@@ -1,0 +1,218 @@
+'use strict';
+
+// ── Extractions ───────────────────────────────────────────────────────────────
+
+function insertExtractions(db, document_id, rows) {
+  const stmt = db.prepare(`
+    INSERT INTO extractions
+      (document_id, field_key, raw_value, display_value,
+       confidence, extraction_method)
+    VALUES
+      (@document_id, @field_key, @raw_value, @display_value,
+       @confidence, @extraction_method)
+  `);
+  const insertMany = db.transaction((rows) => {
+    for (const row of rows) stmt.run({ document_id, ...row });
+  });
+  insertMany(rows);
+}
+
+function deleteExtractions(db, document_id) {
+  return db.prepare(
+    'DELETE FROM extractions WHERE document_id = ?'
+  ).run(document_id);
+}
+
+// ── Corrections & hints ───────────────────────────────────────────────────────
+
+function saveCorrections(db, document_id, corrections,
+                         supplier_name, document_type, allValues) {
+  const effectiveSupplier = supplier_name
+    || (allValues && allValues.supplier_name)
+    || '__global__';
+
+  const insertCorr = db.prepare(`
+    INSERT INTO corrections
+      (document_id, field_key, original_value, corrected_value,
+       supplier_name, document_type)
+    VALUES
+      (@document_id, @field_key, @original_value, @corrected_value,
+       @supplier_name, @document_type)
+  `);
+
+  const upsertHint = db.prepare(`
+    INSERT INTO supplier_hints
+      (supplier_name, document_type, field_key, hint_value, usage_count, last_seen)
+    VALUES
+      (@supplier_name, @document_type, @field_key, @hint_value, 1, datetime('now'))
+    ON CONFLICT(supplier_name, document_type, field_key, hint_value) DO UPDATE SET
+      usage_count = usage_count + 1,
+      last_seen   = datetime('now')
+  `);
+
+  db.transaction(() => {
+    // Save explicit corrections
+    for (const [field_key, { original_value, corrected_value }]
+         of Object.entries(corrections)) {
+      insertCorr.run({
+        document_id, field_key, original_value, corrected_value,
+        supplier_name: effectiveSupplier, document_type: document_type || null,
+      });
+      if (corrected_value) {
+        upsertHint.run({
+          supplier_name: effectiveSupplier, document_type: document_type || null,
+          field_key, hint_value: corrected_value,
+        });
+        // Also save as global
+        if (effectiveSupplier !== '__global__') {
+          upsertHint.run({
+            supplier_name: '__global__', document_type: document_type || null,
+            field_key, hint_value: corrected_value,
+          });
+        }
+      }
+    }
+
+    // Save all confirmed values as hints
+    const keyFields = [
+      'invoice_number', 'invoice_date', 'supplier_name', 'total_amount',
+      'currency', 'payment_terms', 'purchase_order_number',
+      'sales_order_number', 'po_number', 'po_date', 'order_date',
+    ];
+    if (allValues) {
+      for (const field_key of keyFields) {
+        const val = allValues[field_key];
+        if (val && val.trim() && !corrections[field_key]) {
+          upsertHint.run({
+            supplier_name: effectiveSupplier,
+            document_type: document_type || null,
+            field_key, hint_value: val.trim(),
+          });
+        }
+      }
+    }
+  })();
+}
+
+function getHints(db, { supplier_name, document_type, limit = 100 } = {}) {
+  if (supplier_name && document_type) {
+    return db.prepare(`
+      SELECT * FROM supplier_hints
+      WHERE (supplier_name = ? OR supplier_name = '__global__')
+        AND (document_type = ? OR document_type IS NULL)
+      ORDER BY usage_count DESC LIMIT ?
+    `).all(supplier_name, document_type, limit);
+  }
+  return db.prepare(`
+    SELECT * FROM supplier_hints
+    ORDER BY usage_count DESC LIMIT ?
+  `).all(limit);
+}
+
+// ── Field anchors ─────────────────────────────────────────────────────────────
+
+function saveAnchor(db, {
+  supplier_name, document_type, field_key,
+  anchor_label, direction, page_zone, x_norm, y_norm
+}) {
+  return db.prepare(`
+    INSERT INTO field_anchors
+      (supplier_name, document_type, field_key, anchor_label,
+       direction, page_zone, x_norm, y_norm)
+    VALUES
+      (@supplier_name, @document_type, @field_key, @anchor_label,
+       @direction, @page_zone, @x_norm, @y_norm)
+    ON CONFLICT(supplier_name, document_type, field_key, anchor_label, direction)
+    DO UPDATE SET
+      usage_count = usage_count + 1,
+      confidence  = MIN(1.0, confidence + 0.1),
+      x_norm      = (@x_norm + x_norm) / 2.0,
+      y_norm      = (@y_norm + y_norm) / 2.0,
+      last_seen   = datetime('now')
+  `).run({
+    supplier_name: supplier_name || '__unknown__',
+    document_type: document_type || null,
+    field_key, anchor_label, direction, page_zone,
+    x_norm: x_norm || 0, y_norm: y_norm || 0,
+  });
+}
+
+function getAllAnchors(db) {
+  return db.prepare(
+    'SELECT * FROM field_anchors ORDER BY usage_count DESC, confidence DESC'
+  ).all();
+}
+
+// ── Logo fingerprints ─────────────────────────────────────────────────────────
+
+function saveLogoFingerprint(db, { supplier_name, phash, ahash }) {
+  const existing = db.prepare(
+    'SELECT id, phash FROM logo_fingerprints WHERE supplier_name = ?'
+  ).all(supplier_name);
+
+  for (const row of existing) {
+    if (hammingDistance(row.phash, phash) <= 10) {
+      db.prepare(`
+        UPDATE logo_fingerprints
+        SET match_count = match_count + 1, last_seen = datetime('now')
+        WHERE id = ?
+      `).run(row.id);
+      return;
+    }
+  }
+  db.prepare(`
+    INSERT INTO logo_fingerprints (supplier_name, phash, ahash)
+    VALUES (?, ?, ?)
+  `).run(supplier_name, phash, ahash);
+}
+
+function getAllLogos(db) {
+  return db.prepare(
+    'SELECT * FROM logo_fingerprints ORDER BY match_count DESC'
+  ).all();
+}
+
+function hammingDistance(h1, h2) {
+  if (!h1 || !h2 || h1.length !== h2.length) return 64;
+  let dist = 0;
+  for (let i = 0; i < h1.length; i++) {
+    const xor = parseInt(h1[i], 16) ^ parseInt(h2[i], 16);
+    dist += xor.toString(2).split('1').length - 1;
+  }
+  return dist;
+}
+
+function findLogoMatch(db, phash, threshold = 12) {
+  const all = getAllLogos(db);
+  let best = null, bestDist = threshold + 1;
+  for (const row of all) {
+    const dist = hammingDistance(row.phash, phash);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = { ...row, distance: dist, confidence: Math.max(0, 100 - dist * 6) };
+    }
+  }
+  return best;
+}
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+
+function getSetting(db, key, defaultValue = null) {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+  return row ? row.value : defaultValue;
+}
+
+function setSetting(db, key, value) {
+  return db.prepare(`
+    INSERT INTO settings (key, value) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')
+  `).run(key, value);
+}
+
+module.exports = {
+  insertExtractions, deleteExtractions,
+  saveCorrections, getHints,
+  saveAnchor, getAllAnchors,
+  saveLogoFingerprint, getAllLogos, findLogoMatch,
+  getSetting, setSetting,
+};

@@ -1,0 +1,356 @@
+================================================================================
+  DocuSnap v2 — BUILD & INSTALL GUIDEf
+  Complete instructions from zero to working Windows installer
+================================================================================
+
+Last updated: June 2026
+Project structure: modular (src/modules/, database/, python_backend/)
+
+
+================================================================================
+PART 1 — DEVELOPER SETUP (one-time, on your build machine)
+================================================================================
+
+These tools need to be installed once. You won't need to repeat this unless
+you set up a new machine.
+
+────────────────────────────────────────────────────────────────────────────────
+1.1  Node.js (LTS version)
+────────────────────────────────────────────────────────────────────────────────
+Download the LTS release from: https://nodejs.org
+  → Choose "LTS" (currently v22.x) — NOT the "Current" release
+  → Run the installer, accept all defaults
+  → Tick "Add to PATH" if asked
+
+Verify:
+  node --version     (should show v22.x.x)
+  npm --version      (should show 10.x.x)
+
+
+────────────────────────────────────────────────────────────────────────────────
+1.2  Python 3.12
+────────────────────────────────────────────────────────────────────────────────
+Download from: https://python.org/downloads
+  → Find Python 3.12.x (NOT 3.14 — too new, unstable)
+  → Run installer
+  → TICK "Add Python to PATH" at the bottom before clicking Install
+
+Verify:
+  py --list          (should show -V:3.12 *)
+  py -3.12 --version (should show Python 3.12.x)
+
+
+────────────────────────────────────────────────────────────────────────────────
+1.3  Tesseract OCR
+────────────────────────────────────────────────────────────────────────────────
+Download the Windows installer from:
+  https://github.com/UB-Mannheim/tesseract/wiki
+
+  → Download the 64-bit installer (tesseract-ocr-w64-setup-5.x.x.exe)
+  → Run it — default install path: C:\Program Files\Tesseract-OCR
+  → During install: tick "Add to system PATH" if the option appears
+
+If PATH wasn't added automatically:
+  1. Start → search "Environment Variables"
+  2. Edit the system environment variables
+  3. Environment Variables → System variables → Path → Edit
+  4. New → C:\Program Files\Tesseract-OCR
+  5. OK everywhere → close and reopen your terminal
+
+Verify:
+  tesseract --version   (should show tesseract 5.x.x)
+
+
+────────────────────────────────────────────────────────────────────────────────
+1.4  Ollama + Phi-3 Mini model
+────────────────────────────────────────────────────────────────────────────────
+Download Ollama from: https://ollama.com
+  → Windows installer, run it
+  → Ollama runs silently in the system tray after install
+
+Pull the Phi-3 Mini model (much smaller than Mistral — ~2.4 GB download):
+
+  ollama pull phi3:mini
+
+Wait for the download to complete. Verify:
+  ollama list        (should show phi3:mini)
+  ollama run phi3:mini "Say hello"   (should respond)
+
+WHY PHI-3 MINI instead of Mistral 7B?
+  • 2.4 GB vs 4.1 GB — fits comfortably in 4GB GPU
+  • Loads in ~5 seconds vs ~30 seconds
+  • Performance on structured document extraction is comparable
+  • Much smaller installer for customers
+
+
+────────────────────────────────────────────────────────────────────────────────
+1.5  Python packages
+────────────────────────────────────────────────────────────────────────────────
+Open a terminal and run:
+
+  py -3.12 -m pip install pytesseract pillow pypdfium2 requests imagehash
+
+Verify:
+  py -3.12 -c "import pytesseract, PIL, pypdfium2, requests, imagehash; print('OK')"
+
+
+────────────────────────────────────────────────────────────────────────────────
+1.6  rcedit (needed for building the installer)
+────────────────────────────────────────────────────────────────────────────────
+Download from: https://github.com/electron/rcedit/releases/latest
+  → Download rcedit-x64.exe
+  → Create this folder:
+      %LOCALAPPDATA%\electron-builder\Cache\winCodeSign\winCodeSign-2.6.0\
+  → Copy rcedit-x64.exe into that folder
+
+Also create placeholder symlink files to prevent extraction errors:
+  mkdir "%LOCALAPPDATA%\electron-builder\Cache\winCodeSign\winCodeSign-2.6.0\darwin\10.12\lib"
+  echo placeholder > "%LOCALAPPDATA%\electron-builder\Cache\winCodeSign\winCodeSign-2.6.0\darwin\10.12\lib\libcrypto.dylib"
+  echo placeholder > "%LOCALAPPDATA%\electron-builder\Cache\winCodeSign\winCodeSign-2.6.0\darwin\10.12\lib\libssl.dylib"
+  mkdir "%LOCALAPPDATA%\electron-builder\Cache\winCodeSign\winCodeSign-2.6.0\win"
+
+
+================================================================================
+PART 2 — PROJECT SETUP
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+2.1  Extract the project
+────────────────────────────────────────────────────────────────────────────────
+Extract DocuSnap_v2.zip to C:\docusnap  (or wherever you prefer)
+
+  cd C:\docusnap
+
+
+────────────────────────────────────────────────────────────────────────────────
+2.2  Install Node dependencies
+────────────────────────────────────────────────────────────────────────────────
+  npm install
+
+If you see warnings about better-sqlite3 or electron needing approval:
+  npm approve-scripts electron better-sqlite3
+  npm install
+
+If electron.exe is missing after install:
+  node -e "require('fs').writeFileSync('node_modules/electron/path.txt', 'electron.exe')"
+  Then manually copy electron-v31.7.7-win32-x64.zip contents to node_modules\electron\dist\
+  Download from: https://github.com/electron/electron/releases/tag/v31.7.7
+
+Rebuild better-sqlite3 for Electron's Node version:
+  npx @electron/rebuild -f -w better-sqlite3
+
+
+────────────────────────────────────────────────────────────────────────────────
+2.3  Test the dev build
+────────────────────────────────────────────────────────────────────────────────
+  npm start
+
+The app window should open. Tesseract and Ollama should be detected automatically.
+Test with a few sample documents before building the installer.
+
+
+================================================================================
+PART 3 — BUILDING THE WINDOWS INSTALLER
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+3.1  Build the vendor folder (bundled dependencies for customers)
+────────────────────────────────────────────────────────────────────────────────
+The vendor\ folder bundles everything so customers don't need to install anything.
+
+STEP A — Bundle Python:
+
+  python -m venv vendor\python
+  vendor\python\Scripts\pip install pytesseract pillow pypdfium2 requests imagehash
+
+STEP B — Bundle Tesseract:
+
+  xcopy /E /I "C:\Program Files\Tesseract-OCR" vendor\tesseract
+
+STEP C — Bundle Ollama + Phi-3 Mini model:
+
+  mkdir vendor\ollama
+  copy "%LOCALAPPDATA%\Programs\Ollama\ollama.exe" vendor\ollama\
+
+  :: Copy the model weights (downloaded by 'ollama pull phi3:mini')
+  xcopy /E /I "%USERPROFILE%\.ollama\models" vendor\ollama_models
+
+  NOTE: The Phi-3 Mini model is optional.
+  Without it: installer is ~280MB (Fast Mode + Smart Mode with no AI)
+  With it:    installer is ~2.7GB (all modes including AI mode)
+
+  OPTION A — Small installer (recommended for most customers):
+    Skip the Ollama/model bundling. Customers download model on demand
+    from inside the app (Settings → AI Mode → Download AI Model).
+
+  OPTION B — Full offline installer:
+    Include Ollama + model for customers with no reliable internet.
+    Distribute on USB stick.
+
+
+────────────────────────────────────────────────────────────────────────────────
+3.2  Add an app icon (optional but recommended)
+────────────────────────────────────────────────────────────────────────────────
+Create or obtain a 256x256 .ico file and save it as:
+  assets\icon.ico
+
+Free PNG to ICO converter: https://convertico.com
+
+
+────────────────────────────────────────────────────────────────────────────────
+3.3  Build the installer
+────────────────────────────────────────────────────────────────────────────────
+Run as Administrator (right-click terminal → Run as administrator):
+
+  set CSC_IDENTITY_AUTO_DISCOVERY=false
+  npm run build
+
+This produces:
+  dist\DocuSnap Setup 2.0.0.exe    ← the installer to give to customers
+
+Build time: 5-15 minutes depending on vendor\ folder size.
+
+If you see "cannot create symbolic link" errors:
+  → The rcedit and winCodeSign setup in step 1.6 fixes this
+  → If it persists, enable Developer Mode:
+    Settings → Privacy & Security → For Developers → Developer Mode → On
+    Then reboot and retry
+
+
+────────────────────────────────────────────────────────────────────────────────
+3.4  What the installer gives customers
+────────────────────────────────────────────────────────────────────────────────
+  ✓ DocuSnap shortcut on Desktop
+  ✓ DocuSnap in Start Menu
+  ✓ Entry in Add/Remove Programs with uninstaller
+  ✓ Default install path: C:\Program Files\DocuSnap
+  ✓ All vendor tools bundled — customer needs NOTHING else installed
+  ✓ Settings and database stored in %APPDATA%\DocuSnap (preserved on updates)
+
+
+================================================================================
+PART 3b — PROCESSING MODES
+================================================================================
+
+DocuSnap has three processing modes, selectable in Settings:
+
+  FAST MODE   — keyword + anchor matching only. No AI.
+                Under 1 second per document. Recommended after training.
+                Works on any hardware. No internet required.
+
+  SMART MODE  — keyword + anchor first. AI only if required fields are
+                missing. Default mode. Best balance of speed and accuracy.
+                AI model required (downloaded on demand).
+
+  AI MODE     — AI always runs alongside keyword + anchor.
+                Slowest but most thorough. Best for unknown document types.
+
+The app automatically suggests switching to Fast Mode after 10 confirmed
+documents from the same supplier.
+
+
+================================================================================
+PART 4 — FIRST TIME CUSTOMER SETUP
+================================================================================
+
+After installing, the customer needs to:
+
+1. Open DocuSnap
+2. Click Settings (⚙ top right)
+3. Set the Output Folder — this is where processed documents will be filed
+   e.g. C:\Documents\Processed Invoices
+4. That's it — all other settings have sensible defaults
+
+
+================================================================================
+PART 5 — UPDATING THE APP
+================================================================================
+
+When you release a new version:
+1. Bump the version in package.json (e.g. "version": "2.1.0")
+2. Run npm run build
+3. Distribute the new Setup exe
+
+Customer installs over the top — their database and settings are preserved
+because they live in %APPDATA%\DocuSnap, not in the install folder.
+
+
+================================================================================
+PART 6 — DEVELOPMENT WORKFLOW (modular)
+================================================================================
+
+The project is split into independent modules. To work on a specific area:
+
+  src/modules/processing/   — folder import, OCR, reprocess
+  src/modules/review/       — review queue, defer, delete, confirm
+  src/modules/filing/       — folder structure, filename format, XML
+  src/modules/settings/     — document types, fields, app settings
+  src/modules/search/       — document search
+  src/windows/main/         — main window UI
+  src/windows/review/       — review window UI
+  src/windows/settings/     — settings window UI
+  src/windows/search/       — search window UI
+  python_backend/extraction/ — 4-stage extraction pipeline
+  python_backend/ocr/        — Tesseract wrapper
+  python_backend/logo/       — logo fingerprinting
+  database/modules/          — database operations per domain
+
+Each module can be developed and tested independently:
+  → Change a module → npm start → test → done
+  → No need to rebuild the installer for development
+  → Only rebuild installer when releasing to customers
+
+To test the Python extraction engine standalone:
+  py -3.12 python_backend\process_docs.py --folder C:\test-docs --tesseract "C:\Program Files\Tesseract-OCR\tesseract.exe"
+
+
+================================================================================
+PART 7 — SWITCHING MODELS
+================================================================================
+
+Current model: phi3:mini
+To switch to a different model:
+
+1. Pull the new model:
+   ollama pull <model-name>
+   e.g. ollama pull llama3.2:1b  (even smaller)
+        ollama pull phi3:medium   (more accurate, needs more VRAM)
+
+2. Update the model name in two places:
+   src/modules/processing/handler.js  → '--model', 'phi3:mini'  (change both instances)
+   python_backend/extraction/llm.py   → MODEL_NAME = "phi3:mini"
+
+3. For the bundled installer: copy new model weights to vendor\ollama_models\
+
+4. npm run build
+
+
+================================================================================
+PART 8 — TROUBLESHOOTING
+================================================================================
+
+"AI model warm-up failed"
+  → Open a terminal: ollama serve
+  → Leave it open and try again
+
+"OCR returned no text"
+  → Check Tesseract is installed: tesseract --version
+  → Try a different scan — minimum 200 DPI recommended, 300 DPI optimal
+
+"File still locked / EBUSY"
+  → The PDF viewer is still holding the file
+  → The app retries automatically and will rename/delete on next attempt
+
+"better-sqlite3 version mismatch"
+  → Run: npx @electron/rebuild -f -w better-sqlite3
+
+"Installer only shows uninstall option"
+  → This was a package.json configuration issue — fixed in v2
+  → The new package.json includes proper NSIS configuration
+  → Rebuild from scratch with the v2 package.json
+
+"ENAMETOOLONG on Windows"
+  → Training data is now written to temp files to avoid this
+  → Should not occur in v2
+
+================================================================================

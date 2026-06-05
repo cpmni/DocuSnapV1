@@ -1,0 +1,16 @@
+vendor/ollama_models/ 
+vendor/tesseract/tessdata/ 
+vendor/ollama/ 
+vendor/ollama_models/ 
+vendor/python_env/ 
+vendor/tesseract/ 
+dist/ 
+dist 
+node_modules/ 
+dist/ 
+node_modules/ 
+dist/ 
+vendor/ollama/ 
+vendor/ollama_models/ 
+vendor/python_env/ 
+vendor/tesseract/ 

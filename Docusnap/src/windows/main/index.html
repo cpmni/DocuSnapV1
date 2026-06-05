@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'">
+  <title>DocuSnap</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0c0e14;
+      --surface:   #13161f;
+      --surface2:  #1a1e2a;
+      --border:    #252836;
+      --border2:   #2f3347;
+      --accent:    #4f8ef7;
+      --accent2:   #6ea8ff;
+      --ok:        #3ecf8e;
+      --warn:      #f7b84f;
+      --err:       #f76f6f;
+      --text:      #e2e6f0;
+      --muted:     #7a82a0;
+      --mono:      'IBM Plex Mono', monospace;
+      --sans:      'IBM Plex Sans', sans-serif;
+    }
+
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 13px; overflow: hidden; }
+
+    /* ── Title bar ── */
+    #titlebar {
+      -webkit-app-region: drag;
+      display: flex; align-items: center; justify-content: space-between;
+      height: 38px; padding: 0 12px 0 16px;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .tb-left { display: flex; align-items: center; gap: 10px; }
+    .tb-logo { width: 20px; height: 20px; }
+    .tb-title { font-size: 12px; font-weight: 500; letter-spacing: 0.08em; color: var(--muted); text-transform: uppercase; }
+    .tb-controls { display: flex; gap: 6px; -webkit-app-region: no-drag; }
+    .tb-btn {
+      width: 28px; height: 22px; border-radius: 4px; border: none; cursor: pointer;
+      background: transparent; color: var(--muted); font-size: 14px;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .15s, color .15s;
+    }
+    .tb-btn:hover { background: var(--surface2); color: var(--text); }
+    .tb-btn.close:hover { background: var(--err); color: #fff; }
+
+    /* ── Layout ── */
+    #app { display: flex; flex-direction: column; height: 100vh; }
+    #body { display: flex; flex: 1; overflow: hidden; }
+
+    /* ── Sidebar ── */
+    #sidebar {
+      width: 240px; flex-shrink: 0;
+      background: var(--surface); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; padding: 20px 16px; gap: 16px;
+    }
+    .sidebar-label { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+
+    .folder-box {
+      background: var(--bg); border: 1px dashed var(--border2);
+      border-radius: 8px; padding: 14px 12px; cursor: pointer;
+      transition: border-color .2s, background .2s; min-height: 72px;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .folder-box:hover { border-color: var(--accent); background: #131829; }
+    .folder-path {
+      font-family: var(--mono); font-size: 10px; color: var(--muted);
+      word-break: break-all; line-height: 1.5;
+    }
+    .folder-path.set { color: var(--accent2); }
+
+    .btn-run {
+      width: 100%; padding: 10px; border-radius: 7px; border: none;
+      background: var(--accent); color: #fff; font-family: var(--sans);
+      font-size: 13px; font-weight: 500; cursor: pointer;
+      transition: opacity .2s, transform .1s;
+    }
+    .btn-run:hover:not(:disabled) { opacity: .88; }
+    .btn-run:active:not(:disabled) { transform: scale(.98); }
+    .btn-run:disabled { opacity: .35; cursor: not-allowed; }
+
+    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .stat-card {
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 6px; padding: 10px 8px; text-align: center;
+    }
+    .stat-val { font-family: var(--mono); font-size: 20px; font-weight: 500; color: var(--text); }
+    .stat-lbl { font-size: 10px; color: var(--muted); margin-top: 2px; letter-spacing: .05em; }
+    .stat-card.ok .stat-val  { color: var(--ok); }
+    .stat-card.err .stat-val { color: var(--err); }
+
+    /* ── Main content ── */
+    #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+    /* ── Drop zone (empty state) ── */
+    #dropzone {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 16px;
+      color: var(--muted);
+    }
+    .drop-icon { font-size: 52px; opacity: .25; }
+    .drop-title { font-size: 16px; font-weight: 300; color: var(--muted); }
+    .drop-sub   { font-size: 12px; color: var(--border2); }
+
+    /* ── Progress log ── */
+    #log-panel {
+      display: none; flex-direction: column;
+      height: 160px; flex-shrink: 0;
+      border-top: 1px solid var(--border); background: var(--bg);
+    }
+    #log-panel.visible { display: flex; }
+    .log-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 6px 14px; border-bottom: 1px solid var(--border);
+      font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
+    }
+    #progress-bar-wrap { height: 2px; background: var(--border); }
+    #progress-bar      { height: 2px; background: var(--accent); width: 0; transition: width .3s; }
+    #log-output {
+      flex: 1; overflow-y: auto; padding: 8px 14px;
+      font-family: var(--mono); font-size: 11px; color: var(--muted); line-height: 1.7;
+    }
+    #log-output .ok   { color: var(--ok); }
+    #log-output .warn { color: var(--warn); }
+    #log-output .err  { color: var(--err); }
+
+    /* ── Results table ── */
+    #results-panel { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+    #results-panel.visible { display: flex; }
+
+    .results-toolbar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 16px; border-bottom: 1px solid var(--border);
+      background: var(--surface); flex-shrink: 0;
+    }
+    .results-title { font-size: 12px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+    .btn-clear {
+      padding: 5px 12px; border-radius: 5px; border: 1px solid var(--border2);
+      background: transparent; color: var(--muted); font-size: 11px;
+      cursor: pointer; transition: all .15s; font-family: var(--sans);
+    }
+    .btn-clear:hover { border-color: var(--accent); color: var(--accent); }
+
+    #table-wrap { flex: 1; overflow: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    thead th {
+      position: sticky; top: 0; background: var(--surface);
+      padding: 9px 14px; text-align: left;
+      font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+      color: var(--muted); border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+    tbody tr:hover { background: var(--surface2); }
+    tbody td { padding: 10px 14px; vertical-align: top; color: var(--text); }
+    tbody td.mono { font-family: var(--mono); font-size: 11px; }
+    tbody td.muted { color: var(--muted); }
+    .badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 8px; border-radius: 20px; font-size: 10px; font-weight: 500;
+    }
+    .badge.ok  { background: #0d2e1e; color: var(--ok); }
+    .badge.err  { background: #2e0d0d; color: var(--err); }
+    .badge.warn { background: #2e1a00; color: var(--warn); }
+    .link-btn {
+      background: none; border: none; color: var(--accent2);
+      font-family: var(--mono); font-size: 10px; cursor: pointer;
+      text-decoration: underline; padding: 0;
+    }
+    .link-btn:hover { color: var(--accent); }
+
+
+    /* ── Stage progress indicator ── */
+    #stage-indicator {
+      display: none; align-items: center; gap: 10px;
+      padding: 7px 14px; background: #0d1525; border-bottom: 1px solid #252836;
+      font-size: 11px; flex-shrink: 0;
+    }
+    #stage-indicator.visible { display: flex; }
+    .stage-file { font-family: 'IBM Plex Mono', monospace; color: #6ea8ff; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .stages { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+    .stage {
+      padding: 3px 10px; border-radius: 12px; font-size: 10px; font-weight: 500;
+      border: 1px solid #252836; color: #7a82a0; background: #13161f;
+      transition: all .3s;
+    }
+    .stage.active {
+      border-color: #4f8ef7; color: #6ea8ff; background: #0d1f3a;
+      animation: pulse-stage 1.2s ease-in-out infinite;
+    }
+    .stage.done { border-color: #1a4a2e; color: #3ecf8e; background: #0d2e1e; animation: none; }
+    @keyframes pulse-stage {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.5; }
+    }
+    /* scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- Title bar -->
+  <div id="titlebar">
+    <div class="tb-left">
+      <svg class="tb-logo" viewBox="0 0 24 24" fill="none">
+        <rect x="3" y="3" width="13" height="17" rx="2" fill="none" stroke="#4f8ef7" stroke-width="1.5"/>
+        <path d="M16 3h2a2 2 0 012 2v14a2 2 0 01-2 2h-2" stroke="#4f8ef7" stroke-width="1.5" opacity=".4"/>
+        <line x1="7" y1="8" x2="13" y2="8" stroke="#4f8ef7" stroke-width="1.3"/>
+        <line x1="7" y1="11.5" x2="13" y2="11.5" stroke="#4f8ef7" stroke-width="1.3" opacity=".6"/>
+        <line x1="7" y1="15" x2="10" y2="15" stroke="#4f8ef7" stroke-width="1.3" opacity=".3"/>
+      </svg>
+      <span class="tb-title">DocuSnap</span>
+      <button id="btn-review" style="
+        -webkit-app-region:no-drag; margin-left:12px;
+        padding:3px 10px; border-radius:5px; border:1px solid #2f3347;
+        background:#13161f; color:#7a82a0; font-size:11px; cursor:pointer;
+        display:flex; align-items:center; gap:6px; font-family:inherit;">
+        Review Queue <span id="review-badge" style="
+          background:#f7b84f; color:#0c0e14; border-radius:10px;
+          padding:1px 6px; font-size:10px; font-weight:600; display:none;">0</span>
+      </button>
+      <button id="btn-search" style="
+        -webkit-app-region:no-drag; margin-left:6px;
+        padding:3px 10px; border-radius:5px; border:1px solid #2f3347;
+        background:#13161f; color:#7a82a0; font-size:11px; cursor:pointer;
+        font-family:inherit;">&#128269; Search</button>
+      <button id="btn-settings" style="
+        -webkit-app-region:no-drag; margin-left:6px;
+        padding:3px 10px; border-radius:5px; border:1px solid #2f3347;
+        background:#13161f; color:#7a82a0; font-size:11px; cursor:pointer;
+        font-family:inherit;">&#9881; Settings</button>
+      <span id="mode-badge" style="
+        -webkit-app-region:no-drag; margin-left:8px;
+        padding:2px 8px; border-radius:10px; font-size:10px;
+        background:#0d2e1e; color:#3ecf8e; border:1px solid #1a4a2e;
+        font-family:inherit;">FAST</span>
+    </div>
+    <div class="tb-controls">
+      <button class="tb-btn" id="btn-min" title="Minimise">&#8211;</button>
+      <button class="tb-btn" id="btn-max" title="Maximise">&#9633;</button>
+      <button class="tb-btn close" id="btn-close" title="Close">&#215;</button>
+    </div>
+  </div>
+
+  <div id="body">
+
+    <!-- Sidebar -->
+    <div id="sidebar">
+      <div>
+        <div class="sidebar-label">Source Folder</div>
+        <div class="folder-box" id="folder-box" title="Click to choose folder">
+          <span class="folder-path" id="folder-display">Click to select a folder&hellip;</span>
+        </div>
+      </div>
+
+      <button class="btn-run" id="btn-run" disabled>&#9654;&nbsp; Process Documents</button>
+
+      <div>
+        <div class="sidebar-label">Session Stats</div>
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-val" id="stat-total">0</div><div class="stat-lbl">Found</div></div>
+          <div class="stat-card"><div class="stat-val" id="stat-done">0</div><div class="stat-lbl">Done</div></div>
+          <div class="stat-card ok"><div class="stat-val" id="stat-ok">0</div><div class="stat-lbl">OK</div></div>
+          <div class="stat-card err"><div class="stat-val" id="stat-err">0</div><div class="stat-lbl">Errors</div></div>
+        </div>
+      </div>
+
+      <div style="margin-top:auto; font-size:10px; color:var(--muted); line-height:1.7;">
+        Supported formats:<br>PDF &bull; JPG &bull; PNG &bull; TIFF &bull; BMP<br><br>
+        All processing is done<br>locally on this machine.<br>No data leaves your PC.
+      </div>
+    </div>
+
+    <!-- Main -->
+    <div id="main">
+
+      <!-- Empty state -->
+      <div id="dropzone">
+        <div class="drop-icon">&#128196;</div>
+        <div class="drop-title">No documents processed yet</div>
+        <div class="drop-sub">Select a source folder and click Process Documents</div>
+      </div>
+
+      <!-- Results table -->
+      <div id="results-panel">
+        <div class="results-toolbar">
+          <span class="results-title">Processed Documents</span>
+          <button class="btn-clear" id="btn-clear">Clear Results</button>
+        </div>
+        <div id="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>New Filename</th>
+                <th>Invoice #</th>
+                <th>Date</th>
+                <th>Supplier</th>
+                <th>Total</th>
+                <th>Status</th>
+                <th>Location</th>
+              </tr>
+            </thead>
+            <tbody id="table-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Stage indicator -->
+      <div id="stage-indicator">
+        <span class="stage-file" id="stage-file">—</span>
+        <div class="stages">
+          <span class="stage" id="stage-ocr">OCR</span>
+          <span style="color:#2f3347">›</span>
+          <span class="stage" id="stage-llm">AI Extraction</span>
+          <span style="color:#2f3347">›</span>
+          <span class="stage" id="stage-save">Saving</span>
+        </div>
+      </div>
+
+      <!-- Progress log -->
+      <div id="log-panel">
+        <div class="log-header">
+          <span>Processing Log</span>
+          <span id="log-status">Idle</span>
+        </div>
+        <div id="progress-bar-wrap"><div id="progress-bar"></div></div>
+        <div id="log-output"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+<script src="renderer.js"></script>
+</body>
+</html>

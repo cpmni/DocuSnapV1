@@ -1,0 +1,214 @@
+#!/usr/bin/env python3
+"""
+process_docs.py
+---------------
+Thin entry point called by Electron. Orchestrates the extraction pipeline
+for a folder of documents. Streams JSON progress to stdout.
+
+All heavy lifting is in the extraction/ modules.
+"""
+
+import sys
+import os
+import json
+import shutil
+import argparse
+from pathlib import Path
+from datetime import datetime
+
+# Ensure local modules are importable
+sys.path.insert(0, str(Path(__file__).parent))
+
+from ocr.tesseract import configure as configure_tesseract
+from ocr.tesseract import extract_text_and_images, SUPPORTED_EXTENSIONS
+from extraction.engine import ExtractionEngine
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def emit(obj: dict):
+    print(json.dumps(obj), flush=True)
+
+def log(text: str, level: str = ""):
+    emit({"type": "log", "text": text, "level": level})
+
+def load_json_arg(inline: str | None, filepath: str | None) -> list | dict | None:
+    """Load JSON from a file path or inline string."""
+    if filepath and os.path.exists(filepath):
+        with open(filepath, "r", encoding="utf-8") as f:
+            return json.load(f)
+    if inline:
+        return json.loads(inline)
+    return None
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--folder",          required=True)
+    parser.add_argument("--tesseract",       default=None)
+    parser.add_argument("--ollama-url",      default="http://127.0.0.1:11434/api/generate")
+    parser.add_argument("--model",           default="phi3:mini")
+    parser.add_argument("--mode",            default="smart",
+                        choices=["fast","smart","ai"])
+    parser.add_argument("--config-file",     default=None)
+    parser.add_argument("--fields-file",     default=None)
+    parser.add_argument("--hints-file",      default=None)
+    parser.add_argument("--anchors-file",    default=None)
+    parser.add_argument("--logos-file",      default=None)
+    parser.add_argument("--doc-types-file",  default=None)
+    # Inline fallbacks (for small payloads)
+    parser.add_argument("--fields",          default=None)
+    parser.add_argument("--hints",           default=None)
+    parser.add_argument("--anchors",         default=None)
+    parser.add_argument("--logos",           default=None)
+    args = parser.parse_args()
+
+    # Configure Tesseract
+    configure_tesseract(args.tesseract)
+
+    # Load training data (once, before the file loop)
+    fields    = load_json_arg(args.fields,  args.fields_file)  or []
+    hints     = load_json_arg(args.hints,   args.hints_file)   or []
+    anchors   = load_json_arg(args.anchors, args.anchors_file) or []
+    logos     = load_json_arg(args.logos,   args.logos_file)   or []
+    doc_types = load_json_arg(None,         args.doc_types_file) or []
+
+    emit({
+        "type": "log",
+        "text": f"[Learning] {len(hints)} hints, {len(anchors)} anchors,"
+                f" {len(logos)} logos loaded"
+    })
+
+    # Initialise extraction engine
+    engine = ExtractionEngine(
+        mode        = args.mode,
+        config_path = args.config_file,
+        ollama_url  = args.ollama_url,
+        model       = args.model,
+        emit_fn     = emit,
+    )
+
+    # Warm up model before batch
+    engine.warmup()
+
+    # Find all supported files
+    folder = Path(args.folder)
+    files  = sorted([
+        f for f in folder.iterdir()
+        if f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSIONS
+    ])
+
+    emit({"type": "start", "total": len(files)})
+    processed_at = datetime.now().isoformat(timespec="seconds")
+
+    for filepath in files:
+        emit({"type": "file_begin", "filename": filepath.name})
+
+        try:
+            # OCR
+            log(f"  OCR: {filepath.name}")
+            ocr_text, page_images = extract_text_and_images(filepath)
+
+            if not ocr_text.strip():
+                raise ValueError("OCR returned no text — is the scan readable?")
+
+            # Save raw OCR for audit
+            ocr_path = filepath.parent / (filepath.stem + "_ocr.txt")
+            ocr_path.write_text(ocr_text, encoding="utf-8")
+
+            # Detect document type
+            known_type_names = [dt["name"] for dt in doc_types] if doc_types else None
+            type_detection = engine.detect_document_type(ocr_text, known_type_names)
+            document_type  = type_detection["type"] if type_detection else None
+            type_conf      = type_detection["confidence"] if type_detection else 0
+
+            if document_type:
+                log(f"  Document type: {document_type} ({type_conf}%)")
+
+            # Get fields for this document type
+            active_fields = fields
+            if document_type and doc_types:
+                for dt in doc_types:
+                    if dt["name"] == document_type and dt.get("fields"):
+                        active_fields = dt["fields"]
+                        break
+
+            # Run extraction pipeline
+            # Get doc type slug for smart mode decisions
+            doc_slug = None
+            if document_type and doc_types:
+                for dt in doc_types:
+                    if dt["name"] == document_type:
+                        doc_slug = dt.get("slug")
+                        break
+
+            extractions = engine.extract(
+                ocr_text      = ocr_text,
+                page_images   = page_images,
+                filename      = filepath.name,
+                field_defs    = active_fields,
+                hints         = hints,
+                anchors       = anchors,
+                logos         = logos,
+                document_type = document_type,
+                document_slug = doc_slug,
+                supplier_name = None,
+            )
+
+            # Pull out metadata keys
+            supplier_name    = extractions.pop("_supplier_name", None)
+            doc_type_result  = extractions.pop("_document_type", document_type)
+            overall_conf     = extractions.pop("_overall_confidence", 0)
+            review_needed    = extractions.pop("_needs_review", True)
+
+            status = "needs_review" if review_needed else "confirmed"
+
+            emit({
+                "type":               "file_done",
+                "success":            True,
+                "status":             status,
+                "original_filename":  filepath.name,
+                "overall_confidence": overall_conf,
+                "needs_review":       review_needed,
+                "document_type":      doc_type_result,
+                "type_confidence":    type_conf,
+                "supplier_name":      supplier_name,
+                "mode_used":          extractions.pop("_mode_used", "smart"),
+                "extractions":        {
+                    k: {"value": v.get("value"), "confidence": v.get("confidence", 0),
+                        "method": v.get("method", "unknown")}
+                    for k, v in extractions.items()
+                },
+                # Convenience fields for main window table
+                "invoice_number": _get_val(extractions, [
+                    "invoice_number", "sales_order_number", "po_number"
+                ]),
+                "invoice_date": _get_val(extractions, [
+                    "invoice_date", "order_date", "po_date"
+                ]),
+                "total_amount":  _get_val(extractions, ["total_amount"]),
+                "currency":      _get_val(extractions, ["currency"]),
+            })
+
+        except Exception as exc:
+            emit({
+                "type":              "file_done",
+                "success":           False,
+                "status":            "error",
+                "original_filename": filepath.name,
+                "error":             str(exc),
+            })
+
+
+def _get_val(extractions: dict, keys: list[str]) -> str | None:
+    for k in keys:
+        v = extractions.get(k, {}).get("value")
+        if v:
+            return v
+    return None
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,76 @@
+{
+  "name": "docusnap",
+  "version": "2.0.0",
+  "description": "Local document OCR and AI field extraction",
+  "author": "Your Name",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win --x64",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "build": {
+    "appId": "com.docusnap.app",
+    "productName": "DocuSnap",
+    "copyright": "Copyright © 2026 Your Name",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "sign": null,
+      "signingHashAlgorithms": []
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "DocuSnap",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "deleteAppDataOnUninstall": false,
+      "include": "installer.nsh"
+    },
+    "extraResources": [
+      {
+        "from": "python_backend/",
+        "to": "python_backend",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "config/",
+        "to": "config",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "vendor/",
+        "to": "vendor",
+        "filter": ["**/*"]
+      }
+    ],
+    "files": [
+      "src/**/*",
+      "database/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    }
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.10.0"
+  }
+}
