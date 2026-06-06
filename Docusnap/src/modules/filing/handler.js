@@ -164,15 +164,31 @@ const DATE_FORMATS = [
   /^(\d{2})\.(\d{2})\.(\d{4})$/,  // DD.MM.YYYY
 ];
 
+const MONTHS = {
+  jan:0, feb:1, mar:2, apr:3, may:4, jun:5,
+  jul:6, aug:7, sep:8, oct:9, nov:10, dec:11,
+};
+
 function parseDate(raw) {
   if (!raw) return null;
   const s = String(raw).trim();
-  // DD/MM/YYYY
+  // DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
   let m = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
   if (m) return new Date(parseInt(m[3]), parseInt(m[2])-1, parseInt(m[1]));
   // YYYY-MM-DD
   m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (m) return new Date(parseInt(m[1]), parseInt(m[2])-1, parseInt(m[3]));
+  // MMM DD YYYY or DD MMM YYYY (text month)
+  m = s.match(/^([A-Za-z]{3})\s+(\d{1,2}),?\s+(\d{4})$/);
+  if (m) {
+    const mo = MONTHS[m[1].toLowerCase()];
+    if (mo !== undefined) return new Date(parseInt(m[3]), mo, parseInt(m[2]));
+  }
+  m = s.match(/^(\d{1,2})\s+([A-Za-z]{3}),?\s+(\d{4})$/);
+  if (m) {
+    const mo = MONTHS[m[2].toLowerCase()];
+    if (mo !== undefined) return new Date(parseInt(m[3]), mo, parseInt(m[1]));
+  }
   return null;
 }
 

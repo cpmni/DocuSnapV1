@@ -163,9 +163,26 @@ function renderDeferredList() {
           <span class="qi-name" title="${escHtml(doc.original_filename)}">${escHtml(doc.original_filename)}</span>
           <span class="qi-supplier">${escHtml(doc.supplier_name || '—')}</span>
         </div>
-        <button class="qi-btn danger qi-delete" title="Delete" style="flex-shrink:0; padding:2px 7px; font-size:13px;">&#215;</button>
+        <div style="display:flex; gap:3px; flex-shrink:0;" onclick="event.stopPropagation()">
+          <button class="qi-btn qi-review-now" title="Move back to review queue" style="padding:2px 6px; font-size:10px;">Review</button>
+          <button class="qi-btn danger qi-delete" title="Delete" style="padding:2px 7px; font-size:13px;">&#215;</button>
+        </div>
       </div>
     `;
+    el.querySelector('.qi-review-now').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await window.docusnap.restoreDeferred(doc.id);
+      deferredQueue = deferredQueue.filter(d => d.id !== doc.id);
+      queue = await window.docusnap.getReviewQueue();
+      updateTabCounts();
+      // Switch to review tab and load the doc
+      activeTab = 'review';
+      document.getElementById('tab-review').classList.add('active');
+      document.getElementById('tab-deferred').classList.remove('active');
+      renderQueueList();
+      const restored = queue.find(d => d.id === doc.id);
+      if (restored) selectDoc(restored);
+    });
     el.querySelector('.qi-delete').addEventListener('click', async (e) => {
       e.stopPropagation();
       if (!confirm(`Delete "${doc.original_filename}"? This cannot be undone.`)) return;

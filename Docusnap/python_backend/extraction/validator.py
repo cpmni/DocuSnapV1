@@ -11,30 +11,56 @@ from datetime import datetime
 
 # ── Date parsing ──────────────────────────────────────────────────────────────
 
+# Strip leading day names before parsing: "Monday, 01 May 2024" → "01 May 2024"
+_DAY_NAME_RE = re.compile(
+    r'^(?:Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|'
+    r'Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?)\s*,?\s*',
+    re.IGNORECASE,
+)
+# Strip ordinal suffixes: "1st" → "1", "22nd" → "22", "3rd" → "3"
+_ORDINAL_RE = re.compile(r'\b(\d{1,2})(st|nd|rd|th)\b', re.IGNORECASE)
+
 DATE_FORMATS = [
+    # Fully numeric — DD-first (UK/EU)
     "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y",
+    "%d/%m/%y", "%d-%m-%y", "%d.%m.%y",
+    # Fully numeric — YYYY-first (ISO)
     "%Y-%m-%d", "%Y/%m/%d",
-    "%d/%m/%y", "%d-%m-%y",
-    "%d %B %Y", "%d %b %Y",
-    "%B %d, %Y", "%b %d, %Y",
-    "%m/%d/%Y",  # US format — lower priority
+    # Day + full month name
+    "%d %B %Y", "%d %b %Y",       # 01 May 2024 / 01 May 24
+    "%d %B %y", "%d %b %y",
+    "%d %B, %Y", "%d %b, %Y",     # 01 May, 2024
+    "%d-%B-%Y", "%d-%b-%Y",       # 01-May-2024
+    "%d/%B/%Y", "%d/%b/%Y",       # 01/May/2024
+    # Month name + day (US-ish)
+    "%B %d, %Y", "%b %d, %Y",     # May 01, 2024
+    "%B %d %Y", "%b %d %Y",       # May 01 2024 (no comma)
+    "%B-%d-%Y", "%b-%d-%Y",       # May-01-2024
+    # US numeric — lowest priority (ambiguous with DD/MM)
+    "%m/%d/%Y", "%m-%d-%Y",
 ]
 
 def parse_date(raw: str | None) -> datetime | None:
     if not raw:
         return None
-    raw = str(raw).strip()
+    s = str(raw).strip()
+    # Remove leading day name and optional comma/space
+    s = _DAY_NAME_RE.sub('', s).strip().lstrip(',').strip()
+    # Remove ordinal suffixes from day numbers
+    s = _ORDINAL_RE.sub(r'\1', s)
+    # Collapse runs of whitespace that ordinal removal may have created
+    s = re.sub(r'\s{2,}', ' ', s).strip()
     for fmt in DATE_FORMATS:
         try:
-            return datetime.strptime(raw, fmt)
+            return datetime.strptime(s, fmt)
         except ValueError:
             pass
     return None
 
 def normalise_date(raw: str | None) -> str | None:
-    """Normalise date to DD/MM/YYYY format."""
+    """Normalise any recognised date string to DD-MM-YYYY."""
     d = parse_date(raw)
-    return d.strftime("%d/%m/%Y") if d else raw
+    return d.strftime("%d-%m-%Y") if d else raw
 
 
 # ── Currency parsing ──────────────────────────────────────────────────────────
@@ -93,7 +119,7 @@ def validate_and_adjust(extractions: dict,
                             "validation_note": "invalid date format"}
         else:
             # Normalise to consistent format
-            results[key] = {**data, "value": d.strftime("%d/%m/%Y")}
+            results[key] = {**data, "value": d.strftime("%d-%m-%Y")}
 
     # 2. Validate currency fields and cross-check subtotal + VAT ≈ total
     subtotal = parse_amount(results.get("subtotal", {}).get("value"))

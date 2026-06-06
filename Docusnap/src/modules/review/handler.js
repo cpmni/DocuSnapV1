@@ -120,7 +120,7 @@ function register(ctx) {
       folderPath:        folder_path,
       originalFilename:  original_filename,
       allValues,
-      documentType:      document_type,
+      documentType:      document_type || dtInfo?.name,
       dtInfo,
     });
 
