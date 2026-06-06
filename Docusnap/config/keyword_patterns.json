@@ -91,12 +91,12 @@
         "Inv No.",
         "Inv Number",
         "Inv #",
-        "INV",
         "Tax Invoice No",
         "Tax Invoice Number",
         "Invoice ID",
         "Bill No",
-        "Bill Number"
+        "Bill Number",
+        {"text": "#", "directions": ["right"]}
       ],
       "directions": [
         "right",
@@ -168,13 +168,14 @@
         "Bill To",
         "Billed To",
         "Invoice To",
-        "To",
+        "Sold To",
         "Customer",
         "Client",
-        "Sold To",
-        "Ship To",
-        "Deliver To",
-        "Attention"
+        "Attention",
+        {"text": "BILLING ADDRESS", "directions": ["below"]},
+        {"text": "Billing Address", "directions": ["below"]},
+        {"text": "BILL TO", "directions": ["below"]},
+        {"text": "Invoiced To", "directions": ["below"]}
       ],
       "directions": [
         "right",

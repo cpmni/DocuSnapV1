@@ -262,7 +262,7 @@ async function refreshReviewBadge() {
   if (!badge) return;
   badge.textContent   = count;
   badge.style.display = count > 0 ? '' : 'none';
-  document.getElementById('btn-review').style.color = count > 0 ? '#f7b84f' : '';
+  document.getElementById('btn-review').style.color = count > 0 ? '#f7b84f' : '#7a82a0';
 }
 refreshReviewBadge();
 window.docusnap.onReviewCountChanged((count) => {
@@ -270,7 +270,7 @@ window.docusnap.onReviewCountChanged((count) => {
   if (!badge) return;
   badge.textContent   = count;
   badge.style.display = count > 0 ? '' : 'none';
-  document.getElementById('btn-review').style.color = count > 0 ? '#f7b84f' : '';
+  document.getElementById('btn-review').style.color = count > 0 ? '#f7b84f' : '#7a82a0';
 });
 
 // ── Search button ─────────────────────────────────────────────────────────────

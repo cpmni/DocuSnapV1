@@ -9,7 +9,8 @@ const os = require('os');
 
 function register(ctx) {
   const { ipcMain, getDb, pythonExe, pythonArgs, tesseractPath,
-          backendScript, configPath, notifyMainWindow, spawn, path, fs } = ctx;
+          backendScript, configPath, notifyMainWindow, spawn, path, fs,
+          logger } = ctx;
 
   // ── Folder picker ───────────────────────────────────────────────────────────
   const { dialog, shell } = require('electron');
@@ -51,27 +52,26 @@ function register(ctx) {
   }
 
   function buildTrainingArgs(db) {
-    const docTypes = require('../../../database/modules/document_types');
-    const learning = require('../../../database/modules/learning');
+    const docTypes  = require('../../../database/modules/document_types');
+    const learning  = require('../../../database/modules/learning');
+    const templates = require('../../../database/modules/templates');
 
-    const allDocTypes = docTypes.getAllWithFields(db);
-    const allHints    = learning.getHints(db);
-    const allAnchors  = learning.getAllAnchors(db);
-    const allLogos    = learning.getAllLogos(db);
+    const allDocTypes  = docTypes.getAllWithFields(db);
+    const allHints     = learning.getHints(db);
+    const allAnchors   = learning.getAllAnchors(db);
+    const allLogos     = learning.getAllLogos(db);
+    const allTemplates = templates.getAll(db);
     let allFormats = [];
-    try {
-      allFormats = learning.getFieldFormats(db);
-    } catch (e) {
-      console.warn('[buildTrainingArgs] getFieldFormats failed (non-critical):', e.message);
-    }
+    try { allFormats = learning.getFieldFormats(db); } catch {}
 
-    const fieldsFile   = writeTempJson('fields',   allDocTypes.flatMap(dt => dt.fields));
-    const hintsFile    = writeTempJson('hints',    allHints);
-    const anchorsFile  = writeTempJson('anchors',  allAnchors);
-    const logosFile    = writeTempJson('logos',    allLogos);
-    const dtFile       = writeTempJson('doctypes', allDocTypes);
-    const formatsFile  = writeTempJson('formats',  allFormats);
-    const cfgFile      = configPath();
+    const fieldsFile    = writeTempJson('fields',    allDocTypes.flatMap(dt => dt.fields));
+    const hintsFile     = writeTempJson('hints',     allHints);
+    const anchorsFile   = writeTempJson('anchors',   allAnchors);
+    const logosFile     = writeTempJson('logos',     allLogos);
+    const dtFile        = writeTempJson('doctypes',  allDocTypes);
+    const formatsFile   = writeTempJson('formats',   allFormats);
+    const templatesFile = writeTempJson('templates', allTemplates);
+    const cfgFile       = configPath();
 
     return {
       args: [
@@ -81,9 +81,10 @@ function register(ctx) {
         '--logos-file',     logosFile,
         '--doc-types-file', dtFile,
         '--formats-file',   formatsFile,
+        '--templates-file', templatesFile,
         '--config-file',    cfgFile,
       ],
-      tempFiles: [fieldsFile, hintsFile, anchorsFile, logosFile, dtFile, formatsFile],
+      tempFiles: [fieldsFile, hintsFile, anchorsFile, logosFile, dtFile, formatsFile, templatesFile],
     };
   }
 
@@ -101,12 +102,12 @@ function register(ctx) {
       return { success: false, error: e.message };
     }
 
+    const learning  = require('../../../database/modules/learning');
+    const procMode  = learning.getSetting(db, 'processing_mode', 'smart');
+    logger?.log(`Batch start: folder="${folderPath}" mode=${procMode}`);
+
     return new Promise((resolve) => {
       const py  = pythonExe();
-
-      // Get current processing mode from settings
-      const learning  = require('../../../database/modules/learning');
-      const procMode  = learning.getSetting(db, 'processing_mode', 'smart');
 
       const scriptArgs = [
         '--folder',      folderPath,
@@ -119,7 +120,7 @@ function register(ctx) {
 
       const proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs),
         { windowsHide: true });
-      let buf = '';
+      let buf = '', fileCount = 0;
 
       proc.stdout.on('data', (data) => {
         buf += data.toString();
@@ -130,7 +131,13 @@ function register(ctx) {
           if (!trimmed) continue;
           try {
             const msg = JSON.parse(trimmed);
-            _handleFileMessage(db, msg, folderPath, notifyMainWindow);
+            _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger);
+            if (msg.type === 'file_done') fileCount++;
+            if (msg.type === 'log') {
+              if      (msg.level === 'err')  logger?.err(`Python: ${msg.text}`);
+              else if (msg.level === 'warn') logger?.warn(`Python: ${msg.text}`);
+              else                           logger?.log(`Python: ${msg.text}`);
+            }
             event.sender.send('process-progress', msg);
           } catch {
             event.sender.send('process-progress', { type: 'log', text: trimmed });
@@ -138,11 +145,15 @@ function register(ctx) {
         }
       });
 
-      proc.stderr.on('data', d =>
-        event.sender.send('process-progress', { type: 'log', text: d.toString() }));
+      proc.stderr.on('data', d => {
+        const text = d.toString().trim();
+        if (text) logger?.warn(`Python stderr: ${text}`);
+        event.sender.send('process-progress', { type: 'log', text });
+      });
 
       proc.on('close', (code) => {
         cleanupFiles(tempFiles);
+        logger?.log(`Batch complete: ${fileCount} files, exit=${code}`);
         resolve({ success: code === 0 });
       });
     });
@@ -203,14 +214,18 @@ function register(ctx) {
         }
       });
 
-      proc.stderr.on('data', d =>
-        event.sender.send('reprocess-progress', { type: 'log', text: d.toString() }));
+      proc.stderr.on('data', d => {
+        const text = d.toString().trim();
+        if (text) logger?.warn(`Reprocess stderr: ${text}`);
+        event.sender.send('reprocess-progress', { type: 'log', text });
+      });
 
       proc.on('close', () => {
         try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
         cleanupFiles(tempFiles);
 
         if (!result?.success || !result?.extractions) {
+          logger?.err(`Reprocess failed: ${filename} — no data returned`);
           return resolve({ success: false, error: 'No data returned' });
         }
 
@@ -248,6 +263,18 @@ function register(ctx) {
         for (const r of mergedRows) {
           mergedMap[r.field_key] = { value: r.display_value, confidence: r.confidence };
         }
+
+        if (logger) {
+          logger.log(`Reprocess done: ${filename}`);
+          for (const r of mergedRows) {
+            if (r.display_value) {
+              logger.log(`  FOUND   ${r.field_key}: ${JSON.stringify(r.display_value)} (${r.confidence}% via ${r.extraction_method || '?'})`);
+            } else {
+              logger.log(`  MISSED  ${r.field_key}`);
+            }
+          }
+        }
+
         resolve({ success: true, extractions: mergedMap,
                   overall_confidence: result.overall_confidence });
       });
@@ -324,8 +351,17 @@ function register(ctx) {
 }
 
 // ── Internal: save file_done message to DB ────────────────────────────────────
-function _handleFileMessage(db, msg, folderPath, notifyMainWindow) {
-  if (msg.type !== 'file_done' || !msg.success) return;
+function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger) {
+  if (msg.type === 'file_begin') {
+    logger?.log(`File begin: ${msg.filename}`);
+    return;
+  }
+  if (msg.type !== 'file_done') return;
+
+  if (!msg.success) {
+    logger?.err(`File failed: ${msg.original_filename || '?'} — ${msg.error || 'unknown error'}`);
+    return;
+  }
 
   const documents = require('../../../database/modules/documents');
   const learning  = require('../../../database/modules/learning');
@@ -349,6 +385,10 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow) {
     supplier_name:      msg.supplier_name || null,
     overall_confidence: msg.overall_confidence || null,
     status:             msg.status || 'needs_review',
+    template_id:        msg.template_id   || null,
+    logo_phash:         msg.logo_phash    || null,
+    keyword_fingerprint: msg.keyword_fingerprint
+      ? JSON.stringify(msg.keyword_fingerprint) : null,
   });
 
   const docId = docResult.lastInsertRowid;
@@ -365,6 +405,22 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow) {
   }
 
   msg.db_id = docId;
+
+  // Log extraction result
+  if (logger) {
+    const exFields = msg.extractions
+      ? Object.entries(msg.extractions)
+          .map(([k, v]) => `${k}=${JSON.stringify(v?.value ?? null)}(${v?.confidence ?? '?'}%)`)
+          .join(' | ')
+      : 'none';
+    const tmpl = msg.template_id ? ` template=${msg.template_id}` : '';
+    logger.log(
+      `File done: ${msg.original_filename} → status=${msg.status}` +
+      ` type=${msg.document_type || '?'} supplier=${msg.supplier_name || '?'}` +
+      ` conf=${msg.overall_confidence || '?'}%${tmpl}`
+    );
+    if (exFields) logger.log(`  Fields: ${exFields}`);
+  }
 
   notifyMainWindow('review-count-changed', documents.getReviewCount(db));
   notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));

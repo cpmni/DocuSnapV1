@@ -6,76 +6,100 @@ Uses learned label positions to find field values directly in OCR text.
 Faster and more accurate than LLM for known document layouts.
 """
 
+import re
+
 from PIL import Image
 
 
 def extract_with_anchors(ocr_text: str, anchors: list[dict],
                          supplier_name: str | None,
-                         document_type: str | None) -> dict:
+                         document_type: str | None,
+                         page_images: list | None = None) -> dict:
     """
     Attempt to extract field values using saved structural anchors.
-    Returns dict of {field_key: {"value": str, "confidence": int, "method": "anchor"}}
-    Only includes fields where an anchor match was found.
+
+    When an anchor has x_norm/y_norm coordinates (set by the user via the ⊕
+    selection tool), the page image is cropped to a tight region around the
+    value and re-OCR'd. This is far more accurate than full-page text search
+    for multi-column layouts where columns bleed into each other in OCR text.
+
+    Falls back to text-based search for anchors without coordinates.
+
+    Returns dict of {field_key: {"value": str, "confidence": int, "method": str}}
     """
     if not anchors or not ocr_text:
         return {}
 
-    # Filter anchors relevant to this supplier + doc type
     relevant = _filter_anchors(anchors, supplier_name, document_type)
     if not relevant:
         return {}
 
     lines   = ocr_text.split("\n")
     results = {}
+    page0   = page_images[0] if page_images else None
 
     for anchor in relevant:
-        field_key    = anchor["field_key"]
-        label        = anchor["anchor_label"].lower().strip()
-        direction    = anchor["direction"]
-        usage_count  = anchor.get("usage_count", 1)
-        conf_factor  = anchor.get("confidence", 0.5)
+        field_key   = anchor["field_key"]
+        label       = anchor["anchor_label"].lower().strip()
+        direction   = anchor["direction"]
+        usage_count = anchor.get("usage_count", 1)
+        conf_factor = anchor.get("confidence", 0.5)
+        x_norm      = anchor.get("x_norm") or 0.0
+        y_norm      = anchor.get("y_norm") or 0.0
 
         if field_key in results:
             continue  # already found by higher-priority anchor
 
-        for i, line in enumerate(lines):
-            if not _label_matches_line(label, line):
-                continue
+        value  = None
+        method = "anchor"
 
-            value = None
-
-            if direction == "right":
-                # Value is on the same line after the label
-                idx       = line.lower().find(label)
-                remainder = line[idx + len(label):].strip().lstrip(":").strip()
-                if remainder:
-                    value = remainder
-
-            elif direction == "below":
-                # Value is on the next non-empty line
-                for j in range(i + 1, min(i + 4, len(lines))):
-                    candidate = lines[j].strip()
-                    if candidate:
-                        value = candidate
-                        break
-
-            elif direction == "above":
-                for j in range(i - 1, max(i - 4, -1), -1):
-                    candidate = lines[j].strip()
-                    if candidate:
-                        value = candidate
-                        break
-
+        # ── Primary: image crop + re-OCR (accurate, avoids column bleed) ──────
+        if x_norm > 0 and y_norm > 0 and page0 is not None:
+            w_norm = anchor.get("w_norm") or 0.0
+            h_norm = anchor.get("h_norm") or 0.0
+            value  = _crop_and_ocr(page0, x_norm, y_norm, w_norm, h_norm)
             if value:
-                # Confidence based on usage count and stored confidence
-                conf = min(95, 55 + (usage_count * 5) + int(conf_factor * 20))
-                results[field_key] = {
-                    "value":      value.strip(),
-                    "confidence": conf,
-                    "method":     "anchor",
-                    "anchor":     anchor["anchor_label"],
-                }
-                break
+                method = "anchor_crop"
+
+        # ── Fallback: text-based search in full OCR output ────────────────────
+        if not value:
+            for i, line in enumerate(lines):
+                if not _label_matches_line(label, line):
+                    continue
+
+                if direction == "right":
+                    idx       = line.lower().find(label)
+                    remainder = line[idx + len(label):].strip().lstrip(":").strip()
+                    if remainder:
+                        value = remainder
+
+                elif direction == "below":
+                    for j in range(i + 1, min(i + 4, len(lines))):
+                        candidate = lines[j].strip()
+                        if candidate:
+                            value = candidate
+                            break
+
+                elif direction == "above":
+                    for j in range(i - 1, max(i - 4, -1), -1):
+                        candidate = lines[j].strip()
+                        if candidate:
+                            value = candidate
+                            break
+
+                if value:
+                    break
+
+        if value:
+            conf = min(95, 55 + (usage_count * 5) + int(conf_factor * 20))
+            if method == "anchor_crop":
+                conf = min(97, conf + 5)  # image crop is more reliable
+            results[field_key] = {
+                "value":      value.strip(),
+                "confidence": conf,
+                "method":     method,
+                "anchor":     anchor["anchor_label"],
+            }
 
     return results
 
@@ -121,6 +145,59 @@ def try_logo_supplier_match(page_image: Image.Image,
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
+                  w_norm: float = 0.0, h_norm: float = 0.0) -> str | None:
+    """
+    Crop a tight region centred on the stored value coordinates and re-OCR it.
+    Uses the exact selection dimensions saved by the ⊕ tool (w_norm/h_norm) so
+    the crop never bleeds into adjacent columns or fields. Falls back to a
+    conservative 200×60px half-size when no dimensions are stored.
+    """
+    try:
+        import pytesseract
+        w, h = page_image.size
+        cx = int(x_norm * w)
+        cy = int(y_norm * h)
+
+        # Use stored selection size + small padding, or conservative default
+        if w_norm > 0 and h_norm > 0:
+            half_w = int(w_norm * w / 2) + 20
+            half_h = int(h_norm * h / 2) + 20
+        else:
+            half_w = 200
+            half_h = 60
+
+        x1 = max(0, cx - half_w)
+        y1 = max(0, cy - half_h)
+        x2 = min(w, cx + half_w)
+        y2 = min(h, cy + half_h)
+
+        crop = page_image.crop((x1, y1, x2, y2))
+        # Scale up 2× — Tesseract accuracy improves significantly on larger text
+        crop = crop.resize((crop.width * 2, crop.height * 2), Image.LANCZOS)
+
+        text = pytesseract.image_to_string(crop, config="--oem 3 --psm 6").strip()
+        for line in text.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            # Multiple spaces = Tesseract column gap; 4+ digit run = address start.
+            segment = re.split(r' {4,}|\s+\d{4,}', line)[0].strip()
+            # After 2+ words, a word ending in "," is a city separator, not part of the value
+            parts = segment.split()
+            end = len(parts)
+            for i, w in enumerate(parts):
+                if i >= 2 and w.endswith(','):
+                    end = i
+                    break
+            segment = ' '.join(parts[:end]).rstrip(',;').strip()
+            if segment:
+                return segment
+        return None
+    except Exception:
+        return None
+
 
 def _filter_anchors(anchors: list[dict],
                     supplier_name: str | None,

@@ -234,11 +234,14 @@
     .btn.danger  { color: var(--err); }
     .btn.danger:hover { border-color: var(--err); background: #2e0d0d; }
 
-    /* Reprocess button */
-    #reprocess-bar { padding: 8px 14px 0; flex-shrink: 0; }
-    .btn.reprocess { width: 100%; color: var(--accent2); border-color: var(--accent); font-size: 11px; }
+    /* Reprocess buttons */
+    #reprocess-bar { padding: 8px 14px 0; flex-shrink: 0; display: flex; gap: 6px; }
+    .btn.reprocess { flex: 1; color: var(--accent2); border-color: var(--accent); font-size: 11px; }
     .btn.reprocess:hover     { background: #0d1f3a; }
     .btn.reprocess:disabled  { opacity: .4; cursor: not-allowed; }
+    .btn.reprocess-all { flex-shrink: 0; color: var(--muted); border-color: var(--border2); font-size: 11px; }
+    .btn.reprocess-all:hover    { background: #0d1f3a; color: var(--accent2); border-color: var(--accent); }
+    .btn.reprocess-all:disabled { opacity: .4; cursor: not-allowed; }
     .btn-spinner {
       display: inline-block; width: 11px; height: 11px;
       border: 1.5px solid var(--accent2); border-top-color: transparent;
@@ -322,7 +325,8 @@
       <div id="fields-scroll"></div>
 
       <div id="reprocess-bar">
-        <button class="btn reprocess" id="btn-reprocess">&#9654;&#9654; Reprocess with Learned Data</button>
+        <button class="btn reprocess"     id="btn-reprocess">&#9654;&#9654; Reprocess</button>
+        <button class="btn reprocess-all" id="btn-reprocess-all">&#9654;&#9654; All</button>
       </div>
       <div id="action-bar">
         <button class="btn skip"   id="btn-skip">Skip</button>

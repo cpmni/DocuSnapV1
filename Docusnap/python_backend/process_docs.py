@@ -76,6 +76,7 @@ def main():
     parser.add_argument("--logos-file",      default=None)
     parser.add_argument("--doc-types-file",  default=None)
     parser.add_argument("--formats-file",    default=None)
+    parser.add_argument("--templates-file", default=None)
     # Inline fallbacks (for small payloads)
     parser.add_argument("--fields",          default=None)
     parser.add_argument("--hints",           default=None)
@@ -91,13 +92,15 @@ def main():
     hints     = load_json_arg(args.hints,   args.hints_file)    or []
     anchors   = load_json_arg(args.anchors, args.anchors_file)  or []
     logos     = load_json_arg(args.logos,   args.logos_file)    or []
-    doc_types = load_json_arg(None,         args.doc_types_file) or []
-    formats   = load_json_arg(None,         args.formats_file)  or []
+    doc_types = load_json_arg(None,         args.doc_types_file)  or []
+    formats   = load_json_arg(None,         args.formats_file)   or []
+    templates = load_json_arg(None,         args.templates_file) or []
 
     emit({
         "type": "log",
         "text": f"[Learning] {len(hints)} hints, {len(anchors)} anchors,"
-                f" {len(logos)} logos, {len(formats)} format templates loaded"
+                f" {len(logos)} logos, {len(templates)} templates,"
+                f" {len(formats)} format templates loaded"
     })
 
     # Initialise extraction engine
@@ -175,6 +178,7 @@ def main():
                 hints         = hints,
                 anchors       = anchors,
                 logos         = logos,
+                templates     = templates,
                 document_type = document_type,
                 document_slug = doc_slug,
                 supplier_name = None,
@@ -185,11 +189,24 @@ def main():
             doc_type_result  = raw_extractions.pop("_document_type", document_type)
             overall_conf     = raw_extractions.pop("_overall_confidence", 0)
             review_needed    = raw_extractions.pop("_needs_review", True)
+            template_id      = raw_extractions.pop("_template_id", None)
+            logo_phash       = raw_extractions.pop("_logo_phash", None)
+            kw_fingerprint   = raw_extractions.pop("_keyword_fingerprint", [])
             raw_extractions.pop("_mode_used", None)
             raw_extractions.pop("_document_slug", None)
 
             # Sanitise — ensure all values are proper dicts
             extractions = sanitise_extractions(raw_extractions)
+
+            # Emit per-field extraction detail so the log shows what was found vs missed
+            for field_key, data in extractions.items():
+                val    = data.get("value")
+                conf   = data.get("confidence", 0)
+                method = data.get("method", "?")
+                if val:
+                    log(f"  FOUND   {field_key}: {repr(val)} ({conf}% via {method})")
+                else:
+                    log(f"  MISSED  {field_key}  (method tried: {method})")
 
             status = "needs_review" if review_needed else "confirmed"
 
@@ -203,6 +220,9 @@ def main():
                 "document_type":      doc_type_result,
                 "type_confidence":    type_conf,
                 "supplier_name":      supplier_name,
+                "template_id":        template_id,
+                "logo_phash":         logo_phash,
+                "keyword_fingerprint": kw_fingerprint,
                 "mode_used":          "fast",
                 "extractions":        {
                     k: {"value": v.get("value"), "confidence": v.get("confidence", 0),

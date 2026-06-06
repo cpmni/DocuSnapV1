@@ -160,14 +160,26 @@ def _search_for_label(lines: list[str], label: str,
             after = line[idx + len(label):].strip()
             # Strip common separators
             after = re.sub(r'^[\s:|\-–]+', '', after).strip()
-            if after and len(after) >= 1:
+            # Reject if the extracted text itself looks like another label, or contains
+            # an embedded label:value pair (e.g. "Ship Mode: Second Class", "Date: Sep 07")
+            # which means we grabbed neighbouring column content, not the actual value.
+            if (after and len(after) >= 1
+                    and not after.endswith(':')
+                    and not _is_label_line(after)
+                    and not re.search(r'[A-Za-z]{2,}\s*:', after)):
                 return after, "right"
 
         # Try BELOW direction — value is on the next non-empty line
         if "below" in directions:
             for j in range(i + 1, min(i + 4, len(lines))):
                 candidate = lines[j].strip()
-                if candidate and not _is_label_line(candidate):
+                if not candidate:
+                    continue
+                # Take only the first column segment (split on 4+ spaces)
+                candidate = re.split(r' {4,}', candidate)[0].strip()
+                if (candidate
+                        and not _is_label_line(candidate)
+                        and not re.search(r'[A-Za-z]{2,}\s*:', candidate)):
                     return candidate, "below"
 
         # Try ABOVE direction
@@ -183,12 +195,15 @@ def _search_for_label(lines: list[str], label: str,
 def _is_label_line(text: str) -> bool:
     """Heuristic: is this line a label rather than a value?"""
     t = text.strip().rstrip(":")
-    # Very short, all caps, or ends with colon — likely a label
-    return (
-        len(t) < 3 or
-        (t.isupper() and len(t) < 30) or
-        text.strip().endswith(":")
-    )
+    if len(t) < 3:
+        return True
+    if text.strip().endswith(":"):
+        return True
+    # Single all-caps word (e.g. "INVOICE", "DATE") is a heading/label.
+    # Multi-word all-caps (e.g. "ANDY YOTOV", "ACME LIMITED") is a name — not a label.
+    if t.isupper() and " " not in t and len(t) < 30:
+        return True
+    return False
 
 
 def _validate(value: str, patterns: list[str]) -> bool:
@@ -204,4 +219,19 @@ def _clean_value(value: str, val_type: str | None) -> str:
     value = value.strip()
     # Remove trailing punctuation noise
     value = re.sub(r'[,;]+$', '', value).strip()
+    # For name fields, truncate at column gaps or address numbers.
+    # Addresses start with 4+ digit sequences (zip/postal codes, building numbers).
+    # Multiple spaces = Tesseract column separator.
+    if val_type == "text":
+        # Split on column gaps or address numbers (zip codes)
+        value = re.split(r' {4,}|\s+\d{4,}', value)[0].strip()
+        # After 2+ name words, a word ending in "," signals a city/address separator
+        # e.g. "Ann Blume Tallinn, Harjumaa" → stop at "Tallinn,"
+        parts = value.split()
+        end = len(parts)
+        for i, w in enumerate(parts):
+            if i >= 2 and w.endswith(','):
+                end = i
+                break
+        value = ' '.join(parts[:end]).rstrip(',;').strip()
     return value

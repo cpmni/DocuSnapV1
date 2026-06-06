@@ -63,6 +63,90 @@ function runJsMigrations(db, applied) {
     db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (2)').run();
     console.log('JS migration 2 applied: v1 → v2 schema upgrade');
   }
+
+  // Migration 4: add templates and template_fields tables; extend documents table
+  if (!applied.has(4)) {
+    if (!tableExists(db, 'templates')) {
+      db.exec(`CREATE TABLE templates (
+        id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+        name                 TEXT    NOT NULL,
+        slug                 TEXT    NOT NULL UNIQUE,
+        document_type_slug   TEXT,
+        logo_phash           TEXT,
+        keyword_fingerprint  TEXT,
+        confirmed_count      INTEGER NOT NULL DEFAULT 0,
+        created_at           TEXT    NOT NULL DEFAULT (datetime('now')),
+        updated_at           TEXT    NOT NULL DEFAULT (datetime('now'))
+      )`);
+    }
+    if (!tableExists(db, 'template_fields')) {
+      db.exec(`CREATE TABLE template_fields (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        template_id  INTEGER NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
+        field_key    TEXT    NOT NULL,
+        anchor_label TEXT,
+        direction    TEXT    NOT NULL DEFAULT 'right',
+        fixed_value  TEXT,
+        is_variable  INTEGER NOT NULL DEFAULT 1,
+        UNIQUE(template_id, field_key)
+      )`);
+    }
+    const safeAdd = (col, def) => {
+      if (tableExists(db, 'documents') && !hasColumn(db, 'documents', col)) {
+        try { db.exec(`ALTER TABLE documents ADD COLUMN ${col} ${def}`); } catch {}
+      }
+    };
+    safeAdd('template_id',          'INTEGER REFERENCES templates(id)');
+    safeAdd('logo_phash',           'TEXT');
+    safeAdd('keyword_fingerprint',  'TEXT');
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (4)').run();
+    console.log('JS migration 4 applied: templates system');
+  }
+
+  // Migration 5: purge bad customer_name anchors (they were saved before supplier
+  // identification, so clearAnchors never matched them by supplier)
+  if (!applied.has(5)) {
+    if (tableExists(db, 'field_anchors')) {
+      db.exec(`DELETE FROM field_anchors WHERE field_key = 'customer_name'`);
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (5)').run();
+    console.log('JS migration 5 applied: cleared bad customer_name anchors');
+  }
+
+  // Migration 6: add w_norm / h_norm to field_anchors (stores selection dimensions
+  // so crop-and-OCR uses exactly the region the user dragged, not a fixed size)
+  if (!applied.has(6)) {
+    const safeAdd6 = (col) => {
+      if (tableExists(db, 'field_anchors') && !hasColumn(db, 'field_anchors', col)) {
+        try { db.exec(`ALTER TABLE field_anchors ADD COLUMN ${col} REAL NOT NULL DEFAULT 0`); } catch {}
+      }
+    };
+    safeAdd6('w_norm');
+    safeAdd6('h_norm');
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (6)').run();
+    console.log('JS migration 6 applied: field_anchors w_norm/h_norm columns');
+  }
+
+  // Migration 3: remove extra built-in fields, keep only name/date/ref per type
+  if (!applied.has(3)) {
+    const keepBySlug = {
+      invoice:        ['supplier_name', 'invoice_date',  'invoice_number'],
+      sales_order:    ['customer_name', 'order_date',    'sales_order_number'],
+      purchase_order: ['supplier_name', 'po_date',       'po_number'],
+    };
+    if (tableExists(db, 'document_types') && tableExists(db, 'fields')) {
+      for (const [slug, keep] of Object.entries(keepBySlug)) {
+        const dt = db.prepare('SELECT id FROM document_types WHERE slug = ?').get(slug);
+        if (!dt) continue;
+        const placeholders = keep.map(() => '?').join(',');
+        db.prepare(
+          `DELETE FROM fields WHERE document_type_id = ? AND built_in = 1 AND key NOT IN (${placeholders})`
+        ).run(dt.id, ...keep);
+      }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (3)').run();
+    console.log('JS migration 3 applied: trimmed built-in fields to name/date/ref');
+  }
 }
 
 function hasColumn(db, table, column) {

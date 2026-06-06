@@ -487,6 +487,8 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
       page_zone:     pageZone,
       x_norm:        xNorm,
       y_norm:        yNorm,
+      w_norm:        rect.w / imgW,
+      h_norm:        rect.h / imgH,
     };
 
     const leftPad    = Math.min(rect.x, 300);
@@ -741,6 +743,57 @@ document.getElementById('btn-reprocess').addEventListener('click', async () => {
     btn.style.color = 'var(--err)';
     setTimeout(() => { btn.style.color = ''; }, 2000);
   }
+});
+
+// ── Reprocess All ─────────────────────────────────────────────────────────────
+document.getElementById('btn-reprocess-all').addEventListener('click', async () => {
+  if (queue.length === 0) { showToast('No documents in queue', 'warn'); return; }
+
+  const btnAll = document.getElementById('btn-reprocess-all');
+  const btnOne = document.getElementById('btn-reprocess');
+  btnAll.disabled = true;
+  btnOne.disabled = true;
+
+  const total   = queue.length;
+  let   done    = 0;
+  let   failed  = 0;
+
+  for (const doc of [...queue]) {
+    btnAll.innerHTML = `<span class="btn-spinner"></span> ${done + 1}/${total}`;
+    try {
+      const result = await window.docusnap.reprocessDocument({
+        docId:      doc.id,
+        folderPath: doc.folder_path,
+        filename:   doc.original_filename,
+      });
+      if (!result?.success) failed++;
+      // Refresh display if this is the currently-shown doc
+      if (currentDoc && doc.id === currentDoc.id && result?.success) {
+        const full = await window.docusnap.getDocumentWithExtractions(doc.id);
+        if (full) renderFields(full);
+      }
+    } catch (e) {
+      console.warn(`[Reprocess All] ${doc.original_filename}:`, e.message);
+      failed++;
+    }
+    done++;
+  }
+
+  // Reload queue metadata (status may have changed)
+  queue         = await window.docusnap.getReviewQueue();
+  deferredQueue = await window.docusnap.getDeferredQueue();
+  updateTabCounts();
+  renderQueueList();
+
+  btnAll.disabled = false;
+  btnOne.disabled = false;
+  btnAll.innerHTML = '&#9654;&#9654; All';
+
+  const ok = done - failed;
+  showToast(
+    failed ? `Reprocessed ${ok}/${done} — ${failed} failed` : `Reprocessed ${done} document${done !== 1 ? 's' : ''}`,
+    failed ? 'warn' : 'ok'
+  );
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

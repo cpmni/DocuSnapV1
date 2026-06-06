@@ -9,7 +9,7 @@ const os = require('os');
 
 function register(ctx) {
   const { ipcMain, getDb, pythonExe, pythonArgs, tesseractPath,
-          notifyMainWindow, spawn, path, fs } = ctx;
+          notifyMainWindow, spawn, path, fs, logger } = ctx;
 
   const documents  = require('../../../database/modules/documents');
   const learning   = require('../../../database/modules/learning');
@@ -125,7 +125,22 @@ function register(ctx) {
     });
 
     if (!filingResult.success) {
+      logger?.err(`Confirm failed: ${original_filename} — ${filingResult.error}`);
       return filingResult;
+    }
+
+    // Log confirm
+    if (logger) {
+      const fieldSummary = Object.entries(allValues || {})
+        .filter(([, v]) => v)
+        .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+        .join(' | ');
+      logger.log(
+        `Confirmed: ${original_filename} → type=${document_type_slug || '?'}` +
+        ` supplier=${allValues?.supplier_name || supplier_name || '?'}` +
+        ` filed=${filingResult.filename}`
+      );
+      if (fieldSummary) logger.log(`  Values: ${fieldSummary}`);
     }
 
     // Save corrections for learning
@@ -133,6 +148,15 @@ function register(ctx) {
       db, document_id, corrections || {},
       supplier_name, document_type_slug, allValues
     );
+
+    // Create or update template
+    try {
+      await _upsertTemplate(ctx, db, document_id, {
+        allValues, document_type_slug, supplier_name,
+      });
+    } catch (e) {
+      console.warn('[confirm-review] template upsert failed (non-critical):', e.message);
+    }
 
     // Update document record
     documents.confirm(db, document_id, {
@@ -164,3 +188,88 @@ function register(ctx) {
 }
 
 module.exports = { register };
+
+// ── Template create / update ──────────────────────────────────────────────────
+
+async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_slug, supplier_name }) {
+  const { path, fs, templatesDir } = ctx;
+  const templates = require('../../../database/modules/templates');
+
+  // Read document record for stored logo_phash and keyword_fingerprint
+  const doc = db.prepare(
+    'SELECT template_id, logo_phash, keyword_fingerprint FROM documents WHERE id = ?'
+  ).get(document_id);
+  if (!doc) return;
+
+  const logo_phash           = doc.logo_phash || null;
+  const keyword_fingerprint  = _parseJson(doc.keyword_fingerprint, []);
+
+  // Build template field rules from confirmed values
+  const fields = _buildTemplateFields(allValues, document_type_slug);
+
+  if (doc.template_id) {
+    // Update existing template
+    templates.update(db, doc.template_id, { logo_phash, keyword_fingerprint, fields });
+    _writeTemplateFile(db, doc.template_id, path, fs, templatesDir());
+  } else {
+    // Create new template — name from supplier + doc type
+    const typeName  = document_type_slug
+      ? document_type_slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+      : 'Document';
+    const name      = supplier_name
+      ? `${supplier_name} ${typeName}`
+      : `${typeName} Template`;
+
+    const templateId = templates.create(db, {
+      name,
+      document_type_slug: document_type_slug || null,
+      logo_phash,
+      keyword_fingerprint,
+      fields,
+    });
+
+    // Link document to its new template
+    db.prepare('UPDATE documents SET template_id = ? WHERE id = ?').run(templateId, document_id);
+    _writeTemplateFile(db, templateId, path, fs, templatesDir());
+  }
+}
+
+function _buildTemplateFields(allValues, document_type_slug) {
+  const FIELD_ANCHORS = {
+    supplier_name:      { anchor: null,    direction: null,    variable: false },
+    customer_name:      { anchor: null,    direction: null,    variable: false },
+    invoice_number:     { anchor: '#',     direction: 'right', variable: true  },
+    invoice_date:       { anchor: 'Date:', direction: 'right', variable: true  },
+    sales_order_number: { anchor: 'Order', direction: 'right', variable: true  },
+    order_date:         { anchor: 'Date:', direction: 'right', variable: true  },
+    po_number:          { anchor: 'PO',    direction: 'right', variable: true  },
+    po_date:            { anchor: 'Date:', direction: 'right', variable: true  },
+  };
+
+  return Object.entries(allValues)
+    .filter(([, v]) => v && String(v).trim())
+    .map(([key, value]) => {
+      const rule = FIELD_ANCHORS[key] || { anchor: null, direction: null, variable: true };
+      return {
+        field_key:   key,
+        anchor_label: rule.anchor || null,
+        direction:   rule.direction || 'right',
+        fixed_value: rule.variable ? null : String(value).trim(),
+        is_variable: rule.variable,
+      };
+    });
+}
+
+function _writeTemplateFile(db, templateId, path, fs, dir) {
+  const templates = require('../../../database/modules/templates');
+  const all       = templates.getAll(db);
+  const tmpl      = all.find(t => t.id === templateId);
+  if (!tmpl) return;
+  const slug = tmpl.slug || String(templateId);
+  const file = path.join(dir, `${slug}.json`);
+  fs.writeFileSync(file, JSON.stringify(tmpl, null, 2), 'utf8');
+}
+
+function _parseJson(str, fallback) {
+  try { return JSON.parse(str || 'null') || fallback; } catch { return fallback; }
+}

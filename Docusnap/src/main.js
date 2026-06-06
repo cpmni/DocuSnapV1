@@ -12,6 +12,7 @@ const path = require('path');
 const fs   = require('fs');
 
 // ── Module imports ────────────────────────────────────────────────────────────
+const logger           = require('./modules/logger');
 const processingModule = require('./modules/processing/handler');
 const reviewModule     = require('./modules/review/handler');
 const settingsModule   = require('./modules/settings/handler');
@@ -58,6 +59,14 @@ function backendScript() {
 
 function configPath() {
   return resourcePath('config', 'keyword_patterns.json');
+}
+
+function templatesDir() {
+  const dir = app.isPackaged
+    ? path.join(app.getPath('userData'), 'templates')
+    : resourcePath('templates');
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return dir;
 }
 
 // ── Ollama ────────────────────────────────────────────────────────────────────
@@ -113,6 +122,11 @@ function notifyMainWindow(channel, ...args) {
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 app.whenReady().then(() => {
+  const logFile = app.isPackaged
+    ? path.join(app.getPath('userData'), 'processing.log')
+    : path.join(__dirname, '..', 'processing.log');
+  logger.init(logFile, fs);
+
   startOllama();
 
   // Create main window
@@ -123,10 +137,10 @@ app.whenReady().then(() => {
   const ctx = {
     ipcMain, getDb,
     resourcePath, pythonExe, pythonArgs, tesseractPath,
-    backendScript, configPath,
+    backendScript, configPath, templatesDir,
     createWindow, getMainWindow, notifyMainWindow,
     windows,
-    app, fs,
+    app, fs, logger,
     spawn: require('child_process').spawn,
     path,
   };

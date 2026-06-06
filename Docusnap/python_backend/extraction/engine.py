@@ -22,7 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from extraction import keyword, anchor, validator, ocr_corrector
+from extraction import keyword, anchor, validator, ocr_corrector, template_matcher
 
 # LLM import is optional — system works without it in FAST mode
 try:
@@ -34,10 +34,10 @@ except ImportError:
 
 # ── Required fields that must be found to skip LLM in SMART mode ─────────────
 SMART_MODE_REQUIRED = {
-    "invoice":        ["invoice_number", "invoice_date", "total_amount"],
-    "sales_order":    ["sales_order_number", "order_date"],
-    "purchase_order": ["po_number", "po_date"],
-    "_default":       ["invoice_date", "total_amount"],
+    "invoice":        ["supplier_name", "invoice_date", "invoice_number"],
+    "sales_order":    ["customer_name", "order_date",   "sales_order_number"],
+    "purchase_order": ["supplier_name", "po_date",      "po_number"],
+    "_default":       ["supplier_name", "invoice_date", "invoice_number"],
 }
 
 SMART_MODE_MIN_CONFIDENCE = 70
@@ -99,6 +99,7 @@ class ExtractionEngine:
                 hints:         list,
                 anchors:       list,
                 logos:         list,
+                templates:     list | None = None,
                 document_type: str | None = None,
                 document_slug: str | None = None,
                 supplier_name: str | None = None) -> dict:
@@ -106,10 +107,40 @@ class ExtractionEngine:
         Run extraction pipeline according to current mode.
         Returns dict with field values + metadata keys prefixed with _.
         """
-        results     = {}
-        field_keys  = [f["key"] for f in field_defs]
+        results      = {}
+        field_keys   = [f["key"] for f in field_defs]
+        matched_tmpl = None
+        logo_phash   = None
+        kw_fingerprint = []
 
-        # ── Pre-stage: logo supplier identification ───────────────────────────
+        # ── Pre-stage: compute logo hash + keyword fingerprint (always) ───────
+        if page_images:
+            logo_phash = template_matcher.compute_logo_hash(page_images[0])
+        kw_fingerprint = template_matcher.extract_keyword_fingerprint(ocr_text)
+
+        # ── Stage 0: Template matching ────────────────────────────────────────
+        if templates:
+            match = template_matcher.identify_template(
+                page_images[0] if page_images else None,
+                ocr_text,
+                templates,
+            )
+            if match:
+                matched_tmpl = match['template']
+                # Promote supplier from template if not already known
+                if not supplier_name:
+                    supplier_name = matched_tmpl.get('name', '').split()[0] or None
+                self.log(
+                    f"  Template matched: {matched_tmpl.get('name')} "
+                    f"({match['confidence']}% via {match['method']})"
+                )
+                tmpl_results = template_matcher.extract_with_template(ocr_text, matched_tmpl)
+                for key, data in tmpl_results.items():
+                    results[key] = data
+                found = len([v for v in results.values() if v.get('value')])
+                self.log(f"  Stage 0: {found}/{len(field_keys)} fields from template")
+
+        # ── Pre-stage: logo supplier identification (fallback if no template) ──
         if not supplier_name and logos and page_images:
             logo_match = anchor.try_logo_supplier_match(page_images[0], logos)
             if logo_match:
@@ -139,7 +170,8 @@ class ExtractionEngine:
         if anchors:
             self.log("  Stage 2: anchor extraction…")
             anchor_results = anchor.extract_with_anchors(
-                ocr_text, anchors, supplier_name, document_slug
+                ocr_text, anchors, supplier_name, document_slug,
+                page_images=page_images,
             )
             for key, data in anchor_results.items():
                 existing = results.get(key)
@@ -149,7 +181,50 @@ class ExtractionEngine:
             self.log(f"  Stage 2: +{new_found - found} fields from anchors")
             found = new_found
 
-        # ── Stage 2.5: OCR format correction ─────────────────────────────────
+        # ── Stage 2.5a: Supplier name text-scan fallback ─────────────────────────
+        # If logo match failed and keyword didn't find supplier_name, scan the
+        # top of the OCR text for any known supplier name from confirmed hints.
+        # This handles suppliers like "SuperStore" whose name appears as plain
+        # text rather than an identifiable logo.
+        if not supplier_name and hints:
+            ocr_top = ocr_text[:600].lower()
+            best_hint = None
+            best_usage = 0
+            for h in hints:
+                if h.get("field_key") != "supplier_name":
+                    continue
+                if (h.get("usage_count") or 0) < 3:
+                    continue
+                val = (h.get("hint_value") or "").strip()
+                if val and val.lower() in ocr_top:
+                    if (h.get("usage_count") or 0) > best_usage:
+                        best_hint  = val
+                        best_usage = h.get("usage_count") or 0
+            if best_hint:
+                supplier_name = best_hint
+                results["supplier_name"] = {
+                    "value":      best_hint,
+                    "confidence": min(85, 60 + best_usage * 2),
+                    "method":     "hint_text_match",
+                }
+                self.log(f"  Stage 2.5: supplier '{best_hint}' identified from text scan")
+
+        # ── Stage 2.5b: Apply supplier hints (fill missing fields only) ──────────
+        # Hints only fill fields that keyword/anchor found NOTHING for.
+        # They do not override a found value — each document's variable fields
+        # (date, reference, customer name) differ per invoice.
+        if hints and supplier_name:
+            hint_results = self._apply_hints(hints, supplier_name, document_slug, field_keys)
+            hint_count = 0
+            for key, data in hint_results.items():
+                existing = results.get(key)
+                if not existing or not existing.get("value"):
+                    results[key] = data
+                    hint_count += 1
+            if hint_count:
+                self.log(f"  Stage 2.5: {hint_count} field(s) set from learned hints")
+
+        # ── Stage 2.5b: OCR format correction ────────────────────────────────
         if self.format_index:
             n_corrected = 0
             for key, data in list(results.items()):
@@ -212,12 +287,54 @@ class ExtractionEngine:
         overall_conf  = validator.overall_confidence(results)
         review_needed = validator.needs_review(results, field_defs)
 
-        results["_supplier_name"]      = supplier_name
-        results["_document_type"]      = document_type
-        results["_document_slug"]      = document_slug
-        results["_overall_confidence"] = overall_conf
-        results["_needs_review"]       = review_needed
-        results["_mode_used"]          = self.mode
+        results["_supplier_name"]        = supplier_name
+        results["_document_type"]        = document_type
+        results["_document_slug"]        = document_slug
+        results["_overall_confidence"]   = overall_conf
+        results["_needs_review"]         = review_needed
+        results["_mode_used"]            = self.mode
+        results["_template_id"]          = matched_tmpl.get("id") if matched_tmpl else None
+        results["_logo_phash"]           = logo_phash
+        results["_keyword_fingerprint"]  = kw_fingerprint
+
+        return results
+
+    def _apply_hints(self, hints: list, supplier_name: str,
+                     document_slug: str | None, field_keys: list) -> dict:
+        """
+        Apply learned supplier hints as direct field values.
+        Only applies hints with usage_count >= 2 that match this supplier/type.
+        Confidence scales with usage_count (caps at 90).
+        """
+        results  = {}
+        s_lower  = supplier_name.lower()
+
+        for hint in hints:
+            h_sup   = (hint.get("supplier_name") or "").lower()
+            h_type  = hint.get("document_type") or ""
+            h_key   = hint.get("field_key")
+            h_value = hint.get("hint_value")
+            usage   = int(hint.get("usage_count") or 0)
+
+            if not h_key or not h_value or h_key not in field_keys:
+                continue
+            if usage < 2:
+                continue
+
+            # Must match supplier (partial) and optionally doc type
+            sup_match  = h_sup and (h_sup in s_lower or s_lower in h_sup)
+            type_match = (not h_type) or (h_type == (document_slug or ""))
+
+            if sup_match and type_match:
+                conf = min(90, 60 + usage * 5)
+                # Only update if this hint gives higher confidence than existing
+                existing_conf = results.get(h_key, {}).get("confidence", 0)
+                if conf > existing_conf:
+                    results[h_key] = {
+                        "value":      h_value,
+                        "confidence": conf,
+                        "method":     "hint",
+                    }
 
         return results
 

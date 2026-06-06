@@ -121,6 +121,16 @@
     .threshold-label { font-size: 13px; }
     .threshold-sub   { font-size: 11px; color: var(--muted); margin-top: 2px; }
 
+    /* Doc type tabs */
+    #type-tabs { display: flex; gap: 4px; margin-bottom: 14px; flex-wrap: wrap; }
+    .type-tab {
+      padding: 5px 14px; border-radius: 5px; border: 1px solid var(--border2);
+      background: transparent; color: var(--muted); font-family: var(--sans);
+      font-size: 12px; cursor: pointer; transition: all .15s;
+    }
+    .type-tab:hover { border-color: var(--accent); color: var(--accent); }
+    .type-tab.active { background: #0d1f3a; border-color: var(--accent); color: var(--accent2); }
+
     ::-webkit-scrollbar { width: 5px; }
     ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
   </style>
@@ -153,9 +163,11 @@
     <div class="section">
       <div class="section-title">Extraction Fields</div>
       <p class="section-desc">
-        Built-in fields cannot be deleted but can be disabled or have their confidence threshold adjusted.
-        Custom fields are fully editable and will be included in every extraction.
+        Fields are scoped to a document type. Built-in fields cannot be deleted.
+        Custom fields only appear when reviewing that document type.
       </p>
+
+      <div id="type-tabs"></div>
 
       <table class="fields-table" id="fields-table">
         <thead>
@@ -163,7 +175,6 @@
             <th>Field</th>
             <th>Key</th>
             <th>Type</th>
-            <th>Min. Confidence</th>
             <th>Enabled</th>
             <th></th>
           </tr>
@@ -177,12 +188,16 @@
 
       <div class="add-form" id="add-form">
         <div class="form-group">
+          <label>Document Type</label>
+          <select id="new-doctype" style="width:160px"></select>
+        </div>
+        <div class="form-group">
           <label>Label</label>
-          <input type="text" id="new-label" placeholder="e.g. Account Code" style="width:160px">
+          <input type="text" id="new-label" placeholder="e.g. Customer" style="width:140px">
         </div>
         <div class="form-group">
           <label>Key (auto)</label>
-          <input type="text" id="new-key" placeholder="account_code" style="width:130px" readonly>
+          <input type="text" id="new-key" placeholder="customer" style="width:120px" readonly>
         </div>
         <div class="form-group">
           <label>Type</label>
@@ -193,12 +208,8 @@
             <option value="currency">Currency</option>
           </select>
         </div>
-        <div class="form-group">
-          <label>Min. Confidence %</label>
-          <input type="number" id="new-conf" value="70" min="0" max="100" style="width:70px">
-        </div>
-        <div class="form-group" style="flex-direction:row; gap:8px;">
-          <button class="btn primary" id="btn-save-field">Save Field</button>
+        <div class="form-group" style="flex-direction:row; gap:8px; margin-top:4px;">
+          <button class="btn primary" id="btn-save-field">Save</button>
           <button class="btn" id="btn-cancel-field">Cancel</button>
         </div>
       </div>

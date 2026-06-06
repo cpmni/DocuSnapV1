@@ -1,25 +1,34 @@
 'use strict';
 
 function insert(db, { original_filename, folder_path, document_type_id,
-                      supplier_name, overall_confidence, status }) {
+                      supplier_name, overall_confidence, status,
+                      template_id, logo_phash, keyword_fingerprint }) {
   return db.prepare(`
     INSERT INTO documents
       (original_filename, folder_path, document_type_id,
-       supplier_name, overall_confidence, status)
+       supplier_name, overall_confidence, status,
+       template_id, logo_phash, keyword_fingerprint)
     VALUES
       (@original_filename, @folder_path, @document_type_id,
-       @supplier_name, @overall_confidence, @status)
-  `).run({ original_filename, folder_path, document_type_id: document_type_id || null,
-           supplier_name: supplier_name || null,
-           overall_confidence: overall_confidence || null,
-           status: status || 'pending' });
+       @supplier_name, @overall_confidence, @status,
+       @template_id, @logo_phash, @keyword_fingerprint)
+  `).run({
+    original_filename, folder_path,
+    document_type_id:    document_type_id    || null,
+    supplier_name:       supplier_name       || null,
+    overall_confidence:  overall_confidence  || null,
+    status:              status              || 'pending',
+    template_id:         template_id         || null,
+    logo_phash:          logo_phash          || null,
+    keyword_fingerprint: keyword_fingerprint || null,
+  });
 }
 
 function update(db, id, changes) {
   const allowed = ['document_type_id', 'stored_filename', 'stored_path',
                    'status', 'overall_confidence', 'supplier_name',
                    'doc_date', 'reference_number', 'confirmed_at',
-                   'error_message'];
+                   'error_message', 'template_id'];
   const sets = Object.keys(changes)
     .filter(k => allowed.includes(k))
     .map(k => `${k} = @${k}`)

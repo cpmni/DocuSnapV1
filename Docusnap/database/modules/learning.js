@@ -70,23 +70,24 @@ function saveCorrections(db, document_id, corrections,
             field_key, hint_value: corrected_value,
           });
         }
+        // Clear bad anchors — if the user had to correct this field, the stored
+        // anchor position was wrong. Wipe it so a correct one can be re-learned.
+        clearAnchors(db, {
+          supplier_name: effectiveSupplier,
+          document_type: document_type || null,
+          field_key,
+        });
       }
     }
 
-    // Save all confirmed values as hints
-    const keyFields = [
-      'invoice_number', 'invoice_date', 'supplier_name', 'total_amount',
-      'currency', 'payment_terms', 'purchase_order_number',
-      'sales_order_number', 'po_number', 'po_date', 'order_date',
-    ];
+    // Save all confirmed values as hints — includes custom fields
     if (allValues) {
-      for (const field_key of keyFields) {
-        const val = allValues[field_key];
-        if (val && val.trim() && !corrections[field_key]) {
+      for (const [field_key, val] of Object.entries(allValues)) {
+        if (val && String(val).trim() && !corrections[field_key]) {
           upsertHint.run({
             supplier_name: effectiveSupplier,
             document_type: document_type || null,
-            field_key, hint_value: val.trim(),
+            field_key, hint_value: String(val).trim(),
           });
         }
       }
@@ -111,29 +112,51 @@ function getHints(db, { supplier_name, document_type, limit = 100 } = {}) {
 
 // ── Field anchors ─────────────────────────────────────────────────────────────
 
+function clearAnchors(db, { supplier_name, document_type, field_key }) {
+  // Clear for the specific supplier AND for '__unknown__' / null suppliers,
+  // since anchors are often saved before the supplier is identified.
+  const stmt = db.prepare(`
+    DELETE FROM field_anchors
+    WHERE field_key = @field_key
+      AND (
+        supplier_name = @supplier_name
+        OR supplier_name = '__unknown__'
+        OR supplier_name IS NULL
+      )
+  `);
+  return stmt.run({
+    supplier_name: supplier_name || '__unknown__',
+    field_key,
+  });
+}
+
 function saveAnchor(db, {
   supplier_name, document_type, field_key,
-  anchor_label, direction, page_zone, x_norm, y_norm
+  anchor_label, direction, page_zone, x_norm, y_norm,
+  w_norm = 0, h_norm = 0
 }) {
   return db.prepare(`
     INSERT INTO field_anchors
       (supplier_name, document_type, field_key, anchor_label,
-       direction, page_zone, x_norm, y_norm)
+       direction, page_zone, x_norm, y_norm, w_norm, h_norm)
     VALUES
       (@supplier_name, @document_type, @field_key, @anchor_label,
-       @direction, @page_zone, @x_norm, @y_norm)
+       @direction, @page_zone, @x_norm, @y_norm, @w_norm, @h_norm)
     ON CONFLICT(supplier_name, document_type, field_key, anchor_label, direction)
     DO UPDATE SET
       usage_count = usage_count + 1,
       confidence  = MIN(1.0, confidence + 0.1),
       x_norm      = (@x_norm + x_norm) / 2.0,
       y_norm      = (@y_norm + y_norm) / 2.0,
+      w_norm      = CASE WHEN @w_norm > 0 THEN (@w_norm + w_norm) / 2.0 ELSE w_norm END,
+      h_norm      = CASE WHEN @h_norm > 0 THEN (@h_norm + h_norm) / 2.0 ELSE h_norm END,
       last_seen   = datetime('now')
   `).run({
     supplier_name: supplier_name || '__unknown__',
     document_type: document_type || null,
     field_key, anchor_label, direction, page_zone,
     x_norm: x_norm || 0, y_norm: y_norm || 0,
+    w_norm: w_norm || 0, h_norm: h_norm || 0,
   });
 }
 
@@ -263,7 +286,7 @@ function setSetting(db, key, value) {
 module.exports = {
   insertExtractions, deleteExtractions,
   saveCorrections, getHints,
-  saveAnchor, getAllAnchors,
+  saveAnchor, clearAnchors, getAllAnchors,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
   getFieldFormats,
   getSetting, setSetting,
