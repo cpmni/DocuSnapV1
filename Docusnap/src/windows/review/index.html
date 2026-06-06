@@ -35,25 +35,68 @@
 
     #app { display: flex; flex-direction: column; height: 100vh; }
 
-    /* ── Queue bar ── */
-    #queue-bar {
-      display: flex; align-items: center; gap: 6px; padding: 7px 16px;
-      background: var(--surface); border-bottom: 1px solid var(--border);
-      overflow-x: auto; flex-shrink: 0;
-    }
-    .queue-item {
-      padding: 4px 12px; border-radius: 5px; border: 1px solid var(--border2);
-      background: var(--bg); cursor: pointer; white-space: nowrap;
-      font-size: 11px; color: var(--muted); transition: all .15s; flex-shrink: 0;
-    }
-    .queue-item:hover  { border-color: var(--accent2); color: var(--accent2); }
-    .queue-item.active { border-color: var(--accent); background: #0d1f3a; color: var(--accent2); }
-    .queue-empty { font-size: 12px; color: var(--ok); }
-
-    /* ── Body ── */
+    /* ── Body: 3-pane layout ── */
     #body { display: flex; flex: 1; overflow: hidden; }
 
-    /* ── Document viewer (left) ── */
+    /* ── Left sidebar: queue list ── */
+    #queue-panel {
+      width: 220px; flex-shrink: 0; display: flex; flex-direction: column;
+      border-right: 1px solid var(--border); background: var(--surface); overflow: hidden;
+    }
+
+    /* Tabs */
+    #queue-tabs {
+      display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0;
+    }
+    .qtab {
+      flex: 1; padding: 8px 6px; border: none; background: transparent;
+      color: var(--muted); font-family: var(--sans); font-size: 11px; cursor: pointer;
+      border-bottom: 2px solid transparent; transition: all .15s; line-height: 1.2;
+    }
+    .qtab:hover { color: var(--text); }
+    .qtab.active { color: var(--accent2); border-bottom-color: var(--accent); }
+    .qtab-count {
+      display: inline-block; min-width: 16px; height: 16px; line-height: 16px;
+      padding: 0 4px; border-radius: 8px; font-size: 10px;
+      background: var(--surface2); color: var(--muted); font-family: var(--mono);
+      margin-left: 4px; text-align: center;
+    }
+    .qtab.active .qtab-count { background: #0d1f3a; color: var(--accent2); }
+
+    /* Queue list */
+    #queue-list { flex: 1; overflow-y: auto; }
+    #queue-empty {
+      display: none; padding: 20px 14px; font-size: 11px;
+      color: var(--ok); text-align: center;
+    }
+
+    .queue-item {
+      padding: 9px 12px; cursor: pointer; border-bottom: 1px solid var(--border);
+      transition: background .1s;
+    }
+    .queue-item:hover  { background: var(--surface2); }
+    .queue-item.active { background: #0d1f3a; border-left: 2px solid var(--accent); padding-left: 10px; }
+
+    .qi-name {
+      font-family: var(--mono); font-size: 10px; color: var(--text);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block;
+    }
+    .qi-supplier {
+      font-size: 10px; color: var(--muted); margin-top: 2px; display: block;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+
+    /* Deferred item actions */
+    .qi-actions { display: flex; gap: 5px; margin-top: 6px; }
+    .qi-btn {
+      padding: 3px 8px; border-radius: 4px; border: 1px solid var(--border2);
+      background: transparent; color: var(--muted); font-size: 10px;
+      cursor: pointer; font-family: var(--sans);
+    }
+    .qi-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .qi-btn.danger:hover { border-color: var(--err); color: var(--err); }
+
+    /* ── Document viewer (centre) ── */
     #doc-panel {
       flex: 1; display: flex; flex-direction: column;
       border-right: 1px solid var(--border); background: #080a0f; min-width: 0;
@@ -69,7 +112,7 @@
     }
     .doc-nav-btn:hover { border-color: var(--accent); color: var(--accent); }
 
-    /* selection hint bar */
+    /* zone selection hint bar */
     #select-hint {
       display: none; align-items: center; gap: 8px;
       padding: 6px 12px; background: #0d1f3a;
@@ -82,7 +125,6 @@
       font-size: 11px; cursor: pointer; font-family: var(--sans); }
     .hint-cancel:hover { border-color: var(--err); color: var(--err); }
 
-    /* doc image wrapper — needed for canvas overlay */
     #doc-viewer {
       flex: 1; overflow: auto; display: flex;
       align-items: flex-start; justify-content: center; padding: 16px;
@@ -90,14 +132,9 @@
     #doc-img-wrap { position: relative; display: inline-block; line-height: 0; }
     #doc-img      { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; display: block; }
 
-    /* selection canvas overlay */
-    #sel-canvas {
-      position: absolute; inset: 0; display: none;
-      border-radius: 4px;
-    }
-    #sel-canvas.active { display: block; cursor: crosshair; }
+    #sel-canvas { position: absolute; inset: 0; display: none; border-radius: 4px; }
+    #sel-canvas.active { display: block; cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Cline x1='16' y1='0' x2='16' y2='32' stroke='%23FFE000' stroke-width='2.5'/%3E%3Cline x1='0' y1='16' x2='32' y2='16' stroke='%23FFE000' stroke-width='2.5'/%3E%3Ccircle cx='16' cy='16' r='4' fill='none' stroke='%23FFE000' stroke-width='2'/%3E%3C/svg%3E") 16 16, crosshair; }
 
-    /* OCR spinner overlay */
     #ocr-overlay {
       display: none; position: absolute; inset: 0;
       background: rgba(8,10,15,.65); border-radius: 4px;
@@ -116,17 +153,25 @@
 
     /* ── Fields panel (right) ── */
     #fields-panel {
-      width: 340px; flex-shrink: 0; display: flex; flex-direction: column; overflow: hidden;
+      width: 320px; flex-shrink: 0; display: flex; flex-direction: column; overflow: hidden;
     }
     #fields-header {
-      padding: 10px 16px; border-bottom: 1px solid var(--border);
-      background: var(--surface); flex-shrink: 0;
+      padding: 10px 14px; border-bottom: 1px solid var(--border);
+      background: var(--surface); flex-shrink: 0; display: flex; flex-direction: column; gap: 7px;
     }
     .fields-header-title { font-size: 12px; font-weight: 500; color: var(--text); }
-    .fields-header-sub   { font-size: 10px; color: var(--muted); margin-top: 2px; }
+    .fields-header-sub   { font-size: 10px; color: var(--muted); }
+
+    /* Doc type dropdown */
+    #doctype-select {
+      width: 100%; background: var(--bg); border: 1px solid var(--border2);
+      border-radius: 5px; padding: 5px 8px; color: var(--text);
+      font-family: var(--sans); font-size: 11px; outline: none; cursor: pointer;
+    }
+    #doctype-select:focus { border-color: var(--accent); }
 
     #fields-scroll {
-      flex: 1; overflow-y: auto; padding: 12px 16px;
+      flex: 1; overflow-y: auto; padding: 12px 14px;
       display: flex; flex-direction: column; gap: 10px;
     }
 
@@ -136,6 +181,7 @@
       font-size: 11px; font-weight: 500; color: var(--muted);
       text-transform: uppercase; letter-spacing: .06em;
     }
+    .field-row-label.required-missing { color: var(--err); }
     .conf-badge {
       font-size: 10px; font-family: var(--mono); padding: 1px 6px; border-radius: 10px;
     }
@@ -152,15 +198,13 @@
     .field-input:focus   { border-color: var(--accent); }
     .field-input.corrected { border-color: var(--warn); }
     .field-input.low-conf  { border-color: var(--err); background: #1a0d0d; }
-
-    /* Active (awaiting zone selection) state */
+    .field-input.required-missing { border-color: var(--err); background: #1a0d0d; }
     .field-input.zone-active {
       border-color: var(--accent) !important;
       box-shadow: 0 0 0 2px rgba(79,142,247,.25);
       background: #0d1525;
     }
 
-    /* pick-zone button next to each field */
     .field-input-wrap { display: flex; gap: 6px; align-items: center; }
     .pick-btn {
       flex-shrink: 0; width: 28px; height: 28px; border-radius: 5px;
@@ -169,28 +213,32 @@
       display: flex; align-items: center; justify-content: center;
       transition: all .15s;
     }
-    .pick-btn:hover     { border-color: var(--accent); color: var(--accent); }
-    .pick-btn.picking   { border-color: var(--accent); background: #0d1f3a; color: var(--accent2); }
+    .pick-btn:hover   { border-color: var(--accent); color: var(--accent); }
+    .pick-btn.picking { border-color: var(--accent); background: #0d1f3a; color: var(--accent2); }
 
     /* ── Action bar ── */
     #action-bar {
-      display: flex; gap: 8px; padding: 12px 16px;
+      display: flex; gap: 6px; padding: 10px 14px;
       border-top: 1px solid var(--border); background: var(--surface); flex-shrink: 0;
     }
     .btn {
-      flex: 1; padding: 9px; border-radius: 6px; border: 1px solid var(--border2);
+      padding: 8px 6px; border-radius: 6px; border: 1px solid var(--border2);
       background: transparent; color: var(--text); font-family: var(--sans);
-      font-size: 12px; cursor: pointer; transition: all .15s;
+      font-size: 11px; cursor: pointer; transition: all .15s;
     }
     .btn:hover { border-color: var(--accent2); }
-    .btn.confirm { background: var(--ok); border-color: var(--ok); color: #0a1f14; font-weight: 500; }
-    .btn.confirm:hover { opacity: .88; }
-    .btn.skip { color: var(--muted); }
-    .btn.reprocess { color: var(--accent2); border-color: var(--accent); }
-    .btn.reprocess:hover { background: #0d1f3a; }
-    .btn.reprocess:disabled { opacity: .4; cursor: not-allowed; }
+    .btn.confirm { flex: 1; background: var(--ok); border-color: var(--ok); color: #0a1f14; font-weight: 500; font-size: 12px; }
+    .btn.confirm:hover   { opacity: .88; }
+    .btn.confirm:disabled { opacity: .35; cursor: not-allowed; background: var(--surface2); border-color: var(--border2); color: var(--muted); }
+    .btn.skip    { color: var(--muted); }
+    .btn.danger  { color: var(--err); }
+    .btn.danger:hover { border-color: var(--err); background: #2e0d0d; }
 
-    /* Reprocess spinner */
+    /* Reprocess button */
+    #reprocess-bar { padding: 8px 14px 0; flex-shrink: 0; }
+    .btn.reprocess { width: 100%; color: var(--accent2); border-color: var(--accent); font-size: 11px; }
+    .btn.reprocess:hover     { background: #0d1f3a; }
+    .btn.reprocess:disabled  { opacity: .4; cursor: not-allowed; }
     .btn-spinner {
       display: inline-block; width: 11px; height: 11px;
       border: 1.5px solid var(--accent2); border-top-color: transparent;
@@ -198,33 +246,15 @@
       vertical-align: middle; margin-right: 4px;
     }
 
-    /* ── Deferred panel ── */
-    #deferred-panel {
-      display: none; flex-direction: column;
-      border-top: 1px solid var(--border); max-height: 180px; flex-shrink: 0;
-      background: var(--surface);
+    /* Toast */
+    #toast {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      padding: 9px 18px; border-radius: 7px; font-size: 12px;
+      border: 1px solid; display: none; z-index: 9999; white-space: nowrap;
     }
-    #deferred-panel.visible { display: flex; }
-    .deferred-header {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 7px 16px; border-bottom: 1px solid var(--border);
-      font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
-    }
-    .deferred-count { color: var(--warn); font-family: var(--mono); }
-    #deferred-list { overflow-y: auto; padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; }
-    .deferred-item {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 5px 8px; border-radius: 5px; background: var(--bg);
-      border: 1px solid var(--border); font-size: 11px;
-    }
-    .deferred-name { font-family: var(--mono); color: var(--warn); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .deferred-review-btn {
-      flex-shrink: 0; padding: 3px 8px; border-radius: 4px;
-      border: 1px solid var(--border2); background: transparent;
-      color: var(--muted); font-size: 10px; cursor: pointer; font-family: var(--sans);
-      margin-left: 8px;
-    }
-    .deferred-review-btn:hover { border-color: var(--accent); color: var(--accent); }
+    #toast.ok   { background: #0d2e1e; color: var(--ok);  border-color: var(--ok); }
+    #toast.err  { background: #2e0d0d; color: var(--err); border-color: var(--err); }
+    #toast.warn { background: #2e1a00; color: var(--warn); border-color: var(--warn); }
 
     ::-webkit-scrollbar { width: 5px; }
     ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
@@ -233,18 +263,29 @@
 <body>
 <div id="app">
   <div id="titlebar">
-    <span class="tb-title">DocuSnap — Review Queue</span>
+    <span class="tb-title">DocuSnap — Review</span>
     <div class="tb-right">
       <button class="tb-btn close" id="btn-close">&#215;</button>
     </div>
   </div>
 
-  <div id="queue-bar">
-    <span class="queue-empty" id="queue-empty" style="display:none">✓ All documents reviewed</span>
-  </div>
-
   <div id="body">
-    <!-- Left: document image + selection canvas -->
+
+    <!-- Left: queue sidebar -->
+    <div id="queue-panel">
+      <div id="queue-tabs">
+        <button class="qtab active" id="tab-review">
+          Review <span class="qtab-count" id="tab-review-count">0</span>
+        </button>
+        <button class="qtab" id="tab-deferred">
+          Deferred <span class="qtab-count" id="tab-deferred-count">0</span>
+        </button>
+      </div>
+      <div id="queue-list"></div>
+      <div id="queue-empty">✓ All reviewed</div>
+    </div>
+
+    <!-- Centre: document viewer -->
     <div id="doc-panel">
       <div id="doc-toolbar">
         <span class="doc-name" id="doc-name">No document selected</span>
@@ -253,14 +294,13 @@
         <button class="doc-nav-btn" id="btn-page-next">Next &#8250;</button>
       </div>
 
-      <!-- Zone selection hint -->
       <div id="select-hint">
         <span>Click and drag on the document to select the <span class="hint-field" id="hint-field-name">field</span> value</span>
         <button class="hint-cancel" id="hint-cancel">Cancel</button>
       </div>
 
       <div id="doc-viewer">
-        <span id="doc-placeholder">Select a document from the queue above</span>
+        <span id="doc-placeholder">Select a document from the queue</span>
         <div id="doc-img-wrap" style="display:none">
           <img id="doc-img" alt="Document preview">
           <canvas id="sel-canvas"></canvas>
@@ -272,36 +312,30 @@
       </div>
     </div>
 
-    <!-- Right: extracted fields -->
+    <!-- Right: fields panel -->
     <div id="fields-panel">
       <div id="fields-header">
         <div class="fields-header-title">Extracted Fields</div>
+        <select id="doctype-select"><option value="">— Select document type —</option></select>
         <div class="fields-header-sub">Click ⊕ then drag on the document to pick a value</div>
       </div>
       <div id="fields-scroll"></div>
-      <!-- To Be Reviewed panel -->
-      <div id="deferred-panel">
-        <div class="deferred-header">
-          <span>To Be Reviewed</span>
-          <span class="deferred-count" id="deferred-count">0</span>
-        </div>
-        <div id="deferred-list"></div>
-      </div>
 
-      <div id="reprocess-bar" style="padding: 8px 16px 0; flex-shrink:0;">
-        <button class="btn reprocess" id="btn-reprocess" style="width:100%; margin-bottom:0;">
-          &#9654;&#9654; Reprocess with Learned Data
-        </button>
+      <div id="reprocess-bar">
+        <button class="btn reprocess" id="btn-reprocess">&#9654;&#9654; Reprocess with Learned Data</button>
       </div>
       <div id="action-bar">
-        <button class="btn skip"    id="btn-skip">Skip</button>
-        <button class="btn skip"    id="btn-defer" style="color:var(--warn)">&#8635; Defer</button>
-        <button class="btn confirm" id="btn-confirm">✓ Confirm &amp; Rename</button>
+        <button class="btn skip"   id="btn-skip">Skip</button>
+        <button class="btn skip"   id="btn-defer" style="color:var(--warn)">&#8635; Defer</button>
+        <button class="btn danger" id="btn-delete" title="Delete document">&#128465;</button>
+        <button class="btn confirm" id="btn-confirm" disabled>&#10003; Confirm &amp; File</button>
       </div>
     </div>
+
   </div>
 </div>
 
+<div id="toast"></div>
 <script src="renderer.js"></script>
 </body>
 </html>

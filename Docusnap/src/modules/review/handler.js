@@ -26,8 +26,15 @@ function register(ctx) {
 
   // ── Document pages for preview ──────────────────────────────────────────────
   ipcMain.handle('get-document-pages', async (_e, docId, folderPath, filename) => {
+    if (!folderPath || !filename) {
+      console.log(`[pages] docId=${docId} missing path — folderPath=${folderPath} filename=${filename}`);
+      return [];
+    }
     const filePath = path.join(folderPath, filename);
-    if (!fs.existsSync(filePath)) return [];
+    if (!fs.existsSync(filePath)) {
+      console.log(`[pages] file not found: ${filePath}`);
+      return [];
+    }
 
     const ext = path.extname(filename).toLowerCase();
     if (ext !== '.pdf') {

@@ -195,6 +195,57 @@ function findLogoMatch(db, phash, threshold = 12) {
   return best;
 }
 
+// ── Format templates (OCR correction) ────────────────────────────────────────
+
+function getFieldFormats(db) {
+  // For each supplier+doctype+field, collect the final confirmed values
+  // (corrected value if user edited, otherwise the extracted display value).
+  const rows = db.prepare(`
+    SELECT
+      e.document_id,
+      d.supplier_name,
+      dt.slug        AS document_type,
+      e.field_key,
+      e.display_value,
+      c.corrected_value
+    FROM extractions e
+    JOIN  documents      d  ON d.id  = e.document_id
+    LEFT JOIN document_types dt ON dt.id = d.document_type_id
+    LEFT JOIN corrections   c  ON c.document_id = e.document_id
+                               AND c.field_key  = e.field_key
+    WHERE d.status          = 'confirmed'
+      AND d.supplier_name   IS NOT NULL
+      AND d.supplier_name   != ''
+      AND d.supplier_name   != '__global__'
+      AND (e.display_value IS NOT NULL OR c.corrected_value IS NOT NULL)
+  `).all();
+
+  const groups = {};
+  for (const row of rows) {
+    const finalValue = (row.corrected_value || row.display_value || '').trim();
+    if (!finalValue) continue;
+
+    const key = `${row.supplier_name}|${row.document_type || ''}|${row.field_key}`;
+    if (!groups[key]) {
+      groups[key] = {
+        supplier_name: row.supplier_name,
+        document_type: row.document_type || '',
+        field_key:     row.field_key,
+        _values:       new Set(),
+      };
+    }
+    groups[key]._values.add(finalValue);
+  }
+
+  // Only return groups with 3+ distinct confirmed values (enough to learn a pattern)
+  return Object.values(groups)
+    .filter(g => g._values.size >= 3)
+    .map(({ _values, ...rest }) => ({
+      ...rest,
+      sample_values: [..._values].slice(0, 20),
+    }));
+}
+
 // ── Settings ──────────────────────────────────────────────────────────────────
 
 function getSetting(db, key, defaultValue = null) {
@@ -214,5 +265,6 @@ module.exports = {
   saveCorrections, getHints,
   saveAnchor, getAllAnchors,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
+  getFieldFormats,
   getSetting, setSetting,
 };

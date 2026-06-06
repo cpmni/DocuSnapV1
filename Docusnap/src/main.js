@@ -106,7 +106,9 @@ function createWindow(name, options, htmlFile) {
 
 function getMainWindow()   { return windows['main'];     }
 function notifyMainWindow(channel, ...args) {
+  // Send to main window and review window so both stay in sync
   windows['main']?.webContents.send(channel, ...args);
+  windows['review']?.webContents.send(channel, ...args);
 }
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────

@@ -22,7 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from extraction import keyword, anchor, validator
+from extraction import keyword, anchor, validator, ocr_corrector
 
 # LLM import is optional — system works without it in FAST mode
 try:
@@ -53,14 +53,21 @@ class ExtractionEngine:
                  model:        str = "phi3:mini",
                  emit_fn            = None):
 
-        self.mode       = mode.lower()
-        self.patterns   = keyword.load_patterns(config_path)
-        self.ollama_url = ollama_url
-        self.model      = model
-        self.emit       = emit_fn or (lambda msg: None)
+        self.mode         = mode.lower()
+        self.patterns     = keyword.load_patterns(config_path)
+        self.ollama_url   = ollama_url
+        self.model        = model
+        self.emit         = emit_fn or (lambda msg: None)
+        self.format_index = {}   # populated by set_formats()
 
     def log(self, text: str, level: str = ""):
         self.emit({"type": "log", "text": text, "level": level})
+
+    def set_formats(self, formats_data: list):
+        """Pre-build OCR correction index from confirmed value data."""
+        self.format_index = ocr_corrector.build_format_index(formats_data)
+        n = len([k for k in self.format_index if k != '_fallback'])
+        self.log(f"  OCR corrector: {n} format templates loaded")
 
     def warmup(self) -> bool:
         """Warm up Ollama model. Returns True if AI is available."""
@@ -121,7 +128,10 @@ class ExtractionEngine:
         # ── Stage 1: Keyword extraction (always runs) ─────────────────────────
         self.log("  Stage 1: keyword extraction…")
         kw_results = keyword.extract_fields(ocr_text, field_keys, self.patterns)
-        results.update(kw_results)
+        for key, data in kw_results.items():
+            existing = results.get(key)
+            if not existing or data.get("confidence", 0) > existing.get("confidence", 0):
+                results[key] = data
         found = len([v for v in results.values() if v.get("value")])
         self.log(f"  Stage 1: {found}/{len(field_keys)} fields found")
 
@@ -138,6 +148,31 @@ class ExtractionEngine:
             new_found = len([v for v in results.values() if v.get("value")])
             self.log(f"  Stage 2: +{new_found - found} fields from anchors")
             found = new_found
+
+        # ── Stage 2.5: OCR format correction ─────────────────────────────────
+        if self.format_index:
+            n_corrected = 0
+            for key, data in list(results.items()):
+                if not isinstance(data, dict) or not data.get("value"):
+                    continue
+                corrected_val, boost = ocr_corrector.correct_extraction(
+                    data["value"], key, supplier_name, document_slug,
+                    self.format_index,
+                )
+                if boost > 0:
+                    new_conf = min(95, (data.get("confidence") or 0) + boost)
+                    was_changed = corrected_val != data["value"]
+                    results[key] = {
+                        **data,
+                        "value":      corrected_val,
+                        "confidence": new_conf,
+                        "method":     (data.get("method", "") + "+corrected")
+                                      if was_changed else data.get("method", ""),
+                    }
+                    if was_changed:
+                        n_corrected += 1
+            if n_corrected:
+                self.log(f"  Stage 2.5: {n_corrected} OCR correction(s) applied")
 
         # ── Decide whether to call LLM ────────────────────────────────────────
         use_llm = self._should_use_llm(results, document_slug)

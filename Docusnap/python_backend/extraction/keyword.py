@@ -100,7 +100,14 @@ def extract_fields(ocr_text: str, field_keys: list[str],
         base_conf = fp.get("base_confidence", 75)
 
         for label in labels:
-            found = _search_for_label(lines, label, dirs)
+            # Support per-label direction override: {"text": "Bill From", "directions": ["below"]}
+            if isinstance(label, dict):
+                label_text = label["text"]
+                label_dirs = label.get("directions", dirs)
+            else:
+                label_text = label
+                label_dirs = dirs
+            found = _search_for_label(lines, label_text, label_dirs)
             if not found:
                 continue
 
@@ -126,7 +133,7 @@ def extract_fields(ocr_text: str, field_keys: list[str],
                 "value":      value,
                 "confidence": min(95, conf),
                 "method":     "keyword",
-                "label":      label,
+                "label":      label_text,
             }
             break  # found for this field, move to next
 

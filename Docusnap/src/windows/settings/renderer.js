@@ -2,6 +2,23 @@
 
 document.getElementById('btn-close').addEventListener('click', () => window.docusnap.windowClose());
 
+// ── Output folder ─────────────────────────────────────────────────────────────
+const outputPathEl = document.getElementById('output-folder-path');
+
+async function loadOutputFolder() {
+  const val = await window.docusnap.getSetting('output_folder');
+  outputPathEl.value = val || '';
+}
+loadOutputFolder();
+
+document.getElementById('btn-pick-output').addEventListener('click', async () => {
+  const folder = await window.docusnap.pickOutputFolder();
+  if (folder) {
+    await window.docusnap.setSetting('output_folder', folder);
+    outputPathEl.value = folder;
+  }
+});
+
 // ── Load fields ───────────────────────────────────────────────────────────────
 async function loadFields() {
   const fields = await window.docusnap.getAllFields();

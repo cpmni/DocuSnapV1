@@ -145,7 +145,8 @@
     },
     "supplier_name": {
       "labels": [
-        "From",
+        {"text": "Bill From", "directions": ["below"]},
+        {"text": "BILL FROM", "directions": ["below"]},
         "Supplier",
         "Vendor",
         "Issued By",
@@ -160,7 +161,7 @@
       ],
       "position_hint": "top_third",
       "validation": "text",
-      "base_confidence": 75
+      "base_confidence": 40
     },
     "customer_name": {
       "labels": [
@@ -292,6 +293,69 @@
       ],
       "validation": "alphanumeric",
       "base_confidence": 83
+    },
+    "po_number": {
+      "labels": [
+        "Purchase Order No",
+        "Purchase Order Number",
+        "PURCHASE ORDER NO",
+        "PO Number",
+        "PO No",
+        "PO No.",
+        "PO #",
+        "PO Ref"
+      ],
+      "directions": [
+        "right",
+        "below"
+      ],
+      "validation": "alphanumeric",
+      "base_confidence": 88
+    },
+    "po_date": {
+      "labels": [
+        "PO Date",
+        "Order Date",
+        "Date of Order",
+        "Printed On",
+        "Issue Date",
+        "Date"
+      ],
+      "directions": [
+        "right",
+        "below"
+      ],
+      "validation": "date",
+      "base_confidence": 85
+    },
+    "order_date": {
+      "labels": [
+        "Order Date",
+        "Date",
+        "Sales Order Date",
+        "Issue Date",
+        "Date of Order"
+      ],
+      "directions": [
+        "right",
+        "below"
+      ],
+      "validation": "date",
+      "base_confidence": 85
+    },
+    "buyer_name": {
+      "labels": [
+        "Buyer",
+        "Buyer Name",
+        "Purchased By",
+        "Ordered By"
+      ],
+      "directions": [
+        "right",
+        "below"
+      ],
+      "validation": "text",
+      "base_confidence": 75
     },
     "sales_order_number": {
       "labels": [

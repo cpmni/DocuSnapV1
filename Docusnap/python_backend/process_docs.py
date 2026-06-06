@@ -32,6 +32,23 @@ def emit(obj: dict):
 def log(text: str, level: str = ""):
     emit({"type": "log", "text": text, "level": level})
 
+def sanitise_extractions(extractions: dict) -> dict:
+    """
+    Ensure every field value is a proper dict with value/confidence/method.
+    Filters out _ prefixed metadata keys and handles plain string/None values.
+    """
+    clean = {}
+    for key, data in extractions.items():
+        if key.startswith('_'):
+            continue  # skip metadata keys
+        if isinstance(data, dict):
+            clean[key] = data
+        elif data is not None:
+            clean[key] = {"value": str(data), "confidence": 50, "method": "unknown"}
+        else:
+            clean[key] = {"value": None, "confidence": 0, "method": "unknown"}
+    return clean
+
 def load_json_arg(inline: str | None, filepath: str | None) -> list | dict | None:
     """Load JSON from a file path or inline string."""
     if filepath and os.path.exists(filepath):
@@ -58,6 +75,7 @@ def main():
     parser.add_argument("--anchors-file",    default=None)
     parser.add_argument("--logos-file",      default=None)
     parser.add_argument("--doc-types-file",  default=None)
+    parser.add_argument("--formats-file",    default=None)
     # Inline fallbacks (for small payloads)
     parser.add_argument("--fields",          default=None)
     parser.add_argument("--hints",           default=None)
@@ -69,16 +87,17 @@ def main():
     configure_tesseract(args.tesseract)
 
     # Load training data (once, before the file loop)
-    fields    = load_json_arg(args.fields,  args.fields_file)  or []
-    hints     = load_json_arg(args.hints,   args.hints_file)   or []
-    anchors   = load_json_arg(args.anchors, args.anchors_file) or []
-    logos     = load_json_arg(args.logos,   args.logos_file)   or []
+    fields    = load_json_arg(args.fields,  args.fields_file)   or []
+    hints     = load_json_arg(args.hints,   args.hints_file)    or []
+    anchors   = load_json_arg(args.anchors, args.anchors_file)  or []
+    logos     = load_json_arg(args.logos,   args.logos_file)    or []
     doc_types = load_json_arg(None,         args.doc_types_file) or []
+    formats   = load_json_arg(None,         args.formats_file)  or []
 
     emit({
         "type": "log",
         "text": f"[Learning] {len(hints)} hints, {len(anchors)} anchors,"
-                f" {len(logos)} logos loaded"
+                f" {len(logos)} logos, {len(formats)} format templates loaded"
     })
 
     # Initialise extraction engine
@@ -89,6 +108,10 @@ def main():
         model       = args.model,
         emit_fn     = emit,
     )
+
+    # Load learned format templates for OCR correction
+    if formats:
+        engine.set_formats(formats)
 
     # Warm up model before batch
     engine.warmup()
@@ -144,7 +167,7 @@ def main():
                         doc_slug = dt.get("slug")
                         break
 
-            extractions = engine.extract(
+            raw_extractions = engine.extract(
                 ocr_text      = ocr_text,
                 page_images   = page_images,
                 filename      = filepath.name,
@@ -157,11 +180,16 @@ def main():
                 supplier_name = None,
             )
 
-            # Pull out metadata keys
-            supplier_name    = extractions.pop("_supplier_name", None)
-            doc_type_result  = extractions.pop("_document_type", document_type)
-            overall_conf     = extractions.pop("_overall_confidence", 0)
-            review_needed    = extractions.pop("_needs_review", True)
+            # Pull out metadata keys before sanitising
+            supplier_name    = raw_extractions.pop("_supplier_name", None)
+            doc_type_result  = raw_extractions.pop("_document_type", document_type)
+            overall_conf     = raw_extractions.pop("_overall_confidence", 0)
+            review_needed    = raw_extractions.pop("_needs_review", True)
+            raw_extractions.pop("_mode_used", None)
+            raw_extractions.pop("_document_slug", None)
+
+            # Sanitise — ensure all values are proper dicts
+            extractions = sanitise_extractions(raw_extractions)
 
             status = "needs_review" if review_needed else "confirmed"
 
@@ -175,7 +203,7 @@ def main():
                 "document_type":      doc_type_result,
                 "type_confidence":    type_conf,
                 "supplier_name":      supplier_name,
-                "mode_used":          extractions.pop("_mode_used", "smart"),
+                "mode_used":          "fast",
                 "extractions":        {
                     k: {"value": v.get("value"), "confidence": v.get("confidence", 0),
                         "method": v.get("method", "unknown")}

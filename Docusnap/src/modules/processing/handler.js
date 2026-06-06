@@ -58,12 +58,19 @@ function register(ctx) {
     const allHints    = learning.getHints(db);
     const allAnchors  = learning.getAllAnchors(db);
     const allLogos    = learning.getAllLogos(db);
+    let allFormats = [];
+    try {
+      allFormats = learning.getFieldFormats(db);
+    } catch (e) {
+      console.warn('[buildTrainingArgs] getFieldFormats failed (non-critical):', e.message);
+    }
 
     const fieldsFile   = writeTempJson('fields',   allDocTypes.flatMap(dt => dt.fields));
     const hintsFile    = writeTempJson('hints',    allHints);
     const anchorsFile  = writeTempJson('anchors',  allAnchors);
     const logosFile    = writeTempJson('logos',    allLogos);
     const dtFile       = writeTempJson('doctypes', allDocTypes);
+    const formatsFile  = writeTempJson('formats',  allFormats);
     const cfgFile      = configPath();
 
     return {
@@ -73,18 +80,29 @@ function register(ctx) {
         '--anchors-file',   anchorsFile,
         '--logos-file',     logosFile,
         '--doc-types-file', dtFile,
+        '--formats-file',   formatsFile,
         '--config-file',    cfgFile,
       ],
-      tempFiles: [fieldsFile, hintsFile, anchorsFile, logosFile, dtFile],
+      tempFiles: [fieldsFile, hintsFile, anchorsFile, logosFile, dtFile, formatsFile],
     };
   }
 
   // ── Process folder ──────────────────────────────────────────────────────────
   ipcMain.handle('process-folder', async (event, folderPath) => {
+    const db = getDb();
+    let trainingArgs, tempFiles;
+    try {
+      ({ args: trainingArgs, tempFiles } = buildTrainingArgs(db));
+    } catch (e) {
+      console.error('[process-folder] buildTrainingArgs failed:', e);
+      event.sender.send('process-progress', {
+        type: 'log', text: `Setup error: ${e.message}`, level: 'err'
+      });
+      return { success: false, error: e.message };
+    }
+
     return new Promise((resolve) => {
-      const db  = getDb();
       const py  = pythonExe();
-      const { args: trainingArgs, tempFiles } = buildTrainingArgs(db);
 
       // Get current processing mode from settings
       const learning  = require('../../../database/modules/learning');
@@ -211,11 +229,8 @@ function register(ctx) {
         const mergedRows = newRows.map(row => {
           const ex = existingMap[row.field_key];
           if (!ex) return row;
+          // Only preserve old value if reprocessing found nothing new
           if (ex.display_value && !row.display_value) return {
-            ...row, raw_value: ex.raw_value,
-            display_value: ex.display_value, confidence: ex.confidence,
-          };
-          if ((ex.confidence || 0) > (row.confidence || 0) + 20) return {
             ...row, raw_value: ex.raw_value,
             display_value: ex.display_value, confidence: ex.confidence,
           };
@@ -314,10 +329,23 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow) {
 
   const documents = require('../../../database/modules/documents');
   const learning  = require('../../../database/modules/learning');
+  const docTypes  = require('../../../database/modules/document_types');
+
+  // Resolve document_type_id from the detected type name so the review queue
+  // has type_slug populated and anchors/hints are tagged correctly.
+  let document_type_id = null;
+  if (msg.document_type) {
+    const allTypes = docTypes.getAllWithFields(db);
+    const match = allTypes.find(
+      dt => dt.name.toLowerCase() === msg.document_type.toLowerCase()
+    );
+    if (match) document_type_id = match.id;
+  }
 
   const docResult = documents.insert(db, {
     original_filename:  msg.original_filename,
     folder_path:        folderPath,
+    document_type_id,
     supplier_name:      msg.supplier_name || null,
     overall_confidence: msg.overall_confidence || null,
     status:             msg.status || 'needs_review',

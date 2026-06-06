@@ -18,7 +18,7 @@ def configure(tesseract_path: str | None = None):
         pytesseract.pytesseract.tesseract_cmd = tesseract_path
 
 
-def ocr_image(img: Image.Image, config: str = "--oem 3 --psm 6") -> str:
+def ocr_image(img: Image.Image, config: str = "--oem 3 --psm 3") -> str:
     """Run Tesseract OCR on a PIL image."""
     return pytesseract.image_to_string(img, config=config)
 

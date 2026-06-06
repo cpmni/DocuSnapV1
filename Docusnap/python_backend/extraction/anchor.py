@@ -39,7 +39,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
             continue  # already found by higher-priority anchor
 
         for i, line in enumerate(lines):
-            if label not in line.lower():
+            if not _label_matches_line(label, line):
                 continue
 
             value = None
@@ -163,6 +163,21 @@ def _anchor_matches(anchor: dict, supplier_name: str | None,
         return True
 
     return False
+
+
+def _label_matches_line(label: str, line: str) -> bool:
+    """Check if a saved anchor label matches an OCR line.
+    Exact substring first; falls back to word-overlap (70%) to tolerate
+    minor OCR differences between strip-OCR (at save time) and full-page OCR.
+    """
+    line_l = line.lower()
+    if label in line_l:
+        return True
+    words = [w for w in label.split() if len(w) > 2]
+    if not words:
+        return False
+    hits = sum(1 for w in words if w in line_l)
+    return hits / len(words) >= 0.7
 
 
 def _hamming(h1: str, h2: str) -> int:
