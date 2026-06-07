@@ -5,9 +5,11 @@
  * Handles document filing — creates folder structure, renames files,
  * writes metadata XML.
  *
- * Folder structure:  OutputRoot/CompanyName/Year/Month/
- * Filename format:   DocType.DD-MM-YYYY.RefNo.pdf
- * Metadata:          OutputRoot/CompanyName/Year/Month/.metadata/DocType.DD-MM-YYYY.RefNo.xml
+ * Folder structure: OutputRoot/CompanyName/Year/Month/
+ * Filename:         built from the user-configurable pattern in Settings →
+ *                   File Naming (see filename_pattern.js); defaults to
+ *                   {docType}.{date}.{ref} i.e. DocType.DD-MM-YYYY.RefNo.pdf
+ * Metadata:         <filename>.xml alongside it, in .metadata/
  */
 
 const MONTH_NAMES = [
@@ -15,10 +17,40 @@ const MONTH_NAMES = [
   'July','August','September','October','November','December'
 ];
 
-// ── Register IPC (settings only — commitDocument called internally) ───────────
+const {
+  DEFAULT_PATTERN, SUPPORTED_TOKENS,
+  buildFilename, resolveDuplicateFilename,
+} = require('./filename_pattern');
+
+// ── Register IPC ──────────────────────────────────────────────────────────────
+// commitDocument itself is called internally by review/handler.js — the only
+// direct IPC this module owns is for the File Naming settings tab (pattern
+// info + live preview). Settings IPC for output folder is in settings/handler.js
 function register(ctx) {
-  // Filing module has no direct IPC — it's called by review/handler.js
-  // Settings IPC for output folder is in settings/handler.js
+  const { ipcMain } = ctx;
+
+  ipcMain.handle('get-filename-pattern-info', () => ({
+    tokens:         SUPPORTED_TOKENS,
+    defaultPattern: DEFAULT_PATTERN,
+  }));
+
+  ipcMain.handle('preview-filename-pattern', (_e, pattern) => {
+    // Sample supplier name deliberately contains a character Windows forbids
+    // in filenames ("/") — so a pattern that includes {supplier} visibly
+    // demonstrates, right in the live preview, that illegal characters are
+    // stripped automatically by the same backend pass that runs at filing time.
+    const sampleValues = {
+      docType:      'Invoice',
+      date:         '15-12-2025',
+      ref:          'INV-2025-0142',
+      supplier:     'Smith & Sons / Builders Ltd',
+      year:         '2025',
+      month:        'December',
+      originalName: 'scan0042',
+    };
+    const result = buildFilename({ pattern, values: sampleValues, ext: '.pdf' });
+    return { filename: result.filename, warning: result.fellBack ? result.reason : null };
+  });
 }
 
 // ── Main filing function ──────────────────────────────────────────────────────
@@ -30,21 +62,44 @@ async function commitDocument({
   allValues,
   documentType,
   dtInfo,
+  logger,
 }) {
   // ── 1. Determine filename components ────────────────────────────────────────
-  const docTypeStr   = sanitiseFilePart(documentType || 'Document', 30);
-  const refField     = dtInfo?.ref_field_key  || 'invoice_number';
-  const dateField    = dtInfo?.date_field_key || 'invoice_date';
-  const refValue     = allValues[refField]    || allValues['reference_number'] || 'NOREF';
-  const dateValue    = allValues[dateField]   || allValues['invoice_date']     || null;
+  const refField  = dtInfo?.ref_field_key  || 'invoice_number';
+  const dateField = dtInfo?.date_field_key || 'invoice_date';
+
+  const rawRef       = allValues[refField]  || allValues['reference_number'] || null;
+  const rawDate      = allValues[dateField] || allValues['invoice_date']     || null;
   const supplierName = allValues['supplier_name'] || 'Unknown Company';
 
-  const dateObj    = parseDate(dateValue);
-  const dateStr    = dateObj ? formatDate(dateObj) : 'NODATE';
-  const refStr     = sanitiseFilePart(refValue, 40);
-  const ext        = path.extname(originalFilename).toLowerCase();
+  const dateObj = parseDate(rawDate);
+  const ext     = path.extname(originalFilename).toLowerCase();
 
-  const baseFilename = `${docTypeStr}.${dateStr}.${refStr}${ext}`;
+  // Build the committed filename from the user-configurable pattern (Settings
+  // → File Naming). Token values are passed through as-is — buildFilename()
+  // sanitises each one individually and collapses any separators an empty
+  // token (missing ref/date/supplier on this particular document) would
+  // otherwise leave dangling.
+  const learning = require('../../../database/modules/learning');
+  const pattern  = learning.getSetting(db, 'filename_pattern', DEFAULT_PATTERN);
+  const tokenValues = {
+    docType:      documentType || 'Document',
+    date:         dateObj ? formatDate(dateObj) : '',
+    ref:          rawRef || '',
+    supplier:     allValues['supplier_name'] || '',
+    year:         dateObj ? String(dateObj.getFullYear())   : '',
+    month:        dateObj ? MONTH_NAMES[dateObj.getMonth()] : '',
+    originalName: path.basename(originalFilename, ext),
+  };
+
+  const built = buildFilename({ pattern, values: tokenValues, ext });
+  if (built.fellBack) {
+    logger?.warn(
+      `[filing] filename pattern "${pattern}" — ${built.reason}` +
+      ` Falling back to default (${DEFAULT_PATTERN}) for: ${originalFilename}`
+    );
+  }
+  const baseFilename = built.filename;
 
   // ── 2. Build folder path ─────────────────────────────────────────────────────
   const companyFolder = sanitiseFolderName(supplierName);
@@ -59,17 +114,9 @@ async function commitDocument({
   fs.mkdirSync(metaDir,   { recursive: true });
 
   // ── 4. Handle duplicates ─────────────────────────────────────────────────────
-  let finalFilename = baseFilename;
-  if (fs.existsSync(path.join(targetDir, baseFilename))) {
-    const stem = path.basename(baseFilename, ext);
-    finalFilename = `${stem}-DUPLICATE${ext}`;
-    // If duplicate of duplicate, append number
-    let n = 2;
-    while (fs.existsSync(path.join(targetDir, finalFilename))) {
-      finalFilename = `${stem}-DUPLICATE-${n}${ext}`;
-      n++;
-    }
-  }
+  const finalFilename = resolveDuplicateFilename(
+    baseFilename, ext, (name) => fs.existsSync(path.join(targetDir, name))
+  );
 
   const targetPath = path.join(targetDir, finalFilename);
   const srcPath    = path.join(folderPath, originalFilename);
@@ -142,14 +189,6 @@ function buildXml({ allValues, documentType, originalFilename,
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function sanitiseFilePart(text, maxLen = 40) {
-  return String(text || 'UNKNOWN')
-    .replace(/[\\/:*?"<>|]/g, '')
-    .replace(/\s+/g, '-')
-    .trim()
-    .slice(0, maxLen) || 'UNKNOWN';
-}
-
 function sanitiseFolderName(name) {
   return String(name || 'Unknown Company')
     .replace(/[\\/:*?"<>|]/g, '')
