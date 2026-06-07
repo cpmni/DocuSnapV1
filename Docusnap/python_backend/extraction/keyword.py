@@ -166,7 +166,7 @@ def extract_fields(ocr_text: str, field_keys: list[str],
                     continue  # doesn't match expected format — try next label
 
             # Clean up the value
-            value = _clean_value(value, val_type)
+            value = _clean_value(value, val_type, validation)
 
             # Confidence boost for exact label match
             conf = base_conf
@@ -185,6 +185,25 @@ def extract_fields(ocr_text: str, field_keys: list[str],
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _label_pattern(label: str) -> "re.Pattern | None":
+    """
+    Build a regex that tolerates OCR merging or splitting the whitespace
+    between a label's words. The same supplier's own forms commonly OCR
+    inconsistently scan-to-scan — e.g. "Purchase Order No" comes back as
+    "PURCHASE ORDERNO" on some pages and "PURCHASE ORDER NO" on others
+    (kerning/font/scan-quality variance collapses or preserves the space).
+    An exact-substring match silently misses the field on some scans of the
+    very same document layout while matching on others — a generalisable
+    label-matching gap, not a one-document quirk. Allowing zero-or-more
+    whitespace between each word covers merges, splits and doubled spaces
+    alike, for any current or future label.
+    """
+    words = label.lower().split()
+    if not words:
+        return None
+    return re.compile(r'\s*'.join(re.escape(w) for w in words))
+
 
 def _type_keyword_pattern(label: str) -> "re.Pattern | None":
     """
@@ -214,19 +233,25 @@ def _search_for_label(lines: list[str], label: str,
     """
     Search lines for a label and return (value, direction) or None.
     """
-    label_lower = label.lower()
+    pattern = _label_pattern(label)
+    if pattern is None:
+        return None
 
     for i, line in enumerate(lines):
         line_lower = line.lower()
-        if label_lower not in line_lower:
+        m = pattern.search(line_lower)
+        if not m:
             continue
 
         # Try RIGHT direction — value is on the same line after the label
         if "right" in directions or "inline" in directions:
-            idx = line_lower.find(label_lower)
-            after = line[idx + len(label):].strip()
+            after = line[m.end():].strip()
             # Strip common separators
             after = re.sub(r'^[\s:|\-–]+', '', after).strip()
+            # Split on column gaps (4+ spaces) — same as 'below' direction.
+            # Multi-column OCR often interleaves adjacent columns on the same line;
+            # take only the first column segment to avoid grabbing unrelated text.
+            after = re.split(r' {4,}', after)[0].strip()
             # Reject if the extracted text itself looks like another label, or contains
             # an embedded label:value pair (e.g. "Ship Mode: Second Class", "Date: Sep 07")
             # which means we grabbed neighbouring column content, not the actual value.
@@ -268,7 +293,16 @@ def _is_label_line(text: str) -> bool:
         return True
     # Single all-caps word (e.g. "INVOICE", "DATE") is a heading/label.
     # Multi-word all-caps (e.g. "ANDY YOTOV", "ACME LIMITED") is a name — not a label.
-    if t.isupper() and " " not in t and len(t) < 30:
+    # Digits are the deciding signal against a false positive here: genuine
+    # label/heading words are linguistic ("INVOICE", "PURCHASE ORDER", "TOTAL
+    # DUE") and essentially never contain digits, whereas reference/code
+    # values that follow a letter-prefix convention ("INV-2024-0456",
+    # "NC-58213", "PO-77410" — one of the most common real-world numbering
+    # styles) are exactly the kind of all-caps, no-space, short string this
+    # check would otherwise misclassify as a label and reject as a candidate
+    # value — silently breaking extraction for every document from any
+    # supplier using that convention.
+    if t.isupper() and " " not in t and len(t) < 30 and not any(c.isdigit() for c in t):
         return True
     return False
 
@@ -281,11 +315,29 @@ def _validate(value: str, patterns: list[str]) -> bool:
     return False
 
 
-def _clean_value(value: str, val_type: str | None) -> str:
+def _clean_value(value: str, val_type: str | None,
+                 validation: dict | None = None) -> str:
     """Clean up extracted value."""
     value = value.strip()
     # Remove trailing punctuation noise
     value = re.sub(r'[,;]+$', '', value).strip()
+    # Date/currency values are matched via regex against the whole string
+    # (which may include column-bleed noise either side, e.g.
+    # "3/6/2026  FREIGHT/CARRIAGE/INSURANCE"). The regex match itself is the
+    # actual value — extract just that substring rather than keeping everything.
+    if val_type in ("date", "currency") and validation and val_type in validation:
+        for p in validation[val_type]:
+            m = re.search(p, value, re.IGNORECASE)
+            if m:
+                return m.group(0).strip()
+    # Reference numbers are single tokens — if OCR column-bleed left a second
+    # "word" that looks like a name (starts with a capital letter), drop it.
+    # e.g. "204870 Polychemtex Inc." → "204870"
+    if val_type == "alphanumeric":
+        value = re.split(r' {2,}', value)[0].strip()
+        parts = value.split()
+        if len(parts) > 1 and re.match(r'^[A-Z][a-z]', parts[1]):
+            value = parts[0]
     # For name fields, truncate at column gaps or address numbers.
     # Addresses start with 4+ digit sequences (zip/postal codes, building numbers).
     # Multiple spaces = Tesseract column separator.
