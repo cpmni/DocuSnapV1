@@ -36,29 +36,72 @@ def load_patterns(config_path: str | None = None) -> dict:
 def detect_document_type(ocr_text: str, patterns: dict,
                           known_types: list[str] | None = None) -> dict | None:
     """
-    Scan the top quarter of the OCR text for document type keywords.
-    Returns {"type": "Invoice", "confidence": 85} or None.
+    Score candidate document types by scanning every line for type-indicating
+    phrases, weighting matches by how close to the top of the page they sit
+    and whether the matched text essentially IS the line (a heading) rather
+    than an incidental mention inside running text.
 
-    known_types: list of type names from the database — we score these first.
+    Real layouts vary hugely in how much letterhead/address/VAT/bank-detail
+    preamble precedes the actual type heading — from zero lines to well over
+    half the page (confirmed against sample invoices: ~40% had their
+    "Invoice"/"INVOICE" heading sitting beyond a fixed "top quarter" cutoff,
+    which silently excluded it from scanning entirely). Scanning the whole
+    document and applying a smooth positional weight keeps "headings near the
+    top matter most" without ever structurally excluding a legitimate one.
+
+    known_types: type names configured in the database (built-in + custom,
+    enabled only). Each name is folded in as its own keyword phrase, so a
+    custom type ("Delivery Receipt", "Goods Received Note", ...) participates
+    in scoring exactly like a built-in type — the configured name itself is
+    the header phrase to look for, with no per-type rules required.
     """
-    # Only look at top portion of the document
-    lines  = ocr_text.split("\n")
-    n_top  = max(10, len(lines) // 4)
-    top    = "\n".join(lines[:n_top]).lower()
+    lines = ocr_text.split("\n")
+    total = len(lines)
+    if not total:
+        return None
 
-    type_keywords = patterns.get("document_type_keywords", {})
+    type_keywords = {k: list(v) for k, v in patterns.get("document_type_keywords", {}).items()}
+    for name in (known_types or []):
+        name = (name or "").strip()
+        if name:
+            bucket = type_keywords.setdefault(name, [])
+            if name not in bucket:
+                bucket.append(name)
+
     if not type_keywords:
         return None
 
-    scores = {}
+    scores: dict[str, float] = {}
     for doc_type, keywords in type_keywords.items():
-        score = 0
+        score = 0.0
         for kw in keywords:
-            if kw.lower() in top:
-                # Exact phrase match scores higher
-                score += 2 if f" {kw.lower()} " in f" {top} " else 1
+            kw = kw.strip()
+            if not kw:
+                continue
+            pattern = _type_keyword_pattern(kw)
+            if pattern is None:
+                continue
+            for i, line in enumerate(lines):
+                m = pattern.search(line.lower())
+                if not m:
+                    continue
+                # Headings near the top carry by far the strongest signal;
+                # weight decays smoothly with depth but never drops below 1 —
+                # nothing found later in the document is structurally ignored.
+                position_weight = max(1.0, 3.0 - 4.0 * (i / total))
+                # A line that essentially IS the matched phrase (a standalone
+                # heading like "PURCHASE ORDER") is a far stronger signal than
+                # an incidental mention inside a longer line. Unlike the old
+                # `f" {kw} " in f" {top} "` check — which only recognised
+                # phrases padded by literal spaces and so never matched
+                # OCR'd standalone headings (newline-delimited, not
+                # space-delimited) — comparing against the regex match span
+                # works for any current or future label shape.
+                is_heading = line.strip().lower() == m.group(0).strip()
+                score += position_weight * (2.0 if is_heading else 1.0)
+                break  # first occurrence of this phrase is enough
         if score > 0:
-            scores[doc_type] = score
+            scores[doc_type] = round(score, 1)
 
     if not scores:
         return None
@@ -66,8 +109,9 @@ def detect_document_type(ocr_text: str, patterns: dict,
     best_type  = max(scores, key=scores.get)
     best_score = scores[best_type]
 
-    # Convert score to confidence (max score ~5 → 95%)
-    confidence = min(95, 60 + best_score * 7)
+    # Convert score to confidence (a clear top-of-page heading alone scores
+    # 6.0 → 90%; several corroborating mentions push toward the 95% cap).
+    confidence = min(95, 60 + int(best_score * 5))
 
     return {
         "type":       best_type,
@@ -141,6 +185,29 @@ def extract_fields(ocr_text: str, field_keys: list[str],
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _type_keyword_pattern(label: str) -> "re.Pattern | None":
+    """
+    Whitespace-tolerant matcher for document-type keywords/names — same
+    \\s*-joined approach as _label_pattern (handles "PURCHASE ORDER" vs
+    "PURCHASEORDER" OCR variance), plus a word-boundary guard for short
+    single-word alphabetic phrases.
+
+    The guard matters specifically here because `known_types` folds in
+    user-defined custom type *names* as keywords, and short generic names
+    ("PO", "GRN", "Ref") are exactly the shape that collides as a substring
+    inside unrelated words ("Polychemtex") — the same collision class fixed
+    for anchor labels in anchor.py/template_matcher.py. Built-in keyword
+    phrases are long enough that this never changes their matching.
+    """
+    words = label.lower().split()
+    if not words:
+        return None
+    body = r'\s*'.join(re.escape(w) for w in words)
+    if len(words) == 1 and words[0].isalpha():
+        return re.compile(r'(?<![a-z0-9])' + body + r'(?![a-z0-9])')
+    return re.compile(body)
+
 
 def _search_for_label(lines: list[str], label: str,
                       directions: list[str]) -> tuple[str, str] | None:
