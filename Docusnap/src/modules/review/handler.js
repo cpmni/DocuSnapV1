@@ -14,18 +14,29 @@ function register(ctx) {
   const documents  = require('../../../database/modules/documents');
   const learning   = require('../../../database/modules/learning');
   const doctypes   = require('../../../database/modules/document_types');
+  const { requireRole, requireLogin, hasRole } = require('../auth/handler');
 
   // ── Queue queries ───────────────────────────────────────────────────────────
-  ipcMain.handle('get-review-queue',  () => documents.getReviewQueue(getDb()));
-  ipcMain.handle('get-deferred-queue',() => documents.getDeferredQueue(getDb()));
-  ipcMain.handle('get-review-count',  () => documents.getReviewCount(getDb()));
-  ipcMain.handle('get-deferred-count',() => documents.getDeferredCount(getDb()));
+  // The review/deferred queues are the working-document workflow surface —
+  // every action on them (edit, confirm, defer, reprocess) is Admin/Edit only,
+  // so Read Only has no use for the queue contents either (their "view" role
+  // is served by Search, which lists filed documents — see search/handler.js).
+  ipcMain.handle('get-review-queue',  () => { requireRole('admin', 'edit'); return documents.getReviewQueue(getDb()); });
+  ipcMain.handle('get-deferred-queue',() => { requireRole('admin', 'edit'); return documents.getDeferredQueue(getDb()); });
+  ipcMain.handle('get-review-count',  () => { requireRole('admin', 'edit'); return documents.getReviewCount(getDb()); });
+  ipcMain.handle('get-deferred-count',() => { requireRole('admin', 'edit'); return documents.getDeferredCount(getDb()); });
 
-  ipcMain.handle('get-document-with-extractions', (_e, id) =>
-    documents.getWithExtractions(getDb(), id));
+  // get-document-with-extractions / get-document-pages are shared with the
+  // Search window (Read Only previews filed documents there too) — gate to
+  // "any signed-in user", not a specific role.
+  ipcMain.handle('get-document-with-extractions', (_e, id) => {
+    requireLogin();
+    return documents.getWithExtractions(getDb(), id);
+  });
 
   // ── Document pages for preview ──────────────────────────────────────────────
   ipcMain.handle('get-document-pages', async (_e, docId, folderPath, filename) => {
+    requireLogin();
     if (!folderPath || !filename) {
       console.log(`[pages] docId=${docId} missing path — folderPath=${folderPath} filename=${filename}`);
       return [];
@@ -58,6 +69,7 @@ function register(ctx) {
 
   // ── Defer ───────────────────────────────────────────────────────────────────
   ipcMain.handle('defer-document', (_e, docId) => {
+    requireRole('admin', 'edit');
     const db = getDb();
     documents.update(db, docId, { status: 'deferred' });
     notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
@@ -66,6 +78,7 @@ function register(ctx) {
   });
 
   ipcMain.handle('restore-deferred', (_e, docId) => {
+    requireRole('admin', 'edit');
     const db = getDb();
     documents.update(db, docId, { status: 'needs_review' });
     notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
@@ -74,7 +87,11 @@ function register(ctx) {
   });
 
   // ── Delete ──────────────────────────────────────────────────────────────────
+  // Delete is the one queue action the user explicitly kept Admin-exclusive
+  // (Edit gets the rest of the daily workflow — review, edit, confirm, defer,
+  // reprocess — but not permanent deletion of a scanned document).
   ipcMain.handle('delete-document', async (_e, docId, filePath) => {
+    requireRole('admin');
     const db = getDb();
     // Delete file from disk
     if (filePath && fs.existsSync(filePath)) {
@@ -91,6 +108,7 @@ function register(ctx) {
 
   // ── Confirm review ──────────────────────────────────────────────────────────
   ipcMain.handle('confirm-review', async (_e, payload) => {
+    requireRole('admin', 'edit');
     const {
       document_id, folder_path, original_filename,
       corrections, allValues, supplier_name,
@@ -181,6 +199,7 @@ function register(ctx) {
   });
 
   ipcMain.on('notify-review-complete', () => {
+    if (!hasRole('admin', 'edit')) return;
     const db = getDb();
     notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
     notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));

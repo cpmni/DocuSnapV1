@@ -310,8 +310,12 @@ function register(ctx) {
   const { ipcMain, getDb } = ctx;
   const { dialog, BrowserWindow } = require('electron');
   const learning = require('../../../database/modules/learning');
+  const { requireRole } = require('../auth/handler');
 
+  // The watch-folder is configured exclusively from the Admin-only Settings
+  // window — "access all settings" is the line drawn there.
   ipcMain.handle('pick-watch-folder', async (e) => {
+    requireRole('admin');
     const win = BrowserWindow.fromWebContents(e.sender);
     const r = await dialog.showOpenDialog(win, {
       properties: ['openDirectory'],
@@ -321,6 +325,7 @@ function register(ctx) {
   });
 
   ipcMain.handle('get-watch-folder-config', () => {
+    requireRole('admin');
     const db = getDb();
     return {
       folder:  learning.getSetting(db, 'watch_folder', null),
@@ -329,6 +334,7 @@ function register(ctx) {
   });
 
   ipcMain.handle('set-watch-folder', (_e, folderPath) => {
+    requireRole('admin');
     const db = getDb();
     learning.setSetting(db, 'watch_folder', folderPath || '');
     _log('log', `[watch] folder set: ${folderPath || '(cleared)'}`);
@@ -337,6 +343,7 @@ function register(ctx) {
   });
 
   ipcMain.handle('set-watch-folder-enabled', (_e, enabled) => {
+    requireRole('admin');
     const db = getDb();
     learning.setSetting(db, 'watch_folder_enabled', enabled ? '1' : '0');
     if (enabled) _start(db);

@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'">
+  <title>DocuSnap — Sign in</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:        #0c0e14;
+      --surface:   #13161f;
+      --surface2:  #1a1e2a;
+      --border:    #252836;
+      --border2:   #2f3347;
+      --accent:    #4f8ef7;
+      --accent2:   #6ea8ff;
+      --ok:        #3ecf8e;
+      --warn:      #f7b84f;
+      --err:       #f76f6f;
+      --text:      #e2e6f0;
+      --muted:     #7a82a0;
+      --ok-bg:     #0d2e1e;
+      --err-bg:    #2e0d0d;
+      --warn-bg:   #2e1a00;
+      --accent-bg: #0d1f3a;
+      --accent-border: #1a3a6a;
+      --ok-border: #1a4a2e;
+      --warn-border: #4a3a1a;
+      --mono:      'IBM Plex Mono', monospace;
+      --sans:      'IBM Plex Sans', sans-serif;
+      color-scheme: dark;
+    }
+    :root[data-theme="light"] {
+      --bg:        #f0f3fa;
+      --surface:   #ffffff;
+      --surface2:  #e8edf7;
+      --border:    #cdd4e8;
+      --border2:   #b8c2d8;
+      --text:      #1c2035;
+      --muted:     #5a6385;
+      --ok-bg:     #d4f5e5;
+      --err-bg:    #fde8e8;
+      --warn-bg:   #fef3d8;
+      --accent-bg: #ddeaff;
+      --accent-border: #90b8ff;
+      --ok-border: #6dd8a8;
+      --warn-border: #f0d090;
+      color-scheme: light;
+    }
+
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 13px; overflow: hidden; }
+
+    #titlebar {
+      -webkit-app-region: drag;
+      display: flex; align-items: center; justify-content: space-between;
+      height: 38px; padding: 0 12px 0 16px;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .tb-left { display: flex; align-items: center; gap: 10px; }
+    .tb-logo { width: 18px; height: 18px; }
+    .tb-title { font-size: 12px; font-weight: 500; letter-spacing: 0.08em; color: var(--muted); text-transform: uppercase; }
+    .tb-btn {
+      -webkit-app-region: no-drag;
+      width: 28px; height: 22px; border-radius: 4px; border: none; cursor: pointer;
+      background: transparent; color: var(--muted); font-size: 14px;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .15s, color .15s;
+    }
+    .tb-btn:hover { background: var(--surface2); color: var(--text); }
+    .tb-btn.close:hover { background: var(--err); color: #fff; }
+
+    #stage {
+      height: calc(100vh - 38px); display: flex; align-items: center; justify-content: center;
+      padding: 20px; overflow-y: auto;
+    }
+    .card {
+      width: 100%; max-width: 380px;
+      display: flex; flex-direction: column; gap: 14px;
+    }
+    .brand { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-bottom: 4px; }
+    .brand-logo { width: 36px; height: 36px; }
+    .brand-name { font-size: 16px; font-weight: 500; letter-spacing: .04em; }
+    .card-title { font-size: 14px; font-weight: 500; color: var(--text); }
+    .card-sub   { font-size: 11.5px; color: var(--muted); line-height: 1.6; }
+
+    label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 5px; letter-spacing: .03em; }
+    input[type="text"], input[type="password"] {
+      width: 100%; padding: 9px 11px; border-radius: 6px;
+      border: 1px solid var(--border2); background: var(--bg); color: var(--text);
+      font-family: var(--sans); font-size: 13px; outline: none;
+      transition: border-color .15s;
+    }
+    input[type="text"]:focus, input[type="password"]:focus { border-color: var(--accent); }
+    .field { margin-bottom: 4px; }
+    .field-row { display: flex; gap: 10px; }
+    .field-row .field { flex: 1; }
+
+    .btn {
+      width: 100%; padding: 10px; border-radius: 7px; border: none;
+      background: var(--accent); color: #fff; font-family: var(--sans);
+      font-size: 13px; font-weight: 500; cursor: pointer;
+      transition: opacity .2s, transform .1s;
+    }
+    .btn:hover:not(:disabled) { opacity: .88; }
+    .btn:active:not(:disabled) { transform: scale(.98); }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+    .btn-secondary {
+      background: transparent; color: var(--muted); border: 1px solid var(--border2);
+    }
+    .btn-secondary:hover:not(:disabled) { color: var(--text); border-color: var(--accent); opacity: 1; }
+    .btn-link {
+      background: none; border: none; color: var(--accent2); font-family: var(--sans);
+      font-size: 11.5px; cursor: pointer; text-decoration: underline; padding: 2px 0;
+      text-align: center; width: 100%;
+    }
+    .btn-link:hover { color: var(--accent); }
+
+    .msg { font-size: 11.5px; padding: 9px 11px; border-radius: 6px; line-height: 1.5; display: none; }
+    .msg.visible { display: block; }
+    .msg.err  { background: var(--err-bg);  color: var(--err);  border: 1px solid var(--err); }
+    .msg.ok   { background: var(--ok-bg);   color: var(--ok);   border: 1px solid var(--ok-border); }
+    .msg.warn { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn-border); }
+    .msg.info { background: var(--accent-bg); color: var(--accent2); border: 1px solid var(--accent-border); }
+
+    .code-box {
+      font-family: var(--mono); font-size: 17px; letter-spacing: .12em; text-align: center;
+      padding: 16px; border-radius: 8px; background: var(--bg);
+      border: 1px solid var(--accent-border); color: var(--accent2);
+      user-select: text;
+    }
+    .divider { height: 1px; background: var(--border); margin: 2px 0; }
+    .screen { display: none; flex-direction: column; gap: 14px; }
+    .screen.active { display: flex; }
+    .center { text-align: center; }
+    .spinner-text { color: var(--muted); font-size: 12px; text-align: center; }
+
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <div id="titlebar">
+    <div class="tb-left">
+      <svg class="tb-logo" viewBox="0 0 24 24" fill="none">
+        <rect x="3" y="3" width="13" height="17" rx="2" fill="none" stroke="#4f8ef7" stroke-width="1.5"/>
+        <path d="M16 3h2a2 2 0 012 2v14a2 2 0 01-2 2h-2" stroke="#4f8ef7" stroke-width="1.5" opacity=".4"/>
+        <line x1="7" y1="8" x2="13" y2="8" stroke="#4f8ef7" stroke-width="1.3"/>
+        <line x1="7" y1="11.5" x2="13" y2="11.5" stroke="#4f8ef7" stroke-width="1.3" opacity=".6"/>
+        <line x1="7" y1="15" x2="10" y2="15" stroke="#4f8ef7" stroke-width="1.3" opacity=".3"/>
+      </svg>
+      <span class="tb-title">DocuSnap</span>
+    </div>
+    <button class="tb-btn close" id="btn-close" title="Close">&#215;</button>
+  </div>
+
+  <div id="stage">
+    <div class="card">
+
+      <!-- Loading -->
+      <div class="screen active" id="screen-loading">
+        <div class="brand">
+          <svg class="brand-logo" viewBox="0 0 24 24" fill="none">
+            <rect x="3" y="3" width="13" height="17" rx="2" fill="none" stroke="#4f8ef7" stroke-width="1.5"/>
+            <path d="M16 3h2a2 2 0 012 2v14a2 2 0 01-2 2h-2" stroke="#4f8ef7" stroke-width="1.5" opacity=".4"/>
+            <line x1="7" y1="8" x2="13" y2="8" stroke="#4f8ef7" stroke-width="1.3"/>
+            <line x1="7" y1="11.5" x2="13" y2="11.5" stroke="#4f8ef7" stroke-width="1.3" opacity=".6"/>
+          </svg>
+          <span class="brand-name">DocuSnap</span>
+        </div>
+        <div class="spinner-text" id="loading-text">Loading&hellip;</div>
+      </div>
+
+      <!-- First-run admin setup -->
+      <div class="screen" id="screen-setup">
+        <div class="brand">
+          <svg class="brand-logo" viewBox="0 0 24 24" fill="none">
+            <rect x="3" y="3" width="13" height="17" rx="2" fill="none" stroke="#4f8ef7" stroke-width="1.5"/>
+            <path d="M16 3h2a2 2 0 012 2v14a2 2 0 01-2 2h-2" stroke="#4f8ef7" stroke-width="1.5" opacity=".4"/>
+            <line x1="7" y1="8" x2="13" y2="8" stroke="#4f8ef7" stroke-width="1.3"/>
+            <line x1="7" y1="11.5" x2="13" y2="11.5" stroke="#4f8ef7" stroke-width="1.3" opacity=".6"/>
+          </svg>
+          <span class="brand-name">Welcome to DocuSnap</span>
+        </div>
+        <div class="card-title">Create the administrator account</div>
+        <div class="card-sub">This is the first time DocuSnap has been run. Create the account that will manage users, settings, and document filing. There are no default credentials — you choose everything below.</div>
+
+        <div class="msg err" id="setup-msg"></div>
+
+        <div class="field">
+          <label for="setup-username">Username</label>
+          <input type="text" id="setup-username" autocomplete="username" placeholder="e.g. jane.admin">
+        </div>
+        <div class="field">
+          <label for="setup-display-name">Display name</label>
+          <input type="text" id="setup-display-name" autocomplete="name" placeholder="e.g. Jane Smith">
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="setup-password">Password</label>
+            <input type="password" id="setup-password" autocomplete="new-password" placeholder="At least 8 characters">
+          </div>
+          <div class="field">
+            <label for="setup-confirm">Confirm password</label>
+            <input type="password" id="setup-confirm" autocomplete="new-password" placeholder="Re-enter password">
+          </div>
+        </div>
+        <button class="btn" id="btn-setup-submit">Create administrator account</button>
+      </div>
+
+      <!-- One-time recovery code (first-run + after admin recovery) -->
+      <div class="screen" id="screen-recovery-code">
+        <div class="card-title">Save your admin recovery code</div>
+        <div class="card-sub">
+          If this administrator ever loses their password — and no other active
+          Admin account exists to reset it — this one-time code is the <em>only</em>
+          way back into DocuSnap. <strong>Write it down or print it and store it
+          somewhere safe and offline.</strong> It will not be shown again.
+        </div>
+        <div class="code-box" id="recovery-code-text">XXXX-XXXX-XXXX-XXXX</div>
+        <div class="msg warn visible">
+          This code works once. Using it generates a brand-new code and immediately
+          invalidates this one — so re-store the new one if you ever have to use it.
+        </div>
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+          <input type="checkbox" id="recovery-ack" style="width:auto;">
+          <span style="font-size:11.5px; color: var(--text);">I have saved this code somewhere safe</span>
+        </label>
+        <button class="btn" id="btn-recovery-continue" disabled>Continue to DocuSnap</button>
+      </div>
+
+      <!-- Login -->
+      <div class="screen" id="screen-login">
+        <div class="brand">
+          <svg class="brand-logo" viewBox="0 0 24 24" fill="none">
+            <rect x="3" y="3" width="13" height="17" rx="2" fill="none" stroke="#4f8ef7" stroke-width="1.5"/>
+            <path d="M16 3h2a2 2 0 012 2v14a2 2 0 01-2 2h-2" stroke="#4f8ef7" stroke-width="1.5" opacity=".4"/>
+            <line x1="7" y1="8" x2="13" y2="8" stroke="#4f8ef7" stroke-width="1.3"/>
+            <line x1="7" y1="11.5" x2="13" y2="11.5" stroke="#4f8ef7" stroke-width="1.3" opacity=".6"/>
+          </svg>
+          <span class="brand-name">DocuSnap</span>
+        </div>
+        <div class="card-title">Sign in</div>
+
+        <div class="msg err" id="login-msg"></div>
+
+        <div class="field">
+          <label for="login-username">Username</label>
+          <input type="text" id="login-username" autocomplete="username">
+        </div>
+        <div class="field">
+          <label for="login-password">Password</label>
+          <input type="password" id="login-password" autocomplete="current-password">
+        </div>
+        <button class="btn" id="btn-login-submit">Sign in</button>
+        <button class="btn-link" id="btn-forgot-password">Forgot your password?</button>
+      </div>
+
+      <!-- Forced password change (must_change_password) -->
+      <div class="screen" id="screen-must-change">
+        <div class="card-title">Choose a new password</div>
+        <div class="card-sub">An administrator reset your password. Choose a new one to finish signing in — you won't be able to use the temporary password again.</div>
+
+        <div class="msg err" id="must-change-msg"></div>
+
+        <div class="field">
+          <label for="mc-password">New password</label>
+          <input type="password" id="mc-password" autocomplete="new-password" placeholder="At least 8 characters">
+        </div>
+        <div class="field">
+          <label for="mc-confirm">Confirm new password</label>
+          <input type="password" id="mc-confirm" autocomplete="new-password">
+        </div>
+        <button class="btn" id="btn-must-change-submit">Set new password &amp; continue</button>
+      </div>
+
+      <!-- Forgot password — informational -->
+      <div class="screen" id="screen-forgot">
+        <div class="card-title">Forgot your password?</div>
+        <div class="card-sub">
+          DocuSnap accounts are managed locally by your organisation's
+          administrators — there is no email-based reset.
+        </div>
+        <div class="msg info visible">
+          <strong>Most users:</strong> ask an Administrator to reset your password
+          from <em>Settings → Users</em>. You'll be asked to choose a new password
+          the next time you sign in.
+        </div>
+        <div class="msg warn visible">
+          <strong>Sole Administrator who is locked out:</strong> if you have no
+          other working Admin account, use the one-time recovery code that was
+          generated when this administrator account was created.
+        </div>
+        <button class="btn-secondary btn" id="btn-go-recover-admin">I have an admin recovery code</button>
+        <button class="btn-link" id="btn-forgot-back">&larr; Back to sign in</button>
+      </div>
+
+      <!-- Admin recovery via one-time code -->
+      <div class="screen" id="screen-recover-admin">
+        <div class="card-title">Recover admin access</div>
+        <div class="card-sub">Enter the one-time recovery code shown when an administrator account was created or last recovered, then choose a new password for that account.</div>
+
+        <div class="msg err" id="recover-msg"></div>
+
+        <div class="field">
+          <label for="recover-code">Recovery code</label>
+          <input type="text" id="recover-code" placeholder="XXXX-XXXX-XXXX-XXXX" autocomplete="off" style="font-family: var(--mono); letter-spacing: .08em;">
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="recover-password">New password</label>
+            <input type="password" id="recover-password" autocomplete="new-password" placeholder="At least 8 characters">
+          </div>
+          <div class="field">
+            <label for="recover-confirm">Confirm password</label>
+            <input type="password" id="recover-confirm" autocomplete="new-password">
+          </div>
+        </div>
+        <button class="btn" id="btn-recover-submit">Reset admin password</button>
+        <button class="btn-link" id="btn-recover-back">&larr; Back to sign in</button>
+      </div>
+
+    </div>
+  </div>
+
+<script src="../shared/theme.js"></script>
+<script src="renderer.js"></script>
+</body>
+</html>

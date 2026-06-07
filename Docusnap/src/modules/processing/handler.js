@@ -12,10 +12,14 @@ function register(ctx) {
           backendScript, configPath, notifyMainWindow, spawn, path, fs,
           logger } = ctx;
 
+  const { requireRole, getCurrentUser } = require('../auth/handler');
+
   // ── Folder picker ───────────────────────────────────────────────────────────
   const { dialog, shell } = require('electron');
 
+  // Source folder for "Process Documents" — part of the daily Admin/Edit workflow.
   ipcMain.handle('pick-folder', async (e) => {
+    requireRole('admin', 'edit');
     const { BrowserWindow } = require('electron');
     const win = BrowserWindow.fromWebContents(e.sender);
     const r = await dialog.showOpenDialog(win, {
@@ -25,7 +29,11 @@ function register(ctx) {
     return r.canceled ? null : r.filePaths[0];
   });
 
+  // Output folder is an app-wide filing-destination setting — "access all
+  // settings" is the Admin-exclusive line drawn for Settings, and this picker
+  // only ever appears inside that Admin-gated window.
   ipcMain.handle('pick-output-folder', async (e) => {
+    requireRole('admin');
     const { BrowserWindow } = require('electron');
     const win = BrowserWindow.fromWebContents(e.sender);
     const r = await dialog.showOpenDialog(win, {
@@ -35,8 +43,10 @@ function register(ctx) {
     return r.canceled ? null : r.filePaths[0];
   });
 
-  ipcMain.on('show-in-explorer', (_e, filePath) => shell.showItemInFolder(filePath));
-  ipcMain.on('open-file', (_e, filePath) => shell.openPath(filePath));
+  // Opening a filed document in Explorer/its default app is part of "search/view
+  // documents" — available to every signed-in role, including Read Only.
+  ipcMain.on('show-in-explorer', (_e, filePath) => { if (getCurrentUser()) shell.showItemInFolder(filePath); });
+  ipcMain.on('open-file',        (_e, filePath) => { if (getCurrentUser()) shell.openPath(filePath); });
 
   // ── Write temp JSON files ───────────────────────────────────────────────────
   function writeTempJson(name, data) {
@@ -90,6 +100,7 @@ function register(ctx) {
 
   // ── Process folder ──────────────────────────────────────────────────────────
   ipcMain.handle('process-folder', async (event, folderPath) => {
+    requireRole('admin', 'edit');
     const db = getDb();
     let trainingArgs, tempFiles;
     try {
@@ -161,6 +172,7 @@ function register(ctx) {
 
   // ── Reprocess single document ───────────────────────────────────────────────
   ipcMain.handle('reprocess-document', async (event, { docId, folderPath, filename }) => {
+    requireRole('admin', 'edit');
     const db      = getDb();
     const srcFile = path.join(folderPath, filename);
     if (!fs.existsSync(srcFile)) {
@@ -282,7 +294,11 @@ function register(ctx) {
   });
 
   // ── OCR region ──────────────────────────────────────────────────────────────
+  // Zone-OCR + anchor/logo teaching tools — all part of the Review window's
+  // "teach the system" workflow, so Admin/Edit (the same set that can confirm
+  // and correct extractions there).
   ipcMain.handle('ocr-region', async (_e, base64png) => {
+    requireRole('admin', 'edit');
     const tmpFile = path.join(os.tmpdir(), `ds_ocr_${Date.now()}.png`);
     fs.writeFileSync(tmpFile, Buffer.from(base64png, 'base64'));
     const script = ctx.resourcePath('python_backend', 'ocr', 'region.py');
@@ -322,10 +338,13 @@ function register(ctx) {
     });
   }
 
-  ipcMain.handle('extract-logo-hash', (_e, b64) =>
-    runLogoScript(b64, ['--mode', 'extract']));
+  ipcMain.handle('extract-logo-hash', (_e, b64) => {
+    requireRole('admin', 'edit');
+    return runLogoScript(b64, ['--mode', 'extract']);
+  });
 
   ipcMain.handle('match-logo-hash', async (_e, b64) => {
+    requireRole('admin', 'edit');
     const learning = require('../../../database/modules/learning');
     const logos = learning.getAllLogos(getDb());
     if (!logos.length) return null;
@@ -338,12 +357,14 @@ function register(ctx) {
   });
 
   ipcMain.handle('save-logo-fingerprint', (_e, { supplier_name, phash, ahash }) => {
+    requireRole('admin', 'edit');
     const learning = require('../../../database/modules/learning');
     learning.saveLogoFingerprint(getDb(), { supplier_name, phash, ahash });
     return true;
   });
 
   ipcMain.handle('save-field-anchor', (_e, data) => {
+    requireRole('admin', 'edit');
     const learning = require('../../../database/modules/learning');
     learning.saveAnchor(getDb(), data);
     return true;

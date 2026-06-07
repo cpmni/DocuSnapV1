@@ -4,6 +4,27 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('docusnap', {
 
+  // ── Authentication ───────────────────────────────────────────────────────────
+  authGetStatus:        ()     => ipcRenderer.invoke('auth-get-status'),
+  authGetCurrentUser:   ()     => ipcRenderer.invoke('auth-get-current-user'),
+  authFirstRunSetup:    (data) => ipcRenderer.invoke('auth-first-run-setup', data),
+  authLogin:            (data) => ipcRenderer.invoke('auth-login', data),
+  authLogout:           ()     => ipcRenderer.invoke('auth-logout'),
+  authChangePassword:   (data) => ipcRenderer.invoke('auth-change-password', data),
+  authSetNewPasswordAfterReset: (data) => ipcRenderer.invoke('auth-set-new-password-after-reset', data),
+  authRecoverAdmin:     (data) => ipcRenderer.invoke('auth-recover-admin', data),
+  // User management (Admin only — also enforced in the main process)
+  authListUsers:        ()           => ipcRenderer.invoke('auth-list-users'),
+  authCreateUser:       (data)       => ipcRenderer.invoke('auth-create-user', data),
+  authSetUserRole:      (data)       => ipcRenderer.invoke('auth-set-user-role', data),
+  authSetUserActive:    (data)       => ipcRenderer.invoke('auth-set-user-active', data),
+  authAdminResetPassword: (data)     => ipcRenderer.invoke('auth-admin-reset-password', data),
+  authGetAuditLog:      (limit)      => ipcRenderer.invoke('auth-get-audit-log', limit),
+  // Login ⇄ main-app window swap (the login window has no other window powers)
+  authEnterApp:         () => ipcRenderer.send('auth-enter-app'),
+  authShowLoginScreen:  () => ipcRenderer.send('auth-show-login'),
+  onAuthSessionChanged: (cb) => ipcRenderer.on('auth-session-changed', (_e, user) => cb(user)),
+
   // ── Window controls ─────────────────────────────────────────────────────────
   windowMinimise:     () => ipcRenderer.send('window-minimise'),
   windowMaximise:     () => ipcRenderer.send('window-maximise'),

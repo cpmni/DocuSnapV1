@@ -28,13 +28,16 @@ const {
 // info + live preview). Settings IPC for output folder is in settings/handler.js
 function register(ctx) {
   const { ipcMain } = ctx;
+  const { requireRole } = require('../auth/handler');
 
-  ipcMain.handle('get-filename-pattern-info', () => ({
-    tokens:         SUPPORTED_TOKENS,
-    defaultPattern: DEFAULT_PATTERN,
-  }));
+  // Both live only in the Admin-exclusive Settings → File Naming tab.
+  ipcMain.handle('get-filename-pattern-info', () => {
+    requireRole('admin');
+    return { tokens: SUPPORTED_TOKENS, defaultPattern: DEFAULT_PATTERN };
+  });
 
   ipcMain.handle('preview-filename-pattern', (_e, pattern) => {
+    requireRole('admin');
     // Sample supplier name deliberately contains a character Windows forbids
     // in filenames ("/") — so a pattern that includes {supplier} visibly
     // demonstrates, right in the live preview, that illegal characters are

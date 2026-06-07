@@ -13,6 +13,7 @@ const fs   = require('fs');
 
 // ── Module imports ────────────────────────────────────────────────────────────
 const logger           = require('./modules/logger');
+const authModule       = require('./modules/auth/handler');
 const processingModule = require('./modules/processing/handler');
 const reviewModule     = require('./modules/review/handler');
 const settingsModule   = require('./modules/settings/handler');
@@ -93,6 +94,23 @@ function stopOllama() {
 // ── Window management ─────────────────────────────────────────────────────────
 const windows = {};
 
+const MAIN_WINDOW_OPTIONS  = { width: 1100, height: 750, minWidth: 800, minHeight: 560 };
+const LOGIN_WINDOW_OPTIONS = { width: 460, height: 660, resizable: false, minimizable: false, maximizable: false };
+
+// Swap the whole app shell between "logged out" and "in the app". The login
+// window is always created BEFORE the others are closed, so the app never
+// passes through a zero-window moment that would trip window-all-closed.
+function showLoginScreen() {
+  createWindow('login', LOGIN_WINDOW_OPTIONS, 'index.html');
+  Object.keys(windows).forEach((name) => {
+    if (name !== 'login') windows[name]?.close();
+  });
+}
+function enterMainApp() {
+  createWindow('main', MAIN_WINDOW_OPTIONS, 'index.html');
+  windows['login']?.close();
+}
+
 function createWindow(name, options, htmlFile) {
   if (windows[name]) { windows[name].focus(); return windows[name]; }
 
@@ -115,9 +133,12 @@ function createWindow(name, options, htmlFile) {
 
 function getMainWindow()   { return windows['main'];     }
 function notifyMainWindow(channel, ...args) {
-  // Send to main window and review window so both stay in sync
   windows['main']?.webContents.send(channel, ...args);
   windows['review']?.webContents.send(channel, ...args);
+}
+
+function notifyAllWindows(channel, ...args) {
+  Object.values(windows).forEach(w => w?.webContents.send(channel, ...args));
 }
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────
@@ -129,21 +150,29 @@ app.whenReady().then(() => {
 
   startOllama();
 
-  // Create main window
-  createWindow('main', { width: 1100, height: 750, minWidth: 800, minHeight: 560 },
-    'index.html');
+  // App opens to the login screen — first-run setup, sign-in, forced password
+  // change and admin recovery all live there. The main shell only appears
+  // once auth-handler confirms a session is established (see 'auth-enter-app').
+  createWindow('login', LOGIN_WINDOW_OPTIONS, 'index.html');
 
   // Register all module IPC handlers
   const ctx = {
     ipcMain, getDb,
     resourcePath, pythonExe, pythonArgs, tesseractPath,
     backendScript, configPath, templatesDir,
-    createWindow, getMainWindow, notifyMainWindow,
+    createWindow, getMainWindow, notifyMainWindow, notifyAllWindows,
     windows,
     app, fs, logger,
     spawn: require('child_process').spawn,
     path,
   };
+
+  authModule.register(ctx);
+  // The login window owns these transitions but has no window-management
+  // powers of its own (by design — preload only exposes auth IPC there);
+  // it just signals "I'm done" and main.js performs the swap.
+  ipcMain.on('auth-enter-app',   () => enterMainApp());
+  ipcMain.on('auth-show-login',  () => showLoginScreen());
 
   processingModule.register(ctx);
   reviewModule.register(ctx);
@@ -163,12 +192,25 @@ app.whenReady().then(() => {
     BrowserWindow.fromWebContents(e.sender)?.close());
 
   // Window openers
-  ipcMain.on('open-review-window', () =>
-    createWindow('review', { width: 1200, height: 800, minWidth: 900, minHeight: 600 }));
-  ipcMain.on('open-settings-window', () =>
-    createWindow('settings', { width: 760, height: 640, minWidth: 640, minHeight: 480 }));
-  ipcMain.on('open-search-window', () =>
-    createWindow('search', { width: 1200, height: 780, minWidth: 1000, minHeight: 600 }));
+  ipcMain.on('open-review-window', () => {
+    // Every action inside Review — view queue, edit, confirm, defer, delete,
+    // reprocess — is Admin/Edit territory (see review/handler.js). Read Only
+    // has nothing to do there; their "search/view documents" surface is Search.
+    if (!authModule.hasRole('admin', 'edit')) return;
+    createWindow('review', { width: 1200, height: 800, minWidth: 900, minHeight: 600 });
+  });
+  ipcMain.on('open-settings-window', () => {
+    // Settings (output folder, processing mode, document types/fields, file
+    // naming, user management) is the "access all settings" surface called
+    // out as Admin-exclusive — Edit/Read Only are not meant to reach it at
+    // all, not just see it with options greyed out.
+    if (!authModule.hasRole('admin')) return;
+    createWindow('settings', { width: 760, height: 640, minWidth: 640, minHeight: 480 });
+  });
+  ipcMain.on('open-search-window', () => {
+    if (!authModule.getCurrentUser()) return;
+    createWindow('search', { width: 1200, height: 780, minWidth: 1000, minHeight: 600 });
+  });
 });
 
 app.on('window-all-closed', () => { stopOllama(); app.quit(); });

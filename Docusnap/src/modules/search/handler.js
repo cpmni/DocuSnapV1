@@ -8,18 +8,23 @@
 function register(ctx) {
   const { ipcMain, getDb } = ctx;
   const documents = require('../../../database/modules/documents');
+  const { requireLogin, hasRole } = require('../auth/handler');
 
   ipcMain.handle('search-documents', (_e, params) => {
+    requireLogin();
     const db = getDb();
     const { company, reference, dateFrom, dateTo,
             docType, includeUncommitted } = params || {};
 
-    // Confirmed documents
+    // Confirmed documents — what "search/view documents" means for every role.
     const confirmed = documents.search(db, {
       company, reference, dateFrom, dateTo, docType, status: 'confirmed',
     });
 
-    if (!includeUncommitted) {
+    // Uncommitted results open the inline mini-review/commit panel — an edit
+    // action — so Read Only never receives them, regardless of what the
+    // request asks for (the renderer hiding that toggle is a UX nicety only).
+    if (!includeUncommitted || !hasRole('admin', 'edit')) {
       return { confirmed, uncommitted: [] };
     }
 

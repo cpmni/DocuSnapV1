@@ -360,3 +360,136 @@ window.docusnap.onProgress((msg) => {
     checkFastModeSuggestion(msg.supplier_name);
   }
 });
+
+// ── Account: current-user chip, role-based nav, sign out, change password ────
+const ROLE_LABELS = { admin: 'Admin', edit: 'Edit', readonly: 'Read Only' };
+
+const userChip       = document.getElementById('user-chip');
+const userChipName   = document.getElementById('user-chip-name');
+const userChipRole   = document.getElementById('user-chip-role');
+const userChipAvatar = document.getElementById('user-chip-avatar');
+const userMenu       = document.getElementById('user-menu');
+const btnChangePassword = document.getElementById('menu-change-password');
+const btnSignOut        = document.getElementById('menu-sign-out');
+const btnReviewNav      = document.getElementById('btn-review');
+const btnSettingsNav    = document.getElementById('btn-settings');
+
+function applyCurrentUser(user) {
+  if (!user) return;
+  const label = user.displayName || user.username || '?';
+  userChipName.textContent = label;
+  userChipAvatar.textContent = label.trim().charAt(0).toUpperCase();
+  userChipRole.textContent = ROLE_LABELS[user.role] || user.role;
+  userChipRole.dataset.role = user.role;
+
+  // Mirrors the IPC-level gates (see main.js open-review-window /
+  // open-settings-window and the role checks inside their handler modules):
+  // Read Only has no actionable use for Review (every action there is
+  // Admin/Edit), and Settings is the Admin-exclusive "access all settings"
+  // surface. Hiding the entry points keeps the chrome honest about what a
+  // role can actually do — not just relying on the click being rejected.
+  if (btnReviewNav)   btnReviewNav.style.display   = (user.role === 'readonly') ? 'none' : '';
+  if (btnSettingsNav) btnSettingsNav.style.display = (user.role === 'admin')    ? '' : 'none';
+}
+
+window.docusnap.authGetCurrentUser().then(applyCurrentUser);
+window.docusnap.onAuthSessionChanged((user) => { if (user) applyCurrentUser(user); });
+
+userChip?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  userMenu.classList.toggle('open');
+});
+document.addEventListener('click', () => userMenu?.classList.remove('open'));
+
+btnSignOut?.addEventListener('click', async () => {
+  userMenu.classList.remove('open');
+  await window.docusnap.authLogout();
+  window.docusnap.authShowLoginScreen();
+});
+
+btnChangePassword?.addEventListener('click', () => {
+  userMenu.classList.remove('open');
+  showChangePasswordDialog();
+});
+
+function showChangePasswordDialog() {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `
+    position: fixed; inset: 0; z-index: 9998;
+    background: rgba(0,0,0,.55);
+    display: flex; align-items: center; justify-content: center;
+  `;
+  const fieldStyle = 'width:100%; padding:8px 10px; border-radius:6px; border:1px solid var(--border2);' +
+    ' background:var(--bg); color:var(--text); font-family:inherit; font-size:12px; outline:none;';
+  overlay.innerHTML = `
+    <div style="width:320px; background:var(--surface); border:1px solid var(--border2);
+                border-radius:10px; padding:18px; display:flex; flex-direction:column; gap:12px;
+                font-family:var(--sans); color:var(--text);">
+      <div style="font-size:13px; font-weight:500;">Change your password</div>
+      <div id="cp-msg" style="display:none; font-size:11px; padding:8px 10px; border-radius:6px; line-height:1.5;"></div>
+      <div>
+        <label style="display:block; font-size:11px; color:var(--muted); margin-bottom:4px;">Current password</label>
+        <input type="password" id="cp-current" autocomplete="current-password" style="${fieldStyle}">
+      </div>
+      <div>
+        <label style="display:block; font-size:11px; color:var(--muted); margin-bottom:4px;">New password</label>
+        <input type="password" id="cp-new" autocomplete="new-password" style="${fieldStyle}">
+      </div>
+      <div>
+        <label style="display:block; font-size:11px; color:var(--muted); margin-bottom:4px;">Confirm new password</label>
+        <input type="password" id="cp-confirm" autocomplete="new-password" style="${fieldStyle}">
+      </div>
+      <div style="display:flex; gap:8px; margin-top:4px;">
+        <button id="cp-cancel" style="flex:1; padding:9px; border-radius:6px; border:1px solid var(--border2);
+                background:transparent; color:var(--muted); font-family:inherit; font-size:12px; cursor:pointer;">Cancel</button>
+        <button id="cp-save" style="flex:1; padding:9px; border-radius:6px; border:none;
+                background:var(--accent); color:#fff; font-family:inherit; font-size:12px; font-weight:500; cursor:pointer;">Save</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const msg     = overlay.querySelector('#cp-msg');
+  const current = overlay.querySelector('#cp-current');
+  const next    = overlay.querySelector('#cp-new');
+  const confirmInput = overlay.querySelector('#cp-confirm');
+  const save    = overlay.querySelector('#cp-save');
+
+  function setMsg(text, ok) {
+    if (!text) { msg.style.display = 'none'; return; }
+    msg.textContent = text;
+    msg.style.display = 'block';
+    msg.style.background = ok ? 'rgba(62,207,142,.12)' : 'rgba(247,111,111,.12)';
+    msg.style.color      = ok ? 'var(--ok)'            : 'var(--err)';
+  }
+
+  overlay.querySelector('#cp-cancel').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+  save.addEventListener('click', async () => {
+    setMsg('');
+    const currentPassword = current.value;
+    const newPassword     = next.value;
+    const confirmPassword = confirmInput.value;
+    if (newPassword.length < 8)          { setMsg('New password must be at least 8 characters.'); return; }
+    if (newPassword !== confirmPassword) { setMsg('New passwords do not match.'); return; }
+
+    save.disabled = true;
+    save.textContent = 'Saving…';
+    let result;
+    try {
+      result = await window.docusnap.authChangePassword({ currentPassword, newPassword, confirmPassword });
+    } finally {
+      save.disabled = false;
+      save.textContent = 'Save';
+    }
+
+    if (!result || !result.success) {
+      setMsg((result && result.error) || 'Could not change your password.');
+      return;
+    }
+    setMsg('Password changed.', true);
+    current.value = ''; next.value = ''; confirmInput.value = '';
+    setTimeout(() => overlay.remove(), 900);
+  });
+}
