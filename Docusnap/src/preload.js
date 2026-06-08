@@ -116,7 +116,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   setTemplateGroup:           (tid, gid)     => ipcRenderer.invoke('set-template-group', tid, gid),
   getTemplateSiblings:        (id)           => ipcRenderer.invoke('get-template-siblings', id),
   // PDF splitting
-  splitPdf:                   (file, ranges, outDir) => ipcRenderer.invoke('split-pdf', file, ranges, outDir),
+  splitPdf:                   (file, ranges, outDir, docId) => ipcRenderer.invoke('split-pdf', file, ranges, outDir, docId),
 
   // ── Settings ─────────────────────────────────────────────────────────────────
   getSetting:          (key)      => ipcRenderer.invoke('get-setting', key),

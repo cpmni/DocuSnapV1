@@ -225,6 +225,12 @@ async function _selectDoc(doc) {
   document.getElementById('btn-defer').disabled = doc.status === 'deferred';
   document.getElementById('doc-name').textContent = doc.original_filename;
 
+  // Show split button for PDF files only; hide the split panel when switching docs
+  const isPdf = doc.original_filename?.toLowerCase().endsWith('.pdf');
+  document.getElementById('btn-split-pdf').style.display  = isPdf ? '' : 'none';
+  document.getElementById('split-bar').style.display      = 'none';
+  document.getElementById('split-ranges-input').value     = '';
+
   // Set doc type dropdown
   selectedTypeSlug = doc.type_slug || null;
   const sel = document.getElementById('doctype-select');
@@ -885,6 +891,64 @@ document.getElementById('btn-reprocess-all').addEventListener('click', async () 
   }
 });
 
+// ── Split PDF ─────────────────────────────────────────────────────────────────
+document.getElementById('btn-split-pdf').addEventListener('click', () => {
+  const bar   = document.getElementById('split-bar');
+  const input = document.getElementById('split-ranges-input');
+  bar.style.display = 'flex';
+  input.value = '';
+  input.focus();
+});
+
+document.getElementById('btn-split-cancel').addEventListener('click', () => {
+  document.getElementById('split-bar').style.display = 'none';
+  document.getElementById('split-ranges-input').value = '';
+});
+
+async function doSplitPdf() {
+  if (!currentDoc) return;
+  const input  = document.getElementById('split-ranges-input');
+  const ranges = input.value.trim();
+  if (!ranges) { input.focus(); return; }
+
+  const filePath  = currentDoc.folder_path + '\\' + currentDoc.original_filename;
+  const docId     = currentDoc.id;
+  const btnSplit  = document.getElementById('btn-split-confirm');
+  btnSplit.disabled = true;
+  btnSplit.innerHTML = '<span class="btn-spinner"></span>';
+
+  try {
+    const result = await window.docusnap.splitPdf(filePath, ranges, undefined, docId);
+    if (result?.success) {
+      const count = result.files?.length ?? 0;
+      // Remove original from local queue state — it has been deleted from DB + disk.
+      queue = queue.filter(d => d.id !== docId);
+      currentDoc = null;
+      clearDocPanel();
+      renderQueueList();
+      showToast(`Split into ${count} file${count !== 1 ? 's' : ''}`, 'ok');
+      // review-count-changed event (fired by IPC handler) will reload the full
+      // queue and surface the newly registered split files.
+    } else {
+      showToast('Split failed: ' + (result?.error || 'unknown error'), 'err');
+    }
+  } catch (err) {
+    showToast('Split failed: ' + err.message, 'err');
+  } finally {
+    btnSplit.disabled = false;
+    btnSplit.innerHTML = '&#9986; Split';
+  }
+}
+
+document.getElementById('btn-split-confirm').addEventListener('click', doSplitPdf);
+document.getElementById('split-ranges-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter')  doSplitPdf();
+  if (e.key === 'Escape') {
+    document.getElementById('split-bar').style.display = 'none';
+    document.getElementById('split-ranges-input').value = '';
+  }
+});
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function clearDocPanel() {
   docImgWrap.style.display = 'none';
@@ -896,6 +960,8 @@ function clearDocPanel() {
   document.getElementById('doctype-select').value = '';
   selectedTypeSlug = null;
   document.getElementById('btn-confirm').disabled = true;
+  document.getElementById('btn-split-pdf').style.display  = 'none';
+  document.getElementById('split-bar').style.display      = 'none';
 }
 
 function escHtml(str) {

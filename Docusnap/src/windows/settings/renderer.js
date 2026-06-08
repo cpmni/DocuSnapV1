@@ -880,13 +880,38 @@ document.getElementById('tpl-group-select').addEventListener('change', async (e)
   } catch (err) { console.warn('setTemplateGroup failed:', err.message); }
 });
 
-document.getElementById('tpl-btn-new-group').addEventListener('click', async () => {
-  const name = prompt('New group name:');
-  if (!name || !name.trim()) return;
+const tplNewGroupRow   = document.getElementById('tpl-new-group-row');
+const tplNewGroupInput = document.getElementById('tpl-new-group-input');
+
+document.getElementById('tpl-btn-new-group').addEventListener('click', () => {
+  tplNewGroupRow.style.display = 'flex';
+  tplNewGroupInput.value = '';
+  tplNewGroupInput.focus();
+});
+
+document.getElementById('tpl-btn-cancel-group').addEventListener('click', () => {
+  tplNewGroupRow.style.display = 'none';
+  tplNewGroupInput.value = '';
+});
+
+async function saveNewGroup() {
+  const name = tplNewGroupInput.value.trim();
+  if (!name) { tplNewGroupInput.focus(); return; }
   try {
-    allGroups = await api.createTemplateGroup(name.trim()) || [];
+    allGroups = await api.createTemplateGroup(name) || [];
+    tplNewGroupRow.style.display = 'none';
+    tplNewGroupInput.value = '';
     await renderGroupSection(selectedTemplate);
-  } catch (err) { alert('Could not create group: ' + err.message); }
+  } catch (err) {
+    console.error('createTemplateGroup failed:', err);
+    alert('Could not create group: ' + err.message);
+  }
+}
+
+document.getElementById('tpl-btn-save-group').addEventListener('click', saveNewGroup);
+tplNewGroupInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter')  saveNewGroup();
+  if (e.key === 'Escape') { tplNewGroupRow.style.display = 'none'; tplNewGroupInput.value = ''; }
 });
 
 async function selectTemplate(id) {

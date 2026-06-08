@@ -400,34 +400,60 @@ function register(ctx) {
   // Thin wrapper around pdf_splitter.py (pypdf). Splits a single PDF into
   // page-range sub-documents that can then be dropped into the normal process-
   // folder pipeline. outDir is optional (defaults to a safe system-temp path).
-  ipcMain.handle('split-pdf', async (_e, filePath, ranges, outDir) => {
+  ipcMain.handle('split-pdf', async (_e, filePath, ranges, outDir, docId) => {
     requireRole('admin', 'edit');
     if (!filePath || !ranges) return { success: false, error: 'filePath and ranges are required' };
 
-    const splitterScript = path.join(
-      path.dirname(backendScript), 'pdf_splitter.py'
-    );
-    const args = [
-      ...pythonArgs,
-      splitterScript,
-      '--file',   filePath,
-      '--ranges', ranges,
-    ];
+    const py             = pythonExe();
+    const splitterScript = path.join(path.dirname(backendScript()), 'pdf_splitter.py');
+    const args           = pythonArgs(splitterScript, '--file', filePath, '--ranges', ranges);
     if (outDir) { args.push('--outdir', outDir); }
 
-    return new Promise((resolve) => {
+    const raw = await new Promise((resolve) => {
       let stdout = '';
-      const proc = spawn(pythonExe, args);
+      const proc = spawn(py, args, { windowsHide: true });
       proc.stdout.on('data', (d) => { stdout += d.toString(); });
       proc.on('close', () => {
-        try {
-          resolve(JSON.parse(stdout.trim()));
-        } catch {
-          resolve({ success: false, error: 'pdf_splitter returned non-JSON output', raw: stdout.trim() });
-        }
+        try { resolve(JSON.parse(stdout.trim())); }
+        catch { resolve({ success: false, error: 'pdf_splitter returned non-JSON output', raw: stdout.trim() }); }
       });
       proc.on('error', (err) => resolve({ success: false, error: err.message }));
     });
+
+    if (!raw.success) return raw;
+
+    // Register split files as pending documents and remove the original.
+    // Only deletes the original after all outputs are confirmed on disk.
+    const documents = require('../../../database/modules/documents');
+    const db        = getDb();
+
+    const createdFiles = (raw.files || []).filter(f => fs.existsSync(f));
+    if (createdFiles.length === 0) {
+      return { success: false, error: 'Splitter reported success but no output files were found on disk.' };
+    }
+
+    const docIds = [];
+    for (const outFile of createdFiles) {
+      const info = documents.insert(db, {
+        original_filename: path.basename(outFile),
+        folder_path:       path.dirname(outFile),
+        status:            'pending',
+      });
+      docIds.push(info.lastInsertRowid);
+    }
+
+    // Remove original from DB and disk — only after outputs are confirmed.
+    if (docId) {
+      documents.deleteDoc(db, docId);
+    }
+    if (filePath && fs.existsSync(filePath)) {
+      try { fs.unlinkSync(filePath); } catch (e) { logger?.warn('Could not delete original after split:', e.message); }
+    }
+
+    notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
+    notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
+
+    return { success: true, files: createdFiles, docIds };
   });
 }
 
