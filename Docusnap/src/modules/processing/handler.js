@@ -395,6 +395,40 @@ function register(ctx) {
     learning.saveAnchor(getDb(), data);
     return true;
   });
+
+  // ── PDF splitting ───────────────────────────────────────────────────────────
+  // Thin wrapper around pdf_splitter.py (pypdf). Splits a single PDF into
+  // page-range sub-documents that can then be dropped into the normal process-
+  // folder pipeline. outDir is optional (defaults to a safe system-temp path).
+  ipcMain.handle('split-pdf', async (_e, filePath, ranges, outDir) => {
+    requireRole('admin', 'edit');
+    if (!filePath || !ranges) return { success: false, error: 'filePath and ranges are required' };
+
+    const splitterScript = path.join(
+      path.dirname(backendScript), 'pdf_splitter.py'
+    );
+    const args = [
+      ...pythonArgs,
+      splitterScript,
+      '--file',   filePath,
+      '--ranges', ranges,
+    ];
+    if (outDir) { args.push('--outdir', outDir); }
+
+    return new Promise((resolve) => {
+      let stdout = '';
+      const proc = spawn(pythonExe, args);
+      proc.stdout.on('data', (d) => { stdout += d.toString(); });
+      proc.on('close', () => {
+        try {
+          resolve(JSON.parse(stdout.trim()));
+        } catch {
+          resolve({ success: false, error: 'pdf_splitter returned non-JSON output', raw: stdout.trim() });
+        }
+      });
+      proc.on('error', (err) => resolve({ success: false, error: err.message }));
+    });
+  });
 }
 
 // ── Internal: save file_done message to DB ────────────────────────────────────

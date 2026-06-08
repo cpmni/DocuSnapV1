@@ -275,9 +275,43 @@ function _parseJson(str, fallback) {
   try { return JSON.parse(str || 'null') || fallback; } catch { return fallback; }
 }
 
+// ── Template groups ───────────────────────────────────────────────────────────
+// Organisational grouping only — v1 has no shared-anchor behaviour.  Matching
+// (Stage 0 logo/keyword, Stage 0.5 mapping) is purely per-template; group_id
+// is metadata consumed only by the admin UI and returned via getById's SELECT *.
+
+function getAllGroups(db) {
+  return db.prepare('SELECT * FROM template_groups ORDER BY name').all();
+}
+
+function createGroup(db, name) {
+  const info = db.prepare('INSERT INTO template_groups (name) VALUES (?)').run(name.trim());
+  return info.lastInsertRowid;
+}
+
+function deleteGroup(db, id) {
+  const tx = db.transaction(() => {
+    db.prepare('UPDATE templates SET group_id = NULL WHERE group_id = ?').run(id);
+    db.prepare('DELETE FROM template_groups WHERE id = ?').run(id);
+  });
+  tx();
+}
+
+function setTemplateGroup(db, templateId, groupId) {
+  db.prepare('UPDATE templates SET group_id = ? WHERE id = ?').run(groupId || null, templateId);
+  return getById(db, templateId);
+}
+
+function getSiblings(db, groupId, excludeTemplateId) {
+  return db.prepare(
+    'SELECT id, name, document_type_slug FROM templates WHERE group_id = ? AND id != ? ORDER BY name'
+  ).all(groupId, excludeTemplateId);
+}
+
 module.exports = {
   getAll, getById, getFields, findByLogoHash, create, update, remove, rename, hammingDistance,
   getMappings, getMapping, saveMapping, setMappingEnabled, deleteMapping,
   recordMappingTest, setSampleDocument,
+  getAllGroups, createGroup, deleteGroup, setTemplateGroup, getSiblings,
   GRID_COLS, GRID_ROWS,
 };

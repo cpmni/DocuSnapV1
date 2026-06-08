@@ -514,6 +514,9 @@
           mappings keep using the existing keyword/anchor pipeline exactly as before —
           mappings are an optional, additive optimisation layered on top per supplier layout.
         </p>
+        <p class="section-desc" style="border-left:2px solid var(--warn); padding-left:8px; color:var(--warn); margin-top:6px;">
+          Advanced tool: only use this editor when initial learning or preview-window drawn fields are repeatedly failing for the same template family.
+        </p>
       </div>
       <div id="tpl-layout">
         <div id="tpl-list-col">
@@ -579,6 +582,18 @@
                 </div>
                 <div class="threshold-sub" id="tpl-detail-meta">—</div>
                 <span id="tpl-name-msg" class="section-desc" style="display:block; margin:4px 0 0;"></span>
+
+                <div class="form-group" style="margin:12px 0 0;">
+                  <label>Group / Family</label>
+                  <div class="row-flex" style="gap:6px; align-items:center; margin-top:4px;">
+                    <select id="tpl-group-select" class="field-select" style="flex:1;"></select>
+                    <button class="btn" id="tpl-btn-new-group" style="white-space:nowrap; padding:4px 10px; font-size:11px;">+ New</button>
+                  </div>
+                  <div id="tpl-siblings" style="margin-top:6px; display:none;">
+                    <div class="threshold-sub" style="margin-bottom:4px;">Siblings in same group:</div>
+                    <div id="tpl-siblings-list" style="display:flex; flex-direction:column; gap:3px;"></div>
+                  </div>
+                </div>
 
                 <div class="row-flex" style="margin:14px 0;">
                   <button class="btn danger" id="tpl-btn-delete-template">Delete Template</button>

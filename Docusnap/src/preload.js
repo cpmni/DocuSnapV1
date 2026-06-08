@@ -109,6 +109,14 @@ contextBridge.exposeInMainWorld('docusnap', {
   setTemplateMappingEnabled:  (id, key, enabled)  => ipcRenderer.invoke('set-template-mapping-enabled', id, key, enabled),
   deleteTemplateMapping:      (id, key)           => ipcRenderer.invoke('delete-template-mapping', id, key),
   recordTemplateMappingTest:  (id, key, result)   => ipcRenderer.invoke('record-template-mapping-test', id, key, result),
+  // Template groups (v1: organisational metadata)
+  getTemplateGroups:          ()             => ipcRenderer.invoke('get-template-groups'),
+  createTemplateGroup:        (name)         => ipcRenderer.invoke('create-template-group', name),
+  deleteTemplateGroup:        (id)           => ipcRenderer.invoke('delete-template-group', id),
+  setTemplateGroup:           (tid, gid)     => ipcRenderer.invoke('set-template-group', tid, gid),
+  getTemplateSiblings:        (id)           => ipcRenderer.invoke('get-template-siblings', id),
+  // PDF splitting
+  splitPdf:                   (file, ranges, outDir) => ipcRenderer.invoke('split-pdf', file, ranges, outDir),
 
   // ── Settings ─────────────────────────────────────────────────────────────────
   getSetting:          (key)      => ipcRenderer.invoke('get-setting', key),

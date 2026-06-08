@@ -158,6 +158,36 @@ function register(ctx) {
     templates.recordMappingTest(getDb(), templateId, fieldKey, result || {});
     return true;
   });
+
+  // ── Template groups (v1: organisational metadata only) ────────────────────
+  ipcMain.handle('get-template-groups', (_e) => {
+    requireRole('admin');
+    return templates.getAllGroups(getDb());
+  });
+
+  ipcMain.handle('create-template-group', (_e, name) => {
+    requireRole('admin');
+    templates.createGroup(getDb(), (name || '').trim());
+    return templates.getAllGroups(getDb());
+  });
+
+  ipcMain.handle('delete-template-group', (_e, id) => {
+    requireRole('admin');
+    templates.deleteGroup(getDb(), id);
+    return templates.getAllGroups(getDb());
+  });
+
+  ipcMain.handle('set-template-group', (_e, templateId, groupId) => {
+    requireRole('admin');
+    return templates.setTemplateGroup(getDb(), templateId, groupId || null);
+  });
+
+  ipcMain.handle('get-template-siblings', (_e, templateId) => {
+    requireRole('admin');
+    const tmpl = templates.getById(getDb(), templateId);
+    if (!tmpl || !tmpl.group_id) return [];
+    return templates.getSiblings(getDb(), tmpl.group_id, templateId);
+  });
 }
 
 module.exports = { register };

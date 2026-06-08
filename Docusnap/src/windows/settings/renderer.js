@@ -666,6 +666,7 @@ document.getElementById('theme-toggle').addEventListener('change', async (e) => 
 // ══════════════════════════════════════════════════════════════════════════════
 
 let allTemplates     = [];
+let allGroups        = [];
 let selectedTemplate = null;
 let tplPageImages    = [];
 let tplCurrentPage   = 0;
@@ -830,6 +831,64 @@ document.getElementById('tpl-btn-delete-template').addEventListener('click', asy
   }
 });
 
+// ── Template groups ───────────────────────────────────────────────────────────
+
+async function renderGroupSection(detail) {
+  try { allGroups = await api.getTemplateGroups() || []; } catch { allGroups = []; }
+  const sel = document.getElementById('tpl-group-select');
+  sel.innerHTML = '<option value="">— No group —</option>';
+  for (const g of allGroups) {
+    const opt = document.createElement('option');
+    opt.value       = g.id;
+    opt.textContent = g.name;
+    if (detail.group_id === g.id) opt.selected = true;
+    sel.appendChild(opt);
+  }
+  await renderSiblings(detail);
+}
+
+async function renderSiblings(detail) {
+  const siblingsDiv = document.getElementById('tpl-siblings');
+  const listDiv     = document.getElementById('tpl-siblings-list');
+  if (!detail.group_id) { siblingsDiv.style.display = 'none'; return; }
+  let siblings = [];
+  try { siblings = await api.getTemplateSiblings(detail.id) || []; } catch {}
+  if (!siblings.length) { siblingsDiv.style.display = 'none'; return; }
+  siblingsDiv.style.display = '';
+  listDiv.innerHTML = '';
+  for (const s of siblings) {
+    const el = document.createElement('span');
+    el.className   = 'tpl-row-meta';
+    el.style.cssText = 'cursor:pointer; color:var(--accent2); padding:1px 0; display:block;';
+    el.textContent = `${s.name} (${s.document_type_slug || '—'})`;
+    el.title       = 'Open this template';
+    el.addEventListener('click', () => selectTemplate(s.id));
+    listDiv.appendChild(el);
+  }
+}
+
+document.getElementById('tpl-group-select').addEventListener('change', async (e) => {
+  if (!selectedTemplate) return;
+  const groupId = parseInt(e.target.value) || null;
+  try {
+    const updated = await api.setTemplateGroup(selectedTemplate.id, groupId);
+    if (!updated) return;
+    selectedTemplate = updated;
+    const idx = allTemplates.findIndex(t => t.id === updated.id);
+    if (idx !== -1) allTemplates[idx] = updated;
+    await renderSiblings(updated);
+  } catch (err) { console.warn('setTemplateGroup failed:', err.message); }
+});
+
+document.getElementById('tpl-btn-new-group').addEventListener('click', async () => {
+  const name = prompt('New group name:');
+  if (!name || !name.trim()) return;
+  try {
+    allGroups = await api.createTemplateGroup(name.trim()) || [];
+    await renderGroupSection(selectedTemplate);
+  } catch (err) { alert('Could not create group: ' + err.message); }
+});
+
 async function selectTemplate(id) {
   document.querySelectorAll('.tpl-row').forEach(r => r.classList.toggle('active', parseInt(r.dataset.id) === id));
   document.getElementById('tpl-empty').style.display  = 'none';
@@ -851,7 +910,10 @@ async function selectTemplate(id) {
   document.getElementById('tpl-detail-meta').textContent =
     `${detail.document_type_slug || 'unknown type'} · confirmed ${detail.confirmed_count} time${detail.confirmed_count === 1 ? '' : 's'} · updated ${formatWhen(detail.updated_at) || '—'}`;
 
-  await loadSampleCandidates(detail);
+  await Promise.all([
+    loadSampleCandidates(detail),
+    renderGroupSection(detail),
+  ]);
   renderMappingsTable(detail);
   renderSelectorAnchorsTable(detail);
   await loadSamplePages(detail);
@@ -1126,12 +1188,6 @@ function drawNormBox(xN, yN, wN, hN, w, h, color, label) {
   tplCtx.fillRect(x, y, bw, bh);
 
   tplCtx.setLineDash([]);
-  tplCtx.font = '10px "IBM Plex Mono", monospace';
-  const textW = tplCtx.measureText(label).width;
-  tplCtx.fillStyle = color;
-  tplCtx.fillRect(x, Math.max(0, y - 14), textW + 8, 14);
-  tplCtx.fillStyle = '#0c0e14';
-  tplCtx.fillText(label, x + 4, Math.max(10, y - 3));
 }
 
 // ── Drawing tools (Phase 2) ──────────────────────────────────────────────────

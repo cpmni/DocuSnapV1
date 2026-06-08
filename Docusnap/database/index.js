@@ -204,6 +204,25 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 7 applied: local authentication (users, recovery_codes, audit_log)');
   }
 
+  // Migration 9: template groups — organisational grouping for related templates
+  // (same supplier family, layout variants). Grouping is v1 metadata only; no
+  // shared-anchor behaviour is added here. Existing ungrouped templates continue
+  // to match and extract identically — the new columns are nullable.
+  if (!applied.has(9)) {
+    if (!tableExists(db, 'template_groups')) {
+      db.exec(`CREATE TABLE template_groups (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        name       TEXT    NOT NULL UNIQUE,
+        created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+      )`);
+    }
+    if (tableExists(db, 'templates') && !hasColumn(db, 'templates', 'group_id')) {
+      try { db.exec(`ALTER TABLE templates ADD COLUMN group_id INTEGER REFERENCES template_groups(id)`); } catch {}
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (9)').run();
+    console.log('JS migration 9 applied: template groups');
+  }
+
   // Migration 3: remove extra built-in fields, keep only name/date/ref per type
   if (!applied.has(3)) {
     const keepBySlug = {
