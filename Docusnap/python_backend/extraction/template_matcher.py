@@ -17,6 +17,20 @@ STOP_WORDS = {
     'page', 'date', 'name', 'total', 'amount', 'number', 'order', 'invoice',
 }
 
+# Calendar words rotate with every single document — the same supplier's
+# invoices say "January" one month and "August" the next, so a month or
+# weekday name is the opposite of a stable identity signal even though it
+# is a perfectly ordinary alphabetic word. Kept separate from STOP_WORDS
+# (generic-vocabulary noise) because these are noise specifically *because*
+# they vary per document, not because they're meaningless.
+CALENDAR_WORDS = {
+    'january', 'february', 'march', 'april', 'june', 'july',
+    'august', 'september', 'october', 'november', 'december',
+    'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'sept', 'oct', 'nov', 'dec',
+    'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+    'mon', 'tue', 'tues', 'wed', 'thu', 'thur', 'thurs', 'fri', 'sat', 'sun',
+}
+
 LOGO_THRESHOLD    = 13   # max hamming distance for logo match
 KEYWORD_THRESHOLD = 0.75 # min fraction of keywords that must be present
 
@@ -35,7 +49,7 @@ def identify_template(page_image, ocr_text: str, templates: list) -> dict | None
     # 1. Logo hash — most reliable identifier
     if page_image is not None:
         logo_phash, logo_match = _match_by_logo(page_image, templates)
-        if logo_match and logo_match['confidence'] >= 65:
+        if logo_match and logo_match['confidence'] >= 60:
             logo_match['logo_phash'] = logo_phash
             return logo_match
 
@@ -94,6 +108,23 @@ def extract_keyword_fingerprint(ocr_text: str, max_words: int = 10) -> list:
     """
     Extract distinctive keywords from the document header for template
     identification. Only looks at the first 20 lines.
+
+    This fingerprint becomes part of a template's permanent identity
+    (persisted and reused for every future match), so per-document VARIABLE
+    content must not be allowed to leak in alongside the supplier's stable
+    branding vocabulary:
+      - any token containing a digit is skipped — invoice/reference/account
+        numbers, numeric dates, amounts and postcodes are essentially never
+        genuine supplier-branding words (those are overwhelmingly pure
+        alphabetic), but "INV2024", "REF-A1183" etc. would otherwise be
+        captured whole and rotate on every document
+      - calendar words are skipped (see CALENDAR_WORDS) — the month/weekday
+        named in a header changes from invoice to invoice
+      - the existing generic STOP_WORDS list is still applied
+    Customer/recipient names are NOT filtered here — there is no generic,
+    layout-independent way to recognise "this word is a person/company name"
+    from plain OCR text without risking false positives on real supplier
+    branding. That residual risk is documented in the audit report.
     """
     lines       = ocr_text.split('\n')[:20]
     header_text = ' '.join(lines)
@@ -102,9 +133,15 @@ def extract_keyword_fingerprint(ocr_text: str, max_words: int = 10) -> list:
     seen        = set()
     fingerprint = []
     for word in words:
-        if word.lower() not in STOP_WORDS and word not in seen:
-            seen.add(word)
-            fingerprint.append(word)
+        lower = word.lower()
+        if lower in STOP_WORDS or lower in CALENDAR_WORDS:
+            continue
+        if any(ch.isdigit() for ch in word):
+            continue
+        if word in seen:
+            continue
+        seen.add(word)
+        fingerprint.append(word)
         if len(fingerprint) >= max_words:
             break
 
@@ -162,7 +199,17 @@ def _match_by_keywords(ocr_text: str, templates: list) -> dict | None:
         keywords = t.get('keyword_fingerprint') or []
         if not keywords:
             continue
-        hits  = sum(1 for kw in keywords if kw.lower() in ocr_lower)
+        # Word-boundary match — mirrors _label_pattern's single-word collision
+        # guard (the proven Stage-1 fix). Plain substring containment let a
+        # short distinctive keyword like "LTD" or "REF" score a hit by sheer
+        # accident inside an unrelated word ("ALTDORF", "PREFAB") in a
+        # different supplier's document, inflating that template's score and
+        # raising the odds of a false cross-supplier match for suppliers that
+        # fall back to keywords because they have no usable logo.
+        hits = sum(
+            1 for kw in keywords
+            if re.search(r'(?<![a-z0-9])' + re.escape(kw.lower()) + r'(?![a-z0-9])', ocr_lower)
+        )
         score = hits / len(keywords)
         if score > best_score:
             best_score = score

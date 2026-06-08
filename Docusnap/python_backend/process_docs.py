@@ -133,10 +133,6 @@ def main():
             if not ocr_text.strip():
                 raise ValueError("OCR returned no text — is the scan readable?")
 
-            # Save raw OCR for audit
-            ocr_path = filepath.parent / (filepath.stem + "_ocr.txt")
-            ocr_path.write_text(ocr_text, encoding="utf-8")
-
             # Detect document type
             known_type_names = [dt["name"] for dt in doc_types] if doc_types else None
             type_detection = engine.detect_document_type(ocr_text, known_type_names)

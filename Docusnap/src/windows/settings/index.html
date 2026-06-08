@@ -217,6 +217,22 @@
     #tpl-layout { display:flex; gap:18px; align-items:flex-start; }
     #tpl-list-col { width:240px; flex-shrink:0; }
     #tpl-viewer-col { flex:1; min-width:0; }
+    #tpl-detail-layout { display:flex; gap:16px; align-items:flex-start; }
+    #tpl-preview-pane { flex:1; min-width:0; }
+    #tpl-dock {
+      width:400px; flex-shrink:0; max-height:calc(100vh - 220px);
+      overflow-y:auto; padding-right:4px;
+    }
+    .tpl-zoom-controls {
+      display:flex; align-items:center; gap:4px; margin-left:10px;
+      font-size:11px; color:var(--muted); font-family:var(--mono);
+    }
+    .tpl-zoom-controls .btn-icon {
+      width:24px; height:24px; line-height:14px; border:1px solid var(--border2);
+      background:var(--surface2); border-radius:5px;
+    }
+    .tpl-zoom-controls .btn-icon:hover { color:var(--accent2); border-color:var(--accent); background:var(--surface2); }
+    #tpl-zoom-level { min-width:38px; text-align:center; }
     .tpl-placeholder { color:var(--muted); font-size:12px; padding:40px 0; text-align:center; }
     .tpl-row {
       display:flex; flex-direction:column; gap:2px;
@@ -235,10 +251,19 @@
     #tpl-doc-viewer {
       min-height:200px; display:flex; align-items:flex-start; justify-content:center;
       padding:14px; background:var(--surface); border:1px solid var(--border); border-radius:8px;
+      overflow:hidden; cursor:grab;
     }
+    #tpl-doc-viewer.panning { cursor:grabbing; }
+    #tpl-doc-viewer.panning #tpl-img-wrap { transition:none; }
     #tpl-doc-placeholder { color:var(--muted); font-size:12px; margin:auto; padding:40px 0; }
-    #tpl-img-wrap { position:relative; display:inline-block; line-height:0; }
-    #tpl-img { max-width:100%; border:1px solid var(--border); border-radius:4px; display:block; }
+    #tpl-img-wrap {
+      position:relative; display:inline-block; line-height:0;
+      transform-origin:0 0; transition:transform .12s ease-out;
+    }
+    #tpl-img {
+      max-width:100%; max-height:calc(100vh - 360px); width:auto; height:auto;
+      border:1px solid var(--border); border-radius:4px; display:block;
+    }
     #tpl-overlay-canvas { position:absolute; inset:0; border-radius:4px; pointer-events:none; }
     #tpl-overlay-canvas.drawing {
       pointer-events:auto;
@@ -494,39 +519,80 @@
         <div id="tpl-list-col">
           <div class="section-title">Templates</div>
           <div id="tpl-list"></div>
+          <div style="margin-top:14px;">
+            <button class="btn" id="btn-new-template">+ New Template</button>
+          </div>
+          <div class="add-form" id="new-template-form">
+            <div class="form-group">
+              <label>Template name</label>
+              <input type="text" id="new-template-name" placeholder="e.g. Acme Corp Invoice" style="width:180px">
+            </div>
+            <div class="form-group">
+              <label>Document type</label>
+              <select id="new-template-doctype" class="field-select" style="width:180px"></select>
+            </div>
+            <div class="form-group" style="flex-direction:row; gap:8px; align-items:flex-end;">
+              <button class="btn primary" id="btn-save-template">Create</button>
+              <button class="btn" id="btn-cancel-template">Cancel</button>
+            </div>
+          </div>
         </div>
         <div id="tpl-viewer-col">
           <div id="tpl-empty" class="tpl-placeholder">Select a template to inspect its sample document and field mappings.</div>
           <div id="tpl-detail" style="display:none;">
+            <div id="tpl-detail-layout">
 
-            <div class="row-flex" style="margin-bottom:10px; align-items:flex-start;">
-              <div style="flex:1;">
-                <div class="threshold-label" id="tpl-detail-name">—</div>
+              <div id="tpl-preview-pane">
+                <div id="tpl-doc-toolbar" class="row-flex" style="margin-bottom:8px; flex-wrap:wrap; row-gap:8px;">
+                  <button class="btn" id="tpl-btn-page-prev">&#8249; Prev</button>
+                  <span id="tpl-page-indicator" style="font-size:11px; color:var(--muted);">—</span>
+                  <button class="btn" id="tpl-btn-page-next">Next &#8250;</button>
+                  <span class="tpl-zoom-controls">
+                    <button class="btn-icon" id="tpl-btn-zoom-out" title="Zoom out">&#8722;</button>
+                    <span id="tpl-zoom-level">100%</span>
+                    <button class="btn-icon" id="tpl-btn-zoom-in" title="Zoom in">+</button>
+                    <button class="btn-icon" id="tpl-btn-zoom-reset" title="Reset zoom &amp; pan">&#8634;</button>
+                  </span>
+                  <span class="tpl-legend">
+                    <span class="tpl-swatch tpl-swatch-anchor"></span> Anchor
+                    <span class="tpl-swatch tpl-swatch-target"></span> Target zone
+                  </span>
+                </div>
+
+                <div id="tpl-doc-viewer">
+                  <span id="tpl-doc-placeholder">No sample document pinned for this template yet — pick one above.</span>
+                  <div id="tpl-img-wrap" style="display:none">
+                    <img id="tpl-img" alt="Template sample preview">
+                    <canvas id="tpl-overlay-canvas"></canvas>
+                  </div>
+                </div>
+                <p class="section-desc" style="margin:6px 0 0;">Mouse wheel or +/− to zoom, click-drag to pan. While "Draw Anchor"/"Draw Target" is active, click-drag draws a box instead.</p>
+              </div>
+
+              <div id="tpl-dock">
+                <div class="row-flex" style="align-items:flex-end; gap:8px; margin-bottom:6px;">
+                  <div class="form-group" style="flex:1; min-width:0; gap:4px;">
+                    <label>Name</label>
+                    <input type="text" id="tpl-name-input" class="field-select">
+                  </div>
+                  <button class="btn" id="tpl-btn-rename" disabled>Rename</button>
+                </div>
                 <div class="threshold-sub" id="tpl-detail-meta">—</div>
-              </div>
-              <div class="form-group" style="gap:4px;">
-                <label>Sample document</label>
-                <select id="tpl-sample-select" class="field-select" style="max-width:300px;"></select>
-              </div>
-            </div>
+                <span id="tpl-name-msg" class="section-desc" style="display:block; margin:4px 0 0;"></span>
 
-            <div id="tpl-doc-toolbar" class="row-flex" style="margin-bottom:8px;">
-              <button class="btn" id="tpl-btn-page-prev">&#8249; Prev</button>
-              <span id="tpl-page-indicator" style="font-size:11px; color:var(--muted);">—</span>
-              <button class="btn" id="tpl-btn-page-next">Next &#8250;</button>
-              <span class="tpl-legend">
-                <span class="tpl-swatch tpl-swatch-anchor"></span> Anchor
-                <span class="tpl-swatch tpl-swatch-target"></span> Target zone
-              </span>
-            </div>
+                <div class="row-flex" style="margin:14px 0;">
+                  <button class="btn danger" id="tpl-btn-delete-template">Delete Template</button>
+                </div>
 
-            <div id="tpl-doc-viewer">
-              <span id="tpl-doc-placeholder">No sample document pinned for this template yet — pick one above.</span>
-              <div id="tpl-img-wrap" style="display:none">
-                <img id="tpl-img" alt="Template sample preview">
-                <canvas id="tpl-overlay-canvas"></canvas>
-              </div>
-            </div>
+                <div class="form-group" style="margin-bottom:6px;">
+                  <label>Sample document</label>
+                  <div class="row-flex" style="gap:8px; align-items:center;">
+                    <select id="tpl-sample-select" class="field-select" style="flex:1;"></select>
+                    <button class="btn" id="tpl-btn-import-sample">Import Sample File…</button>
+                  </div>
+                  <span class="section-desc" style="display:block; margin:4px 0 0;">A sample is required before anchor/target mapping can be configured — new templates have no confirmed documents yet, so attach any representative file (PDF, PNG or JPEG) directly.</span>
+                  <span id="tpl-sample-msg" class="section-desc" style="display:block; margin:4px 0 0;"></span>
+                </div>
 
             <div class="section" style="margin-top:14px;">
               <div class="section-title">Map a Field</div>
@@ -577,7 +643,7 @@
                 </div>
               </div>
 
-              <div class="row-flex" style="margin-top:14px; gap:8px;">
+              <div class="row-flex" style="margin-top:14px; gap:8px; flex-wrap:wrap; row-gap:6px;">
                 <button class="btn primary" id="tpl-btn-save-mapping" disabled>Save Mapping</button>
                 <button class="btn" id="tpl-btn-test-mapping" disabled>Test Extraction</button>
                 <button class="btn danger" id="tpl-btn-delete-mapping" style="display:none;">Delete Mapping</button>
@@ -609,6 +675,8 @@
               </table>
             </div>
 
+              </div>
+            </div>
           </div>
         </div>
       </div>

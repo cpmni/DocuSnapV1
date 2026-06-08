@@ -679,9 +679,25 @@ let tplIsDragging      = false;
 let tplDragStart       = null;
 let tplDragRect        = null;
 
-const tplImg    = document.getElementById('tpl-img');
-const tplCanvas = document.getElementById('tpl-overlay-canvas');
-const tplCtx    = tplCanvas.getContext('2d');
+// Zoom / pan state — applied to #tpl-img-wrap via CSS transform, independent
+// of the canvas's internal pixel buffer (tplCanvas.width/height), which always
+// stays at the unscaled rendered image size. Mouse-to-canvas coordinate maths
+// in the drawing handlers below converts through the live bounding-rect ratio,
+// so drawing stays accurate at any zoom level.
+let tplZoom       = 1;
+let tplPanX       = 0;
+let tplPanY       = 0;
+let tplIsPanning  = false;
+let tplPanStart   = null;   // {x, y, panX, panY} — client coords + pan at drag start
+const TPL_ZOOM_MIN  = 1;
+const TPL_ZOOM_MAX  = 4;
+const TPL_ZOOM_STEP = 0.25;
+
+const tplImg     = document.getElementById('tpl-img');
+const tplImgWrap = document.getElementById('tpl-img-wrap');
+const tplViewer  = document.getElementById('tpl-doc-viewer');
+const tplCanvas  = document.getElementById('tpl-overlay-canvas');
+const tplCtx     = tplCanvas.getContext('2d');
 
 async function loadTemplates() {
   try {
@@ -714,6 +730,106 @@ function renderTemplateList() {
   }
 }
 
+// ── Create template ───────────────────────────────────────────────────────────
+// Mirrors the existing add-type-form pattern (toggle .visible, validate name,
+// reload list). Doc-type dropdown reuses allTypesWithFields (loaded by
+// loadDocTypes for the mapping-field selector) — no second source of truth —
+// filtered to enabled types only, same set an admin can otherwise assign.
+const newTemplateForm = document.getElementById('new-template-form');
+
+document.getElementById('btn-new-template').addEventListener('click', async () => {
+  if (!allTypesWithFields.length) {
+    try { await loadDocTypes(); } catch (e) { console.warn('loadDocTypes (for new template) failed:', e.message); }
+  }
+  const select = document.getElementById('new-template-doctype');
+  select.innerHTML = '';
+  for (const dt of allTypesWithFields.filter(t => t.enabled)) {
+    const opt = document.createElement('option');
+    opt.value = dt.slug;
+    opt.textContent = dt.name;
+    select.appendChild(opt);
+  }
+  newTemplateForm.classList.add('visible');
+  document.getElementById('new-template-name').focus();
+});
+
+document.getElementById('btn-cancel-template').addEventListener('click', () => {
+  newTemplateForm.classList.remove('visible');
+  document.getElementById('new-template-name').value = '';
+});
+
+document.getElementById('btn-save-template').addEventListener('click', async () => {
+  const name = document.getElementById('new-template-name').value.trim();
+  if (!name) { alert('Please enter a template name.'); return; }
+  const documentTypeSlug = document.getElementById('new-template-doctype').value || null;
+  try {
+    const created = await api.createTemplate({ name, document_type_slug: documentTypeSlug });
+    newTemplateForm.classList.remove('visible');
+    document.getElementById('new-template-name').value = '';
+    await loadTemplates();
+    if (created && created.id) await selectTemplate(created.id);
+  } catch (e) {
+    alert('Could not create template: ' + e.message);
+  }
+});
+
+// ── Rename template ───────────────────────────────────────────────────────────
+// Cosmetic/admin-facing metadata only — template_matcher.py identifies
+// templates solely by logo_phash and keyword_fingerprint (never name/slug),
+// and slug (the functional/derived identifier used for the debug-export
+// filename) is left untouched by templates.rename, so editing this field
+// cannot affect matching, identification, or existing joins.
+const tplNameInput = document.getElementById('tpl-name-input');
+const tplBtnRename = document.getElementById('tpl-btn-rename');
+
+tplNameInput.addEventListener('input', () => {
+  const trimmed = tplNameInput.value.trim();
+  tplBtnRename.disabled = !selectedTemplate || !trimmed || trimmed === selectedTemplate.name;
+});
+
+tplBtnRename.addEventListener('click', async () => {
+  if (!selectedTemplate) return;
+  const name = tplNameInput.value.trim();
+  const msg  = document.getElementById('tpl-name-msg');
+  if (!name || name === selectedTemplate.name) return;
+  try {
+    const updated = await api.renameTemplate(selectedTemplate.id, name);
+    if (!updated) return;
+    selectedTemplate = updated;
+    const idx = allTemplates.findIndex(t => t.id === updated.id);
+    if (idx !== -1) allTemplates[idx] = updated;
+    renderTemplateList();
+    tplBtnRename.disabled = true;
+    msg.textContent = 'Renamed.';
+    msg.style.color = 'var(--ok)';
+  } catch (e) {
+    msg.textContent = 'Rename failed: ' + e.message;
+    msg.style.color = 'var(--err)';
+  }
+});
+
+// ── Delete template ───────────────────────────────────────────────────────────
+// Scoped to this template's own record + its own field/mapping rows (cascade
+// on template_id — see templates.remove); confirmed documents that reference
+// it are merely unlinked, never touched otherwise. Does not affect other
+// templates, document types, fields, learned anchors, supplier hints, logo
+// fingerprints, or settings.
+document.getElementById('tpl-btn-delete-template').addEventListener('click', async () => {
+  if (!selectedTemplate) return;
+  if (!confirm(`Delete the template "${selectedTemplate.name}"? Its field mappings and selector anchors will be removed too. Confirmed documents that used it stay exactly as they are. This cannot be undone.`)) return;
+  try {
+    await api.deleteTemplate(selectedTemplate.id);
+    const deletedId = selectedTemplate.id;
+    selectedTemplate = null;
+    allTemplates = allTemplates.filter(t => t.id !== deletedId);
+    document.getElementById('tpl-detail').style.display = 'none';
+    document.getElementById('tpl-empty').style.display  = '';
+    renderTemplateList();
+  } catch (e) {
+    alert('Could not delete template: ' + e.message);
+  }
+});
+
 async function selectTemplate(id) {
   document.querySelectorAll('.tpl-row').forEach(r => r.classList.toggle('active', parseInt(r.dataset.id) === id));
   document.getElementById('tpl-empty').style.display  = 'none';
@@ -728,7 +844,10 @@ async function selectTemplate(id) {
   if (!detail) return;
   selectedTemplate = detail;
 
-  document.getElementById('tpl-detail-name').textContent = detail.name;
+  const nameInput = document.getElementById('tpl-name-input');
+  nameInput.value = detail.name;
+  document.getElementById('tpl-btn-rename').disabled = true;
+  document.getElementById('tpl-name-msg').textContent = '';
   document.getElementById('tpl-detail-meta').textContent =
     `${detail.document_type_slug || 'unknown type'} · confirmed ${detail.confirmed_count} time${detail.confirmed_count === 1 ? '' : 's'} · updated ${formatWhen(detail.updated_at) || '—'}`;
 
@@ -750,6 +869,16 @@ async function loadSampleCandidates(detail) {
     console.warn('getTemplateSampleCandidates failed:', e.message);
   }
 
+  // get-template-sample-candidates only returns confirmed documents already
+  // linked to this template — an imported sample (status='template_sample',
+  // attached via "Import Sample File…" before any document has ever matched)
+  // won't be in that list. Prepend it so the dropdown still shows it as
+  // selected instead of looking unset.
+  const pinned = detail.sample_document;
+  if (pinned && !candidates.some(c => c.id === pinned.id)) {
+    candidates = [pinned, ...candidates];
+  }
+
   const noneOpt = document.createElement('option');
   noneOpt.value = '';
   noneOpt.textContent = candidates.length ? '— Select a sample —' : 'No confirmed documents linked yet';
@@ -759,6 +888,7 @@ async function loadSampleCandidates(detail) {
     const opt = document.createElement('option');
     opt.value = String(c.id);
     opt.textContent = [c.supplier_name, c.reference_number, c.doc_date].filter(Boolean).join(' · ') || c.original_filename;
+    if (c.status === 'template_sample') opt.textContent += ' (imported sample)';
     if (detail.sample_document_id === c.id) opt.selected = true;
     select.appendChild(opt);
   }
@@ -777,6 +907,48 @@ async function loadSampleCandidates(detail) {
     }
   };
 }
+
+// New templates start with no confirmed documents — get-template-sample-
+// candidates is necessarily empty, so there is nothing to pick from the
+// dropdown above. This lets an admin attach an arbitrary file directly: it's
+// referenced in place (no copy), registered as a minimal 'template_sample'
+// document row (invisible to review/search/counts — see templates/handler.js),
+// pinned as the sample, and immediately re-rendered through the same
+// loadSamplePages/getDocumentPages preview path every other sample uses.
+document.getElementById('tpl-btn-import-sample').addEventListener('click', async () => {
+  if (!selectedTemplate) return;
+  const msg = document.getElementById('tpl-sample-msg');
+  msg.textContent = '';
+  msg.style.color = '';
+
+  let filePath = null;
+  try {
+    filePath = await api.pickTemplateSampleFile();
+  } catch (e) {
+    console.warn('pickTemplateSampleFile failed:', e.message);
+    return;
+  }
+  if (!filePath) return;
+
+  try {
+    const res = await api.importTemplateSampleFile(selectedTemplate.id, filePath);
+    if (!res || !res.success) {
+      msg.textContent = (res && res.error) || 'Could not import that file.';
+      msg.style.color = 'var(--err)';
+      return;
+    }
+    selectedTemplate = res.template;
+    const idx = allTemplates.findIndex(t => t.id === res.template.id);
+    if (idx !== -1) allTemplates[idx] = res.template;
+    await loadSampleCandidates(selectedTemplate);
+    await loadSamplePages(selectedTemplate);
+    msg.textContent = 'Sample file attached.';
+  } catch (e) {
+    console.warn('importTemplateSampleFile failed:', e.message);
+    msg.textContent = 'Could not import that file.';
+    msg.style.color = 'var(--err)';
+  }
+});
 
 // Mirrors fileArgs() in search/renderer.js — confirmed documents resolve their
 // preview path from stored_path/stored_filename, everything else from
@@ -826,6 +998,7 @@ function renderTplPage() {
 
   placeholder.style.display = 'none';
   wrap.style.display        = 'inline-block';
+  resetTplView();
   tplImg.onload = () => {
     tplCanvas.width  = tplImg.offsetWidth;
     tplCanvas.height = tplImg.offsetHeight;
@@ -840,6 +1013,63 @@ document.getElementById('tpl-btn-page-prev').addEventListener('click', () => {
 });
 document.getElementById('tpl-btn-page-next').addEventListener('click', () => {
   if (tplCurrentPage < tplPageImages.length - 1) { tplCurrentPage++; renderTplPage(); }
+});
+
+// ── Zoom / pan (Phase 2 layout pass) ─────────────────────────────────────────
+// CSS-transform scale+translate on #tpl-img-wrap. Kept independent of the
+// canvas's internal pixel buffer — see coordinate-conversion note on the
+// drawing handlers below — so existing anchor/target drawing keeps working
+// unchanged at any zoom level.
+
+function applyTplTransform() {
+  tplImgWrap.style.transform = `translate(${tplPanX}px, ${tplPanY}px) scale(${tplZoom})`;
+  document.getElementById('tpl-zoom-level').textContent = Math.round(tplZoom * 100) + '%';
+}
+
+function setTplZoom(zoom) {
+  tplZoom = Math.max(TPL_ZOOM_MIN, Math.min(TPL_ZOOM_MAX, zoom));
+  applyTplTransform();
+}
+
+function resetTplView() {
+  tplZoom = 1;
+  tplPanX = 0;
+  tplPanY = 0;
+  applyTplTransform();
+}
+
+document.getElementById('tpl-btn-zoom-in').addEventListener('click', () => setTplZoom(tplZoom + TPL_ZOOM_STEP));
+document.getElementById('tpl-btn-zoom-out').addEventListener('click', () => setTplZoom(tplZoom - TPL_ZOOM_STEP));
+document.getElementById('tpl-btn-zoom-reset').addEventListener('click', resetTplView);
+
+tplViewer.addEventListener('wheel', (e) => {
+  if (!tplPageImages.length) return;
+  e.preventDefault();
+  setTplZoom(tplZoom + (e.deltaY < 0 ? TPL_ZOOM_STEP : -TPL_ZOOM_STEP));
+}, { passive: false });
+
+// Click-drag panning on the viewer. Gated on tplMapMode so "Draw Anchor"/
+// "Draw Target" keeps exclusive control of the gesture — the overlay canvas
+// already captures pointer events itself in that state (`.drawing` toggles
+// pointer-events:auto), so this check is a redundant belt-and-braces guard
+// against the same mousedown bubbling up from the canvas.
+tplViewer.addEventListener('mousedown', (e) => {
+  if (tplMapMode || !tplPageImages.length) return;
+  tplIsPanning = true;
+  tplPanStart  = { x: e.clientX, y: e.clientY, panX: tplPanX, panY: tplPanY };
+  tplViewer.classList.add('panning');
+});
+window.addEventListener('mousemove', (e) => {
+  if (!tplIsPanning || !tplPanStart) return;
+  tplPanX = tplPanStart.panX + (e.clientX - tplPanStart.x);
+  tplPanY = tplPanStart.panY + (e.clientY - tplPanStart.y);
+  applyTplTransform();
+});
+window.addEventListener('mouseup', () => {
+  if (!tplIsPanning) return;
+  tplIsPanning = false;
+  tplPanStart  = null;
+  tplViewer.classList.remove('panning');
 });
 
 // Full redraw: saved (enabled) mappings underneath, then whatever the editor
@@ -936,19 +1166,30 @@ document.getElementById('tpl-btn-draw-target').addEventListener('click', () => {
   else enterDrawMode('target');
 });
 
+// Mouse coordinates arrive in CSS (post-zoom) pixels via getBoundingClientRect,
+// while tplCanvas.width/height stay at the unscaled rendered-image size — the
+// canvas is never resized for zoom, only visually scaled along with #tpl-img-wrap.
+// Multiplying by (canvas buffer size / bounding-rect size) converts back to
+// canvas-pixel space, so drawn boxes land in the right place at any zoom level
+// (ratio is 1 at zoom=1, leaving today's behaviour unchanged).
+function tplCanvasPoint(e) {
+  const r = tplCanvas.getBoundingClientRect();
+  return {
+    x: (e.clientX - r.left) * (tplCanvas.width  / r.width),
+    y: (e.clientY - r.top)  * (tplCanvas.height / r.height),
+  };
+}
+
 tplCanvas.addEventListener('mousedown', (e) => {
   if (!tplMapMode) return;
   tplIsDragging = true;
-  const r   = tplCanvas.getBoundingClientRect();
-  tplDragStart = { x: e.clientX - r.left, y: e.clientY - r.top };
+  tplDragStart = tplCanvasPoint(e);
   tplDragRect  = { x: tplDragStart.x, y: tplDragStart.y, w: 0, h: 0 };
 });
 
 tplCanvas.addEventListener('mousemove', (e) => {
   if (!tplIsDragging || !tplDragRect) return;
-  const r  = tplCanvas.getBoundingClientRect();
-  const cx = e.clientX - r.left;
-  const cy = e.clientY - r.top;
+  const { x: cx, y: cy } = tplCanvasPoint(e);
   tplDragRect = {
     x: Math.min(tplDragStart.x, cx),
     y: Math.min(tplDragStart.y, cy),

@@ -306,10 +306,36 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
   // Build template field rules from confirmed values
   const fields = _buildTemplateFields(allValues, dtInfo);
 
-  if (doc.template_id) {
-    // Update existing template
-    templates.update(db, doc.template_id, { logo_phash, keyword_fingerprint, fields });
-    _writeTemplateFile(db, doc.template_id, path, fs, templatesDir());
+  // `doc.template_id` reflects whatever Stage 0 matched DURING PROCESSING —
+  // which, for a freshly-scanned batch, runs before any of that batch's own
+  // confirmations have created a template. Confirming document #1 creates
+  // the supplier's first template; #2-#4 were OCR'd/matched against the
+  // template list as it stood when the *batch* was processed (template_id
+  // still null on each of them), even though a same-layout template now
+  // exists by the time they're confirmed. Re-check by logo phash — the
+  // strongest stable identity signal already in the system: position-
+  // anchored, immune to per-document variable content (customer name,
+  // invoice number, totals, dates), and compared with the exact same
+  // Hamming-distance/confidence model and accept gate as Stage 0's logo
+  // match (confidence >= 65 ⇔ distance <= 5 — see template_matcher.py
+  // identify_template/_match_by_logo). findByLogoHash already existed in
+  // templates.js as the JS-side mirror of that primitive but was unused —
+  // wiring it in here converges repeats of the same supplier/layout onto
+  // one template without loosening what counts as "the same" beyond what
+  // Stage 0 already accepts.
+  let templateId = doc.template_id || null;
+  if (!templateId && logo_phash) {
+    const reuse = templates.findByLogoHash(db, logo_phash);
+    if (reuse && reuse.confidence >= 60) templateId = reuse.id;
+  }
+
+  if (templateId) {
+    // Update existing (or now logo-matched) template
+    templates.update(db, templateId, { logo_phash, keyword_fingerprint, fields });
+    if (!doc.template_id) {
+      db.prepare('UPDATE documents SET template_id = ? WHERE id = ?').run(templateId, document_id);
+    }
+    _writeTemplateFile(db, templateId, path, fs, templatesDir());
   } else {
     // Create new template — name from supplier + doc type
     const typeName  = document_type_slug

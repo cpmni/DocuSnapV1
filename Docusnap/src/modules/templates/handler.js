@@ -12,9 +12,20 @@
  * convention used throughout settings/handler.js.
  */
 
+const path = require('path');
+const fs   = require('fs');
+
+// Extensions the existing get-document-pages preview path actually renders
+// correctly (PDF via render/pages.py; PNG/JPEG inline as a data URI — see
+// review/handler.js). Deliberately narrower than watch/handler.js's
+// SUPPORTED_EXTENSIONS (which also lists .tiff/.bmp): offering a type the
+// preview can't display would break "appears in the preview immediately".
+const SAMPLE_FILE_EXTENSIONS = new Set(['.pdf', '.png', '.jpg', '.jpeg']);
+
 function register(ctx) {
   const { ipcMain, getDb } = ctx;
   const templates = require('../../../database/modules/templates');
+  const documents = require('../../../database/modules/documents');
   const { requireRole } = require('../auth/handler');
 
   // ── Browse ──────────────────────────────────────────────────────────────────
@@ -26,6 +37,30 @@ function register(ctx) {
   ipcMain.handle('get-template-detail', (_e, templateId) => {
     requireRole('admin');
     return templates.getById(getDb(), templateId);
+  });
+
+  // Admin-facing template management — name is purely cosmetic metadata
+  // (matching relies solely on logo_phash / keyword_fingerprint, see
+  // template_matcher.py and templates.create's slug derivation), and delete
+  // is scoped to this template's own rows only — see templates.remove.
+  ipcMain.handle('create-template', (_e, data) => {
+    requireRole('admin');
+    const id = templates.create(getDb(), {
+      name:               ((data && data.name) || '').trim(),
+      document_type_slug: (data && data.document_type_slug) || null,
+    });
+    return templates.getById(getDb(), id);
+  });
+
+  ipcMain.handle('rename-template', (_e, templateId, name) => {
+    requireRole('admin');
+    return templates.rename(getDb(), templateId, (name || '').trim());
+  });
+
+  ipcMain.handle('delete-template', (_e, templateId) => {
+    requireRole('admin');
+    templates.remove(getDb(), templateId);
+    return true;
   });
 
   // Confirmed documents this template was learned from / matched against —
@@ -48,6 +83,44 @@ function register(ctx) {
     requireRole('admin');
     templates.setSampleDocument(getDb(), templateId, documentId);
     return templates.getById(getDb(), templateId);
+  });
+
+  // A brand-new template has no confirmed documents yet — get-template-sample-
+  // candidates is necessarily empty (chicken-and-egg: nothing can match an
+  // empty template). These two let an admin attach an arbitrary file in place
+  // as a working sample, so anchor/target mapping has something to draw on
+  // immediately. The file is referenced, not copied (see import handler), and
+  // is registered as a minimal `documents` row under a dedicated status —
+  // 'template_sample' — that every status-filtered surface (review queue,
+  // deferred queue, counts, search — all exact-match equality) ignores, so it
+  // can never leak into normal document flows. This reuses the exact same
+  // documents.insert / setSampleDocument / getSampleDocument / get-document-pages
+  // chain the rest of the Template Viewer already relies on for preview.
+  ipcMain.handle('pick-template-sample-file', async (e) => {
+    requireRole('admin');
+    const { dialog, BrowserWindow } = require('electron');
+    const win = BrowserWindow.fromWebContents(e.sender);
+    const r = await dialog.showOpenDialog(win, {
+      properties: ['openFile'],
+      title: 'Select a sample document for this template',
+      filters: [{ name: 'Documents & Images', extensions: ['pdf', 'png', 'jpg', 'jpeg'] }],
+    });
+    return r.canceled ? null : r.filePaths[0];
+  });
+
+  ipcMain.handle('import-template-sample-file', (_e, templateId, filePath) => {
+    requireRole('admin');
+    if (!filePath || !fs.existsSync(filePath)) return { success: false, error: 'File not found' };
+    const ext = path.extname(filePath).toLowerCase();
+    if (!SAMPLE_FILE_EXTENSIONS.has(ext)) return { success: false, error: 'Unsupported file type' };
+    const info = documents.insert(getDb(), {
+      original_filename: path.basename(filePath),
+      folder_path:       path.dirname(filePath),
+      status:            'template_sample',
+      template_id:       templateId,
+    });
+    templates.setSampleDocument(getDb(), templateId, info.lastInsertRowid);
+    return { success: true, template: templates.getById(getDb(), templateId) };
   });
 
   // ── Field anchor → target mappings ──────────────────────────────────────────

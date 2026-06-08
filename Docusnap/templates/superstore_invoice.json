@@ -1,28 +1,38 @@
 {
-  "id": 9,
+  "id": 26,
   "name": "SuperStore Invoice",
   "slug": "superstore_invoice",
   "document_type_slug": "invoice",
-  "logo_phash": "ac936c9369c3e14b",
+  "logo_phash": "ad926d9269c3e13a",
   "keyword_fingerprint": [
     "Superstore",
-    "Dec",
     "Bill",
     "Ship",
     "Mode",
-    "First",
+    "Standard",
     "Class",
-    "Alan",
-    "Hwang",
-    "Paris"
+    "Aaron",
+    "Hawkins",
+    "Villa",
+    "Canales"
   ],
-  "confirmed_count": 4,
-  "created_at": "2026-06-07 10:00:35",
-  "updated_at": "2026-06-07 11:23:38",
+  "confirmed_count": 0,
+  "created_at": "2026-06-08 21:21:09",
+  "updated_at": "2026-06-08 21:21:09",
+  "sample_document_id": null,
   "fields": [
     {
-      "id": 167,
-      "template_id": 9,
+      "id": 448,
+      "template_id": 26,
+      "field_key": "customer",
+      "anchor_label": null,
+      "direction": "right",
+      "fixed_value": "Aaron Hawkins",
+      "is_variable": 0
+    },
+    {
+      "id": 446,
+      "template_id": 26,
       "field_key": "invoice_date",
       "anchor_label": null,
       "direction": "right",
@@ -30,8 +40,8 @@
       "is_variable": 1
     },
     {
-      "id": 168,
-      "template_id": 9,
+      "id": 447,
+      "template_id": 26,
       "field_key": "invoice_number",
       "anchor_label": null,
       "direction": "right",
@@ -39,13 +49,14 @@
       "is_variable": 1
     },
     {
-      "id": 166,
-      "template_id": 9,
+      "id": 445,
+      "template_id": 26,
       "field_key": "supplier_name",
       "anchor_label": null,
       "direction": "right",
       "fixed_value": "SuperStore",
       "is_variable": 0
     }
-  ]
+  ],
+  "field_mappings": []
 }

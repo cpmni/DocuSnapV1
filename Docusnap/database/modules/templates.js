@@ -202,6 +202,32 @@ function create(db, { name, document_type_slug, logo_phash, keyword_fingerprint,
   return id;
 }
 
+// Cosmetic/admin-facing rename only — `name` plays no role in template
+// matching (identification uses logo_phash / keyword_fingerprint exclusively,
+// see template_matcher.py) and `slug` is left untouched, so this can never
+// affect extraction, identification, or the debug-export filename derived
+// from slug at creation time (review/handler.js _writeTemplateFile).
+function rename(db, id, name) {
+  db.prepare(`UPDATE templates SET name = ?, updated_at = datetime('now') WHERE id = ?`).run(name, id);
+  return getById(db, id);
+}
+
+// Scoped delete — removes only this template's own row plus its
+// template_fields / template_field_mappings (both ON DELETE CASCADE on
+// template_id, see migrations 4 and 8). documents.template_id has no cascade
+// and foreign_keys is ON, so any confirmed documents pointing at this template
+// must be unlinked first or the DELETE would throw SQLITE_CONSTRAINT_FOREIGNKEY;
+// nulling it out only clears the now-dangling reference — the documents, their
+// extractions, learned anchors, supplier hints, and logo fingerprints are
+// untouched. Wrapped in a transaction so the unlink and delete are atomic.
+function remove(db, id) {
+  const tx = db.transaction(() => {
+    db.prepare('UPDATE documents SET template_id = NULL WHERE template_id = ?').run(id);
+    db.prepare('DELETE FROM templates WHERE id = ?').run(id);
+  });
+  tx();
+}
+
 function update(db, id, { logo_phash, keyword_fingerprint, fields } = {}) {
   const sets   = ["confirmed_count = confirmed_count + 1", "updated_at = datetime('now')"];
   const params = [];
@@ -250,7 +276,7 @@ function _parseJson(str, fallback) {
 }
 
 module.exports = {
-  getAll, getById, getFields, findByLogoHash, create, update, hammingDistance,
+  getAll, getById, getFields, findByLogoHash, create, update, remove, rename, hammingDistance,
   getMappings, getMapping, saveMapping, setMappingEnabled, deleteMapping,
   recordMappingTest, setSampleDocument,
   GRID_COLS, GRID_ROWS,

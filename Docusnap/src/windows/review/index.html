@@ -216,6 +216,9 @@
     .btn.reprocess-all { flex-shrink: 0; color: var(--muted); border-color: var(--border2); font-size: 11px; }
     .btn.reprocess-all:hover    { background: var(--accent-bg); color: var(--accent2); border-color: var(--accent); }
     .btn.reprocess-all:disabled { opacity: .4; cursor: not-allowed; }
+    .btn.stop-batch { flex-shrink:0; color:var(--warn); border-color:var(--warn); font-size:11px; }
+    .btn.stop-batch:hover    { background:var(--warn-bg); }
+    .btn.stop-batch:disabled { opacity:.4; cursor:not-allowed; }
     .btn-spinner {
       display: inline-block; width: 11px; height: 11px;
       border: 1.5px solid var(--accent2); border-top-color: transparent;
@@ -300,6 +303,7 @@
 
       <div id="reprocess-bar">
         <button class="btn reprocess"     id="btn-reprocess">&#9654;&#9654; Reprocess</button>
+        <button class="btn stop-batch"    id="btn-stop-reprocess" style="display:none;">&#9632; Stop</button>
         <button class="btn reprocess-all" id="btn-reprocess-all">&#9654;&#9654; All</button>
       </div>
       <div id="action-bar">

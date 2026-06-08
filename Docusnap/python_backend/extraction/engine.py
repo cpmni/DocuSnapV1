@@ -160,7 +160,23 @@ class ExtractionEngine:
                     applied = 0
                     for key, data in mapping_results.items():
                         existing = results.get(key)
-                        if not existing or data["confidence"] > existing.get("confidence", 0):
+                        # An admin-drawn mapping (Settings → Templates → "Map a
+                        # Field") is a deliberate, per-template correction —
+                        # someone pinned the exact zone on a real sample because
+                        # the template's own generic rule was producing the
+                        # wrong value for this field (template_fixed/
+                        # template_anchor are frequently auto-learned and can be
+                        # stale — this mapping exists specifically to override
+                        # one). It should win on authority, not on a raw
+                        # confidence number that the generic rule's stale 95
+                        # (template_fixed) would otherwise always clear. Mirrors
+                        # the is_taught_override precedent below — a more
+                        # specific, curated source outranks the more generic
+                        # rule it refines, regardless of either one's confidence.
+                        is_curated_refinement = (existing is None
+                                                  or existing.get("method") in
+                                                     ("template_fixed", "template_anchor"))
+                        if is_curated_refinement or data["confidence"] > existing.get("confidence", 0):
                             results[key] = data
                             applied += 1
                     if applied:
@@ -210,9 +226,24 @@ class ExtractionEngine:
                 # computed confidence sits ~85) can never beat an
                 # already-wrong keyword hit (e.g. base_confidence 88-93 for
                 # po_number), so the "wrong value" never gets corrected.
+                #
+                # EXCEPTION — admin-drawn template mappings (Stage 0.5,
+                # method "template_mapping"/"template_mapping_expanded") are
+                # excluded from "generic match this overrides". A learned
+                # anchor_crop is keyed to whatever supplier_name the pipeline
+                # believed at teaching time; if that identity was wrong, the
+                # anchor itself is silently wrong too — and unconditionally
+                # overriding a freshly hand-placed mapping with it would let
+                # exactly that stale, mis-keyed learning permanently shadow a
+                # deliberate correction (the bug this guard exists to close).
+                # The two now contend on confidence like any other pairing —
+                # both are curated "ground truth" tiers, so a fair contest
+                # between them is the right arbiter, not an automatic win for
+                # whichever one happens to run later in the stage order.
                 is_taught_override = (data.get("method") == "anchor_crop"
                                       and existing
-                                      and existing.get("method") != "anchor_crop")
+                                      and existing.get("method") not in
+                                          ("anchor_crop", "template_mapping", "template_mapping_expanded"))
                 if not existing or is_taught_override or data["confidence"] > existing["confidence"]:
                     results[key] = data
             new_found = len([v for v in results.values() if v.get("value")])

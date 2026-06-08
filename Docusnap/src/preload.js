@@ -98,8 +98,13 @@ contextBridge.exposeInMainWorld('docusnap', {
   // ── Template Viewer / Anchor Mapping (admin-only, lives in Settings) ────────
   getTemplates:               ()                  => ipcRenderer.invoke('get-templates'),
   getTemplateDetail:          (id)                => ipcRenderer.invoke('get-template-detail', id),
+  createTemplate:             (data)              => ipcRenderer.invoke('create-template', data),
+  renameTemplate:             (id, name)          => ipcRenderer.invoke('rename-template', id, name),
+  deleteTemplate:             (id)                => ipcRenderer.invoke('delete-template', id),
   getTemplateSampleCandidates:(id)                => ipcRenderer.invoke('get-template-sample-candidates', id),
   setTemplateSample:          (id, docId)         => ipcRenderer.invoke('set-template-sample', id, docId),
+  pickTemplateSampleFile:     ()                  => ipcRenderer.invoke('pick-template-sample-file'),
+  importTemplateSampleFile:   (id, filePath)      => ipcRenderer.invoke('import-template-sample-file', id, filePath),
   saveTemplateMapping:        (id, mapping)       => ipcRenderer.invoke('save-template-mapping', id, mapping),
   setTemplateMappingEnabled:  (id, key, enabled)  => ipcRenderer.invoke('set-template-mapping-enabled', id, key, enabled),
   deleteTemplateMapping:      (id, key)           => ipcRenderer.invoke('delete-template-mapping', id, key),

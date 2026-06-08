@@ -181,6 +181,17 @@ function register(ctx) {
       proc.on('close', (code) => {
         _currentBatchProc = null;
         cleanupFiles(tempFiles);
+        // Remove any *_ocr.txt plaintext artifacts left by earlier versions of
+        // the pipeline that wrote raw OCR text to the source folder as an audit
+        // file. The current pipeline no longer creates these; this sweep cleans
+        // up residual files from prior runs so none linger in user-visible paths.
+        try {
+          for (const entry of fs.readdirSync(folderPath)) {
+            if (entry.endsWith('_ocr.txt')) {
+              try { fs.unlinkSync(path.join(folderPath, entry)); } catch {}
+            }
+          }
+        } catch {}
         logger?.log(`Batch complete: ${fileCount} files, exit=${code}`);
         resolve({ success: code === 0 });
       });

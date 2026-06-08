@@ -802,55 +802,87 @@ document.getElementById('btn-reprocess').addEventListener('click', async () => {
   }
 });
 
-// ── Reprocess All ─────────────────────────────────────────────────────────────
+// ── Reprocess All (with cooperative Stop) ─────────────────────────────────────
+let _batchActive  = false;
+let _batchStopped = false;
+
+document.getElementById('btn-stop-reprocess').addEventListener('click', () => {
+  if (!_batchActive) return;
+  _batchStopped = true;
+  const btnStop = document.getElementById('btn-stop-reprocess');
+  btnStop.disabled = true;
+  btnStop.innerHTML = 'Stopping…';
+});
+
 document.getElementById('btn-reprocess-all').addEventListener('click', async () => {
   if (queue.length === 0) { showToast('No documents in queue', 'warn'); return; }
+  if (_batchActive) return;
 
-  const btnAll = document.getElementById('btn-reprocess-all');
-  const btnOne = document.getElementById('btn-reprocess');
-  btnAll.disabled = true;
-  btnOne.disabled = true;
+  const btnAll  = document.getElementById('btn-reprocess-all');
+  const btnOne  = document.getElementById('btn-reprocess');
+  const btnStop = document.getElementById('btn-stop-reprocess');
 
-  const total   = queue.length;
-  let   done    = 0;
-  let   failed  = 0;
+  _batchActive  = true;
+  _batchStopped = false;
+  btnAll.disabled      = true;
+  btnOne.disabled      = true;
+  btnStop.disabled     = false;
+  btnStop.innerHTML    = '&#9632; Stop';
+  btnStop.style.display = '';
 
-  for (const doc of [...queue]) {
-    btnAll.innerHTML = `<span class="btn-spinner"></span> ${done + 1}/${total}`;
-    try {
-      const result = await window.docusnap.reprocessDocument({
-        docId:      doc.id,
-        folderPath: doc.folder_path,
-        filename:   doc.original_filename,
-      });
-      if (!result?.success) failed++;
-      // Refresh display if this is the currently-shown doc
-      if (currentDoc && doc.id === currentDoc.id && result?.success) {
-        const full = await window.docusnap.getDocumentWithExtractions(doc.id);
-        if (full) renderFields(full);
+  const total = queue.length;
+  let done    = 0;
+  let failed  = 0;
+
+  try {
+    for (const doc of [...queue]) {
+      if (_batchStopped) break;   // cooperative stop — never mid-document
+
+      btnAll.innerHTML = `<span class="btn-spinner"></span> ${done + 1}/${total}`;
+      try {
+        const result = await window.docusnap.reprocessDocument({
+          docId:      doc.id,
+          folderPath: doc.folder_path,
+          filename:   doc.original_filename,
+        });
+        if (!result?.success) failed++;
+        if (currentDoc && doc.id === currentDoc.id && result?.success) {
+          const full = await window.docusnap.getDocumentWithExtractions(doc.id);
+          if (full) renderFields(full);
+        }
+      } catch (e) {
+        console.warn(`[Reprocess All] ${doc.original_filename}:`, e.message);
+        failed++;
       }
-    } catch (e) {
-      console.warn(`[Reprocess All] ${doc.original_filename}:`, e.message);
-      failed++;
+      done++;
     }
-    done++;
+  } finally {
+    // Always runs — covers normal completion, stop, and unexpected throws
+    queue         = await window.docusnap.getReviewQueue();
+    deferredQueue = await window.docusnap.getDeferredQueue();
+    updateTabCounts();
+    renderQueueList();
+
+    _batchActive         = false;
+    btnAll.disabled      = false;
+    btnOne.disabled      = false;
+    btnStop.style.display = 'none';
+    btnAll.innerHTML     = '&#9654;&#9654; All';
   }
 
-  // Reload queue metadata (status may have changed)
-  queue         = await window.docusnap.getReviewQueue();
-  deferredQueue = await window.docusnap.getDeferredQueue();
-  updateTabCounts();
-  renderQueueList();
-
-  btnAll.disabled = false;
-  btnOne.disabled = false;
-  btnAll.innerHTML = '&#9654;&#9654; All';
-
   const ok = done - failed;
-  showToast(
-    failed ? `Reprocessed ${ok}/${done} — ${failed} failed` : `Reprocessed ${done} document${done !== 1 ? 's' : ''}`,
-    failed ? 'warn' : 'ok'
-  );
+  if (_batchStopped) {
+    const remaining = queue.length;
+    showToast(
+      `Stopped after ${done} — ${remaining} remaining in queue`,
+      'warn'
+    );
+  } else {
+    showToast(
+      failed ? `Reprocessed ${ok}/${done} — ${failed} failed` : `Reprocessed ${done} document${done !== 1 ? 's' : ''}`,
+      failed ? 'warn' : 'ok'
+    );
+  }
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

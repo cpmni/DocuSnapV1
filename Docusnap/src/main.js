@@ -186,7 +186,7 @@ app.whenReady().then(() => {
     // out as Admin-exclusive — Edit/Read Only are not meant to reach it at
     // all, not just see it with options greyed out.
     if (!authModule.hasRole('admin')) return;
-    createWindow('settings', { width: 760, height: 640, minWidth: 640, minHeight: 480 });
+    createWindow('settings', { width: 1100, height: 680, minWidth: 900, minHeight: 520 });
   });
   ipcMain.on('open-search-window', () => {
     if (!authModule.getCurrentUser()) return;
