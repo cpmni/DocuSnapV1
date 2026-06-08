@@ -437,7 +437,7 @@ function register(ctx) {
       const info = documents.insert(db, {
         original_filename: path.basename(outFile),
         folder_path:       path.dirname(outFile),
-        status:            'pending',
+        status:            'needs_review',
       });
       docIds.push(info.lastInsertRowid);
     }
