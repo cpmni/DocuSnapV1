@@ -38,6 +38,7 @@ Common OCR confusions addressed:
     T ← 7
 """
 
+import re
 from collections import Counter
 
 # ── Confusion maps ────────────────────────────────────────────────────────────
@@ -271,6 +272,116 @@ def build_format_index(formats_data: list) -> dict:
 
     index['_fallback'] = fallback
     return index
+
+
+# ── Learned noise-edge stripping ─────────────────────────────────────────────
+#
+# Distinct from the character-substitution correction above: rather than fixing
+# individual confused characters inside a same-length value, this learns
+# whether a template's CONFIRMED values ever legitimately carry non-digit
+# characters at all. When confirmed history proves they never do (every
+# distinct confirmed value for this exact supplier+doctype+field is plain
+# digits, across enough instances to trust it), a leading/trailing non-digit
+# fragment on a fresh OCR read — the "# " in "# 14269", the "F " in "F 31901"
+# — is provably noise (commonly bleed from an adjacent label) and can be
+# trimmed conservatively. If even ONE confirmed value carries letters or
+# symbols ("INV12343", or a template whose real numbers genuinely include
+# "#"), that proves a prefix CAN be legitimate for THIS template — the rule
+# permanently does not fire for it, and values pass through untouched.
+
+MIN_CONFIRMED_FOR_NOISE_PROFILE = 10
+
+_NON_DIGIT_EDGE = re.compile(r'^\D+|\D+$')
+
+
+def infer_digit_only_profile(sample_values: list, confirmed_count: int) -> bool | None:
+    """
+    True only when confirmed history PROVES this exact template's values are
+    always plain digits: unanimous agreement across every distinct confirmed
+    value, backed by at least MIN_CONFIRMED_FOR_NOISE_PROFILE confirmed
+    instances. A single legitimately-prefixed confirmed value disqualifies the
+    inference for this template — one counter-example is enough to prove a
+    prefix can be real here, and "infer the simplest pattern supported by the
+    history" means we stop, not guess which examples were the exceptions.
+
+    Returns None ("no rule learned — leave OCR output untouched") when there
+    isn't yet enough evidence, or the evidence is mixed/non-digit.
+    """
+    if confirmed_count < MIN_CONFIRMED_FOR_NOISE_PROFILE:
+        return None
+    clean = [v.strip() for v in (sample_values or []) if v and v.strip()]
+    if len(clean) < 2:
+        return None
+    return True if all(v.isdigit() for v in clean) else None
+
+
+def strip_non_digit_edges(value: str) -> str:
+    """
+    Remove leading/trailing runs of non-digit characters, leaving everything
+    between the first and last digit untouched. Conservative by construction —
+    it can only ever shorten a value from the outside in, never edit a
+    character that sits inside the digit run, so an OCR confusion INSIDE the
+    number ("3l900") is left for try_correct's substitution logic rather than
+    risked here. Never returns an empty string: an all-noise value ("###") is
+    left exactly as found rather than wiped out.
+    """
+    stripped = _NON_DIGIT_EDGE.sub('', value)
+    return stripped or value
+
+
+def build_noise_profile_index(formats_data: list) -> dict:
+    """
+    Build a strictly-scoped lookup of which (supplier, doctype) invoice_number
+    templates have confirmed-digits-only evidence behind them.
+
+    No document-type or global fallback — unlike build_format_index's
+    `_fallback`, a learned digit-only profile must never leak outside the
+    exact supplier+doctype+field combination that produced the evidence: one
+    supplier's numbering convention is not evidence about another's, and a
+    rule "for invoice_number" must never apply to any other field.
+
+    Returns:
+        {(supplier_lower, doctype_lower, 'invoice_number'): True, ...}
+    Absence from the index means "no rule learned — leave value unchanged".
+    """
+    index = {}
+    for entry in (formats_data or []):
+        if entry.get('field_key') != 'invoice_number':
+            continue
+        supplier = (entry.get('supplier_name') or '').lower().strip()
+        doc_type = (entry.get('document_type') or '').lower().strip()
+        if not supplier or not doc_type:
+            continue
+        if infer_digit_only_profile(entry.get('sample_values') or [],
+                                    entry.get('confirmed_count') or 0) is True:
+            index[(supplier, doc_type, 'invoice_number')] = True
+    return index
+
+
+def denoise_value(value: str,
+                  field_key: str,
+                  supplier_name: str | None,
+                  doc_type: str | None,
+                  noise_profile_index: dict) -> tuple:
+    """
+    Apply a learned digit-only edge-strip, scoped to the exact
+    supplier+doctype+field combination whose confirmed history produced it.
+
+    Returns:
+        (value, was_changed) — the original value and False when no rule
+        applies for this exact key, or stripping would be a no-op.
+    """
+    if not value or not noise_profile_index:
+        return value, False
+
+    key = ((supplier_name or '').lower().strip(),
+           (doc_type or '').lower().strip(),
+           field_key)
+    if key not in noise_profile_index:
+        return value, False
+
+    cleaned = strip_non_digit_edges(value.strip())
+    return (cleaned, True) if cleaned != value else (value, False)
 
 
 # ── Public entry point ────────────────────────────────────────────────────────

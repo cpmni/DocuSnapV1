@@ -41,12 +41,14 @@ contextBridge.exposeInMainWorld('docusnap', {
   pickFolder:         ()     => ipcRenderer.invoke('pick-folder'),
   pickOutputFolder:   ()     => ipcRenderer.invoke('pick-output-folder'),
   processFolder:      (f)    => ipcRenderer.invoke('process-folder', f),
+  stopProcessing:     ()     => ipcRenderer.invoke('stop-processing'),
   onProgress:         (cb)   => ipcRenderer.on('process-progress', (_e, m) => cb(m)),
   removeProgress:     ()     => ipcRenderer.removeAllListeners('process-progress'),
 
   // ── Document types & fields ──────────────────────────────────────────────────
   getDocumentTypes:    ()           => ipcRenderer.invoke('get-document-types'),
   getAllDocTypes:       ()           => ipcRenderer.invoke('get-all-doc-types'),
+  getAllDocTypesAll:    ()           => ipcRenderer.invoke('get-all-doc-types-all'),
   addDocumentType:     (data)       => ipcRenderer.invoke('add-document-type', data),
   updateDocumentType:  (id, ch)     => ipcRenderer.invoke('update-document-type', id, ch),
   addField:            (data)       => ipcRenderer.invoke('add-field', data),
@@ -74,23 +76,41 @@ contextBridge.exposeInMainWorld('docusnap', {
   matchLogoHash:       (b64)      => ipcRenderer.invoke('match-logo-hash', b64),
   saveLogoFingerprint: (data)     => ipcRenderer.invoke('save-logo-fingerprint', data),
 
-  // ── AI / Processing mode ─────────────────────────────────────────────────────
-  getAiStatus:               ()           => ipcRenderer.invoke('get-ai-status'),
+  // ── Processing mode ──────────────────────────────────────────────────────────
   getProcessingMode:         ()           => ipcRenderer.invoke('get-processing-mode'),
   setProcessingMode:         (mode)       => ipcRenderer.invoke('set-processing-mode', mode),
-  pullAiModel:               ()           => ipcRenderer.invoke('pull-ai-model'),
-  onPullProgress:            (cb)         => ipcRenderer.on('pull-progress', (_e, m) => cb(m)),
   checkFastModeSuggestion:   (supplier)   => ipcRenderer.invoke('check-fast-mode-suggestion', supplier),
   onProcessingModeChanged:   (cb)         => ipcRenderer.on('processing-mode-changed', (_e, m) => cb(m)),
 
+  // ── Watch folder ─────────────────────────────────────────────────────────────
+  pickWatchFolder:         ()        => ipcRenderer.invoke('pick-watch-folder'),
+  getWatchFolderConfig:    ()        => ipcRenderer.invoke('get-watch-folder-config'),
+  setWatchFolder:          (folder)  => ipcRenderer.invoke('set-watch-folder', folder),
+  setWatchFolderEnabled:   (enabled) => ipcRenderer.invoke('set-watch-folder-enabled', enabled),
+
+  // ── File naming ──────────────────────────────────────────────────────────────
+  getFilenamePatternInfo:  ()         => ipcRenderer.invoke('get-filename-pattern-info'),
+  previewFilenamePattern:  (pattern)  => ipcRenderer.invoke('preview-filename-pattern', pattern),
+
   // ── Search ───────────────────────────────────────────────────────────────────
   searchDocuments:     (params)   => ipcRenderer.invoke('search-documents', params),
+
+  // ── Template Viewer / Anchor Mapping (admin-only, lives in Settings) ────────
+  getTemplates:               ()                  => ipcRenderer.invoke('get-templates'),
+  getTemplateDetail:          (id)                => ipcRenderer.invoke('get-template-detail', id),
+  getTemplateSampleCandidates:(id)                => ipcRenderer.invoke('get-template-sample-candidates', id),
+  setTemplateSample:          (id, docId)         => ipcRenderer.invoke('set-template-sample', id, docId),
+  saveTemplateMapping:        (id, mapping)       => ipcRenderer.invoke('save-template-mapping', id, mapping),
+  setTemplateMappingEnabled:  (id, key, enabled)  => ipcRenderer.invoke('set-template-mapping-enabled', id, key, enabled),
+  deleteTemplateMapping:      (id, key)           => ipcRenderer.invoke('delete-template-mapping', id, key),
+  recordTemplateMappingTest:  (id, key, result)   => ipcRenderer.invoke('record-template-mapping-test', id, key, result),
 
   // ── Settings ─────────────────────────────────────────────────────────────────
   getSetting:          (key)      => ipcRenderer.invoke('get-setting', key),
   setSetting:          (key, val) => ipcRenderer.invoke('set-setting', key, val),
 
   // ── Events from main → renderer ──────────────────────────────────────────────
+  onThemeChanged:        (cb) => ipcRenderer.on('theme-changed',          (_e, t) => cb(t)),
   onReviewCountChanged:  (cb) => ipcRenderer.on('review-count-changed',  (_e, n) => cb(n)),
   onDeferredCountChanged:(cb) => ipcRenderer.on('deferred-count-changed', (_e, n) => cb(n)),
   onReprocessProgress:   (cb) => ipcRenderer.on('reprocess-progress',    (_e, m) => cb(m)),

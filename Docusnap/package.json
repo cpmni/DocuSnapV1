@@ -17,7 +17,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "assets/icon.ico",
@@ -42,17 +44,25 @@
       {
         "from": "python_backend/",
         "to": "python_backend",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "config/",
         "to": "config",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "vendor/",
         "to": "vendor",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*",
+          "!ollama/**/*",
+          "!ollama_models/**/*"
+        ]
       }
     ],
     "files": [
@@ -60,6 +70,9 @@
       "database/**/*",
       "assets/**/*",
       "package.json"
+    ],
+    "asarUnpack": [
+      "**/*.node"
     ],
     "directories": {
       "output": "dist",
@@ -71,6 +84,7 @@
     "electron-builder": "^24.13.3"
   },
   "dependencies": {
+    "argon2": "^0.44.0",
     "better-sqlite3": "^12.10.0"
   }
 }

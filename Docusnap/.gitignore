@@ -2,9 +2,13 @@ vendor/ollama_models/
 vendor/tesseract/tessdata/
 vendor/ollama/
 vendor/python_env/
+vendor/python/
+vendor/python_venv_backup/
 vendor/tesseract/
 dist/
 node_modules/
 __pycache__/
 *.pyc
 *.pyo
+/processing.log
+/processing_test.log

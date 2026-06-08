@@ -1,0 +1,46 @@
+{
+  "name": "07_supplier_identity_resync",
+  "description": "Stage 0 template matching identifies this document via keyword-fingerprint similarity to a DIFFERENT supplier's saved template (near-duplicate layouts/fingerprints are common — see CLAUDE.md/processing.log notes on templates 10-13 being created from garbled OCR text with near-identical phashes). That template's own stored anchor ('Remit To' -> right) lands on a payment-processor name printed on this document, seeding a provisional supplier_name of 'Acme Corp Holdings' at 85% (template_anchor). Stage 2 then applies this supplier's OWN previously-taught anchor ('Supplier' -> right, usage_count 4, learned confidence 1.0 -> 95%), which reads the document's real vendor line and produces 'Greenfield Logistics Ltd' — a different value, at higher confidence, in results['supplier_name']. Pre-fix, engine.py's local `supplier_name` variable stayed frozen at the Stage-0 template guess ('Acme Corp Holdings') for every downstream lookup/persistence (_supplier_name, hint/anchor/logo writes), even though the field the user sees and confirms already reads 'Greenfield Logistics Ltd' — silently teaching the learning corpus the wrong identity on every confirm. This fixture pins the fix: the final `_supplier_name` (and the persisted identity derived from it) must track the LATER, anchor-derived value in results['supplier_name'], not the earlier template guess.",
+  "represents": "The general supplier-identity-drift CLASS at the Stage 0 -> Stage 2 boundary — any time an early-stage provisional supplier guess (template match, logo match, hint text-scan) is subsequently superseded by a higher-confidence later-stage read of the actual page (keyword, anchor, anchor_crop). Will recur for any future supplier whose template/logo collides with another's, unless the pipeline always re-resolves its 'who is this' from the latest, most-reliable field value rather than freezing it at first guess.",
+  "document_type": "Invoice",
+  "document_slug": "invoice",
+  "mode": "smart",
+  "supplier_name": null,
+  "ocr_text": "INVOICE\n\nGreenfield Logistics Ltd\nRemit To: Acme Corp Holdings\nSupplier: Greenfield Logistics Ltd\n\nInvoice Number: INV-7821\nInvoice Date: 14/03/2026\n",
+  "field_defs": [
+    { "key": "supplier_name",  "label": "Supplier Name",  "type": "text", "required": 1, "is_variable": 0, "confidence_threshold": 70 },
+    { "key": "invoice_number", "label": "Invoice Number", "type": "text", "required": 1, "is_variable": 1, "confidence_threshold": 70 },
+    { "key": "invoice_date",   "label": "Invoice Date",   "type": "date", "required": 1, "is_variable": 1, "confidence_threshold": 70 }
+  ],
+  "hints": [],
+  "anchors": [
+    {
+      "supplier_name": "Greenfield Logistics Ltd",
+      "document_type": "invoice",
+      "field_key": "supplier_name",
+      "anchor_label": "Supplier",
+      "direction": "right",
+      "usage_count": 4,
+      "confidence": 1.0,
+      "x_norm": 0,
+      "y_norm": 0
+    }
+  ],
+  "logos": [],
+  "templates": [
+    {
+      "id": 99,
+      "name": "Acme Corp Holdings Invoice",
+      "document_type_slug": "invoice",
+      "keyword_fingerprint": ["Greenfield", "Logistics", "Remit", "Invoice"],
+      "fields": [
+        { "field_key": "supplier_name",  "anchor_label": "Remit To",       "direction": "right", "fixed_value": null, "is_variable": 1 },
+        { "field_key": "invoice_number", "anchor_label": "Invoice Number", "direction": "right", "fixed_value": null, "is_variable": 1 }
+      ]
+    }
+  ],
+  "expected": {
+    "supplier_name":  "Greenfield Logistics Ltd",
+    "_supplier_name": "Greenfield Logistics Ltd"
+  }
+}

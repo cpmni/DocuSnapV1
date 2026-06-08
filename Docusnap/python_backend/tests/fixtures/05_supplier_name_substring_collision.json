@@ -1,0 +1,25 @@
+{
+  "name": "05_supplier_name_substring_collision",
+  "description": "The current document's supplier ('PO Solutions Group Ltd') textually CONTAINS the name of a different, unrelated supplier ('Solutions Group') that has its own confidently-learned (usage_count=4) but WRONG po_number hint. A naive substring match ('a in b or b in a') would let that unrelated supplier's hint fire on this document. The correct behaviour is to use the document's own freshly-extracted po_number and ignore the unrelated hint entirely.",
+  "represents": "The general collision-bug CLASS (not the one specific 'PO'/'Polychemtex' pair already fixed): any time one supplier's name is a substring of another's — which is common with holding-company/subsidiary/rebrand naming — naive substring matching cross-contaminates their learned data. This is the regression guard for the exact-match fix in engine.py::_apply_hints and anchor.py::_anchor_matches.",
+  "document_type": "Purchase Order",
+  "document_slug": "purchase_order",
+  "mode": "smart",
+  "ocr_text": "PURCHASE ORDER\n\nPO Number: PSX-44120\nPO Date: 09/06/2026\nSupplier: PO Solutions Group Ltd\n\nItem                Qty   Total\nCable looms          60    £540.00\n",
+  "field_defs": [
+    { "key": "supplier_name", "label": "Supplier Name", "type": "text", "required": 1, "is_variable": 0 },
+    { "key": "po_date",       "label": "PO Date",       "type": "date", "required": 1, "is_variable": 1 },
+    { "key": "po_number",     "label": "PO Number",     "type": "text", "required": 1, "is_variable": 1 }
+  ],
+  "hints": [
+    { "supplier_name": "Solutions Group", "document_type": "purchase_order",
+      "field_key": "po_number", "hint_value": "WRONG-00000", "usage_count": 4 }
+  ],
+  "anchors":   [],
+  "templates": [],
+  "expected": {
+    "supplier_name": "PO Solutions Group Ltd",
+    "po_number": "PSX-44120",
+    "po_date": "09-06-2026"
+  }
+}

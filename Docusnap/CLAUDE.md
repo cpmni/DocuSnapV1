@@ -5,6 +5,34 @@
 
 ---
 
+## Working rules (read before any fix)
+
+**Token conservation — hard requirement**
+- Smallest possible scope: read the fewest files necessary; never scan the
+  whole repo unless a narrow, targeted investigation has proven insufficient.
+- Stage non-trivial work into incremental edits — prefer a focused change
+  over a broad rewrite. Keep investigation and responses concise and
+  non-repetitive.
+
+**Extraction/anchoring fixes are system fixes, not document fixes**
+Any issue touching field detection, anchors, OCR regions, keyword matching,
+validation, supplier/template learning, or extraction accuracy is a reusable
+*application-level* weakness until proven otherwise — assume it also affects
+unseen suppliers, layouts, and future templates, not just the document on screen.
+- Fix the reusable layer — matching strategy, learning rules, normalisation,
+  thresholds, validation — not the symptom on one sample document.
+- No one-document hacks: filename-based exceptions, sample-specific
+  coordinates, or narrow conditionals tuned to a single case (allowed only
+  with a documented architectural reason).
+- State explicitly how the fix helps future unseen documents/templates. If it
+  mainly helps the sample in front of you and doesn't clearly improve the
+  broader system, stop and redesign the approach.
+- Verify beyond the single failing document: note likely impact on other
+  templates/layouts and regression risk; prefer multi-sample or manual
+  cross-checks over a single-document confirmation.
+
+---
+
 ## What this is
 Windows desktop app: scans documents → OCR → extracts fields → files them intelligently.
 Electron + Python backend + SQLite. Fully offline capable.
@@ -17,7 +45,7 @@ Electron + Python backend + SQLite. Fully offline capable.
 | Desktop shell | Electron 31, Node.js, better-sqlite3 |
 | UI | Vanilla HTML/CSS/JS, frameless windows |
 | OCR | Tesseract 5 via pytesseract + pypdfium2 |
-| AI extraction | Ollama + phi3:mini (optional, on-demand) |
+| AI extraction | phi3:mini via Ollama (dormant — `ai` mode not exposed in shipped UI; not bundled in installer) |
 | Database | SQLite via better-sqlite3 |
 | Platform | Windows only |
 
@@ -31,34 +59,38 @@ docusnap2/
 │   ├── preload.js                       # contextBridge API bridge
 │   ├── modules/
 │   │   ├── processing/handler.js        # folder import, reprocess, OCR region, logos
-│   │   ├── processing/ollama_handler.js # AI status, mode switching, model pull
+│   │   ├── processing/processing_mode_handler.js # mode get/set, fast-mode suggestion
 │   │   ├── review/handler.js            # queue, confirm, defer, delete, pages
 │   │   ├── filing/handler.js            # folder structure, rename, XML metadata
 │   │   ├── settings/handler.js          # doc types, fields, key-value settings
+│   │   ├── templates/handler.js         # Admin Template Viewer — browse/pin samples, anchor→target mapping CRUD
 │   │   └── search/handler.js            # document search
 │   └── windows/
 │       ├── main/{index.html,renderer.js}
 │       ├── review/{index.html,renderer.js}
-│       ├── settings/{index.html,renderer.js}  # needs rebuild
+│       ├── settings/{index.html,renderer.js}  # incl. Admin Template Viewer (anchor/target mapping)
 │       └── search/index.html                  # placeholder
 ├── database/
 │   ├── index.js                         # open(), runMigrations(), runJsMigrations()
 │   └── modules/
 │       ├── document_types.js            # doc type + field CRUD, seedBuiltInTypes()
 │       ├── documents.js                 # document CRUD, search(), getReviewQueue()
-│       └── learning.js                 # hints, anchors, logos, getSetting/setSetting
+│       ├── learning.js                 # hints, anchors, logos, getSetting/setSetting
+│       └── templates.js                # template CRUD, field mappings, sample-document linkage
 ├── python_backend/
 │   ├── process_docs.py                  # CLI entry point, streams JSON to stdout
-│   ├── ollama_manager.py                # status check + model pull streaming
 │   ├── extraction/
-│   │   ├── engine.py                    # ExtractionEngine class, 4-stage pipeline
+│   │   ├── engine.py                    # ExtractionEngine — staged pipeline orchestration (see Extraction pipeline below)
+│   │   ├── template_matcher.py          # Stage 0: learned-template identification + field seeding
+│   │   ├── template_mapper.py           # Stage 0.5: admin-drawn anchor→target zone mapping extraction
 │   │   ├── keyword.py                   # Stage 1: regex pattern matching
 │   │   ├── anchor.py                    # Stage 2: spatial anchors + logo match
-│   │   ├── llm.py                       # Stage 3: phi3:mini via Ollama
+│   │   ├── ocr_corrector.py             # Stage 2.5: learned OCR misread correction
+│   │   ├── llm.py                       # Stage 3: phi3:mini via Ollama (dormant — 'ai' mode not exposed in UI)
 │   │   └── validator.py                 # Stage 4: cross-field validation
 │   ├── ocr/{tesseract.py,region.py}
 │   ├── logo/fingerprint.py
-│   └── render/pages.py
+│   └── render/pages.py                 # PDF→PNG rendering — shared by review/search/template preview (see Gotchas)
 └── config/keyword_patterns.json        # editable pattern library
 ```
 
@@ -90,6 +122,13 @@ migrations      — version, applied_at
 ## Extraction pipeline
 ```
 process_docs.py → ExtractionEngine.extract()
+  Stage 0:   template_matcher.py — match a learned template, seed fields from it
+  Stage 0.5: template_mapper.py  — admin-drawn anchor→target zone mappings
+             (Settings → Templates → "Map a Field"; only runs when the matched
+             template has enabled mappings AND page images are available).
+             Returns the same result shape as anchor.extract_with_anchors();
+             engine.py merges it into results by confidence comparison — the
+             same approach Stage 2 uses for its anchor results below.
   Stage 1: keyword.py    — regex patterns from keyword_patterns.json (~60-70% fields)
   Stage 2: anchor.py     — learned label positions + logo supplier ID
   Stage 3: llm.py        — phi3:mini, ONLY for missing fields (smart/ai mode)
@@ -109,6 +148,16 @@ process_docs.py → ExtractionEngine.extract()
 
 **sanitise_extractions()** in process_docs.py strips _ keys and normalises
 all values to proper dicts. Call this after popping metadata, before emitting.
+
+**Supplier identity — don't freeze it early**: `supplier_name`/`_supplier_name`
+must reflect the LATEST reliable `results['supplier_name']`, not the first
+guess. Stage 0's template match (or the logo fallback) only seeds a
+provisional value; Stage 1/2 can legitimately override it with something more
+accurate (e.g. a taught `anchor_crop` reading the real page beats a
+near-duplicate-logo template guess). engine.py re-resolves `supplier_name`
+once, after every stage that can touch it has run, before persisting
+hints/anchors/logos — otherwise the learning corpus gets silently written
+against a stale identity.
 
 ---
 
@@ -239,10 +288,8 @@ Three tabs: General | Document Types | Fields
 
 **General tab**:
 - Output folder: text display + Browse button → `pick-output-folder` IPC
-- Processing mode: Fast/Smart/AI radio buttons → `set-processing-mode`
-- AI status indicator: shows if Ollama running + model available
-- Download AI Model button (only shown if not available) → `pull-ai-model`
-  with progress bar during download
+- Processing mode: Fast/Smart radio buttons → `set-processing-mode`
+  (AI mode and Ollama model-download UI were removed — not shipped)
 - Global confidence threshold slider
 
 **Document Types tab**:
@@ -325,7 +372,7 @@ fs.writeFileSync(file, JSON.stringify(data));
 // cleanup in proc.on('close')
 ```
 
-Python uses `py -3.12` in dev, `vendor/python/Scripts/python.exe` when packaged.
+Python uses `py -3.12` in dev, `vendor/python/python.exe` when packaged.
 
 ---
 

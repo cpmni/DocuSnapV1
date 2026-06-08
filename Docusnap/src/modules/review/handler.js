@@ -7,6 +7,52 @@
 
 const os = require('os');
 
+// ── Deferred source-file move (confirm/commit path) ──────────────────────────
+// commitDocument copies the original scan to its filed location immediately,
+// but the source can still be open in the preview pipeline (img/PDF render)
+// at that exact moment — deleting it then is the documented cause of the
+// locked-file failures in processing.log. Instead of retrying in a loop while
+// the user waits, we defer the delete to the next point we know for certain
+// the preview has moved on: the next get-document-pages call for a different
+// document. With no further document to load (end of queue), there's no
+// "next load" to hook, so we fall back to a short fixed delay instead.
+//
+// At most one move is ever pending — confirms happen one at a time, and the
+// pending move for document A is always resolved (by the next load, or by
+// its timer) before document B can be confirmed in the normal flow.
+let _pendingSourceMove = null;   // { srcPath, originalFilename, timer }
+
+function _runPendingSourceMove(ctx, trigger) {
+  const pending = _pendingSourceMove;
+  if (!pending) return;
+  _pendingSourceMove = null;
+  if (pending.timer) clearTimeout(pending.timer);
+
+  const { fs, logger } = ctx;
+  const filing = require('../filing/handler');
+  filing.removeSourceFile(fs, pending.srcPath, logger).then(ok => {
+    logger?.log(
+      `[filing] source move (${trigger}): ${pending.originalFilename}` +
+      (ok ? ' — removed' : ' — FAILED (see warnings above)')
+    );
+  });
+}
+
+function _scheduleSourceMove(ctx, db, documents, { srcPath, originalFilename }) {
+  // Resolve anything still outstanding first — never silently drop a
+  // scheduled removal just because another confirm arrived.
+  if (_pendingSourceMove) _runPendingSourceMove(ctx, 'flushed before next confirm');
+
+  if (documents.getReviewCount(db) > 0) {
+    _pendingSourceMove = { srcPath, originalFilename, timer: null };
+    ctx.logger?.log(`[filing] source move deferred to next document load: ${originalFilename}`);
+  } else {
+    const timer = setTimeout(() => _runPendingSourceMove(ctx, 'after ~3s, queue empty'), 3000);
+    _pendingSourceMove = { srcPath, originalFilename, timer };
+    ctx.logger?.log(`[filing] queue empty — source move deferred ~3s: ${originalFilename}`);
+  }
+}
+
 function register(ctx) {
   const { ipcMain, getDb, pythonExe, pythonArgs, tesseractPath,
           notifyMainWindow, spawn, path, fs, logger } = ctx;
@@ -42,6 +88,14 @@ function register(ctx) {
       return [];
     }
     const filePath = path.join(folderPath, filename);
+
+    // A new document loading is our signal that the previous one's preview
+    // has moved on — fire any deferred source-file move now (unless, oddly,
+    // it's pending removal of the very file we're about to load).
+    if (_pendingSourceMove && _pendingSourceMove.srcPath !== filePath) {
+      _runPendingSourceMove(ctx, 'next document loaded');
+    }
+
     if (!fs.existsSync(filePath)) {
       console.log(`[pages] file not found: ${filePath}`);
       return [];
@@ -60,9 +114,21 @@ function register(ctx) {
       const proc = spawn(py, pythonArgs(script, '--file', filePath),
         { windowsHide: true });
       let out = '';
+      let err = '';
       proc.stdout.on('data', d => { out += d.toString(); });
-      proc.on('close', () => {
-        try { resolve(JSON.parse(out)); } catch { resolve([]); }
+      proc.stderr.on('data', d => { err += d.toString(); });
+      proc.on('error', (e) => {
+        console.log(`[pages] spawn error for ${filePath}: ${e.message}`);
+        resolve([]);
+      });
+      proc.on('close', (code) => {
+        try {
+          resolve(JSON.parse(out));
+        } catch (e) {
+          console.log(`[pages] render failed for ${filePath} — exit=${code} stdout_len=${out.length} parse_error=${e.message}`
+            + (err ? ` stderr=${err.trim().slice(0, 500)}` : ''));
+          resolve([]);
+        }
       });
     });
   });
@@ -113,6 +179,7 @@ function register(ctx) {
       document_id, folder_path, original_filename,
       corrections, allValues, supplier_name,
       document_type, document_type_slug,
+      taught_fields,
     } = payload;
 
     const db      = getDb();
@@ -140,6 +207,7 @@ function register(ctx) {
       allValues,
       documentType:      document_type || dtInfo?.name,
       dtInfo,
+      logger,
     });
 
     if (!filingResult.success) {
@@ -164,13 +232,14 @@ function register(ctx) {
     // Save corrections for learning
     learning.saveCorrections(
       db, document_id, corrections || {},
-      supplier_name, document_type_slug, allValues
+      supplier_name, document_type_slug, allValues,
+      taught_fields || []
     );
 
     // Create or update template
     try {
       await _upsertTemplate(ctx, db, document_id, {
-        allValues, document_type_slug, supplier_name,
+        allValues, document_type_slug, supplier_name, dtInfo,
       });
     } catch (e) {
       console.warn('[confirm-review] template upsert failed (non-critical):', e.message);
@@ -192,6 +261,17 @@ function register(ctx) {
       document_type_id: dtInfo?.id             || null,
     });
 
+    // Defer removal of the original scan until the preview UI is done with
+    // it — see _scheduleSourceMove for why (locked-file failures at confirm
+    // time, documented in processing.log). commitDocument has already copied
+    // the file to its filed location; only the delete-of-original is deferred.
+    if (filingResult.srcPath) {
+      _scheduleSourceMove(ctx, db, documents, {
+        srcPath:          filingResult.srcPath,
+        originalFilename: original_filename,
+      });
+    }
+
     notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
     notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
 
@@ -210,7 +290,7 @@ module.exports = { register };
 
 // ── Template create / update ──────────────────────────────────────────────────
 
-async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_slug, supplier_name }) {
+async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_slug, supplier_name, dtInfo }) {
   const { path, fs, templatesDir } = ctx;
   const templates = require('../../../database/modules/templates');
 
@@ -224,7 +304,7 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
   const keyword_fingerprint  = _parseJson(doc.keyword_fingerprint, []);
 
   // Build template field rules from confirmed values
-  const fields = _buildTemplateFields(allValues, document_type_slug);
+  const fields = _buildTemplateFields(allValues, dtInfo);
 
   if (doc.template_id) {
     // Update existing template
@@ -253,28 +333,32 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
   }
 }
 
-function _buildTemplateFields(allValues, document_type_slug) {
-  const FIELD_ANCHORS = {
-    supplier_name:      { anchor: null,    direction: null,    variable: false },
-    customer_name:      { anchor: null,    direction: null,    variable: false },
-    invoice_number:     { anchor: '#',     direction: 'right', variable: true  },
-    invoice_date:       { anchor: 'Date:', direction: 'right', variable: true  },
-    sales_order_number: { anchor: 'Order', direction: 'right', variable: true  },
-    order_date:         { anchor: 'Date:', direction: 'right', variable: true  },
-    po_number:          { anchor: 'PO',    direction: 'right', variable: true  },
-    po_date:            { anchor: 'Date:', direction: 'right', variable: true  },
-  };
+function _buildTemplateFields(allValues, dtInfo) {
+  // Whether a field is "variable" (differs per document — reference number,
+  // date) or "constant" for a supplier (company name, address) comes from
+  // the document type's own schema (ref_field_key / date_field_key / type),
+  // via document_types.js's _annotateFieldVariability — see field.is_variable.
+  // This generalises to custom document types/fields automatically, and
+  // keeps the answer in one place rather than a hand-maintained map here
+  // that previously also stored short anchor-label guesses like 'PO' or '#'
+  // which matched as substrings inside unrelated text (e.g. 'PO' inside
+  // "Polychemtex Inc.", producing "lychemtex Inc." as the extracted value).
+  // Variable fields get no anchor_label here — they are templated by the
+  // user-taught ⊕ field-anchor tool (Stage 2, coordinate-based crop+OCR),
+  // which is immune to text-substring collisions.
+  const fieldMeta = new Map((dtInfo?.fields || []).map(f => [f.key, f]));
 
   return Object.entries(allValues)
     .filter(([, v]) => v && String(v).trim())
     .map(([key, value]) => {
-      const rule = FIELD_ANCHORS[key] || { anchor: null, direction: null, variable: true };
+      const meta = fieldMeta.get(key);
+      const isVariable = meta ? !!meta.is_variable : true;
       return {
-        field_key:   key,
-        anchor_label: rule.anchor || null,
-        direction:   rule.direction || 'right',
-        fixed_value: rule.variable ? null : String(value).trim(),
-        is_variable: rule.variable,
+        field_key:    key,
+        anchor_label: null,
+        direction:    'right',
+        fixed_value:  isVariable ? null : String(value).trim(),
+        is_variable:  isVariable,
       };
     });
 }

@@ -1,0 +1,25 @@
+{
+  "name": "04_missing_field_vs_stale_hint",
+  "description": "The PO number is genuinely absent from this document's OCR text (damaged/illegible header), AND the supplier already has a confidently-learned hint (usage_count=5, above the apply threshold) that remembers a DIFFERENT po_number value from a previous document. The correct behaviour is to leave po_number empty/unfound — NOT to backfill it from the cached hint.",
+  "represents": "The structural root cause of the '763321' cross-contamination bug: a per-document 'variable' field (reference number / date) must never be filled from a remembered supplier hint, no matter how many times that hint has been confirmed. This is the regression guard for engine.py::_apply_hints' field_defs[*].is_variable skip — proving a stale cached value cannot be force-applied to a document where extraction legitimately found nothing.",
+  "document_type": "Purchase Order",
+  "document_slug": "purchase_order",
+  "mode": "smart",
+  "ocr_text": "PURCHASE ORDER\n\n[ header section unreadable — water damage ]\n\nDate of Order: 11/05/2026\nVendor: Castlemere Fabrication Co\n\nItem                  Qty    Total\nAluminium sheet         40    £820.00\n",
+  "field_defs": [
+    { "key": "supplier_name", "label": "Supplier Name", "type": "text", "required": 1, "is_variable": 0 },
+    { "key": "po_date",       "label": "PO Date",       "type": "date", "required": 1, "is_variable": 1 },
+    { "key": "po_number",     "label": "PO Number",     "type": "text", "required": 1, "is_variable": 1 }
+  ],
+  "hints": [
+    { "supplier_name": "Castlemere Fabrication Co", "document_type": "purchase_order",
+      "field_key": "po_number", "hint_value": "OLD-99999", "usage_count": 5 }
+  ],
+  "anchors":   [],
+  "templates": [],
+  "expected": {
+    "supplier_name": "Castlemere Fabrication Co",
+    "po_number": null,
+    "po_date": "11-05-2026"
+  }
+}

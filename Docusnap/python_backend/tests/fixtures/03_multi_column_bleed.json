@@ -1,0 +1,22 @@
+{
+  "name": "03_multi_column_bleed",
+  "description": "Two-column layout where Tesseract merges adjacent columns onto the same OCR line, separated by a large whitespace gap (e.g. 'PO Number: GR-30182          Delivery Date: 02/05/2026'). Without column-gap-aware splitting, a naive right-of-label regex grabs the next column's label+value as garbage.",
+  "represents": "OCR column bleed — a known, recurring artefact of multi-column invoices/POs/statements (not specific to one supplier's layout). Guards the column-gap splitting fix referenced in CLAUDE.md/keyword.py.",
+  "document_type": "Purchase Order",
+  "document_slug": "purchase_order",
+  "mode": "smart",
+  "ocr_text": "PURCHASE ORDER                                    Ship To: Warehouse 4, Unit 9\nPO Number: GR-30182                               Delivery Date: 02/05/2026\nPO Date: 19/04/2026                               Contact: J. Whitfield\nSupplier: Granworth Industrial Supplies           Buyer Ref: INT-2291\n",
+  "field_defs": [
+    { "key": "supplier_name", "label": "Supplier Name", "type": "text", "required": 1, "is_variable": 0 },
+    { "key": "po_date",       "label": "PO Date",       "type": "date", "required": 1, "is_variable": 1 },
+    { "key": "po_number",     "label": "PO Number",     "type": "text", "required": 1, "is_variable": 1 }
+  ],
+  "hints":     [],
+  "anchors":   [],
+  "templates": [],
+  "expected": {
+    "supplier_name": "Granworth Industrial Supplies",
+    "po_number": "GR-30182",
+    "po_date": "19-04-2026"
+  }
+}

@@ -26,10 +26,11 @@ function deleteExtractions(db, document_id) {
 // ── Corrections & hints ───────────────────────────────────────────────────────
 
 function saveCorrections(db, document_id, corrections,
-                         supplier_name, document_type, allValues) {
+                         supplier_name, document_type, allValues, taughtFields = []) {
   const effectiveSupplier = supplier_name
     || (allValues && allValues.supplier_name)
     || '__global__';
+  const taught = new Set(taughtFields);
 
   const insertCorr = db.prepare(`
     INSERT INTO corrections
@@ -70,13 +71,24 @@ function saveCorrections(db, document_id, corrections,
             field_key, hint_value: corrected_value,
           });
         }
-        // Clear bad anchors — if the user had to correct this field, the stored
-        // anchor position was wrong. Wipe it so a correct one can be re-learned.
-        clearAnchors(db, {
-          supplier_name: effectiveSupplier,
-          document_type: document_type || null,
-          field_key,
-        });
+        // Clear bad anchors — if the user had to manually correct this field,
+        // the stored anchor position was wrong. Wipe it so a correct one can
+        // be re-learned. EXCEPT: when the new value came from the ⊕ highlight/
+        // zone-OCR teaching tool in this same cycle, captureAnchorContext()
+        // already saved the anchor for that exact position moments ago — that
+        // is the system *learning*, not evidence of a *wrong* anchor. Treating
+        // it as a correction would wipe the anchor immediately after teaching
+        // it, so anchors could never survive a single confirm cycle for ANY
+        // supplier/template (the dominant lifecycle bug — not specific to one
+        // document or field). Skipping the wipe here is what lets future
+        // teachings accumulate via saveAnchor's usage_count/confidence upsert.
+        if (!taught.has(field_key)) {
+          clearAnchors(db, {
+            supplier_name: effectiveSupplier,
+            document_type: document_type || null,
+            field_key,
+          });
+        }
       }
     }
 
@@ -130,34 +142,105 @@ function clearAnchors(db, { supplier_name, document_type, field_key }) {
   });
 }
 
+// "Same spot" tolerance floor (normalized page-fraction) for anchors saved
+// without usable w_norm/h_norm — keeps the distance check meaningful even
+// when the stored box has zero/near-zero recorded dimensions.
+const ANCHOR_MIN_TOLERANCE = 0.015;
+
+function _centerDistance(ax, ay, bx, by) {
+  const dx = ax - bx;
+  const dy = ay - by;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
 function saveAnchor(db, {
   supplier_name, document_type, field_key,
   anchor_label, direction, page_zone, x_norm, y_norm,
   w_norm = 0, h_norm = 0
 }) {
-  return db.prepare(`
-    INSERT INTO field_anchors
-      (supplier_name, document_type, field_key, anchor_label,
-       direction, page_zone, x_norm, y_norm, w_norm, h_norm)
-    VALUES
-      (@supplier_name, @document_type, @field_key, @anchor_label,
-       @direction, @page_zone, @x_norm, @y_norm, @w_norm, @h_norm)
-    ON CONFLICT(supplier_name, document_type, field_key, anchor_label, direction)
-    DO UPDATE SET
-      usage_count = usage_count + 1,
-      confidence  = MIN(1.0, confidence + 0.1),
-      x_norm      = (@x_norm + x_norm) / 2.0,
-      y_norm      = (@y_norm + y_norm) / 2.0,
-      w_norm      = CASE WHEN @w_norm > 0 THEN (@w_norm + w_norm) / 2.0 ELSE w_norm END,
-      h_norm      = CASE WHEN @h_norm > 0 THEN (@h_norm + h_norm) / 2.0 ELSE h_norm END,
-      last_seen   = datetime('now')
-  `).run({
+  const key = {
     supplier_name: supplier_name || '__unknown__',
     document_type: document_type || null,
-    field_key, anchor_label, direction, page_zone,
+    field_key, anchor_label, direction,
+  };
+  const incoming = {
+    page_zone,
     x_norm: x_norm || 0, y_norm: y_norm || 0,
     w_norm: w_norm || 0, h_norm: h_norm || 0,
-  });
+  };
+
+  // `=` (not `IS`) deliberately mirrors the NULL-never-matches semantics of
+  // the unique index this replaces — ON CONFLICT(supplier_name, document_type,
+  // field_key, anchor_label, direction) never fires when any key column is
+  // NULL (SQLite treats each NULL as distinct), so those anchors always
+  // inserted fresh. Using `=` here reproduces that exactly: NULL = NULL is
+  // NULL/false, so such rows still always take the insert branch below.
+  const existing = db.prepare(`
+    SELECT id, x_norm, y_norm, w_norm, h_norm, usage_count
+    FROM field_anchors
+    WHERE supplier_name = @supplier_name AND document_type = @document_type
+      AND field_key = @field_key AND anchor_label = @anchor_label AND direction = @direction
+  `).get(key);
+
+  if (!existing) {
+    db.prepare(`
+      INSERT INTO field_anchors
+        (supplier_name, document_type, field_key, anchor_label,
+         direction, page_zone, x_norm, y_norm, w_norm, h_norm)
+      VALUES
+        (@supplier_name, @document_type, @field_key, @anchor_label,
+         @direction, @page_zone, @x_norm, @y_norm, @w_norm, @h_norm)
+    `).run({ ...key, ...incoming });
+    return;
+  }
+
+  // Tolerance is derived from the anchor's OWN stored footprint (half its
+  // larger dimension, floored at ANCHOR_MIN_TOLERANCE) — so "is this the same
+  // spot" scales with each field's value-box size for any supplier, field, or
+  // future template, rather than using one fixed distance for every anchor.
+  const tolerance = Math.max(existing.w_norm, existing.h_norm, ANCHOR_MIN_TOLERANCE) / 2;
+  const distance  = _centerDistance(incoming.x_norm, incoming.y_norm, existing.x_norm, existing.y_norm);
+
+  let next;
+  if (distance <= tolerance) {
+    // Refinement: usage-weighted running average. A well-established anchor
+    // (high usage_count) barely moves on each new consistent sample and
+    // converges/stabilizes — instead of being perturbed by a fixed 50% on
+    // every re-teach forever, which is how drift accumulated previously.
+    const n = existing.usage_count || 1;
+    const blend = (oldVal, inVal) => (oldVal * n + inVal) / (n + 1);
+    next = {
+      x_norm: blend(existing.x_norm, incoming.x_norm),
+      y_norm: blend(existing.y_norm, incoming.y_norm),
+      w_norm: incoming.w_norm > 0 ? blend(existing.w_norm, incoming.w_norm) : existing.w_norm,
+      h_norm: incoming.h_norm > 0 ? blend(existing.h_norm, incoming.h_norm) : existing.h_norm,
+    };
+  } else {
+    // Correction: the new box sits materially away from the stored one — the
+    // user redrew it somewhere else on purpose. Trust it outright rather than
+    // diluting it into the very position it's correcting (blending a
+    // correction into a wrong position is what produces two fields' anchors
+    // overlapping and cropping near-identical garbage).
+    next = {
+      x_norm: incoming.x_norm,
+      y_norm: incoming.y_norm,
+      w_norm: incoming.w_norm > 0 ? incoming.w_norm : existing.w_norm,
+      h_norm: incoming.h_norm > 0 ? incoming.h_norm : existing.h_norm,
+    };
+  }
+
+  db.prepare(`
+    UPDATE field_anchors
+    SET usage_count = usage_count + 1,
+        confidence  = MIN(1.0, confidence + 0.1),
+        page_zone   = @page_zone,
+        x_norm      = @x_norm,
+        y_norm      = @y_norm,
+        w_norm      = @w_norm,
+        h_norm      = @h_norm,
+        last_seen   = datetime('now')
+    WHERE id = @id
+  `).run({ id: existing.id, page_zone: incoming.page_zone, ...next });
 }
 
 function getAllAnchors(db) {
@@ -255,17 +338,23 @@ function getFieldFormats(db) {
         document_type: row.document_type || '',
         field_key:     row.field_key,
         _values:       new Set(),
+        _count:        0,
       };
     }
     groups[key]._values.add(finalValue);
+    groups[key]._count += 1;
   }
 
-  // Only return groups with 3+ distinct confirmed values (enough to learn a pattern)
+  // Only return groups with 3+ distinct confirmed values (enough to learn a pattern).
+  // confirmed_count (total confirmed instances, not deduped) lets consumers like
+  // ocr_corrector's noise-profile inference enforce their own, stricter "enough
+  // examples" thresholds without a second DB round-trip.
   return Object.values(groups)
     .filter(g => g._values.size >= 3)
-    .map(({ _values, ...rest }) => ({
+    .map(({ _values, _count, ...rest }) => ({
       ...rest,
-      sample_values: [..._values].slice(0, 20),
+      sample_values:   [..._values].slice(0, 20),
+      confirmed_count: _count,
     }));
 }
 

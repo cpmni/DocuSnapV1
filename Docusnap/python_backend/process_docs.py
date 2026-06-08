@@ -65,8 +65,6 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--folder",          required=True)
     parser.add_argument("--tesseract",       default=None)
-    parser.add_argument("--ollama-url",      default="http://127.0.0.1:11434/api/generate")
-    parser.add_argument("--model",           default="phi3:mini")
     parser.add_argument("--mode",            default="smart",
                         choices=["fast","smart","ai"])
     parser.add_argument("--config-file",     default=None)
@@ -107,17 +105,12 @@ def main():
     engine = ExtractionEngine(
         mode        = args.mode,
         config_path = args.config_file,
-        ollama_url  = args.ollama_url,
-        model       = args.model,
         emit_fn     = emit,
     )
 
     # Load learned format templates for OCR correction
     if formats:
         engine.set_formats(formats)
-
-    # Warm up model before batch
-    engine.warmup()
 
     # Find all supported files
     folder = Path(args.folder)
@@ -208,7 +201,8 @@ def main():
                 else:
                     log(f"  MISSED  {field_key}  (method tried: {method})")
 
-            status = "needs_review" if review_needed else "confirmed"
+            # Always send to review queue — user confirms each document
+            status = "needs_review"
 
             emit({
                 "type":               "file_done",

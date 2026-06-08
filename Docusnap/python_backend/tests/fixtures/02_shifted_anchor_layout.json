@@ -1,0 +1,22 @@
+{
+  "name": "02_shifted_anchor_layout",
+  "description": "Same logical fields as the baseline, but the label sits ABOVE its value on its own line instead of inline to the left ('Label\\nValue' instead of 'Label: Value'). Simulates a supplier whose form layout shifted (redesigned template, different scan crop, new stationery) — exactly the class of drift that makes a previously-learned anchor position stop matching.",
+  "represents": "Layout drift within a 'known' supplier/template: the system must re-derive fields from the new positions via the 'below' direction rather than silently keeping a stale cached value from the old layout.",
+  "document_type": "Purchase Order",
+  "document_slug": "purchase_order",
+  "mode": "smart",
+  "ocr_text": "PURCHASE ORDER\nSolas Manufacturing Ltd\n\nPurchase Order Number\nPO-77410\n\nDate of Order\n21/04/2026\n\nVendor\nHalden & Pryce Supplies\n",
+  "field_defs": [
+    { "key": "supplier_name", "label": "Supplier Name", "type": "text", "required": 1, "is_variable": 0 },
+    { "key": "po_date",       "label": "PO Date",       "type": "date", "required": 1, "is_variable": 1 },
+    { "key": "po_number",     "label": "PO Number",     "type": "text", "required": 1, "is_variable": 1 }
+  ],
+  "hints":     [],
+  "anchors":   [],
+  "templates": [],
+  "expected": {
+    "supplier_name": "Halden & Pryce Supplies",
+    "po_number": "PO-77410",
+    "po_date": "21-04-2026"
+  }
+}

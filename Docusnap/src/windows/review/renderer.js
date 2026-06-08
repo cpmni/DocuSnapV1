@@ -12,6 +12,7 @@ let currentPage      = 0;
 let pageImages       = [];
 let fieldDefs        = [];
 let corrections      = {};
+let anchorTaughtFields = new Set(); // field_keys taught via the ⊕ highlight/zone-OCR tool this cycle
 let activeTab        = 'review';
 let selectedTypeSlug = null;   // tracks dropdown selection independently
 
@@ -114,6 +115,7 @@ function updateTabCounts() {
 
 // ── Queue list (review tab) ───────────────────────────────────────────────────
 function renderQueueList() {
+  document.getElementById('deferred-footer').style.display = 'none';
   const list  = document.getElementById('queue-list');
   const empty = document.getElementById('queue-empty');
   list.innerHTML = '';
@@ -141,16 +143,19 @@ function renderQueueList() {
 
 // ── Deferred list (deferred tab) ─────────────────────────────────────────────
 function renderDeferredList() {
-  const list  = document.getElementById('queue-list');
-  const empty = document.getElementById('queue-empty');
+  const list   = document.getElementById('queue-list');
+  const empty  = document.getElementById('queue-empty');
+  const footer = document.getElementById('deferred-footer');
   list.innerHTML = '';
 
   if (deferredQueue.length === 0) {
     empty.style.display = '';
     empty.textContent = 'No deferred documents';
+    footer.style.display = 'none';
     return;
   }
   empty.style.display = 'none';
+  footer.style.display = 'block';
 
   for (const doc of deferredQueue) {
     const el = document.createElement('div');
@@ -210,6 +215,7 @@ async function _selectDoc(doc) {
   currentDoc  = doc;
   currentPage = 0;
   corrections = {};
+  anchorTaughtFields = new Set();
 
   document.querySelectorAll('.queue-item').forEach(el => {
     el.classList.toggle('active', parseInt(el.dataset.id) === doc.id);
@@ -480,7 +486,8 @@ async function runZoneOcr(rect, fieldKey) {
         corrections[fieldKey] = { original_value: orig, corrected_value: text };
         validateConfirm();
       }
-      await captureAnchorContext(rect, fieldKey, text, imgW, imgH, scaleX, scaleY);
+      const anchorSaved = await captureAnchorContext(rect, fieldKey, text, imgW, imgH, scaleX, scaleY);
+      if (anchorSaved) anchorTaughtFields.add(fieldKey);
     }
   } catch (err) {
     console.error('Zone OCR error:', err);
@@ -491,23 +498,27 @@ async function runZoneOcr(rect, fieldKey) {
 }
 
 async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, scaleY) {
+  const xNorm    = (rect.x + rect.w / 2) / imgW;
+  const yNorm    = (rect.y + rect.h / 2) / imgH;
+  const pageZone = yNorm < 0.33 ? 'top' : yNorm < 0.66 ? 'middle' : 'bottom';
+  const docType  = currentDoc?.type_slug || currentDoc?.document_type_slug || null;
+
+  const anchorBase = {
+    supplier_name: cleanSupplierName(currentDoc?.supplier_name),
+    document_type: docType,
+    field_key:     fieldKey,
+    page_zone:     pageZone,
+    x_norm:        xNorm,
+    y_norm:        yNorm,
+    w_norm:        rect.w / imgW,
+    h_norm:        rect.h / imgH,
+  };
+
+  // Best-effort: try to find a real label to the left of the box, then above.
+  // Each attempt is independently guarded — a failure here (bad crop, OCR
+  // error) must NOT prevent the guaranteed fallback save below, otherwise
+  // nothing gets learned at all.
   try {
-    const xNorm    = (rect.x + rect.w / 2) / imgW;
-    const yNorm    = (rect.y + rect.h / 2) / imgH;
-    const pageZone = yNorm < 0.33 ? 'top' : yNorm < 0.66 ? 'middle' : 'bottom';
-    const docType  = currentDoc?.type_slug || currentDoc?.document_type_slug || null;
-
-    const anchorBase = {
-      supplier_name: cleanSupplierName(currentDoc?.supplier_name),
-      document_type: docType,
-      field_key:     fieldKey,
-      page_zone:     pageZone,
-      x_norm:        xNorm,
-      y_norm:        yNorm,
-      w_norm:        rect.w / imgW,
-      h_norm:        rect.h / imgH,
-    };
-
     const leftPad    = Math.min(rect.x, 300);
     const leftCanvas = document.createElement('canvas');
     leftCanvas.width  = Math.round(leftPad * scaleX);
@@ -524,10 +535,14 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
       const leftLabel = extractLabel(leftText);
       if (leftLabel) {
         await window.docusnap.saveFieldAnchor({ ...anchorBase, anchor_label: leftLabel, direction: 'right' });
-        return;
+        return true;
       }
     }
+  } catch (err) {
+    console.warn('Anchor capture: left-label lookup failed (non-critical):', err);
+  }
 
+  try {
     const abovePad    = Math.min(rect.y, 60);
     const aboveCanvas = document.createElement('canvas');
     aboveCanvas.width  = Math.round(rect.w * scaleX);
@@ -544,17 +559,23 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
       const aboveLabel = extractLabel(aboveText);
       if (aboveLabel) {
         await window.docusnap.saveFieldAnchor({ ...anchorBase, anchor_label: aboveLabel, direction: 'below' });
-        return;
+        return true;
       }
     }
-
-    const fallbackLabel = labelFor(fieldKey);
-    if (fallbackLabel && fallbackLabel.length > 2) {
-      await window.docusnap.saveFieldAnchor({ ...anchorBase, anchor_label: fallbackLabel, direction: 'right' });
-    }
   } catch (err) {
-    console.warn('Anchor capture failed (non-critical):', err);
+    console.warn('Anchor capture: above-label lookup failed (non-critical):', err);
   }
+
+  // Guaranteed fallback — always save SOMETHING so the position is learned
+  // even when no nearby label text could be read.
+  try {
+    const fallbackLabel = labelFor(fieldKey) || fieldKey.replace(/_/g, ' ');
+    await window.docusnap.saveFieldAnchor({ ...anchorBase, anchor_label: fallbackLabel, direction: 'right' });
+    return true;
+  } catch (err) {
+    console.warn('Anchor capture: fallback save failed:', err);
+  }
+  return false;
 }
 
 function cleanSupplierName(name) {
@@ -598,6 +619,7 @@ document.getElementById('btn-confirm').addEventListener('click', async () => {
     allValues,
     supplier_name:      currentDoc.supplier_name,
     document_type_slug: selectedTypeSlug || currentDoc?.type_slug || null,
+    taught_fields:      [...anchorTaughtFields],
   });
 
   if (!result?.success) {
@@ -635,6 +657,24 @@ document.getElementById('btn-defer').addEventListener('click', async () => {
   if (queue.length > 0) selectDoc(queue[0]);
   else { currentDoc = null; clearDocPanel(); }
   window.docusnap.notifyReviewComplete();
+});
+
+// ── Delete All Deferred ───────────────────────────────────────────────────────
+document.getElementById('btn-delete-all').addEventListener('click', async () => {
+  if (deferredQueue.length === 0) return;
+  if (!confirm(`Delete all ${deferredQueue.length} deferred document(s)? This cannot be undone.`)) return;
+
+  const toDelete = [...deferredQueue];
+  for (const doc of toDelete) {
+    const filePath = doc.folder_path ? `${doc.folder_path}\\${doc.original_filename}` : null;
+    await window.docusnap.deleteDocument(doc.id, filePath);
+  }
+
+  const hadCurrent = toDelete.some(d => d.id === currentDoc?.id);
+  deferredQueue = [];
+  if (hadCurrent) { currentDoc = null; clearDocPanel(); }
+  updateTabCounts();
+  renderDeferredList();
 });
 
 // ── Delete ────────────────────────────────────────────────────────────────────

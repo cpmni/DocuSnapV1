@@ -127,6 +127,42 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 6 applied: field_anchors w_norm/h_norm columns');
   }
 
+  // Migration 8: Template Viewer / Anchor Mapping — pin a representative
+  // sample document per template, and store admin-defined per-field
+  // anchor → target zone mappings (additive: new nullable column + new
+  // table; existing templates/extraction behaviour is untouched until an
+  // admin actively maps a field — see template_mapper.py).
+  if (!applied.has(8)) {
+    if (tableExists(db, 'templates') && !hasColumn(db, 'templates', 'sample_document_id')) {
+      try { db.exec(`ALTER TABLE templates ADD COLUMN sample_document_id INTEGER REFERENCES documents(id)`); } catch {}
+    }
+    if (!tableExists(db, 'template_field_mappings')) {
+      db.exec(`CREATE TABLE template_field_mappings (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        template_id      INTEGER NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
+        field_key        TEXT    NOT NULL,
+        page_number      INTEGER NOT NULL DEFAULT 0,
+        anchor_text      TEXT,
+        anchor_x_norm    REAL, anchor_y_norm REAL, anchor_w_norm REAL, anchor_h_norm REAL,
+        target_x_norm    REAL, target_y_norm REAL, target_w_norm REAL, target_h_norm REAL,
+        offset_dx_norm   REAL, offset_dy_norm REAL,
+        ocr_type         TEXT    NOT NULL DEFAULT 'text',
+        search_expansion REAL    NOT NULL DEFAULT 0.04,
+        region_hint      TEXT,
+        enabled          INTEGER NOT NULL DEFAULT 1,
+        last_test_value      TEXT,
+        last_test_confidence REAL,
+        last_test_status     TEXT,
+        last_test_at         TEXT,
+        created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+        updated_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(template_id, field_key)
+      )`);
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (8)').run();
+    console.log('JS migration 8 applied: template viewer / anchor mapping (sample_document_id, template_field_mappings)');
+  }
+
   // Migration 7: local authentication — users, recovery_codes, audit_log
   if (!applied.has(7)) {
     if (!tableExists(db, 'users')) {

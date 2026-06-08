@@ -1,0 +1,53 @@
+{
+  "id": 10,
+  "name": "fl ™% Invoice",
+  "slug": "fl_invoice",
+  "document_type_slug": "invoice",
+  "logo_phash": "9ec3e0e1c21fe1c3",
+  "keyword_fingerprint": [
+    "City",
+    "Office",
+    "Boucher",
+    "Crescent",
+    "Belfast",
+    "BT12",
+    "accounts",
+    "cityofficeni",
+    "com",
+    "Aurora"
+  ],
+  "confirmed_count": 3,
+  "created_at": "2026-06-07 23:05:22",
+  "updated_at": "2026-06-08 02:32:54",
+  "sample_document_id": 542,
+  "fields": [
+    {
+      "id": 245,
+      "template_id": 10,
+      "field_key": "invoice_date",
+      "anchor_label": null,
+      "direction": "right",
+      "fixed_value": null,
+      "is_variable": 1
+    },
+    {
+      "id": 246,
+      "template_id": 10,
+      "field_key": "invoice_number",
+      "anchor_label": null,
+      "direction": "right",
+      "fixed_value": null,
+      "is_variable": 1
+    },
+    {
+      "id": 244,
+      "template_id": 10,
+      "field_key": "supplier_name",
+      "anchor_label": null,
+      "direction": "right",
+      "fixed_value": "Aurora Managed Services Ltd",
+      "is_variable": 0
+    }
+  ],
+  "field_mappings": []
+}

@@ -71,6 +71,32 @@ function seedBuiltInTypes(db) {
   seed();
 }
 
+// ── Field variability (schema-derived) ────────────────────────────────────────
+//
+// "Is this field's value constant for a given supplier (safe to remember as a
+// template fixed_value / supplier hint) or does it vary per document (must be
+// re-located on every document, never cached)?" used to be answered by
+// hand-maintained per-field-key tables scattered across the codebase (e.g. a
+// FIELD_ANCHORS map of "po_number: variable, supplier_name: not"). Those don't
+// extend to custom document types/fields, can drift out of sync, and a wrong
+// guess for a "variable" field is exactly how a stale value (e.g. one
+// supplier's PO number) gets force-applied to a different document.
+//
+// The document type's own schema already encodes this: the designated
+// reference/date fields are by definition unique per document, and so is any
+// field typed as a date. Everything else defaults to "constant" — which is
+// also the right default for supplier_name/customer_name/addresses/terms.
+function _annotateFieldVariability(dt) {
+  for (const f of dt.fields || []) {
+    f.is_variable = (
+      f.key === dt.ref_field_key ||
+      f.key === dt.date_field_key ||
+      f.type === 'date'
+    ) ? 1 : 0;
+  }
+  return dt;
+}
+
 // ── CRUD ──────────────────────────────────────────────────────────────────────
 
 function getAll(db) {
@@ -89,7 +115,7 @@ function getWithFields(db, slug) {
     WHERE document_type_id = ? AND enabled = 1
     ORDER BY sort_order
   `).all(dt.id);
-  return dt;
+  return _annotateFieldVariability(dt);
 }
 
 function getAllWithFields(db) {
@@ -101,6 +127,19 @@ function getAllWithFields(db) {
       SELECT * FROM fields
       WHERE document_type_id = ? AND enabled = 1
       ORDER BY sort_order
+    `).all(dt.id);
+    _annotateFieldVariability(dt);
+  }
+  return types;
+}
+
+function getAllWithFieldsAll(db) {
+  const types = db.prepare(
+    'SELECT * FROM document_types ORDER BY sort_order, name'
+  ).all();
+  for (const dt of types) {
+    dt.fields = db.prepare(`
+      SELECT * FROM fields WHERE document_type_id = ? ORDER BY sort_order
     `).all(dt.id);
   }
   return types;
@@ -154,6 +193,6 @@ function updateType(db, id, changes) {
 }
 
 module.exports = {
-  seedBuiltInTypes, getAll, getWithFields, getAllWithFields,
+  seedBuiltInTypes, getAll, getWithFields, getAllWithFields, getAllWithFieldsAll,
   addType, updateType, addField, updateField, deleteField,
 };

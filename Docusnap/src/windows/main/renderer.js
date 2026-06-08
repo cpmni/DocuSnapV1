@@ -10,6 +10,7 @@ let stats          = { total: 0, done: 0, ok: 0, err: 0 };
 const folderBox     = document.getElementById('folder-box');
 const folderDisplay = document.getElementById('folder-display');
 const btnRun        = document.getElementById('btn-run');
+const btnStop       = document.getElementById('btn-stop');
 const btnClear      = document.getElementById('btn-clear');
 const dropzone      = document.getElementById('dropzone');
 const resultsPanel  = document.getElementById('results-panel');
@@ -96,6 +97,7 @@ async function startProcessing() {
   running = true;
   btnRun.disabled = true;
   btnRun.textContent = '⏳ Processing…';
+  btnStop.classList.add('visible');
 
   // Reset stats for new run
   stats = { total: 0, done: 0, ok: 0, err: 0 };
@@ -120,6 +122,7 @@ async function startProcessing() {
     running = false;
     btnRun.disabled  = false;
     btnRun.innerHTML = '&#9654;&nbsp; Process Documents';
+    btnStop.classList.remove('visible');
     return;
   }
 
@@ -127,6 +130,7 @@ async function startProcessing() {
   running = false;
   btnRun.disabled  = false;
   btnRun.innerHTML = '&#9654;&nbsp; Process Documents';
+  btnStop.classList.remove('visible');
   clearStage();
   logStatus.textContent = 'Complete';
   progressBar.style.width = '100%';
@@ -174,7 +178,7 @@ function handleProgress(msg) {
 
     case 'log':
       appendLog(msg.text, msg.level || '');
-      if (msg.text && msg.text.includes('Extracting fields')) {
+      if (msg.text && msg.text.includes('Stage 3:')) {
         setStage(stageFile.textContent, 'llm');
       } else if (msg.text && msg.text.includes('OCR:')) {
         setStage(stageFile.textContent, 'ocr');
@@ -247,6 +251,13 @@ function escHtml(str) {
 }
 
 
+// ── Stop button ───────────────────────────────────────────────────────────────
+btnStop?.addEventListener('click', async () => {
+  btnStop.disabled = true;
+  btnStop.textContent = 'Stopping…';
+  await window.docusnap.stopProcessing();
+});
+
 // ── Review & settings buttons ─────────────────────────────────────────────────
 document.getElementById('btn-review')?.addEventListener('click', () => {
   window.docusnap.openReviewWindow();
@@ -281,20 +292,11 @@ document.getElementById('btn-search')?.addEventListener('click', () => {
 // ── Processing mode badge ─────────────────────────────────────────────────────
 const modeBadge = document.getElementById('mode-badge');
 
-const MODE_LABELS = {
-  fast:  { label: 'FAST',  bg: '#0d2e1e', color: '#3ecf8e', border: '#1a4a2e' },
-  smart: { label: 'SMART', bg: '#0d1f3a', color: '#6ea8ff', border: '#1a3a6a' },
-  ai:    { label: 'AI',    bg: '#2e1a00', color: '#f7b84f', border: '#4a2e00' },
-};
-
 async function updateModeBadge() {
   if (!modeBadge) return;
   const mode = await window.docusnap.getProcessingMode();
-  const cfg  = MODE_LABELS[mode] || MODE_LABELS.smart;
-  modeBadge.textContent        = cfg.label;
-  modeBadge.style.background   = cfg.bg;
-  modeBadge.style.color        = cfg.color;
-  modeBadge.style.borderColor  = cfg.border;
+  modeBadge.textContent = mode === 'fast' ? 'FAST' : 'SMART';
+  modeBadge.dataset.mode = mode;
   modeBadge.title = `Processing mode: ${mode}. Click to change in Settings.`;
 }
 
@@ -459,8 +461,8 @@ function showChangePasswordDialog() {
     if (!text) { msg.style.display = 'none'; return; }
     msg.textContent = text;
     msg.style.display = 'block';
-    msg.style.background = ok ? 'rgba(62,207,142,.12)' : 'rgba(247,111,111,.12)';
-    msg.style.color      = ok ? 'var(--ok)'            : 'var(--err)';
+    msg.style.background = ok ? 'var(--ok-bg)' : 'var(--err-bg)';
+    msg.style.color      = ok ? 'var(--ok)'    : 'var(--err)';
   }
 
   overlay.querySelector('#cp-cancel').addEventListener('click', () => overlay.remove());

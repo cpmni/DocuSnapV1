@@ -31,7 +31,7 @@ docusnap/
 │   │   ├── engine.py               ← Orchestrates all 4 stages
 │   │   ├── keyword.py              ← Stage 1: pattern matching
 │   │   ├── anchor.py               ← Stage 2: spatial anchors + logo
-│   │   ├── llm.py                  ← Stage 3: Phi-3 Mini via Ollama
+│   │   ├── llm.py                  ← Stage 3: Phi-3 Mini via Ollama (dormant — 'ai' mode not exposed in UI, not bundled)
 │   │   └── validator.py            ← Stage 4: cross-field validation
 │   ├── ocr/
 │   │   ├── tesseract.py            ← Page OCR + PDF rendering
@@ -49,7 +49,7 @@ docusnap/
 ## Module Details
 
 ### `src/main.js` — Entry point
-Thin router only. Creates windows, starts Ollama, registers module handlers.
+Thin router only. Creates windows, registers module handlers.
 **Do not add business logic here.** Each module registers its own IPC handlers
 via `module.register(ctx)`.
 
@@ -110,7 +110,10 @@ by their position relative to known label text.
 Also handles logo-based supplier identification.
 
 ### Stage 3 — `extraction/llm.py`
-Phi-3 Mini via Ollama. Only called for fields not found by stages 1-2.
+Phi-3 Mini via Ollama. Only called for fields not found by stages 1-2,
+and only in `ai` mode — which is dormant (`_should_use_llm` gates it off,
+and the shipped Settings UI exposes only Fast/Smart). Ollama is not bundled
+in the installer; this stage never runs in the shipped product.
 Uses learned hints from `supplier_hints` table as few-shot examples.
 Model: `phi3:mini` (configurable).
 

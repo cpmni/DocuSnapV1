@@ -131,22 +131,10 @@ async function commitDocument({
 
   fs.copyFileSync(srcPath, targetPath);
 
-  // Retry delete with escalating delays
-  const delays = [200, 500, 1000, 1500, 2000, 3000];
-  let deleted = false;
-  for (const delay of delays) {
-    await new Promise(r => setTimeout(r, delay));
-    try { fs.unlinkSync(srcPath); deleted = true; break; }
-    catch (e) { if (e.code !== 'EBUSY' && e.code !== 'EPERM') break; }
-  }
-  if (!deleted) {
-    // Rename fallback
-    try {
-      const trash = srcPath + '.deleting';
-      fs.renameSync(srcPath, trash);
-      _scheduleDelete(fs, trash, 10);
-    } catch {}
-  }
+  // Original removal is deferred by the caller (review/handler.js schedules
+  // it via removeSourceFile() below) until the preview UI is done with the
+  // file — copying it here and deleting it later avoids the locked-file
+  // failures that happen when the source is still open for preview.
 
   // ── 6. Write metadata XML ─────────────────────────────────────────────────────
   const xmlFilename = path.basename(finalFilename, ext) + '.xml';
@@ -164,7 +152,48 @@ async function commitDocument({
     filePath:     targetPath,
     metadataPath: xmlPath,
     isDuplicate:  finalFilename.includes('-DUPLICATE'),
+    srcPath,      // caller schedules removal once the original is no longer in use
   };
+}
+
+// ── Deferred source-file removal ──────────────────────────────────────────────
+// Called by review/handler.js once it has determined the preview UI should no
+// longer have `srcPath` open (next document loaded, or a short fixed delay at
+// the end of the queue). At that point a single unlink is expected to succeed
+// — the escalating retry and rename-to-`.deleting` fallback below exist only
+// as a final safety net for the rare case that assumption doesn't hold for a
+// particular file (e.g. an AV scan or search indexer grabbed it), not as the
+// primary mechanism.
+async function removeSourceFile(fs, srcPath, logger) {
+  if (!fs.existsSync(srcPath)) return true;
+
+  try { fs.unlinkSync(srcPath); return true; }
+  catch (e) {
+    if (e.code !== 'EBUSY' && e.code !== 'EPERM') {
+      logger?.warn(`[filing] could not remove source file: ${srcPath} — ${e.message}`);
+      return false;
+    }
+  }
+
+  // Fallback: still locked at the time we expected it to be free — escalating
+  // retry, then park it for later cleanup rather than leaving it in place.
+  logger?.warn(`[filing] source file still locked at expected-free time, retrying with backoff: ${srcPath}`);
+  const delays = [200, 500, 1000, 1500, 2000, 3000];
+  for (const delay of delays) {
+    await new Promise(r => setTimeout(r, delay));
+    try { fs.unlinkSync(srcPath); return true; }
+    catch (e) { if (e.code !== 'EBUSY' && e.code !== 'EPERM') break; }
+  }
+  try {
+    const trash = srcPath + '.deleting';
+    fs.renameSync(srcPath, trash);
+    _scheduleDelete(fs, trash, 10);
+    logger?.warn(`[filing] renamed still-locked source for later cleanup: ${trash}`);
+    return true;
+  } catch (e) {
+    logger?.warn(`[filing] could not remove or rename locked source file: ${srcPath} — ${e.message}`);
+    return false;
+  }
 }
 
 // ── XML builder ───────────────────────────────────────────────────────────────
@@ -248,4 +277,4 @@ function _scheduleDelete(fs, filePath, attempts) {
   }, 2000);
 }
 
-module.exports = { register, commitDocument };
+module.exports = { register, commitDocument, removeSourceFile };

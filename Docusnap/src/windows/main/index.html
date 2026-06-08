@@ -23,8 +23,33 @@
       --err:       #f76f6f;
       --text:      #e2e6f0;
       --muted:     #7a82a0;
+      --ok-bg:     #0d2e1e;
+      --err-bg:    #2e0d0d;
+      --warn-bg:   #2e1a00;
+      --accent-bg: #0d1f3a;
+      --accent-border: #1a3a6a;
+      --ok-border: #1a4a2e;
+      --doc-bg:    #080a0f;
       --mono:      'IBM Plex Mono', monospace;
       --sans:      'IBM Plex Sans', sans-serif;
+      color-scheme: dark;
+    }
+    :root[data-theme="light"] {
+      --bg:        #f0f3fa;
+      --surface:   #ffffff;
+      --surface2:  #e8edf7;
+      --border:    #cdd4e8;
+      --border2:   #b8c2d8;
+      --text:      #1c2035;
+      --muted:     #5a6385;
+      --ok-bg:     #d4f5e5;
+      --err-bg:    #fde8e8;
+      --warn-bg:   #fef3d8;
+      --accent-bg: #ddeaff;
+      --accent-border: #90b8ff;
+      --ok-border: #6dd8a8;
+      --doc-bg:    #e8ecf5;
+      color-scheme: light;
     }
 
     html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 13px; overflow: hidden; }
@@ -50,6 +75,30 @@
     .tb-btn:hover { background: var(--surface2); color: var(--text); }
     .tb-btn.close:hover { background: var(--err); color: #fff; }
 
+    /* Titlebar nav buttons */
+    .tb-nav-btn {
+      -webkit-app-region: no-drag;
+      padding: 3px 10px; border-radius: 5px; border: 1px solid var(--border2);
+      background: var(--surface); color: var(--muted); font-size: 11px; cursor: pointer;
+      display: flex; align-items: center; gap: 6px; font-family: inherit;
+      transition: all .15s;
+    }
+    .tb-nav-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .tb-review-badge {
+      background: var(--warn); color: var(--bg);
+      border-radius: 10px; padding: 1px 6px;
+      font-size: 10px; font-weight: 600; display: none;
+    }
+    .tb-mode-badge {
+      -webkit-app-region: no-drag;
+      padding: 2px 8px; border-radius: 10px; font-size: 10px;
+      font-family: inherit; border: 1px solid;
+      background: var(--ok-bg); color: var(--ok); border-color: var(--ok-border);
+    }
+    .tb-mode-badge[data-mode="smart"] {
+      background: var(--accent-bg); color: var(--accent2); border-color: var(--accent-border);
+    }
+
     /* ── Account chip & menu ── */
     .user-chip-wrap { position: relative; -webkit-app-region: no-drag; }
     .user-chip {
@@ -62,7 +111,7 @@
     .user-chip:hover { border-color: var(--accent); }
     .user-chip-avatar {
       width: 20px; height: 20px; border-radius: 50%;
-      background: var(--surface2); color: var(--accent2);
+      background: var(--accent-bg); color: var(--accent2);
       display: flex; align-items: center; justify-content: center;
       font-size: 10px; font-weight: 600; flex-shrink: 0;
     }
@@ -71,9 +120,9 @@
       font-size: 9px; letter-spacing: .05em; text-transform: uppercase; font-weight: 600;
       padding: 1px 7px; border-radius: 8px; border: 1px solid;
     }
-    .role-pill[data-role="admin"]    { background: transparent; color: var(--warn);   border-color: var(--warn); }
-    .role-pill[data-role="edit"]     { background: transparent; color: var(--accent2); border-color: var(--accent); }
-    .role-pill[data-role="readonly"] { background: var(--surface2); color: var(--muted); border-color: var(--border2); }
+    .role-pill[data-role="admin"]    { background: var(--warn-bg);   color: var(--warn);   border-color: var(--warn); }
+    .role-pill[data-role="edit"]     { background: var(--accent-bg); color: var(--accent2); border-color: var(--accent-border); }
+    .role-pill[data-role="readonly"] { background: var(--surface2);  color: var(--muted);  border-color: var(--border2); }
     .user-menu {
       position: absolute; top: calc(100% + 6px); right: 0; min-width: 180px;
       background: var(--surface); border: 1px solid var(--border2); border-radius: 8px;
@@ -108,11 +157,8 @@
       transition: border-color .2s, background .2s; min-height: 72px;
       display: flex; flex-direction: column; gap: 4px;
     }
-    .folder-box:hover { border-color: var(--accent); background: #131829; }
-    .folder-path {
-      font-family: var(--mono); font-size: 10px; color: var(--muted);
-      word-break: break-all; line-height: 1.5;
-    }
+    .folder-box:hover { border-color: var(--accent); background: var(--surface2); }
+    .folder-path { font-family: var(--mono); font-size: 10px; color: var(--muted); word-break: break-all; line-height: 1.5; }
     .folder-path.set { color: var(--accent2); }
 
     .btn-run {
@@ -125,11 +171,17 @@
     .btn-run:active:not(:disabled) { transform: scale(.98); }
     .btn-run:disabled { opacity: .35; cursor: not-allowed; }
 
-    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    .stat-card {
-      background: var(--bg); border: 1px solid var(--border);
-      border-radius: 6px; padding: 10px 8px; text-align: center;
+    .btn-stop {
+      display: none; width: 100%; padding: 8px; border-radius: 7px;
+      border: 1px solid var(--err); background: transparent; color: var(--err);
+      font-family: var(--sans); font-size: 12px; font-weight: 500; cursor: pointer;
+      transition: background .15s; margin-top: 6px;
     }
+    .btn-stop:hover { background: var(--err-bg); }
+    .btn-stop.visible { display: block; }
+
+    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .stat-card { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px 8px; text-align: center; }
     .stat-val { font-family: var(--mono); font-size: 20px; font-weight: 500; color: var(--text); }
     .stat-lbl { font-size: 10px; color: var(--muted); margin-top: 2px; letter-spacing: .05em; }
     .stat-card.ok .stat-val  { color: var(--ok); }
@@ -138,22 +190,18 @@
     /* ── Main content ── */
     #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 
-    /* ── Drop zone (empty state) ── */
+    /* ── Drop zone ── */
     #dropzone {
       flex: 1; display: flex; flex-direction: column;
       align-items: center; justify-content: center; gap: 16px;
       color: var(--muted);
     }
-    .drop-icon { font-size: 52px; opacity: .25; }
+    .drop-icon  { font-size: 52px; opacity: .25; }
     .drop-title { font-size: 16px; font-weight: 300; color: var(--muted); }
     .drop-sub   { font-size: 12px; color: var(--border2); }
 
     /* ── Progress log ── */
-    #log-panel {
-      display: none; flex-direction: column;
-      height: 160px; flex-shrink: 0;
-      border-top: 1px solid var(--border); background: var(--bg);
-    }
+    #log-panel { display: none; flex-direction: column; height: 160px; flex-shrink: 0; border-top: 1px solid var(--border); background: var(--bg); }
     #log-panel.visible { display: flex; }
     .log-header {
       display: flex; align-items: center; justify-content: space-between;
@@ -162,10 +210,7 @@
     }
     #progress-bar-wrap { height: 2px; background: var(--border); }
     #progress-bar      { height: 2px; background: var(--accent); width: 0; transition: width .3s; }
-    #log-output {
-      flex: 1; overflow-y: auto; padding: 8px 14px;
-      font-family: var(--mono); font-size: 11px; color: var(--muted); line-height: 1.7;
-    }
+    #log-output { flex: 1; overflow-y: auto; padding: 8px 14px; font-family: var(--mono); font-size: 11px; color: var(--muted); line-height: 1.7; }
     #log-output .ok   { color: var(--ok); }
     #log-output .warn { color: var(--warn); }
     #log-output .err  { color: var(--err); }
@@ -173,7 +218,6 @@
     /* ── Results table ── */
     #results-panel { display: none; flex: 1; flex-direction: column; overflow: hidden; }
     #results-panel.visible { display: flex; }
-
     .results-toolbar {
       display: flex; align-items: center; justify-content: space-between;
       padding: 10px 16px; border-bottom: 1px solid var(--border);
@@ -193,53 +237,41 @@
       position: sticky; top: 0; background: var(--surface);
       padding: 9px 14px; text-align: left;
       font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
-      color: var(--muted); border-bottom: 1px solid var(--border);
-      white-space: nowrap;
+      color: var(--muted); border-bottom: 1px solid var(--border); white-space: nowrap;
     }
     tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
     tbody tr:hover { background: var(--surface2); }
     tbody td { padding: 10px 14px; vertical-align: top; color: var(--text); }
-    tbody td.mono { font-family: var(--mono); font-size: 11px; }
+    tbody td.mono  { font-family: var(--mono); font-size: 11px; }
     tbody td.muted { color: var(--muted); }
-    .badge {
-      display: inline-flex; align-items: center; gap: 4px;
-      padding: 2px 8px; border-radius: 20px; font-size: 10px; font-weight: 500;
-    }
-    .badge.ok  { background: #0d2e1e; color: var(--ok); }
-    .badge.err  { background: #2e0d0d; color: var(--err); }
-    .badge.warn { background: #2e1a00; color: var(--warn); }
-    .link-btn {
-      background: none; border: none; color: var(--accent2);
-      font-family: var(--mono); font-size: 10px; cursor: pointer;
-      text-decoration: underline; padding: 0;
-    }
+    .badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 20px; font-size: 10px; font-weight: 500; }
+    .badge.ok   { background: var(--ok-bg);   color: var(--ok); }
+    .badge.err  { background: var(--err-bg);  color: var(--err); }
+    .badge.warn { background: var(--warn-bg); color: var(--warn); }
+    .link-btn { background: none; border: none; color: var(--accent2); font-family: var(--mono); font-size: 10px; cursor: pointer; text-decoration: underline; padding: 0; }
     .link-btn:hover { color: var(--accent); }
-
 
     /* ── Stage progress indicator ── */
     #stage-indicator {
       display: none; align-items: center; gap: 10px;
-      padding: 7px 14px; background: #0d1525; border-bottom: 1px solid #252836;
+      padding: 7px 14px; background: var(--accent-bg); border-bottom: 1px solid var(--border);
       font-size: 11px; flex-shrink: 0;
     }
     #stage-indicator.visible { display: flex; }
-    .stage-file { font-family: 'IBM Plex Mono', monospace; color: #6ea8ff; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .stage-file { font-family: var(--mono); color: var(--accent2); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .stages { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
     .stage {
       padding: 3px 10px; border-radius: 12px; font-size: 10px; font-weight: 500;
-      border: 1px solid #252836; color: #7a82a0; background: #13161f;
+      border: 1px solid var(--border); color: var(--muted); background: var(--surface);
       transition: all .3s;
     }
     .stage.active {
-      border-color: #4f8ef7; color: #6ea8ff; background: #0d1f3a;
+      border-color: var(--accent); color: var(--accent2); background: var(--accent-bg);
       animation: pulse-stage 1.2s ease-in-out infinite;
     }
-    .stage.done { border-color: #1a4a2e; color: #3ecf8e; background: #0d2e1e; animation: none; }
-    @keyframes pulse-stage {
-      0%, 100% { opacity: 1; }
-      50%       { opacity: 0.5; }
-    }
-    /* scrollbar */
+    .stage.done { border-color: var(--ok-border); color: var(--ok); background: var(--ok-bg); animation: none; }
+    @keyframes pulse-stage { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: var(--bg); }
     ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
@@ -248,7 +280,6 @@
 <body>
 <div id="app">
 
-  <!-- Title bar -->
   <div id="titlebar">
     <div class="tb-left">
       <svg class="tb-logo" viewBox="0 0 24 24" fill="none">
@@ -259,30 +290,12 @@
         <line x1="7" y1="15" x2="10" y2="15" stroke="#4f8ef7" stroke-width="1.3" opacity=".3"/>
       </svg>
       <span class="tb-title">DocuSnap</span>
-      <button id="btn-review" style="
-        -webkit-app-region:no-drag; margin-left:12px;
-        padding:3px 10px; border-radius:5px; border:1px solid #2f3347;
-        background:#13161f; color:#7a82a0; font-size:11px; cursor:pointer;
-        display:flex; align-items:center; gap:6px; font-family:inherit;">
-        Review Queue <span id="review-badge" style="
-          background:#f7b84f; color:#0c0e14; border-radius:10px;
-          padding:1px 6px; font-size:10px; font-weight:600; display:none;">0</span>
+      <button id="btn-review" class="tb-nav-btn" style="margin-left:12px;">
+        Review Queue <span id="review-badge" class="tb-review-badge">0</span>
       </button>
-      <button id="btn-search" style="
-        -webkit-app-region:no-drag; margin-left:6px;
-        padding:3px 10px; border-radius:5px; border:1px solid #2f3347;
-        background:#13161f; color:#7a82a0; font-size:11px; cursor:pointer;
-        font-family:inherit;">Search</button>
-      <button id="btn-settings" style="
-        -webkit-app-region:no-drag; margin-left:6px;
-        padding:3px 10px; border-radius:5px; border:1px solid #2f3347;
-        background:#13161f; color:#7a82a0; font-size:11px; cursor:pointer;
-        font-family:inherit;">&#9881; Settings</button>
-      <span id="mode-badge" style="
-        -webkit-app-region:no-drag; margin-left:8px;
-        padding:2px 8px; border-radius:10px; font-size:10px;
-        background:#0d2e1e; color:#3ecf8e; border:1px solid #1a4a2e;
-        font-family:inherit;">FAST</span>
+      <button id="btn-search" class="tb-nav-btn">Search</button>
+      <button id="btn-settings" class="tb-nav-btn">&#9881; Settings</button>
+      <span id="mode-badge" class="tb-mode-badge" style="margin-left:8px;">FAST</span>
     </div>
     <div class="tb-controls">
       <div class="user-chip-wrap" id="user-chip-wrap">
@@ -305,7 +318,6 @@
 
   <div id="body">
 
-    <!-- Sidebar -->
     <div id="sidebar">
       <div>
         <div class="sidebar-label">Source Folder</div>
@@ -315,6 +327,7 @@
       </div>
 
       <button class="btn-run" id="btn-run" disabled>&#9654;&nbsp; Process Documents</button>
+      <button class="btn-stop" id="btn-stop">&#9632; Stop Processing</button>
 
       <div>
         <div class="sidebar-label">Session Stats</div>
@@ -332,17 +345,14 @@
       </div>
     </div>
 
-    <!-- Main -->
     <div id="main">
 
-      <!-- Empty state -->
       <div id="dropzone">
         <div class="drop-icon">&#128196;</div>
         <div class="drop-title">No documents processed yet</div>
         <div class="drop-sub">Select a source folder and click Process Documents</div>
       </div>
 
-      <!-- Results table -->
       <div id="results-panel">
         <div class="results-toolbar">
           <span class="results-title">Processed Documents</span>
@@ -352,13 +362,8 @@
           <table>
             <thead>
               <tr>
-                <th>New Filename</th>
-                <th>Invoice #</th>
-                <th>Date</th>
-                <th>Supplier</th>
-                <th>Total</th>
-                <th>Status</th>
-                <th>Location</th>
+                <th>New Filename</th><th>Invoice #</th><th>Date</th>
+                <th>Supplier</th><th>Total</th><th>Status</th><th>Location</th>
               </tr>
             </thead>
             <tbody id="table-body"></tbody>
@@ -366,19 +371,17 @@
         </div>
       </div>
 
-      <!-- Stage indicator -->
       <div id="stage-indicator">
         <span class="stage-file" id="stage-file">—</span>
         <div class="stages">
           <span class="stage" id="stage-ocr">OCR</span>
-          <span style="color:#2f3347">›</span>
-          <span class="stage" id="stage-llm">AI Extraction</span>
-          <span style="color:#2f3347">›</span>
+          <span style="color:var(--border2)">›</span>
+          <span class="stage" id="stage-llm">Extraction</span>
+          <span style="color:var(--border2)">›</span>
           <span class="stage" id="stage-save">Saving</span>
         </div>
       </div>
 
-      <!-- Progress log -->
       <div id="log-panel">
         <div class="log-header">
           <span>Processing Log</span>
@@ -391,6 +394,7 @@
     </div>
   </div>
 </div>
+<script src="../shared/theme.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

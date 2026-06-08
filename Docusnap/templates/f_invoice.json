@@ -1,0 +1,53 @@
+{
+  "id": 11,
+  "name": "f Invoice",
+  "slug": "f_invoice",
+  "document_type_slug": "invoice",
+  "logo_phash": "9ec3e0e1e01fe1c3",
+  "keyword_fingerprint": [
+    "Cit",
+    "Office",
+    "One",
+    "Oak",
+    "Leisure",
+    "Central",
+    "Bar",
+    "Ann",
+    "Street",
+    "Ballycastle"
+  ],
+  "confirmed_count": 11,
+  "created_at": "2026-06-07 23:05:48",
+  "updated_at": "2026-06-08 02:33:32",
+  "sample_document_id": 541,
+  "fields": [
+    {
+      "id": 248,
+      "template_id": 11,
+      "field_key": "invoice_date",
+      "anchor_label": null,
+      "direction": "right",
+      "fixed_value": null,
+      "is_variable": 1
+    },
+    {
+      "id": 249,
+      "template_id": 11,
+      "field_key": "invoice_number",
+      "anchor_label": null,
+      "direction": "right",
+      "fixed_value": null,
+      "is_variable": 1
+    },
+    {
+      "id": 247,
+      "template_id": 11,
+      "field_key": "supplier_name",
+      "anchor_label": null,
+      "direction": "right",
+      "fixed_value": "One Oak Leisure/The Central Bar",
+      "is_variable": 0
+    }
+  ],
+  "field_mappings": []
+}

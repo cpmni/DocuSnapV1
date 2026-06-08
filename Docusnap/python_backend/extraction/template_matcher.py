@@ -175,14 +175,49 @@ def _match_by_keywords(ocr_text: str, templates: list) -> dict | None:
     return best
 
 
+def _label_pattern(label: str) -> "re.Pattern | None":
+    """
+    Build a regex for matching a saved template anchor label inside an OCR
+    line — mirrors keyword.py's _label_pattern (the proven Stage-1 fix).
+
+    Two needs, one pattern:
+      1. Whitespace tolerance — multi-word labels ("Purchase Order No") are
+         commonly OCR'd with merged or split inter-word spacing ("PURCHASE
+         ORDERNO" vs "PURCHASE ORDER NO") depending on scan/font variance,
+         even across pages of the very same template. \\s* between each word
+         covers both without resorting to fuzzy/edit-distance matching.
+      2. Collision guard — a short single-word alphabetic label ("PO", "Ref")
+         must not match inside an unrelated word ("Polychemtex", "Refinishing").
+         Multi-word/punctuated labels rarely collide and boundary semantics
+         don't apply meaningfully to them, so the guard is scoped to the
+         single-word-alphabetic shape only — preserving prior behaviour.
+
+    Returning a single compiled pattern (rather than a bool test plus a
+    separate exact-length .find()) means the match span IS the extraction
+    span — removing the class of bug where a tolerant match succeeds but
+    idx + len(label) lands in the wrong place because the matched text's
+    length differs from the label string's length.
+    """
+    words = label.split()
+    if not words:
+        return None
+    body = r'\s*'.join(re.escape(w) for w in words)
+    if len(words) == 1 and words[0].isalpha():
+        return re.compile(r'(?<![a-z0-9])' + body + r'(?![a-z0-9])')
+    return re.compile(body)
+
+
 def _find_by_anchor(lines: list, label: str, direction: str) -> str | None:
+    pattern = _label_pattern(label)
+    if pattern is None:
+        return None
+
     for i, line in enumerate(lines):
-        line_l = line.lower()
-        if label not in line_l:
+        m = pattern.search(line.lower())
+        if not m:
             continue
         if direction == 'right':
-            idx  = line_l.find(label)
-            rest = line[idx + len(label):].strip().lstrip(':').strip()
+            rest = line[m.end():].strip().lstrip(':').strip()
             if rest:
                 return rest
         elif direction == 'below':

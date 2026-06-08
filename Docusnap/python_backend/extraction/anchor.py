@@ -14,7 +14,8 @@ from PIL import Image
 def extract_with_anchors(ocr_text: str, anchors: list[dict],
                          supplier_name: str | None,
                          document_type: str | None,
-                         page_images: list | None = None) -> dict:
+                         page_images: list | None = None,
+                         field_patterns: dict | None = None) -> dict:
     """
     Attempt to extract field values using saved structural anchors.
 
@@ -55,21 +56,23 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
 
         # ── Primary: image crop + re-OCR (accurate, avoids column bleed) ──────
         if x_norm > 0 and y_norm > 0 and page0 is not None:
-            w_norm = anchor.get("w_norm") or 0.0
-            h_norm = anchor.get("h_norm") or 0.0
-            value  = _crop_and_ocr(page0, x_norm, y_norm, w_norm, h_norm)
+            w_norm   = anchor.get("w_norm") or 0.0
+            h_norm   = anchor.get("h_norm") or 0.0
+            val_type = (field_patterns or {}).get(field_key, {}).get("validation")
+            value    = _crop_and_ocr(page0, x_norm, y_norm, w_norm, h_norm, val_type)
             if value:
                 method = "anchor_crop"
 
         # ── Fallback: text-based search in full OCR output ────────────────────
         if not value:
+            pattern = _label_pattern(label)
             for i, line in enumerate(lines):
-                if not _label_matches_line(label, line):
+                m = pattern.search(line.lower()) if pattern else None
+                if not m:
                     continue
 
                 if direction == "right":
-                    idx       = line.lower().find(label)
-                    remainder = line[idx + len(label):].strip().lstrip(":").strip()
+                    remainder = line[m.end():].strip().lstrip(":").strip()
                     if remainder:
                         value = remainder
 
@@ -147,12 +150,17 @@ def try_logo_supplier_match(page_image: Image.Image,
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
-                  w_norm: float = 0.0, h_norm: float = 0.0) -> str | None:
+                  w_norm: float = 0.0, h_norm: float = 0.0,
+                  val_type: str | None = None) -> str | None:
     """
     Crop a tight region centred on the stored value coordinates and re-OCR it.
     Uses the exact selection dimensions saved by the ⊕ tool (w_norm/h_norm) so
     the crop never bleeds into adjacent columns or fields. Falls back to a
     conservative 200×60px half-size when no dimensions are stored.
+
+    val_type (the field's configured `validation` type, e.g. "alphanumeric",
+    "currency", "text") gates the digit-run truncation below — see the comment
+    at the split-pattern selection for why this matters.
     """
     try:
         import pytesseract
@@ -182,8 +190,22 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
             line = line.strip()
             if not line:
                 continue
-            # Multiple spaces = Tesseract column gap; 4+ digit run = address start.
-            segment = re.split(r' {4,}|\s+\d{4,}', line)[0].strip()
+            # Multiple spaces = Tesseract column gap (any field — safe to
+            # split on regardless of type). A leading 4+ digit run ALSO
+            # signals an address/postal-code boundary for free-text name and
+            # address fields ("Ann Blume 10115 Berlin" -> "Ann Blume") — but
+            # reference numbers, amounts and other numeric-shaped values
+            # legitimately CONTAIN a 4+ digit run as their actual value
+            # ("# 16384" -> truncating at " 16384" would discard the value
+            # itself, keeping only the meaningless "#"). Scope the digit-run
+            # split to the same text/multiline-text validation types
+            # keyword.py::_clean_value already treats as name/address shaped,
+            # so every other field (including unknown/custom types, where
+            # destructively dropping digits would be the worse default) keeps
+            # its digits intact.
+            split_pattern = (r' {4,}|\s+\d{4,}' if val_type in ('text', 'multiline_text')
+                             else r' {4,}')
+            segment = re.split(split_pattern, line)[0].strip()
             # After 2+ words, a word ending in "," is a city separator, not part of the value
             parts = segment.split()
             end = len(parts)
@@ -224,16 +246,21 @@ def _filter_anchors(anchors: list[dict],
 
 def _anchor_matches(anchor: dict, supplier_name: str | None,
                     document_type: str | None) -> bool:
-    a_sup  = (anchor.get("supplier_name") or "").lower()
+    a_sup  = (anchor.get("supplier_name") or "").lower().strip()
     a_type = anchor.get("document_type") or ""
-    s_name = (supplier_name or "").lower()
+    s_name = (supplier_name or "").lower().strip()
     d_type = document_type or ""
 
     # Global anchors always apply
     if a_sup in ("__unknown__", "__global__", ""):
         return True
-    # Supplier match (partial)
-    if a_sup and s_name and (a_sup in s_name or s_name in a_sup):
+    # Supplier match — exact (normalised), not substring. Substring matching
+    # ("a_sup in s_name or s_name in a_sup") lets one supplier's anchors fire
+    # on another whenever one name contains the other (e.g. a short supplier
+    # name that happens to be a substring of a longer one) — the same
+    # collision class that made the 'PO' template anchor match inside
+    # "Polychemtex Inc.".
+    if a_sup and s_name and a_sup == s_name:
         return True
     # Doc type match
     if a_type and d_type and a_type == d_type:
@@ -242,19 +269,36 @@ def _anchor_matches(anchor: dict, supplier_name: str | None,
     return False
 
 
-def _label_matches_line(label: str, line: str) -> bool:
-    """Check if a saved anchor label matches an OCR line.
-    Exact substring first; falls back to word-overlap (70%) to tolerate
-    minor OCR differences between strip-OCR (at save time) and full-page OCR.
+def _label_pattern(label: str) -> "re.Pattern | None":
     """
-    line_l = line.lower()
-    if label in line_l:
-        return True
-    words = [w for w in label.split() if len(w) > 2]
+    Build a regex tolerant of OCR whitespace merging/splitting between a
+    saved anchor label's words — the same fix already applied to Stage 1
+    keyword matching (see keyword.py's _label_pattern). A label captured via
+    strip-OCR at teach time ("Purchase Order No") and the same text seen in
+    a later full-page OCR pass ("PURCHASE ORDERNO") commonly disagree on
+    whether inter-word spacing collapsed; allowing zero-or-more whitespace
+    between each word covers both, for any current or future label.
+
+    The returned pattern's match span is used directly for extraction (see
+    extract_with_anchors), so "does it match" and "where does the value
+    start" are always answered by the same regex — eliminating the previous
+    inconsistency where a loose word-overlap match could pass here while the
+    subsequent exact-length line.find(label) silently failed or misaligned
+    the extracted value.
+
+    Single-word alphabetic labels also get a word-boundary guard, mirroring
+    template_matcher.py::_find_by_anchor's existing fix for the same
+    collision class — a short generic label ("PO", "Ref") must not match
+    inside an unrelated word ("Polychemtex", "Refinishing"). Without this,
+    the two label-matching paths would disagree on the same kind of label.
+    """
+    words = label.split()
     if not words:
-        return False
-    hits = sum(1 for w in words if w in line_l)
-    return hits / len(words) >= 0.7
+        return None
+    body = r'\s*'.join(re.escape(w) for w in words)
+    if len(words) == 1 and words[0].isalpha():
+        return re.compile(r'(?<![a-z0-9])' + body + r'(?![a-z0-9])')
+    return re.compile(body)
 
 
 def _hamming(h1: str, h2: str) -> int:

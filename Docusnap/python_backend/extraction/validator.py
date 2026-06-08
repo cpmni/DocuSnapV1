@@ -63,6 +63,51 @@ def normalise_date(raw: str | None) -> str | None:
     return d.strftime("%d-%m-%Y") if d else raw
 
 
+# ── Field-specific OCR-noise sanitisation ─────────────────────────────────────
+# Targeted, schema-driven cleanup for the two failure shapes most often seen
+# in cropped/anchor OCR output: stray bracket/hash noise riding alongside a
+# date ("(01-12-2012", "#Dec 01 2012") or a reference number ("(12345",
+# ")12345"). Deliberately NOT a global strip-all-punctuation pass — that would
+# just as readily mangle "Smith & Sons (UK) Ltd." or "AB-12345". Each rule is
+# scoped by the field's own schema (`type == "date"`, or the `..._number` key
+# convention every built-in and learned reference field already follows), so
+# it generalises to any future supplier, layout or custom field of the same
+# shape rather than special-casing the one in front of us.
+
+# A date can only legitimately contain digits, letters (month/day names),
+# whitespace and the separators DATE_FORMATS knows how to parse. Anything
+# else here rode in from neighbouring text during crop+OCR.
+_DATE_JUNK_RE = re.compile(r"[^0-9A-Za-z\s\-/.,]")
+
+def _sanitise_date_junk(raw: str) -> str:
+    """Strip characters that cannot legitimately appear in a date, leaving
+    the existing parse_date()/normalise_date() pipeline a clean string to
+    interpret exactly as before."""
+    return _DATE_JUNK_RE.sub("", raw).strip()
+
+
+# Edge noise on a reference number: stray marks like '(', ')', '#', '|' that
+# the crop boundary swept in alongside the real value. Only the leading run
+# before the first letter/digit and the trailing run after the last
+# letter/digit are removed — the interior, where genuine structure lives
+# ("AB-12345", "INV12345"), is left exactly as captured.
+_EDGE_NOISE_RE = re.compile(r"^[^0-9A-Za-z]+|[^0-9A-Za-z]+$")
+
+def _sanitise_reference_edges(raw: str) -> str:
+    """Trim non-alphanumeric noise from the edges of a reference/number
+    value only — never touches internal separators or letter prefixes."""
+    return _EDGE_NOISE_RE.sub("", raw)
+
+
+def _is_reference_number_field(key: str) -> bool:
+    """Reference/number fields follow one consistent `..._number` naming
+    convention across every built-in document type (invoice_number,
+    po_number, sales_order_number) and any custom field added the same
+    way — keying off that convention covers unseen types without
+    hardcoding a single field name."""
+    return key.endswith("_number")
+
+
 # ── Currency parsing ──────────────────────────────────────────────────────────
 
 CURRENCY_RE = re.compile(
@@ -102,6 +147,51 @@ def validate_and_adjust(extractions: dict,
             results[key] = {"value": str(data), "confidence": 50, "method": "unknown"}
         else:
             results[key] = {"value": None, "confidence": 0, "method": "unknown"}
+
+    # 0. Reject values that are clearly mis-captured labels, not values.
+    # A label-shaped string (ends with ':') is the universal signal that an
+    # anchor/crop landed on the field's LABEL rather than its value — e.g. an
+    # anchor_crop returning "Total:" for invoice_number at 85% confidence
+    # (observed in processing.log — high enough to skip review entirely).
+    # No legitimate value for any field type (reference number, date, amount,
+    # name) naturally ends with a bare colon, so this is a safe, layout- and
+    # supplier-agnostic guard against that failure class, not a one-off patch.
+    for key, data in results.items():
+        if key.startswith('_') or not isinstance(data, dict):
+            continue
+        val = data.get("value")
+        if isinstance(val, str) and val.strip().endswith(':'):
+            results[key] = {
+                **data,
+                "confidence": min(data.get("confidence", 0), 35),
+                "validation_note": "value looks like a label, not a field value",
+            }
+
+    # 0b. Field-specific OCR-noise cleanup (dates & reference numbers).
+    # Runs after the label-shape guard (so a genuinely mis-captured label is
+    # flagged on its original shape, not silently reshaped into something
+    # that no longer looks like one) and before date parsing (so the parser
+    # gets a clean string). Skips anything the guard above already flagged —
+    # an already-suspect value is left exactly as captured for the user to
+    # inspect, per its "not silently discarded" contract.
+    for f in field_defs:
+        key  = f["key"]
+        data = results.get(key)
+        if not isinstance(data, dict) or data.get("validation_note"):
+            continue
+        val = data.get("value")
+        if not isinstance(val, str) or not val:
+            continue
+
+        if f.get("type") == "date":
+            cleaned = _sanitise_date_junk(val)
+        elif _is_reference_number_field(key):
+            cleaned = _sanitise_reference_edges(val)
+        else:
+            continue
+
+        if cleaned and cleaned != val:
+            results[key] = {**data, "value": cleaned}
 
     # 1. Validate date fields
     for f in field_defs:
@@ -185,8 +275,18 @@ def validate_and_adjust(extractions: dict,
 
 
 def overall_confidence(extractions: dict,
+                       field_defs: list[dict] | None = None,
                        key_fields: list[str] | None = None) -> int:
-    """Calculate weighted average confidence across key fields."""
+    """
+    Calculate weighted average confidence across the fields that matter most
+    for this document type. "What matters" comes from the type's own schema
+    (required fields) — not a hardcoded list of field-key names that only
+    covers the three built-in document types and silently ignores any custom
+    type's fields entirely.
+    """
+    if key_fields is None and field_defs:
+        key_fields = [f["key"] for f in field_defs if f.get("required")] \
+                     or [f["key"] for f in field_defs]
     if key_fields is None:
         key_fields = [
             "invoice_number", "invoice_date", "total_amount", "supplier_name",

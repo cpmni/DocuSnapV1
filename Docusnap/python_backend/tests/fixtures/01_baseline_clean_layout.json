@@ -1,0 +1,22 @@
+{
+  "name": "01_baseline_clean_layout",
+  "description": "Clean single-column 'Label: Value' layout, all fields on their own line, nothing ambiguous nearby. The happy path — if this ever regresses, the core matching logic itself is broken, not just an edge case.",
+  "represents": "Baseline regression guard: any future change to keyword/anchor/validation must keep the simplest possible document working.",
+  "document_type": "Purchase Order",
+  "document_slug": "purchase_order",
+  "mode": "smart",
+  "ocr_text": "PURCHASE ORDER\n\nPO Number: NC-58213\nPO Date: 03/02/2026\nSupplier: Bridgeway Trading Co\n\nItem                    Qty      Unit Price     Total\nSteel brackets           200       £1.85         £370.00\n",
+  "field_defs": [
+    { "key": "supplier_name", "label": "Supplier Name", "type": "text", "required": 1, "is_variable": 0 },
+    { "key": "po_date",       "label": "PO Date",       "type": "date", "required": 1, "is_variable": 1 },
+    { "key": "po_number",     "label": "PO Number",     "type": "text", "required": 1, "is_variable": 1 }
+  ],
+  "hints":     [],
+  "anchors":   [],
+  "templates": [],
+  "expected": {
+    "supplier_name": "Bridgeway Trading Co",
+    "po_number": "NC-58213",
+    "po_date": "03-02-2026"
+  }
+}

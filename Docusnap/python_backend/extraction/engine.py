@@ -4,10 +4,11 @@ extraction/engine.py
 Orchestrates the extraction pipeline across three modes:
 
   FAST  — keyword + anchor only. No LLM. Sub-second per document.
-           Used when supplier is well-trained (10+ confirmed docs).
+           Used when supplier is well-trained.
 
-  SMART — keyword + anchor first. LLM only if required fields are
-           missing or low confidence. Default mode.
+  SMART — keyword + anchor only, same as FAST. Default mode. (LLM
+           fallback for missing required fields was disabled — see
+           _should_use_llm — kept distinct from FAST for future use.)
 
   AI    — LLM always runs after keyword + anchor, regardless of
            confidence. Slowest, most thorough for unknown documents.
@@ -22,7 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from extraction import keyword, anchor, validator, ocr_corrector, template_matcher
+from extraction import keyword, anchor, validator, ocr_corrector, template_matcher, template_mapper
 
 # LLM import is optional — system works without it in FAST mode
 try:
@@ -31,17 +32,6 @@ try:
 except ImportError:
     LLM_AVAILABLE = False
 
-
-# ── Required fields that must be found to skip LLM in SMART mode ─────────────
-SMART_MODE_REQUIRED = {
-    "invoice":        ["supplier_name", "invoice_date", "invoice_number"],
-    "sales_order":    ["customer_name", "order_date",   "sales_order_number"],
-    "purchase_order": ["supplier_name", "po_date",      "po_number"],
-    "_default":       ["supplier_name", "invoice_date", "invoice_number"],
-}
-
-SMART_MODE_MIN_CONFIDENCE = 70
-FAST_MODE_SUGGESTION_THRESHOLD = 10  # confirmed docs before suggesting Fast Mode
 
 
 class ExtractionEngine:
@@ -59,6 +49,7 @@ class ExtractionEngine:
         self.model        = model
         self.emit         = emit_fn or (lambda msg: None)
         self.format_index = {}   # populated by set_formats()
+        self.noise_profile_index = {}   # populated by set_formats()
 
     def log(self, text: str, level: str = ""):
         self.emit({"type": "log", "text": text, "level": level})
@@ -66,8 +57,10 @@ class ExtractionEngine:
     def set_formats(self, formats_data: list):
         """Pre-build OCR correction index from confirmed value data."""
         self.format_index = ocr_corrector.build_format_index(formats_data)
+        self.noise_profile_index = ocr_corrector.build_noise_profile_index(formats_data)
         n = len([k for k in self.format_index if k != '_fallback'])
-        self.log(f"  OCR corrector: {n} format templates loaded")
+        m = len(self.noise_profile_index)
+        self.log(f"  OCR corrector: {n} format templates, {m} learned noise profile(s) loaded")
 
     def warmup(self) -> bool:
         """Warm up Ollama model. Returns True if AI is available."""
@@ -127,9 +120,6 @@ class ExtractionEngine:
             )
             if match:
                 matched_tmpl = match['template']
-                # Promote supplier from template if not already known
-                if not supplier_name:
-                    supplier_name = matched_tmpl.get('name', '').split()[0] or None
                 self.log(
                     f"  Template matched: {matched_tmpl.get('name')} "
                     f"({match['confidence']}% via {match['method']})"
@@ -137,8 +127,44 @@ class ExtractionEngine:
                 tmpl_results = template_matcher.extract_with_template(ocr_text, matched_tmpl)
                 for key, data in tmpl_results.items():
                     results[key] = data
+                # Promote supplier from the template's own resolved supplier_name
+                # field (a fixed_value learned from confirmed documents) — NOT
+                # from the template's auto-generated display name. Templates
+                # created before a supplier was known get generic names like
+                # "Purchase Order Template", whose first word ("Purchase") is
+                # not a supplier name — using it poisoned every downstream
+                # hint/anchor lookup (and got persisted into supplier_hints,
+                # where it then won out over the real "Polychemtex Inc." hints).
+                if not supplier_name:
+                    supplier_name = (results.get('supplier_name') or {}).get('value') or None
                 found = len([v for v in results.values() if v.get('value')])
                 self.log(f"  Stage 0: {found}/{len(field_keys)} fields from template")
+
+                # ── Stage 0.5: admin-drawn anchor → target zone mappings ──────
+                # Optional, additive layer on the matched template (Settings →
+                # Templates → "Map a Field"). Only engages for documents that
+                # matched a SPECIFIC template with enabled mappings AND when we
+                # have page pixels to crop — every template/document without
+                # drawn mappings takes zero extra work and behaves exactly as
+                # before. See template_mapper.py for the anchor-relocation +
+                # relative-offset model (the "primary model" the admin tool
+                # implements — NOT a fixed coarse-grid lookup).
+                tmpl_mappings = [m for m in (matched_tmpl.get('field_mappings') or [])
+                                 if m.get('enabled', True) not in (False, 0)]
+                if tmpl_mappings and page_images:
+                    self.log(f"  Stage 0.5: {len(tmpl_mappings)} anchor→target mapping(s)…")
+                    mapping_results = template_mapper.extract_with_mappings(
+                        page_images, tmpl_mappings,
+                        field_patterns=self.patterns.get("field_patterns", {}),
+                    )
+                    applied = 0
+                    for key, data in mapping_results.items():
+                        existing = results.get(key)
+                        if not existing or data["confidence"] > existing.get("confidence", 0):
+                            results[key] = data
+                            applied += 1
+                    if applied:
+                        self.log(f"  Stage 0.5: {applied} field(s) refined via anchor/target mapping")
 
         # ── Pre-stage: logo supplier identification (fallback if no template) ──
         if not supplier_name and logos and page_images:
@@ -172,14 +198,51 @@ class ExtractionEngine:
             anchor_results = anchor.extract_with_anchors(
                 ocr_text, anchors, supplier_name, document_slug,
                 page_images=page_images,
+                field_patterns=self.patterns.get("field_patterns", {}),
             )
             for key, data in anchor_results.items():
                 existing = results.get(key)
-                if not existing or data["confidence"] > existing["confidence"]:
+                # A user-taught anchor (drawn with the ⊕ tool, resolved via
+                # crop+re-OCR at the exact saved coordinates) is ground truth for
+                # that spot on the page — it overrides a generic keyword/regex
+                # match even when the keyword match scored higher confidence.
+                # Without this, a freshly-learned anchor (usage_count=1, so its
+                # computed confidence sits ~85) can never beat an
+                # already-wrong keyword hit (e.g. base_confidence 88-93 for
+                # po_number), so the "wrong value" never gets corrected.
+                is_taught_override = (data.get("method") == "anchor_crop"
+                                      and existing
+                                      and existing.get("method") != "anchor_crop")
+                if not existing or is_taught_override or data["confidence"] > existing["confidence"]:
                     results[key] = data
             new_found = len([v for v in results.values() if v.get("value")])
             self.log(f"  Stage 2: +{new_found - found} fields from anchors")
             found = new_found
+
+        # ── Resolve final supplier identity ───────────────────────────────────
+        # Stage 0 (template) and the pre-stage logo match only produce a
+        # provisional supplier_name — its job is to seed anchor/hint filtering
+        # for Stage 2, not to be the final answer. Stage 1/2 can legitimately
+        # override results['supplier_name'] with a different, more accurate
+        # value (e.g. a user-taught anchor_crop reading the real page beats a
+        # near-duplicate-logo template match). Re-resolving here — once, after
+        # every stage that can touch the field has run, before _supplier_name
+        # is set or any hint/anchor/logo persistence happens — keeps the
+        # pipeline's notion of "who is this" in sync with the value the user
+        # actually sees and confirms. Without this, the stale provisional
+        # identity kept driving downstream lookups/persistence while the
+        # displayed field already held the corrected value, silently writing
+        # the wrong supplier into the learning corpus on every confirm.
+        resolved_supplier = (results.get('supplier_name') or {}).get('value') or None
+        if resolved_supplier and resolved_supplier != supplier_name:
+            if supplier_name:
+                self.log(
+                    f"  WARNING: supplier identity changed during extraction — "
+                    f"pipeline='{supplier_name}' field='{resolved_supplier}' "
+                    f"(file={filename}) — using field value",
+                    level="warn",
+                )
+            supplier_name = resolved_supplier
 
         # ── Stage 2.5a: Supplier name text-scan fallback ─────────────────────────
         # If logo match failed and keyword didn't find supplier_name, scan the
@@ -214,7 +277,7 @@ class ExtractionEngine:
         # They do not override a found value — each document's variable fields
         # (date, reference, customer name) differ per invoice.
         if hints and supplier_name:
-            hint_results = self._apply_hints(hints, supplier_name, document_slug, field_keys)
+            hint_results = self._apply_hints(hints, supplier_name, document_slug, field_defs)
             hint_count = 0
             for key, data in hint_results.items():
                 existing = results.get(key)
@@ -223,6 +286,31 @@ class ExtractionEngine:
                     hint_count += 1
             if hint_count:
                 self.log(f"  Stage 2.5: {hint_count} field(s) set from learned hints")
+
+        # ── Stage 2.5c: learned noise-edge stripping (template-scoped) ───────
+        # Runs before character-substitution correction below so a value like
+        # "# 14269" is trimmed to "14269" first — giving try_correct a clean,
+        # correctly-sized string to apply digit-confusion fixes to, rather than
+        # failing its length check against a noise-padded value.
+        if self.noise_profile_index:
+            n_denoised = 0
+            for key, data in list(results.items()):
+                if not isinstance(data, dict) or not data.get("value"):
+                    continue
+                denoised, was_changed = ocr_corrector.denoise_value(
+                    data["value"], key, supplier_name, document_slug,
+                    self.noise_profile_index,
+                )
+                if was_changed:
+                    results[key] = {
+                        **data,
+                        "value":      denoised,
+                        "confidence": min(95, (data.get("confidence") or 0) + 5),
+                        "method":     data.get("method", "") + "+denoised",
+                    }
+                    n_denoised += 1
+            if n_denoised:
+                self.log(f"  Stage 2.5: {n_denoised} value(s) denoised via learned template")
 
         # ── Stage 2.5b: OCR format correction ────────────────────────────────
         if self.format_index:
@@ -274,17 +362,14 @@ class ExtractionEngine:
                 final = len([v for v in results.values() if v.get("value")])
                 self.log(f"  Stage 3: +{final - found} fields from AI")
         else:
-            if self.mode == "fast":
-                self.log("  Stage 3: skipped (Fast Mode)")
-            else:
-                self.log("  Stage 3: skipped (sufficient confidence from keyword/anchor)")
+            self.log(f"  Stage 3: skipped ({self.mode.capitalize()} Mode)")
 
         # ── Stage 4: Validation ───────────────────────────────────────────────
         self.log("  Stage 4: validating…")
         results = validator.validate_and_adjust(results, field_defs)
 
         # ── Metadata ──────────────────────────────────────────────────────────
-        overall_conf  = validator.overall_confidence(results)
+        overall_conf  = validator.overall_confidence(results, field_defs)
         review_needed = validator.needs_review(results, field_defs)
 
         results["_supplier_name"]        = supplier_name
@@ -300,29 +385,45 @@ class ExtractionEngine:
         return results
 
     def _apply_hints(self, hints: list, supplier_name: str,
-                     document_slug: str | None, field_keys: list) -> dict:
+                     document_slug: str | None, field_defs: list[dict]) -> dict:
         """
-        Apply learned supplier hints as direct field values.
-        Only applies hints with usage_count >= 2 that match this supplier/type.
-        Confidence scales with usage_count (caps at 90).
+        Apply learned supplier hints as direct field values — but only for
+        fields whose value is constant for a given supplier (company name,
+        address, terms). A field the document type's own schema marks as
+        "variable" (it's the designated reference/date field, or typed as a
+        date) differs on every document; replaying a remembered value for
+        it is exactly how one document's reference number ends up stamped
+        onto another's (see field_defs[*]["is_variable"], derived in
+        document_types.js from ref_field_key/date_field_key/type — NOT a
+        per-field-key guess here, so custom types/fields are covered too).
+
+        Only applies hints with usage_count >= 2 that match this supplier
+        (exactly — see note below) and optionally doc type. Confidence
+        scales with usage_count (caps at 90).
         """
-        results  = {}
-        s_lower  = supplier_name.lower()
+        results    = {}
+        s_lower    = supplier_name.lower().strip()
+        field_meta = {f["key"]: f for f in field_defs}
 
         for hint in hints:
-            h_sup   = (hint.get("supplier_name") or "").lower()
+            h_sup   = (hint.get("supplier_name") or "").lower().strip()
             h_type  = hint.get("document_type") or ""
             h_key   = hint.get("field_key")
             h_value = hint.get("hint_value")
             usage   = int(hint.get("usage_count") or 0)
 
-            if not h_key or not h_value or h_key not in field_keys:
+            if not h_key or not h_value or h_key not in field_meta:
                 continue
             if usage < 2:
                 continue
+            if field_meta[h_key].get("is_variable"):
+                continue
 
-            # Must match supplier (partial) and optionally doc type
-            sup_match  = h_sup and (h_sup in s_lower or s_lower in h_sup)
+            # Exact (normalised) supplier match. Substring matching here
+            # would let one supplier's hints bleed into another's whenever
+            # one name contains the other — the same collision class that
+            # made 'PO' match inside "Polychemtex Inc." for template anchors.
+            sup_match  = h_sup and h_sup == s_lower
             type_match = (not h_type) or (h_type == (document_slug or ""))
 
             if sup_match and type_match:
@@ -341,22 +442,8 @@ class ExtractionEngine:
     def _should_use_llm(self, current_results: dict,
                         document_slug: str | None) -> bool:
         """Decide whether to call the LLM based on current mode and coverage."""
-
-        if self.mode == "fast":
-            return False
-
+        # Fast and Smart modes both use keyword+anchor only — no Ollama required.
+        # LLM is reserved for 'ai' mode only (not exposed in UI).
         if self.mode == "ai":
-            return LLM_AVAILABLE and self.mode != "fast"
-
-        # SMART mode — only call LLM if required fields are missing/low confidence
-        slug     = document_slug or "_default"
-        required = SMART_MODE_REQUIRED.get(slug, SMART_MODE_REQUIRED["_default"])
-
-        for field_key in required:
-            data = current_results.get(field_key, {})
-            if not data.get("value"):
-                return True  # missing required field — need LLM
-            if (data.get("confidence") or 0) < SMART_MODE_MIN_CONFIDENCE:
-                return True  # low confidence — need LLM
-
-        return False  # all required fields found with good confidence
+            return LLM_AVAILABLE
+        return False

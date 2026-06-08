@@ -6,15 +6,172 @@ function getAll(db) {
   ).all();
   for (const t of rows) {
     t.fields              = getFields(db, t.id);
+    t.field_mappings      = getMappings(db, t.id);
     t.keyword_fingerprint = _parseJson(t.keyword_fingerprint, []);
   }
   return rows;
+}
+
+function getById(db, id) {
+  const t = db.prepare('SELECT * FROM templates WHERE id = ?').get(id);
+  if (!t) return null;
+  t.fields              = getFields(db, t.id);
+  t.field_mappings      = getMappings(db, t.id);
+  t.keyword_fingerprint = _parseJson(t.keyword_fingerprint, []);
+  t.sample_document     = t.sample_document_id ? getSampleDocument(db, t.sample_document_id) : null;
+  return t;
+}
+
+// Minimal projection — just enough for the viewer to resolve a preview path
+// (mirrors the {folderPath, filename} resolution search/renderer.js already
+// does for confirmed vs. unconfirmed documents) and show a caption.
+function getSampleDocument(db, documentId) {
+  return db.prepare(`
+    SELECT id, original_filename, stored_filename, stored_path, folder_path,
+           status, supplier_name, doc_date, reference_number
+    FROM documents WHERE id = ?
+  `).get(documentId) || null;
 }
 
 function getFields(db, templateId) {
   return db.prepare(
     'SELECT * FROM template_fields WHERE template_id = ? ORDER BY field_key'
   ).all(templateId);
+}
+
+// ── Field anchor → target mappings (Template Viewer) ─────────────────────────
+// Additive companion to template_fields: those store text-search anchor RULES
+// (label + direction, no coordinates); these store admin-DRAWN anchor/target
+// RECTANGLES on a pinned sample document, for crop-and-OCR extraction. Kept
+// in their own table (rather than extending template_fields) so templates
+// without any drawn mappings are byte-for-byte unaffected — see
+// template_mapper.py for how they're consumed.
+
+function getMappings(db, templateId) {
+  const rows = db.prepare(
+    'SELECT * FROM template_field_mappings WHERE template_id = ? ORDER BY field_key'
+  ).all(templateId);
+  for (const r of rows) r.region_hint = _parseJson(r.region_hint, []);
+  return rows;
+}
+
+function getMapping(db, templateId, fieldKey) {
+  const r = db.prepare(
+    'SELECT * FROM template_field_mappings WHERE template_id = ? AND field_key = ?'
+  ).get(templateId, fieldKey);
+  if (r) r.region_hint = _parseJson(r.region_hint, []);
+  return r || null;
+}
+
+function saveMapping(db, templateId, mapping) {
+  const m = {
+    template_id:      templateId,
+    field_key:        mapping.field_key,
+    page_number:      mapping.page_number || 0,
+    anchor_text:      mapping.anchor_text || null,
+    anchor_x_norm:    mapping.anchor_x_norm,
+    anchor_y_norm:    mapping.anchor_y_norm,
+    anchor_w_norm:    mapping.anchor_w_norm,
+    anchor_h_norm:    mapping.anchor_h_norm,
+    target_x_norm:    mapping.target_x_norm,
+    target_y_norm:    mapping.target_y_norm,
+    target_w_norm:    mapping.target_w_norm,
+    target_h_norm:    mapping.target_h_norm,
+    offset_dx_norm:   mapping.target_x_norm - mapping.anchor_x_norm,
+    offset_dy_norm:   mapping.target_y_norm - mapping.anchor_y_norm,
+    ocr_type:         mapping.ocr_type || 'text',
+    search_expansion: mapping.search_expansion ?? 0.04,
+    region_hint:      JSON.stringify(_computeRegionHint(mapping)),
+    enabled:          mapping.enabled === false ? 0 : 1,
+  };
+  db.prepare(`
+    INSERT INTO template_field_mappings
+      (template_id, field_key, page_number, anchor_text,
+       anchor_x_norm, anchor_y_norm, anchor_w_norm, anchor_h_norm,
+       target_x_norm, target_y_norm, target_w_norm, target_h_norm,
+       offset_dx_norm, offset_dy_norm, ocr_type, search_expansion,
+       region_hint, enabled)
+    VALUES
+      (@template_id, @field_key, @page_number, @anchor_text,
+       @anchor_x_norm, @anchor_y_norm, @anchor_w_norm, @anchor_h_norm,
+       @target_x_norm, @target_y_norm, @target_w_norm, @target_h_norm,
+       @offset_dx_norm, @offset_dy_norm, @ocr_type, @search_expansion,
+       @region_hint, @enabled)
+    ON CONFLICT(template_id, field_key) DO UPDATE SET
+      page_number      = excluded.page_number,
+      anchor_text      = excluded.anchor_text,
+      anchor_x_norm    = excluded.anchor_x_norm,
+      anchor_y_norm    = excluded.anchor_y_norm,
+      anchor_w_norm    = excluded.anchor_w_norm,
+      anchor_h_norm    = excluded.anchor_h_norm,
+      target_x_norm    = excluded.target_x_norm,
+      target_y_norm    = excluded.target_y_norm,
+      target_w_norm    = excluded.target_w_norm,
+      target_h_norm    = excluded.target_h_norm,
+      offset_dx_norm   = excluded.offset_dx_norm,
+      offset_dy_norm   = excluded.offset_dy_norm,
+      ocr_type         = excluded.ocr_type,
+      search_expansion = excluded.search_expansion,
+      region_hint      = excluded.region_hint,
+      enabled          = excluded.enabled,
+      updated_at       = datetime('now')
+  `).run(m);
+  return getMapping(db, templateId, mapping.field_key);
+}
+
+function setMappingEnabled(db, templateId, fieldKey, enabled) {
+  db.prepare(`
+    UPDATE template_field_mappings SET enabled = ?, updated_at = datetime('now')
+    WHERE template_id = ? AND field_key = ?
+  `).run(enabled ? 1 : 0, templateId, fieldKey);
+}
+
+function deleteMapping(db, templateId, fieldKey) {
+  return db.prepare(
+    'DELETE FROM template_field_mappings WHERE template_id = ? AND field_key = ?'
+  ).run(templateId, fieldKey);
+}
+
+function recordMappingTest(db, templateId, fieldKey, { value, confidence, status }) {
+  db.prepare(`
+    UPDATE template_field_mappings
+    SET last_test_value = ?, last_test_confidence = ?, last_test_status = ?,
+        last_test_at = datetime('now')
+    WHERE template_id = ? AND field_key = ?
+  `).run(value ?? null, confidence ?? null, status || null, templateId, fieldKey);
+}
+
+// 8-region coarse grid: 2 columns × 4 rows of the page, indexed 0-7
+// (row-major, top-left = 0). Purely an optimisation HINT recorded alongside
+// the real anchor/target geometry — see CLAUDE.md: "do not make the fixed
+// grid the sole extraction mechanism". A target spanning multiple cells
+// records all of them so a future full-OCR-skip pass knows to merge zones.
+const GRID_COLS = 2;
+const GRID_ROWS = 4;
+
+function _computeRegionHint({ target_x_norm, target_y_norm, target_w_norm, target_h_norm }) {
+  if ([target_x_norm, target_y_norm, target_w_norm, target_h_norm].some(v => v == null)) return [];
+  const x0 = Math.max(0, Math.min(1, target_x_norm));
+  const y0 = Math.max(0, Math.min(1, target_y_norm));
+  const x1 = Math.max(0, Math.min(1, target_x_norm + target_w_norm));
+  const y1 = Math.max(0, Math.min(1, target_y_norm + target_h_norm));
+  const cells = new Set();
+  const c0 = Math.floor(x0 * GRID_COLS), c1 = Math.max(c0, Math.ceil(x1 * GRID_COLS) - 1);
+  const r0 = Math.floor(y0 * GRID_ROWS), r1 = Math.max(r0, Math.ceil(y1 * GRID_ROWS) - 1);
+  for (let r = r0; r <= Math.min(r1, GRID_ROWS - 1); r++) {
+    for (let c = c0; c <= Math.min(c1, GRID_COLS - 1); c++) {
+      cells.add(r * GRID_COLS + c);
+    }
+  }
+  return [...cells].sort((a, b) => a - b);
+}
+
+// ── Sample document ───────────────────────────────────────────────────────────
+
+function setSampleDocument(db, templateId, documentId) {
+  db.prepare(`
+    UPDATE templates SET sample_document_id = ?, updated_at = datetime('now') WHERE id = ?
+  `).run(documentId || null, templateId);
 }
 
 function findByLogoHash(db, phash, threshold = 12) {
@@ -92,4 +249,9 @@ function _parseJson(str, fallback) {
   try { return JSON.parse(str || 'null') || fallback; } catch { return fallback; }
 }
 
-module.exports = { getAll, getFields, findByLogoHash, create, update, hammingDistance };
+module.exports = {
+  getAll, getById, getFields, findByLogoHash, create, update, hammingDistance,
+  getMappings, getMapping, saveMapping, setMappingEnabled, deleteMapping,
+  recordMappingTest, setSampleDocument,
+  GRID_COLS, GRID_ROWS,
+};

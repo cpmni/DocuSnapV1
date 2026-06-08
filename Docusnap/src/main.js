@@ -19,7 +19,9 @@ const reviewModule     = require('./modules/review/handler');
 const settingsModule   = require('./modules/settings/handler');
 const filingModule     = require('./modules/filing/handler');
 const searchModule     = require('./modules/search/handler');
-const ollamaModule     = require('./modules/processing/ollama_handler');
+const processingModeModule = require('./modules/processing/processing_mode_handler');
+const watchModule          = require('./modules/watch/handler');
+const templatesModule      = require('./modules/templates/handler');
 
 // ── DB ────────────────────────────────────────────────────────────────────────
 let _db = null;
@@ -40,7 +42,7 @@ function resourcePath(...parts) {
 
 function pythonExe() {
   return app.isPackaged
-    ? resourcePath('vendor', 'python', 'Scripts', 'python.exe')
+    ? resourcePath('vendor', 'python', 'python.exe')
     : 'py';
 }
 
@@ -68,27 +70,6 @@ function templatesDir() {
     : resourcePath('templates');
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   return dir;
-}
-
-// ── Ollama ────────────────────────────────────────────────────────────────────
-let ollamaProcess = null;
-
-function startOllama() {
-  const exe = resourcePath('vendor', 'ollama', 'ollama.exe');
-  if (!fs.existsSync(exe)) return;
-  const { spawn } = require('child_process');
-  ollamaProcess = spawn(exe, ['serve'], {
-    env: {
-      ...process.env,
-      OLLAMA_MODELS: resourcePath('vendor', 'ollama_models'),
-      OLLAMA_HOST:   '127.0.0.1:11434',
-    },
-    windowsHide: true,
-  });
-}
-
-function stopOllama() {
-  if (ollamaProcess) { ollamaProcess.kill(); ollamaProcess = null; }
 }
 
 // ── Window management ─────────────────────────────────────────────────────────
@@ -148,8 +129,6 @@ app.whenReady().then(() => {
     : path.join(__dirname, '..', 'processing.log');
   logger.init(logFile, fs);
 
-  startOllama();
-
   // App opens to the login screen — first-run setup, sign-in, forced password
   // change and admin recovery all live there. The main shell only appears
   // once auth-handler confirms a session is established (see 'auth-enter-app').
@@ -179,7 +158,9 @@ app.whenReady().then(() => {
   settingsModule.register(ctx);
   filingModule.register(ctx);
   searchModule.register(ctx);
-  ollamaModule.register(ctx);
+  processingModeModule.register(ctx);
+  watchModule.register(ctx);
+  templatesModule.register(ctx);
 
   // Window controls (shared across all windows)
   ipcMain.on('window-minimise', e =>
@@ -213,4 +194,4 @@ app.whenReady().then(() => {
   });
 });
 
-app.on('window-all-closed', () => { stopOllama(); app.quit(); });
+app.on('window-all-closed', () => { app.quit(); });

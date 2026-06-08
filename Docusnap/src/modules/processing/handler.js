@@ -5,7 +5,64 @@
  * Handles folder import, single-file reprocess, OCR region, logo ops.
  */
 
-const os = require('os');
+const os   = require('os');
+const path = require('path');
+const fs   = require('fs');
+
+let _currentBatchProc = null;  // reference to the running Python process
+
+// ── Write temp JSON files ─────────────────────────────────────────────────────
+// Module-level (not register()-scoped closures) so other modules — e.g. the
+// watch-folder handler — can reuse the exact same pipeline-setup machinery
+// instead of duplicating it on a parallel import path.
+function writeTempJson(name, data) {
+  const file = path.join(os.tmpdir(), `ds_${name}_${Date.now()}.json`);
+  fs.writeFileSync(file, JSON.stringify(data));
+  return file;
+}
+
+function cleanupFiles(files) {
+  for (const f of files) {
+    try { fs.unlinkSync(f); } catch {}
+  }
+}
+
+function buildTrainingArgs(db, configPath) {
+  const docTypes  = require('../../../database/modules/document_types');
+  const learning  = require('../../../database/modules/learning');
+  const templates = require('../../../database/modules/templates');
+
+  const allDocTypes  = docTypes.getAllWithFields(db);
+  const allHints     = learning.getHints(db);
+  const allAnchors   = learning.getAllAnchors(db);
+  const allLogos     = learning.getAllLogos(db);
+  const allTemplates = templates.getAll(db);
+  let allFormats = [];
+  try { allFormats = learning.getFieldFormats(db); } catch {}
+
+  const fieldsFile    = writeTempJson('fields',    allDocTypes.flatMap(dt => dt.fields));
+  const hintsFile     = writeTempJson('hints',     allHints);
+  const anchorsFile   = writeTempJson('anchors',   allAnchors);
+  const logosFile     = writeTempJson('logos',     allLogos);
+  const dtFile        = writeTempJson('doctypes',  allDocTypes);
+  const formatsFile   = writeTempJson('formats',   allFormats);
+  const templatesFile = writeTempJson('templates', allTemplates);
+  const cfgFile       = configPath();
+
+  return {
+    args: [
+      '--fields-file',    fieldsFile,
+      '--hints-file',     hintsFile,
+      '--anchors-file',   anchorsFile,
+      '--logos-file',     logosFile,
+      '--doc-types-file', dtFile,
+      '--formats-file',   formatsFile,
+      '--templates-file', templatesFile,
+      '--config-file',    cfgFile,
+    ],
+    tempFiles: [fieldsFile, hintsFile, anchorsFile, logosFile, dtFile, formatsFile, templatesFile],
+  };
+}
 
 function register(ctx) {
   const { ipcMain, getDb, pythonExe, pythonArgs, tesseractPath,
@@ -48,55 +105,15 @@ function register(ctx) {
   ipcMain.on('show-in-explorer', (_e, filePath) => { if (getCurrentUser()) shell.showItemInFolder(filePath); });
   ipcMain.on('open-file',        (_e, filePath) => { if (getCurrentUser()) shell.openPath(filePath); });
 
-  // ── Write temp JSON files ───────────────────────────────────────────────────
-  function writeTempJson(name, data) {
-    const file = path.join(os.tmpdir(), `ds_${name}_${Date.now()}.json`);
-    fs.writeFileSync(file, JSON.stringify(data));
-    return file;
-  }
-
-  function cleanupFiles(files) {
-    for (const f of files) {
-      try { fs.unlinkSync(f); } catch {}
+  // ── Stop processing ─────────────────────────────────────────────────────────
+  ipcMain.handle('stop-processing', () => {
+    requireRole('admin', 'edit');
+    if (_currentBatchProc) {
+      try { _currentBatchProc.kill(); } catch {}
+      _currentBatchProc = null;
     }
-  }
-
-  function buildTrainingArgs(db) {
-    const docTypes  = require('../../../database/modules/document_types');
-    const learning  = require('../../../database/modules/learning');
-    const templates = require('../../../database/modules/templates');
-
-    const allDocTypes  = docTypes.getAllWithFields(db);
-    const allHints     = learning.getHints(db);
-    const allAnchors   = learning.getAllAnchors(db);
-    const allLogos     = learning.getAllLogos(db);
-    const allTemplates = templates.getAll(db);
-    let allFormats = [];
-    try { allFormats = learning.getFieldFormats(db); } catch {}
-
-    const fieldsFile    = writeTempJson('fields',    allDocTypes.flatMap(dt => dt.fields));
-    const hintsFile     = writeTempJson('hints',     allHints);
-    const anchorsFile   = writeTempJson('anchors',   allAnchors);
-    const logosFile     = writeTempJson('logos',     allLogos);
-    const dtFile        = writeTempJson('doctypes',  allDocTypes);
-    const formatsFile   = writeTempJson('formats',   allFormats);
-    const templatesFile = writeTempJson('templates', allTemplates);
-    const cfgFile       = configPath();
-
-    return {
-      args: [
-        '--fields-file',    fieldsFile,
-        '--hints-file',     hintsFile,
-        '--anchors-file',   anchorsFile,
-        '--logos-file',     logosFile,
-        '--doc-types-file', dtFile,
-        '--formats-file',   formatsFile,
-        '--templates-file', templatesFile,
-        '--config-file',    cfgFile,
-      ],
-      tempFiles: [fieldsFile, hintsFile, anchorsFile, logosFile, dtFile, formatsFile, templatesFile],
-    };
-  }
+    return true;
+  });
 
   // ── Process folder ──────────────────────────────────────────────────────────
   ipcMain.handle('process-folder', async (event, folderPath) => {
@@ -104,7 +121,7 @@ function register(ctx) {
     const db = getDb();
     let trainingArgs, tempFiles;
     try {
-      ({ args: trainingArgs, tempFiles } = buildTrainingArgs(db));
+      ({ args: trainingArgs, tempFiles } = buildTrainingArgs(db, configPath));
     } catch (e) {
       console.error('[process-folder] buildTrainingArgs failed:', e);
       event.sender.send('process-progress', {
@@ -123,14 +140,13 @@ function register(ctx) {
       const scriptArgs = [
         '--folder',      folderPath,
         '--tesseract',   tesseractPath(),
-        '--ollama-url',  'http://127.0.0.1:11434/api/generate',
-        '--model',       'phi3:mini',
         '--mode',        procMode,
         ...trainingArgs,
       ];
 
       const proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs),
         { windowsHide: true });
+      _currentBatchProc = proc;
       let buf = '', fileCount = 0;
 
       proc.stdout.on('data', (data) => {
@@ -142,7 +158,7 @@ function register(ctx) {
           if (!trimmed) continue;
           try {
             const msg = JSON.parse(trimmed);
-            _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger);
+            setImmediate(() => _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger));
             if (msg.type === 'file_done') fileCount++;
             if (msg.type === 'log') {
               if      (msg.level === 'err')  logger?.err(`Python: ${msg.text}`);
@@ -163,6 +179,7 @@ function register(ctx) {
       });
 
       proc.on('close', (code) => {
+        _currentBatchProc = null;
         cleanupFiles(tempFiles);
         logger?.log(`Batch complete: ${fileCount} files, exit=${code}`);
         resolve({ success: code === 0 });
@@ -190,15 +207,13 @@ function register(ctx) {
     const tmpFilename = `reprocess_${Date.now()}${ext}`;
     fs.copyFileSync(srcFile, path.join(tmpDir, tmpFilename));
 
-    const { args: trainingArgs, tempFiles } = buildTrainingArgs(db);
+    const { args: trainingArgs, tempFiles } = buildTrainingArgs(db, configPath);
     const learning2 = require('../../../database/modules/learning');
     const reprMode  = learning2.getSetting(db, 'processing_mode', 'smart');
 
     const scriptArgs = [
       '--folder',     tmpDir,
       '--tesseract',  tesseractPath(),
-      '--ollama-url', 'http://127.0.0.1:11434/api/generate',
-      '--model',      'phi3:mini',
       '--mode',       reprMode,
       ...trainingArgs,
     ];
@@ -399,11 +414,16 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger) {
     if (match) document_type_id = match.id;
   }
 
+  // _supplier_name metadata is only populated via logo/hint matching, which is
+  // empty on a fresh install — fall back to the extracted field value so the
+  // queue/DB don't show null or a stale supplier name.
+  const supplierName = msg.supplier_name || msg.extractions?.supplier_name?.value || null;
+
   const docResult = documents.insert(db, {
     original_filename:  msg.original_filename,
     folder_path:        folderPath,
     document_type_id,
-    supplier_name:      msg.supplier_name || null,
+    supplier_name:      supplierName,
     overall_confidence: msg.overall_confidence || null,
     status:             msg.status || 'needs_review',
     template_id:        msg.template_id   || null,
@@ -427,6 +447,43 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger) {
 
   msg.db_id = docId;
 
+  // Move source file to Processed folder if configured
+  const processedFolder = learning.getSetting(db, 'processed_folder', null);
+  if (processedFolder) {
+    const srcPath = path.join(folderPath, msg.original_filename);
+    if (fs.existsSync(srcPath)) {
+      try {
+        if (!fs.existsSync(processedFolder)) {
+          fs.mkdirSync(processedFolder, { recursive: true });
+        }
+        const ext  = path.extname(msg.original_filename);
+        const base = path.basename(msg.original_filename, ext);
+        let destPath = path.join(processedFolder, msg.original_filename);
+        let counter = 1;
+        while (fs.existsSync(destPath)) {
+          destPath = path.join(processedFolder, `${base}-${counter}${ext}`);
+          counter++;
+        }
+        try {
+          fs.renameSync(srcPath, destPath);
+        } catch {
+          fs.copyFileSync(srcPath, destPath);
+          fs.unlinkSync(srcPath);
+        }
+        const destFilename = path.basename(destPath);
+        db.prepare('UPDATE documents SET folder_path = ? WHERE id = ?')
+          .run(processedFolder, docId);
+        if (destFilename !== msg.original_filename) {
+          db.prepare('UPDATE documents SET original_filename = ? WHERE id = ?')
+            .run(destFilename, docId);
+        }
+        logger?.log(`Moved to processed: ${msg.original_filename}`);
+      } catch (e) {
+        logger?.warn(`Could not move to processed folder: ${e.message}`);
+      }
+    }
+  }
+
   // Log extraction result
   if (logger) {
     const exFields = msg.extractions
@@ -437,7 +494,7 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger) {
     const tmpl = msg.template_id ? ` template=${msg.template_id}` : '';
     logger.log(
       `File done: ${msg.original_filename} → status=${msg.status}` +
-      ` type=${msg.document_type || '?'} supplier=${msg.supplier_name || '?'}` +
+      ` type=${msg.document_type || '?'} supplier=${supplierName || '?'}` +
       ` conf=${msg.overall_confidence || '?'}%${tmpl}`
     );
     if (exFields) logger.log(`  Fields: ${exFields}`);
@@ -447,8 +504,13 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger) {
   notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
 }
 
-module.exports = { register };
-
-// ── Ollama management ─────────────────────────────────────────────────────────
-// These are appended at module level but need to be inside register().
-// See ollama_handler.js for the actual implementation.
+module.exports = {
+  register,
+  // Exposed so other entry points into the same pipeline (e.g. the
+  // watch-folder handler) can reuse this setup/dispatch machinery instead
+  // of duplicating it on a parallel import path.
+  buildTrainingArgs,
+  cleanupTempFiles: cleanupFiles,
+  handleFileMessage: _handleFileMessage,
+  isBatchRunning: () => !!_currentBatchProc,
+};
