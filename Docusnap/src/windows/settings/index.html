@@ -237,13 +237,29 @@
     .tpl-row {
       display:flex; flex-direction:column; gap:2px;
       padding:9px 12px; border:1px solid var(--border);
-      border-radius:7px; margin-bottom:6px; background:var(--surface);
+      border-radius:7px; margin-bottom:4px; background:var(--surface);
       cursor:pointer; transition:border-color .15s;
     }
     .tpl-row:hover { border-color:var(--accent); }
     .tpl-row.active { border-color:var(--accent); background:var(--accent-bg); }
     .tpl-row-name { font-weight:500; font-size:12px; }
     .tpl-row-meta { font-size:10px; color:var(--muted); font-family:var(--mono); }
+    /* ── Group tree ── */
+    .tpl-group-node { margin-bottom:6px; }
+    .tpl-group-hdr {
+      display:flex; align-items:center; gap:7px;
+      padding:7px 10px; border:1px solid var(--border2);
+      border-radius:6px; cursor:pointer; user-select:none;
+      background:var(--surface2); font-size:11px; font-weight:600; color:var(--text);
+    }
+    .tpl-group-hdr:hover { border-color:var(--accent); }
+    .tpl-group-arrow { font-size:9px; color:var(--muted); display:inline-block; transition:transform .15s; flex-shrink:0; }
+    .tpl-group-node.collapsed .tpl-group-arrow { transform:rotate(-90deg); }
+    .tpl-group-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .tpl-group-badge { flex-shrink:0; color:var(--muted); font-size:10px; font-weight:400; font-family:var(--mono); }
+    .tpl-group-children { padding-left:8px; border-left:2px solid var(--border2); margin:4px 0 0 14px; }
+    .tpl-group-node.collapsed .tpl-group-children { display:none; }
+    .tpl-child { margin-bottom:4px; }
     .tpl-legend { margin-left:auto; font-size:10px; color:var(--muted); display:flex; align-items:center; gap:6px; }
     .tpl-swatch { display:inline-block; width:11px; height:11px; border-radius:2px; border:1.5px solid; vertical-align:middle; }
     .tpl-swatch-anchor { border-color:#4f8ef7; background:rgba(79,142,247,0.15); }
@@ -581,6 +597,7 @@
                   <button class="btn" id="tpl-btn-rename" disabled>Rename</button>
                 </div>
                 <div class="threshold-sub" id="tpl-detail-meta">—</div>
+                <div id="tpl-detection-method" style="margin-top:5px; display:flex; flex-wrap:wrap; gap:5px; align-items:center;"></div>
                 <span id="tpl-name-msg" class="section-desc" style="display:block; margin:4px 0 0;"></span>
 
                 <div class="form-group" style="margin:12px 0 0;">

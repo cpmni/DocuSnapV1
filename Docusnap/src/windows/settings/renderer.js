@@ -668,6 +668,7 @@ document.getElementById('theme-toggle').addEventListener('change', async (e) => 
 let allTemplates     = [];
 let allGroups        = [];
 let selectedTemplate = null;
+const collapsedGroups = new Set(); // group IDs currently collapsed in the tree
 let tplPageImages    = [];
 let tplCurrentPage   = 0;
 
@@ -702,12 +703,33 @@ const tplCtx     = tplCanvas.getContext('2d');
 
 async function loadTemplates() {
   try {
-    allTemplates = await api.getTemplates() || [];
+    [allTemplates, allGroups] = await Promise.all([
+      api.getTemplates().catch(() => []),
+      api.getTemplateGroups().catch(() => []),
+    ]);
+    allTemplates = allTemplates || [];
+    allGroups    = allGroups    || [];
   } catch (e) {
-    console.warn('getTemplates failed:', e.message);
+    console.warn('loadTemplates failed:', e.message);
     allTemplates = [];
+    allGroups    = [];
   }
   renderTemplateList();
+}
+
+function makeTplRow(t, isChild) {
+  const mappingCount = (t.field_mappings || []).filter(m => m.enabled).length;
+  const row = document.createElement('div');
+  row.className = 'tpl-row' +
+    (isChild ? ' tpl-child' : '') +
+    (selectedTemplate && selectedTemplate.id === t.id ? ' active' : '');
+  row.dataset.id = t.id;
+  row.innerHTML = `
+    <span class="tpl-row-name">${escHtml(t.name)}</span>
+    <span class="tpl-row-meta">${escHtml(t.document_type_slug || '—')} · confirmed ${t.confirmed_count}× · ${mappingCount} mapping${mappingCount === 1 ? '' : 's'}</span>
+  `;
+  row.addEventListener('click', () => selectTemplate(t.id));
+  return row;
 }
 
 function renderTemplateList() {
@@ -717,18 +739,56 @@ function renderTemplateList() {
     list.innerHTML = '<p class="section-desc">No templates learned yet — confirm a few documents to build the first one.</p>';
     return;
   }
+
+  // Build group map from allGroups; assign templates to their group
+  const groupMap = new Map();
+  for (const g of allGroups) groupMap.set(g.id, { group: g, templates: [] });
+
+  const ungrouped = [];
   for (const t of allTemplates) {
-    const mappingCount = (t.field_mappings || []).filter(m => m.enabled).length;
-    const row = document.createElement('div');
-    row.className = 'tpl-row' + (selectedTemplate && selectedTemplate.id === t.id ? ' active' : '');
-    row.dataset.id = t.id;
-    row.innerHTML = `
-      <span class="tpl-row-name">${escHtml(t.name)}</span>
-      <span class="tpl-row-meta">${escHtml(t.document_type_slug || '—')} · confirmed ${t.confirmed_count}× · ${mappingCount} mapping${mappingCount === 1 ? '' : 's'}</span>
-    `;
-    row.addEventListener('click', () => selectTemplate(t.id));
-    list.appendChild(row);
+    if (t.group_id && groupMap.has(t.group_id)) {
+      groupMap.get(t.group_id).templates.push(t);
+    } else {
+      ungrouped.push(t);
+    }
   }
+
+  // Render populated group nodes (alphabetical by group name)
+  const populatedGroups = [...groupMap.values()]
+    .filter(g => g.templates.length > 0)
+    .sort((a, b) => a.group.name.localeCompare(b.group.name));
+
+  for (const { group, templates } of populatedGroups) {
+    const isCollapsed = collapsedGroups.has(group.id);
+    const count = templates.length;
+
+    const node = document.createElement('div');
+    node.className = 'tpl-group-node' + (isCollapsed ? ' collapsed' : '');
+    node.dataset.groupId = group.id;
+
+    const hdr = document.createElement('div');
+    hdr.className = 'tpl-group-hdr';
+    hdr.innerHTML = `
+      <span class="tpl-group-arrow">&#9660;</span>
+      <span class="tpl-group-name">${escHtml(group.name)}</span>
+      <span class="tpl-group-badge">${count} variant${count === 1 ? '' : 's'}</span>
+    `;
+    hdr.addEventListener('click', () => {
+      if (collapsedGroups.has(group.id)) collapsedGroups.delete(group.id);
+      else collapsedGroups.add(group.id);
+      node.classList.toggle('collapsed');
+    });
+    node.appendChild(hdr);
+
+    const children = document.createElement('div');
+    children.className = 'tpl-group-children';
+    for (const t of templates) children.appendChild(makeTplRow(t, true));
+    node.appendChild(children);
+    list.appendChild(node);
+  }
+
+  // Render ungrouped templates as flat top-level rows
+  for (const t of ungrouped) list.appendChild(makeTplRow(t, false));
 }
 
 // ── Create template ───────────────────────────────────────────────────────────
@@ -876,6 +936,7 @@ document.getElementById('tpl-group-select').addEventListener('change', async (e)
     selectedTemplate = updated;
     const idx = allTemplates.findIndex(t => t.id === updated.id);
     if (idx !== -1) allTemplates[idx] = updated;
+    renderTemplateList();
     await renderSiblings(updated);
   } catch (err) { console.warn('setTemplateGroup failed:', err.message); }
 });
@@ -916,6 +977,13 @@ tplNewGroupInput.addEventListener('keydown', (e) => {
 
 async function selectTemplate(id) {
   document.querySelectorAll('.tpl-row').forEach(r => r.classList.toggle('active', parseInt(r.dataset.id) === id));
+  // If the selected row is inside a collapsed group node, expand it
+  const activeRow = document.querySelector('.tpl-row.active');
+  const parentNode = activeRow?.closest('.tpl-group-node');
+  if (parentNode?.classList.contains('collapsed')) {
+    collapsedGroups.delete(parseInt(parentNode.dataset.groupId));
+    parentNode.classList.remove('collapsed');
+  }
   document.getElementById('tpl-empty').style.display  = 'none';
   document.getElementById('tpl-detail').style.display = '';
 
@@ -934,6 +1002,7 @@ async function selectTemplate(id) {
   document.getElementById('tpl-name-msg').textContent = '';
   document.getElementById('tpl-detail-meta').textContent =
     `${detail.document_type_slug || 'unknown type'} · confirmed ${detail.confirmed_count} time${detail.confirmed_count === 1 ? '' : 's'} · updated ${formatWhen(detail.updated_at) || '—'}`;
+  renderDetectionMethod(detail);
 
   await Promise.all([
     loadSampleCandidates(detail),
@@ -943,6 +1012,30 @@ async function selectTemplate(id) {
   renderSelectorAnchorsTable(detail);
   await loadSamplePages(detail);
   await populateMapFieldSelect(detail);
+}
+
+function renderDetectionMethod(detail) {
+  const el = document.getElementById('tpl-detection-method');
+  el.innerHTML = '';
+
+  const hasLogo = !!detail.logo_phash;
+  const hasKw   = Array.isArray(detail.keyword_fingerprint) && detail.keyword_fingerprint.length > 0;
+  const mappingN = (detail.field_mappings || []).filter(m => m.enabled).length;
+
+  let label, color;
+  if (hasLogo && hasKw)      { label = 'Logo & keyword fingerprint'; color = 'var(--ok)'; }
+  else if (hasLogo)          { label = 'Logo fingerprint';           color = 'var(--accent2)'; }
+  else if (hasKw)            { label = 'Keyword fingerprint';        color = 'var(--accent2)'; }
+  else                       { label = 'Not yet learned';            color = 'var(--warn)'; }
+
+  const pill = (text, c) => {
+    const s = document.createElement('span');
+    s.style.cssText = `font-size:10px; font-family:var(--mono); padding:2px 7px; border-radius:4px; border:1px solid ${c}; color:${c}; white-space:nowrap;`;
+    s.textContent = text;
+    return s;
+  };
+  el.appendChild(pill(label, color));
+  if (mappingN > 0) el.appendChild(pill(`+ ${mappingN} admin mapping${mappingN === 1 ? '' : 's'}`, 'var(--accent2)'));
 }
 
 async function loadSampleCandidates(detail) {
