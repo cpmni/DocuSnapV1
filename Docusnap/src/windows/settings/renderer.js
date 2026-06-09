@@ -1326,6 +1326,7 @@ function exitDrawMode() {
   tplMapMode    = null;
   tplIsDragging = false;
   tplDragRect   = null;
+  tplCanvas.style.cursor = 'default';
   tplCanvas.classList.remove('drawing');
   document.getElementById('tpl-btn-draw-anchor').classList.remove('primary');
   document.getElementById('tpl-btn-draw-target').classList.remove('primary');

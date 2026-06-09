@@ -421,11 +421,15 @@ function clearCanvas() {
 
 function drawRect(r) {
   clearCanvas();
-  ctx.strokeStyle = '#FFE000';
-  ctx.lineWidth   = 2;
   ctx.setLineDash([4, 3]);
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+  ctx.lineWidth   = 4;
   ctx.strokeRect(r.x, r.y, r.w, r.h);
-  ctx.fillStyle = 'rgba(255,224,0,0.08)';
+  ctx.strokeStyle = '#4f8ef7';
+  ctx.lineWidth   = 2;
+  ctx.strokeRect(r.x, r.y, r.w, r.h);
+  ctx.setLineDash([]);
+  ctx.fillStyle   = 'rgba(79,142,247,0.09)';
   ctx.fillRect(r.x, r.y, r.w, r.h);
 }
 
