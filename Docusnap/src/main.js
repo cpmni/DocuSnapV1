@@ -189,6 +189,10 @@ app.whenReady().then(() => {
   // Open Review focused on a specific document (e.g. from "Edit in Review" in Search).
   ipcMain.on('open-review-window-at', (_e, docId) => {
     if (!authModule.hasRole('admin', 'edit')) return;
+    authModule.logAudit(getDb(), {
+      action: 'search_open_review', target_type: 'document',
+      target_id: docId, details: 'source:search',
+    });
     const alreadyOpen = !!windows['review'];
     pendingReviewDocId = docId;
     createWindow('review', { width: 1200, height: 800, minWidth: 900, minHeight: 600 });

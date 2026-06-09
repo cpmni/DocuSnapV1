@@ -403,4 +403,14 @@ function register(ctx) {
   });
 }
 
-module.exports = { register, getCurrentUser, hasRole, requireRole, requireLogin };
+// Safe audit helper for use by other main-process modules.
+// Injects the current session's user_id automatically.
+function logAudit(db, entry) {
+  try {
+    auth.addAuditEntry(db, { user_id: currentSession?.id ?? null, ...entry });
+  } catch (e) {
+    // Non-fatal — audit write failure must never block the triggering action.
+  }
+}
+
+module.exports = { register, getCurrentUser, hasRole, requireRole, requireLogin, logAudit };
