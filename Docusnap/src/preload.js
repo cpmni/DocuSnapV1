@@ -33,9 +33,12 @@ contextBridge.exposeInMainWorld('docusnap', {
   openFile:           (p) => ipcRenderer.send('open-file', p),
 
   // ── Window navigation ────────────────────────────────────────────────────────
-  openReviewWindow:   () => ipcRenderer.send('open-review-window'),
-  openSettingsWindow: () => ipcRenderer.send('open-settings-window'),
-  openSearchWindow:   () => ipcRenderer.send('open-search-window'),
+  openReviewWindow:    ()       => ipcRenderer.send('open-review-window'),
+  openReviewWindowAt:  (docId)  => ipcRenderer.send('open-review-window-at', docId),
+  openSettingsWindow:  ()       => ipcRenderer.send('open-settings-window'),
+  openSearchWindow:    ()       => ipcRenderer.send('open-search-window'),
+  getReviewTarget:     ()       => ipcRenderer.invoke('get-review-target'),
+  onNavigateToDoc:     (cb)     => ipcRenderer.on('navigate-to-doc', (_e, id) => cb(id)),
 
   // ── Folder processing ────────────────────────────────────────────────────────
   pickFolder:         ()     => ipcRenderer.invoke('pick-folder'),

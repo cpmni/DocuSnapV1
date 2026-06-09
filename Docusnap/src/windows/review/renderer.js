@@ -49,6 +49,10 @@ async function loadQueue() {
   updateTabCounts();
   renderQueueList();
   if (queue.length > 0) selectDoc(queue[0]);
+
+  // If opened via "Edit in Review" from Search, navigate to the requested doc.
+  const targetId = await window.docusnap.getReviewTarget();
+  if (targetId) _navigateToDoc(targetId);
 }
 
 function reviewFields() {
@@ -992,7 +996,11 @@ document.getElementById('btn-reprocess').addEventListener('click', async () => {
 
   if (result.success && result.extractions) {
     const full = await window.docusnap.getDocumentWithExtractions(currentDoc.id);
-    renderFields(full);
+    if (full) {
+      currentDoc  = full;    // sync in-memory state to fresh DB record
+      corrections = {};      // drop stale corrections; fields are now fresh
+    }
+    renderFields(full || currentDoc);
     btn.innerHTML = '✓ Reprocessed';
     btn.style.color = 'var(--ok)';
     btn.style.borderColor = 'var(--ok)';
@@ -1056,7 +1064,11 @@ document.getElementById('btn-reprocess-all').addEventListener('click', async () 
         if (!result?.success) failed++;
         if (currentDoc && doc.id === currentDoc.id && result?.success) {
           const full = await window.docusnap.getDocumentWithExtractions(doc.id);
-          if (full) renderFields(full);
+          if (full) {
+            currentDoc  = full;
+            corrections = {};
+            renderFields(full);
+          }
         }
       } catch (e) {
         console.warn(`[Reprocess All] ${doc.original_filename}:`, e.message);
@@ -1192,6 +1204,30 @@ window.addEventListener('resize', () => {
     selCanvas.height = docImg.offsetHeight;
   }
 });
+
+// Navigate to a specific doc when Review is already open (e.g. second "Edit in Review" click).
+window.docusnap.onNavigateToDoc((docId) => _navigateToDoc(docId));
+
+function _navigateToDoc(docId) {
+  const inReview   = queue.find(d => d.id === docId);
+  const inDeferred = deferredQueue.find(d => d.id === docId);
+  const doc        = inReview || inDeferred;
+  if (!doc) return;
+
+  if (inDeferred && activeTab !== 'deferred') {
+    activeTab = 'deferred';
+    document.getElementById('tab-deferred').classList.add('active');
+    document.getElementById('tab-review').classList.remove('active');
+    renderDeferredList();
+  } else if (inReview && activeTab !== 'review') {
+    activeTab = 'review';
+    document.getElementById('tab-review').classList.add('active');
+    document.getElementById('tab-deferred').classList.remove('active');
+    renderQueueList();
+  }
+
+  selectDoc(doc);
+}
 
 // Auto-refresh queue when main process signals new docs were added
 window.docusnap.onReviewCountChanged(async (n) => {

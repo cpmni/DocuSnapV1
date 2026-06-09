@@ -75,6 +75,11 @@ function templatesDir() {
 // ── Window management ─────────────────────────────────────────────────────────
 const windows = {};
 
+// Doc id to focus when the review window opens via "Edit in Review" from Search.
+// Cleared by get-review-target (pulled by the renderer after loadQueue) or
+// consumed immediately if the review window is already open.
+let pendingReviewDocId = null;
+
 const MAIN_WINDOW_OPTIONS  = { width: 1100, height: 750, minWidth: 800, minHeight: 560 };
 const LOGIN_WINDOW_OPTIONS = { width: 460, height: 660, resizable: false, minimizable: false, maximizable: false };
 
@@ -179,6 +184,27 @@ app.whenReady().then(() => {
     // has nothing to do there; their "search/view documents" surface is Search.
     if (!authModule.hasRole('admin', 'edit')) return;
     createWindow('review', { width: 1200, height: 800, minWidth: 900, minHeight: 600 });
+  });
+
+  // Open Review focused on a specific document (e.g. from "Edit in Review" in Search).
+  ipcMain.on('open-review-window-at', (_e, docId) => {
+    if (!authModule.hasRole('admin', 'edit')) return;
+    const alreadyOpen = !!windows['review'];
+    pendingReviewDocId = docId;
+    createWindow('review', { width: 1200, height: 800, minWidth: 900, minHeight: 600 });
+    if (alreadyOpen) {
+      // Window is loaded — send event directly; no need to poll via get-review-target.
+      windows['review'].webContents.send('navigate-to-doc', docId);
+      pendingReviewDocId = null;
+    }
+    // else: new window — renderer calls get-review-target after loadQueue() completes.
+  });
+
+  // Renderer pulls this once after loadQueue() to get its initial navigation target.
+  ipcMain.handle('get-review-target', () => {
+    const id = pendingReviewDocId;
+    pendingReviewDocId = null;
+    return id;
   });
   ipcMain.on('open-settings-window', () => {
     // Settings (output folder, processing mode, document types/fields, file

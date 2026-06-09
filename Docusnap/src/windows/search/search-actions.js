@@ -28,7 +28,7 @@ function renderActions(doc) {
     // Edit in Review is admin/edit territory; the open-review-window IPC handler
     // enforces this independently — the button is visible to any logged-in user
     // here but the window will not open for Read Only.
-    _btn(panel, 'Edit in Review', () => window.docusnap.openReviewWindow(), true);
+    _btn(panel, 'Edit in Review', () => window.docusnap.openReviewWindowAt(doc.id), true);
   }
 
   // Extension seam — workflow/approval providers slot in here.
