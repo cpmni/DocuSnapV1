@@ -680,6 +680,10 @@ let tplDraftTarget     = null;
 let tplIsDragging      = false;
 let tplDragStart       = null;
 let tplDragRect        = null;
+// Select / move state — left-click on an existing box selects it; dragging moves it.
+let tplSelectedBox = null;   // { fieldKey, boxType:'anchor'|'target' } | null
+let tplIsMoving    = false;
+let tplMoveStart   = null;   // { pt:{x,y}, origNorm } when a move drag is in progress
 
 // Zoom / pan state — applied to #tpl-img-wrap via CSS transform, independent
 // of the canvas's internal pixel buffer (tplCanvas.width/height), which always
@@ -1228,17 +1232,18 @@ tplViewer.addEventListener('wheel', (e) => {
   setTplZoom(tplZoom + (e.deltaY < 0 ? TPL_ZOOM_STEP : -TPL_ZOOM_STEP));
 }, { passive: false });
 
-// Click-drag panning on the viewer. Gated on tplMapMode so "Draw Anchor"/
-// "Draw Target" keeps exclusive control of the gesture — the overlay canvas
-// already captures pointer events itself in that state (`.drawing` toggles
-// pointer-events:auto), so this check is a redundant belt-and-braces guard
-// against the same mousedown bubbling up from the canvas.
+// Right-click pan — works in and out of draw mode so the user can always
+// reposition without toggling tools. Left-click is reserved for drawing.
+// contextmenu is suppressed so the right-click drag doesn't pop a menu.
 tplViewer.addEventListener('mousedown', (e) => {
-  if (tplMapMode || !tplPageImages.length) return;
+  if (e.button !== 2 || !tplPageImages.length) return;
   tplIsPanning = true;
   tplPanStart  = { x: e.clientX, y: e.clientY, panX: tplPanX, panY: tplPanY };
   tplViewer.classList.add('panning');
 });
+tplViewer.addEventListener('contextmenu', e => { if (tplPageImages.length) e.preventDefault(); });
+// Prevent the browser's native image-drag (ghost image follows cursor on left-click drag).
+tplViewer.addEventListener('dragstart', e => e.preventDefault());
 window.addEventListener('mousemove', (e) => {
   if (!tplIsPanning || !tplPanStart) return;
   tplPanX = tplPanStart.panX + (e.clientX - tplPanStart.x);
@@ -1252,6 +1257,19 @@ window.addEventListener('mouseup', () => {
   tplViewer.classList.remove('panning');
 });
 
+// ── Canvas resize sync (Pass 2) ──────────────────────────────────────────────
+// #tpl-img uses max-width/max-height so its CSS display size changes when the
+// window is resized or maximised. The canvas buffer must stay in sync or the
+// normalised-coordinate boxes drift off the landmarks they were placed on.
+new ResizeObserver(() => {
+  if (!tplPageImages.length) return;
+  const w = tplImg.offsetWidth, h = tplImg.offsetHeight;
+  if (!w || !h || (w === tplCanvas.width && h === tplCanvas.height)) return;
+  tplCanvas.width  = w;
+  tplCanvas.height = h;
+  redrawTplCanvas();
+}).observe(tplImg);
+
 // Full redraw: saved (enabled) mappings underneath, then whatever the editor
 // currently has in flight (draft anchor/target boxes, live drag rectangle) on
 // top — so drawing a new box never has to fight the persisted overlay for
@@ -1261,17 +1279,24 @@ function redrawTplCanvas() {
   drawSavedMappings();
   const w = tplCanvas.width, h = tplCanvas.height;
   if (tplDraftAnchor && (tplDraftAnchor.page_number || 0) === tplCurrentPage) {
-    drawNormBox(tplDraftAnchor.x_norm, tplDraftAnchor.y_norm, tplDraftAnchor.w_norm, tplDraftAnchor.h_norm, w, h, '#4f8ef7', 'anchor (draft)');
+    const sel = tplSelectedBox?.boxType === 'anchor';
+    drawNormBox(tplDraftAnchor.x_norm, tplDraftAnchor.y_norm, tplDraftAnchor.w_norm, tplDraftAnchor.h_norm, w, h, '#4f8ef7', 'anchor (draft)', sel);
   }
   if (tplDraftTarget && (tplDraftTarget.page_number || 0) === tplCurrentPage) {
-    drawNormBox(tplDraftTarget.x_norm, tplDraftTarget.y_norm, tplDraftTarget.w_norm, tplDraftTarget.h_norm, w, h, '#3ecf8e', 'target (draft)');
+    const sel = tplSelectedBox?.boxType === 'target';
+    drawNormBox(tplDraftTarget.x_norm, tplDraftTarget.y_norm, tplDraftTarget.w_norm, tplDraftTarget.h_norm, w, h, '#3ecf8e', 'target (draft)', sel);
   }
   if (tplDragRect) {
-    tplCtx.strokeStyle = '#FFE000';
-    tplCtx.lineWidth   = 2;
+    const dragColor = tplMapMode === 'target' ? '#3ecf8e' : '#4f8ef7';
     tplCtx.setLineDash([4, 3]);
+    tplCtx.strokeStyle = 'rgba(0,0,0,0.4)';
+    tplCtx.lineWidth   = 4;
     tplCtx.strokeRect(tplDragRect.x, tplDragRect.y, tplDragRect.w, tplDragRect.h);
-    tplCtx.fillStyle = 'rgba(255,224,0,0.08)';
+    tplCtx.strokeStyle = dragColor;
+    tplCtx.lineWidth   = 2;
+    tplCtx.strokeRect(tplDragRect.x, tplDragRect.y, tplDragRect.w, tplDragRect.h);
+    tplCtx.setLineDash([]);
+    tplCtx.fillStyle   = dragColor + '18';
     tplCtx.fillRect(tplDragRect.x, tplDragRect.y, tplDragRect.w, tplDragRect.h);
   }
 }
@@ -1290,29 +1315,74 @@ function drawSavedMappings() {
     if (!m.enabled) continue;
     if (m.field_key === tplEditingFieldKey) continue;
     if ((m.page_number || 0) !== tplCurrentPage) continue;
-    drawNormBox(m.anchor_x_norm, m.anchor_y_norm, m.anchor_w_norm, m.anchor_h_norm, w, h, '#4f8ef7', `${m.field_key} anchor`);
-    drawNormBox(m.target_x_norm, m.target_y_norm, m.target_w_norm, m.target_h_norm, w, h, '#3ecf8e', m.field_key);
+    const asel = tplSelectedBox?.fieldKey === m.field_key && tplSelectedBox?.boxType === 'anchor';
+    const tsel = tplSelectedBox?.fieldKey === m.field_key && tplSelectedBox?.boxType === 'target';
+    drawNormBox(m.anchor_x_norm, m.anchor_y_norm, m.anchor_w_norm, m.anchor_h_norm, w, h, '#4f8ef7', `${m.field_key} anchor`, asel);
+    drawNormBox(m.target_x_norm, m.target_y_norm, m.target_w_norm, m.target_h_norm, w, h, '#3ecf8e', m.field_key, tsel);
   }
 }
 
-function drawNormBox(xN, yN, wN, hN, w, h, color, label) {
+function drawNormBox(xN, yN, wN, hN, w, h, color, label, selected = false) {
   if ([xN, yN, wN, hN].some(v => v == null)) return;
   const x = xN * w, y = yN * h, bw = wN * w, bh = hN * h;
-  tplCtx.strokeStyle = color;
-  tplCtx.lineWidth   = 2;
-  tplCtx.setLineDash([4, 3]);
+  const lw = selected ? 3 : 2;
+  tplCtx.setLineDash(selected ? [] : [4, 3]);
+  // Dark outline behind color stroke for visibility on white documents
+  tplCtx.strokeStyle = 'rgba(0,0,0,0.3)';
+  tplCtx.lineWidth   = lw + 2;
   tplCtx.strokeRect(x, y, bw, bh);
-  tplCtx.fillStyle = color + '26'; // ~15% alpha fill, same convention as review's drawRect
+  tplCtx.strokeStyle = color;
+  tplCtx.lineWidth   = lw;
+  tplCtx.strokeRect(x, y, bw, bh);
+  tplCtx.fillStyle   = color + (selected ? '40' : '26');
   tplCtx.fillRect(x, y, bw, bh);
-
   tplCtx.setLineDash([]);
 }
 
+// ── Hit testing ──────────────────────────────────────────────────────────────
+// Returns { fieldKey, boxType:'anchor'|'target' } for the topmost box under
+// the canvas-space point, or null. Draft boxes (current editing field) are
+// checked first — they render on top.
+function hitTestBoxes(pt) {
+  const w = tplCanvas.width, h = tplCanvas.height;
+  if (tplEditingFieldKey) {
+    if (tplDraftAnchor && (tplDraftAnchor.page_number || 0) === tplCurrentPage && normHit(pt, tplDraftAnchor, w, h))
+      return { fieldKey: tplEditingFieldKey, boxType: 'anchor' };
+    if (tplDraftTarget && (tplDraftTarget.page_number || 0) === tplCurrentPage && normHit(pt, tplDraftTarget, w, h))
+      return { fieldKey: tplEditingFieldKey, boxType: 'target' };
+  }
+  for (const m of (selectedTemplate?.field_mappings || [])) {
+    if (!m.enabled || m.field_key === tplEditingFieldKey) continue;
+    if ((m.page_number || 0) !== tplCurrentPage) continue;
+    if (mappingBoxHit(pt, m, 'anchor', w, h)) return { fieldKey: m.field_key, boxType: 'anchor' };
+    if (mappingBoxHit(pt, m, 'target', w, h)) return { fieldKey: m.field_key, boxType: 'target' };
+  }
+  return null;
+}
+function normHit(pt, n, w, h) {
+  return pt.x >= n.x_norm * w && pt.x <= (n.x_norm + n.w_norm) * w &&
+         pt.y >= n.y_norm * h && pt.y <= (n.y_norm + n.h_norm) * h;
+}
+function mappingBoxHit(pt, m, type, w, h) {
+  const xN = m[`${type}_x_norm`], yN = m[`${type}_y_norm`];
+  const wN = m[`${type}_w_norm`], hN = m[`${type}_h_norm`];
+  if ([xN, yN, wN, hN].some(v => v == null)) return false;
+  return pt.x >= xN * w && pt.x <= (xN + wN) * w &&
+         pt.y >= yN * h && pt.y <= (yN + hN) * h;
+}
+// Get/set the normalised coords of a selected box (always via draft state after load).
+function getBoxNorm(sel) {
+  return sel.boxType === 'anchor' ? { ...tplDraftAnchor } : { ...tplDraftTarget };
+}
+function setBoxNorm(sel, norm) {
+  if (sel.boxType === 'anchor') tplDraftAnchor = norm;
+  else                          tplDraftTarget = norm;
+}
+
 // ── Drawing tools (Phase 2) ──────────────────────────────────────────────────
-// Same drag-to-rectangle interaction as the review window's zone-OCR teaching
-// tool (mousedown/mousemove/mouseup → normalised box), but the canvas only
-// accepts pointer events while a draw mode is active — overlay stays
-// click-through the rest of the time so it never blocks page scrolling.
+// Left-click in draw mode: drag to draw a new box.
+// Left-click outside draw mode: click-to-select / drag-to-move an existing box.
+// Right-click: pan (handled on tplViewer, not here).
 
 function enterDrawMode(mode) {
   if (!selectedTemplate || !tplPageImages.length || !tplEditingFieldKey) return;
@@ -1356,47 +1426,127 @@ function tplCanvasPoint(e) {
 }
 
 tplCanvas.addEventListener('mousedown', (e) => {
-  if (!tplMapMode) return;
-  tplIsDragging = true;
-  tplDragStart = tplCanvasPoint(e);
-  tplDragRect  = { x: tplDragStart.x, y: tplDragStart.y, w: 0, h: 0 };
+  if (e.button !== 0 || !tplPageImages.length) return;
+  const pt = tplCanvasPoint(e);
+
+  if (tplMapMode) {
+    // Draw mode: start a new box
+    tplIsDragging = true;
+    tplDragStart  = pt;
+    tplDragRect   = { x: pt.x, y: pt.y, w: 0, h: 0 };
+    return;
+  }
+
+  // Normal mode: hit-test existing boxes
+  const hit = hitTestBoxes(pt);
+  if (hit) {
+    // If a different field's box was clicked, load it into the editor first
+    if (hit.fieldKey !== tplEditingFieldKey) {
+      const sel = document.getElementById('tpl-map-field-select');
+      if (sel) sel.value = hit.fieldKey;
+      loadMappingIntoEditor(hit.fieldKey);
+      // loadMappingIntoEditor clears tplSelectedBox; set it after
+    }
+    tplSelectedBox = { fieldKey: hit.fieldKey, boxType: hit.boxType };
+    tplMoveStart   = { pt, origNorm: getBoxNorm(tplSelectedBox) };
+    redrawTplCanvas();
+  } else {
+    // Empty space: clear selection
+    if (tplSelectedBox) { tplSelectedBox = null; redrawTplCanvas(); }
+  }
 });
 
 tplCanvas.addEventListener('mousemove', (e) => {
-  if (!tplIsDragging || !tplDragRect) return;
-  const { x: cx, y: cy } = tplCanvasPoint(e);
-  tplDragRect = {
-    x: Math.min(tplDragStart.x, cx),
-    y: Math.min(tplDragStart.y, cy),
-    w: Math.abs(cx - tplDragStart.x),
-    h: Math.abs(cy - tplDragStart.y),
-  };
-  redrawTplCanvas();
+  if (tplIsDragging && tplDragRect) {
+    // Drawing a new box
+    const { x: cx, y: cy } = tplCanvasPoint(e);
+    tplDragRect = {
+      x: Math.min(tplDragStart.x, cx),
+      y: Math.min(tplDragStart.y, cy),
+      w: Math.abs(cx - tplDragStart.x),
+      h: Math.abs(cy - tplDragStart.y),
+    };
+    redrawTplCanvas();
+    return;
+  }
+
+  if (tplMoveStart && tplSelectedBox) {
+    // Moving a selected box
+    tplIsMoving  = true;
+    const pt = tplCanvasPoint(e);
+    const dx = (pt.x - tplMoveStart.pt.x) / tplCanvas.width;
+    const dy = (pt.y - tplMoveStart.pt.y) / tplCanvas.height;
+    const o  = tplMoveStart.origNorm;
+    setBoxNorm(tplSelectedBox, {
+      ...o,
+      x_norm: Math.max(0, Math.min(1 - o.w_norm, o.x_norm + dx)),
+      y_norm: Math.max(0, Math.min(1 - o.h_norm, o.y_norm + dy)),
+    });
+    redrawTplCanvas();
+    return;
+  }
+
+  // Hover cursor: show move cursor when over an existing box
+  if (!tplMapMode) {
+    tplCanvas.style.cursor = hitTestBoxes(tplCanvasPoint(e)) ? 'move' : 'default';
+  }
 });
 
 tplCanvas.addEventListener('mouseup', () => {
-  if (!tplIsDragging || !tplDragRect || !tplMapMode) return;
-  tplIsDragging = false;
-  const rect = tplDragRect;
-  tplDragRect = null;
-  if (rect.w < 8 || rect.h < 8) { redrawTplCanvas(); return; }
-
-  const norm = {
-    x_norm: rect.x / tplCanvas.width,
-    y_norm: rect.y / tplCanvas.height,
-    w_norm: rect.w / tplCanvas.width,
-    h_norm: rect.h / tplCanvas.height,
-    page_number: tplCurrentPage,
-  };
-  if (tplMapMode === 'anchor') {
-    tplDraftAnchor = norm;
-    autoDetectAnchorText(rect);
-  } else {
-    tplDraftTarget = norm;
+  if (tplIsDragging) {
+    tplIsDragging = false;
+    const rect = tplDragRect;
+    tplDragRect  = null;
+    if (!rect || !tplMapMode || rect.w < 8 || rect.h < 8) { redrawTplCanvas(); return; }
+    const norm = {
+      x_norm: rect.x / tplCanvas.width,   y_norm: rect.y / tplCanvas.height,
+      w_norm: rect.w / tplCanvas.width,   h_norm: rect.h / tplCanvas.height,
+      page_number: tplCurrentPage,
+    };
+    if (tplMapMode === 'anchor') { tplDraftAnchor = norm; autoDetectAnchorText(rect); }
+    else                         { tplDraftTarget = norm; }
+    exitDrawMode();
+    updateMappingEditorState();
+    redrawTplCanvas();
+    return;
   }
-  exitDrawMode();
-  updateMappingEditorState();
+
+  if (tplMoveStart) {
+    tplIsMoving  = false;
+    tplMoveStart = null;
+    if (tplSelectedBox) updateMappingEditorState();
+    redrawTplCanvas();
+  }
+});
+
+// Keyboard nudge — arrow keys move the selected box by a small (or large with Shift) step.
+// Ignored when focus is inside any text input, textarea, or select element.
+window.addEventListener('keydown', (e) => {
+  if (!tplSelectedBox) return;
+  const tag = document.activeElement?.tagName?.toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+
+  const ARROWS = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'];
+  if (!ARROWS.includes(e.key)) return;
+  e.preventDefault();
+
+  const step = e.shiftKey ? 0.01 : 0.002;
+  const norm = getBoxNorm(tplSelectedBox);
+  if (!norm || norm.x_norm == null) return;
+
+  let dx = 0, dy = 0;
+  if (e.key === 'ArrowLeft')  dx = -step;
+  if (e.key === 'ArrowRight') dx =  step;
+  if (e.key === 'ArrowUp')    dy = -step;
+  if (e.key === 'ArrowDown')  dy =  step;
+
+  setBoxNorm(tplSelectedBox, {
+    ...norm,
+    x_norm: Math.max(0, Math.min(1 - norm.w_norm, norm.x_norm + dx)),
+    y_norm: Math.max(0, Math.min(1 - norm.h_norm, norm.y_norm + dy)),
+  });
   redrawTplCanvas();
+  updateMappingEditorState();
 });
 
 // Best-effort prefill — OCRs the box the admin just drew for the anchor and
@@ -1448,6 +1598,9 @@ async function populateMapFieldSelect(detail) {
 
 function loadMappingIntoEditor(fieldKey) {
   exitDrawMode();
+  tplSelectedBox     = null;
+  tplIsMoving        = false;
+  tplMoveStart       = null;
   tplEditingFieldKey = fieldKey;
 
   const existing = fieldKey
