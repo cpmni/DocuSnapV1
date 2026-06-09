@@ -291,10 +291,75 @@ document.getElementById('btn-page-next').addEventListener('click', () => {
   if (currentPage < pageImages.length - 1) { cancelZoneMode(); currentPage++; renderPage(); }
 });
 
+// ── Extraction status pills ────────────────────────────────────────────────────
+function renderExtractionStatus(doc) {
+  const el = document.getElementById('extraction-status');
+  if (!el) return;
+  el.innerHTML = '';
+  if (!doc) return;
+
+  // ── Identification ─────────────────────────────────────────────────────────
+  const hasTemplate = !!doc.template_id;
+  const hasLogo     = !!doc.logo_phash;
+  const hasKw       = !!(doc.keyword_fingerprint && doc.keyword_fingerprint !== 'null');
+
+  let idLabel, idCls;
+  if (hasTemplate && hasLogo && hasKw)  { idLabel = 'Logo & keyword';    idCls = 'ok'; }
+  else if (hasTemplate && hasLogo)      { idLabel = 'Logo match';         idCls = 'info'; }
+  else if (hasTemplate && hasKw)        { idLabel = 'Keyword match';      idCls = 'info'; }
+  else if (hasTemplate)                 { idLabel = 'Template match';     idCls = 'info'; }
+  else                                  { idLabel = 'No template match';  idCls = 'warn'; }
+
+  // ── Extraction method summary ──────────────────────────────────────────────
+  // Strip +corrected/+denoised suffixes, then categorise each field's method.
+  const baseMethods = (doc.extractions || [])
+    .map(e => (e.extraction_method || '').split('+')[0].trim().toLowerCase())
+    .filter(Boolean);
+
+  const mappingN  = baseMethods.filter(m => m.startsWith('template_mapping')).length;
+  const anchorN   = baseMethods.filter(m => m.startsWith('anchor')).length;
+  const keywordN  = baseMethods.filter(m => m === 'keyword').length;
+  const aiN       = baseMethods.filter(m => m.startsWith('llm')).length;
+  const knownN    = baseMethods.filter(m => m && m !== 'unknown').length;
+
+  let extLabel, extCls;
+  if (knownN === 0)                              { extLabel = 'Unknown';          extCls = 'muted'; }
+  else if (mappingN > 0 && mappingN >= Math.max(anchorN, keywordN)) {
+                                                   extLabel = 'Template mappings'; extCls = 'ok'; }
+  else if (anchorN > 0 && anchorN >= keywordN)  { extLabel = 'Learned anchors';   extCls = 'info'; }
+  else if (keywordN > 0)                         { extLabel = 'Keyword patterns';  extCls = 'info'; }
+  else if (aiN > 0)                              { extLabel = 'AI fallback';       extCls = 'warn'; }
+  else                                           { extLabel = 'Mixed methods';     extCls = 'info'; }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  const pill = (text, cls) => {
+    const s = document.createElement('span');
+    s.className   = `method-pill ${cls}`;
+    s.textContent = text;
+    return s;
+  };
+  const row = (labelText, ...pills) => {
+    const d = document.createElement('div');
+    d.className = 'ext-status-row';
+    const lbl = document.createElement('span');
+    lbl.className   = 'ext-status-lbl';
+    lbl.textContent = labelText;
+    d.appendChild(lbl);
+    pills.forEach(p => d.appendChild(p));
+    return d;
+  };
+
+  el.appendChild(row('ID:', pill(idLabel, idCls)));
+  const extPills = [pill(extLabel, extCls)];
+  if (mappingN > 0) extPills.push(pill(`${mappingN} mapping${mappingN === 1 ? '' : 's'}`, 'ok'));
+  el.appendChild(row('Extraction:', ...extPills));
+}
+
 // ── Fields panel ──────────────────────────────────────────────────────────────
 function renderFields(doc) {
   const scroll = document.getElementById('fields-scroll');
   scroll.innerHTML = '';
+  renderExtractionStatus(doc);
   if (!doc) { validateConfirm(); return; }
 
   const extMap = {};
@@ -303,16 +368,19 @@ function renderFields(doc) {
   for (const key of reviewFields()) {
     const ext = extMap[key] || {};
     const val = ext.display_value ?? ext.raw_value ?? '';
-    appendFieldRow(scroll, key, val, ext.confidence ?? null);
+    appendFieldRow(scroll, key, val, ext.confidence ?? null, ext.validation_note || null);
   }
   validateConfirm();
 }
 
-function appendFieldRow(scroll, key, val, conf) {
+function appendFieldRow(scroll, key, val, conf, note) {
   const low      = conf !== null && conf < 70;
   const confClass = conf === null ? '' : conf >= 70 ? 'high' : conf >= 40 ? 'mid' : 'low';
   const confLabel = conf !== null
     ? `<span class="conf-badge ${confClass}">${conf}%</span>`
+    : '';
+  const noteHtml = note
+    ? `<div class="field-note">${escHtml(note)}</div>`
     : '';
 
   const row = document.createElement('div');
@@ -329,6 +397,7 @@ function appendFieldRow(scroll, key, val, conf) {
              value="${escHtml(val)}" placeholder="Not found">
       <button class="pick-btn" data-key="${key}" title="Pick from document">&#8853;</button>
     </div>
+    ${noteHtml}
   `;
 
   const input = row.querySelector('input');
@@ -966,6 +1035,8 @@ function clearDocPanel() {
   document.getElementById('btn-confirm').disabled = true;
   document.getElementById('btn-split-pdf').style.display  = 'none';
   document.getElementById('split-bar').style.display      = 'none';
+  const extStatus = document.getElementById('extraction-status');
+  if (extStatus) extStatus.innerHTML = '';
 }
 
 function escHtml(str) {

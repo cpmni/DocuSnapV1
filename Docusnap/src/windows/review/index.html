@@ -149,6 +149,17 @@
     }
     .fields-header-title { font-size: 12px; font-weight: 500; color: var(--text); }
     .fields-header-sub   { font-size: 10px; color: var(--muted); }
+    #extraction-status { display: flex; flex-direction: column; gap: 4px; }
+    .ext-status-row { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+    .ext-status-lbl { font-size: 10px; color: var(--muted); white-space: nowrap; min-width: 64px; }
+    .method-pill {
+      font-size: 10px; font-family: var(--mono); padding: 1px 7px;
+      border-radius: 4px; border: 1px solid currentColor; white-space: nowrap;
+    }
+    .method-pill.ok   { color: var(--ok); }
+    .method-pill.info { color: var(--accent2); }
+    .method-pill.warn { color: var(--warn); }
+    .method-pill.muted { color: var(--muted); }
 
     #doctype-select {
       width: 100%; background: var(--bg); border: 1px solid var(--border2);
@@ -178,6 +189,7 @@
     .field-input.corrected { border-color: var(--warn); }
     .field-input.low-conf  { border-color: var(--err); background: var(--err-bg); }
     .field-input.required-missing { border-color: var(--err); background: var(--err-bg); }
+    .field-note { font-size: 10px; color: var(--warn); font-family: var(--mono); margin-top: 1px; }
     .field-input.zone-active {
       border-color: var(--accent) !important;
       box-shadow: 0 0 0 2px rgba(79,142,247,.25);
@@ -297,6 +309,7 @@
       <div id="fields-header">
         <div class="fields-header-title">Extracted Fields</div>
         <select id="doctype-select"><option value="">— Select document type —</option></select>
+        <div id="extraction-status"></div>
         <div class="fields-header-sub">Click ⊕ then drag on the document to pick a value</div>
       </div>
       <div id="fields-scroll"></div>
