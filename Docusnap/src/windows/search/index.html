@@ -153,7 +153,7 @@
     .pf-conf { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-left: 6px; }
     .pf-divider { height: 1px; background: var(--border); margin: 2px 0; }
 
-    #preview-actions { padding: 12px 14px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 7px; flex-shrink: 0; background: var(--surface); }
+    #preview-actions { border-top: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; background: var(--surface); overflow-y: auto; }
     .action-btn {
       width: 100%; padding: 7px 12px; border-radius: 5px; border: 1px solid var(--border2);
       background: transparent; color: var(--text); font-family: var(--sans);
@@ -162,6 +162,19 @@
     .action-btn:hover { border-color: var(--accent2); color: var(--accent2); }
     .action-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; text-align: center; }
     .action-btn.primary:hover { opacity: .85; }
+
+    /* ── Action/status panel sections ─────────────────────────────────────── */
+    .ap-status-bar { display: flex; align-items: center; gap: 8px; padding: 10px 14px 8px; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
+    .ap-chip { font-size: 10px; padding: 2px 8px; border-radius: 10px; font-family: var(--mono); white-space: nowrap; }
+    .ap-chip.confirmed { background: var(--ok-bg);      color: var(--ok); }
+    .ap-chip.review    { background: var(--warn-bg);    color: var(--warn); }
+    .ap-chip.deferred  { background: var(--accent-bg);  color: #a080f0; }
+    .ap-chip.other     { background: var(--surface2);   color: var(--muted); }
+    .ap-confidence     { font-size: 10px; font-family: var(--mono); color: var(--muted); }
+    .ap-section        { padding: 10px 14px; display: flex; flex-direction: column; gap: 6px; }
+    .ap-section + .ap-section { border-top: 1px solid var(--border); }
+    .ap-section-header { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); padding-bottom: 2px; }
+    .ap-future-note    { font-size: 11px; color: var(--muted); line-height: 1.5; }
 
     .spinner { width: 18px; height: 18px; border: 2px solid var(--border2); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; margin: auto; }
     @keyframes spin { to { transform: rotate(360deg); } }
