@@ -133,6 +133,39 @@ function register(ctx) {
     });
   });
 
+  // ── OCR preprocessing preview ────────────────────────────────────────────────
+  ipcMain.handle('get-enhanced-preview', async (_e, { folderPath, filename, page, enhanceParams }) => {
+    requireLogin();
+    if (!folderPath || !filename || !enhanceParams) return null;
+
+    const filePath = path.join(folderPath, filename);
+    if (!fs.existsSync(filePath)) return null;
+
+    const enhanceFile = path.join(os.tmpdir(), `ds_enh_preview_${Date.now()}.json`);
+    fs.writeFileSync(enhanceFile, JSON.stringify(enhanceParams));
+
+    const script = ctx.resourcePath('python_backend', 'render', 'preview_enhance.py');
+    return new Promise((resolve) => {
+      const py   = pythonExe();
+      const proc = spawn(py, pythonArgs(script,
+        '--file',         filePath,
+        '--page',         String(page || 0),
+        '--enhance-file', enhanceFile,
+      ), { windowsHide: true });
+      let out = '', err = '';
+      proc.stdout.on('data', d => { out += d.toString(); });
+      proc.stderr.on('data', d => { err += d.toString(); });
+      proc.on('close', () => {
+        try { fs.unlinkSync(enhanceFile); } catch {}
+        try   { resolve(JSON.parse(out) || null); }
+        catch {
+          if (err) logger?.warn(`[preview] ${err.trim().slice(0, 200)}`);
+          resolve(null);
+        }
+      });
+    });
+  });
+
   // ── Defer ───────────────────────────────────────────────────────────────────
   ipcMain.handle('defer-document', (_e, docId) => {
     requireRole('admin', 'edit');

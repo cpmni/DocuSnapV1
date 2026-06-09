@@ -14,6 +14,11 @@ let fieldDefs        = [];
 let corrections      = {};
 let anchorTaughtFields = new Set(); // field_keys taught via the ⊕ highlight/zone-OCR tool this cycle
 let activeTab        = 'review';
+
+// OCR preview state
+let previewActive    = false;
+let previewCache     = new Map(); // page index → data URI
+let _previewDebounce = null;
 let selectedTypeSlug = null;   // tracks dropdown selection independently
 
 // Zone selection state
@@ -211,6 +216,7 @@ async function selectDoc(doc) {
   }
 }
 async function _selectDoc(doc) {
+  _clearPreviewState();
   cancelZoneMode();
   currentDoc  = doc;
   currentPage = 0;
@@ -280,15 +286,17 @@ function renderPage() {
     clearCanvas();
     if (currentPage === 0) attemptLogoMatch();
   };
-  docImg.src = pageImages[currentPage];
+  docImg.src = (previewActive && previewCache.has(currentPage))
+    ? previewCache.get(currentPage)
+    : pageImages[currentPage];
   indicator.textContent = `Page ${currentPage + 1} / ${pageImages.length}`;
 }
 
 document.getElementById('btn-page-prev').addEventListener('click', () => {
-  if (currentPage > 0) { cancelZoneMode(); currentPage--; renderPage(); }
+  if (currentPage > 0) { cancelZoneMode(); currentPage--; renderPage(); if (previewActive) refreshPreviewNow(); }
 });
 document.getElementById('btn-page-next').addEventListener('click', () => {
-  if (currentPage < pageImages.length - 1) { cancelZoneMode(); currentPage++; renderPage(); }
+  if (currentPage < pageImages.length - 1) { cancelZoneMode(); currentPage++; renderPage(); if (previewActive) refreshPreviewNow(); }
 });
 
 // ── Extraction status pills ────────────────────────────────────────────────────
@@ -854,10 +862,16 @@ document.getElementById('enh-threshold').addEventListener('change', function () 
   const label  = document.getElementById('enh-threshold-value');
   slider.style.display = this.checked ? '' : 'none';
   label.style.display  = this.checked ? '' : 'none';
+  schedulePreviewRefresh();
 });
 
 document.getElementById('enh-threshold-level').addEventListener('input', function () {
   document.getElementById('enh-threshold-value').textContent = this.value;
+  schedulePreviewRefresh();
+});
+
+['enh-grayscale', 'enh-autocontrast', 'enh-deskew'].forEach(id => {
+  document.getElementById(id).addEventListener('change', () => schedulePreviewRefresh());
 });
 
 function getEnhanceParams() {
@@ -874,6 +888,86 @@ function getEnhanceParams() {
     threshold_level: parseInt(document.getElementById('enh-threshold-level').value, 10),
   };
 }
+
+// ── OCR preview ───────────────────────────────────────────────────────────────
+function _clearPreviewState() {
+  previewActive = false;
+  previewCache.clear();
+  clearTimeout(_previewDebounce);
+  const banner = document.getElementById('preview-banner');
+  if (banner) banner.classList.remove('visible');
+  const btn = document.getElementById('btn-preview-ocr');
+  if (btn) { btn.innerHTML = '&#9658; Preview OCR'; btn.classList.remove('active'); }
+}
+
+function deactivatePreview() {
+  _clearPreviewState();
+  renderPage();
+}
+
+async function generateEnhancedPreview(page) {
+  if (!currentDoc) return null;
+  const params = getEnhanceParams();
+  if (!params) return null;
+  try {
+    return await window.docusnap.getEnhancedPreview({
+      folderPath:    currentDoc.folder_path,
+      filename:      currentDoc.original_filename,
+      page,
+      enhanceParams: params,
+    });
+  } catch (e) {
+    console.warn('[preview]', e.message);
+    return null;
+  }
+}
+
+async function refreshPreviewNow() {
+  if (!previewActive) return;
+  clearTimeout(_previewDebounce);
+  const page = currentPage;
+  if (previewCache.has(page)) { renderPage(); return; }
+  ocrOverlay.classList.add('visible');
+  const uri = await generateEnhancedPreview(page);
+  ocrOverlay.classList.remove('visible');
+  if (previewActive && uri && currentPage === page) {
+    previewCache.set(page, uri);
+    renderPage();
+  }
+}
+
+function schedulePreviewRefresh() {
+  if (!previewActive) return;
+  previewCache.clear();
+  clearTimeout(_previewDebounce);
+  _previewDebounce = setTimeout(() => refreshPreviewNow(), 600);
+}
+
+async function activatePreview() {
+  if (!currentDoc) return;
+  const params = getEnhanceParams();
+  if (!params) { showToast('Enable at least one enhancement option first', 'warn'); return; }
+  previewActive = true;
+  previewCache.clear();
+  document.getElementById('preview-banner').classList.add('visible');
+  const btn = document.getElementById('btn-preview-ocr');
+  btn.innerHTML = '&#9632; Hide Preview';
+  btn.classList.add('active');
+  await refreshPreviewNow();
+  if (!previewCache.has(currentPage)) {
+    deactivatePreview();
+    showToast('Preview generation failed', 'err');
+  }
+}
+
+document.getElementById('btn-preview-ocr').addEventListener('click', () => {
+  if (previewActive) deactivatePreview();
+  else activatePreview();
+});
+
+document.getElementById('btn-preview-exit').addEventListener('click', () => {
+  deactivatePreview();
+});
 
 // ── Reprocess ─────────────────────────────────────────────────────────────────
 document.getElementById('btn-reprocess').addEventListener('click', async () => {
@@ -1059,6 +1153,7 @@ document.getElementById('split-ranges-input').addEventListener('keydown', (e) =>
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function clearDocPanel() {
+  _clearPreviewState();
   docImgWrap.style.display = 'none';
   const ph = document.getElementById('doc-placeholder');
   ph.style.display = '';

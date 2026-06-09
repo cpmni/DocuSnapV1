@@ -62,6 +62,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   getDeferredCount:            ()        => ipcRenderer.invoke('get-deferred-count'),
   getDocumentWithExtractions:  (id)      => ipcRenderer.invoke('get-document-with-extractions', id),
   getDocumentPages:            (id, fp, fn) => ipcRenderer.invoke('get-document-pages', id, fp, fn),
+  getEnhancedPreview:          (data)       => ipcRenderer.invoke('get-enhanced-preview', data),
   confirmReview:               (payload) => ipcRenderer.invoke('confirm-review', payload),
   deferDocument:               (id)      => ipcRenderer.invoke('defer-document', id),
   restoreDeferred:             (id)      => ipcRenderer.invoke('restore-deferred', id),

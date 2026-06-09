@@ -253,6 +253,23 @@
       flex: 1; min-width: 40px; cursor: pointer; accent-color: var(--accent); vertical-align: middle;
     }
     .enh-num { font-family: var(--mono); font-size: 10px; color: var(--accent2); min-width: 24px; text-align: right; }
+
+    #preview-banner {
+      display: none; align-items: center; gap: 8px; justify-content: space-between;
+      padding: 5px 12px; background: var(--warn-bg); border-bottom: 1px solid var(--warn);
+      font-size: 11px; color: var(--warn); flex-shrink: 0;
+    }
+    #preview-banner.visible { display: flex; }
+    .preview-banner-label { font-family: var(--mono); font-weight: 500; letter-spacing: .03em; }
+    #btn-preview-exit {
+      padding: 2px 9px; border-radius: 4px; border: 1px solid currentColor;
+      background: transparent; color: inherit; font-size: 10px; cursor: pointer; font-family: var(--sans);
+    }
+    #btn-preview-exit:hover { opacity: .75; }
+    .btn.preview-ocr { width: 100%; color: var(--muted); border-color: var(--border2); font-size: 10px; margin-top: 3px; }
+    .btn.preview-ocr:hover { border-color: var(--accent); color: var(--accent2); background: var(--accent-bg); }
+    .btn.preview-ocr.active { color: var(--warn); border-color: var(--warn); }
+    .btn.preview-ocr.active:hover { background: var(--warn-bg); }
     .btn-spinner {
       display: inline-block; width: 11px; height: 11px;
       border: 1.5px solid var(--accent2); border-top-color: transparent;
@@ -314,6 +331,11 @@
         <button class="hint-cancel" id="hint-cancel">Cancel</button>
       </div>
 
+      <div id="preview-banner">
+        <span class="preview-banner-label">&#128065; OCR Preview — showing preprocessed image</span>
+        <button id="btn-preview-exit">Show Original</button>
+      </div>
+
       <div id="doc-viewer">
         <span id="doc-placeholder">Select a document from the queue</span>
         <div id="doc-img-wrap" style="display:none">
@@ -351,6 +373,7 @@
               <span id="enh-threshold-value" class="enh-num" style="display:none;">128</span>
             </label>
           </div>
+          <button id="btn-preview-ocr" class="btn preview-ocr">&#9658; Preview OCR</button>
         </div>
       </div>
 
