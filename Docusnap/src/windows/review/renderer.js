@@ -841,6 +841,40 @@ async function saveLogoOnConfirm(supplierName) {
   }
 }
 
+// ── OCR Enhancement controls ──────────────────────────────────────────────────
+document.getElementById('btn-enhance-toggle').addEventListener('click', () => {
+  const controls = document.getElementById('enhance-controls');
+  const btn      = document.getElementById('btn-enhance-toggle');
+  const open     = controls.classList.toggle('open');
+  btn.innerHTML  = (open ? '&#9660;' : '&#9658;') + ' OCR Enhancement';
+});
+
+document.getElementById('enh-threshold').addEventListener('change', function () {
+  const slider = document.getElementById('enh-threshold-level');
+  const label  = document.getElementById('enh-threshold-value');
+  slider.style.display = this.checked ? '' : 'none';
+  label.style.display  = this.checked ? '' : 'none';
+});
+
+document.getElementById('enh-threshold-level').addEventListener('input', function () {
+  document.getElementById('enh-threshold-value').textContent = this.value;
+});
+
+function getEnhanceParams() {
+  const grayscale    = document.getElementById('enh-grayscale').checked;
+  const autocontrast = document.getElementById('enh-autocontrast').checked;
+  const deskew       = document.getElementById('enh-deskew').checked;
+  const threshold    = document.getElementById('enh-threshold').checked;
+  if (!grayscale && !autocontrast && !deskew && !threshold) return null;
+  return {
+    grayscale,
+    autocontrast,
+    deskew,
+    threshold,
+    threshold_level: parseInt(document.getElementById('enh-threshold-level').value, 10),
+  };
+}
+
 // ── Reprocess ─────────────────────────────────────────────────────────────────
 document.getElementById('btn-reprocess').addEventListener('click', async () => {
   if (!currentDoc) return;
@@ -854,9 +888,10 @@ document.getElementById('btn-reprocess').addEventListener('click', async () => {
   });
 
   const result = await window.docusnap.reprocessDocument({
-    docId:      currentDoc.id,
-    folderPath: currentDoc.folder_path,
-    filename:   currentDoc.original_filename,
+    docId:         currentDoc.id,
+    folderPath:    currentDoc.folder_path,
+    filename:      currentDoc.original_filename,
+    enhanceParams: getEnhanceParams(),
   });
 
   window.docusnap.removeReprocessProgress();

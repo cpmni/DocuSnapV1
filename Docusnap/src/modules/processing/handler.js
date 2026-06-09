@@ -199,7 +199,7 @@ function register(ctx) {
   });
 
   // ── Reprocess single document ───────────────────────────────────────────────
-  ipcMain.handle('reprocess-document', async (event, { docId, folderPath, filename }) => {
+  ipcMain.handle('reprocess-document', async (event, { docId, folderPath, filename, enhanceParams }) => {
     requireRole('admin', 'edit');
     const db      = getDb();
     const srcFile = path.join(folderPath, filename);
@@ -222,12 +222,18 @@ function register(ctx) {
     const learning2 = require('../../../database/modules/learning');
     const reprMode  = learning2.getSetting(db, 'processing_mode', 'smart');
 
-    const scriptArgs = [
+    const scriptArgs    = [
       '--folder',     tmpDir,
       '--tesseract',  tesseractPath(),
       '--mode',       reprMode,
       ...trainingArgs,
     ];
+    const allTempFiles = [...tempFiles];
+    if (enhanceParams && typeof enhanceParams === 'object') {
+      const enhanceFile = writeTempJson('enhance', enhanceParams);
+      allTempFiles.push(enhanceFile);
+      scriptArgs.push('--enhance-file', enhanceFile);
+    }
 
     return new Promise((resolve) => {
       const py   = pythonExe();
@@ -260,7 +266,7 @@ function register(ctx) {
 
       proc.on('close', () => {
         try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
-        cleanupFiles(tempFiles);
+        cleanupFiles(allTempFiles);
 
         if (!result?.success || !result?.extractions) {
           logger?.err(`Reprocess failed: ${filename} — no data returned`);
@@ -272,11 +278,12 @@ function register(ctx) {
         for (const e of existing) existingMap[e.field_key] = e;
 
         const newRows = Object.entries(result.extractions).map(([key, data]) => ({
-          field_key:     key,
-          raw_value:     data.value != null ? String(data.value) : null,
-          display_value: data.value != null ? String(data.value) : null,
-          confidence:    data.confidence ?? null,
+          field_key:         key,
+          raw_value:         data.value != null ? String(data.value) : null,
+          display_value:     data.value != null ? String(data.value) : null,
+          confidence:        data.confidence ?? null,
           extraction_method: data.method || null,
+          validation_note:   data.validation_note || null,
         }));
 
         const mergedRows = newRows.map(row => {
@@ -286,16 +293,49 @@ function register(ctx) {
           if (ex.display_value && !row.display_value) return {
             ...row, raw_value: ex.raw_value,
             display_value: ex.display_value, confidence: ex.confidence,
+            validation_note: ex.validation_note || null,
           };
           return row;
         });
+
+        // Preserve fields the new run didn't return at all (not just null) so that
+        // reprocess can't silently drop a field that the first pass extracted correctly.
+        const newFieldKeys = new Set(newRows.map(r => r.field_key));
+        for (const ex of existing) {
+          if (!newFieldKeys.has(ex.field_key) && ex.display_value) {
+            mergedRows.push({
+              field_key:         ex.field_key,
+              raw_value:         ex.raw_value,
+              display_value:     ex.display_value,
+              confidence:        ex.confidence,
+              extraction_method: ex.extraction_method,
+              validation_note:   ex.validation_note || null,
+            });
+          }
+        }
 
         const learning = require('../../../database/modules/learning');
         learning.deleteExtractions(db, docId);
         learning.insertExtractions(db, docId, mergedRows);
         db.prepare(
-          `UPDATE documents SET overall_confidence = ?, status = 'needs_review' WHERE id = ?`
-        ).run(result.overall_confidence || null, docId);
+          `UPDATE documents SET
+             overall_confidence  = ?,
+             status              = 'needs_review',
+             template_id         = ?,
+             logo_phash          = ?,
+             keyword_fingerprint = ?,
+             supplier_name       = COALESCE(?, supplier_name),
+             ocr_text            = COALESCE(?, ocr_text)
+           WHERE id = ?`
+        ).run(
+          result.overall_confidence || null,
+          result.template_id        || null,
+          result.logo_phash         || null,
+          result.keyword_fingerprint ? JSON.stringify(result.keyword_fingerprint) : null,
+          result.supplier_name      || null,
+          result.ocr_text           || null,
+          docId
+        );
 
         const mergedMap = {};
         for (const r of mergedRows) {
@@ -501,6 +541,7 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger) {
     logo_phash:         msg.logo_phash    || null,
     keyword_fingerprint: msg.keyword_fingerprint
       ? JSON.stringify(msg.keyword_fingerprint) : null,
+    ocr_text:           msg.ocr_text      || null,
   });
 
   const docId = docResult.lastInsertRowid;
@@ -512,6 +553,7 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger) {
       display_value:     data.value != null ? String(data.value) : null,
       confidence:        data.confidence ?? null,
       extraction_method: data.method || null,
+      validation_note:   data.validation_note || null,
     }));
     learning.insertExtractions(db, docId, rows);
   }

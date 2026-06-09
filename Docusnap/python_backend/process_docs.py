@@ -75,6 +75,7 @@ def main():
     parser.add_argument("--doc-types-file",  default=None)
     parser.add_argument("--formats-file",    default=None)
     parser.add_argument("--templates-file", default=None)
+    parser.add_argument("--enhance-file",   default=None)
     # Inline fallbacks (for small payloads)
     parser.add_argument("--fields",          default=None)
     parser.add_argument("--hints",           default=None)
@@ -91,8 +92,9 @@ def main():
     anchors   = load_json_arg(args.anchors, args.anchors_file)  or []
     logos     = load_json_arg(args.logos,   args.logos_file)    or []
     doc_types = load_json_arg(None,         args.doc_types_file)  or []
-    formats   = load_json_arg(None,         args.formats_file)   or []
-    templates = load_json_arg(None,         args.templates_file) or []
+    formats        = load_json_arg(None, args.formats_file)   or []
+    templates      = load_json_arg(None, args.templates_file) or []
+    enhance_params = load_json_arg(None, args.enhance_file)   or None
 
     emit({
         "type": "log",
@@ -128,7 +130,7 @@ def main():
         try:
             # OCR
             log(f"  OCR: {filepath.name}")
-            ocr_text, page_images = extract_text_and_images(filepath)
+            ocr_text, page_images = extract_text_and_images(filepath, enhance_params)
 
             if not ocr_text.strip():
                 raise ValueError("OCR returned no text — is the scan readable?")
@@ -214,9 +216,15 @@ def main():
                 "logo_phash":         logo_phash,
                 "keyword_fingerprint": kw_fingerprint,
                 "mode_used":          "fast",
+                "ocr_text":           ocr_text[:50000],
                 "extractions":        {
-                    k: {"value": v.get("value"), "confidence": v.get("confidence", 0),
-                        "method": v.get("method", "unknown")}
+                    k: {
+                        "value":      v.get("value"),
+                        "confidence": v.get("confidence", 0),
+                        "method":     v.get("method", "unknown"),
+                        **({"validation_note": v["validation_note"]}
+                           if v.get("validation_note") else {}),
+                    }
                     for k, v in extractions.items()
                 },
                 # Convenience fields for main window table

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytesseract
 import pypdfium2 as pdfium
-from PIL import Image
+from PIL import Image, ImageOps
 
 
 def configure(tesseract_path: str | None = None):
@@ -33,26 +33,105 @@ def pdf_to_images(filepath: Path, dpi: int = 300) -> list[Image.Image]:
     return images
 
 
-def extract_text_and_images(filepath: Path) -> tuple[str, list[Image.Image]]:
+def _deskew(img: Image.Image) -> Image.Image:
+    """
+    Detect and correct small-angle document skew via horizontal projection variance.
+    Operates on a downscaled binary copy for speed; rotation applied to the original
+    at full resolution. Skew below 0.2° is ignored to avoid spurious micro-rotations.
+    """
+    import numpy as np
+
+    gray   = img.convert('L') if img.mode != 'L' else img
+    binary = gray.point(lambda p: 0 if p < 128 else 255)
+
+    w, h  = binary.size
+    scale = min(1.0, 800.0 / max(w, h))
+    small = binary.resize((int(w * scale), int(h * scale)), Image.LANCZOS) if scale < 1.0 else binary
+    arr   = np.array(small)
+
+    def _score(deg: float) -> float:
+        rot  = Image.fromarray(arr).rotate(deg, expand=False, fillcolor=255)
+        proj = np.sum(np.array(rot) < 128, axis=1).astype(np.float64)
+        return float(np.var(proj))
+
+    # Coarse sweep: -15 to +15 degrees in 0.5-degree steps (61 iterations)
+    coarse = [a * 0.5 for a in range(-30, 31)]
+    best   = max(coarse, key=_score)
+
+    # Fine sweep: ±0.5 around coarse best in 0.1-degree steps (11 iterations)
+    base = round(best * 10)
+    fine = [(base + d) / 10.0 for d in range(-5, 6)]
+    best = max(fine, key=_score)
+
+    if abs(best) < 0.2:
+        return img  # no meaningful skew
+
+    fill = 255 if img.mode == 'L' else (255, 255, 255)
+    return img.rotate(best, expand=False, fillcolor=fill, resample=Image.BICUBIC)
+
+
+def preprocess_for_ocr(img: Image.Image, params: dict | None) -> Image.Image:
+    """
+    Apply OCR preprocessing in a fixed pipeline order.
+    params keys: grayscale (bool), autocontrast (bool), deskew (bool),
+                 threshold (bool), threshold_level (int 50-220).
+    Returns img unchanged when params is None or all options are falsy.
+    Pipeline order is fixed here and must not be controlled by the caller.
+    """
+    if not params:
+        return img
+
+    # Normalise exotic modes (RGBA, P, etc.) before any operation
+    if img.mode not in ('RGB', 'L'):
+        img = img.convert('RGB')
+
+    # 1. Grayscale — required before autocontrast and threshold
+    if params.get('grayscale') or params.get('autocontrast') or params.get('threshold'):
+        if img.mode != 'L':
+            img = img.convert('L')
+
+    # 2. Autocontrast / contrast normalisation
+    if params.get('autocontrast'):
+        img = ImageOps.autocontrast(img, cutoff=2)
+
+    # 3. Deskew — after grayscale (projects well on grey), before threshold
+    if params.get('deskew'):
+        img = _deskew(img)
+
+    # 4. Threshold / binarize
+    if params.get('threshold'):
+        level = max(1, min(254, int(params.get('threshold_level', 128))))
+        img   = img.point(lambda p: 255 if p > level else 0)
+
+    return img
+
+
+def extract_text_and_images(
+    filepath: Path,
+    enhance_params: dict | None = None,
+) -> tuple[str, list[Image.Image]]:
     """
     Extract OCR text from a document file.
     Returns (full_text, list_of_page_images).
-    Page images are kept for logo matching and zone OCR.
+
+    page_images are the original unenhanced images, kept for logo matching and
+    zone OCR.  enhance_params, when provided, are applied only to the OCR text
+    extraction pass — the returned pages are always the raw render.
     """
-    ext    = filepath.suffix.lower()
-    texts  = []
-    pages  = []
+    ext   = filepath.suffix.lower()
+    texts = []
+    pages = []
 
     if ext == ".pdf":
         pages = pdf_to_images(filepath)
         for page in pages:
-            texts.append(ocr_image(page))
+            texts.append(ocr_image(preprocess_for_ocr(page, enhance_params)))
     else:
         img = Image.open(filepath)
         if img.mode not in ("RGB", "L"):
             img = img.convert("RGB")
         pages = [img]
-        texts.append(ocr_image(img))
+        texts.append(ocr_image(preprocess_for_ocr(img, enhance_params)))
 
     return "\n\n--- PAGE BREAK ---\n\n".join(texts), pages
 
