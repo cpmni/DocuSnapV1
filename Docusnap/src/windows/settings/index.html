@@ -752,6 +752,29 @@
         </div>
       </div>
 
+      <div class="section">
+        <div class="row-flex" style="justify-content:space-between; align-items:center;">
+          <div class="section-title" style="margin:0;">Learned memory inventory</div>
+          <button class="btn" id="lr-inv-refresh">Refresh</button>
+        </div>
+        <p class="section-desc">
+          Read-only overview of what the automatic-learning corpora currently hold, grouped by
+          learning key. Use the search box above to inspect or clear a specific supplier scope.
+        </p>
+        <table class="fields-table" id="lr-inventory">
+          <thead>
+            <tr>
+              <th>Key (supplier · type · field)</th>
+              <th>Memory type</th>
+              <th>Records</th>
+              <th>Distinct values</th>
+              <th>Last seen</th>
+            </tr>
+          </thead>
+          <tbody id="lr-inventory-tbody"></tbody>
+        </table>
+      </div>
+
       <div class="section" id="lr-results" style="display:none;">
         <div class="section-title">Summary</div>
         <div id="lr-summary" class="section-desc" style="font-family:var(--mono);"></div>

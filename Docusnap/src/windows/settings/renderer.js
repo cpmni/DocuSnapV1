@@ -9,6 +9,7 @@ document.querySelectorAll('.tab').forEach(btn => {
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+    if (btn.dataset.tab === 'learning') loadMemoryInventory();
   });
 });
 
@@ -1964,6 +1965,34 @@ async function populateLearningDocTypes() {
   }
 }
 
+async function loadMemoryInventory() {
+  const tbody = document.getElementById('lr-inventory-tbody');
+  if (!tbody) return;
+  let rows = [];
+  try { rows = await api.getMemoryInventory(); }
+  catch (e) { console.warn('getMemoryInventory failed:', e.message); return; }
+
+  tbody.innerHTML = '';
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="section-desc">No learned memory recorded yet.</td></tr>';
+    return;
+  }
+  const TYPE_LABEL = { hint: 'Supplier hint', anchor: 'Field anchor', correction: 'Correction', logo: 'Logo fingerprint' };
+  for (const r of rows) {
+    const parts = [r.supplier_name || '—'];
+    if (r.document_type) parts.push(r.document_type);
+    if (r.field_key) parts.push(r.field_key);
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      `<td><span class="field-key">${escHtml(parts.join(' · '))}</span></td>` +
+      `<td>${escHtml(TYPE_LABEL[r.type] || r.type)}</td>` +
+      `<td>${r.records}</td>` +
+      `<td>${r.distinct_values == null ? '—' : r.distinct_values}</td>` +
+      `<td>${escHtml(r.last_seen || '—')}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
 function renderLearningSummary(summary) {
   document.getElementById('lr-summary').textContent =
     `Field anchors: ${summary.anchors}    ·    Supplier hints: ${summary.hints}    ·    ` +
@@ -2105,6 +2134,7 @@ async function runLearningSearch() {
   renderLearningDetail(data.detail);
 }
 
+document.getElementById('lr-inv-refresh').addEventListener('click', loadMemoryInventory);
 document.getElementById('lr-btn-search').addEventListener('click', runLearningSearch);
 document.getElementById('lr-supplier').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') runLearningSearch();

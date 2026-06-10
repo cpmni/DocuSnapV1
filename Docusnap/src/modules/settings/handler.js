@@ -48,6 +48,13 @@ function register(ctx) {
     };
   });
 
+  // Read-only grouped inventory of all learned memory (no scope, no mutation) —
+  // powers the Learning Recovery memory table.
+  ipcMain.handle('get-memory-inventory', () => {
+    requireRole('admin');
+    return learning.getMemoryInventory(getDb());
+  });
+
   ipcMain.handle('clear-learning-anchors', (_e, params) => {
     requireRole('admin');
     const { supplier_name, document_type } = params || {};

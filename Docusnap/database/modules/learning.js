@@ -496,6 +496,49 @@ function getFieldFormats(db) {
     }));
 }
 
+// ── Learned-memory inventory (read-only) ─────────────────────────────────────
+// Grouped counts of what the automatic-learning corpora currently hold, keyed
+// by the REAL learning-group identity each table uses — supplier_name +
+// document_type + field_key for hints/anchors/corrections (the exact tuple
+// engine.py scopes lookups by), supplier_name for logo fingerprints. Computed
+// entirely in SQL (no renderer-side raw dumps). Purely informational: the
+// Learning Recovery search box remains the way to act on any key shown here.
+function getMemoryInventory(db) {
+  const rows = [];
+  rows.push(...db.prepare(`
+    SELECT 'hint' AS type, supplier_name, document_type, field_key,
+           COUNT(*) AS records, COUNT(DISTINCT hint_value) AS distinct_values,
+           MAX(last_seen) AS last_seen
+    FROM supplier_hints
+    GROUP BY supplier_name, document_type, field_key
+  `).all());
+  rows.push(...db.prepare(`
+    SELECT 'anchor' AS type, supplier_name, document_type, field_key,
+           COUNT(*) AS records, NULL AS distinct_values,
+           MAX(last_seen) AS last_seen
+    FROM field_anchors
+    GROUP BY supplier_name, document_type, field_key
+  `).all());
+  rows.push(...db.prepare(`
+    SELECT 'correction' AS type, supplier_name, document_type, field_key,
+           COUNT(*) AS records, COUNT(DISTINCT corrected_value) AS distinct_values,
+           MAX(corrected_at) AS last_seen
+    FROM corrections
+    GROUP BY supplier_name, document_type, field_key
+  `).all());
+  rows.push(...db.prepare(`
+    SELECT 'logo' AS type, supplier_name, NULL AS document_type, NULL AS field_key,
+           COUNT(*) AS records, NULL AS distinct_values,
+           MAX(last_seen) AS last_seen
+    FROM logo_fingerprints
+    GROUP BY supplier_name
+  `).all());
+  rows.sort((a, b) =>
+    (b.records - a.records) ||
+    String(a.supplier_name || '').localeCompare(String(b.supplier_name || '')));
+  return rows;
+}
+
 // ── Settings ──────────────────────────────────────────────────────────────────
 
 function getSetting(db, key, defaultValue = null) {
@@ -516,7 +559,7 @@ module.exports = {
   saveAnchor, clearAnchors, getAllAnchors,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
   getFieldFormats,
-  getRecoverySummary, getRecoveryDetail,
+  getRecoverySummary, getRecoveryDetail, getMemoryInventory,
   clearFieldAnchorsForScope, clearSupplierHintsForScope, clearCorrectionsForScope,
   getSetting, setSetting,
 };
