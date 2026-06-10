@@ -107,6 +107,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   deleteTemplate:             (id)                => ipcRenderer.invoke('delete-template', id),
   getTemplateSampleCandidates:(id)                => ipcRenderer.invoke('get-template-sample-candidates', id),
   setTemplateSample:          (id, docId)         => ipcRenderer.invoke('set-template-sample', id, docId),
+  reassignTemplateDocuments:  (fromId, toId)      => ipcRenderer.invoke('reassign-template-documents', fromId, toId),
   setTemplateOcrAuto:         (id, enabled)       => ipcRenderer.invoke('set-template-ocr-auto', id, enabled),
   pickTemplateSampleFile:     ()                  => ipcRenderer.invoke('pick-template-sample-file'),
   importTemplateSampleFile:   (id, filePath)      => ipcRenderer.invoke('import-template-sample-file', id, filePath),

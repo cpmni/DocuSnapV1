@@ -85,6 +85,15 @@ function register(ctx) {
     return templates.getById(getDb(), templateId);
   });
 
+  // Reassign a poisoned/duplicate template's documents onto an existing correct
+  // template (Learning Recovery → "Reassign"). Reversible link-only move; the
+  // caller follows up with the existing delete-template if the source is now an
+  // empty duplicate to be removed. Returns a {moved, sampleAdopted} summary.
+  ipcMain.handle('reassign-template-documents', (_e, fromTemplateId, toTemplateId) => {
+    requireRole('admin');
+    return templates.reassignDocuments(getDb(), Number(fromTemplateId), Number(toTemplateId));
+  });
+
   // OCR auto-processing — enable/disable a learned per-template OCR
   // preprocessing rule (see templates.setOcrAutoParams, created via an
   // OCR-Preview-active reprocess). Toggling never discards the stored

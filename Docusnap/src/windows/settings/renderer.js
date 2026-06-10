@@ -1970,12 +1970,65 @@ function renderLearningSummary(summary) {
     `Corrections: ${summary.corrections}    ·    Logo fingerprints: ${summary.logos}`;
 }
 
-function renderLearningTemplates(rows) {
+function renderLearningTemplates(rows, allTemplates) {
   const el = document.getElementById('lr-templates');
+  el.innerHTML = '';
   if (!rows.length) { el.textContent = 'No managed templates match this name.'; return; }
-  el.innerHTML = rows.map(t =>
-    `<div>${escHtml(t.name)} <span class="field-key">(${escHtml(t.document_type_slug || '—')}, confirmed ${t.confirmed_count}×)</span></div>`
-  ).join('');
+
+  for (const t of rows) {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:4px 0;';
+
+    const label = document.createElement('span');
+    label.style.flex = '1 1 220px';
+    label.innerHTML = `${escHtml(t.name)} <span class="field-key">(${escHtml(t.document_type_slug || '—')}, confirmed ${t.confirmed_count}×)</span>`;
+    row.appendChild(label);
+
+    // Reassign target — every OTHER template (full list, not just the search
+    // results, since the correct target usually has a different name).
+    const sel = document.createElement('select');
+    sel.className = 'field-select';
+    sel.style.cssText = 'width:200px;';
+    const ph = document.createElement('option');
+    ph.value = ''; ph.textContent = 'Reassign docs to…';
+    sel.appendChild(ph);
+    for (const o of (allTemplates || [])) {
+      if (o.id === t.id) continue;
+      const opt = document.createElement('option');
+      opt.value = String(o.id);
+      opt.textContent = o.name;
+      sel.appendChild(opt);
+    }
+    row.appendChild(sel);
+
+    const btnReassign = document.createElement('button');
+    btnReassign.className = 'btn';
+    btnReassign.textContent = 'Reassign';
+    btnReassign.addEventListener('click', async () => {
+      const toId = Number(sel.value);
+      if (!toId) return;
+      const toName = sel.options[sel.selectedIndex].textContent;
+      if (!confirm(`Reassign all documents from "${t.name}" to "${toName}"?\n\nDocuments are only relinked (reversible) — no extraction data, hints, or anchors are deleted.`)) return;
+      const r = await api.reassignTemplateDocuments(t.id, toId);
+      document.getElementById('lr-msg').textContent =
+        `Reassigned ${r.moved} document(s): "${t.name}" → "${toName}"${r.sampleAdopted ? ' (sample adopted by target)' : ''}.`;
+      await runLearningSearch();
+    });
+    row.appendChild(btnReassign);
+
+    const btnDelete = document.createElement('button');
+    btnDelete.className = 'btn danger';
+    btnDelete.textContent = 'Delete';
+    btnDelete.addEventListener('click', async () => {
+      if (!confirm(`Delete template "${t.name}"?\n\nLinked documents are unlinked (set to no template); their extractions and learned data are kept. This cannot be undone — reassign first if these documents belong to another template.`)) return;
+      await api.deleteTemplate(t.id);
+      document.getElementById('lr-msg').textContent = `Deleted template "${t.name}".`;
+      await runLearningSearch();
+    });
+    row.appendChild(btnDelete);
+
+    el.appendChild(row);
+  }
 }
 
 function renderLearningDetail(detail) {
@@ -2045,8 +2098,10 @@ async function runLearningSearch() {
 
   emptyEl.style.display = 'none';
   resultsEl.style.display = '';
+  let allTemplates = [];
+  try { allTemplates = await api.getTemplates(); } catch (e) { console.warn('getTemplates (reassign list) failed:', e.message); }
   renderLearningSummary(s);
-  renderLearningTemplates(data.templates);
+  renderLearningTemplates(data.templates, allTemplates);
   renderLearningDetail(data.detail);
 }
 

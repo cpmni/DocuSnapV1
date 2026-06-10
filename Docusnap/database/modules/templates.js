@@ -187,6 +187,37 @@ function setSampleDocument(db, templateId, documentId) {
 // active and that document has a known template_id — the manual params
 // become this template's auto-processing baseline (enabled by default; an
 // admin can turn it off via setOcrAutoEnabled without losing the params).
+// Move every document linked to `fromTemplateId` onto `toTemplateId` — the
+// reversible primitive behind admin "reassign a poisoned duplicate's documents
+// to the correct template" (e.g. a near-identical layout that was learned twice,
+// once under a bad short-token identity). Only the documents.template_id LINK
+// moves; no extraction data, hints, anchors, or fingerprints are touched, and
+// matching itself is link-independent (Stage 0 uses logo_phash/keyword_finger-
+// print, not template_id) — so this is fully reversible by reassigning back.
+// If the target has no pinned sample yet, it adopts the source's so the
+// representative preview survives the move. Returns a summary for traceability.
+function reassignDocuments(db, fromTemplateId, toTemplateId) {
+  if (!fromTemplateId || !toTemplateId || fromTemplateId === toTemplateId) {
+    return { moved: 0, sampleAdopted: false, from: fromTemplateId, to: toTemplateId };
+  }
+  let sampleAdopted = false;
+  const tx = db.transaction(() => {
+    const info = db.prepare(
+      'UPDATE documents SET template_id = @to WHERE template_id = @from'
+    ).run({ to: toTemplateId, from: fromTemplateId });
+    const src = db.prepare('SELECT sample_document_id FROM templates WHERE id = ?').get(fromTemplateId);
+    const dst = db.prepare('SELECT sample_document_id FROM templates WHERE id = ?').get(toTemplateId);
+    if (src && src.sample_document_id && dst && !dst.sample_document_id) {
+      db.prepare(`UPDATE templates SET sample_document_id = ?, updated_at = datetime('now') WHERE id = ?`)
+        .run(src.sample_document_id, toTemplateId);
+      sampleAdopted = true;
+    }
+    return info.changes;
+  });
+  const moved = tx();
+  return { moved, sampleAdopted, from: fromTemplateId, to: toTemplateId };
+}
+
 function setOcrAutoParams(db, templateId, params) {
   db.prepare(`
     UPDATE templates SET ocr_auto_enabled = 1, ocr_auto_params = ?, updated_at = datetime('now')
@@ -355,7 +386,7 @@ module.exports = {
   getAll, getById, getFields, findByLogoHash, create, update, remove, rename, hammingDistance,
   searchByName,
   getMappings, getMapping, saveMapping, setMappingEnabled, deleteMapping,
-  recordMappingTest, setSampleDocument,
+  recordMappingTest, setSampleDocument, reassignDocuments,
   setOcrAutoParams, setOcrAutoEnabled,
   getAllGroups, createGroup, deleteGroup, setTemplateGroup, getSiblings,
   GRID_COLS, GRID_ROWS,
