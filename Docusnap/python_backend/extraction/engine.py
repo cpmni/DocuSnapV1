@@ -23,7 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from extraction import keyword, anchor, validator, ocr_corrector, template_matcher, template_mapper
+from extraction import keyword, anchor, validator, ocr_corrector, template_matcher, template_mapper, format_anomaly_checker
 
 # LLM import is optional — system works without it in FAST mode
 try:
@@ -48,19 +48,24 @@ class ExtractionEngine:
         self.ollama_url   = ollama_url
         self.model        = model
         self.emit         = emit_fn or (lambda msg: None)
-        self.format_index = {}   # populated by set_formats()
+        self.format_index        = {}   # populated by set_formats()
         self.noise_profile_index = {}   # populated by set_formats()
+        self.format_class_index  = {}   # populated by set_formats()
 
     def log(self, text: str, level: str = ""):
         self.emit({"type": "log", "text": text, "level": level})
 
     def set_formats(self, formats_data: list):
-        """Pre-build OCR correction index from confirmed value data."""
-        self.format_index = ocr_corrector.build_format_index(formats_data)
+        """Pre-build all format indexes from confirmed value data."""
+        self.format_index        = ocr_corrector.build_format_index(formats_data)
         self.noise_profile_index = ocr_corrector.build_noise_profile_index(formats_data)
+        self.format_class_index  = format_anomaly_checker.build_format_class_index(formats_data)
         n = len([k for k in self.format_index if k != '_fallback'])
         m = len(self.noise_profile_index)
+        p = len(self.format_class_index)
         self.log(f"  OCR corrector: {n} format templates, {m} learned noise profile(s) loaded")
+        if p:
+            self.log(f"  Format checker: {p} format class rule(s) loaded")
 
     def warmup(self) -> bool:
         """Warm up Ollama model. Returns True if AI is available."""
@@ -399,9 +404,48 @@ class ExtractionEngine:
         self.log("  Stage 4: validating…")
         results = validator.validate_and_adjust(results, field_defs)
 
+        # ── Stage 4.5: Format anomaly check ──────────────────────────────────
+        # Compares each extracted value against the coarse format class learned
+        # from confirmed historical values for the same
+        # (supplier_name, document_type, field_key) group.  On anomaly: caps
+        # confidence at 45 and adds a traceable validation_note.  Fields
+        # already flagged by Stage 4 are skipped to avoid double-penalisation.
+        # No correction is proposed here — that is Stage 2 of this feature.
+        format_anomaly_flagged = False
+        if self.format_class_index and supplier_name and document_slug:
+            s_lower  = supplier_name.lower().strip()
+            dt_lower = document_slug.lower().strip()
+            n_flagged = 0
+            for key, data in list(results.items()):
+                if key.startswith('_') or not isinstance(data, dict):
+                    continue
+                if data.get('validation_note'):
+                    continue  # Stage 4 already flagged this field
+                val = data.get('value')
+                if not val:
+                    continue
+                fmt_entry = self.format_class_index.get((s_lower, dt_lower, key))
+                if not fmt_entry:
+                    continue
+                anomaly = format_anomaly_checker.check_value(str(val), fmt_entry)
+                if anomaly:
+                    new_conf = min(data.get('confidence') or 0, 45)
+                    results[key] = {
+                        **data,
+                        'confidence':      new_conf,
+                        'validation_note': f"format anomaly ({anomaly['anomaly']})",
+                    }
+                    n_flagged += 1
+                    format_anomaly_flagged = True
+            if n_flagged:
+                self.log(f"  Stage 4.5: {n_flagged} field(s) flagged by format anomaly check")
+
         # ── Metadata ──────────────────────────────────────────────────────────
         overall_conf  = validator.overall_confidence(results, field_defs)
-        review_needed = validator.needs_review(results, field_defs)
+        # Stage 4.5 confidence caps (≤45) will always trigger needs_review via
+        # the per-field threshold check.  The OR guard covers the edge case
+        # where a flagged field is not listed in field_defs.
+        review_needed = validator.needs_review(results, field_defs) or format_anomaly_flagged
 
         results["_supplier_name"]        = supplier_name
         results["_document_type"]        = document_type

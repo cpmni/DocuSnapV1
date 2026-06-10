@@ -6,10 +6,10 @@ function insertExtractions(db, document_id, rows) {
   const stmt = db.prepare(`
     INSERT INTO extractions
       (document_id, field_key, raw_value, display_value,
-       confidence, extraction_method)
+       confidence, extraction_method, validation_note)
     VALUES
       (@document_id, @field_key, @raw_value, @display_value,
-       @confidence, @extraction_method)
+       @confidence, @extraction_method, @validation_note)
   `);
   const insertMany = db.transaction((rows) => {
     for (const row of rows) stmt.run({ document_id, ...row });
@@ -324,6 +324,7 @@ function getFieldFormats(db) {
       AND d.supplier_name   != ''
       AND d.supplier_name   != '__global__'
       AND (e.display_value IS NOT NULL OR c.corrected_value IS NOT NULL)
+    ORDER BY d.confirmed_at DESC, d.id DESC
   `).all();
 
   const groups = {};

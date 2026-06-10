@@ -352,6 +352,53 @@ UNCOMMITTED (2)                  │  Total: £1,250.00
 - Uncommitted items open inline commit panel (mini review)
 - Edit in Review: opens review window with doc pre-loaded
 
+### STAGE 7 — Field format cross-referencing
+**Files**: `python_backend/extraction/format_anomaly_checker.py` (new),
+`python_backend/extraction/engine.py`, `database/modules/learning.js`,
+`database/index.js` (migration 11 — `extractions.validation_note`, landed Stage 1;
+Stage 3 will need migration 12 for `field_format_rules`)
+
+During processing, compare each extracted field value against up to 3 sampled
+confirmed historical values for the same `(supplier_name, document_type, field_key)`
+group. Infer a coarse format class from history; if the new value violates it, lower
+confidence, add a `validation_note`, and force `needs_review`. Conservative correction
+candidates are proposed in Stage 2 but never silently applied — always review-forced.
+
+**Format classes** (inferred from sample consensus — disagreement → `freetext`, no constraint):
+`digits_only` | `upper_alphanum` | `alphanum` | `alphanum_sep` | `date_like` | `currency_like` | `freetext`
+
+**Scoping rules** — strict `(supplier_name, document_type, field_key)`; minimum 3 distinct
+confirmed values required; if history is absent or thin, pass through unchanged.
+
+**Data source** — reuses existing `formats_data` / `--formats-file` pipeline already
+loaded by the processing handler. No new IPC or Python arg until Stage 3.
+
+**Stage 1 — COMPLETE**
+- `format_anomaly_checker.py` (Stage 4.5 in `engine.py`), `getFieldFormats()` recency ordering,
+  migration 11 (`extractions.validation_note TEXT`), `insertExtractions` updated,
+  both insert paths in `handler.js` carry `validation_note`, reprocess merge restores note
+  alongside restored value, review `appendFieldRow` renders note as amber mono text
+- 37-test suite passes (`python_backend/tests/test_format_anomaly_checker.py`)
+- Polish deferred (non-blocking): user-facing wording for `validation_note` strings;
+  define how Stage 2 correction candidates share/extend the same note area
+
+**Stage 2 (conservative correction candidates)**
+- `propose_correction()` applies LETTER_TO_DIGIT / DIGIT_TO_UPPER maps and removes
+  unexpected separators from `digits_only` fields only when evidence is strong
+- Correction is a **candidate, not a rewrite**: `display_value` unchanged, `corrected_to`
+  holds the proposed fix, `was_corrected` stays `False`, `needs_review` forced
+- `validation_note`: `"format anomaly: correction candidate — {corrected_to}"`
+- Correction only proposed when corrected form passes format check AND ≤2 chars changed
+  AND ≤25% of value length affected
+
+**Stage 3 (persistent learned format model — migration 12)**
+- New `field_format_rules` table: `(supplier_name, document_type, field_key)` → `format_class`,
+  `allowed_separators`, `confirmed_count`, `last_updated`
+- Written by `learning.js` inside `saveCorrections()` transaction on every confirm
+- Read by Python via new `--format-rules-file` arg; overrides inferred class once
+  `confirmed_count ≥ 10` (bootstrapping grace period below that threshold)
+- Confirming a value that expands the character class updates `format_class` in-place
+
 ---
 
 ## Fast Mode suggestion

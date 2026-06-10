@@ -215,6 +215,15 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 10 applied: documents.ocr_text for full-text search');
   }
 
+  // Migration 11: validation_note on extractions — stores Stage 4.5 anomaly reason.
+  if (!applied.has(11)) {
+    if (tableExists(db, 'extractions') && !hasColumn(db, 'extractions', 'validation_note')) {
+      try { db.exec(`ALTER TABLE extractions ADD COLUMN validation_note TEXT`); } catch {}
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (11)').run();
+    console.log('JS migration 11 applied: extractions.validation_note for format anomaly notes');
+  }
+
   // Migration 9: template groups — organisational grouping for related templates
   // (same supplier family, layout variants). Grouping is v1 metadata only; no
   // shared-anchor behaviour is added here. Existing ungrouped templates continue
