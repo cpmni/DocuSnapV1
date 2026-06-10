@@ -120,12 +120,21 @@ function search(db, { company, reference, dateFrom, dateTo,
     sql += ` AND d.reference_number LIKE @reference`;
     params.reference = `%${reference.trim()}%`;
   }
+  // doc_date is stored DD-MM-YYYY (validator.normalise_date), but the Search
+  // date inputs (<input type="date">) supply ISO YYYY-MM-DD. Comparing those two
+  // formats as strings never works (e.g. "16-03-2026" >= "2026-03-01" is always
+  // false), so reshape a clean DD-MM-YYYY doc_date to ISO before comparing. Rows
+  // whose doc_date isn't a well-formed DD-MM-YYYY yield NULL here and are simply
+  // excluded from a date-filtered result — they can't be placed on the timeline.
+  const ISO_DOC_DATE =
+    "CASE WHEN d.doc_date GLOB '[0-9][0-9]-[0-9][0-9]-[0-9][0-9][0-9][0-9]' " +
+    "THEN substr(d.doc_date,7,4)||'-'||substr(d.doc_date,4,2)||'-'||substr(d.doc_date,1,2) END";
   if (dateFrom) {
-    sql += ` AND d.doc_date >= @dateFrom`;
+    sql += ` AND ${ISO_DOC_DATE} >= @dateFrom`;
     params.dateFrom = dateFrom;
   }
   if (dateTo) {
-    sql += ` AND d.doc_date <= @dateTo`;
+    sql += ` AND ${ISO_DOC_DATE} <= @dateTo`;
     params.dateTo = dateTo;
   }
   if (docType && docType !== 'all') {
