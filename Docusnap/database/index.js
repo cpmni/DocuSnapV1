@@ -204,6 +204,17 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 7 applied: local authentication (users, recovery_codes, audit_log)');
   }
 
+  // Migration 10: store OCR full text per document for full-text search.
+  // Stored in %APPDATA%\DocuSnap\docusnap.db — private app-data, not user-visible.
+  // Truncated to 50,000 chars at the Python layer before insertion.
+  if (!applied.has(10)) {
+    if (tableExists(db, 'documents') && !hasColumn(db, 'documents', 'ocr_text')) {
+      try { db.exec(`ALTER TABLE documents ADD COLUMN ocr_text TEXT`); } catch {}
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (10)').run();
+    console.log('JS migration 10 applied: documents.ocr_text for full-text search');
+  }
+
   // Migration 9: template groups — organisational grouping for related templates
   // (same supplier family, layout variants). Grouping is v1 metadata only; no
   // shared-anchor behaviour is added here. Existing ungrouped templates continue

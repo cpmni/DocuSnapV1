@@ -14,11 +14,11 @@ function register(ctx) {
     requireLogin();
     const db = getDb();
     const { company, reference, dateFrom, dateTo,
-            docType, includeUncommitted } = params || {};
+            docType, includeUncommitted, fullText } = params || {};
 
     // Confirmed documents — what "search/view documents" means for every role.
     const confirmed = documents.search(db, {
-      company, reference, dateFrom, dateTo, docType, status: 'confirmed',
+      company, reference, dateFrom, dateTo, docType, fullText, status: 'confirmed',
     });
 
     // Uncommitted results open the inline mini-review/commit panel — an edit
@@ -30,10 +30,10 @@ function register(ctx) {
 
     // Uncommitted — needs_review + deferred
     const review   = documents.search(db, {
-      company, reference, dateFrom, dateTo, docType, status: 'needs_review',
+      company, reference, dateFrom, dateTo, docType, fullText, status: 'needs_review',
     });
     const deferred = documents.search(db, {
-      company, reference, dateFrom, dateTo, docType, status: 'deferred',
+      company, reference, dateFrom, dateTo, docType, fullText, status: 'deferred',
     });
 
     return {

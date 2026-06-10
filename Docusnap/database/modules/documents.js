@@ -2,16 +2,17 @@
 
 function insert(db, { original_filename, folder_path, document_type_id,
                       supplier_name, overall_confidence, status,
-                      template_id, logo_phash, keyword_fingerprint }) {
+                      template_id, logo_phash, keyword_fingerprint,
+                      ocr_text }) {
   return db.prepare(`
     INSERT INTO documents
       (original_filename, folder_path, document_type_id,
        supplier_name, overall_confidence, status,
-       template_id, logo_phash, keyword_fingerprint)
+       template_id, logo_phash, keyword_fingerprint, ocr_text)
     VALUES
       (@original_filename, @folder_path, @document_type_id,
        @supplier_name, @overall_confidence, @status,
-       @template_id, @logo_phash, @keyword_fingerprint)
+       @template_id, @logo_phash, @keyword_fingerprint, @ocr_text)
   `).run({
     original_filename, folder_path,
     document_type_id:    document_type_id    || null,
@@ -21,6 +22,7 @@ function insert(db, { original_filename, folder_path, document_type_id,
     template_id:         template_id         || null,
     logo_phash:          logo_phash          || null,
     keyword_fingerprint: keyword_fingerprint || null,
+    ocr_text:            ocr_text            || null,
   });
 }
 
@@ -97,7 +99,7 @@ function deleteDoc(db, id) {
 }
 
 function search(db, { company, reference, dateFrom, dateTo,
-                      docType, status = 'confirmed', limit = 200 }) {
+                      docType, status = 'confirmed', fullText, limit = 200 }) {
   let sql = `
     SELECT d.*, dt.name as type_name, dt.slug as type_slug
     FROM documents d
@@ -129,6 +131,10 @@ function search(db, { company, reference, dateFrom, dateTo,
   if (docType && docType !== 'all') {
     sql += ` AND dt.slug = @docType`;
     params.docType = docType;
+  }
+  if (fullText && fullText.trim()) {
+    sql += ` AND d.ocr_text LIKE @fullText`;
+    params.fullText = `%${fullText.trim()}%`;
   }
 
   sql += ` ORDER BY d.confirmed_at DESC, d.processed_at DESC LIMIT @limit`;
