@@ -8,6 +8,7 @@ function getAll(db) {
     t.fields              = getFields(db, t.id);
     t.field_mappings      = getMappings(db, t.id);
     t.keyword_fingerprint = _parseJson(t.keyword_fingerprint, []);
+    t.ocr_auto_params     = _parseJson(t.ocr_auto_params, null);
   }
   return rows;
 }
@@ -18,6 +19,7 @@ function getById(db, id) {
   t.fields              = getFields(db, t.id);
   t.field_mappings      = getMappings(db, t.id);
   t.keyword_fingerprint = _parseJson(t.keyword_fingerprint, []);
+  t.ocr_auto_params     = _parseJson(t.ocr_auto_params, null);
   t.sample_document     = t.sample_document_id ? getSampleDocument(db, t.sample_document_id) : null;
   return t;
 }
@@ -174,6 +176,32 @@ function setSampleDocument(db, templateId, documentId) {
   `).run(documentId || null, templateId);
 }
 
+// ── OCR auto-processing rule ─────────────────────────────────────────────────
+// A learned, template-tied OCR preprocessing baseline (skew/threshold/noise
+// params — same shape as review/renderer.js getEnhanceParams()). Persisted
+// here so it can apply automatically on reprocess for documents matched to
+// this template, independent of manual OCR Preview state — see
+// processing/handler.js reprocess-document.
+
+// Called when an admin/edit user reprocesses a document with OCR Preview
+// active and that document has a known template_id — the manual params
+// become this template's auto-processing baseline (enabled by default; an
+// admin can turn it off via setOcrAutoEnabled without losing the params).
+function setOcrAutoParams(db, templateId, params) {
+  db.prepare(`
+    UPDATE templates SET ocr_auto_enabled = 1, ocr_auto_params = ?, updated_at = datetime('now')
+    WHERE id = ?
+  `).run(JSON.stringify(params || {}), templateId);
+  return getById(db, templateId);
+}
+
+function setOcrAutoEnabled(db, templateId, enabled) {
+  db.prepare(`
+    UPDATE templates SET ocr_auto_enabled = ?, updated_at = datetime('now') WHERE id = ?
+  `).run(enabled ? 1 : 0, templateId);
+  return getById(db, templateId);
+}
+
 function findByLogoHash(db, phash, threshold = 12) {
   if (!phash) return null;
   const rows = db.prepare(
@@ -312,6 +340,7 @@ module.exports = {
   getAll, getById, getFields, findByLogoHash, create, update, remove, rename, hammingDistance,
   getMappings, getMapping, saveMapping, setMappingEnabled, deleteMapping,
   recordMappingTest, setSampleDocument,
+  setOcrAutoParams, setOcrAutoEnabled,
   getAllGroups, createGroup, deleteGroup, setTemplateGroup, getSiblings,
   GRID_COLS, GRID_ROWS,
 };

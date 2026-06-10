@@ -1007,6 +1007,7 @@ async function selectTemplate(id) {
   document.getElementById('tpl-detail-meta').textContent =
     `${detail.document_type_slug || 'unknown type'} · confirmed ${detail.confirmed_count} time${detail.confirmed_count === 1 ? '' : 's'} · updated ${formatWhen(detail.updated_at) || '—'}`;
   renderDetectionMethod(detail);
+  renderOcrAutoStatus(detail);
 
   await Promise.all([
     loadSampleCandidates(detail),
@@ -1041,6 +1042,47 @@ function renderDetectionMethod(detail) {
   };
   el.appendChild(pill(label, cls));
   if (mappingN > 0) el.appendChild(pill(`+ ${mappingN} admin mapping${mappingN === 1 ? '' : 's'}`, 'info'));
+}
+
+// OCR auto-processing rule indicator — shown only once a rule exists for this
+// template (created via an OCR-Preview-active reprocess, see
+// processing/handler.js reprocess-document / templates.setOcrAutoParams).
+// The toggle lets an admin disable a rule that turns out to be harmful for
+// this template, without affecting any other template's rule.
+function renderOcrAutoStatus(detail) {
+  const row    = document.getElementById('tpl-ocr-auto-row');
+  const desc   = document.getElementById('tpl-ocr-auto-desc');
+  const pill   = document.getElementById('tpl-ocr-auto-pill');
+  const toggle = document.getElementById('tpl-ocr-auto-toggle');
+  if (!row || !toggle) return;
+
+  const hasRule = !!(detail.ocr_auto_params);
+  row.style.display  = hasRule ? 'flex' : 'none';
+  desc.style.display = hasRule ? 'block' : 'none';
+  if (!hasRule) return;
+
+  toggle.checked = !!detail.ocr_auto_enabled;
+  pill.classList.toggle('ok', !!detail.ocr_auto_enabled);
+  pill.classList.toggle('warn', !detail.ocr_auto_enabled);
+  pill.textContent = detail.ocr_auto_enabled
+    ? 'OCR auto-processing active'
+    : 'OCR auto-processing disabled';
+
+  toggle.onchange = async () => {
+    toggle.disabled = true;
+    try {
+      const updated = await api.setTemplateOcrAuto(detail.id, toggle.checked);
+      if (updated) {
+        selectedTemplate = updated;
+        renderOcrAutoStatus(updated);
+      }
+    } catch (err) {
+      console.error('setTemplateOcrAuto failed:', err);
+      toggle.checked = !toggle.checked; // revert on failure
+    } finally {
+      toggle.disabled = false;
+    }
+  };
 }
 
 async function loadSampleCandidates(detail) {

@@ -219,8 +219,34 @@ function register(ctx) {
     fs.copyFileSync(srcFile, path.join(tmpDir, tmpFilename));
 
     const { args: trainingArgs, tempFiles } = buildTrainingArgs(db, configPath);
-    const learning2 = require('../../../database/modules/learning');
-    const reprMode  = learning2.getSetting(db, 'processing_mode', 'smart');
+    const learning2  = require('../../../database/modules/learning');
+    const templates2 = require('../../../database/modules/templates');
+    const reprMode   = learning2.getSetting(db, 'processing_mode', 'smart');
+
+    // Resolve the OCR preprocessing params to actually use:
+    //  - manual params (sent only while OCR Preview is active for this
+    //    document, see review/renderer.js) are a one-shot override for THIS
+    //    reprocess and — if the document has a known template — become that
+    //    template's learned auto-processing baseline going forward;
+    //  - otherwise, fall back to the matched template's own learned baseline
+    //    (if any and enabled), so recurring templates benefit automatically
+    //    even when preview is off.
+    const docRow     = db.prepare('SELECT template_id FROM documents WHERE id = ?').get(docId);
+    const templateId = docRow ? docRow.template_id : null;
+    let effectiveEnhanceParams = null;
+    let ruleCreatedFor          = null;
+    if (enhanceParams && typeof enhanceParams === 'object') {
+      effectiveEnhanceParams = enhanceParams;
+      if (templateId) {
+        const updated = templates2.setOcrAutoParams(db, templateId, enhanceParams);
+        ruleCreatedFor = updated ? updated.name : null;
+      }
+    } else if (templateId) {
+      const tmpl = templates2.getById(db, templateId);
+      if (tmpl && tmpl.ocr_auto_enabled && tmpl.ocr_auto_params) {
+        effectiveEnhanceParams = tmpl.ocr_auto_params;
+      }
+    }
 
     const scriptArgs    = [
       '--folder',     tmpDir,
@@ -229,8 +255,8 @@ function register(ctx) {
       ...trainingArgs,
     ];
     const allTempFiles = [...tempFiles];
-    if (enhanceParams && typeof enhanceParams === 'object') {
-      const enhanceFile = writeTempJson('enhance', enhanceParams);
+    if (effectiveEnhanceParams) {
+      const enhanceFile = writeTempJson('enhance', effectiveEnhanceParams);
       allTempFiles.push(enhanceFile);
       scriptArgs.push('--enhance-file', enhanceFile);
     }
@@ -354,7 +380,8 @@ function register(ctx) {
         }
 
         resolve({ success: true, extractions: mergedMap,
-                  overall_confidence: result.overall_confidence });
+                  overall_confidence: result.overall_confidence,
+                  ruleCreated: ruleCreatedFor });
       });
     });
   });

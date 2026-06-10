@@ -85,6 +85,15 @@ function register(ctx) {
     return templates.getById(getDb(), templateId);
   });
 
+  // OCR auto-processing — enable/disable a learned per-template OCR
+  // preprocessing rule (see templates.setOcrAutoParams, created via an
+  // OCR-Preview-active reprocess). Toggling never discards the stored
+  // params, so re-enabling restores the same baseline.
+  ipcMain.handle('set-template-ocr-auto', (_e, templateId, enabled) => {
+    requireRole('admin');
+    return templates.setOcrAutoEnabled(getDb(), templateId, !!enabled);
+  });
+
   // A brand-new template has no confirmed documents yet — get-template-sample-
   // candidates is necessarily empty (chicken-and-egg: nothing can match an
   // empty template). These two let an admin attach an arbitrary file in place

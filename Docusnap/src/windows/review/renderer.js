@@ -878,18 +878,26 @@ document.getElementById('enh-threshold-level').addEventListener('input', functio
   document.getElementById(id).addEventListener('change', () => schedulePreviewRefresh());
 });
 
+const NOISE_LEVEL_LABELS = ['Off', 'Low', 'Medium', 'High'];
+document.getElementById('enh-noise').addEventListener('input', function () {
+  document.getElementById('enh-noise-value').textContent = NOISE_LEVEL_LABELS[parseInt(this.value, 10)] || 'Off';
+  schedulePreviewRefresh();
+});
+
 function getEnhanceParams() {
   const grayscale    = document.getElementById('enh-grayscale').checked;
   const autocontrast = document.getElementById('enh-autocontrast').checked;
   const deskew       = document.getElementById('enh-deskew').checked;
   const threshold    = document.getElementById('enh-threshold').checked;
-  if (!grayscale && !autocontrast && !deskew && !threshold) return null;
+  const noiseLevel   = parseInt(document.getElementById('enh-noise').value, 10) || 0;
+  if (!grayscale && !autocontrast && !deskew && !threshold && !noiseLevel) return null;
   return {
     grayscale,
     autocontrast,
     deskew,
     threshold,
     threshold_level: parseInt(document.getElementById('enh-threshold-level').value, 10),
+    noise_level: noiseLevel,
   };
 }
 
@@ -985,11 +993,15 @@ document.getElementById('btn-reprocess').addEventListener('click', async () => {
     if (msg.type === 'log') console.log('[Reprocess]', msg.text);
   });
 
+  // Manual OCR Enhancement controls only affect this reprocess while OCR
+  // Preview is active for this document — preview-off means inactive, not
+  // hidden-active. (A template-level auto-processing rule, if any, is
+  // applied on the main process side regardless of preview state.)
   const result = await window.docusnap.reprocessDocument({
     docId:         currentDoc.id,
     folderPath:    currentDoc.folder_path,
     filename:      currentDoc.original_filename,
-    enhanceParams: getEnhanceParams(),
+    enhanceParams: previewActive ? getEnhanceParams() : null,
   });
 
   window.docusnap.removeReprocessProgress();
@@ -1001,6 +1013,9 @@ document.getElementById('btn-reprocess').addEventListener('click', async () => {
       corrections = {};      // drop stale corrections; fields are now fresh
     }
     renderFields(full || currentDoc);
+    if (result.ruleCreated) {
+      showToast(`OCR auto-processing enabled for template "${result.ruleCreated}"`, 'ok');
+    }
     btn.innerHTML = '✓ Reprocessed';
     btn.style.color = 'var(--ok)';
     btn.style.borderColor = 'var(--ok)';

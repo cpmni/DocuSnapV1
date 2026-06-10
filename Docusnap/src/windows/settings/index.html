@@ -599,6 +599,17 @@
                 </div>
                 <div class="threshold-sub" id="tpl-detail-meta">—</div>
                 <div id="tpl-detection-method" style="margin-top:5px; display:flex; flex-wrap:wrap; gap:5px; align-items:center;"></div>
+                <div id="tpl-ocr-auto-row" style="margin-top:5px; display:none; flex-wrap:wrap; gap:8px; align-items:center;">
+                  <span class="tpl-method-pill ok" id="tpl-ocr-auto-pill">OCR auto-processing active</span>
+                  <label class="toggle">
+                    <input type="checkbox" id="tpl-ocr-auto-toggle">
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+                <p class="section-desc" id="tpl-ocr-auto-desc" style="display:none; margin:2px 0 0;">
+                  Applies learned image preprocessing (skew/threshold/noise cleanup) before OCR for documents
+                  matching this template — does not rewrite extracted field values.
+                </p>
                 <span id="tpl-name-msg" class="section-desc" style="display:block; margin:4px 0 0;"></span>
 
                 <div class="form-group" style="margin:12px 0 0;">

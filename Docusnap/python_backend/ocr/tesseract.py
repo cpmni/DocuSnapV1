@@ -9,7 +9,11 @@ from pathlib import Path
 
 import pytesseract
 import pypdfium2 as pdfium
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageFilter
+
+# Noise-cleanup slider levels (1-3) → PIL MedianFilter kernel size.
+# Larger kernels remove more speckle but blur fine text more.
+NOISE_FILTER_SIZES = {1: 3, 2: 5, 3: 7}
 
 
 def configure(tesseract_path: str | None = None):
@@ -74,7 +78,8 @@ def preprocess_for_ocr(img: Image.Image, params: dict | None) -> Image.Image:
     """
     Apply OCR preprocessing in a fixed pipeline order.
     params keys: grayscale (bool), autocontrast (bool), deskew (bool),
-                 threshold (bool), threshold_level (int 50-220).
+                 threshold (bool), threshold_level (int 50-220),
+                 noise_level (int 0-3, 0 = off).
     Returns img unchanged when params is None or all options are falsy.
     Pipeline order is fixed here and must not be controlled by the caller.
     """
@@ -89,6 +94,13 @@ def preprocess_for_ocr(img: Image.Image, params: dict | None) -> Image.Image:
     if params.get('grayscale') or params.get('autocontrast') or params.get('threshold'):
         if img.mode != 'L':
             img = img.convert('L')
+
+    # 1.5. Noise cleanup / despeckle — median filter, before autocontrast/deskew
+    # so contrast stretching and skew detection aren't thrown off by speckle.
+    noise_level = int(params.get('noise_level') or 0)
+    if noise_level > 0:
+        size = NOISE_FILTER_SIZES.get(max(1, min(3, noise_level)), 3)
+        img  = img.filter(ImageFilter.MedianFilter(size=size))
 
     # 2. Autocontrast / contrast normalisation
     if params.get('autocontrast'):

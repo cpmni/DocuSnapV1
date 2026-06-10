@@ -224,6 +224,23 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 11 applied: extractions.validation_note for format anomaly notes');
   }
 
+  // Migration 12: template-level OCR auto-processing — a learned, template-tied
+  // preprocessing rule (skew/threshold/noise params) that can be applied
+  // automatically on reprocess for documents matched to this template, even
+  // when manual OCR Preview is off. Additive/nullable; existing templates are
+  // unaffected until a rule is created (see processing/handler.js reprocess-document
+  // and templates.setOcrAutoParams).
+  if (!applied.has(12)) {
+    if (tableExists(db, 'templates') && !hasColumn(db, 'templates', 'ocr_auto_enabled')) {
+      try { db.exec(`ALTER TABLE templates ADD COLUMN ocr_auto_enabled INTEGER NOT NULL DEFAULT 0`); } catch {}
+    }
+    if (tableExists(db, 'templates') && !hasColumn(db, 'templates', 'ocr_auto_params')) {
+      try { db.exec(`ALTER TABLE templates ADD COLUMN ocr_auto_params TEXT`); } catch {}
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (12)').run();
+    console.log('JS migration 12 applied: templates.ocr_auto_enabled / ocr_auto_params');
+  }
+
   // Migration 9: template groups — organisational grouping for related templates
   // (same supplier family, layout variants). Grouping is v1 metadata only; no
   // shared-anchor behaviour is added here. Existing ungrouped templates continue
