@@ -9,7 +9,8 @@ const os   = require('os');
 const path = require('path');
 const fs   = require('fs');
 
-let _currentBatchProc = null;  // reference to the running Python process
+let _currentBatchProc  = null;   // reference to the running Python process
+let _cancelRequested   = false;  // set true when stop is requested; suppresses buffered stdout
 
 // ── Write temp JSON files ─────────────────────────────────────────────────────
 // Module-level (not register()-scoped closures) so other modules — e.g. the
@@ -109,6 +110,18 @@ function register(ctx) {
   ipcMain.handle('stop-processing', () => {
     requireRole('admin', 'edit');
     if (_currentBatchProc) {
+      _cancelRequested = true;
+      const pid = _currentBatchProc.pid;
+      // Kill the full process tree: in dev mode `py.exe` (Python Launcher) is
+      // spawned and proc.kill() only kills the launcher, leaving python.exe
+      // alive and writing to the inherited pipe. taskkill /T kills all
+      // descendants so the pipe closes and proc.on('close') fires promptly.
+      try {
+        require('child_process').spawnSync(
+          'taskkill', ['/F', '/T', '/PID', String(pid)],
+          { windowsHide: true, stdio: 'ignore' }
+        );
+      } catch {}
       try { _currentBatchProc.kill(); } catch {}
       _currentBatchProc = null;
     }
@@ -150,6 +163,7 @@ function register(ctx) {
       let buf = '', fileCount = 0;
 
       proc.stdout.on('data', (data) => {
+        if (_cancelRequested) return;
         buf += data.toString();
         const lines = buf.split('\n');
         buf = lines.pop();
@@ -173,12 +187,15 @@ function register(ctx) {
       });
 
       proc.stderr.on('data', d => {
+        if (_cancelRequested) return;
         const text = d.toString().trim();
         if (text) logger?.warn(`Python stderr: ${text}`);
         event.sender.send('process-progress', { type: 'log', text });
       });
 
       proc.on('close', (code) => {
+        const stopped = _cancelRequested;
+        _cancelRequested = false;
         _currentBatchProc = null;
         cleanupFiles(tempFiles);
         // Remove any *_ocr.txt plaintext artifacts left by earlier versions of
@@ -192,8 +209,8 @@ function register(ctx) {
             }
           }
         } catch {}
-        logger?.log(`Batch complete: ${fileCount} files, exit=${code}`);
-        resolve({ success: code === 0 });
+        logger?.log(`Batch ${stopped ? 'stopped' : 'complete'}: ${fileCount} files, exit=${code}`);
+        resolve({ success: !stopped && code === 0, stopped });
       });
     });
   });

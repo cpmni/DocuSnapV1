@@ -114,8 +114,9 @@ async function startProcessing() {
   window.docusnap.removeProgress();
   window.docusnap.onProgress((msg) => handleProgress(msg));
 
+  let processResult;
   try {
-    await window.docusnap.processFolder(selectedFolder);
+    processResult = await window.docusnap.processFolder(selectedFolder);
   } catch (e) {
     appendLog(`Fatal error: ${e.message}`, 'err');
     logStatus.textContent = 'Error';
@@ -132,9 +133,14 @@ async function startProcessing() {
   btnRun.innerHTML = '&#9654;&nbsp; Process Documents';
   btnStop.classList.remove('visible');
   clearStage();
-  logStatus.textContent = 'Complete';
-  progressBar.style.width = '100%';
-  appendLog('✓ All documents processed.', 'ok');
+  if (processResult && processResult.stopped) {
+    logStatus.textContent = 'Stopped';
+    appendLog('Processing stopped.', 'warn');
+  } else {
+    logStatus.textContent = 'Complete';
+    progressBar.style.width = '100%';
+    appendLog('✓ All documents processed.', 'ok');
+  }
 }
 
 function handleProgress(msg) {
