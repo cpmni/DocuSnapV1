@@ -643,6 +643,59 @@ function showSecretDialog(title, value, note) {
   overlay.querySelector('#secret-ok').addEventListener('click', () => overlay.remove());
 }
 
+// ── Typed-name confirmation for extreme-use destructive actions ──────────────
+// Electron does not implement window.prompt(), so the "type the exact name to
+// confirm" pattern is built as a custom overlay (same convention as
+// showSecretDialog above). Resolves true only when the user types `requiredText`
+// exactly and clicks Confirm; cancel / backdrop / Escape resolve false.
+function showTypedConfirmDialog({ title, warningHtml, requiredText, confirmLabel = 'Delete' }) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+      position: fixed; inset: 0; z-index: 9998;
+      background: rgba(0,0,0,.55);
+      display: flex; align-items: center; justify-content: center;
+    `;
+    overlay.innerHTML = `
+      <div style="width:380px; background:var(--surface); border:1px solid var(--border2);
+                  border-radius:10px; padding:18px; display:flex; flex-direction:column; gap:12px;
+                  font-family:var(--sans); color:var(--text);">
+        <div style="font-size:13px; font-weight:500; color:var(--err);">${escHtml(title)}</div>
+        <div style="font-size:11px; color:var(--muted); line-height:1.6;">${warningHtml}</div>
+        <div style="font-size:11px; color:var(--muted);">Type <strong style="color:var(--text); font-family:var(--mono);">${escHtml(requiredText)}</strong> to confirm:</div>
+        <input id="tc-input" type="text" spellcheck="false" autocomplete="off" style="
+          padding:9px; border-radius:6px; border:1px solid var(--border2); background:var(--bg);
+          color:var(--text); font-family:var(--mono); font-size:13px;">
+        <div style="display:flex; gap:8px;">
+          <button id="tc-cancel" style="flex:1; padding:9px; border-radius:6px; border:1px solid var(--border2);
+                  background:transparent; color:var(--muted); font-family:inherit; font-size:12px; cursor:pointer;">Cancel</button>
+          <button id="tc-confirm" disabled style="flex:1; padding:9px; border-radius:6px; border:none;
+                  background:var(--err); color:#fff; font-family:inherit; font-size:12px; font-weight:500;
+                  cursor:pointer; opacity:.45;">${escHtml(confirmLabel)}</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const input    = overlay.querySelector('#tc-input');
+    const btnOk     = overlay.querySelector('#tc-confirm');
+    const close     = (result) => { overlay.remove(); document.removeEventListener('keydown', onKey); resolve(result); };
+    const matches  = () => input.value === requiredText;
+    const sync     = () => { btnOk.disabled = !matches(); btnOk.style.opacity = matches() ? '1' : '.45'; };
+    const onKey     = (e) => {
+      if (e.key === 'Escape') close(false);
+      else if (e.key === 'Enter' && matches()) close(true);
+    };
+
+    input.addEventListener('input', sync);
+    overlay.querySelector('#tc-cancel').addEventListener('click', () => close(false));
+    btnOk.addEventListener('click', () => { if (matches()) close(true); });
+    overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(false); });
+    document.addEventListener('keydown', onKey);
+    input.focus();
+  });
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // THEME TOGGLE
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1887,6 +1940,162 @@ function renderSelectorAnchorsTable(detail) {
     tbody.appendChild(tr);
   }
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// LEARNING RECOVERY TAB
+// ══════════════════════════════════════════════════════════════════════════════
+// Read-only inspection + small targeted cleanup for the automatic-learning
+// corpora (field anchors, supplier hints, corrections, logo fingerprints),
+// scoped to a supplier name and optional document type. Managed templates are
+// shown for context only — clearing here never touches the templates table.
+
+let lrCurrentScope = null;
+
+async function populateLearningDocTypes() {
+  if (!allTypesWithFields.length) {
+    try { await loadDocTypes(); } catch (e) { console.warn('loadDocTypes (learning recovery) failed:', e.message); }
+  }
+  const select = document.getElementById('lr-doctype');
+  for (const dt of allTypesWithFields) {
+    const opt = document.createElement('option');
+    opt.value = dt.slug;
+    opt.textContent = dt.name;
+    select.appendChild(opt);
+  }
+}
+
+function renderLearningSummary(summary) {
+  document.getElementById('lr-summary').textContent =
+    `Field anchors: ${summary.anchors}    ·    Supplier hints: ${summary.hints}    ·    ` +
+    `Corrections: ${summary.corrections}    ·    Logo fingerprints: ${summary.logos}`;
+}
+
+function renderLearningTemplates(rows) {
+  const el = document.getElementById('lr-templates');
+  if (!rows.length) { el.textContent = 'No managed templates match this name.'; return; }
+  el.innerHTML = rows.map(t =>
+    `<div>${escHtml(t.name)} <span class="field-key">(${escHtml(t.document_type_slug || '—')}, confirmed ${t.confirmed_count}×)</span></div>`
+  ).join('');
+}
+
+function renderLearningDetail(detail) {
+  const lines = [];
+
+  if (detail.anchors.length) {
+    lines.push('<div class="section-title" style="margin-top:0;">Field Anchors</div>');
+    for (const a of detail.anchors) {
+      lines.push(`<div>${escHtml(a.field_key)} — "${escHtml(a.anchor_label)}" (${escHtml(a.direction)}), ` +
+        `type: ${escHtml(a.document_type || '—')}, used ${a.usage_count}×, conf ${(a.confidence ?? 0).toFixed(2)}, last ${escHtml(a.last_seen)}</div>`);
+    }
+  }
+  if (detail.hints.length) {
+    lines.push('<div class="section-title" style="margin-top:10px;">Supplier Hints</div>');
+    for (const h of detail.hints) {
+      lines.push(`<div>${escHtml(h.field_key)} = "${escHtml(h.hint_value)}", type: ${escHtml(h.document_type || '—')}, used ${h.usage_count}×, last ${escHtml(h.last_seen)}</div>`);
+    }
+  }
+  if (detail.corrections.length) {
+    lines.push('<div class="section-title" style="margin-top:10px;">Corrections</div>');
+    for (const c of detail.corrections) {
+      lines.push(`<div>${escHtml(c.field_key)}: "${escHtml(c.original_value || '')}" → "${escHtml(c.corrected_value)}", type: ${escHtml(c.document_type || '—')}, ${escHtml(c.corrected_at)}</div>`);
+    }
+  }
+  if (detail.logos.length) {
+    lines.push('<div class="section-title" style="margin-top:10px;">Logo Fingerprints</div>');
+    for (const l of detail.logos) {
+      lines.push(`<div>${escHtml(l.phash)}, matched ${l.match_count}×, last ${escHtml(l.last_seen)}</div>`);
+    }
+  }
+
+  document.getElementById('lr-detail').innerHTML = lines.length ? lines.join('') : '<div>No detail rows.</div>';
+}
+
+async function runLearningSearch() {
+  const supplier_name = document.getElementById('lr-supplier').value.trim();
+  const document_type = document.getElementById('lr-doctype').value || null;
+  const resultsEl = document.getElementById('lr-results');
+  const emptyEl   = document.getElementById('lr-empty');
+  document.getElementById('lr-msg').textContent = '';
+
+  if (!supplier_name) {
+    resultsEl.style.display = 'none';
+    emptyEl.style.display = 'none';
+    lrCurrentScope = null;
+    return;
+  }
+
+  let data;
+  try {
+    data = await api.getLearningRecovery({ supplier_name, document_type });
+  } catch (e) {
+    console.warn('getLearningRecovery failed:', e.message);
+    return;
+  }
+
+  lrCurrentScope = { supplier_name, document_type };
+
+  const s = data?.summary;
+  const hasData = s && (s.anchors || s.hints || s.corrections || s.logos || data.templates.length);
+
+  if (!hasData) {
+    resultsEl.style.display = 'none';
+    emptyEl.style.display = '';
+    return;
+  }
+
+  emptyEl.style.display = 'none';
+  resultsEl.style.display = '';
+  renderLearningSummary(s);
+  renderLearningTemplates(data.templates);
+  renderLearningDetail(data.detail);
+}
+
+document.getElementById('lr-btn-search').addEventListener('click', runLearningSearch);
+document.getElementById('lr-supplier').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') runLearningSearch();
+});
+
+document.getElementById('lr-btn-clear-anchors').addEventListener('click', async () => {
+  if (!lrCurrentScope) return;
+  const { supplier_name, document_type } = lrCurrentScope;
+  const scopeLabel = document_type ? `${supplier_name} / ${document_type}` : supplier_name;
+  if (!confirm(`Clear all field anchors learned for "${scopeLabel}"? This cannot be undone.`)) return;
+  const result = await api.clearLearningAnchors(lrCurrentScope);
+  document.getElementById('lr-msg').textContent = `Cleared ${result.changes} field anchor(s).`;
+  await runLearningSearch();
+});
+
+document.getElementById('lr-btn-clear-hints').addEventListener('click', async () => {
+  if (!lrCurrentScope) return;
+  const { supplier_name, document_type } = lrCurrentScope;
+  const scopeLabel = document_type ? `${supplier_name} / ${document_type}` : supplier_name;
+  if (!confirm(`Clear all supplier hints learned for "${scopeLabel}"? This cannot be undone.`)) return;
+  const result = await api.clearLearningHints(lrCurrentScope);
+  document.getElementById('lr-msg').textContent = `Cleared ${result.changes} supplier hint(s).`;
+  await runLearningSearch();
+});
+
+document.getElementById('lr-btn-clear-corrections').addEventListener('click', async () => {
+  if (!lrCurrentScope) return;
+  const { supplier_name, document_type } = lrCurrentScope;
+  const scopeLabel = document_type ? `${supplier_name} / ${document_type}` : supplier_name;
+  const confirmed = await showTypedConfirmDialog({
+    title: 'Clear corrections — extreme-use recovery',
+    warningHtml:
+      `This permanently removes all confirmed correction history for ` +
+      `<strong style="color:var(--text);">${escHtml(scopeLabel)}</strong>. ` +
+      `Corrections are the audit trail behind format-anomaly learning and cannot be recovered. ` +
+      `Use only when learning has become polluted and narrower cleanup has failed.`,
+    requiredText: supplier_name,
+    confirmLabel: 'Clear corrections',
+  });
+  if (!confirmed) return;
+  const result = await api.clearLearningCorrections(lrCurrentScope);
+  document.getElementById('lr-msg').textContent = `Cleared ${result.changes} correction(s).`;
+  await runLearningSearch();
+});
+
+populateLearningDocTypes();
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 loadDocTypes();

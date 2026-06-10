@@ -322,6 +322,7 @@
     <button class="tab" data-tab="fields">Fields</button>
     <button class="tab" data-tab="filenaming">File Naming</button>
     <button class="tab" data-tab="templates">Templates</button>
+    <button class="tab" data-tab="learning">Learning Recovery</button>
     <button class="tab" data-tab="users">Users</button>
   </div>
 
@@ -729,6 +730,59 @@
             </div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- ══ LEARNING RECOVERY ══ -->
+    <div class="panel" id="panel-learning">
+      <div class="section">
+        <div class="section-title">Learning Recovery</div>
+        <p class="section-desc">
+          Inspect automatically-learned extraction data for a supplier (and optionally a
+          document type), and clear it if it has become polluted. Managed templates are a
+          separate, admin-curated store — they're shown for context but are not affected
+          by the actions below.
+        </p>
+        <div class="row-flex">
+          <input type="text" id="lr-supplier" class="path-input" placeholder="Supplier name…" style="max-width:280px;" spellcheck="false">
+          <select id="lr-doctype" class="field-select" style="width:170px;">
+            <option value="">All document types</option>
+          </select>
+          <button class="btn primary" id="lr-btn-search">Search</button>
+        </div>
+      </div>
+
+      <div class="section" id="lr-results" style="display:none;">
+        <div class="section-title">Summary</div>
+        <div id="lr-summary" class="section-desc" style="font-family:var(--mono);"></div>
+
+        <div class="section-title" style="margin-top:18px;">Templates (managed — separate from learning)</div>
+        <div id="lr-templates" class="section-desc"></div>
+
+        <div class="section-title" style="margin-top:18px;">Detail</div>
+        <div id="lr-detail" style="font-family:var(--mono); font-size:11px; line-height:1.8;"></div>
+
+        <div class="row-flex" style="margin-top:16px; gap:8px;">
+          <button class="btn danger" id="lr-btn-clear-anchors">Clear field anchors for this scope</button>
+          <button class="btn danger" id="lr-btn-clear-hints">Clear supplier hints for this scope</button>
+        </div>
+        <div id="lr-msg" class="section-desc" style="margin-top:8px;"></div>
+
+        <details id="lr-advanced" style="margin-top:18px;">
+          <summary style="cursor:pointer; color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.08em;">Advanced options</summary>
+          <div style="margin-top:10px;">
+            <p class="section-desc" style="border-left:2px solid var(--err); padding-left:8px; color:var(--err);">
+              Extreme-use recovery tool. This removes confirmed correction history for the selected
+              supplier/document type. Use only when learning has become polluted and narrower cleanup
+              has failed.
+            </p>
+            <button class="btn danger" id="lr-btn-clear-corrections">Clear corrections for this scope</button>
+          </div>
+        </details>
+      </div>
+
+      <div class="section" id="lr-empty" style="display:none;">
+        <p class="section-desc">No learned data found for this supplier / document type.</p>
       </div>
     </div>
 

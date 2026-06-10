@@ -127,6 +127,12 @@ contextBridge.exposeInMainWorld('docusnap', {
   getSetting:          (key)      => ipcRenderer.invoke('get-setting', key),
   setSetting:          (key, val) => ipcRenderer.invoke('set-setting', key, val),
 
+  // ── Learning Recovery (Settings tab) ────────────────────────────────────────
+  getLearningRecovery: (params)   => ipcRenderer.invoke('get-learning-recovery', params),
+  clearLearningAnchors:(params)   => ipcRenderer.invoke('clear-learning-anchors', params),
+  clearLearningHints:  (params)   => ipcRenderer.invoke('clear-learning-hints', params),
+  clearLearningCorrections: (params) => ipcRenderer.invoke('clear-learning-corrections', params),
+
   // ── Events from main → renderer ──────────────────────────────────────────────
   onThemeChanged:        (cb) => ipcRenderer.on('theme-changed',          (_e, t) => cb(t)),
   onReviewCountChanged:  (cb) => ipcRenderer.on('review-count-changed',  (_e, n) => cb(n)),

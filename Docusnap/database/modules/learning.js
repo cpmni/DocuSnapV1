@@ -301,6 +301,105 @@ function findLogoMatch(db, phash, threshold = 12) {
   return best;
 }
 
+// ── Learning Recovery (Settings tab) ─────────────────────────────────────────
+// Read-only inspection + small targeted cleanup for the AUTOMATIC learning
+// corpora (field_anchors, supplier_hints, corrections, logo_fingerprints).
+// Deliberately separate from database/modules/templates.js — managed
+// templates are a distinct, admin-curated store and are not touched by the
+// clear* functions below.
+
+function getRecoverySummary(db, { supplier_name, document_type } = {}) {
+  if (!supplier_name) return null;
+  const dt = document_type || null;
+
+  const anchors = db.prepare(`
+    SELECT COUNT(*) AS n FROM field_anchors
+    WHERE supplier_name = @supplier_name AND (@dt IS NULL OR document_type = @dt)
+  `).get({ supplier_name, dt }).n;
+
+  const hints = db.prepare(`
+    SELECT COUNT(*) AS n FROM supplier_hints
+    WHERE supplier_name = @supplier_name AND (@dt IS NULL OR document_type = @dt)
+  `).get({ supplier_name, dt }).n;
+
+  const corrections = db.prepare(`
+    SELECT COUNT(*) AS n FROM corrections
+    WHERE supplier_name = @supplier_name AND (@dt IS NULL OR document_type = @dt)
+  `).get({ supplier_name, dt }).n;
+
+  const logos = db.prepare(`
+    SELECT COUNT(*) AS n FROM logo_fingerprints WHERE supplier_name = @supplier_name
+  `).get({ supplier_name }).n;
+
+  return { anchors, hints, corrections, logos };
+}
+
+function getRecoveryDetail(db, { supplier_name, document_type } = {}, limit = 25) {
+  if (!supplier_name) return null;
+  const dt = document_type || null;
+
+  const anchors = db.prepare(`
+    SELECT field_key, anchor_label, direction, document_type, usage_count, confidence, last_seen
+    FROM field_anchors
+    WHERE supplier_name = @supplier_name AND (@dt IS NULL OR document_type = @dt)
+    ORDER BY usage_count DESC LIMIT @limit
+  `).all({ supplier_name, dt, limit });
+
+  const hints = db.prepare(`
+    SELECT field_key, hint_value, document_type, usage_count, last_seen
+    FROM supplier_hints
+    WHERE supplier_name = @supplier_name AND (@dt IS NULL OR document_type = @dt)
+    ORDER BY usage_count DESC LIMIT @limit
+  `).all({ supplier_name, dt, limit });
+
+  const corrections = db.prepare(`
+    SELECT field_key, original_value, corrected_value, document_type, corrected_at
+    FROM corrections
+    WHERE supplier_name = @supplier_name AND (@dt IS NULL OR document_type = @dt)
+    ORDER BY corrected_at DESC LIMIT @limit
+  `).all({ supplier_name, dt, limit });
+
+  const logos = db.prepare(`
+    SELECT phash, match_count, last_seen FROM logo_fingerprints
+    WHERE supplier_name = @supplier_name
+    ORDER BY match_count DESC LIMIT @limit
+  `).all({ supplier_name, limit });
+
+  return { anchors, hints, corrections, logos };
+}
+
+function clearFieldAnchorsForScope(db, { supplier_name, document_type } = {}) {
+  if (!supplier_name) return { changes: 0 };
+  const dt = document_type || null;
+  return db.prepare(`
+    DELETE FROM field_anchors
+    WHERE supplier_name = @supplier_name AND (@dt IS NULL OR document_type = @dt)
+  `).run({ supplier_name, dt });
+}
+
+function clearSupplierHintsForScope(db, { supplier_name, document_type } = {}) {
+  if (!supplier_name) return { changes: 0 };
+  const dt = document_type || null;
+  return db.prepare(`
+    DELETE FROM supplier_hints
+    WHERE supplier_name = @supplier_name AND (@dt IS NULL OR document_type = @dt)
+  `).run({ supplier_name, dt });
+}
+
+// Extreme-use recovery only — corrections are the audit trail behind
+// supplier_hints/field_anchors AND getFieldFormats()'s format-anomaly
+// learning (see Stage 7 in CLAUDE.md). Clearing them does not undo any
+// hints/anchors already derived from them; it only stops them counting
+// toward future format-consensus and audit history for this exact scope.
+function clearCorrectionsForScope(db, { supplier_name, document_type } = {}) {
+  if (!supplier_name) return { changes: 0 };
+  const dt = document_type || null;
+  return db.prepare(`
+    DELETE FROM corrections
+    WHERE supplier_name = @supplier_name AND (@dt IS NULL OR document_type = @dt)
+  `).run({ supplier_name, dt });
+}
+
 // ── Format templates (OCR correction) ────────────────────────────────────────
 
 function getFieldFormats(db) {
@@ -379,5 +478,7 @@ module.exports = {
   saveAnchor, clearAnchors, getAllAnchors,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
   getFieldFormats,
+  getRecoverySummary, getRecoveryDetail,
+  clearFieldAnchorsForScope, clearSupplierHintsForScope, clearCorrectionsForScope,
   getSetting, setSetting,
 };

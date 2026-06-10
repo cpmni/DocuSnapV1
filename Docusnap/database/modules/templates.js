@@ -218,6 +218,21 @@ function findByLogoHash(db, phash, threshold = 12) {
   return best;
 }
 
+// Cheap name-based lookup for the Learning Recovery tab — shows managed
+// templates alongside (but separate from) automatic learning data for the
+// same supplier. Matching is purely cosmetic (template name vs. supplier
+// name); it does not affect identification, which uses logo_phash /
+// keyword_fingerprint exclusively.
+function searchByName(db, query, document_type_slug) {
+  const q = `%${(query || '').toLowerCase()}%`;
+  return db.prepare(`
+    SELECT id, name, document_type_slug, confirmed_count
+    FROM templates
+    WHERE LOWER(name) LIKE @q AND (@dt IS NULL OR document_type_slug = @dt)
+    ORDER BY name
+  `).all({ q, dt: document_type_slug || null });
+}
+
 function create(db, { name, document_type_slug, logo_phash, keyword_fingerprint, fields }) {
   const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
   const info = db.prepare(`
@@ -338,6 +353,7 @@ function getSiblings(db, groupId, excludeTemplateId) {
 
 module.exports = {
   getAll, getById, getFields, findByLogoHash, create, update, remove, rename, hammingDistance,
+  searchByName,
   getMappings, getMapping, saveMapping, setMappingEnabled, deleteMapping,
   recordMappingTest, setSampleDocument,
   setOcrAutoParams, setOcrAutoEnabled,
