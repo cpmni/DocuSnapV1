@@ -79,6 +79,10 @@ const windows = {};
 // Cleared by get-review-target (pulled by the renderer after loadQueue) or
 // consumed immediately if the review window is already open.
 let pendingReviewDocId = null;
+// Same pattern for "open Settings focused on a template" (from Review's "Add to
+// Template Manager") — pulled by the settings renderer after loadTemplates(), or
+// delivered immediately if the settings window is already open.
+let pendingSettingsTemplateId = null;
 
 const MAIN_WINDOW_OPTIONS  = { width: 1100, height: 750, minWidth: 800, minHeight: 560 };
 const LOGIN_WINDOW_OPTIONS = { width: 460, height: 660, resizable: false, minimizable: false, maximizable: false };
@@ -217,6 +221,25 @@ app.whenReady().then(() => {
     // all, not just see it with options greyed out.
     if (!authModule.hasRole('admin')) return;
     createWindow('settings', { width: 1100, height: 680, minWidth: 900, minHeight: 520 });
+  });
+
+  // Open Settings focused on a specific template (from Review → "Add to
+  // Template Manager"), so its sample loads in the editor preview automatically.
+  ipcMain.on('open-settings-window-at-template', (_e, templateId) => {
+    if (!authModule.hasRole('admin')) return;
+    const alreadyOpen = !!windows['settings'];
+    pendingSettingsTemplateId = templateId;
+    createWindow('settings', { width: 1100, height: 680, minWidth: 900, minHeight: 520 });
+    if (alreadyOpen) {
+      windows['settings'].webContents.send('navigate-to-template', templateId);
+      pendingSettingsTemplateId = null;
+    }
+  });
+
+  ipcMain.handle('get-settings-template-target', () => {
+    const id = pendingSettingsTemplateId;
+    pendingSettingsTemplateId = null;
+    return id;
   });
   ipcMain.on('open-search-window', () => {
     if (!authModule.getCurrentUser()) return;

@@ -36,6 +36,9 @@ contextBridge.exposeInMainWorld('docusnap', {
   openReviewWindow:    ()       => ipcRenderer.send('open-review-window'),
   openReviewWindowAt:  (docId)  => ipcRenderer.send('open-review-window-at', docId),
   openSettingsWindow:  ()       => ipcRenderer.send('open-settings-window'),
+  openSettingsWindowAtTemplate: (templateId) => ipcRenderer.send('open-settings-window-at-template', templateId),
+  getSettingsTemplateTarget:    ()           => ipcRenderer.invoke('get-settings-template-target'),
+  onNavigateToTemplate:         (cb)         => ipcRenderer.on('navigate-to-template', (_e, id) => cb(id)),
   openSearchWindow:    ()       => ipcRenderer.send('open-search-window'),
   getReviewTarget:     ()       => ipcRenderer.invoke('get-review-target'),
   onNavigateToDoc:     (cb)     => ipcRenderer.on('navigate-to-doc', (_e, id) => cb(id)),
@@ -71,6 +74,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   restoreDeferred:             (id)      => ipcRenderer.invoke('restore-deferred', id),
   deleteDocument:              (id, fp)  => ipcRenderer.invoke('delete-document', id, fp),
   reprocessDocument:           (data)    => ipcRenderer.invoke('reprocess-document', data),
+  promoteToTemplate:           (data)    => ipcRenderer.invoke('promote-to-template', data),
   notifyReviewComplete:        ()        => ipcRenderer.send('notify-review-complete'),
 
   // ── Zone OCR & learning ──────────────────────────────────────────────────────

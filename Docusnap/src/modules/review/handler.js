@@ -60,6 +60,7 @@ function register(ctx) {
   const documents  = require('../../../database/modules/documents');
   const learning   = require('../../../database/modules/learning');
   const doctypes   = require('../../../database/modules/document_types');
+  const templates  = require('../../../database/modules/templates');
   const { requireRole, requireLogin, hasRole } = require('../auth/handler');
 
   // ── Queue queries ───────────────────────────────────────────────────────────
@@ -269,15 +270,6 @@ function register(ctx) {
       taught_fields || []
     );
 
-    // Create or update template
-    try {
-      await _upsertTemplate(ctx, db, document_id, {
-        allValues, document_type_slug, supplier_name, dtInfo,
-      });
-    } catch (e) {
-      console.warn('[confirm-review] template upsert failed (non-critical):', e.message);
-    }
-
     // Update document record
     documents.confirm(db, document_id, {
       stored_filename: filingResult.filename,
@@ -311,6 +303,40 @@ function register(ctx) {
     return { success: true, ...filingResult };
   });
 
+  // ── Add to Template Manager (explicit promotion) ───────────────────────────
+  // The deliberate escalation path: a user looking at a recurring layout that
+  // keeps misdetecting can promote the current document's reviewed values into
+  // a managed template (creating one, or refreshing an existing one matched by
+  // logo), using the same field-building logic _upsertTemplate provides.
+  // Automatic learning (anchors/hints/corrections via saveCorrections) keeps
+  // working on every confirm regardless.
+  ipcMain.handle('promote-to-template', async (_e, payload) => {
+    requireRole('admin', 'edit');
+    const { document_id, allValues, document_type_slug, supplier_name } = payload || {};
+    if (!document_id || !allValues) {
+      return { success: false, error: 'Missing document or field values' };
+    }
+    const db = getDb();
+    const dtInfo = document_type_slug
+      ? doctypes.getWithFields(db, document_type_slug)
+      : null;
+    try {
+      const result = await _upsertTemplate(ctx, db, document_id, {
+        allValues, document_type_slug, supplier_name, dtInfo,
+      });
+      // Pin the promoted document as the template's sample so the template
+      // editor, opened straight from here, has it loaded in the preview pane
+      // (no second manual browse). This is the doc the admin just curated, so
+      // it is the right representative sample.
+      if (result.templateId) {
+        templates.setSampleDocument(db, result.templateId, document_id);
+      }
+      return { success: true, ...result };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
   ipcMain.on('notify-review-complete', () => {
     if (!hasRole('admin', 'edit')) return;
     const db = getDb();
@@ -331,7 +357,7 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
   const doc = db.prepare(
     'SELECT template_id, logo_phash, keyword_fingerprint FROM documents WHERE id = ?'
   ).get(document_id);
-  if (!doc) return;
+  if (!doc) throw new Error('Document not found');
 
   const logo_phash           = doc.logo_phash || null;
   const keyword_fingerprint  = _parseJson(doc.keyword_fingerprint, []);
@@ -369,6 +395,8 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
       db.prepare('UPDATE documents SET template_id = ? WHERE id = ?').run(templateId, document_id);
     }
     _writeTemplateFile(db, templateId, path, fs, templatesDir());
+    const tmpl = templates.getById(db, templateId);
+    return { created: false, templateId, name: tmpl?.name || null };
   } else {
     // Create new template — name from supplier + doc type
     const typeName  = document_type_slug
@@ -378,7 +406,7 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
       ? `${supplier_name} ${typeName}`
       : `${typeName} Template`;
 
-    const templateId = templates.create(db, {
+    const newTemplateId = templates.create(db, {
       name,
       document_type_slug: document_type_slug || null,
       logo_phash,
@@ -387,8 +415,9 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
     });
 
     // Link document to its new template
-    db.prepare('UPDATE documents SET template_id = ? WHERE id = ?').run(templateId, document_id);
-    _writeTemplateFile(db, templateId, path, fs, templatesDir());
+    db.prepare('UPDATE documents SET template_id = ? WHERE id = ?').run(newTemplateId, document_id);
+    _writeTemplateFile(db, newTemplateId, path, fs, templatesDir());
+    return { created: true, templateId: newTemplateId, name };
   }
 }
 

@@ -2216,4 +2216,21 @@ loadDocTypes();
 loadFieldsTabTypes();
 loadUsers();
 loadAuditLog();
-loadTemplates();
+
+// Open the editor on a specific template when launched from Review's "Add to
+// Template Manager" — switch to the Templates tab and select it (loads its
+// sample preview via the normal selectTemplate path). Handles both a fresh
+// window (pull the target after the list loads) and an already-open one.
+function openTemplateInEditor(id) {
+  if (!id) return;
+  const tab = document.querySelector('.tab[data-tab="templates"]');
+  if (tab) tab.click();
+  selectTemplate(id);
+}
+loadTemplates().then(async () => {
+  try {
+    const targetId = await api.getSettingsTemplateTarget();
+    if (targetId) openTemplateInEditor(targetId);
+  } catch (e) { console.warn('settings template target failed:', e.message); }
+});
+api.onNavigateToTemplate(openTemplateInEditor);

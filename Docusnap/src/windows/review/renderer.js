@@ -1033,6 +1033,47 @@ document.getElementById('btn-reprocess').addEventListener('click', async () => {
   }
 });
 
+// ── Add to Template Manager (explicit promotion) ──────────────────────────────
+// Templates are no longer auto-created/refreshed on every confirm — this is
+// the deliberate escalation path for a recurring layout that keeps
+// misdetecting. It snapshots the currently reviewed/edited field values
+// (same shape confirm-review sends) into a managed template, independent of
+// confirming this document. Automatic learning (anchors/hints/corrections)
+// is unaffected and keeps happening on every confirm regardless.
+document.getElementById('btn-add-template').addEventListener('click', async () => {
+  if (!currentDoc) return;
+  const btn = document.getElementById('btn-add-template');
+
+  const allValues = {};
+  document.querySelectorAll('#fields-scroll .field-input').forEach(input => {
+    allValues[input.dataset.key] = input.value;
+  });
+
+  const supplierInput = document.querySelector('.field-input[data-key="supplier_name"]');
+  const supplierName  = supplierInput?.value?.trim() || currentDoc?.supplier_name || null;
+  const docTypeSlug   = selectedTypeSlug || currentDoc?.type_slug || currentDoc?.document_type_slug || null;
+
+  btn.disabled = true;
+  const result = await window.docusnap.promoteToTemplate({
+    document_id:        currentDoc.id,
+    allValues,
+    document_type_slug: docTypeSlug,
+    supplier_name:      supplierName,
+  });
+  btn.disabled = false;
+
+  if (result?.success) {
+    const verb = result.created ? 'Created' : 'Updated';
+    showToast(`${verb} managed template "${result.name}" — opening editor…`, 'ok');
+    // Hand off to the template editor with this document already pinned as the
+    // sample (set server-side in promote-to-template), so its preview loads
+    // automatically — no second manual browse for the same document.
+    if (result.templateId) window.docusnap.openSettingsWindowAtTemplate(result.templateId);
+  } else {
+    showToast(result?.error || 'Could not save template', 'err');
+  }
+});
+
 // ── Reprocess All (with cooperative Stop) ─────────────────────────────────────
 let _batchActive  = false;
 let _batchStopped = false;
