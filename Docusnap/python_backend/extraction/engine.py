@@ -130,6 +130,10 @@ class ExtractionEngine:
         """
         results      = {}
         field_keys   = [f["key"] for f in field_defs]
+        # Date-typed fields get a merge guard: a candidate that doesn't parse as
+        # a real date must never displace one that does (e.g. a mis-cropped
+        # taught anchor returning a bare "March" overriding a valid full date).
+        date_field_keys = {f["key"] for f in field_defs if f.get("type") == "date"}
         matched_tmpl = None
         logo_phash   = None
         kw_fingerprint = []
@@ -238,6 +242,10 @@ class ExtractionEngine:
                 if decision == "take":
                     results[key] = data
                     continue
+            if (key in date_field_keys and existing
+                    and validator.parse_date(existing.get("value")) is not None
+                    and validator.parse_date(data.get("value")) is None):
+                continue  # don't let an unparseable date replace a valid one
             if not existing or data.get("confidence", 0) > existing.get("confidence", 0):
                 results[key] = data
         found = len([v for v in results.values() if v.get("value")])
@@ -266,6 +274,13 @@ class ExtractionEngine:
                     if decision == "take":
                         results[key] = data
                         continue
+                # Date guard: an unparseable taught date (e.g. a mis-cropped
+                # anchor_crop "March") must not override a valid existing date,
+                # even via the is_taught_override "ground truth" path below.
+                if (key in date_field_keys and existing
+                        and validator.parse_date(existing.get("value")) is not None
+                        and validator.parse_date(data.get("value")) is None):
+                    continue
                 # A user-taught anchor (drawn with the ⊕ tool, resolved via
                 # crop+re-OCR at the exact saved coordinates) is ground truth for
                 # that spot on the page — it overrides a generic keyword/regex
