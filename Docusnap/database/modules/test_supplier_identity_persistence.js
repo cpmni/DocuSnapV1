@@ -118,6 +118,22 @@ function main() {
     if (!check(`${JSON.stringify(good)} accepted`, f(good))) failures++;
   }
 
+  // ── 5: supplier-name normalisation unifies the learning corpus ───────────
+  section('normalizeSupplierName collapses edge quote noise so corrections key to ONE bucket');
+  const n = learning.normalizeSupplierName;
+  if (!check('smart-quote "‘Cloud VPS" normalises to "Cloud VPS"', n('‘Cloud VPS') === 'Cloud VPS')) failures++;
+  if (!check('replacement-char "�Cloud VPS" normalises to "Cloud VPS"', n('�Cloud VPS') === 'Cloud VPS')) failures++;
+  if (!check('trailing "." preserved ("Polychemtex Inc.")', n('Polychemtex Inc.') === 'Polychemtex Inc.')) failures++;
+  // A correction confirmed under the smart-quote spelling must persist under the
+  // canonical key, so it merges with the rest of the supplier's corpus.
+  db = freshDb();
+  learning.saveCorrections(
+    db, 5, { invoice_number: { original_value: 'x', corrected_value: 'INV-9' } },
+    '‘Cloud VPS', 'Invoice', { supplier_name: '‘Cloud VPS', invoice_number: 'INV-9' });
+  const keyed = db.prepare(`SELECT DISTINCT supplier_name FROM supplier_hints`).all().map(r => r.supplier_name);
+  if (!check(`hints keyed under canonical "Cloud VPS" (got ${JSON.stringify(keyed)})`,
+             keyed.includes('Cloud VPS') && !keyed.includes('‘Cloud VPS'))) failures++;
+  db.close();
   console.log();
   if (failures) {
     console.log(`${failures} check(s) failed — supplier identity persistence guard regressed.`);

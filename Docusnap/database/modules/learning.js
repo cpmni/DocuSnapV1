@@ -25,6 +25,20 @@ function deleteExtractions(db, document_id) {
 
 // ── Corrections & hints ───────────────────────────────────────────────────────
 
+// Strip leading/trailing quote/apostrophe/replacement-char noise from a supplier
+// name so the same real supplier always keys to ONE learning bucket. JS mirror
+// of keyword.normalize_supplier_name in the Python extractor: a stray OCR smart
+// quote ("‘Cloud VPS") otherwise splits a supplier's corrections/hints/anchors
+// across two spellings, so neither accumulates and reprocess never improves.
+// Only edge noise is removed (interior chars and a legitimate trailing "." like
+// "Inc." are preserved); falls back to the trimmed original if it would empty.
+function normalizeSupplierName(name) {
+  if (name == null) return name;
+  const s = String(name).trim();
+  const cleaned = s.replace(/^[\s'‘’“”‛′‵`�]+|[\s'‘’“”‛′‵`�]+$/g, '');
+  return cleaned || s;
+}
+
 // Is `value` plausible as a SUPPLIER IDENTITY (not a generic field value)?
 // JS mirror of keyword._is_plausible_supplier_name in the Python extractor:
 // a bare 2-3 char all-caps no-digit token ("IN"/"INV" from "INVOICE") is a
@@ -53,9 +67,9 @@ function saveCorrections(db, document_id, corrections,
   // none ever accumulating enough usage_count to be applied — while templates
   // converged correctly on the corrected name. Preferring the confirmed value
   // keeps both corpora keyed to the same identity going forward.
-  const effectiveSupplier = (allValues && String(allValues.supplier_name || '').trim())
-    || supplier_name
-    || '__global__';
+  const effectiveSupplier = normalizeSupplierName(
+    (allValues && String(allValues.supplier_name || '').trim()) || supplier_name || '__global__'
+  );
   const taught = new Set(taughtFields);
 
   const insertCorr = db.prepare(`
@@ -583,7 +597,7 @@ function setSetting(db, key, value) {
 
 module.exports = {
   insertExtractions, deleteExtractions,
-  saveCorrections, getHints, isPlausibleSupplierName,
+  saveCorrections, getHints, isPlausibleSupplierName, normalizeSupplierName,
   saveAnchor, clearAnchors, getAllAnchors,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
   getFieldFormats,

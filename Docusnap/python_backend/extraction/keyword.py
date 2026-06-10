@@ -334,6 +334,31 @@ def _is_plausible_supplier_name(value: str | None) -> bool:
     return True
 
 
+# Leading/trailing noise that OCR commonly prepends to a supplier name read off
+# a letterhead/logo — straight + smart quotes, backticks, and the U+FFFD
+# replacement char left by a decode failure. A single stray "‘" turned
+# "Cloud VPS" into "‘Cloud VPS", splitting that supplier's learning corpus in
+# two so confirmed hints/anchors/format under one spelling never applied to
+# documents resolved under the other.
+_SUPPLIER_EDGE_NOISE = "'‘’“”‛′‵`� \t\r\n"
+
+
+def normalize_supplier_name(name: str | None) -> str | None:
+    """Strip edge quote/apostrophe/replacement-char noise from a supplier name.
+
+    Reusable identity normaliser so the same real supplier always keys to one
+    learning bucket. Only EDGE noise is removed — interior characters and
+    legitimate trailing punctuation that is already part of learned keys (e.g.
+    the '.' in "Polychemtex Inc.") are preserved. Falls back to the trimmed
+    original if stripping would empty the string.
+    """
+    if name is None:
+        return None
+    s = str(name).strip()
+    cleaned = s.strip(_SUPPLIER_EDGE_NOISE).strip()
+    return cleaned or s
+
+
 def _validate(value: str, patterns: list[str]) -> bool:
     """Check if value matches any of the validation patterns."""
     for p in patterns:

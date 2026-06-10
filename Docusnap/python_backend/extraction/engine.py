@@ -323,6 +323,17 @@ class ExtractionEngine:
                 )
             supplier_name = resolved_supplier
 
+        # Normalise supplier identity to one canonical form before it drives any
+        # downstream supplier-scoped lookup (hints, anchors, format anomaly) or
+        # gets persisted: OCR edge noise like a leading smart quote ("‘Cloud VPS")
+        # otherwise splits the learning corpus so prior corrections never apply.
+        if supplier_name:
+            normalised = keyword.normalize_supplier_name(supplier_name)
+            if normalised != supplier_name:
+                supplier_name = normalised
+                if results.get('supplier_name'):
+                    results['supplier_name'] = {**results['supplier_name'], 'value': supplier_name}
+
         # ── Stage 2.5a: Supplier name text-scan fallback ─────────────────────────
         # If logo match failed and keyword didn't find supplier_name, scan the
         # top of the OCR text for any known supplier name from confirmed hints.

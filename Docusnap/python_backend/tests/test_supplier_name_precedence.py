@@ -274,6 +274,27 @@ def main():
         if not check(f'{good!r} accepted as a plausible supplier identity', plausible(good)):
             failures += 1
 
+    # ── 8: supplier-name normalisation (edge quote/apostrophe noise) ─────────
+    section('normalize_supplier_name collapses OCR edge noise to one canonical key')
+    # Labels kept ASCII-only — the cp1252 dev console can't encode U+FFFD; the
+    # actual noise characters are exercised in the assertion arguments below.
+    from extraction.keyword import normalize_supplier_name as norm
+    if not check('leading smart quote (U+2018) stripped -> "Cloud VPS"',
+                 norm('‘Cloud VPS') == 'Cloud VPS'):
+        failures += 1
+    if not check('replacement char (U+FFFD) stripped -> "Cloud VPS"',
+                 norm('�Cloud VPS') == 'Cloud VPS'):
+        failures += 1
+    if not check('straight apostrophe + trailing quote stripped -> "Cloud VPS"',
+                 norm("'Cloud VPS'") == 'Cloud VPS'):
+        failures += 1
+    if not check('legitimate trailing "." preserved: "Polychemtex Inc." unchanged',
+                 norm('Polychemtex Inc.') == 'Polychemtex Inc.'):
+        failures += 1
+    if not check('interior characters untouched: "Smith & Sons" unchanged',
+                 norm('Smith & Sons') == 'Smith & Sons'):
+        failures += 1
+
     print()
     if failures:
         print(f"{failures} check(s) failed — supplier_name precedence regressed.")
