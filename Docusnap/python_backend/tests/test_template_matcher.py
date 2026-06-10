@@ -235,6 +235,66 @@ def main():
                  genuine_match and genuine_match['confidence'] == 100):
         failures += 1
 
+    # ── ocr_auto_enabled / ocr_auto_params must not influence matching ──────
+    # Per-template OCR auto-processing rules (templates.ocr_auto_enabled /
+    # ocr_auto_params, see database/modules/templates.js setOcrAutoParams) are
+    # applied AFTER a template has already been selected on identity grounds
+    # (logo/keyword) — see processing/handler.js reprocess-document. Stage 0
+    # itself never reads these fields. These checks pin that down: two
+    # candidates that are otherwise identical (same logo distance / same
+    # keyword score -> a tie) must resolve to the same winner regardless of
+    # which one (if either) has OCR auto-processing enabled.
+    section('identify_template: ocr_auto_enabled/ocr_auto_params do not affect tie-break or ordering')
+    SAME_HASH = 'c0ffee00c0ffee00'
+    TPL_A = {'id': 20, 'name': 'Sibling A', 'logo_phash': SAME_HASH, 'keyword_fingerprint': []}
+    TPL_B = {'id': 21, 'name': 'Sibling B', 'logo_phash': SAME_HASH, 'keyword_fingerprint': []}
+    tie_page = FakePage(phash=SAME_HASH)
+    AUTO_PARAMS = {'grayscale': True, 'threshold': True, 'threshold_level': 140, 'noise_level': 2}
+
+    neither_auto = with_stub_hash(
+        lambda: template_matcher.identify_template(tie_page, "irrelevant text", [TPL_A, TPL_B]))
+    if not check('baseline tie (identical logo hash, neither has OCR auto) -> first candidate (A) wins',
+                 neither_auto and neither_auto['template']['id'] == 20):
+        failures += 1
+
+    loser_has_auto = with_stub_hash(lambda: template_matcher.identify_template(
+        tie_page, "irrelevant text",
+        [TPL_A, {**TPL_B, 'ocr_auto_enabled': 1, 'ocr_auto_params': AUTO_PARAMS}]))
+    if not check('giving the tie-loser (B) OCR auto-processing does not flip the winner to B',
+                 loser_has_auto and loser_has_auto['template']['id'] == 20):
+        failures += 1
+
+    winner_has_auto = with_stub_hash(lambda: template_matcher.identify_template(
+        tie_page, "irrelevant text",
+        [{**TPL_A, 'ocr_auto_enabled': 1, 'ocr_auto_params': AUTO_PARAMS}, TPL_B]))
+    if not check('giving the tie-winner (A) OCR auto-processing does not demote it either',
+                 winner_has_auto and winner_has_auto['template']['id'] == 20):
+        failures += 1
+
+    both_auto = with_stub_hash(lambda: template_matcher.identify_template(
+        tie_page, "irrelevant text",
+        [{**TPL_A, 'ocr_auto_enabled': 1, 'ocr_auto_params': AUTO_PARAMS},
+         {**TPL_B, 'ocr_auto_enabled': 1, 'ocr_auto_params': AUTO_PARAMS}]))
+    if not check('both candidates having OCR auto-processing still resolves the same tie the same way',
+                 both_auto and both_auto['template']['id'] == 20):
+        failures += 1
+
+    # Same check via the keyword-fallback path (separate tie-break: score > best_score)
+    KW_A = {'id': 22, 'name': 'KW Sibling A', 'logo_phash': None, 'keyword_fingerprint': ['ZAPHOD', 'BEEBLEBROX']}
+    KW_B = {'id': 23, 'name': 'KW Sibling B', 'logo_phash': None, 'keyword_fingerprint': ['ZAPHOD', 'BEEBLEBROX']}
+    kw_text = "ZAPHOD BEEBLEBROX\nInvoice\nTotal Due 1.00"
+
+    kw_neither = template_matcher.identify_template(None, kw_text, [KW_A, KW_B])
+    if not check('keyword tie (identical fingerprints, neither has OCR auto) -> first candidate wins',
+                 kw_neither and kw_neither['template']['id'] == 22):
+        failures += 1
+
+    kw_loser_auto = template_matcher.identify_template(
+        None, kw_text, [KW_A, {**KW_B, 'ocr_auto_enabled': 1, 'ocr_auto_params': AUTO_PARAMS}])
+    if not check('keyword tie: OCR auto-processing on the loser does not flip the winner',
+                 kw_loser_auto and kw_loser_auto['template']['id'] == 22):
+        failures += 1
+
     print()
     if failures:
         print(f"{failures} check(s) failed — template_matcher Stage 0 identification regressed.")

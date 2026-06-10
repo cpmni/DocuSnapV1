@@ -728,8 +728,14 @@ function makeTplRow(t, isChild) {
     (isChild ? ' tpl-child' : '') +
     (selectedTemplate && selectedTemplate.id === t.id ? ' active' : '');
   row.dataset.id = t.id;
+  // Per-template (not per-group) scan-friendly indicator — mirrors the
+  // detail-panel badge in renderOcrAutoStatus, so siblings in the same group
+  // can be told apart at a glance without clicking into each one.
+  const ocrAutoIcon = t.ocr_auto_enabled
+    ? '<span class="tpl-row-ocr-icon" title="OCR auto-processing enabled">&#9889;</span>'
+    : '';
   row.innerHTML = `
-    <span class="tpl-row-name">${escHtml(t.name)}</span>
+    <span class="tpl-row-name">${escHtml(t.name)}${ocrAutoIcon}</span>
     <span class="tpl-row-meta">${escHtml(t.document_type_slug || '—')} · confirmed ${t.confirmed_count}× · ${mappingCount} mapping${mappingCount === 1 ? '' : 's'}</span>
   `;
   row.addEventListener('click', () => selectTemplate(t.id));
