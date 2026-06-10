@@ -1020,26 +1020,27 @@ async function selectTemplate(id) {
 
 function renderDetectionMethod(detail) {
   const el = document.getElementById('tpl-detection-method');
+  if (!el) return;
   el.innerHTML = '';
 
-  const hasLogo = !!detail.logo_phash;
-  const hasKw   = Array.isArray(detail.keyword_fingerprint) && detail.keyword_fingerprint.length > 0;
+  const hasLogo  = !!detail.logo_phash;
+  const hasKw    = Array.isArray(detail.keyword_fingerprint) && detail.keyword_fingerprint.length > 0;
   const mappingN = (detail.field_mappings || []).filter(m => m.enabled).length;
 
-  let label, color;
-  if (hasLogo && hasKw)      { label = 'Logo & keyword fingerprint'; color = 'var(--ok)'; }
-  else if (hasLogo)          { label = 'Logo fingerprint';           color = 'var(--accent2)'; }
-  else if (hasKw)            { label = 'Keyword fingerprint';        color = 'var(--accent2)'; }
-  else                       { label = 'Not yet learned';            color = 'var(--warn)'; }
+  let label, cls;
+  if (hasLogo && hasKw)  { label = 'Logo & keyword fingerprint'; cls = 'ok'; }
+  else if (hasLogo)      { label = 'Logo fingerprint';           cls = 'info'; }
+  else if (hasKw)        { label = 'Keyword fingerprint';        cls = 'info'; }
+  else                   { label = 'Not yet learned';            cls = 'warn'; }
 
   const pill = (text, c) => {
     const s = document.createElement('span');
-    s.style.cssText = `font-size:10px; font-family:var(--mono); padding:2px 7px; border-radius:4px; border:1px solid ${c}; color:${c}; white-space:nowrap;`;
+    s.className   = `tpl-method-pill ${c}`;
     s.textContent = text;
     return s;
   };
-  el.appendChild(pill(label, color));
-  if (mappingN > 0) el.appendChild(pill(`+ ${mappingN} admin mapping${mappingN === 1 ? '' : 's'}`, 'var(--accent2)'));
+  el.appendChild(pill(label, cls));
+  if (mappingN > 0) el.appendChild(pill(`+ ${mappingN} admin mapping${mappingN === 1 ? '' : 's'}`, 'info'));
 }
 
 async function loadSampleCandidates(detail) {

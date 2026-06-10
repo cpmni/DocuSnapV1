@@ -69,6 +69,8 @@
     .section { margin-bottom:28px; }
     .section-title { font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); margin-bottom:10px; }
     .section-desc { font-size:12px; color:var(--muted); line-height:1.6; margin-bottom:10px; }
+    /* Divider between adjacent sections within a panel tab (not template dock — that has its own rule) */
+    .panel > .section + .section { border-top:1px solid var(--border); margin-top:-14px; padding-top:14px; }
     .row-flex { display:flex; gap:8px; align-items:center; }
     .path-input {
       flex:1; background:var(--bg); border:1px solid var(--border2);
@@ -257,6 +259,13 @@
     .tpl-group-node.collapsed .tpl-group-arrow { transform:rotate(-90deg); }
     .tpl-group-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .tpl-group-badge { flex-shrink:0; color:var(--muted); font-size:10px; font-weight:400; font-family:var(--mono); }
+    .tpl-method-pill {
+      font-size:10px; font-family:var(--mono); padding:2px 8px;
+      border-radius:4px; border:1px solid currentColor; white-space:nowrap;
+    }
+    .tpl-method-pill.ok   { color:var(--ok); }
+    .tpl-method-pill.info { color:var(--accent2); }
+    .tpl-method-pill.warn { color:var(--warn); }
     .tpl-group-children { padding-left:8px; border-left:2px solid var(--border2); margin:4px 0 0 14px; }
     .tpl-group-node.collapsed .tpl-group-children { display:none; }
     .tpl-child { margin-bottom:4px; }
@@ -288,6 +297,11 @@
     .mapping-status.ok   { background:var(--ok-bg);   color:var(--ok);   border-color:var(--ok-border); }
     .mapping-status.warn { background:var(--warn-bg); color:var(--warn); }
     .mapping-status.err  { background:var(--err-bg);  color:var(--err); }
+    /* Saved Mappings: widen last-test column so values are readable */
+    #tpl-mappings-table th:nth-child(5),
+    #tpl-mappings-table td:nth-child(5) { min-width:170px; }
+    /* Visual dividers between dock sections */
+    .tpl-dock .section { border-top:1px solid var(--border); padding-top:14px; margin-top:0; }
 
     ::-webkit-scrollbar { width:5px; }
     ::-webkit-scrollbar-thumb { background:var(--border2); border-radius:3px; }
@@ -326,7 +340,7 @@
 
       <div class="section">
         <div class="section-title">Processed Scans Folder</div>
-        <p class="section-desc">Source files are moved here after processing — acts as a backup archive of all scans. Leave blank to keep files in place.</p>
+        <p class="section-desc">Source files are moved here after processing. Leave blank to keep originals in place.</p>
         <div class="row-flex">
           <input type="text" id="processed-folder-path" class="path-input" readonly placeholder="No folder selected (files stay in source)">
           <button class="btn primary" id="btn-pick-processed">Browse…</button>
@@ -338,11 +352,11 @@
 
       <div class="section">
         <div class="section-title">Watch Folder</div>
-        <p class="section-desc">Automatically import new scans dropped into this folder — handy for network scanners. A file is imported once it has stopped changing for 30 seconds, so partially-copied scans are never processed.</p>
+        <p class="section-desc">Auto-imports scans dropped here. Files must be stable for 30 seconds before processing — prevents partial-transfer issues with network scanners.</p>
         <div class="threshold-row">
           <div>
             <div class="threshold-label">Enable watch-folder monitoring</div>
-            <div class="threshold-sub">Checks the folder periodically and imports stable files automatically</div>
+            <div class="threshold-sub">Polls for new files and imports stable ones automatically</div>
           </div>
           <label class="toggle">
             <input type="checkbox" id="watch-folder-toggle">
@@ -492,18 +506,9 @@
       <div class="section">
         <div class="section-title">Always Made Windows-Safe</div>
         <p class="section-desc">
-          Whatever pattern you choose, DocuSnap automatically makes the resulting filename
-          safe for Windows before it's ever written to disk — this happens in the background
-          for every committed document, not just here in the preview:
-          characters Windows forbids
-          (<span class="field-key">&lt; &gt; : " / \ | ? *</span>) are removed,
-          trailing spaces and periods are trimmed, names Windows reserves for devices
-          (<span class="field-key">CON</span>, <span class="field-key">PRN</span>,
-          <span class="field-key">NUL</span>, <span class="field-key">COM1</span>, …) are
-          defused, and duplicate filenames still get
-          <span class="field-key">-DUPLICATE</span> / <span class="field-key">-DUPLICATE-2</span>
-          suffixes as before. If sanitising ever leaves nothing usable, DocuSnap falls back
-          to the default pattern automatically.
+          Forbidden characters (<span class="field-key">&lt; &gt; : " / \ | ? *</span>) are stripped,
+          reserved device names are defused, and duplicates get a
+          <span class="field-key">-DUPLICATE</span> suffix. Falls back to the default pattern if nothing usable remains.
         </p>
       </div>
 
@@ -524,13 +529,10 @@
       <div class="section">
         <div class="section-title">Template Viewer &amp; Anchor Mapping</div>
         <p class="section-desc">
-          Inspect stored templates, pin a representative sample document, and review the
-          anchor → target zone mappings used to extract fields from it. Templates with no
-          mappings keep using the existing keyword/anchor pipeline exactly as before —
-          mappings are an optional, additive optimisation layered on top per supplier layout.
+          Inspect templates and manage anchor → target zone field mappings. Templates with no mappings continue using the standard extraction pipeline — mappings are optional.
         </p>
         <p class="section-desc" style="border-left:2px solid var(--warn); padding-left:8px; color:var(--warn); margin-top:6px;">
-          Advanced tool: only use this editor when initial learning or preview-window drawn fields are repeatedly failing for the same template family.
+          Advanced: use only when standard extraction is repeatedly failing for a supplier layout.
         </p>
       </div>
       <div id="tpl-layout">
@@ -580,11 +582,11 @@
                 <div id="tpl-doc-viewer">
                   <span id="tpl-doc-placeholder">No sample document pinned for this template yet — pick one above.</span>
                   <div id="tpl-img-wrap" style="display:none">
-                    <img id="tpl-img" alt="Template sample preview">
+                    <img id="tpl-img" alt="Template sample preview" draggable="false">
                     <canvas id="tpl-overlay-canvas"></canvas>
                   </div>
                 </div>
-                <p class="section-desc" style="margin:6px 0 0;">Mouse wheel or +/− to zoom, click-drag to pan. While "Draw Anchor"/"Draw Target" is active, click-drag draws a box instead.</p>
+                <p class="section-desc" style="margin:6px 0 0;">Wheel / +− to zoom · drag to pan. In draw mode, drag draws a zone.</p>
               </div>
 
               <div id="tpl-dock">
@@ -623,25 +625,25 @@
                 <div class="form-group" style="margin-bottom:6px;">
                   <label>Sample document</label>
                   <div class="row-flex" style="gap:8px; align-items:center;">
-                    <select id="tpl-sample-select" class="field-select" style="flex:1;"></select>
-                    <button class="btn" id="tpl-btn-import-sample">Import Sample File…</button>
+                    <select id="tpl-sample-select" class="field-select" style="flex:1;" title="Choose sample document for this template"></select>
+                    <button class="btn" id="tpl-btn-import-sample" title="Import a PDF, PNG or JPEG as a sample document">Import Sample…</button>
                   </div>
-                  <span class="section-desc" style="display:block; margin:4px 0 0;">A sample is required before anchor/target mapping can be configured — new templates have no confirmed documents yet, so attach any representative file (PDF, PNG or JPEG) directly.</span>
+                  <span class="section-desc" style="display:block; margin:4px 0 0;">Required for anchor/target mapping. Attach any representative PDF, PNG or JPEG.</span>
                   <span id="tpl-sample-msg" class="section-desc" style="display:block; margin:4px 0 0;"></span>
                 </div>
 
             <div class="section" style="margin-top:14px;">
               <div class="section-title">Map a Field</div>
-              <p class="section-desc">Pick a field, then draw its anchor (the printed label, e.g. "Invoice No:") and its target zone (where the value sits relative to that label) directly on the preview above. Saved mappings are layered on top of — not instead of — the existing keyword/anchor pipeline: if the anchor can't be found on a future document, extraction simply falls back to current behaviour.</p>
+              <p class="section-desc">Draw an anchor label and target zone on the preview. Falls back to standard extraction if the anchor isn't found.</p>
 
               <div class="row-flex" style="flex-wrap:wrap; gap:16px; align-items:flex-end;">
                 <div class="form-group">
                   <label>Field</label>
-                  <select id="tpl-map-field-select" class="field-select" style="min-width:190px;"></select>
+                  <select id="tpl-map-field-select" class="field-select" style="min-width:190px;" title="Choose the field to map"></select>
                 </div>
                 <div class="form-group" style="flex-direction:row; gap:8px;">
-                  <button class="btn" id="tpl-btn-draw-anchor">Draw Anchor</button>
-                  <button class="btn" id="tpl-btn-draw-target">Draw Target</button>
+                  <button class="btn" id="tpl-btn-draw-anchor" title="Draw a box around the label text on the document (e.g. 'Invoice No:')">Draw Anchor</button>
+                  <button class="btn" id="tpl-btn-draw-target" title="Draw a box around where the value appears">Draw Target</button>
                 </div>
                 <div class="form-group" style="flex-direction:row; gap:8px;">
                   <span id="tpl-anchor-status" class="mapping-status">Anchor: not drawn</span>
@@ -651,12 +653,12 @@
 
               <div class="row-flex" style="flex-wrap:wrap; gap:16px; margin-top:12px; align-items:flex-end;">
                 <div class="form-group">
-                  <label>Anchor label text</label>
-                  <input type="text" id="tpl-map-anchor-text" placeholder="auto-detected from drawn box" style="width:220px;">
+                  <label>Anchor text</label>
+                  <input type="text" id="tpl-map-anchor-text" placeholder="auto-detected" style="width:220px;" title="Label text to find on the document — auto-filled from drawn box">
                 </div>
                 <div class="form-group">
                   <label>OCR type</label>
-                  <select id="tpl-map-ocr-type" class="field-select">
+                  <select id="tpl-map-ocr-type" class="field-select" title="Expected value format — affects post-processing">
                     <option value="text">Text</option>
                     <option value="number">Number</option>
                     <option value="date">Date</option>
@@ -664,9 +666,9 @@
                   </select>
                 </div>
                 <div class="form-group">
-                  <label>Search expansion</label>
+                  <label>Expansion</label>
                   <div class="conf-row">
-                    <input type="range" class="conf-slider" id="tpl-map-expansion" min="0" max="20" value="4">
+                    <input type="range" class="conf-slider" id="tpl-map-expansion" min="0" max="20" value="4" title="Extra margin added around the target zone when searching">
                     <span class="conf-val" id="tpl-map-expansion-val">4%</span>
                   </div>
                 </div>
@@ -680,29 +682,29 @@
               </div>
 
               <div class="row-flex" style="margin-top:14px; gap:8px; flex-wrap:wrap; row-gap:6px;">
-                <button class="btn primary" id="tpl-btn-save-mapping" disabled>Save Mapping</button>
-                <button class="btn" id="tpl-btn-test-mapping" disabled>Test Extraction</button>
-                <button class="btn danger" id="tpl-btn-delete-mapping" style="display:none;">Delete Mapping</button>
-                <button class="btn" id="tpl-btn-cancel-mapping">Reset</button>
+                <button class="btn primary" id="tpl-btn-save-mapping" disabled title="Save this anchor→target mapping">Save Mapping</button>
+                <button class="btn" id="tpl-btn-test-mapping" disabled title="Run extraction on the sample document using this mapping">Test</button>
+                <button class="btn danger" id="tpl-btn-delete-mapping" style="display:none;" title="Delete this mapping">Delete</button>
+                <button class="btn" id="tpl-btn-cancel-mapping" title="Clear the editor">Reset</button>
                 <span id="tpl-mapping-msg" class="section-desc" style="margin:0;"></span>
               </div>
             </div>
 
             <div class="section" style="margin-top:8px;">
               <div class="section-title">Saved Mappings</div>
-              <p class="section-desc">Click a row to load it into the editor above for review or changes.</p>
-              <table class="fields-table">
+              <p class="section-desc">Click a row to edit.</p>
+              <table class="fields-table" id="tpl-mappings-table">
                 <thead>
                   <tr><th>Field</th><th>Anchor label</th><th>OCR type</th><th>Search expansion</th><th>Last test</th><th>Enabled</th></tr>
                 </thead>
                 <tbody id="tpl-mappings-tbody"></tbody>
               </table>
-              <div id="tpl-mappings-empty" class="section-desc" style="display:none;">No anchor/target mappings defined yet — extraction for this template uses the standard keyword/anchor pipeline unchanged.</div>
+              <div id="tpl-mappings-empty" class="section-desc" style="display:none;">No mappings yet — standard pipeline applies.</div>
             </div>
 
             <div class="section">
               <div class="section-title">Template Selector Anchors</div>
-              <p class="section-desc">Text-rule anchors (label + direction) this template was learned with — used to identify and extract from matching documents. These have no fixed coordinates, so they aren't drawn on the preview above.</p>
+              <p class="section-desc">Learned text anchors used to identify this template — no fixed coordinates, not shown on the preview.</p>
               <table class="fields-table">
                 <thead>
                   <tr><th>Field</th><th>Anchor label</th><th>Direction</th><th>Variable</th></tr>
@@ -723,7 +725,7 @@
 
       <div class="section">
         <div class="section-title">Users</div>
-        <p class="section-desc">Who can sign in to DocuSnap and what they can do. New accounts are created with a one-time temporary password — the new user must choose their own on first sign-in.</p>
+        <p class="section-desc">Who can sign in and what they can do. New accounts get a temporary password; the user sets their own on first sign-in.</p>
         <div id="users-list"></div>
         <div style="margin-top:14px;">
           <button class="btn" id="btn-add-user">+ Add User</button>
