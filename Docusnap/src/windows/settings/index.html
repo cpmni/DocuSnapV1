@@ -773,6 +773,20 @@
           </thead>
           <tbody id="lr-inventory-tbody"></tbody>
         </table>
+
+        <details id="lr-dev-advanced" style="margin-top:18px;">
+          <summary style="cursor:pointer; color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.08em;">Developer reset</summary>
+          <div style="margin-top:10px;">
+            <p class="section-desc" style="border-left:2px solid var(--err); padding-left:8px; color:var(--err);">
+              Destructive developer tool. Permanently wipes ALL learning memory in one action —
+              supplier hints, field anchors, logo fingerprints, corrections, and every managed
+              template (with its fields and mappings). Documents stay, but lose their template link.
+              Core settings are untouched. Use only to reset learned state during development.
+            </p>
+            <button class="btn danger" id="lr-btn-reset-all">Clear ALL learning memory</button>
+            <div id="lr-dev-msg" class="section-desc" style="margin-top:8px;"></div>
+          </div>
+        </details>
       </div>
 
       <div class="section" id="lr-results" style="display:none;">

@@ -2135,6 +2135,35 @@ async function runLearningSearch() {
 }
 
 document.getElementById('lr-inv-refresh').addEventListener('click', loadMemoryInventory);
+
+document.getElementById('lr-btn-reset-all').addEventListener('click', async () => {
+  const devMsg = document.getElementById('lr-dev-msg');
+  const confirmed = await showTypedConfirmDialog({
+    title: 'Clear ALL learning memory — developer reset',
+    warningHtml:
+      'This permanently deletes <strong style="color:var(--text);">all</strong> learning memory: ' +
+      'supplier hints, field anchors, logo fingerprints, corrections, and every managed template ' +
+      '(fields and mappings included). Documents remain but lose their template link; core settings ' +
+      'are untouched. This cannot be undone.',
+    requiredText: 'CLEAR ALL LEARNING',
+    confirmLabel: 'Wipe learning memory',
+  });
+  if (!confirmed) return;
+  try {
+    const c = await api.resetAllLearning();
+    devMsg.style.color = 'var(--muted)';
+    devMsg.textContent =
+      `Cleared — hints ${c.supplier_hints}, anchors ${c.field_anchors}, logos ${c.logo_fingerprints}, ` +
+      `corrections ${c.corrections}, templates ${c.templates} (mappings ${c.template_field_mappings}, ` +
+      `groups ${c.template_groups}); ${c.documents_unlinked} document link(s) cleared.`;
+    await loadMemoryInventory();
+    await runLearningSearch();
+  } catch (e) {
+    devMsg.style.color = 'var(--err)';
+    devMsg.textContent = 'Reset failed: ' + e.message;
+  }
+});
+
 document.getElementById('lr-btn-search').addEventListener('click', runLearningSearch);
 document.getElementById('lr-supplier').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') runLearningSearch();

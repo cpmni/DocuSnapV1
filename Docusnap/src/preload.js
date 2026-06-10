@@ -131,6 +131,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   // ── Learning Recovery (Settings tab) ────────────────────────────────────────
   getLearningRecovery: (params)   => ipcRenderer.invoke('get-learning-recovery', params),
   getMemoryInventory:  ()         => ipcRenderer.invoke('get-memory-inventory'),
+  resetAllLearning:    ()         => ipcRenderer.invoke('reset-all-learning'),
   clearLearningAnchors:(params)   => ipcRenderer.invoke('clear-learning-anchors', params),
   clearLearningHints:  (params)   => ipcRenderer.invoke('clear-learning-hints', params),
   clearLearningCorrections: (params) => ipcRenderer.invoke('clear-learning-corrections', params),

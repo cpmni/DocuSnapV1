@@ -55,6 +55,14 @@ function register(ctx) {
     return learning.getMemoryInventory(getDb());
   });
 
+  // Developer reset — wipe ALL learning state in one transaction (corpora +
+  // learned templates). Admin-gated; the strong typed confirmation lives in the
+  // renderer. Returns per-table deleted counts.
+  ipcMain.handle('reset-all-learning', () => {
+    requireRole('admin');
+    return learning.resetAllLearning(getDb());
+  });
+
   ipcMain.handle('clear-learning-anchors', (_e, params) => {
     requireRole('admin');
     const { supplier_name, document_type } = params || {};

@@ -496,6 +496,34 @@ function getFieldFormats(db) {
     }));
 }
 
+// Developer reset — wipe ALL learning state in a single transaction. Clears the
+// automatic-learning corpora (supplier_hints, field_anchors, logo_fingerprints,
+// corrections) AND the learned/managed template store (templates plus their
+// fields, mappings, and groups), unlinking documents from any removed template
+// (documents.template_id has no cascade). Deliberately leaves intact: the
+// settings table (UI/output-folder/processing-mode — none are learning state),
+// document_types/fields, and the documents + their extractions themselves —
+// only the template_id link is cleared. Idempotent: re-running on a clean DB
+// matches zero rows everywhere. Returns per-table deleted counts so the
+// confirmation can report exactly what was removed.
+function resetAllLearning(db) {
+  const counts = {};
+  const del = (sql) => db.prepare(sql).run().changes;
+  db.transaction(() => {
+    counts.supplier_hints          = del('DELETE FROM supplier_hints');
+    counts.field_anchors           = del('DELETE FROM field_anchors');
+    counts.logo_fingerprints       = del('DELETE FROM logo_fingerprints');
+    counts.corrections             = del('DELETE FROM corrections');
+    counts.documents_unlinked      = db.prepare(
+      'UPDATE documents SET template_id = NULL WHERE template_id IS NOT NULL').run().changes;
+    counts.template_field_mappings = del('DELETE FROM template_field_mappings');
+    counts.template_fields         = del('DELETE FROM template_fields');
+    counts.templates               = del('DELETE FROM templates');
+    counts.template_groups         = del('DELETE FROM template_groups');
+  })();
+  return counts;
+}
+
 // ── Learned-memory inventory (read-only) ─────────────────────────────────────
 // Grouped counts of what the automatic-learning corpora currently hold, keyed
 // by the REAL learning-group identity each table uses — supplier_name +
@@ -559,7 +587,7 @@ module.exports = {
   saveAnchor, clearAnchors, getAllAnchors,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
   getFieldFormats,
-  getRecoverySummary, getRecoveryDetail, getMemoryInventory,
+  getRecoverySummary, getRecoveryDetail, getMemoryInventory, resetAllLearning,
   clearFieldAnchorsForScope, clearSupplierHintsForScope, clearCorrectionsForScope,
   getSetting, setSetting,
 };
