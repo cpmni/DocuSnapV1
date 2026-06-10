@@ -216,6 +216,64 @@ def main():
                  and (r4.get('supplier_name') or {}).get('value') == WRONG_NAME):
         failures += 1
 
+    # ── 5: an implausible template_fixed fragment ("IN") is overridden by a
+    #       plausible read, regardless of the fragment's high confidence ──────
+    section('a plausible read overrides an implausible template_fixed short fragment ("IN") despite higher fixed confidence')
+    IN_TEMPLATE = {
+        'id': 30, 'name': 'IN Invoice', 'document_type_slug': 'invoice',
+        'logo_phash': None, 'keyword_fingerprint': ['CITY', 'OFFICE', 'FACILITIES'],
+        'fields': [
+            {'field_key': 'supplier_name', 'fixed_value': 'IN', 'is_variable': 0,
+             'anchor_label': None, 'direction': 'right'},
+        ],
+        'field_mappings': [],
+    }
+    PLAUSIBLE_ANCHOR = {
+        'supplier_name': {'value': RIGHT_NAME, 'confidence': 30, 'method': 'anchor'},
+    }
+    r5 = run(IN_TEMPLATE, NO_HIT, PLAUSIBLE_ANCHOR)
+    if not check(f'final supplier_name is the plausible read ({RIGHT_NAME!r}), not the implausible "IN" '
+                 f'(template_fixed conf 95 lost to a plausible conf-30 read — plausibility outranks confidence here)',
+                 r5.get('_supplier_name') == RIGHT_NAME
+                 and (r5.get('supplier_name') or {}).get('value') == RIGHT_NAME):
+        failures += 1
+
+    # ── 6: an implausible incumbent no longer BLOCKS Stage 2.5a hint recovery ─
+    section('an implausible "IN" seed no longer blocks Stage 2.5a hint text-scan recovery of the real name')
+    IN_TEMPLATE_SS = {
+        **IN_TEMPLATE, 'id': 31,
+        'keyword_fingerprint': ['SuperStore', 'Invoice', 'Total'],
+    }
+    RECOVERY_OCR = "SuperStore\nInvoice Number: INV-9001\nTotal Due: 12.00"
+    RECOVERY_HINTS = [
+        {'field_key': 'supplier_name', 'hint_value': 'SuperStore', 'usage_count': 6},
+    ]
+    orig_anchor = anchor_module.extract_with_anchors
+    anchor_module.extract_with_anchors = lambda *a, **kw: {}
+    try:
+        eng = ExtractionEngine(mode='smart', emit_fn=lambda *_a: None)
+        r6 = eng.extract(
+            ocr_text=RECOVERY_OCR, page_images=['fake'], filename='ss.pdf',
+            field_defs=FIELD_DEFS, hints=RECOVERY_HINTS, anchors=PLACEHOLDER_ANCHORS,
+            logos=[], templates=[IN_TEMPLATE_SS], document_type='Invoice',
+            document_slug='invoice', supplier_name=None,
+        )
+    finally:
+        anchor_module.extract_with_anchors = orig_anchor
+    if not check('Stage 2.5a recovered the plausible "SuperStore" from confirmed hints despite the "IN" template seed',
+                 r6.get('_supplier_name') == 'SuperStore'):
+        failures += 1
+
+    # ── 7: the plausibility helper itself — shape test, not a stoplist ───────
+    section('supplier-name plausibility helper rejects short structural fragments, accepts real names')
+    from extraction.keyword import _is_plausible_supplier_name as plausible
+    for bad in ('IN', 'INV', 'PO', '', '   '):
+        if not check(f'{bad!r} rejected as an implausible supplier identity', not plausible(bad)):
+            failures += 1
+    for good in ('SuperStore', 'ACME LIMITED', 'Polychemtex Inc.', 'INV-2024-01'):
+        if not check(f'{good!r} accepted as a plausible supplier identity', plausible(good)):
+            failures += 1
+
     print()
     if failures:
         print(f"{failures} check(s) failed — supplier_name precedence regressed.")

@@ -25,10 +25,36 @@ function deleteExtractions(db, document_id) {
 
 // ── Corrections & hints ───────────────────────────────────────────────────────
 
+// Is `value` plausible as a SUPPLIER IDENTITY (not a generic field value)?
+// JS mirror of keyword._is_plausible_supplier_name in the Python extractor:
+// a bare 2-3 char all-caps no-digit token ("IN"/"INV" from "INVOICE") is a
+// document-structure fragment, never a company name. Shape test only — no
+// supplier is hardcoded. Short all-caps brands ("IBM") are flagged here too;
+// callers apply "unless uniquely supported" (we only block the PASSED-THROUGH,
+// un-corrected supplier identity — an explicit user correction still persists).
+function isPlausibleSupplierName(value) {
+  const t = String(value == null ? '' : value).trim().replace(/:+$/, '');
+  if (!t) return false;
+  if (t.length <= 3 && !/\s/.test(t) && t === t.toUpperCase() && !/\d/.test(t)) {
+    return false;
+  }
+  return true;
+}
+
 function saveCorrections(db, document_id, corrections,
                          supplier_name, document_type, allValues, taughtFields = []) {
-  const effectiveSupplier = supplier_name
-    || (allValues && allValues.supplier_name)
+  // The confirmed/edited supplier_name field (allValues.supplier_name) is the
+  // identity the user just reviewed and accepted — the same source
+  // _buildTemplateFields() uses for the template corpus. The `supplier_name`
+  // parameter reflects the document's PRE-CONFIRM extracted identity, which
+  // can differ when the user corrects a misread supplier name in this same
+  // cycle. Preferring the stale value here split learning rows (hints,
+  // corrections, anchors) across multiple spellings of "the same" supplier —
+  // none ever accumulating enough usage_count to be applied — while templates
+  // converged correctly on the corrected name. Preferring the confirmed value
+  // keeps both corpora keyed to the same identity going forward.
+  const effectiveSupplier = (allValues && String(allValues.supplier_name || '').trim())
+    || supplier_name
     || '__global__';
   const taught = new Set(taughtFields);
 
@@ -96,6 +122,18 @@ function saveCorrections(db, document_id, corrections,
     if (allValues) {
       for (const [field_key, val] of Object.entries(allValues)) {
         if (val && String(val).trim() && !corrections[field_key]) {
+          // Supplier-identity guard (scoped to supplier_name only): a
+          // passed-through, un-corrected supplier name that is an implausible
+          // short fragment ("IN"/"INV" seeded by a stale template) must not
+          // become reusable identity memory — that self-hint is exactly what
+          // engine.py's Stage 2.5a text-scan reads back to RE-identify a
+          // supplier, so persisting it re-poisons every future run. An
+          // explicit user correction goes through the corrections loop above
+          // and is preserved as normal (handles legitimately short names the
+          // user actually typed). Other fields are untouched.
+          if (field_key === 'supplier_name' && !isPlausibleSupplierName(val)) {
+            continue;
+          }
           upsertHint.run({
             supplier_name: effectiveSupplier,
             document_type: document_type || null,
@@ -474,7 +512,7 @@ function setSetting(db, key, value) {
 
 module.exports = {
   insertExtractions, deleteExtractions,
-  saveCorrections, getHints,
+  saveCorrections, getHints, isPlausibleSupplierName,
   saveAnchor, clearAnchors, getAllAnchors,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
   getFieldFormats,

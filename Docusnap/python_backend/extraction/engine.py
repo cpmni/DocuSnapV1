@@ -33,6 +33,29 @@ except ImportError:
     LLM_AVAILABLE = False
 
 
+def _supplier_identity_decision(existing: dict | None, candidate: dict | None) -> str | None:
+    """Plausibility-aware merge ruling for the supplier_name field only.
+
+    Returns 'take' (candidate replaces existing), 'keep' (existing wins, ignore
+    candidate), or None (no opinion — fall back to the normal confidence merge).
+
+    A plausible candidate replaces an IMPLAUSIBLE incumbent regardless of
+    confidence — this is what lets a real read of the company name override a
+    stale template_fixed short fragment like "IN" that arrived at confidence 95.
+    Symmetrically, an implausible candidate never displaces a plausible
+    incumbent. When both are plausible (or both implausible — e.g. a genuinely
+    short "IBM" with no plausible alternative), there is no opinion and the
+    caller's confidence comparison decides, so legitimate short names are never
+    hard-banned. Reuses keyword._is_plausible_supplier_name (shape test).
+    """
+    e_ok = keyword._is_plausible_supplier_name((existing or {}).get("value"))
+    c_ok = keyword._is_plausible_supplier_name((candidate or {}).get("value"))
+    if e_ok and not c_ok:
+        return "keep"
+    if c_ok and not e_ok:
+        return "take"
+    return None
+
 
 class ExtractionEngine:
 
@@ -208,6 +231,13 @@ class ExtractionEngine:
         kw_results = keyword.extract_fields(ocr_text, field_keys, self.patterns)
         for key, data in kw_results.items():
             existing = results.get(key)
+            if key == "supplier_name" and existing:
+                decision = _supplier_identity_decision(existing, data)
+                if decision == "keep":
+                    continue
+                if decision == "take":
+                    results[key] = data
+                    continue
             if not existing or data.get("confidence", 0) > existing.get("confidence", 0):
                 results[key] = data
         found = len([v for v in results.values() if v.get("value")])
@@ -223,6 +253,19 @@ class ExtractionEngine:
             )
             for key, data in anchor_results.items():
                 existing = results.get(key)
+                # Supplier identity is plausibility-gated first: a poisoned
+                # anchor_crop carrying an implausible short fragment must not
+                # ride the is_taught_override path to clobber a plausible name,
+                # and a plausible anchor read must rescue an implausible
+                # incumbent regardless of confidence. Both-plausible /
+                # both-implausible falls through to the normal contest below.
+                if key == "supplier_name" and existing:
+                    decision = _supplier_identity_decision(existing, data)
+                    if decision == "keep":
+                        continue
+                    if decision == "take":
+                        results[key] = data
+                        continue
                 # A user-taught anchor (drawn with the ⊕ tool, resolved via
                 # crop+re-OCR at the exact saved coordinates) is ground truth for
                 # that spot on the page — it overrides a generic keyword/regex
@@ -285,7 +328,13 @@ class ExtractionEngine:
         # top of the OCR text for any known supplier name from confirmed hints.
         # This handles suppliers like "SuperStore" whose name appears as plain
         # text rather than an identifiable logo.
-        if not supplier_name and hints:
+        #
+        # Gated on PLAUSIBILITY, not mere presence: a stale template/anchor seed
+        # of an implausible short fragment ("IN") used to count as "already have
+        # a supplier" and skipped this recovery entirely — letting the fragment
+        # win. Now an implausible incumbent is treated like no incumbent, so the
+        # scan can recover the real, plausible name from confirmed hints.
+        if not keyword._is_plausible_supplier_name(supplier_name) and hints:
             ocr_top = ocr_text[:600].lower()
             best_hint = None
             best_usage = 0
@@ -295,6 +344,10 @@ class ExtractionEngine:
                 if (h.get("usage_count") or 0) < 3:
                     continue
                 val = (h.get("hint_value") or "").strip()
+                # Only a PLAUSIBLE hint may replace the incumbent — never swap one
+                # implausible fragment for another.
+                if not keyword._is_plausible_supplier_name(val):
+                    continue
                 if val and val.lower() in ocr_top:
                     if (h.get("usage_count") or 0) > best_usage:
                         best_hint  = val

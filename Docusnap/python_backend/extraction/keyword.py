@@ -307,6 +307,33 @@ def _is_label_line(text: str) -> bool:
     return False
 
 
+def _is_plausible_supplier_name(value: str | None) -> bool:
+    """Is `value` plausible as a SUPPLIER IDENTITY (not a generic field value)?
+
+    A real supplier/company name is essentially never a bare 2-3 character
+    all-caps token with no digits — those ("IN"/"INV" from "INVOICE", "BILL",
+    "PO") are document-structure fragments that label/zone cropping leaves
+    behind, and once one wins it poisons every supplier-keyed lookup. Anything
+    longer, multi-word, mixed-case, or containing a digit is treated as
+    plausible (so "SuperStore", "ACME LIMITED", "Polychemtex Inc." all pass).
+
+    This is deliberately a SHAPE test, not a stoplist — no supplier name is
+    hardcoded. Short all-caps brands ("IBM", "DHL") are flagged here as
+    not-uniquely-plausible BY SHAPE; callers must apply an "unless uniquely
+    supported" rule (override only when a plausible alternative exists; persist
+    only when the user explicitly confirmed it) so legitimate short names are
+    never hard-banned. Mirrored in database/modules/learning.js
+    (isPlausibleSupplierName) for the persistence side.
+    """
+    if not value or not str(value).strip():
+        return False
+    t = str(value).strip().rstrip(":")
+    if (len(t) <= 3 and t.isupper() and " " not in t
+            and not any(c.isdigit() for c in t)):
+        return False
+    return True
+
+
 def _validate(value: str, patterns: list[str]) -> bool:
     """Check if value matches any of the validation patterns."""
     for p in patterns:
