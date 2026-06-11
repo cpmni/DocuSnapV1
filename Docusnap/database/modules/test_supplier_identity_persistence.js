@@ -111,10 +111,12 @@ function main() {
   // ── 4: the helper itself ────────────────────────────────────────────────
   section('isPlausibleSupplierName helper: rejects short fragments, accepts real names');
   const f = learning.isPlausibleSupplierName;
-  for (const bad of ['IN', 'INV', 'PO', '', '   ', null]) {
+  for (const bad of ['IN', 'INV', 'PO', '', '   ', null,
+                     't 38/07', '36552', '12345', '12/345']) {
     if (!check(`${JSON.stringify(bad)} rejected`, !f(bad))) failures++;
   }
-  for (const good of ['SuperStore', 'ACME LIMITED', 'Polychemtex Inc.', 'INV-2024']) {
+  for (const good of ['SuperStore', 'ACME LIMITED', 'Polychemtex Inc.', 'INV-2024',
+                      '3M', 'G2 Environmental', '24/7 Services']) {
     if (!check(`${JSON.stringify(good)} accepted`, f(good))) failures++;
   }
 
@@ -134,6 +136,7 @@ function main() {
   if (!check(`hints keyed under canonical "Cloud VPS" (got ${JSON.stringify(keyed)})`,
              keyed.includes('Cloud VPS') && !keyed.includes('‘Cloud VPS'))) failures++;
   db.close();
+
   console.log();
   if (failures) {
     console.log(`${failures} check(s) failed — supplier identity persistence guard regressed.`);

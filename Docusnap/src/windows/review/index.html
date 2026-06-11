@@ -72,13 +72,13 @@
 
     #queue-list { flex: 1; overflow-y: auto; }
     #queue-empty { display: none; padding: 20px 14px; font-size: 11px; color: var(--ok); text-align: center; }
-    #deferred-footer { display: none; padding: 8px 10px; border-top: 1px solid var(--border); flex-shrink: 0; }
-    #btn-delete-all {
+    #deferred-footer, #review-footer { display: none; padding: 8px 10px; border-top: 1px solid var(--border); flex-shrink: 0; }
+    #btn-delete-all, #btn-delete-all-review {
       width: 100%; padding: 6px; border-radius: 5px; border: 1px solid var(--border2);
       background: transparent; color: var(--err); font-family: var(--sans); font-size: 11px;
       cursor: pointer; transition: all .15s;
     }
-    #btn-delete-all:hover { border-color: var(--err); background: var(--err-bg); }
+    #btn-delete-all:hover, #btn-delete-all-review:hover { border-color: var(--err); background: var(--err-bg); }
 
     .queue-item { padding: 9px 12px; cursor: pointer; border-bottom: 1px solid var(--border); transition: background .1s; }
     .queue-item:hover  { background: var(--surface2); }
@@ -190,6 +190,14 @@
     .field-input.low-conf  { border-color: var(--err); background: var(--err-bg); }
     .field-input.required-missing { border-color: var(--err); background: var(--err-bg); }
     .field-note { font-size: 10px; color: var(--warn); font-family: var(--mono); margin-top: 1px; }
+    .accept-btn {
+      font-size: 10px; font-family: var(--sans); line-height: 1;
+      padding: 1px 6px; margin-left: 6px; vertical-align: baseline;
+      border: 1px solid var(--border2); border-radius: 4px;
+      background: transparent; color: var(--accent2); cursor: pointer;
+    }
+    .accept-btn:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-bg); }
+    .accept-btn:disabled { color: var(--muted); cursor: default; border-color: var(--border); }
     .field-input.zone-active {
       border-color: var(--accent) !important;
       box-shadow: 0 0 0 2px rgba(79,142,247,.25);
@@ -313,6 +321,9 @@
       </div>
       <div id="queue-list"></div>
       <div id="queue-empty">✓ All reviewed</div>
+      <div id="review-footer">
+        <button id="btn-delete-all-review">&#128465; Delete All Review</button>
+      </div>
       <div id="deferred-footer">
         <button id="btn-delete-all">&#128465; Delete All Deferred</button>
       </div>

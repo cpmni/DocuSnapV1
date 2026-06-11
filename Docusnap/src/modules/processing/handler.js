@@ -271,6 +271,12 @@ function register(ctx) {
       '--mode',       reprMode,
       ...trainingArgs,
     ];
+    // Honour the template this doc is already linked to as a Stage 0 fallback,
+    // so its admin-drawn field mappings still apply on reprocess even when live
+    // re-identification is borderline (see engine.extract known_template_id).
+    if (templateId) {
+      scriptArgs.push('--known-template-id', String(templateId));
+    }
     const allTempFiles = [...tempFiles];
     if (effectiveEnhanceParams) {
       const enhanceFile = writeTempJson('enhance', effectiveEnhanceParams);
@@ -327,6 +333,7 @@ function register(ctx) {
           confidence:        data.confidence ?? null,
           extraction_method: data.method || null,
           validation_note:   data.validation_note || null,
+          corrected_to:      data.corrected_to || null,
         }));
 
         const mergedRows = newRows.map(row => {
@@ -337,6 +344,7 @@ function register(ctx) {
             ...row, raw_value: ex.raw_value,
             display_value: ex.display_value, confidence: ex.confidence,
             validation_note: ex.validation_note || null,
+            corrected_to: ex.corrected_to || null,
           };
           return row;
         });
@@ -353,6 +361,7 @@ function register(ctx) {
               confidence:        ex.confidence,
               extraction_method: ex.extraction_method,
               validation_note:   ex.validation_note || null,
+              corrected_to:      ex.corrected_to || null,
             });
           }
         }
@@ -425,6 +434,44 @@ function register(ctx) {
         try { fs.unlinkSync(tmpFile); } catch {}
         if (err) console.error('ocr_region stderr:', err);
         resolve(out.trim());
+      });
+    });
+  });
+
+  // ── Template-mapping test (shared path with reprocess) ───────────────────────
+  // Runs the SAME Stage 0.5 extraction (template_mapper.extract_with_mappings)
+  // the real reprocess uses, against the full sample page, for one draft/saved
+  // mapping. The Template Editor calls this instead of cropping the absolute
+  // drawn target itself, so the test result matches reprocess exactly (same
+  // anchor relocation + offset + crop + normalisation). Mirrors the ocr-region
+  // spawn pattern above.
+  ipcMain.handle('test-template-mapping', async (_e, pageBase64, mapping) => {
+    requireRole('admin');
+    if (!pageBase64 || !mapping) return {};
+    const imgFile = path.join(os.tmpdir(), `ds_tmap_img_${Date.now()}.png`);
+    const mapFile = path.join(os.tmpdir(), `ds_tmap_${Date.now()}.json`);
+    try {
+      fs.writeFileSync(imgFile, Buffer.from(pageBase64, 'base64'));
+      fs.writeFileSync(mapFile, JSON.stringify(mapping));
+    } catch (e) {
+      try { fs.unlinkSync(imgFile); } catch {}
+      try { fs.unlinkSync(mapFile); } catch {}
+      return { error: e.message };
+    }
+    const script = ctx.resourcePath('python_backend', 'test_mapping.py');
+    return new Promise((resolve) => {
+      const proc = spawn(pythonExe(), pythonArgs(script,
+        '--image-file', imgFile, '--mapping-file', mapFile, '--tesseract', tesseractPath()),
+        { windowsHide: true });
+      let out = '', err = '';
+      proc.stdout.on('data', d => { out += d.toString(); });
+      proc.stderr.on('data', d => { err += d.toString(); });
+      proc.on('close', () => {
+        try { fs.unlinkSync(imgFile); } catch {}
+        try { fs.unlinkSync(mapFile); } catch {}
+        if (err) console.error('test_mapping stderr:', err);
+        try { resolve(JSON.parse(out.trim() || '{}')); }
+        catch { resolve({}); }
       });
     });
   });
@@ -598,6 +645,7 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger) {
       confidence:        data.confidence ?? null,
       extraction_method: data.method || null,
       validation_note:   data.validation_note || null,
+      corrected_to:      data.corrected_to || null,
     }));
     learning.insertExtractions(db, docId, rows);
   }

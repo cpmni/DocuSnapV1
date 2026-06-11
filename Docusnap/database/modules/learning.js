@@ -6,13 +6,15 @@ function insertExtractions(db, document_id, rows) {
   const stmt = db.prepare(`
     INSERT INTO extractions
       (document_id, field_key, raw_value, display_value,
-       confidence, extraction_method, validation_note)
+       confidence, extraction_method, validation_note, corrected_to)
     VALUES
       (@document_id, @field_key, @raw_value, @display_value,
-       @confidence, @extraction_method, @validation_note)
+       @confidence, @extraction_method, @validation_note, @corrected_to)
   `);
   const insertMany = db.transaction((rows) => {
-    for (const row of rows) stmt.run({ document_id, ...row });
+    // corrected_to is the proposed (not-yet-applied) correction candidate from
+    // Stage 4.5; default to null so callers that don't set it are unaffected.
+    for (const row of rows) stmt.run({ document_id, corrected_to: null, ...row });
   });
   insertMany(rows);
 }
@@ -52,6 +54,13 @@ function isPlausibleSupplierName(value) {
   if (t.length <= 3 && !/\s/.test(t) && t === t.toUpperCase() && !/\d/.test(t)) {
     return false;
   }
+  // Digit-dominant reference shapes misread into the supplier field ("t 38/07",
+  // "36552", "12/345") — reject when there are 2+ digits AND fewer than 3
+  // letters. Keeps letter-rich names that merely contain digits ("3M",
+  // "G2 Environmental", "24/7 Services"). Mirrors keyword._is_plausible_supplier_name.
+  const nAlpha = (t.match(/[A-Za-z]/g) || []).length;
+  const nDigit = (t.match(/\d/g) || []).length;
+  if (nAlpha < 3 && nDigit >= 2) return false;
   return true;
 }
 
@@ -510,6 +519,29 @@ function getFieldFormats(db) {
     }));
 }
 
+// Which fields for this (supplier, document_type) have a learned format of
+// digits-only — used by Review to warn before confirming a non-digit value on
+// such a field. Mirrors the digits_only branch of the Python classifier
+// (format_anomaly_checker.classify_format): a field qualifies only with ≥3
+// distinct confirmed values whose 3 newest are all pure digits. Read-side only;
+// never mutates and never constrains free-text fields.
+function _isDigitsOnlyFormat(sampleValues) {
+  if (!Array.isArray(sampleValues) || sampleValues.length < 3) return false;
+  return sampleValues.slice(0, 3).every(v => /^\d+$/.test(String(v).trim()));
+}
+
+function getDigitsOnlyFields(db, supplier_name, document_type) {
+  if (!supplier_name) return [];
+  const s  = String(supplier_name).toLowerCase().trim();
+  const dt = String(document_type || '').toLowerCase().trim();
+  return getFieldFormats(db)
+    .filter(f =>
+      String(f.supplier_name).toLowerCase().trim() === s &&
+      String(f.document_type || '').toLowerCase().trim() === dt &&
+      _isDigitsOnlyFormat(f.sample_values))
+    .map(f => f.field_key);
+}
+
 // Developer reset — wipe ALL learning state in a single transaction. Clears the
 // automatic-learning corpora (supplier_hints, field_anchors, logo_fingerprints,
 // corrections) AND the learned/managed template store (templates plus their
@@ -600,7 +632,7 @@ module.exports = {
   saveCorrections, getHints, isPlausibleSupplierName, normalizeSupplierName,
   saveAnchor, clearAnchors, getAllAnchors,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
-  getFieldFormats,
+  getFieldFormats, getDigitsOnlyFields,
   getRecoverySummary, getRecoveryDetail, getMemoryInventory, resetAllLearning,
   clearFieldAnchorsForScope, clearSupplierHintsForScope, clearCorrectionsForScope,
   getSetting, setSetting,

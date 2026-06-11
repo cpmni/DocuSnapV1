@@ -73,12 +73,16 @@ contextBridge.exposeInMainWorld('docusnap', {
   deferDocument:               (id)      => ipcRenderer.invoke('defer-document', id),
   restoreDeferred:             (id)      => ipcRenderer.invoke('restore-deferred', id),
   deleteDocument:              (id, fp)  => ipcRenderer.invoke('delete-document', id, fp),
+  deleteAllReview:             ()        => ipcRenderer.invoke('delete-all-review'),
+  deleteAllDeferred:           ()        => ipcRenderer.invoke('delete-all-deferred'),
   reprocessDocument:           (data)    => ipcRenderer.invoke('reprocess-document', data),
   promoteToTemplate:           (data)    => ipcRenderer.invoke('promote-to-template', data),
+  checkTemplateMatch:          (id)      => ipcRenderer.invoke('check-template-match-for-document', id),
   notifyReviewComplete:        ()        => ipcRenderer.send('notify-review-complete'),
 
   // ── Zone OCR & learning ──────────────────────────────────────────────────────
   ocrRegion:           (b64)      => ipcRenderer.invoke('ocr-region', b64),
+  testTemplateMapping: (pageB64, mapping) => ipcRenderer.invoke('test-template-mapping', pageB64, mapping),
   saveFieldAnchor:     (data)     => ipcRenderer.invoke('save-field-anchor', data),
   extractLogoHash:     (b64)      => ipcRenderer.invoke('extract-logo-hash', b64),
   matchLogoHash:       (b64)      => ipcRenderer.invoke('match-logo-hash', b64),

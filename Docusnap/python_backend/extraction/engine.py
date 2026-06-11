@@ -123,7 +123,8 @@ class ExtractionEngine:
                 templates:     list | None = None,
                 document_type: str | None = None,
                 document_slug: str | None = None,
-                supplier_name: str | None = None) -> dict:
+                supplier_name: str | None = None,
+                known_template_id: int | None = None) -> dict:
         """
         Run extraction pipeline according to current mode.
         Returns dict with field values + metadata keys prefixed with _.
@@ -150,6 +151,18 @@ class ExtractionEngine:
                 ocr_text,
                 templates,
             )
+            # Reprocess honour: a document already linked to a template (passed
+            # as known_template_id) should still run that template's stage 0/0.5
+            # — including its admin-drawn field mappings — even when live
+            # re-identification is borderline and returns no match (e.g. a
+            # logo/keyword score that dipped below threshold for this scan). Only
+            # used as a fallback when live matching fails, so it never overrides
+            # a positive live match with a stale link.
+            if not match and known_template_id is not None:
+                known = next((t for t in templates if t.get('id') == known_template_id), None)
+                if known:
+                    match = {'template': known, 'confidence': 0, 'method': 'known_id'}
+                    self.log(f"  Stage 0: live match failed; honouring linked template id={known_template_id}")
             if match:
                 matched_tmpl = match['template']
                 self.log(
@@ -242,6 +255,14 @@ class ExtractionEngine:
                 if decision == "take":
                     results[key] = data
                     continue
+            # An admin-drawn Stage 0.5 mapping is curated ground truth. A generic
+            # keyword hit must not silently DEMOTE it to method "keyword" — doing
+            # so also strips its protection from the anchor_crop override in Stage
+            # 2 (is_taught_override excludes only template_mapping*), letting a
+            # mis-aimed learned anchor then clobber the deliberate mapping. Keep
+            # the mapping; curated sources still contend on confidence later.
+            if existing and existing.get("method") in ("template_mapping", "template_mapping_expanded"):
+                continue
             if (key in date_field_keys and existing
                     and validator.parse_date(existing.get("value")) is not None
                     and validator.parse_date(data.get("value")) is None):
@@ -508,12 +529,33 @@ class ExtractionEngine:
                     continue
                 anomaly = format_anomaly_checker.check_value(str(val), fmt_entry)
                 if anomaly:
-                    new_conf = min(data.get('confidence') or 0, 45)
-                    results[key] = {
-                        **data,
-                        'confidence':      new_conf,
-                        'validation_note': f"format anomaly ({anomaly['anomaly']})",
-                    }
+                    # Stage 2 — conservative digits-only cleanup. If the learned
+                    # class is digits_only, try to repair the value. A confident
+                    # repair (only known OCR confusables / separators changed) is
+                    # auto-applied as the effective value with an explanatory
+                    # note; an uncertain one is surfaced as a review-forced
+                    # CANDIDATE (display value untouched). Non-digits_only
+                    # classes fall through to plain anomaly flagging.
+                    correction = format_anomaly_checker.propose_correction(str(val), fmt_entry)
+                    if correction and correction['confident']:
+                        results[key] = {
+                            **data,
+                            'value':           correction['corrected'],
+                            'validation_note': correction['note'],
+                        }
+                    elif correction:
+                        results[key] = {
+                            **data,
+                            'confidence':      min(data.get('confidence') or 0, 45),
+                            'corrected_to':    correction['corrected'],
+                            'validation_note': correction['note'],
+                        }
+                    else:
+                        results[key] = {
+                            **data,
+                            'confidence':      min(data.get('confidence') or 0, 45),
+                            'validation_note': f"format anomaly ({anomaly['anomaly']})",
+                        }
                     n_flagged += 1
                     format_anomaly_flagged = True
             if n_flagged:
@@ -533,6 +575,10 @@ class ExtractionEngine:
         results["_needs_review"]         = review_needed
         results["_mode_used"]            = self.mode
         results["_template_id"]          = matched_tmpl.get("id") if matched_tmpl else None
+        # The matched template carries the document type its layout was confirmed
+        # under — the only signal that assigns CUSTOM doc types (which have no
+        # document_type_keywords to keyword-detect). process_docs.py prefers it.
+        results["_document_type_slug"]   = matched_tmpl.get("document_type_slug") if matched_tmpl else None
         results["_logo_phash"]           = logo_phash
         results["_keyword_fingerprint"]  = kw_fingerprint
 

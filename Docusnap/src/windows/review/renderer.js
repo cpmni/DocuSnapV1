@@ -14,6 +14,7 @@ let fieldDefs        = [];
 let corrections      = {};
 let anchorTaughtFields = new Set(); // field_keys taught via the ⊕ highlight/zone-OCR tool this cycle
 let activeTab        = 'review';
+let isAdmin          = false;   // gates the destructive bulk-delete actions (also enforced server-side)
 
 // OCR preview state
 let previewActive    = false;
@@ -41,6 +42,10 @@ document.getElementById('btn-close').addEventListener('click', () => window.docu
 
 // ── Load queue ────────────────────────────────────────────────────────────────
 async function loadQueue() {
+  // Resolve role first so the admin-only bulk-delete footers render correctly
+  // (visibility is a convenience — the delete IPCs are admin-gated server-side).
+  try { const me = await window.docusnap.authGetCurrentUser(); isAdmin = !!(me && me.role === 'admin'); }
+  catch { isAdmin = false; }
   queue         = await window.docusnap.getReviewQueue();
   deferredQueue = await window.docusnap.getDeferredQueue();
   allDocTypes   = await window.docusnap.getAllDocTypes();
@@ -125,16 +130,20 @@ function updateTabCounts() {
 // ── Queue list (review tab) ───────────────────────────────────────────────────
 function renderQueueList() {
   document.getElementById('deferred-footer').style.display = 'none';
+  const reviewFooter = document.getElementById('review-footer');
   const list  = document.getElementById('queue-list');
   const empty = document.getElementById('queue-empty');
   list.innerHTML = '';
 
   if (queue.length === 0) {
     empty.style.display = '';
+    reviewFooter.style.display = 'none';
     if (!currentDoc) clearDocPanel();
     return;
   }
   empty.style.display = 'none';
+  // Admin-only "Delete All Review" footer
+  reviewFooter.style.display = isAdmin ? 'block' : 'none';
 
   for (const doc of queue) {
     const el = document.createElement('div');
@@ -152,6 +161,7 @@ function renderQueueList() {
 
 // ── Deferred list (deferred tab) ─────────────────────────────────────────────
 function renderDeferredList() {
+  document.getElementById('review-footer').style.display = 'none';
   const list   = document.getElementById('queue-list');
   const empty  = document.getElementById('queue-empty');
   const footer = document.getElementById('deferred-footer');
@@ -164,7 +174,8 @@ function renderDeferredList() {
     return;
   }
   empty.style.display = 'none';
-  footer.style.display = 'block';
+  // Admin-only "Delete All Deferred" footer
+  footer.style.display = isAdmin ? 'block' : 'none';
 
   for (const doc of deferredQueue) {
     const el = document.createElement('div');
@@ -265,7 +276,23 @@ async function _selectDoc(doc) {
   } catch (e) {
     console.warn('getDocumentWithExtractions failed:', e.message);
   }
-  renderFields(full || doc);
+  const renderedDoc = full || doc;
+  renderFields(renderedDoc);
+
+  // Lightweight current-template recheck — this doc had no template match at
+  // processing time, but a template covering its layout may have been added
+  // since (e.g. via "Add to Template Manager" on another document from the
+  // same supplier). Read-only UI refresh: does not reprocess, does not write
+  // template_id, and is skipped entirely once a template_id is already set.
+  if (!doc.template_id) {
+    window.docusnap.checkTemplateMatch(doc.id).then(result => {
+      if (currentDoc?.id !== doc.id) return; // user switched docs while pending
+      if (result?.matched) {
+        renderedDoc._templateRecheck = result;
+        renderExtractionStatus(renderedDoc);
+      }
+    }).catch(e => console.warn('checkTemplateMatch failed:', e.message));
+  }
 }
 
 // ── Page rendering ────────────────────────────────────────────────────────────
@@ -315,11 +342,14 @@ function renderExtractionStatus(doc) {
   const hasLogo     = !!doc.logo_phash;
   const hasKw       = !!(doc.keyword_fingerprint && doc.keyword_fingerprint !== 'null');
 
+  const recheck = doc._templateRecheck;
+
   let idLabel, idCls;
   if (hasTemplate && hasLogo && hasKw)  { idLabel = 'Logo & keyword';    idCls = 'ok'; }
   else if (hasTemplate && hasLogo)      { idLabel = 'Logo match';         idCls = 'info'; }
   else if (hasTemplate && hasKw)        { idLabel = 'Keyword match';      idCls = 'info'; }
   else if (hasTemplate)                 { idLabel = 'Template match';     idCls = 'info'; }
+  else if (recheck?.matched)            { idLabel = `Template available: ${recheck.templateName}`; idCls = 'info'; }
   else                                  { idLabel = 'No template match';  idCls = 'warn'; }
 
   // ── Extraction method summary ──────────────────────────────────────────────
@@ -380,19 +410,26 @@ function renderFields(doc) {
   for (const key of reviewFields()) {
     const ext = extMap[key] || {};
     const val = ext.display_value ?? ext.raw_value ?? '';
-    appendFieldRow(scroll, key, val, ext.confidence ?? null, ext.validation_note || null);
+    appendFieldRow(scroll, key, val, ext.confidence ?? null, ext.validation_note || null, ext.corrected_to || null);
   }
   validateConfirm();
 }
 
-function appendFieldRow(scroll, key, val, conf, note) {
+function appendFieldRow(scroll, key, val, conf, note, correctedTo) {
   const low      = conf !== null && conf < 70;
   const confClass = conf === null ? '' : conf >= 70 ? 'high' : conf >= 40 ? 'mid' : 'low';
   const confLabel = conf !== null
     ? `<span class="conf-badge ${confClass}">${conf}%</span>`
     : '';
-  const noteHtml = note
-    ? `<div class="field-note">${escHtml(note)}</div>`
+  // An "Accept" button is shown ONLY for correction CANDIDATES — i.e. when a
+  // corrected_to value is present (set by Stage 4.5's non-confident proposal).
+  // Plain validation notes (no corrected_to) get no button. The button only
+  // copies the suggestion into the input; it never confirms or persists.
+  const acceptHtml = correctedTo
+    ? ` <button type="button" class="accept-btn" data-key="${key}">Accept</button>`
+    : '';
+  const noteHtml = (note || correctedTo)
+    ? `<div class="field-note">${escHtml(note || '')}${acceptHtml}</div>`
     : '';
 
   const row = document.createElement('div');
@@ -428,6 +465,20 @@ function appendFieldRow(scroll, key, val, conf, note) {
     if (activeField === key) cancelZoneMode();
     else enterZoneMode(key, labelFor(key));
   });
+
+  // Accept the suggested correction: copy it into the editable input and fire
+  // the normal 'input' event so it flows through the SAME path as a manual edit
+  // (records corrections[key], runs validateConfirm). No auto-confirm, no DB
+  // write — the value is learned only if/when the user confirms the document.
+  const acceptBtn = row.querySelector('.accept-btn');
+  if (acceptBtn) {
+    acceptBtn.addEventListener('click', () => {
+      input.value = correctedTo;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      acceptBtn.disabled = true;
+      acceptBtn.textContent = 'Applied';
+    });
+  }
 
   scroll.appendChild(row);
 }
@@ -594,8 +645,18 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
   const pageZone = yNorm < 0.33 ? 'top' : yNorm < 0.66 ? 'middle' : 'bottom';
   const docType  = currentDoc?.type_slug || currentDoc?.document_type_slug || null;
 
+  // Use the live supplier_name field value (what the user has reviewed/
+  // corrected in this session and will send as allValues.supplier_name on
+  // confirm) rather than currentDoc.supplier_name (the pre-confirm extracted
+  // identity). Anchors taught here must share the same supplier scope that
+  // saveCorrections now keys hints/corrections to — otherwise a corrected
+  // supplier name leaves this anchor saved under the old, stale identity and
+  // it never gets found again on the next document.
+  const supplierInput = document.querySelector('.field-input[data-key="supplier_name"]');
+  const liveSupplier  = supplierInput?.value?.trim() || currentDoc?.supplier_name;
+
   const anchorBase = {
-    supplier_name: cleanSupplierName(currentDoc?.supplier_name),
+    supplier_name: cleanSupplierName(liveSupplier),
     document_type: docType,
     field_key:     fieldKey,
     page_zone:     pageZone,
@@ -693,6 +754,18 @@ document.getElementById('btn-confirm').addEventListener('click', async () => {
     allValues[input.dataset.key] = input.value;
   });
 
+  // Part 2: warn before confirming a non-digit value on a field whose learned
+  // format is digits-only. Cancelable and scoped to the mismatching field(s)
+  // only — cancelling leaves the user in Review without confirming.
+  for (const key of (currentDoc.digit_only_fields || [])) {
+    const v = (allValues[key] || '').trim();
+    if (v && !/^\d+$/.test(v)) {
+      if (!confirm(`"${labelFor(key)}" — Are you sure this is correct? This field usually contains only digits.`)) {
+        return;
+      }
+    }
+  }
+
   const supplierForLogo = allValues.supplier_name || currentDoc?.supplier_name;
   if (supplierForLogo) await saveLogoOnConfirm(supplierForLogo);
 
@@ -750,22 +823,39 @@ document.getElementById('btn-defer').addEventListener('click', async () => {
   window.docusnap.notifyReviewComplete();
 });
 
-// ── Delete All Deferred ───────────────────────────────────────────────────────
+// ── Delete All Review (admin only) ────────────────────────────────────────────
+document.getElementById('btn-delete-all-review').addEventListener('click', async () => {
+  if (!isAdmin || queue.length === 0) return;
+  if (!confirm(`Delete ALL ${queue.length} document(s) in the Review queue?\n\n` +
+               `Their files and extracted data are permanently removed. Confirmed and deferred ` +
+               `documents are NOT affected. This cannot be undone.`)) return;
+
+  const res = await window.docusnap.deleteAllReview();
+  if (!res?.success) { showToast(res?.error || 'Delete failed.', 'err'); return; }
+  const hadCurrent = queue.some(d => d.id === currentDoc?.id);
+  queue = [];
+  if (hadCurrent) { currentDoc = null; clearDocPanel(); }
+  updateTabCounts();
+  renderQueueList();
+  window.docusnap.notifyReviewComplete();
+  showToast(`Deleted ${res.deleted} review document(s).`, 'ok');
+});
+
+// ── Delete All Deferred (admin only) ──────────────────────────────────────────
 document.getElementById('btn-delete-all').addEventListener('click', async () => {
-  if (deferredQueue.length === 0) return;
-  if (!confirm(`Delete all ${deferredQueue.length} deferred document(s)? This cannot be undone.`)) return;
+  if (!isAdmin || deferredQueue.length === 0) return;
+  if (!confirm(`Delete ALL ${deferredQueue.length} deferred document(s)?\n\n` +
+               `Their files and extracted data are permanently removed. This cannot be undone.`)) return;
 
-  const toDelete = [...deferredQueue];
-  for (const doc of toDelete) {
-    const filePath = doc.folder_path ? `${doc.folder_path}\\${doc.original_filename}` : null;
-    await window.docusnap.deleteDocument(doc.id, filePath);
-  }
-
-  const hadCurrent = toDelete.some(d => d.id === currentDoc?.id);
+  const res = await window.docusnap.deleteAllDeferred();
+  if (!res?.success) { showToast(res?.error || 'Delete failed.', 'err'); return; }
+  const hadCurrent = deferredQueue.some(d => d.id === currentDoc?.id);
   deferredQueue = [];
   if (hadCurrent) { currentDoc = null; clearDocPanel(); }
   updateTabCounts();
   renderDeferredList();
+  window.docusnap.notifyReviewComplete();
+  showToast(`Deleted ${res.deleted} deferred document(s).`, 'ok');
 });
 
 // ── Delete ────────────────────────────────────────────────────────────────────
@@ -1052,6 +1142,14 @@ document.getElementById('btn-add-template').addEventListener('click', async () =
   const supplierInput = document.querySelector('.field-input[data-key="supplier_name"]');
   const supplierName  = supplierInput?.value?.trim() || currentDoc?.supplier_name || null;
   const docTypeSlug   = selectedTypeSlug || currentDoc?.type_slug || currentDoc?.document_type_slug || null;
+
+  // A template must be tied to a real document type, or it's created with a null
+  // type and the Template Manager shows no fields to map (the custom-type bug).
+  // Block until one is selected — the backend enforces this too.
+  if (!docTypeSlug) {
+    showToast('Select a document type before adding to Template Manager.', 'warn');
+    return;
+  }
 
   btn.disabled = true;
   const result = await window.docusnap.promoteToTemplate({

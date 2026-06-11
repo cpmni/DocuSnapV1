@@ -249,11 +249,57 @@ function findByLogoHash(db, phash, threshold = 12) {
   return best;
 }
 
+// Keyword-fingerprint match — JS mirror of template_matcher.py's
+// _match_by_keywords (word-boundary regex over each template's stored
+// keyword_fingerprint, score = hits/len(keywords)). KEYWORD_THRESHOLD there
+// is 0.75 → confidence >= 75 here, with the same int()-style truncation.
+function findByKeywordFingerprint(db, ocrText, threshold = 75) {
+  if (!ocrText) return null;
+  const ocrLower = ocrText.toLowerCase();
+  const rows = db.prepare(
+    'SELECT id, name, keyword_fingerprint FROM templates WHERE keyword_fingerprint IS NOT NULL'
+  ).all();
+
+  let best = null, bestScore = 0;
+  for (const t of rows) {
+    const keywords = _parseJson(t.keyword_fingerprint, []);
+    if (!keywords.length) continue;
+    let hits = 0;
+    for (const kw of keywords) {
+      const esc = kw.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (new RegExp(`(?<![a-z0-9])${esc}(?![a-z0-9])`).test(ocrLower)) hits++;
+    }
+    const score = hits / keywords.length;
+    if (score > bestScore) {
+      bestScore = score;
+      best = { template: { id: t.id, name: t.name }, confidence: Math.floor(score * 100), method: 'keywords' };
+    }
+  }
+  return (best && best.confidence >= threshold) ? best : null;
+}
+
+// Lightweight current-template recheck — given a document's already-stored
+// logo_phash/ocr_text (no page image, no OCR, no extraction pipeline), tries
+// the same logo-then-keyword identification order and accept thresholds as
+// template_matcher.identify_template(): logo confidence >= 60, else keyword
+// confidence >= 75. Used by the review queue to detect that a template added
+// via "Add to Template Manager" now covers a document that was queued before
+// it existed.
+function identifyByFingerprint(db, { logo_phash, ocr_text }) {
+  if (logo_phash) {
+    const logoMatch = findByLogoHash(db, logo_phash);
+    if (logoMatch && logoMatch.confidence >= 60) {
+      return { template: { id: logoMatch.id, name: logoMatch.name }, confidence: logoMatch.confidence, method: 'logo' };
+    }
+  }
+  return findByKeywordFingerprint(db, ocr_text);
+}
+
 // Cheap name-based lookup for the Learning Recovery tab — shows managed
 // templates alongside (but separate from) automatic learning data for the
 // same supplier. Matching is purely cosmetic (template name vs. supplier
 // name); it does not affect identification, which uses logo_phash /
-// keyword_fingerprint exclusively.
+// keyword_fingerprint exclusively (see identifyByFingerprint above).
 function searchByName(db, query, document_type_slug) {
   const q = `%${(query || '').toLowerCase()}%`;
   return db.prepare(`
@@ -383,8 +429,9 @@ function getSiblings(db, groupId, excludeTemplateId) {
 }
 
 module.exports = {
-  getAll, getById, getFields, findByLogoHash, create, update, remove, rename, hammingDistance,
+  getAll, getById, getFields, findByLogoHash, findByKeywordFingerprint, identifyByFingerprint,
   searchByName,
+  create, update, remove, rename, hammingDistance,
   getMappings, getMapping, saveMapping, setMappingEnabled, deleteMapping,
   recordMappingTest, setSampleDocument, reassignDocuments,
   setOcrAutoParams, setOcrAutoEnabled,

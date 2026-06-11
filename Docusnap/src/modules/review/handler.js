@@ -78,7 +78,20 @@ function register(ctx) {
   // "any signed-in user", not a specific role.
   ipcMain.handle('get-document-with-extractions', (_e, id) => {
     requireLogin();
-    return documents.getWithExtractions(getDb(), id);
+    const db  = getDb();
+    const doc = documents.getWithExtractions(db, id);
+    if (doc) {
+      // Attach the fields whose learned format is digits-only, so Review can
+      // warn before confirming a non-digit value on one (Part 2). Resolve the
+      // type slug from document_type_id (getById is SELECT * and has no slug).
+      let typeSlug = doc.type_slug || null;
+      if (!typeSlug && doc.document_type_id) {
+        const t = db.prepare('SELECT slug FROM document_types WHERE id = ?').get(doc.document_type_id);
+        typeSlug = t ? t.slug : null;
+      }
+      doc.digit_only_fields = learning.getDigitsOnlyFields(db, doc.supplier_name, typeSlug);
+    }
+    return doc;
   });
 
   // ── Document pages for preview ──────────────────────────────────────────────
@@ -206,6 +219,38 @@ function register(ctx) {
     return true;
   });
 
+  // ── Bulk delete of a whole queue (Admin only) ───────────────────────────────
+  // Permanent deletion of scanned documents is Admin-exclusive, like the
+  // single-doc delete above. Each helper is scoped to exactly one status so it
+  // can never reach confirmed documents; source files are unlinked best-effort
+  // first, then the rows (and their cascaded extractions) are removed in one
+  // statement. Returning the deleted count lets the renderer report it.
+  function _deleteQueue(status, rows, countEvent) {
+    const db = getDb();
+    for (const r of rows) {
+      if (r.folder_path && r.original_filename) {
+        const fp = path.join(r.folder_path, r.original_filename);
+        try { if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch (e) {
+          console.warn('Could not delete file:', fp, e.message);
+        }
+      }
+    }
+    const result = documents.deleteByStatus(db, status);
+    notifyMainWindow(countEvent, status === 'needs_review'
+      ? documents.getReviewCount(db) : documents.getDeferredCount(db));
+    return { success: true, deleted: result.changes };
+  }
+
+  ipcMain.handle('delete-all-review', async () => {
+    requireRole('admin');
+    return _deleteQueue('needs_review', documents.getReviewQueue(getDb()), 'review-count-changed');
+  });
+
+  ipcMain.handle('delete-all-deferred', async () => {
+    requireRole('admin');
+    return _deleteQueue('deferred', documents.getDeferredQueue(getDb()), 'deferred-count-changed');
+  });
+
   // ── Confirm review ──────────────────────────────────────────────────────────
   ipcMain.handle('confirm-review', async (_e, payload) => {
     requireRole('admin', 'edit');
@@ -303,13 +348,46 @@ function register(ctx) {
     return { success: true, ...filingResult };
   });
 
+  // ── Lightweight current-template recheck ────────────────────────────────────
+  // A document can sit in the review queue from before a template covering its
+  // layout was created (via "Add to Template Manager" below). Its template_id
+  // and identification pill were set once at processing time and never refresh.
+  // This re-runs only the cheap identification step — logo-hash hamming
+  // distance and keyword-fingerprint scoring against the CURRENT template list,
+  // using the document's already-stored logo_phash/ocr_text — so the review UI
+  // can reflect a newly-available template without reprocessing or re-OCRing.
+  ipcMain.handle('check-template-match-for-document', (_e, documentId) => {
+    requireRole('admin', 'edit');
+    const db  = getDb();
+    const doc = db.prepare(
+      'SELECT template_id, logo_phash, ocr_text FROM documents WHERE id = ?'
+    ).get(documentId);
+    if (!doc || doc.template_id) return { matched: false };
+
+    const match = templates.identifyByFingerprint(db, {
+      logo_phash: doc.logo_phash,
+      ocr_text:   doc.ocr_text,
+    });
+    if (!match) return { matched: false };
+
+    return {
+      matched:      true,
+      templateId:   match.template.id,
+      templateName: match.template.name,
+      confidence:   match.confidence,
+      method:       match.method,
+    };
+  });
+
   // ── Add to Template Manager (explicit promotion) ───────────────────────────
-  // The deliberate escalation path: a user looking at a recurring layout that
-  // keeps misdetecting can promote the current document's reviewed values into
-  // a managed template (creating one, or refreshing an existing one matched by
-  // logo), using the same field-building logic _upsertTemplate provides.
-  // Automatic learning (anchors/hints/corrections via saveCorrections) keeps
-  // working on every confirm regardless.
+  // Templates are no longer auto-created/refreshed on every confirm (see
+  // _upsertTemplate's removal from confirm-review above). Automatic learning
+  // — anchors, hints, corrections via saveCorrections — keeps working on every
+  // confirm regardless. This handler is the deliberate escalation path: a user
+  // looking at a recurring layout that keeps misdetecting can promote the
+  // current document's reviewed values into a managed template (creating one,
+  // or refreshing an existing one matched by logo), using the same field-
+  // building logic confirm-review used to run unconditionally.
   ipcMain.handle('promote-to-template', async (_e, payload) => {
     requireRole('admin', 'edit');
     const { document_id, allValues, document_type_slug, supplier_name } = payload || {};
@@ -320,6 +398,12 @@ function register(ctx) {
     const dtInfo = document_type_slug
       ? doctypes.getWithFields(db, document_type_slug)
       : null;
+    // Authoritative guard (the renderer also blocks this): a template with no
+    // resolvable document type is created field-less and its custom fields never
+    // appear in the Template Manager. Require a real, known doc type.
+    if (!dtInfo) {
+      return { success: false, error: 'Select a document type before adding to Template Manager.' };
+    }
     try {
       const result = await _upsertTemplate(ctx, db, document_id, {
         allValues, document_type_slug, supplier_name, dtInfo,
