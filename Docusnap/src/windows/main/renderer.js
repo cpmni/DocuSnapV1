@@ -97,6 +97,11 @@ async function startProcessing() {
   running = true;
   btnRun.disabled = true;
   btnRun.textContent = '⏳ Processing…';
+  // Reset the stop button every run: it was left disabled+"Stopping…" after a
+  // previous stop, so without this a later run shows a stuck, unclickable
+  // "Stopping…" and documents keep processing because stop can't be triggered.
+  btnStop.disabled = false;
+  btnStop.innerHTML = '&#9632;&nbsp; Stop Processing';
   btnStop.classList.add('visible');
 
   // Reset stats for new run
