@@ -29,7 +29,7 @@ const SUPPORTED_EXTENSIONS = new Set(
 );
 
 const POLL_INTERVAL_MS    = 5000;
-const STABILITY_DELAY_MS  = 30000;
+const STABILITY_DELAY_MS  = 10000;
 
 let _ctx          = null;
 let _pollTimer    = null;
