@@ -331,6 +331,16 @@ def _is_plausible_supplier_name(value: str | None) -> bool:
     if (len(t) <= 3 and t.isupper() and " " not in t
             and not any(c.isdigit() for c in t)):
         return False
+    # A reference/number misread into the supplier field ("t 38/07", "36552",
+    # "12/345") is digit-dominant with almost no letters — a real company name
+    # always carries substantial alphabetic content. Shape test only: reject
+    # when there are 2+ digits AND fewer than 3 letters. This keeps legitimate
+    # letter-rich names that merely contain digits ("3M", "G2 Environmental",
+    # "24/7 Services") plausible.
+    n_alpha = sum(c.isalpha() for c in t)
+    n_digit = sum(c.isdigit() for c in t)
+    if n_alpha < 3 and n_digit >= 2:
+        return False
     return True
 
 

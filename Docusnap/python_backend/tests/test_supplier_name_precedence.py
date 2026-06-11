@@ -267,10 +267,14 @@ def main():
     # ── 7: the plausibility helper itself — shape test, not a stoplist ───────
     section('supplier-name plausibility helper rejects short structural fragments, accepts real names')
     from extraction.keyword import _is_plausible_supplier_name as plausible
-    for bad in ('IN', 'INV', 'PO', '', '   '):
+    for bad in ('IN', 'INV', 'PO', '', '   ',
+                # digit-dominant reference shapes misread into the supplier field
+                't 38/07', '36552', '12345', '12/345'):
         if not check(f'{bad!r} rejected as an implausible supplier identity', not plausible(bad)):
             failures += 1
-    for good in ('SuperStore', 'ACME LIMITED', 'Polychemtex Inc.', 'INV-2024-01'):
+    for good in ('SuperStore', 'ACME LIMITED', 'Polychemtex Inc.', 'INV-2024-01',
+                 # letter-rich names that merely contain digits stay plausible
+                 '3M', 'G2 Environmental', '24/7 Services'):
         if not check(f'{good!r} accepted as a plausible supplier identity', plausible(good)):
             failures += 1
 
