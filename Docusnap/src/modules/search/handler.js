@@ -7,8 +7,15 @@
 
 function register(ctx) {
   const { ipcMain, getDb } = ctx;
+  const fs = require('fs');
   const documents = require('../../../database/modules/documents');
   const { requireLogin, hasRole } = require('../auth/handler');
+
+  // Exclude rows whose backing file was deleted out-of-band, so a document that
+  // no longer exists on disk stops appearing as a valid result. Audit rows stay
+  // in the DB — they're just filtered out of search. Bounded to the result set
+  // (no full-disk scan); normal-flow moves keep paths in sync so they're safe.
+  const onlyExisting = (rows) => documents.filterExisting(rows, fs.existsSync);
 
   ipcMain.handle('search-documents', (_e, params) => {
     requireLogin();
@@ -17,9 +24,9 @@ function register(ctx) {
             docType, includeUncommitted, fullText } = params || {};
 
     // Confirmed documents — what "search/view documents" means for every role.
-    const confirmed = documents.search(db, {
+    const confirmed = onlyExisting(documents.search(db, {
       company, reference, dateFrom, dateTo, docType, fullText, status: 'confirmed',
-    });
+    }));
 
     // Uncommitted results open the inline mini-review/commit panel — an edit
     // action — so Read Only never receives them, regardless of what the
@@ -38,7 +45,7 @@ function register(ctx) {
 
     return {
       confirmed,
-      uncommitted: [...review, ...deferred],
+      uncommitted: onlyExisting([...review, ...deferred]),
     };
   });
 }

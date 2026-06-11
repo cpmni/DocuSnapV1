@@ -1,5 +1,7 @@
 'use strict';
 
+const path = require('path');
+
 function insert(db, { original_filename, folder_path, document_type_id,
                       supplier_name, overall_confidence, status,
                       template_id, logo_phash, keyword_fingerprint,
@@ -42,6 +44,15 @@ function update(db, id, changes) {
 
 function getById(db, id) {
   return db.prepare('SELECT * FROM documents WHERE id = ?').get(id);
+}
+
+// Bulk delete every document in ONE workflow status — used only by the
+// admin "Delete All Review" / "Delete All Deferred" actions. Scoped strictly to
+// the given status so it can never touch confirmed (or any other) documents;
+// extractions/corrections are removed by their ON DELETE CASCADE. Callers are
+// responsible for unlinking the source files first (see review/handler.js).
+function deleteByStatus(db, status) {
+  return db.prepare('DELETE FROM documents WHERE status = ?').run(status);
 }
 
 function getWithExtractions(db, id) {
@@ -152,9 +163,35 @@ function search(db, { company, reference, dateFrom, dateTo,
   return db.prepare(sql).all(params);
 }
 
+// Canonical on-disk path backing a document row, mirroring the same resolution
+// the search/review previews use: a confirmed doc lives at its filed stored_path;
+// anything else lives at folder_path/original_filename. folder_path is kept in
+// sync with normal-flow moves (e.g. the processed-folder move updates it), so a
+// MISSING file here means a real out-of-band deletion, not an app move. Returns
+// null when no path can be resolved (such rows are never treated as stale).
+function resolveFilePath(doc) {
+  if (!doc) return null;
+  if (doc.status === 'confirmed' && doc.stored_path) return doc.stored_path;
+  if (doc.folder_path && doc.original_filename) {
+    return path.join(doc.folder_path, doc.original_filename);
+  }
+  return null;
+}
+
+// Drop rows whose backing file no longer exists on disk — used to keep deleted
+// documents out of search results without hard-deleting the audit rows. Bounded
+// to the rows passed in (no full-disk scan); `existsFn` is injectable for tests.
+function filterExisting(rows, existsFn) {
+  return (rows || []).filter(doc => {
+    const p = resolveFilePath(doc);
+    return !p || existsFn(p);
+  });
+}
+
 module.exports = {
   insert, update, getById, getWithExtractions,
   getReviewQueue, getDeferredQueue,
   getReviewCount, getDeferredCount,
-  confirm, deleteDoc, search,
+  confirm, deleteDoc, deleteByStatus, search,
+  resolveFilePath, filterExisting,
 };

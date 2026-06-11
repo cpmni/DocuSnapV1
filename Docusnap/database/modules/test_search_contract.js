@@ -77,10 +77,14 @@ function seedSmall(db) {
     (id,supplier_name,reference_number,doc_date,document_type_id,status,ocr_text,
      overall_confidence,original_filename,stored_filename,stored_path,folder_path,confirmed_at,processed_at)
     VALUES (@id,@s,@r,@d,@dt,@st,@o,@c,@of,@sf,@sp,@fp,@ca,@pa)`);
+  // stored_path/folder_path left null so the search handler's file-existence
+  // filter (documents.filterExisting) keeps these rows — this test pins the
+  // request/response/auth contract, not on-disk existence (covered separately
+  // by test_stale_document_refs.js).
   const row = (id, st, over) => ({
     id, s: `Supplier ${id}`, r: `REF-${id}`, d: '16-03-2026', dt: 1, st, o: `ocr alpha ${id}`,
-    c: over, of: `orig_${id}.pdf`, sf: `Invoice.${id}.pdf`, sp: `C:/out/Invoice.${id}.pdf`,
-    fp: 'C:/in', ca: `2026-03-1${id}`, pa: `2026-03-1${id}`,
+    c: over, of: `orig_${id}.pdf`, sf: `Invoice.${id}.pdf`, sp: null,
+    fp: null, ca: `2026-03-1${id}`, pa: `2026-03-1${id}`,
   });
   ins.run(row(1, 'confirmed', 91));
   ins.run(row(2, 'confirmed', 92));
