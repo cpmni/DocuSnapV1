@@ -289,11 +289,98 @@ def test_extract_with_mappings():
     return failures
 
 
+def test_derived_target_no_leading_inset_clip():
+    """Regression: the box-based offset must be applied to the located anchor's
+    BOX origin, not its tight OCR bbox — otherwise the derived target is shifted
+    right/down by the anchor's drawn margin and clips leading glyphs
+    ("PROFILE" -> "ROFILE"). With the label tight-centred inside the drawn anchor
+    box and no drift, the derived crop must land exactly on the DRAWN target."""
+    failures = 0
+    print("derived target: box-origin offset removes leading-character inset clip")
+    page = FakePage((1000, 1000))
+    # base_mapping: anchor box x=0.10 w=0.20; target box x=0.25 w=0.15; dx=0.15.
+    m = base_mapping()
+    # Label OCR'd tight-centred inside the anchor crop (crop-relative): left 0.15
+    # of width 0.70 -> page-relative tight left 0.10+0.15*0.20=0.13, width 0.14,
+    # so per-side inset (0.20-0.14)/2 = 0.03.
+    centred = [{"text": "Invoice Number", "x_norm": 0.15, "y_norm": 0.25,
+                "w_norm": 0.70, "h_norm": 0.50}]
+    captured = {}
+    def recording_text(crop):
+        captured["box"] = crop[1]   # FakePage.crop -> ("crop", (x1,y1,x2,y2))
+        return "PROFILE CONSTRUCTION"
+    res = template_mapper.extract_with_mappings(
+        [page], [m],
+        ocr_lines_fn=lines_stub(centred), ocr_text_fn=recording_text,
+    )
+    x1 = captured.get("box", (None,))[0]
+    # Drawn target left = 0.25 * 1000 = 250. The pre-fix bug cropped at 280
+    # (0.13 tight + 0.15 offset = 0.28), dropping the leading "P".
+    if not check(f"derived crop left lands on the drawn target (250), not inset-shifted (got {x1})",
+                 x1 == 250):
+        failures += 1
+    if not check("full value resolved, leading character intact",
+                 res.get("invoice_number", {}).get("value") == "PROFILE CONSTRUCTION"):
+        failures += 1
+    print()
+    return failures
+
+
+def test_locate_anchor_padded_box():
+    """An anchor box drawn deliberately WIDER than its label (margin for future
+    variability) captures the label plus padding/neighbouring words on the same
+    OCR line. Relocation must still succeed there — full-line ratio() used to
+    sink below threshold purely because the line was longer — while a genuinely
+    different nearby label stays rejected."""
+    failures = 0
+    print("_locate_anchor: tolerant of a padded anchor box (label + extra on the line)")
+    page = FakePage()
+    anchor_box = {"x_norm": 0.10, "y_norm": 0.20, "w_norm": 0.30, "h_norm": 0.04}
+
+    # 1. Tight line still locates (baseline contract preserved).
+    tight = [{"text": "Invoice Number", "x_norm": 0.1, "y_norm": 0.25, "w_norm": 0.5, "h_norm": 0.5}]
+    if not check("text-tight anchor still locates",
+                 template_mapper._locate_anchor(page, anchor_box, "Invoice Number", 0.0, lines_stub(tight)) is not None):
+        failures += 1
+
+    # 2. Wider box: the label rides on a line with trailing text. Old full-line
+    #    ratio() would drop below 0.6 from the extra length; containment locates.
+    padded_line = "Invoice Number Issued On 14 March 2026 Reference 998877"
+    import difflib as _d
+    old_ratio = _d.SequenceMatcher(None, "invoice number", padded_line.lower()).ratio()
+    padded = [{"text": padded_line, "x_norm": 0.05, "y_norm": 0.25, "w_norm": 0.9, "h_norm": 0.5}]
+    located = template_mapper._locate_anchor(page, anchor_box, "Invoice Number", 0.0, lines_stub(padded))
+    if not check(f"padded anchor box still locates the label (old ratio {old_ratio:.2f} < 0.6 would have failed)",
+                 located is not None and located.get("matched_text") == padded_line):
+        failures += 1
+
+    # 3. A different nearby label in the same region is NOT chosen as the match.
+    mixed = [
+        {"text": "Bill To Account Holder", "x_norm": 0.05, "y_norm": 0.10, "w_norm": 0.6, "h_norm": 0.3},
+        {"text": padded_line,              "x_norm": 0.05, "y_norm": 0.60, "w_norm": 0.9, "h_norm": 0.3},
+    ]
+    picked = template_mapper._locate_anchor(page, anchor_box, "Invoice Number", 0.0, lines_stub(mixed))
+    if not check("the correct padded label is preferred over a different nearby label",
+                 picked is not None and picked.get("matched_text") == padded_line):
+        failures += 1
+
+    # 4. A region containing ONLY a different label still reports None (fallback).
+    wrong_only = [{"text": "Bill To Account Holder", "x_norm": 0.1, "y_norm": 0.1, "w_norm": 0.6, "h_norm": 0.3}]
+    if not check("only a different label present -> None (clean fallback)",
+                 template_mapper._locate_anchor(page, anchor_box, "Invoice Number", 0.0, lines_stub(wrong_only)) is None):
+        failures += 1
+
+    print()
+    return failures
+
+
 def main():
     failures = 0
     failures += test_geometry_helpers()
     failures += test_locate_anchor()
     failures += test_extract_with_mappings()
+    failures += test_derived_target_no_leading_inset_clip()
+    failures += test_locate_anchor_padded_box()
 
     if failures:
         print(f"{failures} check(s) failed — template_mapper regressed.")

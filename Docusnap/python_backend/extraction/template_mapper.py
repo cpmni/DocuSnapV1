@@ -91,11 +91,24 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn):
     # Heart of the "anchor + relative target zone" model: derive the target
     # from where the anchor ACTUALLY is, not from the absolute saved target
     # coordinates — handles the anchor having drifted since the sample doc.
+    #
+    # The stored offset is BOX-origin → BOX-origin (saveMapping records
+    # target_x − anchor_x using the admin-drawn box corners), but _locate_anchor
+    # reports the label's TIGHT OCR word-bbox, which sits inset to the right of /
+    # below the drawn anchor box by its margin. Applying the box-based offset to
+    # the tight origin shifted every derived target right/down by that margin —
+    # clipping leading glyphs (the observed "PROFILE" → "ROFILE"). Re-derive the
+    # located anchor's box-origin equivalent first (assume the label is roughly
+    # centred in the drawn box, so the inset ≈ half the width/height slack) so
+    # the offset is applied origin-to-origin as intended. General to every
+    # mapping — not tuned to one template.
     dx = mapping.get("offset_dx_norm") or 0.0
     dy = mapping.get("offset_dy_norm") or 0.0
+    inset_x = max(0.0, (anchor_box["w_norm"] - located["w_norm"]) / 2.0)
+    inset_y = max(0.0, (anchor_box["h_norm"] - located["h_norm"]) / 2.0)
     derived_target = {
-        "x_norm": _clamp01(located["x_norm"] + dx),
-        "y_norm": _clamp01(located["y_norm"] + dy),
+        "x_norm": _clamp01(located["x_norm"] - inset_x + dx),
+        "y_norm": _clamp01(located["y_norm"] - inset_y + dy),
         "w_norm": target_box["w_norm"],
         "h_norm": target_box["h_norm"],
     }
@@ -147,7 +160,7 @@ def _locate_anchor(page, anchor_box, anchor_text, expansion, ocr_lines_fn):
         haystack = _normalise(line.get("text", ""))
         if not haystack:
             continue
-        score = difflib.SequenceMatcher(None, needle, haystack).ratio() if needle else 1.0
+        score = _label_score(needle, haystack)
         if score > best_score:
             best, best_score = line, score
 
@@ -202,6 +215,30 @@ def _clamp01(value):
 
 def _normalise(text):
     return re.sub(r'\s+', ' ', (text or '')).strip().lower()
+
+
+def _label_score(needle, haystack):
+    """How well the anchor LABEL (`needle`) is present in an OCR line
+    (`haystack`), independent of how much extra text the line carries.
+
+    SequenceMatcher.ratio() penalises a longer haystack (2·M/(len_n+len_h)), so
+    an anchor box drawn deliberately wider than its label — capturing padding or
+    a neighbouring word on the same OCR line — scored below threshold and failed
+    to relocate, even on a perfect label match. Instead, measure the fraction of
+    the needle found as a contiguous run in the haystack (a substring scores
+    1.0), blended with ratio() so a tight exact line still scores high. A
+    different nearby label shares little of the needle, so it stays rejected —
+    preferring the correct local label without widening the search.
+    """
+    if not needle:
+        return 1.0
+    if not haystack:
+        return 0.0
+    if needle in haystack:
+        return 1.0
+    sm = difflib.SequenceMatcher(None, needle, haystack)
+    longest = sm.find_longest_match(0, len(needle), 0, len(haystack)).size
+    return max(longest / len(needle), sm.ratio())
 
 
 # ── Image / OCR primitives ────────────────────────────────────────────────────

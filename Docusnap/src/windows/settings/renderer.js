@@ -1830,44 +1830,62 @@ document.getElementById('tpl-btn-delete-mapping').addEventListener('click', asyn
 // reload. This proves out the target geometry against real pixels without
 // needing template_mapper.py / engine.py wiring (Phase 3) to exist yet.
 document.getElementById('tpl-btn-test-mapping').addEventListener('click', async () => {
-  if (!selectedTemplate || !tplEditingFieldKey || !tplDraftTarget || !tplPageImages.length) return;
+  if (!selectedTemplate || !tplEditingFieldKey || !tplDraftAnchor || !tplDraftTarget || !tplPageImages.length) return;
   const msg = document.getElementById('tpl-mapping-msg');
   msg.textContent = 'Testing…';
   msg.style.color = 'var(--muted)';
 
   try {
-    if ((tplDraftTarget.page_number || 0) !== tplCurrentPage) {
-      tplCurrentPage = tplDraftTarget.page_number || 0;
+    const pageNum = tplDraftAnchor.page_number || 0;
+    if (pageNum !== tplCurrentPage) {
+      tplCurrentPage = pageNum;
       renderTplPage();
       await new Promise(resolve => { tplImg.onload = () => { tplCanvas.width = tplImg.offsetWidth; tplCanvas.height = tplImg.offsetHeight; redrawTplCanvas(); resolve(); }; });
     }
 
-    const scaleX = tplImg.naturalWidth  / tplImg.offsetWidth;
-    const scaleY = tplImg.naturalHeight / tplImg.offsetHeight;
-    const rect = {
-      x: tplDraftTarget.x_norm * tplImg.offsetWidth,
-      y: tplDraftTarget.y_norm * tplImg.offsetHeight,
-      w: tplDraftTarget.w_norm * tplImg.offsetWidth,
-      h: tplDraftTarget.h_norm * tplImg.offsetHeight,
+    // Build the SAME mapping the Save path persists (incl. the box→box offset
+    // saveMapping records) and run it through the REAL Stage 0.5 extractor, so
+    // this test reflects exactly what reprocess will produce — same anchor
+    // relocation, target-crop derivation, OCR and normalisation. (Previously the
+    // editor cropped the absolute drawn target itself, which silently diverged.)
+    const mapping = {
+      field_key:        tplEditingFieldKey,
+      page_number:      pageNum,
+      anchor_text:      document.getElementById('tpl-map-anchor-text').value.trim() || null,
+      anchor_x_norm: tplDraftAnchor.x_norm, anchor_y_norm: tplDraftAnchor.y_norm,
+      anchor_w_norm: tplDraftAnchor.w_norm, anchor_h_norm: tplDraftAnchor.h_norm,
+      target_x_norm: tplDraftTarget.x_norm, target_y_norm: tplDraftTarget.y_norm,
+      target_w_norm: tplDraftTarget.w_norm, target_h_norm: tplDraftTarget.h_norm,
+      offset_dx_norm:   tplDraftTarget.x_norm - tplDraftAnchor.x_norm,
+      offset_dy_norm:   tplDraftTarget.y_norm - tplDraftAnchor.y_norm,
+      ocr_type:         document.getElementById('tpl-map-ocr-type').value,
+      search_expansion: parseInt(document.getElementById('tpl-map-expansion').value, 10) / 100,
+      enabled:          true,
     };
-    const cropCanvas = document.createElement('canvas');
-    cropCanvas.width  = Math.max(1, Math.round(rect.w * scaleX));
-    cropCanvas.height = Math.max(1, Math.round(rect.h * scaleY));
-    cropCanvas.getContext('2d').drawImage(
-      tplImg,
-      Math.round(rect.x * scaleX), Math.round(rect.y * scaleY),
-      cropCanvas.width, cropCanvas.height,
-      0, 0, cropCanvas.width, cropCanvas.height
-    );
-    const text = (await api.ocrRegion(cropCanvas.toDataURL('image/png').split(',')[1]) || '').trim();
+
+    // The extractor relocates the anchor and derives the target itself, so send
+    // the WHOLE full-resolution page, not a pre-cropped box.
+    const pageCanvas = document.createElement('canvas');
+    pageCanvas.width  = tplImg.naturalWidth;
+    pageCanvas.height = tplImg.naturalHeight;
+    pageCanvas.getContext('2d').drawImage(tplImg, 0, 0);
+    const pageB64 = pageCanvas.toDataURL('image/png').split(',')[1];
+
+    const out  = (await api.testTemplateMapping(pageB64, mapping)) || {};
+    const text = (out.value || '').trim();
     const status = text ? 'ok' : 'not_found';
 
     await api.recordTemplateMappingTest(selectedTemplate.id, tplEditingFieldKey, {
-      value: text || null, confidence: text ? 90 : 0, status,
+      value: text || null, confidence: text ? (out.confidence || 90) : 0, status,
     });
 
-    msg.textContent = text ? `Test result: "${text}"` : 'Test result: nothing recognised in the target zone.';
-    msg.style.color = text ? 'var(--ok)' : 'var(--warn)';
+    if (text) {
+      msg.textContent = `Test result: "${text}" (${out.method || 'mapping'})`;
+      msg.style.color = 'var(--ok)';
+    } else {
+      msg.textContent = 'Test result: anchor not located or nothing read — this is exactly what reprocess will do.';
+      msg.style.color = 'var(--warn)';
+    }
     await refreshSelectedTemplate();
     renderMappingsTable(selectedTemplate);
   } catch (e) {
