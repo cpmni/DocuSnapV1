@@ -76,6 +76,9 @@ def main():
     parser.add_argument("--formats-file",    default=None)
     parser.add_argument("--templates-file", default=None)
     parser.add_argument("--enhance-file",   default=None)
+    # Reprocess only: the template this document is already linked to, honoured
+    # as a Stage 0 fallback when live re-identification fails (see engine.extract).
+    parser.add_argument("--known-template-id", type=int, default=None)
     # Inline fallbacks (for small payloads)
     parser.add_argument("--fields",          default=None)
     parser.add_argument("--hints",           default=None)
@@ -173,11 +176,24 @@ def main():
                 document_type = document_type,
                 document_slug = doc_slug,
                 supplier_name = None,
+                known_template_id = args.known_template_id,
             )
 
             # Pull out metadata keys before sanitising
             supplier_name    = raw_extractions.pop("_supplier_name", None)
             doc_type_result  = raw_extractions.pop("_document_type", document_type)
+            # A matched template's document type wins over keyword detection: it's
+            # a confirmed, learned layout identity, and it's the ONLY way a custom
+            # doc type (no document_type_keywords) gets assigned to recurring docs.
+            # Resolve the template's slug back to the type name the rest of the
+            # pipeline / handler expects. Falls through to the keyword result when
+            # no template matched or its slug isn't a known type.
+            tmpl_type_slug   = raw_extractions.pop("_document_type_slug", None)
+            if tmpl_type_slug and doc_types:
+                for dt in doc_types:
+                    if dt.get("slug") == tmpl_type_slug:
+                        doc_type_result = dt["name"]
+                        break
             overall_conf     = raw_extractions.pop("_overall_confidence", 0)
             review_needed    = raw_extractions.pop("_needs_review", True)
             template_id      = raw_extractions.pop("_template_id", None)
@@ -224,6 +240,8 @@ def main():
                         "method":     v.get("method", "unknown"),
                         **({"validation_note": v["validation_note"]}
                            if v.get("validation_note") else {}),
+                        **({"corrected_to": v["corrected_to"]}
+                           if v.get("corrected_to") else {}),
                     }
                     for k, v in extractions.items()
                 },
