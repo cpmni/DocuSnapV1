@@ -1,28 +1,23 @@
 {
-  "id": 1,
+  "id": 32,
   "name": "Invoice Template",
   "slug": "invoice_template",
   "document_type_slug": "invoice",
-  "logo_phash": "ec9668976987e131",
+  "logo_phash": "bc922c9361c3e17b",
   "keyword_fingerprint": [
-    "Superstore",
-    "Oct",
-    "Bill",
-    "Ship",
-    "Mode",
-    "Second",
-    "Class",
-    "Alan",
-    "Schoenberger",
-    "Montgomery"
+    "Superstore"
   ],
-  "confirmed_count": 6,
-  "created_at": "2026-06-06 21:18:06",
-  "updated_at": "2026-06-07 10:45:04",
+  "confirmed_count": 0,
+  "created_at": "2026-06-10 19:41:01",
+  "updated_at": "2026-06-10 19:41:01",
+  "sample_document_id": null,
+  "group_id": null,
+  "ocr_auto_enabled": 0,
+  "ocr_auto_params": null,
   "fields": [
     {
-      "id": 2,
-      "template_id": 1,
+      "id": 597,
+      "template_id": 32,
       "field_key": "invoice_date",
       "anchor_label": null,
       "direction": "right",
@@ -30,22 +25,14 @@
       "is_variable": 1
     },
     {
-      "id": 3,
-      "template_id": 1,
+      "id": 598,
+      "template_id": 32,
       "field_key": "invoice_number",
       "anchor_label": null,
       "direction": "right",
       "fixed_value": null,
       "is_variable": 1
-    },
-    {
-      "id": 1,
-      "template_id": 1,
-      "field_key": "supplier_name",
-      "anchor_label": null,
-      "direction": "right",
-      "fixed_value": "SuperStore",
-      "is_variable": 0
     }
-  ]
+  ],
+  "field_mappings": []
 }
