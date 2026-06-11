@@ -23,6 +23,7 @@ from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from extraction.validator import parse_date, parse_amount
+from extraction.ocr_corrector import LETTER_TO_DIGIT
 
 
 # ── Format class labels ───────────────────────────────────────────────────────
@@ -197,6 +198,64 @@ def check_value(value: str, format_entry: dict) -> Optional[dict]:
         'anomaly':  f"{cls} field, unexpected character(s): {sorted(disallowed)!r}",
         'severity': severity,
     }
+
+
+# ── Digits-only OCR cleanup + correction proposal (Stage 2) ──────────────────
+
+# Reuse the extractor's existing OCR confusable map (l/I→1, O→0, S→5, …) rather
+# than duplicating it, extended with the one digit-only-specific case it lacks:
+# a slash misread for a 7. Scoped to digit-only output only — never applied to
+# alphanumeric or free-text fields.
+_DIGIT_OCR_SUBST = {**LETTER_TO_DIGIT, '/': '7'}
+
+# Characters legitimately stripped when normalising to digits-only (separators,
+# whitespace) — their removal counts as a "safe" change for the confident path.
+_STRIPPABLE = frozenset(' \t.,-_')
+
+
+def clean_digits_only(value: str) -> str:
+    """Conservatively normalise a value toward digits-only output.
+
+    Order (per spec): (1) apply the OCR substitution map, (2) drop every
+    character that is not a digit — letters, spaces, punctuation, (3+4) leading,
+    trailing, and interior whitespace are removed as a consequence of the
+    digit-only filter, (5) the meaningful digits are preserved in order.
+    """
+    s = value or ''
+    s = ''.join(_DIGIT_OCR_SUBST.get(c, c) for c in s)   # 1
+    s = ''.join(c for c in s if c.isdigit())             # 2 (+3,4 implicitly)
+    return s                                              # 5
+
+
+def propose_correction(value: str, format_entry: dict) -> Optional[dict]:
+    """Propose a digits-only cleanup for a value on a digits_only field.
+
+    Returns None unless the learned class is DIGITS_ONLY and cleanup yields a
+    different, valid all-digit string. Otherwise returns:
+        {'corrected': str, 'note': str, 'confident': bool}
+
+    `confident` is True only when EVERY character that was substituted or
+    removed was a known OCR confusable or a strippable separator/space — i.e.
+    the cleanup is unambiguous (e.g. "/ 36714" → "736714", "I36714" → "136714").
+    A value like "INV12345" requires dropping 'N'/'V' (not confusables), so it
+    is returned as a non-confident CANDIDATE — never silently auto-applied.
+    """
+    if (format_entry or {}).get('class') != DIGITS_ONLY:
+        return None
+    original = (value or '').strip()
+    if not original:
+        return None
+    cleaned = clean_digits_only(original)
+    if not cleaned or cleaned == original or not cleaned.isdigit():
+        return None
+    confident = all(
+        c.isdigit() or c in _DIGIT_OCR_SUBST or c in _STRIPPABLE
+        for c in original
+    )
+    note = (f"Auto-corrected digits-only field from '{original}' to '{cleaned}'."
+            if confident
+            else f"format anomaly: correction candidate — {cleaned}")
+    return {'corrected': cleaned, 'note': note, 'confident': confident}
 
 
 # ── Index builder ─────────────────────────────────────────────────────────────

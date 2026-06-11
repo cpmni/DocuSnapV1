@@ -34,6 +34,8 @@ from extraction.format_anomaly_checker import (
     classify_format,
     classify_single,
     check_value,
+    clean_digits_only,
+    propose_correction,
     DIGITS_ONLY, UPPER_ALPHANUM, ALPHANUM, ALPHANUM_SEP,
     DATE_LIKE, CURRENCY_LIKE, FREETEXT,
 )
@@ -309,6 +311,57 @@ def main() -> int:
     bad_index = build_format_class_index(bad_entries)
     if not check("index is empty for entries with missing required keys",
                  len(bad_index) == 0):
+        failures += 1
+
+    # ── 13. Digits-only cleanup (Part 1) ─────────────────────────────────────
+    section("13. clean_digits_only normalises common OCR noise to pure digits")
+    if not check("'/ 36714' -> '736714' (slash->7, space stripped)",
+                 clean_digits_only('/ 36714') == '736714'):
+        failures += 1
+    if not check("'I36714' -> '136714' (I->1)",
+                 clean_digits_only('I36714') == '136714'):
+        failures += 1
+    if not check("'l36 714' -> '136714' (l->1, interior space removed)",
+                 clean_digits_only('l36 714') == '136714'):
+        failures += 1
+
+    # ── 14. propose_correction confident vs candidate (Part 1) ───────────────
+    section("14. propose_correction auto-applies safe repairs, holds uncertain ones as candidates")
+    dig = {'class': DIGITS_ONLY, 'separators': frozenset()}
+    c1 = propose_correction('/ 36714', dig)
+    if not check("'/ 36714' is a CONFIDENT correction to '736714' with auto-correct note",
+                 c1 and c1['confident'] and c1['corrected'] == '736714'
+                 and c1['note'].startswith("Auto-corrected digits-only field")):
+        failures += 1
+    c2 = propose_correction('INV12345', dig)
+    if not check("'INV12345' is a NON-confident candidate (I->1, then N/V dropped = '112345') — not auto-applied",
+                 c2 and not c2['confident'] and c2['corrected'] == '112345'
+                 and 'candidate' in c2['note']):
+        failures += 1
+    if not check("propose_correction returns None for a non-digits_only class",
+                 propose_correction('INV-001', {'class': UPPER_ALPHANUM, 'separators': frozenset()}) is None):
+        failures += 1
+    if not check("propose_correction returns None when value is already clean digits",
+                 propose_correction('12345', dig) is None):
+        failures += 1
+
+    # ── 15. Learned-format promotion after 3 distinct non-digit confirms (P3) ─
+    # getFieldFormats feeds sample_values newest-first; once 3 distinct non-digit
+    # values are the newest, classify_format no longer resolves digits_only —
+    # the constraint (and thus the warning) is dropped. No format-rule redesign.
+    section("15. format broadens away from digits_only once non-digit values dominate the recent pool")
+    promoted = build_format_class_index([_entry(
+        'Acme Ltd', 'invoice', 'invoice_number',
+        # newest-first: 3 newly-confirmed alphanum exceptions, then old digits
+        ['INV12345', 'INV12346', 'INV12347', '2345', '1234'])])
+    cls_after = promoted.get(('acme ltd', 'invoice', 'invoice_number'), {}).get('class')
+    if not check("after 3 distinct non-digit confirms, class is no longer digits_only",
+                 cls_after != DIGITS_ONLY):
+        failures += 1
+    if not check("a still-digits value would NOT be flagged under the broadened class "
+                 "(warning stops for matching future values)",
+                 ('acme ltd', 'invoice', 'invoice_number') not in promoted
+                 or check_value('999', promoted[('acme ltd', 'invoice', 'invoice_number')]) is None):
         failures += 1
 
     # ── Summary ───────────────────────────────────────────────────────────────
