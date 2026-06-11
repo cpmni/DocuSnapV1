@@ -6,7 +6,7 @@
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder --win --x64",
+    "build": "node -e \"const c=require('child_process');process.env.BUILD_REV=process.env.BUILD_REV||'local';c.execSync('electron-builder --win --x64',{stdio:'inherit',env:process.env})\"",
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
@@ -27,6 +27,7 @@
       "signingHashAlgorithms": []
     },
     "nsis": {
+      "artifactName": "DocuSnap Setup ${version}-r${env.BUILD_REV}.exe",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
@@ -45,7 +46,10 @@
         "from": "python_backend/",
         "to": "python_backend",
         "filter": [
-          "**/*"
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.pyc",
+          "!**/*.pyo"
         ]
       },
       {
