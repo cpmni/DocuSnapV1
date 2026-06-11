@@ -121,13 +121,24 @@ def extract_keyword_fingerprint(ocr_text: str, max_words: int = 10) -> list:
       - calendar words are skipped (see CALENDAR_WORDS) — the month/weekday
         named in a header changes from invoice to invoice
       - the existing generic STOP_WORDS list is still applied
-    Customer/recipient names are NOT filtered here — there is no generic,
-    layout-independent way to recognise "this word is a person/company name"
-    from plain OCR text without risking false positives on real supplier
-    branding. That residual risk is documented in the audit report.
+    The recipient/customer block IS excluded: harvesting stops at the first
+    line containing a recipient marker ("Bill To", "Ship To", "Invoice To",
+    "Sold To", "Customer"). Everything after such a marker is per-document
+    customer name/address — capturing it ("Alan Shonely Tampa Florida") made a
+    template match only the one sample customer and fail every sibling document
+    of the same supplier/layout. The marker words themselves are universal
+    invoice structure, not customer-specific, so truncating AT the marker keeps
+    the stable branding/header words above it while dropping the volatile block
+    — layout-independent and reusable.
     """
-    lines       = ocr_text.split('\n')[:20]
-    header_text = ' '.join(lines)
+    RECIPIENT_MARKERS = ('bill to', 'ship to', 'invoice to', 'sold to', 'customer')
+    header_lines = []
+    for line in ocr_text.split('\n')[:20]:
+        low = line.lower()
+        if any(m in low for m in RECIPIENT_MARKERS):
+            break  # stop before the per-document recipient/customer block
+        header_lines.append(line)
+    header_text = ' '.join(header_lines)
     words       = re.findall(r'\b[A-Za-z][A-Za-z0-9]{2,}\b', header_text)
 
     seen        = set()

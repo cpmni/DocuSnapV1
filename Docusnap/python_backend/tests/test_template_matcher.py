@@ -200,12 +200,14 @@ def main():
     if not check('calendar words (rotating month names) are dropped',
                  'march' not in one_lower and 'september' not in two_lower):
         failures += 1
-    # Customer name ("Northwind Traders" vs "Fabrikam Retail") is the one
-    # variable element this fix deliberately does NOT filter — there is no
-    # generic, safe way to recognise "this is a person/company name" in plain
-    # OCR text (see extract_keyword_fingerprint's docstring). What matters is
-    # that it doesn't crowd the STABLE supplier-branding words out of the
-    # first max_words slots — the shared core below proves that didn't happen.
+    # Customer name ("Northwind Traders" vs "Fabrikam Retail") sits in the
+    # recipient block AFTER "Bill To:" — harvesting now stops at that marker, so
+    # the per-document customer words are excluded entirely (the bug that made a
+    # template match only its one sample customer). The stable supplier core
+    # above the marker is kept.
+    if not check('recipient-block customer names are excluded from the fingerprint',
+                 not ({'northwind', 'traders', 'fabrikam', 'retail'} & (set(one_lower) | set(two_lower)))):
+        failures += 1
     shared = set(one_lower) & set(two_lower)
     if not check('the two same-supplier fingerprints still share a stable supplier-identity core',
                  {'globex', 'trading', 'limited'} <= shared):
