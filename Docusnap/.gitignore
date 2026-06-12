@@ -17,4 +17,4 @@ __pycache__/
 Debug/
 debug/
 # App-generated template export artifacts (written at runtime; regenerable)
-templates/job_worksheet_template*.json
+templates/*job_worksheet*.json
