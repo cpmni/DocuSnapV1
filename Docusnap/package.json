@@ -22,9 +22,7 @@
           ]
         }
       ],
-      "icon": "assets/icon.ico",
-      "sign": null,
-      "signingHashAlgorithms": []
+      "icon": "assets/icon.ico"
     },
     "nsis": {
       "artifactName": "DocuSnap Setup ${version}-r${env.BUILD_REV}.exe",
@@ -85,7 +83,7 @@
   },
   "devDependencies": {
     "electron": "^31.0.0",
-    "electron-builder": "^24.13.3"
+    "electron-builder": "^26.8.1"
   },
   "dependencies": {
     "argon2": "^0.44.0",
