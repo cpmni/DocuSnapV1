@@ -12,3 +12,9 @@ __pycache__/
 *.pyo
 /processing.log
 /processing_test.log
+
+# Local repro documents (not part of the codebase)
+Debug/
+debug/
+# App-generated template export artifacts (written at runtime; regenerable)
+templates/job_worksheet_template*.json
