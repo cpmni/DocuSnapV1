@@ -30,7 +30,7 @@ function freshDb() {
       id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER, field_key TEXT,
       raw_value TEXT, display_value TEXT, confidence INTEGER,
       extraction_method TEXT, validation_note TEXT,
-      was_corrected INTEGER DEFAULT 0, corrected_to TEXT
+      was_corrected INTEGER DEFAULT 0, corrected_to TEXT, anchor_label TEXT
     );
     CREATE TABLE corrections (
       id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER, field_key TEXT,

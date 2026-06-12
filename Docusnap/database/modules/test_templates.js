@@ -51,6 +51,7 @@ function makeTestDb() {
       document_type_slug   TEXT,
       logo_phash           TEXT,
       keyword_fingerprint  TEXT,
+      supplier_name        TEXT,
       sample_document_id   INTEGER REFERENCES documents(id),
       confirmed_count      INTEGER NOT NULL DEFAULT 0,
       created_at           TEXT    NOT NULL DEFAULT (datetime('now')),

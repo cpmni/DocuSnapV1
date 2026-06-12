@@ -24,6 +24,7 @@ db.exec(`
   CREATE TABLE documents (id INTEGER PRIMARY KEY, status TEXT, folder_path TEXT, original_filename TEXT);
   CREATE TABLE extractions (id INTEGER PRIMARY KEY AUTOINCREMENT,
     document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE, field_key TEXT);
+  CREATE TABLE templates (id INTEGER PRIMARY KEY, sample_document_id INTEGER REFERENCES documents(id));
 `);
 const doc = db.prepare(`INSERT INTO documents (id,status) VALUES (?,?)`);
 const ext = db.prepare(`INSERT INTO extractions (document_id,field_key) VALUES (?,?)`);

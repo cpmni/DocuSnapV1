@@ -51,7 +51,7 @@ function freshDb() {
     CREATE TABLE documents (id INTEGER PRIMARY KEY, supplier_name TEXT, status TEXT, template_id INTEGER,
       logo_phash TEXT, keyword_fingerprint TEXT, document_type_id INTEGER);
     CREATE TABLE templates (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, slug TEXT, document_type_slug TEXT,
-      logo_phash TEXT, keyword_fingerprint TEXT, confirmed_count INTEGER DEFAULT 0, sample_document_id INTEGER,
+      logo_phash TEXT, keyword_fingerprint TEXT, supplier_name TEXT, confirmed_count INTEGER DEFAULT 0, sample_document_id INTEGER,
       group_id INTEGER, ocr_auto_enabled INTEGER DEFAULT 0, ocr_auto_params TEXT,
       created_at TEXT DEFAULT (datetime('now')), updated_at TEXT);
     CREATE TABLE template_fields (id INTEGER PRIMARY KEY AUTOINCREMENT,
