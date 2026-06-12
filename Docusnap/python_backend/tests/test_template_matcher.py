@@ -297,6 +297,135 @@ def main():
                  kw_loser_auto and kw_loser_auto['template']['id'] == 22):
         failures += 1
 
+    # ── Stage 0b: identify_by_anchor_labels ─────────────────────────────────
+    # Three distinct labels, each with usage_count >= 2, supplier name/type set.
+    FACTORY_ANCHORS = [
+        {'supplier_name': 'Meridian Factory Supplies',  'document_type': 'goods_receipt',
+         'anchor_label': 'GRN Number',  'usage_count': 4},
+        {'supplier_name': 'Meridian Factory Supplies',  'document_type': 'goods_receipt',
+         'anchor_label': 'Received By', 'usage_count': 3},
+        {'supplier_name': 'Meridian Factory Supplies',  'document_type': 'goods_receipt',
+         'anchor_label': 'Batch Ref',   'usage_count': 5},
+        # Low-usage entry for the same pair — must be excluded from voting
+        {'supplier_name': 'Meridian Factory Supplies',  'document_type': 'goods_receipt',
+         'anchor_label': 'Signature',   'usage_count': 1},
+    ]
+    # A registered template for this pair
+    FACTORY_TEMPLATE = {
+        'id': 10, 'name': 'Meridian GRN',
+        'supplier_name': 'Meridian Factory Supplies',
+        'document_type_slug': 'goods_receipt',
+        'logo_phash': None, 'keyword_fingerprint': [],
+        'fields': [], 'field_mappings': [],
+    }
+    FACTORY_OCR_GOOD = (
+        "Meridian Factory Supplies\n"
+        "GOODS RECEIPT NOTE\n"
+        "GRN Number: GRN-20260611-042\n"
+        "Received By: J. Sharma\n"
+        "Batch Ref: BAT-991"
+    )
+    FACTORY_OCR_PARTIAL = (  # only 1 of 3 eligible labels present
+        "Meridian Factory Supplies\n"
+        "GOODS RECEIPT NOTE\n"
+        "GRN Number: GRN-20260611-042\n"
+        "No batch or received-by info"
+    )
+
+    section('identify_by_anchor_labels: Stage 0b anchor-label voting')
+
+    # Happy path: 3 labels match, returns the registered real template
+    result_tmpl, result_labels = template_matcher.identify_by_anchor_labels(
+        FACTORY_OCR_GOOD, FACTORY_ANCHORS, [FACTORY_TEMPLATE])
+    if not check('3 labels match -> returns the registered real template',
+                 result_tmpl and result_tmpl.get('id') == 10):
+        failures += 1
+    if not check('matched_labels contains the 3 found labels',
+                 set(result_labels) == {'grn number', 'received by', 'batch ref'}):
+        failures += 1
+
+    # No registered template -> synthetic dict with correct supplier/type
+    result_synth, synth_labels = template_matcher.identify_by_anchor_labels(
+        FACTORY_OCR_GOOD, FACTORY_ANCHORS, [])  # no templates
+    if not check('no template -> synthetic dict with supplier_name',
+                 result_synth and result_synth.get('id') is None
+                 and result_synth.get('supplier_name') == 'Meridian Factory Supplies'):
+        failures += 1
+    if not check('synthetic dict carries document_type_slug',
+                 result_synth and result_synth.get('document_type_slug') == 'goods_receipt'):
+        failures += 1
+    if not check('synthetic dict has empty fields and field_mappings (Stage 0.5 will skip)',
+                 result_synth and result_synth.get('fields') == []
+                 and result_synth.get('field_mappings') == []):
+        failures += 1
+
+    # Too few labels match -> no result
+    result_partial, _ = template_matcher.identify_by_anchor_labels(
+        FACTORY_OCR_PARTIAL, FACTORY_ANCHORS, [FACTORY_TEMPLATE])
+    if not check('only 1 label present (below MIN_MATCHES=2) -> no match',
+                 result_partial is None):
+        failures += 1
+
+    # Low usage_count anchors must be ignored (Signature has usage_count=1)
+    low_usage_only = [
+        {'supplier_name': 'Some Supplier', 'document_type': 'invoice',
+         'anchor_label': 'Invoice No',  'usage_count': 1},
+        {'supplier_name': 'Some Supplier', 'document_type': 'invoice',
+         'anchor_label': 'Date',        'usage_count': 1},
+        {'supplier_name': 'Some Supplier', 'document_type': 'invoice',
+         'anchor_label': 'Total',       'usage_count': 1},
+    ]
+    result_low, _ = template_matcher.identify_by_anchor_labels(
+        "Invoice No: 1\nDate: 2026-01-01\nTotal: 100", low_usage_only, [])
+    if not check('all anchors below usage_count >= 2 -> no match',
+                 result_low is None):
+        failures += 1
+
+    # Two-label pair must be blocked by MIN_LABELS=3 guard
+    two_label_anchors = [
+        {'supplier_name': 'Generic Corp', 'document_type': 'invoice',
+         'anchor_label': 'Invoice No', 'usage_count': 5},
+        {'supplier_name': 'Generic Corp', 'document_type': 'invoice',
+         'anchor_label': 'Date',       'usage_count': 5},
+    ]
+    result_two_label, _ = template_matcher.identify_by_anchor_labels(
+        "Invoice No: 123\nDate: 2026-01-01\nTotal: 500", two_label_anchors, [])
+    if not check('pair with only 2 unique labels (below MIN_LABELS=3) -> not eligible',
+                 result_two_label is None):
+        failures += 1
+
+    # Word-boundary guard: single-word label "Date" must not match inside "Update"
+    date_anchor_only = [
+        {'supplier_name': 'BorderTest Co', 'document_type': 'report',
+         'anchor_label': 'Date',        'usage_count': 3},
+        {'supplier_name': 'BorderTest Co', 'document_type': 'report',
+         'anchor_label': 'Status',      'usage_count': 3},
+        {'supplier_name': 'BorderTest Co', 'document_type': 'report',
+         'anchor_label': 'Reference',   'usage_count': 3},
+    ]
+    no_standalone_date = "Last Updated: 2026-06-01\nStatusReport: pending\nReference: REF-001"
+    result_boundary, _ = template_matcher.identify_by_anchor_labels(
+        no_standalone_date, date_anchor_only, [])
+    if not check('"Date" inside "Updated" does not count as hit (word-boundary guard)',
+                 result_boundary is None):
+        failures += 1
+
+    # OCR whitespace tolerance: "Invoice Number" matching "InvoiceNumber" (merged)
+    ocr_merge_anchors = [
+        {'supplier_name': 'Precision Parts Ltd', 'document_type': 'invoice',
+         'anchor_label': 'Invoice Number', 'usage_count': 4},
+        {'supplier_name': 'Precision Parts Ltd', 'document_type': 'invoice',
+         'anchor_label': 'Delivery Note',  'usage_count': 3},
+        {'supplier_name': 'Precision Parts Ltd', 'document_type': 'invoice',
+         'anchor_label': 'VAT Number',     'usage_count': 2},
+    ]
+    ocr_merge_text = "InvoiceNumber: INV-005\nDeliveryNote: DN-020\nVATNumber: GB123456"
+    result_merge, merge_labels = template_matcher.identify_by_anchor_labels(
+        ocr_merge_text, ocr_merge_anchors, [])
+    if not check('OCR-merged label "InvoiceNumber" matches taught "Invoice Number"',
+                 result_merge is not None and 'invoice number' in merge_labels):
+        failures += 1
+
     print()
     if failures:
         print(f"{failures} check(s) failed — template_matcher Stage 0 identification regressed.")

@@ -227,35 +227,76 @@ def clean_digits_only(value: str) -> str:
     return s                                              # 5
 
 
+def _strip_edge_noise(value: str) -> str:
+    """Strip leading AND trailing runs of non-alphanumeric characters, leaving
+    the alphanumeric-bounded core.
+
+    Values of the character-set classes (digits_only / alphanum / upper_alphanum
+    / alphanum_sep) always begin and end with an alphanumeric character —
+    separators are interior — so stray OCR noise OR a dangling separator at
+    either edge ("<-2605-0769-1", "2605-0769-1%\"", "(2605-0769-1)") is safely
+    removed, while interior content is never touched (an anomaly whose bad
+    characters sit inside the value is left intact for manual review)."""
+    start, end = 0, len(value)
+    while start < end and not value[start].isalnum():
+        start += 1
+    while end > start and not value[end - 1].isalnum():
+        end -= 1
+    return value[start:end]
+
+
 def propose_correction(value: str, format_entry: dict) -> Optional[dict]:
-    """Propose a digits-only cleanup for a value on a digits_only field.
+    """Propose a conservative cleanup for an anomalous value.
 
-    Returns None unless the learned class is DIGITS_ONLY and cleanup yields a
-    different, valid all-digit string. Otherwise returns:
+    Two reusable, format-class-driven repairs, both strictly scoped by the
+    learned (supplier, document_type, field_key) format entry:
+
+      • DIGITS_ONLY — OCR-confusable substitution + drop non-digits. Returned
+        as a CONFIDENT auto-fix only when every changed character was a known
+        confusable or strippable separator/space ("/ 36714" → "736714");
+        otherwise a review-forced CANDIDATE ("INV12345" → "12345").
+
+      • UPPER_ALPHANUM / ALPHANUM / ALPHANUM_SEP — strip leading/trailing runs
+        of non-alphanumeric characters (stray edge OCR noise or a dangling edge
+        separator: "1234-1234-1%\"" → "1234-1234-1", "<-2605-0769-1" →
+        "2605-0769-1"). Always a non-confident CANDIDATE — never a silent
+        rewrite — and only proposed when stripping the edges yields a value that
+        FULLY satisfies the learned class (interior noise is left for manual
+        review).
+
+    Returns None when no safe proposal applies, else:
         {'corrected': str, 'note': str, 'confident': bool}
-
-    `confident` is True only when EVERY character that was substituted or
-    removed was a known OCR confusable or a strippable separator/space — i.e.
-    the cleanup is unambiguous (e.g. "/ 36714" → "736714", "I36714" → "136714").
-    A value like "INV12345" requires dropping 'N'/'V' (not confusables), so it
-    is returned as a non-confident CANDIDATE — never silently auto-applied.
     """
-    if (format_entry or {}).get('class') != DIGITS_ONLY:
-        return None
+    cls      = (format_entry or {}).get('class')
     original = (value or '').strip()
     if not original:
         return None
-    cleaned = clean_digits_only(original)
-    if not cleaned or cleaned == original or not cleaned.isdigit():
-        return None
-    confident = all(
-        c.isdigit() or c in _DIGIT_OCR_SUBST or c in _STRIPPABLE
-        for c in original
-    )
-    note = (f"Auto-corrected digits-only field from '{original}' to '{cleaned}'."
-            if confident
-            else f"format anomaly: correction candidate — {cleaned}")
-    return {'corrected': cleaned, 'note': note, 'confident': confident}
+
+    if cls == DIGITS_ONLY:
+        cleaned = clean_digits_only(original)
+        if not cleaned or cleaned == original or not cleaned.isdigit():
+            return None
+        confident = all(
+            c.isdigit() or c in _DIGIT_OCR_SUBST or c in _STRIPPABLE
+            for c in original
+        )
+        note = (f"Auto-corrected digits-only field from '{original}' to '{cleaned}'."
+                if confident
+                else f"format anomaly: correction candidate — {cleaned}")
+        return {'corrected': cleaned, 'note': note, 'confident': confident}
+
+    if cls in (UPPER_ALPHANUM, ALPHANUM, ALPHANUM_SEP):
+        seps     = (format_entry or {}).get('separators', frozenset())
+        stripped = _strip_edge_noise(original)
+        if (stripped and stripped != original
+                and not _disallowed_chars(stripped, cls, seps)):
+            return {
+                'corrected':  stripped,
+                'note':       f"format anomaly: stray edge characters — correction candidate {stripped}",
+                'confident':  False,
+            }
+
+    return None
 
 
 # ── Index builder ─────────────────────────────────────────────────────────────

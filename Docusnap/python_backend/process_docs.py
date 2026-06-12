@@ -75,6 +75,7 @@ def main():
     parser.add_argument("--doc-types-file",  default=None)
     parser.add_argument("--formats-file",    default=None)
     parser.add_argument("--templates-file", default=None)
+    parser.add_argument("--supplier-types-file", default=None)
     parser.add_argument("--enhance-file",   default=None)
     # Reprocess only: the template this document is already linked to, honoured
     # as a Stage 0 fallback when live re-identification fails (see engine.extract).
@@ -97,6 +98,7 @@ def main():
     doc_types = load_json_arg(None,         args.doc_types_file)  or []
     formats        = load_json_arg(None, args.formats_file)   or []
     templates      = load_json_arg(None, args.templates_file) or []
+    supplier_types = load_json_arg(None, args.supplier_types_file) or []
     enhance_params = load_json_arg(None, args.enhance_file)   or None
 
     emit({
@@ -177,6 +179,7 @@ def main():
                 document_slug = doc_slug,
                 supplier_name = None,
                 known_template_id = args.known_template_id,
+                supplier_types = supplier_types,
             )
 
             # Pull out metadata keys before sanitising
@@ -218,6 +221,22 @@ def main():
             # Always send to review queue — user confirms each document
             status = "needs_review"
 
+            # Main-window preview keys: resolve Reference/Date from the matched
+            # document type's OWN ref/date field keys first, so custom types
+            # (e.g. Job Worksheet → job_no/date) preview immediately in the list,
+            # then fall back to the built-in invoice/SO/PO keys. Generalises to
+            # any current or future custom type — no per-type special-casing.
+            ref_keys  = ["invoice_number", "sales_order_number", "po_number"]
+            date_keys = ["invoice_date", "order_date", "po_date"]
+            if doc_type_result and doc_types:
+                for dt in doc_types:
+                    if dt.get("name") == doc_type_result:
+                        if dt.get("ref_field_key"):
+                            ref_keys  = [dt["ref_field_key"]]  + ref_keys
+                        if dt.get("date_field_key"):
+                            date_keys = [dt["date_field_key"]] + date_keys
+                        break
+
             emit({
                 "type":               "file_done",
                 "success":            True,
@@ -246,12 +265,8 @@ def main():
                     for k, v in extractions.items()
                 },
                 # Convenience fields for main window table
-                "invoice_number": _get_val(extractions, [
-                    "invoice_number", "sales_order_number", "po_number"
-                ]),
-                "invoice_date": _get_val(extractions, [
-                    "invoice_date", "order_date", "po_date"
-                ]),
+                "invoice_number": _get_val(extractions, ref_keys),
+                "invoice_date":   _get_val(extractions, date_keys),
                 "total_amount":  _get_val(extractions, ["total_amount"]),
                 "currency":      _get_val(extractions, ["currency"]),
             })

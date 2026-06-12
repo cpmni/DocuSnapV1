@@ -123,22 +123,44 @@ def detect_document_type(ocr_text: str, patterns: dict,
 # ── Field extraction ──────────────────────────────────────────────────────────
 
 def extract_fields(ocr_text: str, field_keys: list[str],
-                   patterns: dict) -> dict:
+                   patterns: dict, field_defs: list[dict] | None = None) -> dict:
     """
     Extract field values using keyword patterns.
     Returns dict of {field_key: {"value": str, "confidence": int, "method": "keyword"}}
     Only includes fields that were found.
+
+    field_defs (optional): the document type's own field schema rows
+    ({"key","label","type"}). For any field key NOT present in the static
+    config/keyword_patterns.json (i.e. every CUSTOM field, and any custom
+    type's non-default keys), a label-search pattern is SYNTHESISED from the
+    field's own configured label — so custom fields get the same first-pass
+    Stage 1 label extraction as built-ins, with no per-field config and no
+    supplier-specific logic. Keys present in the static config are unchanged
+    (built-in behaviour is byte-for-byte identical). This is the layer where
+    custom fields were previously second-class: extract_fields used to `continue`
+    past any unconfigured key, so a custom field got zero label extraction until
+    anchors/hints/templates were manually taught.
     """
     field_patterns = patterns.get("field_patterns", {})
     validation     = patterns.get("validation_patterns", {})
     results        = {}
     lines          = ocr_text.split("\n")
 
-    for field_key in field_keys:
-        if field_key not in field_patterns:
-            continue
+    defs_by_key = {}
+    for f in (field_defs or []):
+        if isinstance(f, dict) and f.get("key"):
+            defs_by_key[f["key"]] = f
 
-        fp      = field_patterns[field_key]
+    for field_key in field_keys:
+        fp = field_patterns.get(field_key)
+        if fp is None:
+            # No static pattern — synthesise one from the field's own definition
+            # so custom fields are searched by their configured label exactly
+            # like built-ins. Skip only when there is no definition/label to use.
+            fp = _synthesize_field_pattern(field_key, defs_by_key.get(field_key))
+            if fp is None:
+                continue
+
         labels  = fp.get("labels", [])
         dirs    = fp.get("directions", ["right"])
         base_conf = fp.get("base_confidence", 75)
@@ -185,6 +207,53 @@ def extract_fields(ocr_text: str, field_keys: list[str],
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _synthesize_field_pattern(field_key: str, fdef: dict | None) -> dict | None:
+    """
+    Build a Stage 1 label-search spec for a field that has no static entry in
+    config/keyword_patterns.json — i.e. any custom field. The search labels come
+    from the field's OWN configured label plus a humanised key fallback
+    ("job_no" → "job no"), so the existing _search_for_label machinery locates
+    the value the same way it does for built-in fields. Returns None when there
+    is no usable label (the caller then skips the field, as before).
+
+    Reusable, schema-driven, no supplier/document-specific logic: every current
+    and future custom field benefits automatically the moment it is defined.
+
+    Validation is derived from the field's declared TYPE (the same idea the
+    static config encodes per field): date/currency fields get format validation
+    so a stray match is rejected and the value is trimmed to the matched span;
+    everything else is treated as free text (no validation), which is the safe
+    default that never drops an otherwise-valid value.
+    """
+    if not fdef:
+        return None
+    label    = (fdef.get("label") or "").strip()
+    key_text = (field_key or "").replace("_", " ").strip()
+
+    labels: list[str] = []
+    for cand in (label, key_text):
+        if cand and cand.lower() not in {l.lower() for l in labels}:
+            labels.append(cand)
+    if not labels:
+        return None
+
+    ftype = (fdef.get("type") or "").lower()
+    fp: dict = {
+        "labels": labels,
+        # Cover both inline ("Job No: 123") and stacked ("Job No" above value)
+        # form layouts — the two dominant shapes for custom worksheet fields.
+        # _search_for_label tries right first, then below, with its existing
+        # adjacent-label guards preventing column bleed.
+        "directions": ["right", "below"],
+        "base_confidence": 75,   # parity with the built-in default
+    }
+    if ftype == "date":
+        fp["validation"] = "date"
+    elif ftype in ("currency", "money"):
+        fp["validation"] = "currency"
+    return fp
+
 
 def _label_pattern(label: str) -> "re.Pattern | None":
     """

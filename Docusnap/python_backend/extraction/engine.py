@@ -32,6 +32,11 @@ try:
 except ImportError:
     LLM_AVAILABLE = False
 
+# Minimum confirmed documents a supplier must have under one type before that
+# type may be used as the fallback "type bridge" signal (Fix B). High enough
+# that a single mis-filed confirm can't define a supplier's "usual" type.
+SUPPLIER_TYPE_MIN_CONFIRMED = 3
+
 
 def _supplier_identity_decision(existing: dict | None, candidate: dict | None) -> str | None:
     """Plausibility-aware merge ruling for the supplier_name field only.
@@ -124,7 +129,8 @@ class ExtractionEngine:
                 document_type: str | None = None,
                 document_slug: str | None = None,
                 supplier_name: str | None = None,
-                known_template_id: int | None = None) -> dict:
+                known_template_id: int | None = None,
+                supplier_types: list | None = None) -> dict:
         """
         Run extraction pipeline according to current mode.
         Returns dict with field values + metadata keys prefixed with _.
@@ -180,8 +186,21 @@ class ExtractionEngine:
                 # not a supplier name — using it poisoned every downstream
                 # hint/anchor lookup (and got persisted into supplier_hints,
                 # where it then won out over the real "Polychemtex Inc." hints).
+                # Also check the template row's supplier_name column (migration 13)
+                # — this seeds the identity for logo-only suppliers whose name
+                # never appears as searchable text in the OCR output.
                 if not supplier_name:
                     supplier_name = (results.get('supplier_name') or {}).get('value') or None
+                if not supplier_name:
+                    tmpl_sup = (matched_tmpl.get('supplier_name') or '').strip()
+                    if tmpl_sup and keyword._is_plausible_supplier_name(tmpl_sup):
+                        supplier_name = tmpl_sup
+                        results['supplier_name'] = {
+                            'value':      tmpl_sup,
+                            'confidence': 88,
+                            'method':     'template_supplier',
+                        }
+                        self.log(f"  Stage 0: supplier '{tmpl_sup}' from template row")
                 found = len([v for v in results.values() if v.get('value')])
                 self.log(f"  Stage 0: {found}/{len(field_keys)} fields from template")
 
@@ -201,6 +220,7 @@ class ExtractionEngine:
                     mapping_results = template_mapper.extract_with_mappings(
                         page_images, tmpl_mappings,
                         field_patterns=self.patterns.get("field_patterns", {}),
+                        field_defs=field_defs,
                     )
                     applied = 0
                     for key, data in mapping_results.items():
@@ -227,6 +247,46 @@ class ExtractionEngine:
                     if applied:
                         self.log(f"  Stage 0.5: {applied} field(s) refined via anchor/target mapping")
 
+        # ── Stage 0b: anchor-label voting (when logo + keyword both failed) ────
+        # Logo hash and keyword fingerprint are template-level signals set at
+        # "Promote to Template" time. When neither fires — crinkled/photocopied
+        # logo (Hamming distance > threshold), custom doc type with no stable
+        # keyword header, or simply no template yet promoted — confirmed anchor
+        # labels from field_anchors provide a third identity signal: label
+        # texts taught across several confirmed docs accumulate a reliable
+        # presence pattern that is more robust to per-scan logo degradation.
+        # Only runs when Stage 0 (including the known_template_id fallback)
+        # returned no match, so it never overrides a positive identification.
+        if not matched_tmpl and anchors:
+            voted, voted_labels = template_matcher.identify_by_anchor_labels(
+                ocr_text, anchors, templates or [],
+            )
+            if voted:
+                n_voted    = len(voted_labels)
+                voted_conf = min(75, 50 + n_voted * 5)
+                matched_tmpl = voted
+                self.log(
+                    f"  Stage 0b: {n_voted} anchor label(s) → "
+                    f"supplier='{voted.get('supplier_name')}' "
+                    f"type='{voted.get('document_type_slug')}' conf={voted_conf}"
+                )
+                voted_supplier = voted.get('supplier_name')
+                voted_slug     = voted.get('document_type_slug')
+                # Seed supplier_name only when not already established or
+                # implausible — Stage 1/2 can still refine it further.
+                if voted_supplier and not keyword._is_plausible_supplier_name(
+                        (results.get('supplier_name') or {}).get('value')):
+                    results['supplier_name'] = {
+                        'value':      voted_supplier,
+                        'confidence': voted_conf,
+                        'method':     'anchor_vote',
+                    }
+                    if not keyword._is_plausible_supplier_name(supplier_name):
+                        supplier_name = voted_supplier
+                # Fill document_slug for hint/anchor lookups only if unknown.
+                if not document_slug and voted_slug:
+                    document_slug = voted_slug
+
         # ── Pre-stage: logo supplier identification (fallback if no template) ──
         if not supplier_name and logos and page_images:
             logo_match = anchor.try_logo_supplier_match(page_images[0], logos)
@@ -245,7 +305,8 @@ class ExtractionEngine:
 
         # ── Stage 1: Keyword extraction (always runs) ─────────────────────────
         self.log("  Stage 1: keyword extraction…")
-        kw_results = keyword.extract_fields(ocr_text, field_keys, self.patterns)
+        kw_results = keyword.extract_fields(ocr_text, field_keys, self.patterns,
+                                            field_defs=field_defs)
         for key, data in kw_results.items():
             existing = results.get(key)
             if key == "supplier_name" and existing:
@@ -561,6 +622,40 @@ class ExtractionEngine:
             if n_flagged:
                 self.log(f"  Stage 4.5: {n_flagged} field(s) flagged by format anomaly check")
 
+        # ── Logo/supplier → document-type bridge (Fix B) ──────────────────────
+        # When the supplier is identified (logo fingerprint, template, hint or
+        # anchor vote) but NEITHER on-page keyword/heading detection NOR a
+        # template produced a document type, fall back to the type this supplier
+        # has most often been CONFIRMED under. This realises the intended model
+        # — "logo narrows the supplier; page labels confirm the type" — without
+        # weakening any stronger signal:
+        #   • only fills a gap: skipped entirely when a template matched
+        #     (matched_tmpl) or keyword/heading detection found a type
+        #     (document_slug) — page-label evidence always decides first;
+        #   • requires a minimum confirmed history for the supplier;
+        #   • no supplier/document-specific logic — pure confirmed-history signal,
+        #     so every supplier and every (built-in or custom) type benefits.
+        # Especially recovers custom document types whose on-page heading differs
+        # from the configured type name (so keyword/name detection can't fire).
+        bridged_slug = None
+        if (supplier_name and supplier_types
+                and not matched_tmpl
+                and not document_slug):
+            s_lower = supplier_name.lower().strip()
+            for row in supplier_types:
+                if (row.get('supplier_name') or '').lower().strip() != s_lower:
+                    continue
+                if int(row.get('confirmed_count') or 0) < SUPPLIER_TYPE_MIN_CONFIRMED:
+                    continue
+                bridged_slug = row.get('document_type_slug') or None
+                if bridged_slug:
+                    self.log(
+                        f"  Type bridge: supplier '{supplier_name}' → "
+                        f"'{bridged_slug}' from {row.get('confirmed_count')} "
+                        f"confirmed doc(s) (no template/heading type signal)"
+                    )
+                break
+
         # ── Metadata ──────────────────────────────────────────────────────────
         overall_conf  = validator.overall_confidence(results, field_defs)
         # Stage 4.5 confidence caps (≤45) will always trigger needs_review via
@@ -576,9 +671,14 @@ class ExtractionEngine:
         results["_mode_used"]            = self.mode
         results["_template_id"]          = matched_tmpl.get("id") if matched_tmpl else None
         # The matched template carries the document type its layout was confirmed
-        # under — the only signal that assigns CUSTOM doc types (which have no
-        # document_type_keywords to keyword-detect). process_docs.py prefers it.
-        results["_document_type_slug"]   = matched_tmpl.get("document_type_slug") if matched_tmpl else None
+        # under — a strong signal that assigns CUSTOM doc types (which have no
+        # document_type_keywords to keyword-detect). When no template matched, the
+        # supplier→type confirmed-history bridge (above) fills the gap. Either way
+        # process_docs.py resolves the slug back to the type name. matched_tmpl and
+        # bridged_slug are mutually exclusive by the bridge's gate, so the OR is
+        # unambiguous.
+        tmpl_slug = matched_tmpl.get("document_type_slug") if matched_tmpl else None
+        results["_document_type_slug"]   = tmpl_slug or bridged_slug
         results["_logo_phash"]           = logo_phash
         results["_keyword_fingerprint"]  = kw_fingerprint
 

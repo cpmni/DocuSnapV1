@@ -1,0 +1,48 @@
+{
+  "name": "08_stage0b_anchor_label_identification",
+  "description": "Custom document type identified via Stage 0b anchor-label voting when logo hash fails and no keyword fingerprint exists. Supplier and doc-type context must flow through to Stage 2 so anchor extraction and hints both fire correctly.",
+  "represents": "Regression guard for the Stage 0b fallback: crinkled/absent logo, custom doc type with no built-in keyword cues, prior confirmed docs taught 3+ anchor labels. The field values must arrive via Stage 2 anchor text-search (no image crop available in this fixture — page_images=[]).",
+  "mode": "fast",
+  "document_type": null,
+  "document_slug": null,
+  "supplier_name": null,
+  "ocr_text": "Meridian Factory Supplies Ltd\nGOODS RECEIPT NOTE\n\nGRN Number: GRN-20260611-042\nReceived By: J. Sharma\nBatch Ref: BAT-991\nDate Received: 11/06/2026\n\nItem Description        Qty      Unit\nHigh-tensile bolts       500      M10\nFlat washers             500      M10\n\nAuthorised By: D. Walsh\n",
+  "field_defs": [
+    { "key": "supplier_name",   "label": "Supplier Name",   "type": "text", "required": 1, "is_variable": 0 },
+    { "key": "grn_number",      "label": "GRN Number",      "type": "text", "required": 1, "is_variable": 1 },
+    { "key": "received_by",     "label": "Received By",     "type": "text", "required": 0, "is_variable": 1 },
+    { "key": "batch_ref",       "label": "Batch Ref",       "type": "text", "required": 0, "is_variable": 1 },
+    { "key": "date_received",   "label": "Date Received",   "type": "date", "required": 1, "is_variable": 1 }
+  ],
+  "hints": [
+    { "supplier_name": "Meridian Factory Supplies Ltd", "document_type": "goods_receipt",
+      "field_key": "supplier_name", "hint_value": "Meridian Factory Supplies Ltd", "usage_count": 6 }
+  ],
+  "anchors": [
+    { "supplier_name": "Meridian Factory Supplies Ltd", "document_type": "goods_receipt",
+      "field_key": "grn_number", "anchor_label": "GRN Number",
+      "direction": "right", "page_zone": "top",
+      "x_norm": 0.0, "y_norm": 0.0, "w_norm": 0.0, "h_norm": 0.0,
+      "usage_count": 4, "confidence": 0.9 },
+    { "supplier_name": "Meridian Factory Supplies Ltd", "document_type": "goods_receipt",
+      "field_key": "received_by", "anchor_label": "Received By",
+      "direction": "right", "page_zone": "middle",
+      "x_norm": 0.0, "y_norm": 0.0, "w_norm": 0.0, "h_norm": 0.0,
+      "usage_count": 3, "confidence": 0.8 },
+    { "supplier_name": "Meridian Factory Supplies Ltd", "document_type": "goods_receipt",
+      "field_key": "batch_ref", "anchor_label": "Batch Ref",
+      "direction": "right", "page_zone": "middle",
+      "x_norm": 0.0, "y_norm": 0.0, "w_norm": 0.0, "h_norm": 0.0,
+      "usage_count": 5, "confidence": 0.9 }
+  ],
+  "logos": [],
+  "templates": [],
+  "expected": {
+    "grn_number":    "GRN-20260611-042",
+    "received_by":   "J. Sharma",
+    "batch_ref":     "BAT-991",
+    "supplier_name": "Meridian Factory Supplies Ltd",
+    "_supplier_name": "Meridian Factory Supplies Ltd",
+    "_document_type_slug": "goods_receipt"
+  }
+}

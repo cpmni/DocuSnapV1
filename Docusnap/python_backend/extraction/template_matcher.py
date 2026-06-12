@@ -34,6 +34,11 @@ CALENDAR_WORDS = {
 LOGO_THRESHOLD    = 13   # max hamming distance for logo match
 KEYWORD_THRESHOLD = 0.75 # min fraction of keywords that must be present
 
+# Anchor-label voting thresholds (Stage 0b fallback)
+ANCHOR_VOTE_MIN_LABELS   = 3    # minimum unique labels a pair must have to be eligible
+ANCHOR_VOTE_MIN_MATCHES  = 2    # labels that must appear in the OCR text
+ANCHOR_VOTE_MIN_COVERAGE = 0.35 # fraction of a pair's known labels required
+
 
 def identify_template(page_image, ocr_text: str, templates: list) -> dict | None:
     """
@@ -61,6 +66,116 @@ def identify_template(page_image, ocr_text: str, templates: list) -> dict | None
         return kw_match
 
     return None
+
+
+def identify_by_anchor_labels(ocr_text: str, anchors: list,
+                              templates: list) -> tuple[dict | None, list]:
+    """
+    Stage 0b fallback: identify supplier/document-type from learned anchor labels.
+
+    When logo hash and keyword fingerprint both fail (e.g. a crinkled logo or a
+    custom doc type with no stable keyword header), the anchor labels saved from
+    prior confirmed documents form a third, reusable identity signal. A
+    (supplier_name, document_type) pair whose labels appear in sufficient number
+    and proportion in the new document's OCR text is taken as the document's
+    identity, allowing custom types and logo-less suppliers to benefit from prior
+    learning without needing a formal template or perfectly intact logo.
+
+    Only anchors with usage_count >= 2 are considered — single-use labels from
+    one-off OCR variance are not reliable identity signals.
+
+    Returns (template_dict | synthetic_dict | None, matched_label_list).
+    A synthetic dict (when no template is registered for the identified pair)
+    carries supplier_name and document_type_slug so Stage 2 anchors and hints
+    can still fire with the correct context.
+    """
+    if not anchors or not ocr_text:
+        return None, []
+
+    ocr_lower = ocr_text.lower()
+
+    # Group anchor labels by (supplier_name_lower, document_type_lower).
+    # Exclude global/unknown anchors — they carry no supplier identity.
+    groups: dict[tuple, list]  = {}
+    canonical: dict[tuple, dict] = {}  # first-seen casing for each key
+    for a in anchors:
+        sup = (a.get('supplier_name') or '').strip()
+        dt  = (a.get('document_type') or '').strip()
+        lbl = (a.get('anchor_label') or '').strip()
+        uc  = int(a.get('usage_count') or 0)
+        if not sup or sup in ('__unknown__', '__global__') or not lbl or uc < 2:
+            continue
+        key = (sup.lower(), dt.lower())
+        groups.setdefault(key, []).append(lbl.lower())
+        canonical.setdefault(key, {'supplier_name': sup, 'document_type': dt})
+
+    if not groups:
+        return None, []
+
+    best_key    = None
+    best_labels: list = []
+    best_n      = 0
+
+    for key, raw_labels in groups.items():
+        unique = list(dict.fromkeys(raw_labels))  # dedup, preserve order
+        # Pairs with fewer than ANCHOR_VOTE_MIN_LABELS unique labels are not
+        # eligible: two generic labels ("Date", "Invoice No") appear on almost
+        # every document and would produce cross-supplier false positives whenever
+        # both happen to be present in an unrelated document.
+        if len(unique) < ANCHOR_VOTE_MIN_LABELS:
+            continue
+        matched = [lbl for lbl in unique if _anchor_label_in_text(lbl, ocr_lower)]
+        n        = len(matched)
+        coverage = n / len(unique)
+        if n >= ANCHOR_VOTE_MIN_MATCHES and coverage >= ANCHOR_VOTE_MIN_COVERAGE:
+            if n > best_n:
+                best_n      = n
+                best_key    = key
+                best_labels = matched
+
+    if not best_key:
+        return None, []
+
+    info       = canonical[best_key]
+    sup_name   = info['supplier_name']
+    dt_slug    = info['document_type']
+    sup_lower, dt_lower = best_key
+
+    # Prefer a real template registered for this (supplier, document_type) pair.
+    for t in templates:
+        t_sup = (t.get('supplier_name') or '').lower().strip()
+        t_dt  = (t.get('document_type_slug') or '').lower().strip()
+        if t_sup == sup_lower and t_dt == dt_lower:
+            return t, best_labels
+
+    # No template yet — return a synthetic object so Stage 2 anchors and hints
+    # can fire with the correct supplier + doc-type context. id=None ensures
+    # Stage 0.5 (admin-drawn mappings) is skipped for this pseudo-match.
+    synth = {
+        'id':                 None,
+        'supplier_name':      sup_name,
+        'document_type_slug': dt_slug,
+        'fields':             [],
+        'field_mappings':     [],
+    }
+    return synth, best_labels
+
+
+def _anchor_label_in_text(label: str, ocr_lower: str) -> bool:
+    """
+    Whitespace-tolerant search for a (pre-lowercased) anchor label in OCR text.
+    Mirrors the \\s*-joined regex used across all other label-matching paths so
+    OCR word-merging/splitting is handled consistently.
+    """
+    words = label.split()
+    if not words:
+        return False
+    body = r'\s*'.join(re.escape(w) for w in words)
+    if len(words) == 1 and words[0].isalpha():
+        pattern = re.compile(r'(?<![a-z0-9])' + body + r'(?![a-z0-9])')
+    else:
+        pattern = re.compile(body)
+    return bool(pattern.search(ocr_lower))
 
 
 def extract_with_template(ocr_text: str, template: dict) -> dict:

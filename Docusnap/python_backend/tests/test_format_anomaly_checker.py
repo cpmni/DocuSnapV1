@@ -364,6 +364,62 @@ def main() -> int:
                  or check_value('999', promoted[('acme ltd', 'invoice', 'invoice_number')]) is None):
         failures += 1
 
+    # ── 16. Stray trailing OCR noise -> review-forced correction candidate (P2) ─
+    # Generalises the example: a reference field whose confirmed history is shaped
+    # NNNN-NNNN-N (alphanum_sep, '-') must flag "1234-1234-1%\"" and propose
+    # stripping the trailing noise — as a CANDIDATE, never a silent fix — while a
+    # clean value still passes and INTERIOR noise is left untouched for review.
+    section("16. stray trailing OCR noise on a stable alphanum_sep field -> correction candidate")
+    sep = {'class': ALPHANUM_SEP, 'separators': frozenset({'-'})}
+    if not check("trailing-noise value '1234-1234-1%\"' is flagged as anomalous",
+                 check_value('1234-1234-1%"', sep) is not None):
+        failures += 1
+    t1 = propose_correction('1234-1234-1%"', sep)
+    if not check("trailing OCR noise -> non-confident candidate corrected_to '1234-1234-1'",
+                 t1 and not t1['confident'] and t1['corrected'] == '1234-1234-1'
+                 and 'candidate' in t1['note']):
+        failures += 1
+    # Leading noise (the reprocess example) and wrapped noise must also propose
+    # the alnum-bounded core — edge stripping is symmetric, incl. dangling seps.
+    lead = propose_correction('<-2605-0769-1', sep)
+    if not check("leading OCR noise '<-2605-0769-1' -> candidate '2605-0769-1'",
+                 lead and not lead['confident'] and lead['corrected'] == '2605-0769-1'):
+        failures += 1
+    wrap = propose_correction('(2605-0769-1)', sep)
+    if not check("wrapped OCR noise '(2605-0769-1)' -> candidate '2605-0769-1'",
+                 wrap and wrap['corrected'] == '2605-0769-1'):
+        failures += 1
+    if not check("a legitimate value with the normal separator pattern still passes",
+                 check_value('5678-9012-3', sep) is None):
+        failures += 1
+    if not check("a clean value yields no correction proposal",
+                 propose_correction('5678-9012-3', sep) is None):
+        failures += 1
+    if not check("INTERIOR noise is NOT auto-stripped (conservative — left for review)",
+                 propose_correction('1234-12%34-1', sep) is None):
+        failures += 1
+    ua = {'class': UPPER_ALPHANUM, 'separators': frozenset()}
+    t2 = propose_correction('ABC123!!', ua)
+    if not check("upper_alphanum generalisation: 'ABC123!!' -> candidate 'ABC123'",
+                 t2 and not t2['confident'] and t2['corrected'] == 'ABC123'):
+        failures += 1
+    # End-to-end through the index builder with a synthetic, multi-value fixture
+    # (no document/supplier-specific assumptions — any stable separator shape).
+    idx = build_format_class_index([_entry(
+        'Globex Services', 'job_worksheet', 'reference',
+        ['1234-1234-1', '2234-5678-9', '3456-7890-2', '4567-8901-3'])])
+    fe = idx.get(('globex services', 'job_worksheet', 'reference'))
+    if not check("synthetic history classifies as alphanum_sep with '-' separator",
+                 bool(fe) and fe['class'] == ALPHANUM_SEP and '-' in fe['separators']):
+        failures += 1
+    e2e = propose_correction('9999-8888-7@', fe) if fe else None
+    if not check("end-to-end via index entry: '9999-8888-7@' -> candidate '9999-8888-7'",
+                 e2e and e2e['corrected'] == '9999-8888-7' and not e2e['confident']):
+        failures += 1
+    if not check("freetext field is unaffected (no constraint, no proposal)",
+                 propose_correction('anything goes!!', {'class': FREETEXT, 'separators': frozenset()}) is None):
+        failures += 1
+
     # ── Summary ───────────────────────────────────────────────────────────────
     print()
     if failures:

@@ -146,8 +146,12 @@ def test_locate_anchor():
                  located is not None and located.get("matched_text") == "Invoice Numben"):
         failures += 1
     if located:
-        expect_x = 0.10 + 0.5 * 0.20   # crop_box.x + word.x_norm * crop_box.w
-        expect_y = 0.20 + 0.25 * 0.04
+        # Text-validated anchors now search an asymmetric drift margin around the
+        # drawn box (mx=_MIN_RELOCATE_MARGIN_X=0.01, my=_MIN_RELOCATE_MARGIN_Y=
+        # 0.05), so the crop box is x0=0.09,w=0.22 / y0=0.15,h=0.14 and the
+        # crop-relative word translates against THAT box.
+        expect_x = 0.09 + 0.5 * 0.22   # crop_box.x + word.x_norm * crop_box.w
+        expect_y = 0.15 + 0.25 * 0.14
         if not check(f"located position translated to page-relative ({expect_x:.3f}, {expect_y:.3f})",
                      abs(located["x_norm"] - expect_x) < 1e-9 and abs(located["y_norm"] - expect_y) < 1e-9):
             failures += 1
@@ -299,7 +303,11 @@ def test_derived_target_no_leading_inset_clip():
     print("derived target: box-origin offset removes leading-character inset clip")
     page = FakePage((1000, 1000))
     # base_mapping: anchor box x=0.10 w=0.20; target box x=0.25 w=0.15; dx=0.15.
-    m = base_mapping()
+    # Use a non-reference field (customer_name) for this geometry test — the value
+    # below ("PROFILE CONSTRUCTION") is a name with no digit, which the numeric
+    # shape-gate would legitimately reject on a `..._number`/`..._no` field. This
+    # is also truer to the original bug, which was a name field clipped to "ROFILE".
+    m = base_mapping(field_key="customer_name")
     # Label OCR'd tight-centred inside the anchor crop (crop-relative): left 0.15
     # of width 0.70 -> page-relative tight left 0.10+0.15*0.20=0.13, width 0.14,
     # so per-side inset (0.20-0.14)/2 = 0.03.
@@ -320,7 +328,7 @@ def test_derived_target_no_leading_inset_clip():
                  x1 == 250):
         failures += 1
     if not check("full value resolved, leading character intact",
-                 res.get("invoice_number", {}).get("value") == "PROFILE CONSTRUCTION"):
+                 res.get("customer_name", {}).get("value") == "PROFILE CONSTRUCTION"):
         failures += 1
     print()
     return failures

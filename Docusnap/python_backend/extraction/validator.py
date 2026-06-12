@@ -99,6 +99,18 @@ def _sanitise_reference_edges(raw: str) -> str:
     return _EDGE_NOISE_RE.sub("", raw)
 
 
+def _sanitise_number_spaces(raw: str) -> str:
+    """Remove OCR-inserted whitespace from a strictly numeric field value.
+    A field typed `number` ("job_no" -> "2603-1351 -1") has no legitimate
+    internal spaces, so collapsing them recovers the contiguous value that a
+    manual OCR of the same region reads ("2603-1351-1"). Scoped by the field's
+    own schema `type == "number"` ONLY, so textual reference fields
+    (invoice_number / po_number / sales_order_number are all type "text") and
+    names are never touched — invoices and other types stay byte-for-byte
+    unchanged."""
+    return re.sub(r"\s+", "", raw)
+
+
 def _is_reference_number_field(key: str) -> bool:
     """Reference/number fields follow one consistent `..._number` naming
     convention across every built-in document type (invoice_number,
@@ -185,6 +197,8 @@ def validate_and_adjust(extractions: dict,
 
         if f.get("type") == "date":
             cleaned = _sanitise_date_junk(val)
+        elif f.get("type") == "number":
+            cleaned = _sanitise_number_spaces(val)
         elif _is_reference_number_field(key):
             cleaned = _sanitise_reference_edges(val)
         else:

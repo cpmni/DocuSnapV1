@@ -30,6 +30,8 @@ import re
 
 from PIL import Image, ImageFilter, ImageOps
 
+from extraction import validator
+
 try:
     import pytesseract
     from pytesseract import Output
@@ -39,9 +41,34 @@ except ImportError:  # pragma: no cover - exercised only when Tesseract absent
 
 _FUZZY_MATCH_THRESHOLD = 0.6
 
+# Always search a margin around a TEXT-validated anchor box when relocating, even
+# if the admin saved search_expansion=0. The anchor+relative-offset model exists
+# to absorb print/scan drift, but a zero-margin search defeats it: a label that
+# drifted even slightly off the tightly-drawn box OCRs as empty and the mapping
+# silently fails (observed: "Work Address" found on the sample but missed on
+# sibling documents where it shifted ~4% vertically, dropping customer_name to
+# keyword junk). Vertical margin is generous (drift is mostly up/down); horizontal
+# margin is tiny so the search never swallows the value column to the label's
+# right. The needle (anchor_text) match still gates acceptance, so widening the
+# search cannot grab an unrelated label — it only recovers the same label nearby.
+_MIN_RELOCATE_MARGIN_Y = 0.05
+_MIN_RELOCATE_MARGIN_X = 0.01
+
+
+def _is_numeric_field(field_key, field_type):
+    """A field is numeric/reference-shaped — and therefore must contain at least
+    one digit to be a valid value — when its schema type is number/integer or its
+    key follows the universal reference naming convention (`..._number`, `..._no`,
+    `..._no.`). Keyed off type + convention so it generalises to any custom field
+    or document type, with no hardcoded field names."""
+    if (field_type or "").lower() in ("number", "integer", "int"):
+        return True
+    k = (field_key or "").lower()
+    return k.endswith("_number") or k.endswith("_no") or k.endswith("_no.")
+
 
 def extract_with_mappings(page_images, mappings, field_patterns=None,
-                          ocr_lines_fn=None, ocr_text_fn=None):
+                          ocr_lines_fn=None, ocr_text_fn=None, field_defs=None):
     """
     Run every enabled mapping against `page_images` and return resolved fields.
 
@@ -55,6 +82,8 @@ def extract_with_mappings(page_images, mappings, field_patterns=None,
         return {}
     ocr_lines_fn = ocr_lines_fn or _ocr_lines
     ocr_text_fn  = ocr_text_fn  or _ocr_text
+    field_types  = {f.get("key"): f.get("type") for f in (field_defs or [])
+                    if isinstance(f, dict) and f.get("key")}
 
     results = {}
     for mapping in mappings:
@@ -69,6 +98,19 @@ def extract_with_mappings(page_images, mappings, field_patterns=None,
 
         outcome = _extract_one(page_images[page_idx], mapping, field_patterns,
                                ocr_lines_fn, ocr_text_fn)
+        # Shape gate: a mapped value that fails its field's basic type validation
+        # is a mis-located/mis-read crop, not a value — drop it so the field falls
+        # back to keyword/anchor instead of winning on the mapping's curated-
+        # refinement precedence. Two reusable, type-driven checks:
+        #  • numeric/reference field with no digit ("Planned Mainte" for a job no.)
+        #  • date field whose value can't be parsed as a date ("97/01/2026")
+        if outcome:
+            ftype = (field_types.get(field_key) or "").lower()
+            value = outcome.get("value", "") or ""
+            if _is_numeric_field(field_key, ftype) and not any(c.isdigit() for c in value):
+                outcome = None
+            elif ftype == "date" and validator.parse_date(value) is None:
+                outcome = None
         if outcome:
             results[field_key] = outcome
     return results
@@ -144,7 +186,19 @@ def _locate_anchor(page, anchor_box, anchor_text, expansion, ocr_lines_fn):
     normalised coordinates. Returns None when nothing usable is found there —
     the caller's documented signal to fall back to the rest of the pipeline.
     """
-    search_box = _expand_box(anchor_box, expansion) if expansion > 0 else dict(anchor_box)
+    # Text-validated anchors get search slack so small drift doesn't drop the
+    # match. The slack is asymmetric: generous VERTICALLY (labels drift up/down
+    # between print runs) but minimal HORIZONTALLY — a wide horizontal box would
+    # swallow the start of the value column to the label's right, merge it into
+    # the matched OCR line, and shift the derived target (observed: "Beaumont" →
+    # "jeaumont"). Needle-less anchors keep their exact/admin-set box, since
+    # there's no label match to guard a wider search.
+    if anchor_text:
+        mx = max(expansion, _MIN_RELOCATE_MARGIN_X)
+        my = max(expansion, _MIN_RELOCATE_MARGIN_Y)
+        search_box = _expand_xy(anchor_box, mx, my)
+    else:
+        search_box = _expand_box(anchor_box, expansion) if expansion > 0 else dict(anchor_box)
     crop_box = _clamp_box(search_box)
     crop = _crop(page, crop_box)
     if crop is None:
@@ -194,10 +248,17 @@ def _expand_box(box, fraction):
     """Grow a box by `fraction` of the page in every direction, clamped to [0,1]."""
     if not fraction:
         return dict(box)
-    x0 = max(0.0, box["x_norm"] - fraction)
-    y0 = max(0.0, box["y_norm"] - fraction)
-    x1 = min(1.0, box["x_norm"] + box["w_norm"] + fraction)
-    y1 = min(1.0, box["y_norm"] + box["h_norm"] + fraction)
+    return _expand_xy(box, fraction, fraction)
+
+
+def _expand_xy(box, fx, fy):
+    """Grow a box by `fx` horizontally and `fy` vertically (page fractions),
+    clamped to [0,1]. Lets the anchor-relocation search use a different margin
+    per axis — see _locate_anchor."""
+    x0 = max(0.0, box["x_norm"] - fx)
+    y0 = max(0.0, box["y_norm"] - fy)
+    x1 = min(1.0, box["x_norm"] + box["w_norm"] + fx)
+    y1 = min(1.0, box["y_norm"] + box["h_norm"] + fy)
     return {"x_norm": x0, "y_norm": y0, "w_norm": max(0.0, x1 - x0), "h_norm": max(0.0, y1 - y0)}
 
 
