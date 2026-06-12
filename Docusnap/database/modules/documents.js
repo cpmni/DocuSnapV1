@@ -52,7 +52,19 @@ function getById(db, id) {
 // extractions/corrections are removed by their ON DELETE CASCADE. Callers are
 // responsible for unlinking the source files first (see review/handler.js).
 function deleteByStatus(db, status) {
-  return db.prepare('DELETE FROM documents WHERE status = ?').run(status);
+  // templates.sample_document_id -> documents.id is ON DELETE NO ACTION, so any
+  // template pinned to one of these docs (e.g. a confirmed sample later
+  // reprocessed back to needs_review) would FK-block the whole DELETE — aborting
+  // it atomically and leaving every row behind. Clear the dangling pin first,
+  // in one transaction, mirroring templates.remove() nulling template_id.
+  const tx = db.transaction(() => {
+    db.prepare(
+      `UPDATE templates SET sample_document_id = NULL
+       WHERE sample_document_id IN (SELECT id FROM documents WHERE status = ?)`
+    ).run(status);
+    return db.prepare('DELETE FROM documents WHERE status = ?').run(status);
+  });
+  return tx();
 }
 
 function getWithExtractions(db, id) {
@@ -106,7 +118,14 @@ function confirm(db, id, { stored_filename, stored_path }) {
 }
 
 function deleteDoc(db, id) {
-  return db.prepare('DELETE FROM documents WHERE id = ?').run(id);
+  // Same FK guard as deleteByStatus: a doc pinned as a template's sample
+  // (sample_document_id, ON DELETE NO ACTION) can't be deleted until that
+  // reference is cleared — otherwise single-delete of a pinned doc throws.
+  const tx = db.transaction(() => {
+    db.prepare('UPDATE templates SET sample_document_id = NULL WHERE sample_document_id = ?').run(id);
+    return db.prepare('DELETE FROM documents WHERE id = ?').run(id);
+  });
+  return tx();
 }
 
 function search(db, { company, reference, dateFrom, dateTo,

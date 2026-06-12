@@ -681,8 +681,8 @@
                 <div class="form-group">
                   <label>Expansion</label>
                   <div class="conf-row">
-                    <input type="range" class="conf-slider" id="tpl-map-expansion" min="0" max="20" value="4" title="Extra margin added around the target zone when searching">
-                    <span class="conf-val" id="tpl-map-expansion-val">4%</span>
+                    <input type="range" class="conf-slider" id="tpl-map-expansion" min="0" max="20" value="0" title="Extra margin added around the target zone when searching">
+                    <span class="conf-val" id="tpl-map-expansion-val">0%</span>
                   </div>
                 </div>
                 <div class="form-group">
@@ -705,7 +705,7 @@
 
             <div class="section" style="margin-top:8px;">
               <div class="section-title">Saved Mappings</div>
-              <p class="section-desc">Click a row to edit.</p>
+              <p class="section-desc">Click a row to edit. The “Last test” column shows the raw mapped read; the filed value (Review/Search) is normalised later (spacing, date format).</p>
               <table class="fields-table" id="tpl-mappings-table">
                 <thead>
                   <tr><th>Field</th><th>Anchor label</th><th>OCR type</th><th>Search expansion</th><th>Last test</th><th>Enabled</th></tr>
@@ -713,6 +713,32 @@
                 <tbody id="tpl-mappings-tbody"></tbody>
               </table>
               <div id="tpl-mappings-empty" class="section-desc" style="display:none;">No mappings yet — standard pipeline applies.</div>
+            </div>
+
+            <div class="section">
+              <div class="section-title">Fixed Field Values</div>
+              <p class="section-desc">Force a constant value for a field on every document that matches this template (e.g. a supplier name that is always the same). Fixed values are applied automatically during processing and reprocess. Clear a value to return the field to normal extraction.</p>
+              <div class="row-flex" style="flex-wrap:wrap; gap:16px; align-items:flex-end;">
+                <div class="form-group">
+                  <label>Field</label>
+                  <select id="tpl-fixed-field-select" class="field-select" style="min-width:190px;" title="Choose the field to fix"></select>
+                </div>
+                <div class="form-group" style="flex:1; min-width:200px;">
+                  <label>Fixed value</label>
+                  <input type="text" id="tpl-fixed-value-input" class="field-select" placeholder="e.g. Document Solutions Ltd">
+                </div>
+                <div class="form-group" style="flex-direction:row; gap:8px;">
+                  <button class="btn" id="tpl-fixed-set-btn">Set Fixed Value</button>
+                </div>
+              </div>
+              <span id="tpl-fixed-msg" class="section-desc" style="display:none; margin:6px 0 0;"></span>
+              <table class="fields-table" style="margin-top:10px;">
+                <thead>
+                  <tr><th>Field</th><th>Fixed value</th><th></th></tr>
+                </thead>
+                <tbody id="tpl-fixed-tbody"></tbody>
+              </table>
+              <div id="tpl-fixed-empty" class="section-desc" style="display:none;">No fixed field values — all fields use normal extraction.</div>
             </div>
 
             <div class="section">

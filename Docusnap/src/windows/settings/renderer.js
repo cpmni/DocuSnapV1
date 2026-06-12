@@ -1077,6 +1077,7 @@ async function selectTemplate(id) {
   renderSelectorAnchorsTable(detail);
   await loadSamplePages(detail);
   await populateMapFieldSelect(detail);
+  await renderFixedFieldsSection(detail);
 }
 
 function renderDetectionMethod(detail) {
@@ -1391,16 +1392,15 @@ function redrawTplCanvas() {
   }
   if (tplDragRect) {
     const dragColor = tplMapMode === 'target' ? '#3ecf8e' : '#4f8ef7';
-    tplCtx.setLineDash([4, 3]);
-    tplCtx.strokeStyle = 'rgba(0,0,0,0.4)';
-    tplCtx.lineWidth   = 4;
-    tplCtx.strokeRect(tplDragRect.x, tplDragRect.y, tplDragRect.w, tplDragRect.h);
+    const dx = Math.round(tplDragRect.x), dy = Math.round(tplDragRect.y);
+    const dw = Math.round(tplDragRect.w), dh = Math.round(tplDragRect.h);
+    tplCtx.lineWidth   = 1;
     tplCtx.strokeStyle = dragColor;
-    tplCtx.lineWidth   = 2;
-    tplCtx.strokeRect(tplDragRect.x, tplDragRect.y, tplDragRect.w, tplDragRect.h);
+    tplCtx.setLineDash([5, 4]);
+    tplCtx.strokeRect(dx + 0.5, dy + 0.5, dw, dh);
     tplCtx.setLineDash([]);
-    tplCtx.fillStyle   = dragColor + '18';
-    tplCtx.fillRect(tplDragRect.x, tplDragRect.y, tplDragRect.w, tplDragRect.h);
+    tplCtx.fillStyle = dragColor + '18';
+    tplCtx.fillRect(dx, dy, dw, dh);
   }
 }
 
@@ -1427,19 +1427,17 @@ function drawSavedMappings() {
 
 function drawNormBox(xN, yN, wN, hN, w, h, color, label, selected = false) {
   if ([xN, yN, wN, hN].some(v => v == null)) return;
-  const x = xN * w, y = yN * h, bw = wN * w, bh = hN * h;
-  const lw = selected ? 3 : 2;
-  tplCtx.setLineDash(selected ? [] : [4, 3]);
-  // Dark outline behind color stroke for visibility on white documents
-  tplCtx.strokeStyle = 'rgba(0,0,0,0.3)';
-  tplCtx.lineWidth   = lw + 2;
-  tplCtx.strokeRect(x, y, bw, bh);
+  const x  = Math.round(xN * w);
+  const y  = Math.round(yN * h);
+  const bw = Math.round(wN * w);
+  const bh = Math.round(hN * h);
+  tplCtx.lineWidth   = selected ? 1.5 : 1;
   tplCtx.strokeStyle = color;
-  tplCtx.lineWidth   = lw;
-  tplCtx.strokeRect(x, y, bw, bh);
-  tplCtx.fillStyle   = color + (selected ? '40' : '26');
-  tplCtx.fillRect(x, y, bw, bh);
+  tplCtx.setLineDash(selected ? [] : [5, 4]);
+  tplCtx.strokeRect(x + 0.5, y + 0.5, bw, bh);
   tplCtx.setLineDash([]);
+  tplCtx.fillStyle = color + (selected ? '26' : '12');
+  tplCtx.fillRect(x, y, bw, bh);
 }
 
 // ── Hit testing ──────────────────────────────────────────────────────────────
@@ -1738,8 +1736,8 @@ function loadMappingIntoEditor(fieldKey) {
     tplDraftTarget = null;
     document.getElementById('tpl-map-anchor-text').value = '';
     document.getElementById('tpl-map-ocr-type').value    = 'text';
-    document.getElementById('tpl-map-expansion').value     = 4;
-    document.getElementById('tpl-map-expansion-val').textContent = '4%';
+    document.getElementById('tpl-map-expansion').value     = 0;
+    document.getElementById('tpl-map-expansion-val').textContent = '0%';
     document.getElementById('tpl-map-enabled').checked   = true;
     document.getElementById('tpl-btn-delete-mapping').style.display = 'none';
   }
@@ -1848,8 +1846,14 @@ document.getElementById('tpl-btn-test-mapping').addEventListener('click', async 
     // this test reflects exactly what reprocess will produce — same anchor
     // relocation, target-crop derivation, OCR and normalisation. (Previously the
     // editor cropped the absolute drawn target itself, which silently diverged.)
+    // field_type carries the doc-type schema type so the test applies the same
+    // Stage 0.5 numeric/date shape-gate engine.py does (which passes field_defs)
+    // — otherwise the test would show a value that live extraction rejects.
+    const dtFields = (allTypesWithFields.find(t => t.slug === selectedTemplate.document_type_slug)?.fields) || [];
+    const fieldType = dtFields.find(f => f.key === tplEditingFieldKey)?.type || null;
     const mapping = {
       field_key:        tplEditingFieldKey,
+      field_type:       fieldType,
       page_number:      pageNum,
       anchor_text:      document.getElementById('tpl-map-anchor-text').value.trim() || null,
       anchor_x_norm: tplDraftAnchor.x_norm, anchor_y_norm: tplDraftAnchor.y_norm,
@@ -1880,7 +1884,12 @@ document.getElementById('tpl-btn-test-mapping').addEventListener('click', async 
     });
 
     if (text) {
-      msg.textContent = `Test result: "${text}" (${out.method || 'mapping'})`;
+      // This is the RAW Stage 0.5 mapped read. The Review window / filed value is
+      // the SAME extraction after Stage 4 normalisation (e.g. spacing collapse on
+      // numeric fields, date reformatting), so it may render slightly tidied —
+      // same value, later stage. Spelled out here to avoid "Test vs Review differ"
+      // confusion now that the test path is type-aware.
+      msg.textContent = `Test result: "${text}" (${out.method || 'mapping'}) — raw mapped read; Review/filed value may be normalised (spacing, date format).`;
       msg.style.color = 'var(--ok)';
     } else {
       msg.textContent = 'Test result: anchor not located or nothing read — this is exactly what reprocess will do.';
@@ -1938,6 +1947,101 @@ function renderMappingsTable(detail) {
     tbody.appendChild(tr);
   }
 }
+
+// ── Fixed field values ─────────────────────────────────────────────────────────
+// Admin-managed constant values for template fields. The field dropdown reuses
+// the document type's own field schema (allTypesWithFields — same source as the
+// mapping field selector), so it offers every field even when no template_fields
+// row exists yet (e.g. a supplier_name that was never captured on confirm). The
+// table lists only fields currently fixed, so it's clear at a glance which fields
+// are constant and which use normal extraction.
+async function renderFixedFieldsSection(detail) {
+  if (!allTypesWithFields.length) {
+    try { await loadDocTypes(); } catch (e) { console.warn('loadDocTypes (fixed fields) failed:', e.message); }
+  }
+  const dt       = allTypesWithFields.find(t => t.slug === detail.document_type_slug);
+  const dtFields = (dt ? dt.fields : []) || [];
+  const labelFor = (key) => { const f = dtFields.find(f => f.key === key); return f ? f.label : key; };
+
+  // Field dropdown + value prefill from any existing fixed value
+  const select = document.getElementById('tpl-fixed-field-select');
+  const input  = document.getElementById('tpl-fixed-value-input');
+  if (select) {
+    select.innerHTML = '';
+    for (const f of dtFields) {
+      const opt = document.createElement('option');
+      opt.value = f.key;
+      opt.textContent = `${f.label} (${f.key})`;
+      select.appendChild(opt);
+    }
+    const syncInput = () => {
+      const ex = (selectedTemplate?.fields || []).find(
+        f => f.field_key === select.value && !f.is_variable && f.fixed_value);
+      if (input) input.value = ex ? ex.fixed_value : '';
+    };
+    select.onchange = syncInput;
+    if (dtFields.length) select.value = dtFields[0].key;
+    syncInput();
+  }
+
+  // Table of fields that are currently fixed
+  const tbody = document.getElementById('tpl-fixed-tbody');
+  const empty = document.getElementById('tpl-fixed-empty');
+  const fixed = (detail.fields || []).filter(f => !f.is_variable && f.fixed_value);
+  if (tbody) {
+    tbody.innerHTML = '';
+    for (const f of fixed) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><span class="field-key">${escHtml(labelFor(f.field_key))}</span> <span class="section-desc">(${escHtml(f.field_key)})</span></td>
+        <td>${escHtml(f.fixed_value)}</td>
+        <td><button class="btn" style="padding:2px 9px; font-size:11px;">Clear</button></td>
+      `;
+      tr.querySelector('button').addEventListener('click', () => clearFixedFieldValue(f.field_key));
+      tbody.appendChild(tr);
+    }
+  }
+  if (empty) empty.style.display = fixed.length ? 'none' : '';
+}
+
+async function setFixedFieldValue() {
+  if (!selectedTemplate) return;
+  const select = document.getElementById('tpl-fixed-field-select');
+  const input  = document.getElementById('tpl-fixed-value-input');
+  const msg    = document.getElementById('tpl-fixed-msg');
+  const fieldKey = select?.value;
+  const value    = (input?.value || '').trim();
+  if (!fieldKey) return;
+  try {
+    const res = await api.setTemplateFieldFixed(selectedTemplate.id, fieldKey, value);
+    if (res?.success && res.template) {
+      selectedTemplate = res.template;
+      await renderFixedFieldsSection(res.template);
+      if (msg) { msg.style.display = ''; msg.textContent = value
+        ? `Fixed value set for "${fieldKey}".`
+        : `Fixed value cleared for "${fieldKey}".`; }
+    } else if (msg) {
+      msg.style.display = ''; msg.textContent = res?.error || 'Could not set fixed value.';
+    }
+  } catch (e) {
+    if (msg) { msg.style.display = ''; msg.textContent = 'Error: ' + e.message; }
+  }
+}
+
+async function clearFixedFieldValue(fieldKey) {
+  if (!selectedTemplate) return;
+  try {
+    const res = await api.setTemplateFieldFixed(selectedTemplate.id, fieldKey, '');
+    if (res?.success && res.template) {
+      selectedTemplate = res.template;
+      await renderFixedFieldsSection(res.template);
+    }
+  } catch (e) {
+    console.warn('clearFixedFieldValue failed:', e.message);
+  }
+}
+
+document.getElementById('tpl-fixed-set-btn')?.addEventListener('click', setFixedFieldValue);
 
 function renderSelectorAnchorsTable(detail) {
   const tbody  = document.getElementById('tpl-fields-tbody');

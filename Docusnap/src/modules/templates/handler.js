@@ -177,6 +177,19 @@ function register(ctx) {
     return true;
   });
 
+  // ── Fixed field values ───────────────────────────────────────────────────────
+  // Explicit admin-managed constant value for a single template field. Reuses
+  // the existing template_fields.fixed_value / is_variable mechanism that
+  // template_matcher.extract_with_template already applies during processing and
+  // reprocess — this endpoint only exposes set/clear from the UI. Passing an
+  // empty value clears the override and returns the field to normal extraction.
+  ipcMain.handle('set-template-field-fixed', (_e, templateId, fieldKey, fixedValue) => {
+    requireRole('admin');
+    if (!fieldKey) return { success: false, error: 'field_key required' };
+    const template = templates.setFieldFixedValue(getDb(), Number(templateId), fieldKey, fixedValue);
+    return { success: true, template };
+  });
+
   // ── Template groups (v1: organisational metadata only) ────────────────────
   ipcMain.handle('get-template-groups', (_e) => {
     requireRole('admin');

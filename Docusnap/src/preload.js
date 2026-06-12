@@ -123,6 +123,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   setTemplateMappingEnabled:  (id, key, enabled)  => ipcRenderer.invoke('set-template-mapping-enabled', id, key, enabled),
   deleteTemplateMapping:      (id, key)           => ipcRenderer.invoke('delete-template-mapping', id, key),
   recordTemplateMappingTest:  (id, key, result)   => ipcRenderer.invoke('record-template-mapping-test', id, key, result),
+  setTemplateFieldFixed:      (id, key, value)    => ipcRenderer.invoke('set-template-field-fixed', id, key, value),
   // Template groups (v1: organisational metadata)
   getTemplateGroups:          ()             => ipcRenderer.invoke('get-template-groups'),
   createTemplateGroup:        (name)         => ipcRenderer.invoke('create-template-group', name),

@@ -260,6 +260,27 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 9 applied: template groups');
   }
 
+  // Migration 14: add anchor_label to extractions — stores the anchor label used
+  // so the review UI can show "From anchor: xxxxxx" for debugging.
+  if (!applied.has(14)) {
+    if (tableExists(db, 'extractions') && !hasColumn(db, 'extractions', 'anchor_label')) {
+      try { db.exec(`ALTER TABLE extractions ADD COLUMN anchor_label TEXT`); } catch {}
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (14)').run();
+    console.log('JS migration 14 applied: extractions.anchor_label');
+  }
+
+  // Migration 13: add supplier_name to templates — enables logo-matched templates to
+  // seed the supplier identity without requiring the supplier's name to appear as
+  // searchable text in the OCR output (logo-only suppliers were always supplier=?).
+  if (!applied.has(13)) {
+    if (tableExists(db, 'templates') && !hasColumn(db, 'templates', 'supplier_name')) {
+      try { db.exec(`ALTER TABLE templates ADD COLUMN supplier_name TEXT`); } catch {}
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (13)').run();
+    console.log('JS migration 13 applied: templates.supplier_name');
+  }
+
   // Migration 3: remove extra built-in fields, keep only name/date/ref per type
   if (!applied.has(3)) {
     const keepBySlug = {

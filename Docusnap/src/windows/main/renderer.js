@@ -221,7 +221,6 @@ function addTableRow(msg) {
     <td class="mono">${escHtml(msg.invoice_number || '—')}</td>
     <td class="mono">${escHtml(msg.invoice_date   || '—')}</td>
     <td>${escHtml(msg.supplier_name || '—')}</td>
-    <td class="mono">${escHtml(msg.total_amount || '—')} ${escHtml(msg.currency || '')}</td>
     ${confLabel}
       <td>${statusBadge}</td>
     <td>${locationBtn}</td>

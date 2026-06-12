@@ -10,6 +10,26 @@ function getAll(db) {
     t.keyword_fingerprint = _parseJson(t.keyword_fingerprint, []);
     t.ocr_auto_params     = _parseJson(t.ocr_auto_params, null);
   }
+
+  // Group-level supplier_name inheritance (read-time enrichment, no DB write).
+  // When Template B in a group has no confirmed supplier_name but a sibling
+  // Template A does, Template B inherits it so Python's anchor/hint lookup
+  // (keyed by supplier_name) can find all anchors learned from the group.
+  // Rows are already sorted by confirmed_count DESC so the first member with a
+  // supplier_name is always the most-confirmed one — no extra sort needed.
+  const byGroup = {};
+  for (const t of rows) {
+    if (t.group_id) (byGroup[t.group_id] = byGroup[t.group_id] || []).push(t);
+  }
+  for (const members of Object.values(byGroup)) {
+    const canonical = members.find(t => t.supplier_name);
+    if (canonical) {
+      for (const t of members) {
+        if (!t.supplier_name) t.supplier_name = canonical.supplier_name;
+      }
+    }
+  }
+
   return rows;
 }
 
@@ -82,7 +102,7 @@ function saveMapping(db, templateId, mapping) {
     offset_dx_norm:   mapping.target_x_norm - mapping.anchor_x_norm,
     offset_dy_norm:   mapping.target_y_norm - mapping.anchor_y_norm,
     ocr_type:         mapping.ocr_type || 'text',
-    search_expansion: mapping.search_expansion ?? 0.04,
+    search_expansion: mapping.search_expansion ?? 0,
     region_hint:      JSON.stringify(_computeRegionHint(mapping)),
     enabled:          mapping.enabled === false ? 0 : 1,
   };
@@ -310,12 +330,18 @@ function searchByName(db, query, document_type_slug) {
   `).all({ q, dt: document_type_slug || null });
 }
 
-function create(db, { name, document_type_slug, logo_phash, keyword_fingerprint, fields }) {
-  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+function create(db, { name, document_type_slug, supplier_name, logo_phash, keyword_fingerprint, fields }) {
+  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  // Ensure uniqueness: try base slug, then base_2, base_3, …
+  let slug = base;
+  let suffix = 2;
+  while (db.prepare('SELECT 1 FROM templates WHERE slug = ?').get(slug)) {
+    slug = `${base}_${suffix++}`;
+  }
   const info = db.prepare(`
-    INSERT INTO templates (name, slug, document_type_slug, logo_phash, keyword_fingerprint)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(name, slug, document_type_slug || null, logo_phash || null,
+    INSERT INTO templates (name, slug, document_type_slug, supplier_name, logo_phash, keyword_fingerprint)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(name, slug, document_type_slug || null, supplier_name || null, logo_phash || null,
          JSON.stringify(keyword_fingerprint || []));
   const id = info.lastInsertRowid;
   if (fields && fields.length) _upsertFields(db, id, fields);
@@ -348,11 +374,12 @@ function remove(db, id) {
   tx();
 }
 
-function update(db, id, { logo_phash, keyword_fingerprint, fields } = {}) {
+function update(db, id, { logo_phash, keyword_fingerprint, supplier_name, fields } = {}) {
   const sets   = ["confirmed_count = confirmed_count + 1", "updated_at = datetime('now')"];
   const params = [];
   if (logo_phash          !== undefined) { sets.push('logo_phash = ?');          params.push(logo_phash); }
   if (keyword_fingerprint !== undefined) { sets.push('keyword_fingerprint = ?'); params.push(JSON.stringify(keyword_fingerprint)); }
+  if (supplier_name       !== undefined) { sets.push('supplier_name = ?');       params.push(supplier_name || null); }
   params.push(id);
   db.prepare(`UPDATE templates SET ${sets.join(', ')} WHERE id = ?`).run(...params);
   if (fields && fields.length) _upsertFields(db, id, fields);
@@ -379,6 +406,29 @@ function _upsertFields(db, templateId, fields) {
       f.is_variable !== false && f.is_variable !== 0 ? 1 : 0
     );
   }
+}
+
+// Explicit admin-set fixed value for ONE template field (Template Manager →
+// "Fixed Field Values"). A fixed value makes template_matcher.extract_with_template
+// emit it for every matching document (method 'template_fixed', confidence 95),
+// independent of OCR — exactly the same mechanism _buildTemplateFields uses on
+// confirm, just driven explicitly from the UI instead of inferred. Clearing it
+// (null/empty) sets fixed_value=NULL and is_variable=1, returning the field to
+// normal variable behaviour. Only fixed_value + is_variable are touched on
+// conflict, so any learned anchor_label/direction on the same row is preserved.
+function setFieldFixedValue(db, templateId, fieldKey, fixedValue) {
+  const val = (fixedValue == null || String(fixedValue).trim() === '')
+    ? null
+    : String(fixedValue).trim();
+  const isVariable = val === null ? 1 : 0;
+  db.prepare(`
+    INSERT INTO template_fields (template_id, field_key, fixed_value, is_variable)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(template_id, field_key) DO UPDATE SET
+      fixed_value = excluded.fixed_value,
+      is_variable = excluded.is_variable
+  `).run(templateId, fieldKey, val, isVariable);
+  return getById(db, templateId);
 }
 
 function hammingDistance(h1, h2) {
@@ -433,7 +483,7 @@ module.exports = {
   searchByName,
   create, update, remove, rename, hammingDistance,
   getMappings, getMapping, saveMapping, setMappingEnabled, deleteMapping,
-  recordMappingTest, setSampleDocument, reassignDocuments,
+  recordMappingTest, setSampleDocument, reassignDocuments, setFieldFixedValue,
   setOcrAutoParams, setOcrAutoEnabled,
   getAllGroups, createGroup, deleteGroup, setTemplateGroup, getSiblings,
   GRID_COLS, GRID_ROWS,

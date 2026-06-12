@@ -6,15 +6,13 @@ function insertExtractions(db, document_id, rows) {
   const stmt = db.prepare(`
     INSERT INTO extractions
       (document_id, field_key, raw_value, display_value,
-       confidence, extraction_method, validation_note, corrected_to)
+       confidence, extraction_method, validation_note, corrected_to, anchor_label)
     VALUES
       (@document_id, @field_key, @raw_value, @display_value,
-       @confidence, @extraction_method, @validation_note, @corrected_to)
+       @confidence, @extraction_method, @validation_note, @corrected_to, @anchor_label)
   `);
   const insertMany = db.transaction((rows) => {
-    // corrected_to is the proposed (not-yet-applied) correction candidate from
-    // Stage 4.5; default to null so callers that don't set it are unaffected.
-    for (const row of rows) stmt.run({ document_id, corrected_to: null, ...row });
+    for (const row of rows) stmt.run({ document_id, corrected_to: null, anchor_label: null, ...row });
   });
   insertMany(rows);
 }
@@ -186,11 +184,17 @@ function getHints(db, { supplier_name, document_type, limit = 100 } = {}) {
 // ── Field anchors ─────────────────────────────────────────────────────────────
 
 function clearAnchors(db, { supplier_name, document_type, field_key }) {
-  // Clear for the specific supplier AND for '__unknown__' / null suppliers,
-  // since anchors are often saved before the supplier is identified.
+  // Only clear COORDINATE-based anchors (x_norm > 0 OR y_norm > 0).
+  // Text-only anchors (x_norm = 0, y_norm = 0) are position-independent —
+  // they are anchored to the label string's presence in OCR text, not to a
+  // saved pixel position, so they are unaffected by scan-registration drift.
+  // Clearing them when a correction is made would throw away learned label
+  // relationships that are still correct (e.g. "Work Address" -> customer_name)
+  // just because the crop coordinates from a different scan were stale.
   const stmt = db.prepare(`
     DELETE FROM field_anchors
     WHERE field_key = @field_key
+      AND (x_norm > 0 OR y_norm > 0)
       AND (
         supplier_name = @supplier_name
         OR supplier_name = '__unknown__'
@@ -302,6 +306,103 @@ function saveAnchor(db, {
         last_seen   = datetime('now')
     WHERE id = @id
   `).run({ id: existing.id, page_zone: incoming.page_zone, ...next });
+}
+
+// ── Auto-label discovery from confirmed documents ─────────────────────────────
+//
+// At confirmation time, scan the stored OCR text to find what label precedes
+// each confirmed field value. Save discovered labels as text-only anchors
+// (x_norm=0, y_norm=0) — these are position-independent and drift-tolerant.
+//
+// This closes the gap where the ⊕ tool teaches coordinate anchors that work
+// well when page-registration is stable but break when the same document type
+// appears with different scan margins. Text-only anchors find the value via the
+// label string wherever it actually appears in the OCR, regardless of position.
+//
+// The discovery is a simple "what immediately precedes this value on the same
+// OCR line?" search, with two separator patterns:
+//   1. Colon-separated:  "Work Address: Beaumont Care Homes Ltd - Tudordale"
+//   2. Multi-space:      "Work Address   Beaumont Care Homes Ltd - Tudordale"
+//      (column layout where Tesseract streams two columns on one output line)
+//
+// Anchors accumulate usage_count through saveAnchor's upsert — after two or
+// three confirmations the same label is seen consistently, making it a reliable
+// extraction signal for future documents of the same supplier/type.
+
+function learnAnchorsFromText(db, {
+  supplier_name, document_type, document_id, confirmedValues, taughtFields = []
+}) {
+  if (!supplier_name || !document_type || !confirmedValues) return;
+
+  const row = db.prepare('SELECT ocr_text FROM documents WHERE id = ?').get(document_id);
+  const ocrText = row && row.ocr_text;
+  if (!ocrText) return;
+
+  const effectiveSup = normalizeSupplierName(supplier_name);
+  const taught = new Set(taughtFields);
+  const lines  = ocrText.split('\n');
+
+  for (const [field_key, rawValue] of Object.entries(confirmedValues)) {
+    if (taught.has(field_key)) continue;      // ⊕-taught: already has a precise anchor
+    const value = String(rawValue || '').trim();
+    if (value.length < 4) continue;           // too short to anchor reliably
+
+    const label = _discoverLabel(lines, value);
+    if (!label) continue;
+
+    saveAnchor(db, {
+      supplier_name: effectiveSup,
+      document_type: document_type || null,
+      field_key,
+      anchor_label:  label,
+      direction:     'right',
+      page_zone:     null,
+      x_norm:        0,
+      y_norm:        0,
+      w_norm:        0,
+      h_norm:        0,
+    });
+  }
+}
+
+// Scan OCR lines for the first occurrence of `value` that has a label-like
+// text immediately to its left (colon-separated, or 3+-space column separator).
+function _discoverLabel(lines, value) {
+  const valueLower = value.toLowerCase();
+  for (const line of lines) {
+    const idx = line.toLowerCase().indexOf(valueLower);
+    if (idx <= 0) continue;
+
+    const before = line.substring(0, idx);
+
+    // Primary: "Label: Value" (most common form field pattern)
+    const colonPos = before.lastIndexOf(':');
+    if (colonPos >= 0) {
+      const label = _extractTrailingLabel(before.substring(0, colonPos));
+      if (label) return label;
+    }
+
+    // Fallback: column-separated "Label   Value" (3+ spaces = OCR column gap)
+    const m = before.match(/([A-Za-z][A-Za-z.\-/]*(?:\s[A-Za-z][A-Za-z.\-/]*){0,2})\s{3,}$/);
+    if (m) {
+      const label = m[1].trim();
+      if (label.length >= 2 && label.length <= 35 && /[A-Za-z]{2,}/.test(label)) return label;
+    }
+
+    // no label found on this occurrence — keep searching later lines
+  }
+  return null;
+}
+
+// Extract the last 1–3-word alphabetic phrase from the end of a string.
+// "...   Work Address" -> "Work Address"   "...2603-1351-1   Ticket No." -> "Ticket No."
+function _extractTrailingLabel(text) {
+  const m = text.trimEnd().match(/([A-Za-z][A-Za-z.\-/]*(?:\s[A-Za-z][A-Za-z.\-/]*){0,2})$/);
+  if (!m) return null;
+  const label = m[1].trim();
+  if (label.length < 2 || label.length > 35) return null;
+  if (!/[A-Za-z]{2,}/.test(label)) return null;
+  return label;
 }
 
 function getAllAnchors(db) {
@@ -519,6 +620,48 @@ function getFieldFormats(db) {
     }));
 }
 
+// Confirmed-history association of supplier → its most common document type.
+// Used as a CONSERVATIVE fallback type signal (engine.py Fix B "type bridge"):
+// when a document's supplier is identified (logo fingerprint, template, hint or
+// anchor vote) but neither on-page keyword/heading detection nor a template
+// produced a document type, the type the supplier has most often been CONFIRMED
+// under fills the gap. Returns one row per supplier — the single dominant type
+// — with the confirmed instance count so the consumer can gate on a minimum
+// history. Reusable + schema-driven: works for any supplier and any (built-in
+// or custom) document type, no hardcoded names. Read-only.
+function getSupplierDocTypes(db) {
+  const rows = db.prepare(`
+    SELECT d.supplier_name AS supplier_name,
+           dt.slug          AS document_type_slug,
+           COUNT(*)         AS confirmed_count
+    FROM documents d
+    JOIN document_types dt ON dt.id = d.document_type_id
+    WHERE d.status        = 'confirmed'
+      AND d.supplier_name IS NOT NULL
+      AND d.supplier_name != ''
+      AND d.supplier_name != '__global__'
+      AND dt.slug         IS NOT NULL
+    GROUP BY d.supplier_name, dt.slug
+  `).all();
+
+  // Reduce to the dominant type per supplier (most confirmed instances).
+  // Keyed by the normalised supplier identity so the same supplier always maps
+  // to one bucket regardless of OCR edge-noise spelling.
+  const bySupplier = {};
+  for (const r of rows) {
+    const key = normalizeSupplierName(r.supplier_name);
+    const cur = bySupplier[key];
+    if (!cur || r.confirmed_count > cur.confirmed_count) {
+      bySupplier[key] = {
+        supplier_name:      key,
+        document_type_slug: r.document_type_slug,
+        confirmed_count:    r.confirmed_count,
+      };
+    }
+  }
+  return Object.values(bySupplier);
+}
+
 // Which fields for this (supplier, document_type) have a learned format of
 // digits-only — used by Review to warn before confirming a non-digit value on
 // such a field. Mirrors the digits_only branch of the Python classifier
@@ -630,9 +773,9 @@ function setSetting(db, key, value) {
 module.exports = {
   insertExtractions, deleteExtractions,
   saveCorrections, getHints, isPlausibleSupplierName, normalizeSupplierName,
-  saveAnchor, clearAnchors, getAllAnchors,
+  saveAnchor, clearAnchors, getAllAnchors, learnAnchorsFromText,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
-  getFieldFormats, getDigitsOnlyFields,
+  getFieldFormats, getDigitsOnlyFields, getSupplierDocTypes,
   getRecoverySummary, getRecoveryDetail, getMemoryInventory, resetAllLearning,
   clearFieldAnchorsForScope, clearSupplierHintsForScope, clearCorrectionsForScope,
   getSetting, setSetting,

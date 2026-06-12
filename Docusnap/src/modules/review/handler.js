@@ -89,6 +89,10 @@ function register(ctx) {
         const t = db.prepare('SELECT slug FROM document_types WHERE id = ?').get(doc.document_type_id);
         typeSlug = t ? t.slug : null;
       }
+      // getWithExtractions → getById is SELECT * (no JOIN) so it lacks type_slug.
+      // Surface the resolved slug so Review can sync its doc-type dropdown to the
+      // record after a reprocess re-identifies the type.
+      doc.type_slug = typeSlug;
       doc.digit_only_fields = learning.getDigitsOnlyFields(db, doc.supplier_name, typeSlug);
     }
     return doc;
@@ -308,12 +312,35 @@ function register(ctx) {
       if (fieldSummary) logger.log(`  Values: ${fieldSummary}`);
     }
 
+    // Resolve the confirmed supplier identity. allValues uses 'supplier_name' for
+    // built-in types but custom types (e.g. Job Worksheet) may use a different key
+    // like 'supplier'. The payload supplier_name reflects the pre-confirmation
+    // extracted identity (null for unidentified docs), so check field values first.
+    const resolvedSupplier = learning.normalizeSupplierName(
+      (allValues?.supplier_name || '').trim() ||
+      (allValues?.supplier      || '').trim() ||
+      (allValues?.company_name  || '').trim() ||
+      supplier_name || '__global__'
+    );
+
     // Save corrections for learning
     learning.saveCorrections(
       db, document_id, corrections || {},
-      supplier_name, document_type_slug, allValues,
+      resolvedSupplier, document_type_slug, allValues,
       taught_fields || []
     );
+
+    // Auto-discover anchor labels: scan OCR text for what precedes each confirmed
+    // value, save as text-only anchors (x_norm=0,y_norm=0). These accumulate
+    // usage_count across confirmations and become reliable extraction signals
+    // without requiring the user to use the ⊕ tool on every document variant.
+    learning.learnAnchorsFromText(db, {
+      supplier_name:   resolvedSupplier,
+      document_type:   document_type_slug,
+      document_id,
+      confirmedValues: allValues,
+      taughtFields:    taught_fields || [],
+    });
 
     // Update document record
     documents.confirm(db, document_id, {
@@ -472,9 +499,19 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
     if (reuse && reuse.confidence >= 60) templateId = reuse.id;
   }
 
+  // The confirmed supplier_name is the authoritative identity — persist it on
+  // the template so future logo-matched documents inherit the supplier without
+  // requiring the name to appear as searchable text in OCR output.
+  const effectiveSupplier = (
+    (allValues?.supplier_name || '').trim() ||
+    (allValues?.supplier      || '').trim() ||
+    (allValues?.company_name  || '').trim() ||
+    (supplier_name || '').trim()
+  ) || null;
+
   if (templateId) {
     // Update existing (or now logo-matched) template
-    templates.update(db, templateId, { logo_phash, keyword_fingerprint, fields });
+    templates.update(db, templateId, { logo_phash, keyword_fingerprint, supplier_name: effectiveSupplier, fields });
     if (!doc.template_id) {
       db.prepare('UPDATE documents SET template_id = ? WHERE id = ?').run(templateId, document_id);
     }
@@ -486,13 +523,14 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
     const typeName  = document_type_slug
       ? document_type_slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
       : 'Document';
-    const name      = supplier_name
-      ? `${supplier_name} ${typeName}`
+    const name      = effectiveSupplier
+      ? `${effectiveSupplier} ${typeName}`
       : `${typeName} Template`;
 
     const newTemplateId = templates.create(db, {
       name,
       document_type_slug: document_type_slug || null,
+      supplier_name:      effectiveSupplier,
       logo_phash,
       keyword_fingerprint,
       fields,
