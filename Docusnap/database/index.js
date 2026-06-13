@@ -270,6 +270,36 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 14 applied: extractions.anchor_label');
   }
 
+  // Migration 15: field_format_rules — the persistent learned-memory store for
+  // Stage 7 Stage 3 (field format cross-referencing). Each row is an explicit,
+  // inspectable, independently-clearable rule keyed strictly by
+  // (supplier_name, document_type, field_key): the coarse format_class learned
+  // from confirmed history, the separators allowed for alphanum_sep, the
+  // confirmed-value count it was derived from, and a JSON sample for inspection.
+  // Additive/independent: extraction still falls back to per-run history
+  // inference for any key with no persisted rule, so behaviour is unchanged
+  // until rules accumulate. document_type is stored as '' (not NULL) when a
+  // document has no type, so the UNIQUE constraint / upsert stays well-defined.
+  if (!applied.has(15)) {
+    if (!tableExists(db, 'field_format_rules')) {
+      db.exec(`CREATE TABLE field_format_rules (
+        id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+        supplier_name      TEXT    NOT NULL,
+        document_type      TEXT    NOT NULL DEFAULT '',
+        field_key          TEXT    NOT NULL,
+        format_class       TEXT    NOT NULL,
+        allowed_separators TEXT    NOT NULL DEFAULT '',
+        confirmed_count    INTEGER NOT NULL DEFAULT 0,
+        sample_values      TEXT,
+        created_at         TEXT    NOT NULL DEFAULT (datetime('now')),
+        updated_at         TEXT    NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(supplier_name, document_type, field_key)
+      )`);
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (15)').run();
+    console.log('JS migration 15 applied: field_format_rules (persistent format model)');
+  }
+
   // Migration 13: add supplier_name to templates — enables logo-matched templates to
   // seed the supplier identity without requiring the supplier's name to appear as
   // searchable text in the OCR output (logo-only suppliers were always supplier=?).

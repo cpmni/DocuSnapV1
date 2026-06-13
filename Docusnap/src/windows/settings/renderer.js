@@ -82,9 +82,32 @@ async function loadProcessingMode() {
 }
 loadProcessingMode();
 
+// AI availability — reflects whether Ollama + the model are actually reachable,
+// so picking "AI" isn't a silent no-op that falls back to Fast at run time.
+async function refreshAiStatus() {
+  const el = document.getElementById('ai-status');
+  if (!el) return;
+  try {
+    const s = await api.getAiStatus();
+    if (s && s.available) {
+      el.textContent = `✓ AI available (${s.model})`;
+      el.className = 'mode-ai-status ok';
+    } else {
+      el.textContent = `✗ ${s?.reason || 'AI not available'}`;
+      el.className = 'mode-ai-status bad';
+    }
+  } catch {
+    el.textContent = '✗ Could not check AI availability';
+    el.className = 'mode-ai-status bad';
+  }
+}
+refreshAiStatus();
+
 document.querySelectorAll('input[name="proc-mode"]').forEach(r => {
   r.addEventListener('change', async () => {
     if (r.checked) await api.setProcessingMode(r.value);
+    // Re-probe when AI is selected so a just-started Ollama is reflected promptly.
+    if (r.checked && r.value === 'ai') refreshAiStatus();
   });
 });
 
@@ -2118,7 +2141,8 @@ async function loadMemoryInventory() {
 function renderLearningSummary(summary) {
   document.getElementById('lr-summary').textContent =
     `Field anchors: ${summary.anchors}    ·    Supplier hints: ${summary.hints}    ·    ` +
-    `Corrections: ${summary.corrections}    ·    Logo fingerprints: ${summary.logos}`;
+    `Corrections: ${summary.corrections}    ·    Logo fingerprints: ${summary.logos}    ·    ` +
+    `Format rules: ${summary.formatRules ?? 0}`;
 }
 
 function renderLearningTemplates(rows, allTemplates) {
@@ -2210,6 +2234,14 @@ function renderLearningDetail(detail) {
       lines.push(`<div>${escHtml(l.phash)}, matched ${l.match_count}×, last ${escHtml(l.last_seen)}</div>`);
     }
   }
+  if (detail.formatRules && detail.formatRules.length) {
+    lines.push('<div class="section-title" style="margin-top:10px;">Format Rules (learned format model)</div>');
+    for (const fr of detail.formatRules) {
+      const seps = fr.allowed_separators ? ` seps:"${escHtml(fr.allowed_separators)}"` : '';
+      lines.push(`<div>${escHtml(fr.field_key)} → <strong>${escHtml(fr.format_class)}</strong>${seps}, ` +
+        `type: ${escHtml(fr.document_type || '—')}, from ${fr.confirmed_count} confirmed, updated ${escHtml(fr.updated_at)}</div>`);
+    }
+  }
 
   document.getElementById('lr-detail').innerHTML = lines.length ? lines.join('') : '<div>No detail rows.</div>';
 }
@@ -2276,7 +2308,8 @@ document.getElementById('lr-btn-reset-all').addEventListener('click', async () =
     devMsg.style.color = 'var(--muted)';
     devMsg.textContent =
       `Cleared — hints ${c.supplier_hints}, anchors ${c.field_anchors}, logos ${c.logo_fingerprints}, ` +
-      `corrections ${c.corrections}, templates ${c.templates} (mappings ${c.template_field_mappings}, ` +
+      `corrections ${c.corrections}, format rules ${c.field_format_rules}, ` +
+      `templates ${c.templates} (mappings ${c.template_field_mappings}, ` +
       `groups ${c.template_groups}); ${c.documents_unlinked} document link(s) cleared.`;
     await loadMemoryInventory();
     await runLearningSearch();
@@ -2308,6 +2341,19 @@ document.getElementById('lr-btn-clear-hints').addEventListener('click', async ()
   if (!confirm(`Clear all supplier hints learned for "${scopeLabel}"? This cannot be undone.`)) return;
   const result = await api.clearLearningHints(lrCurrentScope);
   document.getElementById('lr-msg').textContent = `Cleared ${result.changes} supplier hint(s).`;
+  await runLearningSearch();
+});
+
+document.getElementById('lr-btn-clear-format-rules').addEventListener('click', async () => {
+  if (!lrCurrentScope) return;
+  const { supplier_name, document_type } = lrCurrentScope;
+  const scopeLabel = document_type ? `${supplier_name} / ${document_type}` : supplier_name;
+  if (!confirm(`Clear the learned format model for "${scopeLabel}"?\n\n` +
+    `Only the format rules are removed — anchors, hints, corrections, logos, ` +
+    `templates and OCR-auto settings are untouched. Format checking falls back ` +
+    `to per-run history until the next confirm re-learns the rules.`)) return;
+  const result = await api.clearLearningFormatRules(lrCurrentScope);
+  document.getElementById('lr-msg').textContent = `Cleared ${result.changes} format rule(s).`;
   await runLearningSearch();
 });
 

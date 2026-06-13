@@ -91,6 +91,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   // ── Processing mode ──────────────────────────────────────────────────────────
   getProcessingMode:         ()           => ipcRenderer.invoke('get-processing-mode'),
   setProcessingMode:         (mode)       => ipcRenderer.invoke('set-processing-mode', mode),
+  getAiStatus:               ()           => ipcRenderer.invoke('get-ai-status'),
   checkFastModeSuggestion:   (supplier)   => ipcRenderer.invoke('check-fast-mode-suggestion', supplier),
   onProcessingModeChanged:   (cb)         => ipcRenderer.on('processing-mode-changed', (_e, m) => cb(m)),
 
@@ -144,6 +145,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   clearLearningAnchors:(params)   => ipcRenderer.invoke('clear-learning-anchors', params),
   clearLearningHints:  (params)   => ipcRenderer.invoke('clear-learning-hints', params),
   clearLearningCorrections: (params) => ipcRenderer.invoke('clear-learning-corrections', params),
+  clearLearningFormatRules: (params) => ipcRenderer.invoke('clear-learning-format-rules', params),
 
   // ── Events from main → renderer ──────────────────────────────────────────────
   onThemeChanged:        (cb) => ipcRenderer.on('theme-changed',          (_e, t) => cb(t)),

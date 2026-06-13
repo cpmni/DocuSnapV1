@@ -335,3 +335,33 @@ def build_format_class_index(formats_data: list) -> dict:
         index[(supplier, doc_type, field_key)] = fmt
 
     return index
+
+
+def merge_format_rules(index: dict, format_rules: list) -> dict:
+    """Overlay the PERSISTENT learned format model (Stage 7 Stage 3) onto an
+    inferred index.
+
+    `format_rules` are rows from the field_format_rules table (exported by
+    learning.getFieldFormatRules), each:
+        {'supplier_name', 'document_type', 'field_key',
+         'format_class', 'allowed_separators', 'confirmed_count'}
+
+    A persisted rule WINS for its exact (supplier, document_type, field_key) —
+    overriding whatever this run inferred (or adding a constraint the run had
+    too little history to infer). Every key NOT covered by a persisted rule
+    keeps its inferred entry untouched, so absence of a rule cleanly falls back
+    to per-run inference. Same strict scoping and key shape as
+    build_format_class_index — no cross-supplier/type fallback. freetext rules
+    (no constraint) are ignored. Returns a new dict; the input is not mutated.
+    """
+    merged = dict(index or {})
+    for rule in (format_rules or []):
+        supplier  = (rule.get('supplier_name') or '').lower().strip()
+        doc_type  = (rule.get('document_type')  or '').lower().strip()
+        field_key = rule.get('field_key', '')
+        cls       = rule.get('format_class') or FREETEXT
+        if not supplier or not field_key or cls == FREETEXT:
+            continue
+        seps = frozenset(rule.get('allowed_separators') or '')
+        merged[(supplier, doc_type, field_key)] = {'class': cls, 'separators': seps}
+    return merged

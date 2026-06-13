@@ -105,6 +105,10 @@
     .mode-name { font-weight:500; font-size:13px; display:flex; align-items:center; gap:6px; margin-bottom:3px; }
     .mode-desc { font-size:11px; color:var(--muted); line-height:1.5; }
     .badge-default { font-size:9px; padding:1px 6px; border-radius:8px; background:var(--ok-bg); color:var(--ok); border:1px solid var(--ok-border); }
+    .badge-experimental { font-size:9px; padding:1px 6px; border-radius:8px; background:var(--warn-bg); color:var(--warn); border:1px solid var(--warn); }
+    .mode-ai-status { font-size:11px; margin-top:6px; font-family:var(--mono,monospace); }
+    .mode-ai-status.ok  { color:var(--ok); }
+    .mode-ai-status.bad { color:var(--warn); }
 
     /* ── Threshold / toggle rows ── */
     .threshold-row { display:flex; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--border); }
@@ -386,6 +390,20 @@
             <div class="mode-card">
               <div class="mode-name">Smart <span class="badge-default">Default</span></div>
               <div class="mode-desc">Uses advanced extraction only when key fields are missing or confidence is low.</div>
+            </div>
+          </label>
+          <label class="mode-option">
+            <input type="radio" name="proc-mode" value="ai">
+            <div class="mode-card">
+              <div class="mode-name">AI <span class="badge-experimental">Experimental</span></div>
+              <div class="mode-desc">
+                Runs a local AI model (phi3:mini via Ollama) on every document, after
+                the regex/anchor stages, to fill fields they missed. Slower (seconds
+                per document) and best for unfamiliar suppliers with no learned template.
+                <strong>Requires Ollama running with the phi3:mini model</strong> — if
+                it isn't reachable, processing silently falls back to Fast.
+              </div>
+              <div class="mode-ai-status" id="ai-status">Checking AI availability…</div>
             </div>
           </label>
         </div>
@@ -828,6 +846,7 @@
         <div class="row-flex" style="margin-top:16px; gap:8px;">
           <button class="btn danger" id="lr-btn-clear-anchors">Clear field anchors for this scope</button>
           <button class="btn danger" id="lr-btn-clear-hints">Clear supplier hints for this scope</button>
+          <button class="btn danger" id="lr-btn-clear-format-rules">Clear format rules for this scope</button>
         </div>
         <div id="lr-msg" class="section-desc" style="margin-top:8px;"></div>
 

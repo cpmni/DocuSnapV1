@@ -74,6 +74,7 @@ def main():
     parser.add_argument("--logos-file",      default=None)
     parser.add_argument("--doc-types-file",  default=None)
     parser.add_argument("--formats-file",    default=None)
+    parser.add_argument("--format-rules-file", default=None)
     parser.add_argument("--templates-file", default=None)
     parser.add_argument("--supplier-types-file", default=None)
     parser.add_argument("--enhance-file",   default=None)
@@ -97,6 +98,7 @@ def main():
     logos     = load_json_arg(args.logos,   args.logos_file)    or []
     doc_types = load_json_arg(None,         args.doc_types_file)  or []
     formats        = load_json_arg(None, args.formats_file)   or []
+    format_rules   = load_json_arg(None, args.format_rules_file) or []
     templates      = load_json_arg(None, args.templates_file) or []
     supplier_types = load_json_arg(None, args.supplier_types_file) or []
     enhance_params = load_json_arg(None, args.enhance_file)   or None
@@ -115,9 +117,21 @@ def main():
         emit_fn     = emit,
     )
 
-    # Load learned format templates for OCR correction
-    if formats:
-        engine.set_formats(formats)
+    # Load learned format templates for OCR correction, plus the persistent
+    # learned format model (Stage 7 Stage 3). Persisted rules override per-run
+    # inference for their (supplier, doc_type, field) key; keys without a rule
+    # still fall back to inference inside set_formats().
+    if formats or format_rules:
+        engine.set_formats(formats, format_rules)
+
+    # Warm up the AI model once before the batch — ai mode ONLY. This both
+    # preloads phi3:mini so the first document isn't slow, and — crucially —
+    # lets the engine downgrade ai→fast up front if Ollama is unreachable,
+    # instead of every document eating ~10s of failed LLM retries. Guarded to
+    # 'ai' so the default smart/fast paths never make an Ollama connection
+    # attempt (engine.warmup() only short-circuits for 'fast', not 'smart').
+    if engine.mode == "ai":
+        engine.warmup()
 
     # Find all supported files
     folder = Path(args.folder)

@@ -30,6 +30,35 @@ function register(ctx) {
     return true;
   });
 
+  // ── AI (Ollama) availability ───────────────────────────────────────────────
+  // Lightweight reachability probe for the Settings → Processing Mode "AI"
+  // option, so the user can see whether AI mode will actually run rather than
+  // silently falling back to Fast (engine.warmup() does that fallback at
+  // processing time). Checks Ollama's /api/tags and whether the configured
+  // model is present. Done from Node (no Python spawn) with a short timeout so
+  // an absent Ollama fails fast instead of hanging the Settings window.
+  const AI_MODEL = 'phi3:mini';
+  ipcMain.handle('get-ai-status', async () => {
+    requireLogin();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 1500);
+    try {
+      const res = await fetch('http://127.0.0.1:11434/api/tags', { signal: controller.signal });
+      if (!res.ok) return { available: false, model: AI_MODEL, reason: `Ollama responded ${res.status}` };
+      const data = await res.json();
+      const names = (data.models || []).map(m => m.name || m.model || '');
+      const hasModel = names.some(n => n === AI_MODEL || n.startsWith(AI_MODEL + ':') || n.startsWith(AI_MODEL));
+      return hasModel
+        ? { available: true, model: AI_MODEL }
+        : { available: false, model: AI_MODEL, reason: `Ollama is running but the ${AI_MODEL} model isn't installed (run: ollama pull ${AI_MODEL})` };
+    } catch (e) {
+      const reason = e.name === 'AbortError' ? 'Ollama not reachable (timed out)' : 'Ollama not running';
+      return { available: false, model: AI_MODEL, reason };
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+
   // ── Fast Mode suggestion ───────────────────────────────────────────────────
   // After confirming a document, check if this supplier has hit the threshold
   ipcMain.handle('check-fast-mode-suggestion', (_e, supplierName) => {

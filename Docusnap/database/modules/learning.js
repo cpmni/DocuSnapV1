@@ -493,7 +493,12 @@ function getRecoverySummary(db, { supplier_name, document_type } = {}) {
     SELECT COUNT(*) AS n FROM logo_fingerprints WHERE supplier_name = @supplier_name
   `).get({ supplier_name }).n;
 
-  return { anchors, hints, corrections, logos };
+  const formatRules = db.prepare(`
+    SELECT COUNT(*) AS n FROM field_format_rules
+    WHERE supplier_name = @supplier_name AND (@dt IS NULL OR document_type = @dt)
+  `).get({ supplier_name, dt }).n;
+
+  return { anchors, hints, corrections, logos, formatRules };
 }
 
 function getRecoveryDetail(db, { supplier_name, document_type } = {}, limit = 25) {
@@ -527,7 +532,15 @@ function getRecoveryDetail(db, { supplier_name, document_type } = {}, limit = 25
     ORDER BY match_count DESC LIMIT @limit
   `).all({ supplier_name, limit });
 
-  return { anchors, hints, corrections, logos };
+  const formatRules = db.prepare(`
+    SELECT field_key, document_type, format_class, allowed_separators,
+           confirmed_count, sample_values, updated_at
+    FROM field_format_rules
+    WHERE supplier_name = @supplier_name AND (@dt IS NULL OR document_type = @dt)
+    ORDER BY confirmed_count DESC LIMIT @limit
+  `).all({ supplier_name, dt, limit });
+
+  return { anchors, hints, corrections, logos, formatRules };
 }
 
 function clearFieldAnchorsForScope(db, { supplier_name, document_type } = {}) {
@@ -620,6 +633,179 @@ function getFieldFormats(db) {
     }));
 }
 
+// ── Persistent format model (Stage 7 Stage 3) ────────────────────────────────
+//
+// field_format_rules is the explicit, inspectable, independently-clearable
+// learned-memory store for the format-anomaly system. It is a MATERIALISATION
+// of what confirmed history implies — recomputed from getFieldFormats() on
+// every confirm — so it never drifts from the corpus, but unlike per-run
+// inference it persists, is visible in Learning Recovery, and can be cleared on
+// its own without touching anchors/hints/logos/templates/OCR-auto.
+//
+// The classifier below is a deliberate JS mirror of
+// python_backend/extraction/format_anomaly_checker.classify_format (same coarse
+// classes, same 5-value pool / 3-value unanimous-consensus rule, same
+// separator-union for alphanum_sep) — the established pattern already used by
+// _isDigitsOnlyFormat above. The persisted class only drives the Python
+// check_value()/propose_correction() logic, which re-validates dates/amounts
+// with its OWN parsers, so the mirror only has to recognise well-formed
+// confirmed samples — it never decides anomalies itself.
+
+const FORMAT_POOL_SIZE   = 5;
+const FORMAT_SAMPLE_SIZE = 3;
+const _CURRENCY_SYMBOLS  = new Set(['£', '$', '€', '¥']);
+const _CURRENCY_CODES    = ['GBP', 'USD', 'EUR', 'JPY'];
+const _MONTH = '(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*';
+
+function _looksLikeDate(value) {
+  let s = String(value).trim();
+  // Mirror validator.parse_date preprocessing: drop leading day name + ordinals.
+  s = s.replace(/^(?:mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\s*,?\s*/i, '');
+  s = s.replace(/\b(\d{1,2})(st|nd|rd|th)\b/ig, '$1');
+  s = s.replace(/\s{2,}/g, ' ').trim();
+  const pats = [
+    /^\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4}$/,                                  // 01/12/2025, 1-2-25, m/d/Y
+    /^\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}$/,                                       // 2025-12-01, 2025/12/01
+    new RegExp(`^\\d{1,2}[\\s\\-/]${_MONTH}[\\s\\-/,]+\\d{2,4}$`, 'i'),        // 01 May 2024, 01-May-2024
+    new RegExp(`^${_MONTH}[\\s\\-]\\d{1,2},?\\s*\\d{2,4}$`, 'i'),              // May 01, 2024 / May-01-2024
+  ];
+  return pats.some(re => re.test(s));
+}
+
+function _looksLikeCurrency(value) {
+  const v = String(value);
+  const hasSym  = [...v].some(c => _CURRENCY_SYMBOLS.has(c));
+  const hasCode = _CURRENCY_CODES.some(code => v.toUpperCase().includes(code));
+  if (!hasSym && !hasCode) return false;
+  return /\d/.test(v);   // an indicator plus at least one digit → amount-shaped
+}
+
+// Mirror of format_anomaly_checker.classify_single — date/currency first
+// (their charsets overlap simpler classes), then most→least restrictive.
+function _classifySingleFormat(value) {
+  const v = String(value == null ? '' : value).trim();
+  if (!v) return 'freetext';
+  if (_looksLikeDate(v))     return 'date_like';
+  if (_looksLikeCurrency(v)) return 'currency_like';
+  if (/^\d+$/.test(v))       return 'digits_only';
+  if (/^[A-Z0-9]+$/.test(v)) return 'upper_alphanum';
+  if (/^[A-Za-z0-9]+$/.test(v)) return 'alphanum';
+  const nonAlnum = new Set([...v].filter(c => !/[A-Za-z0-9]/.test(c)));
+  if (nonAlnum.size >= 1 && nonAlnum.size <= 3) return 'alphanum_sep';
+  return 'freetext';
+}
+
+// Mirror of format_anomaly_checker.classify_format — returns the learned class
+// and (for alphanum_sep) its allowed separators as a string.
+function classifyFormatClass(values) {
+  const seen = [];
+  const seenSet = new Set();
+  for (const v of (values || [])) {
+    const s = String(v == null ? '' : v).trim();
+    if (s && !seenSet.has(s)) { seenSet.add(s); seen.push(s); }
+  }
+  if (seen.length < 3) return { format_class: 'freetext', separators: '' };
+
+  const pool   = seen.slice(0, FORMAT_POOL_SIZE);
+  const sample = pool.slice(0, FORMAT_SAMPLE_SIZE);
+  const classes = sample.map(_classifySingleFormat);
+  if (new Set(classes).size !== 1) return { format_class: 'freetext', separators: '' };
+
+  const cls = classes[0];
+  let seps = '';
+  if (cls === 'alphanum_sep') {
+    const sepSet = new Set();
+    for (const v of pool) for (const c of v) if (!/[A-Za-z0-9]/.test(c)) sepSet.add(c);
+    seps = [...sepSet].join('');
+  }
+  return { format_class: cls, separators: seps };
+}
+
+// Sync the persisted field_format_rules for ONE (supplier, document_type) scope
+// to match what confirmed history currently implies. Called at confirm time
+// (after the document is marked confirmed, so getFieldFormats sees it). Keyed by
+// the normalised supplier identity — the SAME identity hints/anchors/corrections
+// use — so Learning Recovery clears/inventories it consistently.
+//   • non-freetext class → upsert the rule (widening in place as the class grows)
+//   • freetext (no consensus) → remove any stale rule (relax the constraint)
+function updateFormatRules(db, { supplier_name, document_type } = {}) {
+  if (!supplier_name) return { upserted: 0, removed: 0 };
+
+  const wantSup = normalizeSupplierName(String(supplier_name)).toLowerCase().trim();
+  const wantDt  = String(document_type || '').toLowerCase().trim();
+  const scoped  = getFieldFormats(db).filter(f =>
+    normalizeSupplierName(String(f.supplier_name)).toLowerCase().trim() === wantSup &&
+    String(f.document_type || '').toLowerCase().trim() === wantDt
+  );
+
+  const storeSupplier = normalizeSupplierName(String(supplier_name));
+  const storeDocType  = document_type || '';
+
+  const upsert = db.prepare(`
+    INSERT INTO field_format_rules
+      (supplier_name, document_type, field_key, format_class,
+       allowed_separators, confirmed_count, sample_values, created_at, updated_at)
+    VALUES
+      (@supplier_name, @document_type, @field_key, @format_class,
+       @allowed_separators, @confirmed_count, @sample_values, datetime('now'), datetime('now'))
+    ON CONFLICT(supplier_name, document_type, field_key) DO UPDATE SET
+      format_class       = excluded.format_class,
+      allowed_separators = excluded.allowed_separators,
+      confirmed_count    = excluded.confirmed_count,
+      sample_values      = excluded.sample_values,
+      updated_at         = datetime('now')
+    WHERE field_format_rules.format_class       != excluded.format_class
+       OR field_format_rules.allowed_separators != excluded.allowed_separators
+       OR field_format_rules.confirmed_count    != excluded.confirmed_count
+  `);
+  const remove = db.prepare(`
+    DELETE FROM field_format_rules
+    WHERE supplier_name = @supplier_name AND document_type = @document_type AND field_key = @field_key
+  `);
+
+  let upserted = 0, removed = 0;
+  db.transaction(() => {
+    for (const f of scoped) {
+      const { format_class, separators } = classifyFormatClass(f.sample_values);
+      const keyArgs = { supplier_name: storeSupplier, document_type: storeDocType, field_key: f.field_key };
+      if (format_class === 'freetext') {
+        removed += remove.run(keyArgs).changes;
+        continue;
+      }
+      upsert.run({
+        ...keyArgs,
+        format_class,
+        allowed_separators: separators,
+        confirmed_count:    f.confirmed_count || 0,
+        sample_values:      JSON.stringify((f.sample_values || []).slice(0, 10)),
+      });
+      upserted += 1;
+    }
+  })();
+  return { upserted, removed };
+}
+
+// Export the persisted rules for the Python pipeline (--format-rules-file).
+// Shape mirrors what format_anomaly_checker.merge_format_rules expects.
+function getFieldFormatRules(db) {
+  return db.prepare(`
+    SELECT supplier_name, document_type, field_key,
+           format_class, allowed_separators, confirmed_count
+    FROM field_format_rules
+  `).all();
+}
+
+// Learning Recovery clear — format rules ONLY. Mirrors clearFieldAnchorsForScope
+// etc.; never touches anchors/hints/logos/templates/OCR-auto.
+function clearFieldFormatRulesForScope(db, { supplier_name, document_type } = {}) {
+  if (!supplier_name) return { changes: 0 };
+  const dt = document_type || null;
+  return db.prepare(`
+    DELETE FROM field_format_rules
+    WHERE supplier_name = @supplier_name AND (@dt IS NULL OR document_type = @dt)
+  `).run({ supplier_name, dt });
+}
+
 // Confirmed-history association of supplier → its most common document type.
 // Used as a CONSERVATIVE fallback type signal (engine.py Fix B "type bridge"):
 // when a document's supplier is identified (logo fingerprint, template, hint or
@@ -687,7 +873,7 @@ function getDigitsOnlyFields(db, supplier_name, document_type) {
 
 // Developer reset — wipe ALL learning state in a single transaction. Clears the
 // automatic-learning corpora (supplier_hints, field_anchors, logo_fingerprints,
-// corrections) AND the learned/managed template store (templates plus their
+// corrections, field_format_rules) AND the learned/managed template store (templates plus their
 // fields, mappings, and groups), unlinking documents from any removed template
 // (documents.template_id has no cascade). Deliberately leaves intact: the
 // settings table (UI/output-folder/processing-mode — none are learning state),
@@ -703,6 +889,7 @@ function resetAllLearning(db) {
     counts.field_anchors           = del('DELETE FROM field_anchors');
     counts.logo_fingerprints       = del('DELETE FROM logo_fingerprints');
     counts.corrections             = del('DELETE FROM corrections');
+    counts.field_format_rules      = del('DELETE FROM field_format_rules');
     counts.documents_unlinked      = db.prepare(
       'UPDATE documents SET template_id = NULL WHERE template_id IS NOT NULL').run().changes;
     counts.template_field_mappings = del('DELETE FROM template_field_mappings');
@@ -750,6 +937,12 @@ function getMemoryInventory(db) {
     FROM logo_fingerprints
     GROUP BY supplier_name
   `).all());
+  rows.push(...db.prepare(`
+    SELECT 'format_rule' AS type, supplier_name, document_type, field_key,
+           1 AS records, confirmed_count AS distinct_values,
+           updated_at AS last_seen
+    FROM field_format_rules
+  `).all());
   rows.sort((a, b) =>
     (b.records - a.records) ||
     String(a.supplier_name || '').localeCompare(String(b.supplier_name || '')));
@@ -776,7 +969,9 @@ module.exports = {
   saveAnchor, clearAnchors, getAllAnchors, learnAnchorsFromText,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
   getFieldFormats, getDigitsOnlyFields, getSupplierDocTypes,
+  classifyFormatClass, updateFormatRules, getFieldFormatRules,
   getRecoverySummary, getRecoveryDetail, getMemoryInventory, resetAllLearning,
   clearFieldAnchorsForScope, clearSupplierHintsForScope, clearCorrectionsForScope,
+  clearFieldFormatRulesForScope,
   getSetting, setSetting,
 };

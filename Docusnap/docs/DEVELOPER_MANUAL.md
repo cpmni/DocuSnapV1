@@ -95,14 +95,14 @@ contexts exist: **dev** (system Python 3.12 + system Tesseract) and
 
 | Layer | Technology | Notes |
 |---|---|---|
-| Desktop shell | **Electron 31**, Node.js | `package.json` pins `electron: ^31.0.0` (confirmed) |
+| Desktop shell | **Electron 41**, Node.js | `package.json` pins `electron: ^41.7.2` (confirmed). Upgraded 31→41 in steps on the `chore/dep-upgrade-prep` branch (ABI 143→145, Node 22→24); each bump rebuilt the native addons — see the recent `chore(deps)` commits |
 | Native DB binding | **better-sqlite3 ^12.10.0** | Native addon — must be rebuilt against Electron's Node ABI. This is why JS unit tests run via `ELECTRON_RUN_AS_NODE=1 electron <file>.js` rather than plain `node` (see [§14](#14-testing--regression-strategy)) |
 | Auth hashing | **argon2 ^0.44.0** | Used for password hashing in `database/modules/auth.js` |
 | UI | Vanilla HTML/CSS/JS, **frameless windows** | Custom titlebar, `-webkit-app-region: drag`. No framework (no React/Vue) |
 | OCR | **Tesseract 5** via `pytesseract` + `pypdfium2` | `pypdfium2` renders PDF pages to images for OCR and for preview |
-| AI extraction | **phi3:mini via Ollama** | **Dormant** — Stage 3 code exists (`llm.py`) but `ai` mode is not exposed in the shipped Settings UI and Ollama/the model is not bundled in the installer |
+| AI extraction | **phi3:mini via Ollama** | Stage 3 (`llm.py`). The `ai` mode option is **selectable in Settings → Processing Mode** (re-added after being removed) with a live `get-ai-status` availability probe. Ollama/the model are still **not bundled** in the installer — user-installed. `smart` mode does **not** currently invoke it (see [§6.1](#61-modes)) |
 | Database | **SQLite** via better-sqlite3, WAL journal mode, foreign keys ON | Single file at `{userData}/docusnap.db` |
-| Packaging | **electron-builder ^24.13.3** | NSIS installer, Windows x64 only, code signing disabled |
+| Packaging | **electron-builder ^26.8.1** | NSIS installer, Windows x64 only, code signing disabled |
 
 ### Process roles
 
@@ -139,7 +139,7 @@ contexts exist: **dev** (system Python 3.12 + system Tesseract) and
 docusnap2/
 ├── CLAUDE.md                  # Primary project memory / source of truth
 ├── MODULES.md                 # Older, shorter module reference (4-stage pipeline; superseded by this manual)
-├── package.json                # Electron 31, better-sqlite3, argon2, electron-builder
+├── package.json                # Electron 41, better-sqlite3, argon2, electron-builder
 ├── config/
 │   └── keyword_patterns.json  # document_type_keywords + field_patterns (Stage 1 regex library)
 ├── templates/                  # Sample/fixture exports of DB `templates` rows (NOT loaded by the app at runtime)
@@ -366,11 +366,19 @@ Stored in `settings.processing_mode` (`fast | smart | ai`, default `smart`):
 | Mode | Stages run | LLM (Stage 3) |
 |---|---|---|
 | `fast` | 0, 0.5, 1, 2, 2.5, 4, 4.5 | never |
-| `smart` (default) | same as fast | only if `invoice_number`/`invoice_date`/`total_amount` missing or confidence < 70% |
-| `ai` | same as fast | always |
+| `smart` (default) | same as fast | **never (currently)** — the conditional fallback is disabled in code; `smart` is functionally identical to `fast`. The `engine.py` docstring keeps it distinct "for future use" (would fire when `invoice_number`/`invoice_date`/`total_amount` are missing or < 70%) |
+| `ai` | same as fast | always (fills only fields still missing after stages 0–2) |
 
 `_should_use_llm()` returns `True` only in `ai` mode **and** when the LLM is
-available; `fast`/`smart` paths short-circuit before any Ollama call.
+available; `fast`/`smart` paths short-circuit before any Ollama call. The
+**AI mode option was re-added** to Settings → Processing Mode (it had been
+removed); selecting it persists `processing_mode='ai'` and the Settings UI runs
+a live availability probe (`get-ai-status` IPC → Ollama `/api/tags`, Node-side,
+1.5s timeout) showing whether Ollama + `phi3:mini` are actually reachable. At
+processing time, `engine.warmup()` still silently downgrades `ai`→`fast` if
+Ollama is unreachable, so the probe is the user's only up-front signal.
+In-app model download (`pull-ai-model`) was **not** restored — users install
+Ollama and `ollama pull phi3:mini` themselves.
 
 ### 6.2 Stage-by-stage
 
@@ -562,15 +570,29 @@ CLAUDE.md describes a 3-stage "field format cross-referencing" feature:
   `corrected_to` holds the candidate, `was_corrected` stays `False`,
   `_needs_review` forced, `validation_note = "format anomaly: correction
   candidate — {corrected_to}"`.
-- **Stage 3 (NOT IMPLEMENTED)**: CLAUDE.md describes a planned
-  `field_format_rules` table (migration 12) for a *persistent* learned format
-  model read via `--format-rules-file`. **Migration 12 was actually used for
-  template-level OCR auto-processing** (`templates.ocr_auto_enabled` /
-  `ocr_auto_params` — see [§8](#8-template-system)), not for
-  `field_format_rules`. As of this snapshot, `field_format_rules` does not
-  exist in any migration, and `getFieldFormats()` only collects samples
-  in-memory per run — it does not persist a learned model. **Treat Stage 3 as
-  fully unimplemented**, not "started under a different migration number".
+- **Stage 3 (IMPLEMENTED — migration 15)**: `field_format_rules` is the
+  persistent learned format model, keyed strictly by
+  `(supplier_name, document_type, field_key)` →
+  `format_class, allowed_separators, confirmed_count, sample_values`.
+  - **Write**: `learning.updateFormatRules(db, {supplier_name, document_type})`
+    is called from `confirm-review` (after the doc is confirmed) and
+    materialises rules from confirmed history (`getFieldFormats`) — non-freetext
+    classes upsert (widening in place), lost-consensus → the stale rule is
+    deleted (relaxation). `learning.classifyFormatClass()` is the JS mirror of
+    `format_anomaly_checker.classify_format`.
+  - **Read/override**: `learning.getFieldFormatRules()` → `--format-rules-file`
+    (added in `buildTrainingArgs`) → `process_docs.py` →
+    `engine.set_formats(formats, format_rules)`, which overlays them via the new
+    `format_anomaly_checker.merge_format_rules(index, rules)`. A persisted rule
+    wins for its exact key; **keys without a rule fall back to per-run
+    inference** (`build_format_class_index`, unchanged).
+  - **Clearable**: `clear-learning-format-rules` IPC →
+    `learning.clearFieldFormatRulesForScope()` (Learning Recovery), and included
+    in `resetAllLearning`. Touches format rules only — never anchors/hints/
+    logos/templates/OCR-auto.
+  - `check_value` / `propose_correction` are **unchanged** (Stage 1/2 preserved).
+    Tests: `python_backend/tests/test_format_rules_pipeline.py`,
+    `database/modules/test_format_rules.js`.
 
 ### 7.6 Audit log
 
@@ -815,8 +837,9 @@ Tabs: **General | Document Types | Fields | File Naming | Templates | Users**.
 - **General**: output folder (`pick-output-folder`), processed folder,
   watch folder (toggle + picker — see [§17](#17-known-gotchas--sharp-edges)
   for watch-folder caveats), theme toggle, global confidence threshold,
-  processing mode (fast/smart — AI mode UI removed from shipped build per
-  CLAUDE.md).
+  processing mode (fast/smart/**ai** — the AI radio was re-added, with a live
+  `get-ai-status` availability line showing whether Ollama + `phi3:mini` are
+  reachable; see [§6.1](#61-modes)).
 - **Document Types**: list from `get-all-doc-types-all`, enable/disable,
   add custom type, click → Fields sub-panel.
 - **Fields**: per-type field list, add/edit (label, key auto-from-label,
@@ -909,8 +932,11 @@ already read-mostly and role-gated, which is a reasonable seam:
 - `runMigrations()`: applies `database/migrations/001_initial.sql` (base v1
   schema) plus tracks applied versions in the `migrations` table
   `(id, version, applied_at)`.
-- `runJsMigrations(db, applied)`: runs **12 numbered JS migrations** in
-  order, each gated on `applied.has(n)`:
+- `runJsMigrations(db, applied)`: runs **15 numbered JS migrations**, each
+  gated on `applied.has(n)`. Note the JS migration *blocks are defined out of
+  numeric order* in `index.js` (e.g. 8 before 7, 14 before 13) — execution
+  order follows the guarded blocks, not the version numbers, which is harmless
+  because each is independently idempotent:
 
 | # | Adds / changes |
 |---|---|
@@ -925,15 +951,18 @@ already read-mostly and role-gated, which is a reasonable seam:
 | 10 | `documents.ocr_text` (up to 50,000 chars) for full-text search |
 | 11 | `extractions.validation_note` (Stage 4.5 anomaly reason) |
 | 12 | `templates.ocr_auto_enabled` / `templates.ocr_auto_params` (template-level OCR preprocessing baseline) |
+| 13 | `templates.supplier_name` — lets a logo-matched template seed supplier identity for logo-only suppliers whose name never appears as OCR'd text (previously always `supplier=?`) |
+| 14 | `extractions.anchor_label` — records which anchor label produced a value, so the Review UI can show "From anchor: …" for debugging |
+| 15 | `field_format_rules` — persistent learned format model (Stage 7 Stage 3), keyed `(supplier_name, document_type, field_key)` → `format_class, allowed_separators, confirmed_count, sample_values` |
 
 Helper functions: `hasColumn(db, table, column)`, `tableExists(db, table)`,
 `upgradeFieldsTable(db)`, `addMissingColumns(db)` (creates `settings`,
 `document_types`, `field_anchors`, `logo_fingerprints` if absent).
 
-> ⚠️ **`field_format_rules` (CLAUDE.md Stage 7 / Stage 3) does not exist.**
-> Migration 12 was used for OCR auto-processing instead. If you implement
-> Stage 3, it will need a **new migration (13)** — do not assume migration 12
-> covers it.
+> ℹ️ **`field_format_rules` now exists (migration 15)** — the persistent Stage 7
+> Stage 3 model. (Migration 12 had been repurposed for OCR auto-processing, so
+> Stage 3 landed at 15, not 12.) The latest applied migration is **15**; the next
+> new migration is **16**.
 
 ### 12.2 Table reference
 
@@ -942,13 +971,14 @@ Helper functions: `hasColumn(db, table, column)`, `tableExists(db, table)`,
 | `document_types` | `name, slug, built_in, enabled, ref_field_key, date_field_key, sort_order` | `settings/handler.js` (admin CRUD), `seedBuiltInTypes()` | Settings UI, Review type dropdown, `process_docs.py` (doc-type detection seed list) |
 | `fields` | `document_type_id (FK), key, label, type, required, built_in, enabled, confidence_threshold, sort_order` | `settings/handler.js` | extraction `field_defs`, Review/Settings field lists |
 | `documents` | `original_filename, folder_path, document_type_id (FK), supplier_name, overall_confidence, status, template_id (FK), logo_phash, keyword_fingerprint, ocr_text, stored_filename, stored_path, doc_date, reference_number, confirmed_at, error_message` | `processing/handler.js` (`_handleFileMessage` insert), `review/handler.js` (`confirm-review`, `defer`, `delete`) | Review/Deferred queues, Search, Template sample candidates |
-| `extractions` | `document_id (FK), field_key, raw_value, display_value, confidence, extraction_method, validation_note, was_corrected, corrected_to` | `learning.insertExtractions()` (insert), `reprocess-document` (delete+reinsert with merge) | Review window field rendering |
+| `extractions` | `document_id (FK), field_key, raw_value, display_value, confidence, extraction_method, validation_note, anchor_label, was_corrected, corrected_to` | `learning.insertExtractions()` (insert), `reprocess-document` (delete+reinsert with merge) | Review window field rendering ("From anchor: …" via `anchor_label`) |
 | `corrections` | `document_id (FK), field_key, original_value, corrected_value, supplier_name, document_type` | `learning.saveCorrections()` | (learning audit trail; not read by extraction directly) |
 | `supplier_hints` | `supplier_name, document_type, field_key, hint_value, usage_count, last_seen` (UNIQUE on first 4) | `learning.saveCorrections()` | Stage 2.5a/b |
 | `field_anchors` | `supplier_name, document_type, field_key, anchor_label, direction, page_zone, x_norm, y_norm, w_norm, h_norm, usage_count, confidence, last_seen` (UNIQUE on supplier/doctype/field/label/direction) | `learning.saveAnchor()` | Stage 2 |
 | `logo_fingerprints` | `supplier_name, phash, ahash, crop_zone, match_count, last_seen` | `save-logo-fingerprint` IPC | Pre-stage/Stage 0 logo match, `templates.findByLogoHash` |
+| `field_format_rules` | `supplier_name, document_type, field_key, format_class, allowed_separators, confirmed_count, sample_values` (UNIQUE on supplier/doctype/field) | `learning.updateFormatRules()` (from `confirm-review`) | Stage 4.5 via `--format-rules-file` → `merge_format_rules()` overlay; clearable in Learning Recovery |
 | `settings` | `key (PK), value, updated_at` | `learning.setSetting()` | `get-setting`, theme sync, processing mode, output/processed/watch folders, filename pattern |
-| `templates` | `name, slug (UNIQUE), document_type_slug, logo_phash, keyword_fingerprint, confirmed_count, sample_document_id (FK), group_id (FK), ocr_auto_enabled, ocr_auto_params` | `_upsertTemplate()`, Template Viewer handlers | Stage 0, Stage 0.5, reprocess OCR-auto resolution |
+| `templates` | `name, slug (UNIQUE), document_type_slug, supplier_name, logo_phash, keyword_fingerprint, confirmed_count, sample_document_id (FK), group_id (FK), ocr_auto_enabled, ocr_auto_params` | `_upsertTemplate()`, Template Viewer handlers | Stage 0 (incl. `supplier_name` seeding for logo-only suppliers), Stage 0.5, reprocess OCR-auto resolution |
 | `template_fields` | `template_id (FK), field_key, anchor_label, direction, fixed_value, is_variable` (UNIQUE on template_id+field_key) | `templates._upsertFields()` | Stage 0 `extract_with_template` |
 | `template_field_mappings` | see [§8.4](#84-stage-05--admin-drawn-anchortarget-mappings) | `templates.saveMapping()` | Stage 0.5 |
 | `template_groups` | `name (UNIQUE)` | Template Viewer | Template Viewer grouping UI only |
@@ -1092,7 +1122,7 @@ ELECTRON_RUN_AS_NODE=1 node_modules/.bin/electron database/modules/test_template
 | New/changed extraction field-detection logic (keyword/anchor/template/mapping) | Add or extend a `run_regression.py` fixture covering the *pattern*, not just the sample document. Re-run the full regression suite — a fix for one supplier must not break others (CLAUDE.md "system fixes, not document fixes") |
 | Confidence/merge/override changes in `engine.py` | Re-run `test_supplier_name_precedence.py` and `test_supplier_identity_stability.py` — these encode the two trickiest invariants |
 | Template matching changes | Re-run `test_template_matcher.py`, and re-verify the OCR-auto/matching decoupling ([§8.3](#83-matching-grouping--the-ocr-auto-guardrail)) |
-| DB schema changes | Add a new numbered migration (next is **13**); add/extend a `database/modules/*` JS test against an in-memory DB with that migration applied |
+| DB schema changes | Add a new numbered migration (latest applied is 15, so next is **16**); add/extend a `database/modules/*` JS test against an in-memory DB with that migration applied |
 | UI changes (Settings/Review/Search) | Manual verification in a running `npm start` session — there is no automated UI test harness. Test the golden path **and** edge cases (empty states, role-gated buttons for non-admin) |
 | Filing/filename pattern changes | `src/modules/filing/test_filename_pattern.js` + manual check of `.metadata/*.xml` output |
 
@@ -1175,11 +1205,13 @@ npm start          # electron .  — uses system Python (py -3.12) + system Tess
 ### 16.2 Build
 
 ```bash
-npm run build       # electron-builder --win --x64
+npm run build       # sets BUILD_REV (default "local") then electron-builder --win --x64
 ```
 
-- Output: `dist/DocuSnap Setup <version>.exe` (NSIS installer, Windows x64
-  only, custom `installer.nsh`)
+- Output: `dist/DocuSnap Setup <version>-r<BUILD_REV>.exe` (NSIS installer,
+  Windows x64 only, custom `installer.nsh`). The `artifactName` embeds
+  `${env.BUILD_REV}` — the `build` script defaults it to `local`, so a plain
+  `npm run build` produces `…-rlocal.exe`; CI/release sets it to a real revision
 - `postinstall`: `electron-builder install-app-deps` — rebuilds native addons
   (`better-sqlite3`, `argon2`) against Electron's ABI
 - `extraResources` bundle `python_backend/`, `config/`, and `vendor/`
@@ -1376,12 +1408,14 @@ pattern — add calls at the relevant points in `review/handler.js` and
   column/table scoped to `(template_id, field_key)` rather than changing
   `templates.ocr_auto_params`'s shape — keep the existing template-wide
   baseline as a fallback for fields without an override.
-- **Stage 7 Stage 3** (`field_format_rules`, [§7.5](#75-formatocr-correction-learning-stage-7--partially-implemented)):
-  next migration is **13**; write path would extend
-  `learning.saveCorrections()`'s transaction; read path needs a new
-  `--format-rules-file` CLI arg threaded through `buildTrainingArgs()` in
-  `processing/handler.js` and consumed in `engine.py` to override the
-  in-memory `format_class_index` once `confirmed_count >= 10`.
+- **Stage 7 Stage 3** (`field_format_rules`) — **DONE** (migration 15, see
+  [§7.5](#75-formatocr-correction-learning-stage-7--partially-implemented)).
+  Write path is `learning.updateFormatRules()` from `confirm-review`; read path
+  is `--format-rules-file` (added in `buildTrainingArgs()`) consumed in
+  `engine.set_formats()` and overlaid via
+  `format_anomaly_checker.merge_format_rules()`. Possible future refinements:
+  per-field confidence-gated override thresholds, or surfacing rules in the
+  Review UI.
 
 In all cases, follow [§15.2](#152-extractionanchoring-fixes-are-system-fixes):
 new learning/extraction behaviour must be scoped strictly by

@@ -83,17 +83,31 @@ class ExtractionEngine:
     def log(self, text: str, level: str = ""):
         self.emit({"type": "log", "text": text, "level": level})
 
-    def set_formats(self, formats_data: list):
-        """Pre-build all format indexes from confirmed value data."""
+    def set_formats(self, formats_data: list, format_rules: list | None = None):
+        """Pre-build all format indexes from confirmed value data.
+
+        format_class_index is the Stage 4.5 lookup. It is first inferred from
+        this run's confirmed history (Stage 1 behaviour, unchanged), then any
+        PERSISTED learned rules (Stage 7 Stage 3, field_format_rules) are
+        overlaid on top — a persisted rule wins for its exact
+        (supplier, document_type, field_key); every key without a persisted
+        rule keeps its inferred entry, so the fallback path is preserved.
+        """
         self.format_index        = ocr_corrector.build_format_index(formats_data)
         self.noise_profile_index = ocr_corrector.build_noise_profile_index(formats_data)
         self.format_class_index  = format_anomaly_checker.build_format_class_index(formats_data)
+        inferred = len(self.format_class_index)
+        if format_rules:
+            self.format_class_index = format_anomaly_checker.merge_format_rules(
+                self.format_class_index, format_rules)
         n = len([k for k in self.format_index if k != '_fallback'])
         m = len(self.noise_profile_index)
         p = len(self.format_class_index)
         self.log(f"  OCR corrector: {n} format templates, {m} learned noise profile(s) loaded")
         if p:
-            self.log(f"  Format checker: {p} format class rule(s) loaded")
+            persisted = len(format_rules or [])
+            self.log(f"  Format checker: {p} format class rule(s) loaded"
+                     f" ({inferred} inferred, {persisted} persisted override(s))")
 
     def warmup(self) -> bool:
         """Warm up Ollama model. Returns True if AI is available."""

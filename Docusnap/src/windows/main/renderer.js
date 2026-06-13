@@ -305,7 +305,7 @@ const modeBadge = document.getElementById('mode-badge');
 async function updateModeBadge() {
   if (!modeBadge) return;
   const mode = await window.docusnap.getProcessingMode();
-  modeBadge.textContent = mode === 'fast' ? 'FAST' : 'SMART';
+  modeBadge.textContent = { fast: 'FAST', smart: 'SMART', ai: 'AI' }[mode] || 'SMART';
   modeBadge.dataset.mode = mode;
   modeBadge.title = `Processing mode: ${mode}. Click to change in Settings.`;
 }

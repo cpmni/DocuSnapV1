@@ -358,6 +358,19 @@ function register(ctx) {
       document_type_id: dtInfo?.id             || null,
     });
 
+    // Stage 7 Stage 3 — refresh the persistent learned format model for this
+    // (supplier, document_type) from the now-updated confirmed history. Runs
+    // after confirm()/update() above so getFieldFormats() counts this document.
+    // Best-effort: a format-model hiccup must never block a confirm.
+    try {
+      learning.updateFormatRules(db, {
+        supplier_name: resolvedSupplier,
+        document_type: document_type_slug,
+      });
+    } catch (e) {
+      logger?.warn?.(`[format-rules] update skipped for ${resolvedSupplier}/${document_type_slug || '?'}: ${e.message}`);
+    }
+
     // Defer removal of the original scan until the preview UI is done with
     // it — see _scheduleSourceMove for why (locked-file failures at confirm
     // time, documented in processing.log). commitDocument has already copied

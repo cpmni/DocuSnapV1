@@ -40,6 +40,8 @@ function buildTrainingArgs(db, configPath) {
   const allTemplates = templates.getAll(db);
   let allFormats = [];
   try { allFormats = learning.getFieldFormats(db); } catch {}
+  let allFormatRules = [];
+  try { allFormatRules = learning.getFieldFormatRules(db); } catch {}
   let allSupplierTypes = [];
   try { allSupplierTypes = learning.getSupplierDocTypes(db); } catch {}
 
@@ -49,6 +51,7 @@ function buildTrainingArgs(db, configPath) {
   const logosFile     = writeTempJson('logos',     allLogos);
   const dtFile        = writeTempJson('doctypes',  allDocTypes);
   const formatsFile   = writeTempJson('formats',   allFormats);
+  const formatRulesFile = writeTempJson('formatrules', allFormatRules);
   const templatesFile = writeTempJson('templates', allTemplates);
   const supplierTypesFile = writeTempJson('suppliertypes', allSupplierTypes);
   const cfgFile       = configPath();
@@ -61,11 +64,12 @@ function buildTrainingArgs(db, configPath) {
       '--logos-file',     logosFile,
       '--doc-types-file', dtFile,
       '--formats-file',   formatsFile,
+      '--format-rules-file', formatRulesFile,
       '--templates-file', templatesFile,
       '--supplier-types-file', supplierTypesFile,
       '--config-file',    cfgFile,
     ],
-    tempFiles: [fieldsFile, hintsFile, anchorsFile, logosFile, dtFile, formatsFile, templatesFile, supplierTypesFile],
+    tempFiles: [fieldsFile, hintsFile, anchorsFile, logosFile, dtFile, formatsFile, formatRulesFile, templatesFile, supplierTypesFile],
   };
 }
 

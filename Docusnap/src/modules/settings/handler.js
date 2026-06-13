@@ -95,6 +95,21 @@ function register(ctx) {
     return { changes: result.changes };
   });
 
+  // Clear ONLY the persistent learned format model (field_format_rules) for a
+  // scope — leaves anchors, hints, corrections, logos, templates and
+  // template OCR-auto settings untouched. The next confirm for that
+  // (supplier, document_type) re-derives rules from history; until then
+  // extraction falls back to per-run format inference.
+  ipcMain.handle('clear-learning-format-rules', (_e, params) => {
+    requireRole('admin');
+    const { supplier_name, document_type } = params || {};
+    if (!supplier_name || !supplier_name.trim()) return { changes: 0 };
+    const result = learning.clearFieldFormatRulesForScope(getDb(), {
+      supplier_name: supplier_name.trim(), document_type: document_type || null,
+    });
+    return { changes: result.changes };
+  });
+
   // ── App settings (key-value) ─────────────────────────────────────────────────
   // get-setting stays open even pre-login: theme.js reads 'theme' from every
   // window — including the login screen, before currentSession exists — to
