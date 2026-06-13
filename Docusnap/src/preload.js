@@ -25,6 +25,20 @@ contextBridge.exposeInMainWorld('docusnap', {
   authShowLoginScreen:  () => ipcRenderer.send('auth-show-login'),
   onAuthSessionChanged: (cb) => ipcRenderer.on('auth-session-changed', (_e, user) => cb(user)),
 
+  // ── Licensing ────────────────────────────────────────────────────────────────
+  // Phase 1: read-only status + trial-start only. These return STATUS objects
+  // (never the raw fingerprint) and perform NO gating — enforcement is OFF.
+  // No gate signal is exposed yet; that arrives in Phase 2, where the MAIN
+  // process re-decides and the renderer can never self-grant access.
+  licenseGetStatus:   () => ipcRenderer.invoke('license-get-status'),
+  licenseStartTrial:  () => ipcRenderer.invoke('license-start-trial'),
+  licenseActivate:    (data) => ipcRenderer.invoke('license-activate', data),
+  licenseRevoke:      (data) => ipcRenderer.invoke('license-revoke', data),
+  // Phase 2 — license window only: request entry (main re-decides; the renderer
+  // cannot self-grant) and receive the blocked-state reason for display.
+  licenseEnterApp:    () => ipcRenderer.send('license-enter-app'),
+  onLicenseState:     (cb) => ipcRenderer.on('license-state', (_e, s) => cb(s)),
+
   // ── Window controls ─────────────────────────────────────────────────────────
   windowMinimise:     () => ipcRenderer.send('window-minimise'),
   windowMaximise:     () => ipcRenderer.send('window-maximise'),

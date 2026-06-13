@@ -1,0 +1,9 @@
+# Map the clean /v1/* contract paths onto the PHP files. Apache (WAMP and IONOS)
+# both honor this, so client URLs stay contract-shaped and host-portable.
+RewriteEngine On
+
+RewriteRule ^v1/trial/start/?$  v1/trial_start.php  [L]
+RewriteRule ^v1/activate/?$     v1/activate.php     [L]
+RewriteRule ^v1/validate/?$     v1/validate.php     [L]
+RewriteRule ^v1/revoke/?$       v1/revoke.php       [L]
+RewriteRule ^v1/status/?$       v1/status.php       [L]

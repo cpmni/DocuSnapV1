@@ -22,6 +22,7 @@ const searchModule     = require('./modules/search/handler');
 const processingModeModule = require('./modules/processing/processing_mode_handler');
 const watchModule          = require('./modules/watch/handler');
 const templatesModule      = require('./modules/templates/handler');
+const licensingModule      = require('./modules/licensing/handler');
 
 // ── DB ────────────────────────────────────────────────────────────────────────
 let _db = null;
@@ -84,8 +85,9 @@ let pendingReviewDocId = null;
 // delivered immediately if the settings window is already open.
 let pendingSettingsTemplateId = null;
 
-const MAIN_WINDOW_OPTIONS  = { width: 1100, height: 750, minWidth: 800, minHeight: 560 };
-const LOGIN_WINDOW_OPTIONS = { width: 460, height: 660, resizable: false, minimizable: false, maximizable: false };
+const MAIN_WINDOW_OPTIONS    = { width: 1100, height: 750, minWidth: 800, minHeight: 560 };
+const LOGIN_WINDOW_OPTIONS   = { width: 460, height: 660, resizable: false, minimizable: false, maximizable: false };
+const LICENSE_WINDOW_OPTIONS = { width: 460, height: 560, resizable: false, minimizable: false, maximizable: false };
 
 // Swap the whole app shell between "logged out" and "in the app". The login
 // window is always created BEFORE the others are closed, so the app never
@@ -96,9 +98,36 @@ function showLoginScreen() {
     if (name !== 'login') windows[name]?.close();
   });
 }
-function enterMainApp() {
+
+// Raw shell open — only ever reached AFTER the licensing gate has allowed it.
+function openMainShell() {
   createWindow('main', MAIN_WINDOW_OPTIONS, 'index.html');
   windows['login']?.close();
+  windows['license']?.close();
+}
+
+// Licensing gate (Phase 2). The MAIN process is the sole decider; the renderer
+// only signals intent. With enforcement OFF (default) decideAccess() returns
+// 'allow', so this is behaviourally identical to before. When enforcement is
+// ON and access cannot continue, route to the license window instead of main.
+async function enterMainApp() {
+  let gate = { decision: 'allow', enforcement: false };
+  try { gate = await licensingModule.decideAccess(); }
+  catch (e) { logger.err('licensing gate error (failing closed): ' + e.message); gate = { decision: 'locked_needs_online', reason: 'gate_error' }; }
+  if (gate.decision === 'allow') { openMainShell(); return; }
+  showLicenseWindow(gate);
+}
+
+function showLicenseWindow(gate) {
+  const win = createWindow('license', LICENSE_WINDOW_OPTIONS, 'index.html');
+  Object.keys(windows).forEach((name) => {
+    if (name !== 'license') windows[name]?.close();
+  });
+  if (win) {
+    win.webContents.on('did-finish-load', () => {
+      try { win.webContents.send('license-state', gate); } catch {}
+    });
+  }
 }
 
 function createWindow(name, options, htmlFile) {
@@ -161,6 +190,10 @@ app.whenReady().then(() => {
   // it just signals "I'm done" and main.js performs the swap.
   ipcMain.on('auth-enter-app',   () => enterMainApp());
   ipcMain.on('auth-show-login',  () => showLoginScreen());
+  // Licensing gate signal (Phase 2): the renderer can only REQUEST entry; the
+  // main process re-runs decideAccess() and refuses unless the state allows.
+  // The renderer can never self-grant access into the main shell.
+  ipcMain.on('license-enter-app', () => enterMainApp());
 
   processingModule.register(ctx);
   reviewModule.register(ctx);
@@ -170,6 +203,10 @@ app.whenReady().then(() => {
   processingModeModule.register(ctx);
   watchModule.register(ctx);
   templatesModule.register(ctx);
+  // Licensing — Phase 1: registers read-only status/trial-start IPC only.
+  // NO gate and NO denial path (enforcement OFF); the enterMainApp() flow below
+  // is untouched, so app launch behavior is unchanged.
+  licensingModule.register(ctx);
 
   // Window controls (shared across all windows)
   ipcMain.on('window-minimise', e =>
