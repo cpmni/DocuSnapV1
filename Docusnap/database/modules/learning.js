@@ -6,15 +6,17 @@ function insertExtractions(db, document_id, rows) {
   const stmt = db.prepare(`
     INSERT INTO extractions
       (document_id, field_key, raw_value, display_value,
-       confidence, extraction_method, validation_note, corrected_to)
+       confidence, extraction_method, validation_note, corrected_to, anchor_label)
     VALUES
       (@document_id, @field_key, @raw_value, @display_value,
-       @confidence, @extraction_method, @validation_note, @corrected_to)
+       @confidence, @extraction_method, @validation_note, @corrected_to, @anchor_label)
   `);
   const insertMany = db.transaction((rows) => {
     // corrected_to is the proposed (not-yet-applied) correction candidate from
-    // Stage 4.5; default to null so callers that don't set it are unaffected.
-    for (const row of rows) stmt.run({ document_id, corrected_to: null, ...row });
+    // Stage 4.5; anchor_label records the label an anchor-based read used (for the
+    // review "From anchor:" note). Both default to null so callers that don't set
+    // them are unaffected.
+    for (const row of rows) stmt.run({ document_id, corrected_to: null, anchor_label: null, ...row });
   });
   insertMany(rows);
 }

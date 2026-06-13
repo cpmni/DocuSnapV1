@@ -1,0 +1,57 @@
+{
+  "id": 43,
+  "name": "Document Solutions Ltd. Job Worksheet",
+  "slug": "document_solutions_ltd_job_worksheet",
+  "document_type_slug": "job_worksheet",
+  "logo_phash": "bc18e7c7c743468c",
+  "keyword_fingerprint": [
+    "DOCUMENT",
+    "SOLUTIONS",
+    "Ticket",
+    "Location",
+    "Work",
+    "Address",
+    "Beaumont",
+    "Care",
+    "Homes",
+    "Ltd"
+  ],
+  "confirmed_count": 0,
+  "created_at": "2026-06-12 23:22:57",
+  "updated_at": "2026-06-12 23:22:57",
+  "sample_document_id": null,
+  "group_id": null,
+  "ocr_auto_enabled": 0,
+  "ocr_auto_params": null,
+  "supplier_name": "Document Solutions Ltd.",
+  "fields": [
+    {
+      "id": 706,
+      "template_id": 43,
+      "field_key": "customer_name",
+      "anchor_label": null,
+      "direction": "right",
+      "fixed_value": "Po.",
+      "is_variable": 0
+    },
+    {
+      "id": 707,
+      "template_id": 43,
+      "field_key": "date",
+      "anchor_label": null,
+      "direction": "right",
+      "fixed_value": null,
+      "is_variable": 1
+    },
+    {
+      "id": 708,
+      "template_id": 43,
+      "field_key": "job_no",
+      "anchor_label": null,
+      "direction": "right",
+      "fixed_value": null,
+      "is_variable": 1
+    }
+  ],
+  "field_mappings": []
+}

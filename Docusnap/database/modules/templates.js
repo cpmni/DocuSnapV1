@@ -381,6 +381,29 @@ function _upsertFields(db, templateId, fields) {
   }
 }
 
+// Explicit admin-set fixed value for ONE template field (Template Manager →
+// "Fixed Field Values"). A fixed value makes template_matcher.extract_with_template
+// emit it for every matching document (method 'template_fixed', confidence 95),
+// independent of OCR — exactly the same mechanism _buildTemplateFields uses on
+// confirm, just driven explicitly from the UI instead of inferred. Clearing it
+// (null/empty) sets fixed_value=NULL and is_variable=1, returning the field to
+// normal variable behaviour. Only fixed_value + is_variable are touched on
+// conflict, so any learned anchor_label/direction on the same row is preserved.
+function setFieldFixedValue(db, templateId, fieldKey, fixedValue) {
+  const val = (fixedValue == null || String(fixedValue).trim() === '')
+    ? null
+    : String(fixedValue).trim();
+  const isVariable = val === null ? 1 : 0;
+  db.prepare(`
+    INSERT INTO template_fields (template_id, field_key, fixed_value, is_variable)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(template_id, field_key) DO UPDATE SET
+      fixed_value = excluded.fixed_value,
+      is_variable = excluded.is_variable
+  `).run(templateId, fieldKey, val, isVariable);
+  return getById(db, templateId);
+}
+
 function hammingDistance(h1, h2) {
   if (!h1 || !h2 || h1.length !== h2.length) return 64;
   let dist = 0;
@@ -433,7 +456,7 @@ module.exports = {
   searchByName,
   create, update, remove, rename, hammingDistance,
   getMappings, getMapping, saveMapping, setMappingEnabled, deleteMapping,
-  recordMappingTest, setSampleDocument, reassignDocuments,
+  recordMappingTest, setSampleDocument, reassignDocuments, setFieldFixedValue,
   setOcrAutoParams, setOcrAutoEnabled,
   getAllGroups, createGroup, deleteGroup, setTemplateGroup, getSiblings,
   GRID_COLS, GRID_ROWS,

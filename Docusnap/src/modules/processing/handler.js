@@ -334,6 +334,7 @@ function register(ctx) {
           extraction_method: data.method || null,
           validation_note:   data.validation_note || null,
           corrected_to:      data.corrected_to || null,
+          anchor_label:      data.anchor || null,
         }));
 
         const mergedRows = newRows.map(row => {
@@ -369,10 +370,26 @@ function register(ctx) {
         const learning = require('../../../database/modules/learning');
         learning.deleteExtractions(db, docId);
         learning.insertExtractions(db, docId, mergedRows);
+
+        // Persist the freshly detected document type so Review can auto-select
+        // it. Resolve type name → id exactly as the batch insert path
+        // (_handleFileMessage) does; the COALESCE below keeps the existing type
+        // when re-identification returns nothing, so a borderline reprocess
+        // never wipes a known type.
+        let reprocDocTypeId = null;
+        if (result.document_type) {
+          const docTypesMod = require('../../../database/modules/document_types');
+          const reMatch = docTypesMod.getAllWithFields(db).find(
+            dt => dt.name.toLowerCase() === result.document_type.toLowerCase()
+          );
+          if (reMatch) reprocDocTypeId = reMatch.id;
+        }
+
         db.prepare(
           `UPDATE documents SET
              overall_confidence  = ?,
              status              = 'needs_review',
+             document_type_id    = COALESCE(?, document_type_id),
              template_id         = ?,
              logo_phash          = ?,
              keyword_fingerprint = ?,
@@ -381,6 +398,7 @@ function register(ctx) {
            WHERE id = ?`
         ).run(
           result.overall_confidence || null,
+          reprocDocTypeId,
           result.template_id        || null,
           result.logo_phash         || null,
           result.keyword_fingerprint ? JSON.stringify(result.keyword_fingerprint) : null,
@@ -646,6 +664,7 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger) {
       extraction_method: data.method || null,
       validation_note:   data.validation_note || null,
       corrected_to:      data.corrected_to || null,
+      anchor_label:      data.anchor || null,
     }));
     learning.insertExtractions(db, docId, rows);
   }

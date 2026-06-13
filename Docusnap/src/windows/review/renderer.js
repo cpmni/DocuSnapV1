@@ -410,12 +410,12 @@ function renderFields(doc) {
   for (const key of reviewFields()) {
     const ext = extMap[key] || {};
     const val = ext.display_value ?? ext.raw_value ?? '';
-    appendFieldRow(scroll, key, val, ext.confidence ?? null, ext.validation_note || null, ext.corrected_to || null);
+    appendFieldRow(scroll, key, val, ext.confidence ?? null, ext.validation_note || null, ext.corrected_to || null, ext.anchor_label || null, ext.extraction_method || null);
   }
   validateConfirm();
 }
 
-function appendFieldRow(scroll, key, val, conf, note, correctedTo) {
+function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, method) {
   const low      = conf !== null && conf < 70;
   const confClass = conf === null ? '' : conf >= 70 ? 'high' : conf >= 40 ? 'mid' : 'low';
   const confLabel = conf !== null
@@ -430,6 +430,12 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo) {
     : '';
   const noteHtml = (note || correctedTo)
     ? `<div class="field-note">${escHtml(note || '')}${acceptHtml}</div>`
+    : '';
+  // Anchor provenance: only for anchor-based extraction sources, and only when a
+  // label was captured. Other methods (keyword, template, llm, manual) show nothing.
+  const isAnchorMethod = method === 'anchor' || method === 'anchor_crop';
+  const anchorHtml = (isAnchorMethod && anchorLabel)
+    ? `<div class="field-anchor-note">From anchor: ${escHtml(anchorLabel)}</div>`
     : '';
 
   const row = document.createElement('div');
@@ -446,7 +452,7 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo) {
              value="${escHtml(val)}" placeholder="Not found">
       <button class="pick-btn" data-key="${key}" title="Pick from document">&#8853;</button>
     </div>
-    ${noteHtml}
+    ${noteHtml}${anchorHtml}
   `;
 
   const input = row.querySelector('input');
@@ -1071,6 +1077,20 @@ document.getElementById('btn-preview-exit').addEventListener('click', () => {
   deactivatePreview();
 });
 
+// After a reprocess re-identifies the document type, sync the dropdown,
+// selectedTypeSlug and fieldDefs to the freshly persisted type so the correct
+// field set renders and the detected type is pre-selected — the same dropdown
+// sync _selectDoc performs on load. No-op when the record carries no type, so a
+// borderline reprocess leaves the user's current selection untouched.
+function syncDocTypeFromRecord(doc) {
+  if (!doc || !doc.type_slug) return;
+  selectedTypeSlug = doc.type_slug;
+  const sel = document.getElementById('doctype-select');
+  if (sel) sel.value = selectedTypeSlug;
+  const dt = allDocTypes.find(t => t.slug === selectedTypeSlug);
+  if (dt) fieldDefs = dt.fields;
+}
+
 // ── Reprocess ─────────────────────────────────────────────────────────────────
 document.getElementById('btn-reprocess').addEventListener('click', async () => {
   if (!currentDoc) return;
@@ -1101,6 +1121,7 @@ document.getElementById('btn-reprocess').addEventListener('click', async () => {
     if (full) {
       currentDoc  = full;    // sync in-memory state to fresh DB record
       corrections = {};      // drop stale corrections; fields are now fresh
+      syncDocTypeFromRecord(full); // auto-select the newly detected type
     }
     renderFields(full || currentDoc);
     if (result.ruleCreated) {
@@ -1221,6 +1242,7 @@ document.getElementById('btn-reprocess-all').addEventListener('click', async () 
           if (full) {
             currentDoc  = full;
             corrections = {};
+            syncDocTypeFromRecord(full); // auto-select the newly detected type
             renderFields(full);
           }
         }

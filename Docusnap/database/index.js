@@ -241,6 +241,17 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 12 applied: templates.ocr_auto_enabled / ocr_auto_params');
   }
 
+  // Migration 14: add anchor_label to extractions — stores the anchor label used
+  // so the review UI can show a "From anchor: xxxxxx" note. Additive/nullable;
+  // existing rows stay null (no note) until the next (re)process repopulates them.
+  if (!applied.has(14)) {
+    if (tableExists(db, 'extractions') && !hasColumn(db, 'extractions', 'anchor_label')) {
+      try { db.exec(`ALTER TABLE extractions ADD COLUMN anchor_label TEXT`); } catch {}
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (14)').run();
+    console.log('JS migration 14 applied: extractions.anchor_label');
+  }
+
   // Migration 9: template groups — organisational grouping for related templates
   // (same supplier family, layout variants). Grouping is v1 metadata only; no
   // shared-anchor behaviour is added here. Existing ungrouped templates continue

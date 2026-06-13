@@ -89,6 +89,10 @@ function register(ctx) {
         const t = db.prepare('SELECT slug FROM document_types WHERE id = ?').get(doc.document_type_id);
         typeSlug = t ? t.slug : null;
       }
+      // getWithExtractions → getById is SELECT * (no JOIN) so it lacks type_slug.
+      // Surface the resolved slug so Review can sync its doc-type dropdown to the
+      // record after a reprocess re-identifies the type.
+      doc.type_slug = typeSlug;
       doc.digit_only_fields = learning.getDigitsOnlyFields(db, doc.supplier_name, typeSlug);
     }
     return doc;
