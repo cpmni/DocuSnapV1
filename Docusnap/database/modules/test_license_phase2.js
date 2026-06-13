@@ -97,6 +97,9 @@ const ctx = {
   ipcMain: { handle: () => {} },
   getDb: () => db,
   resourcePath: (...p) => path.join(ROOT, ...p),
+  // Hermetic: force the online refresh to fail so the gate evaluates the SEEDED
+  // cached token only (no dependency on a real/reachable backend at cfg.base_url).
+  licenseTransport: () => Promise.reject(new Error('test-offline')),
   fs,
   logger: { warn: () => {}, err: () => {} },
 };

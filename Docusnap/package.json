@@ -22,9 +22,7 @@
           ]
         }
       ],
-      "icon": "assets/icon.ico",
-      "sign": null,
-      "signingHashAlgorithms": []
+      "icon": "assets/icon.ico"
     },
     "nsis": {
       "artifactName": "DocuSnap Setup ${version}-r${env.BUILD_REV}.exe",

@@ -40,6 +40,8 @@
     .activate input { background: var(--surface); border: 1px solid var(--border);
       border-radius: 6px; color: var(--text); padding: 8px 10px; font-size: 13px; }
     .activate input::placeholder { color: var(--muted); }
+    .section-title { font-size: 13px; font-weight: 600; }
+    .hint { font-size: 12px; color: var(--muted); margin: -2px 0 2px; }
     .msg { font-size: 12px; min-height: 16px; }
     .msg.err { color: var(--err); }
     .msg.ok { color: #3ecf8e; }
@@ -55,10 +57,20 @@
     <div class="reason" id="reason"></div>
     <div class="row">
       <button class="action" id="recheck">Check again</button>
-      <button class="action secondary" id="trial">Start / resume trial</button>
     </div>
     <hr />
     <div class="activate">
+      <span class="section-title">Start your 14-day free trial</span>
+      <p class="hint">Enter your details to begin. The trial only starts once these are saved.</p>
+      <input id="trial_customer" type="text" placeholder="Customer or company name (required)" autocomplete="off" maxlength="190" />
+      <input id="trial_user" type="text" placeholder="Your name" autocomplete="off" maxlength="190" />
+      <input id="trial_email" type="email" placeholder="Email" autocomplete="off" spellcheck="false" maxlength="190" />
+      <button class="action" id="trial">Start / resume trial</button>
+      <div class="msg" id="trial_msg"></div>
+    </div>
+    <hr />
+    <div class="activate">
+      <span class="section-title">Already have a licence key?</span>
       <input id="key" type="text" placeholder="Activation key" autocomplete="off" spellcheck="false" />
       <input id="label" type="text" placeholder="Device name (optional)" autocomplete="off" />
       <button class="action" id="activate">Activate</button>

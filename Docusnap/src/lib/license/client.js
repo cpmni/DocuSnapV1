@@ -55,9 +55,18 @@ function createClient({ baseUrl, productId, transport = defaultTransport, timeou
   if (!baseUrl || !productId) throw new Error('license/client: baseUrl and productId are required');
   const base = String(baseUrl).replace(/\/+$/, '');
 
-  // POST /v1/trial/start — resume-or-create. Sends only product_id + fp_hash.
-  function startTrial(fpHash) {
-    return transport('POST', base + '/trial/start', { product_id: productId, fp_hash: fpHash }, timeoutMs);
+  // POST /v1/trial/start — resume-or-create. Sends product_id + fp_hash plus the
+  // captured trial-customer identity (customer_name required; contact_name/email
+  // optional). These are plain contact details, never the raw fingerprint or any
+  // secret. Backend validates again and is the source of truth.
+  function startTrial(fpHash, customer = {}) {
+    return transport('POST', base + '/trial/start', {
+      product_id: productId,
+      fp_hash: fpHash,
+      customer_name: customer.customerName || '',
+      contact_name:  customer.contactName  || '',
+      email:         customer.email        || '',
+    }, timeoutMs);
   }
 
   // GET /v1/status — read-only display snapshot.

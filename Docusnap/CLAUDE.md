@@ -64,19 +64,23 @@ docusnap2/
 │   │   ├── filing/handler.js            # folder structure, rename, XML metadata
 │   │   ├── settings/handler.js          # doc types, fields, key-value settings
 │   │   ├── templates/handler.js         # Admin Template Viewer — browse/pin samples, anchor→target mapping CRUD
-│   │   └── search/handler.js            # document search
+│   │   ├── search/handler.js            # document search
+│   │   └── licensing/handler.js         # license gate decideAccess() + trial/activate/revoke/enforcement IPC (see Licensing)
+│   ├── lib/license/{client.js,token.js,fingerprint.js}  # backend HTTP client · offline JWS verify · device fp_hash
 │   └── windows/
 │       ├── main/{index.html,renderer.js}
 │       ├── review/{index.html,renderer.js}
-│       ├── settings/{index.html,renderer.js}  # incl. Admin Template Viewer (anchor/target mapping)
-│       └── search/index.html                  # placeholder
+│       ├── settings/{index.html,renderer.js}  # incl. Admin Template Viewer + License/Activation-Test tab
+│       ├── search/index.html                  # placeholder
+│       └── license/{index.html,renderer.js}   # activation/trial screen shown when the gate locks
 ├── database/
 │   ├── index.js                         # open(), runMigrations(), runJsMigrations()
 │   └── modules/
 │       ├── document_types.js            # doc type + field CRUD, seedBuiltInTypes()
 │       ├── documents.js                 # document CRUD, search(), getReviewQueue()
 │       ├── learning.js                 # hints, anchors, logos, getSetting/setSetting
-│       └── templates.js                # template CRUD, field mappings, sample-document linkage
+│       ├── templates.js                # template CRUD, field mappings, sample-document linkage
+│       └── licensing.js                # client license_tokens cache (cacheToken/getActiveToken/clearSeatToken)
 ├── python_backend/
 │   ├── process_docs.py                  # CLI entry point, streams JSON to stdout
 │   ├── extraction/
@@ -91,7 +95,12 @@ docusnap2/
 │   ├── ocr/{tesseract.py,region.py}
 │   ├── logo/fingerprint.py
 │   └── render/pages.py                 # PDF→PNG rendering — shared by review/search/template preview (see Gotchas)
-└── config/keyword_patterns.json        # editable pattern library
+├── config/keyword_patterns.json        # editable pattern library
+├── config/license.json                 # client license config: base_url, product_id, public_keys (PUBLIC keys only)
+└── licensing-backend/                   # separate PHP 8 + MySQL activation server (WAMP/IONOS); see Licensing
+    ├── public/{index.php, v1/*.php, admin/*}  # health · /v1 trial_start|activate|validate|revoke|status · admin web page
+    ├── lib/{db.php, jws.php, admin_auth.php}   # PDO+JSON helpers · Ed25519 signing · admin gate+CSRF+bright chrome
+    └── schema.sql · keys/ (gitignored seeds + admin_password.hash) · scripts/{Configure,Verify}-WampBackend*.ps1
 ```
 
 ---
@@ -115,6 +124,9 @@ field_anchors   — supplier_name, document_type, field_key, anchor_label,
 logo_fingerprints — supplier_name, phash, ahash, match_count
 settings        — key, value (key-value store)
 migrations      — version, applied_at
+license_tokens  — kind(seat|trial), subject, token_blob(JWS), state, not_after,   ← migration 16
+                  grace_until, kid  (client cache of the signed token; deletable)
+device_registrations — fp_hash, product_id  (local mirror; backend is source of truth)
 ```
 
 ---
@@ -186,6 +198,52 @@ OutputRoot/
 
 ---
 
+## Licensing & activation
+Optional license gate: trial + paid-seat, all device-bound. **OFF in dev, ON by default in
+packaged builds.** The MAIN process is the sole decider — the renderer can only REQUEST
+entry (`license-enter-app`), never self-grant.
+
+**Flow**: login → `enterMainApp()` (main.js) → `licensingModule.decideAccess()` → `allow`
+opens the main shell, otherwise the **license window** (`src/windows/license` — Start/Resume
+Trial · Enter key + Activate · Release · Check again). Enforcement only changes what
+`decideAccess` returns; when off it always returns `allow` (unchanged launch behaviour).
+
+**Enforcement resolution** — `enforcementActive(db)` in `src/modules/licensing/handler.js`:
+1. env `DOCUSNAP_LICENSE_ENFORCEMENT` (on/off) — dev/recovery escape hatch, **wins**;
+2. setting `license_enforcement_enabled` ('true'/'false') — admin toggle (Settings → Activation);
+3. unset → `_ctx.app.isPackaged` (installed build enforces, dev stays off).
+A valid cached trial/seat token always passes the gate, so legit users open normally.
+
+**decideAccess specifics**: best-effort online `validate()` (short timeout) refreshes the
+cached token; a REACHABLE backend returning no grant **clears** the stale seat token, so a
+server-side release/revoke locks on the next online check; OFFLINE falls back to the cached
+token within its 7-day grace. Clock-rollback defended by a monotonic high-water mark
+(`license_time_hwm` in settings). Tokens verified OFFLINE in `src/lib/license/token.js`
+against pinned public keys: alg must be EdDSA, kid pinned, signature, then product/fp/
+expiry/grace/state. Fingerprint = SHA-256(product_id | Windows MachineGuid)
+(`src/lib/license/fingerprint.js`) — raw value never leaves main, never sent.
+⚠ Non-sysprep'd VM **clones share MachineGuid** → same fp_hash.
+
+**config/license.json**: `base_url` (per-environment — change for WAMP→prod, no code
+change), `product_id`, `public_keys` (PUBLIC only). Bundled via extraResources → **rebuild
+the installer after editing it**.
+
+**Backend** `licensing-backend/` (PHP+MySQL): `/v1/{trial/start,activate,validate,revoke,
+status}`. account_key stored only as SHA-256; tokens signed with the Ed25519 seed in `keys/`
+(outside docroot). Admin web page `public/admin/` — session + CSRF, single bcrypt password
+in `keys/admin_password.hash`, BRIGHT-ONLY theme — manages products/accounts/entitlements/
+seats and issues **temporary licenses** (= an entitlement with `expires_at`; one-time key
+shown once). Deploy/verify via `scripts/Configure-WampBackend.ps1` / `Verify-WampBackend-Ready.ps1`
+(the Configure script now fails loudly on mysql errors).
+
+**Tests** (Electron-as-Node): `database/modules/test_license_*.js`. Gate tests **stub
+`ctx.licenseTransport`** to stay hermetic (no real backend) — do the same for any new one.
+
+**Secrets**: never log/echo account or activation keys; never re-display a one-time key
+after issuance; never expose `account_key_hash` or the raw fingerprint.
+
+---
+
 ## UI conventions
 ```css
 --bg:#0c0e14  --surface:#13161f  --surface2:#1a1e2a
@@ -217,6 +275,9 @@ search-documents(params)
 get-setting(key), set-setting(key,value)
 get-ai-status, get-processing-mode, set-processing-mode(mode)
 pull-ai-model, check-fast-mode-suggestion(supplierName)
+license-get-status, license-start-trial, license-activate(data), license-revoke(data)
+license-test-activate(data)            # admin local test — never mutates real state
+license-get-enforcement, license-set-enforcement(on)   # admin-gated; Settings → Activation
 ```
 
 ### Renderer → Main (send — fire and forget)
@@ -225,6 +286,7 @@ window-minimise, window-maximise, window-close
 show-in-explorer(path), open-file(path)
 open-review-window, open-settings-window, open-search-window
 notify-review-complete
+license-enter-app                      # REQUEST entry; main re-decides via decideAccess
 ```
 
 ### Main → Renderer (events)
@@ -233,6 +295,7 @@ review-count-changed(n), deferred-count-changed(n)
 processing-mode-changed(mode)
 pull-progress({status,completed,total})
 reprocess-progress(msg), process-progress(msg)
+license-state(gate)                    # pushed to the license window with the blocked-state reason
 ```
 
 ---
@@ -426,11 +489,21 @@ Python uses `py -3.12` in dev, `vendor/python/python.exe` when packaged.
 ## Dev workflow
 ```bash
 cd C:\docusnap2
-npm start          # dev mode — uses system Python + Tesseract
-npm run build      # produces dist\DocuSnap Setup 2.0.0.exe
+npm start          # dev mode — uses system Python + Tesseract; licensing enforcement OFF
+npm run build      # → dist\DocuSnap Setup <ver>-r<BUILD_REV>.exe  (BUILD_REV defaults 'local')
 ```
 Dev uses `py -3.12 script.py`, packaged uses bundled Python venv.
 Tesseract hardcoded to `C:\Program Files\Tesseract-OCR\tesseract.exe` in dev.
 
-Delete `%APPDATA%\DocuSnap\docusnap.db` to reset database during development.
+**Build notes**: electron-builder **v26** (the old `win.sign` / `win.signingHashAlgorithms`
+keys are removed — don't re-add them). `postinstall` runs `install-app-deps`; native deps
+(`argon2`, `better-sqlite3`) are auto-rebuilt for the Electron ABI during build. Installer is
+**unsigned** → SmartScreen "More info → Run anyway" on the VM. Run gate tests with
+Electron-as-Node, not plain node (native-module ABI).
+
+Delete `%APPDATA%\DocuSnap\docusnap.db` to reset DB during development (also clears users,
+cached license tokens, and the enforcement setting).
 Delete `python_backend/**/__pycache__` if Python changes don't take effect.
+Packaged build remembers prior login/trial because that DB persists across reinstalls
+(NSIS `deleteAppDataOnUninstall:false`). To force the activation gate in dev: launch with
+`DOCUSNAP_LICENSE_ENFORCEMENT=on`; to bypass it: `=off`.

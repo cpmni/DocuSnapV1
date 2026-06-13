@@ -9,14 +9,20 @@ CREATE TABLE IF NOT EXISTS products (
 
 -- Trial-clock anchor. Authoritative trial window per (product, fingerprint).
 -- A returning fp_hash RESUMES this window; it is never re-minted.
+-- customer_name/contact_name/email capture the trial customer's identity at
+-- trial start (the in-app 14-day trial). They are plain contact details only —
+-- never secrets, keys or tokens. customer_name is required when a trial starts.
 CREATE TABLE IF NOT EXISTS device_registrations (
-  id          BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  fp_hash     CHAR(64)     NOT NULL,
-  product_id  CHAR(36)     NOT NULL,
-  first_seen  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  last_seen   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  trial_start DATETIME     NULL,
-  trial_end   DATETIME     NULL,
+  id            BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  fp_hash       CHAR(64)     NOT NULL,
+  product_id    CHAR(36)     NOT NULL,
+  first_seen    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_seen     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  trial_start   DATETIME     NULL,
+  trial_end     DATETIME     NULL,
+  customer_name VARCHAR(190) NULL,   -- customer or company name (required at trial start)
+  contact_name  VARCHAR(190) NULL,   -- user name
+  email         VARCHAR(190) NULL,   -- contact email (validated when present)
   UNIQUE KEY uq_fp_product (fp_hash, product_id),
   FOREIGN KEY (product_id) REFERENCES products(product_id)
 );
@@ -34,6 +40,11 @@ CREATE TABLE IF NOT EXISTS entitlements (
   seats_total INT         NOT NULL DEFAULT 1,
   expires_at  DATETIME    NULL,
   status      VARCHAR(20) NOT NULL DEFAULT 'active',
+  -- Admin-issuance metadata (temporary licences). Never secrets.
+  customer_name  VARCHAR(190) NULL,   -- required at issuance: customer or company name
+  device_label   VARCHAR(120) NULL,   -- optional human-friendly device name
+  customer_email VARCHAR(190) NULL,   -- optional; support / expiry reminders only
+  notes          TEXT         NULL,   -- internal admin notes
   FOREIGN KEY (account_id) REFERENCES accounts(id),
   FOREIGN KEY (product_id) REFERENCES products(product_id)
 );
@@ -67,3 +78,33 @@ CREATE TABLE IF NOT EXISTS audit_events (
   ip         VARCHAR(45) NULL,
   created_at DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ── Idempotent migrations ────────────────────────────────────────────────────
+-- CREATE TABLE IF NOT EXISTS above only covers FRESH installs; an existing DB
+-- keeps its old column set. This block back-fills new columns on re-import
+-- (Configure-WampBackend.ps1 -ImportDatabase). Guarded so re-running is safe and
+-- it does not depend on `ADD COLUMN IF NOT EXISTS` (absent in stock MySQL).
+DROP PROCEDURE IF EXISTS _ds_migrate;
+DELIMITER //
+CREATE PROCEDURE _ds_migrate()
+BEGIN
+  -- Trial customer identity on device_registrations (see table comment above).
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'device_registrations'
+                   AND COLUMN_NAME = 'customer_name') THEN
+    ALTER TABLE device_registrations ADD COLUMN customer_name VARCHAR(190) NULL AFTER trial_end;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'device_registrations'
+                   AND COLUMN_NAME = 'contact_name') THEN
+    ALTER TABLE device_registrations ADD COLUMN contact_name VARCHAR(190) NULL AFTER customer_name;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'device_registrations'
+                   AND COLUMN_NAME = 'email') THEN
+    ALTER TABLE device_registrations ADD COLUMN email VARCHAR(190) NULL AFTER contact_name;
+  END IF;
+END //
+DELIMITER ;
+CALL _ds_migrate();
+DROP PROCEDURE IF EXISTS _ds_migrate;

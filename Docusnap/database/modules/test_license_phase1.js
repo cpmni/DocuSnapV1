@@ -7,7 +7,8 @@
  * Loop 4 / Phase 1 — fingerprint + status, enforcement OFF. Verifies locally
  * (no live WAMP needed) that:
  *   1. Fingerprint is a stable, salted SHA-256 hash; raw never returned.
- *   2. Client sends ONLY {product_id, fp_hash} (no raw fingerprint) on the wire.
+ *   2. Client sends {product_id, fp_hash} + the captured trial-customer identity
+ *      (customer_name/contact_name/email) — never the raw fingerprint material.
  *   3. trial/start RESUMES the same window on repeat (idempotent, never resets)
  *      — incl. after a simulated local-DB deletion (server is source of truth).
  *   4. Local cache helpers round-trip over the migration-16 tables.
@@ -67,22 +68,26 @@ function makeMock() {
   const mock = makeMock();
   const client = createClient({ baseUrl: 'http://example/v1', productId: 'prod-A', transport: mock.transport });
 
-  const r1 = await client.startTrial(fpA1);
+  const cust = { customerName: 'ACME Ltd', contactName: 'Jane Smith', email: 'jane@acme.example' };
+  const r1 = await client.startTrial(fpA1, cust);
   if (!check('trial/start creates a window first time', r1.body.resumed === false && !!r1.body.trial_end)) fail++;
 
   const sentKeys = Object.keys(mock.getLastBody()).sort().join(',');
-  if (!check('wire body is exactly {fp_hash, product_id}', sentKeys === 'fp_hash,product_id')) fail++;
+  if (!check('wire body is {contact_name, customer_name, email, fp_hash, product_id}',
+      sentKeys === 'contact_name,customer_name,email,fp_hash,product_id')) fail++;
   if (!check('wire body carries the HASH, not raw material',
       mock.getLastBody().fp_hash === fpA1 && !/machine|guid|raw/i.test(JSON.stringify(mock.getLastBody())))) fail++;
+  if (!check('wire body carries the captured customer identity',
+      mock.getLastBody().customer_name === 'ACME Ltd' && mock.getLastBody().email === 'jane@acme.example')) fail++;
 
-  const r2 = await client.startTrial(fpA1);
+  const r2 = await client.startTrial(fpA1, cust);
   if (!check('trial/start RESUMES same window on repeat',
       r2.body.resumed === true && r2.body.trial_end === r1.body.trial_end)) fail++;
 
   // Simulate local-DB deletion: a brand-new client (no local state) still resumes
   // because the backend (mock store) is the source of truth.
   const freshClient = createClient({ baseUrl: 'http://example/v1', productId: 'prod-A', transport: mock.transport });
-  const r3 = await freshClient.startTrial(fpA1);
+  const r3 = await freshClient.startTrial(fpA1, cust);
   if (!check('resume survives simulated local-DB deletion (no reset)',
       r3.body.resumed === true && r3.body.trial_end === r1.body.trial_end)) fail++;
 
@@ -109,13 +114,17 @@ function makeMock() {
   handler.register(fakeCtx);
   const names = Object.keys(handlers).sort();
   if (!check('registers the expected licensing IPC channels',
-      names.join(',') === 'license-activate,license-get-status,license-revoke,license-start-trial')) fail++;
+      names.join(',') === 'license-activate,license-get-diagnostics,license-get-enforcement,' +
+        'license-get-status,license-revoke,license-set-enforcement,license-start-trial,license-test-activate')) fail++;
   if (!check('registers NO gate/deny/enter handle channel',
       !names.some(n => /enter|gate|deny|lock/.test(n)))) fail++;
 
   // Offline call (nothing serves config base_url here) must NOT throw or deny.
+  // Valid capture is supplied so the validation guard passes and the real offline
+  // network path is exercised (not short-circuited on missing fields).
   let threw = false, res = null;
-  try { res = await handlers['license-start-trial'](); } catch (e) { threw = true; }
+  try { res = await handlers['license-start-trial'](undefined, { customerName: 'ACME Ltd' }); }
+  catch (e) { threw = true; }
   if (!check('offline trial-start does not throw', !threw)) fail++;
   if (!check('offline result is non-denial (no locked/denied/gate field)',
       res && !res.denied && !res.locked && !res.gate)) fail++;

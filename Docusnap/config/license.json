@@ -2,7 +2,7 @@
   "_comment": "Client-side licensing config. PUBLIC keys only — never place a private key here. base_url is a config-only setting so the WAMP->IONOS migration needs no code change. Replace base_url with the dev WAMP VM URL, then the production host, as needed.",
   "schema_version": 1,
   "product_id": "3e2a3d3c-c8b0-428b-9b68-38829f20b53d",
-  "base_url": "http://localhost:8080/v1",
+  "base_url": "http://192.168.0.237/licensing/public/v1",
   "active_kid": "k1",
   "public_keys": {
     "k1": {

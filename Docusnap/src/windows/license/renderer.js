@@ -13,8 +13,8 @@ const REASONS = {
   revoked:            'This licence seat has been revoked.',
   seat_reassigned:    'This seat is now active on another device.',
   stale_past_grace:   'Offline grace has elapsed — an online check is required.',
-  no_cached_token:    'No verified licence yet — an online check is required.',
-  config_error:       'Licence configuration could not be read.',
+  no_cached_token:    'Activation required — enter your activation key below to continue.',
+  config_error:       'Licence configuration could not be read. Contact your administrator.',
   gate_error:         'Licence check failed — please try again.',
 };
 
@@ -22,11 +22,14 @@ function render(state) {
   const decision = (state && state.decision) || 'locked';
   const reason = (state && state.reason) || '';
   if (decision === 'locked_invalid') {
-    $('state').textContent = 'This licence could not be verified.';
+    $('state').textContent = 'This licence could not be verified. Re-activate below to continue.';
   } else if (decision === 'locked_needs_online') {
-    $('state').textContent = 'An online verification is required to continue.';
+    // Most commonly this device has never been activated; guide them to activate.
+    $('state').textContent = (reason === 'no_cached_token')
+      ? REASONS.no_cached_token
+      : 'Activation required — an online verification is needed. Activate below or “Check again”.';
   } else {
-    $('state').textContent = REASONS[reason] || 'Access cannot continue on this device.';
+    $('state').textContent = REASONS[reason] || 'Activation is required to use this device.';
   }
   $('reason').textContent = reason ? `(${reason})` : '';
 }
@@ -55,11 +58,66 @@ const ACTIVATE_ERRORS = {
 };
 
 $('recheck').addEventListener('click', () => { api.licenseEnterApp(); });
+
+// Basic email shape check (mirrors the main/backend validation). Empty is allowed
+// here — email is optional — but a non-empty value must look like an address.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Start / Resume Trial: CAPTURE the customer identity (customer/company name +
+// user name + email) FIRST, validate it, then persist the trial record (the
+// backend resume-or-creates the 14-day window and stores the identity; main
+// caches the signed trial token). We continue into the app ONLY if a valid trial
+// is in force — never call the app-launch path (licenseEnterApp) until capture +
+// the trial step have actually succeeded, so incomplete capture cannot silently
+// proceed. Trials are no longer anonymous.
 $('trial').addEventListener('click', async () => {
+  const msg = $('trial_msg');
+  const customerName = $('trial_customer').value.trim();
+  const contactName  = $('trial_user').value.trim();
+  const email        = $('trial_email').value.trim();
+
+  msg.className = 'msg';
+  if (!customerName) {
+    msg.className = 'msg err'; msg.textContent = 'Enter a customer or company name to start the trial.';
+    return;
+  }
+  if (email && !EMAIL_RE.test(email)) {
+    msg.className = 'msg err'; msg.textContent = 'Enter a valid email address, or leave it blank.';
+    return;
+  }
+
+  msg.textContent = 'Starting your trial…';
   $('trial').disabled = true;
-  try { await api.licenseStartTrial(); } catch {}
-  api.licenseEnterApp();
-  $('trial').disabled = false;
+  try {
+    // persists trial window + identity, caches token
+    const res = await api.licenseStartTrial({ customerName, contactName, email });
+    if (res && res.ok && res.state === 'active') {
+      const left = (res.days_remaining != null) ? ` — ${res.days_remaining} day(s) remaining` : '';
+      msg.className = 'msg ok';
+      msg.textContent = (res.resumed ? 'Resuming your trial' : 'Trial started') + left + '. Opening…';
+      api.licenseEnterApp();              // enter ONLY after capture/validation succeeds
+    } else if (res && res.state === 'expired') {
+      msg.className = 'msg err';
+      msg.textContent = 'Your trial has ended. Enter a licence key to continue.';
+    } else if (res && res.code === 'missing_fields') {
+      msg.className = 'msg err';
+      msg.textContent = 'Enter a customer or company name to start the trial.';
+    } else if (res && res.code === 'invalid_email') {
+      msg.className = 'msg err';
+      msg.textContent = 'Enter a valid email address, or leave it blank.';
+    } else if (res && res.offline) {
+      msg.className = 'msg err';
+      msg.textContent = ACTIVATE_ERRORS.offline; // couldn't reach the server to record the trial
+    } else {
+      msg.className = 'msg err';
+      msg.textContent = 'Could not start the trial. Please try again.';
+    }
+  } catch {
+    msg.className = 'msg err';
+    msg.textContent = ACTIVATE_ERRORS.offline;
+  } finally {
+    $('trial').disabled = false;
+  }
 });
 
 // Activation: renderer only REQUESTS; main decides via the backend + verifier.
