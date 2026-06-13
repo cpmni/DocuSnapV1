@@ -260,6 +260,44 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 9 applied: template groups');
   }
 
+  // Migration 16: licensing scaffolding (Loop 4 / Phase 0). Creates the two
+  // CLIENT-side local tables. Additive and inert: nothing reads or writes them
+  // in Phase 0, and enforcement stays OFF, so app behavior is unchanged until
+  // later phases wire them up. Idempotent — guarded by applied.has(16) and
+  // tableExists, so a re-run is a no-op.
+  //   device_registrations: local MIRROR of the fingerprint (fp_hash). The
+  //     authoritative trial clock lives server-side; deleting this row can never
+  //     mint or reset a trial.
+  //   license_tokens: read-only cache of the latest signed JWS + parsed columns;
+  //     a missing/deleted cache simply forces an online check.
+  if (!applied.has(16)) {
+    if (!tableExists(db, 'device_registrations')) {
+      db.exec(`CREATE TABLE device_registrations (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        fp_hash    TEXT    NOT NULL UNIQUE,
+        created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+      )`);
+    }
+    if (!tableExists(db, 'license_tokens')) {
+      db.exec(`CREATE TABLE license_tokens (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind              TEXT    NOT NULL,
+        subject           TEXT    NOT NULL,
+        token_blob        TEXT    NOT NULL,
+        state             TEXT    NOT NULL,
+        not_after         TEXT,
+        grace_until       TEXT,
+        last_validated_at TEXT,
+        kid               TEXT,
+        created_at        TEXT    NOT NULL DEFAULT (datetime('now')),
+        updated_at        TEXT    NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(kind, subject)
+      )`);
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (16)').run();
+    console.log('JS migration 16 applied: licensing scaffolding (device_registrations, license_tokens)');
+  }
+
   // Migration 3: remove extra built-in fields, keep only name/date/ref per type
   if (!applied.has(3)) {
     const keepBySlug = {
@@ -403,4 +441,4 @@ function seedDefaults(db) {
   docTypes.seedBuiltInTypes(db);
 }
 
-module.exports = { open };
+module.exports = { open, runMigrations };

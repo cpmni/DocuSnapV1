@@ -1,0 +1,91 @@
+<?php
+// POST /v1/validate — refresh/re-verify. Returns a FRESH signed token whose
+// 7-day grace restarts from issue, plus a readable state. Source of truth for
+// the trial clock; never re-mints the trial window. Phase 2: trial only (seats
+// arrive in Phase 3). Accepts only product_id + fp_hash (+ optional token_id).
+
+require __DIR__ . '/../../lib/db.php';
+require __DIR__ . '/../../lib/jws.php';
+
+const ACTIVE_KID = 'k1';
+
+$body      = read_json_body();
+$productId = isset($body['product_id']) ? trim((string) $body['product_id']) : '';
+$fpHash    = isset($body['fp_hash']) ? strtolower(trim((string) $body['fp_hash'])) : '';
+
+if ($productId === '' || !preg_match('/^[0-9a-f]{64}$/', $fpHash)) {
+    bad_request('product_id and a 64-hex fp_hash are required');
+    return;
+}
+
+try {
+    $pdo = db();
+
+    // Seat-aware: if a bound SEAT exists for this fingerprint, re-issue a fresh
+    // seat token (this is what refreshes the 7-day grace for paid users online).
+    $seatSel = $pdo->prepare(
+        'SELECT s.id AS seat_id, s.entitlement_id, e.seats_total, e.expires_at
+         FROM seats s JOIN entitlements e ON e.id = s.entitlement_id
+         WHERE s.fp_hash = ? AND s.status = "bound" AND e.product_id = ? AND e.status = "active"
+         LIMIT 1'
+    );
+    $seatSel->execute([$fpHash, $productId]);
+    $seat = $seatSel->fetch();
+    if ($seat) {
+        $entId      = (int) $seat['entitlement_id'];
+        $seatsTotal = (int) $seat['seats_total'];
+        $expiresAt  = $seat['expires_at'];
+        $seatsUsed  = (int) $pdo->query("SELECT COUNT(*) FROM seats WHERE entitlement_id = $entId AND status = 'bound'")->fetchColumn();
+        $expired    = $expiresAt !== null && new DateTimeImmutable($expiresAt) <= new DateTimeImmutable('now');
+        $state      = $expired ? 'expired' : 'active';
+        $claims     = seat_claims($productId, $fpHash, $state, $entId, (int) $seat['seat_id'], $seatsTotal, $seatsUsed, $expiresAt);
+        $token      = jws_sign($claims, ACTIVE_KID);
+        audit_event($pdo, null, $fpHash, 'license.validated', "kind=seat state=$state");
+        send_json(200, ['token' => $token, 'kind' => 'seat', 'state' => $state,
+            'entitlement_id' => $entId, 'seat_id' => (int) $seat['seat_id'],
+            'seats_total' => $seatsTotal, 'seats_used' => $seatsUsed, 'expires_at' => $expiresAt]);
+        return;
+    }
+
+    $sel = $pdo->prepare(
+        'SELECT trial_start, trial_end FROM device_registrations
+         WHERE product_id = ? AND fp_hash = ?'
+    );
+    $sel->execute([$productId, $fpHash]);
+    $row = $sel->fetch();
+
+    if (!$row || $row['trial_end'] === null) {
+        // No seat and no trial — client must call trial/start first. Not a grant.
+        send_json(200, ['state' => 'none']);
+        return;
+    }
+
+    $pdo->prepare('UPDATE device_registrations SET last_seen = NOW()
+                   WHERE product_id = ? AND fp_hash = ?')->execute([$productId, $fpHash]);
+
+    $now           = new DateTimeImmutable('now');
+    $end           = new DateTimeImmutable($row['trial_end']);
+    $state         = ($now < $end) ? 'active' : 'expired';
+    $daysRemaining = max(0, (int) ceil(($end->getTimestamp() - $now->getTimestamp()) / 86400));
+
+    $claims = trial_claims($productId, $fpHash, $state, $row['trial_start'], $row['trial_end']);
+    $token  = jws_sign($claims, ACTIVE_KID);
+
+    audit_event($pdo, null, $fpHash, 'license.validated', "kind=trial state=$state");
+
+    send_json(200, [
+        'token'          => $token,
+        'kind'           => 'trial',
+        'state'          => $state,
+        'trial_start'    => $row['trial_start'],
+        'trial_end'      => $row['trial_end'],
+        'days_remaining' => $daysRemaining,
+    ]);
+} catch (Throwable $e) {
+    error_log('validate error: ' . $e->getMessage());
+    send_json(500, ['error' => [
+        'code'       => 'server_error',
+        'message'    => 'validate failed',
+        'request_id' => bin2hex(random_bytes(8)),
+    ]]);
+}

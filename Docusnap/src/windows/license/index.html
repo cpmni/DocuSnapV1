@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+  <title>Licence</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:#0c0e14; --surface:#13161f; --border:#252836;
+      --accent:#4f8ef7; --text:#e2e6f0; --muted:#7a82a0;
+      --warn:#f7b84f; --err:#f76f6f;
+    }
+    html, body { height: 100%; }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      display: flex; flex-direction: column; height: 100vh;
+    }
+    .titlebar { height: 36px; -webkit-app-region: drag; display: flex;
+      align-items: center; justify-content: flex-end; padding: 0 8px; }
+    .titlebar button { -webkit-app-region: no-drag; background: none; border: none;
+      color: var(--muted); width: 28px; height: 28px; cursor: pointer; font-size: 15px; }
+    .titlebar button:hover { color: var(--text); }
+    main { flex: 1; display: flex; flex-direction: column; align-items: center;
+      justify-content: center; padding: 24px; text-align: center; gap: 14px; }
+    h1 { font-size: 18px; font-weight: 600; }
+    .state { font-size: 13px; color: var(--muted); min-height: 18px; }
+    .reason { font-family: 'Consolas', monospace; font-size: 12px; color: var(--warn); }
+    .row { display: flex; gap: 10px; margin-top: 8px; }
+    button.action { -webkit-app-region: no-drag; background: var(--accent);
+      color: #fff; border: none; border-radius: 6px; padding: 9px 16px;
+      font-size: 13px; cursor: pointer; }
+    button.action.secondary { background: var(--surface); color: var(--text);
+      border: 1px solid var(--border); }
+    button.action:disabled { opacity: .5; cursor: default; }
+    .activate { display: flex; flex-direction: column; gap: 8px; width: 100%;
+      max-width: 320px; margin-top: 6px; }
+    .activate input { background: var(--surface); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text); padding: 8px 10px; font-size: 13px; }
+    .activate input::placeholder { color: var(--muted); }
+    .msg { font-size: 12px; min-height: 16px; }
+    .msg.err { color: var(--err); }
+    .msg.ok { color: #3ecf8e; }
+    hr { width: 100%; max-width: 320px; border: none; border-top: 1px solid var(--border); margin: 6px 0; }
+  </style>
+</head>
+<body>
+  <div class="titlebar"><button id="min">—</button><button id="close">✕</button></div>
+  <main>
+    <h1 id="title">Licence required</h1>
+    <div class="state" id="state">Checking licence…</div>
+    <div class="state" id="seats"></div>
+    <div class="reason" id="reason"></div>
+    <div class="row">
+      <button class="action" id="recheck">Check again</button>
+      <button class="action secondary" id="trial">Start / resume trial</button>
+    </div>
+    <hr />
+    <div class="activate">
+      <input id="key" type="text" placeholder="Activation key" autocomplete="off" spellcheck="false" />
+      <input id="label" type="text" placeholder="Device name (optional)" autocomplete="off" />
+      <button class="action" id="activate">Activate</button>
+      <button class="action secondary" id="release">Release this device</button>
+      <div class="msg" id="msg"></div>
+    </div>
+  </main>
+  <script src="renderer.js"></script>
+</body>
+</html>
