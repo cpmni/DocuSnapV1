@@ -348,11 +348,81 @@ function remove(db, id) {
   tx();
 }
 
+// ── Template identity stability ────────────────────────────────────────────
+// A template's logo_phash + keyword_fingerprint ARE its Stage-0 identity (see
+// template_matcher.py identify_template). Confirming a sample used to OVERWRITE
+// both with that one document's freshly-OCR'd values, so a single noisy scan
+// could replace a known-good identity with non-reproducible garble — OCR
+// misreads ("OLUTIONS", "bol"), or per-document customer/invoice/date tokens.
+// After such a confirm even the original sample no longer matched its own
+// template, so the learned anchors/field-mappings never ran. These helpers make
+// identity STABILISE across confirms instead of being clobbered by one sample.
+
+// A pruned keyword identity below this many tokens is too thin to identify
+// reliably, so a confirm that would erode it that far is ignored in favour of
+// the established identity.
+const FINGERPRINT_FLOOR = 3;
+
+function _normTokens(arr) {
+  const out = [], seen = new Set();
+  for (const t of (Array.isArray(arr) ? arr : [])) {
+    const s = String(t == null ? '' : t).trim();
+    if (!s) continue;
+    const k = s.toLowerCase();
+    if (seen.has(k)) continue;   // case-insensitive dedupe (matcher lowercases both sides)
+    seen.add(k);
+    out.push(s);                 // preserve first-seen casing/order
+  }
+  return out;
+}
+
+// Keep the tokens that RECUR across confirmed samples — the intersection of the
+// established identity with the incoming sample. Per-document noise (a customer
+// name, an invoice number, a one-off OCR misread) appears in only one sample and
+// is dropped; stable supplier branding survives and converges. The FLOOR guards
+// erosion: if the intersection is too thin to identify reliably, the established
+// identity is kept unchanged so one noisy confirm cannot erase it. The first
+// real identity (nothing established yet) is seeded as-is.
+function stabiliseFingerprint(existing, incoming) {
+  const ex  = _normTokens(existing);
+  const inc = _normTokens(incoming);
+  if (!ex.length)  return inc;   // nothing established yet — seed from this sample
+  if (!inc.length) return ex;    // nothing to learn from — keep the proven identity
+  const incSet = new Set(inc.map(t => t.toLowerCase()));
+  const kept   = ex.filter(t => incSet.has(t.toLowerCase()));   // existing order/casing
+  return kept.length >= FINGERPRINT_FLOOR ? kept : ex;
+}
+
+// Logo identity is a single perceptual hash, not a set, so it cannot intersect.
+// The same per-render scan/DPI/enhance drift that affects the fingerprint shifts
+// a recomputed phash by double-digit Hamming on the SAME document, so over-
+// writing a populated hash every confirm only destabilises the Stage-0 logo
+// gate. Seed it once when empty; otherwise keep the established value.
+function chooseLogoPhash(existing, incoming) {
+  const ex = existing == null ? '' : String(existing).trim();
+  if (ex) return existing;
+  return (incoming == null || String(incoming).trim() === '') ? null : incoming;
+}
+
 function update(db, id, { logo_phash, keyword_fingerprint, fields } = {}) {
   const sets   = ["confirmed_count = confirmed_count + 1", "updated_at = datetime('now')"];
   const params = [];
-  if (logo_phash          !== undefined) { sets.push('logo_phash = ?');          params.push(logo_phash); }
-  if (keyword_fingerprint !== undefined) { sets.push('keyword_fingerprint = ?'); params.push(JSON.stringify(keyword_fingerprint)); }
+
+  // Identity must STABILISE across confirms, never be overwritten by one noisy
+  // sample — read the established identity and merge the incoming sample into it
+  // (see stabiliseFingerprint / chooseLogoPhash above).
+  if (logo_phash !== undefined || keyword_fingerprint !== undefined) {
+    const cur = db.prepare('SELECT logo_phash, keyword_fingerprint FROM templates WHERE id = ?').get(id) || {};
+    if (logo_phash !== undefined) {
+      sets.push('logo_phash = ?');
+      params.push(chooseLogoPhash(cur.logo_phash, logo_phash));
+    }
+    if (keyword_fingerprint !== undefined) {
+      const merged = stabiliseFingerprint(_parseJson(cur.keyword_fingerprint, []), keyword_fingerprint);
+      sets.push('keyword_fingerprint = ?');
+      params.push(JSON.stringify(merged));
+    }
+  }
   params.push(id);
   db.prepare(`UPDATE templates SET ${sets.join(', ')} WHERE id = ?`).run(...params);
   if (fields && fields.length) _upsertFields(db, id, fields);
@@ -455,6 +525,7 @@ module.exports = {
   getAll, getById, getFields, findByLogoHash, findByKeywordFingerprint, identifyByFingerprint,
   searchByName,
   create, update, remove, rename, hammingDistance,
+  stabiliseFingerprint, chooseLogoPhash,
   getMappings, getMapping, saveMapping, setMappingEnabled, deleteMapping,
   recordMappingTest, setSampleDocument, reassignDocuments, setFieldFixedValue,
   setOcrAutoParams, setOcrAutoEnabled,

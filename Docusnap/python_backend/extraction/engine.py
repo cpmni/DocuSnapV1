@@ -57,6 +57,74 @@ def _supplier_identity_decision(existing: dict | None, candidate: dict | None) -
     return None
 
 
+def _enabled_mappings(tmpl: dict) -> list:
+    """Enabled admin-drawn field_mappings on a template dict (same enabled-filter
+    Stage 0.5 has always applied: anything not explicitly disabled counts)."""
+    return [m for m in (tmpl.get("field_mappings") or [])
+            if m.get("enabled", True) not in (False, 0)]
+
+
+def select_mapping_source(matched_tmpl: dict, templates: list | None) -> tuple[list, dict | None]:
+    """Decide which template's admin-drawn field_mappings to run for a document
+    that matched ``matched_tmpl`` — the deferred template-group "shared-anchor"
+    behaviour (see templates.js: groups were metadata-only in v1).
+
+    Returns ``(mappings, source)`` where ``mappings`` is the list of enabled
+    field_mappings to apply and ``source`` is the template they came from
+    (``matched_tmpl`` itself when it has its own, the sibling when borrowed, or
+    ``matched_tmpl`` with an empty list when there is nothing to run).
+
+    Rule:
+      1. If the matched template has enabled mappings OF ITS OWN, always use
+         those — unchanged behaviour; a template's own curated mappings win and
+         no group lookup happens.
+      2. Otherwise, if it belongs to a group, BORROW from the grouped sibling
+         (same ``group_id``, different ``id``) that has enabled mappings. A group
+         is an admin assertion that those templates share a layout, and the
+         borrowed mappings are still re-run through the anchor-relocation model
+         on THIS page (template_mapper re-finds each anchor, yielding nothing if
+         the layout doesn't actually match) — so borrowing is validated, never
+         copied blindly.
+      3. If there is no group, or no sibling has mappings, return an empty list
+         so the caller simply runs no Stage 0.5 — exactly as before.
+
+    Deterministic sibling pick: the sibling with the MOST enabled mappings, tie-
+    broken by highest ``confirmed_count`` then lowest ``id`` — the most-developed,
+    most-trusted sibling, chosen stably regardless of the input list's order.
+
+    Pure: no I/O and no DB; operates only on the template dicts already passed
+    into ``extract()`` (each carries ``id``, ``group_id`` and ``field_mappings``
+    via templates.getAll's ``SELECT *`` + per-row mapping load).
+    """
+    own = _enabled_mappings(matched_tmpl)
+    if own:
+        return own, matched_tmpl
+
+    gid = matched_tmpl.get("group_id")
+    if gid is None:
+        return [], matched_tmpl
+
+    mid = matched_tmpl.get("id")
+    candidates = []
+    for sib in (templates or []):
+        if sib is matched_tmpl:
+            continue
+        if sib.get("group_id") != gid or sib.get("id") == mid:
+            continue
+        sib_maps = _enabled_mappings(sib)
+        if sib_maps:
+            candidates.append((sib, sib_maps))
+
+    if not candidates:
+        return [], matched_tmpl
+
+    candidates.sort(key=lambda c: (-len(c[1]),
+                                   -(c[0].get("confirmed_count") or 0),
+                                   c[0].get("id") or 0))
+    best_sib, best_maps = candidates[0]
+    return best_maps, best_sib
+
+
 class ExtractionEngine:
 
     def __init__(self,
@@ -194,10 +262,16 @@ class ExtractionEngine:
                 # before. See template_mapper.py for the anchor-relocation +
                 # relative-offset model (the "primary model" the admin tool
                 # implements — NOT a fixed coarse-grid lookup).
-                tmpl_mappings = [m for m in (matched_tmpl.get('field_mappings') or [])
-                                 if m.get('enabled', True) not in (False, 0)]
+                # Own enabled mappings win; otherwise borrow from a grouped
+                # sibling that has them (validated below by re-running the
+                # anchor relocation on this page). See select_mapping_source.
+                tmpl_mappings, mapping_src = select_mapping_source(matched_tmpl, templates)
                 if tmpl_mappings and page_images:
-                    self.log(f"  Stage 0.5: {len(tmpl_mappings)} anchor→target mapping(s)…")
+                    if mapping_src is not matched_tmpl:
+                        self.log(f"  Stage 0.5: borrowing {len(tmpl_mappings)} mapping(s) from "
+                                 f"grouped sibling '{mapping_src.get('name')}'…")
+                    else:
+                        self.log(f"  Stage 0.5: {len(tmpl_mappings)} anchor→target mapping(s)…")
                     mapping_results = template_mapper.extract_with_mappings(
                         page_images, tmpl_mappings,
                         field_patterns=self.patterns.get("field_patterns", {}),
@@ -563,6 +637,22 @@ class ExtractionEngine:
 
         # ── Metadata ──────────────────────────────────────────────────────────
         overall_conf  = validator.overall_confidence(results, field_defs)
+        # Document-level format-consistency weighting: penalise the document when
+        # any field failed its expected format, and reward it when several well-
+        # supported fields all match. "Supported" = fields with a learned format
+        # for this supplier/type (the same index Stage 4.5 checks against), so a
+        # clean-but-unverified or sparse document is never over-rewarded. Only the
+        # displayed document score moves — per-field notes and needs_review are
+        # untouched.
+        supported_keys = set()
+        if self.format_class_index and supplier_name and document_slug:
+            sl = supplier_name.lower().strip()
+            dl = document_slug.lower().strip()
+            supported_keys = {k for (s, d, k) in self.format_class_index if s == sl and d == dl}
+        fc_delta = validator.format_consistency_delta(results, field_defs, supported_keys)
+        if fc_delta:
+            overall_conf = max(0, min(100, overall_conf + fc_delta))
+            self.log(f"  Format consistency: document confidence {'+' if fc_delta > 0 else ''}{fc_delta}")
         # Stage 4.5 confidence caps (≤45) will always trigger needs_review via
         # the per-field threshold check.  The OR guard covers the edge case
         # where a flagged field is not listed in field_defs.

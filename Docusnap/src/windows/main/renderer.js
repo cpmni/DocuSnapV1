@@ -57,7 +57,7 @@ document.getElementById('btn-max').addEventListener('click',   () => window.docu
 document.getElementById('btn-close').addEventListener('click', () => window.docusnap.windowClose());
 
 // ── Folder picker ────────────────────────────────────────────────────────────
-folderBox.addEventListener('click', async () => {
+async function chooseSourceFolder() {
   if (running) return;
   const folder = await window.docusnap.pickFolder();
   if (!folder) return;
@@ -70,8 +70,18 @@ folderBox.addEventListener('click', async () => {
   folderDisplay.textContent = display;
   folderDisplay.title       = folder;
   folderDisplay.classList.add('set');
+  folderBox.classList.remove('cue');  // stop the launchpad's "pick a folder" pulse
   btnRun.disabled = false;
-});
+}
+folderBox.addEventListener('click', chooseSourceFolder);
+
+// ── Launchpad (empty initial state) ───────────────────────────────────────────
+// Reuses the existing pick-folder / search / settings actions. The launchpad
+// lives inside #dropzone, so it is hidden automatically when startProcessing()
+// sets dropzone.style.display='none', and re-shown by Clear Results.
+document.getElementById('lp-import')?.addEventListener('click', chooseSourceFolder);
+document.getElementById('lp-search')?.addEventListener('click', () => window.docusnap.openSearchWindow());
+document.getElementById('lp-settings')?.addEventListener('click', () => window.docusnap.openSettingsWindow());
 
 // ── Run button ───────────────────────────────────────────────────────────────
 btnRun.addEventListener('click', async () => {
@@ -403,6 +413,10 @@ function applyCurrentUser(user) {
   // role can actually do — not just relying on the click being rejected.
   if (btnReviewNav)   btnReviewNav.style.display   = (user.role === 'readonly') ? 'none' : '';
   if (btnSettingsNav) btnSettingsNav.style.display = (user.role === 'admin')    ? '' : 'none';
+
+  // Launchpad Settings card mirrors the same Admin-only gate as the titlebar nav.
+  const lpSettings = document.getElementById('lp-settings');
+  if (lpSettings) lpSettings.style.display = (user.role === 'admin') ? '' : 'none';
 }
 
 window.docusnap.authGetCurrentUser().then(applyCurrentUser);

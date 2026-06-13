@@ -235,10 +235,12 @@ function main() {
   // logo crop itself is unchanged. All comfortably clear the >= 65 / <= 5
   // accept gate no matter which one ends up as the template's "current"
   // stored hash after each reuse overwrites it.
-  const docA = { template_id: null, logo_phash: 'aabbccdd11223344', keyword_fingerprint: ['BIGCO', 'INVOICE', 'CUSTOMERONE',   'INV1001', '01JAN2026'] };
-  const docB = { template_id: null, logo_phash: 'aabbccdd11223345', keyword_fingerprint: ['BIGCO', 'INVOICE', 'CUSTOMERTWO',   'INV1002', '02JAN2026'] };
-  const docC = { template_id: null, logo_phash: 'aabbccdd11223144', keyword_fingerprint: ['BIGCO', 'INVOICE', 'CUSTOMERTHREE', 'INV1003', '03JAN2026'] };
-  const docD = { template_id: null, logo_phash: 'aabbccdd11323344', keyword_fingerprint: ['BIGCO', 'INVOICE', 'CUSTOMERFOUR',  'INV1004', '04JAN2026'] };
+  // Shared, stable supplier branding (BIGCO / INVOICE / LTD) recurs on every
+  // scan; the customer name, invoice number and date are per-document noise.
+  const docA = { template_id: null, logo_phash: 'aabbccdd11223344', keyword_fingerprint: ['BIGCO', 'INVOICE', 'LTD', 'CUSTOMERONE',   'INV1001', '01JAN2026'] };
+  const docB = { template_id: null, logo_phash: 'aabbccdd11223345', keyword_fingerprint: ['BIGCO', 'INVOICE', 'LTD', 'CUSTOMERTWO',   'INV1002', '02JAN2026'] };
+  const docC = { template_id: null, logo_phash: 'aabbccdd11223144', keyword_fingerprint: ['BIGCO', 'INVOICE', 'LTD', 'CUSTOMERTHREE', 'INV1003', '03JAN2026'] };
+  const docD = { template_id: null, logo_phash: 'aabbccdd11323344', keyword_fingerprint: ['BIGCO', 'INVOICE', 'LTD', 'CUSTOMERFOUR',  'INV1004', '04JAN2026'] };
 
   if (!check('fixture sanity: every pair of "repeat scan" hashes is within the <= 5 accept-gate distance',
              [[docA, docB], [docA, docC], [docA, docD], [docB, docC], [docB, docD], [docC, docD]]
@@ -262,11 +264,18 @@ function main() {
   const bigCo = templates.getById(db, tplA);
   if (!check('confirmed_count reflects the 3 reuses on top of the initial create (0 -> 3)',
              bigCo.confirmed_count === 3)) failures++;
-  if (!check("template's stored fingerprint reflects the LATEST confirm, not a stale per-document snapshot "
-             + "(and customer-name/invoice-number/date variation never blocked convergence)",
-             bigCo.logo_phash === docD.logo_phash
-             && bigCo.keyword_fingerprint.includes('CUSTOMERFOUR')
-             && !bigCo.keyword_fingerprint.includes('CUSTOMERONE'))) failures++;
+  // Identity STABILISES across confirms (the regression fix): the stored
+  // fingerprint converges to the tokens that RECUR (stable branding), while
+  // every sample's per-document noise is pruned away — NOT overwritten with the
+  // latest sample's raw tokens. So no single customer name survives, and the
+  // established logo_phash is kept rather than clobbered by each later render.
+  if (!check("stored fingerprint converges to the recurring stable branding (BIGCO/INVOICE/LTD)",
+             ['BIGCO', 'INVOICE', 'LTD'].every(t => bigCo.keyword_fingerprint.includes(t)))) failures++;
+  if (!check("per-document noise (every sample's customer name, invoice no, date) is pruned, not accumulated",
+             !['CUSTOMERONE','CUSTOMERTWO','CUSTOMERTHREE','CUSTOMERFOUR',
+               'INV1001','INV1004','01JAN2026','04JAN2026'].some(t => bigCo.keyword_fingerprint.includes(t)))) failures++;
+  if (!check("established logo_phash is kept stable across confirms, not overwritten by each later render",
+             bigCo.logo_phash === docA.logo_phash)) failures++;
 
   // ── A materially different layout must still be free to start its own template ──
   section('upsert convergence: a materially different logo does not get folded into an unrelated template');
@@ -283,7 +292,48 @@ function main() {
              tplE !== tplA)) failures++;
   if (!check('both supplier templates now coexist, untouched by each other',
              db.prepare(`SELECT COUNT(*) n FROM templates WHERE name IN ('BigCo Invoice','SmallCo Statement')`).get().n === 2
-             && templates.getById(db, tplA).logo_phash === docD.logo_phash)) failures++;
+             && templates.getById(db, tplA).logo_phash === docA.logo_phash)) failures++;
+
+  // ── Identity-stability helpers (the regression fix, tested in isolation) ──────
+  // Pure functions, no DB: stabiliseFingerprint / chooseLogoPhash are the
+  // reusable rules update() applies on every confirm. Reproduces the real
+  // Document-Solutions case where confirming a noisy scan overwrote a known-good
+  // fingerprint with OCR garble and stranded the learned anchors.
+  section('identity stability: a noisy confirm cannot erase a known-good keyword fingerprint');
+
+  const goodIdentity = ['DOCUMENT','SOLUTIONS','Ticket','Location','Work','Address','Beaumont','Care','Homes','Ltd'];
+  const noisySample  = ['SERVICE','WORKSHEET','bol','OOH','DOCUMENT','OLUTIONS','TAs','Ticket','Location','Work'];
+  const merged = templates.stabiliseFingerprint(goodIdentity, noisySample);
+
+  if (!check('intersection keeps the tokens that RECUR across both (DOCUMENT/Ticket/Location/Work)',
+             ['DOCUMENT','Ticket','Location','Work'].every(t => merged.includes(t)))) failures++;
+  if (!check('non-reproducible OCR garble from the one noisy sample is dropped (bol/OOH/OLUTIONS/TAs)',
+             !['bol','OOH','OLUTIONS','TAs','SERVICE','WORKSHEET'].some(t => merged.includes(t)))) failures++;
+  if (!check('single-sample customer/address leakage is dropped (Beaumont/Care/Homes)',
+             !['Beaumont','Care','Homes'].some(t => merged.includes(t)))) failures++;
+  if (!check('the merged identity still has enough tokens to identify (>= floor)',
+             merged.length >= 3)) failures++;
+
+  // Floor guard: when the intersection is too thin to identify, keep the proven
+  // identity rather than collapse to it.
+  const eroded = templates.stabiliseFingerprint(['ALPHA','BETA','GAMMA','DELTA'], ['ALPHA','ZETA','ETA','THETA']);
+  if (!check('a confirm sharing too few tokens (1 < floor) keeps the established identity, does not erode it',
+             eroded.length === 4 && eroded.includes('BETA') && eroded.includes('DELTA'))) failures++;
+
+  // Seeding + empties.
+  if (!check('first identity (nothing established) is seeded from the sample as-is',
+             JSON.stringify(templates.stabiliseFingerprint([], ['X','Y','Z'])) === JSON.stringify(['X','Y','Z']))) failures++;
+  if (!check('an empty/unreadable incoming sample never wipes the established identity',
+             JSON.stringify(templates.stabiliseFingerprint(['X','Y','Z'], [])) === JSON.stringify(['X','Y','Z']))) failures++;
+  if (!check('case-insensitive intersection (matcher lowercases both sides) — "work" matches "Work"',
+             templates.stabiliseFingerprint(['DOCUMENT','Ticket','Work','Location'], ['document','ticket','work','location']).length >= 3)) failures++;
+
+  section('identity stability: an established logo_phash is not clobbered on every confirm');
+  if (!check('a populated logo_phash is kept when a later confirm brings a drifted hash',
+             templates.chooseLogoPhash('aabbccdd11223344', 'ffee00112233aabb') === 'aabbccdd11223344')) failures++;
+  if (!check('an empty logo_phash IS seeded from the first sample that has one',
+             templates.chooseLogoPhash('', 'ffee00112233aabb') === 'ffee00112233aabb'
+             && templates.chooseLogoPhash(null, 'ffee00112233aabb') === 'ffee00112233aabb')) failures++;
 
   console.log();
   if (failures) {

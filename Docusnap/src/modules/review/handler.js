@@ -477,7 +477,11 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
   }
 
   if (templateId) {
-    // Update existing (or now logo-matched) template
+    // Update existing (or now logo-matched) template. update() STABILISES the
+    // stored identity across confirms (intersect-with-floor on the keyword
+    // fingerprint; keep an established logo_phash) so one noisy sample's OCR
+    // garble / per-document tokens can't poison Stage 0 matching and strand the
+    // learned anchors — see templates.stabiliseFingerprint / chooseLogoPhash.
     templates.update(db, templateId, { logo_phash, keyword_fingerprint, fields });
     if (!doc.template_id) {
       db.prepare('UPDATE documents SET template_id = ? WHERE id = ?').run(templateId, document_id);

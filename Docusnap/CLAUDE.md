@@ -68,7 +68,8 @@ docusnap2/
 │   │   └── licensing/handler.js         # license gate decideAccess() + trial/activate/revoke/enforcement IPC (see Licensing)
 │   ├── lib/license/{client.js,token.js,fingerprint.js}  # backend HTTP client · offline JWS verify · device fp_hash
 │   └── windows/
-│       ├── main/{index.html,renderer.js}
+│       ├── main/{index.html,renderer.js}      # incl. empty-state launchpad (Begin Import · Search · Settings)
+│       ├── splash/{index.html,splash.js}      # cosmetic startup splash — shown in whenReady, closed once login loads
 │       ├── review/{index.html,renderer.js}
 │       ├── settings/{index.html,renderer.js}  # incl. Admin Template Viewer + License/Activation-Test tab
 │       ├── search/index.html                  # placeholder
@@ -141,10 +142,19 @@ process_docs.py → ExtractionEngine.extract()
              Returns the same result shape as anchor.extract_with_anchors();
              engine.py merges it into results by confidence comparison — the
              same approach Stage 2 uses for its anchor results below.
+             GROUP-SHARED MAPPINGS: when the matched template has NO enabled
+             mappings of its own but belongs to a group, it BORROWS enabled
+             field_mappings from a grouped sibling that has them
+             (engine.select_mapping_source; borrowed anchors are still
+             re-validated on this page). Template groups are otherwise
+             organisational only.
   Stage 1: keyword.py    — regex patterns from keyword_patterns.json (~60-70% fields)
   Stage 2: anchor.py     — learned label positions + logo supplier ID
   Stage 3: llm.py        — phi3:mini, ONLY for missing fields (smart/ai mode)
-  Stage 4: validator.py  — date normalise, currency infer, maths cross-check
+  Stage 4: validator.py  — date normalise/salvage, currency infer, maths cross-check
+  Stage 4.5: format_anomaly_checker.py — coarse-class + learned-shape consistency
+             vs confirmed history; engine then weights _overall_confidence by
+             cross-field format consistency (see Stage 7)
 ```
 
 **Three modes** (stored in settings as `processing_mode`):
@@ -170,6 +180,26 @@ near-duplicate-logo template guess). engine.py re-resolves `supplier_name`
 once, after every stage that can touch it has run, before persisting
 hints/anchors/logos — otherwise the learning corpus gets silently written
 against a stale identity.
+
+**Template identity is stabilised on confirm, not overwritten**: confirming a
+document MERGES its fingerprint into the template's stored identity instead of
+replacing it (`templates.stabiliseFingerprint`/`chooseLogoPhash`). The keyword
+fingerprint becomes the INTERSECTION of recurring tokens across confirmed
+samples (with a floor so one noisy sample can't erase a known-good identity);
+an already-established `logo_phash` is kept rather than reclobbered each confirm.
+Prevents one garbled scan from poisoning Stage 0 matching for a whole supplier.
+
+**Validator date rules (Stage 4)**: dates normalise to DD-MM-YYYY; a valid date
+embedded in OCR junk is salvaged (`salvage_date`, review-forced). The date
+sanity check is FUTURE-ONLY — old archival dates are expected and never flagged;
+only dates clearly in the future (> ~1 year) are anomalous.
+
+**Document confidence is format-weighted (Stage 4.5)**: after the per-field
+average, `validator.format_consistency_delta` adjusts `_overall_confidence` —
+penalise any field that failed its format check; boost only when several
+WELL-SUPPORTED fields all match (conservative — sparse/unverified docs get no
+boost). Adjusts the displayed score only; per-field notes and needs_review are
+unaffected.
 
 ---
 
@@ -392,6 +422,16 @@ Tab badges update via `review-count-changed` and `deferred-count-changed` events
 - Per item: [Review Now] [Delete]
 - Review Now: `restore-deferred(id)` → switch to Review Queue tab → load that doc
 
+**Built additions (durable)**:
+- Single confirm is factored into `confirmCurrentDoc({bulk})`, shared by the
+  Confirm button and a **"File All Ready"** queue-footer action that bulk-files
+  every queue doc whose Confirm would be enabled (type + required filled);
+  not-ready / digit-mismatch docs are skipped for manual review. No backend
+  bulk endpoint — it reuses the per-doc `confirm-review` path.
+- The up/down rail beside the queue list **cycles the selected document**
+  (prev/next within the active Review/Deferred list via `selectDoc`, clamped at
+  ends), not viewport scrolling.
+
 ### STAGE 6 — Search window
 **File**: `src/windows/search/index.html` + `renderer.js`
 
@@ -429,6 +469,13 @@ candidates are proposed in Stage 2 but never silently applied — always review-
 
 **Format classes** (inferred from sample consensus — disagreement → `freetext`, no constraint):
 `digits_only` | `upper_alphanum` | `alphanum` | `alphanum_sep` | `date_like` | `currency_like` | `freetext`
+
+**Shape consistency (within-class, added)** — beyond the coarse class, a learned
+per-`(supplier,doctype,field)` SHAPE signature (digit/letter group lengths +
+separator positions, `shape_signature`) is compared to the value: a structurally
+wrong but in-class value (e.g. an extra digit group, a missing/extra separator)
+is flagged low-severity. Learned only when the WHOLE recent pool shares one shape
+(keeps false positives low; shape-varying history → no shape constraint).
 
 **Scoping rules** — strict `(supplier_name, document_type, field_key)`; minimum 3 distinct
 confirmed values required; if history is absent or thin, pass through unchanged.

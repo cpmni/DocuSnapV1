@@ -190,8 +190,9 @@
     /* ── Main content ── */
     #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 
-    /* ── Drop zone ── */
+    /* ── Drop zone / launchpad (empty initial state) ── */
     #dropzone {
+      position: relative;
       flex: 1; display: flex; flex-direction: column;
       align-items: center; justify-content: center; gap: 16px;
       color: var(--muted);
@@ -199,6 +200,47 @@
     .drop-icon  { font-size: 52px; opacity: .25; }
     .drop-title { font-size: 16px; font-weight: 300; color: var(--muted); }
     .drop-sub   { font-size: 12px; color: var(--border2); }
+
+    .launchpad { width: 100%; max-width: 760px; padding: 0 40px; display: flex; flex-direction: column; gap: 26px; }
+    .lp-head { text-align: center; }
+    .lp-title2 { font-size: 22px; font-weight: 300; color: var(--text); letter-spacing: .02em; }
+    .lp-sub2 { font-size: 12px; color: var(--muted); margin-top: 6px; }
+    .lp-grid {
+      display: grid; grid-template-columns: 1.5fr 1fr; grid-template-rows: auto auto; gap: 16px;
+    }
+    .lp-btn {
+      display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 8px;
+      padding: 22px; border-radius: 14px; cursor: pointer;
+      border: 1px solid var(--border2); background: var(--surface);
+      color: var(--text); font-family: var(--sans); text-align: left;
+      transition: border-color .15s, background .15s, transform .1s;
+    }
+    .lp-btn:hover  { border-color: var(--accent); background: var(--surface2); }
+    .lp-btn:active { transform: scale(.99); }
+    .lp-ico  { font-size: 30px; line-height: 1; }
+    .lp-name { font-size: 16px; font-weight: 600; }
+    .lp-desc { font-size: 11px; color: var(--muted); line-height: 1.5; }
+    .lp-import {
+      grid-row: 1 / span 2;
+      background: linear-gradient(160deg, var(--accent-bg), var(--surface));
+      border-color: var(--accent-border);
+    }
+    .lp-import:hover { border-color: var(--accent); }
+    .lp-import .lp-name { color: var(--accent2); }
+
+    /* Arrow cue pointing at the sidebar's Pick-Folder control */
+    .lp-folder-cue {
+      position: absolute; top: 26px; left: 18px;
+      display: flex; align-items: center; gap: 8px;
+      color: var(--accent2); font-size: 12px; pointer-events: none;
+      animation: cue-bob 1.8s ease-in-out infinite;
+    }
+    .lp-folder-cue svg { width: 40px; height: 24px; }
+    @keyframes cue-bob { 0%,100% { transform: translateX(0); } 50% { transform: translateX(-6px); } }
+
+    /* Folder box glow while the launchpad is asking for a source folder */
+    .folder-box.cue { border-color: var(--accent); background: var(--surface2); animation: folder-glow 1.8s ease-in-out infinite; }
+    @keyframes folder-glow { 0%,100% { box-shadow: 0 0 0 0 rgba(79,142,247,0); } 50% { box-shadow: 0 0 0 4px rgba(79,142,247,.18); } }
 
     /* ── Progress log ── */
     #log-panel { display: none; flex-direction: column; height: 160px; flex-shrink: 0; border-top: 1px solid var(--border); background: var(--bg); }
@@ -321,7 +363,7 @@
     <div id="sidebar">
       <div>
         <div class="sidebar-label">Source Folder</div>
-        <div class="folder-box" id="folder-box" title="Click to choose folder">
+        <div class="folder-box cue" id="folder-box" title="Click to choose folder">
           <span class="folder-path" id="folder-display">Click to select a folder&hellip;</span>
         </div>
       </div>
@@ -348,9 +390,37 @@
     <div id="main">
 
       <div id="dropzone">
-        <div class="drop-icon">&#128196;</div>
-        <div class="drop-title">No documents processed yet</div>
-        <div class="drop-sub">Select a source folder and click Process Documents</div>
+        <div class="lp-folder-cue">
+          <svg viewBox="0 0 40 24" fill="none">
+            <path d="M38 12 H6" stroke="#6ea8ff" stroke-width="2" stroke-linecap="round"/>
+            <path d="M12 6 L4 12 L12 18" stroke="#6ea8ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span>Pick your source folder</span>
+        </div>
+
+        <div class="launchpad" id="launchpad">
+          <div class="lp-head">
+            <div class="lp-title2">Welcome to DocuSnap</div>
+            <div class="lp-sub2">Choose what you&rsquo;d like to do</div>
+          </div>
+          <div class="lp-grid">
+            <button class="lp-btn lp-import" id="lp-import">
+              <span class="lp-ico">&#128194;</span>
+              <span class="lp-name">Begin Import</span>
+              <span class="lp-desc">Pick a source folder and process its documents</span>
+            </button>
+            <button class="lp-btn" id="lp-search">
+              <span class="lp-ico">&#128269;</span>
+              <span class="lp-name">Search</span>
+              <span class="lp-desc">Find documents you&rsquo;ve already filed</span>
+            </button>
+            <button class="lp-btn" id="lp-settings">
+              <span class="lp-ico">&#9881;</span>
+              <span class="lp-name">Settings</span>
+              <span class="lp-desc">Document types, fields &amp; preferences</span>
+            </button>
+          </div>
+        </div>
       </div>
 
       <div id="results-panel">

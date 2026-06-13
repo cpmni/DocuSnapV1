@@ -84,6 +84,40 @@ def classify_single(value: str) -> str:
     return FREETEXT
 
 
+# Classes whose values have a meaningful fixed STRUCTURE worth enforcing beyond
+# the coarse character set. date_like / currency_like deliberately excluded —
+# their shape varies legitimately (e.g. "1/2/25" vs "01/12/2025") and they have
+# their own parse-based validation.
+_SHAPED_CLASSES = (DIGITS_ONLY, UPPER_ALPHANUM, ALPHANUM, ALPHANUM_SEP)
+
+
+def shape_signature(value: str) -> str:
+    """Normalised structural signature of a value.
+
+    Each digit → '#', each letter → '@', every other character (separators,
+    spaces) kept literally and in place. This captures digit/letter group
+    LENGTHS and separator POSITIONS, so values that share a coarse class can
+    still be told apart by structure:
+
+        '1111-1111-1'  → '####-####-#'
+        '11111-1111-1' → '#####-####-#'   (wrong-length first group)
+        '11111111-1'   → '########-#'     (missing separator)
+        '1111--1111-1' → '####--####-#'   (extra separator)
+
+    All four are alphanum_sep, but only the first matches the learned shape.
+    Pure and deterministic.
+    """
+    out = []
+    for c in (value or '').strip():
+        if c.isdigit():
+            out.append('#')
+        elif c.isalpha():
+            out.append('@')
+        else:
+            out.append(c)
+    return ''.join(out)
+
+
 # ── Consensus classification over a sample ───────────────────────────────────
 
 def classify_format(values: list[str]) -> dict:
@@ -97,8 +131,11 @@ def classify_format(values: list[str]) -> dict:
     Any disagreement → {'class': FREETEXT, 'separators': frozenset()}.
 
     Returns:
-        {'class': str, 'separators': frozenset}
+        {'class': str, 'separators': frozenset, 'shape': str | None}
         'separators' is populated for ALPHANUM_SEP only (union across pool).
+        'shape' is the unanimous shape_signature of the recent pool (a stricter
+        within-class structure constraint) when every pooled value agrees AND
+        the class is a shaped one; otherwise None (no shape constraint enforced).
     """
     # Deduplicate in insertion order (values from getFieldFormats are already
     # distinct, but guard here for direct callers and test code)
@@ -119,7 +156,7 @@ def classify_format(values: list[str]) -> dict:
     unique  = set(classes)
 
     if len(unique) != 1:
-        return {'class': FREETEXT, 'separators': frozenset()}
+        return {'class': FREETEXT, 'separators': frozenset(), 'shape': None}
 
     cls = unique.pop()
 
@@ -127,7 +164,19 @@ def classify_format(values: list[str]) -> dict:
     if cls == ALPHANUM_SEP:
         seps = frozenset(c for v in pool for c in v if not c.isalnum())
 
-    return {'class': cls, 'separators': seps}
+    # Learn a stricter shape only when the ENTIRE recent pool unanimously shares
+    # one structure. Using the whole pool (not just the 3-sample used for the
+    # coarse class) is a deliberately stronger support requirement: the moment
+    # any recent confirmed value has a different shape — e.g. a field that is
+    # sometimes "INV12345" and sometimes "2345" — no shape constraint is learned,
+    # keeping false positives low for fields whose structure legitimately varies.
+    shape = None
+    if cls in _SHAPED_CLASSES:
+        pool_shapes = {shape_signature(v) for v in pool}
+        if len(pool_shapes) == 1:
+            shape = next(iter(pool_shapes))
+
+    return {'class': cls, 'separators': seps, 'shape': shape}
 
 
 # ── Anomaly check ─────────────────────────────────────────────────────────────
@@ -190,14 +239,28 @@ def check_value(value: str, format_entry: dict) -> Optional[dict]:
         return None
 
     disallowed = _disallowed_chars(v, cls, seps)
-    if not disallowed:
-        return None
+    if disallowed:
+        severity = 'high' if cls in (DIGITS_ONLY, UPPER_ALPHANUM) else 'low'
+        return {
+            'anomaly':  f"{cls} field, unexpected character(s): {sorted(disallowed)!r}",
+            'severity': severity,
+        }
 
-    severity = 'high' if cls in (DIGITS_ONLY, UPPER_ALPHANUM) else 'low'
-    return {
-        'anomaly':  f"{cls} field, unexpected character(s): {sorted(disallowed)!r}",
-        'severity': severity,
-    }
+    # Stricter within-class shape check. The value fits the coarse class, but a
+    # learned, unanimous shape signature (digit-group lengths + separator
+    # positions) lets us still flag a structurally wrong value — e.g. an extra
+    # digit ('11111-1111-1' vs learned '####-####-#') or a missing/extra hyphen.
+    # Only enforced when a shape was learned, so fields with shape-varying
+    # history are never penalised. Low severity: it forces review, never an
+    # auto-correction.
+    shape = format_entry.get('shape')
+    if shape and shape_signature(v) != shape:
+        return {
+            'anomaly':  f"{cls} field, shape {shape_signature(v)!r} differs from learned {shape!r}",
+            'severity': 'low',
+        }
+
+    return None
 
 
 # ── Digits-only OCR cleanup + correction proposal (Stage 2) ──────────────────

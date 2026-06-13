@@ -70,7 +70,35 @@
     }
     .qtab.active .qtab-count { background: var(--accent-bg); color: var(--accent2); }
 
-    #queue-list { flex: 1; overflow-y: auto; }
+    /* Queue list + the quick-scroll arrow rail beside it */
+    #queue-scroll-wrap { flex: 1; display: flex; min-height: 0; }
+    #queue-list { flex: 1; overflow-y: auto; min-width: 0; }
+    #queue-scroll-rail {
+      flex-shrink: 0; width: 42px; display: flex; flex-direction: column;
+      align-items: center; justify-content: flex-start; gap: 10px;
+      padding-top: 10px;
+      border-left: 1px solid var(--border); background: var(--surface);
+    }
+    /* Soft, rounded document-cycle buttons (prev / next) */
+    .queue-nav-btn {
+      width: 32px; height: 32px; padding: 0; border-radius: 50%;
+      border: 1px solid var(--border2); background: var(--surface2);
+      color: var(--accent2); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .15s, border-color .15s, color .15s, transform .12s, box-shadow .15s;
+    }
+    .queue-nav-btn svg { width: 18px; height: 18px; display: block; }
+    .queue-nav-btn svg path {
+      fill: none; stroke: currentColor; stroke-width: 2.4;
+      stroke-linecap: round; stroke-linejoin: round;
+    }
+    .queue-nav-btn:hover:not(:disabled) {
+      background: var(--accent-bg); border-color: var(--accent); color: var(--accent);
+      transform: scale(1.08); box-shadow: 0 2px 8px rgba(79,142,247,.18);
+    }
+    .queue-nav-btn:active:not(:disabled) { transform: scale(.92); }
+    .queue-nav-btn:disabled { opacity: .3; color: var(--muted); cursor: default; }
+
     #queue-empty { display: none; padding: 20px 14px; font-size: 11px; color: var(--ok); text-align: center; }
     #deferred-footer, #review-footer { display: none; padding: 8px 10px; border-top: 1px solid var(--border); flex-shrink: 0; }
     #btn-delete-all, #btn-delete-all-review {
@@ -79,6 +107,15 @@
       cursor: pointer; transition: all .15s;
     }
     #btn-delete-all:hover, #btn-delete-all-review:hover { border-color: var(--err); background: var(--err-bg); }
+    /* File All Ready — a bulk confirm, kept in the queue footer (away from the
+       single Confirm button) so it can't be hit by accident. */
+    #btn-file-all-review {
+      width: 100%; padding: 7px; border-radius: 5px; border: 1px solid var(--ok-border);
+      background: var(--ok-bg); color: var(--ok); font-family: var(--sans); font-size: 11px;
+      font-weight: 500; cursor: pointer; transition: all .15s; margin-bottom: 6px;
+    }
+    #btn-file-all-review:hover:not(:disabled) { border-color: var(--ok); filter: brightness(1.12); }
+    #btn-file-all-review:disabled { opacity: .55; cursor: default; }
 
     .queue-item { padding: 9px 12px; cursor: pointer; border-bottom: 1px solid var(--border); transition: background .1s; }
     .queue-item:hover  { background: var(--surface2); }
@@ -320,9 +357,20 @@
           Deferred <span class="qtab-count" id="tab-deferred-count">0</span>
         </button>
       </div>
-      <div id="queue-list"></div>
+      <div id="queue-scroll-wrap">
+        <div id="queue-list"></div>
+        <div id="queue-scroll-rail">
+          <button class="queue-nav-btn" id="btn-doc-prev" title="Previous document" aria-label="Previous document">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15 L12 9 L18 15"/></svg>
+          </button>
+          <button class="queue-nav-btn" id="btn-doc-next" title="Next document" aria-label="Next document">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9 L12 15 L18 9"/></svg>
+          </button>
+        </div>
+      </div>
       <div id="queue-empty">✓ All reviewed</div>
       <div id="review-footer">
+        <button id="btn-file-all-review" title="File every document whose type and required fields are filled in. Documents still missing details are left for manual review.">&#10003; File All Ready</button>
         <button id="btn-delete-all-review">&#128465; Delete All Review</button>
       </div>
       <div id="deferred-footer">

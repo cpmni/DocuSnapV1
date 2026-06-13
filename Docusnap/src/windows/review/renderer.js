@@ -113,6 +113,7 @@ document.getElementById('tab-review').addEventListener('click', () => {
   document.getElementById('tab-review').classList.add('active');
   document.getElementById('tab-deferred').classList.remove('active');
   renderQueueList();
+  updateDocNavButtons();
 });
 
 document.getElementById('tab-deferred').addEventListener('click', () => {
@@ -120,11 +121,19 @@ document.getElementById('tab-deferred').addEventListener('click', () => {
   document.getElementById('tab-deferred').classList.add('active');
   document.getElementById('tab-review').classList.remove('active');
   renderDeferredList();
+  updateDocNavButtons();
 });
 
 function updateTabCounts() {
   document.getElementById('tab-review-count').textContent   = queue.length;
   document.getElementById('tab-deferred-count').textContent = deferredQueue.length;
+}
+
+// Show/hide the list+arrow-rail container (hidden when the active list is empty,
+// so the "all reviewed" / "no deferred" message shows in its place).
+function setQueueWrapVisible(visible) {
+  const w = document.getElementById('queue-scroll-wrap');
+  if (w) w.style.display = visible ? 'flex' : 'none';
 }
 
 // ── Queue list (review tab) ───────────────────────────────────────────────────
@@ -138,12 +147,16 @@ function renderQueueList() {
   if (queue.length === 0) {
     empty.style.display = '';
     reviewFooter.style.display = 'none';
+    setQueueWrapVisible(false);
     if (!currentDoc) clearDocPanel();
     return;
   }
   empty.style.display = 'none';
-  // Admin-only "Delete All Review" footer
-  reviewFooter.style.display = isAdmin ? 'block' : 'none';
+  setQueueWrapVisible(true);
+  // Footer is shown for everyone (File All is a normal review action), but the
+  // destructive "Delete All Review" stays admin-only (also enforced server-side).
+  reviewFooter.style.display = 'block';
+  document.getElementById('btn-delete-all-review').style.display = isAdmin ? '' : 'none';
 
   for (const doc of queue) {
     const el = document.createElement('div');
@@ -171,9 +184,11 @@ function renderDeferredList() {
     empty.style.display = '';
     empty.textContent = 'No deferred documents';
     footer.style.display = 'none';
+    setQueueWrapVisible(false);
     return;
   }
   empty.style.display = 'none';
+  setQueueWrapVisible(true);
   // Admin-only "Delete All Deferred" footer
   footer.style.display = isAdmin ? 'block' : 'none';
 
@@ -229,6 +244,10 @@ async function selectDoc(doc) {
     console.error('selectDoc failed:', err);
     showToast('Error loading doc: ' + err.message, 'err');
   }
+  // Keep the prev/next rail in sync with the new position and ensure the chosen
+  // item is visible (matters when cycling to an off-screen document).
+  updateDocNavButtons();
+  scrollActiveItemIntoView();
 }
 async function _selectDoc(doc) {
   _clearPreviewState();
@@ -752,34 +771,44 @@ function extractLabel(text) {
 }
 
 // ── Confirm ───────────────────────────────────────────────────────────────────
-document.getElementById('btn-confirm').addEventListener('click', async () => {
-  if (!currentDoc) return;
+// Confirm + file the CURRENT document. Shared by the single Confirm button and
+// the bulk "File All Ready" action so both go through the exact same path.
+// Returns one of: { filed:true } | { skipped, reason } | { cancelled } | { error }.
+// In BULK mode it never opens a modal — the digit-only soft prompt the single
+// path shows becomes a "skip this one for manual review" instead of filing it
+// blindly — and the on-screen-image steps (logo-fingerprint save + image-clear
+// animation) are skipped, since File All cycles documents itself. The file-by-
+// file behaviour is otherwise unchanged.
+async function confirmCurrentDoc({ bulk = false } = {}) {
+  if (!currentDoc) return { error: 'No document selected.' };
 
   const allValues = {};
   document.querySelectorAll('#fields-scroll .field-input').forEach(input => {
     allValues[input.dataset.key] = input.value;
   });
 
-  // Part 2: warn before confirming a non-digit value on a field whose learned
-  // format is digits-only. Cancelable and scoped to the mismatching field(s)
-  // only — cancelling leaves the user in Review without confirming.
+  // Warn before confirming a non-digit value on a field whose learned format is
+  // digits-only. Cancelable in single-doc mode; in bulk a mismatch means "not
+  // cleanly ready", so the document is skipped (left in the queue).
   for (const key of (currentDoc.digit_only_fields || [])) {
     const v = (allValues[key] || '').trim();
     if (v && !/^\d+$/.test(v)) {
+      if (bulk) return { skipped: true, reason: 'needs check' };
       if (!confirm(`"${labelFor(key)}" — Are you sure this is correct? This field usually contains only digits.`)) {
-        return;
+        return { cancelled: true };
       }
     }
   }
 
-  const supplierForLogo = allValues.supplier_name || currentDoc?.supplier_name;
-  if (supplierForLogo) await saveLogoOnConfirm(supplierForLogo);
-
-  docImg.src = '';
-  docImgWrap.style.display = 'none';
-  selCanvas.width  = 0;
-  selCanvas.height = 0;
-  await new Promise(r => setTimeout(r, 150));
+  if (!bulk) {
+    const supplierForLogo = allValues.supplier_name || currentDoc?.supplier_name;
+    if (supplierForLogo) await saveLogoOnConfirm(supplierForLogo);
+    docImg.src = '';
+    docImgWrap.style.display = 'none';
+    selCanvas.width  = 0;
+    selCanvas.height = 0;
+    await new Promise(r => setTimeout(r, 150));
+  }
 
   const result = await window.docusnap.confirmReview({
     document_id:        currentDoc.id,
@@ -793,20 +822,111 @@ document.getElementById('btn-confirm').addEventListener('click', async () => {
   });
 
   if (!result?.success) {
-    if (pageImages?.length) {
+    if (!bulk && pageImages?.length) {
       docImgWrap.style.display = '';
       docImg.src = pageImages[currentPage];
     }
-    showToast(result?.error || 'Confirm failed. Check settings.', 'err');
-    return;
+    return { error: result?.error || 'Confirm failed. Check settings.' };
   }
 
   queue         = queue.filter(d => d.id !== currentDoc.id);
   deferredQueue = deferredQueue.filter(d => d.id !== currentDoc.id);
+  return { filed: true };
+}
+
+document.getElementById('btn-confirm').addEventListener('click', async () => {
+  const r = await confirmCurrentDoc();
+  if (r.cancelled) return;
+  if (r.error) { showToast(r.error, 'err'); return; }
   updateTabCounts();
   advanceAfterAction();
   window.docusnap.notifyReviewComplete();
 });
+
+// ── File All Ready (bulk) ─────────────────────────────────────────────────────
+// Files every document in the Review queue that is individually ready — i.e.
+// whose single Confirm button would be enabled (type + required fields present).
+// Each is filed through confirmCurrentDoc({bulk:true}), exactly the per-document
+// path; not-ready or digit-mismatch documents are left in the queue for review.
+async function fileAllReady() {
+  if (activeTab !== 'review') return;                 // only the review queue
+  const btn = document.getElementById('btn-file-all-review');
+  if (!btn || btn.disabled) return;
+  const docs = [...queue];                            // snapshot before it mutates
+  if (docs.length === 0) return;
+  if (!confirm(
+        `File all ready documents in the Review queue?\n\n` +
+        `Every document with its type and required fields filled in will be filed, ` +
+        `exactly as if you confirmed it one by one. Documents still missing required ` +
+        `details are left in the queue for you to review.`)) return;
+
+  const confirmBtn = document.getElementById('btn-confirm');
+  const original   = btn.textContent;
+  btn.disabled = true;
+  let filed = 0, skipped = 0;
+
+  try {
+    for (let i = 0; i < docs.length; i++) {
+      const doc = docs[i];
+      if (!queue.some(d => d.id === doc.id)) continue; // already handled elsewhere
+      btn.textContent = `Filing… ${i + 1}/${docs.length}`;
+      await selectDoc(doc);                            // loads fields; runs validateConfirm()
+      if (confirmBtn.disabled) { skipped++; continue; } // not ready — leave for review
+      const r = await confirmCurrentDoc({ bulk: true });
+      if (r.filed) filed++; else skipped++;
+    }
+  } finally {
+    btn.textContent = original;
+    btn.disabled = false;
+  }
+
+  updateTabCounts();
+  renderQueueList();
+  if (queue.length > 0) selectDoc(queue[0]);
+  else { currentDoc = null; clearDocPanel(); }
+  if (filed) window.docusnap.notifyReviewComplete();
+
+  showToast(
+    `Filed ${filed} document${filed === 1 ? '' : 's'}` +
+      (skipped ? ` · ${skipped} left for review` : ''),
+    filed ? 'ok' : 'warn');
+}
+document.getElementById('btn-file-all-review')?.addEventListener('click', fileAllReady);
+
+// ── Document cycling (prev/next rail beside the queue) ────────────────────────
+// The up/down rail moves the SELECTED document one step earlier/later within the
+// ACTIVE list (Review queue or the Deferred tab), reusing selectDoc — the exact
+// same selection path clicking a list item uses. It clamps at the ends (no wrap)
+// so navigation is predictable, and keeps the chosen item scrolled into view.
+// Native list scrolling (wheel / scrollbar) is unaffected.
+function cycleDocument(direction) {
+  const list = activeTab === 'deferred' ? deferredQueue : queue;
+  if (!list.length) return;
+  const idx     = currentDoc ? list.findIndex(d => d.id === currentDoc.id) : -1;
+  const nextIdx = idx === -1 ? 0 : idx + direction;   // up = -1 (prev), down = +1 (next)
+  if (nextIdx < 0 || nextIdx >= list.length) return;  // clamp at the ends
+  selectDoc(list[nextIdx]);                           // updateDocNavButtons + scroll run inside selectDoc
+}
+
+function scrollActiveItemIntoView() {
+  const el = document.querySelector('#queue-list .queue-item.active');
+  if (el) el.scrollIntoView({ block: 'nearest' });
+}
+
+// Disable the up arrow on the first item and the down arrow on the last, so the
+// rail clearly shows where the current document sits in the active list.
+function updateDocNavButtons() {
+  const prev = document.getElementById('btn-doc-prev');
+  const next = document.getElementById('btn-doc-next');
+  if (!prev || !next) return;
+  const list = activeTab === 'deferred' ? deferredQueue : queue;
+  const idx  = currentDoc ? list.findIndex(d => d.id === currentDoc.id) : -1;
+  prev.disabled = idx <= 0;
+  next.disabled = idx === -1 || idx >= list.length - 1;
+}
+
+document.getElementById('btn-doc-prev')?.addEventListener('click', () => cycleDocument(-1));
+document.getElementById('btn-doc-next')?.addEventListener('click', () => cycleDocument(1));
 
 // ── Skip ──────────────────────────────────────────────────────────────────────
 document.getElementById('btn-skip').addEventListener('click', () => {
@@ -1355,6 +1475,7 @@ function clearDocPanel() {
   document.getElementById('split-bar').style.display      = 'none';
   const extStatus = document.getElementById('extraction-status');
   if (extStatus) extStatus.innerHTML = '';
+  updateDocNavButtons();   // no current document → both arrows disabled
 }
 
 function escHtml(str) {

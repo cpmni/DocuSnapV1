@@ -40,6 +40,14 @@ DATE_FORMATS = [
     "%m/%d/%Y", "%m-%d-%Y",
 ]
 
+# How far ahead of "now" a date may sit before it is treated as anomalous.
+# Document dates are issue dates that live in the past or present — old dates are
+# entirely expected and never flagged on age. Only a date clearly in the FUTURE
+# is suspicious. The tolerance (~1 year) absorbs clock skew and legitimately
+# near-future dates (e.g. a due/expiry date), so the flag fires only when a date
+# is CLEARLY in the future, not merely unusual.
+_FUTURE_DATE_TOLERANCE_DAYS = 366
+
 def parse_date(raw: str | None) -> datetime | None:
     if not raw:
         return None
@@ -61,6 +69,63 @@ def normalise_date(raw: str | None) -> str | None:
     """Normalise any recognised date string to DD-MM-YYYY."""
     d = parse_date(raw)
     return d.strftime("%d-%m-%Y") if d else raw
+
+
+# ── Salvaging a date embedded in noisy OCR text ───────────────────────────────
+# parse_date() above only succeeds on a string that is a date START-to-END. But
+# cropped/anchor OCR sometimes drops a real date inside surrounding junk that
+# rides along on the SAME alphanumeric run (so the char-class strip in
+# _sanitise_date_junk can't remove it), e.g. "2_ 2/4/26bf" or "Inv01-May-2024x".
+# salvage_date() finds the date inside that junk. It is deliberately
+# conservative: the regexes only LOCATE date-shaped candidates (a run carrying
+# real date separators or a month name — never a bare run of digits), and
+# parse_date() is the sole gatekeeper that decides whether a candidate is a real
+# calendar date. Arbitrary text and plain numbers are therefore never coerced.
+
+_NUMERIC_DATE_RE = re.compile(r'\d{1,4}[/.\-]\d{1,2}[/.\-]\d{1,4}')
+
+_MONTH_NAME = (r'(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|'
+               r'Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|'
+               r'Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)')
+_MONTH_NAME_DATE_RE = re.compile(
+    r'\d{1,2}\s*[-/ ]\s*' + _MONTH_NAME + r'\s*[-/ ,]?\s*\d{2,4}'  # 01 May 2024 / 1-May-24
+    r'|' + _MONTH_NAME + r'\s+\d{1,2},?\s+\d{2,4}',                # May 01, 2024
+    re.IGNORECASE,
+)
+
+
+def _best_date_candidate(candidates: list[datetime]) -> datetime:
+    """Pick the most plausible date among confirmed candidates.
+
+    Prefers dates inside the same ±10-year window the sanity check trusts;
+    among those, the one closest to today. Falls back to all candidates when
+    none are in-window, so a real-but-unusual date is still salvaged rather
+    than dropped. Deterministic for a given input."""
+    now        = datetime.now()
+    reasonable = [d for d in candidates if abs((now - d).days) / 365 <= 10]
+    pool       = reasonable or candidates
+    return min(pool, key=lambda d: abs((now - d).days))
+
+
+def salvage_date(raw: str | None) -> datetime | None:
+    """Return a real date found embedded inside noisy text, or None.
+
+    Locates date-shaped substrings (numeric first, then month-name), confirms
+    each with parse_date(), and returns the best-supported one. None when no
+    candidate is a real date — callers fall back to their existing handling.
+    """
+    if not raw:
+        return None
+    s = str(raw)
+    candidates: list[datetime] = []
+    for rx in (_NUMERIC_DATE_RE, _MONTH_NAME_DATE_RE):
+        for m in rx.finditer(s):
+            d = parse_date(m.group(0).strip())
+            if d:
+                candidates.append(d)
+    if not candidates:
+        return None
+    return _best_date_candidate(candidates)
 
 
 # ── Field-specific OCR-noise sanitisation ─────────────────────────────────────
@@ -203,13 +268,27 @@ def validate_and_adjust(extractions: dict,
             continue
 
         d = parse_date(data["value"])
-        if d is None:
-            # Doesn't look like a valid date — reduce confidence
+        if d is not None:
+            # Clean date — normalise to consistent format (unchanged behaviour)
+            results[key] = {**data, "value": d.strftime("%d-%m-%Y")}
+            continue
+
+        # Doesn't parse start-to-end. Before giving up, try to salvage a real
+        # date embedded in OCR junk (e.g. "2_ 2/4/26bf" → 02-04-2026). When one
+        # is found we keep ONLY the normalised date (junk discarded) but force a
+        # review — the input was noisy, so a human should confirm the recovery.
+        salvaged = salvage_date(data["value"])
+        if salvaged is not None:
+            results[key] = {
+                **data,
+                "value":           salvaged.strftime("%d-%m-%Y"),
+                "confidence":      min(data["confidence"], 45),
+                "validation_note": "date recovered from noisy text — please verify",
+            }
+        else:
+            # Genuinely not a date — reduce confidence
             results[key] = {**data, "confidence": min(data["confidence"], 30),
                             "validation_note": "invalid date format"}
-        else:
-            # Normalise to consistent format
-            results[key] = {**data, "value": d.strftime("%d-%m-%Y")}
 
     # 2. Validate currency fields and cross-check subtotal + VAT ≈ total
     subtotal = parse_amount(results.get("subtotal", {}).get("value"))
@@ -232,7 +311,10 @@ def validate_and_adjust(extractions: dict,
                         "validation_note": note,
                     }
 
-    # 3. Sanity check — dates should be reasonable (not in far future/past)
+    # 3. Sanity check — a document date should not be in the future. Old dates
+    # are expected (this system files historical paperwork) and are NEVER flagged
+    # on age. Only a date clearly beyond today (past the future tolerance) is
+    # treated as anomalous; this is generic across every date field.
     now = datetime.now()
     for f in field_defs:
         if f.get("type") != "date":
@@ -242,14 +324,12 @@ def validate_and_adjust(extractions: dict,
         if not data or not data.get("value"):
             continue
         d = parse_date(data["value"])
-        if d:
-            age_years = abs((now - d).days / 365)
-            if age_years > 10:
-                results[key] = {
-                    **data,
-                    "confidence": min(data["confidence"], 40),
-                    "validation_note": "date seems too old or in the future",
-                }
+        if d and (d - now).days > _FUTURE_DATE_TOLERANCE_DAYS:
+            results[key] = {
+                **data,
+                "confidence": min(data["confidence"], 40),
+                "validation_note": "date is in the future",
+            }
 
     # 4. Currency symbol → currency code inference
     for f in field_defs:
@@ -298,6 +378,81 @@ def overall_confidence(extractions: dict,
         if isinstance(data, dict) and data.get("value"):
             scores.append(data.get("confidence", 0))
     return int(sum(scores) / len(scores)) if scores else 0
+
+
+# ── Document-level format-consistency weighting ───────────────────────────────
+# Rolls the per-field format signals the earlier stages already produced up into
+# ONE document-level confidence adjustment. Re-uses, rather than recomputes,
+# those signals: a field carrying a validation_note (from Stage 4 validation or
+# the Stage 4.5 format-anomaly check) is a format MISMATCH; a clean field whose
+# key has a learned format for this supplier/type (strong historical support) is
+# a SUPPORTED MATCH. The rule is deterministic and explainable: penalise any
+# mismatch, and reward a document only when SEVERAL well-supported fields all
+# match — so a single field, a sparse document, or one with no historical
+# evidence is never over-rewarded.
+
+_FC_MISMATCH_BASE   = 12   # penalty for the first mismatched field
+_FC_MISMATCH_STEP   = 6    # extra penalty per additional mismatched field
+_FC_MISMATCH_CAP    = 25   # most we ever subtract
+_FC_BOOST_PER_FIELD = 3    # boost per well-supported matching field
+_FC_BOOST_CAP       = 10   # most we ever add (kept below the penalty range)
+_FC_MIN_FIELDS      = 3    # need at least this many valued fields before any boost
+_FC_MIN_SUPPORTED   = 2    # need at least this many SUPPORTED matches before any boost
+
+
+def format_consistency_adjustment(field_signals: list[dict]) -> int:
+    """Document-level confidence delta from per-field format consistency.
+
+    `field_signals` — one dict per KEY field that has a value:
+        {'mismatch': bool, 'supported': bool}
+
+    Returns an int delta (negative = penalty, positive = boost):
+      * Any mismatch → a penalty that grows with the number of mismatched fields
+        (capped). A single bad field always lowers the document score.
+      * No mismatches → a boost ONLY when there are at least _FC_MIN_FIELDS valued
+        fields and at least _FC_MIN_SUPPORTED supported matches; it scales with
+        the supported matches and is capped below the penalty range. A sparse or
+        unverified-but-clean document gets 0 — never an inflated score.
+    """
+    present = len(field_signals)
+    if present == 0:
+        return 0
+    mismatched = sum(1 for s in field_signals if s.get('mismatch'))
+    if mismatched:
+        return -min(_FC_MISMATCH_CAP,
+                    _FC_MISMATCH_BASE + _FC_MISMATCH_STEP * (mismatched - 1))
+    supported_matches = sum(1 for s in field_signals if s.get('supported'))
+    if present >= _FC_MIN_FIELDS and supported_matches >= _FC_MIN_SUPPORTED:
+        return min(_FC_BOOST_CAP, _FC_BOOST_PER_FIELD * supported_matches)
+    return 0
+
+
+def format_consistency_delta(extractions: dict,
+                             field_defs: list[dict] | None,
+                             supported_keys: set | None = None) -> int:
+    """Build per-field signals from validated results and return the document
+    delta (see format_consistency_adjustment).
+
+    A field is a MISMATCH when it has a value AND a validation_note; SUPPORTED
+    when its key is in `supported_keys` (the fields that have a learned format
+    for this document's supplier/type). Judges the SAME key fields as
+    overall_confidence so the weighting is about the fields the score is built
+    from.
+    """
+    if not field_defs:
+        return 0
+    key_fields = [f["key"] for f in field_defs if f.get("required")] \
+                 or [f["key"] for f in field_defs]
+    supported_keys = supported_keys or set()
+    signals = []
+    for k in key_fields:
+        data = extractions.get(k)
+        if isinstance(data, dict) and data.get("value"):
+            signals.append({
+                "mismatch":  bool(data.get("validation_note")),
+                "supported": k in supported_keys,
+            })
+    return format_consistency_adjustment(signals)
 
 
 def needs_review(extractions: dict, field_defs: list[dict]) -> bool:

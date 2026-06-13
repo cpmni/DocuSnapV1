@@ -135,6 +135,49 @@ function showLicenseWindow(gate) {
   else win.webContents.once('did-finish-load', pushState);
 }
 
+// Lightweight startup splash — purely cosmetic, no IPC, no preload. Shown
+// immediately in app.whenReady() and torn down once the first window (login)
+// has finished loading. It never participates in the login/license/main swap
+// logic below, so it cannot interfere with the gate or the launchpad.
+let splashShownAt = 0;
+function createSplash() {
+  const pkg = require('../package.json');
+  const splash = new BrowserWindow({
+    width: 420, height: 300,
+    frame: false, resizable: false, minimizable: false, maximizable: false,
+    skipTaskbar: true, alwaysOnTop: true, show: false, center: true,
+    backgroundColor: '#0c0e14',
+    icon: path.join(__dirname, '..', 'assets', 'icon.ico'),
+    webPreferences: { contextIsolation: true },
+  });
+  const query = {
+    version:   app.getVersion(),
+    copyright: (pkg.build && pkg.build.copyright) || '',
+  };
+  splash.loadFile(path.join(__dirname, 'windows', 'splash', 'index.html'), { query });
+  splash.once('ready-to-show', () => { splash.show(); splashShownAt = Date.now(); });
+  splash.on('closed', () => { delete windows['splash']; });
+  windows['splash'] = splash;
+  return splash;
+}
+
+// Close the splash once the app is ready, but hold it on screen for a fixed
+// minimum so it reads as a real splash rather than flashing on and off. The
+// window is shown on 'ready-to-show' and the timer is measured from THAT moment
+// (splashShownAt), so the 3 seconds is 3 seconds of actual visibility, not of
+// load time. closeSplash() is only called once the next window is ready (login
+// 'did-finish-load', plus an 8s safety backstop), so the splash also never
+// disappears before there's something to transition to. The setTimeout keeps
+// this non-blocking — the login window loads underneath while the splash waits.
+const SPLASH_MIN_VISIBLE_MS = 3000;
+function closeSplash() {
+  const s = windows['splash'];
+  if (!s || s.isDestroyed()) return;
+  const elapsed = splashShownAt ? Date.now() - splashShownAt : 0;
+  const wait    = Math.max(0, SPLASH_MIN_VISIBLE_MS - elapsed);
+  setTimeout(() => { const w = windows['splash']; if (w && !w.isDestroyed()) w.close(); }, wait);
+}
+
 function createWindow(name, options, htmlFile) {
   if (windows[name]) { windows[name].focus(); return windows[name]; }
 
@@ -167,6 +210,9 @@ function notifyAllWindows(channel, ...args) {
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 app.whenReady().then(() => {
+  // Splash first, before any other startup work, so it appears immediately.
+  createSplash();
+
   const logFile = app.isPackaged
     ? path.join(app.getPath('userData'), 'processing.log')
     : path.join(__dirname, '..', 'processing.log');
@@ -175,7 +221,11 @@ app.whenReady().then(() => {
   // App opens to the login screen — first-run setup, sign-in, forced password
   // change and admin recovery all live there. The main shell only appears
   // once auth-handler confirms a session is established (see 'auth-enter-app').
-  createWindow('login', LOGIN_WINDOW_OPTIONS, 'index.html');
+  const loginWin = createWindow('login', LOGIN_WINDOW_OPTIONS, 'index.html');
+  // Tear the splash down once the login window has rendered. Safety timeout
+  // guarantees it never lingers even if did-finish-load somehow doesn't fire.
+  loginWin?.webContents.once('did-finish-load', closeSplash);
+  setTimeout(closeSplash, 8000);
 
   // Register all module IPC handlers
   const ctx = {
