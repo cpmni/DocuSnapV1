@@ -324,6 +324,7 @@
     <button class="tab" data-tab="templates">Templates</button>
     <button class="tab" data-tab="learning">Learning Recovery</button>
     <button class="tab" data-tab="users">Users</button>
+    <button class="tab" data-tab="activation">Activation Test</button>
   </div>
 
   <div id="body">
@@ -705,7 +706,7 @@
 
             <div class="section" style="margin-top:8px;">
               <div class="section-title">Saved Mappings</div>
-              <p class="section-desc">Click a row to edit.</p>
+              <p class="section-desc">Click a row to edit. The “Last test” column shows the raw mapped read; the filed value (Review/Search) is normalised later (spacing, date format).</p>
               <table class="fields-table" id="tpl-mappings-table">
                 <thead>
                   <tr><th>Field</th><th>Anchor label</th><th>OCR type</th><th>Search expansion</th><th>Last test</th><th>Enabled</th></tr>
@@ -713,6 +714,32 @@
                 <tbody id="tpl-mappings-tbody"></tbody>
               </table>
               <div id="tpl-mappings-empty" class="section-desc" style="display:none;">No mappings yet — standard pipeline applies.</div>
+            </div>
+
+            <div class="section">
+              <div class="section-title">Fixed Field Values</div>
+              <p class="section-desc">Force a constant value for a field on every document that matches this template (e.g. a supplier name that is always the same). Fixed values are applied automatically during processing and reprocess. Clear a value to return the field to normal extraction.</p>
+              <div class="row-flex" style="flex-wrap:wrap; gap:16px; align-items:flex-end;">
+                <div class="form-group">
+                  <label>Field</label>
+                  <select id="tpl-fixed-field-select" class="field-select" style="min-width:190px;" title="Choose the field to fix"></select>
+                </div>
+                <div class="form-group" style="flex:1; min-width:200px;">
+                  <label>Fixed value</label>
+                  <input type="text" id="tpl-fixed-value-input" class="field-select" placeholder="e.g. Document Solutions Ltd">
+                </div>
+                <div class="form-group" style="flex-direction:row; gap:8px;">
+                  <button class="btn" id="tpl-fixed-set-btn">Set Fixed Value</button>
+                </div>
+              </div>
+              <span id="tpl-fixed-msg" class="section-desc" style="display:none; margin:6px 0 0;"></span>
+              <table class="fields-table" style="margin-top:10px;">
+                <thead>
+                  <tr><th>Field</th><th>Fixed value</th><th></th></tr>
+                </thead>
+                <tbody id="tpl-fixed-tbody"></tbody>
+              </table>
+              <div id="tpl-fixed-empty" class="section-desc" style="display:none;">No fixed field values — all fields use normal extraction.</div>
             </div>
 
             <div class="section">
@@ -868,6 +895,80 @@
         </table>
       </div>
 
+    </div>
+
+    <!-- ══ ACTIVATION TEST ══ -->
+    <div class="panel" id="panel-activation">
+      <div class="section">
+        <div class="section-title">License Status</div>
+        <p class="section-desc">
+          What the licence gate currently sees on <strong>this device</strong> — a local,
+          read-only check (no network call). Use it to confirm whether enforcement is
+          active and whether a trial or seat licence is cached and recognised.
+        </p>
+        <div class="row-flex" style="gap:8px; margin-bottom:10px;">
+          <button class="btn" id="lic-refresh">Refresh status</button>
+        </div>
+        <div id="lic-status" class="section-desc"
+             style="font-family:var(--mono); font-size:12px; line-height:1.75;">Loading…</div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Local Activation Test</div>
+        <p class="section-desc">
+          Admin tool for verifying a local or staging licensing backend against seeded
+          test credentials. Runs a one-off seat activation against the backend below and
+          reports the result. This does <strong>not</strong> change this device's real
+          license state, and the activation key is sent to the backend for the request
+          only — it is never stored on disk or written to logs.
+        </p>
+
+        <div class="form-group" style="margin-bottom:12px; max-width:540px;">
+          <label>Backend URL (v1 root)</label>
+          <input type="text" id="act-base-url" class="path-input" spellcheck="false"
+                 autocomplete="off" placeholder="http://localhost/licensing/public/v1">
+        </div>
+        <div class="form-group" style="margin-bottom:12px; max-width:540px;">
+          <label>Product ID</label>
+          <input type="text" id="act-product-id" class="path-input" spellcheck="false"
+                 autocomplete="off" placeholder="00000000-0000-0000-0000-000000000000">
+        </div>
+        <div class="form-group" style="margin-bottom:14px; max-width:540px;">
+          <label>Activation Key</label>
+          <input type="password" id="act-key" class="path-input" spellcheck="false"
+                 autocomplete="off" placeholder="Seeded test activation key (not stored)">
+        </div>
+
+        <div class="row-flex" style="gap:8px;">
+          <button class="btn primary" id="act-btn-run">Run Activation Test</button>
+        </div>
+
+        <div id="act-status" class="pattern-msg" style="display:none; margin-top:16px;
+             padding:10px 12px; border-radius:6px; line-height:1.6; max-width:540px;"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">License Enforcement</div>
+        <p class="section-desc">
+          When enabled, this device must hold a valid local activation before the main
+          app will open — on next launch, unactivated machines are routed to the
+          activation screen instead. Default is <strong>off</strong>. The dedicated
+          activation screen and the backend admin page remain available for recovery.
+          A <code>DOCUSNAP_LICENSE_ENFORCEMENT</code> environment variable
+          (<code>on</code>/<code>off</code>) overrides this setting — the dev escape hatch.
+        </p>
+        <div class="threshold-row">
+          <div>
+            <div class="threshold-label">Require activation to enter the app</div>
+            <div class="threshold-sub" id="enf-sub">Takes effect on the next app launch.</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="enf-toggle">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div id="enf-status" class="section-desc" style="margin-top:8px; font-family:var(--mono); font-size:11px;"></div>
+      </div>
     </div>
 
   </div>

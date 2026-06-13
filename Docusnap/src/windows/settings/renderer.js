@@ -1077,6 +1077,7 @@ async function selectTemplate(id) {
   renderSelectorAnchorsTable(detail);
   await loadSamplePages(detail);
   await populateMapFieldSelect(detail);
+  await renderFixedFieldsSection(detail);
 }
 
 function renderDetectionMethod(detail) {
@@ -1391,16 +1392,15 @@ function redrawTplCanvas() {
   }
   if (tplDragRect) {
     const dragColor = tplMapMode === 'target' ? '#3ecf8e' : '#4f8ef7';
-    tplCtx.setLineDash([4, 3]);
-    tplCtx.strokeStyle = 'rgba(0,0,0,0.4)';
-    tplCtx.lineWidth   = 4;
-    tplCtx.strokeRect(tplDragRect.x, tplDragRect.y, tplDragRect.w, tplDragRect.h);
+    const dx = Math.round(tplDragRect.x), dy = Math.round(tplDragRect.y);
+    const dw = Math.round(tplDragRect.w), dh = Math.round(tplDragRect.h);
+    tplCtx.lineWidth   = 1;
     tplCtx.strokeStyle = dragColor;
-    tplCtx.lineWidth   = 2;
-    tplCtx.strokeRect(tplDragRect.x, tplDragRect.y, tplDragRect.w, tplDragRect.h);
+    tplCtx.setLineDash([5, 4]);
+    tplCtx.strokeRect(dx + 0.5, dy + 0.5, dw, dh);
     tplCtx.setLineDash([]);
-    tplCtx.fillStyle   = dragColor + '18';
-    tplCtx.fillRect(tplDragRect.x, tplDragRect.y, tplDragRect.w, tplDragRect.h);
+    tplCtx.fillStyle = dragColor + '18';
+    tplCtx.fillRect(dx, dy, dw, dh);
   }
 }
 
@@ -1427,19 +1427,17 @@ function drawSavedMappings() {
 
 function drawNormBox(xN, yN, wN, hN, w, h, color, label, selected = false) {
   if ([xN, yN, wN, hN].some(v => v == null)) return;
-  const x = xN * w, y = yN * h, bw = wN * w, bh = hN * h;
-  const lw = selected ? 3 : 2;
-  tplCtx.setLineDash(selected ? [] : [4, 3]);
-  // Dark outline behind color stroke for visibility on white documents
-  tplCtx.strokeStyle = 'rgba(0,0,0,0.3)';
-  tplCtx.lineWidth   = lw + 2;
-  tplCtx.strokeRect(x, y, bw, bh);
+  const x  = Math.round(xN * w);
+  const y  = Math.round(yN * h);
+  const bw = Math.round(wN * w);
+  const bh = Math.round(hN * h);
+  tplCtx.lineWidth   = selected ? 1.5 : 1;
   tplCtx.strokeStyle = color;
-  tplCtx.lineWidth   = lw;
-  tplCtx.strokeRect(x, y, bw, bh);
-  tplCtx.fillStyle   = color + (selected ? '40' : '26');
-  tplCtx.fillRect(x, y, bw, bh);
+  tplCtx.setLineDash(selected ? [] : [5, 4]);
+  tplCtx.strokeRect(x + 0.5, y + 0.5, bw, bh);
   tplCtx.setLineDash([]);
+  tplCtx.fillStyle = color + (selected ? '26' : '12');
+  tplCtx.fillRect(x, y, bw, bh);
 }
 
 // ── Hit testing ──────────────────────────────────────────────────────────────
@@ -1939,6 +1937,101 @@ function renderMappingsTable(detail) {
   }
 }
 
+// ── Fixed field values ─────────────────────────────────────────────────────────
+// Admin-managed constant values for template fields. The field dropdown reuses
+// the document type's own field schema (allTypesWithFields — same source as the
+// mapping field selector), so it offers every field even when no template_fields
+// row exists yet (e.g. a supplier_name that was never captured on confirm). The
+// table lists only fields currently fixed, so it's clear at a glance which fields
+// are constant and which use normal extraction.
+async function renderFixedFieldsSection(detail) {
+  if (!allTypesWithFields.length) {
+    try { await loadDocTypes(); } catch (e) { console.warn('loadDocTypes (fixed fields) failed:', e.message); }
+  }
+  const dt       = allTypesWithFields.find(t => t.slug === detail.document_type_slug);
+  const dtFields = (dt ? dt.fields : []) || [];
+  const labelFor = (key) => { const f = dtFields.find(f => f.key === key); return f ? f.label : key; };
+
+  // Field dropdown + value prefill from any existing fixed value
+  const select = document.getElementById('tpl-fixed-field-select');
+  const input  = document.getElementById('tpl-fixed-value-input');
+  if (select) {
+    select.innerHTML = '';
+    for (const f of dtFields) {
+      const opt = document.createElement('option');
+      opt.value = f.key;
+      opt.textContent = `${f.label} (${f.key})`;
+      select.appendChild(opt);
+    }
+    const syncInput = () => {
+      const ex = (selectedTemplate?.fields || []).find(
+        f => f.field_key === select.value && !f.is_variable && f.fixed_value);
+      if (input) input.value = ex ? ex.fixed_value : '';
+    };
+    select.onchange = syncInput;
+    if (dtFields.length) select.value = dtFields[0].key;
+    syncInput();
+  }
+
+  // Table of fields that are currently fixed
+  const tbody = document.getElementById('tpl-fixed-tbody');
+  const empty = document.getElementById('tpl-fixed-empty');
+  const fixed = (detail.fields || []).filter(f => !f.is_variable && f.fixed_value);
+  if (tbody) {
+    tbody.innerHTML = '';
+    for (const f of fixed) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><span class="field-key">${escHtml(labelFor(f.field_key))}</span> <span class="section-desc">(${escHtml(f.field_key)})</span></td>
+        <td>${escHtml(f.fixed_value)}</td>
+        <td><button class="btn" style="padding:2px 9px; font-size:11px;">Clear</button></td>
+      `;
+      tr.querySelector('button').addEventListener('click', () => clearFixedFieldValue(f.field_key));
+      tbody.appendChild(tr);
+    }
+  }
+  if (empty) empty.style.display = fixed.length ? 'none' : '';
+}
+
+async function setFixedFieldValue() {
+  if (!selectedTemplate) return;
+  const select = document.getElementById('tpl-fixed-field-select');
+  const input  = document.getElementById('tpl-fixed-value-input');
+  const msg    = document.getElementById('tpl-fixed-msg');
+  const fieldKey = select?.value;
+  const value    = (input?.value || '').trim();
+  if (!fieldKey) return;
+  try {
+    const res = await api.setTemplateFieldFixed(selectedTemplate.id, fieldKey, value);
+    if (res?.success && res.template) {
+      selectedTemplate = res.template;
+      await renderFixedFieldsSection(res.template);
+      if (msg) { msg.style.display = ''; msg.textContent = value
+        ? `Fixed value set for "${fieldKey}".`
+        : `Fixed value cleared for "${fieldKey}".`; }
+    } else if (msg) {
+      msg.style.display = ''; msg.textContent = res?.error || 'Could not set fixed value.';
+    }
+  } catch (e) {
+    if (msg) { msg.style.display = ''; msg.textContent = 'Error: ' + e.message; }
+  }
+}
+
+async function clearFixedFieldValue(fieldKey) {
+  if (!selectedTemplate) return;
+  try {
+    const res = await api.setTemplateFieldFixed(selectedTemplate.id, fieldKey, '');
+    if (res?.success && res.template) {
+      selectedTemplate = res.template;
+      await renderFixedFieldsSection(res.template);
+    }
+  } catch (e) {
+    console.warn('clearFixedFieldValue failed:', e.message);
+  }
+}
+
+document.getElementById('tpl-fixed-set-btn')?.addEventListener('click', setFixedFieldValue);
+
 function renderSelectorAnchorsTable(detail) {
   const tbody  = document.getElementById('tpl-fields-tbody');
   const fields = detail.fields || [];
@@ -2252,3 +2345,205 @@ loadTemplates().then(async () => {
   } catch (e) { console.warn('settings template target failed:', e.message); }
 });
 api.onNavigateToTemplate(openTemplateInEditor);
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ACTIVATION TEST TAB  (admin-only — the whole Settings window is gated to
+// hasRole('admin') in main.js). Verifies a local/staging licensing backend
+// against seeded credentials WITHOUT touching this device's real license state.
+// ══════════════════════════════════════════════════════════════════════════════
+const ACT_URL_KEY = 'license_test_base_url';
+const ACT_PID_KEY = 'license_test_product_id';
+const actBaseUrl  = document.getElementById('act-base-url');
+const actProductId = document.getElementById('act-product-id');
+const actKey      = document.getElementById('act-key');
+const actRunBtn   = document.getElementById('act-btn-run');
+const actStatus   = document.getElementById('act-status');
+
+// Prefill the non-secret fields only. The activation key is never persisted, so
+// it always starts blank.
+async function loadActivationTest() {
+  try {
+    actBaseUrl.value   = (await api.getSetting(ACT_URL_KEY)) || '';
+    actProductId.value = (await api.getSetting(ACT_PID_KEY)) || '';
+  } catch (e) { console.warn('activation test prefill failed:', e.message); }
+}
+loadActivationTest();
+
+function setActStatus(kind, html) {
+  // kind: 'ok' | 'err' | 'info'
+  const palette = {
+    ok:   { bg: 'var(--ok-bg)',     fg: 'var(--ok)',     bd: 'var(--ok-border)' },
+    err:  { bg: 'var(--err-bg)',    fg: 'var(--err)',    bd: 'var(--err)' },
+    info: { bg: 'var(--accent-bg)', fg: 'var(--accent2)', bd: 'var(--accent-border)' },
+  }[kind] || {};
+  actStatus.style.display = 'block';
+  actStatus.style.background = palette.bg || 'transparent';
+  actStatus.style.color = palette.fg || 'var(--text)';
+  actStatus.style.border = '1px solid ' + (palette.bd || 'var(--border2)');
+  actStatus.innerHTML = html;
+}
+
+actRunBtn.addEventListener('click', async () => {
+  const baseUrl   = actBaseUrl.value.trim();
+  const productId = actProductId.value.trim();
+  const accountKey = actKey.value; // not trimmed — keys may legitimately vary
+
+  if (!baseUrl || !productId || !accountKey) {
+    setActStatus('err', 'Backend URL, Product ID and Activation Key are all required.');
+    return;
+  }
+
+  // Persist the non-secret fields for next time; never store the key.
+  try {
+    await api.setSetting(ACT_URL_KEY, baseUrl);
+    await api.setSetting(ACT_PID_KEY, productId);
+  } catch { /* prefill persistence is best-effort */ }
+
+  actRunBtn.disabled = true;
+  setActStatus('info', 'Running activation test…');
+  try {
+    const r = await api.licenseTestActivate({ baseUrl, productId, accountKey });
+    if (r && r.ok) {
+      const seats = (r.seats_used != null && r.seats_total != null)
+        ? ` &middot; seat ${escHtml(String(r.seats_used))} of ${escHtml(String(r.seats_total))} bound`
+        : '';
+      setActStatus('ok',
+        `<strong>Activation succeeded</strong> (HTTP ${escHtml(String(r.status))})<br>` +
+        `State: <span class="field-key">${escHtml(r.state || 'active')}</span>${seats}`);
+    } else if (r && r.offline) {
+      setActStatus('err',
+        `<strong>Could not reach backend.</strong><br>` +
+        `Check the URL and that Apache/MySQL are running.` +
+        (r.message ? `<br><span class="field-key">${escHtml(r.message)}</span>` : ''));
+    } else {
+      const code = (r && r.code) || 'activation_failed';
+      const httpPart = (r && r.status != null) ? ` (HTTP ${escHtml(String(r.status))})` : '';
+      setActStatus('err',
+        `<strong>Activation failed</strong>${httpPart}<br>` +
+        `Reason: <span class="field-key">${escHtml(code)}</span>` +
+        ((r && r.message) ? `<br>${escHtml(r.message)}` : ''));
+    }
+  } catch (e) {
+    setActStatus('err', 'Unexpected error: ' + escHtml(e.message || String(e)));
+  } finally {
+    actRunBtn.disabled = false;
+  }
+});
+
+// ── License enforcement (staged) ──────────────────────────────────────────────
+const enfToggle = document.getElementById('enf-toggle');
+const enfSub    = document.getElementById('enf-sub');
+const enfStatus = document.getElementById('enf-status');
+
+function renderEnfStatus(s) {
+  if (!s) { enfStatus.textContent = ''; return; }
+  let line = `Setting: ${s.setting ? 'ON' : 'OFF'} · Effective: ${s.effective ? 'ON' : 'OFF'}`;
+  if (s.envOverride !== null && s.envOverride !== undefined) {
+    line += ` · env override forces ${s.envOverride ? 'ON' : 'OFF'}`;
+    enfSub.textContent = 'A DOCUSNAP_LICENSE_ENFORCEMENT env override is active and overrides this toggle.';
+  } else {
+    enfSub.textContent = 'Takes effect on the next app launch.';
+  }
+  enfStatus.textContent = line;
+}
+
+async function loadEnforcement() {
+  try {
+    const s = await api.licenseGetEnforcement();
+    enfToggle.checked = !!(s && s.setting);
+    renderEnfStatus(s);
+  } catch (e) { console.warn('enforcement load failed:', e.message); }
+}
+loadEnforcement();
+
+enfToggle.addEventListener('change', async () => {
+  const want = enfToggle.checked;
+  enfToggle.disabled = true;
+  try {
+    const r = await api.licenseSetEnforcement(want);
+    if (!r || !r.ok) {
+      enfToggle.checked = !want; // revert on failure
+      enfStatus.textContent = (r && r.code === 'forbidden')
+        ? 'Only an admin can change enforcement.' : 'Could not update enforcement.';
+    } else {
+      renderEnfStatus(r);
+    }
+  } catch (e) {
+    enfToggle.checked = !want;
+    enfStatus.textContent = 'Could not update enforcement: ' + (e.message || 'error');
+  } finally {
+    enfToggle.disabled = false;
+  }
+  loadLicenseStatus(); // reflect the new effective enforcement immediately
+});
+
+// ── License status (read-only diagnostic) ─────────────────────────────────────
+// Shows exactly what the gate sees on this device: effective enforcement (and any
+// env override), the cached trial/seat token, and the offline gate decision. This
+// is the "is it seeing a licence?" answer. No network call, no state change.
+const licStatusEl   = document.getElementById('lic-status');
+const licRefreshBtn = document.getElementById('lic-refresh');
+
+const GATE_TEXT = {
+  allow:               ['ok',    'Would ALLOW entry — a valid licence is in force.'],
+  enforcement_off:     ['muted', 'Enforcement is OFF — the app opens without requiring a licence.'],
+  no_cached_token:     ['warn',  'Would REQUIRE activation — no licence is cached on this device.'],
+  locked_needs_online: ['warn',  'Would REQUIRE an online check / activation.'],
+  stale_past_grace:    ['warn',  'Cached licence is past its offline grace — an online check is required.'],
+  locked:              ['err',   'Would BLOCK — the licence is not active.'],
+  expired:             ['err',   'Would BLOCK — the licence has expired.'],
+  revoked:             ['err',   'Would BLOCK — the licence was revoked.'],
+  seat_reassigned:     ['err',   'Would BLOCK — this seat is active on another device.'],
+  locked_invalid:      ['err',   'Cached licence FAILED verification.'],
+  config_error:        ['err',   'Licence configuration could not be read.'],
+};
+const COLOR = { ok: 'var(--ok)', err: 'var(--err)', warn: 'var(--warn)', muted: 'var(--muted)' };
+function colorSpan(cls, text) {
+  return `<span style="color:${COLOR[cls] || 'var(--text)'}">${escHtml(String(text))}</span>`;
+}
+
+function renderLicenseStatus(s) {
+  if (!s) { licStatusEl.innerHTML = colorSpan('err', 'Could not read licence status.'); return; }
+  const enf = s.enforcement || {};
+  const lines = [];
+
+  let enfLine = `Enforcement — setting: ${enf.setting ? 'ON' : 'OFF'} · effective: ` +
+    colorSpan(enf.effective ? 'ok' : 'muted', enf.effective ? 'ON' : 'OFF');
+  if (enf.envOverride !== null && enf.envOverride !== undefined) {
+    enfLine += ' · ' + colorSpan('warn', `env override forces ${enf.envOverride ? 'ON' : 'OFF'}`);
+  }
+  lines.push(enfLine);
+
+  const t = s.token || {};
+  if (!t.hasToken) {
+    lines.push('Licence — ' + colorSpan('warn', 'none cached (this device has not activated or started a trial).'));
+  } else {
+    const kind = t.kind === 'seat' ? 'Paid seat' : (t.kind === 'trial' ? 'Trial' : t.kind);
+    let lic = `Licence — ${escHtml(String(kind))} · state: ` +
+      colorSpan(t.state === 'active' ? 'ok' : 'err', t.state);
+    if (t.days_remaining != null) lic += ` · ${t.days_remaining} day(s) remaining`;
+    if (t.entitlement_end) lic += ` · ends ${escHtml(String(t.entitlement_end))}`;
+    lines.push(lic);
+    if (t.kind === 'seat' && t.seats_total != null) {
+      lines.push(`Seats — ${t.seats_used != null ? t.seats_used : '?'} / ${t.seats_total} in use`);
+    }
+  }
+
+  const g = GATE_TEXT[s.localDecision] || GATE_TEXT[s.reason] || ['muted', `Decision: ${s.localDecision || 'unknown'}`];
+  let gateLine = 'Gate — ' + colorSpan(g[0], g[1]);
+  if (s.reason && s.reason !== s.localDecision) gateLine += ' ' + colorSpan('muted', `(${s.reason})`);
+  lines.push(gateLine);
+
+  licStatusEl.innerHTML = lines.join('<br>');
+}
+
+async function loadLicenseStatus() {
+  licStatusEl.textContent = 'Loading…';
+  try {
+    renderLicenseStatus(await api.licenseGetDiagnostics());
+  } catch (e) {
+    licStatusEl.innerHTML = colorSpan('err', 'Could not read licence status: ' + (e.message || 'error'));
+  }
+}
+if (licRefreshBtn) licRefreshBtn.addEventListener('click', loadLicenseStatus);
+loadLicenseStatus();

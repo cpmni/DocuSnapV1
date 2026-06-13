@@ -31,9 +31,19 @@ contextBridge.exposeInMainWorld('docusnap', {
   // No gate signal is exposed yet; that arrives in Phase 2, where the MAIN
   // process re-decides and the renderer can never self-grant access.
   licenseGetStatus:   () => ipcRenderer.invoke('license-get-status'),
-  licenseStartTrial:  () => ipcRenderer.invoke('license-start-trial'),
+  licenseStartTrial:  (data) => ipcRenderer.invoke('license-start-trial', data),
   licenseActivate:    (data) => ipcRenderer.invoke('license-activate', data),
   licenseRevoke:      (data) => ipcRenderer.invoke('license-revoke', data),
+  // Admin-only local activation TEST (Settings → Activation Test). Round-trips a
+  // given backend with given credentials without mutating this device's real
+  // license state. The account key is sent to main for the request only.
+  licenseTestActivate: (data) => ipcRenderer.invoke('license-test-activate', data),
+  // Staged-enforcement toggle (admin-only; Settings → Activation Test).
+  licenseGetEnforcement: ()   => ipcRenderer.invoke('license-get-enforcement'),
+  licenseSetEnforcement: (on) => ipcRenderer.invoke('license-set-enforcement', on),
+  // Read-only diagnostic: what the gate sees on this device (enforcement + cached
+  // token state + offline decision). No network call, no state change.
+  licenseGetDiagnostics: ()   => ipcRenderer.invoke('license-get-diagnostics'),
   // Phase 2 — license window only: request entry (main re-decides; the renderer
   // cannot self-grant) and receive the blocked-state reason for display.
   licenseEnterApp:    () => ipcRenderer.send('license-enter-app'),
@@ -137,6 +147,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   setTemplateMappingEnabled:  (id, key, enabled)  => ipcRenderer.invoke('set-template-mapping-enabled', id, key, enabled),
   deleteTemplateMapping:      (id, key)           => ipcRenderer.invoke('delete-template-mapping', id, key),
   recordTemplateMappingTest:  (id, key, result)   => ipcRenderer.invoke('record-template-mapping-test', id, key, result),
+  setTemplateFieldFixed:      (id, key, value)    => ipcRenderer.invoke('set-template-field-fixed', id, key, value),
   // Template groups (v1: organisational metadata)
   getTemplateGroups:          ()             => ipcRenderer.invoke('get-template-groups'),
   createTemplateGroup:        (name)         => ipcRenderer.invoke('create-template-group', name),
