@@ -119,15 +119,20 @@ async function enterMainApp() {
 }
 
 function showLicenseWindow(gate) {
+  const alreadyOpen = !!windows['license'];
   const win = createWindow('license', LICENSE_WINDOW_OPTIONS, 'index.html');
   Object.keys(windows).forEach((name) => {
     if (name !== 'license') windows[name]?.close();
   });
-  if (win) {
-    win.webContents.on('did-finish-load', () => {
-      try { win.webContents.send('license-state', gate); } catch {}
-    });
-  }
+  if (!win) return;
+  const pushState = () => { try { win.webContents.send('license-state', gate); } catch {} };
+  // Fresh window: push the blocked reason once it has loaded. Re-entry — the gate
+  // bounced access back to an ALREADY-open license window (e.g. a trial the backend
+  // reported active but the gate denied as expired): did-finish-load won't fire
+  // again, so push immediately so the renderer can replace any optimistic
+  // "Opening…" with the real denial reason instead of appearing stuck.
+  if (alreadyOpen && !win.webContents.isLoading()) pushState();
+  else win.webContents.once('did-finish-load', pushState);
 }
 
 function createWindow(name, options, htmlFile) {

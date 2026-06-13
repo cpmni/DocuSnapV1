@@ -32,6 +32,19 @@ function render(state) {
     $('state').textContent = REASONS[reason] || 'Activation is required to use this device.';
   }
   $('reason').textContent = reason ? `(${reason})` : '';
+
+  // A denial state pushed here means a prior optimistic "Opening…" (from the trial
+  // or activate flow) did NOT result in entry — the main process bounced back to
+  // this window. Replace any lingering "Opening…" with the actual reason so the UI
+  // never appears stuck, and re-enable the trial button for a retry.
+  for (const id of ['trial_msg', 'msg']) {
+    const el = $(id);
+    if (el && /opening/i.test(el.textContent)) {
+      el.className = 'msg err';
+      el.textContent = $('state').textContent;
+    }
+  }
+  if ($('trial')) $('trial').disabled = false;
 }
 
 // Initial blocked reason pushed by main when the window loads.
