@@ -184,6 +184,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
+        if ($action === 'extend_trial') {
+            // Trials carry no `status` column; "active" is purely trial_end > NOW().
+            // Extend reuses trial_end only (no schema change): push it out from the
+            // later of now / current end, so an expired or revoked trial gets a full
+            // fresh window and an active one is topped up. Trial start is untouched.
+            $trialId = filter_input(INPUT_POST, 'trial_id', FILTER_VALIDATE_INT);
+            $days    = filter_input(INPUT_POST, 'days', FILTER_VALIDATE_INT);
+            if (!$trialId) throw new RuntimeException('Invalid trial.');
+            if ($days === false || $days === null || $days < 1 || $days > 3650) {
+                throw new RuntimeException('Extension must be a whole number between 1 and 3650 days.');
+            }
+            $row = $pdo->prepare('SELECT fp_hash, trial_start, trial_end FROM device_registrations WHERE id = ?');
+            $row->execute([$trialId]);
+            $tr = $row->fetch();
+            if (!$tr || $tr['trial_start'] === null) throw new RuntimeException('Trial not found.');
+            $base   = max(time(), strtotime((string) $tr['trial_end']));
+            $newEnd = date('Y-m-d H:i:s', $base + $days * 86400);
+            $pdo->prepare('UPDATE device_registrations SET trial_end = ? WHERE id = ?')->execute([$newEnd, $trialId]);
+            audit_event($pdo, null, (string) $tr['fp_hash'], 'admin.trial_extended', "trial=$trialId plus{$days}d new_end=$newEnd");
+            flash_set('ok', "Trial #$trialId extended by $days day(s) — now expires $newEnd.");
+            header('Location: index.php#trials');
+            exit;
+        }
+
+        if ($action === 'revoke_trial') {
+            // Revoke = end the trial window now so is_active (trial_end > NOW) is false
+            // immediately; reuses trial_end, no schema change. trial/start never
+            // re-mints an existing window, so a revoked device cannot resume it.
+            $trialId = filter_input(INPUT_POST, 'trial_id', FILTER_VALIDATE_INT);
+            if (!$trialId) throw new RuntimeException('Invalid trial.');
+            $row = $pdo->prepare('SELECT fp_hash, trial_start, trial_end FROM device_registrations WHERE id = ?');
+            $row->execute([$trialId]);
+            $tr = $row->fetch();
+            if (!$tr || $tr['trial_start'] === null) throw new RuntimeException('Trial not found.');
+            if (strtotime((string) $tr['trial_end']) <= time()) throw new RuntimeException('Trial is already inactive.');
+            $pdo->prepare('UPDATE device_registrations SET trial_end = NOW() WHERE id = ?')->execute([$trialId]);
+            audit_event($pdo, null, (string) $tr['fp_hash'], 'admin.trial_revoked', "trial=$trialId");
+            flash_set('ok', "Trial #$trialId revoked — it is no longer active.");
+            header('Location: index.php#trials');
+            exit;
+        }
+
         flash_set('err', 'Unknown action.');
         header('Location: ' . $back);
         exit;
@@ -258,7 +300,7 @@ $trials = $pdo->query(
             CONCAT(SUBSTRING(d.fp_hash, 1, 10), "…") AS fp_short
      FROM device_registrations d LEFT JOIN products p ON p.product_id = d.product_id
      WHERE d.trial_start IS NOT NULL
-     ORDER BY d.trial_start DESC LIMIT 500'
+     ORDER BY is_active DESC, d.trial_start DESC LIMIT 500'
 )->fetchAll();
 $trialsActive = 0;
 foreach ($trials as $t) { if ((int) $t['is_active'] === 1) { $trialsActive++; } }
@@ -341,8 +383,70 @@ if ($issued):
 </div>
 <?php endif; ?>
 
+<!-- ── SECTION NAV ──────────────────────────────────────────────────────── -->
+<nav style="display:flex; flex-wrap:wrap; gap:8px; margin:14px 0 4px;">
+  <a class="btn secondary" href="#trials">Trial licenses</a>
+  <a class="btn secondary" href="#temp">Temporary licenses</a>
+  <a class="btn secondary" href="#accounts">Accounts</a>
+  <a class="btn secondary" href="#products">Products</a>
+  <a class="btn secondary" href="#activity">Recent activity</a>
+</nav>
+
+<!-- ── TRIALS (in-app 14-day) ───────────────────────────────────────────── -->
+<h2 id="trials">Trial Licenses
+  <span class="pill ok" style="font-size:12px; vertical-align:middle;"><?= (int) $trialsActive ?> active</span>
+  <span class="pill" style="font-size:12px; vertical-align:middle;"><?= count($trials) ?> total</span>
+</h2>
+<p class="muted">
+  In-app 14-day free trials, one device-bound row each, captured at trial start and
+  resumed (never reset) when the device returns. Active trials are listed first.
+</p>
+<?php if (!$trials): ?>
+  <div class="empty">No trials started yet.</div>
+<?php else: ?>
+<table>
+  <thead><tr>
+    <th>Customer / Company</th><th>User</th><th>Email</th>
+    <th>Product</th><th>Trial start</th><th>Expiry</th><th>Remaining</th><th>Device</th><th>State</th><th>Actions</th>
+  </tr></thead>
+  <tbody>
+  <?php foreach ($trials as $t): $active = (int) $t['is_active'] === 1; $left = temp_days_left($t['trial_end']); ?>
+    <tr>
+      <td><strong><?= $t['customer_name'] ? h($t['customer_name']) : '<span class="muted" style="font-weight:400;">(not captured)</span>' ?></strong></td>
+      <td><?= $t['contact_name'] ? h($t['contact_name']) : '<span class="muted">—</span>' ?></td>
+      <td class="mono"><?= $t['email'] ? h($t['email']) : '<span class="muted">—</span>' ?></td>
+      <td><?= h($t['name_internal'] ?? '(unknown)') ?></td>
+      <td class="mono muted"><?= h($t['trial_start']) ?></td>
+      <td class="mono muted"><?= h($t['trial_end']) ?></td>
+      <td class="mono"><?= $active ? $left . ' day(s)' : '—' ?></td>
+      <td class="mono muted" title="device fingerprint (truncated)"><?= h($t['fp_short']) ?></td>
+      <td><?= $active ? '<span class="pill ok">active</span>' : '<span class="pill">expired</span>' ?></td>
+      <td>
+        <form method="post" action="index.php" class="inline" style="margin-right:6px;">
+          <?= csrf_field() ?>
+          <input type="hidden" name="action" value="extend_trial">
+          <input type="hidden" name="trial_id" value="<?= (int) $t['id'] ?>">
+          <input type="number" name="days" min="1" max="3650" value="14" style="width:60px;" title="Days to add">
+          <button class="btn secondary" type="submit">Extend</button>
+        </form>
+        <?php if ($active): ?>
+        <form method="post" action="index.php" class="inline"
+              onsubmit="return confirm('Revoke trial #<?= (int) $t['id'] ?> now? It will no longer count as active. The device cannot restart this trial.');">
+          <?= csrf_field() ?>
+          <input type="hidden" name="action" value="revoke_trial">
+          <input type="hidden" name="trial_id" value="<?= (int) $t['id'] ?>">
+          <button class="btn danger" type="submit">Revoke</button>
+        </form>
+        <?php endif; ?>
+      </td>
+    </tr>
+  <?php endforeach; ?>
+  </tbody>
+</table>
+<?php endif; ?>
+
 <!-- ── PRODUCTS ─────────────────────────────────────────────────────────── -->
-<h2>Products</h2>
+<h2 id="products">Products</h2>
 <form method="get" action="index.php" class="row" style="margin-bottom:6px;">
   <div class="field">
     <label for="pq">Search name or ID</label>
@@ -368,7 +472,7 @@ if ($issued):
 <?php endif; ?>
 
 <!-- ── ACCOUNTS ─────────────────────────────────────────────────────────── -->
-<h2>Accounts</h2>
+<h2 id="accounts">Accounts</h2>
 <form method="get" action="index.php" class="row" style="margin-bottom:6px;">
   <div class="field">
     <label for="aq">Account ID</label>
@@ -406,7 +510,7 @@ if ($issued):
 <?php endif; ?>
 
 <!-- ── TEMPORARY LICENSES ───────────────────────────────────────────────── -->
-<h2>Temporary Licenses</h2>
+<h2 id="temp">Temporary Licenses</h2>
 <p class="muted">
   Time-limited keys (any entitlement with an expiry) — separate from the perpetual
   paid-seat flow and the in-app 14-day customer trial. Creating one mints a new
@@ -416,9 +520,10 @@ if ($issued):
   until it expires or is revoked.
 </p>
 
-<div class="card" style="margin-bottom:16px; max-width:720px;">
-  <strong style="font-size:15px;">Create a temporary license</strong>
-  <p class="muted" style="margin:4px 0 4px; font-size:13px;">Generates a new key valid for the chosen period (default 14 days), with one device seat. The key appears once below after you create it.</p>
+<details style="margin-bottom:16px;">
+  <summary style="cursor:pointer; font-weight:600; color:var(--accent-ink); padding:8px 0;">+ Create a temporary license</summary>
+<div class="card" style="margin:8px 0 0; max-width:720px;">
+  <p class="muted" style="margin:0 0 4px; font-size:13px;">Generates a new key valid for the chosen period (default 14 days), with one device seat. The key appears once below after you create it.</p>
   <form method="post" action="index.php"
         style="margin-top:14px; display:grid; grid-template-columns:1fr 1fr; gap:16px;">
     <?= csrf_field() ?>
@@ -464,6 +569,7 @@ if ($issued):
     </div>
   </form>
 </div>
+</details>
 
 <?php if (!$tempLicenses): ?>
   <div class="empty">No temporary licenses yet.</div>
@@ -510,46 +616,8 @@ if ($issued):
 </table>
 <?php endif; ?>
 
-<!-- ── TRIALS ───────────────────────────────────────────────────────────── -->
-<h2>Trial Licenses
-  <span class="pill ok" style="font-size:12px; vertical-align:middle;"><?= (int) $trialsActive ?> active</span>
-</h2>
-<p class="muted">
-  In-app 14-day free trials, one per device. Each row is a device that started a
-  trial from the desktop app, with the customer details captured at trial start.
-  Trials are device-bound and resume (never reset) when the same device returns —
-  separate from paid seats and temporary licenses above.
-  <strong><?= (int) $trialsActive ?></strong> of <strong><?= count($trials) ?></strong>
-  shown <?= count($trials) === 1 ? 'is' : 'are' ?> currently active.
-</p>
-<?php if (!$trials): ?>
-  <div class="empty">No trials started yet.</div>
-<?php else: ?>
-<table>
-  <thead><tr>
-    <th>Customer / Company</th><th>User</th><th>Email</th>
-    <th>Product</th><th>Trial start</th><th>Expiry</th><th>Remaining</th><th>Device</th><th>State</th>
-  </tr></thead>
-  <tbody>
-  <?php foreach ($trials as $t): $active = (int) $t['is_active'] === 1; $left = temp_days_left($t['trial_end']); ?>
-    <tr>
-      <td><strong><?= $t['customer_name'] ? h($t['customer_name']) : '<span class="muted" style="font-weight:400;">(not captured)</span>' ?></strong></td>
-      <td><?= $t['contact_name'] ? h($t['contact_name']) : '<span class="muted">—</span>' ?></td>
-      <td class="mono"><?= $t['email'] ? h($t['email']) : '<span class="muted">—</span>' ?></td>
-      <td><?= h($t['name_internal'] ?? '(unknown)') ?></td>
-      <td class="mono muted"><?= h($t['trial_start']) ?></td>
-      <td class="mono muted"><?= h($t['trial_end']) ?></td>
-      <td class="mono"><?= $active ? $left . ' day(s)' : '—' ?></td>
-      <td class="mono muted" title="device fingerprint (truncated)"><?= h($t['fp_short']) ?></td>
-      <td><?= $active ? '<span class="pill ok">active</span>' : '<span class="pill">expired</span>' ?></td>
-    </tr>
-  <?php endforeach; ?>
-  </tbody>
-</table>
-<?php endif; ?>
-
 <!-- ── RECENT ACTIVITY ──────────────────────────────────────────────────── -->
-<h2>Recent activity</h2>
+<h2 id="activity">Recent activity</h2>
 <p class="lead" style="margin-bottom:8px;">Audit trail of license actions. Activation keys are never recorded.</p>
 <?php if (!$activity): ?>
   <div class="empty">No activity recorded yet.</div>
