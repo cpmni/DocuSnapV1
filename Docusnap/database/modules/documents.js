@@ -32,7 +32,7 @@ function update(db, id, changes) {
   const allowed = ['document_type_id', 'stored_filename', 'stored_path',
                    'status', 'overall_confidence', 'supplier_name',
                    'doc_date', 'reference_number', 'confirmed_at',
-                   'error_message', 'template_id'];
+                   'error_message', 'template_id', 'working_path'];
   const sets = Object.keys(changes)
     .filter(k => allowed.includes(k))
     .map(k => `${k} = @${k}`)
@@ -65,8 +65,24 @@ function getWithExtractions(db, id) {
 }
 
 function getReviewQueue(db) {
+  // review_flag_count: how many of the doc's fields carry a validation note or a
+  // correction candidate — lets the review list colour "corrected/flagged" rows
+  // distinctly without loading every field. Read-only enrichment; no change to
+  // confidence calculation.
   return db.prepare(`
-    SELECT d.*, dt.name as type_name, dt.slug as type_slug
+    SELECT d.*, dt.name as type_name, dt.slug as type_slug,
+      (SELECT COUNT(*) FROM extractions e
+         WHERE e.document_id = d.id
+           AND ( (e.validation_note IS NOT NULL AND e.validation_note <> '')
+              OR (e.corrected_to   IS NOT NULL AND e.corrected_to   <> '') )
+      ) AS review_flag_count,
+      (SELECT COUNT(*) FROM extractions e
+         JOIN fields f ON f.document_type_id = d.document_type_id AND f.key = e.field_key
+         WHERE e.document_id = d.id
+           AND e.confidence IS NOT NULL
+           AND (f.enabled IS NULL OR f.enabled = 1)
+           AND e.confidence < COALESCE(f.confidence_threshold, 70)
+      ) AS below_threshold_count
     FROM documents d
     LEFT JOIN document_types dt ON dt.id = d.document_type_id
     WHERE d.status = 'needs_review'
@@ -171,6 +187,9 @@ function search(db, { company, reference, dateFrom, dateTo,
 // null when no path can be resolved (such rows are never treated as stale).
 function resolveFilePath(doc) {
   if (!doc) return null;
+  // The app-managed working copy is the reliable, app-owned location and is the
+  // normal path for unconfirmed docs (kept until the doc is filed or deleted).
+  if (doc.working_path) return doc.working_path;
   if (doc.status === 'confirmed' && doc.stored_path) return doc.stored_path;
   if (doc.folder_path && doc.original_filename) {
     return path.join(doc.folder_path, doc.original_filename);
@@ -188,10 +207,19 @@ function filterExisting(rows, existsFn) {
   });
 }
 
+// Non-null managed working-copy paths across all documents — used by the
+// startup inbox integrity sweep to distinguish live managed copies from
+// crash-orphaned files.
+function getWorkingPaths(db) {
+  return db.prepare(
+    "SELECT working_path FROM documents WHERE working_path IS NOT NULL AND working_path <> ''"
+  ).all().map(r => r.working_path);
+}
+
 module.exports = {
   insert, update, getById, getWithExtractions,
   getReviewQueue, getDeferredQueue,
   getReviewCount, getDeferredCount,
   confirm, deleteDoc, deleteByStatus, search,
-  resolveFilePath, filterExisting,
+  resolveFilePath, filterExisting, getWorkingPaths,
 };

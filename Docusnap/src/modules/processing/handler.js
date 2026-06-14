@@ -219,7 +219,12 @@ function register(ctx) {
   ipcMain.handle('reprocess-document', async (event, { docId, folderPath, filename, enhanceParams }) => {
     requireRole('admin', 'edit');
     const db      = getDb();
-    const srcFile = path.join(folderPath, filename);
+    // Prefer the app-managed working copy so reprocess doesn't depend on the
+    // user's source folder still holding the file; fall back to the source path.
+    const wpRow   = db.prepare('SELECT working_path FROM documents WHERE id = ?').get(docId);
+    const srcFile = (wpRow && wpRow.working_path && fs.existsSync(wpRow.working_path))
+                  ? wpRow.working_path
+                  : path.join(folderPath, filename);
     if (!fs.existsSync(srcFile)) {
       return { success: false, error: 'File not found: ' + srcFile };
     }
@@ -670,6 +675,34 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger) {
   }
 
   msg.db_id = docId;
+
+  // ── Copy-on-import: keep an app-managed working copy ─────────────────────────
+  // So preview / reprocess / confirm never depend on the user's source folder
+  // surviving. Filename is the docId under userData (collision-proof — unique PK
+  // — and no user-supplied text in the path). Best-effort: on any failure leave
+  // working_path NULL and fall back to the source path / recovery logic as before.
+  // Runs BEFORE the optional processed-folder move so it copies the file in place.
+  try {
+    const { app }    = require('electron');
+    const srcForCopy = path.join(folderPath, msg.original_filename);
+    if (fs.existsSync(srcForCopy)) {
+      const inbox = path.join(app.getPath('userData'), 'inbox');
+      if (!fs.existsSync(inbox)) fs.mkdirSync(inbox, { recursive: true });
+      const rawExt = path.extname(msg.original_filename);
+      const ext    = /^\.[A-Za-z0-9]+$/.test(rawExt) ? rawExt : '';   // sanitise extension
+      const dest   = path.join(inbox, `${docId}${ext}`);
+      try {
+        fs.copyFileSync(srcForCopy, dest);
+        documents.update(db, docId, { working_path: dest });
+        msg.working_path = dest;
+      } catch (e) {
+        try { if (fs.existsSync(dest)) fs.unlinkSync(dest); } catch {}   // no partial orphan
+        throw e;
+      }
+    }
+  } catch (e) {
+    console.warn(`[import] working copy failed for docId=${docId}: ${e.message}`);
+  }
 
   // Move source file to Processed folder if configured
   const processedFolder = learning.getSetting(db, 'processed_folder', null);

@@ -105,21 +105,69 @@ function register(ctx) {
       console.log(`[pages] docId=${docId} missing path — folderPath=${folderPath} filename=${filename}`);
       return [];
     }
-    const filePath = path.join(folderPath, filename);
+    const sourcePath = path.join(folderPath, filename);
 
     // A new document loading is our signal that the previous one's preview
     // has moved on — fire any deferred source-file move now (unless, oddly,
     // it's pending removal of the very file we're about to load).
-    if (_pendingSourceMove && _pendingSourceMove.srcPath !== filePath) {
+    if (_pendingSourceMove && _pendingSourceMove.srcPath !== sourcePath) {
       _runPendingSourceMove(ctx, 'next document loaded');
     }
 
+    // Prefer the app-managed working copy — the reliable, app-owned location
+    // that doesn't depend on the user's source folder. Fall back to the source.
+    const wpRow = getDb().prepare('SELECT working_path FROM documents WHERE id = ?').get(docId);
+    let filePath = (wpRow && wpRow.working_path && fs.existsSync(wpRow.working_path))
+      ? wpRow.working_path
+      : sourcePath;
+
     if (!fs.existsSync(filePath)) {
-      console.log(`[pages] file not found: ${filePath}`);
-      return [];
+      // The recorded source can be gone if the file was moved/renamed since
+      // processing — by the "Processed folder" setting, by confirming a duplicate
+      // (filed to the output folder, sometimes under a "-N" disambiguated name),
+      // or by deleting the source folder. Recover any surviving copy of the SAME
+      // document. File-not-found ONLY, so normal previews are untouched.
+      const db = getDb();
+      // First existing on-disk location for a document row (filed copy or its
+      // recorded folder), or null.
+      const existing = (r) => {
+        if (r.stored_path && fs.existsSync(r.stored_path)) return r.stored_path;
+        if (r.folder_path && r.original_filename) {
+          const p = path.join(r.folder_path, r.original_filename);
+          if (fs.existsSync(p)) return p;
+        }
+        return null;
+      };
+      // Base name with the import's "-N" duplicate suffix normalised away, so a
+      // row and its renamed copy match.
+      const baseOf = (fn) => {
+        const e = path.extname(fn || '');
+        return path.basename(fn || '', e).replace(/-\d+$/, '');
+      };
+      // 1) this document's own filed copy
+      const self = db.prepare('SELECT stored_path FROM documents WHERE id = ?').get(docId);
+      let alt = (self && self.stored_path && fs.existsSync(self.stored_path)) ? self.stored_path : null;
+      // 2) any other row holding the same source file (same normalised base name)
+      if (!alt) {
+        const base = baseOf(filename);
+        const sibs = db.prepare(
+          'SELECT folder_path, original_filename, stored_path FROM documents WHERE id <> ? AND original_filename LIKE ?'
+        ).all(docId, base + '%');
+        for (const r of sibs) {
+          if (baseOf(r.original_filename) !== base) continue;
+          const f = existing(r);
+          if (f) { alt = f; break; }
+        }
+      }
+      if (!alt) {
+        console.log(`[pages] file not found (no recoverable copy): ${filePath}`);
+        return [];
+      }
+      console.log(`[pages] source missing for docId=${docId}; previewing recovered copy: ${alt}`);
+      filePath = alt;
     }
 
-    const ext = path.extname(filename).toLowerCase();
+    const ext = path.extname(filePath).toLowerCase();
     if (ext !== '.pdf') {
       const data = fs.readFileSync(filePath);
       const mime = ext === '.png' ? 'image/png' : 'image/jpeg';
@@ -208,7 +256,7 @@ function register(ctx) {
   // (Edit gets the rest of the daily workflow — review, edit, confirm, defer,
   // reprocess — but not permanent deletion of a scanned document).
   ipcMain.handle('delete-document', async (_e, docId, filePath) => {
-    requireRole('admin');
+    requireRole('admin', 'edit');   // single-doc delete is Edit/Admin (matches the rest of Review)
     const db = getDb();
     // Delete file from disk
     if (filePath && fs.existsSync(filePath)) {
@@ -216,6 +264,9 @@ function register(ctx) {
         console.warn('Could not delete file:', filePath, e.message);
       }
     }
+    // Also remove the app-managed working copy, if any (avoid orphaned files).
+    const wp = documents.getById(db, docId)?.working_path;
+    if (wp && fs.existsSync(wp)) { try { fs.unlinkSync(wp); } catch {} }
     // Remove from DB
     documents.deleteDoc(db, docId);
     notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
@@ -237,6 +288,10 @@ function register(ctx) {
         try { if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch (e) {
           console.warn('Could not delete file:', fp, e.message);
         }
+      }
+      // Remove the app-managed working copy too (avoid orphaned files).
+      if (r.working_path && fs.existsSync(r.working_path)) {
+        try { fs.unlinkSync(r.working_path); } catch {}
       }
     }
     const result = documents.deleteByStatus(db, status);
@@ -267,6 +322,9 @@ function register(ctx) {
 
     const db      = getDb();
     const filing  = require('../filing/handler');
+    // The app-managed working copy is the stable source for filing (the user's
+    // original source may be gone). Captured before filing; cleaned up after.
+    const workingPath = documents.getById(db, document_id)?.working_path || null;
 
     // Get document type info for filing
     const dtInfo = document_type_slug
@@ -287,6 +345,7 @@ function register(ctx) {
       outputRoot,
       folderPath:        folder_path,
       originalFilename:  original_filename,
+      workingPath,
       allValues,
       documentType:      document_type || dtInfo?.name,
       dtInfo,
@@ -324,6 +383,14 @@ function register(ctx) {
       stored_filename: filingResult.filename,
       stored_path:     filingResult.filePath,
     });
+
+    // The working copy has served its purpose (the doc is now filed at
+    // stored_path) — remove it and clear the pointer so resolveFilePath falls
+    // through to the filed copy. Best-effort; a leftover file is harmless.
+    if (workingPath) {
+      try { if (fs.existsSync(workingPath)) fs.unlinkSync(workingPath); } catch {}
+      documents.update(db, document_id, { working_path: null });
+    }
 
     // Update supplier name, date, reference for search
     const refField  = dtInfo?.ref_field_key  || 'invoice_number';

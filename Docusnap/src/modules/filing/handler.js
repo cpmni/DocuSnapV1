@@ -62,6 +62,7 @@ async function commitDocument({
   outputRoot,
   folderPath,
   originalFilename,
+  workingPath,
   allValues,
   documentType,
   dtInfo,
@@ -123,13 +124,17 @@ async function commitDocument({
 
   const targetPath = path.join(targetDir, finalFilename);
   const srcPath    = path.join(folderPath, originalFilename);
+  // Prefer the app-managed working copy as the stable source for filing, so
+  // confirm succeeds even if the user's original source file has been removed.
+  // srcPath (the original) is still returned for the caller's deferred cleanup.
+  const copyFrom   = (workingPath && fs.existsSync(workingPath)) ? workingPath : srcPath;
 
   // ── 5. Copy document, then delete original ───────────────────────────────────
-  if (!fs.existsSync(srcPath)) {
-    return { success: false, error: `Source file not found: ${srcPath}` };
+  if (!fs.existsSync(copyFrom)) {
+    return { success: false, error: `Source file not found: ${copyFrom}` };
   }
 
-  fs.copyFileSync(srcPath, targetPath);
+  fs.copyFileSync(copyFrom, targetPath);
 
   // Original removal is deferred by the caller (review/handler.js schedules
   // it via removeSourceFile() below) until the preview UI is done with the

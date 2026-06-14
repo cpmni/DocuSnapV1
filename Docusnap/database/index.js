@@ -309,6 +309,18 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 16 applied: licensing scaffolding (device_registrations, license_tokens)');
   }
 
+  // Migration 17: app-managed working copy of each imported document, so
+  // preview / reprocess / confirm never depend on the user's source folder
+  // continuing to exist. Old rows keep working_path NULL and fall back to
+  // stored_path / folder_path as before (no backfill).
+  if (!applied.has(17)) {
+    if (tableExists(db, 'documents') && !hasColumn(db, 'documents', 'working_path')) {
+      try { db.exec(`ALTER TABLE documents ADD COLUMN working_path TEXT`); } catch {}
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (17)').run();
+    console.log('JS migration 17 applied: documents.working_path (managed working copy)');
+  }
+
   // Migration 3: remove extra built-in fields, keep only name/date/ref per type
   if (!applied.has(3)) {
     const keepBySlug = {
