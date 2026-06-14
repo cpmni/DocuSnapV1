@@ -322,6 +322,7 @@ async function _selectDoc(doc) {
     console.warn('getDocumentPages failed:', e.message);
     pageImages = [];
   }
+  if (currentDoc?.id !== doc.id) return;   // a newer doc was selected while pages loaded — don't clobber its preview (this same _selectDoc set currentDoc=doc at the top, so the latest selection always passes)
   renderPage();
 
   let full = null;
@@ -330,6 +331,7 @@ async function _selectDoc(doc) {
   } catch (e) {
     console.warn('getDocumentWithExtractions failed:', e.message);
   }
+  if (currentDoc?.id !== doc.id) return;   // superseded while extractions loaded — leave the newer doc's fields intact
   const renderedDoc = full || doc;
   renderFields(renderedDoc);
 
@@ -1019,6 +1021,32 @@ function updateDocNavButtons() {
 
 document.getElementById('btn-doc-prev')?.addEventListener('click', () => cycleDocument(-1));
 document.getElementById('btn-doc-next')?.addEventListener('click', () => cycleDocument(1));
+
+// Keyboard triage shortcuts (single document-level listener; reuses the exact
+// handlers the on-screen controls use — no second nav/acknowledge path):
+//   ArrowUp/ArrowDown → cycleDocument() (same as the prev/next rail; respects the
+//                       active Review/Deferred list and its end clamping)
+//   Space            → the #btn-acknowledge button's own click handler
+// Guard: only true text-entry/selection controls are excluded, so a focused
+// button never swallows Space. preventDefault stops page scroll and stops a
+// focused button from also activating. e.repeat blocks key-repeat storms.
+document.addEventListener('keydown', (e) => {
+  const t = e.target;
+  if (t && (t.isContentEditable || t.tagName === 'INPUT'
+            || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+  if (e.repeat) return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  switch (e.key) {
+    case 'ArrowUp':   e.preventDefault(); cycleDocument(-1); break;
+    case 'ArrowDown': e.preventDefault(); cycleDocument(1);  break;
+    case ' ': {
+      e.preventDefault();
+      const btn = document.getElementById('btn-acknowledge');
+      if (btn && btn.style.display !== 'none' && !btn.disabled) btn.click();
+      break;
+    }
+  }
+});
 
 // ── Skip ──────────────────────────────────────────────────────────────────────
 document.getElementById('btn-skip').addEventListener('click', () => {
