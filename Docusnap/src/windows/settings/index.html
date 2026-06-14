@@ -67,7 +67,13 @@
 
     /* ── Sections ── */
     .section { margin-bottom:28px; }
-    .section-title { font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); margin-bottom:10px; }
+    /* Top-level section headings: stronger contrast/weight so they read as the
+       primary label of each block. Restrained — no colour/decoration, same
+       uppercase tracking as before, just promoted from muted 10px to text 11px. */
+    .section-title { font-size:11px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--text); margin-bottom:12px; }
+    /* Subordinate (sub-section) headings: kept muted/light so they sit clearly
+       below a top-level .section-title. Apply `sub` to nested headings. */
+    .section-title.sub { font-size:10px; font-weight:500; letter-spacing:.1em; color:var(--muted); margin-bottom:8px; }
     .section-desc { font-size:12px; color:var(--muted); line-height:1.6; margin-bottom:10px; }
     /* Divider between adjacent sections within a panel tab (not template dock — that has its own rule) */
     .panel > .section + .section { border-top:1px solid var(--border); margin-top:-14px; padding-top:14px; }
@@ -557,7 +563,7 @@
       </div>
       <div id="tpl-layout">
         <div id="tpl-list-col">
-          <div class="section-title">Templates</div>
+          <div class="section-title sub">Templates</div>
           <div id="tpl-list"></div>
           <div style="margin-top:14px;">
             <button class="btn" id="btn-new-template">+ New Template</button>
@@ -664,7 +670,7 @@
                 </div>
 
             <div class="section" style="margin-top:14px;">
-              <div class="section-title">Map a Field</div>
+              <div class="section-title sub">Map a Field</div>
               <p class="section-desc">Draw an anchor label and target zone on the preview. Falls back to standard extraction if the anchor isn't found.</p>
 
               <div class="row-flex" style="flex-wrap:wrap; gap:16px; align-items:flex-end;">
@@ -722,7 +728,7 @@
             </div>
 
             <div class="section" style="margin-top:8px;">
-              <div class="section-title">Saved Mappings</div>
+              <div class="section-title sub">Saved Mappings</div>
               <p class="section-desc">Click a row to edit. The “Last test” column shows the raw mapped read; the filed value (Review/Search) is normalised later (spacing, date format).</p>
               <table class="fields-table" id="tpl-mappings-table">
                 <thead>
@@ -734,7 +740,7 @@
             </div>
 
             <div class="section">
-              <div class="section-title">Fixed Field Values</div>
+              <div class="section-title sub">Fixed Field Values</div>
               <p class="section-desc">Force a constant value for a field on every document that matches this template (e.g. a supplier name that is always the same). Fixed values are applied automatically during processing and reprocess. Clear a value to return the field to normal extraction.</p>
               <div class="row-flex" style="flex-wrap:wrap; gap:16px; align-items:flex-end;">
                 <div class="form-group">
@@ -760,7 +766,7 @@
             </div>
 
             <div class="section">
-              <div class="section-title">Template Selector Anchors</div>
+              <div class="section-title sub">Template Selector Anchors</div>
               <p class="section-desc">Learned text anchors used to identify this template — no fixed coordinates, not shown on the preview.</p>
               <table class="fields-table">
                 <thead>
@@ -798,7 +804,7 @@
 
       <div class="section">
         <div class="row-flex" style="justify-content:space-between; align-items:center;">
-          <div class="section-title" style="margin:0;">Learned memory inventory</div>
+          <div class="section-title sub" style="margin:0;">Learned memory inventory</div>
           <button class="btn" id="lr-inv-refresh">Refresh</button>
         </div>
         <p class="section-desc">
