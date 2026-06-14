@@ -15,6 +15,7 @@ let corrections      = {};
 let anchorTaughtFields = new Set(); // field_keys taught via the ⊕ highlight/zone-OCR tool this cycle
 let activeTab        = 'review';
 let isAdmin          = false;   // gates the destructive bulk-delete actions (also enforced server-side)
+let canEdit          = false;   // admin OR edit — gates per-row delete (also enforced server-side)
 
 // OCR preview state
 let previewActive    = false;
@@ -44,8 +45,11 @@ document.getElementById('btn-close').addEventListener('click', () => window.docu
 async function loadQueue() {
   // Resolve role first so the admin-only bulk-delete footers render correctly
   // (visibility is a convenience — the delete IPCs are admin-gated server-side).
-  try { const me = await window.docusnap.authGetCurrentUser(); isAdmin = !!(me && me.role === 'admin'); }
-  catch { isAdmin = false; }
+  try {
+    const me = await window.docusnap.authGetCurrentUser();
+    isAdmin = !!(me && me.role === 'admin');
+    canEdit = !!(me && (me.role === 'admin' || me.role === 'edit'));
+  } catch { isAdmin = false; canEdit = false; }
   queue         = await window.docusnap.getReviewQueue();
   deferredQueue = await window.docusnap.getDeferredQueue();
   allDocTypes   = await window.docusnap.getAllDocTypes();
@@ -139,42 +143,73 @@ function setQueueWrapVisible(visible) {
 // ── Queue list (review tab) ───────────────────────────────────────────────────
 function renderQueueList() {
   document.getElementById('deferred-footer').style.display = 'none';
-  const reviewFooter = document.getElementById('review-footer');
+  const reviewActions = document.getElementById('review-actions');
   const list  = document.getElementById('queue-list');
   const empty = document.getElementById('queue-empty');
   list.innerHTML = '';
 
   if (queue.length === 0) {
     empty.style.display = '';
-    reviewFooter.style.display = 'none';
+    reviewActions.style.display = 'none';
     setQueueWrapVisible(false);
     if (!currentDoc) clearDocPanel();
     return;
   }
   empty.style.display = 'none';
   setQueueWrapVisible(true);
-  // Footer is shown for everyone (File All is a normal review action), but the
-  // destructive "Delete All Review" stays admin-only (also enforced server-side).
-  reviewFooter.style.display = 'block';
+  // The whole left action block (Skip/Defer · File All · Delete All) is shown on
+  // the review tab; the destructive "Delete All Review" stays admin-only (also
+  // enforced server-side).
+  reviewActions.style.display = 'flex';
   document.getElementById('btn-delete-all-review').style.display = isAdmin ? '' : 'none';
 
   for (const doc of queue) {
     const el = document.createElement('div');
     el.className  = 'queue-item';
     el.dataset.id = doc.id;
+    // Row colour reflects actual review reasons (not raw confidence or missing
+    // doc-row fields, which are only set on confirm):
+    //   orange = a field is below its per-field threshold set in Settings, OR a
+    //            value was flagged for review during processing (validation note
+    //            / correction candidate).
+    //   red    = critically low overall confidence (<40) — existing critical state.
+    //   green  = otherwise clean.
+    const conf           = doc.overall_confidence;
+    const belowThreshold = (doc.below_threshold_count || 0) > 0;
+    const flagged        = (doc.review_flag_count   || 0) > 0;
+    let sev = '';   // '', 'high'(green), 'mid'(orange), 'low'(red)
+    if (conf != null) {
+      if (conf < 40)                       sev = 'low';
+      else if (belowThreshold || flagged)  sev = 'mid';
+      else                                 sev = 'high';
+    }
+    if (sev === 'low')      el.classList.add('qi-conf-low');
+    else if (sev === 'mid') el.classList.add('qi-conf-mid');
     if (currentDoc && doc.id === currentDoc.id) el.classList.add('active');
+    const confBadge = conf == null ? '' :
+      `<span class="conf-badge ${sev}" style="flex-shrink:0;">${conf}%</span>`;
     el.innerHTML = `
-      <span class="qi-name" title="${escHtml(doc.original_filename)}">${escHtml(doc.original_filename)}</span>
-      <span class="qi-supplier">${escHtml(doc.supplier_name || '—')}</span>
+      <div style="display:flex; align-items:flex-start; gap:4px;">
+        <div style="flex:1; min-width:0;">
+          <span class="qi-name" title="${escHtml(doc.original_filename)}">${escHtml(doc.original_filename)}</span>
+          <div style="display:flex; align-items:center; gap:6px;">
+            <span class="qi-supplier" style="flex:1; min-width:0;">${escHtml(doc.supplier_name || '—')}</span>
+            ${confBadge}
+          </div>
+        </div>
+        ${canEdit ? `<button class="qi-btn danger qi-delete" title="Delete document" aria-label="Delete document" style="flex-shrink:0; padding:2px 7px; font-size:13px;">&#215;</button>` : ''}
+      </div>
     `;
     el.addEventListener('click', () => selectDoc(doc));
+    const delBtn = el.querySelector('.qi-delete');
+    if (delBtn) delBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteFromQueue(doc); });
     list.appendChild(el);
   }
 }
 
 // ── Deferred list (deferred tab) ─────────────────────────────────────────────
 function renderDeferredList() {
-  document.getElementById('review-footer').style.display = 'none';
+  document.getElementById('review-actions').style.display = 'none';   // review-only block; not for Deferred
   const list   = document.getElementById('queue-list');
   const empty  = document.getElementById('queue-empty');
   const footer = document.getElementById('deferred-footer');
@@ -1005,6 +1040,22 @@ document.getElementById('btn-delete').addEventListener('click', async () => {
   window.docusnap.notifyReviewComplete();
 });
 
+// Delete a queued document straight from its row's "×" (Edit/Admin only — the
+// control is rendered only for those roles, and delete-document is role-gated
+// server-side). Reuses the same delete flow as the action-bar Delete button.
+async function deleteFromQueue(doc) {
+  if (!doc) return;
+  if (!confirm(`Delete "${doc.original_filename}"? This cannot be undone.`)) return;
+  const filePath = doc.folder_path ? `${doc.folder_path}\\${doc.original_filename}` : null;
+  await window.docusnap.deleteDocument(doc.id, filePath);
+  queue         = queue.filter(d => d.id !== doc.id);
+  deferredQueue = deferredQueue.filter(d => d.id !== doc.id);
+  updateTabCounts();
+  if (currentDoc?.id === doc.id) advanceAfterAction();  // deleted the open doc → load next / clear panel
+  else                          renderQueueList();      // keep current selection, just refresh the list
+  window.docusnap.notifyReviewComplete();
+}
+
 // ── After confirm/delete: load next doc in the active tab's list ──────────────
 function advanceAfterAction() {
   if (activeTab === 'deferred') {
@@ -1074,7 +1125,30 @@ document.getElementById('btn-enhance-toggle').addEventListener('click', () => {
   const controls = document.getElementById('enhance-controls');
   const btn      = document.getElementById('btn-enhance-toggle');
   const open     = controls.classList.toggle('open');
-  btn.innerHTML  = (open ? '&#9660;' : '&#9658;') + ' OCR Enhancement';
+  // The toggle is now an icon button in the side rail — reflect open state with
+  // a class instead of rewriting the label (which would clobber the icon).
+  btn.classList.toggle('open', open);
+});
+
+// Click-away: close an open rail flyout (OCR enhancement / Split PDF) when the
+// user clicks anywhere outside it and its trigger — not only by toggling again.
+// The trigger's own handler runs first on a toggle click and the trigger is
+// excluded here, so opening/closing via the button is unaffected; clicks inside
+// the flyout (adjusting controls) are excluded too.
+document.addEventListener('click', (e) => {
+  const enhControls = document.getElementById('enhance-controls');
+  const enhToggle   = document.getElementById('btn-enhance-toggle');
+  if (enhControls?.classList.contains('open') &&
+      !enhControls.contains(e.target) && !enhToggle.contains(e.target)) {
+    enhControls.classList.remove('open');
+    enhToggle.classList.remove('open');
+  }
+  const splitBar = document.getElementById('split-bar');
+  const splitBtn = document.getElementById('btn-split-pdf');
+  if (splitBar && splitBar.style.display !== 'none' && splitBar.style.display !== '' &&
+      !splitBar.contains(e.target) && !splitBtn.contains(e.target)) {
+    splitBar.style.display = 'none';
+  }
 });
 
 document.getElementById('enh-threshold').addEventListener('change', function () {
@@ -1383,7 +1457,7 @@ document.getElementById('btn-reprocess-all').addEventListener('click', async () 
     btnAll.disabled      = false;
     btnOne.disabled      = false;
     btnStop.style.display = 'none';
-    btnAll.innerHTML     = '&#9654;&#9654; All';
+    btnAll.innerHTML     = '&#9654;&#9654; Reprocess All';
   }
 
   const ok = done - failed;
