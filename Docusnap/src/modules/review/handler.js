@@ -397,6 +397,16 @@ function register(ctx) {
       stored_path:     filingResult.filePath,
     });
 
+    // Clear the per-field review AIDS now that a human has reviewed and accepted
+    // this document. validation_note / corrected_to are pre-confirmation prompts
+    // (e.g. the Stage 4.5 format-anomaly "/" warning); leaving them on the
+    // extractions meant a re-opened COMMITTED doc still showed the stale warning
+    // even though it was already reviewed. Display-only fields (not read by
+    // learning), scoped to this document, so this is safe and targeted.
+    db.prepare(
+      'UPDATE extractions SET validation_note = NULL, corrected_to = NULL WHERE document_id = ?'
+    ).run(document_id);
+
     // The working copy has served its purpose (the doc is now filed at
     // stored_path) — remove it and clear the pointer so resolveFilePath falls
     // through to the filed copy. Best-effort; a leftover file is harmless.
