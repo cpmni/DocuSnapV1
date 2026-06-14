@@ -30,8 +30,12 @@ function partitionRoundRobin(items, n) {
 // Module-level (not register()-scoped closures) so other modules — e.g. the
 // watch-folder handler — can reuse the exact same pipeline-setup machinery
 // instead of duplicating it on a parallel import path.
+let _tmpSeq = 0;
 function writeTempJson(name, data) {
-  const file = path.join(os.tmpdir(), `ds_${name}_${Date.now()}.json`);
+  // Process-unique suffix (pid + monotonic counter) so concurrent callers — the
+  // bounded import pool and parallel Reprocess All — never collide on the same
+  // temp filename within a single millisecond (Date.now() alone is not enough).
+  const file = path.join(os.tmpdir(), `ds_${name}_${Date.now()}_${process.pid}_${_tmpSeq++}.json`);
   fs.writeFileSync(file, JSON.stringify(data));
   return file;
 }

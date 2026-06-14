@@ -1418,37 +1418,65 @@ document.getElementById('btn-reprocess-all').addEventListener('click', async () 
   btnStop.innerHTML    = '&#9632; Stop';
   btnStop.style.display = '';
 
-  const total = queue.length;
+  const docs  = [...queue];   // snapshot; queue is refetched in finally
+  const total = docs.length;
   let done    = 0;
   let failed  = 0;
+  let nextIdx = 0;            // shared cursor handed out to the worker pool
+
+  // Bounded parallel reprocess: run up to `processing_concurrency` reprocess
+  // calls at once (default 1 = the original serial behaviour). Each call is the
+  // SAME reprocess-document IPC the single-doc Reprocess button uses; the heavy
+  // OCR/extraction runs in parallel Python processes, while every DB write stays
+  // serialized on the single-threaded JS event loop (better-sqlite3 is
+  // synchronous) — so there is no SQLite contention or lost updates. Stop is
+  // cooperative: in-flight documents finish, no new ones start.
+  let concurrency = parseInt(await window.docusnap.getSetting('processing_concurrency'), 10);
+  if (!Number.isFinite(concurrency)) concurrency = 1;
+  concurrency = Math.max(1, Math.min(5, concurrency));
+
+  const runOne = async (doc) => {
+    try {
+      const result = await window.docusnap.reprocessDocument({
+        docId:      doc.id,
+        folderPath: doc.folder_path,
+        filename:   doc.original_filename,
+      });
+      if (!result?.success) failed++;
+      // Refresh the open document's panel only if IT was reprocessed AND is
+      // still the open doc when its result lands (the user may have navigated
+      // away while other workers were running).
+      if (result?.success && currentDoc && doc.id === currentDoc.id) {
+        const full = await window.docusnap.getDocumentWithExtractions(doc.id);
+        if (full && currentDoc && currentDoc.id === doc.id) {
+          currentDoc  = full;
+          corrections = {};
+          syncDocTypeFromRecord(full); // auto-select the newly detected type
+          renderFields(full);
+        }
+      }
+    } catch (e) {
+      console.warn(`[Reprocess All] ${doc.original_filename}:`, e.message);
+      failed++;
+    }
+    done++;
+    btnAll.innerHTML = `<span class="btn-spinner"></span> ${done}/${total}`;
+  };
+
+  // One worker pulls the next index off the shared cursor until the list is
+  // exhausted or Stop is requested. `nextIdx++` is safe without locking — there
+  // is no await between read and increment, so each index is handed out once.
+  const worker = async () => {
+    while (!_batchStopped) {
+      const i = nextIdx++;
+      if (i >= docs.length) return;
+      await runOne(docs[i]);
+    }
+  };
 
   try {
-    for (const doc of [...queue]) {
-      if (_batchStopped) break;   // cooperative stop — never mid-document
-
-      btnAll.innerHTML = `<span class="btn-spinner"></span> ${done + 1}/${total}`;
-      try {
-        const result = await window.docusnap.reprocessDocument({
-          docId:      doc.id,
-          folderPath: doc.folder_path,
-          filename:   doc.original_filename,
-        });
-        if (!result?.success) failed++;
-        if (currentDoc && doc.id === currentDoc.id && result?.success) {
-          const full = await window.docusnap.getDocumentWithExtractions(doc.id);
-          if (full) {
-            currentDoc  = full;
-            corrections = {};
-            syncDocTypeFromRecord(full); // auto-select the newly detected type
-            renderFields(full);
-          }
-        }
-      } catch (e) {
-        console.warn(`[Reprocess All] ${doc.original_filename}:`, e.message);
-        failed++;
-      }
-      done++;
-    }
+    const poolSize = Math.max(1, Math.min(concurrency, docs.length));
+    await Promise.all(Array.from({ length: poolSize }, () => worker()));
   } finally {
     // Always runs — covers normal completion, stop, and unexpected throws
     queue         = await window.docusnap.getReviewQueue();
