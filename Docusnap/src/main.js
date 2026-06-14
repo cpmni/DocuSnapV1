@@ -139,7 +139,7 @@ function showLicenseWindow(gate) {
 // immediately in app.whenReady() and torn down once the first window (login)
 // has finished loading. It never participates in the login/license/main swap
 // logic below, so it cannot interfere with the gate or the launchpad.
-let splashShownAt = 0;
+let splashCreatedAt = 0;
 function createSplash() {
   const pkg = require('../package.json');
   const splash = new BrowserWindow({
@@ -155,27 +155,41 @@ function createSplash() {
     copyright: (pkg.build && pkg.build.copyright) || '',
   };
   splash.loadFile(path.join(__dirname, 'windows', 'splash', 'index.html'), { query });
-  splash.once('ready-to-show', () => { splash.show(); splashShownAt = Date.now(); });
+  splash.once('ready-to-show', () => splash.show());
   splash.on('closed', () => { delete windows['splash']; });
   windows['splash'] = splash;
+  splashCreatedAt = Date.now();
   return splash;
 }
 
-// Close the splash once the app is ready, but hold it on screen for a fixed
-// minimum so it reads as a real splash rather than flashing on and off. The
-// window is shown on 'ready-to-show' and the timer is measured from THAT moment
-// (splashShownAt), so the 3 seconds is 3 seconds of actual visibility, not of
-// load time. closeSplash() is only called once the next window is ready (login
-// 'did-finish-load', plus an 8s safety backstop), so the splash also never
-// disappears before there's something to transition to. The setTimeout keeps
-// this non-blocking — the login window loads underneath while the splash waits.
-const SPLASH_MIN_VISIBLE_MS = 3000;
-function closeSplash() {
-  const s = windows['splash'];
-  if (!s || s.isDestroyed()) return;
-  const elapsed = splashShownAt ? Date.now() - splashShownAt : 0;
-  const wait    = Math.max(0, SPLASH_MIN_VISIBLE_MS - elapsed);
-  setTimeout(() => { const w = windows['splash']; if (w && !w.isDestroyed()) w.close(); }, wait);
+// Minimum time the splash is the ONLY window on screen before anything else.
+const SPLASH_MS = 2000;
+
+// Serialized startup: splash alone for SPLASH_MS, then exactly ONE follow-on
+// window. The follow-on is the login window (which itself handles first-run
+// setup vs. sign-in; the main shell is only ever opened later via the auth/
+// license gate). It is PRELOADED HIDDEN so it can be revealed instantly but is
+// never visible alongside the splash — no overlap, no flash, no duplicate
+// window. We reveal only once BOTH the 2s minimum has elapsed AND the follow-on
+// has finished loading, closing the splash in the same step. An 8s backstop
+// ensures we never get stuck on the splash.
+function launchStartupWindow() {
+  const win = createWindow('login', { ...LOGIN_WINDOW_OPTIONS, show: false }, 'index.html');
+  let loginReady = false, minElapsed = false, revealed = false;
+
+  const reveal = () => {
+    if (revealed) return;
+    revealed = true;
+    const splash = windows['splash'];
+    if (splash && !splash.isDestroyed()) splash.close();   // splash closes first…
+    if (win && !win.isDestroyed()) win.show();              // …then the single follow-on appears
+  };
+  const maybeReveal = () => { if (minElapsed && loginReady) reveal(); };
+
+  win.webContents.once('did-finish-load', () => { loginReady = true; maybeReveal(); });
+  const elapsed = splashCreatedAt ? Date.now() - splashCreatedAt : 0;
+  setTimeout(() => { minElapsed = true; maybeReveal(); }, Math.max(0, SPLASH_MS - elapsed));
+  setTimeout(reveal, 8000);   // safety backstop — never hang on the splash
 }
 
 function createWindow(name, options, htmlFile) {
@@ -198,6 +212,37 @@ function createWindow(name, options, htmlFile) {
   return win;
 }
 
+// Best-effort startup integrity sweep of the managed import inbox. Copy-on-
+// import writes userData/inbox/<docId><ext> and then sets documents.working_path;
+// a crash between those two steps would leave a stray file with no DB reference.
+// This removes such orphans. It is strictly bounded to the inbox directory,
+// matches on normalised absolute paths (so a live working copy is never deleted),
+// treats a missing inbox as a no-op, and never throws into startup.
+function sweepInboxOrphans() {
+  try {
+    const inbox = path.join(app.getPath('userData'), 'inbox');
+    if (!fs.existsSync(inbox)) return;                         // nothing imported yet
+    const documents = require('../database/modules/documents');
+    const live = new Set(
+      documents.getWorkingPaths(getDb())
+        .map(p => { try { return path.resolve(p); } catch { return null; } })
+        .filter(Boolean)
+    );
+    let removed = 0;
+    for (const name of fs.readdirSync(inbox)) {
+      const full = path.resolve(path.join(inbox, name));       // always inside the inbox
+      let st; try { st = fs.statSync(full); } catch { continue; }
+      if (!st.isFile()) continue;                              // never recurse / touch dirs
+      if (live.has(full)) continue;                            // referenced by a live row — keep
+      try { fs.unlinkSync(full); removed++; }
+      catch (e) { logger?.warn?.(`[inbox-sweep] could not remove orphan ${full}: ${e.message}`); }
+    }
+    if (removed) logger?.log?.(`[inbox-sweep] removed ${removed} orphaned working-copy file(s)`);
+  } catch (e) {
+    try { logger?.warn?.(`[inbox-sweep] skipped: ${e.message}`); } catch {}
+  }
+}
+
 function getMainWindow()   { return windows['main'];     }
 function notifyMainWindow(channel, ...args) {
   windows['main']?.webContents.send(channel, ...args);
@@ -218,14 +263,14 @@ app.whenReady().then(() => {
     : path.join(__dirname, '..', 'processing.log');
   logger.init(logFile, fs);
 
-  // App opens to the login screen — first-run setup, sign-in, forced password
-  // change and admin recovery all live there. The main shell only appears
+  // Best-effort: clean up any crash-orphaned managed import copies. Never blocks
+  // startup (fully guarded inside the helper).
+  sweepInboxOrphans();
+
+  // The login window (first-run setup, sign-in, forced password change, admin
+  // recovery) is created and revealed by launchStartupWindow() AFTER the splash,
+  // once all IPC handlers below are registered. The main shell only appears later
   // once auth-handler confirms a session is established (see 'auth-enter-app').
-  const loginWin = createWindow('login', LOGIN_WINDOW_OPTIONS, 'index.html');
-  // Tear the splash down once the login window has rendered. Safety timeout
-  // guarantees it never lingers even if did-finish-load somehow doesn't fire.
-  loginWin?.webContents.once('did-finish-load', closeSplash);
-  setTimeout(closeSplash, 8000);
 
   // Register all module IPC handlers
   const ctx = {
@@ -337,6 +382,11 @@ app.whenReady().then(() => {
     if (!authModule.getCurrentUser()) return;
     createWindow('search', { width: 1200, height: 780, minWidth: 1000, minHeight: 600 });
   });
+
+  // All IPC handlers are registered — now serialize the startup windows: the
+  // splash stays alone for ~2s, then the (preloaded, hidden) login window is
+  // revealed as the single follow-on. No overlap with the splash.
+  launchStartupWindow();
 });
 
 app.on('window-all-closed', () => { app.quit(); });
