@@ -353,6 +353,7 @@ class ExtractionEngine:
                 ocr_text, anchors, supplier_name, document_slug,
                 page_images=page_images,
                 field_patterns=self.patterns.get("field_patterns", {}),
+                validation_patterns=self.patterns.get("validation_patterns", {}),
             )
             for key, data in anchor_results.items():
                 existing = results.get(key)

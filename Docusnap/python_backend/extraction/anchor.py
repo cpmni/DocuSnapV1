@@ -15,7 +15,8 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                          supplier_name: str | None,
                          document_type: str | None,
                          page_images: list | None = None,
-                         field_patterns: dict | None = None) -> dict:
+                         field_patterns: dict | None = None,
+                         validation_patterns: dict | None = None) -> dict:
     """
     Attempt to extract field values using saved structural anchors.
 
@@ -51,16 +52,23 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
         if field_key in results:
             continue  # already found by higher-priority anchor
 
-        value  = None
-        method = "anchor"
+        value    = None
+        method   = "anchor"
+        val_type = (field_patterns or {}).get(field_key, {}).get("validation")
 
         # ── Primary: image crop + re-OCR (accurate, avoids column bleed) ──────
         if x_norm > 0 and y_norm > 0 and page0 is not None:
             w_norm   = anchor.get("w_norm") or 0.0
             h_norm   = anchor.get("h_norm") or 0.0
-            val_type = (field_patterns or {}).get(field_key, {}).get("validation")
-            value    = _crop_and_ocr(page0, x_norm, y_norm, w_norm, h_norm, val_type)
-            if value:
+            crop_value = _crop_and_ocr(page0, x_norm, y_norm, w_norm, h_norm, val_type)
+            # A fixed crop is positionally rigid: when an upstream line wraps or
+            # the block shifts on a sibling layout, the box can land off-target
+            # and return a NON-EMPTY but wrong value (e.g. ">alifornia" from the
+            # line below the name). Keep the crop only when it is credible for
+            # this field; otherwise leave value=None so the anchor_label +
+            # direction search below runs and gets a chance to relocate it.
+            if crop_value and _crop_is_credible(crop_value, val_type, validation_patterns):
+                value  = crop_value
                 method = "anchor_crop"
 
         # ── Fallback: text-based search in full OCR output ────────────────────
@@ -92,6 +100,13 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
 
                 if value:
                     break
+
+        # Never commit an implausible value — whether from a drifted crop or a
+        # fallback line that landed on an adjacent label (e.g. ". Ship Mode:").
+        # Leaving the field empty routes it to review/manual entry instead of a
+        # confidently-wrong read; a credible value (the normal case) is kept.
+        if value and not _crop_is_credible(value, val_type, validation_patterns):
+            value = None
 
         if value:
             conf = min(95, 55 + (usage_count * 5) + int(conf_factor * 20))
@@ -148,6 +163,39 @@ def try_logo_supplier_match(page_image: Image.Image,
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _crop_is_credible(value: str, val_type: str | None,
+                      validation_patterns: dict | None) -> bool:
+    """
+    Decide whether an anchor result is trustworthy enough to COMMIT, or whether
+    it is likely crop drift / a fallback line that landed on the wrong row and
+    should be discarded (so the field falls to review instead of a wrong value).
+
+    Reusable across every anchored supplier/field — no supplier, filename, or
+    coordinate is referenced:
+      * Typed/structured fields (date, currency, alphanumeric, currency_code):
+        reuse the SAME validation_patterns the keyword stage trusts — the value
+        must match one of them.
+      * Free-text fields (text/multiline_text, or no configured type): there is
+        no strict pattern, so only reject obvious debris — a value whose first
+        real character is punctuation (the ">alifornia" / ". Ship Mode:" failure
+        mode) or that is mostly non-alphanumeric. Clean names/addresses pass.
+    """
+    v = (value or "").strip()
+    if not v:
+        return False
+
+    pats = (validation_patterns or {}).get(val_type) if val_type else None
+    if pats:
+        return any(re.search(p, v, re.IGNORECASE) for p in pats)
+
+    # Free-text: must start with an alphanumeric char and be mostly alphanumeric.
+    if not v[0].isalnum():
+        return False
+    nonspace = [c for c in v if not c.isspace()]
+    alnum    = sum(c.isalnum() for c in nonspace)
+    return alnum >= len(nonspace) * 0.5
+
 
 def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
                   w_norm: float = 0.0, h_norm: float = 0.0,
