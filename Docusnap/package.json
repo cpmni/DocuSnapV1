@@ -11,7 +11,7 @@
   },
   "build": {
     "appId": "com.docusnap.app",
-    "productName": "DocuSnap",
+    "productName": "ScanFinder",
     "copyright": "Copyright © 2026 SOFTWARE COMPANY",
     "win": {
       "target": [
@@ -25,14 +25,14 @@
       "icon": "assets/icon.ico"
     },
     "nsis": {
-      "artifactName": "DocuSnap Setup ${version}-r${env.BUILD_REV}.exe",
+      "artifactName": "ScanFinder Setup ${version}-r${env.BUILD_REV}.exe",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "allowElevation": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "DocuSnap",
+      "shortcutName": "ScanFinder",
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico",
       "installerHeaderIcon": "assets/icon.ico",

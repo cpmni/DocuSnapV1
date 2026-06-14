@@ -11,6 +11,16 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const fs   = require('fs');
 
+// ── App-data directory (brand-rename safety) ──────────────────────────────────
+// The product is shown to users as "ScanFinder", but its on-disk data lives in
+// %APPDATA%\DocuSnap (SQLite DB, users, cached license tokens, inbox, templates,
+// processing.log). Electron derives userData from productName, so renaming
+// productName alone would repoint userData at a NEW empty %APPDATA%\ScanFinder
+// folder and orphan every existing install's data. Pin userData to the original
+// folder so the rename stays purely cosmetic — no data migration. Must run
+// before app 'ready' / first DB open.
+app.setPath('userData', path.join(app.getPath('appData'), 'DocuSnap'));
+
 // ── Module imports ────────────────────────────────────────────────────────────
 const logger           = require('./modules/logger');
 const authModule       = require('./modules/auth/handler');

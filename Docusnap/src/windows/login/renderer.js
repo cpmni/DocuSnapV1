@@ -246,6 +246,6 @@ document.getElementById('btn-recover-back').addEventListener('click', () => {
     }
   } catch (e) {
     document.getElementById('loading-text').textContent =
-      'Could not reach the application. Please restart DocuSnap.';
+      'Could not reach the application. Please restart ScanFinder.';
   }
 })();
