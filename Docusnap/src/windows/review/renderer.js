@@ -6,6 +6,7 @@ const FALLBACK_FIELD_KEYS = ['supplier_name', 'invoice_number', 'invoice_date'];
 // ── State ─────────────────────────────────────────────────────────────────────
 let queue            = [];
 let deferredQueue    = [];
+let bulkFiling       = false; // true while File All Ready runs; suppresses the auto-refresh listener so its per-doc confirm broadcasts can't clobber the loop's local queue mid-run
 let allDocTypes      = [];
 let currentDoc       = null;
 let currentPage      = 0;
@@ -898,6 +899,7 @@ async function fileAllReady() {
   const confirmBtn = document.getElementById('btn-confirm');
   const original   = btn.textContent;
   btn.disabled = true;
+  bulkFiling   = true; // hold off auto-refresh; each confirm broadcasts review-count-changed back to this window
   let filed = 0, skipped = 0;
 
   try {
@@ -913,6 +915,7 @@ async function fileAllReady() {
   } finally {
     btn.textContent = original;
     btn.disabled = false;
+    bulkFiling   = false; // re-enable auto-refresh before the post-run refresh below
   }
 
   updateTabCounts();
@@ -1602,6 +1605,11 @@ function _navigateToDoc(docId) {
 
 // Auto-refresh queue when main process signals new docs were added
 window.docusnap.onReviewCountChanged(async (n) => {
+  // While File All Ready is running, each per-doc confirm broadcasts this event
+  // back to us; re-fetching here would clobber the loop's local queue mid-run and
+  // leave just-filed docs as ghosts in the list. fileAllReady does one clean
+  // refresh once it finishes, so it's safe to ignore these interim signals.
+  if (bulkFiling) return;
   const prevId  = currentDoc?.id;
   queue         = await window.docusnap.getReviewQueue();
   deferredQueue = await window.docusnap.getDeferredQueue();
