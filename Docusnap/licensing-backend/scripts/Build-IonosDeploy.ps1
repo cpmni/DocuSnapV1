@@ -180,8 +180,9 @@ Options -Indexes
   Header always set X-Content-Type-Options "nosniff"
   Header always set X-Frame-Options "DENY"
   Header always set Referrer-Policy "no-referrer"
-  # Enable HSTS only once HTTPS is permanent for this subdomain:
-  # Header always set Strict-Transport-Security "max-age=31536000"
+  # HSTS - HTTPS is confirmed permanent here (valid Sectigo cert + HTTP->HTTPS
+  # forced). 1 year; no includeSubDomains/preload (scope to this host only).
+  Header always set Strict-Transport-Security "max-age=31536000"
 </IfModule>
 
 # (4) API path contract - unchanged from the dev .htaccess.
