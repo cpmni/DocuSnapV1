@@ -251,6 +251,19 @@ function register(ctx) {
     return true;
   });
 
+  // Mark a flagged document as reviewed. This is the ONLY thing that lets a
+  // flagged doc (validation note / correction candidate / below-threshold field)
+  // become eligible for bulk "File All Ready" — it never files anything itself,
+  // and is set only by a deliberate Mark Reviewed click, never by navigation.
+  // Does not change the review count (doc stays in the queue), so no broadcast.
+  ipcMain.handle('acknowledge-review', (_e, docId) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const at = new Date().toISOString();
+    documents.update(db, docId, { review_acknowledged_at: at });
+    return at;
+  });
+
   // ── Delete ──────────────────────────────────────────────────────────────────
   // Delete is the one queue action the user explicitly kept Admin-exclusive
   // (Edit gets the rest of the daily workflow — review, edit, confirm, defer,

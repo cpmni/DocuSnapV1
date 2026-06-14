@@ -32,7 +32,8 @@ function update(db, id, changes) {
   const allowed = ['document_type_id', 'stored_filename', 'stored_path',
                    'status', 'overall_confidence', 'supplier_name',
                    'doc_date', 'reference_number', 'confirmed_at',
-                   'error_message', 'template_id', 'working_path'];
+                   'error_message', 'template_id', 'working_path',
+                   'review_acknowledged_at'];
   const sets = Object.keys(changes)
     .filter(k => allowed.includes(k))
     .map(k => `${k} = @${k}`)

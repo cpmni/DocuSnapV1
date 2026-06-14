@@ -180,7 +180,16 @@
     .qi-btn.danger:hover { border-color: var(--err); color: var(--err); }
 
     /* ── Document viewer (centre) ── */
-    #doc-panel { flex: 1; display: flex; flex-direction: column; border-right: 1px solid var(--border); background: var(--doc-bg); min-width: 0; }
+    #doc-panel { flex: 1; display: flex; flex-direction: column; border-right: 1px solid var(--border); background: var(--doc-bg); min-width: 0; position: relative; }
+    /* Mark Reviewed floats at the top-left of the preview pane. Anchored to
+       #doc-panel (which does NOT scroll — only #doc-viewer does), so it stays
+       put while the document image scrolls beneath it. Shown only for flagged
+       docs via renderer.js updateAcknowledgeButton(); colour/label set there. */
+    #btn-acknowledge {
+      position: absolute; top: 46px; left: 12px; z-index: 6;
+      padding: 9px 16px; font-size: 13px; font-weight: 600;
+      box-shadow: 0 2px 8px rgba(0,0,0,.35);
+    }
     #doc-toolbar {
       display: flex; align-items: center; gap: 8px; padding: 7px 12px;
       border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0;
@@ -503,6 +512,8 @@
         <span id="page-indicator" style="font-size:11px; color:var(--muted);">—</span>
         <button class="doc-nav-btn" id="btn-page-next">Next &#8250;</button>
       </div>
+
+      <button class="btn" id="btn-acknowledge" style="display:none" title="This document was flagged for review. Mark it reviewed so File All Ready can include it.">&#10003; Mark Reviewed</button>
 
       <div id="select-hint">
         <span>Drag to select the <span class="hint-field" id="hint-field-name">field</span> value</span>

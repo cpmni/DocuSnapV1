@@ -96,6 +96,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   confirmReview:               (payload) => ipcRenderer.invoke('confirm-review', payload),
   deferDocument:               (id)      => ipcRenderer.invoke('defer-document', id),
   restoreDeferred:             (id)      => ipcRenderer.invoke('restore-deferred', id),
+  acknowledgeReview:           (id)      => ipcRenderer.invoke('acknowledge-review', id),
   deleteDocument:              (id, fp)  => ipcRenderer.invoke('delete-document', id, fp),
   deleteAllReview:             ()        => ipcRenderer.invoke('delete-all-review'),
   deleteAllDeferred:           ()        => ipcRenderer.invoke('delete-all-deferred'),

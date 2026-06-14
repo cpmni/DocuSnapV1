@@ -475,7 +475,8 @@ function register(ctx) {
              logo_phash          = ?,
              keyword_fingerprint = ?,
              supplier_name       = COALESCE(?, supplier_name),
-             ocr_text            = COALESCE(?, ocr_text)
+             ocr_text            = COALESCE(?, ocr_text),
+             review_acknowledged_at = NULL
            WHERE id = ?`
         ).run(
           result.overall_confidence || null,

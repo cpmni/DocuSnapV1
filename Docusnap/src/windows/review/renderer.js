@@ -175,14 +175,13 @@ function renderQueueList() {
     //            / correction candidate).
     //   red    = critically low overall confidence (<40) — existing critical state.
     //   green  = otherwise clean.
-    const conf           = doc.overall_confidence;
-    const belowThreshold = (doc.below_threshold_count || 0) > 0;
-    const flagged        = (doc.review_flag_count   || 0) > 0;
+    const conf    = doc.overall_confidence;
+    const flagged = isFlagged(doc);
     let sev = '';   // '', 'high'(green), 'mid'(orange), 'low'(red)
     if (conf != null) {
-      if (conf < 40)                       sev = 'low';
-      else if (belowThreshold || flagged)  sev = 'mid';
-      else                                 sev = 'high';
+      if (conf < 40)    sev = 'low';
+      else if (flagged) sev = 'mid';
+      else              sev = 'high';
     }
     if (sev === 'low')      el.classList.add('qi-conf-low');
     else if (sev === 'mid') el.classList.add('qi-conf-mid');
@@ -452,6 +451,36 @@ function renderExtractionStatus(doc) {
   el.appendChild(row('Extraction:', ...extPills));
 }
 
+// A document is "flagged" when processing surfaced questionable data on it: a
+// field carries a validation note or correction candidate (review_flag_count),
+// or a field came in under its confidence threshold (below_threshold_count).
+// SINGLE source of truth for queue severity colouring, File All Ready
+// eligibility, and the Mark Reviewed button. Counts come from getReviewQueue()
+// and live on the in-memory queue object (currentDoc is that same object).
+function isFlagged(doc) {
+  return (doc?.review_flag_count || 0) > 0 || (doc?.below_threshold_count || 0) > 0;
+}
+
+// Show Mark Reviewed only for the flagged current document. A flagged doc is
+// excluded from File All until acknowledged; once acknowledged the button shows
+// a static "Reviewed" state. Unflagged docs never show it. Reads currentDoc so
+// it reflects the live queue object (which carries the flag counts + ack stamp).
+function updateAcknowledgeButton() {
+  const btn = document.getElementById('btn-acknowledge');
+  if (!btn) return;
+  if (!currentDoc || !isFlagged(currentDoc)) { btn.style.display = 'none'; return; }
+  btn.style.display = '';
+  if (currentDoc.review_acknowledged_at) {
+    btn.disabled    = true;
+    btn.innerHTML   = '✓ Reviewed';
+    btn.style.color = 'var(--ok)';
+  } else {
+    btn.disabled    = false;
+    btn.innerHTML   = '✓ Mark Reviewed';
+    btn.style.color = 'var(--warn)';
+  }
+}
+
 // ── Fields panel ──────────────────────────────────────────────────────────────
 function renderFields(doc) {
   const scroll = document.getElementById('fields-scroll');
@@ -468,6 +497,7 @@ function renderFields(doc) {
     appendFieldRow(scroll, key, val, ext.confidence ?? null, ext.validation_note || null, ext.corrected_to || null, ext.anchor_label || null, ext.extraction_method || null);
   }
   validateConfirm();
+  updateAcknowledgeButton();
 }
 
 function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, method) {
@@ -879,6 +909,26 @@ document.getElementById('btn-confirm').addEventListener('click', async () => {
   window.docusnap.notifyReviewComplete();
 });
 
+// Mark Reviewed: the only way a flagged doc becomes File-All eligible. Stamps
+// review_acknowledged_at server-side, then updates BOTH the current doc and its
+// in-memory queue entry (same object in practice, set explicitly to be safe) so
+// eligibility flips immediately — no reload. Does not file or advance.
+document.getElementById('btn-acknowledge')?.addEventListener('click', async () => {
+  if (!currentDoc) return;
+  const id = currentDoc.id;
+  try {
+    const at = await window.docusnap.acknowledgeReview(id);
+    if (currentDoc && currentDoc.id === id) currentDoc.review_acknowledged_at = at;
+    const q = queue.find(d => d.id === id);
+    if (q) q.review_acknowledged_at = at;
+    updateAcknowledgeButton();
+    renderQueueList();
+    showToast('Marked as reviewed', 'ok');
+  } catch (e) {
+    showToast('Could not mark reviewed: ' + e.message, 'err');
+  }
+});
+
 // ── File All Ready (bulk) ─────────────────────────────────────────────────────
 // Files every document in the Review queue that is individually ready — i.e.
 // whose single Confirm button would be enabled (type + required fields present).
@@ -906,6 +956,10 @@ async function fileAllReady() {
     for (let i = 0; i < docs.length; i++) {
       const doc = docs[i];
       if (!queue.some(d => d.id === doc.id)) continue; // already handled elsewhere
+      // Flagged docs (validation note / correction candidate / below-threshold
+      // field) are excluded from bulk filing until a human clicks Mark Reviewed.
+      // Checked off the queue object directly — no need to load the doc.
+      if (isFlagged(doc) && !doc.review_acknowledged_at) { skipped++; continue; }
       btn.textContent = `Filing… ${i + 1}/${docs.length}`;
       await selectDoc(doc);                            // loads fields; runs validateConfirm()
       if (confirmBtn.disabled) { skipped++; continue; } // not ready — leave for review

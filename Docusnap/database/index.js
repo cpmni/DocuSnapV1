@@ -321,6 +321,20 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 17 applied: documents.working_path (managed working copy)');
   }
 
+  // Migration 18: explicit "review acknowledged" timestamp. A flagged document
+  // (validation note / correction candidate / below-threshold field) is held
+  // back from bulk "File All Ready" until a human deliberately acknowledges it
+  // via the Mark Reviewed button, which stamps this column. Cleared on reprocess
+  // so stale approval is never reused. NULL = not acknowledged (default; no
+  // backfill — pre-existing flagged rows stay held back until reviewed).
+  if (!applied.has(18)) {
+    if (tableExists(db, 'documents') && !hasColumn(db, 'documents', 'review_acknowledged_at')) {
+      try { db.exec(`ALTER TABLE documents ADD COLUMN review_acknowledged_at TEXT`); } catch {}
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (18)').run();
+    console.log('JS migration 18 applied: documents.review_acknowledged_at (explicit review ack)');
+  }
+
   // Migration 3: remove extra built-in fields, keep only name/date/ref per type
   if (!applied.has(3)) {
     const keepBySlug = {
