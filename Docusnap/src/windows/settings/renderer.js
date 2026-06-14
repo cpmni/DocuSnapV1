@@ -88,6 +88,20 @@ document.querySelectorAll('input[name="proc-mode"]').forEach(r => {
   });
 });
 
+// ── Parallel document processing (worker count) ───────────────────────────────
+const concurrencySelect = document.getElementById('processing-concurrency');
+async function loadProcessingConcurrency() {
+  let n = parseInt(await api.getSetting('processing_concurrency'), 10);
+  if (!Number.isFinite(n)) n = 1;
+  n = Math.max(1, Math.min(5, n));
+  concurrencySelect.value = String(n);
+}
+loadProcessingConcurrency();
+
+concurrencySelect.addEventListener('change', async () => {
+  await api.setSetting('processing_concurrency', concurrencySelect.value);
+});
+
 // ── File naming ───────────────────────────────────────────────────────────────
 const filenamePatternInput   = document.getElementById('filename-pattern-input');
 const filenamePatternMsg     = document.getElementById('filename-pattern-msg');

@@ -76,6 +76,11 @@ def main():
     parser.add_argument("--formats-file",    default=None)
     parser.add_argument("--templates-file", default=None)
     parser.add_argument("--enhance-file",   default=None)
+    # Parallel processing: when Electron runs a bounded worker pool, each worker
+    # gets an explicit JSON list of the filenames (within --folder) it owns, so
+    # the pool processes disjoint slices of the folder concurrently. Absent →
+    # the worker scans the whole folder (the original single-process behaviour).
+    parser.add_argument("--files-file",     default=None)
     # Reprocess only: the template this document is already linked to, honoured
     # as a Stage 0 fallback when live re-identification fails (see engine.extract).
     parser.add_argument("--known-template-id", type=int, default=None)
@@ -117,12 +122,23 @@ def main():
     if formats:
         engine.set_formats(formats)
 
-    # Find all supported files
-    folder = Path(args.folder)
-    files  = sorted([
-        f for f in folder.iterdir()
-        if f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSIONS
-    ])
+    # Find the files to process. With an explicit --files-file (a parallel
+    # worker's shard), process exactly those names — restricted to existing,
+    # supported files in the folder, preserving the given order. Otherwise scan
+    # the whole folder as before.
+    folder    = Path(args.folder)
+    file_list = load_json_arg(None, args.files_file)
+    if file_list is not None:
+        files = [
+            folder / name for name in file_list
+            if (folder / name).is_file()
+            and (folder / name).suffix.lower() in SUPPORTED_EXTENSIONS
+        ]
+    else:
+        files = sorted([
+            f for f in folder.iterdir()
+            if f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSIONS
+        ])
 
     emit({"type": "start", "total": len(files)})
     processed_at = datetime.now().isoformat(timespec="seconds")

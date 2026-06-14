@@ -9,8 +9,22 @@ const os   = require('os');
 const path = require('path');
 const fs   = require('fs');
 
-let _currentBatchProc  = null;   // reference to the running Python process
+let _currentBatchProcs = [];     // all running Python worker processes for the active batch (bounded pool)
 let _cancelRequested   = false;  // set true when stop is requested; suppresses buffered stdout
+
+// Supported input extensions — mirrors python_backend ocr.tesseract.SUPPORTED_EXTENSIONS
+// and watch/handler.js. Used only to enumerate + shard files for the parallel
+// worker pool; the per-document pipeline (and its file detection) is unchanged.
+const BATCH_SUPPORTED_EXTS = new Set(
+  ['.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.tif', '.bmp']
+);
+
+// Round-robin split so worker file counts stay balanced regardless of order.
+function partitionRoundRobin(items, n) {
+  const parts = Array.from({ length: n }, () => []);
+  items.forEach((it, i) => parts[i % n].push(it));
+  return parts.filter(p => p.length > 0);
+}
 
 // ── Write temp JSON files ─────────────────────────────────────────────────────
 // Module-level (not register()-scoped closures) so other modules — e.g. the
@@ -109,21 +123,22 @@ function register(ctx) {
   // ── Stop processing ─────────────────────────────────────────────────────────
   ipcMain.handle('stop-processing', () => {
     requireRole('admin', 'edit');
-    if (_currentBatchProc) {
+    if (_currentBatchProcs.length) {
       _cancelRequested = true;
-      const pid = _currentBatchProc.pid;
-      // Kill the full process tree: in dev mode `py.exe` (Python Launcher) is
-      // spawned and proc.kill() only kills the launcher, leaving python.exe
-      // alive and writing to the inherited pipe. taskkill /T kills all
-      // descendants so the pipe closes and proc.on('close') fires promptly.
-      try {
-        require('child_process').spawnSync(
-          'taskkill', ['/F', '/T', '/PID', String(pid)],
-          { windowsHide: true, stdio: 'ignore' }
-        );
-      } catch {}
-      try { _currentBatchProc.kill(); } catch {}
-      _currentBatchProc = null;
+      // Kill every worker's full process tree: in dev mode `py.exe` (Python
+      // Launcher) is spawned and proc.kill() only kills the launcher, leaving
+      // python.exe alive and writing to the inherited pipe. taskkill /T kills
+      // all descendants so the pipe closes and proc.on('close') fires promptly.
+      for (const proc of _currentBatchProcs) {
+        try {
+          require('child_process').spawnSync(
+            'taskkill', ['/F', '/T', '/PID', String(proc.pid)],
+            { windowsHide: true, stdio: 'ignore' }
+          );
+        } catch {}
+        try { proc.kill(); } catch {}
+      }
+      _currentBatchProcs = [];
     }
     return true;
   });
@@ -145,22 +160,39 @@ function register(ctx) {
 
     const learning  = require('../../../database/modules/learning');
     const procMode  = learning.getSetting(db, 'processing_mode', 'smart');
-    logger?.log(`Batch start: folder="${folderPath}" mode=${procMode}`);
 
-    return new Promise((resolve) => {
-      const py  = pythonExe();
+    // Bounded cross-document parallelism. Each worker is a separate Python
+    // process handling a disjoint slice of the folder; ALL DB writes still flow
+    // through _handleFileMessage on the single-threaded JS event loop (better-
+    // sqlite3 is synchronous), so concurrency only parallelizes the CPU-bound
+    // OCR/extraction, never DB/learning state. Default 1 = unchanged sequential.
+    let concurrency = parseInt(learning.getSetting(db, 'processing_concurrency', '1'), 10);
+    if (!Number.isFinite(concurrency)) concurrency = 1;
+    concurrency = Math.max(1, Math.min(5, concurrency));
 
+    _cancelRequested   = false;
+    _currentBatchProcs = [];
+    let fileCount   = 0;
+    const shardFiles = [];   // per-worker --files-file temp paths to clean up
+
+    // Spawn one Python worker. filesFile=null → it scans the whole folder (the
+    // original single-process behaviour). suppressStart hides the worker's own
+    // {type:'start'} so a pool can emit ONE aggregate total to the renderer
+    // instead of N competing ones (the renderer keys its progress bar off it).
+    const runWorker = (filesFile, suppressStart) => new Promise((resolve) => {
+      const py = pythonExe();
       const scriptArgs = [
-        '--folder',      folderPath,
-        '--tesseract',   tesseractPath(),
-        '--mode',        procMode,
+        '--folder',    folderPath,
+        '--tesseract', tesseractPath(),
+        '--mode',      procMode,
         ...trainingArgs,
       ];
+      if (filesFile) scriptArgs.push('--files-file', filesFile);
 
       const proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs),
         { windowsHide: true });
-      _currentBatchProc = proc;
-      let buf = '', fileCount = 0;
+      _currentBatchProcs.push(proc);
+      let buf = '';
 
       proc.stdout.on('data', (data) => {
         if (_cancelRequested) return;
@@ -172,6 +204,7 @@ function register(ctx) {
           if (!trimmed) continue;
           try {
             const msg = JSON.parse(trimmed);
+            if (suppressStart && msg.type === 'start') continue;
             setImmediate(() => _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger));
             if (msg.type === 'file_done') fileCount++;
             if (msg.type === 'log') {
@@ -194,25 +227,64 @@ function register(ctx) {
       });
 
       proc.on('close', (code) => {
-        const stopped = _cancelRequested;
-        _cancelRequested = false;
-        _currentBatchProc = null;
-        cleanupFiles(tempFiles);
-        // Remove any *_ocr.txt plaintext artifacts left by earlier versions of
-        // the pipeline that wrote raw OCR text to the source folder as an audit
-        // file. The current pipeline no longer creates these; this sweep cleans
-        // up residual files from prior runs so none linger in user-visible paths.
-        try {
-          for (const entry of fs.readdirSync(folderPath)) {
-            if (entry.endsWith('_ocr.txt')) {
-              try { fs.unlinkSync(path.join(folderPath, entry)); } catch {}
-            }
-          }
-        } catch {}
-        logger?.log(`Batch ${stopped ? 'stopped' : 'complete'}: ${fileCount} files, exit=${code}`);
-        resolve({ success: !stopped && code === 0, stopped });
+        _currentBatchProcs = _currentBatchProcs.filter(p => p !== proc);
+        resolve(code);
       });
     });
+
+    // Build the worker set. concurrency<=1 keeps the EXACT original path (one
+    // worker scans the folder; its own start/total flows straight through).
+    let workerPromises;
+    if (concurrency <= 1) {
+      logger?.log(`Batch start: folder="${folderPath}" mode=${procMode} concurrency=1`);
+      workerPromises = [runWorker(null, false)];
+    } else {
+      let allFiles = [];
+      try {
+        allFiles = fs.readdirSync(folderPath, { withFileTypes: true })
+          .filter(e => e.isFile() && BATCH_SUPPORTED_EXTS.has(path.extname(e.name).toLowerCase()))
+          .map(e => e.name)
+          .sort();
+      } catch (e) {
+        logger?.warn(`Could not enumerate folder for parallel split: ${e.message}`);
+      }
+      if (allFiles.length <= 1) {
+        // Nothing to parallelize — fall back to the single-worker path.
+        logger?.log(`Batch start: folder="${folderPath}" mode=${procMode} concurrency=1 (only ${allFiles.length} file)`);
+        workerPromises = [runWorker(null, false)];
+      } else {
+        const shards = partitionRoundRobin(allFiles, Math.min(concurrency, allFiles.length));
+        logger?.log(`Batch start: folder="${folderPath}" mode=${procMode} concurrency=${concurrency} → ${shards.length} workers, ${allFiles.length} files`);
+        // One aggregate start for the whole batch; per-worker starts suppressed.
+        event.sender.send('process-progress', { type: 'start', total: allFiles.length });
+        workerPromises = shards.map(shard => {
+          const f = writeTempJson('files', shard);
+          shardFiles.push(f);
+          return runWorker(f, true);
+        });
+      }
+    }
+
+    const codes   = await Promise.all(workerPromises);
+    const stopped = _cancelRequested;
+    _cancelRequested   = false;
+    _currentBatchProcs = [];
+    cleanupFiles(tempFiles);
+    cleanupFiles(shardFiles);
+    // Remove any *_ocr.txt plaintext artifacts left by earlier versions of the
+    // pipeline that wrote raw OCR text to the source folder as an audit file.
+    // The current pipeline no longer creates these; this sweep cleans up
+    // residual files from prior runs so none linger in user-visible paths.
+    try {
+      for (const entry of fs.readdirSync(folderPath)) {
+        if (entry.endsWith('_ocr.txt')) {
+          try { fs.unlinkSync(path.join(folderPath, entry)); } catch {}
+        }
+      }
+    } catch {}
+    const success = !stopped && codes.every(c => c === 0);
+    logger?.log(`Batch ${stopped ? 'stopped' : 'complete'}: ${fileCount} files, exit=${codes.join(',')}`);
+    return { success, stopped };
   });
 
   // ── Reprocess single document ───────────────────────────────────────────────
@@ -769,5 +841,5 @@ module.exports = {
   buildTrainingArgs,
   cleanupTempFiles: cleanupFiles,
   handleFileMessage: _handleFileMessage,
-  isBatchRunning: () => !!_currentBatchProc,
+  isBatchRunning: () => _currentBatchProcs.length > 0,
 };

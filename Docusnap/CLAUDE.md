@@ -163,6 +163,20 @@ process_docs.py → ExtractionEngine.extract()
              missing or below 70% confidence. DEFAULT.
 - `ai`    — stages 1+2+3 always
 
+**Bounded parallel processing** (setting `processing_concurrency`, 1–5, default 1):
+`process-folder` (processing/handler.js) runs a worker POOL — N Python procs,
+each handling a disjoint round-robin SHARD of the folder's files (passed via the
+backward-compatible `--files-file` arg in process_docs.py; absent → scan whole
+folder). Parallelizes only the CPU-bound OCR/extraction ACROSS documents, never
+within one. concurrency=1 keeps the exact original single-proc path. Safe because
+ALL DB/file writes stay on the single-threaded JS event loop via
+`_handleFileMessage` (better-sqlite3 is synchronous) — Python workers never touch
+the DB, only read a per-batch training-data snapshot and emit JSON. Pool emits ONE
+aggregate `{type:start,total}` (per-worker starts suppressed) so the renderer's
+progress bar isn't clobbered. `_currentBatchProcs[]` + `isBatchRunning()` track all
+workers; stop kills every tree. Watch-folder stays serial and defers via
+`isBatchRunning()`.
+
 **Critical**: engine.extract() returns a flat dict mixing field data dicts
 `{"value":..,"confidence":..,"method":..}` with plain metadata values
 `_supplier_name`, `_document_type`, `_overall_confidence`, `_needs_review`,
