@@ -45,23 +45,107 @@ function admin_password_hash(): ?string
     return null;
 }
 
+// Server-side inactivity timeout for an authenticated admin session (seconds).
+const ADMIN_IDLE_TIMEOUT = 300;          // 5 minutes
+// Max wrong TOTP/recovery attempts before the pending 2FA state is dropped.
+const ADMIN_2FA_MAX_TRIES = 5;
+// Lifetime of the password→code window. The pending 2FA state self-expires after
+// this, independent of (and shorter than) the authenticated-session timeout.
+const ADMIN_2FA_PENDING_TTL = 180; // 3 minutes
+
 function admin_is_authed(): bool
 {
-    return !empty($_SESSION['admin_authed']);
-}
-
-function admin_login(string $password): bool
-{
-    $hash = admin_password_hash();
-    if ($hash === null) {
-        return false; // not provisioned -> deny
-    }
-    if (!password_verify($password, $hash)) {
+    if (empty($_SESSION['admin_authed'])) {
         return false;
     }
-    session_regenerate_id(true); // prevent fixation
-    $_SESSION['admin_authed'] = true;
+    // Authoritative inactivity expiry (the page gate below also enforces this and
+    // shows a message; this keeps any other caller honest too).
+    $last = (int) ($_SESSION['last_activity'] ?? 0);
+    if ($last > 0 && (time() - $last) > ADMIN_IDLE_TIMEOUT) {
+        unset($_SESSION['admin_authed']);
+        return false;
+    }
     return true;
+}
+
+// Promote a verified session to fully authenticated. Used after a password-only
+// login (no 2FA) and after a successful 2FA challenge.
+function admin_finalize_login(): void
+{
+    session_regenerate_id(true); // prevent fixation
+    $_SESSION['admin_authed']  = true;
+    $_SESSION['last_activity'] = time();
+    unset($_SESSION['admin_2fa_pending'], $_SESSION['admin_2fa_tries'], $_SESSION['admin_2fa_started']);
+}
+
+// True only while a 2FA challenge is outstanding AND within its short TTL. Clears
+// the pending state once it has expired, so a stale challenge cannot be resumed.
+function admin_2fa_pending_active(): bool
+{
+    if (empty($_SESSION['admin_2fa_pending'])) {
+        return false;
+    }
+    $started = (int) ($_SESSION['admin_2fa_started'] ?? 0);
+    if ($started > 0 && (time() - $started) > ADMIN_2FA_PENDING_TTL) {
+        unset($_SESSION['admin_2fa_pending'], $_SESSION['admin_2fa_tries'], $_SESSION['admin_2fa_started']);
+        return false;
+    }
+    return true;
+}
+
+// Stage 1. Returns 'ok' (fully signed in, no 2FA), 'need_2fa' (password correct,
+// a TOTP challenge is required next), or 'fail'. Never sets admin_authed while a
+// 2FA challenge is outstanding.
+function admin_login(string $password): string
+{
+    $hash = admin_password_hash();
+    if ($hash === null || !password_verify($password, $hash)) {
+        admin_audit('admin.login_failed', 'password');
+        return 'fail';
+    }
+    if (admin_2fa_enabled()) {
+        $_SESSION['admin_2fa_pending'] = true;
+        $_SESSION['admin_2fa_tries']   = 0;
+        $_SESSION['admin_2fa_started'] = time();   // starts the short pending TTL
+        unset($_SESSION['admin_authed']);
+        return 'need_2fa';
+    }
+    admin_finalize_login();
+    admin_audit('admin.login_success', 'password');
+    return 'ok';
+}
+
+// Stage 2. Completes login from the pending state with a TOTP code or a one-time
+// recovery code. Server-side only — never trusts client state. Throttled.
+function admin_complete_2fa(string $code): bool
+{
+    if (!admin_2fa_pending_active()) {   // missing, or expired past the pending TTL
+        return false;
+    }
+    if ((int) ($_SESSION['admin_2fa_tries'] ?? 0) >= ADMIN_2FA_MAX_TRIES) {
+        return false;
+    }
+    $_SESSION['admin_2fa_tries'] = (int) ($_SESSION['admin_2fa_tries'] ?? 0) + 1;
+
+    $state = admin_2fa_load();
+    if (!is_array($state) || empty($state['enabled']) || empty($state['secret'])) {
+        return false;
+    }
+    $code = preg_replace('/\s+/', '', $code);
+
+    if ($code !== '' && ctype_digit($code) && totp_verify((string) $state['secret'], $code)) {
+        admin_finalize_login();
+        admin_audit('admin.login_success', '2fa=totp');
+        return true;
+    }
+    if ($code !== '' && admin_recovery_consume($code)) {
+        admin_finalize_login();
+        admin_audit('admin.recovery_used', '');
+        admin_audit('admin.login_success', '2fa=recovery');
+        return true;
+    }
+    admin_audit('admin.login_failed', '2fa');
+    return false;
 }
 
 function admin_logout(): void
@@ -78,10 +162,24 @@ function admin_logout(): void
 function require_admin(): void
 {
     admin_session_boot();
-    if (!admin_is_authed()) {
+    // Never cache an authenticated admin page (browser history / bfcache): after
+    // the inactivity timeout, back/refresh must re-hit this gate, not show a stale
+    // page. Sent before any page output (require_admin runs at the top of pages).
+    header('Cache-Control: no-store, no-cache, must-revalidate');
+    header('Pragma: no-cache');
+    if (empty($_SESSION['admin_authed'])) {
         header('Location: login.php');
         exit;
     }
+    // 5-minute server-side inactivity timeout (authoritative).
+    $last = (int) ($_SESSION['last_activity'] ?? 0);
+    if ($last > 0 && (time() - $last) > ADMIN_IDLE_TIMEOUT) {
+        unset($_SESSION['admin_authed'], $_SESSION['admin_2fa_pending'], $_SESSION['admin_2fa_tries']);
+        flash_set('err', 'Session expired due to inactivity. Please sign in again.');
+        header('Location: login.php');
+        exit;
+    }
+    $_SESSION['last_activity'] = time(); // sliding inactivity window
 }
 
 // ── CSRF (synchroniser token) ────────────────────────────────────────────────
@@ -115,6 +213,189 @@ function flash_take(): ?array
     $f = $_SESSION['flash'] ?? null;
     unset($_SESSION['flash']);
     return is_array($f) ? $f : null;
+}
+
+// ── TOTP 2FA (RFC 6238, dependency-free) ─────────────────────────────────────
+// Pure-PHP implementation using the built-in hash_hmac / random_bytes — no third-
+// party code, so there is no licensing question and nothing to install. The
+// shared secret and the hashed one-time recovery codes live in keys/admin_2fa.json,
+// OUTSIDE the web docroot, mirroring keys/admin_password.hash and the signing
+// seeds (the established secret-at-rest pattern for this backend).
+
+function admin_2fa_path(): string
+{
+    return __DIR__ . '/../keys/admin_2fa.json'; // sibling of public/, never web-served
+}
+
+function admin_2fa_load(): ?array
+{
+    $f = admin_2fa_path();
+    if (!is_file($f)) {
+        return null;
+    }
+    $j = json_decode((string) file_get_contents($f), true);
+    return is_array($j) ? $j : null;
+}
+
+function admin_2fa_save(array $state): bool
+{
+    $f   = admin_2fa_path();
+    $tmp = $f . '.tmp';
+    if (file_put_contents($tmp, json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), LOCK_EX) === false) {
+        return false;
+    }
+    @chmod($tmp, 0600);
+    return rename($tmp, $f); // atomic replace
+}
+
+function admin_2fa_enabled(): bool
+{
+    $s = admin_2fa_load();
+    return is_array($s) && !empty($s['enabled']) && !empty($s['secret']);
+}
+
+function admin_2fa_disable(): void
+{
+    $f = admin_2fa_path();
+    if (is_file($f)) {
+        @unlink($f);
+    }
+}
+
+// RFC 4648 base32 (no padding) — TOTP secrets are exchanged in base32.
+function base32_encode(string $bin): string
+{
+    $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    $out = ''; $val = 0; $bits = 0;
+    for ($i = 0, $n = strlen($bin); $i < $n; $i++) {
+        $val  = ($val << 8) | ord($bin[$i]);
+        $bits += 8;
+        while ($bits >= 5) {
+            $bits -= 5;
+            $out  .= $alphabet[($val >> $bits) & 31];
+        }
+    }
+    if ($bits > 0) {
+        $out .= $alphabet[($val << (5 - $bits)) & 31];
+    }
+    return $out;
+}
+
+function base32_decode(string $b32): string
+{
+    $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    $b32 = strtoupper(preg_replace('/[^A-Za-z2-7]/', '', $b32));
+    $out = ''; $val = 0; $bits = 0;
+    for ($i = 0, $n = strlen($b32); $i < $n; $i++) {
+        $idx = strpos($alphabet, $b32[$i]);
+        if ($idx === false) {
+            continue;
+        }
+        $val  = ($val << 5) | $idx;
+        $bits += 5;
+        if ($bits >= 8) {
+            $bits -= 8;
+            $out  .= chr(($val >> $bits) & 0xFF);
+        }
+    }
+    return $out;
+}
+
+function totp_generate_secret(int $bytes = 20): string
+{
+    return base32_encode(random_bytes($bytes)); // 160-bit, RFC-recommended length
+}
+
+function totp_at(string $secretBin, int $counter): string
+{
+    $msg  = pack('N*', 0) . pack('N*', $counter); // 8-byte big-endian counter
+    $hash = hash_hmac('sha1', $msg, $secretBin, true);
+    $off  = ord($hash[strlen($hash) - 1]) & 0x0F;
+    $bin  = ((ord($hash[$off])     & 0x7F) << 24)
+          | ((ord($hash[$off + 1]) & 0xFF) << 16)
+          | ((ord($hash[$off + 2]) & 0xFF) << 8)
+          |  (ord($hash[$off + 3]) & 0xFF);
+    return str_pad((string) ($bin % 1000000), 6, '0', STR_PAD_LEFT);
+}
+
+// Verify a 6-digit code against a base32 secret, allowing ±1 step for clock skew.
+function totp_verify(string $secretB32, string $code, int $window = 1): bool
+{
+    $code = preg_replace('/\D/', '', $code);
+    if (strlen($code) !== 6) {
+        return false;
+    }
+    $secretBin = base32_decode($secretB32);
+    if ($secretBin === '') {
+        return false;
+    }
+    $counter = (int) floor(time() / 30);
+    for ($i = -$window; $i <= $window; $i++) {
+        if (hash_equals(totp_at($secretBin, $counter + $i), $code)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function totp_uri(string $secretB32, string $label, string $issuer): string
+{
+    return 'otpauth://totp/' . rawurlencode($issuer . ':' . $label)
+        . '?secret=' . rawurlencode($secretB32)
+        . '&issuer=' . rawurlencode($issuer)
+        . '&algorithm=SHA1&digits=6&period=30';
+}
+
+// ── One-time recovery codes (hashed at rest, single use) ─────────────────────
+function recovery_generate(int $count = 10): array
+{
+    $codes = [];
+    for ($i = 0; $i < $count; $i++) {
+        $raw = bin2hex(random_bytes(5));                 // 10 hex chars
+        $codes[] = substr($raw, 0, 5) . '-' . substr($raw, 5, 5);
+    }
+    return $codes;
+}
+
+function recovery_hash_all(array $codes): array
+{
+    return array_map(static fn($c) => password_hash((string) $c, PASSWORD_DEFAULT), $codes);
+}
+
+// Check a recovery code against the stored hashes; on match, remove it (single
+// use) and persist. Returns true only on a successful, consumed match.
+function admin_recovery_consume(string $code): bool
+{
+    $code  = strtolower(trim($code));
+    $state = admin_2fa_load();
+    if (!is_array($state) || empty($state['recovery']) || !is_array($state['recovery'])) {
+        return false;
+    }
+    foreach ($state['recovery'] as $i => $hash) {
+        if (is_string($hash) && password_verify($code, $hash)) {
+            unset($state['recovery'][$i]);
+            $state['recovery'] = array_values($state['recovery']);
+            admin_2fa_save($state);
+            return true;
+        }
+    }
+    return false;
+}
+
+// ── Best-effort audit (reuses lib/db.php audit_events; never blocks auth) ─────
+function admin_audit(string $action, string $detail = ''): void
+{
+    try {
+        $dbFile = __DIR__ . '/db.php';
+        if (is_file($dbFile)) {
+            require_once $dbFile;
+            if (function_exists('db') && function_exists('audit_event')) {
+                audit_event(db(), null, null, $action, $detail);
+            }
+        }
+    } catch (\Throwable $e) {
+        error_log('admin_audit failed: ' . $e->getMessage());
+    }
 }
 
 // ── HTML helpers / shared chrome ─────────────────────────────────────────────
@@ -214,6 +495,7 @@ function admin_page_open(string $title, bool $showNav = true): void
   <span class="brand">Licensing Admin</span>
   <nav>
     <a href="index.php">Dashboard</a>
+    <a href="2fa.php">Security</a>
     <a href="logout.php">Sign out</a>
   </nav>
 </header>
