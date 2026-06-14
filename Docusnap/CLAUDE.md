@@ -112,7 +112,10 @@ document_types  — name, slug, built_in, ref_field_key, date_field_key
 fields          — document_type_id(FK), key, label, type, required, built_in
 documents       — document_type_id(FK), original_filename, stored_filename,
                   stored_path, folder_path, status, overall_confidence,
-                  supplier_name, doc_date, reference_number
+                  supplier_name, doc_date, reference_number,
+                  working_path  ← migration 17: app-managed import copy in
+                  userData/inbox/<docId><ext>; preferred by preview/reprocess/
+                  confirm so they don't depend on the source folder surviving
                   STATUS: pending|needs_review|deferred|confirmed|deleted|error
 extractions     — document_id(FK), field_key, raw_value, display_value,
                   confidence, was_corrected, corrected_to, extraction_method
@@ -279,6 +282,14 @@ in `keys/admin_password.hash`, BRIGHT-ONLY theme — manages products/accounts/e
 seats and issues **temporary licenses** (= an entitlement with `expires_at`; one-time key
 shown once). Deploy/verify via `scripts/Configure-WampBackend.ps1` / `Verify-WampBackend-Ready.ps1`
 (the Configure script now fails loudly on mysql errors).
+
+**Admin 2FA** (`public/admin/{login,2fa}.php`, `lib/admin_auth.php`): optional TOTP
+(RFC6238, dependency-free pure PHP — backend has NO composer), two-stage login
+(`admin_login`→'ok'|'need_2fa'|'fail'), bcrypt-hashed recovery codes, secret+codes at
+rest in `keys/admin_2fa.json` (outside docroot), 5-min inactivity timeout. QR uses a
+**self-hosted** vendored `public/admin/qrcode.min.js` (MIT qrcodejs — no CDN); manual
+key/URI entry is the fallback when the file is absent. **When editing admin_auth/login/
+2fa/qrcode, redeploy to `C:\wamp64\www\licensing\public\admin\`.**
 
 **Tests** (Electron-as-Node): `database/modules/test_license_*.js`. Gate tests **stub
 `ctx.licenseTransport`** to stay hermetic (no real backend) — do the same for any new one.
