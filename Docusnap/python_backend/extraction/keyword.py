@@ -392,6 +392,14 @@ def _clean_value(value: str, val_type: str | None,
             m = re.search(p, value, re.IGNORECASE)
             if m:
                 return m.group(0).strip()
+    # Reference numbers with a fixed group shape (e.g. job_no "2603-0670-1"):
+    # extract the four-four-one digit shape from the captured text and normalise
+    # whatever OCR separator noise (".", spaces, "_", "/", mixed) to a single "-".
+    # Generic to the shape, not to any one supplier's worksheet.
+    if val_type == "job_reference":
+        m = re.search(r'(\d{4})[-.\s_/]{0,3}(\d{4})[-.\s_/]{0,3}(\d)\b', value)
+        if m:
+            return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
     # Reference numbers are single tokens — if OCR column-bleed left a second
     # "word" that looks like a name (starts with a capital letter), drop it.
     # e.g. "204870 Polychemtex Inc." → "204870"

@@ -376,6 +376,28 @@
       "validation": "alphanumeric",
       "base_confidence": 83
     },
+    "job_no": {
+      "labels": [
+        "Job No",
+        "Job No.",
+        "Job Number",
+        "Job #",
+        "Job Ref",
+        "Job Reference",
+        "Job/Ref No",
+        "Ref No",
+        "Ref No.",
+        "Reference No",
+        "Booking No",
+        "Booking Ref"
+      ],
+      "directions": [
+        "right",
+        "below"
+      ],
+      "validation": "job_reference",
+      "base_confidence": 88
+    },
     "delivery_date": {
       "labels": [
         "Delivery Date",
@@ -437,6 +459,9 @@
     ],
     "alphanumeric": [
       "[A-Za-z0-9][A-Za-z0-9\\-\\/\\.]{2,20}"
+    ],
+    "job_reference": [
+      "\\b\\d{4}[-.\\s_/]{0,3}\\d{4}[-.\\s_/]{0,3}\\d\\b"
     ],
     "currency_code": [
       "^(?:GBP|USD|EUR|JPY|CAD|AUD|CHF|CNY|INR)$"
