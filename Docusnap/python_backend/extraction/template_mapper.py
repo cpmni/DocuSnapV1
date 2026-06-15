@@ -26,9 +26,12 @@ pipeline (keyword/anchor/LLM) for that field.
 """
 
 import difflib
+import math
 import re
 
 from PIL import Image, ImageFilter, ImageOps
+
+from extraction import page_geometry
 
 try:
     import pytesseract
@@ -38,6 +41,24 @@ except ImportError:  # pragma: no cover - exercised only when Tesseract absent
     Output = None
 
 _FUZZY_MATCH_THRESHOLD = 0.6
+
+# Floor on the anchor SEARCH margin (page-normalised, every edge), applied even
+# when a mapping stored no search_expansion. A drawn anchor box is often tight or
+# slightly misaligned, and a shifted scan moves the label further; without a
+# margin the label falls outside the box and never relocates. Generic for every
+# template -- it only widens WHERE the label is sought; the fuzzy-match threshold
+# still rejects a wrong nearby label, so coverage improves without false matches.
+_ANCHOR_SEARCH_MIN = 0.06
+
+# Consensus page-drift fallback from MULTIPLE recurring-label landmarks.
+# Translation only; used solely as a coarse pre-shift when a field's own local
+# anchor relocation fails -- never to override a located anchor or set a value.
+_DRIFT_W_MIN     = 0.7    # min anchor match_score for a landmark to count
+_DRIFT_AGREE_TOL = 0.03   # max distance (page-normalised) from the median delta to keep
+_DRIFT_MAX       = 0.10   # implausible consensus magnitude -> ignore drift entirely
+_DRIFT_ZONE_COLS = 3      # coarse page columns for spatial-diversity weighting
+_DRIFT_ZONE_ROWS = 2      # coarse page rows
+_UNSET = object()         # "located not provided" sentinel (distinct from a None relocation)
 
 
 def extract_with_mappings(page_images, mappings, field_patterns=None,
@@ -56,19 +77,55 @@ def extract_with_mappings(page_images, mappings, field_patterns=None,
     ocr_lines_fn = ocr_lines_fn or _ocr_lines
     ocr_text_fn  = ocr_text_fn  or _ocr_text
 
-    results = {}
+    # Enabled mappings that point at a valid, present page (filtered once).
+    usable = []
     for mapping in mappings:
         if mapping.get("enabled") is False or mapping.get("enabled") == 0:
             continue
-        field_key = mapping.get("field_key")
-        if not field_key or field_key in results:
+        if not mapping.get("field_key"):
             continue
         page_idx = mapping.get("page_number") or 0
         if page_idx < 0 or page_idx >= len(page_images) or page_images[page_idx] is None:
             continue
+        usable.append((page_idx, mapping))
 
+    # Pre-pass: relocate every anchor ONCE, and estimate a per-page coarse drift
+    # from the AGREEING recurring-label landmarks. Each relocation is cached so
+    # _extract_one reuses it (no anchor OCR'd twice); the drift is applied below
+    # only as a fallback pre-shift -- never to override a located anchor.
+    located_cache = {}
+    landmarks = {}   # page_idx -> [(dx, dy, weight), ...]
+    for page_idx, mapping in usable:
+        anchor_box = _norm_box(mapping, "anchor")
+        if not anchor_box:
+            located_cache[id(mapping)] = None
+            continue
+        located = _locate_anchor(
+            page_images[page_idx], anchor_box, mapping.get("anchor_text"),
+            float(mapping.get("search_expansion") or 0.0), ocr_lines_fn,
+            min_search=_ANCHOR_SEARCH_MIN)
+        located_cache[id(mapping)] = located
+        if located and located.get("matched_text") is not None:
+            # Anchor box-origin drift (inset-corrected -- the SAME convention the
+            # located+offset relocation uses), weighted by the match strength.
+            inset_x = max(0.0, (anchor_box["w_norm"] - located["w_norm"]) / 2.0)
+            inset_y = max(0.0, (anchor_box["h_norm"] - located["h_norm"]) / 2.0)
+            dx = (located["x_norm"] - inset_x) - anchor_box["x_norm"]
+            dy = (located["y_norm"] - inset_y) - anchor_box["y_norm"]
+            landmarks.setdefault(page_idx, []).append(
+                (dx, dy, float(located.get("match_score") or 0.0),
+                 located["x_norm"], located["y_norm"]))
+    page_drift = {pi: _consensus_drift(lm) for pi, lm in landmarks.items()}
+
+    results = {}
+    for page_idx, mapping in usable:
+        field_key = mapping["field_key"]
+        if field_key in results:
+            continue
         outcome = _extract_one(page_images[page_idx], mapping, field_patterns,
-                               ocr_lines_fn, ocr_text_fn)
+                               ocr_lines_fn, ocr_text_fn,
+                               located=located_cache[id(mapping)],
+                               drift=page_drift.get(page_idx))
         if outcome:
             results[field_key] = outcome
     return results
@@ -76,17 +133,24 @@ def extract_with_mappings(page_images, mappings, field_patterns=None,
 
 # ── Per-mapping resolution ────────────────────────────────────────────────────
 
-def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn):
+def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
+                 located=_UNSET, drift=None):
     anchor_box = _norm_box(mapping, "anchor")
     target_box = _norm_box(mapping, "target")
     if not anchor_box or not target_box:
         return None
 
     expansion = float(mapping.get("search_expansion") or 0.0)
-    located = _locate_anchor(page, anchor_box, mapping.get("anchor_text"),
-                             expansion, ocr_lines_fn)
+    if located is _UNSET:
+        located = _locate_anchor(page, anchor_box, mapping.get("anchor_text"),
+                                 expansion, ocr_lines_fn,
+                                 min_search=_ANCHOR_SEARCH_MIN)
     if not located:
-        return None
+        # Local relocation failed. ONLY here may a consensus page drift help: a
+        # coarse translation-only pre-shift of the absolute target box. Never
+        # reached when the anchor IS located -> local evidence always wins.
+        return _drift_fallback(page, mapping, target_box, expansion, drift,
+                               field_patterns, ocr_text_fn)
 
     # Heart of the "anchor + relative target zone" model: derive the target
     # from where the anchor ACTUALLY is, not from the absolute saved target
@@ -135,16 +199,140 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn):
     }
 
 
+def _drift_fallback(page, mapping, target_box, expansion, drift,
+                    field_patterns, ocr_text_fn):
+    """Local anchor relocation failed. If a consensus page drift exists, seed the
+    target by (1) the unchanged coarse translation-only pre-shift of the ABSOLUTE
+    target box, then — only if that reads nothing — (2) a page-geometry-landmark
+    prior (landmark + stored offset + drift); otherwise return None (today's
+    'field omitted -> pipeline fallback'). Either result is deliberately weaker
+    than any locally-relocated value (same method/confidence tiers as before)."""
+    if not drift:
+        return None
+    cdx, cdy = drift
+    field_key = mapping.get("field_key", "")
+    val_type  = (field_patterns or {}).get(field_key, {}).get("validation")
+
+    def _read(origin_x, origin_y):
+        box = {
+            "x_norm": _clamp01(origin_x),
+            "y_norm": _clamp01(origin_y),
+            "w_norm": target_box["w_norm"],
+            "h_norm": target_box["h_norm"],
+        }
+        txt = _crop_and_ocr(page, box, val_type, ocr_text_fn)
+        exp = False
+        if not txt and expansion > 0:
+            txt = _crop_and_ocr(page, _expand_box(box, expansion), val_type, ocr_text_fn)
+            exp = bool(txt)
+        return txt, exp
+
+    # 1) Existing behaviour, UNCHANGED: shift the ABSOLUTE target box by the
+    #    consensus drift and read it (with the optional expanded retry).
+    text, expanded = _read(target_box["x_norm"] + cdx, target_box["y_norm"] + cdy)
+
+    # 2) Geometry SEARCH PRIOR — tried ONLY when the absolute seed found nothing,
+    #    so it can never replace a successful absolute seed (no regression). It
+    #    re-seeds the target from the stable page-geometry landmark nearest the
+    #    TAUGHT anchor, plus the stored anchor->target offset, plus the same
+    #    consensus drift:  landmark + stored_offset + consensus_drift. This
+    #    recovers targets whose stored ABSOLUTE coordinate has itself drifted far
+    #    from where the page geometry says it sits. Same method/confidence tiers;
+    #    no new method, no precedence change.
+    if not text:
+        anchor_box = _norm_box(mapping, "anchor")
+        if anchor_box:
+            (lx, ly), _ = page_geometry.nearest_landmark(
+                anchor_box["x_norm"], anchor_box["y_norm"])
+            off_dx = mapping.get("offset_dx_norm") or 0.0
+            off_dy = mapping.get("offset_dy_norm") or 0.0
+            text, expanded = _read(lx + off_dx + cdx, ly + off_dy + cdy)
+
+    if not text:
+        return None
+    confidence = 48 if expanded else 60   # < explicit located tiers (78/90)
+    return {
+        "value":      text,
+        "confidence": max(50, min(96, confidence)),
+        "method":     "template_mapping_drift_expanded" if expanded else "template_mapping_drift",
+        "anchor":     mapping.get("anchor_text") or field_key,
+    }
+
+
+def _median(xs):
+    s = sorted(xs)
+    n = len(s)
+    if n == 0:
+        return 0.0
+    mid = n // 2
+    return s[mid] if n % 2 else (s[mid - 1] + s[mid]) / 2.0
+
+
+def _drift_zone(x, y):
+    """Coarse page cell (col, row) for a landmark position, clamped to the grid."""
+    col = min(_DRIFT_ZONE_COLS - 1, max(0, int(x * _DRIFT_ZONE_COLS)))
+    row = min(_DRIFT_ZONE_ROWS - 1, max(0, int(y * _DRIFT_ZONE_ROWS)))
+    return (col, row)
+
+
+def _consensus_drift(landmarks):
+    """Combine per-landmark (dx, dy, weight, x, y) drift candidates into ONE
+    coarse page drift, or None. Weighted + outlier-robust, and -- in the FINAL
+    aggregation only -- spatially fair so a tight cluster of landmarks cannot
+    dominate the estimate when more distributed landmarks are present:
+      1) reliability gate (weight >= _DRIFT_W_MIN),
+      2) quorum >= 2,
+      3) component-wise median seed,
+      4) reject deltas farther than _DRIFT_AGREE_TOL from the median,
+      5) re-quorum >= 2,
+      6) ZONE-FAIR weighted mean: each survivor's weight is divided by the number
+         of survivors sharing its coarse page zone, so a cluster counts ~once
+         while a distinct-zone landmark keeps full voice,
+      7) sanity bound (magnitude <= _DRIFT_MAX).
+    Steps 1-5 and 7 are unchanged from the non-spatial version."""
+    pts = [p for p in landmarks if p[2] >= _DRIFT_W_MIN]
+    if len(pts) < 2:
+        return None
+    mdx = _median([p[0] for p in pts])
+    mdy = _median([p[1] for p in pts])
+    keep = [p for p in pts if math.hypot(p[0] - mdx, p[1] - mdy) <= _DRIFT_AGREE_TOL]
+    if len(keep) < 2:
+        return None
+    # Zone-fair weighting (final aggregation only): collapse each cluster toward a
+    # single zone-vote so spatially distributed landmarks govern the estimate.
+    zcount = {}
+    for (_, _, _, x, y) in keep:
+        z = _drift_zone(x, y)
+        zcount[z] = zcount.get(z, 0) + 1
+    wsum = sdx = sdy = 0.0
+    for (dx, dy, w, x, y) in keep:
+        eff = w / zcount[_drift_zone(x, y)]
+        wsum += eff; sdx += dx * eff; sdy += dy * eff
+    if wsum <= 0:
+        return None
+    cdx, cdy = sdx / wsum, sdy / wsum
+    if math.hypot(cdx, cdy) > _DRIFT_MAX:
+        return None
+    return (cdx, cdy)
+
+
 # ── Anchor relocation ─────────────────────────────────────────────────────────
 
-def _locate_anchor(page, anchor_box, anchor_text, expansion, ocr_lines_fn):
+def _locate_anchor(page, anchor_box, anchor_text, expansion, ocr_lines_fn,
+                   min_search=0.0):
     """
     Search the (optionally expanded) drawn anchor region for the stored label
     text and report where it ACTUALLY sits on this page, in page-relative
     normalised coordinates. Returns None when nothing usable is found there —
     the caller's documented signal to fall back to the rest of the pipeline.
+
+    `min_search` floors the search margin (used by callers even when the mapping
+    stored no search_expansion) so a tight/misaligned box or a shifted scan still
+    finds its label; it widens only WHERE we search — the located position and the
+    fuzzy threshold are unchanged, so a wrong nearby label is still rejected.
     """
-    search_box = _expand_box(anchor_box, expansion) if expansion > 0 else dict(anchor_box)
+    eff = max(expansion, min_search)
+    search_box = _expand_box(anchor_box, eff) if eff > 0 else dict(anchor_box)
     crop_box = _clamp_box(search_box)
     crop = _crop(page, crop_box)
     if crop is None:

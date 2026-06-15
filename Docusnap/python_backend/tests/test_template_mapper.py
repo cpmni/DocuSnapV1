@@ -303,15 +303,27 @@ def test_derived_target_no_leading_inset_clip():
     # Label OCR'd tight-centred inside the anchor crop (crop-relative): left 0.15
     # of width 0.70 -> page-relative tight left 0.10+0.15*0.20=0.13, width 0.14,
     # so per-side inset (0.20-0.14)/2 = 0.03.
-    centred = [{"text": "Invoice Number", "x_norm": 0.15, "y_norm": 0.25,
-                "w_norm": 0.70, "h_norm": 0.50}]
+    # The label sits at a FIXED page bbox (tight-centred in the anchor box):
+    # x=0.13, w=0.14 (per-side inset 0.03), y=0.21. A crop-aware stub reports it
+    # relative to whatever search crop it is given, so the assertion holds whether
+    # or not the production min_search floor widens that crop.
+    def centred_label(crop):
+        _, (x1, y1, x2, y2) = crop
+        cw, ch = (x2 - x1) / 1000.0, (y2 - y1) / 1000.0
+        if cw <= 0 or ch <= 0:
+            return []
+        cx, cy = x1 / 1000.0, y1 / 1000.0
+        px, py, pw, ph = 0.13, 0.21, 0.14, 0.02
+        return [{"text": "Invoice Number",
+                 "x_norm": (px - cx) / cw, "y_norm": (py - cy) / ch,
+                 "w_norm": pw / cw, "h_norm": ph / ch}]
     captured = {}
     def recording_text(crop):
         captured["box"] = crop[1]   # FakePage.crop -> ("crop", (x1,y1,x2,y2))
         return "PROFILE CONSTRUCTION"
     res = template_mapper.extract_with_mappings(
         [page], [m],
-        ocr_lines_fn=lines_stub(centred), ocr_text_fn=recording_text,
+        ocr_lines_fn=centred_label, ocr_text_fn=recording_text,
     )
     x1 = captured.get("box", (None,))[0]
     # Drawn target left = 0.25 * 1000 = 250. The pre-fix bug cropped at 280
@@ -374,6 +386,255 @@ def test_locate_anchor_padded_box():
     return failures
 
 
+def test_consensus_drift():
+    """Pure consensus rule: reliability gate, quorum, median-seed outlier
+    rejection, re-quorum, weighted mean, sanity bound. Never a naive average."""
+    failures = 0
+    print("consensus drift: weighted, outlier-robust landmark agreement")
+    cd = template_mapper._consensus_drift
+
+    # Landmarks are (dx, dy, weight, x, y). Distinct (x,y) zones below, so the
+    # zone-fair step is neutral (one landmark per zone) and these assert the
+    # unchanged gate/median/outlier/sanity behaviour.
+    # Two agreeing landmarks -> weighted mean.
+    c = cd([(0.050, 0.020, 0.9, 0.1, 0.1), (0.052, 0.018, 0.8, 0.9, 0.9)])
+    if not check("two agreeing distinct-zone landmarks -> weighted-mean drift",
+                 c is not None and abs(c[0] - 0.0510) < 2e-3 and abs(c[1] - 0.0191) < 2e-3):
+        failures += 1
+
+    # An obvious outlier is rejected, not averaged in.
+    c2 = cd([(0.050, 0.020, 0.9, 0.1, 0.1), (0.052, 0.018, 0.9, 0.9, 0.9), (0.40, 0.40, 0.95, 0.5, 0.5)])
+    if not check("outlier landmark rejected (drift stays near the agreeing two)",
+                 c2 is not None and c2[0] < 0.10 and abs(c2[0] - 0.051) < 5e-3):
+        failures += 1
+
+    # Fewer than two RELIABLE landmarks -> None.
+    if not check("single reliable landmark -> None (quorum)", cd([(0.05, 0.02, 0.9, 0.1, 0.1)]) is None):
+        failures += 1
+    if not check("all weights below gate -> None (reliability)",
+                 cd([(0.05, 0.02, 0.5, 0.1, 0.1), (0.05, 0.02, 0.6, 0.9, 0.9)]) is None):
+        failures += 1
+
+    # Two landmarks that DISAGREE -> rejected, None (no naive midpoint).
+    if not check("two disagreeing landmarks -> None (no naive average)",
+                 cd([(0.05, 0.02, 0.9, 0.1, 0.1), (0.40, 0.40, 0.9, 0.9, 0.9)]) is None):
+        failures += 1
+
+    # Agreeing but implausibly large -> ignored by the sanity bound.
+    if not check("agreeing-but-implausible drift -> None (sanity bound)",
+                 cd([(0.50, 0.50, 0.9, 0.1, 0.1), (0.51, 0.49, 0.9, 0.9, 0.9)]) is None):
+        failures += 1
+
+    print()
+    return failures
+
+
+def test_drift_fallback():
+    """End-to-end via extract_with_mappings: a consensus drift from >=2 agreeing
+    anchors pre-shifts a field whose OWN anchor failed; a field whose own anchor
+    succeeds ignores the consensus; no consensus -> field omitted (unchanged)."""
+    failures = 0
+    print("drift fallback: consensus pre-shift only when local relocation fails")
+    page = FakePage()
+    const_text = lambda _crop: "VAL"
+
+    def m(field, anchor_text, **ov):
+        d = {"field_key": field, "page_number": 0, "enabled": True,
+             "anchor_text": anchor_text, "search_expansion": 0.0,
+             "anchor_x_norm": 0.10, "anchor_y_norm": 0.20,
+             "anchor_w_norm": 0.20, "anchor_h_norm": 0.04,
+             "target_x_norm": 0.25, "target_y_norm": 0.20,
+             "target_w_norm": 0.15, "target_h_norm": 0.04,
+             "offset_dx_norm": 0.15, "offset_dy_norm": 0.0}
+        d.update(ov)
+        return d
+
+    # Two landmark anchors locate "Invoice Number" (agree -> consensus); a third
+    # field's anchor "Bill To" is NOT present, so its local relocation fails.
+    lines = lines_stub([{"text": "Invoice Number", "x_norm": 0.6, "y_norm": 0.25,
+                         "w_norm": 0.3, "h_norm": 0.5}])
+    res = template_mapper.extract_with_mappings(
+        [page],
+        [m("ref_a", "Invoice Number"), m("ref_b", "Invoice Number"),
+         m("customer", "Bill To", target_x_norm=0.55)],
+        {"customer": {"validation": "text"}},
+        ocr_lines_fn=lines, ocr_text_fn=const_text,
+    )
+    if not check("field whose own anchor failed is recovered via consensus pre-shift",
+                 res.get("customer", {}).get("value") == "VAL"
+                 and res["customer"]["method"] == "template_mapping_drift"):
+        failures += 1
+    if not check("drift-fallback confidence is weaker than a located anchor (<78)",
+                 res.get("customer", {}).get("confidence", 999) < 78):
+        failures += 1
+    if not check("a field whose own anchor located uses the local path (not drift)",
+                 res.get("ref_a", {}).get("method") == "template_mapping"):
+        failures += 1
+
+    # No consensus (single failing anchor) -> field omitted; drift never applied.
+    res2 = template_mapper.extract_with_mappings(
+        [page], [m("customer", "Bill To")],
+        {"customer": {"validation": "text"}},
+        ocr_lines_fn=lines, ocr_text_fn=const_text,
+    )
+    if not check("no consensus -> field omitted (today's behaviour unchanged)",
+                 "customer" not in res2):
+        failures += 1
+
+    print()
+    return failures
+
+
+def test_anchor_search_floor():
+    """A tight/misaligned drawn anchor box whose label sits just outside it
+    relocates only once the min_search FLOOR widens the search region; the
+    default min_search=0.0 leaves the search (and all existing callers) unchanged."""
+    failures = 0
+    print("anchor search floor: widen the search so a just-outside label is found")
+    page = FakePage((1000, 1000))
+    tiny = {"x_norm": 0.40, "y_norm": 0.40, "w_norm": 0.04, "h_norm": 0.02}
+
+    # Stub returns the label ONLY when the search crop is wide (floor applied):
+    # the tight box (~40px wide) yields nothing; the floored box (~160px) yields it.
+    def floor_aware(crop):
+        _, (x1, _, x2, _) = crop
+        if (x2 - x1) > 100:
+            return [{"text": "Work Address", "x_norm": 0.5, "y_norm": 0.5, "w_norm": 0.3, "h_norm": 0.3}]
+        return []
+
+    without = template_mapper._locate_anchor(page, tiny, "Work Address", 0.0, floor_aware, min_search=0.0)
+    if not check("tight box + no floor -> label outside box, not located", without is None):
+        failures += 1
+    withfloor = template_mapper._locate_anchor(page, tiny, "Work Address", 0.0, floor_aware, min_search=0.06)
+    if not check("same box + search floor -> label now found",
+                 withfloor is not None and withfloor.get("matched_text") == "Work Address"):
+        failures += 1
+    default = template_mapper._locate_anchor(page, tiny, "Work Address", 0.0, floor_aware)
+    if not check("default min_search=0.0 -> unchanged tight behaviour", default is None):
+        failures += 1
+    print()
+    return failures
+
+
+def test_consensus_drift_spatial():
+    """Zone-fair aggregation (final step only): a tight CLUSTER of landmarks does
+    not dominate a distinct-zone landmark, and distinct-zone landmarks reproduce
+    the plain weighted mean (no regression). All deltas agree within the
+    (unchanged) outlier tolerance so the comparison is purely about weighting."""
+    failures = 0
+    print("consensus drift: spatial-diversity (zone-fair) aggregation")
+    cd = template_mapper._consensus_drift
+
+    # 3 landmarks clustered in one top-left zone at delta 0.020, plus ONE
+    # distinct-zone landmark at 0.035 (within outlier tol of the 0.020 median).
+    # Naive weighted mean = (0.020*3 + 0.035)/4 = 0.02375 (cluster dominates).
+    # Zone-fair: cluster -> one vote (0.020), spread -> one vote (0.035) -> 0.0275.
+    cluster_spread = [
+        (0.020, 0.0, 0.9, 0.05, 0.05), (0.020, 0.0, 0.9, 0.08, 0.06),
+        (0.020, 0.0, 0.9, 0.10, 0.04), (0.035, 0.0, 0.9, 0.90, 0.90),
+    ]
+    cs = cd(cluster_spread)
+    if not check("cluster does NOT dominate: zone-fair ~0.0275 (> naive 0.02375)",
+                 cs is not None and abs(cs[0] - 0.0275) < 1e-3 and cs[0] > 0.025):
+        failures += 1
+
+    # Distinct zones, one landmark each -> identical to the plain weighted mean.
+    distinct = [(0.020, 0.0, 0.9, 0.1, 0.1), (0.025, 0.0, 0.9, 0.5, 0.1),
+                (0.030, 0.0, 0.9, 0.9, 0.1)]
+    dz = cd(distinct)
+    if not check("distinct-zone landmarks -> plain mean 0.025 (no regression)",
+                 dz is not None and abs(dz[0] - 0.025) < 1e-3):
+        failures += 1
+
+    # A noisy local cluster biased high (0.030 x3) vs a cleaner spread point at
+    # the true 0.010: naive = (0.030*3+0.010)/4 = 0.025; zone-fair pulls to 0.020.
+    noisy = [
+        (0.030, 0.0, 0.9, 0.05, 0.05), (0.030, 0.0, 0.9, 0.08, 0.06),
+        (0.030, 0.0, 0.9, 0.10, 0.04), (0.010, 0.0, 0.9, 0.90, 0.90),
+    ]
+    nz = cd(noisy)
+    if not check("noisy cluster down-weighted: zone-fair ~0.020 (< naive 0.025)",
+                 nz is not None and abs(nz[0] - 0.020) < 1e-3 and nz[0] < 0.025):
+        failures += 1
+
+    print()
+    return failures
+
+
+def test_geometry_seeded_fallback():
+    """Stage-1 geometry prior: when local relocation has failed AND the absolute
+    drift-shifted seed reads nothing, the fallback re-seeds the target from the
+    page-geometry landmark nearest the taught anchor (landmark + stored offset +
+    consensus drift) and can recover the value. It is purely ADDITIVE — a
+    successful absolute seed is returned unchanged and the geometry branch is
+    never reached, so existing drift-fallback behaviour cannot regress."""
+    failures = 0
+    print("geometry-seeded drift fallback: landmark + offset + drift recovers a shifted target")
+    from extraction import page_geometry
+    page = FakePage((1000, 1000))
+
+    # Customer mapping: taught anchor at (0.10,0.20), stored offset +0.15 right, so
+    # the ABSOLUTE target sits at (0.25,0.20). Its own anchor ("Bill To") is absent
+    # on this page (local relocation fails), so _extract_one routes to _drift_fallback.
+    mapping = {"field_key": "customer", "page_number": 0, "enabled": True,
+               "anchor_text": "Bill To", "search_expansion": 0.0,
+               "anchor_x_norm": 0.10, "anchor_y_norm": 0.20,
+               "anchor_w_norm": 0.20, "anchor_h_norm": 0.04,
+               "target_x_norm": 0.25, "target_y_norm": 0.20,
+               "target_w_norm": 0.15, "target_h_norm": 0.04,
+               "offset_dx_norm": 0.15, "offset_dy_norm": 0.0}
+    target_box = template_mapper._norm_box(mapping, "target")
+    fps   = {"customer": {"validation": "text"}}
+    drift = (0.02, 0.0)
+
+    # Nearest landmark to the taught anchor (0.10,0.20) is the centred-75% corner.
+    (lx, ly), _ = page_geometry.nearest_landmark(0.10, 0.20)
+    if not check(f"landmark nearest the anchor is the 75% box corner (got {lx},{ly})",
+                 abs(lx - 0.125) < 1e-9 and abs(ly - 0.125) < 1e-9):
+        failures += 1
+    abs_x1 = int((target_box["x_norm"] + drift[0]) * 1000)        # 270 — absolute seed
+    geo_x1 = int((lx + 0.15 + drift[0]) * 1000)                   # 295 — landmark seed
+    if not check(f"absolute and geometry seeds land on different crops ({abs_x1} vs {geo_x1})",
+                 abs_x1 != geo_x1):
+        failures += 1
+
+    # Stub: the value lives only at the LANDMARK-seeded crop; the absolute drift
+    # crop reads nothing -> raw-absolute seeding MISSES, geometry recovers.
+    def value_at_landmark(crop):
+        _, (x1, _y1, _x2, _y2) = crop
+        return "AcmeLtd" if x1 == geo_x1 else None
+    out = template_mapper._drift_fallback(page, mapping, target_box, 0.0, drift,
+                                          fps, value_at_landmark)
+    if not check("geometry-seeded fallback recovers a value raw-absolute seeding missed",
+                 out is not None and out.get("value") == "AcmeLtd"):
+        failures += 1
+    if not check("recovered value keeps the UNCHANGED drift method + confidence (60)",
+                 out and out.get("method") == "template_mapping_drift" and out.get("confidence") == 60):
+        failures += 1
+
+    # Additive guarantee: when the ABSOLUTE seed reads a value, that value is
+    # returned and the geometry branch is never reached (stub raises if it runs).
+    def absolute_hits(crop):
+        _, (x1, _y1, _x2, _y2) = crop
+        if x1 == geo_x1:
+            raise AssertionError("geometry branch must not run when the absolute seed hit")
+        return "ABS" if x1 == abs_x1 else None
+    out2 = template_mapper._drift_fallback(page, mapping, target_box, 0.0, drift,
+                                           fps, absolute_hits)
+    if not check("successful absolute seed returned unchanged (geometry not reached)",
+                 out2 is not None and out2.get("value") == "ABS"):
+        failures += 1
+
+    # No consensus drift -> None; the geometry prior never fires without drift.
+    if not check("no drift -> None (geometry prior never fires without consensus)",
+                 template_mapper._drift_fallback(page, mapping, target_box, 0.0, None,
+                                                 fps, value_at_landmark) is None):
+        failures += 1
+
+    print()
+    return failures
+
+
 def main():
     failures = 0
     failures += test_geometry_helpers()
@@ -381,6 +642,11 @@ def main():
     failures += test_extract_with_mappings()
     failures += test_derived_target_no_leading_inset_clip()
     failures += test_locate_anchor_padded_box()
+    failures += test_consensus_drift()
+    failures += test_drift_fallback()
+    failures += test_anchor_search_floor()
+    failures += test_consensus_drift_spatial()
+    failures += test_geometry_seeded_fallback()
 
     if failures:
         print(f"{failures} check(s) failed — template_mapper regressed.")
