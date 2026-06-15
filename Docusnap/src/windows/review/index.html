@@ -232,6 +232,47 @@
     .spinner { width: 22px; height: 22px; border: 2px solid var(--border2); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* ── Preview zoom/pan + Template Wizard (Stage 1: shell/preview only) ─────── */
+    #doc-img-wrap { transform-origin: 0 0; }   /* scale/translate from top-left */
+    /* Draft-mapping overlay canvas — sits above the zone-OCR canvas; only active
+       while the wizard is open, so it never intercepts existing zone-OCR drags. */
+    #wiz-canvas { position: absolute; inset: 0; display: none; border-radius: 4px; z-index: 5; pointer-events: none; }
+    #wiz-canvas.active  { display: block; }                               /* shows draft overlays */
+    #wiz-canvas.drawing { pointer-events: auto; cursor: crosshair; }      /* captures drags only while armed */
+
+    .zoom-group { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+    #zoom-level { font-size: 11px; color: var(--muted); font-family: var(--mono); min-width: 40px; text-align: center; }
+
+    #wizard-panel {
+      display: none; position: absolute; top: 46px; right: 12px; z-index: 7; width: 248px;
+      flex-direction: column; gap: 9px; padding: 12px;
+      background: var(--surface2); border: 1px solid var(--border2);
+      border-radius: 9px; box-shadow: 0 8px 24px rgba(0,0,0,.45);
+    }
+    #wizard-panel.visible { display: flex; }
+    .wiz-title { display: flex; align-items: center; justify-content: space-between;
+      font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text); }
+    .wiz-close { background: none; border: none; color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; }
+    .wiz-close:hover { color: var(--err); }
+    .wiz-step { font-size: 10px; color: var(--accent2); font-family: var(--mono); }
+    .wiz-row { display: flex; flex-direction: column; gap: 4px; }
+    .wiz-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+    #wizard-panel select, #wizard-panel input[type="text"] {
+      width: 100%; background: var(--bg); border: 1px solid var(--border2); border-radius: 5px;
+      padding: 5px 8px; color: var(--text); font-family: var(--sans); font-size: 11px; outline: none;
+    }
+    #wizard-panel select:focus, #wizard-panel input[type="text"]:focus { border-color: var(--accent); }
+    .wiz-fixed-row { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+    .wiz-fixed-row input { accent-color: var(--accent); cursor: pointer; }
+    .wiz-draw-row { display: flex; gap: 6px; }
+    .wiz-draw-row .btn { flex: 1; font-size: 10px; }
+    .wiz-draw-row .btn.armed { border-color: var(--accent); background: var(--accent-bg); color: var(--accent2); }
+    .wiz-status { font-size: 10px; font-family: var(--mono); color: var(--muted); }
+    .wiz-status.ok { color: var(--ok); }
+    .wiz-footer { display: flex; gap: 6px; }
+    .wiz-footer .btn { flex: 1; font-size: 10px; }
+    .wiz-note { font-size: 9px; color: var(--muted); font-style: italic; }
+
     #doc-placeholder { color: var(--muted); font-size: 14px; margin: auto; }
 
     /* ── Fields panel (right) ── */
@@ -444,6 +485,7 @@
           <!-- Group 2: document tools (compact icon triggers; wide controls open as rail-anchored flyouts) -->
           <div class="rail-group rail-tools-group">
             <button class="queue-tool-btn" id="btn-split-pdf" style="display:none;" title="Split PDF…">&#9986;</button>
+            <button class="queue-tool-btn" id="btn-anchor-wizard" style="display:none;" title="Template Wizard — map fields (admin)">&#9875;</button>
             <button class="queue-tool-btn" id="btn-enhance-toggle" title="OCR Enhancement">
               <svg class="enhance-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
                 <line x1="3" y1="7" x2="21" y2="7"/>
@@ -508,6 +550,12 @@
     <div id="doc-panel">
       <div id="doc-toolbar">
         <span class="doc-name" id="doc-name">No document selected</span>
+        <div class="zoom-group">
+          <button class="doc-nav-btn" id="btn-zoom-out" title="Zoom out">&#8722;</button>
+          <span id="zoom-level">100%</span>
+          <button class="doc-nav-btn" id="btn-zoom-in" title="Zoom in">&#43;</button>
+          <button class="doc-nav-btn" id="btn-zoom-reset" title="Reset zoom &amp; pan">Reset</button>
+        </div>
         <button class="doc-nav-btn" id="btn-page-prev">&#8249; Prev</button>
         <span id="page-indicator" style="font-size:11px; color:var(--muted);">—</span>
         <button class="doc-nav-btn" id="btn-page-next">Next &#8250;</button>
@@ -530,11 +578,55 @@
         <div id="doc-img-wrap" style="display:none">
           <img id="doc-img" alt="Document preview">
           <canvas id="sel-canvas"></canvas>
+          <canvas id="wiz-canvas"></canvas>
           <div id="ocr-overlay">
             <div class="spinner"></div>
             <span>Reading selection…</span>
           </div>
         </div>
+      </div>
+
+      <!-- Template Wizard (Stage 1: shell + draft drawing only; persistence in Stage 2) -->
+      <div id="wizard-panel">
+        <div class="wiz-title">Template Wizard
+          <button class="wiz-close" id="wiz-close" title="Close">&times;</button>
+        </div>
+        <div class="wiz-step" id="wiz-step">Field — of —</div>
+        <div class="wiz-row">
+          <span class="wiz-label">Field</span>
+          <select id="wiz-field-select"></select>
+        </div>
+        <label class="wiz-fixed-row">
+          <input type="checkbox" id="wiz-fixed-toggle">
+          Fixed text (skip target OCR)
+        </label>
+        <div class="wiz-row" id="wiz-anchor-block">
+          <span class="wiz-label">Anchor label</span>
+          <input type="text" id="wiz-anchor-text" placeholder="e.g. Invoice Number">
+          <select id="wiz-ocr-type" style="margin-top:2px;">
+            <option value="text">Text</option>
+            <option value="number">Number</option>
+            <option value="date">Date</option>
+            <option value="currency">Currency</option>
+          </select>
+          <div class="wiz-draw-row">
+            <button class="btn" id="wiz-draw-anchor">Draw anchor</button>
+            <button class="btn" id="wiz-draw-target">Draw target</button>
+          </div>
+          <span class="wiz-status" id="wiz-status">Anchor: — · Target: —</span>
+        </div>
+        <div class="wiz-row" id="wiz-fixed-block" style="display:none;">
+          <span class="wiz-label">Fixed value</span>
+          <input type="text" id="wiz-fixed-value" placeholder="Value to file for this field">
+        </div>
+        <div class="wiz-footer">
+          <button class="btn" id="wiz-prev">&#8249; Prev</button>
+          <button class="btn" id="wiz-next">Next &#8250;</button>
+        </div>
+        <div class="wiz-footer">
+          <button class="btn confirm" id="wiz-save" disabled title="Saving is wired in Stage 2">Save (Stage 2)</button>
+        </div>
+        <span class="wiz-note">Stage 1 preview — drawing works; nothing is saved yet.</span>
       </div>
     </div>
 

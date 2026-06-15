@@ -30,15 +30,27 @@ let isDragging  = false;
 let dragStart   = { x: 0, y: 0 };
 let dragRect    = null;
 
+// Preview zoom/pan + Template Wizard (Stage 1 — shell/preview only, no persistence)
+let previewZoom = 1, previewPanX = 0, previewPanY = 0;
+let _viewDocId  = null;            // resets zoom/pan when the displayed doc changes
+const PREVIEW_ZOOM_MIN = 1, PREVIEW_ZOOM_MAX = 4, PREVIEW_ZOOM_STEP = 0.25;
+const wizard = {
+  active: false, fields: [], index: 0, step: 'field',
+  draftAnchor: null, draftTarget: null, fixedMode: false,
+  drawMode: null, isDragging: false, dragStart: { x: 0, y: 0 }, dragRect: null,
+};
+
 // ── Element refs ──────────────────────────────────────────────────────────────
 const docImg     = document.getElementById('doc-img');
 const docImgWrap = document.getElementById('doc-img-wrap');
 const selCanvas  = document.getElementById('sel-canvas');
+const wizCanvas  = document.getElementById('wiz-canvas');
 const ocrOverlay = document.getElementById('ocr-overlay');
 const selectHint = document.getElementById('select-hint');
 const hintField  = document.getElementById('hint-field-name');
 const hintCancel = document.getElementById('hint-cancel');
 const ctx        = selCanvas.getContext('2d');
+const wizCtx     = wizCanvas.getContext('2d');
 
 document.getElementById('btn-close').addEventListener('click', () => window.docusnap.windowClose());
 
@@ -51,6 +63,7 @@ async function loadQueue() {
     isAdmin = !!(me && me.role === 'admin');
     canEdit = !!(me && (me.role === 'admin' || me.role === 'edit'));
   } catch { isAdmin = false; canEdit = false; }
+  applyAnchorWizardGate();   // Template Wizard is admin-only (mapping IPC is admin-gated server-side)
   queue         = await window.docusnap.getReviewQueue();
   deferredQueue = await window.docusnap.getDeferredQueue();
   allDocTypes   = await window.docusnap.getAllDocTypes();
@@ -367,10 +380,21 @@ function renderPage() {
   placeholder.style.display = 'none';
   docImgWrap.style.display  = 'inline-block';
 
+  // Reset zoom/pan (and close the wizard) when a different document is shown —
+  // page-to-page navigation within the same doc keeps the current view.
+  if (currentDoc && currentDoc.id !== _viewDocId) {
+    _viewDocId = currentDoc.id;
+    resetPreviewView();
+    if (wizard.active) exitWizard();
+  }
+
   docImg.onload = () => {
     selCanvas.width  = docImg.offsetWidth;
     selCanvas.height = docImg.offsetHeight;
+    wizCanvas.width  = docImg.offsetWidth;
+    wizCanvas.height = docImg.offsetHeight;
     clearCanvas();
+    redrawWizard();
     if (currentPage === 0) attemptLogoMatch();
   };
   docImg.src = (previewActive && previewCache.has(currentPage))
@@ -661,21 +685,19 @@ function drawRect(r) {
 selCanvas.addEventListener('mousedown', (e) => {
   if (!activeField) return;
   isDragging = true;
-  const r    = selCanvas.getBoundingClientRect();
-  dragStart  = { x: e.clientX - r.left, y: e.clientY - r.top };
-  dragRect   = { x: dragStart.x, y: dragStart.y, w: 0, h: 0 };
+  const p    = canvasPoint(e, selCanvas);   // zoom/pan-compensated canvas-buffer px
+  dragStart  = { x: p.x, y: p.y };
+  dragRect   = { x: p.x, y: p.y, w: 0, h: 0 };
 });
 
 selCanvas.addEventListener('mousemove', (e) => {
   if (!isDragging || !dragRect) return;
-  const r  = selCanvas.getBoundingClientRect();
-  const cx = e.clientX - r.left;
-  const cy = e.clientY - r.top;
+  const p  = canvasPoint(e, selCanvas);
   dragRect = {
-    x: Math.min(dragStart.x, cx),
-    y: Math.min(dragStart.y, cy),
-    w: Math.abs(cx - dragStart.x),
-    h: Math.abs(cy - dragStart.y),
+    x: Math.min(dragStart.x, p.x),
+    y: Math.min(dragStart.y, p.y),
+    w: Math.abs(p.x - dragStart.x),
+    h: Math.abs(p.y - dragStart.y),
   };
   drawRect(dragRect);
 });
@@ -1728,6 +1750,228 @@ window.docusnap.onReviewCountChanged(async (n) => {
   if (activeTab === 'deferred') renderDeferredList();
   // Auto-select first doc if nothing is currently loaded
   if (!prevId && queue.length > 0 && activeTab === 'review') selectDoc(queue[0]);
+});
+
+// ── Preview zoom / pan ────────────────────────────────────────────────────────
+// Mirrors the Template Manager interaction model: a CSS transform on the image
+// wrapper (scale + translate), with a coordinate-compensation helper so canvas
+// drags map back to unscaled canvas-buffer pixels at any zoom/pan. At zoom 1 the
+// transform is the identity and canvasPoint() returns the same value the old
+// `clientX - rect.left` math did — so existing zone-OCR is byte-for-byte unchanged.
+function applyPreviewTransform() {
+  docImgWrap.style.transform = `translate(${previewPanX}px, ${previewPanY}px) scale(${previewZoom})`;
+  const lvl = document.getElementById('zoom-level');
+  if (lvl) lvl.textContent = Math.round(previewZoom * 100) + '%';
+}
+function setPreviewZoom(z) {
+  previewZoom = Math.max(PREVIEW_ZOOM_MIN, Math.min(PREVIEW_ZOOM_MAX, z));
+  applyPreviewTransform();
+}
+function resetPreviewView() {
+  previewZoom = 1; previewPanX = 0; previewPanY = 0;
+  applyPreviewTransform();
+}
+
+// Convert a mouse event to canvas-BUFFER pixels, compensating for the wrapper's
+// scale (getBoundingClientRect reports the scaled/panned rect; the buffer stays
+// at the unscaled rendered-image size). rect.left/top already include the pan.
+function canvasPoint(e, canvas) {
+  const r = canvas.getBoundingClientRect();
+  return {
+    x: (e.clientX - r.left) * (canvas.width  / r.width),
+    y: (e.clientY - r.top)  * (canvas.height / r.height),
+  };
+}
+
+document.getElementById('btn-zoom-in') ?.addEventListener('click', () => setPreviewZoom(previewZoom + PREVIEW_ZOOM_STEP));
+document.getElementById('btn-zoom-out')?.addEventListener('click', () => setPreviewZoom(previewZoom - PREVIEW_ZOOM_STEP));
+document.getElementById('btn-zoom-reset')?.addEventListener('click', resetPreviewView);
+
+// Right-click drag pans the preview (same as Template Manager). Left-click is
+// left untouched so zone-OCR / wizard drawing keep working.
+let _panStart = null;
+const _docViewer = document.getElementById('doc-viewer');
+_docViewer.addEventListener('contextmenu', (e) => e.preventDefault());
+_docViewer.addEventListener('mousedown', (e) => {
+  if (e.button !== 2) return;
+  _panStart = { x: e.clientX, y: e.clientY, panX: previewPanX, panY: previewPanY };
+  e.preventDefault();
+});
+window.addEventListener('mousemove', (e) => {
+  if (!_panStart) return;
+  previewPanX = _panStart.panX + (e.clientX - _panStart.x);
+  previewPanY = _panStart.panY + (e.clientY - _panStart.y);
+  applyPreviewTransform();
+});
+window.addEventListener('mouseup', () => { _panStart = null; });
+
+// ── Template Wizard (Stage 1: admin-only shell + draft drawing, NO persistence) ─
+// Reuses existing template CONCEPTS only as UI state; it does not call
+// promote-to-template / save-template-mapping / set-template-field-fixed yet —
+// that wiring lands in Stage 2. Field order = the current document type's fields
+// (same source the Template Manager mapping editor uses).
+function applyAnchorWizardGate() {
+  const btn = document.getElementById('btn-anchor-wizard');
+  if (btn) btn.style.display = isAdmin ? '' : 'none';
+}
+
+function wizardFieldList() {
+  const slug = selectedTypeSlug || currentDoc?.type_slug || currentDoc?.document_type_slug;
+  const dt = allDocTypes.find(t => t.slug === slug);
+  const fields = (dt?.fields && dt.fields.length) ? dt.fields : (fieldDefs || []);
+  return fields.map(f => ({ key: f.key, label: f.label || f.key }));
+}
+
+function openWizard() {
+  if (!isAdmin) return;                       // defence-in-depth; button is hidden for non-admins
+  if (!pageImages.length) { showToast('Open a document first', 'warn'); return; }
+  cancelZoneMode();                           // don't fight the zone-OCR tool
+  wizard.active = true;
+  wizard.fields = wizardFieldList();
+  wizard.fixedMode = false;
+
+  const sel = document.getElementById('wiz-field-select');
+  sel.innerHTML = '';
+  for (const f of wizard.fields) {
+    const o = document.createElement('option');
+    o.value = f.key; o.textContent = `${f.label} (${f.key})`;
+    sel.appendChild(o);
+  }
+  document.getElementById('wizard-panel').classList.add('visible');
+  document.getElementById('btn-anchor-wizard').classList.add('open');
+  wizCanvas.classList.add('active');
+  loadWizardField(0);
+}
+
+function exitWizard() {
+  wizard.active = false;
+  wizard.drawMode = null;
+  wizard.isDragging = false;
+  wizard.dragRect = null;
+  wizard.draftAnchor = wizard.draftTarget = null;
+  document.getElementById('wizard-panel').classList.remove('visible');
+  document.getElementById('btn-anchor-wizard')?.classList.remove('open');
+  wizCanvas.classList.remove('active', 'drawing');
+  wizCtx.clearRect(0, 0, wizCanvas.width, wizCanvas.height);
+}
+
+function loadWizardField(i) {
+  if (!wizard.fields.length) return;
+  wizard.index = Math.max(0, Math.min(wizard.fields.length - 1, i));
+  wizard.step = 'field';
+  wizard.draftAnchor = wizard.draftTarget = null;
+  wizard.drawMode = null;
+  wizCanvas.classList.remove('drawing');
+
+  const f = wizard.fields[wizard.index];
+  document.getElementById('wiz-field-select').value = f.key;
+  document.getElementById('wiz-anchor-text').value = '';
+  document.getElementById('wiz-fixed-value').value = '';
+  document.getElementById('wiz-fixed-toggle').checked = false;
+  wizard.fixedMode = false;
+
+  updateWizardUI();
+  redrawWizard();
+}
+
+function updateWizardUI() {
+  const f = wizard.fields[wizard.index];
+  document.getElementById('wiz-step').textContent =
+    `Field ${wizard.index + 1} of ${wizard.fields.length}${f ? ' — ' + f.label : ''}`;
+  document.getElementById('wiz-anchor-block').style.display = wizard.fixedMode ? 'none' : '';
+  document.getElementById('wiz-fixed-block').style.display  = wizard.fixedMode ? '' : 'none';
+
+  const a = !!wizard.draftAnchor, t = !!wizard.draftTarget;
+  const st = document.getElementById('wiz-status');
+  st.textContent = `Anchor: ${a ? 'drawn ✓' : '—'} · Target: ${t ? 'drawn ✓' : '—'}`;
+  st.className = 'wiz-status' + (a && t ? ' ok' : '');
+
+  document.getElementById('wiz-draw-anchor').classList.toggle('armed', wizard.drawMode === 'anchor');
+  document.getElementById('wiz-draw-target').classList.toggle('armed', wizard.drawMode === 'target');
+}
+
+function armWizardDraw(mode) {
+  if (!wizard.active || wizard.fixedMode) return;
+  wizard.drawMode = wizard.drawMode === mode ? null : mode;
+  wizCanvas.classList.toggle('drawing', !!wizard.drawMode);
+  updateWizardUI();
+}
+
+function drawWizBox(n, color) {
+  const w = wizCanvas.width, h = wizCanvas.height;
+  const x = Math.round(n.x_norm * w), y = Math.round(n.y_norm * h);
+  const bw = Math.round(n.w_norm * w), bh = Math.round(n.h_norm * h);
+  wizCtx.setLineDash([]);
+  wizCtx.lineWidth = 1.5; wizCtx.strokeStyle = color;
+  wizCtx.strokeRect(x + 0.5, y + 0.5, bw, bh);
+  wizCtx.fillStyle = color + '22'; wizCtx.fillRect(x, y, bw, bh);
+}
+
+function redrawWizard() {
+  if (!wizCanvas.width) return;
+  wizCtx.clearRect(0, 0, wizCanvas.width, wizCanvas.height);
+  if (!wizard.active) return;
+  if (wizard.draftAnchor) drawWizBox(wizard.draftAnchor, '#4f8ef7');
+  if (wizard.draftTarget) drawWizBox(wizard.draftTarget, '#3ecf8e');
+  if (wizard.dragRect) {
+    const c = wizard.drawMode === 'target' ? '#3ecf8e' : '#4f8ef7';
+    const r = wizard.dragRect;
+    wizCtx.setLineDash([5, 4]); wizCtx.strokeStyle = c; wizCtx.lineWidth = 1;
+    wizCtx.strokeRect(r.x + 0.5, r.y + 0.5, r.w, r.h);
+    wizCtx.setLineDash([]); wizCtx.fillStyle = c + '18'; wizCtx.fillRect(r.x, r.y, r.w, r.h);
+  }
+}
+
+wizCanvas.addEventListener('mousedown', (e) => {
+  if (e.button !== 0 || !wizard.active || !wizard.drawMode) return;
+  const p = canvasPoint(e, wizCanvas);
+  wizard.isDragging = true;
+  wizard.dragStart = { x: p.x, y: p.y };
+  wizard.dragRect = { x: p.x, y: p.y, w: 0, h: 0 };
+});
+wizCanvas.addEventListener('mousemove', (e) => {
+  if (!wizard.isDragging || !wizard.dragRect) return;
+  const p = canvasPoint(e, wizCanvas);
+  wizard.dragRect = {
+    x: Math.min(wizard.dragStart.x, p.x), y: Math.min(wizard.dragStart.y, p.y),
+    w: Math.abs(p.x - wizard.dragStart.x), h: Math.abs(p.y - wizard.dragStart.y),
+  };
+  redrawWizard();
+});
+wizCanvas.addEventListener('mouseup', () => {
+  if (!wizard.isDragging) return;
+  wizard.isDragging = false;
+  const r = wizard.dragRect; wizard.dragRect = null;
+  if (!r || r.w < 8 || r.h < 8) { redrawWizard(); return; }
+  const norm = {
+    x_norm: r.x / wizCanvas.width,  y_norm: r.y / wizCanvas.height,
+    w_norm: r.w / wizCanvas.width,  h_norm: r.h / wizCanvas.height,
+  };
+  if (wizard.drawMode === 'anchor') { wizard.draftAnchor = norm; wizard.step = 'target'; }
+  else                              { wizard.draftTarget = norm; wizard.step = 'review'; }
+  wizard.drawMode = null;
+  wizCanvas.classList.remove('drawing');
+  updateWizardUI();
+  redrawWizard();
+});
+
+document.getElementById('btn-anchor-wizard')?.addEventListener('click', () => {
+  if (wizard.active) exitWizard(); else openWizard();
+});
+document.getElementById('wiz-close')?.addEventListener('click', exitWizard);
+document.getElementById('wiz-field-select')?.addEventListener('change', (e) => {
+  const idx = wizard.fields.findIndex(f => f.key === e.target.value);
+  if (idx >= 0) loadWizardField(idx);
+});
+document.getElementById('wiz-draw-anchor')?.addEventListener('click', () => armWizardDraw('anchor'));
+document.getElementById('wiz-draw-target')?.addEventListener('click', () => armWizardDraw('target'));
+document.getElementById('wiz-prev')?.addEventListener('click', () => loadWizardField(wizard.index - 1));
+document.getElementById('wiz-next')?.addEventListener('click', () => loadWizardField(wizard.index + 1));
+document.getElementById('wiz-fixed-toggle')?.addEventListener('change', (e) => {
+  wizard.fixedMode = e.target.checked;
+  wizard.drawMode = null;
+  wizCanvas.classList.remove('drawing');
+  updateWizardUI();
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────────
