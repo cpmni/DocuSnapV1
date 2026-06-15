@@ -38,6 +38,11 @@ const wizard = {
   active: false, fields: [], index: 0, step: 'field',
   draftAnchor: null, draftTarget: null, fixedMode: false,
   drawMode: null, isDragging: false, dragStart: { x: 0, y: 0 }, dragRect: null,
+  selectedBox: null,           // 'anchor' | 'target' | null — click-selected box (Delete removes / drag moves it)
+  moveStart: null,             // { pt, orig } while dragging a selected box to reposition it
+  templateId: null,            // resolved existing template (rehydrate) or set on first save
+  mappingsByKey: new Map(),    // field_key -> persisted mapping (cached for rehydration on reopen)
+  savedKeys: new Set(),        // field keys saved during this wizard session (drives auto-advance)
 };
 
 // ── Element refs ──────────────────────────────────────────────────────────────
@@ -1704,12 +1709,21 @@ function showToast(msg, level = 'ok') {
   toastTimer = setTimeout(() => { el.style.display = 'none'; }, 4000);
 }
 
-window.addEventListener('resize', () => {
-  if (docImg.complete && docImg.naturalWidth) {
-    selCanvas.width  = docImg.offsetWidth;
-    selCanvas.height = docImg.offsetHeight;
-  }
-});
+// Keep both overlay canvases' pixel buffers exactly equal to the DISPLAYED image
+// size — the single source of truth for normalized<->screen mapping (Template
+// Manager's model). This makes boxes stay aligned and fully drawable across image
+// load (incl. cached), window/pane resize, and zoom, and removes the right-edge
+// "barrier" a stale/undersized buffer caused. Transform-based zoom does not change
+// offsetWidth, so this never loops on zoom; canvasPoint() handles the scaled rect.
+new ResizeObserver(() => {
+  if (!pageImages.length) return;
+  const w = docImg.offsetWidth, h = docImg.offsetHeight;
+  if (!w || !h || (w === selCanvas.width && h === selCanvas.height)) return;
+  selCanvas.width = w; selCanvas.height = h;
+  wizCanvas.width = w; wizCanvas.height = h;
+  clearCanvas();
+  redrawWizard();
+}).observe(docImg);
 
 // Navigate to a specific doc when Review is already open (e.g. second "Edit in Review" click).
 window.docusnap.onNavigateToDoc((docId) => _navigateToDoc(docId));
@@ -1791,7 +1805,12 @@ document.getElementById('btn-zoom-reset')?.addEventListener('click', resetPrevie
 // left untouched so zone-OCR / wizard drawing keep working.
 let _panStart = null;
 const _docViewer = document.getElementById('doc-viewer');
-_docViewer.addEventListener('contextmenu', (e) => e.preventDefault());
+// Mirror Template Manager: suppress the context menu (so right-drag can pan) only
+// when a document is shown, and block native image/file dragging on the preview so
+// neither left- nor right-drag grabs a file/icon ghost. (#doc-img also has
+// draggable="false"; this catches any bubbled dragstart from its children.)
+_docViewer.addEventListener('contextmenu', (e) => { if (pageImages.length) e.preventDefault(); });
+_docViewer.addEventListener('dragstart', (e) => e.preventDefault());
 _docViewer.addEventListener('mousedown', (e) => {
   if (e.button !== 2) return;
   _panStart = { x: e.clientX, y: e.clientY, panX: previewPanX, panY: previewPanY };
@@ -1822,13 +1841,16 @@ function wizardFieldList() {
   return fields.map(f => ({ key: f.key, label: f.label || f.key }));
 }
 
-function openWizard() {
+async function openWizard() {
   if (!isAdmin) return;                       // defence-in-depth; button is hidden for non-admins
   if (!pageImages.length) { showToast('Open a document first', 'warn'); return; }
   cancelZoneMode();                           // don't fight the zone-OCR tool
   wizard.active = true;
   wizard.fields = wizardFieldList();
   wizard.fixedMode = false;
+  wizard.savedKeys = new Set();
+  const openMgr = document.getElementById('wiz-open-manager');
+  if (openMgr) openMgr.style.display = 'none';
 
   const sel = document.getElementById('wiz-field-select');
   sel.innerHTML = '';
@@ -1840,7 +1862,32 @@ function openWizard() {
   document.getElementById('wizard-panel').classList.add('visible');
   document.getElementById('btn-anchor-wizard').classList.add('open');
   wizCanvas.classList.add('active');
-  loadWizardField(0);
+
+  await resolveWizardTemplate();              // resolve existing template + cache saved mappings
+  if (!wizard.active) return;                 // wizard was closed while awaiting
+  if (wizard.templateId) document.getElementById('wiz-open-manager').style.display = '';
+  loadWizardField(0);                         // rehydrates this field's saved boxes (if any)
+}
+
+// Resolve the document's template (its own template_id, else a current
+// fingerprint match) and cache its persisted field mappings so saved boxes can
+// be rehydrated. Leaves templateId null when the document has no template yet —
+// the first save then promotes/creates one (Stage 2 behaviour, unchanged).
+async function resolveWizardTemplate() {
+  wizard.templateId   = currentDoc?.template_id || null;
+  wizard.mappingsByKey = new Map();
+  if (!wizard.templateId && currentDoc) {
+    try {
+      const m = await window.docusnap.checkTemplateMatch(currentDoc.id);
+      if (m?.matched && m.templateId) wizard.templateId = m.templateId;
+    } catch (e) { /* no match — first save will promote */ }
+  }
+  if (wizard.templateId) {
+    try {
+      const detail = await window.docusnap.getTemplateDetail(wizard.templateId);
+      for (const mp of (detail?.field_mappings || [])) wizard.mappingsByKey.set(mp.field_key, mp);
+    } catch (e) { console.warn('wizard rehydrate failed:', e.message); }
+  }
 }
 
 function exitWizard() {
@@ -1849,9 +1896,13 @@ function exitWizard() {
   wizard.isDragging = false;
   wizard.dragRect = null;
   wizard.draftAnchor = wizard.draftTarget = null;
+  wizard.selectedBox = null;
+  wizard.moveStart = null;
   document.getElementById('wizard-panel').classList.remove('visible');
   document.getElementById('btn-anchor-wizard')?.classList.remove('open');
+  document.getElementById('wiz-open-manager').style.display = 'none';
   wizCanvas.classList.remove('active', 'drawing');
+  wizCanvas.style.cursor = 'default';
   wizCtx.clearRect(0, 0, wizCanvas.width, wizCanvas.height);
 }
 
@@ -1860,15 +1911,33 @@ function loadWizardField(i) {
   wizard.index = Math.max(0, Math.min(wizard.fields.length - 1, i));
   wizard.step = 'field';
   wizard.draftAnchor = wizard.draftTarget = null;
+  wizard.selectedBox = null;
+  wizard.moveStart = null;
   wizard.drawMode = null;
   wizCanvas.classList.remove('drawing');
 
   const f = wizard.fields[wizard.index];
   document.getElementById('wiz-field-select').value = f.key;
-  document.getElementById('wiz-anchor-text').value = '';
   document.getElementById('wiz-fixed-value').value = '';
   document.getElementById('wiz-fixed-toggle').checked = false;
   wizard.fixedMode = false;
+
+  // Rehydrate a previously-saved mapping for this field so its boxes are visible
+  // and editable on reopen. Stored normalized, so it re-renders correctly at the
+  // current preview scale (no stored pixels).
+  const saved = wizard.mappingsByKey && wizard.mappingsByKey.get(f.key);
+  if (saved && saved.anchor_x_norm != null && saved.target_x_norm != null
+      && (saved.page_number || 0) === currentPage) {   // only show a box that belongs to this page
+    wizard.draftAnchor = { x_norm: saved.anchor_x_norm, y_norm: saved.anchor_y_norm,
+                           w_norm: saved.anchor_w_norm, h_norm: saved.anchor_h_norm };
+    wizard.draftTarget = { x_norm: saved.target_x_norm, y_norm: saved.target_y_norm,
+                           w_norm: saved.target_w_norm, h_norm: saved.target_h_norm };
+    document.getElementById('wiz-anchor-text').value = saved.anchor_text || '';
+    document.getElementById('wiz-ocr-type').value    = saved.ocr_type || 'text';
+  } else {
+    document.getElementById('wiz-anchor-text').value = '';
+    document.getElementById('wiz-ocr-type').value    = 'text';
+  }
 
   updateWizardUI();
   redrawWizard();
@@ -1881,13 +1950,26 @@ function updateWizardUI() {
   document.getElementById('wiz-anchor-block').style.display = wizard.fixedMode ? 'none' : '';
   document.getElementById('wiz-fixed-block').style.display  = wizard.fixedMode ? '' : 'none';
 
-  const a = !!wizard.draftAnchor, t = !!wizard.draftTarget;
   const st = document.getElementById('wiz-status');
-  st.textContent = `Anchor: ${a ? 'drawn ✓' : '—'} · Target: ${t ? 'drawn ✓' : '—'}`;
-  st.className = 'wiz-status' + (a && t ? ' ok' : '');
+  if (wizard.fixedMode) {
+    const hasVal = !!document.getElementById('wiz-fixed-value').value.trim();
+    st.textContent = hasVal ? 'Fixed value ready ✓' : 'Enter a fixed value';
+    st.className = 'wiz-status' + (hasVal ? ' ok' : '');
+  } else {
+    const a = !!wizard.draftAnchor, t = !!wizard.draftTarget;
+    st.textContent = `Anchor: ${a ? 'drawn ✓' : '—'} · Target: ${t ? 'drawn ✓' : '—'}`;
+    st.className = 'wiz-status' + (a && t ? ' ok' : '');
+  }
 
   document.getElementById('wiz-draw-anchor').classList.toggle('armed', wizard.drawMode === 'anchor');
   document.getElementById('wiz-draw-target').classList.toggle('armed', wizard.drawMode === 'target');
+
+  // Save enablement: mapping mode needs both boxes; fixed mode needs a value.
+  const ready = wizard.fixedMode
+    ? !!document.getElementById('wiz-fixed-value').value.trim()
+    : (!!wizard.draftAnchor && !!wizard.draftTarget);
+  const saveBtn = document.getElementById('wiz-save');
+  if (saveBtn) saveBtn.disabled = !ready;
 }
 
 function armWizardDraw(mode) {
@@ -1897,22 +1979,34 @@ function armWizardDraw(mode) {
   updateWizardUI();
 }
 
-function drawWizBox(n, color) {
+// Which drawn box (if any) is under a canvas-buffer point. Target is drawn on
+// top, so it is hit-tested first.
+function wizHitTest(p) {
+  const w = wizCanvas.width, h = wizCanvas.height;
+  const inside = (n) => n && p.x >= n.x_norm * w && p.x <= (n.x_norm + n.w_norm) * w
+                          && p.y >= n.y_norm * h && p.y <= (n.y_norm + n.h_norm) * h;
+  if (inside(wizard.draftTarget)) return 'target';
+  if (inside(wizard.draftAnchor)) return 'anchor';
+  return null;
+}
+
+function drawWizBox(n, color, selected) {
   const w = wizCanvas.width, h = wizCanvas.height;
   const x = Math.round(n.x_norm * w), y = Math.round(n.y_norm * h);
   const bw = Math.round(n.w_norm * w), bh = Math.round(n.h_norm * h);
-  wizCtx.setLineDash([]);
-  wizCtx.lineWidth = 1.5; wizCtx.strokeStyle = color;
+  wizCtx.setLineDash(selected ? [] : [5, 4]);    // solid when selected (mirrors Template Manager)
+  wizCtx.lineWidth = selected ? 2 : 1.5; wizCtx.strokeStyle = color;
   wizCtx.strokeRect(x + 0.5, y + 0.5, bw, bh);
-  wizCtx.fillStyle = color + '22'; wizCtx.fillRect(x, y, bw, bh);
+  wizCtx.setLineDash([]);
+  wizCtx.fillStyle = color + (selected ? '33' : '22'); wizCtx.fillRect(x, y, bw, bh);
 }
 
 function redrawWizard() {
   if (!wizCanvas.width) return;
   wizCtx.clearRect(0, 0, wizCanvas.width, wizCanvas.height);
   if (!wizard.active) return;
-  if (wizard.draftAnchor) drawWizBox(wizard.draftAnchor, '#4f8ef7');
-  if (wizard.draftTarget) drawWizBox(wizard.draftTarget, '#3ecf8e');
+  if (wizard.draftAnchor) drawWizBox(wizard.draftAnchor, '#4f8ef7', wizard.selectedBox === 'anchor');
+  if (wizard.draftTarget) drawWizBox(wizard.draftTarget, '#3ecf8e', wizard.selectedBox === 'target');
   if (wizard.dragRect) {
     const c = wizard.drawMode === 'target' ? '#3ecf8e' : '#4f8ef7';
     const r = wizard.dragRect;
@@ -1922,37 +2016,80 @@ function redrawWizard() {
   }
 }
 
+// Left-click model mirrors Template Manager: armed → draw a fresh box; not armed →
+// click selects a box and drag repositions it. Right-button is ignored here so it
+// bubbles to the doc-viewer pan handler.
 wizCanvas.addEventListener('mousedown', (e) => {
-  if (e.button !== 0 || !wizard.active || !wizard.drawMode) return;
+  if (e.button !== 0 || !wizard.active) return;
   const p = canvasPoint(e, wizCanvas);
-  wizard.isDragging = true;
-  wizard.dragStart = { x: p.x, y: p.y };
-  wizard.dragRect = { x: p.x, y: p.y, w: 0, h: 0 };
+  if (wizard.drawMode) {
+    wizard.isDragging = true;
+    wizard.dragStart = { x: p.x, y: p.y };
+    wizard.dragRect = { x: p.x, y: p.y, w: 0, h: 0 };
+    wizard.selectedBox = null;
+    wizard.moveStart = null;
+    return;
+  }
+  // Not armed: select the box under the point (if any) and arm a move from here.
+  const hit = wizHitTest(p);
+  wizard.selectedBox = hit;
+  wizard.moveStart = hit
+    ? { pt: p, orig: { ...(hit === 'anchor' ? wizard.draftAnchor : wizard.draftTarget) } }
+    : null;
+  redrawWizard();
 });
 wizCanvas.addEventListener('mousemove', (e) => {
-  if (!wizard.isDragging || !wizard.dragRect) return;
-  const p = canvasPoint(e, wizCanvas);
-  wizard.dragRect = {
-    x: Math.min(wizard.dragStart.x, p.x), y: Math.min(wizard.dragStart.y, p.y),
-    w: Math.abs(p.x - wizard.dragStart.x), h: Math.abs(p.y - wizard.dragStart.y),
-  };
-  redrawWizard();
+  // Drawing a new box.
+  if (wizard.isDragging && wizard.dragRect) {
+    const p = canvasPoint(e, wizCanvas);
+    wizard.dragRect = {
+      x: Math.min(wizard.dragStart.x, p.x), y: Math.min(wizard.dragStart.y, p.y),
+      w: Math.abs(p.x - wizard.dragStart.x), h: Math.abs(p.y - wizard.dragStart.y),
+    };
+    redrawWizard();
+    return;
+  }
+  // Repositioning the selected box — delta computed in normalized space so it is
+  // correct at any zoom/scale, clamped so the box stays on-page.
+  if (wizard.moveStart && wizard.selectedBox) {
+    const p  = canvasPoint(e, wizCanvas);
+    const dx = (p.x - wizard.moveStart.pt.x) / wizCanvas.width;
+    const dy = (p.y - wizard.moveStart.pt.y) / wizCanvas.height;
+    const o  = wizard.moveStart.orig;
+    const moved = { ...o,
+      x_norm: Math.max(0, Math.min(1 - o.w_norm, o.x_norm + dx)),
+      y_norm: Math.max(0, Math.min(1 - o.h_norm, o.y_norm + dy)) };
+    if (wizard.selectedBox === 'anchor') wizard.draftAnchor = moved; else wizard.draftTarget = moved;
+    redrawWizard();
+    return;
+  }
+  // Idle hover: show a move cursor over an existing box.
+  if (!wizard.drawMode) {
+    wizCanvas.style.cursor = wizHitTest(canvasPoint(e, wizCanvas)) ? 'move' : 'default';
+  }
 });
 wizCanvas.addEventListener('mouseup', () => {
-  if (!wizard.isDragging) return;
-  wizard.isDragging = false;
-  const r = wizard.dragRect; wizard.dragRect = null;
-  if (!r || r.w < 8 || r.h < 8) { redrawWizard(); return; }
-  const norm = {
-    x_norm: r.x / wizCanvas.width,  y_norm: r.y / wizCanvas.height,
-    w_norm: r.w / wizCanvas.width,  h_norm: r.h / wizCanvas.height,
-  };
-  if (wizard.drawMode === 'anchor') { wizard.draftAnchor = norm; wizard.step = 'target'; }
-  else                              { wizard.draftTarget = norm; wizard.step = 'review'; }
-  wizard.drawMode = null;
-  wizCanvas.classList.remove('drawing');
-  updateWizardUI();
-  redrawWizard();
+  if (wizard.isDragging) {
+    wizard.isDragging = false;
+    const r = wizard.dragRect; wizard.dragRect = null;
+    if (!r || r.w < 8 || r.h < 8) { redrawWizard(); return; }
+    const norm = {
+      x_norm: r.x / wizCanvas.width,  y_norm: r.y / wizCanvas.height,
+      w_norm: r.w / wizCanvas.width,  h_norm: r.h / wizCanvas.height,
+    };
+    if (wizard.drawMode === 'anchor') { wizard.draftAnchor = norm; wizard.step = 'target'; }
+    else                              { wizard.draftTarget = norm; wizard.step = 'review'; }
+    wizard.drawMode = null;
+    wizCanvas.classList.remove('drawing');
+    updateWizardUI();
+    redrawWizard();
+    return;
+  }
+  if (wizard.moveStart) {
+    wizard.moveStart = null;       // finalize reposition
+    updateWizardUI();
+    redrawWizard();
+  }
 });
 
 document.getElementById('btn-anchor-wizard')?.addEventListener('click', () => {
@@ -1972,6 +2109,126 @@ document.getElementById('wiz-fixed-toggle')?.addEventListener('change', (e) => {
   wizard.drawMode = null;
   wizCanvas.classList.remove('drawing');
   updateWizardUI();
+});
+// Re-evaluate Save enablement as the user types a fixed value.
+document.getElementById('wiz-fixed-value')?.addEventListener('input', updateWizardUI);
+
+// Delete / Backspace removes the currently selected drawn box so the user can
+// redraw. Scoped: only fires while the wizard is open AND a box is selected, and
+// never while typing in a text-entry control (so it can't disturb field edits).
+document.addEventListener('keydown', (e) => {
+  if (!wizard.active || !wizard.selectedBox) return;
+  if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+  const t = e.target;
+  if (t && (t.isContentEditable || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+  e.preventDefault();
+  if (wizard.selectedBox === 'anchor')      wizard.draftAnchor = null;
+  else if (wizard.selectedBox === 'target') wizard.draftTarget = null;
+  wizard.selectedBox = null;
+  updateWizardUI();
+  redrawWizard();
+});
+
+// ── Template Wizard — Stage 2 persistence (existing IPC only) ─────────────────
+function setWizStatus(text, kind) {
+  const st = document.getElementById('wiz-status');
+  st.textContent = text;
+  st.className = 'wiz-status' + (kind === 'ok' ? ' ok' : kind === 'err' ? ' err' : '');
+}
+
+// Create-or-reuse the template for the current document. Delegates entirely to
+// promote-to-template, which already reuses doc.template_id / a logo match (so an
+// already-templated document is edited in place, never duplicated) and pins this
+// document as the sample. Returns the templateId, or null on failure (status set).
+async function ensureWizardTemplate() {
+  const allValues = {};
+  document.querySelectorAll('#fields-scroll .field-input').forEach(i => { allValues[i.dataset.key] = i.value; });
+  const supplierInput = document.querySelector('.field-input[data-key="supplier_name"]');
+  const supplierName  = supplierInput?.value?.trim() || currentDoc?.supplier_name || null;
+  const docTypeSlug   = selectedTypeSlug || currentDoc?.type_slug || currentDoc?.document_type_slug || null;
+  if (!docTypeSlug) {
+    setWizStatus('Select a document type first', 'err');
+    showToast('Select a document type before mapping.', 'warn');
+    return null;
+  }
+  const result = await window.docusnap.promoteToTemplate({
+    document_id: currentDoc.id, allValues, document_type_slug: docTypeSlug, supplier_name: supplierName,
+  });
+  if (!result?.success) { setWizStatus(result?.error || 'Could not create template', 'err'); return null; }
+  return result.templateId || null;
+}
+
+// Advance to the next field not yet saved in this session; otherwise report done.
+function advanceWizardField() {
+  const n = wizard.fields.length;
+  for (let s = 1; s <= n; s++) {
+    const idx = (wizard.index + s) % n;
+    if (!wizard.savedKeys.has(wizard.fields[idx].key)) { loadWizardField(idx); return; }
+  }
+  setWizStatus('All fields mapped ✓', 'ok');
+}
+
+async function wizardSave() {
+  if (!wizard.active || !isAdmin) return;                // defence-in-depth; IPC is admin-gated too
+  const field = wizard.fields[wizard.index];
+  if (!field) return;
+
+  const fixed    = wizard.fixedMode;
+  const fixedVal = document.getElementById('wiz-fixed-value').value.trim();
+  if (fixed ? !fixedVal : (!wizard.draftAnchor || !wizard.draftTarget)) return;  // validation guard
+
+  const saveBtn = document.getElementById('wiz-save');
+  saveBtn.disabled = true;
+  setWizStatus('Saving…', '');
+
+  // First save resolves (creates/reuses) the template.
+  if (!wizard.templateId) {
+    const tid = await ensureWizardTemplate();
+    if (!tid) { saveBtn.disabled = false; return; }
+    wizard.templateId = tid;
+    document.getElementById('wiz-open-manager').style.display = '';   // reveal handoff affordance
+  }
+
+  try {
+    let res, savedMapping = null;
+    if (fixed) {
+      res = await window.docusnap.setTemplateFieldFixed(wizard.templateId, field.key, fixedVal);
+    } else {
+      // Normalized coordinates only — saveMapping derives offset_dx/dy_norm server-side.
+      savedMapping = {
+        field_key:        field.key,
+        page_number:      currentPage,
+        anchor_text:      document.getElementById('wiz-anchor-text').value.trim() || null,
+        anchor_x_norm: wizard.draftAnchor.x_norm, anchor_y_norm: wizard.draftAnchor.y_norm,
+        anchor_w_norm: wizard.draftAnchor.w_norm, anchor_h_norm: wizard.draftAnchor.h_norm,
+        target_x_norm: wizard.draftTarget.x_norm, target_y_norm: wizard.draftTarget.y_norm,
+        target_w_norm: wizard.draftTarget.w_norm, target_h_norm: wizard.draftTarget.h_norm,
+        ocr_type:         document.getElementById('wiz-ocr-type').value,
+        search_expansion: 0.04,
+        enabled:          true,
+      };
+      res = await window.docusnap.saveTemplateMapping(wizard.templateId, savedMapping);
+    }
+    if (!res || res.success === false) {
+      setWizStatus(res?.error || 'Save failed', 'err');
+      saveBtn.disabled = false;
+      return;
+    }
+    // Keep the in-session rehydration cache current so navigating back to this
+    // field (or reopening) shows the box without a round-trip.
+    if (savedMapping) wizard.mappingsByKey.set(field.key, savedMapping);
+    wizard.savedKeys.add(field.key);
+    showToast(`Saved ${field.label} to template`, 'ok');
+    advanceWizardField();
+  } catch (e) {
+    setWizStatus('Save failed: ' + e.message, 'err');
+    saveBtn.disabled = false;
+  }
+}
+
+document.getElementById('wiz-save')?.addEventListener('click', wizardSave);
+document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
+  if (wizard.templateId) window.docusnap.openSettingsWindowAtTemplate(wizard.templateId);
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────────
