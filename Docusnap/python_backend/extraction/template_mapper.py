@@ -62,7 +62,7 @@ _UNSET = object()         # "located not provided" sentinel (distinct from a Non
 
 
 def extract_with_mappings(page_images, mappings, field_patterns=None,
-                          ocr_lines_fn=None, ocr_text_fn=None):
+                          ocr_lines_fn=None, ocr_text_fn=None, slice_capture=None):
     """
     Run every enabled mapping against `page_images` and return resolved fields.
 
@@ -100,10 +100,14 @@ def extract_with_mappings(page_images, mappings, field_patterns=None,
         if not anchor_box:
             located_cache[id(mapping)] = None
             continue
+        _acap = ((lambda c, _m=mapping, _p=page_idx, _ab=anchor_box:
+                    slice_capture(_m.get("field_key"), "template_mapping", _p,
+                                  (_ab["x_norm"], _ab["y_norm"], _ab["w_norm"], _ab["h_norm"]),
+                                  c, "anchor")) if slice_capture else None)
         located = _locate_anchor(
             page_images[page_idx], anchor_box, mapping.get("anchor_text"),
             float(mapping.get("search_expansion") or 0.0), ocr_lines_fn,
-            min_search=_ANCHOR_SEARCH_MIN)
+            min_search=_ANCHOR_SEARCH_MIN, capture=_acap)
         located_cache[id(mapping)] = located
         if located and located.get("matched_text") is not None:
             # Anchor box-origin drift (inset-corrected -- the SAME convention the
@@ -125,7 +129,8 @@ def extract_with_mappings(page_images, mappings, field_patterns=None,
         outcome = _extract_one(page_images[page_idx], mapping, field_patterns,
                                ocr_lines_fn, ocr_text_fn,
                                located=located_cache[id(mapping)],
-                               drift=page_drift.get(page_idx))
+                               drift=page_drift.get(page_idx),
+                               slice_capture=slice_capture, page_idx=page_idx)
         if outcome:
             results[field_key] = outcome
     return results
@@ -134,7 +139,7 @@ def extract_with_mappings(page_images, mappings, field_patterns=None,
 # ── Per-mapping resolution ────────────────────────────────────────────────────
 
 def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
-                 located=_UNSET, drift=None):
+                 located=_UNSET, drift=None, slice_capture=None, page_idx=0):
     anchor_box = _norm_box(mapping, "anchor")
     target_box = _norm_box(mapping, "target")
     if not anchor_box or not target_box:
@@ -180,7 +185,10 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
     field_key = mapping.get("field_key", "")
     val_type = (field_patterns or {}).get(field_key, {}).get("validation")
 
-    text = _crop_and_ocr(page, derived_target, val_type, ocr_text_fn)
+    _cap = ((lambda c: slice_capture(field_key, "template_mapping", page_idx,
+               (derived_target["x_norm"], derived_target["y_norm"],
+                derived_target["w_norm"], derived_target["h_norm"]), c, "target")) if slice_capture else None)
+    text = _crop_and_ocr(page, derived_target, val_type, ocr_text_fn, capture=_cap)
     expanded = False
     if not text and expansion > 0:
         text = _crop_and_ocr(page, _expand_box(derived_target, expansion), val_type, ocr_text_fn)
@@ -319,7 +327,7 @@ def _consensus_drift(landmarks):
 # ── Anchor relocation ─────────────────────────────────────────────────────────
 
 def _locate_anchor(page, anchor_box, anchor_text, expansion, ocr_lines_fn,
-                   min_search=0.0):
+                   min_search=0.0, capture=None):
     """
     Search the (optionally expanded) drawn anchor region for the stored label
     text and report where it ACTUALLY sits on this page, in page-relative
@@ -337,6 +345,9 @@ def _locate_anchor(page, anchor_box, anchor_text, expansion, ocr_lines_fn,
     crop = _crop(page, crop_box)
     if crop is None:
         return None
+    if capture:
+        try: capture(crop)
+        except Exception: pass   # dev-only slice capture; never disrupt relocation
 
     lines = ocr_lines_fn(crop)
     if not lines:
@@ -523,10 +534,13 @@ def _ocr_lines(image):
     return lines
 
 
-def _crop_and_ocr(page, box, val_type, ocr_text_fn):
+def _crop_and_ocr(page, box, val_type, ocr_text_fn, capture=None):
     crop = _crop(page, _clamp_box(box))
     if crop is None:
         return None
+    if capture:
+        try: capture(crop)
+        except Exception: pass   # dev-only slice capture; never disrupt OCR
     text = ocr_text_fn(crop)
     if not text:
         return None

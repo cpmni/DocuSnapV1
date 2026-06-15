@@ -176,4 +176,14 @@ contextBridge.exposeInMainWorld('docusnap', {
   onDeferredCountChanged:(cb) => ipcRenderer.on('deferred-count-changed', (_e, n) => cb(n)),
   onReprocessProgress:   (cb) => ipcRenderer.on('reprocess-progress',    (_e, m) => cb(m)),
   removeReprocessProgress: ()  => ipcRenderer.removeAllListeners('reprocess-progress'),
+
+  // Hidden dev inspector (read-only): request password unlock + subscribe to the
+  // mirrored process telemetry. No privileged/mutating actions are exposed here.
+  devInspectorUnlock:  (pw) => ipcRenderer.invoke('dev-inspector-unlock', pw),
+  devInspectorRunning: ()   => ipcRenderer.invoke('dev-inspector-running'),
+  onProcessProgress:   (cb) => ipcRenderer.on('process-progress', (_e, m) => cb(m)),
+  onProcessTrace:      (cb) => ipcRenderer.on('process-trace',    (_e, m) => cb(m)),
+  devGetSessionDocs:   ()        => ipcRenderer.invoke('dev-get-session-docs'),
+  devGetSessionDoc:    (key)     => ipcRenderer.invoke('dev-get-session-doc', key),
+  devGetSlice:         (path)    => ipcRenderer.invoke('dev-get-slice', path),
 });

@@ -11,6 +11,7 @@ All heavy lifting is in the extraction/ modules.
 import sys
 import os
 import json
+import time
 import shutil
 import argparse
 from pathlib import Path
@@ -84,12 +85,31 @@ def main():
     # Reprocess only: the template this document is already linked to, honoured
     # as a Stage 0 fallback when live re-identification fails (see engine.extract).
     parser.add_argument("--known-template-id", type=int, default=None)
+    # Dev-only: emit a structured per-field extraction TRACE stream (type:"trace")
+    # for the hidden Dev Inspector. Off by default → zero extra output/overhead and
+    # the user-facing process-progress stream is byte-identical.
+    parser.add_argument("--trace", action="store_true")
+    # Dev-only: directory for temporary OCR crop slices (set by the handler only
+    # while the inspector is open). Ignored unless --trace is also set.
+    parser.add_argument("--slice-dir", default=None)
     # Inline fallbacks (for small payloads)
     parser.add_argument("--fields",          default=None)
     parser.add_argument("--hints",           default=None)
     parser.add_argument("--anchors",         default=None)
     parser.add_argument("--logos",           default=None)
     args = parser.parse_args()
+
+    # Dev-only trace emitter (no-op unless --trace). Stamps type/doc/seq/ts so the
+    # inspector can order + group events; emitted on the same stdout but with a
+    # distinct type the handler routes only to the inspector. Never affects the
+    # user-facing progress messages.
+    _trace_state = {"seq": 0, "doc": None}
+    def emit_trace(ev: dict):
+        if not args.trace:
+            return
+        _trace_state["seq"] += 1
+        emit({"type": "trace", "doc": _trace_state["doc"],
+              "seq": _trace_state["seq"], "ts": int(time.time() * 1000), **ev})
 
     # Configure Tesseract
     configure_tesseract(args.tesseract)
@@ -145,6 +165,7 @@ def main():
 
     for filepath in files:
         emit({"type": "file_begin", "filename": filepath.name})
+        _trace_state["doc"] = filepath.name
 
         try:
             # OCR
@@ -193,6 +214,8 @@ def main():
                 document_slug = doc_slug,
                 supplier_name = None,
                 known_template_id = args.known_template_id,
+                trace         = emit_trace if args.trace else None,
+                slice_dir     = args.slice_dir if args.trace else None,
             )
 
             # Pull out metadata keys before sanitising

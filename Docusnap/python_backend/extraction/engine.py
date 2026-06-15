@@ -57,6 +57,32 @@ def _supplier_identity_decision(existing: dict | None, candidate: dict | None) -
     return None
 
 
+def _is_ref_field(key: str) -> bool:
+    """Reference-number-style fields, by naming convention (no supplier/doc
+    specifics): invoice_number / po_number / sales_order_number (..._number),
+    job_no (..._no), and any explicit reference field. Covers unseen custom
+    types that follow the same convention."""
+    k = (key or "").lower()
+    return k.endswith("_number") or k.endswith("_no") or "reference" in k
+
+
+def _ref_override_plausible(value) -> bool:
+    """Conservative shape gate for whether a Stage 2 reference candidate is
+    information-rich enough to OVERRIDE an existing incumbent. Rejects the
+    low-information failures (a lone "a", punctuation-only crops, 2-letter
+    noise) while still accepting short numeric refs ("12", "PO12") and normal
+    alphanumeric refs ("INV-2026-001", "ABCD"). Shape-only — no value lists."""
+    v = (value or "").strip()
+    alnum = sum(c.isalnum() for c in v)
+    if alnum == 0:                       # punctuation-only junk
+        return False
+    if len(v) < 2:                       # single character like "a"
+        return False
+    if not any(c.isdigit() for c in v) and alnum < 4:   # very low-info, no digits
+        return False
+    return True
+
+
 def _enabled_mappings(tmpl: dict) -> list:
     """Enabled admin-drawn field_mappings on a template dict (same enabled-filter
     Stage 0.5 has always applied: anything not explicitly disabled counts)."""
@@ -142,9 +168,93 @@ class ExtractionEngine:
         self.format_index        = {}   # populated by set_formats()
         self.noise_profile_index = {}   # populated by set_formats()
         self.format_class_index  = {}   # populated by set_formats()
+        self._trace              = None  # dev-only trace callback (set per extract())
 
     def log(self, text: str, level: str = ""):
         self.emit({"type": "log", "text": text, "level": level})
+
+    # ── Dev-only extraction trace (no-op unless a trace callback is set) ────────
+    # Emits structured field-lifecycle events for the hidden Dev Inspector. All
+    # helpers short-circuit when self._trace is None, so normal (non-trace)
+    # extraction does no extra work and produces no extra output. These never
+    # mutate `results` — they only observe it, so merge outcomes are unchanged.
+    def _t(self, event: str, **kw):
+        if not self._trace:
+            return
+        ev = {"event": event}
+        for k, v in kw.items():
+            ev[k] = self._brief(v) if k == "vs" else v
+        self._trace(ev)
+
+    @staticmethod
+    def _brief(d):
+        if not isinstance(d, dict):
+            return None
+        return {"method": d.get("method"), "value": d.get("value"),
+                "confidence": d.get("confidence")}
+
+    def _snap(self, results: dict) -> dict:
+        """Shallow per-field snapshot (method/value/confidence) of resolved fields."""
+        return {k: self._brief(v) for k, v in results.items()
+                if not k.startswith("_") and isinstance(v, dict)}
+
+    def _trace_stage(self, stage: str, stage_results: dict, pre: dict, results: dict):
+        """Emit stage_start, a candidate per field the stage proposed, the merge
+        decision derived from the OBSERVED post-merge state (win/lose + the value
+        it contended with), then stage_end. Pure observation."""
+        if not self._trace:
+            return
+        self._t("stage_start", stage=stage)
+        for key, cand in (stage_results or {}).items():
+            if key.startswith("_") or not isinstance(cand, dict):
+                continue
+            self._t("candidate", stage=stage, field=key, method=cand.get("method"),
+                    value=cand.get("value"), confidence=cand.get("confidence"))
+            after = results.get(key)
+            won = bool(after and after.get("value") == cand.get("value")
+                       and after.get("method") == cand.get("method"))
+            self._t("merge", stage=stage, field=key,
+                    decision=("win" if won else "lose"),
+                    method=cand.get("method"), value=cand.get("value"),
+                    confidence=cand.get("confidence"),
+                    vs=(pre.get(key) if won else after))
+        self._t("stage_end", stage=stage)
+
+    def _capture_slice(self, field, stage, page, bbox, pil_img, kind="target"):
+        """Dev-only: save the exact crop used for an OCR attempt to the session
+        temp dir and emit a typed `slice` trace event pointing at it. `kind` is
+        'anchor' (the region used to find/verify the anchor) or 'target' (the
+        region OCR'd for the field value). No-op unless a trace callback AND a
+        slice dir are set. Never raises into extraction."""
+        if not (self._trace and self._slice_dir):
+            return
+        try:
+            import os
+            self._slice_n += 1
+            path = os.path.join(self._slice_dir, f"slice_{self._slice_n}_{kind}.png")
+            pil_img.save(path)
+            self._t("slice", field=field, stage=stage, kind=kind, page=page,
+                    bbox=(list(bbox) if bbox else None), path=path)
+        except Exception:
+            pass  # diagnostics must never disrupt extraction
+
+    def _trace_validation(self, pre: dict, results: dict):
+        """Emit a validation event for any field that Stage 4/4.5 normalised,
+        capped, corrected, or annotated."""
+        if not self._trace:
+            return
+        for key, data in results.items():
+            if key.startswith("_") or not isinstance(data, dict):
+                continue
+            b = pre.get(key)
+            note      = data.get("validation_note")
+            corrected = data.get("corrected_to")
+            changed   = bool(b and b.get("value") != data.get("value"))
+            capped    = bool(b and (b.get("confidence") or 0) > (data.get("confidence") or 0))
+            if note or corrected or changed or capped:
+                self._t("validation", field=key, value=data.get("value"),
+                        confidence=data.get("confidence"), note=note,
+                        corrected_to=corrected, was=(b.get("value") if b else None))
 
     def set_formats(self, formats_data: list):
         """Pre-build all format indexes from confirmed value data."""
@@ -192,11 +302,20 @@ class ExtractionEngine:
                 document_type: str | None = None,
                 document_slug: str | None = None,
                 supplier_name: str | None = None,
-                known_template_id: int | None = None) -> dict:
+                known_template_id: int | None = None,
+                trace = None,
+                slice_dir = None) -> dict:
         """
         Run extraction pipeline according to current mode.
         Returns dict with field values + metadata keys prefixed with _.
+
+        `trace`: optional dev-only callback (process_docs --trace). When set,
+        structured field-lifecycle events are emitted for the Dev Inspector;
+        when None, every trace helper is a no-op so behaviour/timing is unchanged.
         """
+        self._trace     = trace
+        self._slice_dir = slice_dir   # dev-only crop capture dir (set only with --trace)
+        self._slice_n   = 0
         results      = {}
         field_keys   = [f["key"] for f in field_defs]
         # Date-typed fields get a merge guard: a candidate that doesn't parse as
@@ -238,8 +357,10 @@ class ExtractionEngine:
                     f"({match['confidence']}% via {match['method']})"
                 )
                 tmpl_results = template_matcher.extract_with_template(ocr_text, matched_tmpl)
+                _pre_s0 = self._snap(results)
                 for key, data in tmpl_results.items():
                     results[key] = data
+                self._trace_stage('0_template', tmpl_results, _pre_s0, results)
                 # Promote supplier from the template's own resolved supplier_name
                 # field (a fixed_value learned from confirmed documents) — NOT
                 # from the template's auto-generated display name. Templates
@@ -275,8 +396,10 @@ class ExtractionEngine:
                     mapping_results = template_mapper.extract_with_mappings(
                         page_images, tmpl_mappings,
                         field_patterns=self.patterns.get("field_patterns", {}),
+                        slice_capture=(self._capture_slice if (self._trace and self._slice_dir) else None),
                     )
                     applied = 0
+                    _pre_s05 = self._snap(results)
                     for key, data in mapping_results.items():
                         existing = results.get(key)
                         # An admin-drawn mapping (Settings → Templates → "Map a
@@ -298,6 +421,7 @@ class ExtractionEngine:
                         if is_curated_refinement or data["confidence"] > existing.get("confidence", 0):
                             results[key] = data
                             applied += 1
+                    self._trace_stage('0.5_mapping', mapping_results, _pre_s05, results)
                     if applied:
                         self.log(f"  Stage 0.5: {applied} field(s) refined via anchor/target mapping")
 
@@ -320,6 +444,7 @@ class ExtractionEngine:
         # ── Stage 1: Keyword extraction (always runs) ─────────────────────────
         self.log("  Stage 1: keyword extraction…")
         kw_results = keyword.extract_fields(ocr_text, field_keys, self.patterns)
+        _pre_s1 = self._snap(results)
         for key, data in kw_results.items():
             existing = results.get(key)
             if key == "supplier_name" and existing:
@@ -343,6 +468,7 @@ class ExtractionEngine:
                 continue  # don't let an unparseable date replace a valid one
             if not existing or data.get("confidence", 0) > existing.get("confidence", 0):
                 results[key] = data
+        self._trace_stage('1_keyword', kw_results, _pre_s1, results)
         found = len([v for v in results.values() if v.get("value")])
         self.log(f"  Stage 1: {found}/{len(field_keys)} fields found")
 
@@ -354,7 +480,9 @@ class ExtractionEngine:
                 page_images=page_images,
                 field_patterns=self.patterns.get("field_patterns", {}),
                 validation_patterns=self.patterns.get("validation_patterns", {}),
+                slice_capture=(self._capture_slice if (self._trace and self._slice_dir) else None),
             )
+            _pre_s2 = self._snap(results)
             for key, data in anchor_results.items():
                 existing = results.get(key)
                 # Supplier identity is plausibility-gated first: a poisoned
@@ -370,13 +498,30 @@ class ExtractionEngine:
                     if decision == "take":
                         results[key] = data
                         continue
-                # Date guard: an unparseable taught date (e.g. a mis-cropped
-                # anchor_crop "March") must not override a valid existing date,
-                # even via the is_taught_override "ground truth" path below.
-                if (key in date_field_keys and existing
-                        and validator.parse_date(existing.get("value")) is not None
-                        and validator.parse_date(data.get("value")) is None):
-                    continue
+                # ── Stage 2 credibility gate (before any override) ───────────
+                # A Stage 2 candidate must not DISPLACE an existing incumbent
+                # unless it is credible for the field's class. Reusable, shape/
+                # type based — never document- or supplier-specific. Only guards
+                # OVERRIDES: an empty field is still filled (and the validator
+                # then flags it), so this never suppresses a first read.
+                if existing and existing.get("value"):
+                    if key in date_field_keys:
+                        # Non-date junk (e.g. a mis-cropped "March") must not beat
+                        # a date field — the candidate has to parse as a date.
+                        if validator.parse_date(data.get("value")) is None:
+                            continue
+                    elif _is_ref_field(key):
+                        cand_v = data.get("value") or ""
+                        # Wildly-inconsistent ref (a lone "a", punctuation noise)
+                        # must not override a plausible incumbent.
+                        if not _ref_override_plausible(cand_v):
+                            continue
+                        # Digit-shape consistency: a digit-free candidate (e.g. a
+                        # label/word like "Booking" read from a drifted crop) must
+                        # not displace a digit-bearing incumbent ("7602-1354-4").
+                        inc_v = existing.get("value") or ""
+                        if any(c.isdigit() for c in inc_v) and not any(c.isdigit() for c in cand_v):
+                            continue
                 # A user-taught anchor (drawn with the ⊕ tool, resolved via
                 # crop+re-OCR at the exact saved coordinates) is ground truth for
                 # that spot on the page — it overrides a generic keyword/regex
@@ -405,6 +550,7 @@ class ExtractionEngine:
                                           ("anchor_crop", "template_mapping", "template_mapping_expanded"))
                 if not existing or is_taught_override or data["confidence"] > existing["confidence"]:
                     results[key] = data
+            self._trace_stage('2_anchor', anchor_results, _pre_s2, results)
             new_found = len([v for v in results.values() if v.get("value")])
             self.log(f"  Stage 2: +{new_found - found} fields from anchors")
             found = new_found
@@ -520,6 +666,9 @@ class ExtractionEngine:
                         "method":     data.get("method", "") + "+denoised",
                     }
                     n_denoised += 1
+                    self._t("transform", field=key, stage="2.5_denoise",
+                            method=results[key]["method"], confidence=results[key]["confidence"],
+                            **{"from": data["value"], "to": denoised})
             if n_denoised:
                 self.log(f"  Stage 2.5: {n_denoised} value(s) denoised via learned template")
 
@@ -545,6 +694,9 @@ class ExtractionEngine:
                     }
                     if was_changed:
                         n_corrected += 1
+                        self._t("transform", field=key, stage="2.5_correct",
+                                method=results[key]["method"], confidence=new_conf,
+                                **{"from": data["value"], "to": corrected_val})
             if n_corrected:
                 self.log(f"  Stage 2.5: {n_corrected} OCR correction(s) applied")
 
@@ -577,6 +729,8 @@ class ExtractionEngine:
 
         # ── Stage 4: Validation ───────────────────────────────────────────────
         self.log("  Stage 4: validating…")
+        self._t('stage_start', stage='4_validate')
+        _pre_val = self._snap(results)
         results = validator.validate_and_adjust(results, field_defs)
 
         # ── Stage 4.5: Format anomaly check ──────────────────────────────────
@@ -636,6 +790,9 @@ class ExtractionEngine:
             if n_flagged:
                 self.log(f"  Stage 4.5: {n_flagged} field(s) flagged by format anomaly check")
 
+        self._trace_validation(_pre_val, results)
+        self._t('stage_end', stage='4_validate')
+
         # ── Metadata ──────────────────────────────────────────────────────────
         overall_conf  = validator.overall_confidence(results, field_defs)
         # Document-level format-consistency weighting: penalise the document when
@@ -672,6 +829,16 @@ class ExtractionEngine:
         results["_document_type_slug"]   = matched_tmpl.get("document_type_slug") if matched_tmpl else None
         results["_logo_phash"]           = logo_phash
         results["_keyword_fingerprint"]  = kw_fingerprint
+
+        # Final resolved value per field — the inspector marks any earlier
+        # candidate whose value differs from this as a superseded intermediate.
+        if self._trace:
+            for key, data in results.items():
+                if key.startswith("_") or not isinstance(data, dict):
+                    continue
+                self._t("final", field=key, value=data.get("value"),
+                        method=data.get("method"), confidence=data.get("confidence"),
+                        note=data.get("validation_note"))
 
         return results
 

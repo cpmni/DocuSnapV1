@@ -16,7 +16,8 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                          document_type: str | None,
                          page_images: list | None = None,
                          field_patterns: dict | None = None,
-                         validation_patterns: dict | None = None) -> dict:
+                         validation_patterns: dict | None = None,
+                         slice_capture = None) -> dict:
     """
     Attempt to extract field values using saved structural anchors.
 
@@ -60,7 +61,9 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
         if x_norm > 0 and y_norm > 0 and page0 is not None:
             w_norm   = anchor.get("w_norm") or 0.0
             h_norm   = anchor.get("h_norm") or 0.0
-            crop_value = _crop_and_ocr(page0, x_norm, y_norm, w_norm, h_norm, val_type)
+            _cap = ((lambda c: slice_capture(field_key, "anchor_crop", 0,
+                       (x_norm, y_norm, w_norm, h_norm), c, "target")) if slice_capture else None)
+            crop_value = _crop_and_ocr(page0, x_norm, y_norm, w_norm, h_norm, val_type, capture=_cap)
             # A fixed crop is positionally rigid: when an upstream line wraps or
             # the block shifts on a sibling layout, the box can land off-target
             # and return a NON-EMPTY but wrong value (e.g. ">alifornia" from the
@@ -199,7 +202,7 @@ def _crop_is_credible(value: str, val_type: str | None,
 
 def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
                   w_norm: float = 0.0, h_norm: float = 0.0,
-                  val_type: str | None = None) -> str | None:
+                  val_type: str | None = None, capture = None) -> str | None:
     """
     Crop a tight region centred on the stored value coordinates and re-OCR it.
     Uses the exact selection dimensions saved by the ⊕ tool (w_norm/h_norm) so
@@ -230,6 +233,9 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
         y2 = min(h, cy + half_h)
 
         crop = page_image.crop((x1, y1, x2, y2))
+        if capture:
+            try: capture(crop)
+            except Exception: pass   # dev-only slice capture; never disrupt OCR
         # Scale up 2× — Tesseract accuracy improves significantly on larger text
         crop = crop.resize((crop.width * 2, crop.height * 2), Image.LANCZOS)
 

@@ -520,3 +520,87 @@ function showChangePasswordDialog() {
     setTimeout(() => overlay.remove(), 900);
   });
 }
+
+// ── Hidden developer inspector shortcut: Ctrl+Shift+D then M (within ~1s) ──────
+// The renderer only DETECTS the sequence and forwards the typed password; the
+// main process verifies it (SFDEV) and decides whether to open the window. This
+// grants no privilege by itself and never bypasses login/role checks.
+(() => {
+  let armed = false, armedAt = 0;   // true after Ctrl+Shift+D, expires after 1s
+  let modalOpen = false;
+
+  const inField = (el) => !!el && (el.isContentEditable
+    || el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT');
+
+  document.addEventListener('keydown', (e) => {
+    if (modalOpen || inField(e.target)) return;
+    if (!(e.ctrlKey && e.shiftKey)) { armed = false; return; }
+    if (e.code === 'KeyD') { armed = true; armedAt = Date.now(); return; }
+    if (e.code === 'KeyM' && armed && (Date.now() - armedAt) < 1000) {
+      armed = false;
+      e.preventDefault();
+      openDevPasswordModal();
+    } else if (e.code !== 'KeyD') {
+      armed = false;
+    }
+  });
+
+  function openDevPasswordModal() {
+    modalOpen = true;
+    const overlay = document.createElement('div');
+    Object.assign(overlay.style, {
+      position: 'fixed', inset: '0', background: 'rgba(8,10,15,.72)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: '99999',
+    });
+    const box = document.createElement('div');
+    Object.assign(box.style, {
+      width: '300px', background: '#13161f', border: '1px solid #2f3347',
+      borderRadius: '10px', padding: '18px', boxShadow: '0 12px 32px rgba(0,0,0,.5)',
+      fontFamily: "'IBM Plex Sans',sans-serif", color: '#e2e6f0',
+    });
+    const title = document.createElement('div');
+    title.textContent = 'Developer Inspector';
+    Object.assign(title.style, { fontSize: '13px', fontWeight: '600', marginBottom: '10px' });
+    const input = document.createElement('input');
+    input.type = 'password'; input.placeholder = 'Password';
+    Object.assign(input.style, {
+      width: '100%', padding: '8px 10px', borderRadius: '6px', outline: 'none',
+      border: '1px solid #2f3347', background: '#0c0e14', color: '#e2e6f0',
+      fontFamily: "'IBM Plex Sans',sans-serif", fontSize: '12px',
+    });
+    const msg = document.createElement('div');
+    Object.assign(msg.style, { color: '#f76f6f', fontSize: '11px', minHeight: '14px', margin: '6px 0 10px' });
+    const row = document.createElement('div');
+    Object.assign(row.style, { display: 'flex', gap: '8px', justifyContent: 'flex-end' });
+    const cancel = document.createElement('button');
+    cancel.textContent = 'Cancel';
+    const ok = document.createElement('button');
+    ok.textContent = 'Open';
+    for (const b of [cancel, ok]) Object.assign(b.style, {
+      padding: '7px 14px', borderRadius: '6px', border: '1px solid #2f3347',
+      background: 'transparent', color: '#e2e6f0', cursor: 'pointer', fontSize: '11px',
+    });
+    Object.assign(ok.style, { background: '#4f8ef7', borderColor: '#4f8ef7', color: '#0c0e14', fontWeight: '500' });
+
+    const close = () => { overlay.remove(); modalOpen = false; };
+    const submit = async () => {
+      ok.disabled = true;
+      const valid = await window.docusnap.devInspectorUnlock(input.value);
+      ok.disabled = false;
+      if (valid) close();
+      else { msg.textContent = 'Incorrect password.'; input.value = ''; input.focus(); }
+    };
+    cancel.addEventListener('click', close);
+    ok.addEventListener('click', submit);
+    input.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') submit();
+      if (ev.key === 'Escape') close();
+    });
+
+    row.append(cancel, ok);
+    box.append(title, input, msg, row);
+    overlay.append(box);
+    document.body.append(overlay);
+    input.focus();
+  }
+})();

@@ -12,6 +12,28 @@ const fs   = require('fs');
 let _currentBatchProcs = [];     // all running Python worker processes for the active batch (bounded pool)
 let _cancelRequested   = false;  // set true when stop is requested; suppresses buffered stdout
 
+// Dev-inspector ONLY: in-memory, session-scoped registry of docs processed while
+// the app runs, plus their captured trace events. Never persisted (no SQLite, no
+// settings); starts empty on every app launch (module load).
+const _devSession = { docs: [], traceByDoc: new Map() };
+function _recordDevDoc(msg) {
+  const key = msg && (msg.original_filename || msg.filename);
+  if (!key) return;
+  const meta = { key, filename: key, supplier: msg.supplier_name || null,
+                 docType: msg.document_type || null, status: msg.status || null,
+                 confidence: msg.overall_confidence ?? null, ts: Date.now() };
+  const existing = _devSession.docs.find(d => d.key === key);
+  if (existing) Object.assign(existing, meta); else _devSession.docs.push(meta);
+}
+function _recordDevTrace(ev) {
+  const key = ev && ev.doc;
+  if (!key) return;
+  let arr = _devSession.traceByDoc.get(key);
+  if (!arr) { arr = []; _devSession.traceByDoc.set(key, arr); }
+  arr.push(ev);
+  if (arr.length > 4000) arr.shift();   // bound per-doc memory
+}
+
 // Supported input extensions — mirrors python_backend ocr.tesseract.SUPPORTED_EXTENSIONS
 // and watch/handler.js. Used only to enumerate + shard files for the parallel
 // worker pool; the per-document pipeline (and its file detection) is unchanged.
@@ -85,13 +107,26 @@ function buildTrainingArgs(db, configPath) {
 
 function register(ctx) {
   const { ipcMain, getDb, pythonExe, pythonArgs, tesseractPath,
-          backendScript, configPath, notifyMainWindow, spawn, path, fs,
-          logger } = ctx;
+          backendScript, configPath, notifyMainWindow, notifyDevInspector,
+          spawn, path, fs, logger } = ctx;
+
+  // Additive read-only telemetry mirror: send a progress message to the invoking
+  // renderer exactly as before, then ALSO to the hidden dev inspector if it is
+  // open (no-op otherwise). Does not change message shape, ordering, or any
+  // processing logic — it is a pure tee.
+  const mirror = (sender, channel, msg) => {
+    sender.send(channel, msg);
+    notifyDevInspector?.(channel, msg);
+  };
 
   const { requireRole, getCurrentUser } = require('../auth/handler');
 
   // ── Folder picker ───────────────────────────────────────────────────────────
   const { dialog, shell } = require('electron');
+
+  // Dev-inspector read-only session getters (no mutation; in-memory only).
+  ipcMain.handle('dev-get-session-docs', () => _devSession.docs.slice().reverse());
+  ipcMain.handle('dev-get-session-doc',  (_e, key) => _devSession.traceByDoc.get(key) || []);
 
   // Source folder for "Process Documents" — part of the daily Admin/Edit workflow.
   ipcMain.handle('pick-folder', async (e) => {
@@ -156,7 +191,7 @@ function register(ctx) {
       ({ args: trainingArgs, tempFiles } = buildTrainingArgs(db, configPath));
     } catch (e) {
       console.error('[process-folder] buildTrainingArgs failed:', e);
-      event.sender.send('process-progress', {
+      mirror(event.sender, 'process-progress', {
         type: 'log', text: `Setup error: ${e.message}`, level: 'err'
       });
       return { success: false, error: e.message };
@@ -192,6 +227,12 @@ function register(ctx) {
         ...trainingArgs,
       ];
       if (filesFile) scriptArgs.push('--files-file', filesFile);
+      // Emit the dev trace stream + capture OCR slices only while the hidden
+      // inspector is open. Slice dir is created on demand and cleaned by main.
+      if (ctx.windows && ctx.windows['dev-inspector']) {
+        scriptArgs.push('--trace');
+        try { fs.mkdirSync(ctx.devSliceDir, { recursive: true }); scriptArgs.push('--slice-dir', ctx.devSliceDir); } catch {}
+      }
 
       const proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs),
         { windowsHide: true });
@@ -208,7 +249,11 @@ function register(ctx) {
           if (!trimmed) continue;
           try {
             const msg = JSON.parse(trimmed);
+            // Dev-only trace stream: retain for the session registry, route ONLY
+            // to the inspector — never to user-facing progress or the DB handler.
+            if (msg.type === 'trace') { _recordDevTrace(msg); notifyDevInspector?.('process-trace', msg); continue; }
             if (suppressStart && msg.type === 'start') continue;
+            if (msg.type === 'file_done') _recordDevDoc(msg);
             setImmediate(() => _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger));
             if (msg.type === 'file_done') fileCount++;
             if (msg.type === 'log') {
@@ -216,9 +261,9 @@ function register(ctx) {
               else if (msg.level === 'warn') logger?.warn(`Python: ${msg.text}`);
               else                           logger?.log(`Python: ${msg.text}`);
             }
-            event.sender.send('process-progress', msg);
+            mirror(event.sender, 'process-progress', msg);
           } catch {
-            event.sender.send('process-progress', { type: 'log', text: trimmed });
+            mirror(event.sender, 'process-progress', { type: 'log', text: trimmed });
           }
         }
       });
@@ -227,7 +272,7 @@ function register(ctx) {
         if (_cancelRequested) return;
         const text = d.toString().trim();
         if (text) logger?.warn(`Python stderr: ${text}`);
-        event.sender.send('process-progress', { type: 'log', text });
+        mirror(event.sender, 'process-progress', { type: 'log', text });
       });
 
       proc.on('close', (code) => {
@@ -260,7 +305,7 @@ function register(ctx) {
         const shards = partitionRoundRobin(allFiles, Math.min(concurrency, allFiles.length));
         logger?.log(`Batch start: folder="${folderPath}" mode=${procMode} concurrency=${concurrency} → ${shards.length} workers, ${allFiles.length} files`);
         // One aggregate start for the whole batch; per-worker starts suppressed.
-        event.sender.send('process-progress', { type: 'start', total: allFiles.length });
+        mirror(event.sender, 'process-progress', { type: 'start', total: allFiles.length });
         workerPromises = shards.map(shard => {
           const f = writeTempJson('files', shard);
           shardFiles.push(f);
@@ -358,6 +403,11 @@ function register(ctx) {
     if (templateId) {
       scriptArgs.push('--known-template-id', String(templateId));
     }
+    // Dev trace stream + OCR slice capture only while the hidden inspector is open.
+    if (ctx.windows && ctx.windows['dev-inspector']) {
+      scriptArgs.push('--trace');
+      try { fs.mkdirSync(ctx.devSliceDir, { recursive: true }); scriptArgs.push('--slice-dir', ctx.devSliceDir); } catch {}
+    }
     const allTempFiles = [...tempFiles];
     if (effectiveEnhanceParams) {
       const enhanceFile = writeTempJson('enhance', effectiveEnhanceParams);
@@ -380,10 +430,12 @@ function register(ctx) {
           if (!trimmed) continue;
           try {
             const msg = JSON.parse(trimmed);
-            event.sender.send('reprocess-progress', msg);
+            if (msg.type === 'trace') { _recordDevTrace(msg); notifyDevInspector?.('process-trace', msg); continue; }
+            if (msg.type === 'file_done') _recordDevDoc(msg);
+            mirror(event.sender, 'reprocess-progress', msg);
             if (msg.type === 'file_done') result = msg;
           } catch {
-            event.sender.send('reprocess-progress', { type: 'log', text: trimmed });
+            mirror(event.sender, 'reprocess-progress', { type: 'log', text: trimmed });
           }
         }
       });
@@ -391,7 +443,7 @@ function register(ctx) {
       proc.stderr.on('data', d => {
         const text = d.toString().trim();
         if (text) logger?.warn(`Reprocess stderr: ${text}`);
-        event.sender.send('reprocess-progress', { type: 'log', text });
+        mirror(event.sender, 'reprocess-progress', { type: 'log', text });
       });
 
       proc.on('close', () => {
@@ -418,16 +470,30 @@ function register(ctx) {
           anchor_label:      data.anchor || null,
         }));
 
+        // Dev-only: surface each merge decision to the inspector (and session
+        // registry). Observation only — the merge result below is unchanged.
+        const _devTrace = !!(ctx.windows && ctx.windows['dev-inspector']);
+        const _emitMerge = (field, decision, oldV, newV) => {
+          if (!_devTrace) return;
+          const ev = { type: 'trace', doc: filename, event: 'reprocess_merge',
+                       field, decision, old: oldV ?? null, new: newV ?? null };
+          _recordDevTrace(ev); notifyDevInspector('process-trace', ev);
+        };
+
         const mergedRows = newRows.map(row => {
           const ex = existingMap[row.field_key];
           if (!ex) return row;
           // Only preserve old value if reprocessing found nothing new
-          if (ex.display_value && !row.display_value) return {
-            ...row, raw_value: ex.raw_value,
-            display_value: ex.display_value, confidence: ex.confidence,
-            validation_note: ex.validation_note || null,
-            corrected_to: ex.corrected_to || null,
-          };
+          if (ex.display_value && !row.display_value) {
+            _emitMerge(row.field_key, 'kept_existing', ex.display_value, row.display_value);
+            return {
+              ...row, raw_value: ex.raw_value,
+              display_value: ex.display_value, confidence: ex.confidence,
+              validation_note: ex.validation_note || null,
+              corrected_to: ex.corrected_to || null,
+            };
+          }
+          if (ex.display_value) _emitMerge(row.field_key, 'used_new', ex.display_value, row.display_value);
           return row;
         });
 

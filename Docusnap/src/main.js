@@ -288,6 +288,10 @@ app.whenReady().then(() => {
     resourcePath, pythonExe, pythonArgs, tesseractPath,
     backendScript, configPath, templatesDir,
     createWindow, getMainWindow, notifyMainWindow, notifyAllWindows,
+    // Read-only telemetry mirror target for the hidden dev inspector (no-op when closed).
+    notifyDevInspector: (channel, ...args) => windows['dev-inspector']?.webContents.send(channel, ...args),
+    // Dev-only temp dir for OCR crop slices (cleaned on inspector close + app exit).
+    devSliceDir: path.join(app.getPath('temp'), 'ds-devslices'),
     windows,
     app, fs, logger,
     spawn: require('child_process').spawn,
@@ -317,6 +321,48 @@ app.whenReady().then(() => {
   // NO gate and NO denial path (enforcement OFF); the enterMainApp() flow below
   // is untouched, so app launch behavior is unchanged.
   licensingModule.register(ctx);
+
+  // ── Hidden developer processing inspector (read-only) ───────────────────────
+  // Password is verified HERE in the main process; the renderer can only REQUEST
+  // unlock and can never self-grant. The inspector window only subscribes to
+  // mirrored process telemetry — it invokes no role-protected handler, so existing
+  // requireLogin/requireRole boundaries are untouched. Available in dev and
+  // packaged builds, gated solely by this password.
+  const devSliceDir = ctx.devSliceDir;
+  const clearDevSlices = () => {
+    try {
+      if (!fs.existsSync(devSliceDir)) return;
+      for (const f of fs.readdirSync(devSliceDir)) {
+        try { fs.unlinkSync(path.join(devSliceDir, f)); } catch {}
+      }
+    } catch {}
+  };
+  ipcMain.handle('dev-inspector-unlock', (_e, password) => {
+    if (password !== 'SFDEV') return false;         // never log the password
+    const win = createWindow('dev-inspector', {
+      width: 960, height: 720, minWidth: 640, minHeight: 480,
+    });
+    // Closing the inspector removes the session's temp OCR slice files.
+    win.on('closed', clearDevSlices);
+    win.focus();
+    return true;
+  });
+  // Read-only state getter (boolean) — no mutation, safe to expose.
+  ipcMain.handle('dev-inspector-running', () => {
+    try { return processingModule.isBatchRunning(); } catch { return false; }
+  });
+  // Serve a captured OCR slice as a base64 data URI — path MUST resolve inside the
+  // dev slice dir (prevents the renderer reading arbitrary files). Dev-only.
+  ipcMain.handle('dev-get-slice', (_e, slicePath) => {
+    try {
+      const root = path.resolve(devSliceDir);
+      const abs  = path.resolve(String(slicePath || ''));
+      if (!abs.startsWith(root + path.sep) || !fs.existsSync(abs)) return null;
+      return 'data:image/png;base64,' + fs.readFileSync(abs).toString('base64');
+    } catch { return null; }
+  });
+  // Fallback cleanup on clean exit.
+  app.on('before-quit', () => { try { fs.rmSync(devSliceDir, { recursive: true, force: true }); } catch {} });
 
   // Window controls (shared across all windows)
   ipcMain.on('window-minimise', e =>
