@@ -219,7 +219,8 @@ function _centerDistance(ax, ay, bx, by) {
 function saveAnchor(db, {
   supplier_name, document_type, field_key,
   anchor_label, direction, page_zone, x_norm, y_norm,
-  w_norm = 0, h_norm = 0
+  w_norm = 0, h_norm = 0, authoritative = false,
+  offset_dx_norm = null, offset_dy_norm = null
 }) {
   const key = {
     supplier_name: supplier_name || '__unknown__',
@@ -230,7 +231,77 @@ function saveAnchor(db, {
     page_zone,
     x_norm: x_norm || 0, y_norm: y_norm || 0,
     w_norm: w_norm || 0, h_norm: h_norm || 0,
+    // Drift-invariant label→value offset (only the ⊕ teach supplies it; passive
+    // auto-learn leaves it null). Stored on the authoritative path below.
+    offset_dx_norm: (offset_dx_norm === null || offset_dx_norm === undefined) ? null : offset_dx_norm,
+    offset_dy_norm: (offset_dy_norm === null || offset_dy_norm === undefined) ? null : offset_dy_norm,
   };
+
+  // ── Authoritative re-teach (operator EXPLICITLY redrew the box via ⊕) ────────
+  // An explicit human correction is the highest-quality signal we ever get and
+  // must take effect immediately — never be averaged toward a stale position or
+  // out-voted by a high passive usage_count. So we TRUST the drawn coordinates
+  // outright (no tolerance test, no usage-weighted blend) and COLLAPSE every
+  // other anchor for this (supplier, doc_type, field): a previous teach can have
+  // produced a sibling row under a slightly different auto-derived anchor_label,
+  // and _filter_anchors would otherwise keep selecting the stale sibling by
+  // usage_count. Stamping last_authoritative_at lets extraction prefer this row.
+  // A mis-teach is cheap to recover from — just redraw again (also authoritative).
+  if (authoritative) {
+    // Remove sibling anchors for the SAME field/supplier/doc_type that are not
+    // this exact label+direction, so the just-drawn box is the single source of
+    // truth for the field's position and no stale row can win selection.
+    //
+    // Scope is (field_key, document_type) ACROSS ALL SUPPLIERS — deliberately
+    // NOT restricted to this teach's supplier. The doc-type IS the layout here;
+    // an operator teaching where a field sits is correcting it for that layout,
+    // not for one resolved supplier identity. Without the cross-supplier sweep,
+    // a stale anchor saved under a supplier the template/logo resolves to
+    // (supplier-exact = higher selection priority) survives and out-ranks this
+    // supplier-agnostic teach — the exact failure that made re-teaching look
+    // broken. Superseding by (field, doc-type) makes the explicit teach win for
+    // every future document of this type regardless of resolved supplier, which
+    // is the intended supplier-optional, doc-type-driven behaviour.
+    db.prepare(`
+      DELETE FROM field_anchors
+      WHERE field_key = @field_key
+        AND ((document_type IS @document_type) OR document_type = @document_type)
+        AND NOT (supplier_name = @supplier_name
+                 AND anchor_label = @anchor_label AND direction = @direction)
+    `).run(key);
+
+    const existingAuth = db.prepare(`
+      SELECT id FROM field_anchors
+      WHERE supplier_name = @supplier_name AND document_type = @document_type
+        AND field_key = @field_key AND anchor_label = @anchor_label AND direction = @direction
+    `).get(key);
+
+    if (existingAuth) {
+      db.prepare(`
+        UPDATE field_anchors
+        SET page_zone = @page_zone, x_norm = @x_norm, y_norm = @y_norm,
+            w_norm = @w_norm, h_norm = @h_norm,
+            offset_dx_norm = @offset_dx_norm, offset_dy_norm = @offset_dy_norm,
+            usage_count = usage_count + 1,
+            confidence  = 1.0,
+            last_seen   = datetime('now'),
+            last_authoritative_at = datetime('now')
+        WHERE id = @id
+      `).run({ id: existingAuth.id, page_zone: incoming.page_zone, ...incoming });
+    } else {
+      db.prepare(`
+        INSERT INTO field_anchors
+          (supplier_name, document_type, field_key, anchor_label, direction,
+           page_zone, x_norm, y_norm, w_norm, h_norm,
+           offset_dx_norm, offset_dy_norm, last_authoritative_at)
+        VALUES
+          (@supplier_name, @document_type, @field_key, @anchor_label, @direction,
+           @page_zone, @x_norm, @y_norm, @w_norm, @h_norm,
+           @offset_dx_norm, @offset_dy_norm, datetime('now'))
+      `).run({ ...key, ...incoming });
+    }
+    return;
+  }
 
   // `=` (not `IS`) deliberately mirrors the NULL-never-matches semantics of
   // the unique index this replaces — ON CONFLICT(supplier_name, document_type,
@@ -257,15 +328,22 @@ function saveAnchor(db, {
     return;
   }
 
-  // Tolerance is derived from the anchor's OWN stored footprint (half its
-  // larger dimension, floored at ANCHOR_MIN_TOLERANCE) — so "is this the same
-  // spot" scales with each field's value-box size for any supplier, field, or
-  // future template, rather than using one fixed distance for every anchor.
-  const tolerance = Math.max(existing.w_norm, existing.h_norm, ANCHOR_MIN_TOLERANCE) / 2;
-  const distance  = _centerDistance(incoming.x_norm, incoming.y_norm, existing.x_norm, existing.y_norm);
+  // "Same spot?" is judged PER-AXIS, each axis against its OWN stored dimension
+  // (half the width horizontally, half the height vertically, both floored at
+  // ANCHOR_MIN_TOLERANCE). A single radial tolerance taken from max(w,h) let the
+  // box WIDTH set the vertical threshold — value boxes are wide and short, so a
+  // deliberate one-text-line-down correction (a small dy) fell inside half the
+  // width and was misclassified as a refinement, then blended away on a
+  // high-usage anchor. Component-wise tolerance keeps a vertical line move a
+  // genuine correction while still absorbing true jitter. (Passive path only —
+  // an explicit ⊕ re-teach is handled authoritatively above.)
+  const tolX = Math.max(existing.w_norm, ANCHOR_MIN_TOLERANCE) / 2;
+  const tolY = Math.max(existing.h_norm, ANCHOR_MIN_TOLERANCE) / 2;
+  const withinSpot = Math.abs(incoming.x_norm - existing.x_norm) <= tolX
+                  && Math.abs(incoming.y_norm - existing.y_norm) <= tolY;
 
   let next;
-  if (distance <= tolerance) {
+  if (withinSpot) {
     // Refinement: usage-weighted running average. A well-established anchor
     // (high usage_count) barely moves on each new consistent sample and
     // converges/stabilizes — instead of being perturbed by a fixed 50% on
@@ -465,9 +543,32 @@ function clearCorrectionsForScope(db, { supplier_name, document_type } = {}) {
 
 // ── Format templates (OCR correction) ────────────────────────────────────────
 
+// Lightweight "does this look like a date?" test — a JS gate to keep non-dates
+// (e.g. a reference like "2605-0849-1") out of a date field's learned format.
+// Matches D/M/Y & ISO numeric dates and month-name dates; deliberately loose
+// (the Python validator is the real parser) but enough to reject reference shapes.
+const _MONTHS_RE = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i;
+function _looksDateish(v) {
+  const s = String(v || '');
+  if (/\d{1,2}\s*[/.\-]\s*\d{1,2}\s*[/.\-]\s*\d{2,4}/.test(s)) return true; // 20/02/2026 · 20-02-2026
+  if (/\d{4}[/\-]\d{2}[/\-]\d{2}/.test(s)) return true;                     // 2026-02-20 (ISO)
+  if (_MONTHS_RE.test(s) && /\d/.test(s)) return true;                      // 6 Aug 2026
+  return false;
+}
+
 function getFieldFormats(db) {
-  // For each supplier+doctype+field, collect the final confirmed values
-  // (corrected value if user edited, otherwise the extracted display value).
+  // Collect final confirmed values (corrected value if the user edited, else the
+  // extracted display value) for every confirmed document. Built into TWO kinds
+  // of group:
+  //   • supplier-scoped  (supplier_name, doc_type, field)  — when a real supplier
+  //     is known (supplier-centric workflows);
+  //   • doc-type-scoped  ('', doc_type, field)            — ALWAYS, aggregating
+  //     across every supplier (and documents with none). This makes format
+  //     learning DOCUMENT-AGNOSTIC: a doc type whose supplier is never identified
+  //     (e.g. a worksheet where the supplier is implicit/constant) still learns
+  //     its reference/date/field shapes, so the qualification gate can reject a
+  //     garbage value by doc-type alone. The empty supplier_name is the
+  //     doc-type-scoped key the Python index/engine fall back to.
   const rows = db.prepare(`
     SELECT
       e.document_id,
@@ -475,37 +576,54 @@ function getFieldFormats(db) {
       dt.slug        AS document_type,
       e.field_key,
       e.display_value,
-      c.corrected_value
+      c.corrected_value,
+      fld.type       AS field_type
     FROM extractions e
     JOIN  documents      d  ON d.id  = e.document_id
     LEFT JOIN document_types dt ON dt.id = d.document_type_id
+    LEFT JOIN fields        fld ON fld.document_type_id = d.document_type_id
+                               AND fld.key = e.field_key
     LEFT JOIN corrections   c  ON c.document_id = e.document_id
                                AND c.field_key  = e.field_key
     WHERE d.status          = 'confirmed'
-      AND d.supplier_name   IS NOT NULL
-      AND d.supplier_name   != ''
-      AND d.supplier_name   != '__global__'
       AND (e.display_value IS NOT NULL OR c.corrected_value IS NOT NULL)
     ORDER BY d.confirmed_at DESC, d.id DESC
   `).all();
 
   const groups = {};
+  const addTo = (supplierKey, docType, fieldKey, value) => {
+    const key = `${supplierKey}|${docType}|${fieldKey}`;
+    let g = groups[key];
+    if (!g) {
+      g = groups[key] = {
+        supplier_name: supplierKey, document_type: docType, field_key: fieldKey,
+        _values: new Set(), _valueCounts: new Map(), _count: 0,
+      };
+    }
+    g._values.add(value);
+    g._valueCounts.set(value, (g._valueCounts.get(value) || 0) + 1);
+    g._count += 1;
+  };
+
   for (const row of rows) {
     const finalValue = (row.corrected_value || row.display_value || '').trim();
     if (!finalValue) continue;
-
-    const key = `${row.supplier_name}|${row.document_type || ''}|${row.field_key}`;
-    if (!groups[key]) {
-      groups[key] = {
-        supplier_name: row.supplier_name,
-        document_type: row.document_type || '',
-        field_key:     row.field_key,
-        _values:       new Set(),
-        _count:        0,
-      };
+    // Guard: never LEARN a non-date into a date-typed field's format. A mis-aimed
+    // anchor that once read (and got confirmed as) a reference number must not
+    // pollute the date field's learned shape — that turns the date class into
+    // "freetext" and disables date qualification entirely. Only date-shaped
+    // values contribute to a date field's format model.
+    if (row.field_type === 'date' && !_looksDateish(finalValue)) continue;
+    const docType  = row.document_type || '';
+    const supplier = (row.supplier_name || '').trim();
+    // Supplier-scoped — only for a real, non-placeholder supplier (unchanged).
+    if (supplier && supplier !== '__global__') {
+      addTo(supplier, docType, row.field_key, finalValue);
     }
-    groups[key]._values.add(finalValue);
-    groups[key]._count += 1;
+    // Doc-type-scoped — always, across every supplier (incl. none).
+    if (docType) {
+      addTo('', docType, row.field_key, finalValue);
+    }
   }
 
   // Only return groups with 3+ distinct confirmed values (enough to learn a pattern).
@@ -514,10 +632,15 @@ function getFieldFormats(db) {
   // examples" thresholds without a second DB round-trip.
   return Object.values(groups)
     .filter(g => g._values.size >= 3)
-    .map(({ _values, _count, ...rest }) => ({
+    .map(({ _values, _valueCounts, _count, ...rest }) => ({
       ...rest,
       sample_values:   [..._values].slice(0, 20),
       confirmed_count: _count,
+      // Per-value confirmed-document counts (newest distinct first, capped) so
+      // the Python shape model can learn the SET of shapes each confirmed enough
+      // times, not just one unanimous shape — letting a field legitimately carry
+      // more than one structure (e.g. a 4- and a 5-digit reference).
+      value_counts:    Object.fromEntries([..._valueCounts].slice(0, 200)),
     }));
 }
 
@@ -568,6 +691,70 @@ function resetAllLearning(db) {
     counts.template_fields         = del('DELETE FROM template_fields');
     counts.templates               = del('DELETE FROM templates');
     counts.template_groups         = del('DELETE FROM template_groups');
+  })();
+  return counts;
+}
+
+// Developer reset — "fresh install, keep the document corpus". A superset of
+// resetAllLearning: in one transaction it additionally removes the CUSTOM schema
+// (custom document types + custom fields, re-seeding only the built-ins) and
+// strips every learned attribute back off the kept documents, sending confirmed/
+// deferred docs back to the review queue. The binary files (documents.working_path)
+// and the document rows themselves are preserved, so re-processing those same
+// files re-learns the system from zero — the point of the test.
+//
+// KEEPS (untouched): settings (config + licensing flags), users/recovery/audit,
+// license_tokens/device_registrations, and the documents + extractions rows.
+// extractions are left in place — a reprocess overwrites them; meanwhile learning
+// reads only from CONFIRMED docs, and every doc has just been moved out of that
+// state, so the learning corpus is genuinely empty until the user re-confirms.
+//
+// Order matters: documents holds FKs to BOTH templates(id) (template_id) and
+// document_types(id) (document_type_id), neither with an ON DELETE action. So the
+// documents UPDATE runs FIRST, nulling those links before the template and
+// custom-type deletes below — otherwise either delete trips an FK constraint
+// while a document still references the row. Idempotent. Returns per-table counts.
+function resetToFreshInstall(db) {
+  const counts = {};
+  const del = (sql) => db.prepare(sql).run().changes;
+  const docTypes = require('./document_types');
+  db.transaction(() => {
+    // 1. Strip learned identity off every kept document and requeue confirmed/
+    //    deferred ones. Must precede the deletes: clears the template_id and
+    //    document_type_id FKs so the rows they point at can be removed.
+    counts.documents_reset = db.prepare(`
+      UPDATE documents SET
+        template_id            = NULL,
+        logo_phash             = NULL,
+        keyword_fingerprint    = NULL,
+        supplier_name          = NULL,
+        document_type_id       = NULL,
+        ocr_text               = NULL,
+        confirmed_at           = NULL,
+        review_acknowledged_at = NULL,
+        status = CASE WHEN status IN ('confirmed','deferred') THEN 'needs_review' ELSE status END
+      WHERE template_id IS NOT NULL OR logo_phash IS NOT NULL
+         OR keyword_fingerprint IS NOT NULL OR supplier_name IS NOT NULL
+         OR document_type_id IS NOT NULL OR ocr_text IS NOT NULL
+         OR confirmed_at IS NOT NULL OR review_acknowledged_at IS NOT NULL
+         OR status IN ('confirmed','deferred')
+    `).run().changes;
+    // 2. Automatic-learning corpora.
+    counts.supplier_hints          = del('DELETE FROM supplier_hints');
+    counts.field_anchors           = del('DELETE FROM field_anchors');
+    counts.logo_fingerprints       = del('DELETE FROM logo_fingerprints');
+    counts.corrections             = del('DELETE FROM corrections');
+    // 3. Learned/managed template store (children before parents).
+    counts.template_field_mappings = del('DELETE FROM template_field_mappings');
+    counts.template_fields         = del('DELETE FROM template_fields');
+    counts.templates               = del('DELETE FROM templates');
+    counts.template_groups         = del('DELETE FROM template_groups');
+    // 4. Custom schema → fresh-install schema (built-ins only). fields cascade
+    //    from their type, but custom fields can also hang off a built-in type,
+    //    so delete by the built_in flag explicitly, then re-seed the built-ins.
+    counts.custom_fields           = del('DELETE FROM fields WHERE built_in = 0');
+    counts.custom_document_types   = del('DELETE FROM document_types WHERE built_in = 0');
+    docTypes.seedBuiltInTypes(db);
   })();
   return counts;
 }
@@ -636,6 +823,7 @@ module.exports = {
   saveLogoFingerprint, getAllLogos, findLogoMatch,
   getFieldFormats, getDigitsOnlyFields,
   getRecoverySummary, getRecoveryDetail, getMemoryInventory, resetAllLearning,
+  resetToFreshInstall,
   clearFieldAnchorsForScope, clearSupplierHintsForScope, clearCorrectionsForScope,
   getSetting, setSetting,
 };

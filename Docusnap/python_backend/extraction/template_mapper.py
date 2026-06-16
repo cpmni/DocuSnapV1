@@ -32,6 +32,14 @@ import re
 from PIL import Image, ImageFilter, ImageOps
 
 from extraction import page_geometry
+# Reuse the SAME credibility test the learned-anchor stage uses, so a template
+# mapping is held to the same "is this value plausible for the field?" standard
+# (typed fields must match their validation pattern; free-text must not be debris).
+from extraction.anchor import _crop_is_credible
+# And the SAME learned-format check Stage 4.5 uses, so the failsafe below judges a
+# value against the shape this field has historically taken on this template
+# (learned from confirmed docs) — label- and field-key-agnostic, one source of truth.
+from extraction.format_anomaly_checker import check_value as _check_learned_format
 
 try:
     import pytesseract
@@ -41,6 +49,15 @@ except ImportError:  # pragma: no cover - exercised only when Tesseract absent
     Output = None
 
 _FUZZY_MATCH_THRESHOLD = 0.6
+
+# Proximity tie-break: when a label REPEATS on the page and several lines match
+# the anchor EQUALLY well, prefer the one nearest the original anchor position.
+# This must NEVER let a nearer but LOWER-scoring line beat a higher-scoring match
+# — doing so picked "Ticket Type" (0.70) over the real "Ticket No." (0.75) merely
+# because it sat fractionally closer, returning the wrong row's value. So only
+# EXACT-score ties (within this tiny float epsilon) are decided by proximity;
+# a meaningfully higher score always wins outright.
+_SCORE_TIE_EPSILON = 1e-6
 
 # Floor on the anchor SEARCH margin (page-normalised, every edge), applied even
 # when a mapping stored no search_expansion. A drawn anchor box is often tight or
@@ -62,7 +79,8 @@ _UNSET = object()         # "located not provided" sentinel (distinct from a Non
 
 
 def extract_with_mappings(page_images, mappings, field_patterns=None,
-                          ocr_lines_fn=None, ocr_text_fn=None, slice_capture=None):
+                          ocr_lines_fn=None, ocr_text_fn=None, slice_capture=None,
+                          validation_patterns=None, format_lookup=None):
     """
     Run every enabled mapping against `page_images` and return resolved fields.
 
@@ -130,7 +148,9 @@ def extract_with_mappings(page_images, mappings, field_patterns=None,
                                ocr_lines_fn, ocr_text_fn,
                                located=located_cache[id(mapping)],
                                drift=page_drift.get(page_idx),
-                               slice_capture=slice_capture, page_idx=page_idx)
+                               slice_capture=slice_capture, page_idx=page_idx,
+                               validation_patterns=validation_patterns,
+                               format_lookup=format_lookup)
         if outcome:
             results[field_key] = outcome
     return results
@@ -138,24 +158,63 @@ def extract_with_mappings(page_images, mappings, field_patterns=None,
 
 # ── Per-mapping resolution ────────────────────────────────────────────────────
 
+def _format_rejects(text, field_key, format_lookup):
+    """True when a LEARNED format exists for this field and `text` doesn't match
+    it — the universal, label-agnostic failsafe.
+
+    Conservative by construction: only constrains a field once it HAS a learned
+    format (build_format_class_index requires ≥3 confirmed values and drops
+    free-text/varied groups), and only when a lookup was supplied. Otherwise
+    returns False (pass through), so a brand-new template/field is never
+    rejected until it has actually learned its shape — and as a new but genuine
+    value shape recurs and is confirmed, the count-gated shape model adds it to
+    the accepted set, so the system keeps working for ANY future document."""
+    if not text or format_lookup is None:
+        return False
+    try:
+        entry = format_lookup(field_key)
+    except Exception:
+        return False
+    if not entry:
+        return False
+    return _check_learned_format(str(text), entry) is not None
+
+
 def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
-                 located=_UNSET, drift=None, slice_capture=None, page_idx=0):
+                 located=_UNSET, drift=None, slice_capture=None, page_idx=0,
+                 validation_patterns=None, format_lookup=None):
     anchor_box = _norm_box(mapping, "anchor")
     target_box = _norm_box(mapping, "target")
     if not anchor_box or not target_box:
         return None
 
-    expansion = float(mapping.get("search_expansion") or 0.0)
+    expansion   = float(mapping.get("search_expansion") or 0.0)
+    anchor_text = mapping.get("anchor_text")
+    field_key   = mapping.get("field_key", "")
+    val_type    = (field_patterns or {}).get(field_key, {}).get("validation")
+
     if located is _UNSET:
-        located = _locate_anchor(page, anchor_box, mapping.get("anchor_text"),
-                                 expansion, ocr_lines_fn,
-                                 min_search=_ANCHOR_SEARCH_MIN)
+        located = _locate_anchor(page, anchor_box, anchor_text, expansion,
+                                 ocr_lines_fn, min_search=_ANCHOR_SEARCH_MIN)
+    # Page-wide relocation ("try again to actually FIND the label"): when the
+    # label isn't in the drawn box ± local margin — a cropped/heavily-shifted
+    # scan (e.g. a worksheet whose top is clipped so everything sits higher)
+    # moves it out — search the WHOLE page for the distinctive label before
+    # falling back to fixed-coordinate drift. The target is still derived from
+    # where the label ACTUALLY is, so the value follows the label however far it
+    # moved. Guarded by the fuzzy threshold (a wrong nearby label is rejected)
+    # and only attempted when a label needle exists. Generic to every template.
+    if not located and anchor_text:
+        located = _locate_anchor(page, anchor_box, anchor_text, 1.0,
+                                 ocr_lines_fn, min_search=_ANCHOR_SEARCH_MIN)
     if not located:
-        # Local relocation failed. ONLY here may a consensus page drift help: a
-        # coarse translation-only pre-shift of the absolute target box. Never
-        # reached when the anchor IS located -> local evidence always wins.
+        # Local + page-wide relocation failed. ONLY here may a consensus page
+        # drift help: a coarse translation-only pre-shift of the absolute target
+        # box. Never reached when the anchor IS located -> local evidence wins.
         return _drift_fallback(page, mapping, target_box, expansion, drift,
-                               field_patterns, ocr_text_fn)
+                               field_patterns, ocr_text_fn,
+                               validation_patterns=validation_patterns,
+                               format_lookup=format_lookup)
 
     # Heart of the "anchor + relative target zone" model: derive the target
     # from where the anchor ACTUALLY is, not from the absolute saved target
@@ -182,9 +241,6 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
         "h_norm": target_box["h_norm"],
     }
 
-    field_key = mapping.get("field_key", "")
-    val_type = (field_patterns or {}).get(field_key, {}).get("validation")
-
     _cap = ((lambda c: slice_capture(field_key, "template_mapping", page_idx,
                (derived_target["x_norm"], derived_target["y_norm"],
                 derived_target["w_norm"], derived_target["h_norm"]), c, "target")) if slice_capture else None)
@@ -193,6 +249,23 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
     if not text and expansion > 0:
         text = _crop_and_ocr(page, _expand_box(derived_target, expansion), val_type, ocr_text_fn)
         expanded = bool(text)
+
+    # FAILSAFE — never WRITE a value that fails the field's known format. A crop
+    # that landed on an adjacent row ("Booking" where a job reference shaped like
+    # "2603-1351-1" is expected) or OCR debris is rejected here, so the field is
+    # omitted and falls through to the rest of the pipeline / manual review rather
+    # than committing a confidently-wrong value. Uses the SAME per-field
+    # validation patterns the keyword and learned-anchor stages already trust, so
+    # it generalises to every template/field that has a known shape — not tuned to
+    # one document. Fields with no configured pattern only reject obvious debris.
+    if text and not _crop_is_credible(text, val_type, validation_patterns):
+        text = None
+    # Learned-format failsafe (universal, no per-field config): reject a value
+    # whose shape doesn't match what this field has historically been on this
+    # template ("Booking" vs a learned "####-####-#"). Only bites once the field
+    # has a learned format; otherwise passes through. See _format_rejects.
+    if text and _format_rejects(text, field_key, format_lookup):
+        text = None
     if not text:
         return None
 
@@ -208,7 +281,8 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
 
 
 def _drift_fallback(page, mapping, target_box, expansion, drift,
-                    field_patterns, ocr_text_fn):
+                    field_patterns, ocr_text_fn, validation_patterns=None,
+                    format_lookup=None):
     """Local anchor relocation failed. If a consensus page drift exists, seed the
     target by (1) the unchanged coarse translation-only pre-shift of the ABSOLUTE
     target box, then — only if that reads nothing — (2) a page-geometry-landmark
@@ -256,6 +330,14 @@ def _drift_fallback(page, mapping, target_box, expansion, drift,
             off_dy = mapping.get("offset_dy_norm") or 0.0
             text, expanded = _read(lx + off_dx + cdx, ly + off_dy + cdy)
 
+    # Same failsafe as the located path: a drift/landmark read is fixed-coordinate
+    # and the most likely to land off-target, so it must clear BOTH the field's
+    # validation pattern AND its learned format before it can be written —
+    # otherwise omit and fall through to review.
+    if text and not _crop_is_credible(text, val_type, validation_patterns):
+        text = None
+    if text and _format_rejects(text, field_key, format_lookup):
+        text = None
     if not text:
         return None
     confidence = 48 if expanded else 60   # < explicit located tiers (78/90)
@@ -354,19 +436,38 @@ def _locate_anchor(page, anchor_box, anchor_text, expansion, ocr_lines_fn,
         return None
 
     needle = _normalise(anchor_text) if anchor_text else None
-    best, best_score = None, 0.0
+    scored = []
     for line in lines:
         haystack = _normalise(line.get("text", ""))
         if not haystack:
             continue
-        score = _label_score(needle, haystack)
-        if score > best_score:
-            best, best_score = line, score
+        scored.append((_label_score(needle, haystack), line))
 
-    if best is None:
+    if not scored:
         return None
+    best_score = max(s for s, _ in scored)
     if needle and best_score < _FUZZY_MATCH_THRESHOLD:
         return None
+
+    # Among EQUALLY-best candidates, prefer the one closest to the original anchor
+    # position. For a unique best match this is a no-op (it wins on score, even if
+    # the scan shifted it far). It matters only when a label REPEATS on the page
+    # with the SAME score: without this a page-wide search could lock onto a far
+    # duplicate; with it, the nearest true label is chosen. Only EXACT score ties
+    # are decided by proximity — a higher score ALWAYS wins, so a lower-scoring but
+    # marginally-closer WRONG label (e.g. "Ticket Type" 0.70 vs "Ticket No." 0.75)
+    # can never be picked.
+    acx = anchor_box["x_norm"] + anchor_box["w_norm"] / 2.0
+    acy = anchor_box["y_norm"] + anchor_box["h_norm"] / 2.0
+
+    def _page_dist(ln):
+        cx = crop_box["x_norm"] + (ln["x_norm"] + ln["w_norm"] / 2.0) * crop_box["w_norm"]
+        cy = crop_box["y_norm"] + (ln["y_norm"] + ln["h_norm"] / 2.0) * crop_box["h_norm"]
+        return math.hypot(cx - acx, cy - acy)
+
+    floor = max(best_score - _SCORE_TIE_EPSILON, (_FUZZY_MATCH_THRESHOLD if needle else 0.0))
+    candidates = [(s, ln) for s, ln in scored if s >= floor]
+    chosen_score, best = min(candidates, key=lambda sl: (_page_dist(sl[1]), -sl[0]))
 
     return {
         "x_norm":       crop_box["x_norm"] + best["x_norm"] * crop_box["w_norm"],
@@ -374,7 +475,7 @@ def _locate_anchor(page, anchor_box, anchor_text, expansion, ocr_lines_fn,
         "w_norm":       best["w_norm"] * crop_box["w_norm"],
         "h_norm":       best["h_norm"] * crop_box["h_norm"],
         "matched_text": best.get("text") if needle else None,
-        "match_score":  best_score,
+        "match_score":  chosen_score,
     }
 
 

@@ -300,17 +300,25 @@ def main() -> int:
                  result_pf is not None):
         failures += 1
 
-    # ── 12. build_format_class_index ignores entries missing required keys ────
-    section("12. Entries missing supplier / doc_type / field_key are silently skipped")
+    # ── 12. build_format_class_index requires doc_type + field_key (supplier may
+    #        be empty: that's the document-agnostic doc-type-scoped key) ─────────
+    section("12. doc-type-scoped (empty-supplier) entries ARE indexed; missing doc_type/field skipped")
+
+    # Empty supplier is VALID — it's the document-agnostic key getFieldFormats
+    # emits ('', doc_type, field). Only a missing doc_type or field_key is skipped.
+    doctype_scoped = [
+        {'supplier_name': '', 'document_type': 'invoice', 'field_key': 'x', 'sample_values': ['1','2','3']},
+    ]
+    if not check("empty-supplier doc-type-scoped entry IS indexed",
+                 ('', 'invoice', 'x') in build_format_class_index(doctype_scoped)):
+        failures += 1
 
     bad_entries = [
-        {'supplier_name': '',      'document_type': 'invoice', 'field_key': 'x', 'sample_values': ['1','2','3']},
-        {'supplier_name': 'Acme',  'document_type': '',        'field_key': 'x', 'sample_values': ['1','2','3']},
-        {'supplier_name': 'Acme',  'document_type': 'invoice', 'field_key': '',  'sample_values': ['1','2','3']},
+        {'supplier_name': 'Acme',  'document_type': '', 'field_key': 'x', 'sample_values': ['1','2','3']},
+        {'supplier_name': 'Acme',  'document_type': 'invoice', 'field_key': '', 'sample_values': ['1','2','3']},
     ]
-    bad_index = build_format_class_index(bad_entries)
-    if not check("index is empty for entries with missing required keys",
-                 len(bad_index) == 0):
+    if not check("entries missing doc_type / field_key are skipped",
+                 len(build_format_class_index(bad_entries)) == 0):
         failures += 1
 
     # ── 13. Digits-only cleanup (Part 1) ─────────────────────────────────────

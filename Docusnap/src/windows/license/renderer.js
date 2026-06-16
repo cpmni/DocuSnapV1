@@ -31,7 +31,9 @@ function render(state) {
   } else {
     $('state').textContent = REASONS[reason] || 'Activation is required to use this device.';
   }
-  $('reason').textContent = reason ? `(${reason})` : '';
+  // Raw reason codes (e.g. "no_cached_token") are internal diagnostics, not
+  // end-user text — keep them out of the shipped activation screen.
+  $('reason').textContent = '';
 
   // A denial state pushed here means a prior optimistic "Opening…" (from the trial
   // or activate flow) did NOT result in entry — the main process bounced back to
@@ -51,11 +53,28 @@ function render(state) {
 if (api && api.onLicenseState) api.onLicenseState(render);
 
 // Pull current status for display (best-effort; does not gate).
+// Raw backend/cache states that all mean "this device is not licensed yet". On a
+// fresh machine licenseGetStatus reports one of these; show ONE clear message
+// instead of leaking a raw token error (e.g. "Status: invalid_token").
+const NO_LICENSE_STATES = new Set(
+  ['invalid_token', 'invalid', 'unknown', 'none', 'no_token', 'no_entitlement', 'inactive']);
+
 async function refresh() {
   try {
     const s = await api.licenseGetStatus();
-    if (s && s.state) $('state').textContent = `Status: ${s.state}` +
-      (s.days_remaining != null ? ` · ${s.days_remaining} day(s) left` : '');
+    const state = s && s.state;
+    if (state) {
+      if (NO_LICENSE_STATES.has(state)) {
+        $('state').textContent = 'No valid license found — activate below to continue.';
+      } else if (state === 'expired') {
+        $('state').textContent = REASONS.expired;
+      } else if (state === 'revoked') {
+        $('state').textContent = REASONS.revoked;
+      } else {
+        $('state').textContent = `Status: ${state}` +
+          (s.days_remaining != null ? ` · ${s.days_remaining} day(s) left` : '');
+      }
+    }
     if (s && s.seats_total != null) $('seats').textContent = `Seats: ${s.seats_used}/${s.seats_total} in use`;
     else $('seats').textContent = '';
   } catch { /* ignore — main remains the decider */ }

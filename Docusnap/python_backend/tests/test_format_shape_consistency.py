@@ -73,7 +73,7 @@ def main() -> int:
                  entry.get('class') == ALPHANUM_SEP):
         failures += 1
     if not check("learned shape signature is '####-####-#'",
-                 entry.get('shape') == '####-####-#'):
+                 entry.get('shapes') == frozenset({'####-####-#'})):
         failures += 1
 
     anomaly = check_value('11111-1111-1', entry)   # the task's example
@@ -103,8 +103,8 @@ def main() -> int:
     varied = [_entry('Acme Ltd', 'invoice', 'ref2',
                      ['11-1', '1111-1111-1', '12-1234'])]   # all alphanum_sep, diff shapes
     v_entry = build_format_class_index(varied).get(('acme ltd', 'invoice', 'ref2'))
-    if not check("class still learned (alphanum_sep) but shape is None",
-                 v_entry and v_entry.get('class') == ALPHANUM_SEP and v_entry.get('shape') is None):
+    if not check("class still learned (alphanum_sep) but no shape constraint",
+                 v_entry and v_entry.get('class') == ALPHANUM_SEP and not v_entry.get('shapes')):
         failures += 1
     if not check("an oddly-shaped but in-class value is NOT flagged on shape grounds",
                  check_value('999-99', v_entry) is None):
@@ -114,7 +114,8 @@ def main() -> int:
     section("5. digits_only: wrong digit count flagged, right count passes")
     dd = [_entry('Beta Co', 'invoice', 'code', ['123456', '234567', '345678'])]
     d_entry = build_format_class_index(dd).get(('beta co', 'invoice', 'code'))
-    if not check("learned shape is '######' (six digits)", d_entry.get('shape') == '######'):
+    if not check("learned shape is '######' (six digits)",
+                 d_entry.get('shapes') == frozenset({'######'})):
         failures += 1
     if not check("'1234567' (7 digits) flagged even though still all-digits",
                  check_value('1234567', d_entry) is not None):
@@ -133,6 +134,39 @@ def main() -> int:
     if not check("unexpected separator in alphanum_sep still flagged LOW (char path)",
                  sep_anom and sep_anom.get('severity') == 'low'
                  and 'unexpected character' in sep_anom.get('anomaly', '')):
+        failures += 1
+
+    # ── 6b. Count-gated multi-shape learning (value_counts path) ──────────────
+    section("6b. a second shape is accepted once confirmed enough times")
+    # A ref field that is usually 5 digits, now also seen as 4 digits. The 4-digit
+    # shape is below the accept threshold at first (flagged), then clears it.
+    base5 = {'12345': 4, '23456': 3, '34567': 2}        # '#####' confirmed 9x
+    mc_entry = build_format_class_index([{
+        'supplier_name': 'Gamma Co', 'document_type': 'invoice', 'field_key': 'ref',
+        'sample_values': list(base5), 'confirmed_count': 9, 'value_counts': base5,
+    }]).get(('gamma co', 'invoice', 'ref'))
+    if not check("only the well-supported 5-digit shape learned",
+                 mc_entry and mc_entry.get('shapes') == frozenset({'#####'})):
+        failures += 1
+    if not check("a stray 4-digit value is flagged while under the threshold",
+                 check_value('9999', mc_entry) is not None):
+        failures += 1
+
+    # Now the 4-digit shape has been confirmed _SHAPE_ACCEPT_MIN times.
+    both = {**base5, '8888': 3, '7777': 1}              # '####' confirmed 4x (>=3)
+    mc2 = build_format_class_index([{
+        'supplier_name': 'Gamma Co', 'document_type': 'invoice', 'field_key': 'ref',
+        'sample_values': list(both), 'confirmed_count': 13, 'value_counts': both,
+    }]).get(('gamma co', 'invoice', 'ref'))
+    if not check("both shapes now accepted",
+                 mc2 and mc2.get('shapes') == frozenset({'#####', '####'})):
+        failures += 1
+    if not check("a 4-digit value is no longer flagged", check_value('9999', mc2) is None):
+        failures += 1
+    if not check("a 5-digit value is still accepted", check_value('55555', mc2) is None):
+        failures += 1
+    if not check("a 3-digit value (never confirmed) is still flagged",
+                 check_value('123', mc2) is not None):
         failures += 1
 
     # ── 7. shape_signature is correct + deterministic ─────────────────────────

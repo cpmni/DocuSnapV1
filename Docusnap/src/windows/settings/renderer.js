@@ -2361,197 +2361,44 @@ loadTemplates().then(async () => {
 api.onNavigateToTemplate(openTemplateInEditor);
 
 // ══════════════════════════════════════════════════════════════════════════════
-// ACTIVATION TEST TAB  (admin-only — the whole Settings window is gated to
-// hasRole('admin') in main.js). Verifies a local/staging licensing backend
-// against seeded credentials WITHOUT touching this device's real license state.
+// LICENSING TAB  (admin-only — the whole Settings window is gated to
+// hasRole('admin') in main.js). Read-only display of the licence currently in
+// force on this device — no network call, no state change. The dev-only
+// activation-test and enforcement-toggle tooling was removed for live
+// deployment; enforcement is driven by the packaged build, with the
+// DOCUSNAP_LICENSE_ENFORCEMENT env override left as the recovery hatch.
 // ══════════════════════════════════════════════════════════════════════════════
-const ACT_URL_KEY = 'license_test_base_url';
-const ACT_PID_KEY = 'license_test_product_id';
-const actBaseUrl  = document.getElementById('act-base-url');
-const actProductId = document.getElementById('act-product-id');
-const actKey      = document.getElementById('act-key');
-const actRunBtn   = document.getElementById('act-btn-run');
-const actStatus   = document.getElementById('act-status');
-
-// Prefill the non-secret fields only. The activation key is never persisted, so
-// it always starts blank.
-async function loadActivationTest() {
-  try {
-    actBaseUrl.value   = (await api.getSetting(ACT_URL_KEY)) || '';
-    actProductId.value = (await api.getSetting(ACT_PID_KEY)) || '';
-  } catch (e) { console.warn('activation test prefill failed:', e.message); }
-}
-loadActivationTest();
-
-function setActStatus(kind, html) {
-  // kind: 'ok' | 'err' | 'info'
-  const palette = {
-    ok:   { bg: 'var(--ok-bg)',     fg: 'var(--ok)',     bd: 'var(--ok-border)' },
-    err:  { bg: 'var(--err-bg)',    fg: 'var(--err)',    bd: 'var(--err)' },
-    info: { bg: 'var(--accent-bg)', fg: 'var(--accent2)', bd: 'var(--accent-border)' },
-  }[kind] || {};
-  actStatus.style.display = 'block';
-  actStatus.style.background = palette.bg || 'transparent';
-  actStatus.style.color = palette.fg || 'var(--text)';
-  actStatus.style.border = '1px solid ' + (palette.bd || 'var(--border2)');
-  actStatus.innerHTML = html;
-}
-
-actRunBtn.addEventListener('click', async () => {
-  const baseUrl   = actBaseUrl.value.trim();
-  const productId = actProductId.value.trim();
-  const accountKey = actKey.value; // not trimmed — keys may legitimately vary
-
-  if (!baseUrl || !productId || !accountKey) {
-    setActStatus('err', 'Backend URL, Product ID and Activation Key are all required.');
-    return;
-  }
-
-  // Persist the non-secret fields for next time; never store the key.
-  try {
-    await api.setSetting(ACT_URL_KEY, baseUrl);
-    await api.setSetting(ACT_PID_KEY, productId);
-  } catch { /* prefill persistence is best-effort */ }
-
-  actRunBtn.disabled = true;
-  setActStatus('info', 'Running activation test…');
-  try {
-    const r = await api.licenseTestActivate({ baseUrl, productId, accountKey });
-    if (r && r.ok) {
-      const seats = (r.seats_used != null && r.seats_total != null)
-        ? ` &middot; seat ${escHtml(String(r.seats_used))} of ${escHtml(String(r.seats_total))} bound`
-        : '';
-      setActStatus('ok',
-        `<strong>Activation succeeded</strong> (HTTP ${escHtml(String(r.status))})<br>` +
-        `State: <span class="field-key">${escHtml(r.state || 'active')}</span>${seats}`);
-    } else if (r && r.offline) {
-      setActStatus('err',
-        `<strong>Could not reach backend.</strong><br>` +
-        `Check the URL and that Apache/MySQL are running.` +
-        (r.message ? `<br><span class="field-key">${escHtml(r.message)}</span>` : ''));
-    } else {
-      const code = (r && r.code) || 'activation_failed';
-      const httpPart = (r && r.status != null) ? ` (HTTP ${escHtml(String(r.status))})` : '';
-      setActStatus('err',
-        `<strong>Activation failed</strong>${httpPart}<br>` +
-        `Reason: <span class="field-key">${escHtml(code)}</span>` +
-        ((r && r.message) ? `<br>${escHtml(r.message)}` : ''));
-    }
-  } catch (e) {
-    setActStatus('err', 'Unexpected error: ' + escHtml(e.message || String(e)));
-  } finally {
-    actRunBtn.disabled = false;
-  }
-});
-
-// ── License enforcement (staged) ──────────────────────────────────────────────
-const enfToggle = document.getElementById('enf-toggle');
-const enfSub    = document.getElementById('enf-sub');
-const enfStatus = document.getElementById('enf-status');
-
-function renderEnfStatus(s) {
-  if (!s) { enfStatus.textContent = ''; return; }
-  let line = `Setting: ${s.setting ? 'ON' : 'OFF'} · Effective: ${s.effective ? 'ON' : 'OFF'}`;
-  if (s.envOverride !== null && s.envOverride !== undefined) {
-    line += ` · env override forces ${s.envOverride ? 'ON' : 'OFF'}`;
-    enfSub.textContent = 'A DOCUSNAP_LICENSE_ENFORCEMENT env override is active and overrides this toggle.';
-  } else {
-    enfSub.textContent = 'Takes effect on the next app launch.';
-  }
-  enfStatus.textContent = line;
-}
-
-async function loadEnforcement() {
-  try {
-    const s = await api.licenseGetEnforcement();
-    enfToggle.checked = !!(s && s.setting);
-    renderEnfStatus(s);
-  } catch (e) { console.warn('enforcement load failed:', e.message); }
-}
-loadEnforcement();
-
-enfToggle.addEventListener('change', async () => {
-  const want = enfToggle.checked;
-  enfToggle.disabled = true;
-  try {
-    const r = await api.licenseSetEnforcement(want);
-    if (!r || !r.ok) {
-      enfToggle.checked = !want; // revert on failure
-      enfStatus.textContent = (r && r.code === 'forbidden')
-        ? 'Only an admin can change enforcement.' : 'Could not update enforcement.';
-    } else {
-      renderEnfStatus(r);
-    }
-  } catch (e) {
-    enfToggle.checked = !want;
-    enfStatus.textContent = 'Could not update enforcement: ' + (e.message || 'error');
-  } finally {
-    enfToggle.disabled = false;
-  }
-  loadLicenseStatus(); // reflect the new effective enforcement immediately
-});
-
-// ── License status (read-only diagnostic) ─────────────────────────────────────
-// Shows exactly what the gate sees on this device: effective enforcement (and any
-// env override), the cached trial/seat token, and the offline gate decision. This
-// is the "is it seeing a licence?" answer. No network call, no state change.
 const licStatusEl   = document.getElementById('lic-status');
 const licRefreshBtn = document.getElementById('lic-refresh');
 
-const GATE_TEXT = {
-  allow:               ['ok',    'Would ALLOW entry — a valid licence is in force.'],
-  enforcement_off:     ['muted', 'Enforcement is OFF — the app opens without requiring a licence.'],
-  no_cached_token:     ['warn',  'Would REQUIRE activation — no licence is cached on this device.'],
-  locked_needs_online: ['warn',  'Would REQUIRE an online check / activation.'],
-  stale_past_grace:    ['warn',  'Cached licence is past its offline grace — an online check is required.'],
-  locked:              ['err',   'Would BLOCK — the licence is not active.'],
-  expired:             ['err',   'Would BLOCK — the licence has expired.'],
-  revoked:             ['err',   'Would BLOCK — the licence was revoked.'],
-  seat_reassigned:     ['err',   'Would BLOCK — this seat is active on another device.'],
-  locked_invalid:      ['err',   'Cached licence FAILED verification.'],
-  config_error:        ['err',   'Licence configuration could not be read.'],
-};
 const COLOR = { ok: 'var(--ok)', err: 'var(--err)', warn: 'var(--warn)', muted: 'var(--muted)' };
 function colorSpan(cls, text) {
   return `<span style="color:${COLOR[cls] || 'var(--text)'}">${escHtml(String(text))}</span>`;
 }
 
+// Show only what pertains to the CURRENT licence: kind, state, time left, seats.
+// No cached/valid licence → one clear line, matching the wording used on the
+// activation screen so the two never disagree.
 function renderLicenseStatus(s) {
-  if (!s) { licStatusEl.innerHTML = colorSpan('err', 'Could not read licence status.'); return; }
-  const enf = s.enforcement || {};
+  const t = (s && s.token) || {};
+  if (!s || !t.hasToken || t.state === 'invalid' || t.state === 'unknown') {
+    licStatusEl.innerHTML = colorSpan('warn', 'No valid license found.');
+    return;
+  }
   const lines = [];
-
-  let enfLine = `Enforcement — setting: ${enf.setting ? 'ON' : 'OFF'} · effective: ` +
-    colorSpan(enf.effective ? 'ok' : 'muted', enf.effective ? 'ON' : 'OFF');
-  if (enf.envOverride !== null && enf.envOverride !== undefined) {
-    enfLine += ' · ' + colorSpan('warn', `env override forces ${enf.envOverride ? 'ON' : 'OFF'}`);
+  const kind = t.kind === 'seat' ? 'Paid licence' : (t.kind === 'trial' ? 'Trial' : (t.kind || 'Licence'));
+  let lic = `${escHtml(String(kind))} — ` + colorSpan(t.state === 'active' ? 'ok' : 'err', t.state);
+  if (t.days_remaining != null) lic += ` · ${escHtml(String(t.days_remaining))} day(s) remaining`;
+  if (t.entitlement_end) lic += ` · ends ${escHtml(String(t.entitlement_end))}`;
+  lines.push(lic);
+  if (t.kind === 'seat' && t.seats_total != null) {
+    lines.push(`Seats — ${t.seats_used != null ? escHtml(String(t.seats_used)) : '?'} / ${escHtml(String(t.seats_total))} in use`);
   }
-  lines.push(enfLine);
-
-  const t = s.token || {};
-  if (!t.hasToken) {
-    lines.push('Licence — ' + colorSpan('warn', 'none cached (this device has not activated or started a trial).'));
-  } else {
-    const kind = t.kind === 'seat' ? 'Paid seat' : (t.kind === 'trial' ? 'Trial' : t.kind);
-    let lic = `Licence — ${escHtml(String(kind))} · state: ` +
-      colorSpan(t.state === 'active' ? 'ok' : 'err', t.state);
-    if (t.days_remaining != null) lic += ` · ${t.days_remaining} day(s) remaining`;
-    if (t.entitlement_end) lic += ` · ends ${escHtml(String(t.entitlement_end))}`;
-    lines.push(lic);
-    if (t.kind === 'seat' && t.seats_total != null) {
-      lines.push(`Seats — ${t.seats_used != null ? t.seats_used : '?'} / ${t.seats_total} in use`);
-    }
-  }
-
-  const g = GATE_TEXT[s.localDecision] || GATE_TEXT[s.reason] || ['muted', `Decision: ${s.localDecision || 'unknown'}`];
-  let gateLine = 'Gate — ' + colorSpan(g[0], g[1]);
-  if (s.reason && s.reason !== s.localDecision) gateLine += ' ' + colorSpan('muted', `(${s.reason})`);
-  lines.push(gateLine);
-
   licStatusEl.innerHTML = lines.join('<br>');
 }
 
 async function loadLicenseStatus() {
+  if (!licStatusEl) return;
   licStatusEl.textContent = 'Loading…';
   try {
     renderLicenseStatus(await api.licenseGetDiagnostics());
@@ -2561,3 +2408,137 @@ async function loadLicenseStatus() {
 }
 if (licRefreshBtn) licRefreshBtn.addEventListener('click', loadLicenseStatus);
 loadLicenseStatus();
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ADVANCED TAB — keyword label overrides (admin-only; whole window is admin).
+// Add extra label words for a (doc-type, field) so the keyword stage catches the
+// field on import. Stored per-installation in the DB (never packaged); merged
+// onto the shipped keyword_patterns.json at processing time.
+// ══════════════════════════════════════════════════════════════════════════════
+const loDocType = document.getElementById('lo-doctype');
+const loField   = document.getElementById('lo-field');
+const loLabel   = document.getElementById('lo-label');
+const loAddBtn  = document.getElementById('lo-add');
+const loMsg     = document.getElementById('lo-msg');
+const loList    = document.getElementById('lo-list');
+let _loTypes = [];
+
+function loSetMsg(kind, text) {
+  if (!loMsg) return;
+  loMsg.style.display = text ? 'block' : 'none';
+  loMsg.style.color = { err: 'var(--err)', ok: 'var(--ok)', warn: 'var(--warn)' }[kind] || 'var(--muted)';
+  loMsg.textContent = text || '';
+}
+
+function loPopulateFields() {
+  const t = _loTypes.find(x => x.slug === loDocType.value);
+  loField.innerHTML = '';
+  for (const f of (t && t.fields ? t.fields : [])) {
+    const opt = document.createElement('option');
+    opt.value = f.key;
+    opt.textContent = `${f.label} (${f.key})`;
+    loField.appendChild(opt);
+  }
+}
+
+async function loLoadTypes() {
+  try { _loTypes = (await api.getAllDocTypesAll()) || []; } catch { _loTypes = []; }
+  loDocType.innerHTML = '';
+  for (const t of _loTypes) {
+    const opt = document.createElement('option');
+    opt.value = t.slug;
+    opt.textContent = t.name;
+    loDocType.appendChild(opt);
+  }
+  loPopulateFields();
+}
+
+async function loLoadList() {
+  let rows = [];
+  try { rows = (await api.getLabelOverrides()) || []; } catch {}
+  if (!rows.length) {
+    loList.innerHTML = '<span style="color:var(--muted)">No label overrides yet.</span>';
+    return;
+  }
+  const byType = {};
+  for (const r of rows) (byType[r.doc_type_slug] = byType[r.doc_type_slug] || []).push(r);
+  const typeName = (slug) => (_loTypes.find(t => t.slug === slug) || {}).name || slug;
+  let html = '';
+  for (const slug of Object.keys(byType).sort()) {
+    html += `<div style="margin-top:10px; font-weight:600; color:var(--text);">${escHtml(typeName(slug))}</div>`;
+    for (const r of byType[slug]) {
+      html += `<div class="row-flex" style="gap:8px; align-items:center; padding:3px 0;">
+        <span style="font-family:var(--mono); color:var(--muted); min-width:140px;">${escHtml(r.field_key)}</span>
+        <span style="font-family:var(--mono); color:var(--accent2);">&ldquo;${escHtml(r.label)}&rdquo;</span>
+        <button class="btn" data-lo-del="${r.id}" style="padding:2px 8px; font-size:11px;">Remove</button>
+      </div>`;
+    }
+  }
+  loList.innerHTML = html;
+  loList.querySelectorAll('[data-lo-del]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      try { await api.deleteLabelOverride(parseInt(btn.dataset.loDel, 10)); } catch {}
+      loLoadList();
+    });
+  });
+}
+
+if (loDocType && loField && loAddBtn) {
+  loDocType.addEventListener('change', loPopulateFields);
+  loAddBtn.addEventListener('click', async () => {
+    const data = {
+      doc_type_slug: loDocType.value,
+      field_key:     loField.value,
+      labels:        loLabel.value || '',   // backend splits on comma/newline
+    };
+    if (!data.doc_type_slug || !data.field_key || !data.labels.trim()) {
+      loSetMsg('err', 'Pick a document type and field, and enter at least one label.');
+      return;
+    }
+    let r;
+    try { r = await api.addLabelOverrides(data); } catch (e) { r = { ok: false, code: e.message }; }
+    if (!(r && r.ok)) {
+      loSetMsg('err', 'Could not add labels' + (r && r.code ? ` (${r.code})` : '') + '.');
+      return;
+    }
+    const parts = [];
+    if (r.inserted)       parts.push(`Added ${r.inserted} label${r.inserted !== 1 ? 's' : ''}.`);
+    if (r.alreadyExisted) parts.push(`${r.alreadyExisted} already existed.`);
+    const cap  = (r.rejected || []).filter(x => x.code === 'cap_reached').length;
+    const long = (r.rejected || []).filter(x => x.code === 'too_long').length;
+    if (cap)  parts.push(`${cap} skipped (25-label limit).`);
+    if (long) parts.push(`${long} skipped (too long).`);
+    let kind = r.inserted ? 'ok' : 'muted';
+    let text = parts.join(' ') || 'Nothing to add.';
+    if (r.warnings && r.warnings.length) {
+      kind = 'warn';
+      text += '  ⚠ ' + r.warnings
+        .map(w => `"${w.label}" is also a label for field "${w.field_key}" — the first field extracted wins`)
+        .join('; ');
+    }
+    loSetMsg(kind, text);
+    if (r.inserted) loLabel.value = '';
+    loLoadList();
+  });
+  loLoadTypes().then(loLoadList);
+}
+
+// ── Diagnostic logging toggle ─────────────────────────────────────────────────
+const diagToggle = document.getElementById('diag-toggle');
+const diagSub    = document.getElementById('diag-sub');
+if (diagToggle) {
+  (async () => {
+    try { diagToggle.checked = (await api.getSetting('diagnostic_logging')) === 'true'; } catch {}
+  })();
+  diagToggle.addEventListener('change', async () => {
+    const on = diagToggle.checked;
+    try {
+      await api.setSetting('diagnostic_logging', on ? 'true' : 'false');
+      if (diagSub) diagSub.textContent = on
+        ? 'On — writes to the app debug folder on the next processing/reprocess run.'
+        : "Saved to the app's debug folder.";
+    } catch {
+      diagToggle.checked = !on;
+    }
+  });
+}

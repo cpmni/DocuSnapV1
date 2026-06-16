@@ -330,7 +330,8 @@
     <button class="tab" data-tab="templates">Templates</button>
     <button class="tab" data-tab="learning">Learning Recovery</button>
     <button class="tab" data-tab="users">Users</button>
-    <button class="tab" data-tab="activation">Activation Test</button>
+    <button class="tab" data-tab="licensing">Licensing</button>
+    <button class="tab" data-tab="advanced">Advanced</button>
   </div>
 
   <div id="body">
@@ -920,77 +921,75 @@
 
     </div>
 
-    <!-- ══ ACTIVATION TEST ══ -->
-    <div class="panel" id="panel-activation">
+    <!-- ══ LICENSING ══ -->
+    <div class="panel" id="panel-licensing">
       <div class="section">
-        <div class="section-title">License Status</div>
+        <div class="section-title">License</div>
         <p class="section-desc">
-          What the licence gate currently sees on <strong>this device</strong> — a local,
-          read-only check (no network call). Use it to confirm whether enforcement is
-          active and whether a trial or seat licence is cached and recognised.
+          The licence currently in force on this device.
         </p>
         <div class="row-flex" style="gap:8px; margin-bottom:10px;">
-          <button class="btn" id="lic-refresh">Refresh status</button>
+          <button class="btn" id="lic-refresh">Refresh</button>
         </div>
         <div id="lic-status" class="section-desc"
              style="font-family:var(--mono); font-size:12px; line-height:1.75;">Loading…</div>
       </div>
+    </div>
 
+    <!-- ══ ADVANCED ══ -->
+    <div class="panel" id="panel-advanced">
       <div class="section">
-        <div class="section-title">Local Activation Test</div>
+        <div class="section-title">Keyword Label Overrides</div>
         <p class="section-desc">
-          Admin tool for verifying a local or staging licensing backend against seeded
-          test credentials. Runs a one-off seat activation against the backend below and
-          reports the result. This does <strong>not</strong> change this device's real
-          license state, and the activation key is sent to the backend for the request
-          only — it is never stored on disk or written to logs.
+          Teach the keyword stage extra <strong>label words</strong> for a field on a
+          document type, so it's detected immediately on import without per-document
+          teaching. For example, if a worksheet prints <em>“Serial No.”</em> next to the
+          value you want in the <em>Reference</em> field, add it here once and every
+          future worksheet picks it up. These overrides are specific to
+          <strong>this installation</strong> — they are never shared or packaged.
         </p>
-
-        <div class="form-group" style="margin-bottom:12px; max-width:540px;">
-          <label>Backend URL (v1 root)</label>
-          <input type="text" id="act-base-url" class="path-input" spellcheck="false"
-                 autocomplete="off" placeholder="http://localhost/licensing/public/v1">
+        <div class="row-flex" style="gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px;">
+          <div style="display:flex; flex-direction:column; gap:4px; min-width:170px;">
+            <label style="font-size:11px; color:var(--muted);">Document type</label>
+            <select id="lo-doctype" class="path-input"></select>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:4px; min-width:170px;">
+            <label style="font-size:11px; color:var(--muted);">Field</label>
+            <select id="lo-field" class="path-input"></select>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:4px; flex:1; min-width:220px;">
+            <label style="font-size:11px; color:var(--muted);">Label(s) as printed — separate with commas</label>
+            <textarea id="lo-label" class="path-input" rows="2" spellcheck="false"
+                      placeholder="e.g. Serial No., Ticket No., Reference No."
+                      style="resize:vertical; min-height:34px; line-height:1.5;"></textarea>
+          </div>
+          <button class="btn primary" id="lo-add">Add labels</button>
         </div>
-        <div class="form-group" style="margin-bottom:12px; max-width:540px;">
-          <label>Product ID</label>
-          <input type="text" id="act-product-id" class="path-input" spellcheck="false"
-                 autocomplete="off" placeholder="00000000-0000-0000-0000-000000000000">
-        </div>
-        <div class="form-group" style="margin-bottom:14px; max-width:540px;">
-          <label>Activation Key</label>
-          <input type="password" id="act-key" class="path-input" spellcheck="false"
-                 autocomplete="off" placeholder="Seeded test activation key (not stored)">
-        </div>
-
-        <div class="row-flex" style="gap:8px;">
-          <button class="btn primary" id="act-btn-run">Run Activation Test</button>
-        </div>
-
-        <div id="act-status" class="pattern-msg" style="display:none; margin-top:16px;
-             padding:10px 12px; border-radius:6px; line-height:1.6; max-width:540px;"></div>
+        <div id="lo-msg" class="section-desc"
+             style="display:none; font-family:var(--mono); font-size:11px; margin-bottom:8px;"></div>
+        <div id="lo-list" class="section-desc"></div>
       </div>
 
       <div class="section">
-        <div class="section-title">License Enforcement</div>
+        <div class="section-title">Diagnostic Logging</div>
         <p class="section-desc">
-          When enabled, this device must hold a valid local activation before the main
-          app will open — on next launch, unactivated machines are routed to the
-          activation screen instead. Default is <strong>off</strong>. The dedicated
-          activation screen and the backend admin page remain available for recovery.
-          A <code>DOCUSNAP_LICENSE_ENFORCEMENT</code> environment variable
-          (<code>on</code>/<code>off</code>) overrides this setting — the dev escape hatch.
+          Writes a detailed per-document diagnostic log (every extraction stage,
+          anchor crop coordinates, the values read, and the decisions made) to a
+          file, for troubleshooting why fields are/aren't captured. Off by default.
+          ⚠ The file contains document field values and OCR text — treat it as
+          sensitive as the documents themselves. Takes effect on the next
+          processing / reprocess run.
         </p>
         <div class="threshold-row">
           <div>
-            <div class="threshold-label">Require activation to enter the app</div>
-            <div class="threshold-sub" id="enf-sub">Takes effect on the next app launch.</div>
+            <div class="threshold-label">Write diagnostic log</div>
+            <div class="threshold-sub" id="diag-sub">Saved to the app's debug folder.</div>
           </div>
           <label class="toggle">
-            <input type="checkbox" id="enf-toggle">
+            <input type="checkbox" id="diag-toggle">
             <span class="toggle-slider"></span>
           </label>
         </div>
-        <div id="enf-status" class="section-desc" style="margin-top:8px; font-family:var(--mono); font-size:11px;"></div>
       </div>
     </div>
 

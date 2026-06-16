@@ -32,10 +32,15 @@ DATE_FORMATS = [
     "%d %B, %Y", "%d %b, %Y",     # 01 May, 2024
     "%d-%B-%Y", "%d-%b-%Y",       # 01-May-2024
     "%d/%B/%Y", "%d/%b/%Y",       # 01/May/2024
+    "%d-%B-%y", "%d-%b-%y",       # 01-May-24
+    "%d/%B/%y", "%d/%b/%y",       # 01/May/24
     # Month name + day (US-ish)
     "%B %d, %Y", "%b %d, %Y",     # May 01, 2024
     "%B %d %Y", "%b %d %Y",       # May 01 2024 (no comma)
     "%B-%d-%Y", "%b-%d-%Y",       # May-01-2024
+    "%B %d, %y", "%b %d, %y",     # May 01, 24
+    "%B %d %y", "%b %d %y",       # May 01 24 (no comma)
+    "%B-%d-%y", "%b-%d-%y",       # May-01-24
     # US numeric — lowest priority (ambiguous with DD/MM)
     "%m/%d/%Y", "%m-%d-%Y",
 ]
@@ -82,14 +87,17 @@ def normalise_date(raw: str | None) -> str | None:
 # parse_date() is the sole gatekeeper that decides whether a candidate is a real
 # calendar date. Arbitrary text and plain numbers are therefore never coerced.
 
-_NUMERIC_DATE_RE = re.compile(r'\d{1,4}[/.\-]\d{1,2}[/.\-]\d{1,4}')
+# Allow OCR whitespace around the separators ("16 / 03 / 2026") — the candidate
+# is space-normalised before parse_date (see salvage_date) so it still parses.
+_NUMERIC_DATE_RE = re.compile(r'\d{1,4}\s*[/.\-]\s*\d{1,2}\s*[/.\-]\s*\d{1,4}')
 
 _MONTH_NAME = (r'(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|'
                r'Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|'
                r'Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)')
+_ORD = r'(?:st|nd|rd|th)?'   # optional ordinal suffix on the day ("6th")
 _MONTH_NAME_DATE_RE = re.compile(
-    r'\d{1,2}\s*[-/ ]\s*' + _MONTH_NAME + r'\s*[-/ ,]?\s*\d{2,4}'  # 01 May 2024 / 1-May-24
-    r'|' + _MONTH_NAME + r'\s+\d{1,2},?\s+\d{2,4}',                # May 01, 2024
+    r'\d{1,2}' + _ORD + r'\s*[-/ ]\s*' + _MONTH_NAME + r'\s*[-/ ,]?\s*\d{2,4}'  # 6th May 2024 / 1-May-24
+    r'|' + _MONTH_NAME + r'\s+\d{1,2}' + _ORD + r',?\s+\d{2,4}',                # May 6th, 2024
     re.IGNORECASE,
 )
 
@@ -120,7 +128,10 @@ def salvage_date(raw: str | None) -> datetime | None:
     candidates: list[datetime] = []
     for rx in (_NUMERIC_DATE_RE, _MONTH_NAME_DATE_RE):
         for m in rx.finditer(s):
-            d = parse_date(m.group(0).strip())
+            # Collapse OCR whitespace sitting around the separators so a noisy
+            # crop like "16 / 03 / 2026" still parses as a real date.
+            cand = re.sub(r'\s*([/.\-])\s*', r'\1', m.group(0)).strip()
+            d = parse_date(cand)
             if d:
                 candidates.append(d)
     if not candidates:
@@ -286,9 +297,24 @@ def validate_and_adjust(extractions: dict,
                 "validation_note": "date recovered from noisy text — please verify",
             }
         else:
-            # Genuinely not a date — reduce confidence
-            results[key] = {**data, "confidence": min(data["confidence"], 30),
-                            "validation_note": "invalid date format"}
+            # Couldn't parse or salvage. Distinguish two cases instead of always
+            # blanking (which wiped a taught date that merely OCR'd noisily and
+            # made the field look like it stopped working):
+            #  • the value carries date-like content (any digit, or a month name)
+            #    but noise stopped it parsing — KEEP it (flagged) so the user sees
+            #    a value to verify/fix rather than an empty field;
+            #  • a value with NO date content at all ("Colour Issues") is genuinely
+            #    not a date — WITHHOLD it.
+            raw = str(data["value"])
+            looks_date_like = any(c.isdigit() for c in raw) or \
+                              re.search(_MONTH_NAME, raw, re.IGNORECASE)
+            if looks_date_like:
+                results[key] = {**data,
+                                "confidence":      min(data["confidence"], 30),
+                                "validation_note": "date couldn't be read cleanly — please verify"}
+            else:
+                results[key] = {**data, "value": None, "confidence": 0,
+                                "validation_note": "not a valid date — please enter manually"}
 
     # 2. Validate currency fields and cross-check subtotal + VAT ≈ total
     subtotal = parse_amount(results.get("subtotal", {}).get("value"))

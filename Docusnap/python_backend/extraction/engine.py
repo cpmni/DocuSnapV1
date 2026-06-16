@@ -168,6 +168,7 @@ class ExtractionEngine:
         self.format_index        = {}   # populated by set_formats()
         self.noise_profile_index = {}   # populated by set_formats()
         self.format_class_index  = {}   # populated by set_formats()
+        self.label_overrides     = []   # populated by set_label_overrides()
         self._trace              = None  # dev-only trace callback (set per extract())
 
     def log(self, text: str, level: str = ""):
@@ -255,6 +256,27 @@ class ExtractionEngine:
                 self._t("validation", field=key, value=data.get("value"),
                         confidence=data.get("confidence"), note=note,
                         corrected_to=corrected, was=(b.get("value") if b else None))
+
+    def set_label_overrides(self, overrides: list):
+        """Admin keyword label overrides (per-installation), merged onto the
+        shipped patterns at Stage 1, scoped to each document's doc-type slug."""
+        self.label_overrides = overrides or []
+        if self.label_overrides:
+            self.log(f"  Keyword label overrides: {len(self.label_overrides)} loaded")
+
+    def _make_format_lookup(self, supplier_name, document_slug):
+        """Per-field learned-format lookup used by the qualification gates: try
+        the supplier-scoped entry first, then fall back to the doc-type-scoped one
+        ('' supplier) so qualification works even when the supplier is never
+        resolved (document-agnostic). Returns None when nothing is learned."""
+        if not self.format_class_index or not document_slug:
+            return None
+        s = (supplier_name or '').lower().strip()
+        d = document_slug.lower().strip()
+        def lookup(fk):
+            return (self.format_class_index.get((s, d, fk)) if s else None) \
+                   or self.format_class_index.get(('', d, fk))
+        return lookup
 
     def set_formats(self, formats_data: list):
         """Pre-build all format indexes from confirmed value data."""
@@ -356,6 +378,19 @@ class ExtractionEngine:
                     f"  Template matched: {matched_tmpl.get('name')} "
                     f"({match['confidence']}% via {match['method']})"
                 )
+                # A matched template is a STRONG, reliable doc-type signal — far
+                # more robust than the keyword type-detection that sets
+                # document_slug upstream, which fails when the identifying band is
+                # clipped off a scan (the exact cropped-page failure mode). The
+                # learned-format / qualification gates key on document_slug, so a
+                # missing slug silently DISABLES them — a wrong-row crop then
+                # passes and drift relocation never triggers. Adopt the template's
+                # doc-type slug when the caller couldn't resolve one, so the gates
+                # still engage on a degraded page. Never overrides a slug the
+                # caller DID detect; reusable for every template/doc-type.
+                if not document_slug and matched_tmpl.get('document_type_slug'):
+                    document_slug = matched_tmpl.get('document_type_slug')
+                    self.log(f"  Doc-type slug from matched template: {document_slug}")
                 tmpl_results = template_matcher.extract_with_template(ocr_text, matched_tmpl)
                 _pre_s0 = self._snap(results)
                 for key, data in tmpl_results.items():
@@ -393,9 +428,20 @@ class ExtractionEngine:
                                  f"grouped sibling '{mapping_src.get('name')}'…")
                     else:
                         self.log(f"  Stage 0.5: {len(tmpl_mappings)} anchor→target mapping(s)…")
+                    # Universal failsafe source: the SAME learned-format index
+                    # Stage 4.5 uses, keyed the SAME way (supplier+doc-type+field,
+                    # lowercased). Passed as a per-field lookup so the mapper can
+                    # reject a value whose shape doesn't match what this field has
+                    # historically been on this template — no per-field config, no
+                    # dependence on the on-page label text. Only constrains fields
+                    # that already have a learned format (≥3 confirmed values via
+                    # build_format_class_index); everything else passes through.
+                    _fmt_lookup = self._make_format_lookup(supplier_name, document_slug)
                     mapping_results = template_mapper.extract_with_mappings(
                         page_images, tmpl_mappings,
                         field_patterns=self.patterns.get("field_patterns", {}),
+                        validation_patterns=self.patterns.get("validation_patterns", {}),
+                        format_lookup=_fmt_lookup,
                         slice_capture=(self._capture_slice if (self._trace and self._slice_dir) else None),
                     )
                     applied = 0
@@ -441,9 +487,28 @@ class ExtractionEngine:
                     "method":     "logo",
                 }
 
+        # Dev-only: expose the RESOLVED doc identity so a diagnostic log can show
+        # why the learned-format / qualification gates did or didn't engage (they
+        # key on document_slug; a missing/mismatched slug silently disables them).
+        # No-op unless tracing.
+        self._t("doc_context",
+                supplier_name=supplier_name,
+                document_slug=document_slug,
+                document_type=document_type,
+                template_name=(matched_tmpl.get("name") if matched_tmpl else None),
+                template_slug=(matched_tmpl.get("document_type_slug") if matched_tmpl else None),
+                format_rules=len(self.format_class_index or {}),
+                format_keys=sorted(self.format_class_index.keys())[:12] if self.format_class_index else [])
+
         # ── Stage 1: Keyword extraction (always runs) ─────────────────────────
         self.log("  Stage 1: keyword extraction…")
-        kw_results = keyword.extract_fields(ocr_text, field_keys, self.patterns)
+        # Merge admin label overrides for THIS doc type onto the shipped patterns
+        # (additive; creates an entry for a custom field that has no shipped one,
+        # so it becomes keyword-extractable). Returns self.patterns unchanged when
+        # there's nothing to merge — no per-run copy in the common case.
+        patterns_for_run = keyword.merge_label_overrides(
+            self.patterns, self.label_overrides, document_slug)
+        kw_results = keyword.extract_fields(ocr_text, field_keys, patterns_for_run)
         _pre_s1 = self._snap(results)
         for key, data in kw_results.items():
             existing = results.get(key)
@@ -481,6 +546,7 @@ class ExtractionEngine:
                 field_patterns=self.patterns.get("field_patterns", {}),
                 validation_patterns=self.patterns.get("validation_patterns", {}),
                 slice_capture=(self._capture_slice if (self._trace and self._slice_dir) else None),
+                format_lookup=self._make_format_lookup(supplier_name, document_slug),
             )
             _pre_s2 = self._snap(results)
             for key, data in anchor_results.items():
@@ -741,8 +807,8 @@ class ExtractionEngine:
         # already flagged by Stage 4 are skipped to avoid double-penalisation.
         # No correction is proposed here — that is Stage 2 of this feature.
         format_anomaly_flagged = False
-        if self.format_class_index and supplier_name and document_slug:
-            s_lower  = supplier_name.lower().strip()
+        if self.format_class_index and document_slug:
+            s_lower  = (supplier_name or '').lower().strip()
             dt_lower = document_slug.lower().strip()
             n_flagged = 0
             for key, data in list(results.items()):
@@ -753,18 +819,36 @@ class ExtractionEngine:
                 val = data.get('value')
                 if not val:
                     continue
-                fmt_entry = self.format_class_index.get((s_lower, dt_lower, key))
+                # Supplier-scoped format first; fall back to the doc-type-scoped
+                # one ('' supplier) so qualification works even when the supplier
+                # is never identified (document-agnostic learning).
+                fmt_entry = (self.format_class_index.get((s_lower, dt_lower, key)) if s_lower else None) \
+                            or self.format_class_index.get(('', dt_lower, key))
                 if not fmt_entry:
                     continue
                 anomaly = format_anomaly_checker.check_value(str(val), fmt_entry)
                 if anomaly:
+                    # First, recover a CLEAN value by extracting a substring that
+                    # matches a learned accepted SHAPE — this strips column-bleed
+                    # junk ("2605-0769-1 Work Address Beaumont…") down to the real
+                    # value ("2605-0769-1"). Universal: driven by the field's own
+                    # learned shapes, never a per-field pattern.
+                    extracted = format_anomaly_checker.extract_accepted_shape(str(val), fmt_entry)
+                    if extracted and extracted != str(val):
+                        results[key] = {
+                            **data,
+                            'value':           extracted,
+                            'validation_note': 'trimmed to the expected format — please verify',
+                        }
+                        n_flagged += 1
+                        format_anomaly_flagged = True
+                        continue
                     # Stage 2 — conservative digits-only cleanup. If the learned
                     # class is digits_only, try to repair the value. A confident
                     # repair (only known OCR confusables / separators changed) is
                     # auto-applied as the effective value with an explanatory
                     # note; an uncertain one is surfaced as a review-forced
-                    # CANDIDATE (display value untouched). Non-digits_only
-                    # classes fall through to plain anomaly flagging.
+                    # CANDIDATE (display value untouched).
                     correction = format_anomaly_checker.propose_correction(str(val), fmt_entry)
                     if correction and correction['confident']:
                         results[key] = {
@@ -779,11 +863,28 @@ class ExtractionEngine:
                             'corrected_to':    correction['corrected'],
                             'validation_note': correction['note'],
                         }
+                    elif anomaly.get('severity') == 'high' or fmt_entry.get('shapes'):
+                        # Very wrong for this field — either a hard class violation
+                        # (letters where it's always digits/dates) OR the field has
+                        # a learned SHAPE that this value, and any substring of it,
+                        # doesn't satisfy (e.g. garbage "AyeARr AGAR a" where the
+                        # reference is shaped "####-####-#"). Withhold it and ask
+                        # for manual entry rather than populate an inconsistent
+                        # value. A genuinely new-but-correct shape is accepted once
+                        # it has been confirmed enough times (count-gated shapes).
+                        results[key] = {
+                            **data,
+                            'value':           None,
+                            'confidence':      0,
+                            'validation_note': "doesn't match the expected format — please enter manually",
+                        }
                     else:
+                        # In-class difference with no learned shape to enforce —
+                        # keep it but flag for a human to verify.
                         results[key] = {
                             **data,
                             'confidence':      min(data.get('confidence') or 0, 45),
-                            'validation_note': f"format anomaly ({anomaly['anomaly']})",
+                            'validation_note': 'format differs from the usual — please verify',
                         }
                     n_flagged += 1
                     format_anomaly_flagged = True

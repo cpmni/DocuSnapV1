@@ -12,7 +12,7 @@ Covers:
   4. Another common format (ISO, embedded in junk) is salvaged
   5. A month-name date embedded in junk is salvaged
   6. salvage_date is conservative: plain digit runs / partial dates -> None
-  7. Existing "invalid date format" behaviour still fires for true non-dates
+  7. A true non-date in a date field is withheld (cleared) + flagged for manual entry
 
 Usage:
     py -3.12 python_backend/tests/test_date_salvage.py
@@ -84,8 +84,10 @@ def main() -> int:
     if not check("salvage_date('Order 12345') is None", salvage_date("Order 12345") is None):
         failures += 1
     r = _run("Customer Copy")
-    if not check("non-date field flagged 'invalid date format', value left as-is",
-                 r.get("validation_note") == "invalid date format" and r["value"] == "Customer Copy"):
+    # A date field must never hold a non-date: the value is now WITHHELD (cleared)
+    # and flagged for manual entry, rather than kept at low confidence.
+    if not check("non-date in a date field is withheld + flagged for manual entry",
+                 r.get("value") in (None, "") and bool(r.get("validation_note"))):
         failures += 1
 
     # ── 4. Another common format (ISO) embedded in junk ───────────────────────

@@ -8,6 +8,21 @@
 const os   = require('os');
 const path = require('path');
 const fs   = require('fs');
+const diaglog = require('../diaglog');
+
+// Deep diagnostic logging is ON when the env override says so, or the admin
+// setting is 'true'. When on we (a) ask the extractor for the full --trace +
+// --slice-dir even with no inspector window open, and (b) tee every trace event
+// to the JSONL diagnostic file. Off by default → no --trace → byte-identical
+// pipeline. Env mirrors the licensing escape-hatch convention.
+function _diagEnabled(db) {
+  const env = (process.env.DOCUSNAP_DIAGNOSTIC_LOG || '').toLowerCase();
+  if (env === 'on'  || env === 'true'  || env === '1') return true;
+  if (env === 'off' || env === 'false' || env === '0') return false;
+  try {
+    return require('../../../database/modules/learning').getSetting(db, 'diagnostic_logging') === 'true';
+  } catch { return false; }
+}
 
 let _currentBatchProcs = [];     // all running Python worker processes for the active batch (bounded pool)
 let _cancelRequested   = false;  // set true when stop is requested; suppresses buffered stdout
@@ -68,7 +83,7 @@ function cleanupFiles(files) {
   }
 }
 
-function buildTrainingArgs(db, configPath) {
+function buildTrainingArgs(db, configPath, logger = null) {
   const docTypes  = require('../../../database/modules/document_types');
   const learning  = require('../../../database/modules/learning');
   const templates = require('../../../database/modules/templates');
@@ -78,8 +93,42 @@ function buildTrainingArgs(db, configPath) {
   const allAnchors   = learning.getAllAnchors(db);
   const allLogos     = learning.getAllLogos(db);
   const allTemplates = templates.getAll(db);
+  // Format model is the source of the qualification gate. The catch was SILENT,
+  // which hid the cause when 0 formats reach the extractor despite many confirms
+  // — log a throw (so a real failure is visible) and the resulting group count.
   let allFormats = [];
-  try { allFormats = learning.getFieldFormats(db); } catch {}
+  try { allFormats = learning.getFieldFormats(db); }
+  catch (e) { logger?.warn?.(`[training] getFieldFormats failed: ${e && e.message}`); }
+  // Admin keyword label overrides (per-installation; merged onto the shipped
+  // patterns at processing time, scoped to the doc-type slug). Guarded so an
+  // older DB without migration 19 still processes (just with no overrides).
+  let allLabelOverrides = [];
+  try { allLabelOverrides = require('../../../database/modules/label_overrides').getForExtraction(db); }
+  catch (e) { logger?.warn?.(`[training] label overrides load failed: ${e && e.message}`); }
+
+  // Visible in processing.log so "0 formats loaded" can be traced to its source
+  // (a throw above vs genuinely no qualifying confirmed history yet).
+  logger?.log?.(`[training] ${allTemplates.length} templates, ${allFormats.length} format groups, ` +
+                `${allAnchors.length} anchors, ${allHints.length} hints, ${allLabelOverrides.length} label overrides`);
+  // Enumerate the learned format groups (key = supplier|doctype|field, with the
+  // distinct-value count). This is the fastest way to see whether a given field
+  // (e.g. 'date') is being learned at all — a field with no group here can't be
+  // qualified/recovered, no matter what the anchor reads.
+  if (allFormats.length) {
+    const groups = allFormats
+      .map(g => `${g.supplier_name || '∅'}|${g.document_type}|${g.field_key}(${(g.sample_values || []).length})`)
+      .join(', ');
+    logger?.log?.(`[training] format groups: ${groups}`);
+  }
+  diaglog.write({ ev: 'training_load',
+    templates: allTemplates.length, anchors: allAnchors.length, hints: allHints.length,
+    label_overrides: allLabelOverrides.length,
+    format_groups: allFormats.map(g => ({
+      key: `${g.supplier_name || ''}|${g.document_type}|${g.field_key}`,
+      distinct: (g.sample_values || []).length,
+      samples: (g.sample_values || []).slice(0, 5),
+    })),
+  });
 
   const fieldsFile    = writeTempJson('fields',    allDocTypes.flatMap(dt => dt.fields));
   const hintsFile     = writeTempJson('hints',     allHints);
@@ -88,6 +137,7 @@ function buildTrainingArgs(db, configPath) {
   const dtFile        = writeTempJson('doctypes',  allDocTypes);
   const formatsFile   = writeTempJson('formats',   allFormats);
   const templatesFile = writeTempJson('templates', allTemplates);
+  const overridesFile = writeTempJson('labeloverrides', allLabelOverrides);
   const cfgFile       = configPath();
 
   return {
@@ -99,9 +149,10 @@ function buildTrainingArgs(db, configPath) {
       '--doc-types-file', dtFile,
       '--formats-file',   formatsFile,
       '--templates-file', templatesFile,
+      '--label-overrides-file', overridesFile,
       '--config-file',    cfgFile,
     ],
-    tempFiles: [fieldsFile, hintsFile, anchorsFile, logosFile, dtFile, formatsFile, templatesFile],
+    tempFiles: [fieldsFile, hintsFile, anchorsFile, logosFile, dtFile, formatsFile, templatesFile, overridesFile],
   };
 }
 
@@ -159,6 +210,20 @@ function register(ctx) {
   ipcMain.on('show-in-explorer', (_e, filePath) => { if (getCurrentUser()) shell.showItemInFolder(filePath); });
   ipcMain.on('open-file',        (_e, filePath) => { if (getCurrentUser()) shell.openPath(filePath); });
 
+  // Diagnostic-only: record a ⊕ teach action — the box coordinates STORED for the
+  // anchor plus the value the live zone-OCR read at teach time, and the preview
+  // image dimensions used. Comparing this "teach-time read at coords X" against
+  // the extraction-time read at the same coords pinpoints a review-preview vs
+  // extraction-render coordinate-space mismatch. No-op unless diagnostic logging
+  // is on. Fire-and-forget from the review renderer.
+  ipcMain.on('diag-teach', (_e, data) => {
+    try {
+      if (!_diagEnabled(getDb())) return;
+      diaglog.enable();
+      diaglog.write({ ev: 'teach_anchor', ...(data || {}) });
+    } catch { /* diagnostics never disrupt */ }
+  });
+
   // ── Stop processing ─────────────────────────────────────────────────────────
   ipcMain.handle('stop-processing', () => {
     requireRole('admin', 'edit');
@@ -186,9 +251,11 @@ function register(ctx) {
   ipcMain.handle('process-folder', async (event, folderPath) => {
     requireRole('admin', 'edit');
     const db = getDb();
+    const diagOn = _diagEnabled(db);
+    if (diagOn) { diaglog.enable(); diaglog.write({ ev: 'batch_start', folder: folderPath }); }
     let trainingArgs, tempFiles;
     try {
-      ({ args: trainingArgs, tempFiles } = buildTrainingArgs(db, configPath));
+      ({ args: trainingArgs, tempFiles } = buildTrainingArgs(db, configPath, logger));
     } catch (e) {
       console.error('[process-folder] buildTrainingArgs failed:', e);
       mirror(event.sender, 'process-progress', {
@@ -227,9 +294,11 @@ function register(ctx) {
         ...trainingArgs,
       ];
       if (filesFile) scriptArgs.push('--files-file', filesFile);
-      // Emit the dev trace stream + capture OCR slices only while the hidden
-      // inspector is open. Slice dir is created on demand and cleaned by main.
-      if (ctx.windows && ctx.windows['dev-inspector']) {
+      // Emit the dev trace stream + capture OCR slices while the hidden inspector
+      // is open OR diagnostic logging is on (so the diagnostic file gets the full
+      // per-stage trace + crop bboxes even with no window). Slice dir is created
+      // on demand and cleaned by main.
+      if ((ctx.windows && ctx.windows['dev-inspector']) || diagOn) {
         scriptArgs.push('--trace');
         try { fs.mkdirSync(ctx.devSliceDir, { recursive: true }); scriptArgs.push('--slice-dir', ctx.devSliceDir); } catch {}
       }
@@ -251,7 +320,7 @@ function register(ctx) {
             const msg = JSON.parse(trimmed);
             // Dev-only trace stream: retain for the session registry, route ONLY
             // to the inspector — never to user-facing progress or the DB handler.
-            if (msg.type === 'trace') { _recordDevTrace(msg); notifyDevInspector?.('process-trace', msg); continue; }
+            if (msg.type === 'trace') { _recordDevTrace(msg); notifyDevInspector?.('process-trace', msg); diaglog.write(msg); continue; }
             if (suppressStart && msg.type === 'start') continue;
             if (msg.type === 'file_done') _recordDevDoc(msg);
             setImmediate(() => _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger));
@@ -361,7 +430,9 @@ function register(ctx) {
     const tmpFilename = `reprocess_${Date.now()}${ext}`;
     fs.copyFileSync(srcFile, path.join(tmpDir, tmpFilename));
 
-    const { args: trainingArgs, tempFiles } = buildTrainingArgs(db, configPath);
+    const diagOn = _diagEnabled(db);
+    if (diagOn) { diaglog.enable(); diaglog.write({ ev: 'reprocess_start', filename, doc_id: docId }); }
+    const { args: trainingArgs, tempFiles } = buildTrainingArgs(db, configPath, logger);
     const learning2  = require('../../../database/modules/learning');
     const templates2 = require('../../../database/modules/templates');
     const reprMode   = learning2.getSetting(db, 'processing_mode', 'smart');
@@ -403,8 +474,22 @@ function register(ctx) {
     if (templateId) {
       scriptArgs.push('--known-template-id', String(templateId));
     }
-    // Dev trace stream + OCR slice capture only while the hidden inspector is open.
-    if (ctx.windows && ctx.windows['dev-inspector']) {
+    // Honour the document's ALREADY-ASSIGNED doc type on reprocess instead of
+    // re-detecting it from the (possibly clipped/degraded) OCR text. Re-detection
+    // fails when a scan's identifying band is cut off → null document_slug →
+    // the learned-format / qualification gates silently disable → wrong-row crops
+    // commit and drift relocation never fires. A reprocessed doc already knows
+    // its type; pass that slug as the authoritative document_slug.
+    try {
+      const dtRow = db.prepare(
+        `SELECT dt.slug AS slug FROM documents d
+         LEFT JOIN document_types dt ON dt.id = d.document_type_id
+         WHERE d.id = ?`).get(docId);
+      if (dtRow && dtRow.slug) scriptArgs.push('--known-doc-slug', String(dtRow.slug));
+    } catch {}
+    // Dev trace stream + OCR slice capture while the inspector is open OR
+    // diagnostic logging is on (so the diagnostic file captures reprocess too).
+    if ((ctx.windows && ctx.windows['dev-inspector']) || diagOn) {
       scriptArgs.push('--trace');
       try { fs.mkdirSync(ctx.devSliceDir, { recursive: true }); scriptArgs.push('--slice-dir', ctx.devSliceDir); } catch {}
     }
@@ -420,6 +505,38 @@ function register(ctx) {
       const proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs),
         { windowsHide: true });
       let buf = '', result = null;
+      let settled  = false;
+      let watchdog = null;
+
+      // Settle exactly once and clean temp artefacts no matter which event
+      // fires (close / spawn error / watchdog). Without this a spawn failure or
+      // a stalled Python worker would never resolve, deadlocking Reprocess and
+      // Reprocess All until the app is restarted.
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        if (watchdog) clearTimeout(watchdog);
+        try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
+        cleanupFiles(allTempFiles);
+        resolve(value);
+      };
+
+      // A single document should never take this long; if it does the worker
+      // has hung. Kill its whole process tree (in dev py.exe launches a child
+      // python.exe — proc.kill() alone leaves it alive) and fail this doc so the
+      // caller's batch can continue rather than deadlocking on Promise.all.
+      const REPROCESS_TIMEOUT_MS = 5 * 60 * 1000;
+      watchdog = setTimeout(() => {
+        logger?.err(`Reprocess timed out: ${filename}`);
+        try {
+          require('child_process').spawnSync(
+            'taskkill', ['/F', '/T', '/PID', String(proc.pid)],
+            { windowsHide: true, stdio: 'ignore' }
+          );
+        } catch {}
+        try { proc.kill(); } catch {}
+        finish({ success: false, error: 'Reprocess timed out' });
+      }, REPROCESS_TIMEOUT_MS);
 
       proc.stdout.on('data', (data) => {
         buf += data.toString();
@@ -430,7 +547,7 @@ function register(ctx) {
           if (!trimmed) continue;
           try {
             const msg = JSON.parse(trimmed);
-            if (msg.type === 'trace') { _recordDevTrace(msg); notifyDevInspector?.('process-trace', msg); continue; }
+            if (msg.type === 'trace') { _recordDevTrace(msg); notifyDevInspector?.('process-trace', msg); diaglog.write(msg); continue; }
             if (msg.type === 'file_done') _recordDevDoc(msg);
             mirror(event.sender, 'reprocess-progress', msg);
             if (msg.type === 'file_done') result = msg;
@@ -446,13 +563,16 @@ function register(ctx) {
         mirror(event.sender, 'reprocess-progress', { type: 'log', text });
       });
 
-      proc.on('close', () => {
-        try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
-        cleanupFiles(allTempFiles);
+      proc.on('error', (err) => {
+        logger?.err(`Reprocess spawn error: ${filename} — ${err.message}`);
+        finish({ success: false, error: err.message });
+      });
 
+      proc.on('close', () => {
+        if (settled) return;          // error/timeout already settled it
         if (!result?.success || !result?.extractions) {
           logger?.err(`Reprocess failed: ${filename} — no data returned`);
-          return resolve({ success: false, error: 'No data returned' });
+          return finish({ success: false, error: 'No data returned' });
         }
 
         // Merge: keep existing if it had higher confidence
@@ -474,10 +594,11 @@ function register(ctx) {
         // registry). Observation only — the merge result below is unchanged.
         const _devTrace = !!(ctx.windows && ctx.windows['dev-inspector']);
         const _emitMerge = (field, decision, oldV, newV) => {
-          if (!_devTrace) return;
+          if (!_devTrace && !diagOn) return;
           const ev = { type: 'trace', doc: filename, event: 'reprocess_merge',
                        field, decision, old: oldV ?? null, new: newV ?? null };
-          _recordDevTrace(ev); notifyDevInspector('process-trace', ev);
+          if (_devTrace) { _recordDevTrace(ev); notifyDevInspector('process-trace', ev); }
+          diaglog.write(ev);
         };
 
         const mergedRows = newRows.map(row => {
@@ -571,9 +692,9 @@ function register(ctx) {
           }
         }
 
-        resolve({ success: true, extractions: mergedMap,
-                  overall_confidence: result.overall_confidence,
-                  ruleCreated: ruleCreatedFor });
+        finish({ success: true, extractions: mergedMap,
+                 overall_confidence: result.overall_confidence,
+                 ruleCreated: ruleCreatedFor });
       });
     });
   });
@@ -600,6 +721,31 @@ function register(ctx) {
         try { fs.unlinkSync(tmpFile); } catch {}
         if (err) console.error('ocr_region stderr:', err);
         resolve(out.trim());
+      });
+    });
+  });
+
+  // Like ocr-region but returns {text, box:[l,t,w,h]} where box is the union of
+  // detected word boxes in the crop's ORIGINAL pixels. The ⊕ tool uses this to
+  // capture the taught LABEL's position so a drift-invariant label→value offset
+  // can be stored (see review/renderer.js captureAnchorContext, learning.saveAnchor).
+  ipcMain.handle('ocr-region-boxes', async (_e, base64png) => {
+    requireRole('admin', 'edit');
+    const tmpFile = path.join(os.tmpdir(), `ds_ocrb_${Date.now()}.png`);
+    fs.writeFileSync(tmpFile, Buffer.from(base64png, 'base64'));
+    const script = ctx.resourcePath('python_backend', 'ocr', 'region.py');
+    const py = pythonExe();
+    return new Promise((resolve) => {
+      const proc = spawn(py, pythonArgs(script,
+        '--image-file', tmpFile, '--tesseract', tesseractPath(), '--boxes'),
+        { windowsHide: true });
+      let out = '', err = '';
+      proc.stdout.on('data', d => { out += d.toString(); });
+      proc.stderr.on('data', d => { err += d.toString(); });
+      proc.on('close', () => {
+        try { fs.unlinkSync(tmpFile); } catch {}
+        if (err) console.error('ocr_region_boxes stderr:', err);
+        try { resolve(JSON.parse(out.trim())); } catch { resolve(null); }
       });
     });
   });
@@ -689,7 +835,32 @@ function register(ctx) {
   ipcMain.handle('save-field-anchor', (_e, data) => {
     requireRole('admin', 'edit');
     const learning = require('../../../database/modules/learning');
-    learning.saveAnchor(getDb(), data);
+    const db = getDb();
+    learning.saveAnchor(db, data);
+    // Recording verification (diagnostic only): record exactly what now sits in
+    // field_anchors for this (supplier, doc_type, field) after the save, so a
+    // diagnostic log shows whether the ⊕ teach actually persisted the drawn
+    // coordinates — and that an authoritative re-teach collapsed stale siblings.
+    // No-op unless diagnostic logging is enabled (never logs in normal use).
+    try {
+      if (_diagEnabled(db)) {
+        const rows = db.prepare(`
+          SELECT id, anchor_label, direction, x_norm, y_norm, w_norm, h_norm,
+                 offset_dx_norm, offset_dy_norm,
+                 usage_count, confidence, last_authoritative_at
+          FROM field_anchors
+          WHERE field_key = ?
+            AND ((supplier_name IS ?) OR supplier_name = ?)
+            AND ((document_type IS ?) OR document_type = ?)
+        `).all(data.field_key,
+               data.supplier_name || null, data.supplier_name || '__unknown__',
+               data.document_type || null, data.document_type || null);
+        diaglog.enable();
+        diaglog.write({ ev: 'anchor_saved', field_key: data.field_key,
+          supplier_name: data.supplier_name, document_type: data.document_type,
+          authoritative: !!data.authoritative, persisted_rows: rows });
+      }
+    } catch {}
     return true;
   });
 

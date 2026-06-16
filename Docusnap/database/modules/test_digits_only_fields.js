@@ -21,6 +21,8 @@ function check(label, cond) { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}`);
 const db = new Database(':memory:');
 db.exec(`
   CREATE TABLE document_types (id INTEGER PRIMARY KEY, slug TEXT);
+  -- getFieldFormats LEFT JOINs fields to read each field's type (date guard).
+  CREATE TABLE fields (id INTEGER PRIMARY KEY AUTOINCREMENT, document_type_id INTEGER, key TEXT, type TEXT);
   CREATE TABLE documents (
     id INTEGER PRIMARY KEY, supplier_name TEXT, document_type_id INTEGER,
     status TEXT, confirmed_at TEXT

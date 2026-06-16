@@ -107,6 +107,7 @@ contextBridge.exposeInMainWorld('docusnap', {
 
   // ── Zone OCR & learning ──────────────────────────────────────────────────────
   ocrRegion:           (b64)      => ipcRenderer.invoke('ocr-region', b64),
+  ocrRegionBoxes:      (b64)      => ipcRenderer.invoke('ocr-region-boxes', b64),
   testTemplateMapping: (pageB64, mapping) => ipcRenderer.invoke('test-template-mapping', pageB64, mapping),
   saveFieldAnchor:     (data)     => ipcRenderer.invoke('save-field-anchor', data),
   extractLogoHash:     (b64)      => ipcRenderer.invoke('extract-logo-hash', b64),
@@ -166,9 +167,17 @@ contextBridge.exposeInMainWorld('docusnap', {
   getLearningRecovery: (params)   => ipcRenderer.invoke('get-learning-recovery', params),
   getMemoryInventory:  ()         => ipcRenderer.invoke('get-memory-inventory'),
   resetAllLearning:    ()         => ipcRenderer.invoke('reset-all-learning'),
+  resetFreshInstall:   ()         => ipcRenderer.invoke('reset-fresh-install'),
   clearLearningAnchors:(params)   => ipcRenderer.invoke('clear-learning-anchors', params),
   clearLearningHints:  (params)   => ipcRenderer.invoke('clear-learning-hints', params),
   clearLearningCorrections: (params) => ipcRenderer.invoke('clear-learning-corrections', params),
+
+  // ── Advanced (Settings tab) — keyword label overrides ───────────────────────
+  getLabelOverrides:   ()        => ipcRenderer.invoke('get-label-overrides'),
+  addLabelOverride:    (data)    => ipcRenderer.invoke('add-label-override', data),
+  addLabelOverrides:   (data)    => ipcRenderer.invoke('add-label-overrides', data),
+  diagTeach:           (data)    => ipcRenderer.send('diag-teach', data),
+  deleteLabelOverride: (id)      => ipcRenderer.invoke('delete-label-override', id),
 
   // ── Events from main → renderer ──────────────────────────────────────────────
   onThemeChanged:        (cb) => ipcRenderer.on('theme-changed',          (_e, t) => cb(t)),

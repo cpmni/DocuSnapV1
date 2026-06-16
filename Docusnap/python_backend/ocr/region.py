@@ -16,6 +16,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--image-file', required=True, help='Path to PNG file')
     parser.add_argument('--tesseract', default=None,  help='Path to tesseract.exe')
+    # --boxes: emit JSON {"text":..., "box":[left,top,width,height]} where box is
+    # the union of detected word boxes in ORIGINAL (pre-upscale) crop pixels. Used
+    # by the ⊕ tool to capture the taught LABEL's position so a drift-invariant
+    # label→value offset can be stored. Default (no flag) is unchanged: plain text.
+    parser.add_argument('--boxes', action='store_true')
     args = parser.parse_args()
 
     if args.tesseract and os.path.exists(args.tesseract):
@@ -28,8 +33,10 @@ def main():
         print('', end='')
         return
 
-    # Upscale small crops for better accuracy
+    # Upscale small crops for better accuracy. Track the factor so --boxes can map
+    # word boxes back to the caller's ORIGINAL crop coordinates.
     w, h = img.size
+    scale = 1
     if w < 300:
         scale = max(2, 300 // w)
         img = img.resize((w * scale, h * scale), Image.LANCZOS)
@@ -46,6 +53,29 @@ def main():
 
     # Clean up common OCR artifacts
     text = text.replace('\n', ' ').replace('\r', '').strip()
+
+    if args.boxes:
+        import json
+        box = None
+        try:
+            data = pytesseract.image_to_data(img, config='--oem 3 --psm 6',
+                                             output_type=pytesseract.Output.DICT)
+            xs, ys, x2s, y2s = [], [], [], []
+            for i in range(len(data.get('text', []))):
+                if not (data['text'][i] or '').strip():
+                    continue
+                xs.append(data['left'][i]); ys.append(data['top'][i])
+                x2s.append(data['left'][i] + data['width'][i])
+                y2s.append(data['top'][i] + data['height'][i])
+            if xs:
+                # Union of word boxes, mapped back to original (pre-upscale) px.
+                l, t = min(xs) / scale, min(ys) / scale
+                bw, bh = (max(x2s) - min(xs)) / scale, (max(y2s) - min(ys)) / scale
+                box = [l, t, bw, bh]
+        except Exception:
+            box = None
+        print(json.dumps({"text": text, "box": box}), end='', flush=True)
+        return
 
     print(text, end='', flush=True)
 

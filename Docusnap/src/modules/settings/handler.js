@@ -63,6 +63,56 @@ function register(ctx) {
     return learning.resetAllLearning(getDb());
   });
 
+  // Developer "fresh install (keep document corpus)" reset — superset of the
+  // above that also erases the custom schema and strips learned identity back
+  // off the kept documents (see learning.resetToFreshInstall). Admin-gated; the
+  // typed confirmation lives in the caller (Dev Inspector / Settings). Takes a
+  // one-shot timestamped backup of the SQLite file first (irreversible op), then
+  // returns { backup, counts }. backup is null if the copy failed — the reset
+  // still proceeds (best-effort safety net, not a hard dependency).
+  ipcMain.handle('reset-fresh-install', () => {
+    requireRole('admin');
+    const fs = ctx.fs || require('fs');
+    const db = getDb();
+    let backup = null;
+    try {
+      if (db.name && fs.existsSync(db.name)) {
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        backup = `${db.name}.bak-${stamp}`;
+        fs.copyFileSync(db.name, backup);
+      }
+    } catch (e) {
+      backup = null;
+      try { ctx.logger?.warn?.(`[reset-fresh-install] DB backup failed: ${e.message}`); } catch {}
+    }
+    const counts = learning.resetToFreshInstall(db);
+    return { backup, counts };
+  });
+
+  // ── Advanced: keyword label overrides (admin) ────────────────────────────────
+  // Per-installation extra label words for a (doc-type, field), merged onto the
+  // shipped keyword patterns at processing time so the field is caught at Stage 1.
+  // Customer-specific: lives in the userData DB, never packaged.
+  const labelOverrides = require('../../../database/modules/label_overrides');
+  ipcMain.handle('get-label-overrides', () => {
+    requireRole('admin');
+    return labelOverrides.listLabelOverrides(getDb());
+  });
+  ipcMain.handle('add-label-override', (_e, data) => {
+    requireRole('admin');
+    return labelOverrides.addLabelOverride(getDb(), data || {});
+  });
+  // Bulk add (comma/newline-separated labels in one transaction; reports
+  // inserted / alreadyExisted / rejected / collision warnings).
+  ipcMain.handle('add-label-overrides', (_e, data) => {
+    requireRole('admin');
+    return labelOverrides.addLabelOverrides(getDb(), data || {});
+  });
+  ipcMain.handle('delete-label-override', (_e, id) => {
+    requireRole('admin');
+    return labelOverrides.deleteLabelOverride(getDb(), id);
+  });
+
   ipcMain.handle('clear-learning-anchors', (_e, params) => {
     requireRole('admin');
     const { supplier_name, document_type } = params || {};

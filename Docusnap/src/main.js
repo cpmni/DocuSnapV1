@@ -23,6 +23,7 @@ app.setPath('userData', path.join(app.getPath('appData'), 'DocuSnap'));
 
 // ── Module imports ────────────────────────────────────────────────────────────
 const logger           = require('./modules/logger');
+const diaglog          = require('./modules/diaglog');
 const authModule       = require('./modules/auth/handler');
 const processingModule = require('./modules/processing/handler');
 const reviewModule     = require('./modules/review/handler');
@@ -265,6 +266,22 @@ function notifyAllWindows(channel, ...args) {
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 app.whenReady().then(() => {
+  // Frameless windows shown via show()/swap don't reliably take OS keyboard focus
+  // on Windows — especially after the alwaysOnTop splash closes and the next
+  // window is show()'d in the same step. The result is a visible window whose
+  // clicked text fields receive no keystrokes ("I clicked the box but can't
+  // type"), intermittently, on first-run/packaged machines. Focus every window —
+  // and crucially its webContents, so the web page (and the focused input) gets
+  // key events, not just the window frame — whenever it is actually shown.
+  // Registered before any window is created so it covers the splash, the
+  // login/main/license swap, child windows (settings/review/search), and any
+  // window added later. Re-fires on every show so restore-from-minimise re-focuses.
+  app.on('browser-window-created', (_e, win) => {
+    const grabFocus = () => { try { win.focus(); win.webContents.focus(); } catch {} };
+    win.on('show', grabFocus);
+    if (win.isVisible()) grabFocus();
+  });
+
   // Splash first, before any other startup work, so it appears immediately.
   createSplash();
 
@@ -272,6 +289,7 @@ app.whenReady().then(() => {
     ? path.join(app.getPath('userData'), 'processing.log')
     : path.join(__dirname, '..', 'processing.log');
   logger.init(logFile, fs);
+  diaglog.init(app);   // deep diagnostic log target (enabled lazily when the flag is on)
 
   // Best-effort: clean up any crash-orphaned managed import copies. Never blocks
   // startup (fully guarded inside the helper).
@@ -362,7 +380,10 @@ app.whenReady().then(() => {
     } catch { return null; }
   });
   // Fallback cleanup on clean exit.
-  app.on('before-quit', () => { try { fs.rmSync(devSliceDir, { recursive: true, force: true }); } catch {} });
+  app.on('before-quit', () => {
+    try { fs.rmSync(devSliceDir, { recursive: true, force: true }); } catch {}
+    try { diaglog.close(); } catch {}
+  });
 
   // Window controls (shared across all windows)
   ipcMain.on('window-minimise', e =>

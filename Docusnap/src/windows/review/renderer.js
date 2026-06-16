@@ -759,6 +759,26 @@ async function runZoneOcr(rect, fieldKey) {
   cancelZoneMode();
 }
 
+// Compute the DRIFT-INVARIANT label→value offset to store with a ⊕ teach.
+// `box` is the label's [left, top, w, h] in the crop's ORIGINAL (natural) pixels
+// (from ocrRegionBoxes). `originDX/DY` are the crop's top-left in DISPLAY px.
+// Returns {offset_dx_norm, offset_dy_norm} = (value-centre − label-top-left),
+// page-normalised — or {} when no/implausible box (→ anchor stores null offset,
+// extraction falls back to its geometric guess). Normalised throughout so it is
+// immune to the preview-vs-render pixel-scale difference.
+function labelOffsetFromBox(box, originDX, originDY, xNorm, yNorm, imgW, imgH) {
+  if (!Array.isArray(box) || box.length < 2) return {};
+  const nW = docImg.naturalWidth || imgW, nH = docImg.naturalHeight || imgH;
+  if (!nW || !nH || !imgW || !imgH) return {};
+  const labelXNorm = (originDX / imgW) + (box[0] / nW);
+  const labelYNorm = (originDY / imgH) + (box[1] / nH);
+  const dx = xNorm - labelXNorm, dy = yNorm - labelYNorm;
+  // Sanity: a real label sits near its value. Reject implausible offsets so a
+  // mis-read box never stores a wild vector (extraction then uses the fallback).
+  if (!isFinite(dx) || !isFinite(dy) || Math.abs(dx) > 0.6 || Math.abs(dy) > 0.3) return {};
+  return { offset_dx_norm: dx, offset_dy_norm: dy };
+}
+
 async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, scaleY) {
   const xNorm    = (rect.x + rect.w / 2) / imgW;
   const yNorm    = (rect.y + rect.h / 2) / imgH;
@@ -784,7 +804,27 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
     y_norm:        yNorm,
     w_norm:        rect.w / imgW,
     h_norm:        rect.h / imgH,
+    // This is an EXPLICIT operator re-teach: trust the drawn box outright and let
+    // it override any stale/auto-learned anchor for this field (see
+    // learning.saveAnchor's authoritative branch). Without this an established
+    // wrong anchor can't be corrected — the user's redraw gets blended away.
+    authoritative: true,
   };
+
+  // Diagnostic: record what the ⊕ tool STORED (normalised coords) alongside the
+  // value the live zone-OCR read at teach time, and the preview image dimensions.
+  // If extraction later reads something else at these same coords, the review
+  // preview and the extraction render aren't the same pixels. No-op unless
+  // diagnostic logging is on (main checks the flag).
+  try {
+    window.docusnap.diagTeach?.({
+      field_key: fieldKey, value, x_norm: xNorm, y_norm: yNorm,
+      w_norm: rect.w / imgW, h_norm: rect.h / imgH,
+      rect, imgW, imgH, scaleX, scaleY,
+      naturalW: docImg.naturalWidth, naturalH: docImg.naturalHeight,
+      page: currentPage, preview_active: !!previewActive,
+    });
+  } catch {}
 
   // Best-effort: try to find a real label to the left of the box, then above.
   // Each attempt is independently guarded — a failure here (bad crop, OCR
@@ -803,10 +843,15 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
         leftCanvas.width, leftCanvas.height,
         0, 0, leftCanvas.width, leftCanvas.height
       );
-      const leftText  = (await window.docusnap.ocrRegion(leftCanvas.toDataURL('image/png').split(',')[1]) || '').trim();
+      const leftB64   = leftCanvas.toDataURL('image/png').split(',')[1];
+      const leftRes   = await window.docusnap.ocrRegionBoxes?.(leftB64);
+      const leftText  = ((leftRes && leftRes.text) || (await window.docusnap.ocrRegion(leftB64)) || '').trim();
       const leftLabel = extractLabel(leftText);
       if (leftLabel) {
-        await window.docusnap.saveFieldAnchor({ ...anchorBase, anchor_label: leftLabel, direction: 'right' });
+        // Drift-invariant offset: the located label's page position → value centre.
+        // Origin of the left crop in DISPLAY px is (rect.x - leftPad, rect.y).
+        const off = labelOffsetFromBox(leftRes && leftRes.box, rect.x - leftPad, rect.y, xNorm, yNorm, imgW, imgH);
+        await window.docusnap.saveFieldAnchor({ ...anchorBase, anchor_label: leftLabel, direction: 'right', ...off });
         return true;
       }
     }
@@ -827,10 +872,14 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
         aboveCanvas.width, aboveCanvas.height,
         0, 0, aboveCanvas.width, aboveCanvas.height
       );
-      const aboveText  = (await window.docusnap.ocrRegion(aboveCanvas.toDataURL('image/png').split(',')[1]) || '').trim();
+      const aboveB64   = aboveCanvas.toDataURL('image/png').split(',')[1];
+      const aboveRes   = await window.docusnap.ocrRegionBoxes?.(aboveB64);
+      const aboveText  = ((aboveRes && aboveRes.text) || (await window.docusnap.ocrRegion(aboveB64)) || '').trim();
       const aboveLabel = extractLabel(aboveText);
       if (aboveLabel) {
-        await window.docusnap.saveFieldAnchor({ ...anchorBase, anchor_label: aboveLabel, direction: 'below' });
+        // Origin of the above crop in DISPLAY px is (rect.x, rect.y - abovePad).
+        const off = labelOffsetFromBox(aboveRes && aboveRes.box, rect.x, rect.y - abovePad, xNorm, yNorm, imgW, imgH);
+        await window.docusnap.saveFieldAnchor({ ...anchorBase, anchor_label: aboveLabel, direction: 'below', ...off });
         return true;
       }
     }
@@ -839,13 +888,23 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
   }
 
   // Guaranteed fallback — always save SOMETHING so the position is learned
-  // even when no nearby label text could be read.
+  // even when no nearby label text could be read. A failure HERE is NOT
+  // "non-critical": it means NOTHING was recorded for this teach (e.g. the save
+  // is admin-gated and the current user lacks the role, or a DB error). Surface
+  // it so the operator isn't misled into thinking the ⊕ tool worked when the
+  // anchor never persisted.
   try {
     const fallbackLabel = labelFor(fieldKey) || fieldKey.replace(/_/g, ' ');
     await window.docusnap.saveFieldAnchor({ ...anchorBase, anchor_label: fallbackLabel, direction: 'right' });
     return true;
   } catch (err) {
-    console.warn('Anchor capture: fallback save failed:', err);
+    console.error('Anchor capture: save FAILED — nothing recorded:', err);
+    try {
+      const msg = /FORBIDDEN|permission/i.test(err?.message || '')
+        ? 'Could not save anchor: this account lacks permission (admin required).'
+        : 'Could not save anchor — it was not recorded. See console for details.';
+      showToast(msg, 'err');
+    } catch {}
   }
   return false;
 }

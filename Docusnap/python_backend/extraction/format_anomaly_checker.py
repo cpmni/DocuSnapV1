@@ -17,6 +17,7 @@ on the JS side (getFieldFormats filters groups below that threshold), but
 also guarded here for belt-and-braces safety.
 """
 
+import re
 import sys
 from pathlib import Path
 from typing import Optional
@@ -43,6 +44,13 @@ _CURRENCY_CODES   = ('GBP', 'USD', 'EUR', 'JPY')
 # Pool / sample sizes for format inference
 _SAMPLE_POOL_SIZE = 5   # use the N most-recent distinct values as the candidate pool
 _SAMPLE_SIZE      = 3   # draw this many from the pool for consensus check
+
+# A within-class shape is only ACCEPTED (added to the learned set) once it has
+# been seen in at least this many confirmed documents. Below the threshold a new
+# shape is still flagged for review, so a one-off OCR-garbled structure never
+# gets learned; once a genuinely recurring shape clears it, that shape stops
+# being flagged — this is how the field "learns" a second legitimate structure.
+_SHAPE_ACCEPT_MIN = 3
 
 
 # ── Single-value classification ───────────────────────────────────────────────
@@ -118,9 +126,51 @@ def shape_signature(value: str) -> str:
     return ''.join(out)
 
 
+def _shape_to_regex(shape: str) -> str:
+    """Turn a shape signature into a regex that matches a STANDALONE run of that
+    shape: '#'→a digit, '@'→a letter, any other char→itself (a literal
+    separator). Word-boundary guards stop it matching a slice of a longer run
+    (so '####-####-#' won't grab 4 of 5 digits)."""
+    body = []
+    for c in shape:
+        if c == '#':
+            body.append(r'\d')
+        elif c == '@':
+            body.append(r'[A-Za-z]')
+        else:
+            body.append(re.escape(c))
+    return r'(?<![A-Za-z0-9])' + ''.join(body) + r'(?![A-Za-z0-9])'
+
+
+def extract_accepted_shape(value: str, format_entry: dict) -> Optional[str]:
+    """If `value` carries column-bleed/junk wrapped around a substring that
+    matches one of the field's learned accepted SHAPES, return just that
+    substring — e.g. trim "2605-0769-1 Work Address Beaumont" to "2605-0769-1".
+
+    Universal and learned: driven entirely by the field's own accepted shapes,
+    never a per-field pattern. Returns None when no shapes are learned, the value
+    already IS an accepted shape (nothing to trim), or no accepted-shape run is
+    found inside it. Picks the LONGEST match so a fuller value wins."""
+    shapes = (format_entry or {}).get('shapes')
+    if not shapes:
+        return None
+    v = (value or '').strip()
+    if not v or shape_signature(v) in shapes:
+        return None
+    best = None
+    for shape in shapes:
+        try:
+            m = re.search(_shape_to_regex(shape), v)
+        except re.error:
+            continue
+        if m and (best is None or len(m.group(0)) > len(best)):
+            best = m.group(0)
+    return best
+
+
 # ── Consensus classification over a sample ───────────────────────────────────
 
-def classify_format(values: list[str]) -> dict:
+def classify_format(values: list[str], value_counts: dict | None = None) -> dict:
     """
     Infer a format class from a list of confirmed historical values.
 
@@ -131,11 +181,16 @@ def classify_format(values: list[str]) -> dict:
     Any disagreement → {'class': FREETEXT, 'separators': frozenset()}.
 
     Returns:
-        {'class': str, 'separators': frozenset, 'shape': str | None}
+        {'class': str, 'separators': frozenset, 'shapes': frozenset}
         'separators' is populated for ALPHANUM_SEP only (union across pool).
-        'shape' is the unanimous shape_signature of the recent pool (a stricter
-        within-class structure constraint) when every pooled value agrees AND
-        the class is a shaped one; otherwise None (no shape constraint enforced).
+        'shapes' is the SET of within-class shape_signatures that are accepted
+        for this field. When `value_counts` (value → confirmed-document count)
+        is supplied, a shape is accepted once it has been confirmed at least
+        _SHAPE_ACCEPT_MIN times — so a field can legitimately carry more than
+        one structure (e.g. a 4- and a 5-digit reference) without permanently
+        flagging the rarer one. When `value_counts` is omitted (legacy / direct
+        / test callers) it falls back to the original behaviour: a single shape,
+        learned only if the entire recent pool is unanimous.
     """
     # Deduplicate in insertion order (values from getFieldFormats are already
     # distinct, but guard here for direct callers and test code)
@@ -156,7 +211,7 @@ def classify_format(values: list[str]) -> dict:
     unique  = set(classes)
 
     if len(unique) != 1:
-        return {'class': FREETEXT, 'separators': frozenset(), 'shape': None}
+        return {'class': FREETEXT, 'separators': frozenset(), 'shapes': frozenset()}
 
     cls = unique.pop()
 
@@ -164,19 +219,33 @@ def classify_format(values: list[str]) -> dict:
     if cls == ALPHANUM_SEP:
         seps = frozenset(c for v in pool for c in v if not c.isalnum())
 
-    # Learn a stricter shape only when the ENTIRE recent pool unanimously shares
-    # one structure. Using the whole pool (not just the 3-sample used for the
-    # coarse class) is a deliberately stronger support requirement: the moment
-    # any recent confirmed value has a different shape — e.g. a field that is
-    # sometimes "INV12345" and sometimes "2345" — no shape constraint is learned,
-    # keeping false positives low for fields whose structure legitimately varies.
-    shape = None
+    # Learn the SET of within-class shapes this field accepts.
+    #
+    # Preferred path (value_counts present): sum confirmed-document counts per
+    # shape_signature across ALL confirmed values, and accept every shape that
+    # clears _SHAPE_ACCEPT_MIN. This lets a field carry several legitimate
+    # structures at once — a new shape is flagged until it has been confirmed
+    # enough times, then it joins the accepted set and stops being flagged.
+    #
+    # Fallback path (no value_counts): the original unanimous-pool rule — accept
+    # exactly one shape, and only when the whole recent pool shares it; any
+    # variation learns no shape constraint at all.
+    shapes = frozenset()
     if cls in _SHAPED_CLASSES:
-        pool_shapes = {shape_signature(v) for v in pool}
-        if len(pool_shapes) == 1:
-            shape = next(iter(pool_shapes))
+        if value_counts:
+            shape_counts: dict[str, int] = {}
+            for val, n in value_counts.items():
+                sig = shape_signature(val)
+                if sig:
+                    shape_counts[sig] = shape_counts.get(sig, 0) + int(n or 0)
+            shapes = frozenset(sig for sig, c in shape_counts.items()
+                               if c >= _SHAPE_ACCEPT_MIN)
+        else:
+            pool_shapes = {shape_signature(v) for v in pool}
+            if len(pool_shapes) == 1:
+                shapes = frozenset(pool_shapes)
 
-    return {'class': cls, 'separators': seps, 'shape': shape}
+    return {'class': cls, 'separators': seps, 'shapes': shapes}
 
 
 # ── Anomaly check ─────────────────────────────────────────────────────────────
@@ -247,16 +316,17 @@ def check_value(value: str, format_entry: dict) -> Optional[dict]:
         }
 
     # Stricter within-class shape check. The value fits the coarse class, but a
-    # learned, unanimous shape signature (digit-group lengths + separator
-    # positions) lets us still flag a structurally wrong value — e.g. an extra
-    # digit ('11111-1111-1' vs learned '####-####-#') or a missing/extra hyphen.
-    # Only enforced when a shape was learned, so fields with shape-varying
-    # history are never penalised. Low severity: it forces review, never an
-    # auto-correction.
-    shape = format_entry.get('shape')
-    if shape and shape_signature(v) != shape:
+    # learned set of shape signatures (digit-group lengths + separator positions)
+    # lets us still flag a structurally wrong value — e.g. an extra digit
+    # ('11111-1111-1' vs learned '####-####-#') or a missing/extra hyphen.
+    # A value is only flagged when its shape is in NEITHER of the accepted
+    # shapes, so a field that legitimately has more than one structure (each
+    # confirmed enough times) is never penalised. Empty/absent set → no shape
+    # constraint. Low severity: it forces review, never an auto-correction.
+    shapes = format_entry.get('shapes')
+    if shapes and shape_signature(v) not in shapes:
         return {
-            'anomaly':  f"{cls} field, shape {shape_signature(v)!r} differs from learned {shape!r}",
+            'anomaly':  f"{cls} field, shape {shape_signature(v)!r} not in learned shapes {sorted(shapes)!r}",
             'severity': 'low',
         }
 
@@ -344,13 +414,22 @@ def build_format_class_index(formats_data: list) -> dict:
         doc_type  = (entry.get('document_type')  or '').lower().strip()
         field_key = entry.get('field_key', '')
         samples   = entry.get('sample_values') or []
+        vcounts   = entry.get('value_counts') or None
 
-        if not supplier or not doc_type or not field_key:
+        # Require a doc-type + field, but ALLOW an empty supplier: the
+        # doc-type-scoped groups getFieldFormats emits for document-agnostic
+        # learning are keyed ('', doc_type, field). Rejecting empty-supplier
+        # entries here silently DROPPED every one of them from the index, so
+        # _make_format_lookup's ('', d, fk) fallback never found anything and the
+        # qualification gate was effectively OFF for any supplier-agnostic setup
+        # (it only mattered on a drifted/degraded crop, which is why clean pages
+        # still looked fine). Keep supplier-scoped entries too.
+        if not doc_type or not field_key:
             continue
         if len(samples) < 3:
             continue
 
-        fmt = classify_format(samples)
+        fmt = classify_format(samples, vcounts)
         if fmt['class'] == FREETEXT:
             continue  # no usable constraint learned
 

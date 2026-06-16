@@ -76,6 +76,7 @@ def main():
     parser.add_argument("--doc-types-file",  default=None)
     parser.add_argument("--formats-file",    default=None)
     parser.add_argument("--templates-file", default=None)
+    parser.add_argument("--label-overrides-file", default=None)
     parser.add_argument("--enhance-file",   default=None)
     # Parallel processing: when Electron runs a bounded worker pool, each worker
     # gets an explicit JSON list of the filenames (within --folder) it owns, so
@@ -85,6 +86,10 @@ def main():
     # Reprocess only: the template this document is already linked to, honoured
     # as a Stage 0 fallback when live re-identification fails (see engine.extract).
     parser.add_argument("--known-template-id", type=int, default=None)
+    # Authoritative doc-type slug for a reprocess (the document's already-assigned
+    # type). Used in preference to re-detecting from OCR, which fails on a clipped
+    # scan and leaves document_slug null — silently disabling the format gates.
+    parser.add_argument("--known-doc-slug", default=None)
     # Dev-only: emit a structured per-field extraction TRACE stream (type:"trace")
     # for the hidden Dev Inspector. Off by default → zero extra output/overhead and
     # the user-facing process-progress stream is byte-identical.
@@ -122,6 +127,7 @@ def main():
     doc_types = load_json_arg(None,         args.doc_types_file)  or []
     formats        = load_json_arg(None, args.formats_file)   or []
     templates      = load_json_arg(None, args.templates_file) or []
+    label_overrides = load_json_arg(None, args.label_overrides_file) or []
     enhance_params = load_json_arg(None, args.enhance_file)   or None
 
     emit({
@@ -141,6 +147,11 @@ def main():
     # Load learned format templates for OCR correction
     if formats:
         engine.set_formats(formats)
+
+    # Admin keyword label overrides — merged onto the shipped patterns per run,
+    # scoped to each document's detected doc-type slug (see engine Stage 1).
+    if label_overrides:
+        engine.set_label_overrides(label_overrides)
 
     # Find the files to process. With an explicit --files-file (a parallel
     # worker's shard), process exactly those names — restricted to existing,
@@ -199,6 +210,21 @@ def main():
                 for dt in doc_types:
                     if dt["name"] == document_type:
                         doc_slug = dt.get("slug")
+                        break
+
+            # Authoritative override: a reprocessed document already knows its
+            # assigned doc type. Honour it over keyword re-detection (which fails
+            # on a clipped scan, nulling the slug and disabling the format gates).
+            # Also recover the type NAME + its field set from the known slug so the
+            # rest of the pipeline stays consistent with the assigned type.
+            if args.known_doc_slug and doc_types:
+                for dt in doc_types:
+                    if dt.get("slug") == args.known_doc_slug:
+                        doc_slug      = args.known_doc_slug
+                        document_type = dt["name"]
+                        if dt.get("fields"):
+                            active_fields = dt["fields"]
+                        log(f"  Doc type from assigned record: {document_type} ({doc_slug})")
                         break
 
             raw_extractions = engine.extract(

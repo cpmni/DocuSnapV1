@@ -70,9 +70,10 @@ docusnap2/
 │   └── windows/
 │       ├── main/{index.html,renderer.js}      # incl. empty-state launchpad (Begin Import · Search · Settings)
 │       ├── splash/{index.html,splash.js}      # cosmetic startup splash — shown in whenReady, closed once login loads
-│       ├── review/{index.html,renderer.js}
+│       ├── review/{index.html,renderer.js}    # incl. zoom/pan preview + hidden admin Template Wizard (⚓): draw anchor/target → save via existing template-mapping IPC
 │       ├── settings/{index.html,renderer.js}  # incl. Admin Template Viewer + License/Activation-Test tab
 │       ├── search/index.html                  # placeholder
+│       ├── dev-inspector/{index.html,renderer.js}  # hidden read-only processing inspector (Ctrl+Shift+D+M, pw SFDEV) — see Dev inspector
 │       └── license/{index.html,renderer.js}   # activation/trial screen shown when the gate locks
 ├── database/
 │   ├── index.js                         # open(), runMigrations(), runJsMigrations()
@@ -87,8 +88,9 @@ docusnap2/
 │   ├── extraction/
 │   │   ├── engine.py                    # ExtractionEngine — staged pipeline orchestration (see Extraction pipeline below)
 │   │   ├── template_matcher.py          # Stage 0: learned-template identification + field seeding
-│   │   ├── template_mapper.py           # Stage 0.5: admin-drawn anchor→target zone mapping extraction
-│   │   ├── keyword.py                   # Stage 1: regex pattern matching
+│   │   ├── template_mapper.py           # Stage 0.5: admin-drawn anchor→target zone mapping + geometric drift-fallback seed (page_geometry)
+│   │   ├── page_geometry.py             # pure normalised page-landmark helper — search prior for template_mapper drift fallback only
+│   │   ├── keyword.py                   # Stage 1: regex pattern matching (incl. job_no 4-4-1 shape, separator-normalised)
 │   │   ├── anchor.py                    # Stage 2: spatial anchors + logo match
 │   │   ├── ocr_corrector.py             # Stage 2.5: learned OCR misread correction
 │   │   ├── llm.py                       # Stage 3: phi3:mini via Ollama (dormant — 'ai' mode not exposed in UI)
@@ -124,7 +126,26 @@ corrections     — document_id(FK), field_key, original_value, corrected_value,
 supplier_hints  — supplier_name, document_type, field_key, hint_value, usage_count
 field_anchors   — supplier_name, document_type, field_key, anchor_label,
                   direction(right|below|above), page_zone, x_norm, y_norm,
-                  usage_count, confidence
+                  w_norm, h_norm, usage_count, confidence,
+                  last_authoritative_at  ← migration 20: set on an EXPLICIT ⊕
+                  re-teach. saveAnchor's authoritative branch TRUSTS the drawn
+                  box outright (no tolerance/blend) and makes it the SINGLE
+                  anchor for (field_key, document_type) by sweeping every other
+                  row for that field+doctype ACROSS ALL SUPPLIERS — the doc-type
+                  is the layout; a teach corrects the field for that layout, not
+                  for one resolved supplier. anchor._filter_anchors then puts
+                  authoritative anchors in their OWN bucket ahead of all passive
+                  ones BEFORE supplier-priority, so an explicit teach can never
+                  lose to a stale auto-learned anchor that merely happens to be
+                  tagged to the supplier the template/logo resolved (the bug that
+                  made re-teaching look broken); among teaches the most recent
+                  wins. Passive auto-learn (no flag) still usage-weight-blends,
+                  but with PER-AXIS tolerance (h sets the vertical threshold, not
+                  max(w,h)) so a one-line correction isn't mistaken for jitter.
+                  offset_dx_norm/offset_dy_norm  ← migration 21: drift-invariant
+                  label→value vector captured on the ⊕ teach (see Stage 2 note).
+                  NOTE: supplier_name is a LEARNING SCOPE key (resolved via
+                  logo/template/optional field), never a required document field.
 logo_fingerprints — supplier_name, phash, ahash, match_count
 settings        — key, value (key-value store)
 migrations      — version, applied_at
@@ -139,6 +160,20 @@ device_registrations — fp_hash, product_id  (local mirror; backend is source o
 ```
 process_docs.py → ExtractionEngine.extract()
   Stage 0:   template_matcher.py — match a learned template, seed fields from it
+             DOC-TYPE SLUG RESOLUTION (the format/qualification gates key on
+             document_slug; a null slug silently DISABLES them → wrong-row crops
+             commit and drift relocation never fires). Two reinforcing sources:
+             (a) REPROCESS passes the document's already-assigned doc-type slug
+             (handler --known-doc-slug → process_docs uses it over re-detection,
+             which fails on a clipped scan); (b) when a template matches and the
+             caller resolved no slug, the engine adopts
+             matched_tmpl.document_type_slug. ALSO FIXED: build_format_class_index
+             (format_anomaly_checker) used to drop every EMPTY-SUPPLIER entry, so
+             the document-agnostic doc-type-scoped groups getFieldFormats emits
+             ('', slug, field) never entered the index — the gate was effectively
+             OFF for supplier-independent setups (only visible on a drifted crop,
+             since a clean crop reads the right value anyway). Now it requires only
+             doc_type + field_key; supplier may be empty.
   Stage 0.5: template_mapper.py  — admin-drawn anchor→target zone mappings
              (Settings → Templates → "Map a Field"; only runs when the matched
              template has enabled mappings AND page images are available).
@@ -153,6 +188,35 @@ process_docs.py → ExtractionEngine.extract()
              organisational only.
   Stage 1: keyword.py    — regex patterns from keyword_patterns.json (~60-70% fields)
   Stage 2: anchor.py     — learned label positions + logo supplier ID
+           DRIFT RECOVERY (_relocate_value_by_label): the ⊕ crop is tried at the
+           stored coords FIRST (fast path); if that read fails its credibility/
+           learned-format gate (a shifted/clipped scan moved the value off the
+           rigid box), anchor.py RE-FINDS the taught label on this page (reusing
+           template_mapper._locate_anchor — local then page-wide) and re-derives
+           the value crop ADJACENT to where the label actually landed, so the
+           value FOLLOWS the label's displacement (method anchor_crop_relocated).
+           Coordinates are only a HINT; the label drives the read — same anchor+
+           relative model as Stage 0.5, brought to ⊕ anchors. Runs only after the
+           rigid crop failed, and the relocated value still must clear the same
+           credibility + format gates. Generic to every supplier/field.
+           DRIFT-INVARIANT OFFSET (migration 21, field_anchors.offset_dx/dy_norm):
+           the ⊕ teach captures the located LABEL's box (ocr-region-boxes →
+           region.py --boxes; renderer labelOffsetFromBox) and stores
+           offset = value-centre − label-top-left, page-normalised. Relocation
+           places the value at located-label + offset (exact) instead of the
+           coarse adjacency guess. Because label and value shift together, the
+           offset is the SAME taught on a clipped/shifted scan as on a clean page
+           — so correcting a field on a bad scan no longer re-points the canonical
+           anchor and poisons normal-page extraction. Legacy rows (NULL offset)
+           fall back to the geometric guess. (Stage 2 — cross-field consensus
+           resite via a shared drift module — deferred.)
+           CREDIBILITY GATE (engine.extract): a Stage-2 candidate may not OVERRIDE
+           an existing incumbent unless credible for the field class — date fields
+           require validator.parse_date(); ref fields (_is_ref_field: ..._number/
+           ..._no/reference) reject low-info values (lone "a") AND a digit-free
+           candidate ("Booking") cannot displace a digit-bearing incumbent. Guards
+           OVERRIDES only — an empty field is still filled (validator then flags).
+           Reusable/shape-based, never supplier- or document-specific.
   Stage 3: llm.py        — phi3:mini, ONLY for missing fields (smart/ai mode)
   Stage 4: validator.py  — date normalise/salvage, currency infer, maths cross-check
   Stage 4.5: format_anomaly_checker.py — coarse-class + learned-shape consistency
@@ -333,6 +397,10 @@ pull-ai-model, check-fast-mode-suggestion(supplierName)
 license-get-status, license-start-trial, license-activate(data), license-revoke(data)
 license-test-activate(data)            # admin local test — never mutates real state
 license-get-enforcement, license-set-enforcement(on)   # admin-gated; Settings → Activation
+dev-inspector-unlock(pw)               # pw checked in MAIN (=== 'SFDEV'); opens dev-inspector window
+dev-inspector-running                  # read-only bool (isBatchRunning)
+dev-get-session-docs, dev-get-session-doc(key)  # read-only in-memory dev-session registry (no DB)
+dev-get-slice(path)                    # base64 of a temp OCR crop; path MUST resolve under ctx.devSliceDir
 ```
 
 ### Renderer → Main (send — fire and forget)
@@ -350,6 +418,7 @@ review-count-changed(n), deferred-count-changed(n)
 processing-mode-changed(mode)
 pull-progress({status,completed,total})
 reprocess-progress(msg), process-progress(msg)
+process-trace(ev)                      # dev-inspector ONLY (never to main window); see Dev inspector
 license-state(gate)                    # pushed to the license window with the blocked-state reason
 ```
 
@@ -541,6 +610,63 @@ After confirming a doc, call `check-fast-mode-suggestion(supplierName)`.
 If returns non-null, show toast: "Switch to Fast Mode? You've confirmed N docs
 from [supplier]. Fast Mode processes instantly without AI."
 Buttons: "Switch to Fast Mode" → `set-processing-mode('fast')` | "Not now"
+
+---
+
+## Dev inspector (hidden, read-only)
+Hidden developer tool for diagnosing extraction. **Read-only — no DB writes, no
+learning, no mutation; invokes no role-protected handler.**
+- **Open**: in the MAIN window press **Ctrl+Shift+D then M** (~1s, ignored in text
+  fields) → password modal → main checks `=== 'SFDEV'` (`dev-inspector-unlock`,
+  pw never logged) → opens `src/windows/dev-inspector`. Available in dev AND
+  packaged, gated only by the password.
+- **UI — "answer-first" provenance view** (`src/windows/dev-inspector/{index.html,
+  renderer.js}`, renderer-only; uses only existing IPC, touches no main-app code):
+  three-column shell — LEFT a **session-docs card picker** (in-memory registry,
+  resets on restart; filter box + "Follow live document" toggle; coloured status/
+  type chips + mini confidence bar; reprocess temp-names `reprocess_<ms>.<ext>`
+  prettified to `↻ Reprocess HH:MM:SS`), CENTER the per-field provenance area,
+  RIGHT live status (current file/activity/progress) over a page-evidence pane.
+  Raw log demoted to a collapsed bottom drawer.
+- **Telemetry mirror**: `processing/handler.js` ADDITIVELY tees `process-progress`/
+  `reprocess-progress` to the inspector (`notifyDevInspector`) — user console
+  unchanged. Drives the live-status card + the doc header summary (resolved
+  per-field, NOT the misleading invoice_number convenience).
+- **Extraction trace** (`type:"trace"` stdout, separate `process-trace` channel,
+  routed only to the inspector): emitted by `engine.extract(trace=…)` ONLY when
+  `process_docs --trace` is set, which handler adds ONLY while the inspector is
+  open → normal processing is byte-identical (no overhead/output). Events:
+  `stage_start|stage_end|candidate|merge(decision win/lose +vs)|transform(2.5)|
+  validation(4/4.5)|final|slice`. JS `reprocess_merge` event also surfaces the
+  reprocess-merge keep/replace decision.
+- **Per-field WINNING LINEAGE** (renderer reconstruction): each field collapses to
+  `name + final value + winning-stage badge + "+N other candidates"`; expanded it
+  shows a ★FINAL box then a vertical, colour-per-stage **lineage chain** (win
+  merges → 2.5 transforms shown in-chain as `from → to` → value-changing
+  validations → final), with losers + their reason (`lower confidence (X%<Y%)`
+  else honest `superseded (reason not recorded)`) tucked in an "Other candidates"
+  expander. Transforms render as chain NODES, so a value cleaned up into the final
+  answer reads as the chain's origin — never struck-through (fixes the old
+  value-equality "supersede" mislabel). Because the engine does not yet DECLARE a
+  winner or per-decision reasons, the chain carries an **"approx" badge** and
+  degrades gracefully. Flagged fields (validation note / corrected_to / final
+  note) auto-expand. States handled: trace-not-captured banner (opened mid-run),
+  live-streaming (debounced re-render), no-crop fields (honest "matched on OCR
+  text layer"), AI stage absent, validation-forced-review. **Known main-app
+  follow-ups (out of scope of the window):** engine winner-declaration + reason
+  strings; and the reprocess identity stamp — reprocess copies to a temp name so
+  the trace + dropdown register under it while JS `reprocess_merge` events key on
+  the ORIGINAL filename and can orphan (renderer shows them when present, but the
+  binding fix lives in `handler.js`).
+- **OCR slices**: with `--slice-dir` (added with `--trace`), the anchor crop
+  (`anchor_crop`, kind=target) and template-mapping crops (`template_mapping`,
+  kinds anchor+target) are saved as temp PNGs; the page-evidence pane shows them
+  for the selected field (value/target crops first, then anchor), each labelled
+  from its OWN slice event's stage/page/bbox. **Temp only**: one main-owned dir
+  `<temp>/ds-devslices`, served base64 via path-validated `dev-get-slice`, cleared
+  on inspector close + app before-quit. Never persisted/filed/learned.
+- Tests stub OCR-dependent stages (`tests/test_stage2_winner_consistency.py`,
+  `test_job_no_pattern.py`); do the same for new trace/gate logic.
 
 ---
 

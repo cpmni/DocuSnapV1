@@ -26,9 +26,60 @@ def load_patterns(config_path: str | None = None) -> dict:
                 break
 
     if config_path and Path(config_path).exists():
-        with open(config_path, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            # Never let a malformed/unreadable config crash extraction — degrade
+            # to "no patterns" (Stage 1 simply finds nothing) rather than throw.
+            # The shipped config is the only thing read here (admin overrides live
+            # in the DB and are merged separately), so this should never trip in
+            # practice — it's a safety net.
+            return {}
     return {}
+
+
+def merge_label_overrides(patterns: dict, overrides: list, doc_slug: str | None) -> dict:
+    """Merge admin keyword label overrides for `doc_slug` onto `patterns`.
+
+    Each override is {doc_type_slug, field_key, label}. Only those whose
+    doc_type_slug matches `doc_slug` (case-insensitive) apply. The merge is
+    ADDITIVE: a field's shipped labels are preserved and the override label is
+    appended; a field_key with NO shipped entry gets one created (so a CUSTOM
+    doc-type field — which keyword.extract_fields would otherwise skip — becomes
+    keyword-extractable). Returns the ORIGINAL `patterns` object unchanged when
+    there's nothing to merge, so the common (no-override) path costs nothing.
+
+    Pure: never mutates the input patterns; builds shallow copies of only the
+    field_patterns entries it touches.
+    """
+    if not overrides or not doc_slug:
+        return patterns
+    slug = str(doc_slug).strip().lower()
+    relevant = [o for o in overrides
+                if str(o.get("doc_type_slug", "")).strip().lower() == slug
+                and o.get("field_key") and o.get("label")]
+    if not relevant:
+        return patterns
+
+    field_patterns = {k: dict(v) for k, v in (patterns.get("field_patterns") or {}).items()}
+    for o in relevant:
+        key = str(o["field_key"]).strip()
+        lab = str(o["label"]).strip()
+        if not key or not lab:
+            continue
+        entry = field_patterns.get(key)
+        if entry is None:
+            # Custom field with no shipped pattern — seed a sane default so the
+            # label alone makes it extractable (value to the right of, or below,
+            # the label).
+            entry = {"labels": [], "directions": ["right", "below"], "base_confidence": 80}
+        labels = list(entry.get("labels") or [])
+        if lab not in labels:
+            labels.append(lab)
+        field_patterns[key] = {**entry, "labels": labels}
+
+    return {**patterns, "field_patterns": field_patterns}
 
 
 # ── Document type detection ───────────────────────────────────────────────────

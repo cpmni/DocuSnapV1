@@ -335,6 +335,57 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 18 applied: documents.review_acknowledged_at (explicit review ack)');
   }
 
+  // Migration 19: admin-managed keyword label overrides. Lets an admin add extra
+  // label words for a (doc-type, field) so the cheap keyword stage (Stage 1)
+  // catches the field without per-document anchor teaching. CUSTOMER-SPECIFIC and
+  // per-installation: this table lives in userData and is NEVER packaged — only
+  // the shipped config/keyword_patterns.json carries default labels. Rows are
+  // merged onto those defaults at processing time, scoped to the doc-type slug.
+  if (!applied.has(19)) {
+    db.exec(`CREATE TABLE IF NOT EXISTS field_label_overrides (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      doc_type_slug TEXT NOT NULL,
+      field_key     TEXT NOT NULL,
+      label         TEXT NOT NULL,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(doc_type_slug, field_key, label)
+    )`);
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (19)').run();
+    console.log('JS migration 19 applied: field_label_overrides (admin keyword label overrides)');
+  }
+
+  // Migration 20: field_anchors.last_authoritative_at — set when an operator
+  // EXPLICITLY (re)draws a field's box via the ⊕ tool. An explicit re-teach is
+  // the highest-quality signal the system gets; this timestamp lets extraction
+  // prefer the most recently human-corrected anchor over one that merely
+  // accumulated a high passive usage_count, so a correction takes effect
+  // immediately instead of being out-voted/blended away. NULL for passively
+  // auto-learned anchors (the existing confirm-time corpus).
+  if (!applied.has(20)) {
+    if (tableExists(db, 'field_anchors') && !hasColumn(db, 'field_anchors', 'last_authoritative_at')) {
+      try { db.exec(`ALTER TABLE field_anchors ADD COLUMN last_authoritative_at TEXT`); } catch {}
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (20)').run();
+    console.log('JS migration 20 applied: field_anchors.last_authoritative_at (explicit re-teach precedence)');
+  }
+
+  // Migration 21: field_anchors.offset_dx_norm / offset_dy_norm — the DRIFT-
+  // INVARIANT label→value vector captured at ⊕ teach time (value-centre minus the
+  // located label's top-left, page-normalised). Lets anchor.py relocate the value
+  // from where the label ACTUALLY sits + this offset, so a correction taught on a
+  // clipped/shifted scan yields the same relationship as one taught on a clean
+  // page (no longer poisons normal-page extraction). NULL on legacy anchors →
+  // anchor.py falls back to its geometric guess; non-destructive.
+  if (!applied.has(21)) {
+    for (const col of ['offset_dx_norm', 'offset_dy_norm']) {
+      if (tableExists(db, 'field_anchors') && !hasColumn(db, 'field_anchors', col)) {
+        try { db.exec(`ALTER TABLE field_anchors ADD COLUMN ${col} REAL`); } catch {}
+      }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (21)').run();
+    console.log('JS migration 21 applied: field_anchors.offset_dx_norm/offset_dy_norm (drift-invariant teach offset)');
+  }
+
   // Migration 3: remove extra built-in fields, keep only name/date/ref per type
   if (!applied.has(3)) {
     const keepBySlug = {
@@ -457,6 +508,9 @@ function addMissingColumns(db) {
       usage_count INTEGER NOT NULL DEFAULT 1,
       confidence REAL NOT NULL DEFAULT 1.0,
       last_seen TEXT NOT NULL DEFAULT (datetime('now')),
+      last_authoritative_at TEXT,
+      offset_dx_norm REAL,
+      offset_dy_norm REAL,
       UNIQUE(supplier_name, document_type, field_key, anchor_label, direction)
     )`);
   }
