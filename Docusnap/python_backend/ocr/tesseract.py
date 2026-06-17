@@ -121,6 +121,7 @@ def preprocess_for_ocr(img: Image.Image, params: dict | None) -> Image.Image:
 def extract_text_and_images(
     filepath: Path,
     enhance_params: dict | None = None,
+    born_digital: bool = False,
 ) -> tuple[str, list[Image.Image]]:
     """
     Extract OCR text from a document file.
@@ -129,15 +130,36 @@ def extract_text_and_images(
     page_images are the original unenhanced images, kept for logo matching and
     zone OCR.  enhance_params, when provided, are applied only to the OCR text
     extraction pass — the returned pages are always the raw render.
+
+    born_digital (default off): when on, a PDF page that carries a real embedded
+    text layer (a generated invoice/statement) contributes its EXACT vector text
+    instead of an OCR read — faster and exact. Image-only/scanned pages have no
+    text layer and fall back to OCR unchanged. The page IMAGES are still rendered
+    either way (logo/anchor/zone OCR need them). Gated by 'born_digital_enabled'.
     """
     ext   = filepath.suffix.lower()
     texts = []
     pages = []
 
     if ext == ".pdf":
-        pages = pdf_to_images(filepath)
-        for page in pages:
-            texts.append(ocr_image(preprocess_for_ocr(page, enhance_params)))
+        import pypdfium2 as pdfium
+        from ocr import born_digital as _bd
+        doc = pdfium.PdfDocument(str(filepath))
+        for page in doc:
+            img = page.render(scale=300 / 72).to_pil()
+            pages.append(img)
+            layer_text = None
+            if born_digital:
+                try:
+                    ok, _n, _txt = _bd.assess_page(page)
+                    if ok:
+                        # Positional reading order (page_lines), not the layer's raw
+                        # char order, so label-adjacency keyword extraction matches OCR.
+                        layer_text = _bd.page_text(page)
+                except Exception:
+                    layer_text = None   # any text-layer failure -> OCR fallback
+            texts.append(layer_text if layer_text is not None
+                         else ocr_image(preprocess_for_ocr(img, enhance_params)))
     else:
         img = Image.open(filepath)
         if img.mode not in ("RGB", "L"):

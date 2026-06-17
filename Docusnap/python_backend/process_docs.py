@@ -97,6 +97,9 @@ def main():
     parser.add_argument("--registration", action="store_true",
                         help="enable Stage 0.5 registration-invariant anchoring "
                              "(landmark transform); inert unless templates carry landmarks")
+    parser.add_argument("--born-digital", action="store_true",
+                        help="use a PDF's embedded text layer (exact) instead of OCR "
+                             "for pages that carry one; inert for image-only/scanned PDFs")
     parser.add_argument("--trace", action="store_true")
     # Dev-only: directory for temporary OCR crop slices (set by the handler only
     # while the inspector is open). Ignored unless --trace is also set.
@@ -190,10 +193,26 @@ def main():
         try:
             # OCR
             log(f"  OCR: {filepath.name}")
-            ocr_text, page_images = extract_text_and_images(filepath, enhance_params)
+            ocr_text, page_images = extract_text_and_images(
+                filepath, enhance_params, born_digital=args.born_digital)
 
             if not ocr_text.strip():
                 raise ValueError("OCR returned no text — is the scan readable?")
+
+            # Born-digital: page-0 text-layer lines (exact word boxes) for the
+            # anchor locate/harvest, so a relocated read on a generated PDF is
+            # taken from the vector text, not an OCR re-read. None for image-only/
+            # scanned pages (no text layer) -> anchors fall back to OCR unchanged.
+            page_text_lines = None
+            if args.born_digital and filepath.suffix.lower() == ".pdf":
+                try:
+                    import pypdfium2 as _pdfium
+                    from ocr import born_digital as _bd
+                    _pg0 = _pdfium.PdfDocument(str(filepath))[0]
+                    if _bd.assess_page(_pg0)[0]:
+                        page_text_lines = _bd.page_lines(_pg0)
+                except Exception:
+                    page_text_lines = None
 
             # Detect document type
             known_type_names = [dt["name"] for dt in doc_types] if doc_types else None
@@ -261,6 +280,21 @@ def main():
                                 f"({tslug}, {tmatch.get('confidence')}% via {tmatch.get('method')})")
                             break
 
+            # The doc type's designated REFERENCE field is a CODE (a reference or
+            # serial — a single token, no internal spaces), even when the operator
+            # left its type as the generic "text". Coerce it to 'alphanumeric' so
+            # the credibility/rescue gates treat a high-DPI crop mis-read like
+            # "cield wu" as a reference error (and a clean "2602-0768-1" as valid)
+            # instead of accepting it as free text. Never touches a date/currency
+            # field; reusable for every custom doc type.
+            if doc_slug and doc_types:
+                _ref_key = next((dt.get("ref_field_key") for dt in doc_types
+                                 if dt.get("slug") == doc_slug), None)
+                if _ref_key and active_fields:
+                    for _f in active_fields:
+                        if _f.get("key") == _ref_key and (_f.get("type") or "text") in ("text", "", None):
+                            _f["type"] = "alphanumeric"
+
             raw_extractions = engine.extract(
                 ocr_text      = ocr_text,
                 page_images   = page_images,
@@ -276,6 +310,7 @@ def main():
                 known_template_id = args.known_template_id,
                 trace         = emit_trace if args.trace else None,
                 slice_dir     = args.slice_dir if args.trace else None,
+                page_text_lines = page_text_lines,
             )
 
             # Pull out metadata keys before sanitising

@@ -6,6 +6,7 @@ Uses learned label positions to find field values directly in OCR text.
 Faster and more accurate than LLM for known document layouts.
 """
 
+import math
 import re
 
 from PIL import Image
@@ -47,7 +48,8 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                          slice_capture = None,
                          format_lookup = None,
                          page_transform = None,
-                         on_reject = None) -> dict:
+                         on_reject = None,
+                         page_text_lines = None) -> dict:
     """
     Attempt to extract field values using saved structural anchors.
 
@@ -92,9 +94,9 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
         # the crop reader so a degraded TEXT line that fails it triggers the
         # heavier denoise/adaptive re-read (text fields only); a passing read
         # short-circuits with zero extra work.
-        def _verify(t, _vt=val_type, _fk=field_key):
+        def _verify(t, _vt=val_type, _fk=field_key, _lbl=label):
             return (bool(t)
-                    and _crop_is_credible(t, _vt, validation_patterns)
+                    and _crop_is_credible(t, _vt, validation_patterns, _lbl)
                     and bool(_qualify_against_format(t, _fk, format_lookup)))
 
         # ── Primary: image crop + re-OCR (accurate, avoids column bleed) ──────
@@ -110,7 +112,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
             # line below the name). Keep the crop only when it is credible for
             # this field; otherwise leave value=None so the anchor_label +
             # direction search below runs and gets a chance to relocate it.
-            if crop_value and not _crop_is_credible(crop_value, val_type, validation_patterns):
+            if crop_value and not _crop_is_credible(crop_value, val_type, validation_patterns, label):
                 if on_reject: on_reject(field_key, "anchor_crop", crop_value, "not_credible")
             elif crop_value:
                 # Also qualify against the learned format: a fixed crop that drifted
@@ -135,7 +137,8 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
         # after the rigid crop failed; the mapped read still clears the SAME
         # credibility + learned-format gates. INERT (ladder byte-identical to
         # before) when no transform was fitted (flag off / no landmarks / poor fit).
-        if not value and page_transform is not None and x_norm > 0 and y_norm > 0 and page0 is not None:
+        if (not value or _is_weak_read(value, val_type)) and page_transform is not None \
+                and x_norm > 0 and y_norm > 0 and page0 is not None:
             w_norm = anchor.get("w_norm") or 0.0
             h_norm = anchor.get("h_norm") or 0.0
             # field_anchors stores the value CENTRE; Transform.apply_box wants a
@@ -150,13 +153,14 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
             _gcap = ((lambda c: slice_capture(field_key, "anchor_registration", 0,
                         (rcx, rcy, w_norm, h_norm), c, "target")) if slice_capture else None)
             gval = _crop_and_ocr(page0, rcx, rcy, w_norm, h_norm, val_type, capture=_gcap, verify_fn=_verify)
-            if gval and not _crop_is_credible(gval, val_type, validation_patterns):
+            if gval and not _crop_is_credible(gval, val_type, validation_patterns, label):
                 if on_reject: on_reject(field_key, "anchor_registration", gval, "not_credible")
             elif gval:
                 q = _qualify_against_format(gval, field_key, format_lookup)
                 if q:
-                    value  = q
-                    method = "anchor_registration"
+                    if _should_replace(value, q, val_type, validation_patterns):
+                        value  = q
+                        method = "anchor_registration"
                 elif on_reject:
                     on_reject(field_key, "anchor_registration", gval, "format")
 
@@ -173,27 +177,65 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
         # rigid crop already failed, so the fast happy path is unchanged; the
         # relocated value still must clear the same credibility + learned-format
         # gates before it can win. Generic to every supplier/field.
-        if not value and page0 is not None and (anchor.get("anchor_label") or "").strip():
+        # Fires when the rigid read is empty, a weak free-text fragment, OR not
+        # STRICTLY credible (high-DPI crop garbage like "cield wu" that slips
+        # through the loose gate) — the label-anchored harvest then rescues it. A
+        # cleanly-read rigid value is strictly credible, so the rung is skipped and
+        # the fast happy path is byte-identical (no extra OCR on good reads).
+        if (not value or _is_weak_read(value, val_type)
+                or not _strict_credible(value, val_type, validation_patterns)) \
+                and page0 is not None and (anchor.get("anchor_label") or "").strip():
             w_norm = anchor.get("w_norm") or 0.0
             h_norm = anchor.get("h_norm") or 0.0
-            relo = _relocate_value_by_label(
-                page0, anchor["anchor_label"], direction,
-                (x_norm, y_norm, w_norm, h_norm),
-                offset=(anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm")))
-            if relo:
-                _rcap = ((lambda c: slice_capture(field_key, "anchor_relocate", 0,
-                            relo, c, "target")) if slice_capture else None)
-                rval = _crop_and_ocr(page0, relo[0], relo[1], relo[2], relo[3],
-                                     val_type, capture=_rcap, verify_fn=_verify)
-                if rval and not _crop_is_credible(rval, val_type, validation_patterns):
-                    if on_reject: on_reject(field_key, "anchor_crop_relocated", rval, "not_credible")
-                elif rval:
-                    q = _qualify_against_format(rval, field_key, format_lookup)
-                    if q:
-                        value  = q
-                        method = "anchor_crop_relocated"
-                    elif on_reject:
-                        on_reject(field_key, "anchor_crop_relocated", rval, "format")
+            vbox    = (x_norm, y_norm, w_norm, h_norm)
+            located = _locate_for_relocation(page0, anchor["anchor_label"], direction, vbox, page_text_lines)
+            if located:
+                # 1. INLINE HARVEST: in a key/value row the value shares the located
+                # label's OCR line ("label …gap… value") and sits in a far column the
+                # adjacency guess can't reach — so read it STRAIGHT off the located
+                # line. Cleaned/narrowed (date pattern, column-gap split) and held to
+                # the SAME credibility + learned-format gates as a crop read, so it
+                # can never commit something a crop read would have rejected.
+                iv = located.get("inline_value")
+                if iv:
+                    hv = _clean_text_fallback(iv, val_type, validation_patterns) or clean_crop_segment(iv, val_type)
+                    # A code-like value column ("2602-0768-1 Work Address …") is a
+                    # single token; keep the first (the harvest already excludes the
+                    # label, so the first token is the value, not a caption).
+                    if hv and val_type == "alphanumeric" and " " in hv:
+                        hv = hv.split()[0]
+                    if hv and _crop_is_credible(hv, val_type, validation_patterns, label):
+                        q = _qualify_against_format(hv, field_key, format_lookup)
+                        if q and _should_replace(value, q, val_type, validation_patterns):
+                            value  = q
+                            method = "anchor_inline"
+                    elif hv and on_reject:
+                        on_reject(field_key, "anchor_inline", hv, "not_credible")
+                # 2. PLACEMENT + CROP: value not on the label's line (label-above
+                # layouts) or harvest failed — seat a crop relative to the LABEL box
+                # (not the whole line) and re-OCR it.
+                if not value or _is_weak_read(value, val_type) \
+                        or not _strict_credible(value, val_type, validation_patterns):
+                    relo = _place_from_located(located, direction, vbox,
+                        offset=(anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm")))
+                    if relo:
+                        # Widen a touch (centre-preserved) so a value marginally
+                        # wider than the tight taught box isn't sheared.
+                        relo = _widen_relocated_crop(relo, val_type)
+                        _rcap = ((lambda c: slice_capture(field_key, "anchor_relocate", 0,
+                                    relo, c, "target")) if slice_capture else None)
+                        rval = _crop_and_ocr(page0, relo[0], relo[1], relo[2], relo[3],
+                                             val_type, capture=_rcap, verify_fn=_verify)
+                        if rval and not _crop_is_credible(rval, val_type, validation_patterns, label):
+                            if on_reject: on_reject(field_key, "anchor_crop_relocated", rval, "not_credible")
+                        elif rval:
+                            q = _qualify_against_format(rval, field_key, format_lookup)
+                            if q:
+                                if _should_replace(value, q, val_type, validation_patterns):
+                                    value  = q
+                                    method = "anchor_crop_relocated"
+                            elif on_reject:
+                                on_reject(field_key, "anchor_crop_relocated", rval, "format")
 
         # ── Fallback: text-based search in full OCR output ────────────────────
         if not value:
@@ -225,11 +267,20 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 if value:
                     break
 
+        # Text-fallback values (method 'anchor') are raw line slices that never
+        # went through the crop paths' shared cleaning, so a label-band
+        # over-capture ("2605-0769-1 Work Address Beaumont…") would commit whole.
+        # Narrow a structured field to its pattern match and clean a free-text
+        # field with the shared segment cleaner. Crop/relocate/registration values
+        # are already cleaned, so only the text path is touched. Reusable.
+        if value and method == "anchor":
+            value = _clean_text_fallback(value, val_type, validation_patterns) or value
+
         # Never commit an implausible value — whether from a drifted crop or a
         # fallback line that landed on an adjacent label (e.g. ". Ship Mode:").
         # Leaving the field empty routes it to review/manual entry instead of a
         # confidently-wrong read; a credible value (the normal case) is kept.
-        if value and not _crop_is_credible(value, val_type, validation_patterns):
+        if value and not _crop_is_credible(value, val_type, validation_patterns, label):
             value = None
 
         # Final learned-format gate — also covers the text-fallback value, so a
@@ -241,6 +292,10 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
             conf = min(95, 55 + (usage_count * 5) + int(conf_factor * 20))
             if method == "anchor_crop":
                 conf = min(97, conf + 5)  # image crop is more reliable
+            elif method == "anchor_inline":
+                # Value read directly off the located label's OCR line — a clean
+                # text read, no crop drift; reliable, ranks with a good rigid crop.
+                conf = min(93, conf + 5)
             elif method == "anchor_crop_relocated":
                 # Drift-relocated crop: more reliable than a blind text-line grab,
                 # but a touch below a clean rigid crop since the page had shifted.
@@ -306,47 +361,110 @@ def _clamp01(v: float) -> float:
     return max(0.0, min(1.0, v))
 
 
-def _relocate_value_by_label(page0, anchor_label, direction, vbox,
-                             offset=None):
-    """Drift recovery for a ⊕-taught anchor: find `anchor_label` on THIS page and
-    return a NEW value-crop box (cx, cy, w, h — same convention as _crop_and_ocr)
-    positioned relative to the located label, or None if the label can't be found.
+def _widen_relocated_crop(box, val_type):
+    """Add a modest, CENTRE-PRESERVING margin to a RELOCATED crop so a value
+    marginally wider than the tight taught box (a longer name on this page,
+    sub-pixel offset rounding) is not sheared at its edges — the "Beaumont"→"mont"
+    class of clip. Symmetric, so it never moves the drift-invariant value centre
+    that _relocate_value_by_label computed (that position is a tested contract);
+    pads are NORMALISED (page-dim fractions), so DPI-invariant. Kept small to stay
+    clear of an adjacent label, with extra vertical headroom for text lines
+    (ascenders/descenders). Applied ONLY on the relocate fallback crop, so the
+    rigid happy path is byte-identical. Reusable across every supplier/field."""
+    cx, cy, w, h = box
+    pad_w = 0.010
+    pad_h = 0.006 if val_type in ("text", "multiline_text") else 0.0
+    return (cx, cy, w + 2 * pad_w, h + 2 * pad_h)
 
-    `vbox` is the taught value box (cx, cy, w, h, all page-normalised).
 
-    `offset` (offset_dx_norm, offset_dy_norm) is the DRIFT-INVARIANT label→value
-    vector captured at teach time = (taught value-centre − taught label top-left),
-    page-normalised. When present we place the value at located-label-top-left +
-    offset — this is exact and reproduces the relationship the operator actually
-    drew, so a correction taught on a clipped/shifted scan yields the SAME offset
-    as one taught on a clean page (the poison-the-good-pages bug this closes).
-    When absent (legacy anchors with no stored offset), fall back to the coarse
-    geometric GUESS that the value sits immediately adjacent to the label in
-    `direction` — preserving prior behaviour for un-migrated anchors.
+def _locate_in_text_lines(text_lines, lbox, anchor_label):
+    """BORN-DIGITAL path: locate the label among PRECOMPUTED text-layer lines
+    (exact vector text, already page-normalised) within the lbox row band, with NO
+    crop and NO OCR. Returns the SAME result shape as template_mapper._locate_anchor
+    (label-word box + harvested inline value), reusing the shared label-match
+    helpers so behaviour matches the OCR path exactly — just exact and faster."""
+    from extraction import template_mapper as tm
+    needle = tm._normalise(anchor_label) if anchor_label else None
+    if not needle or not text_lines:
+        return None
+    acx = lbox["x_norm"] + lbox["w_norm"] / 2.0
+    acy = lbox["y_norm"] + lbox["h_norm"] / 2.0
+    band = max(lbox["h_norm"], 0.0)
+    cands = []
+    for ln in text_lines:
+        cy = ln["y_norm"] + ln["h_norm"] / 2.0
+        if cy < lbox["y_norm"] - band or cy > lbox["y_norm"] + lbox["h_norm"] + band:
+            continue
+        s = tm._label_score(needle, tm._normalise(ln.get("text", "")))
+        if s >= tm._FUZZY_MATCH_THRESHOLD:
+            cands.append((s, ln))
+    if not cands:
+        return None
+    best_score = max(s for s, _ in cands)
+    floor = max(best_score - tm._SCORE_TIE_EPSILON, tm._FUZZY_MATCH_THRESHOLD)
 
-    Reuses template_mapper's proven label locator (OCR word-grouping + fuzzy match
-    + proximity tie-break). Lazy import avoids a module-load cycle (template_mapper
-    imports anchor)."""
+    def _dist(ln):
+        cx = ln["x_norm"] + ln["w_norm"] / 2.0
+        cy = ln["y_norm"] + ln["h_norm"] / 2.0
+        return math.hypot(cx - acx, cy - acy)
+
+    chosen_score, best = min(((s, ln) for s, ln in cands if s >= floor),
+                             key=lambda sl: (_dist(sl[1]), -sl[0]))
+
+    label_box = None
+    inline_value = None
+    words = best.get("words") or []
+    run = tm._match_label_run(words, needle)
+    if run:
+        rx1 = min(w["x_norm"] for w in run)
+        rx2 = max(w["x_norm"] + w["w_norm"] for w in run)
+        ry1 = min(w["y_norm"] for w in run)
+        ry2 = max(w["y_norm"] + w["h_norm"] for w in run)
+        label_box = {"x_norm": rx1, "y_norm": ry1, "w_norm": rx2 - rx1, "h_norm": ry2 - ry1}
+        rest = words[len(run):]
+        if rest:
+            inline_value = " ".join(w["text"] for w in rest).strip() or None
+    return {
+        "x_norm": best["x_norm"], "y_norm": best["y_norm"],
+        "w_norm": best["w_norm"], "h_norm": best["h_norm"],
+        "matched_text": best.get("text"), "match_score": chosen_score,
+        "label_box": label_box, "inline_value": inline_value,
+    }
+
+
+def _locate_for_relocation(page0, anchor_label, direction, vbox, page_text_lines=None):
+    """Find `anchor_label` on THIS page and return template_mapper._locate_anchor's
+    result (now carrying the matched LABEL-WORD box and any value harvested off the
+    same line), or None. Shared by the relocation crop placement AND the inline
+    value harvest so the label is located ONCE. When `page_text_lines` (a born-
+    digital text layer) is supplied, the label is found EXACTLY in that layer with
+    no OCR. Lazy import avoids the anchor<->template_mapper module-load cycle."""
     label = (anchor_label or "").strip()
     if not label or page0 is None:
         return None
     cx, cy, vw, vh = (vbox[0] or 0.0), (vbox[1] or 0.0), (vbox[2] or 0.0), (vbox[3] or 0.0)
     if vw <= 0 or vh <= 0:
         return None
-    hw, hh = vw / 2.0, vh / 2.0
-
-    # Expected label box (top-left + size) in the OPPOSITE of `direction`.
-    if direction == "right":      # label to the LEFT, same row
-        lbox = {"x_norm": _clamp01(cx - hw - vw), "y_norm": _clamp01(cy - hh),
-                "w_norm": vw, "h_norm": vh}
-    elif direction == "below":    # label ABOVE the value
-        lbox = {"x_norm": _clamp01(cx - hw), "y_norm": _clamp01(cy - hh - vh),
-                "w_norm": vw, "h_norm": vh}
-    elif direction == "above":    # label BELOW the value
-        lbox = {"x_norm": _clamp01(cx - hw), "y_norm": _clamp01(cy + hh),
-                "w_norm": vw, "h_norm": vh}
+    # Search a FULL-PAGE-WIDTH strip at the label's row (not a narrow box beside
+    # the value). A key/value value can sit in a FAR column ("label …big gap…
+    # value"); a narrow locate box would crop the value out, so it could never be
+    # harvested off the located line. Full width keeps the whole row in one OCR
+    # line; the located POSITION is still taken from the matched LABEL words, so a
+    # wrong nearby label is still rejected by the fuzzy threshold.
+    band = max(vh * 2.5, 0.03)
+    if direction == "right":      # label on the SAME row as the value
+        ly = cy
+    elif direction == "below":    # label one line ABOVE the value
+        ly = cy - vh
+    elif direction == "above":    # label one line BELOW the value
+        ly = cy + vh
     else:
         return None
+    lbox = {"x_norm": 0.0, "y_norm": _clamp01(ly - band / 2.0), "w_norm": 1.0, "h_norm": band}
+
+    # Born-digital: locate EXACTLY in the embedded text layer (no crop, no OCR).
+    if page_text_lines:
+        return _locate_in_text_lines(page_text_lines, lbox, label)
 
     from extraction import template_mapper as tm
     # Local search first (covers normal drift), then page-wide (clipped/heavily
@@ -354,30 +472,36 @@ def _relocate_value_by_label(page0, anchor_label, direction, vbox,
     located = tm._locate_anchor(page0, lbox, label, 0.0, tm._ocr_lines, min_search=0.10)
     if not located:
         located = tm._locate_anchor(page0, lbox, label, 1.0, tm._ocr_lines, min_search=0.10)
-    if not located:
-        return None
+    return located
 
-    Lx, Ly, Lw, Lh = (located["x_norm"], located["y_norm"],
-                      located["w_norm"], located["h_norm"])
 
-    # Precise path: replay the taught label→value offset from where the label
-    # ACTUALLY landed. offset is value-centre relative to label TOP-LEFT (the
-    # convention _locate_anchor reports), so this is drift-invariant.
+def _place_from_located(located, direction, vbox, offset=None):
+    """Derive the value-crop box (cx, cy, w, h — _crop_and_ocr convention) from a
+    located label. Prefers the tight LABEL-WORD box (`label_box`) over the whole
+    OCR-line box, so the value is seated relative to the LABEL not "label …gap…
+    value" (the line box overshoots the value). With a stored drift-invariant
+    `offset` we replay label-top-left + offset exactly; otherwise we use the coarse
+    adjacency guess. (Same return contract as before; the line box is still used
+    when no label_box is present, e.g. stubbed tests.)"""
+    cx, cy, vw, vh = (vbox[0] or 0.0), (vbox[1] or 0.0), (vbox[2] or 0.0), (vbox[3] or 0.0)
+    hw, hh = vw / 2.0, vh / 2.0
+    lb = located.get("label_box") or located
+    Lx, Ly, Lw, Lh = lb["x_norm"], lb["y_norm"], lb["w_norm"], lb["h_norm"]
+
     if offset is not None and offset[0] is not None and offset[1] is not None \
        and (offset[0] != 0.0 or offset[1] != 0.0):
         nx = Lx + float(offset[0])
         ny = Ly + float(offset[1])
         return (_clamp01(nx), _clamp01(ny), vw, vh)
 
-    # Legacy fallback: coarse geometric guess (value immediately adjacent).
     Lcy = Ly + Lh / 2.0
     Lcx = Lx + Lw / 2.0
     gap = 0.004
     if direction == "right":
         nx = Lx + Lw + gap + hw      # value starts just right of the label
-        ny = Lcy                     # vertically aligned to the label row
+        ny = Lcy
     elif direction == "below":
-        nx = Lcx                     # centred under the label
+        nx = Lcx
         ny = Ly + Lh + gap + hh
     else:  # above
         nx = Lcx
@@ -385,8 +509,119 @@ def _relocate_value_by_label(page0, anchor_label, direction, vbox,
     return (_clamp01(nx), _clamp01(ny), vw, vh)
 
 
+def _relocate_value_by_label(page0, anchor_label, direction, vbox, offset=None):
+    """Drift recovery for a ⊕-taught anchor: locate `anchor_label` on THIS page and
+    return a value-crop box positioned relative to it, or None if it can't be
+    found. Thin composition of _locate_for_relocation + _place_from_located (the
+    extraction rung uses those two directly so it can ALSO harvest a same-line
+    value before falling back to a crop)."""
+    vw = vbox[2] or 0.0
+    vh = vbox[3] or 0.0
+    if vw <= 0 or vh <= 0:
+        return None
+    located = _locate_for_relocation(page0, anchor_label, direction, vbox)
+    if not located:
+        return None
+    return _place_from_located(located, direction, vbox, offset)
+
+
+def _is_low_entropy(v: str) -> bool:
+    """Reject obvious OCR debris from a crop that landed on a ruled line or blank
+    band: a value with almost no distinct characters ("ee ee ee ee") or one made
+    mostly of tiny fragments ("5 de oe et Ee ee ee ee ..."). Shape-based and
+    reusable — a real name/address/reference has many distinct characters and
+    full-length words, so it is never flagged."""
+    nonspace = v.replace(" ", "")
+    if len(nonspace) >= 6 and len(set(nonspace.lower())) < 4:
+        return True
+    tokens = v.split()
+    if len(tokens) >= 4:
+        short = sum(1 for t in tokens if len(t) <= 2)
+        if short >= len(tokens) * 0.6:
+            return True
+    return False
+
+
+def _is_bare_label(v: str, label: str | None) -> bool:
+    """Reject a read whose EVERY token belongs to the anchor's OWN label — i.e.
+    the crop drifted onto the label itself ("Field" where the field caption is
+    "...Field", "Work Address" reading the caption). Defined relative to THIS
+    anchor's label, so it needs no hardcoded word list; a genuine value that
+    merely shares one word with the label is kept (must be a FULL subset)."""
+    if not label:
+        return False
+    label_tokens = set(re.findall(r"[a-z0-9]+", label.lower()))
+    val_tokens = re.findall(r"[a-z0-9]+", v.lower())
+    if not label_tokens or not val_tokens:
+        return False
+    return all(t in label_tokens for t in val_tokens)
+
+
+def _is_weak_read(value, val_type):
+    """A committable-but-SUSPECT rigid read for a FREE-TEXT field: a single short
+    token where a name/address is expected (the "nara"/"Field" fragment class).
+    Lets drift recovery run as a CANDIDATE even though the read passed the
+    credibility gate. Conservative — only text/multiline fields and only a short
+    single token; numbers/dates/refs and multi-word names are never weak, so the
+    clean happy path is unaffected."""
+    if val_type not in ("text", "multiline_text"):
+        return False
+    v = (value or "").strip()
+    return bool(v) and (" " not in v) and len(v) <= 5
+
+
+def _should_replace_weak(incumbent, candidate, val_type):
+    """Whether a relocation/registration CANDIDATE should replace the current
+    value. An empty slot always takes the candidate. A STRONG incumbent is never
+    displaced (so a clean rigid read is untouched). A WEAK incumbent is replaced
+    only by a clearly stronger candidate (not itself weak, and meaningfully
+    longer) — on a clean page the relocated crop reads the SAME value, so it stays
+    weak and is NOT preferred, which prevents regressions; only a genuinely better
+    read on a drifted page wins."""
+    inc = (incumbent or "").strip()
+    if not inc:
+        return True
+    if not _is_weak_read(inc, val_type):
+        return False
+    cand = (candidate or "").strip()
+    return (not _is_weak_read(cand, val_type)) and len(cand) >= len(inc) + 3
+
+
+def _strict_credible(value, val_type, validation_patterns):
+    """Stricter trust test used to decide whether a committed RIGID value should
+    yield to a label-anchored harvest. Basic credibility PLUS a single-token rule
+    for code-like fields (alphanumeric/job_reference/currency_code) — a reference
+    or serial has no internal space, so high-DPI crop GARBAGE that slips through
+    the loose pattern ("cield wu", "Ba he WE CUE") is rejected here, while a clean
+    single-token read ("2602-0768-1", "INV-001") passes and is never displaced."""
+    v = (value or "").strip()
+    if not v or not _crop_is_credible(v, val_type, validation_patterns):
+        return False
+    if val_type in ("alphanumeric", "job_reference", "currency_code") and " " in v:
+        return False
+    return True
+
+
+def _should_replace(incumbent, candidate, val_type, validation_patterns):
+    """Whether a label-anchored harvest/relocation CANDIDATE should replace the
+    current (rigid) value. GATED RESCUE (Bob): a STRICTLY-credible incumbent is
+    never displaced — a clean rigid read is protected, no unconditional override.
+    Only when the incumbent FAILS the strict gate AND the candidate PASSES it does
+    the candidate win (the high-DPI rigid-garbage case the harvest fixes).
+    Otherwise fall back to the conservative weak-free-text rule."""
+    inc = (incumbent or "").strip()
+    if not inc:
+        return True
+    if _strict_credible(inc, val_type, validation_patterns):
+        return False
+    if _strict_credible(candidate, val_type, validation_patterns):
+        return True
+    return _should_replace_weak(inc, candidate, val_type)
+
+
 def _crop_is_credible(value: str, val_type: str | None,
-                      validation_patterns: dict | None) -> bool:
+                      validation_patterns: dict | None,
+                      label: str | None = None) -> bool:
     """
     Decide whether an anchor result is trustworthy enough to COMMIT, or whether
     it is likely crop drift / a fallback line that landed on the wrong row and
@@ -404,6 +639,14 @@ def _crop_is_credible(value: str, val_type: str | None,
     """
     v = (value or "").strip()
     if not v:
+        return False
+
+    # Shape/relationship rejects applied to EVERY field class — a loose typed
+    # pattern such as 'alphanumeric' otherwise accepts a bare label word or a
+    # repeated-glyph band. Reusable; no supplier/filename/coordinate.
+    if _is_low_entropy(v):
+        return False
+    if _is_bare_label(v, label):
         return False
 
     pats = (validation_patterns or {}).get(val_type) if val_type else None
@@ -517,6 +760,70 @@ def clean_crop_segment(text: str | None, val_type: str | None) -> str | None:
     return None
 
 
+def _clean_text_fallback(value: str | None, val_type: str | None,
+                         validation_patterns: dict | None) -> str | None:
+    """Trim a TEXT-FALLBACK value (a raw line remainder taken after a located
+    label). For a STRUCTURED type (date / currency / currency_code /
+    job_reference) whose pattern is specific, return the FIRST match so a value
+    followed by bled label/address text ("2605-0769-1 Work Address …") narrows to
+    "2605-0769-1". 'alphanumeric'/'text' are intentionally loose (they match any
+    word), so they are NOT pattern-extracted — that could grab a leading label
+    word; the shared clean_crop_segment handles them instead. Reusable across
+    every supplier/field — no per-document logic."""
+    if not value:
+        return None
+    STRUCTURED = {"date", "currency", "currency_code", "job_reference"}
+    if val_type in STRUCTURED:
+        for p in (validation_patterns or {}).get(val_type) or []:
+            m = re.search(p, value, re.IGNORECASE)
+            if m:
+                return m.group(0).strip(" -:;,")
+    return clean_crop_segment(value, val_type)
+
+
+def _light_prep(image):
+    """LIGHT crop prep for the first OCR rung: greyscale, plus an upscale ONLY for
+    a small crop (tiny numeric tokens need ~300px to read). No autocontrast and no
+    sharpen — both AMPLIFY a clean crop's decorative border/rule into a garbage
+    "line" that PSM 7 locks onto ("Beaumont Care Homes Ltd" → a row of junk), the
+    bench-proven failure. An already-legible crop is read essentially as-is (the
+    winning raw read); the heavy upscale+autocontrast+SHARPEN recipe stays as a
+    LATER rung for tight degraded serials. (Oscar: preprocess only when needed.)"""
+    img = image.convert("L")
+    w, h = img.size
+    if w < 300:
+        scale = max(2, 300 // max(1, w))
+        img = img.resize((w * scale, h * scale), Image.LANCZOS)
+    return img
+
+
+def _read(img, psm):
+    """One image_to_data pass → (text, mean_word_conf). Reconstructs lines from
+    word boxes (block/par/line) so clean_crop_segment still sees real line breaks,
+    and averages positive word confidences as a deterministic rung tie-breaker.
+    Same OCR cost as image_to_string on the same image."""
+    import pytesseract
+    from pytesseract import Output
+    try:
+        d = pytesseract.image_to_data(img, config=f"--oem 3 --psm {psm}", output_type=Output.DICT)
+    except Exception:
+        return "", 0.0
+    lines, confs = {}, []
+    for i in range(len(d.get("text", []))):
+        t = (d["text"][i] or "").strip()
+        try:
+            c = float(d["conf"][i])
+        except Exception:
+            c = -1.0
+        if not t or c < 0:
+            continue
+        lines.setdefault((d["block_num"][i], d["par_num"][i], d["line_num"][i]), []).append(t)
+        confs.append(c)
+    text = "\n".join(" ".join(lines[k]) for k in sorted(lines.keys())).strip()
+    mean = (sum(confs) / len(confs)) if confs else 0.0
+    return text, mean
+
+
 def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
                   w_norm: float = 0.0, h_norm: float = 0.0,
                   val_type: str | None = None, capture = None,
@@ -532,7 +839,6 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
     at the split-pattern selection for why this matters.
     """
     try:
-        import pytesseract
         w, h = page_image.size
         cx = int(x_norm * w)
         cy = int(y_norm * h)
@@ -560,51 +866,62 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
         if capture:
             try: capture(crop)
             except Exception: pass   # dev-only slice capture; never disrupt OCR
-        # Enhance + OCR with the SAME recipe as the ⊕ target-draw tool (region.py)
-        # and the Stage 0.5 mapper (template_mapper._prep): greyscale → upscale →
-        # autocontrast → sharpen, then PSM 7 (single line) first with PSM 6 as a
-        # fallback. The previous plain 2× resize + PSM-6-only read was materially
-        # lower quality on tight value crops — it inserted spurious separators
-        # (a serial "H7R5326676" read as "H/7R5326676") even though the identical
-        # crop read cleanly via the target tool, which uses this recipe. One OCR
-        # recipe across every crop path keeps committed reads as good as the
-        # preview, for every supplier/field. Lazy import avoids the
-        # anchor<->template_mapper module-load cycle.
+        # Light-first OCR ladder (Oscar): preprocess only when needed. A clean,
+        # high-res crop reads correctly with minimal processing — the heavy prep
+        # (upscale + SHARPEN) over-processes it and PSM 7 then returns garbage or
+        # empty ("Beaumont Care Homes Ltd" → "nara"/""). So try LIGHT (greyscale +
+        # upscale + autocontrast, NO sharpen) first, and escalate to the heavy prep
+        # (which crispens tight degraded serials so _repair_single_token can strip a
+        # hallucinated "/" — the reason prep exists) and then the denoise enhance
+        # ONLY when the lighter read fails the gate. Each rung is scored by a single
+        # image_to_data pass (mean word confidence) so the winner is deterministic.
+        # _repair_single_token runs on every rung so even a light-rung serial gets
+        # its separator scrubbed. One ladder, reusable for every supplier/field.
+        # Lazy import avoids the anchor<->template_mapper module-load cycle.
         from extraction import template_mapper as _tm
-        img = _tm._prep(crop)
-        text = pytesseract.image_to_string(img, config="--oem 3 --psm 7").strip()
-        if not text:
-            text = pytesseract.image_to_string(img, config="--oem 3 --psm 6").strip()
-        # Shared segment selection (column-gap split, shape-aware postcode/year
-        # trim for free-text, city-comma cut) — identical to the Stage 0.5
-        # template-mapping crop path. See clean_crop_segment.
-        segment = clean_crop_segment(text, val_type)
-        if segment:
-            segment = _repair_single_token(img, segment, val_type)
 
-        # Degraded TEXT-LINE escalation (Oscar): the base recipe (SHARPEN + global
-        # autocontrast) mangles a longer proper-noun line on a degraded scan, and
-        # the caller's credibility/format gate then rejects the garbage (empty
-        # field). ONLY for free-text fields, and ONLY when the caller says the base
-        # read failed its gate (verify_fn) — so tight numerics, clean reads, and
-        # the label/wizard paths (which pass no verify_fn) are byte-identical.
-        # Re-read the SAME crop with a denoise + adaptive-threshold recipe and
-        # accept it only if it now PASSES the gate (so a recovered-but-wrong name
-        # still can't commit). See ocr/text_enhance.enhance_text_crop.
+        def _gate(seg, conf):
+            # verify_fn (the anchor path) is authoritative; a gateless caller
+            # (defensive — anchor calls always pass verify_fn) uses a conf floor.
+            if verify_fn is not None:
+                return bool(seg) and bool(verify_fn(seg))
+            return bool(seg) and conf >= 60.0
+
+        light = _light_prep(crop)
+        heavy = None
+        best_seg, best_conf = None, -1.0
+        for _src, _psm in (("light", 7), ("light", 6), ("heavy", 7), ("heavy", 6)):
+            if _src == "heavy" and heavy is None:
+                heavy = _tm._prep(crop)            # Rung 3 = today's recipe verbatim
+            rimg = light if _src == "light" else heavy
+            rtext, rconf = _read(rimg, _psm)
+            rseg = clean_crop_segment(rtext, val_type)
+            if rseg:
+                rseg = _repair_single_token(rimg, rseg, val_type)
+            if rseg and rconf > best_conf:
+                best_seg, best_conf = rseg, rconf
+            if _gate(rseg, rconf):
+                return rseg
+
+        # No rung satisfied the gate. Degraded TEXT-LINE escalation (free-text
+        # fields, verify_fn only) — denoise + adaptive threshold, accepted only if
+        # it now PASSES the gate (a recovered-but-wrong name still can't commit).
+        # See ocr/text_enhance.enhance_text_crop.
         if (verify_fn is not None and val_type in ("text", "multiline_text")
-                and not (segment and verify_fn(segment))):
+                and not (best_seg and verify_fn(best_seg))):
             try:
                 from ocr import text_enhance
                 eimg = text_enhance.enhance_text_crop(crop)
-                etext = pytesseract.image_to_string(eimg, config="--oem 3 --psm 7").strip()
-                if not etext:
-                    etext = pytesseract.image_to_string(eimg, config="--oem 3 --psm 6").strip()
+                etext, _ec = _read(eimg, 7)
                 eseg = clean_crop_segment(etext, val_type)
+                if not eseg:
+                    etext, _ec = _read(eimg, 6)
+                    eseg = clean_crop_segment(etext, val_type)
                 if eseg and verify_fn(eseg):
                     return eseg
             except Exception:
                 pass
-        return segment or None
+        return best_seg or None
     except Exception:
         return None
 

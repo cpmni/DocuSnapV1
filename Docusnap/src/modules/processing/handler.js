@@ -148,6 +148,13 @@ function buildTrainingArgs(db, configPath, logger = null) {
   try { registrationOn = learning.getSetting(db, 'registration_enabled') !== 'false'; }
   catch { /* older DB without the setting -> default on */ }
 
+  // Born-digital text-layer extraction: ON unless an admin disables it
+  // ('born_digital_enabled' = 'false'). Inert for image-only/scanned PDFs (no
+  // text layer), so the default-on is safe — those pages still go through OCR.
+  let bornDigitalOn = true;
+  try { bornDigitalOn = learning.getSetting(db, 'born_digital_enabled') !== 'false'; }
+  catch { /* older DB without the setting -> default on */ }
+
   const args = [
     '--fields-file',    fieldsFile,
     '--hints-file',     hintsFile,
@@ -160,6 +167,7 @@ function buildTrainingArgs(db, configPath, logger = null) {
     '--config-file',    cfgFile,
   ];
   if (registrationOn) args.push('--registration');
+  if (bornDigitalOn) args.push('--born-digital');
 
   return {
     args,

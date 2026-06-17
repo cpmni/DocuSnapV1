@@ -416,6 +416,28 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
 
 # ── Anchor relocation ─────────────────────────────────────────────────────────
 
+def _match_label_run(words, needle):
+    """The leading contiguous words on the located line that form the matched
+    LABEL, so the trailing VALUE words of a "label …gap… value" key/value row are
+    excluded. Grows the run left→right and keeps the SMALLEST run that MAXIMISES
+    the label match — a prefix of a multi-word label (e.g. "Serial") scores high
+    on ratio() alone but the full "Serial number" scores higher, and adding the
+    value words doesn't improve it, so the label-complete run wins. Returns the
+    word-dict list, or None when even the best run is below threshold (caller then
+    uses the whole-line box, as before)."""
+    if not needle or not words:
+        return None
+    best_k, best_score = 0, -1.0
+    for k in range(1, len(words) + 1):
+        acc = _normalise(" ".join(wd["text"] for wd in words[:k]))
+        s = _label_score(needle, acc)
+        if s > best_score + 1e-9:        # strictly better → smaller k keeps ties
+            best_score, best_k = s, k
+    if best_score < _FUZZY_MATCH_THRESHOLD:
+        return None
+    return words[:best_k]
+
+
 def _locate_anchor(page, anchor_box, anchor_text, expansion, ocr_lines_fn,
                    min_search=0.0, capture=None):
     """
@@ -477,6 +499,33 @@ def _locate_anchor(page, anchor_box, anchor_text, expansion, ocr_lines_fn,
     candidates = [(s, ln) for s, ln in scored if s >= floor]
     chosen_score, best = min(candidates, key=lambda sl: (_page_dist(sl[1]), -sl[0]))
 
+    # Recover the matched LABEL's own sub-box from the line's word boxes, plus any
+    # VALUE sharing the line. A key/value row OCRs as "label …gap… value" on ONE
+    # line, so the line box (returned in x/y/w/h below) spans BOTH — using it for
+    # geometric placement seats the value crop past the value. label_box restores
+    # correct geometry (value to the right of the LABEL, not the line) and
+    # inline_value lets the caller harvest the value straight off the located line
+    # (the only reliable read when the value sits in a far column, not adjacent).
+    # Additive: callers that ignore these keys behave exactly as before.
+    label_box = None
+    inline_value = None
+    bwords = best.get("words") or []
+    run = _match_label_run(bwords, needle) if needle else None
+    if run:
+        rx1 = min(wd["x_norm"] for wd in run)
+        rx2 = max(wd["x_norm"] + wd["w_norm"] for wd in run)
+        ry1 = min(wd["y_norm"] for wd in run)
+        ry2 = max(wd["y_norm"] + wd["h_norm"] for wd in run)
+        label_box = {
+            "x_norm": crop_box["x_norm"] + rx1 * crop_box["w_norm"],
+            "y_norm": crop_box["y_norm"] + ry1 * crop_box["h_norm"],
+            "w_norm": (rx2 - rx1) * crop_box["w_norm"],
+            "h_norm": (ry2 - ry1) * crop_box["h_norm"],
+        }
+        rest = bwords[len(run):]
+        if rest:
+            inline_value = " ".join(wd["text"] for wd in rest).strip() or None
+
     return {
         "x_norm":       crop_box["x_norm"] + best["x_norm"] * crop_box["w_norm"],
         "y_norm":       crop_box["y_norm"] + best["y_norm"] * crop_box["h_norm"],
@@ -484,6 +533,8 @@ def _locate_anchor(page, anchor_box, anchor_text, expansion, ocr_lines_fn,
         "h_norm":       best["h_norm"] * crop_box["h_norm"],
         "matched_text": best.get("text") if needle else None,
         "match_score":  chosen_score,
+        "label_box":    label_box,
+        "inline_value": inline_value,
     }
 
 
@@ -620,12 +671,14 @@ def _ocr_lines(image):
             continue
         key = (data["block_num"][i], data["par_num"][i], data["line_num"][i])
         x, y = data["left"][i], data["top"][i]
-        x2, y2 = x + data["width"][i], y + data["height"][i]
+        ww, hh = data["width"][i], data["height"][i]
+        x2, y2 = x + ww, y + hh
+        wd = {"text": word, "_x": x, "_y": y, "_w": ww, "_h": hh}
         g = groups.get(key)
         if g is None:
-            groups[key] = {"words": [word], "x1": x, "y1": y, "x2": x2, "y2": y2}
+            groups[key] = {"words": [wd], "x1": x, "y1": y, "x2": x2, "y2": y2}
         else:
-            g["words"].append(word)
+            g["words"].append(wd)
             g["x1"] = min(g["x1"], x)
             g["y1"] = min(g["y1"], y)
             g["x2"] = max(g["x2"], x2)
@@ -633,12 +686,19 @@ def _ocr_lines(image):
 
     lines = []
     for g in groups.values():
+        # Per-word boxes (crop-relative normalised) are kept ALONGSIDE the line
+        # box so a caller can recover the matched LABEL's own sub-box instead of
+        # the whole "label …gap… value" line. Additive — existing line-level keys
+        # are unchanged.
+        words = [{"text": wd["text"], "x_norm": wd["_x"] / w, "y_norm": wd["_y"] / h,
+                  "w_norm": wd["_w"] / w, "h_norm": wd["_h"] / h} for wd in g["words"]]
         lines.append({
-            "text":   " ".join(g["words"]),
+            "text":   " ".join(wd["text"] for wd in g["words"]),
             "x_norm": g["x1"] / w,
             "y_norm": g["y1"] / h,
             "w_norm": (g["x2"] - g["x1"]) / w,
             "h_norm": (g["y2"] - g["y1"]) / h,
+            "words":  words,
         })
     return lines
 

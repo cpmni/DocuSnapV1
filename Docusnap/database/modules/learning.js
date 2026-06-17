@@ -216,12 +216,43 @@ function _centerDistance(ax, ay, bx, by) {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
+// Strip DOCUMENT-SPECIFIC tokens (reference numbers, dates, serials) from an
+// auto-detected anchor label so the stored label is a STABLE caption that
+// generalises across documents. An auto-detected label such as
+// "2605-0769-1 Work Address" bakes in ONE document's reference number, so the
+// anchor can never be re-located on a document with a different reference — the
+// "anchor won't drift with the page" failure. A token is document-specific when
+// it carries no letter (a bare number / reference / date) or is a code-like
+// serial (>= 3 digits). Returns the cleaned caption, or '' when nothing stable
+// remains. Reusable for every supplier/field; no per-document logic.
+function sanitizeAnchorLabel(label) {
+  if (!label || typeof label !== 'string') return '';
+  const kept = label.trim().split(/\s+/).filter(tok => {
+    if (!/[a-zA-Z]/.test(tok)) return false;                // bare number / ref / date
+    if ((tok.match(/\d/g) || []).length >= 3) return false; // code-like serial
+    return true;
+  });
+  return kept.join(' ').trim();
+}
+
 function saveAnchor(db, {
   supplier_name, document_type, field_key,
   anchor_label, direction, page_zone, x_norm, y_norm,
   w_norm = 0, h_norm = 0, authoritative = false,
   offset_dx_norm = null, offset_dy_norm = null
 }) {
+  // Keep only the stable caption. If sanitising changes the label, the stored
+  // drift-invariant offset was measured against the POLLUTED label's position
+  // (e.g. a reference number's left edge), so it no longer matches the caption
+  // we'll re-locate at extraction time — drop it so extraction falls back to the
+  // geometric guess (value adjacent to the located clean caption).
+  const _clean = sanitizeAnchorLabel(anchor_label);
+  if (_clean && _clean !== (anchor_label || '').trim()) {
+    anchor_label  = _clean;
+    offset_dx_norm = null;
+    offset_dy_norm = null;
+  }
+
   const key = {
     supplier_name: supplier_name || '__unknown__',
     document_type: document_type || null,
@@ -819,7 +850,7 @@ function setSetting(db, key, value) {
 module.exports = {
   insertExtractions, deleteExtractions,
   saveCorrections, getHints, isPlausibleSupplierName, normalizeSupplierName,
-  saveAnchor, clearAnchors, getAllAnchors,
+  saveAnchor, sanitizeAnchorLabel, clearAnchors, getAllAnchors,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
   getFieldFormats, getDigitsOnlyFields,
   getRecoverySummary, getRecoveryDetail, getMemoryInventory, resetAllLearning,

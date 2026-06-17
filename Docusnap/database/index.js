@@ -440,6 +440,38 @@ function runJsMigrations(db, applied) {
     db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (3)').run();
     console.log('JS migration 3 applied: trimmed built-in fields to name/date/ref');
   }
+
+  // Migration 23: sanitise document-specific tokens out of learned anchor labels.
+  // An auto-detected ⊕ label could absorb a document's own reference/date
+  // ("2605-0769-1 Work Address"), so the anchor could never be re-located on a
+  // document with a different reference — the customer-field "won't drift" bug.
+  // Clean every stored label to its stable caption; when the label changes its
+  // drift-invariant offset was measured against the polluted position, so NULL it
+  // (extraction falls back to the geometric guess). Delete an anchor whose label
+  // is ENTIRELY document-specific (no caption survives) — it can never reliably
+  // match. Safe + reusable: learned positions are re-learnable and a clean anchor
+  // strictly generalises better than a poisoned one. Mirrors migration 5's purge.
+  if (!applied.has(23)) {
+    try {
+      const { sanitizeAnchorLabel } = require('./modules/learning');
+      if (tableExists(db, 'field_anchors')) {
+        const rows = db.prepare('SELECT id, anchor_label FROM field_anchors').all();
+        const upd = db.prepare('UPDATE field_anchors SET anchor_label = ?, offset_dx_norm = NULL, offset_dy_norm = NULL WHERE id = ?');
+        const del = db.prepare('DELETE FROM field_anchors WHERE id = ?');
+        let cleaned = 0, deleted = 0;
+        for (const r of rows) {
+          const clean = sanitizeAnchorLabel(r.anchor_label);
+          if (clean === (r.anchor_label || '').trim()) continue; // already a clean caption
+          if (clean) { upd.run(clean, r.id); cleaned++; }
+          else { del.run(r.id); deleted++; }
+        }
+        console.log(`JS migration 23 applied: sanitised anchor labels (cleaned ${cleaned}, deleted ${deleted})`);
+      }
+    } catch (e) {
+      console.warn('JS migration 23 skipped: ' + (e && e.message));
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (23)').run();
+  }
 }
 
 function hasColumn(db, table, column) {

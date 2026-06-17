@@ -350,7 +350,8 @@ class ExtractionEngine:
                 supplier_name: str | None = None,
                 known_template_id: int | None = None,
                 trace = None,
-                slice_dir = None) -> dict:
+                slice_dir = None,
+                page_text_lines: list | None = None) -> dict:
         """
         Run extraction pipeline according to current mode.
         Returns dict with field values + metadata keys prefixed with _.
@@ -364,6 +365,26 @@ class ExtractionEngine:
         self._slice_n   = 0
         results      = {}
         field_keys   = [f["key"] for f in field_defs]
+        # Seed field_patterns from each field's configured TYPE so CUSTOM doc-type
+        # fields (which have no entry in the keyword config) are gated by their real
+        # type — date / currency / alphanumeric — instead of silently falling back
+        # to loose free-text (which lets high-DPI crop garbage like "ZWIVLZIZULO" or
+        # "cield wu" commit unchallenged). The keyword config still wins where it
+        # carries a richer entry for a known field. Reusable for every custom type.
+        # Only STRUCTURED / code types are seeded (date, currency, alphanumeric).
+        # text/multiline_text are deliberately NOT seeded — leaving them unset
+        # preserves the existing free-text behaviour exactly (seeding "text" would
+        # flip on the degraded-text escalation for name/address fields and change
+        # their reads). So this strengthens gating for typed fields without
+        # touching free-text ones.
+        _TYPE2VAL = {"date": "date", "currency": "currency", "number": "currency",
+                     "amount": "currency", "alphanumeric": "alphanumeric",
+                     "job_reference": "job_reference", "currency_code": "currency_code"}
+        field_patterns = dict(self.patterns.get("field_patterns", {}))
+        for _f in field_defs:
+            _k, _t = _f.get("key"), (_f.get("type") or "").lower()
+            if _k and _k not in field_patterns and _t in _TYPE2VAL:
+                field_patterns[_k] = {"validation": _TYPE2VAL[_t]}
         # Date-typed fields get a merge guard: a candidate that doesn't parse as
         # a real date must never displace one that does (e.g. a mis-cropped
         # taught anchor returning a bare "March" overriding a valid full date).
@@ -468,7 +489,7 @@ class ExtractionEngine:
                     _landmarks = (mapping_src or matched_tmpl).get("landmarks") or []
                     mapping_results = template_mapper.extract_with_mappings(
                         page_images, tmpl_mappings,
-                        field_patterns=self.patterns.get("field_patterns", {}),
+                        field_patterns=field_patterns,
                         validation_patterns=self.patterns.get("validation_patterns", {}),
                         format_lookup=_fmt_lookup,
                         slice_capture=(self._capture_slice if (self._trace and self._slice_dir) else None),
@@ -608,12 +629,13 @@ class ExtractionEngine:
             anchor_results = anchor.extract_with_anchors(
                 ocr_text, anchors, supplier_name, document_slug,
                 page_images=page_images,
-                field_patterns=self.patterns.get("field_patterns", {}),
+                field_patterns=field_patterns,
                 validation_patterns=self.patterns.get("validation_patterns", {}),
                 slice_capture=(self._capture_slice if (self._trace and self._slice_dir) else None),
                 format_lookup=self._make_format_lookup(supplier_name, document_slug),
                 page_transform=anchor_page_transform,
                 on_reject=_on_reject,
+                page_text_lines=page_text_lines,
             )
             _pre_s2 = self._snap(results)
             for key, data in anchor_results.items():
