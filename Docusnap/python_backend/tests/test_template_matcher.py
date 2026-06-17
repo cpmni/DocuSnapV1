@@ -297,6 +297,33 @@ def main():
                  kw_loser_auto and kw_loser_auto['template']['id'] == 22):
         failures += 1
 
+    # The fix: same-logo SIBLINGS (one supplier, several layouts under one
+    # letterhead) are disambiguated by KEYWORD FINGERPRINT, and the winner carries
+    # its OWN document_type_slug — so a worksheet isn't matched to the PO template
+    # (and then mis-typed). The logo alone can't tell them apart.
+    section('identify_template: same-logo siblings disambiguated by keyword fingerprint + slug')
+    PO_TPL = {'id': 30, 'name': 'Acme PO', 'logo_phash': SAME_HASH,
+              'document_type_slug': 'purchase_order', 'keyword_fingerprint': ['PURCHASE', 'ORDER']}
+    WS_TPL = {'id': 31, 'name': 'Acme Worksheet', 'logo_phash': SAME_HASH,
+              'document_type_slug': 'wsheet', 'keyword_fingerprint': ['SERVICE', 'WORKSHEET']}
+    ws_hit = with_stub_hash(lambda: template_matcher.identify_template(
+        FakePage(phash=SAME_HASH), "ACME LTD\nSERVICE WORKSHEET\nTicket No 2605-0769-1",
+        [PO_TPL, WS_TPL]))
+    if not check('worksheet page picks the WORKSHEET sibling, not the PO sibling (same logo)',
+                 ws_hit and ws_hit['template']['id'] == 31):
+        failures += 1
+    if not check('matched sibling carries its own doc-type slug (wsheet)',
+                 ws_hit and ws_hit['template'].get('document_type_slug') == 'wsheet'):
+        failures += 1
+    if not check('method reflects the keyword disambiguation (logo+keywords)',
+                 ws_hit and ws_hit.get('method') == 'logo+keywords'):
+        failures += 1
+    po_hit = with_stub_hash(lambda: template_matcher.identify_template(
+        FakePage(phash=SAME_HASH), "ACME LTD\nPURCHASE ORDER\nPO No 12345", [PO_TPL, WS_TPL]))
+    if not check('PO page picks the PO sibling from the same-logo cluster',
+                 po_hit and po_hit['template']['id'] == 30):
+        failures += 1
+
     print()
     if failures:
         print(f"{failures} check(s) failed — template_matcher Stage 0 identification regressed.")

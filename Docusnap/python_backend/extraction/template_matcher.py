@@ -33,6 +33,11 @@ CALENDAR_WORDS = {
 
 LOGO_THRESHOLD    = 13   # max hamming distance for logo match
 KEYWORD_THRESHOLD = 0.75 # min fraction of keywords that must be present
+# Templates whose logos land within this hamming of the closest match are
+# treated as the SAME-LOGO cluster — a supplier that issues several layouts
+# under one letterhead (e.g. purchase orders AND worksheets). The logo can't
+# tell those apart, so within the cluster the keyword fingerprint disambiguates.
+_LOGO_AMBIG_MARGIN = 3
 
 
 def identify_template(page_image, ocr_text: str, templates: list) -> dict | None:
@@ -44,14 +49,33 @@ def identify_template(page_image, ocr_text: str, templates: list) -> dict | None
     if not templates:
         return None
 
+    ocr_lower  = ocr_text.lower()
     logo_phash = None
 
-    # 1. Logo hash — most reliable identifier
+    # 1. Logo hash — the most reliable SUPPLIER identifier, but NOT a doc-type
+    #    one: a supplier that sends several layouts under the same letterhead has
+    #    several templates with near-identical logos. So gather ALL close logo
+    #    candidates and, when more than one is within the ambiguity margin,
+    #    disambiguate by KEYWORD FINGERPRINT — which is exactly what tells a
+    #    "Purchase Order" apart from a "Service Worksheet". A lone candidate keeps
+    #    the old fast short-circuit (logo wins, no keyword work).
     if page_image is not None:
-        logo_phash, logo_match = _match_by_logo(page_image, templates)
-        if logo_match and logo_match['confidence'] >= 60:
-            logo_match['logo_phash'] = logo_phash
-            return logo_match
+        logo_phash, cands = _logo_candidates(page_image, templates)
+        if cands:
+            best_t, best_dist = cands[0]
+            cluster = [t for (t, d) in cands if d <= best_dist + _LOGO_AMBIG_MARGIN]
+            method = 'logo'
+            if len(cluster) > 1:
+                scored = sorted(((t, _keyword_hit_ratio(t, ocr_lower)) for t in cluster),
+                                key=lambda x: -x[1])
+                if scored[0][1] > 0:                  # keyword evidence breaks the tie
+                    best_t = scored[0][0]
+                    best_dist = next(d for (t, d) in cands if t is best_t)
+                    method = 'logo+keywords'
+            conf = max(0, 100 - best_dist * 6)
+            if conf >= 60:
+                return {'template': best_t, 'confidence': conf,
+                        'method': method, 'logo_phash': logo_phash}
 
     # 2. Keyword fingerprint — fallback for docs without logos
     kw_match = _match_by_keywords(ocr_text, templates)
@@ -176,29 +200,39 @@ def compute_logo_hash(page_image: Image.Image) -> str | None:
 
 # ── Private helpers ───────────────────────────────────────────────────────────
 
-def _match_by_logo(page_image: Image.Image,
-                   templates: list) -> tuple[str | None, dict | None]:
+def _logo_candidates(page_image: Image.Image,
+                     templates: list) -> tuple[str | None, list]:
+    """Return (phash, [(template, hamming_distance), ...]) for every template
+    whose logo is within LOGO_THRESHOLD of this page, CLOSEST FIRST. Unlike a
+    single best-match, this exposes the same-logo cluster so identify_template
+    can break a supplier's multi-layout tie by keyword fingerprint."""
     phash = compute_logo_hash(page_image)
     if not phash:
-        return None, None
-
-    best = None
-    best_dist = LOGO_THRESHOLD + 1
-
+        return None, []
+    cands = []
     for t in templates:
         t_hash = t.get('logo_phash') or ''
         if not t_hash:
             continue
         dist = _hamming(phash, t_hash)
-        if dist < best_dist:
-            best_dist = dist
-            best = {
-                'template':   t,
-                'confidence': max(0, 100 - dist * 6),
-                'method':     'logo',
-            }
+        if dist <= LOGO_THRESHOLD:
+            cands.append((t, dist))
+    cands.sort(key=lambda x: x[1])
+    return phash, cands
 
-    return phash, best
+
+def _keyword_hit_ratio(template: dict, ocr_lower: str) -> float:
+    """Fraction of a template's keyword fingerprint present on the page (the same
+    word-boundary match _match_by_keywords uses). 0.0 when the template has no
+    fingerprint, so a fingerprint-less template never wins a keyword tie-break."""
+    keywords = template.get('keyword_fingerprint') or []
+    if not keywords:
+        return 0.0
+    hits = sum(
+        1 for kw in keywords
+        if re.search(r'(?<![a-z0-9])' + re.escape(kw.lower()) + r'(?![a-z0-9])', ocr_lower)
+    )
+    return hits / len(keywords)
 
 
 def _match_by_keywords(ocr_text: str, templates: list) -> dict | None:

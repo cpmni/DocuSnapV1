@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from ocr.tesseract import configure as configure_tesseract
 from ocr.tesseract import extract_text_and_images, SUPPORTED_EXTENSIONS
 from extraction.engine import ExtractionEngine
+from extraction import template_matcher
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -234,6 +235,31 @@ def main():
                             active_fields = dt["fields"]
                         log(f"  Doc type from assigned record: {document_type} ({doc_slug})")
                         break
+
+            # Fresh-scan doc-type: a confidently-matched template (logo + keyword
+            # fingerprint) is a STRONGER type signal than keyword name-detection —
+            # and for a supplier that issues several layouts under ONE letterhead
+            # the fingerprint is the only thing that distinguishes them (logo alone
+            # just says "this supplier"). Adopt the matched template's doc type +
+            # field set so the slug, fields and (doc-type-scoped) anchors all agree
+            # — but NEVER over an explicit known_doc_slug (a reprocess the user
+            # already assigned). Reusable for every supplier/doc type.
+            if not args.known_doc_slug and templates and page_images:
+                try:
+                    tmatch = template_matcher.identify_template(page_images[0], ocr_text, templates)
+                except Exception:
+                    tmatch = None
+                tslug = ((tmatch or {}).get("template") or {}).get("document_type_slug")
+                if tslug and doc_types and tslug != doc_slug:
+                    for dt in doc_types:
+                        if dt.get("slug") == tslug:
+                            doc_slug      = tslug
+                            document_type = dt["name"]
+                            if dt.get("fields"):
+                                active_fields = dt["fields"]
+                            log(f"  Doc type from matched template: {document_type} "
+                                f"({tslug}, {tmatch.get('confidence')}% via {tmatch.get('method')})")
+                            break
 
             raw_extractions = engine.extract(
                 ocr_text      = ocr_text,
