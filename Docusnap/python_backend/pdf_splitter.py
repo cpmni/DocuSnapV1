@@ -47,7 +47,16 @@ def parse_ranges(ranges_str: str, total_pages: int) -> list[list[int]]:
     return groups
 
 
-def split_pdf(input_path: str, ranges_str: str, out_dir: str) -> list[str]:
+def chunk_ranges(total_pages: int, every: int) -> list[list[int]]:
+    """Split into consecutive groups of `every` pages (0-based indices).
+    every=1 -> one file per page; every=3 -> pages 1-3, 4-6, ... A trailing
+    short group is kept (e.g. 7 pages by 3 -> 1-3, 4-6, 7)."""
+    every = max(1, int(every))
+    return [list(range(i, min(i + every, total_pages)))
+            for i in range(0, total_pages, every)]
+
+
+def split_pdf(input_path: str, ranges_str: str, out_dir: str, every: int | None = None) -> list[str]:
     try:
         from pypdf import PdfReader, PdfWriter
     except ImportError:
@@ -59,7 +68,9 @@ def split_pdf(input_path: str, ranges_str: str, out_dir: str) -> list[str]:
 
     reader     = PdfReader(input_path)
     total      = len(reader.pages)
-    range_sets = parse_ranges(ranges_str, total)
+    # `every` (split every N pages, 1 = every page) takes precedence over an
+    # explicit range string when supplied.
+    range_sets = chunk_ranges(total, every) if every else parse_ranges(ranges_str or '', total)
     stem       = Path(input_path).stem
     out_paths  = []
 
@@ -83,9 +94,15 @@ def split_pdf(input_path: str, ranges_str: str, out_dir: str) -> list[str]:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--file',   required=True,  help='Path to the source PDF')
-    parser.add_argument('--ranges', required=True,  help='Page ranges, e.g. "1-3,5,7-9"')
+    parser.add_argument('--ranges', default=None,   help='Page ranges, e.g. "1-3,5,7-9"')
+    parser.add_argument('--every',  type=int, default=None,
+                        help='Split every N pages (1 = one file per page). Overrides --ranges.')
     parser.add_argument('--outdir', default=None,   help='Output directory (default: auto temp)')
     args = parser.parse_args()
+
+    if not args.every and not args.ranges:
+        print(json.dumps({'success': False, 'error': 'Provide --ranges or --every'}), flush=True)
+        sys.exit(1)
 
     if not os.path.isfile(args.file):
         print(json.dumps({'success': False, 'error': f'File not found: {args.file}'}), flush=True)
@@ -95,7 +112,7 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
 
     try:
-        out_paths = split_pdf(args.file, args.ranges, out_dir)
+        out_paths = split_pdf(args.file, args.ranges, out_dir, every=args.every)
         print(json.dumps({'success': True, 'files': out_paths, 'outdir': out_dir}), flush=True)
     except Exception as exc:
         print(json.dumps({'success': False, 'error': str(exc)}), flush=True)

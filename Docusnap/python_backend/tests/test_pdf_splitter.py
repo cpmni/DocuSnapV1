@@ -22,7 +22,7 @@ import subprocess
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from pdf_splitter import parse_ranges, split_pdf
+from pdf_splitter import parse_ranges, split_pdf, chunk_ranges
 
 
 def check(label, condition, detail=''):
@@ -93,6 +93,52 @@ def main():
         except Exception as exc:
             failures += 1
             print(f'  BAD split_pdf raised: {exc}')
+
+    # ── chunk_ranges — split every N pages ─────────────────────────────────────
+    section('chunk_ranges — every N pages (1 = every page)')
+    chunk_cases = [
+        (5, 1, [[0], [1], [2], [3], [4]]),          # every page
+        (7, 3, [[0, 1, 2], [3, 4, 5], [6]]),        # trailing short group kept
+        (4, 2, [[0, 1], [2, 3]]),                   # even split
+        (3, 10, [[0, 1, 2]]),                       # N > total -> one group
+        (5, 0, [[0], [1], [2], [3], [4]]),          # 0 clamped to 1
+    ]
+    for total, every, expected in chunk_cases:
+        got = chunk_ranges(total, every)
+        if not check(f'chunk_ranges({total}, {every}) == {expected}', got == expected, f'got {got}'):
+            failures += 1
+
+    section('split_pdf — every=1 produces one file per page')
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / 'each.pdf'
+        make_minimal_pdf(src, 5)
+        try:
+            paths = split_pdf(str(src), '', tmp, every=1)
+            if not check('5 single-page files', len(paths) == 5, f'got {len(paths)}'):
+                failures += 1
+            if not check('each output is 1 page', all(count_pages(p) == 1 for p in paths)):
+                failures += 1
+        except Exception as exc:
+            failures += 1; print(f'  BAD split_pdf(every=1) raised: {exc}')
+
+    # ── CLI — --every round-trip ───────────────────────────────────────────────
+    section('CLI round-trip — --every 2')
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / 'every_source.pdf'
+        make_minimal_pdf(src, 5)
+        script = Path(__file__).parent.parent / 'pdf_splitter.py'
+        result = subprocess.run(
+            [sys.executable, str(script), '--file', str(src), '--every', '2', '--outdir', tmp],
+            capture_output=True, text=True,
+        )
+        try:
+            out = json.loads(result.stdout.strip())
+            if not check('--every exits 0', result.returncode == 0, f'code={result.returncode}'):
+                failures += 1
+            if not check('--every -> 3 files (2,2,1)', len(out.get('files', [])) == 3, str(out)):
+                failures += 1
+        except json.JSONDecodeError:
+            failures += 1; print(f'  BAD could not parse --every output: {result.stdout!r}')
 
     # ── CLI — success path ─────────────────────────────────────────────────────
     section('CLI round-trip — success path')

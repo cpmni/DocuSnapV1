@@ -887,13 +887,19 @@ function register(ctx) {
   // Thin wrapper around pdf_splitter.py (pypdf). Splits a single PDF into
   // page-range sub-documents that can then be dropped into the normal process-
   // folder pipeline. outDir is optional (defaults to a safe system-temp path).
-  ipcMain.handle('split-pdf', async (_e, filePath, ranges, outDir, docId) => {
+  ipcMain.handle('split-pdf', async (_e, filePath, ranges, outDir, docId, every) => {
     requireRole('admin', 'edit');
-    if (!filePath || !ranges) return { success: false, error: 'filePath and ranges are required' };
+    // `every` (split every N pages, 1 = every page) is an alternative to an
+    // explicit range string; exactly one is required.
+    const everyN = Number(every) > 0 ? Math.floor(Number(every)) : null;
+    if (!filePath || (!ranges && !everyN)) {
+      return { success: false, error: 'filePath and ranges or every are required' };
+    }
 
     const py             = pythonExe();
     const splitterScript = path.join(path.dirname(backendScript()), 'pdf_splitter.py');
-    const args           = pythonArgs(splitterScript, '--file', filePath, '--ranges', ranges);
+    const splitArgs      = everyN ? ['--every', String(everyN)] : ['--ranges', ranges];
+    const args           = pythonArgs(splitterScript, '--file', filePath, ...splitArgs);
     if (outDir) { args.push('--outdir', outDir); }
 
     const raw = await new Promise((resolve) => {

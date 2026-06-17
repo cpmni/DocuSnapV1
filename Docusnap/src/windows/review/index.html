@@ -502,7 +502,17 @@
             <!-- Flyouts anchored to the rail (shown by the existing handlers; IDs preserved) -->
             <div id="split-bar" class="rail-flyout" style="display:none;">
               <div class="rail-flyout-title">Split PDF</div>
+              <select id="split-mode" style="font-size:11px; padding:4px 8px; background:var(--surface2); border:1px solid var(--border2); color:var(--text); border-radius:4px; width:100%; min-width:0;">
+                <option value="ranges">By page range</option>
+                <option value="each">Every page (1 file per page)</option>
+                <option value="everyn">Every N pages</option>
+              </select>
               <input type="text" id="split-ranges-input" placeholder="e.g. 1-2,3" style="font-size:11px; font-family:var(--mono,monospace); padding:4px 8px; background:var(--surface2); border:1px solid var(--border2); color:var(--text); border-radius:4px; width:100%; min-width:0;">
+              <div id="split-everyn-wrap" style="display:none; align-items:center; gap:6px;">
+                <span style="font-size:11px; color:var(--muted);">Every</span>
+                <input type="number" id="split-every-n" min="1" step="1" value="2" style="font-size:11px; padding:4px 8px; background:var(--surface2); border:1px solid var(--border2); color:var(--text); border-radius:4px; width:60px;">
+                <span style="font-size:11px; color:var(--muted);">pages</span>
+              </div>
               <div class="rail-flyout-row">
                 <button class="btn reprocess" id="btn-split-confirm" style="flex:1; font-size:11px;">&#9986; Split</button>
                 <button class="btn" id="btn-split-cancel" style="flex:1; font-size:11px; color:var(--muted);">Cancel</button>

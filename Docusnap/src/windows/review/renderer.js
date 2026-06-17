@@ -1675,12 +1675,27 @@ document.getElementById('btn-reprocess-all').addEventListener('click', async () 
 });
 
 // ── Split PDF ─────────────────────────────────────────────────────────────────
+// Split mode: show the range input only for "by range", the N field only for
+// "every N pages"; "every page" needs no extra input.
+function applySplitMode() {
+  const mode = document.getElementById('split-mode').value;
+  document.getElementById('split-ranges-input').style.display = mode === 'ranges' ? '' : 'none';
+  document.getElementById('split-everyn-wrap').style.display  = mode === 'everyn' ? 'flex' : 'none';
+}
+document.getElementById('split-mode').addEventListener('change', () => {
+  applySplitMode();
+  const mode = document.getElementById('split-mode').value;
+  (mode === 'ranges' ? document.getElementById('split-ranges-input')
+   : mode === 'everyn' ? document.getElementById('split-every-n') : null)?.focus();
+});
+
 document.getElementById('btn-split-pdf').addEventListener('click', () => {
-  const bar   = document.getElementById('split-bar');
-  const input = document.getElementById('split-ranges-input');
+  const bar = document.getElementById('split-bar');
   bar.style.display = 'flex';
-  input.value = '';
-  input.focus();
+  document.getElementById('split-mode').value = 'ranges';
+  document.getElementById('split-ranges-input').value = '';
+  applySplitMode();
+  document.getElementById('split-ranges-input').focus();
 });
 
 document.getElementById('btn-split-cancel').addEventListener('click', () => {
@@ -1690,9 +1705,18 @@ document.getElementById('btn-split-cancel').addEventListener('click', () => {
 
 async function doSplitPdf() {
   if (!currentDoc) return;
-  const input  = document.getElementById('split-ranges-input');
-  const ranges = input.value.trim();
-  if (!ranges) { input.focus(); return; }
+  const mode  = document.getElementById('split-mode').value;
+  let ranges, every;
+  if (mode === 'each') {
+    every = 1;
+  } else if (mode === 'everyn') {
+    every = parseInt(document.getElementById('split-every-n').value, 10);
+    if (!(every >= 1)) { document.getElementById('split-every-n').focus(); return; }
+  } else {
+    const input = document.getElementById('split-ranges-input');
+    ranges = input.value.trim();
+    if (!ranges) { input.focus(); return; }
+  }
 
   const filePath  = currentDoc.folder_path + '\\' + currentDoc.original_filename;
   const docId     = currentDoc.id;
@@ -1701,7 +1725,7 @@ async function doSplitPdf() {
   btnSplit.innerHTML = '<span class="btn-spinner"></span>';
 
   try {
-    const result = await window.docusnap.splitPdf(filePath, ranges, undefined, docId);
+    const result = await window.docusnap.splitPdf(filePath, ranges, undefined, docId, every);
     if (result?.success) {
       const count = result.files?.length ?? 0;
       // Remove original from local queue state — it has been deleted from DB + disk.
