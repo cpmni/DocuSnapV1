@@ -22,34 +22,19 @@ const { getSetting, setSetting } = require('../../../database/modules/learning')
 const { addAuditEntry } = require('../../../database/modules/auth');
 const authHandler = require('../auth/handler'); // for admin-role guard on enforcement toggle
 
-const ENFORCE_KEY = 'license_enforcement_enabled';
-const ENFORCE_ENV = 'DOCUSNAP_LICENSE_ENFORCEMENT'; // dev/staging override; wins over the setting
 const HWM_KEY = 'license_time_hwm'; // monotonic time high-water mark (ms), in settings (outside token cache)
 
-// A dev/staging env override for enforcement so it can be flipped WITHOUT editing
-// the DB — and so dev can always force it OFF (the escape hatch if a machine ever
-// gets locked). Returns true/false when set, or null to defer to the setting.
-function envEnforcementOverride() {
-  const v = String(process.env[ENFORCE_ENV] || '').trim().toLowerCase();
-  if (v === 'off' || v === '0' || v === 'false' || v === 'no')  return false;
-  if (v === 'on'  || v === '1' || v === 'true'  || v === 'yes') return true;
-  return null;
-}
-
-// Effective enforcement, in priority order:
-//   1. env override (DOCUSNAP_LICENSE_ENFORCEMENT) — dev/staging escape hatch;
-//   2. explicit persisted setting ('true'/'false') — admin choice;
-//   3. unset (e.g. a fresh install): DEFAULT ON for packaged/installed builds so a
-//      clean profile must activate, OFF in dev so `npm start` stays frictionless.
-// A valid cached trial/seat token still passes the gate, so legitimately trialed
-// or activated users open normally; only the "never gated" bypass is closed.
-function enforcementActive(db) {
-  const o = envEnforcementOverride();
-  if (o !== null) return o;
-  const v = getSetting(db, ENFORCE_KEY);
-  if (v === 'true')  return true;
-  if (v === 'false') return false;
-  return !!(_ctx && _ctx.app && _ctx.app.isPackaged); // unset -> enforce in installed builds
+// Licensing enforcement is ALWAYS ON and cannot be disabled — not by an
+// environment variable, not by a persisted setting, and not by running an
+// unpackaged/dev build. This is intentional: a "start with licensing turned
+// off" path is a single, obvious bypass of the payment/entitlement checks, so
+// no such path is allowed to exist. A valid cached trial/seat token still
+// passes the gate, so legitimately trialed or activated users open normally.
+// Dev ergonomics: developers run against a REAL backend trial/seat for their
+// machine's fingerprint (see CLAUDE.md → Licensing & activation) — never a
+// bypass flag. The `db` arg is kept so existing call sites are unchanged.
+function enforcementActive(_db) {
+  return true;
 }
 
 let _ctx = null;
@@ -258,23 +243,20 @@ function register(ctx) {
   // Reports the persisted setting, the effective value, and whether a dev/staging
   // env override is currently forcing it (so the UI can explain a mismatch).
   ipcMain.handle('license-get-enforcement', () => {
-    const db = getDb();
-    const envForced = envEnforcementOverride();
-    const setting = getSetting(db, ENFORCE_KEY) === 'true';
-    return { setting, effective: enforcementActive(db), envOverride: envForced };
+    // Enforcement is permanently ON; no env var or setting can relax it.
+    return { setting: true, effective: true, envOverride: null, locked: true };
   });
 
   // Toggle the persisted enforcement setting. Admin-only (the Settings window is
   // already admin-gated; this is defence in depth). The env override, if present,
   // still takes precedence over whatever is stored here.
-  ipcMain.handle('license-set-enforcement', (_e, on) => {
+  ipcMain.handle('license-set-enforcement', () => {
+    // Hard-gated: enforcement can NEVER be toggled off at runtime. Licensing
+    // enforcement cannot be disabled by environment or settings — this is
+    // intentional to avoid a bypass gate. This handler performs NO state change;
+    // it is retained only so the existing Settings UI gets an honest response.
     if (!authHandler.hasRole('admin')) return { ok: false, code: 'forbidden' };
-    const db = getDb();
-    const want = !!on;
-    setSetting(db, ENFORCE_KEY, want ? 'true' : 'false');
-    audit(db, want ? 'license.enforcement_enabled' : 'license.enforcement_disabled', null, 'via settings');
-    const envForced = envEnforcementOverride();
-    return { ok: true, setting: want, effective: envForced !== null ? envForced : want, envOverride: envForced };
+    return { ok: false, code: 'enforcement_locked', setting: true, effective: true, envOverride: null };
   });
 
   // Read-only license diagnostic for Settings → Activation ("License Status").
@@ -285,9 +267,10 @@ function register(ctx) {
   // raw fingerprint, or secrets.
   ipcMain.handle('license-get-diagnostics', () => {
     const db = getDb();
-    const envForced = envEnforcementOverride();
-    const setting = getSetting(db, ENFORCE_KEY) === 'true';
-    const effective = enforcementActive(db);
+    // Enforcement is permanently ON and cannot be relaxed by env/setting.
+    const envForced = null;
+    const setting = true;
+    const effective = true;
 
     let fpHash = null, cfg = null;
     try { cfg = loadConfig(_ctx); fpHash = fingerprintLib.computeFpHash(cfg.product_id); }
