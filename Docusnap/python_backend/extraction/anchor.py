@@ -666,18 +666,29 @@ def _anchor_matches(anchor: dict, supplier_name: str | None,
     s_name = (supplier_name or "").lower().strip()
     d_type = document_type or ""
 
-    # Global anchors always apply
+    # A typed anchor must NOT cross into a DIFFERENT known doc type — even for the
+    # same supplier. One supplier often sends several doc types (e.g. a supplier
+    # that issues both purchase orders AND worksheets); without this guard, that
+    # supplier's purchase_order anchors (po_number/po_date) fire on its worksheets
+    # too, producing a Frankenstein field set from every type the supplier was
+    # ever taught under. The doc-type IS the layout (see migration-20 note), so a
+    # field taught for one layout must not leak onto another. Only enforced when
+    # BOTH types are known; if detection couldn't resolve the doc type, the broad
+    # supplier fallback below still applies (unchanged), so nothing regresses.
+    type_conflict = bool(a_type and d_type and a_type != d_type)
+
+    # Global anchors always apply — unless they carry a conflicting doc type.
     if a_sup in ("__unknown__", "__global__", ""):
-        return True
+        return not type_conflict
     # Supplier match — exact (normalised), not substring. Substring matching
     # ("a_sup in s_name or s_name in a_sup") lets one supplier's anchors fire
     # on another whenever one name contains the other (e.g. a short supplier
     # name that happens to be a substring of a longer one) — the same
     # collision class that made the 'PO' template anchor match inside
-    # "Polychemtex Inc.".
+    # "Polychemtex Inc.". A doc-type conflict still vetoes a supplier match.
     if a_sup and s_name and a_sup == s_name:
-        return True
-    # Doc type match
+        return not type_conflict
+    # Doc type match (e.g. a different supplier, same layout family).
     if a_type and d_type and a_type == d_type:
         return True
 
