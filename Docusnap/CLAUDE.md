@@ -104,6 +104,7 @@ docusnap2/
 │       ├── settings/{index.html,renderer.js}  # incl. Admin Template Viewer + License/Activation-Test tab
 │       ├── search/index.html                  # placeholder
 │       ├── dev-inspector/{index.html,renderer.js}  # hidden read-only processing inspector (Ctrl+Shift+D+M, pw SFDEV) — see Dev inspector
+│       ├── onboarding/{index.html,renderer.js} # first-run setup wizard — see First-run wizard
 │       └── license/{index.html,renderer.js}   # activation/trial screen shown when the gate locks
 │   (createWindow opens every panel HIDDEN and reveals on ready-to-show — no
 │    empty-background "black box" flash; startup/login flow passes show:false and
@@ -187,8 +188,11 @@ template_landmarks — template_id(FK cascade), label_text, x/y/w/h_norm, ocr_co
                   (registration.py). Additive/inert — a template with no rows uses
                   the existing anchor/offset path unchanged.
 settings        — key, value (key-value store; incl. registration_enabled —
-                  default ON, gates the Stage 0.5 registration rung; and
-                  born_digital_enabled — default ON, gates PDF text-layer extraction)
+                  default ON, gates the Stage 0.5 registration rung;
+                  born_digital_enabled — default ON, gates PDF text-layer extraction;
+                  first_run_completed — 'true' once the setup wizard finishes/skips
+                  (migration 24 stamps it for already-configured installs so existing
+                  users are never re-onboarded))
 migrations      — version, applied_at
 license_tokens  — kind(seat|trial), subject, token_blob(JWS), state, not_after,   ← migration 16
                   grace_until, kid  (client cache of the signed token; deletable)
@@ -504,8 +508,9 @@ packaged builds.** The MAIN process is the sole decider — the renderer can onl
 entry (`license-enter-app`), never self-grant.
 
 **Flow**: login → `enterMainApp()` (main.js) → `licensingModule.decideAccess()` → `allow`
-opens the main shell, otherwise the **license window** (`src/windows/license` — Start/Resume
-Trial · Enter key + Activate · Release · Check again).
+then `needsOnboarding()` → on a clean install the **first-run setup wizard** (see First-run
+wizard), otherwise the main shell; a non-`allow` gate routes to the **license window**
+(`src/windows/license` — Start/Resume Trial · Enter key + Activate · Release · Check again).
 
 **Enforcement is ALWAYS ON** — `enforcementActive(db)` in `src/modules/licensing/handler.js`
 returns `true` unconditionally. The old relaxations are REMOVED: the
@@ -594,6 +599,8 @@ dev-inspector-unlock(pw)               # pw checked in MAIN (=== 'SFDEV'); opens
 dev-inspector-running                  # read-only bool (isBatchRunning)
 dev-get-session-docs, dev-get-session-doc(key)  # read-only in-memory dev-session registry (no DB)
 dev-get-slice(path)                    # base64 of a temp OCR crop; path MUST resolve under ctx.devSliceDir
+split-pdf(file,ranges,outDir,docId,every)  # pypdf split; `every` N = split every N pages (1=each), else ranges
+onboarding-suggested-folder, onboarding-validate-folder(folder)  # first-run wizard (mkdir+probe writability)
 ```
 
 ### Renderer → Main (send — fire and forget)
@@ -602,6 +609,7 @@ window-minimise, window-maximise, window-close
 show-in-explorer(path), open-file(path)
 open-review-window, open-settings-window, open-search-window
 open-teach-window, open-teach-window-at(docId)   # guided teaching wizard (Admin+Edit)
+onboarding-complete, open-onboarding   # first-run wizard: set first_run_completed+open shell / re-run (admin)
 notify-review-complete
 license-enter-app                      # REQUEST entry; main re-decides via decideAccess
 ```
@@ -804,6 +812,29 @@ After confirming a doc, call `check-fast-mode-suggestion(supplierName)`.
 If returns non-null, show toast: "Switch to Fast Mode? You've confirmed N docs
 from [supplier]. Fast Mode processes instantly without AI."
 Buttons: "Switch to Fast Mode" → `set-processing-mode('fast')` | "Not now"
+
+---
+
+## First-run wizard (clean-install setup)
+`src/windows/onboarding/` — a linear setup wizard shown ONCE on a clean install,
+AFTER the licensing gate allows (so a locked user never sees it). Gated by the
+`first_run_completed` setting (`!== 'true'` → show); migration 24 stamps the flag
+on any already-configured DB (has an `output_folder`) so existing users are never
+re-onboarded — NEVER infer "clean install" from empty state.
+- **Gate/flow (main.js):** `enterMainApp()` → gate `allow` → `needsOnboarding()` →
+  `showOnboarding()` (else `openMainShell()`). `onboarding-complete` sets the flag
+  + opens the shell. `open-onboarding` (admin) re-runs it from Settings → General
+  ("Re-run setup"). Reads fail-open — a read error never blocks app entry.
+- **Steps:** welcome + offline/privacy note → **output folder** (the ONLY required
+  step: pre-filled `Documents\Scan Finder` via `onboarding-suggested-folder`,
+  write-validated by `onboarding-validate-folder` which mkdirs + probes) → theme
+  (light/dark, live) → performance (threads presets + speed/accuracy mode) → done.
+  "Skip setup" accepts defaults but still secures a writable output folder.
+- Writes go through the EXISTING `set-setting` path (theme broadcasts live via
+  `theme-changed`); the wizard owns only the FLAG + the window/shell swap.
+- **Backup-with-retention was deliberately deferred** — a real backup subsystem
+  (copy + prune, sensitive deletion path) is its own workstream, NOT a phantom
+  toggle that claims to run backups it doesn't.
 
 ---
 
