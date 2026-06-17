@@ -313,7 +313,16 @@ function searchByName(db, query, document_type_slug) {
 }
 
 function create(db, { name, document_type_slug, logo_phash, keyword_fingerprint, fields }) {
-  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'template';
+  // templates.slug is UNIQUE, but the generated NAME is not: two documents of the
+  // same type with no resolved supplier both yield "<Type> Template" -> the same
+  // base slug, so a second one would hit "UNIQUE constraint failed: templates.slug".
+  // De-duplicate by appending a counter. Slug/name are COSMETIC (identification is
+  // by logo_phash / keyword_fingerprint — see template_matcher.py and rename()), so
+  // a numbered slug is harmless. Reusable for every supplier/type.
+  const slugExists = db.prepare('SELECT 1 FROM templates WHERE slug = ?');
+  let slug = base, n = 1;
+  while (slugExists.get(slug)) { n += 1; slug = `${base}_${n}`; }
   const info = db.prepare(`
     INSERT INTO templates (name, slug, document_type_slug, logo_phash, keyword_fingerprint)
     VALUES (?, ?, ?, ?, ?)
