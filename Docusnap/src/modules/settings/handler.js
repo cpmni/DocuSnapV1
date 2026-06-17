@@ -24,6 +24,50 @@ function register(ctx) {
   ipcMain.handle('add-document-type',    (_e, data)    => { requireRole('admin'); return doctypes.addType(getDb(), data); });
   ipcMain.handle('update-document-type', (_e, id, ch)  => { requireRole('admin'); return doctypes.updateType(getDb(), id, ch); });
 
+  // Create a doc type + its fields + key-field assignments in ONE transaction.
+  // The teaching wizard drives non-technical users through this; doing it as
+  // chained renderer calls risks a partial type (created, fields half-added,
+  // ref/date unset) — the field-less-template footgun the promote path guards
+  // against. Returns the created type id (or {error}). Admin-gated like the
+  // single-step handlers. Field keys are slugified the SAME way addField does,
+  // and ref/date keys are matched to those slugs so the assignment is valid.
+  ipcMain.handle('create-doc-type-with-fields', (_e, data) => {
+    requireRole('admin');
+    const db = getDb();
+    const name = ((data && data.name) || '').trim();
+    if (!name) return { success: false, error: 'A document type name is required.' };
+    const fields = Array.isArray(data && data.fields) ? data.fields : [];
+    if (!fields.length) return { success: false, error: 'Add at least one field.' };
+    const slug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9_]/g, '_');
+    const refKey  = data.ref_field_key  ? slug(data.ref_field_key)  : null;
+    const dateKey = data.date_field_key ? slug(data.date_field_key) : null;
+    try {
+      const tx = db.transaction(() => {
+        const res = doctypes.addType(db, { name, ref_field_key: refKey, date_field_key: dateKey });
+        const typeId = res.lastInsertRowid;
+        let order = 10;
+        for (const f of fields) {
+          if (!f || !(f.key || f.label)) continue;
+          doctypes.addField(db, {
+            document_type_id: typeId,
+            key:        f.key || f.label,
+            label:      f.label || f.key,
+            type:       f.type || 'text',
+            required:   f.required ? 1 : 0,
+            sort_order: order,
+          });
+          order += 10;
+        }
+        return typeId;
+      });
+      const id = tx();
+      const created = doctypes.getAllWithFieldsAll(db).find(t => t.id === id) || null;
+      return { success: true, id, type: created };
+    } catch (e) {
+      return { success: false, error: e.message };  // UNIQUE name clash etc. — atomic rollback
+    }
+  });
+
   // ── Fields ──────────────────────────────────────────────────────────────────
   ipcMain.handle('add-field',    (_e, data)    => { requireRole('admin'); return doctypes.addField(getDb(), data); });
   ipcMain.handle('update-field', (_e, id, ch)  => { requireRole('admin'); return doctypes.updateField(getDb(), id, ch); });

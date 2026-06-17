@@ -66,6 +66,12 @@ contextBridge.exposeInMainWorld('docusnap', {
   openSearchWindow:    ()       => ipcRenderer.send('open-search-window'),
   getReviewTarget:     ()       => ipcRenderer.invoke('get-review-target'),
   onNavigateToDoc:     (cb)     => ipcRenderer.on('navigate-to-doc', (_e, id) => cb(id)),
+  // Teach-a-new-document wizard
+  openTeachWindow:     ()       => ipcRenderer.send('open-teach-window'),
+  openTeachWindowAt:   (docId)  => ipcRenderer.send('open-teach-window-at', docId),
+  getTeachTarget:      ()       => ipcRenderer.invoke('get-teach-target'),
+  onTeachLoadDoc:      (cb)     => ipcRenderer.on('teach-load-doc', (_e, id) => cb(id)),
+  createDocTypeWithFields: (data) => ipcRenderer.invoke('create-doc-type-with-fields', data),
 
   // ── Folder processing ────────────────────────────────────────────────────────
   pickFolder:         ()     => ipcRenderer.invoke('pick-folder'),

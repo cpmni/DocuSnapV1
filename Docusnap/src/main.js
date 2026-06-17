@@ -95,6 +95,8 @@ let pendingReviewDocId = null;
 // Template Manager") — pulled by the settings renderer after loadTemplates(), or
 // delivered immediately if the settings window is already open.
 let pendingSettingsTemplateId = null;
+// Same pattern for the teaching wizard opened targeted at a just-scanned doc.
+let pendingTeachDocId = null;
 
 const MAIN_WINDOW_OPTIONS    = { width: 1100, height: 750, minWidth: 800, minHeight: 560 };
 const LOGIN_WINDOW_OPTIONS   = { width: 460, height: 660, resizable: false, minimizable: false, maximizable: false };
@@ -428,6 +430,30 @@ app.whenReady().then(() => {
     pendingReviewDocId = null;
     return id;
   });
+
+  // ── Teach-a-new-document wizard (guided, non-technical) ──────────────────────
+  // Writes templates/learning, so Admin+Edit like Review. Mirrors the review
+  // opener pattern: open cold, or open targeted at a just-scanned document.
+  ipcMain.on('open-teach-window', () => {
+    if (!authModule.hasRole('admin', 'edit')) return;
+    createWindow('teach', { width: 1200, height: 820, minWidth: 960, minHeight: 640 });
+  });
+  ipcMain.on('open-teach-window-at', (_e, docId) => {
+    if (!authModule.hasRole('admin', 'edit')) return;
+    const alreadyOpen = !!windows['teach'];
+    pendingTeachDocId = docId;
+    createWindow('teach', { width: 1200, height: 820, minWidth: 960, minHeight: 640 });
+    if (alreadyOpen) {
+      windows['teach'].webContents.send('teach-load-doc', docId);
+      pendingTeachDocId = null;
+    }
+  });
+  ipcMain.handle('get-teach-target', () => {
+    const id = pendingTeachDocId;
+    pendingTeachDocId = null;
+    return id;
+  });
+
   ipcMain.on('open-settings-window', () => {
     // Settings (output folder, processing mode, document types/fields, file
     // naming, user management) is the "access all settings" surface called

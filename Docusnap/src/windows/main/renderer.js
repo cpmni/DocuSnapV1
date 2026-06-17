@@ -82,6 +82,7 @@ folderBox.addEventListener('click', chooseSourceFolder);
 document.getElementById('lp-import')?.addEventListener('click', chooseSourceFolder);
 document.getElementById('lp-search')?.addEventListener('click', () => window.docusnap.openSearchWindow());
 document.getElementById('lp-settings')?.addEventListener('click', () => window.docusnap.openSettingsWindow());
+document.getElementById('lp-teach')?.addEventListener('click', () => window.docusnap.openTeachWindow());
 
 // ── Run button ───────────────────────────────────────────────────────────────
 btnRun.addEventListener('click', async () => {
@@ -417,6 +418,9 @@ function applyCurrentUser(user) {
   // Launchpad Settings card mirrors the same Admin-only gate as the titlebar nav.
   const lpSettings = document.getElementById('lp-settings');
   if (lpSettings) lpSettings.style.display = (user.role === 'admin') ? '' : 'none';
+  // Teaching writes templates/learning — Admin+Edit, like Review (hidden for Read Only).
+  const lpTeach = document.getElementById('lp-teach');
+  if (lpTeach) lpTeach.style.display = (user.role === 'readonly') ? 'none' : '';
 }
 
 window.docusnap.authGetCurrentUser().then(applyCurrentUser);
