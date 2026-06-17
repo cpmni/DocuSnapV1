@@ -10,6 +10,8 @@ import re
 
 from PIL import Image
 
+from extraction import registration   # pure NumPy; no cycle (registration imports nothing here)
+
 
 def _qualify_against_format(value, field_key, format_lookup):
     """Qualify a learned-anchor value against the field's LEARNED format (the same
@@ -43,7 +45,9 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                          field_patterns: dict | None = None,
                          validation_patterns: dict | None = None,
                          slice_capture = None,
-                         format_lookup = None) -> dict:
+                         format_lookup = None,
+                         page_transform = None,
+                         on_reject = None) -> dict:
     """
     Attempt to extract field values using saved structural anchors.
 
@@ -83,20 +87,32 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
         method   = "anchor"
         val_type = (field_patterns or {}).get(field_key, {}).get("validation")
 
+        # "Did this crop read a value we'd actually commit?" — the same
+        # credibility + learned-format gate the merge below applies. Passed into
+        # the crop reader so a degraded TEXT line that fails it triggers the
+        # heavier denoise/adaptive re-read (text fields only); a passing read
+        # short-circuits with zero extra work.
+        def _verify(t, _vt=val_type, _fk=field_key):
+            return (bool(t)
+                    and _crop_is_credible(t, _vt, validation_patterns)
+                    and bool(_qualify_against_format(t, _fk, format_lookup)))
+
         # ── Primary: image crop + re-OCR (accurate, avoids column bleed) ──────
         if x_norm > 0 and y_norm > 0 and page0 is not None:
             w_norm   = anchor.get("w_norm") or 0.0
             h_norm   = anchor.get("h_norm") or 0.0
             _cap = ((lambda c: slice_capture(field_key, "anchor_crop", 0,
                        (x_norm, y_norm, w_norm, h_norm), c, "target")) if slice_capture else None)
-            crop_value = _crop_and_ocr(page0, x_norm, y_norm, w_norm, h_norm, val_type, capture=_cap)
+            crop_value = _crop_and_ocr(page0, x_norm, y_norm, w_norm, h_norm, val_type, capture=_cap, verify_fn=_verify)
             # A fixed crop is positionally rigid: when an upstream line wraps or
             # the block shifts on a sibling layout, the box can land off-target
             # and return a NON-EMPTY but wrong value (e.g. ">alifornia" from the
             # line below the name). Keep the crop only when it is credible for
             # this field; otherwise leave value=None so the anchor_label +
             # direction search below runs and gets a chance to relocate it.
-            if crop_value and _crop_is_credible(crop_value, val_type, validation_patterns):
+            if crop_value and not _crop_is_credible(crop_value, val_type, validation_patterns):
+                if on_reject: on_reject(field_key, "anchor_crop", crop_value, "not_credible")
+            elif crop_value:
                 # Also qualify against the learned format: a fixed crop that drifted
                 # onto the wrong row reads a NON-EMPTY, credible-looking but wrong
                 # value ("Bookinc" where the reference is shaped "####-####-#").
@@ -107,6 +123,42 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 if qualified:
                     value  = qualified
                     method = "anchor_crop"
+                elif on_reject:
+                    on_reject(field_key, "anchor_crop", crop_value, "format")
+
+        # ── Registration recovery: map the taught value box through the per-page
+        # transform (fitted from the template's landmarks) so the value FOLLOWS a
+        # shifted/skewed/scaled page even when the field's OWN label can't be
+        # re-found — the failure that leaves a worksheet date empty. A multi-
+        # landmark similarity fit (scale+rotation+translation, RANSAC) is stronger
+        # than the single-label relocation below, so it runs FIRST. Runs only
+        # after the rigid crop failed; the mapped read still clears the SAME
+        # credibility + learned-format gates. INERT (ladder byte-identical to
+        # before) when no transform was fitted (flag off / no landmarks / poor fit).
+        if not value and page_transform is not None and x_norm > 0 and y_norm > 0 and page0 is not None:
+            w_norm = anchor.get("w_norm") or 0.0
+            h_norm = anchor.get("h_norm") or 0.0
+            # field_anchors stores the value CENTRE; Transform.apply_box wants a
+            # top-left box. Convert in → map → recentre, KEEPING the original tight
+            # w/h (apply_box's AABB can inflate under rotation; we only want the
+            # corrected POSITION, not a ballooned crop).
+            tl = {"x_norm": x_norm - w_norm / 2.0, "y_norm": y_norm - h_norm / 2.0,
+                  "w_norm": w_norm, "h_norm": h_norm}
+            mapped = page_transform.apply_box(tl)
+            rcx = mapped["x_norm"] + mapped["w_norm"] / 2.0
+            rcy = mapped["y_norm"] + mapped["h_norm"] / 2.0
+            _gcap = ((lambda c: slice_capture(field_key, "anchor_registration", 0,
+                        (rcx, rcy, w_norm, h_norm), c, "target")) if slice_capture else None)
+            gval = _crop_and_ocr(page0, rcx, rcy, w_norm, h_norm, val_type, capture=_gcap, verify_fn=_verify)
+            if gval and not _crop_is_credible(gval, val_type, validation_patterns):
+                if on_reject: on_reject(field_key, "anchor_registration", gval, "not_credible")
+            elif gval:
+                q = _qualify_against_format(gval, field_key, format_lookup)
+                if q:
+                    value  = q
+                    method = "anchor_registration"
+                elif on_reject:
+                    on_reject(field_key, "anchor_registration", gval, "format")
 
         # ── Drift recovery: locate the label, then read the value beside it ───
         # The fixed crop is positionally RIGID — on a shifted/cropped scan (the
@@ -132,12 +184,16 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 _rcap = ((lambda c: slice_capture(field_key, "anchor_relocate", 0,
                             relo, c, "target")) if slice_capture else None)
                 rval = _crop_and_ocr(page0, relo[0], relo[1], relo[2], relo[3],
-                                     val_type, capture=_rcap)
-                if rval and _crop_is_credible(rval, val_type, validation_patterns):
+                                     val_type, capture=_rcap, verify_fn=_verify)
+                if rval and not _crop_is_credible(rval, val_type, validation_patterns):
+                    if on_reject: on_reject(field_key, "anchor_crop_relocated", rval, "not_credible")
+                elif rval:
                     q = _qualify_against_format(rval, field_key, format_lookup)
                     if q:
                         value  = q
                         method = "anchor_crop_relocated"
+                    elif on_reject:
+                        on_reject(field_key, "anchor_crop_relocated", rval, "format")
 
         # ── Fallback: text-based search in full OCR output ────────────────────
         if not value:
@@ -189,6 +245,11 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 # Drift-relocated crop: more reliable than a blind text-line grab,
                 # but a touch below a clean rigid crop since the page had shifted.
                 conf = min(92, conf + 2)
+            elif method == "anchor_registration":
+                # Multi-landmark page transform — score by the FIT quality (inliers
+                # + residual), not usage_count. Ranks above single-label relocate
+                # (stronger geometry) and below a clean rigid crop.
+                conf = min(93, registration.registration_confidence(page_transform))
             results[field_key] = {
                 "value":      value.strip(),
                 "confidence": conf,
@@ -357,9 +418,109 @@ def _crop_is_credible(value: str, val_type: str | None,
     return alnum >= len(nonspace) * 0.5
 
 
+def _repair_single_token(img, segment, val_type):
+    """Fix the PSM-7 single-token separator artefact: a value that is ONE token
+    (no spaces) — a serial, reference or part number — can come back from PSM 7
+    with a spurious "/" "\\" or "|" wedged in ("H7R5326676" -> "H/7R5326676"),
+    while PSM 8 (single word) reads the same crop cleanly.
+
+    Re-OCR the SAME prepped crop as a single word and accept it ONLY when it is
+    the same alphanumeric token with the junk separator removed — so this can
+    never change which characters were recognised, only drop a separator that
+    does not belong inside an unbroken token. Multi-word values (names/addresses,
+    which contain a space) and date fields (where "/" is legitimate) are left
+    untouched. Reusable across every supplier/field; no per-document logic."""
+    try:
+        if (not segment) or (" " in segment) or val_type == "date":
+            return segment
+        if not re.search(r"[\\/|]", segment):
+            return segment
+        # Never strip separators from a DATE-SHAPED token (its "/" "." "-" are the
+        # date's own separators) even when the field wasn't typed 'date' — a custom
+        # or mistyped field that happens to hold "22/06/2025" must not become
+        # "22062025". Shape-based, so it protects every supplier/field; a real
+        # serial misread with a spurious slash ("H/7R..", "12/34567") does NOT
+        # match this strict layout and is still repaired.
+        if re.fullmatch(r"\d{1,4}[./\-]\d{1,2}(?:[./\-]\d{1,4})?", segment):
+            return segment
+        import pytesseract
+        # Re-read the SAME prepped crop with configs that cannot emit (or don't
+        # invent) the spurious "/" "\\" "|": PSM 7 + alphanumeric whitelist (line
+        # mode keeps robustness to padding), then PSM 8 / PSM 8+whitelist (single
+        # word — reads tight serials cleanest). Accept the FIRST whose recognised
+        # alphanumerics are identical to the corrupted read — so this only strips
+        # a junk separator and never changes which glyphs were recognised.
+        wl = ("-c tessedit_char_whitelist="
+              "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-")
+        target = re.sub(r"[^0-9A-Za-z]", "", segment)
+        for cfg in ("--oem 3 --psm 7 " + wl,
+                    "--oem 3 --psm 8 " + wl,
+                    "--oem 3 --psm 8"):
+            alt = pytesseract.image_to_string(img, config=cfg).strip().split("\n")[0].strip()
+            if alt and re.sub(r"[^0-9A-Za-z]", "", alt) == target:
+                return alt
+    except Exception:
+        pass
+    return segment
+
+
+def _trim_trailing_digit_boundary(segment: str) -> str:
+    """Trim a postcode/year boundary from a free-text value: a 4+ digit run that
+    is preceded by AT LEAST TWO alphabetic words ("Ann Blume 10115 Berlin" ->
+    "Ann Blume"). Fewer leading alpha words means the digits are most likely the
+    VALUE'S OWN number (e.g. "Unit 4 1024 Park", "Site 4012"), so the segment is
+    kept whole — the previous blanket `\\s+\\d{4,}` split amputated such values
+    (a worksheet name/address line cut down to a fragment). Never returns an
+    empty head."""
+    m = re.search(r'\s+\d{4,}', segment)
+    if not m:
+        return segment
+    head = segment[:m.start()].strip()
+    alpha_words = [w for w in head.split() if any(c.isalpha() for c in w)]
+    return head if (len(alpha_words) >= 2 and len(head) >= 2) else segment
+
+
+def clean_crop_segment(text: str | None, val_type: str | None) -> str | None:
+    """Select the value segment from a (possibly multi-line) OCR crop read.
+
+    SHARED by the Stage 2 anchor crop (_crop_and_ocr) and the Stage 0.5
+    template-mapping crop (template_mapper._clean_value) so a drawn target zone
+    is cleaned IDENTICALLY to a learned-anchor crop — one rule, system-wide.
+
+    Rules, in order, on the first non-empty line:
+      * Split off Tesseract column-gap noise: 4+ spaces (every field type).
+      * For free-text name/address fields (text/multiline_text) ONLY, trim a
+        TRAILING postcode/year boundary via _trim_trailing_digit_boundary —
+        shape-aware so it never discards a value whose own token is the number
+        (reference numbers/amounts are not text-typed and keep their digits).
+      * After 2+ words, a word ending in "," is a city separator, not value.
+    Returns None when nothing usable remains. Does NOT do single-token separator
+    repair (that needs the prepped image; callers apply _repair_single_token)."""
+    if not text:
+        return None
+    for line in text.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        segment = re.split(r' {4,}', line)[0].strip()
+        if val_type in ('text', 'multiline_text'):
+            segment = _trim_trailing_digit_boundary(segment)
+        parts = segment.split()
+        end = len(parts)
+        for i, w in enumerate(parts):
+            if i >= 2 and w.endswith(','):
+                end = i
+                break
+        segment = ' '.join(parts[:end]).rstrip(',;').strip()
+        if segment:
+            return segment
+    return None
+
+
 def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
                   w_norm: float = 0.0, h_norm: float = 0.0,
-                  val_type: str | None = None, capture = None) -> str | None:
+                  val_type: str | None = None, capture = None,
+                  verify_fn = None) -> str | None:
     """
     Crop a tight region centred on the stored value coordinates and re-OCR it.
     Uses the exact selection dimensions saved by the ⊕ tool (w_norm/h_norm) so
@@ -380,6 +541,12 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
         if w_norm > 0 and h_norm > 0:
             half_w = int(w_norm * w / 2) + 20
             half_h = int(h_norm * h / 2) + 20
+            # A free-text proper-noun line (a company name in a variable-height
+            # block) needs more vertical headroom than a tight numeric token — a
+            # clipped ascender/descender corrupts the read. Pad text fields more;
+            # numerics keep the tight box (so they don't bleed into the next column).
+            if val_type in ("text", "multiline_text"):
+                half_h += int(h_norm * h * 0.4) + 6
         else:
             half_w = 200
             half_h = 60
@@ -393,41 +560,51 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
         if capture:
             try: capture(crop)
             except Exception: pass   # dev-only slice capture; never disrupt OCR
-        # Scale up 2× — Tesseract accuracy improves significantly on larger text
-        crop = crop.resize((crop.width * 2, crop.height * 2), Image.LANCZOS)
+        # Enhance + OCR with the SAME recipe as the ⊕ target-draw tool (region.py)
+        # and the Stage 0.5 mapper (template_mapper._prep): greyscale → upscale →
+        # autocontrast → sharpen, then PSM 7 (single line) first with PSM 6 as a
+        # fallback. The previous plain 2× resize + PSM-6-only read was materially
+        # lower quality on tight value crops — it inserted spurious separators
+        # (a serial "H7R5326676" read as "H/7R5326676") even though the identical
+        # crop read cleanly via the target tool, which uses this recipe. One OCR
+        # recipe across every crop path keeps committed reads as good as the
+        # preview, for every supplier/field. Lazy import avoids the
+        # anchor<->template_mapper module-load cycle.
+        from extraction import template_mapper as _tm
+        img = _tm._prep(crop)
+        text = pytesseract.image_to_string(img, config="--oem 3 --psm 7").strip()
+        if not text:
+            text = pytesseract.image_to_string(img, config="--oem 3 --psm 6").strip()
+        # Shared segment selection (column-gap split, shape-aware postcode/year
+        # trim for free-text, city-comma cut) — identical to the Stage 0.5
+        # template-mapping crop path. See clean_crop_segment.
+        segment = clean_crop_segment(text, val_type)
+        if segment:
+            segment = _repair_single_token(img, segment, val_type)
 
-        text = pytesseract.image_to_string(crop, config="--oem 3 --psm 6").strip()
-        for line in text.split("\n"):
-            line = line.strip()
-            if not line:
-                continue
-            # Multiple spaces = Tesseract column gap (any field — safe to
-            # split on regardless of type). A leading 4+ digit run ALSO
-            # signals an address/postal-code boundary for free-text name and
-            # address fields ("Ann Blume 10115 Berlin" -> "Ann Blume") — but
-            # reference numbers, amounts and other numeric-shaped values
-            # legitimately CONTAIN a 4+ digit run as their actual value
-            # ("# 16384" -> truncating at " 16384" would discard the value
-            # itself, keeping only the meaningless "#"). Scope the digit-run
-            # split to the same text/multiline-text validation types
-            # keyword.py::_clean_value already treats as name/address shaped,
-            # so every other field (including unknown/custom types, where
-            # destructively dropping digits would be the worse default) keeps
-            # its digits intact.
-            split_pattern = (r' {4,}|\s+\d{4,}' if val_type in ('text', 'multiline_text')
-                             else r' {4,}')
-            segment = re.split(split_pattern, line)[0].strip()
-            # After 2+ words, a word ending in "," is a city separator, not part of the value
-            parts = segment.split()
-            end = len(parts)
-            for i, w in enumerate(parts):
-                if i >= 2 and w.endswith(','):
-                    end = i
-                    break
-            segment = ' '.join(parts[:end]).rstrip(',;').strip()
-            if segment:
-                return segment
-        return None
+        # Degraded TEXT-LINE escalation (Oscar): the base recipe (SHARPEN + global
+        # autocontrast) mangles a longer proper-noun line on a degraded scan, and
+        # the caller's credibility/format gate then rejects the garbage (empty
+        # field). ONLY for free-text fields, and ONLY when the caller says the base
+        # read failed its gate (verify_fn) — so tight numerics, clean reads, and
+        # the label/wizard paths (which pass no verify_fn) are byte-identical.
+        # Re-read the SAME crop with a denoise + adaptive-threshold recipe and
+        # accept it only if it now PASSES the gate (so a recovered-but-wrong name
+        # still can't commit). See ocr/text_enhance.enhance_text_crop.
+        if (verify_fn is not None and val_type in ("text", "multiline_text")
+                and not (segment and verify_fn(segment))):
+            try:
+                from ocr import text_enhance
+                eimg = text_enhance.enhance_text_crop(crop)
+                etext = pytesseract.image_to_string(eimg, config="--oem 3 --psm 7").strip()
+                if not etext:
+                    etext = pytesseract.image_to_string(eimg, config="--oem 3 --psm 6").strip()
+                eseg = clean_crop_segment(etext, val_type)
+                if eseg and verify_fn(eseg):
+                    return eseg
+            except Exception:
+                pass
+        return segment or None
     except Exception:
         return None
 

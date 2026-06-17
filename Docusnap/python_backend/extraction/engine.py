@@ -33,6 +33,24 @@ except ImportError:
     LLM_AVAILABLE = False
 
 
+# Stage 0.5 LOCATED-path mapping methods (admin-drawn anchor→target zones that
+# located their anchor on this page). Curated ground truth — protected from
+# keyword demotion and from a stale taught-anchor clobber. The "_salvaged"
+# variants are the SAME located mappings whose date value was rescued via
+# validator.salvage_date (Fix C1); they carry identical provenance and so get
+# identical protection. The weaker DRIFT-path variants are deliberately excluded
+# (unchanged): a fixed-coordinate drift seed is not strong enough to be shielded.
+_STAGE05_LOCATED_METHODS = (
+    "template_mapping", "template_mapping_expanded",
+    "template_mapping_salvaged", "template_mapping_expanded_salvaged",
+    # P4 "register, then read" rung — a target box mapped through the per-page
+    # registration transform. Same curated-ground-truth provenance as a located
+    # mapping, so it gets the same keyword-demotion / stale-anchor-clobber guards.
+    "template_registration", "template_registration_expanded",
+    "template_registration_salvaged", "template_registration_expanded_salvaged",
+)
+
+
 def _supplier_identity_decision(existing: dict | None, candidate: dict | None) -> str | None:
     """Plausibility-aware merge ruling for the supplier_name field only.
 
@@ -169,10 +187,16 @@ class ExtractionEngine:
         self.noise_profile_index = {}   # populated by set_formats()
         self.format_class_index  = {}   # populated by set_formats()
         self.label_overrides     = []   # populated by set_label_overrides()
+        self.registration_enabled = False  # set by set_registration_enabled()
         self._trace              = None  # dev-only trace callback (set per extract())
 
     def log(self, text: str, level: str = ""):
         self.emit({"type": "log", "text": text, "level": level})
+
+    def set_registration_enabled(self, on: bool):
+        """Enable the Stage 0.5 registration rung (P4, 'register, then read').
+        Inert unless the matched template carries taught landmarks."""
+        self.registration_enabled = bool(on)
 
     # ── Dev-only extraction trace (no-op unless a trace callback is set) ────────
     # Emits structured field-lifecycle events for the hidden Dev Inspector. All
@@ -437,12 +461,19 @@ class ExtractionEngine:
                     # that already have a learned format (≥3 confirmed values via
                     # build_format_class_index); everything else passes through.
                     _fmt_lookup = self._make_format_lookup(supplier_name, document_slug)
+                    # Landmarks come from the SAME template the mappings did
+                    # (mapping_src — its coordinate frame is what the transform
+                    # registers this page against). Inert unless that template has
+                    # landmarks AND registration is enabled.
+                    _landmarks = (mapping_src or matched_tmpl).get("landmarks") or []
                     mapping_results = template_mapper.extract_with_mappings(
                         page_images, tmpl_mappings,
                         field_patterns=self.patterns.get("field_patterns", {}),
                         validation_patterns=self.patterns.get("validation_patterns", {}),
                         format_lookup=_fmt_lookup,
                         slice_capture=(self._capture_slice if (self._trace and self._slice_dir) else None),
+                        template_landmarks=_landmarks,
+                        registration_enabled=self.registration_enabled,
                     )
                     applied = 0
                     _pre_s05 = self._snap(results)
@@ -525,7 +556,7 @@ class ExtractionEngine:
             # 2 (is_taught_override excludes only template_mapping*), letting a
             # mis-aimed learned anchor then clobber the deliberate mapping. Keep
             # the mapping; curated sources still contend on confidence later.
-            if existing and existing.get("method") in ("template_mapping", "template_mapping_expanded"):
+            if existing and existing.get("method") in _STAGE05_LOCATED_METHODS:
                 continue
             if (key in date_field_keys and existing
                     and validator.parse_date(existing.get("value")) is not None
@@ -540,6 +571,40 @@ class ExtractionEngine:
         # ── Stage 2: Anchor extraction (always runs) ──────────────────────────
         if anchors:
             self.log("  Stage 2: anchor extraction…")
+            # "Register, then read" for Stage 2: fit ONE page-0 transform from the
+            # matched template's landmarks (anchors only read page 0) and hand it to
+            # the anchor stage so a taught value box can be mapped onto a shifted/
+            # skewed/scaled page when its own label can't be re-found. Inert (None)
+            # unless registration is enabled AND the matched template has landmarks
+            # — so a template without landmarks behaves exactly as before. Fitting
+            # here (vs inside Stage 0.5) lets the SAME transform serve both stages;
+            # for an anchors-only template (no drawn mappings) Stage 0.5 never ran,
+            # so this is the only fit.
+            anchor_page_transform = None
+            if self.registration_enabled and page_images and matched_tmpl:
+                _alm = matched_tmpl.get("landmarks") or []
+                if not _alm:
+                    self.log("  Stage 2: registration inactive — template has no "
+                             "landmarks (re-pin the sample to generate them)")
+                else:
+                    try:
+                        anchor_page_transform = template_mapper._fit_page_transform(
+                            page_images[0], _alm, template_mapper._ocr_lines)
+                    except Exception as e:
+                        self.log(f"  Stage 2: landmark fit skipped ({e})", "warn")
+                    if anchor_page_transform is not None:
+                        self.log(f"  Stage 2: page registered "
+                                 f"({anchor_page_transform.n_inliers}/{len(_alm)} landmarks, "
+                                 f"residual {anchor_page_transform.residual:.4f})")
+                    else:
+                        self.log(f"  Stage 2: registration fit failed "
+                                 f"({len(_alm)} landmarks, too few/poor matches)")
+            # Dev-trace only: record what each crop rung READ and which gate
+            # dropped it, so a "field not pulled in" can be diagnosed (the winners-
+            # only candidate trace can't show a rejected read). No-op without --trace.
+            _on_reject = ((lambda fk, st, v, r: self._t(
+                "anchor_reject", field=fk, method=st, value=v, reason=r))
+                if self._trace else None)
             anchor_results = anchor.extract_with_anchors(
                 ocr_text, anchors, supplier_name, document_slug,
                 page_images=page_images,
@@ -547,6 +612,8 @@ class ExtractionEngine:
                 validation_patterns=self.patterns.get("validation_patterns", {}),
                 slice_capture=(self._capture_slice if (self._trace and self._slice_dir) else None),
                 format_lookup=self._make_format_lookup(supplier_name, document_slug),
+                page_transform=anchor_page_transform,
+                on_reject=_on_reject,
             )
             _pre_s2 = self._snap(results)
             for key, data in anchor_results.items():
@@ -613,7 +680,7 @@ class ExtractionEngine:
                 is_taught_override = (data.get("method") == "anchor_crop"
                                       and existing
                                       and existing.get("method") not in
-                                          ("anchor_crop", "template_mapping", "template_mapping_expanded"))
+                                          ("anchor_crop", *_STAGE05_LOCATED_METHODS))
                 if not existing or is_taught_override or data["confidence"] > existing["confidence"]:
                     results[key] = data
             self._trace_stage('2_anchor', anchor_results, _pre_s2, results)

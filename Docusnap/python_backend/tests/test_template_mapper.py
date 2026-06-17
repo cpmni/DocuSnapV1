@@ -66,6 +66,51 @@ def text_queue_stub(values):
     return stub
 
 
+# Real date validation patterns (mirrors config/keyword_patterns.json
+# validation_patterns.date) — the SAME strict patterns _crop_is_credible trusts.
+DATE_PATTERNS = {
+    "date": [
+        r"\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}",
+        r"\d{4}[/\-]\d{2}[/\-]\d{2}",
+        r"\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{2,4}",
+        r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{2,4}",
+    ]
+}
+
+
+def page_words_stub(words):
+    """Crop-aware `ocr_lines_fn`: `words` are placed in PAGE-normalised coords on a
+    1000x1000 FakePage; the stub returns any word fully inside the requested crop,
+    reported in crop-relative coords (mirrors real image_to_data over a crop)."""
+    def stub(crop):
+        _, (x1, y1, x2, y2) = crop
+        cw, ch = (x2 - x1) / 1000.0, (y2 - y1) / 1000.0
+        if cw <= 0 or ch <= 0:
+            return []
+        cx, cy = x1 / 1000.0, y1 / 1000.0
+        out = []
+        for w in words:
+            if (w["x"] >= cx - 1e-9 and w["y"] >= cy - 1e-9
+                    and w["x"] + w["w"] <= cx + cw + 1e-9
+                    and w["y"] + w["h"] <= cy + ch + 1e-9):
+                out.append({"text": w["text"],
+                            "x_norm": (w["x"] - cx) / cw, "y_norm": (w["y"] - cy) / ch,
+                            "w_norm": w["w"] / cw, "h_norm": w["h"] / ch})
+        return out
+    return stub
+
+
+def value_at_stub(value, vx, vy, vw, vh):
+    """Region-aware `ocr_text_fn`: returns `value` only when the requested crop
+    covers the value's centre (PAGE-normalised), else None."""
+    mx, my = vx + vw / 2.0, vy + vh / 2.0
+    def stub(crop):
+        _, (x1, y1, x2, y2) = crop
+        return value if (x1 / 1000.0 <= mx <= x2 / 1000.0
+                         and y1 / 1000.0 <= my <= y2 / 1000.0) else None
+    return stub
+
+
 def base_mapping(**overrides):
     """
     A consistent anchor/target pair: target sits to the right of the anchor
@@ -206,15 +251,16 @@ def test_extract_with_mappings():
                  results.get("invoice_number", {}).get("anchor") == "Invoice Number"):
         failures += 1
 
-    # Anchor not found anywhere in its region -> field omitted entirely, so
-    # engine.py's merge leaves whatever keyword/anchor stages already produced
+    # Absolute drawn box reads nothing credible AND the anchor can't be located
+    # anywhere -> field omitted entirely (no consensus drift on a single mapping),
+    # so engine.py's merge leaves whatever keyword/anchor stages already produced
     # untouched (the documented "fall back to current behaviour" contract).
     no_match = template_mapper.extract_with_mappings(
         [page], [base_mapping()], field_patterns,
         ocr_lines_fn=lines_stub([{"text": "Unrelated", "x_norm": 0, "y_norm": 0, "w_norm": 1, "h_norm": 1}]),
-        ocr_text_fn=text_queue_stub(["should never be reached"]),
+        ocr_text_fn=lambda _crop: None,
     )
-    if not check("anchor not located -> field omitted (fallback to existing pipeline)",
+    if not check("absolute box empty + anchor not located -> field omitted",
                  "invoice_number" not in no_match):
         failures += 1
 
@@ -290,49 +336,132 @@ def test_extract_with_mappings():
 
 
 def test_derived_target_no_leading_inset_clip():
-    """Regression: the box-based offset must be applied to the located anchor's
-    BOX origin, not its tight OCR bbox — otherwise the derived target is shifted
-    right/down by the anchor's drawn margin and clips leading glyphs
-    ("PROFILE" -> "ROFILE"). With the label tight-centred inside the drawn anchor
-    box and no drift, the derived crop must land exactly on the DRAWN target."""
+    """Relocation + inset regression (now reached only AFTER the absolute fast
+    path fails). On a DRIFTED page the drawn box reads nothing, so extraction
+    relocates the label and derives the value crop from where it landed. The
+    box-based offset must be applied to the located anchor's BOX origin, not its
+    tight OCR bbox — otherwise the derived target shifts right/down by the drawn
+    margin and clips leading glyphs ("PROFILE" -> "ROFILE")."""
     failures = 0
-    print("derived target: box-origin offset removes leading-character inset clip")
+    print("derived target: drift relocation derives an inset-corrected crop")
     page = FakePage((1000, 1000))
     # base_mapping: anchor box x=0.10 w=0.20; target box x=0.25 w=0.15; dx=0.15.
     m = base_mapping()
-    # Label OCR'd tight-centred inside the anchor crop (crop-relative): left 0.15
-    # of width 0.70 -> page-relative tight left 0.10+0.15*0.20=0.13, width 0.14,
-    # so per-side inset (0.20-0.14)/2 = 0.03.
-    # The label sits at a FIXED page bbox (tight-centred in the anchor box):
-    # x=0.13, w=0.14 (per-side inset 0.03), y=0.21. A crop-aware stub reports it
-    # relative to whatever search crop it is given, so the assertion holds whether
-    # or not the production min_search floor widens that crop.
-    def centred_label(crop):
+    # The label has DRIFTED to page x=0.43 (tight width 0.14, per-side inset 0.03).
+    # Inset-corrected derived target = 0.43 - 0.03 + 0.15 = 0.55 -> x1 550.
+    # The pre-fix bug would crop at 0.43 + 0.15 = 0.58 -> x1 580, clipping "P".
+    def drifted_label(crop):
         _, (x1, y1, x2, y2) = crop
         cw, ch = (x2 - x1) / 1000.0, (y2 - y1) / 1000.0
         if cw <= 0 or ch <= 0:
             return []
         cx, cy = x1 / 1000.0, y1 / 1000.0
-        px, py, pw, ph = 0.13, 0.21, 0.14, 0.02
+        px, py, pw, ph = 0.43, 0.21, 0.14, 0.02
         return [{"text": "Invoice Number",
                  "x_norm": (px - cx) / cw, "y_norm": (py - cy) / ch,
                  "w_norm": pw / cw, "h_norm": ph / ch}]
     captured = {}
     def recording_text(crop):
-        captured["box"] = crop[1]   # FakePage.crop -> ("crop", (x1,y1,x2,y2))
+        x1 = crop[1][0]
+        if x1 == 250:            # the ABSOLUTE drawn box -> empty, force relocation
+            return None
+        captured["box"] = crop[1]
         return "PROFILE CONSTRUCTION"
     res = template_mapper.extract_with_mappings(
-        [page], [m],
-        ocr_lines_fn=centred_label, ocr_text_fn=recording_text,
+        [page], [m], {"invoice_number": {"validation": "alphanumeric"}},
+        ocr_lines_fn=drifted_label, ocr_text_fn=recording_text,
+        validation_patterns={"alphanumeric": [r"[A-Za-z0-9][A-Za-z0-9\-\/\.]{2,20}"]},
     )
     x1 = captured.get("box", (None,))[0]
-    # Drawn target left = 0.25 * 1000 = 250. The pre-fix bug cropped at 280
-    # (0.13 tight + 0.15 offset = 0.28), dropping the leading "P".
-    if not check(f"derived crop left lands on the drawn target (250), not inset-shifted (got {x1})",
-                 x1 == 250):
+    if not check(f"relocated derived crop left lands inset-corrected (550), not shifted (got {x1})",
+                 x1 == 550):
         failures += 1
-    if not check("full value resolved, leading character intact",
+    if not check("full value resolved via relocation, leading character intact",
                  res.get("invoice_number", {}).get("value") == "PROFILE CONSTRUCTION"):
+        failures += 1
+    print()
+    return failures
+
+
+def test_absolute_target_first():
+    """Fix: Stage 0.5 reads the EXACT drawn target box FIRST (matching the live
+    'targeted selection' the operator sees), and only relocates if that read fails
+    the gates. On a clean page the absolute box wins and the anchor is never even
+    located — the regression for "why doesn't it read it right the first time"."""
+    failures = 0
+    print("absolute target fast path: read the drawn box first, skip relocation when clean")
+    page = FakePage((1000, 1000))
+    m = base_mapping()   # target x=0.25 -> x1 250; derived (if reached) differs
+    fps = {"invoice_number": {"validation": "alphanumeric"}}
+    vps = {"alphanumeric": [r"[A-Za-z0-9][A-Za-z0-9\-\/\.]{2,20}"]}
+
+    # Absolute box (x1 250) reads the right value; any other crop would read WRONG.
+    def region_text(crop):
+        return "INV-2026-001" if crop[1][0] == 250 else "WRONG"
+    # Locating the anchor must NOT happen — the absolute read short-circuits it.
+    def boom_lines(_crop):
+        raise AssertionError("anchor relocation must not run when the drawn box reads cleanly")
+
+    out = template_mapper._extract_one(
+        page, m, fps, boom_lines, region_text,
+        located=template_mapper._UNSET, validation_patterns=vps)
+    if not check("clean page: absolute drawn box read, value correct",
+                 out is not None and out.get("value") == "INV-2026-001"):
+        failures += 1
+    if not check("absolute read reports method=template_mapping at full confidence (90)",
+                 out and out.get("method") == "template_mapping" and out.get("confidence") == 90):
+        failures += 1
+
+    # Absolute box empty -> the gate fails -> relocation DOES run (anchor located
+    # at its taught spot here, so the derived crop also lands on x1 250).
+    located_calls = {"n": 0}
+    def counting_lines(crop):
+        located_calls["n"] += 1
+        _, (x1, y1, x2, y2) = crop
+        cw, ch = (x2 - x1) / 1000.0, (y2 - y1) / 1000.0
+        if cw <= 0 or ch <= 0:
+            return []
+        cx, cy = x1 / 1000.0, y1 / 1000.0
+        px, py, pw, ph = 0.13, 0.21, 0.14, 0.02   # taught spot, no drift
+        return [{"text": "Invoice Number",
+                 "x_norm": (px - cx) / cw, "y_norm": (py - cy) / ch,
+                 "w_norm": pw / cw, "h_norm": ph / ch}]
+    reads = {"n": 0}
+    def empty_then_value(crop):
+        reads["n"] += 1
+        return None if reads["n"] == 1 else "INV-2026-001"   # 1st = absolute (empty)
+    out2 = template_mapper._extract_one(
+        page, m, fps, counting_lines, empty_then_value,
+        located=template_mapper._UNSET, validation_patterns=vps)
+    if not check("absolute read empty -> relocation runs and recovers the value",
+                 out2 is not None and out2.get("value") == "INV-2026-001"
+                 and located_calls["n"] > 0):
+        failures += 1
+
+    print()
+    return failures
+
+
+def test_gate_value_shared():
+    """The shared _gate_value helper used by all three crop paths: clean value
+    passes (not salvaged), a typed value failing its pattern is rejected, and a
+    junk-wrapped date is salvaged+normalised (Fix C1) — one gate, one behaviour."""
+    failures = 0
+    print("_gate_value: shared credibility / date-salvage / format gate")
+    vps = {"date": DATE_PATTERNS["date"],
+           "alphanumeric": [r"[A-Za-z0-9][A-Za-z0-9\-\/\.]{2,20}"]}
+    g = lambda text, vt: template_mapper._gate_value(text, vt, "k", vps, None)
+
+    if not check("clean alphanumeric passes unchanged, not salvaged",
+                 g("INV-001", "alphanumeric") == ("INV-001", False)):
+        failures += 1
+    if not check("non-date text rejected for a date field",
+                 g("Booking", "date") == (None, False)):
+        failures += 1
+    if not check("spaced date salvaged + normalised, salvaged flag set",
+                 g("27 -05- 2026", "date") == ("27-05-2026", True)):
+        failures += 1
+    if not check("empty text rejected", g(None, "date") == (None, False)):
         failures += 1
     print()
     return failures
@@ -384,107 +513,6 @@ def test_locate_anchor_padded_box():
 
     print()
     return failures
-
-
-def test_consensus_drift():
-    """Pure consensus rule: reliability gate, quorum, median-seed outlier
-    rejection, re-quorum, weighted mean, sanity bound. Never a naive average."""
-    failures = 0
-    print("consensus drift: weighted, outlier-robust landmark agreement")
-    cd = template_mapper._consensus_drift
-
-    # Landmarks are (dx, dy, weight, x, y). Distinct (x,y) zones below, so the
-    # zone-fair step is neutral (one landmark per zone) and these assert the
-    # unchanged gate/median/outlier/sanity behaviour.
-    # Two agreeing landmarks -> weighted mean.
-    c = cd([(0.050, 0.020, 0.9, 0.1, 0.1), (0.052, 0.018, 0.8, 0.9, 0.9)])
-    if not check("two agreeing distinct-zone landmarks -> weighted-mean drift",
-                 c is not None and abs(c[0] - 0.0510) < 2e-3 and abs(c[1] - 0.0191) < 2e-3):
-        failures += 1
-
-    # An obvious outlier is rejected, not averaged in.
-    c2 = cd([(0.050, 0.020, 0.9, 0.1, 0.1), (0.052, 0.018, 0.9, 0.9, 0.9), (0.40, 0.40, 0.95, 0.5, 0.5)])
-    if not check("outlier landmark rejected (drift stays near the agreeing two)",
-                 c2 is not None and c2[0] < 0.10 and abs(c2[0] - 0.051) < 5e-3):
-        failures += 1
-
-    # Fewer than two RELIABLE landmarks -> None.
-    if not check("single reliable landmark -> None (quorum)", cd([(0.05, 0.02, 0.9, 0.1, 0.1)]) is None):
-        failures += 1
-    if not check("all weights below gate -> None (reliability)",
-                 cd([(0.05, 0.02, 0.5, 0.1, 0.1), (0.05, 0.02, 0.6, 0.9, 0.9)]) is None):
-        failures += 1
-
-    # Two landmarks that DISAGREE -> rejected, None (no naive midpoint).
-    if not check("two disagreeing landmarks -> None (no naive average)",
-                 cd([(0.05, 0.02, 0.9, 0.1, 0.1), (0.40, 0.40, 0.9, 0.9, 0.9)]) is None):
-        failures += 1
-
-    # Agreeing but implausibly large -> ignored by the sanity bound.
-    if not check("agreeing-but-implausible drift -> None (sanity bound)",
-                 cd([(0.50, 0.50, 0.9, 0.1, 0.1), (0.51, 0.49, 0.9, 0.9, 0.9)]) is None):
-        failures += 1
-
-    print()
-    return failures
-
-
-def test_drift_fallback():
-    """End-to-end via extract_with_mappings: a consensus drift from >=2 agreeing
-    anchors pre-shifts a field whose OWN anchor failed; a field whose own anchor
-    succeeds ignores the consensus; no consensus -> field omitted (unchanged)."""
-    failures = 0
-    print("drift fallback: consensus pre-shift only when local relocation fails")
-    page = FakePage()
-    const_text = lambda _crop: "VAL"
-
-    def m(field, anchor_text, **ov):
-        d = {"field_key": field, "page_number": 0, "enabled": True,
-             "anchor_text": anchor_text, "search_expansion": 0.0,
-             "anchor_x_norm": 0.10, "anchor_y_norm": 0.20,
-             "anchor_w_norm": 0.20, "anchor_h_norm": 0.04,
-             "target_x_norm": 0.25, "target_y_norm": 0.20,
-             "target_w_norm": 0.15, "target_h_norm": 0.04,
-             "offset_dx_norm": 0.15, "offset_dy_norm": 0.0}
-        d.update(ov)
-        return d
-
-    # Two landmark anchors locate "Invoice Number" (agree -> consensus); a third
-    # field's anchor "Bill To" is NOT present, so its local relocation fails.
-    lines = lines_stub([{"text": "Invoice Number", "x_norm": 0.6, "y_norm": 0.25,
-                         "w_norm": 0.3, "h_norm": 0.5}])
-    res = template_mapper.extract_with_mappings(
-        [page],
-        [m("ref_a", "Invoice Number"), m("ref_b", "Invoice Number"),
-         m("customer", "Bill To", target_x_norm=0.55)],
-        {"customer": {"validation": "text"}},
-        ocr_lines_fn=lines, ocr_text_fn=const_text,
-    )
-    if not check("field whose own anchor failed is recovered via consensus pre-shift",
-                 res.get("customer", {}).get("value") == "VAL"
-                 and res["customer"]["method"] == "template_mapping_drift"):
-        failures += 1
-    if not check("drift-fallback confidence is weaker than a located anchor (<78)",
-                 res.get("customer", {}).get("confidence", 999) < 78):
-        failures += 1
-    if not check("a field whose own anchor located uses the local path (not drift)",
-                 res.get("ref_a", {}).get("method") == "template_mapping"):
-        failures += 1
-
-    # No consensus (single failing anchor) -> field omitted; drift never applied.
-    res2 = template_mapper.extract_with_mappings(
-        [page], [m("customer", "Bill To")],
-        {"customer": {"validation": "text"}},
-        ocr_lines_fn=lines, ocr_text_fn=const_text,
-    )
-    if not check("no consensus -> field omitted (today's behaviour unchanged)",
-                 "customer" not in res2):
-        failures += 1
-
-    print()
-    return failures
-
-
 def test_anchor_search_floor():
     """A tight/misaligned drawn anchor box whose label sits just outside it
     relocates only once the min_search FLOOR widens the search region; the
@@ -514,123 +542,166 @@ def test_anchor_search_floor():
         failures += 1
     print()
     return failures
-
-
-def test_consensus_drift_spatial():
-    """Zone-fair aggregation (final step only): a tight CLUSTER of landmarks does
-    not dominate a distinct-zone landmark, and distinct-zone landmarks reproduce
-    the plain weighted mean (no regression). All deltas agree within the
-    (unchanged) outlier tolerance so the comparison is purely about weighting."""
+def test_date_salvage_fallback():
+    """Stage 0.5 date salvage (Fix C1): a date crop that FAILS the strict
+    credibility gate — because OCR put whitespace around its separators or wrapped
+    it in junk — is rescued and normalised via validator.salvage_date instead of
+    being dropped (the observed worksheet "Date: Not found"). A crop that already
+    passes the gate is left untouched and keeps its full confidence, and a crop
+    with no date at all is still omitted. Reuses the validator, so this generalises
+    to every template's date field — not the worksheet layout in particular."""
     failures = 0
-    print("consensus drift: spatial-diversity (zone-fair) aggregation")
-    cd = template_mapper._consensus_drift
+    print("date salvage fallback: rescue gate-failing dates, leave clean ones alone")
+    page = FakePage()
+    fps  = {"date": {"validation": "date"}}
+    # "Ticket Logged" relocates so _extract_one takes the LOCATED path.
+    label = lines_stub([{"text": "Ticket Logged", "x_norm": 0.4, "y_norm": 0.25,
+                         "w_norm": 0.3, "h_norm": 0.5}])
 
-    # 3 landmarks clustered in one top-left zone at delta 0.020, plus ONE
-    # distinct-zone landmark at 0.035 (within outlier tol of the 0.020 median).
-    # Naive weighted mean = (0.020*3 + 0.035)/4 = 0.02375 (cluster dominates).
-    # Zone-fair: cluster -> one vote (0.020), spread -> one vote (0.035) -> 0.0275.
-    cluster_spread = [
-        (0.020, 0.0, 0.9, 0.05, 0.05), (0.020, 0.0, 0.9, 0.08, 0.06),
-        (0.020, 0.0, 0.9, 0.10, 0.04), (0.035, 0.0, 0.9, 0.90, 0.90),
-    ]
-    cs = cd(cluster_spread)
-    if not check("cluster does NOT dominate: zone-fair ~0.0275 (> naive 0.02375)",
-                 cs is not None and abs(cs[0] - 0.0275) < 1e-3 and cs[0] > 0.025):
+    def run(ocr_value):
+        return template_mapper.extract_with_mappings(
+            [page], [base_mapping(field_key="date", anchor_text="Ticket Logged")],
+            fps, ocr_lines_fn=label, ocr_text_fn=text_queue_stub([ocr_value]),
+            validation_patterns=DATE_PATTERNS,
+        )
+
+    # 1. Clean date passes the gate untouched: full confidence, no salvage tag.
+    clean = run("27-05-2026").get("date", {})
+    if not check("clean date passes the gate unchanged (method=template_mapping)",
+                 clean.get("value") == "27-05-2026" and clean.get("method") == "template_mapping"):
+        failures += 1
+    if not check("clean date keeps full located confidence (90, NOT salvage-capped)",
+                 clean.get("confidence") == 90):
         failures += 1
 
-    # Distinct zones, one landmark each -> identical to the plain weighted mean.
-    distinct = [(0.020, 0.0, 0.9, 0.1, 0.1), (0.025, 0.0, 0.9, 0.5, 0.1),
-                (0.030, 0.0, 0.9, 0.9, 0.1)]
-    dz = cd(distinct)
-    if not check("distinct-zone landmarks -> plain mean 0.025 (no regression)",
-                 dz is not None and abs(dz[0] - 0.025) < 1e-3):
+    # 2. OCR spacing around the separators fails the gate -> salvaged + normalised.
+    spaced = run("27 -05- 2026").get("date", {})
+    if not check("spaced-separator date salvaged to DD-MM-YYYY",
+                 spaced.get("value") == "27-05-2026"):
+        failures += 1
+    if not check("salvaged date is tagged template_mapping_salvaged",
+                 spaced.get("method") == "template_mapping_salvaged"):
+        failures += 1
+    if not check("salvaged date confidence capped at 70 (weaker than a clean crop)",
+                 spaced.get("confidence") == 70):
         failures += 1
 
-    # A noisy local cluster biased high (0.030 x3) vs a cleaner spread point at
-    # the true 0.010: naive = (0.030*3+0.010)/4 = 0.025; zone-fair pulls to 0.020.
-    noisy = [
-        (0.030, 0.0, 0.9, 0.05, 0.05), (0.030, 0.0, 0.9, 0.08, 0.06),
-        (0.030, 0.0, 0.9, 0.10, 0.04), (0.010, 0.0, 0.9, 0.90, 0.90),
-    ]
-    nz = cd(noisy)
-    if not check("noisy cluster down-weighted: zone-fair ~0.020 (< naive 0.025)",
-                 nz is not None and abs(nz[0] - 0.020) < 1e-3 and nz[0] < 0.025):
+    # 3. A date wrapped in surrounding junk (with spacing) is recovered too.
+    junk = run("Logged 16 / 03 / 2026").get("date", {})
+    if not check("date embedded in junk text is salvaged to DD-MM-YYYY",
+                 junk.get("value") == "16-03-2026" and junk.get("method") == "template_mapping_salvaged"):
+        failures += 1
+
+    # 4. No date present -> salvage returns nothing -> field omitted (unchanged).
+    if not check("non-date crop ('Booking') is still omitted, never fabricated",
+                 "date" not in run("Booking")):
         failures += 1
 
     print()
     return failures
 
 
-def test_geometry_seeded_fallback():
-    """Stage-1 geometry prior: when local relocation has failed AND the absolute
-    drift-shifted seed reads nothing, the fallback re-seeds the target from the
-    page-geometry landmark nearest the taught anchor (landmark + stored offset +
-    consensus drift) and can recover the value. It is purely ADDITIVE — a
-    successful absolute seed is returned unchanged and the geometry branch is
-    never reached, so existing drift-fallback behaviour cannot regress."""
+def test_clean_crop_segment_shape_aware():
+    """Shared crop-segment cleaning (Fix B1): the free-text postcode/year trim is
+    now SHAPE-AWARE — it only fires when >=2 alphabetic words precede the digit
+    run, so a genuine name/address with its own number is no longer amputated to a
+    fragment (the worksheet `name` failures). Column-gap split, city-comma cut and
+    non-text digit preservation are unchanged. Exercises template_mapper._clean_value
+    (which delegates to anchor.clean_crop_segment), proving both crop paths share
+    one rule."""
     failures = 0
-    print("geometry-seeded drift fallback: landmark + offset + drift recovers a shifted target")
-    from extraction import page_geometry
+    print("clean_crop_segment: shape-aware free-text trim (no value amputation)")
+    cv = template_mapper._clean_value
+
+    # Postcode boundary WITH >=2 leading alpha words -> trimmed (existing good case).
+    if not check("'Ann Blume 10115 Berlin' (text) -> 'Ann Blume' (postcode trimmed)",
+                 cv("Ann Blume 10115 Berlin", "text") == "Ann Blume"):
+        failures += 1
+    # Value's OWN number (only 1 leading alpha word) -> kept whole (the B1 fix:
+    # previously the blanket \\s+\\d{4,} split amputated this to "Unit 4").
+    if not check("'Unit 4 1024 Park' (text) -> kept whole (not amputated)",
+                 cv("Unit 4 1024 Park", "text") == "Unit 4 1024 Park"):
+        failures += 1
+    if not check("'Site 4012' (text) -> kept whole (single alpha word before digits)",
+                 cv("Site 4012", "text") == "Site 4012"):
+        failures += 1
+    # Clean name with no digit run -> unchanged.
+    if not check("'Beaumont Care Homes Ltd - Galgorm' (text) -> unchanged",
+                 cv("Beaumont Care Homes Ltd - Galgorm", "text") == "Beaumont Care Homes Ltd - Galgorm"):
+        failures += 1
+    # A lone 4-digit value (no preceding word) is never trimmed to empty.
+    if not check("'2026' (text) -> kept (never amputated to empty)",
+                 cv("2026", "text") == "2026"):
+        failures += 1
+    # Non-text fields keep their digits (the column-gap split still applies).
+    if not check("'INV 12345' (alphanumeric) -> digits preserved",
+                 cv("INV 12345", "alphanumeric") == "INV 12345"):
+        failures += 1
+    # Column gap (4+ spaces) splits for every type.
+    if not check("'Acme Ltd    99887' -> 'Acme Ltd' (column-gap split)",
+                 cv("Acme Ltd    99887", "text") == "Acme Ltd"):
+        failures += 1
+    # City-comma cut after 2+ words is preserved.
+    if not check("'John Smith, Belfast, BT1' -> 'John Smith' (city-comma cut)",
+                 cv("John Smith, Belfast, BT1", "text") == "John Smith"):
+        failures += 1
+
+    print()
+    return failures
+
+
+def test_registration_rung():
+    """P4 end-to-end: with taught landmarks + registration_enabled, a SHIFTED page
+    (where the drawn target box no longer covers the value) is registered via the
+    landmark transform and the value is read at the mapped box — the headline
+    'find the data regardless of registration' behaviour. With registration off,
+    the transform rung never fires."""
+    failures = 0
+    print("registration rung: taught landmarks register a shifted page and read the value")
     page = FakePage((1000, 1000))
+    SHIFT = (0.10, 0.05)
+    taught_lms = [
+        {"label_text": "ALPHA", "x_norm": 0.10, "y_norm": 0.10, "w_norm": 0.08, "h_norm": 0.03, "page_number": 0},
+        {"label_text": "BETA",  "x_norm": 0.70, "y_norm": 0.15, "w_norm": 0.08, "h_norm": 0.03, "page_number": 0},
+        {"label_text": "GAMMA", "x_norm": 0.40, "y_norm": 0.60, "w_norm": 0.08, "h_norm": 0.03, "page_number": 0},
+    ]
+    # On the incoming scan every landmark (and the value) has shifted by SHIFT.
+    run_words = [{"text": l["label_text"],
+                  "x": l["x_norm"] + SHIFT[0], "y": l["y_norm"] + SHIFT[1],
+                  "w": l["w_norm"], "h": l["h_norm"]} for l in taught_lms]
+    lines = page_words_stub(run_words)
+    text_fn = value_at_stub("INV-REG-001", 0.30 + SHIFT[0], 0.30 + SHIFT[1], 0.12, 0.04)
+    mapping = {
+        "field_key": "invoice_number", "page_number": 0, "enabled": True,
+        "anchor_text": "ALPHA", "search_expansion": 0.0,
+        "anchor_x_norm": 0.10, "anchor_y_norm": 0.10, "anchor_w_norm": 0.08, "anchor_h_norm": 0.03,
+        "target_x_norm": 0.30, "target_y_norm": 0.30, "target_w_norm": 0.12, "target_h_norm": 0.04,
+        "offset_dx_norm": 0.20, "offset_dy_norm": 0.20,
+    }
+    fps = {"invoice_number": {"validation": "alphanumeric"}}
+    vps = {"alphanumeric": [r"[A-Za-z0-9][A-Za-z0-9\-\/\.]{2,20}"]}
 
-    # Customer mapping: taught anchor at (0.10,0.20), stored offset +0.15 right, so
-    # the ABSOLUTE target sits at (0.25,0.20). Its own anchor ("Bill To") is absent
-    # on this page (local relocation fails), so _extract_one routes to _drift_fallback.
-    mapping = {"field_key": "customer", "page_number": 0, "enabled": True,
-               "anchor_text": "Bill To", "search_expansion": 0.0,
-               "anchor_x_norm": 0.10, "anchor_y_norm": 0.20,
-               "anchor_w_norm": 0.20, "anchor_h_norm": 0.04,
-               "target_x_norm": 0.25, "target_y_norm": 0.20,
-               "target_w_norm": 0.15, "target_h_norm": 0.04,
-               "offset_dx_norm": 0.15, "offset_dy_norm": 0.0}
-    target_box = template_mapper._norm_box(mapping, "target")
-    fps   = {"customer": {"validation": "text"}}
-    drift = (0.02, 0.0)
-
-    # Nearest landmark to the taught anchor (0.10,0.20) is the centred-75% corner.
-    (lx, ly), _ = page_geometry.nearest_landmark(0.10, 0.20)
-    if not check(f"landmark nearest the anchor is the 75% box corner (got {lx},{ly})",
-                 abs(lx - 0.125) < 1e-9 and abs(ly - 0.125) < 1e-9):
+    res = template_mapper.extract_with_mappings(
+        [page], [mapping], fps, ocr_lines_fn=lines, ocr_text_fn=text_fn,
+        validation_patterns=vps, template_landmarks=taught_lms, registration_enabled=True)
+    got = res.get("invoice_number", {})
+    if not check("shifted-page value recovered via registration",
+                 got.get("value") == "INV-REG-001"):
         failures += 1
-    abs_x1 = int((target_box["x_norm"] + drift[0]) * 1000)        # 270 — absolute seed
-    geo_x1 = int((lx + 0.15 + drift[0]) * 1000)                   # 295 — landmark seed
-    if not check(f"absolute and geometry seeds land on different crops ({abs_x1} vs {geo_x1})",
-                 abs_x1 != geo_x1):
+    if not check(f"resolved by the registration rung (got method={got.get('method')})",
+                 (got.get("method") or "").startswith("template_registration")):
         failures += 1
-
-    # Stub: the value lives only at the LANDMARK-seeded crop; the absolute drift
-    # crop reads nothing -> raw-absolute seeding MISSES, geometry recovers.
-    def value_at_landmark(crop):
-        _, (x1, _y1, _x2, _y2) = crop
-        return "AcmeLtd" if x1 == geo_x1 else None
-    out = template_mapper._drift_fallback(page, mapping, target_box, 0.0, drift,
-                                          fps, value_at_landmark)
-    if not check("geometry-seeded fallback recovers a value raw-absolute seeding missed",
-                 out is not None and out.get("value") == "AcmeLtd"):
-        failures += 1
-    if not check("recovered value keeps the UNCHANGED drift method + confidence (60)",
-                 out and out.get("method") == "template_mapping_drift" and out.get("confidence") == 60):
+    if not check(f"registration confidence is meaningful (got {got.get('confidence')})",
+                 isinstance(got.get("confidence"), int) and got.get("confidence") >= 55):
         failures += 1
 
-    # Additive guarantee: when the ABSOLUTE seed reads a value, that value is
-    # returned and the geometry branch is never reached (stub raises if it runs).
-    def absolute_hits(crop):
-        _, (x1, _y1, _x2, _y2) = crop
-        if x1 == geo_x1:
-            raise AssertionError("geometry branch must not run when the absolute seed hit")
-        return "ABS" if x1 == abs_x1 else None
-    out2 = template_mapper._drift_fallback(page, mapping, target_box, 0.0, drift,
-                                           fps, absolute_hits)
-    if not check("successful absolute seed returned unchanged (geometry not reached)",
-                 out2 is not None and out2.get("value") == "ABS"):
+    # Control: registration OFF -> the transform rung must NOT be the resolver.
+    res_off = template_mapper.extract_with_mappings(
+        [page], [mapping], fps, ocr_lines_fn=lines, ocr_text_fn=text_fn,
+        validation_patterns=vps, template_landmarks=taught_lms, registration_enabled=False)
+    if not check("registration OFF -> not resolved via template_registration",
+                 not (res_off.get("invoice_number", {}).get("method") or "").startswith("template_registration")):
         failures += 1
-
-    # No consensus drift -> None; the geometry prior never fires without drift.
-    if not check("no drift -> None (geometry prior never fires without consensus)",
-                 template_mapper._drift_fallback(page, mapping, target_box, 0.0, None,
-                                                 fps, value_at_landmark) is None):
-        failures += 1
-
     print()
     return failures
 
@@ -642,11 +713,12 @@ def main():
     failures += test_extract_with_mappings()
     failures += test_derived_target_no_leading_inset_clip()
     failures += test_locate_anchor_padded_box()
-    failures += test_consensus_drift()
-    failures += test_drift_fallback()
     failures += test_anchor_search_floor()
-    failures += test_consensus_drift_spatial()
-    failures += test_geometry_seeded_fallback()
+    failures += test_date_salvage_fallback()
+    failures += test_clean_crop_segment_shape_aware()
+    failures += test_absolute_target_first()
+    failures += test_gate_value_shared()
+    failures += test_registration_rung()
 
     if failures:
         print(f"{failures} check(s) failed — template_mapper regressed.")

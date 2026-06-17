@@ -31,11 +31,11 @@ import re
 
 from PIL import Image, ImageFilter, ImageOps
 
-from extraction import page_geometry
+from extraction import registration
 # Reuse the SAME credibility test the learned-anchor stage uses, so a template
 # mapping is held to the same "is this value plausible for the field?" standard
 # (typed fields must match their validation pattern; free-text must not be debris).
-from extraction.anchor import _crop_is_credible
+from extraction.anchor import _crop_is_credible, _repair_single_token, clean_crop_segment
 # And the SAME learned-format check Stage 4.5 uses, so the failsafe below judges a
 # value against the shape this field has historically taken on this template
 # (learned from confirmed docs) — label- and field-key-agnostic, one source of truth.
@@ -66,21 +66,13 @@ _SCORE_TIE_EPSILON = 1e-6
 # template -- it only widens WHERE the label is sought; the fuzzy-match threshold
 # still rejects a wrong nearby label, so coverage improves without false matches.
 _ANCHOR_SEARCH_MIN = 0.06
-
-# Consensus page-drift fallback from MULTIPLE recurring-label landmarks.
-# Translation only; used solely as a coarse pre-shift when a field's own local
-# anchor relocation fails -- never to override a located anchor or set a value.
-_DRIFT_W_MIN     = 0.7    # min anchor match_score for a landmark to count
-_DRIFT_AGREE_TOL = 0.03   # max distance (page-normalised) from the median delta to keep
-_DRIFT_MAX       = 0.10   # implausible consensus magnitude -> ignore drift entirely
-_DRIFT_ZONE_COLS = 3      # coarse page columns for spatial-diversity weighting
-_DRIFT_ZONE_ROWS = 2      # coarse page rows
 _UNSET = object()         # "located not provided" sentinel (distinct from a None relocation)
 
 
 def extract_with_mappings(page_images, mappings, field_patterns=None,
                           ocr_lines_fn=None, ocr_text_fn=None, slice_capture=None,
-                          validation_patterns=None, format_lookup=None):
+                          validation_patterns=None, format_lookup=None,
+                          template_landmarks=None, registration_enabled=False):
     """
     Run every enabled mapping against `page_images` and return resolved fields.
 
@@ -107,12 +99,9 @@ def extract_with_mappings(page_images, mappings, field_patterns=None,
             continue
         usable.append((page_idx, mapping))
 
-    # Pre-pass: relocate every anchor ONCE, and estimate a per-page coarse drift
-    # from the AGREEING recurring-label landmarks. Each relocation is cached so
-    # _extract_one reuses it (no anchor OCR'd twice); the drift is applied below
-    # only as a fallback pre-shift -- never to override a located anchor.
+    # Pre-pass: relocate every mapping's anchor ONCE and cache it so _extract_one
+    # reuses it (no anchor OCR'd twice) for the single-label local-refinement path.
     located_cache = {}
-    landmarks = {}   # page_idx -> [(dx, dy, weight), ...]
     for page_idx, mapping in usable:
         anchor_box = _norm_box(mapping, "anchor")
         if not anchor_box:
@@ -122,22 +111,27 @@ def extract_with_mappings(page_images, mappings, field_patterns=None,
                     slice_capture(_m.get("field_key"), "template_mapping", _p,
                                   (_ab["x_norm"], _ab["y_norm"], _ab["w_norm"], _ab["h_norm"]),
                                   c, "anchor")) if slice_capture else None)
-        located = _locate_anchor(
+        located_cache[id(mapping)] = _locate_anchor(
             page_images[page_idx], anchor_box, mapping.get("anchor_text"),
             float(mapping.get("search_expansion") or 0.0), ocr_lines_fn,
             min_search=_ANCHOR_SEARCH_MIN, capture=_acap)
-        located_cache[id(mapping)] = located
-        if located and located.get("matched_text") is not None:
-            # Anchor box-origin drift (inset-corrected -- the SAME convention the
-            # located+offset relocation uses), weighted by the match strength.
-            inset_x = max(0.0, (anchor_box["w_norm"] - located["w_norm"]) / 2.0)
-            inset_y = max(0.0, (anchor_box["h_norm"] - located["h_norm"]) / 2.0)
-            dx = (located["x_norm"] - inset_x) - anchor_box["x_norm"]
-            dy = (located["y_norm"] - inset_y) - anchor_box["y_norm"]
-            landmarks.setdefault(page_idx, []).append(
-                (dx, dy, float(located.get("match_score") or 0.0),
-                 located["x_norm"], located["y_norm"]))
-    page_drift = {pi: _consensus_drift(lm) for pi, lm in landmarks.items()}
+
+    # Per-page registration transform ("register, then read", P4): when the
+    # template carries taught landmarks, RE-locate them on THIS page and fit a
+    # robust similarity transform ONCE per page (not per field), so taught target
+    # boxes follow a shifted/skewed/scaled scan. Gated by registration_enabled; a
+    # too-few/poor fit yields None and every field falls through to the existing
+    # anchor/offset path — never worse than today.
+    page_transform = {}
+    if registration_enabled and template_landmarks:
+        lm_by_page = {}
+        for lm in template_landmarks:
+            lm_by_page.setdefault(int(lm.get("page_number") or 0), []).append(lm)
+        for page_idx in {pi for pi, _ in usable}:
+            lms = lm_by_page.get(page_idx)
+            if lms:
+                page_transform[page_idx] = _fit_page_transform(
+                    page_images[page_idx], lms, ocr_lines_fn)
 
     results = {}
     for page_idx, mapping in usable:
@@ -147,13 +141,43 @@ def extract_with_mappings(page_images, mappings, field_patterns=None,
         outcome = _extract_one(page_images[page_idx], mapping, field_patterns,
                                ocr_lines_fn, ocr_text_fn,
                                located=located_cache[id(mapping)],
-                               drift=page_drift.get(page_idx),
+                               page_transform=page_transform.get(page_idx),
                                slice_capture=slice_capture, page_idx=page_idx,
                                validation_patterns=validation_patterns,
                                format_lookup=format_lookup)
         if outcome:
             results[field_key] = outcome
     return results
+
+
+def _fit_page_transform(page, landmarks, ocr_lines_fn):
+    """Locate each taught landmark on THIS page and fit a similarity transform
+    mapping taught centroids -> located centroids. Returns a registration.Transform
+    or None (too few/poor correspondences -> caller falls through). Reuses
+    _locate_anchor — the SAME image_to_data the anchor path already runs — so the
+    fit adds no OCR beyond locating the landmark words."""
+    src, dst = [], []
+    for lm in landmarks:
+        try:
+            box = {"x_norm": float(lm["x_norm"]), "y_norm": float(lm["y_norm"]),
+                   "w_norm": float(lm["w_norm"]), "h_norm": float(lm["h_norm"])}
+        except (KeyError, TypeError, ValueError):
+            continue
+        text = lm.get("label_text")
+        found = _locate_anchor(page, box, text, 0.0, ocr_lines_fn,
+                               min_search=_ANCHOR_SEARCH_MIN)
+        if not (found and found.get("matched_text") is not None):
+            found = _locate_anchor(page, box, text, 1.0, ocr_lines_fn,
+                                   min_search=_ANCHOR_SEARCH_MIN)
+        if not (found and found.get("matched_text") is not None):
+            continue
+        src.append([box["x_norm"] + box["w_norm"] / 2.0,
+                    box["y_norm"] + box["h_norm"] / 2.0])
+        dst.append([found["x_norm"] + found["w_norm"] / 2.0,
+                    found["y_norm"] + found["h_norm"] / 2.0])
+    if len(src) < 2:
+        return None
+    return registration.fit_transform(src, dst, kind="similarity")
 
 
 # ── Per-mapping resolution ────────────────────────────────────────────────────
@@ -180,8 +204,82 @@ def _format_rejects(text, field_key, format_lookup):
     return _check_learned_format(str(text), entry) is not None
 
 
+def _salvage_date_value(text, val_type):
+    """Rescue a real date embedded in noisy OCR (whitespace around separators, or a
+    date sitting inside surrounding junk) — reusing validator.salvage_date, the
+    SAME recovery Stage 4 already applies to keyword/anchor dates. Used only as a
+    FALLBACK when the crop has already failed the strict date credibility gate, so
+    Stage 0.5 normalises and keeps a salvageable "27 -05- 2026" instead of dropping
+    the field (the observed worksheet "Date: Not found").
+
+    Returns the normalised DD-MM-YYYY date, or None when nothing date-shaped is
+    present. Lazy import mirrors the module's other cross-stage imports; no-op for
+    non-date fields. Generalises to EVERY template's date field, not one layout.
+
+    Limitation (intentional): salvage handles spacing / embedded-junk dates, NOT
+    glyph misreads (e.g. a year OCR'd as "202G") — those still fall to review."""
+    if not text or val_type != 'date':
+        return None
+    try:
+        from extraction import validator
+        d = validator.salvage_date(text)
+    except Exception:
+        return None
+    return d.strftime("%d-%m-%Y") if d else None
+
+
+def _gate_value(text, val_type, field_key, validation_patterns, format_lookup):
+    """Shared accept/reject (+ date salvage) for a crop read, used by the
+    absolute-target fast path, the anchor-derived path AND the drift fallback so
+    all three apply IDENTICAL gates (the sequence was previously duplicated).
+
+    Order:
+      1. date-salvage FALLBACK (Fix C1) — when a date crop fails the strict date
+         credibility gate, rescue/normalise it via validator.salvage_date;
+      2. _crop_is_credible — the value must match the field's validation pattern
+         (free-text only rejects obvious debris);
+      3. _format_rejects — reject a value contradicting the learned per-
+         (supplier,doctype,field) shape, once one exists.
+
+    Returns (value, salvaged); (None, False) when the value is rejected."""
+    if not text:
+        return None, False
+    salvaged = False
+    if val_type == 'date' and not _crop_is_credible(text, val_type, validation_patterns):
+        rescued = _salvage_date_value(text, val_type)
+        if rescued:
+            text, salvaged = rescued, True
+    if not _crop_is_credible(text, val_type, validation_patterns):
+        return None, False
+    if _format_rejects(text, field_key, format_lookup):
+        return None, False
+    return text, salvaged
+
+
+def _mapping_result(value, full_confidence, expanded, salvaged, anchor):
+    """Build a Stage 0.5 result dict with the shared confidence tiers used by the
+    absolute fast path and the anchor-derived path. `full_confidence` selects the
+    90 (anchor located / anchor_text present) vs 78 (no label) base; `expanded`
+    discounts a widened-retry read; `salvaged` (a date rescued from junk) caps
+    confidence so it can't outrank a clean Stage 1/2 read, and tags the method."""
+    confidence = 90 if full_confidence else 78
+    if expanded:
+        confidence -= 12
+    method = "template_mapping_expanded" if expanded else "template_mapping"
+    if salvaged:
+        confidence = min(confidence, 70)
+        method += "_salvaged"
+    return {
+        "value":      value,
+        "confidence": max(50, min(96, confidence)),
+        "method":     method,
+        "anchor":     anchor,
+    }
+
+
 def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
-                 located=_UNSET, drift=None, slice_capture=None, page_idx=0,
+                 located=_UNSET, page_transform=None,
+                 slice_capture=None, page_idx=0,
                  validation_patterns=None, format_lookup=None):
     anchor_box = _norm_box(mapping, "anchor")
     target_box = _norm_box(mapping, "target")
@@ -193,32 +291,89 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
     field_key   = mapping.get("field_key", "")
     val_type    = (field_patterns or {}).get(field_key, {}).get("validation")
 
+    # ── FAST PATH: read the EXACT box the operator drew ───────────────────────
+    # The drawn target box is what the Template Wizard's live zone-OCR (region.py)
+    # read when the field was taught, so on a page that has NOT drifted it reads
+    # the value cleanly — exactly what the operator saw and validated. TRUST the
+    # saved coordinates FIRST (mirroring anchor.py's rigid-crop-then-relocate
+    # model); only when this read fails the shared credibility/format/date-salvage
+    # gate do we fall through to anchor relocation. No offset/inset arithmetic
+    # happens here, so this path cannot reintroduce the leading-glyph inset clip
+    # the derived path below corrects for. THIS is what makes first-instance
+    # extraction match the live "targeted selection": previously a located anchor
+    # ALWAYS re-derived the crop and the drawn box was never read on a clean page.
+    _tcap = ((lambda c: slice_capture(field_key, "template_mapping", page_idx,
+               (target_box["x_norm"], target_box["y_norm"],
+                target_box["w_norm"], target_box["h_norm"]), c, "target")) if slice_capture else None)
+    abs_text = _crop_and_ocr(page, target_box, val_type, ocr_text_fn, capture=_tcap)
+    abs_expanded = False
+    if not abs_text and expansion > 0:
+        abs_text = _crop_and_ocr(page, _expand_box(target_box, expansion), val_type, ocr_text_fn)
+        abs_expanded = bool(abs_text)
+    abs_text, abs_salvaged = _gate_value(abs_text, val_type, field_key,
+                                         validation_patterns, format_lookup)
+    if abs_text:
+        return _mapping_result(abs_text, bool(mapping.get("anchor_text")),
+                               abs_expanded, abs_salvaged,
+                               mapping.get("anchor_text") or field_key)
+
+    # ── REGISTRATION RUNG (P4, "register, then read"): the drawn box at its
+    # stored coords didn't yield a credible value, so the page is shifted/skewed/
+    # scaled. If a per-page transform was fitted from the template's landmarks,
+    # map the taught target box THROUGH it and read there — the value follows the
+    # page's actual geometry (scale+rotation+translation), not a single-label
+    # translation guess. Sits ABOVE the single-label path; falls through if the
+    # transform read doesn't clear the gates. Confidence reflects the fit quality.
+    if page_transform is not None:
+        reg_box = page_transform.apply_box(target_box)
+        _rcap = ((lambda c: slice_capture(field_key, "template_registration", page_idx,
+                   (reg_box["x_norm"], reg_box["y_norm"], reg_box["w_norm"], reg_box["h_norm"]),
+                   c, "target")) if slice_capture else None)
+        rtext = _crop_and_ocr(page, reg_box, val_type, ocr_text_fn, capture=_rcap)
+        r_expanded = False
+        if not rtext and expansion > 0:
+            rtext = _crop_and_ocr(page, _expand_box(reg_box, expansion), val_type, ocr_text_fn)
+            r_expanded = bool(rtext)
+        rtext, r_salvaged = _gate_value(rtext, val_type, field_key, validation_patterns, format_lookup)
+        if rtext:
+            conf = registration.registration_confidence(page_transform)
+            if r_expanded:
+                conf -= 12
+            method = "template_registration_expanded" if r_expanded else "template_registration"
+            if r_salvaged:
+                conf = min(conf, 70)
+                method += "_salvaged"
+            return {
+                "value":      rtext,
+                "confidence": max(50, min(96, conf)),
+                "method":     method,
+                "anchor":     mapping.get("anchor_text") or field_key,
+            }
+
+    # ── SINGLE-LABEL LOCAL REFINEMENT: the drawn box read nothing credible and
+    # the registration transform (if any) didn't resolve it either. Find the
+    # field's own label and derive the value crop from where it ACTUALLY landed
+    # (anchor + relative-offset) — the per-field fallback for templates without a
+    # usable landmark fit. ─────────────────────────────────────────────────────
     if located is _UNSET:
         located = _locate_anchor(page, anchor_box, anchor_text, expansion,
                                  ocr_lines_fn, min_search=_ANCHOR_SEARCH_MIN)
     # Page-wide relocation ("try again to actually FIND the label"): when the
     # label isn't in the drawn box ± local margin — a cropped/heavily-shifted
-    # scan (e.g. a worksheet whose top is clipped so everything sits higher)
-    # moves it out — search the WHOLE page for the distinctive label before
-    # falling back to fixed-coordinate drift. The target is still derived from
-    # where the label ACTUALLY is, so the value follows the label however far it
-    # moved. Guarded by the fuzzy threshold (a wrong nearby label is rejected)
-    # and only attempted when a label needle exists. Generic to every template.
+    # scan moves it out — search the WHOLE page for the distinctive label. The
+    # target is still derived from where the label ACTUALLY is, so the value
+    # follows the label however far it moved. Guarded by the fuzzy threshold and
+    # only attempted when a label needle exists. Generic to every template.
     if not located and anchor_text:
         located = _locate_anchor(page, anchor_box, anchor_text, 1.0,
                                  ocr_lines_fn, min_search=_ANCHOR_SEARCH_MIN)
     if not located:
-        # Local + page-wide relocation failed. ONLY here may a consensus page
-        # drift help: a coarse translation-only pre-shift of the absolute target
-        # box. Never reached when the anchor IS located -> local evidence wins.
-        return _drift_fallback(page, mapping, target_box, expansion, drift,
-                               field_patterns, ocr_text_fn,
-                               validation_patterns=validation_patterns,
-                               format_lookup=format_lookup)
+        # Nothing located — omit the field (it falls through to the rest of the
+        # pipeline / manual review), exactly as before.
+        return None
 
-    # Heart of the "anchor + relative target zone" model: derive the target
-    # from where the anchor ACTUALLY is, not from the absolute saved target
-    # coordinates — handles the anchor having drifted since the sample doc.
+    # Derive the target from where the anchor ACTUALLY is, not from the absolute
+    # saved coordinates — handles the anchor having drifted since the sample doc.
     #
     # The stored offset is BOX-origin → BOX-origin (saveMapping records
     # target_x − anchor_x using the admin-drawn box corners), but _locate_anchor
@@ -250,160 +405,13 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
         text = _crop_and_ocr(page, _expand_box(derived_target, expansion), val_type, ocr_text_fn)
         expanded = bool(text)
 
-    # FAILSAFE — never WRITE a value that fails the field's known format. A crop
-    # that landed on an adjacent row ("Booking" where a job reference shaped like
-    # "2603-1351-1" is expected) or OCR debris is rejected here, so the field is
-    # omitted and falls through to the rest of the pipeline / manual review rather
-    # than committing a confidently-wrong value. Uses the SAME per-field
-    # validation patterns the keyword and learned-anchor stages already trust, so
-    # it generalises to every template/field that has a known shape — not tuned to
-    # one document. Fields with no configured pattern only reject obvious debris.
-    if text and not _crop_is_credible(text, val_type, validation_patterns):
-        text = None
-    # Learned-format failsafe (universal, no per-field config): reject a value
-    # whose shape doesn't match what this field has historically been on this
-    # template ("Booking" vs a learned "####-####-#"). Only bites once the field
-    # has a learned format; otherwise passes through. See _format_rejects.
-    if text and _format_rejects(text, field_key, format_lookup):
-        text = None
+    text, salvaged = _gate_value(text, val_type, field_key, validation_patterns, format_lookup)
     if not text:
         return None
-
-    confidence = 90 if located.get("matched_text") is not None and mapping.get("anchor_text") else 78
-    if expanded:
-        confidence -= 12
-    return {
-        "value":      text,
-        "confidence": max(50, min(96, confidence)),
-        "method":     "template_mapping_expanded" if expanded else "template_mapping",
-        "anchor":     mapping.get("anchor_text") or field_key,
-    }
-
-
-def _drift_fallback(page, mapping, target_box, expansion, drift,
-                    field_patterns, ocr_text_fn, validation_patterns=None,
-                    format_lookup=None):
-    """Local anchor relocation failed. If a consensus page drift exists, seed the
-    target by (1) the unchanged coarse translation-only pre-shift of the ABSOLUTE
-    target box, then — only if that reads nothing — (2) a page-geometry-landmark
-    prior (landmark + stored offset + drift); otherwise return None (today's
-    'field omitted -> pipeline fallback'). Either result is deliberately weaker
-    than any locally-relocated value (same method/confidence tiers as before)."""
-    if not drift:
-        return None
-    cdx, cdy = drift
-    field_key = mapping.get("field_key", "")
-    val_type  = (field_patterns or {}).get(field_key, {}).get("validation")
-
-    def _read(origin_x, origin_y):
-        box = {
-            "x_norm": _clamp01(origin_x),
-            "y_norm": _clamp01(origin_y),
-            "w_norm": target_box["w_norm"],
-            "h_norm": target_box["h_norm"],
-        }
-        txt = _crop_and_ocr(page, box, val_type, ocr_text_fn)
-        exp = False
-        if not txt and expansion > 0:
-            txt = _crop_and_ocr(page, _expand_box(box, expansion), val_type, ocr_text_fn)
-            exp = bool(txt)
-        return txt, exp
-
-    # 1) Existing behaviour, UNCHANGED: shift the ABSOLUTE target box by the
-    #    consensus drift and read it (with the optional expanded retry).
-    text, expanded = _read(target_box["x_norm"] + cdx, target_box["y_norm"] + cdy)
-
-    # 2) Geometry SEARCH PRIOR — tried ONLY when the absolute seed found nothing,
-    #    so it can never replace a successful absolute seed (no regression). It
-    #    re-seeds the target from the stable page-geometry landmark nearest the
-    #    TAUGHT anchor, plus the stored anchor->target offset, plus the same
-    #    consensus drift:  landmark + stored_offset + consensus_drift. This
-    #    recovers targets whose stored ABSOLUTE coordinate has itself drifted far
-    #    from where the page geometry says it sits. Same method/confidence tiers;
-    #    no new method, no precedence change.
-    if not text:
-        anchor_box = _norm_box(mapping, "anchor")
-        if anchor_box:
-            (lx, ly), _ = page_geometry.nearest_landmark(
-                anchor_box["x_norm"], anchor_box["y_norm"])
-            off_dx = mapping.get("offset_dx_norm") or 0.0
-            off_dy = mapping.get("offset_dy_norm") or 0.0
-            text, expanded = _read(lx + off_dx + cdx, ly + off_dy + cdy)
-
-    # Same failsafe as the located path: a drift/landmark read is fixed-coordinate
-    # and the most likely to land off-target, so it must clear BOTH the field's
-    # validation pattern AND its learned format before it can be written —
-    # otherwise omit and fall through to review.
-    if text and not _crop_is_credible(text, val_type, validation_patterns):
-        text = None
-    if text and _format_rejects(text, field_key, format_lookup):
-        text = None
-    if not text:
-        return None
-    confidence = 48 if expanded else 60   # < explicit located tiers (78/90)
-    return {
-        "value":      text,
-        "confidence": max(50, min(96, confidence)),
-        "method":     "template_mapping_drift_expanded" if expanded else "template_mapping_drift",
-        "anchor":     mapping.get("anchor_text") or field_key,
-    }
-
-
-def _median(xs):
-    s = sorted(xs)
-    n = len(s)
-    if n == 0:
-        return 0.0
-    mid = n // 2
-    return s[mid] if n % 2 else (s[mid - 1] + s[mid]) / 2.0
-
-
-def _drift_zone(x, y):
-    """Coarse page cell (col, row) for a landmark position, clamped to the grid."""
-    col = min(_DRIFT_ZONE_COLS - 1, max(0, int(x * _DRIFT_ZONE_COLS)))
-    row = min(_DRIFT_ZONE_ROWS - 1, max(0, int(y * _DRIFT_ZONE_ROWS)))
-    return (col, row)
-
-
-def _consensus_drift(landmarks):
-    """Combine per-landmark (dx, dy, weight, x, y) drift candidates into ONE
-    coarse page drift, or None. Weighted + outlier-robust, and -- in the FINAL
-    aggregation only -- spatially fair so a tight cluster of landmarks cannot
-    dominate the estimate when more distributed landmarks are present:
-      1) reliability gate (weight >= _DRIFT_W_MIN),
-      2) quorum >= 2,
-      3) component-wise median seed,
-      4) reject deltas farther than _DRIFT_AGREE_TOL from the median,
-      5) re-quorum >= 2,
-      6) ZONE-FAIR weighted mean: each survivor's weight is divided by the number
-         of survivors sharing its coarse page zone, so a cluster counts ~once
-         while a distinct-zone landmark keeps full voice,
-      7) sanity bound (magnitude <= _DRIFT_MAX).
-    Steps 1-5 and 7 are unchanged from the non-spatial version."""
-    pts = [p for p in landmarks if p[2] >= _DRIFT_W_MIN]
-    if len(pts) < 2:
-        return None
-    mdx = _median([p[0] for p in pts])
-    mdy = _median([p[1] for p in pts])
-    keep = [p for p in pts if math.hypot(p[0] - mdx, p[1] - mdy) <= _DRIFT_AGREE_TOL]
-    if len(keep) < 2:
-        return None
-    # Zone-fair weighting (final aggregation only): collapse each cluster toward a
-    # single zone-vote so spatially distributed landmarks govern the estimate.
-    zcount = {}
-    for (_, _, _, x, y) in keep:
-        z = _drift_zone(x, y)
-        zcount[z] = zcount.get(z, 0) + 1
-    wsum = sdx = sdy = 0.0
-    for (dx, dy, w, x, y) in keep:
-        eff = w / zcount[_drift_zone(x, y)]
-        wsum += eff; sdx += dx * eff; sdy += dy * eff
-    if wsum <= 0:
-        return None
-    cdx, cdy = sdx / wsum, sdy / wsum
-    if math.hypot(cdx, cdy) > _DRIFT_MAX:
-        return None
-    return (cdx, cdy)
+    return _mapping_result(
+        text,
+        located.get("matched_text") is not None and bool(mapping.get("anchor_text")),
+        expanded, salvaged, mapping.get("anchor_text") or field_key)
 
 
 # ── Anchor relocation ─────────────────────────────────────────────────────────
@@ -645,27 +653,24 @@ def _crop_and_ocr(page, box, val_type, ocr_text_fn, capture=None):
     text = ocr_text_fn(crop)
     if not text:
         return None
-    return _clean_value(text, val_type)
+    cleaned = _clean_value(text, val_type)
+    # Same single-token separator repair the Stage 2 anchor crop uses: a serial /
+    # reference read as one token can come back with a spurious "/" "\" "|"; re-read
+    # the prepped crop as a single word and keep it only if the glyphs are otherwise
+    # identical. Reuses anchor._repair_single_token (already cross-imported) so both
+    # crop paths behave the same. No-op for multi-word values and date fields, and
+    # safe under test stubs (it try/excepts when the crop isn't a real image).
+    if cleaned:
+        try:
+            cleaned = _repair_single_token(_prep(crop), cleaned, val_type)
+        except Exception:
+            pass
+    return cleaned
 
 
 def _clean_value(text, val_type):
-    """Mirrors anchor._crop_and_ocr's segment-selection so a drawn target zone
-    is cleaned up exactly like a learned-anchor crop (column-gap / digit-run /
-    trailing-city-comma truncation), keeping value shape consistent system-wide."""
-    for line in text.split("\n"):
-        line = line.strip()
-        if not line:
-            continue
-        split_pattern = (r' {4,}|\s+\d{4,}' if val_type in ('text', 'multiline_text')
-                         else r' {4,}')
-        segment = re.split(split_pattern, line)[0].strip()
-        parts = segment.split()
-        end = len(parts)
-        for i, word in enumerate(parts):
-            if i >= 2 and word.endswith(','):
-                end = i
-                break
-        segment = ' '.join(parts[:end]).rstrip(',;').strip()
-        if segment:
-            return segment
-    return None
+    """Delegates to the SHARED anchor.clean_crop_segment so a drawn target zone is
+    cleaned identically to a learned-anchor crop (column-gap split, shape-aware
+    postcode/year trim for free-text, trailing-city-comma cut) — one rule across
+    both crop paths. See clean_crop_segment for the per-rule rationale."""
+    return clean_crop_segment(text, val_type)

@@ -7,6 +7,7 @@ function getAll(db) {
   for (const t of rows) {
     t.fields              = getFields(db, t.id);
     t.field_mappings      = getMappings(db, t.id);
+    t.landmarks           = getLandmarks(db, t.id);
     t.keyword_fingerprint = _parseJson(t.keyword_fingerprint, []);
     t.ocr_auto_params     = _parseJson(t.ocr_auto_params, null);
   }
@@ -21,6 +22,7 @@ function getById(db, id) {
   t.keyword_fingerprint = _parseJson(t.keyword_fingerprint, []);
   t.ocr_auto_params     = _parseJson(t.ocr_auto_params, null);
   t.sample_document     = t.sample_document_id ? getSampleDocument(db, t.sample_document_id) : null;
+  t.landmarks           = getLandmarks(db, t.id);
   return t;
 }
 
@@ -521,6 +523,49 @@ function getSiblings(db, groupId, excludeTemplateId) {
   ).all(groupId, excludeTemplateId);
 }
 
+// ── Registration landmarks (migration 22) ───────────────────────────────────
+// Per-template stable text landmarks used to fit a similarity/affine transform
+// from the taught page onto an incoming (shifted/skewed/scaled) page — see
+// python_backend/extraction/registration.py. Additive: a template with no
+// landmarks simply falls through to the existing anchor/offset path.
+
+function getLandmarks(db, templateId) {
+  return db.prepare(
+    'SELECT * FROM template_landmarks WHERE template_id = ? ORDER BY page_number, id'
+  ).all(templateId);
+}
+
+// Replace-all in one transaction (the wizard / backfill recomputes the whole
+// set for a template at once, never appends piecemeal).
+function setLandmarks(db, templateId, landmarks) {
+  const rows = Array.isArray(landmarks) ? landmarks : [];
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM template_landmarks WHERE template_id = ?').run(templateId);
+    const ins = db.prepare(`
+      INSERT INTO template_landmarks
+        (template_id, label_text, x_norm, y_norm, w_norm, h_norm, ocr_conf, page_number)
+      VALUES (@template_id, @label_text, @x_norm, @y_norm, @w_norm, @h_norm, @ocr_conf, @page_number)
+    `);
+    for (const l of rows) {
+      if (!l || l.label_text == null) continue;
+      ins.run({
+        template_id: templateId,
+        label_text:  String(l.label_text),
+        x_norm:      Number(l.x_norm), y_norm: Number(l.y_norm),
+        w_norm:      Number(l.w_norm), h_norm: Number(l.h_norm),
+        ocr_conf:    l.ocr_conf == null ? null : Number(l.ocr_conf),
+        page_number: l.page_number == null ? 0 : (Number(l.page_number) | 0),
+      });
+    }
+  });
+  tx();
+  return getLandmarks(db, templateId);
+}
+
+function clearLandmarks(db, templateId) {
+  db.prepare('DELETE FROM template_landmarks WHERE template_id = ?').run(templateId);
+}
+
 module.exports = {
   getAll, getById, getFields, findByLogoHash, findByKeywordFingerprint, identifyByFingerprint,
   searchByName,
@@ -529,6 +574,7 @@ module.exports = {
   getMappings, getMapping, saveMapping, setMappingEnabled, deleteMapping,
   recordMappingTest, setSampleDocument, reassignDocuments, setFieldFixedValue,
   setOcrAutoParams, setOcrAutoEnabled,
+  getLandmarks, setLandmarks, clearLandmarks,
   getAllGroups, createGroup, deleteGroup, setTemplateGroup, getSiblings,
   GRID_COLS, GRID_ROWS,
 };

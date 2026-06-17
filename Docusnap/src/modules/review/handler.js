@@ -541,7 +541,7 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
   const keyword_fingerprint  = _parseJson(doc.keyword_fingerprint, []);
 
   // Build template field rules from confirmed values
-  const fields = _buildTemplateFields(allValues, dtInfo);
+  const fields = _buildTemplateFields(db, allValues, dtInfo);
 
   // `doc.template_id` reflects whatever Stage 0 matched DURING PROCESSING —
   // which, for a freshly-scanned batch, runs before any of that batch's own
@@ -603,26 +603,52 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
   }
 }
 
-function _buildTemplateFields(allValues, dtInfo) {
-  // Whether a field is "variable" (differs per document — reference number,
-  // date) or "constant" for a supplier (company name, address) comes from
-  // the document type's own schema (ref_field_key / date_field_key / type),
-  // via document_types.js's _annotateFieldVariability — see field.is_variable.
-  // This generalises to custom document types/fields automatically, and
-  // keeps the answer in one place rather than a hand-maintained map here
-  // that previously also stored short anchor-label guesses like 'PO' or '#'
-  // which matched as substrings inside unrelated text (e.g. 'PO' inside
-  // "Polychemtex Inc.", producing "lychemtex Inc." as the extracted value).
+// Fields proven VARIABLE by confirmed history: >=2 distinct final confirmed
+// values for this doc-type (corrected value if the user edited, else the
+// extracted one — the same "final value" getFieldFormats uses). Evidence that a
+// field differs per document, regardless of the schema's variability guess.
+function _fieldsWithMultipleConfirmedValues(db, dtInfo) {
+  const out = new Set();
+  if (!db || !dtInfo || !dtInfo.id) return out;
+  try {
+    const rows = db.prepare(`
+      SELECT e.field_key AS k,
+             COUNT(DISTINCT TRIM(COALESCE(c.corrected_value, e.display_value))) AS n
+      FROM extractions e
+      JOIN documents d ON d.id = e.document_id
+      LEFT JOIN corrections c ON c.document_id = e.document_id AND c.field_key = e.field_key
+      WHERE d.status = 'confirmed' AND d.document_type_id = ?
+        AND TRIM(COALESCE(c.corrected_value, e.display_value)) != ''
+      GROUP BY e.field_key
+    `).all(dtInfo.id);
+    for (const r of rows) if ((r.n || 0) >= 2) out.add(r.k);
+  } catch { /* older schema -> fall back to the schema heuristic only */ }
+  return out;
+}
+
+function _buildTemplateFields(db, allValues, dtInfo) {
+  // A field is "variable" (differs per document — reference, date, and ALSO any
+  // field the confirmed history shows taking multiple values) or "constant" for a
+  // supplier (company name, address). The schema gives a first guess
+  // (ref_field_key / date_field_key / type, via _annotateFieldVariability) but it
+  // is INVOICE-CENTRIC: it treats any non-ref/non-date field as constant, which
+  // wrongly FROZE a worksheet 'customer' to one stale value. So a field is frozen
+  // (fixed_value) ONLY when the schema says constant AND confirmed history has NOT
+  // shown it varying. The cost of a false "variable" is a harmless re-extract; a
+  // false "fixed" commits a wrong value on every other document — so we bias to
+  // variable. This self-heals an already-frozen field on the next confirm.
   // Variable fields get no anchor_label here — they are templated by the
-  // user-taught ⊕ field-anchor tool (Stage 2, coordinate-based crop+OCR),
-  // which is immune to text-substring collisions.
-  const fieldMeta = new Map((dtInfo?.fields || []).map(f => [f.key, f]));
+  // user-taught ⊕ field-anchor tool (Stage 2) / drawn mappings (Stage 0.5),
+  // which are coordinate-based and immune to text-substring collisions.
+  const fieldMeta   = new Map((dtInfo?.fields || []).map(f => [f.key, f]));
+  const multiValued = _fieldsWithMultipleConfirmedValues(db, dtInfo);
 
   return Object.entries(allValues)
     .filter(([, v]) => v && String(v).trim())
     .map(([key, value]) => {
       const meta = fieldMeta.get(key);
-      const isVariable = meta ? !!meta.is_variable : true;
+      const schemaVariable = meta ? !!meta.is_variable : true;
+      const isVariable = schemaVariable || multiValued.has(key);
       return {
         field_key:    key,
         anchor_label: null,

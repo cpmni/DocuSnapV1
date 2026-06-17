@@ -24,9 +24,78 @@ const SAMPLE_FILE_EXTENSIONS = new Set(['.pdf', '.png', '.jpg', '.jpeg']);
 
 function register(ctx) {
   const { ipcMain, getDb } = ctx;
+  const { spawn } = require('child_process');
   const templates = require('../../../database/modules/templates');
   const documents = require('../../../database/modules/documents');
   const { requireRole } = require('../auth/handler');
+
+  // Resolve a document row to an on-disk file (managed working copy preferred,
+  // then the filed/stored location) — mirrors the preview/reprocess resolution.
+  function _resolveDocPath(doc) {
+    if (!doc) return null;
+    const ok = (p) => (p && fs.existsSync(p) ? p : null);
+    const dir  = doc.stored_path || doc.folder_path;
+    const name = doc.stored_filename || doc.original_filename;
+    return ok(doc.working_path)
+        || ok(dir && name ? path.join(dir, name) : null)
+        || ok(doc.folder_path && doc.original_filename ? path.join(doc.folder_path, doc.original_filename) : null);
+  }
+
+  // Generate registration landmarks from a template's pinned sample page and
+  // store them (templates.setLandmarks). Best-effort + async: a failure never
+  // blocks pinning/mapping — the template simply falls back to the existing
+  // anchor/offset path until landmarks exist. Reuses the same Python/Tesseract
+  // the rest of processing uses (ocr/landmarks.py). This is the SAME mechanism
+  // for new templates (auto on sample pin) and the existing-corpus backfill.
+  function generateLandmarks(templateId) {
+    return new Promise((resolve) => {
+      try {
+        const db = getDb();
+        const tmpl = templates.getById(db, templateId);
+        if (!tmpl || !tmpl.sample_document_id) return resolve({ success: false, reason: 'no sample' });
+        const doc  = db.prepare('SELECT * FROM documents WHERE id = ?').get(tmpl.sample_document_id);
+        const file = _resolveDocPath(doc);
+        if (!file) return resolve({ success: false, reason: 'sample file not found' });
+        const script = ctx.resourcePath('python_backend', 'ocr', 'landmarks.py');
+        const proc = spawn(ctx.pythonExe(),
+          ctx.pythonArgs(script, '--file', file, '--page', '0', '--tesseract', ctx.tesseractPath()),
+          { windowsHide: true });
+        let out = '', err = '';
+        proc.stdout.on('data', d => { out += d.toString(); });
+        proc.stderr.on('data', d => { err += d.toString(); });
+        proc.on('close', () => {
+          if (err) console.error('landmarks stderr:', err.trim());
+          let list = [];
+          try { list = JSON.parse(out.trim()); } catch {}
+          if (Array.isArray(list)) {
+            try { templates.setLandmarks(db, templateId, list); }
+            catch (e) { console.error('setLandmarks:', e.message); }
+          }
+          resolve({ success: Array.isArray(list), count: Array.isArray(list) ? list.length : 0 });
+        });
+        proc.on('error', (e) => { console.error('landmarks spawn:', e.message); resolve({ success: false, reason: e.message }); });
+      } catch (e) {
+        console.error('generateLandmarks:', e.message);
+        resolve({ success: false, reason: e.message });
+      }
+    });
+  }
+
+  // Lazy one-shot backfill: existing templates that have a pinned sample but no
+  // landmarks gain them with NO re-teach. Delayed + sequential so it never
+  // competes with startup or active processing; entirely best-effort.
+  setTimeout(async () => {
+    try {
+      const db = getDb();
+      const rows = db.prepare(`
+        SELECT t.id FROM templates t
+        WHERE t.sample_document_id IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM template_landmarks l WHERE l.template_id = t.id)
+      `).all();
+      for (const r of rows) await generateLandmarks(r.id);
+      if (rows.length) console.log(`[landmarks] backfilled ${rows.length} template(s)`);
+    } catch (e) { console.error('[landmarks] backfill failed:', e.message); }
+  }, 8000);
 
   // ── Browse ──────────────────────────────────────────────────────────────────
   ipcMain.handle('get-templates', () => {
@@ -79,9 +148,11 @@ function register(ctx) {
     `).all(templateId);
   });
 
-  ipcMain.handle('set-template-sample', (_e, templateId, documentId) => {
+  ipcMain.handle('set-template-sample', async (_e, templateId, documentId) => {
     requireRole('admin');
     templates.setSampleDocument(getDb(), templateId, documentId);
+    // Refresh registration landmarks from the newly-pinned sample (best-effort).
+    await generateLandmarks(templateId);
     return templates.getById(getDb(), templateId);
   });
 
@@ -126,7 +197,7 @@ function register(ctx) {
     return r.canceled ? null : r.filePaths[0];
   });
 
-  ipcMain.handle('import-template-sample-file', (_e, templateId, filePath) => {
+  ipcMain.handle('import-template-sample-file', async (_e, templateId, filePath) => {
     requireRole('admin');
     if (!filePath || !fs.existsSync(filePath)) return { success: false, error: 'File not found' };
     const ext = path.extname(filePath).toLowerCase();
@@ -138,6 +209,7 @@ function register(ctx) {
       template_id:       templateId,
     });
     templates.setSampleDocument(getDb(), templateId, info.lastInsertRowid);
+    await generateLandmarks(templateId);   // derive registration landmarks (best-effort)
     return { success: true, template: templates.getById(getDb(), templateId) };
   });
 

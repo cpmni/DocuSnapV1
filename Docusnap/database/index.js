@@ -386,6 +386,40 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 21 applied: field_anchors.offset_dx_norm/offset_dy_norm (drift-invariant teach offset)');
   }
 
+  // Migration 22: registration-invariant anchoring groundwork ("register, then
+  // read"). ADDITIVE and inert — nothing reads it until the Stage 0.5 registration
+  // rung (registration_enabled) is wired up, so existing templates and extraction
+  // behaviour are unchanged.
+  //   template_landmarks — 3-5 stable, well-separated, high-confidence text words
+  //     captured per template at teach time (or backfilled by re-OCRing the pinned
+  //     sample_document_id). At run time these are RE-located and matched
+  //     taught→found to fit a robust similarity/affine transform, so a shifted/
+  //     skewed/scaled scan still maps the taught target boxes onto the page. Many
+  //     rows per template → its own table, ON DELETE CASCADE with the template.
+  // (No teach_render_scale column: the fit is in normalised 0-1 coords, so the
+  // teach→run render-scale difference cancels in the transform — storing it would
+  // be dead weight.)
+  if (!applied.has(22)) {
+    if (!tableExists(db, 'template_landmarks')) {
+      db.exec(`CREATE TABLE template_landmarks (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        template_id  INTEGER NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
+        label_text   TEXT    NOT NULL,
+        x_norm       REAL    NOT NULL,
+        y_norm       REAL    NOT NULL,
+        w_norm       REAL    NOT NULL,
+        h_norm       REAL    NOT NULL,
+        ocr_conf     REAL,
+        page_number  INTEGER NOT NULL DEFAULT 0,
+        created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+      )`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_template_landmarks_template
+               ON template_landmarks(template_id)`);
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (22)').run();
+    console.log('JS migration 22 applied: registration groundwork (template_landmarks)');
+  }
+
   // Migration 3: remove extra built-in fields, keep only name/date/ref per type
   if (!applied.has(3)) {
     const keepBySlug = {

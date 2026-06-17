@@ -93,6 +93,9 @@ def main():
     # Dev-only: emit a structured per-field extraction TRACE stream (type:"trace")
     # for the hidden Dev Inspector. Off by default → zero extra output/overhead and
     # the user-facing process-progress stream is byte-identical.
+    parser.add_argument("--registration", action="store_true",
+                        help="enable Stage 0.5 registration-invariant anchoring "
+                             "(landmark transform); inert unless templates carry landmarks")
     parser.add_argument("--trace", action="store_true")
     # Dev-only: directory for temporary OCR crop slices (set by the handler only
     # while the inspector is open). Ignored unless --trace is also set.
@@ -143,6 +146,11 @@ def main():
         config_path = args.config_file,
         emit_fn     = emit,
     )
+
+    # Registration-invariant anchoring (off unless --registration; inert without
+    # taught landmarks on the matched template).
+    if args.registration:
+        engine.set_registration_enabled(True)
 
     # Load learned format templates for OCR correction
     if formats:

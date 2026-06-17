@@ -140,18 +140,29 @@ function buildTrainingArgs(db, configPath, logger = null) {
   const overridesFile = writeTempJson('labeloverrides', allLabelOverrides);
   const cfgFile       = configPath();
 
+  // Registration-invariant anchoring ("register, then read"): ON unless an admin
+  // explicitly disables it (setting 'registration_enabled' = 'false'). It is inert
+  // until a template actually has taught landmarks (template_landmarks), so the
+  // default-on is safe — templates without landmarks behave exactly as before.
+  let registrationOn = true;
+  try { registrationOn = learning.getSetting(db, 'registration_enabled') !== 'false'; }
+  catch { /* older DB without the setting -> default on */ }
+
+  const args = [
+    '--fields-file',    fieldsFile,
+    '--hints-file',     hintsFile,
+    '--anchors-file',   anchorsFile,
+    '--logos-file',     logosFile,
+    '--doc-types-file', dtFile,
+    '--formats-file',   formatsFile,
+    '--templates-file', templatesFile,
+    '--label-overrides-file', overridesFile,
+    '--config-file',    cfgFile,
+  ];
+  if (registrationOn) args.push('--registration');
+
   return {
-    args: [
-      '--fields-file',    fieldsFile,
-      '--hints-file',     hintsFile,
-      '--anchors-file',   anchorsFile,
-      '--logos-file',     logosFile,
-      '--doc-types-file', dtFile,
-      '--formats-file',   formatsFile,
-      '--templates-file', templatesFile,
-      '--label-overrides-file', overridesFile,
-      '--config-file',    cfgFile,
-    ],
+    args,
     tempFiles: [fieldsFile, hintsFile, anchorsFile, logosFile, dtFile, formatsFile, templatesFile, overridesFile],
   };
 }
