@@ -97,13 +97,17 @@ docusnap2/
 │   │   └── licensing/handler.js         # license gate decideAccess() + trial/activate/revoke/enforcement IPC (see Licensing)
 │   ├── lib/license/{client.js,token.js,fingerprint.js}  # backend HTTP client · offline JWS verify · device fp_hash
 │   └── windows/
-│       ├── main/{index.html,renderer.js}      # incl. empty-state launchpad (Begin Import · Search · Settings)
+│       ├── main/{index.html,renderer.js}      # incl. empty-state launchpad (Begin Import · Search · Settings · Teach a document)
 │       ├── splash/{index.html,splash.js}      # cosmetic startup splash — shown in whenReady, closed once login loads
 │       ├── review/{index.html,renderer.js}    # incl. zoom/pan preview + hidden admin Template Wizard (⚓): draw anchor/target → save via existing template-mapping IPC
+│       ├── teach/{index.html,renderer.js}      # guided "Teach a new document" wizard (non-technical) — see Teaching wizard
 │       ├── settings/{index.html,renderer.js}  # incl. Admin Template Viewer + License/Activation-Test tab
 │       ├── search/index.html                  # placeholder
 │       ├── dev-inspector/{index.html,renderer.js}  # hidden read-only processing inspector (Ctrl+Shift+D+M, pw SFDEV) — see Dev inspector
 │       └── license/{index.html,renderer.js}   # activation/trial screen shown when the gate locks
+│   (createWindow opens every panel HIDDEN and reveals on ready-to-show — no
+│    empty-background "black box" flash; startup/login flow passes show:false and
+│    reveals manually, so it's untouched)
 ├── database/
 │   ├── index.js                         # open(), runMigrations(), runJsMigrations()
 │   └── modules/
@@ -116,7 +120,7 @@ docusnap2/
 │   ├── process_docs.py                  # CLI entry point, streams JSON to stdout
 │   ├── extraction/
 │   │   ├── engine.py                    # ExtractionEngine — staged pipeline orchestration (see Extraction pipeline below)
-│   │   ├── template_matcher.py          # Stage 0: learned-template identification + field seeding
+│   │   ├── template_matcher.py          # Stage 0: learned-template identification + field seeding (same-logo siblings disambiguated by keyword fingerprint)
 │   │   ├── template_mapper.py           # Stage 0.5: admin-drawn anchor→target zone mapping; absolute-first read, then registration transform, then single-label refinement
 │   │   ├── registration.py              # "register, then read": NumPy similarity/affine RANSAC fit (taught landmarks→page) + confidence; no OpenCV
 │   │   ├── keyword.py                   # Stage 1: regex pattern matching (incl. job_no 4-4-1 shape, separator-normalised)
@@ -124,7 +128,7 @@ docusnap2/
 │   │   ├── ocr_corrector.py             # Stage 2.5: learned OCR misread correction
 │   │   ├── llm.py                       # Stage 3: phi3:mini via Ollama (dormant — 'ai' mode not exposed in UI)
 │   │   └── validator.py                 # Stage 4: cross-field validation
-│   ├── ocr/{tesseract.py,region.py,landmarks.py}  # landmarks.py: derive registration landmarks from a template's sample page (select_landmarks + CLI)
+│   ├── ocr/{tesseract.py,region.py,landmarks.py,text_enhance.py,born_digital.py}  # landmarks.py: derive registration landmarks from sample page; text_enhance.py: degraded text-line re-read (denoise+Sauvola+unsharp), text-only gate-triggered escalation; born_digital.py: read EXACT text + word boxes from a PDF's embedded text layer (pypdfium2 BSD), skipping OCR for generated PDFs (gated by born_digital_enabled)
 │   ├── logo/fingerprint.py
 │   └── render/pages.py                 # PDF→PNG rendering — shared by review/search/template preview (see Gotchas)
 ├── config/keyword_patterns.json        # editable pattern library
@@ -183,7 +187,8 @@ template_landmarks — template_id(FK cascade), label_text, x/y/w/h_norm, ocr_co
                   (registration.py). Additive/inert — a template with no rows uses
                   the existing anchor/offset path unchanged.
 settings        — key, value (key-value store; incl. registration_enabled —
-                  default ON, gates the Stage 0.5 registration rung)
+                  default ON, gates the Stage 0.5 registration rung; and
+                  born_digital_enabled — default ON, gates PDF text-layer extraction)
 migrations      — version, applied_at
 license_tokens  — kind(seat|trial), subject, token_blob(JWS), state, not_after,   ← migration 16
                   grace_until, kid  (client cache of the signed token; deletable)
@@ -196,14 +201,26 @@ device_registrations — fp_hash, product_id  (local mirror; backend is source o
 ```
 process_docs.py → ExtractionEngine.extract()
   Stage 0:   template_matcher.py — match a learned template, seed fields from it
+             SAME-LOGO DISAMBIGUATION (identify_template): the logo identifies the
+             SUPPLIER, not the doc type — a supplier that sends several layouts
+             under ONE letterhead has several templates with near-identical logos.
+             identify_template no longer returns on the first logo hit; it gathers
+             ALL close logo candidates and, when >1 fall in the same-logo cluster,
+             picks the one whose KEYWORD FINGERPRINT matches the page (what tells a
+             "Purchase Order" from a "Service Worksheet"). A lone candidate keeps
+             the fast logo short-circuit. The winner carries its own slug.
              DOC-TYPE SLUG RESOLUTION (the format/qualification gates key on
              document_slug; a null slug silently DISABLES them → wrong-row crops
-             commit and drift relocation never fires). Two reinforcing sources:
+             commit and drift relocation never fires). Sources, in precedence:
              (a) REPROCESS passes the document's already-assigned doc-type slug
              (handler --known-doc-slug → process_docs uses it over re-detection,
-             which fails on a clipped scan); (b) when a template matches and the
-             caller resolved no slug, the engine adopts
-             matched_tmpl.document_type_slug. ALSO FIXED: build_format_class_index
+             which fails on a clipped scan) — ALWAYS WINS; (b) FRESH SCAN:
+             process_docs adopts a confidently-MATCHED TEMPLATE's doc type + FIELD
+             SET over weak keyword name-detection (the template is the stronger
+             type signal), so slug, fields and the doc-type-scoped anchors all
+             agree; (c) when a template matches and the caller still resolved no
+             slug, engine.extract adopts matched_tmpl.document_type_slug.
+             ALSO FIXED: build_format_class_index
              (format_anomaly_checker) used to drop every EMPTY-SUPPLIER entry, so
              the document-agnostic doc-type-scoped groups getFieldFormats emits
              ('', slug, field) never entered the index — the gate was effectively
@@ -271,6 +288,23 @@ process_docs.py → ExtractionEngine.extract()
              located salvaged methods via _STAGE05_LOCATED_METHODS.
   Stage 1: keyword.py    — regex patterns from keyword_patterns.json (~60-70% fields)
   Stage 2: anchor.py     — learned label positions + logo supplier ID
+           DOC-TYPE SCOPING (_anchor_matches): a learned anchor is keyed
+           (supplier, document_type, field_key). It used to fire on SUPPLIER match
+           ALONE — so a supplier that sends several doc types had its
+           purchase_order anchors (po_number/po_date) and invoice anchors fire on
+           its worksheets too (a Frankenstein field set, which made doc-type
+           autodetection look broken). Now a TYPED anchor may NOT cross into a
+           DIFFERENT known doc type, even for the same supplier (the doc type is
+           the layout). Only enforced when BOTH types are known; if detection
+           couldn't resolve the doc type, the broad supplier fallback is unchanged.
+           DEGRADED TEXT-LINE ESCALATION (ocr/text_enhance.py): for text/multiline
+           fields only, when a crop read FAILS the credibility/format gate the SAME
+           crop is re-read with a heavier recipe (denoise + Sauvola adaptive
+           threshold + mild unsharp, taller pad) and committed only if it then
+           passes — recovers a degraded company-name line ("Beaumont Care Homes" →
+           "pe fomes") the noise-amplifying base recipe mangled. Gate-triggered, so
+           numerics/clean reads/the wizard+label paths are byte-identical. Dev-only
+           anchor_reject trace records what each rung READ + which gate dropped it.
            CROP OCR RECIPE: anchor._crop_and_ocr now uses the SAME recipe as the
            ⊕ target-draw tool (region.py) and Stage 0.5 (template_mapper._prep):
            greyscale→upscale→autocontrast→sharpen + PSM 7 (was a plain 2× resize
@@ -321,6 +355,48 @@ process_docs.py → ExtractionEngine.extract()
            candidate ("Booking") cannot displace a digit-bearing incumbent. Guards
            OVERRIDES only — an empty field is still filled (validator then flags).
            Reusable/shape-based, never supplier- or document-specific.
+           ── 2026 RELIABILITY PASS (find → follow → read, across doc types) ──
+           LIGHT-FIRST OCR LADDER (_crop_and_ocr): the unconditional heavy prep
+           noted above is REPLACED by a ladder — light (greyscale, upscale-small-
+           only, NO autocontrast/sharpen) PSM 7 → light PSM 6 → heavy _prep PSM 7/6
+           → text_enhance — each scored by ONE image_to_data pass and accepted by
+           verify_fn (or a conf floor). The heavy upscale+sharpen was DESTROYING
+           clean high-res crops ("Beaumont Care Homes Ltd" → "nara"/""); the heavy
+           rung still runs for tight degraded serials, so the separator fix is
+           preserved. _repair_single_token runs on every rung.
+           KEY/VALUE PLACEMENT + INLINE HARVEST: the locator used to return the
+           whole OCR LINE box, so in a "label …big gap… value" row geometric
+           placement seated the value crop PAST the value (clip/empty). Now
+           _ocr_lines keeps per-word boxes; template_mapper._locate_anchor returns
+           the matched LABEL-word box AND harvests the value straight off the
+           located line; anchor._locate_for_relocation searches a FULL-WIDTH row
+           strip so a far value column is captured, and the rung HARVESTS the value
+           (method anchor_inline) before any crop. This is what makes a drifted
+           worksheet customer and a never-seen key/value report read correctly.
+           GATED RESCUE (_strict_credible / _should_replace): a label-anchored
+           harvest replaces a rigid read ONLY when the rigid value FAILS a strict
+           gate (single-token for code fields, so high-DPI garbage like "cield wu"
+           or a clipped date yields) — a strictly-credible rigid read is never
+           displaced (no unconditional override).
+           ANCHOR-LABEL SANITISATION (learning.sanitizeAnchorLabel, migration 23):
+           strip document-specific tokens (reference numbers/dates/serials) from an
+           auto-detected ⊕ label so it GENERALISES across documents
+           ("2605-0769-1 Work Address" → "Work Address"); on change the now-
+           mismatched drift offset is NULLed. Migration 23 cleans existing rows
+           (deletes any whose label is entirely document-specific).
+           VAL_TYPE FROM FIELD TYPE (engine.extract): field_patterns is seeded from
+           each CUSTOM field's DB type (date/currency/alphanumeric only — text left
+           untouched so name/address reads don't change) and the doc-type reference
+           field is coerced to a code type, so the credibility/rescue gates work for
+           custom document types (which carry no keyword-config entry).
+           BORN-DIGITAL (ocr/born_digital.py — pypdfium2 BSD-3/Apache, NOT PyMuPDF):
+           a generated PDF's embedded text layer gives EXACT text + word boxes (no
+           OCR) for the full text (extract_text_and_images, positional reading
+           order) AND the anchor locate/harvest (page_text_lines threaded
+           process_docs → engine.extract → extract_with_anchors →
+           _locate_in_text_lines). Detected by GLYPH COUNT + an alpha-ratio hybrid
+           guard; INERT for image-only/scanned pages (fall back to OCR). Gated by
+           born_digital_enabled (default ON).
   Stage 3: llm.py        — phi3:mini, ONLY for missing fields (smart/ai mode)
   Stage 4: validator.py  — date normalise/salvage, currency infer, maths cross-check
   Stage 4.5: format_anomaly_checker.py — coarse-class + learned-shape consistency
@@ -374,6 +450,15 @@ samples (with a floor so one noisy sample can't erase a known-good identity);
 an already-established `logo_phash` is kept rather than reclobbered each confirm.
 Prevents one garbled scan from poisoning Stage 0 matching for a whole supplier.
 
+**Field variability is EVIDENCE-based, not schema-guessed** (`_buildTemplateFields`
+in review/handler.js): a confirmed field is frozen as a template `fixed_value`
+ONLY when it's truly constant. The schema heuristic (`_annotateFieldVariability`)
+was invoice-centric — it froze any non-ref/non-date field, which wrongly pinned a
+worksheet `customer` to one stale value. Now a field with ≥2 DISTINCT confirmed
+values for the doc type is treated as variable and never frozen (the cost of a
+false "variable" is a harmless re-extract; a false "fixed" commits a wrong value
+on every other doc). Self-heals an already-frozen field on the next confirm.
+
 **Validator date rules (Stage 4)**: dates normalise to DD-MM-YYYY; a valid date
 embedded in OCR junk is salvaged (`salvage_date`, review-forced). The date
 sanity check is FUTURE-ONLY — old archival dates are expected and never flagged;
@@ -420,14 +505,16 @@ entry (`license-enter-app`), never self-grant.
 
 **Flow**: login → `enterMainApp()` (main.js) → `licensingModule.decideAccess()` → `allow`
 opens the main shell, otherwise the **license window** (`src/windows/license` — Start/Resume
-Trial · Enter key + Activate · Release · Check again). Enforcement only changes what
-`decideAccess` returns; when off it always returns `allow` (unchanged launch behaviour).
+Trial · Enter key + Activate · Release · Check again).
 
-**Enforcement resolution** — `enforcementActive(db)` in `src/modules/licensing/handler.js`:
-1. env `DOCUSNAP_LICENSE_ENFORCEMENT` (on/off) — dev/recovery escape hatch, **wins**;
-2. setting `license_enforcement_enabled` ('true'/'false') — admin toggle (Settings → Activation);
-3. unset → `_ctx.app.isPackaged` (installed build enforces, dev stays off).
-A valid cached trial/seat token always passes the gate, so legit users open normally.
+**Enforcement is ALWAYS ON** — `enforcementActive(db)` in `src/modules/licensing/handler.js`
+returns `true` unconditionally. The old relaxations are REMOVED: the
+`DOCUSNAP_LICENSE_ENFORCEMENT` env override, the `license_enforcement_enabled` setting
+branch, and the unpackaged/dev-mode (`app.isPackaged`) bypass are gone, and the runtime
+toggle IPC (`license-set-enforcement`) is hard-gated to a no-op. There is NO "start with
+licensing off" path in any build (dev runs against a real backend trial/seat). `decideAccess`
+always proceeds to the token/backend gate. A valid cached trial/seat token always passes, so
+legit users open normally.
 
 **decideAccess specifics**: best-effort online `validate()` (short timeout) refreshes the
 cached token; a REACHABLE backend returning no grant **clears** the stale seat token, so a
@@ -488,6 +575,8 @@ pick-folder, pick-output-folder, process-folder(folderPath)
 get-document-types, get-all-doc-types
 add-document-type(data), update-document-type(id,changes)
 add-field(data), update-field(id,changes), delete-field(id)
+create-doc-type-with-fields({name,fields[],ref_field_key,date_field_key})  # transactional; teaching wizard
+get-teach-target                       # docId the teach window was opened at (pulled once on load)
 get-review-queue, get-deferred-queue, get-review-count, get-deferred-count
 get-document-with-extractions(id), get-document-pages(id,folderPath,filename)
 confirm-review(payload), defer-document(id), restore-deferred(id)
@@ -512,6 +601,7 @@ dev-get-slice(path)                    # base64 of a temp OCR crop; path MUST re
 window-minimise, window-maximise, window-close
 show-in-explorer(path), open-file(path)
 open-review-window, open-settings-window, open-search-window
+open-teach-window, open-teach-window-at(docId)   # guided teaching wizard (Admin+Edit)
 notify-review-complete
 license-enter-app                      # REQUEST entry; main re-decides via decideAccess
 ```
@@ -717,6 +807,28 @@ Buttons: "Switch to Fast Mode" → `set-processing-mode('fast')` | "Not now"
 
 ---
 
+## Teaching wizard (guided, non-technical)
+`src/windows/teach/` — a dedicated, linear "Teach a new document" wizard for
+first-time/non-technical users; opened from the main launchpad card "Teach a
+document" (Admin+Edit) or `open-teach-window-at(docId)`. Steps: welcome → choose
+the scanned doc (from the review queue) → pick or CREATE a doc type (friendly
+field setup + plain-English "main number"/"date" key questions) → point out each
+field by drawing a box around its VALUE (live OCR read-back; the wizard
+auto-detects the nearby label as the anchor) → review → commit → honest learning
+explainer.
+- **Artifact (per Oscar):** each field is saved as a Stage 0.5 anchor→target
+  MAPPING (value-box-only; auto-label), so it works on document #1 and
+  registration covers drift — NOT a Stage 2 ⊕ anchor (avoids two competing
+  artifacts).
+- **Commit sequence (deferred until the last step so Back/Cancel are safe):**
+  `promote-to-template` (creates the template + pins this page as the sample →
+  auto-generates landmarks) → `save-template-mapping` per field →
+  `confirm-review` (files + learns). Reuses existing IPC; the only new backend is
+  `create-doc-type-with-fields` (transactional). The dense Review renderer is
+  untouched — the teach window has its own small canvas drawer.
+
+---
+
 ## Dev inspector (hidden, read-only)
 Hidden developer tool for diagnosing extraction. **Read-only — no DB writes, no
 learning, no mutation; invokes no role-protected handler.**
@@ -807,5 +919,5 @@ Delete `%APPDATA%\DocuSnap\docusnap.db` to reset DB during development (also cle
 cached license tokens, and the enforcement setting).
 Delete `python_backend/**/__pycache__` if Python changes don't take effect.
 Packaged build remembers prior login/trial because that DB persists across reinstalls
-(NSIS `deleteAppDataOnUninstall:false`). To force the activation gate in dev: launch with
-`DOCUSNAP_LICENSE_ENFORCEMENT=on`; to bypass it: `=off`.
+(NSIS `deleteAppDataOnUninstall:false`). Licensing enforcement is ALWAYS ON (no env/setting/
+dev bypass) — dev must run against a real backend trial/seat for the machine's fingerprint.
