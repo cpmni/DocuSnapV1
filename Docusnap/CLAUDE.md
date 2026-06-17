@@ -33,8 +33,37 @@ unseen suppliers, layouts, and future templates, not just the document on screen
 
 ---
 
+## Subagents & skills (advisors the user invokes by name)
+Defined in `.claude/agents/*.md`; invoked via the Agent tool. All three are
+ADVISORY — they diagnose/recommend and DO NOT implement unless explicitly asked.
+Implementation stays with main Claude Code. Brief them with full context (a fresh
+spawn starts cold) and relay their findings to the user.
+- **bob** (`agents/bob.md`) — senior software & product advisor. Receives a
+  report/diagnostic/plan, translates to plain English, splits fact vs assumption,
+  flags risks, gives ranked options + a recommendation. Use after producing a
+  report when the user wants options before implementation.
+- **gary** — Python engineering analyst (root-cause analysis, testable fix design,
+  test strategy). Not a defined agent file; spun up as a general-purpose agent and
+  named by the user. Briefed to use the Python skills below. (Validated the
+  absolute-target-first root cause for the worksheet date/name failures.)
+- **oscar** (`agents/oscar.md`) — OCR expert: efficient OCR pipelines
+  (preprocessing, Tesseract PSM/OEM/lang, per-field crop recipes, confidence,
+  tables/searchable-PDF, accuracy-vs-throughput). HARD RULE: only recommends
+  open-source tools that are free for commercial use, and states the licence —
+  e.g. flags PyMuPDF (AGPL) and steers to pypdfium2, which this project uses.
+
+**Skills** in `.claude/skills/`: a set of Python engineering skills
+(`testing-strategy`, `code-quality`, `performance`, `api-design`, `packaging`,
+`security-audit`, etc. — gary's toolkit) and `ocr-document-processor` (oscar's
+OCR knowledge pack: SKILL.md + scripts; note its requirements.txt lists PyMuPDF —
+use pypdfium2 here instead). `scan-finder-frontend-design` covers the website/UI.
+
+---
+
 ## What this is
-Windows desktop app: scans documents → OCR → extracts fields → files them intelligently.
+Windows desktop app (ships as **Scan Finder** / `ScanFinder.exe`; internal
+identifiers, DB `docusnap.db` and `%APPDATA%\DocuSnap` remain "DocuSnap"):
+scans documents → OCR → extracts fields → files them intelligently.
 Electron + Python backend + SQLite. Fully offline capable.
 
 ---
@@ -88,14 +117,14 @@ docusnap2/
 │   ├── extraction/
 │   │   ├── engine.py                    # ExtractionEngine — staged pipeline orchestration (see Extraction pipeline below)
 │   │   ├── template_matcher.py          # Stage 0: learned-template identification + field seeding
-│   │   ├── template_mapper.py           # Stage 0.5: admin-drawn anchor→target zone mapping + geometric drift-fallback seed (page_geometry)
-│   │   ├── page_geometry.py             # pure normalised page-landmark helper — search prior for template_mapper drift fallback only
+│   │   ├── template_mapper.py           # Stage 0.5: admin-drawn anchor→target zone mapping; absolute-first read, then registration transform, then single-label refinement
+│   │   ├── registration.py              # "register, then read": NumPy similarity/affine RANSAC fit (taught landmarks→page) + confidence; no OpenCV
 │   │   ├── keyword.py                   # Stage 1: regex pattern matching (incl. job_no 4-4-1 shape, separator-normalised)
 │   │   ├── anchor.py                    # Stage 2: spatial anchors + logo match
 │   │   ├── ocr_corrector.py             # Stage 2.5: learned OCR misread correction
 │   │   ├── llm.py                       # Stage 3: phi3:mini via Ollama (dormant — 'ai' mode not exposed in UI)
 │   │   └── validator.py                 # Stage 4: cross-field validation
-│   ├── ocr/{tesseract.py,region.py}
+│   ├── ocr/{tesseract.py,region.py,landmarks.py}  # landmarks.py: derive registration landmarks from a template's sample page (select_landmarks + CLI)
 │   ├── logo/fingerprint.py
 │   └── render/pages.py                 # PDF→PNG rendering — shared by review/search/template preview (see Gotchas)
 ├── config/keyword_patterns.json        # editable pattern library
@@ -147,7 +176,14 @@ field_anchors   — supplier_name, document_type, field_key, anchor_label,
                   NOTE: supplier_name is a LEARNING SCOPE key (resolved via
                   logo/template/optional field), never a required document field.
 logo_fingerprints — supplier_name, phash, ahash, match_count
-settings        — key, value (key-value store)
+template_landmarks — template_id(FK cascade), label_text, x/y/w/h_norm, ocr_conf,  ← migration 22
+                  page_number. 3-5 stable/unique/well-spread words auto-derived
+                  from a template's sample page (ocr/landmarks.py); RE-located on
+                  each incoming page to fit the Stage 0.5 registration transform
+                  (registration.py). Additive/inert — a template with no rows uses
+                  the existing anchor/offset path unchanged.
+settings        — key, value (key-value store; incl. registration_enabled —
+                  default ON, gates the Stage 0.5 registration rung)
 migrations      — version, applied_at
 license_tokens  — kind(seat|trial), subject, token_blob(JWS), state, not_after,   ← migration 16
                   grace_until, kid  (client cache of the signed token; deletable)
@@ -186,8 +222,76 @@ process_docs.py → ExtractionEngine.extract()
              (engine.select_mapping_source; borrowed anchors are still
              re-validated on this page). Template groups are otherwise
              organisational only.
+             ABSOLUTE-TARGET-FIRST (template_mapper._extract_one): the EXACT drawn
+             target box is read FIRST — the same region the Template Wizard's live
+             zone-OCR (region.py) read at teach time — and only if that read fails
+             the gates does it relocate. Previously a located anchor ALWAYS
+             re-derived the crop from located-label + offset (with an estimated
+             inset), so the drawn box was never read on a clean page; an imprecise
+             tight-bbox for a short/generic label (e.g. "Ticket Logged") slid the
+             derived crop off the value → "Not found"/garbage even with no drift,
+             while live "targeted selection" of the same box always read clean.
+             Now first-instance extraction MATCHES targeted selection. The
+             offset/inset arithmetic stays ONLY in the relocation fallback, so the
+             "PROFILE"→"ROFILE" leading-inset clip cannot reappear. Mirrors Stage
+             2's rigid-crop-then-relocate model; same accepted trade-off (a
+             heavily-drifted page could read a wrong-but-credible value before
+             relocating — guarded by the same credibility+format gates).
+             REGISTRATION RUNG ("register, then read", registration.py): the rung
+             BETWEEN the absolute fast-path and the single-label refinement. When
+             the matched template carries taught LANDMARKS (template_landmarks,
+             migration 22 — auto-derived from the sample page by ocr/landmarks.py,
+             3-5 stable/unique/well-spread words; captured on sample-pin and
+             backfilled for existing templates), they are RE-located on this page
+             and a robust similarity/affine transform is fitted ONCE per page
+             (registration.fit_transform — NumPy + RANSAC, NO OpenCV) mapping the
+             taught frame onto the incoming page. Each taught target box is mapped
+             THROUGH the transform, so a shifted/skewed/SCALED scan still finds the
+             value regardless of registration — the headline capability. Gated by
+             the registration_enabled setting (default ON; INERT without landmarks,
+             so templates without them behave exactly as before); a too-few/poor
+             fit (RANSAC inliers/residual) falls through. Confidence comes from the
+             fit quality (registration.registration_confidence). Method tier
+             template_registration[_expanded][_salvaged]; engine protects these via
+             _STAGE05_LOCATED_METHODS. This REPLACED the old translation-only
+             consensus-drift fallback: page_geometry.py (content-free page-corner
+             "landmarks"), _consensus_drift and _drift_fallback were REMOVED — a
+             real content-landmark transform strictly supersedes a corner prior +
+             translation guess. SHARED GATE (_gate_value): one helper applied by
+             the absolute path, the registration rung AND the single-label path —
+             order = date-salvage (C1) → _crop_is_credible → _format_rejects.
+             DATE SALVAGE (C1): when a
+             date crop FAILS the strict date credibility pattern (OCR spacing
+             around separators, or a date wrapped in junk), it is rescued/
+             normalised via validator.salvage_date (the same recovery Stage 4 uses)
+             instead of being dropped; salvaged dates are capped at conf 70 and
+             tagged method "..._salvaged". A clean date passes untouched at full
+             confidence. Salvage handles spacing/embedded-junk, NOT glyph misreads
+             (a year OCR'd "202G" still falls to review). engine.py protects the
+             located salvaged methods via _STAGE05_LOCATED_METHODS.
   Stage 1: keyword.py    — regex patterns from keyword_patterns.json (~60-70% fields)
   Stage 2: anchor.py     — learned label positions + logo supplier ID
+           CROP OCR RECIPE: anchor._crop_and_ocr now uses the SAME recipe as the
+           ⊕ target-draw tool (region.py) and Stage 0.5 (template_mapper._prep):
+           greyscale→upscale→autocontrast→sharpen + PSM 7 (was a plain 2× resize
+           + PSM-6-only read, which was lower quality and inserted spurious
+           separators — a serial "H7R5326676" committed as "H/7R5326676" even
+           though the identical crop read clean via the target tool). PLUS
+           _repair_single_token: when a SINGLE-token value (no spaces, not a date)
+           comes back with a stray "/" "\" "|", it re-reads the same prepped crop
+           in a few modes (PSM 7+alphanumeric-whitelist, PSM 8, PSM 8+whitelist)
+           and keeps the first whose glyphs are otherwise identical (strips junk
+           separators, never changes characters). SHARED: template_mapper._crop_and_ocr
+           (Stage 0.5, the admin anchor-wizard path) calls the same repair, so both
+           crop paths behave identically. Reusable for every supplier/field.
+           SHARED SEGMENT CLEANING (anchor.clean_crop_segment, B1): both crop paths
+           also share ONE segment-selection helper — column-gap split, city-comma
+           cut, and a SHAPE-AWARE postcode/year trim for free-text fields. The trim
+           only fires when ≥2 alphabetic words precede the 4+ digit run
+           ("Ann Blume 10115 Berlin"→"Ann Blume"), so a name/address whose OWN token
+           is the number ("Unit 4 1024 Park", "Site 4012") is no longer amputated to
+           a fragment (the old blanket \s+\d{4,} split). Non-text/ref fields keep
+           their digits. template_mapper._clean_value delegates to it.
            DRIFT RECOVERY (_relocate_value_by_label): the ⊕ crop is tried at the
            stored coords FIRST (fast path); if that read fails its credibility/
            learned-format gate (a shifted/clipped scan moved the value off the
