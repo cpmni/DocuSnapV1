@@ -472,6 +472,28 @@ function runJsMigrations(db, applied) {
     }
     db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (23)').run();
   }
+
+  // Migration 24: don't re-onboard EXISTING installs. The first-run setup wizard
+  // shows when `first_run_completed` !== 'true'; stamp the flag on any DB that is
+  // already configured (has an output_folder), so ONLY a genuinely clean install
+  // sees the wizard. A fresh DB has no output_folder -> flag stays unset -> wizard.
+  if (!applied.has(24)) {
+    try {
+      if (tableExists(db, 'settings')) {
+        const row = db.prepare("SELECT value FROM settings WHERE key = 'output_folder'").get();
+        if (row && String(row.value || '').trim()) {
+          db.prepare(`INSERT INTO settings (key, value) VALUES ('first_run_completed', 'true')
+                      ON CONFLICT(key) DO UPDATE SET value = 'true'`).run();
+          console.log('JS migration 24 applied: marked existing configured install as onboarded');
+        } else {
+          console.log('JS migration 24 applied: clean install — first-run wizard will show');
+        }
+      }
+    } catch (e) {
+      console.warn('JS migration 24 skipped: ' + (e && e.message));
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (24)').run();
+  }
 }
 
 function hasColumn(db, table, column) {

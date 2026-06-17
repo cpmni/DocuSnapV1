@@ -34,6 +34,9 @@ document.getElementById('btn-pick-output').addEventListener('click', async () =>
   }
 });
 
+// Re-run the first-time setup wizard (admin-gated in main).
+document.getElementById('btn-rerun-setup')?.addEventListener('click', () => api.openOnboarding());
+
 // ── Processed folder ──────────────────────────────────────────────────────────
 async function loadProcessedFolder() {
   const val = await api.getSetting('processed_folder');
@@ -390,8 +393,16 @@ const addFieldForm = document.getElementById('add-field-form');
 const newLabel     = document.getElementById('new-label');
 const newKey       = document.getElementById('new-key');
 
+// Field key = a stable identifier (lowercase, underscores). Keeps underscores,
+// unlike a display-name slug, so a hand-typed "po_number" survives.
+const keySlug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+// The Key field is EDITABLE: auto-derive it from the Label until the user types
+// in it themselves, then stop overriding (the conventional label→slug pattern).
+let keyEdited = false;
+
 document.getElementById('btn-add-field').addEventListener('click', () => {
   addFieldForm.classList.add('visible');
+  keyEdited = false;
   newLabel.focus();
 });
 
@@ -399,18 +410,20 @@ document.getElementById('btn-cancel-field').addEventListener('click', () => {
   addFieldForm.classList.remove('visible');
   newLabel.value = '';
   newKey.value   = '';
+  keyEdited = false;
 });
 
 newLabel.addEventListener('input', () => {
-  newKey.value = newLabel.value.toLowerCase()
-    .replace(/[^a-z0-9\s]/g, '')
-    .trim()
-    .replace(/\s+/g, '_');
+  if (!keyEdited) newKey.value = keySlug(newLabel.value);
+});
+newKey.addEventListener('input', () => {
+  // Once the user edits the key, it's theirs — stop auto-deriving (resume if emptied).
+  keyEdited = newKey.value.trim() !== '';
 });
 
 document.getElementById('btn-save-field').addEventListener('click', async () => {
   const label = newLabel.value.trim();
-  const key   = newKey.value.trim();
+  const key   = keySlug(newKey.value);
   const type  = document.getElementById('new-field-type').value;
 
   if (!label || !key) { alert('Please enter a field label.'); return; }
@@ -421,6 +434,7 @@ document.getElementById('btn-save-field').addEventListener('click', async () => 
   addFieldForm.classList.remove('visible');
   newLabel.value = '';
   newKey.value   = '';
+  keyEdited = false;
 
   await loadFieldsTabTypes();
   await loadDocTypes();

@@ -73,6 +73,12 @@ contextBridge.exposeInMainWorld('docusnap', {
   onTeachLoadDoc:      (cb)     => ipcRenderer.on('teach-load-doc', (_e, id) => cb(id)),
   createDocTypeWithFields: (data) => ipcRenderer.invoke('create-doc-type-with-fields', data),
 
+  // First-run setup wizard
+  onboardingComplete:   ()       => ipcRenderer.send('onboarding-complete'),
+  openOnboarding:       ()       => ipcRenderer.send('open-onboarding'),
+  suggestedOutputFolder:()       => ipcRenderer.invoke('onboarding-suggested-folder'),
+  validateOutputFolder: (folder) => ipcRenderer.invoke('onboarding-validate-folder', folder),
+
   // ── Folder processing ────────────────────────────────────────────────────────
   pickFolder:         ()     => ipcRenderer.invoke('pick-folder'),
   pickOutputFolder:   ()     => ipcRenderer.invoke('pick-output-folder'),
@@ -163,7 +169,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   setTemplateGroup:           (tid, gid)     => ipcRenderer.invoke('set-template-group', tid, gid),
   getTemplateSiblings:        (id)           => ipcRenderer.invoke('get-template-siblings', id),
   // PDF splitting
-  splitPdf:                   (file, ranges, outDir, docId) => ipcRenderer.invoke('split-pdf', file, ranges, outDir, docId),
+  splitPdf:                   (file, ranges, outDir, docId, every) => ipcRenderer.invoke('split-pdf', file, ranges, outDir, docId, every),
 
   // ── Settings ─────────────────────────────────────────────────────────────────
   getSetting:          (key)      => ipcRenderer.invoke('get-setting', key),

@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self';" />
+<title>Welcome to Scan Finder</title>
+<script src="../shared/theme.js"></script>
+<style>
+  :root{
+    --bg:#0c0e14; --surface:#13161f; --surface2:#1a1e2a; --border:#252836; --border2:#2f3347;
+    --accent:#4f8ef7; --accent2:#6ea8ff; --ok:#3ecf8e; --warn:#f7b84f; --err:#f76f6f;
+    --text:#e2e6f0; --muted:#7a82a0;
+  }
+  :root[data-theme="light"]{
+    --bg:#f4f6fb; --surface:#ffffff; --surface2:#eef1f7; --border:#dde2ec; --border2:#cbd2e0;
+    --accent:#2f6fe0; --accent2:#3f7ff0; --ok:#1f9d63; --warn:#b9791a; --err:#d24c4c;
+    --text:#1b2030; --muted:#5b6480;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:'IBM Plex Sans',-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--text);
+    display:flex;flex-direction:column;overflow:hidden;user-select:none;
+  }
+  .titlebar{height:38px;-webkit-app-region:drag;display:flex;align-items:center;
+    padding:0 14px;color:var(--muted);font-size:12px;border-bottom:1px solid var(--border);background:var(--surface)}
+  .stage{flex:1;display:flex;flex-direction:column;padding:28px 40px 0;overflow:hidden}
+  .steps{display:flex;gap:6px;margin-bottom:22px}
+  .dot{height:4px;flex:1;border-radius:2px;background:var(--border2);transition:background .2s}
+  .dot.active{background:var(--accent)}
+  .dot.done{background:var(--accent2)}
+  .panel{display:none;flex:1;flex-direction:column;animation:fade .25s ease}
+  .panel.show{display:flex}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  h1{font-size:23px;font-weight:600;margin-bottom:8px}
+  h2{font-size:19px;font-weight:600;margin-bottom:6px}
+  p.sub{color:var(--muted);font-size:13.5px;line-height:1.55;margin-bottom:20px;max-width:560px}
+  .field{margin-bottom:18px}
+  label.lbl{display:block;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px}
+  .pathrow{display:flex;gap:10px;align-items:center}
+  .pathbox{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;
+    padding:11px 13px;font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:var(--text);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .btn{border:1px solid var(--border2);background:var(--surface2);color:var(--text);
+    border-radius:8px;padding:10px 16px;font-size:13px;cursor:pointer;font-family:inherit;-webkit-app-region:no-drag}
+  .btn:hover{border-color:var(--accent)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.primary:hover{background:var(--accent2)}
+  .btn.primary:disabled{opacity:.45;cursor:not-allowed;background:var(--accent);border-color:var(--accent)}
+  .btn.ghost{background:transparent;border-color:transparent;color:var(--muted)}
+  .btn.ghost:hover{color:var(--text);border-color:var(--border)}
+  .hint{font-size:12px;margin-top:8px;min-height:16px}
+  .hint.ok{color:var(--ok)} .hint.err{color:var(--err)} .hint.muted{color:var(--muted)}
+  .cards{display:flex;gap:12px;flex-wrap:wrap}
+  .card{flex:1;min-width:150px;background:var(--surface);border:1.5px solid var(--border);border-radius:10px;
+    padding:15px;cursor:pointer;transition:border-color .15s,background .15s;-webkit-app-region:no-drag}
+  .card:hover{border-color:var(--border2)}
+  .card.sel{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 9%,var(--surface))}
+  .card .ttl{font-size:14px;font-weight:600;margin-bottom:4px}
+  .card .desc{font-size:12px;color:var(--muted);line-height:1.45}
+  .footer{display:flex;align-items:center;gap:10px;padding:18px 40px;border-top:1px solid var(--border);background:var(--surface)}
+  .footer .spacer{flex:1}
+  .reassure{font-size:12px;color:var(--muted);margin-top:auto;padding-top:14px}
+  .privacy{display:flex;gap:14px;align-items:flex-start;background:var(--surface);border:1px solid var(--border);
+    border-radius:10px;padding:16px;margin-top:6px}
+  .privacy .lock{font-size:26px;line-height:1}
+  .privacy .txt{font-size:13px;line-height:1.55}
+  .privacy .txt b{color:var(--text)}
+</style>
+</head>
+<body>
+  <div class="titlebar">Scan Finder — first-time setup</div>
+  <div class="stage">
+    <div class="steps" id="steps"></div>
+
+    <!-- 0 Welcome -->
+    <section class="panel" data-step="0">
+      <h1>Welcome to Scan Finder 👋</h1>
+      <p class="sub">Let's get a few essentials set up. It takes about a minute, and you can change
+        any of this later in Settings.</p>
+      <div class="privacy">
+        <div class="lock">🔒</div>
+        <div class="txt"><b>Everything stays on this computer.</b><br>
+          Scan Finder works fully offline — your documents are never uploaded or sent anywhere.</div>
+      </div>
+    </section>
+
+    <!-- 1 Output folder (required) -->
+    <section class="panel" data-step="1">
+      <h2>Where should filed documents go?</h2>
+      <p class="sub">When you confirm a document, Scan Finder files a tidy copy here, organised by
+        type, year and month. This is the only thing it needs to get started.</p>
+      <div class="field">
+        <label class="lbl">Output folder</label>
+        <div class="pathrow">
+          <div class="pathbox" id="outPath">—</div>
+          <button class="btn" id="browseBtn">Browse…</button>
+        </div>
+        <div class="hint muted" id="outHint">A suggested location is filled in — change it if you like.</div>
+      </div>
+    </section>
+
+    <!-- 2 Theme -->
+    <section class="panel" data-step="2">
+      <h2>Look &amp; feel</h2>
+      <p class="sub">Pick the theme that's easiest on your eyes. You'll see it change instantly.</p>
+      <div class="cards">
+        <div class="card" data-theme-choice="dark"><div class="ttl">Dark</div>
+          <div class="desc">Easy in low light. The default.</div></div>
+        <div class="card" data-theme-choice="light"><div class="ttl">Light</div>
+          <div class="desc">Bright, high-contrast.</div></div>
+      </div>
+    </section>
+
+    <!-- 3 Performance -->
+    <section class="panel" data-step="3">
+      <h2>How hard should Scan Finder work?</h2>
+      <p class="sub">More power processes batches faster but uses more of your computer while it runs.</p>
+      <label class="lbl">Speed</label>
+      <div class="cards" style="margin-bottom:18px">
+        <div class="card" data-threads="1"><div class="ttl">Gentle</div>
+          <div class="desc">One at a time. Lightest on the PC.</div></div>
+        <div class="card" data-threads="2"><div class="ttl">Balanced</div>
+          <div class="desc">A good default for most machines.</div></div>
+        <div class="card" data-threads="4"><div class="ttl">Fast</div>
+          <div class="desc">Best for a powerful PC.</div></div>
+      </div>
+      <label class="lbl">Accuracy</label>
+      <div class="cards">
+        <div class="card" data-mode="smart"><div class="ttl">Thorough</div>
+          <div class="desc">Best accuracy. Recommended.</div></div>
+        <div class="card" data-mode="fast"><div class="ttl">Quick</div>
+          <div class="desc">Faster, lighter checks.</div></div>
+      </div>
+    </section>
+
+    <!-- 4 Done -->
+    <section class="panel" data-step="4">
+      <h1>You're all set ✓</h1>
+      <p class="sub">Scan Finder is ready. Drop in a folder of scans from the home screen, or teach it a
+        new document type whenever you like.</p>
+      <div class="privacy">
+        <div class="lock">🔒</div>
+        <div class="txt"><b>Private by design.</b><br>
+          Offline OCR and filing — nothing leaves this machine. Change any setting later under Settings.</div>
+      </div>
+    </section>
+
+    <div class="reassure">You can change all of this later in <b>Settings</b>.</div>
+  </div>
+
+  <div class="footer">
+    <button class="btn ghost" id="skipBtn">Skip setup</button>
+    <div class="spacer"></div>
+    <button class="btn" id="backBtn" style="display:none">Back</button>
+    <button class="btn primary" id="nextBtn">Next</button>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

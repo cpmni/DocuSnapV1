@@ -101,6 +101,7 @@ let pendingTeachDocId = null;
 const MAIN_WINDOW_OPTIONS    = { width: 1100, height: 750, minWidth: 800, minHeight: 560 };
 const LOGIN_WINDOW_OPTIONS   = { width: 460, height: 660, resizable: false, minimizable: false, maximizable: false };
 const LICENSE_WINDOW_OPTIONS = { width: 460, height: 560, resizable: false, minimizable: false, maximizable: false };
+const ONBOARDING_WINDOW_OPTIONS = { width: 720, height: 640, resizable: false, minimizable: false, maximizable: false };
 
 // Swap the whole app shell between "logged out" and "in the app". The login
 // window is always created BEFORE the others are closed, so the app never
@@ -117,6 +118,24 @@ function openMainShell() {
   createWindow('main', MAIN_WINDOW_OPTIONS, 'index.html');
   windows['login']?.close();
   windows['license']?.close();
+  windows['onboarding']?.close();
+}
+
+// First-run setup wizard. Shows ONLY when `first_run_completed` !== 'true' (a
+// genuine clean install — migration 24 stamps the flag on already-configured
+// DBs so existing users are never re-onboarded). Runs AFTER the licensing gate
+// allows, so a locked user never sees it. Reads fail-open: a read error must
+// never block entry to the app.
+function needsOnboarding() {
+  try {
+    return require('../database/modules/learning').getSetting(getDb(), 'first_run_completed') !== 'true';
+  } catch { return false; }
+}
+
+function showOnboarding() {
+  createWindow('onboarding', ONBOARDING_WINDOW_OPTIONS, 'index.html');
+  windows['login']?.close();
+  windows['license']?.close();
 }
 
 // Licensing gate (Phase 2). The MAIN process is the sole decider; the renderer
@@ -127,7 +146,11 @@ async function enterMainApp() {
   let gate = { decision: 'allow', enforcement: false };
   try { gate = await licensingModule.decideAccess(); }
   catch (e) { logger.err('licensing gate error (failing closed): ' + e.message); gate = { decision: 'locked_needs_online', reason: 'gate_error' }; }
-  if (gate.decision === 'allow') { openMainShell(); return; }
+  if (gate.decision === 'allow') {
+    if (needsOnboarding()) { showOnboarding(); return; }
+    openMainShell();
+    return;
+  }
   showLicenseWindow(gate);
 }
 
@@ -208,8 +231,17 @@ function launchStartupWindow() {
 function createWindow(name, options, htmlFile) {
   if (windows[name]) { windows[name].focus(); return windows[name]; }
 
+  options = options || {};
+  // Create HIDDEN and reveal on first paint (ready-to-show) so a panel never
+  // flashes its empty dark background ("black box") while the renderer loads —
+  // the window appears already styled. We only auto-manage this when the caller
+  // didn't pass `show` itself (the startup/login flow at launchStartupWindow
+  // passes show:false and reveals manually — leave that untouched).
+  const manageShow = options.show === undefined;
+
   const win = new BrowserWindow({
     ...options,
+    show:           manageShow ? false : options.show,
     frame:          false,
     backgroundColor: '#0c0e14',
     webPreferences: {
@@ -218,6 +250,13 @@ function createWindow(name, options, htmlFile) {
     },
     icon: path.join(__dirname, '..', '..', 'assets', 'icon.ico'),
   });
+
+  if (manageShow) {
+    win.once('ready-to-show', () => { if (!win.isDestroyed()) win.show(); });
+    // Backstop: never leave a window stuck hidden if ready-to-show never fires
+    // (e.g. a renderer error) — reveal anyway after a short grace period.
+    setTimeout(() => { if (!win.isDestroyed() && !win.isVisible()) win.show(); }, 2000);
+  }
 
   win.loadFile(path.join(__dirname, 'windows', name, 'index.html'));
   win.on('closed', () => { delete windows[name]; });
@@ -429,6 +468,38 @@ app.whenReady().then(() => {
     const id = pendingReviewDocId;
     pendingReviewDocId = null;
     return id;
+  });
+
+  // ── First-run setup wizard ───────────────────────────────────────────────────
+  // The wizard writes individual settings through the existing set-setting path;
+  // these signals only own the FLAG + the window/shell swap (main is the decider).
+  ipcMain.on('onboarding-complete', () => {
+    try { require('../database/modules/learning').setSetting(getDb(), 'first_run_completed', 'true'); }
+    catch (e) { logger.warn?.('onboarding flag write failed: ' + e.message); }
+    openMainShell();
+  });
+  // Re-run setup from Settings → General. Admin only (it changes app-wide config).
+  ipcMain.on('open-onboarding', () => {
+    if (!authModule.hasRole('admin')) return;
+    showOnboarding();
+  });
+  // A sensible pre-fillable default so the only required step is one click —
+  // Documents\Scan Finder (created on accept, not here).
+  ipcMain.handle('onboarding-suggested-folder', () => {
+    try { return path.join(app.getPath('documents'), 'Scan Finder'); } catch { return ''; }
+  });
+  // Confirm the chosen output folder is actually writable BEFORE the wizard
+  // accepts it — otherwise onboarding "finishes" into a path nothing can file to.
+  // Creates the folder if missing (so the suggested default works one-click), then
+  // round-trips a probe file to prove writability.
+  ipcMain.handle('onboarding-validate-folder', (_e, folder) => {
+    try {
+      if (!folder || !String(folder).trim()) return { ok: false, reason: 'empty' };
+      fs.mkdirSync(folder, { recursive: true });
+      const probe = path.join(folder, '.scanfinder_write_test');
+      fs.writeFileSync(probe, 'ok'); fs.unlinkSync(probe);
+      return { ok: true };
+    } catch { return { ok: false, reason: 'not_writable' }; }
   });
 
   // ── Teach-a-new-document wizard (guided, non-technical) ──────────────────────
