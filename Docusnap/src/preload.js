@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('docusnap', {
   authSetUserActive:    (data)       => ipcRenderer.invoke('auth-set-user-active', data),
   authAdminResetPassword: (data)     => ipcRenderer.invoke('auth-admin-reset-password', data),
   authGetAuditLog:      (limit)      => ipcRenderer.invoke('auth-get-audit-log', limit),
+  auditQuery:           (filters)    => ipcRenderer.invoke('audit-query', filters),
+  auditExportCsv:       (filters)    => ipcRenderer.invoke('audit-export-csv', filters),
   // Login ⇄ main-app window swap (the login window has no other window powers)
   authEnterApp:         () => ipcRenderer.send('auth-enter-app'),
   authShowLoginScreen:  () => ipcRenderer.send('auth-show-login'),
@@ -103,6 +105,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   getReviewCount:              ()        => ipcRenderer.invoke('get-review-count'),
   getDeferredCount:            ()        => ipcRenderer.invoke('get-deferred-count'),
   getDocumentWithExtractions:  (id)      => ipcRenderer.invoke('get-document-with-extractions', id),
+  notifyDocClosed:             (id)      => ipcRenderer.send('notify-doc-closed', id),
   getDocumentPages:            (id, fp, fn) => ipcRenderer.invoke('get-document-pages', id, fp, fn),
   getEnhancedPreview:          (data)       => ipcRenderer.invoke('get-enhanced-preview', data),
   confirmReview:               (payload) => ipcRenderer.invoke('confirm-review', payload),

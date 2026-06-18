@@ -28,6 +28,7 @@ const GENERIC_RECOVERY_ERROR = 'That recovery code is invalid or has already bee
 // ── Session (in-memory, single shared instance) ──────────────────────────────
 
 let currentSession = null; // { id, username, displayName, role } | null
+let _getDb = null;         // set in register(); lets requireRole audit denials centrally
 
 function getCurrentUser() {
   return currentSession;
@@ -56,6 +57,12 @@ function requireLogin() {
 function requireRole(...roles) {
   requireLogin();
   if (!roles.includes(currentSession.role)) {
+    // Central denied-action audit: every role-gated handler gets denied-coverage
+    // for free (actor + required-vs-actual role). Best-effort; never blocks.
+    try {
+      if (_getDb) logAudit(_getDb(), { action: 'access_denied', action_category: 'admin',
+        outcome: 'denied', details: `required ${roles.join('/')}; has ${currentSession.role}` });
+    } catch {}
     throw Object.assign(new Error('You do not have permission to perform this action.'), { code: 'FORBIDDEN' });
   }
   return currentSession;
@@ -134,6 +141,7 @@ function _validateNewPassword(plainPassword, confirmPassword) {
 
 function register(ctx) {
   const { ipcMain, getDb, notifyAllWindows, logger } = ctx;
+  _getDb = getDb;   // expose for requireRole's central denied-action audit
 
   const audit = (entry) => { try { auth.addAuditEntry(getDb(), entry); } catch (e) { logger?.warn(`[auth] audit write failed: ${e.message}`); } };
   const broadcastSession = () => notifyAllWindows('auth-session-changed', currentSession);
@@ -401,6 +409,41 @@ function register(ctx) {
     const n = Math.min(Math.max(parseInt(limit, 10) || 200, 1), 1000);
     return auth.getAuditLog(getDb(), n);
   });
+
+  // Admin audit search (filters + pagination) and CSV export of the filtered set.
+  ipcMain.handle('audit-query', (_e, filters) => {
+    requireRole('admin');
+    return auth.getAuditLogFiltered(getDb(), filters || {});
+  });
+  ipcMain.handle('audit-export-csv', async (e, filters) => {
+    requireRole('admin');
+    const { rows } = auth.getAuditLogFiltered(getDb(), { ...(filters || {}), limit: 5000, offset: 0 });
+    const csv = auditRowsToCsv(rows);
+    const { dialog, BrowserWindow } = require('electron');
+    const win = BrowserWindow.fromWebContents(e.sender);
+    const r = await dialog.showSaveDialog(win, {
+      title: 'Export audit log',
+      defaultPath: `scanfinder-audit-${new Date().toISOString().slice(0, 10)}.csv`,
+      filters: [{ name: 'CSV', extensions: ['csv'] }],
+    });
+    if (r.canceled || !r.filePath) return { saved: false };
+    require('fs').writeFileSync(r.filePath, csv, 'utf8');
+    return { saved: true, path: r.filePath, count: rows.length };
+  });
+}
+
+// CSV of audit rows for admin export. metadata_json is already sanitised at write
+// time, so it's safe to include. Standard RFC-4180-ish quoting.
+function auditRowsToCsv(rows) {
+  const esc = (v) => { const s = v == null ? '' : String(v); return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const header = ['id', 'timestamp_utc', 'actor', 'actor_role', 'action', 'category', 'outcome',
+                  'target_type', 'target_id', 'document_id', 'details', 'metadata'];
+  const body = (rows || []).map(r => [
+    r.id, r.created_at, r.actor_username || r.actor_username_live || '', r.actor_role || '',
+    r.action, r.action_category || '', r.outcome || '', r.target_type || '', r.target_id || '',
+    r.document_id ?? '', r.details || '', r.metadata_json || '',
+  ].map(esc).join(','));
+  return [header.join(','), ...body].join('\r\n');
 }
 
 // Safe audit helper for use by other main-process modules.

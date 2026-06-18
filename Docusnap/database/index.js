@@ -494,6 +494,38 @@ function runJsMigrations(db, applied) {
     }
     db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (24)').run();
   }
+
+  // Migration 25: extend audit_log into a structured, GDPR-aware audit trail.
+  // Additive + nullable columns only (existing rows keep working). Snapshots the
+  // actor (username/role) so a record survives a user rename/deletion (user_id is
+  // SET NULL on delete). action_category/outcome/document_id/customer_id/
+  // session_id/source/metadata_json give searchable, sanitised structure. Indexes
+  // back the admin search. NEVER stores secrets/contents — see auth.sanitiseAuditMeta.
+  if (!applied.has(25)) {
+    if (tableExists(db, 'audit_log')) {
+      const addCol = (name, def) => {
+        if (!hasColumn(db, 'audit_log', name)) {
+          try { db.exec(`ALTER TABLE audit_log ADD COLUMN ${name} ${def}`); }
+          catch (e) { console.warn(`  audit_log.${name}: ${e.message}`); }
+        }
+      };
+      addCol('action_category', 'TEXT');
+      addCol('outcome',         "TEXT");      // success | failure | denied
+      addCol('document_id',     'INTEGER');
+      addCol('customer_id',     'TEXT');
+      addCol('session_id',      'TEXT');
+      addCol('source',          "TEXT DEFAULT 'desktop'");
+      addCol('metadata_json',   'TEXT');
+      addCol('actor_username',  'TEXT');      // snapshot at write time
+      addCol('actor_role',      'TEXT');      // snapshot at write time
+      try { db.exec('CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at)'); } catch {}
+      try { db.exec('CREATE INDEX IF NOT EXISTS idx_audit_user    ON audit_log(user_id)'); } catch {}
+      try { db.exec('CREATE INDEX IF NOT EXISTS idx_audit_cat     ON audit_log(action_category)'); } catch {}
+      try { db.exec('CREATE INDEX IF NOT EXISTS idx_audit_doc     ON audit_log(document_id)'); } catch {}
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (25)').run();
+    console.log('JS migration 25 applied: structured audit_log (category/outcome/actor snapshot/metadata + indexes)');
+  }
 }
 
 function hasColumn(db, table, column) {

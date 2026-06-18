@@ -93,9 +93,13 @@ function withSeatInfo(db, fpHash, result) {
 }
 
 // Local audit mirror (brand-neutral action names). Never throws.
-function audit(db, action, targetId, details) {
+// outcome is success|failure|denied so the admin Audit view can filter on it;
+// action_category is pinned to 'licensing' (categoryFor also infers it from the
+// 'license.' prefix, but being explicit keeps it robust to renames).
+function audit(db, action, outcome, targetId, details) {
   try {
-    addAuditEntry(db, { user_id: null, action, target_type: 'license',
+    addAuditEntry(db, { user_id: null, action, action_category: 'licensing',
+      outcome: outcome || null, target_type: 'license',
       target_id: targetId != null ? String(targetId) : null, details });
   } catch { /* audit is best-effort */ }
 }
@@ -168,10 +172,15 @@ function register(ctx) {
       // cache a token, never let the renderer enter the app.
       if (!res || res.status < 200 || res.status >= 300 || !res.body || !res.body.token) {
         const code = (res && res.body && res.body.error && res.body.error.code) || 'trial_failed';
+        audit(db, 'license.trial_failed', 'failure', fpHash, code);
         return { ok: false, code };
       }
+      audit(db, 'license.trial_started', 'success', fpHash, null);
       return persistAndReturn(db, fpHash, res.body);
-    } catch (e) { return offlineFallback(db, fpHash, 'license-start-trial', e); }
+    } catch (e) {
+      audit(db, 'license.trial_failed', 'failure', fpHash || 'unknown', 'offline: ' + e.message);
+      return offlineFallback(db, fpHash, 'license-start-trial', e);
+    }
   });
 
   // Paid activation (Phase 3). The renderer may REQUEST activation, but MAIN
@@ -190,15 +199,15 @@ function register(ctx) {
       if (ok) {
         licensing.recordDevice(db, fpHash);
         cacheFromResponse(db, fpHash, res.body);
-        audit(db, 'license.activated', res.body.seat_id || fpHash,
+        audit(db, 'license.activated', 'success', res.body.seat_id || fpHash,
           `seats=${res.body.seats_used}/${res.body.seats_total}`);
         return { ok: true, ...readable(res.body) };
       }
       const code = (res && res.body && res.body.error && res.body.error.code) || 'activation_failed';
-      audit(db, 'license.activate_failed', fpHash, code);
+      audit(db, 'license.activate_failed', 'failure', fpHash, code);
       return { ok: false, code };
     } catch (e) {
-      audit(db, 'license.activate_failed', fpHash || 'unknown', 'offline: ' + e.message);
+      audit(db, 'license.activate_failed', 'failure', fpHash || 'unknown', 'offline: ' + e.message);
       return { ok: false, offline: true, code: 'offline' };
     }
   });
@@ -224,7 +233,7 @@ function register(ctx) {
       const res = await client.activate(fpHash, accountKey, 'activation-test');
       const status = res && res.status;
       const ok = res && status >= 200 && status < 300 && res.body && res.body.token;
-      audit(db, 'license.test_activate', null, `status=${status} ok=${!!ok}`);
+      audit(db, 'license.test_activate', ok ? 'success' : 'failure', null, `status=${status} ok=${!!ok}`);
       if (ok) {
         const b = res.body;
         return { ok: true, status, state: b.state || 'active',
@@ -234,7 +243,7 @@ function register(ctx) {
       return { ok: false, status, code: (err && err.code) || 'activation_failed',
                message: (err && err.message) || null };
     } catch (e) {
-      audit(db, 'license.test_activate', null, 'offline: ' + e.message);
+      audit(db, 'license.test_activate', 'failure', null, 'offline: ' + e.message);
       return { ok: false, offline: true, code: 'offline', message: e.message };
     }
   });
@@ -255,7 +264,12 @@ function register(ctx) {
     // enforcement cannot be disabled by environment or settings — this is
     // intentional to avoid a bypass gate. This handler performs NO state change;
     // it is retained only so the existing Settings UI gets an honest response.
-    if (!authHandler.hasRole('admin')) return { ok: false, code: 'forbidden' };
+    if (!authHandler.hasRole('admin')) {
+      audit(getDb(), 'license.enforcement_toggle_attempt', 'denied', null, 'non-admin');
+      return { ok: false, code: 'forbidden' };
+    }
+    // Honest no-op, but a deliberate attempt to relax licensing is worth recording.
+    audit(getDb(), 'license.enforcement_toggle_attempt', 'denied', null, 'enforcement_locked');
     return { ok: false, code: 'enforcement_locked', setting: true, effective: true, envOverride: null };
   });
 
@@ -328,14 +342,14 @@ function register(ctx) {
       const ok = res && res.status >= 200 && res.status < 300 && res.body && res.body.released;
       if (ok) {
         licensing.clearSeatToken(db, fpHash);
-        audit(db, 'license.revoked', fpHash, `seats=${res.body.seats_used}/${res.body.seats_total}`);
+        audit(db, 'license.revoked', 'success', fpHash, `seats=${res.body.seats_used}/${res.body.seats_total}`);
         return { ok: true, ...readable(res.body) };
       }
       const code = (res && res.body && res.body.error && res.body.error.code) || 'revoke_failed';
-      audit(db, 'license.revoke_failed', fpHash, code);
+      audit(db, 'license.revoke_failed', 'failure', fpHash, code);
       return { ok: false, code };
     } catch (e) {
-      audit(db, 'license.revoke_failed', fpHash || 'unknown', 'offline: ' + e.message);
+      audit(db, 'license.revoke_failed', 'failure', fpHash || 'unknown', 'offline: ' + e.message);
       return { ok: false, offline: true, code: 'offline' };
     }
   });

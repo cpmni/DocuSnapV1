@@ -189,7 +189,7 @@ function register(ctx) {
     notifyDevInspector?.(channel, msg);
   };
 
-  const { requireRole, getCurrentUser } = require('../auth/handler');
+  const { requireRole, getCurrentUser, logAudit } = require('../auth/handler');
 
   // ── Folder picker ───────────────────────────────────────────────────────────
   const { dialog, shell } = require('electron');
@@ -270,6 +270,8 @@ function register(ctx) {
   ipcMain.handle('process-folder', async (event, folderPath) => {
     requireRole('admin', 'edit');
     const db = getDb();
+    logAudit(db, { action: 'import_run', action_category: 'processing', target_type: 'folder',
+      outcome: 'success', metadata: { folder: folderPath } });
     const diagOn = _diagEnabled(db);
     if (diagOn) { diaglog.enable(); diaglog.write({ ev: 'batch_start', folder: folderPath }); }
     let trainingArgs, tempFiles;
@@ -428,6 +430,8 @@ function register(ctx) {
   ipcMain.handle('reprocess-document', async (event, { docId, folderPath, filename, enhanceParams }) => {
     requireRole('admin', 'edit');
     const db      = getDb();
+    logAudit(db, { action: 'reprocess', target_type: 'document', target_id: docId, document_id: docId,
+      outcome: 'success', metadata: { enhanced: !!enhanceParams } });
     // Prefer the app-managed working copy so reprocess doesn't depend on the
     // user's source folder still holding the file; fall back to the source path.
     const wpRow   = db.prepare('SELECT working_path FROM documents WHERE id = ?').get(docId);

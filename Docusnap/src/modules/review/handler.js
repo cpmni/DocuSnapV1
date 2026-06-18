@@ -61,7 +61,7 @@ function register(ctx) {
   const learning   = require('../../../database/modules/learning');
   const doctypes   = require('../../../database/modules/document_types');
   const templates  = require('../../../database/modules/templates');
-  const { requireRole, requireLogin, hasRole } = require('../auth/handler');
+  const { requireRole, requireLogin, hasRole, logAudit } = require('../auth/handler');
 
   // ── Queue queries ───────────────────────────────────────────────────────────
   // The review/deferred queues are the working-document workflow surface —
@@ -94,8 +94,18 @@ function register(ctx) {
       // record after a reprocess re-identifies the type.
       doc.type_slug = typeSlug;
       doc.digit_only_fields = learning.getDigitsOnlyFields(db, doc.supplier_name, typeSlug);
+      logAudit(db, { action: 'document_open', target_type: 'document', target_id: id,
+        document_id: id, outcome: 'success', metadata: { type: typeSlug || null, status: doc.status || null } });
     }
     return doc;
+  });
+
+  // Document close — the Review window fires this when it navigates away from a
+  // document or the window is closed. Completes the open/close audit pair.
+  ipcMain.on('notify-doc-closed', (_e, docId) => {
+    if (docId == null) return;
+    try { logAudit(getDb(), { action: 'document_close', target_type: 'document', target_id: docId,
+      document_id: docId, outcome: 'success' }); } catch {}
   });
 
   // ── Document pages for preview ──────────────────────────────────────────────
@@ -237,6 +247,7 @@ function register(ctx) {
     requireRole('admin', 'edit');
     const db = getDb();
     documents.update(db, docId, { status: 'deferred' });
+    logAudit(db, { action: 'review_deferred', target_type: 'document', target_id: docId, document_id: docId, outcome: 'success' });
     notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
     notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
     return true;
@@ -246,6 +257,7 @@ function register(ctx) {
     requireRole('admin', 'edit');
     const db = getDb();
     documents.update(db, docId, { status: 'needs_review' });
+    logAudit(db, { action: 'review_restored', target_type: 'document', target_id: docId, document_id: docId, outcome: 'success' });
     notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
     notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
     return true;
@@ -282,6 +294,8 @@ function register(ctx) {
     if (wp && fs.existsSync(wp)) { try { fs.unlinkSync(wp); } catch {} }
     // Remove from DB
     documents.deleteDoc(db, docId);
+    logAudit(db, { action: 'document_deleted', action_category: 'document', target_type: 'document',
+      target_id: docId, document_id: docId, outcome: 'success', metadata: { had_file: !!filePath } });
     notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
     notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
     return true;
@@ -396,6 +410,11 @@ function register(ctx) {
       stored_filename: filingResult.filename,
       stored_path:     filingResult.filePath,
     });
+
+    logAudit(db, { action: 'review_confirmed', target_type: 'document', target_id: document_id,
+      document_id, outcome: 'success',
+      metadata: { type: document_type_slug || null, filed: filingResult.filename,
+                  fields_changed: Object.keys(corrections || {}).join(',') || null } });
 
     // Clear the per-field review AIDS now that a human has reviewed and accepted
     // this document. validation_note / corrected_to are pre-confirmation prompts

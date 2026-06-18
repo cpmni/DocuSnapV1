@@ -59,6 +59,21 @@ const wizCtx     = wizCanvas.getContext('2d');
 
 document.getElementById('btn-close').addEventListener('click', () => window.docusnap.windowClose());
 
+// ── Document open/close audit signalling ──────────────────────────────────────
+// The server logs document_open on each fetch; here we pair it with a close when
+// the viewer moves to a different document or the window is closed.
+let _lastOpenedDocId = null;
+function noteDocOpened(id) {
+  if (id == null) return;
+  if (_lastOpenedDocId != null && _lastOpenedDocId !== id) {
+    try { window.docusnap.notifyDocClosed(_lastOpenedDocId); } catch {}
+  }
+  _lastOpenedDocId = id;
+}
+window.addEventListener('beforeunload', () => {
+  if (_lastOpenedDocId != null) { try { window.docusnap.notifyDocClosed(_lastOpenedDocId); } catch {} }
+});
+
 // ── Load queue ────────────────────────────────────────────────────────────────
 async function loadQueue() {
   // Resolve role first so the admin-only bulk-delete footers render correctly
@@ -343,6 +358,7 @@ async function _selectDoc(doc) {
   if (currentDoc?.id !== doc.id) return;   // a newer doc was selected while pages loaded — don't clobber its preview (this same _selectDoc set currentDoc=doc at the top, so the latest selection always passes)
   renderPage();
 
+  noteDocOpened(doc.id);
   let full = null;
   try {
     full = await window.docusnap.getDocumentWithExtractions(doc.id);

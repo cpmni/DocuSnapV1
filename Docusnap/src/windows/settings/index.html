@@ -330,6 +330,7 @@
     <button class="tab" data-tab="templates">Templates</button>
     <button class="tab" data-tab="learning">Learning Recovery</button>
     <button class="tab" data-tab="users">Users</button>
+    <button class="tab" data-tab="audit">Audit</button>
     <button class="tab" data-tab="licensing">Licensing</button>
     <button class="tab" data-tab="advanced">Advanced</button>
   </div>
@@ -927,6 +928,60 @@
         </table>
       </div>
 
+    </div>
+
+    <!-- ══ AUDIT ══ -->
+    <div class="panel" id="panel-audit">
+      <style>
+        #panel-audit .aud-lbl { display:block; font-size:10px; color:var(--muted); margin-bottom:3px; letter-spacing:.04em; }
+        #panel-audit .aud-input { padding:5px 8px; background:var(--surface2); border:1px solid var(--border2);
+          color:var(--text); border-radius:5px; font-size:11px; font-family:inherit; }
+        #panel-audit .aud-input[type=text] { width:130px; }
+        #panel-audit #aud-table td { padding:6px 10px; font-size:11px; vertical-align:top; cursor:pointer; }
+        #panel-audit tr.aud-row:hover { background:var(--surface2); }
+        #panel-audit .aud-pill { font-size:9px; padding:1px 6px; border-radius:8px; text-transform:uppercase; letter-spacing:.05em; }
+        #panel-audit .aud-pill.success { background:var(--ok-bg); color:var(--ok); }
+        #panel-audit .aud-pill.failure { background:var(--err-bg); color:var(--err); }
+        #panel-audit .aud-pill.denied  { background:var(--warn-bg); color:var(--warn); }
+        #panel-audit .aud-detail td { background:var(--bg); color:var(--muted); font-family:var(--mono); font-size:10.5px; white-space:pre-wrap; word-break:break-word; }
+      </style>
+      <div class="section">
+        <div class="section-title">Audit log</div>
+        <p class="section-desc">Record of sensitive actions — logins, settings changes, document open/close,
+          review actions, licensing and denied access. Admin only; values are sanitised (no secrets or contents).</p>
+
+        <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; margin-bottom:12px;">
+          <div><label class="aud-lbl">User</label><input id="aud-user" type="text" class="aud-input" placeholder="username"></div>
+          <div><label class="aud-lbl">Document ID</label><input id="aud-doc" type="number" class="aud-input" style="width:100px"></div>
+          <div><label class="aud-lbl">Category</label>
+            <select id="aud-cat" class="aud-input">
+              <option value="">All</option><option value="auth">Auth</option><option value="settings">Settings</option>
+              <option value="document">Document</option><option value="review">Review</option><option value="processing">Processing</option>
+              <option value="template">Template</option><option value="licensing">Licensing</option><option value="admin">Admin</option>
+            </select></div>
+          <div><label class="aud-lbl">Outcome</label>
+            <select id="aud-outcome" class="aud-input">
+              <option value="">All</option><option value="success">Success</option><option value="failure">Failure</option><option value="denied">Denied</option>
+            </select></div>
+          <div><label class="aud-lbl">From</label><input id="aud-from" type="date" class="aud-input"></div>
+          <div><label class="aud-lbl">To</label><input id="aud-to" type="date" class="aud-input"></div>
+          <div><label class="aud-lbl">Search</label><input id="aud-text" type="text" class="aud-input" placeholder="action / details"></div>
+          <button class="btn primary" id="aud-apply">Apply</button>
+          <button class="btn" id="aud-clear">Clear</button>
+          <button class="btn" id="aud-csv">Export CSV</button>
+        </div>
+
+        <div id="aud-summary" style="font-size:11px; color:var(--muted); margin-bottom:6px;"></div>
+        <table class="fields-table" id="aud-table" style="width:100%">
+          <thead><tr><th>When (UTC)</th><th>User</th><th>Action</th><th>Category</th><th>Outcome</th><th>Target</th></tr></thead>
+          <tbody id="aud-tbody"></tbody>
+        </table>
+        <div style="display:flex; gap:8px; align-items:center; margin-top:10px;">
+          <button class="btn" id="aud-prev">&#8249; Prev</button>
+          <span id="aud-page" style="font-size:11px; color:var(--muted)"></span>
+          <button class="btn" id="aud-next">Next &#8250;</button>
+        </div>
+      </div>
     </div>
 
     <!-- ══ LICENSING ══ -->

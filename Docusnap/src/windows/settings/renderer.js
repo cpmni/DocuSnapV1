@@ -10,6 +10,7 @@ document.querySelectorAll('.tab').forEach(btn => {
     btn.classList.add('active');
     document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
     if (btn.dataset.tab === 'learning') loadMemoryInventory();
+    if (btn.dataset.tab === 'audit' && !auditState.loaded) loadAudit();
   });
 });
 
@@ -2556,3 +2557,138 @@ if (diagToggle) {
     }
   });
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// AUDIT TAB (admin-only — server enforces requireRole('admin'))
+// ══════════════════════════════════════════════════════════════════════════════
+const auditState = { offset: 0, limit: 50, total: 0, loaded: false, lastFilters: {} };
+
+function auditFilters() {
+  const v = (id) => (document.getElementById(id)?.value || '').trim();
+  const f = {};
+  if (v('aud-user')) f.username = v('aud-user');
+  if (v('aud-doc')) f.document_id = v('aud-doc');
+  if (v('aud-cat')) f.category = v('aud-cat');
+  if (v('aud-outcome')) f.outcome = v('aud-outcome');
+  // <input type=date> gives YYYY-MM-DD; widen the upper bound to end-of-day.
+  if (v('aud-from')) f.dateFrom = v('aud-from') + ' 00:00:00';
+  if (v('aud-to')) f.dateTo = v('aud-to') + ' 23:59:59';
+  if (v('aud-text')) f.text = v('aud-text');
+  return f;
+}
+
+async function loadAudit(resetOffset = true) {
+  if (resetOffset) auditState.offset = 0;
+  const tbody = document.getElementById('aud-tbody');
+  if (!tbody) return;
+  const filters = auditState.lastFilters = auditFilters();
+  tbody.innerHTML = '<tr><td colspan="6" style="color:var(--muted)">Loading…</td></tr>';
+  let res;
+  try {
+    res = await api.auditQuery({ ...filters, limit: auditState.limit, offset: auditState.offset });
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="6" style="color:var(--err)">${escHtml(e.message || 'Failed to load audit log')}</td></tr>`;
+    return;
+  }
+  auditState.loaded = true;
+  auditState.total = res.total || 0;
+  renderAuditRows(res.rows || []);
+  updateAuditPager();
+}
+
+function auditOutcomeClass(o) {
+  if (o === 'success') return 'success';
+  if (o === 'denied') return 'denied';
+  if (o === 'failure' || o === 'error') return 'failure';
+  return '';
+}
+
+function renderAuditRows(rows) {
+  const tbody = document.getElementById('aud-tbody');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="color:var(--muted)">No matching events.</td></tr>';
+    return;
+  }
+  const html = [];
+  for (const r of rows) {
+    const when = formatWhen(r.created_at) || escHtml(r.created_at || '');
+    const user = escHtml(r.actor_display_name || r.actor_username || r.actor_username_live || (r.user_id ? `#${r.user_id}` : 'system'));
+    const cat = escHtml(r.action_category || '');
+    const outcome = escHtml(r.outcome || '');
+    const oclass = auditOutcomeClass(r.outcome);
+    const target = r.target_type
+      ? escHtml(r.target_id ? `${r.target_type}:${r.target_id}` : r.target_type)
+      : (r.document_id ? escHtml(`document:${r.document_id}`) : '');
+    html.push(`<tr class="aud-row" data-id="${r.id}">
+      <td>${when}</td>
+      <td>${user}${r.actor_role ? ` <span style="color:var(--muted)">(${escHtml(r.actor_role)})</span>` : ''}</td>
+      <td style="font-family:var(--mono)">${escHtml(r.action || '')}</td>
+      <td>${cat}</td>
+      <td>${outcome ? `<span class="aud-pill ${oclass}">${outcome}</span>` : ''}</td>
+      <td style="font-family:var(--mono)">${target}</td>
+    </tr>`);
+    // Expandable detail row (hidden until the summary row is clicked).
+    const details = [];
+    if (r.details) details.push(`details: ${r.details}`);
+    if (r.session_id) details.push(`session: ${r.session_id}`);
+    if (r.source) details.push(`source: ${r.source}`);
+    if (r.metadata_json) {
+      let meta = r.metadata_json;
+      try { meta = JSON.stringify(JSON.parse(r.metadata_json), null, 2); } catch {}
+      details.push(`metadata: ${meta}`);
+    }
+    const detailText = details.length ? details.join('\n') : '(no additional detail)';
+    html.push(`<tr class="aud-detail" data-detail="${r.id}" style="display:none"><td colspan="6">${escHtml(detailText)}</td></tr>`);
+  }
+  tbody.innerHTML = html.join('');
+  tbody.querySelectorAll('tr.aud-row').forEach(tr => {
+    tr.addEventListener('click', () => {
+      const d = tbody.querySelector(`tr.aud-detail[data-detail="${tr.dataset.id}"]`);
+      if (d) d.style.display = d.style.display === 'none' ? '' : 'none';
+    });
+  });
+}
+
+function updateAuditPager() {
+  const from = auditState.total === 0 ? 0 : auditState.offset + 1;
+  const to = Math.min(auditState.offset + auditState.limit, auditState.total);
+  const sum = document.getElementById('aud-summary');
+  if (sum) sum.textContent = `${auditState.total} event${auditState.total === 1 ? '' : 's'} matched`;
+  const page = document.getElementById('aud-page');
+  if (page) page.textContent = auditState.total ? `${from}–${to} of ${auditState.total}` : '—';
+  const prev = document.getElementById('aud-prev');
+  const next = document.getElementById('aud-next');
+  if (prev) prev.disabled = auditState.offset <= 0;
+  if (next) next.disabled = auditState.offset + auditState.limit >= auditState.total;
+}
+
+document.getElementById('aud-apply')?.addEventListener('click', () => loadAudit(true));
+document.getElementById('aud-text')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') loadAudit(true); });
+document.getElementById('aud-user')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') loadAudit(true); });
+document.getElementById('aud-clear')?.addEventListener('click', () => {
+  ['aud-user', 'aud-doc', 'aud-from', 'aud-to', 'aud-text'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['aud-cat', 'aud-outcome'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  loadAudit(true);
+});
+document.getElementById('aud-prev')?.addEventListener('click', () => {
+  if (auditState.offset <= 0) return;
+  auditState.offset = Math.max(0, auditState.offset - auditState.limit);
+  loadAudit(false);
+});
+document.getElementById('aud-next')?.addEventListener('click', () => {
+  if (auditState.offset + auditState.limit >= auditState.total) return;
+  auditState.offset += auditState.limit;
+  loadAudit(false);
+});
+document.getElementById('aud-csv')?.addEventListener('click', async () => {
+  const btn = document.getElementById('aud-csv');
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Exporting…';
+  try {
+    const r = await api.auditExportCsv(auditState.lastFilters || auditFilters());
+    btn.textContent = r && r.saved ? `Saved ${r.count} rows` : 'Export CSV';
+  } catch (e) {
+    btn.textContent = 'Export failed';
+  }
+  setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1800);
+});

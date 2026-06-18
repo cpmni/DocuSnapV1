@@ -10,7 +10,15 @@ function register(ctx) {
   const doctypes  = require('../../../database/modules/document_types');
   const learning  = require('../../../database/modules/learning');
   const templates = require('../../../database/modules/templates');
-  const { requireRole, requireLogin } = require('../auth/handler');
+  const { requireRole, requireLogin, logAudit } = require('../auth/handler');
+  // Setting keys whose VALUE is safe to record verbatim in the audit trail
+  // (mode/threads/flags). Anything else (paths, patterns, unknown keys) logs the
+  // key NAME + a "[set]" marker only — never the raw value (GDPR-aware).
+  const _SAFE_SETTING_VALUE = new Set([
+    'processing_mode', 'processing_concurrency', 'registration_enabled', 'born_digital_enabled',
+    'diagnostic_logging', 'theme', 'first_run_completed', 'watch_folder_enabled',
+    'confidence_threshold', 'license_enforcement_enabled',
+  ]);
 
   // ── Document types ──────────────────────────────────────────────────────────
   // get-all-doc-types is shared with Review (Admin/Edit) and Search (every
@@ -200,8 +208,12 @@ function register(ctx) {
   ipcMain.handle('get-setting', (_e, key)      => learning.getSetting(getDb(), key));
   ipcMain.handle('set-setting', (_e, key, val) => {
     requireRole('admin');
-    learning.setSetting(getDb(), key, val);
+    const db = getDb();
+    learning.setSetting(db, key, val);
     if (key === 'theme') notifyAllWindows('theme-changed', val);
+    logAudit(db, { action: 'setting_changed', action_category: 'settings', target_type: 'setting',
+      target_id: key, outcome: 'success',
+      metadata: { key, value: _SAFE_SETTING_VALUE.has(key) ? String(val).slice(0, 120) : '[set]' } });
     return true;
   });
 }
