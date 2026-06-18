@@ -129,7 +129,7 @@ docusnap2/
 │   │   ├── ocr_corrector.py             # Stage 2.5: learned OCR misread correction
 │   │   ├── llm.py                       # Stage 3: phi3:mini via Ollama (dormant — 'ai' mode not exposed in UI)
 │   │   └── validator.py                 # Stage 4: cross-field validation
-│   ├── ocr/{tesseract.py,region.py,landmarks.py,text_enhance.py,born_digital.py}  # landmarks.py: derive registration landmarks from sample page; text_enhance.py: degraded text-line re-read (denoise+Sauvola+unsharp), text-only gate-triggered escalation; born_digital.py: read EXACT text + word boxes from a PDF's embedded text layer (pypdfium2 BSD), skipping OCR for generated PDFs (gated by born_digital_enabled)
+│   ├── ocr/{tesseract.py,region.py,landmarks.py,text_enhance.py,born_digital.py}  # region.py: interactive draw-tool zone-OCR (review ⊕ picker, Template Wizard read-back, Template Manager) + --boxes label-position capture; LIGHT-FIRST ladder mirroring anchor._crop_and_ocr (light greyscale+upscale-small-only read first, heavy autocontrast+sharpen only when light is EMPTY) so a drawn box reads the SAME as extraction and clean born-digital crops aren't mangled into junk ("Serial number"→"be_7"); landmarks.py: derive registration landmarks from sample page; text_enhance.py: degraded text-line re-read (denoise+Sauvola+unsharp), text-only gate-triggered escalation; born_digital.py: read EXACT text + word boxes from a PDF's embedded text layer (pypdfium2 BSD), skipping OCR for generated PDFs (gated by born_digital_enabled)
 │   ├── logo/fingerprint.py
 │   └── render/pages.py                 # PDF→PNG rendering — shared by review/search/template preview (see Gotchas)
 ├── config/keyword_patterns.json        # editable pattern library
@@ -367,7 +367,19 @@ process_docs.py → ExtractionEngine.extract()
            verify_fn (or a conf floor). The heavy upscale+sharpen was DESTROYING
            clean high-res crops ("Beaumont Care Homes Ltd" → "nara"/""); the heavy
            rung still runs for tight degraded serials, so the separator fix is
-           preserved. _repair_single_token runs on every rung.
+           preserved. _repair_single_token runs on every rung. SAME LADDER IN
+           region.py: the interactive draw-tool OCR (review ⊕ picker, Template
+           Wizard read-back, Template Manager — all via ocr-region/ocr-region-boxes)
+           was the un-migrated outlier still doing unconditional autocontrast+
+           SHARPEN, so a DRAWN box read worse than extraction and mangled clean
+           born-digital crops (corrupt anchor label "be_7" + wrong/empty value).
+           region.py now reads LIGHT first (greyscale+upscale-small-only, no
+           autocontrast/sharpen) PSM 7→6 and escalates to the heavy recipe only
+           when the light read is EMPTY; --boxes mapping is unchanged (upscale
+           scale constant). So the supersedes-line above ("region.py" sharing the
+           heavy recipe) is historical. Guarded by tests/test_region_light_first.py
+           (renders the failure shape, asserts a faithful+clean read; skips without
+           Tesseract).
            KEY/VALUE PLACEMENT + INLINE HARVEST: the locator used to return the
            whole OCR LINE box, so in a "label …big gap… value" row geometric
            placement seated the value crop PAST the value (clip/empty). Now
