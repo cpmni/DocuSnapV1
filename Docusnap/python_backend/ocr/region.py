@@ -34,22 +34,35 @@ def main():
         return
 
     # Upscale small crops for better accuracy. Track the factor so --boxes can map
-    # word boxes back to the caller's ORIGINAL crop coordinates.
+    # word boxes back to the caller's ORIGINAL crop coordinates. The scale is the
+    # SAME for the light and heavy rungs below (heavy is derived from the upscaled
+    # greyscale), so box mapping is unaffected by which rung wins.
     w, h = img.size
     scale = 1
     if w < 300:
-        scale = max(2, 300 // w)
+        scale = max(2, 300 // max(1, w))
         img = img.resize((w * scale, h * scale), Image.LANCZOS)
 
-    # Enhance contrast and sharpen
-    img = ImageOps.autocontrast(img, cutoff=2)
-    img = img.filter(ImageFilter.SHARPEN)
-
-    # PSM 7 = single line (best for field values like invoice numbers, dates)
-    # PSM 6 = block (fallback for multiline like addresses)
-    text = pytesseract.image_to_string(img, config='--oem 3 --psm 7').strip()
-    if not text:
-        text = pytesseract.image_to_string(img, config='--oem 3 --psm 6').strip()
+    # LIGHT-FIRST OCR ladder — mirrors extraction's anchor._crop_and_ocr ladder so
+    # an interactively-drawn box reads the SAME as extraction reads (the ⊕ tool,
+    # Template Wizard read-back and Template Manager all come through here). The old
+    # unconditional autocontrast(cutoff=2)+SHARPEN over-processes a clean, high-res
+    # (e.g. born-digital) crop: PSM 7 then locks onto amplified rules/edges and
+    # returns garbage or empty ("Serial number" -> "be_7"). So read LIGHT first
+    # (greyscale + upscale only, NO autocontrast/sharpen) and escalate to the heavy
+    # recipe ONLY when the light read is empty — heavy still crispens genuinely
+    # degraded tight serials. First non-empty rung wins, light preferred.
+    light = img                                  # greyscale (+ upscale), faithful
+    heavy = None
+    chosen, text = light, ''
+    for src, psm in (('light', 7), ('light', 6), ('heavy', 7), ('heavy', 6)):
+        if src == 'heavy' and heavy is None:
+            heavy = ImageOps.autocontrast(light, cutoff=2).filter(ImageFilter.SHARPEN)
+        rimg = light if src == 'light' else heavy
+        t = pytesseract.image_to_string(rimg, config=f'--oem 3 --psm {psm}').strip()
+        if t:
+            chosen, text = rimg, t
+            break
 
     # Clean up common OCR artifacts
     text = text.replace('\n', ' ').replace('\r', '').strip()
@@ -58,7 +71,7 @@ def main():
         import json
         box = None
         try:
-            data = pytesseract.image_to_data(img, config='--oem 3 --psm 6',
+            data = pytesseract.image_to_data(chosen, config='--oem 3 --psm 6',
                                              output_type=pytesseract.Output.DICT)
             xs, ys, x2s, y2s = [], [], [], []
             for i in range(len(data.get('text', []))):
