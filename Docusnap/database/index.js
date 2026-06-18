@@ -526,6 +526,63 @@ function runJsMigrations(db, applied) {
     db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (25)').run();
     console.log('JS migration 25 applied: structured audit_log (category/outcome/actor snapshot/metadata + indexes)');
   }
+
+  // Migration 26: TOTP second factor for the detached-client auth boundary.
+  // Additive + nullable: totp_secret (base32, NULL until enrolled) and
+  // totp_enabled (0/1, only set once a code is confirmed). Inert for the desktop
+  // app — the in-process login path never reads these; only the detached-client
+  // API enforces MFA when totp_enabled = 1. Existing users keep working (MFA off).
+  if (!applied.has(26)) {
+    if (tableExists(db, 'users')) {
+      if (!hasColumn(db, 'users', 'totp_secret')) {
+        try { db.exec(`ALTER TABLE users ADD COLUMN totp_secret TEXT`); } catch (e) { console.warn(`  users.totp_secret: ${e.message}`); }
+      }
+      if (!hasColumn(db, 'users', 'totp_enabled')) {
+        try { db.exec(`ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0`); } catch (e) { console.warn(`  users.totp_enabled: ${e.message}`); }
+      }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (26)').run();
+    console.log('JS migration 26 applied: users.totp_secret/totp_enabled (detached-client MFA)');
+  }
+
+  // Migration 27: mailbox / approval workflow (Stage 5a). A SEPARATE workflow state
+  // machine that never rewrites a document's filing status (documents.status is
+  // untouched) — approval is a business-acknowledgement layer on top of filed docs.
+  //   document_routes — one routing task: who sent it to whom, the requested action
+  //     (approve|acknowledge), its state, a claim-lock, snapshots of the actors'
+  //     usernames (survive rename/delete), and a `version` for optimistic concurrency
+  //     (reject double/stale resolution). ON DELETE CASCADE with the document.
+  //   documents.workflow_status — denormalised latest route state for quick filtering.
+  if (!applied.has(27)) {
+    if (!tableExists(db, 'document_routes')) {
+      db.exec(`CREATE TABLE document_routes (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        document_id         INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+        from_user_id        INTEGER,
+        from_username       TEXT,
+        to_user_id          INTEGER,
+        to_username         TEXT,
+        action_required     TEXT NOT NULL,            -- approve | acknowledge
+        state               TEXT NOT NULL DEFAULT 'pending', -- pending|claimed|approved|rejected|acknowledged|recalled
+        comment             TEXT,                      -- sender's note
+        resolution_comment  TEXT,                      -- resolver's reason (required on reject)
+        claimed_by_id       INTEGER,
+        claimed_by_username TEXT,
+        claimed_at          TEXT,
+        resolved_at         TEXT,
+        version             INTEGER NOT NULL DEFAULT 1,
+        created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+      )`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_routes_to    ON document_routes(to_user_id, state)`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_routes_from  ON document_routes(from_user_id, state)`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_routes_doc   ON document_routes(document_id)`);
+    }
+    if (tableExists(db, 'documents') && !hasColumn(db, 'documents', 'workflow_status')) {
+      try { db.exec(`ALTER TABLE documents ADD COLUMN workflow_status TEXT`); } catch (e) { console.warn(`  documents.workflow_status: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (27)').run();
+    console.log('JS migration 27 applied: mailbox workflow (document_routes + documents.workflow_status)');
+  }
 }
 
 function hasColumn(db, table, column) {

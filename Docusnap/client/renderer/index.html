@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'self';" />
+  <title>ScanFinder — Search</title>
+  <style>
+    :root {
+      --bg:#0c0e14; --surface:#13161f; --surface2:#1a1e2a; --border:#252836; --border2:#2f3347;
+      --accent:#4f8ef7; --accent2:#6ea8ff; --ok:#3ecf8e; --warn:#f7b84f; --err:#f76f6f;
+      --text:#e2e6f0; --muted:#7a82a0;
+    }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:'IBM Plex Sans',system-ui,sans-serif; background:var(--bg); color:var(--text); height:100vh; }
+    .mono { font-family:'IBM Plex Mono',ui-monospace,monospace; }
+    button { font:inherit; cursor:pointer; border:1px solid var(--border2); background:var(--surface2); color:var(--text); border-radius:8px; padding:8px 14px; }
+    button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    input { font:inherit; background:var(--surface2); color:var(--text); border:1px solid var(--border2); border-radius:8px; padding:8px 10px; }
+    .hidden { display:none !important; }
+
+    #banner { padding:8px 14px; font-size:13px; text-align:center; }
+    #banner.ok { background:rgba(62,207,142,.12); color:var(--ok); }
+    #banner.warn { background:rgba(247,184,79,.14); color:var(--warn); }
+    #banner.block { background:rgba(247,111,111,.16); color:var(--err); }
+
+    /* Login */
+    #login { display:flex; align-items:center; justify-content:center; height:calc(100vh - 34px); }
+    #login .card { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:28px; width:340px; }
+    #login h1 { font-size:18px; margin:0 0 4px; }
+    #login p { color:var(--muted); font-size:13px; margin:0 0 18px; }
+    #login label { display:block; font-size:12px; color:var(--muted); margin:12px 0 4px; }
+    #login input { width:100%; }
+    #login .err { color:var(--err); font-size:12px; min-height:16px; margin-top:10px; }
+    #login button { width:100%; margin-top:16px; }
+
+    /* App */
+    #app { height:calc(100vh - 34px); display:flex; flex-direction:column; }
+    .topbar { display:flex; gap:8px; align-items:center; padding:10px 14px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+    .topbar input { flex:0 0 auto; }
+    .topbar .grow { flex:1 1 160px; }
+    .topbar .spacer { flex:1 1 auto; }
+    .who { color:var(--muted); font-size:12px; }
+    .main { flex:1; display:flex; min-height:0; }
+    .results { width:42%; border-right:1px solid var(--border); overflow:auto; }
+    .section-h { padding:8px 14px; font-size:11px; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); position:sticky; top:0; background:var(--bg); }
+    .row { padding:10px 14px; border-bottom:1px solid var(--border); cursor:pointer; }
+    .row:hover, .row.sel { background:var(--surface2); }
+    .row .r1 { font-size:14px; }
+    .row .r2 { font-size:12px; color:var(--muted); margin-top:2px; }
+    .chip { display:inline-block; font-size:11px; padding:1px 7px; border-radius:999px; border:1px solid var(--border2); margin-left:6px; }
+    .chip.confirmed { color:var(--ok); border-color:rgba(62,207,142,.5); }
+    .chip.needs_review { color:var(--warn); border-color:rgba(247,184,79,.5); }
+    .chip.deferred { color:var(--muted); }
+    .preview { flex:1; overflow:auto; padding:16px; }
+    .fields { margin-bottom:16px; }
+    .field { display:flex; justify-content:space-between; gap:12px; padding:6px 0; border-bottom:1px dashed var(--border); }
+    .field .k { color:var(--muted); font-size:12px; }
+    .note { color:var(--warn); font-size:12px; }
+    .pages img { max-width:100%; border:1px solid var(--border); border-radius:8px; margin-bottom:12px; display:block; }
+    .empty { color:var(--muted); padding:24px; text-align:center; }
+  </style>
+</head>
+<body>
+  <div id="banner" class="hidden"></div>
+
+  <!-- Login view -->
+  <section id="login">
+    <div class="card">
+      <h1>ScanFinder Search</h1>
+      <p id="api-target" class="mono"></p>
+      <label>Username</label>
+      <input id="u" autocomplete="username" />
+      <label>Password</label>
+      <input id="p" type="password" autocomplete="current-password" />
+      <label id="totp-label" class="hidden">Authentication code</label>
+      <input id="totp" class="hidden mono" inputmode="numeric" autocomplete="one-time-code" />
+      <div id="login-err" class="err"></div>
+      <button id="login-btn" class="primary">Sign in</button>
+    </div>
+  </section>
+
+  <!-- App view -->
+  <section id="app" class="hidden">
+    <div class="topbar">
+      <input id="f-company" class="grow" placeholder="Company" />
+      <input id="f-reference" placeholder="Reference" />
+      <input id="f-from" type="date" title="From date" />
+      <input id="f-to" type="date" title="To date" />
+      <input id="f-text" class="grow" placeholder="Full text" />
+      <label id="unc-wrap" class="who hidden"><input id="f-unc" type="checkbox" /> include uncommitted</label>
+      <button id="search-btn" class="primary">Search</button>
+      <span class="spacer"></span>
+      <span id="who" class="who"></span>
+      <button id="logout-btn">Sign out</button>
+    </div>
+    <div class="main">
+      <div id="results" class="results"><div class="empty">Search to list documents.</div></div>
+      <div id="preview" class="preview"><div class="empty">Select a document to preview.</div></div>
+    </div>
+  </section>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

@@ -61,6 +61,7 @@ function register(ctx) {
   const learning   = require('../../../database/modules/learning');
   const doctypes   = require('../../../database/modules/document_types');
   const templates  = require('../../../database/modules/templates');
+  const previewService = require('../../services/previewService');
   const { requireRole, requireLogin, hasRole, logAudit } = require('../auth/handler');
 
   // ── Queue queries ───────────────────────────────────────────────────────────
@@ -79,23 +80,13 @@ function register(ctx) {
   ipcMain.handle('get-document-with-extractions', (_e, id) => {
     requireLogin();
     const db  = getDb();
-    const doc = documents.getWithExtractions(db, id);
+    // Pure data assembly (doc + extractions + resolved slug + digit-only fields)
+    // lives in the shared service so a detached client can reuse it; auth + audit
+    // stay here at the transport edge.
+    const doc = previewService.getDocumentDetail(db, id, { learning });
     if (doc) {
-      // Attach the fields whose learned format is digits-only, so Review can
-      // warn before confirming a non-digit value on one (Part 2). Resolve the
-      // type slug from document_type_id (getById is SELECT * and has no slug).
-      let typeSlug = doc.type_slug || null;
-      if (!typeSlug && doc.document_type_id) {
-        const t = db.prepare('SELECT slug FROM document_types WHERE id = ?').get(doc.document_type_id);
-        typeSlug = t ? t.slug : null;
-      }
-      // getWithExtractions → getById is SELECT * (no JOIN) so it lacks type_slug.
-      // Surface the resolved slug so Review can sync its doc-type dropdown to the
-      // record after a reprocess re-identifies the type.
-      doc.type_slug = typeSlug;
-      doc.digit_only_fields = learning.getDigitsOnlyFields(db, doc.supplier_name, typeSlug);
       logAudit(db, { action: 'document_open', target_type: 'document', target_id: id,
-        document_id: id, outcome: 'success', metadata: { type: typeSlug || null, status: doc.status || null } });
+        document_id: id, outcome: 'success', metadata: { type: doc.type_slug || null, status: doc.status || null } });
     }
     return doc;
   });
@@ -119,93 +110,17 @@ function register(ctx) {
 
     // A new document loading is our signal that the previous one's preview
     // has moved on — fire any deferred source-file move now (unless, oddly,
-    // it's pending removal of the very file we're about to load).
+    // it's pending removal of the very file we're about to load). This is a
+    // Review-window filing concern and stays here, not in the shared service.
     if (_pendingSourceMove && _pendingSourceMove.srcPath !== sourcePath) {
       _runPendingSourceMove(ctx, 'next document loaded');
     }
 
-    // Prefer the app-managed working copy — the reliable, app-owned location
-    // that doesn't depend on the user's source folder. Fall back to the source.
-    const wpRow = getDb().prepare('SELECT working_path FROM documents WHERE id = ?').get(docId);
-    let filePath = (wpRow && wpRow.working_path && fs.existsSync(wpRow.working_path))
-      ? wpRow.working_path
-      : sourcePath;
-
-    if (!fs.existsSync(filePath)) {
-      // The recorded source can be gone if the file was moved/renamed since
-      // processing — by the "Processed folder" setting, by confirming a duplicate
-      // (filed to the output folder, sometimes under a "-N" disambiguated name),
-      // or by deleting the source folder. Recover any surviving copy of the SAME
-      // document. File-not-found ONLY, so normal previews are untouched.
-      const db = getDb();
-      // First existing on-disk location for a document row (filed copy or its
-      // recorded folder), or null.
-      const existing = (r) => {
-        if (r.stored_path && fs.existsSync(r.stored_path)) return r.stored_path;
-        if (r.folder_path && r.original_filename) {
-          const p = path.join(r.folder_path, r.original_filename);
-          if (fs.existsSync(p)) return p;
-        }
-        return null;
-      };
-      // Base name with the import's "-N" duplicate suffix normalised away, so a
-      // row and its renamed copy match.
-      const baseOf = (fn) => {
-        const e = path.extname(fn || '');
-        return path.basename(fn || '', e).replace(/-\d+$/, '');
-      };
-      // 1) this document's own filed copy
-      const self = db.prepare('SELECT stored_path FROM documents WHERE id = ?').get(docId);
-      let alt = (self && self.stored_path && fs.existsSync(self.stored_path)) ? self.stored_path : null;
-      // 2) any other row holding the same source file (same normalised base name)
-      if (!alt) {
-        const base = baseOf(filename);
-        const sibs = db.prepare(
-          'SELECT folder_path, original_filename, stored_path FROM documents WHERE id <> ? AND original_filename LIKE ?'
-        ).all(docId, base + '%');
-        for (const r of sibs) {
-          if (baseOf(r.original_filename) !== base) continue;
-          const f = existing(r);
-          if (f) { alt = f; break; }
-        }
-      }
-      if (!alt) {
-        console.log(`[pages] file not found (no recoverable copy): ${filePath}`);
-        return [];
-      }
-      console.log(`[pages] source missing for docId=${docId}; previewing recovered copy: ${alt}`);
-      filePath = alt;
-    }
-
-    const ext = path.extname(filePath).toLowerCase();
-    if (ext !== '.pdf') {
-      const data = fs.readFileSync(filePath);
-      const mime = ext === '.png' ? 'image/png' : 'image/jpeg';
-      return [`data:${mime};base64,${data.toString('base64')}`];
-    }
-
-    const py     = pythonExe();
-    const script = ctx.resourcePath('python_backend', 'render', 'pages.py');
-    return new Promise((resolve) => {
-      const proc = spawn(py, pythonArgs(script, '--file', filePath),
-        { windowsHide: true });
-      let out = '';
-      let err = '';
-      proc.stdout.on('data', d => { out += d.toString(); });
-      proc.stderr.on('data', d => { err += d.toString(); });
-      proc.on('error', (e) => {
-        console.log(`[pages] spawn error for ${filePath}: ${e.message}`);
-        resolve([]);
-      });
-      proc.on('close', (code) => {
-        try {
-          resolve(JSON.parse(out));
-        } catch (e) {
-          console.log(`[pages] render failed for ${filePath} — exit=${code} stdout_len=${out.length} parse_error=${e.message}`
-            + (err ? ` stderr=${err.trim().slice(0, 500)}` : ''));
-          resolve([]);
-        }
-      });
+    // Transport-agnostic page render lives in the shared service so the detached
+    // client can reuse it; Electron collaborators are injected via deps.
+    return previewService.getDocumentPages(getDb(), { docId, folderPath, filename }, {
+      fs, path, spawn, pythonExe, pythonArgs,
+      renderScript: ctx.resourcePath('python_backend', 'render', 'pages.py'),
     });
   });
 

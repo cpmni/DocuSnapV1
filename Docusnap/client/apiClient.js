@@ -1,0 +1,144 @@
+'use strict';
+
+/**
+ * client/apiClient.js
+ * -------------------
+ * The detached client's transport to the core app's /v1 API. Pure Node http/https
+ * (no Electron, no deps) so it is unit-testable against the real server and can be
+ * driven from the client's MAIN process — keeping the session token OUT of the
+ * renderer (the renderer calls IPC, main calls this).
+ *
+ * VERSION HANDSHAKE (lockstep): connect() reads /v1/health and compares the
+ * server's contract version against the version this client was built for. The
+ * client and core ship together, so:
+ *   - different MAJOR  -> block (incompatible; upgrade required),
+ *   - different MINOR  -> warn  (drift; proceed degraded),
+ *   - otherwise        -> ok.
+ * Stage 6 finalises how the UI enforces 'block'/'warn'; this returns the verdict.
+ */
+
+const http  = require('http');
+const https = require('https');
+const { URL } = require('url');
+
+// The contract version this client build targets — keep in lockstep with the
+// server's API_CONTRACT_VERSION (src/modules/api/handler.js).
+const CLIENT_CONTRACT = '1.0.0';
+
+function parseVer(v) {
+  const m = String(v || '').match(/^(\d+)\.(\d+)\.(\d+)/);
+  return m ? { major: +m[1], minor: +m[2], patch: +m[3] } : null;
+}
+
+/** Compare a server contract version to what the client expects. */
+function compareContract(serverVersion, expected = CLIENT_CONTRACT) {
+  const s = parseVer(serverVersion);
+  const e = parseVer(expected);
+  if (!s) return { mode: 'block', reason: 'server did not advertise a contract version' };
+  if (s.major !== e.major) {
+    return { mode: 'block', reason: `incompatible API (server v${serverVersion}, client expects v${e.major}.x)` };
+  }
+  if (s.minor !== e.minor) {
+    return { mode: 'warn', reason: `minor API drift (server v${serverVersion}, client v${expected})` };
+  }
+  return { mode: 'ok', reason: null };
+}
+
+function createClient(opts = {}) {
+  const baseUrl = String(opts.baseUrl || '').replace(/\/+$/, '');
+  const expectedContract = opts.expectedContract || CLIENT_CONTRACT;
+  const allowSelfSigned = !!opts.allowSelfSigned; // internal-CA / pinned dev certs
+  let token = null;
+
+  function request(method, p, { body, withAuth } = {}) {
+    return new Promise((resolve, reject) => {
+      let u;
+      try { u = new URL(baseUrl + p); } catch (e) { return reject(e); }
+      const lib = u.protocol === 'https:' ? https : http;
+      const data = body != null ? JSON.stringify(body) : null;
+      const headers = { 'Accept': 'application/json' };
+      if (data) { headers['Content-Type'] = 'application/json'; headers['Content-Length'] = Buffer.byteLength(data); }
+      if (withAuth && token) headers['Authorization'] = `Bearer ${token}`;
+      const reqOpts = {
+        method, headers, hostname: u.hostname, port: u.port,
+        path: u.pathname + u.search,
+      };
+      if (u.protocol === 'https:' && allowSelfSigned) reqOpts.rejectUnauthorized = false;
+      const req = lib.request(reqOpts, (res) => {
+        let out = '';
+        res.on('data', d => { out += d; });
+        res.on('end', () => {
+          let json = null;
+          try { json = out ? JSON.parse(out) : null; } catch { /* leave null */ }
+          resolve({ status: res.statusCode, json });
+        });
+      });
+      req.on('error', reject);
+      if (data) req.write(data);
+      req.end();
+    });
+  }
+
+  /** Handshake: returns { ok, mode:'ok'|'warn'|'block', reason, serverVersion }. */
+  async function connect() {
+    let r;
+    try { r = await request('GET', '/v1/health'); }
+    catch (e) { return { ok: false, mode: 'block', reason: `cannot reach server: ${e.message}`, serverVersion: null }; }
+    if (r.status !== 200 || !r.json) {
+      return { ok: false, mode: 'block', reason: `unexpected health response (${r.status})`, serverVersion: null };
+    }
+    const cmp = compareContract(r.json.contractVersion, expectedContract);
+    return { ok: cmp.mode !== 'block', mode: cmp.mode, reason: cmp.reason, serverVersion: r.json.contractVersion };
+  }
+
+  async function login(username, password, totp) {
+    const r = await request('POST', '/v1/auth/login', { body: { username, password, totp } });
+    if (r.status === 200 && r.json && r.json.token) {
+      token = r.json.token;
+      return { ok: true, user: r.json.user, expiresAt: r.json.expiresAt };
+    }
+    return {
+      ok: false, status: r.status,
+      mfaRequired: !!(r.json && r.json.mfaRequired),
+      error: (r.json && r.json.error) || 'Login failed.',
+      retryAfterMs: r.json && r.json.retryAfterMs,
+    };
+  }
+
+  async function logout() {
+    if (token) { try { await request('POST', '/v1/auth/logout', { withAuth: true }); } catch { /* best effort */ } }
+    token = null;
+    return { ok: true };
+  }
+
+  async function search(params) {
+    const r = await request('POST', '/v1/search', { body: params || {}, withAuth: true });
+    return r;
+  }
+  async function getDocument(id) {
+    return request('GET', `/v1/documents/${encodeURIComponent(id)}`, { withAuth: true });
+  }
+  async function getPages(id, folderPath, filename) {
+    const q = new URLSearchParams({ folderPath: folderPath || '', filename: filename || '' });
+    return request('GET', `/v1/documents/${encodeURIComponent(id)}/pages?${q}`, { withAuth: true });
+  }
+
+  // ── Mailbox / approval workflow ───────────────────────────────────────────────
+  const wfList    = (view) => request('GET', `/v1/workflow/${view}`, { withAuth: true });
+  const recipients = () => request('GET', '/v1/workflow/recipients', { withAuth: true });
+  const assign = (documentId, toUserId, actionRequired, comment) =>
+    request('POST', '/v1/workflow/routes', { withAuth: true, body: { documentId, toUserId, actionRequired, comment } });
+  const claim   = (id, version) => request('POST', `/v1/workflow/routes/${id}/claim`, { withAuth: true, body: { version } });
+  const resolve = (id, decision, comment, version) =>
+    request('POST', `/v1/workflow/routes/${id}/resolve`, { withAuth: true, body: { decision, comment, version } });
+  const recall  = (id, version) => request('POST', `/v1/workflow/routes/${id}/recall`, { withAuth: true, body: { version } });
+
+  return {
+    connect, login, logout, search, getDocument, getPages,
+    workflow: { list: wfList, recipients, assign, claim, resolve, recall },
+    isAuthenticated: () => !!token,
+    _setToken: (t) => { token = t; }, // test/diagnostic aid only
+  };
+}
+
+module.exports = { createClient, compareContract, CLIENT_CONTRACT };

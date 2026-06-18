@@ -34,6 +34,7 @@ const processingModeModule = require('./modules/processing/processing_mode_handl
 const watchModule          = require('./modules/watch/handler');
 const templatesModule      = require('./modules/templates/handler');
 const licensingModule      = require('./modules/licensing/handler');
+const apiModule            = require('./modules/api/handler');
 
 // ── DB ────────────────────────────────────────────────────────────────────────
 let _db = null;
@@ -380,6 +381,10 @@ app.whenReady().then(() => {
   // NO gate and NO denial path (enforcement OFF); the enterMainApp() flow below
   // is untouched, so app launch behavior is unchanged.
   licensingModule.register(ctx);
+
+  // Detached-client read-only API (Stage 2 dev POC). INERT unless SCANFINDER_API=1;
+  // loopback-only, least-privilege (readonly). See modules/api/handler.js.
+  apiModule.register(ctx);
 
   // ── Hidden developer processing inspector (read-only) ───────────────────────
   // Password is verified HERE in the main process; the renderer can only REQUEST
