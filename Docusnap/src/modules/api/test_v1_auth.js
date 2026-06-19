@@ -77,7 +77,7 @@ function httpReq(port, method, urlPath, body, token) {
 async function main() {
   let fail = 0;
   const db = await freshDb();
-  const server = api.createServer({ getDb: () => db, learning: { getDigitsOnlyFields: () => [] } });
+  const server = api.createServer({ getDb: () => db, learning: { getDigitsOnlyFields: () => [] }, checkEntitlement: () => ({ entitled: true, feature: 'detached_client' }) });
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const port = server.address().port;
   const login = (username, password, totpCode) =>

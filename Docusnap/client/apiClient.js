@@ -111,6 +111,10 @@ function createClient(opts = {}) {
     return { ok: true };
   }
 
+  async function entitlement() {
+    return request('GET', '/v1/entitlement', { withAuth: true });
+  }
+
   async function search(params) {
     const r = await request('POST', '/v1/search', { body: params || {}, withAuth: true });
     return r;
@@ -134,7 +138,7 @@ function createClient(opts = {}) {
   const recall  = (id, version) => request('POST', `/v1/workflow/routes/${id}/recall`, { withAuth: true, body: { version } });
 
   return {
-    connect, login, logout, search, getDocument, getPages,
+    connect, login, logout, entitlement, search, getDocument, getPages,
     workflow: { list: wfList, recipients, assign, claim, resolve, recall },
     isAuthenticated: () => !!token,
     _setToken: (t) => { token = t; }, // test/diagnostic aid only

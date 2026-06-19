@@ -25,8 +25,11 @@
     #banner.warn { background:rgba(247,184,79,.14); color:var(--warn); }
     #banner.block { background:rgba(247,111,111,.16); color:var(--err); }
 
-    /* Login */
-    #login { display:flex; align-items:center; justify-content:center; height:calc(100vh - 34px); }
+    /* Login / locked */
+    #login, #locked { display:flex; align-items:center; justify-content:center; height:calc(100vh - 34px); }
+    #locked .card { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:28px; width:380px; text-align:center; }
+    #locked h1 { font-size:18px; margin:0 0 8px; color:var(--warn); }
+    #locked p { color:var(--muted); font-size:13px; margin:0 0 18px; }
     #login .card { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:28px; width:340px; }
     #login h1 { font-size:18px; margin:0 0 4px; }
     #login p { color:var(--muted); font-size:13px; margin:0 0 18px; }
@@ -144,6 +147,15 @@
         <button id="mb-refresh">Refresh</button>
       </div>
       <div id="mb-list" class="mb-list"><div class="empty">Loading…</div></div>
+    </div>
+  </section>
+
+  <!-- Not-licensed (entitlement) screen -->
+  <section id="locked" class="hidden">
+    <div class="card">
+      <h1>Search client not licensed</h1>
+      <p id="locked-msg">This ScanFinder server does not include the detached search client. Contact your administrator to enable it.</p>
+      <button id="locked-back">Back to sign in</button>
     </div>
   </section>
 

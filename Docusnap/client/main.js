@@ -45,6 +45,7 @@ ipcMain.handle('client-config',       () => ({ apiUrl: API_URL }));
 ipcMain.handle('client-connect',      () => client.connect());
 ipcMain.handle('client-login',        (_e, { username, password, totp }) => client.login(username, password, totp));
 ipcMain.handle('client-logout',       () => client.logout());
+ipcMain.handle('client-entitlement',  () => client.entitlement());
 ipcMain.handle('client-search',       (_e, params) => client.search(params));
 ipcMain.handle('client-get-document', (_e, id) => client.getDocument(id));
 ipcMain.handle('client-get-pages',    (_e, id) => client.getPages(id));

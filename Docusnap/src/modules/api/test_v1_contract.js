@@ -111,6 +111,7 @@ async function main() {
   const server = api.createServer({
     getDb: () => db,
     learning: { getDigitsOnlyFields: () => [] }, // stub — keeps detail hermetic
+    checkEntitlement: () => ({ entitled: true, feature: 'detached_client' }),
   });
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const port = server.address().port;

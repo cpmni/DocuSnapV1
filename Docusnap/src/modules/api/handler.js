@@ -30,10 +30,11 @@ const { URL } = require('url');
 const searchService  = require('../../services/searchService');
 const previewService = require('../../services/previewService');
 const dto            = require('../../services/dto');
-const sessionService  = require('../../services/sessionService');
-const authService     = require('../../services/authService');
-const workflowService = require('../../services/workflowService');
-const totp            = require('../../lib/totp');
+const sessionService    = require('../../services/sessionService');
+const authService       = require('../../services/authService');
+const workflowService   = require('../../services/workflowService');
+const entitlementService = require('../../services/entitlementService');
+const totp              = require('../../lib/totp');
 
 // Map a workflowService error code to an HTTP status.
 const WF_HTTP = { FORBIDDEN: 403, NOT_FOUND: 404, CONFLICT: 409 };
@@ -115,6 +116,11 @@ function createRequestListener(ctx) {
   const workflow = ctx.workflowService || workflowService.createWorkflowService({ audit });
   const actorOf = (session) => ({ userId: session.userId, username: session.username, role: session.role });
 
+  // Detached-client add-on entitlement (ctx may override for tests/demo).
+  const checkEntitlement = ctx.checkEntitlement || (() => entitlementService.checkClientEntitlement(getDb()));
+  // Routes that expose the licensed feature itself (gated); auth/health/entitlement are not.
+  const FEATURE_ROUTE = new RegExp(`^${API_PREFIX}/(search|documents|workflow)(/|$)`);
+
   const pageDeps = () => ({
     fs: ctx.fs || require('fs'),
     path: ctx.path || require('path'),
@@ -152,9 +158,30 @@ function createRequestListener(ctx) {
         });
       }
 
+      // Add-on entitlement gate: the licensed feature surfaces (search/preview/
+      // workflow) are blocked unless this install is entitled to the detached
+      // client. Auth, health and the entitlement probe stay open so a client can
+      // sign in and discover it is not licensed.
+      if (FEATURE_ROUTE.test(pathname)) {
+        const ent = checkEntitlement();
+        if (!ent.entitled) {
+          return sendJson(res, 402, {
+            error: 'The ScanFinder search client is not licensed for this server.',
+            code: 'FEATURE_NOT_LICENSED', feature: ent.feature,
+          });
+        }
+      }
+
       // ── Public: health ───────────────────────────────────────────────────────
       if (req.method === 'GET' && pathname === `${API_PREFIX}/health`) {
         return sendJson(res, 200, { ok: true, contract: 'v1', contractVersion: API_CONTRACT_VERSION });
+      }
+
+      // ── Auth-required: add-on entitlement probe (never gated, so a client can
+      //    sign in and learn it is not licensed) ──────────────────────────────────
+      if (req.method === 'GET' && pathname === `${API_PREFIX}/entitlement`) {
+        const session = requireSession(req, res); if (!session) return;
+        return sendJson(res, 200, checkEntitlement());
       }
 
       // ── Public: login ────────────────────────────────────────────────────────

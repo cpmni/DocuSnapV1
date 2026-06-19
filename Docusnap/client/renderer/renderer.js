@@ -51,6 +51,14 @@ $('login-btn').addEventListener('click', async () => {
   const r = await api.login(username, password, totp);
   if (r.ok) {
     role = r.user.role;
+    // Add-on entitlement: the server may have authenticated us but not include the
+    // detached-client feature in its license. Gate before showing the app.
+    const ent = await api.entitlement();
+    if (!(ent.json && ent.json.entitled)) {
+      $('login').classList.add('hidden');
+      $('locked').classList.remove('hidden');
+      return;
+    }
     $('who').textContent = `${r.user.displayName || r.user.username} · ${role}`;
     $('unc-wrap').classList.toggle('hidden', !canDecide());
     $('login').classList.add('hidden');
@@ -75,6 +83,14 @@ $('logout-btn').addEventListener('click', async () => {
   $('login').classList.remove('hidden');
   $('p').value = ''; $('totp').value = '';
   $('totp').classList.add('hidden'); $('totp-label').classList.add('hidden');
+});
+
+$('locked-back').addEventListener('click', async () => {
+  await api.logout();
+  role = null;
+  $('locked').classList.add('hidden');
+  $('login').classList.remove('hidden');
+  $('p').value = '';
 });
 
 // ── View switching ─────────────────────────────────────────────────────────────

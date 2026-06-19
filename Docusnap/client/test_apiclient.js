@@ -64,7 +64,7 @@ async function main() {
   check('compareContract missing -> block', compareContract(null, '1.0.0').mode === 'block');
 
   const db = await freshDb();
-  const server = api.createServer({ getDb: () => db, learning: { getDigitsOnlyFields: () => [] } });
+  const server = api.createServer({ getDb: () => db, learning: { getDigitsOnlyFields: () => [] }, checkEntitlement: () => ({ entitled: true, feature: 'detached_client' }) });
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
 
