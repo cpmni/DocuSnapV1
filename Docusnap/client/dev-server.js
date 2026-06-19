@@ -19,6 +19,9 @@ const pw  = require('../src/modules/auth/password');
 
 const PORT = 8765;
 const DEMO = { admin: 'demo12345', alice: 'alice12345' };
+// Demo toggle: the detached-client add-on is "licensed" while this file exists, so
+// the entitlement gate can be flipped live (create/delete it) without a restart.
+const LICENSE_FLAG = path.join(os.tmpdir(), 'scanfinder_demo_licensed');
 
 // A tiny but valid PNG so the preview pane shows an actual image.
 const PNG = Buffer.from(
@@ -89,12 +92,16 @@ seed().then((db) => {
   const server = api.createServer({
     getDb: () => db,
     learning: { getDigitsOnlyFields: () => [] },
-    checkEntitlement: () => ({ entitled: true, feature: 'detached_client', reason: 'demo' }),
+    checkEntitlement: () => ({
+      entitled: fs.existsSync(LICENSE_FLAG), feature: 'detached_client',
+      reason: fs.existsSync(LICENSE_FLAG) ? 'licensed' : 'not_licensed',
+    }),
   });
   server.listen(PORT, '127.0.0.1', () => {
     console.log(`\n  ScanFinder DEMO API → http://127.0.0.1:${PORT}/v1`);
     console.log(`  Sign in:  demo / ${DEMO.admin}   (admin)`);
     console.log(`            alice / ${DEMO.alice}  (edit)`);
+    console.log(`  Add-on licensed: ${fs.existsSync(LICENSE_FLAG) ? 'YES' : 'NO'}  (toggle file: ${LICENSE_FLAG})`);
     console.log(`  Ctrl+C to stop.\n`);
   });
 }).catch((e) => { console.error('demo seed failed:', e); process.exit(1); });

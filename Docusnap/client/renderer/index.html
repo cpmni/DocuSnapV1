@@ -7,155 +7,363 @@
   <title>ScanFinder — Search</title>
   <style>
     :root {
-      --bg:#0c0e14; --surface:#13161f; --surface2:#1a1e2a; --border:#252836; --border2:#2f3347;
-      --accent:#4f8ef7; --accent2:#6ea8ff; --ok:#3ecf8e; --warn:#f7b84f; --err:#f76f6f;
-      --text:#e2e6f0; --muted:#7a82a0;
+      /* Light theme (default). */
+      --bg:#f4f6fa; --surface:#ffffff; --surface2:#eef1f7; --border:#e4e7ef; --border2:#d2d8e4;
+      --accent:#3b7df0; --accent2:#2f6fe0; --ok:#1f9d63; --warn:#b07816; --err:#d64545;
+      --text:#1b1f2a; --muted:#69728a;
+      --grad1:#e9eefb; --grad2:#f4f6fa; --nav-bg:rgba(255,255,255,.78);
+      --card-a:#ffffff; --card-b:#f6f8fc;
+      --shadow:0 1px 2px rgba(16,24,40,.05), 0 20px 44px -26px rgba(16,24,40,.22);
+      --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px;
+      --r:12px; --r-sm:9px; --r-pill:999px;
+      --display:'IBM Plex Sans',system-ui,sans-serif; --body:'IBM Plex Sans',system-ui,sans-serif;
+      --mono:'IBM Plex Mono',ui-monospace,monospace;
     }
     * { box-sizing:border-box; }
-    body { margin:0; font-family:'IBM Plex Sans',system-ui,sans-serif; background:var(--bg); color:var(--text); height:100vh; }
-    .mono { font-family:'IBM Plex Mono',ui-monospace,monospace; }
-    button { font:inherit; cursor:pointer; border:1px solid var(--border2); background:var(--surface2); color:var(--text); border-radius:8px; padding:8px 14px; }
-    button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
-    button:disabled { opacity:.5; cursor:not-allowed; }
-    input { font:inherit; background:var(--surface2); color:var(--text); border:1px solid var(--border2); border-radius:8px; padding:8px 10px; }
+    html,body { height:100%; }
+    body {
+      margin:0; font-family:var(--body); color:var(--text); font-size:14px;
+      background:
+        radial-gradient(120% 90% at 85% -10%, var(--grad1) 0%, transparent 55%),
+        radial-gradient(90% 70% at 0% 0%, var(--grad1) 0%, transparent 50%),
+        var(--grad2);
+    }
+    .mono { font-family:var(--mono); font-variant-numeric:tabular-nums; }
     .hidden { display:none !important; }
+    .spacer { flex:1 1 auto; }
+    .ic { width:16px; height:16px; flex:0 0 auto; }
 
-    #banner { padding:8px 14px; font-size:13px; text-align:center; }
-    #banner.ok { background:rgba(62,207,142,.12); color:var(--ok); }
-    #banner.warn { background:rgba(247,184,79,.14); color:var(--warn); }
-    #banner.block { background:rgba(247,111,111,.16); color:var(--err); }
+    /* ── Buttons ─────────────────────────────────────────────────────────────── */
+    .btn {
+      display:inline-flex; align-items:center; gap:var(--s2); white-space:nowrap;
+      font:600 13px/1 var(--body); padding:8px 14px; border-radius:var(--r-sm);
+      border:1px solid transparent; background:transparent; color:var(--text); cursor:pointer;
+      transition:background .15s ease, border-color .15s ease, filter .15s ease, color .15s ease, transform .04s ease;
+    }
+    .btn:active { transform:translateY(1px); }
+    .btn:focus-visible { outline:2px solid var(--accent2); outline-offset:2px; }
+    .btn[disabled], .btn.is-busy { opacity:.55; pointer-events:none; }
+    .btn-sm { padding:5px 10px; font-size:12px; gap:6px; }
+    .btn-block { width:100%; justify-content:center; }
+    .btn-primary { background:var(--accent); border-color:var(--accent); color:#fff; box-shadow:0 8px 18px -10px var(--accent); }
+    .btn-primary:hover { filter:brightness(1.09); }
+    .btn-secondary { background:var(--surface2); border-color:var(--border2); color:var(--text); }
+    .btn-secondary:hover { background:var(--border); border-color:var(--accent2); }
+    .btn-ghost { color:var(--muted); }
+    .btn-ghost:hover { color:var(--text); background:var(--surface2); border-color:var(--border2); }
+    .btn-danger { color:var(--err); border-color:rgba(247,111,111,.40); }
+    .btn-danger:hover { background:rgba(247,111,111,.14); border-color:var(--err); }
+    .btn .ic.spin { animation:spin .8s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
 
-    /* Login / locked */
-    #login, #locked { display:flex; align-items:center; justify-content:center; height:calc(100vh - 34px); }
-    #locked .card { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:28px; width:380px; text-align:center; }
-    #locked h1 { font-size:18px; margin:0 0 8px; color:var(--warn); }
-    #locked p { color:var(--muted); font-size:13px; margin:0 0 18px; }
-    #login .card { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:28px; width:340px; }
-    #login h1 { font-size:18px; margin:0 0 4px; }
-    #login p { color:var(--muted); font-size:13px; margin:0 0 18px; }
-    #login label { display:block; font-size:12px; color:var(--muted); margin:12px 0 4px; }
+    /* ── Inputs ──────────────────────────────────────────────────────────────── */
+    input {
+      font:inherit; background:var(--surface2); color:var(--text); border:1px solid var(--border2);
+      border-radius:var(--r-sm); padding:8px 10px; transition:border-color .15s ease, box-shadow .15s ease;
+    }
+    input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(79,142,247,.18); }
+    .fieldlbl { display:flex; flex-direction:column; gap:5px; }
+    .fieldlbl > span { font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); }
+
+    /* chips / dots / meters */
+    .dot { width:8px; height:8px; border-radius:50%; background:var(--muted); flex:0 0 auto; }
+    .dot.ok { background:var(--ok); box-shadow:0 0 8px rgba(62,207,142,.6); }
+    .dot.warn { background:var(--warn); } .dot.err { background:var(--err); }
+    .rolechip { font-size:11px; padding:2px 9px; border-radius:var(--r-pill); background:var(--surface2);
+      border:1px solid var(--border2); color:var(--accent2); text-transform:capitalize; }
+    .chip { display:inline-flex; align-items:center; font-size:11px; padding:2px 9px; border-radius:var(--r-pill);
+      border:1px solid var(--border2); color:var(--muted); }
+    .chip.confirmed,.chip.approved,.chip.acknowledged { color:var(--ok); background:rgba(62,207,142,.12); border-color:rgba(62,207,142,.4); }
+    .chip.needs_review,.chip.pending { color:var(--warn); background:rgba(247,184,79,.12); border-color:rgba(247,184,79,.4); }
+    .chip.deferred,.chip.recalled { color:var(--muted); background:var(--surface2); }
+    .chip.claimed { color:var(--accent2); background:rgba(79,142,247,.12); border-color:rgba(79,142,247,.4); }
+    .chip.rejected { color:var(--err); background:rgba(247,111,111,.12); border-color:rgba(247,111,111,.4); }
+    .meter { height:6px; width:120px; background:var(--surface2); border-radius:var(--r-pill); overflow:hidden; }
+    .meter > i { display:block; height:100%; border-radius:var(--r-pill); background:var(--ok); }
+    .meter.warn > i { background:var(--warn); } .meter.err > i { background:var(--err); }
+
+    /* Confidence signature: row pip + field-level tint */
+    .confpip { display:inline-flex; align-items:center; gap:6px; }
+    .cmeter { width:44px; height:5px; background:var(--surface2); border-radius:var(--r-pill); overflow:hidden; }
+    .cmeter > i { display:block; height:100%; background:var(--ok); border-radius:var(--r-pill); }
+    .confpip.warn .cmeter > i { background:var(--warn); }
+    .confpip.err .cmeter > i { background:var(--err); }
+    .cval { font-size:11px; color:var(--muted); min-width:30px; text-align:right; }
+    .field.fld-ok   { box-shadow:inset 3px 0 0 rgba(31,157,99,.55); }
+    .field.fld-warn { box-shadow:inset 3px 0 0 rgba(176,120,22,.7); }
+    .field.fld-err  { box-shadow:inset 3px 0 0 rgba(214,69,69,.7); }
+
+    .empty { color:var(--muted); padding:36px var(--s5); text-align:center; display:flex;
+      flex-direction:column; align-items:center; gap:10px; font-size:13px; }
+    .empty .ic { width:30px; height:30px; opacity:.45; }
+
+    /* ── Login / locked ──────────────────────────────────────────────────────── */
+    #login, #locked { display:flex; align-items:center; justify-content:center; height:100vh; padding:var(--s5); }
+    .card { background:linear-gradient(180deg, var(--card-a), var(--card-b)); border:1px solid var(--border);
+      border-radius:var(--r); padding:var(--s6); width:360px; box-shadow:var(--shadow); }
+    .card h1 { font-family:var(--display); font-size:20px; margin:0 0 var(--s2); letter-spacing:-.01em; }
+    .brandmark { width:30px; height:30px; color:var(--accent); margin-bottom:var(--s3); }
+    .card .sub { color:var(--muted); font-size:13px; margin:0 0 var(--s4); }
+    .conn { display:inline-flex; align-items:center; gap:7px; font-size:12px; color:var(--muted);
+      background:var(--surface2); border:1px solid var(--border); border-radius:var(--r-pill); padding:4px 10px; margin-bottom:var(--s4); }
+    #login label.fieldlbl { margin-top:var(--s3); }
     #login input { width:100%; }
-    #login .err { color:var(--err); font-size:12px; min-height:16px; margin-top:10px; }
-    #login button { width:100%; margin-top:16px; }
+    #login .err { color:var(--err); font-size:12px; min-height:16px; margin-top:var(--s3); }
+    #login .btn, #locked .btn { margin-top:var(--s4); }
 
-    /* App */
-    #app { height:calc(100vh - 34px); display:flex; flex-direction:column; }
+    /* Stage 4 — two-panel login */
+    .login-split { display:flex; width:780px; max-width:100%; border:1px solid var(--border);
+      border-radius:var(--r); overflow:hidden; box-shadow:var(--shadow); }
+    .login-brand { flex:1; padding:var(--s6); display:flex; flex-direction:column; gap:var(--s3);
+      background:
+        radial-gradient(130% 120% at 0% 0%, #dce7fd 0%, transparent 60%),
+        radial-gradient(120% 120% at 100% 100%, #e6ecfb 0%, transparent 55%),
+        linear-gradient(160deg, #eef3fe, #f8faff); }
+    .login-brand .brandmark { width:44px; height:44px; color:var(--accent); margin:0; }
+    .login-brand h1 { font-size:25px; margin:var(--s2) 0 0; letter-spacing:-.02em; }
+    .login-brand .promise { color:var(--muted); font-size:14px; margin:0; max-width:30ch; }
+    .login-points { list-style:none; margin:var(--s4) 0 0; padding:0; display:flex; flex-direction:column; gap:11px; }
+    .login-points li { position:relative; padding-left:24px; font-size:13px; color:var(--text); }
+    .login-points li .ic { position:absolute; left:0; top:0; width:16px; height:16px; color:var(--accent); }
+    .login-form { flex:0 0 326px; padding:var(--s6); background:var(--surface); display:flex; flex-direction:column; }
+    .login-form h2 { font-size:18px; margin:0 0 var(--s3); }
+    @media (max-width:720px) { .login-brand { display:none; } .login-split { width:360px; } }
+    #locked .card { text-align:center; width:400px; }
+    #locked .brandmark { color:var(--warn); margin:0 auto var(--s3); display:block; }
+    #locked h1 { color:var(--warn); }
+    #locked .sub { margin-bottom:var(--s5); }
+
+    /* ── App shell ───────────────────────────────────────────────────────────── */
+    #app { height:100vh; display:flex; flex-direction:row; }
     #view-search, #view-mailbox { flex:1; display:flex; flex-direction:column; min-height:0; }
-    .nav { display:flex; gap:6px; align-items:center; padding:8px 14px; border-bottom:1px solid var(--border); background:var(--surface); }
-    .navbtn { background:transparent; border:1px solid transparent; color:var(--muted); padding:6px 12px; }
-    .navbtn.active { color:var(--text); border-color:var(--border2); background:var(--surface2); }
-    .navbtn .badge { display:inline-block; min-width:18px; padding:0 5px; margin-left:6px; border-radius:999px; background:var(--accent); color:#fff; font-size:11px; }
-    .topbar { display:flex; gap:8px; align-items:center; padding:10px 14px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
-    .topbar input { flex:0 0 auto; }
-    .topbar .grow { flex:1 1 160px; }
-    .topbar .spacer { flex:1 1 auto; }
-    .who { color:var(--muted); font-size:12px; }
+
+    /* Sidebar shell */
+    .sidebar { width:216px; flex:0 0 216px; display:flex; flex-direction:column; gap:var(--s5);
+      background:var(--surface); border-right:1px solid var(--border); padding:var(--s4) var(--s3); }
+    .brand-lockup { display:flex; align-items:center; gap:var(--s2); padding:var(--s1) var(--s2); }
+    .brand-lockup .brandmark { width:26px; height:26px; color:var(--accent); }
+    .brand-lockup .wordmark { font-weight:600; font-size:15px; letter-spacing:-.01em; }
+    .brand-lockup .subtag { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.07em; }
+    .side-nav { display:flex; flex-direction:column; gap:4px; }
+    .sidebtn { display:flex; align-items:center; gap:var(--s3); width:100%; text-align:left;
+      padding:9px var(--s3); border-radius:var(--r-sm); border:1px solid transparent; background:transparent;
+      color:var(--muted); font:600 14px/1 var(--body); cursor:pointer; transition:background .15s, color .15s; }
+    .sidebtn:hover { background:var(--surface2); color:var(--text); }
+    .sidebtn.active { background:rgba(59,125,240,.10); color:var(--accent); border-color:rgba(59,125,240,.22); }
+    .sidebtn .ic { width:18px; height:18px; }
+    .side-foot { margin-top:auto; display:flex; flex-direction:column; gap:var(--s3);
+      border-top:1px solid var(--border); padding-top:var(--s3); }
+    .side-user { display:flex; flex-direction:column; gap:5px; font-size:12px; color:var(--muted); }
+
+    /* Content area + per-view header */
+    .content { flex:1; display:flex; flex-direction:column; min-height:0; }
+    .view-header { display:flex; align-items:center; justify-content:space-between; gap:var(--s4);
+      padding:var(--s4) var(--s5) var(--s3); border-bottom:1px solid var(--border); }
+    .vh-title { font-size:19px; font-weight:600; margin:0; letter-spacing:-.01em; }
+    .vh-sub { font-size:12px; color:var(--muted); margin-top:3px; }
+    .vh-actions { display:flex; gap:var(--s2); align-items:center; }
+
+    .badge { display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px;
+      padding:0 5px; border-radius:var(--r-pill); background:var(--accent); color:#fff;
+      font-size:11px; font-weight:600; }
+    .seg-badge { min-width:16px; height:16px; font-size:10px; background:var(--border2); color:var(--text); }
+
+    .toolbar { display:flex; gap:var(--s3); align-items:center; padding:var(--s3) var(--s5);
+      border-bottom:1px solid var(--border); flex-wrap:wrap; }
+    .toolbar .grow { flex:1 1 150px; } .toolbar input { width:100%; }
+    .toolbar .actions { display:flex; gap:var(--s2); align-items:center; }
+
+    /* Stage 2 — lead search bar */
+    .searchbar { display:flex; flex-direction:column; gap:var(--s3); padding:var(--s4) var(--s5);
+      border-bottom:1px solid var(--border); }
+    .search-lead { display:flex; gap:var(--s2); align-items:center; }
+    .lead-wrap { flex:1; position:relative; display:flex; align-items:center; }
+    .lead-wrap .ic { position:absolute; left:13px; width:18px; height:18px; color:var(--muted); pointer-events:none; }
+    .lead-input { flex:1; width:100%; padding:12px 14px 12px 42px; font-size:15px; border-radius:var(--r); }
+    .filters { display:flex; gap:var(--s3); align-items:flex-end; flex-wrap:wrap; }
+    .chips { display:flex; gap:var(--s2); flex-wrap:wrap; align-items:center; }
+    .chips .lbl { font-size:12px; color:var(--muted); }
+    .chip-btn { border:1px solid var(--border2); background:var(--surface); color:var(--muted);
+      border-radius:var(--r-pill); padding:5px 12px; font-size:12px; cursor:pointer; transition:border-color .15s, color .15s; }
+    .chip-btn:hover { border-color:var(--accent2); color:var(--text); }
+
     .main { flex:1; display:flex; min-height:0; }
-    .results { width:42%; border-right:1px solid var(--border); overflow:auto; }
-    .section-h { padding:8px 14px; font-size:11px; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); position:sticky; top:0; background:var(--bg); }
-    .row { padding:10px 14px; border-bottom:1px solid var(--border); cursor:pointer; }
-    .row:hover, .row.sel { background:var(--surface2); }
-    .row .r1 { font-size:14px; }
-    .row .r2 { font-size:12px; color:var(--muted); margin-top:2px; }
-    .chip { display:inline-block; font-size:11px; padding:1px 7px; border-radius:999px; border:1px solid var(--border2); margin-left:6px; }
-    .chip.confirmed { color:var(--ok); border-color:rgba(62,207,142,.5); }
-    .chip.needs_review { color:var(--warn); border-color:rgba(247,184,79,.5); }
-    .chip.deferred { color:var(--muted); }
-    .preview { flex:1; overflow:auto; padding:16px; }
-    .fields { margin-bottom:16px; }
-    .field { display:flex; justify-content:space-between; gap:12px; padding:6px 0; border-bottom:1px dashed var(--border); }
+    .results { width:42%; min-width:300px; border-right:1px solid var(--border); overflow:auto; }
+    .results-head { padding:var(--s3) var(--s4); font-size:12px; color:var(--muted); position:sticky; top:0;
+      background:var(--bg); border-bottom:1px solid var(--border); }
+    .section-h { padding:var(--s3) var(--s4) var(--s2); font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
+    .row { padding:var(--s3) var(--s4); border-bottom:1px solid var(--border); cursor:pointer;
+      border-left:3px solid transparent; transition:background .12s ease, border-color .12s ease; }
+    .row:hover { background:var(--surface2); }
+    .row.sel { background:var(--surface2); border-left-color:var(--accent); }
+    .row .r1 { display:flex; align-items:center; gap:var(--s2); font-size:14px; }
+    .row .r1 .nm { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .row .r2 { font-size:12px; color:var(--muted); margin-top:3px; }
+
+    .preview { flex:1; overflow:auto; padding:var(--s5); }
+    .pv-head { display:flex; align-items:center; gap:var(--s3); margin-bottom:var(--s4); }
+    .pv-head .ic { width:18px; height:18px; color:var(--accent); }
+    .pv-head h2 { font-size:16px; margin:0; font-weight:600; }
+    .pv-conf { display:flex; align-items:center; gap:var(--s3); margin:0 0 var(--s4); padding:10px var(--s4);
+      border:1px solid var(--border); border-radius:var(--r); background:var(--surface); font-size:13px; color:var(--muted); }
+    .pv-conf .meter { width:160px; }
+    .pv-conf .cval { font-weight:600; color:var(--text); }
+    .fields { margin-bottom:var(--s5); border:1px solid var(--border); border-radius:var(--r); overflow:hidden; }
+    .field { display:flex; justify-content:space-between; gap:var(--s4); padding:9px var(--s4);
+      border-bottom:1px solid var(--border); }
+    .field:last-child { border-bottom:none; }
     .field .k { color:var(--muted); font-size:12px; }
-    .note { color:var(--warn); font-size:12px; }
-    .pages img { max-width:100%; border:1px solid var(--border); border-radius:8px; margin-bottom:12px; display:block; }
-    .empty { color:var(--muted); padding:24px; text-align:center; }
+    .field .v { text-align:right; }
+    .note { color:var(--warn); font-size:12px; padding:6px var(--s4); background:rgba(247,184,79,.08); }
+    .pages img { max-width:100%; border:1px solid var(--border); border-radius:var(--r-sm); margin-bottom:var(--s3); display:block; }
 
-    /* Workflow / assign */
-    .wf { margin-top:18px; padding-top:14px; border-top:1px solid var(--border); }
-    .wf h3 { font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:0 0 8px; }
-    .wf select, .wf input { margin:0 6px 8px 0; }
-    .wf .err { color:var(--err); font-size:12px; }
-    .wf .ok { color:var(--ok); font-size:12px; }
+    /* workflow / assign */
+    .wf { margin:0 0 var(--s4); padding:var(--s3) var(--s4); border:1px solid var(--border); border-radius:var(--r);
+      background:var(--surface); box-shadow:var(--shadow); }
+    .wf h3 { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:0 0 var(--s3);
+      display:flex; align-items:center; gap:6px; }
+    .wf .wf-row { display:flex; gap:var(--s2); flex-wrap:wrap; align-items:center; }
+    .wf select, .wf input { background:var(--surface2); color:var(--text); border:1px solid var(--border2);
+      border-radius:var(--r-sm); padding:7px 9px; font:inherit; }
+    .wf .msg { font-size:12px; margin-left:4px; } .wf .msg.ok { color:var(--ok); } .wf .msg.err { color:var(--err); }
+    .wf.decision { border-color:rgba(59,125,240,.30); }
+    .dec-banner { display:flex; align-items:flex-start; gap:8px; font-size:13px; color:var(--text);
+      background:rgba(59,125,240,.08); border:1px solid rgba(59,125,240,.22); border-radius:var(--r-sm);
+      padding:10px 12px; margin-bottom:var(--s3); }
+    .dec-banner .ic { width:16px; height:16px; color:var(--accent); margin-top:1px; }
+    .dec-acts { display:flex; gap:var(--s2); flex-wrap:wrap; }
 
-    /* Mailbox */
-    .mb-tabs { gap:6px; }
+    /* ── Mailbox ─────────────────────────────────────────────────────────────── */
+    .segmented { display:inline-flex; background:var(--surface2); border:1px solid var(--border);
+      border-radius:var(--r-pill); padding:3px; gap:2px; }
+    .seg { display:inline-flex; align-items:center; gap:6px; border:none; background:transparent; color:var(--muted);
+      padding:6px 13px; border-radius:var(--r-pill); font:600 13px/1 var(--body); cursor:pointer; transition:background .15s, color .15s; }
+    .seg:hover { color:var(--text); } .seg.active { background:var(--accent); color:#fff; }
+    .seg.active .seg-badge { background:rgba(255,255,255,.25); color:#fff; }
     .mb-list { flex:1; overflow:auto; }
-    .mb-row { padding:12px 16px; border-bottom:1px solid var(--border); }
-    .mb-row .r1 { font-size:14px; }
-    .mb-row .r2 { font-size:12px; color:var(--muted); margin:2px 0 8px; }
-    .mb-row .acts { display:flex; gap:6px; flex-wrap:wrap; }
-    .mb-row .acts button { padding:5px 10px; font-size:13px; }
-    .state { display:inline-block; font-size:11px; padding:1px 7px; border-radius:999px; border:1px solid var(--border2); margin-left:6px; }
-    .state.pending { color:var(--warn); } .state.claimed { color:var(--accent2); }
-    .state.approved, .state.acknowledged { color:var(--ok); }
-    .state.rejected { color:var(--err); } .state.recalled { color:var(--muted); }
+    .mb-row { padding:var(--s4); border-bottom:1px solid var(--border); }
+    .mb-row .t1 { display:flex; align-items:center; gap:var(--s2); }
+    .mb-row .t1 .nm { font-weight:600; font-size:14px; }
+    .mb-row .t2 { display:flex; align-items:center; gap:7px; font-size:12px; color:var(--muted); margin:5px 0; }
+    .mb-row .t2 .ic { width:14px; height:14px; opacity:.7; }
+    .mb-row .quote { border-left:2px solid var(--border2); padding-left:10px; color:var(--muted);
+      font-size:13px; margin:var(--s2) 0; }
+    .mb-row .acts { display:flex; gap:var(--s2); flex-wrap:wrap; margin-top:var(--s3); }
+    .mb-row .reason { display:flex; gap:var(--s2); margin-top:var(--s3); }
+    .mb-row .reason input { flex:1; }
+
+    @keyframes fadeUp { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+    .fade { animation:fadeUp .22s ease both; }
+    @media (prefers-reduced-motion: reduce) {
+      * { animation:none !important; transition:none !important; }
+    }
   </style>
 </head>
 <body>
-  <div id="banner" class="hidden"></div>
-
-  <!-- Login view -->
+  <!-- Login -->
   <section id="login">
-    <div class="card">
-      <h1>ScanFinder Search</h1>
-      <p id="api-target" class="mono"></p>
-      <label>Username</label>
-      <input id="u" autocomplete="username" />
-      <label>Password</label>
-      <input id="p" type="password" autocomplete="current-password" />
-      <label id="totp-label" class="hidden">Authentication code</label>
-      <input id="totp" class="hidden mono" inputmode="numeric" autocomplete="one-time-code" />
-      <div id="login-err" class="err"></div>
-      <button id="login-btn" class="primary">Sign in</button>
+    <div class="login-split">
+      <div class="login-brand">
+        <svg class="brandmark" data-ic="brand"></svg>
+        <h1>ScanFinder</h1>
+        <p class="promise">Find, preview and approve your filed documents — fast.</p>
+        <ul class="login-points">
+          <li><svg data-ic="lock"></svg>Everything stays on your network</li>
+          <li><svg data-ic="search"></svg>Search across every filed document</li>
+          <li><svg data-ic="check"></svg>Approve &amp; route from your inbox</li>
+        </ul>
+      </div>
+      <div class="login-form">
+        <h2>Sign in</h2>
+        <div class="conn"><span id="conn-dot" class="dot"></span><span id="conn-text">Connecting…</span></div>
+        <label class="fieldlbl"><span>Username</span><input id="u" autocomplete="username" /></label>
+        <label class="fieldlbl"><span>Password</span><input id="p" type="password" autocomplete="current-password" /></label>
+        <label id="totp-label" class="fieldlbl hidden"><span>Authentication code</span></label>
+        <input id="totp" class="hidden mono" inputmode="numeric" autocomplete="one-time-code" style="width:100%" />
+        <div id="login-err" class="err"></div>
+        <button id="login-btn" class="btn btn-primary btn-block"><span data-ic="signin"></span>Sign in</button>
+      </div>
     </div>
   </section>
 
-  <!-- App view -->
+  <!-- App -->
   <section id="app" class="hidden">
-    <div class="nav">
-      <button id="nav-search" class="navbtn active">Search</button>
-      <button id="nav-mailbox" class="navbtn">Mailbox<span id="inbox-badge" class="badge hidden">0</span></button>
-      <span class="spacer"></span>
-      <span id="who" class="who"></span>
-      <button id="logout-btn">Sign out</button>
-    </div>
+    <aside class="sidebar">
+      <div class="brand-lockup">
+        <svg class="brandmark" data-ic="brand"></svg>
+        <div><div class="wordmark">ScanFinder</div><div class="subtag">Search client</div></div>
+      </div>
+      <nav class="side-nav">
+        <button id="nav-search" class="sidebtn active"><span data-ic="search"></span>Search</button>
+        <button id="nav-mailbox" class="sidebtn"><span data-ic="inbox"></span>Mailbox<span id="inbox-badge" class="badge hidden" style="margin-left:auto">0</span></button>
+      </nav>
+      <div class="side-foot">
+        <div class="conn"><span id="side-conn-dot" class="dot"></span><span id="side-conn-text">…</span></div>
+        <div class="side-user"><span id="who" class="mono"></span><span id="role-chip" class="rolechip hidden"></span></div>
+        <button id="logout-btn" class="btn btn-ghost btn-sm"><span data-ic="signout"></span>Sign out</button>
+      </div>
+    </aside>
+
+    <div class="content">
+      <header class="view-header">
+        <div><h1 id="vh-title" class="vh-title">Search</h1><div id="vh-sub" class="vh-sub"></div></div>
+        <div id="vh-actions" class="vh-actions"></div>
+      </header>
 
     <!-- Search -->
     <div id="view-search">
-      <div class="topbar">
-        <input id="f-company" class="grow" placeholder="Company" />
-        <input id="f-reference" placeholder="Reference" />
-        <input id="f-from" type="date" title="From date" />
-        <input id="f-to" type="date" title="To date" />
-        <input id="f-text" class="grow" placeholder="Full text" />
-        <label id="unc-wrap" class="who hidden"><input id="f-unc" type="checkbox" /> include uncommitted</label>
-        <button id="search-btn" class="primary">Search</button>
+      <div class="searchbar">
+        <div class="search-lead">
+          <div class="lead-wrap">
+            <svg data-ic="search"></svg>
+            <input id="f-text" class="lead-input" placeholder="Search documents — company, reference, or anything in the text" />
+          </div>
+          <button id="search-btn" class="btn btn-primary"><span data-ic="search"></span>Search</button>
+          <button id="filters-toggle" class="btn btn-ghost"><span data-ic="filter"></span>Filters</button>
+        </div>
+        <div id="filters" class="filters hidden">
+          <label class="fieldlbl"><span>Company</span><input id="f-company" placeholder="e.g. Acme" /></label>
+          <label class="fieldlbl"><span>Reference</span><input id="f-reference" placeholder="INV-…" /></label>
+          <label class="fieldlbl"><span>From</span><input id="f-from" type="date" /></label>
+          <label class="fieldlbl"><span>To</span><input id="f-to" type="date" /></label>
+          <label id="unc-wrap" class="hidden" style="font-size:12px;color:var(--muted);display:flex;gap:6px;align-items:center">
+            <input id="f-unc" type="checkbox" style="width:auto" /> include uncommitted</label>
+        </div>
+        <div id="example-chips" class="chips"></div>
       </div>
       <div class="main">
-        <div id="results" class="results"><div class="empty">Search to list documents.</div></div>
-        <div id="preview" class="preview"><div class="empty">Select a document to preview.</div></div>
+        <div class="results">
+          <div id="results-head" class="results-head hidden"></div>
+          <div id="results"><div class="empty">Search by company, reference, date or full text to find filed documents.</div></div>
+        </div>
+        <div id="preview" class="preview"><div class="empty">Select a document on the left to preview its pages and fields.</div></div>
       </div>
     </div>
 
     <!-- Mailbox -->
     <div id="view-mailbox" class="hidden">
-      <div class="topbar mb-tabs">
-        <button class="navbtn active" data-box="inbox">Inbox</button>
-        <button class="navbtn" data-box="sent">Sent</button>
-        <button class="navbtn" data-box="assigned">Assigned</button>
-        <button class="navbtn" data-box="completed">Completed</button>
+      <div class="toolbar" style="align-items:center">
+        <div class="segmented">
+          <button class="seg active" data-box="inbox"><span data-ic="inbox"></span>Inbox<span class="seg-badge badge hidden" data-count></span></button>
+          <button class="seg" data-box="sent"><span data-ic="assign"></span>Sent<span class="seg-badge badge hidden" data-count></span></button>
+          <button class="seg" data-box="assigned"><span data-ic="claim"></span>Assigned<span class="seg-badge badge hidden" data-count></span></button>
+          <button class="seg" data-box="completed"><span data-ic="check"></span>Completed<span class="seg-badge badge hidden" data-count></span></button>
+        </div>
         <span class="spacer"></span>
-        <button id="mb-refresh">Refresh</button>
+        <button id="mb-refresh" class="btn btn-secondary btn-sm"><span data-ic="refresh"></span>Refresh</button>
       </div>
       <div id="mb-list" class="mb-list"><div class="empty">Loading…</div></div>
     </div>
+    </div><!-- /.content -->
   </section>
 
-  <!-- Not-licensed (entitlement) screen -->
+  <!-- Not-licensed -->
   <section id="locked" class="hidden">
     <div class="card">
+      <svg class="brandmark" data-ic="lock"></svg>
       <h1>Search client not licensed</h1>
-      <p id="locked-msg">This ScanFinder server does not include the detached search client. Contact your administrator to enable it.</p>
-      <button id="locked-back">Back to sign in</button>
+      <p class="sub">This is a paid ScanFinder add-on, and it isn’t enabled for this server yet. Ask your administrator to enable the search client for your licence.</p>
+      <button id="locked-back" class="btn btn-secondary btn-block"><span data-ic="signout"></span>Back to sign in</button>
     </div>
   </section>
 
