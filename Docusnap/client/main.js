@@ -50,6 +50,16 @@ ipcMain.handle('client-get-document', (_e, id) => client.getDocument(id));
 ipcMain.handle('client-get-pages',    (_e, id) => client.getPages(id));
 ipcMain.handle('client-authed',       () => client.isAuthenticated());
 
+// Mailbox / approval workflow.
+ipcMain.handle('client-wf-list',       (_e, view) => client.workflow.list(view));
+ipcMain.handle('client-wf-recipients', () => client.workflow.recipients());
+ipcMain.handle('client-wf-assign',     (_e, { documentId, toUserId, actionRequired, comment }) =>
+  client.workflow.assign(documentId, toUserId, actionRequired, comment));
+ipcMain.handle('client-wf-claim',      (_e, { id, version }) => client.workflow.claim(id, version));
+ipcMain.handle('client-wf-resolve',    (_e, { id, decision, comment, version }) =>
+  client.workflow.resolve(id, decision, comment, version));
+ipcMain.handle('client-wf-recall',     (_e, { id, version }) => client.workflow.recall(id, version));
+
 app.whenReady().then(createWindow);
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

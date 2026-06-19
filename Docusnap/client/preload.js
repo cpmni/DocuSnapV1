@@ -20,4 +20,14 @@ contextBridge.exposeInMainWorld('scanfinder', {
   getDocument:     (id) => ipcRenderer.invoke('client-get-document', id),
   getPages:        (id) => ipcRenderer.invoke('client-get-pages', id),
   isAuthenticated: () => ipcRenderer.invoke('client-authed'),
+  workflow: {
+    list:       (view) => ipcRenderer.invoke('client-wf-list', view),
+    recipients: () => ipcRenderer.invoke('client-wf-recipients'),
+    assign:     (documentId, toUserId, actionRequired, comment) =>
+                  ipcRenderer.invoke('client-wf-assign', { documentId, toUserId, actionRequired, comment }),
+    claim:      (id, version) => ipcRenderer.invoke('client-wf-claim', { id, version }),
+    resolve:    (id, decision, comment, version) =>
+                  ipcRenderer.invoke('client-wf-resolve', { id, decision, comment, version }),
+    recall:     (id, version) => ipcRenderer.invoke('client-wf-recall', { id, version }),
+  },
 });

@@ -37,6 +37,11 @@
 
     /* App */
     #app { height:calc(100vh - 34px); display:flex; flex-direction:column; }
+    #view-search, #view-mailbox { flex:1; display:flex; flex-direction:column; min-height:0; }
+    .nav { display:flex; gap:6px; align-items:center; padding:8px 14px; border-bottom:1px solid var(--border); background:var(--surface); }
+    .navbtn { background:transparent; border:1px solid transparent; color:var(--muted); padding:6px 12px; }
+    .navbtn.active { color:var(--text); border-color:var(--border2); background:var(--surface2); }
+    .navbtn .badge { display:inline-block; min-width:18px; padding:0 5px; margin-left:6px; border-radius:999px; background:var(--accent); color:#fff; font-size:11px; }
     .topbar { display:flex; gap:8px; align-items:center; padding:10px 14px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
     .topbar input { flex:0 0 auto; }
     .topbar .grow { flex:1 1 160px; }
@@ -60,6 +65,26 @@
     .note { color:var(--warn); font-size:12px; }
     .pages img { max-width:100%; border:1px solid var(--border); border-radius:8px; margin-bottom:12px; display:block; }
     .empty { color:var(--muted); padding:24px; text-align:center; }
+
+    /* Workflow / assign */
+    .wf { margin-top:18px; padding-top:14px; border-top:1px solid var(--border); }
+    .wf h3 { font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:0 0 8px; }
+    .wf select, .wf input { margin:0 6px 8px 0; }
+    .wf .err { color:var(--err); font-size:12px; }
+    .wf .ok { color:var(--ok); font-size:12px; }
+
+    /* Mailbox */
+    .mb-tabs { gap:6px; }
+    .mb-list { flex:1; overflow:auto; }
+    .mb-row { padding:12px 16px; border-bottom:1px solid var(--border); }
+    .mb-row .r1 { font-size:14px; }
+    .mb-row .r2 { font-size:12px; color:var(--muted); margin:2px 0 8px; }
+    .mb-row .acts { display:flex; gap:6px; flex-wrap:wrap; }
+    .mb-row .acts button { padding:5px 10px; font-size:13px; }
+    .state { display:inline-block; font-size:11px; padding:1px 7px; border-radius:999px; border:1px solid var(--border2); margin-left:6px; }
+    .state.pending { color:var(--warn); } .state.claimed { color:var(--accent2); }
+    .state.approved, .state.acknowledged { color:var(--ok); }
+    .state.rejected { color:var(--err); } .state.recalled { color:var(--muted); }
   </style>
 </head>
 <body>
@@ -83,21 +108,42 @@
 
   <!-- App view -->
   <section id="app" class="hidden">
-    <div class="topbar">
-      <input id="f-company" class="grow" placeholder="Company" />
-      <input id="f-reference" placeholder="Reference" />
-      <input id="f-from" type="date" title="From date" />
-      <input id="f-to" type="date" title="To date" />
-      <input id="f-text" class="grow" placeholder="Full text" />
-      <label id="unc-wrap" class="who hidden"><input id="f-unc" type="checkbox" /> include uncommitted</label>
-      <button id="search-btn" class="primary">Search</button>
+    <div class="nav">
+      <button id="nav-search" class="navbtn active">Search</button>
+      <button id="nav-mailbox" class="navbtn">Mailbox<span id="inbox-badge" class="badge hidden">0</span></button>
       <span class="spacer"></span>
       <span id="who" class="who"></span>
       <button id="logout-btn">Sign out</button>
     </div>
-    <div class="main">
-      <div id="results" class="results"><div class="empty">Search to list documents.</div></div>
-      <div id="preview" class="preview"><div class="empty">Select a document to preview.</div></div>
+
+    <!-- Search -->
+    <div id="view-search">
+      <div class="topbar">
+        <input id="f-company" class="grow" placeholder="Company" />
+        <input id="f-reference" placeholder="Reference" />
+        <input id="f-from" type="date" title="From date" />
+        <input id="f-to" type="date" title="To date" />
+        <input id="f-text" class="grow" placeholder="Full text" />
+        <label id="unc-wrap" class="who hidden"><input id="f-unc" type="checkbox" /> include uncommitted</label>
+        <button id="search-btn" class="primary">Search</button>
+      </div>
+      <div class="main">
+        <div id="results" class="results"><div class="empty">Search to list documents.</div></div>
+        <div id="preview" class="preview"><div class="empty">Select a document to preview.</div></div>
+      </div>
+    </div>
+
+    <!-- Mailbox -->
+    <div id="view-mailbox" class="hidden">
+      <div class="topbar mb-tabs">
+        <button class="navbtn active" data-box="inbox">Inbox</button>
+        <button class="navbtn" data-box="sent">Sent</button>
+        <button class="navbtn" data-box="assigned">Assigned</button>
+        <button class="navbtn" data-box="completed">Completed</button>
+        <span class="spacer"></span>
+        <button id="mb-refresh">Refresh</button>
+      </div>
+      <div id="mb-list" class="mb-list"><div class="empty">Loading…</div></div>
     </div>
   </section>
 
