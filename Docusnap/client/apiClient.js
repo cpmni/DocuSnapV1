@@ -56,7 +56,7 @@ function createClient(opts = {}) {
       try { u = new URL(baseUrl + p); } catch (e) { return reject(e); }
       const lib = u.protocol === 'https:' ? https : http;
       const data = body != null ? JSON.stringify(body) : null;
-      const headers = { 'Accept': 'application/json' };
+      const headers = { 'Accept': 'application/json', 'X-ScanFinder-Client-Contract': expectedContract };
       if (data) { headers['Content-Type'] = 'application/json'; headers['Content-Length'] = Buffer.byteLength(data); }
       if (withAuth && token) headers['Authorization'] = `Bearer ${token}`;
       const reqOpts = {

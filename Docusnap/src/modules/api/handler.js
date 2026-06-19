@@ -41,6 +41,17 @@ const wfStatus = (code) => WF_HTTP[code] || 400;
 
 const API_CONTRACT_VERSION = '1.0.0';
 const API_PREFIX = '/v1';
+const CLIENT_CONTRACT_HEADER = 'x-scanfinder-client-contract';
+
+// Lockstep gate (Stage 6): the server refuses a client whose contract MAJOR does
+// not match. The client advertises its contract via CLIENT_CONTRACT_HEADER; an
+// absent header is NOT enforced (older callers / health probing). /health stays
+// open so a blocked client can still read the server version to explain itself.
+function clientContractCompatible(headerVal) {
+  if (!headerVal) return true;
+  const m = String(headerVal).match(/^(\d+)\./);
+  return !!m && m[1] === API_CONTRACT_VERSION.split('.')[0];
+}
 const TOTP_ISSUER = 'ScanFinder';
 const MAX_BODY_BYTES = 1 * 1024 * 1024;
 
@@ -127,9 +138,19 @@ function createRequestListener(ctx) {
       if (!isLoopback(req.socket.remoteAddress) && !ctx.allowRemote) {
         return sendJson(res, 403, { error: 'forbidden' });
       }
+      // HSTS only when actually served over TLS (harmless to omit on loopback http).
+      if (req.socket.encrypted) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
 
       const url = new URL(req.url, 'http://127.0.0.1');
       const pathname = url.pathname;
+
+      // Lockstep handshake gate: refuse an incompatible client (health stays open).
+      if (pathname !== `${API_PREFIX}/health` && !clientContractCompatible(req.headers[CLIENT_CONTRACT_HEADER])) {
+        return sendJson(res, 426, {
+          error: 'Client version is incompatible with this server. Please update ScanFinder.',
+          serverContract: API_CONTRACT_VERSION,
+        });
+      }
 
       // ── Public: health ───────────────────────────────────────────────────────
       if (req.method === 'GET' && pathname === `${API_PREFIX}/health`) {
@@ -193,6 +214,10 @@ function createRequestListener(ctx) {
         const session = requireSession(req, res); if (!session) return;
         let params; try { params = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message }); }
         const result = searchService.searchDocuments({ db: getDb(), params, role: session.role });
+        // Audit that a search happened (counts only — never the query terms, which
+        // could be sensitive). Completes audit coverage for compliance review.
+        audit({ user_id: session.userId, action: 'search', action_category: 'document', outcome: 'success',
+                metadata: { confirmed: result.confirmed.length, uncommitted: result.uncommitted.length } });
         return sendJson(res, 200, dto.projectSearchResult(result));
       }
 
