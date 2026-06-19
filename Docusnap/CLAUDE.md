@@ -82,7 +82,8 @@ Electron + Python backend + SQLite. Fully offline capable.
 | Layer | Tech |
 |---|---|
 | Desktop shell | Electron 31, Node.js, better-sqlite3 |
-| UI | Vanilla HTML/CSS/JS, frameless windows |
+| UI | Vanilla HTML/CSS/JS; **native OS window frames**; shared light/dark theme (`src/windows/shared/theme.css`) |
+| LAN add-on | TLS `/v1` API (Node `https`) + detached Electron search client; certs via node-forge (`src/services/certService.js`) — see Detached search client |
 | OCR | Tesseract 5 via pytesseract + pypdfium2 |
 | AI extraction | phi3:mini via Ollama (dormant — `ai` mode not exposed in shipped UI; not bundled in installer) |
 | Database | SQLite via better-sqlite3 |
@@ -104,18 +105,23 @@ docusnap2/
 │   │   ├── settings/handler.js          # doc types, fields, key-value settings
 │   │   ├── templates/handler.js         # Admin Template Viewer — browse/pin samples, anchor→target mapping CRUD; Learning Recovery reassign (link-only, reversible) + MERGE (templates.mergeInto: fold a fragment's doc-links/missing-mappings/fields/landmarks/sample/identity into a canonical row, sum confirmed_count, delete source — IRREVERSIBLE; the cure for near-duplicate "same logo, drifted phash" template fragmentation). Guarded by database/modules/test_template_merge.js
 │   │   ├── search/handler.js            # document search
+│   │   ├── api/handler.js               # TLS /v1 API for the detached client + cert wizard + enroll (see Detached search client)
+│   │   ├── workflow/handler.js          # desktop mailbox/approval IPC (entitlement+role gated; reuses workflowService)
 │   │   └── licensing/handler.js         # license gate decideAccess() + trial/activate/revoke/enforcement IPC (see Licensing)
 │   ├── lib/license/{client.js,token.js,fingerprint.js}  # backend HTTP client · offline JWS verify · device fp_hash
+│   ├── services/{searchService,previewService,workflowService,entitlementService,certService,sessionService}.js  # transport-agnostic core (see Detached search client)
 │   └── windows/
 │       ├── main/{index.html,renderer.js}      # incl. empty-state launchpad (Begin Import · Search · Settings · Teach a document)
 │       ├── splash/{index.html,splash.js}      # cosmetic startup splash — shown in whenReady, closed once login loads
 │       ├── review/{index.html,renderer.js}    # incl. zoom/pan preview + hidden admin Template Wizard (⚓): draw anchor/target → save via existing template-mapping IPC; "Show where it reads" overlays (amber) the RESOLVED anchor/target on the current page via test-template-mapping → template_mapper.resolve_geometry (so the operator sees the mapping TRACK a shifted scan, vs the static drawn boxes)
 │       ├── teach/{index.html,renderer.js}      # guided "Teach a new document" wizard (non-technical) — see Teaching wizard
 │       ├── settings/{index.html,renderer.js}  # incl. Admin Template Viewer + License/Activation-Test tab
-│       ├── search/index.html                  # placeholder
+│       ├── search/{index.html,renderer.js,search-results.js,search-preview.js,search-actions.js}  # built search UI; entitlement-gated confidence/mailbox/workflow actions (see Detached search client)
 │       ├── dev-inspector/{index.html,renderer.js}  # hidden read-only processing inspector (Ctrl+Shift+D+M, pw SFDEV) — see Dev inspector
 │       ├── onboarding/{index.html,renderer.js} # first-run setup wizard — see First-run wizard
-│       └── license/{index.html,renderer.js}   # activation/trial screen shown when the gate locks
+│       ├── license/{index.html,renderer.js}   # activation/trial screen shown when the gate locks
+│       ├── help/                              # User Guide window (index + content pages, help.css, help-nav.js) — native frame, themed
+│       └── shared/{theme.css,theme.js,helpmode.js}  # centralised palette/components · theme toggle · data-help-key help-mode
 │   (createWindow opens every panel HIDDEN and reveals on ready-to-show — no
 │    empty-background "black box" flash; startup/login flow passes show:false and
 │    reveals manually, so it's untouched)
@@ -147,6 +153,8 @@ docusnap2/
 │   └── render/pages.py                 # PDF→PNG rendering — shared by review/search/template preview (see Gotchas)
 ├── config/keyword_patterns.json        # editable pattern library
 ├── config/license.json                 # client license config: base_url, product_id, public_keys (PUBLIC keys only)
+├── client/                              # detached LAN search/mailbox Electron client (apiClient.js pins the CA) — see Detached search client
+├── cert-tool/                           # standalone TLS cert-generator GUI (node-forge)
 └── licensing-backend/                   # separate PHP 8 + MySQL activation server (WAMP/IONOS); see Licensing
     ├── public/{index.php, v1/*.php, admin/*}  # health · /v1 trial_start|activate|validate|revoke|status · admin web page
     ├── lib/{db.php, jws.php, admin_auth.php}   # PDO+JSON helpers · Ed25519 signing · admin gate+CSRF+bright chrome
@@ -225,6 +233,14 @@ migrations      — version, applied_at
 license_tokens  — kind(seat|trial), subject, token_blob(JWS), state, not_after,   ← migration 16
                   grace_until, kid  (client cache of the signed token; deletable)
 device_registrations — fp_hash, product_id  (local mirror; backend is source of truth)
+users           — …, totp_secret, totp_enabled  ← migration 28 (detached-client MFA
+                  only; nullable/inert — the in-process desktop login never reads them)
+document_routes — document_id(FK cascade), from/to_user_id+username,
+                  action_required(approve|acknowledge), state(pending|claimed|approved|
+                  rejected|acknowledged|recalled), comment, resolution_comment,
+                  claimed_by_*, resolved_at, version  (mailbox/approval; see Detached
+                  search client). documents.workflow_status = denormalised latest state.
+                  Ensured UNCONDITIONALLY in runJsMigrations — NOT version-stamped.
 ```
 
 ---
@@ -759,16 +775,117 @@ after issuance; never expose `account_key_hash` or the raw fingerprint.
 
 ---
 
+## Detached search client (LAN add-on)
+A separate Electron **search/mailbox client** runs on other LAN PCs and talks to the
+core app over a TLS `/v1` API. It's an **entitlement-gated add-on** — the SAME gate
+also upgrades the core app's own Search. Core app still works fully standalone with
+the add-on off. (Design history: `memory/scanfinder-*` + the plan in `.claude/plans`.)
+
+**`/v1` API — `src/modules/api/handler.js`** (Node `https`; `register(ctx)`):
+- Starts when `SCANFINDER_API=1` **or** the `client_api_enabled` setting is true; host/
+  port/TLS read from settings (`client_api_host` default 127.0.0.1, `client_api_port`
+  8765, `client_api_tls_cert`/`_key`/`_ca_fingerprint`/`cert_sans`). Refuses a
+  non-loopback bind without TLS. `ctx.allowRemote = host !== 127.0.0.1/localhost`
+  (the loopback peer-guard fix for LAN clients).
+- **DTO projection** — returns only the frozen `search-documents` contract fields,
+  never `stored_path`/`folder_path`/`working_path`; files served as page images by id.
+- **Lockstep handshake** blocks on contract drift (exempts `/health` + `/v1/ca`).
+- Endpoints: search/preview, `/v1/workflow/{inbox,sent,assigned,completed,recipients}`
+  + route create/claim/resolve/recall, **`GET /v1/ca`** (pairing-gated; returns the CA
+  PEM + fingerprint for trust bootstrap — NEVER the CA key), **`POST /v1/enroll`**
+  (pairing → entitlement(402) → creds(401/429/MFA) → returns CA + session token + user).
+- Admin IPC: `client-api-{get-status,set-enabled,cert-status,cert-generate,cert-export}`.
+
+**TLS — managed certs + Certificate Wizard** (`src/services/certService.js`, node-forge,
+MIT — no OpenSSL bundling):
+- **2-tier**: a CA cert (`CA:TRUE`+`keyCertSign`) signs a server cert (IP **and** DNS
+  SANs + `serverAuth`); the client pins the **CA** (`ca.crt`) via the https `ca` option.
+  A lone self-signed leaf pinned as its own CA fails in Node — don't.
+- Enabling LAN access auto-runs **`ensureManagedCert`** (generates under userData/certs,
+  sets the cert/key/fingerprint/SANs settings; respects a manually-configured cert
+  outside certsDir unless forced). `buildConnectionProfile` exports a `{host,port,tls,
+  caFingerprintSha256,caPem}` profile the client imports. CA is **reused on rotate** so
+  existing clients stay trusted. `ca.key` is the trust root — **never** served anywhere.
+- Settings → **Search client access**: enable toggle + host:port + **Managed TLS
+  certificate** panel (status/fingerprint, Generate, Export profile) + an Advanced
+  details for manual cert/key paths.
+
+**Entitlement — `src/services/entitlementService.js`** (`detached_client_licensed`
+setting): the SINGLE gate. `checkClientEntitlement(db)` → `{entitled,feature}`; gates
+BOTH the detached client API and the in-core enhanced search. Manual/admin for now
+(licensing-driven wiring later). Exposed to the renderer via `get-entitlement`.
+
+**Mailbox / approval workflow** — `src/services/workflowService.js` +
+`database/modules/workflow.js`:
+- `document_routes` (+ `documents.workflow_status`) ensured **UNCONDITIONALLY +
+  idempotently** in `runJsMigrations` (NOT version-gated, NOT stamped) — a dev DB shared
+  across worktrees can be stamped past the version WITHOUT the table, which would break
+  the Review confirm path; CREATE-IF-MISSING self-heals. A **separate** state machine
+  (`pending→claimed→{approved|rejected|acknowledged}`, `recall` while pending) that
+  **never rewrites `documents.status`**; reject reason required; optimistic `version`.
+- **`editGuard` = the workflow_lock**: while a doc has an open route, the Review pipeline
+  is blocked from mutating it (admin override, audited). `review/handler.js`
+  `requireUnlocked()` wraps **confirm/defer/delete/restore**.
+- Desktop workflow IPC: `src/modules/workflow/handler.js` (`workflow-*`, entitlement +
+  role gated, reuses `workflowService`). Core **Search** gains (entitlement-gated, else
+  byte-identical basic search): a confidence signature, **mailbox view**, and workflow
+  actions via the existing `search-actions.registerActionProvider` hook.
+
+**TOTP MFA** (migration 28 — `users.totp_secret`/`totp_enabled`, nullable/inert): the
+in-process desktop login never reads these; only the client API enforces MFA when
+`totp_enabled=1`.
+
+**Components**: `client/` (detached Electron app — `apiClient.js` pins the CA / supports
+import-profile + fetch-CA-with-fingerprint-confirm + enroll; connect screen; search +
+mailbox UI) · `cert-tool/` (standalone cert-generator GUI) ·
+`scripts/New-ScanFinderCustomerCert.ps1` (per-customer CLI cert; `MSYS_NO_PATHCONV=1`).
+
+**Security invariants (preserve)**: real TLS verification with **no silent self-signed
+bypass in the client UI** (only a dev-only `SCANFINDER_CLIENT_ALLOW_SELF_SIGNED=1` env
+override); pin the **CA** (`ca.crt`), not `server.crt`; `ca.key` NEVER crosses any
+endpoint; enrollment needs an integrity check (fingerprint confirm / pairing code) — no
+silent auto-grab. (Host-side TLS tests can be MITM'd by AVG's HTTPS scanning — verify
+from the VM; see `memory/avg-https-mitm-local-tls`.)
+
+**Tests** (Electron-as-Node): `src/services/test_{certservice,workflow,entitlement,
+session}.js`, `src/modules/api/test_{cert_wizard,v1_ca,v1_enroll,v1_workflow,v1_*}.js`,
+`src/modules/review/test_workflow_lock.js`, `src/modules/workflow/test_workflow_ipc.js`,
+`client/test_apiclient.js`.
+
+---
+
 ## UI conventions
+**Shared theme** — every window's palette + components are centralised in
+`src/windows/shared/theme.css` (loaded by all windows) + `theme.js` (sets
+`data-theme` on `<html>`, persists the choice). **LIGHT is the default** (`:root`);
+DARK is the opt-in (`:root[data-theme="dark"]`). The palette is matched to the
+detached search client. Windows reference the tokens and no longer define their own
+`:root` (the help window's `help.css` was the last self-token holdout — now linked
+to theme.css too).
 ```css
---bg:#0c0e14  --surface:#13161f  --surface2:#1a1e2a
---border:#252836  --border2:#2f3347
---accent:#4f8ef7  --accent2:#6ea8ff
---ok:#3ecf8e  --warn:#f7b84f  --err:#f76f6f
---text:#e2e6f0  --muted:#7a82a0
+/* light (default) — the client palette */
+--bg:#f4f6fa  --surface:#ffffff  --surface2:#eef1f7  --surface3:#e4e8f1
+--border:#e4e7ef  --border2:#d2d8e4
+--accent:#3b7df0  --accent2:#2f6fe0  --accent-bg:#e7f0ff
+--ok:#1f9d63  --warn:#b07816  --err:#d64545
+--text:#1b1f2a  --muted:#69728a  --doc-bg:#eef1f7
+--r:12px --r-sm:9px --r-pill:999px        /* rounded buttons / inputs / cards */
 Font: IBM Plex Sans (UI) + IBM Plex Mono (values/code)
-Frameless windows — custom titlebar with -webkit-app-region:drag
 ```
+- **Native OS window frames** (`main.js` `frame:true`). The old custom drag
+  titlebars are hidden globally (`html #titlebar,.titlebar{display:none!important}`
+  in theme.css). The main window's bar is renamed `#topbar` and kept as a real toolbar.
+- **Self-contained child windows** (review/settings/search/teach/dev-inspector):
+  opened **modal** to the focused parent, **`skipTaskbar`** (no second taskbar
+  icon), start **maximised** with user resize remembered (`applyWindowState` →
+  `window-state.json`).
+- **Settings & Review use a left-sidebar shell**; buttons/inputs are the rounded
+  client-style components from theme.css.
+- **Help-mode** (`src/windows/shared/helpmode.js`): elements tagged `data-help-key`
+  highlight and deep-link into the User Guide window (`src/windows/help/`).
+- **Review queue** mirrors the Search results list: plain scroll + click (no arrow
+  rail; ↑/↓ keys still cycle), and a **draggable splitter** makes the file column
+  width adjustable (persisted in localStorage).
 
 ---
 
