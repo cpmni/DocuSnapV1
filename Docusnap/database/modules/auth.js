@@ -61,6 +61,29 @@ function setUserActive(db, id, isActive) {
     .run(isActive ? 1 : 0, id);
 }
 
+// ── TOTP (second factor for the detached-client auth boundary, migration 25) ──
+// Stored on the users row: totp_secret (base32) + totp_enabled (0/1). The secret
+// is written by an enrolment "setup" step and only ENABLED once the user proves a
+// valid code ("confirm") — so a half-finished enrolment never locks anyone out.
+function getTotpForUser(db, id) {
+  return db.prepare('SELECT totp_secret, totp_enabled FROM users WHERE id = ?').get(id);
+}
+
+function setTotpSecret(db, id, secretBase32) {
+  db.prepare(`UPDATE users SET totp_secret = ?, totp_enabled = 0, updated_at = datetime('now') WHERE id = ?`)
+    .run(secretBase32, id);
+}
+
+function setTotpEnabled(db, id, enabled) {
+  db.prepare(`UPDATE users SET totp_enabled = ?, updated_at = datetime('now') WHERE id = ?`)
+    .run(enabled ? 1 : 0, id);
+}
+
+function clearTotp(db, id) {
+  db.prepare(`UPDATE users SET totp_secret = NULL, totp_enabled = 0, updated_at = datetime('now') WHERE id = ?`)
+    .run(id);
+}
+
 // Used both for admin-initiated resets (mustChange = true, temp password) and
 // for a user changing their own password (mustChange = false, clears the flag).
 function setUserPassword(db, id, password_hash, mustChange) {
@@ -224,6 +247,7 @@ module.exports = {
   countUsers, countActiveAdmins,
   getUserByUsername, getUserById, getAllUsers, createUser,
   setUserRole, setUserActive, setUserPassword, touchLastLogin,
+  getTotpForUser, setTotpSecret, setTotpEnabled, clearTotp,
   issueRecoveryCode, findActiveRecoveryCodeByHash, markRecoveryCodeUsed,
   addAuditEntry, getAuditLog, getAuditLogFiltered, sanitiseAuditMeta, categoryFor,
 };

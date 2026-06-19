@@ -1,7 +1,7 @@
 // Applies synchronously from localStorage so there's no flash on load.
 // DOMContentLoaded syncs from DB and wires up the IPC listener.
 (function () {
-  const saved = localStorage.getItem('docusnap_theme') || 'dark';
+  const saved = localStorage.getItem('docusnap_theme') || 'light';
   document.documentElement.setAttribute('data-theme', saved);
 })();
 
@@ -12,10 +12,13 @@ function applyTheme(theme) {
 
 window.addEventListener('DOMContentLoaded', async () => {
   try {
-    const dbTheme = await window.docusnap.getSetting('theme');
+    const dbTheme = await (window.docusnap && window.docusnap.getSetting && window.docusnap.getSetting('theme'));
     if (dbTheme && dbTheme !== localStorage.getItem('docusnap_theme')) {
       applyTheme(dbTheme);
     }
   } catch {}
-  window.docusnap.onThemeChanged(applyTheme);
+  // Guard: some secondary windows use a narrower preload bridge.
+  if (window.docusnap && typeof window.docusnap.onThemeChanged === 'function') {
+    window.docusnap.onThemeChanged(applyTheme);
+  }
 });

@@ -51,6 +51,14 @@ function _resultItem(doc) {
   if      (doc.status === 'needs_review') statusBadge = `<span class="result-status-badge review">Needs Review</span>`;
   else if (doc.status === 'deferred')     statusBadge = `<span class="result-status-badge deferred">Deferred</span>`;
 
+  // Confidence pip — only when the workflow add-on is licensed (enhanced Search).
+  let confPip = '';
+  if (window.SearchState.entitled && doc.overall_confidence != null) {
+    const w = Math.max(4, Math.min(100, doc.overall_confidence));
+    confPip = `<span class="result-conf ${confLevel(doc.overall_confidence)}" title="Extraction confidence ${doc.overall_confidence}%">
+      <span class="rc-meter"><i style="width:${w}%"></i></span><span class="rc-val">${doc.overall_confidence}%</span></span>`;
+  }
+
   el.innerHTML = `
     <div class="result-header">
       <span class="result-supplier" title="${escHtml(supplier)}">${escHtml(supplier)}</span>
@@ -59,7 +67,7 @@ function _resultItem(doc) {
     <div class="result-filename" title="${escHtml(name)}">${escHtml(name)}</div>
     <div class="result-footer">
       <span class="result-date">${escHtml(date)}</span>
-      ${statusBadge}
+      <span class="result-footer-right">${statusBadge}${confPip}</span>
     </div>
   `;
   el.addEventListener('click', () => window.SearchPreview.selectDoc(doc));

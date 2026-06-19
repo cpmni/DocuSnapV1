@@ -1,0 +1,637 @@
+'use strict';
+
+/**
+ * modules/api/handler.js
+ * ----------------------
+ * Detached-client read-only API. Stage 2 stood up the read seam; Stage 3 adds the
+ * PARALLEL AUTH BOUNDARY in front of it — local-account login + optional TOTP MFA
+ * issuing an opaque bearer token (sessionService), which the API maps back to a
+ * { userId, username, role } on every request and uses to drive the SAME shared
+ * services the IPC handlers use. The in-process Electron `requireRole` checks are
+ * never touched or relaxed.
+ *
+ * SAFETY (still pre-LAN-hardening):
+ *  - OFF BY DEFAULT (SCANFINDER_API=1) and LOOPBACK ONLY by default; a non-loopback
+ *    peer is refused. TLS is supported (SCANFINDER_API_TLS_CERT/KEY) for when this
+ *    is deliberately exposed on the LAN — never serve plaintext off-host.
+ *  - Read/preview routes REQUIRE a valid session token (401 otherwise). The role
+ *    comes from the authenticated session — admin/edit can see uncommitted, readonly
+ *    cannot — exactly as the internal search rule, enforced in searchService.
+ *  - Every response body is projected by services/dto.js (no fs paths / raw OCR).
+ *
+ * createServer()/createRequestListener() are exported so the conformance + auth
+ * tests can drive the real stack on an ephemeral port without app bootstrap.
+ */
+
+const http  = require('http');
+const https = require('https');
+const { URL } = require('url');
+
+const searchService  = require('../../services/searchService');
+const previewService = require('../../services/previewService');
+const dto            = require('../../services/dto');
+const sessionService    = require('../../services/sessionService');
+const authService       = require('../../services/authService');
+const workflowService   = require('../../services/workflowService');
+const entitlementService = require('../../services/entitlementService');
+const totp              = require('../../lib/totp');
+const certService       = require('../../services/certService');
+const path              = require('path');
+
+// Map a workflowService error code to an HTTP status.
+const WF_HTTP = { FORBIDDEN: 403, NOT_FOUND: 404, CONFLICT: 409 };
+const wfStatus = (code) => WF_HTTP[code] || 400;
+
+const API_CONTRACT_VERSION = '1.0.0';
+const API_PREFIX = '/v1';
+const CLIENT_CONTRACT_HEADER = 'x-scanfinder-client-contract';
+
+// Lockstep gate (Stage 6): the server refuses a client whose contract MAJOR does
+// not match. The client advertises its contract via CLIENT_CONTRACT_HEADER; an
+// absent header is NOT enforced (older callers / health probing). /health stays
+// open so a blocked client can still read the server version to explain itself.
+function clientContractCompatible(headerVal) {
+  if (!headerVal) return true;
+  const m = String(headerVal).match(/^(\d+)\./);
+  return !!m && m[1] === API_CONTRACT_VERSION.split('.')[0];
+}
+const TOTP_ISSUER = 'ScanFinder';
+const MAX_BODY_BYTES = 1 * 1024 * 1024;
+
+function isLoopback(addr) {
+  return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
+}
+
+function sendJson(res, status, payload) {
+  const body = JSON.stringify(payload);
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': Buffer.byteLength(body),
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+  });
+  res.end(body);
+}
+
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > MAX_BODY_BYTES) { reject(new Error('body too large')); req.destroy(); return; }
+      chunks.push(c);
+    });
+    req.on('end', () => {
+      const raw = Buffer.concat(chunks).toString('utf8').trim();
+      if (!raw) return resolve({});
+      try { resolve(JSON.parse(raw)); } catch { reject(new Error('invalid JSON body')); }
+    });
+    req.on('error', reject);
+  });
+}
+
+function bearerToken(req) {
+  const h = req.headers['authorization'] || '';
+  const m = h.match(/^Bearer\s+(.+)$/i);
+  return m ? m[1].trim() : null;
+}
+
+/**
+ * Build the request listener over an explicit dependency set. Exposed for tests.
+ * deps: getDb (required), learning (stub-able), sessionStore, authenticator,
+ * page-render collaborators, dbAuth (audit + totp persistence), logger.
+ */
+function createRequestListener(ctx) {
+  const getDb = ctx.getDb;
+  const log = ctx.logger?.log?.bind(ctx.logger) || (() => {});
+  const learning = ctx.learning || require('../../../database/modules/learning');
+  const dbAuth = ctx.dbAuth || require('../../../database/modules/auth');
+  const sessions = ctx.sessionStore || sessionService.createSessionStore();
+  const authenticator = ctx.authenticator || authService.createAuthenticator();
+
+  const audit = (entry) => {
+    try { dbAuth.addAuditEntry(getDb(), { source: 'client_api', ...entry }); }
+    catch (e) { log(`[api] audit write failed: ${e && e.message}`); }
+  };
+
+  const workflow = ctx.workflowService || workflowService.createWorkflowService({ audit });
+  const actorOf = (session) => ({ userId: session.userId, username: session.username, role: session.role });
+
+  // Detached-client add-on entitlement (ctx may override for tests/demo).
+  const checkEntitlement = ctx.checkEntitlement || (() => entitlementService.checkClientEntitlement(getDb()));
+  // Routes that expose the licensed feature itself (gated); auth/health/entitlement are not.
+  const FEATURE_ROUTE = new RegExp(`^${API_PREFIX}/(search|documents|workflow)(/|$)`);
+
+  const pageDeps = () => ({
+    fs: ctx.fs || require('fs'),
+    path: ctx.path || require('path'),
+    spawn: ctx.spawn || require('child_process').spawn,
+    pythonExe: ctx.pythonExe,
+    pythonArgs: ctx.pythonArgs,
+    renderScript: ctx.renderScript
+      || (ctx.resourcePath && ctx.resourcePath('python_backend', 'render', 'pages.py')),
+    log,
+  });
+
+  // Resolve + require a session; on failure writes 401 and returns null.
+  const requireSession = (req, res) => {
+    const session = sessions.verify(bearerToken(req));
+    if (!session) { sendJson(res, 401, { error: 'unauthorized' }); return null; }
+    return session;
+  };
+
+  return async function listener(req, res) {
+    try {
+      if (!isLoopback(req.socket.remoteAddress) && !ctx.allowRemote) {
+        return sendJson(res, 403, { error: 'forbidden' });
+      }
+      // HSTS only when actually served over TLS (harmless to omit on loopback http).
+      if (req.socket.encrypted) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
+
+      const url = new URL(req.url, 'http://127.0.0.1');
+      const pathname = url.pathname;
+
+      // Lockstep handshake gate: refuse an incompatible client (health + CA bootstrap
+      // stay open so a fresh/older client can enroll).
+      if (pathname !== `${API_PREFIX}/health` && pathname !== `${API_PREFIX}/ca` && !clientContractCompatible(req.headers[CLIENT_CONTRACT_HEADER])) {
+        return sendJson(res, 426, {
+          error: 'Client version is incompatible with this server. Please update ScanFinder.',
+          serverContract: API_CONTRACT_VERSION,
+        });
+      }
+
+      // Add-on entitlement gate: the licensed feature surfaces (search/preview/
+      // workflow) are blocked unless this install is entitled to the detached
+      // client. Auth, health and the entitlement probe stay open so a client can
+      // sign in and discover it is not licensed.
+      if (FEATURE_ROUTE.test(pathname)) {
+        const ent = checkEntitlement();
+        if (!ent.entitled) {
+          return sendJson(res, 402, {
+            error: 'The ScanFinder search client is not licensed for this server.',
+            code: 'FEATURE_NOT_LICENSED', feature: ent.feature,
+          });
+        }
+      }
+
+      // ── Public: health ───────────────────────────────────────────────────────
+      if (req.method === 'GET' && pathname === `${API_PREFIX}/health`) {
+        return sendJson(res, 200, { ok: true, contract: 'v1', contractVersion: API_CONTRACT_VERSION });
+      }
+
+      // ── Public: CA bootstrap (lockstep-exempt). Returns the managed CA to pin.
+      //    The client fetches this over an UNTRUSTED connection and MUST confirm the
+      //    fingerprint out-of-band (TOFU); an optional pairing code gates harvesting. ─
+      if (req.method === 'GET' && pathname === `${API_PREFIX}/ca`) {
+        const pr = pairingOk(url, learning, getDb());
+        if (!pr.ok) return sendJson(res, 403, { error: pr.reason === 'expired' ? 'pairing code expired' : 'pairing code required', code: 'PAIRING' });
+        const prof = buildConnectionProfile(ctx);
+        if (!prof.ok) return sendJson(res, 404, { error: 'no managed certificate', code: 'NO_MANAGED_CA' });
+        return sendJson(res, 200, {
+          caPem: prof.profile.caPem, caFingerprintSha256: prof.profile.caFingerprintSha256,
+          host: prof.profile.host, port: prof.profile.port,
+        });
+      }
+
+      // ── Auth-required: add-on entitlement probe (never gated, so a client can
+      //    sign in and learn it is not licensed) ──────────────────────────────────
+      if (req.method === 'GET' && pathname === `${API_PREFIX}/entitlement`) {
+        const session = requireSession(req, res); if (!session) return;
+        return sendJson(res, 200, checkEntitlement());
+      }
+
+      // ── Public: login ────────────────────────────────────────────────────────
+      if (req.method === 'POST' && pathname === `${API_PREFIX}/auth/login`) {
+        let body;
+        try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+        const r = await authenticator.login(getDb(), body);
+        if (!r.ok) {
+          if (r.code === 'RATE_LIMITED') return sendJson(res, 429, { error: r.error, retryAfterMs: r.retryAfterMs });
+          if (r.code === 'MFA_REQUIRED') return sendJson(res, 401, { error: r.error, mfaRequired: true });
+          audit({ action: 'login_failure', action_category: 'auth', outcome: 'failure', details: r.code });
+          return sendJson(res, 401, { error: r.error });
+        }
+        const { token, expiresAt } = sessions.issue({ userId: r.user.id, username: r.user.username, role: r.user.role });
+        audit({ user_id: r.user.id, action: 'login_success', action_category: 'auth', outcome: 'success',
+                actor_username: r.user.username, actor_role: r.user.role });
+        return sendJson(res, 200, {
+          token, expiresAt,
+          user: { username: r.user.username, displayName: r.user.displayName, role: r.user.role },
+        });
+      }
+
+      // ── Public: enroll — credential + entitlement gated. Collapses CA-fetch +
+      //    login into one step: returns the CA to pin AND a session token. ──────────
+      if (req.method === 'POST' && pathname === `${API_PREFIX}/enroll`) {
+        const pr = pairingOk(url, learning, getDb());
+        if (!pr.ok) return sendJson(res, 403, { error: pr.reason === 'expired' ? 'pairing code expired' : 'pairing code required', code: 'PAIRING' });
+        const ent = checkEntitlement();
+        if (!ent.entitled) return sendJson(res, 402, {
+          error: 'The ScanFinder search client is not licensed for this server.',
+          code: 'FEATURE_NOT_LICENSED', feature: ent.feature,
+        });
+        let body; try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+        const r = await authenticator.login(getDb(), body);
+        if (!r.ok) {
+          if (r.code === 'RATE_LIMITED') return sendJson(res, 429, { error: r.error, retryAfterMs: r.retryAfterMs });
+          if (r.code === 'MFA_REQUIRED') return sendJson(res, 401, { error: r.error, mfaRequired: true });
+          audit({ action: 'enroll_failure', action_category: 'auth', outcome: 'failure', details: r.code });
+          return sendJson(res, 401, { error: r.error });
+        }
+        const prof = buildConnectionProfile(ctx);
+        if (!prof.ok) return sendJson(res, 409, { error: 'no managed certificate', code: 'NO_MANAGED_CA' });
+        const { token, expiresAt } = sessions.issue({ userId: r.user.id, username: r.user.username, role: r.user.role });
+        audit({ user_id: r.user.id, action: 'enroll_success', action_category: 'auth', outcome: 'success',
+                actor_username: r.user.username, actor_role: r.user.role });
+        return sendJson(res, 200, {
+          caPem: prof.profile.caPem, caFingerprintSha256: prof.profile.caFingerprintSha256,
+          host: prof.profile.host, port: prof.profile.port,
+          token, expiresAt,
+          user: { username: r.user.username, displayName: r.user.displayName, role: r.user.role },
+        });
+      }
+
+      // ── Auth-required: logout ─────────────────────────────────────────────────
+      if (req.method === 'POST' && pathname === `${API_PREFIX}/auth/logout`) {
+        const tok = bearerToken(req);
+        const session = sessions.verify(tok);
+        if (session) audit({ user_id: session.userId, action: 'logout', action_category: 'auth', outcome: 'success' });
+        sessions.revoke(tok);
+        return sendJson(res, 200, { ok: true });
+      }
+
+      // ── Auth-required: TOTP enrolment (setup → returns secret; confirm → enables) ─
+      if (req.method === 'POST' && pathname === `${API_PREFIX}/auth/totp/setup`) {
+        const session = requireSession(req, res); if (!session) return;
+        const secret = totp.generateSecret();
+        dbAuth.setTotpSecret(getDb(), session.userId, secret);
+        audit({ user_id: session.userId, action: 'totp_setup', action_category: 'auth', outcome: 'success' });
+        return sendJson(res, 200, {
+          secret,
+          otpauthUri: totp.otpauthUri({ secret, label: session.username, issuer: TOTP_ISSUER }),
+        });
+      }
+      if (req.method === 'POST' && pathname === `${API_PREFIX}/auth/totp/confirm`) {
+        const session = requireSession(req, res); if (!session) return;
+        let body; try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+        const row = dbAuth.getTotpForUser(getDb(), session.userId);
+        if (!row || !row.totp_secret || !totp.verify(body.totp, row.totp_secret)) {
+          return sendJson(res, 400, { error: 'Invalid authentication code.' });
+        }
+        dbAuth.setTotpEnabled(getDb(), session.userId, 1);
+        audit({ user_id: session.userId, action: 'totp_enabled', action_category: 'auth', outcome: 'success' });
+        return sendJson(res, 200, { ok: true });
+      }
+
+      // ── Auth-required: search ─────────────────────────────────────────────────
+      if (req.method === 'POST' && pathname === `${API_PREFIX}/search`) {
+        const session = requireSession(req, res); if (!session) return;
+        let params; try { params = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+        const result = searchService.searchDocuments({ db: getDb(), params, role: session.role });
+        // Audit that a search happened (counts only — never the query terms, which
+        // could be sensitive). Completes audit coverage for compliance review.
+        audit({ user_id: session.userId, action: 'search', action_category: 'document', outcome: 'success',
+                metadata: { confirmed: result.confirmed.length, uncommitted: result.uncommitted.length } });
+        return sendJson(res, 200, dto.projectSearchResult(result));
+      }
+
+      // ── Auth-required: document detail ────────────────────────────────────────
+      const detailMatch = pathname.match(new RegExp(`^${API_PREFIX}/documents/(\\d+)$`));
+      if (req.method === 'GET' && detailMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        const id = Number(detailMatch[1]);
+        const doc = previewService.getDocumentDetail(getDb(), id, { learning });
+        if (!doc) return sendJson(res, 404, { error: 'not found' });
+        audit({ user_id: session.userId, action: 'document_open', action_category: 'document',
+                outcome: 'success', document_id: id });
+        return sendJson(res, 200, dto.projectDocumentDetail(doc));
+      }
+
+      // ── Auth-required: document pages ─────────────────────────────────────────
+      const pagesMatch = pathname.match(new RegExp(`^${API_PREFIX}/documents/(\\d+)/pages$`));
+      if (req.method === 'GET' && pagesMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        const id = Number(pagesMatch[1]);
+        let folderPath = url.searchParams.get('folderPath');
+        let filename   = url.searchParams.get('filename');
+        // A detached client never sees filesystem paths, so it can't pass them.
+        // Resolve a usable location SERVER-SIDE from the document row (preferring
+        // the app-managed working copy, then the filed copy, then the source).
+        if (!folderPath || !filename) {
+          const P = ctx.path || require('path');
+          const row = getDb().prepare(
+            'SELECT working_path, stored_path, folder_path, original_filename FROM documents WHERE id = ?').get(id);
+          if (row) {
+            const pick = row.working_path || row.stored_path
+              || (row.folder_path && row.original_filename ? P.join(row.folder_path, row.original_filename) : null);
+            if (pick) { folderPath = folderPath || P.dirname(pick); filename = filename || P.basename(pick); }
+          }
+        }
+        const pages = await previewService.getDocumentPages(
+          getDb(), { docId: id, folderPath, filename }, pageDeps());
+        return sendJson(res, 200, { pages });
+      }
+
+      // ── Auth-required: mailbox / approval workflow ────────────────────────────
+      const wfList = pathname.match(new RegExp(`^${API_PREFIX}/workflow/(inbox|sent|assigned|completed)$`));
+      if (req.method === 'GET' && wfList) {
+        const session = requireSession(req, res); if (!session) return;
+        const rows = workflow[wfList[1]](getDb(), actorOf(session));
+        return sendJson(res, 200, { routes: dto.projectRoutes(rows) });
+      }
+
+      // Assignable recipients (active users) — only roles that can route may list them.
+      if (req.method === 'GET' && pathname === `${API_PREFIX}/workflow/recipients`) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!(session.role === 'admin' || session.role === 'edit')) return sendJson(res, 403, { error: 'forbidden' });
+        const users = (dbAuth.getAllUsers(getDb()) || [])
+          .filter(u => u.is_active)
+          .map(u => ({ id: u.id, username: u.username, displayName: u.display_name, role: u.role }));
+        return sendJson(res, 200, { recipients: users });
+      }
+
+      // Create a route (assign).
+      if (req.method === 'POST' && pathname === `${API_PREFIX}/workflow/routes`) {
+        const session = requireSession(req, res); if (!session) return;
+        let body; try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+        const r = workflow.assign(getDb(), actorOf(session), body);
+        return r.ok ? sendJson(res, 200, { route: dto.projectRoute(r.route) })
+                    : sendJson(res, wfStatus(r.code), { error: r.error, code: r.code });
+      }
+
+      // Transition a route: claim | resolve | recall.
+      const wfAct = pathname.match(new RegExp(`^${API_PREFIX}/workflow/routes/(\\d+)/(claim|resolve|recall)$`));
+      if (req.method === 'POST' && wfAct) {
+        const session = requireSession(req, res); if (!session) return;
+        const id = Number(wfAct[1]);
+        let body; try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+        const actor = actorOf(session);
+        let r;
+        if (wfAct[2] === 'claim')   r = workflow.claim(getDb(), actor, id, body.version);
+        else if (wfAct[2] === 'recall') r = workflow.recall(getDb(), actor, id, body.version);
+        else r = workflow.resolve(getDb(), actor, id, { decision: body.decision, comment: body.comment, expectedVersion: body.version });
+        return r.ok ? sendJson(res, 200, { route: dto.projectRoute(r.route) })
+                    : sendJson(res, wfStatus(r.code), { error: r.error, code: r.code });
+      }
+
+      return sendJson(res, 404, { error: 'not found' });
+    } catch (e) {
+      log(`[api] request error: ${e && e.message}`);
+      return sendJson(res, 500, { error: 'internal error' });
+    }
+  };
+}
+
+/** Build (but do not start) an HTTP server over the request listener. */
+function createServer(ctx) {
+  return http.createServer(createRequestListener(ctx));
+}
+
+// Effective config: env overrides persisted settings. Enabled when EITHER the env
+// flag or the `client_api_enabled` setting is on. Host/port/TLS likewise merge.
+function resolveApiConfig(ctx) {
+  let s = {};
+  try {
+    const learning = require('../../../database/modules/learning');
+    const db = ctx.getDb();
+    s = {
+      enabled: learning.getSetting(db, 'client_api_enabled') === 'true',
+      host: learning.getSetting(db, 'client_api_host'),
+      port: parseInt(learning.getSetting(db, 'client_api_port'), 10),
+      cert: learning.getSetting(db, 'client_api_tls_cert'),
+      key: learning.getSetting(db, 'client_api_tls_key'),
+    };
+  } catch { /* DB not ready — fall back to env/defaults */ }
+  return {
+    enabled: process.env.SCANFINDER_API === '1' || !!s.enabled,
+    host: process.env.SCANFINDER_API_HOST || s.host || '127.0.0.1',
+    port: parseInt(process.env.SCANFINDER_API_PORT, 10) || s.port || 8765,
+    certPath: process.env.SCANFINDER_API_TLS_CERT || s.cert || null,
+    keyPath: process.env.SCANFINDER_API_TLS_KEY || s.key || null,
+  };
+}
+
+function apiStatus(ctx) {
+  const cfg = resolveApiConfig(ctx);
+  return {
+    running: !!(ctx._apiServer && ctx._apiServer.listening),
+    enabled: cfg.enabled, host: cfg.host, port: cfg.port,
+    tls: !!(cfg.certPath && cfg.keyPath),
+  };
+}
+
+// Start the listener (idempotent). Refuses a non-loopback bind without TLS.
+function startApiServer(ctx) {
+  if (ctx._apiServer && ctx._apiServer.listening) return apiStatus(ctx);
+  const cfg = resolveApiConfig(ctx);
+  // When the admin deliberately binds a non-loopback host (LAN exposure, which
+  // also requires TLS below), permit non-loopback peers — otherwise the listener's
+  // defence-in-depth loopback guard would 403 every LAN client.
+  ctx.allowRemote = (cfg.host !== '127.0.0.1' && cfg.host !== 'localhost');
+  const listener = createRequestListener(ctx);
+  let server;
+  if (cfg.certPath && cfg.keyPath) {
+    const fs = ctx.fs || require('fs');
+    server = https.createServer({ cert: fs.readFileSync(cfg.certPath), key: fs.readFileSync(cfg.keyPath) }, listener);
+  } else {
+    if (cfg.host !== '127.0.0.1' && cfg.host !== 'localhost') {
+      ctx.logger?.warn?.('[api] refusing to bind a non-loopback host without TLS — set a TLS cert/key first');
+      return { ...apiStatus(ctx), error: 'tls_required_for_lan' };
+    }
+    server = http.createServer(listener);
+  }
+  server.on('error', (e) => ctx.logger?.warn?.(`[api] server error: ${e.message}`));
+  server.listen(cfg.port, cfg.host, () => {
+    ctx.logger?.log?.(`[api] detached-client API on ${cfg.certPath ? 'https' : 'http'}://${cfg.host}:${cfg.port}${API_PREFIX}`);
+  });
+  ctx._apiServer = server;
+  return apiStatus(ctx);
+}
+
+function stopApiServer(ctx) {
+  if (ctx._apiServer) { try { ctx._apiServer.close(); } catch { /* ignore */ } ctx._apiServer = null; }
+  return apiStatus(ctx);
+}
+
+// ── Managed TLS certificate (Certificate Wizard) ───────────────────────────────
+// Self-managed certs so an admin never hand-manages TLS: detect the server's LAN
+// identities, generate a CA + server cert into userData/certs (certService), and
+// point the existing client_api_tls_cert/key settings at them. ctx.certsDir
+// overrides the location (hermetic tests).
+
+function certsDirFor(ctx) {
+  if (ctx.certsDir) return ctx.certsDir;
+  let base;
+  try { base = (ctx.app || require('electron').app).getPath('userData'); }
+  catch { base = require('os').tmpdir(); }
+  return path.join(base, 'certs');
+}
+
+// Addresses a client could connect to: the configured host (if a real IP), every
+// detected LAN IPv4, and the hostname. 0.0.0.0 / :: are bind wildcards, not SANs.
+function managedSans(ctx, host) {
+  const ids = certService.detectLanIdentities({});
+  const out = [];
+  const add = (v) => {
+    v = String(v || '').trim();
+    if (v && !['0.0.0.0', '::', '127.0.0.1', 'localhost'].includes(v) && !out.includes(v)) out.push(v);
+  };
+  add(host);
+  ids.ipv4.forEach(add);
+  add(ids.hostname);
+  return out;
+}
+
+function managedCertStatus(ctx) {
+  const cfg = resolveApiConfig(ctx);
+  const fs = ctx.fs || require('fs');
+  const certsDir = certsDirFor(ctx);
+  const sans = managedSans(ctx, cfg.host);
+  const exists = (p) => { try { return !!p && fs.existsSync(p); } catch { return false; } };
+  const loopback = (cfg.host === '127.0.0.1' || cfg.host === 'localhost');
+  const hasCert = exists(cfg.certPath);
+  let cover = { valid: false, missingSans: sans, expired: false, notAfter: null };
+  if (hasCert) cover = certService.certCoversAddresses({ serverCrtPath: cfg.certPath, addresses: sans, fs });
+  let caFingerprint = null;
+  try { const caCrt = path.join(certsDir, 'ca.crt'); if (exists(caCrt)) caFingerprint = certService.readCaFingerprint({ caCrtPath: caCrt, fs }); }
+  catch { /* ignore */ }
+  return {
+    loopback, host: cfg.host, port: cfg.port, hasCert,
+    valid: cover.valid, missingSans: cover.missingSans, expired: cover.expired,
+    notAfter: cover.notAfter ? new Date(cover.notAfter).toISOString() : null,
+    sans, caFingerprint, certsDir,
+  };
+}
+
+// Ensure a valid managed cert exists for the current LAN host and the TLS settings
+// point at it (generate/rotate as needed). No-op for a loopback host.
+function ensureManagedCert(ctx, { force = false } = {}) {
+  const cfg = resolveApiConfig(ctx);
+  if (cfg.host === '127.0.0.1' || cfg.host === 'localhost') return { managed: false, reason: 'loopback', ...managedCertStatus(ctx) };
+  const fs = ctx.fs || require('fs');
+  const sans = managedSans(ctx, cfg.host);
+  if (!sans.length) return { managed: false, reason: 'no_addresses', ...managedCertStatus(ctx) };
+
+  const exists = (p) => { try { return !!p && fs.existsSync(p); } catch { return false; } };
+  const rp = (p) => { try { return p ? path.resolve(p) : null; } catch { return null; } };
+  const managedCrt = path.join(certsDirFor(ctx), 'server.crt');
+
+  // Respect an admin's own (Advanced) certificate living outside the managed dir —
+  // only the explicit "Generate / re-issue" button (force) ever overrides it.
+  const isManual = cfg.certPath && rp(cfg.certPath) !== rp(managedCrt) && exists(cfg.certPath);
+  if (!force && isManual) return { managed: false, reason: 'manual', ...managedCertStatus(ctx) };
+
+  // Managed cert already present, pointed at, and still covering → nothing to do.
+  const covering = exists(managedCrt) && certService.certCoversAddresses({ serverCrtPath: managedCrt, addresses: sans, fs }).valid;
+  if (!force && covering && rp(cfg.certPath) === rp(managedCrt)) return { managed: true, regenerated: false, ...managedCertStatus(ctx) };
+
+  const r = certService.generateServerCerts({ certsDir: certsDirFor(ctx), sans, reuseCa: true, fs });
+  const db = ctx.getDb();
+  const learning = require('../../../database/modules/learning');
+  learning.setSetting(db, 'client_api_tls_cert', r.serverCrtPath);
+  learning.setSetting(db, 'client_api_tls_key', r.serverKeyPath);
+  learning.setSetting(db, 'client_api_ca_fingerprint', r.caFingerprintSha256);
+  learning.setSetting(db, 'client_api_cert_sans', r.serverSans.join(','));
+  ctx.logger?.log?.(`[api] managed certificate ${r.caReused ? 're-issued' : 'created'} — SANs: ${r.serverSans.join(', ')}`);
+  return { managed: true, regenerated: true, ...managedCertStatus(ctx) };
+}
+
+// A connectable host for the profile: the configured host if it's a real address,
+// else the first detected LAN IPv4 (0.0.0.0 is a bind wildcard, not connectable).
+function connectionProfileHost(cfg) {
+  if (cfg.host && !['0.0.0.0', '::', '127.0.0.1', 'localhost'].includes(cfg.host)) return cfg.host;
+  const ids = certService.detectLanIdentities({});
+  return ids.ipv4[0] || ids.hostname || cfg.host;
+}
+
+// Build a one-click connection profile (host + port + CA to pin) for clients.
+// Uses the managed CA (certsDir/ca.crt); a purely manual setup distributes its own CA.
+function buildConnectionProfile(ctx) {
+  const cfg = resolveApiConfig(ctx);
+  const fs = ctx.fs || require('fs');
+  const caCrt = path.join(certsDirFor(ctx), 'ca.crt');
+  const exists = (p) => { try { return !!p && fs.existsSync(p); } catch { return false; } };
+  if (!exists(caCrt)) return { ok: false, error: 'no_managed_ca' };
+  const caPem = fs.readFileSync(caCrt, 'utf8');
+  return {
+    ok: true,
+    profile: {
+      v: 1,
+      host: connectionProfileHost(cfg),
+      port: cfg.port,
+      tls: true,
+      caFingerprintSha256: certService.readCaFingerprint({ pem: caPem }),
+      caPem,
+    },
+  };
+}
+
+// Optional pairing-code gate for the CA-bootstrap/enroll endpoints. When a code is
+// configured (client_api_pairing_code), callers must present a matching ?code= and
+// the code must not be expired; otherwise the gate is open (a CA cert is public).
+function pairingOk(url, learning, db) {
+  let code = null, exp = null;
+  try { code = learning.getSetting(db, 'client_api_pairing_code'); } catch { /* ignore */ }
+  if (!code) return { ok: true };
+  try { exp = learning.getSetting(db, 'client_api_pairing_expires'); } catch { /* ignore */ }
+  if (exp && Date.now() > Number(exp)) return { ok: false, reason: 'expired' };
+  return (url.searchParams.get('code') || '') === code ? { ok: true } : { ok: false, reason: 'bad_code' };
+}
+
+/**
+ * App entry point. The API is OFF by default; it starts when the env flag
+ * SCANFINDER_API=1 OR the admin `client_api_enabled` setting is on. Admin IPC lets
+ * the Settings window start/stop it at runtime. Loopback-only unless TLS is set.
+ */
+function register(ctx) {
+  const { ipcMain, getDb } = ctx;
+  const learning = require('../../../database/modules/learning');
+  const { requireRole } = require('../auth/handler');
+
+  ipcMain.handle('client-api-get-status', () => { requireRole('admin'); return apiStatus(ctx); });
+  ipcMain.handle('client-api-set-enabled', (_e, on) => {
+    requireRole('admin');
+    learning.setSetting(getDb(), 'client_api_enabled', on ? 'true' : 'false');
+    if (!on) return stopApiServer(ctx);
+    // Certificate Wizard: auto-provision a managed TLS cert when exposing on the LAN.
+    const cfg = resolveApiConfig(ctx);
+    if (cfg.host !== '127.0.0.1' && cfg.host !== 'localhost') ensureManagedCert(ctx);
+    return startApiServer(ctx);
+  });
+  ipcMain.handle('client-api-cert-status', () => { requireRole('admin'); return managedCertStatus(ctx); });
+  ipcMain.handle('client-api-cert-generate', () => {
+    requireRole('admin');
+    const res = ensureManagedCert(ctx, { force: true });
+    if (ctx._apiServer && ctx._apiServer.listening) { stopApiServer(ctx); startApiServer(ctx); } // reload cert
+    return res;
+  });
+  ipcMain.handle('client-api-cert-export', async () => {
+    requireRole('admin');
+    const r = buildConnectionProfile(ctx);
+    if (!r.ok) return r;
+    const { dialog } = require('electron');
+    const res = await dialog.showSaveDialog({
+      title: 'Export connection profile',
+      defaultPath: 'scanfinder-profile.json',
+      filters: [{ name: 'ScanFinder profile', extensions: ['json'] }],
+    });
+    if (res.canceled || !res.filePath) return { ok: false, canceled: true };
+    (ctx.fs || require('fs')).writeFileSync(res.filePath, JSON.stringify(r.profile, null, 2));
+    return { ok: true, path: res.filePath, caFingerprintSha256: r.profile.caFingerprintSha256 };
+  });
+
+  // Startup: self-heal the managed cert (e.g. a DHCP IP change across a reboot) then start.
+  if (resolveApiConfig(ctx).enabled) {
+    const cfg = resolveApiConfig(ctx);
+    if (cfg.host !== '127.0.0.1' && cfg.host !== 'localhost') ensureManagedCert(ctx);
+    startApiServer(ctx);
+  }
+}
+
+module.exports = {
+  register, createServer, createRequestListener,
+  startApiServer, stopApiServer, apiStatus,
+  ensureManagedCert, managedCertStatus, buildConnectionProfile,
+  API_CONTRACT_VERSION, API_PREFIX,
+};

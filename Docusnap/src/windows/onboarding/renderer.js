@@ -45,7 +45,7 @@ function render() {
 }
 
 async function loadCurrent() {
-  try { state.theme   = (await D.getSetting('theme')) || 'dark'; } catch {}
+  try { state.theme   = (await D.getSetting('theme')) || 'light'; } catch {}
   try {
     state.outputFolder = (await D.getSetting('output_folder')) || (await D.suggestedOutputFolder()) || '';
   } catch {}

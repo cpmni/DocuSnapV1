@@ -579,6 +579,62 @@ function runJsMigrations(db, applied) {
     db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (27)').run();
     console.log('JS migration 27 applied: structural fields permanent + relabel Company');
   }
+
+  // Migration 28: TOTP second factor for the detached-client auth boundary.
+  // (Renumbered 26 → 28 on merge — migrations 26/27 are owned by the logo/structural
+  // work on main; this stays a distinct, stamped migration.)
+  // Additive + nullable: totp_secret (base32, NULL until enrolled) and
+  // totp_enabled (0/1, only set once a code is confirmed). Inert for the desktop
+  // app — the in-process login path never reads these; only the detached-client
+  // API enforces MFA when totp_enabled = 1. Existing users keep working (MFA off).
+  if (!applied.has(28)) {
+    if (tableExists(db, 'users')) {
+      if (!hasColumn(db, 'users', 'totp_secret')) {
+        try { db.exec(`ALTER TABLE users ADD COLUMN totp_secret TEXT`); } catch (e) { console.warn(`  users.totp_secret: ${e.message}`); }
+      }
+      if (!hasColumn(db, 'users', 'totp_enabled')) {
+        try { db.exec(`ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0`); } catch (e) { console.warn(`  users.totp_enabled: ${e.message}`); }
+      }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (28)').run();
+    console.log('JS migration 28 applied: users.totp_secret/totp_enabled (detached-client MFA)');
+  }
+
+  // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
+  // A SEPARATE workflow state machine that never rewrites a document's filing status.
+  // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the
+  // migrations table — because a dev DB shared across worktrees can be stamped at a
+  // version WITHOUT these objects (the gated form would then skip creation and the
+  // review confirm path breaks: editGuard → workflow.hasActiveRoute → "no such table").
+  // CREATE-IF-MISSING self-heals and is a no-op once the objects exist.
+  if (!tableExists(db, 'document_routes')) {
+    db.exec(`CREATE TABLE document_routes (
+      id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+      document_id         INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+      from_user_id        INTEGER,
+      from_username       TEXT,
+      to_user_id          INTEGER,
+      to_username         TEXT,
+      action_required     TEXT NOT NULL,            -- approve | acknowledge
+      state               TEXT NOT NULL DEFAULT 'pending', -- pending|claimed|approved|rejected|acknowledged|recalled
+      comment             TEXT,                      -- sender's note
+      resolution_comment  TEXT,                      -- resolver's reason (required on reject)
+      claimed_by_id       INTEGER,
+      claimed_by_username TEXT,
+      claimed_at          TEXT,
+      resolved_at         TEXT,
+      version             INTEGER NOT NULL DEFAULT 1,
+      created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+    )`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_routes_to    ON document_routes(to_user_id, state)`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_routes_from  ON document_routes(from_user_id, state)`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_routes_doc   ON document_routes(document_id)`);
+    console.log('Workflow schema: created document_routes');
+  }
+  if (tableExists(db, 'documents') && !hasColumn(db, 'documents', 'workflow_status')) {
+    try { db.exec(`ALTER TABLE documents ADD COLUMN workflow_status TEXT`); console.log('Workflow schema: added documents.workflow_status'); }
+    catch (e) { console.warn(`  documents.workflow_status: ${e.message}`); }
+  }
 }
 
 function hasColumn(db, table, column) {

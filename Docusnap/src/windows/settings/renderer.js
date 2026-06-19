@@ -11,8 +11,115 @@ document.querySelectorAll('.tab').forEach(btn => {
     document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
     if (btn.dataset.tab === 'learning') loadMemoryInventory();
     if (btn.dataset.tab === 'audit' && !auditState.loaded) loadAudit();
+    if (btn.dataset.tab === 'licensing') initClientApiSection();
   });
 });
+
+// ── Search client access (admin) — host the detached-client API ────────────────
+let _clientApiWired = false;
+async function initClientApiSection() {
+  const tgl = document.getElementById('client-api-toggle');
+  const statusEl = document.getElementById('client-api-status');
+  if (!tgl || !statusEl) return;
+  const host = document.getElementById('client-api-host');
+  const port = document.getElementById('client-api-port');
+  const cert = document.getElementById('client-api-tls-cert');
+  const key  = document.getElementById('client-api-tls-key');
+
+  const render = (s) => {
+    if (!s) { statusEl.textContent = 'Unavailable (admin only)'; return; }
+    tgl.checked = !!s.enabled;
+    statusEl.textContent = s.running
+      ? `Running · ${s.tls ? 'https' : 'http'}://${s.host}:${s.port}`
+      : (s.enabled ? 'Enabled (starting…)' : 'Off');
+  };
+
+  try { render(await api.clientApiGetStatus()); }
+  catch { statusEl.textContent = 'Unavailable (admin only)'; return; }
+
+  // Managed certificate (Certificate Wizard) status + fingerprint.
+  const certStatusEl = document.getElementById('client-api-cert-status');
+  const certFpEl = document.getElementById('client-api-cert-fp');
+  const renderCert = (cs) => {
+    if (!certStatusEl) return;
+    if (!cs) { certStatusEl.textContent = '—'; if (certFpEl) certFpEl.textContent = ''; return; }
+    if (cs.loopback) {
+      certStatusEl.textContent = 'Not needed — loopback host uses plain HTTP. Set a LAN host (e.g. 0.0.0.0) to auto-generate a certificate.';
+      if (certFpEl) certFpEl.textContent = ''; return;
+    }
+    if (!cs.hasCert) {
+      certStatusEl.textContent = 'None yet — generated automatically when you switch access on.';
+      if (certFpEl) certFpEl.textContent = ''; return;
+    }
+    const exp = cs.notAfter ? new Date(cs.notAfter).toLocaleDateString() : '?';
+    certStatusEl.textContent = cs.valid
+      ? `Active · covers ${cs.sans.join(', ')} · expires ${exp}`
+      : `Needs re-issue · ${cs.expired ? 'near/after expiry' : 'missing ' + (cs.missingSans || []).join(', ')} · expires ${exp}`;
+    if (certFpEl) certFpEl.textContent = cs.caFingerprint ? ('CA fingerprint  ' + cs.caFingerprint) : '';
+  };
+  try { renderCert(await api.clientApiCertStatus()); } catch { /* ignore */ }
+
+  // Workflow add-on entitlement (drives enhanced Search here + the detached client).
+  const wfTgl = document.getElementById('wf-addon-toggle');
+  const wfSub = document.getElementById('wf-addon-sub');
+  if (wfTgl && wfSub) {
+    try {
+      const on = (await api.getSetting('detached_client_licensed')) === 'true';
+      wfTgl.checked = on; wfSub.textContent = on ? 'Licensed' : 'Off';
+    } catch { /* ignore */ }
+    if (!wfTgl.dataset.wired) {
+      wfTgl.dataset.wired = '1';
+      wfTgl.addEventListener('change', async () => {
+        try { await api.setSetting('detached_client_licensed', wfTgl.checked ? 'true' : 'false');
+          wfSub.textContent = wfTgl.checked ? 'Licensed' : 'Off'; }
+        catch (e) { wfSub.textContent = 'Error: ' + (e && e.message); wfTgl.checked = !wfTgl.checked; }
+      });
+    }
+  }
+
+  if (_clientApiWired) return; // bind listeners once
+  _clientApiWired = true;
+
+  try {
+    host.value = (await api.getSetting('client_api_host')) || '';
+    port.value = (await api.getSetting('client_api_port')) || '';
+    cert.value = (await api.getSetting('client_api_tls_cert')) || '';
+    key.value  = (await api.getSetting('client_api_tls_key')) || '';
+  } catch { /* ignore */ }
+
+  tgl.addEventListener('change', async () => {
+    try {
+      render(await api.clientApiSetEnabled(tgl.checked));
+      // The listener binds asynchronously, so re-poll shortly to flip "starting…" → "Running".
+      setTimeout(async () => { try { render(await api.clientApiGetStatus()); } catch { /* ignore */ } }, 800);
+    } catch (e) { statusEl.textContent = 'Error: ' + (e && e.message); tgl.checked = !tgl.checked; }
+  });
+  const saver = (el, k) => el.addEventListener('change', () => { try { api.setSetting(k, el.value.trim()); } catch {} });
+  saver(host, 'client_api_host'); saver(port, 'client_api_port');
+  saver(cert, 'client_api_tls_cert'); saver(key, 'client_api_tls_key');
+
+  const certGenBtn = document.getElementById('client-api-cert-generate');
+  if (certGenBtn) certGenBtn.addEventListener('click', async () => {
+    const prev = certGenBtn.textContent; certGenBtn.disabled = true; certGenBtn.textContent = 'Generating…';
+    try { renderCert(await api.clientApiCertGenerate()); render(await api.clientApiGetStatus()); }
+    catch (e) { if (certStatusEl) certStatusEl.textContent = 'Error: ' + (e && e.message); }
+    finally { certGenBtn.disabled = false; certGenBtn.textContent = prev; }
+  });
+
+  const certExportBtn = document.getElementById('client-api-cert-export');
+  const exportStatusEl = document.getElementById('client-api-export-status');
+  if (certExportBtn) certExportBtn.addEventListener('click', async () => {
+    if (exportStatusEl) exportStatusEl.textContent = '';
+    try {
+      const r = await api.clientApiCertExport();
+      if (!exportStatusEl) return;
+      if (r && r.ok) exportStatusEl.textContent = 'Saved profile to ' + r.path + ' — share it with the client (one-click import).';
+      else if (r && r.canceled) exportStatusEl.textContent = '';
+      else if (r && r.error === 'no_managed_ca') exportStatusEl.textContent = 'Generate a managed certificate first, then export.';
+      else exportStatusEl.textContent = 'Export failed' + (r && r.error ? ': ' + r.error : '.');
+    } catch (e) { if (exportStatusEl) exportStatusEl.textContent = 'Error: ' + (e && e.message); }
+  });
+}
 
 document.getElementById('btn-close').addEventListener('click', () => api.windowClose());
 
@@ -763,7 +870,7 @@ function showTypedConfirmDialog({ title, warningHtml, requiredText, confirmLabel
 // ══════════════════════════════════════════════════════════════════════════════
 
 async function loadThemeToggle() {
-  const theme = await api.getSetting('theme') || 'dark';
+  const theme = await api.getSetting('theme') || 'light';
   document.getElementById('theme-toggle').checked = (theme === 'light');
 }
 loadThemeToggle();

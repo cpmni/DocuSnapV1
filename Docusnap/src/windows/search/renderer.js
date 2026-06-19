@@ -27,6 +27,18 @@ async function _loadDocTypes() {
 
 async function _init() {
   await _loadDocTypes();
+  // Workflow add-on: when licensed the Search window gains the enhanced experience
+  // (confidence signature, workflow actions, mailbox); otherwise it stays basic.
+  try {
+    const e = await window.docusnap.getEntitlement();
+    window.SearchState.entitled = !!(e && e.entitled);
+  } catch { window.SearchState.entitled = false; }
+  try { const u = await window.docusnap.authGetCurrentUser(); window.SearchState.role = u && u.role; } catch { /* ignore */ }
+  if (window.SearchState.entitled) {
+    document.body.classList.add('wf-on');
+    if (window.SearchWorkflow) await window.SearchWorkflow.init();
+    if (window.SearchMailbox) window.SearchMailbox.init();
+  }
   window.SearchPreview.initPageNav();
   window.SearchQuery.initInputs();
   window.SearchQuery.doSearch();

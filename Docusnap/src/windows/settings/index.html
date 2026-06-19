@@ -6,27 +6,10 @@
         content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; img-src 'self' data:">
   <title>ScanFinder — Settings</title>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../shared/theme.css" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    :root {
-      --bg:#0c0e14; --surface:#13161f; --surface2:#1a1e2a;
-      --border:#252836; --border2:#2f3347;
-      --accent:#4f8ef7; --accent2:#6ea8ff;
-      --ok:#3ecf8e; --warn:#f7b84f; --err:#f76f6f;
-      --text:#e2e6f0; --muted:#7a82a0;
-      --ok-bg:#0d2e1e; --err-bg:#2e0d0d; --warn-bg:#2e1a00;
-      --accent-bg:#0d1f3a; --accent-border:#1a3a6a; --ok-border:#1a4a2e;
-      --mono:'IBM Plex Mono',monospace; --sans:'IBM Plex Sans',sans-serif;
-      color-scheme: dark;
-    }
-    :root[data-theme="light"] {
-      --bg:#f0f3fa; --surface:#ffffff; --surface2:#e8edf7;
-      --border:#cdd4e8; --border2:#b8c2d8;
-      --text:#1c2035; --muted:#5a6385;
-      --ok-bg:#d4f5e5; --err-bg:#fde8e8; --warn-bg:#fef3d8;
-      --accent-bg:#ddeaff; --accent-border:#90b8ff; --ok-border:#6dd8a8;
-      color-scheme: light;
-    }
+    /* Palette + tokens are centralised in shared/theme.css (light default + matching dark). */
     html, body { height:100%; background:var(--bg); color:var(--text); font-family:var(--sans); font-size:13px; }
 
     /* ── Titlebar ── */
@@ -47,27 +30,39 @@
     .tb-btn.close:hover { background:var(--err); color:#fff; }
 
     /* ── Tab bar ── */
+    /* Left sidebar of vertical tabs (client-style shell) */
     #tab-bar {
-      display:flex; gap:2px; padding:8px 16px 0;
-      background:var(--surface); border-bottom:1px solid var(--border); flex-shrink:0;
+      display:flex; flex-direction:column; gap:3px; width:214px; flex-shrink:0;
+      padding:16px 12px; background:var(--surface); border-right:1px solid var(--border); overflow-y:auto;
     }
+    .side-head { font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
+      color:var(--muted); padding:2px 14px 12px; }
     .tab {
-      padding:7px 18px; border-radius:6px 6px 0 0; border:1px solid transparent;
+      width:100%; text-align:left; padding:9px 14px; border-radius:8px; border:1px solid transparent;
       background:transparent; color:var(--muted); font-family:var(--sans);
-      font-size:12px; font-weight:500; cursor:pointer; transition:all .15s;
-      border-bottom:none; position:relative; bottom:-1px;
+      font-size:13px; font-weight:600; cursor:pointer; transition:all .15s;
     }
-    .tab:hover { color:var(--text); }
-    .tab.active { background:var(--bg); color:var(--accent2); border-color:var(--border); border-bottom-color:var(--bg); }
+    .tab:hover { color:var(--text); background:var(--surface2); }
+    .tab.active { background:var(--accent-bg); color:var(--accent2); border-color:var(--accent-border); }
 
     /* ── Body / panels ── */
-    #app { display:flex; flex-direction:column; height:100vh; }
-    #body { flex:1; overflow-y:auto; padding:24px 28px; }
+    #app { display:flex; flex-direction:row; height:100vh; }
+    #body { flex:1; overflow-y:auto; padding:26px 32px; }
     .panel { display:none; }
     .panel.active { display:block; }
 
     /* ── Sections ── */
     .section { margin-bottom:28px; }
+
+    /* Settings groups: a labelled category whose sections flow LEFT→RIGHT and wrap
+       — an item sits beside the previous when there's room, else starts a new row. */
+    .settings-group { margin-bottom: 30px; }
+    .settings-group > .group-title {
+      font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+      color: var(--accent2); margin: 0 0 14px; padding-bottom: 9px; border-bottom: 1px solid var(--border);
+    }
+    .group-body { display: flex; flex-wrap: wrap; gap: 22px 36px; align-items: flex-start; }
+    .group-body > .section { flex: 1 1 340px; min-width: 0; margin-bottom: 0; }
     /* Top-level section headings: stronger contrast/weight so they read as the
        primary label of each block. Restrained — no colour/decoration, same
        uppercase tracking as before, just promoted from muted 10px to text 11px. */
@@ -328,6 +323,7 @@
   </div>
 
   <div id="tab-bar">
+    <div class="side-head">Settings</div>
     <button class="tab active" data-tab="general" data-help-key="tab-general">General</button>
     <button class="tab" data-tab="doctypes" data-help-key="tab-doctypes">Document Types</button>
     <button class="tab" data-tab="fields" data-help-key="tab-fields">Fields</button>
@@ -345,111 +341,135 @@
     <!-- ══ GENERAL ══ -->
     <div class="panel active" id="panel-general">
 
-      <div class="section">
-        <div class="section-title">Output Folder</div>
-        <p class="section-desc">Where confirmed documents are filed. Required before confirming any document.</p>
-        <div class="row-flex">
-          <input type="text" id="output-folder-path" class="path-input" readonly placeholder="No folder selected">
-          <button class="btn primary" id="btn-pick-output" data-help-key="output-folder">Browse…</button>
-        </div>
-      </div>
-
-      <div class="section">
-        <div class="section-title">First-time setup</div>
-        <p class="section-desc">Re-run the welcome wizard to revisit the essentials — theme, output folder and performance.</p>
-        <div class="row-flex">
-          <button class="btn" id="btn-rerun-setup" data-help-key="rerun-setup">Re-run setup wizard…</button>
-        </div>
-      </div>
-
-      <div class="section">
-        <div class="section-title">Processed Scans Folder</div>
-        <p class="section-desc">Source files are moved here after processing. Leave blank to keep originals in place.</p>
-        <div class="row-flex">
-          <input type="text" id="processed-folder-path" class="path-input" readonly placeholder="No folder selected (files stay in source)">
-          <button class="btn primary" id="btn-pick-processed">Browse…</button>
-        </div>
-        <div style="margin-top:6px;">
-          <button class="btn small" id="btn-clear-processed" style="font-size:10px; padding:3px 10px; color:var(--err); border-color:var(--err);">Clear</button>
-        </div>
-      </div>
-
-      <div class="section">
-        <div class="section-title">Watch Folder</div>
-        <p class="section-desc">Auto-imports scans dropped here. Files must be stable for 30 seconds before processing — prevents partial-transfer issues with network scanners.</p>
-        <div class="threshold-row">
-          <div>
-            <div class="threshold-label">Enable watch-folder monitoring</div>
-            <div class="threshold-sub">Polls for new files and imports stable ones automatically</div>
-          </div>
-          <label class="toggle">
-            <input type="checkbox" id="watch-folder-toggle">
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <div class="row-flex" style="margin-top:10px;">
-          <input type="text" id="watch-folder-path" class="path-input" readonly placeholder="No folder selected">
-          <button class="btn primary" id="btn-pick-watch">Browse…</button>
-        </div>
-      </div>
-
-      <div class="section">
-        <div class="section-title">Processing Mode</div>
-        <div class="mode-group">
-          <label class="mode-option">
-            <input type="radio" name="proc-mode" value="fast">
-            <div class="mode-card">
-              <div class="mode-name">Fast</div>
-              <div class="mode-desc">Regex patterns + learned positions only. Sub-second per document.</div>
+      <div class="settings-group">
+        <div class="group-title">Folders</div>
+        <div class="group-body">
+          <div class="section">
+            <div class="section-title">Output Folder</div>
+            <p class="section-desc">Where confirmed documents are filed. Required before confirming any document.</p>
+            <div class="row-flex">
+              <input type="text" id="output-folder-path" class="path-input" readonly placeholder="No folder selected">
+              <button class="btn primary" id="btn-pick-output" data-help-key="output-folder">Browse…</button>
             </div>
-          </label>
-          <label class="mode-option">
-            <input type="radio" name="proc-mode" value="smart">
-            <div class="mode-card">
-              <div class="mode-name">Smart <span class="badge-default">Default</span></div>
-              <div class="mode-desc">Uses advanced extraction only when key fields are missing or confidence is low.</div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Processed Scans Folder</div>
+            <p class="section-desc">Source files are moved here after processing. Leave blank to keep originals in place.</p>
+            <div class="row-flex">
+              <input type="text" id="processed-folder-path" class="path-input" readonly placeholder="No folder selected (files stay in source)">
+              <button class="btn primary" id="btn-pick-processed">Browse…</button>
             </div>
-          </label>
+            <div style="margin-top:6px;">
+              <button class="btn small" id="btn-clear-processed" style="font-size:10px; padding:3px 10px; color:var(--err); border-color:var(--err);">Clear</button>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Watch Folder</div>
+            <p class="section-desc">Auto-imports scans dropped here. Files must be stable for 30 seconds before processing — prevents partial-transfer issues with network scanners.</p>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Enable watch-folder monitoring</div>
+                <div class="threshold-sub">Polls for new files and imports stable ones automatically</div>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" id="watch-folder-toggle">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div class="row-flex" style="margin-top:10px;">
+              <input type="text" id="watch-folder-path" class="path-input" readonly placeholder="No folder selected">
+              <button class="btn primary" id="btn-pick-watch">Browse…</button>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div class="section">
-        <div class="section-title">Parallel document processing</div>
-        <div class="threshold-row">
-          <div>
-            <div class="threshold-label">Documents processed at once</div>
-            <div class="threshold-sub">How many documents ScanFinder may OCR/process at the same time. Higher values may be faster on powerful PCs but use more CPU and memory.</div>
+      <div class="settings-group">
+        <div class="group-title">Processing</div>
+        <div class="group-body">
+          <div class="section">
+            <div class="section-title">Processing Mode</div>
+            <div class="mode-group">
+              <label class="mode-option">
+                <input type="radio" name="proc-mode" value="fast">
+                <div class="mode-card">
+                  <div class="mode-name">Fast</div>
+                  <div class="mode-desc">Regex patterns + learned positions only. Sub-second per document.</div>
+                </div>
+              </label>
+              <label class="mode-option">
+                <input type="radio" name="proc-mode" value="smart">
+                <div class="mode-card">
+                  <div class="mode-name">Smart <span class="badge-default">Default</span></div>
+                  <div class="mode-desc">Uses advanced extraction only when key fields are missing or confidence is low.</div>
+                </div>
+              </label>
+            </div>
           </div>
-          <select id="processing-concurrency" class="field-select" style="width:80px;">
-            <option value="1">1</option>
-            <option value="2">2</option>
-            <option value="3">3</option>
-            <option value="4">4</option>
-            <option value="5">5</option>
-          </select>
+
+          <div class="section">
+            <div class="section-title">Parallel document processing</div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Documents processed at once</div>
+                <div class="threshold-sub">How many documents ScanFinder may OCR/process at the same time. Higher values may be faster on powerful PCs but use more CPU and memory.</div>
+              </div>
+              <select id="processing-concurrency" class="field-select" style="width:80px;">
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+              </select>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div class="section">
-        <div class="section-title">Appearance &amp; Review</div>
-        <div class="threshold-row">
-          <div>
-            <div class="threshold-label">Light Mode</div>
-            <div class="threshold-sub">Switch between dark and light interface</div>
+      <div class="settings-group">
+        <div class="group-title">Appearance &amp; Review</div>
+        <div class="group-body">
+          <div class="section">
+            <div class="section-title">Interface</div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Light Mode</div>
+                <div class="threshold-sub">Switch between dark and light interface</div>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" id="theme-toggle">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
           </div>
-          <label class="toggle">
-            <input type="checkbox" id="theme-toggle">
-            <span class="toggle-slider"></span>
-          </label>
+
+          <div class="section">
+            <div class="section-title">Review</div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Confidence threshold</div>
+                <div class="threshold-sub">Flag a document for review if any field falls below this confidence</div>
+              </div>
+              <div class="conf-row">
+                <input type="range" class="conf-slider" id="global-threshold" min="0" max="100" value="70">
+                <span class="conf-val" id="global-threshold-val">70%</span>
+              </div>
+            </div>
+          </div>
         </div>
-        <div class="threshold-row">
-          <div>
-            <div class="threshold-label">Confidence threshold</div>
-            <div class="threshold-sub">Flag a document for review if any field falls below this confidence</div>
-          </div>
-          <div class="conf-row">
-            <input type="range" class="conf-slider" id="global-threshold" min="0" max="100" value="70">
-            <span class="conf-val" id="global-threshold-val">70%</span>
+      </div>
+
+      <div class="settings-group">
+        <div class="group-title">Setup</div>
+        <div class="group-body">
+          <div class="section">
+            <div class="section-title">First-time setup</div>
+            <p class="section-desc">Re-run the welcome wizard to revisit the essentials — theme, output folder and performance.</p>
+            <div class="row-flex">
+              <button class="btn" id="btn-rerun-setup" data-help-key="rerun-setup">Re-run setup wizard…</button>
+            </div>
           </div>
         </div>
       </div>
@@ -1002,6 +1022,62 @@
         </div>
         <div id="lic-status" class="section-desc"
              style="font-family:var(--mono); font-size:12px; line-height:1.75;">Loading…</div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Workflow add-on</div>
+        <p class="section-desc">Unlocks the enhanced Search experience — confidence cues, approval workflow and mailbox — in this app and for the detached client. Normally set by your licence; toggle here for setup/testing.</p>
+        <div class="threshold-row">
+          <div>
+            <div class="threshold-label">Workflow add-on licensed</div>
+            <div class="threshold-sub" id="wf-addon-sub">Off</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="wf-addon-toggle">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Search client access</div>
+        <p class="section-desc">Host the read-only API so the detached ScanFinder Search client can connect over your network. Off by default; a loopback host stays plain HTTP, and a LAN host gets an automatic, managed TLS certificate — no manual cert files.</p>
+        <div class="threshold-row">
+          <div>
+            <div class="threshold-label">Allow search-client connections</div>
+            <div class="threshold-sub" id="client-api-status">Loading…</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="client-api-toggle">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="row-flex" style="gap:8px; margin-top:10px;">
+          <input type="text" id="client-api-host" class="path-input" placeholder="0.0.0.0 (LAN) or 127.0.0.1" style="max-width:200px">
+          <input type="text" id="client-api-port" class="path-input" placeholder="8765" style="max-width:90px">
+        </div>
+
+        <div id="client-api-cert" style="margin-top:12px; padding:12px 14px; border:1px solid var(--border); border-radius:9px; background:var(--surface2);">
+          <div class="threshold-label" style="margin-bottom:4px;">Managed TLS certificate</div>
+          <div class="threshold-sub" id="client-api-cert-status">—</div>
+          <div id="client-api-cert-fp" style="font-family:var(--mono); font-size:11px; color:var(--muted); margin-top:6px; word-break:break-all;"></div>
+          <div class="row-flex" style="gap:8px; margin-top:10px;">
+            <button class="btn" id="client-api-cert-generate">Generate / re-issue certificate</button>
+            <button class="btn" id="client-api-cert-export">Export connection profile…</button>
+          </div>
+          <div class="threshold-sub" id="client-api-export-status" style="margin-top:6px;"></div>
+        </div>
+
+        <details style="margin-top:12px;">
+          <summary style="cursor:pointer; color:var(--muted); font-size:12px;">Advanced — use your own certificate</summary>
+          <div class="row-flex" style="gap:8px; margin-top:8px;">
+            <input type="text" id="client-api-tls-cert" class="path-input" placeholder="TLS certificate path (.crt)">
+          </div>
+          <div class="row-flex" style="gap:8px; margin-top:8px;">
+            <input type="text" id="client-api-tls-key" class="path-input" placeholder="TLS private-key path (.key)">
+          </div>
+          <p class="section-desc" style="margin-top:6px;">Override the managed certificate with your own (e.g. an internal-CA cert). Host/port/cert changes apply the next time you switch access on.</p>
+        </details>
       </div>
     </div>
 

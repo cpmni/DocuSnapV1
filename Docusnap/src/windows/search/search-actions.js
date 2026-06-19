@@ -55,7 +55,8 @@ function renderActions(doc) {
     try {
       const acts = provider(doc) || [];
       for (const act of acts) {
-        _btn(wfSection, act.label, act.onClick, !!act.primary);
+        if (act.node) wfSection.appendChild(act.node);            // rich panel (decision bar / assign form)
+        else _btn(wfSection, act.label, act.onClick, !!act.primary);
         hasWorkflowActions = true;
       }
     } catch (err) {

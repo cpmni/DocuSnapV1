@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
+  <title>ScanFinder Cert Tool</title>
+  <style>
+    :root {
+      --bg:#0c0e14; --surface:#13161f; --surface2:#1a1e2a;
+      --border:#252836; --border2:#2f3347;
+      --accent:#4f8ef7; --accent2:#6ea8ff; --accent-bg:rgba(79,142,247,.12);
+      --ok:#3ecf8e; --ok-bg:rgba(62,207,142,.12);
+      --warn:#f7b84f; --err:#f76f6f; --err-bg:rgba(247,111,111,.1);
+      --text:#e2e6f0; --muted:#7a82a0;
+      --mono:'Cascadia Code','Consolas',ui-monospace,monospace;
+      --sans:'Segoe UI',system-ui,sans-serif;
+    }
+    * { box-sizing:border-box; }
+    body {
+      margin:0; background:
+        radial-gradient(120% 90% at 85% -10%, #161b27 0%, transparent 55%),
+        var(--bg);
+      color:var(--text); font-family:var(--sans); font-size:14px;
+      min-height:100vh; padding:28px 30px 36px;
+    }
+    .head { display:flex; align-items:center; gap:14px; margin-bottom:6px; }
+    .mark { width:42px; height:42px; flex:none; color:var(--accent2);
+      background:var(--accent-bg); border:1px solid var(--border2); border-radius:11px;
+      display:flex; align-items:center; justify-content:center; }
+    .mark svg { width:23px; height:23px; }
+    h1 { font-size:19px; margin:0; letter-spacing:.2px; }
+    .sub { color:var(--muted); font-size:12.5px; margin:2px 0 0; }
+
+    .card { background:linear-gradient(180deg,var(--surface),#11141c);
+      border:1px solid var(--border); border-radius:14px; padding:22px 22px 24px; margin-top:20px; }
+
+    label.fld { display:block; margin-bottom:16px; }
+    label.fld > span { display:block; font-size:11px; letter-spacing:.07em; text-transform:uppercase;
+      color:var(--muted); margin-bottom:6px; }
+    input[type=text], input[type=number] {
+      width:100%; background:var(--surface2); border:1px solid var(--border2); color:var(--text);
+      border-radius:8px; padding:10px 12px; font-size:14px; font-family:var(--sans); outline:none;
+    }
+    input::placeholder { color:var(--muted); opacity:.7; }
+    input:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-bg); }
+    .hint { font-size:11.5px; color:var(--muted); margin-top:5px; line-height:1.45; }
+    code { font-family:var(--mono); font-size:12px; color:var(--accent2); }
+
+    .row { display:flex; gap:12px; }
+    .row > * { flex:1; }
+    .browse { display:flex; gap:8px; }
+    .browse input { flex:1; }
+    .btn { border:1px solid var(--border2); background:var(--surface2); color:var(--text);
+      border-radius:8px; padding:10px 14px; font-size:13px; cursor:pointer; font-family:var(--sans); }
+    .btn:hover { border-color:var(--accent2); color:var(--accent2); }
+    .btn.primary { background:var(--accent); border-color:var(--accent); color:#08111f; font-weight:600;
+      width:100%; padding:12px; font-size:14.5px; margin-top:4px; }
+    .btn.primary:hover { background:var(--accent2); color:#08111f; }
+    .btn.primary:disabled { opacity:.55; cursor:default; }
+
+    .chk { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text);
+      background:var(--surface2); border:1px solid var(--border2); border-radius:8px; padding:10px 12px; height:42px; }
+    .chk input { width:auto; accent-color:var(--accent); }
+
+    #out { margin-top:20px; }
+    .hidden { display:none !important; }
+    .result { border:1px solid var(--ok); background:var(--ok-bg); border-radius:12px; padding:18px 20px; }
+    .result.err { border-color:var(--err); background:var(--err-bg); }
+    .result h2 { margin:0 0 4px; font-size:15px; }
+    .result .dir { font-family:var(--mono); font-size:12px; color:var(--muted); word-break:break-all; margin-bottom:14px; }
+    .ca-note { font-size:12px; margin:0 0 14px; }
+    .ca-note.new { color:var(--warn); }
+    .ca-note.reuse { color:var(--ok); }
+    .deliver { list-style:none; margin:0 0 16px; padding:0; display:grid; gap:10px; }
+    .deliver li { display:grid; grid-template-columns:140px 1fr; gap:12px; align-items:baseline;
+      background:#10131b; border:1px solid var(--border); border-radius:8px; padding:10px 12px; }
+    .deliver .file { font-family:var(--mono); font-size:12.5px; color:var(--accent2); }
+    .deliver .where { font-size:12.5px; color:var(--text); line-height:1.45; }
+    .deliver .where small { color:var(--muted); }
+    .keep { color:var(--warn); }
+    .act { display:flex; gap:10px; }
+    .err-msg { font-family:var(--mono); font-size:12.5px; color:var(--err); }
+    .foot { margin-top:18px; font-size:11px; color:var(--muted); text-align:center; line-height:1.5; }
+  </style>
+</head>
+<body>
+  <div class="head">
+    <div class="mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/><path d="M9 12l2 2 4-4"/>
+      </svg>
+    </div>
+    <div>
+      <h1>ScanFinder Cert Tool</h1>
+      <p class="sub">Generate per-customer TLS certificates for the detached search client.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <label class="fld">
+      <span>Customer</span>
+      <input id="customer" type="text" placeholder="e.g. Acme Ltd" autocomplete="off" />
+      <div class="hint">Used as the folder name and the CA's common name.</div>
+    </label>
+
+    <label class="fld">
+      <span>Server address(es)</span>
+      <input id="addresses" type="text" placeholder="192.168.0.50, scanfinder.acme.local" autocomplete="off" />
+      <div class="hint">The IP(s) and/or hostname(s) clients will connect to — comma or space separated. The first is the certificate's CN. These become the cert's SANs, so they must match exactly what users type on the Connect screen.</div>
+    </label>
+
+    <label class="fld">
+      <span>Output folder</span>
+      <div class="browse">
+        <input id="outdir" type="text" placeholder="Choose where to write the customer's certificate folder…" readonly />
+        <button class="btn" id="browse">Browse…</button>
+      </div>
+    </label>
+
+    <div class="row">
+      <label class="fld" style="margin-bottom:0;">
+        <span>Server cert validity (days)</span>
+        <input id="days" type="number" value="825" min="1" max="3650" />
+      </label>
+      <label class="fld" style="margin-bottom:0;">
+        <span>CA handling</span>
+        <div class="chk"><input id="reuse" type="checkbox" checked /> <label for="reuse" style="cursor:pointer">Reuse existing CA (rotate)</label></div>
+      </label>
+    </div>
+
+    <button class="btn primary" id="go" style="margin-top:18px;">Generate certificates</button>
+  </div>
+
+  <div id="out"></div>
+
+  <p class="foot">Per-customer isolated CA · pure-JS (node-forge, MIT) · no OpenSSL required<br/>
+    Keep each customer's <code>ca.key</code> private — it lets you re-issue their server cert without re-pinning clients.</p>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
