@@ -37,6 +37,24 @@ async function initClientApiSection() {
   try { render(await api.clientApiGetStatus()); }
   catch { statusEl.textContent = 'Unavailable (admin only)'; return; }
 
+  // Workflow add-on entitlement (drives enhanced Search here + the detached client).
+  const wfTgl = document.getElementById('wf-addon-toggle');
+  const wfSub = document.getElementById('wf-addon-sub');
+  if (wfTgl && wfSub) {
+    try {
+      const on = (await api.getSetting('detached_client_licensed')) === 'true';
+      wfTgl.checked = on; wfSub.textContent = on ? 'Licensed' : 'Off';
+    } catch { /* ignore */ }
+    if (!wfTgl.dataset.wired) {
+      wfTgl.dataset.wired = '1';
+      wfTgl.addEventListener('change', async () => {
+        try { await api.setSetting('detached_client_licensed', wfTgl.checked ? 'true' : 'false');
+          wfSub.textContent = wfTgl.checked ? 'Licensed' : 'Off'; }
+        catch (e) { wfSub.textContent = 'Error: ' + (e && e.message); wfTgl.checked = !wfTgl.checked; }
+      });
+    }
+  }
+
   if (_clientApiWired) return; // bind listeners once
   _clientApiWired = true;
 
@@ -48,8 +66,11 @@ async function initClientApiSection() {
   } catch { /* ignore */ }
 
   tgl.addEventListener('change', async () => {
-    try { render(await api.clientApiSetEnabled(tgl.checked)); }
-    catch (e) { statusEl.textContent = 'Error: ' + (e && e.message); tgl.checked = !tgl.checked; }
+    try {
+      render(await api.clientApiSetEnabled(tgl.checked));
+      // The listener binds asynchronously, so re-poll shortly to flip "starting…" → "Running".
+      setTimeout(async () => { try { render(await api.clientApiGetStatus()); } catch { /* ignore */ } }, 800);
+    } catch (e) { statusEl.textContent = 'Error: ' + (e && e.message); tgl.checked = !tgl.checked; }
   });
   const saver = (el, k) => el.addEventListener('change', () => { try { api.setSetting(k, el.value.trim()); } catch {} });
   saver(host, 'client_api_host'); saver(port, 'client_api_port');

@@ -377,6 +377,10 @@ function apiStatus(ctx) {
 function startApiServer(ctx) {
   if (ctx._apiServer && ctx._apiServer.listening) return apiStatus(ctx);
   const cfg = resolveApiConfig(ctx);
+  // When the admin deliberately binds a non-loopback host (LAN exposure, which
+  // also requires TLS below), permit non-loopback peers — otherwise the listener's
+  // defence-in-depth loopback guard would 403 every LAN client.
+  ctx.allowRemote = (cfg.host !== '127.0.0.1' && cfg.host !== 'localhost');
   const listener = createRequestListener(ctx);
   let server;
   if (cfg.certPath && cfg.keyPath) {
