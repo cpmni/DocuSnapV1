@@ -51,7 +51,7 @@ function createClient(opts = {}) {
   const ca = opts.ca || null;                     // pinned server cert/CA (PEM) — verification stays ON
   let token = null;
 
-  function request(method, p, { body, withAuth } = {}) {
+  function request(method, p, { body, withAuth, insecure } = {}) {
     return new Promise((resolve, reject) => {
       let u;
       try { u = new URL(baseUrl + p); } catch (e) { return reject(e); }
@@ -64,8 +64,8 @@ function createClient(opts = {}) {
         method, headers, hostname: u.hostname, port: u.port,
         path: u.pathname + u.search,
       };
-      if (u.protocol === 'https:' && allowSelfSigned) reqOpts.rejectUnauthorized = false;
-      if (u.protocol === 'https:' && ca) reqOpts.ca = ca; // trust this cert/CA; full verification kept on
+      if (u.protocol === 'https:' && (allowSelfSigned || insecure)) reqOpts.rejectUnauthorized = false; // insecure = one-shot CA bootstrap
+      if (u.protocol === 'https:' && ca && !insecure) reqOpts.ca = ca; // trust this cert/CA; full verification kept on
       const req = lib.request(reqOpts, (res) => {
         let out = '';
         res.on('data', d => { out += d; });
@@ -139,8 +139,35 @@ function createClient(opts = {}) {
     request('POST', `/v1/workflow/routes/${id}/resolve`, { withAuth: true, body: { decision, comment, version } });
   const recall  = (id, version) => request('POST', `/v1/workflow/routes/${id}/recall`, { withAuth: true, body: { version } });
 
+  // One-shot CA bootstrap over an UNTRUSTED connection (no CA pinned yet). The caller
+  // MUST confirm the returned fingerprint out-of-band before pinning it.
+  async function fetchCa(code) {
+    const q = code ? `?code=${encodeURIComponent(code)}` : '';
+    let r;
+    try { r = await request('GET', `/v1/ca${q}`, { insecure: true }); }
+    catch (e) { return { ok: false, error: `cannot reach server: ${e.message}` }; }
+    if (r.status !== 200 || !r.json || !r.json.caPem) {
+      return { ok: false, status: r.status, error: (r.json && r.json.error) || `certificate fetch failed (${r.status})` };
+    }
+    let fingerprint = r.json.caFingerprintSha256;
+    try { fingerprint = new (require('crypto').X509Certificate)(r.json.caPem).fingerprint256; } catch { /* keep server-reported */ }
+    return { ok: true, caPem: r.json.caPem, fingerprint, serverReported: r.json.caFingerprintSha256, host: r.json.host, port: r.json.port };
+  }
+
+  // Credential + entitlement-gated enrollment: returns the CA to pin AND a session
+  // token in one step (sets the token on success). Bootstrap (insecure) fetch.
+  async function enroll(username, password, totpCode, code) {
+    const q = code ? `?code=${encodeURIComponent(code)}` : '';
+    const r = await request('POST', `/v1/enroll${q}`, { body: { username, password, totp: totpCode }, insecure: true });
+    if (r.status === 200 && r.json && r.json.token) {
+      token = r.json.token;
+      return { ok: true, caPem: r.json.caPem, caFingerprint: r.json.caFingerprintSha256, user: r.json.user, expiresAt: r.json.expiresAt };
+    }
+    return { ok: false, status: r.status, mfaRequired: !!(r.json && r.json.mfaRequired), code: r.json && r.json.code, error: (r.json && r.json.error) || 'Enrollment failed.' };
+  }
+
   return {
-    connect, login, logout, entitlement, search, getDocument, getPages,
+    connect, login, logout, entitlement, search, getDocument, getPages, fetchCa, enroll,
     workflow: { list: wfList, recipients, assign, claim, resolve, recall },
     isAuthenticated: () => !!token,
     _setToken: (t) => { token = t; }, // test/diagnostic aid only

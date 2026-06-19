@@ -151,6 +151,23 @@ $('import-profile-btn').addEventListener('click', async () => {
   $('srv-cert-name').textContent = r.name + (r.caFingerprint ? ' · ' + r.caFingerprint.slice(0, 17) + '…' : '');
   $('connect-btn').click();   // validate via the handshake + proceed to sign-in
 });
+$('fetch-ca-btn').addEventListener('click', async () => {
+  $('connect-err').textContent = '';
+  const host = $('srv-host').value.trim();
+  if (!host) { $('connect-err').textContent = 'Enter the server address first.'; return; }
+  const r = await api.fetchCa({ host, port: $('srv-port').value.trim() || 8765 });
+  if (!r || !r.ok) { $('connect-err').textContent = (r && r.error) || 'Could not fetch the certificate.'; return; }
+  const confirmed = window.confirm(
+    'Server certificate fingerprint (SHA-256):\n\n' + r.fingerprint +
+    '\n\nConfirm this EXACTLY matches the fingerprint shown in the core app ' +
+    '(Settings → Search client access) before trusting it.\n\n' +
+    'A mismatch can mean the connection is being intercepted.');
+  if (!confirmed) return;
+  $('srv-tls').checked = true; _syncCertRow();
+  _caPem = r.caPem;
+  $('srv-cert-name').textContent = 'fetched · ' + r.fingerprint.slice(0, 17) + '…';
+  $('connect-btn').click();
+});
 for (const id of ['srv-host', 'srv-port']) {
   $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') $('connect-btn').click(); });
 }

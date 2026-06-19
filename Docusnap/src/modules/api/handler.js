@@ -152,8 +152,9 @@ function createRequestListener(ctx) {
       const url = new URL(req.url, 'http://127.0.0.1');
       const pathname = url.pathname;
 
-      // Lockstep handshake gate: refuse an incompatible client (health stays open).
-      if (pathname !== `${API_PREFIX}/health` && !clientContractCompatible(req.headers[CLIENT_CONTRACT_HEADER])) {
+      // Lockstep handshake gate: refuse an incompatible client (health + CA bootstrap
+      // stay open so a fresh/older client can enroll).
+      if (pathname !== `${API_PREFIX}/health` && pathname !== `${API_PREFIX}/ca` && !clientContractCompatible(req.headers[CLIENT_CONTRACT_HEADER])) {
         return sendJson(res, 426, {
           error: 'Client version is incompatible with this server. Please update ScanFinder.',
           serverContract: API_CONTRACT_VERSION,
@@ -179,6 +180,20 @@ function createRequestListener(ctx) {
         return sendJson(res, 200, { ok: true, contract: 'v1', contractVersion: API_CONTRACT_VERSION });
       }
 
+      // ── Public: CA bootstrap (lockstep-exempt). Returns the managed CA to pin.
+      //    The client fetches this over an UNTRUSTED connection and MUST confirm the
+      //    fingerprint out-of-band (TOFU); an optional pairing code gates harvesting. ─
+      if (req.method === 'GET' && pathname === `${API_PREFIX}/ca`) {
+        const pr = pairingOk(url, learning, getDb());
+        if (!pr.ok) return sendJson(res, 403, { error: pr.reason === 'expired' ? 'pairing code expired' : 'pairing code required', code: 'PAIRING' });
+        const prof = buildConnectionProfile(ctx);
+        if (!prof.ok) return sendJson(res, 404, { error: 'no managed certificate', code: 'NO_MANAGED_CA' });
+        return sendJson(res, 200, {
+          caPem: prof.profile.caPem, caFingerprintSha256: prof.profile.caFingerprintSha256,
+          host: prof.profile.host, port: prof.profile.port,
+        });
+      }
+
       // ── Auth-required: add-on entitlement probe (never gated, so a client can
       //    sign in and learn it is not licensed) ──────────────────────────────────
       if (req.method === 'GET' && pathname === `${API_PREFIX}/entitlement`) {
@@ -201,6 +216,37 @@ function createRequestListener(ctx) {
         audit({ user_id: r.user.id, action: 'login_success', action_category: 'auth', outcome: 'success',
                 actor_username: r.user.username, actor_role: r.user.role });
         return sendJson(res, 200, {
+          token, expiresAt,
+          user: { username: r.user.username, displayName: r.user.displayName, role: r.user.role },
+        });
+      }
+
+      // ── Public: enroll — credential + entitlement gated. Collapses CA-fetch +
+      //    login into one step: returns the CA to pin AND a session token. ──────────
+      if (req.method === 'POST' && pathname === `${API_PREFIX}/enroll`) {
+        const pr = pairingOk(url, learning, getDb());
+        if (!pr.ok) return sendJson(res, 403, { error: pr.reason === 'expired' ? 'pairing code expired' : 'pairing code required', code: 'PAIRING' });
+        const ent = checkEntitlement();
+        if (!ent.entitled) return sendJson(res, 402, {
+          error: 'The ScanFinder search client is not licensed for this server.',
+          code: 'FEATURE_NOT_LICENSED', feature: ent.feature,
+        });
+        let body; try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+        const r = await authenticator.login(getDb(), body);
+        if (!r.ok) {
+          if (r.code === 'RATE_LIMITED') return sendJson(res, 429, { error: r.error, retryAfterMs: r.retryAfterMs });
+          if (r.code === 'MFA_REQUIRED') return sendJson(res, 401, { error: r.error, mfaRequired: true });
+          audit({ action: 'enroll_failure', action_category: 'auth', outcome: 'failure', details: r.code });
+          return sendJson(res, 401, { error: r.error });
+        }
+        const prof = buildConnectionProfile(ctx);
+        if (!prof.ok) return sendJson(res, 409, { error: 'no managed certificate', code: 'NO_MANAGED_CA' });
+        const { token, expiresAt } = sessions.issue({ userId: r.user.id, username: r.user.username, role: r.user.role });
+        audit({ user_id: r.user.id, action: 'enroll_success', action_category: 'auth', outcome: 'success',
+                actor_username: r.user.username, actor_role: r.user.role });
+        return sendJson(res, 200, {
+          caPem: prof.profile.caPem, caFingerprintSha256: prof.profile.caFingerprintSha256,
+          host: prof.profile.host, port: prof.profile.port,
           token, expiresAt,
           user: { username: r.user.username, displayName: r.user.displayName, role: r.user.role },
         });
@@ -519,6 +565,18 @@ function buildConnectionProfile(ctx) {
       caPem,
     },
   };
+}
+
+// Optional pairing-code gate for the CA-bootstrap/enroll endpoints. When a code is
+// configured (client_api_pairing_code), callers must present a matching ?code= and
+// the code must not be expired; otherwise the gate is open (a CA cert is public).
+function pairingOk(url, learning, db) {
+  let code = null, exp = null;
+  try { code = learning.getSetting(db, 'client_api_pairing_code'); } catch { /* ignore */ }
+  if (!code) return { ok: true };
+  try { exp = learning.getSetting(db, 'client_api_pairing_expires'); } catch { /* ignore */ }
+  if (exp && Date.now() > Number(exp)) return { ok: false, reason: 'expired' };
+  return (url.searchParams.get('code') || '') === code ? { ok: true } : { ok: false, reason: 'bad_code' };
 }
 
 /**

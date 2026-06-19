@@ -97,6 +97,15 @@ ipcMain.handle('client-import-profile', async () => {
   } catch (e) { return { ok: false, error: e.message }; }
 });
 
+// One-shot CA bootstrap from the server (TOFU). The renderer confirms the returned
+// fingerprint out-of-band before pinning it.
+ipcMain.handle('client-fetch-ca', async (_e, { host, port, code } = {}) => {
+  const h = String(host || '').trim();
+  if (!h) return { ok: false, error: 'Enter a server address.' };
+  const tmp = createClient({ baseUrl: `https://${h}:${Number(port) || 8765}`, allowSelfSigned: ALLOW_SELF_SIGNED });
+  try { return await tmp.fetchCa(code); } catch (e) { return { ok: false, error: e.message }; }
+});
+
 ipcMain.handle('client-config',       () => ({ apiUrl: serverConfig ? urlOf(serverConfig) : null }));
 ipcMain.handle('client-connect',      () => client ? client.connect() : { ok: false, mode: 'block', reason: 'No server configured.' });
 ipcMain.handle('client-login',        (_e, { username, password, totp }) => client ? client.login(username, password, totp) : { ok: false, error: 'No server configured.' });
