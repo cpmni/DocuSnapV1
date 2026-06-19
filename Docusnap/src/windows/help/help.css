@@ -21,7 +21,7 @@ html, body { height:100%; background:var(--bg); color:var(--text); font-family:v
 }
 .tb-btn.close:hover { background:var(--err); color:#fff; }
 
-#shell { display:flex; height:calc(100vh - 38px); }
+#shell { display:flex; height:100vh; }  /* custom titlebar is hidden (native frame) — fill the viewport */
 
 /* Left nav (built by help-nav.js from the page manifest) */
 #nav {
@@ -41,7 +41,7 @@ html, body { height:100%; background:var(--bg); color:var(--text); font-family:v
 
 /* Content column */
 #content { flex:1; overflow-y:auto; padding:26px 40px 90px; scroll-behavior:smooth; }
-.doc { max-width:720px; }
+.doc { max-width:1100px; }  /* scales with the window up to a readable line length */
 
 /* Breadcrumb */
 .breadcrumb { font-size:11.5px; color:var(--muted); margin-bottom:18px; }
