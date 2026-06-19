@@ -50,6 +50,46 @@ function normalizeSupplierName(name) {
 // supplier is hardcoded. Short all-caps brands ("IBM") are flagged here too;
 // callers apply "unless uniquely supported" (we only block the PASSED-THROUGH,
 // un-corrected supplier identity — an explicit user correction still persists).
+// Word-quality mirror of python_backend/extraction/value_quality.name_quality —
+// compact heuristic (no word list: supplier names are Title-case, so proper-noun +
+// abbreviation shape covers them). A token is "good" if it's a known abbreviation,
+// or a Title-case proper noun (>=4, with a vowel, no 4+ consonant run); fragments
+// ("Fr"), digit/symbol-only ("67"), gibberish and mixed-case junk ("OMe") are bad.
+const _VQ_ABBREV = new Set(['ltd','inc','plc','llc','llp','co','corp','gmbh','srl','sa','sas',
+  'ag','bv','nv','pty','pvt','spa','oy','ab','ni','uk','us','usa','eu','ie','roi','uae','&']);
+const _VQ_VOWELS = new Set(['a','e','i','o','u','y']);
+function _vqLongConsonantRun(low) {
+  let run = 0;
+  for (const c of low) {
+    if (c >= 'a' && c <= 'z' && !_VQ_VOWELS.has(c)) { if (++run >= 4) return true; }
+    else run = 0;
+  }
+  return false;
+}
+function _vqTokenGood(tok) {
+  const t = tok.replace(/^[.,;:()[\]{}'"`/\\|]+|[.,;:()[\]{}'"`/\\|]+$/g, '');
+  if (!t) return null;
+  if (t.includes('�')) return false;
+  const low = t.toLowerCase();
+  if (_VQ_ABBREV.has(low)) return true;
+  if (!/[A-Za-z]/.test(t)) return false;          // digit/symbol-only ("67")
+  if (t.length <= 2) return false;                // fragment ("Fr","St","WM")
+  if (![...low].some(c => _VQ_VOWELS.has(c))) return false;  // consonant gibberish
+  if (t.length >= 4 && t[0] === t[0].toUpperCase() && t[0] !== t[0].toLowerCase()
+      && t.slice(1) === t.slice(1).toLowerCase() && !_vqLongConsonantRun(low)) return true;
+  return false;
+}
+function nameQuality(value) {
+  if (!value) return 1.0;
+  let good = 0, bad = 0;
+  for (const m of String(value).split(/\s+/)) {
+    const r = _vqTokenGood(m);
+    if (r === true) good++; else if (r === false) bad++;
+  }
+  const total = good + bad;
+  return total === 0 ? 1.0 : good / total;
+}
+
 function isPlausibleSupplierName(value) {
   const t = String(value == null ? '' : value).trim().replace(/:+$/, '');
   if (!t) return false;
@@ -63,6 +103,10 @@ function isPlausibleSupplierName(value) {
   const nAlpha = (t.match(/[A-Za-z]/g) || []).length;
   const nDigit = (t.match(/\d/g) || []).length;
   if (nAlpha < 3 && nDigit >= 2) return false;
+  // Word-quality gate (multi-word only): a mostly-gibberish MULTI-TOKEN read
+  // ("Fr eanehae Crane", "67 Boucher Cre") is not a real supplier identity — so it
+  // is never persisted as a learned hint. Single-token brands ("3M") aren't judged.
+  if (/\s/.test(t) && nameQuality(t) < 0.5) return false;
   return true;
 }
 
@@ -251,6 +295,19 @@ function saveAnchor(db, {
     anchor_label  = _clean;
     offset_dx_norm = null;
     offset_dy_norm = null;
+  }
+  // A field's OWN NAME is never an on-page caption ("Supplier Name" for the
+  // supplier_name field) — an anchor labelled with it can NEVER be located, so it
+  // blind-crops stale coordinates forever and (if authoritative) shadows a correct
+  // mapping. Drop the label so it becomes a pure-coordinate anchor instead of a
+  // phantom-caption one. Reusable guard for every field.
+  if (anchor_label && field_key) {
+    const ln = anchor_label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    if (ln === String(field_key).toLowerCase()) {
+      anchor_label   = '';
+      offset_dx_norm = null;
+      offset_dy_norm = null;
+    }
   }
 
   const key = {
