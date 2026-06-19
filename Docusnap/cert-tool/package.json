@@ -1,0 +1,55 @@
+{
+  "name": "scanfinder-cert-tool",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Generate per-customer TLS certificates for the ScanFinder detached-client API.",
+  "author": "SOFTWARE COMPANY",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --x64"
+  },
+  "build": {
+    "appId": "com.scanfinder.certtool",
+    "productName": "ScanFinder Cert Tool",
+    "copyright": "Copyright © 2026 SOFTWARE COMPANY",
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "artifactName": "ScanFinder Cert Tool Setup ${version}.exe",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ScanFinder Cert Tool",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "deleteAppDataOnUninstall": false
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "certgen.js",
+      "renderer/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    }
+  },
+  "dependencies": {
+    "node-forge": "^1.3.1"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  }
+}
