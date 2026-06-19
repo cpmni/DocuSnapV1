@@ -4,16 +4,9 @@
    diagrams re-skin with the theme instead of going stale like screenshots. */
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-:root {
-  --bg:#0c0e14; --surface:#13161f; --surface2:#1a1e2a; --border:#252836; --border2:#2f3347;
-  --accent:#4f8ef7; --accent2:#6ea8ff; --ok:#3ecf8e; --warn:#f7b84f; --err:#f76f6f;
-  --text:#e2e6f0; --muted:#7a82a0; --accent-bg:#0d1f3a;
-  --mono:'IBM Plex Mono', monospace; --sans:'IBM Plex Sans', sans-serif; color-scheme: dark;
-}
-:root[data-theme="light"] {
-  --bg:#f0f3fa; --surface:#ffffff; --surface2:#e8edf7; --border:#cdd4e8; --border2:#b8c2d8;
-  --text:#1c2035; --muted:#5a6385; --accent-bg:#ddeaff; color-scheme: light;
-}
+/* Palette tokens come from the shared ../shared/theme.css (client light default +
+   matching dark), linked by every help page — so the User Guide matches the rest
+   of the app exactly. theme.css also hides the custom #titlebar below (native frame). */
 html, body { height:100%; background:var(--bg); color:var(--text); font-family:var(--sans); font-size:13px; overflow:hidden; }
 
 /* Title bar */
