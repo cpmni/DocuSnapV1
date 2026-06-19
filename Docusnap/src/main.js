@@ -230,6 +230,43 @@ function launchStartupWindow() {
   setTimeout(reveal, 8000);   // safety backstop — never hang on the splash
 }
 
+// Child windows opened from the main shell are parented + kept off the taskbar so
+// the whole suite shares ONE taskbar entry and feels self-contained. Most also
+// lock their opener (modal), like a regular Windows app; the dev inspector stays
+// non-modal so you can watch live processing while using the main window.
+const CHILD_WINDOWS   = new Set(['review', 'settings', 'search', 'teach', 'dev-inspector']);
+const NON_MODAL_CHILD = new Set(['dev-inspector']);
+
+const winStateFile = () => path.join(app.getPath('userData'), 'window-state.json');
+function loadWinStates() { try { return JSON.parse(fs.readFileSync(winStateFile(), 'utf8')); } catch { return {}; } }
+function saveWinStates(s) { try { fs.writeFileSync(winStateFile(), JSON.stringify(s, null, 2)); } catch { /* ignore */ } }
+
+// Open maximized by default ("fullscreen"); once the user restores/resizes a
+// window, remember that and honour it next time. Fixed dialogs (resizable:false,
+// e.g. login/licence/onboarding) are left exactly as defined.
+function applyWindowState(win, name, options) {
+  if (options.resizable === false) return;
+  const st = loadWinStates()[name];
+  if (st && st.userSized && !st.maximized && st.bounds) win.setBounds(st.bounds);
+  else win.maximize();
+
+  let ready = false, t;
+  win.once('ready-to-show', () => { ready = true; });   // ignore the programmatic default-maximize
+  const persist = () => {
+    if (!ready || win.isDestroyed()) return;
+    const all = loadWinStates();
+    all[name] = win.isMaximized()
+      ? { userSized: true, maximized: true }
+      : { userSized: true, maximized: false, bounds: win.getBounds() };
+    saveWinStates(all);
+  };
+  const debounced = () => { clearTimeout(t); t = setTimeout(persist, 400); };
+  win.on('resize', debounced);
+  win.on('move', debounced);
+  win.on('maximize', persist);
+  win.on('unmaximize', persist);
+}
+
 function createWindow(name, options, htmlFile) {
   if (windows[name]) { windows[name].focus(); return windows[name]; }
 
@@ -241,17 +278,31 @@ function createWindow(name, options, htmlFile) {
   // passes show:false and reveals manually — leave that untouched).
   const manageShow = options.show === undefined;
 
+  // Parent/modal/taskbar wiring for child windows of the main shell.
+  let parentWin, modal = false, skipTaskbar = false;
+  if (CHILD_WINDOWS.has(name)) {
+    const focused = BrowserWindow.getFocusedWindow();
+    parentWin = (focused && !focused.isDestroyed()) ? focused
+              : (windows['main'] && !windows['main'].isDestroyed() ? windows['main'] : undefined);
+    if (parentWin) { skipTaskbar = true; modal = !NON_MODAL_CHILD.has(name); }
+  }
+
   const win = new BrowserWindow({
     ...options,
+    ...(parentWin ? { parent: parentWin } : {}),
+    modal,
+    skipTaskbar,
     show:           manageShow ? false : options.show,
-    frame:          false,
-    backgroundColor: '#0c0e14',
+    frame:          true,            // native OS title bar / window controls (proper Windows app chrome)
+    backgroundColor: '#f4f6fa',      // light pre-paint background (matches the light default theme)
     webPreferences: {
       preload:          path.join(__dirname, 'preload.js'),
       contextIsolation: true,
     },
     icon: path.join(__dirname, '..', '..', 'assets', 'icon.ico'),
   });
+  if (win.removeMenu) win.removeMenu();   // no native menu bar (File/Edit/View/Window/Help)
+  applyWindowState(win, name, options);   // maximize by default / restore the user's last size
 
   if (manageShow) {
     win.once('ready-to-show', () => { if (!win.isDestroyed()) win.show(); });
