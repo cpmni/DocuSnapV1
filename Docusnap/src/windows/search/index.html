@@ -77,6 +77,26 @@
     #btn-search:hover { opacity: .85; }
     .uncommitted-toggle { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
     .uncommitted-toggle input { accent-color: var(--accent); cursor: pointer; }
+    #btn-mailbox { padding: 6px 14px; border-radius: 5px; border: 1px solid var(--border2);
+      background: var(--surface2); color: var(--text); font-size: 12px; cursor: pointer; }
+    #btn-mailbox:hover { border-color: var(--accent2); color: var(--accent2); }
+    body.mailbox-mode #inp-company, body.mailbox-mode #inp-reference, body.mailbox-mode #inp-fulltext,
+    body.mailbox-mode #inp-date-from, body.mailbox-mode #inp-date-to, body.mailbox-mode #inp-type,
+    body.mailbox-mode .uncommitted-toggle, body.mailbox-mode #btn-search,
+    body.mailbox-mode #search-bar > span { display: none !important; }
+
+    #mailbox-tabs { display: flex; gap: 4px; padding: 8px 10px; border-bottom: 1px solid var(--border); background: var(--surface); }
+    .mb-tab { flex: 1; padding: 6px 8px; border-radius: 5px; border: 1px solid transparent;
+      background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; }
+    .mb-tab:hover { color: var(--text); }
+    .mb-tab.active { background: var(--accent-bg); color: var(--accent2); border-color: var(--accent-border); }
+    .wf-state { font-size: 10px; padding: 1px 7px; border-radius: 10px; font-family: var(--mono);
+      background: var(--surface2); color: var(--muted); flex-shrink: 0; }
+    .wf-state.pending { background: var(--warn-bg); color: var(--warn); }
+    .wf-state.claimed { background: var(--accent-bg); color: var(--accent2); }
+    .wf-state.approved, .wf-state.acknowledged { background: var(--ok-bg); color: var(--ok); }
+    .wf-state.rejected { background: var(--err-bg); color: var(--err); }
+    .wf-state.recalled { background: var(--surface2); color: var(--muted); }
 
     #body { display: flex; flex: 1; overflow: hidden; }
 
@@ -153,6 +173,30 @@
     .pf-conf { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-left: 6px; }
     .pf-divider { height: 1px; background: var(--border); margin: 2px 0; }
 
+    /* ── Confidence signature (enhanced Search) ───────────────────────────────── */
+    .result-footer-right { display: flex; align-items: center; gap: 8px; }
+    .result-conf { display: inline-flex; align-items: center; gap: 5px; }
+    .rc-meter { width: 38px; height: 4px; background: var(--surface2); border-radius: 999px; overflow: hidden; }
+    .rc-meter > i { display: block; height: 100%; background: var(--ok); border-radius: 999px; }
+    .result-conf.warn .rc-meter > i { background: var(--warn); }
+    .result-conf.err  .rc-meter > i { background: var(--err); }
+    .rc-val { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+
+    .pf-confband { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--border);
+      border-radius: 6px; background: var(--surface); }
+    .pf-confband .pf-label { flex-shrink: 0; }
+    .cb-meter { flex: 1; height: 6px; background: var(--surface2); border-radius: 999px; overflow: hidden; }
+    .cb-meter > i { display: block; height: 100%; background: var(--ok); border-radius: 999px; }
+    .pf-confband.warn .cb-meter > i { background: var(--warn); }
+    .pf-confband.err  .cb-meter > i { background: var(--err); }
+    .cb-val { font-family: var(--mono); font-size: 11px; font-weight: 500; color: var(--text); }
+
+    .pf-tint { padding-left: 9px; }
+    .pf-tint.pf-ok   { box-shadow: inset 3px 0 0 var(--ok); }
+    .pf-tint.pf-warn { box-shadow: inset 3px 0 0 var(--warn); }
+    .pf-tint.pf-err  { box-shadow: inset 3px 0 0 var(--err); }
+    .pf-note { font-size: 10px; color: var(--warn); line-height: 1.4; }
+
     #preview-actions { border-top: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; background: var(--surface); overflow-y: auto; }
     .action-btn {
       width: 100%; padding: 7px 12px; border-radius: 5px; border: 1px solid var(--border2);
@@ -175,6 +219,17 @@
     .ap-section + .ap-section { border-top: 1px solid var(--border); }
     .ap-section-header { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); padding-bottom: 2px; }
     .ap-future-note    { font-size: 11px; color: var(--muted); line-height: 1.5; }
+
+    /* ── Workflow actions (enhanced Search) ───────────────────────────────────── */
+    .wf-decision, .wf-assign { display: flex; flex-direction: column; gap: 7px; }
+    .wf-banner { font-size: 11px; color: var(--text); background: var(--accent-bg); border: 1px solid var(--accent-border);
+      border-radius: 5px; padding: 7px 9px; line-height: 1.45; }
+    .wf-acts { display: flex; gap: 6px; flex-wrap: wrap; }
+    .wf-acts .action-btn { width: auto; flex: 1; text-align: center; }
+    .wf-reason { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
+    .wf-sub { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+    .wf-assign select.search-input, .wf-assign input.search-input { width: 100%; }
+    .wf-err { font-size: 11px; color: var(--err); }
 
     .spinner { width: 18px; height: 18px; border: 2px solid var(--border2); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; margin: auto; }
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -206,10 +261,17 @@
       Include unconfirmed
     </label>
     <button id="btn-search">Search</button>
+    <button id="btn-mailbox" style="display:none">Mailbox</button>
   </div>
 
   <div id="body">
     <div id="results-pane">
+      <div id="mailbox-tabs" style="display:none">
+        <button class="mb-tab active" data-box="inbox">Inbox</button>
+        <button class="mb-tab" data-box="sent">Sent</button>
+        <button class="mb-tab" data-box="assigned">Assigned</button>
+        <button class="mb-tab" data-box="completed">Completed</button>
+      </div>
       <div id="results-scroll">
         <div id="results-empty" style="display:none">No documents found</div>
       </div>
@@ -246,6 +308,8 @@
 <script src="search-results.js"></script>
 <script src="search-preview.js"></script>
 <script src="search-query.js"></script>
+<script src="search-workflow.js"></script>
+<script src="search-mailbox.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

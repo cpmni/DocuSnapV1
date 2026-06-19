@@ -5,7 +5,13 @@ window.SearchState = {
   selectedDoc:  null,
   currentPages: [],
   currentPage:  0,
+  entitled:     false,   // workflow add-on licensed → enhanced Search (set in renderer._init)
+  myOpenRoutes: {},      // document_id -> open route addressed to me (workflow; set when entitled)
 };
+
+// Confidence level (shared by results + preview): '' = none, else ok/warn/err.
+// Mirrors the detached client's thresholds so the two surfaces read identically.
+function confLevel(c) { return c == null ? '' : c >= 85 ? 'ok' : c >= 60 ? 'warn' : 'err'; }
 
 // Shared HTML-escape utility — used by results and preview modules. Escapes the
 // five characters that can break HTML, including " and ' so values interpolated

@@ -7,6 +7,17 @@ function renderPreviewFields(doc) {
   const scroll = document.getElementById('preview-fields-scroll');
   scroll.innerHTML = '';
 
+  // Confidence band (enhanced Search only) — the signature "how sure are we" cue.
+  if (window.SearchState.entitled && doc.overall_confidence != null) {
+    const lvl = confLevel(doc.overall_confidence);
+    const w   = Math.max(4, Math.min(100, doc.overall_confidence));
+    const band = document.createElement('div');
+    band.className = `pf-confband ${lvl}`;
+    band.innerHTML = `<span class="pf-label">Extraction confidence</span>
+      <span class="cb-meter"><i style="width:${w}%"></i></span><span class="cb-val">${doc.overall_confidence}%</span>`;
+    scroll.appendChild(band);
+  }
+
   _field(scroll, 'Company',   doc.supplier_name);
   _field(scroll, 'Type',      doc.type_name);
   _field(scroll, 'Reference', doc.reference_number);
@@ -24,18 +35,25 @@ function renderPreviewFields(doc) {
       const div = document.createElement('div');
       div.className = 'pf-divider';
       scroll.appendChild(div);
-      for (const ex of extras) _field(scroll, _keyLabel(ex.field_key), ex.display_value, ex.confidence);
+      for (const ex of extras) _field(scroll, _keyLabel(ex.field_key), ex.display_value, ex.confidence, ex.validation_note);
     }
   }
 }
 
-function _field(container, label, value, confidence) {
+function _field(container, label, value, confidence, note) {
   const row = document.createElement('div');
   row.className = 'pf-row';
+  // Per-field confidence tint (enhanced Search only): warn if a validation note,
+  // otherwise by confidence level. Basic Search is left byte-for-byte unchanged.
+  if (window.SearchState.entitled) {
+    const lvl = note ? 'warn' : confLevel(confidence);
+    if (lvl) row.classList.add('pf-tint', 'pf-' + lvl);
+  }
   const confSpan = confidence != null ? `<span class="pf-conf">${confidence}%</span>` : '';
   row.innerHTML = `
     <span class="pf-label">${escHtml(label)}</span>
     <span class="pf-value${value ? '' : ' empty'}">${escHtml(value || '—')}${confSpan}</span>
+    ${window.SearchState.entitled && note ? `<span class="pf-note">⚠ ${escHtml(note)}</span>` : ''}
   `;
   container.appendChild(row);
 }
