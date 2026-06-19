@@ -81,6 +81,18 @@ const rmf = api.ensureManagedCert(ctxMan, { force: true });
 check('explicit Generate (force) overrides manual → managed', rmf.managed === true && rmf.regenerated === true);
 check('force: settings now point at managed cert', learning.getSetting(dbMan, 'client_api_tls_cert') === path.join(tmp, 'man-certs', 'server.crt'));
 
+// ── connection profile (Stage C) ───────────────────────────────────────────────
+const prof = api.buildConnectionProfile(ctx); // ctx → certsDir tmp/lan (managed CA present)
+check('profile: ok', prof.ok === true);
+check('profile: v=1, tls true, port carried', prof.profile.v === 1 && prof.profile.tls === true && prof.profile.port === 8766);
+check('profile: host is a real address (not 0.0.0.0)', !!prof.profile.host && prof.profile.host !== '0.0.0.0');
+check('profile: caPem parses as a cert', (() => { try { new X509Certificate(prof.profile.caPem); return true; } catch { return false; } })());
+check('profile: fingerprint matches the CA', prof.profile.caFingerprintSha256 === new X509Certificate(fs.readFileSync(path.join(tmp, 'lan', 'ca.crt'), 'utf8')).fingerprint256);
+
+const dbNo = makeDb('0.0.0.0');
+const ctxNo = { getDb: () => dbNo, fs, certsDir: path.join(tmp, 'empty'), logger: { log() {}, warn() {} } };
+check('profile: no managed CA → error', api.buildConnectionProfile(ctxNo).error === 'no_managed_ca');
+
 try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* ignore */ }
 console.log(`\ncert wizard: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

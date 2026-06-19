@@ -78,6 +78,24 @@ ipcMain.handle('client-pick-cert', async () => {
   try { return { ok: true, name: path.basename(r.filePaths[0]), pem: fs.readFileSync(r.filePaths[0], 'utf8') }; }
   catch (e) { return { ok: false, error: e.message }; }
 });
+// Import a connection profile (host + port + CA) exported by the core app's wizard —
+// one-click enrollment: fills the connect form and pins the CA in one step.
+ipcMain.handle('client-import-profile', async () => {
+  const r = await dialog.showOpenDialog(win, {
+    title: 'Import connection profile',
+    properties: ['openFile'],
+    filters: [{ name: 'ScanFinder profile', extensions: ['json'] }],
+  });
+  if (r.canceled || !r.filePaths || !r.filePaths[0]) return { ok: false };
+  try {
+    const p = JSON.parse(fs.readFileSync(r.filePaths[0], 'utf8'));
+    if (!p || !p.host || !p.caPem) return { ok: false, error: 'Not a valid ScanFinder connection profile.' };
+    return {
+      ok: true, host: String(p.host).trim(), port: Number(p.port) || 8765, tls: p.tls !== false,
+      caPem: String(p.caPem), caFingerprint: p.caFingerprintSha256 || null, name: path.basename(r.filePaths[0]),
+    };
+  } catch (e) { return { ok: false, error: e.message }; }
+});
 
 ipcMain.handle('client-config',       () => ({ apiUrl: serverConfig ? urlOf(serverConfig) : null }));
 ipcMain.handle('client-connect',      () => client ? client.connect() : { ok: false, mode: 'block', reason: 'No server configured.' });

@@ -105,6 +105,20 @@ async function initClientApiSection() {
     catch (e) { if (certStatusEl) certStatusEl.textContent = 'Error: ' + (e && e.message); }
     finally { certGenBtn.disabled = false; certGenBtn.textContent = prev; }
   });
+
+  const certExportBtn = document.getElementById('client-api-cert-export');
+  const exportStatusEl = document.getElementById('client-api-export-status');
+  if (certExportBtn) certExportBtn.addEventListener('click', async () => {
+    if (exportStatusEl) exportStatusEl.textContent = '';
+    try {
+      const r = await api.clientApiCertExport();
+      if (!exportStatusEl) return;
+      if (r && r.ok) exportStatusEl.textContent = 'Saved profile to ' + r.path + ' — share it with the client (one-click import).';
+      else if (r && r.canceled) exportStatusEl.textContent = '';
+      else if (r && r.error === 'no_managed_ca') exportStatusEl.textContent = 'Generate a managed certificate first, then export.';
+      else exportStatusEl.textContent = 'Export failed' + (r && r.error ? ': ' + r.error : '.');
+    } catch (e) { if (exportStatusEl) exportStatusEl.textContent = 'Error: ' + (e && e.message); }
+  });
 }
 
 document.getElementById('btn-close').addEventListener('click', () => api.windowClose());

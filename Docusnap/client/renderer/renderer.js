@@ -139,6 +139,18 @@ $('srv-cert-btn').addEventListener('click', async () => {
   const r = await api.pickCert();
   if (r && r.ok) { _caPem = r.pem; $('srv-cert-name').textContent = r.name; }
 });
+$('import-profile-btn').addEventListener('click', async () => {
+  $('connect-err').textContent = '';
+  const r = await api.importProfile();
+  if (!r || !r.ok) { if (r && r.error) $('connect-err').textContent = r.error; return; }
+  $('srv-host').value = r.host;
+  $('srv-port').value = r.port;
+  $('srv-tls').checked = !!r.tls;
+  _syncCertRow();
+  _caPem = r.caPem;
+  $('srv-cert-name').textContent = r.name + (r.caFingerprint ? ' · ' + r.caFingerprint.slice(0, 17) + '…' : '');
+  $('connect-btn').click();   // validate via the handshake + proceed to sign-in
+});
 for (const id of ['srv-host', 'srv-port']) {
   $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') $('connect-btn').click(); });
 }

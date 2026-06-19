@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('scanfinder', {
   getServer:       () => ipcRenderer.invoke('client-get-server'),
   setServer:       (cfg) => ipcRenderer.invoke('client-set-server', cfg),
   pickCert:        () => ipcRenderer.invoke('client-pick-cert'),
+  importProfile:   () => ipcRenderer.invoke('client-import-profile'),
   connect:         () => ipcRenderer.invoke('client-connect'),
   login:           (username, password, totp) => ipcRenderer.invoke('client-login', { username, password, totp }),
   logout:          () => ipcRenderer.invoke('client-logout'),

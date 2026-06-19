@@ -491,6 +491,36 @@ function ensureManagedCert(ctx, { force = false } = {}) {
   return { managed: true, regenerated: true, ...managedCertStatus(ctx) };
 }
 
+// A connectable host for the profile: the configured host if it's a real address,
+// else the first detected LAN IPv4 (0.0.0.0 is a bind wildcard, not connectable).
+function connectionProfileHost(cfg) {
+  if (cfg.host && !['0.0.0.0', '::', '127.0.0.1', 'localhost'].includes(cfg.host)) return cfg.host;
+  const ids = certService.detectLanIdentities({});
+  return ids.ipv4[0] || ids.hostname || cfg.host;
+}
+
+// Build a one-click connection profile (host + port + CA to pin) for clients.
+// Uses the managed CA (certsDir/ca.crt); a purely manual setup distributes its own CA.
+function buildConnectionProfile(ctx) {
+  const cfg = resolveApiConfig(ctx);
+  const fs = ctx.fs || require('fs');
+  const caCrt = path.join(certsDirFor(ctx), 'ca.crt');
+  const exists = (p) => { try { return !!p && fs.existsSync(p); } catch { return false; } };
+  if (!exists(caCrt)) return { ok: false, error: 'no_managed_ca' };
+  const caPem = fs.readFileSync(caCrt, 'utf8');
+  return {
+    ok: true,
+    profile: {
+      v: 1,
+      host: connectionProfileHost(cfg),
+      port: cfg.port,
+      tls: true,
+      caFingerprintSha256: certService.readCaFingerprint({ pem: caPem }),
+      caPem,
+    },
+  };
+}
+
 /**
  * App entry point. The API is OFF by default; it starts when the env flag
  * SCANFINDER_API=1 OR the admin `client_api_enabled` setting is on. Admin IPC lets
@@ -518,6 +548,20 @@ function register(ctx) {
     if (ctx._apiServer && ctx._apiServer.listening) { stopApiServer(ctx); startApiServer(ctx); } // reload cert
     return res;
   });
+  ipcMain.handle('client-api-cert-export', async () => {
+    requireRole('admin');
+    const r = buildConnectionProfile(ctx);
+    if (!r.ok) return r;
+    const { dialog } = require('electron');
+    const res = await dialog.showSaveDialog({
+      title: 'Export connection profile',
+      defaultPath: 'scanfinder-profile.json',
+      filters: [{ name: 'ScanFinder profile', extensions: ['json'] }],
+    });
+    if (res.canceled || !res.filePath) return { ok: false, canceled: true };
+    (ctx.fs || require('fs')).writeFileSync(res.filePath, JSON.stringify(r.profile, null, 2));
+    return { ok: true, path: res.filePath, caFingerprintSha256: r.profile.caFingerprintSha256 };
+  });
 
   // Startup: self-heal the managed cert (e.g. a DHCP IP change across a reboot) then start.
   if (resolveApiConfig(ctx).enabled) {
@@ -530,6 +574,6 @@ function register(ctx) {
 module.exports = {
   register, createServer, createRequestListener,
   startApiServer, stopApiServer, apiStatus,
-  ensureManagedCert, managedCertStatus,
+  ensureManagedCert, managedCertStatus, buildConnectionProfile,
   API_CONTRACT_VERSION, API_PREFIX,
 };
