@@ -75,8 +75,22 @@ def merge_label_overrides(patterns: dict, overrides: list, doc_slug: str | None)
             # the label).
             entry = {"labels": [], "directions": ["right", "below"], "base_confidence": 80}
         labels = list(entry.get("labels") or [])
-        if lab not in labels:
-            labels.append(lab)
+        # PRECEDENCE: an admin override is a deliberate per-install instruction to
+        # look for THIS label, so it is consulted BEFORE the shipped/auto labels —
+        # extract_fields tries labels in order and the first valid value wins, so
+        # an APPENDED override could never beat a shipped label that also matches
+        # (the "changing the label did nothing" bug). Tag it (dict form) so the
+        # winning hit is marked method "keyword_override": that flags provenance
+        # AND lets engine.extract treat it as an authority that can displace a
+        # GENERIC template value (a plain "keyword" hit can't clear the
+        # > template_fixed confidence gate). It still yields to curated Stage 0.5
+        # mappings / Stage 2 ⊕ anchors. Fall-through to the shipped labels is
+        # preserved when the override label isn't found or its value fails the
+        # field's format gate.
+        if not any(isinstance(x, dict) and x.get("override")
+                   and str(x.get("text", "")).strip().lower() == lab.lower()
+                   for x in labels):
+            labels.insert(0, {"text": lab, "override": True})
         field_patterns[key] = {**entry, "labels": labels}
 
     return {**patterns, "field_patterns": field_patterns}
@@ -196,9 +210,12 @@ def extract_fields(ocr_text: str, field_keys: list[str],
 
         for label in labels:
             # Support per-label direction override: {"text": "Bill From", "directions": ["below"]}
+            # and the admin label-override flag ({"text": ..., "override": True}).
+            is_override = False
             if isinstance(label, dict):
                 label_text = label["text"]
                 label_dirs = label.get("directions", dirs)
+                is_override = bool(label.get("override"))
             else:
                 label_text = label
                 label_dirs = dirs
@@ -227,7 +244,10 @@ def extract_fields(ocr_text: str, field_keys: list[str],
             results[field_key] = {
                 "value":      value,
                 "confidence": min(95, conf),
-                "method":     "keyword",
+                # Admin label override (Settings → Advanced) gets distinct
+                # provenance so it's visible in Review/Dev Inspector AND so
+                # engine.extract can let it outrank a generic template value.
+                "method":     "keyword_override" if is_override else "keyword",
                 "label":      label_text,
             }
             break  # found for this field, move to next
@@ -392,6 +412,17 @@ def _is_plausible_supplier_name(value: str | None) -> bool:
     n_digit = sum(c.isdigit() for c in t)
     if n_alpha < 3 and n_digit >= 2:
         return False
+    # Word-quality gate (multi-word only): a MULTI-TOKEN read that is mostly OCR
+    # gibberish / address fragments ("Fr eanehae Crane", "67 Boucher Cre",
+    # "St OMe WM cenant") is not a real supplier identity — flagging it implausible
+    # is what lets the learned-hint recovery (engine Stage 2.5a) replace it with the
+    # confirmed name. Single-token values are NOT judged here so short real brands
+    # ("3M", "IBM", "DHL") are never demoted by this rule (the shape tests above
+    # already govern them). See extraction/value_quality.py.
+    if len(t.split()) >= 2:
+        from extraction.value_quality import name_quality
+        if name_quality(t) < 0.5:
+            return False
     return True
 
 

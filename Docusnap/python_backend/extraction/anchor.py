@@ -288,6 +288,17 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
         if value:
             value = _qualify_against_format(value, field_key, format_lookup)
 
+        # Name-quality gate (Part 3): a NAME/company/address field whose read is a
+        # garbled MULTI-WORD string ("Fr eanehae Crane", "67 Boucher Cre") is OCR
+        # junk, not a real name — DROP it so it can't win (Tier-A / confidence)
+        # over a credible mapping / keyword / learned hint, and so the empty field
+        # falls to hint-recovery. Single-token brands ("3M", "IBM") aren't judged.
+        # Reusable for every name-like field. See extraction/value_quality.py.
+        if value and len(str(value).split()) >= 2:
+            from extraction.value_quality import is_name_like_field, name_quality
+            if is_name_like_field(field_key) and name_quality(value) < 0.5:
+                value = None
+
         if value:
             conf = min(95, 55 + (usage_count * 5) + int(conf_factor * 20))
             if method == "anchor_crop":
@@ -305,11 +316,53 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 # + residual), not usage_count. Ranks above single-label relocate
                 # (stronger geometry) and below a clean rigid crop.
                 conf = min(93, registration.registration_confidence(page_transform))
+            # ── LOCATED gate: Tier-A trust requires the anchor to be on THIS page ──
+            # A label/landmark-confirmed read (text-fallback / inline / relocated /
+            # registration) is located by construction. A RIGID anchor_crop is
+            # located only if it has NO label (a pure-coordinate anchor, trusted by
+            # design) OR its label is actually present here. An AUTHORITATIVE anchor
+            # that resolved rigidly with a label gets that label CONFIRMED — a label
+            # that can't be found (e.g. the field's own name "Supplier Name", never
+            # printed on the page) means the box is a BLIND read of stale coordinates
+            # reading the wrong row ("a? Boucher Gres" off the address line). Such a
+            # read must NOT win Tier-A over a located mapping, and can't carry a high
+            # confidence. Cost (one locate) is paid ONLY for authoritative rigid
+            # anchors — the Tier-A claimants; passive/label-less anchors are unchanged.
+            located_ok = method in ("anchor", "anchor_inline",
+                                    "anchor_crop_relocated", "anchor_registration")
+            if not located_ok:                            # a RIGID anchor_crop read
+                if not anchor.get("last_authoritative_at"):
+                    located_ok = True                     # passive: 'located' never consulted (Tier-A needs authoritative)
+                else:
+                    # An AUTHORITATIVE rigid read is trustworthy ONLY if its label is
+                    # CONFIRMED on this page. A LABEL-LESS anchor (nothing to verify —
+                    # e.g. a field-name caption sanitised to empty) is a BLIND
+                    # coordinate read that can't self-verify or drift-correct and
+                    # silently reads the wrong row ("57 Boucher Crescent" off the
+                    # address), so it must NOT be treated as located. A labelled
+                    # anchor must have its label actually found here.
+                    _lbl = (anchor.get("anchor_label") or "").strip()
+                    located_ok = bool(_lbl) and bool(_locate_for_relocation(
+                        page0, _lbl, direction,
+                        (x_norm, y_norm, anchor.get("w_norm") or 0.0, anchor.get("h_norm") or 0.0),
+                        page_text_lines))
+            if not located_ok:
+                conf = min(conf, 50)   # blind rigid read (label absent/unfound) — untrustworthy
             results[field_key] = {
                 "value":      value.strip(),
                 "confidence": conf,
                 "method":     method,
                 "anchor":     anchor["anchor_label"],
+                # True only for an EXPLICIT operator ⊕ re-teach (last_authoritative_at
+                # set) — "manually drawn", precedence tier 1. A passively auto-learned
+                # anchor is an automatic guess (tier 3); the engine lets an admin label
+                # override (tier 2) outrank it but never an authoritative anchor.
+                "authoritative": bool(anchor.get("last_authoritative_at")),
+                # Whether the anchor was CONFIRMED on this page (see LOCATED gate
+                # above). engine Tier-A requires this so a blind authoritative read
+                # can't dominate a located mapping. Defaults True for callers/tests
+                # that build results directly.
+                "located": located_ok,
             }
 
     return results

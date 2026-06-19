@@ -31,6 +31,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from extraction import template_mapper  # noqa: E402
+from extraction import format_anomaly_checker  # noqa: E402
 
 
 def check(label, condition):
@@ -450,18 +451,21 @@ def test_gate_value_shared():
     print("_gate_value: shared credibility / date-salvage / format gate")
     vps = {"date": DATE_PATTERNS["date"],
            "alphanumeric": [r"[A-Za-z0-9][A-Za-z0-9\-\/\.]{2,20}"]}
+    # _gate_value now returns a 3-tuple (value, salvaged, shape_warn); shape_warn
+    # is only ever True under shape_mode='flag' with a learned format present (None
+    # lookup here → always False), so these regex/type-only cases are unaffected.
     g = lambda text, vt: template_mapper._gate_value(text, vt, "k", vps, None)
 
     if not check("clean alphanumeric passes unchanged, not salvaged",
-                 g("INV-001", "alphanumeric") == ("INV-001", False)):
+                 g("INV-001", "alphanumeric") == ("INV-001", False, False)):
         failures += 1
     if not check("non-date text rejected for a date field",
-                 g("Booking", "date") == (None, False)):
+                 g("Booking", "date") == (None, False, False)):
         failures += 1
     if not check("spaced date salvaged + normalised, salvaged flag set",
-                 g("27 -05- 2026", "date") == ("27-05-2026", True)):
+                 g("27 -05- 2026", "date") == ("27-05-2026", True, False)):
         failures += 1
-    if not check("empty text rejected", g(None, "date") == (None, False)):
+    if not check("empty text rejected", g(None, "date") == (None, False, False)):
         failures += 1
     print()
     return failures
@@ -706,6 +710,87 @@ def test_registration_rung():
     return failures
 
 
+def _invoice_shape_lookup():
+    """A learned-format lookup for invoice_number shaped AAA-##-#### (from confirmed
+    history). Used to prove a type-valid but off-shape manual value's handling."""
+    idx = format_anomaly_checker.build_format_class_index([{
+        "supplier_name": "", "document_type": "invoice", "field_key": "invoice_number",
+        "sample_values": ["HLC-26-0309", "HLC-25-0211", "HLC-24-0190", "HLC-23-0050"],
+    }])
+    entry = idx.get(("", "invoice", "invoice_number"))
+    return (lambda fk: entry if fk == "invoice_number" else None), entry
+
+
+def test_gate_value_shape_modes():
+    """Part A core: _gate_value's shape_mode governs how a LEARNED-SHAPE mismatch is
+    handled — 'ignore' (absolute manual read) keeps a type-valid value with no warn;
+    'flag' (derived rungs) keeps it but signals shape_warn for review; 'drop' (legacy)
+    rejects it. Regex/type failure is rejected in EVERY mode."""
+    failures = 0
+    print("_gate_value: shape_mode = manual-vs-derived learned-shape severity")
+    vps = {"alphanumeric": [r"[A-Za-z0-9][A-Za-z0-9\-\/\.]{2,20}"]}
+    lookup, entry = _invoice_shape_lookup()
+
+    if not check("precondition: off-shape value really fails the learned shape",
+                 entry is not None
+                 and template_mapper._format_rejects("GB374998618", "invoice_number", lookup)):
+        failures += 1
+
+    g = lambda v, mode: template_mapper._gate_value(
+        v, "alphanumeric", "invoice_number", vps, lookup, shape_mode=mode)
+
+    if not check("ignore: off-shape but type-valid value kept, no shape_warn",
+                 g("GB374998618", "ignore") == ("GB374998618", False, False)):
+        failures += 1
+    if not check("flag: off-shape value kept WITH shape_warn (review, not drop)",
+                 g("GB374998618", "flag") == ("GB374998618", False, True)):
+        failures += 1
+    if not check("drop (legacy): off-shape value rejected",
+                 g("GB374998618", "drop") == (None, False, False)):
+        failures += 1
+    if not check("ignore: a value failing the field REGEX/TYPE is still rejected",
+                 g("!", "ignore") == (None, False, False)):
+        failures += 1
+    print()
+    return failures
+
+
+def test_manual_anchor_shape_precedence():
+    """Part A end-to-end: the ABSOLUTE drawn-box read of a manual mapping WINS on the
+    field's regex/type even when the value differs from the learned shape (the
+    operator's explicit override of history) — the exact bug where a type-valid
+    manual value was silently dropped and the wrong auto value won. A value that
+    fails the field's regex/type is still dropped (falls through)."""
+    failures = 0
+    print("extract_with_mappings: manual anchor qualified on regex/type, not learned shape")
+    page = FakePage()
+    field_patterns = {"invoice_number": {"validation": "alphanumeric"}}
+    vps = {"alphanumeric": [r"[A-Za-z0-9][A-Za-z0-9\-\/\.]{2,20}"]}
+    lookup, _ = _invoice_shape_lookup()
+
+    res = template_mapper.extract_with_mappings(
+        [page], [base_mapping()], field_patterns,
+        ocr_lines_fn=lines_stub([]),
+        ocr_text_fn=value_at_stub("GB374998618", 0.25, 0.20, 0.15, 0.04),
+        validation_patterns=vps, format_lookup=lookup)
+    got = res.get("invoice_number")
+    if not check("absolute manual read WINS on regex/type despite shape mismatch",
+                 got is not None and got["value"] == "GB374998618"
+                 and got["method"] == "template_mapping"):
+        failures += 1
+
+    res_bad = template_mapper.extract_with_mappings(
+        [page], [base_mapping()], field_patterns,
+        ocr_lines_fn=lines_stub([]),
+        ocr_text_fn=value_at_stub("!", 0.25, 0.20, 0.15, 0.04),
+        validation_patterns=vps, format_lookup=lookup)
+    if not check("regex/type failure still drops the manual value (falls through)",
+                 "invoice_number" not in res_bad):
+        failures += 1
+    print()
+    return failures
+
+
 def main():
     failures = 0
     failures += test_geometry_helpers()
@@ -718,6 +803,8 @@ def main():
     failures += test_clean_crop_segment_shape_aware()
     failures += test_absolute_target_first()
     failures += test_gate_value_shared()
+    failures += test_gate_value_shape_modes()
+    failures += test_manual_anchor_shape_precedence()
     failures += test_registration_rung()
 
     if failures:

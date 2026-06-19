@@ -1,0 +1,158 @@
+[
+  {
+    "in": "Beaumont Care Homes",
+    "norm": "beaumont care homes",
+    "tokens": [
+      "beaumont",
+      "care",
+      "homes"
+    ]
+  },
+  {
+    "in": "  Beaumont   Care  Homes  ",
+    "norm": "beaumont care homes",
+    "tokens": [
+      "beaumont",
+      "care",
+      "homes"
+    ]
+  },
+  {
+    "in": "*- Beaumont Care Homes -",
+    "norm": "beaumont care homes",
+    "tokens": [
+      "beaumont",
+      "care",
+      "homes"
+    ]
+  },
+  {
+    "in": "Beaumont Care Homes \u2013 Tudordale",
+    "norm": "beaumont care homes - tudordale",
+    "tokens": [
+      "beaumont",
+      "care",
+      "homes",
+      "-",
+      "tudordale"
+    ]
+  },
+  {
+    "in": "Beaumont Care Homes \u2014 Holywood",
+    "norm": "beaumont care homes - holywood",
+    "tokens": [
+      "beaumont",
+      "care",
+      "homes",
+      "-",
+      "holywood"
+    ]
+  },
+  {
+    "in": "O\u2019Brien & Sons Ltd",
+    "norm": "o'brien & sons ltd",
+    "tokens": [
+      "o'brien",
+      "&",
+      "sons",
+      "ltd"
+    ]
+  },
+  {
+    "in": "\u201cCloud VPS\u201d",
+    "norm": "cloud vps",
+    "tokens": [
+      "cloud",
+      "vps"
+    ]
+  },
+  {
+    "in": "ACME LIMITED",
+    "norm": "acme limited",
+    "tokens": [
+      "acme",
+      "limited"
+    ]
+  },
+  {
+    "in": "City Office NI",
+    "norm": "city office ni",
+    "tokens": [
+      "city",
+      "office",
+      "ni"
+    ]
+  },
+  {
+    "in": "Ann Blume\u00a0Berlin",
+    "norm": "ann blume berlin",
+    "tokens": [
+      "ann",
+      "blume",
+      "berlin"
+    ]
+  },
+  {
+    "in": "\uff26\uff55\uff4c\uff4c \uff37\uff49\uff44\uff54\uff48",
+    "norm": "full width",
+    "tokens": [
+      "full",
+      "width"
+    ]
+  },
+  {
+    "in": "Polychemtex Inc.",
+    "norm": "polychemtex inc",
+    "tokens": [
+      "polychemtex",
+      "inc"
+    ]
+  },
+  {
+    "in": "",
+    "norm": "",
+    "tokens": []
+  },
+  {
+    "in": "   ",
+    "norm": "",
+    "tokens": []
+  },
+  {
+    "in": "123-456 / 789",
+    "norm": "123-456 / 789",
+    "tokens": [
+      "123-456",
+      "/",
+      "789"
+    ]
+  },
+  {
+    "in": "Caf\u00e9 Ren\u00e9",
+    "norm": "caf\u00e9 ren",
+    "tokens": [
+      "caf\u00e9",
+      "ren"
+    ]
+  },
+  {
+    "in": "Beaumont\tCare\nHomes",
+    "norm": "beaumont care homes",
+    "tokens": [
+      "beaumont",
+      "care",
+      "homes"
+    ]
+  },
+  {
+    "in": "eeaument care homes - lisburn",
+    "norm": "eeaument care homes - lisburn",
+    "tokens": [
+      "eeaument",
+      "care",
+      "homes",
+      "-",
+      "lisburn"
+    ]
+  }
+]

@@ -68,6 +68,24 @@ class Transform:
                 "w_norm": max(xs) - x0, "h_norm": max(ys) - y0}
 
 
+def box_divergence(transform, box):
+    """Normalised CENTRE-distance between a box and its transform-mapped image —
+    how far the fitted page transform says this box has MOVED relative to the
+    taught (drawn) frame. 0.0 for a None/identity transform (a clean page where
+    registration agrees with the drawn coordinates → caller keeps the absolute
+    read, byte-identical), growing as the page registers differently from the
+    taught frame (the drawn box is reading the wrong place → caller should prefer
+    the registration read). Pure / unit-testable; no OCR."""
+    if transform is None:
+        return 0.0
+    cx = box["x_norm"] + box["w_norm"] / 2.0
+    cy = box["y_norm"] + box["h_norm"] / 2.0
+    mapped = transform.apply_box(box)
+    mx = mapped["x_norm"] + mapped["w_norm"] / 2.0
+    my = mapped["y_norm"] + mapped["h_norm"] / 2.0
+    return float(((mx - cx) ** 2 + (my - cy) ** 2) ** 0.5)
+
+
 def _fit_similarity(src, dst):
     """Closed-form least-squares 2-D similarity (Umeyama, reflection-free).
     Handles N>=2. Returns a 2x3 matrix or None if degenerate (coincident pts)."""

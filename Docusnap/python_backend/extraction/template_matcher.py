@@ -211,10 +211,15 @@ def _logo_candidates(page_image: Image.Image,
         return None, []
     cands = []
     for t in templates:
-        t_hash = t.get('logo_phash') or ''
-        if not t_hash:
+        # Multi-reference identity (migration 26): a template carries a SET of logo
+        # hashes (logo_phashes) so per-scan drift still matches the closest. Fall
+        # back to the legacy single logo_phash for un-migrated payloads. Distance =
+        # MIN over the set; everything downstream (threshold/cluster/gate) is unchanged.
+        hashes = t.get('logo_phashes') or ([t.get('logo_phash')] if t.get('logo_phash') else [])
+        dists = [_hamming(phash, h) for h in hashes if h]
+        if not dists:
             continue
-        dist = _hamming(phash, t_hash)
+        dist = min(dists)
         if dist <= LOGO_THRESHOLD:
             cands.append((t, dist))
     cands.sort(key=lambda x: x[1])

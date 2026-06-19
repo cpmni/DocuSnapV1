@@ -62,8 +62,12 @@ def main():
     if field_key and mapping.get('ocr_type'):
         field_patterns = {field_key: {'validation': mapping['ocr_type']}}
 
-    results = template_mapper.extract_with_mappings([page], [mapping], field_patterns=field_patterns)
-    print(json.dumps(results.get(field_key) or {}))
+    # resolve_geometry runs the SAME extractor and ALSO reports where the anchor
+    # label located and which target box was actually read (the resolved value
+    # position), so the Template Wizard can overlay "where it reads" on the page.
+    # Backward-compatible: callers that only read value/confidence/method (the
+    # Template Manager "Test" button) ignore the extra anchor_box/target_box keys.
+    print(json.dumps(template_mapper.resolve_geometry(page, mapping, field_patterns=field_patterns)))
 
 
 if __name__ == '__main__':

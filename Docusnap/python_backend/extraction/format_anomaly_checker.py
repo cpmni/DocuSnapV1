@@ -391,6 +391,21 @@ def propose_correction(value: str, format_entry: dict) -> Optional[dict]:
     return {'corrected': cleaned, 'note': note, 'confident': confident}
 
 
+# ── Valid-character policy (Phase 1) ──────────────────────────────────────────
+
+def charset_disallowed(value, allowed_extra) -> list:
+    """Return the sorted DISALLOWED characters in `value` for a field type — anything
+    that is NOT alphanumeric, NOT whitespace, and NOT in `allowed_extra` (the per-type
+    extra-punctuation string from config `field_charsets`). The OCR replacement char
+    U+FFFD therefore always counts as disallowed. `allowed_extra is None` => no
+    constraint (free text) => []. Backend-only FLAG signal — never strips/mutates."""
+    if allowed_extra is None or not value:
+        return []
+    extra = set(allowed_extra)
+    bad = {c for c in str(value) if not c.isalnum() and not c.isspace() and c not in extra}
+    return sorted(bad)
+
+
 # ── Index builder ─────────────────────────────────────────────────────────────
 
 def build_format_class_index(formats_data: list) -> dict:
@@ -430,9 +445,27 @@ def build_format_class_index(formats_data: list) -> dict:
             continue
 
         fmt = classify_format(samples, vcounts)
-        if fmt['class'] == FREETEXT:
-            continue  # no usable constraint learned
 
+        # Token lexicon for NAME-LIKE fields (company/customer), Phase 1 canonical
+        # repair. Built here so it's computed ONCE per group and attached to the
+        # fmt entry the Stage 4.5 loop already resolves. Names are usually coarse
+        # class FREETEXT, so this MUST be attached even when the class is freetext —
+        # otherwise the entry is dropped below and the repair has nothing to read.
+        name_lex = None
+        try:
+            from extraction import value_quality, name_match
+            if value_quality.is_name_like_field(field_key):
+                lex = name_match.build_token_lexicon(vcounts or {}, entry.get('confirmed_count'))
+                if lex and lex.get('positions'):
+                    name_lex = lex
+        except Exception:
+            name_lex = None
+
+        if fmt['class'] == FREETEXT and not name_lex:
+            continue  # no usable constraint learned and no name lexicon
+
+        if name_lex:
+            fmt = {**fmt, 'name_lexicon': name_lex}
         index[(supplier, doc_type, field_key)] = fmt
 
     return index

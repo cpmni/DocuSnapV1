@@ -51,6 +51,19 @@ _STAGE05_LOCATED_METHODS = (
 )
 
 
+def _is_stage05_located(method: str | None) -> bool:
+    """True for ANY Stage 0.5 located-mapping method — the absolute fast-path read,
+    the registration/relocation rungs, and their `_salvaged` / `_shapewarn` suffix
+    variants. Prefix-based so every present and future suffix combination (e.g.
+    template_mapping_shapewarn, template_registration_expanded_shapewarn) gets the
+    SAME protection: keyword can't demote it (Stage 1) and a non-authoritative
+    auto-anchor can't clobber it (Stage 2). Note template_matcher's generic
+    `template_fixed` / `template_anchor` deliberately DON'T match — they are the
+    auto-learned rules a manual mapping exists to override, not located mappings."""
+    return bool(method) and (method.startswith("template_mapping")
+                             or method.startswith("template_registration"))
+
+
 def _supplier_identity_decision(existing: dict | None, candidate: dict | None) -> str | None:
     """Plausibility-aware merge ruling for the supplier_name field only.
 
@@ -389,6 +402,20 @@ class ExtractionEngine:
         # a real date must never displace one that does (e.g. a mis-cropped
         # taught anchor returning a bare "March" overriding a valid full date).
         date_field_keys = {f["key"] for f in field_defs if f.get("type") == "date"}
+        # Free-text fields (text / multiline_text / untyped) have legitimately
+        # variable shapes — a customer name with or without a site suffix, an
+        # address of any length. The Stage 4.5 learned-SHAPE check must never
+        # WITHHOLD or TRIM such a value (only softly flag it); otherwise a clean
+        # company name is discarded just because recent confirmed history happened
+        # to share a longer shape (e.g. customers all "Beaumont Care Homes Ltd -
+        # <Site>" learn a rigid shape that NULLs a valid "Beaumont Care Homes Ltd
+        # -" with no site). NOTE: a reference field is frequently typed plain
+        # "text" too (e.g. reference_number), so exclude _is_ref_field — those ARE
+        # structured codes and must keep full shape enforcement. Dates/currency are
+        # their own types, already outside this set.
+        text_field_keys = {f["key"] for f in field_defs
+                           if (f.get("type") or "").lower() in ("text", "multiline_text", "")
+                           and not _is_ref_field(f["key"])}
         matched_tmpl = None
         logo_phash   = None
         kw_fingerprint = []
@@ -577,13 +604,29 @@ class ExtractionEngine:
             # 2 (is_taught_override excludes only template_mapping*), letting a
             # mis-aimed learned anchor then clobber the deliberate mapping. Keep
             # the mapping; curated sources still contend on confidence later.
-            if existing and existing.get("method") in _STAGE05_LOCATED_METHODS:
+            if existing and _is_stage05_located(existing.get("method")):
                 continue
             if (key in date_field_keys and existing
                     and validator.parse_date(existing.get("value")) is not None
                     and validator.parse_date(data.get("value")) is None):
                 continue  # don't let an unparseable date replace a valid one
-            if not existing or data.get("confidence", 0) > existing.get("confidence", 0):
+            # Precedence: an admin label override (Settings → Advanced, method
+            # "keyword_override") is a deliberate instruction for where this
+            # field's value lives, so a VALID one outranks ANY learned/generic
+            # incumbent on AUTHORITY — not on a raw confidence number it could
+            # never clear against a frozen 95. (At Stage 1 the realistic incumbents
+            # are the Stage 0 template seeds template_fixed/template_anchor, but the
+            # guard is written generally so the override also beats any other
+            # non-curated method without depending on the seed's exact label.) It
+            # still yields to curated Stage 0.5 mappings — those are skipped above
+            # via _STAGE05_LOCATED_METHODS, and excluding them here keeps that
+            # mapping > label ordering consistent — and to authoritative Stage 2 ⊕
+            # anchors (Tier A above overrides it there, now regardless of method).
+            is_override_authority = (data.get("method") == "keyword_override"
+                                     and existing is not None
+                                     and not _is_stage05_located(existing.get("method")))
+            if (not existing or is_override_authority
+                    or data.get("confidence", 0) > existing.get("confidence", 0)):
                 results[key] = data
         self._trace_stage('1_keyword', kw_results, _pre_s1, results)
         found = len([v for v in results.values() if v.get("value")])
@@ -677,6 +720,45 @@ class ExtractionEngine:
                         inc_v = existing.get("value") or ""
                         if any(c.isdigit() for c in inc_v) and not any(c.isdigit() for c in cand_v):
                             continue
+                # ── Tier A: authoritative ⊕ anchor wins outright (any method) ──
+                # An EXPLICIT authoritative ⊕ anchor that cleared the credibility
+                # gate above is the operator's deliberate, current correction for
+                # this field — it wins outright over ANY incumbent (Stage 0.5
+                # mapping, admin label override, generic template seed, learned),
+                # regardless of the resolved method or confidence. Passive anchors
+                # (authoritative=False) never reach here. This generalises the old
+                # anchor_crop-ONLY is_taught_override below so an authoritative
+                # anchor that resolved via inline / relocated / registration still
+                # wins (was the bug: a re-teach that read its value off the
+                # located line lost a confidence contest to the label it was meant
+                # to override). An INVALID authoritative read was already dropped
+                # by the credibility gate, so it correctly yields to the next valid
+                # lower-priority source.
+                # LOCATED gate (anchor.py): a blind RIGID read whose label can't be
+                # found on this page (a stale/non-localizable ⊕ anchor reading the
+                # wrong row — e.g. anchor_label = the field's own name) is NOT a
+                # trustworthy correction, so it does NOT win Tier-A; it falls through
+                # to the normal confidence contest (where its capped conf yields to a
+                # located mapping). `located` defaults True so a located teach — and
+                # any caller/test that builds results without the flag — is unchanged.
+                if data.get("authoritative") and data.get("value") and data.get("located", True):
+                    results[key] = data
+                    continue
+                # Precedence: a deliberately DRAWN source outranks an AUTO-LEARNED
+                # anchor. A hand-drawn Stage 0.5 mapping (_STAGE05_LOCATED_METHODS)
+                # and an admin label override (method "keyword_override") are
+                # "manually drawn" (tier 1/2); a passively auto-learned anchor is
+                # an automatic guess (tier 3), not "manually drawn". Only an
+                # EXPLICIT ⊕ re-teach (authoritative) anchor may displace them —
+                # without this a stale auto-learned anchor with a high computed
+                # confidence (≈97, often mis-keyed to the wrong supplier) silently
+                # shadows a freshly drawn mapping / override on every reprocess.
+                # Two DELIBERATE sources (a drawn mapping and an authoritative
+                # anchor) still contend on confidence below, as before.
+                if (existing and not data.get("authoritative")
+                        and (existing.get("method") == "keyword_override"
+                             or _is_stage05_located(existing.get("method")))):
+                    continue
                 # A user-taught anchor (drawn with the ⊕ tool, resolved via
                 # crop+re-OCR at the exact saved coordinates) is ground truth for
                 # that spot on the page — it overrides a generic keyword/regex
@@ -700,9 +782,10 @@ class ExtractionEngine:
                 # between them is the right arbiter, not an automatic win for
                 # whichever one happens to run later in the stage order.
                 is_taught_override = (data.get("method") == "anchor_crop"
+                                      and data.get("located", True)
                                       and existing
-                                      and existing.get("method") not in
-                                          ("anchor_crop", *_STAGE05_LOCATED_METHODS))
+                                      and existing.get("method") != "anchor_crop"
+                                      and not _is_stage05_located(existing.get("method")))
                 if not existing or is_taught_override or data["confidence"] > existing["confidence"]:
                     results[key] = data
             self._trace_stage('2_anchor', anchor_results, _pre_s2, results)
@@ -900,6 +983,8 @@ class ExtractionEngine:
             s_lower  = (supplier_name or '').lower().strip()
             dt_lower = document_slug.lower().strip()
             n_flagged = 0
+            field_charsets = self.patterns.get('field_charsets') or {}
+            field_types    = {f.get('key'): f.get('type') for f in (field_defs or [])}
             for key, data in list(results.items()):
                 if key.startswith('_') or not isinstance(data, dict):
                     continue
@@ -908,6 +993,27 @@ class ExtractionEngine:
                 val = data.get('value')
                 if not val:
                     continue
+                # ── Valid-character policy (Phase 1, backend-only FLAG) ── before the
+                # format lookup so it covers EVERY field, not only those with learned
+                # formats. Surfaces unexpected OCR symbols for the field TYPE (note +
+                # conf cap); NEVER strips the value. Skips date/currency (their own
+                # normalisers own punctuation); defers to any existing note via the
+                # guard above. See format_anomaly_checker.charset_disallowed +
+                # config field_charsets.
+                if field_charsets:
+                    _ftype = field_types.get(key)
+                    if _ftype not in ('date', 'currency', 'currency_code'):
+                        _spec = field_charsets.get(_ftype, field_charsets.get('default'))
+                        _bad = format_anomaly_checker.charset_disallowed(str(val), _spec)
+                        if _bad:
+                            results[key] = {
+                                **data,
+                                'confidence':      min(data.get('confidence') or 0, 70),
+                                'validation_note': "unexpected characters (" + " ".join(_bad) + ") - please verify",
+                            }
+                            n_flagged += 1
+                            format_anomaly_flagged = True
+                            continue
                 # Supplier-scoped format first; fall back to the doc-type-scoped
                 # one ('' supplier) so qualification works even when the supplier
                 # is never identified (document-agnostic learning).
@@ -915,8 +1021,45 @@ class ExtractionEngine:
                             or self.format_class_index.get(('', dt_lower, key))
                 if not fmt_entry:
                     continue
+                # ── Canonical token repair for NAME-LIKE fields (Phase 1, SUGGESTION
+                # ONLY) ── runs INDEPENDENT of the anomaly verdict: a garbled company
+                # name is coarse-class FREETEXT and may not trip check_value at all, so
+                # gating this behind `anomaly` would make it dead code. Repairs garbled
+                # KNOWN tokens to their learned canonical spelling and keeps the variable
+                # tail verbatim (never whole-value snap, never injects a learned token).
+                # display_value/value untouched — emitted as a corrected_to candidate,
+                # conf capped, review-forced. See name_match.py.
+                name_lex = fmt_entry.get('name_lexicon')
+                if name_lex and key in text_field_keys:
+                    from extraction import name_match
+                    repaired = name_match.repair_name_value(str(val), name_lex)
+                    if repaired and repaired != str(val):
+                        results[key] = {
+                            **data,
+                            'confidence':      min(data.get('confidence') or 0, 70),
+                            'corrected_to':    repaired,
+                            'validation_note': f"Suggested name correction: {repaired}",
+                        }
+                        n_flagged += 1
+                        format_anomaly_flagged = True
+                        continue   # one suggestion per field — skip the anomaly path
                 anomaly = format_anomaly_checker.check_value(str(val), fmt_entry)
                 if anomaly:
+                    # Free-text field (name/address): a learned shape must never
+                    # withhold or trim a valid value here — its shape varies
+                    # legitimately. Keep the value, flag softly for a human to
+                    # eyeball. This is what stops a clean company name being
+                    # discarded by a longer historical shape. Structured/code
+                    # fields fall through to the full shape enforcement below.
+                    if key in text_field_keys:
+                        results[key] = {
+                            **data,
+                            'confidence':      min(data.get('confidence') or 0, 70),
+                            'validation_note': 'format differs from the usual — please verify',
+                        }
+                        n_flagged += 1
+                        format_anomaly_flagged = True
+                        continue
                     # First, recover a CLEAN value by extracting a substring that
                     # matches a learned accepted SHAPE — this strips column-bleed
                     # junk ("2605-0769-1 Work Address Beaumont…") down to the real

@@ -472,5 +472,12 @@
     "$": "USD",
     "\u20ac": "EUR",
     "\u00a5": "JPY"
+  },
+  "field_charsets": {
+    "_comment": "Phase 1 valid-character policy. BACKEND-ONLY flag (never served via get-validation-patterns; never strips a value). Per field TYPE: the EXTRA non-alphanumeric, non-whitespace chars allowed besides A-Za-z0-9 + whitespace. null = no constraint. 'default' applies to any unlisted type. The engine skips date/currency types.",
+    "default": "-'#+&()/\\@:;,.\u00a3$%\u20ac\u00a5",
+    "text": "-'&(),.",
+    "alphanumeric": "-./#",
+    "multiline_text": null
   }
 }
