@@ -168,6 +168,78 @@ def extract_accepted_shape(value: str, format_entry: dict) -> Optional[str]:
     return best
 
 
+# ── Shape families + match score (Phase 2 — additive, diagnostic only) ─────────
+# Purely-additive view over the SAME shape signatures `check_value` already uses.
+# These NEVER change an anomaly decision, a confidence cap, a note, or any return
+# shape — they exist for surfacing/diagnostics and as the foundation for a later
+# candidate-override phase. shape_match_score reuses shape_signature +
+# extract_accepted_shape so it can never disagree with check_value's accept rule.
+
+MAX_SHAPE_FAMILIES = 6   # cap on the families VIEW (does not affect fmt['shapes'])
+
+
+def _shape_canonical(shape: str) -> str:
+    """Fold a shape so near-duplicates that differ only by SEPARATOR-RUN LENGTH
+    group together: collapse a run of the same separator char to one. Group lengths
+    (#/@ runs) are preserved, so genuinely different structures stay distinct.
+        '####--####-#' -> '####-####-#'   (extra '-' folded)
+        '#####-####-#' -> '#####-####-#'  (different group length: unchanged)
+    """
+    out = []
+    prev = None
+    for c in shape or '':
+        if c in ('#', '@'):
+            out.append(c)
+            prev = None
+        else:                      # a separator char — collapse consecutive repeats
+            if c != prev:
+                out.append(c)
+            prev = c
+    return ''.join(out)
+
+
+def shape_families(value_counts, cap: int = MAX_SHAPE_FAMILIES) -> list:
+    """Group the confirmed values' shape signatures into FAMILIES, folding
+    separator-run near-duplicates, summing document counts, sorted by count desc
+    (tie -> lexicographic), capped at `cap`. Pure; derived from the same
+    `value_counts` classify_format uses. Returns
+        [{'shape': <representative signature>, 'count': int, 'variants': [raw,...]}, ...]
+    `last_seen` is intentionally omitted (value_counts carries no timestamp)."""
+    vc = value_counts or {}
+    groups: dict = {}
+    for val, n in vc.items():
+        sig = shape_signature(val)
+        if not sig:
+            continue
+        key = _shape_canonical(sig)
+        g = groups.setdefault(key, {"count": 0, "variants": {}})
+        g["count"] += int(n or 0)
+        g["variants"][sig] = g["variants"].get(sig, 0) + int(n or 0)
+    families = []
+    for key, g in groups.items():
+        # representative = highest-count raw variant (tie -> lexicographic)
+        rep = max(g["variants"].items(), key=lambda kv: (kv[1], [-ord(c) for c in kv[0]]))[0]
+        families.append({"shape": rep, "count": g["count"],
+                         "variants": sorted(g["variants"].keys())})
+    families.sort(key=lambda f: (-f["count"], f["shape"]))
+    return families[:cap]
+
+
+def shape_match_score(value: str, format_entry: dict) -> float:
+    """1.0 exact shape match; 0.8 a learned-shape substring (column-bleed); 0.0
+    otherwise (incl. no learned shapes — read 0.0 as "no shape signal", NOT
+    "anomalous"). Pure, deterministic, side-effect free; reuses shape_signature +
+    extract_accepted_shape so it agrees with check_value's accept rule."""
+    shapes = (format_entry or {}).get('shapes')
+    if not value or not shapes:
+        return 0.0
+    if shape_signature(value) in shapes:
+        return 1.0
+    if extract_accepted_shape(value, format_entry):
+        return 0.8
+    return 0.0
+
+
 # ── Consensus classification over a sample ───────────────────────────────────
 
 def classify_format(values: list[str], value_counts: dict | None = None) -> dict:
@@ -466,6 +538,12 @@ def build_format_class_index(formats_data: list) -> dict:
 
         if name_lex:
             fmt = {**fmt, 'name_lexicon': name_lex}
+        # Additive families VIEW (Phase 2) — diagnostic only; existing consumers read
+        # class/separators/shapes and never see this key. Empty when no shapes/counts.
+        if fmt.get('shapes') and vcounts:
+            fams = shape_families(vcounts)
+            if fams:
+                fmt = {**fmt, 'shape_families': fams}
         index[(supplier, doc_type, field_key)] = fmt
 
     return index
