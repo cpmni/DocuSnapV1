@@ -97,8 +97,15 @@
       flex-direction:column; align-items:center; gap:10px; font-size:13px; }
     .empty .ic { width:30px; height:30px; opacity:.45; }
 
-    /* ── Login / locked ──────────────────────────────────────────────────────── */
-    #login, #locked { display:flex; align-items:center; justify-content:center; height:100vh; padding:var(--s5); }
+    /* ── Login / locked / connect ──────────────────────────────────────────────── */
+    #login, #locked, #connect { display:flex; align-items:center; justify-content:center; height:100vh; padding:var(--s5); }
+    #connect .card { width:380px; }
+    #connect .fieldlbl { margin-top:var(--s3); }
+    #connect input { width:100%; }
+    #connect .err { color:var(--err); font-size:12px; min-height:16px; margin-top:var(--s3); }
+    #connect .btn { margin-top:var(--s4); }
+    #connect .srv-row { display:flex; gap:var(--s3); align-items:flex-end; }
+    #connect .tls-wrap { display:flex; gap:6px; align-items:center; font-size:13px; color:var(--muted); padding:8px 0; white-space:nowrap; }
     .card { background:linear-gradient(180deg, var(--card-a), var(--card-b)); border:1px solid var(--border);
       border-radius:var(--r); padding:var(--s6); width:360px; box-shadow:var(--shadow); }
     .card h1 { font-family:var(--display); font-size:20px; margin:0 0 var(--s2); letter-spacing:-.01em; }
@@ -260,8 +267,34 @@
   </style>
 </head>
 <body>
+  <!-- Connect to server -->
+  <section id="connect" class="hidden">
+    <div class="card">
+      <svg class="brandmark" data-ic="brand"></svg>
+      <h1>Connect to ScanFinder</h1>
+      <p class="sub">Enter the address of the ScanFinder server — the PC running the core app with search-client access enabled.</p>
+      <label class="fieldlbl"><span>Server (IP or hostname)</span><input id="srv-host" placeholder="e.g. 192.168.1.50" autocomplete="off" /></label>
+      <div class="srv-row">
+        <label class="fieldlbl" style="flex:1"><span>Port</span><input id="srv-port" inputmode="numeric" placeholder="8765" /></label>
+        <label class="tls-wrap"><input id="srv-tls" type="checkbox" style="width:auto" /> Use HTTPS</label>
+      </div>
+      <div id="srv-cert-row" class="fieldlbl hidden">
+        <span>Server CA certificate</span>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button id="srv-cert-btn" type="button" class="btn btn-secondary btn-sm">Choose .crt…</button>
+          <span id="srv-cert-name" style="font-size:12px; color:var(--muted)">none selected</span>
+        </div>
+        <small style="display:block; margin-top:5px; font-size:11px; color:var(--muted); line-height:1.45;">
+          The CA that signed the server (e.g. <code>ca.crt</code>) — <strong>not</strong> the server's own <code>server.crt</code>. Only needed for a self-signed / internal certificate; full verification stays on.
+        </small>
+      </div>
+      <div id="connect-err" class="err"></div>
+      <button id="connect-btn" class="btn btn-primary btn-block"><span data-ic="assign"></span>Connect</button>
+    </div>
+  </section>
+
   <!-- Login -->
-  <section id="login">
+  <section id="login" class="hidden">
     <div class="login-split">
       <div class="login-brand">
         <svg class="brandmark" data-ic="brand"></svg>
@@ -282,6 +315,7 @@
         <input id="totp" class="hidden mono" inputmode="numeric" autocomplete="one-time-code" style="width:100%" />
         <div id="login-err" class="err"></div>
         <button id="login-btn" class="btn btn-primary btn-block"><span data-ic="signin"></span>Sign in</button>
+        <button id="login-change-server" class="btn btn-ghost btn-sm btn-block" style="margin-top:8px">Change server</button>
       </div>
     </div>
   </section>

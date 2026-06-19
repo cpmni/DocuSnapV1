@@ -1,10 +1,52 @@
 {
   "name": "scanfinder-client",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "private": true,
-  "description": "Detached read-only search client for ScanFinder (talks to the core app's /v1 API).",
+  "description": "Detached read-only search client for ScanFinder (connects to the core app's /v1 API).",
+  "author": "SOFTWARE COMPANY",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "electron-builder --win --x64"
+  },
+  "build": {
+    "appId": "com.scanfinder.client",
+    "productName": "ScanFinder Search Client",
+    "copyright": "Copyright © 2026 SOFTWARE COMPANY",
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "artifactName": "ScanFinder Search Client Setup ${version}.exe",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ScanFinder Search Client",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "deleteAppDataOnUninstall": false
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "apiClient.js",
+      "renderer/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    }
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
   }
 }

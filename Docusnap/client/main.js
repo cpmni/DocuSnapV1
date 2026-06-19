@@ -9,20 +9,33 @@
  * narrow contextIsolated bridge (preload.js) → IPC → this process → apiClient →
  * the core app's /v1 API.
  *
- * Config via env (set by the launcher / lockstep packaging):
- *   SCANFINDER_CLIENT_API_URL        e.g. https://server-pc.lan:8765  (default loopback)
- *   SCANFINDER_CLIENT_ALLOW_SELF_SIGNED=1  trust an internal-CA / pinned dev cert
+ * The user picks the core app's address on a connect screen; it is validated via
+ * the version handshake and persisted in userData. The session token lives here,
+ * never in the renderer. TLS uses normal certificate verification (no self-signed
+ * bypass in the UI); SCANFINDER_CLIENT_ALLOW_SELF_SIGNED=1 is a dev-only override.
+ *   SCANFINDER_CLIENT_API_URL  optional env override of the saved server (dev/launcher).
  */
 
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const fs = require('fs');
 const path = require('path');
 const { createClient } = require('./apiClient');
 
-const API_URL = process.env.SCANFINDER_CLIENT_API_URL || 'http://127.0.0.1:8765';
 const ALLOW_SELF_SIGNED = process.env.SCANFINDER_CLIENT_ALLOW_SELF_SIGNED === '1';
-
-const client = createClient({ baseUrl: API_URL, allowSelfSigned: ALLOW_SELF_SIGNED });
 let win = null;
+let serverConfig = null;   // { host, port, tls } | null
+let client = null;         // rebuilt whenever the server changes
+
+const configPath = () => path.join(app.getPath('userData'), 'scanfinder-client.json');
+const urlOf = (c) => `${c.tls ? 'https' : 'http'}://${c.host}:${c.port}`;
+
+function loadServerConfig() {
+  const env = process.env.SCANFINDER_CLIENT_API_URL; // env override wins (dev/launcher)
+  if (env) { try { const u = new URL(env); return { host: u.hostname, port: Number(u.port) || (u.protocol === 'https:' ? 443 : 80), tls: u.protocol === 'https:' }; } catch { /* ignore */ } }
+  try { return JSON.parse(fs.readFileSync(configPath(), 'utf8')); } catch { return null; }
+}
+function saveServerConfig(c) { try { fs.writeFileSync(configPath(), JSON.stringify(c, null, 2)); } catch { /* ignore */ } }
+function buildClient(c) { client = createClient({ baseUrl: urlOf(c), allowSelfSigned: ALLOW_SELF_SIGNED, ca: c.caPem || undefined }); }
 
 function createWindow() {
   win = new BrowserWindow({
@@ -41,15 +54,40 @@ function createWindow() {
 }
 
 // Renderer → main → apiClient. The token is never sent to the renderer.
-ipcMain.handle('client-config',       () => ({ apiUrl: API_URL }));
-ipcMain.handle('client-connect',      () => client.connect());
-ipcMain.handle('client-login',        (_e, { username, password, totp }) => client.login(username, password, totp));
-ipcMain.handle('client-logout',       () => client.logout());
-ipcMain.handle('client-entitlement',  () => client.entitlement());
+// Server selection: the renderer asks for the saved address, or sets a new one
+// (which rebuilds the client, validates via the handshake, and persists on success).
+ipcMain.handle('client-get-server', () => serverConfig);
+ipcMain.handle('client-set-server', async (_e, cfg) => {
+  if (!cfg || !String(cfg.host || '').trim()) return { ok: false, mode: 'block', reason: 'Enter a server address.' };
+  const norm = { host: String(cfg.host).trim(), port: Number(cfg.port) || 8765, tls: !!cfg.tls,
+                 caPem: (cfg.caPem && String(cfg.caPem)) || null };
+  buildClient(norm);
+  let h; try { h = await client.connect(); } catch (e) { return { ok: false, mode: 'block', reason: e.message }; }
+  if (h.ok) { serverConfig = norm; saveServerConfig(norm); } // persist only when reachable + compatible
+  return h;
+});
+// Let the user pick the server's certificate (PEM) to trust — read in main, pinned
+// as the https `ca` so verification stays on (works without the OS trust store).
+ipcMain.handle('client-pick-cert', async () => {
+  const r = await dialog.showOpenDialog(win, {
+    title: 'Choose the ScanFinder server certificate',
+    properties: ['openFile'],
+    filters: [{ name: 'Certificate', extensions: ['crt', 'pem', 'cer'] }],
+  });
+  if (r.canceled || !r.filePaths || !r.filePaths[0]) return { ok: false };
+  try { return { ok: true, name: path.basename(r.filePaths[0]), pem: fs.readFileSync(r.filePaths[0], 'utf8') }; }
+  catch (e) { return { ok: false, error: e.message }; }
+});
+
+ipcMain.handle('client-config',       () => ({ apiUrl: serverConfig ? urlOf(serverConfig) : null }));
+ipcMain.handle('client-connect',      () => client ? client.connect() : { ok: false, mode: 'block', reason: 'No server configured.' });
+ipcMain.handle('client-login',        (_e, { username, password, totp }) => client ? client.login(username, password, totp) : { ok: false, error: 'No server configured.' });
+ipcMain.handle('client-logout',       () => client ? client.logout() : { ok: true });
+ipcMain.handle('client-entitlement',  () => client ? client.entitlement() : { status: 0, json: null });
 ipcMain.handle('client-search',       (_e, params) => client.search(params));
 ipcMain.handle('client-get-document', (_e, id) => client.getDocument(id));
 ipcMain.handle('client-get-pages',    (_e, id) => client.getPages(id));
-ipcMain.handle('client-authed',       () => client.isAuthenticated());
+ipcMain.handle('client-authed',       () => client ? client.isAuthenticated() : false);
 
 // Mailbox / approval workflow.
 ipcMain.handle('client-wf-list',       (_e, view) => client.workflow.list(view));
@@ -61,6 +99,10 @@ ipcMain.handle('client-wf-resolve',    (_e, { id, decision, comment, version }) 
   client.workflow.resolve(id, decision, comment, version));
 ipcMain.handle('client-wf-recall',     (_e, { id, version }) => client.workflow.recall(id, version));
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  serverConfig = loadServerConfig();
+  if (serverConfig) buildClient(serverConfig);
+  createWindow();
+});
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

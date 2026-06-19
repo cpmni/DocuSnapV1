@@ -87,21 +87,62 @@ function setConn(mode, text) {
   }
 }
 
+function showOnly(id) {
+  for (const s of ['connect', 'login', 'locked', 'app']) $(s).classList.toggle('hidden', s !== id);
+}
+function applyConn(h) {
+  if (h.mode === 'warn') setConn('warn', h.reason || 'Version drift');
+  else if (h.ok) setConn('ok', `Connected · API v${h.serverVersion}`);
+  else setConn('block', h.reason || 'Not connected');
+}
+let _caPem = null; // pinned server certificate (PEM) chosen on the connect screen
+
+function _syncCertRow() {
+  $('srv-cert-row').classList.toggle('hidden', !$('srv-tls').checked);
+}
+function fillServerForm(cfg) {
+  $('srv-host').value = cfg.host || '';
+  $('srv-port').value = cfg.port || '';
+  $('srv-tls').checked = !!cfg.tls;
+  _caPem = cfg.caPem || null;
+  $('srv-cert-name').textContent = _caPem ? 'certificate pinned' : 'none selected';
+  _syncCertRow();
+}
+function showConnect(reason) { showOnly('connect'); $('connect-err').textContent = reason || ''; }
+
 async function boot() {
   hydrateIcons();
   navActive($('nav-search'), true); navActive($('nav-mailbox'), false);
-  const h = await api.connect();
-  if (h.mode === 'block') {
-    blocked = true;
-    setConn('block', h.reason || 'Incompatible server');
-    $('login-err').textContent = 'Update the ScanFinder client to use this server.';
-    $('login-btn').disabled = true;
-  } else if (h.mode === 'warn') {
-    setConn('warn', h.reason || 'Version drift');
+  const cfg = await api.getServer();
+  if (cfg && cfg.host) {
+    fillServerForm(cfg);
+    const h = await api.connect();   // client already built from the saved server
+    applyConn(h);
+    if (h.ok) showOnly('login'); else showConnect(h.reason || 'Could not reach the saved server.');
   } else {
-    setConn('ok', `Connected · API v${h.serverVersion}`);
+    showConnect();
   }
 }
+
+// ── Connect screen ─────────────────────────────────────────────────────────────
+$('connect-btn').addEventListener('click', (e) => withBusy(e.currentTarget, async () => {
+  $('connect-err').textContent = '';
+  const host = $('srv-host').value.trim();
+  if (!host) { $('connect-err').textContent = 'Enter a server address.'; return; }
+  const cfg = { host, port: $('srv-port').value.trim() || 8765, tls: $('srv-tls').checked, caPem: _caPem };
+  const h = await api.setServer(cfg);
+  applyConn(h);
+  if (h.ok) showOnly('login'); else $('connect-err').textContent = h.reason || 'Could not connect to that server.';
+}));
+$('srv-tls').addEventListener('change', _syncCertRow);
+$('srv-cert-btn').addEventListener('click', async () => {
+  const r = await api.pickCert();
+  if (r && r.ok) { _caPem = r.pem; $('srv-cert-name').textContent = r.name; }
+});
+for (const id of ['srv-host', 'srv-port']) {
+  $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') $('connect-btn').click(); });
+}
+$('login-change-server').addEventListener('click', () => showConnect());
 
 function navActive(btn, on) { btn.classList.toggle('active', on); }
 

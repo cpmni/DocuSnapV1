@@ -13,6 +13,9 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('scanfinder', {
   config:          () => ipcRenderer.invoke('client-config'),
+  getServer:       () => ipcRenderer.invoke('client-get-server'),
+  setServer:       (cfg) => ipcRenderer.invoke('client-set-server', cfg),
+  pickCert:        () => ipcRenderer.invoke('client-pick-cert'),
   connect:         () => ipcRenderer.invoke('client-connect'),
   login:           (username, password, totp) => ipcRenderer.invoke('client-login', { username, password, totp }),
   logout:          () => ipcRenderer.invoke('client-logout'),

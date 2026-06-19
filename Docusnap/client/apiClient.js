@@ -47,7 +47,8 @@ function compareContract(serverVersion, expected = CLIENT_CONTRACT) {
 function createClient(opts = {}) {
   const baseUrl = String(opts.baseUrl || '').replace(/\/+$/, '');
   const expectedContract = opts.expectedContract || CLIENT_CONTRACT;
-  const allowSelfSigned = !!opts.allowSelfSigned; // internal-CA / pinned dev certs
+  const allowSelfSigned = !!opts.allowSelfSigned; // dev-only escape hatch (env), not the UI
+  const ca = opts.ca || null;                     // pinned server cert/CA (PEM) — verification stays ON
   let token = null;
 
   function request(method, p, { body, withAuth } = {}) {
@@ -64,6 +65,7 @@ function createClient(opts = {}) {
         path: u.pathname + u.search,
       };
       if (u.protocol === 'https:' && allowSelfSigned) reqOpts.rejectUnauthorized = false;
+      if (u.protocol === 'https:' && ca) reqOpts.ca = ca; // trust this cert/CA; full verification kept on
       const req = lib.request(reqOpts, (res) => {
         let out = '';
         res.on('data', d => { out += d; });
