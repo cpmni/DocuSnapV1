@@ -553,36 +553,41 @@ function runJsMigrations(db, applied) {
   //     usernames (survive rename/delete), and a `version` for optimistic concurrency
   //     (reject double/stale resolution). ON DELETE CASCADE with the document.
   //   documents.workflow_status — denormalised latest route state for quick filtering.
-  if (!applied.has(27)) {
-    if (!tableExists(db, 'document_routes')) {
-      db.exec(`CREATE TABLE document_routes (
-        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-        document_id         INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-        from_user_id        INTEGER,
-        from_username       TEXT,
-        to_user_id          INTEGER,
-        to_username         TEXT,
-        action_required     TEXT NOT NULL,            -- approve | acknowledge
-        state               TEXT NOT NULL DEFAULT 'pending', -- pending|claimed|approved|rejected|acknowledged|recalled
-        comment             TEXT,                      -- sender's note
-        resolution_comment  TEXT,                      -- resolver's reason (required on reject)
-        claimed_by_id       INTEGER,
-        claimed_by_username TEXT,
-        claimed_at          TEXT,
-        resolved_at         TEXT,
-        version             INTEGER NOT NULL DEFAULT 1,
-        created_at          TEXT NOT NULL DEFAULT (datetime('now'))
-      )`);
-      db.exec(`CREATE INDEX IF NOT EXISTS idx_routes_to    ON document_routes(to_user_id, state)`);
-      db.exec(`CREATE INDEX IF NOT EXISTS idx_routes_from  ON document_routes(from_user_id, state)`);
-      db.exec(`CREATE INDEX IF NOT EXISTS idx_routes_doc   ON document_routes(document_id)`);
-    }
-    if (tableExists(db, 'documents') && !hasColumn(db, 'documents', 'workflow_status')) {
-      try { db.exec(`ALTER TABLE documents ADD COLUMN workflow_status TEXT`); } catch (e) { console.warn(`  documents.workflow_status: ${e.message}`); }
-    }
-    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (27)').run();
-    console.log('JS migration 27 applied: mailbox workflow (document_routes + documents.workflow_status)');
+  // NOTE: ensured UNCONDITIONALLY + idempotently (NOT gated on !applied.has(27)).
+  // A dev DB shared across worktrees can be stamped at version 27 by a divergent
+  // branch WITHOUT these objects; the gated form would then skip creation and the
+  // review confirm path breaks (editGuard → workflow.hasActiveRoute queries
+  // document_routes → "no such table"). CREATE-IF-MISSING self-heals that and is
+  // a no-op once the objects exist.
+  if (!tableExists(db, 'document_routes')) {
+    db.exec(`CREATE TABLE document_routes (
+      id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+      document_id         INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+      from_user_id        INTEGER,
+      from_username       TEXT,
+      to_user_id          INTEGER,
+      to_username         TEXT,
+      action_required     TEXT NOT NULL,            -- approve | acknowledge
+      state               TEXT NOT NULL DEFAULT 'pending', -- pending|claimed|approved|rejected|acknowledged|recalled
+      comment             TEXT,                      -- sender's note
+      resolution_comment  TEXT,                      -- resolver's reason (required on reject)
+      claimed_by_id       INTEGER,
+      claimed_by_username TEXT,
+      claimed_at          TEXT,
+      resolved_at         TEXT,
+      version             INTEGER NOT NULL DEFAULT 1,
+      created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+    )`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_routes_to    ON document_routes(to_user_id, state)`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_routes_from  ON document_routes(from_user_id, state)`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_routes_doc   ON document_routes(document_id)`);
+    console.log('Workflow schema: created document_routes');
   }
+  if (tableExists(db, 'documents') && !hasColumn(db, 'documents', 'workflow_status')) {
+    try { db.exec(`ALTER TABLE documents ADD COLUMN workflow_status TEXT`); console.log('Workflow schema: added documents.workflow_status'); }
+    catch (e) { console.warn(`  documents.workflow_status: ${e.message}`); }
+  }
+  db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (27)').run();
 }
 
 function hasColumn(db, table, column) {
