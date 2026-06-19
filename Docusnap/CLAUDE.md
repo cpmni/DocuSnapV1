@@ -605,6 +605,19 @@ process_docs.py → ExtractionEngine.extract()
              change (classify_format/check_value/propose_correction untouched); the
              foundation for a later candidate-override phase (not yet wired). Guarded
              by tests/test_shape_match_score.py.
+  Stage 4.6: CANDIDATE OVERRIDE (Phase 3, DEFAULT-OFF — commit b58ef06): a gated
+             post-merge resolver (engine._resolve_candidates) that may prefer a
+             clearly-more-credible RETAINED candidate over the merge winner. An additive
+             per-field ledger (self._field_candidates, built only when the setting is on
+             via _remember_candidates at the Stage 0/0.5/1/2/2.5/3 merge points — winner
+             selection byte-identical) feeds it. Runs between Stage 4.5 and metadata;
+             NEVER touches an authoritative anchor / Stage 0.5 located / keyword_override
+             winner, defers to an existing note. Challenger must clearly beat the incumbent
+             on shape_match_score (shaped) or value_quality.name_quality (name). Setting
+             `candidate_override` = off (default, byte-identical) | suggest (corrected_to
+             only) | auto (replace value, only for `candidate_override_fields` types);
+             process_docs --candidate-override plumbing. Guarded by
+             tests/test_candidate_resolver.py.
 ```
 
 **Three modes** (stored in settings as `processing_mode`):
