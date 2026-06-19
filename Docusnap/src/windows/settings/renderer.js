@@ -794,7 +794,7 @@ function showTypedConfirmDialog({ title, warningHtml, requiredText, confirmLabel
 // ══════════════════════════════════════════════════════════════════════════════
 
 async function loadThemeToggle() {
-  const theme = await api.getSetting('theme') || 'dark';
+  const theme = await api.getSetting('theme') || 'light';
   document.getElementById('theme-toggle').checked = (theme === 'light');
 }
 loadThemeToggle();

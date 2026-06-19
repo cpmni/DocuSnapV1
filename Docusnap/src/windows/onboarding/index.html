@@ -5,17 +5,9 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self';" />
 <title>Welcome to Scan Finder</title>
 <script src="../shared/theme.js"></script>
+<link rel="stylesheet" href="../shared/theme.css" />
 <style>
-  :root{
-    --bg:#0c0e14; --surface:#13161f; --surface2:#1a1e2a; --border:#252836; --border2:#2f3347;
-    --accent:#4f8ef7; --accent2:#6ea8ff; --ok:#3ecf8e; --warn:#f7b84f; --err:#f76f6f;
-    --text:#e2e6f0; --muted:#7a82a0;
-  }
-  :root[data-theme="light"]{
-    --bg:#f4f6fb; --surface:#ffffff; --surface2:#eef1f7; --border:#dde2ec; --border2:#cbd2e0;
-    --accent:#2f6fe0; --accent2:#3f7ff0; --ok:#1f9d63; --warn:#b9791a; --err:#d24c4c;
-    --text:#1b2030; --muted:#5b6480;
-  }
+  /* Palette + tokens are centralised in shared/theme.css (light default + matching dark). */
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%}
   body{

@@ -6,16 +6,13 @@
         content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; img-src 'self' data:">
   <title>ScanFinder — Dev Inspector</title>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="../shared/theme.js"></script>
+  <link rel="stylesheet" href="../shared/theme.css" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    /* General palette + tokens come from shared/theme.css (light default + matching dark);
+       only the per-stage inspector colours stay local. */
     :root {
-      --bg:#0c0e14; --surface:#13161f; --surface2:#1a1e2a; --surface3:#222637;
-      --border:#252836; --border2:#2f3347;
-      --accent:#4f8ef7; --accent2:#6ea8ff;
-      --ok:#3ecf8e; --warn:#f7b84f; --err:#f76f6f;
-      --text:#e2e6f0; --muted:#7a82a0; --muted2:#565d78;
-      --mono:'IBM Plex Mono',monospace; --sans:'IBM Plex Sans',sans-serif;
-      /* Per-stage accent palette — every stage reads as its own colour */
       --s0:#b98cff;    /* 0   template   */
       --s05:#3ec5cf;   /* 0.5 mapping    */
       --s1:#4f8ef7;    /* 1   keyword    */
@@ -24,7 +21,6 @@
       --s4:#f59e5c;    /* 4/4.5 validate */
       --rm:#e878c8;    /* reprocess merge*/
       --final:#3ecf8e;
-      color-scheme: dark;
     }
     html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 13px; overflow: hidden; }
     #app { display: flex; flex-direction: column; height: 100vh; }

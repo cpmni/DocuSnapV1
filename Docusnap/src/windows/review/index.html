@@ -6,29 +6,10 @@
         content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; img-src 'self' data:">
   <title>ScanFinder — Review</title>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../shared/theme.css" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    :root {
-      --bg:#0c0e14; --surface:#13161f; --surface2:#1a1e2a;
-      --border:#252836; --border2:#2f3347;
-      --accent:#4f8ef7; --accent2:#6ea8ff;
-      --ok:#3ecf8e; --warn:#f7b84f; --err:#f76f6f;
-      --text:#e2e6f0; --muted:#7a82a0;
-      --ok-bg:#0d2e1e; --err-bg:#2e0d0d; --warn-bg:#2e1a00;
-      --accent-bg:#0d1f3a; --accent-border:#1a3a6a; --ok-border:#1a4a2e;
-      --doc-bg:#080a0f;
-      --mono:'IBM Plex Mono',monospace; --sans:'IBM Plex Sans',sans-serif;
-      color-scheme: dark;
-    }
-    :root[data-theme="light"] {
-      --bg:#f0f3fa; --surface:#ffffff; --surface2:#e8edf7;
-      --border:#cdd4e8; --border2:#b8c2d8;
-      --text:#1c2035; --muted:#5a6385;
-      --ok-bg:#d4f5e5; --err-bg:#fde8e8; --warn-bg:#fef3d8;
-      --accent-bg:#ddeaff; --accent-border:#90b8ff; --ok-border:#6dd8a8;
-      --doc-bg:#e8ecf5;
-      color-scheme: light;
-    }
+    /* Palette + tokens are centralised in shared/theme.css (light default + matching dark). */
     html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 13px; overflow: hidden; }
 
     #titlebar {
@@ -115,6 +96,8 @@
       cursor: pointer; transition: all .15s;
     }
     #btn-delete-all:hover, #btn-delete-all-review:hover { border-color: var(--err); background: var(--err-bg); }
+    /* Per-document delete (icon-only) — larger glyph, squared off */
+    #btn-delete { font-size: 19px; line-height: 1; padding: 7px 12px; }
     /* File All Ready — a bulk confirm, kept in the queue footer (away from the
        single Confirm button) so it can't be hit by accident. */
     #btn-file-all-review {
@@ -291,17 +274,19 @@
     .fields-detect-row #extraction-status { flex: 1; min-width: 0; }
     .fields-detect-spacer { flex-shrink: 0; width: 1px; align-self: stretch; min-height: 22px; background: var(--border2); }
     /* Compact SQUARE button: template icon over a wrapped (multiline) label. */
-    .add-template-btn {
-      flex-shrink: 0; width: 84px; min-height: 84px; padding: 9px 6px;
+    /* #fields-header prefix raises specificity above the shared `html .btn` rule
+       so this stays a square, two-line tile instead of an inline row. */
+    #fields-header .add-template-btn {
+      flex-shrink: 0; width: 96px; padding: 10px 8px; gap: 6px;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
-      gap: 6px; text-align: center; white-space: normal; line-height: 1.22; font-size: 10px;
+      text-align: center; white-space: normal; line-height: 1.25; font-size: 11px;
     }
-    .add-template-ico { width: 22px; height: 22px; color: var(--accent2); flex-shrink: 0; }
+    .add-template-ico { width: 20px; height: 20px; color: var(--accent2); flex-shrink: 0; }
     .add-template-btn:hover:not(:disabled) .add-template-ico { color: var(--accent); }
     .add-template-lbl { display: block; }
     #extraction-status { display: flex; flex-direction: column; gap: 4px; }
-    .ext-status-row { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
-    .ext-status-lbl { font-size: 10px; color: var(--muted); white-space: nowrap; min-width: 64px; }
+    .ext-status-row { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; }
+    .ext-status-lbl { font-size: 10px; color: var(--muted); white-space: nowrap; width: 74px; flex-shrink: 0; }
     .method-pill {
       font-size: 10px; font-family: var(--mono); padding: 1px 7px;
       border-radius: 4px; border: 1px solid currentColor;
@@ -487,7 +472,14 @@
           <!-- Group 2: document tools (compact icon triggers; wide controls open as rail-anchored flyouts) -->
           <div class="rail-group rail-tools-group">
             <button class="queue-tool-btn" id="btn-split-pdf" style="display:none;" title="Split PDF…">&#9986;</button>
-            <button class="queue-tool-btn" id="btn-anchor-wizard" style="display:none;" title="Template Wizard — map fields (admin)">&#9875;</button>
+            <button class="queue-tool-btn" id="btn-anchor-wizard" style="display:none;" title="Template Wizard — map fields (admin)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:17px;height:17px;">
+                <circle cx="12" cy="5" r="2.2"/>
+                <line x1="12" y1="7.2" x2="12" y2="21"/>
+                <line x1="7" y1="11" x2="17" y2="11"/>
+                <path d="M5 15a7 7 0 0 0 14 0"/>
+              </svg>
+            </button>
             <button class="queue-tool-btn" id="btn-enhance-toggle" title="OCR Enhancement">
               <svg class="enhance-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
                 <line x1="3" y1="7" x2="21" y2="7"/>
@@ -660,7 +652,7 @@
               <line x1="17.25" y1="14.5" x2="17.25" y2="20"/>
               <line x1="14.5" y1="17.25" x2="20" y2="17.25"/>
             </svg>
-            <span class="add-template-lbl">Add to Template Manager</span>
+            <span class="add-template-lbl">Template Manager</span>
           </button>
         </div>
         <div class="fields-header-sub">Click ⊕ then drag on the document to pick a value</div>

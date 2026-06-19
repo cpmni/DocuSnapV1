@@ -6,29 +6,10 @@
         content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; img-src 'self' data:">
   <title>ScanFinder — Search</title>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../shared/theme.css" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    :root {
-      --bg:#0c0e14; --surface:#13161f; --surface2:#1a1e2a;
-      --border:#252836; --border2:#2f3347;
-      --accent:#4f8ef7; --accent2:#6ea8ff;
-      --ok:#3ecf8e; --warn:#f7b84f; --err:#f76f6f;
-      --text:#e2e6f0; --muted:#7a82a0;
-      --ok-bg:#0d2e1e; --err-bg:#2e0d0d; --warn-bg:#2e1a00;
-      --accent-bg:#0d1f3a; --accent-border:#1a3a6a;
-      --doc-bg:#080a0f;
-      --mono:'IBM Plex Mono',monospace; --sans:'IBM Plex Sans',sans-serif;
-      color-scheme: dark;
-    }
-    :root[data-theme="light"] {
-      --bg:#f0f3fa; --surface:#ffffff; --surface2:#e8edf7;
-      --border:#cdd4e8; --border2:#b8c2d8;
-      --text:#1c2035; --muted:#5a6385;
-      --ok-bg:#d4f5e5; --err-bg:#fde8e8; --warn-bg:#fef3d8;
-      --accent-bg:#ddeaff; --accent-border:#90b8ff;
-      --doc-bg:#e8ecf5;
-      color-scheme: light;
-    }
+    /* Palette + tokens are centralised in shared/theme.css (light default + matching dark). */
     html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 13px; overflow: hidden; }
 
     #titlebar {

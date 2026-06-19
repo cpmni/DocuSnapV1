@@ -1,0 +1,157 @@
+/*
+ * ScanFinder shared theme — design tokens matched to the detached search client.
+ * LIGHT is the default (:root); DARK is the opt-in variant (:root[data-theme="dark"]).
+ * shared/theme.js sets data-theme on <html> and persists the choice.
+ *
+ * Windows reference these variables in their own component CSS, so centralising the
+ * palette here re-skins every window's buttons/cards/chips to the client's look
+ * without touching their layouts. Window-specific colours (e.g. the dev-inspector's
+ * pipeline-stage hues) stay local to those windows.
+ */
+
+:root {
+  /* ── Light (default) — the client palette ── */
+  --bg:        #f4f6fa;
+  --surface:   #ffffff;
+  --surface2:  #eef1f7;
+  --surface3:  #e4e8f1;
+  --border:    #e4e7ef;
+  --border2:   #d2d8e4;
+
+  --accent:    #3b7df0;
+  --accent2:   #2f6fe0;
+  --accent-bg: #e7f0ff;
+  --accent-border: #bcd5ff;
+
+  --ok:        #1f9d63;
+  --ok-bg:     #e3f6ed;
+  --ok-border: #b7e6cf;
+  --warn:      #b07816;
+  --warn-bg:   #fbf0d8;
+  --warn-border:#ecd49a;
+  --err:       #d64545;
+  --err-bg:    #fbe4e4;
+  --err-border:#f1c4c4;
+
+  --text:      #1b1f2a;
+  --muted:     #69728a;
+  --muted2:    #98a0b5;
+  --doc-bg:    #eef1f7;
+
+  --sans:      'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --mono:      'IBM Plex Mono', ui-monospace, 'Cascadia Code', monospace;
+
+  /* structure (available to all windows; matches the client) */
+  --r:         12px;
+  --r-sm:      9px;
+  --r-pill:    999px;
+  --shadow:    0 1px 2px rgba(16,24,40,.05), 0 20px 44px -26px rgba(16,24,40,.22);
+
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  /* ── Dark — the matching dark variant ── */
+  --bg:        #0c0e14;
+  --surface:   #13161f;
+  --surface2:  #1a1e2a;
+  --surface3:  #222637;
+  --border:    #252836;
+  --border2:   #2f3347;
+
+  --accent:    #4f8ef7;
+  --accent2:   #6ea8ff;
+  --accent-bg: #0d1f3a;
+  --accent-border: #1a3a6a;
+
+  --ok:        #3ecf8e;
+  --ok-bg:     #0d2e1e;
+  --ok-border: #1a4a2e;
+  --warn:      #f7b84f;
+  --warn-bg:   #2e1a00;
+  --warn-border:#4a3a1a;
+  --err:       #f76f6f;
+  --err-bg:    #2e0d0d;
+  --err-border:#4a1f1f;
+
+  --text:      #e2e6f0;
+  --muted:     #7a82a0;
+  --muted2:    #565d78;
+  --doc-bg:    #080a0f;
+
+  --shadow:    0 1px 2px rgba(0,0,0,.35), 0 18px 40px -24px rgba(0,0,0,.7);
+
+  color-scheme: dark;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────────
+ * Client-matched components — the "proper app" feel: larger rounded buttons,
+ * filled primaries with a soft shadow, rounded padded inputs.
+ *
+ * Selectors are html-scoped (specificity 0,1,1) so they win over each window's
+ * plain base rule (.btn / input = 0,1,0) WITHOUT overriding intentional, more
+ * specific variants (.btn.confirm, .ra-row .btn, etc. = 0,2,0+).
+ * ────────────────────────────────────────────────────────────────────────────── */
+
+/* Base button — rounded, padded, secondary-style by default */
+html .btn {
+  display:inline-flex; align-items:center; justify-content:center; gap:8px; white-space:nowrap;
+  font:600 13px/1 var(--sans); padding:9px 16px; border-radius:var(--r-sm);
+  border:1px solid var(--border2); background:var(--surface2); color:var(--text); cursor:pointer;
+  transition:background .15s ease, border-color .15s ease, color .15s ease, filter .15s ease, box-shadow .15s ease, transform .04s ease;
+}
+html .btn:hover { background:var(--border); border-color:var(--accent2); }
+html .btn:active { transform:translateY(1px); }
+html .btn:disabled, html .btn[disabled] { opacity:.5; cursor:not-allowed; transform:none; }
+html .btn:focus-visible { outline:2px solid var(--accent2); outline-offset:2px; }
+
+/* Primary (filled blue, soft shadow) — covers the app's primary button names */
+html .btn-primary, html .btn.primary, html .btn-run, html .btn.confirm {
+  background:var(--accent); border-color:var(--accent); color:#fff; box-shadow:0 8px 18px -12px var(--accent);
+}
+html .btn-primary:hover, html .btn.primary:hover, html .btn-run:hover:not(:disabled) {
+  filter:brightness(1.08); background:var(--accent); border-color:var(--accent);
+}
+/* Confirm/File keeps a green identity but gains the filled, rounded shape */
+html .btn.confirm { background:var(--ok); border-color:var(--ok); }
+html .btn.confirm:hover:not(:disabled) { filter:brightness(1.07); background:var(--ok); border-color:var(--ok); }
+
+/* Ghost / quiet actions */
+html .btn-ghost, html .btn.skip, html .btn-link {
+  background:transparent; border-color:transparent; color:var(--muted); box-shadow:none;
+}
+html .btn-ghost:hover, html .btn.skip:hover, html .btn-link:hover {
+  background:var(--surface2); border-color:var(--border2); color:var(--text);
+}
+/* Destructive */
+html .btn-danger, html .btn-stop, html .btn.danger {
+  background:var(--err-bg); border-color:var(--err-border); color:var(--err); box-shadow:none;
+}
+html .btn-danger:hover, html .btn-stop:hover, html .btn.danger:hover { background:var(--err-bg); border-color:var(--err); }
+
+html .btn-sm { padding:6px 11px; font-size:12px; gap:6px; }
+html .btn-block { width:100%; }
+
+/* Inputs / selects / textareas — rounded + padded, focus ring */
+html input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]),
+html select, html textarea {
+  font:inherit; background:var(--surface2); color:var(--text);
+  border:1px solid var(--border2); border-radius:var(--r-sm); padding:9px 12px;
+  transition:border-color .15s ease, box-shadow .15s ease;
+}
+html input:focus, html select:focus, html textarea:focus {
+  outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-bg);
+}
+
+/* Native window frames are on (main.js frame:true), so the custom drag title bars
+ * are redundant chrome — hide them. (html-scoped to beat each window's local
+ * #titlebar/.titlebar display rule.) The main window's bar is renamed #topbar and
+ * kept as a real toolbar, so it is unaffected by this. */
+html #titlebar, html .titlebar { display: none !important; }
+
+/* Pill chips (status) — opt-in by class, additive */
+.chip { display:inline-flex; align-items:center; gap:5px; font-size:11px; padding:3px 10px;
+  border-radius:var(--r-pill); border:1px solid var(--border2); color:var(--muted); background:var(--surface2); }
+.chip.ok, .chip.confirmed, .chip.approved, .chip.acknowledged { color:var(--ok); background:var(--ok-bg); border-color:var(--ok-border); }
+.chip.warn, .chip.needs_review, .chip.pending { color:var(--warn); background:var(--warn-bg); border-color:var(--warn-border); }
+.chip.err, .chip.rejected, .chip.error { color:var(--err); background:var(--err-bg); border-color:var(--err-border); }
