@@ -526,6 +526,59 @@ function runJsMigrations(db, applied) {
     db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (25)').run();
     console.log('JS migration 25 applied: structured audit_log (category/outcome/actor snapshot/metadata + indexes)');
   }
+
+  // Migration 26: MULTI-REFERENCE logo phash. A template's identity drifts by
+  // double-digit Hamming across scans (DPI/enhance), so a single frozen logo_phash
+  // makes a later same-supplier scan fail the reuse gate and spawn a duplicate. A
+  // template now carries a SET of logo hashes (match against the closest; confirms
+  // append drifted-but-related ones) so the reference set converges to span the
+  // drift. templates.logo_phash stays as the seed/primary (non-destructive);
+  // backfill one child row per existing non-null value. Mirrors template_landmarks.
+  if (!applied.has(26)) {
+    if (!tableExists(db, 'template_logo_hashes')) {
+      db.exec(`CREATE TABLE template_logo_hashes (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        template_id  INTEGER NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
+        phash        TEXT    NOT NULL,
+        created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(template_id, phash)
+      )`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_template_logo_hashes_template
+               ON template_logo_hashes(template_id)`);
+      if (tableExists(db, 'templates')) {
+        try {
+          db.exec(`INSERT OR IGNORE INTO template_logo_hashes (template_id, phash)
+                   SELECT id, logo_phash FROM templates
+                   WHERE logo_phash IS NOT NULL AND logo_phash != ''`);
+        } catch (e) { console.warn('  template_logo_hashes backfill:', e.message); }
+      }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (26)').run();
+    console.log('JS migration 26 applied: multi-reference logo phash (template_logo_hashes)');
+  }
+
+  // Migration 27: STRUCTURAL fields (Company / Date / Reference) are permanent.
+  // (1) Relabel the company/identity field to "Company" (the value's internal key
+  // stays supplier_name/customer_name — only the display label changes — so the
+  // learning schema is untouched). (2) RE-ENABLE any structural field a user had
+  // toggled off before this protection existed (they drive filing + learning and
+  // must always be present). Idempotent.
+  if (!applied.has(27)) {
+    if (tableExists(db, 'fields')) {
+      try {
+        db.exec(`UPDATE fields SET label = 'Company'
+                 WHERE key IN ('supplier_name','customer_name')
+                   AND label IN ('Supplier Name','Customer Name')`);
+        db.exec(`UPDATE fields SET enabled = 1 WHERE enabled = 0 AND (
+                   key IN ('supplier_name','customer_name')
+                   OR id IN (SELECT f.id FROM fields f
+                             JOIN document_types dt ON dt.id = f.document_type_id
+                             WHERE f.key = dt.ref_field_key OR f.key = dt.date_field_key))`);
+      } catch (e) { console.warn('  migration 27 (structural fields):', e.message); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (27)').run();
+    console.log('JS migration 27 applied: structural fields permanent + relabel Company');
+  }
 }
 
 function hasColumn(db, table, column) {
