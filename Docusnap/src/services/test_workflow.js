@@ -12,7 +12,7 @@
  */
 
 const Database = require('better-sqlite3');
-const { createWorkflowService } = require('./workflowService');
+const { createWorkflowService, editGuard } = require('./workflowService');
 
 let fail = 0;
 const check = (label, cond) => { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}`); if (!cond) fail++; };
@@ -37,7 +37,7 @@ function freshDb() {
   `);
   db.prepare(`INSERT INTO document_types (id,name,slug) VALUES (1,'Invoice','invoice')`).run();
   db.prepare(`INSERT INTO documents (id,status,document_type_id) VALUES
-              (1,'confirmed',1),(2,'needs_review',1)`).run();
+              (1,'confirmed',1),(2,'needs_review',1),(3,'pending',1)`).run();
   const u = db.prepare(`INSERT INTO users (id,username,display_name,role,is_active) VALUES (?,?,?,?,?)`);
   u.run(1, 'admin', 'Admin', 'admin', 1);
   u.run(2, 'editor', 'Editor', 'edit', 1);
@@ -57,7 +57,7 @@ function main() {
 
   // ── assign authorization + preconditions ─────────────────────────────────────
   check('readonly cannot assign', wf.assign(db, reader, { documentId: 1, toUserId: 3, actionRequired: 'acknowledge' }).code === 'FORBIDDEN');
-  check('cannot route a non-confirmed doc', wf.assign(db, admin, { documentId: 2, toUserId: 3, actionRequired: 'approve' }).code === 'NOT_CONFIRMED');
+  check('cannot route a pending (non-routable) doc', wf.assign(db, admin, { documentId: 3, toUserId: 3, actionRequired: 'approve' }).code === 'NOT_ROUTABLE');
   check('cannot route to inactive recipient', wf.assign(db, admin, { documentId: 1, toUserId: 4, actionRequired: 'approve' }).code === 'INACTIVE_RECIPIENT');
   check('invalid actionRequired rejected', wf.assign(db, admin, { documentId: 1, toUserId: 3, actionRequired: 'frobnicate' }).code === 'INVALID');
 
@@ -111,6 +111,16 @@ function main() {
 
   // ── completed view ───────────────────────────────────────────────────────────
   check('completed view lists resolved items for admin', wf.completed(db, admin).length >= 3);
+
+  // ── 5b: uncommitted docs are routable + workflow_lock editGuard ───────────────
+  const un = wf.assign(db, admin, { documentId: 2, toUserId: 2, actionRequired: 'approve' }); // doc2 = needs_review
+  check('uncommitted (needs_review) doc IS routable', un.ok && un.route.state === 'pending');
+  check('editGuard: doc with open route is locked for edit', editGuard(db, 2, 'edit').code === 'WORKFLOW_LOCKED');
+  check('editGuard: admin can override the lock', editGuard(db, 2, 'admin').ok === true && editGuard(db, 2, 'admin').overridden === true);
+  check('editGuard: doc with no open route is unlocked', editGuard(db, 999, 'edit').ok === true);
+  // Once resolved, the lock releases.
+  wf.resolve(db, editor, un.route.id, { decision: 'approve' });
+  check('editGuard: lock releases after the route resolves', editGuard(db, 2, 'edit').ok === true);
 
   db.close();
   console.log(fail ? `\n${fail} check(s) FAILED` : '\nAll workflow checks passed.');

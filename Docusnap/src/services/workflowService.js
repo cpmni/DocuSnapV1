@@ -24,7 +24,32 @@
 const ACTOR_CAN_ASSIGN = ['admin', 'edit'];
 const ACTOR_CAN_DECIDE  = ['admin', 'edit']; // approve/reject; acknowledge is open to all
 
+// Stage 5b: documents that may be routed — confirmed AND uncommitted (review queue
+// / deferred). pending/error/deleted are never routable.
+const ROUTABLE_STATES = ['confirmed', 'needs_review', 'deferred'];
+
 function fail(code, error) { return { ok: false, code, error }; }
+
+/**
+ * WORKFLOW_LOCK reconciliation (Stage 5b). The Review pipeline calls this before
+ * mutating a document so the mailbox and the review/learning pipeline can't both
+ * edit the same row. While a route is open (pending/claimed) the document is
+ * locked; an admin may OVERRIDE (audited by the caller). Standalone (no service
+ * instance needed) so review/handler.js can call it directly.
+ *
+ * @returns { ok:true, locked:false }                      not under workflow
+ *        | { ok:true, locked:true, overridden:true }      admin override
+ *        | { ok:false, locked:true, code:'WORKFLOW_LOCKED', error }
+ */
+function editGuard(db, documentId, actorRole, deps = {}) {
+  const wf = deps.dbWorkflow || require('../../database/modules/workflow');
+  if (!wf.hasActiveRoute(db, documentId)) return { ok: true, locked: false };
+  if (actorRole === 'admin') return { ok: true, locked: true, overridden: true };
+  return {
+    ok: false, locked: true, code: 'WORKFLOW_LOCKED',
+    error: 'This document is in an approval workflow — resolve or recall it before editing.',
+  };
+}
 
 function createWorkflowService(deps = {}) {
   const wf  = deps.dbWorkflow  || require('../../database/modules/workflow');
@@ -51,7 +76,9 @@ function createWorkflowService(deps = {}) {
     }
     const doc = docs.getById(db, documentId);
     if (!doc) return fail('NOT_FOUND', 'Document not found.');
-    if (doc.status !== 'confirmed') return fail('NOT_CONFIRMED', 'Only confirmed documents can be routed.');
+    if (!ROUTABLE_STATES.includes(doc.status)) {
+      return fail('NOT_ROUTABLE', 'Only confirmed or in-review documents can be routed.');
+    }
 
     const recipient = dbAuth.getUserById(db, toUserId);
     if (!recipient) return fail('NOT_FOUND', 'Recipient not found.');
@@ -138,4 +165,4 @@ function createWorkflowService(deps = {}) {
   return { inbox, sent, assigned, completed, assign, claim, resolve, recall };
 }
 
-module.exports = { createWorkflowService, ACTOR_CAN_ASSIGN, ACTOR_CAN_DECIDE };
+module.exports = { createWorkflowService, editGuard, ACTOR_CAN_ASSIGN, ACTOR_CAN_DECIDE, ROUTABLE_STATES };

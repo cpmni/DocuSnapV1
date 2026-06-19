@@ -72,7 +72,17 @@ function setDocWorkflowStatus(db, documentId, status) {
   db.prepare('UPDATE documents SET workflow_status = ? WHERE id = ?').run(status, documentId);
 }
 
+// True when a document has an OPEN routing task (pending or claimed). This is the
+// workflow_lock signal: while it holds, the Review pipeline must not mutate the
+// document (see workflowService.editGuard) so the two systems can't both edit the
+// same row.
+function hasActiveRoute(db, documentId) {
+  return !!db.prepare(
+    "SELECT 1 FROM document_routes WHERE document_id = ? AND state IN ('pending','claimed') LIMIT 1"
+  ).get(documentId);
+}
+
 module.exports = {
   insertRoute, getRoute, listInbox, listSent, listAssigned, listCompleted,
-  updateState, setDocWorkflowStatus, OPEN_STATES, CLOSED_STATES,
+  updateState, setDocWorkflowStatus, hasActiveRoute, OPEN_STATES, CLOSED_STATES,
 };

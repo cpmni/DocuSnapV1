@@ -62,7 +62,24 @@ function register(ctx) {
   const doctypes   = require('../../../database/modules/document_types');
   const templates  = require('../../../database/modules/templates');
   const previewService = require('../../services/previewService');
+  const workflowService = require('../../services/workflowService');
   const { requireRole, requireLogin, hasRole, logAudit } = require('../auth/handler');
+
+  // WORKFLOW_LOCK (Stage 5b): block a Review-pipeline mutation while the document
+  // has an OPEN approval route, so the mailbox and the review/learning pipeline
+  // can't both edit the same row. Admin may override (audited). Throws like
+  // requireRole so the rejection crosses IPC; returns the actor's session.
+  function requireUnlocked(db, docId, action) {
+    const sess = requireRole('admin', 'edit');
+    const guard = workflowService.editGuard(db, docId, sess.role);
+    if (!guard.ok) throw Object.assign(new Error(guard.error), { code: guard.code });
+    if (guard.overridden) {
+      logAudit(db, { action: 'workflow_lock_overridden', action_category: 'workflow',
+        target_type: 'document', target_id: docId, document_id: docId, outcome: 'success',
+        metadata: { action } });
+    }
+    return sess;
+  }
 
   // ── Queue queries ───────────────────────────────────────────────────────────
   // The review/deferred queues are the working-document workflow surface —
@@ -159,8 +176,8 @@ function register(ctx) {
 
   // ── Defer ───────────────────────────────────────────────────────────────────
   ipcMain.handle('defer-document', (_e, docId) => {
-    requireRole('admin', 'edit');
     const db = getDb();
+    requireUnlocked(db, docId, 'defer');
     documents.update(db, docId, { status: 'deferred' });
     logAudit(db, { action: 'review_deferred', target_type: 'document', target_id: docId, document_id: docId, outcome: 'success' });
     notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
@@ -169,8 +186,8 @@ function register(ctx) {
   });
 
   ipcMain.handle('restore-deferred', (_e, docId) => {
-    requireRole('admin', 'edit');
     const db = getDb();
+    requireUnlocked(db, docId, 'restore');
     documents.update(db, docId, { status: 'needs_review' });
     logAudit(db, { action: 'review_restored', target_type: 'document', target_id: docId, document_id: docId, outcome: 'success' });
     notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
@@ -196,8 +213,9 @@ function register(ctx) {
   // (Edit gets the rest of the daily workflow — review, edit, confirm, defer,
   // reprocess — but not permanent deletion of a scanned document).
   ipcMain.handle('delete-document', async (_e, docId, filePath) => {
-    requireRole('admin', 'edit');   // single-doc delete is Edit/Admin (matches the rest of Review)
     const db = getDb();
+    requireUnlocked(db, docId, 'delete'); // Edit/Admin; blocked while under an open approval route
+
     // Delete file from disk
     if (filePath && fs.existsSync(filePath)) {
       try { fs.unlinkSync(filePath); } catch (e) {
@@ -254,7 +272,6 @@ function register(ctx) {
 
   // ── Confirm review ──────────────────────────────────────────────────────────
   ipcMain.handle('confirm-review', async (_e, payload) => {
-    requireRole('admin', 'edit');
     const {
       document_id, folder_path, original_filename,
       corrections, allValues, supplier_name,
@@ -263,6 +280,7 @@ function register(ctx) {
     } = payload;
 
     const db      = getDb();
+    requireUnlocked(db, document_id, 'confirm');
     const filing  = require('../filing/handler');
     // The app-managed working copy is the stable source for filing (the user's
     // original source may be gone). Captured before filing; cleaned up after.

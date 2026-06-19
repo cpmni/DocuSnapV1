@@ -42,7 +42,8 @@ async function freshDb() {
   `);
   db.prepare(`INSERT INTO document_types (id,name,slug) VALUES (1,'Invoice','invoice')`).run();
   db.prepare(`INSERT INTO documents (id,supplier_name,document_type_id,status,confirmed_at,processed_at)
-              VALUES (1,'Acme',1,'confirmed','2026-03-11','2026-03-11')`).run();
+              VALUES (1,'Acme',1,'confirmed','2026-03-11','2026-03-11'),
+                     (2,'ReviewCo',1,'needs_review','2026-03-12','2026-03-12')`).run();
   const h = await pw.hashPassword(PWD);
   const ins = db.prepare(`INSERT INTO users (id,username,display_name,password_hash,role,is_active) VALUES (?,?,?,?,?,1)`);
   ins.run(1, 'admin', 'Admin', h, 'admin');
@@ -115,6 +116,10 @@ async function main() {
   check('readonly recipient approve -> 403', r.status === 403);
   r = await adminC.workflow.recall(roRoute.id, roRoute.version);
   check('sender recalls pending -> 200 recalled', r.status === 200 && r.json.route.state === 'recalled');
+
+  // ── 5b: uncommitted (needs_review) documents are routable ────────────────────
+  r = await adminC.workflow.assign(2, editorId, 'approve', 'check this review item');
+  check('admin can route an uncommitted (needs_review) doc -> 200', r.status === 200 && r.json.route.state === 'pending');
 
   // ── filing state never rewritten by workflow ─────────────────────────────────
   r = await adminC.getDocument(1);
