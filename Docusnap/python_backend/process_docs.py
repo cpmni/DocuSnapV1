@@ -97,6 +97,13 @@ def main():
     parser.add_argument("--registration", action="store_true",
                         help="enable Stage 0.5 registration-invariant anchoring "
                              "(landmark transform); inert unless templates carry landmarks")
+    parser.add_argument("--candidate-override", choices=("off", "suggest", "auto"),
+                        default="off",
+                        help="Phase 3 post-merge candidate resolver (default off = no "
+                             "behaviour change; suggest = corrected_to only; auto = "
+                             "replace value for --candidate-override-fields only)")
+    parser.add_argument("--candidate-override-fields", default="",
+                        help="comma-separated field TYPES eligible for auto override")
     parser.add_argument("--born-digital", action="store_true",
                         help="use a PDF's embedded text layer (exact) instead of OCR "
                              "for pages that carry one; inert for image-only/scanned PDFs")
@@ -155,6 +162,11 @@ def main():
     # taught landmarks on the matched template).
     if args.registration:
         engine.set_registration_enabled(True)
+
+    # Phase 3 candidate override (default 'off' → byte-identical behaviour).
+    if args.candidate_override and args.candidate_override != "off":
+        _co_fields = [t.strip() for t in (args.candidate_override_fields or "").split(",") if t.strip()]
+        engine.set_candidate_override(args.candidate_override, _co_fields)
 
     # Load learned format templates for OCR correction
     if formats:

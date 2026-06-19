@@ -201,6 +201,12 @@ class ExtractionEngine:
         self.format_class_index  = {}   # populated by set_formats()
         self.label_overrides     = []   # populated by set_label_overrides()
         self.registration_enabled = False  # set by set_registration_enabled()
+        # Phase 3 candidate-override (default OFF → byte-identical behaviour). Modes:
+        # 'off' | 'suggest' (corrected_to only) | 'auto' (value, only for opted-in
+        # field types in candidate_override_fields). See _resolve_candidates().
+        self.candidate_override        = 'off'
+        self.candidate_override_fields = set()
+        self._field_candidates   = {}    # per-run candidate ledger (built only when override on)
         self._trace              = None  # dev-only trace callback (set per extract())
 
     def log(self, text: str, level: str = ""):
@@ -210,6 +216,122 @@ class ExtractionEngine:
         """Enable the Stage 0.5 registration rung (P4, 'register, then read').
         Inert unless the matched template carries taught landmarks."""
         self.registration_enabled = bool(on)
+
+    def set_candidate_override(self, mode, fields=None):
+        """Enable the Phase 3 post-merge candidate resolver. mode: 'off' (default,
+        no behaviour change) | 'suggest' (corrected_to + note only) | 'auto' (replace
+        value, but ONLY for field types in `fields`). Mirrors the other extraction
+        setting setters; default-off keeps the engine byte-identical."""
+        self.candidate_override = (mode or 'off').lower().strip()
+        self.candidate_override_fields = set(fields or [])
+
+    # ── Phase 3 candidate ledger + post-merge resolver (default OFF) ─────────────
+    # A purely-additive side-ledger of every stage's produced candidate, consumed
+    # ONLY by _resolve_candidates after Stage 4.5. Winner-selection code is unchanged;
+    # when candidate_override is 'off' both helpers short-circuit so there is zero
+    # extra work and zero behaviour change.
+    def _remember_candidates(self, stage: str, produced: dict):
+        if self.candidate_override == 'off' or not produced:
+            return
+        for key, data in produced.items():
+            if key.startswith('_') or not isinstance(data, dict):
+                continue
+            v = data.get('value')
+            if not v:
+                continue
+            self._field_candidates.setdefault(key, []).append({
+                'value':         v,
+                'method':        data.get('method'),
+                'confidence':    data.get('confidence') or 0,
+                'stage':         stage,
+                'authoritative': bool(data.get('authoritative')),
+                'located':       bool(data.get('located')),
+            })
+
+    @staticmethod
+    def _override_eligible(incumbent: dict) -> bool:
+        """A winner may be reconsidered ONLY if it is a generic/auto source — NEVER
+        an authoritative ⊕ anchor, a Stage 0.5 located mapping/registration, or an
+        admin label. This is what preserves the committed precedence guarantees."""
+        if incumbent.get('authoritative'):
+            return False
+        m = incumbent.get('method')
+        if _is_stage05_located(m) or m == 'keyword_override':
+            return False
+        return True
+
+    def _best_challenger(self, key, incumbent, cands, fmt_entry, ftype):
+        """Pick a retained candidate that CLEARLY beats the incumbent on the field's
+        evidence axis, else None. Deterministic (tie-break: confidence desc, then
+        value). Reuses shape_match_score (shaped) / value_quality.name_quality (name)
+        — no parallel scoring."""
+        inc_val = str(incumbent.get('value') or '')
+        distinct = [c for c in cands if c.get('value') and str(c['value']) != inc_val]
+        if not distinct:
+            return None
+
+        shapes = (fmt_entry or {}).get('shapes')
+        if shapes:  # SHAPED field: prefer a candidate that matches a learned shape
+            if format_anomaly_checker.shape_match_score(inc_val, fmt_entry) >= 0.8:
+                return None  # incumbent already credible for this shape
+            qualifying = [c for c in distinct
+                          if format_anomaly_checker.shape_match_score(str(c['value']), fmt_entry) == 1.0]
+        else:       # NAME-LIKE field: prefer a clearly higher-quality name
+            try:
+                from extraction import value_quality
+            except Exception:
+                return None
+            if not value_quality.is_name_like_field(key):
+                return None
+            if value_quality.name_quality(inc_val) >= 0.5:
+                return None
+            qualifying = [c for c in distinct
+                          if value_quality.name_quality(str(c['value'])) >= 0.6]
+        if not qualifying:
+            return None
+        qualifying.sort(key=lambda c: (-(c['confidence'] or 0), str(c['value'])))
+        return qualifying[0]
+
+    def _resolve_candidates(self, results, field_defs, supplier_name, document_slug):
+        """Stage 4.6 — gated, deterministic, suggestion-first override. Runs only when
+        candidate_override != 'off'. Never touches a protected winner, defers to a
+        field that already has a note/corrected_to (one note per field)."""
+        if self.candidate_override == 'off' or not self._field_candidates:
+            return
+        auto_fields = self.candidate_override_fields
+        field_types = {f.get('key'): (f.get('type') or '') for f in (field_defs or [])}
+        s_lower  = (supplier_name or '').lower().strip()
+        dt_lower = (document_slug or '').lower().strip()
+        n = 0
+        for key, incumbent in list(results.items()):
+            if key.startswith('_') or not isinstance(incumbent, dict):
+                continue
+            if incumbent.get('validation_note') or incumbent.get('corrected_to'):
+                continue  # Stage 4/4.5 already spoke — one note per field
+            if not self._override_eligible(incumbent):
+                continue
+            cands = self._field_candidates.get(key)
+            if not cands:
+                continue
+            fmt_entry = (self.format_class_index.get((s_lower, dt_lower, key)) if s_lower else None) \
+                        or self.format_class_index.get(('', dt_lower, key))
+            challenger = self._best_challenger(key, incumbent, cands, fmt_entry, field_types.get(key))
+            if not challenger:
+                continue
+            if self.candidate_override == 'auto' and field_types.get(key) in auto_fields:
+                results[key] = {**incumbent,
+                                'value':           challenger['value'],
+                                'confidence':      challenger.get('confidence') or incumbent.get('confidence') or 0,
+                                'overridden':      True,
+                                'validation_note': f"auto-selected better-match candidate: {challenger['value']}"}
+            else:  # suggest (default when on): never replace the value
+                results[key] = {**incumbent,
+                                'corrected_to':    challenger['value'],
+                                'confidence':      min(incumbent.get('confidence') or 0, 70),
+                                'validation_note': f"better-match candidate: {challenger['value']}"}
+            n += 1
+        if n:
+            self.log(f"  Stage 4.6: {n} field(s) had a better-match candidate ({self.candidate_override})")
 
     # ── Dev-only extraction trace (no-op unless a trace callback is set) ────────
     # Emits structured field-lifecycle events for the hidden Dev Inspector. All
@@ -376,6 +498,7 @@ class ExtractionEngine:
         self._trace     = trace
         self._slice_dir = slice_dir   # dev-only crop capture dir (set only with --trace)
         self._slice_n   = 0
+        self._field_candidates = {}   # Phase 3 ledger (built only when candidate_override on)
         results      = {}
         field_keys   = [f["key"] for f in field_defs]
         # Seed field_patterns from each field's configured TYPE so CUSTOM doc-type
@@ -465,6 +588,7 @@ class ExtractionEngine:
                     self.log(f"  Doc-type slug from matched template: {document_slug}")
                 tmpl_results = template_matcher.extract_with_template(ocr_text, matched_tmpl)
                 _pre_s0 = self._snap(results)
+                self._remember_candidates('0_template', tmpl_results)
                 for key, data in tmpl_results.items():
                     results[key] = data
                 self._trace_stage('0_template', tmpl_results, _pre_s0, results)
@@ -525,6 +649,7 @@ class ExtractionEngine:
                     )
                     applied = 0
                     _pre_s05 = self._snap(results)
+                    self._remember_candidates('0.5_mapping', mapping_results)
                     for key, data in mapping_results.items():
                         existing = results.get(key)
                         # An admin-drawn mapping (Settings → Templates → "Map a
@@ -589,6 +714,7 @@ class ExtractionEngine:
             self.patterns, self.label_overrides, document_slug)
         kw_results = keyword.extract_fields(ocr_text, field_keys, patterns_for_run)
         _pre_s1 = self._snap(results)
+        self._remember_candidates('1_keyword', kw_results)
         for key, data in kw_results.items():
             existing = results.get(key)
             if key == "supplier_name" and existing:
@@ -681,6 +807,7 @@ class ExtractionEngine:
                 page_text_lines=page_text_lines,
             )
             _pre_s2 = self._snap(results)
+            self._remember_candidates('2_anchor', anchor_results)
             for key, data in anchor_results.items():
                 existing = results.get(key)
                 # Supplier identity is plausibility-gated first: a poisoned
@@ -874,6 +1001,7 @@ class ExtractionEngine:
         if hints and supplier_name:
             hint_results = self._apply_hints(hints, supplier_name, document_slug, field_defs)
             hint_count = 0
+            self._remember_candidates('2.5_hint', hint_results)
             for key, data in hint_results.items():
                 existing = results.get(key)
                 if not existing or not existing.get("value"):
@@ -957,6 +1085,7 @@ class ExtractionEngine:
                     ollama_url       = self.ollama_url,
                     model            = self.model,
                 )
+                self._remember_candidates('3_llm', llm_results)
                 for key, data in llm_results.items():
                     if data.get("value") and not results.get(key, {}).get("value"):
                         results[key] = data
@@ -1125,6 +1254,12 @@ class ExtractionEngine:
 
         self._trace_validation(_pre_val, results)
         self._t('stage_end', stage='4_validate')
+
+        # ── Stage 4.6: gated candidate override (default OFF → no-op) ───────────
+        # After Stage 4.5, before metadata, so overall_confidence/needs_review reflect
+        # any change. Suggestion-first; never touches a protected winner. No-op unless
+        # candidate_override is enabled (then the ledger built during merge is read).
+        self._resolve_candidates(results, field_defs, supplier_name, document_slug)
 
         # ── Metadata ──────────────────────────────────────────────────────────
         overall_conf  = validator.overall_confidence(results, field_defs)
