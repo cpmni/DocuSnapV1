@@ -1241,6 +1241,37 @@ function updateDocNavButtons() {
 document.getElementById('btn-doc-prev')?.addEventListener('click', () => cycleDocument(-1));
 document.getElementById('btn-doc-next')?.addEventListener('click', () => cycleDocument(1));
 
+// Expandable file column — drag the splitter to widen/narrow the queue panel.
+// Width persists in localStorage so a chosen width survives reopening. Clamped so
+// the panel can't be dragged uselessly small or eat the whole window.
+(function initQueueResizer() {
+  const panel = document.getElementById('queue-panel');
+  const grip  = document.getElementById('queue-resizer');
+  if (!panel || !grip) return;
+  const MIN = 170, MAX = 560;
+  const saved = parseInt(localStorage.getItem('review_queue_width'), 10);
+  if (saved >= MIN && saved <= MAX) panel.style.width = saved + 'px';
+  let dragging = false;
+  grip.addEventListener('mousedown', (e) => {
+    dragging = true; e.preventDefault();
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    let w = e.clientX - panel.getBoundingClientRect().left;
+    w = Math.max(MIN, Math.min(MAX, w));
+    panel.style.width = w + 'px';
+  });
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    localStorage.setItem('review_queue_width', String(parseInt(panel.style.width, 10) || 220));
+  });
+})();
+
 // Keyboard triage shortcuts (single document-level listener; reuses the exact
 // handlers the on-screen controls use — no second nav/acknowledge path):
 //   ArrowUp/ArrowDown → cycleDocument() (same as the prev/next rail; respects the

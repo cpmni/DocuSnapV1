@@ -35,6 +35,9 @@
       width: 220px; flex-shrink: 0; display: flex; flex-direction: column;
       border-right: 1px solid var(--border); background: var(--surface); overflow: hidden;
     }
+    /* Draggable splitter — the file column is expandable (width persisted). */
+    #queue-resizer { flex-shrink: 0; width: 5px; cursor: col-resize; background: var(--border); transition: background .15s; }
+    #queue-resizer:hover { background: var(--accent); }
     #queue-tabs { display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0; }
     .qtab {
       flex: 1; padding: 8px 6px; border: none; background: transparent;
@@ -142,7 +145,7 @@
     .rail-flyout .enh-row { flex-direction: column; align-items: stretch; gap: 6px; }
     .rail-flyout .enh-opt { white-space: normal; }
 
-    .queue-item { padding: 9px 12px; cursor: pointer; border-bottom: 1px solid var(--border); transition: background .1s; }
+    .queue-item { padding: 9px 14px; cursor: pointer; border-bottom: 1px solid var(--border); transition: background .1s; }
     .queue-item:hover  { background: var(--surface2); }
     .queue-item.active { background: var(--accent-bg); border-left: 2px solid var(--accent); padding-left: 10px; }
     /* Confidence stripe for under-review rows (reuses overall_confidence). Scoped
@@ -151,8 +154,8 @@
     .queue-item.qi-conf-mid:not(.active) { border-left: 2px solid var(--warn); padding-left: 10px; }
     .queue-item.qi-conf-low:not(.active) { border-left: 2px solid var(--err);  padding-left: 10px; }
 
-    .qi-name     { font-family: var(--mono); font-size: 10px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
-    .qi-supplier { font-size: 10px; color: var(--muted); margin-top: 2px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .qi-name     { font-family: var(--mono); font-size: 12px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+    .qi-supplier { font-size: 11px; color: var(--muted); margin-top: 2px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .qi-actions  { display: flex; gap: 5px; margin-top: 6px; }
     .qi-btn {
       padding: 3px 8px; border-radius: 4px; border: 1px solid var(--border2);
@@ -463,17 +466,9 @@
       <div id="queue-scroll-wrap">
         <div id="queue-list"></div>
         <div id="queue-scroll-rail">
-          <!-- Group 1: document navigation -->
-          <div class="rail-group">
-            <button class="queue-nav-btn" id="btn-doc-prev" title="Previous document" aria-label="Previous document" data-help-key="doc-nav">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15 L12 9 L18 15"/></svg>
-            </button>
-            <button class="queue-nav-btn" id="btn-doc-next" title="Next document" aria-label="Next document" data-help-key="doc-nav">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9 L12 15 L18 9"/></svg>
-            </button>
-          </div>
-          <div class="rail-divider" aria-hidden="true"></div>
-          <!-- Group 2: document tools (compact icon triggers; wide controls open as rail-anchored flyouts) -->
+          <!-- Plain scroll + click like Search (the prev/next arrow rail was removed;
+               ↑/↓ keys still cycle documents). Document tools remain below. -->
+          <!-- Document tools (compact icon triggers; wide controls open as rail-anchored flyouts) -->
           <div class="rail-group rail-tools-group">
             <button class="queue-tool-btn" id="btn-split-pdf" style="display:none;" title="Split PDF…" data-help-key="split">&#9986;</button>
             <button class="queue-tool-btn" id="btn-anchor-wizard" style="display:none;" title="Template Wizard — map fields (admin)" data-help-key="anchor-wizard">
@@ -554,6 +549,8 @@
         <button id="btn-delete-all">&#128465; Delete All Deferred</button>
       </div>
     </div>
+
+    <div id="queue-resizer" title="Drag to resize the file list"></div>
 
     <div id="doc-panel">
       <div id="doc-toolbar">
