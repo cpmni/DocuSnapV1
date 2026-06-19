@@ -51,6 +51,16 @@ spawn starts cold) and relay their findings to the user.
   tables/searchable-PDF, accuracy-vs-throughput). HARD RULE: only recommends
   open-source tools that are free for commercial use, and states the licence —
   e.g. flags PyMuPDF (AGPL) and steers to pypdfium2, which this project uses.
+- **eric** (`agents/eric.md`) — Electron expert: main/renderer architecture,
+  secure IPC + preload/contextBridge, BrowserWindow/webContents lifecycle,
+  child-process management, packaging/electron-builder, code signing, perf/memory.
+- **reggie** (`agents/reggie.md`) — regex & extraction-pattern expert: analyses/
+  tightens/loosens field regexes and validation rules (invoice/PO/sales-order
+  numbers, VAT, dates, totals, codes, IDs) and anchored label→value extraction;
+  precision-first; keeps the renderer `RegExp` and Python `re` patterns aligned
+  (the shared `validation_patterns` in config/keyword_patterns.json). Returns a
+  fixed report shape (Facts / Proposed pattern / Match examples / Integration point
+  / Risks / Smallest change).
 
 **Skills** in `.claude/skills/`: a set of Python engineering skills
 (`testing-strategy`, `code-quality`, `performance`, `api-design`, `packaging`,
@@ -92,14 +102,14 @@ docusnap2/
 │   │   ├── review/handler.js            # queue, confirm, defer, delete, pages
 │   │   ├── filing/handler.js            # folder structure, rename, XML metadata
 │   │   ├── settings/handler.js          # doc types, fields, key-value settings
-│   │   ├── templates/handler.js         # Admin Template Viewer — browse/pin samples, anchor→target mapping CRUD
+│   │   ├── templates/handler.js         # Admin Template Viewer — browse/pin samples, anchor→target mapping CRUD; Learning Recovery reassign (link-only, reversible) + MERGE (templates.mergeInto: fold a fragment's doc-links/missing-mappings/fields/landmarks/sample/identity into a canonical row, sum confirmed_count, delete source — IRREVERSIBLE; the cure for near-duplicate "same logo, drifted phash" template fragmentation). Guarded by database/modules/test_template_merge.js
 │   │   ├── search/handler.js            # document search
 │   │   └── licensing/handler.js         # license gate decideAccess() + trial/activate/revoke/enforcement IPC (see Licensing)
 │   ├── lib/license/{client.js,token.js,fingerprint.js}  # backend HTTP client · offline JWS verify · device fp_hash
 │   └── windows/
 │       ├── main/{index.html,renderer.js}      # incl. empty-state launchpad (Begin Import · Search · Settings · Teach a document)
 │       ├── splash/{index.html,splash.js}      # cosmetic startup splash — shown in whenReady, closed once login loads
-│       ├── review/{index.html,renderer.js}    # incl. zoom/pan preview + hidden admin Template Wizard (⚓): draw anchor/target → save via existing template-mapping IPC
+│       ├── review/{index.html,renderer.js}    # incl. zoom/pan preview + hidden admin Template Wizard (⚓): draw anchor/target → save via existing template-mapping IPC; "Show where it reads" overlays (amber) the RESOLVED anchor/target on the current page via test-template-mapping → template_mapper.resolve_geometry (so the operator sees the mapping TRACK a shifted scan, vs the static drawn boxes)
 │       ├── teach/{index.html,renderer.js}      # guided "Teach a new document" wizard (non-technical) — see Teaching wizard
 │       ├── settings/{index.html,renderer.js}  # incl. Admin Template Viewer + License/Activation-Test tab
 │       ├── search/index.html                  # placeholder
@@ -128,7 +138,10 @@ docusnap2/
 │   │   ├── anchor.py                    # Stage 2: spatial anchors + logo match
 │   │   ├── ocr_corrector.py             # Stage 2.5: learned OCR misread correction
 │   │   ├── llm.py                       # Stage 3: phi3:mini via Ollama (dormant — 'ai' mode not exposed in UI)
-│   │   └── validator.py                 # Stage 4: cross-field validation
+│   │   ├── validator.py                 # Stage 4: cross-field validation
+│   │   ├── value_quality.py             # name/company/address quality (name_quality, is_name_like_field) — JS mirror in learning.js
+│   │   ├── text_normalise.py            # deterministic compare-time normaliser (NFKC/dash/quote/lower/ws/edge); JS twin database/modules/text_normalise.js
+│   │   └── name_match.py                # Stage 4.5 token-level canonical NAME repair (lexicon + positional repair); suggestion-only
 │   ├── ocr/{tesseract.py,region.py,landmarks.py,text_enhance.py,born_digital.py}  # region.py: interactive draw-tool zone-OCR (review ⊕ picker, Template Wizard read-back, Template Manager) + --boxes label-position capture; LIGHT-FIRST ladder mirroring anchor._crop_and_ocr (light greyscale+upscale-small-only read first, heavy autocontrast+sharpen only when light is EMPTY) so a drawn box reads the SAME as extraction and clean born-digital crops aren't mangled into junk ("Serial number"→"be_7"); landmarks.py: derive registration landmarks from sample page; text_enhance.py: degraded text-line re-read (denoise+Sauvola+unsharp), text-only gate-triggered escalation; born_digital.py: read EXACT text + word boxes from a PDF's embedded text layer (pypdfium2 BSD), skipping OCR for generated PDFs (gated by born_digital_enabled)
 │   ├── logo/fingerprint.py
 │   └── render/pages.py                 # PDF→PNG rendering — shared by review/search/template preview (see Gotchas)
@@ -187,6 +200,21 @@ template_landmarks — template_id(FK cascade), label_text, x/y/w/h_norm, ocr_co
                   each incoming page to fit the Stage 0.5 registration transform
                   (registration.py). Additive/inert — a template with no rows uses
                   the existing anchor/offset path unchanged.
+template_logo_hashes — template_id(FK cascade), phash, UNIQUE(template_id,phash)  ← migration 26
+                  MULTI-REFERENCE logo identity: a template carries a SET of logo
+                  phashes, not one. Per-scan DPI/enhance drift shifts a recomputed
+                  phash double-digit Hamming, so a single frozen logo_phash made a
+                  drifted same-supplier scan spawn a near-duplicate template. Stage 0
+                  (_logo_candidates) and JS findByLogoHash now take the MIN distance
+                  over the set (legacy fallback: [templates.logo_phash]); templates.
+                  logo_phash stays the seed/primary. On confirm, templates.update
+                  APPENDS the scan's hash when it's drifted-but-related (dist to
+                  nearest ref in (2,13]); set capped at 8 (evict most-redundant
+                  non-primary). _upsertTemplate reuses on a 7-13 "convergence" band
+                  gated by same doc-type-slug + ≥0.60 keyword overlap, so the set
+                  CONVERGES instead of fragmenting; the matcher accept gate stays ≤6.
+                  mergeInto folds hash sets. Guarded by test_template_logo_hashes.js
+                  + tests/test_logo_phashes_multiref.py.
 settings        — key, value (key-value store; incl. registration_enabled —
                   default ON, gates the Stage 0.5 registration rung;
                   born_digital_enabled — default ON, gates PDF text-layer extraction;
@@ -255,9 +283,43 @@ process_docs.py → ExtractionEngine.extract()
              Now first-instance extraction MATCHES targeted selection. The
              offset/inset arithmetic stays ONLY in the relocation fallback, so the
              "PROFILE"→"ROFILE" leading-inset clip cannot reappear. Mirrors Stage
-             2's rigid-crop-then-relocate model; same accepted trade-off (a
-             heavily-drifted page could read a wrong-but-credible value before
-             relocating — guarded by the same credibility+format gates).
+             2's rigid-crop-then-relocate model.
+             DRIFT GUARD (closes the old absolute-first trade-off for LABELLED
+             mappings): a stationary drawn box on a shifted page (e.g. a mapping
+             taught on a CROPPED scan, then run on the UNCROPPED reprocess where
+             every row moves down) reads a credible-but-WRONG neighbouring line,
+             which shape_mode='ignore' can't catch — so it used to commit and
+             short-circuit relocation. Now, BEFORE accepting the absolute read,
+             when the mapping has a real anchor_text and the anchor LABEL is found
+             DISPLACED beyond a per-axis tolerance (_label_drifted: box-centre
+             distance vs half the drawn box per axis, floored; only on a genuine
+             matched_text, never proximity-only), the value is re-derived from the
+             label's ACTUAL position via the drift-invariant stored offset
+             (_relocate_and_read, shared by this early branch and the late
+             single-label fallback) and preferred. The pre-cached LOCAL locate is
+             reused; only a large shift that missed it triggers ONE page-wide
+             locate, and ONLY when the absolute read was non-empty — so a clean
+             page (label at its spot) pays no extra OCR and behaves byte-identically
+             (absolute, conf 90). A failed relocation falls through (no worse than
+             before). Blank/legacy NULL-anchor_text mappings are unaffected.
+             DRIFT SAFETY GUARDS (so relocation can't trade one failure for
+             another): (1) _located_too_wide — relocation REFUSES a "label" match
+             that spans far more than the drawn anchor box (≥2.5× its width, min
+             0.30 page-width): cross-column form rows OCR-merge into one line
+             ("Ticket No. … Work Address Beaumont…"), and relocating off that row's
+             left edge reads the wrong column (garbage). On refusal it falls
+             through (early branch) / omits the field (late path) instead of
+             committing junk. (2) _is_ocr_debris — the shared gate rejects
+             fragmented free-text OCR junk ("aan EE ..... 4 4.3 Fs . J... .";
+             replacement-char reads) so it can't scrape past the lax free-text
+             credibility and commit — forces fall-through to registration or a
+             clean absolute read. Both guarded by test_template_mapper_drift.py.
+             ANCHOR-LABEL AUTO-CAPTURE (wizard, review/renderer.js): so every new
+             mapping HAS a label to track, when the Template Wizard ANCHOR LABEL is
+             left blank the drawn anchor box is OCR'd (existing ocr-region recipe),
+             sanitised (sanitizeAnchorLabel mirror — drop refs/dates/serials), and
+             populated into the VISIBLE, editable input before save; empty/failed
+             OCR → null (legacy). Guarded by tests/test_template_mapper_drift.py.
              REGISTRATION RUNG ("register, then read", registration.py): the rung
              BETWEEN the absolute fast-path and the single-label refinement. When
              the matched template carries taught LANDMARKS (template_landmarks,
@@ -274,13 +336,62 @@ process_docs.py → ExtractionEngine.extract()
              fit (RANSAC inliers/residual) falls through. Confidence comes from the
              fit quality (registration.registration_confidence). Method tier
              template_registration[_expanded][_salvaged]; engine protects these via
-             _STAGE05_LOCATED_METHODS. This REPLACED the old translation-only
+             _STAGE05_LOCATED_METHODS.
+             REGISTRATION ARBITER (the rung is no longer fallback-only): the
+             registration read body is factored into _read_registration (shared),
+             and an ARBITER runs BEFORE the absolute-read return — after the
+             per-field _label_drifted guard. When a page transform is fitted AND
+             registration.box_divergence(transform, target_box) (normalised
+             centre-distance between the drawn box and its transform-mapped image)
+             exceeds the same "still on this row?" band _label_drifted uses
+             (max(h*0.5, _DRIFT_FLOOR)), the page is registered DIFFERENTLY from the
+             taught frame, so the stationary absolute box is reading the wrong row —
+             a credible-but-WRONG type-valid neighbour that shape_mode='ignore'
+             can't catch and the per-label guard misses on a generic/merged-row
+             label. The registration read is then preferred; a failed reg read falls
+             through to absolute (no worse than before). CLEAN pages → transform ≈
+             identity → divergence ≈ 0 → arbiter never fires → absolute fast path
+             BYTE-IDENTICAL (only cost: one apply_box, no OCR). Guarded by
+             tests/test_registration_arbiter.py. NOTE the prerequisite is that the
+             matched template HAS landmarks — a template pinned to a sample whose
+             files were since removed (or never backfilled) has none; Settings →
+             Template Manager → "Regenerate landmarks" (regenerate-template-landmarks
+             IPC → generateLandmarks, no re-pin) or "Import Sample…" (clean original)
+             recomputes them. generateLandmarks now also SEEDS logo_phash from the
+             sample (landmarks.py --emit-phash → compute_logo_hash; stored ONLY when
+             the template has none, never overwriting an established phash) so a
+             sample-pinned template becomes matchable — closing the empty-phash
+             ORPHAN class (templates that can never match, e.g. blank create-template
+             rows). (Stage 2 anchor arbiter: deferred.) This REPLACED the old translation-only
              consensus-drift fallback: page_geometry.py (content-free page-corner
              "landmarks"), _consensus_drift and _drift_fallback were REMOVED — a
              real content-landmark transform strictly supersedes a corner prior +
              translation guess. SHARED GATE (_gate_value): one helper applied by
              the absolute path, the registration rung AND the single-label path —
-             order = date-salvage (C1) → _crop_is_credible → _format_rejects.
+             order = date-salvage (C1) → _crop_is_credible (the field's REGEX/TYPE,
+             always enforced) → _format_rejects (the LEARNED-SHAPE consensus vs
+             confirmed history — statistics, NOT the field's type).
+             MANUAL-ANCHOR PRECEDENCE (rung-aware shape gating): a hand-drawn
+             mapping is a deliberate human OVERRIDE of learned history, so it must
+             win on regex/TYPE alone — it must NOT be vetoed by the learned-shape
+             check. _gate_value takes a shape_mode: the ABSOLUTE drawn-box read uses
+             'ignore' (skip _format_rejects entirely — the operator's own box on a
+             non-drifted page can't column-bleed, so regex/type is the right and
+             OCR-safe qualifier); the DERIVED rungs (registration + single-label
+             relocation, where column-bleed actually happens) use 'flag' — a
+             type-valid value that fails the learned shape is KEPT but capped at
+             conf ≤70, tagged "..._shapewarn" and given a validation_note for
+             review, instead of being silently dropped. ('drop' is the legacy hard
+             reject, kept as the default for any other caller.) This fixed the bug
+             where a type-valid manual value was silently dropped by _format_rejects
+             and the WRONG auto/keyword value then won on reprocess. Auto tiers
+             (Stage 2 anchor / keyword) keep FULL type+shape gating — unchanged.
+             engine._is_stage05_located() is now a PREFIX test (template_mapping* /
+             template_registration*) so every suffix combo — _salvaged, _shapewarn,
+             _expanded — gets the same protection (keyword can't demote it; a
+             non-authoritative auto-anchor can't clobber it). Guarded by
+             tests/test_template_mapper.py (test_gate_value_shape_modes,
+             test_manual_anchor_shape_precedence).
              DATE SALVAGE (C1): when a
              date crop FAILS the strict date credibility pattern (OCR spacing
              around separators, or a date wrapped in junk), it is rescued/
@@ -359,6 +470,21 @@ process_docs.py → ExtractionEngine.extract()
            candidate ("Booking") cannot displace a digit-bearing incumbent. Guards
            OVERRIDES only — an empty field is still filled (validator then flags).
            Reusable/shape-based, never supplier- or document-specific.
+           AUTHORITY PRECEDENCE (engine.extract — the cross-stage winner order):
+           authoritative ⊕ anchor > Stage 0.5 mapping > admin label
+           (keyword_override) > other (passive anchor / keyword / inline /
+           relocated) > generic seed (template_fixed/template_anchor) > hints,
+           each gated on validity. TWO 2026 fixes: (1) Stage 2 TIER A — an
+           authoritative anchor (data["authoritative"], from last_authoritative_at)
+           that clears the credibility gate wins OUTRIGHT regardless of resolved
+           method or confidence (was anchor_crop-ONLY via is_taught_override, so a
+           re-teach reading its value via anchor_inline/relocated/registration
+           could lose a confidence contest to the label it was meant to override).
+           (2) Stage 1 — a valid admin label (keyword_override) beats ANY incumbent
+           on authority EXCEPT a Stage 0.5 mapping (is_override_authority broadened
+           from template_fixed/template_anchor-only to `not _is_stage05_located`);
+           mapping > label is the chosen ordering. Guarded by
+           tests/test_precedence.py + test_label_overrides.py #9.
            ── 2026 RELIABILITY PASS (find → follow → read, across doc types) ──
            LIGHT-FIRST OCR LADDER (_crop_and_ocr): the unconditional heavy prep
            noted above is REPLACED by a ladder — light (greyscale, upscale-small-
@@ -417,7 +543,52 @@ process_docs.py → ExtractionEngine.extract()
   Stage 4: validator.py  — date normalise/salvage, currency infer, maths cross-check
   Stage 4.5: format_anomaly_checker.py — coarse-class + learned-shape consistency
              vs confirmed history; engine then weights _overall_confidence by
-             cross-field format consistency (see Stage 7)
+             cross-field format consistency (see Stage 7).
+             FREE-TEXT GUARD (engine.extract): the learned-SHAPE check may FLAG but
+             NEVER withhold/trim a free-text field's value — fields typed
+             text/multiline/untyped AND not _is_ref_field (text_field_keys). Names
+             & addresses vary legitimately, so a value that misses a rigid learned
+             shape is kept + tagged "format differs from the usual — please verify"
+             (conf ≤70, review-forced) instead of being NULLed. Without this, a
+             customer history all shaped "Beaumont Care Homes Ltd - <Site>" learned
+             an alphanum_sep shape that hard-nulled a valid "Beaumont Care Homes Ltd
+             -" (no site) → empty Customer field. Ref fields typed plain "text"
+             (e.g. reference_number) are EXCLUDED via _is_ref_field so structured
+             codes keep full shape enforcement (withhold on mismatch). Guarded by
+             tests/test_stage45_text_preserve.py.
+             PATTERN-BASED FIELD CORRECTION (Phase 1, SUGGESTION-ONLY — commit
+             09a4c62): two helpers run in the Stage 4.5 loop on the WINNER value
+             only; both set ONLY corrected_to + validation_note + conf≤70, NEVER
+             value/display_value (no auto-correct, no precedence change, no candidate
+             swap). (1) TOKEN-LEVEL NAME REPAIR (name_match.py + text_normalise.py):
+             for name-like fields, builds a per-(supplier,doctype,field) token
+             lexicon from confirmed value_counts (stable token = doc-freq ≥0.6 AND
+             ≥3 docs, deterministic canonical surface) and repairs garbled KNOWN
+             tokens to their canonical spelling while keeping the VARIABLE tail
+             verbatim ("eeaument care homes - lisburn" → "Beaumont Care Homes -
+             lisburn") — never whole-value snaps, never injects a learned token,
+             positional + thin-evidence guards, idempotent. Runs INDEPENDENT of
+             check_value's anomaly verdict (a garbled name is coarse-class FREETEXT
+             and won't trip it); the lexicon is attached to fmt_entry in
+             build_format_class_index (additive name_lexicon key, even for freetext
+             name fields). text_normalise.py is a deterministic compare-time
+             normaliser (NFKC→dash/quote fold→.lower()→explicit-class ws collapse→
+             edge-trim) with a byte-identical JS twin (database/modules/
+             text_normalise.js, parity-tested via tests/normalise_corpus.json). (2)
+             CHARSET VALIDATION (config field_charsets, BACKEND-ONLY — NOT served via
+             get-validation-patterns): per field TYPE, flags unexpected OCR symbols
+             (format_anomaly_checker.charset_disallowed) as a note + conf cap; skips
+             date/currency, defers to a pre-existing note (one note per field).
+             Guarded by tests/test_{name_match,text_normalise,field_charsets}.py +
+             test_text_normalise.js.
+             SHAPE FAMILIES + shape_match_score (Phase 2, ADDITIVE/DIAGNOSTIC —
+             commit 0277a85): format_anomaly_checker.shape_families() folds the
+             learned shape set (separator-run near-dups merged), counts, sorts, caps
+             at 6 → additive fmt['shape_families']; shape_match_score(value,fmt) →
+             1.0 exact / 0.8 learned-shape substring / 0.0 else. Pure, no behavior
+             change (classify_format/check_value/propose_correction untouched); the
+             foundation for a later candidate-override phase (not yet wired). Guarded
+             by tests/test_shape_match_score.py.
 ```
 
 **Three modes** (stored in settings as `processing_mode`):
@@ -512,6 +683,23 @@ OutputRoot/
 | Sales Order | sales_order | sales_order_number | order_date |
 | Purchase Order | purchase_order | po_number | po_date |
 
+**STRUCTURAL fields (Company / Date / Reference) are PERMANENT** (migration 27,
+`document_types.js`): every type has three locked roles — the COMPANY/identity
+field (`COMPANY_KEYS` = supplier_name | customer_name; label relabelled
+**"Company"**), the `date_field_key`, and the `ref_field_key`. They drive filing
+(`Company/Year/Month/DocType.Date.Ref`) AND all per-supplier learning
+(logo_fingerprints/hints/anchors/corrections/template identity key off the company
+scope value), so the FIELD can't be deleted, disabled, renamed or retyped — but the
+per-document VALUE stays editable (correcting a mis-read is what feeds learning).
+The internal key stays `supplier_name`/`customer_name` (only the display LABEL is
+"Company") so the learning schema is untouched. `is_structural` is annotated on each
+field (getWithFields/getAllWithFieldsAll) for the Settings UI (locked toggle, no
+delete, 🔒). `updateField`/`deleteField` enforce it server-side;
+`create-doc-type-with-fields` injects a Company field if the caller omits one.
+Guarded by `database/modules/test_structural_fields.js`. (NOTE a latent nuance: the
+engine's universal scope key is `supplier_name`, but sales orders carry the company
+as `customer_name` — label-only unification here; a key reconciliation is deferred.)
+
 ---
 
 ## Licensing & activation
@@ -592,6 +780,7 @@ pick-folder, pick-output-folder, process-folder(folderPath)
 get-document-types, get-all-doc-types
 add-document-type(data), update-document-type(id,changes)
 add-field(data), update-field(id,changes), delete-field(id)
+get-validation-patterns                # validation_patterns from config (cached) — Review on-blur field validation
 create-doc-type-with-fields({name,fields[],ref_field_key,date_field_key})  # transactional; teaching wizard
 get-teach-target                       # docId the teach window was opened at (pulled once on load)
 get-review-queue, get-deferred-queue, get-review-count, get-deferred-count
@@ -632,7 +821,7 @@ review-count-changed(n), deferred-count-changed(n)
 processing-mode-changed(mode)
 pull-progress({status,completed,total})
 reprocess-progress(msg), process-progress(msg)
-process-trace(ev)                      # dev-inspector ONLY (never to main window); see Dev inspector
+process-trace(ev)                      # dev-inspector + (when its console is active) the REVIEW window; never the main window. See Dev inspector / Review trace console
 license-state(gate)                    # pushed to the license window with the blocked-state reason
 ```
 
@@ -739,6 +928,19 @@ Tab badges update via `review-count-changed` and `deferred-count-changed` events
 - The up/down rail beside the queue list **cycles the selected document**
   (prev/next within the active Review/Deferred list via `selectDoc`, clamped at
   ends), not viewport scrolling.
+- **On-blur field validation** (`appendFieldRow`): an edited field is validated on
+  focus-out against the field's regex/TYPE, using the SAME `validation_patterns`
+  the Python extraction qualification uses — fetched once via the new
+  `get-validation-patterns` IPC (reads `config/keyword_patterns.json`) and compiled
+  to `RegExp` in the renderer, so UI and pipeline can't drift apart (`field.type` →
+  validation key mirrors engine.py's `_TYPE2VAL`; also reuses the learned
+  `digit_only_fields` signal already attached to the doc). WARN-ONLY: sets a
+  lightweight inline red note (`.field-validation-warn`) + invalid border; NEVER
+  disables Confirm (an operator can still file an OCR edge case — mirrors
+  extraction's review-not-reject philosophy). Synchronous, no IPC/reprocess on
+  blur, no re-render or focus change (so clicking Confirm can't race it); the
+  warning clears eagerly on `input` and is re-evaluated only on blur (no mid-type
+  flashing). free-text/`multiline_text` have no constraint.
 
 ### STAGE 6 — Search window
 **File**: `src/windows/search/index.html` + `renderer.js`
@@ -891,10 +1093,25 @@ learning, no mutation; invokes no role-protected handler.**
   `reprocess-progress` to the inspector (`notifyDevInspector`) — user console
   unchanged. Drives the live-status card + the doc header summary (resolved
   per-field, NOT the misleading invoice_number convenience).
+- **Review trace console** (same key combo Ctrl+Shift+D+M, pw SFDEV, inside the
+  REVIEW window — `src/windows/review/{index.html,renderer.js}`): a hidden
+  right-side drawer for debugging extraction PRECEDENCE. Reuses the SAME trace
+  stream — no new schema. On unlock it calls `review-trace-set(true, pw)` (verified
+  in main, opens NO window) which sets `ctx.reviewTraceActive`; processing/handler
+  then enables `--trace` (`traceWanted()`) and tees `process-trace` to the review
+  window too (`routeTrace`). Per field it lists each stage's candidate
+  (stage·value·confidence·method), won/lost (+reason), anchor_reject reasons,
+  Stage 2.5 transforms (denoise/correct, from→to), Stage 4/4.5 validation rows
+  (the note + value change behind a held/flagged/emptied value — e.g. a Stage 4.5
+  withhold), and the final winner. "Reprocess (trace)" reuses the existing reprocess flow;
+  events are buffered live (a reprocess runs under a temp filename, so no filename
+  filter), with a `devGetSessionDoc` pull for already-processed docs. Crop-slice
+  thumbnails deferred (inspector-only).
 - **Extraction trace** (`type:"trace"` stdout, separate `process-trace` channel,
-  routed only to the inspector): emitted by `engine.extract(trace=…)` ONLY when
-  `process_docs --trace` is set, which handler adds ONLY while the inspector is
-  open → normal processing is byte-identical (no overhead/output). Events:
+  routed to the inspector + the review console when active): emitted by
+  `engine.extract(trace=…)` ONLY when `process_docs --trace` is set, which handler
+  adds ONLY while the inspector/review-console is open or diag logging is on →
+  normal processing is byte-identical (no overhead/output). Events:
   `stage_start|stage_end|candidate|merge(decision win/lose +vs)|transform(2.5)|
   validation(4/4.5)|final|slice`. JS `reprocess_merge` event also surfaces the
   reprocess-merge keep/replace decision.
