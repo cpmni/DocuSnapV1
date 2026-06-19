@@ -47,13 +47,37 @@ function getById(db, id) {
   return db.prepare('SELECT * FROM documents WHERE id = ?').get(id);
 }
 
+// Clear any FK reference into documents that has NO ON DELETE action, so the
+// subsequent DELETE doesn't trip a constraint. extractions/corrections cascade
+// (001_initial.sql), but templates.sample_document_id (added by JS migration 8
+// via ALTER TABLE, which can't carry an ON DELETE clause) is a back-link with no
+// cascade — NULL it for the doomed rows. A deleted sample doesn't harm the
+// template: its landmarks are already derived and stored in template_landmarks
+// (keyed by template_id), so only the now-stale browse link is dropped. Guarded
+// so minimal DBs without a templates table are a no-op. `whereSql`/`params`
+// select the doomed document ids (e.g. "id = ?" or "status = ?").
+function _clearDanglingDocRefs(db, whereSql, params) {
+  try {
+    db.prepare(
+      `UPDATE templates SET sample_document_id = NULL
+       WHERE sample_document_id IN (SELECT id FROM documents WHERE ${whereSql})`
+    ).run(...params);
+  } catch { /* no templates table (minimal test DB) — nothing to clear */ }
+}
+
 // Bulk delete every document in ONE workflow status — used only by the
 // admin "Delete All Review" / "Delete All Deferred" actions. Scoped strictly to
 // the given status so it can never touch confirmed (or any other) documents;
-// extractions/corrections are removed by their ON DELETE CASCADE. Callers are
-// responsible for unlinking the source files first (see review/handler.js).
+// extractions/corrections are removed by their ON DELETE CASCADE, and the
+// no-cascade templates.sample_document_id back-link is cleared first (in one
+// transaction) so the DELETE can't fail the FK. Callers are responsible for
+// unlinking the source files first (see review/handler.js).
 function deleteByStatus(db, status) {
-  return db.prepare('DELETE FROM documents WHERE status = ?').run(status);
+  const tx = db.transaction((st) => {
+    _clearDanglingDocRefs(db, 'status = ?', [st]);
+    return db.prepare('DELETE FROM documents WHERE status = ?').run(st);
+  });
+  return tx(status);
 }
 
 function getWithExtractions(db, id) {
@@ -123,7 +147,14 @@ function confirm(db, id, { stored_filename, stored_path }) {
 }
 
 function deleteDoc(db, id) {
-  return db.prepare('DELETE FROM documents WHERE id = ?').run(id);
+  // Same FK guard as deleteByStatus: clear the no-cascade template back-link
+  // before the DELETE so removing a doc that is a template's pinned sample can't
+  // fail the templates.sample_document_id constraint.
+  const tx = db.transaction((docId) => {
+    _clearDanglingDocRefs(db, 'id = ?', [docId]);
+    return db.prepare('DELETE FROM documents WHERE id = ?').run(docId);
+  });
+  return tx(id);
 }
 
 function search(db, { company, reference, dateFrom, dateTo,
