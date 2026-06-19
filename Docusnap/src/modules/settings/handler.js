@@ -29,7 +29,17 @@ function register(ctx) {
   ipcMain.handle('get-document-types',        () => { requireLogin(); return doctypes.getAll(getDb()); });
   ipcMain.handle('get-all-doc-types',         () => { requireLogin(); return doctypes.getAllWithFields(getDb()); });
   ipcMain.handle('get-all-doc-types-all',     () => { requireRole('admin'); return doctypes.getAllWithFieldsAll(getDb()); });
-  ipcMain.handle('add-document-type',    (_e, data)    => { requireRole('admin'); return doctypes.addType(getDb(), data); });
+  ipcMain.handle('add-document-type',    (_e, data)    => {
+    requireRole('admin');
+    const db = getDb();
+    // Atomic: create the type AND force its structural ID fields (Company + Date) so an
+    // empty custom type can never exist. A mid-way throw rolls back the whole thing.
+    return db.transaction(() => {
+      const res = doctypes.addType(db, data || {});
+      doctypes.ensureStructuralRoles(db, res.lastInsertRowid);
+      return res;
+    })();
+  });
   ipcMain.handle('update-document-type', (_e, id, ch)  => { requireRole('admin'); return doctypes.updateType(getDb(), id, ch); });
 
   // Create a doc type + its fields + key-field assignments in ONE transaction.
@@ -66,6 +76,9 @@ function register(ctx) {
           });
           order += 10;
         }
+        // Force the structural ID fields (Company + Date) AFTER the user fields, so a
+        // wizard-designated date is respected and nothing is left missing.
+        doctypes.ensureStructuralRoles(db, typeId);
         return typeId;
       });
       const id = tx();
