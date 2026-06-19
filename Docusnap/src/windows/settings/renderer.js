@@ -37,6 +37,28 @@ async function initClientApiSection() {
   try { render(await api.clientApiGetStatus()); }
   catch { statusEl.textContent = 'Unavailable (admin only)'; return; }
 
+  // Managed certificate (Certificate Wizard) status + fingerprint.
+  const certStatusEl = document.getElementById('client-api-cert-status');
+  const certFpEl = document.getElementById('client-api-cert-fp');
+  const renderCert = (cs) => {
+    if (!certStatusEl) return;
+    if (!cs) { certStatusEl.textContent = '—'; if (certFpEl) certFpEl.textContent = ''; return; }
+    if (cs.loopback) {
+      certStatusEl.textContent = 'Not needed — loopback host uses plain HTTP. Set a LAN host (e.g. 0.0.0.0) to auto-generate a certificate.';
+      if (certFpEl) certFpEl.textContent = ''; return;
+    }
+    if (!cs.hasCert) {
+      certStatusEl.textContent = 'None yet — generated automatically when you switch access on.';
+      if (certFpEl) certFpEl.textContent = ''; return;
+    }
+    const exp = cs.notAfter ? new Date(cs.notAfter).toLocaleDateString() : '?';
+    certStatusEl.textContent = cs.valid
+      ? `Active · covers ${cs.sans.join(', ')} · expires ${exp}`
+      : `Needs re-issue · ${cs.expired ? 'near/after expiry' : 'missing ' + (cs.missingSans || []).join(', ')} · expires ${exp}`;
+    if (certFpEl) certFpEl.textContent = cs.caFingerprint ? ('CA fingerprint  ' + cs.caFingerprint) : '';
+  };
+  try { renderCert(await api.clientApiCertStatus()); } catch { /* ignore */ }
+
   // Workflow add-on entitlement (drives enhanced Search here + the detached client).
   const wfTgl = document.getElementById('wf-addon-toggle');
   const wfSub = document.getElementById('wf-addon-sub');
@@ -75,6 +97,14 @@ async function initClientApiSection() {
   const saver = (el, k) => el.addEventListener('change', () => { try { api.setSetting(k, el.value.trim()); } catch {} });
   saver(host, 'client_api_host'); saver(port, 'client_api_port');
   saver(cert, 'client_api_tls_cert'); saver(key, 'client_api_tls_key');
+
+  const certGenBtn = document.getElementById('client-api-cert-generate');
+  if (certGenBtn) certGenBtn.addEventListener('click', async () => {
+    const prev = certGenBtn.textContent; certGenBtn.disabled = true; certGenBtn.textContent = 'Generating…';
+    try { renderCert(await api.clientApiCertGenerate()); render(await api.clientApiGetStatus()); }
+    catch (e) { if (certStatusEl) certStatusEl.textContent = 'Error: ' + (e && e.message); }
+    finally { certGenBtn.disabled = false; certGenBtn.textContent = prev; }
+  });
 }
 
 document.getElementById('btn-close').addEventListener('click', () => api.windowClose());

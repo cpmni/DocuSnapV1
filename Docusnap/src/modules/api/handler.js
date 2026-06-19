@@ -35,6 +35,8 @@ const authService       = require('../../services/authService');
 const workflowService   = require('../../services/workflowService');
 const entitlementService = require('../../services/entitlementService');
 const totp              = require('../../lib/totp');
+const certService       = require('../../services/certService');
+const path              = require('path');
 
 // Map a workflowService error code to an HTTP status.
 const WF_HTTP = { FORBIDDEN: 403, NOT_FOUND: 404, CONFLICT: 409 };
@@ -406,6 +408,89 @@ function stopApiServer(ctx) {
   return apiStatus(ctx);
 }
 
+// ── Managed TLS certificate (Certificate Wizard) ───────────────────────────────
+// Self-managed certs so an admin never hand-manages TLS: detect the server's LAN
+// identities, generate a CA + server cert into userData/certs (certService), and
+// point the existing client_api_tls_cert/key settings at them. ctx.certsDir
+// overrides the location (hermetic tests).
+
+function certsDirFor(ctx) {
+  if (ctx.certsDir) return ctx.certsDir;
+  let base;
+  try { base = (ctx.app || require('electron').app).getPath('userData'); }
+  catch { base = require('os').tmpdir(); }
+  return path.join(base, 'certs');
+}
+
+// Addresses a client could connect to: the configured host (if a real IP), every
+// detected LAN IPv4, and the hostname. 0.0.0.0 / :: are bind wildcards, not SANs.
+function managedSans(ctx, host) {
+  const ids = certService.detectLanIdentities({});
+  const out = [];
+  const add = (v) => {
+    v = String(v || '').trim();
+    if (v && !['0.0.0.0', '::', '127.0.0.1', 'localhost'].includes(v) && !out.includes(v)) out.push(v);
+  };
+  add(host);
+  ids.ipv4.forEach(add);
+  add(ids.hostname);
+  return out;
+}
+
+function managedCertStatus(ctx) {
+  const cfg = resolveApiConfig(ctx);
+  const fs = ctx.fs || require('fs');
+  const certsDir = certsDirFor(ctx);
+  const sans = managedSans(ctx, cfg.host);
+  const exists = (p) => { try { return !!p && fs.existsSync(p); } catch { return false; } };
+  const loopback = (cfg.host === '127.0.0.1' || cfg.host === 'localhost');
+  const hasCert = exists(cfg.certPath);
+  let cover = { valid: false, missingSans: sans, expired: false, notAfter: null };
+  if (hasCert) cover = certService.certCoversAddresses({ serverCrtPath: cfg.certPath, addresses: sans, fs });
+  let caFingerprint = null;
+  try { const caCrt = path.join(certsDir, 'ca.crt'); if (exists(caCrt)) caFingerprint = certService.readCaFingerprint({ caCrtPath: caCrt, fs }); }
+  catch { /* ignore */ }
+  return {
+    loopback, host: cfg.host, port: cfg.port, hasCert,
+    valid: cover.valid, missingSans: cover.missingSans, expired: cover.expired,
+    notAfter: cover.notAfter ? new Date(cover.notAfter).toISOString() : null,
+    sans, caFingerprint, certsDir,
+  };
+}
+
+// Ensure a valid managed cert exists for the current LAN host and the TLS settings
+// point at it (generate/rotate as needed). No-op for a loopback host.
+function ensureManagedCert(ctx, { force = false } = {}) {
+  const cfg = resolveApiConfig(ctx);
+  if (cfg.host === '127.0.0.1' || cfg.host === 'localhost') return { managed: false, reason: 'loopback', ...managedCertStatus(ctx) };
+  const fs = ctx.fs || require('fs');
+  const sans = managedSans(ctx, cfg.host);
+  if (!sans.length) return { managed: false, reason: 'no_addresses', ...managedCertStatus(ctx) };
+
+  const exists = (p) => { try { return !!p && fs.existsSync(p); } catch { return false; } };
+  const rp = (p) => { try { return p ? path.resolve(p) : null; } catch { return null; } };
+  const managedCrt = path.join(certsDirFor(ctx), 'server.crt');
+
+  // Respect an admin's own (Advanced) certificate living outside the managed dir —
+  // only the explicit "Generate / re-issue" button (force) ever overrides it.
+  const isManual = cfg.certPath && rp(cfg.certPath) !== rp(managedCrt) && exists(cfg.certPath);
+  if (!force && isManual) return { managed: false, reason: 'manual', ...managedCertStatus(ctx) };
+
+  // Managed cert already present, pointed at, and still covering → nothing to do.
+  const covering = exists(managedCrt) && certService.certCoversAddresses({ serverCrtPath: managedCrt, addresses: sans, fs }).valid;
+  if (!force && covering && rp(cfg.certPath) === rp(managedCrt)) return { managed: true, regenerated: false, ...managedCertStatus(ctx) };
+
+  const r = certService.generateServerCerts({ certsDir: certsDirFor(ctx), sans, reuseCa: true, fs });
+  const db = ctx.getDb();
+  const learning = require('../../../database/modules/learning');
+  learning.setSetting(db, 'client_api_tls_cert', r.serverCrtPath);
+  learning.setSetting(db, 'client_api_tls_key', r.serverKeyPath);
+  learning.setSetting(db, 'client_api_ca_fingerprint', r.caFingerprintSha256);
+  learning.setSetting(db, 'client_api_cert_sans', r.serverSans.join(','));
+  ctx.logger?.log?.(`[api] managed certificate ${r.caReused ? 're-issued' : 'created'} — SANs: ${r.serverSans.join(', ')}`);
+  return { managed: true, regenerated: true, ...managedCertStatus(ctx) };
+}
+
 /**
  * App entry point. The API is OFF by default; it starts when the env flag
  * SCANFINDER_API=1 OR the admin `client_api_enabled` setting is on. Admin IPC lets
@@ -420,14 +505,31 @@ function register(ctx) {
   ipcMain.handle('client-api-set-enabled', (_e, on) => {
     requireRole('admin');
     learning.setSetting(getDb(), 'client_api_enabled', on ? 'true' : 'false');
-    return on ? startApiServer(ctx) : stopApiServer(ctx);
+    if (!on) return stopApiServer(ctx);
+    // Certificate Wizard: auto-provision a managed TLS cert when exposing on the LAN.
+    const cfg = resolveApiConfig(ctx);
+    if (cfg.host !== '127.0.0.1' && cfg.host !== 'localhost') ensureManagedCert(ctx);
+    return startApiServer(ctx);
+  });
+  ipcMain.handle('client-api-cert-status', () => { requireRole('admin'); return managedCertStatus(ctx); });
+  ipcMain.handle('client-api-cert-generate', () => {
+    requireRole('admin');
+    const res = ensureManagedCert(ctx, { force: true });
+    if (ctx._apiServer && ctx._apiServer.listening) { stopApiServer(ctx); startApiServer(ctx); } // reload cert
+    return res;
   });
 
-  if (resolveApiConfig(ctx).enabled) startApiServer(ctx);
+  // Startup: self-heal the managed cert (e.g. a DHCP IP change across a reboot) then start.
+  if (resolveApiConfig(ctx).enabled) {
+    const cfg = resolveApiConfig(ctx);
+    if (cfg.host !== '127.0.0.1' && cfg.host !== 'localhost') ensureManagedCert(ctx);
+    startApiServer(ctx);
+  }
 }
 
 module.exports = {
   register, createServer, createRequestListener,
   startApiServer, stopApiServer, apiStatus,
+  ensureManagedCert, managedCertStatus,
   API_CONTRACT_VERSION, API_PREFIX,
 };

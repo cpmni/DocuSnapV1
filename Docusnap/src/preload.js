@@ -49,6 +49,8 @@ contextBridge.exposeInMainWorld('docusnap', {
   // Detached search-client API hosting (admin-only; Settings → Search client access).
   clientApiGetStatus:  ()    => ipcRenderer.invoke('client-api-get-status'),
   clientApiSetEnabled: (on)  => ipcRenderer.invoke('client-api-set-enabled', on),
+  clientApiCertStatus:   ()  => ipcRenderer.invoke('client-api-cert-status'),
+  clientApiCertGenerate: ()  => ipcRenderer.invoke('client-api-cert-generate'),
   // Workflow add-on entitlement (drives the in-core enhanced Search).
   getEntitlement:      ()    => ipcRenderer.invoke('get-entitlement'),
   // Phase 2 — license window only: request entry (main re-decides; the renderer

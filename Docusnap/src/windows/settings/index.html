@@ -1035,7 +1035,7 @@
 
       <div class="section">
         <div class="section-title">Search client access</div>
-        <p class="section-desc">Host the read-only API so the detached ScanFinder Search client can connect over your network. Off by default; loopback-only unless a TLS certificate is set.</p>
+        <p class="section-desc">Host the read-only API so the detached ScanFinder Search client can connect over your network. Off by default; a loopback host stays plain HTTP, and a LAN host gets an automatic, managed TLS certificate — no manual cert files.</p>
         <div class="threshold-row">
           <div>
             <div class="threshold-label">Allow search-client connections</div>
@@ -1047,16 +1047,29 @@
           </label>
         </div>
         <div class="row-flex" style="gap:8px; margin-top:10px;">
-          <input type="text" id="client-api-host" class="path-input" placeholder="127.0.0.1" style="max-width:160px">
+          <input type="text" id="client-api-host" class="path-input" placeholder="0.0.0.0 (LAN) or 127.0.0.1" style="max-width:200px">
           <input type="text" id="client-api-port" class="path-input" placeholder="8765" style="max-width:90px">
         </div>
-        <div class="row-flex" style="gap:8px; margin-top:8px;">
-          <input type="text" id="client-api-tls-cert" class="path-input" placeholder="TLS certificate path (.crt) — required for LAN">
+
+        <div id="client-api-cert" style="margin-top:12px; padding:12px 14px; border:1px solid var(--border); border-radius:9px; background:var(--surface2);">
+          <div class="threshold-label" style="margin-bottom:4px;">Managed TLS certificate</div>
+          <div class="threshold-sub" id="client-api-cert-status">—</div>
+          <div id="client-api-cert-fp" style="font-family:var(--mono); font-size:11px; color:var(--muted); margin-top:6px; word-break:break-all;"></div>
+          <div class="row-flex" style="gap:8px; margin-top:10px;">
+            <button class="btn" id="client-api-cert-generate">Generate / re-issue certificate</button>
+          </div>
         </div>
-        <div class="row-flex" style="gap:8px; margin-top:8px;">
-          <input type="text" id="client-api-tls-key" class="path-input" placeholder="TLS private-key path (.key)">
-        </div>
-        <p class="section-desc" style="margin-top:8px;">Host, port and TLS changes apply the next time you switch access on.</p>
+
+        <details style="margin-top:12px;">
+          <summary style="cursor:pointer; color:var(--muted); font-size:12px;">Advanced — use your own certificate</summary>
+          <div class="row-flex" style="gap:8px; margin-top:8px;">
+            <input type="text" id="client-api-tls-cert" class="path-input" placeholder="TLS certificate path (.crt)">
+          </div>
+          <div class="row-flex" style="gap:8px; margin-top:8px;">
+            <input type="text" id="client-api-tls-key" class="path-input" placeholder="TLS private-key path (.key)">
+          </div>
+          <p class="section-desc" style="margin-top:6px;">Override the managed certificate with your own (e.g. an internal-CA cert). Host/port/cert changes apply the next time you switch access on.</p>
+        </details>
       </div>
     </div>
 
