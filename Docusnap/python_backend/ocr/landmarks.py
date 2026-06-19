@@ -123,6 +123,8 @@ def _main():
     parser.add_argument("--page", type=int, default=0)
     parser.add_argument("--max", type=int, default=5)
     parser.add_argument("--min-conf", type=float, default=80.0)
+    parser.add_argument("--emit-phash", action="store_true",
+                        help="also compute the page's logo phash and emit {landmarks, logo_phash}")
     args = parser.parse_args()
 
     import pytesseract
@@ -154,7 +156,22 @@ def _main():
         })
     out = select_landmarks(words, max_n=args.max, min_conf=args.min_conf,
                            page_number=args.page)
-    print(json.dumps(out))
+    if args.emit_phash:
+        # Reuse the SAME logo hash the matcher uses (resizes the crop to a fixed
+        # 256x256 before hashing, so it's largely render-DPI-independent). Lets the
+        # caller seed identity on an empty-phash template from the sample we already
+        # rendered — one render, one spawn. Best-effort; null on any failure.
+        phash = None
+        try:
+            import os as _os
+            sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+            from extraction.template_matcher import compute_logo_hash
+            phash = compute_logo_hash(img)
+        except Exception:
+            phash = None
+        print(json.dumps({"landmarks": out, "logo_phash": phash}))
+    else:
+        print(json.dumps(out))
 
 
 if __name__ == "__main__":

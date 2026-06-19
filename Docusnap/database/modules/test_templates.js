@@ -93,6 +93,20 @@ function makeTestDb() {
       reference_number  TEXT,
       template_id       INTEGER REFERENCES templates(id)
     );
+    -- migration 22: getById() reads landmarks, so the table must exist here too.
+    CREATE TABLE template_landmarks (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      template_id  INTEGER NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
+      label_text   TEXT, x_norm REAL, y_norm REAL, w_norm REAL, h_norm REAL,
+      ocr_conf     REAL, page_number INTEGER DEFAULT 0
+    );
+    -- migration 26: create()/getById()/findByLogoHash() touch the logo-hash set.
+    CREATE TABLE template_logo_hashes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      template_id INTEGER NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
+      phash TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(template_id, phash)
+    );
   `);
   return db;
 }
