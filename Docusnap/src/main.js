@@ -35,6 +35,7 @@ const watchModule          = require('./modules/watch/handler');
 const templatesModule      = require('./modules/templates/handler');
 const licensingModule      = require('./modules/licensing/handler');
 const apiModule            = require('./modules/api/handler');
+const workflowModule       = require('./modules/workflow/handler');
 
 // ── DB ────────────────────────────────────────────────────────────────────────
 let _db = null;
@@ -382,9 +383,13 @@ app.whenReady().then(() => {
   // is untouched, so app launch behavior is unchanged.
   licensingModule.register(ctx);
 
-  // Detached-client read-only API (Stage 2 dev POC). INERT unless SCANFINDER_API=1;
-  // loopback-only, least-privilege (readonly). See modules/api/handler.js.
+  // Detached-client read-only API. OFF unless SCANFINDER_API=1 or the admin
+  // `client_api_enabled` setting; loopback-only unless TLS set. See modules/api/handler.js.
   apiModule.register(ctx);
+
+  // In-process mailbox/approval workflow for the core app's enhanced Search
+  // (entitlement + role gated; reuses workflowService). See modules/workflow/handler.js.
+  workflowModule.register(ctx);
 
   // ── Hidden developer processing inspector (read-only) ───────────────────────
   // Password is verified HERE in the main process; the renderer can only REQUEST

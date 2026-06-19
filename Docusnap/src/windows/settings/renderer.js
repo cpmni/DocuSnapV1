@@ -11,8 +11,50 @@ document.querySelectorAll('.tab').forEach(btn => {
     document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
     if (btn.dataset.tab === 'learning') loadMemoryInventory();
     if (btn.dataset.tab === 'audit' && !auditState.loaded) loadAudit();
+    if (btn.dataset.tab === 'licensing') initClientApiSection();
   });
 });
+
+// ── Search client access (admin) — host the detached-client API ────────────────
+let _clientApiWired = false;
+async function initClientApiSection() {
+  const tgl = document.getElementById('client-api-toggle');
+  const statusEl = document.getElementById('client-api-status');
+  if (!tgl || !statusEl) return;
+  const host = document.getElementById('client-api-host');
+  const port = document.getElementById('client-api-port');
+  const cert = document.getElementById('client-api-tls-cert');
+  const key  = document.getElementById('client-api-tls-key');
+
+  const render = (s) => {
+    if (!s) { statusEl.textContent = 'Unavailable (admin only)'; return; }
+    tgl.checked = !!s.enabled;
+    statusEl.textContent = s.running
+      ? `Running · ${s.tls ? 'https' : 'http'}://${s.host}:${s.port}`
+      : (s.enabled ? 'Enabled (starting…)' : 'Off');
+  };
+
+  try { render(await api.clientApiGetStatus()); }
+  catch { statusEl.textContent = 'Unavailable (admin only)'; return; }
+
+  if (_clientApiWired) return; // bind listeners once
+  _clientApiWired = true;
+
+  try {
+    host.value = (await api.getSetting('client_api_host')) || '';
+    port.value = (await api.getSetting('client_api_port')) || '';
+    cert.value = (await api.getSetting('client_api_tls_cert')) || '';
+    key.value  = (await api.getSetting('client_api_tls_key')) || '';
+  } catch { /* ignore */ }
+
+  tgl.addEventListener('change', async () => {
+    try { render(await api.clientApiSetEnabled(tgl.checked)); }
+    catch (e) { statusEl.textContent = 'Error: ' + (e && e.message); tgl.checked = !tgl.checked; }
+  });
+  const saver = (el, k) => el.addEventListener('change', () => { try { api.setSetting(k, el.value.trim()); } catch {} });
+  saver(host, 'client_api_host'); saver(port, 'client_api_port');
+  saver(cert, 'client_api_tls_cert'); saver(key, 'client_api_tls_key');
+}
 
 document.getElementById('btn-close').addEventListener('click', () => api.windowClose());
 

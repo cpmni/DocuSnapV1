@@ -46,6 +46,11 @@ contextBridge.exposeInMainWorld('docusnap', {
   // Read-only diagnostic: what the gate sees on this device (enforcement + cached
   // token state + offline decision). No network call, no state change.
   licenseGetDiagnostics: ()   => ipcRenderer.invoke('license-get-diagnostics'),
+  // Detached search-client API hosting (admin-only; Settings → Search client access).
+  clientApiGetStatus:  ()    => ipcRenderer.invoke('client-api-get-status'),
+  clientApiSetEnabled: (on)  => ipcRenderer.invoke('client-api-set-enabled', on),
+  // Workflow add-on entitlement (drives the in-core enhanced Search).
+  getEntitlement:      ()    => ipcRenderer.invoke('get-entitlement'),
   // Phase 2 — license window only: request entry (main re-decides; the renderer
   // cannot self-grant) and receive the blocked-state reason for display.
   licenseEnterApp:    () => ipcRenderer.send('license-enter-app'),
@@ -147,6 +152,21 @@ contextBridge.exposeInMainWorld('docusnap', {
 
   // ── Search ───────────────────────────────────────────────────────────────────
   searchDocuments:     (params)   => ipcRenderer.invoke('search-documents', params),
+
+  // ── Mailbox / approval workflow (in-core; entitlement + role gated) ────────────
+  workflow: {
+    inbox:      () => ipcRenderer.invoke('workflow-inbox'),
+    sent:       () => ipcRenderer.invoke('workflow-sent'),
+    assigned:   () => ipcRenderer.invoke('workflow-assigned'),
+    completed:  () => ipcRenderer.invoke('workflow-completed'),
+    recipients: () => ipcRenderer.invoke('workflow-recipients'),
+    assign:     (documentId, toUserId, actionRequired, comment) =>
+                   ipcRenderer.invoke('workflow-assign', { documentId, toUserId, actionRequired, comment }),
+    claim:      (id, version) => ipcRenderer.invoke('workflow-claim', { id, version }),
+    resolve:    (id, decision, comment, version) =>
+                   ipcRenderer.invoke('workflow-resolve', { id, decision, comment, version }),
+    recall:     (id, version) => ipcRenderer.invoke('workflow-recall', { id, version }),
+  },
 
   // ── Template Viewer / Anchor Mapping (admin-only, lives in Settings) ────────
   getTemplates:               ()                  => ipcRenderer.invoke('get-templates'),

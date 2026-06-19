@@ -340,36 +340,90 @@ function createServer(ctx) {
   return http.createServer(createRequestListener(ctx));
 }
 
-/**
- * App entry point. Inert unless SCANFINDER_API=1. Loopback by default; uses HTTPS
- * when SCANFINDER_API_TLS_CERT/KEY are provided (required before any LAN exposure).
- */
-function register(ctx) {
-  if (process.env.SCANFINDER_API !== '1') return;
+// Effective config: env overrides persisted settings. Enabled when EITHER the env
+// flag or the `client_api_enabled` setting is on. Host/port/TLS likewise merge.
+function resolveApiConfig(ctx) {
+  let s = {};
+  try {
+    const learning = require('../../../database/modules/learning');
+    const db = ctx.getDb();
+    s = {
+      enabled: learning.getSetting(db, 'client_api_enabled') === 'true',
+      host: learning.getSetting(db, 'client_api_host'),
+      port: parseInt(learning.getSetting(db, 'client_api_port'), 10),
+      cert: learning.getSetting(db, 'client_api_tls_cert'),
+      key: learning.getSetting(db, 'client_api_tls_key'),
+    };
+  } catch { /* DB not ready — fall back to env/defaults */ }
+  return {
+    enabled: process.env.SCANFINDER_API === '1' || !!s.enabled,
+    host: process.env.SCANFINDER_API_HOST || s.host || '127.0.0.1',
+    port: parseInt(process.env.SCANFINDER_API_PORT, 10) || s.port || 8765,
+    certPath: process.env.SCANFINDER_API_TLS_CERT || s.cert || null,
+    keyPath: process.env.SCANFINDER_API_TLS_KEY || s.key || null,
+  };
+}
 
-  const port = parseInt(process.env.SCANFINDER_API_PORT, 10) || 8765;
-  const host = process.env.SCANFINDER_API_HOST || '127.0.0.1';
+function apiStatus(ctx) {
+  const cfg = resolveApiConfig(ctx);
+  return {
+    running: !!(ctx._apiServer && ctx._apiServer.listening),
+    enabled: cfg.enabled, host: cfg.host, port: cfg.port,
+    tls: !!(cfg.certPath && cfg.keyPath),
+  };
+}
+
+// Start the listener (idempotent). Refuses a non-loopback bind without TLS.
+function startApiServer(ctx) {
+  if (ctx._apiServer && ctx._apiServer.listening) return apiStatus(ctx);
+  const cfg = resolveApiConfig(ctx);
   const listener = createRequestListener(ctx);
-
-  const certPath = process.env.SCANFINDER_API_TLS_CERT;
-  const keyPath  = process.env.SCANFINDER_API_TLS_KEY;
   let server;
-  if (certPath && keyPath) {
+  if (cfg.certPath && cfg.keyPath) {
     const fs = ctx.fs || require('fs');
-    server = https.createServer({ cert: fs.readFileSync(certPath), key: fs.readFileSync(keyPath) }, listener);
+    server = https.createServer({ cert: fs.readFileSync(cfg.certPath), key: fs.readFileSync(cfg.keyPath) }, listener);
   } else {
-    if (host !== '127.0.0.1' && host !== 'localhost') {
-      ctx.logger?.warn?.('[api] refusing to bind a non-loopback host without TLS — set SCANFINDER_API_TLS_CERT/KEY');
-      return;
+    if (cfg.host !== '127.0.0.1' && cfg.host !== 'localhost') {
+      ctx.logger?.warn?.('[api] refusing to bind a non-loopback host without TLS — set a TLS cert/key first');
+      return { ...apiStatus(ctx), error: 'tls_required_for_lan' };
     }
     server = http.createServer(listener);
   }
-
-  server.listen(port, host, () => {
-    ctx.logger?.log?.(`[api] detached-client API on ${certPath ? 'https' : 'http'}://${host}:${port}${API_PREFIX}`);
-  });
   server.on('error', (e) => ctx.logger?.warn?.(`[api] server error: ${e.message}`));
+  server.listen(cfg.port, cfg.host, () => {
+    ctx.logger?.log?.(`[api] detached-client API on ${cfg.certPath ? 'https' : 'http'}://${cfg.host}:${cfg.port}${API_PREFIX}`);
+  });
   ctx._apiServer = server;
+  return apiStatus(ctx);
 }
 
-module.exports = { register, createServer, createRequestListener, API_CONTRACT_VERSION, API_PREFIX };
+function stopApiServer(ctx) {
+  if (ctx._apiServer) { try { ctx._apiServer.close(); } catch { /* ignore */ } ctx._apiServer = null; }
+  return apiStatus(ctx);
+}
+
+/**
+ * App entry point. The API is OFF by default; it starts when the env flag
+ * SCANFINDER_API=1 OR the admin `client_api_enabled` setting is on. Admin IPC lets
+ * the Settings window start/stop it at runtime. Loopback-only unless TLS is set.
+ */
+function register(ctx) {
+  const { ipcMain, getDb } = ctx;
+  const learning = require('../../../database/modules/learning');
+  const { requireRole } = require('../auth/handler');
+
+  ipcMain.handle('client-api-get-status', () => { requireRole('admin'); return apiStatus(ctx); });
+  ipcMain.handle('client-api-set-enabled', (_e, on) => {
+    requireRole('admin');
+    learning.setSetting(getDb(), 'client_api_enabled', on ? 'true' : 'false');
+    return on ? startApiServer(ctx) : stopApiServer(ctx);
+  });
+
+  if (resolveApiConfig(ctx).enabled) startApiServer(ctx);
+}
+
+module.exports = {
+  register, createServer, createRequestListener,
+  startApiServer, stopApiServer, apiStatus,
+  API_CONTRACT_VERSION, API_PREFIX,
+};
