@@ -38,6 +38,7 @@
       background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0;
     }
     .tb-title { font-size: 11px; font-weight: 500; letter-spacing: .1em; color: var(--muted); text-transform: uppercase; }
+    .tb-right { display: flex; align-items: center; gap: 8px; -webkit-app-region: no-drag; }
     .tb-btn {
       -webkit-app-region: no-drag;
       width: 26px; height: 20px; border-radius: 4px; border: none; cursor: pointer;
@@ -187,21 +188,25 @@
 <div id="app">
   <div id="titlebar">
     <span class="tb-title">ScanFinder — Search</span>
-    <button class="tb-btn close" id="btn-close">&#215;</button>
+    <div class="tb-right">
+      <button class="tb-btn help-guide-btn" id="btn-help-guide" title="Open the user guide (Search)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></button>
+      <button class="tb-btn" id="help-mode-toggle" data-help-key="help-mode" title="Help mode — click, then click any control to learn what it does">?</button>
+      <button class="tb-btn close" id="btn-close" title="Close">&#215;</button>
+    </div>
   </div>
 
   <div id="search-bar">
     <input class="search-input" id="inp-company"   type="text" placeholder="Company…">
     <input class="search-input" id="inp-reference" type="text" placeholder="Reference…">
-    <input class="search-input" id="inp-fulltext"  type="text" placeholder="Full text…" title="Search OCR text content">
+    <input class="search-input" id="inp-fulltext"  type="text" placeholder="Full text…" title="Search OCR text content" data-help-key="fulltext">
     <span style="font-size:11px; color:var(--muted); white-space:nowrap;">From</span>
     <input class="search-input" id="inp-date-from" type="date" title="From date">
     <span style="font-size:11px; color:var(--muted);">to</span>
     <input class="search-input" id="inp-date-to"   type="date" title="To date">
-    <select id="inp-type">
+    <select id="inp-type" data-help-key="type-filter">
       <option value="">All types</option>
     </select>
-    <label class="uncommitted-toggle">
+    <label class="uncommitted-toggle" data-help-key="uncommitted">
       <input type="checkbox" id="chk-uncommitted" checked>
       Include unconfirmed
     </label>
@@ -225,9 +230,9 @@
             <img id="preview-img" style="display:none" alt="Document preview" draggable="false">
           </div>
           <div id="page-nav" style="display:none">
-            <button class="page-nav-btn" id="btn-page-prev" disabled>&#8249;</button>
+            <button class="page-nav-btn" id="btn-page-prev" title="Previous page" aria-label="Previous page" disabled>&#8249;</button>
             <span id="page-label" class="page-nav-label">1 / 1</span>
-            <button class="page-nav-btn" id="btn-page-next" disabled>&#8250;</button>
+            <button class="page-nav-btn" id="btn-page-next" title="Next page" aria-label="Next page" disabled>&#8250;</button>
           </div>
         </div>
 
@@ -241,6 +246,7 @@
 </div>
 
 <script src="../shared/theme.js"></script>
+<script src="../shared/helpmode.js"></script>
 <script src="search-state.js"></script>
 <script src="search-actions.js"></script>
 <script src="search-results.js"></script>

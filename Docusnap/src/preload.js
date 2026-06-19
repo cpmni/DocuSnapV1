@@ -68,6 +68,10 @@ contextBridge.exposeInMainWorld('docusnap', {
   openSearchWindow:    ()       => ipcRenderer.send('open-search-window'),
   getReviewTarget:     ()       => ipcRenderer.invoke('get-review-target'),
   onNavigateToDoc:     (cb)     => ipcRenderer.on('navigate-to-doc', (_e, id) => cb(id)),
+  // User-guide / help window (optional section to jump to, e.g. 'review')
+  openHelpWindow:      (section) => ipcRenderer.send('open-help-window', section),
+  onHelpSection:       (cb)      => ipcRenderer.on('help-section', (_e, s) => cb(s)),
+
   // Teach-a-new-document wizard
   openTeachWindow:     ()       => ipcRenderer.send('open-teach-window'),
   openTeachWindowAt:   (docId)  => ipcRenderer.send('open-teach-window-at', docId),
@@ -98,6 +102,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   addField:            (data)       => ipcRenderer.invoke('add-field', data),
   updateField:         (id, ch)     => ipcRenderer.invoke('update-field', id, ch),
   deleteField:         (id)         => ipcRenderer.invoke('delete-field', id),
+  getValidationPatterns: ()         => ipcRenderer.invoke('get-validation-patterns'),
 
   // ── Review queue ─────────────────────────────────────────────────────────────
   getReviewQueue:              ()        => ipcRenderer.invoke('get-review-queue'),
@@ -157,9 +162,11 @@ contextBridge.exposeInMainWorld('docusnap', {
   getTemplateSampleCandidates:(id)                => ipcRenderer.invoke('get-template-sample-candidates', id),
   setTemplateSample:          (id, docId)         => ipcRenderer.invoke('set-template-sample', id, docId),
   reassignTemplateDocuments:  (fromId, toId)      => ipcRenderer.invoke('reassign-template-documents', fromId, toId),
+  mergeTemplate:              (fromId, toId)      => ipcRenderer.invoke('merge-template', fromId, toId),
   setTemplateOcrAuto:         (id, enabled)       => ipcRenderer.invoke('set-template-ocr-auto', id, enabled),
   pickTemplateSampleFile:     ()                  => ipcRenderer.invoke('pick-template-sample-file'),
   importTemplateSampleFile:   (id, filePath)      => ipcRenderer.invoke('import-template-sample-file', id, filePath),
+  regenerateTemplateLandmarks:(id)                => ipcRenderer.invoke('regenerate-template-landmarks', id),
   saveTemplateMapping:        (id, mapping)       => ipcRenderer.invoke('save-template-mapping', id, mapping),
   setTemplateMappingEnabled:  (id, key, enabled)  => ipcRenderer.invoke('set-template-mapping-enabled', id, key, enabled),
   deleteTemplateMapping:      (id, key)           => ipcRenderer.invoke('delete-template-mapping', id, key),
@@ -205,6 +212,9 @@ contextBridge.exposeInMainWorld('docusnap', {
   // mirrored process telemetry. No privileged/mutating actions are exposed here.
   devInspectorUnlock:  (pw) => ipcRenderer.invoke('dev-inspector-unlock', pw),
   devInspectorRunning: ()   => ipcRenderer.invoke('dev-inspector-running'),
+  // In-Review dev console: enable (with SFDEV password) / disable the per-field
+  // extraction trace route to this window. No window is opened.
+  reviewTraceSet:      (on, pw) => ipcRenderer.invoke('review-trace-set', on, pw),
   onProcessProgress:   (cb) => ipcRenderer.on('process-progress', (_e, m) => cb(m)),
   onProcessTrace:      (cb) => ipcRenderer.on('process-trace',    (_e, m) => cb(m)),
   devGetSessionDocs:   ()        => ipcRenderer.invoke('dev-get-session-docs'),

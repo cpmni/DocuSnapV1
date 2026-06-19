@@ -332,14 +332,16 @@
         <line x1="7" y1="15" x2="10" y2="15" stroke="#4f8ef7" stroke-width="1.3" opacity=".3"/>
       </svg>
       <span class="tb-title">ScanFinder</span>
-      <button id="btn-review" class="tb-nav-btn" style="margin-left:12px;">
+      <button id="btn-review" class="tb-nav-btn" style="margin-left:12px;" data-help-key="review">
         Review Queue <span id="review-badge" class="tb-review-badge">0</span>
       </button>
-      <button id="btn-search" class="tb-nav-btn">Search</button>
-      <button id="btn-settings" class="tb-nav-btn">&#9881; Settings</button>
-      <span id="mode-badge" class="tb-mode-badge" style="margin-left:8px;">FAST</span>
+      <button id="btn-search" class="tb-nav-btn" data-help-key="search">Search</button>
+      <button id="btn-settings" class="tb-nav-btn" data-help-key="settings">&#9881; Settings</button>
+      <span id="mode-badge" class="tb-mode-badge" style="margin-left:8px;" data-help-key="mode">FAST</span>
     </div>
     <div class="tb-controls">
+      <button class="tb-nav-btn help-guide-btn" id="btn-help-guide" title="Open the user guide"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>Help</button>
+      <button class="tb-btn" id="help-mode-toggle" data-help-key="help-mode" title="Help mode — click, then click any control to learn what it does">?</button>
       <div class="user-chip-wrap" id="user-chip-wrap">
         <button class="user-chip" id="user-chip" title="Account">
           <span class="user-chip-avatar" id="user-chip-avatar">&#8226;</span>
@@ -363,12 +365,12 @@
     <div id="sidebar">
       <div>
         <div class="sidebar-label">Source Folder</div>
-        <div class="folder-box cue" id="folder-box" title="Click to choose folder">
+        <div class="folder-box cue" id="folder-box" title="Click to choose folder" data-help-key="source-folder">
           <span class="folder-path" id="folder-display">Click to select a folder&hellip;</span>
         </div>
       </div>
 
-      <button class="btn-run" id="btn-run" disabled>&#9654;&nbsp; Process Documents</button>
+      <button class="btn-run" id="btn-run" disabled data-help-key="process">&#9654;&nbsp; Process Documents</button>
       <button class="btn-stop" id="btn-stop">&#9632; Stop Processing</button>
 
       <div>
@@ -404,25 +406,30 @@
             <div class="lp-sub2">Choose what you&rsquo;d like to do</div>
           </div>
           <div class="lp-grid">
-            <button class="lp-btn lp-import" id="lp-import">
+            <button class="lp-btn lp-import" id="lp-import" data-help-key="begin-import">
               <span class="lp-ico">&#128194;</span>
               <span class="lp-name">Begin Import</span>
               <span class="lp-desc">Pick a source folder and process its documents</span>
             </button>
-            <button class="lp-btn" id="lp-search">
+            <button class="lp-btn" id="lp-search" data-help-key="search">
               <span class="lp-ico">&#128269;</span>
               <span class="lp-name">Search</span>
               <span class="lp-desc">Find documents you&rsquo;ve already filed</span>
             </button>
-            <button class="lp-btn" id="lp-settings">
+            <button class="lp-btn" id="lp-settings" data-help-key="settings">
               <span class="lp-ico">&#9881;</span>
               <span class="lp-name">Settings</span>
               <span class="lp-desc">Document types, fields &amp; preferences</span>
             </button>
-            <button class="lp-btn" id="lp-teach">
+            <button class="lp-btn" id="lp-teach" data-help-key="teach">
               <span class="lp-ico">&#127891;</span>
               <span class="lp-name">Teach a document</span>
               <span class="lp-desc">Guide Scan Finder to learn a new layout</span>
+            </button>
+            <button class="lp-btn" id="lp-help" data-help-key="user-guide">
+              <span class="lp-ico">&#10067;</span>
+              <span class="lp-name">User guide</span>
+              <span class="lp-desc">Learn how Scan Finder works</span>
             </button>
           </div>
         </div>
@@ -470,6 +477,7 @@
   </div>
 </div>
 <script src="../shared/theme.js"></script>
+<script src="../shared/helpmode.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

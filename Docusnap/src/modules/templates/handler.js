@@ -58,20 +58,31 @@ function register(ctx) {
         if (!file) return resolve({ success: false, reason: 'sample file not found' });
         const script = ctx.resourcePath('python_backend', 'ocr', 'landmarks.py');
         const proc = spawn(ctx.pythonExe(),
-          ctx.pythonArgs(script, '--file', file, '--page', '0', '--tesseract', ctx.tesseractPath()),
+          ctx.pythonArgs(script, '--file', file, '--page', '0', '--emit-phash', '--tesseract', ctx.tesseractPath()),
           { windowsHide: true });
         let out = '', err = '';
         proc.stdout.on('data', d => { out += d.toString(); });
         proc.stderr.on('data', d => { err += d.toString(); });
         proc.on('close', () => {
           if (err) console.error('landmarks stderr:', err.trim());
-          let list = [];
-          try { list = JSON.parse(out.trim()); } catch {}
-          if (Array.isArray(list)) {
+          // --emit-phash returns {landmarks, logo_phash}; tolerate the legacy array.
+          let parsed = null;
+          try { parsed = JSON.parse(out.trim()); } catch {}
+          const list  = Array.isArray(parsed) ? parsed : (parsed && parsed.landmarks) || [];
+          const phash = (parsed && !Array.isArray(parsed)) ? parsed.logo_phash : null;
+          if (Array.isArray(list) && list.length) {
             try { templates.setLandmarks(db, templateId, list); }
             catch (e) { console.error('setLandmarks:', e.message); }
           }
-          resolve({ success: Array.isArray(list), count: Array.isArray(list) ? list.length : 0 });
+          // Seed identity from the sample ONLY when the template has none — never
+          // overwrite an established phash (consistent with chooseLogoPhash). This
+          // is what stops empty-phash orphan templates that can never be matched.
+          if (phash && !tmpl.logo_phash) {
+            try {
+              db.prepare("UPDATE templates SET logo_phash = ?, updated_at = datetime('now') WHERE id = ? AND (logo_phash IS NULL OR logo_phash = '')").run(phash, templateId);
+            } catch (e) { console.error('seed logo_phash:', e.message); }
+          }
+          resolve({ success: list.length > 0, count: list.length, phashSeeded: !!(phash && !tmpl.logo_phash) });
         });
         proc.on('error', (e) => { console.error('landmarks spawn:', e.message); resolve({ success: false, reason: e.message }); });
       } catch (e) {
@@ -156,6 +167,16 @@ function register(ctx) {
     return templates.getById(getDb(), templateId);
   });
 
+  // Recompute registration landmarks from the template's CURRENT pinned sample
+  // without changing the pin — the user-facing recovery lever for a template that
+  // ended up with no/poor landmarks (e.g. the startup backfill couldn't render the
+  // sample, or the sample's files were since removed). Returns {success,count} so
+  // the UI can report it; replaces all landmark rows (templates.setLandmarks).
+  ipcMain.handle('regenerate-template-landmarks', async (_e, templateId) => {
+    requireRole('admin');
+    return generateLandmarks(templateId);
+  });
+
   // Reassign a poisoned/duplicate template's documents onto an existing correct
   // template (Learning Recovery → "Reassign"). Reversible link-only move; the
   // caller follows up with the existing delete-template if the source is now an
@@ -163,6 +184,15 @@ function register(ctx) {
   ipcMain.handle('reassign-template-documents', (_e, fromTemplateId, toTemplateId) => {
     requireRole('admin');
     return templates.reassignDocuments(getDb(), Number(fromTemplateId), Number(toTemplateId));
+  });
+
+  // Consolidate a duplicate/fragment template INTO a canonical one and delete the
+  // source (Learning Recovery → "Merge into…"). IRREVERSIBLE — folds the source's
+  // doc links + missing mappings/fields/landmarks/sample/identity into the target
+  // (target wins) and removes the source. See templates.mergeInto.
+  ipcMain.handle('merge-template', (_e, fromTemplateId, toTemplateId) => {
+    requireRole('admin');
+    return templates.mergeInto(getDb(), Number(fromTemplateId), Number(toTemplateId));
   });
 
   // OCR auto-processing — enable/disable a learned per-template OCR

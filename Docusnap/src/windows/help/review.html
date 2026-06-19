@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self'; script-src 'self'">
+  <title>Scan Finder — Review Window</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="help.css">
+  <script src="../shared/theme.js"></script>
+</head>
+<body>
+  <div id="titlebar">
+    <span class="tb-title">Scan Finder — User Guide</span>
+    <button class="tb-btn close" id="btn-close" title="Close">&#215;</button>
+  </div>
+
+  <div id="shell">
+    <nav id="nav">
+      <div class="nav-label">User Guide</div>
+      <div id="nav-links"></div>
+    </nav>
+
+    <div id="content">
+      <div class="doc">
+        <div class="breadcrumb" id="breadcrumb"></div>
+
+        <main>
+          <section id="review">
+            <h1>The Review Window</h1>
+            <p class="lead">The Review window is where you check what Scan Finder read before it's filed. It's
+              the screen you'll spend the most time in &mdash; and once you know the layout, each document only
+              takes a few seconds.</p>
+          </section>
+
+          <section id="layout">
+            <h2>The three areas</h2>
+            <p>The window is split into three parts:</p>
+            <ul>
+              <li><b>Left &mdash; the queue.</b> The list of documents waiting for you, with <b>Review</b> and
+                <b>Deferred</b> tabs.</li>
+              <li><b>Centre &mdash; the document preview.</b> The actual scan, which you can zoom and pan.</li>
+              <li><b>Right &mdash; the fields.</b> What Scan Finder pulled out, ready for you to check and correct.</li>
+            </ul>
+
+            <figure class="shot-fig">
+              <img class="shot" src="img/review-window-annotated.png" alt="The Review window: queue on the left, document preview in the centre, extracted fields on the right">
+              <figcaption>Pick a document on the left, check the preview, correct the fields on the right, then Confirm &amp; File.</figcaption>
+            </figure>
+
+            <figure class="diagram">
+              <svg viewBox="0 0 680 220" role="img" aria-label="The three panes of the Review window: queue, preview, fields">
+                <title>Anatomy of the Review window</title>
+                <rect class="dg-panel" x="20" y="14" width="640" height="168" rx="8"/>
+                <rect class="dg-panel2" x="21" y="15" width="638" height="22"/>
+                <rect class="dg-accent" x="30" y="19" width="64" height="14" rx="3"/>
+                <rect class="dg-panel"  x="100" y="19" width="60" height="14" rx="3"/>
+                <text class="dg-sub" x="62"  y="29" text-anchor="middle">Review</text>
+                <text class="dg-sub" x="130" y="29" text-anchor="middle">Deferred</text>
+                <rect class="dg-panel2" x="28" y="44" width="148" height="132" rx="5"/>
+                <rect class="dg-accent" x="34" y="52" width="136" height="24" rx="4"/>
+                <rect class="dg-panel"  x="34" y="82" width="136" height="24" rx="4"/>
+                <rect class="dg-panel"  x="34" y="112" width="136" height="24" rx="4"/>
+                <rect class="dg-panel"  x="34" y="142" width="136" height="24" rx="4"/>
+                <rect class="dg-panel2" x="184" y="44" width="292" height="132" rx="5"/>
+                <rect class="dg-panel"  x="300" y="54" width="120" height="116" rx="3"/>
+                <line class="dg-textline" x1="312" y1="70"  x2="408" y2="70"/>
+                <line class="dg-textline" x1="312" y1="84"  x2="392" y2="84"/>
+                <line class="dg-textline" x1="312" y1="98"  x2="404" y2="98"/>
+                <line class="dg-textline" x1="312" y1="120" x2="372" y2="120"/>
+                <line class="dg-textline" x1="312" y1="134" x2="400" y2="134"/>
+                <rect class="dg-panel2" x="484" y="44" width="168" height="132" rx="5"/>
+                <text class="dg-sub" x="492" y="61">Type</text>  <rect class="dg-panel" x="492" y="66" width="152" height="16" rx="3"/>
+                <text class="dg-sub" x="492" y="95">Date</text>  <rect class="dg-panel" x="492" y="100" width="152" height="16" rx="3"/>
+                <text class="dg-sub" x="492" y="129">Ref</text>  <rect class="dg-panel" x="492" y="134" width="152" height="16" rx="3"/>
+                <text class="dg-sub" x="492" y="163">Total</text> <rect class="dg-warn-s" x="492" y="168" width="152" height="16" rx="3" fill="none"/>
+                <text class="dg-sub" x="102" y="202" text-anchor="middle">Queue &amp; Deferred</text>
+                <text class="dg-sub" x="330" y="202" text-anchor="middle">Document preview (zoom &amp; pan)</text>
+                <text class="dg-sub" x="568" y="202" text-anchor="middle">Fields to confirm</text>
+              </svg>
+              <figcaption>The same three areas, shown as a simple diagram.</figcaption>
+            </figure>
+          </section>
+
+          <section id="loop">
+            <h2>Reviewing a document, step by step</h2>
+            <ol>
+              <li>Select a document in the queue on the left.</li>
+              <li>Glance at the preview in the centre to see the real scan.</li>
+              <li>Check the fields on the right. If one looks wrong, click it and type the correct value.</li>
+              <li>Make sure the <b>Document type</b> is correct &mdash; change it from the dropdown if needed.</li>
+              <li>Click <b>Confirm &amp; File</b>.</li>
+            </ol>
+          </section>
+
+          <section id="editing">
+            <h2>Editing a field</h2>
+            <p>Click into any field and type to correct it. A couple of helpful touches:</p>
+            <ul>
+              <li>If a value doesn't look right for its field &mdash; for example, text that isn't a real date in a
+                date field &mdash; the box is gently flagged so you can fix it before filing.</li>
+              <li>To copy a value straight off the scan, click the small <b>pick</b> button next to a field, then
+                draw a box around the value in the preview. Scan Finder reads it for you.</li>
+            </ul>
+
+            <figure class="shot-fig">
+              <img class="shot" src="img/review-field-row.png" alt="A single field row showing the value, a confidence badge, and the pick-from-document button">
+              <figcaption>Each field shows its value and a confidence badge; the button beside it lets you pick the value from the scan.</figcaption>
+            </figure>
+          </section>
+
+          <section id="confidence">
+            <h2>What "confidence" means</h2>
+            <p>Each field has a <b>confidence</b> &mdash; how sure Scan Finder is that it read the value correctly.
+              A high score means it's probably right; a low score means it's worth a closer look.</p>
+            <figure class="diagram">
+              <svg viewBox="0 0 680 156" role="img" aria-label="How confidence decides which documents need review">
+                <title>Confidence and the review line</title>
+                <text class="dg-text" x="40" y="24">Each field gets a confidence score</text>
+                <rect class="dg-warn-f" x="40"  y="40" width="392" height="20" rx="4" fill-opacity="0.7"/>
+                <rect class="dg-ok-f"   x="432" y="40" width="168" height="20" rx="4" fill-opacity="0.85"/>
+                <line class="dg-dash" x1="432" y1="30" x2="432" y2="78"/>
+                <text class="dg-sub" x="432" y="92" text-anchor="middle">review line</text>
+                <text class="dg-sub" x="40"  y="76">0%</text>
+                <text class="dg-sub" x="600" y="76" text-anchor="end">100%</text>
+                <rect class="dg-warn-s" x="40"  y="106" width="280" height="38" rx="7" fill="none"/>
+                <rect class="dg-ok-s"   x="330" y="106" width="270" height="38" rx="7" fill="none"/>
+                <text class="dg-text" x="58"  y="130">Below &rarr; needs a check</text>
+                <text class="dg-text" x="348" y="130">Above &rarr; ready to file</text>
+              </svg>
+              <figcaption>Low-confidence reads stop for a quick human check; confident ones can sail through.</figcaption>
+            </figure>
+          </section>
+
+          <section id="statuses">
+            <h2>What the badges and statuses mean</h2>
+            <p>You'll see a few colours and labels around the queue and fields. Here's the quick reference:</p>
+            <table class="refkey">
+              <thead><tr><th>You see</th><th>It means</th></tr></thead>
+              <tbody>
+                <tr><td><span class="pill warn">Needs review</span></td><td>Scan Finder wasn't fully sure about this document &mdash; give it a quick check, then confirm.</td></tr>
+                <tr><td><span class="pill mut">Deferred</span></td><td>You set this document aside to deal with later. It's safe in the <b>Deferred</b> tab.</td></tr>
+                <tr><td><span class="pill ok">Confirmed</span></td><td>You've checked and filed it. It now appears in <b>Search</b>.</td></tr>
+                <tr><td><span class="pill ok">High confidence</span></td><td>A green badge on a field &mdash; Scan Finder is confident it read this correctly.</td></tr>
+                <tr><td><span class="pill warn">Low confidence</span></td><td>An amber/red badge or highlight &mdash; worth checking this value before filing.</td></tr>
+                <tr><td><span class="pill err">Required field empty</span></td><td>A required field (such as type, date or reference) is blank and needs filling before you can file.</td></tr>
+              </tbody>
+            </table>
+          </section>
+
+          <section id="actions">
+            <h2>The action buttons</h2>
+            <ul>
+              <li><b>Confirm &amp; File</b> &mdash; accept the values and save the tidy, filed copy.</li>
+              <li><b>Defer</b> &mdash; set the document aside to deal with later (find it on the Deferred tab).</li>
+              <li><b>Skip</b> &mdash; move on to the next document without filing this one.</li>
+              <li><b>Delete</b> &mdash; remove a document you don't want (you'll be asked to confirm).</li>
+              <li><b>Reprocess</b> &mdash; read the document again from scratch, for example after improving the scan.</li>
+              <li><b>File All Ready</b> &mdash; file every queued document whose type and required fields are already
+                complete, in one go. Documents that still need attention are left for you.</li>
+              <li><b>Prev / Next</b> &mdash; step through the queue one document at a time.</li>
+            </ul>
+            <div class="callout warn">
+              <div class="callout-title">"Confirm &amp; File" is greyed out?</div>
+              <p>That's deliberate. Confirm stays disabled until the <b>document type</b> and all <b>required
+                fields</b> (usually type, date and reference) are filled in. Complete them and the button turns on.</p>
+            </div>
+          </section>
+
+          <section id="recovery">
+            <h2>When a scan reads badly</h2>
+            <p>Two tools help with awkward documents:</p>
+            <ul>
+              <li><b>OCR Enhancement</b> &mdash; re-reads a poor scan with stronger image clean-up, which often
+                recovers faint or noisy text. Use it, then <b>Reprocess</b>.</li>
+              <li><b>Split PDF</b> &mdash; splits a multi-page PDF into separate documents (by page range, every
+                page, or every few pages) &mdash; handy when one file actually contains several documents.</li>
+            </ul>
+            <p>Admins also have the <b>Template Wizard</b> here, which teaches Scan Finder where a field sits on a
+              layout &mdash; see <a class="xref" href="templates.html">Templates &amp; Learning</a>.</p>
+          </section>
+
+          <div class="callout tip">
+            <div class="callout-title">Next step</div>
+            <p>Want Scan Finder to read a tricky layout better next time? See
+              <a class="xref" href="templates.html">Templates &amp; Learning</a>.</p>
+          </div>
+        </main>
+
+        <nav class="page-foot" id="page-foot"></nav>
+      </div>
+    </div>
+  </div>
+
+  <script src="help-nav.js"></script>
+</body>
+</html>

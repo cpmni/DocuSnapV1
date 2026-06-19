@@ -3,6 +3,81 @@
 // Fallback fields shown when no doc type is selected
 const FALLBACK_FIELD_KEYS = ['supplier_name', 'invoice_number', 'invoice_date'];
 
+// ── On-blur field validation (shared source of truth with extraction) ───────────
+// The Review window validates an edited field on focus-out using the SAME
+// validation_patterns the Python extraction qualification uses (fetched once via
+// get-validation-patterns), so UI and pipeline can never drift apart. Field
+// `type` → validation key mirrors engine.py's _TYPE2VAL exactly. text /
+// multiline_text have no regex constraint (free-text) — left unvalidated.
+const TYPE_TO_VALIDATION = {
+  date: 'date', currency: 'currency', number: 'currency', amount: 'currency',
+  alphanumeric: 'alphanumeric', job_reference: 'job_reference', currency_code: 'currency_code',
+};
+let validationPatterns = null;   // { date:[RegExp,…], … } compiled once from config
+
+async function ensureValidationPatterns() {
+  if (validationPatterns) return validationPatterns;
+  validationPatterns = {};
+  try {
+    const raw = await window.docusnap.getValidationPatterns();
+    for (const [key, arr] of Object.entries(raw || {})) {
+      // currency_code is the only anchored pattern (^…$); the rest use search
+      // semantics with IGNORECASE, mirroring the Python re.search/re.IGNORECASE.
+      const flags = key === 'currency_code' ? '' : 'i';
+      validationPatterns[key] = (arr || [])
+        .map(p => { try { return new RegExp(p, flags); } catch { return null; } })
+        .filter(Boolean);
+    }
+  } catch { /* degrade gracefully — no patterns means no blur validation */ }
+  return validationPatterns;
+}
+
+// Returns a short error message when `value` fails the field's regex/type (or its
+// learned digits-only shape), or null when valid / unconstrained. Pure + sync so
+// it can run on blur with no perceptible pause and never blocks Confirm.
+function fieldValidationError(key, value) {
+  const v = (value || '').trim();
+  if (!v) return null;   // empty is handled by the required-presence gate, not here
+  // Learned digits-only shape (reuses the existing per-(supplier,type,field)
+  // signal already attached to the document) — "unlike other entries".
+  if ((currentDoc?.digit_only_fields || []).includes(key) && /\D/.test(v.replace(/[\s,]/g, ''))) {
+    return 'Usually all digits for this field';
+  }
+  const def  = (fieldDefs || []).find(f => f.key === key);
+  const type = (def?.type || '').toLowerCase();
+  const valKey = TYPE_TO_VALIDATION[type];
+  if (!valKey) return null;                      // free-text / untyped → no constraint
+  const pats = validationPatterns && validationPatterns[valKey];
+  if (!pats || !pats.length) return null;
+  if (pats.some(re => re.test(v))) return null;
+  return valKey === 'date'          ? 'Not a valid date'
+       : valKey === 'currency'      ? 'Not a valid amount'
+       : valKey === 'currency_code' ? 'Not a valid currency code'
+       :                              'Unexpected format for this field';
+}
+
+// Inline warning UI for a field row — a dedicated amber note + red input border.
+// Kept separate from extraction's own .field-note (validation_note/corrected_to)
+// so refreshing the document never wipes a standing live-edit warning, and vice
+// versa. Pure DOM, scoped to the one row — no re-render, no focus change.
+function setFieldWarning(row, input, msg) {
+  if (input) input.classList.add('invalid');
+  let el = row.querySelector('.field-validation-warn');
+  if (!el) {
+    el = document.createElement('div');
+    el.className = 'field-note field-validation-warn';
+    row.appendChild(el);
+  }
+  el.textContent = msg;
+}
+
+function clearFieldWarning(row, input) {
+  const i = input || row.querySelector('.field-input');
+  if (i) i.classList.remove('invalid');
+  const el = row.querySelector('.field-validation-warn');
+  if (el) el.remove();
+}
+
 // ── State ─────────────────────────────────────────────────────────────────────
 let queue            = [];
 let deferredQueue    = [];
@@ -37,6 +112,7 @@ const PREVIEW_ZOOM_MIN = 1, PREVIEW_ZOOM_MAX = 4, PREVIEW_ZOOM_STEP = 0.25;
 const wizard = {
   active: false, fields: [], index: 0, step: 'field',
   draftAnchor: null, draftTarget: null, fixedMode: false,
+  resolved: null,              // {anchor_box, target_box} — where the mapping ACTUALLY resolves on this page (amber overlay)
   drawMode: null, isDragging: false, dragStart: { x: 0, y: 0 }, dragRect: null,
   selectedBox: null,           // 'anchor' | 'target' | null — click-selected box (Delete removes / drag moves it)
   moveStart: null,             // { pt, orig } while dragging a selected box to reposition it
@@ -58,6 +134,26 @@ const ctx        = selCanvas.getContext('2d');
 const wizCtx     = wizCanvas.getContext('2d');
 
 document.getElementById('btn-close').addEventListener('click', () => window.docusnap.windowClose());
+
+// ── Help: user guide + contextual help mode ───────────────────────────────────
+document.getElementById('btn-help-guide')?.addEventListener('click', () => window.docusnap.openHelpWindow('review'));
+
+const HELP_TEXTS = {
+  'review-tab':    'Documents waiting to be checked and confirmed.',
+  'deferred-tab':  'Documents you set aside to deal with later.',
+  'doc-nav':       'Step to the previous / next document in the list.',
+  'split':         'Split a multi-page PDF — by page range, every page, or every N pages.',
+  'anchor-wizard': 'Template Wizard (admin): map where each field sits on this layout.',
+  'enhance':       'Re-read a poor scan with stronger image cleanup, then re-extract.',
+  'zoom':          'Zoom and pan the document preview; Reset returns to fit.',
+  'confirm':       'Accept the values shown and file this document.',
+  'skip':          'Move to the next document without filing this one.',
+  'defer':         'Set this document aside in the Deferred tab to handle later.',
+  'file-all':      'File every queued document whose type and required fields are complete. Incomplete ones are left for manual review.',
+  'delete-all':    'Delete every document in this tab. This cannot be undone.',
+  'help-mode':     'Help mode: click any control to see what it does. Press Esc to leave.',
+};
+window.initHelpMode?.('help-mode-toggle', HELP_TEXTS);
 
 // ── Document open/close audit signalling ──────────────────────────────────────
 // The server logs document_open on each fetch; here we pair it with a close when
@@ -87,6 +183,7 @@ async function loadQueue() {
   queue         = await window.docusnap.getReviewQueue();
   deferredQueue = await window.docusnap.getDeferredQueue();
   allDocTypes   = await window.docusnap.getAllDocTypes();
+  ensureValidationPatterns();   // fire-and-forget; ready well before any field blur
   fieldDefs     = allDocTypes.length ? allDocTypes[0].fields : [];
   populateTypeDropdown();
   updateTabCounts();
@@ -596,7 +693,22 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
     } else {
       delete corrections[key];
     }
+    // Eagerly CLEAR any standing warning the moment the user starts fixing the
+    // value — only re-evaluate (and possibly re-flag) on blur, so the error never
+    // flashes mid-type (e.g. an unfinished "12-05" looks invalid until complete).
+    clearFieldWarning(row);
     validateConfirm();
+  });
+
+  // Immediate regex/type validation on focus-out. Synchronous + warn-only: it sets
+  // a lightweight inline error state but NEVER disables Confirm (an operator can
+  // still file an OCR edge-case value, mirroring extraction's review-not-reject
+  // philosophy) and never re-renders or moves focus — so clicking Confirm (which
+  // blurs the field) can't race or be hijacked. No reprocess, no IPC, no pause.
+  input.addEventListener('blur', () => {
+    const msg = fieldValidationError(key, input.value);
+    if (msg) setFieldWarning(row, input, msg);
+    else clearFieldWarning(row, input);
   });
 
   row.querySelector('.pick-btn').addEventListener('click', () => {
@@ -1005,11 +1117,16 @@ async function confirmCurrentDoc({ bulk = false } = {}) {
 }
 
 document.getElementById('btn-confirm').addEventListener('click', async () => {
+  // Remember where the doc sits BEFORE confirmCurrentDoc removes it from the list,
+  // so we can advance to the NEXT doc (the one that shifts into this slot) rather
+  // than snapping back to the top — the operator has already worked down the list.
+  const list = activeTab === 'deferred' ? deferredQueue : queue;
+  const idx  = list.findIndex(d => d.id === currentDoc?.id);
   const r = await confirmCurrentDoc();
   if (r.cancelled) return;
   if (r.error) { showToast(r.error, 'err'); return; }
   updateTabCounts();
-  advanceAfterAction();
+  advanceAfterAction(idx);
   window.docusnap.notifyReviewComplete();
 });
 
@@ -1178,7 +1295,9 @@ document.getElementById('btn-delete-all-review').addEventListener('click', async
                `Their files and extracted data are permanently removed. Confirmed and deferred ` +
                `documents are NOT affected. This cannot be undone.`)) return;
 
-  const res = await window.docusnap.deleteAllReview();
+  let res;
+  try { res = await window.docusnap.deleteAllReview(); }
+  catch (e) { showToast(`Delete failed: ${e?.message || e}`, 'err'); return; }
   if (!res?.success) { showToast(res?.error || 'Delete failed.', 'err'); return; }
   const hadCurrent = queue.some(d => d.id === currentDoc?.id);
   queue = [];
@@ -1195,7 +1314,9 @@ document.getElementById('btn-delete-all').addEventListener('click', async () => 
   if (!confirm(`Delete ALL ${deferredQueue.length} deferred document(s)?\n\n` +
                `Their files and extracted data are permanently removed. This cannot be undone.`)) return;
 
-  const res = await window.docusnap.deleteAllDeferred();
+  let res;
+  try { res = await window.docusnap.deleteAllDeferred(); }
+  catch (e) { showToast(`Delete failed: ${e?.message || e}`, 'err'); return; }
   if (!res?.success) { showToast(res?.error || 'Delete failed.', 'err'); return; }
   const hadCurrent = deferredQueue.some(d => d.id === currentDoc?.id);
   deferredQueue = [];
@@ -1244,14 +1365,19 @@ async function deleteFromQueue(doc) {
 }
 
 // ── After confirm/delete: load next doc in the active tab's list ──────────────
-function advanceAfterAction() {
+// After filing/removing the current doc, advance to the NEXT one in the list.
+// `removedIdx` is the just-removed doc's old position; because the list has
+// already shifted up, the element now AT that index is the next doc (clamped to
+// the last entry if we filed the bottom one). Defaults to 0 (top) when unknown.
+function advanceAfterAction(removedIdx = 0) {
+  const at = Math.max(0, removedIdx);
   if (activeTab === 'deferred') {
     renderDeferredList();
-    if (deferredQueue.length > 0) selectDoc(deferredQueue[0]);
+    if (deferredQueue.length > 0) selectDoc(deferredQueue[Math.min(at, deferredQueue.length - 1)]);
     else { currentDoc = null; clearDocPanel(); }
   } else {
     renderQueueList();
-    if (queue.length > 0) selectDoc(queue[0]);
+    if (queue.length > 0) selectDoc(queue[Math.min(at, queue.length - 1)]);
     else { currentDoc = null; clearDocPanel(); }
   }
 }
@@ -2010,6 +2136,8 @@ function loadWizardField(i) {
   wizard.index = Math.max(0, Math.min(wizard.fields.length - 1, i));
   wizard.step = 'field';
   wizard.draftAnchor = wizard.draftTarget = null;
+  wizard.resolved = null;              // stale once the field changes
+  const _rmsg = document.getElementById('wiz-resolved-msg'); if (_rmsg) _rmsg.textContent = '';
   wizard.selectedBox = null;
   wizard.moveStart = null;
   wizard.drawMode = null;
@@ -2100,12 +2228,33 @@ function drawWizBox(n, color, selected) {
   wizCtx.fillStyle = color + (selected ? '33' : '22'); wizCtx.fillRect(x, y, bw, bh);
 }
 
+// Resolved-position box (amber, tight dash) drawn from a [x,y,w,h] normalised
+// array returned by test-template-mapping — distinct from the drawn blue/green so
+// the operator can compare "where I drew" vs "where it actually read".
+function drawWizResolved(arr, color) {
+  if (!arr || arr.length < 4) return;
+  const w = wizCanvas.width, h = wizCanvas.height;
+  const x = Math.round(arr[0] * w), y = Math.round(arr[1] * h);
+  const bw = Math.round(arr[2] * w), bh = Math.round(arr[3] * h);
+  wizCtx.setLineDash([2, 3]); wizCtx.lineWidth = 2; wizCtx.strokeStyle = color;
+  wizCtx.strokeRect(x + 0.5, y + 0.5, bw, bh);
+  wizCtx.setLineDash([]); wizCtx.fillStyle = color + '22'; wizCtx.fillRect(x, y, bw, bh);
+}
+
 function redrawWizard() {
   if (!wizCanvas.width) return;
   wizCtx.clearRect(0, 0, wizCanvas.width, wizCanvas.height);
   if (!wizard.active) return;
   if (wizard.draftAnchor) drawWizBox(wizard.draftAnchor, '#4f8ef7', wizard.selectedBox === 'anchor');
   if (wizard.draftTarget) drawWizBox(wizard.draftTarget, '#3ecf8e', wizard.selectedBox === 'target');
+  // Resolved-position overlay (amber): where the mapping ACTUALLY reads on THIS
+  // page after relocation — so the operator sees it track a shifted scan, vs the
+  // static drawn boxes above. Anchor = where the label was located; target = the
+  // crop the value was read from.
+  if (wizard.resolved) {
+    if (wizard.resolved.anchor_box) drawWizResolved(wizard.resolved.anchor_box, '#f7b84f');
+    if (wizard.resolved.target_box) drawWizResolved(wizard.resolved.target_box, '#f7b84f');
+  }
   if (wizard.dragRect) {
     const c = wizard.drawMode === 'target' ? '#3ecf8e' : '#4f8ef7';
     const r = wizard.dragRect;
@@ -2176,9 +2325,12 @@ wizCanvas.addEventListener('mouseup', () => {
       x_norm: r.x / wizCanvas.width,  y_norm: r.y / wizCanvas.height,
       w_norm: r.w / wizCanvas.width,  h_norm: r.h / wizCanvas.height,
     };
-    if (wizard.drawMode === 'anchor') { wizard.draftAnchor = norm; wizard.step = 'target'; }
-    else                              { wizard.draftTarget = norm; wizard.step = 'review'; }
+    if (wizard.drawMode === 'anchor') {
+      wizard.draftAnchor = norm; wizard.step = 'target';
+      maybeAutofillAnchorLabel(norm);   // fill the (editable) label from the box if blank
+    } else                              { wizard.draftTarget = norm; wizard.step = 'review'; }
     wizard.drawMode = null;
+    wizard.resolved = null;             // a re-draw invalidates the previous "reads here" overlay
     wizCanvas.classList.remove('drawing');
     updateWizardUI();
     redrawWizard();
@@ -2201,6 +2353,51 @@ document.getElementById('wiz-field-select')?.addEventListener('change', (e) => {
 });
 document.getElementById('wiz-draw-anchor')?.addEventListener('click', () => armWizardDraw('anchor'));
 document.getElementById('wiz-draw-target')?.addEventListener('click', () => armWizardDraw('target'));
+
+// "Show where it reads": run the REAL Stage 0.5 extractor on the current page and
+// overlay (amber) where the anchor located + the value was actually read, so the
+// operator sees the mapping track a shifted document instead of trusting the
+// static drawn boxes. Uses the same test-template-mapping IPC the Template
+// Manager test uses (now also returning resolved geometry).
+document.getElementById('wiz-show-resolved')?.addEventListener('click', async () => {
+  if (!wizard.active || wizard.fixedMode || !wizard.draftAnchor || !wizard.draftTarget) return;
+  const f = wizard.fields[wizard.index];
+  const msg = document.getElementById('wiz-resolved-msg');
+  msg.textContent = 'Reading…'; msg.className = 'wiz-status';
+  // Build the mapping EXACTLY as Save does, so the preview matches reprocess.
+  const mapping = {
+    field_key:      f.key, page_number: currentPage,
+    anchor_text:    document.getElementById('wiz-anchor-text').value.trim() || null,
+    anchor_x_norm: wizard.draftAnchor.x_norm, anchor_y_norm: wizard.draftAnchor.y_norm,
+    anchor_w_norm: wizard.draftAnchor.w_norm, anchor_h_norm: wizard.draftAnchor.h_norm,
+    target_x_norm: wizard.draftTarget.x_norm, target_y_norm: wizard.draftTarget.y_norm,
+    target_w_norm: wizard.draftTarget.w_norm, target_h_norm: wizard.draftTarget.h_norm,
+    offset_dx_norm: wizard.draftTarget.x_norm - wizard.draftAnchor.x_norm,
+    offset_dy_norm: wizard.draftTarget.y_norm - wizard.draftAnchor.y_norm,
+    ocr_type:       document.getElementById('wiz-ocr-type').value,
+    search_expansion: 0.04, enabled: true,
+  };
+  let out = {};
+  try {
+    const c = document.createElement('canvas');
+    c.width = docImg.naturalWidth; c.height = docImg.naturalHeight;
+    c.getContext('2d').drawImage(docImg, 0, 0);
+    const b64 = c.toDataURL('image/png').split(',')[1];
+    out = (await window.docusnap.testTemplateMapping(b64, mapping)) || {};
+  } catch (e) {
+    msg.textContent = 'Read failed: ' + (e?.message || e); msg.className = 'wiz-status err';
+    return;
+  }
+  wizard.resolved = { anchor_box: out.anchor_box || null, target_box: out.target_box || null };
+  redrawWizard();
+  if (out.value) {
+    msg.textContent = `Reads “${out.value}” — amber shows where it resolved`;
+    msg.className = 'wiz-status ok';
+  } else {
+    msg.textContent = 'Anchor not located / nothing read on this page.';
+    msg.className = 'wiz-status err';
+  }
+});
 document.getElementById('wiz-prev')?.addEventListener('click', () => loadWizardField(wizard.index - 1));
 document.getElementById('wiz-next')?.addEventListener('click', () => loadWizardField(wizard.index + 1));
 document.getElementById('wiz-fixed-toggle')?.addEventListener('change', (e) => {
@@ -2267,6 +2464,51 @@ function advanceWizardField() {
   setWizStatus('All fields mapped ✓', 'ok');
 }
 
+// Mirror of database/modules/learning.js::sanitizeAnchorLabel — keep only stable
+// caption tokens, dropping bare numbers / refs / dates / code-like serials so an
+// auto-derived label GENERALISES across documents (e.g. "2605-0769-1 Work Address"
+// -> "Work Address"). Same rule both ends so a wizard-captured label matches what
+// extraction re-locates.
+function sanitizeAnchorLabel(label) {
+  if (!label || typeof label !== 'string') return '';
+  return label.trim().split(/\s+/).filter(tok => {
+    if (!/[a-zA-Z]/.test(tok)) return false;                 // bare number / ref / date
+    if ((tok.match(/\d/g) || []).length >= 3) return false;  // code-like serial
+    return true;
+  }).join(' ').trim();
+}
+
+// OCR a NORMALISED box on the current page image (docImg) via the existing
+// ocr-region IPC (same light-first region.py recipe the target read-back uses).
+// Returns trimmed text, or '' on failure. Used to auto-derive the anchor label.
+async function ocrWizardBox(box) {
+  try {
+    if (!docImg || !docImg.naturalWidth) return '';
+    const nw = docImg.naturalWidth, nh = docImg.naturalHeight;
+    const c = document.createElement('canvas');
+    c.width  = Math.max(1, Math.round(box.w_norm * nw));
+    c.height = Math.max(1, Math.round(box.h_norm * nh));
+    const ctx = c.getContext('2d');
+    ctx.drawImage(docImg, Math.round(box.x_norm * nw), Math.round(box.y_norm * nh),
+                  c.width, c.height, 0, 0, c.width, c.height);
+    const b64 = c.toDataURL('image/png').split(',')[1];
+    return ((await window.docusnap.ocrRegion(b64)) || '').trim();
+  } catch { return ''; }
+}
+
+// Auto-derive the anchor LABEL from the drawn anchor box when the operator left
+// the field blank — so EVERY mapping carries a label, which the extraction-time
+// drift guard re-locates to follow a shifted page (a mapping with no label can't
+// track drift). Populates the VISIBLE, editable input so the operator can correct
+// it before Save. Never overwrites a label the operator typed; an empty/failed
+// OCR leaves it blank (-> null on save, today's behaviour).
+async function maybeAutofillAnchorLabel(box) {
+  const input = document.getElementById('wiz-anchor-text');
+  if (!input || input.value.trim()) return;
+  const clean = sanitizeAnchorLabel(await ocrWizardBox(box));
+  if (clean && !input.value.trim()) input.value = clean;
+}
+
 async function wizardSave() {
   if (!wizard.active || !isAdmin) return;                // defence-in-depth; IPC is admin-gated too
   const field = wizard.fields[wizard.index];
@@ -2329,6 +2571,276 @@ document.getElementById('wiz-save')?.addEventListener('click', wizardSave);
 document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
   if (wizard.templateId) window.docusnap.openSettingsWindowAtTemplate(wizard.templateId);
 });
+
+// ── Hidden developer extraction-precedence console (Ctrl+Shift+D then M) ───────
+// Read-only debugging aid: shows, per field, the candidate each stage produced,
+// its value/confidence/method, whether it won or was rejected (and why), and the
+// final winning value. Reuses the existing engine trace stream (process-trace);
+// the main process gates --trace + the route to this window behind reviewTraceSet
+// (password SFDEV, verified in main). Opens NO extra window — just this panel.
+(() => {
+  const STAGE_LABEL = { '0_template': 'template', '0.5_mapping': 'mapping',
+                        '1_keyword': 'keyword', '2_anchor': 'anchor', '4_validate': 'validate' };
+  const STAGE_ORDER = { '0_template': 0, '0.5_mapping': 1, '1_keyword': 2, '2_anchor': 3, '4_validate': 4 };
+
+  const panel = document.getElementById('rdc');
+  if (!panel) return;
+  const elDoc    = document.getElementById('rdc-doc');
+  const elEmpty  = document.getElementById('rdc-empty');
+  const elFields = document.getElementById('rdc-fields');
+
+  let active   = false;     // console open
+  let armed    = false, armedAt = 0;
+  let modalOpen = false;
+  let traceBuf = [];        // events for the run currently being shown
+  let renderTimer = null;
+
+  const inField = (el) => !!el && (el.isContentEditable
+    || el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT');
+
+  // Subscribe ONCE. Events only arrive while reviewTraceActive is set in main, so
+  // this is inert until the console is unlocked. During a single-doc reprocess the
+  // stream belongs to the doc the user just acted on, so we buffer it as-is rather
+  // than filtering on filename (a reprocess runs under a temp filename — the known
+  // trace-orphan case — so a filename filter would drop its events).
+  window.docusnap.onProcessTrace((ev) => {
+    if (!active || !ev) return;
+    traceBuf.push(ev);
+    scheduleRender();
+  });
+
+  function scheduleRender() {
+    if (renderTimer) return;
+    renderTimer = setTimeout(() => { renderTimer = null; render(traceBuf); }, 120);
+  }
+
+  function render(events) {
+    const byField = new Map();
+    const get = (f) => {
+      if (!byField.has(f)) byField.set(f, { merges: [], rejects: [], transforms: [], validations: [], final: null });
+      return byField.get(f);
+    };
+    for (const ev of events) {
+      if (!ev || ev.field == null) continue;
+      if (ev.event === 'merge') get(ev.field).merges.push(ev);
+      else if (ev.event === 'anchor_reject') get(ev.field).rejects.push(ev);
+      else if (ev.event === 'transform') get(ev.field).transforms.push(ev);   // Stage 2.5 denoise/correct
+      else if (ev.event === 'validation') get(ev.field).validations.push(ev);  // Stage 4/4.5 normalise/flag/withhold
+      else if (ev.event === 'final') get(ev.field).final = ev;
+    }
+    if (!byField.size) {
+      elEmpty.hidden = false; elFields.innerHTML = '';
+      return;
+    }
+    elEmpty.hidden = true;
+    const blocks = [];
+    for (const [field, m] of byField) {
+      const finalVal = m.final ? m.final.value : null;
+      const emptyCls = (finalVal == null || finalVal === '') ? ' empty' : '';
+      const winLine  = m.final
+        ? `${escHtml(shown(finalVal))}${m.final.method ? ` · ${escHtml(m.final.method)}` : ''}`
+        : '—';
+
+      const rows = [];
+      for (const c of [...m.merges].sort((a, b) => (STAGE_ORDER[a.stage] ?? 9) - (STAGE_ORDER[b.stage] ?? 9))) {
+        const won = c.decision === 'win';
+        let reason = '';
+        if (!won) {
+          const wc = c.vs ? c.vs.confidence : null;
+          reason = (wc != null && c.confidence != null && c.confidence < wc)
+            ? `lost — lower confidence (${c.confidence}% < ${wc}%)`
+            : (c.vs && c.vs.value != null ? `lost — superseded by "${shown(c.vs.value)}"` : 'lost — superseded');
+        }
+        rows.push(cand(STAGE_LABEL[c.stage] || c.stage, c.value, c.confidence, c.method, won ? 'won' : 'lost', won ? '' : reason));
+      }
+      for (const r of m.rejects) {
+        rows.push(cand(r.method || 'anchor', r.value, null, null, 'rej', `rejected — ${r.reason || 'failed gate'}`));
+      }
+      // Stage 2.5 transforms (denoise / OCR-correct): value rewritten in place.
+      for (const t of m.transforms) {
+        const lbl = t.stage === '2.5_denoise' ? 'denoise'
+                  : t.stage === '2.5_correct' ? 'correct' : (t.stage || 'transform');
+        rows.push(noteRow(lbl, `${escHtml(shown(t.from))} → ${escHtml(shown(t.to))}`, 'xform'));
+      }
+      // Stage 4 / 4.5 validation: the answer to "why is this held / flagged /
+      // emptied" — shows the note, any value change, and a correction candidate.
+      for (const v of m.validations) {
+        if (!v.note && !v.corrected_to && v.was === v.value) continue;   // no-op normalise
+        let txt = (v.was !== undefined && v.was !== v.value)
+          ? `${escHtml(shown(v.was))} → ${escHtml(shown(v.value))}`
+          : escHtml(shown(v.value));
+        if (v.corrected_to) txt += ` · candidate: ${escHtml(v.corrected_to)}`;
+        if (v.note) txt += ` — ${escHtml(v.note)}`;
+        rows.push(noteRow('validate', txt, 'valid'));
+      }
+      if (!rows.length) rows.push(`<div class="rdc-cand"><span class="rdc-reason" style="padding-left:0">matched on the OCR text layer (no per-stage crop trace)</span></div>`);
+
+      blocks.push(
+        `<div class="rdc-field" data-f="${escHtml(field)}">`
+        + `<div class="rdc-fhead"><span class="rdc-fname">${escHtml(field)}</span>`
+        + `<span class="rdc-fwin${emptyCls}">${winLine}</span></div>`
+        + `<div class="rdc-cands">${rows.join('')}</div></div>`);
+    }
+    elFields.innerHTML = blocks.join('');
+    elFields.querySelectorAll('.rdc-fhead').forEach((h) => {
+      h.addEventListener('click', () => h.parentElement.classList.toggle('open'));
+    });
+  }
+
+  function cand(stage, value, conf, method, tag, reason) {
+    const tagTxt = tag === 'rej' ? 'rejected' : tag;
+    return `<div class="rdc-cand">`
+      + `<span class="rdc-stage">${escHtml(stage)}</span>`
+      + `<span class="rdc-val">${escHtml(shown(value))}${method ? ` <span class="rdc-conf">${escHtml(method)}</span>` : ''}</span>`
+      + (conf != null ? `<span class="rdc-conf">${conf}%</span>` : '')
+      + `<span class="rdc-tag ${tag}">${tagTxt}</span>`
+      + (reason ? `<span class="rdc-reason">${escHtml(reason)}</span>` : '')
+      + `</div>`;
+  }
+
+  function noteRow(label, html, cls) {
+    return `<div class="rdc-cand rdc-note ${cls}">`
+      + `<span class="rdc-stage">${escHtml(label)}</span>`
+      + `<span class="rdc-val">${html}</span></div>`;
+  }
+
+  function shown(v) { return v == null || v === '' ? '∅' : String(v); }
+
+  async function pullExisting() {
+    // Already-processed (fresh-scan) docs are keyed in the session registry by
+    // their original filename; reprocess runs stream live into traceBuf instead.
+    if (!currentDoc) { traceBuf = []; render(traceBuf); return; }
+    let evs = [];
+    try { evs = (await window.docusnap.devGetSessionDoc(currentDoc.original_filename)) || []; } catch {}
+    traceBuf = evs;
+    render(traceBuf);
+  }
+
+  async function open() {
+    if (active) return;
+    const ok = await openPasswordModal();
+    if (!ok) return;
+    active = true;
+    panel.hidden = false;
+    elDoc.textContent = currentDoc ? currentDoc.original_filename : '(no document selected)';
+    pullExisting();
+  }
+
+  async function close() {
+    if (!active) return;
+    active = false;
+    panel.hidden = true;
+    try { await window.docusnap.reviewTraceSet(false); } catch {}
+  }
+
+  // Refresh when the selected document changes (doc-name is set by selectDoc).
+  const nameEl = document.getElementById('doc-name');
+  if (nameEl) {
+    new MutationObserver(() => {
+      if (!active) return;
+      elDoc.textContent = nameEl.textContent || '(no document selected)';
+      pullExisting();
+    }).observe(nameEl, { childList: true, characterData: true, subtree: true });
+  }
+
+  // Draggable by its title bar so it never traps the review action buttons
+  // underneath it. Grab the header (not its buttons) and move freely; clamped so
+  // the title bar always stays on-screen.
+  const head = document.getElementById('rdc-head');
+  let drag = null;
+  head?.addEventListener('mousedown', (e) => {
+    if (e.target.closest('button')) return;        // let header buttons click normally
+    const r = panel.getBoundingClientRect();
+    drag = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+    panel.style.left = r.left + 'px';              // switch from right-anchored to left/top
+    panel.style.top  = r.top + 'px';
+    panel.style.right = 'auto';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!drag) return;
+    const maxL = Math.max(0, window.innerWidth  - panel.offsetWidth);
+    const maxT = Math.max(0, window.innerHeight - 36);   // keep the title bar reachable
+    panel.style.left = Math.min(Math.max(0, e.clientX - drag.dx), maxL) + 'px';
+    panel.style.top  = Math.min(Math.max(0, e.clientY - drag.dy), maxT) + 'px';
+  });
+  window.addEventListener('mouseup', () => {
+    if (drag) { drag = null; document.body.style.userSelect = ''; }
+  });
+
+  document.getElementById('rdc-close')?.addEventListener('click', close);
+  document.getElementById('rdc-reprocess')?.addEventListener('click', () => {
+    traceBuf = [];                       // fresh run — drop the previous trace
+    render(traceBuf);
+    document.getElementById('btn-reprocess')?.click();   // reuse the full reprocess flow
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && active && !modalOpen) { close(); return; }
+    if (modalOpen || inField(e.target)) return;
+    if (!(e.ctrlKey && e.shiftKey)) { armed = false; return; }
+    if (e.code === 'KeyD') { armed = true; armedAt = Date.now(); return; }
+    if (e.code === 'KeyM' && armed && (Date.now() - armedAt) < 1000) {
+      armed = false; e.preventDefault();
+      active ? close() : open();
+    } else if (e.code !== 'KeyD') { armed = false; }
+  });
+
+  // Minimal password prompt → enable tracing in main (verified there). Resolves
+  // true on success. Mirrors the main-window dev-inspector unlock UX.
+  function openPasswordModal() {
+    return new Promise((resolve) => {
+      modalOpen = true;
+      const ov = document.createElement('div');
+      Object.assign(ov.style, { position: 'fixed', inset: '0', background: 'rgba(8,10,15,.72)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: '99999' });
+      const box = document.createElement('div');
+      Object.assign(box.style, { width: '280px', background: 'var(--surface)',
+        border: '1px solid var(--border2)', borderRadius: '10px', padding: '18px',
+        boxShadow: '0 12px 32px rgba(0,0,0,.5)', color: 'var(--text)' });
+      const title = document.createElement('div');
+      title.textContent = 'Extraction trace console';
+      Object.assign(title.style, { fontSize: '13px', fontWeight: '600', marginBottom: '10px' });
+      const input = document.createElement('input');
+      input.type = 'password'; input.placeholder = 'Password';
+      Object.assign(input.style, { width: '100%', padding: '8px 10px', borderRadius: '6px',
+        outline: 'none', border: '1px solid var(--border2)', background: 'var(--bg)',
+        color: 'var(--text)', fontSize: '12px', boxSizing: 'border-box' });
+      const msg = document.createElement('div');
+      Object.assign(msg.style, { color: 'var(--err)', fontSize: '11px', minHeight: '14px', margin: '6px 0 10px' });
+      const row = document.createElement('div');
+      Object.assign(row.style, { display: 'flex', gap: '8px', justifyContent: 'flex-end' });
+      const cancel = document.createElement('button'); cancel.textContent = 'Cancel';
+      const okBtn = document.createElement('button'); okBtn.textContent = 'Open';
+      for (const b of [cancel, okBtn]) Object.assign(b.style, { padding: '7px 14px',
+        borderRadius: '6px', border: '1px solid var(--border2)', background: 'transparent',
+        color: 'var(--text)', cursor: 'pointer', fontSize: '11px' });
+      Object.assign(okBtn.style, { background: 'var(--accent)', borderColor: 'var(--accent)',
+        color: 'var(--bg)', fontWeight: '500' });
+      const done = (v) => { ov.remove(); modalOpen = false; resolve(v); };
+      const submit = async () => {
+        okBtn.disabled = true;
+        let valid = false;
+        try { valid = await window.docusnap.reviewTraceSet(true, input.value); } catch {}
+        okBtn.disabled = false;
+        if (valid) done(true);
+        else { msg.textContent = 'Incorrect password.'; input.value = ''; input.focus(); }
+      };
+      cancel.addEventListener('click', () => done(false));
+      okBtn.addEventListener('click', submit);
+      input.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') submit();
+        if (ev.key === 'Escape') done(false);
+      });
+      row.append(cancel, okBtn);
+      box.append(title, input, msg, row);
+      ov.append(box);
+      document.body.append(ov);
+      input.focus();
+    });
+  }
+})();
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 loadQueue();

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self'; script-src 'self'">
+  <title>Scan Finder — Importing Documents</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="help.css">
+  <script src="../shared/theme.js"></script>
+</head>
+<body>
+  <div id="titlebar">
+    <span class="tb-title">Scan Finder — User Guide</span>
+    <button class="tb-btn close" id="btn-close" title="Close">&#215;</button>
+  </div>
+
+  <div id="shell">
+    <nav id="nav">
+      <div class="nav-label">User Guide</div>
+      <div id="nav-links"></div>
+    </nav>
+
+    <div id="content">
+      <div class="doc">
+        <div class="breadcrumb" id="breadcrumb"></div>
+
+        <main>
+          <section id="importing">
+            <h1>Importing Documents</h1>
+            <p class="lead">Importing is how you bring scans into Scan Finder so it can read them. You point
+              it at a folder of documents, and it processes them one by one.</p>
+          </section>
+
+          <section id="folders">
+            <h2>Two folders, two different jobs</h2>
+            <p>It's worth knowing the difference between these from the start &mdash; they are not the same:</p>
+            <ul>
+              <li><b>Source folder</b> &mdash; where your <i>incoming</i> scans live. This is what you choose
+                when you import.</li>
+              <li><b>Output folder</b> &mdash; where Scan Finder <i>saves the finished, filed</i> documents. You
+                set this once during first-time setup (and can change it in Settings).</li>
+            </ul>
+            <div class="callout warn">
+              <div class="callout-title">Common mix-up</div>
+              <p>When you click Import, choose the folder your <b>scans came from</b> &mdash; not your output
+                folder. The output folder is managed for you; you rarely need to open it by hand.</p>
+            </div>
+          </section>
+
+          <section id="import">
+            <h2>How to import and process</h2>
+            <ol>
+              <li>On the home screen, click <b>Begin Import</b> (or click the <b>Source Folder</b> box in the sidebar).</li>
+              <li>Choose the folder that contains your scans, then confirm.</li>
+              <li>Click <b>Process Documents</b> to start.</li>
+              <li>A progress indicator shows how far along it is. You can click <b>Stop</b> at any time to halt
+                safely &mdash; anything already finished is kept.</li>
+            </ol>
+            <p>Scan Finder works with PDF scans and common image files (such as PNG and JPG).</p>
+          </section>
+
+          <section id="after">
+            <h2>What happens after importing</h2>
+            <p>For each document, Scan Finder:</p>
+            <ol>
+              <li><b>Reads the text</b> on the page (this is called OCR &mdash; it simply means turning a picture
+                of text into text the computer can use).</li>
+              <li><b>Pulls out the key fields</b> &mdash; things like the date, the reference number and the supplier.</li>
+              <li><b>Decides how sure it is.</b> Confident documents can be filed straight through; anything it's
+                unsure about waits for you in the <b>Review Queue</b>.</li>
+            </ol>
+            <p>Watch the <b>Review Queue</b> badge at the top of the window &mdash; the number tells you how many
+              documents need a quick human check.</p>
+          </section>
+
+          <section id="expect">
+            <h2>What to expect</h2>
+            <ul>
+              <li><b>Speed</b> depends on how many documents you import, how clear the scans are, and your
+                performance settings. Large batches take longer.</li>
+              <li><b>Clear scans read better.</b> Faint, skewed or very low-quality scans are more likely to need
+                a review &mdash; that's normal, and there are tools in the Review window to help.</li>
+              <li><b>Nothing leaves your computer.</b> All reading and filing happens locally.</li>
+            </ul>
+          </section>
+
+          <div class="callout tip">
+            <div class="callout-title">Next step</div>
+            <p>Once processing finishes, open the <a class="xref" href="review.html">Review Window</a> to check
+              and file your documents.</p>
+          </div>
+        </main>
+
+        <nav class="page-foot" id="page-foot"></nav>
+      </div>
+    </div>
+  </div>
+
+  <script src="help-nav.js"></script>
+</body>
+</html>

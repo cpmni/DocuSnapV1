@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self'; script-src 'self'">
+  <title>Scan Finder — Templates &amp; Learning</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="help.css">
+  <script src="../shared/theme.js"></script>
+</head>
+<body>
+  <div id="titlebar">
+    <span class="tb-title">Scan Finder — User Guide</span>
+    <button class="tb-btn close" id="btn-close" title="Close">&#215;</button>
+  </div>
+
+  <div id="shell">
+    <nav id="nav">
+      <div class="nav-label">User Guide</div>
+      <div id="nav-links"></div>
+    </nav>
+
+    <div id="content">
+      <div class="doc">
+        <div class="breadcrumb" id="breadcrumb"></div>
+
+        <main>
+          <section id="templates">
+            <h1>Templates &amp; Learning</h1>
+            <p class="lead">Scan Finder gets better the more you use it. When you confirm documents, it quietly
+              learns where each supplier puts the important details &mdash; so next time, it reads them more
+              accurately on its own.</p>
+          </section>
+
+          <section id="learning">
+            <h2>How learning works (in plain English)</h2>
+            <p>Every time you confirm a document, Scan Finder remembers what a good result looks like for that
+              kind of paperwork. Over a few documents from the same supplier or layout, it builds up a picture
+              of where the date, the reference and the other fields usually sit.</p>
+            <p>You don't have to do anything special for this &mdash; it happens automatically as you review and
+              file. But for a brand-new or tricky layout, you can give it a head start by <b>teaching</b> it.</p>
+            <div class="callout note">
+              <div class="callout-title">Good to know</div>
+              <p>Teaching is entirely optional. Scan Finder works without it &mdash; teaching simply helps it
+                read an unusual layout correctly from the very first document.</p>
+            </div>
+          </section>
+
+          <section id="teach">
+            <h2>Teach a document</h2>
+            <p>This is a friendly, step-by-step wizard for showing Scan Finder a new layout. You point out each
+              field by drawing a box around its value, and Scan Finder reads it back to you live.</p>
+            <ol>
+              <li>From the home screen, click <b>Teach a document</b>.</li>
+              <li>Choose one of your scanned documents to learn from.</li>
+              <li>Pick or create the <b>document type</b> (for example "Invoice"), and confirm its main number
+                and date fields in plain language.</li>
+              <li>For each field, draw a box around its <b>value</b> on the document. Scan Finder shows you what
+                it reads, so you can see it's correct.</li>
+              <li>Review and finish. Scan Finder now recognises similar documents automatically.</li>
+            </ol>
+
+            <figure class="shot-fig">
+              <img class="shot" src="img/teach-draw-box.png" alt="Teaching a document: drawing a box around a field's value with the live read-back shown">
+              <figcaption>Draw a box around each value &mdash; Scan Finder reads it live and finds the nearby label.</figcaption>
+            </figure>
+
+            <figure class="diagram">
+              <svg viewBox="0 0 680 196" role="img" aria-label="Teaching: draw a box around a field's value and Scan Finder reads it">
+                <title>Point out a field by drawing a box</title>
+                <rect class="dg-panel" x="40" y="18" width="320" height="160" rx="4"/>
+                <line class="dg-textline" x1="60" y1="42" x2="180" y2="42"/>
+                <line class="dg-textline" x1="60" y1="64" x2="150" y2="64"/>
+                <line class="dg-textline" x1="60" y1="120" x2="150" y2="120"/>
+                <line class="dg-textline" x1="60" y1="142" x2="200" y2="142"/>
+                <line class="dg-textline" x1="200" y1="64" x2="300" y2="64"/>
+                <text class="dg-sub"  x="60" y="100">Invoice No</text>
+                <rect class="dg-dash" x="196" y="84" width="126" height="28" rx="3" fill="none"/>
+                <text class="dg-mono" x="208" y="103">INV-001</text>
+                <g class="dg-accent">
+                  <rect x="193" y="81" width="6" height="6"/><rect x="319" y="81" width="6" height="6"/>
+                  <rect x="193" y="109" width="6" height="6"/><rect x="319" y="109" width="6" height="6"/>
+                </g>
+                <path class="dg-arrow" d="M326 110 l0 17 l4 -4 l3 7 l3 -1 l-3 -7 l6 0 z"/>
+                <line class="dg-flow" x1="322" y1="98" x2="404" y2="98"/>
+                <path class="dg-arrow" d="M404 98 l-7 -4 v8 z"/>
+                <rect class="dg-panel2" x="410" y="68" width="230" height="64" rx="8"/>
+                <text class="dg-sub"  x="426" y="92">Live read</text>
+                <text class="dg-mono" x="486" y="93" style="font-size:13px">INV-001</text>
+                <text class="dg-sub"  x="426" y="116">label found: &#8220;Invoice No&#8221;</text>
+              </svg>
+              <figcaption>Because it reads each value as you draw, teaching works on the very first document.</figcaption>
+            </figure>
+          </section>
+
+          <section id="template-wizard">
+            <h2>The Template Wizard and manual mapping (admin)</h2>
+            <p>Inside the Review window, admins have a <b>Template Wizard</b> for fine-tuning where a field's
+              value sits on a particular layout. This is the more advanced cousin of "Teach a document".</p>
+            <ul>
+              <li>Use it when a specific field on a recurring layout keeps coming out wrong, and you want to pin
+                exactly where its value is.</li>
+              <li>A field you map by hand <b>takes priority</b> over Scan Finder's automatic guess &mdash; as long
+                as the value it finds there makes sense for that field. If it doesn't, Scan Finder falls back to
+                its normal reading.</li>
+              <li>The <b>Template Manager</b> (in Settings) lets admins review the layouts Scan Finder has learned.</li>
+            </ul>
+            <p>For most users, simply confirming documents accurately is all the "teaching" that's needed.</p>
+          </section>
+
+          <div class="callout tip">
+            <div class="callout-title">Next step</div>
+            <p>See how filed documents are organised and found in <a class="xref" href="search.html">Search &amp; Filing</a>.</p>
+          </div>
+        </main>
+
+        <nav class="page-foot" id="page-foot"></nav>
+      </div>
+    </div>
+  </div>
+
+  <script src="help-nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self'; script-src 'self'">
+  <title>Scan Finder — User Guide</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="help.css">
+  <script src="../shared/theme.js"></script>
+</head>
+<body>
+  <div id="titlebar">
+    <span class="tb-title">Scan Finder — User Guide</span>
+    <button class="tb-btn close" id="btn-close" title="Close">&#215;</button>
+  </div>
+
+  <div id="shell">
+    <nav id="nav">
+      <div class="nav-label">User Guide</div>
+      <div id="nav-links"></div>
+    </nav>
+
+    <div id="content">
+      <div class="doc">
+        <div class="breadcrumb" id="breadcrumb"></div>
+
+        <main>
+          <section id="overview">
+            <h1>Welcome to Scan Finder</h1>
+            <p class="lead">Scan Finder turns folders of scanned documents into tidy, searchable, filed
+              records &mdash; the date, the reference, the supplier, the total &mdash; so you don't have to
+              type them out or hunt for paperwork later.</p>
+            <p>It reads each scan, pulls out the details that matter, lets you check anything it wasn't
+              sure about, then files a clean, neatly-named copy. <b>Everything happens on this computer.
+              No documents are uploaded or sent anywhere.</b></p>
+
+            <figure class="diagram">
+              <svg viewBox="0 0 680 116" role="img" aria-label="How Scan Finder processes a document: import, read, extract, review, filed">
+                <title>The Scan Finder workflow</title>
+                <g>
+                  <rect class="dg-panel2" x="10"  y="26" width="108" height="58" rx="7"/>
+                  <rect class="dg-panel2" x="148" y="26" width="108" height="58" rx="7"/>
+                  <rect class="dg-panel2" x="286" y="26" width="108" height="58" rx="7"/>
+                  <rect class="dg-accent" x="424" y="26" width="108" height="58" rx="7"/>
+                  <rect class="dg-panel2" x="562" y="26" width="108" height="58" rx="7"/>
+                </g>
+                <g class="dg-flow">
+                  <line x1="120" y1="55" x2="144" y2="55"/><line x1="258" y1="55" x2="282" y2="55"/>
+                  <line x1="396" y1="55" x2="420" y2="55"/><line x1="534" y1="55" x2="558" y2="55"/>
+                </g>
+                <g class="dg-arrow">
+                  <path d="M144 55 l-7 -4 v8 z"/><path d="M282 55 l-7 -4 v8 z"/>
+                  <path d="M420 55 l-7 -4 v8 z"/><path d="M558 55 l-7 -4 v8 z"/>
+                </g>
+                <text class="dg-text" x="64"  y="52" text-anchor="middle">Import</text>
+                <text class="dg-sub"  x="64"  y="68" text-anchor="middle">a folder of scans</text>
+                <text class="dg-text" x="202" y="52" text-anchor="middle">Read</text>
+                <text class="dg-sub"  x="202" y="68" text-anchor="middle">the text on each page</text>
+                <text class="dg-text" x="340" y="52" text-anchor="middle">Extract</text>
+                <text class="dg-sub"  x="340" y="68" text-anchor="middle">the key fields</text>
+                <text class="dg-text" x="478" y="52" text-anchor="middle">Review</text>
+                <text class="dg-sub"  x="478" y="68" text-anchor="middle">check &amp; confirm</text>
+                <text class="dg-text" x="616" y="52" text-anchor="middle">Filed</text>
+                <text class="dg-sub"  x="616" y="68" text-anchor="middle">tidy &amp; searchable</text>
+                <text class="dg-sub"  x="478" y="102" text-anchor="middle">only documents it's unsure about stop here</text>
+              </svg>
+              <figcaption>Every document follows the same path &mdash; all on this computer.</figcaption>
+            </figure>
+          </section>
+
+          <section id="quick-start">
+            <div class="quickstart">
+              <h3>Quick start &mdash; your first filed document</h3>
+              <ol>
+                <li>On the home screen, click <b>Begin Import</b> and choose a folder that contains your scans.</li>
+                <li>Click <b>Process Documents</b> and wait while Scan Finder reads them.</li>
+                <li>Open the <b>Review Queue</b> (top of the window) to see anything that needs a quick check.</li>
+                <li>For each document, glance at the preview, fix any field that looks wrong, and pick the document type.</li>
+                <li>Click <b>Confirm &amp; File</b>. Your document is saved, neatly named, in your output folder &mdash; find it again any time from <b>Search</b>.</li>
+              </ol>
+            </div>
+          </section>
+
+          <section id="who">
+            <h2>Who Scan Finder is for</h2>
+            <p>Anyone who deals with batches of scanned paperwork &mdash; invoices, orders, worksheets &mdash;
+              and wants them read, named and filed without manual data entry. You don't need any technical
+              knowledge to use it.</p>
+            <p>Depending on how your copy is set up, people sign in with one of three roles:</p>
+            <ul>
+              <li><b>Admin</b> &mdash; full access, including Settings and teaching new document layouts.</li>
+              <li><b>Edit</b> &mdash; can import, review and file documents.</li>
+              <li><b>Read only</b> &mdash; can search and view filed documents, but not change them.</li>
+            </ul>
+          </section>
+
+          <section id="explore">
+            <h2>Explore the guide</h2>
+            <div class="cards">
+              <a class="card" href="getting-started.html"><div class="card-title">Getting Started</div><div class="card-sub">Open the app, sign in, and find your way around the main screen.</div></a>
+              <a class="card" href="importing.html"><div class="card-title">Importing Documents</div><div class="card-sub">Bring scans in and process them.</div></a>
+              <a class="card" href="review.html"><div class="card-title">Review Window</div><div class="card-sub">Check, correct and file what was read.</div></a>
+              <a class="card" href="templates.html"><div class="card-title">Templates &amp; Learning</div><div class="card-sub">Teach Scan Finder new layouts so it gets more accurate.</div></a>
+              <a class="card" href="search.html"><div class="card-title">Search &amp; Filing</div><div class="card-sub">How documents are filed and how to find them.</div></a>
+              <a class="card" href="settings.html"><div class="card-title">Settings &amp; Help</div><div class="card-sub">Common settings and where to get help.</div></a>
+              <a class="card" href="troubleshooting.html"><div class="card-title">Troubleshooting &amp; FAQ</div><div class="card-sub">Quick answers to common questions.</div></a>
+            </div>
+          </section>
+
+          <div class="callout note">
+            <div class="callout-title">Tip: built-in help is always close by</div>
+            <p>Click the <b>?</b> button at the top of the main window, then click any control to see a short
+              explanation of what it does. The <b>User Guide</b> button (and the card on the home screen)
+              opens this guide at any time.</p>
+          </div>
+        </main>
+
+        <nav class="page-foot" id="page-foot"></nav>
+      </div>
+    </div>
+  </div>
+
+  <script src="help-nav.js"></script>
+</body>
+</html>

@@ -340,7 +340,9 @@
     .field-input.corrected { border-color: var(--warn); }
     .field-input.low-conf  { border-color: var(--err); background: var(--err-bg); }
     .field-input.required-missing { border-color: var(--err); background: var(--err-bg); }
+    .field-input.invalid { border-color: var(--err); background: var(--err-bg); }
     .field-note { font-size: 10px; color: var(--warn); font-family: var(--mono); margin-top: 1px; }
+    .field-validation-warn { color: var(--err); }
     .field-anchor-note { font-size: 10px; color: var(--muted); font-family: var(--mono); margin-top: 1px; }
     .accept-btn {
       font-size: 10px; font-family: var(--sans); line-height: 1;
@@ -456,7 +458,9 @@
   <div id="titlebar">
     <span class="tb-title">ScanFinder — Review</span>
     <div class="tb-right">
-      <button class="tb-btn close" id="btn-close">&#215;</button>
+      <button class="tb-btn help-guide-btn" id="btn-help-guide" title="Open the user guide (Review)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></button>
+      <button class="tb-btn" id="help-mode-toggle" data-help-key="help-mode" title="Help mode — click, then click any control to learn what it does">?</button>
+      <button class="tb-btn close" id="btn-close" title="Close">&#215;</button>
     </div>
   </div>
 
@@ -464,10 +468,10 @@
 
     <div id="queue-panel">
       <div id="queue-tabs">
-        <button class="qtab active" id="tab-review">
+        <button class="qtab active" id="tab-review" data-help-key="review-tab">
           Review <span class="qtab-count" id="tab-review-count">0</span>
         </button>
-        <button class="qtab" id="tab-deferred">
+        <button class="qtab" id="tab-deferred" data-help-key="deferred-tab">
           Deferred <span class="qtab-count" id="tab-deferred-count">0</span>
         </button>
       </div>
@@ -476,19 +480,19 @@
         <div id="queue-scroll-rail">
           <!-- Group 1: document navigation -->
           <div class="rail-group">
-            <button class="queue-nav-btn" id="btn-doc-prev" title="Previous document" aria-label="Previous document">
+            <button class="queue-nav-btn" id="btn-doc-prev" title="Previous document" aria-label="Previous document" data-help-key="doc-nav">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15 L12 9 L18 15"/></svg>
             </button>
-            <button class="queue-nav-btn" id="btn-doc-next" title="Next document" aria-label="Next document">
+            <button class="queue-nav-btn" id="btn-doc-next" title="Next document" aria-label="Next document" data-help-key="doc-nav">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9 L12 15 L18 9"/></svg>
             </button>
           </div>
           <div class="rail-divider" aria-hidden="true"></div>
           <!-- Group 2: document tools (compact icon triggers; wide controls open as rail-anchored flyouts) -->
           <div class="rail-group rail-tools-group">
-            <button class="queue-tool-btn" id="btn-split-pdf" style="display:none;" title="Split PDF…">&#9986;</button>
-            <button class="queue-tool-btn" id="btn-anchor-wizard" style="display:none;" title="Template Wizard — map fields (admin)">&#9875;</button>
-            <button class="queue-tool-btn" id="btn-enhance-toggle" title="OCR Enhancement">
+            <button class="queue-tool-btn" id="btn-split-pdf" style="display:none;" title="Split PDF…" data-help-key="split">&#9986;</button>
+            <button class="queue-tool-btn" id="btn-anchor-wizard" style="display:none;" title="Template Wizard — map fields (admin)" data-help-key="anchor-wizard">&#9875;</button>
+            <button class="queue-tool-btn" id="btn-enhance-toggle" title="OCR Enhancement" data-help-key="enhance">
               <svg class="enhance-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
                 <line x1="3" y1="7" x2="21" y2="7"/>
                 <line x1="3" y1="12" x2="21" y2="12"/>
@@ -548,11 +552,11 @@
       <div id="queue-empty">✓ All reviewed</div>
       <div id="review-actions">
         <div class="ra-row">
-          <button class="btn skip" id="btn-skip">Skip</button>
-          <button class="btn skip" id="btn-defer" style="color:var(--warn)">&#8635; Defer</button>
+          <button class="btn skip" id="btn-skip" data-help-key="skip">Skip</button>
+          <button class="btn skip" id="btn-defer" style="color:var(--warn)" data-help-key="defer">&#8635; Defer</button>
         </div>
-        <button id="btn-file-all-review" title="File every document whose type and required fields are filled in. Documents still missing details are left for manual review.">&#10003; File All Ready</button>
-        <button id="btn-delete-all-review">&#128465; Delete All Review</button>
+        <button id="btn-file-all-review" data-help-key="file-all" title="File every document whose type and required fields are filled in. Documents still missing details are left for manual review.">&#10003; File All Ready</button>
+        <button id="btn-delete-all-review" data-help-key="delete-all">&#128465; Delete All Review</button>
       </div>
       <div id="deferred-footer">
         <button id="btn-delete-all">&#128465; Delete All Deferred</button>
@@ -562,7 +566,7 @@
     <div id="doc-panel">
       <div id="doc-toolbar">
         <span class="doc-name" id="doc-name">No document selected</span>
-        <div class="zoom-group">
+        <div class="zoom-group" data-help-key="zoom">
           <button class="doc-nav-btn" id="btn-zoom-out" title="Zoom out">&#8722;</button>
           <span id="zoom-level">100%</span>
           <button class="doc-nav-btn" id="btn-zoom-in" title="Zoom in">&#43;</button>
@@ -632,6 +636,10 @@
         </div>
         <span class="wiz-status" id="wiz-status">Anchor: — · Target: —</span>
         <div class="wiz-footer">
+          <button class="btn" id="wiz-show-resolved" title="OCR this document and overlay (amber) where the mapping ACTUALLY resolves — so you can see the anchor/target track a shifted page">Show where it reads</button>
+        </div>
+        <span class="wiz-status" id="wiz-resolved-msg"></span>
+        <div class="wiz-footer">
           <button class="btn" id="wiz-prev">&#8249; Prev</button>
           <button class="btn" id="wiz-next">Next &#8250;</button>
         </div>
@@ -674,7 +682,7 @@
       </div>
       <div id="action-bar">
         <button class="btn danger" id="btn-delete" title="Delete document">&#128465;</button>
-        <button class="btn confirm" id="btn-confirm" disabled>&#10003; Confirm &amp; File</button>
+        <button class="btn confirm" id="btn-confirm" disabled data-help-key="confirm">&#10003; Confirm &amp; File</button>
       </div>
     </div>
 
@@ -682,7 +690,74 @@
 </div>
 
 <div id="toast"></div>
+
+<!-- Hidden developer extraction-precedence console (Ctrl+Shift+D then M, pw SFDEV).
+     Read-only: shows each stage's candidate values per field and which one won. -->
+<aside id="rdc" hidden>
+  <div id="rdc-head">
+    <span id="rdc-title">Extraction trace</span>
+    <span id="rdc-doc"></span>
+    <button id="rdc-reprocess" class="rdc-btn" title="Reprocess this document with tracing on">↻ Reprocess (trace)</button>
+    <button id="rdc-close" class="rdc-btn" title="Close (Esc)">&times;</button>
+  </div>
+  <div id="rdc-body">
+    <div id="rdc-empty">No trace captured yet — click “Reprocess (trace)” to capture per-field candidates and winners.</div>
+    <div id="rdc-fields"></div>
+  </div>
+</aside>
+<style>
+  #rdc {
+    position: fixed; top: 52px; right: 16px; width: 380px; height: 70vh; max-height: 84vh;
+    z-index: 90000; background: var(--surface); border: 1px solid var(--border2);
+    border-radius: 8px; box-shadow: 0 12px 34px rgba(0,0,0,.5); display: flex;
+    flex-direction: column; font-family: var(--mono, monospace); color: var(--text);
+  }
+  #rdc[hidden] { display: none; }
+  #rdc-head {
+    display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+    border-bottom: 1px solid var(--border2); background: var(--surface2); flex-shrink: 0;
+    cursor: move; user-select: none; border-radius: 8px 8px 0 0;
+  }
+  #rdc-title { font-weight: 600; font-size: 12px; color: var(--accent2); }
+  #rdc-doc { flex: 1; font-size: 10px; color: var(--muted); overflow: hidden;
+             text-overflow: ellipsis; white-space: nowrap; }
+  .rdc-btn {
+    border: 1px solid var(--border2); background: var(--surface); color: var(--muted);
+    border-radius: 5px; padding: 3px 8px; font-size: 11px; cursor: pointer; flex-shrink: 0;
+  }
+  .rdc-btn:hover { border-color: var(--accent); color: var(--accent); }
+  #rdc-body { flex: 1; overflow: auto; padding: 8px 10px; }
+  #rdc-empty { color: var(--muted); font-size: 11px; line-height: 1.5; padding: 8px 2px; }
+  .rdc-field { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 8px; overflow: hidden; }
+  .rdc-fhead {
+    display: flex; align-items: baseline; gap: 6px; padding: 6px 8px; cursor: pointer;
+    background: var(--surface2);
+  }
+  .rdc-fname { font-size: 11px; color: var(--text); }
+  .rdc-fwin { margin-left: auto; font-size: 11px; color: var(--ok); max-width: 55%;
+              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rdc-fwin.empty { color: var(--warn); }
+  .rdc-cands { padding: 4px 8px 8px; display: none; }
+  .rdc-field.open .rdc-cands { display: block; }
+  .rdc-cand { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px;
+              font-size: 10px; padding: 3px 0; border-top: 1px solid var(--border); }
+  .rdc-stage { color: var(--accent2); flex-shrink: 0; min-width: 64px; }
+  .rdc-val { color: var(--text); flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .rdc-conf { color: var(--muted); flex-shrink: 0; }
+  .rdc-tag { flex-shrink: 0; font-size: 9px; padding: 0 4px; border-radius: 3px; }
+  .rdc-tag.won  { background: rgba(62,207,142,.18); color: var(--ok); }
+  .rdc-tag.lost { background: var(--surface2); color: var(--muted); }
+  .rdc-tag.rej  { background: rgba(247,111,111,.16); color: var(--err); }
+  .rdc-tag.auth { background: rgba(79,142,247,.18); color: var(--accent2); }
+  .rdc-reason { color: var(--muted); font-size: 9px; flex-basis: 100%; padding-left: 70px; }
+  /* Stage 2.5 transform + Stage 4/4.5 validation rows (the "why" behind a held/
+     flagged/emptied value). */
+  .rdc-note .rdc-stage { color: var(--muted); }
+  .rdc-note.valid .rdc-val { color: var(--warn); }
+  .rdc-note.xform .rdc-val { color: var(--accent2); }
+</style>
 <script src="../shared/theme.js"></script>
+<script src="../shared/helpmode.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

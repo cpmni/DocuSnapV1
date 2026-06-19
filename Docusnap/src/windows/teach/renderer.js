@@ -32,6 +32,15 @@ const state = {
 // ── Titlebar ─────────────────────────────────────────────────────────────────
 $('win-min').onclick   = () => D.windowMinimise();
 $('win-close').onclick = () => confirmCancel();
+
+// ── Help: user guide + contextual help mode ───────────────────────────────────
+$('btn-help-guide')?.addEventListener('click', () => D.openHelpWindow('teach'));
+window.initHelpMode?.('help-mode-toggle', {
+  'next':      'Move to the next step. On the final step this is what saves the document type, the field map and files the document.',
+  'back':      'Return to the previous step. Nothing is saved until the final step, so going back is always safe.',
+  'cancel':    'Stop teaching and close. Nothing is saved unless you reach and complete the final step.',
+  'help-mode': 'Help mode: click any control to see what it does. Press Esc to leave.',
+});
 $('btn-cancel').onclick = () => confirmCancel();
 function confirmCancel(){
   if (confirm('Stop teaching? Nothing is saved yet.')) D.windowClose();

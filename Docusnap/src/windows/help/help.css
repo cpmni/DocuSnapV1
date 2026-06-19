@@ -1,0 +1,159 @@
+/* Scan Finder — User Guide: shared stylesheet for every help page.
+   One file so the 8 pages never drift. All colour comes from theme CSS vars
+   (set by ../shared/theme.js) so light/dark both work, and the inline-SVG
+   diagrams re-skin with the theme instead of going stale like screenshots. */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:#0c0e14; --surface:#13161f; --surface2:#1a1e2a; --border:#252836; --border2:#2f3347;
+  --accent:#4f8ef7; --accent2:#6ea8ff; --ok:#3ecf8e; --warn:#f7b84f; --err:#f76f6f;
+  --text:#e2e6f0; --muted:#7a82a0; --accent-bg:#0d1f3a;
+  --mono:'IBM Plex Mono', monospace; --sans:'IBM Plex Sans', sans-serif; color-scheme: dark;
+}
+:root[data-theme="light"] {
+  --bg:#f0f3fa; --surface:#ffffff; --surface2:#e8edf7; --border:#cdd4e8; --border2:#b8c2d8;
+  --text:#1c2035; --muted:#5a6385; --accent-bg:#ddeaff; color-scheme: light;
+}
+html, body { height:100%; background:var(--bg); color:var(--text); font-family:var(--sans); font-size:13px; overflow:hidden; }
+
+/* Title bar */
+#titlebar {
+  -webkit-app-region: drag; display:flex; align-items:center; justify-content:space-between;
+  height:38px; padding:0 12px 0 16px; background:var(--surface); border-bottom:1px solid var(--border); flex-shrink:0;
+}
+.tb-title { font-size:11px; font-weight:500; letter-spacing:.1em; color:var(--muted); text-transform:uppercase; }
+.tb-btn {
+  -webkit-app-region:no-drag; width:26px; height:20px; border-radius:4px; border:none; cursor:pointer;
+  background:var(--surface2); color:var(--muted); font-size:13px; display:flex; align-items:center; justify-content:center;
+}
+.tb-btn.close:hover { background:var(--err); color:#fff; }
+
+#shell { display:flex; height:calc(100vh - 38px); }
+
+/* Left nav (built by help-nav.js from the page manifest) */
+#nav {
+  width:212px; flex-shrink:0; background:var(--surface); border-right:1px solid var(--border);
+  padding:18px 12px; display:flex; flex-direction:column; gap:2px; overflow-y:auto;
+}
+.nav-label { font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); margin:0 8px 8px; }
+.nav-item {
+  display:block; text-align:left; padding:8px 10px; border-radius:7px; border:none; background:transparent;
+  color:var(--muted); font-family:inherit; font-size:12.5px; cursor:pointer; text-decoration:none;
+  transition:background .12s, color .12s;
+}
+.nav-item:hover { background:var(--surface2); color:var(--text); }
+.nav-item.active { background:var(--accent-bg); color:var(--accent2); font-weight:500; }
+.nav-num { display:inline-block; width:16px; color:var(--border2); font-family:var(--mono); font-size:11px; }
+.nav-item.active .nav-num { color:var(--accent2); }
+
+/* Content column */
+#content { flex:1; overflow-y:auto; padding:26px 40px 90px; scroll-behavior:smooth; }
+.doc { max-width:720px; }
+
+/* Breadcrumb */
+.breadcrumb { font-size:11.5px; color:var(--muted); margin-bottom:18px; }
+.breadcrumb a { color:var(--accent2); text-decoration:none; }
+.breadcrumb a:hover { text-decoration:underline; }
+.breadcrumb .sep { margin:0 7px; opacity:.6; }
+
+/* Headings & text */
+.doc h1 { font-size:25px; font-weight:300; margin-bottom:8px; }
+.doc h2 { font-size:18px; font-weight:600; margin:30px 0 12px; color:var(--text);
+  border-bottom:1px solid var(--border); padding-bottom:8px; scroll-margin-top:16px; }
+.doc h3 { font-size:14px; font-weight:600; margin:20px 0 8px; color:var(--text); }
+.doc p  { color:var(--muted); line-height:1.65; margin-bottom:12px; }
+.doc ul, .doc ol { margin:0 0 14px 4px; padding-left:20px; }
+.doc li { color:var(--muted); line-height:1.7; margin-bottom:6px; }
+.doc ol li { margin-bottom:8px; }
+.doc li b, .doc p b { color:var(--text); font-weight:600; }
+.doc a.xref { color:var(--accent2); text-decoration:none; }
+.doc a.xref:hover { text-decoration:underline; }
+.doc code { font-family:var(--mono); font-size:11px; background:var(--surface2); padding:1px 5px; border-radius:4px; color:var(--accent2); }
+.lead { font-size:14.5px; color:var(--text); line-height:1.6; }
+
+/* Callout boxes */
+.callout { border:1px solid var(--border2); border-left-width:3px; border-radius:8px;
+  padding:12px 14px; margin:0 0 18px; background:var(--surface); }
+.callout p:last-child { margin-bottom:0; }
+.callout .callout-title { font-weight:600; color:var(--text); margin-bottom:4px; font-size:12.5px; }
+.callout.tip  { border-left-color:var(--accent); }
+.callout.note { border-left-color:var(--accent2); }
+.callout.warn { border-left-color:var(--warn); }
+.callout.ok   { border-left-color:var(--ok); }
+
+/* Quick-start steps (Home) */
+.quickstart { background:var(--surface); border:1px solid var(--border2); border-radius:10px; padding:18px 20px; margin:6px 0 26px; }
+.quickstart h3 { margin:0 0 12px; font-size:15px; }
+.quickstart ol { counter-reset:qs; list-style:none; padding-left:0; margin:0; }
+.quickstart li { position:relative; padding:0 0 12px 38px; margin:0; color:var(--muted); line-height:1.6; }
+.quickstart li::before {
+  counter-increment:qs; content:counter(qs); position:absolute; left:0; top:0;
+  width:24px; height:24px; border-radius:50%; background:var(--accent-bg); color:var(--accent2);
+  font-family:var(--mono); font-size:12px; font-weight:600; display:flex; align-items:center; justify-content:center;
+}
+.quickstart li:last-child { padding-bottom:0; }
+
+/* Section-link cards (Home) */
+.cards { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:8px 0 22px; }
+.card { display:block; text-decoration:none; border:1px solid var(--border); border-radius:9px;
+  padding:13px 15px; background:var(--surface); transition:border-color .12s, background .12s; }
+.card:hover { border-color:var(--accent); background:var(--surface2); }
+.card .card-title { color:var(--text); font-weight:600; font-size:13px; margin-bottom:3px; }
+.card .card-sub { color:var(--muted); font-size:11.5px; line-height:1.5; }
+
+/* Status / badge reference table */
+.refkey { width:100%; border-collapse:collapse; margin:6px 0 20px; font-size:12.5px; }
+.refkey th, .refkey td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--border); vertical-align:top; }
+.refkey th { color:var(--muted); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.06em; }
+.refkey td { color:var(--muted); line-height:1.55; }
+.refkey td b { color:var(--text); }
+.pill { display:inline-block; padding:2px 9px; border-radius:20px; font-size:11px; font-weight:600; font-family:var(--mono); white-space:nowrap; }
+.pill.ok   { background:rgba(62,207,142,.16); color:var(--ok); }
+.pill.warn { background:rgba(247,184,79,.16); color:var(--warn); }
+.pill.err  { background:rgba(247,111,111,.16); color:var(--err); }
+.pill.mut  { background:var(--surface2); color:var(--muted); }
+
+/* Screenshots — <figure class="shot-fig"><img class="shot" …><figcaption></figure>.
+   help-nav.js swaps a missing image for the placeholder below, so the guide reads
+   cleanly before real captures exist and auto-upgrades when a PNG is dropped in. */
+figure.shot-fig { margin:8px 0 22px; }
+img.shot { width:100%; height:auto; display:block; border:1px solid var(--border); border-radius:8px; background:var(--surface); }
+.shot-placeholder {
+  border:1px dashed var(--border2); border-radius:8px; background:var(--surface);
+  padding:26px 16px; text-align:center; color:var(--muted); display:flex; flex-direction:column; align-items:center; gap:7px;
+}
+.shot-placeholder .ph-icon { font-size:22px; opacity:.7; }
+.shot-placeholder .ph-label { font-size:12px; }
+.shot-placeholder code { font-size:10.5px; }
+figure.shot-fig figcaption, figure.diagram figcaption { color:var(--muted); font-size:11px; margin-top:7px; text-align:center; }
+
+/* Themeable inline-SVG diagrams (carried from the original guide) */
+figure.diagram { margin:8px 0 22px; }
+figure.diagram svg { width:100%; height:auto; display:block; border:1px solid var(--border); border-radius:8px; background:var(--surface); }
+.dg-panel   { fill:var(--surface);  stroke:var(--border2); stroke-width:1; }
+.dg-panel2  { fill:var(--surface2); stroke:var(--border);  stroke-width:1; }
+.dg-accent  { fill:var(--accent-bg); stroke:var(--accent); stroke-width:1.2; }
+.dg-line    { stroke:var(--border2); stroke-width:1.4; fill:none; }
+.dg-flow    { stroke:var(--accent);  stroke-width:1.6; fill:none; }
+.dg-arrow   { fill:var(--accent); }
+.dg-text    { fill:var(--text);  font-family:var(--sans); font-size:12px; font-weight:600; }
+.dg-sub     { fill:var(--muted); font-family:var(--sans); font-size:10px; }
+.dg-mono    { fill:var(--accent2); font-family:var(--mono); font-size:10.5px; }
+.dg-dash    { stroke:var(--accent); stroke-width:1.6; stroke-dasharray:5 4; fill:none; }
+.dg-ok-f    { fill:var(--ok); }   .dg-ok-s   { stroke:var(--ok);   stroke-width:1.4; fill:none; }
+.dg-warn-f  { fill:var(--warn); } .dg-warn-s { stroke:var(--warn); stroke-width:1.4; fill:none; }
+.dg-textline{ stroke:var(--muted); stroke-width:2.4; stroke-linecap:round; opacity:.5; }
+
+/* Footer prev/next + back to home (built by help-nav.js) */
+.page-foot { display:flex; align-items:stretch; gap:10px; margin-top:34px; padding-top:18px; border-top:1px solid var(--border); }
+.page-foot a { flex:1; text-decoration:none; border:1px solid var(--border); border-radius:9px; padding:11px 14px;
+  background:var(--surface); transition:border-color .12s, background .12s; }
+.page-foot a:hover { border-color:var(--accent); background:var(--surface2); }
+.page-foot .pf-dir { font-size:10.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); }
+.page-foot .pf-title { color:var(--accent2); font-size:13px; font-weight:600; margin-top:2px; }
+.page-foot a.pf-next { text-align:right; }
+.page-foot a.pf-home { flex:0 0 auto; display:flex; align-items:center; color:var(--muted); font-size:12px; }
+.page-foot a.pf-home:hover { color:var(--text); }
+
+::-webkit-scrollbar { width:7px; }
+::-webkit-scrollbar-thumb { background:var(--border2); border-radius:4px; }

@@ -178,15 +178,39 @@ function buildTrainingArgs(db, configPath, logger = null) {
 function register(ctx) {
   const { ipcMain, getDb, pythonExe, pythonArgs, tesseractPath,
           backendScript, configPath, notifyMainWindow, notifyDevInspector,
-          spawn, path, fs, logger } = ctx;
+          notifyReview, safeSend, spawn, path, fs, logger } = ctx;
 
   // Additive read-only telemetry mirror: send a progress message to the invoking
   // renderer exactly as before, then ALSO to the hidden dev inspector if it is
   // open (no-op otherwise). Does not change message shape, ordering, or any
   // processing logic — it is a pure tee.
+  // `sender` is event.sender (a webContents) captured at invoke time; it can be
+  // DESTROYED while the Python child still streams after its window closed, so it
+  // MUST go through safeSend (was a raw sender.send → uncaught "Object has been
+  // destroyed" crash on closing the window mid-run). notifyDevInspector already
+  // routes through safeSend in main.js.
   const mirror = (sender, channel, msg) => {
-    sender.send(channel, msg);
+    safeSend(sender, channel, msg);
     notifyDevInspector?.(channel, msg);
+  };
+
+  // Should the Python child emit the dev trace stream this run? True when the
+  // hidden inspector window is open, OR diagnostic logging is on (passed in, since
+  // it's computed per-handler), OR the in-Review dev console requested it
+  // (ctx.reviewTraceActive, set by review-trace-set).
+  const traceWanted = (diagOn) => !!(ctx.windows && ctx.windows['dev-inspector'])
+    || !!diagOn || !!ctx.reviewTraceActive;
+
+  // Route a trace event to every active sink: the session registry (so the
+  // inspector/Review console can PULL it via dev-get-session-doc), the inspector
+  // window, the Review window (only when its console is active), and the diag log.
+  // Each sink self-gates (notify* are no-ops when their window is absent), so this
+  // is safe to call unconditionally on any received trace message.
+  const routeTrace = (msg) => {
+    _recordDevTrace(msg);
+    notifyDevInspector?.('process-trace', msg);
+    if (ctx.reviewTraceActive) notifyReview?.('process-trace', msg);
+    diaglog.write(msg);
   };
 
   const { requireRole, getCurrentUser, logAudit } = require('../auth/handler');
@@ -319,7 +343,7 @@ function register(ctx) {
       // is open OR diagnostic logging is on (so the diagnostic file gets the full
       // per-stage trace + crop bboxes even with no window). Slice dir is created
       // on demand and cleaned by main.
-      if ((ctx.windows && ctx.windows['dev-inspector']) || diagOn) {
+      if (traceWanted(diagOn)) {
         scriptArgs.push('--trace');
         try { fs.mkdirSync(ctx.devSliceDir, { recursive: true }); scriptArgs.push('--slice-dir', ctx.devSliceDir); } catch {}
       }
@@ -339,9 +363,10 @@ function register(ctx) {
           if (!trimmed) continue;
           try {
             const msg = JSON.parse(trimmed);
-            // Dev-only trace stream: retain for the session registry, route ONLY
-            // to the inspector — never to user-facing progress or the DB handler.
-            if (msg.type === 'trace') { _recordDevTrace(msg); notifyDevInspector?.('process-trace', msg); diaglog.write(msg); continue; }
+            // Dev-only trace stream: retain for the session registry, route to the
+            // inspector and (when its console is active) the Review window — never
+            // to user-facing progress or the DB handler.
+            if (msg.type === 'trace') { routeTrace(msg); continue; }
             if (suppressStart && msg.type === 'start') continue;
             if (msg.type === 'file_done') _recordDevDoc(msg);
             setImmediate(() => _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger));
@@ -512,7 +537,7 @@ function register(ctx) {
     } catch {}
     // Dev trace stream + OCR slice capture while the inspector is open OR
     // diagnostic logging is on (so the diagnostic file captures reprocess too).
-    if ((ctx.windows && ctx.windows['dev-inspector']) || diagOn) {
+    if (traceWanted(diagOn)) {
       scriptArgs.push('--trace');
       try { fs.mkdirSync(ctx.devSliceDir, { recursive: true }); scriptArgs.push('--slice-dir', ctx.devSliceDir); } catch {}
     }
@@ -570,7 +595,7 @@ function register(ctx) {
           if (!trimmed) continue;
           try {
             const msg = JSON.parse(trimmed);
-            if (msg.type === 'trace') { _recordDevTrace(msg); notifyDevInspector?.('process-trace', msg); diaglog.write(msg); continue; }
+            if (msg.type === 'trace') { routeTrace(msg); continue; }
             if (msg.type === 'file_done') _recordDevDoc(msg);
             mirror(event.sender, 'reprocess-progress', msg);
             if (msg.type === 'file_done') result = msg;
@@ -598,7 +623,10 @@ function register(ctx) {
           return finish({ success: false, error: 'No data returned' });
         }
 
-        // Merge: keep existing if it had higher confidence
+        // Merge: the freshly-recomputed value WINS whenever present (the engine
+        // recomputes field winners cleanly each run); a prior value is preserved
+        // only when the new run found nothing for that field (see below). No
+        // confidence comparison — a stale value never shadows a new winner.
         const existingMap = {};
         for (const e of existing) existingMap[e.field_key] = e;
 
@@ -615,13 +643,11 @@ function register(ctx) {
 
         // Dev-only: surface each merge decision to the inspector (and session
         // registry). Observation only — the merge result below is unchanged.
-        const _devTrace = !!(ctx.windows && ctx.windows['dev-inspector']);
         const _emitMerge = (field, decision, oldV, newV) => {
-          if (!_devTrace && !diagOn) return;
+          if (!traceWanted(diagOn)) return;
           const ev = { type: 'trace', doc: filename, event: 'reprocess_merge',
                        field, decision, old: oldV ?? null, new: newV ?? null };
-          if (_devTrace) { _recordDevTrace(ev); notifyDevInspector('process-trace', ev); }
-          diaglog.write(ev);
+          routeTrace(ev);
         };
 
         const mergedRows = newRows.map(row => {

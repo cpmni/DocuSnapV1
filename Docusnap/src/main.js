@@ -23,6 +23,7 @@ app.setPath('userData', path.join(app.getPath('appData'), 'DocuSnap'));
 
 // ── Module imports ────────────────────────────────────────────────────────────
 const logger           = require('./modules/logger');
+const { makeSafeSend } = require('./lib/safe-send');
 const diaglog          = require('./modules/diaglog');
 const authModule       = require('./modules/auth/handler');
 const processingModule = require('./modules/processing/handler');
@@ -102,6 +103,7 @@ const MAIN_WINDOW_OPTIONS    = { width: 1100, height: 750, minWidth: 800, minHei
 const LOGIN_WINDOW_OPTIONS   = { width: 460, height: 660, resizable: false, minimizable: false, maximizable: false };
 const LICENSE_WINDOW_OPTIONS = { width: 460, height: 560, resizable: false, minimizable: false, maximizable: false };
 const ONBOARDING_WINDOW_OPTIONS = { width: 720, height: 640, resizable: false, minimizable: false, maximizable: false };
+const HELP_WINDOW_OPTIONS = { width: 940, height: 700, minWidth: 640, minHeight: 460 };
 
 // Swap the whole app shell between "logged out" and "in the app". The login
 // window is always created BEFORE the others are closed, so the app never
@@ -296,13 +298,21 @@ function sweepInboxOrphans() {
 }
 
 function getMainWindow()   { return windows['main'];     }
+
+// Crash-safe webContents.send (see src/lib/safe-send.js). A captured webContents
+// (e.g. event.sender frozen in a Python-stdout closure) can be DESTROYED while a
+// child still streams after its window closed; a raw send then throws an uncaught
+// "Object has been destroyed" (native crash dialog). Every webContents.send in
+// the main process funnels through this guard.
+const safeSend = makeSafeSend(logger);
+
 function notifyMainWindow(channel, ...args) {
-  windows['main']?.webContents.send(channel, ...args);
-  windows['review']?.webContents.send(channel, ...args);
+  safeSend(windows['main']?.webContents, channel, ...args);
+  safeSend(windows['review']?.webContents, channel, ...args);
 }
 
 function notifyAllWindows(channel, ...args) {
-  Object.values(windows).forEach(w => w?.webContents.send(channel, ...args));
+  Object.values(windows).forEach(w => safeSend(w?.webContents, channel, ...args));
 }
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────
@@ -346,9 +356,16 @@ app.whenReady().then(() => {
     ipcMain, getDb,
     resourcePath, pythonExe, pythonArgs, tesseractPath,
     backendScript, configPath, templatesDir,
-    createWindow, getMainWindow, notifyMainWindow, notifyAllWindows,
+    createWindow, getMainWindow, notifyMainWindow, notifyAllWindows, safeSend,
     // Read-only telemetry mirror target for the hidden dev inspector (no-op when closed).
-    notifyDevInspector: (channel, ...args) => windows['dev-inspector']?.webContents.send(channel, ...args),
+    // safeSend guards a destroyed/missing webContents, not just a missing window.
+    notifyDevInspector: (channel, ...args) => safeSend(windows['dev-inspector']?.webContents, channel, ...args),
+    // Same read-only telemetry tee, aimed at the REVIEW window — used only by the
+    // in-Review dev console (Ctrl+Shift+D→M). No-op unless that window exists.
+    notifyReview: (channel, ...args) => safeSend(windows['review']?.webContents, channel, ...args),
+    // Set true while the in-Review dev console is open; gates --trace + the
+    // process-trace route to the Review window (see processing/handler.js).
+    reviewTraceActive: false,
     // Dev-only temp dir for OCR crop slices (cleaned on inspector close + app exit).
     devSliceDir: path.join(app.getPath('temp'), 'ds-devslices'),
     windows,
@@ -406,6 +423,20 @@ app.whenReady().then(() => {
     win.focus();
     return true;
   });
+  // In-Review dev console: enable/disable the per-field extraction trace for the
+  // Review window. Enabling requires the same SFDEV password (verified HERE, never
+  // logged); disabling is unconditional. Sets ctx.reviewTraceActive, which gates
+  // --trace and the process-trace route in processing/handler.js. Opens NO window
+  // — the console is just a hidden panel inside the existing Review window.
+  ipcMain.handle('review-trace-set', (_e, on, password) => {
+    if (on) {
+      if (password !== 'SFDEV') return false;
+      ctx.reviewTraceActive = true;
+      return true;
+    }
+    ctx.reviewTraceActive = false;
+    return true;
+  });
   // Read-only state getter (boolean) — no mutation, safe to expose.
   ipcMain.handle('dev-inspector-running', () => {
     try { return processingModule.isBatchRunning(); } catch { return false; }
@@ -457,7 +488,7 @@ app.whenReady().then(() => {
     createWindow('review', { width: 1200, height: 800, minWidth: 900, minHeight: 600 });
     if (alreadyOpen) {
       // Window is loaded — send event directly; no need to poll via get-review-target.
-      windows['review'].webContents.send('navigate-to-doc', docId);
+      safeSend(windows['review']?.webContents, 'navigate-to-doc', docId);
       pendingReviewDocId = null;
     }
     // else: new window — renderer calls get-review-target after loadQueue() completes.
@@ -502,6 +533,20 @@ app.whenReady().then(() => {
     } catch { return { ok: false, reason: 'not_writable' }; }
   });
 
+  // ── User-guide / help window ─────────────────────────────────────────────────
+  // Read-only docs; any role may open it. `section` (e.g. 'review') scrolls the
+  // guide straight to that section. Mirrors the license window's open/re-open
+  // push: send once the page has loaded, or immediately if it's already open.
+  ipcMain.on('open-help-window', (_e, section) => {
+    const alreadyOpen = !!windows['help'];
+    const win = createWindow('help', HELP_WINDOW_OPTIONS, 'index.html');
+    if (!win) return;
+    const sec = String(section || 'overview');
+    const push = () => { try { win.webContents.send('help-section', sec); } catch {} };
+    if (alreadyOpen && !win.webContents.isLoading()) { win.focus(); push(); }
+    else win.webContents.once('did-finish-load', push);
+  });
+
   // ── Teach-a-new-document wizard (guided, non-technical) ──────────────────────
   // Writes templates/learning, so Admin+Edit like Review. Mirrors the review
   // opener pattern: open cold, or open targeted at a just-scanned document.
@@ -515,7 +560,7 @@ app.whenReady().then(() => {
     pendingTeachDocId = docId;
     createWindow('teach', { width: 1200, height: 820, minWidth: 960, minHeight: 640 });
     if (alreadyOpen) {
-      windows['teach'].webContents.send('teach-load-doc', docId);
+      safeSend(windows['teach']?.webContents, 'teach-load-doc', docId);
       pendingTeachDocId = null;
     }
   });
@@ -542,7 +587,7 @@ app.whenReady().then(() => {
     pendingSettingsTemplateId = templateId;
     createWindow('settings', { width: 1100, height: 680, minWidth: 900, minHeight: 520 });
     if (alreadyOpen) {
-      windows['settings'].webContents.send('navigate-to-template', templateId);
+      safeSend(windows['settings']?.webContents, 'navigate-to-template', templateId);
       pendingSettingsTemplateId = null;
     }
   });

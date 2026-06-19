@@ -126,6 +126,8 @@
   <div class="titlebar">
     <span class="ttl">Teach a new document</span>
     <div class="winbtns">
+      <button class="help-guide-btn" id="btn-help-guide" title="Open the user guide (Teach a document)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></button>
+      <button id="help-mode-toggle" data-help-key="help-mode" title="Help mode — click, then click any control to learn what it does">?</button>
       <button id="win-min" title="Minimise">—</button>
       <button class="close" id="win-close" title="Close">✕</button>
     </div>
@@ -227,15 +229,16 @@
   </div>
 
   <div class="footer">
-    <button class="btn ghost" id="btn-back">← Back</button>
+    <button class="btn ghost" id="btn-back" data-help-key="back">← Back</button>
     <div class="dots" id="dots"></div>
     <div style="display:flex;gap:10px;align-items:center">
-      <button class="btn link" id="btn-cancel">Cancel</button>
-      <button class="btn primary" id="btn-next">Continue →</button>
+      <button class="btn link" id="btn-cancel" data-help-key="cancel">Cancel</button>
+      <button class="btn primary" id="btn-next" data-help-key="next">Continue →</button>
     </div>
   </div>
 
   <div class="toast" id="toast"></div>
+  <script src="../shared/helpmode.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

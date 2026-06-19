@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self'; script-src 'self'">
+  <title>Scan Finder — Settings &amp; Help</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="help.css">
+  <script src="../shared/theme.js"></script>
+</head>
+<body>
+  <div id="titlebar">
+    <span class="tb-title">Scan Finder — User Guide</span>
+    <button class="tb-btn close" id="btn-close" title="Close">&#215;</button>
+  </div>
+
+  <div id="shell">
+    <nav id="nav">
+      <div class="nav-label">User Guide</div>
+      <div id="nav-links"></div>
+    </nav>
+
+    <div id="content">
+      <div class="doc">
+        <div class="breadcrumb" id="breadcrumb"></div>
+
+        <main>
+          <section id="settings">
+            <h1>Settings &amp; Help</h1>
+            <p class="lead">Settings let an admin tailor how Scan Finder works. Most people rarely need to change
+              anything &mdash; but here are the settings you're most likely to touch, plus where to find help.</p>
+            <div class="callout note">
+              <div class="callout-title">Admin only</div>
+              <p>Settings are available to admins. If you don't see the Settings button, your account doesn't
+                have permission &mdash; ask whoever set up Scan Finder for you.</p>
+            </div>
+          </section>
+
+          <section id="common">
+            <h2>Settings you may need</h2>
+            <ul>
+              <li><b>Output folder</b> &mdash; where your filed documents are saved. Change this if you want
+                documents to go somewhere else.</li>
+              <li><b>Processed-scans folder</b> &mdash; where originals are kept track of after processing.</li>
+              <li><b>Processing mode</b> &mdash; <b>Fast</b> (instant) or <b>Smart</b> (the default, more thorough).
+                Pick whichever suits your documents.</li>
+              <li><b>Performance / threads</b> &mdash; how many documents to work on at once. More can speed up
+                large imports on a capable computer; the default is a safe choice.</li>
+              <li><b>Document types &amp; fields</b> &mdash; turn document types on or off and add your own fields
+                (for example a "PO number") to a type.</li>
+              <li><b>Templates</b> &mdash; review the layouts Scan Finder has learned.</li>
+              <li><b>Activation</b> &mdash; shows your licence status.</li>
+              <li><b>Re-run setup</b> &mdash; opens the first-time setup wizard again.</li>
+            </ul>
+          </section>
+
+          <section id="help">
+            <h2>Where to find help</h2>
+            <p>Scan Finder has help built in, in three forms:</p>
+            <ul>
+              <li><b>User Guide</b> &mdash; this guide. Open it from the <b>User Guide</b> button, the card on the
+                home screen, or the <b>Help</b> button at the top of the main window.</li>
+              <li><b>Quick explanations</b> &mdash; the <b>?</b> help mode, described below.</li>
+              <li><b>Troubleshooting</b> &mdash; common problems and fixes are on the
+                <a class="xref" href="troubleshooting.html">Troubleshooting &amp; FAQ</a> page.</li>
+            </ul>
+          </section>
+
+          <section id="help-mode">
+            <h2>The "?" help mode</h2>
+            <p>This is the quickest way to learn what a button does without leaving what you're doing.</p>
+            <ol>
+              <li>Click the <b>?</b> button at the top of the window. The pointer changes to show help mode is on.</li>
+              <li>Click any control &mdash; a button, a field, a badge.</li>
+              <li>A short explanation pops up. Help mode then switches off automatically.</li>
+              <li>Press <b>Esc</b> or click away to dismiss the explanation.</li>
+            </ol>
+            <p>Help mode is available on the main window and other screens that show a <b>?</b> button.</p>
+          </section>
+
+          <div class="callout tip">
+            <div class="callout-title">Next step</div>
+            <p>Run into something unexpected? The <a class="xref" href="troubleshooting.html">Troubleshooting &amp; FAQ</a>
+              page has quick answers.</p>
+          </div>
+        </main>
+
+        <nav class="page-foot" id="page-foot"></nav>
+      </div>
+    </div>
+  </div>
+
+  <script src="help-nav.js"></script>
+</body>
+</html>

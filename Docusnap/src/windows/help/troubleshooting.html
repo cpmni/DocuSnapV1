@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self'; script-src 'self'">
+  <title>Scan Finder — Troubleshooting &amp; FAQ</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="help.css">
+  <script src="../shared/theme.js"></script>
+</head>
+<body>
+  <div id="titlebar">
+    <span class="tb-title">Scan Finder — User Guide</span>
+    <button class="tb-btn close" id="btn-close" title="Close">&#215;</button>
+  </div>
+
+  <div id="shell">
+    <nav id="nav">
+      <div class="nav-label">User Guide</div>
+      <div id="nav-links"></div>
+    </nav>
+
+    <div id="content">
+      <div class="doc">
+        <div class="breadcrumb" id="breadcrumb"></div>
+
+        <main>
+          <section id="troubleshooting">
+            <h1>Troubleshooting &amp; FAQ</h1>
+            <p class="lead">Quick answers to the things people ask most. Each one is "what you're seeing &rarr;
+              what to check &rarr; what to do".</p>
+          </section>
+
+          <section id="faq">
+            <h2>Common questions</h2>
+
+            <h3>A field came out wrong or empty</h3>
+            <ol>
+              <li>Open the document in the <a class="xref" href="review.html">Review window</a>.</li>
+              <li>Click the field and type the correct value &mdash; or use the pick button to grab it from the scan.</li>
+              <li>If the whole scan reads poorly, try <b>OCR Enhancement</b> and then <b>Reprocess</b>.</li>
+            </ol>
+
+            <h3>My document isn't showing up in Search</h3>
+            <ol>
+              <li>Search only shows documents you've <b>confirmed and filed</b>.</li>
+              <li>Check the <b>Review queue</b> &mdash; it's probably still there, waiting to be confirmed.</li>
+              <li>Confirm it, and it will appear in Search.</li>
+            </ol>
+
+            <h3>The "Confirm &amp; File" button is greyed out</h3>
+            <ol>
+              <li>A required field is missing &mdash; usually the <b>document type</b>, <b>date</b>, or <b>reference</b>.</li>
+              <li>Fill in anything highlighted as required.</li>
+              <li>The button turns on as soon as everything required is present.</li>
+            </ol>
+
+            <h3>Processing is slow, or a scan won't read</h3>
+            <ol>
+              <li>Large batches and faint or skewed scans naturally take longer.</li>
+              <li>For a single bad scan, use <b>OCR Enhancement</b> in the Review window, then <b>Reprocess</b>.</li>
+              <li>An admin can raise the number of threads in <a class="xref" href="settings.html">Settings</a> to
+                speed up big imports on a capable computer.</li>
+            </ol>
+
+            <h3>Where did my filed document go?</h3>
+            <ol>
+              <li>It's in your <b>output folder</b>, grouped by company, year and month.</li>
+              <li>The file is named <code>Type.Date.Reference</code> &mdash; for example
+                <code>Invoice.15-12-2025.INV-001.pdf</code>.</li>
+              <li>The easiest way to find it is <b>Search</b>, then "show in explorer".</li>
+            </ol>
+
+            <h3>One PDF actually contains several documents</h3>
+            <ol>
+              <li>Open it in the Review window.</li>
+              <li>Use <b>Split PDF</b> to break it into separate documents (by page range, every page, or every
+                few pages).</li>
+              <li>Review and file each one as normal.</li>
+            </ol>
+
+            <h3>Scan Finder keeps reading a layout wrong</h3>
+            <ol>
+              <li>Confirm a few documents from that supplier accurately &mdash; it learns as you go.</li>
+              <li>For a stubborn layout, use <a class="xref" href="templates.html">Teach a document</a> to show it
+                where each field sits.</li>
+            </ol>
+          </section>
+
+          <div class="callout note">
+            <div class="callout-title">Still stuck?</div>
+            <p>Use the <b>?</b> help mode on the main window to learn what a specific control does, or revisit the
+              relevant section of this guide. Remember &mdash; everything stays on this computer, so your documents
+              are never lost to an upload or a connection problem.</p>
+          </div>
+        </main>
+
+        <nav class="page-foot" id="page-foot"></nav>
+      </div>
+    </div>
+  </div>
+
+  <script src="help-nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self'; script-src 'self'">
+  <title>Scan Finder — Getting Started</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="help.css">
+  <script src="../shared/theme.js"></script>
+</head>
+<body>
+  <div id="titlebar">
+    <span class="tb-title">Scan Finder — User Guide</span>
+    <button class="tb-btn close" id="btn-close" title="Close">&#215;</button>
+  </div>
+
+  <div id="shell">
+    <nav id="nav">
+      <div class="nav-label">User Guide</div>
+      <div id="nav-links"></div>
+    </nav>
+
+    <div id="content">
+      <div class="doc">
+        <div class="breadcrumb" id="breadcrumb"></div>
+
+        <main>
+          <section id="getting-started">
+            <h1>Getting Started</h1>
+            <p class="lead">A quick tour of opening Scan Finder, signing in, and finding your way around the
+              main screen.</p>
+          </section>
+
+          <section id="login">
+            <h2>Opening the app and signing in</h2>
+            <ol>
+              <li>Open <b>Scan Finder</b> from your desktop or Start menu.</li>
+              <li>If your copy asks you to sign in, enter your username and password and click <b>Sign in</b>.</li>
+              <li>The first time the app is ever used, it will ask you to create an admin account &mdash; keep
+                these details safe, as the admin can manage everyone else's access.</li>
+            </ol>
+            <p>What you can do depends on your role:</p>
+            <ul>
+              <li><b>Admin</b> &mdash; everything, including Settings and teaching new layouts.</li>
+              <li><b>Edit</b> &mdash; import, review and file documents.</li>
+              <li><b>Read only</b> &mdash; search and view filed documents.</li>
+            </ul>
+          </section>
+
+          <section id="first-run">
+            <h2>First-time setup</h2>
+            <p>On a brand-new installation, a short setup wizard runs <b>once</b> to get you going. It asks for
+              the things Scan Finder needs and then takes you to the main screen.</p>
+            <ol>
+              <li><b>Output folder</b> &mdash; where your tidy, filed documents will be saved. This is the only
+                required step; a sensible default is suggested and you can change it.</li>
+              <li><b>Appearance</b> &mdash; choose a light or dark theme (you can change this later in Settings).</li>
+              <li><b>Performance</b> &mdash; how fast to process and how many documents to handle at once. The
+                defaults are fine for most computers.</li>
+            </ol>
+            <div class="callout note">
+              <div class="callout-title">Already set up?</div>
+              <p>Existing installations skip this wizard. An admin can run it again any time from
+                <a class="xref" href="settings.html">Settings &rarr; General &rarr; Re-run setup</a>.</p>
+            </div>
+          </section>
+
+          <span id="main" aria-hidden="true"></span>
+          <section id="console">
+            <h2>The main screen (the console)</h2>
+            <p>The home screen is where you start a run or jump to any other area. Here's what each part does:</p>
+
+            <figure class="shot-fig">
+              <img class="shot" src="img/console-annotated.png" alt="The Scan Finder main window with its key areas labelled">
+              <figcaption>The main window &mdash; pick a folder, process it, or jump to Review, Search or Settings.</figcaption>
+            </figure>
+
+            <ul>
+              <li><b>Begin Import</b> &mdash; choose a folder of scans and bring them in for processing.</li>
+              <li><b>Source Folder</b> (sidebar) &mdash; the folder you're importing from; click it to choose a different one.</li>
+              <li><b>Process Documents</b> &mdash; start reading the selected folder. <b>Stop</b> safely halts a run in progress.</li>
+              <li><b>Review Queue</b> (top bar) &mdash; opens the Review window; the number badge shows how many documents are waiting for a check.</li>
+              <li><b>Search</b> &mdash; find documents you've already filed.</li>
+              <li><b>Settings</b> &mdash; document types, fields, folders and preferences (admin only).</li>
+              <li><b>Teach a document</b> &mdash; guide Scan Finder to learn a new layout (admin/edit).</li>
+              <li><b>FAST / SMART badge</b> &mdash; shows the current processing mode; see below.</li>
+              <li><b>Help</b> and <b>?</b> &mdash; open this guide, or turn on help mode (click <b>?</b>, then click any control to see what it does).</li>
+            </ul>
+          </section>
+
+          <section id="mode">
+            <h2>Processing mode: Fast or Smart</h2>
+            <p>The badge near the top shows how Scan Finder reads your documents. Click it to change the mode in Settings.</p>
+            <ul>
+              <li><b>Fast</b> &mdash; reads documents almost instantly. Great for familiar, good-quality scans.</li>
+              <li><b>Smart</b> &mdash; the default. Takes a little longer and works harder on anything it's unsure about.</li>
+            </ul>
+            <p>You can switch between them at any time; it only affects documents processed afterwards.</p>
+          </section>
+
+          <div class="callout tip">
+            <div class="callout-title">Next step</div>
+            <p>Ready to bring documents in? Head to <a class="xref" href="importing.html">Importing Documents</a>.</p>
+          </div>
+        </main>
+
+        <nav class="page-foot" id="page-foot"></nav>
+      </div>
+    </div>
+  </div>
+
+  <script src="help-nav.js"></script>
+</body>
+</html>

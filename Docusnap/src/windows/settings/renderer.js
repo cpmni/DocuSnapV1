@@ -16,6 +16,28 @@ document.querySelectorAll('.tab').forEach(btn => {
 
 document.getElementById('btn-close').addEventListener('click', () => api.windowClose());
 
+// ── Help: user guide + contextual help mode ───────────────────────────────────
+document.getElementById('btn-help-guide')?.addEventListener('click', () => api.openHelpWindow('settings'));
+
+const HELP_TEXTS = {
+  'tab-general':    'Output folder (where filed documents go), the processed-scans folder, processing mode/threads, and re-running first-time setup.',
+  'tab-doctypes':   'Enable or disable document types and choose which field is each type’s main reference number and date.',
+  'tab-fields':     'Add, edit, reorder or remove the fields a document type extracts. Built-in fields are locked.',
+  'tab-filenaming': 'Choose how filed documents are named (the DocType.Date.Reference pattern and its parts).',
+  'tab-templates':  'Browse the layouts Scan Finder has learned, pin sample pages, and map where each field sits on a layout.',
+  'tab-learning':   'Recovery tools for the learned data — review and clean up hints, anchors and templates if extraction drifts.',
+  'tab-users':      'Manage the people who can sign in and what each is allowed to do (admin / edit / read-only).',
+  'tab-audit':      'A searchable record of sensitive actions — sign-ins, document opens, review actions, settings and licensing changes.',
+  'tab-licensing':  'Your licence / activation status, and the trial or paid-seat details for this device.',
+  'tab-advanced':   'Lower-level toggles (registration, born-digital text, concurrency) — sensible defaults are already set.',
+  'output-folder':  'Pick the folder where confirmed documents are filed. This must be set before any document can be confirmed.',
+  'rerun-setup':    'Re-open the welcome wizard to revisit the essentials — theme, output folder and performance — without losing any data.',
+  'add-type':       'Create a custom document type with its own fields (e.g. “Delivery Note”) alongside the built-in Invoice / Sales Order / Purchase Order.',
+  'add-field':      'Add a custom field to the selected document type: a label, an auto-generated key, a value type and whether it’s required.',
+  'help-mode':      'Help mode: click any control to see what it does. Press Esc to leave.',
+};
+window.initHelpMode?.('help-mode-toggle', HELP_TEXTS);
+
 // ══════════════════════════════════════════════════════════════════════════════
 // GENERAL TAB
 // ══════════════════════════════════════════════════════════════════════════════
@@ -354,27 +376,37 @@ function renderFieldsTable() {
 
   for (const f of dt.fields) {
     const tr = document.createElement('tr');
+    // Structural roles (Company / Date / Reference) are PERMANENT: they drive
+    // filing + all learning, so they can't be disabled or deleted (the per-document
+    // value stays editable in Review). Lock the toggle and show a 🔒 instead of a
+    // delete button.
+    const structural = f.is_structural === 1;
     tr.innerHTML = `
-      <td>${escHtml(f.label)}</td>
+      <td>${escHtml(f.label)}${structural ? ' <span class="field-lock" title="Permanent field — required for filing and learning">🔒</span>' : ''}</td>
       <td><span class="field-key">${escHtml(f.key)}</span></td>
       <td>${escHtml(f.type)}</td>
       <td>
         <label class="toggle">
-          <input type="checkbox" data-field-id="${f.id}" ${f.enabled !== 0 ? 'checked' : ''}>
+          <input type="checkbox" data-field-id="${f.id}" ${f.enabled !== 0 ? 'checked' : ''} ${structural ? 'disabled' : ''}>
           <span class="toggle-slider"></span>
         </label>
       </td>
       <td>
-        ${f.built_in
-          ? `<span class="badge-builtin">built-in</span>`
-          : `<span class="badge-custom">custom</span>
-             <button class="btn-icon" data-delete="${f.id}">&#215;</button>`}
+        ${structural
+          ? `<span class="badge-builtin">permanent</span>`
+          : f.built_in
+            ? `<span class="badge-builtin">built-in</span>`
+            : `<span class="badge-custom">custom</span>
+               <button class="btn-icon" data-delete="${f.id}">&#215;</button>`}
       </td>
     `;
 
-    tr.querySelector('input[type=checkbox]').addEventListener('change', async (e) => {
-      await api.updateField(f.id, { enabled: e.target.checked ? 1 : 0 });
-    });
+    const toggle = tr.querySelector('input[type=checkbox]');
+    if (!structural) {
+      toggle.addEventListener('change', async (e) => {
+        await api.updateField(f.id, { enabled: e.target.checked ? 1 : 0 });
+      });
+    }
 
     const delBtn = tr.querySelector('[data-delete]');
     if (delBtn) {
@@ -1267,6 +1299,29 @@ document.getElementById('tpl-btn-import-sample').addEventListener('click', async
   }
 });
 
+// Recompute registration landmarks from the CURRENT sample (no re-pin) — recovery
+// for a template with no/poor landmarks so drifted scans register correctly.
+document.getElementById('tpl-btn-regen-landmarks').addEventListener('click', async () => {
+  if (!selectedTemplate) return;
+  const msg = document.getElementById('tpl-sample-msg');
+  msg.textContent = 'Regenerating landmarks…';
+  msg.style.color = 'var(--muted)';
+  try {
+    const res = await api.regenerateTemplateLandmarks(selectedTemplate.id);
+    if (res && res.success) {
+      msg.textContent = `Registration landmarks regenerated (${res.count}).`;
+      msg.style.color = res.count >= 2 ? 'var(--ok)' : 'var(--warn)';
+    } else {
+      msg.textContent = `Could not regenerate landmarks${res && res.reason ? ' — ' + res.reason : ''}. Try Import Sample… with a clean copy.`;
+      msg.style.color = 'var(--err)';
+    }
+  } catch (e) {
+    console.warn('regenerateTemplateLandmarks failed:', e.message);
+    msg.textContent = 'Could not regenerate landmarks.';
+    msg.style.color = 'var(--err)';
+  }
+});
+
 // Mirrors fileArgs() in search/renderer.js — confirmed documents resolve their
 // preview path from stored_path/stored_filename, everything else from
 // folder_path/original_filename. Sample documents pinned here are always
@@ -2148,9 +2203,16 @@ function renderLearningTemplates(rows, allTemplates) {
     const row = document.createElement('div');
     row.style.cssText = 'display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:4px 0;';
 
+    // Identity-less templates (no logo_phash) can never be MATCHED — they are
+    // orphans to merge into the matched template (or regenerate identity for).
+    // searchByName returns a thin projection, so read logo_phash from the full
+    // getAll list (allTemplates) by id.
+    const full = (allTemplates || []).find(o => o.id === t.id);
+    const noIdentity = full && !full.logo_phash;
     const label = document.createElement('span');
     label.style.flex = '1 1 220px';
-    label.innerHTML = `${escHtml(t.name)} <span class="field-key">(${escHtml(t.document_type_slug || '—')}, confirmed ${t.confirmed_count}×)</span>`;
+    label.innerHTML = `${escHtml(t.name)} <span class="field-key">(${escHtml(t.document_type_slug || '—')}, confirmed ${t.confirmed_count}×)</span>`
+      + (noIdentity ? ` <span class="field-key" style="color:var(--warn)" title="No logo fingerprint — this template can't be matched. Merge it into the matched template, or pin/regenerate a sample to seed its identity.">⚠ unmatchable</span>` : '');
     row.appendChild(label);
 
     // Reassign target — every OTHER template (full list, not just the search
@@ -2159,7 +2221,7 @@ function renderLearningTemplates(rows, allTemplates) {
     sel.className = 'field-select';
     sel.style.cssText = 'width:200px;';
     const ph = document.createElement('option');
-    ph.value = ''; ph.textContent = 'Reassign docs to…';
+    ph.value = ''; ph.textContent = 'Reassign / merge to…';
     sel.appendChild(ph);
     for (const o of (allTemplates || [])) {
       if (o.id === t.id) continue;
@@ -2184,6 +2246,29 @@ function renderLearningTemplates(rows, allTemplates) {
       await runLearningSearch();
     });
     row.appendChild(btnReassign);
+
+    // Merge: fold this template INTO the selected target and delete it
+    // (irreversible — folds mappings/fields/landmarks/sample/identity the target
+    // lacks, moves doc links, then removes this row). The cure for fragmentation.
+    const btnMerge = document.createElement('button');
+    btnMerge.className = 'btn';
+    btnMerge.textContent = 'Merge into…';
+    btnMerge.addEventListener('click', async () => {
+      const toId = Number(sel.value);
+      if (!toId) return;
+      const toName = sel.options[sel.selectedIndex].textContent;
+      if (!confirm(`Merge "${t.name}" INTO "${toName}" and DELETE "${t.name}"?\n\n`
+        + `"${toName}" keeps its own data and GAINS anything it lacks (field mappings, `
+        + `landmarks, sample, identity) plus all of "${t.name}"'s documents.\n\n`
+        + `This is NOT reversible (unlike Reassign).`)) return;
+      const r = await api.mergeTemplate(t.id, toId);
+      document.getElementById('lr-msg').textContent = (r && r.ok)
+        ? `Merged "${t.name}" → "${toName}": ${r.movedDocs} doc(s), +${r.mappingsAdded} mapping(s)`
+          + `${r.landmarksAdopted ? ', landmarks adopted' : ''}${r.sampleAdopted ? ', sample adopted' : ''}.`
+        : `Merge failed${r && r.reason ? ' — ' + r.reason : ''}.`;
+      await runLearningSearch();
+    });
+    row.appendChild(btnMerge);
 
     const btnDelete = document.createElement('button');
     btnDelete.className = 'btn danger';

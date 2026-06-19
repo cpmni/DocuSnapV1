@@ -7,6 +7,7 @@
   "scripts": {
     "start": "electron .",
     "build": "node -e \"const c=require('child_process');process.env.BUILD_REV=process.env.BUILD_REV||'local';c.execSync('electron-builder --win --x64',{stdio:'inherit',env:process.env})\"",
+    "check:help": "node scripts/check-help-coverage.js",
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {

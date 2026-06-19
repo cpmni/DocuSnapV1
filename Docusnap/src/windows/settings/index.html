@@ -37,6 +37,7 @@
       background:var(--surface); border-bottom:1px solid var(--border); flex-shrink:0;
     }
     .tb-title { font-size:11px; font-weight:500; letter-spacing:.1em; color:var(--muted); text-transform:uppercase; }
+    .tb-right { display:flex; align-items:center; gap:8px; -webkit-app-region:no-drag; }
     .tb-btn {
       -webkit-app-region:no-drag;
       width:26px; height:20px; border-radius:4px; border:none; cursor:pointer;
@@ -319,20 +320,24 @@
 
   <div id="titlebar">
     <span class="tb-title">ScanFinder — Settings</span>
-    <button class="tb-btn close" id="btn-close">&#215;</button>
+    <div class="tb-right">
+      <button class="tb-btn help-guide-btn" id="btn-help-guide" title="Open the user guide (Settings)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></button>
+      <button class="tb-btn" id="help-mode-toggle" data-help-key="help-mode" title="Help mode — click, then click any control to learn what it does">?</button>
+      <button class="tb-btn close" id="btn-close" title="Close">&#215;</button>
+    </div>
   </div>
 
   <div id="tab-bar">
-    <button class="tab active" data-tab="general">General</button>
-    <button class="tab" data-tab="doctypes">Document Types</button>
-    <button class="tab" data-tab="fields">Fields</button>
-    <button class="tab" data-tab="filenaming">File Naming</button>
-    <button class="tab" data-tab="templates">Templates</button>
-    <button class="tab" data-tab="learning">Learning Recovery</button>
-    <button class="tab" data-tab="users">Users</button>
-    <button class="tab" data-tab="audit">Audit</button>
-    <button class="tab" data-tab="licensing">Licensing</button>
-    <button class="tab" data-tab="advanced">Advanced</button>
+    <button class="tab active" data-tab="general" data-help-key="tab-general">General</button>
+    <button class="tab" data-tab="doctypes" data-help-key="tab-doctypes">Document Types</button>
+    <button class="tab" data-tab="fields" data-help-key="tab-fields">Fields</button>
+    <button class="tab" data-tab="filenaming" data-help-key="tab-filenaming">File Naming</button>
+    <button class="tab" data-tab="templates" data-help-key="tab-templates">Templates</button>
+    <button class="tab" data-tab="learning" data-help-key="tab-learning">Learning Recovery</button>
+    <button class="tab" data-tab="users" data-help-key="tab-users">Users</button>
+    <button class="tab" data-tab="audit" data-help-key="tab-audit">Audit</button>
+    <button class="tab" data-tab="licensing" data-help-key="tab-licensing">Licensing</button>
+    <button class="tab" data-tab="advanced" data-help-key="tab-advanced">Advanced</button>
   </div>
 
   <div id="body">
@@ -345,7 +350,7 @@
         <p class="section-desc">Where confirmed documents are filed. Required before confirming any document.</p>
         <div class="row-flex">
           <input type="text" id="output-folder-path" class="path-input" readonly placeholder="No folder selected">
-          <button class="btn primary" id="btn-pick-output">Browse…</button>
+          <button class="btn primary" id="btn-pick-output" data-help-key="output-folder">Browse…</button>
         </div>
       </div>
 
@@ -353,7 +358,7 @@
         <div class="section-title">First-time setup</div>
         <p class="section-desc">Re-run the welcome wizard to revisit the essentials — theme, output folder and performance.</p>
         <div class="row-flex">
-          <button class="btn" id="btn-rerun-setup">Re-run setup wizard…</button>
+          <button class="btn" id="btn-rerun-setup" data-help-key="rerun-setup">Re-run setup wizard…</button>
         </div>
       </div>
 
@@ -458,7 +463,7 @@
         <p class="section-desc">Enable or disable types, and set which fields are used for filing (reference number and date).</p>
         <div id="doctypes-list"></div>
         <div style="margin-top:14px;">
-          <button class="btn" id="btn-add-type">+ Add Custom Type</button>
+          <button class="btn" id="btn-add-type" data-help-key="add-type">+ Add Custom Type</button>
         </div>
         <div class="add-form" id="add-type-form">
           <div class="form-group">
@@ -485,7 +490,7 @@
           <tbody id="fields-tbody"></tbody>
         </table>
         <div style="margin-top:12px;">
-          <button class="btn" id="btn-add-field">+ Add Custom Field</button>
+          <button class="btn" id="btn-add-field" data-help-key="add-field">+ Add Custom Field</button>
         </div>
         <div class="add-form" id="add-field-form">
           <div class="form-group">
@@ -657,7 +662,7 @@
                   <div id="tpl-new-group-row" class="row-flex" style="display:none; gap:6px; margin-top:6px; align-items:center;">
                     <input type="text" id="tpl-new-group-input" class="field-select" placeholder="Group name…" style="flex:1;">
                     <button class="btn primary" id="tpl-btn-save-group" style="white-space:nowrap; padding:4px 10px; font-size:11px;">Save</button>
-                    <button class="btn" id="tpl-btn-cancel-group" style="white-space:nowrap; padding:4px 10px; font-size:11px;">&#215;</button>
+                    <button class="btn" id="tpl-btn-cancel-group" title="Cancel" aria-label="Cancel new group" style="white-space:nowrap; padding:4px 10px; font-size:11px;">&#215;</button>
                   </div>
                   <div id="tpl-siblings" style="margin-top:6px; display:none;">
                     <div class="threshold-sub" style="margin-bottom:4px;">Siblings in same group:</div>
@@ -674,6 +679,7 @@
                   <div class="row-flex" style="gap:8px; align-items:center;">
                     <select id="tpl-sample-select" class="field-select" style="flex:1;" title="Choose sample document for this template"></select>
                     <button class="btn" id="tpl-btn-import-sample" title="Import a PDF, PNG or JPEG as a sample document">Import Sample…</button>
+                    <button class="btn" id="tpl-btn-regen-landmarks" title="Recompute registration landmarks from the current sample (fixes a template that ended up with no/poor landmarks, so drifted scans register correctly)">Regenerate landmarks</button>
                   </div>
                   <span class="section-desc" style="display:block; margin:4px 0 0;">Required for anchor/target mapping. Attach any representative PDF, PNG or JPEG.</span>
                   <span id="tpl-sample-msg" class="section-desc" style="display:block; margin:4px 0 0;"></span>
@@ -1004,12 +1010,19 @@
       <div class="section">
         <div class="section-title">Keyword Label Overrides</div>
         <p class="section-desc">
-          Teach the keyword stage extra <strong>label words</strong> for a field on a
-          document type, so it's detected immediately on import without per-document
-          teaching. For example, if a worksheet prints <em>“Serial No.”</em> next to the
-          value you want in the <em>Reference</em> field, add it here once and every
-          future worksheet picks it up. These overrides are specific to
-          <strong>this installation</strong> — they are never shared or packaged.
+          Teach the keyword stage extra <strong>words to look for on the page</strong> for a
+          field on a document type, so it's detected immediately on import without
+          per-document teaching. For example, if a worksheet prints <em>“Serial No.”</em>
+          next to the value you want in the <em>Reference</em> field, add it here once and
+          every future worksheet picks it up.
+        </p>
+        <p class="section-desc">
+          On reprocessing, Scan Finder looks for <strong>your words first</strong>, then
+          falls back to its built-in words if yours aren't on the page (your built-in words
+          are kept as a fallback, not removed). This applies to <strong>all documents of
+          that type</strong>, not just the one on screen. A field you've taught with a
+          drawn anchor still wins over these words. Overrides are specific to
+          <strong>this installation</strong> — never shared or packaged.
         </p>
         <div class="row-flex" style="gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px;">
           <div style="display:flex; flex-direction:column; gap:4px; min-width:170px;">
@@ -1059,6 +1072,7 @@
   </div>
 </div>
 <script src="../shared/theme.js"></script>
+<script src="../shared/helpmode.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

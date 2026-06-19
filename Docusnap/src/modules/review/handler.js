@@ -63,6 +63,29 @@ function register(ctx) {
   const templates  = require('../../../database/modules/templates');
   const { requireRole, requireLogin, hasRole, logAudit } = require('../auth/handler');
 
+  // ── Validation patterns (shared source of truth for UI field validation) ─────
+  // The Review window validates an edited field on blur (regex/type) using the
+  // EXACT same `validation_patterns` the Python extraction qualification uses
+  // (config/keyword_patterns.json), so UI and pipeline can never drift apart — the
+  // renderer compiles these literal strings to RegExp rather than re-authoring
+  // them. Read once and cached; returns {} if the file is missing/unparseable so
+  // the UI degrades gracefully (no validation rather than a crash).
+  let _validationPatternsCache;
+  ipcMain.handle('get-validation-patterns', () => {
+    requireLogin();
+    if (_validationPatternsCache === undefined) {
+      try {
+        const cfgFile = ctx.resourcePath('config', 'keyword_patterns.json');
+        const cfg = JSON.parse(fs.readFileSync(cfgFile, 'utf8'));
+        _validationPatternsCache = cfg.validation_patterns || {};
+      } catch (e) {
+        logger?.warn?.(`get-validation-patterns: ${e.message}`);
+        _validationPatternsCache = {};
+      }
+    }
+    return _validationPatternsCache;
+  });
+
   // ── Queue queries ───────────────────────────────────────────────────────────
   // The review/deferred queues are the working-document workflow surface —
   // every action on them (edit, confirm, defer, reprocess) is Admin/Edit only,
@@ -579,10 +602,25 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
   // wiring it in here converges repeats of the same supplier/layout onto
   // one template without loosening what counts as "the same" beyond what
   // Stage 0 already accepts.
+  // Reuse decision, in order of safety (migration 26 multi-reference phash):
+  //   1. STRICT — nearest stored hash within dist<=6 (conf>=60): exact Stage-0
+  //      parity, always safe.
+  //   2. CONVERGENCE (7-13 band) — a phash drifted past the strict gate but within
+  //      the matcher candidate net, of the SAME doc-type, with strong keyword
+  //      corroboration (>=60% overlap) is the same supplier whose render drifted.
+  //      Reuse so update() APPENDS the drifted hash and the reference set converges
+  //      — instead of spawning a near-duplicate template. Same-slug + keyword floor
+  //      keep this from merging two different suppliers with similar logos.
   let templateId = doc.template_id || null;
   if (!templateId && logo_phash) {
-    const reuse = templates.findByLogoHash(db, logo_phash);
-    if (reuse && reuse.confidence >= 60) templateId = reuse.id;
+    const reuse = templates.findByLogoHash(db, logo_phash);   // min over the hash set
+    if (reuse && reuse.confidence >= 60) {
+      templateId = reuse.id;
+    } else if (reuse && reuse.match_distance <= 13
+               && document_type_slug && reuse.document_type_slug === document_type_slug
+               && templates.keywordOverlap(keyword_fingerprint, _parseJson(reuse.keyword_fingerprint, [])) >= 0.60) {
+      templateId = reuse.id;
+    }
   }
 
   if (templateId) {

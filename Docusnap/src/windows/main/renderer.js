@@ -84,6 +84,24 @@ document.getElementById('lp-search')?.addEventListener('click', () => window.doc
 document.getElementById('lp-settings')?.addEventListener('click', () => window.docusnap.openSettingsWindow());
 document.getElementById('lp-teach')?.addEventListener('click', () => window.docusnap.openTeachWindow());
 
+// ── Help: user guide + contextual help mode ───────────────────────────────────
+document.getElementById('lp-help')?.addEventListener('click', () => window.docusnap.openHelpWindow('overview'));
+document.getElementById('btn-help-guide')?.addEventListener('click', () => window.docusnap.openHelpWindow('main'));
+
+const HELP_TEXTS = {
+  'begin-import':  'Pick a folder of scans and process them into the queue.',
+  'source-folder': 'The folder Scan Finder imports from. Click to choose a different one.',
+  'process':       'Start processing the selected source folder into documents.',
+  'review':        'Open the Review window to check, correct and confirm extracted data before filing. The badge shows how many items are waiting.',
+  'search':        'Find documents you have already filed — by company, reference, date or type.',
+  'settings':      'Document types, fields, folders and preferences (admin).',
+  'teach':         'Guide Scan Finder, step by step, to learn a new document layout.',
+  'user-guide':    'Open the full user guide.',
+  'mode':          'Current processing mode (Fast or Smart). Click to change it in Settings.',
+  'help-mode':     'Help mode: click any control to see what it does. Press Esc to leave.',
+};
+window.initHelpMode?.('help-mode-toggle', HELP_TEXTS);
+
 // ── Run button ───────────────────────────────────────────────────────────────
 btnRun.addEventListener('click', async () => {
   if (!selectedFolder || running) return;
