@@ -26,3 +26,9 @@ licensing-backend/keys/
 # agents/ and skills/ ARE committed). settings.local.json holds per-host config.
 .claude/settings.local.json
 .claude/worktrees/
+
+# Runtime-learned templates: the app writes these to templatesDir (the repo
+# templates/ dir in dev, userData when packaged) via _writeTemplateFile. They are
+# per-install learned data, NOT shipped (not in build files/extraResources), so they
+# must never be committed.
+templates/*.json
