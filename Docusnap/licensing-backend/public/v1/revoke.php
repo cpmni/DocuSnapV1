@@ -6,6 +6,7 @@
 // via account_key (admin/support release path is future work).
 
 require __DIR__ . '/../../lib/db.php';
+require __DIR__ . '/../../lib/ratelimit.php';
 
 $body       = read_json_body();
 $productId  = isset($body['product_id']) ? trim((string) $body['product_id']) : '';
@@ -19,12 +20,20 @@ if ($productId === '' || !preg_match('/^[0-9a-f]{64}$/', $fpHash) || $accountKey
 
 try {
     $pdo = db();
+    // Anti-automation (F-03): same per-IP cap + failed-guess backoff as /v1/activate
+    // (revoke also takes an account_key). Legitimate release of a real key is rare
+    // and never trips the fail bucket.
+    $ip = client_ip();
+    $gen = rate_hit($pdo, "activate_ip:$ip", 30, 3600);
+    if (!$gen['allowed']) { too_many_requests($gen['retry_after']); return; }
+    if (rate_count($pdo, "activate_fail_ip:$ip") > 12) { too_many_requests(900); return; }
     $accountHash = hash('sha256', $accountKey); // never store/log the plaintext key
 
     $acc = $pdo->prepare('SELECT id, status FROM accounts WHERE account_key_hash = ?');
     $acc->execute([$accountHash]);
     $account = $acc->fetch();
     if (!$account || $account['status'] !== 'active') {
+        rate_hit($pdo, "activate_fail_ip:$ip", 12, 3600); // count key-guessing attempts
         send_json(400, ['error' => ['code' => 'unknown_account', 'message' => 'Activation key not recognised', 'request_id' => bin2hex(random_bytes(8))]]);
         return;
     }

@@ -6,6 +6,7 @@
 
 require __DIR__ . '/../../lib/db.php';
 require __DIR__ . '/../../lib/jws.php';
+require __DIR__ . '/../../lib/ratelimit.php';
 
 const ACTIVE_KID = 'k1';
 
@@ -20,6 +21,11 @@ if ($productId === '' || !preg_match('/^[0-9a-f]{64}$/', $fpHash)) {
 
 try {
     $pdo = db();
+    // Anti-automation (F-03): generous per-IP cap — validate runs on app start and
+    // online refresh, so the threshold is high enough never to affect a real client
+    // while still bounding scripted abuse.
+    $ipHit = rate_hit($pdo, 'validate_ip:' . client_ip(), 120, 3600);
+    if (!$ipHit['allowed']) { too_many_requests($ipHit['retry_after']); return; }
 
     // Seat-aware: if a bound SEAT exists for this fingerprint, re-issue a fresh
     // seat token (this is what refreshes the 7-day grace for paid users online).

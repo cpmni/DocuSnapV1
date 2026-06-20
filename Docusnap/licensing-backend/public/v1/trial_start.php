@@ -10,6 +10,7 @@
 
 require __DIR__ . '/../../lib/db.php';
 require __DIR__ . '/../../lib/jws.php';
+require __DIR__ . '/../../lib/ratelimit.php';
 
 const TRIAL_DAYS = 14;
 const ACTIVE_KID = 'k1';
@@ -49,6 +50,11 @@ $emailVal       = $email !== '' ? $email : null;
 
 try {
     $pdo = db();
+    // Anti-automation (F-03): throttle trial/start per source IP. Covers both new
+    // mint and resume; a normal user is far under this rate.
+    $ip = client_ip();
+    $ipHit = rate_hit($pdo, "trial_ip:$ip", 10, 3600);
+    if (!$ipHit['allowed']) { too_many_requests($ipHit['retry_after']); return; }
     // Ensure the product row exists (FK target). Brand-neutral default name.
     $pdo->prepare('INSERT IGNORE INTO products (product_id, name_internal) VALUES (?, ?)')
         ->execute([$productId, 'product']);
@@ -76,6 +82,11 @@ try {
         $trialEnd   = $row['trial_end'];
         $resumed    = true;
     } else {
+        // Global new-trial guardrail (F-03): cap brand-new trials minted per day.
+        // A returning fingerprint RESUMES above and never reaches here, so legitimate
+        // devices are unaffected; only fresh fp_hashes (the farming vector) count.
+        $newCap = rate_hit($pdo, 'trial_new:' . gmdate('Y-m-d'), 500, 86400);
+        if (!$newCap['allowed']) { too_many_requests($newCap['retry_after']); return; }
         // CREATE — first time this fingerprint is seen for this product. Store the
         // captured identity. ON DUPLICATE handles a row that exists without a
         // trial window yet (e.g. a bare device record): it opens the window now

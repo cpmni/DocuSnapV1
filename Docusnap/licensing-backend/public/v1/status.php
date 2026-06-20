@@ -5,6 +5,7 @@
 // Phase 1 (seats arrive in Phase 3).
 
 require __DIR__ . '/../../lib/db.php';
+require __DIR__ . '/../../lib/ratelimit.php';
 
 $productId = isset($_GET['product_id']) ? trim((string) $_GET['product_id']) : '';
 $fpHash    = isset($_GET['fp_hash']) ? strtolower(trim((string) $_GET['fp_hash'])) : '';
@@ -16,6 +17,9 @@ if ($productId === '' || !preg_match('/^[0-9a-f]{64}$/', $fpHash)) {
 
 try {
     $pdo = db();
+    // Anti-automation (F-03): generous per-IP cap on the read-only status probe.
+    $ipHit = rate_hit($pdo, 'status_ip:' . client_ip(), 240, 3600);
+    if (!$ipHit['allowed']) { too_many_requests($ipHit['retry_after']); return; }
     $sel = $pdo->prepare(
         'SELECT trial_start, trial_end FROM device_registrations
          WHERE product_id = ? AND fp_hash = ?'
