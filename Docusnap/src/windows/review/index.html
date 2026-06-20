@@ -765,6 +765,15 @@
   .rdc-note .rdc-stage { color: var(--muted); }
   .rdc-note.valid .rdc-val { color: var(--warn); }
   .rdc-note.xform .rdc-val { color: var(--accent2); }
+  /* Regex/format match score badge (per value, where a pattern check applies). */
+  .rdc-rx { font-size: 9px; font-family: var(--mono); padding: 0 4px; border-radius: 3px;
+            background: var(--surface2); color: var(--muted); white-space: nowrap; }
+  .rdc-rx.rx-full { background: rgba(62,207,142,.18); color: var(--ok); }
+  .rdc-rx.rx-part { background: rgba(176,120,22,.18); color: var(--warn); }
+  .rdc-rx.rx-low  { background: rgba(247,111,111,.16); color: var(--err); }
+  /* Plain-English reasoning sub-line under a validation row. */
+  .rdc-why { flex-basis: 100%; margin-top: 3px; padding-left: 70px; font-size: 9px;
+             color: var(--muted); line-height: 1.5; font-style: italic; }
 </style>
 <script src="../shared/theme.js"></script>
 <script src="../shared/helpmode.js"></script>

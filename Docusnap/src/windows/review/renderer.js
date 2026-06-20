@@ -2857,7 +2857,7 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
       const finalVal = m.final ? m.final.value : null;
       const emptyCls = (finalVal == null || finalVal === '') ? ' empty' : '';
       const winLine  = m.final
-        ? `${escHtml(shown(finalVal))}${m.final.method ? ` · ${escHtml(m.final.method)}` : ''}`
+        ? `${escHtml(shown(finalVal))}${m.final.method ? ` · ${escHtml(m.final.method)}` : ''}${rxBadge(field, finalVal)}`
         : '—';
 
       const rows = [];
@@ -2870,12 +2870,13 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
             ? `lost — lower confidence (${c.confidence}% < ${wc}%)`
             : (c.vs && c.vs.value != null ? `lost — superseded by "${shown(c.vs.value)}"` : 'lost — superseded');
         }
-        rows.push(cand(STAGE_LABEL[c.stage] || c.stage, c.value, c.confidence, c.method, won ? 'won' : 'lost', won ? '' : reason, pickSlice(field, c.method)));
+        rows.push(cand(STAGE_LABEL[c.stage] || c.stage, c.value, c.confidence, c.method, won ? 'won' : 'lost', won ? '' : reason, pickSlice(field, c.method), rxBadge(field, c.value)));
       }
       for (const r of m.rejects) {
         // A rejected rung IS keyed by its method (e.g. "anchor_crop") — show the
-        // exact crop it read so the operator sees WHERE the garbage came from.
-        rows.push(cand(r.method || 'anchor', r.value, null, null, 'rej', `rejected — ${r.reason || 'failed gate'}`, pickSlice(field, r.method)));
+        // exact crop it read so the operator sees WHERE the garbage came from. The
+        // rx score explains a format-based rejection at a glance (e.g. rx 0%).
+        rows.push(cand(r.method || 'anchor', r.value, null, null, 'rej', `rejected — ${r.reason || 'failed gate'}`, pickSlice(field, r.method), rxBadge(field, r.value)));
       }
       // Stage 2.5 transforms (denoise / OCR-correct): value rewritten in place.
       for (const t of m.transforms) {
@@ -2891,7 +2892,11 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
           ? `${escHtml(shown(v.was))} → ${escHtml(shown(v.value))}`
           : escHtml(shown(v.value));
         if (v.corrected_to) txt += ` · candidate: ${escHtml(v.corrected_to)}`;
+        txt += rxBadge(field, v.value);
         if (v.note) txt += ` — ${escHtml(v.note)}`;
+        // Plain-English reasoning sub-line (what the validation did + why).
+        const why = validationWhy(v);
+        if (why) txt += `<div class="rdc-why">${why}</div>`;
         rows.push(noteRow('validate', txt, 'valid'));
       }
       if (!rows.length) rows.push(`<div class="rdc-cand"><span class="rdc-reason" style="padding-left:0">matched on the OCR text layer (no per-stage crop trace)</span></div>`);
@@ -2926,12 +2931,12 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
     });
   }
 
-  function cand(stage, value, conf, method, tag, reason, slice) {
+  function cand(stage, value, conf, method, tag, reason, slice, rx) {
     const tagTxt = tag === 'rej' ? 'rejected' : tag;
     const bboxAttr = slice ? ` data-bbox="${escHtml(JSON.stringify(slice.bbox))}" data-kind="${escHtml(slice.kind || 'target')}" data-page="${slice.page ?? 0}" data-stage="${escHtml(slice.stage || '_')}" style="cursor:pointer" title="Click to highlight region on page"` : '';
     return `<div class="rdc-cand"${bboxAttr}>`
       + `<span class="rdc-stage">${escHtml(stage)}</span>`
-      + `<span class="rdc-val">${escHtml(shown(value))}${method ? ` <span class="rdc-conf">${escHtml(method)}</span>` : ''}</span>`
+      + `<span class="rdc-val">${escHtml(shown(value))}${method ? ` <span class="rdc-conf">${escHtml(method)}</span>` : ''}${rx || ''}</span>`
       + (conf != null ? `<span class="rdc-conf">${conf}%</span>` : '')
       + `<span class="rdc-tag ${tag}">${tagTxt}</span>`
       + (reason ? `<span class="rdc-reason">${escHtml(reason)}</span>` : '')
@@ -2946,6 +2951,59 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
   }
 
   function shown(v) { return v == null || v === '' ? '∅' : String(v); }
+
+  // ── Regex/format score + validation explanation (this window only) ────────────
+  // Reuses the SAME validation_patterns the extraction credibility gate uses
+  // (fetched once via ensureValidationPatterns) and the SAME field type→key map,
+  // so the score the trace shows is the score extraction actually checked against.
+  function traceValKey(field) {
+    const def = (fieldDefs || []).find(f => f.key === field);
+    const type = (def && def.type ? def.type : '').toLowerCase();
+    return TYPE_TO_VALIDATION[type] || null;
+  }
+  // % of the value covered by the best matching pattern: 100 = the whole value
+  // fits the expected shape; <100 = trailing/leading chars fall outside it; 0 =
+  // no match. null when the field has no pattern (free-text → no regex check ran).
+  function regexScore(field, value) {
+    const v = (value == null ? '' : String(value)).trim();
+    if (!v) return null;
+    const valKey = traceValKey(field);
+    if (!valKey) return null;
+    const pats = validationPatterns && validationPatterns[valKey];
+    if (!pats || !pats.length) return null;
+    let best = 0;
+    for (const re of pats) {
+      let m = null; try { m = v.match(re); } catch { m = null; }
+      if (m && m[0]) best = Math.max(best, m[0].length / v.length);
+    }
+    return { pct: Math.round(best * 100), valKey };
+  }
+  function rxBadge(field, value) {
+    const s = regexScore(field, value);
+    if (!s) return '';
+    const cls = s.pct >= 100 ? 'rx-full' : s.pct >= 60 ? 'rx-part' : 'rx-low';
+    return ` <span class="rdc-rx ${cls}" title="Regex/format check (${escHtml(s.valKey)}): ${s.pct}% of this value fits the expected pattern">rx ${s.pct}%</span>`;
+  }
+  // Plain-English reasoning for a Stage 4/4.5 validation event, from the structural
+  // signals (value change / correction candidate / kept-and-flagged) PLUS a reading
+  // of the note text. Returns '' when there's nothing extra to explain.
+  function validationWhy(v) {
+    const changed = (v.was !== undefined && v.was !== v.value);
+    const bits = [];
+    if (changed) bits.push('Stage 4/4.5 rewrote the value (normalised or OCR-corrected during validation).');
+    if (v.corrected_to) bits.push(`A correction "${escHtml(v.corrected_to)}" was suggested but NOT auto-applied — confirm to accept it.`);
+    if (!changed && !v.corrected_to) bits.push('The value was kept but flagged for review (confidence capped).');
+    const n = (v.note ? String(v.note) : '').toLowerCase();
+    if (n.includes('format differs from the usual'))
+      bits.push("Why: the value's shape differs from the format learned from this field's confirmed history.");
+    else if (n.includes('candidate') || n.includes('correction'))
+      bits.push('Why: a likely OCR fix was found in learned data and offered as a suggestion.');
+    else if (n.includes('character') || n.includes('charset') || n.includes('symbol'))
+      bits.push("Why: the value contains characters not expected for this field type (likely an OCR symbol misread).");
+    else if (n.includes('date'))
+      bits.push('Why: the date was recovered/normalised from a noisy read; confidence capped pending review.');
+    return bits.join(' ');
+  }
 
   async function pullExisting() {
     // Already-processed (fresh-scan) docs are keyed in the session registry by
@@ -2964,6 +3022,10 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
     active = true;
     panel.hidden = false;
     elDoc.textContent = currentDoc ? currentDoc.original_filename : '(no document selected)';
+    // Load the shared validation_patterns so rxBadge() can score values against
+    // the SAME regexes extraction used (no-op if already loaded; degrades to no
+    // badge if unavailable). Awaited before the first render.
+    try { await ensureValidationPatterns(); } catch {}
     pullExisting();
   }
 
