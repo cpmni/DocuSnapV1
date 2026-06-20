@@ -88,10 +88,10 @@ WHY PHI-3 MINI instead of Mistral 7B?
 ────────────────────────────────────────────────────────────────────────────────
 Open a terminal and run:
 
-  py -3.12 -m pip install pytesseract pillow pypdfium2 requests imagehash
+  py -3.12 -m pip install pytesseract pillow pypdfium2 requests imagehash pypdf
 
 Verify:
-  py -3.12 -c "import pytesseract, PIL, pypdfium2, requests, imagehash; print('OK')"
+  py -3.12 -c "import pytesseract, PIL, pypdfium2, requests, imagehash, pypdf; print('OK')"
 
 OPTIONAL — RapidOCR full-page OCR engine (beta, opt-in; NOT required):
   py -3.12 -m pip install -r python_backend\requirements-ocr.txt
@@ -165,17 +165,34 @@ PART 3 — BUILDING THE WINDOWS INSTALLER
 ────────────────────────────────────────────────────────────────────────────────
 The vendor\ folder bundles everything so customers don't need to install anything.
 
-STEP A — Bundle Python:
+STEP A — Bundle Python (3.12 — Windows EMBEDDABLE package, NOT a venv):
 
-  py -3.12 -m venv vendor\python
-  vendor\python\Scripts\pip install pytesseract pillow pypdfium2 requests imagehash
+  The app launches the bundled interpreter at vendor\python\python.exe (src\main.js,
+  pythonExe()), so vendor\python MUST have python.exe at its ROOT. That is the layout
+  of Python's Windows *embeddable* package — a venv would put python.exe under
+  Scripts\ and the app would not find it. Build it as follows:
 
-  ⚠ MUST be Python 3.12 (see 1.2) — use `py -3.12`, NOT a bare `python` (which can
-    grab a newer system Python). Do NOT use 3.13/3.14: rapidocr-onnxruntime ships
+  1. Download the 3.12 embeddable zip (amd64) and extract into vendor\python so that
+     vendor\python\python.exe exists:
+       https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip
+
+  2. Enable site-packages: edit vendor\python\python312._pth and change the line
+     "#import site" to "import site" (uncomment it). Without this, pip-installed
+     packages are NOT importable.
+
+  3. Bootstrap pip (the embeddable zip ships none). Download get-pip.py into
+     vendor\python\, then run it:
+       https://bootstrap.pypa.io/pip/get-pip.py
+       vendor\python\python.exe vendor\python\get-pip.py
+
+  4. Install the backend dependencies (pypdf is REQUIRED — process_docs / pdf_splitter /
+     render all import it; it is easy to omit because it is not a top-level app file):
+       vendor\python\python.exe -m pip install pytesseract pillow pypdfium2 requests imagehash pypdf
+
+  ⚠ MUST be Python 3.12 (see 1.2). Do NOT use 3.13/3.14: rapidocr-onnxruntime ships
     NO wheels for Python >=3.13 (every release is Requires-Python <3.13), so the
     RapidOCR step below cannot resolve on a 3.13/3.14 runtime and RapidOCR would be
-    SILENTLY ABSENT from the dist. The app launches the bundled interpreter at
-    vendor\python\python.exe (src/main.js) — verify THAT one before continuing:
+    SILENTLY ABSENT from the dist. Verify the bundled interpreter before continuing:
       vendor\python\python.exe --version    (must report 3.12.x)
 
   REQUIRED — bundle the RapidOCR full-page OCR engine (opt-in AT RUNTIME):
@@ -188,6 +205,11 @@ STEP A — Bundle Python:
     runtime ever fails to init). Details: python_backend\OCR_RUNTIME.md
     Verify it actually landed in the bundled runtime (no network):
       vendor\python\python.exe -c "from rapidocr_onnxruntime import RapidOCR; RapidOCR(); print('RapidOCR OK')"
+
+  NOTE: `npm run build` runs scripts\check-rapidocr-bundled.js FIRST and ABORTS the
+  build if RapidOCR is missing/broken in vendor\python (e.g. a wrong-version runtime
+  that cannot host it). Override only deliberately with SCANFINDER_SKIP_RAPIDOCR_CHECK=1
+  (a knowingly Tesseract-only build).
 
 STEP B — Bundle Tesseract:
 
