@@ -29,6 +29,7 @@
 18. [Where to Change Things](#18-where-to-change-things)
 19. [Troubleshooting Matrix](#19-troubleshooting-matrix)
 20. [Extension Roadmap Guidance](#20-extension-roadmap-guidance)
+21. [Recent Enhancements (2026-06)](#21-recent-enhancements-2026-06)
 
 ---
 
@@ -1388,6 +1389,76 @@ new learning/extraction behaviour must be scoped strictly by
 `(supplier_name, document_type, field_key)` (or documented global fallback
 like `__global__`), with conservative confirmed-sample minimums, mirroring
 every existing learning corpus in [§7](#7-learning-systems).
+
+---
+
+## 21. Recent Enhancements (2026-06)
+
+A focused pass on extraction accuracy, learning safety, and operator
+transparency. Pointers into the detailed sections above.
+
+### 21.1 Confidence reflects OCR read quality ([§6](#6-extraction-pipeline))
+- `anchor._read` now returns `(text, mean, min_word_conf)`; `_crop_and_ocr`
+  threads them out through an optional `meta` dict.
+- **FREE-TEXT ONLY** (`val_type` in None/text/multiline): the field confidence is
+  capped at `mean + 5`, and an authoritative ⊕ anchor's outright Tier-A /
+  `is_taught_override` win is gated on `ocr_min_conf ≥ 70` — a garbled
+  authoritative read ("Aaiumant Care Homes Ltd - Galaorm") falls through to the
+  confidence contest, where a clean keyword wins.
+- **Structured fields keep regex as the trust signal** — Tesseract under-reads
+  dash-separated digits, so a valid reference `2602-0768-1` must NOT be capped.
+- Tests: `test_precedence.py` (garbled yields / clean still wins; passive
+  anchor_crop can't displace `keyword_override`).
+
+### 21.2 Name-token correction: detection + auto-apply ([§7.5](#75-formatocr-correction-learning-stage-7--partially-implemented))
+- `name_match.repair_name_value(..., details=True)` → `(repaired, strong)`.
+- **Short-token rule**: a 3-char alphabetic stable token that is near-universal
+  (`doc_freq ≥ 0.9`) repairs a same-length single substitution — `Lid → Ltd` —
+  without opening short tokens to loose fuzzy collisions (`Co → Go` stays exact).
+- **Two tiers**: a STRONG repair (every changed token near-universal) **auto-applies**
+  (`value`/`display_value` corrected, `was_corrected`, a "Corrected to learned
+  spelling" note, NOT review-forced); a WEAK repair stays a `corrected_to`
+  suggestion. The Review UI shows a green "✓ auto-corrected" badge for the former
+  (detected by `value == corrected_to`), the amber note + Accept for the latter.
+- **`conforms_to_lexicon` + `expected_len`**: the lexicon (stable prefix + variable
+  tail) suppresses the false "format differs" shape flag for a legitimate *new
+  site* whose length was never confirmed — but `expected_len` (the run of content
+  positions a ≥60% majority of docs reach) is a TRUNCATION GUARD, so a value missing
+  its tail (`…Ltd -`, site cut off) stays flagged.
+- **`value_quality.strip_name_edges`**: drops leading non-alphanumeric runs +
+  trailing junk (edges only) from name-like free-text, applied at Stage-1 keyword
+  capture AND as a Stage-4.5 catch-all (`--« Beaumont Care Homes Ltd -` → clean).
+- Tests: `test_name_match.py`, `test_value_quality.py`, `test_stage45_text_preserve.py`.
+
+### 21.3 ⊕ teach persists on COMMIT, not on the draw ([§7.2](#72-saveanchor--incremental-anchor-learning))
+- The Review ⊕ tool now STAGES the drawn anchor in `pendingAnchors` (mirroring
+  `corrections`) and only writes it via `saveFieldAnchor` in `confirmCurrentDoc`
+  after a successful confirm. An un-confirmed teach (skip/defer/doc-change/reprocess)
+  leaves no learned trace — so an accidental wrong pick can't poison the corpus.
+- Recovery for a committed mistake: Settings → Learning Recovery → Clear anchors
+  (scoped to supplier/doc-type), or just re-teach (authoritative sweeps the old).
+
+### 21.4 Admin-locked fixed values (migration 31) ([§8](#8-template-system))
+- `template_fields.fixed_locked`; method `template_fixed_locked`; preserved through
+  confirmed-history rebuilds; guarded from ordinary overrides (yields only to a
+  Stage 0.5 mapping / `keyword_override` / authoritative anchor). Tests:
+  `test_fixed_locked.js`, `test_precedence.py`.
+
+### 21.5 Review extraction-trace console ([§10.3](#103-review-window-srcwindowsreview), [§13](#13-logging-diagnostics--debugging))
+- **Click-to-highlight**: clicking a candidate/reject/validate/final row draws its
+  captured crop region on the page (`#trace-canvas`). Match is by EXACT extraction
+  method (`METHOD_TO_SLICE`), centre-vs-top-left handled explicitly; inline winners
+  emit `anchor.inline_box` so the winner is highlightable; no-region methods draw no box.
+- **Regex score** "rx N%" badge on any value where a pattern check applies, using the
+  shared `validation_patterns` + a JS mirror of `_is_ref_field` coercion
+  (`validationKeyFor` — also fixes the on-blur validator for ref fields).
+- **Validation "why"**: a plain-English sub-line under each validate row.
+
+### 21.6 Teach wizard (guided) ([§10](#10-windows--ui-surfaces))
+- Auto-flow value → anchor → next field; "Skip label →"; a per-field **fixed value**
+  option (inline text → locked on commit); `autoLabel()` requires ≥3 alpha chars;
+  type selector Text/Date/Currency/Number. (Watch for smart quotes in injected HTML
+  — they silently break the buttons' class/id.)
 
 ---
 
