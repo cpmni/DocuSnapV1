@@ -290,7 +290,18 @@ function createWindow(name, options, htmlFile) {
     // a parent cascade, GPU crash) may never fire 'closed', leaving a STALE ref
     // whose .focus() throws "Object has been destroyed" — which silently kills the
     // opener (e.g. the Review button does nothing). Drop the corpse and recreate.
-    if (!windows[name].isDestroyed()) { windows[name].focus(); return windows[name]; }
+    if (!windows[name].isDestroyed()) {
+      const w = windows[name];
+      // Re-opening a window that's MINIMISED (or hidden) must bring it BACK, not
+      // just .focus() it — on Windows focus() alone leaves a minimised window in the
+      // taskbar/corner, so the toolbar button "did nothing". Restore then reveal.
+      try {
+        if (w.isMinimized()) w.restore();
+        if (!w.isVisible()) w.show();
+        w.focus();
+      } catch { /* fall through to recreate if the ref turned out stale */ }
+      return w;
+    }
     delete windows[name];
   }
 
