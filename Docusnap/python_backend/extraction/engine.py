@@ -23,7 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from extraction import keyword, anchor, validator, ocr_corrector, template_matcher, template_mapper, format_anomaly_checker
+from extraction import keyword, anchor, validator, ocr_corrector, template_matcher, template_mapper, format_anomaly_checker, value_quality
 
 # LLM import is optional — system works without it in FAST mode
 try:
@@ -1174,6 +1174,22 @@ class ExtractionEngine:
                 val = data.get('value')
                 if not val:
                     continue
+                # ── EDGE-JUNK CLEANUP (name-like free-text) ── a real name never
+                # STARTS with "--«" / a stray symbol; strip OCR edge artefacts BEFORE
+                # the charset/format checks below so a cleaned value isn't needlessly
+                # flagged, and so a keyword read (which skips the crop-path cleaning)
+                # gets the same edge hygiene a crop read already has. EDGES ONLY —
+                # the interior is untouched (free-text variation preserved). The value
+                # change is visible in the trace; no review is forced (the charset
+                # check then runs on the CLEANED value). See value_quality.strip_name_edges.
+                _ftype0 = field_types.get(key)
+                if _ftype0 in (None, 'text', 'multiline_text') and value_quality.is_name_like_field(key):
+                    _spec0 = (field_charsets.get(_ftype0, field_charsets.get('default')) if field_charsets else None)
+                    _clean = value_quality.strip_name_edges(str(val), _spec0)
+                    if _clean and _clean != val:
+                        data = {**data, 'value': _clean, 'display_value': _clean}
+                        results[key] = data
+                        val = _clean
                 # ── Valid-character policy (Phase 1, backend-only FLAG) ── before the
                 # format lookup so it covers EVERY field, not only those with learned
                 # formats. Surfaces unexpected OCR symbols for the field TYPE (note +
