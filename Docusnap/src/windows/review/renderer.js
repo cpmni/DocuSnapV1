@@ -2067,6 +2067,12 @@ const _docViewer = document.getElementById('doc-viewer');
 // draggable="false"; this catches any bubbled dragstart from its children.)
 _docViewer.addEventListener('contextmenu', (e) => { if (pageImages.length) e.preventDefault(); });
 _docViewer.addEventListener('dragstart', (e) => e.preventDefault());
+// Scroll-wheel zoom (same step as the +/− buttons; matches the Template Manager preview).
+_docViewer.addEventListener('wheel', (e) => {
+  if (!pageImages.length) return;
+  e.preventDefault();
+  setPreviewZoom(previewZoom + (e.deltaY < 0 ? PREVIEW_ZOOM_STEP : -PREVIEW_ZOOM_STEP));
+}, { passive: false });
 _docViewer.addEventListener('mousedown', (e) => {
   if (e.button !== 2) return;
   _panStart = { x: e.clientX, y: e.clientY, panX: previewPanX, panY: previewPanY };

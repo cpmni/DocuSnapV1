@@ -195,6 +195,17 @@ async function commitTypeChoice(){
 
 // ── Step 3: region selection ─────────────────────────────────────────────────
 let canvas, ctx, drag=null, drawnBox=null;
+// Zoom/pan for the page canvas — same model as the review preview: a CSS transform
+// (translate=pan, scale=zoom) on the canvas. Wiring + handlers live in bindCanvas.
+let tzZoom=1, tzPanX=0, tzPanY=0, _tzPan=null;
+const TZ_MIN=1, TZ_MAX=4, TZ_STEP=0.25;
+function tzApply(){
+  if(!canvas) return;
+  canvas.style.transform=`translate(${tzPanX}px,${tzPanY}px) scale(${tzZoom})`;
+  const lvl=$('tz-level'); if(lvl) lvl.textContent=Math.round(tzZoom*100)+'%';
+}
+function tzSet(z){ tzZoom=Math.max(TZ_MIN,Math.min(TZ_MAX,z)); tzApply(); }
+function tzReset(){ tzZoom=1; tzPanX=0; tzPanY=0; tzApply(); }
 async function startRegionStep(){
   canvas=$('pageCanvas'); ctx=canvas.getContext('2d');
   if (!state.img){
@@ -205,7 +216,7 @@ async function startRegionStep(){
     if (!state.pageDataUrl){ $('rg-prompt').textContent="Couldn't load that page."; return; }
     await new Promise(res=>{ const im=new Image(); im.onload=()=>{state.img=im;res();}; im.onerror=()=>res(); im.src=state.pageDataUrl; });
   }
-  fitCanvas(); redrawCanvas();
+  fitCanvas(); tzReset(); redrawCanvas();
   state.fieldIndex = state.fields.findIndex(f=>!state.results[f.key]);
   if (state.fieldIndex<0) state.fieldIndex=0;
   renderFieldRail(); promptField();
@@ -213,10 +224,14 @@ async function startRegionStep(){
 }
 function fitCanvas(){
   if (!state.img) return;
-  const maxW=Math.min(760, canvas.parentElement.clientWidth||760), maxH=Math.round(window.innerHeight*0.62);
-  const r=Math.min(maxW/state.img.naturalWidth, maxH/state.img.naturalHeight, 2);
-  canvas.width=Math.round(state.img.naturalWidth*r);
-  canvas.height=Math.round(state.img.naturalHeight*r);
+  // Size the BUFFER at (capped) NATIVE resolution — not the fitted display size — so
+  // the page stays sharp when zoomed and the preview auto-grows with the window. CSS
+  // (#pageCanvas max-width/max-height) downscales it to fit the pane; the transform
+  // handles zoom. Only ever downscale an oversized scan (memory guard); never upscale.
+  const natW=state.img.naturalWidth, natH=state.img.naturalHeight;
+  const CAP=2800, s=Math.min(1, CAP/Math.max(natW,natH));
+  canvas.width=Math.round(natW*s);
+  canvas.height=Math.round(natH*s);
 }
 function redrawCanvas(){
   if (!state.img) return;
@@ -229,7 +244,10 @@ function redrawCanvas(){
 }
 function drawBox(n,color,solid,dashed){
   const x=n.x*canvas.width,y=n.y*canvas.height,w=n.w*canvas.width,h=n.h*canvas.height;
-  ctx.lineWidth=2; ctx.strokeStyle=color; ctx.setLineDash(dashed?[5,4]:[]);
+  // The buffer is full-res and CSS-downscaled, so scale the stroke to stay ~2px
+  // on-screen at any fit/zoom (getBoundingClientRect already includes the transform).
+  const br=canvas.getBoundingClientRect(), k=br.width? canvas.width/br.width : 1;
+  ctx.lineWidth=Math.max(1.5, 2*k); ctx.strokeStyle=color; ctx.setLineDash(dashed?[6*k,4*k]:[]);
   ctx.strokeRect(x+.5,y+.5,w,h); ctx.setLineDash([]);
   ctx.fillStyle=color+'22'; ctx.fillRect(x,y,w,h);
 }
@@ -237,9 +255,38 @@ function cpoint(e){ const r=canvas.getBoundingClientRect(); return {x:(e.clientX
 let _bound=false;
 function bindCanvas(){
   if (_bound) return; _bound=true;
-  canvas.addEventListener('mousedown',e=>{ const p=cpoint(e); drag={x:p.x,y:p.y,w:0,h:0,_sx:p.x,_sy:p.y}; });
+  // LEFT-drag draws the box; right-click is reserved for panning (below).
+  canvas.addEventListener('mousedown',e=>{ if(e.button!==0)return; const p=cpoint(e); drag={x:p.x,y:p.y,w:0,h:0,_sx:p.x,_sy:p.y}; });
   canvas.addEventListener('mousemove',e=>{ if(!drag)return; const p=cpoint(e); drag.x=Math.min(drag._sx,p.x);drag.y=Math.min(drag._sy,p.y);drag.w=Math.abs(p.x-drag._sx);drag.h=Math.abs(p.y-drag._sy); redrawCanvas(); });
   window.addEventListener('mouseup',async()=>{ if(!drag)return; const b={x:drag.x,y:drag.y,w:drag.w,h:drag.h}; drag=null; if(b.w<0.01||b.h<0.008){redrawCanvas();return;} drawnBox=b; redrawCanvas(); await readBack(b); });
+
+  // ── Zoom / pan (same model as the review preview) ────────────────────────────
+  // Zoom via +/−/reset; pan via RIGHT-drag only (left-drag stays for drawing).
+  // cpoint() already maps through getBoundingClientRect(), so drawing stays correct
+  // at any zoom/pan. dragstart is blocked so neither button grabs a ghost image.
+  const wrap=canvas.parentElement;
+  $('tz-in') ?.addEventListener('click',()=>tzSet(tzZoom+TZ_STEP));
+  $('tz-out')?.addEventListener('click',()=>tzSet(tzZoom-TZ_STEP));
+  $('tz-reset')?.addEventListener('click',tzReset);
+  // Scroll-wheel zoom (same step as the +/− buttons; matches the other preview panes).
+  wrap.addEventListener('wheel',e=>{ if(!state.img)return; e.preventDefault(); tzSet(tzZoom+(e.deltaY<0?TZ_STEP:-TZ_STEP)); }, {passive:false});
+  wrap.addEventListener('dragstart',e=>e.preventDefault());
+  wrap.addEventListener('contextmenu',e=>{ if(state.img) e.preventDefault(); });
+  wrap.addEventListener('mousedown',e=>{
+    if(e.button!==2)return;                       // right-click only
+    _tzPan={x:e.clientX,y:e.clientY,panX:tzPanX,panY:tzPanY};
+    canvas.style.cursor='grabbing'; e.preventDefault();
+  });
+  window.addEventListener('mousemove',e=>{
+    if(!_tzPan)return;
+    tzPanX=_tzPan.panX+(e.clientX-_tzPan.x);
+    tzPanY=_tzPan.panY+(e.clientY-_tzPan.y);
+    tzApply();
+  });
+  window.addEventListener('mouseup',()=>{ if(_tzPan){ _tzPan=null; canvas.style.cursor=''; } });
+  // CSS auto-fits the full-res buffer to the pane, so the page scales on maximise;
+  // redraw so the overlay boxes (and their on-screen stroke width) track the new size.
+  window.addEventListener('resize',()=>{ if(state.img) redrawCanvas(); });
 }
 function curField(){ return state.fields[state.fieldIndex]; }
 function promptField(){
