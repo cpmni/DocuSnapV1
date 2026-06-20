@@ -107,6 +107,11 @@ let pageImages       = [];
 let fieldDefs        = [];
 let corrections      = {};
 let anchorTaughtFields = new Set(); // field_keys taught via the ⊕ highlight/zone-OCR tool this cycle
+// Anchors drawn with ⊕ this cycle, STAGED in memory and persisted only on Confirm
+// & File (mirrors `corrections`). An un-confirmed teach (skip/defer/doc-change)
+// leaves NO learned trace, so an accidental wrong pick can't poison the corpus.
+// Keyed by field_key → the saveFieldAnchor payload computed at draw time.
+let pendingAnchors   = {};
 let activeTab        = 'review';
 let isAdmin          = false;   // gates the destructive bulk-delete actions (also enforced server-side)
 let canEdit          = false;   // admin OR edit — gates per-row delete (also enforced server-side)
@@ -444,6 +449,7 @@ async function _selectDoc(doc) {
   currentPage = 0;
   corrections = {};
   anchorTaughtFields = new Set();
+  pendingAnchors = {};   // discard any un-confirmed ⊕ teach when the doc changes
 
   document.querySelectorAll('.queue-item').forEach(el => {
     el.classList.toggle('active', parseInt(el.dataset.id) === doc.id);
@@ -1047,7 +1053,7 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
         // Drift-invariant offset: the located label's page position → value centre.
         // Origin of the left crop in DISPLAY px is (rect.x - leftPad, rect.y).
         const off = labelOffsetFromBox(leftRes && leftRes.box, rect.x - leftPad, rect.y, xNorm, yNorm, imgW, imgH);
-        await window.docusnap.saveFieldAnchor({ ...anchorBase, anchor_label: leftLabel, direction: 'right', ...off });
+        pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: leftLabel, direction: 'right', ...off };
         return true;
       }
     }
@@ -1075,7 +1081,7 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
       if (aboveLabel) {
         // Origin of the above crop in DISPLAY px is (rect.x, rect.y - abovePad).
         const off = labelOffsetFromBox(aboveRes && aboveRes.box, rect.x, rect.y - abovePad, xNorm, yNorm, imgW, imgH);
-        await window.docusnap.saveFieldAnchor({ ...anchorBase, anchor_label: aboveLabel, direction: 'below', ...off });
+        pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: aboveLabel, direction: 'below', ...off };
         return true;
       }
     }
@@ -1083,26 +1089,13 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
     console.warn('Anchor capture: above-label lookup failed (non-critical):', err);
   }
 
-  // Guaranteed fallback — always save SOMETHING so the position is learned
-  // even when no nearby label text could be read. A failure HERE is NOT
-  // "non-critical": it means NOTHING was recorded for this teach (e.g. the save
-  // is admin-gated and the current user lacks the role, or a DB error). Surface
-  // it so the operator isn't misled into thinking the ⊕ tool worked when the
-  // anchor never persisted.
-  try {
-    const fallbackLabel = labelFor(fieldKey) || fieldKey.replace(/_/g, ' ');
-    await window.docusnap.saveFieldAnchor({ ...anchorBase, anchor_label: fallbackLabel, direction: 'right' });
-    return true;
-  } catch (err) {
-    console.error('Anchor capture: save FAILED — nothing recorded:', err);
-    try {
-      const msg = /FORBIDDEN|permission/i.test(err?.message || '')
-        ? 'Could not save anchor: this account lacks permission (admin required).'
-        : 'Could not save anchor — it was not recorded. See console for details.';
-      showToast(msg, 'err');
-    } catch {}
-  }
-  return false;
+  // Guaranteed fallback — always STAGE SOMETHING so the position is learned on
+  // commit even when no nearby label text could be read. The actual persistence
+  // (and its admin-role / DB-error handling) happens in confirmCurrentDoc, so an
+  // un-confirmed teach leaves no trace.
+  const fallbackLabel = labelFor(fieldKey) || fieldKey.replace(/_/g, ' ');
+  pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: fallbackLabel, direction: 'right' };
+  return true;
 }
 
 function cleanSupplierName(name) {
@@ -1177,6 +1170,31 @@ async function confirmCurrentDoc({ bulk = false } = {}) {
       docImg.src = pageImages[currentPage];
     }
     return { error: result?.error || 'Confirm failed. Check settings.' };
+  }
+
+  // Persist anchors taught with ⊕ this cycle — DEFERRED to commit so an un-confirmed
+  // teach (skip/defer/doc-change) leaves no learned trace. Re-key to the supplier the
+  // user actually confirmed (the live field may have been edited after the draw);
+  // saveAnchor's authoritative branch makes each the single anchor for its
+  // (field, doc-type), sweeping stale ones. Best-effort per field — a save failure is
+  // surfaced but does not un-file the already-filed document.
+  const taughtKeys = Object.keys(pendingAnchors);
+  if (taughtKeys.length) {
+    const taughtSupplier = cleanSupplierName(allValues.supplier_name || currentDoc?.supplier_name);
+    for (const fk of taughtKeys) {
+      try {
+        await window.docusnap.saveFieldAnchor({ ...pendingAnchors[fk], supplier_name: taughtSupplier });
+      } catch (err) {
+        console.error(`Anchor save failed for "${fk}":`, err);
+        if (!bulk) {
+          const msg = /FORBIDDEN|permission/i.test(err?.message || '')
+            ? 'Document filed, but saving the taught anchor needs an admin account.'
+            : 'Document filed, but a taught anchor could not be saved (see console).';
+          try { showToast(msg, 'err'); } catch {}
+        }
+      }
+    }
+    pendingAnchors = {};
   }
 
   queue         = queue.filter(d => d.id !== currentDoc.id);
@@ -1727,6 +1745,7 @@ document.getElementById('btn-reprocess').addEventListener('click', async () => {
     if (full) {
       currentDoc  = full;    // sync in-memory state to fresh DB record
       corrections = {};      // drop stale corrections; fields are now fresh
+      pendingAnchors = {};   // ...and any un-committed ⊕ teach (coords now stale)
       syncDocTypeFromRecord(full); // auto-select the newly detected type
     }
     renderFields(full || currentDoc);
@@ -1860,6 +1879,7 @@ document.getElementById('btn-reprocess-all').addEventListener('click', async () 
         if (full && currentDoc && currentDoc.id === doc.id) {
           currentDoc  = full;
           corrections = {};
+          pendingAnchors = {};   // drop any un-committed ⊕ teach (coords now stale)
           syncDocTypeFromRecord(full); // auto-select the newly detected type
           renderFields(full);
         }
