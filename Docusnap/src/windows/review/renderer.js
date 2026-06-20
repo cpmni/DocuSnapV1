@@ -13,6 +13,25 @@ const TYPE_TO_VALIDATION = {
   date: 'date', currency: 'currency', number: 'currency', amount: 'currency',
   alphanumeric: 'alphanumeric', job_reference: 'job_reference', currency_code: 'currency_code',
 };
+// Mirror engine.py _is_ref_field: a reference/ticket field (key ends _number /
+// _no or contains "reference").
+function isRefFieldKey(key) {
+  const k = (key || '').toLowerCase();
+  return k.endsWith('_number') || k.endsWith('_no') || k.includes('reference');
+}
+// Field → validation key, mirroring engine.py's _TYPE2VAL + the ref-field
+// coercion: a reference field typed Number/Currency is validated as a CODE
+// (alphanumeric), not as money. Without this a valid ref "2602-0926-1" failed
+// the currency pattern (rx 0% / a false on-blur warning).
+function validationKeyFor(def) {
+  if (!def) return null;
+  const type = (def.type || '').toLowerCase();
+  let mapped = TYPE_TO_VALIDATION[type] || null;
+  if ((mapped === 'currency' || mapped === 'currency_code') && isRefFieldKey(def.key)) {
+    mapped = 'alphanumeric';
+  }
+  return mapped;
+}
 let validationPatterns = null;   // { date:[RegExp,…], … } compiled once from config
 
 async function ensureValidationPatterns() {
@@ -44,8 +63,7 @@ function fieldValidationError(key, value) {
     return 'Usually all digits for this field';
   }
   const def  = (fieldDefs || []).find(f => f.key === key);
-  const type = (def?.type || '').toLowerCase();
-  const valKey = TYPE_TO_VALIDATION[type];
+  const valKey = validationKeyFor(def);
   if (!valKey) return null;                      // free-text / untyped → no constraint
   const pats = validationPatterns && validationPatterns[valKey];
   if (!pats || !pats.length) return null;
@@ -2957,9 +2975,7 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
   // (fetched once via ensureValidationPatterns) and the SAME field type→key map,
   // so the score the trace shows is the score extraction actually checked against.
   function traceValKey(field) {
-    const def = (fieldDefs || []).find(f => f.key === field);
-    const type = (def && def.type ? def.type : '').toLowerCase();
-    return TYPE_TO_VALIDATION[type] || null;
+    return validationKeyFor((fieldDefs || []).find(f => f.key === field));
   }
   // % of the value covered by the best matching pattern: 100 = the whole value
   // fits the expected shape; <100 = trailing/leading chars fall outside it; 0 =
