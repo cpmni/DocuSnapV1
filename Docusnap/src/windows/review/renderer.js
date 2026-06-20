@@ -676,16 +676,24 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   const confLabel = conf !== null
     ? `<span class="conf-badge ${confClass}">${conf}%</span>`
     : '';
-  // An "Accept" button is shown ONLY for correction CANDIDATES — i.e. when a
-  // corrected_to value is present (set by Stage 4.5's non-confident proposal).
-  // Plain validation notes (no corrected_to) get no button. The button only
+  // A correction that was ALREADY APPLIED to the value (Stage 4.5 strong auto-fix:
+  // an OCR misread of a near-universal learned token, e.g. "Lid"→"Ltd") shows as a
+  // calm "auto-corrected" badge — the value in the input IS the fix, so there is no
+  // Accept button. A SUGGESTION (corrected_to differs from the current value) keeps
+  // the amber note + Accept button. The applied case is detected by value equality,
+  // which the engine guarantees (value/display_value/corrected_to all set to the
+  // repair on auto-apply).
+  const isApplied = !!correctedTo && val === correctedTo;
+  // An "Accept" button is shown ONLY for unapplied correction CANDIDATES. The button
   // copies the suggestion into the input; it never confirms or persists.
-  const acceptHtml = correctedTo
+  const acceptHtml = (correctedTo && !isApplied)
     ? ` <button type="button" class="accept-btn" data-key="${key}">Accept</button>`
     : '';
-  const noteHtml = (note || correctedTo)
-    ? `<div class="field-note">${escHtml(note || '')}${acceptHtml}</div>`
-    : '';
+  const noteHtml = isApplied
+    ? `<div class="field-note corrected"><span class="corrected-badge" title="An OCR misread was auto-corrected to the spelling that recurs in your confirmed data">✓ auto-corrected</span> ${escHtml(note || '')}</div>`
+    : (note || correctedTo)
+      ? `<div class="field-note">${escHtml(note || '')}${acceptHtml}</div>`
+      : '';
   // Anchor provenance: only for anchor-based extraction sources, and only when a
   // label was captured. Other methods (keyword, template, llm, manual) show nothing.
   const isAnchorMethod = method === 'anchor' || method === 'anchor_crop';

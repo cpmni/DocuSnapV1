@@ -1269,7 +1269,9 @@ class ExtractionEngine:
                                 'display_value':   repaired,
                                 'was_corrected':   True,
                                 'corrected_to':    repaired,
-                                'validation_note': f"Corrected to learned spelling: {repaired}",
+                                # Note carries the ORIGINAL read so the UI can show what
+                                # was auto-fixed (the input already holds the correction).
+                                'validation_note': f"Auto-corrected to match learned data (was: {val})",
                             }
                         else:
                             results[key] = {

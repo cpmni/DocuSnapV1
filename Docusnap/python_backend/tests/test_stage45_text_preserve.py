@@ -126,7 +126,9 @@ def test_strong_token_repair_auto_applied():
     f += not check("was_corrected flag set", cust.get("was_corrected") is True)
     f += not check("confidence kept (not capped to 70) -> not review-forced",
                    (cust.get("confidence") or 0) >= 70 and not r.get("_needs_review"))
-    f += not check("note records the correction", "Corrected to learned spelling" in (cust.get("validation_note") or ""))
+    f += not check("note records the correction + the original read",
+                   "Auto-corrected" in (cust.get("validation_note") or "")
+                   and "Lid" in (cust.get("validation_note") or ""))
     print()
     return f
 

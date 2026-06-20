@@ -338,6 +338,12 @@
     .field-input.invalid { border-color: var(--err); background: var(--err-bg); }
     .field-note { font-size: 10px; color: var(--warn); font-family: var(--mono); margin-top: 1px; }
     .field-validation-warn { color: var(--err); }
+    /* Auto-corrected (Stage 4.5 strong token repair): a calm, positive note — the
+       fix is already in the field, so it reads as info, not a warning. */
+    .field-note.corrected { color: var(--muted); }
+    .corrected-badge { display: inline-block; font-family: var(--sans); font-size: 9px;
+      font-weight: 600; line-height: 1; padding: 2px 6px; margin-right: 4px; border-radius: var(--r-pill);
+      background: rgba(31,157,99,.16); color: var(--ok); vertical-align: baseline; }
     .field-anchor-note { font-size: 10px; color: var(--muted); font-family: var(--mono); margin-top: 1px; }
     .accept-btn {
       font-size: 10px; font-family: var(--sans); line-height: 1;
