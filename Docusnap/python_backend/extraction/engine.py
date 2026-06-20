@@ -1242,28 +1242,45 @@ class ExtractionEngine:
                             or self.format_class_index.get(('', dt_lower, key))
                 if not fmt_entry:
                     continue
-                # ── Canonical token repair for NAME-LIKE fields (Phase 1, SUGGESTION
-                # ONLY) ── runs INDEPENDENT of the anomaly verdict: a garbled company
-                # name is coarse-class FREETEXT and may not trip check_value at all, so
-                # gating this behind `anomaly` would make it dead code. Repairs garbled
-                # KNOWN tokens to their learned canonical spelling and keeps the variable
-                # tail verbatim (never whole-value snap, never injects a learned token).
-                # display_value/value untouched — emitted as a corrected_to candidate,
-                # conf capped, review-forced. See name_match.py.
+                # ── Canonical token repair for NAME-LIKE fields ── runs INDEPENDENT of
+                # the anomaly verdict: a garbled company name is coarse-class FREETEXT
+                # and may not trip check_value at all, so gating it behind `anomaly`
+                # would make it dead code. Repairs garbled KNOWN tokens to their learned
+                # canonical spelling and keeps the variable tail verbatim (never
+                # whole-value snap, never injects a learned token). See name_match.py.
+                # TWO TIERS by evidence:
+                #   STRONG (every changed token at a NEAR-UNIVERSAL position, doc_freq
+                #     >= 0.9, >= 3 docs) — a confident misread fix backed by overwhelming
+                #     history ("Beaumont Care Homes Lid" -> "...Ltd"). AUTO-APPLY the
+                #     value (the operator wants the misread FIXED, not just suggested);
+                #     kept visible via was_corrected + a note, and NOT review-forced
+                #     (no format_anomaly_flagged) so a confident fix doesn't nag.
+                #   WEAK — emitted as a corrected_to SUGGESTION only (value untouched,
+                #     conf capped, review-forced), exactly as before.
                 name_lex = fmt_entry.get('name_lexicon')
                 if name_lex and key in text_field_keys:
                     from extraction import name_match
-                    repaired = name_match.repair_name_value(str(val), name_lex)
+                    repaired, strong = name_match.repair_name_value(str(val), name_lex, details=True)
                     if repaired and repaired != str(val):
-                        results[key] = {
-                            **data,
-                            'confidence':      min(data.get('confidence') or 0, 70),
-                            'corrected_to':    repaired,
-                            'validation_note': f"Suggested name correction: {repaired}",
-                        }
-                        n_flagged += 1
-                        format_anomaly_flagged = True
-                        continue   # one suggestion per field — skip the anomaly path
+                        if strong:
+                            results[key] = {
+                                **data,
+                                'value':           repaired,
+                                'display_value':   repaired,
+                                'was_corrected':   True,
+                                'corrected_to':    repaired,
+                                'validation_note': f"Corrected to learned spelling: {repaired}",
+                            }
+                        else:
+                            results[key] = {
+                                **data,
+                                'confidence':      min(data.get('confidence') or 0, 70),
+                                'corrected_to':    repaired,
+                                'validation_note': f"Suggested name correction: {repaired}",
+                            }
+                            n_flagged += 1
+                            format_anomaly_flagged = True
+                        continue   # one repair/suggestion per field — skip the anomaly path
                 anomaly = format_anomaly_checker.check_value(str(val), fmt_entry)
                 if anomaly:
                     # Free-text field (name/address): a learned shape must never

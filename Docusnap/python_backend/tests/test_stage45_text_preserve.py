@@ -113,11 +113,30 @@ def test_ref_field_still_shape_enforced():
     return f
 
 
+def test_strong_token_repair_auto_applied():
+    print("name repair: a near-universal token misread ('Lid'->'Ltd') is AUTO-APPLIED, not just suggested")
+    f = 0
+    # 'Ltd' is at doc_freq 1.0 across the customer history → a 1-glyph misread is a
+    # confident fix. The VALUE is corrected (not only flagged), and a high-confidence
+    # fix is not review-forced.
+    r = _run({"customer": {"value": "Beaumont Care Homes Lid - Parkview", "confidence": 90, "method": "keyword_override"}})
+    cust = _f(r, "customer")
+    f += not check("value auto-corrected 'Lid' -> 'Ltd'",
+                   cust.get("value") == "Beaumont Care Homes Ltd - Parkview")
+    f += not check("was_corrected flag set", cust.get("was_corrected") is True)
+    f += not check("confidence kept (not capped to 70) -> not review-forced",
+                   (cust.get("confidence") or 0) >= 70 and not r.get("_needs_review"))
+    f += not check("note records the correction", "Corrected to learned spelling" in (cust.get("validation_note") or ""))
+    print()
+    return f
+
+
 def main():
     fails = 0
     fails += test_text_value_preserved_on_shape_mismatch()
     fails += test_clean_text_value_unflagged()
     fails += test_ref_field_still_shape_enforced()
+    fails += test_strong_token_repair_auto_applied()
     if fails:
         print(f"{fails} check(s) failed — Stage 4.5 free-text preservation regressed.")
         return 1

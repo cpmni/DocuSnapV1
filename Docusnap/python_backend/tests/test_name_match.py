@@ -67,6 +67,26 @@ def main():
     f += not check("position 1 NOT stable (only 2 docs < floor 3)", 1 not in thin["positions"])
     f += not check("'acme co' keeps 'co' verbatim", repair_name_value("acme co", thin) == "Acme co")
 
+    print("\nshort-token strong repair (Ltd/Lid) — evidence-gated + AUTO-APPLY strength flag")
+    # 'Ltd' is near-universal at its position; a 1-glyph misread 'Lid' is fixed.
+    ltd = build_token_lexicon({"Beaumont Care Homes Ltd": 12, "Beaumont Care Homes Ltd - Belmont": 5}, 17)
+    rL, sL = repair_name_value("Beaumont Care Homes Lid", ltd, details=True)
+    f += not check(f"'...Lid' -> '...Ltd' = {rL!r}", rL == "Beaumont Care Homes Ltd")
+    f += not check("repair is STRONG (doc_freq>=0.9) -> auto-apply", sL is True)
+    f += not check("idempotent on the canonical (details)", repair_name_value("Beaumont Care Homes Ltd", ltd, details=True) == (None, False))
+    f += not check("legacy (no details) still returns the string", repair_name_value("Beaumont Care Homes Lid", ltd) == "Beaumont Care Homes Ltd")
+    # SAFETY: a position that is NOT near-universal (mixed Ltd/Inc) is not even stable.
+    mixed = build_token_lexicon({"Acme Ltd": 6, "Acme Inc": 5, "Acme Co": 1}, 12)
+    f += not check("mixed-suffix position is NOT stable", 1 not in mixed["positions"])
+    f += not check("'Acme Lid' NOT repaired (no near-universal suffix)", repair_name_value("Acme Lid", mixed, details=True) == (None, False))
+    # SAFETY: a genuinely DIFFERENT suffix (Inc, dist 3 from Ltd) is kept, not snapped.
+    globex = build_token_lexicon({"Globex Ltd": 11, "Globex Ltd x": 1}, 12)
+    f += not check("real different suffix 'Inc' kept (not snapped to Ltd)", repair_name_value("Globex Inc", globex) is None)
+    f += not check("dist-1 misread 'Lid' IS fixed to 'Ltd'", repair_name_value("Globex Lid", globex) == "Globex Ltd")
+    # SAFETY: 2-char tokens stay exact-only (no Co->Go).
+    co = build_token_lexicon({"Big Co": 5, "Big Co": 5, "Big Co north": 4}, 9)
+    f += not check("2-char 'Go' NOT repaired to 'Co'", repair_name_value("Big Go", co) is None)
+
     print("\ndeterminism + empties")
     f += not check("lexicon build is deterministic", build_token_lexicon(HISTORY, N) == lex)
     f += not check("empty lexicon -> no repair", repair_name_value("anything", {"positions": {}, "n_docs": 0}) is None)
