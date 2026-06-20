@@ -167,15 +167,27 @@ The vendor\ folder bundles everything so customers don't need to install anythin
 
 STEP A — Bundle Python:
 
-  python -m venv vendor\python
+  py -3.12 -m venv vendor\python
   vendor\python\Scripts\pip install pytesseract pillow pypdfium2 requests imagehash
 
-  OPTIONAL — bundle the RapidOCR engine (beta, opt-in):
-    vendor\python\Scripts\pip install -r python_backend\requirements-ocr.txt
-    This also installs RapidOCR's bundled PP-OCR ONNX models (offline, no
+  ⚠ MUST be Python 3.12 (see 1.2) — use `py -3.12`, NOT a bare `python` (which can
+    grab a newer system Python). Do NOT use 3.13/3.14: rapidocr-onnxruntime ships
+    NO wheels for Python >=3.13 (every release is Requires-Python <3.13), so the
+    RapidOCR step below cannot resolve on a 3.13/3.14 runtime and RapidOCR would be
+    SILENTLY ABSENT from the dist. The app launches the bundled interpreter at
+    vendor\python\python.exe (src/main.js) — verify THAT one before continuing:
+      vendor\python\python.exe --version    (must report 3.12.x)
+
+  REQUIRED — bundle the RapidOCR full-page OCR engine (opt-in AT RUNTIME):
+    vendor\python\python.exe -m pip install -r python_backend\requirements-ocr.txt
+    Installs RapidOCR + onnxruntime + its bundled PP-OCR ONNX models (offline, no
     download) under vendor\python\Lib\site-packages\rapidocr_onnxruntime\models\.
-    Skipping it keeps a Tesseract-only build (the default); the app falls back to
-    Tesseract if RapidOCR isn't bundled. Details: python_backend\OCR_RUNTIME.md
+    Adds ~80-180 MB to the installer. The shipped OCR DEFAULT stays Tesseract;
+    RapidOCR is bundled so the per-install Settings -> OCR engine toggle works
+    without the customer installing anything (and falls back to Tesseract if the
+    runtime ever fails to init). Details: python_backend\OCR_RUNTIME.md
+    Verify it actually landed in the bundled runtime (no network):
+      vendor\python\python.exe -c "from rapidocr_onnxruntime import RapidOCR; RapidOCR(); print('RapidOCR OK')"
 
 STEP B — Bundle Tesseract:
 

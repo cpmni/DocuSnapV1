@@ -46,14 +46,25 @@ process a document. Until installed, selecting RapidOCR simply falls back to Tes
 
 ## 3. Packaged environment (bundled `vendor/python`)
 
-In **`BUILD.txt` Part 3.1 STEP A**, after creating `vendor\python`, add:
+The standard build now bundles RapidOCR — it is a **REQUIRED** step in **`BUILD.txt` Part 3.1
+STEP A**, run right after creating `vendor\python`:
 
 ```bat
 vendor\python\Scripts\pip install -r python_backend\requirements-ocr.txt
 ```
 
-This installs the package **and its bundled PP-OCR models** into the venv. Skipping it keeps a
-Tesseract-only build (the default); the app falls back to Tesseract if RapidOCR isn't present.
+This installs the package **and its bundled PP-OCR models** into the venv. The app still
+defaults to Tesseract and falls back to it automatically; bundling only makes the per-install
+**Settings → OCR engine** toggle work without the customer installing anything.
+
+> ⚠ **`vendor\python` MUST be Python 3.12.** `rapidocr-onnxruntime` publishes **no wheels for
+> Python ≥ 3.13** (every release is `Requires-Python <3.13`), so this `pip install` cannot
+> resolve on a 3.13/3.14 venv and RapidOCR would be silently absent. Build the venv with
+> `py -3.12 -m venv` (BUILD.txt §1.2 already mandates 3.12) and verify
+> `vendor\python\Scripts\python.exe --version` reports 3.12.x first.
+>
+> The backend ships **numpy 2.x**, so `onnxruntime` must be **≥ 1.19** (older builds were
+> compiled against numpy 1.x and fail to load) — already pinned in `requirements-ocr.txt`.
 
 ---
 
