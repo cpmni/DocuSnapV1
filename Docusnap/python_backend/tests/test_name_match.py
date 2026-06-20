@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from extraction.name_match import build_token_lexicon, repair_name_value  # noqa: E402
+from extraction.name_match import build_token_lexicon, repair_name_value, conforms_to_lexicon  # noqa: E402
 
 
 def check(label, cond):
@@ -86,6 +86,19 @@ def main():
     # SAFETY: 2-char tokens stay exact-only (no Co->Go).
     co = build_token_lexicon({"Big Co": 5, "Big Co": 5, "Big Co north": 4}, 9)
     f += not check("2-char 'Go' NOT repaired to 'Co'", repair_name_value("Big Go", co) is None)
+
+    print("\nconforms_to_lexicon: stable prefix + variable tail is the EXPECTED pattern (no flag)")
+    # Varied sites -> position 3 (site) is NOT stable; the prefix is.
+    site = build_token_lexicon({"Beaumont Care Homes - Tudordale": 1, "Beaumont Care Homes - Holywood": 1,
+                                "Beaumont Care Homes - Bangor": 1, "Beaumont Care Homes - Clandeboye": 1}, 4)
+    f += not check("a NEW site conforms (prefix matches) -> suppress flag",
+                   conforms_to_lexicon("Beaumont Care Homes - Newtownabbey", site) is True)
+    f += not check("the canonical itself conforms", conforms_to_lexicon("Beaumont Care Homes - Tudordale", site) is True)
+    f += not check("WRONG prefix does NOT conform (real anomaly kept)",
+                   conforms_to_lexicon("Acme Care Homes - Newtownabbey", site) is False)
+    f += not check("missing a stable prefix token does NOT conform",
+                   conforms_to_lexicon("Beaumont Care - Newtownabbey", site) is False)
+    f += not check("empty lexicon -> does not conform", conforms_to_lexicon("anything", {"positions": {}, "n_docs": 0}) is False)
 
     print("\ndeterminism + empties")
     f += not check("lexicon build is deterministic", build_token_lexicon(HISTORY, N) == lex)

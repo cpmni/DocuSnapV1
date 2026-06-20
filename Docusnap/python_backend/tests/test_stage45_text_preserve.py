@@ -72,6 +72,26 @@ def _run(kw_results):
         engine_mod.validator.validate_and_adjust = orig_va
 
 
+def _run_fmt(kw_results, formats, fields):
+    """As _run but with caller-supplied confirmed formats + field defs."""
+    eng = ExtractionEngine(mode="fast", config_path=CONFIG if os.path.exists(CONFIG) else None)
+    eng.set_formats(formats)
+    orig_kw = engine_mod.keyword.extract_fields
+    orig_an = engine_mod.anchor.extract_with_anchors
+    orig_va = engine_mod.validator.validate_and_adjust
+    engine_mod.keyword.extract_fields = lambda *a, **k: {kk: dict(vv) for kk, vv in kw_results.items()}
+    engine_mod.anchor.extract_with_anchors = lambda *a, **k: {}
+    engine_mod.validator.validate_and_adjust = lambda results, field_defs: results
+    try:
+        return eng.extract(ocr_text="stub", page_images=[], filename="t.pdf",
+                           field_defs=fields, hints=[], anchors=[], logos=[], templates=[],
+                           document_type="WSheet", document_slug="wsheet")
+    finally:
+        engine_mod.keyword.extract_fields = orig_kw
+        engine_mod.anchor.extract_with_anchors = orig_an
+        engine_mod.validator.validate_and_adjust = orig_va
+
+
 def _f(r, k):
     return r.get(k) or {}
 
@@ -133,12 +153,39 @@ def test_strong_token_repair_auto_applied():
     return f
 
 
+def test_varied_site_new_name_not_flagged():
+    print("name field: a NEW site (different length) is NOT flagged when the prefix conforms")
+    f = 0
+    # Varied confirmed sites -> no single site dominates -> the site position is
+    # variable. A brand-new site of a never-seen LENGTH ('Clandeboye') used to trip
+    # the learned-shape check ("format differs"); the name-lexicon conformance now
+    # recognises the stable prefix and suppresses that false flag.
+    varied = ["Beaumont Care Homes Ltd - Parkview", "Beaumont Care Homes Ltd - Bangor",
+              "Beaumont Care Homes Ltd - Holywood", "Beaumont Care Homes Ltd - Belmont"]
+    fmts = [{"supplier_name": "", "document_type": "wsheet", "field_key": "customer",
+             "sample_values": varied, "confirmed_count": 12,
+             "value_counts": {varied[0]: 3, varied[1]: 3, varied[2]: 3, varied[3]: 3}}]
+    flds = [{"key": "customer", "type": "text"}]
+    r = _run_fmt({"customer": {"value": "Beaumont Care Homes Ltd - Clandeboye", "confidence": 90,
+                               "method": "keyword_override"}}, fmts, flds)
+    cust = _f(r, "customer")
+    f += not check("new-site value kept", cust.get("value") == "Beaumont Care Homes Ltd - Clandeboye")
+    f += not check("new-site value NOT flagged ('format differs' suppressed)", not cust.get("validation_note"))
+    # A genuinely WRONG prefix is still flagged.
+    r2 = _run_fmt({"customer": {"value": "Totally Different Co - Clandeboye", "confidence": 90,
+                                "method": "keyword_override"}}, fmts, flds)
+    f += not check("wrong-prefix value IS still flagged", bool(_f(r2, "customer").get("validation_note")))
+    print()
+    return f
+
+
 def main():
     fails = 0
     fails += test_text_value_preserved_on_shape_mismatch()
     fails += test_clean_text_value_unflagged()
     fails += test_ref_field_still_shape_enforced()
     fails += test_strong_token_repair_auto_applied()
+    fails += test_varied_site_new_name_not_flagged()
     if fails:
         print(f"{fails} check(s) failed — Stage 4.5 free-text preservation regressed.")
         return 1

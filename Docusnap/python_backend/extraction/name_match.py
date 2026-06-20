@@ -180,3 +180,32 @@ def repair_name_value(value, lexicon, details=False):
         return none
     result = " ".join(out)
     return (result, strong) if details else result
+
+
+def conforms_to_lexicon(value, lexicon):
+    """True if `value` matches the learned name PATTERN: at EVERY stable position it
+    carries the canonical token (exact, normalised), and the remaining positions are
+    its variable tail. A conforming value is the EXPECTED "stable prefix + variable
+    tail" shape ("Beaumont Care Homes Ltd - <Site>" with a NEW site) — not an
+    anomaly — so the coarse learned-SHAPE check (which would flag a never-seen site
+    length) should be suppressed for it. Returns False when a stable position is
+    missing or carries a DIFFERENT token (a real anomaly), or there are no stable
+    positions. Mirrors repair_name_value's iteration (separators don't advance the
+    content position)."""
+    if not value or not lexicon:
+        return False
+    positions = lexicon.get("positions") or {}
+    if not positions:
+        return False
+    content_i = 0
+    matched = 0
+    for raw in str(value).split():
+        if not _is_content(raw):
+            continue                       # separator — does not occupy a content position
+        stable = positions.get(content_i)
+        if stable:
+            if normalise_for_tokens(raw) != stable["norm"]:
+                return False               # wrong/garbled token at a stable position
+            matched += 1
+        content_i += 1
+    return matched == len(positions)       # every stable prefix token must be present & correct

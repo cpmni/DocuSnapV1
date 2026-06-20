@@ -1283,6 +1283,15 @@ class ExtractionEngine:
                             n_flagged += 1
                             format_anomaly_flagged = True
                         continue   # one repair/suggestion per field — skip the anomaly path
+                    # No repair needed. If the value CONFORMS to the learned name
+                    # pattern (every stable PREFIX token matches; only the variable
+                    # TAIL differs), the name_lexicon — a more precise model than the
+                    # coarse learned SHAPE — says this is the EXPECTED pattern. Suppress
+                    # the shape "format differs" flag: a customer "Beaumont Care Homes
+                    # Ltd - <new site>" is normal, not an anomaly, even when the new
+                    # site's length was never confirmed before.
+                    if name_match.conforms_to_lexicon(str(val), name_lex):
+                        continue
                 anomaly = format_anomaly_checker.check_value(str(val), fmt_entry)
                 if anomaly:
                     # Free-text field (name/address): a learned shape must never
