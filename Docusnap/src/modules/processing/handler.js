@@ -180,6 +180,7 @@ function buildTrainingArgs(db, configPath, logger = null) {
 
   return {
     args,
+    ocrEngine,   // 'tesseract' | 'rapidocr' — lets callers add RapidOCR-only speed flags
     tempFiles: [fieldsFile, hintsFile, anchorsFile, logosFile, dtFile, formatsFile, templatesFile, overridesFile],
   };
 }
@@ -377,9 +378,9 @@ function register(ctx) {
       outcome: 'success', metadata: { folder: folderPath } });
     const diagOn = _diagEnabled(db);
     if (diagOn) { diaglog.enable(); diaglog.write({ ev: 'batch_start', folder: folderPath }); }
-    let trainingArgs, tempFiles;
+    let trainingArgs, tempFiles, ocrEngine;
     try {
-      ({ args: trainingArgs, tempFiles } = buildTrainingArgs(db, configPath, logger));
+      ({ args: trainingArgs, tempFiles, ocrEngine } = buildTrainingArgs(db, configPath, logger));
     } catch (e) {
       console.error('[process-folder] buildTrainingArgs failed:', e);
       mirror(event.sender, 'process-progress', {
@@ -409,7 +410,7 @@ function register(ctx) {
     // original single-process behaviour). suppressStart hides the worker's own
     // {type:'start'} so a pool can emit ONE aggregate total to the renderer
     // instead of N competing ones (the renderer keys its progress bar off it).
-    const runWorker = (filesFile, suppressStart) => new Promise((resolve) => {
+    const runWorker = (filesFile, suppressStart, ocrThreads = 0) => new Promise((resolve) => {
       const py = pythonExe();
       const scriptArgs = [
         '--folder',    folderPath,
@@ -417,6 +418,13 @@ function register(ctx) {
         '--mode',      procMode,
         ...trainingArgs,
       ];
+      // RapidOCR-only speed flags (default Tesseract command line stays unchanged):
+      // Fast mode skips the angle classifier; parallel workers cap onnxruntime
+      // threads to cores/workers so they don't oversubscribe the CPU.
+      if (ocrEngine === 'rapidocr') {
+        if (procMode === 'fast') scriptArgs.push('--ocr-fast');
+        if (ocrThreads > 0) scriptArgs.push('--ocr-threads', String(ocrThreads));
+      }
       if (filesFile) scriptArgs.push('--files-file', filesFile);
       // Emit the dev trace stream + capture OCR slices while the hidden inspector
       // is open OR diagnostic logging is on (so the diagnostic file gets the full
@@ -498,12 +506,18 @@ function register(ctx) {
       } else {
         const shards = partitionRoundRobin(allFiles, Math.min(concurrency, allFiles.length));
         logger?.log(`Batch start: folder="${folderPath}" mode=${procMode} concurrency=${concurrency} → ${shards.length} workers, ${allFiles.length} files`);
+        // Cap each RapidOCR worker's onnxruntime threads to cores/workers so the
+        // pool doesn't oversubscribe the CPU (RapidOCR is internally multithreaded,
+        // unlike Tesseract). 0 = no cap (Tesseract, or unknown CPU count).
+        const ocrCap = ocrEngine === 'rapidocr'
+          ? Math.max(1, Math.floor((os.cpus().length || 1) / shards.length))
+          : 0;
         // One aggregate start for the whole batch; per-worker starts suppressed.
         mirror(event.sender, 'process-progress', { type: 'start', total: allFiles.length });
         workerPromises = shards.map(shard => {
           const f = writeTempJson('files', shard);
           shardFiles.push(f);
-          return runWorker(f, true);
+          return runWorker(f, true, ocrCap);
         });
       }
     }
@@ -563,7 +577,7 @@ function register(ctx) {
 
     const diagOn = _diagEnabled(db);
     if (diagOn) { diaglog.enable(); diaglog.write({ ev: 'reprocess_start', filename, doc_id: docId }); }
-    const { args: trainingArgs, tempFiles } = buildTrainingArgs(db, configPath, logger);
+    const { args: trainingArgs, tempFiles, ocrEngine } = buildTrainingArgs(db, configPath, logger);
     const learning2  = require('../../../database/modules/learning');
     const templates2 = require('../../../database/modules/templates');
     const reprMode   = learning2.getSetting(db, 'processing_mode', 'smart');
@@ -599,6 +613,8 @@ function register(ctx) {
       '--mode',       reprMode,
       ...trainingArgs,
     ];
+    // RapidOCR Fast-mode speed flag (single doc -> no thread cap). Tesseract default unchanged.
+    if (ocrEngine === 'rapidocr' && reprMode === 'fast') scriptArgs.push('--ocr-fast');
     // Honour the template this doc is already linked to as a Stage 0 fallback,
     // so its admin-drawn field mappings still apply on reprocess even when live
     // re-identification is borderline (see engine.extract known_template_id).

@@ -85,7 +85,7 @@ finally:
     RapidOcrEngine._ensure = _orig_ensure
 
 # ── 3. reading order from line boxes ──────────────────────────────────────────────
-def _fake_rapid(arr):
+def _fake_rapid(arr, **kwargs):
     # 'world' sits BELOW 'hello'; engine must reorder to hello\nworld.
     box_lo = [[10, 50], [60, 50], [60, 62], [10, 62]]   # y ~50
     box_hi = [[10, 5],  [60, 5],  [60, 17], [10, 17]]   # y ~5
@@ -100,7 +100,7 @@ _orig_ocr_image = tess_mod.ocr_image
 tess_mod.ocr_image = lambda img, config="--oem 3 --psm 3": "TESS-FALLBACK"
 try:
     r4 = RapidOcrEngine()
-    def _boom(arr): raise RuntimeError("inference boom")
+    def _boom(arr, **kwargs): raise RuntimeError("inference boom")
     r4._engine = _boom
     res4, out4 = _capture(lambda: r4.read_page(Image.new("L", (20, 20), 255)))
     check("rapidocr mid-run failure -> Tesseract text", res4 == "TESS-FALLBACK")
@@ -116,6 +116,24 @@ with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
     check("seam: engine.read_page called once", spy.calls == 1)
     check("seam: engine text returned", text == "SPY")
     check("seam: raw page image returned", len(pages) == 1 and pages[0].size == (24, 16))
+
+# ── 9. speed knobs: use_cls + intra_op_num_threads forwarding (RapidOCR-only) ─────
+# 9a. get_engine forwards the knobs to the RapidOcrEngine without initialising it.
+e = get_engine("rapidocr", probe=False, use_cls=False, intra_op_num_threads=3)
+check("get_engine forwards use_cls", e._use_cls is False)
+check("get_engine forwards intra_op_num_threads", e._intra_op_num_threads == 3)
+# 9b. defaults are byte-identical (cls on, no thread cap).
+ed = get_engine("rapidocr", probe=False)
+check("get_engine default use_cls on", ed._use_cls is True and ed._intra_op_num_threads is None)
+# 9c. read_page passes use_cls THROUGH to the underlying engine call.
+_seen = {}
+def _spy_cls(arr, **kwargs):
+    _seen.update(kwargs)
+    return ([[[[0, 0], [9, 0], [9, 9], [0, 9]], "x", 0.9]], 0.0)
+rc = RapidOcrEngine(use_cls=False)
+rc._engine = _spy_cls
+rc.read_page(Image.new("L", (16, 16), 255))
+check("read_page forwards use_cls=False to engine", _seen.get("use_cls") is False)
 
 # ── 6. default (engine=None) is the Tesseract path -> ocr_image (byte-identical) ──
 with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:

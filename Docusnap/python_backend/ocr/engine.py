@@ -41,19 +41,36 @@ class RapidOcrEngine:
     (import / init / inference) falls back to Tesseract for that page."""
     name = "rapidocr"
 
-    def __init__(self):
+    def __init__(self, use_cls=True, intra_op_num_threads=None):
         self._engine = None  # constructed lazily in _ensure()
+        # Speed knobs (RapidOCR-only; Tesseract path ignores them). use_cls=False
+        # skips the angle-classifier pass per page — faster, assumes upright pages
+        # (the detector still corrects skew; only ~180° flips are missed). Set by
+        # the app in Fast mode. intra_op_num_threads caps the onnxruntime thread
+        # pool so several parallel workers don't each grab every core and thrash
+        # (None/<=0 = onnxruntime default = all cores, best single-doc latency).
+        self._use_cls = use_cls
+        self._intra_op_num_threads = intra_op_num_threads
 
     def _ensure(self):
         if self._engine is None:
             from rapidocr_onnxruntime import RapidOCR   # may raise ImportError
-            kwargs = self._local_model_kwargs()
+            kwargs = dict(self._local_model_kwargs())
+            if self._intra_op_num_threads and self._intra_op_num_threads > 0:
+                # RapidOCR's UpdateParameters routes a Global intra_op_num_threads
+                # down to the Det/Cls/Rec ONNX sessions.
+                kwargs["intra_op_num_threads"] = int(self._intra_op_num_threads)
             try:
                 self._engine = RapidOCR(**kwargs) if kwargs else RapidOCR()  # may raise (missing model / DLL)
             except TypeError:
-                # Installed RapidOCR build doesn't accept these kwargs -> use its
-                # own bundled offline models (still no download).
-                self._engine = RapidOCR()
+                # Installed RapidOCR build doesn't accept a kwarg -> retry with the
+                # local model paths only, then bare. Either way uses the bundled
+                # offline models (no download).
+                mk = self._local_model_kwargs()
+                try:
+                    self._engine = RapidOCR(**mk) if mk else RapidOCR()
+                except TypeError:
+                    self._engine = RapidOCR()
         return self._engine
 
     @staticmethod
@@ -87,7 +104,7 @@ class RapidOcrEngine:
             # pre-deskew/threshold (those fight its detector). The autocontrast/denoise
             # enhance_params are not applied at this full-page stage either.
             g = img.convert("L") if img.mode != "L" else img
-            out = eng(np.array(g))
+            out = eng(np.array(g), use_cls=self._use_cls)
             result = out[0] if isinstance(out, tuple) else out
             if not result:
                 return ""
@@ -108,17 +125,19 @@ class RapidOcrEngine:
             return TesseractEngine().read_page(img, enhance_params)
 
 
-def get_engine(name=None, *, probe=True):
+def get_engine(name=None, *, probe=True, use_cls=True, intra_op_num_threads=None):
     """Select a full-page OCR engine.
 
     Default / unknown / 'tesseract' -> TesseractEngine (byte-identical).
     'rapidocr' -> RapidOcrEngine if it imports + initialises, else TesseractEngine (logged).
     `probe` (default True) performs the one-time import/init up front, so a missing wheel
     or model degrades cleanly BEFORE processing rather than once per page.
+    `use_cls`/`intra_op_num_threads` are RapidOCR-only speed knobs (the Tesseract path
+    ignores them); the defaults (cls on, no thread cap) are byte-identical to before.
     """
     if (name or "tesseract").strip().lower() != "rapidocr":
         return TesseractEngine()
-    engine = RapidOcrEngine()
+    engine = RapidOcrEngine(use_cls=use_cls, intra_op_num_threads=intra_op_num_threads)
     if probe:
         try:
             engine._ensure()

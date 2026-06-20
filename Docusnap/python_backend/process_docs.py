@@ -111,6 +111,14 @@ def main():
                         help="full-page OCR engine: 'tesseract' (default, byte-identical) "
                              "| 'rapidocr' (opt-in; falls back to tesseract if the runtime/"
                              "models are unavailable). Crop/zone/anchor OCR always uses Tesseract.")
+    parser.add_argument("--ocr-fast", action="store_true",
+                        help="RapidOCR speed mode: skip the angle classifier (use_cls=False) "
+                             "for upright pages. Set by the app in Fast mode; ignored by Tesseract.")
+    parser.add_argument("--ocr-threads", type=int, default=0,
+                        help="RapidOCR onnxruntime intra-op thread cap PER worker (0/unset = "
+                             "onnxruntime default = all cores). The app passes cores/concurrency "
+                             "when running parallel workers so they don't oversubscribe the CPU. "
+                             "Ignored by Tesseract.")
     parser.add_argument("--trace", action="store_true")
     # Dev-only: directory for temporary OCR crop slices (set by the handler only
     # while the inspector is open). Ignored unless --trace is also set.
@@ -153,7 +161,11 @@ def main():
     # anchor OCR is unaffected by this selection. Named ocr_engine to avoid colliding
     # with the ExtractionEngine `engine` below.
     from ocr.engine import get_engine
-    ocr_engine = get_engine(args.ocr_engine)
+    ocr_engine = get_engine(
+        args.ocr_engine,
+        use_cls=not args.ocr_fast,
+        intra_op_num_threads=(args.ocr_threads if args.ocr_threads and args.ocr_threads > 0 else None),
+    )
 
     emit({
         "type": "log",
