@@ -342,16 +342,22 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 # + residual), not usage_count. Ranks above single-label relocate
                 # (stronger geometry) and below a clean rigid crop.
                 conf = min(93, registration.registration_confidence(page_transform))
-            # ── OCR-QUALITY CAP: confidence must reflect the actual READ, not just
-            # the anchor's usage_count. Without this a garbled crop ("Aaiumant Care
-            # Homes Ltd - Galaorm") scored in the 90s purely because the anchor had
-            # been used a few times. Cap the field confidence at the crop's mean
-            # word confidence + a small margin: a clean crop (mean ~90) is unaffected
-            # (cap ≥ 95), while a poor read (mean ~65) is pulled down to ~70 and
-            # routed to review. Only applies to crop-based methods (ocr_conf set);
-            # inline/text-fallback reads keep their own caps above. Reusable for
-            # every supplier/field.
-            if ocr_conf is not None:
+            # ── OCR-QUALITY CAP (FREE-TEXT ONLY): for a name/address field there is
+            # no regex to validate the read, so the crop's mean OCR confidence is the
+            # only quality signal — without this a garbled crop ("Aaiumant Care Homes
+            # Ltd - Galaorm") scored in the 90s on usage_count alone. Cap the field
+            # confidence at the crop's mean word confidence + a small margin: a clean
+            # crop (mean ~90) is unaffected (cap ≥ 95), a poor read (mean ~65) drops
+            # to ~70 and is routed to review.
+            # SCOPED TO FREE-TEXT: a STRUCTURED value (date/currency/alphanumeric
+            # reference) that already passed its regex/type gate is validated by the
+            # PATTERN, not by Tesseract's per-glyph confidence — which is routinely
+            # low on isolated digit groups and dashes. Applying the cap there sank a
+            # correct reference "2602-0768-1" to 18% (mean conf ~13). For those fields
+            # the regex IS the trust signal, so the cap (and the Tier-A min-conf
+            # signal below) is skipped.
+            _is_free_text = val_type in (None, "text", "multiline_text")
+            if ocr_conf is not None and _is_free_text:
                 conf = min(conf, int(ocr_conf) + 5)
             # ── LOCATED gate: Tier-A trust requires the anchor to be on THIS page ──
             # A label/landmark-confirmed read (text-fallback / inline / relocated /
@@ -405,8 +411,11 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 # uses it so an authoritative ⊕ anchor whose crop read a garbled word
                 # ("Aaiumant"/"Galaorm" min ~55) does NOT win OUTRIGHT over a clean
                 # keyword value — it falls through to the confidence contest, where
-                # its OCR-capped confidence loses to the clean read.
-                "ocr_min_conf": ocr_min,
+                # its OCR-capped confidence loses to the clean read. SCOPED TO
+                # FREE-TEXT (same reason as the cap above): a regex-valid structured
+                # value isn't judged by Tesseract's digit confidence, so it carries
+                # no min-conf signal (None → Tier-A unaffected).
+                "ocr_min_conf": ocr_min if _is_free_text else None,
             }
 
     return results
