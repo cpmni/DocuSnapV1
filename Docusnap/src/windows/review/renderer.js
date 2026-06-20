@@ -124,14 +124,16 @@ const wizard = {
 // ── Element refs ──────────────────────────────────────────────────────────────
 const docImg     = document.getElementById('doc-img');
 const docImgWrap = document.getElementById('doc-img-wrap');
-const selCanvas  = document.getElementById('sel-canvas');
-const wizCanvas  = document.getElementById('wiz-canvas');
-const ocrOverlay = document.getElementById('ocr-overlay');
-const selectHint = document.getElementById('select-hint');
-const hintField  = document.getElementById('hint-field-name');
-const hintCancel = document.getElementById('hint-cancel');
-const ctx        = selCanvas.getContext('2d');
-const wizCtx     = wizCanvas.getContext('2d');
+const selCanvas    = document.getElementById('sel-canvas');
+const wizCanvas    = document.getElementById('wiz-canvas');
+const traceCanvas  = document.getElementById('trace-canvas');
+const ocrOverlay   = document.getElementById('ocr-overlay');
+const selectHint   = document.getElementById('select-hint');
+const hintField    = document.getElementById('hint-field-name');
+const hintCancel   = document.getElementById('hint-cancel');
+const ctx          = selCanvas.getContext('2d');
+const wizCtx       = wizCanvas.getContext('2d');
+const traceCtx     = traceCanvas.getContext('2d');
 
 document.getElementById('btn-close').addEventListener('click', () => window.docusnap.windowClose());
 
@@ -507,11 +509,14 @@ function renderPage() {
   }
 
   docImg.onload = () => {
-    selCanvas.width  = docImg.offsetWidth;
-    selCanvas.height = docImg.offsetHeight;
-    wizCanvas.width  = docImg.offsetWidth;
-    wizCanvas.height = docImg.offsetHeight;
+    selCanvas.width    = docImg.offsetWidth;
+    selCanvas.height   = docImg.offsetHeight;
+    wizCanvas.width    = docImg.offsetWidth;
+    wizCanvas.height   = docImg.offsetHeight;
+    traceCanvas.width  = docImg.offsetWidth;
+    traceCanvas.height = docImg.offsetHeight;
     clearCanvas();
+    clearTraceHighlight();
     redrawWizard();
     if (currentPage === 0) attemptLogoMatch();
   };
@@ -813,6 +818,40 @@ function drawRect(r) {
   ctx.setLineDash([]);
   ctx.fillStyle   = 'rgba(79,142,247,0.09)';
   ctx.fillRect(r.x, r.y, r.w, r.h);
+}
+
+// ── Trace-highlight overlay ───────────────────────────────────────────────────
+// Draws an amber bbox from a slice trace event onto the dedicated traceCanvas.
+// Clears automatically after a short dwell; also cleared on page/doc change.
+let _traceHighlightTimer = null;
+function clearTraceHighlight() {
+  if (_traceHighlightTimer) { clearTimeout(_traceHighlightTimer); _traceHighlightTimer = null; }
+  traceCtx.clearRect(0, 0, traceCanvas.width, traceCanvas.height);
+}
+// Slice stages whose bbox is [cx, cy, w, h] CENTRE-based — the anchor.py crop
+// reads (_crop_and_ocr crops cx±half). Everything else (template_mapping, the
+// inline harvest's inline_box) is [x_tl, y_tl, w, h] TOP-LEFT-based.
+const _CENTRE_BASED_SLICE_STAGES = new Set(['anchor_crop', 'anchor_relocate', 'anchor_registration']);
+function drawTraceBbox(bbox, kind, stage) {
+  if (!bbox || bbox.length < 4 || !traceCanvas.width) return;
+  clearTraceHighlight();
+  const w = traceCanvas.width, h = traceCanvas.height;
+  const bw = Math.round(bbox[2] * w), bh = Math.round(bbox[3] * h);
+  const isCenterBased = _CENTRE_BASED_SLICE_STAGES.has(stage);
+  const x = isCenterBased ? Math.round(bbox[0] * w - bw / 2) : Math.round(bbox[0] * w);
+  const y = isCenterBased ? Math.round(bbox[1] * h - bh / 2) : Math.round(bbox[1] * h);
+  // target = amber (value region), anchor = blue (label region)
+  const color = kind === 'anchor' ? '#4f8ef7' : '#d4820a';
+  traceCtx.save();
+  traceCtx.setLineDash([3, 3]);
+  traceCtx.lineWidth = 2;
+  traceCtx.strokeStyle = color;
+  traceCtx.strokeRect(x + 0.5, y + 0.5, bw, bh);
+  traceCtx.setLineDash([]);
+  traceCtx.fillStyle = color + '28';
+  traceCtx.fillRect(x, y, bw, bh);
+  traceCtx.restore();
+  _traceHighlightTimer = setTimeout(clearTraceHighlight, 3500);
 }
 
 selCanvas.addEventListener('mousedown', (e) => {
@@ -1975,9 +2014,11 @@ new ResizeObserver(() => {
   if (!pageImages.length) return;
   const w = docImg.offsetWidth, h = docImg.offsetHeight;
   if (!w || !h || (w === selCanvas.width && h === selCanvas.height)) return;
-  selCanvas.width = w; selCanvas.height = h;
-  wizCanvas.width = w; wizCanvas.height = h;
+  selCanvas.width    = w; selCanvas.height    = h;
+  wizCanvas.width    = w; wizCanvas.height    = h;
+  traceCanvas.width  = w; traceCanvas.height  = h;
   clearCanvas();
+  clearTraceHighlight();
   redrawWizard();
 }).observe(docImg);
 
@@ -2653,6 +2694,8 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
 
   function render(events) {
     const byField = new Map();
+    // sliceMap[field][stage] = [ {kind, bbox, page}, ... ] — links candidates to page regions
+    const sliceMap = {};
     const get = (f) => {
       if (!byField.has(f)) byField.set(f, { merges: [], rejects: [], transforms: [], validations: [], final: null });
       return byField.get(f);
@@ -2664,6 +2707,43 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
       else if (ev.event === 'transform') get(ev.field).transforms.push(ev);   // Stage 2.5 denoise/correct
       else if (ev.event === 'validation') get(ev.field).validations.push(ev);  // Stage 4/4.5 normalise/flag/withhold
       else if (ev.event === 'final') get(ev.field).final = ev;
+      else if (ev.event === 'slice' && ev.bbox) {
+        const f = ev.field;
+        if (!sliceMap[f]) sliceMap[f] = {};
+        const key = ev.stage || '_';
+        if (!sliceMap[f][key]) sliceMap[f][key] = [];
+        sliceMap[f][key].push({ kind: ev.kind || 'target', bbox: ev.bbox, page: ev.page ?? 0, stage: ev.stage || '_' });
+      }
+    }
+    // Map a candidate's METHOD to the slice-event stage it produced. The slice
+    // events are keyed by the OCR METHOD ("anchor_crop", "anchor_relocate",
+    // "anchor_registration", "template_mapping", "anchor_inline") — NOT the coarse
+    // merge stage ("2_anchor"). A method with NO captured region (text-fallback
+    // "anchor" / "keyword" / "template_fixed_locked") is intentionally absent here
+    // → no highlight box (honest: there is no region to point at, rather than a
+    // misleading box from an unrelated rejected rung). Note anchor_inline DOES have
+    // a region now — the harvested value's inline_box (see anchor.py).
+    const METHOD_TO_SLICE = {
+      anchor_crop: 'anchor_crop',
+      anchor_inline: 'anchor_inline',
+      anchor_registration: 'anchor_registration',
+      anchor_crop_relocated: 'anchor_relocate',
+      template_mapping: 'template_mapping',
+      template_mapping_expanded: 'template_mapping',
+      template_mapping_salvaged: 'template_mapping',
+      template_mapping_expanded_salvaged: 'template_mapping',
+    };
+    // Pick the slice that the candidate's METHOD actually produced — never a
+    // fallback to "any slice for the field" (that was the wrong-box bug: a winning
+    // inline read borrowed the rejected rigid crop's stale coordinates).
+    function pickSlice(field, method) {
+      const m = sliceMap[field];
+      if (!m || !method) return null;
+      const key = METHOD_TO_SLICE[method];
+      if (!key) return null;                  // text/inline read — no crop region
+      const arr = m[key];
+      if (!arr || !arr.length) return null;
+      return arr.find(s => s.kind === 'target') || arr[0];
     }
     if (!byField.size) {
       elEmpty.hidden = false; elFields.innerHTML = '';
@@ -2688,10 +2768,12 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
             ? `lost — lower confidence (${c.confidence}% < ${wc}%)`
             : (c.vs && c.vs.value != null ? `lost — superseded by "${shown(c.vs.value)}"` : 'lost — superseded');
         }
-        rows.push(cand(STAGE_LABEL[c.stage] || c.stage, c.value, c.confidence, c.method, won ? 'won' : 'lost', won ? '' : reason));
+        rows.push(cand(STAGE_LABEL[c.stage] || c.stage, c.value, c.confidence, c.method, won ? 'won' : 'lost', won ? '' : reason, pickSlice(field, c.method)));
       }
       for (const r of m.rejects) {
-        rows.push(cand(r.method || 'anchor', r.value, null, null, 'rej', `rejected — ${r.reason || 'failed gate'}`));
+        // A rejected rung IS keyed by its method (e.g. "anchor_crop") — show the
+        // exact crop it read so the operator sees WHERE the garbage came from.
+        rows.push(cand(r.method || 'anchor', r.value, null, null, 'rej', `rejected — ${r.reason || 'failed gate'}`, pickSlice(field, r.method)));
       }
       // Stage 2.5 transforms (denoise / OCR-correct): value rewritten in place.
       for (const t of m.transforms) {
@@ -2722,16 +2804,36 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
     elFields.querySelectorAll('.rdc-fhead').forEach((h) => {
       h.addEventListener('click', () => h.parentElement.classList.toggle('open'));
     });
+    // Click a candidate row that has slice data → highlight the region on the page.
+    elFields.querySelectorAll('.rdc-cand[data-bbox]').forEach((row) => {
+      row.addEventListener('click', (e) => {
+        e.stopPropagation();   // don't toggle the field block open/closed
+        try {
+          const bbox  = JSON.parse(row.dataset.bbox);
+          const page  = parseInt(row.dataset.page, 10) || 0;
+          const kind  = row.dataset.kind  || 'target';
+          const stage = row.dataset.stage || '_';
+          // If the document is showing a different page, navigate to the correct one first.
+          if (page !== currentPage) {
+            currentPage = page;
+            renderPage();
+          }
+          drawTraceBbox(bbox, kind, stage);
+        } catch (_) {}
+      });
+    });
   }
 
-  function cand(stage, value, conf, method, tag, reason) {
+  function cand(stage, value, conf, method, tag, reason, slice) {
     const tagTxt = tag === 'rej' ? 'rejected' : tag;
-    return `<div class="rdc-cand">`
+    const bboxAttr = slice ? ` data-bbox="${escHtml(JSON.stringify(slice.bbox))}" data-kind="${escHtml(slice.kind || 'target')}" data-page="${slice.page ?? 0}" data-stage="${escHtml(slice.stage || '_')}" style="cursor:pointer" title="Click to highlight region on page"` : '';
+    return `<div class="rdc-cand"${bboxAttr}>`
       + `<span class="rdc-stage">${escHtml(stage)}</span>`
       + `<span class="rdc-val">${escHtml(shown(value))}${method ? ` <span class="rdc-conf">${escHtml(method)}</span>` : ''}</span>`
       + (conf != null ? `<span class="rdc-conf">${conf}%</span>` : '')
       + `<span class="rdc-tag ${tag}">${tagTxt}</span>`
       + (reason ? `<span class="rdc-reason">${escHtml(reason)}</span>` : '')
+      + (slice ? `<span class="rdc-pin" title="Click row to highlight on page">◎</span>` : '')
       + `</div>`;
   }
 
@@ -2746,7 +2848,7 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
   async function pullExisting() {
     // Already-processed (fresh-scan) docs are keyed in the session registry by
     // their original filename; reprocess runs stream live into traceBuf instead.
-    if (!currentDoc) { traceBuf = []; render(traceBuf); return; }
+    if (!currentDoc) { traceBuf = []; clearTraceHighlight(); render(traceBuf); return; }
     let evs = [];
     try { evs = (await window.docusnap.devGetSessionDoc(currentDoc.original_filename)) || []; } catch {}
     traceBuf = evs;
@@ -2809,6 +2911,7 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
   document.getElementById('rdc-close')?.addEventListener('click', close);
   document.getElementById('rdc-reprocess')?.addEventListener('click', () => {
     traceBuf = [];                       // fresh run — drop the previous trace
+    clearTraceHighlight();
     render(traceBuf);
     document.getElementById('btn-reprocess')?.click();   // reuse the full reprocess flow
   });

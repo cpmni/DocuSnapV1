@@ -226,6 +226,9 @@
     #wiz-canvas { position: absolute; inset: 0; display: none; border-radius: 4px; z-index: 5; pointer-events: none; }
     #wiz-canvas.active  { display: block; pointer-events: auto; cursor: default; }  /* captures left-click draw/select while open */
     #wiz-canvas.drawing { cursor: crosshair; }                                       /* armed for a fresh draw */
+    /* Trace-highlight overlay — shown when a candidate row in the trace console is
+       clicked; sits above the wizard canvas, never captures pointer events. */
+    #trace-canvas { position: absolute; inset: 0; border-radius: 4px; z-index: 6; pointer-events: none; }
 
     .zoom-group { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
     #zoom-level { font-size: 11px; color: var(--muted); font-family: var(--mono); min-width: 40px; text-align: center; }
@@ -584,6 +587,7 @@
           <img id="doc-img" alt="Document preview" draggable="false">
           <canvas id="sel-canvas"></canvas>
           <canvas id="wiz-canvas"></canvas>
+          <canvas id="trace-canvas"></canvas>
           <div id="ocr-overlay">
             <div class="spinner"></div>
             <span>Reading selection…</span>
@@ -730,6 +734,8 @@
   .rdc-field.open .rdc-cands { display: block; }
   .rdc-cand { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px;
               font-size: 10px; padding: 3px 0; border-top: 1px solid var(--border); }
+  .rdc-cand[data-bbox]:hover { background: var(--accent-bg); border-radius: 3px; }
+  .rdc-pin { margin-left: auto; flex-shrink: 0; font-size: 10px; color: var(--accent); opacity: 0.6; }
   .rdc-stage { color: var(--accent2); flex-shrink: 0; min-width: 64px; }
   .rdc-val { color: var(--text); flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .rdc-conf { color: var(--muted); flex-shrink: 0; }

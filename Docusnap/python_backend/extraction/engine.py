@@ -40,6 +40,13 @@ except ImportError:
 # validator.salvage_date (Fix C1); they carry identical provenance and so get
 # identical protection. The weaker DRIFT-path variants are deliberately excluded
 # (unchanged): a fixed-coordinate drift seed is not strong enough to be shielded.
+# Minimum substantial-word OCR confidence for an authoritative ⊕ anchor's CROP
+# read to win Tier-A OUTRIGHT (engine.extract). Below this the read carries a
+# garbled word and must instead contend on confidence, where its OCR-capped score
+# loses to a clean alternative. 70 keeps confidently-read teaches winning while
+# rejecting the partial-garble case (min word conf ~55) the mean alone misses.
+_TIER_A_OCR_MIN = 70
+
 _STAGE05_LOCATED_METHODS = (
     "template_mapping", "template_mapping_expanded",
     "template_mapping_salvaged", "template_mapping_expanded_salvaged",
@@ -520,7 +527,16 @@ class ExtractionEngine:
         for _f in field_defs:
             _k, _t = _f.get("key"), (_f.get("type") or "").lower()
             if _k and _k not in field_patterns and _t in _TYPE2VAL:
-                field_patterns[_k] = {"validation": _TYPE2VAL[_t]}
+                mapped = _TYPE2VAL[_t]
+                # A reference/ticket/job field typed as "number" or "currency" gets
+                # the currency validation pattern (£\d+, \d+\.\d{2}) which rejects
+                # NNNN-NNNN-N ticket references.  Coerce any _is_ref_field key to
+                # "alphanumeric" — the right gate for a code — regardless of how the
+                # user labelled the field in Settings. Fixes the systemic case where
+                # a user picks "Number" thinking it means "reference number."
+                if _is_ref_field(_k) and mapped in ("currency", "currency_code"):
+                    mapped = "alphanumeric"
+                field_patterns[_k] = {"validation": mapped}
         # Date-typed fields get a merge guard: a candidate that doesn't parse as
         # a real date must never displace one that does (e.g. a mis-cropped
         # taught anchor returning a bare "March" overriding a valid full date).
@@ -888,7 +904,18 @@ class ExtractionEngine:
                 # to the normal confidence contest (where its capped conf yields to a
                 # located mapping). `located` defaults True so a located teach — and
                 # any caller/test that builds results without the flag — is unchanged.
-                if data.get("authoritative") and data.get("value") and data.get("located", True):
+                # OCR-QUALITY gate on the outright win: an authoritative crop whose
+                # read contains a GARBLED word (min substantial-word confidence low)
+                # is not trustworthy enough to win OUTRIGHT over a credible
+                # alternative — e.g. a re-teach that read "Aaiumant Care Homes Ltd -
+                # Galaorm" (min word conf ~55) should not beat the clean keyword
+                # "Beaumont Care Homes Ltd - Galgorm". Such a read FALLS THROUGH to
+                # the confidence contest below, where its OCR-capped confidence loses
+                # to the clean read. A clean authoritative read (min ≥ threshold, or
+                # an inline/text read with no crop conf = None) still wins outright.
+                _omin = data.get("ocr_min_conf")
+                _ocr_clean = (_omin is None) or (_omin >= _TIER_A_OCR_MIN)
+                if data.get("authoritative") and data.get("value") and data.get("located", True) and _ocr_clean:
                     results[key] = data
                     continue
                 # Precedence: a deliberately DRAWN source outranks an AUTO-LEARNED
@@ -928,8 +955,13 @@ class ExtractionEngine:
                 # both are curated "ground truth" tiers, so a fair contest
                 # between them is the right arbiter, not an automatic win for
                 # whichever one happens to run later in the stage order.
+                # OCR gate (same _ocr_clean as Tier-A): a garbled anchor_crop read
+                # must not taught-override a clean incumbent either — it falls
+                # through to the confidence contest, where its OCR-capped confidence
+                # loses. A clean read (or one with no crop conf) keeps the override.
                 is_taught_override = (data.get("method") == "anchor_crop"
                                       and data.get("located", True)
+                                      and _ocr_clean
                                       and existing
                                       and existing.get("method") != "anchor_crop"
                                       and not _is_stage05_located(existing.get("method")))

@@ -768,6 +768,7 @@ def _locate_anchor(page, anchor_box, anchor_text, expansion, ocr_lines_fn,
     # Additive: callers that ignore these keys behave exactly as before.
     label_box = None
     inline_value = None
+    inline_box = None
     bwords = best.get("words") or []
     run = _match_label_run(bwords, needle) if needle else None
     if run:
@@ -784,6 +785,18 @@ def _locate_anchor(page, anchor_box, anchor_text, expansion, ocr_lines_fn,
         rest = bwords[len(run):]
         if rest:
             inline_value = " ".join(wd["text"] for wd in rest).strip() or None
+            # Page-space bbox of the VALUE words (crop-relative → page), so the dev
+            # trace can highlight where an inline-harvested value was actually read.
+            vx1 = min(wd["x_norm"] for wd in rest)
+            vx2 = max(wd["x_norm"] + wd["w_norm"] for wd in rest)
+            vy1 = min(wd["y_norm"] for wd in rest)
+            vy2 = max(wd["y_norm"] + wd["h_norm"] for wd in rest)
+            inline_box = {
+                "x_norm": crop_box["x_norm"] + vx1 * crop_box["w_norm"],
+                "y_norm": crop_box["y_norm"] + vy1 * crop_box["h_norm"],
+                "w_norm": (vx2 - vx1) * crop_box["w_norm"],
+                "h_norm": (vy2 - vy1) * crop_box["h_norm"],
+            }
 
     return {
         "x_norm":       crop_box["x_norm"] + best["x_norm"] * crop_box["w_norm"],
@@ -794,6 +807,7 @@ def _locate_anchor(page, anchor_box, anchor_text, expansion, ocr_lines_fn,
         "match_score":  chosen_score,
         "label_box":    label_box,
         "inline_value": inline_value,
+        "inline_box":   inline_box,
     }
 
 
