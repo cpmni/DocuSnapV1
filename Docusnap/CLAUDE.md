@@ -1305,6 +1305,18 @@ keys are removed — don't re-add them). `postinstall` runs `install-app-deps`; 
 **unsigned** → SmartScreen "More info → Run anyway" on the VM. Run gate tests with
 Electron-as-Node, not plain node (native-module ABI).
 
+**⚠ Dist versioning (TODO — needs a real revisioning scheme).** Every build emits the
+SAME installer filename, so a rebuild silently OVERWRITES the previous installer in `dist/`
+— there is no way to tell builds apart or keep an older one. Core is always
+`ScanFinder Setup 2.0.0-rlocal.exe` (`package.json` `version` pinned at 2.0.0 + `BUILD_REV`
+defaults to `local`); client is always `ScanFinder Search Client Setup 1.0.2.exe`
+(`client/package.json` 1.0.2, and its `artifactName` carries NO `-r${BUILD_REV}` suffix at
+all). REQUIRED: give each build a DISTINCT, traceable filename — bump the package.json
+`version` per release AND/OR pass a real `BUILD_REV` (git short SHA or UTC timestamp, e.g.
+`BUILD_REV=$(git rev-parse --short HEAD) npm run build`) instead of the `local` default, and
+add the same `-r${env.BUILD_REV}` suffix to the client `artifactName`. Until this lands,
+archive/rename the prior installer before rebuilding or it is lost.
+
 Delete `%APPDATA%\DocuSnap\docusnap.db` to reset DB during development (also clears users,
 cached license tokens, and the enforcement setting).
 Delete `python_backend/**/__pycache__` if Python changes don't take effect.
