@@ -210,6 +210,8 @@ contextBridge.exposeInMainWorld('docusnap', {
   // ── Settings ─────────────────────────────────────────────────────────────────
   getSetting:          (key)      => ipcRenderer.invoke('get-setting', key),
   setSetting:          (key, val) => ipcRenderer.invoke('set-setting', key, val),
+  // Runtime flag for renderer dev-gating (e.g. the dev-only "Erase ALL data" tool).
+  appIsDev:            ()         => ipcRenderer.invoke('app-is-dev'),
 
   // ── Learning Recovery (Settings tab) ────────────────────────────────────────
   getLearningRecovery: (params)   => ipcRenderer.invoke('get-learning-recovery', params),

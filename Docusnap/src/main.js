@@ -454,6 +454,11 @@ app.whenReady().then(() => {
   // The renderer can never self-grant access into the main shell.
   ipcMain.on('license-enter-app', () => enterMainApp());
 
+  // Runtime flag for renderer dev-gating (e.g. the dev-only "Erase ALL data" button
+  // in Settings → Learning Recovery). True only in an unpackaged/dev build; the
+  // renderer keeps the control hidden in packaged/production builds.
+  ipcMain.handle('app-is-dev', () => !app.isPackaged);
+
   processingModule.register(ctx);
   reviewModule.register(ctx);
   settingsModule.register(ctx);

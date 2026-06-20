@@ -885,6 +885,19 @@
             </p>
             <button class="btn danger" id="lr-btn-reset-all">Clear ALL learning memory</button>
             <div id="lr-dev-msg" class="section-desc" style="margin-top:8px;"></div>
+
+            <!-- Dev-only full wipe (fresh install) — a SUPERSET of the above. Hidden by
+                 default; the renderer reveals it only when app-is-dev (unpackaged build). -->
+            <div id="lr-fresh-install-block" style="display:none; margin-top:16px; border-top:1px solid var(--border); padding-top:14px;">
+              <p class="section-desc" style="border-left:2px solid var(--err); padding-left:8px; color:var(--err);">
+                Erases <strong style="color:var(--text);">ALL</strong> custom data and reverts to a fresh
+                install — a superset of the above that also drops the custom schema (document types, fields,
+                mappings) and strips learned identity off your documents. Your files are kept. A timestamped
+                database backup is taken first. Dev-only — not shown in packaged builds.
+              </p>
+              <button class="btn danger" id="lr-btn-fresh-install">Erase ALL data — fresh install</button>
+              <div id="lr-fresh-msg" class="section-desc" style="margin-top:8px;"></div>
+            </div>
           </div>
         </details>
       </div>

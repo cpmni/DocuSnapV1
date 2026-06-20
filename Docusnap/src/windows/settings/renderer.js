@@ -2513,6 +2513,44 @@ document.getElementById('lr-btn-reset-all').addEventListener('click', async () =
   }
 });
 
+// Dev-only "Erase ALL data → fresh install" (superset of the learning wipe above).
+// The block is hidden in packaged builds and revealed only when the main process
+// reports dev mode (app-is-dev). The backend handler stays admin-gated regardless.
+(async () => {
+  try {
+    if (await api.appIsDev()) {
+      const block = document.getElementById('lr-fresh-install-block');
+      if (block) block.style.display = '';
+    }
+  } catch { /* fail safe: leave the dev-only control hidden */ }
+})();
+
+document.getElementById('lr-btn-fresh-install').addEventListener('click', async () => {
+  const msg = document.getElementById('lr-fresh-msg');
+  const confirmed = await showTypedConfirmDialog({
+    title: 'Erase ALL data — revert to a fresh install',
+    warningHtml:
+      'This <strong style="color:var(--text);">erases all custom data</strong> and reverts to a fresh ' +
+      'install: every bit of learning memory AND the custom schema (document types, fields, mappings), ' +
+      'and it strips learned identity off your documents. Your files are kept. A timestamped database ' +
+      'backup is taken first. This cannot be undone.',
+    requiredText: 'ERASE ALL DATA',
+    confirmLabel: 'Erase all data',
+  });
+  if (!confirmed) return;
+  try {
+    const res = await api.resetFreshInstall();
+    msg.style.color = 'var(--muted)';
+    msg.textContent = 'Reverted to a fresh install.' +
+      (res && res.backup ? ` Backup saved: ${res.backup}` : ' (database backup was not created)');
+    await loadMemoryInventory();
+    await runLearningSearch();
+  } catch (e) {
+    msg.style.color = 'var(--err)';
+    msg.textContent = 'Erase failed: ' + e.message;
+  }
+});
+
 document.getElementById('lr-btn-search').addEventListener('click', runLearningSearch);
 document.getElementById('lr-supplier').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') runLearningSearch();
