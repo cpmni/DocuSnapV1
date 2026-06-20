@@ -7,7 +7,7 @@
  * Each module registers its own IPC handlers via module.register(ipcMain, getDb, ...).
  */
 
-const { app, BrowserWindow, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, shell } = require('electron');
 const path = require('path');
 const fs   = require('fs');
 
@@ -491,6 +491,21 @@ app.whenReady().then(() => {
   // in Settings → Learning Recovery). True only in an unpackaged/dev build; the
   // renderer keeps the control hidden in packaged/production builds.
   ipcMain.handle('app-is-dev', () => !app.isPackaged);
+
+  // ── About box: version details + third-party attribution ───────────────────
+  ipcMain.handle('get-app-about', () => {
+    let copyright = '';
+    try { copyright = require('../package.json').build.copyright || ''; } catch { /* ignore */ }
+    return { name: app.getName(), version: app.getVersion(), electron: process.versions.electron, copyright };
+  });
+  // Opens the bundled THIRD-PARTY-LICENSES.txt in the OS default viewer.
+  // resourcePath resolves it in BOTH dev (repo root) and packaged (extraResources).
+  ipcMain.handle('open-third-party-licenses', async () => {
+    const p = resourcePath('THIRD-PARTY-LICENSES.txt');
+    if (!fs.existsSync(p)) return { ok: false, error: 'notice file not found' };
+    const err = await shell.openPath(p);   // '' on success
+    return { ok: err === '', error: err || undefined };
+  });
 
   processingModule.register(ctx);
   reviewModule.register(ctx);

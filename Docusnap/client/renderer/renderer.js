@@ -231,6 +231,30 @@ function doLogout() {
 $('logout-btn').addEventListener('click', doLogout);
 $('locked-back').addEventListener('click', doLogout);
 
+// ── About dialog ────────────────────────────────────────────────────────────────
+let _aboutLoaded = false;
+async function openAbout() {
+  if (!_aboutLoaded) {
+    try {
+      const a = await window.scanfinder.about();
+      $('about-version').textContent   = a.version ? `Version ${a.version}` : '';
+      $('about-electron').textContent  = a.electron ? `Electron ${a.electron}` : '';
+      $('about-copyright').textContent = a.copyright || '';
+      _aboutLoaded = true;
+    } catch (e) { console.warn('about() failed:', e.message); }
+  }
+  $('about-overlay').classList.remove('hidden');
+}
+$('about-btn').addEventListener('click', openAbout);
+$('about-close').addEventListener('click', () => $('about-overlay').classList.add('hidden'));
+$('about-overlay').addEventListener('click', (e) => {
+  if (e.target === $('about-overlay')) $('about-overlay').classList.add('hidden');
+});
+$('about-licenses').addEventListener('click', async () => {
+  const r = await window.scanfinder.openLicenses();
+  if (r && !r.ok) console.warn('Could not open the licenses file:', r.error);
+});
+
 // ── View switching ─────────────────────────────────────────────────────────────
 function setView(view) {
   const search = view === 'search';

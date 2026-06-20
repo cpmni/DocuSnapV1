@@ -104,8 +104,12 @@ async function renderDocPicker(){
   for (const d of state.docs){
     const c=document.createElement('div'); c.className='card'+(state.doc&&state.doc.id===d.id?' sel':'');
     const name=d.original_filename||('Document #'+d.id);
-    c.innerHTML=`<div class="ic">📄</div><div class="nm" style="font-size:13px;word-break:break-all">${esc(name)}</div>`+
+    // 📄 emoji is the placeholder; the real page-1 thumbnail replaces it once
+    // loaded. A doc with no renderable thumbnail keeps the emoji.
+    c.innerHTML=`<div class="ic"><span class="ic-emoji">📄</span><img class="ic-thumb" alt=""></div>`+
+      `<div class="nm" style="font-size:13px;word-break:break-all">${esc(name)}</div>`+
       `<div class="muted" style="font-size:12px">${esc(d.supplier_name||'Unknown supplier')}</div>`;
+    if (window.Thumbs) window.Thumbs.lazy(c.querySelector('.ic-thumb'), d);
     c.onclick=()=>{ state.doc=d; renderDocPicker(); renderFooter(); };
     grid.appendChild(c);
   }

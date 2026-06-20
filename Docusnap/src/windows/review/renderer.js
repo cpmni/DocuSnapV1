@@ -347,7 +347,8 @@ function renderQueueList() {
     const confBadge = conf == null ? '' :
       `<span class="conf-badge ${sev}" style="flex-shrink:0;">${conf}%</span>`;
     el.innerHTML = `
-      <div style="display:flex; align-items:flex-start; gap:4px;">
+      <div style="display:flex; align-items:flex-start; gap:8px;">
+        <img class="qi-thumb" alt="">
         <div style="flex:1; min-width:0;">
           <span class="qi-name" title="${escHtml(doc.original_filename)}">${escHtml(doc.original_filename)}</span>
           <div style="display:flex; align-items:center; gap:6px;">
@@ -358,6 +359,7 @@ function renderQueueList() {
         ${canEdit ? `<button class="qi-btn danger qi-delete" title="Delete document" aria-label="Delete document" style="flex-shrink:0; padding:2px 7px; font-size:13px;">&#215;</button>` : ''}
       </div>
     `;
+    if (window.Thumbs) window.Thumbs.lazy(el.querySelector('.qi-thumb'), doc);
     el.addEventListener('click', () => selectDoc(doc));
     const delBtn = el.querySelector('.qi-delete');
     if (delBtn) delBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteFromQueue(doc); });
@@ -1837,6 +1839,7 @@ document.getElementById('btn-reprocess-all').addEventListener('click', async () 
   const btnAll  = document.getElementById('btn-reprocess-all');
   const btnOne  = document.getElementById('btn-reprocess');
   const btnStop = document.getElementById('btn-stop-reprocess');
+  const banner  = document.getElementById('reprocess-progress');
 
   _batchActive  = true;
   _batchStopped = false;
@@ -1845,6 +1848,11 @@ document.getElementById('btn-reprocess-all').addEventListener('click', async () 
   btnStop.disabled     = false;
   btnStop.innerHTML    = '&#9632; Stop';
   btnStop.style.display = '';
+  // Progress shows in the banner above the buttons — the button label stays put.
+  btnAll.innerHTML     = '<span class="btn-spinner"></span> Reprocessing…';
+  banner.classList.remove('done');
+  banner.classList.add('show');
+  banner.textContent   = `Reprocessing 0 of ${queue.length}…`;
 
   const docs  = [...queue];   // snapshot; queue is refetched in finally
   const total = docs.length;
@@ -1889,7 +1897,7 @@ document.getElementById('btn-reprocess-all').addEventListener('click', async () 
       failed++;
     }
     done++;
-    btnAll.innerHTML = `<span class="btn-spinner"></span> ${done}/${total}`;
+    banner.textContent = `Reprocessing ${done} of ${total}…`;
   };
 
   // One worker pulls the next index off the shared cursor until the list is
@@ -1921,6 +1929,17 @@ document.getElementById('btn-reprocess-all').addEventListener('click', async () 
   }
 
   const ok = done - failed;
+  // Final state stays in the banner ("…completed"), then clears after a moment.
+  const summary = _batchStopped
+    ? `Stopped after ${done} of ${total}`
+    : (failed ? `Completed — ${ok} of ${done} OK, ${failed} failed`
+              : `Completed ${done} of ${total}`);
+  banner.classList.add('done');
+  banner.textContent = summary;
+  setTimeout(() => {
+    if (!_batchActive) { banner.classList.remove('show', 'done'); banner.textContent = ''; }
+  }, 4000);
+
   if (_batchStopped) {
     const remaining = queue.length;
     showToast(

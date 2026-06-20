@@ -9,6 +9,22 @@
  * pipeline-stage hues) stay local to those windows.
  */
 
+/*
+ * IBM Plex (OFL-1.1) is SELF-HOSTED — the woff2 files (latin subset) live in
+ * ./fonts beside this stylesheet. The app is offline/privacy-first, so we must
+ * NOT fetch fonts from Google's CDN at runtime (it would leak the user's IP to
+ * Google on every window and break offline use). See THIRD-PARTY-LICENSES.
+ * font-display:swap keeps text visible while the (local) font loads.
+ */
+@font-face { font-family:'IBM Plex Sans'; font-style:normal; font-weight:300; font-display:swap; src:url('fonts/IBMPlexSans-300.woff2') format('woff2'); }
+@font-face { font-family:'IBM Plex Sans'; font-style:normal; font-weight:400; font-display:swap; src:url('fonts/IBMPlexSans-400.woff2') format('woff2'); }
+@font-face { font-family:'IBM Plex Sans'; font-style:normal; font-weight:500; font-display:swap; src:url('fonts/IBMPlexSans-500.woff2') format('woff2'); }
+@font-face { font-family:'IBM Plex Sans'; font-style:normal; font-weight:600; font-display:swap; src:url('fonts/IBMPlexSans-600.woff2') format('woff2'); }
+@font-face { font-family:'IBM Plex Sans'; font-style:normal; font-weight:700; font-display:swap; src:url('fonts/IBMPlexSans-700.woff2') format('woff2'); }
+@font-face { font-family:'IBM Plex Mono'; font-style:normal; font-weight:400; font-display:swap; src:url('fonts/IBMPlexMono-400.woff2') format('woff2'); }
+@font-face { font-family:'IBM Plex Mono'; font-style:normal; font-weight:500; font-display:swap; src:url('fonts/IBMPlexMono-500.woff2') format('woff2'); }
+@font-face { font-family:'IBM Plex Mono'; font-style:normal; font-weight:600; font-display:swap; src:url('fonts/IBMPlexMono-600.woff2') format('woff2'); }
+
 :root {
   /* ── Light (default) — the client palette ── */
   --bg:        #f4f6fa;

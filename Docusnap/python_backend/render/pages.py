@@ -27,21 +27,38 @@ def _win_long_path(path):
         return '\\\\?\\UNC\\' + path.lstrip('\\')
     return '\\\\?\\' + path
 
+def _render_page(page, scale):
+    bitmap = page.render(scale=scale)
+    img    = bitmap.to_pil()
+    buf    = BytesIO()
+    img.save(buf, format='PNG', optimize=True)
+    b64 = base64.b64encode(buf.getvalue()).decode()
+    return f'data:image/png;base64,{b64}'
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--file', required=True)
+    # THUMBNAIL MODE: render a SINGLE low-res page (page 1 by default) and print
+    # one data: URI string — used by the document/file lists + the add-template
+    # picker (get-document-thumbnail). Without --thumb the behaviour is unchanged:
+    # ALL pages at scale 1.5 as a JSON array, for the full-page preview panes.
+    parser.add_argument('--thumb', action='store_true',
+                        help='render only one page at a low scale and print a single data: URI')
+    parser.add_argument('--page', type=int, default=0, help='page index for --thumb (default 0)')
+    parser.add_argument('--scale', type=float, default=None,
+                        help='render scale (default 1.5 full / 0.3 thumb)')
     args = parser.parse_args()
 
-    doc    = pdfium.PdfDocument(_win_long_path(args.file))
-    images = []
-    for page in doc:
-        bitmap = page.render(scale=1.5)   # 108 DPI — enough for preview, smaller payload
-        img    = bitmap.to_pil()
-        buf    = BytesIO()
-        img.save(buf, format='PNG', optimize=True)
-        b64 = base64.b64encode(buf.getvalue()).decode()
-        images.append(f'data:image/png;base64,{b64}')
+    doc = pdfium.PdfDocument(_win_long_path(args.file))
 
+    if args.thumb:
+        scale = args.scale if args.scale is not None else 0.3
+        idx   = max(0, min(args.page, len(doc) - 1))
+        print(json.dumps(_render_page(doc[idx], scale)), flush=True)
+        return
+
+    scale  = args.scale if args.scale is not None else 1.5   # 108 DPI — enough for preview, smaller payload
+    images = [_render_page(page, scale) for page in doc]
     print(json.dumps(images), flush=True)
 
 if __name__ == '__main__':

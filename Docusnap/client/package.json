@@ -40,6 +40,12 @@
       "assets/**/*",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "THIRD-PARTY-LICENSES.txt",
+        "to": "THIRD-PARTY-LICENSES.txt"
+      }
+    ],
     "directories": {
       "output": "dist",
       "buildResources": "assets"

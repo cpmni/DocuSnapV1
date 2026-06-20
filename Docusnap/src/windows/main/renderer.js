@@ -12,6 +12,7 @@ const folderDisplay = document.getElementById('folder-display');
 const btnRun        = document.getElementById('btn-run');
 const btnStop       = document.getElementById('btn-stop');
 const btnClear      = document.getElementById('btn-clear');
+const btnViewResults = document.getElementById('btn-view-results');
 const dropzone      = document.getElementById('dropzone');
 const resultsPanel  = document.getElementById('results-panel');
 const logPanel      = document.getElementById('log-panel');
@@ -19,6 +20,18 @@ const logOutput     = document.getElementById('log-output');
 const logStatus     = document.getElementById('log-status');
 const progressBar   = document.getElementById('progress-bar');
 const tableBody     = document.getElementById('table-body');
+
+// Doc-type → structural field keys, so the results table can show the right
+// Reference/Date for ANY type (invoice, sales order, PO, custom), not just the
+// invoice_* convenience fields. Keyed by both type name and slug (lowercased).
+const docTypeKeys = {};
+window.docusnap.getAllDocTypes?.().then((types) => {
+  for (const t of (types || [])) {
+    const entry = { ref: t.ref_field_key, date: t.date_field_key };
+    if (t.name) docTypeKeys[t.name.toLowerCase()] = entry;
+    if (t.slug) docTypeKeys[t.slug.toLowerCase()] = entry;
+  }
+}).catch(() => {});
 
 // ── Stage indicator ───────────────────────────────────────────────────────────
 const stageIndicator = document.getElementById('stage-indicator');
@@ -71,6 +84,7 @@ async function chooseSourceFolder() {
   folderDisplay.title       = folder;
   folderDisplay.classList.add('set');
   folderBox.classList.remove('cue');  // stop the launchpad's "pick a folder" pulse
+  dropzone.classList.add('has-folder');  // hide the launchpad's bobbing "pick a folder" cue
   btnRun.disabled = false;
 }
 folderBox.addEventListener('click', chooseSourceFolder);
@@ -108,17 +122,18 @@ btnRun.addEventListener('click', async () => {
   startProcessing();
 });
 
-// ── Clear button ─────────────────────────────────────────────────────────────
+// ── "View Results" — switch from the launchpad+log view to the results table ──
+btnViewResults?.addEventListener('click', () => {
+  dropzone.style.display = 'none';        // results table needs the launchpad's flex:1 space
+  resultsPanel.classList.add('visible');
+});
+
+// ── "Back" — return from the results table to the launchpad (data kept) ───────
 btnClear.addEventListener('click', () => {
-  results = [];
-  stats   = { total: 0, done: 0, ok: 0, err: 0 };
-  tableBody.innerHTML = '';
-  updateStats();
   resultsPanel.classList.remove('visible');
-  logPanel.classList.remove('visible');
-  logOutput.innerHTML = '';
-  dropzone.style.display = '';
-  btnRun.disabled = !selectedFolder;
+  dropzone.style.display = '';            // bring the launchpad (action buttons) back
+  // The log strip stays at the bottom with the "Finished" state + View Results,
+  // so the user can re-open the table without re-processing.
 });
 
 // ── Processing ───────────────────────────────────────────────────────────────
@@ -137,8 +152,14 @@ async function startProcessing() {
   stats = { total: 0, done: 0, ok: 0, err: 0 };
   updateStats();
 
-  // Show log panel
-  dropzone.style.display = 'none';
+  // Keep the launchpad (the action buttons) visible during processing; show live
+  // progress in the bottom log strip instead of blanking the whole center. The
+  // full results table is revealed as its own view once processing finishes — it
+  // needs the same flex:1 space the launchpad uses, so the two can't coexist.
+  dropzone.style.display = '';
+  resultsPanel.classList.remove('visible');
+  btnViewResults.style.display = 'none';   // hidden until this run finishes
+  tableBody.innerHTML = '';                // fresh results for this run
   logPanel.classList.add('visible');
   logOutput.innerHTML = '';
   progressBar.style.width = '0';
@@ -171,10 +192,13 @@ async function startProcessing() {
     logStatus.textContent = 'Stopped';
     appendLog('Processing stopped.', 'warn');
   } else {
-    logStatus.textContent = 'Complete';
+    logStatus.textContent = 'Finished';
     progressBar.style.width = '100%';
-    appendLog('✓ All documents processed.', 'ok');
+    appendLog(`✓ Finished processing — ${stats.ok} filed${stats.err ? `, ${stats.err} with errors` : ''}.`, 'ok');
   }
+  // Launchpad + log strip stay on screen. If anything was processed, offer a
+  // "View Results" button (in the log header) that opens the 3-field table.
+  if (stats.done > 0) btnViewResults.style.display = '';
 }
 
 function handleProgress(msg) {
@@ -212,8 +236,8 @@ function handleProgress(msg) {
       } else {
         appendLog(`  ✗ Error: ${msg.error}`, 'err');
       }
-      // Show results panel once we have at least one result
-      resultsPanel.classList.add('visible');
+      // Table rows accumulate, but the results table stays hidden DURING the run
+      // (the launchpad keeps the center). It's revealed at completion below.
       break;
 
     case 'log':
@@ -230,37 +254,26 @@ function handleProgress(msg) {
 // ── Table row ────────────────────────────────────────────────────────────────
 function addTableRow(msg) {
   const tr = document.createElement('tr');
+  // Status lives in the live log; here we only tint the row (error / needs-review)
+  // so the 3-field table stays clean: Company, Date, Reference.
+  if (!msg.success)        tr.classList.add('row-err');
+  else if (msg.needs_review) tr.classList.add('row-review');
 
-  const statusBadge = msg.success
-    ? (msg.needs_review
-        ? `<span class="badge warn">⚠ Review</span>`
-        : `<span class="badge ok">✓ OK</span>`)
-    : `<span class="badge err">✗ Error</span>`;
-
-  const conf = msg.overall_confidence;
-  const confClass = !conf ? 'muted' : conf >= 70 ? 'ok' : conf >= 40 ? 'warn' : 'err';
-  const confLabel = conf != null ? `<span style="color:var(--${confClass}); font-family:var(--mono); font-size:11px;">${conf}%</span>` : '<span class="muted">—</span>';
-
-  const locationBtn = msg.output_path
-    ? `<button class="link-btn" data-path="${escHtml(msg.output_path)}">Show in Explorer</button>`
-    : '—';
+  // Resolve Date + Reference by the doc type's STRUCTURAL keys (date_field_key /
+  // ref_field_key) so sales orders, POs and custom types populate too — not just
+  // invoice_*. Fall back to the backend's invoice/SO/PO convenience fields.
+  const ex    = msg.extractions || {};
+  const keys  = docTypeKeys[(msg.document_type || '').toLowerCase()] || {};
+  const exVal = (k) => (k && ex[k] && ex[k].value) ? ex[k].value : null;
+  const company = msg.supplier_name || '—';
+  const date    = exVal(keys.date) || msg.invoice_date   || '—';
+  const ref     = exVal(keys.ref)  || msg.invoice_number || '—';
 
   tr.innerHTML = `
-    <td class="mono" style="${msg.needs_review ? 'color:var(--warn)' : ''}">${escHtml(msg.new_filename || msg.original_filename)}</td>
-    <td class="mono">${escHtml(msg.invoice_number || '—')}</td>
-    <td class="mono">${escHtml(msg.invoice_date   || '—')}</td>
-    <td>${escHtml(msg.supplier_name || '—')}</td>
-    <td class="mono">${escHtml(msg.total_amount || '—')} ${escHtml(msg.currency || '')}</td>
-    ${confLabel}
-      <td>${statusBadge}</td>
-    <td>${locationBtn}</td>
+    <td>${escHtml(company)}</td>
+    <td class="mono">${escHtml(date)}</td>
+    <td class="mono">${escHtml(ref)}</td>
   `;
-
-  // Wire up explorer button
-  const btn = tr.querySelector('.link-btn');
-  if (btn) {
-    btn.addEventListener('click', () => window.docusnap.showInExplorer(btn.dataset.path));
-  }
 
   tableBody.prepend(tr);  // newest at top
 }
@@ -459,6 +472,34 @@ btnSignOut?.addEventListener('click', async () => {
 btnChangePassword?.addEventListener('click', () => {
   userMenu.classList.remove('open');
   showChangePasswordDialog();
+});
+
+// ── About dialog ──────────────────────────────────────────────────────────────
+const aboutOverlay = document.getElementById('about-overlay');
+let _aboutLoaded = false;
+async function openAbout() {
+  if (!_aboutLoaded) {
+    try {
+      const a = await window.docusnap.getAppAbout();
+      document.getElementById('about-version').textContent   = a.version ? `Version ${a.version}` : '';
+      document.getElementById('about-electron').textContent  = a.electron ? `Electron ${a.electron}` : '';
+      document.getElementById('about-copyright').textContent = a.copyright || '';
+      _aboutLoaded = true;
+    } catch (e) { console.warn('getAppAbout failed:', e.message); }
+  }
+  aboutOverlay.style.display = 'flex';
+}
+function closeAbout() { aboutOverlay.style.display = 'none'; }
+
+document.getElementById('menu-about')?.addEventListener('click', () => {
+  userMenu.classList.remove('open');
+  openAbout();
+});
+document.getElementById('about-close')?.addEventListener('click', closeAbout);
+aboutOverlay?.addEventListener('click', (e) => { if (e.target === aboutOverlay) closeAbout(); });
+document.getElementById('about-licenses')?.addEventListener('click', async () => {
+  const r = await window.docusnap.openThirdPartyLicenses();
+  if (r && !r.ok) console.warn('Could not open the licenses file:', r.error);
 });
 
 function showChangePasswordDialog() {

@@ -123,6 +123,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   getDocumentWithExtractions:  (id)      => ipcRenderer.invoke('get-document-with-extractions', id),
   notifyDocClosed:             (id)      => ipcRenderer.send('notify-doc-closed', id),
   getDocumentPages:            (id, fp, fn) => ipcRenderer.invoke('get-document-pages', id, fp, fn),
+  getDocumentThumbnail:        (id, fp, fn) => ipcRenderer.invoke('get-document-thumbnail', id, fp, fn),
   getEnhancedPreview:          (data)       => ipcRenderer.invoke('get-enhanced-preview', data),
   confirmReview:               (payload) => ipcRenderer.invoke('confirm-review', payload),
   deferDocument:               (id)      => ipcRenderer.invoke('defer-document', id),
@@ -212,6 +213,10 @@ contextBridge.exposeInMainWorld('docusnap', {
   setSetting:          (key, val) => ipcRenderer.invoke('set-setting', key, val),
   // Runtime flag for renderer dev-gating (e.g. the dev-only "Erase ALL data" tool).
   appIsDev:            ()         => ipcRenderer.invoke('app-is-dev'),
+
+  // About box: version details + open the bundled third-party notice.
+  getAppAbout:             ()    => ipcRenderer.invoke('get-app-about'),
+  openThirdPartyLicenses:  ()    => ipcRenderer.invoke('open-third-party-licenses'),
 
   // ── Learning Recovery (Settings tab) ────────────────────────────────────────
   getLearningRecovery: (params)   => ipcRenderer.invoke('get-learning-recovery', params),

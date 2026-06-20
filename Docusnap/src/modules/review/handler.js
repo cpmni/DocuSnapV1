@@ -164,6 +164,16 @@ function register(ctx) {
     });
   });
 
+  // ── Small page-1 thumbnail for the document lists + add-template picker ──────
+  ipcMain.handle('get-document-thumbnail', async (_e, docId, folderPath, filename) => {
+    requireLogin();
+    if (!folderPath || !filename) return null;
+    return previewService.getThumbnail(getDb(), { docId, folderPath, filename }, {
+      fs, path, spawn, pythonExe, pythonArgs,
+      renderScript: ctx.resourcePath('python_backend', 'render', 'pages.py'),
+    });
+  });
+
   // ── OCR preprocessing preview ────────────────────────────────────────────────
   ipcMain.handle('get-enhanced-preview', async (_e, { folderPath, filename, page, enhanceParams }) => {
     requireLogin();

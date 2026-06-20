@@ -111,7 +111,7 @@ docusnap2/
 │   ├── lib/license/{client.js,token.js,fingerprint.js}  # backend HTTP client · offline JWS verify · device fp_hash
 │   ├── services/{searchService,previewService,workflowService,entitlementService,certService,sessionService}.js  # transport-agnostic core (see Detached search client)
 │   └── windows/
-│       ├── main/{index.html,renderer.js}      # incl. empty-state launchpad (Begin Import · Search · Settings · Teach a document)
+│       ├── main/{index.html,renderer.js}      # incl. empty-state launchpad (Begin Import · Search · Settings · Teach a document). PROCESS FLOW (2026-06): clicking Process KEEPS the launchpad visible (no longer blanks the center) and streams live progress into the bottom 160px log strip; on finish shows "✓ Finished processing — N filed" + a "View Results" button (log header) → opens a 3-FIELD results table (Company/Date/Reference) that replaces the launchpad (← Back returns; data kept). Reference/Date resolve via the doc type's STRUCTURAL keys (ref_field_key/date_field_key from get-all-doc-types, loaded once) read from msg.extractions — so sales orders/POs/custom types populate, not just invoice_* convenience fields. The launchpad + results table both want flex:1, so they're mutually exclusive (can't co-show); the log strip is flex-shrink:0 and coexists. Reprocess-All progress is a BANNER above the buttons (review window), not a mutating button label.
 │       ├── splash/{index.html,splash.js}      # cosmetic startup splash — shown in whenReady, closed once login loads
 │       ├── review/{index.html,renderer.js}    # incl. zoom/pan preview + hidden admin Template Wizard (⚓): draw anchor/target → save via existing template-mapping IPC; "Show where it reads" overlays (amber) the RESOLVED anchor/target on the current page via test-template-mapping → template_mapper.resolve_geometry (so the operator sees the mapping TRACK a shifted scan, vs the static drawn boxes)
 │       ├── teach/{index.html,renderer.js}      # guided "Teach a new document" wizard (non-technical) — see Teaching wizard
@@ -150,7 +150,7 @@ docusnap2/
 │   │   └── name_match.py                # Stage 4.5 token-level canonical NAME repair (lexicon + positional repair); suggestion-only
 │   ├── ocr/{tesseract.py,region.py,landmarks.py,text_enhance.py,born_digital.py}  # region.py: interactive draw-tool zone-OCR (review ⊕ picker, Template Wizard read-back, Template Manager) + --boxes label-position capture; LIGHT-FIRST ladder mirroring anchor._crop_and_ocr (light greyscale+upscale-small-only read first, heavy autocontrast+sharpen only when light is EMPTY) so a drawn box reads the SAME as extraction and clean born-digital crops aren't mangled into junk ("Serial number"→"be_7"); landmarks.py: derive registration landmarks from sample page; text_enhance.py: degraded text-line re-read (denoise+Sauvola+unsharp), text-only gate-triggered escalation; born_digital.py: read EXACT text + word boxes from a PDF's embedded text layer (pypdfium2 BSD), skipping OCR for generated PDFs (gated by born_digital_enabled)
 │   ├── logo/fingerprint.py
-│   └── render/pages.py                 # PDF→PNG rendering — shared by review/search/template preview (see Gotchas)
+│   └── render/pages.py                 # PDF→PNG rendering — shared by review/search/template preview (see Gotchas). --thumb = single low-res page-1 thumbnail for list thumbnails (previewService.getThumbnail)
 ├── config/keyword_patterns.json        # editable pattern library
 ├── config/license.json                 # client license config: base_url, product_id, public_keys (PUBLIC keys only)
 ├── client/                              # detached LAN search/mailbox Electron client (apiClient.js pins the CA) — see Detached search client
@@ -947,7 +947,10 @@ to theme.css too).
 --ok:#1f9d63  --warn:#b07816  --err:#d64545
 --text:#1b1f2a  --muted:#69728a  --doc-bg:#eef1f7
 --r:12px --r-sm:9px --r-pill:999px        /* rounded buttons / inputs / cards */
-Font: IBM Plex Sans (UI) + IBM Plex Mono (values/code)
+Font: IBM Plex Sans (UI) + IBM Plex Mono (values/code) — SELF-HOSTED woff2
+(latin subset, OFL-1.1) in src/windows/shared/fonts/ + @font-face in theme.css.
+NO Google-Fonts CDN (was a per-window offline/privacy leak); every window's CSP
+is now font-src 'self'. Don't reintroduce a CDN <link>.
 ```
 - **Native OS window frames** (`main.js` `frame:true`). The old custom drag
   titlebars are hidden globally (`html #titlebar,.titlebar{display:none!important}`
@@ -960,6 +963,18 @@ Font: IBM Plex Sans (UI) + IBM Plex Mono (values/code)
   client-style components from theme.css.
 - **Help-mode** (`src/windows/shared/helpmode.js`): elements tagged `data-help-key`
   highlight and deep-link into the User Guide window (`src/windows/help/`).
+- **List thumbnails** (`src/windows/shared/thumbs.js`): page-1 PDF thumbnails in the
+  Review queue, Search results, and the Teach doc-picker, lazy per visible row
+  (IntersectionObserver) + a per-window in-memory cache. ONE shared IPC
+  `get-document-thumbnail` → `previewService.getThumbnail` → `render/pages.py --thumb`
+  (single low-res page; reuses pypdfium2 — no new dep). GOTCHA: the observed element
+  must have a layout box — `display:none` starves IntersectionObserver, so the teach
+  card uses a `visibility:hidden` overlay (review/search use a visible placeholder box).
+- **About box** (core: user-menu "About ScanFinder…"; client: sidebar "About"): app +
+  Electron version + copyright (read from package.json `build.copyright`) + a
+  "Third-Party Licenses" button that opens the bundled notice via `shell.openPath`.
+  IPC `get-app-about`/`open-third-party-licenses` (core), `client-about`/
+  `client-open-licenses` (client). See License compliance.
 - **Review queue** mirrors the Search results list: plain scroll + click (no arrow
   rail; ↑/↓ keys still cycle), and a **draggable splitter** makes the file column
   width adjustable (persisted in localStorage).
@@ -979,6 +994,8 @@ create-doc-type-with-fields({name,fields[],ref_field_key,date_field_key})  # tra
 get-teach-target                       # docId the teach window was opened at (pulled once on load)
 get-review-queue, get-deferred-queue, get-review-count, get-deferred-count
 get-document-with-extractions(id), get-document-pages(id,folderPath,filename)
+get-document-thumbnail(id,folderPath,filename)   # page-1 low-res thumb (shared/thumbs.js)
+get-app-about, open-third-party-licenses          # About box: version + open the bundled notice
 confirm-review(payload), defer-document(id), restore-deferred(id)
 delete-document(id,filePath), reprocess-document({docId,folderPath,filename})
 ocr-region(base64), save-field-anchor(data)
@@ -1374,6 +1391,29 @@ fs.writeFileSync(file, JSON.stringify(data));
 Python uses `py -3.12` in dev, `vendor/python/python.exe` when packaged.
 
 ---
+
+## License compliance (third-party OSS) — see `COMPLIANCE.md` (canonical)
+The shipped product bundles permissive/notice-style OSS (no GPL/AGPL); the only
+copyleft is weak/file-level (FFmpeg LGPL-2.1 via Electron, a couple of MPL-2.0
+files). Compliance is automated:
+- **`THIRD-PARTY-LICENSES.txt`** (core, repo root) + **`client/THIRD-PARTY-LICENSES.txt`**
+  ship via each app's `build.extraResources`; surfaced in-app via the About box.
+- **`scripts/check-licenses.js`** — prebuild GATE (wired into `npm run build`, also
+  `npm run check:licenses`). Enumerates the Node prod-dep tree + bundled
+  `vendor/python` packages, classifies each license ALLOWED / DENIED(copyleft) /
+  UNKNOWN against an allowlist, exits 1 on any DENIED/UNKNOWN so a dependency bump
+  can't silently ship a bad license. Dual `A OR B` passes if either side is allowed
+  (elections: node-forge→BSD-3, expand-template→MIT, rc→MIT, packaging→Apache-2.0).
+  MPL-2.0 is allowed (we ship unmodified source). Exports its collectors.
+- **`scripts/gen-third-party-notices.js`** — rewrites the notice's INVENTORY section
+  from the gate's data + re-stamps the product version (package.json) and date; leaves
+  the curated copyright/license-text sections alone.
+- **Release**: on the build machine (where `vendor/python` exists) bump versions →
+  `npm run check:licenses` → `node scripts/gen-third-party-notices.js` → `npm run build`.
+- When a new license FAMILY appears, add its text to section 3 of the notice + its
+  name to the intro list (the generator does NOT manage section 3). Editing the
+  notice's whole license text in one Write trips the API content filter — author the
+  short parts, then APPEND long texts (fetched to files) via a script.
 
 ## Dev workflow
 ```bash

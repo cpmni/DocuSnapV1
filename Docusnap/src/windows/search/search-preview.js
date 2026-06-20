@@ -138,4 +138,4 @@ function _fileArgs(doc) {
   return { folderPath: doc.folder_path, filename: doc.original_filename };
 }
 
-window.SearchPreview = { selectDoc, renderPreviewFields, initPageNav };
+window.SearchPreview = { selectDoc, renderPreviewFields, initPageNav, fileArgs: _fileArgs };

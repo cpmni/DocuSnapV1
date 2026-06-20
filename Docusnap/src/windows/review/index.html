@@ -3,9 +3,8 @@
 <head>
   <meta charset="UTF-8"/>
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; img-src 'self' data:">
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; img-src 'self' data:">
   <title>ScanFinder — Review</title>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../shared/theme.css" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -384,6 +383,15 @@
     .btn.danger  { color: var(--err); }
     .btn.danger:hover { border-color: var(--err); background: var(--err-bg); }
 
+    /* Reprocess-All progress banner — sits above the buttons; the button labels
+       no longer change to carry the count. Hidden until a batch is running. */
+    #reprocess-progress {
+      display: none; margin: 8px 14px 0; padding: 6px 10px; border-radius: 6px;
+      background: var(--accent-bg); border: 1px solid var(--accent);
+      color: var(--accent2); font-size: 11px; font-weight: 600; text-align: center;
+    }
+    #reprocess-progress.show { display: block; }
+    #reprocess-progress.done { background: var(--surface2); border-color: var(--border2); color: var(--muted); }
     #reprocess-bar { padding: 8px 14px 0; flex-shrink: 0; display: flex; gap: 6px; }
     .btn.reprocess { flex: 1; color: var(--accent2); border-color: var(--accent); font-size: 11px; }
     .btn.reprocess:hover     { background: var(--accent-bg); }
@@ -689,6 +697,7 @@
       </div>
       <div id="fields-scroll"></div>
 
+      <div id="reprocess-progress" role="status" aria-live="polite"></div>
       <div id="reprocess-bar">
         <button class="btn reprocess"     id="btn-reprocess">&#9654;&#9654; Reprocess</button>
         <button class="btn stop-batch"    id="btn-stop-reprocess" style="display:none;">&#9632; Stop</button>
@@ -780,9 +789,17 @@
   /* Plain-English reasoning sub-line under a validation row. */
   .rdc-why { flex-basis: 100%; margin-top: 3px; padding-left: 70px; font-size: 9px;
              color: var(--muted); line-height: 1.5; font-style: italic; }
+
+  /* Queue-row page-1 thumbnail (shared/thumbs.js). The empty element is the
+     placeholder box; the rendered page fills it once loaded. A doc with no
+     renderable thumbnail simply keeps the empty box (no broken-image icon). */
+  .qi-thumb { flex-shrink: 0; width: 34px; height: 44px; border-radius: 4px;
+              background: var(--doc-bg); border: 1px solid var(--border);
+              object-fit: cover; object-position: top center; }
 </style>
 <script src="../shared/theme.js"></script>
 <script src="../shared/helpmode.js"></script>
+<script src="../shared/thumbs.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>
