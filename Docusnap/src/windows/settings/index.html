@@ -1093,6 +1093,23 @@
           <p class="section-desc" style="margin-top:6px;">Override the managed certificate with your own (e.g. an internal-CA cert). Host/port/cert changes apply the next time you switch access on.</p>
         </details>
       </div>
+
+      <div class="section" id="seats-section">
+        <div class="section-title">Search client seats (concurrent)</div>
+        <p class="section-desc">Floating licences — any machine can connect while a seat is free, and a seat stays held by its client until you release it here (it is never auto-freed). Set the licensed seat count to match your licence.</p>
+        <div class="row-flex" style="gap:10px; align-items:center; margin-bottom:8px;">
+          <div class="threshold-label">Licensed seats</div>
+          <input type="number" id="seats-count" min="0" max="999" class="path-input" style="max-width:80px">
+          <button class="btn" id="seats-save">Save</button>
+          <button class="btn" id="seats-refresh">Refresh</button>
+          <span class="threshold-sub" id="seats-summary" style="margin-left:auto;"></span>
+        </div>
+        <table class="fields-table" id="seats-table" style="margin-top:6px;">
+          <thead><tr><th>User</th><th>Hostname</th><th>IP address</th><th>Last seen</th><th></th></tr></thead>
+          <tbody id="seats-tbody"></tbody>
+        </table>
+        <div class="threshold-sub" id="seats-empty" style="margin-top:6px;"></div>
+      </div>
     </div>
 
     <!-- ══ ADVANCED ══ -->

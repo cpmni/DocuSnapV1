@@ -437,6 +437,10 @@ app.whenReady().then(() => {
     app, fs, logger,
     spawn: require('child_process').spawn,
     path,
+    // Detached-client auth sessions + the concurrent (sticky) seat pool, owned by
+    // main so the /v1 API and the admin Licensing IPC share one instance.
+    sessionStore: require('./services/sessionService').createSessionStore(),
+    seatPool:     require('./services/seatPool').createSeatPool({ getDb }),
   };
 
   authModule.register(ctx);

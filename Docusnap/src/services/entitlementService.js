@@ -21,6 +21,7 @@
 
 const FEATURE = 'detached_client';
 const SETTING_KEY = 'detached_client_licensed';
+const SEATS_KEY = 'detached_client_seats';   // licensed concurrent-client seat count
 
 function _readSetting(db, key) {
   try {
@@ -32,13 +33,17 @@ function _readSetting(db, key) {
 }
 
 /**
- * @returns {{ entitled:boolean, feature:string, reason:string }}
+ * @returns {{ entitled:boolean, feature:string, seats:number, reason:string }}
+ *   seats = the licensed concurrent-client seat cap (0 when not entitled; defaults to
+ *   1 when entitled but the count is unset). The detached-client SEAT POOL enforces it.
  */
 function checkClientEntitlement(db, deps = {}) {
   const getSetting = deps.getSetting || _readSetting;
   const val = getSetting(db, SETTING_KEY);
   const entitled = val === 'true' || val === '1';
-  return { entitled, feature: FEATURE, reason: entitled ? 'licensed' : 'not_licensed' };
+  const seatsRaw = parseInt(getSetting(db, SEATS_KEY), 10);
+  const seats = entitled ? (Number.isFinite(seatsRaw) && seatsRaw > 0 ? seatsRaw : 1) : 0;
+  return { entitled, feature: FEATURE, seats, reason: entitled ? 'licensed' : 'not_licensed' };
 }
 
-module.exports = { checkClientEntitlement, FEATURE, SETTING_KEY };
+module.exports = { checkClientEntitlement, FEATURE, SETTING_KEY, SEATS_KEY };

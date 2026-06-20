@@ -2633,6 +2633,60 @@ async function loadLicenseStatus() {
 if (licRefreshBtn) licRefreshBtn.addEventListener('click', loadLicenseStatus);
 loadLicenseStatus();
 
+// ── Search client seats (concurrent floating pool) ─────────────────────────────
+const seatsTbody   = document.getElementById('seats-tbody');
+const seatsSummary = document.getElementById('seats-summary');
+const seatsCountIn = document.getElementById('seats-count');
+const seatsEmpty   = document.getElementById('seats-empty');
+
+function _seatAgo(ms) {
+  if (!ms) return '—';
+  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (s < 60)    return s + 's ago';
+  if (s < 3600)  return Math.round(s / 60) + 'm ago';
+  if (s < 86400) return Math.round(s / 3600) + 'h ago';
+  return Math.round(s / 86400) + 'd ago';
+}
+
+async function loadSeats() {
+  if (!seatsTbody) return;
+  try {
+    const s = await api.licenseSeatsStatus();
+    if (seatsCountIn && document.activeElement !== seatsCountIn) seatsCountIn.value = s.seats;
+    if (seatsSummary) seatsSummary.innerHTML = s.entitled
+      ? `${colorSpan(s.free > 0 ? 'ok' : 'warn', s.inUse + ' in use')} of ${escHtml(String(s.seats))} (${escHtml(String(s.free))} free)`
+      : colorSpan('muted', 'Add-on not licensed — enable “Workflow add-on” above');
+    const rows = s.leases || [];
+    if (seatsEmpty) seatsEmpty.textContent = rows.length ? '' : 'No clients are currently holding a seat.';
+    seatsTbody.innerHTML = rows.map(r => `
+      <tr>
+        <td>${escHtml(r.username || '—')}</td>
+        <td>${escHtml(r.hostname || '—')}</td>
+        <td style="font-family:var(--mono)">${escHtml(r.ip || '—')}</td>
+        <td title="${escHtml(r.lastSeen ? new Date(r.lastSeen).toLocaleString() : '')}">${escHtml(_seatAgo(r.lastSeen))}</td>
+        <td><button class="btn danger" data-seat="${escHtml(r.id)}">Release</button></td>
+      </tr>`).join('');
+    seatsTbody.querySelectorAll('button[data-seat]').forEach(b => {
+      b.addEventListener('click', async () => {
+        b.disabled = true;
+        try { await api.licenseSeatRelease(b.dataset.seat); } catch { /* surfaced on reload */ }
+        await loadSeats();
+      });
+    });
+  } catch (e) {
+    if (seatsSummary) seatsSummary.innerHTML = colorSpan('err', 'Could not read seats: ' + (e.message || 'error'));
+  }
+}
+
+document.getElementById('seats-refresh')?.addEventListener('click', loadSeats);
+document.getElementById('seats-save')?.addEventListener('click', async () => {
+  if (!seatsCountIn) return;
+  const n = Math.max(0, Math.min(999, parseInt(seatsCountIn.value, 10) || 0));
+  try { await api.setSetting('detached_client_seats', String(n)); } catch { /* surfaced on reload */ }
+  await loadSeats();
+});
+loadSeats();
+
 // ══════════════════════════════════════════════════════════════════════════════
 // ADVANCED TAB — keyword label overrides (admin-only; whole window is admin).
 // Add extra label words for a (doc-type, field) so the keyword stage catches the

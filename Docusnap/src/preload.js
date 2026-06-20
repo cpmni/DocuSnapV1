@@ -54,6 +54,9 @@ contextBridge.exposeInMainWorld('docusnap', {
   clientApiCertExport:   ()  => ipcRenderer.invoke('client-api-cert-export'),
   // Workflow add-on entitlement (drives the in-core enhanced Search).
   getEntitlement:      ()    => ipcRenderer.invoke('get-entitlement'),
+  // Concurrent client-seat pool (admin): licensed seats + active leases, and release.
+  licenseSeatsStatus:  ()    => ipcRenderer.invoke('license-seats-status'),
+  licenseSeatRelease:  (id)  => ipcRenderer.invoke('license-seat-release', id),
   // Phase 2 — license window only: request entry (main re-decides; the renderer
   // cannot self-grant) and receive the blocked-state reason for display.
   licenseEnterApp:    () => ipcRenderer.send('license-enter-app'),

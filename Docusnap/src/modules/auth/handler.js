@@ -21,6 +21,7 @@
 
 const auth = require('../../../database/modules/auth');
 const pw   = require('./password');
+const os   = require('os');
 
 const GENERIC_LOGIN_ERROR    = 'Invalid username or password.';
 const GENERIC_RECOVERY_ERROR = 'That recovery code is invalid or has already been used.';
@@ -219,7 +220,11 @@ function register(ctx) {
 
     _clearRateLimit(usernameInput);
     auth.touchLastLogin(db, user.id);
-    audit({ user_id: user.id, action: 'login_success', target_type: 'user', target_id: user.id });
+    // Record where the sign-in came from. The desktop login is in-process, so the
+    // host is this machine (ip is local); the detached /v1 clients capture the real
+    // remote ip + reported hostname at their own login (modules/api/handler.js).
+    audit({ user_id: user.id, action: 'login_success', target_type: 'user', target_id: user.id,
+            metadata: { hostname: os.hostname(), ip: 'local' } });
 
     currentSession = _toSessionUser(user);
     broadcastSession();

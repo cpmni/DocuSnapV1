@@ -620,6 +620,25 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 29 applied: audit_log search indexes (outcome, action_category+created_at)');
   }
 
+  // Migration 30: concurrent client-seat leases for the detached search clients. One
+  // row per ACTIVE sticky seat — claimed by a stable client_key, freed ONLY by an
+  // admin (no auto-expiry; release deletes the row, the audit_log keeps the history).
+  // Persisted so seat assignments survive a core-app restart. Additive + idempotent.
+  if (!applied.has(30)) {
+    db.exec(`CREATE TABLE IF NOT EXISTS client_seats (
+      id          TEXT    NOT NULL PRIMARY KEY,
+      client_key  TEXT    NOT NULL UNIQUE,
+      username    TEXT,
+      role        TEXT,
+      hostname    TEXT,
+      ip          TEXT,
+      first_seen  INTEGER NOT NULL,
+      last_seen   INTEGER NOT NULL
+    )`);
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (30)').run();
+    console.log('JS migration 30 applied: client_seats (concurrent sticky seat leases)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the
