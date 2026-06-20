@@ -399,6 +399,18 @@ app.whenReady().then(() => {
   // startup (fully guarded inside the helper).
   sweepInboxOrphans();
 
+  // Best-effort audit-log retention: archive audit_log rows older than the window
+  // (settings `audit_retention_days`, default 180; 0 disables) into monthly files
+  // under userData/audit-archive — MOVE, never delete-without-archive. Throttled to
+  // once/day; fully guarded inside the helper (never throws). Stage A: archived rows
+  // are preserved on disk but not yet surfaced in the admin Audit search (Stage B).
+  try {
+    require('../database/modules/audit_archive').runMaintenance(getDb(), {
+      archiveDir: path.join(app.getPath('userData'), 'audit-archive'),
+      logger,
+    });
+  } catch (e) { try { logger?.warn?.(`[audit-archive] startup hook skipped: ${e.message}`); } catch {} }
+
   // The login window (first-run setup, sign-in, forced password change, admin
   // recovery) is created and revealed by launchStartupWindow() AFTER the splash,
   // once all IPC handlers below are registered. The main shell only appears later

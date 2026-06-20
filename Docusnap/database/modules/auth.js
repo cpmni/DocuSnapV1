@@ -216,7 +216,7 @@ function getAuditLog(db, limit = 200) {
 
 // Admin search: filter by user / document / customer / category / action /
 // outcome / date range / free text, with pagination. Returns { rows, total }.
-function getAuditLogFiltered(db, f = {}) {
+function getAuditLogFiltered(db, f = {}, opts = {}) {
   const cols = auditColumns(db);
   const where = [], args = {};
   const has = (c) => cols.has(c);
@@ -233,13 +233,85 @@ function getAuditLogFiltered(db, f = {}) {
   const clause = where.length ? 'WHERE ' + where.join(' AND ') : '';
   const limit  = Math.min(Math.max(parseInt(f.limit, 10) || 100, 1), 500);
   const offset = Math.max(parseInt(f.offset, 10) || 0, 0);
-  const total  = db.prepare(`SELECT COUNT(*) AS c FROM audit_log al ${clause}`).get(args).c;
-  const rows   = db.prepare(`
-    SELECT al.*, u.username AS actor_username_live, u.display_name AS actor_display_name
-    FROM audit_log al LEFT JOIN users u ON u.id = al.user_id
-    ${clause} ORDER BY al.id DESC LIMIT ${limit} OFFSET ${offset}
-  `).all(args);
-  return { rows, total, limit, offset };
+
+  // Archive-aware search (Stage B): when a date bound is set AND monthly archive
+  // files (Stage A) overlap the range, transparently MERGE live + archive rows via
+  // ATTACH + UNION ALL — only the FROM source changes; WHERE/COUNT/ORDER/LIMIT/JOIN
+  // are unchanged. Archived rows keep their original (unique) live `id`, so
+  // ORDER BY al.id DESC stays a correct chronological total order and COUNT/LIMIT/
+  // OFFSET remain accurate. Recent / live-only searches (no date bound, or no
+  // overlapping archive file) are byte-identical. Best-effort: any archive failure
+  // degrades to the live-only query and never throws (archivesPartial flags it).
+  const ATTACH_CAP = 8;                 // SQLite default attached-DB limit is 10 — leave headroom
+  const attached = [];                  // alias names to DETACH afterwards
+  let archivesPartial = false;
+  let fromExpr = 'audit_log al';        // live-only default (byte-identical path)
+
+  if (opts.archiveDir && (f.dateFrom || f.dateTo)) {
+    try {
+      const { archiveFilesForRange } = require('./audit_archive');
+      const fromYm = f.dateFrom ? String(f.dateFrom).slice(0, 7) : null;
+      const toYm   = f.dateTo   ? String(f.dateTo).slice(0, 7)   : null;
+      const picked = archiveFilesForRange(opts.archiveDir, fromYm, toYm, ATTACH_CAP);
+      archivesPartial = picked.partial;
+      if (picked.files.length) {
+        const colSql = [...cols].map(c => `"${c}"`).join(', ');
+        const parts  = [`SELECT ${colSql} FROM audit_log`];
+        picked.files.forEach((file, i) => {
+          const alias = `arc${i}`;
+          try {
+            db.exec(`ATTACH DATABASE '${String(file.path).replace(/'/g, "''")}' AS ${alias}`);
+            // Probe + per-archive column presence: a corrupt/locked file or a
+            // schema-drifted archive throws here and is cleanly excluded; an absent
+            // column is selected as NULL so the UNION stays column-aligned.
+            const acols = new Set(db.prepare(`PRAGMA ${alias}.table_info(audit_log)`).all().map(r => r.name));
+            const sel = [...cols].map(c => (acols.has(c) ? `"${c}"` : `NULL AS "${c}"`)).join(', ');
+            parts.push(`SELECT ${sel} FROM ${alias}.audit_log`);
+            attached.push(alias);
+          } catch {
+            archivesPartial = true;
+            try { db.exec(`DETACH DATABASE ${alias}`); } catch { /* ignore */ }
+          }
+        });
+        if (parts.length > 1) fromExpr = `(${parts.join(' UNION ALL ')}) al`;
+      }
+    } catch { archivesPartial = true; /* fall through to live-only */ }
+  }
+
+  let rows, total;
+  if (fromExpr === 'audit_log al') {
+    // Live-only: byte-identical to the pre-archive behavior (no attachments held).
+    total = db.prepare(`SELECT COUNT(*) AS c FROM audit_log al ${clause}`).get(args).c;
+    rows  = db.prepare(`
+      SELECT al.*, u.username AS actor_username_live, u.display_name AS actor_display_name
+      FROM audit_log al LEFT JOIN users u ON u.id = al.user_id
+      ${clause} ORDER BY al.id DESC LIMIT ${limit} OFFSET ${offset}
+    `).all(args);
+  } else {
+    try {
+      total = db.prepare(`SELECT COUNT(*) AS c FROM ${fromExpr} ${clause}`).get(args).c;
+      rows  = db.prepare(`
+        SELECT al.*, u.username AS actor_username_live, u.display_name AS actor_display_name
+        FROM ${fromExpr} LEFT JOIN users u ON u.id = al.user_id
+        ${clause} ORDER BY al.id DESC LIMIT ${limit} OFFSET ${offset}
+      `).all(args);
+    } catch (e) {
+      // Robust fallback: any merged-query failure returns live-only, never throws.
+      archivesPartial = true;
+      total = db.prepare(`SELECT COUNT(*) AS c FROM audit_log al ${clause}`).get(args).c;
+      rows  = db.prepare(`
+        SELECT al.*, u.username AS actor_username_live, u.display_name AS actor_display_name
+        FROM audit_log al LEFT JOIN users u ON u.id = al.user_id
+        ${clause} ORDER BY al.id DESC LIMIT ${limit} OFFSET ${offset}
+      `).all(args);
+    } finally {
+      for (const alias of attached) { try { db.exec(`DETACH DATABASE ${alias}`); } catch { /* ignore */ } }
+    }
+  }
+
+  const result = { rows, total, limit, offset };
+  if (archivesPartial) result.archivesPartial = true;   // additive: only on degraded coverage
+  return result;
 }
 
 module.exports = {

@@ -413,11 +413,11 @@ function register(ctx) {
   // Admin audit search (filters + pagination) and CSV export of the filtered set.
   ipcMain.handle('audit-query', (_e, filters) => {
     requireRole('admin');
-    return auth.getAuditLogFiltered(getDb(), filters || {});
+    return auth.getAuditLogFiltered(getDb(), filters || {}, { archiveDir: _auditArchiveDir() });
   });
   ipcMain.handle('audit-export-csv', async (e, filters) => {
     requireRole('admin');
-    const { rows } = auth.getAuditLogFiltered(getDb(), { ...(filters || {}), limit: 5000, offset: 0 });
+    const { rows } = auth.getAuditLogFiltered(getDb(), { ...(filters || {}), limit: 5000, offset: 0 }, { archiveDir: _auditArchiveDir() });
     const csv = auditRowsToCsv(rows);
     const { dialog, BrowserWindow } = require('electron');
     const win = BrowserWindow.fromWebContents(e.sender);
@@ -430,6 +430,14 @@ function register(ctx) {
     require('fs').writeFileSync(r.filePath, csv, 'utf8');
     return { saved: true, path: r.filePath, count: rows.length };
   });
+}
+
+// Stage-A audit archive directory (userData/audit-archive) so the admin search /
+// export can transparently include archived months (Stage B). Null in non-app
+// contexts (tests) → getAuditLogFiltered falls back to the live-only query.
+function _auditArchiveDir() {
+  try { return require('path').join(require('electron').app.getPath('userData'), 'audit-archive'); }
+  catch { return null; }
 }
 
 // CSV of audit rows for admin export. metadata_json is already sanitised at write

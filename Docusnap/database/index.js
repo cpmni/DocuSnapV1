@@ -600,6 +600,26 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 28 applied: users.totp_secret/totp_enabled (detached-client MFA)');
   }
 
+  // Migration 29: index audit_log for the two filtered-search paths that were full
+  // scans. Migration 25 already covered the default list (reverse-PK LIMIT) and the
+  // created_at/user/category/document filters; these add the `outcome` filter and the
+  // (action_category, created_at) composite the admin search uses. Additive +
+  // idempotent (CREATE INDEX IF NOT EXISTS); guarded so a pre-migration-25 table is skipped.
+  if (!applied.has(29)) {
+    if (tableExists(db, 'audit_log')) {
+      if (hasColumn(db, 'audit_log', 'outcome')) {
+        try { db.exec('CREATE INDEX IF NOT EXISTS idx_audit_outcome ON audit_log(outcome)'); }
+        catch (e) { console.warn(`  idx_audit_outcome: ${e.message}`); }
+      }
+      if (hasColumn(db, 'audit_log', 'action_category')) {
+        try { db.exec('CREATE INDEX IF NOT EXISTS idx_audit_cat_created ON audit_log(action_category, created_at)'); }
+        catch (e) { console.warn(`  idx_audit_cat_created: ${e.message}`); }
+      }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (29)').run();
+    console.log('JS migration 29 applied: audit_log search indexes (outcome, action_category+created_at)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the
