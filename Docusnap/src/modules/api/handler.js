@@ -359,20 +359,21 @@ function createRequestListener(ctx) {
       if (req.method === 'GET' && pagesMatch) {
         const session = requireSession(req, res); if (!session) return;
         const id = Number(pagesMatch[1]);
-        let folderPath = url.searchParams.get('folderPath');
-        let filename   = url.searchParams.get('filename');
-        // A detached client never sees filesystem paths, so it can't pass them.
-        // Resolve a usable location SERVER-SIDE from the document row (preferring
-        // the app-managed working copy, then the filed copy, then the source).
-        if (!folderPath || !filename) {
-          const P = ctx.path || require('path');
-          const row = getDb().prepare(
-            'SELECT working_path, stored_path, folder_path, original_filename FROM documents WHERE id = ?').get(id);
-          if (row) {
-            const pick = row.working_path || row.stored_path
-              || (row.folder_path && row.original_filename ? P.join(row.folder_path, row.original_filename) : null);
-            if (pick) { folderPath = folderPath || P.dirname(pick); filename = filename || P.basename(pick); }
-          }
+        // SECURITY (F-02): the on-disk location is resolved SERVER-SIDE from the
+        // document row ONLY — client-supplied folderPath/filename are NOT read here.
+        // A detached client never sees filesystem paths; honouring them would let an
+        // authenticated peer (any role, including readonly) read arbitrary host files
+        // through the render path, defeating the dto.js path-hiding boundary. The
+        // precedence mirrors the in-process preview: app-managed working copy →
+        // filed copy → recorded source.
+        let folderPath = null, filename = null;
+        const P = ctx.path || require('path');
+        const row = getDb().prepare(
+          'SELECT working_path, stored_path, folder_path, original_filename FROM documents WHERE id = ?').get(id);
+        if (row) {
+          const pick = row.working_path || row.stored_path
+            || (row.folder_path && row.original_filename ? P.join(row.folder_path, row.original_filename) : null);
+          if (pick) { folderPath = P.dirname(pick); filename = P.basename(pick); }
         }
         const pages = await previewService.getDocumentPages(
           getDb(), { docId: id, folderPath, filename }, pageDeps());

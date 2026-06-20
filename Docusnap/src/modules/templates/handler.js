@@ -246,6 +246,10 @@ function register(ctx) {
   // ── Field anchor → target mappings ──────────────────────────────────────────
   ipcMain.handle('save-template-mapping', (_e, templateId, mapping) => {
     requireRole('admin');
+    // Multi-point licensing enforcement (F-01): defining a template mapping is a
+    // high-value learning write. Network-free cached-license re-check.
+    const licenseDenial = require('../licensing/handler').licenseDenied(getDb());
+    if (licenseDenial) return { success: false, error: 'A valid license is required to edit templates. Please re-activate ScanFinder.', ...licenseDenial };
     if (!mapping || !mapping.field_key) return { success: false, error: 'field_key required' };
     const required = ['anchor_x_norm', 'anchor_y_norm', 'anchor_w_norm', 'anchor_h_norm',
                       'target_x_norm', 'target_y_norm', 'target_w_norm', 'target_h_norm'];
@@ -258,6 +262,9 @@ function register(ctx) {
 
   ipcMain.handle('set-template-mapping-enabled', (_e, templateId, fieldKey, enabled) => {
     requireRole('admin');
+    // F-01: same multi-point gate. This handler's contract is a boolean, so a denial
+    // returns false (renderer-safe falsy) rather than an object that would read truthy.
+    if (require('../licensing/handler').licenseDenied(getDb())) return false;
     templates.setMappingEnabled(getDb(), templateId, fieldKey, !!enabled);
     return true;
   });

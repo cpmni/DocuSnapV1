@@ -184,6 +184,58 @@ function buildTrainingArgs(db, configPath, logger = null) {
   };
 }
 
+// ── Safe path policy for "open in default app / reveal in Explorer" (F-06) ────
+// shell.openPath launches a path with its OS handler — for an .exe/.lnk/UNC path
+// that means code execution. The open-file / show-in-explorer IPC channels accept
+// a renderer-supplied path, so it is constrained to (a) a known document/preview
+// file type, (b) no UNC path, and (c) located inside an app-managed root OR a path
+// recorded against a document row. Uses the module-level `path`/`fs` (Node core).
+const ALLOWED_OPEN_EXTS = new Set(['.pdf', '.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp', '.xml']);
+
+function _allowedOpenRoots(db) {
+  const roots = [];
+  try {
+    const out = require('../../../database/modules/learning').getSetting(db, 'output_folder', null);
+    if (out) roots.push(path.resolve(out));
+  } catch { /* ignore */ }
+  try {
+    const { app } = require('electron');
+    roots.push(path.resolve(path.join(app.getPath('userData'), 'inbox')));
+  } catch { /* ignore (e.g. unit tests without an electron app) */ }
+  return roots;
+}
+
+function _withinAnyRoot(resolved, roots) {
+  return roots.some(r => resolved === r || resolved.startsWith(r + path.sep));
+}
+
+// True only when `rawPath` is safe to hand to shell.openPath / showItemInFolder.
+function _isOpenablePath(db, rawPath) {
+  if (!rawPath || typeof rawPath !== 'string') return false;
+  if (/^[\\/]{2}/.test(rawPath)) return false;                  // reject UNC (\\host or //host)
+  let resolved;
+  try { resolved = path.resolve(rawPath); } catch { return false; }
+  if (/^[\\/]{2}/.test(resolved)) return false;                 // UNC after resolution too
+  if (!ALLOWED_OPEN_EXTS.has(path.extname(resolved).toLowerCase())) return false;
+  if (_withinAnyRoot(resolved, _allowedOpenRoots(db))) return true;
+  // Otherwise allow only an exact path the app itself recorded for a document
+  // (covers an original source file that legitimately lives outside the roots).
+  try {
+    const base = path.basename(resolved);
+    const rows = db.prepare(
+      `SELECT working_path, stored_path, folder_path, original_filename FROM documents
+        WHERE working_path = ? OR stored_path = ? OR original_filename = ?`
+    ).all(resolved, resolved, base);
+    for (const row of rows) {
+      if (row.working_path && path.resolve(row.working_path) === resolved) return true;
+      if (row.stored_path && path.resolve(row.stored_path) === resolved) return true;
+      if (row.folder_path && row.original_filename &&
+          path.resolve(path.join(row.folder_path, row.original_filename)) === resolved) return true;
+    }
+  } catch { /* ignore */ }
+  return false;
+}
+
 function register(ctx) {
   const { ipcMain, getDb, pythonExe, pythonArgs, tesseractPath,
           backendScript, configPath, notifyMainWindow, notifyDevInspector,
@@ -259,8 +311,22 @@ function register(ctx) {
 
   // Opening a filed document in Explorer/its default app is part of "search/view
   // documents" — available to every signed-in role, including Read Only.
-  ipcMain.on('show-in-explorer', (_e, filePath) => { if (getCurrentUser()) shell.showItemInFolder(filePath); });
-  ipcMain.on('open-file',        (_e, filePath) => { if (getCurrentUser()) shell.openPath(filePath); });
+  ipcMain.on('show-in-explorer', (_e, filePath) => {
+    if (!getCurrentUser()) return;
+    if (!_isOpenablePath(getDb(), filePath)) {
+      logger?.warn?.('[security] blocked show-in-explorer for a disallowed path');
+      return;
+    }
+    shell.showItemInFolder(filePath);
+  });
+  ipcMain.on('open-file', (_e, filePath) => {
+    if (!getCurrentUser()) return;
+    if (!_isOpenablePath(getDb(), filePath)) {
+      logger?.warn?.('[security] blocked open-file for a disallowed path');
+      return;
+    }
+    shell.openPath(filePath);
+  });
 
   // Diagnostic-only: record a ⊕ teach action — the box coordinates STORED for the
   // anchor plus the value the live zone-OCR read at teach time, and the preview
@@ -303,6 +369,10 @@ function register(ctx) {
   ipcMain.handle('process-folder', async (event, folderPath) => {
     requireRole('admin', 'edit');
     const db = getDb();
+    // Multi-point licensing enforcement (F-01): bulk import is the highest-value
+    // extraction write path. Network-free cached-license re-check before any work.
+    const licenseDenial = require('../licensing/handler').licenseDenied(db);
+    if (licenseDenial) return { success: false, error: 'A valid license is required to process documents. Please re-activate ScanFinder.', ...licenseDenial };
     logAudit(db, { action: 'import_run', action_category: 'processing', target_type: 'folder',
       outcome: 'success', metadata: { folder: folderPath } });
     const diagOn = _diagEnabled(db);
@@ -464,6 +534,10 @@ function register(ctx) {
   ipcMain.handle('reprocess-document', async (event, { docId, folderPath, filename, enhanceParams }) => {
     requireRole('admin', 'edit');
     const db      = getDb();
+    // Multi-point licensing enforcement (F-01): reprocess re-runs the extraction
+    // pipeline — same network-free cached-license re-check as bulk import.
+    const licenseDenial = require('../licensing/handler').licenseDenied(db);
+    if (licenseDenial) return { success: false, error: 'A valid license is required to reprocess documents. Please re-activate ScanFinder.', ...licenseDenial };
     logAudit(db, { action: 'reprocess', target_type: 'document', target_id: docId, document_id: docId,
       outcome: 'success', metadata: { enhanced: !!enhanceParams } });
     // Prefer the app-managed working copy so reprocess doesn't depend on the
@@ -1148,4 +1222,6 @@ module.exports = {
   cleanupTempFiles: cleanupFiles,
   handleFileMessage: _handleFileMessage,
   isBatchRunning: () => _currentBatchProcs.length > 0,
+  // Exposed for the F-06 path-policy unit test (test_open_path_policy.js).
+  _isOpenablePath,
 };

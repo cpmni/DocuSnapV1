@@ -10,8 +10,8 @@
  *   token.evaluate: valid->allow, expired->locked, past-grace->needs_online,
  *     tampered/alg-confusion/unknown-kid/product-mismatch/fp-mismatch->locked_invalid,
  *     clock-rollback defeated by the high-water mark.
- *   decideAccess gate: enforcement OFF -> allow; ON + valid -> allow; ON + expired
- *     -> locked; ON + tampered -> locked_invalid; ON + no token -> needs_online.
+ *   decideAccess gate (enforcement is ALWAYS ON): no token -> needs_online; valid
+ *     -> allow; expired -> locked; tampered -> locked_invalid.
  *   main.js wiring: license-enter-app re-decides via enterMainApp (no self-grant).
  *
  * Run under Electron-as-Node:
@@ -108,9 +108,11 @@ const licensing = require('./licensing');
 const seed = (jws, state) => licensing.cacheToken(db, { kind: 'trial', subject: 'trial:' + FP, jws, state });
 
 (async () => {
-  // enforcement OFF (default) -> allow regardless
+  // Enforcement is ALWAYS ON now (no off path) — with no cached token the gate
+  // locks regardless of any setting. (The setSetting below is therefore inert; it
+  // is kept only to show the setting can no longer relax enforcement.)
   let r = await handler.decideAccess();
-  if (!check('enforcement OFF -> allow', r.decision === 'allow' && r.enforcement === false)) fail++;
+  if (!check('always-on: no token -> locked_needs_online', r.decision === 'locked_needs_online' && r.enforcement === true)) fail++;
 
   learning.setSetting(db, 'license_enforcement_enabled', 'true');
 

@@ -66,8 +66,15 @@ function backend({ seatsTotal = 2, goodKey = 'GOOD-KEY' } = {}) {
       bindings.delete(body.fp_hash); freed.push(seatId);
       return R(200, { released: true, seats_total: seatsTotal, seats_used: used() });
     }
+    if (method === 'POST' && url.endsWith('/validate')) {
+      // A real backend re-issues a SEAT token for a BOUND fingerprint on validate
+      // (this is what refreshes the gate online); an unbound fp gets {state:'none'}.
+      const seatId = bindings.get(body.fp_hash);
+      if (seatId) return R(200, { token: sign(seatClaims({ fp: body.fp_hash, seatId, seatsTotal, seatsUsed: used() })), kind: 'seat', state: 'active', entitlement_id: 'e1', seat_id: seatId, seats_total: seatsTotal, seats_used: used(), expires_at: null });
+      return R(200, { state: 'none' });
+    }
     if (method === 'GET' && url.includes('/status')) return R(200, { state: 'active' });
-    return R(200, { state: 'none' }); // validate
+    return R(200, { state: 'none' }); // any other
   };
 }
 function makeCtx(database, transport) {

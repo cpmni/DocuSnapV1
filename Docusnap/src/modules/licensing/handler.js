@@ -356,6 +356,70 @@ function register(ctx) {
 }
 
 /**
+ * Network-free, read-only evaluation of the CACHED token against the rollback-proof
+ * clock (effectiveNow = max(now, high-water mark)). Shared by decideAccess() (after
+ * its online refresh) AND the per-workflow guard licenseDenied(). It NEVER makes a
+ * network call and NEVER throws — a per-workflow caller must not be able to crash an
+ * IPC handler, and on any unexpected error it fails CLOSED (locked). It only READS
+ * the persisted high-water mark; decideAccess() still advances it.
+ * Returns { decision: 'allow'|'locked'|'locked_needs_online'|'locked_invalid',
+ *           reason, enforcement }.
+ */
+function evaluateCachedAccess(db, pre = null) {
+  try {
+    if (!enforcementActive(db)) {
+      return { decision: 'allow', reason: 'enforcement_off', enforcement: false };
+    }
+    // Reuse the caller's already-computed config + fingerprint when provided, so a
+    // single decideAccess() pass does not recompute the device fingerprint twice
+    // (it computes them for the online refresh). A direct per-workflow caller passes
+    // nothing and computes here. Identical values either way — behavior is unchanged.
+    let cfg, fpHash;
+    if (pre && pre.cfg && pre.fpHash) {
+      ({ cfg, fpHash } = pre);
+    } else {
+      try {
+        cfg = loadConfig(_ctx);
+        fpHash = fingerprintLib.computeFpHash(cfg.product_id);
+      } catch (e) {
+        return { decision: 'locked_needs_online', reason: 'config_error', enforcement: true };
+      }
+    }
+    const now = Date.now();
+    let hwm = readHwm(db);
+    const cached = licensing.getActiveToken(db, fpHash);
+    if (cached && cached.token_blob) {
+      const c = token.decodeUnverifiedClaims(cached.token_blob);
+      if (c && c.issued_at) hwm = Math.max(hwm, Date.parse(c.issued_at) || 0);
+    }
+    if (!cached || !cached.token_blob) {
+      return { decision: 'locked_needs_online', reason: 'no_cached_token', enforcement: true };
+    }
+    const result = token.evaluate(cached.token_blob, {
+      fpHash, productId: cfg.product_id, publicKeys: cfg.public_keys,
+      now, highWaterMark: Math.max(hwm, now),
+    });
+    return { ...result, enforcement: true };
+  } catch (e) {
+    // A per-workflow guard must never throw into a handler — fail CLOSED.
+    return { decision: 'locked_invalid', reason: 'eval_error', enforcement: true };
+  }
+}
+
+/**
+ * Thin MULTI-POINT guard (F-01) for high-value workflow entry points. Returns null
+ * when access is allowed, otherwise a small structured denial the IPC handler
+ * spreads into its own response shape: { code:'license_required', reason }.
+ * Network-free; safe to call synchronously inside an IPC handler. Spreading these
+ * checks across the high-value flows means a single patched branch no longer
+ * silently re-enables the product.
+ */
+function licenseDenied(db) {
+  const r = evaluateCachedAccess(db);
+  return r.decision === 'allow' ? null : { code: 'license_required', reason: r.reason };
+}
+
+/**
  * The gate's effective-state decision. Never throws.
  * Returns { decision: 'allow'|'locked'|'locked_needs_online'|'locked_invalid',
  *           reason, enforcement }.
@@ -363,8 +427,7 @@ function register(ctx) {
 async function decideAccess() {
   const db = _ctx.getDb();
 
-  // Enforcement switch — default OFF preserves Phase 0/1 behavior exactly.
-  // Env override (DOCUSNAP_LICENSE_ENFORCEMENT) wins over the stored setting.
+  // Enforcement is permanently ON (see enforcementActive); kept for symmetry.
   if (!enforcementActive(db)) {
     return { decision: 'allow', reason: 'enforcement_off', enforcement: false };
   }
@@ -399,23 +462,19 @@ async function decideAccess() {
     licensing.clearSeatToken(db, fpHash);
   }
 
-  // Monotonic high-water mark (rollback defense), persisted outside the cache.
+  // Advance the persisted monotonic high-water mark (rollback defense) exactly as
+  // before, then delegate the verdict to the shared, network-free evaluator.
   let hwm = readHwm(db);
   const cached = licensing.getActiveToken(db, fpHash);
   if (cached && cached.token_blob) {
     const c = token.decodeUnverifiedClaims(cached.token_blob);
     if (c && c.issued_at) hwm = Math.max(hwm, Date.parse(c.issued_at) || 0);
   }
-  hwm = bumpHwm(db, Math.max(now, hwm));
+  bumpHwm(db, Math.max(now, hwm));
 
-  if (!cached || !cached.token_blob) {
-    return { decision: 'locked_needs_online', reason: 'no_cached_token', enforcement: true };
-  }
-
-  const result = token.evaluate(cached.token_blob, {
-    fpHash, productId: cfg.product_id, publicKeys: cfg.public_keys, now, highWaterMark: hwm,
-  });
-  return { ...result, enforcement: true };
+  // Delegate the verdict to the shared evaluator, handing it the config + fingerprint
+  // already computed above so the fingerprint is not derived a second time.
+  return evaluateCachedAccess(db, { cfg, fpHash });
 }
 
-module.exports = { register, decideAccess };
+module.exports = { register, decideAccess, evaluateCachedAccess, licenseDenied };
