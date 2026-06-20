@@ -130,7 +130,18 @@ function selectType(card,isNew){
   card.classList.add('sel');
   $('new-type-panel').classList.toggle('hidden', !isNew);
   if (isNew && !state.newFields.length){
-    state.newFields=[{label:'Supplier',type:'text'},{label:'Reference number',type:'text'},{label:'Date',type:'date'}];
+    // Seed the structural roles. Company + Date are MANDATORY (the backend force-
+    // creates them — ensureStructuralRoles) so they are LOCKED here (no delete/retype),
+    // mirroring Settings. Company uses the canonical scope key `supplier_name` so the
+    // backend recognises it and won't inject a duplicate — only the DISPLAY label is
+    // "Company". Reference is a pre-filled DEFAULT but intentionally REMOVABLE: the
+    // backend deliberately allows reference-less types (forcing a ref where there is
+    // none poisons filename/reference learning — see document_types.ensureStructuralRoles).
+    state.newFields=[
+      {label:'Company',          key:'supplier_name', type:'text', locked:true},
+      {label:'Reference number',                      type:'text'},
+      {label:'Date',                                  type:'date', locked:true},
+    ];
     renderNewFields();
   }
   renderFooter();
@@ -143,13 +154,20 @@ function slugify(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9_]/g,'_
 function renderNewFields(){
   const wrap=$('nt-fields'); wrap.innerHTML='';
   state.newFields.forEach((f,i)=>{
-    f.key = slugify(f.label);
-    const chip=document.createElement('span'); chip.className='chip';
-    chip.innerHTML=`<span>${esc(f.label)}</span>`+
-      `<select data-i="${i}"><option value="text"${f.type==='text'?' selected':''}>Text</option>`+
-      `<option value="date"${f.type==='date'?' selected':''}>Date</option>`+
-      `<option value="currency"${f.type==='currency'?' selected':''}>Money</option></select>`+
-      `<span class="x" data-i="${i}">✕</span>`;
+    f.key = f.key || slugify(f.label);   // preserve an explicit key (e.g. supplier_name)
+    const chip=document.createElement('span'); chip.className='chip'+(f.locked?' locked':'');
+    if (f.locked){
+      // Structural role: fixed type, no delete (mirrors the Settings 🔒 lock).
+      const tl = f.type==='date'?'Date':(f.type==='currency'?'Money':'Text');
+      chip.innerHTML=`<span>${esc(f.label)}</span><span class="ftype">${tl}</span>`+
+        `<span class="lock" title="Required field — it can’t be removed or retyped">🔒</span>`;
+    } else {
+      chip.innerHTML=`<span>${esc(f.label)}</span>`+
+        `<select data-i="${i}"><option value="text"${f.type==='text'?' selected':''}>Text</option>`+
+        `<option value="date"${f.type==='date'?' selected':''}>Date</option>`+
+        `<option value="currency"${f.type==='currency'?' selected':''}>Money</option></select>`+
+        `<span class="x" data-i="${i}">✕</span>`;
+    }
     wrap.appendChild(chip);
   });
   wrap.querySelectorAll('select').forEach(sel=>sel.onchange=e=>{ state.newFields[+e.target.dataset.i].type=e.target.value; });
@@ -183,7 +201,7 @@ async function commitTypeChoice(){
   }
   // create new type transactionally
   const name=$('nt-name').value.trim();
-  const fields=state.newFields.map(f=>({key:slugify(f.label),label:f.label,type:f.type}));
+  const fields=state.newFields.map(f=>({key:f.key||slugify(f.label),label:f.label,type:f.type}));
   const ref=$('nt-ref').value||null, date=$('nt-date').value||null;
   const res=await D.createDocTypeWithFields({name,fields,ref_field_key:ref,date_field_key:date});
   if (!res||!res.success){ $('nt-err').textContent=(res&&res.error)||'Could not create the type.'; return false; }
