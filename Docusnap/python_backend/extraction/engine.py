@@ -665,9 +665,14 @@ class ExtractionEngine:
                         # the is_taught_override precedent below — a more
                         # specific, curated source outranks the more generic
                         # rule it refines, regardless of either one's confidence.
+                        # A curated Stage 0.5 mapping outranks the generic Stage 0
+                        # seeds it exists to refine — including an admin-LOCKED fixed
+                        # value (a drawn zone on a real sample is the more specific
+                        # curated source, per the intended precedence).
                         is_curated_refinement = (existing is None
                                                   or existing.get("method") in
-                                                     ("template_fixed", "template_anchor"))
+                                                     ("template_fixed", "template_anchor",
+                                                      "template_fixed_locked"))
                         if is_curated_refinement or data["confidence"] > existing.get("confidence", 0):
                             results[key] = data
                             applied += 1
@@ -717,6 +722,15 @@ class ExtractionEngine:
         self._remember_candidates('1_keyword', kw_results)
         for key, data in kw_results.items():
             existing = results.get(key)
+            # An admin-LOCKED fixed value (method 'template_fixed_locked') is a
+            # deliberate, protected override: NO ordinary read — not even the
+            # supplier-identity rescue below — may replace it on confidence. It still
+            # yields ONLY to an explicit admin label (keyword_override) and to curated
+            # Stage 0.5 mappings (which ran first). Narrow: ordinary 'template_fixed'
+            # stays overridable.
+            if (existing and existing.get("method") == "template_fixed_locked"
+                    and data.get("method") != "keyword_override"):
+                continue
             if key == "supplier_name" and existing:
                 decision = _supplier_identity_decision(existing, data)
                 if decision == "keep":
@@ -810,6 +824,12 @@ class ExtractionEngine:
             self._remember_candidates('2_anchor', anchor_results)
             for key, data in anchor_results.items():
                 existing = results.get(key)
+                # Protect an admin-LOCKED fixed value from any NON-authoritative anchor
+                # read (incl. the supplier-identity rescue + credibility-gate paths
+                # below). An authoritative ⊕ anchor still wins outright via Tier A.
+                if (existing and existing.get("method") == "template_fixed_locked"
+                        and not data.get("authoritative")):
+                    continue
                 # Supplier identity is plausibility-gated first: a poisoned
                 # anchor_crop carrying an implausible short fragment must not
                 # ride the is_taught_override path to clobber a plausible name,

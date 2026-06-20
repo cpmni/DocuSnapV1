@@ -639,6 +639,22 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 30 applied: client_seats (concurrent sticky seat leases)');
   }
 
+  // Migration 31: admin-LOCKED fixed values. A fixed value an admin explicitly set in
+  // the Template Wizard (template_fields.fixed_locked = 1) is a deliberate, protected
+  // override — distinct from an auto-derived non-variable seed (fixed_locked = 0). It is
+  // preserved across confirmed-history rebuilds (templates._upsertFields) and emitted by
+  // Stage 0 as method 'template_fixed_locked' so the engine protects it from ordinary
+  // OCR/keyword/anchor overrides (ordinary 'template_fixed' stays overridable). Additive +
+  // idempotent.
+  if (!applied.has(31)) {
+    if (tableExists(db, 'template_fields') && !hasColumn(db, 'template_fields', 'fixed_locked')) {
+      try { db.exec(`ALTER TABLE template_fields ADD COLUMN fixed_locked INTEGER NOT NULL DEFAULT 0`); }
+      catch (e) { console.warn(`  template_fields.fixed_locked: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (31)').run();
+    console.log('JS migration 31 applied: template_fields.fixed_locked (admin-locked fixed values)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

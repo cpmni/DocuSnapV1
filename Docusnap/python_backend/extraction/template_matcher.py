@@ -100,18 +100,23 @@ def extract_with_template(ocr_text: str, template: dict) -> dict:
         key        = field.get('field_key')
         fixed_val  = field.get('fixed_value')
         is_var     = field.get('is_variable', 1)
+        locked     = field.get('fixed_locked', 0)
         anchor     = field.get('anchor_label')
         direction  = field.get('direction', 'right')
 
         if not key:
             continue
 
-        # Fixed value — same every time (e.g. supplier_name)
+        # Fixed value — same every time (e.g. supplier_name). An admin-LOCKED fixed
+        # value (fixed_locked = 1) is a deliberate, protected override → distinct
+        # method 'template_fixed_locked' that engine.extract guards from ordinary
+        # OCR/keyword/anchor overrides; an auto-derived non-variable value stays the
+        # overridable 'template_fixed'. Same confidence either way.
         if fixed_val and not is_var:
             results[key] = {
                 'value':      fixed_val,
                 'confidence': 95,
-                'method':     'template_fixed',
+                'method':     'template_fixed_locked' if locked else 'template_fixed',
             }
             continue
 
