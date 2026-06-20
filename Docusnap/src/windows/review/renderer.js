@@ -112,6 +112,9 @@ const PREVIEW_ZOOM_MIN = 1, PREVIEW_ZOOM_MAX = 4, PREVIEW_ZOOM_STEP = 0.25;
 const wizard = {
   active: false, fields: [], index: 0, step: 'field',
   draftAnchor: null, draftTarget: null, fixedMode: false,
+  drafts: {},                  // in-session per-field draft cache: unsaved boxes/fixed text survive field switches
+  fixedByKey: null,            // Map(field_key -> saved fixed_value) from template_fields, for rehydration
+  _loadedKey: null,            // field currently shown (so its draft is captured before switching)
   resolved: null,              // {anchor_box, target_box} — where the mapping ACTUALLY resolves on this page (amber overlay)
   drawMode: null, isDragging: false, dragStart: { x: 0, y: 0 }, dragRect: null,
   selectedBox: null,           // 'anchor' | 'target' | null — click-selected box (Delete removes / drag moves it)
@@ -2152,16 +2155,14 @@ async function openWizard() {
   wizard.fields = wizardFieldList();
   wizard.fixedMode = false;
   wizard.savedKeys = new Set();
+  wizard.drafts = {};            // fresh in-session draft cache each time the wizard opens
+  wizard._loadedKey = null;
   const openMgr = document.getElementById('wiz-open-manager');
   if (openMgr) openMgr.style.display = 'none';
 
-  const sel = document.getElementById('wiz-field-select');
-  sel.innerHTML = '';
-  for (const f of wizard.fields) {
-    const o = document.createElement('option');
-    o.value = f.key; o.textContent = `${f.label} (${f.key})`;
-    sel.appendChild(o);
-  }
+  // The field dropdown — with "• fixed" / "• boxes" markers so you can see at a
+  // glance what each field already has — is (re)built by loadWizardField ->
+  // populateWizardFieldOptions, once resolveWizardTemplate has cached saved state.
   document.getElementById('wizard-panel').classList.add('visible');
   document.getElementById('btn-anchor-wizard').classList.add('open');
   wizCanvas.classList.add('active');
@@ -2185,10 +2186,17 @@ async function resolveWizardTemplate() {
       if (m?.matched && m.templateId) wizard.templateId = m.templateId;
     } catch (e) { /* no match — first save will promote */ }
   }
+  wizard.fixedByKey = new Map();
   if (wizard.templateId) {
     try {
       const detail = await window.docusnap.getTemplateDetail(wizard.templateId);
       for (const mp of (detail?.field_mappings || [])) wizard.mappingsByKey.set(mp.field_key, mp);
+      // Saved FIXED values live in template_fields (separate from the drawn-box
+      // mappings) — cache them so the wizard can show "this field is fixed text".
+      for (const tf of (detail?.fields || [])) {
+        if (!tf.is_variable && tf.fixed_value != null && String(tf.fixed_value).trim() !== '')
+          wizard.fixedByKey.set(tf.field_key, String(tf.fixed_value));
+      }
     } catch (e) { console.warn('wizard rehydrate failed:', e.message); }
   }
 }
@@ -2209,8 +2217,49 @@ function exitWizard() {
   wizCtx.clearRect(0, 0, wizCanvas.width, wizCanvas.height);
 }
 
+// Snapshot the CURRENTLY-shown field's in-progress state into the session draft
+// cache, so switching away and back never loses unsaved boxes / fixed text.
+function captureWizardDraft(key) {
+  if (!key) return;
+  wizard.drafts[key] = {
+    fixedMode:   !!wizard.fixedMode,
+    fixedValue:  document.getElementById('wiz-fixed-value')?.value || '',
+    anchorText:  document.getElementById('wiz-anchor-text')?.value || '',
+    ocrType:     document.getElementById('wiz-ocr-type')?.value || 'text',
+    draftAnchor: wizard.draftAnchor ? { ...wizard.draftAnchor } : null,
+    draftTarget: wizard.draftTarget ? { ...wizard.draftTarget } : null,
+  };
+}
+
+// Rebuild the field dropdown with an at-a-glance marker per field: "• fixed" when
+// it has fixed text, "• boxes" when it has a drawn anchor+target — from the live
+// draft cache first, else the saved template state. Programmatic value set never
+// re-fires the 'change' handler.
+function populateWizardFieldOptions() {
+  const sel = document.getElementById('wiz-field-select');
+  if (!sel) return;
+  sel.innerHTML = '';
+  for (const f of wizard.fields) {
+    const d = wizard.drafts[f.key];
+    const hasFixed = d ? (d.fixedMode && d.fixedValue.trim() !== '')
+                       : !!(wizard.fixedByKey && wizard.fixedByKey.get(f.key));
+    const hasBoxes = d ? !!(d.draftAnchor && d.draftTarget)
+                       : !!(wizard.mappingsByKey && wizard.mappingsByKey.get(f.key)?.anchor_x_norm != null);
+    const mark = hasFixed ? ' • fixed' : hasBoxes ? ' • boxes' : '';
+    const o = document.createElement('option');
+    o.value = f.key; o.textContent = `${f.label} (${f.key})${mark}`;
+    sel.appendChild(o);
+  }
+  const cur = wizard.fields[wizard.index];
+  if (cur) sel.value = cur.key;
+}
+
 function loadWizardField(i) {
   if (!wizard.fields.length) return;
+  // Remember the OUTGOING field's draft before we switch (the reported bug: data
+  // was lost on field change). No-op on first load (_loadedKey is null).
+  if (wizard._loadedKey) captureWizardDraft(wizard._loadedKey);
+
   wizard.index = Math.max(0, Math.min(wizard.fields.length - 1, i));
   wizard.step = 'field';
   wizard.draftAnchor = wizard.draftTarget = null;
@@ -2222,28 +2271,43 @@ function loadWizardField(i) {
   wizCanvas.classList.remove('drawing');
 
   const f = wizard.fields[wizard.index];
-  document.getElementById('wiz-field-select').value = f.key;
-  document.getElementById('wiz-fixed-value').value = '';
-  document.getElementById('wiz-fixed-toggle').checked = false;
-  wizard.fixedMode = false;
+  const fixedInput  = document.getElementById('wiz-fixed-value');
+  const fixedToggle = document.getElementById('wiz-fixed-toggle');
+  const anchorInput = document.getElementById('wiz-anchor-text');
+  const ocrInput    = document.getElementById('wiz-ocr-type');
 
-  // Rehydrate a previously-saved mapping for this field so its boxes are visible
-  // and editable on reopen. Stored normalized, so it re-renders correctly at the
-  // current preview scale (no stored pixels).
+  // Restore priority: in-session DRAFT (unsaved edits) > saved FIXED value >
+  // saved BOXES (this page) > empty. So you always see what's there + don't lose
+  // work in progress.
+  const draft = wizard.drafts[f.key];
   const saved = wizard.mappingsByKey && wizard.mappingsByKey.get(f.key);
-  if (saved && saved.anchor_x_norm != null && saved.target_x_norm != null
-      && (saved.page_number || 0) === currentPage) {   // only show a box that belongs to this page
+  const savedFixed = wizard.fixedByKey && wizard.fixedByKey.get(f.key);
+  if (draft) {
+    wizard.fixedMode    = draft.fixedMode;
+    fixedToggle.checked = draft.fixedMode;
+    fixedInput.value    = draft.fixedValue;
+    anchorInput.value   = draft.anchorText;
+    ocrInput.value      = draft.ocrType;
+    wizard.draftAnchor  = draft.draftAnchor ? { ...draft.draftAnchor } : null;
+    wizard.draftTarget  = draft.draftTarget ? { ...draft.draftTarget } : null;
+  } else if (savedFixed != null && savedFixed !== '') {
+    wizard.fixedMode = true; fixedToggle.checked = true; fixedInput.value = savedFixed;
+    anchorInput.value = ''; ocrInput.value = 'text';
+  } else if (saved && saved.anchor_x_norm != null && saved.target_x_norm != null
+             && (saved.page_number || 0) === currentPage) {   // box belongs to this page
+    wizard.fixedMode = false; fixedToggle.checked = false; fixedInput.value = '';
     wizard.draftAnchor = { x_norm: saved.anchor_x_norm, y_norm: saved.anchor_y_norm,
                            w_norm: saved.anchor_w_norm, h_norm: saved.anchor_h_norm };
     wizard.draftTarget = { x_norm: saved.target_x_norm, y_norm: saved.target_y_norm,
                            w_norm: saved.target_w_norm, h_norm: saved.target_h_norm };
-    document.getElementById('wiz-anchor-text').value = saved.anchor_text || '';
-    document.getElementById('wiz-ocr-type').value    = saved.ocr_type || 'text';
+    anchorInput.value = saved.anchor_text || ''; ocrInput.value = saved.ocr_type || 'text';
   } else {
-    document.getElementById('wiz-anchor-text').value = '';
-    document.getElementById('wiz-ocr-type').value    = 'text';
+    wizard.fixedMode = false; fixedToggle.checked = false; fixedInput.value = '';
+    anchorInput.value = ''; ocrInput.value = 'text';
   }
 
+  wizard._loadedKey = f.key;
+  populateWizardFieldOptions();        // refresh the fixed/boxes markers
   updateWizardUI();
   redrawWizard();
 }
@@ -2484,6 +2548,36 @@ document.getElementById('wiz-fixed-toggle')?.addEventListener('change', (e) => {
   wizCanvas.classList.remove('drawing');
   updateWizardUI();
 });
+
+// Make the Template Wizard panel draggable by its title bar. The panel is
+// absolutely positioned (default: anchored top-right); on the first drag we switch
+// to explicit left/top and then clamp inside its container so it can't be lost
+// off-screen. The close button inside the bar never starts a drag.
+(() => {
+  const panel  = document.getElementById('wizard-panel');
+  const handle = panel?.querySelector('.wiz-title');
+  if (!panel || !handle) return;
+  let drag = null;
+  handle.addEventListener('mousedown', (e) => {
+    if (e.button !== 0 || e.target.closest('.wiz-close')) return;
+    const r  = panel.getBoundingClientRect();
+    const pr = (panel.offsetParent || document.body).getBoundingClientRect();
+    panel.style.left  = (r.left - pr.left) + 'px';
+    panel.style.top   = (r.top  - pr.top)  + 'px';
+    panel.style.right = 'auto';
+    drag = { x: e.clientX, y: e.clientY, left: r.left - pr.left, top: r.top - pr.top };
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!drag) return;
+    const par  = panel.offsetParent || document.documentElement;
+    const maxL = Math.max(0, par.clientWidth  - panel.offsetWidth);
+    const maxT = Math.max(0, par.clientHeight - panel.offsetHeight);
+    panel.style.left = Math.max(0, Math.min(maxL, drag.left + (e.clientX - drag.x))) + 'px';
+    panel.style.top  = Math.max(0, Math.min(maxT, drag.top  + (e.clientY - drag.y))) + 'px';
+  });
+  window.addEventListener('mouseup', () => { drag = null; });
+})();
 // Re-evaluate Save enablement as the user types a fixed value.
 document.getElementById('wiz-fixed-value')?.addEventListener('input', updateWizardUI);
 
@@ -2636,6 +2730,14 @@ async function wizardSave() {
     // Keep the in-session rehydration cache current so navigating back to this
     // field (or reopening) shows the box without a round-trip.
     if (savedMapping) wizard.mappingsByKey.set(field.key, savedMapping);
+    if (fixed) {
+      wizard.fixedByKey.set(field.key, fixedVal);
+      // Populate the document's field in the review panel IMMEDIATELY — the operator
+      // shouldn't have to reprocess to see a fixed value they just set. Dispatching
+      // 'input' marks the field edited so the normal Confirm path persists it.
+      const inp = document.querySelector(`.field-input[data-key="${field.key}"]`);
+      if (inp) { inp.value = fixedVal; inp.dispatchEvent(new Event('input', { bubbles: true })); }
+    }
     wizard.savedKeys.add(field.key);
     showToast(`Saved ${field.label} to template`, 'ok');
     advanceWizardField();

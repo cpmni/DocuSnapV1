@@ -115,6 +115,9 @@
     .rail-group { display: flex; flex-direction: column; align-items: center; gap: 10px; }
     .rail-tools-group { position: relative; }            /* anchor for the tool flyouts */
     .rail-divider { width: 22px; height: 1px; background: var(--border2); margin: 2px 0; flex-shrink: 0; }
+    /* Clearer separator: same line, more breathing room, so the nav arrows read
+       as a distinct group from the split/anchor/quality tools below. */
+    .rail-divider-clear { width: 28px; margin: 8px 0; }
 
     /* Compact icon trigger for a secondary tool (square-rounded, to read distinct
        from the round nav arrows above). */
@@ -241,7 +244,8 @@
     }
     #wizard-panel.visible { display: flex; }
     .wiz-title { display: flex; align-items: center; justify-content: space-between;
-      font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text); }
+      font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text);
+      cursor: move; user-select: none; }   /* drag the title bar to move the panel */
     .wiz-close { background: none; border: none; color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; }
     .wiz-close:hover { color: var(--err); }
     .wiz-step { font-size: 10px; color: var(--accent2); font-family: var(--mono); }
@@ -469,8 +473,19 @@
       <div id="queue-scroll-wrap">
         <div id="queue-list"></div>
         <div id="queue-scroll-rail">
-          <!-- Plain scroll + click like Search (the prev/next arrow rail was removed;
-               ↑/↓ keys still cycle documents). Document tools remain below. -->
+          <!-- Prev / next document cycle (round arrows). Reuses cycleDocument() — the
+               SAME path ArrowUp/ArrowDown use; clamps + disables at the list ends via
+               updateDocNavButtons(). -->
+          <div class="rail-group rail-nav-group">
+            <button class="queue-nav-btn" id="btn-doc-prev" title="Previous document (↑)" aria-label="Previous document" data-help-key="nav-prev">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>
+            </button>
+            <button class="queue-nav-btn" id="btn-doc-next" title="Next document (↓)" aria-label="Next document" data-help-key="nav-next">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+          </div>
+          <!-- Clear spacer separating the nav arrows from the document tools below. -->
+          <div class="rail-divider rail-divider-clear"></div>
           <!-- Document tools (compact icon triggers; wide controls open as rail-anchored flyouts) -->
           <div class="rail-group rail-tools-group">
             <button class="queue-tool-btn" id="btn-split-pdf" style="display:none;" title="Split PDF…" data-help-key="split">&#9986;</button>
