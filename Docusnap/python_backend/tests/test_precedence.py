@@ -416,8 +416,46 @@ def test_clean_authoritative_anchor_still_wins_tier_a():
     return f
 
 
+def test_keyword_name_value_edge_cleaned_at_capture():
+    print("input hygiene: leading OCR junk is stripped from a name-like keyword value AT CAPTURE")
+    f = 0
+    # The "--« Beaumont Care Homes Ltd -" case: a keyword_override name read carries
+    # leading OCR junk. It still WINS (highest authority), but the junk is stripped
+    # at capture so the winner is clean (trailing ' -' separator kept; interior intact).
+    results, _ = _run([{"key": "customer", "type": "text"}],
+        kw={"customer": {"value": "--« Beaumont Care Homes Ltd -", "confidence": 85,
+                         "method": "keyword_override"}})
+    if not check("keyword winner is edge-cleaned to 'Beaumont Care Homes Ltd -'",
+                 _val(results, "customer") == "Beaumont Care Homes Ltd -"):
+        f += 1
+    if not check("winning method stays keyword_override (precedence untouched)",
+                 _method(results, "customer") == "keyword_override"):
+        f += 1
+    print()
+    return f
+
+
+def test_passive_anchor_cannot_displace_keyword_override_name():
+    print("fence (Gary): a passive anchor_crop must NOT displace a keyword_override name incumbent")
+    f = 0
+    # Locks in the deliberate decision NOT to weaken admin-label authority: even a
+    # higher-confidence passive anchor cannot win over a keyword_override. This is the
+    # tripwire against a future "make the clean anchor win" change landing silently.
+    results, _ = _run([{"key": "customer", "type": "text"}],
+        kw={"customer": {"value": "Beaumont Care Homes Ltd", "confidence": 80, "method": "keyword_override"}},
+        anchor={"customer": {"value": "Wrong Name Ltd", "confidence": 99,
+                             "method": "anchor_crop", "authoritative": False}})
+    if not check("keyword_override 'Beaumont Care Homes Ltd' survives a 99% passive anchor",
+                 _val(results, "customer") == "Beaumont Care Homes Ltd"):
+        f += 1
+    print()
+    return f
+
+
 def main():
     failures = 0
+    failures += test_keyword_name_value_edge_cleaned_at_capture()
+    failures += test_passive_anchor_cannot_displace_keyword_override_name()
     failures += test_label_beats_generic_seed()
     failures += test_authoritative_anchor_beats_label_method_independent()
     failures += test_invalid_authoritative_date_yields_to_label()

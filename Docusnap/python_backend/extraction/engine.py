@@ -734,6 +734,30 @@ class ExtractionEngine:
         patterns_for_run = keyword.merge_label_overrides(
             self.patterns, self.label_overrides, document_slug)
         kw_results = keyword.extract_fields(ocr_text, field_keys, patterns_for_run)
+        # ── INPUT HYGIENE for name-like free-text keyword reads ── a keyword/label
+        # capture has NO crop-path cleaning, so OCR edge junk ("--« Beaumont Care
+        # Homes Ltd -") enters verbatim and — being the highest-authority source
+        # (keyword_override) — WINS, then only gets flagged downstream. Strip the
+        # SAME edge artefacts a crop read already drops, AT CAPTURE, so the junk
+        # never becomes "the answer" and the trace shows a clean winner. Edges only
+        # (interior preserved); structured/ref fields untouched. Stage 4.5 still
+        # edge-cleans the final winner as a catch-all (idempotent here). Reusable for
+        # every supplier/field. See value_quality.strip_name_edges.
+        _kw_charsets = self.patterns.get('field_charsets') or {}
+        _kw_types    = {f.get('key'): f.get('type') for f in (field_defs or [])}
+        for _kk, _kd in kw_results.items():
+            if not isinstance(_kd, dict):
+                continue
+            _kt = _kw_types.get(_kk)
+            if _kt in (None, 'text', 'multiline_text') and value_quality.is_name_like_field(_kk):
+                _kv = _kd.get('value')
+                if _kv:
+                    _kspec = _kw_charsets.get(_kt, _kw_charsets.get('default')) if _kw_charsets else None
+                    _kclean = value_quality.strip_name_edges(str(_kv), _kspec)
+                    if _kclean and _kclean != _kv:
+                        _kd['value'] = _kclean
+                        if 'display_value' in _kd:
+                            _kd['display_value'] = _kclean
         _pre_s1 = self._snap(results)
         self._remember_candidates('1_keyword', kw_results)
         for key, data in kw_results.items():
