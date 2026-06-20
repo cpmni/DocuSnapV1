@@ -425,6 +425,20 @@
               </select>
             </div>
           </div>
+
+          <div class="section">
+            <div class="section-title">OCR engine</div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Full-page OCR engine</div>
+                <div class="threshold-sub">Governs full-page document text only — zone, teach and template field reads always use Tesseract. RapidOCR is beta and falls back to Tesseract automatically if it isn't available.</div>
+              </div>
+              <select id="ocr-engine-select" class="field-select" style="width:160px;">
+                <option value="tesseract">Tesseract</option>
+                <option value="rapidocr">RapidOCR (beta)</option>
+              </select>
+            </div>
+          </div>
         </div>
       </div>
 

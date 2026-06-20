@@ -235,6 +235,23 @@ concurrencySelect.addEventListener('change', async () => {
   await api.setSetting('processing_concurrency', concurrencySelect.value);
 });
 
+// ── Full-page OCR engine (Stage 2 selector) ───────────────────────────────────
+// The backend seam (processing/handler.js + Python) already consumes `ocr_engine`;
+// this only persists the choice. Unset shows Tesseract, matching the shipped default
+// (the backend defaults the same way and only adds --ocr-engine for 'rapidocr'), so
+// existing installs are unaffected until an admin opts in.
+const ocrEngineSelect = document.getElementById('ocr-engine-select');
+async function loadOcrEngine() {
+  if (!ocrEngineSelect) return;
+  const v = await api.getSetting('ocr_engine');
+  ocrEngineSelect.value = (v === 'rapidocr') ? 'rapidocr' : 'tesseract';
+}
+loadOcrEngine();
+if (ocrEngineSelect) ocrEngineSelect.addEventListener('change', async () => {
+  try { await api.setSetting('ocr_engine', ocrEngineSelect.value === 'rapidocr' ? 'rapidocr' : 'tesseract'); }
+  catch { /* non-fatal; the saved value reloads on next open */ }
+});
+
 // ── File naming ───────────────────────────────────────────────────────────────
 const filenamePatternInput   = document.getElementById('filename-pattern-input');
 const filenamePatternMsg     = document.getElementById('filename-pattern-msg');

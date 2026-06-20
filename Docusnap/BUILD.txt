@@ -93,6 +93,13 @@ Open a terminal and run:
 Verify:
   py -3.12 -c "import pytesseract, PIL, pypdfium2, requests, imagehash; print('OK')"
 
+OPTIONAL — RapidOCR full-page OCR engine (beta, opt-in; NOT required):
+  py -3.12 -m pip install -r python_backend\requirements-ocr.txt
+  The app defaults to Tesseract and falls back to it automatically if RapidOCR
+  is absent, so this is only needed to try RapidOCR (Settings -> OCR engine).
+  Bundled PP-OCR models are offline (no download). Adds ~80-180 MB.
+  Full provisioning + offline verification: python_backend\OCR_RUNTIME.md
+
 
 ────────────────────────────────────────────────────────────────────────────────
 1.6  rcedit (needed for building the installer)
@@ -162,6 +169,13 @@ STEP A — Bundle Python:
 
   python -m venv vendor\python
   vendor\python\Scripts\pip install pytesseract pillow pypdfium2 requests imagehash
+
+  OPTIONAL — bundle the RapidOCR engine (beta, opt-in):
+    vendor\python\Scripts\pip install -r python_backend\requirements-ocr.txt
+    This also installs RapidOCR's bundled PP-OCR ONNX models (offline, no
+    download) under vendor\python\Lib\site-packages\rapidocr_onnxruntime\models\.
+    Skipping it keeps a Tesseract-only build (the default); the app falls back to
+    Tesseract if RapidOCR isn't bundled. Details: python_backend\OCR_RUNTIME.md
 
 STEP B — Bundle Tesseract:
 

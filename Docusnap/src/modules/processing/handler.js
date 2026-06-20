@@ -155,6 +155,14 @@ function buildTrainingArgs(db, configPath, logger = null) {
   try { bornDigitalOn = learning.getSetting(db, 'born_digital_enabled') !== 'false'; }
   catch { /* older DB without the setting -> default on */ }
 
+  // Full-page OCR engine selection (Stage 1). DEFAULT 'tesseract' = byte-identical:
+  // only the opt-in 'rapidocr' adds a flag, so an existing install's command line is
+  // unchanged. Governs full-page OCR ONLY and falls back to Tesseract in Python if the
+  // RapidOCR runtime/models aren't bundled. Crop/zone/anchor OCR is unaffected.
+  let ocrEngine = 'tesseract';
+  try { if (learning.getSetting(db, 'ocr_engine') === 'rapidocr') ocrEngine = 'rapidocr'; }
+  catch { /* older DB without the setting -> default tesseract */ }
+
   const args = [
     '--fields-file',    fieldsFile,
     '--hints-file',     hintsFile,
@@ -168,6 +176,7 @@ function buildTrainingArgs(db, configPath, logger = null) {
   ];
   if (registrationOn) args.push('--registration');
   if (bornDigitalOn) args.push('--born-digital');
+  if (ocrEngine === 'rapidocr') args.push('--ocr-engine', 'rapidocr');
 
   return {
     args,

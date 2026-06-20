@@ -107,6 +107,10 @@ def main():
     parser.add_argument("--born-digital", action="store_true",
                         help="use a PDF's embedded text layer (exact) instead of OCR "
                              "for pages that carry one; inert for image-only/scanned PDFs")
+    parser.add_argument("--ocr-engine", default="tesseract",
+                        help="full-page OCR engine: 'tesseract' (default, byte-identical) "
+                             "| 'rapidocr' (opt-in; falls back to tesseract if the runtime/"
+                             "models are unavailable). Crop/zone/anchor OCR always uses Tesseract.")
     parser.add_argument("--trace", action="store_true")
     # Dev-only: directory for temporary OCR crop slices (set by the handler only
     # while the inspector is open). Ignored unless --trace is also set.
@@ -143,6 +147,13 @@ def main():
     templates      = load_json_arg(None, args.templates_file) or []
     label_overrides = load_json_arg(None, args.label_overrides_file) or []
     enhance_params = load_json_arg(None, args.enhance_file)   or None
+
+    # Full-page OCR engine (default 'tesseract' = byte-identical). RapidOCR is opt-in
+    # and falls back to Tesseract if its runtime/models are unavailable; crop/zone/
+    # anchor OCR is unaffected by this selection. Named ocr_engine to avoid colliding
+    # with the ExtractionEngine `engine` below.
+    from ocr.engine import get_engine
+    ocr_engine = get_engine(args.ocr_engine)
 
     emit({
         "type": "log",
@@ -206,7 +217,7 @@ def main():
             # OCR
             log(f"  OCR: {filepath.name}")
             ocr_text, page_images = extract_text_and_images(
-                filepath, enhance_params, born_digital=args.born_digital)
+                filepath, enhance_params, born_digital=args.born_digital, engine=ocr_engine)
 
             if not ocr_text.strip():
                 raise ValueError("OCR returned no text — is the scan readable?")

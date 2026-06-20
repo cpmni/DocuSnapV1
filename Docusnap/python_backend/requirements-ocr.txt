@@ -1,0 +1,23 @@
+# requirements-ocr.txt — OPT-IN RapidOCR full-page OCR engine runtime (Stage 3).
+#
+# NOT installed by default and NOT bundled by the standard build. The shipped OCR
+# default stays Tesseract; RapidOCR is chosen per-install via Settings -> OCR engine
+# and falls back to Tesseract AUTOMATICALLY if this runtime is absent or fails to init
+# (see python_backend/ocr/engine.py). Provisioning + offline verification:
+# python_backend/OCR_RUNTIME.md.
+#
+# Commercial-use licences (all safe; no GPL/AGPL anywhere in this stack):
+#   rapidocr-onnxruntime  Apache-2.0   (the wheel BUNDLES the PP-OCR det/rec/cls ONNX
+#                                       models, themselves Apache-2.0 — offline, no download)
+#   onnxruntime           MIT          (CPU build — do NOT use onnxruntime-gpu)
+#   transitive (pulled automatically by rapidocr-onnxruntime):
+#     opencv-python        Apache-2.0
+#     pyclipper            BSD-3-Clause
+#     shapely              BSD-3-Clause
+#     PyYAML               MIT
+#   already present in the backend: numpy (BSD-3-Clause), Pillow (HPND/MIT-like)
+#
+# Pinned to the tested series. During provisioning, capture `pip freeze` of the
+# resolved versions into a full lock for reproducible packaged builds.
+rapidocr-onnxruntime~=1.3.0
+onnxruntime~=1.17.0
