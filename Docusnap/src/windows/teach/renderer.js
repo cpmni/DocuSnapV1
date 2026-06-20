@@ -378,16 +378,16 @@ function renderFieldRail(){
 }
 async function readBack(box){
   const f=curField();
-  $('rg-readback').innerHTML='<span class=”muted”>Reading…</span>';
+  $('rg-readback').innerHTML='<span class="muted">Reading…</span>';
   let value=''; try{ value=(await D.ocrRegion(await cropB64(box)))||''; }catch{}
   value=(value||'').trim();
   const anchor=await autoLabel(box);
   if (!value){
     $('rg-readback').innerHTML=
-      `<div class=”warn”>Couldn't read that clearly. Try a bigger box, or type the value:</div>`+
-      `<div style=”margin-top:8px;display:flex;gap:8px;align-items:center”>`+
-        `<input type=”text” id=”rb-manual-input” style=”flex:1;background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-radius:8px;padding:8px 10px;font-size:14px;font-family:inherit” placeholder=”${esc(f.label)} value…”>`+
-        `<button class=”btn ghost” id=”rb-type”>Use this</button>`+
+      `<div class="warn">Couldn't read that clearly. Try a bigger box, or type the value:</div>`+
+      `<div style="margin-top:8px;display:flex;gap:8px;align-items:center">`+
+        `<input type="text" id="rb-manual-input" style="flex:1;background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-radius:8px;padding:8px 10px;font-size:14px;font-family:inherit" placeholder="${esc(f.label)} value…">`+
+        `<button class="btn ghost" id="rb-type">Use this</button>`+
       `</div>`;
     const mi=$('rb-manual-input'); mi.focus();
     const doManual=()=>{ const v=mi.value.trim(); if(!v){mi.style.borderColor='var(--err)';return;} store(f,box,anchor,v,true); showValueConfirm(f,state.results[f.key]); };
@@ -401,10 +401,10 @@ async function readBack(box){
 // Value is stored; let the user confirm it before moving to the anchor step.
 function showValueConfirm(f, r){
   $('rg-readback').innerHTML=
-    `<div>I read: <span class=”val mono”>${esc(r.value)}</span> — is that right?</div>`+
-    `<div style=”margin-top:10px;display:flex;gap:8px;flex-wrap:wrap”>`+
-      `<button class=”btn primary” id=”rb-yes”>Yes →</button>`+
-      `<button class=”btn ghost” id=”rb-redraw”>Redraw</button>`+
+    `<div>I read: <span class="val mono">${esc(r.value)}</span> — is that right?</div>`+
+    `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">`+
+      `<button class="btn primary" id="rb-yes">Yes →</button>`+
+      `<button class="btn ghost" id="rb-redraw">Redraw</button>`+
     `</div>`;
   $('rb-yes').onclick=()=>enterAnchorMode();
   $('rb-redraw').onclick=()=>{ delete state.results[f.key]; promptField(); };
@@ -415,15 +415,15 @@ function enterAnchorMode(){
   const f=curField(), r=f&&state.results[f.key]; if(!r) return;
   drawMode='anchor';
   $('rg-prompt').textContent=`Step 2 — mark the label for ${f.label}`;
-  $('rg-sub').textContent=`Draw a box around the printed label near the value (e.g. “${f.label}:”). You can draw it anywhere — the relative offset is remembered. Or skip if there's no clear label.`;
+  $('rg-sub').textContent=`Draw a box around the printed label near the value (e.g. "${f.label}:"). You can draw it anywhere — the relative offset is remembered. Or skip if there's no clear label.`;
   const lbl=r.anchor_text
-    ?`Auto-detected: <span class=”mono”>”${esc(r.anchor_text)}”</span>`
+    ?`Auto-detected: <span class="mono">"${esc(r.anchor_text)}"</span>`
     :'No label auto-detected — will use position only.';
   $('rg-readback').innerHTML=
-    `<div class=”muted” style=”font-size:13px”>${lbl}</div>`+
-    `<div style=”margin-top:10px;display:flex;gap:8px;flex-wrap:wrap”>`+
-      `<button class=”btn primary” id=”rb-skip-anchor”>Skip label →</button>`+
-      `<button class=”btn ghost” id=”rb-redraw-val”>← Redraw value</button>`+
+    `<div class="muted" style="font-size:13px">${lbl}</div>`+
+    `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">`+
+      `<button class="btn primary" id="rb-skip-anchor">Skip label →</button>`+
+      `<button class="btn ghost" id="rb-redraw-val">← Redraw value</button>`+
     `</div>`;
   $('rb-skip-anchor').onclick=()=>{ r.status='done'; drawMode='value'; advanceField(); };
   $('rb-redraw-val').onclick=()=>{ delete state.results[f.key]; promptField(); };
@@ -431,7 +431,7 @@ function enterAnchorMode(){
 }
 async function captureAnchor(box){
   const f=curField(), r=f&&state.results[f.key]; if(!r){ drawMode='value'; return; }
-  $('rg-readback').innerHTML='<span class=”muted”>Reading the label…</span>';
+  $('rg-readback').innerHTML='<span class="muted">Reading the label…</span>';
   let text=''; try{ const res=await D.ocrRegionBoxes(await cropB64(box)); text=res&&res.text?String(res.text).trim():''; }catch{}
   text=(text||'').split('\n')[0].slice(0,40);
   r.anchor={x:box.x,y:box.y,w:box.w,h:box.h};
