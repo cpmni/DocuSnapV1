@@ -123,7 +123,19 @@ def build_token_lexicon(value_counts, confirmed_count=None):
         # canonical surface spelling: max doc-count, tie -> lexicographic
         surface = max(surfaces.items(), key=lambda kv: (kv[1], _neg_lex(kv[0])))[0] if surfaces else norm
         positions[i] = {"norm": norm, "surface": surface, "doc_freq": doc_count / n_docs}
-    return {"positions": positions, "n_docs": n_docs}
+
+    # EXPECTED LENGTH — the longest CONSECUTIVE run of content positions that a strong
+    # majority (>= _STABLE_FREQ) of confirmed docs actually reach. History that is
+    # always "<stable prefix> - <variable site>" reaches position 4 in (nearly) every
+    # doc, so expected_len = 5. A value that STOPS SHORT of this ("Beaumont Care Homes
+    # Ltd -" with the site truncated off) is missing the variable tail history always
+    # carries — NOT a conforming "new site", so conforms_to_lexicon rejects it and the
+    # shape flag is kept. pos_doc_count[i] = docs (weighted) that have content at i.
+    pos_doc_count = {i: sum(nc.values()) for i, nc in pos_norm_counts.items()}
+    expected_len = 0
+    while pos_doc_count.get(expected_len, 0) >= _STABLE_FREQ * n_docs:
+        expected_len += 1
+    return {"positions": positions, "n_docs": n_docs, "expected_len": expected_len}
 
 
 def _neg_lex(s):
@@ -197,15 +209,17 @@ def conforms_to_lexicon(value, lexicon):
     positions = lexicon.get("positions") or {}
     if not positions:
         return False
-    content_i = 0
-    matched = 0
-    for raw in str(value).split():
-        if not _is_content(raw):
-            continue                       # separator — does not occupy a content position
-        stable = positions.get(content_i)
-        if stable:
-            if normalise_for_tokens(raw) != stable["norm"]:
-                return False               # wrong/garbled token at a stable position
-            matched += 1
-        content_i += 1
-    return matched == len(positions)       # every stable prefix token must be present & correct
+    content_toks = [t for t in str(value).split() if _is_content(t)]
+    # TRUNCATION GUARD: the value must reach the length history consistently carries.
+    # A value missing its variable TAIL ("Beaumont Care Homes Ltd -" with the site
+    # cut off) is NOT a conforming "new site" — history always had a site there — so
+    # it falls through to the shape flag instead of being silently accepted.
+    if len(content_toks) < (lexicon.get("expected_len") or 0):
+        return False
+    # Every STABLE prefix position must be present AND carry the canonical token.
+    for i, st in positions.items():
+        if i >= len(content_toks):
+            return False                   # a stable prefix token is missing entirely
+        if normalise_for_tokens(content_toks[i]) != st["norm"]:
+            return False                   # wrong/garbled token at a stable position
+    return True

@@ -99,6 +99,15 @@ def main():
     f += not check("missing a stable prefix token does NOT conform",
                    conforms_to_lexicon("Beaumont Care - Newtownabbey", site) is False)
     f += not check("empty lexicon -> does not conform", conforms_to_lexicon("anything", {"positions": {}, "n_docs": 0}) is False)
+    # TRUNCATION GUARD: history always has a site after "Ltd"; a value missing it
+    # (the site cut off by a too-narrow anchor crop) must NOT conform — it stays flagged.
+    ltd_site = build_token_lexicon({"Beaumont Care Homes Ltd - Parkview": 3, "Beaumont Care Homes Ltd - Bangor": 3,
+                                    "Beaumont Care Homes Ltd - Holywood": 3, "Beaumont Care Homes Ltd - Belmont": 3}, 12)
+    f += not check("expected_len learned from history (= 5 content tokens)", ltd_site.get("expected_len") == 5)
+    f += not check("full new site conforms", conforms_to_lexicon("Beaumont Care Homes Ltd - Clandeboye", ltd_site) is True)
+    f += not check("TRUNCATED 'Ltd -' (site cut off) does NOT conform -> stays flagged",
+                   conforms_to_lexicon("Beaumont Care Homes Ltd -", ltd_site) is False)
+    f += not check("no-site 'Ltd' does NOT conform", conforms_to_lexicon("Beaumont Care Homes Ltd", ltd_site) is False)
 
     print("\ndeterminism + empties")
     f += not check("lexicon build is deterministic", build_token_lexicon(HISTORY, N) == lex)
