@@ -7,7 +7,7 @@
  * Each module registers its own IPC handlers via module.register(ipcMain, getDb, ...).
  */
 
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, screen } = require('electron');
 const path = require('path');
 const fs   = require('fs');
 
@@ -243,14 +243,29 @@ const winStateFile = () => path.join(app.getPath('userData'), 'window-state.json
 function loadWinStates() { try { return JSON.parse(fs.readFileSync(winStateFile(), 'utf8')); } catch { return {}; } }
 function saveWinStates(s) { try { fs.writeFileSync(winStateFile(), JSON.stringify(s, null, 2)); } catch { /* ignore */ } }
 
+// True when a saved window rect still falls on a CONNECTED display, so a stale
+// position (an unplugged monitor / changed layout) can't restore a window
+// off-screen where it looks like it "won't open". Needs a usable overlap.
+function _boundsVisible(b) {
+  if (!b || typeof b.x !== 'number' || typeof b.y !== 'number') return false;
+  try {
+    return screen.getAllDisplays().some((d) => {
+      const wa = d.workArea;
+      const ox = Math.min(b.x + (b.width  || 0), wa.x + wa.width)  - Math.max(b.x, wa.x);
+      const oy = Math.min(b.y + (b.height || 0), wa.y + wa.height) - Math.max(b.y, wa.y);
+      return ox >= 120 && oy >= 80;   // enough of the window is reachable to drag/use
+    });
+  } catch { return true; }   // screen unavailable (very early) — don't block restore
+}
+
 // Open maximized by default ("fullscreen"); once the user restores/resizes a
 // window, remember that and honour it next time. Fixed dialogs (resizable:false,
 // e.g. login/licence/onboarding) are left exactly as defined.
 function applyWindowState(win, name, options) {
   if (options.resizable === false) return;
   const st = loadWinStates()[name];
-  if (st && st.userSized && !st.maximized && st.bounds) win.setBounds(st.bounds);
-  else win.maximize();
+  if (st && st.userSized && !st.maximized && st.bounds && _boundsVisible(st.bounds)) win.setBounds(st.bounds);
+  else win.maximize();   // no saved size, or it would land off-screen → maximize
 
   let ready = false, t;
   win.once('ready-to-show', () => { ready = true; });   // ignore the programmatic default-maximize
@@ -270,7 +285,14 @@ function applyWindowState(win, name, options) {
 }
 
 function createWindow(name, options, htmlFile) {
-  if (windows[name]) { windows[name].focus(); return windows[name]; }
+  if (windows[name]) {
+    // Reuse a LIVE window. But a window destroyed abnormally (render-process-gone,
+    // a parent cascade, GPU crash) may never fire 'closed', leaving a STALE ref
+    // whose .focus() throws "Object has been destroyed" — which silently kills the
+    // opener (e.g. the Review button does nothing). Drop the corpse and recreate.
+    if (!windows[name].isDestroyed()) { windows[name].focus(); return windows[name]; }
+    delete windows[name];
+  }
 
   options = options || {};
   // Create HIDDEN and reveal on first paint (ready-to-show) so a panel never
@@ -554,8 +576,19 @@ app.whenReady().then(() => {
     // Every action inside Review — view queue, edit, confirm, defer, delete,
     // reprocess — is Admin/Edit territory (see review/handler.js). Read Only
     // has nothing to do there; their "search/view documents" surface is Search.
-    if (!authModule.hasRole('admin', 'edit')) return;
-    createWindow('review', { width: 1200, height: 800, minWidth: 900, minHeight: 600 });
+    if (!authModule.hasRole('admin', 'edit')) {
+      logger?.warn?.('[open-review] blocked: caller lacks admin/edit role');
+      return;
+    }
+    try {
+      const win = createWindow('review', { width: 1200, height: 800, minWidth: 900, minHeight: 600 });
+      const bounds = (win && !win.isDestroyed()) ? win.getBounds() : null;
+      logger?.log?.(`[open-review] window created (destroyed=${win?.isDestroyed?.()}, bounds=${JSON.stringify(bounds)})`);
+    } catch (e) {
+      // A corrupt registry entry must never permanently brick Review — log + heal.
+      logger?.warn?.(`[open-review] createWindow THREW: ${e && e.message}`);
+      try { delete windows['review']; } catch {}
+    }
   });
 
   // Open Review focused on a specific document (e.g. from "Edit in Review" in Search).
