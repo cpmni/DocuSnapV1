@@ -11,7 +11,7 @@
 const D = window.docusnap;
 const $ = (id) => document.getElementById(id);
 
-const TYPE_MAP = { Text: 'text', Date: 'date', Money: 'currency' };
+const TYPE_MAP = { Text: 'text', Date: 'date', Currency: 'currency', Number: 'number' };
 
 const state = {
   step: 0,
@@ -71,7 +71,9 @@ function canAdvance(){
     case 1: return !!state.doc;
     case 2: return !!$('type-grid').querySelector('.card.sel') &&
                    (!isNewTypeSelected() || newTypeReady());
-    case 3: return state.fields.length>0 && state.fields.every(f => state.results[f.key]);
+    case 3: return state.fields.length>0 && state.fields.every(f => {
+      const r=state.results[f.key]; return r && r.status !== 'pending';
+    });
     default: return true;
   }
 }
@@ -158,14 +160,15 @@ function renderNewFields(){
     const chip=document.createElement('span'); chip.className='chip'+(f.locked?' locked':'');
     if (f.locked){
       // Structural role: fixed type, no delete (mirrors the Settings 🔒 lock).
-      const tl = f.type==='date'?'Date':(f.type==='currency'?'Money':'Text');
+      const tl = f.type==='date'?'Date':(f.type==='currency'?'Currency':(f.type==='number'?'Number':'Text'));
       chip.innerHTML=`<span>${esc(f.label)}</span><span class="ftype">${tl}</span>`+
         `<span class="lock" title="Required field — it can’t be removed or retyped">🔒</span>`;
     } else {
       chip.innerHTML=`<span>${esc(f.label)}</span>`+
         `<select data-i="${i}"><option value="text"${f.type==='text'?' selected':''}>Text</option>`+
         `<option value="date"${f.type==='date'?' selected':''}>Date</option>`+
-        `<option value="currency"${f.type==='currency'?' selected':''}>Money</option></select>`+
+        `<option value="currency"${f.type==='currency'?' selected':''}>Currency</option>`+
+        `<option value="number"${f.type==='number'?' selected':''}>Number</option></select>`+
         `<span class="x" data-i="${i}">✕</span>`;
     }
     wrap.appendChild(chip);
@@ -212,7 +215,13 @@ async function commitTypeChoice(){
 }
 
 // ── Step 3: region selection ─────────────────────────────────────────────────
-let canvas, ctx, drag=null, drawnBox=null;
+// Two box kinds per field, drawn in the SAME normalised (0-1 of the page) coords
+// the Template Manager + review Template Wizard use, so they line up everywhere:
+//   value  (target) = GREEN  — what we read
+//   label  (anchor) = BLUE   — the printed words we FOLLOW if the layout shifts
+// drawMode routes the next drawn box; the value is required, the label is optional
+// (auto-detected when not drawn).
+let canvas, ctx, drag=null, drawnBox=null, drawMode='value';   // 'value' | 'anchor'
 // Zoom/pan for the page canvas — same model as the review preview: a CSS transform
 // (translate=pan, scale=zoom) on the canvas. Wiring + handlers live in bindCanvas.
 let tzZoom=1, tzPanX=0, tzPanY=0, _tzPan=null;
@@ -255,10 +264,15 @@ function redrawCanvas(){
   if (!state.img) return;
   ctx.clearRect(0,0,canvas.width,canvas.height);
   ctx.drawImage(state.img,0,0,canvas.width,canvas.height);
-  // existing captured boxes (faint)
+  // other captured fields' values (faint green)
   for (const f of state.fields){ const r=state.results[f.key]; if(r&&r.target&&r.status==='done') drawBox(r.target,'#3ecf8e',false); }
-  if (drawnBox) drawBox(drawnBox,'#4f8ef7',true);
-  if (drag) drawBox(drag,'#4f8ef7',true,true);
+  // current field: its label (blue) + value (green) — same colours as Template Manager
+  const cf=curField(), cr=cf?state.results[cf.key]:null;
+  if (cr&&cr.anchor) drawBox(cr.anchor,'#4f8ef7',true);
+  if (cr&&cr.target) drawBox(cr.target,'#3ecf8e',true);
+  else if (drawnBox) drawBox(drawnBox,'#3ecf8e',true);
+  // live drag rectangle, coloured by what we're drawing
+  if (drag) drawBox(drag, drawMode==='anchor'?'#4f8ef7':'#3ecf8e',true,true);
 }
 function drawBox(n,color,solid,dashed){
   const x=n.x*canvas.width,y=n.y*canvas.height,w=n.w*canvas.width,h=n.h*canvas.height;
@@ -276,7 +290,9 @@ function bindCanvas(){
   // LEFT-drag draws the box; right-click is reserved for panning (below).
   canvas.addEventListener('mousedown',e=>{ if(e.button!==0)return; const p=cpoint(e); drag={x:p.x,y:p.y,w:0,h:0,_sx:p.x,_sy:p.y}; });
   canvas.addEventListener('mousemove',e=>{ if(!drag)return; const p=cpoint(e); drag.x=Math.min(drag._sx,p.x);drag.y=Math.min(drag._sy,p.y);drag.w=Math.abs(p.x-drag._sx);drag.h=Math.abs(p.y-drag._sy); redrawCanvas(); });
-  window.addEventListener('mouseup',async()=>{ if(!drag)return; const b={x:drag.x,y:drag.y,w:drag.w,h:drag.h}; drag=null; if(b.w<0.01||b.h<0.008){redrawCanvas();return;} drawnBox=b; redrawCanvas(); await readBack(b); });
+  window.addEventListener('mouseup',async()=>{ if(!drag)return; const b={x:drag.x,y:drag.y,w:drag.w,h:drag.h}; drag=null; if(b.w<0.01||b.h<0.008){redrawCanvas();return;}
+    if (drawMode==='anchor'){ await captureAnchor(b); return; }
+    drawnBox=b; redrawCanvas(); await readBack(b); });
 
   // ── Zoom / pan (same model as the review preview) ────────────────────────────
   // Zoom via +/−/reset; pan via RIGHT-drag only (left-drag stays for drawing).
@@ -307,13 +323,44 @@ function bindCanvas(){
   window.addEventListener('resize',()=>{ if(state.img) redrawCanvas(); });
 }
 function curField(){ return state.fields[state.fieldIndex]; }
+function setValueBanner(f){
+  const idx=state.fieldIndex+1, total=state.fields.length;
+  $('rg-prompt').textContent=`Field ${idx} of ${total} — draw a box around the ${f.label}`;
+  $('rg-sub').textContent=`Drag a rectangle right over the value on the page (not the label next to it). After reading it you'll mark its label.`;
+}
 function promptField(){
   const f=curField(); if(!f) return;
-  $('rg-prompt').textContent=`Draw a box around the ${f.label}`;
-  $('rg-sub').textContent=`Drag a rectangle right over the value — e.g. the ${f.label.toLowerCase()} itself, not the words next to it.`;
-  $('rg-readback').innerHTML='';
+  drawMode='value';
+  setValueBanner(f);
+  $('rg-readback').innerHTML=`<div class="muted" style="margin-top:4px">Or, if this field is always the same on every document of this type: <button class="btn link" id="rb-fixed" style="padding:4px 8px">Fixed value</button></div>`;
+  $('rb-fixed').onclick=()=>showFixedInput(f);
   drawnBox=null; redrawCanvas();
   renderFieldRail();
+}
+function showFixedInput(f){
+  drawMode='value';
+  $('rg-prompt').textContent=`${f.label} — type the fixed value`;
+  $('rg-sub').textContent=`This value is always the same on every document of this type (e.g. the company name).`;
+  const existing=state.results[f.key];
+  const prev=(existing&&existing.status==='fixed')?existing.value||'':'';
+  $('rg-readback').innerHTML=
+    `<input type="text" id="rb-fixed-input" value="${esc(prev)}" placeholder="e.g. Document Solutions" `+
+    `style="width:100%;background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-radius:8px;padding:10px 12px;font-size:14px;font-family:inherit;margin-bottom:10px">`+
+    `<div style="display:flex;gap:8px">`+
+      `<button class="btn primary" id="rb-fixed-save">Save →</button>`+
+      `<button class="btn ghost" id="rb-fixed-cancel">Cancel</button>`+
+    `</div>`;
+  const inp=$('rb-fixed-input'); inp.focus(); inp.select();
+  const save=()=>{
+    const v=inp.value.trim();
+    if(!v){ inp.style.borderColor='var(--err)'; return; }
+    state.results[f.key]={value:v,target:null,anchor:null,anchor_text:null,status:'fixed'};
+    advanceField();
+  };
+  inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){e.preventDefault();save();} });
+  $('rb-fixed-save').onclick=save;
+  $('rb-fixed-cancel').onclick=()=>promptField();
+  drawnBox=null; redrawCanvas();
 }
 function renderFieldRail(){
   const done=state.fields.filter(f=>state.results[f.key]).length;
@@ -321,7 +368,7 @@ function renderFieldRail(){
   const list=$('rg-fieldlist'); list.innerHTML='';
   state.fields.forEach((f,i)=>{
     const r=state.results[f.key];
-    const cls=i===state.fieldIndex?'cur':''; const dot=r? (r.status==='skip'?'skip':'done') : (i===state.fieldIndex?'cur':'');
+    const cls=i===state.fieldIndex?'cur':''; const dot=r? (r.status==='skip'?'skip':(r.status==='fixed'?'fixed':(r.status==='pending'?'cur':'done'))) : (i===state.fieldIndex?'cur':'');
     const row=document.createElement('div'); row.className='fieldrow '+cls;
     row.innerHTML=`<span class="dot ${dot}"></span><span>${esc(f.label)}</span>`;
     row.onclick=()=>{ state.fieldIndex=i; promptField(); };
@@ -331,23 +378,70 @@ function renderFieldRail(){
 }
 async function readBack(box){
   const f=curField();
-  $('rg-readback').innerHTML='<span class="muted">Reading…</span>';
+  $('rg-readback').innerHTML='<span class=”muted”>Reading…</span>';
   let value=''; try{ value=(await D.ocrRegion(await cropB64(box)))||''; }catch{}
   value=(value||'').trim();
   const anchor=await autoLabel(box);
   if (!value){
-    $('rg-readback').innerHTML=`<div class="warn">Hmm, I couldn't read that clearly. Try a slightly bigger box, or:</div>`+
-      `<div style="margin-top:8px;display:flex;gap:8px"><button class="btn ghost" id="rb-type">Type it in</button></div>`;
-    $('rb-type').onclick=()=>{ const v=prompt(`Type the ${f.label} value:`); if(v){ store(f,box,anchor,v.trim()); } };
+    $('rg-readback').innerHTML=
+      `<div class=”warn”>Couldn't read that clearly. Try a bigger box, or type the value:</div>`+
+      `<div style=”margin-top:8px;display:flex;gap:8px;align-items:center”>`+
+        `<input type=”text” id=”rb-manual-input” style=”flex:1;background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-radius:8px;padding:8px 10px;font-size:14px;font-family:inherit” placeholder=”${esc(f.label)} value…”>`+
+        `<button class=”btn ghost” id=”rb-type”>Use this</button>`+
+      `</div>`;
+    const mi=$('rb-manual-input'); mi.focus();
+    const doManual=()=>{ const v=mi.value.trim(); if(!v){mi.style.borderColor='var(--err)';return;} store(f,box,anchor,v,true); showValueConfirm(f,state.results[f.key]); };
+    $('rb-type').onclick=doManual;
+    mi.addEventListener('keydown',e=>{ if(e.key==='Enter'){e.preventDefault();doManual();} });
     return;
   }
   store(f, box, anchor, value, /*pending*/true);
-  $('rg-readback').innerHTML=`<div>I read: <span class="val mono">${esc(value)}</span> — is that right?`+
-    (anchor.anchor_text?`<div class="muted" style="margin-top:4px">I'll find it using the label “${esc(anchor.anchor_text)}”.</div>`:'')+
-    `</div><div style="margin-top:10px;display:flex;gap:8px"><button class="btn primary" id="rb-yes">Yes, next →</button>`+
-    `<button class="btn ghost" id="rb-redraw">Redraw</button></div>`;
-  $('rb-yes').onclick=()=>{ state.results[f.key].status='done'; advanceField(); };
+  showValueConfirm(f, state.results[f.key]);
+}
+// Value is stored; let the user confirm it before moving to the anchor step.
+function showValueConfirm(f, r){
+  $('rg-readback').innerHTML=
+    `<div>I read: <span class=”val mono”>${esc(r.value)}</span> — is that right?</div>`+
+    `<div style=”margin-top:10px;display:flex;gap:8px;flex-wrap:wrap”>`+
+      `<button class=”btn primary” id=”rb-yes”>Yes →</button>`+
+      `<button class=”btn ghost” id=”rb-redraw”>Redraw</button>`+
+    `</div>`;
+  $('rb-yes').onclick=()=>enterAnchorMode();
   $('rb-redraw').onclick=()=>{ delete state.results[f.key]; promptField(); };
+}
+// After confirming the value, auto-enter anchor mode so the user can mark (or skip)
+// the printed label Scan Finder follows when the layout shifts.
+function enterAnchorMode(){
+  const f=curField(), r=f&&state.results[f.key]; if(!r) return;
+  drawMode='anchor';
+  $('rg-prompt').textContent=`Step 2 — mark the label for ${f.label}`;
+  $('rg-sub').textContent=`Draw a box around the printed label near the value (e.g. “${f.label}:”). You can draw it anywhere — the relative offset is remembered. Or skip if there's no clear label.`;
+  const lbl=r.anchor_text
+    ?`Auto-detected: <span class=”mono”>”${esc(r.anchor_text)}”</span>`
+    :'No label auto-detected — will use position only.';
+  $('rg-readback').innerHTML=
+    `<div class=”muted” style=”font-size:13px”>${lbl}</div>`+
+    `<div style=”margin-top:10px;display:flex;gap:8px;flex-wrap:wrap”>`+
+      `<button class=”btn primary” id=”rb-skip-anchor”>Skip label →</button>`+
+      `<button class=”btn ghost” id=”rb-redraw-val”>← Redraw value</button>`+
+    `</div>`;
+  $('rb-skip-anchor').onclick=()=>{ r.status='done'; drawMode='value'; advanceField(); };
+  $('rb-redraw-val').onclick=()=>{ delete state.results[f.key]; promptField(); };
+  redrawCanvas();
+}
+async function captureAnchor(box){
+  const f=curField(), r=f&&state.results[f.key]; if(!r){ drawMode='value'; return; }
+  $('rg-readback').innerHTML='<span class=”muted”>Reading the label…</span>';
+  let text=''; try{ const res=await D.ocrRegionBoxes(await cropB64(box)); text=res&&res.text?String(res.text).trim():''; }catch{}
+  text=(text||'').split('\n')[0].slice(0,40);
+  r.anchor={x:box.x,y:box.y,w:box.w,h:box.h};
+  r.anchor_text = text || r.anchor_text || null;
+  r.anchorManual = true;
+  r.status = 'done';
+  drawMode='value';
+  redrawCanvas();
+  toast('Label captured');
+  advanceField();
 }
 function store(f,box,anchor,value,pending){
   state.results[f.key]={ value, target:box, anchor:anchor.box, anchor_text:anchor.anchor_text, status:pending?'pending':'done' };
@@ -382,7 +476,7 @@ async function autoLabel(box){
     try{
       const res=await D.ocrRegionBoxes(await cropB64(band));
       const text=res&&res.text?String(res.text).trim():'';
-      if (text && /[A-Za-z]/.test(text)){
+      if (text && text.replace(/[^A-Za-z]/g,'').length>=3){
         let abox={x:band.x,y:band.y,w:band.w,h:band.h};
         if (Array.isArray(res.box)){ // tighten to the detected word (box in crop-original px)
           const cw=band.w*state.img.naturalWidth, ch=band.h*state.img.naturalHeight;
@@ -404,16 +498,18 @@ async function autoLabel(box){
 // ── Step 4: summary + commit ─────────────────────────────────────────────────
 function renderSummary(){
   const s=$('commit-summary'); s.innerHTML='';
-  addRow(s,'Document type',state.docTypeName,false);
+  addRow(s,'Document type',state.docTypeName,false,false);
   for (const f of state.fields){
     const r=state.results[f.key];
+    const isFixed=r&&r.status==='fixed';
     const val = r&&r.status==='skip' ? "— you'll fill this in when reviewing" : (r?r.value:'');
-    addRow(s,f.label,val||'—', r&&r.status==='skip');
+    addRow(s,f.label,val||'—', r&&(r.status==='skip'||!val), isFixed);
   }
 }
-function addRow(parent,k,v,empty){
+function addRow(parent,k,v,empty,isFixed){
   const row=document.createElement('div'); row.className='srow';
-  row.innerHTML=`<span class="k">${esc(k)}</span><span class="v${empty?' empty':''}">${esc(v)}</span>`;
+  const badge=isFixed?` <span class="muted" style="font-size:11px;font-weight:400">(fixed)</span>`:'';
+  row.innerHTML=`<span class="k">${esc(k)}</span><span class="v${empty?' empty':''}">${esc(v)}${badge}</span>`;
   parent.appendChild(row);
 }
 async function doCommit(){
@@ -429,10 +525,16 @@ async function doCommit(){
     });
     if (!promo||!promo.success){ throw new Error((promo&&promo.error)||'Could not create the template.'); }
     const templateId=promo.templateId;
-    // 2) save a Stage 0.5 mapping per captured field
+    // 2a) save locked fixed values (admin override — survives confirmed-history rebuilds)
     let warnLandmarks=false;
     for (const f of state.fields){
-      const r=state.results[f.key]; if(!r||r.status==='skip'||!r.target) continue;
+      const r=state.results[f.key]; if(!r||r.status!=='fixed'||!r.value) continue;
+      try{ await D.setTemplateFieldFixed(templateId, f.key, r.value); }
+      catch(e){ console.warn('set fixed value failed:', e); }
+    }
+    // 2b) save a Stage 0.5 mapping per captured (non-fixed) field
+    for (const f of state.fields){
+      const r=state.results[f.key]; if(!r||r.status==='skip'||r.status==='fixed'||!r.target) continue;
       const a=r.anchor||{x:Math.max(0,r.target.x-0.1),y:r.target.y,w:0.1,h:r.target.h};
       await D.saveTemplateMapping(templateId,{
         field_key:f.key, page_number:0, anchor_text:r.anchor_text||null,

@@ -93,7 +93,7 @@
   .fieldrow{display:flex;align-items:center;gap:8px;padding:7px 4px;font-size:14px;border-radius:6px}
   .fieldrow.cur{background:var(--surface2)}
   .dot{width:10px;height:10px;border-radius:50%;background:var(--border2);flex:0 0 auto}
-  .dot.done{background:var(--ok)} .dot.cur{background:var(--accent)} .dot.skip{background:var(--warn)}
+  .dot.done{background:var(--ok)} .dot.cur{background:var(--accent)} .dot.skip{background:var(--warn)} .dot.fixed{background:var(--muted)}
   .readback{margin-top:12px;font-size:13px}
   .readback .val{font-size:15px;color:var(--ok)}
   .warn{color:var(--warn);font-size:13px;margin-top:8px}
@@ -149,10 +149,14 @@
     <section class="step active" data-step="0">
       <h1>Let's teach Scan Finder a new document</h1>
       <p class="lead">You'll show Scan Finder one example — say an invoice from a supplier you use often.
-        You point out where the important details sit on the page, and from then on it knows where to look.
+        For each detail you draw a box around its <b style="color:var(--ok)">value</b>, then mark the
+        printed <b style="color:var(--accent)">label</b> next to it. The label is the anchor Scan Finder follows,
+        so it still finds the value even when the next scan is shifted, scaled or a little crooked.
+        Fields that are always the same (like the company name) can be set as a <b>fixed value</b> instead — no drawing needed.
         It takes a few minutes the first time, and you can change anything later.</p>
-      <div class="pill-strip"><b>1</b> Pick the document &nbsp;→&nbsp; <b>2</b> Point out the details &nbsp;→&nbsp; <b>3</b> Done</div>
-      <p class="muted">Nothing is saved until the very end. You can go back at any point.</p>
+      <div class="pill-strip"><b>1</b> Pick the document &nbsp;→&nbsp; <b>2</b> Draw values &amp; labels (or set fixed) &nbsp;→&nbsp; <b>3</b> Done</div>
+      <p class="muted">The boxes you draw are the exact ones the Template Manager shows later.
+        Nothing is saved until the very end — you can go back at any point.</p>
     </section>
 
     <!-- Step 1: Choose the scanned document -->
@@ -194,8 +198,8 @@
     <!-- Step 3: Point out the details -->
     <section class="step" data-step="3">
       <div class="banner">
-        <div class="big" id="rg-prompt">Draw a box around the value</div>
-        <div class="sub" id="rg-sub">Drag a rectangle right over where the value is printed — not the label.</div>
+        <div class="big" id="rg-prompt">Step 1 — draw a box around the value</div>
+        <div class="sub" id="rg-sub">Drag a rectangle over the value itself. After I read it, you can also mark its label.</div>
       </div>
       <div class="regionwrap">
         <div>
@@ -216,6 +220,10 @@
           <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px">
             <button class="btn ghost" id="rg-redraw">Redraw</button>
             <button class="btn link" id="rg-skip">Skip for now</button>
+          </div>
+          <div class="muted" style="font-size:12px;margin-top:12px;line-height:1.6">
+            <span style="color:#3ecf8e;font-weight:700">▮</span> value (what I read)<br>
+            <span style="color:#4f8ef7;font-weight:700">▮</span> label (the anchor I follow)
           </div>
         </div>
       </div>
