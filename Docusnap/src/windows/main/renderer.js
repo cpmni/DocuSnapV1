@@ -444,6 +444,33 @@ window.docusnap.onProgress((msg) => {
   }
 });
 
+// ── Watch-folder activity in the live log strip ──────────────────────────────
+// The watch folder emits the same per-file progress as a manual run, on its own
+// 'watch-progress' channel. Surface it in the SAME bottom log strip so background
+// imports are visible — but WITHOUT touching the manual batch stats / progress
+// bar / results table (those are built for one discrete user-initiated batch; the
+// watcher streams per-file and runs files in parallel).
+function handleWatchProgress(msg) {
+  if (running) return;            // a manual run owns the strip; the watcher defers anyway
+  logPanel.classList.add('visible');
+  switch (msg.type) {
+    case 'file_begin':
+      logStatus.textContent = 'Watch folder — processing…';
+      appendLog(`[Watch] → ${msg.filename}`);
+      break;
+    case 'file_done':
+      if (msg.success) appendLog(`[Watch]   ✓ ${msg.original_filename || ''} → ${msg.new_filename || 'filed'}`, 'ok');
+      else             appendLog(`[Watch]   ✗ ${msg.original_filename || ''}: ${msg.error || 'error'}`, 'err');
+      logStatus.textContent = 'Watch folder — idle';
+      break;
+    case 'log':
+      if (msg.text) appendLog(`[Watch] ${msg.text}`, msg.level || '');
+      break;
+    // per-file 'start' (total:1) is noise for a continuous watcher — ignored
+  }
+}
+window.docusnap.onWatchProgress?.(handleWatchProgress);
+
 // ── Account: current-user chip, role-based nav, sign out, change password ────
 const ROLE_LABELS = { admin: 'Admin', edit: 'Edit', readonly: 'Read Only' };
 

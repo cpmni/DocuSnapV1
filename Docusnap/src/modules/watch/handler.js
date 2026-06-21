@@ -304,8 +304,13 @@ async function _processFile(db, filename) {
             else if (msg.level === 'warn') _log('warn', `[watch] Python: ${msg.text}`);
           }
           notifyMainWindow('process-progress', msg);
+          // Dedicated channel for the main-window log strip — isolated from the
+          // manual 'process-progress' listener churn (which removeAllListeners on
+          // each manual run), so watch activity always reaches the log.
+          notifyMainWindow('watch-progress', msg);
         } catch {
           notifyMainWindow('process-progress', { type: 'log', text: trimmed });
+          notifyMainWindow('watch-progress', { type: 'log', text: trimmed });
         }
       }
     });

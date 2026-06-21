@@ -254,6 +254,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   // extraction trace route to this window. No window is opened.
   reviewTraceSet:      (on, pw) => ipcRenderer.invoke('review-trace-set', on, pw),
   onProcessProgress:   (cb) => ipcRenderer.on('process-progress', (_e, m) => cb(m)),
+  onWatchProgress:     (cb) => ipcRenderer.on('watch-progress',   (_e, m) => cb(m)),
   onProcessTrace:      (cb) => ipcRenderer.on('process-trace',    (_e, m) => cb(m)),
   devGetSessionDocs:   ()        => ipcRenderer.invoke('dev-get-session-docs'),
   devGetSessionDoc:    (key)     => ipcRenderer.invoke('dev-get-session-doc', key),
