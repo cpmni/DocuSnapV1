@@ -209,6 +209,12 @@ async function startProcessing() {
 }
 
 function handleProgress(msg) {
+  // Watch-folder events arrive on this shared channel too (tagged source:'watch').
+  // They're handled separately by handleWatchProgress (log strip + Session Stats);
+  // this manual-batch handler must ignore them, or — since it stays wired after a
+  // manual run — it double-counts each watch doc and resets "Found" to the
+  // watcher's per-file total of 1.
+  if (msg.source === 'watch') return;
   switch (msg.type) {
 
     case 'start':

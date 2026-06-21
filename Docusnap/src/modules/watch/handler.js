@@ -312,13 +312,16 @@ async function _processFile(db, filename) {
             if      (msg.level === 'err')  _log('err',  `[watch] Python: ${msg.text}`);
             else if (msg.level === 'warn') _log('warn', `[watch] Python: ${msg.text}`);
           }
-          notifyMainWindow('process-progress', msg);
-          // Dedicated channel for the main-window log strip — isolated from the
-          // manual 'process-progress' listener churn (which removeAllListeners on
-          // each manual run), so watch activity always reaches the log.
+          // Tag the SHARED 'process-progress' as watch-sourced so the main
+          // window's manual-batch handler (handleProgress, which persists after a
+          // run) can ignore it — otherwise it double-counts watch docs and resets
+          // "Found" to the watcher's per-file total of 1.
+          notifyMainWindow('process-progress', { ...msg, source: 'watch' });
+          // Dedicated channel for the main-window log strip + Session Stats —
+          // isolated from the manual 'process-progress' listener churn.
           notifyMainWindow('watch-progress', msg);
         } catch {
-          notifyMainWindow('process-progress', { type: 'log', text: trimmed });
+          notifyMainWindow('process-progress', { type: 'log', text: trimmed, source: 'watch' });
           notifyMainWindow('watch-progress', { type: 'log', text: trimmed });
         }
       }
