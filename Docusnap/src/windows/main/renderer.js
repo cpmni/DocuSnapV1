@@ -486,6 +486,62 @@ function handleWatchProgress(msg) {
 }
 window.docusnap.onWatchProgress?.(handleWatchProgress);
 
+// ── Stuck (failed) documents surface ─────────────────────────────────────────
+// A doc that fails extraction now holds at status='error' (no longer silently
+// dropped). Surface the count with a "Try again" that reprocesses them through
+// the existing per-doc reprocess path; on success they become needs_review.
+const stuckChip     = document.getElementById('stuck-chip');
+const stuckMsg      = document.getElementById('stuck-msg');
+const btnStuckRetry = document.getElementById('btn-stuck-retry');
+
+function renderStuckChip(n) {
+  if (!stuckChip) return;
+  if (!n || n < 1) { stuckChip.style.display = 'none'; return; }
+  stuckMsg.textContent = `${n} document${n === 1 ? "" : "s"} couldn't be read`;
+  stuckChip.style.display = '';
+  // "Try again" runs reprocess (Admin/Edit only) — hide the action for read-only.
+  if (btnStuckRetry) btnStuckRetry.style.display = _userCanReview ? '' : 'none';
+}
+async function refreshStuckCount() {
+  try { renderStuckChip(await window.docusnap.getStuckCount()); } catch {}
+}
+refreshStuckCount();
+window.docusnap.onStuckCountChanged?.((n) => renderStuckChip(n));
+
+btnStuckRetry?.addEventListener('click', async () => {
+  if (running) return;                       // don't fight a manual batch
+  let docs = [];
+  try { docs = await window.docusnap.getStuckDocs(); } catch {}
+  if (!docs.length) { refreshStuckCount(); return; }
+
+  btnStuckRetry.disabled = true;
+  const orig = btnStuckRetry.textContent;
+  logPanel.classList.add('visible');
+  logStatus.textContent = 'Retrying…';
+  appendLog(`Reprocessing ${docs.length} stuck document(s)…`);
+  let recovered = 0, stillStuck = 0;
+  for (let i = 0; i < docs.length; i++) {
+    const d = docs[i];
+    btnStuckRetry.textContent = `Retrying ${i + 1}/${docs.length}…`;
+    try {
+      const r = await window.docusnap.reprocessDocument({
+        docId: d.id, folderPath: d.folder_path, filename: d.original_filename,
+      });
+      if (r?.success) { recovered++; appendLog(`  ✓ ${d.original_filename}`, 'ok'); }
+      else            { stillStuck++; appendLog(`  ✗ ${d.original_filename}: ${r?.error || 'still failing'}`, 'err'); }
+    } catch (e) {
+      stillStuck++; appendLog(`  ✗ ${d.original_filename}: ${e.message}`, 'err');
+    }
+  }
+  btnStuckRetry.textContent = orig;
+  btnStuckRetry.disabled = false;
+  logStatus.textContent = 'Finished';
+  appendLog(`Reprocess complete — ${recovered} recovered${stillStuck ? `, ${stillStuck} still failing` : ''}.`,
+    recovered ? 'ok' : 'warn');
+  await refreshStuckCount();
+  if (recovered > 0) window.docusnap.notifyReviewComplete?.();
+});
+
 // ── Account: current-user chip, role-based nav, sign out, change password ────
 const ROLE_LABELS = { admin: 'Admin', edit: 'Edit', readonly: 'Read Only' };
 

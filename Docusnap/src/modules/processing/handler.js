@@ -566,6 +566,14 @@ function register(ctx) {
     return { success, stopped };
   });
 
+  // ── Stuck (failed) documents — the launchpad "couldn't be read" surface ──────
+  // Ungated reads (a count/list is not sensitive); the "Try again" action reuses
+  // the role-gated reprocess-document IPC below.
+  ipcMain.handle('get-stuck-count', () =>
+    require('../../../database/modules/documents').getStuckCount(getDb()));
+  ipcMain.handle('get-stuck-docs', () =>
+    require('../../../database/modules/documents').getStuckQueue(getDb()));
+
   // ── Reprocess single document ───────────────────────────────────────────────
   ipcMain.handle('reprocess-document', async (event, { docId, folderPath, filename, enhanceParams }) => {
     requireRole('admin', 'edit');

@@ -145,6 +145,15 @@ function getStuckCount(db) {
   ).get().n;
 }
 
+function getStuckQueue(db) {
+  return db.prepare(`
+    SELECT id, original_filename, folder_path, working_path, error_message, processed_at
+    FROM documents
+    WHERE status = 'error'
+    ORDER BY processed_at DESC
+  `).all();
+}
+
 function confirm(db, id, { stored_filename, stored_path }) {
   return update(db, id, {
     status:       'confirmed',
@@ -259,7 +268,7 @@ function getWorkingPaths(db) {
 module.exports = {
   insert, update, getById, getWithExtractions,
   getReviewQueue, getDeferredQueue,
-  getReviewCount, getDeferredCount, getStuckCount,
+  getReviewCount, getDeferredCount, getStuckCount, getStuckQueue,
   confirm, deleteDoc, deleteByStatus, search,
   resolveFilePath, filterExisting, getWorkingPaths,
 };

@@ -149,6 +149,21 @@
     .btn-review-docs:active { transform: scale(.98); }
     .btn-review-docs.visible { display: block; }
 
+    /* "Stuck docs" surface — documents that failed extraction (status='error') */
+    .stuck-chip {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      margin-top: 6px; padding: 8px 10px; border-radius: 7px; font-size: 11px;
+      background: var(--warn-bg); border: 1px solid var(--warn); color: var(--warn);
+    }
+    .stuck-chip .stuck-msg { line-height: 1.35; }
+    .stuck-retry {
+      flex-shrink: 0; padding: 3px 10px; border-radius: 6px; cursor: pointer;
+      border: 1px solid var(--warn); background: transparent; color: var(--warn);
+      font-family: var(--sans); font-size: 11px; font-weight: 600;
+    }
+    .stuck-retry:hover    { background: var(--warn); color: #fff; }
+    .stuck-retry:disabled { opacity: .5; cursor: default; }
+
     .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .stat-card { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px 8px; text-align: center; }
     .stat-val { font-family: var(--mono); font-size: 20px; font-weight: 500; color: var(--text); }
@@ -387,6 +402,10 @@
       <button class="btn-run" id="btn-run" disabled data-help-key="process">&#9654;&nbsp; Process Documents</button>
       <button class="btn-stop" id="btn-stop">&#9632; Stop Processing</button>
       <button class="btn-review-docs" id="btn-review-docs">&#10003;&nbsp; Review your documents</button>
+      <div class="stuck-chip" id="stuck-chip" style="display:none;">
+        <span class="stuck-msg" id="stuck-msg"></span>
+        <button class="stuck-retry" id="btn-stuck-retry">Try again</button>
+      </div>
 
       <div>
         <div class="sidebar-label">Session Stats</div>
