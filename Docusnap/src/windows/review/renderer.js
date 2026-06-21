@@ -442,8 +442,8 @@ function renderDeferredList() {
 }
 
 // ── Select document ───────────────────────────────────────────────────────────
-async function selectDoc(doc) {
-  try { await _selectDoc(doc); } catch(err) {
+async function selectDoc(doc, opts) {
+  try { await _selectDoc(doc, opts); } catch(err) {
     console.error('selectDoc failed:', err);
     showToast('Error loading doc: ' + err.message, 'err');
   }
@@ -452,7 +452,10 @@ async function selectDoc(doc) {
   updateDocNavButtons();
   scrollActiveItemIntoView();
 }
-async function _selectDoc(doc) {
+// fieldsOnly: bulk "File All Ready" needs only the field VALUES + readiness, so
+// it skips the PDF→PNG preview render (the dominant per-doc cost) and the
+// display-only template recheck. Single-document review passes nothing → full path.
+async function _selectDoc(doc, { fieldsOnly = false } = {}) {
   _clearPreviewState();
   cancelZoneMode();
   currentDoc  = doc;
@@ -482,17 +485,23 @@ async function _selectDoc(doc) {
   const dt = allDocTypes.find(t => t.slug === selectedTypeSlug);
   fieldDefs = dt ? dt.fields : (allDocTypes[0]?.fields || []);
 
-  // Load pages and fields independently — a missing file must not block field rendering
-  try {
-    pageImages = (doc.folder_path && doc.original_filename)
-      ? await window.docusnap.getDocumentPages(doc.id, doc.folder_path, doc.original_filename)
-      : [];
-  } catch (e) {
-    console.warn('getDocumentPages failed:', e.message);
+  // Load pages and fields independently — a missing file must not block field
+  // rendering. fieldsOnly skips the preview render entirely (bulk filing reads
+  // only the field values, never the image).
+  if (fieldsOnly) {
     pageImages = [];
+  } else {
+    try {
+      pageImages = (doc.folder_path && doc.original_filename)
+        ? await window.docusnap.getDocumentPages(doc.id, doc.folder_path, doc.original_filename)
+        : [];
+    } catch (e) {
+      console.warn('getDocumentPages failed:', e.message);
+      pageImages = [];
+    }
+    if (currentDoc?.id !== doc.id) return;   // a newer doc was selected while pages loaded — don't clobber its preview (this same _selectDoc set currentDoc=doc at the top, so the latest selection always passes)
+    renderPage();
   }
-  if (currentDoc?.id !== doc.id) return;   // a newer doc was selected while pages loaded — don't clobber its preview (this same _selectDoc set currentDoc=doc at the top, so the latest selection always passes)
-  renderPage();
 
   noteDocOpened(doc.id);
   let full = null;
@@ -516,7 +525,8 @@ async function _selectDoc(doc) {
   // since (e.g. via "Add to Template Manager" on another document from the
   // same supplier). Read-only UI refresh: does not reprocess, does not write
   // template_id, and is skipped entirely once a template_id is already set.
-  if (!doc.template_id) {
+  // Skipped in fieldsOnly (bulk) — it's a display-only refresh and adds an IPC/doc.
+  if (!fieldsOnly && !doc.template_id) {
     window.docusnap.checkTemplateMatch(doc.id).then(result => {
       if (currentDoc?.id !== doc.id) return; // user switched docs while pending
       if (result?.matched) {
@@ -1334,7 +1344,7 @@ async function fileAllReady() {
       // Checked off the queue object directly — no need to load the doc.
       if (isFlagged(doc) && !doc.review_acknowledged_at) { skipped++; continue; }
       btn.textContent = `Filing… ${i + 1}/${docs.length}`;
-      await selectDoc(doc);                            // loads fields; runs validateConfirm()
+      await selectDoc(doc, { fieldsOnly: true });      // loads fields (no preview render); runs validateConfirm()
       if (confirmBtn.disabled) { skipped++; continue; } // not ready — leave for review
       const r = await confirmCurrentDoc({ bulk: true });
       if (r.filed) filed++; else skipped++;
