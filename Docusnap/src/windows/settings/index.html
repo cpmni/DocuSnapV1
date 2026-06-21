@@ -3,9 +3,8 @@
 <head>
   <meta charset="UTF-8"/>
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; img-src 'self' data:">
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; img-src 'self' data:">
   <title>ScanFinder — Settings</title>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../shared/theme.css" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -422,6 +421,20 @@
                 <option value="3">3</option>
                 <option value="4">4</option>
                 <option value="5">5</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">OCR engine</div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Full-page OCR engine</div>
+                <div class="threshold-sub">Governs full-page document text only — zone, teach and template field reads always use Tesseract. RapidOCR is beta and falls back to Tesseract automatically if it isn't available.</div>
+              </div>
+              <select id="ocr-engine-select" class="field-select" style="width:160px;">
+                <option value="tesseract">Tesseract</option>
+                <option value="rapidocr">RapidOCR (beta)</option>
               </select>
             </div>
           </div>
@@ -871,6 +884,19 @@
             </p>
             <button class="btn danger" id="lr-btn-reset-all">Clear ALL learning memory</button>
             <div id="lr-dev-msg" class="section-desc" style="margin-top:8px;"></div>
+
+            <!-- Dev-only full wipe (fresh install) — a SUPERSET of the above. Hidden by
+                 default; the renderer reveals it only when app-is-dev (unpackaged build). -->
+            <div id="lr-fresh-install-block" style="display:none; margin-top:16px; border-top:1px solid var(--border); padding-top:14px;">
+              <p class="section-desc" style="border-left:2px solid var(--err); padding-left:8px; color:var(--err);">
+                Erases <strong style="color:var(--text);">ALL</strong> custom data and reverts to a fresh
+                install — a superset of the above that also drops the custom schema (document types, fields,
+                mappings) and strips learned identity off your documents. Your files are kept. A timestamped
+                database backup is taken first. Dev-only — not shown in packaged builds.
+              </p>
+              <button class="btn danger" id="lr-btn-fresh-install">Erase ALL data — fresh install</button>
+              <div id="lr-fresh-msg" class="section-desc" style="margin-top:8px;"></div>
+            </div>
           </div>
         </details>
       </div>
@@ -1078,6 +1104,23 @@
           </div>
           <p class="section-desc" style="margin-top:6px;">Override the managed certificate with your own (e.g. an internal-CA cert). Host/port/cert changes apply the next time you switch access on.</p>
         </details>
+      </div>
+
+      <div class="section" id="seats-section">
+        <div class="section-title">Search client seats (concurrent)</div>
+        <p class="section-desc">Floating licences — any machine can connect while a seat is free, and a seat stays held by its client until you release it here (it is never auto-freed). Set the licensed seat count to match your licence.</p>
+        <div class="row-flex" style="gap:10px; align-items:center; margin-bottom:8px;">
+          <div class="threshold-label">Licensed seats</div>
+          <input type="number" id="seats-count" min="0" max="999" class="path-input" style="max-width:80px">
+          <button class="btn" id="seats-save">Save</button>
+          <button class="btn" id="seats-refresh">Refresh</button>
+          <span class="threshold-sub" id="seats-summary" style="margin-left:auto;"></span>
+        </div>
+        <table class="fields-table" id="seats-table" style="margin-top:6px;">
+          <thead><tr><th>User</th><th>Hostname</th><th>IP address</th><th>Last seen</th><th></th></tr></thead>
+          <tbody id="seats-tbody"></tbody>
+        </table>
+        <div class="threshold-sub" id="seats-empty" style="margin-top:6px;"></div>
       </div>
     </div>
 

@@ -131,3 +131,49 @@ def name_quality(value):
             bad += 1
     total = good + bad
     return 1.0 if total == 0 else good / total
+
+
+def strip_name_edges(value, allowed_extra=None):
+    """Remove OCR EDGE artefacts from a free-text name/company/address value:
+      - a LEADING run of non-alphanumeric chars — a real name always STARTS with a
+        letter or digit, never "--«", ">", a stray quote (mirrors the crop
+        credibility rule v[0].isalnum());
+      - a TRAILING run of whitespace + DISALLOWED symbols for the field type
+        (guillemets «», em-dash, the U+FFFD replacement char), while KEEPING
+        legitimate trailing punctuation (a " -" separator before a wrapped site,
+        "Inc.").
+    The INTERIOR is never touched, so legitimate internal variation/punctuation is
+    preserved (the free-text rule). `allowed_extra` is the field type's
+    extra-punctuation string (config field_charsets); None => only the leading
+    non-alnum run and edge whitespace are stripped. Returns the value unchanged
+    when nothing is strippable, or when the result would be empty / a <3-char
+    fragment of a longer value (over-strip guard). Deterministic; reusable for
+    every supplier/field — no document/coordinate specifics."""
+    if not value:
+        return value
+    s = str(value)
+    n = len(s)
+    # Leading: drop everything before the first alphanumeric ("--« " / ">" / quotes).
+    i = 0
+    while i < n and not s[i].isalnum():
+        i += 1
+
+    # Trailing: drop whitespace + disallowed symbols; keep allowed punctuation.
+    def _strip_tail(ch):
+        if ch.isspace():
+            return True
+        if ch.isalnum():
+            return False
+        if allowed_extra is None:
+            return False            # no policy → leave trailing punctuation alone
+        return ch not in allowed_extra
+    j = n
+    while j > i and _strip_tail(s[j - 1]):
+        j -= 1
+
+    out = s[i:j]
+    if not out:
+        return value
+    if len(out) < 3 and len(out) < len(s.strip()):
+        return value                # over-stripped a longer value — leave to the gates
+    return out

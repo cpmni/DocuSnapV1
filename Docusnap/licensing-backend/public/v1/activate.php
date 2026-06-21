@@ -7,6 +7,7 @@
 
 require __DIR__ . '/../../lib/db.php';
 require __DIR__ . '/../../lib/jws.php';
+require __DIR__ . '/../../lib/ratelimit.php';
 
 const ACTIVE_KID = 'k1';
 
@@ -24,12 +25,21 @@ if ($productId === '' || !preg_match('/^[0-9a-f]{64}$/', $fpHash) || $accountKey
 
 try {
     $pdo = db();
+    // Anti-automation (F-03): cap activation attempts per source IP, plus an
+    // escalating-backoff veto once this IP has accrued too many recent FAILED
+    // guesses (unknown account key). Idempotent re-activation of a VALID key never
+    // increments the fail bucket, so legitimate reuse is unaffected.
+    $ip = client_ip();
+    $gen = rate_hit($pdo, "activate_ip:$ip", 30, 3600);
+    if (!$gen['allowed']) { too_many_requests($gen['retry_after']); return; }
+    if (rate_count($pdo, "activate_fail_ip:$ip") > 12) { too_many_requests(900); return; }
     $accountHash = hash('sha256', $accountKey); // never store/log the plaintext key
 
     $acc = $pdo->prepare('SELECT id, status FROM accounts WHERE account_key_hash = ?');
     $acc->execute([$accountHash]);
     $account = $acc->fetch();
     if (!$account || $account['status'] !== 'active') {
+        rate_hit($pdo, "activate_fail_ip:$ip", 12, 3600); // count key-guessing attempts
         audit_event($pdo, $account['id'] ?? null, $fpHash, 'license.activate_failed', 'unknown_account');
         send_json(400, ['error' => ['code' => 'unknown_account', 'message' => 'Activation key not recognised', 'request_id' => bin2hex(random_bytes(8))]]);
         return;

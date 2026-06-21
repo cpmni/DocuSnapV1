@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from extraction.name_match import build_token_lexicon, repair_name_value  # noqa: E402
+from extraction.name_match import build_token_lexicon, repair_name_value, conforms_to_lexicon  # noqa: E402
 
 
 def check(label, cond):
@@ -66,6 +66,48 @@ def main():
     f += not check("position 0 'Acme' stable (3 docs)", thin["positions"].get(0, {}).get("surface") == "Acme")
     f += not check("position 1 NOT stable (only 2 docs < floor 3)", 1 not in thin["positions"])
     f += not check("'acme co' keeps 'co' verbatim", repair_name_value("acme co", thin) == "Acme co")
+
+    print("\nshort-token strong repair (Ltd/Lid) — evidence-gated + AUTO-APPLY strength flag")
+    # 'Ltd' is near-universal at its position; a 1-glyph misread 'Lid' is fixed.
+    ltd = build_token_lexicon({"Beaumont Care Homes Ltd": 12, "Beaumont Care Homes Ltd - Belmont": 5}, 17)
+    rL, sL = repair_name_value("Beaumont Care Homes Lid", ltd, details=True)
+    f += not check(f"'...Lid' -> '...Ltd' = {rL!r}", rL == "Beaumont Care Homes Ltd")
+    f += not check("repair is STRONG (doc_freq>=0.9) -> auto-apply", sL is True)
+    f += not check("idempotent on the canonical (details)", repair_name_value("Beaumont Care Homes Ltd", ltd, details=True) == (None, False))
+    f += not check("legacy (no details) still returns the string", repair_name_value("Beaumont Care Homes Lid", ltd) == "Beaumont Care Homes Ltd")
+    # SAFETY: a position that is NOT near-universal (mixed Ltd/Inc) is not even stable.
+    mixed = build_token_lexicon({"Acme Ltd": 6, "Acme Inc": 5, "Acme Co": 1}, 12)
+    f += not check("mixed-suffix position is NOT stable", 1 not in mixed["positions"])
+    f += not check("'Acme Lid' NOT repaired (no near-universal suffix)", repair_name_value("Acme Lid", mixed, details=True) == (None, False))
+    # SAFETY: a genuinely DIFFERENT suffix (Inc, dist 3 from Ltd) is kept, not snapped.
+    globex = build_token_lexicon({"Globex Ltd": 11, "Globex Ltd x": 1}, 12)
+    f += not check("real different suffix 'Inc' kept (not snapped to Ltd)", repair_name_value("Globex Inc", globex) is None)
+    f += not check("dist-1 misread 'Lid' IS fixed to 'Ltd'", repair_name_value("Globex Lid", globex) == "Globex Ltd")
+    # SAFETY: 2-char tokens stay exact-only (no Co->Go).
+    co = build_token_lexicon({"Big Co": 5, "Big Co": 5, "Big Co north": 4}, 9)
+    f += not check("2-char 'Go' NOT repaired to 'Co'", repair_name_value("Big Go", co) is None)
+
+    print("\nconforms_to_lexicon: stable prefix + variable tail is the EXPECTED pattern (no flag)")
+    # Varied sites -> position 3 (site) is NOT stable; the prefix is.
+    site = build_token_lexicon({"Beaumont Care Homes - Tudordale": 1, "Beaumont Care Homes - Holywood": 1,
+                                "Beaumont Care Homes - Bangor": 1, "Beaumont Care Homes - Clandeboye": 1}, 4)
+    f += not check("a NEW site conforms (prefix matches) -> suppress flag",
+                   conforms_to_lexicon("Beaumont Care Homes - Newtownabbey", site) is True)
+    f += not check("the canonical itself conforms", conforms_to_lexicon("Beaumont Care Homes - Tudordale", site) is True)
+    f += not check("WRONG prefix does NOT conform (real anomaly kept)",
+                   conforms_to_lexicon("Acme Care Homes - Newtownabbey", site) is False)
+    f += not check("missing a stable prefix token does NOT conform",
+                   conforms_to_lexicon("Beaumont Care - Newtownabbey", site) is False)
+    f += not check("empty lexicon -> does not conform", conforms_to_lexicon("anything", {"positions": {}, "n_docs": 0}) is False)
+    # TRUNCATION GUARD: history always has a site after "Ltd"; a value missing it
+    # (the site cut off by a too-narrow anchor crop) must NOT conform — it stays flagged.
+    ltd_site = build_token_lexicon({"Beaumont Care Homes Ltd - Parkview": 3, "Beaumont Care Homes Ltd - Bangor": 3,
+                                    "Beaumont Care Homes Ltd - Holywood": 3, "Beaumont Care Homes Ltd - Belmont": 3}, 12)
+    f += not check("expected_len learned from history (= 5 content tokens)", ltd_site.get("expected_len") == 5)
+    f += not check("full new site conforms", conforms_to_lexicon("Beaumont Care Homes Ltd - Clandeboye", ltd_site) is True)
+    f += not check("TRUNCATED 'Ltd -' (site cut off) does NOT conform -> stays flagged",
+                   conforms_to_lexicon("Beaumont Care Homes Ltd -", ltd_site) is False)
+    f += not check("no-site 'Ltd' does NOT conform", conforms_to_lexicon("Beaumont Care Homes Ltd", ltd_site) is False)
 
     print("\ndeterminism + empties")
     f += not check("lexicon build is deterministic", build_token_lexicon(HISTORY, N) == lex)

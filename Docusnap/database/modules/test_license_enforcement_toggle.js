@@ -4,13 +4,19 @@
 /**
  * database/modules/test_license_enforcement_toggle.js
  * ---------------------------------------------------
- * Staged-enforcement control surface added on top of Phase 2's gate:
- *   - decideAccess honours the persisted `license_enforcement_enabled` setting.
- *   - The DOCUSNAP_LICENSE_ENFORCEMENT env override WINS over the setting in both
- *     directions (the dev escape hatch / staged enable).
- *   - license-get-enforcement reports setting / effective / envOverride.
- * No token signing needed: we assert the enforcement DECISION (off->allow,
- * on+no-token->locked_needs_online), not token validity (covered by phase 2).
+ * Enforcement is ALWAYS ON and CANNOT be disabled — there is no toggle path: not
+ * the `license_enforcement_enabled` setting, not the old DOCUSNAP_LICENSE_ENFORCEMENT
+ * env override, and not an unpackaged/dev build. (The original "staged enforcement"
+ * control surface was removed; see CLAUDE.md → Licensing & activation.)
+ *
+ * This asserts the control surface is LOCKED:
+ *   - decideAccess enforces regardless of any setting/env (no token -> needs_online);
+ *   - license-get-enforcement always reports ON / ON / null + locked:true;
+ *   - license-set-enforcement cannot relax enforcement (ok:false), and the gate
+ *     still enforces afterwards;
+ *   - packaged AND dev builds both enforce (no unpackaged bypass).
+ * Hermetic: an offline transport so no token is granted and the decision depends
+ * only on enforcement being permanently on.
  *
  * Run under Electron-as-Node:
  *   ELECTRON_RUN_AS_NODE=1 node_modules/.bin/electron database/modules/test_license_enforcement_toggle.js
@@ -24,9 +30,11 @@ const handler = require('../../src/modules/licensing/handler');
 const learning = require('./learning');
 
 const ROOT = path.join(__dirname, '..', '..');
+const ENV = 'DOCUSNAP_LICENSE_ENFORCEMENT';
 function check(label, cond) { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}`); return cond; }
 let fail = 0;
 
+const offline = () => Promise.reject(new Error('test-offline'));
 const db = new Database(':memory:');
 runMigrations(db);
 
@@ -35,74 +43,52 @@ handler.register({
   ipcMain: { handle: (name, fn) => { handlers[name] = fn; } },
   getDb: () => db,
   resourcePath: (...p) => path.join(ROOT, ...p),
-  // Hermetic: force the online refresh to fail so enforcement decisions depend
-  // only on the setting/env/cache, not a reachable backend at cfg.base_url.
-  licenseTransport: () => Promise.reject(new Error('test-offline')),
+  licenseTransport: offline,   // force the online refresh to fail -> no token granted
   fs,
   logger: { warn: () => {}, err: () => {} },
 });
 
-const ENV = 'DOCUSNAP_LICENSE_ENFORCEMENT';
-function setEnv(v) { if (v === null) delete process.env[ENV]; else process.env[ENV] = v; }
-function setSetting(on) { learning.setSetting(db, 'license_enforcement_enabled', on ? 'true' : 'false'); }
-const getEnf = () => handlers['license-get-enforcement']();
-
 (async () => {
-  // 1) env unset, setting OFF -> enforcement off -> allow
-  setEnv(null); setSetting(false);
-  let r = await handler.decideAccess();
-  if (!check('setting OFF, no env -> allow', r.decision === 'allow' && r.enforcement === false)) fail++;
-  let e = getEnf();
-  if (!check('get-enforcement reports OFF/OFF/null', e.setting === false && e.effective === false && e.envOverride === null)) fail++;
+  // 1) The persisted setting is inert — any value still enforces (no token -> lock).
+  for (const v of ['false', 'true']) {
+    learning.setSetting(db, 'license_enforcement_enabled', v);
+    const r = await handler.decideAccess();
+    if (!check(`setting=${v}: still enforced (no token -> locked_needs_online)`,
+        r.decision === 'locked_needs_online' && r.enforcement === true)) fail++;
+  }
 
-  // 2) env unset, setting ON, no cached token -> locked_needs_online
-  setSetting(true);
-  r = await handler.decideAccess();
-  if (!check('setting ON, no env, no token -> locked_needs_online', r.decision === 'locked_needs_online')) fail++;
-  e = getEnf();
-  if (!check('get-enforcement reports ON/ON/null', e.setting === true && e.effective === true && e.envOverride === null)) fail++;
+  // 2) The old env escape hatch is gone — any value still enforces.
+  for (const v of ['off', 'on', '0', '1', '']) {
+    process.env[ENV] = v;
+    const r = await handler.decideAccess();
+    if (!check(`env=${JSON.stringify(v)}: still enforced (locked_needs_online)`,
+        r.decision === 'locked_needs_online')) fail++;
+  }
+  delete process.env[ENV];
 
-  // 3) env=off OVERRIDES setting ON -> allow (the dev escape hatch)
-  setEnv('off');
-  r = await handler.decideAccess();
-  if (!check('env=off overrides setting ON -> allow', r.decision === 'allow')) fail++;
-  e = getEnf();
-  if (!check('get-enforcement effective OFF via env override', e.setting === true && e.effective === false && e.envOverride === false)) fail++;
+  // 3) get-enforcement always reports the locked, always-on state.
+  const e = handlers['license-get-enforcement']();
+  if (!check('get-enforcement reports ON / ON / null + locked',
+      e.setting === true && e.effective === true && e.envOverride === null && e.locked === true)) fail++;
 
-  // 4) env=on OVERRIDES setting OFF -> enforce (no token -> locked_needs_online)
-  setEnv('on'); setSetting(false);
-  r = await handler.decideAccess();
-  if (!check('env=on overrides setting OFF -> locked_needs_online', r.decision === 'locked_needs_online')) fail++;
-  e = getEnf();
-  if (!check('get-enforcement effective ON via env override', e.setting === false && e.effective === true && e.envOverride === true)) fail++;
+  // 4) set-enforcement cannot relax enforcement; the gate still enforces after it.
+  const sr = handlers['license-set-enforcement'](null, false);
+  if (!check('set-enforcement cannot relax enforcement (ok:false)', !!sr && sr.ok === false)) fail++;
+  const after = await handler.decideAccess();
+  if (!check('still enforced after attempting set-enforcement(false)',
+      after.decision === 'locked_needs_online')) fail++;
 
-  // 5) env parsing variants
-  setSetting(false);
-  const truthy = ['1', 'true', 'yes', 'ON'];
-  const falsy  = ['0', 'false', 'no', 'OFF'];
-  const ignored = ['', 'maybe', 'enabled'];
-  let ok = true;
-  for (const v of truthy)  { setEnv(v); ok = ok && getEnf().effective === true; }
-  for (const v of falsy)   { setEnv(v); ok = ok && getEnf().effective === false; }
-  for (const v of ignored) { setEnv(v); ok = ok && getEnf().envOverride === null; } // defers to setting
-  if (!check('env parsing: truthy/falsy/ignored handled', ok)) fail++;
-
-  // 6) Fresh install (no setting row): PACKAGED build enforces by default so a
-  //    clean profile must activate; dev (not packaged) stays off. Uses a fresh DB
-  //    with no enforcement setting, and an offline transport so no token is granted.
-  setEnv(null);
-  const offline = () => Promise.reject(new Error('test-offline'));
-  const dbPkg = new Database(':memory:'); runMigrations(dbPkg);
-  handler.register({ ipcMain: { handle: () => {} }, getDb: () => dbPkg, resourcePath: (...p) => path.join(ROOT, ...p),
-    licenseTransport: offline, app: { isPackaged: true }, fs, logger: { warn: () => {}, err: () => {} } });
-  let rp = await handler.decideAccess();
-  if (!check('packaged + unset setting + no grant -> enforced (locked_needs_online)', rp.decision === 'locked_needs_online')) fail++;
-
-  const dbDev = new Database(':memory:'); runMigrations(dbDev);
-  handler.register({ ipcMain: { handle: () => {} }, getDb: () => dbDev, resourcePath: (...p) => path.join(ROOT, ...p),
-    licenseTransport: offline, app: { isPackaged: false }, fs, logger: { warn: () => {}, err: () => {} } });
-  let rd = await handler.decideAccess();
-  if (!check('dev + unset setting -> not enforced (allow)', rd.decision === 'allow' && rd.enforcement === false)) fail++;
+  // 5) Packaged AND dev both enforce — no unpackaged/dev bypass.
+  for (const isPackaged of [true, false]) {
+    const dbX = new Database(':memory:'); runMigrations(dbX);
+    handler.register({ ipcMain: { handle: () => {} }, getDb: () => dbX,
+      resourcePath: (...p) => path.join(ROOT, ...p), licenseTransport: offline,
+      app: { isPackaged }, fs, logger: { warn: () => {}, err: () => {} } });
+    const rx = await handler.decideAccess();
+    if (!check(`isPackaged=${isPackaged}: enforced (locked_needs_online)`,
+        rx.decision === 'locked_needs_online' && rx.enforcement === true)) fail++;
+    dbX.close();
+  }
 
   console.log(fail === 0 ? '\nALL PASS' : `\n${fail} FAILURE(S)`);
   process.exit(fail === 0 ? 0 : 1);

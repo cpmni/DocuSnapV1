@@ -23,7 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from extraction import keyword, anchor, validator, ocr_corrector, template_matcher, template_mapper, format_anomaly_checker
+from extraction import keyword, anchor, validator, ocr_corrector, template_matcher, template_mapper, format_anomaly_checker, value_quality
 
 # LLM import is optional — system works without it in FAST mode
 try:
@@ -40,6 +40,13 @@ except ImportError:
 # validator.salvage_date (Fix C1); they carry identical provenance and so get
 # identical protection. The weaker DRIFT-path variants are deliberately excluded
 # (unchanged): a fixed-coordinate drift seed is not strong enough to be shielded.
+# Minimum substantial-word OCR confidence for an authoritative ⊕ anchor's CROP
+# read to win Tier-A OUTRIGHT (engine.extract). Below this the read carries a
+# garbled word and must instead contend on confidence, where its OCR-capped score
+# loses to a clean alternative. 70 keeps confidently-read teaches winning while
+# rejecting the partial-garble case (min word conf ~55) the mean alone misses.
+_TIER_A_OCR_MIN = 70
+
 _STAGE05_LOCATED_METHODS = (
     "template_mapping", "template_mapping_expanded",
     "template_mapping_salvaged", "template_mapping_expanded_salvaged",
@@ -520,7 +527,16 @@ class ExtractionEngine:
         for _f in field_defs:
             _k, _t = _f.get("key"), (_f.get("type") or "").lower()
             if _k and _k not in field_patterns and _t in _TYPE2VAL:
-                field_patterns[_k] = {"validation": _TYPE2VAL[_t]}
+                mapped = _TYPE2VAL[_t]
+                # A reference/ticket/job field typed as "number" or "currency" gets
+                # the currency validation pattern (£\d+, \d+\.\d{2}) which rejects
+                # NNNN-NNNN-N ticket references.  Coerce any _is_ref_field key to
+                # "alphanumeric" — the right gate for a code — regardless of how the
+                # user labelled the field in Settings. Fixes the systemic case where
+                # a user picks "Number" thinking it means "reference number."
+                if _is_ref_field(_k) and mapped in ("currency", "currency_code"):
+                    mapped = "alphanumeric"
+                field_patterns[_k] = {"validation": mapped}
         # Date-typed fields get a merge guard: a candidate that doesn't parse as
         # a real date must never displace one that does (e.g. a mis-cropped
         # taught anchor returning a bare "March" overriding a valid full date).
@@ -665,9 +681,14 @@ class ExtractionEngine:
                         # the is_taught_override precedent below — a more
                         # specific, curated source outranks the more generic
                         # rule it refines, regardless of either one's confidence.
+                        # A curated Stage 0.5 mapping outranks the generic Stage 0
+                        # seeds it exists to refine — including an admin-LOCKED fixed
+                        # value (a drawn zone on a real sample is the more specific
+                        # curated source, per the intended precedence).
                         is_curated_refinement = (existing is None
                                                   or existing.get("method") in
-                                                     ("template_fixed", "template_anchor"))
+                                                     ("template_fixed", "template_anchor",
+                                                      "template_fixed_locked"))
                         if is_curated_refinement or data["confidence"] > existing.get("confidence", 0):
                             results[key] = data
                             applied += 1
@@ -713,10 +734,43 @@ class ExtractionEngine:
         patterns_for_run = keyword.merge_label_overrides(
             self.patterns, self.label_overrides, document_slug)
         kw_results = keyword.extract_fields(ocr_text, field_keys, patterns_for_run)
+        # ── INPUT HYGIENE for name-like free-text keyword reads ── a keyword/label
+        # capture has NO crop-path cleaning, so OCR edge junk ("--« Beaumont Care
+        # Homes Ltd -") enters verbatim and — being the highest-authority source
+        # (keyword_override) — WINS, then only gets flagged downstream. Strip the
+        # SAME edge artefacts a crop read already drops, AT CAPTURE, so the junk
+        # never becomes "the answer" and the trace shows a clean winner. Edges only
+        # (interior preserved); structured/ref fields untouched. Stage 4.5 still
+        # edge-cleans the final winner as a catch-all (idempotent here). Reusable for
+        # every supplier/field. See value_quality.strip_name_edges.
+        _kw_charsets = self.patterns.get('field_charsets') or {}
+        _kw_types    = {f.get('key'): f.get('type') for f in (field_defs or [])}
+        for _kk, _kd in kw_results.items():
+            if not isinstance(_kd, dict):
+                continue
+            _kt = _kw_types.get(_kk)
+            if _kt in (None, 'text', 'multiline_text') and value_quality.is_name_like_field(_kk):
+                _kv = _kd.get('value')
+                if _kv:
+                    _kspec = _kw_charsets.get(_kt, _kw_charsets.get('default')) if _kw_charsets else None
+                    _kclean = value_quality.strip_name_edges(str(_kv), _kspec)
+                    if _kclean and _kclean != _kv:
+                        _kd['value'] = _kclean
+                        if 'display_value' in _kd:
+                            _kd['display_value'] = _kclean
         _pre_s1 = self._snap(results)
         self._remember_candidates('1_keyword', kw_results)
         for key, data in kw_results.items():
             existing = results.get(key)
+            # An admin-LOCKED fixed value (method 'template_fixed_locked') is a
+            # deliberate, protected override: NO ordinary read — not even the
+            # supplier-identity rescue below — may replace it on confidence. It still
+            # yields ONLY to an explicit admin label (keyword_override) and to curated
+            # Stage 0.5 mappings (which ran first). Narrow: ordinary 'template_fixed'
+            # stays overridable.
+            if (existing and existing.get("method") == "template_fixed_locked"
+                    and data.get("method") != "keyword_override"):
+                continue
             if key == "supplier_name" and existing:
                 decision = _supplier_identity_decision(existing, data)
                 if decision == "keep":
@@ -810,6 +864,12 @@ class ExtractionEngine:
             self._remember_candidates('2_anchor', anchor_results)
             for key, data in anchor_results.items():
                 existing = results.get(key)
+                # Protect an admin-LOCKED fixed value from any NON-authoritative anchor
+                # read (incl. the supplier-identity rescue + credibility-gate paths
+                # below). An authoritative ⊕ anchor still wins outright via Tier A.
+                if (existing and existing.get("method") == "template_fixed_locked"
+                        and not data.get("authoritative")):
+                    continue
                 # Supplier identity is plausibility-gated first: a poisoned
                 # anchor_crop carrying an implausible short fragment must not
                 # ride the is_taught_override path to clobber a plausible name,
@@ -868,7 +928,18 @@ class ExtractionEngine:
                 # to the normal confidence contest (where its capped conf yields to a
                 # located mapping). `located` defaults True so a located teach — and
                 # any caller/test that builds results without the flag — is unchanged.
-                if data.get("authoritative") and data.get("value") and data.get("located", True):
+                # OCR-QUALITY gate on the outright win: an authoritative crop whose
+                # read contains a GARBLED word (min substantial-word confidence low)
+                # is not trustworthy enough to win OUTRIGHT over a credible
+                # alternative — e.g. a re-teach that read "Aaiumant Care Homes Ltd -
+                # Galaorm" (min word conf ~55) should not beat the clean keyword
+                # "Beaumont Care Homes Ltd - Galgorm". Such a read FALLS THROUGH to
+                # the confidence contest below, where its OCR-capped confidence loses
+                # to the clean read. A clean authoritative read (min ≥ threshold, or
+                # an inline/text read with no crop conf = None) still wins outright.
+                _omin = data.get("ocr_min_conf")
+                _ocr_clean = (_omin is None) or (_omin >= _TIER_A_OCR_MIN)
+                if data.get("authoritative") and data.get("value") and data.get("located", True) and _ocr_clean:
                     results[key] = data
                     continue
                 # Precedence: a deliberately DRAWN source outranks an AUTO-LEARNED
@@ -908,8 +979,13 @@ class ExtractionEngine:
                 # both are curated "ground truth" tiers, so a fair contest
                 # between them is the right arbiter, not an automatic win for
                 # whichever one happens to run later in the stage order.
+                # OCR gate (same _ocr_clean as Tier-A): a garbled anchor_crop read
+                # must not taught-override a clean incumbent either — it falls
+                # through to the confidence contest, where its OCR-capped confidence
+                # loses. A clean read (or one with no crop conf) keeps the override.
                 is_taught_override = (data.get("method") == "anchor_crop"
                                       and data.get("located", True)
+                                      and _ocr_clean
                                       and existing
                                       and existing.get("method") != "anchor_crop"
                                       and not _is_stage05_located(existing.get("method")))
@@ -1122,6 +1198,22 @@ class ExtractionEngine:
                 val = data.get('value')
                 if not val:
                     continue
+                # ── EDGE-JUNK CLEANUP (name-like free-text) ── a real name never
+                # STARTS with "--«" / a stray symbol; strip OCR edge artefacts BEFORE
+                # the charset/format checks below so a cleaned value isn't needlessly
+                # flagged, and so a keyword read (which skips the crop-path cleaning)
+                # gets the same edge hygiene a crop read already has. EDGES ONLY —
+                # the interior is untouched (free-text variation preserved). The value
+                # change is visible in the trace; no review is forced (the charset
+                # check then runs on the CLEANED value). See value_quality.strip_name_edges.
+                _ftype0 = field_types.get(key)
+                if _ftype0 in (None, 'text', 'multiline_text') and value_quality.is_name_like_field(key):
+                    _spec0 = (field_charsets.get(_ftype0, field_charsets.get('default')) if field_charsets else None)
+                    _clean = value_quality.strip_name_edges(str(val), _spec0)
+                    if _clean and _clean != val:
+                        data = {**data, 'value': _clean, 'display_value': _clean}
+                        results[key] = data
+                        val = _clean
                 # ── Valid-character policy (Phase 1, backend-only FLAG) ── before the
                 # format lookup so it covers EVERY field, not only those with learned
                 # formats. Surfaces unexpected OCR symbols for the field TYPE (note +
@@ -1150,28 +1242,56 @@ class ExtractionEngine:
                             or self.format_class_index.get(('', dt_lower, key))
                 if not fmt_entry:
                     continue
-                # ── Canonical token repair for NAME-LIKE fields (Phase 1, SUGGESTION
-                # ONLY) ── runs INDEPENDENT of the anomaly verdict: a garbled company
-                # name is coarse-class FREETEXT and may not trip check_value at all, so
-                # gating this behind `anomaly` would make it dead code. Repairs garbled
-                # KNOWN tokens to their learned canonical spelling and keeps the variable
-                # tail verbatim (never whole-value snap, never injects a learned token).
-                # display_value/value untouched — emitted as a corrected_to candidate,
-                # conf capped, review-forced. See name_match.py.
+                # ── Canonical token repair for NAME-LIKE fields ── runs INDEPENDENT of
+                # the anomaly verdict: a garbled company name is coarse-class FREETEXT
+                # and may not trip check_value at all, so gating it behind `anomaly`
+                # would make it dead code. Repairs garbled KNOWN tokens to their learned
+                # canonical spelling and keeps the variable tail verbatim (never
+                # whole-value snap, never injects a learned token). See name_match.py.
+                # TWO TIERS by evidence:
+                #   STRONG (every changed token at a NEAR-UNIVERSAL position, doc_freq
+                #     >= 0.9, >= 3 docs) — a confident misread fix backed by overwhelming
+                #     history ("Beaumont Care Homes Lid" -> "...Ltd"). AUTO-APPLY the
+                #     value (the operator wants the misread FIXED, not just suggested);
+                #     kept visible via was_corrected + a note, and NOT review-forced
+                #     (no format_anomaly_flagged) so a confident fix doesn't nag.
+                #   WEAK — emitted as a corrected_to SUGGESTION only (value untouched,
+                #     conf capped, review-forced), exactly as before.
                 name_lex = fmt_entry.get('name_lexicon')
                 if name_lex and key in text_field_keys:
                     from extraction import name_match
-                    repaired = name_match.repair_name_value(str(val), name_lex)
+                    repaired, strong = name_match.repair_name_value(str(val), name_lex, details=True)
                     if repaired and repaired != str(val):
-                        results[key] = {
-                            **data,
-                            'confidence':      min(data.get('confidence') or 0, 70),
-                            'corrected_to':    repaired,
-                            'validation_note': f"Suggested name correction: {repaired}",
-                        }
-                        n_flagged += 1
-                        format_anomaly_flagged = True
-                        continue   # one suggestion per field — skip the anomaly path
+                        if strong:
+                            results[key] = {
+                                **data,
+                                'value':           repaired,
+                                'display_value':   repaired,
+                                'was_corrected':   True,
+                                'corrected_to':    repaired,
+                                # Note carries the ORIGINAL read so the UI can show what
+                                # was auto-fixed (the input already holds the correction).
+                                'validation_note': f"Auto-corrected to match learned data (was: {val})",
+                            }
+                        else:
+                            results[key] = {
+                                **data,
+                                'confidence':      min(data.get('confidence') or 0, 70),
+                                'corrected_to':    repaired,
+                                'validation_note': f"Suggested name correction: {repaired}",
+                            }
+                            n_flagged += 1
+                            format_anomaly_flagged = True
+                        continue   # one repair/suggestion per field — skip the anomaly path
+                    # No repair needed. If the value CONFORMS to the learned name
+                    # pattern (every stable PREFIX token matches; only the variable
+                    # TAIL differs), the name_lexicon — a more precise model than the
+                    # coarse learned SHAPE — says this is the EXPECTED pattern. Suppress
+                    # the shape "format differs" flag: a customer "Beaumont Care Homes
+                    # Ltd - <new site>" is normal, not an anomaly, even when the new
+                    # site's length was never confirmed before.
+                    if name_match.conforms_to_lexicon(str(val), name_lex):
+                        continue
                 anomaly = format_anomaly_checker.check_value(str(val), fmt_entry)
                 if anomaly:
                     # Free-text field (name/address): a learned shape must never

@@ -17,6 +17,12 @@ function register(ctx) {
   const { requireLogin } = require('../auth/handler');
 
   ipcMain.handle('search-documents', (_e, params) => {
+    // F-01 (multi-point licensing): search is DELIBERATELY left ungated in phase 1.
+    // It is read-only (lowest value to a licence bypass — the licensed asset is the
+    // extraction/learning WRITE path, gated at confirm-review + template mappings)
+    // and carries the highest regression risk (locking a valid-but-just-expired
+    // session out of merely VIEWING records). Revisit if search becomes a gated tier.
+    //
     // Authentication is transport-specific: the in-process session supplies the
     // role; a detached client would map a token to the same role set instead.
     const { role } = requireLogin();

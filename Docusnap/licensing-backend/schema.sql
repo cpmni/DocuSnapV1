@@ -79,6 +79,18 @@ CREATE TABLE IF NOT EXISTS audit_events (
   created_at DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Fixed-window rate-limit counters (F-03 anti-automation). One row per bucket
+-- (e.g. "trial_ip:1.2.3.4", "trial_new:2026-06-20"); written by lib/ratelimit.php.
+-- Disposable operational state — safe to TRUNCATE; never holds secrets.
+-- REQUIRED for rate limiting to take effect: lib/ratelimit.php FAILS OPEN, so until
+-- this table exists the /v1 limiter is INERT (no throttling). Import this file on
+-- every deploy (Configure-WampBackend.ps1 -ImportDatabase) to enable F-03.
+CREATE TABLE IF NOT EXISTS rate_limits (
+  bucket       VARCHAR(190) NOT NULL PRIMARY KEY,
+  count        INT          NOT NULL DEFAULT 0,
+  window_start BIGINT       NOT NULL DEFAULT 0    -- unix epoch seconds
+);
+
 -- ── Idempotent migrations ────────────────────────────────────────────────────
 -- CREATE TABLE IF NOT EXISTS above only covers FRESH installs; an existing DB
 -- keeps its old column set. This block back-fills new columns on re-import

@@ -38,12 +38,13 @@ function createSessionStore(opts = {}) {
     return t >= rec.absoluteExpiry || t >= rec.lastSeen + idleMs;
   }
 
-  /** Issue a new session for an authenticated user. Returns { token, expiresAt }. */
-  function issue({ userId, username, role }) {
+  /** Issue a new session for an authenticated user. Returns { token, expiresAt }.
+   *  `clientKey` (optional) ties the session to its seat-pool lease for heartbeats. */
+  function issue({ userId, username, role, clientKey = null }) {
     const t = now();
     const token = genToken();
     const rec = {
-      token, userId, username, role,
+      token, userId, username, role, clientKey,
       issuedAt: t, lastSeen: t,
       absoluteExpiry: t + absoluteMs,
     };
@@ -63,7 +64,7 @@ function createSessionStore(opts = {}) {
     const t = now();
     if (_expired(rec, t)) { sessions.delete(token); return null; }
     rec.lastSeen = t;
-    return { userId: rec.userId, username: rec.username, role: rec.role };
+    return { userId: rec.userId, username: rec.username, role: rec.role, clientKey: rec.clientKey };
   }
 
   /** Revoke a single token (logout). */

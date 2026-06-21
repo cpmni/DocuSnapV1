@@ -16,7 +16,7 @@
  *   SCANFINDER_CLIENT_API_URL  optional env override of the saved server (dev/launcher).
  */
 
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { createClient } = require('./apiClient');
@@ -125,6 +125,22 @@ ipcMain.handle('client-wf-claim',      (_e, { id, version }) => client.workflow.
 ipcMain.handle('client-wf-resolve',    (_e, { id, decision, comment, version }) =>
   client.workflow.resolve(id, decision, comment, version));
 ipcMain.handle('client-wf-recall',     (_e, { id, version }) => client.workflow.recall(id, version));
+
+// About box: version details + open the bundled third-party notice.
+ipcMain.handle('client-about', () => {
+  let copyright = '';
+  try { copyright = require('./package.json').build.copyright || ''; } catch { /* ignore */ }
+  return { name: app.getName(), version: app.getVersion(), electron: process.versions.electron, copyright };
+});
+ipcMain.handle('client-open-licenses', async () => {
+  // Dev: file sits beside main.js; packaged: extraResources drops it in resources/.
+  const p = app.isPackaged
+    ? path.join(process.resourcesPath, 'THIRD-PARTY-LICENSES.txt')
+    : path.join(__dirname, 'THIRD-PARTY-LICENSES.txt');
+  if (!fs.existsSync(p)) return { ok: false, error: 'notice file not found' };
+  const err = await shell.openPath(p);   // '' on success
+  return { ok: err === '', error: err || undefined };
+});
 
 app.whenReady().then(() => {
   serverConfig = loadServerConfig();

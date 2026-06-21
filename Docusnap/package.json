@@ -6,7 +6,9 @@
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "build": "node -e \"const c=require('child_process');process.env.BUILD_REV=process.env.BUILD_REV||'local';c.execSync('electron-builder --win --x64',{stdio:'inherit',env:process.env})\"",
+    "build": "node scripts/check-licenses.js && node scripts/check-rapidocr-bundled.js && node -e \"const c=require('child_process');process.env.BUILD_REV=process.env.BUILD_REV||'local';c.execSync('electron-builder --win --x64',{stdio:'inherit',env:process.env})\"",
+    "check:licenses": "node scripts/check-licenses.js",
+    "check:rapidocr": "node scripts/check-rapidocr-bundled.js",
     "check:help": "node scripts/check-help-coverage.js",
     "postinstall": "electron-builder install-app-deps"
   },
@@ -41,6 +43,10 @@
       "include": "installer.nsh"
     },
     "extraResources": [
+      {
+        "from": "THIRD-PARTY-LICENSES.txt",
+        "to": "THIRD-PARTY-LICENSES.txt"
+      },
       {
         "from": "python_backend/",
         "to": "python_backend",

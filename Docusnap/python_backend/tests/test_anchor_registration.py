@@ -48,7 +48,7 @@ def _run(monkey_crop, page_transform, orig=None):
     """Run extract_with_anchors with stubbed crop/relocate/filter. `monkey_crop`
     takes (x,y) crop centre and returns the OCR'd value (or None)."""
     saved = (anchor._crop_and_ocr, anchor._relocate_value_by_label, anchor._filter_anchors)
-    anchor._crop_and_ocr = lambda page, x, y, w, h, vt, capture=None, verify_fn=None: monkey_crop(x, y)
+    anchor._crop_and_ocr = lambda page, x, y, w, h, vt, capture=None, verify_fn=None, meta=None: monkey_crop(x, y)
     anchor._relocate_value_by_label = lambda *a, **k: None       # force the no-label case
     anchor._filter_anchors = lambda anchors, s, d: list(anchors)
     try:

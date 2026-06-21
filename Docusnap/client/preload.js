@@ -26,6 +26,8 @@ contextBridge.exposeInMainWorld('scanfinder', {
   getDocument:     (id) => ipcRenderer.invoke('client-get-document', id),
   getPages:        (id) => ipcRenderer.invoke('client-get-pages', id),
   isAuthenticated: () => ipcRenderer.invoke('client-authed'),
+  about:           () => ipcRenderer.invoke('client-about'),
+  openLicenses:    () => ipcRenderer.invoke('client-open-licenses'),
   workflow: {
     list:       (view) => ipcRenderer.invoke('client-wf-list', view),
     recipients: () => ipcRenderer.invoke('client-wf-recipients'),

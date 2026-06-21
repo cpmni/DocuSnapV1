@@ -88,6 +88,11 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
         value    = None
         method   = "anchor"
         val_type = (field_patterns or {}).get(field_key, {}).get("validation")
+        # OCR quality of the crop that produced the WINNING value (None for the
+        # text-fallback / inline paths, which don't crop+re-OCR). Threaded into the
+        # confidence so a garbled read scores low instead of riding usage_count.
+        ocr_conf = None
+        ocr_min  = None
 
         # "Did this crop read a value we'd actually commit?" — the same
         # credibility + learned-format gate the merge below applies. Passed into
@@ -105,7 +110,8 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
             h_norm   = anchor.get("h_norm") or 0.0
             _cap = ((lambda c: slice_capture(field_key, "anchor_crop", 0,
                        (x_norm, y_norm, w_norm, h_norm), c, "target")) if slice_capture else None)
-            crop_value = _crop_and_ocr(page0, x_norm, y_norm, w_norm, h_norm, val_type, capture=_cap, verify_fn=_verify)
+            _m = {}
+            crop_value = _crop_and_ocr(page0, x_norm, y_norm, w_norm, h_norm, val_type, capture=_cap, verify_fn=_verify, meta=_m)
             # A fixed crop is positionally rigid: when an upstream line wraps or
             # the block shifts on a sibling layout, the box can land off-target
             # and return a NON-EMPTY but wrong value (e.g. ">alifornia" from the
@@ -125,6 +131,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 if qualified:
                     value  = qualified
                     method = "anchor_crop"
+                    ocr_conf, ocr_min = _m.get('conf'), _m.get('min_conf')
                 elif on_reject:
                     on_reject(field_key, "anchor_crop", crop_value, "format")
 
@@ -152,7 +159,8 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
             rcy = mapped["y_norm"] + mapped["h_norm"] / 2.0
             _gcap = ((lambda c: slice_capture(field_key, "anchor_registration", 0,
                         (rcx, rcy, w_norm, h_norm), c, "target")) if slice_capture else None)
-            gval = _crop_and_ocr(page0, rcx, rcy, w_norm, h_norm, val_type, capture=_gcap, verify_fn=_verify)
+            _mg = {}
+            gval = _crop_and_ocr(page0, rcx, rcy, w_norm, h_norm, val_type, capture=_gcap, verify_fn=_verify, meta=_mg)
             if gval and not _crop_is_credible(gval, val_type, validation_patterns, label):
                 if on_reject: on_reject(field_key, "anchor_registration", gval, "not_credible")
             elif gval:
@@ -161,6 +169,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                     if _should_replace(value, q, val_type, validation_patterns):
                         value  = q
                         method = "anchor_registration"
+                        ocr_conf, ocr_min = _mg.get('conf'), _mg.get('min_conf')
                 elif on_reject:
                     on_reject(field_key, "anchor_registration", gval, "format")
 
@@ -209,6 +218,21 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                         if q and _should_replace(value, q, val_type, validation_patterns):
                             value  = q
                             method = "anchor_inline"
+                            # Dev trace: emit a slice for the harvested value's region
+                            # so the inspector can highlight where an inline read came
+                            # from (these reads don't crop+re-OCR, so without this the
+                            # winning value has no box). Only fires under --trace.
+                            _ib = located.get("inline_box")
+                            if slice_capture and _ib:
+                                try:
+                                    _ibox = (_ib["x_norm"], _ib["y_norm"], _ib["w_norm"], _ib["h_norm"])
+                                    _icrop = page0.crop((int(_ib["x_norm"] * page0.size[0]),
+                                                         int(_ib["y_norm"] * page0.size[1]),
+                                                         int((_ib["x_norm"] + _ib["w_norm"]) * page0.size[0]),
+                                                         int((_ib["y_norm"] + _ib["h_norm"]) * page0.size[1])))
+                                    slice_capture(field_key, "anchor_inline", 0, _ibox, _icrop, "target")
+                                except Exception:
+                                    pass   # dev-only; never disrupt extraction
                     elif hv and on_reject:
                         on_reject(field_key, "anchor_inline", hv, "not_credible")
                 # 2. PLACEMENT + CROP: value not on the label's line (label-above
@@ -224,8 +248,9 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                         relo = _widen_relocated_crop(relo, val_type)
                         _rcap = ((lambda c: slice_capture(field_key, "anchor_relocate", 0,
                                     relo, c, "target")) if slice_capture else None)
+                        _mr = {}
                         rval = _crop_and_ocr(page0, relo[0], relo[1], relo[2], relo[3],
-                                             val_type, capture=_rcap, verify_fn=_verify)
+                                             val_type, capture=_rcap, verify_fn=_verify, meta=_mr)
                         if rval and not _crop_is_credible(rval, val_type, validation_patterns, label):
                             if on_reject: on_reject(field_key, "anchor_crop_relocated", rval, "not_credible")
                         elif rval:
@@ -234,6 +259,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                                 if _should_replace(value, q, val_type, validation_patterns):
                                     value  = q
                                     method = "anchor_crop_relocated"
+                                    ocr_conf, ocr_min = _mr.get('conf'), _mr.get('min_conf')
                             elif on_reject:
                                 on_reject(field_key, "anchor_crop_relocated", rval, "format")
 
@@ -316,6 +342,23 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 # + residual), not usage_count. Ranks above single-label relocate
                 # (stronger geometry) and below a clean rigid crop.
                 conf = min(93, registration.registration_confidence(page_transform))
+            # ── OCR-QUALITY CAP (FREE-TEXT ONLY): for a name/address field there is
+            # no regex to validate the read, so the crop's mean OCR confidence is the
+            # only quality signal — without this a garbled crop ("Aaiumant Care Homes
+            # Ltd - Galaorm") scored in the 90s on usage_count alone. Cap the field
+            # confidence at the crop's mean word confidence + a small margin: a clean
+            # crop (mean ~90) is unaffected (cap ≥ 95), a poor read (mean ~65) drops
+            # to ~70 and is routed to review.
+            # SCOPED TO FREE-TEXT: a STRUCTURED value (date/currency/alphanumeric
+            # reference) that already passed its regex/type gate is validated by the
+            # PATTERN, not by Tesseract's per-glyph confidence — which is routinely
+            # low on isolated digit groups and dashes. Applying the cap there sank a
+            # correct reference "2602-0768-1" to 18% (mean conf ~13). For those fields
+            # the regex IS the trust signal, so the cap (and the Tier-A min-conf
+            # signal below) is skipped.
+            _is_free_text = val_type in (None, "text", "multiline_text")
+            if ocr_conf is not None and _is_free_text:
+                conf = min(conf, int(ocr_conf) + 5)
             # ── LOCATED gate: Tier-A trust requires the anchor to be on THIS page ──
             # A label/landmark-confirmed read (text-fallback / inline / relocated /
             # registration) is located by construction. A RIGID anchor_crop is
@@ -363,6 +406,16 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 # can't dominate a located mapping. Defaults True for callers/tests
                 # that build results directly.
                 "located": located_ok,
+                # Minimum SUBSTANTIAL-word OCR confidence of the crop that produced
+                # this value (None for inline/text reads). The engine's Tier-A gate
+                # uses it so an authoritative ⊕ anchor whose crop read a garbled word
+                # ("Aaiumant"/"Galaorm" min ~55) does NOT win OUTRIGHT over a clean
+                # keyword value — it falls through to the confidence contest, where
+                # its OCR-capped confidence loses to the clean read. SCOPED TO
+                # FREE-TEXT (same reason as the cap above): a regex-valid structured
+                # value isn't judged by Tesseract's digit confidence, so it carries
+                # no min-conf signal (None → Tier-A unaffected).
+                "ocr_min_conf": ocr_min if _is_free_text else None,
             }
 
     return results
@@ -466,6 +519,7 @@ def _locate_in_text_lines(text_lines, lbox, anchor_label):
 
     label_box = None
     inline_value = None
+    inline_box = None
     words = best.get("words") or []
     run = tm._match_label_run(words, needle)
     if run:
@@ -477,11 +531,18 @@ def _locate_in_text_lines(text_lines, lbox, anchor_label):
         rest = words[len(run):]
         if rest:
             inline_value = " ".join(w["text"] for w in rest).strip() or None
+            # Tight bbox of the VALUE words (top-left convention) so the dev trace
+            # can highlight exactly where an inline-harvested value was read.
+            vx1 = min(w["x_norm"] for w in rest)
+            vx2 = max(w["x_norm"] + w["w_norm"] for w in rest)
+            vy1 = min(w["y_norm"] for w in rest)
+            vy2 = max(w["y_norm"] + w["h_norm"] for w in rest)
+            inline_box = {"x_norm": vx1, "y_norm": vy1, "w_norm": vx2 - vx1, "h_norm": vy2 - vy1}
     return {
         "x_norm": best["x_norm"], "y_norm": best["y_norm"],
         "w_norm": best["w_norm"], "h_norm": best["h_norm"],
         "matched_text": best.get("text"), "match_score": chosen_score,
-        "label_box": label_box, "inline_value": inline_value,
+        "label_box": label_box, "inline_value": inline_value, "inline_box": inline_box,
     }
 
 
@@ -707,9 +768,16 @@ def _crop_is_credible(value: str, val_type: str | None,
         return any(re.search(p, v, re.IGNORECASE) for p in pats)
 
     # Free-text: must start with an alphanumeric char and be mostly alphanumeric.
+    # Also require a minimum of 3 non-space characters — a single letter or two-char
+    # fragment ("a", "be") is always an OCR artefact, never a real name/address/value.
+    # Typed fields (alphanumeric, currency, etc.) are already gated by their pattern
+    # which enforces its own minimum length; this floor only applies to the free-text
+    # path so it cannot accidentally tighten structured-field reads.
     if not v[0].isalnum():
         return False
     nonspace = [c for c in v if not c.isspace()]
+    if len(nonspace) < 3:
+        return False
     alnum    = sum(c.isalnum() for c in nonspace)
     return alnum >= len(nonspace) * 0.5
 
@@ -851,17 +919,22 @@ def _light_prep(image):
 
 
 def _read(img, psm):
-    """One image_to_data pass → (text, mean_word_conf). Reconstructs lines from
-    word boxes (block/par/line) so clean_crop_segment still sees real line breaks,
-    and averages positive word confidences as a deterministic rung tie-breaker.
-    Same OCR cost as image_to_string on the same image."""
+    """One image_to_data pass → (text, mean_word_conf, min_word_conf).
+    Reconstructs lines from word boxes (block/par/line) so clean_crop_segment
+    still sees real line breaks, and averages positive word confidences as a
+    deterministic rung tie-breaker. Also returns the MINIMUM confidence over the
+    SUBSTANTIAL words (alphabetic, length ≥ 3) — a discriminator the mean dilutes:
+    a name like "Aaiumant Care Homes Ltd Galaorm" has three clean words masking
+    two garbled ones, so its mean stays moderate while its min (the garbled word)
+    drops. Used to gate the authoritative-anchor outright win. min == mean when no
+    substantial word is present. Same OCR cost as image_to_string on the same image."""
     import pytesseract
     from pytesseract import Output
     try:
         d = pytesseract.image_to_data(img, config=f"--oem 3 --psm {psm}", output_type=Output.DICT)
     except Exception:
-        return "", 0.0
-    lines, confs = {}, []
+        return "", 0.0, 0.0
+    lines, confs, word_confs = {}, [], []
     for i in range(len(d.get("text", []))):
         t = (d["text"][i] or "").strip()
         try:
@@ -872,15 +945,20 @@ def _read(img, psm):
             continue
         lines.setdefault((d["block_num"][i], d["par_num"][i], d["line_num"][i]), []).append(t)
         confs.append(c)
+        # A "substantial" word for the min — skip 1-2 char tokens and punctuation
+        # ("-", ":", "Co") whose OCR confidence is noisy and not name-bearing.
+        if len(t) >= 3 and sum(ch.isalpha() for ch in t) >= 3:
+            word_confs.append(c)
     text = "\n".join(" ".join(lines[k]) for k in sorted(lines.keys())).strip()
     mean = (sum(confs) / len(confs)) if confs else 0.0
-    return text, mean
+    min_conf = min(word_confs) if word_confs else mean
+    return text, mean, min_conf
 
 
 def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
                   w_norm: float = 0.0, h_norm: float = 0.0,
                   val_type: str | None = None, capture = None,
-                  verify_fn = None) -> str | None:
+                  verify_fn = None, meta = None) -> str | None:
     """
     Crop a tight region centred on the stored value coordinates and re-OCR it.
     Uses the exact selection dimensions saved by the ⊕ tool (w_norm/h_norm) so
@@ -890,7 +968,17 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
     val_type (the field's configured `validation` type, e.g. "alphanumeric",
     "currency", "text") gates the digit-run truncation below — see the comment
     at the split-pattern selection for why this matters.
+
+    `meta` (optional out-dict): when provided, the winning rung's OCR confidence
+    is written as meta['conf'] (mean word confidence) and meta['min_conf'] (the
+    minimum SUBSTANTIAL-word confidence). Callers use these to make the field
+    confidence reflect READ QUALITY rather than only the anchor's usage_count — a
+    garbled crop ("Aaiumant … Galaorm") no longer scores in the 90s.
     """
+    def _set_meta(c, mn):
+        if meta is not None:
+            meta['conf'] = c
+            meta['min_conf'] = mn
     try:
         w, h = page_image.size
         cx = int(x_norm * w)
@@ -942,18 +1030,19 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
 
         light = _light_prep(crop)
         heavy = None
-        best_seg, best_conf = None, -1.0
+        best_seg, best_conf, best_min = None, -1.0, 0.0
         for _src, _psm in (("light", 7), ("light", 6), ("heavy", 7), ("heavy", 6)):
             if _src == "heavy" and heavy is None:
                 heavy = _tm._prep(crop)            # Rung 3 = today's recipe verbatim
             rimg = light if _src == "light" else heavy
-            rtext, rconf = _read(rimg, _psm)
+            rtext, rconf, rmin = _read(rimg, _psm)
             rseg = clean_crop_segment(rtext, val_type)
             if rseg:
                 rseg = _repair_single_token(rimg, rseg, val_type)
             if rseg and rconf > best_conf:
-                best_seg, best_conf = rseg, rconf
+                best_seg, best_conf, best_min = rseg, rconf, rmin
             if _gate(rseg, rconf):
+                _set_meta(rconf, rmin)
                 return rseg
 
         # No rung satisfied the gate. Degraded TEXT-LINE escalation (free-text
@@ -965,15 +1054,17 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
             try:
                 from ocr import text_enhance
                 eimg = text_enhance.enhance_text_crop(crop)
-                etext, _ec = _read(eimg, 7)
+                etext, _ec, _emin = _read(eimg, 7)
                 eseg = clean_crop_segment(etext, val_type)
                 if not eseg:
-                    etext, _ec = _read(eimg, 6)
+                    etext, _ec, _emin = _read(eimg, 6)
                     eseg = clean_crop_segment(etext, val_type)
                 if eseg and verify_fn(eseg):
+                    _set_meta(_ec, _emin)
                     return eseg
             except Exception:
                 pass
+        _set_meta(best_conf if best_conf >= 0 else 0.0, best_min)
         return best_seg or None
     except Exception:
         return None

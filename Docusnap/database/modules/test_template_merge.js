@@ -36,7 +36,9 @@ function makeDb() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       template_id INTEGER NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
       field_key TEXT NOT NULL, anchor_label TEXT, direction TEXT NOT NULL DEFAULT 'right',
-      fixed_value TEXT, is_variable INTEGER NOT NULL DEFAULT 1, UNIQUE(template_id, field_key)
+      fixed_value TEXT, is_variable INTEGER NOT NULL DEFAULT 1,
+      fixed_locked INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(template_id, field_key)
     );
     CREATE TABLE template_field_mappings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

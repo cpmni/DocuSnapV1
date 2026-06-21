@@ -32,3 +32,12 @@ licensing-backend/keys/
 # per-install learned data, NOT shipped (not in build files/extraResources), so they
 # must never be committed.
 templates/*.json
+
+# Private TLS key material must NEVER be committed (SECURITY_AUDIT.md F-07). The
+# Samples/ tree holds throwaway demo certs (incl. ca.key / server.key / server.pfx,
+# all of which carry a private key); ignore the whole tree, plus a belt-and-braces
+# global rule for any stray private-key file anywhere in the repo.
+Samples/
+*.key
+*.pfx
+*.p12

@@ -155,6 +155,14 @@ function buildTrainingArgs(db, configPath, logger = null) {
   try { bornDigitalOn = learning.getSetting(db, 'born_digital_enabled') !== 'false'; }
   catch { /* older DB without the setting -> default on */ }
 
+  // Full-page OCR engine selection (Stage 1). DEFAULT 'tesseract' = byte-identical:
+  // only the opt-in 'rapidocr' adds a flag, so an existing install's command line is
+  // unchanged. Governs full-page OCR ONLY and falls back to Tesseract in Python if the
+  // RapidOCR runtime/models aren't bundled. Crop/zone/anchor OCR is unaffected.
+  let ocrEngine = 'tesseract';
+  try { if (learning.getSetting(db, 'ocr_engine') === 'rapidocr') ocrEngine = 'rapidocr'; }
+  catch { /* older DB without the setting -> default tesseract */ }
+
   const args = [
     '--fields-file',    fieldsFile,
     '--hints-file',     hintsFile,
@@ -168,11 +176,65 @@ function buildTrainingArgs(db, configPath, logger = null) {
   ];
   if (registrationOn) args.push('--registration');
   if (bornDigitalOn) args.push('--born-digital');
+  if (ocrEngine === 'rapidocr') args.push('--ocr-engine', 'rapidocr');
 
   return {
     args,
+    ocrEngine,   // 'tesseract' | 'rapidocr' — lets callers add RapidOCR-only speed flags
     tempFiles: [fieldsFile, hintsFile, anchorsFile, logosFile, dtFile, formatsFile, templatesFile, overridesFile],
   };
+}
+
+// ── Safe path policy for "open in default app / reveal in Explorer" (F-06) ────
+// shell.openPath launches a path with its OS handler — for an .exe/.lnk/UNC path
+// that means code execution. The open-file / show-in-explorer IPC channels accept
+// a renderer-supplied path, so it is constrained to (a) a known document/preview
+// file type, (b) no UNC path, and (c) located inside an app-managed root OR a path
+// recorded against a document row. Uses the module-level `path`/`fs` (Node core).
+const ALLOWED_OPEN_EXTS = new Set(['.pdf', '.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp', '.xml']);
+
+function _allowedOpenRoots(db) {
+  const roots = [];
+  try {
+    const out = require('../../../database/modules/learning').getSetting(db, 'output_folder', null);
+    if (out) roots.push(path.resolve(out));
+  } catch { /* ignore */ }
+  try {
+    const { app } = require('electron');
+    roots.push(path.resolve(path.join(app.getPath('userData'), 'inbox')));
+  } catch { /* ignore (e.g. unit tests without an electron app) */ }
+  return roots;
+}
+
+function _withinAnyRoot(resolved, roots) {
+  return roots.some(r => resolved === r || resolved.startsWith(r + path.sep));
+}
+
+// True only when `rawPath` is safe to hand to shell.openPath / showItemInFolder.
+function _isOpenablePath(db, rawPath) {
+  if (!rawPath || typeof rawPath !== 'string') return false;
+  if (/^[\\/]{2}/.test(rawPath)) return false;                  // reject UNC (\\host or //host)
+  let resolved;
+  try { resolved = path.resolve(rawPath); } catch { return false; }
+  if (/^[\\/]{2}/.test(resolved)) return false;                 // UNC after resolution too
+  if (!ALLOWED_OPEN_EXTS.has(path.extname(resolved).toLowerCase())) return false;
+  if (_withinAnyRoot(resolved, _allowedOpenRoots(db))) return true;
+  // Otherwise allow only an exact path the app itself recorded for a document
+  // (covers an original source file that legitimately lives outside the roots).
+  try {
+    const base = path.basename(resolved);
+    const rows = db.prepare(
+      `SELECT working_path, stored_path, folder_path, original_filename FROM documents
+        WHERE working_path = ? OR stored_path = ? OR original_filename = ?`
+    ).all(resolved, resolved, base);
+    for (const row of rows) {
+      if (row.working_path && path.resolve(row.working_path) === resolved) return true;
+      if (row.stored_path && path.resolve(row.stored_path) === resolved) return true;
+      if (row.folder_path && row.original_filename &&
+          path.resolve(path.join(row.folder_path, row.original_filename)) === resolved) return true;
+    }
+  } catch { /* ignore */ }
+  return false;
 }
 
 function register(ctx) {
@@ -250,8 +312,22 @@ function register(ctx) {
 
   // Opening a filed document in Explorer/its default app is part of "search/view
   // documents" — available to every signed-in role, including Read Only.
-  ipcMain.on('show-in-explorer', (_e, filePath) => { if (getCurrentUser()) shell.showItemInFolder(filePath); });
-  ipcMain.on('open-file',        (_e, filePath) => { if (getCurrentUser()) shell.openPath(filePath); });
+  ipcMain.on('show-in-explorer', (_e, filePath) => {
+    if (!getCurrentUser()) return;
+    if (!_isOpenablePath(getDb(), filePath)) {
+      logger?.warn?.('[security] blocked show-in-explorer for a disallowed path');
+      return;
+    }
+    shell.showItemInFolder(filePath);
+  });
+  ipcMain.on('open-file', (_e, filePath) => {
+    if (!getCurrentUser()) return;
+    if (!_isOpenablePath(getDb(), filePath)) {
+      logger?.warn?.('[security] blocked open-file for a disallowed path');
+      return;
+    }
+    shell.openPath(filePath);
+  });
 
   // Diagnostic-only: record a ⊕ teach action — the box coordinates STORED for the
   // anchor plus the value the live zone-OCR read at teach time, and the preview
@@ -294,13 +370,17 @@ function register(ctx) {
   ipcMain.handle('process-folder', async (event, folderPath) => {
     requireRole('admin', 'edit');
     const db = getDb();
+    // Multi-point licensing enforcement (F-01): bulk import is the highest-value
+    // extraction write path. Network-free cached-license re-check before any work.
+    const licenseDenial = require('../licensing/handler').licenseDenied(db);
+    if (licenseDenial) return { success: false, error: 'A valid license is required to process documents. Please re-activate ScanFinder.', ...licenseDenial };
     logAudit(db, { action: 'import_run', action_category: 'processing', target_type: 'folder',
       outcome: 'success', metadata: { folder: folderPath } });
     const diagOn = _diagEnabled(db);
     if (diagOn) { diaglog.enable(); diaglog.write({ ev: 'batch_start', folder: folderPath }); }
-    let trainingArgs, tempFiles;
+    let trainingArgs, tempFiles, ocrEngine;
     try {
-      ({ args: trainingArgs, tempFiles } = buildTrainingArgs(db, configPath, logger));
+      ({ args: trainingArgs, tempFiles, ocrEngine } = buildTrainingArgs(db, configPath, logger));
     } catch (e) {
       console.error('[process-folder] buildTrainingArgs failed:', e);
       mirror(event.sender, 'process-progress', {
@@ -330,7 +410,7 @@ function register(ctx) {
     // original single-process behaviour). suppressStart hides the worker's own
     // {type:'start'} so a pool can emit ONE aggregate total to the renderer
     // instead of N competing ones (the renderer keys its progress bar off it).
-    const runWorker = (filesFile, suppressStart) => new Promise((resolve) => {
+    const runWorker = (filesFile, suppressStart, ocrThreads = 0) => new Promise((resolve) => {
       const py = pythonExe();
       const scriptArgs = [
         '--folder',    folderPath,
@@ -338,6 +418,13 @@ function register(ctx) {
         '--mode',      procMode,
         ...trainingArgs,
       ];
+      // RapidOCR-only speed flags (default Tesseract command line stays unchanged):
+      // Fast mode skips the angle classifier; parallel workers cap onnxruntime
+      // threads to cores/workers so they don't oversubscribe the CPU.
+      if (ocrEngine === 'rapidocr') {
+        if (procMode === 'fast') scriptArgs.push('--ocr-fast');
+        if (ocrThreads > 0) scriptArgs.push('--ocr-threads', String(ocrThreads));
+      }
       if (filesFile) scriptArgs.push('--files-file', filesFile);
       // Emit the dev trace stream + capture OCR slices while the hidden inspector
       // is open OR diagnostic logging is on (so the diagnostic file gets the full
@@ -419,12 +506,18 @@ function register(ctx) {
       } else {
         const shards = partitionRoundRobin(allFiles, Math.min(concurrency, allFiles.length));
         logger?.log(`Batch start: folder="${folderPath}" mode=${procMode} concurrency=${concurrency} → ${shards.length} workers, ${allFiles.length} files`);
+        // Cap each RapidOCR worker's onnxruntime threads to cores/workers so the
+        // pool doesn't oversubscribe the CPU (RapidOCR is internally multithreaded,
+        // unlike Tesseract). 0 = no cap (Tesseract, or unknown CPU count).
+        const ocrCap = ocrEngine === 'rapidocr'
+          ? Math.max(1, Math.floor((os.cpus().length || 1) / shards.length))
+          : 0;
         // One aggregate start for the whole batch; per-worker starts suppressed.
         mirror(event.sender, 'process-progress', { type: 'start', total: allFiles.length });
         workerPromises = shards.map(shard => {
           const f = writeTempJson('files', shard);
           shardFiles.push(f);
-          return runWorker(f, true);
+          return runWorker(f, true, ocrCap);
         });
       }
     }
@@ -455,6 +548,10 @@ function register(ctx) {
   ipcMain.handle('reprocess-document', async (event, { docId, folderPath, filename, enhanceParams }) => {
     requireRole('admin', 'edit');
     const db      = getDb();
+    // Multi-point licensing enforcement (F-01): reprocess re-runs the extraction
+    // pipeline — same network-free cached-license re-check as bulk import.
+    const licenseDenial = require('../licensing/handler').licenseDenied(db);
+    if (licenseDenial) return { success: false, error: 'A valid license is required to reprocess documents. Please re-activate ScanFinder.', ...licenseDenial };
     logAudit(db, { action: 'reprocess', target_type: 'document', target_id: docId, document_id: docId,
       outcome: 'success', metadata: { enhanced: !!enhanceParams } });
     // Prefer the app-managed working copy so reprocess doesn't depend on the
@@ -480,7 +577,7 @@ function register(ctx) {
 
     const diagOn = _diagEnabled(db);
     if (diagOn) { diaglog.enable(); diaglog.write({ ev: 'reprocess_start', filename, doc_id: docId }); }
-    const { args: trainingArgs, tempFiles } = buildTrainingArgs(db, configPath, logger);
+    const { args: trainingArgs, tempFiles, ocrEngine } = buildTrainingArgs(db, configPath, logger);
     const learning2  = require('../../../database/modules/learning');
     const templates2 = require('../../../database/modules/templates');
     const reprMode   = learning2.getSetting(db, 'processing_mode', 'smart');
@@ -516,6 +613,8 @@ function register(ctx) {
       '--mode',       reprMode,
       ...trainingArgs,
     ];
+    // RapidOCR Fast-mode speed flag (single doc -> no thread cap). Tesseract default unchanged.
+    if (ocrEngine === 'rapidocr' && reprMode === 'fast') scriptArgs.push('--ocr-fast');
     // Honour the template this doc is already linked to as a Stage 0 fallback,
     // so its admin-drawn field mappings still apply on reprocess even when live
     // re-identification is borderline (see engine.extract known_template_id).
@@ -1139,4 +1238,6 @@ module.exports = {
   cleanupTempFiles: cleanupFiles,
   handleFileMessage: _handleFileMessage,
   isBatchRunning: () => _currentBatchProcs.length > 0,
+  // Exposed for the F-06 path-policy unit test (test_open_path_policy.js).
+  _isOpenablePath,
 };

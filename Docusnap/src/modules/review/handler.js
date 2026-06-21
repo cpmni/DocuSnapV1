@@ -164,6 +164,16 @@ function register(ctx) {
     });
   });
 
+  // ── Small page-1 thumbnail for the document lists + add-template picker ──────
+  ipcMain.handle('get-document-thumbnail', async (_e, docId, folderPath, filename) => {
+    requireLogin();
+    if (!folderPath || !filename) return null;
+    return previewService.getThumbnail(getDb(), { docId, folderPath, filename }, {
+      fs, path, spawn, pythonExe, pythonArgs,
+      renderScript: ctx.resourcePath('python_backend', 'render', 'pages.py'),
+    });
+  });
+
   // ── OCR preprocessing preview ────────────────────────────────────────────────
   ipcMain.handle('get-enhanced-preview', async (_e, { folderPath, filename, page, enhanceParams }) => {
     requireLogin();
@@ -303,6 +313,13 @@ function register(ctx) {
     } = payload;
 
     const db      = getDb();
+    // Multi-point licensing enforcement (F-01): filing a confirmed document is a
+    // high-value write path. Re-check the cached license verdict here (network-free)
+    // so neutralising the single startup gate does not silently re-enable confirms.
+    const licenseDenial = require('../licensing/handler').licenseDenied(db);
+    if (licenseDenial) {
+      return { success: false, error: 'A valid license is required to file documents. Please re-activate ScanFinder.', ...licenseDenial };
+    }
     requireUnlocked(db, document_id, 'confirm');
     const filing  = require('../filing/handler');
     // The app-managed working copy is the stable source for filing (the user's

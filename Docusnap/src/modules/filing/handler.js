@@ -111,6 +111,13 @@ async function commitDocument({
   const month         = dateObj ? MONTH_NAMES[dateObj.getMonth()] : 'Unknown Month';
 
   const targetDir = path.join(outputRoot, companyFolder, year, month);
+  // SECURITY (F-08): defence in depth — even after sanitisation, never let the
+  // resolved filing directory escape the configured output root.
+  const rootResolved   = path.resolve(outputRoot);
+  const targetResolved = path.resolve(targetDir);
+  if (targetResolved !== rootResolved && !targetResolved.startsWith(rootResolved + path.sep)) {
+    return { success: false, error: 'Filing path resolved outside the output folder.' };
+  }
   const metaDir   = path.join(targetDir, '.metadata');
 
   // ── 3. Ensure directories exist ──────────────────────────────────────────────
@@ -227,10 +234,18 @@ function buildXml({ allValues, documentType, originalFilename,
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function sanitiseFolderName(name) {
-  return String(name || 'Unknown Company')
-    .replace(/[\\/:*?"<>|]/g, '')
+  const cleaned = String(name || 'Unknown Company')
+    .replace(/[\\/:*?"<>|]/g, '')   // strip path separators + Windows-illegal chars
+    .replace(/^\.+/, '')            // SECURITY (F-08): strip leading dots so a value like
+                                    // ".." / "." cannot anchor a path segment that escapes
+                                    // the output root via path.join(root, "..", ...)
     .trim()
-    .slice(0, 60) || 'Unknown Company';
+    .slice(0, 60)
+    .trim();
+  // A now-empty or dot-only segment must never become a path component (path.join
+  // would resolve it to the parent/current dir). Fall back to a neutral, contained name.
+  if (!cleaned || /^\.+$/.test(cleaned)) return 'Unknown Company';
+  return cleaned;
 }
 
 const DATE_FORMATS = [
@@ -282,4 +297,4 @@ function _scheduleDelete(fs, filePath, attempts) {
   }, 2000);
 }
 
-module.exports = { register, commitDocument, removeSourceFile };
+module.exports = { register, commitDocument, removeSourceFile, sanitiseFolderName };

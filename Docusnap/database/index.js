@@ -600,6 +600,61 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 28 applied: users.totp_secret/totp_enabled (detached-client MFA)');
   }
 
+  // Migration 29: index audit_log for the two filtered-search paths that were full
+  // scans. Migration 25 already covered the default list (reverse-PK LIMIT) and the
+  // created_at/user/category/document filters; these add the `outcome` filter and the
+  // (action_category, created_at) composite the admin search uses. Additive +
+  // idempotent (CREATE INDEX IF NOT EXISTS); guarded so a pre-migration-25 table is skipped.
+  if (!applied.has(29)) {
+    if (tableExists(db, 'audit_log')) {
+      if (hasColumn(db, 'audit_log', 'outcome')) {
+        try { db.exec('CREATE INDEX IF NOT EXISTS idx_audit_outcome ON audit_log(outcome)'); }
+        catch (e) { console.warn(`  idx_audit_outcome: ${e.message}`); }
+      }
+      if (hasColumn(db, 'audit_log', 'action_category')) {
+        try { db.exec('CREATE INDEX IF NOT EXISTS idx_audit_cat_created ON audit_log(action_category, created_at)'); }
+        catch (e) { console.warn(`  idx_audit_cat_created: ${e.message}`); }
+      }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (29)').run();
+    console.log('JS migration 29 applied: audit_log search indexes (outcome, action_category+created_at)');
+  }
+
+  // Migration 30: concurrent client-seat leases for the detached search clients. One
+  // row per ACTIVE sticky seat — claimed by a stable client_key, freed ONLY by an
+  // admin (no auto-expiry; release deletes the row, the audit_log keeps the history).
+  // Persisted so seat assignments survive a core-app restart. Additive + idempotent.
+  if (!applied.has(30)) {
+    db.exec(`CREATE TABLE IF NOT EXISTS client_seats (
+      id          TEXT    NOT NULL PRIMARY KEY,
+      client_key  TEXT    NOT NULL UNIQUE,
+      username    TEXT,
+      role        TEXT,
+      hostname    TEXT,
+      ip          TEXT,
+      first_seen  INTEGER NOT NULL,
+      last_seen   INTEGER NOT NULL
+    )`);
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (30)').run();
+    console.log('JS migration 30 applied: client_seats (concurrent sticky seat leases)');
+  }
+
+  // Migration 31: admin-LOCKED fixed values. A fixed value an admin explicitly set in
+  // the Template Wizard (template_fields.fixed_locked = 1) is a deliberate, protected
+  // override — distinct from an auto-derived non-variable seed (fixed_locked = 0). It is
+  // preserved across confirmed-history rebuilds (templates._upsertFields) and emitted by
+  // Stage 0 as method 'template_fixed_locked' so the engine protects it from ordinary
+  // OCR/keyword/anchor overrides (ordinary 'template_fixed' stays overridable). Additive +
+  // idempotent.
+  if (!applied.has(31)) {
+    if (tableExists(db, 'template_fields') && !hasColumn(db, 'template_fields', 'fixed_locked')) {
+      try { db.exec(`ALTER TABLE template_fields ADD COLUMN fixed_locked INTEGER NOT NULL DEFAULT 0`); }
+      catch (e) { console.warn(`  template_fields.fixed_locked: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (31)').run();
+    console.log('JS migration 31 applied: template_fields.fixed_locked (admin-locked fixed values)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

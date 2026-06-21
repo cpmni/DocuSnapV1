@@ -32,6 +32,9 @@
   .stage{flex:1 1 auto;overflow:auto;padding:34px 40px;display:flex;flex-direction:column;align-items:center}
   .step{width:100%;max-width:880px;display:none;animation:fade .18s ease}
   .step.active{display:block}
+  /* The "point out the details" step gets more room so the page preview can use the
+     window width when maximised (the page itself stays sharp — buffer is full-res). */
+  .step[data-step="3"]{max-width:1320px}
   @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
   h1{font-size:26px;font-weight:650;margin-bottom:14px;letter-spacing:-.01em}
   h2{font-size:21px;font-weight:620;margin-bottom:10px}
@@ -46,7 +49,17 @@
     cursor:pointer;transition:.12s;display:flex;flex-direction:column;gap:6px}
   .card:hover{border-color:var(--border2);background:var(--surface2)}
   .card.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
-  .card .ic{font-size:22px}
+  /* Doc-picker page-1 thumbnail (shared/thumbs.js): the 📄 emoji shows until the
+     real thumb loads, then the image (overlaid on top) reveals and covers it.
+     The image must stay IN LAYOUT (visibility, not display:none) or the lazy
+     IntersectionObserver never fires for it. No thumb → image stays hidden,
+     emoji shows. */
+  .card .ic{position:relative;width:48px;height:62px;font-size:22px;
+    display:flex;align-items:center;justify-content:center}
+  .card .ic-thumb{position:absolute;inset:0;width:100%;height:100%;border-radius:4px;
+    background:var(--doc-bg);border:1px solid var(--border);
+    object-fit:cover;object-position:top center;visibility:hidden}
+  .card .ic-thumb.loaded{visibility:visible}
   .card .nm{font-weight:600}
   .card.dashed{border-style:dashed;color:var(--muted);align-items:center;justify-content:center;text-align:center}
 
@@ -61,6 +74,9 @@
   .chip select{width:auto;padding:2px 4px;font-size:12px;background:transparent;border:0}
   .chip .x{cursor:pointer;color:var(--muted);font-weight:700}
   .chip .x:hover{color:var(--err)}
+  .chip.locked{background:var(--surface3);border-color:var(--border2)}
+  .chip .ftype{color:var(--muted);font-size:12px}
+  .chip .lock{color:var(--muted);font-size:12px;cursor:default}
   .addrow{display:flex;gap:8px;margin-top:10px}
   .addrow input{flex:1}
   .panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;margin-top:14px}
@@ -72,13 +88,22 @@
   .banner .sub{font-size:13px;color:var(--muted);margin-top:3px}
   .canvaswrap{position:relative;background:#0a0c12;border:1px solid var(--border);border-radius:10px;
     overflow:hidden;min-height:420px;display:flex;align-items:center;justify-content:center}
-  #pageCanvas{max-width:100%;max-height:62vh;cursor:crosshair;display:block}
+  /* Same high-visibility crosshair as the Template Manager (dark outline under a blue
+     cross + centre ring) so it shows against a white document. */
+  #pageCanvas{max-width:100%;max-height:72vh;display:block;transform-origin:center center;will-change:transform;
+    cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Cline x1='16' y1='0' x2='16' y2='13' stroke='%23000' stroke-width='4' stroke-opacity='0.5'/%3E%3Cline x1='16' y1='19' x2='16' y2='32' stroke='%23000' stroke-width='4' stroke-opacity='0.5'/%3E%3Cline x1='0' y1='16' x2='13' y2='16' stroke='%23000' stroke-width='4' stroke-opacity='0.5'/%3E%3Cline x1='19' y1='16' x2='32' y2='16' stroke='%23000' stroke-width='4' stroke-opacity='0.5'/%3E%3Ccircle cx='16' cy='16' r='4' fill='none' stroke='%23000' stroke-width='3' stroke-opacity='0.5'/%3E%3Cline x1='16' y1='0' x2='16' y2='13' stroke='%234f8ef7' stroke-width='1.5'/%3E%3Cline x1='16' y1='19' x2='16' y2='32' stroke='%234f8ef7' stroke-width='1.5'/%3E%3Cline x1='0' y1='16' x2='13' y2='16' stroke='%234f8ef7' stroke-width='1.5'/%3E%3Cline x1='19' y1='16' x2='32' y2='16' stroke='%234f8ef7' stroke-width='1.5'/%3E%3Ccircle cx='16' cy='16' r='4' fill='none' stroke='%234f8ef7' stroke-width='1.5'/%3E%3C/svg%3E") 16 16, crosshair}
+  .zoombar{position:absolute;top:8px;right:8px;z-index:2;display:flex;align-items:center;gap:2px;
+    background:var(--surface);border:1px solid var(--border2);border-radius:8px;padding:3px;box-shadow:0 1px 4px rgba(0,0,0,.25)}
+  .zoombar button{width:26px;height:24px;border:0;background:transparent;color:var(--text);font-size:15px;
+    line-height:1;border-radius:5px;cursor:pointer}
+  .zoombar button:hover{background:var(--surface2)}
+  .zoombar .lvl{min-width:42px;text-align:center;font-size:11px;color:var(--muted)}
   .rail{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px}
   .rail h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:10px}
   .fieldrow{display:flex;align-items:center;gap:8px;padding:7px 4px;font-size:14px;border-radius:6px}
   .fieldrow.cur{background:var(--surface2)}
   .dot{width:10px;height:10px;border-radius:50%;background:var(--border2);flex:0 0 auto}
-  .dot.done{background:var(--ok)} .dot.cur{background:var(--accent)} .dot.skip{background:var(--warn)}
+  .dot.done{background:var(--ok)} .dot.cur{background:var(--accent)} .dot.skip{background:var(--warn)} .dot.fixed{background:var(--muted)}
   .readback{margin-top:12px;font-size:13px}
   .readback .val{font-size:15px;color:var(--ok)}
   .warn{color:var(--warn);font-size:13px;margin-top:8px}
@@ -134,10 +159,14 @@
     <section class="step active" data-step="0">
       <h1>Let's teach Scan Finder a new document</h1>
       <p class="lead">You'll show Scan Finder one example — say an invoice from a supplier you use often.
-        You point out where the important details sit on the page, and from then on it knows where to look.
+        For each detail you draw a box around its <b style="color:var(--ok)">value</b>, then mark the
+        printed <b style="color:var(--accent)">label</b> next to it. The label is the anchor Scan Finder follows,
+        so it still finds the value even when the next scan is shifted, scaled or a little crooked.
+        Fields that are always the same (like the company name) can be set as a <b>fixed value</b> instead — no drawing needed.
         It takes a few minutes the first time, and you can change anything later.</p>
-      <div class="pill-strip"><b>1</b> Pick the document &nbsp;→&nbsp; <b>2</b> Point out the details &nbsp;→&nbsp; <b>3</b> Done</div>
-      <p class="muted">Nothing is saved until the very end. You can go back at any point.</p>
+      <div class="pill-strip"><b>1</b> Pick the document &nbsp;→&nbsp; <b>2</b> Draw values &amp; labels (or set fixed) &nbsp;→&nbsp; <b>3</b> Done</div>
+      <p class="muted">The boxes you draw are the exact ones the Template Manager shows later.
+        Nothing is saved until the very end — you can go back at any point.</p>
     </section>
 
     <!-- Step 1: Choose the scanned document -->
@@ -179,12 +208,20 @@
     <!-- Step 3: Point out the details -->
     <section class="step" data-step="3">
       <div class="banner">
-        <div class="big" id="rg-prompt">Draw a box around the value</div>
-        <div class="sub" id="rg-sub">Drag a rectangle right over where the value is printed — not the label.</div>
+        <div class="big" id="rg-prompt">Step 1 — draw a box around the value</div>
+        <div class="sub" id="rg-sub">Drag a rectangle over the value itself. After I read it, you can also mark its label.</div>
       </div>
       <div class="regionwrap">
         <div>
-          <div class="canvaswrap"><canvas id="pageCanvas"></canvas></div>
+          <div class="canvaswrap" title="Right-drag to pan · +/− to zoom">
+            <canvas id="pageCanvas" draggable="false"></canvas>
+            <div class="zoombar">
+              <button id="tz-out" title="Zoom out">−</button>
+              <span class="lvl" id="tz-level">100%</span>
+              <button id="tz-in" title="Zoom in">+</button>
+              <button id="tz-reset" title="Reset view">⟲</button>
+            </div>
+          </div>
           <div class="readback" id="rg-readback"></div>
         </div>
         <div class="rail">
@@ -193,6 +230,10 @@
           <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px">
             <button class="btn ghost" id="rg-redraw">Redraw</button>
             <button class="btn link" id="rg-skip">Skip for now</button>
+          </div>
+          <div class="muted" style="font-size:12px;margin-top:12px;line-height:1.6">
+            <span style="color:#3ecf8e;font-weight:700">▮</span> value (what I read)<br>
+            <span style="color:#4f8ef7;font-weight:700">▮</span> label (the anchor I follow)
           </div>
         </div>
       </div>
@@ -235,6 +276,7 @@
 
   <div class="toast" id="toast"></div>
   <script src="../shared/helpmode.js"></script>
+  <script src="../shared/thumbs.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

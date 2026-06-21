@@ -264,6 +264,18 @@
     @media (prefers-reduced-motion: reduce) {
       * { animation:none !important; transition:none !important; }
     }
+
+    /* About modal */
+    .about-overlay { position:fixed; inset:0; z-index:1000; background:rgba(10,14,22,.45);
+      display:flex; align-items:center; justify-content:center; }
+    .about-card { width:320px; background:var(--surface); border:1px solid var(--border2);
+      border-radius:var(--r); padding:26px 24px 18px; text-align:center; box-shadow:var(--shadow); }
+    .about-card .brandmark { width:42px; height:42px; color:var(--accent); margin:0 auto var(--s2); display:block; }
+    .about-title { font-size:17px; font-weight:600; color:var(--text); }
+    .about-ver { font-family:var(--mono); font-size:12px; color:var(--accent2); margin-top:4px; }
+    .about-sub { font-family:var(--mono); font-size:10px; color:var(--muted); margin-top:2px; }
+    .about-copy { font-size:11px; color:var(--muted); margin-top:12px; }
+    .about-actions { margin-top:16px; }
   </style>
 </head>
 <body>
@@ -337,6 +349,7 @@
         <div class="conn"><span id="side-conn-dot" class="dot"></span><span id="side-conn-text">…</span></div>
         <div class="side-user"><span id="who" class="mono"></span><span id="role-chip" class="rolechip hidden"></span></div>
         <button id="logout-btn" class="btn btn-ghost btn-sm"><span data-ic="signout"></span>Sign out</button>
+        <button id="about-btn" class="btn btn-ghost btn-sm">About</button>
       </div>
     </aside>
 
@@ -402,6 +415,21 @@
       <button id="locked-back" class="btn btn-secondary btn-block"><span data-ic="signout"></span>Back to sign in</button>
     </div>
   </section>
+
+  <!-- About modal -->
+  <div id="about-overlay" class="about-overlay hidden">
+    <div class="about-card" role="dialog" aria-modal="true" aria-labelledby="about-name">
+      <svg class="brandmark" data-ic="brand" style="width:42px;height:42px;color:var(--accent)"></svg>
+      <div id="about-name" class="about-title">ScanFinder Search Client</div>
+      <div id="about-version" class="about-ver">…</div>
+      <div id="about-electron" class="about-sub"></div>
+      <div id="about-copyright" class="about-copy"></div>
+      <div class="about-actions">
+        <button id="about-licenses" class="btn btn-secondary btn-sm">Third-Party Licenses</button>
+      </div>
+      <button id="about-close" class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px">Close</button>
+    </div>
+  </div>
 
   <script src="renderer.js"></script>
 </body>

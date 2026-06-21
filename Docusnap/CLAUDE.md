@@ -111,7 +111,7 @@ docusnap2/
 │   ├── lib/license/{client.js,token.js,fingerprint.js}  # backend HTTP client · offline JWS verify · device fp_hash
 │   ├── services/{searchService,previewService,workflowService,entitlementService,certService,sessionService}.js  # transport-agnostic core (see Detached search client)
 │   └── windows/
-│       ├── main/{index.html,renderer.js}      # incl. empty-state launchpad (Begin Import · Search · Settings · Teach a document)
+│       ├── main/{index.html,renderer.js}      # incl. empty-state launchpad (Begin Import · Search · Settings · Teach a document). PROCESS FLOW (2026-06): clicking Process KEEPS the launchpad visible (no longer blanks the center) and streams live progress into the bottom 160px log strip; on finish shows "✓ Finished processing — N filed" + a "View Results" button (log header) → opens a 3-FIELD results table (Company/Date/Reference) that replaces the launchpad (← Back returns; data kept). Reference/Date resolve via the doc type's STRUCTURAL keys (ref_field_key/date_field_key from get-all-doc-types, loaded once) read from msg.extractions — so sales orders/POs/custom types populate, not just invoice_* convenience fields. The launchpad + results table both want flex:1, so they're mutually exclusive (can't co-show); the log strip is flex-shrink:0 and coexists. Reprocess-All progress is a BANNER above the buttons (review window), not a mutating button label.
 │       ├── splash/{index.html,splash.js}      # cosmetic startup splash — shown in whenReady, closed once login loads
 │       ├── review/{index.html,renderer.js}    # incl. zoom/pan preview + hidden admin Template Wizard (⚓): draw anchor/target → save via existing template-mapping IPC; "Show where it reads" overlays (amber) the RESOLVED anchor/target on the current page via test-template-mapping → template_mapper.resolve_geometry (so the operator sees the mapping TRACK a shifted scan, vs the static drawn boxes)
 │       ├── teach/{index.html,renderer.js}      # guided "Teach a new document" wizard (non-technical) — see Teaching wizard
@@ -150,7 +150,7 @@ docusnap2/
 │   │   └── name_match.py                # Stage 4.5 token-level canonical NAME repair (lexicon + positional repair); suggestion-only
 │   ├── ocr/{tesseract.py,region.py,landmarks.py,text_enhance.py,born_digital.py}  # region.py: interactive draw-tool zone-OCR (review ⊕ picker, Template Wizard read-back, Template Manager) + --boxes label-position capture; LIGHT-FIRST ladder mirroring anchor._crop_and_ocr (light greyscale+upscale-small-only read first, heavy autocontrast+sharpen only when light is EMPTY) so a drawn box reads the SAME as extraction and clean born-digital crops aren't mangled into junk ("Serial number"→"be_7"); landmarks.py: derive registration landmarks from sample page; text_enhance.py: degraded text-line re-read (denoise+Sauvola+unsharp), text-only gate-triggered escalation; born_digital.py: read EXACT text + word boxes from a PDF's embedded text layer (pypdfium2 BSD), skipping OCR for generated PDFs (gated by born_digital_enabled)
 │   ├── logo/fingerprint.py
-│   └── render/pages.py                 # PDF→PNG rendering — shared by review/search/template preview (see Gotchas)
+│   └── render/pages.py                 # PDF→PNG rendering — shared by review/search/template preview (see Gotchas). --thumb = single low-res page-1 thumbnail for list thumbnails (previewService.getThumbnail)
 ├── config/keyword_patterns.json        # editable pattern library
 ├── config/license.json                 # client license config: base_url, product_id, public_keys (PUBLIC keys only)
 ├── client/                              # detached LAN search/mailbox Electron client (apiClient.js pins the CA) — see Detached search client
@@ -183,7 +183,17 @@ field_anchors   — supplier_name, document_type, field_key, anchor_label,
                   direction(right|below|above), page_zone, x_norm, y_norm,
                   w_norm, h_norm, usage_count, confidence,
                   last_authoritative_at  ← migration 20: set on an EXPLICIT ⊕
-                  re-teach. saveAnchor's authoritative branch TRUSTS the drawn
+                  re-teach. ⊕ TEACH PERSISTS ON COMMIT, NOT ON THE DRAW (review/
+                  renderer.js, 2026-06): the drawn anchor is STAGED in `pendingAnchors`
+                  (keyed by field, mirroring `corrections`) and only written by
+                  saveFieldAnchor in confirmCurrentDoc after a successful confirm
+                  (re-keyed to the confirmed supplier); an un-confirmed teach (skip/
+                  defer/doc-change/reprocess) discards it, so an accidental wrong pick
+                  leaves NO learned trace. The field VALUE still fills immediately;
+                  only the learning is deferred. (Erase a committed mistake via
+                  Settings → Learning Recovery → Clear anchors, scoped to supplier/
+                  doctype; or just re-teach — authoritative sweeps the old.)
+                  saveAnchor's authoritative branch TRUSTS the drawn
                   box outright (no tolerance/blend) and makes it the SINGLE
                   anchor for (field_key, document_type) by sweeping every other
                   row for that field+doctype ACROSS ALL SUPPLIERS — the doc-type
@@ -501,6 +511,19 @@ process_docs.py → ExtractionEngine.extract()
            from template_fixed/template_anchor-only to `not _is_stage05_located`);
            mapping > label is the chosen ordering. Guarded by
            tests/test_precedence.py + test_label_overrides.py #9.
+           OCR-QUALITY CONFIDENCE (anchor.py, 2026-06): a crop's confidence used to
+           ride usage_count alone, so a garbled read ("Aaiumant Care Homes Ltd -
+           Galaorm") scored in the 90s. anchor._read now returns (text, mean,
+           min_word_conf); _crop_and_ocr threads them out via `meta`. For FREE-TEXT
+           fields ONLY (val_type None/text/multiline — a structured value is validated
+           by its REGEX, and Tesseract under-reads dash-separated digits, so a valid
+           ref "2602-0768-1" must NOT be capped) the field confidence is capped at
+           mean+5, and an authoritative anchor's outright Tier-A / is_taught_override
+           win is GATED on ocr_min_conf ≥ _TIER_A_OCR_MIN(70): a garbled authoritative
+           read falls through to the confidence contest (its capped conf loses to a
+           clean keyword), while a clean/inline read (ocr_min_conf None) still wins.
+           Guarded by tests/test_precedence.py (garbled yields / clean still wins) +
+           the fence that a passive anchor_crop can't displace keyword_override.
            ── 2026 RELIABILITY PASS (find → follow → read, across doc types) ──
            LIGHT-FIRST OCR LADDER (_crop_and_ocr): the unconditional heavy prep
            noted above is REPLACED by a ladder — light (greyscale, upscale-small-
@@ -572,18 +595,48 @@ process_docs.py → ExtractionEngine.extract()
              (e.g. reference_number) are EXCLUDED via _is_ref_field so structured
              codes keep full shape enforcement (withhold on mismatch). Guarded by
              tests/test_stage45_text_preserve.py.
-             PATTERN-BASED FIELD CORRECTION (Phase 1, SUGGESTION-ONLY — commit
-             09a4c62): two helpers run in the Stage 4.5 loop on the WINNER value
-             only; both set ONLY corrected_to + validation_note + conf≤70, NEVER
-             value/display_value (no auto-correct, no precedence change, no candidate
-             swap). (1) TOKEN-LEVEL NAME REPAIR (name_match.py + text_normalise.py):
-             for name-like fields, builds a per-(supplier,doctype,field) token
-             lexicon from confirmed value_counts (stable token = doc-freq ≥0.6 AND
-             ≥3 docs, deterministic canonical surface) and repairs garbled KNOWN
-             tokens to their canonical spelling while keeping the VARIABLE tail
+             CONFORMANCE OVERRIDE (2026-06, name_match.conforms_to_lexicon): the
+             learned-SHAPE check still FALSE-FLAGGED a legitimate "new site" whose
+             length was never confirmed (a customer "...Ltd - <new long site>" fails
+             the accepted character-shapes once a few sites recur ≥_SHAPE_ACCEPT_MIN).
+             The per-field name_lexicon is a MORE precise model (stable prefix +
+             variable tail), so when every STABLE prefix token matches the canonical
+             AND the value reaches the learned expected_len, the "format differs" flag
+             is SUPPRESSED. expected_len (the longest content-position run a ≥0.6
+             majority of docs reach — history always "<prefix> - <site>" ⇒ 5) is the
+             TRUNCATION GUARD: a value SHORT of it ("...Ltd -" with the site cut off)
+             does NOT conform and stays flagged. Guarded by tests/test_name_match.py.
+             EDGE-JUNK CLEANING (value_quality.strip_name_edges): a keyword/label
+             capture has no crop-path cleaning, so OCR edge junk ("--« Beaumont Care
+             Homes Ltd -") entered verbatim and — as keyword_override (highest
+             authority) — WON, then only got charset-flagged. strip_name_edges drops a
+             leading non-alphanumeric run + trailing whitespace/disallowed symbols
+             (EDGES only — interior + a legitimate trailing " -" preserved), applied
+             both (a) AT CAPTURE in the Stage 1 keyword loop (so the junk never
+             becomes the answer and the trace shows a clean winner) and (b) as a Stage
+             4.5 catch-all for the winner. Name-like free-text only. Guarded by
+             tests/test_value_quality.py.
+             PATTERN-BASED FIELD CORRECTION (Phase 1 — commit 09a4c62; name repair is
+             now TWO-TIER, 2026-06): two helpers run in the Stage 4.5 loop on the
+             WINNER value. (1) TOKEN-LEVEL NAME REPAIR (name_match.py +
+             text_normalise.py): for name-like fields, builds a per-(supplier,doctype,
+             field) token lexicon from confirmed value_counts (stable token = doc-freq
+             ≥0.6 AND ≥3 docs, deterministic canonical surface) and repairs garbled
+             KNOWN tokens to their canonical spelling while keeping the VARIABLE tail
              verbatim ("eeaument care homes - lisburn" → "Beaumont Care Homes -
              lisburn") — never whole-value snaps, never injects a learned token,
-             positional + thin-evidence guards, idempotent. Runs INDEPENDENT of
+             positional + thin-evidence guards, idempotent. SHORT-TOKEN RULE: a 3-char
+             ALPHABETIC stable token that is NEAR-UNIVERSAL (doc_freq ≥0.9) repairs a
+             SAME-LENGTH single substitution ("Lid"→"Ltd") — tighter than the ≥4-char
+             fuzzy path so "Co"→"Go" stays exact-only and a real different suffix
+             "Inc" (dist 3) is kept. TWO TIERS by evidence (repair_name_value(details=
+             True) → (repaired, strong)): a STRONG repair (every changed token at a
+             near-universal position) AUTO-APPLIES — value+display_value corrected,
+             was_corrected, a "Corrected to learned spelling (was: …)" note, NOT
+             review-forced; a WEAK repair stays SUGGESTION-ONLY (corrected_to + note +
+             conf≤70 + review). Review surfaces an auto-apply with a calm green "✓
+             auto-corrected" badge (no Accept button), detected by value==corrected_to;
+             a suggestion keeps the amber note + Accept. Runs INDEPENDENT of
              check_value's anomaly verdict (a garbled name is coarse-class FREETEXT
              and won't trip it); the lexicon is attached to fmt_entry in
              build_format_class_index (additive name_lexicon key, even for freetext
@@ -674,6 +727,17 @@ worksheet `customer` to one stale value. Now a field with ≥2 DISTINCT confirme
 values for the doc type is treated as variable and never frozen (the cost of a
 false "variable" is a harmless re-extract; a false "fixed" commits a wrong value
 on every other doc). Self-heals an already-frozen field on the next confirm.
+
+**Admin-LOCKED fixed values** (migration 31, `template_fields.fixed_locked`): a
+fixed value an admin explicitly sets in the Template Wizard is a DELIBERATE,
+protected override — distinct from the auto-derived non-variable seed above.
+`fixed_locked = 1` → template_matcher emits method `template_fixed_locked` (vs the
+overridable `template_fixed`); `_upsertFields` preserves the locked value across
+confirmed-history rebuilds; `setFieldFixedValue` sets/clears the flag. engine.extract
+guards it from ordinary keyword/anchor/identity-rescue overrides (it still yields to
+a curated Stage 0.5 mapping and to `keyword_override`, and an authoritative ⊕ anchor
+still wins via Tier A). Guarded by `database/modules/test_fixed_locked.js` +
+test_precedence.py.
 
 **Validator date rules (Stage 4)**: dates normalise to DD-MM-YYYY; a valid date
 embedded in OCR junk is salvaged (`salvage_date`, review-forced). The date
@@ -883,7 +947,10 @@ to theme.css too).
 --ok:#1f9d63  --warn:#b07816  --err:#d64545
 --text:#1b1f2a  --muted:#69728a  --doc-bg:#eef1f7
 --r:12px --r-sm:9px --r-pill:999px        /* rounded buttons / inputs / cards */
-Font: IBM Plex Sans (UI) + IBM Plex Mono (values/code)
+Font: IBM Plex Sans (UI) + IBM Plex Mono (values/code) — SELF-HOSTED woff2
+(latin subset, OFL-1.1) in src/windows/shared/fonts/ + @font-face in theme.css.
+NO Google-Fonts CDN (was a per-window offline/privacy leak); every window's CSP
+is now font-src 'self'. Don't reintroduce a CDN <link>.
 ```
 - **Native OS window frames** (`main.js` `frame:true`). The old custom drag
   titlebars are hidden globally (`html #titlebar,.titlebar{display:none!important}`
@@ -896,6 +963,18 @@ Font: IBM Plex Sans (UI) + IBM Plex Mono (values/code)
   client-style components from theme.css.
 - **Help-mode** (`src/windows/shared/helpmode.js`): elements tagged `data-help-key`
   highlight and deep-link into the User Guide window (`src/windows/help/`).
+- **List thumbnails** (`src/windows/shared/thumbs.js`): page-1 PDF thumbnails in the
+  Review queue, Search results, and the Teach doc-picker, lazy per visible row
+  (IntersectionObserver) + a per-window in-memory cache. ONE shared IPC
+  `get-document-thumbnail` → `previewService.getThumbnail` → `render/pages.py --thumb`
+  (single low-res page; reuses pypdfium2 — no new dep). GOTCHA: the observed element
+  must have a layout box — `display:none` starves IntersectionObserver, so the teach
+  card uses a `visibility:hidden` overlay (review/search use a visible placeholder box).
+- **About box** (core: user-menu "About ScanFinder…"; client: sidebar "About"): app +
+  Electron version + copyright (read from package.json `build.copyright`) + a
+  "Third-Party Licenses" button that opens the bundled notice via `shell.openPath`.
+  IPC `get-app-about`/`open-third-party-licenses` (core), `client-about`/
+  `client-open-licenses` (client). See License compliance.
 - **Review queue** mirrors the Search results list: plain scroll + click (no arrow
   rail; ↑/↓ keys still cycle), and a **draggable splitter** makes the file column
   width adjustable (persisted in localStorage).
@@ -915,6 +994,8 @@ create-doc-type-with-fields({name,fields[],ref_field_key,date_field_key})  # tra
 get-teach-target                       # docId the teach window was opened at (pulled once on load)
 get-review-queue, get-deferred-queue, get-review-count, get-deferred-count
 get-document-with-extractions(id), get-document-pages(id,folderPath,filename)
+get-document-thumbnail(id,folderPath,filename)   # page-1 low-res thumb (shared/thumbs.js)
+get-app-about, open-third-party-licenses          # About box: version + open the bundled notice
 confirm-review(payload), defer-document(id), restore-deferred(id)
 delete-document(id,filePath), reprocess-document({docId,folderPath,filename})
 ocr-region(base64), save-field-anchor(data)
@@ -1191,6 +1272,14 @@ field setup + plain-English "main number"/"date" key questions) → point out ea
 field by drawing a box around its VALUE (live OCR read-back; the wizard
 auto-detects the nearby label as the anchor) → review → commit → honest learning
 explainer.
+- **Auto-flow (2026-06):** after a value read-back is confirmed it auto-advances
+  value → anchor → next field (no manual "mark the label"; "Skip label →" keeps the
+  auto-detected anchor). A field that doesn't vary per document can be set as a
+  **fixed value** (inline text, no drawing) → saved on commit via
+  `setTemplateFieldFixed` (locked, survives rebuild — see Admin-LOCKED fixed values).
+  `autoLabel()` requires ≥3 alpha chars from the left band (drops noise). Field type
+  selector offers Text/Date/Currency/Number. (All curly-quote HTML attrs must stay
+  STRAIGHT — smart quotes silently break the injected buttons' class/id.)
 - **Artifact (per Oscar):** each field is saved as a Stage 0.5 anchor→target
   MAPPING (value-box-only; auto-label), so it works on document #1 and
   registration covers drift — NOT a Stage 2 ⊕ anchor (avoids two competing
@@ -1235,8 +1324,21 @@ learning, no mutation; invokes no role-protected handler.**
   (the note + value change behind a held/flagged/emptied value — e.g. a Stage 4.5
   withhold), and the final winner. "Reprocess (trace)" reuses the existing reprocess flow;
   events are buffered live (a reprocess runs under a temp filename, so no filename
-  filter), with a `devGetSessionDoc` pull for already-processed docs. Crop-slice
-  thumbnails deferred (inspector-only).
+  filter), with a `devGetSessionDoc` pull for already-processed docs.
+  REVIEW-CONSOLE ADDITIONS (2026-06): (a) CLICK-TO-HIGHLIGHT — clicking a candidate/
+  reject/validate/final row whose slice was captured draws the crop region on the
+  page over a dedicated `#trace-canvas`. The candidate→slice match is by EXACT
+  extraction METHOD (METHOD_TO_SLICE), never the coarse merge stage; coordinate
+  convention is explicit (`_CENTRE_BASED_SLICE_STAGES` = anchor_crop/relocate/
+  registration are centre-based; template_mapping + the inline harvest's inline_box
+  are top-left); inline winners now emit a region (anchor.inline_box) so the WINNER
+  is highlightable; a method with no crop region draws no box (honest). (b) REGEX
+  SCORE — an "rx N%" badge on every value where a pattern check applies (% of the
+  value the field's validation_pattern matches), using the SAME validation_patterns
+  + a JS mirror of engine `_is_ref_field` coercion (validationKeyFor: a ref field
+  typed Number/Currency scores as alphanumeric, not currency — also fixes the on-blur
+  validator). (c) VALIDATION "WHY" — each validate row gets a plain-English sub-line
+  (value rewritten / suggestion / kept+flagged, plus a reading of the note).
 - **Extraction trace** (`type:"trace"` stdout, separate `process-trace` channel,
   routed to the inspector + the review console when active): emitted by
   `engine.extract(trace=…)` ONLY when `process_docs --trace` is set, which handler
@@ -1290,6 +1392,29 @@ Python uses `py -3.12` in dev, `vendor/python/python.exe` when packaged.
 
 ---
 
+## License compliance (third-party OSS) — see `COMPLIANCE.md` (canonical)
+The shipped product bundles permissive/notice-style OSS (no GPL/AGPL); the only
+copyleft is weak/file-level (FFmpeg LGPL-2.1 via Electron, a couple of MPL-2.0
+files). Compliance is automated:
+- **`THIRD-PARTY-LICENSES.txt`** (core, repo root) + **`client/THIRD-PARTY-LICENSES.txt`**
+  ship via each app's `build.extraResources`; surfaced in-app via the About box.
+- **`scripts/check-licenses.js`** — prebuild GATE (wired into `npm run build`, also
+  `npm run check:licenses`). Enumerates the Node prod-dep tree + bundled
+  `vendor/python` packages, classifies each license ALLOWED / DENIED(copyleft) /
+  UNKNOWN against an allowlist, exits 1 on any DENIED/UNKNOWN so a dependency bump
+  can't silently ship a bad license. Dual `A OR B` passes if either side is allowed
+  (elections: node-forge→BSD-3, expand-template→MIT, rc→MIT, packaging→Apache-2.0).
+  MPL-2.0 is allowed (we ship unmodified source). Exports its collectors.
+- **`scripts/gen-third-party-notices.js`** — rewrites the notice's INVENTORY section
+  from the gate's data + re-stamps the product version (package.json) and date; leaves
+  the curated copyright/license-text sections alone.
+- **Release**: on the build machine (where `vendor/python` exists) bump versions →
+  `npm run check:licenses` → `node scripts/gen-third-party-notices.js` → `npm run build`.
+- When a new license FAMILY appears, add its text to section 3 of the notice + its
+  name to the intro list (the generator does NOT manage section 3). Editing the
+  notice's whole license text in one Write trips the API content filter — author the
+  short parts, then APPEND long texts (fetched to files) via a script.
+
 ## Dev workflow
 ```bash
 cd C:\docusnap2
@@ -1304,6 +1429,18 @@ keys are removed — don't re-add them). `postinstall` runs `install-app-deps`; 
 (`argon2`, `better-sqlite3`) are auto-rebuilt for the Electron ABI during build. Installer is
 **unsigned** → SmartScreen "More info → Run anyway" on the VM. Run gate tests with
 Electron-as-Node, not plain node (native-module ABI).
+
+**⚠ Dist versioning (TODO — needs a real revisioning scheme).** Every build emits the
+SAME installer filename, so a rebuild silently OVERWRITES the previous installer in `dist/`
+— there is no way to tell builds apart or keep an older one. Core is always
+`ScanFinder Setup 2.0.0-rlocal.exe` (`package.json` `version` pinned at 2.0.0 + `BUILD_REV`
+defaults to `local`); client is always `ScanFinder Search Client Setup 1.0.2.exe`
+(`client/package.json` 1.0.2, and its `artifactName` carries NO `-r${BUILD_REV}` suffix at
+all). REQUIRED: give each build a DISTINCT, traceable filename — bump the package.json
+`version` per release AND/OR pass a real `BUILD_REV` (git short SHA or UTC timestamp, e.g.
+`BUILD_REV=$(git rev-parse --short HEAD) npm run build`) instead of the `local` default, and
+add the same `-r${env.BUILD_REV}` suffix to the client `artifactName`. Until this lands,
+archive/rename the prior installer before rebuilding or it is lost.
 
 Delete `%APPDATA%\DocuSnap\docusnap.db` to reset DB during development (also clears users,
 cached license tokens, and the enforcement setting).

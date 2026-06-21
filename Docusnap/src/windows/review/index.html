@@ -3,9 +3,8 @@
 <head>
   <meta charset="UTF-8"/>
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; img-src 'self' data:">
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; img-src 'self' data:">
   <title>ScanFinder — Review</title>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../shared/theme.css" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -115,6 +114,9 @@
     .rail-group { display: flex; flex-direction: column; align-items: center; gap: 10px; }
     .rail-tools-group { position: relative; }            /* anchor for the tool flyouts */
     .rail-divider { width: 22px; height: 1px; background: var(--border2); margin: 2px 0; flex-shrink: 0; }
+    /* Clearer separator: same line, more breathing room, so the nav arrows read
+       as a distinct group from the split/anchor/quality tools below. */
+    .rail-divider-clear { width: 28px; margin: 8px 0; }
 
     /* Compact icon trigger for a secondary tool (square-rounded, to read distinct
        from the round nav arrows above). */
@@ -226,6 +228,9 @@
     #wiz-canvas { position: absolute; inset: 0; display: none; border-radius: 4px; z-index: 5; pointer-events: none; }
     #wiz-canvas.active  { display: block; pointer-events: auto; cursor: default; }  /* captures left-click draw/select while open */
     #wiz-canvas.drawing { cursor: crosshair; }                                       /* armed for a fresh draw */
+    /* Trace-highlight overlay — shown when a candidate row in the trace console is
+       clicked; sits above the wizard canvas, never captures pointer events. */
+    #trace-canvas { position: absolute; inset: 0; border-radius: 4px; z-index: 6; pointer-events: none; }
 
     .zoom-group { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
     #zoom-level { font-size: 11px; color: var(--muted); font-family: var(--mono); min-width: 40px; text-align: center; }
@@ -238,7 +243,8 @@
     }
     #wizard-panel.visible { display: flex; }
     .wiz-title { display: flex; align-items: center; justify-content: space-between;
-      font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text); }
+      font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text);
+      cursor: move; user-select: none; }   /* drag the title bar to move the panel */
     .wiz-close { background: none; border: none; color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; }
     .wiz-close:hover { color: var(--err); }
     .wiz-step { font-size: 10px; color: var(--accent2); font-family: var(--mono); }
@@ -331,6 +337,12 @@
     .field-input.invalid { border-color: var(--err); background: var(--err-bg); }
     .field-note { font-size: 10px; color: var(--warn); font-family: var(--mono); margin-top: 1px; }
     .field-validation-warn { color: var(--err); }
+    /* Auto-corrected (Stage 4.5 strong token repair): a calm, positive note — the
+       fix is already in the field, so it reads as info, not a warning. */
+    .field-note.corrected { color: var(--muted); }
+    .corrected-badge { display: inline-block; font-family: var(--sans); font-size: 9px;
+      font-weight: 600; line-height: 1; padding: 2px 6px; margin-right: 4px; border-radius: var(--r-pill);
+      background: rgba(31,157,99,.16); color: var(--ok); vertical-align: baseline; }
     .field-anchor-note { font-size: 10px; color: var(--muted); font-family: var(--mono); margin-top: 1px; }
     .accept-btn {
       font-size: 10px; font-family: var(--sans); line-height: 1;
@@ -371,6 +383,15 @@
     .btn.danger  { color: var(--err); }
     .btn.danger:hover { border-color: var(--err); background: var(--err-bg); }
 
+    /* Reprocess-All progress banner — sits above the buttons; the button labels
+       no longer change to carry the count. Hidden until a batch is running. */
+    #reprocess-progress {
+      display: none; margin: 8px 14px 0; padding: 6px 10px; border-radius: 6px;
+      background: var(--accent-bg); border: 1px solid var(--accent);
+      color: var(--accent2); font-size: 11px; font-weight: 600; text-align: center;
+    }
+    #reprocess-progress.show { display: block; }
+    #reprocess-progress.done { background: var(--surface2); border-color: var(--border2); color: var(--muted); }
     #reprocess-bar { padding: 8px 14px 0; flex-shrink: 0; display: flex; gap: 6px; }
     .btn.reprocess { flex: 1; color: var(--accent2); border-color: var(--accent); font-size: 11px; }
     .btn.reprocess:hover     { background: var(--accent-bg); }
@@ -466,8 +487,19 @@
       <div id="queue-scroll-wrap">
         <div id="queue-list"></div>
         <div id="queue-scroll-rail">
-          <!-- Plain scroll + click like Search (the prev/next arrow rail was removed;
-               ↑/↓ keys still cycle documents). Document tools remain below. -->
+          <!-- Prev / next document cycle (round arrows). Reuses cycleDocument() — the
+               SAME path ArrowUp/ArrowDown use; clamps + disables at the list ends via
+               updateDocNavButtons(). -->
+          <div class="rail-group rail-nav-group">
+            <button class="queue-nav-btn" id="btn-doc-prev" title="Previous document (↑)" aria-label="Previous document" data-help-key="nav-prev">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>
+            </button>
+            <button class="queue-nav-btn" id="btn-doc-next" title="Next document (↓)" aria-label="Next document" data-help-key="nav-next">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+          </div>
+          <!-- Clear spacer separating the nav arrows from the document tools below. -->
+          <div class="rail-divider rail-divider-clear"></div>
           <!-- Document tools (compact icon triggers; wide controls open as rail-anchored flyouts) -->
           <div class="rail-group rail-tools-group">
             <button class="queue-tool-btn" id="btn-split-pdf" style="display:none;" title="Split PDF…" data-help-key="split">&#9986;</button>
@@ -584,6 +616,7 @@
           <img id="doc-img" alt="Document preview" draggable="false">
           <canvas id="sel-canvas"></canvas>
           <canvas id="wiz-canvas"></canvas>
+          <canvas id="trace-canvas"></canvas>
           <div id="ocr-overlay">
             <div class="spinner"></div>
             <span>Reading selection…</span>
@@ -664,6 +697,7 @@
       </div>
       <div id="fields-scroll"></div>
 
+      <div id="reprocess-progress" role="status" aria-live="polite"></div>
       <div id="reprocess-bar">
         <button class="btn reprocess"     id="btn-reprocess">&#9654;&#9654; Reprocess</button>
         <button class="btn stop-batch"    id="btn-stop-reprocess" style="display:none;">&#9632; Stop</button>
@@ -730,6 +764,8 @@
   .rdc-field.open .rdc-cands { display: block; }
   .rdc-cand { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px;
               font-size: 10px; padding: 3px 0; border-top: 1px solid var(--border); }
+  .rdc-cand[data-bbox]:hover { background: var(--accent-bg); border-radius: 3px; }
+  .rdc-pin { margin-left: auto; flex-shrink: 0; font-size: 10px; color: var(--accent); opacity: 0.6; }
   .rdc-stage { color: var(--accent2); flex-shrink: 0; min-width: 64px; }
   .rdc-val { color: var(--text); flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .rdc-conf { color: var(--muted); flex-shrink: 0; }
@@ -744,9 +780,26 @@
   .rdc-note .rdc-stage { color: var(--muted); }
   .rdc-note.valid .rdc-val { color: var(--warn); }
   .rdc-note.xform .rdc-val { color: var(--accent2); }
+  /* Regex/format match score badge (per value, where a pattern check applies). */
+  .rdc-rx { font-size: 9px; font-family: var(--mono); padding: 0 4px; border-radius: 3px;
+            background: var(--surface2); color: var(--muted); white-space: nowrap; }
+  .rdc-rx.rx-full { background: rgba(62,207,142,.18); color: var(--ok); }
+  .rdc-rx.rx-part { background: rgba(176,120,22,.18); color: var(--warn); }
+  .rdc-rx.rx-low  { background: rgba(247,111,111,.16); color: var(--err); }
+  /* Plain-English reasoning sub-line under a validation row. */
+  .rdc-why { flex-basis: 100%; margin-top: 3px; padding-left: 70px; font-size: 9px;
+             color: var(--muted); line-height: 1.5; font-style: italic; }
+
+  /* Queue-row page-1 thumbnail (shared/thumbs.js). The empty element is the
+     placeholder box; the rendered page fills it once loaded. A doc with no
+     renderable thumbnail simply keeps the empty box (no broken-image icon). */
+  .qi-thumb { flex-shrink: 0; width: 34px; height: 44px; border-radius: 4px;
+              background: var(--doc-bg); border: 1px solid var(--border);
+              object-fit: cover; object-position: top center; }
 </style>
 <script src="../shared/theme.js"></script>
 <script src="../shared/helpmode.js"></script>
+<script src="../shared/thumbs.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

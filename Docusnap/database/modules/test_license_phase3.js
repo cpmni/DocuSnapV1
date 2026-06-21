@@ -99,7 +99,14 @@ if (!check('getActiveToken prefers the bound seat token',
         const used = bindings.size;
         return Promise.resolve({ status: 200, body: { token: sign(seatClaims({ fp: body.fp_hash, seatId, seatsTotal, seatsUsed: used })), kind: 'seat', state: 'active', entitlement_id: 'e1', seat_id: seatId, seats_total: seatsTotal, seats_used: used, expires_at: null } });
       }
-      return Promise.resolve({ status: 200, body: { state: 'none' } }); // gate's validate
+      if (method === 'POST' && url.endsWith('/validate')) {
+        // A real backend re-issues a SEAT token for a BOUND fingerprint on validate
+        // (this is what refreshes the gate online); an unbound fp gets {state:'none'}.
+        const seatId = bindings.get(body.fp_hash);
+        if (seatId) return Promise.resolve({ status: 200, body: { token: sign(seatClaims({ fp: body.fp_hash, seatId, seatsTotal, seatsUsed: bindings.size })), kind: 'seat', state: 'active', entitlement_id: 'e1', seat_id: seatId, seats_total: seatsTotal, seats_used: bindings.size, expires_at: null } });
+        return Promise.resolve({ status: 200, body: { state: 'none' } });
+      }
+      return Promise.resolve({ status: 200, body: { state: 'none' } }); // status / other
     };
   }
   function makeCtx(database, transport) {

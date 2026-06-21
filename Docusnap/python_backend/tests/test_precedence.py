@@ -275,18 +275,207 @@ def test_trace_payload_for_console():
     return f
 
 
+# ── Admin-LOCKED fixed value (migration 31, method 'template_fixed_locked') ──────
+def test_locked_fixed_survives_ordinary_keyword():
+    print("LOCKED > ordinary: an admin-locked fixed value survives a HIGHER-confidence ordinary keyword")
+    f = 0
+    results, _ = _run(REF,
+        seed={"invoice_number": {"value": "LOCKED-1", "confidence": 95, "method": "template_fixed_locked"}},
+        kw={"invoice_number": {"value": "KW-OCR", "confidence": 99, "method": "keyword"}})
+    if not check("locked 'LOCKED-1' survives ordinary keyword 'KW-OCR' at higher confidence",
+                 _val(results, "invoice_number") == "LOCKED-1"):
+        f += 1
+    if not check("winning method stays template_fixed_locked",
+                 _method(results, "invoice_number") == "template_fixed_locked"):
+        f += 1
+    print()
+    return f
+
+
+def test_ordinary_fixed_still_overridable():
+    print("narrow: an ORDINARY template_fixed seed is STILL overridden by a higher-confidence keyword (unchanged)")
+    f = 0
+    results, _ = _run(REF,
+        seed={"invoice_number": {"value": "SEED-1", "confidence": 95, "method": "template_fixed"}},
+        kw={"invoice_number": {"value": "KW-OCR", "confidence": 99, "method": "keyword"}})
+    if not check("ordinary template_fixed 'SEED-1' is overridden by keyword 'KW-OCR' (no behaviour change)",
+                 _val(results, "invoice_number") == "KW-OCR"):
+        f += 1
+    print()
+    return f
+
+
+def test_locked_fixed_survives_passive_anchor():
+    print("LOCKED > passive anchor: a non-authoritative anchor cannot displace a locked fixed value")
+    f = 0
+    results, _ = _run(REF,
+        seed={"invoice_number": {"value": "LOCKED-1", "confidence": 95, "method": "template_fixed_locked"}},
+        anchor={"invoice_number": {"value": "ANC-OCR", "confidence": 99,
+                                   "method": "anchor_crop", "authoritative": False}})
+    if not check("locked 'LOCKED-1' survives a higher-confidence passive anchor 'ANC-OCR'",
+                 _val(results, "invoice_number") == "LOCKED-1"):
+        f += 1
+    print()
+    return f
+
+
+def test_stage05_mapping_beats_locked():
+    print("Stage 0.5 > LOCKED: a curated admin mapping still outranks a locked fixed value (intended precedence)")
+    f = 0
+    results, _ = _run(REF,
+        seed={"invoice_number": {"value": "LOCKED-1", "confidence": 95, "method": "template_fixed_locked"}},
+        mapping={"invoice_number": {"value": "MAP-1", "confidence": 60, "method": "template_mapping"}})
+    if not check("template_mapping 'MAP-1' beats locked 'LOCKED-1' at lower confidence (curated > locked)",
+                 _val(results, "invoice_number") == "MAP-1"):
+        f += 1
+    print()
+    return f
+
+
+def test_keyword_override_beats_locked():
+    print("admin label > LOCKED: an explicit keyword_override outranks a locked fixed value")
+    f = 0
+    results, _ = _run(REF,
+        seed={"invoice_number": {"value": "LOCKED-1", "confidence": 95, "method": "template_fixed_locked"}},
+        kw={"invoice_number": {"value": "LBL-1", "confidence": 50, "method": "keyword_override"}})
+    if not check("keyword_override 'LBL-1' beats locked 'LOCKED-1' at lower confidence (admin label > locked)",
+                 _val(results, "invoice_number") == "LBL-1"):
+        f += 1
+    print()
+    return f
+
+
+def test_matcher_emits_locked_method():
+    print("Stage 0 emit: a locked row -> 'template_fixed_locked'; unlocked/legacy -> 'template_fixed'")
+    f = 0
+    ewt = engine_mod.template_matcher.extract_with_template
+    locked = ewt("", {"fields": [{"field_key": "supplier_name", "fixed_value": "Document Solutions",
+                                   "is_variable": 0, "fixed_locked": 1}]})
+    if not check("locked row emits template_fixed_locked",
+                 (locked.get("supplier_name") or {}).get("method") == "template_fixed_locked"):
+        f += 1
+    unlocked = ewt("", {"fields": [{"field_key": "supplier_name", "fixed_value": "X",
+                                    "is_variable": 0, "fixed_locked": 0}]})
+    if not check("unlocked non-variable row still emits template_fixed",
+                 (unlocked.get("supplier_name") or {}).get("method") == "template_fixed"):
+        f += 1
+    legacy = ewt("", {"fields": [{"field_key": "supplier_name", "fixed_value": "X", "is_variable": 0}]})
+    if not check("legacy row (no fixed_locked key) emits template_fixed",
+                 (legacy.get("supplier_name") or {}).get("method") == "template_fixed"):
+        f += 1
+    print()
+    return f
+
+
+def test_locked_supplier_name_survives_garbled_read():
+    print("LOCKED company: a locked supplier_name survives the keyword read AND the identity rescue (real case)")
+    f = 0
+    results, _ = _run([{"key": "supplier_name", "type": "text"}],
+        seed={"supplier_name": {"value": "Document Solutions", "confidence": 95, "method": "template_fixed_locked"}},
+        kw={"supplier_name": {"value": "17 Castes rare Homes Ltd", "confidence": 99, "method": "keyword"}})
+    if not check("locked 'Document Solutions' survives the garbled page read on the company field",
+                 _val(results, "supplier_name") == "Document Solutions"):
+        f += 1
+    print()
+    return f
+
+
+def test_garbled_authoritative_anchor_yields_to_clean_keyword():
+    print("OCR gate: an authoritative anchor with a GARBLED word (low ocr_min_conf) yields to a clean keyword")
+    f = 0
+    # The "Aaiumant Care Homes Ltd - Galaorm" case: the authoritative ⊕ anchor read
+    # is type-valid and well-SHAPED (so credibility + name_quality pass), but two
+    # words are garbled — its min substantial-word OCR confidence is low (~55). It
+    # must NOT win Tier-A outright; it falls through to the confidence contest where
+    # the clean keyword (the correct "Beaumont…") wins on confidence.
+    results, _ = _run([{"key": "customer", "type": "text"}],
+        kw={"customer": {"value": "Beaumont Care Homes Ltd - Galgorm", "confidence": 85,
+                         "method": "keyword_override"}},
+        anchor={"customer": {"value": "Aaiumant Care Homes Ltd - Galaorm", "confidence": 60,
+                             "method": "anchor_crop", "authoritative": True, "ocr_min_conf": 55}})
+    if not check("clean keyword 'Beaumont…' beats the garbled authoritative read (ocr_min_conf 55)",
+                 _val(results, "customer") == "Beaumont Care Homes Ltd - Galgorm"):
+        f += 1
+    print()
+    return f
+
+
+def test_clean_authoritative_anchor_still_wins_tier_a():
+    print("OCR gate: a CLEAN authoritative anchor (high ocr_min_conf) still wins Tier-A over a keyword")
+    f = 0
+    # Same shape as above but the read is CLEAN (min word conf 90) — Tier-A is intact:
+    # a genuinely confident re-teach still wins outright even below the keyword's conf.
+    results, _ = _run([{"key": "customer", "type": "text"}],
+        kw={"customer": {"value": "Wrong Co", "confidence": 95, "method": "keyword_override"}},
+        anchor={"customer": {"value": "Beaumont Care Homes Ltd", "confidence": 60,
+                             "method": "anchor_crop", "authoritative": True, "ocr_min_conf": 90}})
+    if not check("clean authoritative 'Beaumont…' wins Tier-A despite lower confidence",
+                 _val(results, "customer") == "Beaumont Care Homes Ltd"):
+        f += 1
+    print()
+    return f
+
+
+def test_keyword_name_value_edge_cleaned_at_capture():
+    print("input hygiene: leading OCR junk is stripped from a name-like keyword value AT CAPTURE")
+    f = 0
+    # The "--« Beaumont Care Homes Ltd -" case: a keyword_override name read carries
+    # leading OCR junk. It still WINS (highest authority), but the junk is stripped
+    # at capture so the winner is clean (trailing ' -' separator kept; interior intact).
+    results, _ = _run([{"key": "customer", "type": "text"}],
+        kw={"customer": {"value": "--« Beaumont Care Homes Ltd -", "confidence": 85,
+                         "method": "keyword_override"}})
+    if not check("keyword winner is edge-cleaned to 'Beaumont Care Homes Ltd -'",
+                 _val(results, "customer") == "Beaumont Care Homes Ltd -"):
+        f += 1
+    if not check("winning method stays keyword_override (precedence untouched)",
+                 _method(results, "customer") == "keyword_override"):
+        f += 1
+    print()
+    return f
+
+
+def test_passive_anchor_cannot_displace_keyword_override_name():
+    print("fence (Gary): a passive anchor_crop must NOT displace a keyword_override name incumbent")
+    f = 0
+    # Locks in the deliberate decision NOT to weaken admin-label authority: even a
+    # higher-confidence passive anchor cannot win over a keyword_override. This is the
+    # tripwire against a future "make the clean anchor win" change landing silently.
+    results, _ = _run([{"key": "customer", "type": "text"}],
+        kw={"customer": {"value": "Beaumont Care Homes Ltd", "confidence": 80, "method": "keyword_override"}},
+        anchor={"customer": {"value": "Wrong Name Ltd", "confidence": 99,
+                             "method": "anchor_crop", "authoritative": False}})
+    if not check("keyword_override 'Beaumont Care Homes Ltd' survives a 99% passive anchor",
+                 _val(results, "customer") == "Beaumont Care Homes Ltd"):
+        f += 1
+    print()
+    return f
+
+
 def main():
     failures = 0
+    failures += test_keyword_name_value_edge_cleaned_at_capture()
+    failures += test_passive_anchor_cannot_displace_keyword_override_name()
     failures += test_label_beats_generic_seed()
     failures += test_authoritative_anchor_beats_label_method_independent()
     failures += test_invalid_authoritative_date_yields_to_label()
     failures += test_invalid_authoritative_ref_yields_to_label()
+    failures += test_garbled_authoritative_anchor_yields_to_clean_keyword()
+    failures += test_clean_authoritative_anchor_still_wins_tier_a()
     failures += test_mapping_beats_label()
     failures += test_authoritative_anchor_beats_mapping()
     failures += test_blind_authoritative_anchor_yields_to_mapping()
     failures += test_blind_authoritative_anchor_cannot_taught_override()
     failures += test_passive_anchor_cannot_beat_label()
     failures += test_trace_payload_for_console()
+    # Admin-locked fixed values (migration 31)
+    failures += test_matcher_emits_locked_method()
+    failures += test_locked_fixed_survives_ordinary_keyword()
+    failures += test_ordinary_fixed_still_overridable()
+    failures += test_locked_fixed_survives_passive_anchor()
+    failures += test_stage05_mapping_beats_locked()
+    failures += test_keyword_override_beats_locked()
+    failures += test_locked_supplier_name_survives_garbled_read()
     if failures:
         print(f"{failures} check(s) failed — extraction precedence regressed.")
         return 1

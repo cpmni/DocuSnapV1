@@ -54,6 +54,9 @@ contextBridge.exposeInMainWorld('docusnap', {
   clientApiCertExport:   ()  => ipcRenderer.invoke('client-api-cert-export'),
   // Workflow add-on entitlement (drives the in-core enhanced Search).
   getEntitlement:      ()    => ipcRenderer.invoke('get-entitlement'),
+  // Concurrent client-seat pool (admin): licensed seats + active leases, and release.
+  licenseSeatsStatus:  ()    => ipcRenderer.invoke('license-seats-status'),
+  licenseSeatRelease:  (id)  => ipcRenderer.invoke('license-seat-release', id),
   // Phase 2 — license window only: request entry (main re-decides; the renderer
   // cannot self-grant) and receive the blocked-state reason for display.
   licenseEnterApp:    () => ipcRenderer.send('license-enter-app'),
@@ -120,6 +123,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   getDocumentWithExtractions:  (id)      => ipcRenderer.invoke('get-document-with-extractions', id),
   notifyDocClosed:             (id)      => ipcRenderer.send('notify-doc-closed', id),
   getDocumentPages:            (id, fp, fn) => ipcRenderer.invoke('get-document-pages', id, fp, fn),
+  getDocumentThumbnail:        (id, fp, fn) => ipcRenderer.invoke('get-document-thumbnail', id, fp, fn),
   getEnhancedPreview:          (data)       => ipcRenderer.invoke('get-enhanced-preview', data),
   confirmReview:               (payload) => ipcRenderer.invoke('confirm-review', payload),
   deferDocument:               (id)      => ipcRenderer.invoke('defer-document', id),
@@ -207,6 +211,12 @@ contextBridge.exposeInMainWorld('docusnap', {
   // ── Settings ─────────────────────────────────────────────────────────────────
   getSetting:          (key)      => ipcRenderer.invoke('get-setting', key),
   setSetting:          (key, val) => ipcRenderer.invoke('set-setting', key, val),
+  // Runtime flag for renderer dev-gating (e.g. the dev-only "Erase ALL data" tool).
+  appIsDev:            ()         => ipcRenderer.invoke('app-is-dev'),
+
+  // About box: version details + open the bundled third-party notice.
+  getAppAbout:             ()    => ipcRenderer.invoke('get-app-about'),
+  openThirdPartyLicenses:  ()    => ipcRenderer.invoke('open-third-party-licenses'),
 
   // ── Learning Recovery (Settings tab) ────────────────────────────────────────
   getLearningRecovery: (params)   => ipcRenderer.invoke('get-learning-recovery', params),

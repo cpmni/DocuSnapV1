@@ -62,6 +62,30 @@ function isLoopback(addr) {
   return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
 }
 
+// Authoritative client IP from the CONNECTION (not the body) — used for seat leases
+// and the login audit. Normalises an IPv4-mapped IPv6 address.
+function clientIp(req) {
+  const a = (req.socket && req.socket.remoteAddress) || '';
+  return a.replace(/^::ffff:/, '');
+}
+
+// Claim/reuse a concurrent seat for an authenticated detached client. Returns null
+// when the add-on is not entitled or no seat pool is wired (no enforcement); otherwise
+// the seat-pool result (with the resolved clientKey attached on success). Seats are
+// STICKY — a returning client (same client_id, else username@ip) reuses its seat; a new
+// client is refused once the licensed seats are full, until an admin releases one.
+function claimSeat(ctx, checkEntitlement, body, ip, host, user) {
+  if (!ctx.seatPool) return null;
+  let ent; try { ent = checkEntitlement(); } catch { return null; }
+  if (!ent.entitled) return null;                       // unlicensed → feature routes 402; no seat held
+  const clientKey = (body && body.client_id ? String(body.client_id).slice(0, 128) : '') || `${user.username}@${ip}`;
+  try {
+    const r = ctx.seatPool.claim({ clientKey, username: user.username, role: user.role, hostname: host, ip }, ent.seats);
+    if (r.ok) r.clientKey = clientKey;
+    return r;
+  } catch { return null; }                              // seat-store error → fail OPEN (never 500 a login)
+}
+
 function sendJson(res, status, payload) {
   const body = JSON.stringify(payload);
   res.writeHead(status, {
@@ -138,6 +162,8 @@ function createRequestListener(ctx) {
   const requireSession = (req, res) => {
     const session = sessions.verify(bearerToken(req));
     if (!session) { sendJson(res, 401, { error: 'unauthorized' }); return null; }
+    // Heartbeat the seat lease (last-seen + current IP) on each authenticated request.
+    if (session.clientKey && ctx.seatPool) ctx.seatPool.touch(session.clientKey, { ip: clientIp(req) });
     return session;
   };
 
@@ -205,16 +231,26 @@ function createRequestListener(ctx) {
       if (req.method === 'POST' && pathname === `${API_PREFIX}/auth/login`) {
         let body;
         try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+        const ip = clientIp(req);
+        const host = (body && body.hostname ? String(body.hostname) : '').slice(0, 80) || null;
         const r = await authenticator.login(getDb(), body);
         if (!r.ok) {
           if (r.code === 'RATE_LIMITED') return sendJson(res, 429, { error: r.error, retryAfterMs: r.retryAfterMs });
           if (r.code === 'MFA_REQUIRED') return sendJson(res, 401, { error: r.error, mfaRequired: true });
-          audit({ action: 'login_failure', action_category: 'auth', outcome: 'failure', details: r.code });
+          audit({ action: 'login_failure', action_category: 'auth', outcome: 'failure', details: r.code, metadata: { ip, hostname: host } });
           return sendJson(res, 401, { error: r.error });
         }
-        const { token, expiresAt } = sessions.issue({ userId: r.user.id, username: r.user.username, role: r.user.role });
+        // Concurrent sticky-seat enforcement (only when the add-on is licensed).
+        const seat = claimSeat(ctx, checkEntitlement, body, ip, host, r.user);
+        if (seat && !seat.ok) {
+          audit({ user_id: r.user.id, action: 'license.seat_denied', action_category: 'license', outcome: 'denied',
+                  actor_username: r.user.username, metadata: { ip, hostname: host, inUse: seat.inUse, cap: seat.cap } });
+          return sendJson(res, 409, { error: 'All client seats are in use — an administrator must release one to free a license.',
+                  code: 'SEAT_LIMIT', inUse: seat.inUse, cap: seat.cap });
+        }
+        const { token, expiresAt } = sessions.issue({ userId: r.user.id, username: r.user.username, role: r.user.role, clientKey: seat ? seat.clientKey : null });
         audit({ user_id: r.user.id, action: 'login_success', action_category: 'auth', outcome: 'success',
-                actor_username: r.user.username, actor_role: r.user.role });
+                actor_username: r.user.username, actor_role: r.user.role, metadata: { ip, hostname: host } });
         return sendJson(res, 200, {
           token, expiresAt,
           user: { username: r.user.username, displayName: r.user.displayName, role: r.user.role },
@@ -232,18 +268,28 @@ function createRequestListener(ctx) {
           code: 'FEATURE_NOT_LICENSED', feature: ent.feature,
         });
         let body; try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+        const ip = clientIp(req);
+        const host = (body && body.hostname ? String(body.hostname) : '').slice(0, 80) || null;
         const r = await authenticator.login(getDb(), body);
         if (!r.ok) {
           if (r.code === 'RATE_LIMITED') return sendJson(res, 429, { error: r.error, retryAfterMs: r.retryAfterMs });
           if (r.code === 'MFA_REQUIRED') return sendJson(res, 401, { error: r.error, mfaRequired: true });
-          audit({ action: 'enroll_failure', action_category: 'auth', outcome: 'failure', details: r.code });
+          audit({ action: 'enroll_failure', action_category: 'auth', outcome: 'failure', details: r.code, metadata: { ip, hostname: host } });
           return sendJson(res, 401, { error: r.error });
+        }
+        // Concurrent sticky-seat enforcement (enroll is already entitlement-gated above).
+        const seat = claimSeat(ctx, checkEntitlement, body, ip, host, r.user);
+        if (seat && !seat.ok) {
+          audit({ user_id: r.user.id, action: 'license.seat_denied', action_category: 'license', outcome: 'denied',
+                  actor_username: r.user.username, metadata: { ip, hostname: host, inUse: seat.inUse, cap: seat.cap } });
+          return sendJson(res, 409, { error: 'All client seats are in use — an administrator must release one to free a license.',
+                  code: 'SEAT_LIMIT', inUse: seat.inUse, cap: seat.cap });
         }
         const prof = buildConnectionProfile(ctx);
         if (!prof.ok) return sendJson(res, 409, { error: 'no managed certificate', code: 'NO_MANAGED_CA' });
-        const { token, expiresAt } = sessions.issue({ userId: r.user.id, username: r.user.username, role: r.user.role });
+        const { token, expiresAt } = sessions.issue({ userId: r.user.id, username: r.user.username, role: r.user.role, clientKey: seat ? seat.clientKey : null });
         audit({ user_id: r.user.id, action: 'enroll_success', action_category: 'auth', outcome: 'success',
-                actor_username: r.user.username, actor_role: r.user.role });
+                actor_username: r.user.username, actor_role: r.user.role, metadata: { ip, hostname: host } });
         return sendJson(res, 200, {
           caPem: prof.profile.caPem, caFingerprintSha256: prof.profile.caFingerprintSha256,
           host: prof.profile.host, port: prof.profile.port,
@@ -313,20 +359,21 @@ function createRequestListener(ctx) {
       if (req.method === 'GET' && pagesMatch) {
         const session = requireSession(req, res); if (!session) return;
         const id = Number(pagesMatch[1]);
-        let folderPath = url.searchParams.get('folderPath');
-        let filename   = url.searchParams.get('filename');
-        // A detached client never sees filesystem paths, so it can't pass them.
-        // Resolve a usable location SERVER-SIDE from the document row (preferring
-        // the app-managed working copy, then the filed copy, then the source).
-        if (!folderPath || !filename) {
-          const P = ctx.path || require('path');
-          const row = getDb().prepare(
-            'SELECT working_path, stored_path, folder_path, original_filename FROM documents WHERE id = ?').get(id);
-          if (row) {
-            const pick = row.working_path || row.stored_path
-              || (row.folder_path && row.original_filename ? P.join(row.folder_path, row.original_filename) : null);
-            if (pick) { folderPath = folderPath || P.dirname(pick); filename = filename || P.basename(pick); }
-          }
+        // SECURITY (F-02): the on-disk location is resolved SERVER-SIDE from the
+        // document row ONLY — client-supplied folderPath/filename are NOT read here.
+        // A detached client never sees filesystem paths; honouring them would let an
+        // authenticated peer (any role, including readonly) read arbitrary host files
+        // through the render path, defeating the dto.js path-hiding boundary. The
+        // precedence mirrors the in-process preview: app-managed working copy →
+        // filed copy → recorded source.
+        let folderPath = null, filename = null;
+        const P = ctx.path || require('path');
+        const row = getDb().prepare(
+          'SELECT working_path, stored_path, folder_path, original_filename FROM documents WHERE id = ?').get(id);
+        if (row) {
+          const pick = row.working_path || row.stored_path
+            || (row.folder_path && row.original_filename ? P.join(row.folder_path, row.original_filename) : null);
+          if (pick) { folderPath = P.dirname(pick); filename = P.basename(pick); }
         }
         const pages = await previewService.getDocumentPages(
           getDb(), { docId: id, folderPath, filename }, pageDeps());
@@ -619,6 +666,31 @@ function register(ctx) {
     if (res.canceled || !res.filePath) return { ok: false, canceled: true };
     (ctx.fs || require('fs')).writeFileSync(res.filePath, JSON.stringify(r.profile, null, 2));
     return { ok: true, path: res.filePath, caFingerprintSha256: r.profile.caFingerprintSha256 };
+  });
+
+  // ── Concurrent client-seat pool (admin) ────────────────────────────────────────
+  // Licensed seat count + the active (sticky) leases in use, and an admin release.
+  ipcMain.handle('license-seats-status', () => {
+    requireRole('admin');
+    const ent = entitlementService.checkClientEntitlement(getDb());
+    const leases = ctx.seatPool ? ctx.seatPool.list() : [];
+    return {
+      entitled: ent.entitled, feature: ent.feature, seats: ent.seats,
+      inUse: leases.length, free: Math.max(0, ent.seats - leases.length),
+      leases,
+    };
+  });
+  ipcMain.handle('license-seat-release', (_e, seatId) => {
+    requireRole('admin');
+    const ok = ctx.seatPool ? ctx.seatPool.release(seatId) : false;
+    try {
+      require('../../../database/modules/auth').addAuditEntry(getDb(), {
+        source: 'desktop', action: 'license.seat_released', action_category: 'license',
+        outcome: ok ? 'success' : 'failure', target_type: 'seat', target_id: String(seatId),
+        user_id: require('../auth/handler').getCurrentUser()?.id ?? null,
+      });
+    } catch { /* audit best-effort */ }
+    return { ok };
   });
 
   // Startup: self-heal the managed cert (e.g. a DHCP IP change across a reboot) then start.

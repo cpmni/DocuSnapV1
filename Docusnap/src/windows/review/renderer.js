@@ -13,6 +13,25 @@ const TYPE_TO_VALIDATION = {
   date: 'date', currency: 'currency', number: 'currency', amount: 'currency',
   alphanumeric: 'alphanumeric', job_reference: 'job_reference', currency_code: 'currency_code',
 };
+// Mirror engine.py _is_ref_field: a reference/ticket field (key ends _number /
+// _no or contains "reference").
+function isRefFieldKey(key) {
+  const k = (key || '').toLowerCase();
+  return k.endsWith('_number') || k.endsWith('_no') || k.includes('reference');
+}
+// Field → validation key, mirroring engine.py's _TYPE2VAL + the ref-field
+// coercion: a reference field typed Number/Currency is validated as a CODE
+// (alphanumeric), not as money. Without this a valid ref "2602-0926-1" failed
+// the currency pattern (rx 0% / a false on-blur warning).
+function validationKeyFor(def) {
+  if (!def) return null;
+  const type = (def.type || '').toLowerCase();
+  let mapped = TYPE_TO_VALIDATION[type] || null;
+  if ((mapped === 'currency' || mapped === 'currency_code') && isRefFieldKey(def.key)) {
+    mapped = 'alphanumeric';
+  }
+  return mapped;
+}
 let validationPatterns = null;   // { date:[RegExp,…], … } compiled once from config
 
 async function ensureValidationPatterns() {
@@ -44,8 +63,7 @@ function fieldValidationError(key, value) {
     return 'Usually all digits for this field';
   }
   const def  = (fieldDefs || []).find(f => f.key === key);
-  const type = (def?.type || '').toLowerCase();
-  const valKey = TYPE_TO_VALIDATION[type];
+  const valKey = validationKeyFor(def);
   if (!valKey) return null;                      // free-text / untyped → no constraint
   const pats = validationPatterns && validationPatterns[valKey];
   if (!pats || !pats.length) return null;
@@ -89,6 +107,11 @@ let pageImages       = [];
 let fieldDefs        = [];
 let corrections      = {};
 let anchorTaughtFields = new Set(); // field_keys taught via the ⊕ highlight/zone-OCR tool this cycle
+// Anchors drawn with ⊕ this cycle, STAGED in memory and persisted only on Confirm
+// & File (mirrors `corrections`). An un-confirmed teach (skip/defer/doc-change)
+// leaves NO learned trace, so an accidental wrong pick can't poison the corpus.
+// Keyed by field_key → the saveFieldAnchor payload computed at draw time.
+let pendingAnchors   = {};
 let activeTab        = 'review';
 let isAdmin          = false;   // gates the destructive bulk-delete actions (also enforced server-side)
 let canEdit          = false;   // admin OR edit — gates per-row delete (also enforced server-side)
@@ -112,6 +135,9 @@ const PREVIEW_ZOOM_MIN = 1, PREVIEW_ZOOM_MAX = 4, PREVIEW_ZOOM_STEP = 0.25;
 const wizard = {
   active: false, fields: [], index: 0, step: 'field',
   draftAnchor: null, draftTarget: null, fixedMode: false,
+  drafts: {},                  // in-session per-field draft cache: unsaved boxes/fixed text survive field switches
+  fixedByKey: null,            // Map(field_key -> saved fixed_value) from template_fields, for rehydration
+  _loadedKey: null,            // field currently shown (so its draft is captured before switching)
   resolved: null,              // {anchor_box, target_box} — where the mapping ACTUALLY resolves on this page (amber overlay)
   drawMode: null, isDragging: false, dragStart: { x: 0, y: 0 }, dragRect: null,
   selectedBox: null,           // 'anchor' | 'target' | null — click-selected box (Delete removes / drag moves it)
@@ -124,14 +150,16 @@ const wizard = {
 // ── Element refs ──────────────────────────────────────────────────────────────
 const docImg     = document.getElementById('doc-img');
 const docImgWrap = document.getElementById('doc-img-wrap');
-const selCanvas  = document.getElementById('sel-canvas');
-const wizCanvas  = document.getElementById('wiz-canvas');
-const ocrOverlay = document.getElementById('ocr-overlay');
-const selectHint = document.getElementById('select-hint');
-const hintField  = document.getElementById('hint-field-name');
-const hintCancel = document.getElementById('hint-cancel');
-const ctx        = selCanvas.getContext('2d');
-const wizCtx     = wizCanvas.getContext('2d');
+const selCanvas    = document.getElementById('sel-canvas');
+const wizCanvas    = document.getElementById('wiz-canvas');
+const traceCanvas  = document.getElementById('trace-canvas');
+const ocrOverlay   = document.getElementById('ocr-overlay');
+const selectHint   = document.getElementById('select-hint');
+const hintField    = document.getElementById('hint-field-name');
+const hintCancel   = document.getElementById('hint-cancel');
+const ctx          = selCanvas.getContext('2d');
+const wizCtx       = wizCanvas.getContext('2d');
+const traceCtx     = traceCanvas.getContext('2d');
 
 document.getElementById('btn-close').addEventListener('click', () => window.docusnap.windowClose());
 
@@ -319,7 +347,8 @@ function renderQueueList() {
     const confBadge = conf == null ? '' :
       `<span class="conf-badge ${sev}" style="flex-shrink:0;">${conf}%</span>`;
     el.innerHTML = `
-      <div style="display:flex; align-items:flex-start; gap:4px;">
+      <div style="display:flex; align-items:flex-start; gap:8px;">
+        <img class="qi-thumb" alt="">
         <div style="flex:1; min-width:0;">
           <span class="qi-name" title="${escHtml(doc.original_filename)}">${escHtml(doc.original_filename)}</span>
           <div style="display:flex; align-items:center; gap:6px;">
@@ -330,6 +359,7 @@ function renderQueueList() {
         ${canEdit ? `<button class="qi-btn danger qi-delete" title="Delete document" aria-label="Delete document" style="flex-shrink:0; padding:2px 7px; font-size:13px;">&#215;</button>` : ''}
       </div>
     `;
+    if (window.Thumbs) window.Thumbs.lazy(el.querySelector('.qi-thumb'), doc);
     el.addEventListener('click', () => selectDoc(doc));
     const delBtn = el.querySelector('.qi-delete');
     if (delBtn) delBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteFromQueue(doc); });
@@ -421,6 +451,7 @@ async function _selectDoc(doc) {
   currentPage = 0;
   corrections = {};
   anchorTaughtFields = new Set();
+  pendingAnchors = {};   // discard any un-confirmed ⊕ teach when the doc changes
 
   document.querySelectorAll('.queue-item').forEach(el => {
     el.classList.toggle('active', parseInt(el.dataset.id) === doc.id);
@@ -507,11 +538,14 @@ function renderPage() {
   }
 
   docImg.onload = () => {
-    selCanvas.width  = docImg.offsetWidth;
-    selCanvas.height = docImg.offsetHeight;
-    wizCanvas.width  = docImg.offsetWidth;
-    wizCanvas.height = docImg.offsetHeight;
+    selCanvas.width    = docImg.offsetWidth;
+    selCanvas.height   = docImg.offsetHeight;
+    wizCanvas.width    = docImg.offsetWidth;
+    wizCanvas.height   = docImg.offsetHeight;
+    traceCanvas.width  = docImg.offsetWidth;
+    traceCanvas.height = docImg.offsetHeight;
     clearCanvas();
+    clearTraceHighlight();
     redrawWizard();
     if (currentPage === 0) attemptLogoMatch();
   };
@@ -650,16 +684,24 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   const confLabel = conf !== null
     ? `<span class="conf-badge ${confClass}">${conf}%</span>`
     : '';
-  // An "Accept" button is shown ONLY for correction CANDIDATES — i.e. when a
-  // corrected_to value is present (set by Stage 4.5's non-confident proposal).
-  // Plain validation notes (no corrected_to) get no button. The button only
+  // A correction that was ALREADY APPLIED to the value (Stage 4.5 strong auto-fix:
+  // an OCR misread of a near-universal learned token, e.g. "Lid"→"Ltd") shows as a
+  // calm "auto-corrected" badge — the value in the input IS the fix, so there is no
+  // Accept button. A SUGGESTION (corrected_to differs from the current value) keeps
+  // the amber note + Accept button. The applied case is detected by value equality,
+  // which the engine guarantees (value/display_value/corrected_to all set to the
+  // repair on auto-apply).
+  const isApplied = !!correctedTo && val === correctedTo;
+  // An "Accept" button is shown ONLY for unapplied correction CANDIDATES. The button
   // copies the suggestion into the input; it never confirms or persists.
-  const acceptHtml = correctedTo
+  const acceptHtml = (correctedTo && !isApplied)
     ? ` <button type="button" class="accept-btn" data-key="${key}">Accept</button>`
     : '';
-  const noteHtml = (note || correctedTo)
-    ? `<div class="field-note">${escHtml(note || '')}${acceptHtml}</div>`
-    : '';
+  const noteHtml = isApplied
+    ? `<div class="field-note corrected"><span class="corrected-badge" title="An OCR misread was auto-corrected to the spelling that recurs in your confirmed data">✓ auto-corrected</span> ${escHtml(note || '')}</div>`
+    : (note || correctedTo)
+      ? `<div class="field-note">${escHtml(note || '')}${acceptHtml}</div>`
+      : '';
   // Anchor provenance: only for anchor-based extraction sources, and only when a
   // label was captured. Other methods (keyword, template, llm, manual) show nothing.
   const isAnchorMethod = method === 'anchor' || method === 'anchor_crop';
@@ -813,6 +855,40 @@ function drawRect(r) {
   ctx.setLineDash([]);
   ctx.fillStyle   = 'rgba(79,142,247,0.09)';
   ctx.fillRect(r.x, r.y, r.w, r.h);
+}
+
+// ── Trace-highlight overlay ───────────────────────────────────────────────────
+// Draws an amber bbox from a slice trace event onto the dedicated traceCanvas.
+// Clears automatically after a short dwell; also cleared on page/doc change.
+let _traceHighlightTimer = null;
+function clearTraceHighlight() {
+  if (_traceHighlightTimer) { clearTimeout(_traceHighlightTimer); _traceHighlightTimer = null; }
+  traceCtx.clearRect(0, 0, traceCanvas.width, traceCanvas.height);
+}
+// Slice stages whose bbox is [cx, cy, w, h] CENTRE-based — the anchor.py crop
+// reads (_crop_and_ocr crops cx±half). Everything else (template_mapping, the
+// inline harvest's inline_box) is [x_tl, y_tl, w, h] TOP-LEFT-based.
+const _CENTRE_BASED_SLICE_STAGES = new Set(['anchor_crop', 'anchor_relocate', 'anchor_registration']);
+function drawTraceBbox(bbox, kind, stage) {
+  if (!bbox || bbox.length < 4 || !traceCanvas.width) return;
+  clearTraceHighlight();
+  const w = traceCanvas.width, h = traceCanvas.height;
+  const bw = Math.round(bbox[2] * w), bh = Math.round(bbox[3] * h);
+  const isCenterBased = _CENTRE_BASED_SLICE_STAGES.has(stage);
+  const x = isCenterBased ? Math.round(bbox[0] * w - bw / 2) : Math.round(bbox[0] * w);
+  const y = isCenterBased ? Math.round(bbox[1] * h - bh / 2) : Math.round(bbox[1] * h);
+  // target = amber (value region), anchor = blue (label region)
+  const color = kind === 'anchor' ? '#4f8ef7' : '#d4820a';
+  traceCtx.save();
+  traceCtx.setLineDash([3, 3]);
+  traceCtx.lineWidth = 2;
+  traceCtx.strokeStyle = color;
+  traceCtx.strokeRect(x + 0.5, y + 0.5, bw, bh);
+  traceCtx.setLineDash([]);
+  traceCtx.fillStyle = color + '28';
+  traceCtx.fillRect(x, y, bw, bh);
+  traceCtx.restore();
+  _traceHighlightTimer = setTimeout(clearTraceHighlight, 3500);
 }
 
 selCanvas.addEventListener('mousedown', (e) => {
@@ -979,7 +1055,7 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
         // Drift-invariant offset: the located label's page position → value centre.
         // Origin of the left crop in DISPLAY px is (rect.x - leftPad, rect.y).
         const off = labelOffsetFromBox(leftRes && leftRes.box, rect.x - leftPad, rect.y, xNorm, yNorm, imgW, imgH);
-        await window.docusnap.saveFieldAnchor({ ...anchorBase, anchor_label: leftLabel, direction: 'right', ...off });
+        pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: leftLabel, direction: 'right', ...off };
         return true;
       }
     }
@@ -1007,7 +1083,7 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
       if (aboveLabel) {
         // Origin of the above crop in DISPLAY px is (rect.x, rect.y - abovePad).
         const off = labelOffsetFromBox(aboveRes && aboveRes.box, rect.x, rect.y - abovePad, xNorm, yNorm, imgW, imgH);
-        await window.docusnap.saveFieldAnchor({ ...anchorBase, anchor_label: aboveLabel, direction: 'below', ...off });
+        pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: aboveLabel, direction: 'below', ...off };
         return true;
       }
     }
@@ -1015,26 +1091,13 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
     console.warn('Anchor capture: above-label lookup failed (non-critical):', err);
   }
 
-  // Guaranteed fallback — always save SOMETHING so the position is learned
-  // even when no nearby label text could be read. A failure HERE is NOT
-  // "non-critical": it means NOTHING was recorded for this teach (e.g. the save
-  // is admin-gated and the current user lacks the role, or a DB error). Surface
-  // it so the operator isn't misled into thinking the ⊕ tool worked when the
-  // anchor never persisted.
-  try {
-    const fallbackLabel = labelFor(fieldKey) || fieldKey.replace(/_/g, ' ');
-    await window.docusnap.saveFieldAnchor({ ...anchorBase, anchor_label: fallbackLabel, direction: 'right' });
-    return true;
-  } catch (err) {
-    console.error('Anchor capture: save FAILED — nothing recorded:', err);
-    try {
-      const msg = /FORBIDDEN|permission/i.test(err?.message || '')
-        ? 'Could not save anchor: this account lacks permission (admin required).'
-        : 'Could not save anchor — it was not recorded. See console for details.';
-      showToast(msg, 'err');
-    } catch {}
-  }
-  return false;
+  // Guaranteed fallback — always STAGE SOMETHING so the position is learned on
+  // commit even when no nearby label text could be read. The actual persistence
+  // (and its admin-role / DB-error handling) happens in confirmCurrentDoc, so an
+  // un-confirmed teach leaves no trace.
+  const fallbackLabel = labelFor(fieldKey) || fieldKey.replace(/_/g, ' ');
+  pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: fallbackLabel, direction: 'right' };
+  return true;
 }
 
 function cleanSupplierName(name) {
@@ -1109,6 +1172,31 @@ async function confirmCurrentDoc({ bulk = false } = {}) {
       docImg.src = pageImages[currentPage];
     }
     return { error: result?.error || 'Confirm failed. Check settings.' };
+  }
+
+  // Persist anchors taught with ⊕ this cycle — DEFERRED to commit so an un-confirmed
+  // teach (skip/defer/doc-change) leaves no learned trace. Re-key to the supplier the
+  // user actually confirmed (the live field may have been edited after the draw);
+  // saveAnchor's authoritative branch makes each the single anchor for its
+  // (field, doc-type), sweeping stale ones. Best-effort per field — a save failure is
+  // surfaced but does not un-file the already-filed document.
+  const taughtKeys = Object.keys(pendingAnchors);
+  if (taughtKeys.length) {
+    const taughtSupplier = cleanSupplierName(allValues.supplier_name || currentDoc?.supplier_name);
+    for (const fk of taughtKeys) {
+      try {
+        await window.docusnap.saveFieldAnchor({ ...pendingAnchors[fk], supplier_name: taughtSupplier });
+      } catch (err) {
+        console.error(`Anchor save failed for "${fk}":`, err);
+        if (!bulk) {
+          const msg = /FORBIDDEN|permission/i.test(err?.message || '')
+            ? 'Document filed, but saving the taught anchor needs an admin account.'
+            : 'Document filed, but a taught anchor could not be saved (see console).';
+          try { showToast(msg, 'err'); } catch {}
+        }
+      }
+    }
+    pendingAnchors = {};
   }
 
   queue         = queue.filter(d => d.id !== currentDoc.id);
@@ -1659,6 +1747,7 @@ document.getElementById('btn-reprocess').addEventListener('click', async () => {
     if (full) {
       currentDoc  = full;    // sync in-memory state to fresh DB record
       corrections = {};      // drop stale corrections; fields are now fresh
+      pendingAnchors = {};   // ...and any un-committed ⊕ teach (coords now stale)
       syncDocTypeFromRecord(full); // auto-select the newly detected type
     }
     renderFields(full || currentDoc);
@@ -1750,6 +1839,7 @@ document.getElementById('btn-reprocess-all').addEventListener('click', async () 
   const btnAll  = document.getElementById('btn-reprocess-all');
   const btnOne  = document.getElementById('btn-reprocess');
   const btnStop = document.getElementById('btn-stop-reprocess');
+  const banner  = document.getElementById('reprocess-progress');
 
   _batchActive  = true;
   _batchStopped = false;
@@ -1758,6 +1848,11 @@ document.getElementById('btn-reprocess-all').addEventListener('click', async () 
   btnStop.disabled     = false;
   btnStop.innerHTML    = '&#9632; Stop';
   btnStop.style.display = '';
+  // Progress shows in the banner above the buttons — the button label stays put.
+  btnAll.innerHTML     = '<span class="btn-spinner"></span> Reprocessing…';
+  banner.classList.remove('done');
+  banner.classList.add('show');
+  banner.textContent   = `Reprocessing 0 of ${queue.length}…`;
 
   const docs  = [...queue];   // snapshot; queue is refetched in finally
   const total = docs.length;
@@ -1792,6 +1887,7 @@ document.getElementById('btn-reprocess-all').addEventListener('click', async () 
         if (full && currentDoc && currentDoc.id === doc.id) {
           currentDoc  = full;
           corrections = {};
+          pendingAnchors = {};   // drop any un-committed ⊕ teach (coords now stale)
           syncDocTypeFromRecord(full); // auto-select the newly detected type
           renderFields(full);
         }
@@ -1801,7 +1897,7 @@ document.getElementById('btn-reprocess-all').addEventListener('click', async () 
       failed++;
     }
     done++;
-    btnAll.innerHTML = `<span class="btn-spinner"></span> ${done}/${total}`;
+    banner.textContent = `Reprocessing ${done} of ${total}…`;
   };
 
   // One worker pulls the next index off the shared cursor until the list is
@@ -1833,6 +1929,17 @@ document.getElementById('btn-reprocess-all').addEventListener('click', async () 
   }
 
   const ok = done - failed;
+  // Final state stays in the banner ("…completed"), then clears after a moment.
+  const summary = _batchStopped
+    ? `Stopped after ${done} of ${total}`
+    : (failed ? `Completed — ${ok} of ${done} OK, ${failed} failed`
+              : `Completed ${done} of ${total}`);
+  banner.classList.add('done');
+  banner.textContent = summary;
+  setTimeout(() => {
+    if (!_batchActive) { banner.classList.remove('show', 'done'); banner.textContent = ''; }
+  }, 4000);
+
   if (_batchStopped) {
     const remaining = queue.length;
     showToast(
@@ -1975,9 +2082,11 @@ new ResizeObserver(() => {
   if (!pageImages.length) return;
   const w = docImg.offsetWidth, h = docImg.offsetHeight;
   if (!w || !h || (w === selCanvas.width && h === selCanvas.height)) return;
-  selCanvas.width = w; selCanvas.height = h;
-  wizCanvas.width = w; wizCanvas.height = h;
+  selCanvas.width    = w; selCanvas.height    = h;
+  wizCanvas.width    = w; wizCanvas.height    = h;
+  traceCanvas.width  = w; traceCanvas.height  = h;
   clearCanvas();
+  clearTraceHighlight();
   redrawWizard();
 }).observe(docImg);
 
@@ -2067,6 +2176,12 @@ const _docViewer = document.getElementById('doc-viewer');
 // draggable="false"; this catches any bubbled dragstart from its children.)
 _docViewer.addEventListener('contextmenu', (e) => { if (pageImages.length) e.preventDefault(); });
 _docViewer.addEventListener('dragstart', (e) => e.preventDefault());
+// Scroll-wheel zoom (same step as the +/− buttons; matches the Template Manager preview).
+_docViewer.addEventListener('wheel', (e) => {
+  if (!pageImages.length) return;
+  e.preventDefault();
+  setPreviewZoom(previewZoom + (e.deltaY < 0 ? PREVIEW_ZOOM_STEP : -PREVIEW_ZOOM_STEP));
+}, { passive: false });
 _docViewer.addEventListener('mousedown', (e) => {
   if (e.button !== 2) return;
   _panStart = { x: e.clientX, y: e.clientY, panX: previewPanX, panY: previewPanY };
@@ -2105,16 +2220,14 @@ async function openWizard() {
   wizard.fields = wizardFieldList();
   wizard.fixedMode = false;
   wizard.savedKeys = new Set();
+  wizard.drafts = {};            // fresh in-session draft cache each time the wizard opens
+  wizard._loadedKey = null;
   const openMgr = document.getElementById('wiz-open-manager');
   if (openMgr) openMgr.style.display = 'none';
 
-  const sel = document.getElementById('wiz-field-select');
-  sel.innerHTML = '';
-  for (const f of wizard.fields) {
-    const o = document.createElement('option');
-    o.value = f.key; o.textContent = `${f.label} (${f.key})`;
-    sel.appendChild(o);
-  }
+  // The field dropdown — with "• fixed" / "• boxes" markers so you can see at a
+  // glance what each field already has — is (re)built by loadWizardField ->
+  // populateWizardFieldOptions, once resolveWizardTemplate has cached saved state.
   document.getElementById('wizard-panel').classList.add('visible');
   document.getElementById('btn-anchor-wizard').classList.add('open');
   wizCanvas.classList.add('active');
@@ -2138,10 +2251,17 @@ async function resolveWizardTemplate() {
       if (m?.matched && m.templateId) wizard.templateId = m.templateId;
     } catch (e) { /* no match — first save will promote */ }
   }
+  wizard.fixedByKey = new Map();
   if (wizard.templateId) {
     try {
       const detail = await window.docusnap.getTemplateDetail(wizard.templateId);
       for (const mp of (detail?.field_mappings || [])) wizard.mappingsByKey.set(mp.field_key, mp);
+      // Saved FIXED values live in template_fields (separate from the drawn-box
+      // mappings) — cache them so the wizard can show "this field is fixed text".
+      for (const tf of (detail?.fields || [])) {
+        if (!tf.is_variable && tf.fixed_value != null && String(tf.fixed_value).trim() !== '')
+          wizard.fixedByKey.set(tf.field_key, String(tf.fixed_value));
+      }
     } catch (e) { console.warn('wizard rehydrate failed:', e.message); }
   }
 }
@@ -2162,8 +2282,49 @@ function exitWizard() {
   wizCtx.clearRect(0, 0, wizCanvas.width, wizCanvas.height);
 }
 
+// Snapshot the CURRENTLY-shown field's in-progress state into the session draft
+// cache, so switching away and back never loses unsaved boxes / fixed text.
+function captureWizardDraft(key) {
+  if (!key) return;
+  wizard.drafts[key] = {
+    fixedMode:   !!wizard.fixedMode,
+    fixedValue:  document.getElementById('wiz-fixed-value')?.value || '',
+    anchorText:  document.getElementById('wiz-anchor-text')?.value || '',
+    ocrType:     document.getElementById('wiz-ocr-type')?.value || 'text',
+    draftAnchor: wizard.draftAnchor ? { ...wizard.draftAnchor } : null,
+    draftTarget: wizard.draftTarget ? { ...wizard.draftTarget } : null,
+  };
+}
+
+// Rebuild the field dropdown with an at-a-glance marker per field: "• fixed" when
+// it has fixed text, "• boxes" when it has a drawn anchor+target — from the live
+// draft cache first, else the saved template state. Programmatic value set never
+// re-fires the 'change' handler.
+function populateWizardFieldOptions() {
+  const sel = document.getElementById('wiz-field-select');
+  if (!sel) return;
+  sel.innerHTML = '';
+  for (const f of wizard.fields) {
+    const d = wizard.drafts[f.key];
+    const hasFixed = d ? (d.fixedMode && d.fixedValue.trim() !== '')
+                       : !!(wizard.fixedByKey && wizard.fixedByKey.get(f.key));
+    const hasBoxes = d ? !!(d.draftAnchor && d.draftTarget)
+                       : !!(wizard.mappingsByKey && wizard.mappingsByKey.get(f.key)?.anchor_x_norm != null);
+    const mark = hasFixed ? ' • fixed' : hasBoxes ? ' • boxes' : '';
+    const o = document.createElement('option');
+    o.value = f.key; o.textContent = `${f.label} (${f.key})${mark}`;
+    sel.appendChild(o);
+  }
+  const cur = wizard.fields[wizard.index];
+  if (cur) sel.value = cur.key;
+}
+
 function loadWizardField(i) {
   if (!wizard.fields.length) return;
+  // Remember the OUTGOING field's draft before we switch (the reported bug: data
+  // was lost on field change). No-op on first load (_loadedKey is null).
+  if (wizard._loadedKey) captureWizardDraft(wizard._loadedKey);
+
   wizard.index = Math.max(0, Math.min(wizard.fields.length - 1, i));
   wizard.step = 'field';
   wizard.draftAnchor = wizard.draftTarget = null;
@@ -2175,28 +2336,43 @@ function loadWizardField(i) {
   wizCanvas.classList.remove('drawing');
 
   const f = wizard.fields[wizard.index];
-  document.getElementById('wiz-field-select').value = f.key;
-  document.getElementById('wiz-fixed-value').value = '';
-  document.getElementById('wiz-fixed-toggle').checked = false;
-  wizard.fixedMode = false;
+  const fixedInput  = document.getElementById('wiz-fixed-value');
+  const fixedToggle = document.getElementById('wiz-fixed-toggle');
+  const anchorInput = document.getElementById('wiz-anchor-text');
+  const ocrInput    = document.getElementById('wiz-ocr-type');
 
-  // Rehydrate a previously-saved mapping for this field so its boxes are visible
-  // and editable on reopen. Stored normalized, so it re-renders correctly at the
-  // current preview scale (no stored pixels).
+  // Restore priority: in-session DRAFT (unsaved edits) > saved FIXED value >
+  // saved BOXES (this page) > empty. So you always see what's there + don't lose
+  // work in progress.
+  const draft = wizard.drafts[f.key];
   const saved = wizard.mappingsByKey && wizard.mappingsByKey.get(f.key);
-  if (saved && saved.anchor_x_norm != null && saved.target_x_norm != null
-      && (saved.page_number || 0) === currentPage) {   // only show a box that belongs to this page
+  const savedFixed = wizard.fixedByKey && wizard.fixedByKey.get(f.key);
+  if (draft) {
+    wizard.fixedMode    = draft.fixedMode;
+    fixedToggle.checked = draft.fixedMode;
+    fixedInput.value    = draft.fixedValue;
+    anchorInput.value   = draft.anchorText;
+    ocrInput.value      = draft.ocrType;
+    wizard.draftAnchor  = draft.draftAnchor ? { ...draft.draftAnchor } : null;
+    wizard.draftTarget  = draft.draftTarget ? { ...draft.draftTarget } : null;
+  } else if (savedFixed != null && savedFixed !== '') {
+    wizard.fixedMode = true; fixedToggle.checked = true; fixedInput.value = savedFixed;
+    anchorInput.value = ''; ocrInput.value = 'text';
+  } else if (saved && saved.anchor_x_norm != null && saved.target_x_norm != null
+             && (saved.page_number || 0) === currentPage) {   // box belongs to this page
+    wizard.fixedMode = false; fixedToggle.checked = false; fixedInput.value = '';
     wizard.draftAnchor = { x_norm: saved.anchor_x_norm, y_norm: saved.anchor_y_norm,
                            w_norm: saved.anchor_w_norm, h_norm: saved.anchor_h_norm };
     wizard.draftTarget = { x_norm: saved.target_x_norm, y_norm: saved.target_y_norm,
                            w_norm: saved.target_w_norm, h_norm: saved.target_h_norm };
-    document.getElementById('wiz-anchor-text').value = saved.anchor_text || '';
-    document.getElementById('wiz-ocr-type').value    = saved.ocr_type || 'text';
+    anchorInput.value = saved.anchor_text || ''; ocrInput.value = saved.ocr_type || 'text';
   } else {
-    document.getElementById('wiz-anchor-text').value = '';
-    document.getElementById('wiz-ocr-type').value    = 'text';
+    wizard.fixedMode = false; fixedToggle.checked = false; fixedInput.value = '';
+    anchorInput.value = ''; ocrInput.value = 'text';
   }
 
+  wizard._loadedKey = f.key;
+  populateWizardFieldOptions();        // refresh the fixed/boxes markers
   updateWizardUI();
   redrawWizard();
 }
@@ -2437,6 +2613,36 @@ document.getElementById('wiz-fixed-toggle')?.addEventListener('change', (e) => {
   wizCanvas.classList.remove('drawing');
   updateWizardUI();
 });
+
+// Make the Template Wizard panel draggable by its title bar. The panel is
+// absolutely positioned (default: anchored top-right); on the first drag we switch
+// to explicit left/top and then clamp inside its container so it can't be lost
+// off-screen. The close button inside the bar never starts a drag.
+(() => {
+  const panel  = document.getElementById('wizard-panel');
+  const handle = panel?.querySelector('.wiz-title');
+  if (!panel || !handle) return;
+  let drag = null;
+  handle.addEventListener('mousedown', (e) => {
+    if (e.button !== 0 || e.target.closest('.wiz-close')) return;
+    const r  = panel.getBoundingClientRect();
+    const pr = (panel.offsetParent || document.body).getBoundingClientRect();
+    panel.style.left  = (r.left - pr.left) + 'px';
+    panel.style.top   = (r.top  - pr.top)  + 'px';
+    panel.style.right = 'auto';
+    drag = { x: e.clientX, y: e.clientY, left: r.left - pr.left, top: r.top - pr.top };
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!drag) return;
+    const par  = panel.offsetParent || document.documentElement;
+    const maxL = Math.max(0, par.clientWidth  - panel.offsetWidth);
+    const maxT = Math.max(0, par.clientHeight - panel.offsetHeight);
+    panel.style.left = Math.max(0, Math.min(maxL, drag.left + (e.clientX - drag.x))) + 'px';
+    panel.style.top  = Math.max(0, Math.min(maxT, drag.top  + (e.clientY - drag.y))) + 'px';
+  });
+  window.addEventListener('mouseup', () => { drag = null; });
+})();
 // Re-evaluate Save enablement as the user types a fixed value.
 document.getElementById('wiz-fixed-value')?.addEventListener('input', updateWizardUI);
 
@@ -2589,6 +2795,14 @@ async function wizardSave() {
     // Keep the in-session rehydration cache current so navigating back to this
     // field (or reopening) shows the box without a round-trip.
     if (savedMapping) wizard.mappingsByKey.set(field.key, savedMapping);
+    if (fixed) {
+      wizard.fixedByKey.set(field.key, fixedVal);
+      // Populate the document's field in the review panel IMMEDIATELY — the operator
+      // shouldn't have to reprocess to see a fixed value they just set. Dispatching
+      // 'input' marks the field edited so the normal Confirm path persists it.
+      const inp = document.querySelector(`.field-input[data-key="${field.key}"]`);
+      if (inp) { inp.value = fixedVal; inp.dispatchEvent(new Event('input', { bubbles: true })); }
+    }
     wizard.savedKeys.add(field.key);
     showToast(`Saved ${field.label} to template`, 'ok');
     advanceWizardField();
@@ -2647,6 +2861,8 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
 
   function render(events) {
     const byField = new Map();
+    // sliceMap[field][stage] = [ {kind, bbox, page}, ... ] — links candidates to page regions
+    const sliceMap = {};
     const get = (f) => {
       if (!byField.has(f)) byField.set(f, { merges: [], rejects: [], transforms: [], validations: [], final: null });
       return byField.get(f);
@@ -2658,6 +2874,43 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
       else if (ev.event === 'transform') get(ev.field).transforms.push(ev);   // Stage 2.5 denoise/correct
       else if (ev.event === 'validation') get(ev.field).validations.push(ev);  // Stage 4/4.5 normalise/flag/withhold
       else if (ev.event === 'final') get(ev.field).final = ev;
+      else if (ev.event === 'slice' && ev.bbox) {
+        const f = ev.field;
+        if (!sliceMap[f]) sliceMap[f] = {};
+        const key = ev.stage || '_';
+        if (!sliceMap[f][key]) sliceMap[f][key] = [];
+        sliceMap[f][key].push({ kind: ev.kind || 'target', bbox: ev.bbox, page: ev.page ?? 0, stage: ev.stage || '_' });
+      }
+    }
+    // Map a candidate's METHOD to the slice-event stage it produced. The slice
+    // events are keyed by the OCR METHOD ("anchor_crop", "anchor_relocate",
+    // "anchor_registration", "template_mapping", "anchor_inline") — NOT the coarse
+    // merge stage ("2_anchor"). A method with NO captured region (text-fallback
+    // "anchor" / "keyword" / "template_fixed_locked") is intentionally absent here
+    // → no highlight box (honest: there is no region to point at, rather than a
+    // misleading box from an unrelated rejected rung). Note anchor_inline DOES have
+    // a region now — the harvested value's inline_box (see anchor.py).
+    const METHOD_TO_SLICE = {
+      anchor_crop: 'anchor_crop',
+      anchor_inline: 'anchor_inline',
+      anchor_registration: 'anchor_registration',
+      anchor_crop_relocated: 'anchor_relocate',
+      template_mapping: 'template_mapping',
+      template_mapping_expanded: 'template_mapping',
+      template_mapping_salvaged: 'template_mapping',
+      template_mapping_expanded_salvaged: 'template_mapping',
+    };
+    // Pick the slice that the candidate's METHOD actually produced — never a
+    // fallback to "any slice for the field" (that was the wrong-box bug: a winning
+    // inline read borrowed the rejected rigid crop's stale coordinates).
+    function pickSlice(field, method) {
+      const m = sliceMap[field];
+      if (!m || !method) return null;
+      const key = METHOD_TO_SLICE[method];
+      if (!key) return null;                  // text/inline read — no crop region
+      const arr = m[key];
+      if (!arr || !arr.length) return null;
+      return arr.find(s => s.kind === 'target') || arr[0];
     }
     if (!byField.size) {
       elEmpty.hidden = false; elFields.innerHTML = '';
@@ -2669,7 +2922,7 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
       const finalVal = m.final ? m.final.value : null;
       const emptyCls = (finalVal == null || finalVal === '') ? ' empty' : '';
       const winLine  = m.final
-        ? `${escHtml(shown(finalVal))}${m.final.method ? ` · ${escHtml(m.final.method)}` : ''}`
+        ? `${escHtml(shown(finalVal))}${m.final.method ? ` · ${escHtml(m.final.method)}` : ''}${rxBadge(field, finalVal)}`
         : '—';
 
       const rows = [];
@@ -2682,10 +2935,13 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
             ? `lost — lower confidence (${c.confidence}% < ${wc}%)`
             : (c.vs && c.vs.value != null ? `lost — superseded by "${shown(c.vs.value)}"` : 'lost — superseded');
         }
-        rows.push(cand(STAGE_LABEL[c.stage] || c.stage, c.value, c.confidence, c.method, won ? 'won' : 'lost', won ? '' : reason));
+        rows.push(cand(STAGE_LABEL[c.stage] || c.stage, c.value, c.confidence, c.method, won ? 'won' : 'lost', won ? '' : reason, pickSlice(field, c.method), rxBadge(field, c.value)));
       }
       for (const r of m.rejects) {
-        rows.push(cand(r.method || 'anchor', r.value, null, null, 'rej', `rejected — ${r.reason || 'failed gate'}`));
+        // A rejected rung IS keyed by its method (e.g. "anchor_crop") — show the
+        // exact crop it read so the operator sees WHERE the garbage came from. The
+        // rx score explains a format-based rejection at a glance (e.g. rx 0%).
+        rows.push(cand(r.method || 'anchor', r.value, null, null, 'rej', `rejected — ${r.reason || 'failed gate'}`, pickSlice(field, r.method), rxBadge(field, r.value)));
       }
       // Stage 2.5 transforms (denoise / OCR-correct): value rewritten in place.
       for (const t of m.transforms) {
@@ -2701,7 +2957,11 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
           ? `${escHtml(shown(v.was))} → ${escHtml(shown(v.value))}`
           : escHtml(shown(v.value));
         if (v.corrected_to) txt += ` · candidate: ${escHtml(v.corrected_to)}`;
+        txt += rxBadge(field, v.value);
         if (v.note) txt += ` — ${escHtml(v.note)}`;
+        // Plain-English reasoning sub-line (what the validation did + why).
+        const why = validationWhy(v);
+        if (why) txt += `<div class="rdc-why">${why}</div>`;
         rows.push(noteRow('validate', txt, 'valid'));
       }
       if (!rows.length) rows.push(`<div class="rdc-cand"><span class="rdc-reason" style="padding-left:0">matched on the OCR text layer (no per-stage crop trace)</span></div>`);
@@ -2716,16 +2976,36 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
     elFields.querySelectorAll('.rdc-fhead').forEach((h) => {
       h.addEventListener('click', () => h.parentElement.classList.toggle('open'));
     });
+    // Click a candidate row that has slice data → highlight the region on the page.
+    elFields.querySelectorAll('.rdc-cand[data-bbox]').forEach((row) => {
+      row.addEventListener('click', (e) => {
+        e.stopPropagation();   // don't toggle the field block open/closed
+        try {
+          const bbox  = JSON.parse(row.dataset.bbox);
+          const page  = parseInt(row.dataset.page, 10) || 0;
+          const kind  = row.dataset.kind  || 'target';
+          const stage = row.dataset.stage || '_';
+          // If the document is showing a different page, navigate to the correct one first.
+          if (page !== currentPage) {
+            currentPage = page;
+            renderPage();
+          }
+          drawTraceBbox(bbox, kind, stage);
+        } catch (_) {}
+      });
+    });
   }
 
-  function cand(stage, value, conf, method, tag, reason) {
+  function cand(stage, value, conf, method, tag, reason, slice, rx) {
     const tagTxt = tag === 'rej' ? 'rejected' : tag;
-    return `<div class="rdc-cand">`
+    const bboxAttr = slice ? ` data-bbox="${escHtml(JSON.stringify(slice.bbox))}" data-kind="${escHtml(slice.kind || 'target')}" data-page="${slice.page ?? 0}" data-stage="${escHtml(slice.stage || '_')}" style="cursor:pointer" title="Click to highlight region on page"` : '';
+    return `<div class="rdc-cand"${bboxAttr}>`
       + `<span class="rdc-stage">${escHtml(stage)}</span>`
-      + `<span class="rdc-val">${escHtml(shown(value))}${method ? ` <span class="rdc-conf">${escHtml(method)}</span>` : ''}</span>`
+      + `<span class="rdc-val">${escHtml(shown(value))}${method ? ` <span class="rdc-conf">${escHtml(method)}</span>` : ''}${rx || ''}</span>`
       + (conf != null ? `<span class="rdc-conf">${conf}%</span>` : '')
       + `<span class="rdc-tag ${tag}">${tagTxt}</span>`
       + (reason ? `<span class="rdc-reason">${escHtml(reason)}</span>` : '')
+      + (slice ? `<span class="rdc-pin" title="Click row to highlight on page">◎</span>` : '')
       + `</div>`;
   }
 
@@ -2737,10 +3017,61 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
 
   function shown(v) { return v == null || v === '' ? '∅' : String(v); }
 
+  // ── Regex/format score + validation explanation (this window only) ────────────
+  // Reuses the SAME validation_patterns the extraction credibility gate uses
+  // (fetched once via ensureValidationPatterns) and the SAME field type→key map,
+  // so the score the trace shows is the score extraction actually checked against.
+  function traceValKey(field) {
+    return validationKeyFor((fieldDefs || []).find(f => f.key === field));
+  }
+  // % of the value covered by the best matching pattern: 100 = the whole value
+  // fits the expected shape; <100 = trailing/leading chars fall outside it; 0 =
+  // no match. null when the field has no pattern (free-text → no regex check ran).
+  function regexScore(field, value) {
+    const v = (value == null ? '' : String(value)).trim();
+    if (!v) return null;
+    const valKey = traceValKey(field);
+    if (!valKey) return null;
+    const pats = validationPatterns && validationPatterns[valKey];
+    if (!pats || !pats.length) return null;
+    let best = 0;
+    for (const re of pats) {
+      let m = null; try { m = v.match(re); } catch { m = null; }
+      if (m && m[0]) best = Math.max(best, m[0].length / v.length);
+    }
+    return { pct: Math.round(best * 100), valKey };
+  }
+  function rxBadge(field, value) {
+    const s = regexScore(field, value);
+    if (!s) return '';
+    const cls = s.pct >= 100 ? 'rx-full' : s.pct >= 60 ? 'rx-part' : 'rx-low';
+    return ` <span class="rdc-rx ${cls}" title="Regex/format check (${escHtml(s.valKey)}): ${s.pct}% of this value fits the expected pattern">rx ${s.pct}%</span>`;
+  }
+  // Plain-English reasoning for a Stage 4/4.5 validation event, from the structural
+  // signals (value change / correction candidate / kept-and-flagged) PLUS a reading
+  // of the note text. Returns '' when there's nothing extra to explain.
+  function validationWhy(v) {
+    const changed = (v.was !== undefined && v.was !== v.value);
+    const bits = [];
+    if (changed) bits.push('Stage 4/4.5 rewrote the value (normalised or OCR-corrected during validation).');
+    if (v.corrected_to) bits.push(`A correction "${escHtml(v.corrected_to)}" was suggested but NOT auto-applied — confirm to accept it.`);
+    if (!changed && !v.corrected_to) bits.push('The value was kept but flagged for review (confidence capped).');
+    const n = (v.note ? String(v.note) : '').toLowerCase();
+    if (n.includes('format differs from the usual'))
+      bits.push("Why: the value's shape differs from the format learned from this field's confirmed history.");
+    else if (n.includes('candidate') || n.includes('correction'))
+      bits.push('Why: a likely OCR fix was found in learned data and offered as a suggestion.');
+    else if (n.includes('character') || n.includes('charset') || n.includes('symbol'))
+      bits.push("Why: the value contains characters not expected for this field type (likely an OCR symbol misread).");
+    else if (n.includes('date'))
+      bits.push('Why: the date was recovered/normalised from a noisy read; confidence capped pending review.');
+    return bits.join(' ');
+  }
+
   async function pullExisting() {
     // Already-processed (fresh-scan) docs are keyed in the session registry by
     // their original filename; reprocess runs stream live into traceBuf instead.
-    if (!currentDoc) { traceBuf = []; render(traceBuf); return; }
+    if (!currentDoc) { traceBuf = []; clearTraceHighlight(); render(traceBuf); return; }
     let evs = [];
     try { evs = (await window.docusnap.devGetSessionDoc(currentDoc.original_filename)) || []; } catch {}
     traceBuf = evs;
@@ -2754,6 +3085,10 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
     active = true;
     panel.hidden = false;
     elDoc.textContent = currentDoc ? currentDoc.original_filename : '(no document selected)';
+    // Load the shared validation_patterns so rxBadge() can score values against
+    // the SAME regexes extraction used (no-op if already loaded; degrades to no
+    // badge if unavailable). Awaited before the first render.
+    try { await ensureValidationPatterns(); } catch {}
     pullExisting();
   }
 
@@ -2803,6 +3138,7 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
   document.getElementById('rdc-close')?.addEventListener('click', close);
   document.getElementById('rdc-reprocess')?.addEventListener('click', () => {
     traceBuf = [];                       // fresh run — drop the previous trace
+    clearTraceHighlight();
     render(traceBuf);
     document.getElementById('btn-reprocess')?.click();   // reuse the full reprocess flow
   });

@@ -548,6 +548,10 @@ function update(db, id, { logo_phash, keyword_fingerprint, fields } = {}) {
 }
 
 function _upsertFields(db, templateId, fields) {
+  // A confirmed-history rebuild must NOT erase an admin-LOCKED fixed value
+  // (fixed_locked = 1) — the CASE keeps the existing row's fixed_value/is_variable
+  // when locked, else takes the recomputed values (unchanged behaviour for unlocked
+  // rows). fixed_locked itself is never touched here, so a locked row stays locked.
   const stmt = db.prepare(`
     INSERT INTO template_fields
       (template_id, field_key, anchor_label, direction, fixed_value, is_variable)
@@ -555,8 +559,8 @@ function _upsertFields(db, templateId, fields) {
     ON CONFLICT(template_id, field_key) DO UPDATE SET
       anchor_label = excluded.anchor_label,
       direction    = excluded.direction,
-      fixed_value  = excluded.fixed_value,
-      is_variable  = excluded.is_variable
+      fixed_value  = CASE WHEN fixed_locked = 1 THEN fixed_value ELSE excluded.fixed_value END,
+      is_variable  = CASE WHEN fixed_locked = 1 THEN is_variable ELSE excluded.is_variable END
   `);
   for (const f of fields) {
     stmt.run(
@@ -570,26 +574,31 @@ function _upsertFields(db, templateId, fields) {
   }
 }
 
-// Explicit admin-set fixed value for ONE template field (Template Manager →
-// "Fixed Field Values"). A fixed value makes template_matcher.extract_with_template
-// emit it for every matching document (method 'template_fixed', confidence 95),
-// independent of OCR — exactly the same mechanism _buildTemplateFields uses on
-// confirm, just driven explicitly from the UI instead of inferred. Clearing it
-// (null/empty) sets fixed_value=NULL and is_variable=1, returning the field to
-// normal variable behaviour. Only fixed_value + is_variable are touched on
-// conflict, so any learned anchor_label/direction on the same row is preserved.
+// Explicit admin-set fixed value for ONE template field (Template Manager /
+// Template Wizard → "Fixed value"). A fixed value makes
+// template_matcher.extract_with_template emit it for every matching document — and,
+// because the admin set it deliberately, as the PROTECTED method
+// 'template_fixed_locked' (confidence 95) that the engine guards from ordinary
+// OCR/keyword/anchor overrides, NOT the overridable auto-derived 'template_fixed'.
+// fixed_locked = 1 marks that intent and is preserved across confirmed-history
+// rebuilds (_upsertFields). Clearing it (null/empty) sets fixed_value=NULL,
+// is_variable=1 AND fixed_locked=0, returning the field to normal variable
+// behaviour. Only fixed_value/is_variable/fixed_locked are touched on conflict, so
+// any learned anchor_label/direction on the same row is preserved.
 function setFieldFixedValue(db, templateId, fieldKey, fixedValue) {
   const val = (fixedValue == null || String(fixedValue).trim() === '')
     ? null
     : String(fixedValue).trim();
   const isVariable = val === null ? 1 : 0;
+  const locked     = val === null ? 0 : 1;
   db.prepare(`
-    INSERT INTO template_fields (template_id, field_key, fixed_value, is_variable)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO template_fields (template_id, field_key, fixed_value, is_variable, fixed_locked)
+    VALUES (?, ?, ?, ?, ?)
     ON CONFLICT(template_id, field_key) DO UPDATE SET
-      fixed_value = excluded.fixed_value,
-      is_variable = excluded.is_variable
-  `).run(templateId, fieldKey, val, isVariable);
+      fixed_value  = excluded.fixed_value,
+      is_variable  = excluded.is_variable,
+      fixed_locked = excluded.fixed_locked
+  `).run(templateId, fieldKey, val, isVariable, locked);
   return getById(db, templateId);
 }
 

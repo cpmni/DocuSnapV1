@@ -53,6 +53,23 @@ def main():
     f += not check("invoice_number is NOT name-like", not vq.is_name_like_field("invoice_number", "Invoice No"))
     f += not check("total_amount is NOT name-like", not vq.is_name_like_field("total_amount", "Total"))
 
+    print("\nstrip_name_edges: drop leading non-alnum + trailing junk, keep interior/allowed")
+    TEXT = "-'&(),."   # config field_charsets 'text' allowed_extra
+    EDGE = [
+        # (value, allowed_extra, expected)
+        ("--« Beaumont Care Homes Ltd -", TEXT, "Beaumont Care Homes Ltd -"),  # leading OCR junk; keep trailing '-'
+        ("Beaumont Care Homes Ltd - Jordanstown", TEXT, "Beaumont Care Homes Ltd - Jordanstown"),  # clean unchanged
+        ("Acme Inc.", TEXT, "Acme Inc."),               # trailing '.' is allowed → kept
+        ("  Beaumont  ", TEXT, "Beaumont"),             # edge whitespace
+        ("Smith & Jones", TEXT, "Smith & Jones"),       # internal '&' preserved
+        ("Beaumont Ltd «", TEXT, "Beaumont Ltd"),  # trailing disallowed '«' stripped
+        ("«»--", TEXT, "«»--"),     # all-junk → unchanged (over-strip guard)
+        ("", TEXT, ""),                                  # empty
+    ]
+    for val, spec, exp in EDGE:
+        got = vq.strip_name_edges(val, spec)
+        f += not check(f"{val!r} -> {got!r}", got == exp)
+
     if f:
         print(f"\n{f} check(s) failed — name_quality classification is off.")
         return 1

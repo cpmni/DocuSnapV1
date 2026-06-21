@@ -60,16 +60,28 @@ function _resultItem(doc) {
   }
 
   el.innerHTML = `
-    <div class="result-header">
-      <span class="result-supplier" title="${escHtml(supplier)}">${escHtml(supplier)}</span>
-      ${typeName ? `<span class="result-type-badge">${escHtml(typeName)}</span>` : ''}
-    </div>
-    <div class="result-filename" title="${escHtml(name)}">${escHtml(name)}</div>
-    <div class="result-footer">
-      <span class="result-date">${escHtml(date)}</span>
-      <span class="result-footer-right">${statusBadge}${confPip}</span>
+    <div class="result-row">
+      <img class="result-thumb" alt="">
+      <div class="result-main">
+        <div class="result-header">
+          <span class="result-supplier" title="${escHtml(supplier)}">${escHtml(supplier)}</span>
+          ${typeName ? `<span class="result-type-badge">${escHtml(typeName)}</span>` : ''}
+        </div>
+        <div class="result-filename" title="${escHtml(name)}">${escHtml(name)}</div>
+        <div class="result-footer">
+          <span class="result-date">${escHtml(date)}</span>
+          <span class="result-footer-right">${statusBadge}${confPip}</span>
+        </div>
+      </div>
     </div>
   `;
+  // Reuse the SAME path resolution the preview pane uses (confirmed docs live at
+  // stored_path), so the list thumb and the preview can't disagree.
+  if (window.Thumbs && window.SearchPreview && window.SearchPreview.fileArgs) {
+    const { folderPath, filename } = window.SearchPreview.fileArgs(doc);
+    window.Thumbs.lazy(el.querySelector('.result-thumb'),
+      { id: doc.id, folder_path: folderPath, original_filename: filename });
+  }
   el.addEventListener('click', () => window.SearchPreview.selectDoc(doc));
   return el;
 }

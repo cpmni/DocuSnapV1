@@ -122,6 +122,7 @@ def extract_text_and_images(
     filepath: Path,
     enhance_params: dict | None = None,
     born_digital: bool = False,
+    engine=None,
 ) -> tuple[str, list[Image.Image]]:
     """
     Extract OCR text from a document file.
@@ -131,12 +132,21 @@ def extract_text_and_images(
     zone OCR.  enhance_params, when provided, are applied only to the OCR text
     extraction pass — the returned pages are always the raw render.
 
+    engine (default None -> Tesseract): the FULL-PAGE OCR engine (ocr.engine). When
+    None it is a TesseractEngine whose read_page is exactly the previous inline
+    ocr_image(preprocess_for_ocr(...)) call, so the default path is byte-identical.
+    Only the full-page read is routed through it — crop/zone/anchor OCR is unaffected.
+
     born_digital (default off): when on, a PDF page that carries a real embedded
     text layer (a generated invoice/statement) contributes its EXACT vector text
     instead of an OCR read — faster and exact. Image-only/scanned pages have no
     text layer and fall back to OCR unchanged. The page IMAGES are still rendered
     either way (logo/anchor/zone OCR need them). Gated by 'born_digital_enabled'.
     """
+    if engine is None:
+        from ocr.engine import TesseractEngine
+        engine = TesseractEngine()
+
     ext   = filepath.suffix.lower()
     texts = []
     pages = []
@@ -159,13 +169,13 @@ def extract_text_and_images(
                 except Exception:
                     layer_text = None   # any text-layer failure -> OCR fallback
             texts.append(layer_text if layer_text is not None
-                         else ocr_image(preprocess_for_ocr(img, enhance_params)))
+                         else engine.read_page(img, enhance_params))
     else:
         img = Image.open(filepath)
         if img.mode not in ("RGB", "L"):
             img = img.convert("RGB")
         pages = [img]
-        texts.append(ocr_image(preprocess_for_ocr(img, enhance_params)))
+        texts.append(engine.read_page(img, enhance_params))
 
     return "\n\n--- PAGE BREAK ---\n\n".join(texts), pages
 
