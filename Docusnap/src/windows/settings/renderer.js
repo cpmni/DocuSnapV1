@@ -252,58 +252,67 @@ if (ocrEngineSelect) ocrEngineSelect.addEventListener('change', async () => {
   catch { /* non-fatal; the saved value reloads on next open */ }
 });
 
-// ── File naming ───────────────────────────────────────────────────────────────
-const filenamePatternInput   = document.getElementById('filename-pattern-input');
-const filenamePatternMsg     = document.getElementById('filename-pattern-msg');
-const filenamePatternPreview = document.getElementById('filename-pattern-preview');
+// ── Output Structure (folder + file-name builders) ──────────────────────────────
+// Click-to-insert token "blocks" + free-form custom text, for BOTH the subfolder
+// pattern (output_folder_pattern; "/" = a subfolder level) and the file name
+// (filename_pattern, the existing engine). Live "OutputRoot › subfolders › file".
+const folderPatternInput   = document.getElementById('folder-pattern-input');
+const filenamePatternInput = document.getElementById('filename-pattern-input');
+const filenamePatternMsg   = document.getElementById('filename-pattern-msg');
+const outputPathPreview    = document.getElementById('output-path-preview');
 
-let filenameDefaultPattern = '{docType}.{date}.{ref}';
-let filenamePreviewDebounce = null;
+let _defaultFolderPattern   = '{supplier}/{year}/{month}';
+let _defaultFilenamePattern = '{docType}.{date}.{ref}';
+let _outPreviewDebounce = null;
 
-async function loadFilenamePattern() {
-  const info = await api.getFilenamePatternInfo();
-  filenameDefaultPattern = info.defaultPattern;
-  renderFilenameTokenList(info.tokens);
+async function loadOutputStructure() {
+  if (!folderPatternInput) return;
+  const info = await api.getOutputStructureInfo();
+  _defaultFolderPattern   = info.defaultFolder   || _defaultFolderPattern;
+  _defaultFilenamePattern = info.defaultFilename || _defaultFilenamePattern;
 
-  const saved = await api.getSetting('filename_pattern');
-  filenamePatternInput.value = saved || filenameDefaultPattern;
-  updateFilenamePreview();
+  renderOutputTokenList('folder-token-list',   info.tokens, folderPatternInput);
+  renderOutputTokenList('filename-token-list', info.tokens, filenamePatternInput);
+
+  folderPatternInput.value   = (await api.getSetting('output_folder_pattern')) || _defaultFolderPattern;
+  filenamePatternInput.value = (await api.getSetting('filename_pattern'))       || _defaultFilenamePattern;
+  updateOutputPreview();
 }
-loadFilenamePattern();
+loadOutputStructure();
 
-function renderFilenameTokenList(tokens) {
-  const list = document.getElementById('filename-token-list');
+function renderOutputTokenList(listId, tokens, targetInput) {
+  const list = document.getElementById(listId);
+  if (!list) return;
   list.innerHTML = '';
-  for (const t of tokens) {
+  for (const t of (tokens || [])) {
     const chip = document.createElement('span');
     chip.className = 'token-chip';
     chip.title = `Insert ${t.token} — example: ${t.example}`;
     chip.innerHTML = `${escHtml(t.token)}<span class="token-label">${escHtml(t.label)}</span>`;
-    chip.addEventListener('click', () => insertFilenameToken(t.token));
+    chip.addEventListener('click', () => insertOutputToken(targetInput, t.token));
     list.appendChild(chip);
   }
 }
 
-function insertFilenameToken(token) {
-  const input = filenamePatternInput;
+function insertOutputToken(input, token) {
   const start = input.selectionStart ?? input.value.length;
   const end   = input.selectionEnd   ?? input.value.length;
   input.value = input.value.slice(0, start) + token + input.value.slice(end);
   input.focus();
   input.selectionStart = input.selectionEnd = start + token.length;
-  schedulePatternPreview();
-  savePatternSetting();
+  saveOutputSetting(input);
+  scheduleOutputPreview();
 }
 
-function schedulePatternPreview() {
-  clearTimeout(filenamePreviewDebounce);
-  filenamePreviewDebounce = setTimeout(updateFilenamePreview, 300);
+function scheduleOutputPreview() {
+  clearTimeout(_outPreviewDebounce);
+  _outPreviewDebounce = setTimeout(updateOutputPreview, 300);
 }
 
-async function updateFilenamePreview() {
-  const pattern = filenamePatternInput.value.trim();
-  const result  = await api.previewFilenamePattern(pattern);
-  filenamePatternPreview.textContent = result.filename;
+async function updateOutputPreview() {
+  const root   = (await api.getSetting('output_folder')) || 'Output folder';
+  const result = await api.previewOutputPath(folderPatternInput.value.trim(), filenamePatternInput.value.trim());
+  outputPathPreview.textContent = [root, ...(result.segments || []), result.filename].join('  ›  ');
   if (result.warning) {
     filenamePatternMsg.textContent   = `⚠ ${result.warning}`;
     filenamePatternMsg.className     = 'pattern-msg warn';
@@ -313,17 +322,26 @@ async function updateFilenamePreview() {
   }
 }
 
-async function savePatternSetting() {
-  await api.setSetting('filename_pattern', filenamePatternInput.value.trim());
+async function saveOutputSetting(input) {
+  if (input === folderPatternInput)   await api.setSetting('output_folder_pattern', folderPatternInput.value.trim());
+  if (input === filenamePatternInput) await api.setSetting('filename_pattern',      filenamePatternInput.value.trim());
 }
 
-filenamePatternInput.addEventListener('input', schedulePatternPreview);
-filenamePatternInput.addEventListener('change', savePatternSetting);
+for (const input of [folderPatternInput, filenamePatternInput]) {
+  if (!input) continue;
+  input.addEventListener('input',  scheduleOutputPreview);
+  input.addEventListener('change', () => saveOutputSetting(input));
+}
 
-document.getElementById('btn-reset-filename-pattern').addEventListener('click', async () => {
-  filenamePatternInput.value = filenameDefaultPattern;
-  await savePatternSetting();
-  updateFilenamePreview();
+document.getElementById('btn-reset-folder-pattern')?.addEventListener('click', async () => {
+  folderPatternInput.value = _defaultFolderPattern;
+  await saveOutputSetting(folderPatternInput);
+  updateOutputPreview();
+});
+document.getElementById('btn-reset-filename-pattern')?.addEventListener('click', async () => {
+  filenamePatternInput.value = _defaultFilenamePattern;
+  await saveOutputSetting(filenamePatternInput);
+  updateOutputPreview();
 });
 
 // ── Confidence threshold ──────────────────────────────────────────────────────
@@ -825,6 +843,7 @@ function showSecretDialog(title, value, note) {
               color:#fff; font-family:inherit; font-size:12px; font-weight:500; cursor:pointer;">Done</button>
     </div>
   `;
+  overlay.setAttribute('data-help-ignore', '1');   // stay usable even if help mode is on
   document.body.appendChild(overlay);
   overlay.querySelector('#secret-ok').addEventListener('click', () => overlay.remove());
 }
@@ -861,6 +880,7 @@ function showTypedConfirmDialog({ title, warningHtml, requiredText, confirmLabel
         </div>
       </div>
     `;
+    overlay.setAttribute('data-help-ignore', '1');   // stay usable even if help mode is on
     document.body.appendChild(overlay);
 
     const input    = overlay.querySelector('#tc-input');
@@ -877,8 +897,14 @@ function showTypedConfirmDialog({ title, warningHtml, requiredText, confirmLabel
     overlay.querySelector('#tc-cancel').addEventListener('click', () => close(false));
     btnOk.addEventListener('click', () => { if (matches()) close(true); });
     overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(false); });
+    // Clicking anywhere on the dialog card (not the backdrop) puts the caret in
+    // the field — a reliable fallback if auto-focus was dropped.
+    overlay.addEventListener('click', (e) => { if (e.target !== overlay) input.focus(); });
     document.addEventListener('keydown', onKey);
-    input.focus();
+    // Defer focus to the next frame: focusing an element in the SAME tick it is
+    // appended to the DOM is sometimes dropped by Chromium, leaving the field with
+    // no caret (the "can't type / no flashing cursor" symptom).
+    requestAnimationFrame(() => { try { input.focus(); input.select(); } catch { /* */ } });
   });
 }
 
@@ -2745,6 +2771,66 @@ function loSetMsg(kind, text) {
   loMsg.style.color = { err: 'var(--err)', ok: 'var(--ok)', warn: 'var(--warn)' }[kind] || 'var(--muted)';
   loMsg.textContent = text || '';
 }
+
+// ── Backup & Restore (Advanced) ─────────────────────────────────────────────────
+// Export: validate + confirm the password, then main encrypts & writes the file.
+// Restore: preview (decrypt + counts — proves password) -> explicit confirm ->
+// apply (sectioned replace in a transaction). Restart recommended afterwards.
+(function setupBackupRestore() {
+  const $ = (id) => document.getElementById(id);
+  const expPw = $('bk-exp-pw'), expPw2 = $('bk-exp-pw2'), expBtn = $('bk-export'), expMsg = $('bk-exp-msg');
+  const resPw = $('bk-res-pw'), resBtn = $('bk-restore'), resMsg = $('bk-res-msg');
+  if (!expBtn || !resBtn) return;
+
+  const msg = (el, kind, text) => {
+    el.style.display = text ? 'block' : 'none';
+    el.style.color = { err: 'var(--err)', ok: 'var(--ok)', warn: 'var(--warn)' }[kind] || 'var(--muted)';
+    el.textContent = text || '';
+  };
+
+  expBtn.addEventListener('click', async () => {
+    const pw = expPw.value || '', pw2 = expPw2.value || '';
+    if (!pw.trim()) { msg(expMsg, 'err', 'Choose a password for the backup.'); return; }
+    if (pw !== pw2)  { msg(expMsg, 'err', 'The two passwords do not match.'); return; }
+    expBtn.disabled = true; msg(expMsg, 'muted', 'Creating encrypted backup…');
+    try {
+      const r = await api.backupExport(pw);
+      if (r && r.ok) { msg(expMsg, 'ok', 'Backup saved ✓  Keep the password safe — it is required to restore.'); expPw.value = expPw2.value = ''; }
+      else if (r && r.canceled) msg(expMsg, 'muted', '');
+      else msg(expMsg, 'err', (r && r.error) || 'Could not create the backup.');
+    } catch (e) { msg(expMsg, 'err', e.message || 'Could not create the backup.'); }
+    finally { expBtn.disabled = false; }
+  });
+
+  resBtn.addEventListener('click', async () => {
+    const pw = resPw.value || '';
+    if (!pw.trim()) { msg(resMsg, 'err', 'Enter the password for the backup file.'); return; }
+    resBtn.disabled = true; msg(resMsg, 'muted', 'Opening backup…');
+    let preview;
+    try { preview = await api.backupPreview(pw); }
+    catch (e) { msg(resMsg, 'err', e.message || 'Could not read the backup.'); resBtn.disabled = false; return; }
+    if (!preview || (!preview.ok && preview.canceled)) { msg(resMsg, 'muted', ''); resBtn.disabled = false; return; }
+    if (!preview.ok) { msg(resMsg, 'err', preview.error || 'Could not read the backup.'); resBtn.disabled = false; return; }
+
+    const s = preview.summary || {};
+    const when = preview.meta && preview.meta.exported_at ? new Date(preview.meta.exported_at).toLocaleString() : 'unknown date';
+    const ver  = (preview.meta && preview.meta.app_version) ? ` (app ${preview.meta.app_version})` : '';
+    const counts = `${s.document_types || 0} document type(s), ${s.templates || 0} template(s), ${s.field_anchors || 0} learned anchor(s)`;
+    const confirmed = window.confirm(
+      `Restore this backup?\n\nExported: ${when}${ver}\nContains: ${counts}.\n\n` +
+      `This REPLACES your current document types, templates and learned data, and merges app settings. It cannot be undone.`
+    );
+    if (!confirmed) { msg(resMsg, 'muted', 'Restore cancelled.'); resBtn.disabled = false; return; }
+
+    msg(resMsg, 'muted', 'Restoring…');
+    try {
+      const r = await api.backupApply(preview.path, pw);
+      if (r && r.ok) { msg(resMsg, 'ok', 'Restore complete ✓  Please close and reopen Scan Finder for all changes to take effect.'); resPw.value = ''; }
+      else msg(resMsg, 'err', (r && r.error) || 'Restore failed.');
+    } catch (e) { msg(resMsg, 'err', e.message || 'Restore failed.'); }
+    finally { resBtn.disabled = false; }
+  });
+})();
 
 function loPopulateFields() {
   const t = _loTypes.find(x => x.slug === loDocType.value);

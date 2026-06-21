@@ -17,7 +17,7 @@ function register(ctx) {
   const _SAFE_SETTING_VALUE = new Set([
     'processing_mode', 'processing_concurrency', 'registration_enabled', 'born_digital_enabled',
     'diagnostic_logging', 'theme', 'first_run_completed', 'watch_folder_enabled',
-    'confidence_threshold', 'license_enforcement_enabled',
+    'confidence_threshold', 'license_enforcement_enabled', 'copy_after_processing_enabled',
   ]);
 
   // ── Document types ──────────────────────────────────────────────────────────
@@ -228,6 +228,60 @@ function register(ctx) {
       target_id: key, outcome: 'success',
       metadata: { key, value: _SAFE_SETTING_VALUE.has(key) ? String(val).slice(0, 120) : '[set]' } });
     return true;
+  });
+
+  // ── Encrypted settings backup / restore (admin) ─────────────────────────────
+  // Config + learning ONLY (no auth/sessions/audit/licensing/documents); crypto +
+  // table whitelist live in services/backupService.js. Export writes one encrypted
+  // file; restore is a two-step preview(decrypt+counts) -> apply(replace) so the
+  // renderer can confirm before overwriting.
+  const { dialog, BrowserWindow, app } = require('electron');
+  const fs = require('fs');
+  const backupService = require('../../services/backupService');
+
+  ipcMain.handle('settings-backup-export', async (_e, { password } = {}) => {
+    requireRole('admin');
+    if (!password || !String(password).trim()) return { ok: false, error: 'A password is required.' };
+    try {
+      const def = `scanfinder-backup-${new Date().toISOString().slice(0, 10)}.sfbak`;
+      const r = await dialog.showSaveDialog(BrowserWindow.getFocusedWindow(), {
+        title: 'Save Settings Backup', defaultPath: def,
+        filters: [{ name: 'Scan Finder backup', extensions: ['sfbak'] }],
+      });
+      if (r.canceled || !r.filePath) return { ok: false, canceled: true };
+      const buf = backupService.createBackup(getDb(), password, { appVersion: app.getVersion() });
+      fs.writeFileSync(r.filePath, buf);
+      logAudit(getDb(), { action: 'settings_backup_export', action_category: 'settings',
+        target_type: 'backup', outcome: 'success', metadata: { bytes: buf.length } });
+      return { ok: true, path: r.filePath };
+    } catch (e) { return { ok: false, error: e.message }; }
+  });
+
+  ipcMain.handle('settings-backup-preview', async (_e, { password } = {}) => {
+    requireRole('admin');
+    if (!password || !String(password).trim()) return { ok: false, error: 'A password is required.' };
+    try {
+      const r = await dialog.showOpenDialog(BrowserWindow.getFocusedWindow(), {
+        title: 'Choose Settings Backup', properties: ['openFile'],
+        filters: [{ name: 'Scan Finder backup', extensions: ['sfbak'] }],
+      });
+      if (r.canceled || !r.filePaths || !r.filePaths[0]) return { ok: false, canceled: true };
+      const { meta, summary } = backupService.readBackup(fs.readFileSync(r.filePaths[0]), password);
+      return { ok: true, path: r.filePaths[0], meta, summary };
+    } catch (e) { return { ok: false, error: e.message }; }
+  });
+
+  ipcMain.handle('settings-backup-apply', async (_e, { path: filePath, password } = {}) => {
+    requireRole('admin');
+    if (!filePath) return { ok: false, error: 'No backup file selected.' };
+    if (!password || !String(password).trim()) return { ok: false, error: 'A password is required.' };
+    try {
+      const { payload } = backupService.readBackup(fs.readFileSync(filePath), password);   // re-validate before write
+      const { applied } = backupService.applyBackup(getDb(), payload);
+      logAudit(getDb(), { action: 'settings_backup_restore', action_category: 'settings',
+        target_type: 'backup', outcome: 'success', metadata: { tables: Object.keys(applied).length } });
+      return { ok: true, applied, restart: true };
+    } catch (e) { return { ok: false, error: e.message }; }
   });
 }
 

@@ -33,6 +33,7 @@ const {
   DEFAULT_PATTERN, validatePattern,
   sanitiseFilenameStem,
   buildFilename, resolveDuplicateFilename,
+  DEFAULT_FOLDER_PATTERN, FIELD_TOKENS, buildFolderSegments,
 } = require('./filename_pattern');
 
 function check(label, condition, detail) {
@@ -240,6 +241,26 @@ function main() {
     if (!check('three collisions -> -DUPLICATE-3',
       resolveDuplicateFilename(base, '.pdf', n => threeCollisions.has(n)) === 'Invoice.15-12-2025.INV-001-DUPLICATE-3.pdf')) failures++;
   }
+
+  // ── Folder-pattern builder (Settings → Output Structure) ────────────────────
+  console.log('\nFolder-pattern builder:');
+  const fv = { supplier: 'Acme Supplies Ltd', docType: 'Invoice', year: '2025', month: 'December', ref: 'INV-001', date: '15-12-2025' };
+  if (!check('default folder pattern = the legacy Company/Year/Month layout',
+    DEFAULT_FOLDER_PATTERN === '{supplier}/{year}/{month}' &&
+    JSON.stringify(buildFolderSegments(DEFAULT_FOLDER_PATTERN, fv)) === JSON.stringify(['Acme-Supplies-Ltd', '2025', 'December']),
+    buildFolderSegments(DEFAULT_FOLDER_PATTERN, fv))) failures++;
+  if (!check('"/" makes a new subfolder level; an illegal "/" inside a value is stripped',
+    JSON.stringify(buildFolderSegments('{supplier}/{docType}', { ...fv, supplier: 'A/B Ltd' })) === JSON.stringify(['AB-Ltd', 'Invoice']))) failures++;
+  if (!check('custom text between tokens is kept as a folder level',
+    JSON.stringify(buildFolderSegments('Archive/{year}', fv)) === JSON.stringify(['Archive', '2025']))) failures++;
+  if (!check('empty pattern -> zero subfolders (files into the output root)',
+    buildFolderSegments('', fv).length === 0)) failures++;
+  if (!check('a level whose only token is empty is dropped (no blank folder)',
+    JSON.stringify(buildFolderSegments('{supplier}/{ref}/{year}', { ...fv, ref: '' })) === JSON.stringify(['Acme-Supplies-Ltd', '2025']))) failures++;
+  if (!check('reserved device name as a folder level is defused',
+    buildFolderSegments('{docType}', { ...fv, docType: 'CON' })[0] === 'CON_')) failures++;
+  if (!check('builder blocks are the meaningful field tokens only',
+    FIELD_TOKENS.map(t => t.token).join(',') === '{supplier},{docType},{date},{ref},{year},{month}')) failures++;
 
   console.log();
   if (failures) {

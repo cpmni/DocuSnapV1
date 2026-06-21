@@ -19,11 +19,22 @@ const SUPPORTED_TOKENS = [
   { token: '{docType}',      label: 'Document type',                            example: 'Invoice' },
   { token: '{date}',         label: 'Document date (DD-MM-YYYY)',               example: '15-12-2025' },
   { token: '{ref}',          label: 'Reference number',                         example: 'INV-2025-0142' },
-  { token: '{supplier}',     label: 'Supplier / company name',                  example: 'Acme-Supplies-Ltd' },
+  { token: '{supplier}',     label: 'Company',                                  example: 'Acme-Supplies-Ltd' },
   { token: '{year}',         label: 'Document year',                            example: '2025' },
   { token: '{month}',        label: 'Document month name',                      example: 'December' },
   { token: '{originalName}', label: 'Original scanned filename (no extension)', example: 'scan0042' },
 ];
+
+// The curated, meaningful blocks offered in the builder UI (Settings + first-run
+// wizard) for BOTH folder structure and file name — click to insert, type custom
+// text between them. A superset ({originalName}) is still accepted if typed by hand.
+const FIELD_TOKENS = ['{supplier}', '{docType}', '{date}', '{ref}', '{year}', '{month}']
+  .map(tok => SUPPORTED_TOKENS.find(t => t.token === tok));
+
+// Default subfolder pattern built UNDER the (separately configured) output root.
+// "/" separates subfolder levels. This is the long-standing Company/Year/Month
+// layout, so installs that never change it are byte-identical.
+const DEFAULT_FOLDER_PATTERN = '{supplier}/{year}/{month}';
 
 const TOKEN_NAMES = new Set(SUPPORTED_TOKENS.map(t => t.token));
 const TOKEN_RE    = /\{[a-zA-Z]+\}/g;
@@ -172,13 +183,30 @@ function resolveDuplicateFilename(baseFilename, ext, existsFn) {
   return candidate;
 }
 
+// Build the subfolder segments for one document from a folder PATTERN. "/" in the
+// pattern separates subfolder levels; each level is token-substituted and run
+// through the same Windows-safety pass as a filename stem (illegal chars stripped,
+// reserved device names defused, separator edges trimmed). Empty levels — from an
+// unresolved token or stray "/" — are dropped, so the path never contains a blank
+// or unsafe folder. Pure: the caller (filing handler) still enforces the
+// output-root containment check on the joined result.
+function buildFolderSegments(pattern, values) {
+  return String(pattern == null ? '' : pattern)
+    .split('/')
+    .map(seg => buildFilenameStem(seg, values))
+    .filter(Boolean);
+}
+
 module.exports = {
   DEFAULT_PATTERN,
+  DEFAULT_FOLDER_PATTERN,
   SUPPORTED_TOKENS,
+  FIELD_TOKENS,
   RESERVED_NAMES,
   validatePattern,
   sanitiseFilenameStem,
   buildFilenameStem,
   buildFilename,
+  buildFolderSegments,
   resolveDuplicateFilename,
 };

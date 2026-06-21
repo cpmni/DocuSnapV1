@@ -138,6 +138,17 @@
     .btn-stop:hover { background: var(--err-bg); }
     .btn-stop.visible { display: block; }
 
+    /* Appears below Process Documents once a batch finishes — jumps to Review. */
+    .btn-review-docs {
+      display: none; width: 100%; padding: 9px; border-radius: 7px;
+      border: 1px solid var(--ok-border); background: var(--ok-bg); color: var(--ok);
+      font-family: var(--sans); font-size: 12.5px; font-weight: 600; cursor: pointer;
+      transition: filter .15s, transform .1s; margin-top: 6px;
+    }
+    .btn-review-docs:hover  { filter: brightness(.97); }
+    .btn-review-docs:active { transform: scale(.98); }
+    .btn-review-docs.visible { display: block; }
+
     .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .stat-card { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px 8px; text-align: center; }
     .stat-val { font-family: var(--mono); font-size: 20px; font-weight: 500; color: var(--text); }
@@ -372,6 +383,7 @@
 
       <button class="btn-run" id="btn-run" disabled data-help-key="process">&#9654;&nbsp; Process Documents</button>
       <button class="btn-stop" id="btn-stop">&#9632; Stop Processing</button>
+      <button class="btn-review-docs" id="btn-review-docs">&#10003;&nbsp; Review your documents</button>
 
       <div>
         <div class="sidebar-label">Session Stats</div>

@@ -86,15 +86,21 @@
 
     // Capture-phase so we intercept BEFORE the control's own click handlers fire.
     document.addEventListener('click', (e) => {
+      // Modals/overlays marked data-help-ignore (e.g. a destructive typed-confirm
+      // dialog) must stay fully usable even with help mode on — never swallow their
+      // clicks, or the user can't focus/type in them.
+      const exempt = !!(e.target.closest && e.target.closest('[data-help-ignore]'));
       if (!active) {
         // A popup is showing but help mode is off: an outside click dismisses it
-        // (and is consumed) — except a click on the toggle, which re-enters mode.
+        // (and is consumed) — except a click on the toggle, which re-enters mode,
+        // or a click inside an exempt modal, which must reach that modal.
         if (popup && !popup.contains(e.target) && !toggle.contains(e.target)) {
-          closePopup(); e.preventDefault(); e.stopPropagation();
+          closePopup();
+          if (!exempt) { e.preventDefault(); e.stopPropagation(); }
         }
         return;
       }
-      if (toggle.contains(e.target) || (popup && popup.contains(e.target))) return;
+      if (exempt || toggle.contains(e.target) || (popup && popup.contains(e.target))) return;
       e.preventDefault(); e.stopPropagation();
       const el   = e.target.closest && e.target.closest('[data-help-key]');
       const text = (el && texts[el.getAttribute('data-help-key')]) ||

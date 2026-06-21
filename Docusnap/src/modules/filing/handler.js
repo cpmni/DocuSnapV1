@@ -18,8 +18,8 @@ const MONTH_NAMES = [
 ];
 
 const {
-  DEFAULT_PATTERN, SUPPORTED_TOKENS,
-  buildFilename, resolveDuplicateFilename,
+  DEFAULT_PATTERN, DEFAULT_FOLDER_PATTERN, SUPPORTED_TOKENS, FIELD_TOKENS,
+  buildFilename, buildFolderSegments, resolveDuplicateFilename,
 } = require('./filename_pattern');
 
 // ── Register IPC ──────────────────────────────────────────────────────────────
@@ -53,6 +53,28 @@ function register(ctx) {
     };
     const result = buildFilename({ pattern, values: sampleValues, ext: '.pdf' });
     return { filename: result.filename, warning: result.fellBack ? result.reason : null };
+  });
+
+  // Output Structure: the curated "blocks" the builder UI offers + the defaults.
+  ipcMain.handle('get-output-structure-info', () => {
+    requireRole('admin');
+    return {
+      tokens:          FIELD_TOKENS,
+      defaultFolder:   DEFAULT_FOLDER_PATTERN,
+      defaultFilename: DEFAULT_PATTERN,
+    };
+  });
+
+  // Live "OutputRoot › subfolders › filename" preview — folder levels and the
+  // filename are built with the SAME engine + sanitiser filing uses (the sample
+  // company contains a "/" so the automatic clean-up shows live).
+  ipcMain.handle('preview-output-path', (_e, { folderPattern, filenamePattern } = {}) => {
+    requireRole('admin');
+    const sample = { docType: 'Invoice', date: '15-12-2025', ref: 'INV-2025-0142',
+      supplier: 'Smith & Sons / Builders Ltd', year: '2025', month: 'December', originalName: 'scan0042' };
+    const segments = buildFolderSegments(folderPattern, sample);
+    const fn = buildFilename({ pattern: filenamePattern, values: sample, ext: '.pdf' });
+    return { segments, filename: fn.filename, warning: fn.fellBack ? fn.reason : null };
   });
 }
 
@@ -105,12 +127,22 @@ async function commitDocument({
   }
   const baseFilename = built.filename;
 
-  // ── 2. Build folder path ─────────────────────────────────────────────────────
-  const companyFolder = sanitiseFolderName(supplierName);
-  const year          = dateObj ? String(dateObj.getFullYear()) : 'Unknown Year';
-  const month         = dateObj ? MONTH_NAMES[dateObj.getMonth()] : 'Unknown Month';
+  // ── 2. Build folder path from the configured folder pattern ──────────────────
+  // "/" in the pattern is a subfolder level. Default is {supplier}/{year}/{month}
+  // (the long-standing Company/Year/Month layout), so installs that never change
+  // it are byte-identical. buildFolderSegments token-substitutes + Windows-safes
+  // each level and drops empties. Company/Year/Month keep the old readable
+  // placeholders so those levels are never blank.
+  const folderPattern = learning.getSetting(db, 'output_folder_pattern', DEFAULT_FOLDER_PATTERN);
+  const folderValues = {
+    ...tokenValues,
+    supplier: supplierName,                                  // 'Unknown Company' fallback
+    year:     tokenValues.year  || 'Unknown Year',
+    month:    tokenValues.month || 'Unknown Month',
+  };
+  const segments = buildFolderSegments(folderPattern, folderValues);
 
-  const targetDir = path.join(outputRoot, companyFolder, year, month);
+  const targetDir = path.join(outputRoot, ...segments);
   // SECURITY (F-08): defence in depth — even after sanitisation, never let the
   // resolved filing directory escape the configured output root.
   const rootResolved   = path.resolve(outputRoot);

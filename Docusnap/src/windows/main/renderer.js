@@ -5,6 +5,7 @@ let selectedFolder = null;
 let running        = false;
 let results        = [];
 let stats          = { total: 0, done: 0, ok: 0, err: 0 };
+let _userCanReview = true;   // false for Read Only (gates the "Review your documents" CTA)
 
 // ── Element refs ─────────────────────────────────────────────────────────────
 const folderBox     = document.getElementById('folder-box');
@@ -13,6 +14,7 @@ const btnRun        = document.getElementById('btn-run');
 const btnStop       = document.getElementById('btn-stop');
 const btnClear      = document.getElementById('btn-clear');
 const btnViewResults = document.getElementById('btn-view-results');
+const btnReviewDocs  = document.getElementById('btn-review-docs');
 const dropzone      = document.getElementById('dropzone');
 const resultsPanel  = document.getElementById('results-panel');
 const logPanel      = document.getElementById('log-panel');
@@ -159,6 +161,7 @@ async function startProcessing() {
   dropzone.style.display = '';
   resultsPanel.classList.remove('visible');
   btnViewResults.style.display = 'none';   // hidden until this run finishes
+  btnReviewDocs.classList.remove('visible');
   tableBody.innerHTML = '';                // fresh results for this run
   logPanel.classList.add('visible');
   logOutput.innerHTML = '';
@@ -197,8 +200,12 @@ async function startProcessing() {
     appendLog(`✓ Finished processing — ${stats.ok} filed${stats.err ? `, ${stats.err} with errors` : ''}.`, 'ok');
   }
   // Launchpad + log strip stay on screen. If anything was processed, offer a
-  // "View Results" button (in the log header) that opens the 3-field table.
-  if (stats.done > 0) btnViewResults.style.display = '';
+  // "View Results" button (in the log header) that opens the 3-field table, and a
+  // "Review your documents" call-to-action in the sidebar that jumps to Review.
+  if (stats.done > 0) {
+    btnViewResults.style.display = '';
+    if (_userCanReview) btnReviewDocs.classList.add('visible');
+  }
 }
 
 function handleProgress(msg) {
@@ -313,6 +320,9 @@ btnStop?.addEventListener('click', async () => {
 
 // ── Review & settings buttons ─────────────────────────────────────────────────
 document.getElementById('btn-review')?.addEventListener('click', () => {
+  window.docusnap.openReviewWindow();
+});
+btnReviewDocs?.addEventListener('click', () => {
   window.docusnap.openReviewWindow();
 });
 document.getElementById('btn-settings')?.addEventListener('click', () => {
@@ -445,6 +455,9 @@ function applyCurrentUser(user) {
   // role can actually do — not just relying on the click being rejected.
   if (btnReviewNav)   btnReviewNav.style.display   = (user.role === 'readonly') ? 'none' : '';
   if (btnSettingsNav) btnSettingsNav.style.display = (user.role === 'admin')    ? '' : 'none';
+  // The post-processing "Review your documents" CTA follows the same Review gate.
+  _userCanReview = (user.role !== 'readonly');
+  if (!_userCanReview && btnReviewDocs) btnReviewDocs.classList.remove('visible');
 
   // Launchpad Settings card mirrors the same Admin-only gate as the titlebar nav.
   const lpSettings = document.getElementById('lp-settings');

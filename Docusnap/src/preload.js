@@ -161,6 +161,8 @@ contextBridge.exposeInMainWorld('docusnap', {
   // ── File naming ──────────────────────────────────────────────────────────────
   getFilenamePatternInfo:  ()         => ipcRenderer.invoke('get-filename-pattern-info'),
   previewFilenamePattern:  (pattern)  => ipcRenderer.invoke('preview-filename-pattern', pattern),
+  getOutputStructureInfo:  ()         => ipcRenderer.invoke('get-output-structure-info'),
+  previewOutputPath:       (folderPattern, filenamePattern) => ipcRenderer.invoke('preview-output-path', { folderPattern, filenamePattern }),
 
   // ── Search ───────────────────────────────────────────────────────────────────
   searchDocuments:     (params)   => ipcRenderer.invoke('search-documents', params),
@@ -211,6 +213,9 @@ contextBridge.exposeInMainWorld('docusnap', {
   // ── Settings ─────────────────────────────────────────────────────────────────
   getSetting:          (key)      => ipcRenderer.invoke('get-setting', key),
   setSetting:          (key, val) => ipcRenderer.invoke('set-setting', key, val),
+  backupExport:        (password)        => ipcRenderer.invoke('settings-backup-export', { password }),
+  backupPreview:       (password)        => ipcRenderer.invoke('settings-backup-preview', { password }),
+  backupApply:         (path, password)  => ipcRenderer.invoke('settings-backup-apply', { path, password }),
   // Runtime flag for renderer dev-gating (e.g. the dev-only "Erase ALL data" tool).
   appIsDev:            ()         => ipcRenderer.invoke('app-is-dev'),
 

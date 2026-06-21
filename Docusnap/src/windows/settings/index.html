@@ -326,7 +326,7 @@
     <button class="tab active" data-tab="general" data-help-key="tab-general">General</button>
     <button class="tab" data-tab="doctypes" data-help-key="tab-doctypes">Document Types</button>
     <button class="tab" data-tab="fields" data-help-key="tab-fields">Fields</button>
-    <button class="tab" data-tab="filenaming" data-help-key="tab-filenaming">File Naming</button>
+    <button class="tab" data-tab="filenaming" data-help-key="tab-filenaming">Output Structure</button>
     <button class="tab" data-tab="templates" data-help-key="tab-templates">Templates</button>
     <button class="tab" data-tab="learning" data-help-key="tab-learning">Learning Recovery</button>
     <button class="tab" data-tab="users" data-help-key="tab-users">Users</button>
@@ -555,45 +555,46 @@
     <div class="panel" id="panel-filenaming">
 
       <div class="section">
-        <div class="section-title">Filename Pattern</div>
+        <div class="section-title">Folder Structure</div>
         <p class="section-desc">
-          Controls how committed documents are named when filed. Build a pattern from the
-          tokens below — click one to insert it. Default:
-          <span class="field-key">{docType}.{date}.{ref}</span>
-          (e.g. <span class="field-key">Invoice.15-12-2025.INV-2025-0142.pdf</span>) —
-          this is the format ScanFinder has always used, so leaving it as-is keeps existing
-          behaviour unchanged.
+          Build the <strong>subfolders</strong> created inside your output folder (the output
+          folder itself is set on the General tab). Click a block to insert it, or type your
+          own text. Use <span class="field-key">/</span> to make a new subfolder level.
+        </p>
+        <div class="row-flex">
+          <input type="text" id="folder-pattern-input" class="path-input" placeholder="{supplier}/{year}/{month}" spellcheck="false">
+          <button class="btn" id="btn-reset-folder-pattern">Reset to Default</button>
+        </div>
+        <div id="folder-token-list" class="token-list" style="margin-top:10px;"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">File Name</div>
+        <p class="section-desc">
+          Build how each filed document is <strong>named</strong>. Click a block to insert it,
+          or type your own text. Missing values are skipped and stray separators tidied
+          automatically.
         </p>
         <div class="row-flex">
           <input type="text" id="filename-pattern-input" class="path-input" placeholder="{docType}.{date}.{ref}" spellcheck="false">
           <button class="btn" id="btn-reset-filename-pattern">Reset to Default</button>
         </div>
+        <div id="filename-token-list" class="token-list" style="margin-top:10px;"></div>
         <div id="filename-pattern-msg" class="pattern-msg" style="display:none;"></div>
-      </div>
-
-      <div class="section">
-        <div class="section-title">Supported Tokens</div>
-        <p class="section-desc">Values are filled in from the confirmed document. Missing values are skipped and any leftover separators (like a stray "." or "-") are tidied up automatically.</p>
-        <div id="filename-token-list" class="token-list"></div>
-      </div>
-
-      <div class="section">
-        <div class="section-title">Always Made Windows-Safe</div>
-        <p class="section-desc">
-          Forbidden characters (<span class="field-key">&lt; &gt; : " / \ | ? *</span>) are stripped,
-          reserved device names are defused, and duplicates get a
-          <span class="field-key">-DUPLICATE</span> suffix. Falls back to the default pattern if nothing usable remains.
-        </p>
       </div>
 
       <div class="section">
         <div class="section-title">Preview</div>
         <p class="section-desc">
-          What a filed document would be named, using sample values — the sample supplier
-          name includes a "/" on purpose, so adding <span class="field-key">{supplier}</span>
-          to your pattern shows the automatic clean-up happening live:
+          An example of where a filed document would be saved with these settings — the
+          output folder, then the subfolders, then the file name:
         </p>
-        <div id="filename-pattern-preview" class="pattern-preview">{docType}.{date}.{ref}.pdf</div>
+        <div id="output-path-preview" class="pattern-preview">…</div>
+        <p class="section-desc" style="margin-top:8px;">
+          Forbidden characters (<span class="field-key">&lt; &gt; : " / \ | ? *</span>) are
+          stripped from folder and file names, reserved device names are defused, and
+          duplicate files get a <span class="field-key">-DUPLICATE</span> suffix automatically.
+        </p>
       </div>
 
     </div>
@@ -1163,6 +1164,45 @@
         <div id="lo-msg" class="section-desc"
              style="display:none; font-family:var(--mono); font-size:11px; margin-bottom:8px;"></div>
         <div id="lo-list" class="section-desc"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Backup &amp; Restore</div>
+        <p class="section-desc">
+          Export your configuration — document types, fields, templates &amp; mappings,
+          file-naming, folders, and learned data (anchors, hints, corrections, logos) —
+          to a single <strong>encrypted</strong> file, then restore it after reinstalling.
+          The file does <strong>not</strong> contain your documents, users, or login
+          details. Keep the password safe: without it the backup cannot be opened.
+        </p>
+        <div class="row-flex" style="gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:8px;">
+          <div style="display:flex; flex-direction:column; gap:4px; min-width:170px;">
+            <label style="font-size:11px; color:var(--muted);">Backup password</label>
+            <input id="bk-exp-pw" type="password" class="path-input" autocomplete="new-password" placeholder="Choose a password" />
+          </div>
+          <div style="display:flex; flex-direction:column; gap:4px; min-width:170px;">
+            <label style="font-size:11px; color:var(--muted);">Confirm password</label>
+            <input id="bk-exp-pw2" type="password" class="path-input" autocomplete="new-password" placeholder="Re-type it" />
+          </div>
+          <button class="btn primary" id="bk-export">Export Backup…</button>
+        </div>
+        <div id="bk-exp-msg" class="section-desc"
+             style="display:none; font-family:var(--mono); font-size:11px; margin-bottom:16px;"></div>
+
+        <p class="section-desc" style="border-left:2px solid var(--warn); padding-left:8px;">
+          <strong>Restore</strong> overwrites your current document types, templates and learned
+          data with the backup's; app settings are merged. This cannot be undone — export a
+          backup first if unsure.
+        </p>
+        <div class="row-flex" style="gap:10px; flex-wrap:wrap; align-items:flex-end;">
+          <div style="display:flex; flex-direction:column; gap:4px; min-width:170px;">
+            <label style="font-size:11px; color:var(--muted);">Backup password</label>
+            <input id="bk-res-pw" type="password" class="path-input" autocomplete="off" placeholder="Password for the file" />
+          </div>
+          <button class="btn" id="bk-restore">Restore Backup…</button>
+        </div>
+        <div id="bk-res-msg" class="section-desc"
+             style="display:none; font-family:var(--mono); font-size:11px; margin-top:8px;"></div>
       </div>
 
       <div class="section">
