@@ -734,6 +734,10 @@ function renderReviewReason(doc) {
 function renderFields(doc) {
   const scroll = document.getElementById('fields-scroll');
   scroll.innerHTML = '';
+  // The ⊕ "wrong value?" prompt only makes sense with a document loaded — show it
+  // for a real doc, hide it on the empty state (clearDocPanel also hides it).
+  const sub = document.querySelector('.fields-header-sub');
+  if (sub) sub.style.display = doc ? '' : 'none';
   renderExtractionStatus(doc);
   renderReviewReason(doc);
   if (!doc) { validateConfirm(); return; }
@@ -2197,6 +2201,12 @@ function clearDocPanel() {
   document.getElementById('split-bar').style.display      = 'none';
   const extStatus = document.getElementById('extraction-status');
   if (extStatus) extStatus.innerHTML = '';
+  // Blank the per-document review aids too, so an empty queue ("All documents
+  // reviewed") doesn't leave the last doc's prompts behind:
+  renderReviewReason(null);                                  // the "needs a quick check" message
+  const sub = document.querySelector('.fields-header-sub');
+  if (sub) sub.style.display = 'none';                       // the ⊕ "wrong value?" prompt
+  updateAcknowledgeButton();                                 // currentDoc is null → hides "Mark Reviewed"
   updateDocNavButtons();   // no current document → both arrows disabled
 }
 
