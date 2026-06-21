@@ -472,20 +472,31 @@ window.docusnap.onProgress((msg) => {
 // results table (those are built for one discrete user-initiated batch; the
 // watcher streams per-file and runs files in parallel).
 function handleWatchProgress(msg) {
-  if (running) return;            // a manual run owns the strip + stats; the watcher defers anyway
+  // ALWAYS count watch docs in the cumulative Session Stats — even while a manual
+  // run is active. In-flight watch workers finish DURING a manual run and their
+  // file_done still lands here; the old early `if (running) return` dropped those
+  // from the count, so Done under-reported vs the review queue (e.g. 28 counted
+  // but 36 actually filed). Only the LOG display is suppressed during a manual run
+  // so it doesn't fight that run's strip/status.
+  if (msg.type === 'file_begin') {
+    stats.total++;                // Session Stats "Found"
+    updateStats();
+  } else if (msg.type === 'file_done') {
+    stats.done++;
+    if (msg.success) stats.ok++; else stats.err++;
+    updateStats();
+  }
+
+  if (running) return;            // the manual run owns the log strip + status
   logPanel.classList.add('visible');
   switch (msg.type) {
     case 'file_begin':
       logStatus.textContent = 'Watch folder — processing…';
       appendLog(`[Watch] → ${msg.filename}`);
-      stats.total++;              // count the watch doc in Session Stats "Found"
-      updateStats();
       break;
     case 'file_done':
-      stats.done++;
-      if (msg.success) { stats.ok++;  appendLog(`[Watch]   ✓ ${msg.original_filename || ''} → ${msg.new_filename || 'filed'}`, 'ok'); }
-      else             { stats.err++; appendLog(`[Watch]   ✗ ${msg.original_filename || ''}: ${msg.error || 'error'}`, 'err'); }
-      updateStats();
+      if (msg.success) appendLog(`[Watch]   ✓ ${msg.original_filename || ''} → ${msg.new_filename || 'filed'}`, 'ok');
+      else             appendLog(`[Watch]   ✗ ${msg.original_filename || ''}: ${msg.error || 'error'}`, 'err');
       logStatus.textContent = 'Watch folder — idle';
       break;
     case 'log':
