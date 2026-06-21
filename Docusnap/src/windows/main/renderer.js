@@ -261,8 +261,8 @@ function handleProgress(msg) {
 // ── Table row ────────────────────────────────────────────────────────────────
 function addTableRow(msg) {
   const tr = document.createElement('tr');
-  // Status lives in the live log; here we only tint the row (error / needs-review)
-  // so the 3-field table stays clean: Company, Date, Reference.
+  // The row tint plus a per-row status chip make the outcome plain at a glance,
+  // while the table stays compact: Company, Date, Reference, Status.
   if (!msg.success)        tr.classList.add('row-err');
   else if (msg.needs_review) tr.classList.add('row-review');
 
@@ -276,11 +276,28 @@ function addTableRow(msg) {
   const date    = exVal(keys.date) || msg.invoice_date   || '—';
   const ref     = exVal(keys.ref)  || msg.invoice_number || '—';
 
+  // Status chip from the file_done signals: Error / Needs review / Filed. A
+  // needs-review chip is clickable (opens Review) for users who can review.
+  let statusCell;
+  if (!msg.success) {
+    statusCell = `<span class="badge err" title="${escHtml(msg.error || 'Processing error')}">Error</span>`;
+  } else if (msg.needs_review) {
+    statusCell = _userCanReview
+      ? `<button type="button" class="badge warn row-review-link" title="Open the Review window to check and confirm this document">Needs review</button>`
+      : `<span class="badge warn" title="This document needs review">Needs review</span>`;
+  } else {
+    statusCell = `<span class="badge ok">Filed</span>`;
+  }
+
   tr.innerHTML = `
     <td>${escHtml(company)}</td>
     <td class="mono">${escHtml(date)}</td>
     <td class="mono">${escHtml(ref)}</td>
+    <td>${statusCell}</td>
   `;
+
+  const link = tr.querySelector('.row-review-link');
+  if (link) link.addEventListener('click', () => window.docusnap.openReviewWindow());
 
   tableBody.prepend(tr);  // newest at top
 }
@@ -374,32 +391,33 @@ async function checkFastModeSuggestion(supplierName) {
   const suggestion = await window.docusnap.checkFastModeSuggestion(supplierName);
   if (!suggestion) return;
 
-  // Show a subtle toast notification
+  // Show a subtle toast notification — themed so it stays readable on BOTH
+  // light (default) and dark; raw dark-hex here was invisible on light.
   const toast = document.createElement('div');
   toast.style.cssText = `
     position: fixed; bottom: 20px; right: 20px; z-index: 9999;
-    background: #13161f; border: 1px solid #3ecf8e; border-radius: 8px;
-    padding: 12px 16px; max-width: 320px; font-size: 12px; color: #e2e6f0;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    background: var(--surface); border: 1px solid var(--ok); border-radius: var(--r-sm);
+    padding: 12px 16px; max-width: 320px; font-size: 12px; color: var(--text);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.18);
   `;
   toast.innerHTML = `
-    <div style="font-weight:500; color:#3ecf8e; margin-bottom:6px;">
+    <div style="font-weight:600; color:var(--ok); margin-bottom:6px;">
       ⚡ Switch to Fast Mode?
     </div>
-    <div style="color:#7a82a0; margin-bottom:10px; line-height:1.5;">
+    <div style="color:var(--muted); margin-bottom:10px; line-height:1.5;">
       You've confirmed ${suggestion.docCount} documents from
-      <strong style="color:#e2e6f0">${suggestion.supplier}</strong>.
+      <strong style="color:var(--text)">${escHtml(suggestion.supplier)}</strong>.
       Fast Mode will process these instantly without AI.
     </div>
     <div style="display:flex; gap:8px;">
       <button id="toast-fast" style="
-        flex:1; padding:6px; border-radius:5px; border:1px solid #3ecf8e;
-        background:#0d2e1e; color:#3ecf8e; cursor:pointer; font-size:11px;">
+        flex:1; padding:6px; border-radius:var(--r-sm); border:1px solid var(--ok);
+        background:var(--ok); color:#fff; cursor:pointer; font-size:11px;">
         Switch to Fast Mode
       </button>
       <button id="toast-dismiss" style="
-        padding:6px 10px; border-radius:5px; border:1px solid #252836;
-        background:transparent; color:#7a82a0; cursor:pointer; font-size:11px;">
+        padding:6px 10px; border-radius:var(--r-sm); border:1px solid var(--border2);
+        background:transparent; color:var(--muted); cursor:pointer; font-size:11px;">
         Not now
       </button>
     </div>
@@ -470,8 +488,29 @@ function applyCurrentUser(user) {
 window.docusnap.authGetCurrentUser().then(applyCurrentUser);
 window.docusnap.onAuthSessionChanged((user) => { if (user) applyCurrentUser(user); });
 
+// ── Theme toggle (account menu) — mirrors the Settings → General toggle:
+// applyTheme() updates this window instantly, set-setting persists it and
+// broadcasts theme-changed so every other open window follows live. The
+// Settings toggle stays in place as the canonical control.
+const btnThemeToggle = document.getElementById('menu-theme');
+function currentTheme() { return document.documentElement.getAttribute('data-theme') || 'light'; }
+function refreshThemeMenuLabel() {
+  if (btnThemeToggle) btnThemeToggle.textContent =
+    currentTheme() === 'light' ? 'Switch to dark theme' : 'Switch to light theme';
+}
+refreshThemeMenuLabel();
+window.docusnap.onThemeChanged?.(() => refreshThemeMenuLabel());
+btnThemeToggle?.addEventListener('click', async () => {
+  const next = currentTheme() === 'light' ? 'dark' : 'light';
+  applyTheme(next);
+  refreshThemeMenuLabel();
+  userMenu.classList.remove('open');
+  try { await window.docusnap.setSetting('theme', next); } catch {}
+});
+
 userChip?.addEventListener('click', (e) => {
   e.stopPropagation();
+  refreshThemeMenuLabel();        // reflect a theme changed elsewhere since last open
   userMenu.classList.toggle('open');
 });
 document.addEventListener('click', () => userMenu?.classList.remove('open'));

@@ -406,7 +406,7 @@ function renderDocTypesList() {
           ${noneOpt}${fieldOpts}
         </select>
         ${!dt.built_in
-          ? `<button class="btn-icon dt-delete" data-id="${dt.id}" title="Delete type">&#215;</button>`
+          ? `<button class="btn-icon dt-delete" data-id="${dt.id}" title="Hide this type">&#215;</button>`
           : ''}
       </div>
     `;
@@ -438,8 +438,8 @@ function renderDocTypesList() {
     const delBtn = row.querySelector('.dt-delete');
     if (delBtn) {
       delBtn.addEventListener('click', async () => {
-        if (!confirm(`Delete "${dt.name}"? This cannot be undone.`)) return;
-        // No delete-document-type IPC exists yet; mark disabled as a fallback
+        if (!confirm(`Hide "${dt.name}"? It will be disabled and no longer offered when filing new documents. You can switch it back on anytime with the toggle. Documents already filed are unaffected.`)) return;
+        // No delete-document-type IPC exists yet; disabling is the honest action.
         await api.updateDocumentType(dt.id, { enabled: 0 });
         await loadDocTypes();
       });
@@ -617,7 +617,7 @@ document.getElementById('btn-save-field').addEventListener('click', async () => 
 
 // ── Helper ────────────────────────────────────────────────────────────────────
 function escHtml(str) {
-  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 function formatWhen(when) {

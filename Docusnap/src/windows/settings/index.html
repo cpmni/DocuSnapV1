@@ -35,7 +35,9 @@
       padding:16px 12px; background:var(--surface); border-right:1px solid var(--border); overflow-y:auto;
     }
     .side-head { font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
-      color:var(--muted); padding:2px 14px 12px; }
+      color:var(--muted); padding:2px 14px 8px; }
+    /* group heads after the first get extra top space to separate the groups */
+    .tab + .side-head { padding-top:16px; }
     .tab {
       width:100%; text-align:left; padding:9px 14px; border-radius:8px; border:1px solid transparent;
       background:transparent; color:var(--muted); font-family:var(--sans);
@@ -58,7 +60,7 @@
     .settings-group { margin-bottom: 30px; }
     .settings-group > .group-title {
       font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
-      color: var(--accent2); margin: 0 0 14px; padding-bottom: 9px; border-bottom: 1px solid var(--border);
+      color: var(--accent2); margin: 0 0 14px; padding-bottom: 9px; border-bottom: 2px solid var(--border2);
     }
     .group-body { display: flex; flex-wrap: wrap; gap: 22px 36px; align-items: flex-start; }
     .group-body > .section { flex: 1 1 340px; min-width: 0; margin-bottom: 0; }
@@ -71,7 +73,7 @@
     .section-title.sub { font-size:10px; font-weight:500; letter-spacing:.1em; color:var(--muted); margin-bottom:8px; }
     .section-desc { font-size:12px; color:var(--muted); line-height:1.6; margin-bottom:10px; }
     /* Divider between adjacent sections within a panel tab (not template dock — that has its own rule) */
-    .panel > .section + .section { border-top:1px solid var(--border); margin-top:-14px; padding-top:14px; }
+    .panel > .section + .section { border-top:2px solid var(--border2); margin-top:-14px; padding-top:14px; }
     .row-flex { display:flex; gap:8px; align-items:center; }
     .path-input {
       flex:1; background:var(--bg); border:1px solid var(--border2);
@@ -303,7 +305,7 @@
     #tpl-mappings-table th:nth-child(5),
     #tpl-mappings-table td:nth-child(5) { min-width:170px; }
     /* Visual dividers between dock sections */
-    .tpl-dock .section { border-top:1px solid var(--border); padding-top:14px; margin-top:0; }
+    .tpl-dock .section { border-top:2px solid var(--border2); padding-top:14px; margin-top:0; }
 
     ::-webkit-scrollbar { width:5px; }
     ::-webkit-scrollbar-thumb { background:var(--border2); border-radius:3px; }
@@ -322,13 +324,15 @@
   </div>
 
   <div id="tab-bar">
-    <div class="side-head">Settings</div>
+    <div class="side-head">Setup</div>
     <button class="tab active" data-tab="general" data-help-key="tab-general">General</button>
     <button class="tab" data-tab="doctypes" data-help-key="tab-doctypes">Document Types</button>
     <button class="tab" data-tab="fields" data-help-key="tab-fields">Fields</button>
     <button class="tab" data-tab="filenaming" data-help-key="tab-filenaming">Output Structure</button>
+    <div class="side-head">Learning &amp; Templates</div>
     <button class="tab" data-tab="templates" data-help-key="tab-templates">Templates</button>
     <button class="tab" data-tab="learning" data-help-key="tab-learning">Learning Recovery</button>
+    <div class="side-head">Administration</div>
     <button class="tab" data-tab="users" data-help-key="tab-users">Users</button>
     <button class="tab" data-tab="audit" data-help-key="tab-audit">Audit</button>
     <button class="tab" data-tab="licensing" data-help-key="tab-licensing">Licensing</button>

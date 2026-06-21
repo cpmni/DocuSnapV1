@@ -169,10 +169,13 @@ document.getElementById('btn-help-guide')?.addEventListener('click', () => windo
 const HELP_TEXTS = {
   'review-tab':    'Documents waiting to be checked and confirmed.',
   'deferred-tab':  'Documents you set aside to deal with later.',
-  'doc-nav':       'Step to the previous / next document in the list.',
+  'nav-prev':      'Go to the previous document in the list.',
+  'nav-next':      'Go to the next document in the list.',
   'split':         'Split a multi-page PDF — by page range, every page, or every N pages.',
-  'anchor-wizard': 'Template Wizard (admin): map where each field sits on this layout.',
-  'enhance':       'Re-read a poor scan with stronger image cleanup, then re-extract.',
+  'anchor-wizard': 'Teach this layout (admin): if a supplier keeps misreading, map where each field sits so future documents from them read correctly.',
+  'enhance':       'If the scan is faint or noisy, re-read it with stronger image cleanup, then re-extract.',
+  'template-manager': 'If this supplier/layout keeps misdetecting, save the reviewed values as a managed template so the next document is recognised automatically.',
+  'reprocess':     'If you changed the document type or fixed settings, run extraction again on this document to refresh the values.',
   'zoom':          'Zoom and pan the document preview; Reset returns to fit.',
   'confirm':       'Accept the values shown and file this document.',
   'skip':          'Move to the next document without filing this one.',
@@ -344,8 +347,13 @@ function renderQueueList() {
     if (sev === 'low')      el.classList.add('qi-conf-low');
     else if (sev === 'mid') el.classList.add('qi-conf-mid');
     if (currentDoc && doc.id === currentDoc.id) el.classList.add('active');
+    // Human-readable reason on hover: green = clean, orange = needs a check
+    // (low confidence and/or a format flag), red = critically low confidence.
+    const sevWord = sev === 'low'  ? 'Low confidence'
+                  : sev === 'mid'  ? 'Needs a quick check'
+                  :                  'Looks good';
     const confBadge = conf == null ? '' :
-      `<span class="conf-badge ${sev}" style="flex-shrink:0;">${conf}%</span>`;
+      `<span class="conf-badge ${sev}" style="flex-shrink:0;" title="${sevWord} — ${conf}% confidence">${conf}%</span>`;
     el.innerHTML = `
       <div style="display:flex; align-items:flex-start; gap:8px;">
         <img class="qi-thumb" alt="">
@@ -495,6 +503,12 @@ async function _selectDoc(doc) {
   }
   if (currentDoc?.id !== doc.id) return;   // superseded while extractions loaded — leave the newer doc's fields intact
   const renderedDoc = full || doc;
+  // The detailed `full` record doesn't carry the queue's review-reason counts;
+  // bring them over so the "why review" banner matches the queue colouring.
+  if (full && full !== doc) {
+    full.below_threshold_count = doc.below_threshold_count;
+    full.review_flag_count     = doc.review_flag_count;
+  }
   renderFields(renderedDoc);
 
   // Lightweight current-template recheck — this doc had no template match at
@@ -659,11 +673,59 @@ function updateAcknowledgeButton() {
   }
 }
 
+// ── "Why this needs review" summary ─────────────────────────────────────────
+// Plain-language explanation of why a document is in the queue, composed from
+// the SAME signals the queue colouring uses: below_threshold_count (fields under
+// their per-field confidence threshold) and review_flag_count (values a
+// processing check flagged), plus the verbatim per-field notes already produced
+// during processing. Keeps the two "orange" causes — low confidence vs a format
+// flag — distinguishable as two labelled cues.
+function renderReviewReason(doc) {
+  const el = document.getElementById('review-reason');
+  if (!el) return;
+  el.innerHTML = '';
+  el.hidden    = true;
+  if (!doc) return;
+
+  const lowN = doc.below_threshold_count || 0;
+  // review_flag_count is computed server-side for the queue; if it's absent
+  // (e.g. the detailed record after a reprocess), derive it from the notes.
+  const flagN = (doc.review_flag_count != null)
+    ? doc.review_flag_count
+    : (doc.extractions || []).filter(e => e.validation_note || e.corrected_to).length;
+
+  if (lowN === 0 && flagN === 0) return;   // clean — no banner
+
+  const parts = [];
+  if (lowN)  parts.push(`${lowN} field${lowN === 1 ? ' was' : 's were'} read with low confidence`);
+  if (flagN) parts.push(`${flagN} field${flagN === 1 ? ' was' : 's were'} flagged by a formatting check`);
+  const lead = `Needs a quick check — ${parts.join(', and ')}.`;
+
+  const cues = [];
+  if (lowN)  cues.push(`<span class="rr-cue low" title="These fields scored below the confidence threshold set in Settings. Compare the value with the document.">Low confidence · ${lowN}</span>`);
+  if (flagN) cues.push(`<span class="rr-cue flag" title="A formatting check found these values look different from what's usual for this field. They may still be correct — just confirm them.">Format check · ${flagN}</span>`);
+
+  const notes = (doc.extractions || [])
+    .filter(e => e.validation_note)
+    .map(e => ({ key: e.field_key, note: e.validation_note }));
+  const MAX = 4;
+  const noteList = notes.length
+    ? `<ul class="rr-notes">${notes.slice(0, MAX).map(n =>
+         `<li><strong>${escHtml(labelFor(n.key))}:</strong> ${escHtml(n.note)}</li>`).join('')}${
+         notes.length > MAX ? `<li class="rr-more">+${notes.length - MAX} more</li>` : ''}</ul>`
+    : '';
+
+  el.innerHTML = `<div class="rr-lead">${escHtml(lead)}</div>` +
+                 `<div class="rr-cues">${cues.join('')}</div>` + noteList;
+  el.hidden = false;
+}
+
 // ── Fields panel ──────────────────────────────────────────────────────────────
 function renderFields(doc) {
   const scroll = document.getElementById('fields-scroll');
   scroll.innerHTML = '';
   renderExtractionStatus(doc);
+  renderReviewReason(doc);
   if (!doc) { validateConfirm(); return; }
 
   const extMap = {};
@@ -681,8 +743,10 @@ function renderFields(doc) {
 function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, method) {
   const low      = conf !== null && conf < 70;
   const confClass = conf === null ? '' : conf >= 70 ? 'high' : conf >= 40 ? 'mid' : 'low';
+  // Pair the % with a plain word so non-technical users read it at a glance.
+  const confWord = conf === null ? '' : conf >= 70 ? 'High' : conf >= 40 ? 'Check' : 'Low';
   const confLabel = conf !== null
-    ? `<span class="conf-badge ${confClass}">${conf}%</span>`
+    ? `<span class="conf-badge ${confClass}" title="${confWord} confidence — the app is ${conf}% sure of this reading">${confWord} · ${conf}%</span>`
     : '';
   // A correction that was ALREADY APPLIED to the value (Stage 4.5 strong auto-fix:
   // an OCR misread of a near-universal learned token, e.g. "Lid"→"Ltd") shows as a

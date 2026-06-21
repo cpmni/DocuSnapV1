@@ -276,7 +276,8 @@
       background: var(--surface); flex-shrink: 0; display: flex; flex-direction: column; gap: 7px;
     }
     .fields-header-title { font-size: 12px; font-weight: 500; color: var(--text); }
-    .fields-header-sub   { font-size: 10px; color: var(--muted); }
+    .fields-header-sub   { font-size: 11px; color: var(--text); line-height: 1.4; }
+    .fields-header-sub .repick-glyph { color: var(--accent2); font-weight: 700; }
     /* Detection-methods row (below the doc-type dropdown): methods on the left,
        a vertical spacer, then the Add-to-Template button on the right. */
     .fields-detect-row { display: flex; align-items: center; gap: 8px; }
@@ -344,6 +345,23 @@
       font-weight: 600; line-height: 1; padding: 2px 6px; margin-right: 4px; border-radius: var(--r-pill);
       background: rgba(31,157,99,.16); color: var(--ok); vertical-align: baseline; }
     .field-anchor-note { font-size: 10px; color: var(--muted); font-family: var(--mono); margin-top: 1px; }
+    /* "Why this needs review" plain-language summary, pinned above the fields list */
+    #review-reason {
+      margin: 0 14px 2px; padding: 9px 11px; border-radius: 8px; flex-shrink: 0;
+      background: var(--surface2); border: 1px solid var(--border2);
+      border-left: 3px solid var(--warn);
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    #review-reason[hidden] { display: none; }
+    .rr-lead { font-size: 11.5px; color: var(--text); line-height: 1.45; }
+    .rr-cues { display: flex; flex-wrap: wrap; gap: 6px; }
+    .rr-cue { font-size: 10px; font-weight: 600; padding: 1px 8px; border-radius: var(--r-pill); cursor: default; }
+    .rr-cue.low  { background: var(--err-bg);  color: var(--err); }
+    .rr-cue.flag { background: var(--warn-bg); color: var(--warn); }
+    .rr-notes { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 2px; }
+    .rr-notes li { font-size: 10.5px; color: var(--muted); line-height: 1.4; }
+    .rr-notes li strong { color: var(--text); font-weight: 600; }
+    .rr-notes li.rr-more { list-style: none; margin-left: -16px; font-style: italic; }
     .accept-btn {
       font-size: 10px; font-family: var(--sans); line-height: 1;
       padding: 1px 6px; margin-left: 6px; vertical-align: baseline;
@@ -682,7 +700,7 @@
         <div class="fields-detect-row">
           <div id="extraction-status"></div>
           <div class="fields-detect-spacer" aria-hidden="true"></div>
-          <button class="btn add-template-btn" id="btn-add-template" title="Save the current reviewed values as a managed template for this layout — for recurring suppliers/layouts that keep misdetecting">
+          <button class="btn add-template-btn" id="btn-add-template" data-help-key="template-manager" title="Save the current reviewed values as a managed template for this layout — for recurring suppliers/layouts that keep misdetecting">
             <svg class="add-template-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/>
               <rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/>
@@ -693,13 +711,14 @@
             <span class="add-template-lbl">Template Manager</span>
           </button>
         </div>
-        <div class="fields-header-sub">Click ⊕ then drag on the document to pick a value</div>
+        <div class="fields-header-sub">Wrong value? Click the <span class="repick-glyph">⊕</span> on that field, then drag a box around the correct value on the document.</div>
       </div>
+      <div id="review-reason" hidden></div>
       <div id="fields-scroll"></div>
 
       <div id="reprocess-progress" role="status" aria-live="polite"></div>
       <div id="reprocess-bar">
-        <button class="btn reprocess"     id="btn-reprocess">&#9654;&#9654; Reprocess</button>
+        <button class="btn reprocess"     id="btn-reprocess" data-help-key="reprocess">&#9654;&#9654; Reprocess</button>
         <button class="btn stop-batch"    id="btn-stop-reprocess" style="display:none;">&#9632; Stop</button>
         <button class="btn reprocess-all" id="btn-reprocess-all" title="Reprocess every document in the review queue">&#9654;&#9654; Reprocess All</button>
       </div>
