@@ -1109,6 +1109,30 @@ function drainOriginalToFolder(fs, path, srcPath, destDir, originalFilename) {
   return { folder: destDir, filename: path.basename(destPath) };
 }
 
+// Make/refresh the app-managed working copy of an intake file at
+// inboxDir/<docId><ext>. ATOMIC: copy to a `.part` temp then rename onto the
+// final name, so a crash mid-copy never leaves a half-written <docId><ext> that
+// looks valid (a later reconcile sweep GCs stray `.part` files). fs/path injected
+// for testability; the inbox dir is resolved by the caller (keeps electron out of
+// the helper). Returns the working_path on success, else null (best-effort).
+function ensureWorkingCopy(fs, path, inboxDir, srcPath, docId, originalFilename) {
+  if (!fs.existsSync(srcPath)) return null;
+  if (!fs.existsSync(inboxDir)) fs.mkdirSync(inboxDir, { recursive: true });
+  const rawExt = path.extname(originalFilename || '');
+  const ext    = /^\.[A-Za-z0-9]+$/.test(rawExt) ? rawExt : '';   // sanitise extension
+  const dest   = path.join(inboxDir, `${docId}${ext}`);
+  const part   = `${dest}.part`;
+  try {
+    fs.copyFileSync(srcPath, part);
+    fs.renameSync(part, dest);   // atomic publish
+    return dest;
+  } catch (e) {
+    try { if (fs.existsSync(part)) fs.unlinkSync(part); } catch {}
+    try { if (fs.existsSync(dest)) fs.unlinkSync(dest); } catch {}
+    return null;
+  }
+}
+
 // ── Internal: save file_done message to DB ────────────────────────────────────
 function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger) {
   if (msg.type === 'file_begin') {
@@ -1121,19 +1145,51 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger) {
     logger?.err(`File failed: ${msg.original_filename || '?'} — ${msg.error || 'unknown error'}`);
     // Persist a "stuck" record instead of silently dropping the failure, so the
     // doc is VISIBLE (a launchpad surface) and reprocessable — previously a failed
-    // file left no DB row at all. No file is moved here; the original stays put.
+    // file left no DB row at all.
+    const documents = require('../../../database/modules/documents');
+    const learning  = require('../../../database/modules/learning');
+    let docId = null;
     try {
-      const documents = require('../../../database/modules/documents');
       const ins = documents.insert(db, {
         original_filename: msg.original_filename || 'unknown',
         folder_path:       folderPath,
         status:            'error',
       });
-      documents.update(db, ins.lastInsertRowid, { error_message: msg.error || 'unknown error' });
-      msg.db_id = ins.lastInsertRowid;
-      try { notifyMainWindow?.('stuck-count-changed', documents.getStuckCount(db)); } catch {}
+      docId = ins.lastInsertRowid;
+      documents.update(db, docId, { error_message: msg.error || 'unknown error' });
+      msg.db_id = docId;
     } catch (e) {
       logger?.warn(`Could not record failed document ${msg.original_filename || '?'}: ${e.message}`);
+    }
+    // Give the stuck doc a VERIFIED working copy (so it's reprocessable even if the
+    // source later vanishes) and drain its original into an Errors/ subfolder —
+    // same model as success → Processed/ — so it isn't re-pulled on the next run.
+    // Best-effort and INDEPENDENT of the row insert above: a copy/move failure must
+    // never lose the error record.
+    if (docId != null) {
+      try {
+        const { app }    = require('electron');
+        const inboxDir   = path.join(app.getPath('userData'), 'inbox');
+        const srcForCopy = msg.original_filename ? path.join(folderPath, msg.original_filename) : null;
+        const wp = srcForCopy
+          ? ensureWorkingCopy(fs, path, inboxDir, srcForCopy, docId, msg.original_filename)
+          : null;
+        if (wp) { documents.update(db, docId, { working_path: wp }); msg.working_path = wp; }
+        const drainEnabled = learning.getSetting(db, 'drain_processed', 'true') !== 'false';
+        if (drainEnabled && wp && fs.existsSync(wp)) {
+          const moved = drainOriginalToFolder(fs, path, srcForCopy, path.join(folderPath, 'Errors'), msg.original_filename);
+          if (moved) {
+            db.prepare('UPDATE documents SET folder_path = ? WHERE id = ?').run(moved.folder, docId);
+            if (moved.filename !== msg.original_filename) {
+              db.prepare('UPDATE documents SET original_filename = ? WHERE id = ?').run(moved.filename, docId);
+            }
+            logger?.log(`Drained failed original to Errors: ${msg.original_filename} → ${moved.folder}`);
+          }
+        }
+      } catch (e) {
+        logger?.warn(`Could not stow failed original ${msg.original_filename || '?'}: ${e.message}`);
+      }
+      try { notifyMainWindow?.('stuck-count-changed', documents.getStuckCount(db)); } catch {}
     }
     return;
   }
@@ -1195,24 +1251,15 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger) {
   // surviving. Filename is the docId under userData (collision-proof — unique PK
   // — and no user-supplied text in the path). Best-effort: on any failure leave
   // working_path NULL and fall back to the source path / recovery logic as before.
-  // Runs BEFORE the optional processed-folder move so it copies the file in place.
+  // Runs BEFORE the drain below so it copies the file in place.
   try {
     const { app }    = require('electron');
+    const inboxDir   = path.join(app.getPath('userData'), 'inbox');
     const srcForCopy = path.join(folderPath, msg.original_filename);
-    if (fs.existsSync(srcForCopy)) {
-      const inbox = path.join(app.getPath('userData'), 'inbox');
-      if (!fs.existsSync(inbox)) fs.mkdirSync(inbox, { recursive: true });
-      const rawExt = path.extname(msg.original_filename);
-      const ext    = /^\.[A-Za-z0-9]+$/.test(rawExt) ? rawExt : '';   // sanitise extension
-      const dest   = path.join(inbox, `${docId}${ext}`);
-      try {
-        fs.copyFileSync(srcForCopy, dest);
-        documents.update(db, docId, { working_path: dest });
-        msg.working_path = dest;
-      } catch (e) {
-        try { if (fs.existsSync(dest)) fs.unlinkSync(dest); } catch {}   // no partial orphan
-        throw e;
-      }
+    const wp = ensureWorkingCopy(fs, path, inboxDir, srcForCopy, docId, msg.original_filename);
+    if (wp) {
+      documents.update(db, docId, { working_path: wp });
+      msg.working_path = wp;
     }
   } catch (e) {
     console.warn(`[import] working copy failed for docId=${docId}: ${e.message}`);
@@ -1276,6 +1323,7 @@ module.exports = {
   cleanupTempFiles: cleanupFiles,
   handleFileMessage: _handleFileMessage,
   drainOriginalToFolder,
+  ensureWorkingCopy,
   isBatchRunning: () => _currentBatchProcs.length > 0,
   // Exposed for the F-06 path-policy unit test (test_open_path_policy.js).
   _isOpenablePath,
