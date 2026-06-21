@@ -16,7 +16,7 @@
   }
   .titlebar{height:38px;-webkit-app-region:drag;display:flex;align-items:center;
     padding:0 14px;color:var(--muted);font-size:12px;border-bottom:1px solid var(--border);background:var(--surface)}
-  .stage{flex:1;display:flex;flex-direction:column;padding:28px 40px 0;overflow:hidden}
+  .stage{flex:1;display:flex;flex-direction:column;padding:28px 40px 20px;overflow:hidden}
   .steps{display:flex;gap:6px;margin-bottom:22px}
   .dot{height:4px;flex:1;border-radius:2px;background:var(--border2);transition:background .2s}
   .dot.active{background:var(--accent)}
@@ -58,6 +58,13 @@
   .privacy .lock{font-size:26px;line-height:1}
   .privacy .txt{font-size:13px;line-height:1.55}
   .privacy .txt b{color:var(--text)}
+  .ob-tokens{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .ob-chip{font-family:'IBM Plex Mono',monospace;font-size:11px;cursor:pointer;-webkit-app-region:no-drag;
+    background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:3px 8px;color:var(--accent2)}
+  .ob-chip:hover{border-color:var(--accent)}
+  .ob-chip .ob-chip-lbl{color:var(--muted);margin-left:6px;font-family:'IBM Plex Sans',sans-serif}
+  input.pathbox{outline:none}
+  input.pathbox:focus{border-color:var(--accent)}
 </style>
 </head>
 <body>
@@ -90,10 +97,52 @@
         </div>
         <div class="hint muted" id="outHint">A suggested location is filled in — change it if you like.</div>
       </div>
+
+      <div class="field">
+        <label class="lbl">Copy processed scans to another folder?</label>
+        <div class="cards">
+          <div class="card" data-copy="no"><div class="ttl">No</div>
+            <div class="desc">Filed copies stay in the output folder above.</div></div>
+          <div class="card" data-copy="yes"><div class="ttl">Yes</div>
+            <div class="desc">Also place a copy in a second folder you choose (e.g. a backup or shared drive).</div></div>
+        </div>
+        <div id="copyToWrap" style="display:none;margin-top:14px">
+          <label class="lbl">Copy-to folder</label>
+          <div class="pathrow">
+            <div class="pathbox" id="copyPath">—</div>
+            <button class="btn" id="copyBrowseBtn">Browse…</button>
+          </div>
+          <div class="hint muted" id="copyHint"></div>
+        </div>
+      </div>
     </section>
 
-    <!-- 2 Theme -->
+    <!-- 2 Output organization -->
     <section class="panel" data-step="2">
+      <h2>How should filed documents be organised?</h2>
+      <p class="sub">Set this up now so everything is filed consistently from the start. Click a block to
+        insert it, or type your own text. You can change it any time in Settings.</p>
+
+      <div class="field">
+        <label class="lbl">Subfolders inside the output folder — use / for a new level</label>
+        <input type="text" id="ob-folder-pattern" class="pathbox" style="width:100%;font-family:'IBM Plex Mono',monospace" spellcheck="false">
+        <div id="ob-folder-tokens" class="ob-tokens"></div>
+      </div>
+
+      <div class="field">
+        <label class="lbl">File name</label>
+        <input type="text" id="ob-filename-pattern" class="pathbox" style="width:100%;font-family:'IBM Plex Mono',monospace" spellcheck="false">
+        <div id="ob-filename-tokens" class="ob-tokens"></div>
+      </div>
+
+      <div class="field">
+        <label class="lbl">Preview</label>
+        <div id="ob-output-preview" class="pathbox" style="white-space:normal;line-height:1.5">…</div>
+      </div>
+    </section>
+
+    <!-- 3 Theme -->
+    <section class="panel" data-step="3">
       <h2>Look &amp; feel</h2>
       <p class="sub">Pick the theme that's easiest on your eyes. You'll see it change instantly.</p>
       <div class="cards">
@@ -104,8 +153,8 @@
       </div>
     </section>
 
-    <!-- 3 Performance -->
-    <section class="panel" data-step="3">
+    <!-- 4 Performance -->
+    <section class="panel" data-step="4">
       <h2>How hard should Scan Finder work?</h2>
       <p class="sub">More power processes batches faster but uses more of your computer while it runs.</p>
       <label class="lbl">Speed</label>
@@ -126,8 +175,8 @@
       </div>
     </section>
 
-    <!-- 4 Done -->
-    <section class="panel" data-step="4">
+    <!-- 5 Done -->
+    <section class="panel" data-step="5">
       <h1>You're all set ✓</h1>
       <p class="sub">Scan Finder is ready. Drop in a folder of scans from the home screen, or teach it a
         new document type whenever you like.</p>
