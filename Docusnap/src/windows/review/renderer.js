@@ -1350,7 +1350,12 @@ async function fileAllReady() {
       await selectDoc(doc, { fieldsOnly: true });      // loads fields (no preview render); runs validateConfirm()
       if (confirmBtn.disabled) { skipped++; continue; } // not ready — leave for review
       const r = await confirmCurrentDoc({ bulk: true });
-      if (r.filed) filed++; else skipped++;
+      if (r.filed) {
+        filed++;
+        // Drop the row from the visible list the moment it's filed, so the queue
+        // shrinks live during the run instead of all at once at the end.
+        document.querySelector(`.queue-item[data-id="${doc.id}"]`)?.remove();
+      } else skipped++;
     }
   } finally {
     btn.textContent = original;
