@@ -137,6 +137,14 @@ function getDeferredCount(db) {
   ).get().n;
 }
 
+// "Stuck" documents — extraction failed, so they hold at status='error'. These
+// are the records behind the launchpad "couldn't be read" surface + reprocess.
+function getStuckCount(db) {
+  return db.prepare(
+    "SELECT COUNT(*) as n FROM documents WHERE status = 'error'"
+  ).get().n;
+}
+
 function confirm(db, id, { stored_filename, stored_path }) {
   return update(db, id, {
     status:       'confirmed',
@@ -251,7 +259,7 @@ function getWorkingPaths(db) {
 module.exports = {
   insert, update, getById, getWithExtractions,
   getReviewQueue, getDeferredQueue,
-  getReviewCount, getDeferredCount,
+  getReviewCount, getDeferredCount, getStuckCount,
   confirm, deleteDoc, deleteByStatus, search,
   resolveFilePath, filterExisting, getWorkingPaths,
 };

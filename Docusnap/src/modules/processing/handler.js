@@ -1092,6 +1092,22 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger) {
 
   if (!msg.success) {
     logger?.err(`File failed: ${msg.original_filename || '?'} — ${msg.error || 'unknown error'}`);
+    // Persist a "stuck" record instead of silently dropping the failure, so the
+    // doc is VISIBLE (a launchpad surface) and reprocessable — previously a failed
+    // file left no DB row at all. No file is moved here; the original stays put.
+    try {
+      const documents = require('../../../database/modules/documents');
+      const ins = documents.insert(db, {
+        original_filename: msg.original_filename || 'unknown',
+        folder_path:       folderPath,
+        status:            'error',
+      });
+      documents.update(db, ins.lastInsertRowid, { error_message: msg.error || 'unknown error' });
+      msg.db_id = ins.lastInsertRowid;
+      try { notifyMainWindow?.('stuck-count-changed', documents.getStuckCount(db)); } catch {}
+    } catch (e) {
+      logger?.warn(`Could not record failed document ${msg.original_filename || '?'}: ${e.message}`);
+    }
     return;
   }
 
