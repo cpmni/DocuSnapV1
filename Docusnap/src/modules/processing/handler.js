@@ -1082,6 +1082,33 @@ function register(ctx) {
   });
 }
 
+// Move a processed original out of the intake folder into `destDir` (a managed
+// "Processed"/"Errors" subfolder) so it can't be re-pulled by a later scan. All
+// fs is via the injected module so it's hermetically testable. Collisions get a
+// `-N` suffix; a cross-volume rename (EXDEV) falls back to copy+unlink. Returns
+// the new { folder, filename }, or null if the source no longer exists.
+// CALLER must verify a durable copy exists before calling — this DOES remove the
+// original from the intake folder.
+function drainOriginalToFolder(fs, path, srcPath, destDir, originalFilename) {
+  if (!fs.existsSync(srcPath)) return null;
+  if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+  const ext  = path.extname(originalFilename);
+  const base = path.basename(originalFilename, ext);
+  let destPath = path.join(destDir, originalFilename);
+  let counter  = 1;
+  while (fs.existsSync(destPath)) {
+    destPath = path.join(destDir, `${base}-${counter}${ext}`);
+    counter++;
+  }
+  try {
+    fs.renameSync(srcPath, destPath);
+  } catch {
+    fs.copyFileSync(srcPath, destPath);   // cross-volume (EXDEV) fallback
+    fs.unlinkSync(srcPath);
+  }
+  return { folder: destDir, filename: path.basename(destPath) };
+}
+
 // ── Internal: save file_done message to DB ────────────────────────────────────
 function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger) {
   if (msg.type === 'file_begin') {
@@ -1191,40 +1218,32 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger) {
     console.warn(`[import] working copy failed for docId=${docId}: ${e.message}`);
   }
 
-  // Move source file to Processed folder if configured
-  const processedFolder = learning.getSetting(db, 'processed_folder', null);
-  if (processedFolder) {
-    const srcPath = path.join(folderPath, msg.original_filename);
-    if (fs.existsSync(srcPath)) {
-      try {
-        if (!fs.existsSync(processedFolder)) {
-          fs.mkdirSync(processedFolder, { recursive: true });
+  // ── Drain the original out of the intake folder (Slice 2) ────────────────────
+  // Once a VERIFIED working copy exists, move the original from the source/watch
+  // folder into a "Processed" subfolder so it can't be re-pulled on the next
+  // manual run or after a restart (folder scans are non-recursive → subfolders are
+  // skipped). Move, never delete, for data-loss safety. Gated on:
+  //   • drain_processed setting (default ON; set 'false' to keep originals in place)
+  //   • the inbox working copy existing on disk (so the original is never the only
+  //     copy when it leaves the intake folder).
+  // An explicit processed_folder setting still wins (back-compat); otherwise the
+  // target is <intakeFolder>/Processed, which works for BOTH manual and watch.
+  const drainEnabled = learning.getSetting(db, 'drain_processed', 'true') !== 'false';
+  if (drainEnabled && msg.working_path && fs.existsSync(msg.working_path)) {
+    const explicit = learning.getSetting(db, 'processed_folder', null);
+    const destDir  = (explicit && explicit.trim()) || path.join(folderPath, 'Processed');
+    const srcPath  = path.join(folderPath, msg.original_filename);
+    try {
+      const moved = drainOriginalToFolder(fs, path, srcPath, destDir, msg.original_filename);
+      if (moved) {
+        db.prepare('UPDATE documents SET folder_path = ? WHERE id = ?').run(moved.folder, docId);
+        if (moved.filename !== msg.original_filename) {
+          db.prepare('UPDATE documents SET original_filename = ? WHERE id = ?').run(moved.filename, docId);
         }
-        const ext  = path.extname(msg.original_filename);
-        const base = path.basename(msg.original_filename, ext);
-        let destPath = path.join(processedFolder, msg.original_filename);
-        let counter = 1;
-        while (fs.existsSync(destPath)) {
-          destPath = path.join(processedFolder, `${base}-${counter}${ext}`);
-          counter++;
-        }
-        try {
-          fs.renameSync(srcPath, destPath);
-        } catch {
-          fs.copyFileSync(srcPath, destPath);
-          fs.unlinkSync(srcPath);
-        }
-        const destFilename = path.basename(destPath);
-        db.prepare('UPDATE documents SET folder_path = ? WHERE id = ?')
-          .run(processedFolder, docId);
-        if (destFilename !== msg.original_filename) {
-          db.prepare('UPDATE documents SET original_filename = ? WHERE id = ?')
-            .run(destFilename, docId);
-        }
-        logger?.log(`Moved to processed: ${msg.original_filename}`);
-      } catch (e) {
-        logger?.warn(`Could not move to processed folder: ${e.message}`);
+        logger?.log(`Drained to Processed: ${msg.original_filename} → ${moved.folder}`);
       }
+    } catch (e) {
+      logger?.warn(`Could not drain original to Processed folder: ${e.message}`);
     }
   }
 
@@ -1256,6 +1275,7 @@ module.exports = {
   buildTrainingArgs,
   cleanupTempFiles: cleanupFiles,
   handleFileMessage: _handleFileMessage,
+  drainOriginalToFolder,
   isBatchRunning: () => _currentBatchProcs.length > 0,
   // Exposed for the F-06 path-policy unit test (test_open_path_policy.js).
   _isOpenablePath,
