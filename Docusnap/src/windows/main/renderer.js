@@ -444,23 +444,28 @@ window.docusnap.onProgress((msg) => {
   }
 });
 
-// ── Watch-folder activity in the live log strip ──────────────────────────────
+// ── Watch-folder activity in the live log strip + Session Stats ──────────────
 // The watch folder emits the same per-file progress as a manual run, on its own
-// 'watch-progress' channel. Surface it in the SAME bottom log strip so background
-// imports are visible — but WITHOUT touching the manual batch stats / progress
-// bar / results table (those are built for one discrete user-initiated batch; the
+// 'watch-progress' channel. Surface it in the SAME bottom log strip AND count it
+// in the Session Stats cards (Found/Done/OK/Errors) so background imports are
+// reflected there too. It still does NOT drive the manual progress BAR or the
+// results table (those are built for one discrete user-initiated batch; the
 // watcher streams per-file and runs files in parallel).
 function handleWatchProgress(msg) {
-  if (running) return;            // a manual run owns the strip; the watcher defers anyway
+  if (running) return;            // a manual run owns the strip + stats; the watcher defers anyway
   logPanel.classList.add('visible');
   switch (msg.type) {
     case 'file_begin':
       logStatus.textContent = 'Watch folder — processing…';
       appendLog(`[Watch] → ${msg.filename}`);
+      stats.total++;              // count the watch doc in Session Stats "Found"
+      updateStats();
       break;
     case 'file_done':
-      if (msg.success) appendLog(`[Watch]   ✓ ${msg.original_filename || ''} → ${msg.new_filename || 'filed'}`, 'ok');
-      else             appendLog(`[Watch]   ✗ ${msg.original_filename || ''}: ${msg.error || 'error'}`, 'err');
+      stats.done++;
+      if (msg.success) { stats.ok++;  appendLog(`[Watch]   ✓ ${msg.original_filename || ''} → ${msg.new_filename || 'filed'}`, 'ok'); }
+      else             { stats.err++; appendLog(`[Watch]   ✗ ${msg.original_filename || ''}: ${msg.error || 'error'}`, 'err'); }
+      updateStats();
       logStatus.textContent = 'Watch folder — idle';
       break;
     case 'log':
