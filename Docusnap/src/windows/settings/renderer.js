@@ -226,7 +226,7 @@ const concurrencySelect = document.getElementById('processing-concurrency');
 async function loadProcessingConcurrency() {
   let n = parseInt(await api.getSetting('processing_concurrency'), 10);
   if (!Number.isFinite(n)) n = 1;
-  n = Math.max(1, Math.min(5, n));
+  n = Math.max(1, Math.min(10, n));   // TESTING: raised 5 → 10; revert before shipping
   concurrencySelect.value = String(n);
 }
 loadProcessingConcurrency();

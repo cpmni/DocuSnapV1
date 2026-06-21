@@ -399,7 +399,10 @@ function register(ctx) {
     // OCR/extraction, never DB/learning state. Default 1 = unchanged sequential.
     let concurrency = parseInt(learning.getSetting(db, 'processing_concurrency', '1'), 10);
     if (!Number.isFinite(concurrency)) concurrency = 1;
-    concurrency = Math.max(1, Math.min(5, concurrency));
+    // TESTING: cap raised 5 → 10 to evaluate higher parallelism. Revert to
+    // Math.min(5, …) before shipping (values above the CPU core count usually
+    // thrash rather than speed up).
+    concurrency = Math.max(1, Math.min(10, concurrency));
 
     _cancelRequested   = false;
     _currentBatchProcs = [];
