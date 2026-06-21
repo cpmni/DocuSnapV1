@@ -242,6 +242,18 @@ function register(ctx) {
           backendScript, configPath, notifyMainWindow, notifyDevInspector,
           notifyReview, safeSend, spawn, path, fs, logger } = ctx;
 
+  // Startup holding-area reconciliation — GC crash debris (.part / orphaned /
+  // already-confirmed inbox copies) so the holding queue agrees with the DB on
+  // launch. Deferred so it never blocks module registration; best-effort.
+  setImmediate(() => {
+    try {
+      const db = getDb();
+      runHoldingReconcile(db, logger);
+      notifyMainWindow?.('stuck-count-changed',
+        require('../../../database/modules/documents').getStuckCount(db));
+    } catch (e) { logger?.warn(`[reconcile] startup sweep skipped: ${e.message}`); }
+  });
+
   // Additive read-only telemetry mirror: send a progress message to the invoking
   // renderer exactly as before, then ALSO to the hidden dev inspector if it is
   // open (no-op otherwise). Does not change message shape, ordering, or any
@@ -541,6 +553,13 @@ function register(ctx) {
           try { fs.unlinkSync(path.join(folderPath, entry)); } catch {}
         }
       }
+    } catch {}
+    // Tidy the holding area after each batch (dead/confirmed copies + .part debris)
+    // and refresh the stuck-doc count for the launchpad surface.
+    runHoldingReconcile(db, logger);
+    try {
+      notifyMainWindow?.('stuck-count-changed',
+        require('../../../database/modules/documents').getStuckCount(db));
     } catch {}
     const success = !stopped && codes.every(c => c === 0);
     logger?.log(`Batch ${stopped ? 'stopped' : 'complete'}: ${fileCount} files, exit=${codes.join(',')}`);
@@ -1133,6 +1152,71 @@ function ensureWorkingCopy(fs, path, inboxDir, srcPath, docId, originalFilename)
   }
 }
 
+// Reconcile the inbox holding area to the DB (the source of truth). The DB is
+// authoritative; every inbox file must map to a live document row, else it's
+// debris from a crash and is collected. Removes:
+//   • interrupted-copy debris  (*.part)
+//   • orphaned working copies  (no documents row for that id)
+//   • dead working copies      (the doc is already confirmed/deleted)
+// Keeps copies for live docs (needs_review/deferred/error/pending). A crash can
+// only ever leave EXTRA files (cleaned here) — never lose a document, because an
+// original is only removed after a verified copy. Pure: fs/path/db injected for
+// hermetic testing. Returns a summary of what it did.
+function reconcileHolding(fs, path, db, inboxDir) {
+  const summary = { scanned: 0, partsRemoved: 0, orphansRemoved: 0, deadRemoved: 0, kept: 0 };
+  if (!fs.existsSync(inboxDir)) return summary;
+  let entries;
+  try { entries = fs.readdirSync(inboxDir); } catch { return summary; }
+
+  const statusById = new Map(
+    db.prepare('SELECT id, status FROM documents').all().map(r => [r.id, r.status])
+  );
+  const DEAD = new Set(['confirmed', 'deleted']);
+
+  for (const name of entries) {
+    summary.scanned++;
+    const full = path.join(inboxDir, name);
+    if (name.endsWith('.part')) {
+      try { fs.unlinkSync(full); summary.partsRemoved++; } catch {}
+      continue;
+    }
+    // Managed copies are named exactly <docId><ext> (a plain integer id). Anything
+    // else (a stray user file) is left untouched.
+    const idStr = path.basename(name, path.extname(name));
+    const id    = parseInt(idStr, 10);
+    if (!Number.isInteger(id) || String(id) !== idStr) { summary.kept++; continue; }
+
+    const status = statusById.get(id);
+    if (status === undefined) {
+      try { fs.unlinkSync(full); summary.orphansRemoved++; } catch {}
+    } else if (DEAD.has(status)) {
+      try { fs.unlinkSync(full); summary.deadRemoved++; } catch {}
+    } else {
+      summary.kept++;
+    }
+  }
+  return summary;
+}
+
+// Thin wrapper: resolve the inbox dir (electron userData) and run the sweep,
+// logging a one-line summary. Called on startup and after each batch.
+function runHoldingReconcile(db, logger) {
+  try {
+    const { app } = require('electron');
+    const inboxDir = path.join(app.getPath('userData'), 'inbox');
+    const s = reconcileHolding(fs, path, db, inboxDir);
+    const removed = s.partsRemoved + s.orphansRemoved + s.deadRemoved;
+    if (removed > 0) {
+      logger?.log(`[reconcile] holding swept: ${removed} removed ` +
+        `(${s.partsRemoved} .part, ${s.orphansRemoved} orphan, ${s.deadRemoved} confirmed) · ${s.kept} kept`);
+    }
+    return s;
+  } catch (e) {
+    logger?.warn(`[reconcile] holding sweep failed: ${e.message}`);
+    return null;
+  }
+}
+
 // ── Internal: save file_done message to DB ────────────────────────────────────
 function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger) {
   if (msg.type === 'file_begin') {
@@ -1324,6 +1408,8 @@ module.exports = {
   handleFileMessage: _handleFileMessage,
   drainOriginalToFolder,
   ensureWorkingCopy,
+  reconcileHolding,
+  runHoldingReconcile,
   isBatchRunning: () => _currentBatchProcs.length > 0,
   // Exposed for the F-06 path-policy unit test (test_open_path_policy.js).
   _isOpenablePath,
