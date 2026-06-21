@@ -36,7 +36,7 @@ let _pollTimer    = null;
 let _watchFolder  = null;
 let _tracked      = new Map();   // filename -> { size, mtimeMs, lastChangeAt, state }
 let _queue        = [];          // filenames accepted, awaiting their turn
-let _isProcessing = false;
+let _inFlight     = 0;           // count of _processFile workers currently running
 
 // ── Pure stability-decision logic ────────────────────────────────────────────
 // Given the previously tracked state for a file (or null, on first sighting)
@@ -108,7 +108,7 @@ function _start(db) {
   _watchFolder = folder;
   _tracked = new Map();
   _queue = [];
-  _isProcessing = false;
+  _inFlight = 0;
 
   _log('log', `[watch] monitoring started: ${folder} (stability delay ${STABILITY_DELAY_MS / 1000}s, poll every ${POLL_INTERVAL_MS / 1000}s)`);
 
@@ -130,7 +130,7 @@ function _stop() {
   _watchFolder = null;
   _tracked = new Map();
   _queue = [];
-  _isProcessing = false;
+  _inFlight = 0;
 }
 
 // ── Poll: detect new/changed files, advance stability timers ─────────────────
@@ -192,28 +192,43 @@ function _poll(db) {
   }
 }
 
-// ── Serialised processing — one file through the pipeline at a time ──────────
+// ── Parallel processing — up to `processing_concurrency` files at once ───────
+// Mirrors the manual folder-import worker pool: each in-flight _processFile is a
+// separate Python process on a disjoint file, while ALL DB writes still funnel
+// through processing.handleFileMessage on the single-threaded JS event loop
+// (better-sqlite3 is synchronous), so parallelism only speeds the CPU-bound
+// OCR/extraction — never DB/learning state. concurrency=1 keeps the original
+// one-at-a-time behaviour. Re-entrant and idempotent: _queue.shift() hands each
+// filename to exactly one worker, and the `_inFlight < concurrency` gate stops
+// oversubscription no matter how often it's called (poll 'stable' + each
+// worker's finally both re-invoke it).
 function _drainQueue(db) {
-  if (_isProcessing || _queue.length === 0 || !_watchFolder) return;
+  if (!_watchFolder || _queue.length === 0) return;
 
   const processing = require('../processing/handler');
   if (processing.isBatchRunning()) {
-    // A manual folder import is running — retry on the next poll tick
-    // instead of competing for the same OCR/Python resources.
+    // A manual folder import is running — don't compete for the same OCR/Python
+    // resources. Retry on the next poll tick (or when a worker frees up).
     return;
   }
 
-  const filename = _queue.shift();
-  _isProcessing = true;
+  const learning = require('../../../database/modules/learning');
+  let concurrency = parseInt(learning.getSetting(db, 'processing_concurrency', '1'), 10);
+  if (!Number.isFinite(concurrency)) concurrency = 1;
+  concurrency = Math.max(1, Math.min(10, concurrency));   // mirrors processing/handler.js
 
-  _processFile(db, filename)
-    .catch(e => _log('err', `[watch] processing error: ${filename} — ${e.message}`))
-    .finally(() => {
-      const rec = _tracked.get(filename);
-      if (rec) rec.state = 'done';
-      _isProcessing = false;
-      _drainQueue(db);
-    });
+  while (_inFlight < concurrency && _queue.length > 0) {
+    const filename = _queue.shift();
+    _inFlight++;
+    _processFile(db, filename)
+      .catch(e => _log('err', `[watch] processing error: ${filename} — ${e.message}`))
+      .finally(() => {
+        const rec = _tracked.get(filename);
+        if (rec) rec.state = 'done';
+        _inFlight--;
+        _drainQueue(db);   // top the pool back up from the queue
+      });
+  }
 }
 
 async function _processFile(db, filename) {
@@ -222,7 +237,12 @@ async function _processFile(db, filename) {
   const processing = require('../processing/handler');
   const learning   = require('../../../database/modules/learning');
 
-  const srcPath = path.join(_watchFolder, filename);
+  // Capture the folder now: _stop() (e.g. an admin re-points the watch folder)
+  // may null the module var while this file is still in flight, and the captured
+  // path must stay valid for handleFileMessage's persistent folder_path. More
+  // likely to matter now that several files run concurrently.
+  const watchFolder = _watchFolder;
+  const srcPath = path.join(watchFolder, filename);
 
   // Re-verify right before handing off — the file may have been removed,
   // renamed, or already picked up between being queued and its turn arriving.
@@ -278,7 +298,7 @@ async function _processFile(db, filename) {
           // isolated temp dir, so documents.folder_path keeps resolving to
           // a persistent location (preview, confirm, reprocess, the
           // processed-folder move all join folder_path + original_filename).
-          setImmediate(() => processing.handleFileMessage(db, msg, _watchFolder, notifyMainWindow, _ctx.logger));
+          setImmediate(() => processing.handleFileMessage(db, msg, watchFolder, notifyMainWindow, _ctx.logger));
           if (msg.type === 'log') {
             if      (msg.level === 'err')  _log('err',  `[watch] Python: ${msg.text}`);
             else if (msg.level === 'warn') _log('warn', `[watch] Python: ${msg.text}`);
