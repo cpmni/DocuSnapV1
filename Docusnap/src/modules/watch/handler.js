@@ -190,6 +190,15 @@ function _poll(db) {
     }
     if (rec.state !== 'processing') _tracked.delete(name);
   }
+
+  // Safety-net drain every poll tick. A file that became stable WHILE a manual
+  // import was running was queued but deferred (isBatchRunning), and once it's
+  // marked 'processing' the poll treats it as in-flight — so the 'stable' branch
+  // above never re-triggers the drain. Re-attempting here picks up that stranded
+  // backlog as soon as the manual batch finishes (or a worker frees up).
+  // _drainQueue no-ops when the queue is empty, a batch is still running, or the
+  // worker pool is full, so this is cheap when there's nothing to do.
+  _drainQueue(db);
 }
 
 // ── Parallel processing — up to `processing_concurrency` files at once ───────
