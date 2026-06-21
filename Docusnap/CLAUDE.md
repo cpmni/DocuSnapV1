@@ -763,9 +763,26 @@ OutputRoot/
             └── .metadata/
                 └── Invoice.15-12-2025.INV-001.xml
 ```
-- Filename: `DocType.DD-MM-YYYY.RefNo.pdf`
+- Output root stored in settings table as `output_folder` (set on Settings →
+  General; NOT changed by the rules below).
 - Duplicate: append `-DUPLICATE` (then `-DUPLICATE-2` etc)
-- Output root stored in settings table as `output_folder`
+- **OUTPUT STRUCTURE is now BUILDER-driven** (Settings → "Output Structure" tab,
+  renamed from "File Naming"; `src/modules/filing/filename_pattern.js`), both
+  token "block" builders (click-to-insert + custom text + live preview):
+  - **Subfolders** = `output_folder_pattern` setting — a token string where `/`
+    starts a new subfolder level. Default `{supplier}/{year}/{month}` = the legacy
+    Company/Year/Month layout, so installs that never change it are byte-identical.
+    `buildFolderSegments` token-substitutes + Windows-safes EACH level (illegal
+    chars stripped, reserved device names defused) and DROPS empty levels; the
+    handler still enforces the output-root containment check on the joined path.
+  - **Filename** = `filename_pattern` setting (default `{docType}.{date}.{ref}` =
+    `DocType.DD-MM-YYYY.RefNo.pdf`) — the existing `buildFilename` engine, unchanged.
+  - Builder blocks (`FIELD_TOKENS`): Company `{supplier}` · Document Type `{docType}`
+    · Date `{date}` · Reference `{ref}` · Year `{year}` · Month `{month}`. The
+    same builders appear in the first-run wizard's "Output organization" step.
+  - filing/handler.js IPCs: `get-output-structure-info` (blocks + defaults),
+    `preview-output-path` ({folderPattern,filenamePattern} → sanitised segments +
+    filename). Guarded by test_filename_pattern.js.
 
 ---
 
@@ -1002,6 +1019,8 @@ ocr-region(base64), save-field-anchor(data)
 extract-logo-hash(base64), match-logo-hash(base64), save-logo-fingerprint(data)
 search-documents(params)
 get-setting(key), set-setting(key,value)
+get-output-structure-info, preview-output-path({folderPattern,filenamePattern})  # Output Structure builders
+settings-backup-export({password}), settings-backup-preview({password}), settings-backup-apply({path,password})  # admin; see Settings backup
 get-ai-status, get-processing-mode, set-processing-mode(mode)
 pull-ai-model, check-fast-mode-suggestion(supplierName)
 license-get-status, license-start-trial, license-activate(data), license-revoke(data)
@@ -1250,18 +1269,58 @@ re-onboarded — NEVER infer "clean install" from empty state.
   `showOnboarding()` (else `openMainShell()`). `onboarding-complete` sets the flag
   + opens the shell. `open-onboarding` (admin) re-runs it from Settings → General
   ("Re-run setup"). Reads fail-open — a read error never blocks app entry.
-- **Steps:** welcome + offline/privacy note → **output folder** (the ONLY required
-  step: pre-filled `Documents\Scan Finder` via `onboarding-suggested-folder`,
-  write-validated by `onboarding-validate-folder` which mkdirs + probes) → theme
-  (light/dark, live) → performance (threads presets + speed/accuracy mode) → done.
-  "Skip setup" accepts defaults but still secures a writable output folder.
+- **Steps (6):** welcome + offline/privacy note → **output folder** (the ONLY
+  required step: pre-filled `Documents\Scan Finder` via `onboarding-suggested-folder`,
+  write-validated by `onboarding-validate-folder` which mkdirs + probes; ALSO carries
+  the **"Copy processed scans to another folder?"** question) → **output
+  organization** (the same folder + filename block builders as Settings → Output
+  Structure, pre-filled with defaults) → theme (light/dark, live) → performance
+  (threads presets + speed/accuracy mode) → done. "Skip setup" accepts defaults but
+  still secures a writable output folder. (Adding a step = bump STEPS + NEXT_LABEL
+  and renumber the `data-step` panels in onboarding/index.html.)
 - Writes go through the EXISTING `set-setting` path (theme broadcasts live via
-  `theme-changed`); the wizard owns only the FLAG + the window/shell swap.
-- **Backup-with-retention was deliberately deferred** — a real backup subsystem
-  (copy + prune, sensitive deletion path) is its own workstream, NOT a phantom
-  toggle that claims to run backups it doesn't.
+  `theme-changed`); the wizard owns only the FLAG + the window/shell swap. The
+  output-organization step writes `output_folder_pattern` + `filename_pattern`.
+- **Copy-after-processing** (`copy_after_processing_enabled` / `_folder` settings):
+  the wizard collects the toggle + destination, but the DOWNSTREAM copy behaviour is
+  a deliberate SEPARATE follow-up — nothing consumes these keys yet (the deferred
+  "backup-with-retention" subsystem is the real copy+prune workstream, NOT a phantom
+  toggle).
 
 ---
+
+## Settings backup / restore (admin)
+`src/services/backupService.js` + Settings → **Advanced → Backup & Restore**. Exports
+the operational config to ONE password-encrypted file and restores it after reinstall.
+- **Crypto**: scrypt KDF → AES-256-GCM over gzipped JSON (authenticated, so a wrong
+  password / tampering fails cleanly). Binary file `MAGIC|ver|salt|iv|tag|ciphertext`;
+  password never stored. No new dependency (node `crypto`).
+- **Scope INCLUDED**: settings (minus any `licens*` key), document_types, fields,
+  templates + template_fields/field_mappings/landmarks/logo_hashes/groups,
+  field_label_overrides, field_anchors, supplier_hints, corrections, logo_fingerprints.
+  **EXCLUDED**: users, recovery_codes, audit_log, device_registrations, license_tokens,
+  client_seats, document_routes, documents, extractions, migrations.
+- **Restore**: ONE transaction with `PRAGMA defer_foreign_keys=ON`; `settings` is
+  MERGED (upsert — never wipes device/licensing keys), every other whitelisted table
+  is REPLACED (delete + insert with original IDs). Two-step UI: preview(decrypt+counts)
+  → confirm → apply; restart recommended. Forward-compatible (only restores columns
+  that still exist). Guarded by test_backupservice.js.
+- IPCs (admin): `settings-backup-export` / `-preview` / `-apply`.
+
+## Main window — "Review your documents" CTA
+After a batch finishes, a green "✓ Review your documents" button appears in the sidebar
+below Process Documents (where Stop was) and opens the Review window. Shown only when
+`stats.done > 0`, reset on each run start, gated like the Review nav (hidden for
+read-only). Complements the "View Results" 3-field table, doesn't replace it.
+
+## Help-mode + modals gotcha
+`shared/helpmode.js`'s active capture-phase click interceptor (shows help INSTEAD of
+activating a control) used to swallow clicks inside in-page modals — a destructive
+typed-confirm dialog (Erase ALL data) then looked broken (couldn't click/type). Fix:
+help-mode skips any element under `[data-help-ignore]`; the custom modals
+(showTypedConfirmDialog, showSecretDialog) set it. SEPARATELY, those modals now defer
+`input.focus()` to `requestAnimationFrame` (focusing an element the same tick it's
+appended is dropped by Chromium → "no flashing cursor") + a click-to-focus fallback.
 
 ## Teaching wizard (guided, non-technical)
 `src/windows/teach/` — a dedicated, linear "Teach a new document" wizard for
