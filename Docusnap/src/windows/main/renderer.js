@@ -4,7 +4,8 @@
 let selectedFolder = null;
 let running        = false;
 let results        = [];
-let stats          = { total: 0, done: 0, ok: 0, err: 0 };
+let stats          = { total: 0, done: 0, ok: 0, err: 0 };   // cumulative SESSION stats (manual + watch); never reset per run
+let batch          = { total: 0, done: 0, ok: 0, err: 0 };   // current manual run only — drives the progress bar + finish message
 let _userCanReview = true;   // false for Read Only (gates the "Review your documents" CTA)
 
 // ── Element refs ─────────────────────────────────────────────────────────────
@@ -150,8 +151,9 @@ async function startProcessing() {
   btnStop.innerHTML = '&#9632;&nbsp; Stop Processing';
   btnStop.classList.add('visible');
 
-  // Reset stats for new run
-  stats = { total: 0, done: 0, ok: 0, err: 0 };
+  // Reset only the per-run BATCH (the progress bar). Session Stats are cumulative
+  // across the session (manual + watch), so they are NOT wiped here.
+  batch = { total: 0, done: 0, ok: 0, err: 0 };
   updateStats();
 
   // Keep the launchpad (the action buttons) visible during processing; show live
@@ -197,12 +199,12 @@ async function startProcessing() {
   } else {
     logStatus.textContent = 'Finished';
     progressBar.style.width = '100%';
-    appendLog(`✓ Finished processing — ${stats.ok} filed${stats.err ? `, ${stats.err} with errors` : ''}.`, 'ok');
+    appendLog(`✓ Finished processing — ${batch.ok} filed${batch.err ? `, ${batch.err} with errors` : ''}.`, 'ok');
   }
   // Launchpad + log strip stay on screen. If anything was processed, offer a
   // "View Results" button (in the log header) that opens the 3-field table, and a
   // "Review your documents" call-to-action in the sidebar that jumps to Review.
-  if (stats.done > 0) {
+  if (batch.done > 0) {
     btnViewResults.style.display = '';
     if (_userCanReview) btnReviewDocs.classList.add('visible');
   }
@@ -218,7 +220,8 @@ function handleProgress(msg) {
   switch (msg.type) {
 
     case 'start':
-      stats.total = msg.total;
+      batch.total  = msg.total;     // this run, for the progress bar
+      stats.total += msg.total;     // add the batch to the cumulative session "Found"
       updateStats();
       appendLog(`Found ${msg.total} document(s) in folder.`);
       break;
@@ -226,22 +229,23 @@ function handleProgress(msg) {
     case 'file_begin':
       appendLog(`→ ${msg.filename}`);
       setStage(msg.filename, 'ocr');
-      if (stats.total > 0) {
-        progressBar.style.width = ((stats.done / stats.total) * 100) + '%';
+      if (batch.total > 0) {
+        progressBar.style.width = ((batch.done / batch.total) * 100) + '%';
       }
       break;
 
     case 'file_done':
+      batch.done++;
       stats.done++;
-      if (msg.success) { stats.ok++; } else { stats.err++; }
+      if (msg.success) { batch.ok++; stats.ok++; } else { batch.err++; stats.err++; }
       updateStats();
       addTableRow(msg);
-      if (stats.total > 0) {
-        progressBar.style.width = ((stats.done / stats.total) * 100) + '%';
+      if (batch.total > 0) {
+        progressBar.style.width = ((batch.done / batch.total) * 100) + '%';
       }
       setStage(msg.original_filename || msg.new_filename, 'save');
       setTimeout(() => {
-        if (stats.done >= stats.total) clearStage();
+        if (batch.done >= batch.total) clearStage();
         else setStage(stageFile.textContent, 'done');
       }, 800);
       if (msg.success) {
