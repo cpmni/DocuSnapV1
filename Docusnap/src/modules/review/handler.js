@@ -309,7 +309,7 @@ function register(ctx) {
       document_id, folder_path, original_filename,
       corrections, allValues, supplier_name,
       document_type, document_type_slug,
-      taught_fields,
+      taught_fields, bulk,
     } = payload;
 
     const db      = getDb();
@@ -337,8 +337,10 @@ function register(ctx) {
       return { success: false, error: 'No output folder set. Please configure it in Settings.' };
     }
 
-    // Release file handle — renderer should have cleared img.src already
-    await new Promise(r => setTimeout(r, 150));
+    // Release file handle — renderer should have cleared img.src already. Bulk
+    // "File All Ready" uses the fields-only path that never loads the preview, so
+    // there is no handle to release; skip the per-doc wait (≈15s over 100 docs).
+    if (!bulk) await new Promise(r => setTimeout(r, 150));
 
     const filingResult = await filing.commitDocument({
       db, fs, path,
