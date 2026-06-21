@@ -168,6 +168,12 @@
     .stat-card { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px 8px; text-align: center; }
     .stat-val { font-family: var(--mono); font-size: 20px; font-weight: 500; color: var(--text); }
     .stat-lbl { font-size: 10px; color: var(--muted); margin-top: 2px; letter-spacing: .05em; }
+    .btn-clear-stats {
+      width: 100%; margin-top: 8px; padding: 6px; border-radius: 6px;
+      border: 1px solid var(--border2); background: transparent; color: var(--muted);
+      font-family: var(--sans); font-size: 11px; cursor: pointer; transition: all .15s;
+    }
+    .btn-clear-stats:hover { border-color: var(--accent); color: var(--accent); }
     .stat-card.ok .stat-val  { color: var(--ok); }
     .stat-card.err .stat-val { color: var(--err); }
 
@@ -415,6 +421,7 @@
           <div class="stat-card ok"><div class="stat-val" id="stat-ok">0</div><div class="stat-lbl">OK</div></div>
           <div class="stat-card err"><div class="stat-val" id="stat-err">0</div><div class="stat-lbl">Errors</div></div>
         </div>
+        <button class="btn-clear-stats" id="btn-clear-stats" title="Reset the session counters to zero">Clear Stats</button>
       </div>
 
       <div style="margin-top:auto; font-size:10px; color:var(--muted); line-height:1.7;">

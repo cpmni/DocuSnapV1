@@ -328,6 +328,16 @@ function updateStats() {
   document.getElementById('stat-err').textContent   = stats.err;
 }
 
+// Clear Stats — reset the cumulative Session Stats (and the per-run batch +
+// progress bar) back to zero. Session Stats no longer reset per run, so this is
+// the way to start a fresh count without restarting the app.
+document.getElementById('btn-clear-stats')?.addEventListener('click', () => {
+  stats = { total: 0, done: 0, ok: 0, err: 0 };
+  batch = { total: 0, done: 0, ok: 0, err: 0 };
+  updateStats();
+  if (progressBar) progressBar.style.width = '0';
+});
+
 function escHtml(str) {
   if (!str) return '';
   return String(str)
