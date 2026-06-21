@@ -1248,7 +1248,9 @@ async function confirmCurrentDoc({ bulk = false } = {}) {
       docImgWrap.style.display = '';
       docImg.src = pageImages[currentPage];
     }
-    return { error: result?.error || 'Confirm failed. Check settings.' };
+    // Pass the backend code through so bulk filing can tell a license lapse
+    // (abort the whole run once) from an ordinary per-doc failure (skip + continue).
+    return { error: result?.error || 'Confirm failed. Check settings.', code: result?.code || null };
   }
 
   // Persist anchors taught with ⊕ this cycle — DEFERRED to commit so an un-confirmed
@@ -1320,10 +1322,13 @@ document.getElementById('btn-acknowledge')?.addEventListener('click', async () =
 // whose single Confirm button would be enabled (type + required fields present).
 // Each is filed through confirmCurrentDoc({bulk:true}), exactly the per-document
 // path; not-ready or digit-mismatch documents are left in the queue for review.
+let _bulkFileStopped = false;   // cooperative-stop flag for File All Ready
+
 async function fileAllReady() {
   if (activeTab !== 'review') return;                 // only the review queue
   const btn = document.getElementById('btn-file-all-review');
   if (!btn || btn.disabled) return;
+  if (bulkFiling) return;                             // a run is already in progress
   const docs = [...queue];                            // snapshot before it mutates
   if (docs.length === 0) return;
   if (!confirm(
@@ -1333,34 +1338,70 @@ async function fileAllReady() {
         `details are left in the queue for you to review.`)) return;
 
   const confirmBtn = document.getElementById('btn-confirm');
-  const original   = btn.textContent;
-  btn.disabled = true;
-  bulkFiling   = true; // hold off auto-refresh; each confirm broadcasts review-count-changed back to this window
-  let filed = 0, skipped = 0;
+  const banner   = document.getElementById('bulk-file-progress');
+  const barFill  = banner.querySelector('.bfp-bar-fill');
+  const countEl  = banner.querySelector('.bfp-count');
+  const fileEl   = banner.querySelector('.bfp-file');
+  const stopBtn  = document.getElementById('btn-stop-file-all');
+  // These act on currentDoc, which the loop reassigns rapidly — disable for the run.
+  const lockBtns = ['btn-file-all-review', 'btn-skip', 'btn-defer', 'btn-delete-all-review']
+    .map(id => document.getElementById(id)).filter(Boolean);
+
+  // Release any preview image handle held from a doc the user was viewing — ONCE,
+  // up front (the per-doc backend 150ms release-wait is skipped in bulk, and the
+  // fields-only path never opens a new one).
+  try { docImg.src = ''; docImgWrap.style.display = 'none'; } catch {}
+  await new Promise(r => setTimeout(r, 150));
+
+  bulkFiling       = true;   // hold off auto-refresh; each confirm broadcasts review-count-changed back to this window
+  _bulkFileStopped = false;
+  lockBtns.forEach(b => b.disabled = true);
+  stopBtn.disabled  = false;
+  stopBtn.innerHTML = '&#9632; Stop';
+  banner.classList.remove('done');
+  banner.classList.add('show');
+  barFill.style.width = '0';
+
+  let filed = 0, skipped = 0, aborted = false;
 
   try {
     for (let i = 0; i < docs.length; i++) {
+      if (_bulkFileStopped) break;                     // cooperative: in-flight doc already finished
       const doc = docs[i];
+      countEl.textContent = `Filing ${i + 1} of ${docs.length}` + (skipped ? ` · ${skipped} skipped` : '');
+      fileEl.textContent  = doc.original_filename || '';
+      barFill.style.width = `${Math.round(((i + 1) / docs.length) * 100)}%`;
+
       if (!queue.some(d => d.id === doc.id)) continue; // already handled elsewhere
       // Flagged docs (validation note / correction candidate / below-threshold
       // field) are excluded from bulk filing until a human clicks Mark Reviewed.
-      // Checked off the queue object directly — no need to load the doc.
       if (isFlagged(doc) && !doc.review_acknowledged_at) { skipped++; continue; }
-      btn.textContent = `Filing… ${i + 1}/${docs.length}`;
-      await selectDoc(doc, { fieldsOnly: true });      // loads fields (no preview render); runs validateConfirm()
-      if (confirmBtn.disabled) { skipped++; continue; } // not ready — leave for review
-      const r = await confirmCurrentDoc({ bulk: true });
-      if (r.filed) {
-        filed++;
-        // Drop the row from the visible list the moment it's filed, so the queue
-        // shrinks live during the run instead of all at once at the end.
-        document.querySelector(`.queue-item[data-id="${doc.id}"]`)?.remove();
-      } else skipped++;
+
+      try {
+        await selectDoc(doc, { fieldsOnly: true });    // loads fields (no preview render); runs validateConfirm()
+        if (confirmBtn.disabled) { skipped++; continue; } // not ready — leave for review
+        const r = await confirmCurrentDoc({ bulk: true });
+        if (r.filed) {
+          filed++;
+          // Drop the row the moment it's filed, so the queue shrinks live.
+          document.querySelector(`.queue-item[data-id="${doc.id}"]`)?.remove();
+        } else if (r.code === 'license_required') {
+          aborted = true; break;                       // license lapsed mid-run — stop once, don't spam failures
+        } else {
+          skipped++;                                   // ordinary per-doc failure — leave it queued
+        }
+      } catch (err) {
+        // A locked doc (open approval route) throws from requireUnlocked — SKIP it,
+        // never let one locked doc abort the whole run. A permission lapse (role
+        // changed) aborts the run once.
+        if (/FORBIDDEN|permission/i.test(err?.message || '')) { aborted = true; break; }
+        console.warn(`[File All] ${doc.original_filename}:`, err?.message || err);
+        skipped++;
+      }
     }
   } finally {
-    btn.textContent = original;
-    btn.disabled = false;
-    bulkFiling   = false; // re-enable auto-refresh before the post-run refresh below
+    bulkFiling = false;   // re-enable auto-refresh before the post-run refresh below
+    lockBtns.forEach(b => b.disabled = false);
   }
 
   updateTabCounts();
@@ -1369,12 +1410,34 @@ async function fileAllReady() {
   else { currentDoc = null; clearDocPanel(); }
   if (filed) window.docusnap.notifyReviewComplete();
 
+  // Banner done-state, then auto-dismiss. Already-filed docs stay filed.
+  const stoppedNote = _bulkFileStopped ? ' (stopped)' : '';
+  banner.classList.add('done');
+  stopBtn.disabled    = true;
+  fileEl.textContent  = '';
+  countEl.textContent = aborted
+    ? `Stopped — a valid license is required. Filed ${filed} first.`
+    : `Filed ${filed}` + (skipped ? ` · ${skipped} left for review` : '') + stoppedNote;
+  setTimeout(() => banner.classList.remove('show', 'done'), aborted ? 6000 : 3500);
+
   showToast(
-    `Filed ${filed} document${filed === 1 ? '' : 's'}` +
-      (skipped ? ` · ${skipped} left for review` : ''),
-    filed ? 'ok' : 'warn');
+    aborted
+      ? `Filing stopped — a valid license is required. Filed ${filed} document${filed === 1 ? '' : 's'}.`
+      : `Filed ${filed} document${filed === 1 ? '' : 's'}` +
+          (skipped ? ` · ${skipped} left for review` : '') + stoppedNote,
+    (aborted || !filed) ? 'warn' : 'ok');
 }
 document.getElementById('btn-file-all-review')?.addEventListener('click', fileAllReady);
+
+// Cooperative Stop: the in-flight document finishes filing, no new one starts,
+// everything already filed stays filed (this is not an undo). Mirrors Reprocess-All.
+document.getElementById('btn-stop-file-all')?.addEventListener('click', () => {
+  if (!bulkFiling) return;
+  _bulkFileStopped = true;
+  const s = document.getElementById('btn-stop-file-all');
+  s.disabled  = true;
+  s.innerHTML = 'Stopping…';
+});
 
 // ── Document cycling (prev/next rail beside the queue) ────────────────────────
 // The up/down rail moves the SELECTED document one step earlier/later within the

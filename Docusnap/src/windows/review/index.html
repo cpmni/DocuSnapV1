@@ -410,6 +410,23 @@
     }
     #reprocess-progress.show { display: block; }
     #reprocess-progress.done { background: var(--surface2); border-color: var(--border2); color: var(--muted); }
+    /* File All Ready progress banner — queue-footer twin of the reprocess banner */
+    #bulk-file-progress {
+      display: none; margin: 0 0 8px; padding: 8px 10px; border-radius: 6px;
+      background: var(--accent-bg); border: 1px solid var(--accent); color: var(--text); font-size: 11px;
+    }
+    #bulk-file-progress.show { display: block; }
+    #bulk-file-progress.done { background: var(--surface2); border-color: var(--border2); color: var(--muted); }
+    #bulk-file-progress .bfp-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    #bulk-file-progress .bfp-count { font-weight: 600; }
+    #bulk-file-progress .bfp-bar { height: 4px; background: var(--surface3); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+    #bulk-file-progress .bfp-bar-fill { height: 100%; width: 0; background: var(--accent); transition: width .1s; }
+    #bulk-file-progress .bfp-file { margin-top: 4px; font-family: var(--mono); font-size: 10px; color: var(--muted);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #bulk-file-progress .bfp-note { margin-top: 4px; font-size: 10px; color: var(--muted); }
+    .btn.bfp-stop { padding: 3px 10px; font-size: 11px; color: var(--warn); border-color: var(--warn); flex-shrink: 0; }
+    .btn.bfp-stop:hover    { background: var(--warn-bg); }
+    .btn.bfp-stop:disabled { opacity: .5; cursor: default; }
     #reprocess-bar { padding: 8px 14px 0; flex-shrink: 0; display: flex; gap: 6px; }
     .btn.reprocess { flex: 1; color: var(--accent2); border-color: var(--accent); font-size: 11px; }
     .btn.reprocess:hover     { background: var(--accent-bg); }
@@ -587,6 +604,15 @@
         </div>
       </div>
       <div id="queue-empty">✓ All reviewed</div>
+      <div id="bulk-file-progress" role="status" aria-live="polite">
+        <div class="bfp-row">
+          <span class="bfp-count">Filing...</span>
+          <button id="btn-stop-file-all" class="btn bfp-stop">&#9632; Stop</button>
+        </div>
+        <div class="bfp-bar"><div class="bfp-bar-fill"></div></div>
+        <div class="bfp-file"></div>
+        <div class="bfp-note">Already-filed documents stay filed - Stop is not an undo.</div>
+      </div>
       <div id="review-actions">
         <div class="ra-row">
           <button class="btn skip" id="btn-skip" data-help-key="skip">Skip</button>
