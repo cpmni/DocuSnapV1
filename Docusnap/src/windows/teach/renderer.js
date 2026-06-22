@@ -420,13 +420,18 @@ function enterAnchorMode(){
   drawMode='anchor';
   $('rg-prompt').textContent=`Step 2 — mark the label for ${f.label}`;
   $('rg-sub').textContent=`Draw a box around the printed label near the value (e.g. "${f.label}:"). You can draw it anywhere — the relative offset is remembered. Or skip if there's no clear label.`;
-  const lbl=r.anchor_text
+  const hasLabel = !!r.anchor_text;
+  const lbl = hasLabel
     ?`Auto-detected: <span class="mono">"${esc(r.anchor_text)}"</span>`
     :'No label auto-detected — will use position only.';
+  // The primary button KEEPS the auto-detected label (or accepts position-only) and
+  // advances — it never discards a detected label, so it's named for what it does
+  // ("Skip label" wrongly implied the detected anchor was being thrown away).
+  const keepText = hasLabel ? 'Keep this label →' : 'Continue without a label →';
   $('rg-readback').innerHTML=
     `<div class="muted" style="font-size:13px">${lbl}</div>`+
     `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">`+
-      `<button class="btn primary" id="rb-skip-anchor">Skip label →</button>`+
+      `<button class="btn primary" id="rb-skip-anchor">${keepText}</button>`+
       `<button class="btn ghost" id="rb-redraw-val">← Redraw value</button>`+
     `</div>`;
   $('rb-skip-anchor').onclick=()=>{ r.status='done'; drawMode='value'; advanceField(); };
