@@ -955,6 +955,81 @@ def _read(img, psm):
     return text, mean, min_conf
 
 
+def _ocr_crop_laddered(crop, val_type=None, verify_fn=None, meta=None):
+    """Light-first OCR ladder on an ALREADY-CROPPED image -> cleaned best-rung text
+    (or None). SHARED by anchor._crop_and_ocr (centre+dims crop) and
+    template_mapper._crop_and_ocr (drawn-box crop) so every value-crop path reads with the
+    SAME recipe and writes the SAME confidence into 'meta' (meta['conf'] = mean word conf,
+    meta['min_conf'] = min substantial-word conf). The heavy autocontrast+SHARPEN recipe
+    (which mangles a clean printed line into junk) is now only a LATER rung, not the
+    unconditional one. A gateless caller (verify_fn None -- the Stage 0.5 path, which gates
+    separately) accepts the first rung over a conf floor and otherwise returns the best
+    read, so its return shape is unchanged."""
+    def _set_meta(c, mn):
+        if meta is not None:
+            meta['conf'] = c
+            meta['min_conf'] = mn
+    # Light-first OCR ladder (Oscar): preprocess only when needed. A clean,
+    # high-res crop reads correctly with minimal processing — the heavy prep
+    # (upscale + SHARPEN) over-processes it and PSM 7 then returns garbage or
+    # empty ("Beaumont Care Homes Ltd" → "nara"/""). So try LIGHT (greyscale +
+    # upscale + autocontrast, NO sharpen) first, and escalate to the heavy prep
+    # (which crispens tight degraded serials so _repair_single_token can strip a
+    # hallucinated "/" — the reason prep exists) and then the denoise enhance
+    # ONLY when the lighter read fails the gate. Each rung is scored by a single
+    # image_to_data pass (mean word confidence) so the winner is deterministic.
+    # _repair_single_token runs on every rung so even a light-rung serial gets
+    # its separator scrubbed. One ladder, reusable for every supplier/field.
+    # Lazy import avoids the anchor<->template_mapper module-load cycle.
+    from extraction import template_mapper as _tm
+
+    def _gate(seg, conf):
+        # verify_fn (the anchor path) is authoritative; a gateless caller
+        # (defensive — anchor calls always pass verify_fn) uses a conf floor.
+        if verify_fn is not None:
+            return bool(seg) and bool(verify_fn(seg))
+        return bool(seg) and conf >= 60.0
+
+    light = _light_prep(crop)
+    heavy = None
+    best_seg, best_conf, best_min = None, -1.0, 0.0
+    for _src, _psm in (("light", 7), ("light", 6), ("heavy", 7), ("heavy", 6)):
+        if _src == "heavy" and heavy is None:
+            heavy = _tm._prep(crop)            # Rung 3 = today's recipe verbatim
+        rimg = light if _src == "light" else heavy
+        rtext, rconf, rmin = _read(rimg, _psm)
+        rseg = clean_crop_segment(rtext, val_type)
+        if rseg:
+            rseg = _repair_single_token(rimg, rseg, val_type)
+        if rseg and rconf > best_conf:
+            best_seg, best_conf, best_min = rseg, rconf, rmin
+        if _gate(rseg, rconf):
+            _set_meta(rconf, rmin)
+            return rseg
+
+    # No rung satisfied the gate. Degraded TEXT-LINE escalation (free-text
+    # fields, verify_fn only) — denoise + adaptive threshold, accepted only if
+    # it now PASSES the gate (a recovered-but-wrong name still can't commit).
+    # See ocr/text_enhance.enhance_text_crop.
+    if (verify_fn is not None and val_type in ("text", "multiline_text")
+            and not (best_seg and verify_fn(best_seg))):
+        try:
+            from ocr import text_enhance
+            eimg = text_enhance.enhance_text_crop(crop)
+            etext, _ec, _emin = _read(eimg, 7)
+            eseg = clean_crop_segment(etext, val_type)
+            if not eseg:
+                etext, _ec, _emin = _read(eimg, 6)
+                eseg = clean_crop_segment(etext, val_type)
+            if eseg and verify_fn(eseg):
+                _set_meta(_ec, _emin)
+                return eseg
+        except Exception:
+            pass
+    _set_meta(best_conf if best_conf >= 0 else 0.0, best_min)
+    return best_seg or None
+
+
 def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
                   w_norm: float = 0.0, h_norm: float = 0.0,
                   val_type: str | None = None, capture = None,
@@ -975,10 +1050,6 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
     confidence reflect READ QUALITY rather than only the anchor's usage_count — a
     garbled crop ("Aaiumant … Galaorm") no longer scores in the 90s.
     """
-    def _set_meta(c, mn):
-        if meta is not None:
-            meta['conf'] = c
-            meta['min_conf'] = mn
     try:
         w, h = page_image.size
         cx = int(x_norm * w)
@@ -1007,65 +1078,7 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
         if capture:
             try: capture(crop)
             except Exception: pass   # dev-only slice capture; never disrupt OCR
-        # Light-first OCR ladder (Oscar): preprocess only when needed. A clean,
-        # high-res crop reads correctly with minimal processing — the heavy prep
-        # (upscale + SHARPEN) over-processes it and PSM 7 then returns garbage or
-        # empty ("Beaumont Care Homes Ltd" → "nara"/""). So try LIGHT (greyscale +
-        # upscale + autocontrast, NO sharpen) first, and escalate to the heavy prep
-        # (which crispens tight degraded serials so _repair_single_token can strip a
-        # hallucinated "/" — the reason prep exists) and then the denoise enhance
-        # ONLY when the lighter read fails the gate. Each rung is scored by a single
-        # image_to_data pass (mean word confidence) so the winner is deterministic.
-        # _repair_single_token runs on every rung so even a light-rung serial gets
-        # its separator scrubbed. One ladder, reusable for every supplier/field.
-        # Lazy import avoids the anchor<->template_mapper module-load cycle.
-        from extraction import template_mapper as _tm
-
-        def _gate(seg, conf):
-            # verify_fn (the anchor path) is authoritative; a gateless caller
-            # (defensive — anchor calls always pass verify_fn) uses a conf floor.
-            if verify_fn is not None:
-                return bool(seg) and bool(verify_fn(seg))
-            return bool(seg) and conf >= 60.0
-
-        light = _light_prep(crop)
-        heavy = None
-        best_seg, best_conf, best_min = None, -1.0, 0.0
-        for _src, _psm in (("light", 7), ("light", 6), ("heavy", 7), ("heavy", 6)):
-            if _src == "heavy" and heavy is None:
-                heavy = _tm._prep(crop)            # Rung 3 = today's recipe verbatim
-            rimg = light if _src == "light" else heavy
-            rtext, rconf, rmin = _read(rimg, _psm)
-            rseg = clean_crop_segment(rtext, val_type)
-            if rseg:
-                rseg = _repair_single_token(rimg, rseg, val_type)
-            if rseg and rconf > best_conf:
-                best_seg, best_conf, best_min = rseg, rconf, rmin
-            if _gate(rseg, rconf):
-                _set_meta(rconf, rmin)
-                return rseg
-
-        # No rung satisfied the gate. Degraded TEXT-LINE escalation (free-text
-        # fields, verify_fn only) — denoise + adaptive threshold, accepted only if
-        # it now PASSES the gate (a recovered-but-wrong name still can't commit).
-        # See ocr/text_enhance.enhance_text_crop.
-        if (verify_fn is not None and val_type in ("text", "multiline_text")
-                and not (best_seg and verify_fn(best_seg))):
-            try:
-                from ocr import text_enhance
-                eimg = text_enhance.enhance_text_crop(crop)
-                etext, _ec, _emin = _read(eimg, 7)
-                eseg = clean_crop_segment(etext, val_type)
-                if not eseg:
-                    etext, _ec, _emin = _read(eimg, 6)
-                    eseg = clean_crop_segment(etext, val_type)
-                if eseg and verify_fn(eseg):
-                    _set_meta(_ec, _emin)
-                    return eseg
-            except Exception:
-                pass
-        _set_meta(best_conf if best_conf >= 0 else 0.0, best_min)
-        return best_seg or None
+        return _ocr_crop_laddered(crop, val_type, verify_fn=verify_fn, meta=meta)
     except Exception:
         return None
 

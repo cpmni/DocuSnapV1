@@ -35,7 +35,7 @@ from extraction import registration
 # Reuse the SAME credibility test the learned-anchor stage uses, so a template
 # mapping is held to the same "is this value plausible for the field?" standard
 # (typed fields must match their validation pattern; free-text must not be debris).
-from extraction.anchor import _crop_is_credible, _repair_single_token, clean_crop_segment
+from extraction.anchor import _crop_is_credible, _repair_single_token, clean_crop_segment, _ocr_crop_laddered
 # And the SAME learned-format check Stage 4.5 uses, so the failsafe below judges a
 # value against the shape this field has historically taken on this template
 # (learned from confirmed docs) — label- and field-key-agnostic, one source of truth.
@@ -357,7 +357,8 @@ def _gate_value(text, val_type, field_key, validation_patterns, format_lookup,
     return text, salvaged, shape_warn
 
 
-def _mapping_result(value, full_confidence, expanded, salvaged, anchor, shape_warn=False):
+def _mapping_result(value, full_confidence, expanded, salvaged, anchor, shape_warn=False,
+                    ocr_conf=None, val_type=None):
     """Build a Stage 0.5 result dict with the shared confidence tiers used by the
     absolute fast path and the anchor-derived path. `full_confidence` selects the
     90 (anchor located / anchor_text present) vs 78 (no label) base; `expanded`
@@ -365,7 +366,12 @@ def _mapping_result(value, full_confidence, expanded, salvaged, anchor, shape_wa
     confidence so it can't outrank a clean Stage 1/2 read, and tags the method.
     `shape_warn` (a type-valid DERIVED-rung read that differs from the learned
     shape) caps confidence, tags the method `_shapewarn` and attaches a review
-    note — the value is kept (manual authority) but surfaced for verification."""
+    note — the value is kept (manual authority) but surfaced for verification.
+    `ocr_conf` (the read's mean word confidence, when the ladder captured it) caps a
+    FREE-TEXT value's confidence at ocr_conf+5 — mirroring anchor.py — so a garbled crop
+    ("504 Ald Unkesand Band 20|0U0U…") scores by its real read quality (~70 -> review)
+    instead of the synthetic 90. SCOPED to free-text: a structured value already validated
+    by its regex/type is NOT capped (Tesseract under-reads dashed refs)."""
     confidence = 90 if full_confidence else 78
     if expanded:
         confidence -= 12
@@ -373,6 +379,11 @@ def _mapping_result(value, full_confidence, expanded, salvaged, anchor, shape_wa
     if salvaged:
         confidence = min(confidence, 70)
         method += "_salvaged"
+    # Free-text confidence shaping from the real OCR mean (anchor.py parity): a garbled
+    # read can no longer commit at a synthetic 90; structured (regex-validated) fields
+    # are exempt because Tesseract under-reads their dashed/spaced digit groups.
+    if ocr_conf is not None and val_type in (None, "text", "multiline_text"):
+        confidence = min(confidence, int(ocr_conf) + 5)
     result = {
         "value":      value,
         "confidence": max(50, min(96, confidence)),
@@ -475,10 +486,11 @@ def _relocate_and_read(page, mapping, anchor_box, target_box, located, val_type,
     _cap = ((lambda c: slice_capture(field_key, "template_mapping", page_idx,
                (derived_target["x_norm"], derived_target["y_norm"],
                 derived_target["w_norm"], derived_target["h_norm"]), c, "target")) if slice_capture else None)
-    text = _crop_and_ocr(page, derived_target, val_type, ocr_text_fn, capture=_cap)
+    _d_meta = {}
+    text = _crop_and_ocr(page, derived_target, val_type, ocr_text_fn, capture=_cap, meta=_d_meta)
     expanded = False
     if not text and expansion > 0:
-        text = _crop_and_ocr(page, _expand_box(derived_target, expansion), val_type, ocr_text_fn)
+        text = _crop_and_ocr(page, _expand_box(derived_target, expansion), val_type, ocr_text_fn, meta=_d_meta)
         expanded = bool(text)
 
     # DERIVED rung (label-relocated crop): regex/type is a hard gate; a learned-
@@ -493,7 +505,7 @@ def _relocate_and_read(page, mapping, anchor_box, target_box, located, val_type,
         text,
         located.get("matched_text") is not None and bool(mapping.get("anchor_text")),
         expanded, salvaged, mapping.get("anchor_text") or field_key,
-        shape_warn=shapewarn)
+        shape_warn=shapewarn, ocr_conf=_d_meta.get('conf'), val_type=val_type)
 
 
 def _read_registration(page, mapping, target_box, val_type, ocr_text_fn, expansion,
@@ -569,10 +581,11 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
     _tcap = ((lambda c: slice_capture(field_key, "template_mapping", page_idx,
                (target_box["x_norm"], target_box["y_norm"],
                 target_box["w_norm"], target_box["h_norm"]), c, "target")) if slice_capture else None)
-    abs_text = _crop_and_ocr(page, target_box, val_type, ocr_text_fn, capture=_tcap)
+    _abs_meta = {}
+    abs_text = _crop_and_ocr(page, target_box, val_type, ocr_text_fn, capture=_tcap, meta=_abs_meta)
     abs_expanded = False
     if not abs_text and expansion > 0:
-        abs_text = _crop_and_ocr(page, _expand_box(target_box, expansion), val_type, ocr_text_fn)
+        abs_text = _crop_and_ocr(page, _expand_box(target_box, expansion), val_type, ocr_text_fn, meta=_abs_meta)
         abs_expanded = bool(abs_text)
     # ABSOLUTE drawn-box read: qualify on the field's REGEX/TYPE only
     # (shape_mode='ignore'). A manual anchor is an explicit human instruction —
@@ -629,7 +642,8 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
     if abs_text:
         return _mapping_result(abs_text, bool(mapping.get("anchor_text")),
                                abs_expanded, abs_salvaged,
-                               mapping.get("anchor_text") or field_key)
+                               mapping.get("anchor_text") or field_key,
+                               ocr_conf=_abs_meta.get('conf'), val_type=val_type)
 
     # ── REGISTRATION FALLBACK RUNG ("register, then read"): the drawn box at its
     # stored coords read nothing credible, so map the taught target box through the
@@ -976,13 +990,25 @@ def _ocr_lines(image):
     return lines
 
 
-def _crop_and_ocr(page, box, val_type, ocr_text_fn, capture=None):
+def _crop_and_ocr(page, box, val_type, ocr_text_fn, capture=None, meta=None):
     crop = _crop(page, _clamp_box(box))
     if crop is None:
         return None
     if capture:
         try: capture(crop)
         except Exception: pass   # dev-only slice capture; never disrupt OCR
+    # The IMAGE-OCR read now goes through the SAME light-first ladder anchor.py and
+    # region.py use (Oscar): the unconditional heavy autocontrast+SHARPEN recipe was
+    # mangling clean printed lines (a company name -> punctuation soup) — Stage 0.5 was
+    # the last crop path still on the heavy-only recipe. The ladder also writes the real
+    # OCR confidence into `meta` so _mapping_result can shape it instead of a synthetic
+    # constant. A CUSTOM reader (a test stub, or a future text-layer fn) keeps the legacy
+    # path untouched, so existing mapping tests are unaffected.
+    if ocr_text_fn is _ocr_text:
+        try:
+            return _ocr_crop_laddered(crop, val_type, verify_fn=None, meta=meta) or None
+        except Exception:
+            return None
     text = ocr_text_fn(crop)
     if not text:
         return None
