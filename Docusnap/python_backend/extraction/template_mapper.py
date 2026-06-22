@@ -465,25 +465,63 @@ def _relocate_and_read(page, mapping, anchor_box, target_box, located, val_type,
     by the early drift branch and the late single-label fallback in _extract_one.
     Returns a Stage 0.5 result dict, or None if the relocated crop fails the gate.
 
-    The stored offset is BOX-origin → BOX-origin (saveMapping records
-    target_x − anchor_x from the admin-drawn box corners), but _locate_anchor
-    reports the label's TIGHT OCR word-bbox, inset to the right of / below the drawn
-    anchor box. Re-derive the located anchor's box-origin equivalent first (assume
-    the label is roughly centred, so the inset ≈ half the width/height slack) so the
-    offset is applied origin-to-origin — otherwise leading glyphs get clipped
-    ("PROFILE" → "ROFILE"). General to every mapping, not tuned to one template."""
-    # Refuse to relocate off a whole-ROW match (cross-column OCR merge) — its
-    # left-anchored box would derive a wrong-column crop and read garbage. Better
-    # to fall through (early branch) / omit the field (late path) than commit junk.
-    if _located_too_wide(anchor_box, located):
-        return None
+    Two paths, in order (parity with Stage 2 anchor.py):
+      1. INLINE HARVEST — in a key/value row the value shares the located label's OCR
+         line ("label …gap… value") and sits in a far column a geometric crop can't
+         reach, so read it STRAIGHT off the line (`located['inline_value']`), held to
+         the SAME gate as a crop read. THIS is what makes "Ticket No.  2605-0769-1"
+         read the ref, not the row above — and it was entirely missing from Stage 0.5.
+      2. GEOMETRIC DERIVATION — value not on the label's line (label-above layouts):
+         seat a crop at located-label-origin + stored offset. Uses the TIGHT label box
+         (`located['label_box']`), NOT the whole OCR line (which overshoots a "label
+         …gap… value" row — the root of the relocation silently deriving the wrong row).
+
+    The stored offset is BOX-origin → BOX-origin (saveMapping records target − anchor
+    from the drawn box corners); the inset re-derives the located label's box-origin
+    (label ≈ centred in the drawn anchor box) so the offset applies origin-to-origin
+    (else leading glyphs clip, "PROFILE"→"ROFILE"). Returns a result dict or None."""
     dx = mapping.get("offset_dx_norm") or 0.0
     dy = mapping.get("offset_dy_norm") or 0.0
-    inset_x = max(0.0, (anchor_box["w_norm"] - located["w_norm"]) / 2.0)
-    inset_y = max(0.0, (anchor_box["h_norm"] - located["h_norm"]) / 2.0)
+
+    # ── 1. INLINE HARVEST off the located label's OWN line (no extra OCR — the line
+    # was already read during the locate). The reliable read for a key/value row. ──
+    iv = located.get("inline_value")
+    if iv:
+        hv = _clean_value(iv, val_type)
+        if hv and val_type == "alphanumeric" and " " in hv:
+            hv = hv.split()[0]          # a code column is one token; drop trailing captions
+        hv, iv_salvaged, iv_shapewarn = _gate_value(
+            hv, val_type, field_key, validation_patterns, format_lookup, shape_mode='flag')
+        if hv:
+            ib = located.get("inline_box")
+            if slice_capture and ib:
+                try:
+                    pw, ph = page.size
+                    _icrop = page.crop((int(ib["x_norm"] * pw), int(ib["y_norm"] * ph),
+                                        int((ib["x_norm"] + ib["w_norm"]) * pw),
+                                        int((ib["y_norm"] + ib["h_norm"]) * ph)))
+                    slice_capture(field_key, "template_mapping", page_idx,
+                                  (ib["x_norm"], ib["y_norm"], ib["w_norm"], ib["h_norm"]),
+                                  _icrop, "target")
+                except Exception:
+                    pass                # dev-only; never disrupt extraction
+            return _mapping_result(
+                hv, located.get("matched_text") is not None and bool(mapping.get("anchor_text")),
+                False, iv_salvaged, mapping.get("anchor_text") or field_key,
+                shape_warn=iv_shapewarn, val_type=val_type)
+
+    # ── 2. GEOMETRIC DERIVATION off the tight LABEL box (falls back to the whole
+    # line only when no label_box, and only then does _located_too_wide guard it). ──
+    lb = located.get("label_box")
+    if lb is None:
+        if _located_too_wide(anchor_box, located):
+            return None
+        lb = located
+    inset_x = max(0.0, (anchor_box["w_norm"] - (lb.get("w_norm") or 0.0)) / 2.0)
+    inset_y = max(0.0, (anchor_box["h_norm"] - (lb.get("h_norm") or 0.0)) / 2.0)
     derived_target = {
-        "x_norm": _clamp01(located["x_norm"] - inset_x + dx),
-        "y_norm": _clamp01(located["y_norm"] - inset_y + dy),
+        "x_norm": _clamp01(lb["x_norm"] - inset_x + dx),
+        "y_norm": _clamp01(lb["y_norm"] - inset_y + dy),
         "w_norm": target_box["w_norm"],
         "h_norm": target_box["h_norm"],
     }
@@ -627,7 +665,15 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
         drift_located = located or _locate_anchor(
             page, anchor_box, anchor_text, 1.0, ocr_lines_fn,
             min_search=_ANCHOR_SEARCH_MIN)
-        if drift_located and _label_drifted(anchor_box, drift_located):
+        # Prefer the rigid label→value read over the stationary drawn box when the
+        # page has DRIFTED, OR whenever the value is INLINE on the label's own row (a
+        # key/value layout) — there the harvest is the most reliable read regardless
+        # of drift, and the drawn box otherwise commits the row ABOVE on a shifted
+        # scan (the "anchor and data point aren't linked" bug). Falls through to the
+        # absolute read only if the relocation fails the gate.
+        if (drift_located and drift_located.get("matched_text") is not None
+                and (_label_drifted(anchor_box, drift_located)
+                     or drift_located.get("inline_value"))):
             relocated = _relocate_and_read(page, mapping, anchor_box, target_box,
                                            drift_located, val_type, ocr_text_fn,
                                            expansion, validation_patterns,
