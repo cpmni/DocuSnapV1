@@ -109,27 +109,33 @@ const LICENSE_WINDOW_OPTIONS = { width: 460, height: 560, resizable: false, mini
 const ONBOARDING_WINDOW_OPTIONS = { width: 720, height: 640, resizable: false, minimizable: false, maximizable: false };
 const HELP_WINDOW_OPTIONS = { width: 940, height: 700, minWidth: 640, minHeight: 460 };
 
+// Programmatic window close that DESTROYS the window even with the tray
+// close-interceptor active. Primary windows hide to tray on a USER close; the
+// app's own transitions (login↔shell, onboarding) must instead destroy them, or
+// a re-shown hidden window would pile up and could leak the previous user's
+// session. _allowClose tells the interceptor to let this close through.
+function destroyWindow(name) {
+  const w = windows[name];
+  if (w && !w.isDestroyed()) { w._allowClose = true; w.close(); }
+}
+
 // Swap the whole app shell between "logged out" and "in the app". The login
 // window is always created BEFORE the others are closed, so the app never
-// passes through a zero-window moment that would trip window-all-closed.
+// passes through a zero-window moment.
 function showLoginScreen() {
   createWindow('login', LOGIN_WINDOW_OPTIONS, 'index.html');
-  // Logout MUST destroy the main shell, never hide it — the tray close-interceptor
-  // would otherwise hide it, and re-showing that window would leak the previous
-  // user's session. Mark it so the interceptor allows the close.
-  if (windows['main']) windows['main']._allowClose = true;
-  Object.keys(windows).forEach((name) => {
-    if (name !== 'login') windows[name]?.close();
-  });
+  // Destroy (not hide) every other window — especially the main shell, so logging
+  // out can't leave a hidden previous-user session reachable from the tray.
+  Object.keys(windows).forEach((name) => { if (name !== 'login') destroyWindow(name); });
   refreshTrayMenu();   // reflect logged-out state (disable Review/Settings)
 }
 
 // Raw shell open — only ever reached AFTER the licensing gate has allowed it.
 function openMainShell() {
   createWindow('main', MAIN_WINDOW_OPTIONS, 'index.html');
-  windows['login']?.close();
-  windows['license']?.close();
-  windows['onboarding']?.close();
+  destroyWindow('login');
+  destroyWindow('license');
+  destroyWindow('onboarding');
   refreshTrayMenu();   // reflect logged-in state (enable Review/Settings)
 }
 
@@ -146,8 +152,8 @@ function needsOnboarding() {
 
 function showOnboarding() {
   createWindow('onboarding', ONBOARDING_WINDOW_OPTIONS, 'index.html');
-  windows['login']?.close();
-  windows['license']?.close();
+  destroyWindow('login');
+  destroyWindow('license');
 }
 
 // Licensing gate (Phase 2). The MAIN process is the sole decider; the renderer
@@ -246,6 +252,10 @@ function launchStartupWindow() {
 // non-modal so you can watch live processing while using the main window.
 const CHILD_WINDOWS   = new Set(['review', 'settings', 'search', 'teach', 'dev-inspector']);
 const NON_MODAL_CHILD = new Set(['dev-inspector']);
+// Top-level "primary" windows that hide to the tray on a user close (the app then
+// fully quits ONLY via tray Exit). Their programmatic transitions destroy them
+// via destroyWindow(). Child windows close normally.
+const PRIMARY_WINDOWS = new Set(['login', 'license', 'onboarding', 'main']);
 
 const winStateFile = () => path.join(app.getPath('userData'), 'window-state.json');
 function loadWinStates() { try { return JSON.parse(fs.readFileSync(winStateFile(), 'utf8')); } catch { return {}; } }
@@ -356,14 +366,14 @@ function createWindow(name, options, htmlFile) {
 
   win.loadFile(path.join(__dirname, 'windows', name, 'index.html'));
   win.on('closed', () => { delete windows[name]; });
-  // Minimise-to-tray: a logged-in user closing the MAIN shell hides it (the core
-  // keeps running for watch/processing/remote clients) instead of quitting — only
-  // when authenticated, NOT a logged-out background mode. A real Exit sets
-  // isQuitting; logout sets win._allowClose so the shell is DESTROYED, not hidden
-  // (a re-shown hidden window would leak the previous user's session).
-  if (name === 'main') {
+  // Minimise-to-tray: closing ANY primary window (login/license/onboarding/main)
+  // hides it so the core keeps running for watch/processing/remote clients. The
+  // app fully quits ONLY via tray Exit (which sets isQuitting). The app's own
+  // transitions destroy windows via destroyWindow() (sets win._allowClose) — so a
+  // logout/swap can't leave a hidden previous-user shell reachable from the tray.
+  if (PRIMARY_WINDOWS.has(name)) {
     win.on('close', (e) => {
-      if (!isQuitting && !win._allowClose && authModule.getCurrentUser && authModule.getCurrentUser()) {
+      if (!isQuitting && !win._allowClose) {
         e.preventDefault();
         win.hide();
       }
@@ -830,9 +840,8 @@ app.whenReady().then(() => {
   launchStartupWindow();
 });
 
-// Quit when no windows remain. With the tray close-interceptor the MAIN shell is
-// HIDDEN (not destroyed) on close, so this does NOT fire while the app sits in the
-// tray. It only fires when there's genuinely no shell window — e.g. closing the
-// login window before signing in — where quitting is correct (tray mode is a
-// logged-in convenience, and we never leave a headless background process).
-app.on('window-all-closed', () => { app.quit(); });
+// The app fully quits ONLY via tray Exit (which sets isQuitting). Every primary
+// window — including the login screen — hides to the tray on close (kept alive),
+// so this normally never fires; if all windows are ever destroyed without a quit
+// in progress, do nothing and stay resident (the tray keeps the app reachable).
+app.on('window-all-closed', () => { if (isQuitting) app.quit(); });
