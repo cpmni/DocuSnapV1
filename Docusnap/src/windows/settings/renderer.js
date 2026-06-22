@@ -2736,8 +2736,10 @@ async function loadSeats() {
     seatsTbody.innerHTML = rows.map(r => `
       <tr>
         <td>${escHtml(r.username || '—')}</td>
-        <td>${escHtml(r.hostname || '—')}</td>
-        <td style="font-family:var(--mono)">${escHtml(r.ip || '—')}</td>
+        <td>
+          <div>${escHtml(r.hostname || r.ip || '—')}</div>
+          ${r.hostname && r.ip ? `<div style="color:var(--muted); font-size:11px; font-family:var(--mono)">${escHtml(r.ip)}</div>` : ''}
+        </td>
         <td title="${escHtml(r.lastSeen ? new Date(r.lastSeen).toLocaleString() : '')}">${escHtml(_seatAgo(r.lastSeen))}</td>
         <td><button class="btn danger" data-seat="${escHtml(r.id)}">Release</button></td>
       </tr>`).join('');

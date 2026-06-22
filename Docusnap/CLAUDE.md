@@ -1489,14 +1489,20 @@ keys are removed — don't re-add them). `postinstall` runs `install-app-deps`; 
 **unsigned** → SmartScreen "More info → Run anyway" on the VM. Run gate tests with
 Electron-as-Node, not plain node (native-module ABI).
 
-**Dist versioning (implemented).** Each build stamps a DISTINCT, sortable, traceable
-revision into the installer filename, so a rebuild no longer overwrites the previous one.
-`scripts/build-rev.js` `buildRev()` returns `<UTC yyyymmdd-hhmm>-<git short sha>` (e.g.
-`20260622-1133-9f158c5`), or the `BUILD_REV` env var verbatim if set. BOTH builds call it —
-core (`package.json` "build") and client (`client/package.json` "dist") — and both
-`nsis.artifactName`s carry `-r${env.BUILD_REV}`, giving e.g. `ScanFinder Setup
-2.0.0-r<rev>.exe` and `ScanFinder Search Client Setup 1.0.2-r<rev>.exe`. For a real release,
-override with `BUILD_REV=2.1.0 npm run build` AND bump the package.json `version`.
+**Versioning (policy: manual SemVer + automatic build stamp — Eric+Gary consensus).**
+THREE INDEPENDENT axes: the core app version, the client app version, and the `/v1`
+contract version (`API_CONTRACT_VERSION` in `src/modules/api/handler.js` — the real
+client↔server compatibility signal; never gate licensing on it). Bump `package.json`
+`version` **manually, at release only**, git-tagged (MAJOR breaking/licensing-tier · MINOR
+feature/add-on · PATCH fix) — do **NOT** auto-bump per build (it churns git + pollutes the
+number licensing/support reads). Every build is still made DISTINCT + traceable by an
+automatic stamp: `scripts/build-rev.js` `buildRev()` = `<UTC yyyymmdd-hhmm>-<git short sha>`
+(or `BUILD_REV` verbatim), carried by both `nsis.artifactName`s as `-r${env.BUILD_REV}` →
+e.g. `ScanFinder Setup 2.0.0-r20260622-1133-9f158c5.exe`, AND baked into the packaged
+`package.json` via `--config.extraMetadata.buildRev` so the **About box** self-reports
+`Version <ver> (<rev>)` (unpackaged dev reads the live git sha). Release ritual: bump
+`version` → `git tag` → `BUILD_REV=<version> npm run build` (optionally branch artifactName
+to drop the `-r<ver>` for a clean `ScanFinder Setup 2.1.0.exe`).
 
 Delete `%APPDATA%\DocuSnap\docusnap.db` to reset DB during development (also clears users,
 cached license tokens, and the enforcement setting).

@@ -49,6 +49,8 @@ function createClient(opts = {}) {
   const expectedContract = opts.expectedContract || CLIENT_CONTRACT;
   const allowSelfSigned = !!opts.allowSelfSigned; // dev-only escape hatch (env), not the UI
   const ca = opts.ca || null;                     // pinned server cert/CA (PEM) — verification stays ON
+  const clientId = opts.clientId || null;         // stable per-install id → sticky seat survives a DHCP/IP change
+  const hostname = opts.hostname || null;         // display-only client identity (never used for enforcement)
   let token = null;
 
   // Reuse one keep-alive TLS connection for the pinned-CA path (search / detail /
@@ -110,7 +112,7 @@ function createClient(opts = {}) {
   }
 
   async function login(username, password, totp) {
-    const r = await request('POST', '/v1/auth/login', { body: { username, password, totp } });
+    const r = await request('POST', '/v1/auth/login', { body: { username, password, totp, client_id: clientId, hostname } });
     if (r.status === 200 && r.json && r.json.token) {
       token = r.json.token;
       return { ok: true, user: r.json.user, expiresAt: r.json.expiresAt };
@@ -181,7 +183,7 @@ function createClient(opts = {}) {
   // token in one step (sets the token on success). Bootstrap (insecure) fetch.
   async function enroll(username, password, totpCode, code) {
     const q = code ? `?code=${encodeURIComponent(code)}` : '';
-    const r = await request('POST', `/v1/enroll${q}`, { body: { username, password, totp: totpCode }, insecure: true });
+    const r = await request('POST', `/v1/enroll${q}`, { body: { username, password, totp: totpCode, client_id: clientId, hostname }, insecure: true });
     if (r.status === 200 && r.json && r.json.token) {
       token = r.json.token;
       return { ok: true, caPem: r.json.caPem, caFingerprint: r.json.caFingerprintSha256, user: r.json.user, expiresAt: r.json.expiresAt };

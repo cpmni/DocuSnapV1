@@ -611,9 +611,15 @@ app.whenReady().then(() => {
 
   // ── About box: version details + third-party attribution ───────────────────
   ipcMain.handle('get-app-about', () => {
-    let copyright = '';
+    let copyright = '', buildRev = null;
     try { copyright = require('../package.json').build.copyright || ''; } catch { /* ignore */ }
-    return { name: app.getName(), version: app.getVersion(), electron: process.versions.electron, copyright };
+    // Build stamp: baked into the packaged package.json by electron-builder
+    // (extraMetadata.buildRev = BUILD_REV); in unpackaged dev, read the live git sha.
+    try { buildRev = require('../package.json').buildRev || null; } catch { /* not baked */ }
+    if (!buildRev && !app.isPackaged) {
+      try { buildRev = require('child_process').execSync('git rev-parse --short HEAD', { cwd: __dirname, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() || null; } catch { /* no git */ }
+    }
+    return { name: app.getName(), version: app.getVersion(), electron: process.versions.electron, buildRev, copyright };
   });
   // Opens the bundled THIRD-PARTY-LICENSES.txt in the OS default viewer.
   // resourcePath resolves it in BOTH dev (repo root) and packaged (extraResources).

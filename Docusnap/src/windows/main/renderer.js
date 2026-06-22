@@ -652,7 +652,7 @@ async function openAbout() {
   if (!_aboutLoaded) {
     try {
       const a = await window.docusnap.getAppAbout();
-      document.getElementById('about-version').textContent   = a.version ? `Version ${a.version}` : '';
+      document.getElementById('about-version').textContent   = a.version ? `Version ${a.version}${a.buildRev ? ` (${a.buildRev})` : ''}` : '';
       document.getElementById('about-electron').textContent  = a.electron ? `Electron ${a.electron}` : '';
       document.getElementById('about-copyright').textContent = a.copyright || '';
       _aboutLoaded = true;

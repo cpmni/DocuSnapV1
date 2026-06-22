@@ -259,7 +259,7 @@ async function openAbout() {
   if (!_aboutLoaded) {
     try {
       const a = await window.scanfinder.about();
-      $('about-version').textContent   = a.version ? `Version ${a.version}` : '';
+      $('about-version').textContent   = a.version ? `Version ${a.version}${a.buildRev ? ` (${a.buildRev})` : ''}` : '';
       $('about-electron').textContent  = a.electron ? `Electron ${a.electron}` : '';
       $('about-copyright').textContent = a.copyright || '';
       _aboutLoaded = true;

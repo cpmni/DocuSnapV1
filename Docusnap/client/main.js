@@ -18,7 +18,9 @@
 
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 const { createClient } = require('./apiClient');
 
 const ALLOW_SELF_SIGNED = process.env.SCANFINDER_CLIENT_ALLOW_SELF_SIGNED === '1';
@@ -27,7 +29,18 @@ let serverConfig = null;   // { host, port, tls } | null
 let client = null;         // rebuilt whenever the server changes
 
 const configPath = () => path.join(app.getPath('userData'), 'scanfinder-client.json');
+const clientIdPath = () => path.join(app.getPath('userData'), 'scanfinder-client-id');
 const urlOf = (c) => `${c.tls ? 'https' : 'http'}://${c.host}:${c.port}`;
+
+// A stable per-install id, generated ONCE and reused, so a returning client keeps its
+// sticky seat across DHCP/IP changes (the server keys seats on client_id, else
+// username@ip — an IP change otherwise looks like a brand-new client).
+function getClientId() {
+  try { const id = fs.readFileSync(clientIdPath(), 'utf8').trim(); if (id) return id; } catch { /* generate below */ }
+  const id = crypto.randomUUID();
+  try { fs.writeFileSync(clientIdPath(), id); } catch { /* best-effort; falls back to username@ip server-side */ }
+  return id;
+}
 
 function loadServerConfig() {
   const env = process.env.SCANFINDER_CLIENT_API_URL; // env override wins (dev/launcher)
@@ -35,7 +48,12 @@ function loadServerConfig() {
   try { return JSON.parse(fs.readFileSync(configPath(), 'utf8')); } catch { return null; }
 }
 function saveServerConfig(c) { try { fs.writeFileSync(configPath(), JSON.stringify(c, null, 2)); } catch { /* ignore */ } }
-function buildClient(c) { client = createClient({ baseUrl: urlOf(c), allowSelfSigned: ALLOW_SELF_SIGNED, ca: c.caPem || undefined }); }
+function buildClient(c) {
+  client = createClient({
+    baseUrl: urlOf(c), allowSelfSigned: ALLOW_SELF_SIGNED, ca: c.caPem || undefined,
+    clientId: getClientId(), hostname: os.hostname(),
+  });
+}
 
 function createWindow() {
   win = new BrowserWindow({
@@ -211,9 +229,15 @@ ipcMain.handle('client-wf-recall',     guarded((_e, { id, version }) => client.w
 
 // About box: version details + open the bundled third-party notice.
 ipcMain.handle('client-about', () => {
-  let copyright = '';
+  let copyright = '', buildRev = null;
   try { copyright = require('./package.json').build.copyright || ''; } catch { /* ignore */ }
-  return { name: app.getName(), version: app.getVersion(), electron: process.versions.electron, copyright };
+  // Build stamp: baked into the packaged package.json by electron-builder
+  // (extraMetadata.buildRev = BUILD_REV); in unpackaged dev, read the live git sha.
+  try { buildRev = require('./package.json').buildRev || null; } catch { /* not baked */ }
+  if (!buildRev && !app.isPackaged) {
+    try { buildRev = require('child_process').execSync('git rev-parse --short HEAD', { cwd: __dirname, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() || null; } catch { /* no git */ }
+  }
+  return { name: app.getName(), version: app.getVersion(), electron: process.versions.electron, buildRev, copyright };
 });
 ipcMain.handle('client-open-licenses', async () => {
   // Dev: file sits beside main.js; packaged: extraResources drops it in resources/.
