@@ -31,7 +31,9 @@ def _render_page(page, scale):
     bitmap = page.render(scale=scale)
     img    = bitmap.to_pil()
     buf    = BytesIO()
-    img.save(buf, format='PNG', optimize=True)
+    # No optimize=True: it's the slowest PNG step (extra zlib pass) for only a
+    # marginal size win — not worth it for an on-demand preview render over a LAN.
+    img.save(buf, format='PNG')
     b64 = base64.b64encode(buf.getvalue()).decode()
     return f'data:image/png;base64,{b64}'
 

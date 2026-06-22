@@ -106,14 +106,39 @@ ipcMain.handle('client-fetch-ca', async (_e, { host, port, code } = {}) => {
   try { return await tmp.fetchCa(code); } catch (e) { return { ok: false, error: e.message }; }
 });
 
+// ── Page cache ────────────────────────────────────────────────────────────────
+// Rendering a document's pages is the slow path (the host renders PDF→PNG on
+// demand + base64-transfers them, ~1s). Cache successful page payloads by docId
+// so re-clicking a document is instant. Bounded LRU; held in the MAIN process
+// (out of the renderer, like the auth token) and cleared on logout — these are
+// authenticated document images.
+const PAGE_CACHE_MAX = 20;
+const pageCache = new Map();   // id -> { status, json }
+function _pageCacheGet(id) {
+  if (!pageCache.has(id)) return undefined;
+  const v = pageCache.get(id);
+  pageCache.delete(id); pageCache.set(id, v);   // bump to most-recently-used
+  return v;
+}
+function _pageCacheSet(id, v) {
+  pageCache.set(id, v);
+  while (pageCache.size > PAGE_CACHE_MAX) pageCache.delete(pageCache.keys().next().value);
+}
+
 ipcMain.handle('client-config',       () => ({ apiUrl: serverConfig ? urlOf(serverConfig) : null }));
 ipcMain.handle('client-connect',      () => client ? client.connect() : { ok: false, mode: 'block', reason: 'No server configured.' });
 ipcMain.handle('client-login',        (_e, { username, password, totp }) => client ? client.login(username, password, totp) : { ok: false, error: 'No server configured.' });
-ipcMain.handle('client-logout',       () => client ? client.logout() : { ok: true });
+ipcMain.handle('client-logout',       () => { pageCache.clear(); return client ? client.logout() : { ok: true }; });
 ipcMain.handle('client-entitlement',  () => client ? client.entitlement() : { status: 0, json: null });
 ipcMain.handle('client-search',       (_e, params) => client.search(params));
 ipcMain.handle('client-get-document', (_e, id) => client.getDocument(id));
-ipcMain.handle('client-get-pages',    (_e, id) => client.getPages(id));
+ipcMain.handle('client-get-pages',    async (_e, id) => {
+  const hit = _pageCacheGet(id);
+  if (hit !== undefined) return hit;                 // instant re-click
+  const res = await client.getPages(id);
+  if (res && res.status === 200 && res.json) _pageCacheSet(id, res);   // cache only successful payloads
+  return res;
+});
 ipcMain.handle('client-authed',       () => client ? client.isAuthenticated() : false);
 
 // Mailbox / approval workflow.

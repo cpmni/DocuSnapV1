@@ -51,6 +51,15 @@ function createClient(opts = {}) {
   const ca = opts.ca || null;                     // pinned server cert/CA (PEM) — verification stays ON
   let token = null;
 
+  // Reuse one keep-alive TLS connection for the pinned-CA path (search / detail /
+  // pages all hit the same host) instead of a fresh TCP+TLS handshake per request.
+  // CA verification stays FULLY ON — the pinned `ca` + rejectUnauthorized live on
+  // the agent. Insecure one-shot bootstrap calls (fetchCa/enroll) and the dev
+  // self-signed escape do NOT pool — they keep their per-request override below.
+  const secureAgent = (ca && !allowSelfSigned)
+    ? new https.Agent({ keepAlive: true, ca, rejectUnauthorized: true })
+    : null;
+
   function request(method, p, { body, withAuth, insecure } = {}) {
     return new Promise((resolve, reject) => {
       let u;
@@ -64,8 +73,15 @@ function createClient(opts = {}) {
         method, headers, hostname: u.hostname, port: u.port,
         path: u.pathname + u.search,
       };
-      if (u.protocol === 'https:' && (allowSelfSigned || insecure)) reqOpts.rejectUnauthorized = false; // insecure = one-shot CA bootstrap
-      if (u.protocol === 'https:' && ca && !insecure) reqOpts.ca = ca; // trust this cert/CA; full verification kept on
+      if (u.protocol === 'https:') {
+        if (insecure || allowSelfSigned) {
+          reqOpts.rejectUnauthorized = false;   // one-shot CA bootstrap / dev escape — no pooling
+        } else if (secureAgent) {
+          reqOpts.agent = secureAgent;          // pinned-CA keep-alive (ca + verification on the agent)
+        } else if (ca) {
+          reqOpts.ca = ca;                       // pinned CA without a pooled agent (fallback)
+        }
+      }
       const req = lib.request(reqOpts, (res) => {
         let out = '';
         res.on('data', d => { out += d; });
