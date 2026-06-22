@@ -14,7 +14,7 @@ function admin_handle_post(PDO $pdo): void
         return;
     }
     $backAccount = filter_input(INPUT_POST, 'account_id', FILTER_VALIDATE_INT);
-    $back = $backAccount ? ('index.php?account=' . $backAccount) : 'index.php';
+    $back = $backAccount ? ('account.php?account=' . $backAccount) : 'index.php';
 
     if (!csrf_check()) {
         flash_set('err', 'Security check failed. Please retry.');
@@ -59,7 +59,7 @@ function admin_handle_post(PDO $pdo): void
             audit_event($pdo, $accountId, null, 'admin.entitlement_created',
                 "entitlement=$newId product=$productId seats=$seats");
             flash_set('ok', "Entitlement #$newId created with $seats seat(s).");
-            header('Location: index.php?account=' . $accountId);
+            header('Location: account.php?account=' . $accountId);
             exit;
         }
 
@@ -117,7 +117,7 @@ function admin_handle_post(PDO $pdo): void
             audit_event($pdo, $accountId, null, 'admin.features_set',
                 "product=$productId core={$counts['core']} search={$counts['search']} workflow={$counts['workflow']}");
             flash_set('ok', "Features updated — core {$counts['core']}, search {$counts['search']}, workflow {$counts['workflow']}.");
-            header('Location: index.php?account=' . $accountId);
+            header('Location: account.php?account=' . $accountId);
             exit;
         }
 
@@ -138,7 +138,7 @@ function admin_handle_post(PDO $pdo): void
             $pdo->commit();
             audit_event($pdo, (int) $ent['account_id'], null, 'admin.entitlement_revoked', "entitlement=$entId");
             flash_set('ok', "Entitlement #$entId revoked and its bound seats released.");
-            header('Location: index.php?account=' . (int) $ent['account_id']);
+            header('Location: account.php?account=' . (int) $ent['account_id']);
             exit;
         }
 
@@ -158,7 +158,7 @@ function admin_handle_post(PDO $pdo): void
             audit_event($pdo, (int) $seat['account_id'], null, 'admin.seat_revoked',
                 "seat=$seatId entitlement={$seat['ent_id']}");
             flash_set('ok', "Seat #$seatId released.");
-            header('Location: index.php?account=' . (int) $seat['account_id']);
+            header('Location: account.php?account=' . (int) $seat['account_id']);
             exit;
         }
 
@@ -213,7 +213,7 @@ function admin_handle_post(PDO $pdo): void
             // again. Rendered as a success callout on the next page load, then dropped.
             $_SESSION['issued_key'] = ['key' => $key, 'meta' => "account #$accId · license #$entId · valid until $expiresAt"];
             flash_set('ok', 'Temporary license created — copy the key below now, it is shown only once.');
-            header('Location: index.php');
+            header('Location: temp.php');
             exit;
         }
 
@@ -239,7 +239,7 @@ function admin_handle_post(PDO $pdo): void
             audit_event($pdo, (int) $ent['account_id'], null, 'admin.temp_license_extended',
                 "entitlement=$entId plus{$days}d new_expires=$newExpiry");
             flash_set('ok', "Licence #$entId extended by $days day(s) — now expires $newExpiry.");
-            header('Location: index.php');
+            header('Location: temp.php');
             exit;
         }
 
@@ -263,7 +263,7 @@ function admin_handle_post(PDO $pdo): void
             $pdo->prepare('UPDATE device_registrations SET trial_end = ? WHERE id = ?')->execute([$newEnd, $trialId]);
             audit_event($pdo, null, (string) $tr['fp_hash'], 'admin.trial_extended', "trial=$trialId plus{$days}d new_end=$newEnd");
             flash_set('ok', "Trial #$trialId extended by $days day(s) — now expires $newEnd.");
-            header('Location: index.php#trials');
+            header('Location: trials.php');
             exit;
         }
 
@@ -281,7 +281,7 @@ function admin_handle_post(PDO $pdo): void
             $pdo->prepare('UPDATE device_registrations SET trial_end = NOW() WHERE id = ?')->execute([$trialId]);
             audit_event($pdo, null, (string) $tr['fp_hash'], 'admin.trial_revoked', "trial=$trialId");
             flash_set('ok', "Trial #$trialId revoked — it is no longer active.");
-            header('Location: index.php#trials');
+            header('Location: trials.php');
             exit;
         }
 

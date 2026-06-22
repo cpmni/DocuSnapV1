@@ -37,9 +37,9 @@ function admin_nav(string $current): void
     // index.php#anchor; once carved into its own page it points at that page.
     $items = [
         'index'    => ['index.php',          'Dashboard'],
-        'accounts' => ['index.php#accounts', 'Accounts'],            // dashboard (until Slice 4)
-        'trials'   => ['index.php#trials',   'Trials'],              // dashboard (until Slice 3)
-        'temp'     => ['index.php#temp',     'Temporary licenses'],  // dashboard (until Slice 3)
+        'accounts' => ['accounts.php',       'Accounts'],            // split (Slice 4)
+        'trials'   => ['trials.php',         'Trials'],              // split (Slice 3)
+        'temp'     => ['temp.php',           'Temporary licenses'],  // split (Slice 3)
         'products' => ['products.php',       'Products'],            // split (Slice 2)
         'activity' => ['activity.php',       'Activity'],            // split (Slice 2)
     ];
