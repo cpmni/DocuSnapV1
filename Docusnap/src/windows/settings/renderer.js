@@ -1670,10 +1670,21 @@ async function runRegistrationPreview() {
   if (token !== tplPreviewRunToken) return;
   tplPreviewBoxes = results;
   const located = Object.values(results).filter(r => r.target_box).length;
-  if (statusEl) statusEl.textContent =
-    `Resolved ${located}/${mappings.length} on this page` +
-    (landmarks.length ? ` · ${landmarks.length} landmarks active.` : ' · no landmarks (per-field anchors only — try “Regenerate landmarks”).') +
-    ' Grey = drawn, colour = resolved.';
+  // Per-field diagnostic: which rung resolved it (REG=global transform, map=anchor+offset,
+  // anc=anchor) and how far the resolved box moved VERTICALLY from where it was drawn.
+  const diag = mappings.map(m => {
+    const r = results[m.field_key] || {};
+    let where = 'not located';
+    if (Array.isArray(r.target_box)) {
+      const dyPct = Math.round((r.target_box[1] - (m.target_y_norm || 0)) * 1000) / 10;
+      where = Math.abs(dyPct) < 1 ? 'at drawn position'
+            : `moved ${dyPct > 0 ? 'DOWN' : 'UP'} ${Math.abs(dyPct)}%`;
+    }
+    return `${m.field_key}: ${shortMethod(r.method)} · ${where}`;
+  });
+  if (statusEl) statusEl.innerHTML =
+    escHtml(`Resolved ${located}/${mappings.length} · ${landmarks.length} landmarks · REG=transform, map=anchor+offset`) +
+    '<br>' + diag.map(d => escHtml(d)).join('<br>');
   redrawTplCanvas();
 }
 
@@ -1684,20 +1695,34 @@ function drawRegistrationPreview() {
   const w = tplCanvas.width, h = tplCanvas.height;
   for (const m of (selectedTemplate.field_mappings || [])) {
     if (!m.enabled || (m.page_number || 0) !== tplCurrentPage) continue;
+    // DRAWN (stored) position — faint grey + label, so it can be compared to the value.
     drawNormBox(m.anchor_x_norm, m.anchor_y_norm, m.anchor_w_norm, m.anchor_h_norm, w, h, '#9aa3b2', null, false);
     drawNormBox(m.target_x_norm, m.target_y_norm, m.target_w_norm, m.target_h_norm, w, h, '#9aa3b2', null, false);
+    drawPreviewLabel(`${m.field_key} (drawn)`,
+      [m.target_x_norm, m.target_y_norm, m.target_w_norm, m.target_h_norm], w, h, '#6b7280');
     const r = tplPreviewBoxes[m.field_key];
     if (!r) continue;
     if (r.anchor_box) drawArrBox(r.anchor_box, w, h, '#4f8ef7');
     if (r.target_box) {
       drawArrBox(r.target_box, w, h, '#3ecf8e');
-      drawPreviewLabel(r.value ? `${m.field_key} = ${r.value}` : m.field_key, r.target_box, w, h, '#2f9e63');
+      // [rung] = which mechanism placed this box: REG=global transform, map=anchor+offset.
+      drawPreviewLabel(`${m.field_key}${r.value ? ' = ' + r.value : ''} [${shortMethod(r.method)}]`,
+        r.target_box, w, h, '#2f9e63');
     } else {
       drawNormBox(m.target_x_norm, m.target_y_norm, m.target_w_norm, m.target_h_norm, w, h, '#e0a23c', null, true);
       drawPreviewLabel(`${m.field_key}: not located`,
         [m.target_x_norm, m.target_y_norm, m.target_w_norm, m.target_h_norm], w, h, '#b07816');
     }
   }
+}
+
+// Short rung code for the diagnostic overlay/status: which mechanism placed the box.
+function shortMethod(m) {
+  if (!m) return 'none';
+  if (m.startsWith('template_registration')) return 'REG';
+  if (m.startsWith('template_mapping')) return 'map';
+  if (m.startsWith('anchor')) return 'anc';
+  return m.slice(0, 8);
 }
 function drawArrBox(arr, w, h, color) {
   if (Array.isArray(arr) && arr.length >= 4) drawNormBox(arr[0], arr[1], arr[2], arr[3], w, h, color, null, true);
