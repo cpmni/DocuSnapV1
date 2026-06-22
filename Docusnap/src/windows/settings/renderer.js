@@ -2727,17 +2727,22 @@ async function loadSeats() {
   if (!seatsTbody) return;
   try {
     const s = await api.licenseSeatsStatus();
-    if (seatsCountIn && document.activeElement !== seatsCountIn) seatsCountIn.value = s.seats;
-    if (seatsSummary) seatsSummary.innerHTML = s.entitled
-      ? `${colorSpan(s.free > 0 ? 'ok' : 'warn', s.inUse + ' in use')} of ${escHtml(String(s.seats))} (${escHtml(String(s.free))} free)`
-      : colorSpan('muted', 'Add-on not licensed — enable “Workflow add-on” above');
+    const sf = s.search   || { seats: s.seats || 0, inUse: s.inUse || 0, free: s.free || 0 };
+    const wf = s.workflow || { seats: 0, inUse: 0, free: 0 };
+    if (seatsCountIn && document.activeElement !== seatsCountIn) seatsCountIn.value = sf.seats;
+    if (seatsSummary) {
+      const part = (label, f) => f.seats > 0
+        ? colorSpan(f.free > 0 ? 'ok' : 'warn', `${label} ${f.inUse}/${f.seats}`)
+        : colorSpan('muted', `${label} — not licensed`);
+      seatsSummary.innerHTML = `${part('Search', sf)} &nbsp;·&nbsp; ${part('Workflow', wf)}`;
+    }
     const rows = s.leases || [];
     if (seatsEmpty) seatsEmpty.textContent = rows.length ? '' : 'No clients are currently holding a seat.';
     seatsTbody.innerHTML = rows.map(r => `
       <tr>
         <td>${escHtml(r.username || '—')}</td>
         <td>
-          <div>${escHtml(r.hostname || r.ip || '—')}</div>
+          <div>${escHtml(r.hostname || r.ip || '—')}${r.workflowEnabled ? ' <span style="font-size:10px; background:var(--accent-bg); color:var(--accent); padding:1px 6px; border-radius:8px; margin-left:6px; vertical-align:middle;">workflow</span>' : ''}</div>
           ${r.hostname && r.ip ? `<div style="color:var(--muted); font-size:11px; font-family:var(--mono)">${escHtml(r.ip)}</div>` : ''}
         </td>
         <td title="${escHtml(r.lastSeen ? new Date(r.lastSeen).toLocaleString() : '')}">${escHtml(_seatAgo(r.lastSeen))}</td>

@@ -697,9 +697,16 @@ function register(ctx) {
     requireRole('admin');
     const ent = entitlementService.checkClientEntitlement(getDb());
     const leases = ctx.seatPool ? ctx.seatPool.list() : [];
+    const wfInUse  = leases.filter(l => l.workflowEnabled).length;
+    const search   = ent.search   || { entitled: ent.entitled, seats: ent.seats };
+    const workflow = ent.workflow || { entitled: false, seats: 0 };
     return {
       entitled: ent.entitled, feature: ent.feature, seats: ent.seats,
       inUse: leases.length, free: Math.max(0, ent.seats - leases.length),
+      // Per-feature (Stage 2 display): search = the base concurrent seat pool;
+      // workflow = the add-on sub-seats held ON a search seat (workflow <= search).
+      search:   { seats: search.seats,   inUse: leases.length, free: Math.max(0, search.seats - leases.length) },
+      workflow: { seats: workflow.seats, inUse: wfInUse,        free: Math.max(0, workflow.seats - wfInUse) },
       leases,
     };
   });
