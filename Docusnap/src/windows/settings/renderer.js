@@ -924,6 +924,17 @@ document.getElementById('theme-toggle').addEventListener('change', async (e) => 
   await api.setSetting('theme', theme);
 });
 
+// "Close button minimises to the tray" — default ON (checked unless explicitly 'false').
+async function loadCloseToTrayToggle() {
+  const v = await api.getSetting('close_to_tray');
+  document.getElementById('close-to-tray-toggle').checked = (v !== 'false');
+}
+loadCloseToTrayToggle();
+
+document.getElementById('close-to-tray-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('close_to_tray', e.target.checked ? 'true' : 'false');
+});
+
 // ══════════════════════════════════════════════════════════════════════════════
 // TEMPLATES TAB — Admin Template Viewer / Anchor Mapping
 // Phase 1: list + sample-document viewer + read-only mapping overlay

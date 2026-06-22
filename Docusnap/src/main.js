@@ -7,7 +7,7 @@
  * Each module registers its own IPC handlers via module.register(ipcMain, getDb, ...).
  */
 
-const { app, BrowserWindow, ipcMain, screen, shell, Tray, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, shell, Tray, Menu, Notification } = require('electron');
 const path = require('path');
 const fs   = require('fs');
 
@@ -373,9 +373,10 @@ function createWindow(name, options, htmlFile) {
   // logout/swap can't leave a hidden previous-user shell reachable from the tray.
   if (PRIMARY_WINDOWS.has(name)) {
     win.on('close', (e) => {
-      if (!isQuitting && !win._allowClose) {
+      if (!isQuitting && !win._allowClose && closeToTrayEnabled()) {
         e.preventDefault();
         win.hide();
+        maybeShowTrayHint();
       }
     });
   }
@@ -425,6 +426,32 @@ function setupTray() {
   } catch (e) {
     logger.warn?.('[tray] could not create tray icon: ' + (e && e.message));
   }
+}
+
+// Stage 2: "Close button minimises to tray" setting (default ON). When OFF, the
+// close-interceptor lets primary windows close and window-all-closed quits — the
+// pre-tray behaviour. Fail-open to the tray behaviour on any read error.
+function closeToTrayEnabled() {
+  try { return require('../database/modules/learning').getSetting(getDb(), 'close_to_tray', 'true') !== 'false'; }
+  catch { return true; }
+}
+
+// Show a ONE-TIME notification the first time the app hides to the tray, so the
+// user isn't left wondering where the window went. Tracked by a setting so it
+// never repeats. Best-effort — a notification failure must not break hide-to-tray.
+function maybeShowTrayHint() {
+  try {
+    const learning = require('../database/modules/learning');
+    if (learning.getSetting(getDb(), 'tray_hint_shown', 'false') === 'true') return;
+    learning.setSetting(getDb(), 'tray_hint_shown', 'true');
+    if (Notification.isSupported && Notification.isSupported()) {
+      new Notification({
+        title: 'ScanFinder is still running',
+        body: 'It’s minimised to the notification area — watch-folder import and remote search clients keep working. Right-click the tray icon to open it or exit.',
+        icon: path.join(__dirname, '..', 'assets', 'icon.ico'),
+      }).show();
+    }
+  } catch { /* best-effort */ }
 }
 
 // Best-effort startup integrity sweep of the managed import inbox. Copy-on-
@@ -840,8 +867,8 @@ app.whenReady().then(() => {
   launchStartupWindow();
 });
 
-// The app fully quits ONLY via tray Exit (which sets isQuitting). Every primary
-// window — including the login screen — hides to the tray on close (kept alive),
-// so this normally never fires; if all windows are ever destroyed without a quit
-// in progress, do nothing and stay resident (the tray keeps the app reachable).
-app.on('window-all-closed', () => { if (isQuitting) app.quit(); });
+// With "close to tray" ON, primary windows hide (kept alive) so this never fires
+// during normal use, and a real quit comes via tray Exit (isQuitting). With the
+// setting OFF, windows close normally and this restores the plain quit-on-close
+// behaviour. Either way the app never lingers headless.
+app.on('window-all-closed', () => { if (isQuitting || !closeToTrayEnabled()) app.quit(); });
