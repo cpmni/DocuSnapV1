@@ -1535,6 +1535,7 @@ function renderTplPage() {
     tplCanvas.width  = tplImg.offsetWidth;
     tplCanvas.height = tplImg.offsetHeight;
     redrawTplCanvas();
+    if (tplPreviewMode) runRegistrationPreview();
   };
   tplImg.src = tplPageImages[tplCurrentPage];
   indicator.textContent = `Page ${tplCurrentPage + 1} / ${tplPageImages.length}`;
@@ -1618,12 +1619,115 @@ new ResizeObserver(() => {
   redrawTplCanvas();
 }).observe(tplImg);
 
+// ── Registration preview (admin verification) ────────────────────────────────
+// "Does each mapping track THIS document?" For every enabled mapping on the page,
+// run the SAME resolver reprocess uses (test-template-mapping -> resolve_geometry,
+// fed the template's landmarks) and overlay where the anchor/value ACTUALLY land
+// (solid, coloured) against where they were DRAWN (faint grey). Switching the
+// sample doc re-runs it, so the admin watches the boxes follow each layout — the
+// fast way to confirm registration/landmarks work (or spot a field that needs a
+// better anchor). On-demand admin path; N Tesseract resolves run SEQUENTIALLY so
+// the temp-file (Date.now()) handler stays collision-free.
+let tplPreviewMode = false;
+let tplPreviewBoxes = {};            // field_key -> {anchor_box,target_box,value,method}
+let tplPreviewRunToken = 0;          // discards a run whose doc/page changed mid-resolve
+
+function currentTplPageB64() {
+  if (!tplImg || !tplImg.naturalWidth) return null;
+  const c = document.createElement('canvas');
+  c.width = tplImg.naturalWidth; c.height = tplImg.naturalHeight;
+  c.getContext('2d').drawImage(tplImg, 0, 0);
+  return c.toDataURL('image/png').split(',')[1];
+}
+
+async function runRegistrationPreview() {
+  if (!tplPreviewMode || !selectedTemplate) return;
+  const statusEl = document.getElementById('tpl-preview-status');
+  const mappings = (selectedTemplate.field_mappings || [])
+    .filter(m => m.enabled && (m.page_number || 0) === tplCurrentPage);
+  if (!mappings.length) {
+    tplPreviewBoxes = {}; redrawTplCanvas();
+    if (statusEl) statusEl.textContent = 'No enabled mappings on this page to preview.';
+    return;
+  }
+  const pageB64 = currentTplPageB64();
+  if (!pageB64) return;
+  const landmarks = selectedTemplate.landmarks || [];
+  const token = ++tplPreviewRunToken;
+  const results = {};
+  let i = 0;
+  for (const m of mappings) {
+    if (statusEl) statusEl.textContent = `Resolving ${++i}/${mappings.length} — ${m.field_key}…`;
+    try {
+      const out = (await api.testTemplateMapping(pageB64, m, landmarks)) || {};
+      if (token !== tplPreviewRunToken) return;          // doc/page changed — abandon stale run
+      results[m.field_key] = {
+        anchor_box: out.anchor_box || null, target_box: out.target_box || null,
+        value: (out.value || '').trim() || null, method: out.method || null,
+      };
+    } catch { results[m.field_key] = { anchor_box: null, target_box: null, value: null }; }
+  }
+  if (token !== tplPreviewRunToken) return;
+  tplPreviewBoxes = results;
+  const located = Object.values(results).filter(r => r.target_box).length;
+  if (statusEl) statusEl.textContent =
+    `Resolved ${located}/${mappings.length} on this page` +
+    (landmarks.length ? ` · ${landmarks.length} landmarks active.` : ' · no landmarks (per-field anchors only — try “Regenerate landmarks”).') +
+    ' Grey = drawn, colour = resolved.';
+  redrawTplCanvas();
+}
+
+// Overlay: faint grey = the stored (drawn) boxes; solid colour = where each field
+// RESOLVES on this page (anchor blue, value green); amber = located nothing.
+function drawRegistrationPreview() {
+  if (!selectedTemplate) return;
+  const w = tplCanvas.width, h = tplCanvas.height;
+  for (const m of (selectedTemplate.field_mappings || [])) {
+    if (!m.enabled || (m.page_number || 0) !== tplCurrentPage) continue;
+    drawNormBox(m.anchor_x_norm, m.anchor_y_norm, m.anchor_w_norm, m.anchor_h_norm, w, h, '#9aa3b2', null, false);
+    drawNormBox(m.target_x_norm, m.target_y_norm, m.target_w_norm, m.target_h_norm, w, h, '#9aa3b2', null, false);
+    const r = tplPreviewBoxes[m.field_key];
+    if (!r) continue;
+    if (r.anchor_box) drawArrBox(r.anchor_box, w, h, '#4f8ef7');
+    if (r.target_box) {
+      drawArrBox(r.target_box, w, h, '#3ecf8e');
+      drawPreviewLabel(r.value ? `${m.field_key} = ${r.value}` : m.field_key, r.target_box, w, h, '#2f9e63');
+    } else {
+      drawNormBox(m.target_x_norm, m.target_y_norm, m.target_w_norm, m.target_h_norm, w, h, '#e0a23c', null, true);
+      drawPreviewLabel(`${m.field_key}: not located`,
+        [m.target_x_norm, m.target_y_norm, m.target_w_norm, m.target_h_norm], w, h, '#b07816');
+    }
+  }
+}
+function drawArrBox(arr, w, h, color) {
+  if (Array.isArray(arr) && arr.length >= 4) drawNormBox(arr[0], arr[1], arr[2], arr[3], w, h, color, null, true);
+}
+function drawPreviewLabel(text, arr, w, h, color) {
+  if (!text || !Array.isArray(arr) || arr[0] == null) return;
+  const x = Math.round(arr[0] * w), y = Math.round(arr[1] * h);
+  tplCtx.font = '11px sans-serif';
+  const tw = Math.ceil(tplCtx.measureText(text).width);
+  const ly = Math.max(0, y - 14);
+  tplCtx.fillStyle = color;
+  tplCtx.fillRect(x, ly, tw + 6, 13);
+  tplCtx.fillStyle = '#fff';
+  tplCtx.fillText(text, x + 3, ly + 10);
+}
+
+document.getElementById('tpl-preview-registration').addEventListener('change', (e) => {
+  tplPreviewMode = !!e.target.checked;
+  const s = document.getElementById('tpl-preview-status');
+  if (tplPreviewMode) { runRegistrationPreview(); }
+  else { tplPreviewBoxes = {}; if (s) s.textContent = ''; redrawTplCanvas(); }
+});
+
 // Full redraw: saved (enabled) mappings underneath, then whatever the editor
 // currently has in flight (draft anchor/target boxes, live drag rectangle) on
 // top — so drawing a new box never has to fight the persisted overlay for
 // visibility.
 function redrawTplCanvas() {
   tplCtx.clearRect(0, 0, tplCanvas.width, tplCanvas.height);
+  if (tplPreviewMode) { drawRegistrationPreview(); return; }
   drawSavedMappings();
   const w = tplCanvas.width, h = tplCanvas.height;
   if (tplDraftAnchor && (tplDraftAnchor.page_number || 0) === tplCurrentPage) {

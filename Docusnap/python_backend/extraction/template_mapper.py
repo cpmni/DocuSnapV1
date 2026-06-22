@@ -162,7 +162,7 @@ def extract_with_mappings(page_images, mappings, field_patterns=None,
     return results
 
 
-def resolve_geometry(page, mapping, field_patterns=None):
+def resolve_geometry(page, mapping, field_patterns=None, template_landmarks=None):
     """Where does this mapping RESOLVE on `page`? Returns the located anchor-label
     box and the target box actually READ (after any drift relocation / registration),
     plus the read value — for the Template Wizard's "show where it reads" overlay, so
@@ -191,8 +191,13 @@ def resolve_geometry(page, mapping, field_patterns=None):
     def _cap(_fk, _stage, _pi, bbox, _img, kind):
         captured[kind] = [round(float(v), 5) for v in bbox] if bbox else None
 
+    # Pass the template's landmarks (when provided) so the resolved geometry tracks the
+    # page through the SAME registration transform reprocess uses — the admin "preview
+    # registration across docs" overlay then shows where each box ACTUALLY lands on a
+    # shifted scan. None/empty -> no registration (the per-field anchor path), as before.
     res = extract_with_mappings([page], [mapping], field_patterns=field_patterns,
-                                slice_capture=_cap)
+                                slice_capture=_cap, template_landmarks=template_landmarks,
+                                registration_enabled=bool(template_landmarks))
     val = res.get(mapping.get("field_key")) or {}
 
     # Show the located LABEL box (not the drawn search region) so the operator sees

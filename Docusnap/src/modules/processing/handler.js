@@ -935,23 +935,31 @@ function register(ctx) {
   // drawn target itself, so the test result matches reprocess exactly (same
   // anchor relocation + offset + crop + normalisation). Mirrors the ocr-region
   // spawn pattern above.
-  ipcMain.handle('test-template-mapping', async (_e, pageBase64, mapping) => {
+  ipcMain.handle('test-template-mapping', async (_e, pageBase64, mapping, landmarks) => {
     requireRole('admin');
     if (!pageBase64 || !mapping) return {};
     const imgFile = path.join(os.tmpdir(), `ds_tmap_img_${Date.now()}.png`);
     const mapFile = path.join(os.tmpdir(), `ds_tmap_${Date.now()}.json`);
+    // Optional template landmarks -> the Python resolver runs the SAME registration
+    // transform reprocess uses, so the admin "preview across docs" overlay tracks a
+    // shifted page. Absent -> the per-field anchor path (unchanged Test behaviour).
+    const lmFile = (Array.isArray(landmarks) && landmarks.length)
+      ? path.join(os.tmpdir(), `ds_tmap_lm_${Date.now()}.json`) : null;
     try {
       fs.writeFileSync(imgFile, Buffer.from(pageBase64, 'base64'));
       fs.writeFileSync(mapFile, JSON.stringify(mapping));
+      if (lmFile) fs.writeFileSync(lmFile, JSON.stringify(landmarks));
     } catch (e) {
       try { fs.unlinkSync(imgFile); } catch {}
       try { fs.unlinkSync(mapFile); } catch {}
+      if (lmFile) { try { fs.unlinkSync(lmFile); } catch {} }
       return { error: e.message };
     }
     const script = ctx.resourcePath('python_backend', 'test_mapping.py');
     return new Promise((resolve) => {
-      const proc = spawn(pythonExe(), pythonArgs(script,
-        '--image-file', imgFile, '--mapping-file', mapFile, '--tesseract', tesseractPath()),
+      const targs = ['--image-file', imgFile, '--mapping-file', mapFile, '--tesseract', tesseractPath()];
+      if (lmFile) targs.push('--landmarks-file', lmFile);
+      const proc = spawn(pythonExe(), pythonArgs(script, ...targs),
         { windowsHide: true });
       let out = '', err = '';
       proc.stdout.on('data', d => { out += d.toString(); });
@@ -959,6 +967,7 @@ function register(ctx) {
       proc.on('close', () => {
         try { fs.unlinkSync(imgFile); } catch {}
         try { fs.unlinkSync(mapFile); } catch {}
+        if (lmFile) { try { fs.unlinkSync(lmFile); } catch {} }
         if (err) console.error('test_mapping stderr:', err);
         try { resolve(JSON.parse(out.trim() || '{}')); }
         catch { resolve({}); }

@@ -40,6 +40,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--image-file',   required=True)
     parser.add_argument('--mapping-file', required=True)
+    parser.add_argument('--landmarks-file', default=None)
     parser.add_argument('--tesseract',    default=None)
     args = parser.parse_args()
 
@@ -54,6 +55,16 @@ def main():
     with open(args.mapping_file, encoding='utf-8') as f:
         mapping = json.load(f)
 
+    # Template landmarks (optional): when present, resolve_geometry runs the SAME
+    # registration transform reprocess uses, so the overlay tracks a shifted page.
+    landmarks = None
+    if args.landmarks_file:
+        try:
+            with open(args.landmarks_file, encoding='utf-8') as f:
+                landmarks = json.load(f) or None
+        except Exception:
+            landmarks = None
+
     field_key = mapping.get('field_key')
     # Mirror engine.py: field_patterns drives _clean_value's val_type. Use the
     # mapping's own ocr_type so the test cleans the value the same way reprocess
@@ -67,7 +78,8 @@ def main():
     # position), so the Template Wizard can overlay "where it reads" on the page.
     # Backward-compatible: callers that only read value/confidence/method (the
     # Template Manager "Test" button) ignore the extra anchor_box/target_box keys.
-    print(json.dumps(template_mapper.resolve_geometry(page, mapping, field_patterns=field_patterns)))
+    print(json.dumps(template_mapper.resolve_geometry(page, mapping, field_patterns=field_patterns,
+                                                      template_landmarks=landmarks)))
 
 
 if __name__ == '__main__':
