@@ -79,6 +79,20 @@ approx("'2371' x_norm left edge", w2371["x_norm"], 545/612)
 # big x-gap between '#' and '2371' splits them into separate words.
 check("'#' and '2371' are separate words", [w["text"] for w in row2["words"]], ["#", "2371"])
 
+print("Punctuation glue in line reconstruction (_join_words):")
+def _w(t): return {"text": t}
+# A comma/period the text layer emits as its OWN gap/baseline-split word must glue
+# back: a date keeps the space AFTER the comma ("6, 2026"); a decimal rejoins both
+# sides ("42.35"). Otherwise the date/amount patterns + parse_date silently fail.
+check("date comma glues, keeps trailing space",
+      bd._join_words([_w("March"), _w("6"), _w(","), _w("2026")]), "March 6, 2026")
+check("decimal point rejoins both sides",
+      bd._join_words([_w("42"), _w("."), _w("35")]), "42.35")
+check("dotted numeric date stays intact",
+      bd._join_words([_w("6"), _w("."), _w("3"), _w("."), _w("2026")]), "6.3.2026")
+check("'#'+digits stays separate (not attaching punct)",
+      bd._join_words([_w("#"), _w("2371")]), "# 2371")
+
 if fails:
     print(f"\n{len(fails)} FAILED"); sys.exit(1)
 print("\nAll born_digital checks passed.")

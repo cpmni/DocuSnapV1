@@ -65,6 +65,38 @@ def page_text(page):
     return "\n".join(ln["text"] for ln in page_lines(page))
 
 
+# Punctuation the embedded text layer often emits as its OWN word — a comma/period
+# hangs on a different baseline or sits a kerning-gap away from its digit, so the
+# word-builder below splits it off. A naive space-join then renders "March 6 , 2026"
+# / "42 . 35", which breaks the date/amount validation patterns AND parse_date (and
+# made the keyword stage silently skip the field). _join_words glues such tokens back
+# to their neighbour so the reconstructed line matches what a human reads. It only
+# changes SPACING, never which characters are present, and is reusable for every
+# born-digital field/supplier — no document-specific logic.
+_ATTACH_PUNCT = set(',.;:!?)]}%')
+
+def _join_words(words):
+    parts = []
+    for w in words:
+        t = w.get("text", "")
+        if not parts:
+            parts.append(t)
+            continue
+        prev = parts[-1]
+        # (1) a leading attaching-punctuation token glues to the previous word
+        #     ("6"+","->"6,", "42"+"."->"42.")
+        glue = bool(t) and t[0] in _ATTACH_PUNCT
+        # (2) a digit token continues a number after a decimal point ("42."+"35"->
+        #     "42.35"); a DATE comma ("6,"+"2026") is NOT glued, so it keeps its space.
+        if not glue and prev[-1:] == '.' and len(prev) >= 2 and prev[-2].isdigit() and t[:1].isdigit():
+            glue = True
+        if glue:
+            parts[-1] = prev + t
+        else:
+            parts.append(t)
+    return " ".join(parts)
+
+
 def page_lines(page):
     """Text-layer lines with per-word boxes in TOP-LEFT page-normalised coords —
     the SAME shape template_mapper._ocr_lines emits, so the anchor locate/harvest
@@ -129,7 +161,7 @@ def page_lines(page):
         x1 = min(w["x1"] for w in ws); x2 = max(w["x2"] for w in ws)
         y1 = min(w["y1"] for w in ws); y2 = max(w["y2"] for w in ws)
         out.append({
-            "text":   " ".join(w["text"] for w in ws),
+            "text":   _join_words(ws),
             "x_norm": x1, "y_norm": y1, "w_norm": x2 - x1, "h_norm": y2 - y1,
             "words": [{"text": w["text"], "x_norm": w["x1"], "y_norm": w["y1"],
                        "w_norm": w["x2"] - w["x1"], "h_norm": w["y2"] - w["y1"]} for w in ws],
