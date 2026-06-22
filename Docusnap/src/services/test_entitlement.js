@@ -32,12 +32,14 @@ check('workflow 1 -> workflow entitled, seats 1', e3.workflow.entitled === true 
 check('feature name surfaced', checkClientEntitlement(db).feature === 'detached_client');
 db.close();
 
-// Legacy fallback: detached_client_seats alone still licenses SEARCH (cheap back-compat).
+// P0 self-grant fix: the local detached_client_seats key is NO LONGER a source — a
+// hand-edited local seat count cannot grant entitlement (only the backend-cached
+// detached_search_seats does).
 const dbL = new Database(':memory:');
 dbL.exec(`CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)`);
 dbL.prepare(`INSERT INTO settings (key,value) VALUES (?, '3')`).run(SEATS_KEY);
 const eL = checkClientEntitlement(dbL);
-check('legacy detached_client_seats=3 -> search entitled, seats 3', eL.search.entitled === true && eL.search.seats === 3);
+check('local detached_client_seats=3 -> NOT entitled (no local fallback)', eL.search.entitled === false && eL.search.seats === 0);
 dbL.close();
 
 console.log(fail ? `\n${fail} check(s) FAILED` : '\nAll entitlement checks passed.');

@@ -59,22 +59,21 @@ async function initClientApiSection() {
   };
   try { renderCert(await api.clientApiCertStatus()); } catch { /* ignore */ }
 
-  // Workflow add-on entitlement (drives enhanced Search here + the detached client).
+  // Workflow add-on entitlement — READ-ONLY. It is driven by the licence (the verified
+  // token / backend per-feature counts), never a local setting. The old toggle wrote
+  // `detached_client_licensed`, which nothing authoritative consumes, so it could mislead
+  // an operator into thinking they had (un)licensed the feature. We now only REFLECT the
+  // real entitlement from get-entitlement; this control cannot create it.
   const wfTgl = document.getElementById('wf-addon-toggle');
   const wfSub = document.getElementById('wf-addon-sub');
   if (wfTgl && wfSub) {
+    wfTgl.disabled = true;
     try {
-      const on = (await api.getSetting('detached_client_licensed')) === 'true';
-      wfTgl.checked = on; wfSub.textContent = on ? 'Licensed' : 'Off';
-    } catch { /* ignore */ }
-    if (!wfTgl.dataset.wired) {
-      wfTgl.dataset.wired = '1';
-      wfTgl.addEventListener('change', async () => {
-        try { await api.setSetting('detached_client_licensed', wfTgl.checked ? 'true' : 'false');
-          wfSub.textContent = wfTgl.checked ? 'Licensed' : 'Off'; }
-        catch (e) { wfSub.textContent = 'Error: ' + (e && e.message); wfTgl.checked = !wfTgl.checked; }
-      });
-    }
+      const ent = await api.getEntitlement();
+      const on = !!(ent && ent.workflow && ent.workflow.entitled);
+      wfTgl.checked = on;
+      wfSub.textContent = on ? 'Licensed' : 'Not licensed';
+    } catch { wfSub.textContent = 'Unknown'; }
   }
 
   if (_clientApiWired) return; // bind listeners once
@@ -2761,12 +2760,11 @@ async function loadSeats() {
 }
 
 document.getElementById('seats-refresh')?.addEventListener('click', loadSeats);
-document.getElementById('seats-save')?.addEventListener('click', async () => {
-  if (!seatsCountIn) return;
-  const n = Math.max(0, Math.min(999, parseInt(seatsCountIn.value, 10) || 0));
-  try { await api.setSetting('detached_client_seats', String(n)); } catch { /* surfaced on reload */ }
-  await loadSeats();
-});
+// The search-seat count is READ-ONLY: it comes from the licence (the backend-cached,
+// token-verified per-feature count that loadSeats displays), not a local override. The old
+// "Save" path wrote `detached_client_seats`, which entitlement could fall back to — a local
+// self-grant. That write path is removed; the field below is display-only.
+if (seatsCountIn) seatsCountIn.readOnly = true;
 loadSeats();
 
 // ══════════════════════════════════════════════════════════════════════════════

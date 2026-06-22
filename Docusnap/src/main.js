@@ -144,6 +144,7 @@ function openMainShell() {
   destroyWindow('license');
   destroyWindow('onboarding');
   refreshTrayMenu();   // reflect logged-in state (enable Review/Settings)
+  startLicenseRevalidation();   // P0: catch a server-side revoke WHILE running, not only at launch
 }
 
 // First-run setup wizard. Shows ONLY when `first_run_completed` !== 'true' (a
@@ -180,6 +181,7 @@ async function enterMainApp() {
 }
 
 function showLicenseWindow(gate) {
+  stopLicenseRevalidation();   // we're leaving the main shell — no periodic re-check while locked
   const alreadyOpen = !!windows['license'];
   const win = createWindow('license', LICENSE_WINDOW_OPTIONS, 'index.html');
   Object.keys(windows).forEach((name) => {
@@ -194,6 +196,33 @@ function showLicenseWindow(gate) {
   // "Opening…" with the real denial reason instead of appearing stuck.
   if (alreadyOpen && !win.webContents.isLoading()) pushState();
   else win.webContents.once('did-finish-load', pushState);
+}
+
+// Periodic licence re-validation (P0). decideAccess() only runs at startup; without this,
+// a licence revoked or expired SERVER-SIDE while the app is already running would not be
+// noticed until the next launch. This re-runs the SAME authoritative gate on a timer and,
+// on any non-'allow' verdict, locks the running app to the license window. It never locks
+// on a transient offline blip: decideAccess() falls back to the cached token within the
+// offline grace (returns 'allow'); only a REACHABLE backend with no grant (revoked /
+// released) — or grace genuinely expired — yields a lock, so offline grace is preserved.
+const LICENSE_REVALIDATE_MS = 6 * 60 * 60 * 1000; // 6h
+let _revalTimer = null;
+function startLicenseRevalidation() {
+  if (_revalTimer) return;                          // already running
+  _revalTimer = setInterval(async () => {
+    if (!windows['main']) return;                   // only meaningful while the main shell is open
+    let gate;
+    try { gate = await licensingModule.decideAccess(); }
+    catch (e) { logger?.warn?.('periodic licence re-check errored (ignored): ' + e.message); return; }
+    if (gate && gate.decision !== 'allow') {
+      logger?.warn?.(`periodic licence re-check: ${gate.decision} (${gate.reason}) — locking`);
+      showLicenseWindow(gate);                       // stops the timer + swaps to the license window
+    }
+  }, LICENSE_REVALIDATE_MS);
+  if (_revalTimer.unref) _revalTimer.unref();        // don't keep the event loop alive on its own
+}
+function stopLicenseRevalidation() {
+  if (_revalTimer) { clearInterval(_revalTimer); _revalTimer = null; }
 }
 
 // Lightweight startup splash — purely cosmetic, no IPC, no preload. Shown

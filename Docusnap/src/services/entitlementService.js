@@ -21,7 +21,7 @@
 
 const FEATURE = 'detached_client';
 const SETTING_KEY = 'detached_client_licensed';
-const SEATS_KEY = 'detached_client_seats';        // legacy single-pool count (fallback only)
+const SEATS_KEY = 'detached_client_seats';        // DEPRECATED local key — never read as entitlement (kept only for the migration test)
 const SEARCH_SEATS_KEY = 'detached_search_seats';   // backend-cached: concurrent search clients
 const WORKFLOW_SEATS_KEY = 'detached_workflow_seats'; // backend-cached: workflow add-on capacity
 const SIGNED_KEY = 'detached_features_signed';      // set when the counts came from the SIGNED token (Phase 2)
@@ -35,12 +35,12 @@ function _readSetting(db, key) {
   }
 }
 
-// Resolve a non-negative seat count from `key`, falling back to `fallbackKey` (the
-// legacy single-pool setting) when the primary is unset. Entitlement is driven purely
-// by the count (>0 ⇒ entitled) — the backend (cached on validate) is the source of truth.
-function _seatCount(getSetting, db, key, fallbackKey) {
-  let raw = parseInt(getSetting(db, key), 10);
-  if (!Number.isFinite(raw) && fallbackKey) raw = parseInt(getSetting(db, fallbackKey), 10);
+// Resolve a non-negative seat count from `key`. Entitlement is driven PURELY by this
+// count (>0 ⇒ entitled), and the count is only ever written by the licensing handler from
+// the VERIFIED token / backend /v1 response. There is NO local fallback key — a
+// hand-edited local setting can never fabricate entitlement (P0 self-grant fix).
+function _seatCount(getSetting, db, key) {
+  const raw = parseInt(getSetting(db, key), 10);
   return Number.isFinite(raw) && raw > 0 ? raw : 0;
 }
 
@@ -50,14 +50,15 @@ function _seatCount(getSetting, db, key, fallbackKey) {
  *   PER-FEATURE: `search` is the base detached-client capability (a connected client holds
  *   a search seat); `workflow` is an add-on ON a held search seat (workflow ≤ search by
  *   construction at the backend). Top-level entitled/seats mirror SEARCH so existing
- *   callers (the seat pool / claimSeat) are unchanged. Counts come from settings the
- *   licensing handler caches from the /v1 response; legacy `detached_client_seats` is a
- *   fallback for search only. Default-deny: an unset count ⇒ 0 ⇒ not entitled.
+ *   callers (the seat pool / claimSeat) are unchanged. Counts come ONLY from the settings
+ *   the licensing handler writes from the VERIFIED token / backend /v1 response
+ *   (detached_search_seats / detached_workflow_seats) — there is NO local fallback, so a
+ *   locally-edited setting can never fabricate entitlement. Default-deny: unset ⇒ 0 ⇒ not entitled.
  */
 function checkClientEntitlement(db, deps = {}) {
   const getSetting = deps.getSetting || _readSetting;
-  const searchSeats   = _seatCount(getSetting, db, SEARCH_SEATS_KEY, SEATS_KEY);
-  const workflowSeats = _seatCount(getSetting, db, WORKFLOW_SEATS_KEY, null);
+  const searchSeats   = _seatCount(getSetting, db, SEARCH_SEATS_KEY);
+  const workflowSeats = _seatCount(getSetting, db, WORKFLOW_SEATS_KEY);
   const search   = { entitled: searchSeats > 0,   seats: searchSeats };
   const workflow = { entitled: workflowSeats > 0, seats: workflowSeats };
   // Phase 2: the counts above are written from the SIGNED token when one is cached

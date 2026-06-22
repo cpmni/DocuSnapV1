@@ -1079,14 +1079,14 @@
 
       <div class="section">
         <div class="section-title">Workflow add-on</div>
-        <p class="section-desc">Unlocks the enhanced Search experience — confidence cues, approval workflow and mailbox — in this app and for the detached client. Normally set by your licence; toggle here for setup/testing.</p>
+        <p class="section-desc">Unlocks the enhanced Search experience — confidence cues, approval workflow and mailbox — in this app and for the detached client. Set by your licence and shown here read-only.</p>
         <div class="threshold-row">
           <div>
             <div class="threshold-label">Workflow add-on licensed</div>
             <div class="threshold-sub" id="wf-addon-sub">Off</div>
           </div>
           <label class="toggle">
-            <input type="checkbox" id="wf-addon-toggle">
+            <input type="checkbox" id="wf-addon-toggle" disabled title="Set by your licence — read-only">
             <span class="toggle-slider"></span>
           </label>
         </div>
@@ -1135,11 +1135,11 @@
 
       <div class="section" id="seats-section">
         <div class="section-title">Client seats — search &amp; workflow</div>
-        <p class="section-desc">Floating search licences — a machine can connect while a search seat is free, held by its client until you release it here (never auto-freed). Workflow is an add-on a client claims ON its search seat. Seat counts come from the licence; the field here is a manual fallback for the search count. Live per-feature usage is shown on the right and per client below.</p>
+        <p class="section-desc">Floating search licences — a machine can connect while a search seat is free, held by its client until you release it here (never auto-freed). Workflow is an add-on a client claims ON its search seat. Seat counts are set by your licence and shown here read-only. Live per-feature usage is shown on the right and per client below.</p>
         <div class="row-flex" style="gap:10px; align-items:center; margin-bottom:8px;">
           <div class="threshold-label">Search seats</div>
-          <input type="number" id="seats-count" min="0" max="999" class="path-input" style="max-width:80px">
-          <button class="btn" id="seats-save">Save</button>
+          <input type="number" id="seats-count" min="0" max="999" class="path-input" style="max-width:80px" readonly disabled title="Set by your licence — read-only">
+          <span class="threshold-sub">licence-set</span>
           <button class="btn" id="seats-refresh">Refresh</button>
           <span class="threshold-sub" id="seats-summary" style="margin-left:auto;"></span>
         </div>
