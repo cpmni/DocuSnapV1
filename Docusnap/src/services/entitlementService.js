@@ -24,6 +24,7 @@ const SETTING_KEY = 'detached_client_licensed';
 const SEATS_KEY = 'detached_client_seats';        // legacy single-pool count (fallback only)
 const SEARCH_SEATS_KEY = 'detached_search_seats';   // backend-cached: concurrent search clients
 const WORKFLOW_SEATS_KEY = 'detached_workflow_seats'; // backend-cached: workflow add-on capacity
+const SIGNED_KEY = 'detached_features_signed';      // set when the counts came from the SIGNED token (Phase 2)
 
 function _readSetting(db, key) {
   try {
@@ -59,11 +60,16 @@ function checkClientEntitlement(db, deps = {}) {
   const workflowSeats = _seatCount(getSetting, db, WORKFLOW_SEATS_KEY, null);
   const search   = { entitled: searchSeats > 0,   seats: searchSeats };
   const workflow = { entitled: workflowSeats > 0, seats: workflowSeats };
+  // Phase 2: the counts above are written from the SIGNED token when one is cached
+  // (handler._syncSignedFeatures overrides the unsigned JSON), so an unsigned/tampered
+  // JSON response cannot raise the caps; `signed` reflects that source. Old tokens fall
+  // back to the Phase 1 JSON-cached counts (signed:false).
+  const signed = getSetting(db, SIGNED_KEY) === 'true';
   return {
     entitled: search.entitled, feature: FEATURE, seats: search.seats,
     reason: search.entitled ? 'licensed' : 'not_licensed',
-    search, workflow,
+    search, workflow, signed,
   };
 }
 
-module.exports = { checkClientEntitlement, FEATURE, SETTING_KEY, SEATS_KEY, SEARCH_SEATS_KEY, WORKFLOW_SEATS_KEY };
+module.exports = { checkClientEntitlement, FEATURE, SETTING_KEY, SEATS_KEY, SEARCH_SEATS_KEY, WORKFLOW_SEATS_KEY, SIGNED_KEY };

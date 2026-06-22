@@ -106,10 +106,12 @@ try {
     // Per-feature capacity (search/workflow) for the core to cache + enforce.
     $featSel = $pdo->prepare('SELECT feature, seats_total FROM entitlements WHERE account_id = ? AND product_id = ? AND status = "active" AND (expires_at IS NULL OR expires_at > NOW()) AND feature IN ("search","workflow")');
     $featSel->execute([$accountId, $productId]);
-    $features = ['search' => 0, 'workflow' => 0];
+    $features = ['core' => $seatsTotal, 'search' => 0, 'workflow' => 0];
     foreach ($featSel as $fr) { $features[$fr['feature']] = (int) $fr['seats_total']; }
 
-    $claims = seat_claims($productId, $fpHash, 'active', $entId, $seatId, $seatsTotal, $seatsUsed, $expiresAt);
+    // Phase 2: the per-feature capacity is SIGNED into the token (tamper-proof) as
+    // well as returned in the JSON below (back-compat for Phase-1 desktops).
+    $claims = seat_claims($productId, $fpHash, 'active', $entId, $seatId, $seatsTotal, $seatsUsed, $expiresAt, $features);
     $token  = jws_sign($claims, ACTIVE_KID);
 
     audit_event($pdo, $accountId, $fpHash, 'license.activated', "seat=$seatId seats=$seatsUsed/$seatsTotal");

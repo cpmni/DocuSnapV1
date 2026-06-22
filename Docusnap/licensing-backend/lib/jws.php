@@ -66,7 +66,8 @@ function trial_claims(string $productId, string $fpHash, string $state, string $
  */
 function seat_claims(
     string $productId, string $fpHash, string $state, $entitlementId,
-    $seatId, int $seatsTotal, int $seatsUsed, ?string $expiresAt
+    $seatId, int $seatsTotal, int $seatsUsed, ?string $expiresAt,
+    array $features = []
 ): array {
     $now   = new DateTimeImmutable('now', new DateTimeZone('UTC'));
     $grace = $now->add(new DateInterval('P7D'));
@@ -82,6 +83,12 @@ function seat_claims(
         'seats_total'    => $seatsTotal,
         'seats_used'     => $seatsUsed,
         'expires_at'     => $expiresAt,
+        // Phase 2: per-feature seat capacity, SIGNED (tamper-proof, offline-verifiable)
+        // so the desktop enforces it without trusting the unsigned JSON response.
+        // Additive — a verifier that doesn't know the claim ignores it; schema_version
+        // 2 marks its presence. Map of feature_key => seats_total (core|search|workflow).
+        'schema_version' => 2,
+        'features'       => (object) $features,
         'issued_at'      => $iso($now),
         'not_after'      => $iso($grace),
         'grace_until'    => $iso($grace),

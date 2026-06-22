@@ -45,11 +45,11 @@ try {
         // Per-feature capacity (search/workflow) for the core to cache + enforce.
         $featSel = $pdo->prepare('SELECT feature, seats_total FROM entitlements WHERE account_id = ? AND product_id = ? AND status = "active" AND (expires_at IS NULL OR expires_at > NOW()) AND feature IN ("search","workflow")');
         $featSel->execute([(int) $seat['account_id'], $productId]);
-        $features = ['search' => 0, 'workflow' => 0];
+        $features = ['core' => $seatsTotal, 'search' => 0, 'workflow' => 0];
         foreach ($featSel as $fr) { $features[$fr['feature']] = (int) $fr['seats_total']; }
         $expired    = $expiresAt !== null && new DateTimeImmutable($expiresAt) <= new DateTimeImmutable('now');
         $state      = $expired ? 'expired' : 'active';
-        $claims     = seat_claims($productId, $fpHash, $state, $entId, (int) $seat['seat_id'], $seatsTotal, $seatsUsed, $expiresAt);
+        $claims     = seat_claims($productId, $fpHash, $state, $entId, (int) $seat['seat_id'], $seatsTotal, $seatsUsed, $expiresAt, $features);
         $token      = jws_sign($claims, ACTIVE_KID);
         audit_event($pdo, null, $fpHash, 'license.validated', "kind=seat state=$state");
         send_json(200, ['token' => $token, 'kind' => 'seat', 'state' => $state,

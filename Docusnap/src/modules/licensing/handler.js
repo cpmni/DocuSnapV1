@@ -83,6 +83,25 @@ function cacheFromResponse(db, fpHash, body) {
   }
 }
 
+// Phase 2: when the cached token VERIFIED and carries SIGNED per-feature counts
+// (schema_version >= 2), sync them into the detached-client settings, OVERRIDING any
+// unsigned JSON-cached values written by cacheFromResponse — so the effective
+// search/workflow caps come from the tamper-proof, offline-verified token, and a
+// tampered JSON response cannot grant more. Called from decideAccess AFTER the token is
+// verified (online refresh AND offline startup), NOT from the per-IPC guard. An OLD
+// token (no features claim) returns null and leaves the Phase 1 JSON values in place.
+function _syncSignedFeatures(db, claims) {
+  try {
+    const feats = token.featuresOf(claims);
+    if (!feats) return;
+    const learning = require('../../../database/modules/learning');
+    const n = (v) => String(Math.max(0, parseInt(v, 10) || 0));
+    if (feats.search   != null) learning.setSetting(db, 'detached_search_seats',   n(feats.search));
+    if (feats.workflow != null) learning.setSetting(db, 'detached_workflow_seats', n(feats.workflow));
+    learning.setSetting(db, 'detached_features_signed', 'true');
+  } catch { /* non-fatal — falls back to the cached values */ }
+}
+
 // Renderer-facing status never includes the raw JWS or fingerprint.
 function readable(body) {
   if (!body) return { state: 'unknown' };
@@ -486,7 +505,12 @@ async function decideAccess() {
 
   // Delegate the verdict to the shared evaluator, handing it the config + fingerprint
   // already computed above so the fingerprint is not derived a second time.
-  return evaluateCachedAccess(db, { cfg, fpHash });
+  const decision = evaluateCachedAccess(db, { cfg, fpHash });
+  // Phase 2: refresh the SIGNED per-feature caps from the just-verified token (online
+  // or offline), overriding any unsigned JSON. Done here (not in the per-IPC evaluator)
+  // so it runs once per access decision.
+  if (decision && decision.claims) _syncSignedFeatures(db, decision.claims);
+  return decision;
 }
 
 module.exports = { register, decideAccess, evaluateCachedAccess, licenseDenied };
