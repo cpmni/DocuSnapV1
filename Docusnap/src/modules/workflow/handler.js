@@ -27,8 +27,10 @@ function register(ctx) {
   const actor = () => { const u = getCurrentUser(); return { userId: u.id, username: u.username, role: u.role }; };
 
   function assertEntitled() {
+    // Workflow is now its OWN licensed feature (split from the base detached-client /
+    // search add-on), so gate on the workflow entitlement specifically.
     const e = entitlementService.checkClientEntitlement(getDb());
-    if (!e.entitled) throw Object.assign(new Error('The workflow add-on is not licensed for this install.'), { code: 'FEATURE_NOT_LICENSED' });
+    if (!e.workflow || !e.workflow.entitled) throw Object.assign(new Error('The workflow add-on is not licensed for this install.'), { code: 'FEATURE_NOT_LICENSED' });
   }
   const unwrap = (r) => {
     if (r.ok) return r.route;

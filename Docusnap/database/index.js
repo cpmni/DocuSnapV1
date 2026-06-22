@@ -655,6 +655,19 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 31 applied: template_fields.fixed_locked (admin-locked fixed values)');
   }
 
+  // Migration 32: workflow add-on flag on a client seat. Workflow is an upgrade ON a held
+  // search seat (workflow ≤ search), capped independently; this records which seats hold it
+  // so the pool can count workflow occupancy. Display/enforcement only — never an identity.
+  // Additive + idempotent.
+  if (!applied.has(32)) {
+    if (tableExists(db, 'client_seats') && !hasColumn(db, 'client_seats', 'workflow_enabled')) {
+      try { db.exec(`ALTER TABLE client_seats ADD COLUMN workflow_enabled INTEGER NOT NULL DEFAULT 0`); }
+      catch (e) { console.warn(`  client_seats.workflow_enabled: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (32)').run();
+    console.log('JS migration 32 applied: client_seats.workflow_enabled (workflow add-on)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

@@ -26,7 +26,7 @@ const authPath = require.resolve('../auth/handler');
 require.cache[authPath] = { id: authPath, filename: authPath, loaded: true, exports: fakeAuth };
 
 const wfHandler = require('./handler');
-const { SETTING_KEY } = require('../../services/entitlementService');
+const { SEARCH_SEATS_KEY, WORKFLOW_SEATS_KEY } = require('../../services/entitlementService');
 
 function check(label, cond) { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}`); return cond; }
 function threwCode(fn, code) { try { fn(); return false; } catch (e) { return e.code === code; } }
@@ -57,8 +57,12 @@ function main() {
   const db = freshDb();
   const H = {};
   wfHandler.register({ ipcMain: { handle: (n, fn) => { H[n] = fn; } }, getDb: () => db });
-  const setLicensed = (on) => db.prepare(`INSERT INTO settings (key,value) VALUES (?,?)
-    ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(SETTING_KEY, on ? 'true' : 'false');
+  const setLicensed = (on) => {
+    const set = (k, v) => db.prepare(`INSERT INTO settings (key,value) VALUES (?,?)
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(k, v);
+    set(SEARCH_SEATS_KEY, on ? '2' : '0');     // workflow ≤ search, so a workflow licence implies search
+    set(WORKFLOW_SEATS_KEY, on ? '1' : '0');
+  };
 
   // ── entitlement OFF → feature gated ──────────────────────────────────────────
   session = { id: 1, username: 'admin', role: 'admin' };

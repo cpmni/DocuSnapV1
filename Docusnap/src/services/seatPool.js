@@ -32,6 +32,7 @@ function createSeatPool(opts = {}) {
   const _pub = (r) => (r ? {
     id: r.id, clientKey: r.client_key, username: r.username, role: r.role,
     hostname: r.hostname, ip: r.ip, firstSeen: r.first_seen, lastSeen: r.last_seen,
+    workflowEnabled: !!r.workflow_enabled,
   } : null);
 
   /**
@@ -65,6 +66,27 @@ function createSeatPool(opts = {}) {
     return { ok: true, seat: _pub(db.prepare('SELECT * FROM client_seats WHERE id = ?').get(id)), reused: false };
   }
 
+  /**
+   * Claim/confirm the WORKFLOW add-on for a client that ALREADY holds a (search) seat —
+   * workflow is an upgrade ON a held search seat, capped independently by `cap`. Idempotent
+   * for a client that already has it. @returns {{ok:true,seat,reused}} | {{ok:false,code,...}}
+   */
+  function claimWorkflow(clientKey, cap) {
+    const db = _db();
+    if (clientKey == null) return { ok: false, code: 'NO_SEAT' };
+    const seat = db.prepare('SELECT * FROM client_seats WHERE client_key = ?').get(clientKey);
+    if (!seat) return { ok: false, code: 'NO_SEAT' };                  // must hold a search seat first
+    if (seat.workflow_enabled) return { ok: true, seat: _pub(seat), reused: true };
+    const limit = Math.max(0, cap | 0);
+    const inUse = db.prepare('SELECT COUNT(*) AS c FROM client_seats WHERE workflow_enabled = 1').get().c;
+    if (inUse >= limit) return { ok: false, code: 'WORKFLOW_LIMIT', inUse, cap: limit };
+    db.prepare('UPDATE client_seats SET workflow_enabled = 1 WHERE id = ?').run(seat.id);
+    return { ok: true, seat: _pub(db.prepare('SELECT * FROM client_seats WHERE id = ?').get(seat.id)), reused: false };
+  }
+
+  /** Count of seats currently holding the workflow add-on. */
+  function workflowInUse() { return _db().prepare('SELECT COUNT(*) AS c FROM client_seats WHERE workflow_enabled = 1').get().c; }
+
   /** Heartbeat — bump last-seen (and IP) for a client's seat. No-op if it has none. */
   function touch(clientKey, { ip } = {}) {
     if (clientKey == null) return false;
@@ -81,7 +103,7 @@ function createSeatPool(opts = {}) {
   function list()  { return _db().prepare('SELECT * FROM client_seats ORDER BY first_seen').all().map(_pub); }
   function count() { return _db().prepare('SELECT COUNT(*) AS c FROM client_seats').get().c; }
 
-  return { claim, touch, release, list, count };
+  return { claim, claimWorkflow, workflowInUse, touch, release, list, count };
 }
 
 module.exports = { createSeatPool };

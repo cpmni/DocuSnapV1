@@ -15,7 +15,7 @@ const Database = require('better-sqlite3');
 const api = require('./handler');
 const pw  = require('../auth/password');
 const { createClient } = require('../../../client/apiClient');
-const { SETTING_KEY } = require('../../services/entitlementService');
+const { SEARCH_SEATS_KEY } = require('../../services/entitlementService');
 
 const PWD = 'Entitle-Test-5';
 let fail = 0;
@@ -61,9 +61,9 @@ async function main() {
   let d = await c.getDocument(1);
   check('document blocked while not licensed -> 402', d.status === 402);
 
-  // License the add-on for this install.
-  db.prepare(`INSERT INTO settings (key,value) VALUES (?, 'true')
-              ON CONFLICT(key) DO UPDATE SET value='true'`).run(SETTING_KEY);
+  // License the search add-on for this install (seat-count driven).
+  db.prepare(`INSERT INTO settings (key,value) VALUES (?, '2')
+              ON CONFLICT(key) DO UPDATE SET value='2'`).run(SEARCH_SEATS_KEY);
 
   e = await c.entitlement();
   check('entitlement probe -> entitled:true after licensing', e.json.entitled === true);

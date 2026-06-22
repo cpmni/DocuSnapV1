@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS entitlements (
   id          BIGINT      NOT NULL AUTO_INCREMENT PRIMARY KEY,
   account_id  BIGINT      NOT NULL,
   product_id  CHAR(36)    NOT NULL,
+  feature     VARCHAR(20) NOT NULL DEFAULT 'core',   -- core | search | workflow (search/workflow are capacity counts)
   seats_total INT         NOT NULL DEFAULT 1,
   expires_at  DATETIME    NULL,
   status      VARCHAR(20) NOT NULL DEFAULT 'active',
@@ -115,6 +116,13 @@ BEGIN
                  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'device_registrations'
                    AND COLUMN_NAME = 'email') THEN
     ALTER TABLE device_registrations ADD COLUMN email VARCHAR(190) NULL AFTER contact_name;
+  END IF;
+  -- Feature dimension on entitlements (core | search | workflow). Existing rows
+  -- backfill to 'core', so a pre-feature account keeps working as a core licence.
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'entitlements'
+                   AND COLUMN_NAME = 'feature') THEN
+    ALTER TABLE entitlements ADD COLUMN feature VARCHAR(20) NOT NULL DEFAULT 'core' AFTER product_id;
   END IF;
 END //
 DELIMITER ;

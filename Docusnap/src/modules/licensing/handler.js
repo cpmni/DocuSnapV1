@@ -69,6 +69,18 @@ function cacheFromResponse(db, fpHash, body) {
     notAfter: c.not_after || null,
     graceUntil: c.grace_until || null,
   });
+  // Phase 1: cache the per-feature detached-client capacity the backend returned
+  // (search/workflow seat counts ride the JSON response, NOT the signed token) so the
+  // core enforces them offline; refreshed on every online validate — the backend stays
+  // the source of truth. entitlementService reads these settings.
+  if (body.features && typeof body.features === 'object') {
+    try {
+      const learning = require('../../../database/modules/learning');
+      const n = (v) => String(Math.max(0, parseInt(v, 10) || 0));
+      learning.setSetting(db, 'detached_search_seats', n(body.features.search));
+      learning.setSetting(db, 'detached_workflow_seats', n(body.features.workflow));
+    } catch { /* settings/learning unavailable — non-fatal */ }
+  }
 }
 
 // Renderer-facing status never includes the raw JWS or fingerprint.

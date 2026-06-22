@@ -30,9 +30,9 @@ try {
     // Seat-aware: if a bound SEAT exists for this fingerprint, re-issue a fresh
     // seat token (this is what refreshes the 7-day grace for paid users online).
     $seatSel = $pdo->prepare(
-        'SELECT s.id AS seat_id, s.entitlement_id, e.seats_total, e.expires_at
+        'SELECT s.id AS seat_id, s.entitlement_id, e.account_id, e.seats_total, e.expires_at
          FROM seats s JOIN entitlements e ON e.id = s.entitlement_id
-         WHERE s.fp_hash = ? AND s.status = "bound" AND e.product_id = ? AND e.status = "active"
+         WHERE s.fp_hash = ? AND s.status = "bound" AND e.product_id = ? AND e.feature = "core" AND e.status = "active"
          LIMIT 1'
     );
     $seatSel->execute([$fpHash, $productId]);
@@ -42,6 +42,11 @@ try {
         $seatsTotal = (int) $seat['seats_total'];
         $expiresAt  = $seat['expires_at'];
         $seatsUsed  = (int) $pdo->query("SELECT COUNT(*) FROM seats WHERE entitlement_id = $entId AND status = 'bound'")->fetchColumn();
+        // Per-feature capacity (search/workflow) for the core to cache + enforce.
+        $featSel = $pdo->prepare('SELECT feature, seats_total FROM entitlements WHERE account_id = ? AND product_id = ? AND status = "active" AND (expires_at IS NULL OR expires_at > NOW()) AND feature IN ("search","workflow")');
+        $featSel->execute([(int) $seat['account_id'], $productId]);
+        $features = ['search' => 0, 'workflow' => 0];
+        foreach ($featSel as $fr) { $features[$fr['feature']] = (int) $fr['seats_total']; }
         $expired    = $expiresAt !== null && new DateTimeImmutable($expiresAt) <= new DateTimeImmutable('now');
         $state      = $expired ? 'expired' : 'active';
         $claims     = seat_claims($productId, $fpHash, $state, $entId, (int) $seat['seat_id'], $seatsTotal, $seatsUsed, $expiresAt);
@@ -49,7 +54,8 @@ try {
         audit_event($pdo, null, $fpHash, 'license.validated', "kind=seat state=$state");
         send_json(200, ['token' => $token, 'kind' => 'seat', 'state' => $state,
             'entitlement_id' => $entId, 'seat_id' => (int) $seat['seat_id'],
-            'seats_total' => $seatsTotal, 'seats_used' => $seatsUsed, 'expires_at' => $expiresAt]);
+            'seats_total' => $seatsTotal, 'seats_used' => $seatsUsed, 'expires_at' => $expiresAt,
+            'features' => $features]);
         return;
     }
 

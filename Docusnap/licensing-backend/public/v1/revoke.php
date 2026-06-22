@@ -41,7 +41,7 @@ try {
 
     $ent = $pdo->prepare(
         'SELECT id, seats_total FROM entitlements
-         WHERE account_id = ? AND product_id = ? AND status = "active" ORDER BY id LIMIT 1'
+         WHERE account_id = ? AND product_id = ? AND feature = "core" AND status = "active" ORDER BY id LIMIT 1'
     );
     $ent->execute([$accountId, $productId]);
     $entitlement = $ent->fetch();

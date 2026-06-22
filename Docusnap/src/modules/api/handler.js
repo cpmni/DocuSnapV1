@@ -146,6 +146,7 @@ function createRequestListener(ctx) {
   const checkEntitlement = ctx.checkEntitlement || (() => entitlementService.checkClientEntitlement(getDb()));
   // Routes that expose the licensed feature itself (gated); auth/health/entitlement are not.
   const FEATURE_ROUTE = new RegExp(`^${API_PREFIX}/(search|documents|workflow)(/|$)`);
+  const WORKFLOW_ROUTE = new RegExp(`^${API_PREFIX}/workflow(/|$)`);   // gated on the workflow add-on, not just search
 
   const pageDeps = () => ({
     fs: ctx.fs || require('fs'),
@@ -193,11 +194,33 @@ function createRequestListener(ctx) {
       // sign in and discover it is not licensed.
       if (FEATURE_ROUTE.test(pathname)) {
         const ent = checkEntitlement();
-        if (!ent.entitled) {
+        const isWorkflow = WORKFLOW_ROUTE.test(pathname);
+        // search/documents need the SEARCH entitlement; workflow needs the WORKFLOW add-on.
+        // (Legacy/overridden ents without per-feature info still gate search via top-level.)
+        const feat = isWorkflow ? ent.workflow : (ent.search || { entitled: ent.entitled, seats: ent.seats });
+        if (!feat || !feat.entitled) {
           return sendJson(res, 402, {
-            error: 'The ScanFinder search client is not licensed for this server.',
-            code: 'FEATURE_NOT_LICENSED', feature: ent.feature,
+            error: isWorkflow
+              ? 'The workflow add-on is not licensed for this server.'
+              : 'The ScanFinder search client is not licensed for this server.',
+            code: 'FEATURE_NOT_LICENSED', feature: isWorkflow ? 'workflow' : ent.feature,
           });
+        }
+        // Workflow consumes a sub-seat ON the client's held search seat (workflow ≤ search,
+        // capped independently). Resolve the session here so the claim keys on its seat.
+        if (isWorkflow) {
+          const session = requireSession(req, res); if (!session) return;
+          if (ctx.seatPool && session.clientKey) {
+            const w = ctx.seatPool.claimWorkflow(session.clientKey, feat.seats);
+            if (!w.ok) {
+              return sendJson(res, 402, {
+                error: w.code === 'NO_SEAT'
+                  ? 'A search seat is required before using workflow.'
+                  : 'All workflow seats are in use.',
+                code: w.code === 'NO_SEAT' ? 'NO_SEARCH_SEAT' : 'WORKFLOW_LIMIT', feature: 'workflow',
+              });
+            }
+          }
         }
       }
 

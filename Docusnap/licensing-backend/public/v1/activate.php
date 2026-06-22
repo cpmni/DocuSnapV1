@@ -46,9 +46,11 @@ try {
     }
     $accountId = (int) $account['id'];
 
+    // Only the CORE feature binds an install/device seat; search/workflow are
+    // capacity counts returned below for the core to cache + enforce.
     $ent = $pdo->prepare(
         'SELECT id, seats_total, expires_at FROM entitlements
-         WHERE account_id = ? AND product_id = ? AND status = "active"
+         WHERE account_id = ? AND product_id = ? AND feature = "core" AND status = "active"
            AND (expires_at IS NULL OR expires_at > NOW())
          ORDER BY id LIMIT 1'
     );
@@ -101,6 +103,12 @@ try {
     $seatsUsed = (int) $pdo->query("SELECT COUNT(*) FROM seats WHERE entitlement_id = $entId AND status = 'bound'")->fetchColumn();
     $pdo->commit();
 
+    // Per-feature capacity (search/workflow) for the core to cache + enforce.
+    $featSel = $pdo->prepare('SELECT feature, seats_total FROM entitlements WHERE account_id = ? AND product_id = ? AND status = "active" AND (expires_at IS NULL OR expires_at > NOW()) AND feature IN ("search","workflow")');
+    $featSel->execute([$accountId, $productId]);
+    $features = ['search' => 0, 'workflow' => 0];
+    foreach ($featSel as $fr) { $features[$fr['feature']] = (int) $fr['seats_total']; }
+
     $claims = seat_claims($productId, $fpHash, 'active', $entId, $seatId, $seatsTotal, $seatsUsed, $expiresAt);
     $token  = jws_sign($claims, ACTIVE_KID);
 
@@ -115,6 +123,7 @@ try {
         'seats_total'    => $seatsTotal,
         'seats_used'     => $seatsUsed,
         'expires_at'     => $expiresAt,
+        'features'       => $features,
     ]);
 } catch (Throwable $e) {
     if (isset($pdo) && $pdo->inTransaction()) { $pdo->rollBack(); }

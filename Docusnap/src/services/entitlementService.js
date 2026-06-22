@@ -21,7 +21,9 @@
 
 const FEATURE = 'detached_client';
 const SETTING_KEY = 'detached_client_licensed';
-const SEATS_KEY = 'detached_client_seats';   // licensed concurrent-client seat count
+const SEATS_KEY = 'detached_client_seats';        // legacy single-pool count (fallback only)
+const SEARCH_SEATS_KEY = 'detached_search_seats';   // backend-cached: concurrent search clients
+const WORKFLOW_SEATS_KEY = 'detached_workflow_seats'; // backend-cached: workflow add-on capacity
 
 function _readSetting(db, key) {
   try {
@@ -32,18 +34,36 @@ function _readSetting(db, key) {
   }
 }
 
+// Resolve a non-negative seat count from `key`, falling back to `fallbackKey` (the
+// legacy single-pool setting) when the primary is unset. Entitlement is driven purely
+// by the count (>0 ⇒ entitled) — the backend (cached on validate) is the source of truth.
+function _seatCount(getSetting, db, key, fallbackKey) {
+  let raw = parseInt(getSetting(db, key), 10);
+  if (!Number.isFinite(raw) && fallbackKey) raw = parseInt(getSetting(db, fallbackKey), 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : 0;
+}
+
 /**
- * @returns {{ entitled:boolean, feature:string, seats:number, reason:string }}
- *   seats = the licensed concurrent-client seat cap (0 when not entitled; defaults to
- *   1 when entitled but the count is unset). The detached-client SEAT POOL enforces it.
+ * @returns {{ entitled:boolean, feature:string, seats:number, reason:string,
+ *             search:{entitled:boolean,seats:number}, workflow:{entitled:boolean,seats:number} }}
+ *   PER-FEATURE: `search` is the base detached-client capability (a connected client holds
+ *   a search seat); `workflow` is an add-on ON a held search seat (workflow ≤ search by
+ *   construction at the backend). Top-level entitled/seats mirror SEARCH so existing
+ *   callers (the seat pool / claimSeat) are unchanged. Counts come from settings the
+ *   licensing handler caches from the /v1 response; legacy `detached_client_seats` is a
+ *   fallback for search only. Default-deny: an unset count ⇒ 0 ⇒ not entitled.
  */
 function checkClientEntitlement(db, deps = {}) {
   const getSetting = deps.getSetting || _readSetting;
-  const val = getSetting(db, SETTING_KEY);
-  const entitled = val === 'true' || val === '1';
-  const seatsRaw = parseInt(getSetting(db, SEATS_KEY), 10);
-  const seats = entitled ? (Number.isFinite(seatsRaw) && seatsRaw > 0 ? seatsRaw : 1) : 0;
-  return { entitled, feature: FEATURE, seats, reason: entitled ? 'licensed' : 'not_licensed' };
+  const searchSeats   = _seatCount(getSetting, db, SEARCH_SEATS_KEY, SEATS_KEY);
+  const workflowSeats = _seatCount(getSetting, db, WORKFLOW_SEATS_KEY, null);
+  const search   = { entitled: searchSeats > 0,   seats: searchSeats };
+  const workflow = { entitled: workflowSeats > 0, seats: workflowSeats };
+  return {
+    entitled: search.entitled, feature: FEATURE, seats: search.seats,
+    reason: search.entitled ? 'licensed' : 'not_licensed',
+    search, workflow,
+  };
 }
 
-module.exports = { checkClientEntitlement, FEATURE, SETTING_KEY, SEATS_KEY };
+module.exports = { checkClientEntitlement, FEATURE, SETTING_KEY, SEATS_KEY, SEARCH_SEATS_KEY, WORKFLOW_SEATS_KEY };

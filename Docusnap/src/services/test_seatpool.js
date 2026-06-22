@@ -18,7 +18,7 @@ function check(label, cond) { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}`);
 
 const db = new Database(':memory:');   // persisted pool — back it with an in-memory DB
 db.exec(`CREATE TABLE client_seats (id TEXT PRIMARY KEY, client_key TEXT UNIQUE, username TEXT,
-  role TEXT, hostname TEXT, ip TEXT, first_seen INTEGER, last_seen INTEGER)`);
+  role TEXT, hostname TEXT, ip TEXT, first_seen INTEGER, last_seen INTEGER, workflow_enabled INTEGER NOT NULL DEFAULT 0)`);
 
 let t = 1000;
 let n = 0;
@@ -59,6 +59,17 @@ check('one seat free after release', pool.count() === 1);
 const d = pool.claim({ clientKey: 'c4', username: 'd', ip: '10.0.0.4' }, 2);
 check('a new client takes the freed seat', d.ok && !d.reused && pool.count() === 2);
 check('the released client cannot reclaim while full', pool.claim({ clientKey: 'c1', username: 'a' }, 2).ok === false);
+
+// workflow add-on — an upgrade ON a held search seat, capped independently of search.
+// State here: c2 + c4 hold seats; c1 was released (no seat).
+check('workflow without a held seat → NO_SEAT', pool.claimWorkflow('c1', 1).code === 'NO_SEAT');
+check('workflow on a held seat (cap 1) → ok', pool.claimWorkflow('c2', 1).ok === true);
+check('workflow now in use = 1', pool.workflowInUse() === 1);
+check('a 2nd held seat over workflow cap 1 → WORKFLOW_LIMIT',
+  (() => { const w = pool.claimWorkflow('c4', 1); return !w.ok && w.code === 'WORKFLOW_LIMIT'; })());
+check('workflow re-claim is idempotent (reused, no double-count)',
+  (() => { const w = pool.claimWorkflow('c2', 1); return w.ok && w.reused === true && pool.workflowInUse() === 1; })());
+check('list() surfaces workflowEnabled', pool.list().find(s => s.clientKey === 'c2').workflowEnabled === true);
 
 // cap 0 → nothing can claim (fresh empty pool)
 const db0 = new Database(':memory:');

@@ -62,6 +62,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
+        if ($action === 'set_account_features') {
+            // Issue OR upgrade per-feature seat counts in one step: upserts the
+            // (account, product, feature) entitlement for core/search/workflow.
+            // Additive — the account key is unchanged, so the desktop picks up the
+            // new counts on its next online validate. Enforces workflow <= search;
+            // core is the only feature that binds a device seat (search/workflow are
+            // capacity counts the core enforces). Setting a feature to 0 retires it.
+            $accountId = filter_input(INPUT_POST, 'account_id', FILTER_VALIDATE_INT);
+            $productId = trim((string) ($_POST['product_id'] ?? ''));
+            $counts = [
+                'core'     => filter_input(INPUT_POST, 'core', FILTER_VALIDATE_INT),
+                'search'   => filter_input(INPUT_POST, 'search', FILTER_VALIDATE_INT),
+                'workflow' => filter_input(INPUT_POST, 'workflow', FILTER_VALIDATE_INT),
+            ];
+            if (!$accountId)       throw new RuntimeException('Choose a valid account.');
+            if ($productId === '') throw new RuntimeException('Choose a product.');
+            foreach ($counts as $f => $v) {
+                if ($v === false || $v === null || $v < 0 || $v > 100000) {
+                    throw new RuntimeException("$f seats must be a whole number between 0 and 100000.");
+                }
+            }
+            if ($counts['core'] < 1) throw new RuntimeException('Core seats must be at least 1.');
+            if ($counts['workflow'] > $counts['search']) {
+                throw new RuntimeException('Workflow seats cannot exceed search seats.');
+            }
+            $chk = $pdo->prepare('SELECT 1 FROM accounts WHERE id = ?');
+            $chk->execute([$accountId]);
+            if (!$chk->fetchColumn()) throw new RuntimeException('Account not found.');
+            $chk = $pdo->prepare('SELECT 1 FROM products WHERE product_id = ?');
+            $chk->execute([$productId]);
+            if (!$chk->fetchColumn()) throw new RuntimeException('Product not found.');
+
+            $pdo->beginTransaction();
+            foreach ($counts as $feature => $seats) {
+                $sel = $pdo->prepare('SELECT id FROM entitlements WHERE account_id = ? AND product_id = ? AND feature = ? AND status = "active" ORDER BY id LIMIT 1');
+                $sel->execute([$accountId, $productId, $feature]);
+                $row = $sel->fetch();
+                if ($seats > 0) {
+                    if ($row) {
+                        $pdo->prepare('UPDATE entitlements SET seats_total = ? WHERE id = ?')->execute([$seats, (int) $row['id']]);
+                    } else {
+                        $pdo->prepare('INSERT INTO entitlements (account_id, product_id, feature, seats_total, status) VALUES (?, ?, ?, ?, "active")')
+                            ->execute([$accountId, $productId, $feature, $seats]);
+                    }
+                } elseif ($row) {
+                    // 0 seats → retire that feature and release any seats it had bound.
+                    $pdo->prepare('UPDATE entitlements SET status = "revoked" WHERE id = ?')->execute([(int) $row['id']]);
+                    $pdo->prepare('UPDATE seats SET fp_hash = NULL, released_at = NOW(), status = "released" WHERE entitlement_id = ? AND status = "bound"')->execute([(int) $row['id']]);
+                }
+            }
+            $pdo->commit();
+            audit_event($pdo, $accountId, null, 'admin.features_set',
+                "product=$productId core={$counts['core']} search={$counts['search']} workflow={$counts['workflow']}");
+            flash_set('ok', "Features updated — core {$counts['core']}, search {$counts['search']}, workflow {$counts['workflow']}.");
+            header('Location: index.php?account=' . $accountId);
+            exit;
+        }
+
         if ($action === 'revoke_entitlement') {
             $entId = filter_input(INPUT_POST, 'entitlement_id', FILTER_VALIDATE_INT);
             if (!$entId) throw new RuntimeException('Invalid entitlement.');
@@ -321,10 +379,10 @@ if ($account) {
     $st->execute([$account]);
     $selAccount = $st->fetch();
     if ($selAccount) {
-        $st = $pdo->prepare('SELECT e.id, e.product_id, p.name_internal, e.seats_total, e.expires_at, e.status,
+        $st = $pdo->prepare('SELECT e.id, e.product_id, e.feature, p.name_internal, e.seats_total, e.expires_at, e.status,
             (SELECT COUNT(*) FROM seats s WHERE s.entitlement_id = e.id AND s.status = "bound") AS seats_used
           FROM entitlements e LEFT JOIN products p ON p.product_id = e.product_id
-          WHERE e.account_id = ? ORDER BY e.id');
+          WHERE e.account_id = ? ORDER BY e.feature, e.id');
         $st->execute([$account]);
         $entitlements = $st->fetchAll();
 
@@ -651,10 +709,12 @@ if ($issued):
     <div class="card" style="margin-bottom:14px;">
       <div class="row" style="justify-content:space-between; align-items:flex-start;">
         <div>
-          <strong>Entitlement #<?= (int) $e['id'] ?></strong> &nbsp; <?= ent_state_pill($e) ?><br>
+          <strong>Entitlement #<?= (int) $e['id'] ?></strong> &nbsp;
+          <span class="pill"><?= h($e['feature'] ?? 'core') ?></span> &nbsp; <?= ent_state_pill($e) ?><br>
           <span class="muted">Product:</span> <?= h($e['name_internal'] ?? '(unknown)') ?>
           <span class="mono muted">(<?= h($e['product_id']) ?>)</span><br>
-          <span class="muted">Seats:</span> <span class="mono"><?= (int) $e['seats_used'] ?> / <?= (int) $e['seats_total'] ?></span>
+          <span class="muted"><?= ($e['feature'] ?? 'core') === 'core' ? 'Seats (bound/total):' : 'Capacity:' ?></span>
+          <span class="mono"><?= ($e['feature'] ?? 'core') === 'core' ? ((int) $e['seats_used'] . ' / ' . (int) $e['seats_total']) : (int) $e['seats_total'] ?></span>
           &nbsp;·&nbsp; <span class="muted">Expires:</span> <?= $e['expires_at'] ? h($e['expires_at']) : 'never' ?>
         </div>
         <?php if ($e['status'] !== 'revoked'): ?>
@@ -703,12 +763,13 @@ if ($issued):
     </div>
   <?php endforeach; endif; ?>
 
-  <!-- Create entitlement -->
+  <!-- Set licensed features (issue + upgrade in one step) -->
   <div class="card" style="margin-top:6px;">
-    <strong>Create entitlement</strong>
-    <form method="post" action="index.php" class="row" style="margin-top:10px;">
+    <strong>Set licensed features</strong>
+    <div class="muted" style="margin:4px 0 8px; max-width:640px;">Core binds the install seat; <strong>search</strong> and <strong>workflow</strong> are capacity counts the desktop enforces for connected clients. Workflow cannot exceed search. Setting a feature to 0 retires it. Additive — the account key is unchanged, so the desktop picks up new counts on its next online check.</div>
+    <form method="post" action="index.php" class="row" style="margin-top:6px;">
       <?= csrf_field() ?>
-      <input type="hidden" name="action" value="create_entitlement">
+      <input type="hidden" name="action" value="set_account_features">
       <input type="hidden" name="account_id" value="<?= (int) $selAccount['id'] ?>">
       <div class="field">
         <label for="product_id">Product</label>
@@ -720,14 +781,18 @@ if ($issued):
         </select>
       </div>
       <div class="field">
-        <label for="seats_total">Seats</label>
-        <input type="number" id="seats_total" name="seats_total" min="1" max="100000" value="1" required style="width:90px;">
+        <label for="core">Core</label>
+        <input type="number" id="core" name="core" min="1" max="100000" value="1" required style="width:80px;">
       </div>
       <div class="field">
-        <label for="expires_at">Expiry (optional)</label>
-        <input type="date" id="expires_at" name="expires_at">
+        <label for="search">Search</label>
+        <input type="number" id="search" name="search" min="0" max="100000" value="0" required style="width:80px;">
       </div>
-      <button class="btn" type="submit">Create</button>
+      <div class="field">
+        <label for="workflow">Workflow</label>
+        <input type="number" id="workflow" name="workflow" min="0" max="100000" value="0" required style="width:80px;">
+      </div>
+      <button class="btn" type="submit">Apply</button>
     </form>
   </div>
 <?php endif; ?>
