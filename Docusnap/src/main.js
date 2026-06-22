@@ -21,6 +21,13 @@ const fs   = require('fs');
 // before app 'ready' / first DB open.
 app.setPath('userData', path.join(app.getPath('appData'), 'DocuSnap'));
 
+// Windows toast attribution: without an explicit AppUserModelID, notifications are
+// labelled "Electron". Match the installer's shortcut AUMID (build.appId in
+// package.json) so toasts show the registered name ("ScanFinder") in the packaged
+// app. No-op on non-Windows; in unpackaged dev there's no registered shortcut, so
+// the name may still fall back to "Electron" — only the packaged app is affected.
+app.setAppUserModelId('com.docusnap.app');
+
 // ── Module imports ────────────────────────────────────────────────────────────
 const logger           = require('./modules/logger');
 const { makeSafeSend } = require('./lib/safe-send');
@@ -446,8 +453,8 @@ function maybeShowTrayHint() {
     learning.setSetting(getDb(), 'tray_hint_shown', 'true');
     if (Notification.isSupported && Notification.isSupported()) {
       new Notification({
-        title: 'ScanFinder is still running',
-        body: 'It’s minimised to the notification area — watch-folder import and remote search clients keep working. Right-click the tray icon to open it or exit.',
+        title: 'Still running in the background',
+        body: 'Minimised to the notification area — watch-folder import and remote search clients keep working. Right-click the tray icon to open it or exit.',
         icon: path.join(__dirname, '..', 'assets', 'icon.ico'),
       }).show();
     }
