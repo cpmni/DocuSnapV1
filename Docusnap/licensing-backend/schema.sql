@@ -92,6 +92,21 @@ CREATE TABLE IF NOT EXISTS rate_limits (
   window_start BIGINT       NOT NULL DEFAULT 0    -- unix epoch seconds
 );
 
+-- Phase 2b: processed purchase-webhook events (idempotency + audit). The external
+-- event_id is the idempotency key (PRIMARY KEY): a second delivery of the same id
+-- fails the INSERT and is a NO-OP that returns the recorded outcome. Stores the
+-- OUTCOME only — NEVER the raw payload, account_key, or signature. Whole-table
+-- addition, so CREATE-IF-NOT-EXISTS is fully idempotent on re-import.
+CREATE TABLE IF NOT EXISTS webhook_events (
+  event_id    VARCHAR(190) NOT NULL PRIMARY KEY,   -- external idempotency key
+  event_type  VARCHAR(60)  NOT NULL,
+  account_id  BIGINT       NULL,
+  product_id  CHAR(36)     NULL,
+  status      VARCHAR(20)  NOT NULL DEFAULT 'received',  -- received | applied | rejected
+  detail      TEXT         NULL,                          -- human-readable outcome; never secrets/payload
+  received_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- ── Idempotent migrations ────────────────────────────────────────────────────
 -- CREATE TABLE IF NOT EXISTS above only covers FRESH installs; an existing DB
 -- keeps its old column set. This block back-fills new columns on re-import
