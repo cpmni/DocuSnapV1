@@ -685,11 +685,27 @@ class ExtractionEngine:
                         # seeds it exists to refine — including an admin-LOCKED fixed
                         # value (a drawn zone on a real sample is the more specific
                         # curated source, per the intended precedence).
-                        is_curated_refinement = (existing is None
+                        # A garbled FREE-TEXT mapping read no longer rides curated authority:
+                        # Stage A caps such a read to its real OCR mean (~70), so a low-confidence
+                        # free-text mapping forfeits the is_curated_refinement fast-track and must
+                        # instead win on confidence — where it loses to a clean incumbent/anchor, so
+                        # a mangled crop can't out-rank the correct value on authority alone.
+                        # Threshold 75: a clean free-text mapping caps at >=78 (Stage A base 78
+                        # no-label / 90 with-label); only a garbled one (~70) is demoted. Structured
+                        # mappings (regex-validated, never capped, not in text_field_keys) are unaffected.
+                        _ft_mapping_weak = (key in text_field_keys
+                                            and data.get("confidence", 0) < 75)
+                        is_curated_refinement = ((not _ft_mapping_weak)
+                                                  and (existing is None
                                                   or existing.get("method") in
                                                      ("template_fixed", "template_anchor",
-                                                      "template_fixed_locked"))
-                        if is_curated_refinement or data["confidence"] > existing.get("confidence", 0):
+                                                      "template_fixed_locked")))
+                        # `existing is not None` guard: a weak free-text mapping with no
+                        # incumbent (existing None) has is_curated_refinement False, so the
+                        # confidence branch must not deref None — it simply forfeits and the
+                        # field is left for Stage 1/2 to fill.
+                        if is_curated_refinement or (existing is not None
+                                                     and data["confidence"] > existing.get("confidence", 0)):
                             results[key] = data
                             applied += 1
                     self._trace_stage('0.5_mapping', mapping_results, _pre_s05, results)
@@ -859,6 +875,7 @@ class ExtractionEngine:
                 page_transform=anchor_page_transform,
                 on_reject=_on_reject,
                 page_text_lines=page_text_lines,
+                text_field_keys=text_field_keys,
             )
             _pre_s2 = self._snap(results)
             self._remember_candidates('2_anchor', anchor_results)

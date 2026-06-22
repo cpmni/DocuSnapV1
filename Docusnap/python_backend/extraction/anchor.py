@@ -14,7 +14,7 @@ from PIL import Image
 from extraction import registration   # pure NumPy; no cycle (registration imports nothing here)
 
 
-def _qualify_against_format(value, field_key, format_lookup):
+def _qualify_against_format(value, field_key, format_lookup, text_field_keys=None):
     """Qualify a learned-anchor value against the field's LEARNED format (the same
     doc-type-scoped shape model Stage 4.5 uses). Returns the value to commit —
     possibly TRIMMED to the learned shape (e.g. a column-bleed read reduced to the
@@ -23,8 +23,17 @@ def _qualify_against_format(value, field_key, format_lookup):
     "Bookinc" is rejected instead of committed). No lookup / no learned format /
     already-consistent value → returned unchanged. Only ever TIGHTENS for fields
     that have actually learned a format; never loosens. Lazy import avoids any
-    module-load cycle."""
+    module-load cycle.
+
+    FREE-TEXT EXEMPTION: a free-text, non-ref field (name/company/address — the
+    `text_field_keys` set, the SAME set the Stage 4.5 free-text guard uses) has a
+    legitimately variable shape, so the learned-SHAPE veto must NOT withhold it HERE — it
+    exists to trim column-bleed off STRUCTURED refs. Without this a clean "Beaumont Care
+    Homes Ltd - <new site>" was dropped on "format" at Stage 2 before Stage 4.5's softer
+    flag-not-withhold could ever run. Structured refs (NOT in text_field_keys) keep the veto."""
     if not value or format_lookup is None:
+        return value
+    if text_field_keys and field_key in text_field_keys:
         return value
     try:
         entry = format_lookup(field_key)
@@ -49,7 +58,8 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                          format_lookup = None,
                          page_transform = None,
                          on_reject = None,
-                         page_text_lines = None) -> dict:
+                         page_text_lines = None,
+                         text_field_keys = None) -> dict:
     """
     Attempt to extract field values using saved structural anchors.
 
@@ -102,7 +112,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
         def _verify(t, _vt=val_type, _fk=field_key, _lbl=label):
             return (bool(t)
                     and _crop_is_credible(t, _vt, validation_patterns, _lbl)
-                    and bool(_qualify_against_format(t, _fk, format_lookup)))
+                    and bool(_qualify_against_format(t, _fk, format_lookup, text_field_keys)))
 
         # ── Primary: image crop + re-OCR (accurate, avoids column bleed) ──────
         if x_norm > 0 and y_norm > 0 and page0 is not None:
@@ -127,7 +137,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 # Reject/trim it so value stays None and the label search below gets
                 # a chance to relocate the right value, instead of committing the
                 # garbage at high confidence.
-                qualified = _qualify_against_format(crop_value, field_key, format_lookup)
+                qualified = _qualify_against_format(crop_value, field_key, format_lookup, text_field_keys)
                 if qualified:
                     value  = qualified
                     method = "anchor_crop"
@@ -164,7 +174,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
             if gval and not _crop_is_credible(gval, val_type, validation_patterns, label):
                 if on_reject: on_reject(field_key, "anchor_registration", gval, "not_credible")
             elif gval:
-                q = _qualify_against_format(gval, field_key, format_lookup)
+                q = _qualify_against_format(gval, field_key, format_lookup, text_field_keys)
                 if q:
                     if _should_replace(value, q, val_type, validation_patterns):
                         value  = q
@@ -214,7 +224,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                     if hv and val_type == "alphanumeric" and " " in hv:
                         hv = hv.split()[0]
                     if hv and _crop_is_credible(hv, val_type, validation_patterns, label):
-                        q = _qualify_against_format(hv, field_key, format_lookup)
+                        q = _qualify_against_format(hv, field_key, format_lookup, text_field_keys)
                         if q and _should_replace(value, q, val_type, validation_patterns):
                             value  = q
                             method = "anchor_inline"
@@ -254,7 +264,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                         if rval and not _crop_is_credible(rval, val_type, validation_patterns, label):
                             if on_reject: on_reject(field_key, "anchor_crop_relocated", rval, "not_credible")
                         elif rval:
-                            q = _qualify_against_format(rval, field_key, format_lookup)
+                            q = _qualify_against_format(rval, field_key, format_lookup, text_field_keys)
                             if q:
                                 if _should_replace(value, q, val_type, validation_patterns):
                                     value  = q
@@ -312,7 +322,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
         # Final learned-format gate — also covers the text-fallback value, so a
         # label-search read that grabbed the wrong token is rejected/trimmed too.
         if value:
-            value = _qualify_against_format(value, field_key, format_lookup)
+            value = _qualify_against_format(value, field_key, format_lookup, text_field_keys)
 
         # Name-quality gate (Part 3): a NAME/company/address field whose read is a
         # garbled MULTI-WORD string ("Fr eanehae Crane", "67 Boucher Cre") is OCR

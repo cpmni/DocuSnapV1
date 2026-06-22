@@ -452,6 +452,91 @@ def test_passive_anchor_cannot_displace_keyword_override_name():
     return f
 
 
+# ── Stage B: free-text mapping authority gated on read quality (A') + Stage 2
+#    free-text shape-veto exemption (C). Both type/confidence-based, no is_name. ──────
+NAME = [{"key": "customer_name", "type": "text"}]   # free-text, NON-ref -> in text_field_keys
+
+
+def test_stage05_garbled_freetext_mapping_forfeits_authority():
+    print("Stage B (A'): a GARBLED free-text mapping (capped conf 70) forfeits curated authority; the clean anchor wins")
+    f = 0
+    results, _ = _run(NAME,
+        seed={"customer_name": {"value": "Beaumont Care Homes Ltd - Comber", "confidence": 95, "method": "template_fixed"}},
+        mapping={"customer_name": {"value": "504 Ald Unkesand Band 20|0U0U", "confidence": 70, "method": "template_mapping"}},
+        anchor={"customer_name": {"value": "Beaumont Care Homes Ltd - Holywood", "confidence": 80, "method": "anchor_crop"}})
+    if not check("garbled mapping does NOT win on authority; the clean anchor 'Holywood' wins",
+                 _val(results, "customer_name") == "Beaumont Care Homes Ltd - Holywood"):
+        f += 1
+    if not check("winning method is the anchor, not the mapping", _method(results, "customer_name") == "anchor_crop"):
+        f += 1
+    print()
+    return f
+
+
+def test_stage05_garbled_freetext_mapping_no_seed_forfeits():
+    print("Stage B (A'): a garbled free-text mapping with NO incumbent forfeits cleanly (no crash); the anchor fills")
+    f = 0
+    results, _ = _run(NAME,
+        mapping={"customer_name": {"value": "504 Ald Unkesand Band 20|0U0U", "confidence": 70, "method": "template_mapping"}},
+        anchor={"customer_name": {"value": "Beaumont Care Homes Ltd - Holywood", "confidence": 80, "method": "anchor_crop"}})
+    if not check("no-incumbent garbled mapping forfeits; the anchor fills the field",
+                 _val(results, "customer_name") == "Beaumont Care Homes Ltd - Holywood"):
+        f += 1
+    print()
+    return f
+
+
+def test_stage05_clean_freetext_mapping_keeps_authority():
+    print("Stage B (A'): a CLEAN free-text mapping (conf 90) KEEPS curated authority over a stale seed")
+    f = 0
+    results, _ = _run(NAME,
+        seed={"customer_name": {"value": "Beaumont Care Homes Ltd - Comber", "confidence": 95, "method": "template_fixed"}},
+        mapping={"customer_name": {"value": "Beaumont Care Homes Ltd - Holywood", "confidence": 90, "method": "template_mapping"}})
+    if not check("clean mapping wins over the stale template_fixed seed (curated authority preserved)",
+                 _val(results, "customer_name") == "Beaumont Care Homes Ltd - Holywood"):
+        f += 1
+    if not check("winning method is template_mapping", _method(results, "customer_name") == "template_mapping"):
+        f += 1
+    print()
+    return f
+
+
+def test_stage05_structured_mapping_authority_unaffected():
+    print("Stage B (A'): a STRUCTURED (ref) low-conf mapping KEEPS authority — A' only demotes free-text")
+    f = 0
+    results, _ = _run(REF,   # invoice_number = ref -> NOT in text_field_keys -> exempt from A'
+        seed={"invoice_number": {"value": "OLD", "confidence": 95, "method": "template_fixed"}},
+        mapping={"invoice_number": {"value": "INV-77", "confidence": 60, "method": "template_mapping"}})
+    if not check("low-conf structured mapping still wins (regex is the trust signal, not capped)",
+                 _val(results, "invoice_number") == "INV-77"):
+        f += 1
+    print()
+    return f
+
+
+def test_stage2_freetext_anchor_exempt_from_shape_veto():
+    print("Stage B (C): _qualify_against_format skips the learned-shape veto for a free-text field; refs keep it")
+    f = 0
+    from extraction import anchor as _anc
+    called = []
+    def _spy(fk):
+        called.append(fk); return None
+    out = _anc._qualify_against_format("Beaumont Care Homes Ltd - Holywood", "customer_name", _spy,
+                                       text_field_keys={"customer_name"})
+    if not check("free-text field exempt: value returned unchanged", out == "Beaumont Care Homes Ltd - Holywood"):
+        f += 1
+    if not check("free-text field exempt: the shape veto (format_lookup) is NOT consulted",
+                 "customer_name" not in called):
+        f += 1
+    called.clear()
+    _anc._qualify_against_format("2602-0768-1", "invoice_number", _spy, text_field_keys={"customer_name"})
+    if not check("structured ref NOT exempt: the shape veto IS applied (format_lookup consulted)",
+                 "invoice_number" in called):
+        f += 1
+    print()
+    return f
+
+
 def main():
     failures = 0
     failures += test_keyword_name_value_edge_cleaned_at_capture()
@@ -476,6 +561,12 @@ def main():
     failures += test_stage05_mapping_beats_locked()
     failures += test_keyword_override_beats_locked()
     failures += test_locked_supplier_name_survives_garbled_read()
+    # Stage B: free-text mapping authority gating (A') + Stage 2 free-text shape exemption (C)
+    failures += test_stage05_garbled_freetext_mapping_forfeits_authority()
+    failures += test_stage05_garbled_freetext_mapping_no_seed_forfeits()
+    failures += test_stage05_clean_freetext_mapping_keeps_authority()
+    failures += test_stage05_structured_mapping_authority_unaffected()
+    failures += test_stage2_freetext_anchor_exempt_from_shape_veto()
     if failures:
         print(f"{failures} check(s) failed — extraction precedence regressed.")
         return 1
