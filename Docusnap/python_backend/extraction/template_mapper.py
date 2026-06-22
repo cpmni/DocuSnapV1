@@ -614,6 +614,15 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
     # extra OCR). Fires ONLY on a genuine displaced match (anchor_text present,
     # matched_text set); blank-label / unfound paths fall through unchanged. A
     # failed relocation also falls through (no worse than today).
+    # ANCHOR-OFFSET LINK FIRST: when this field's OWN anchor label is located, the
+    # value sits at the label's position + the stored offset — a LOCAL, rigid
+    # label→value link that is strictly more reliable than a global page transform
+    # (a poor landmark fit drifts boxes per-region, floating the value off a
+    # correctly-anchored label: the "anchor and data point aren't linked" bug).
+    #   • label found + DISPLACED  → re-derive via the stored offset and win;
+    #   • label found + at its spot → the absolute read already IS that anchored read,
+    #                                 so mark it stable and let it stand.
+    anchor_stable = False
     if abs_text and anchor_text and located is not _UNSET:
         drift_located = located or _locate_anchor(
             page, anchor_box, anchor_text, 1.0, ocr_lines_fn,
@@ -626,17 +635,20 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
                                            field_key)
             if relocated:
                 return relocated
-    # ── REGISTRATION ARBITER (drift detected by the GLOBAL page transform) ──────
-    # The per-field label-drift guard above didn't fire (a generic / merged-row
-    # label, or the label wasn't displaced locally), but a fitted page transform
-    # is the most reliable, global drift signal. If it says the taught target box
-    # maps to a MEANINGFULLY moved position (box_divergence beyond the same
-    # "still on this row?" band _label_drifted uses), the stationary absolute read
-    # is on the wrong row — a credible-but-WRONG type-valid neighbour that
-    # shape_mode='ignore' can't catch — so prefer the registration read. Clean
-    # pages → transform ≈ identity → divergence ≈ 0 → arbiter never fires → the
-    # absolute fast path below is byte-identical. A failed reg read falls through.
-    if (abs_text and page_transform is not None
+        elif drift_located:
+            anchor_stable = True
+    # ── REGISTRATION ARBITER (global page transform) — FALLBACK ONLY ────────────
+    # Fires ONLY when the anchor is NOT a usable local signal (not found, or a
+    # too-wide merged-row match the relocation refused → anchor_stable stays False).
+    # A fitted page transform is then the global drift signal: if it says the taught
+    # target box maps to a MEANINGFULLY moved position (box_divergence beyond the
+    # same "still on this row?" band _label_drifted uses), the stationary absolute
+    # read is on the wrong row — a credible-but-WRONG type-valid neighbour that
+    # shape_mode='ignore' can't catch — so prefer the registration read. A
+    # correctly-anchored value (anchor_stable) is NEVER overridden by the transform.
+    # Clean pages → divergence ≈ 0 → arbiter never fires → the absolute fast path
+    # below is byte-identical. A failed reg read falls through.
+    if (abs_text and page_transform is not None and not anchor_stable
             and registration.box_divergence(page_transform, target_box)
                 > max(target_box["h_norm"] * 0.5, _DRIFT_FLOOR)):
         reg = _read_registration(page, mapping, target_box, val_type, ocr_text_fn,

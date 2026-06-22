@@ -140,6 +140,31 @@ def test_registration_read_fails_falls_through_to_absolute():
     return f
 
 
+def _run_located(page_transform, ocr_text_fn, located):
+    return template_mapper._extract_one(
+        FakePage(), mp(), FPS, NO_LINES, ocr_text_fn,
+        located=located, page_transform=page_transform, validation_patterns=VPS)
+
+
+def test_found_anchor_not_displaced_beats_registration():
+    print("LINK: this field's anchor found at its spot -> the rigid anchored read wins over a (poor) page transform")
+    f = 0
+    # `located` ≈ the drawn anchor box (NOT displaced) -> _label_drifted False ->
+    # anchor_stable -> the registration arbiter must NOT override a correctly-anchored
+    # value, even though box_divergence is high (a poor global landmark fit). This is
+    # the "anchor and data point aren't linked" fix: the local label→value link wins.
+    located = {"x_norm": 0.10, "y_norm": 0.18, "w_norm": 0.15, "h_norm": 0.03,
+               "matched_text": "Invoice No",
+               "label_box": {"x_norm": 0.10, "y_norm": 0.18, "w_norm": 0.15, "h_norm": 0.03}}
+    out = _run_located(transform(ty=0.12), band_text("INV-001", "INV-XXX"), located)
+    f += not check("anchored absolute value wins (INV-001), NOT the transform read (INV-XXX)",
+                   (out or {}).get("value") == "INV-001")
+    f += not check("method stays template_mapping (arbiter skipped: anchor is a usable local signal)",
+                   (out or {}).get("method") == "template_mapping")
+    print()
+    return f
+
+
 def main():
     fails = 0
     fails += test_box_divergence()
@@ -148,6 +173,7 @@ def main():
     fails += test_no_transform_unchanged()
     fails += test_below_tolerance_keeps_absolute()
     fails += test_registration_read_fails_falls_through_to_absolute()
+    fails += test_found_anchor_not_displaced_beats_registration()
     if fails:
         print(f"{fails} check(s) failed - registration arbiter regressed.")
         return 1
