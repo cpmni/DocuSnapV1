@@ -91,6 +91,13 @@ function register(ctx) {
       }
     });
   }
+  // Expose the landmark generator so the teach-wizard commit path
+  // (review/handler.js -> promote-to-template) can derive landmarks right after it pins
+  // its sample. Every OTHER sample-pin path (set-template-sample / import-sample) already
+  // calls generateLandmarks, but promote-to-template only set the sample — so teach-created
+  // templates were born with NO landmarks and registration (the drift correction) stayed
+  // inert, letting a mapping box drift onto the wrong row. Best-effort; never throws.
+  ctx.generateLandmarks = generateLandmarks;
 
   // Lazy one-shot backfill: existing templates that have a pinned sample but no
   // landmarks gain them with NO re-teach. Delayed + sequential so it never

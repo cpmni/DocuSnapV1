@@ -502,6 +502,14 @@ function register(ctx) {
       // it is the right representative sample.
       if (result.templateId) {
         templates.setSampleDocument(db, result.templateId, document_id);
+        // Derive registration landmarks from the just-pinned sample (best-effort), so a
+        // teach-created template gets the SAME drift correction as every other pin path
+        // (set-template-sample / import-sample). Without this, teach templates had no
+        // landmarks -> registration inert -> a mapping box drifts onto the wrong row
+        // (the "90 Galaorm Road 7" case). Never blocks the commit; generateLandmarks
+        // resolves (never rejects) and the template still works via anchors meanwhile.
+        try { if (ctx.generateLandmarks) await ctx.generateLandmarks(result.templateId); }
+        catch (e) { console.error('promote-to-template landmarks:', e.message); }
       }
       return { success: true, ...result };
     } catch (e) {
