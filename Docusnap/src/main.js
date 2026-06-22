@@ -7,7 +7,7 @@
  * Each module registers its own IPC handlers via module.register(ipcMain, getDb, ...).
  */
 
-const { app, BrowserWindow, ipcMain, screen, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, shell, Tray, Menu } = require('electron');
 const path = require('path');
 const fs   = require('fs');
 
@@ -89,6 +89,8 @@ function templatesDir() {
 
 // ── Window management ─────────────────────────────────────────────────────────
 const windows = {};
+let isQuitting = false;   // true only when a real quit is underway (tray Exit / OS) — lets the main window actually close instead of hiding to tray
+let tray = null;          // system-tray icon; kept referenced so it isn't garbage-collected
 
 // Doc id to focus when the review window opens via "Edit in Review" from Search.
 // Cleared by get-review-target (pulled by the renderer after loadQueue) or
@@ -112,9 +114,14 @@ const HELP_WINDOW_OPTIONS = { width: 940, height: 700, minWidth: 640, minHeight:
 // passes through a zero-window moment that would trip window-all-closed.
 function showLoginScreen() {
   createWindow('login', LOGIN_WINDOW_OPTIONS, 'index.html');
+  // Logout MUST destroy the main shell, never hide it — the tray close-interceptor
+  // would otherwise hide it, and re-showing that window would leak the previous
+  // user's session. Mark it so the interceptor allows the close.
+  if (windows['main']) windows['main']._allowClose = true;
   Object.keys(windows).forEach((name) => {
     if (name !== 'login') windows[name]?.close();
   });
+  refreshTrayMenu();   // reflect logged-out state (disable Review/Settings)
 }
 
 // Raw shell open — only ever reached AFTER the licensing gate has allowed it.
@@ -123,6 +130,7 @@ function openMainShell() {
   windows['login']?.close();
   windows['license']?.close();
   windows['onboarding']?.close();
+  refreshTrayMenu();   // reflect logged-in state (enable Review/Settings)
 }
 
 // First-run setup wizard. Shows ONLY when `first_run_completed` !== 'true' (a
@@ -348,8 +356,65 @@ function createWindow(name, options, htmlFile) {
 
   win.loadFile(path.join(__dirname, 'windows', name, 'index.html'));
   win.on('closed', () => { delete windows[name]; });
+  // Minimise-to-tray: a logged-in user closing the MAIN shell hides it (the core
+  // keeps running for watch/processing/remote clients) instead of quitting — only
+  // when authenticated, NOT a logged-out background mode. A real Exit sets
+  // isQuitting; logout sets win._allowClose so the shell is DESTROYED, not hidden
+  // (a re-shown hidden window would leak the previous user's session).
+  if (name === 'main') {
+    win.on('close', (e) => {
+      if (!isQuitting && !win._allowClose && authModule.getCurrentUser && authModule.getCurrentUser()) {
+        e.preventDefault();
+        win.hide();
+      }
+    });
+  }
   windows[name] = win;
   return win;
+}
+
+// ── System tray (minimise-to-background; Stage 1) ─────────────────────────────
+// Re-show whichever primary window exists — the main shell when logged in, else
+// the login window — reusing createWindow's restore-if-hidden/minimised path.
+function showPrimaryWindow() {
+  const name = (windows['main']  && !windows['main'].isDestroyed())  ? 'main'
+             : (windows['login'] && !windows['login'].isDestroyed()) ? 'login' : null;
+  if (!name) return;
+  const w = windows[name];
+  try { if (w.isMinimized()) w.restore(); if (!w.isVisible()) w.show(); w.focus(); } catch { /* stale ref */ }
+}
+
+// Tray menu — auth-gated items are explicitly DISABLED when the role is absent
+// (not silent no-ops). Rebuilt on login/logout via refreshTrayMenu().
+function buildTrayMenu() {
+  const canReview   = !!(authModule.hasRole && authModule.hasRole('admin', 'edit'));
+  const canSettings = !!(authModule.hasRole && authModule.hasRole('admin'));
+  return Menu.buildFromTemplate([
+    { label: 'Open ScanFinder', click: () => showPrimaryWindow() },
+    { type: 'separator' },
+    { label: 'Open Review',   enabled: canReview,
+      click: () => { if (authModule.hasRole('admin', 'edit')) createWindow('review',   { width: 1200, height: 800, minWidth: 900, minHeight: 600 }); } },
+    { label: 'Open Settings', enabled: canSettings,
+      click: () => { if (authModule.hasRole('admin'))         createWindow('settings', { width: 1100, height: 680, minWidth: 900, minHeight: 520 }); } },
+    { type: 'separator' },
+    { label: 'Exit ScanFinder', click: () => { isQuitting = true; app.quit(); } },
+  ]);
+}
+
+function refreshTrayMenu() {
+  try { if (tray && !tray.isDestroyed()) tray.setContextMenu(buildTrayMenu()); } catch { /* tray gone */ }
+}
+
+function setupTray() {
+  if (tray) return;
+  try {
+    tray = new Tray(path.join(__dirname, '..', 'assets', 'icon.ico'));   // ../assets resolves correctly (matches the splash icon, line ~198); the createWindow path has a latent off-by-one that BrowserWindow silently tolerates but Tray would not
+    tray.setToolTip('ScanFinder');
+    tray.on('double-click', () => showPrimaryWindow());
+    refreshTrayMenu();
+  } catch (e) {
+    logger.warn?.('[tray] could not create tray icon: ' + (e && e.message));
+  }
 }
 
 // Best-effort startup integrity sweep of the managed import inbox. Copy-on-
@@ -402,7 +467,15 @@ function notifyAllWindows(channel, ...args) {
 }
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────
+// Single instance: relaunching (e.g. the shortcut while the app is hidden in the
+// tray) must re-show the running instance, NOT spawn a second core that would
+// double-bind the API/watch. The loser quits; the winner re-shows on 'second-instance'.
+const _gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!_gotSingleInstanceLock) app.quit();
+app.on('second-instance', () => showPrimaryWindow());
+
 app.whenReady().then(() => {
+  if (!_gotSingleInstanceLock) return;   // a second instance: don't build anything, just quit
   // Frameless windows shown via show()/swap don't reliably take OS keyboard focus
   // on Windows — especially after the alwaysOnTop splash closes and the next
   // window is show()'d in the same step. The result is a visible window whose
@@ -583,6 +656,13 @@ app.whenReady().then(() => {
   });
   // Fallback cleanup on clean exit.
   app.on('before-quit', () => {
+    // Any quit path (tray Exit, OS shutdown, app.quit) → allow the main window to
+    // actually close instead of hiding to tray.
+    isQuitting = true;
+    // Stop background work so Exit leaves no orphaned python.exe: clear the watch
+    // poll timer + kill in-flight watch Python, and tree-kill the manual batch.
+    try { watchModule.stopForQuit(); } catch (e) { logger.warn?.('[quit] watch cleanup: ' + (e && e.message)); }
+    try { processingModule.killAll(); } catch (e) { logger.warn?.('[quit] processing cleanup: ' + (e && e.message)); }
     try { fs.rmSync(devSliceDir, { recursive: true, force: true }); } catch {}
     try { diaglog.close(); } catch {}
   });
@@ -746,7 +826,13 @@ app.whenReady().then(() => {
   // All IPC handlers are registered — now serialize the startup windows: the
   // splash stays alone for ~2s, then the (preloaded, hidden) login window is
   // revealed as the single follow-on. No overlap with the splash.
+  setupTray();          // system-tray icon, present for the life of the app
   launchStartupWindow();
 });
 
+// Quit when no windows remain. With the tray close-interceptor the MAIN shell is
+// HIDDEN (not destroyed) on close, so this does NOT fire while the app sits in the
+// tray. It only fires when there's genuinely no shell window — e.g. closing the
+// login window before signing in — where quitting is correct (tray mode is a
+// logged-in convenience, and we never leave a headless background process).
 app.on('window-all-closed', () => { app.quit(); });

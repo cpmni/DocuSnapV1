@@ -1406,12 +1406,30 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger) {
   notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
 }
 
+// Quit-time teardown: tree-kill every running manual-batch worker (the same
+// taskkill /T as the stop-processing IPC) so the app exits clean with no orphaned
+// python.exe. Called from main.js before-quit.
+function killAll() {
+  if (!_currentBatchProcs.length) return;
+  _cancelRequested = true;
+  for (const proc of _currentBatchProcs) {
+    try {
+      require('child_process').spawnSync(
+        'taskkill', ['/F', '/T', '/PID', String(proc.pid)],
+        { windowsHide: true, stdio: 'ignore' });
+    } catch {}
+    try { proc.kill(); } catch {}
+  }
+  _currentBatchProcs = [];
+}
+
 module.exports = {
   register,
   // Exposed so other entry points into the same pipeline (e.g. the
   // watch-folder handler) can reuse this setup/dispatch machinery instead
   // of duplicating it on a parallel import path.
   buildTrainingArgs,
+  killAll,
   cleanupTempFiles: cleanupFiles,
   handleFileMessage: _handleFileMessage,
   drainOriginalToFolder,

@@ -37,6 +37,7 @@ let _watchFolder  = null;
 let _tracked      = new Map();   // filename -> { size, mtimeMs, lastChangeAt, state }
 let _queue        = [];          // filenames accepted, awaiting their turn
 let _inFlight     = 0;           // count of _processFile workers currently running
+const _liveProcs  = new Set();   // live watch Python child procs — for quit-time kill
 
 // ── Pure stability-decision logic ────────────────────────────────────────────
 // Given the previously tracked state for a file (or null, on first sighting)
@@ -131,6 +132,22 @@ function _stop() {
   _tracked = new Map();
   _queue = [];
   _inFlight = 0;
+}
+
+// Quit-time teardown: stop the poll loop and tree-kill any in-flight watch Python
+// so the app exits clean with no orphaned python.exe. taskkill /T kills the launcher
+// (py.exe) AND its python.exe child — proc.kill() alone leaves the child alive.
+function stopForQuit() {
+  _stop();
+  for (const proc of _liveProcs) {
+    try {
+      require('child_process').spawnSync(
+        'taskkill', ['/F', '/T', '/PID', String(proc.pid)],
+        { windowsHide: true, stdio: 'ignore' });
+    } catch {}
+    try { proc.kill(); } catch {}
+  }
+  _liveProcs.clear();
 }
 
 // ── Poll: detect new/changed files, advance stability timers ─────────────────
@@ -291,6 +308,7 @@ async function _processFile(db, filename) {
       ...trainingArgs,
     ];
     const proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs), { windowsHide: true });
+    _liveProcs.add(proc);   // track for quit-time kill (untracked on close below)
     let buf = '';
 
     proc.stdout.on('data', (data) => {
@@ -333,6 +351,7 @@ async function _processFile(db, filename) {
     });
 
     proc.on('close', (code) => {
+      _liveProcs.delete(proc);
       try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
       processing.cleanupTempFiles(tempFiles);
       _log('log', `[watch] finished: ${filename} (exit=${code})`);
@@ -395,6 +414,7 @@ function register(ctx) {
 
 module.exports = {
   register,
+  stopForQuit,   // called from main.js before-quit to clear the poll timer + kill watch python
   // Exported for direct unit testing of the stability/debounce decision —
   // see classifyPoll's own comment for why it's kept pure and side-effect-free.
   classifyPoll,
