@@ -125,31 +125,89 @@ function _pageCacheSet(id, v) {
   while (pageCache.size > PAGE_CACHE_MAX) pageCache.delete(pageCache.keys().next().value);
 }
 
+// ── Connection watch ──────────────────────────────────────────────────────────
+// Detect when the server (the core app) becomes unreachable — proactively via a
+// heartbeat while signed in, and reactively when any authed call hits a network
+// error — and tell the renderer so it can show a "connection lost" overlay with a
+// Retry. Reachability only: a server that's UP but returns an error status counts
+// as connected (session/permission handling stays in the existing 401 path).
+let connAlive = true;
+let heartbeatTimer = null;
+const HEARTBEAT_MS = 5000;
+
+function markConnection(alive) {
+  if (alive === connAlive) return;                 // edge-triggered: only on change
+  connAlive = alive;
+  if (win && !win.isDestroyed()) {
+    try { win.webContents.send(alive ? 'client-connection-restored' : 'client-connection-lost'); } catch { /* window gone */ }
+  }
+}
+function isNetworkError(e) {
+  const code = e && e.code;
+  if (code && ['ECONNREFUSED','ECONNRESET','ETIMEDOUT','ENOTFOUND','EHOSTUNREACH','EHOSTDOWN','ENETUNREACH','EPIPE','ECONNABORTED','EAI_AGAIN'].includes(code)) return true;
+  return /socket hang up|network|ECONN|timed?\s*out|getaddrinfo/i.test((e && e.message) || '');
+}
+// Wrap an authed IPC handler so a NETWORK failure flips the connection state (a
+// real network success clears it). Re-throws so the renderer's own handling runs.
+function guarded(fn) {
+  return async (...args) => {
+    try { const r = await fn(...args); markConnection(true); return r; }
+    catch (e) { if (isNetworkError(e)) markConnection(false); throw e; }
+  };
+}
+async function pingServer() {
+  if (!client) return false;
+  try { return await client.ping(); } catch { return false; }
+}
+function startHeartbeat() {
+  stopHeartbeat();
+  connAlive = true;
+  heartbeatTimer = setInterval(async () => { markConnection(await pingServer()); }, HEARTBEAT_MS);
+}
+function stopHeartbeat() {
+  if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+  connAlive = true;
+}
+// Manual retry from the "connection lost" overlay — force an immediate re-check.
+ipcMain.handle('client-retry-connection', async () => {
+  const ok = await pingServer();
+  markConnection(ok);
+  return { ok };
+});
+
 ipcMain.handle('client-config',       () => ({ apiUrl: serverConfig ? urlOf(serverConfig) : null }));
 ipcMain.handle('client-connect',      () => client ? client.connect() : { ok: false, mode: 'block', reason: 'No server configured.' });
-ipcMain.handle('client-login',        (_e, { username, password, totp }) => client ? client.login(username, password, totp) : { ok: false, error: 'No server configured.' });
-ipcMain.handle('client-logout',       () => { pageCache.clear(); return client ? client.logout() : { ok: true }; });
+ipcMain.handle('client-login',        async (_e, { username, password, totp }) => {
+  if (!client) return { ok: false, error: 'No server configured.' };
+  const r = await client.login(username, password, totp);
+  if (client.isAuthenticated()) startHeartbeat();   // watch the connection for this session
+  return r;
+});
+ipcMain.handle('client-logout',       () => { stopHeartbeat(); pageCache.clear(); return client ? client.logout() : { ok: true }; });
 ipcMain.handle('client-entitlement',  () => client ? client.entitlement() : { status: 0, json: null });
-ipcMain.handle('client-search',       (_e, params) => client.search(params));
-ipcMain.handle('client-get-document', (_e, id) => client.getDocument(id));
+ipcMain.handle('client-search',       guarded((_e, params) => client.search(params)));
+ipcMain.handle('client-get-document', guarded((_e, id) => client.getDocument(id)));
 ipcMain.handle('client-get-pages',    async (_e, id) => {
   const hit = _pageCacheGet(id);
-  if (hit !== undefined) return hit;                 // instant re-click
-  const res = await client.getPages(id);
-  if (res && res.status === 200 && res.json) _pageCacheSet(id, res);   // cache only successful payloads
-  return res;
+  if (hit !== undefined) return hit;                 // instant re-click (no network → don't touch conn state)
+  try {
+    const res = await client.getPages(id);
+    markConnection(true);
+    if (res && res.status === 200 && res.json) _pageCacheSet(id, res);   // cache only successful payloads
+    return res;
+  } catch (e) { if (isNetworkError(e)) markConnection(false); throw e; }
 });
 ipcMain.handle('client-authed',       () => client ? client.isAuthenticated() : false);
 
 // Mailbox / approval workflow.
-ipcMain.handle('client-wf-list',       (_e, view) => client.workflow.list(view));
-ipcMain.handle('client-wf-recipients', () => client.workflow.recipients());
-ipcMain.handle('client-wf-assign',     (_e, { documentId, toUserId, actionRequired, comment }) =>
-  client.workflow.assign(documentId, toUserId, actionRequired, comment));
-ipcMain.handle('client-wf-claim',      (_e, { id, version }) => client.workflow.claim(id, version));
-ipcMain.handle('client-wf-resolve',    (_e, { id, decision, comment, version }) =>
-  client.workflow.resolve(id, decision, comment, version));
-ipcMain.handle('client-wf-recall',     (_e, { id, version }) => client.workflow.recall(id, version));
+ipcMain.handle('client-wf-list',       guarded((_e, view) => client.workflow.list(view)));
+ipcMain.handle('client-wf-recipients', guarded(() => client.workflow.recipients()));
+ipcMain.handle('client-wf-assign',     guarded((_e, { documentId, toUserId, actionRequired, comment }) =>
+  client.workflow.assign(documentId, toUserId, actionRequired, comment)));
+ipcMain.handle('client-wf-claim',      guarded((_e, { id, version }) => client.workflow.claim(id, version)));
+ipcMain.handle('client-wf-resolve',    guarded((_e, { id, decision, comment, version }) =>
+  client.workflow.resolve(id, decision, comment, version)));
+ipcMain.handle('client-wf-recall',     guarded((_e, { id, version }) => client.workflow.recall(id, version)));
 
 // About box: version details + open the bundled third-party notice.
 ipcMain.handle('client-about', () => {

@@ -431,6 +431,18 @@
     </div>
   </div>
 
+  <!-- Connection-lost modal -->
+  <div id="conn-lost" class="about-overlay hidden">
+    <div class="about-card" role="alertdialog" aria-modal="true" aria-labelledby="conn-lost-title">
+      <svg class="brandmark" data-ic="refresh" style="width:42px;height:42px;color:#e0a948"></svg>
+      <div id="conn-lost-title" class="about-title">Connection lost</div>
+      <div class="about-sub" id="conn-lost-msg">The ScanFinder server is unreachable — it may have been closed, or the network dropped. Your session resumes automatically when it’s back.</div>
+      <div class="about-actions">
+        <button id="conn-lost-retry" class="btn btn-primary btn-sm"><span data-ic="refresh"></span>Retry now</button>
+      </div>
+    </div>
+  </div>
+
   <script src="renderer.js"></script>
 </body>
 </html>

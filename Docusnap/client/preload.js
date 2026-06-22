@@ -26,6 +26,10 @@ contextBridge.exposeInMainWorld('scanfinder', {
   getDocument:     (id) => ipcRenderer.invoke('client-get-document', id),
   getPages:        (id) => ipcRenderer.invoke('client-get-pages', id),
   isAuthenticated: () => ipcRenderer.invoke('client-authed'),
+  // Connection watch: main pushes lost/restored; the renderer can force a re-check.
+  onConnectionLost:     (cb) => ipcRenderer.on('client-connection-lost',     () => cb()),
+  onConnectionRestored: (cb) => ipcRenderer.on('client-connection-restored', () => cb()),
+  retryConnection:      () => ipcRenderer.invoke('client-retry-connection'),
   about:           () => ipcRenderer.invoke('client-about'),
   openLicenses:    () => ipcRenderer.invoke('client-open-licenses'),
   workflow: {

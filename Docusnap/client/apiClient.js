@@ -144,6 +144,13 @@ function createClient(opts = {}) {
     const q = new URLSearchParams({ folderPath: folderPath || '', filename: filename || '' });
     return request('GET', `/v1/documents/${encodeURIComponent(id)}/pages?${q}`, { withAuth: true });
   }
+  // Lightweight reachability probe (no auth). True if the server responds at all
+  // (any status); false if the connection fails (server closed / unreachable) —
+  // drives the client's connection-watch heartbeat.
+  async function ping() {
+    try { await request('GET', '/v1/health'); return true; }
+    catch { return false; }
+  }
 
   // ── Mailbox / approval workflow ───────────────────────────────────────────────
   const wfList    = (view) => request('GET', `/v1/workflow/${view}`, { withAuth: true });
@@ -183,7 +190,7 @@ function createClient(opts = {}) {
   }
 
   return {
-    connect, login, logout, entitlement, search, getDocument, getPages, fetchCa, enroll,
+    connect, login, logout, entitlement, search, getDocument, getPages, ping, fetchCa, enroll,
     workflow: { list: wfList, recipients, assign, claim, resolve, recall },
     isAuthenticated: () => !!token,
     _setToken: (t) => { token = t; }, // test/diagnostic aid only

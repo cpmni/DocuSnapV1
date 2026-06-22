@@ -110,8 +110,30 @@ function fillServerForm(cfg) {
 }
 function showConnect(reason) { showOnly('connect'); $('connect-err').textContent = reason || ''; }
 
+// ── Connection-lost overlay ──────────────────────────────────────────────────
+// Main pushes 'lost'/'restored' (heartbeat while signed in + reactive on a failed
+// call). Show a blocking modal with a Retry that forces an immediate re-check;
+// the overlay also auto-dismisses when the heartbeat sees the server return.
+function showConnLost() { $('conn-lost')?.classList.remove('hidden'); setConn('block', 'Connection lost'); }
+function hideConnLost() { $('conn-lost')?.classList.add('hidden'); }
+function wireConnLost() {
+  api.onConnectionLost?.(showConnLost);
+  api.onConnectionRestored?.(() => { hideConnLost(); setConn('ok', 'Reconnected'); });
+  const btn = $('conn-lost-retry');
+  if (btn) btn.addEventListener('click', async () => {
+    const orig = btn.innerHTML;
+    btn.disabled = true; btn.textContent = 'Reconnecting…';
+    let ok = false;
+    try { const r = await api.retryConnection(); ok = !!(r && r.ok); } catch { /* stays lost */ }
+    btn.disabled = false; btn.innerHTML = orig;
+    if (ok) hideConnLost();
+    else toast('Still can’t reach the server.', 'err');
+  });
+}
+
 async function boot() {
   hydrateIcons();
+  wireConnLost();
   navActive($('nav-search'), true); navActive($('nav-mailbox'), false);
   const cfg = await api.getServer();
   if (cfg && cfg.host) {
