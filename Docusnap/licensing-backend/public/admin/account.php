@@ -89,15 +89,15 @@ admin_nav('accounts');
         </select>
       </div>
       <div class="field">
-        <label for="core">Core</label>
+        <label for="core">Core (installs)</label>
         <input type="number" id="core" name="core" min="1" max="100000" value="<?= (int) $preCounts['core'] ?>" required style="width:80px;">
       </div>
       <div class="field">
-        <label for="search">Search</label>
+        <label for="search">Search clients</label>
         <input type="number" id="search" name="search" min="0" max="100000" value="<?= (int) $preCounts['search'] ?>" required style="width:80px;">
       </div>
       <div class="field">
-        <label for="workflow">Workflow</label>
+        <label for="workflow">Workflow add-on</label>
         <input type="number" id="workflow" name="workflow" min="0" max="100000" value="<?= (int) $preCounts['workflow'] ?>" required style="width:80px;">
       </div>
       <button class="btn" type="submit">Apply</button>
@@ -119,16 +119,28 @@ admin_nav('accounts');
 
   <?php if (!$entitlements): ?>
     <div class="empty">No entitlements yet for this account.</div>
-  <?php else: foreach ($entitlements as $e): $seats = $seatsByEnt[$e['id']] ?? []; ?>
+  <?php else: foreach ($entitlements as $e):
+    $seats  = $seatsByEnt[$e['id']] ?? [];
+    $feat   = $e['feature'] ?? 'core';
+    $isCore = $feat === 'core';
+    $featTitle = ['core' => 'Core — desktop install', 'search' => 'Search clients', 'workflow' => 'Workflow add-on'][$feat] ?? ucfirst($feat);
+    $featBlurb = [
+      'core'     => 'One install seat per device (binds the device fingerprint) — the app itself.',
+      'search'   => 'Concurrent search / detached-client capacity — a count the core app enforces; no device binding here.',
+      'workflow' => 'Approval and mailbox add-on — capacity rides a search seat (cannot exceed search).',
+    ][$feat] ?? '';
+  ?>
     <div class="card" style="margin-bottom:14px;">
       <div class="row" style="justify-content:space-between; align-items:flex-start;">
         <div>
-          <strong>Entitlement #<?= (int) $e['id'] ?></strong> &nbsp;
-          <span class="pill"><?= h($e['feature'] ?? 'core') ?></span> &nbsp; <?= ent_state_pill($e) ?><br>
+          <strong><?= h($featTitle) ?></strong> &nbsp;
+          <span class="pill"><?= h($feat) ?></span> &nbsp; <?= ent_state_pill($e) ?>
+          &nbsp; <span class="mono muted" style="font-size:12px;">entitlement #<?= (int) $e['id'] ?></span><br>
+          <?php if ($featBlurb): ?><span class="muted" style="font-size:12px;"><?= h($featBlurb) ?></span><br><?php endif; ?>
           <span class="muted">Product:</span> <?= h($e['name_internal'] ?? '(unknown)') ?>
           <span class="mono muted">(<?= h($e['product_id']) ?>)</span><br>
-          <span class="muted"><?= ($e['feature'] ?? 'core') === 'core' ? 'Seats (bound/total):' : 'Capacity:' ?></span>
-          <span class="mono"><?= ($e['feature'] ?? 'core') === 'core' ? ((int) $e['seats_used'] . ' / ' . (int) $e['seats_total']) : (int) $e['seats_total'] ?></span>
+          <span class="muted"><?= $isCore ? 'Device seats (bound / total):' : 'Capacity (total):' ?></span>
+          <span class="mono"><?= $isCore ? ((int) $e['seats_used'] . ' / ' . (int) $e['seats_total']) : (int) $e['seats_total'] ?></span>
           &nbsp;·&nbsp; <span class="muted">Expires:</span> <?= $e['expires_at'] ? h($e['expires_at']) : 'never' ?>
         </div>
         <?php if ($e['status'] !== 'revoked'): ?>
@@ -143,7 +155,8 @@ admin_nav('accounts');
         <?php endif; ?>
       </div>
 
-      <?php if ($seats): ?>
+      <?php if ($isCore): ?>
+        <?php if ($seats): ?>
       <table style="margin-top:12px;">
         <thead><tr><th>Seat</th><th>State</th><th>Device</th><th>Fingerprint</th><th>Bound</th><th>Released</th><th></th></tr></thead>
         <tbody>
@@ -171,8 +184,11 @@ admin_nav('accounts');
         <?php endforeach; ?>
         </tbody>
       </table>
+        <?php else: ?>
+          <div class="empty">No device has bound a seat under this licence yet.</div>
+        <?php endif; ?>
       <?php else: ?>
-        <div class="empty">No seats provisioned under this entitlement yet.</div>
+        <div class="empty">Capacity only — enforced by the core app for connected clients; nothing is device-bound here.</div>
       <?php endif; ?>
     </div>
   <?php endforeach; endif; ?>
