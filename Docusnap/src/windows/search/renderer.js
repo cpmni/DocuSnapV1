@@ -27,15 +27,20 @@ async function _loadDocTypes() {
 
 async function _init() {
   await _loadDocTypes();
-  // Workflow add-on: when licensed the Search window gains the enhanced experience
-  // (confidence signature, workflow actions, mailbox); otherwise it stays basic.
+  // Entitlements drive the experience, and SEARCH and WORKFLOW are SEPARATE add-ons:
+  //  • search   → the enhanced Search surface (confidence signatures, validation notes);
+  //  • workflow → the mailbox + approval actions. The workflow UI appears ONLY when the
+  //    workflow add-on is licensed, so a search-only (or unlicensed) install shows NO
+  //    mailbox/workflow mention at all.
   try {
     const e = await window.docusnap.getEntitlement();
-    window.SearchState.entitled = !!(e && e.entitled);
-  } catch { window.SearchState.entitled = false; }
+    window.SearchState.entitled = !!(e && e.entitled);                                // search
+    window.SearchState.workflowEntitled = !!(e && e.workflow && e.workflow.entitled); // workflow add-on
+  } catch { window.SearchState.entitled = false; window.SearchState.workflowEntitled = false; }
   try { const u = await window.docusnap.authGetCurrentUser(); window.SearchState.role = u && u.role; } catch { /* ignore */ }
-  if (window.SearchState.entitled) {
-    document.body.classList.add('wf-on');
+  if (window.SearchState.entitled) document.body.classList.add('wf-on');              // enhanced search
+  if (window.SearchState.workflowEntitled) {
+    document.body.classList.add('workflow-on');                                       // mailbox + approvals
     if (window.SearchWorkflow) await window.SearchWorkflow.init();
     if (window.SearchMailbox) window.SearchMailbox.init();
   }

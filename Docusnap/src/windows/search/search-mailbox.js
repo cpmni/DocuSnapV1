@@ -3,13 +3,13 @@
 // between search results and approval-route lists (Inbox/Sent/Assigned/Completed),
 // reusing the workflow IPC. Selecting a route loads the document into the preview,
 // where search-workflow's decision bar handles approve/reject/acknowledge.
-// Inert unless the workflow add-on is licensed (SearchState.entitled).
+// Inert unless the workflow add-on is licensed (SearchState.workflowEntitled).
 
 let _active = false;
 let _box = 'inbox';
 
 function init() {
-  if (!window.SearchState.entitled) return;
+  if (!window.SearchState.workflowEntitled) return;
   const btn = document.getElementById('btn-mailbox');
   if (!btn) return;
   btn.style.display = '';

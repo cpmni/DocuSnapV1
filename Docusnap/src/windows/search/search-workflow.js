@@ -3,7 +3,7 @@
 // workflow IPC (window.docusnap.workflow.* → workflowService). Registers an action
 // provider with SearchActions that renders, for the selected document, either a
 // DECISION BAR (when the doc is routed to me) or a ROUTE/ASSIGN form (admin/edit).
-// Inert unless the workflow add-on is licensed (SearchState.entitled).
+// Inert unless the workflow add-on is licensed (SearchState.workflowEntitled).
 
 let _recipients = [];                 // active users (populated only for routers)
 let _myOpenRoutes = {};               // document_id -> open route addressed to me
@@ -11,7 +11,7 @@ let _myOpenRoutes = {};               // document_id -> open route addressed to 
 const _canDecide = () => window.SearchState.role === 'admin' || window.SearchState.role === 'edit';
 
 async function init() {
-  if (!window.SearchState.entitled) return;
+  if (!window.SearchState.workflowEntitled) return;
   await refresh();
   window.SearchActions.registerActionProvider(_provide);
 }
@@ -54,7 +54,7 @@ function _btn(label, primary, onClick) {
 }
 
 function _provide(doc) {
-  if (!window.SearchState.entitled) return [];
+  if (!window.SearchState.workflowEntitled) return [];
   const route = _myOpenRoutes[doc.id];
   if (route) return [{ node: _decisionBar(route) }];
   if (_recipients.length) return [{ node: _assignForm(doc) }]; // recipients only returned to admin/edit

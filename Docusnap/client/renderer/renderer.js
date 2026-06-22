@@ -12,6 +12,7 @@ const $ = (id) => document.getElementById(id);
 const api = window.scanfinder;
 
 let role = null;
+let workflowEntitled = false; // workflow add-on (mailbox/approvals) — licensed separately from search
 let blocked = false;
 let currentBox = 'inbox';
 let recipientsCache = null;
@@ -215,6 +216,10 @@ $('login-btn').addEventListener('click', async () => {
       $('locked').classList.remove('hidden');
       return;
     }
+    // Workflow (mailbox/approvals) is its OWN add-on — only surface the Mailbox nav when
+    // it is licensed, so a search-only client shows no mailbox/workflow mention.
+    workflowEntitled = !!(ent.json.workflow && ent.json.workflow.entitled);
+    $('nav-mailbox').classList.toggle('hidden', !workflowEntitled);
     $('who').textContent = r.user.displayName || r.user.username;
     const rc = $('role-chip'); rc.textContent = role; rc.classList.remove('hidden');
     $('unc-wrap').classList.toggle('hidden', !canDecide());
@@ -279,6 +284,7 @@ $('about-licenses').addEventListener('click', async () => {
 
 // ── View switching ─────────────────────────────────────────────────────────────
 function setView(view) {
+  if (view === 'mailbox' && !workflowEntitled) view = 'search'; // workflow add-on not licensed
   const search = view === 'search';
   $('view-search').classList.toggle('hidden', !search);
   $('view-mailbox').classList.toggle('hidden', search);

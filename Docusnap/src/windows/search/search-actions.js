@@ -48,28 +48,31 @@ function renderActions(doc) {
   }
   panel.appendChild(docSection);
 
-  // ── 3. Workflow / approval ──────────────────────────────────────────────────
-  const wfSection = _section('Workflow');
-  let hasWorkflowActions = false;
-  for (const provider of _providers) {
-    try {
-      const acts = provider(doc) || [];
-      for (const act of acts) {
-        if (act.node) wfSection.appendChild(act.node);            // rich panel (decision bar / assign form)
-        else _btn(wfSection, act.label, act.onClick, !!act.primary);
-        hasWorkflowActions = true;
+  // ── 3. Workflow / approval — ONLY when the workflow add-on is licensed, so an
+  //       unlicensed / search-only install shows no "Workflow" section or mention. ─────
+  if (window.SearchState && window.SearchState.workflowEntitled) {
+    const wfSection = _section('Workflow');
+    let hasWorkflowActions = false;
+    for (const provider of _providers) {
+      try {
+        const acts = provider(doc) || [];
+        for (const act of acts) {
+          if (act.node) wfSection.appendChild(act.node);            // rich panel (decision bar / assign form)
+          else _btn(wfSection, act.label, act.onClick, !!act.primary);
+          hasWorkflowActions = true;
+        }
+      } catch (err) {
+        console.error('SearchActions provider error:', err);
       }
-    } catch (err) {
-      console.error('SearchActions provider error:', err);
     }
+    if (!hasWorkflowActions) {
+      const note = document.createElement('span');
+      note.className   = 'ap-future-note';
+      note.textContent = 'Approval and workflow features will appear here.';
+      wfSection.appendChild(note);
+    }
+    panel.appendChild(wfSection);
   }
-  if (!hasWorkflowActions) {
-    const note = document.createElement('span');
-    note.className   = 'ap-future-note';
-    note.textContent = 'Approval and workflow features will appear here.';
-    wfSection.appendChild(note);
-  }
-  panel.appendChild(wfSection);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
