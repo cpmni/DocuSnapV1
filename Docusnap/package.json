@@ -6,7 +6,7 @@
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "build": "node scripts/check-licenses.js && node scripts/check-rapidocr-bundled.js && node -e \"const c=require('child_process');process.env.BUILD_REV=process.env.BUILD_REV||'local';c.execSync('electron-builder --win --x64',{stdio:'inherit',env:process.env})\"",
+    "build": "node scripts/check-licenses.js && node scripts/check-rapidocr-bundled.js && node -e \"const c=require('child_process');process.env.BUILD_REV=require('./scripts/build-rev').buildRev();c.execSync('electron-builder --win --x64',{stdio:'inherit',env:process.env})\"",
     "check:licenses": "node scripts/check-licenses.js",
     "check:rapidocr": "node scripts/check-rapidocr-bundled.js",
     "check:help": "node scripts/check-help-coverage.js",

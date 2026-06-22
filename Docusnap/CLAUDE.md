@@ -1478,7 +1478,7 @@ files). Compliance is automated:
 ```bash
 cd C:\docusnap2
 npm start          # dev mode — uses system Python + Tesseract; licensing enforcement OFF
-npm run build      # → dist\DocuSnap Setup <ver>-r<BUILD_REV>.exe  (BUILD_REV defaults 'local')
+npm run build      # → dist\ScanFinder Setup <ver>-r<rev>.exe  (rev = scripts/build-rev.js, or $BUILD_REV)
 ```
 Dev uses `py -3.12 script.py`, packaged uses bundled Python venv.
 Tesseract hardcoded to `C:\Program Files\Tesseract-OCR\tesseract.exe` in dev.
@@ -1489,17 +1489,14 @@ keys are removed — don't re-add them). `postinstall` runs `install-app-deps`; 
 **unsigned** → SmartScreen "More info → Run anyway" on the VM. Run gate tests with
 Electron-as-Node, not plain node (native-module ABI).
 
-**⚠ Dist versioning (TODO — needs a real revisioning scheme).** Every build emits the
-SAME installer filename, so a rebuild silently OVERWRITES the previous installer in `dist/`
-— there is no way to tell builds apart or keep an older one. Core is always
-`ScanFinder Setup 2.0.0-rlocal.exe` (`package.json` `version` pinned at 2.0.0 + `BUILD_REV`
-defaults to `local`); client is always `ScanFinder Search Client Setup 1.0.2.exe`
-(`client/package.json` 1.0.2, and its `artifactName` carries NO `-r${BUILD_REV}` suffix at
-all). REQUIRED: give each build a DISTINCT, traceable filename — bump the package.json
-`version` per release AND/OR pass a real `BUILD_REV` (git short SHA or UTC timestamp, e.g.
-`BUILD_REV=$(git rev-parse --short HEAD) npm run build`) instead of the `local` default, and
-add the same `-r${env.BUILD_REV}` suffix to the client `artifactName`. Until this lands,
-archive/rename the prior installer before rebuilding or it is lost.
+**Dist versioning (implemented).** Each build stamps a DISTINCT, sortable, traceable
+revision into the installer filename, so a rebuild no longer overwrites the previous one.
+`scripts/build-rev.js` `buildRev()` returns `<UTC yyyymmdd-hhmm>-<git short sha>` (e.g.
+`20260622-1133-9f158c5`), or the `BUILD_REV` env var verbatim if set. BOTH builds call it —
+core (`package.json` "build") and client (`client/package.json` "dist") — and both
+`nsis.artifactName`s carry `-r${env.BUILD_REV}`, giving e.g. `ScanFinder Setup
+2.0.0-r<rev>.exe` and `ScanFinder Search Client Setup 1.0.2-r<rev>.exe`. For a real release,
+override with `BUILD_REV=2.1.0 npm run build` AND bump the package.json `version`.
 
 Delete `%APPDATA%\DocuSnap\docusnap.db` to reset DB during development (also clears users,
 cached license tokens, and the enforcement setting).
