@@ -289,10 +289,14 @@
     #tpl-img-wrap {
       position:relative; display:inline-block; line-height:0;
       transform-origin:0 0; transition:transform .12s ease-out;
+      /* Border lives on the WRAPPER, not the image, so #tpl-img offsetWidth/Height
+         (which sizes the overlay canvas) equals the image CONTENT box — otherwise a
+         1px border-box vs content-box gap shifts every overlay box uniformly. */
+      border:1px solid var(--border); border-radius:4px;
     }
     #tpl-img {
       max-width:100%; max-height:calc(100vh - 360px); width:auto; height:auto;
-      border:1px solid var(--border); border-radius:4px; display:block;
+      display:block;
     }
     #tpl-overlay-canvas { position:absolute; inset:0; border-radius:4px; pointer-events:auto; cursor:default; }
     #tpl-overlay-canvas.drawing {
