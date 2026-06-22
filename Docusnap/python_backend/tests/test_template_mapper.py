@@ -657,8 +657,10 @@ def test_clean_crop_segment_shape_aware():
 def test_registration_rung():
     """P4 end-to-end: with taught landmarks + registration_enabled, a SHIFTED page
     (where the drawn target box no longer covers the value) is registered via the
-    landmark transform and the value is read at the mapped box — the headline
-    'find the data regardless of registration' behaviour. With registration off,
+    landmark transform and the value is read at the mapped box. Registration is now
+    the FALLBACK rung — the field's own anchor+offset link takes precedence when its
+    label is findable — so this test isolates registration by giving the mapping a
+    label NOT present on the page (anchor+offset cannot fire). With registration off,
     the transform rung never fires."""
     failures = 0
     print("registration rung: taught landmarks register a shifted page and read the value")
@@ -677,7 +679,9 @@ def test_registration_rung():
     text_fn = value_at_stub("INV-REG-001", 0.30 + SHIFT[0], 0.30 + SHIFT[1], 0.12, 0.04)
     mapping = {
         "field_key": "invoice_number", "page_number": 0, "enabled": True,
-        "anchor_text": "ALPHA", "search_expansion": 0.0,
+        # A label NOT present on the page, so the field's own anchor+offset link
+        # cannot fire — isolating the registration FALLBACK rung this test targets.
+        "anchor_text": "INVOICELABEL", "search_expansion": 0.0,
         "anchor_x_norm": 0.10, "anchor_y_norm": 0.10, "anchor_w_norm": 0.08, "anchor_h_norm": 0.03,
         "target_x_norm": 0.30, "target_y_norm": 0.30, "target_w_norm": 0.12, "target_h_norm": 0.04,
         "offset_dx_norm": 0.20, "offset_dy_norm": 0.20,

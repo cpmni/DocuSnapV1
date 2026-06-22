@@ -165,6 +165,31 @@ def test_found_anchor_not_displaced_beats_registration():
     return f
 
 
+def test_abs_empty_anchor_offset_beats_registration_fallback():
+    print("abs-empty: drawn box reads nothing -> anchor+offset relocation wins over the registration FALLBACK")
+    f = 0
+    def stub(crop):
+        _, (x1, y1, x2, y2) = crop
+        cy = (y1 + y2) / 2.0 / 1000.0
+        if cy < 0.27:   return None        # absolute drawn box -> empty (gate fails)
+        if cy < 0.45:   return "INV-REG"   # where the global transform would land
+        return "INV-RELO"                  # where anchor+offset relocation lands
+    # A found anchor displaced far down (y0.50): the relocation derives the value
+    # crop near y0.52 (cy~0.54 -> "INV-RELO"); the transform fallback would land
+    # near y0.32 (cy~0.34 -> "INV-REG"). With the abs-empty path reordered, the
+    # rigid anchor+offset relocation must win over the global transform.
+    located = {"x_norm": 0.10, "y_norm": 0.50, "w_norm": 0.15, "h_norm": 0.03,
+               "matched_text": "Invoice No",
+               "label_box": {"x_norm": 0.10, "y_norm": 0.50, "w_norm": 0.15, "h_norm": 0.03}}
+    out = _run_located(transform(ty=0.12), stub, located)
+    f += not check("anchor+offset relocation wins (INV-RELO), NOT the transform fallback (INV-REG)",
+                   (out or {}).get("value") == "INV-RELO")
+    f += not check("method is a mapping tier, not template_registration",
+                   not (out or {}).get("method", "").startswith("template_registration"))
+    print()
+    return f
+
+
 def main():
     fails = 0
     fails += test_box_divergence()
@@ -174,6 +199,7 @@ def main():
     fails += test_below_tolerance_keeps_absolute()
     fails += test_registration_read_fails_falls_through_to_absolute()
     fails += test_found_anchor_not_displaced_beats_registration()
+    fails += test_abs_empty_anchor_offset_beats_registration_fallback()
     if fails:
         print(f"{fails} check(s) failed - registration arbiter regressed.")
         return 1

@@ -662,23 +662,14 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
                                mapping.get("anchor_text") or field_key,
                                ocr_conf=_abs_meta.get('conf'), val_type=val_type)
 
-    # ── REGISTRATION FALLBACK RUNG ("register, then read"): the drawn box at its
-    # stored coords read nothing credible, so map the taught target box through the
-    # fitted transform and read there. Sits ABOVE the single-label path; falls
-    # through if the transform read doesn't clear the gates. (Same helper the
-    # arbiter above uses.)
-    if page_transform is not None:
-        reg = _read_registration(page, mapping, target_box, val_type, ocr_text_fn,
-                                 expansion, page_transform, validation_patterns,
-                                 format_lookup, slice_capture, page_idx, field_key)
-        if reg:
-            return reg
-
-    # ── SINGLE-LABEL LOCAL REFINEMENT: the drawn box read nothing credible and
-    # the registration transform (if any) didn't resolve it either. Find the
-    # field's own label and derive the value crop from where it ACTUALLY landed
-    # (anchor + relative-offset) — the per-field fallback for templates without a
-    # usable landmark fit. ─────────────────────────────────────────────────────
+    # ── SINGLE-LABEL LOCAL REFINEMENT (anchor + stored offset) — PREFERRED ──────
+    # The drawn box read nothing credible. Find THIS field's OWN label and derive
+    # the value from where the label ACTUALLY landed (located + the drift-invariant
+    # stored offset). This now runs BEFORE the global page transform: when the
+    # anchor is findable, the rigid label→value link must win — a poor landmark fit
+    # otherwise floats the value off a correctly-anchored label (the "anchor and
+    # data point aren't linked" bug, abs-empty path). Mirrors the arbiter precedence
+    # above (anchor first, transform fallback).
     if located is _UNSET:
         located = _locate_anchor(page, anchor_box, anchor_text, expansion,
                                  ocr_lines_fn, min_search=_ANCHOR_SEARCH_MIN)
@@ -691,17 +682,27 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
     if not located and anchor_text:
         located = _locate_anchor(page, anchor_box, anchor_text, 1.0,
                                  ocr_lines_fn, min_search=_ANCHOR_SEARCH_MIN)
-    if not located:
-        # Nothing located — omit the field (it falls through to the rest of the
-        # pipeline / manual review), exactly as before.
-        return None
+    if located:
+        # Derive the value from where the anchor label ACTUALLY landed — handles the
+        # anchor having drifted since the sample doc. Same helper the early drift
+        # guard above uses; returns the relocated read or None (gate failed).
+        relocated = _relocate_and_read(page, mapping, anchor_box, target_box, located,
+                                       val_type, ocr_text_fn, expansion, validation_patterns,
+                                       format_lookup, slice_capture, page_idx, field_key)
+        if relocated:
+            return relocated
 
-    # Derive the value from where the anchor label ACTUALLY landed — handles the
-    # anchor having drifted since the sample doc. Same helper the early drift guard
-    # above uses; returns the relocated read or None (gate failed → field omitted).
-    return _relocate_and_read(page, mapping, anchor_box, target_box, located,
-                              val_type, ocr_text_fn, expansion, validation_patterns,
-                              format_lookup, slice_capture, page_idx, field_key)
+    # ── REGISTRATION FALLBACK ("register, then read") — LAST RESORT ─────────────
+    # Only NOW, when the label couldn't be found or its relocation failed the gate,
+    # map the taught target box through the fitted transform and read there. Falls
+    # through to None (field omitted) if the transform read doesn't clear the gates.
+    if page_transform is not None:
+        reg = _read_registration(page, mapping, target_box, val_type, ocr_text_fn,
+                                 expansion, page_transform, validation_patterns,
+                                 format_lookup, slice_capture, page_idx, field_key)
+        if reg:
+            return reg
+    return None
 
 
 # ── Anchor relocation ─────────────────────────────────────────────────────────
