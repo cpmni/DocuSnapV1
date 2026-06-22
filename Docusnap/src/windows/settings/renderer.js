@@ -2704,7 +2704,15 @@ async function loadLicenseStatus() {
     licStatusEl.innerHTML = colorSpan('err', 'Could not read licence status: ' + (e.message || 'error'));
   }
 }
-if (licRefreshBtn) licRefreshBtn.addEventListener('click', loadLicenseStatus);
+if (licRefreshBtn) licRefreshBtn.addEventListener('click', async () => {
+  // Re-check the licence against the server NOW (locks the app if it was revoked/expired
+  // server-side), then re-render status + seats from the refreshed cache. Offline → cached.
+  licRefreshBtn.disabled = true;
+  try { await api.licenseRecheck(); } catch { /* offline — show cached */ }
+  await loadLicenseStatus();
+  try { if (typeof loadSeats === 'function') await loadSeats(); } catch { /* best-effort */ }
+  licRefreshBtn.disabled = false;
+});
 loadLicenseStatus();
 
 // ── Search client seats (concurrent floating pool) ─────────────────────────────
@@ -2759,7 +2767,15 @@ async function loadSeats() {
   }
 }
 
-document.getElementById('seats-refresh')?.addEventListener('click', loadSeats);
+document.getElementById('seats-refresh')?.addEventListener('click', async (e) => {
+  const btn = e.currentTarget; if (btn) btn.disabled = true;
+  // Re-check the licence against the server (locks the app if it was revoked/expired), then
+  // re-render seats + licence status from the refreshed cache. Offline → cached counts.
+  try { await api.licenseRecheck(); } catch { /* offline — show cached */ }
+  await loadSeats();
+  try { if (typeof loadLicenseStatus === 'function') await loadLicenseStatus(); } catch { /* best-effort */ }
+  if (btn) btn.disabled = false;
+});
 // The search-seat count is READ-ONLY: it comes from the licence (the backend-cached,
 // token-verified per-feature count that loadSeats displays), not a local override. The old
 // "Save" path wrote `detached_client_seats`, which entitlement could fall back to — a local

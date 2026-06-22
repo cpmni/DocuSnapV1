@@ -46,6 +46,9 @@ contextBridge.exposeInMainWorld('docusnap', {
   // Read-only diagnostic: what the gate sees on this device (enforcement + cached
   // token state + offline decision). No network call, no state change.
   licenseGetDiagnostics: ()   => ipcRenderer.invoke('license-get-diagnostics'),
+  // Manual "re-check licence now": runs the authoritative gate (re-validate) and locks the
+  // app if the licence was revoked/expired server-side. Returns the gate decision.
+  licenseRecheck:        ()   => ipcRenderer.invoke('license-recheck'),
   // Detached search-client API hosting (admin-only; Settings → Search client access).
   clientApiGetStatus:  ()    => ipcRenderer.invoke('client-api-get-status'),
   clientApiSetEnabled: (on)  => ipcRenderer.invoke('client-api-set-enabled', on),

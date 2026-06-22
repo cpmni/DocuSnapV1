@@ -633,6 +633,24 @@ app.whenReady().then(() => {
   // The renderer can never self-grant access into the main shell.
   ipcMain.on('license-enter-app', () => enterMainApp());
 
+  // Manual "re-check licence now" (Settings → Licensing "Refresh"). Runs the SAME
+  // authoritative gate as startup/periodic, so a server-side revoke or expiry takes effect
+  // ON DEMAND: it re-validates and, on any non-'allow' verdict, locks the running app to
+  // the license window. On 'allow' the cached token + per-feature counts were just
+  // refreshed by decideAccess, so the Settings display reflects the latest state. Never
+  // throws into the renderer; an unexpected error leaves the app running (the startup +
+  // 6h periodic checks still apply), so a transient glitch can't lock a working user out.
+  ipcMain.handle('license-recheck', async () => {
+    let gate;
+    try { gate = await licensingModule.decideAccess(); }
+    catch (e) { logger?.warn?.('manual licence re-check errored: ' + e.message); return { decision: 'error', reason: 'recheck_error' }; }
+    if (gate && gate.decision !== 'allow') {
+      stopLicenseRevalidation();
+      showLicenseWindow(gate);
+    }
+    return gate;
+  });
+
   // Runtime flag for renderer dev-gating (e.g. the dev-only "Erase ALL data" button
   // in Settings → Learning Recovery). True only in an unpackaged/dev build; the
   // renderer keeps the control hidden in packaged/production builds.
