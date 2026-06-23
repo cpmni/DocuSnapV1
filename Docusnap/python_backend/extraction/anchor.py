@@ -151,6 +151,64 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 elif on_reject:
                     on_reject(field_key, "anchor_crop", crop_value, "format")
 
+        # ── DRIFT GUARD (labelled free-text): follow the LABEL, not a drifted box ──
+        # A rigid crop that drifted onto an adjacent row can read a plausible free-text
+        # word ("Utax" on the Make row when the Customer value moved down) that PASSES the
+        # loose free-text credibility gate — so the relocate rung below never fires (it only
+        # runs on a failed/weak rigid read) and the wrong row commits at high confidence.
+        # When the anchor carries a real label AND a stored drift offset, locate the label;
+        # if the value's EXPECTED position (located label + offset) is well off the rigid
+        # box, the box is on the wrong row — read beside the LOCATED label instead and
+        # prefer that, but ONLY when the relocated read is itself credible (else keep the
+        # rigid read, so this can never do WORSE than today). Free-text ONLY (structured
+        # fields are pattern-validated and rarely drift onto a credible neighbour); needs a
+        # non-null offset (legacy rows untouched); reuses line_cache so a clean on-row read
+        # pays just one locate. Conservative floor → a correctly placed read is byte-identical.
+        if value and val_type in (None, "text", "multiline_text") \
+                and (anchor.get("anchor_label") or "").strip() \
+                and anchor.get("offset_dy_norm") is not None and page0 is not None:
+            try:
+                _dh = anchor.get("h_norm") or 0.0
+                _dw = anchor.get("w_norm") or 0.0
+                _dloc = _locate_for_relocation(page0, anchor["anchor_label"], direction,
+                                               (x_norm, y_norm, _dw, _dh), page_text_lines,
+                                               line_cache=line_cache)
+                _dlb = (_dloc or {}).get("label_box")
+                if _value_drifted_from_box(_dlb, anchor.get("offset_dy_norm"), y_norm, _dh):
+                    _dcand = None
+                    # 1) inline harvest off the located label's line (value shares the row)
+                    _div = (_dloc.get("inline_value") or "").strip()
+                    if _div:
+                        _dc = _clean_text_fallback(_div, val_type, validation_patterns) or clean_crop_segment(_div, val_type)
+                        if _dc:
+                            from extraction.value_quality import strip_name_edges
+                            _dc = strip_name_edges(_dc)
+                        if _dc and not _name_field_code_reject(_dc, field_key) \
+                                and _crop_is_credible(_dc, val_type, validation_patterns, label) \
+                                and _qualify_against_format(_dc, field_key, format_lookup, text_field_keys):
+                            _dcand = _dc
+                    # 2) else re-read a crop seated beside the LOCATED label
+                    if not _dcand:
+                        _drelo = _place_from_located(_dloc, direction, (x_norm, y_norm, _dw, _dh),
+                                     offset=(anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm")))
+                        if _drelo:
+                            _drelo = _widen_relocated_crop(_drelo, val_type)
+                            _drv = _crop_and_ocr(page0, _drelo[0], _drelo[1], _drelo[2], _drelo[3],
+                                                 val_type, verify_fn=_verify)
+                            if _drv and not _name_field_code_reject(_drv, field_key) \
+                                    and _crop_is_credible(_drv, val_type, validation_patterns, label):
+                                _dq = _qualify_against_format(_drv, field_key, format_lookup, text_field_keys)
+                                if _dq:
+                                    _dcand = _dq
+                    if _dcand and _dcand.strip().lower() != (value or "").strip().lower():
+                        if on_reject:
+                            on_reject(field_key, "anchor_crop", value, "off_row_drift")
+                        value = _dcand
+                        method = "anchor_crop_relocated"
+                        ocr_conf, ocr_min = None, None
+            except Exception:
+                pass  # dev/robustness: the guard must never break a read
+
         # ── Registration recovery: map the taught value box through the per-page
         # transform (fitted from the template's landmarks) so the value FOLLOWS a
         # shifted/skewed/scaled page even when the field's OWN label can't be
@@ -926,6 +984,24 @@ def _crop_is_credible(value: str, val_type: str | None,
         return False
     alnum    = sum(c.isalnum() for c in nonspace)
     return alnum >= len(nonspace) * 0.5
+
+
+_DRIFT_FLOOR = 0.03   # ~3% page height — below this a correctly-placed read must not trip
+
+
+def _value_drifted_from_box(label_box, offset_dy, stored_cy, h_norm) -> bool:
+    """True when the value's EXPECTED position (located label top-left + the taught
+    vertical offset) sits more than ~1.5 line-heights off the rigid box's stored centre
+    — i.e. the rigid crop drifted onto a DIFFERENT row. Conservative floor so a correctly
+    placed read never trips it. Used by the labelled-free-text drift guard in
+    extract_with_anchors. Pure/coordinate-only — no supplier/filename/document logic."""
+    if not label_box or offset_dy is None:
+        return False
+    try:
+        expected_cy = float(label_box.get("y_norm", 0.0)) + float(offset_dy or 0.0)
+    except (TypeError, ValueError):
+        return False
+    return abs(expected_cy - float(stored_cy)) > max(float(h_norm or 0.0) * 1.5, _DRIFT_FLOOR)
 
 
 def _repair_single_token(img, segment, val_type):
