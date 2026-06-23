@@ -1498,6 +1498,25 @@ class ExtractionEngine:
         s_lower    = supplier_name.lower().strip()
         field_meta = {f["key"]: f for f in field_defs}
 
+        # Evidence-based variability: a field with >=2 DISTINCT confirmed values for
+        # this supplier+type is variable IN FACT (e.g. a per-document customer name),
+        # even when the schema doesn't flag it is_variable (free-text fields never are).
+        # Replaying the most-frequent value onto a new document is exactly how one doc's
+        # customer gets stamped onto another's. Count distinct values within the SAME
+        # scope a hint would apply in, and skip those fields — the field falls to review
+        # (empty) instead of being guessed. Mirrors the evidence-based freeze guard in
+        # review/handler.js _buildTemplateFields.
+        distinct_vals: dict[str, set] = {}
+        for h in hints:
+            hk = h.get("field_key")
+            hv = (h.get("hint_value") or "").strip().lower()
+            if not hk or not hv:
+                continue
+            hs = (h.get("supplier_name") or "").lower().strip()
+            ht = h.get("document_type") or ""
+            if hs == s_lower and ((not ht) or ht == (document_slug or "")):
+                distinct_vals.setdefault(hk, set()).add(hv)
+
         for hint in hints:
             h_sup   = (hint.get("supplier_name") or "").lower().strip()
             h_type  = hint.get("document_type") or ""
@@ -1511,6 +1530,8 @@ class ExtractionEngine:
                 continue
             if field_meta[h_key].get("is_variable"):
                 continue
+            if len(distinct_vals.get(h_key, ())) >= 2:
+                continue   # variable BY EVIDENCE — multiple confirmed values; never replay one
 
             # Exact (normalised) supplier match. Substring matching here
             # would let one supplier's hints bleed into another's whenever
