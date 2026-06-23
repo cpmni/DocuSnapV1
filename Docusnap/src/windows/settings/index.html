@@ -718,10 +718,10 @@
                   <select id="tpl-map-field-select" class="field-select" style="min-width:190px;" title="Choose the field to configure"></select>
                 </div>
                 <div class="form-group">
-                  <label>Mode</label>
-                  <select id="tpl-map-mode" class="field-select" style="min-width:170px;" title="Anchor: read this field from the page. Fixed value: force a constant value on every matching document.">
-                    <option value="anchor">Anchor (read from page)</option>
-                    <option value="fixed">Fixed value</option>
+                  <label>How is this field filled?</label>
+                  <select id="tpl-map-mode" class="field-select" style="min-width:200px;" title="Read it from the document: find this value on each scan. Always use the same value: file a constant on every matching document.">
+                    <option value="anchor">Read it from the document</option>
+                    <option value="fixed">Always use the same value</option>
                   </select>
                 </div>
               </div>
@@ -788,7 +788,7 @@
                 <div class="row-flex" style="flex-wrap:wrap; gap:12px; align-items:flex-end;">
                   <div class="form-group" style="flex:2 1 220px; min-width:0;">
                     <label>Fixed value</label>
-                    <input type="text" id="tpl-fixed-value-input" class="field-select" placeholder="e.g. Document Solutions Ltd">
+                    <input type="text" id="tpl-fixed-value-input" class="field-select" placeholder="e.g. Acme Supplies Ltd">
                   </div>
                   <div class="form-group" style="flex-direction:row; gap:8px;">
                     <button class="btn primary" id="tpl-fixed-set-btn">Set Fixed Value</button>

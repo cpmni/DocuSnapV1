@@ -308,7 +308,7 @@ function showFixedInput(f){
   const existing=state.results[f.key];
   const prev=(existing&&existing.status==='fixed')?existing.value||'':'';
   $('rg-readback').innerHTML=
-    `<input type="text" id="rb-fixed-input" value="${esc(prev)}" placeholder="e.g. Document Solutions" `+
+    `<input type="text" id="rb-fixed-input" value="${esc(prev)}" placeholder="e.g. Acme Supplies Ltd" `+
     `style="width:100%;background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-radius:8px;padding:10px 12px;font-size:14px;font-family:inherit;margin-bottom:10px">`+
     `<div style="display:flex;gap:8px">`+
       `<button class="btn primary" id="rb-fixed-save">Save →</button>`+
