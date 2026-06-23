@@ -82,6 +82,12 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
     lines   = ocr_text.split("\n")
     results = {}
     page0   = page_images[0] if page_images else None
+    # Per-page OCR cache (Stage 1 / #4): every field whose rigid crop fails does a
+    # page-wide label locate; without sharing, each re-ran a full-page image_to_data
+    # (~2s). One cache for this page collapses them to a single pass (see
+    # template_mapper._locate_anchor). Especially hot when NO template matched and
+    # all fields fall here.
+    line_cache = {}
 
     for anchor in relevant:
         field_key   = anchor["field_key"]
@@ -207,7 +213,8 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
             w_norm = anchor.get("w_norm") or 0.0
             h_norm = anchor.get("h_norm") or 0.0
             vbox    = (x_norm, y_norm, w_norm, h_norm)
-            located = _locate_for_relocation(page0, anchor["anchor_label"], direction, vbox, page_text_lines)
+            located = _locate_for_relocation(page0, anchor["anchor_label"], direction, vbox, page_text_lines,
+                                             line_cache=line_cache)
             if located:
                 # 1. INLINE HARVEST: in a key/value row the value shares the located
                 # label's OCR line ("label …gap… value") and sits in a far column the
@@ -398,7 +405,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                     located_ok = bool(_lbl) and bool(_locate_for_relocation(
                         page0, _lbl, direction,
                         (x_norm, y_norm, anchor.get("w_norm") or 0.0, anchor.get("h_norm") or 0.0),
-                        page_text_lines))
+                        page_text_lines, line_cache=line_cache))
             if not located_ok:
                 conf = min(conf, 50)   # blind rigid read (label absent/unfound) — untrustworthy
             results[field_key] = {
@@ -556,13 +563,16 @@ def _locate_in_text_lines(text_lines, lbox, anchor_label):
     }
 
 
-def _locate_for_relocation(page0, anchor_label, direction, vbox, page_text_lines=None):
+def _locate_for_relocation(page0, anchor_label, direction, vbox, page_text_lines=None,
+                           line_cache=None):
     """Find `anchor_label` on THIS page and return template_mapper._locate_anchor's
     result (now carrying the matched LABEL-WORD box and any value harvested off the
     same line), or None. Shared by the relocation crop placement AND the inline
     value harvest so the label is located ONCE. When `page_text_lines` (a born-
     digital text layer) is supplied, the label is found EXACTLY in that layer with
-    no OCR. Lazy import avoids the anchor<->template_mapper module-load cycle."""
+    no OCR. `line_cache` (one per page, from extract_with_anchors) shares the
+    full-page OCR across every field's page-wide fallback (Stage 1 / #4). Lazy
+    import avoids the anchor<->template_mapper module-load cycle."""
     label = (anchor_label or "").strip()
     if not label or page0 is None:
         return None
@@ -593,9 +603,11 @@ def _locate_for_relocation(page0, anchor_label, direction, vbox, page_text_lines
     from extraction import template_mapper as tm
     # Local search first (covers normal drift), then page-wide (clipped/heavily
     # shifted scans move the label out of the local window).
-    located = tm._locate_anchor(page0, lbox, label, 0.0, tm._ocr_lines, min_search=0.10)
+    located = tm._locate_anchor(page0, lbox, label, 0.0, tm._ocr_lines,
+                                min_search=0.10, line_cache=line_cache)
     if not located:
-        located = tm._locate_anchor(page0, lbox, label, 1.0, tm._ocr_lines, min_search=0.10)
+        located = tm._locate_anchor(page0, lbox, label, 1.0, tm._ocr_lines,
+                                    min_search=0.10, line_cache=line_cache)
     return located
 
 
@@ -633,7 +645,7 @@ def _place_from_located(located, direction, vbox, offset=None):
     return (_clamp01(nx), _clamp01(ny), vw, vh)
 
 
-def _relocate_value_by_label(page0, anchor_label, direction, vbox, offset=None):
+def _relocate_value_by_label(page0, anchor_label, direction, vbox, offset=None, line_cache=None):
     """Drift recovery for a ⊕-taught anchor: locate `anchor_label` on THIS page and
     return a value-crop box positioned relative to it, or None if it can't be
     found. Thin composition of _locate_for_relocation + _place_from_located (the
@@ -643,7 +655,7 @@ def _relocate_value_by_label(page0, anchor_label, direction, vbox, offset=None):
     vh = vbox[3] or 0.0
     if vw <= 0 or vh <= 0:
         return None
-    located = _locate_for_relocation(page0, anchor_label, direction, vbox)
+    located = _locate_for_relocation(page0, anchor_label, direction, vbox, line_cache=line_cache)
     if not located:
         return None
     return _place_from_located(located, direction, vbox, offset)
