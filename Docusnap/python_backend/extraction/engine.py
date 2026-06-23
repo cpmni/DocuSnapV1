@@ -104,6 +104,47 @@ def _is_ref_field(key: str) -> bool:
     return k.endswith("_number") or k.endswith("_no") or "reference" in k
 
 
+# Field TYPE → credibility validation key. Only STRUCTURED / code types are mapped;
+# text/multiline_text are deliberately ABSENT so free-text fields stay unconstrained
+# (seeding "text" would flip on the degraded-text escalation for name/address reads).
+_TYPE2VAL = {"date": "date", "currency": "currency", "number": "currency",
+             "amount": "currency", "alphanumeric": "alphanumeric",
+             "job_reference": "job_reference", "currency_code": "currency_code",
+             # Explicit "Reference number" field type — a deliberate CODE marker;
+             # gated alphanumeric, never currency.
+             "reference": "alphanumeric"}
+
+
+def _seed_field_patterns(base_patterns, field_defs):
+    """Seed per-field credibility patterns from each field's configured TYPE so a
+    CUSTOM doc-type field (no keyword-config entry) is gated by its real type rather
+    than loose free-text (which lets high-DPI crop garbage commit unchallenged). The
+    keyword config wins where it already carries an entry.
+
+    Ref-role coercion — both cases resolve to "alphanumeric", the right gate for a CODE:
+      * a ref field a user typed Number/Currency (the money pattern rejects NNNN-NNNN-N
+        refs); and
+      * the doc-type REFERENCE role typed plain "text" — the structural ref field is
+        created as text, so it slips past _TYPE2VAL and would be graded FREE TEXT,
+        accepting OCR garbage like "en rT" at the absolute drawn box and never
+        relocating to its anchor. Free-text name/address fields (not _is_ref_field)
+        stay unconstrained. Reusable for every supplier/template with a text ref role.
+    """
+    field_patterns = dict(base_patterns or {})
+    for _f in (field_defs or []):
+        _k, _t = _f.get("key"), (_f.get("type") or "").lower()
+        if not _k or _k in field_patterns:
+            continue
+        if _t in _TYPE2VAL:
+            mapped = _TYPE2VAL[_t]
+            if _is_ref_field(_k) and mapped in ("currency", "currency_code"):
+                mapped = "alphanumeric"
+            field_patterns[_k] = {"validation": mapped}
+        elif _is_ref_field(_k):
+            field_patterns[_k] = {"validation": "alphanumeric"}
+    return field_patterns
+
+
 def _ref_override_plausible(value) -> bool:
     """Conservative shape gate for whether a Stage 2 reference candidate is
     information-rich enough to OVERRIDE an existing incumbent. Rejects the
@@ -508,41 +549,11 @@ class ExtractionEngine:
         self._field_candidates = {}   # Phase 3 ledger (built only when candidate_override on)
         results      = {}
         field_keys   = [f["key"] for f in field_defs]
-        # Seed field_patterns from each field's configured TYPE so CUSTOM doc-type
-        # fields (which have no entry in the keyword config) are gated by their real
-        # type — date / currency / alphanumeric — instead of silently falling back
-        # to loose free-text (which lets high-DPI crop garbage like "ZWIVLZIZULO" or
-        # "cield wu" commit unchallenged). The keyword config still wins where it
-        # carries a richer entry for a known field. Reusable for every custom type.
-        # Only STRUCTURED / code types are seeded (date, currency, alphanumeric).
-        # text/multiline_text are deliberately NOT seeded — leaving them unset
-        # preserves the existing free-text behaviour exactly (seeding "text" would
-        # flip on the degraded-text escalation for name/address fields and change
-        # their reads). So this strengthens gating for typed fields without
-        # touching free-text ones.
-        _TYPE2VAL = {"date": "date", "currency": "currency", "number": "currency",
-                     "amount": "currency", "alphanumeric": "alphanumeric",
-                     "job_reference": "job_reference", "currency_code": "currency_code",
-                     # Explicit "Reference number" field type — the operator's deliberate
-                     # marker that this field holds a CODE (invoice/ticket/job ref), so it's
-                     # gated as alphanumeric and never as currency. Removes the need to
-                     # guess from the field key ("ref"/"cust" abbreviations slip past the
-                     # naming heuristics). Reusable for any supplier/doc type.
-                     "reference": "alphanumeric"}
-        field_patterns = dict(self.patterns.get("field_patterns", {}))
-        for _f in field_defs:
-            _k, _t = _f.get("key"), (_f.get("type") or "").lower()
-            if _k and _k not in field_patterns and _t in _TYPE2VAL:
-                mapped = _TYPE2VAL[_t]
-                # A reference/ticket/job field typed as "number" or "currency" gets
-                # the currency validation pattern (£\d+, \d+\.\d{2}) which rejects
-                # NNNN-NNNN-N ticket references.  Coerce any _is_ref_field key to
-                # "alphanumeric" — the right gate for a code — regardless of how the
-                # user labelled the field in Settings. Fixes the systemic case where
-                # a user picks "Number" thinking it means "reference number."
-                if _is_ref_field(_k) and mapped in ("currency", "currency_code"):
-                    mapped = "alphanumeric"
-                field_patterns[_k] = {"validation": mapped}
+        # Seed field_patterns from each field's configured TYPE (+ the ref-role
+        # coercion) so CUSTOM doc-type fields and the structural REFERENCE role are
+        # gated by their real type instead of loose free-text. The keyword config
+        # still wins where it carries a richer entry. See _seed_field_patterns.
+        field_patterns = _seed_field_patterns(self.patterns.get("field_patterns", {}), field_defs)
         # Date-typed fields get a merge guard: a candidate that doesn't parse as
         # a real date must never displace one that does (e.g. a mis-cropped
         # taught anchor returning a bare "March" overriding a valid full date).

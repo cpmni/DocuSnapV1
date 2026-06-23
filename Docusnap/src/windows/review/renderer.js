@@ -33,6 +33,11 @@ function validationKeyFor(def) {
   if ((mapped === 'currency' || mapped === 'currency_code') && isRefFieldKey(def.key)) {
     mapped = 'alphanumeric';
   }
+  // The doc-type REFERENCE role is created as plain "text", so it would be left
+  // free-text (no constraint). It holds a CODE — gate it as alphanumeric, mirroring
+  // engine.py's _seed_field_patterns ref-role coercion, so the on-blur validator and
+  // the backend agree for text-typed ref fields.
+  if (!mapped && isRefFieldKey(def.key)) mapped = 'alphanumeric';
   return mapped;
 }
 let validationPatterns = null;   // { date:[RegExp,…], … } compiled once from config

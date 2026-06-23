@@ -34,6 +34,7 @@ except ImportError:
     pytesseract = None
 
 from extraction import template_mapper  # noqa: E402
+from extraction.engine import _seed_field_patterns  # noqa: E402  (same gate the real pipeline uses)
 
 
 def main():
@@ -66,12 +67,17 @@ def main():
             landmarks = None
 
     field_key = mapping.get('field_key')
-    # Mirror engine.py: field_patterns drives _clean_value's val_type. Use the
-    # mapping's own ocr_type so the test cleans the value the same way reprocess
-    # does for this field.
+    # Mirror engine.py EXACTLY by building field_patterns through the SAME
+    # _seed_field_patterns the real pipeline uses, with the field's type as input.
+    # This is what makes the preview gate identically to reprocess — crucially it
+    # applies the ref-role coercion, so a doc-type REFERENCE field typed "text" is
+    # gated as a CODE (alphanumeric), not free-text. Without this the preview graded
+    # a text-typed ref as free-text (from the mapping's ocr_type) and a drifted
+    # absolute read of OCR garbage PASSED — committing "at drawn position" instead of
+    # showing the relocation reprocess actually performs (the preview/extraction gap).
     field_patterns = {}
-    if field_key and mapping.get('ocr_type'):
-        field_patterns = {field_key: {'validation': mapping['ocr_type']}}
+    if field_key:
+        field_patterns = _seed_field_patterns({}, [{'key': field_key, 'type': mapping.get('ocr_type') or 'text'}])
 
     # resolve_geometry runs the SAME extractor and ALSO reports where the anchor
     # label located and which target box was actually read (the resolved value
