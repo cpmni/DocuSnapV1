@@ -136,6 +136,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   deleteAllReview:             ()        => ipcRenderer.invoke('delete-all-review'),
   deleteAllDeferred:           ()        => ipcRenderer.invoke('delete-all-deferred'),
   reprocessDocument:           (data)    => ipcRenderer.invoke('reprocess-document', data),
+  reprocessBatch:              (docs)    => ipcRenderer.invoke('reprocess-batch', docs),
   getStuckCount:               ()        => ipcRenderer.invoke('get-stuck-count'),
   getStuckDocs:                ()        => ipcRenderer.invoke('get-stuck-docs'),
   promoteToTemplate:           (data)    => ipcRenderer.invoke('promote-to-template', data),

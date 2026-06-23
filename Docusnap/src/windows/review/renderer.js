@@ -1999,6 +1999,10 @@ let _batchStopped = false;
 document.getElementById('btn-stop-reprocess').addEventListener('click', () => {
   if (!_batchActive) return;
   _batchStopped = true;
+  // Batched Reprocess All runs in server-side Python workers, so cooperative
+  // flag-flipping can't halt it — kill the worker pool (same path folder-import Stop
+  // uses). The in-flight reprocessBatch promise then resolves and the finally runs.
+  try { window.docusnap.stopProcessing(); } catch {}
   const btnStop = document.getElementById('btn-stop-reprocess');
   btnStop.disabled = true;
   btnStop.innerHTML = 'Stopping…';
@@ -2028,66 +2032,44 @@ document.getElementById('btn-reprocess-all').addEventListener('click', async () 
 
   const docs  = [...queue];   // snapshot; queue is refetched in finally
   const total = docs.length;
-  let done    = 0;
-  let failed  = 0;
-  let nextIdx = 0;            // shared cursor handed out to the worker pool
+  let done = 0, failed = 0;
 
-  // Bounded parallel reprocess: run up to `processing_concurrency` reprocess
-  // calls at once (default 1 = the original serial behaviour). Each call is the
-  // SAME reprocess-document IPC the single-doc Reprocess button uses; the heavy
-  // OCR/extraction runs in parallel Python processes, while every DB write stays
-  // serialized on the single-threaded JS event loop (better-sqlite3 is
-  // synchronous) — so there is no SQLite contention or lost updates. Stop is
-  // cooperative: in-flight documents finish, no new ones start.
-  let concurrency = parseInt(await window.docusnap.getSetting('processing_concurrency'), 10);
-  if (!Number.isFinite(concurrency)) concurrency = 1;
-  concurrency = Math.max(1, Math.min(5, concurrency));
+  // Batched reprocess: ONE bounded pool of Python workers (server-side, honouring
+  // processing_concurrency) reprocesses the whole queue — each worker handles a
+  // SHARD of docs in a single process, so Python/Tesseract startup is paid per
+  // worker, not per document (the old per-doc reprocess-document spawn is what made
+  // a large Reprocess All slow to start). Each doc keeps its own template/doc-slug/
+  // enhance via the manifest, so accuracy is unchanged. Progress streams on
+  // reprocess-progress; Stop kills the workers (see the stop handler).
+  window.docusnap.removeReprocessProgress();
+  window.docusnap.onReprocessProgress((msg) => {
+    if (msg.type === 'file_done')  banner.textContent = `Reprocessing ${msg.done || 0} of ${msg.total || total}…`;
+    else if (msg.type === 'log')   console.log('[Reprocess All]', msg.text);
+  });
 
-  const runOne = async (doc) => {
-    try {
-      const result = await window.docusnap.reprocessDocument({
-        docId:      doc.id,
-        folderPath: doc.folder_path,
-        filename:   doc.original_filename,
-      });
-      if (!result?.success) failed++;
-      // Refresh the open document's panel only if IT was reprocessed AND is
-      // still the open doc when its result lands (the user may have navigated
-      // away while other workers were running).
-      if (result?.success && currentDoc && doc.id === currentDoc.id) {
-        const full = await window.docusnap.getDocumentWithExtractions(doc.id);
-        if (full && currentDoc && currentDoc.id === doc.id) {
+  try {
+    const res = await window.docusnap.reprocessBatch(
+      docs.map(d => ({ docId: d.id, folderPath: d.folder_path, filename: d.original_filename }))
+    );
+    done   = (res && res.done)   || 0;
+    failed = (res && res.failed) || 0;
+  } catch (e) {
+    console.warn('[Reprocess All]', e.message);
+  } finally {
+    window.docusnap.removeReprocessProgress();
+    // Refresh the open document's panel (it may have been reprocessed).
+    if (currentDoc) {
+      try {
+        const full = await window.docusnap.getDocumentWithExtractions(currentDoc.id);
+        if (full && currentDoc && currentDoc.id === full.id) {
           currentDoc  = full;
           corrections = {};
           pendingAnchors = {};   // drop any un-committed ⊕ teach (coords now stale)
-          syncDocTypeFromRecord(full); // auto-select the newly detected type
+          syncDocTypeFromRecord(full);
           renderFields(full);
         }
-      }
-    } catch (e) {
-      console.warn(`[Reprocess All] ${doc.original_filename}:`, e.message);
-      failed++;
+      } catch { /* panel refresh is best-effort */ }
     }
-    done++;
-    banner.textContent = `Reprocessing ${done} of ${total}…`;
-  };
-
-  // One worker pulls the next index off the shared cursor until the list is
-  // exhausted or Stop is requested. `nextIdx++` is safe without locking — there
-  // is no await between read and increment, so each index is handed out once.
-  const worker = async () => {
-    while (!_batchStopped) {
-      const i = nextIdx++;
-      if (i >= docs.length) return;
-      await runOne(docs[i]);
-    }
-  };
-
-  try {
-    const poolSize = Math.max(1, Math.min(concurrency, docs.length));
-    await Promise.all(Array.from({ length: poolSize }, () => worker()));
-  } finally {
-    // Always runs — covers normal completion, stop, and unexpected throws
     queue         = await window.docusnap.getReviewQueue();
     deferredQueue = await window.docusnap.getDeferredQueue();
     updateTabCounts();
@@ -2100,11 +2082,10 @@ document.getElementById('btn-reprocess-all').addEventListener('click', async () 
     btnAll.innerHTML     = '&#9654;&#9654; Reprocess All';
   }
 
-  const ok = done - failed;
-  // Final state stays in the banner ("…completed"), then clears after a moment.
-  const summary = _batchStopped
-    ? `Stopped after ${done} of ${total}`
-    : (failed ? `Completed — ${ok} of ${done} OK, ${failed} failed`
+  const stopped = _batchStopped;
+  const summary = stopped
+    ? `Stopped — ${done} reprocessed`
+    : (failed ? `Completed — ${done} OK, ${failed} failed`
               : `Completed ${done} of ${total}`);
   banner.classList.add('done');
   banner.textContent = summary;
@@ -2112,18 +2093,12 @@ document.getElementById('btn-reprocess-all').addEventListener('click', async () 
     if (!_batchActive) { banner.classList.remove('show', 'done'); banner.textContent = ''; }
   }, 4000);
 
-  if (_batchStopped) {
-    const remaining = queue.length;
-    showToast(
-      `Stopped after ${done} — ${remaining} remaining in queue`,
-      'warn'
-    );
-  } else {
-    showToast(
-      failed ? `Reprocessed ${ok}/${done} — ${failed} failed` : `Reprocessed ${done} document${done !== 1 ? 's' : ''}`,
-      failed ? 'warn' : 'ok'
-    );
-  }
+  showToast(
+    stopped ? `Stopped — ${done} reprocessed, ${queue.length} remaining`
+            : (failed ? `Reprocessed ${done} — ${failed} failed`
+                      : `Reprocessed ${done} document${done !== 1 ? 's' : ''}`),
+    (failed || stopped) ? 'warn' : 'ok'
+  );
 });
 
 // ── Split PDF ─────────────────────────────────────────────────────────────────

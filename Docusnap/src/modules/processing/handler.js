@@ -575,6 +575,114 @@ function register(ctx) {
     require('../../../database/modules/documents').getStuckQueue(getDb()));
 
   // ── Reprocess single document ───────────────────────────────────────────────
+  // Merge a fresh reprocess result into a document's stored extractions + identity,
+  // then persist. Shared by single-doc reprocess AND batched Reprocess All (one
+  // process_docs spawn → many file_done events, each applied here by docId). The
+  // freshly-recomputed value WINS whenever present; a prior value is preserved only
+  // when the new run found nothing for that field, and a field the new run didn't
+  // return at all is kept (so reprocess never silently drops a good first-pass read).
+  function applyReprocessResult(db, docId, existing, result, filename, diagOn) {
+    const existingMap = {};
+    for (const e of existing) existingMap[e.field_key] = e;
+
+    const newRows = Object.entries(result.extractions).map(([key, data]) => ({
+      field_key:         key,
+      raw_value:         data.value != null ? String(data.value) : null,
+      display_value:     data.value != null ? String(data.value) : null,
+      confidence:        data.confidence ?? null,
+      extraction_method: data.method || null,
+      validation_note:   data.validation_note || null,
+      corrected_to:      data.corrected_to || null,
+      anchor_label:      data.anchor || null,
+    }));
+
+    const _emitMerge = (field, decision, oldV, newV) => {
+      if (!traceWanted(diagOn)) return;
+      routeTrace({ type: 'trace', doc: filename, event: 'reprocess_merge',
+                   field, decision, old: oldV ?? null, new: newV ?? null });
+    };
+
+    const mergedRows = newRows.map(row => {
+      const ex = existingMap[row.field_key];
+      if (!ex) return row;
+      if (ex.display_value && !row.display_value) {
+        _emitMerge(row.field_key, 'kept_existing', ex.display_value, row.display_value);
+        return {
+          ...row, raw_value: ex.raw_value,
+          display_value: ex.display_value, confidence: ex.confidence,
+          validation_note: ex.validation_note || null,
+          corrected_to: ex.corrected_to || null,
+        };
+      }
+      if (ex.display_value) _emitMerge(row.field_key, 'used_new', ex.display_value, row.display_value);
+      return row;
+    });
+
+    const newFieldKeys = new Set(newRows.map(r => r.field_key));
+    for (const ex of existing) {
+      if (!newFieldKeys.has(ex.field_key) && ex.display_value) {
+        mergedRows.push({
+          field_key:         ex.field_key,
+          raw_value:         ex.raw_value,
+          display_value:     ex.display_value,
+          confidence:        ex.confidence,
+          extraction_method: ex.extraction_method,
+          validation_note:   ex.validation_note || null,
+          corrected_to:      ex.corrected_to || null,
+        });
+      }
+    }
+
+    const learning = require('../../../database/modules/learning');
+    learning.deleteExtractions(db, docId);
+    learning.insertExtractions(db, docId, mergedRows);
+
+    let reprocDocTypeId = null;
+    if (result.document_type) {
+      const docTypesMod = require('../../../database/modules/document_types');
+      const reMatch = docTypesMod.getAllWithFields(db).find(
+        dt => dt.name.toLowerCase() === result.document_type.toLowerCase()
+      );
+      if (reMatch) reprocDocTypeId = reMatch.id;
+    }
+
+    db.prepare(
+      `UPDATE documents SET
+         overall_confidence  = ?,
+         status              = 'needs_review',
+         document_type_id    = COALESCE(?, document_type_id),
+         template_id         = ?,
+         logo_phash          = ?,
+         keyword_fingerprint = ?,
+         supplier_name       = COALESCE(?, supplier_name),
+         ocr_text            = COALESCE(?, ocr_text),
+         review_acknowledged_at = NULL
+       WHERE id = ?`
+    ).run(
+      result.overall_confidence || null,
+      reprocDocTypeId,
+      result.template_id        || null,
+      result.logo_phash         || null,
+      result.keyword_fingerprint ? JSON.stringify(result.keyword_fingerprint) : null,
+      result.supplier_name      || null,
+      result.ocr_text           || null,
+      docId
+    );
+
+    const mergedMap = {};
+    for (const r of mergedRows) mergedMap[r.field_key] = { value: r.display_value, confidence: r.confidence };
+
+    if (logger) {
+      logger.log(`Reprocess done: ${filename}`);
+      for (const r of mergedRows) {
+        if (r.display_value) logger.log(`  FOUND   ${r.field_key}: ${JSON.stringify(r.display_value)} (${r.confidence}% via ${r.extraction_method || '?'})`);
+        else                 logger.log(`  MISSED  ${r.field_key}`);
+      }
+    }
+
+    return { extractions: mergedMap, overall_confidence: result.overall_confidence };
+  }
+
   ipcMain.handle('reprocess-document', async (event, { docId, folderPath, filename, enhanceParams }) => {
     requireRole('admin', 'edit');
     const db      = getDb();
@@ -752,129 +860,142 @@ function register(ctx) {
           return finish({ success: false, error: 'No data returned' });
         }
 
-        // Merge: the freshly-recomputed value WINS whenever present (the engine
-        // recomputes field winners cleanly each run); a prior value is preserved
-        // only when the new run found nothing for that field (see below). No
-        // confidence comparison — a stale value never shadows a new winner.
-        const existingMap = {};
-        for (const e of existing) existingMap[e.field_key] = e;
-
-        const newRows = Object.entries(result.extractions).map(([key, data]) => ({
-          field_key:         key,
-          raw_value:         data.value != null ? String(data.value) : null,
-          display_value:     data.value != null ? String(data.value) : null,
-          confidence:        data.confidence ?? null,
-          extraction_method: data.method || null,
-          validation_note:   data.validation_note || null,
-          corrected_to:      data.corrected_to || null,
-          anchor_label:      data.anchor || null,
-        }));
-
-        // Dev-only: surface each merge decision to the inspector (and session
-        // registry). Observation only — the merge result below is unchanged.
-        const _emitMerge = (field, decision, oldV, newV) => {
-          if (!traceWanted(diagOn)) return;
-          const ev = { type: 'trace', doc: filename, event: 'reprocess_merge',
-                       field, decision, old: oldV ?? null, new: newV ?? null };
-          routeTrace(ev);
-        };
-
-        const mergedRows = newRows.map(row => {
-          const ex = existingMap[row.field_key];
-          if (!ex) return row;
-          // Only preserve old value if reprocessing found nothing new
-          if (ex.display_value && !row.display_value) {
-            _emitMerge(row.field_key, 'kept_existing', ex.display_value, row.display_value);
-            return {
-              ...row, raw_value: ex.raw_value,
-              display_value: ex.display_value, confidence: ex.confidence,
-              validation_note: ex.validation_note || null,
-              corrected_to: ex.corrected_to || null,
-            };
-          }
-          if (ex.display_value) _emitMerge(row.field_key, 'used_new', ex.display_value, row.display_value);
-          return row;
-        });
-
-        // Preserve fields the new run didn't return at all (not just null) so that
-        // reprocess can't silently drop a field that the first pass extracted correctly.
-        const newFieldKeys = new Set(newRows.map(r => r.field_key));
-        for (const ex of existing) {
-          if (!newFieldKeys.has(ex.field_key) && ex.display_value) {
-            mergedRows.push({
-              field_key:         ex.field_key,
-              raw_value:         ex.raw_value,
-              display_value:     ex.display_value,
-              confidence:        ex.confidence,
-              extraction_method: ex.extraction_method,
-              validation_note:   ex.validation_note || null,
-              corrected_to:      ex.corrected_to || null,
-            });
-          }
-        }
-
-        const learning = require('../../../database/modules/learning');
-        learning.deleteExtractions(db, docId);
-        learning.insertExtractions(db, docId, mergedRows);
-
-        // Persist the freshly detected document type so Review can auto-select
-        // it. Resolve type name → id exactly as the batch insert path
-        // (_handleFileMessage) does; the COALESCE below keeps the existing type
-        // when re-identification returns nothing, so a borderline reprocess
-        // never wipes a known type.
-        let reprocDocTypeId = null;
-        if (result.document_type) {
-          const docTypesMod = require('../../../database/modules/document_types');
-          const reMatch = docTypesMod.getAllWithFields(db).find(
-            dt => dt.name.toLowerCase() === result.document_type.toLowerCase()
-          );
-          if (reMatch) reprocDocTypeId = reMatch.id;
-        }
-
-        db.prepare(
-          `UPDATE documents SET
-             overall_confidence  = ?,
-             status              = 'needs_review',
-             document_type_id    = COALESCE(?, document_type_id),
-             template_id         = ?,
-             logo_phash          = ?,
-             keyword_fingerprint = ?,
-             supplier_name       = COALESCE(?, supplier_name),
-             ocr_text            = COALESCE(?, ocr_text),
-             review_acknowledged_at = NULL
-           WHERE id = ?`
-        ).run(
-          result.overall_confidence || null,
-          reprocDocTypeId,
-          result.template_id        || null,
-          result.logo_phash         || null,
-          result.keyword_fingerprint ? JSON.stringify(result.keyword_fingerprint) : null,
-          result.supplier_name      || null,
-          result.ocr_text           || null,
-          docId
-        );
-
-        const mergedMap = {};
-        for (const r of mergedRows) {
-          mergedMap[r.field_key] = { value: r.display_value, confidence: r.confidence };
-        }
-
-        if (logger) {
-          logger.log(`Reprocess done: ${filename}`);
-          for (const r of mergedRows) {
-            if (r.display_value) {
-              logger.log(`  FOUND   ${r.field_key}: ${JSON.stringify(r.display_value)} (${r.confidence}% via ${r.extraction_method || '?'})`);
-            } else {
-              logger.log(`  MISSED  ${r.field_key}`);
-            }
-          }
-        }
-
-        finish({ success: true, extractions: mergedMap,
-                 overall_confidence: result.overall_confidence,
-                 ruleCreated: ruleCreatedFor });
+        const applied = applyReprocessResult(db, docId, existing, result, filename, diagOn);
+        finish({ success: true, ...applied, ruleCreated: ruleCreatedFor });
       });
     });
+  });
+
+  // ── Reprocess All (batched) ───────────────────────────────────────────────
+  // Reprocess many queued documents through a BOUNDED POOL of Python workers, each
+  // handling a SHARD of docs in ONE process — so the Python/Tesseract startup cost is
+  // paid once per worker, not once per document (the per-doc reprocess-document spawn
+  // is what made a large Reprocess All "slow to start"). Accuracy is preserved: each
+  // doc carries its OWN overrides (template / doc-slug / enhance) via the
+  // --reprocess-manifest, exactly as single-doc reprocess passes them. All DB writes
+  // stay on the single-threaded JS event loop (applyReprocessResult), so there is no
+  // SQLite contention. Stop kills every worker tree (shared _currentBatchProcs).
+  ipcMain.handle('reprocess-batch', async (event, docs) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const licenseDenial = require('../licensing/handler').licenseDenied(db);
+    if (licenseDenial) return { success: false, error: 'A valid license is required to reprocess documents. Please re-activate ScanFinder.', ...licenseDenial };
+    if (!Array.isArray(docs) || !docs.length) return { success: true, done: 0, failed: 0 };
+
+    const learning2  = require('../../../database/modules/learning');
+    const templates2 = require('../../../database/modules/templates');
+    const reprMode   = learning2.getSetting(db, 'processing_mode', 'smart');
+    const diagOn     = _diagEnabled(db);
+    if (diagOn) diaglog.enable();
+    const { args: trainingArgs, tempFiles, ocrEngine } = buildTrainingArgs(db, configPath, logger);
+
+    // Stage every doc into ONE temp folder under a unique name, snapshot its existing
+    // extractions, and build its per-doc manifest overrides (mirrors single-doc
+    // reprocess: template baseline enhance + known template-id + known doc-slug).
+    const tmpDir    = fs.mkdtempSync(path.join(os.tmpdir(), 'docusnap-rb-'));
+    const manifest  = {};   // tmpName -> { known_template_id, known_doc_slug, enhance_params }
+    const nameToDoc = {};   // tmpName -> { docId, filename, existing }
+    const tmpNames  = [];
+    for (const d of docs) {
+      try {
+        const row = db.prepare('SELECT working_path, template_id FROM documents WHERE id = ?').get(d.docId);
+        const srcFile = (row && row.working_path && fs.existsSync(row.working_path))
+          ? row.working_path
+          : path.join(d.folderPath || '', d.filename || '');
+        if (!srcFile || !fs.existsSync(srcFile)) { continue; }
+        const ext     = path.extname(d.filename || '') || '.pdf';
+        const tmpName = `rb_${d.docId}${ext}`;
+        fs.copyFileSync(srcFile, path.join(tmpDir, tmpName));
+        const existing = db.prepare('SELECT * FROM extractions WHERE document_id = ?').all(d.docId);
+        const tmpl = row && row.template_id ? templates2.getById(db, row.template_id) : null;
+        const enh  = (tmpl && tmpl.ocr_auto_enabled && tmpl.ocr_auto_params) ? tmpl.ocr_auto_params : null;
+        const dtRow = db.prepare(
+          `SELECT dt.slug AS slug FROM documents d LEFT JOIN document_types dt ON dt.id = d.document_type_id WHERE d.id = ?`
+        ).get(d.docId);
+        manifest[tmpName]  = {
+          known_template_id: (row && row.template_id) || null,
+          known_doc_slug:    (dtRow && dtRow.slug) || null,
+          enhance_params:    enh,
+        };
+        nameToDoc[tmpName] = { docId: d.docId, filename: d.filename, existing };
+        tmpNames.push(tmpName);
+        logAudit(db, { action: 'reprocess', target_type: 'document', target_id: d.docId,
+          document_id: d.docId, outcome: 'success', metadata: { batch: true } });
+      } catch (e) { logger?.warn(`reprocess-batch stage ${d.filename}: ${e.message}`); }
+    }
+    if (!tmpNames.length) {
+      try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
+      cleanupFiles(tempFiles);
+      return { success: true, done: 0, failed: 0 };
+    }
+
+    const manifestFile = writeTempJson('rbmanifest', manifest);
+    let concurrency = parseInt(learning2.getSetting(db, 'processing_concurrency', '1'), 10);
+    if (!Number.isFinite(concurrency)) concurrency = 1;
+    concurrency = Math.max(1, Math.min(5, concurrency));
+    const shards  = partitionRoundRobin(tmpNames, Math.min(concurrency, tmpNames.length));
+    const threads = ocrEngine === 'rapidocr'
+      ? Math.max(1, Math.floor((os.cpus().length || 1) / shards.length)) : 0;
+
+    mirror(event.sender, 'reprocess-progress', { type: 'start', total: tmpNames.length });
+    let done = 0, failed = 0;
+    const shardFiles = [];
+    _currentBatchProcs = [];
+
+    const runShard = (shard) => new Promise((resolve) => {
+      const filesFile = writeTempJson('rbfiles', shard);
+      shardFiles.push(filesFile);
+      const scriptArgs = ['--folder', tmpDir, '--tesseract', tesseractPath(), '--mode', reprMode,
+        '--files-file', filesFile, '--reprocess-manifest', manifestFile, ...trainingArgs];
+      if (ocrEngine === 'rapidocr' && reprMode === 'fast') scriptArgs.push('--ocr-fast');
+      if (threads > 0) scriptArgs.push('--ocr-threads', String(threads));
+      if (traceWanted(diagOn)) {
+        scriptArgs.push('--trace');
+        try { fs.mkdirSync(ctx.devSliceDir, { recursive: true }); scriptArgs.push('--slice-dir', ctx.devSliceDir); } catch {}
+      }
+      const proc = spawn(pythonExe(), pythonArgs(backendScript(), ...scriptArgs), { windowsHide: true });
+      _currentBatchProcs.push(proc);
+      let buf = '', settled = false;
+      const watchdog = setTimeout(() => {
+        logger?.err('reprocess-batch shard timed out');
+        try { require('child_process').spawnSync('taskkill', ['/F', '/T', '/PID', String(proc.pid)], { windowsHide: true, stdio: 'ignore' }); } catch {}
+        try { proc.kill(); } catch {}
+      }, 30 * 60 * 1000);
+      const fin = () => { if (settled) return; settled = true; clearTimeout(watchdog); resolve(); };
+      proc.stdout.on('data', (data) => {
+        buf += data.toString();
+        const lines = buf.split('\n'); buf = lines.pop();
+        for (const line of lines) {
+          const t = line.trim(); if (!t) continue;
+          let msg = null; try { msg = JSON.parse(t); } catch { continue; }
+          if (msg.type === 'trace') { routeTrace(msg); continue; }
+          if (msg.type === 'file_done') {
+            _recordDevDoc(msg);
+            const nd = nameToDoc[msg.original_filename] || nameToDoc[msg.filename];
+            if (nd && msg.success && msg.extractions) {
+              try { applyReprocessResult(db, nd.docId, nd.existing, msg, nd.filename, diagOn); done++; }
+              catch (e) { failed++; logger?.err(`reprocess-batch merge ${nd.filename}: ${e.message}`); }
+            } else if (nd) { failed++; }
+            mirror(event.sender, 'reprocess-progress',
+              { type: 'file_done', done, failed, total: tmpNames.length, docId: nd ? nd.docId : null });
+          } else if (msg.type !== 'start') {
+            mirror(event.sender, 'reprocess-progress', msg);   // file_begin / log
+          }
+        }
+      });
+      proc.stderr.on('data', d => { const tx = d.toString().trim(); if (tx) logger?.warn(`reprocess-batch stderr: ${tx}`); });
+      proc.on('error', (e) => { logger?.err(`reprocess-batch spawn: ${e.message}`); fin(); });
+      proc.on('close', fin);
+    });
+
+    try {
+      await Promise.all(shards.map(runShard));
+    } finally {
+      _currentBatchProcs = [];
+      try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
+      cleanupFiles([manifestFile, ...shardFiles, ...tempFiles]);
+    }
+    return { success: true, done, failed };
   });
 
   // ── OCR region ──────────────────────────────────────────────────────────────
