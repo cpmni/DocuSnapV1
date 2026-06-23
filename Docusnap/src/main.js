@@ -11,15 +11,27 @@ const { app, BrowserWindow, ipcMain, screen, shell, Tray, Menu, Notification } =
 const path = require('path');
 const fs   = require('fs');
 
-// ── App-data directory (brand-rename safety) ──────────────────────────────────
-// The product is shown to users as "ScanFinder", but its on-disk data lives in
-// %APPDATA%\DocuSnap (SQLite DB, users, cached license tokens, inbox, templates,
-// processing.log). Electron derives userData from productName, so renaming
-// productName alone would repoint userData at a NEW empty %APPDATA%\ScanFinder
-// folder and orphan every existing install's data. Pin userData to the original
-// folder so the rename stays purely cosmetic — no data migration. Must run
-// before app 'ready' / first DB open.
-app.setPath('userData', path.join(app.getPath('appData'), 'DocuSnap'));
+// ── App-data directory (brand rename: DocuSnap → ScanFinder) ──────────────────
+// On-disk data lives under userData (SQLite DB, users, cached license tokens,
+// inbox, templates, certs, processing.log). The folder is now %APPDATA%\ScanFinder
+// (matching productName), but legacy installs kept it in %APPDATA%\DocuSnap. The
+// first launch of a renamed build performs a ONE-TIME migration: if the new folder
+// doesn't exist yet but the legacy one does, the whole folder is renamed across —
+// preserving every existing install's data (DB, settings, license tokens, learned
+// templates). If that rename fails (a file is busy), fall back to the legacy folder
+// so data is never orphaned. Must run before app 'ready' / first DB open.
+const _appDataDir    = app.getPath('appData');
+const _userDataDir   = path.join(_appDataDir, 'ScanFinder');
+const _legacyDataDir = path.join(_appDataDir, 'DocuSnap');
+let   _resolvedUserData = _userDataDir;
+try {
+  if (!fs.existsSync(_userDataDir) && fs.existsSync(_legacyDataDir)) {
+    fs.renameSync(_legacyDataDir, _userDataDir);
+  }
+} catch (e) {
+  if (fs.existsSync(_legacyDataDir)) _resolvedUserData = _legacyDataDir;
+}
+app.setPath('userData', _resolvedUserData);
 
 // Windows toast attribution: without an explicit AppUserModelID, notifications are
 // labelled "Electron". Match the installer's shortcut AUMID (build.appId in
