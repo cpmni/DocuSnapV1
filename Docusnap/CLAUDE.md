@@ -61,12 +61,20 @@ spawn starts cold) and relay their findings to the user.
   (the shared `validation_patterns` in config/keyword_patterns.json). Returns a
   fixed report shape (Facts / Proposed pattern / Match examples / Integration point
   / Risks / Smallest change).
+- **007** (`agents/007.md`) — elite OCR ENGINEER (deeper than oscar on geometry):
+  separates the READING axis from the PLACEMENT axis, follows the coordinate frame,
+  proves FACT vs HYPOTHESIS, fixes the reusable layer. For the hardest OCR positioning
+  bugs (label→value drift, registration / coordinate-frame mismatches) + end-to-end
+  OCR-pipeline review; same OSS-licence hard rule as oscar. (Led the Stage 0.5
+  inline-harvest drift fix with oscar + eric — see OCR_WORKFLOW_REVIEW.md.)
 
 **Skills** in `.claude/skills/`: a set of Python engineering skills
 (`testing-strategy`, `code-quality`, `performance`, `api-design`, `packaging`,
-`security-audit`, etc. — gary's toolkit) and `ocr-document-processor` (oscar's
+`security-audit`, etc. — gary's toolkit), `ocr-document-processor` (oscar's
 OCR knowledge pack: SKILL.md + scripts; note its requirements.txt lists PyMuPDF —
-use pypdfium2 here instead). `scan-finder-frontend-design` covers the website/UI.
+use pypdfium2 here instead), and `ocr-engineering` (007's deep OCR pack: coordinate
+frames, anchor→offset math, merged-row inline harvest, registration-as-fallback,
+debug triage). `scan-finder-frontend-design` covers the website/UI.
 
 ---
 
@@ -138,7 +146,7 @@ docusnap2/
 │   ├── extraction/
 │   │   ├── engine.py                    # ExtractionEngine — staged pipeline orchestration (see Extraction pipeline below)
 │   │   ├── template_matcher.py          # Stage 0: learned-template identification + field seeding (same-logo siblings disambiguated by keyword fingerprint)
-│   │   ├── template_mapper.py           # Stage 0.5: admin-drawn anchor→target zone mapping; absolute-first read, then registration transform, then single-label refinement
+│   │   ├── template_mapper.py           # Stage 0.5: admin-drawn anchor→target zone mapping; absolute-first read → inline-harvest/relocate off the located label (label_box) → registration fallback
 │   │   ├── registration.py              # "register, then read": NumPy similarity/affine RANSAC fit (taught landmarks→page) + confidence; no OpenCV
 │   │   ├── keyword.py                   # Stage 1: regex pattern matching (incl. job_no 4-4-1 shape, separator-normalised)
 │   │   ├── anchor.py                    # Stage 2: spatial anchors + logo match
@@ -310,6 +318,26 @@ process_docs.py → ExtractionEngine.extract()
              offset/inset arithmetic stays ONLY in the relocation fallback, so the
              "PROFILE"→"ROFILE" leading-inset clip cannot reappear. Mirrors Stage
              2's rigid-crop-then-relocate model.
+             INLINE HARVEST + label_box (template_mapper._relocate_and_read, 2026-06 —
+             the real "anchor and data point aren't linked" drift fix; led by agent 007
+             + oscar, frame-cleared by eric): the SHARED relocation helper now reads a
+             key/value row the way Stage 2 (anchor.py) always has. (1) INLINE HARVEST —
+             when the located label's OCR line is "label …gap… value" ("Ticket No.
+             2605-0769-1"), the value words are read STRAIGHT off the line
+             (_locate_anchor.inline_value), gated like a crop read, no extra OCR. (2)
+             label_box GEOMETRY — the geometric fallback derives off the TIGHT label_box,
+             NOT the whole OCR LINE box (which overshoots the value and made the
+             relocation refuse/misderive → fall to the registration transform → read the
+             row ABOVE); _located_too_wide now only guards the legacy no-label_box case.
+             The _extract_one drift guard also runs the relocation whenever the value is
+             INLINE on the label's row (not only when _label_drifted), so the harvest
+             fires for key/value layouts regardless of drift. Brings Stage 0.5 to parity
+             with Stage 2; generalises to every label→value form row. Guarded by
+             tests/test_inline_harvest.py. (DEFERRED, see OCR_WORKFLOW_REVIEW.md:
+             resolve_geometry/_extract_one CAPTURE POLLUTION — all rungs capture
+             kind="target", so the diagnostic green box can show a non-winning rung; and
+             tie _label_drifted's coarse fixed _DRIFT_FLOOR to line height for label-ABOVE
+             layouts.)
              DRIFT GUARD (closes the old absolute-first trade-off for LABELLED
              mappings): a stationary drawn box on a shifted page (e.g. a mapping
              taught on a CROPPED scan, then run on the UNCROPPED reprocess where
