@@ -131,91 +131,50 @@ async function renderTypeStep(){
   nu.onclick=()=>selectType(nu,true);
   grid.appendChild(nu);
 }
+let dtEditor = null;   // shared DocTypeEditor (create mode); mounted lazily on "It's something new"
+
 function selectType(card,isNew){
   document.querySelectorAll('#type-grid .card').forEach(c=>c.classList.remove('sel'));
   card.classList.add('sel');
   $('new-type-panel').classList.toggle('hidden', !isNew);
-  if (isNew && !state.newFields.length){
-    // Seed the structural roles. Company + Date are MANDATORY (the backend force-
-    // creates them — ensureStructuralRoles) so they are LOCKED here (no delete/retype),
-    // mirroring Settings. Company uses the canonical scope key `supplier_name` so the
-    // backend recognises it and won't inject a duplicate — only the DISPLAY label is
-    // "Company". Reference is a pre-filled DEFAULT but intentionally REMOVABLE: the
-    // backend deliberately allows reference-less types (forcing a ref where there is
-    // none poisons filename/reference learning — see document_types.ensureStructuralRoles).
-    state.newFields=[
-      {label:'Company',          key:'supplier_name', type:'text', locked:true},
-      {label:'Reference number',                      type:'text'},
-      {label:'Date',                                  type:'date', locked:true},
-    ];
-    renderNewFields();
+  // Mount the shared friendly creator lazily and keep it across toggles, so the
+  // user's in-progress draft survives switching between cards. The component owns
+  // the locked structural roles (Company/Date) + the removable Reference seed.
+  if (isNew && !dtEditor && window.DocTypeEditor){
+    dtEditor = window.DocTypeEditor.create($('nt-editor-host'), {
+      mode:'create', api:D,
+      onValidityChange: () => renderFooter(),   // live-enable the Continue button
+    });
   }
   renderFooter();
 }
 function isNewTypeSelected(){ const s=$('type-grid').querySelector('.card.sel'); return s && s.id==='card-new'; }
-function newTypeReady(){
-  return $('nt-name').value.trim() && state.newFields.length>=1;
-}
-function slugify(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9_]/g,'_').replace(/^_+|_+$/g,''); }
-function renderNewFields(){
-  const wrap=$('nt-fields'); wrap.innerHTML='';
-  state.newFields.forEach((f,i)=>{
-    f.key = f.key || slugify(f.label);   // preserve an explicit key (e.g. supplier_name)
-    const chip=document.createElement('span'); chip.className='chip'+(f.locked?' locked':'');
-    if (f.locked){
-      // Structural role: fixed type, no delete (mirrors the Settings 🔒 lock).
-      const tl = f.type==='date'?'Date':(f.type==='currency'?'Currency':(f.type==='number'?'Number':'Text'));
-      chip.innerHTML=`<span>${esc(f.label)}</span><span class="ftype">${tl}</span>`+
-        `<span class="lock" title="Required field — it can’t be removed or retyped">🔒</span>`;
-    } else {
-      chip.innerHTML=`<span>${esc(f.label)}</span>`+
-        `<select data-i="${i}"><option value="text"${f.type==='text'?' selected':''}>Text</option>`+
-        `<option value="date"${f.type==='date'?' selected':''}>Date</option>`+
-        `<option value="currency"${f.type==='currency'?' selected':''}>Currency</option>`+
-        `<option value="number"${f.type==='number'?' selected':''}>Number</option>`+
-        `<option value="reference"${f.type==='reference'?' selected':''}>Reference number</option></select>`+
-        `<span class="x" data-i="${i}">✕</span>`;
-    }
-    wrap.appendChild(chip);
-  });
-  wrap.querySelectorAll('select').forEach(sel=>sel.onchange=e=>{ state.newFields[+e.target.dataset.i].type=e.target.value; });
-  wrap.querySelectorAll('.x').forEach(x=>x.onclick=e=>{ state.newFields.splice(+e.target.dataset.i,1); renderNewFields(); renderKeySelectors(); renderFooter(); });
-  renderKeySelectors();
-}
-function renderKeySelectors(){
-  const opts=`<option value="">— choose —</option>`+state.newFields.map(f=>`<option value="${esc(f.key)}">${esc(f.label)}</option>`).join('');
-  const ref=$('nt-ref'), date=$('nt-date');
-  const prevR=ref.value, prevD=date.value;
-  ref.innerHTML=opts; date.innerHTML=opts;
-  // sensible pre-guesses
-  const g=(re)=>{const m=state.newFields.find(f=>re.test(f.label)||re.test(f.key));return m?m.key:'';};
-  ref.value = prevR || g(/number|no\b|ref|invoice|order/i) || '';
-  date.value= prevD || g(/date/i) || (state.newFields.find(f=>f.type==='date')||{}).key || '';
-}
-$('nt-field-add').onclick=()=>{ const v=$('nt-field-input').value.trim(); if(!v)return; state.newFields.push({label:v,type:/date/i.test(v)?'date':(/total|amount|price|cost/i.test(v)?'currency':'text')}); $('nt-field-input').value=''; renderNewFields(); renderFooter(); };
-$('nt-field-input').addEventListener('keydown',e=>{ if(e.key==='Enter'){e.preventDefault();$('nt-field-add').click();}});
-$('nt-name').addEventListener('input',renderFooter);
+function newTypeReady(){ return !!dtEditor && dtEditor.isReady(); }
+// (The inline create-form — chips, key selectors, and their listeners — is gone;
+//  the shared DocTypeEditor component now owns the new-type fields + role pickers.)
 
 async function commitTypeChoice(){
-  $('nt-err').textContent='';
   if (!isNewTypeSelected()){
     const card=$('type-grid').querySelector('.card.sel');
     state.docTypeSlug=card.dataset.slug; state.docTypeName=card.dataset.name;
     let types=[]; try{ types=await D.getAllDocTypes()||[]; }catch{}
     const t=types.find(x=>x.slug===state.docTypeSlug);
     state.fields=(t&&t.fields?t.fields:[]).filter(f=>f.enabled!==0).map(f=>({key:f.key,label:f.label,type:f.type,required:!!f.required}));
-    if (!state.fields.length){ $('nt-err').textContent='That type has no fields to teach.'; return false; }
+    if (!state.fields.length){ toast('That type has no fields to teach.'); return false; }
     return true;
   }
-  // create new type transactionally
-  const name=$('nt-name').value.trim();
-  const fields=state.newFields.map(f=>({key:f.key||slugify(f.label),label:f.label,type:f.type}));
-  const ref=$('nt-ref').value||null, date=$('nt-date').value||null;
-  const res=await D.createDocTypeWithFields({name,fields,ref_field_key:ref,date_field_key:date});
-  if (!res||!res.success){ $('nt-err').textContent=(res&&res.error)||'Could not create the type.'; return false; }
-  state.docTypeSlug=res.type?res.type.slug:slugify(name);
-  state.docTypeName=name;
-  state.fields=fields.map(f=>({key:f.key,label:f.label,type:f.type,required:(f.key===slugify(ref)||f.key===slugify(date))}));
+  // Create the new type via the shared editor (immediate commit; teach keeps its
+  // original step-2 timing). The editor surfaces its own validation errors inline.
+  if (!dtEditor) return false;
+  const res=await dtEditor.commit();
+  if (!res||!res.success) return false;
+  const t=res.type;
+  state.docTypeSlug = t ? t.slug : null;
+  state.docTypeName = t ? t.name : '';
+  state.fields=(t&&t.fields?t.fields:[]).map(f=>({
+    key:f.key, label:f.label, type:f.type,
+    required:(f.key===t.ref_field_key || f.key===t.date_field_key),
+  }));
   return true;
 }
 

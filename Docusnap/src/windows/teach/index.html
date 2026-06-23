@@ -185,23 +185,7 @@
       <div id="type-grid" class="grid"></div>
 
       <div id="new-type-panel" class="panel hidden">
-        <label class="fl">Give it a simple name</label>
-        <input type="text" id="nt-name" placeholder="e.g. Delivery Note" autocomplete="off">
-
-        <label class="fl">What details should Scan Finder pull out?</label>
-        <div id="nt-fields" class="chips"></div>
-        <div class="addrow">
-          <input type="text" id="nt-field-input" placeholder="Add a detail, e.g. Order Number" autocomplete="off">
-          <button class="btn ghost" id="nt-field-add">+ Add</button>
-        </div>
-
-        <label class="fl">★ Which detail is the main number you'd search for later?
-          <span class="muted">(usually the invoice or order number)</span></label>
-        <select id="nt-ref"></select>
-
-        <label class="fl">📅 Which detail is the document's date?</label>
-        <select id="nt-date"></select>
-        <div id="nt-err" class="err"></div>
+        <div id="nt-editor-host"></div>
       </div>
     </section>
 
@@ -277,6 +261,7 @@
   <div class="toast" id="toast"></div>
   <script src="../shared/helpmode.js"></script>
   <script src="../shared/thumbs.js"></script>
+  <script src="../shared/doctype-editor.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>
