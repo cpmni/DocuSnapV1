@@ -973,7 +973,20 @@ class ExtractionEngine:
                 # an inline/text read with no crop conf = None) still wins outright.
                 _omin = data.get("ocr_min_conf")
                 _ocr_clean = (_omin is None) or (_omin >= _TIER_A_OCR_MIN)
-                if data.get("authoritative") and data.get("value") and data.get("located", True) and _ocr_clean:
+                # COVERAGE gate on the outright win (belt-and-braces with the anchor.py
+                # credibility coverage check): an authoritative read of a TYPED field
+                # must match MOST of its validation pattern, so a clean-but-wrong value
+                # the pattern only matches on a sub-run (a colon-laden MAC, coverage
+                # ~0.18) cannot win Tier-A over a full-match mapping — it falls through
+                # to the contest where the rx-100% mapping wins. Untyped / date /
+                # currency carry no pattern here → no constraint (byte-identical).
+                _cov_ok = True
+                _vt = (field_patterns.get(key) or {}).get("validation") if field_patterns else None
+                if _vt and _vt not in ("date", "currency", "currency_code"):
+                    _cpats = (self.patterns.get("validation_patterns") or {}).get(_vt)
+                    if _cpats:
+                        _cov_ok = anchor._pattern_coverage(data.get("value"), _cpats) >= 0.8
+                if data.get("authoritative") and data.get("value") and data.get("located", True) and _ocr_clean and _cov_ok:
                     results[key] = data
                     continue
                 # Precedence: a deliberately DRAWN source outranks an AUTO-LEARNED

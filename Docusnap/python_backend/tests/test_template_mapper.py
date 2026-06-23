@@ -367,7 +367,7 @@ def test_derived_target_no_leading_inset_clip():
         if x1 == 250:            # the ABSOLUTE drawn box -> empty, force relocation
             return None
         captured["box"] = crop[1]
-        return "PROFILE CONSTRUCTION"
+        return "PROFILE-CONSTRUCTION"
     res = template_mapper.extract_with_mappings(
         [page], [m], {"invoice_number": {"validation": "alphanumeric"}},
         ocr_lines_fn=drifted_label, ocr_text_fn=recording_text,
@@ -378,7 +378,7 @@ def test_derived_target_no_leading_inset_clip():
                  x1 == 550):
         failures += 1
     if not check("full value resolved via relocation, leading character intact",
-                 res.get("invoice_number", {}).get("value") == "PROFILE CONSTRUCTION"):
+                 res.get("invoice_number", {}).get("value") == "PROFILE-CONSTRUCTION"):
         failures += 1
     print()
     return failures

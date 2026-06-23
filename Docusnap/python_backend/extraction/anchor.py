@@ -822,6 +822,31 @@ def _should_replace(incumbent, candidate, val_type, validation_patterns, inc_ocr
     return _should_replace_weak(inc, candidate, val_type)
 
 
+# Minimum fraction of a TYPED value that its validation pattern must cover for the
+# read to be credible. A real code is one contiguous token (coverage ~1.0); a
+# colon-laden MAC the pattern only matches on a 3-char sub-run scores ~0.18 and is
+# rejected. 0.8 keeps a clean ref (with its own -/./ separators) at 1.0 while
+# excluding the MAC class. Shared by Stage 2 (anchor) and Stage 0.5 (template_mapper).
+_CREDIBLE_COVERAGE_MIN = 0.8
+
+
+def _pattern_coverage(v: str, pats) -> float:
+    """Fraction of `v` covered by the LONGEST single match of any pattern in `pats`
+    (re.search, IGNORECASE), on the whitespace-stripped value. Mirrors the renderer's
+    regexScore ("rx N%") so UI and pipeline share ONE coverage metric. A contiguous-
+    span measure (not summed chars) is what tells a real code (~1.0) from a value the
+    pattern only matches on a disjoint sub-run (the MAC)."""
+    s = (v or "").strip()
+    if not s:
+        return 0.0
+    best = 0
+    for p in (pats or []):
+        m = re.search(p, s, re.IGNORECASE)
+        if m and len(m.group(0)) > best:
+            best = len(m.group(0))
+    return best / len(s)
+
+
 def _crop_is_credible(value: str, val_type: str | None,
                       validation_patterns: dict | None,
                       label: str | None = None) -> bool:
@@ -854,7 +879,14 @@ def _crop_is_credible(value: str, val_type: str | None,
 
     pats = (validation_patterns or {}).get(val_type) if val_type else None
     if pats:
-        return any(re.search(p, v, re.IGNORECASE) for p in pats)
+        # Date / currency keep substring matching + their upstream salvage path (a
+        # "£1,234.00" or junk-wrapped date is rescued later, never rejected here).
+        if val_type in ("date", "currency", "currency_code"):
+            return any(re.search(p, v, re.IGNORECASE) for p in pats)
+        # Other typed fields (alphanumeric / reference / code): the pattern must
+        # COVER most of the value, so a colon-laden MAC matching only a sub-run is
+        # rejected and the field relocates/falls to review instead of committing junk.
+        return _pattern_coverage(v, pats) >= _CREDIBLE_COVERAGE_MIN
 
     # Free-text: must start with an alphanumeric char and be mostly alphanumeric.
     # Also require a minimum of 3 non-space characters — a single letter or two-char

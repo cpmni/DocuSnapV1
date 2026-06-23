@@ -75,7 +75,22 @@ function fieldValidationError(key, value) {
   if (!valKey) return null;                      // free-text / untyped → no constraint
   const pats = validationPatterns && validationPatterns[valKey];
   if (!pats || !pats.length) return null;
-  if (pats.some(re => re.test(v))) return null;
+  // Date/currency: a substring match is fine (the value legitimately sits inside
+  // formatting, and salvage handles the rest). Other typed fields (codes/refs):
+  // require >=80% COVERAGE — the longest matching span over the value — the SAME
+  // metric the backend credibility gate (anchor._pattern_coverage) and the dev-
+  // inspector "rx %" badge use, so the on-blur warning, the badge and extraction
+  // stay one definition (a colon-laden MAC scores ~18% → warns, never silently OK).
+  if (valKey === 'date' || valKey === 'currency' || valKey === 'currency_code') {
+    if (pats.some(re => re.test(v))) return null;
+  } else {
+    let best = 0;
+    for (const re of pats) {
+      let m = null; try { m = v.match(re); } catch { m = null; }
+      if (m && m[0]) best = Math.max(best, m[0].length / v.length);
+    }
+    if (best >= 0.8) return null;
+  }
   return valKey === 'date'          ? 'Not a valid date'
        : valKey === 'currency'      ? 'Not a valid amount'
        : valKey === 'currency_code' ? 'Not a valid currency code'
