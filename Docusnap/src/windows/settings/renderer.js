@@ -1339,6 +1339,11 @@ function renderOcrAutoStatus(detail) {
   if (!row || !toggle) return;
 
   const hasRule = !!(detail.ocr_auto_params);
+  // The titled "OCR auto-processing" section in the Advanced area only appears
+  // once a rule exists for this template (matches the original behaviour of
+  // showing nothing when there is no rule — now with a section label when there is).
+  const section = document.getElementById('tpl-ocr-auto-section');
+  if (section) section.style.display = hasRule ? 'block' : 'none';
   row.style.display  = hasRule ? 'flex' : 'none';
   desc.style.display = hasRule ? 'block' : 'none';
   if (!hasRule) return;
@@ -1513,7 +1518,22 @@ async function loadSamplePages(detail) {
   renderTplPage();
 }
 
+// Gate the "Map a Field" editor on having a usable sample: drawing an anchor/
+// target needs page images (enterDrawMode also hard-guards on tplPageImages), so
+// when none are loaded we hide the controls behind a prompt and clear any armed
+// draw mode, instead of showing live-but-inert buttons. Driven from renderTplPage
+// — the single funnel every sample load/change routes through.
+function gateMapFieldOnSample() {
+  const hasSample = tplPageImages.length > 0;
+  const controls  = document.getElementById('tpl-map-controls');
+  const noSample  = document.getElementById('tpl-map-no-sample');
+  if (controls) controls.style.display = hasSample ? '' : 'none';
+  if (noSample) noSample.style.display = hasSample ? 'none' : 'block';
+  if (!hasSample) exitDrawMode();
+}
+
 function renderTplPage() {
+  gateMapFieldOnSample();
   const placeholder = document.getElementById('tpl-doc-placeholder');
   const wrap        = document.getElementById('tpl-img-wrap');
   const indicator   = document.getElementById('tpl-page-indicator');

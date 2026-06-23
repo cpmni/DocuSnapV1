@@ -705,39 +705,7 @@
                 </div>
                 <div class="threshold-sub" id="tpl-detail-meta">—</div>
                 <div id="tpl-detection-method" style="margin-top:5px; display:flex; flex-wrap:wrap; gap:5px; align-items:center;"></div>
-                <div id="tpl-ocr-auto-row" style="margin-top:5px; display:none; flex-wrap:wrap; gap:8px; align-items:center;">
-                  <span class="tpl-method-pill ok" id="tpl-ocr-auto-pill">OCR auto-processing active</span>
-                  <label class="toggle">
-                    <input type="checkbox" id="tpl-ocr-auto-toggle">
-                    <span class="toggle-slider"></span>
-                  </label>
-                </div>
-                <p class="section-desc" id="tpl-ocr-auto-desc" style="display:none; margin:2px 0 0;">
-                  Applies learned image preprocessing (skew/threshold/noise cleanup) before OCR for documents
-                  matching this template — does not rewrite extracted field values.
-                </p>
                 <span id="tpl-name-msg" class="section-desc" style="display:block; margin:4px 0 0;"></span>
-
-                <div class="form-group" style="margin:12px 0 0;">
-                  <label>Group / Family</label>
-                  <div class="row-flex" style="gap:6px; align-items:center; margin-top:4px;">
-                    <select id="tpl-group-select" class="field-select" style="flex:1;"></select>
-                    <button class="btn" id="tpl-btn-new-group" style="white-space:nowrap; padding:4px 10px; font-size:11px;">+ New</button>
-                  </div>
-                  <div id="tpl-new-group-row" class="row-flex" style="display:none; gap:6px; margin-top:6px; align-items:center;">
-                    <input type="text" id="tpl-new-group-input" class="field-select" placeholder="Group name…" style="flex:1;">
-                    <button class="btn primary" id="tpl-btn-save-group" style="white-space:nowrap; padding:4px 10px; font-size:11px;">Save</button>
-                    <button class="btn" id="tpl-btn-cancel-group" title="Cancel" aria-label="Cancel new group" style="white-space:nowrap; padding:4px 10px; font-size:11px;">&#215;</button>
-                  </div>
-                  <div id="tpl-siblings" style="margin-top:6px; display:none;">
-                    <div class="threshold-sub" style="margin-bottom:4px;">Siblings in same group:</div>
-                    <div id="tpl-siblings-list" style="display:flex; flex-direction:column; gap:3px;"></div>
-                  </div>
-                </div>
-
-                <div class="row-flex" style="margin:14px 0;">
-                  <button class="btn danger" id="tpl-btn-delete-template">Delete Template</button>
-                </div>
 
                 <div class="form-group" style="margin-bottom:6px;">
                   <label>Sample document</label>
@@ -759,6 +727,9 @@
               <div class="section-title sub">Map a Field</div>
               <p class="section-desc">Draw an anchor label and target zone on the preview. Falls back to standard extraction if the anchor isn't found.</p>
 
+              <div id="tpl-map-no-sample" class="section-desc" style="display:none; border-left:2px solid var(--warn); padding-left:8px; color:var(--warn);">Attach a sample document above (Sample document → Import Sample…) before you can map fields.</div>
+
+              <div id="tpl-map-controls">
               <div class="row-flex" style="flex-wrap:wrap; gap:16px; align-items:flex-end;">
                 <div class="form-group">
                   <label>Field</label>
@@ -811,6 +782,7 @@
                 <button class="btn" id="tpl-btn-cancel-mapping" title="Clear the editor">Reset</button>
                 <span id="tpl-mapping-msg" class="section-desc" style="margin:0;"></span>
               </div>
+              </div>
             </div>
 
             <div class="section" style="margin-top:8px;">
@@ -823,6 +795,44 @@
                 <tbody id="tpl-mappings-tbody"></tbody>
               </table>
               <div id="tpl-mappings-empty" class="section-desc" style="display:none;">No mappings yet — standard pipeline applies.</div>
+            </div>
+
+            <details id="tpl-advanced" style="margin-top:18px;">
+              <summary style="cursor:pointer; color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.08em;">Advanced</summary>
+              <p class="section-desc" style="margin-top:8px;">Rarely-needed levers — OCR preprocessing, template grouping, fixed values, and the learned selector anchors.</p>
+
+            <div class="section" id="tpl-ocr-auto-section" style="display:none;">
+              <div class="section-title sub">OCR auto-processing</div>
+              <div id="tpl-ocr-auto-row" style="margin-top:5px; display:none; flex-wrap:wrap; gap:8px; align-items:center;">
+                <span class="tpl-method-pill ok" id="tpl-ocr-auto-pill">OCR auto-processing active</span>
+                <label class="toggle">
+                  <input type="checkbox" id="tpl-ocr-auto-toggle">
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              <p class="section-desc" id="tpl-ocr-auto-desc" style="display:none; margin:2px 0 0;">
+                Applies learned image preprocessing (skew/threshold/noise cleanup) before OCR for documents
+                matching this template — does not rewrite extracted field values.
+              </p>
+            </div>
+
+            <div class="section">
+              <div class="section-title sub">Group / Family</div>
+              <div class="form-group" style="margin:6px 0 0;">
+                <div class="row-flex" style="gap:6px; align-items:center; margin-top:4px;">
+                  <select id="tpl-group-select" class="field-select" style="flex:1;"></select>
+                  <button class="btn" id="tpl-btn-new-group" style="white-space:nowrap; padding:4px 10px; font-size:11px;">+ New</button>
+                </div>
+                <div id="tpl-new-group-row" class="row-flex" style="display:none; gap:6px; margin-top:6px; align-items:center;">
+                  <input type="text" id="tpl-new-group-input" class="field-select" placeholder="Group name…" style="flex:1;">
+                  <button class="btn primary" id="tpl-btn-save-group" style="white-space:nowrap; padding:4px 10px; font-size:11px;">Save</button>
+                  <button class="btn" id="tpl-btn-cancel-group" title="Cancel" aria-label="Cancel new group" style="white-space:nowrap; padding:4px 10px; font-size:11px;">&#215;</button>
+                </div>
+                <div id="tpl-siblings" style="margin-top:6px; display:none;">
+                  <div class="threshold-sub" style="margin-bottom:4px;">Siblings in same group:</div>
+                  <div id="tpl-siblings-list" style="display:flex; flex-direction:column; gap:3px;"></div>
+                </div>
+              </div>
             </div>
 
             <div class="section">
@@ -860,6 +870,14 @@
                 </thead>
                 <tbody id="tpl-fields-tbody"></tbody>
               </table>
+            </div>
+            </details>
+
+            <div class="section" style="margin-top:18px; padding-top:14px; border-top:1px solid var(--err);">
+              <div class="section-title sub" style="color:var(--err);">Danger zone</div>
+              <div class="row-flex" style="margin:6px 0 0;">
+                <button class="btn danger" id="tpl-btn-delete-template">Delete Template</button>
+              </div>
             </div>
 
               </div>
