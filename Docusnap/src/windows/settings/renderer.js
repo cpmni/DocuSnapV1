@@ -846,6 +846,9 @@ let tplDraftTarget     = null;
 let tplIsDragging      = false;
 let tplDragStart       = null;
 let tplDragRect        = null;
+// Enhance-detection (manual landmark) draw state — independent of tplMapMode.
+let tplLandmarkMode    = false;  // drawing manual registration landmarks
+let tplLandmarkDraft   = [];     // [{label_text,x_norm,y_norm,w_norm,h_norm,ocr_conf,page_number}]
 // Select / move state — left-click on an existing box selects it; dragging moves it.
 let tplSelectedBox = null;   // { fieldKey, boxType:'anchor'|'target' } | null
 let tplIsMoving    = false;
@@ -1152,6 +1155,7 @@ tplNewGroupInput.addEventListener('keydown', (e) => {
 });
 
 async function selectTemplate(id) {
+  if (tplLandmarkMode) exitEnhanceMode();   // leave Enhance-detection before switching templates
   document.querySelectorAll('.tpl-row').forEach(r => r.classList.toggle('active', parseInt(r.dataset.id) === id));
   // If the selected row is inside a collapsed group node, expand it
   const activeRow = document.querySelector('.tpl-row.active');
@@ -1376,6 +1380,161 @@ document.getElementById('tpl-btn-regen-landmarks').addEventListener('click', asy
     msg.textContent = 'Could not regenerate landmarks.';
     msg.style.color = 'var(--err)';
   }
+});
+
+// ── Enhance detection: manual registration landmarks ─────────────────────────
+// Let the admin draw up to 5 STABLE landmarks (logo / title / fixed field labels)
+// instead of relying on auto-derivation, which can latch onto document-variable
+// text. Reuses the canvas draw gesture + the ocr-region recipe; saved source='manual'
+// and protected from auto-regeneration. Global per-template — no per-document logic.
+function landmarkMsg(text, kind) {
+  const m = document.getElementById('tpl-landmark-msg');
+  if (!m) return;
+  m.textContent = text || '';
+  m.style.color = kind === 'ok' ? 'var(--ok)' : kind === 'warn' ? 'var(--warn)'
+                : kind === 'err' ? 'var(--err)' : 'var(--muted)';
+}
+
+function renderLandmarkList() {
+  const list = document.getElementById('tpl-landmark-list');
+  if (list) {
+    list.innerHTML = '';
+    tplLandmarkDraft.forEach((l, i) => {
+      const chip = document.createElement('span');
+      chip.style.cssText = 'display:inline-flex; align-items:center; gap:7px; background:var(--surface2); '
+        + 'border:1px solid var(--border2); border-radius:999px; padding:4px 11px; font-size:12px;';
+      chip.innerHTML = `<span>${escHtml(l.label_text)}</span>`
+        + `<span data-i="${i}" title="Remove" style="cursor:pointer; color:var(--muted); font-weight:700;">&#10005;</span>`;
+      chip.querySelector('[data-i]').addEventListener('click', () => {
+        tplLandmarkDraft.splice(i, 1); renderLandmarkList(); redrawTplCanvas();
+      });
+      list.appendChild(chip);
+    });
+  }
+  const c = document.getElementById('tpl-landmark-count');
+  if (c) c.textContent = `${tplLandmarkDraft.length} / 5 drawn`;
+  const save = document.getElementById('tpl-btn-landmark-save');
+  if (save) save.disabled = tplLandmarkDraft.length === 0;
+}
+
+function drawLandmarkDraft() {
+  const w = tplCanvas.width, h = tplCanvas.height;
+  const AMBER = '#e0a32e';
+  for (const l of tplLandmarkDraft) {
+    if ((l.page_number || 0) !== tplCurrentPage) continue;
+    drawNormBox(l.x_norm, l.y_norm, l.w_norm, l.h_norm, w, h, AMBER, l.label_text, true);
+  }
+  if (tplDragRect) {
+    const dx = Math.round(tplDragRect.x), dy = Math.round(tplDragRect.y);
+    const dw = Math.round(tplDragRect.w), dh = Math.round(tplDragRect.h);
+    tplCtx.lineWidth = 1; tplCtx.strokeStyle = AMBER; tplCtx.setLineDash([5, 4]);
+    tplCtx.strokeRect(dx + 0.5, dy + 0.5, dw, dh); tplCtx.setLineDash([]);
+    tplCtx.fillStyle = AMBER + '20'; tplCtx.fillRect(dx, dy, dw, dh);
+  }
+}
+
+// OCR the drawn box (same crop->base64->ocr-region round trip the anchor auto-label
+// uses) and add it as a landmark. Empty reads are rejected — a landmark needs text.
+async function addLandmarkFromRect(rect, norm) {
+  if (tplLandmarkDraft.length >= 5) { landmarkMsg('Up to 5 landmarks — remove one first.', 'warn'); redrawTplCanvas(); return; }
+  landmarkMsg('Reading…', 'muted');
+  let text = '';
+  try {
+    const scaleX = tplImg.naturalWidth  / tplImg.offsetWidth;
+    const scaleY = tplImg.naturalHeight / tplImg.offsetHeight;
+    const crop = document.createElement('canvas');
+    crop.width  = Math.max(1, Math.round(rect.w * scaleX));
+    crop.height = Math.max(1, Math.round(rect.h * scaleY));
+    crop.getContext('2d').drawImage(
+      tplImg, Math.round(rect.x * scaleX), Math.round(rect.y * scaleY),
+      crop.width, crop.height, 0, 0, crop.width, crop.height);
+    text = (await api.ocrRegion(crop.toDataURL('image/png').split(',')[1]) || '').trim();
+  } catch (e) { console.warn('landmark OCR failed:', e.message); }
+  text = text.replace(/\s+/g, ' ').trim();
+  if (!text) { landmarkMsg("Couldn't read text there — draw a tighter box around printed words.", 'warn'); redrawTplCanvas(); return; }
+  tplLandmarkDraft.push({
+    label_text: text,
+    x_norm: norm.x_norm, y_norm: norm.y_norm, w_norm: norm.w_norm, h_norm: norm.h_norm,
+    ocr_conf: 95, page_number: tplCurrentPage,   // admin-asserted landmark (high trust)
+  });
+  landmarkMsg(`Added "${text}".`, 'ok');
+  renderLandmarkList();
+  redrawTplCanvas();
+}
+
+async function enterEnhanceMode() {
+  if (!selectedTemplate) return;
+  if (!tplPageImages.length) {
+    const sm = document.getElementById('tpl-sample-msg');
+    if (sm) { sm.textContent = 'Attach a sample document first (Import Sample…).'; sm.style.color = 'var(--warn)'; }
+    return;
+  }
+  tplPreviewMode = false;                 // mutually exclusive with the registration preview
+  const pcb = document.getElementById('tpl-preview-registration'); if (pcb) pcb.checked = false;
+  const pstat = document.getElementById('tpl-preview-status'); if (pstat) pstat.textContent = '';
+  exitDrawMode();                         // clear any mapping-draw arming
+  let existing = [];
+  try { existing = await api.getTemplateLandmarks(selectedTemplate.id) || []; } catch {}
+  tplLandmarkDraft = existing.slice(0, 5).map(l => ({
+    label_text: l.label_text,
+    x_norm: l.x_norm, y_norm: l.y_norm, w_norm: l.w_norm, h_norm: l.h_norm,
+    ocr_conf: l.ocr_conf == null ? null : l.ocr_conf, page_number: l.page_number || 0,
+  }));
+  tplLandmarkMode = true;
+  tplCanvas.classList.add('drawing');
+  document.getElementById('tpl-landmark-panel').style.display = '';
+  document.getElementById('tpl-btn-enhance').classList.add('primary');
+  landmarkMsg(existing.length ? 'Editing current landmarks — draw to add, ✕ to remove.'
+                              : 'Draw a box around each stable landmark.', 'muted');
+  renderLandmarkList();
+  redrawTplCanvas();
+}
+
+function exitEnhanceMode() {
+  tplLandmarkMode = false;
+  tplIsDragging   = false;
+  tplDragRect     = null;
+  tplCanvas.classList.remove('drawing');
+  const panel = document.getElementById('tpl-landmark-panel'); if (panel) panel.style.display = 'none';
+  const btn = document.getElementById('tpl-btn-enhance'); if (btn) btn.classList.remove('primary');
+  redrawTplCanvas();
+}
+
+document.getElementById('tpl-btn-enhance').addEventListener('click', () => {
+  if (tplLandmarkMode) exitEnhanceMode(); else enterEnhanceMode();
+});
+
+document.getElementById('tpl-btn-landmark-cancel').addEventListener('click', exitEnhanceMode);
+
+document.getElementById('tpl-btn-landmark-save').addEventListener('click', async () => {
+  if (!selectedTemplate || !tplLandmarkDraft.length) return;
+  landmarkMsg('Saving…', 'muted');
+  try {
+    const res = await api.setTemplateLandmarks(selectedTemplate.id, tplLandmarkDraft);
+    if (res && res.success) {
+      const n = res.count;
+      await selectTemplate(selectedTemplate.id);
+      exitEnhanceMode();
+      const sm = document.getElementById('tpl-sample-msg');
+      if (sm) {
+        sm.textContent = `Saved ${n} manual landmark${n === 1 ? '' : 's'} — registration will use these (protected from auto-regeneration).`;
+        sm.style.color = n >= 2 ? 'var(--ok)' : 'var(--warn)';
+      }
+    } else { landmarkMsg('Could not save landmarks.', 'err'); }
+  } catch (e) { landmarkMsg('Error: ' + e.message, 'err'); }
+});
+
+document.getElementById('tpl-btn-landmark-auto').addEventListener('click', async () => {
+  if (!selectedTemplate) return;
+  if (!confirm('Discard manual landmarks and let Scan Finder detect them automatically from the sample?')) return;
+  landmarkMsg('Reverting to automatic…', 'muted');
+  try {
+    const res = await api.clearTemplateLandmarks(selectedTemplate.id);
+    await selectTemplate(selectedTemplate.id);
+    exitEnhanceMode();
+    const sm = document.getElementById('tpl-sample-msg');
+    if (sm) { sm.textContent = `Reverted to automatic landmarks${res && res.count ? ` (${res.count})` : ''}.`; sm.style.color = 'var(--muted)'; }
+  } catch (e) { landmarkMsg('Error: ' + e.message, 'err'); }
 });
 
 // Mirrors fileArgs() in search/renderer.js — confirmed documents resolve their
@@ -1655,6 +1814,7 @@ function drawPreviewLabel(text, arr, w, h, color) {
 document.getElementById('tpl-preview-registration').addEventListener('change', (e) => {
   tplPreviewMode = !!e.target.checked;
   const s = document.getElementById('tpl-preview-status');
+  if (tplPreviewMode && tplLandmarkMode) exitEnhanceMode();   // mutually exclusive
   if (tplPreviewMode) { runRegistrationPreview(); }
   else { tplPreviewBoxes = {}; if (s) s.textContent = ''; redrawTplCanvas(); }
 });
@@ -1666,6 +1826,7 @@ document.getElementById('tpl-preview-registration').addEventListener('change', (
 function redrawTplCanvas() {
   tplCtx.clearRect(0, 0, tplCanvas.width, tplCanvas.height);
   if (tplPreviewMode) { drawRegistrationPreview(); return; }
+  if (tplLandmarkMode) { drawLandmarkDraft(); return; }
   drawSavedMappings();
   const w = tplCanvas.width, h = tplCanvas.height;
   if (tplDraftAnchor && (tplDraftAnchor.page_number || 0) === tplCurrentPage) {
@@ -1816,8 +1977,8 @@ tplCanvas.addEventListener('mousedown', (e) => {
   if (e.button !== 0 || !tplPageImages.length) return;
   const pt = tplCanvasPoint(e);
 
-  if (tplMapMode) {
-    // Draw mode: start a new box
+  if (tplMapMode || tplLandmarkMode) {
+    // Draw mode — a mapping anchor/target box, OR an Enhance-detection landmark.
     tplIsDragging = true;
     tplDragStart  = pt;
     tplDragRect   = { x: pt.x, y: pt.y, w: 0, h: 0 };
@@ -1884,12 +2045,14 @@ tplCanvas.addEventListener('mouseup', () => {
     tplIsDragging = false;
     const rect = tplDragRect;
     tplDragRect  = null;
-    if (!rect || !tplMapMode || rect.w < 8 || rect.h < 8) { redrawTplCanvas(); return; }
+    if (!rect || rect.w < 8 || rect.h < 8) { redrawTplCanvas(); return; }
     const norm = {
       x_norm: rect.x / tplCanvas.width,   y_norm: rect.y / tplCanvas.height,
       w_norm: rect.w / tplCanvas.width,   h_norm: rect.h / tplCanvas.height,
       page_number: tplCurrentPage,
     };
+    if (tplLandmarkMode) { addLandmarkFromRect(rect, norm); return; }   // stays armed for the next landmark
+    if (!tplMapMode) { redrawTplCanvas(); return; }
     if (tplMapMode === 'anchor') { tplDraftAnchor = norm; autoDetectAnchorText(rect); }
     else                         { tplDraftTarget = norm; }
     exitDrawMode();

@@ -721,15 +721,17 @@ function getLandmarks(db, templateId) {
 }
 
 // Replace-all in one transaction (the wizard / backfill recomputes the whole
-// set for a template at once, never appends piecemeal).
-function setLandmarks(db, templateId, landmarks) {
+// set for a template at once, never appends piecemeal). `source` tags how the set
+// was produced ('auto' = derived; 'manual' = admin-drawn via Enhance detection);
+// a row's own l.source wins so an adopted (merge) set keeps its origin.
+function setLandmarks(db, templateId, landmarks, source = 'auto') {
   const rows = Array.isArray(landmarks) ? landmarks : [];
   const tx = db.transaction(() => {
     db.prepare('DELETE FROM template_landmarks WHERE template_id = ?').run(templateId);
     const ins = db.prepare(`
       INSERT INTO template_landmarks
-        (template_id, label_text, x_norm, y_norm, w_norm, h_norm, ocr_conf, page_number)
-      VALUES (@template_id, @label_text, @x_norm, @y_norm, @w_norm, @h_norm, @ocr_conf, @page_number)
+        (template_id, label_text, x_norm, y_norm, w_norm, h_norm, ocr_conf, page_number, source)
+      VALUES (@template_id, @label_text, @x_norm, @y_norm, @w_norm, @h_norm, @ocr_conf, @page_number, @source)
     `);
     for (const l of rows) {
       if (!l || l.label_text == null) continue;
@@ -740,6 +742,7 @@ function setLandmarks(db, templateId, landmarks) {
         w_norm:      Number(l.w_norm), h_norm: Number(l.h_norm),
         ocr_conf:    l.ocr_conf == null ? null : Number(l.ocr_conf),
         page_number: l.page_number == null ? 0 : (Number(l.page_number) | 0),
+        source:      l.source || source,
       });
     }
   });
@@ -747,8 +750,77 @@ function setLandmarks(db, templateId, landmarks) {
   return getLandmarks(db, templateId);
 }
 
+// True if the template has admin-drawn (manual) landmarks — auto-derivation must
+// NOT overwrite these (see generateLandmarks guard).
+function hasManualLandmarks(db, templateId) {
+  return !!db.prepare(
+    "SELECT 1 FROM template_landmarks WHERE template_id = ? AND source = 'manual' LIMIT 1"
+  ).get(templateId);
+}
+
 function clearLandmarks(db, templateId) {
   db.prepare('DELETE FROM template_landmarks WHERE template_id = ?').run(templateId);
+}
+
+// True if the template's landmarks were auto-derived from the cross-sample corpus
+// (source='cross_sample') — the single-sample bootstrap must not downgrade these.
+function hasCrossSampleLandmarks(db, templateId) {
+  return !!db.prepare(
+    "SELECT 1 FROM template_landmarks WHERE template_id = ? AND source = 'cross_sample' LIMIT 1"
+  ).get(templateId);
+}
+
+// ── Cross-sample landmark corpus (migration 34) ──────────────────────────────
+// Per-confirmed-document captured words. REPLACE-per-doc (idempotent) so
+// re-confirming a document never double-counts it in the corpus.
+function replaceSampleWords(db, templateId, docId, words) {
+  const rows = Array.isArray(words) ? words : [];
+  const tx = db.transaction(() => {
+    if (docId != null) {
+      db.prepare('DELETE FROM template_sample_words WHERE template_id = ? AND doc_id = ?').run(templateId, docId);
+    }
+    const ins = db.prepare(`
+      INSERT INTO template_sample_words
+        (template_id, doc_id, label_text, x_norm, y_norm, w_norm, h_norm, ocr_conf)
+      VALUES (@template_id, @doc_id, @label_text, @x_norm, @y_norm, @w_norm, @h_norm, @ocr_conf)
+    `);
+    for (const w of rows) {
+      if (!w || w.text == null) continue;
+      ins.run({
+        template_id: templateId, doc_id: docId == null ? null : docId,
+        label_text: String(w.text),
+        x_norm: Number(w.x_norm), y_norm: Number(w.y_norm),
+        w_norm: Number(w.w_norm), h_norm: Number(w.h_norm),
+        ocr_conf: w.conf == null ? null : Number(w.conf),
+      });
+    }
+  });
+  tx();
+}
+
+function countSampleDocs(db, templateId) {
+  const r = db.prepare(
+    'SELECT COUNT(DISTINCT doc_id) AS n FROM template_sample_words WHERE template_id = ?'
+  ).get(templateId);
+  return (r && r.n) || 0;
+}
+
+// Per-doc word lists for cross-sample selection: [[{text,conf,x_norm,…}], …].
+function getSampleWordsByDoc(db, templateId) {
+  const rows = db.prepare(`
+    SELECT doc_id, label_text, x_norm, y_norm, w_norm, h_norm, ocr_conf
+    FROM template_sample_words WHERE template_id = ? ORDER BY doc_id, id
+  `).all(templateId);
+  const byDoc = new Map();
+  for (const r of rows) {
+    const k = r.doc_id == null ? 0 : r.doc_id;
+    if (!byDoc.has(k)) byDoc.set(k, []);
+    byDoc.get(k).push({
+      text: r.label_text, conf: r.ocr_conf,
+      x_norm: r.x_norm, y_norm: r.y_norm, w_norm: r.w_norm, h_norm: r.h_norm,
+    });
+  }
+  return [...byDoc.values()];
 }
 
 module.exports = {
@@ -759,7 +831,8 @@ module.exports = {
   getMappings, getMapping, saveMapping, setMappingEnabled, deleteMapping,
   recordMappingTest, setSampleDocument, reassignDocuments, mergeInto, setFieldFixedValue,
   setOcrAutoParams, setOcrAutoEnabled,
-  getLandmarks, setLandmarks, clearLandmarks,
+  getLandmarks, setLandmarks, clearLandmarks, hasManualLandmarks, hasCrossSampleLandmarks,
+  replaceSampleWords, countSampleDocs, getSampleWordsByDoc,
   getLogoHashes, addLogoHash, minLogoDistance, keywordOverlap: _keywordOverlap,
   getAllGroups, createGroup, deleteGroup, setTemplateGroup, getSiblings,
   GRID_COLS, GRID_ROWS,

@@ -411,6 +411,7 @@ function runJsMigrations(db, applied) {
         h_norm       REAL    NOT NULL,
         ocr_conf     REAL,
         page_number  INTEGER NOT NULL DEFAULT 0,
+        source       TEXT    NOT NULL DEFAULT 'auto',
         created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
       )`);
       db.exec(`CREATE INDEX IF NOT EXISTS idx_template_landmarks_template
@@ -666,6 +667,45 @@ function runJsMigrations(db, applied) {
     }
     db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (32)').run();
     console.log('JS migration 32 applied: client_seats.workflow_enabled (workflow add-on)');
+  }
+
+  // Migration 33: manual registration landmarks ("Enhance detection" in the Template
+  // Manager). source = 'auto' (derived by ocr/landmarks.py) | 'manual' (admin-drawn).
+  // Auto-derivation can latch onto document-VARIABLE text; a manual set lets an admin
+  // pin guaranteed-stable chrome and is PROTECTED from auto-regeneration. Additive +
+  // idempotent; existing rows default to 'auto', so behaviour is unchanged.
+  if (!applied.has(33)) {
+    if (tableExists(db, 'template_landmarks') && !hasColumn(db, 'template_landmarks', 'source')) {
+      try { db.exec(`ALTER TABLE template_landmarks ADD COLUMN source TEXT NOT NULL DEFAULT 'auto'`); }
+      catch (e) { console.warn(`  template_landmarks.source: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (33)').run();
+    console.log('JS migration 33 applied: template_landmarks.source (manual landmarks)');
+  }
+
+  // Migration 34: cross-sample landmark corpus. Per-confirmed-document word lists
+  // (high-conf, alphabetic, normalised boxes) accumulate here; once >=3 docs exist a
+  // template's registration landmarks are auto-derived from words that RECUR at a
+  // STABLE position across docs (ocr/landmarks.select_cross_sample) — the automatic,
+  // no-human-picking path. Additive; cascade-deletes with the template.
+  if (!applied.has(34)) {
+    if (!tableExists(db, 'template_sample_words')) {
+      db.exec(`CREATE TABLE template_sample_words (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        template_id  INTEGER NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
+        doc_id       INTEGER,
+        label_text   TEXT    NOT NULL,
+        x_norm       REAL    NOT NULL,
+        y_norm       REAL    NOT NULL,
+        w_norm       REAL    NOT NULL,
+        h_norm       REAL    NOT NULL,
+        ocr_conf     REAL,
+        created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+      )`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_tpl_sample_words_tpl ON template_sample_words(template_id)`);
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (34)').run();
+    console.log('JS migration 34 applied: template_sample_words (cross-sample landmark corpus)');
   }
 
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.

@@ -644,6 +644,7 @@
                     <select id="tpl-sample-select" class="field-select" style="flex:1 1 240px; min-width:0;" title="Choose sample document for this template"></select>
                     <button class="btn" id="tpl-btn-import-sample" title="Import a PDF, PNG or JPEG as a sample document">Import Sample…</button>
                     <button class="btn" id="tpl-btn-regen-landmarks" title="Recompute registration landmarks from the current sample (fixes a template that ended up with no/poor landmarks, so drifted scans register correctly)">Regenerate landmarks</button>
+                    <button class="btn" id="tpl-btn-enhance" title="Advanced manual override. Scan Finder detects registration landmarks automatically as documents are processed — only use this if automatic detection keeps failing for this template, and pick words that appear ONCE on the page.">Manual landmarks (advanced)</button>
                   </div>
                   <span class="section-desc" style="display:block; margin:4px 0 0;">Required for anchor/target mapping. Attach any representative PDF, PNG or JPEG.</span>
                   <span id="tpl-sample-msg" class="section-desc" style="display:block; margin:4px 0 0;"></span>
@@ -652,6 +653,20 @@
                     <span>Preview registration on this doc (overlay where each field resolves)</span>
                   </label>
                   <span id="tpl-preview-status" class="section-desc" style="display:block; margin:4px 0 0;"></span>
+
+                  <div id="tpl-landmark-panel" style="display:none; margin-top:10px; border-top:1px solid var(--border2); padding-top:10px;">
+                    <div class="section-title sub">Manual landmarks — advanced override</div>
+                    <p class="section-desc" style="margin:0 0 8px;"><strong>You normally don't need this.</strong> Scan Finder learns registration landmarks <strong>automatically</strong> once a few documents have been processed for this template. Use this only if automatic detection keeps failing. Draw a box around up to 5 things that appear <strong>exactly once</strong> on every document (the logo, the title) — <strong>avoid words that repeat on the page</strong> (e.g. "Ticket", which appears several times) and multi-word phrases, or they can't be re-located on a shifted scan.</p>
+                    <div id="tpl-landmark-list" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;"></div>
+                    <div class="row-flex" style="gap:8px; align-items:center; flex-wrap:wrap;">
+                      <span id="tpl-landmark-count" class="field-label-small">0 / 5 drawn</span>
+                      <span style="flex:1"></span>
+                      <button class="btn" id="tpl-btn-landmark-auto" title="Discard manual landmarks and let Scan Finder detect them automatically from the sample">Use automatic</button>
+                      <button class="btn" id="tpl-btn-landmark-cancel">Cancel</button>
+                      <button class="btn primary" id="tpl-btn-landmark-save" disabled>Save landmarks</button>
+                    </div>
+                    <span id="tpl-landmark-msg" class="section-desc" style="display:block; margin:6px 0 0;"></span>
+                  </div>
                 </div>
 
                 <div id="tpl-doc-toolbar" class="row-flex" style="margin-bottom:8px; flex-wrap:wrap; row-gap:8px;">

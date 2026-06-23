@@ -433,6 +433,19 @@ function register(ctx) {
     notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
     notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
 
+    // Cross-sample landmark learning (Phase 3): feed this confirmed page into the
+    // template's word corpus, then re-derive registration landmarks from words that
+    // RECUR at a stable position across docs (auto, once >=3 docs exist). Fire-and-
+    // forget + best-effort — never blocks or fails the confirm; skips manual sets.
+    try {
+      const tId = documents.getById(db, document_id)?.template_id || null;
+      if (tId && ctx.captureSampleWords) {
+        ctx.captureSampleWords(tId, document_id)
+          .then(() => (ctx.generateLandmarks ? ctx.generateLandmarks(tId) : null))
+          .catch(() => {});
+      }
+    } catch { /* learning is best-effort */ }
+
     return { success: true, ...filingResult };
   });
 
