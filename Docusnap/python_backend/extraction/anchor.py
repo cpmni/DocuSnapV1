@@ -202,13 +202,16 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
         # rigid crop already failed, so the fast happy path is unchanged; the
         # relocated value still must clear the same credibility + learned-format
         # gates before it can win. Generic to every supplier/field.
-        # Fires when the rigid read is empty, a weak free-text fragment, OR not
+        # Fires when the rigid read is empty, a weak free-text fragment, not
         # STRICTLY credible (high-DPI crop garbage like "cield wu" that slips
-        # through the loose gate) — the label-anchored harvest then rescues it. A
-        # cleanly-read rigid value is strictly credible, so the rung is skipped and
-        # the fast happy path is byte-identical (no extra OCR on good reads).
+        # through the loose gate), OR — for free-text — a LOW-confidence crop read
+        # (a clipped/drifted name like "Danirmant fara WMamac" @ conf 34 that the
+        # loose floor accepts but OCR confidence flags): _strict_credible now folds
+        # the rigid read's ocr_conf in. A cleanly-read rigid value (conf >= 60,
+        # strictly credible) skips the rung, so the fast happy path stays
+        # byte-identical (no extra OCR on good reads).
         if (not value or _is_weak_read(value, val_type)
-                or not _strict_credible(value, val_type, validation_patterns)) \
+                or not _strict_credible(value, val_type, validation_patterns, ocr_conf=ocr_conf)) \
                 and page0 is not None and (anchor.get("anchor_label") or "").strip():
             w_norm = anchor.get("w_norm") or 0.0
             h_norm = anchor.get("h_norm") or 0.0
@@ -232,9 +235,15 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                         hv = hv.split()[0]
                     if hv and _crop_is_credible(hv, val_type, validation_patterns, label):
                         q = _qualify_against_format(hv, field_key, format_lookup, text_field_keys)
-                        if q and _should_replace(value, q, val_type, validation_patterns):
+                        if q and _should_replace(value, q, val_type, validation_patterns, inc_ocr_conf=ocr_conf):
                             value  = q
                             method = "anchor_inline"
+                            # The value now comes off the located LINE, not a crop —
+                            # restore the documented "None for inline reads" invariant
+                            # so the confidence cap and the placement rung below treat
+                            # it as a clean located read, not the (possibly low) rigid
+                            # crop conf it's replacing.
+                            ocr_conf, ocr_min = None, None
                             # Dev trace: emit a slice for the harvested value's region
                             # so the inspector can highlight where an inline read came
                             # from (these reads don't crop+re-OCR, so without this the
@@ -256,7 +265,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 # layouts) or harvest failed — seat a crop relative to the LABEL box
                 # (not the whole line) and re-OCR it.
                 if not value or _is_weak_read(value, val_type) \
-                        or not _strict_credible(value, val_type, validation_patterns):
+                        or not _strict_credible(value, val_type, validation_patterns, ocr_conf=ocr_conf):
                     relo = _place_from_located(located, direction, vbox,
                         offset=(anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm")))
                     if relo:
@@ -273,7 +282,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                         elif rval:
                             q = _qualify_against_format(rval, field_key, format_lookup, text_field_keys)
                             if q:
-                                if _should_replace(value, q, val_type, validation_patterns):
+                                if _should_replace(value, q, val_type, validation_patterns, inc_ocr_conf=ocr_conf):
                                     value  = q
                                     method = "anchor_crop_relocated"
                                     ocr_conf, ocr_min = _mr.get('conf'), _mr.get('min_conf')
@@ -693,6 +702,13 @@ def _is_bare_label(v: str, label: str | None) -> bool:
     return all(t in label_tokens for t in val_tokens)
 
 
+# Mean OCR word-confidence floor below which a FREE-TEXT rigid crop read is treated
+# as suspect (clipped/drifted) and routed to the label-located harvest. Validated
+# empirically: garbled cust reads land at 17-34, clean reads at 87-95, so 60 sits in
+# a wide empty gap. Free-text only (structured fields trust their regex, not conf).
+_FREE_TEXT_RESCUE_CONF = 60
+
+
 def _is_weak_read(value, val_type):
     """A committable-but-SUSPECT rigid read for a FREE-TEXT field: a single short
     token where a name/address is expected (the "nara"/"Field" fragment class).
@@ -723,32 +739,51 @@ def _should_replace_weak(incumbent, candidate, val_type):
     return (not _is_weak_read(cand, val_type)) and len(cand) >= len(inc) + 3
 
 
-def _strict_credible(value, val_type, validation_patterns):
+def _strict_credible(value, val_type, validation_patterns, ocr_conf=None):
     """Stricter trust test used to decide whether a committed RIGID value should
     yield to a label-anchored harvest. Basic credibility PLUS a single-token rule
     for code-like fields (alphanumeric/job_reference/currency_code) — a reference
     or serial has no internal space, so high-DPI crop GARBAGE that slips through
     the loose pattern ("cield wu", "Ba he WE CUE") is rejected here, while a clean
-    single-token read ("2602-0768-1", "INV-001") passes and is never displaced."""
+    single-token read ("2602-0768-1", "INV-001") passes and is never displaced.
+
+    `ocr_conf` (the rigid read's MEAN word confidence, when known): a FREE-TEXT
+    rigid read whose mean confidence is below _FREE_TEXT_RESCUE_CONF is a clipped/
+    drifted crop whose garbage still clears the loose free-text floor ("Danirmant
+    fara WMamac" @ 34) — there is no regex to catch it, so OCR confidence is the
+    only quality signal. Treat such a read as NOT strictly credible so the
+    label-located harvest rescues it. SCOPED to free-text: a structured value is
+    validated by its regex (Tesseract under-reports digit-group confidence, so a
+    floor there would sink a valid reference). ocr_conf is None for inline/text
+    reads (no crop) and for callers that don't thread it -> fully trusted, so the
+    clean happy path and every other caller stay byte-identical."""
     v = (value or "").strip()
     if not v or not _crop_is_credible(v, val_type, validation_patterns):
         return False
     if val_type in ("alphanumeric", "job_reference", "currency_code") and " " in v:
         return False
+    if (val_type in (None, "text", "multiline_text")
+            and ocr_conf is not None and ocr_conf < _FREE_TEXT_RESCUE_CONF):
+        return False
     return True
 
 
-def _should_replace(incumbent, candidate, val_type, validation_patterns):
+def _should_replace(incumbent, candidate, val_type, validation_patterns, inc_ocr_conf=None):
     """Whether a label-anchored harvest/relocation CANDIDATE should replace the
     current (rigid) value. GATED RESCUE (Bob): a STRICTLY-credible incumbent is
     never displaced — a clean rigid read is protected, no unconditional override.
     Only when the incumbent FAILS the strict gate AND the candidate PASSES it does
     the candidate win (the high-DPI rigid-garbage case the harvest fixes).
-    Otherwise fall back to the conservative weak-free-text rule."""
+    Otherwise fall back to the conservative weak-free-text rule.
+
+    `inc_ocr_conf` (the incumbent rigid read's mean confidence) lets a LOW-confidence
+    free-text incumbent count as not-strictly-credible (see _strict_credible), so a
+    clean label-located candidate (no crop conf -> trusted) can displace it. The
+    candidate is judged WITHOUT a conf (it came off the located line, not a crop)."""
     inc = (incumbent or "").strip()
     if not inc:
         return True
-    if _strict_credible(inc, val_type, validation_patterns):
+    if _strict_credible(inc, val_type, validation_patterns, ocr_conf=inc_ocr_conf):
         return False
     if _strict_credible(candidate, val_type, validation_patterns):
         return True

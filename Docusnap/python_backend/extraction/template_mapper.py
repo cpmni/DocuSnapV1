@@ -35,7 +35,7 @@ from extraction import registration
 # Reuse the SAME credibility test the learned-anchor stage uses, so a template
 # mapping is held to the same "is this value plausible for the field?" standard
 # (typed fields must match their validation pattern; free-text must not be debris).
-from extraction.anchor import _crop_is_credible, _repair_single_token, clean_crop_segment, _ocr_crop_laddered
+from extraction.anchor import _crop_is_credible, _repair_single_token, clean_crop_segment, _ocr_crop_laddered, _FREE_TEXT_RESCUE_CONF
 # And the SAME learned-format check Stage 4.5 uses, so the failsafe below judges a
 # value against the shape this field has historically taken on this template
 # (learned from confirmed docs) — label- and field-key-agnostic, one source of truth.
@@ -307,7 +307,7 @@ def _salvage_date_value(text, val_type):
 
 
 def _gate_value(text, val_type, field_key, validation_patterns, format_lookup,
-                shape_mode='drop'):
+                shape_mode='drop', ocr_conf=None):
     """Shared accept/reject (+ date salvage) for a crop read, used by the
     absolute-target fast path, the anchor-derived path AND the drift fallback so
     all three apply IDENTICAL regex/type gating (the sequence was previously
@@ -364,6 +364,18 @@ def _gate_value(text, val_type, field_key, validation_patterns, format_lookup,
         from extraction.value_quality import is_name_like_field, name_quality
         if is_name_like_field(field_key) and name_quality(text) < 0.5:
             return None, False, False
+    # Free-text OCR-CONFIDENCE floor (Stage C — parity with Stage 2's _strict_credible):
+    # a drawn-box read whose mean confidence is below _FREE_TEXT_RESCUE_CONF is a
+    # clipped/drifted crop whose garbage clears the loose free-text credibility (there's
+    # no regex to catch it). Reject so the caller defers to the drift-correcting rungs
+    # (single-label relocation / registration), exactly as Stage 2 routes a low-conf
+    # rigid read to its inline harvest — and so a low-conf Stage 0.5 read can't WIN the
+    # engine merge over the correct value. ocr_conf is threaded ONLY from the ABSOLUTE
+    # drawn-box read (the rigid fast path); the derived/inline/registration rungs pass
+    # None -> no floor on the rescue itself, so a clean read and every other rung stay
+    # byte-identical. Free-text only (structured trusts its regex).
+    if not val_type and ocr_conf is not None and ocr_conf < _FREE_TEXT_RESCUE_CONF:
+        return None, False, False
     shape_warn = False
     if shape_mode != 'ignore' and _format_rejects(text, field_key, format_lookup):
         if shape_mode == 'flag':
@@ -667,7 +679,7 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
     # it silently dropped a type-valid manual value and let the wrong auto value win.
     abs_text, abs_salvaged, _ = _gate_value(abs_text, val_type, field_key,
                                             validation_patterns, format_lookup,
-                                            shape_mode='ignore')
+                                            shape_mode='ignore', ocr_conf=_abs_meta.get('conf'))
     # ── DRIFT GUARD (before trusting the stationary drawn box) ────────────────
     # Only relevant when the absolute box DID read a credible value (`abs_text`):
     # on a shifted page (e.g. a cropped sample vs an uncropped reprocess pushes
