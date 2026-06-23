@@ -70,10 +70,18 @@ def is_name_like_field(field_key, label=None):
     gibberish should be quality-checked. Keyed on the field key/label so it works
     for custom fields too. Conservative: only obvious name-ish fields."""
     hay = f"{field_key or ''} {label or ''}".lower()
-    return any(tok in hay for tok in (
+    if any(tok in hay for tok in (
         "name", "supplier", "customer", "company", "client", "vendor",
         "person", "contact", "address", "payee", "bill_to", "ship_to",
-    ))
+    )):
+        return True
+    # Common ABBREVIATIONS that a substring test would miss ("cust" is not inside
+    # "customer") — matched as WHOLE WORDS so they can't false-positive on an
+    # unrelated key ("custom_ref", "custody_value" -> token "custom"/"custody", not
+    # "cust"). A field keyed/labelled "cust" is the customer name and must get the
+    # same edge-strip / name-quality / token-repair treatment as "customer".
+    words = set(re.findall(r"[a-z]+", hay))
+    return bool(words & {"cust"})
 
 
 def _has_long_consonant_run(low):

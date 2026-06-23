@@ -233,6 +233,16 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                     # label, so the first token is the value, not a caption).
                     if hv and val_type == "alphanumeric" and " " in hv:
                         hv = hv.split()[0]
+                    # Strip leading OCR edge-junk ("--«", ">>") that scan noise / handwriting
+                    # bleeds onto the harvested line — otherwise a CORRECT value
+                    # ("--« Beaumont Care Homes Ltd -") is rejected by the credibility gate
+                    # (which requires an alphanumeric first char) and the field falls through to
+                    # a wrong-column read. Same strip_name_edges already applied at the Stage 1
+                    # keyword capture + Stage 4.5 catch-all; bring it to the inline harvest too.
+                    # Free-text only; over-strip-guarded inside strip_name_edges.
+                    if hv and val_type in (None, "text", "multiline_text"):
+                        from extraction.value_quality import strip_name_edges
+                        hv = strip_name_edges(hv)
                     if hv and _crop_is_credible(hv, val_type, validation_patterns, label):
                         q = _qualify_against_format(hv, field_key, format_lookup, text_field_keys)
                         if q and _should_replace(value, q, val_type, validation_patterns, inc_ocr_conf=ocr_conf):
