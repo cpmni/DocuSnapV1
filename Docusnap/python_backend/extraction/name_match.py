@@ -87,6 +87,26 @@ def _short_strong(a, stable):
             and _levenshtein(a, b) == 1)
 
 
+# Canonical spelling for common business suffixes — so a merged OCR-garble cluster
+# canonicalises to the REAL suffix even if misreads outnumber the correct spelling in
+# confirmed history.
+_LEGAL_SUFFIX_CANON = {"ltd": "Ltd", "inc": "Inc", "plc": "Plc",
+                       "llc": "LLC", "llp": "LLP", "co": "Co"}
+
+
+def _ocr_equiv(a, b):
+    """True when 3-char alphabetic norm `a` is a single-substitution OCR misread of `b`
+    (the SAME intended token) — used to fold a minority garble into the dominant token
+    when building the lexicon, so confirmed misreads ("lid" for "ltd") don't dilute the
+    canonical's doc_freq below the repair threshold. SCOPED to the 3-char business-suffix
+    class (Ltd/Inc/Plc/...) where the short-token repair lives. Deliberately NOT extended
+    to longer tokens — fuzzy-merging there would collapse legitimately-varying codes /
+    postcodes / sites (AB12 vs AB13) into a false 'stable' token; longer OCR garbles are
+    already handled by the _close repair when a dominant stable token exists."""
+    return (len(a) == 3 and len(b) == 3 and a.isalpha() and b.isalpha()
+            and _levenshtein(a, b) == 1)
+
+
 def build_token_lexicon(value_counts, confirmed_count=None):
     """Build the positional canonical lexicon for ONE field group from confirmed
     history. `value_counts` = {confirmed_value: doc_count}; `confirmed_count` = total
@@ -115,13 +135,33 @@ def build_token_lexicon(value_counts, confirmed_count=None):
 
     positions = {}
     for i, norm_counts in pos_norm_counts.items():
-        # dominant token at this position (max doc-count, tie -> lexicographic norm)
-        norm, doc_count = max(norm_counts.items(), key=lambda kv: (kv[1], _neg_lex(kv[0])))
+        # Fold minority OCR-garble variants at this position INTO the dominant token,
+        # so confirmed misreads ("Lid" for "Ltd") don't dilute the canonical's doc_freq
+        # below the repair threshold (the "Lid stopped correcting once a few misreads
+        # were confirmed" regression). Conservative: only a token with NO-MORE docs
+        # folds into the more-confirmed one it is OCR-equivalent to; surfaces merge too.
+        # Reusable — any field/supplier/token, not just business suffixes. Works on a
+        # COPY so pos_norm_counts (used by expected_len below) is untouched.
+        merged = dict(norm_counts)
+        anchor = max(merged, key=lambda n: (merged[n], _neg_lex(n)))
+        for n in [k for k in merged if k != anchor]:
+            if merged[n] <= merged[anchor] and _ocr_equiv(n, anchor):
+                merged[anchor] += merged[n]
+                src = pos_norm_surface.get((i, n), {})
+                dst = pos_norm_surface.setdefault((i, anchor), {})
+                for surf, c in src.items():
+                    dst[surf] = dst.get(surf, 0) + c
+                del merged[n]
+        # dominant token after merge (max doc-count, tie -> lexicographic norm)
+        norm, doc_count = max(merged.items(), key=lambda kv: (kv[1], _neg_lex(kv[0])))
         if doc_count < _STABLE_MIN_DOCS or doc_count < _STABLE_FREQ * n_docs:
             continue
         surfaces = pos_norm_surface.get((i, norm), {})
-        # canonical surface spelling: max doc-count, tie -> lexicographic
-        surface = max(surfaces.items(), key=lambda kv: (kv[1], _neg_lex(kv[0])))[0] if surfaces else norm
+        # canonical surface: a known business-suffix spelling present in the cluster wins
+        # over a more-frequent misread; otherwise the most-confirmed surface (tie -> lex).
+        canon = next((_LEGAL_SUFFIX_CANON[normalise_for_tokens(s)]
+                      for s in surfaces if normalise_for_tokens(s) in _LEGAL_SUFFIX_CANON), None)
+        surface = canon or (max(surfaces.items(), key=lambda kv: (kv[1], _neg_lex(kv[0])))[0] if surfaces else norm)
         positions[i] = {"norm": norm, "surface": surface, "doc_freq": doc_count / n_docs}
 
     # EXPECTED LENGTH — the longest CONSECUTIVE run of content positions that a strong

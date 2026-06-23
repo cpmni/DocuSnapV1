@@ -243,6 +243,12 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                     if hv and val_type in (None, "text", "multiline_text"):
                         from extraction.value_quality import strip_name_edges
                         hv = strip_name_edges(hv)
+                    # Cross-field guard: never inline-harvest a code/reference-shaped value
+                    # into a NAME field (the merged-row "Work Address" line also carries the
+                    # ticket reference). See _name_field_code_reject.
+                    if hv and _name_field_code_reject(hv, field_key):
+                        if on_reject: on_reject(field_key, "anchor_inline", hv, "cross_field_code")
+                        hv = None
                     if hv and _crop_is_credible(hv, val_type, validation_patterns, label):
                         q = _qualify_against_format(hv, field_key, format_lookup, text_field_keys)
                         if q and _should_replace(value, q, val_type, validation_patterns, inc_ocr_conf=ocr_conf):
@@ -287,8 +293,11 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                         _mr = {}
                         rval = _crop_and_ocr(page0, relo[0], relo[1], relo[2], relo[3],
                                              val_type, capture=_rcap, verify_fn=_verify, meta=_mr)
-                        if rval and not _crop_is_credible(rval, val_type, validation_patterns, label):
-                            if on_reject: on_reject(field_key, "anchor_crop_relocated", rval, "not_credible")
+                        _xfield = bool(rval) and _name_field_code_reject(rval, field_key)
+                        if rval and (_xfield or not _crop_is_credible(rval, val_type, validation_patterns, label)):
+                            if on_reject:
+                                on_reject(field_key, "anchor_crop_relocated", rval,
+                                          "cross_field_code" if _xfield else "not_credible")
                         elif rval:
                             q = _qualify_against_format(rval, field_key, format_lookup, text_field_keys)
                             if q:
@@ -717,6 +726,19 @@ def _is_bare_label(v: str, label: str | None) -> bool:
 # empirically: garbled cust reads land at 17-34, clean reads at 87-95, so 60 sits in
 # a wide empty gap. Free-text only (structured fields trust their regex, not conf).
 _FREE_TEXT_RESCUE_CONF = 60
+
+
+def _name_field_code_reject(value, field_key):
+    """CROSS-FIELD guard: a NAME-LIKE field must hold a NAME, never a reference/code.
+    On a MERGED OCR row a harvest/relocation can grab the wrong column — e.g. the ticket
+    reference "2602-0926-1" sitting on the same OCR line as "Work Address" gets read into
+    cust. A code-shaped value has NO run of >= 3 letters; reject it so the field falls
+    through (or stays empty for review) instead of committing a cross-field value.
+    Reusable: any name-like field, any supplier/layout. Imports value_quality lazily to
+    avoid a load cycle."""
+    from extraction.value_quality import is_name_like_field
+    v = (value or "").strip()
+    return bool(v) and is_name_like_field(field_key) and re.search(r"[A-Za-z]{3,}", v) is None
 
 
 def _is_weak_read(value, val_type):
