@@ -210,6 +210,31 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
         # the rigid read's ocr_conf in. A cleanly-read rigid value (conf >= 60,
         # strictly credible) skips the rung, so the fast happy path stays
         # byte-identical (no extra OCR on good reads).
+        # Dev trace: show WHERE the taught label resolves on this page as a
+        # kind="anchor" slice — emitted EVEN when the rigid crop already succeeded —
+        # so the inspector / review console can draw the anchor box ALONGSIDE the value
+        # box and reveal a label that isn't locating, or that locates on the wrong row.
+        # Trace-only (slice_capture set); reuses line_cache so the relocate rung below
+        # pays no extra OCR. Never affects extraction.
+        if slice_capture and page0 is not None and (anchor.get("anchor_label") or "").strip():
+            try:
+                _lw = anchor.get("w_norm") or 0.0
+                _lh = anchor.get("h_norm") or 0.0
+                _loc = _locate_for_relocation(page0, anchor["anchor_label"], direction,
+                                              (x_norm, y_norm, _lw, _lh), page_text_lines,
+                                              line_cache=line_cache)
+                _lb = (_loc or {}).get("label_box")
+                if _lb:
+                    _W, _H = page0.size[0], page0.size[1]
+                    _lcrop = page0.crop((int(_lb["x_norm"] * _W), int(_lb["y_norm"] * _H),
+                                         int((_lb["x_norm"] + _lb["w_norm"]) * _W),
+                                         int((_lb["y_norm"] + _lb["h_norm"]) * _H)))
+                    slice_capture(field_key, "anchor_label", 0,
+                                  (_lb["x_norm"], _lb["y_norm"], _lb["w_norm"], _lb["h_norm"]),
+                                  _lcrop, "anchor")
+            except Exception:
+                pass  # dev-only diagnostic; never disrupt extraction
+
         if (not value or _is_weak_read(value, val_type)
                 or not _strict_credible(value, val_type, validation_patterns, ocr_conf=ocr_conf)) \
                 and page0 is not None and (anchor.get("anchor_label") or "").strip():
