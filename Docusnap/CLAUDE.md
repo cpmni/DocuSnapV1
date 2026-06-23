@@ -121,7 +121,7 @@ docusnap2/
 │   └── windows/
 │       ├── main/{index.html,renderer.js}      # incl. empty-state launchpad (Begin Import · Search · Settings · Teach a document). PROCESS FLOW (2026-06): clicking Process KEEPS the launchpad visible (no longer blanks the center) and streams live progress into the bottom 160px log strip; on finish shows "✓ Finished processing — N filed" + a "View Results" button (log header) → opens a 3-FIELD results table (Company/Date/Reference) that replaces the launchpad (← Back returns; data kept). Reference/Date resolve via the doc type's STRUCTURAL keys (ref_field_key/date_field_key from get-all-doc-types, loaded once) read from msg.extractions — so sales orders/POs/custom types populate, not just invoice_* convenience fields. The launchpad + results table both want flex:1, so they're mutually exclusive (can't co-show); the log strip is flex-shrink:0 and coexists. Reprocess-All progress is a BANNER above the buttons (review window), not a mutating button label.
 │       ├── splash/{index.html,splash.js}      # cosmetic startup splash — shown in whenReady, closed once login loads
-│       ├── review/{index.html,renderer.js}    # incl. zoom/pan preview + hidden admin Template Wizard (⚓): draw anchor/target → save via existing template-mapping IPC; "Show where it reads" overlays (amber) the RESOLVED anchor/target on the current page via test-template-mapping → template_mapper.resolve_geometry (so the operator sees the mapping TRACK a shifted scan, vs the static drawn boxes)
+│       ├── review/{index.html,renderer.js}    # incl. zoom/pan preview + hidden admin Template Wizard (⚓): draw anchor/target → save via existing template-mapping IPC; "Show where it reads" overlays (amber) the RESOLVED anchor/target on the current page via test-template-mapping → template_mapper.resolve_geometry (so the operator sees the mapping TRACK a shifted scan, vs the static drawn boxes). FIXED-VALUE MODE is a segmented pill ("Read it from the document" / "Always use the same value"), wording mirrored in Settings → Template Manager. ⊕ teach shows a post-draw READOUT BAR (detected label + value + [← Left]/[↑ Above] direction toggle — see Stage 2 "⊕ AUTO-ANCHOR LABEL SEARCH"). THREE teaching surfaces framed by ROLE so they're legible to non-technical users: Fix a field (⊕) · Teach a document (teach wizard) · Fine-tune a layout (Template Wizard, advanced fallback) — see Help "Which should I use?" (help/templates.html #which-tool)
 │       ├── teach/{index.html,renderer.js}      # guided "Teach a new document" wizard (non-technical) — see Teaching wizard
 │       ├── settings/{index.html,renderer.js}  # incl. Admin Template Viewer + License/Activation-Test tab
 │       ├── search/{index.html,renderer.js,search-results.js,search-preview.js,search-actions.js}  # built search UI; entitlement-gated confidence/mailbox/workflow actions (see Detached search client)
@@ -187,6 +187,15 @@ extractions     — document_id(FK), field_key, raw_value, display_value,
 corrections     — document_id(FK), field_key, original_value, corrected_value,
                   supplier_name, document_type
 supplier_hints  — supplier_name, document_type, field_key, hint_value, usage_count
+                  HINTS FILL EMPTY FIELDS ONLY (engine._apply_hints, usage_count≥2,
+                  conf=min(90,60+usage*5)). EVIDENCE-BASED VARIABILITY GUARD (2026-06): a
+                  field with ≥2 DISTINCT confirmed values in-scope is variable IN FACT and is
+                  SKIPPED — so a per-document free-text field (e.g. customer) never gets the
+                  most-frequent past value stamped on a new doc when its anchor read nothing
+                  ("McConnell Kelly Solicitors" onto a "Dunroamin Caravan Park" doc). The
+                  schema is_variable flag only covered ref/date fields; this evidence check
+                  mirrors review/handler.js _buildTemplateFields. Stable fields (one recurring
+                  value) still benefit.
 field_anchors   — supplier_name, document_type, field_key, anchor_label,
                   direction(right|below|above), page_zone, x_norm, y_norm,
                   w_norm, h_norm, usage_count, confidence,
@@ -517,6 +526,29 @@ process_docs.py → ExtractionEngine.extract()
            anchor and poisons normal-page extraction. Legacy rows (NULL offset)
            fall back to the geometric guess. (Stage 2 — cross-field consensus
            resite via a shared drift module — deferred.)
+           DRIFT GUARD — labelled free-text follows the LABEL (anchor.py, 2026-06):
+           a rigid crop that drifted onto an adjacent row can read a plausible free-text
+           word ("Utax" on the Make row when Customer moved down a row) that PASSES the
+           loose free-text gate, so the relocate rung (fires only on a failed/weak rigid
+           read) never runs and the WRONG row commits at high confidence — the anchor knew
+           its label but never used it. For FREE-TEXT fields with a real anchor_label + a
+           stored offset, the label is located and the value's EXPECTED position
+           (located-label + offset) is compared to the rigid box's stored centre
+           (_value_drifted_from_box; > ~1.5 line-heights, conservative floor = off-row); on
+           drift the value is re-read beside the LOCATED label (inline harvest, else crop)
+           and preferred ONLY if itself credible — so the guard can NEVER do worse than the
+           rigid read. Structured fields (pattern-validated) + legacy NULL-offset anchors
+           untouched; reuses line_cache (a clean on-row read pays one locate, byte-identical
+           result). Guarded by tests/test_anchor_drift_guard.py.
+           ⊕ AUTO-ANCHOR LABEL SEARCH (review/renderer.js captureAnchorContext): the
+           left-label search scans the WHOLE row to the left of the value (was a fixed 300px
+           window), one line tall — so on wide two-column key/value rows a TIGHT value box
+           finds its far-left label ("Make") instead of falling through to the row ABOVE.
+           The above-strip is now one line tall too (was 60px → bled into ~2 rows). A
+           DIRECTION TOGGLE on the post-teach readout bar ([← Left]/[↑ Above]) re-detects
+           the label in the chosen direction (captureAnchorContext forceDir) for label-above
+           layouts or a wrong auto-pick; the readout also flashes the detected anchor box.
+           sanitizeAnchorLabel still rejects a value-shaped "label".
            CREDIBILITY GATE (engine.extract): a Stage-2 candidate may not OVERRIDE
            an existing incumbent unless credible for the field class — date fields
            require validator.parse_date(); ref fields (_is_ref_field: ..._number/
@@ -1426,6 +1458,12 @@ learning, no mutation; invokes no role-protected handler.**
   typed Number/Currency scores as alphanumeric, not currency — also fixes the on-blur
   validator). (c) VALIDATION "WHY" — each validate row gets a plain-English sub-line
   (value rewritten / suggestion / kept+flagged, plus a reading of the note).
+  (d) ANCHOR BOX ALONGSIDE THE VALUE (2026-06) — clicking a row now draws BOTH the value
+  box (amber) AND the field's located anchor/label box (blue) together (drawTraceBbox gains
+  a `keep` layered-draw; anchorSlice() pulls the kind="anchor" slice). For Stage-2 anchors
+  the backend emits an `anchor_label` slice for the located label EVEN when the rigid crop
+  succeeded (anchor.py, trace-only) — so you can SEE a label that didn't locate / located on
+  the wrong row. Highlight dwell is 30s (was 3.5s; still clears on next click/page/doc).
 - **Extraction trace** (`type:"trace"` stdout, separate `process-trace` channel,
   routed to the inspector + the review console when active): emitted by
   `engine.extract(trace=…)` ONLY when `process_docs --trace` is set, which handler
