@@ -373,246 +373,137 @@ async function loadDocTypes() {
   renderDocTypesList();
 }
 
+// Combined Document Types tab = master (left list) + detail (right pane). The
+// detail pane delegates the fields + filing-role editing to the shared
+// DocTypeEditor component (also used by the Teach wizard) so there's one editor.
+let selectedDocTypeId = null;
+let dtEditor = null;            // active DocTypeEditor controller; destroy before re-mount
+
 function renderDocTypesList() {
   const list = document.getElementById('doctypes-list');
   list.innerHTML = '';
 
   for (const dt of allTypesWithFields) {
     const row = document.createElement('div');
-    row.className = 'doctype-row' + (dt.enabled ? '' : ' disabled');
-
-    const fieldOpts = dt.fields.map(f =>
-      `<option value="${escHtml(f.key)}">${escHtml(f.label)}</option>`
-    ).join('');
-    const noneOpt = '<option value="">— none —</option>';
-
+    row.className = 'doctype-row'
+      + (dt.enabled ? '' : ' disabled')
+      + (dt.id === selectedDocTypeId ? ' active' : '');
+    const fieldCount = (dt.fields || []).length;
     row.innerHTML = `
-      <label class="toggle">
-        <input type="checkbox" class="dt-toggle" data-id="${dt.id}" ${dt.enabled ? 'checked' : ''}>
-        <span class="toggle-slider"></span>
-      </label>
       <div class="doctype-name">
         ${escHtml(dt.name)}
         <span class="${dt.built_in ? 'badge-builtin' : 'badge-custom'}">${dt.built_in ? 'built-in' : 'custom'}</span>
       </div>
-      <div class="doctype-fields">
-        <span class="field-label-small">Ref:</span>
-        <select class="field-select dt-ref" data-id="${dt.id}">
-          ${noneOpt}${fieldOpts}
-        </select>
-        <span class="field-label-small">Date:</span>
-        <select class="field-select dt-date" data-id="${dt.id}">
-          ${noneOpt}${fieldOpts}
-        </select>
-        ${!dt.built_in
-          ? `<button class="btn-icon dt-delete" data-id="${dt.id}" title="Hide this type">&#215;</button>`
-          : ''}
-      </div>
+      <span class="doctype-count" title="${fieldCount} field${fieldCount === 1 ? '' : 's'}">${fieldCount}</span>
     `;
-
-    // Set current ref/date values
-    const refSel  = row.querySelector('.dt-ref');
-    const dateSel = row.querySelector('.dt-date');
-    if (dt.ref_field_key)  refSel.value  = dt.ref_field_key;
-    if (dt.date_field_key) dateSel.value = dt.date_field_key;
-
-    // Toggle enable/disable
-    row.querySelector('.dt-toggle').addEventListener('change', async (e) => {
-      const enabled = e.target.checked ? 1 : 0;
-      await api.updateDocumentType(dt.id, { enabled });
-      row.classList.toggle('disabled', !e.target.checked);
-    });
-
-    // Ref field change
-    refSel.addEventListener('change', async () => {
-      await api.updateDocumentType(dt.id, { ref_field_key: refSel.value || null });
-    });
-
-    // Date field change
-    dateSel.addEventListener('change', async () => {
-      await api.updateDocumentType(dt.id, { date_field_key: dateSel.value || null });
-    });
-
-    // Delete custom type
-    const delBtn = row.querySelector('.dt-delete');
-    if (delBtn) {
-      delBtn.addEventListener('click', async () => {
-        if (!confirm(`Hide "${dt.name}"? It will be disabled and no longer offered when filing new documents. You can switch it back on anytime with the toggle. Documents already filed are unaffected.`)) return;
-        // No delete-document-type IPC exists yet; disabling is the honest action.
-        await api.updateDocumentType(dt.id, { enabled: 0 });
-        await loadDocTypes();
-      });
-    }
-
+    row.addEventListener('click', () => selectDocType(dt.id));
     list.appendChild(row);
   }
 }
 
-// ── Add custom type ───────────────────────────────────────────────────────────
-const addTypeForm = document.getElementById('add-type-form');
-
-document.getElementById('btn-add-type').addEventListener('click', () => {
-  addTypeForm.classList.add('visible');
-  document.getElementById('new-type-name').focus();
-});
-
-document.getElementById('btn-cancel-type').addEventListener('click', () => {
-  addTypeForm.classList.remove('visible');
-  document.getElementById('new-type-name').value = '';
-});
-
-document.getElementById('btn-save-type').addEventListener('click', async () => {
-  const name = document.getElementById('new-type-name').value.trim();
-  if (!name) { alert('Please enter a type name.'); return; }
-  await api.addDocumentType({ name });
-  addTypeForm.classList.remove('visible');
-  document.getElementById('new-type-name').value = '';
-  await loadDocTypes();
-  await loadFieldsTabTypes();
-});
-
-// ══════════════════════════════════════════════════════════════════════════════
-// FIELDS TAB
-// ══════════════════════════════════════════════════════════════════════════════
-
-let enabledDocTypes  = [];
-let selectedTypeId   = null;
-
-async function loadFieldsTabTypes() {
-  enabledDocTypes = await api.getAllDocTypes();
-  renderTypeTabs();
-  if (enabledDocTypes.length > 0) {
-    if (!selectedTypeId || !enabledDocTypes.find(t => t.id === selectedTypeId)) {
-      selectedTypeId = enabledDocTypes[0].id;
-    }
-    renderFieldsTable();
-  } else {
-    document.getElementById('fields-tbody').innerHTML = '';
-  }
+async function refreshDocTypesList() {
+  allTypesWithFields = await api.getAllDocTypesAll();
+  renderDocTypesList();
 }
 
-function renderTypeTabs() {
-  const tabsEl = document.getElementById('type-tabs');
-  tabsEl.innerHTML = '';
-  for (const dt of enabledDocTypes) {
-    const btn = document.createElement('button');
-    btn.className = 'type-tab' + (dt.id === selectedTypeId ? ' active' : '');
-    btn.textContent = dt.name;
-    btn.addEventListener('click', () => {
-      selectedTypeId = dt.id;
-      renderTypeTabs();
-      renderFieldsTable();
-      const sel = document.getElementById('new-doctype');
-      if (sel) sel.value = dt.id;
+function showDetailEmpty() {
+  if (dtEditor) { dtEditor.destroy(); dtEditor = null; }
+  document.getElementById('dt-detail').innerHTML = '';
+  document.getElementById('dt-detail-empty').style.display = '';
+}
+
+function selectDocType(id) {
+  selectedDocTypeId = id;
+  renderDocTypesList();
+  const type = allTypesWithFields.find(t => t.id === id);
+  if (!type) { showDetailEmpty(); return; }
+  renderDocTypeDetail(type);
+}
+
+function renderDocTypeDetail(type) {
+  if (dtEditor) { dtEditor.destroy(); dtEditor = null; }
+  document.getElementById('dt-detail-empty').style.display = 'none';
+  const detail = document.getElementById('dt-detail');
+  detail.innerHTML = `
+    <div class="dt-detail-header">
+      <h3>${escHtml(type.name)}</h3>
+      <span class="${type.built_in ? 'badge-builtin' : 'badge-custom'}">${type.built_in ? 'built-in' : 'custom'}</span>
+      <span style="flex:1"></span>
+      <label class="toggle" title="Enable or disable this type for filing">
+        <input type="checkbox" id="dt-enable" ${type.enabled ? 'checked' : ''}>
+        <span class="toggle-slider"></span>
+      </label>
+      <span id="dt-enable-lbl" class="field-label-small">${type.enabled ? 'Enabled' : 'Disabled'}</span>
+      ${type.built_in ? '' : '<button class="btn-icon" id="dt-hide" title="Hide this type">&#215;</button>'}
+    </div>
+    <div id="dt-editor-host"></div>`;
+
+  document.getElementById('dt-enable').addEventListener('change', async (e) => {
+    const enabled = e.target.checked ? 1 : 0;
+    await api.updateDocumentType(type.id, { enabled });
+    document.getElementById('dt-enable-lbl').textContent = enabled ? 'Enabled' : 'Disabled';
+    await refreshDocTypesList();
+  });
+  const hideBtn = document.getElementById('dt-hide');
+  if (hideBtn) {
+    hideBtn.addEventListener('click', async () => {
+      if (!confirm(`Hide "${type.name}"? It will be disabled and no longer offered when filing new documents. You can switch it back on anytime. Documents already filed are unaffected.`)) return;
+      await api.updateDocumentType(type.id, { enabled: 0 });
+      await refreshDocTypesList();
+      selectDocType(type.id);
     });
-    tabsEl.appendChild(btn);
   }
+
+  dtEditor = window.DocTypeEditor.create(
+    document.getElementById('dt-editor-host'),
+    { mode: 'edit', api, initial: type, onChange: refreshDocTypesList }
+  );
 }
 
-function renderFieldsTable() {
-  const dt    = enabledDocTypes.find(t => t.id === selectedTypeId);
-  const tbody = document.getElementById('fields-tbody');
-  tbody.innerHTML = '';
-  if (!dt) return;
+// ── New type (inline friendly creator, shared with the Teach wizard) ───────────
+function openNewTypeForm() {
+  selectedDocTypeId = null;
+  renderDocTypesList();
+  if (dtEditor) { dtEditor.destroy(); dtEditor = null; }
+  document.getElementById('dt-detail-empty').style.display = 'none';
+  const detail = document.getElementById('dt-detail');
+  detail.innerHTML = `
+    <div class="dt-detail-header"><h3>New document type</h3></div>
+    <div id="dt-editor-host"></div>
+    <div style="margin-top:16px; display:flex; gap:8px;">
+      <button class="btn primary" id="dt-create-btn" disabled>Create type</button>
+      <button class="btn" id="dt-cancel-btn">Cancel</button>
+    </div>`;
 
-  for (const f of dt.fields) {
-    const tr = document.createElement('tr');
-    // Structural roles (Company / Date / Reference) are PERMANENT: they drive
-    // filing + all learning, so they can't be disabled or deleted (the per-document
-    // value stays editable in Review). Lock the toggle and show a 🔒 instead of a
-    // delete button.
-    const structural = f.is_structural === 1;
-    tr.innerHTML = `
-      <td>${escHtml(f.label)}${structural ? ' <span class="field-lock" title="Permanent field — required for filing and learning">🔒</span>' : ''}</td>
-      <td><span class="field-key">${escHtml(f.key)}</span></td>
-      <td>${escHtml(f.type)}</td>
-      <td>
-        <label class="toggle">
-          <input type="checkbox" data-field-id="${f.id}" ${f.enabled !== 0 ? 'checked' : ''} ${structural ? 'disabled' : ''}>
-          <span class="toggle-slider"></span>
-        </label>
-      </td>
-      <td>
-        ${structural
-          ? `<span class="badge-builtin">permanent</span>`
-          : f.built_in
-            ? `<span class="badge-builtin">built-in</span>`
-            : `<span class="badge-custom">custom</span>
-               <button class="btn-icon" data-delete="${f.id}">&#215;</button>`}
-      </td>
-    `;
-
-    const toggle = tr.querySelector('input[type=checkbox]');
-    if (!structural) {
-      toggle.addEventListener('change', async (e) => {
-        await api.updateField(f.id, { enabled: e.target.checked ? 1 : 0 });
-      });
+  dtEditor = window.DocTypeEditor.create(
+    document.getElementById('dt-editor-host'),
+    {
+      mode: 'create',
+      api,
+      onValidityChange: (ready) => {
+        const b = document.getElementById('dt-create-btn');
+        if (b) b.disabled = !ready;
+      },
     }
+  );
 
-    const delBtn = tr.querySelector('[data-delete]');
-    if (delBtn) {
-      delBtn.addEventListener('click', async () => {
-        if (!confirm('Delete this custom field? This cannot be undone.')) return;
-        await api.deleteField(f.id);
-        await loadFieldsTabTypes();
-      });
+  document.getElementById('dt-create-btn').addEventListener('click', async () => {
+    const res = await dtEditor.commit();
+    if (res && res.success) {
+      await refreshDocTypesList();
+      const newId = res.type ? res.type.id : null;
+      if (newId) selectDocType(newId);
+      else showDetailEmpty();
     }
-
-    tbody.appendChild(tr);
-  }
+  });
+  document.getElementById('dt-cancel-btn').addEventListener('click', showDetailEmpty);
 }
 
-// ── Add custom field ──────────────────────────────────────────────────────────
-const addFieldForm = document.getElementById('add-field-form');
-const newLabel     = document.getElementById('new-label');
-const newKey       = document.getElementById('new-key');
+document.getElementById('btn-add-type').addEventListener('click', openNewTypeForm);
 
-// Field key = a stable identifier (lowercase, underscores). Keeps underscores,
-// unlike a display-name slug, so a hand-typed "po_number" survives.
-const keySlug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-// The Key field is EDITABLE: auto-derive it from the Label until the user types
-// in it themselves, then stop overriding (the conventional label→slug pattern).
-let keyEdited = false;
-
-document.getElementById('btn-add-field').addEventListener('click', () => {
-  addFieldForm.classList.add('visible');
-  keyEdited = false;
-  newLabel.focus();
-});
-
-document.getElementById('btn-cancel-field').addEventListener('click', () => {
-  addFieldForm.classList.remove('visible');
-  newLabel.value = '';
-  newKey.value   = '';
-  keyEdited = false;
-});
-
-newLabel.addEventListener('input', () => {
-  if (!keyEdited) newKey.value = keySlug(newLabel.value);
-});
-newKey.addEventListener('input', () => {
-  // Once the user edits the key, it's theirs — stop auto-deriving (resume if emptied).
-  keyEdited = newKey.value.trim() !== '';
-});
-
-document.getElementById('btn-save-field').addEventListener('click', async () => {
-  const label = newLabel.value.trim();
-  const key   = keySlug(newKey.value);
-  const type  = document.getElementById('new-field-type').value;
-
-  if (!label || !key) { alert('Please enter a field label.'); return; }
-  if (!selectedTypeId) { alert('Please select a document type tab first.'); return; }
-
-  await api.addField({ document_type_id: selectedTypeId, key, label, type });
-
-  addFieldForm.classList.remove('visible');
-  newLabel.value = '';
-  newKey.value   = '';
-  keyEdited = false;
-
-  await loadFieldsTabTypes();
-  await loadDocTypes();
-});
+// (FIELDS TAB removed — merged into the Document Types master-detail tab above.
+//  Field add/edit/delete now happens in the shared DocTypeEditor component via the
+//  same add-field / update-field / delete-field IPCs.)
 
 // ── Helper ────────────────────────────────────────────────────────────────────
 function escHtml(str) {
@@ -1298,7 +1189,7 @@ async function selectTemplate(id) {
   renderSelectorAnchorsTable(detail);
   await loadSamplePages(detail);
   await populateMapFieldSelect(detail);
-  await renderFixedFieldsSection(detail);
+  await renderFixedFieldsTable(detail);
 }
 
 function renderDetectionMethod(detail) {
@@ -1518,22 +1409,24 @@ async function loadSamplePages(detail) {
   renderTplPage();
 }
 
-// Gate the "Map a Field" editor on having a usable sample: drawing an anchor/
-// target needs page images (enterDrawMode also hard-guards on tplPageImages), so
-// when none are loaded we hide the controls behind a prompt and clear any armed
-// draw mode, instead of showing live-but-inert buttons. Driven from renderTplPage
-// — the single funnel every sample load/change routes through.
-function gateMapFieldOnSample() {
-  const hasSample = tplPageImages.length > 0;
-  const controls  = document.getElementById('tpl-map-controls');
-  const noSample  = document.getElementById('tpl-map-no-sample');
-  if (controls) controls.style.display = hasSample ? '' : 'none';
-  if (noSample) noSample.style.display = hasSample ? 'none' : 'block';
-  if (!hasSample) exitDrawMode();
+// Show/hide the "Map a Field" editor body by MODE (anchor vs fixed value) and, in
+// anchor mode, gate the draw controls on a usable sample. Drawing an anchor/target
+// needs page images (enterDrawMode also hard-guards on tplPageImages); fixed values
+// don't, so they stay available even without a sample. Driven from renderTplPage
+// (the sample-load funnel), the Mode dropdown, and field selection.
+function updateMapModeUI() {
+  const anchorMode = (document.getElementById('tpl-map-mode')?.value || 'anchor') === 'anchor';
+  const hasSample  = tplPageImages.length > 0;
+  const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
+  show('tpl-map-fixed-controls',  !anchorMode);
+  show('tpl-map-anchor-controls',  anchorMode);
+  show('tpl-map-anchor-draw',      anchorMode && hasSample);
+  show('tpl-map-no-sample',        anchorMode && !hasSample);
+  if (!anchorMode || !hasSample) exitDrawMode();
 }
 
 function renderTplPage() {
-  gateMapFieldOnSample();
+  updateMapModeUI();
   const placeholder = document.getElementById('tpl-doc-placeholder');
   const wrap        = document.getElementById('tpl-img-wrap');
   const indicator   = document.getElementById('tpl-page-indicator');
@@ -2084,10 +1977,33 @@ async function populateMapFieldSelect(detail) {
     opt.textContent = `${f.label} (${f.key})`;
     select.appendChild(opt);
   }
-  select.onchange = () => loadMappingIntoEditor(select.value || null);
+  select.onchange = () => selectMapField(select.value || null);
 
-  if (fields.length) { select.value = fields[0].key; loadMappingIntoEditor(fields[0].key); }
-  else loadMappingIntoEditor(null);
+  if (fields.length) { select.value = fields[0].key; selectMapField(fields[0].key); }
+  else selectMapField(null);
+}
+
+// Selecting a field always returns the editor to ANCHOR mode (the default); the
+// user opts a field into a Fixed value via the Mode dropdown. So a field change
+// resets the mode, loads that field's anchor mapping, and re-applies mode visibility.
+function selectMapField(fieldKey) {
+  const modeSel = document.getElementById('tpl-map-mode');
+  if (modeSel) modeSel.value = 'anchor';
+  loadMappingIntoEditor(fieldKey);
+  updateMapModeUI();
+}
+
+// Prefill the Fixed value input from the currently-selected field's stored fixed
+// value (if any) and clear any stale status message. Called when switching to
+// Fixed value mode and after a clear.
+function syncFixedInput() {
+  const fieldKey = document.getElementById('tpl-map-field-select')?.value;
+  const input = document.getElementById('tpl-fixed-value-input');
+  const ex = (selectedTemplate?.fields || []).find(
+    f => f.field_key === fieldKey && !f.is_variable && f.fixed_value);
+  if (input) input.value = ex ? ex.fixed_value : '';
+  const msg = document.getElementById('tpl-fixed-msg');
+  if (msg) { msg.style.display = 'none'; msg.textContent = ''; }
 }
 
 function loadMappingIntoEditor(fieldKey) {
@@ -2158,6 +2074,11 @@ function updateMappingEditorState() {
 
 document.getElementById('tpl-map-expansion').addEventListener('input', (e) => {
   document.getElementById('tpl-map-expansion-val').textContent = e.target.value + '%';
+});
+
+document.getElementById('tpl-map-mode')?.addEventListener('change', (e) => {
+  if (e.target.value === 'fixed') syncFixedInput();
+  updateMapModeUI();
 });
 
 document.getElementById('tpl-btn-cancel-mapping').addEventListener('click', () => {
@@ -2324,47 +2245,26 @@ function renderMappingsTable(detail) {
     tr.addEventListener('click', () => {
       const select = document.getElementById('tpl-map-field-select');
       select.value = m.field_key;
-      loadMappingIntoEditor(m.field_key);
+      selectMapField(m.field_key);   // resets to anchor mode + loads the mapping
     });
     tbody.appendChild(tr);
   }
 }
 
 // ── Fixed field values ─────────────────────────────────────────────────────────
-// Admin-managed constant values for template fields. The field dropdown reuses
-// the document type's own field schema (allTypesWithFields — same source as the
-// mapping field selector), so it offers every field even when no template_fields
-// row exists yet (e.g. a supplier_name that was never captured on confirm). The
-// table lists only fields currently fixed, so it's clear at a glance which fields
-// are constant and which use normal extraction.
-async function renderFixedFieldsSection(detail) {
+// Admin-managed constant values for template fields, set via the Map a Field
+// editor's "Fixed value" mode (the field selector + this table are shared with
+// anchor mode). This renders only the list of fields currently fixed — so it's
+// clear at a glance which fields are constant and which use normal extraction —
+// plus a Clear button per row. The field selector is populated by
+// populateMapFieldSelect; the input is prefilled by syncFixedInput.
+async function renderFixedFieldsTable(detail) {
   if (!allTypesWithFields.length) {
     try { await loadDocTypes(); } catch (e) { console.warn('loadDocTypes (fixed fields) failed:', e.message); }
   }
   const dt       = allTypesWithFields.find(t => t.slug === detail.document_type_slug);
   const dtFields = (dt ? dt.fields : []) || [];
   const labelFor = (key) => { const f = dtFields.find(f => f.key === key); return f ? f.label : key; };
-
-  // Field dropdown + value prefill from any existing fixed value
-  const select = document.getElementById('tpl-fixed-field-select');
-  const input  = document.getElementById('tpl-fixed-value-input');
-  if (select) {
-    select.innerHTML = '';
-    for (const f of dtFields) {
-      const opt = document.createElement('option');
-      opt.value = f.key;
-      opt.textContent = `${f.label} (${f.key})`;
-      select.appendChild(opt);
-    }
-    const syncInput = () => {
-      const ex = (selectedTemplate?.fields || []).find(
-        f => f.field_key === select.value && !f.is_variable && f.fixed_value);
-      if (input) input.value = ex ? ex.fixed_value : '';
-    };
-    select.onchange = syncInput;
-    if (dtFields.length) select.value = dtFields[0].key;
-    syncInput();
-  }
 
   // Table of fields that are currently fixed
   const tbody = document.getElementById('tpl-fixed-tbody');
@@ -2388,7 +2288,7 @@ async function renderFixedFieldsSection(detail) {
 
 async function setFixedFieldValue() {
   if (!selectedTemplate) return;
-  const select = document.getElementById('tpl-fixed-field-select');
+  const select = document.getElementById('tpl-map-field-select');
   const input  = document.getElementById('tpl-fixed-value-input');
   const msg    = document.getElementById('tpl-fixed-msg');
   const fieldKey = select?.value;
@@ -2398,7 +2298,7 @@ async function setFixedFieldValue() {
     const res = await api.setTemplateFieldFixed(selectedTemplate.id, fieldKey, value);
     if (res?.success && res.template) {
       selectedTemplate = res.template;
-      await renderFixedFieldsSection(res.template);
+      await renderFixedFieldsTable(res.template);
       if (msg) { msg.style.display = ''; msg.textContent = value
         ? `Fixed value set for "${fieldKey}".`
         : `Fixed value cleared for "${fieldKey}".`; }
@@ -2416,7 +2316,8 @@ async function clearFixedFieldValue(fieldKey) {
     const res = await api.setTemplateFieldFixed(selectedTemplate.id, fieldKey, '');
     if (res?.success && res.template) {
       selectedTemplate = res.template;
-      await renderFixedFieldsSection(res.template);
+      await renderFixedFieldsTable(res.template);
+      syncFixedInput();
     }
   } catch (e) {
     console.warn('clearFixedFieldValue failed:', e.message);
@@ -2784,8 +2685,9 @@ document.getElementById('lr-btn-clear-corrections').addEventListener('click', as
 populateLearningDocTypes();
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-loadDocTypes();
-loadFieldsTabTypes();
+loadDocTypes().then(() => {
+  if (allTypesWithFields.length) selectDocType(allTypesWithFields[0].id);
+});
 loadUsers();
 loadAuditLog();
 

@@ -139,6 +139,15 @@
     .badge-custom  { font-size:9px; padding:1px 6px; border-radius:8px; background:var(--accent-bg); color:var(--accent2); border:1px solid var(--accent-border); }
     .doctype-fields { display:flex; align-items:center; gap:6px; }
     .field-label-small { font-size:10px; color:var(--muted); white-space:nowrap; }
+    /* ── Combined Document Types tab — master-detail ── */
+    #dt-master-detail { display:flex; gap:18px; align-items:flex-start; }
+    #dt-list-col { width:240px; flex-shrink:0; }
+    #dt-detail-col { flex:1; min-width:0; }
+    .doctype-row { cursor:pointer; }
+    .doctype-row.active { border-color:var(--accent); background:var(--accent-bg); }
+    .doctype-count { font-size:10px; color:var(--muted); font-family:var(--mono); }
+    .dt-detail-header { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:18px; }
+    .dt-detail-header h3 { margin:0; font-size:16px; }
     .field-select {
       background:var(--bg); border:1px solid var(--border2); border-radius:5px;
       padding:4px 8px; color:var(--text); font-family:var(--sans);
@@ -306,11 +315,15 @@
     .mapping-status.ok   { background:var(--ok-bg);   color:var(--ok);   border-color:var(--ok-border); }
     .mapping-status.warn { background:var(--warn-bg); color:var(--warn); }
     .mapping-status.err  { background:var(--err-bg);  color:var(--err); }
-    /* Saved Mappings: widen last-test column so values are readable */
-    #tpl-mappings-table th:nth-child(5),
-    #tpl-mappings-table td:nth-child(5) { min-width:170px; }
-    /* Visual dividers between dock sections */
-    .tpl-dock .section { border-top:2px solid var(--border2); padding-top:14px; margin-top:0; }
+    /* Saved Mappings: keep the table inside the narrow 400px dock — fixed layout
+       + cell wrapping rather than forcing a horizontal scrollbar. */
+    #tpl-mappings-table { table-layout:fixed; }
+    #tpl-dock .fields-table th, #tpl-dock .fields-table td { word-break:break-word; }
+    /* 2px divider + clearer (promoted) heading above each dock section. The dock
+       is id="tpl-dock", so this must be an id selector — the old .tpl-dock class
+       selector never matched, which is why the dividers were missing. */
+    #tpl-dock .section { border-top:2px solid var(--border2); padding-top:16px; margin-top:16px; }
+    #tpl-dock .section-title.sub { font-size:11px; font-weight:600; letter-spacing:.1em; color:var(--text); }
 
     ::-webkit-scrollbar { width:5px; }
     ::-webkit-scrollbar-thumb { background:var(--border2); border-radius:3px; }
@@ -332,7 +345,6 @@
     <div class="side-head">Setup</div>
     <button class="tab active" data-tab="general" data-help-key="tab-general">General</button>
     <button class="tab" data-tab="doctypes" data-help-key="tab-doctypes">Document Types</button>
-    <button class="tab" data-tab="fields" data-help-key="tab-fields">Fields</button>
     <button class="tab" data-tab="filenaming" data-help-key="tab-filenaming">Output Structure</button>
     <div class="side-head">Learning &amp; Templates</div>
     <button class="tab" data-tab="templates" data-help-key="tab-templates">Templates</button>
@@ -523,64 +535,21 @@
     <div class="panel" id="panel-doctypes">
       <div class="section">
         <div class="section-title">Document Types</div>
-        <p class="section-desc">Enable or disable types, and set which fields are used for filing (reference number and date).</p>
-        <div id="doctypes-list"></div>
-        <div style="margin-top:14px;">
-          <button class="btn" id="btn-add-type" data-help-key="add-type">+ Add Custom Type</button>
-        </div>
-        <div class="add-form" id="add-type-form">
-          <div class="form-group">
-            <label>Type Name</label>
-            <input type="text" id="new-type-name" placeholder="e.g. Delivery Note" style="width:180px">
+        <p class="section-desc">Select a type to edit its fields and filing roles, or create a new one. Each type's Company, Date and Reference roles drive filing and learning.</p>
+        <div id="dt-master-detail">
+          <div id="dt-list-col">
+            <div id="doctypes-list"></div>
+            <button class="btn" id="btn-add-type" data-help-key="add-type" style="margin-top:6px; width:100%;">+ New type</button>
           </div>
-          <div class="form-group" style="flex-direction:row; gap:8px; align-items:flex-end;">
-            <button class="btn primary" id="btn-save-type">Save</button>
-            <button class="btn" id="btn-cancel-type">Cancel</button>
+          <div id="dt-detail-col">
+            <div id="dt-detail-empty" class="section-desc">Select a document type on the left to edit it, or "+ New type" to create one.</div>
+            <div id="dt-detail"></div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- ══ FIELDS ══ -->
-    <div class="panel" id="panel-fields">
-      <div class="section">
-        <p class="section-desc">Fields are scoped to a document type. Built-in fields cannot be deleted.</p>
-        <div id="type-tabs"></div>
-        <table class="fields-table">
-          <thead>
-            <tr><th>Field</th><th>Key</th><th>Type</th><th>Enabled</th><th></th></tr>
-          </thead>
-          <tbody id="fields-tbody"></tbody>
-        </table>
-        <div style="margin-top:12px;">
-          <button class="btn" id="btn-add-field" data-help-key="add-field">+ Add Custom Field</button>
-        </div>
-        <div class="add-form" id="add-field-form">
-          <div class="form-group">
-            <label>Label</label>
-            <input type="text" id="new-label" placeholder="e.g. Customer" style="width:140px">
-          </div>
-          <div class="form-group">
-            <label>Key (auto)</label>
-            <input type="text" id="new-key" placeholder="customer" style="width:120px">
-          </div>
-          <div class="form-group">
-            <label>Type</label>
-            <select id="new-field-type">
-              <option value="text">Text</option>
-              <option value="date">Date</option>
-              <option value="number">Number</option>
-              <option value="currency">Currency</option>
-              <option value="reference">Reference number</option>
-            </select>
-          </div>
-          <div class="form-group" style="flex-direction:row; gap:8px; align-items:flex-end;">
-            <button class="btn primary" id="btn-save-field">Save</button>
-            <button class="btn" id="btn-cancel-field">Cancel</button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <!-- (The former Fields tab is merged into Document Types above.) -->
 
     <!-- ══ FILE NAMING ══ -->
     <div class="panel" id="panel-filenaming">
@@ -669,6 +638,22 @@
             <div id="tpl-detail-layout">
 
               <div id="tpl-preview-pane">
+                <div id="tpl-sample-bar" class="section" style="margin:0 0 14px;">
+                  <div class="section-title">Sample document</div>
+                  <div class="row-flex" style="gap:8px; align-items:center; flex-wrap:wrap;">
+                    <select id="tpl-sample-select" class="field-select" style="flex:1 1 240px; min-width:0;" title="Choose sample document for this template"></select>
+                    <button class="btn" id="tpl-btn-import-sample" title="Import a PDF, PNG or JPEG as a sample document">Import Sample…</button>
+                    <button class="btn" id="tpl-btn-regen-landmarks" title="Recompute registration landmarks from the current sample (fixes a template that ended up with no/poor landmarks, so drifted scans register correctly)">Regenerate landmarks</button>
+                  </div>
+                  <span class="section-desc" style="display:block; margin:4px 0 0;">Required for anchor/target mapping. Attach any representative PDF, PNG or JPEG.</span>
+                  <span id="tpl-sample-msg" class="section-desc" style="display:block; margin:4px 0 0;"></span>
+                  <label class="row-flex" style="gap:6px; align-items:center; margin:8px 0 0; cursor:pointer;" title="Resolve every mapping on the loaded sample using the template's landmarks and overlay where each anchor/value ACTUALLY lands. Switch samples to watch the boxes track each layout.">
+                    <input type="checkbox" id="tpl-preview-registration">
+                    <span>Preview registration on this doc (overlay where each field resolves)</span>
+                  </label>
+                  <span id="tpl-preview-status" class="section-desc" style="display:block; margin:4px 0 0;"></span>
+                </div>
+
                 <div id="tpl-doc-toolbar" class="row-flex" style="margin-bottom:8px; flex-wrap:wrap; row-gap:8px;">
                   <button class="btn" id="tpl-btn-page-prev">&#8249; Prev</button>
                   <span id="tpl-page-indicator" style="font-size:11px; color:var(--muted);">—</span>
@@ -707,80 +692,101 @@
                 <div id="tpl-detection-method" style="margin-top:5px; display:flex; flex-wrap:wrap; gap:5px; align-items:center;"></div>
                 <span id="tpl-name-msg" class="section-desc" style="display:block; margin:4px 0 0;"></span>
 
-                <div class="form-group" style="margin-bottom:6px;">
-                  <label>Sample document</label>
-                  <div class="row-flex" style="gap:8px; align-items:center;">
-                    <select id="tpl-sample-select" class="field-select" style="flex:1;" title="Choose sample document for this template"></select>
-                    <button class="btn" id="tpl-btn-import-sample" title="Import a PDF, PNG or JPEG as a sample document">Import Sample…</button>
-                    <button class="btn" id="tpl-btn-regen-landmarks" title="Recompute registration landmarks from the current sample (fixes a template that ended up with no/poor landmarks, so drifted scans register correctly)">Regenerate landmarks</button>
-                  </div>
-                  <span class="section-desc" style="display:block; margin:4px 0 0;">Required for anchor/target mapping. Attach any representative PDF, PNG or JPEG.</span>
-                  <span id="tpl-sample-msg" class="section-desc" style="display:block; margin:4px 0 0;"></span>
-                  <label class="row-flex" style="gap:6px; align-items:center; margin:8px 0 0; cursor:pointer;" title="Resolve every mapping on the loaded sample using the template's landmarks and overlay where each anchor/value ACTUALLY lands. Switch samples to watch the boxes track each layout.">
-                    <input type="checkbox" id="tpl-preview-registration">
-                    <span>Preview registration on this doc (overlay where each field resolves)</span>
-                  </label>
-                  <span id="tpl-preview-status" class="section-desc" style="display:block; margin:4px 0 0;"></span>
-                </div>
-
             <div class="section" style="margin-top:14px;">
               <div class="section-title sub">Map a Field</div>
-              <p class="section-desc">Draw an anchor label and target zone on the preview. Falls back to standard extraction if the anchor isn't found.</p>
-
-              <div id="tpl-map-no-sample" class="section-desc" style="display:none; border-left:2px solid var(--warn); padding-left:8px; color:var(--warn);">Attach a sample document above (Sample document → Import Sample…) before you can map fields.</div>
+              <p class="section-desc">Choose how this field is filled — read it from the page with an anchor + target zone, or force a constant value. Anchor mode falls back to standard extraction if the anchor isn't found.</p>
 
               <div id="tpl-map-controls">
               <div class="row-flex" style="flex-wrap:wrap; gap:16px; align-items:flex-end;">
                 <div class="form-group">
                   <label>Field</label>
-                  <select id="tpl-map-field-select" class="field-select" style="min-width:190px;" title="Choose the field to map"></select>
-                </div>
-                <div class="form-group" style="flex-direction:row; gap:8px;">
-                  <button class="btn" id="tpl-btn-draw-anchor" title="Draw a box around the label text on the document (e.g. 'Invoice No:')">Draw Anchor</button>
-                  <button class="btn" id="tpl-btn-draw-target" title="Draw a box around where the value appears">Draw Target</button>
-                </div>
-                <div class="form-group" style="flex-direction:row; gap:8px;">
-                  <span id="tpl-anchor-status" class="mapping-status">Anchor: not drawn</span>
-                  <span id="tpl-target-status" class="mapping-status">Target: not drawn</span>
-                </div>
-              </div>
-
-              <div class="row-flex" style="flex-wrap:wrap; gap:16px; margin-top:12px; align-items:flex-end;">
-                <div class="form-group">
-                  <label>Anchor text</label>
-                  <input type="text" id="tpl-map-anchor-text" placeholder="auto-detected" style="width:220px;" title="Label text to find on the document — auto-filled from drawn box">
+                  <select id="tpl-map-field-select" class="field-select" style="min-width:190px;" title="Choose the field to configure"></select>
                 </div>
                 <div class="form-group">
-                  <label>OCR type</label>
-                  <select id="tpl-map-ocr-type" class="field-select" title="Expected value format — affects post-processing">
-                    <option value="text">Text</option>
-                    <option value="number">Number</option>
-                    <option value="date">Date</option>
-                    <option value="currency">Currency</option>
+                  <label>Mode</label>
+                  <select id="tpl-map-mode" class="field-select" style="min-width:170px;" title="Anchor: read this field from the page. Fixed value: force a constant value on every matching document.">
+                    <option value="anchor">Anchor (read from page)</option>
+                    <option value="fixed">Fixed value</option>
                   </select>
                 </div>
-                <div class="form-group">
-                  <label>Expansion</label>
-                  <div class="conf-row">
-                    <input type="range" class="conf-slider" id="tpl-map-expansion" min="0" max="20" value="4" title="Extra margin added around the target zone when searching">
-                    <span class="conf-val" id="tpl-map-expansion-val">4%</span>
+              </div>
+
+              <!-- ANCHOR mode -->
+              <div id="tpl-map-anchor-controls">
+                <div id="tpl-map-no-sample" class="section-desc" style="display:none; border-left:2px solid var(--warn); padding-left:8px; color:var(--warn); margin-top:12px;">Attach a sample document (Sample document → Import Sample…) to draw anchors. You can still set a fixed value without one.</div>
+
+                <div id="tpl-map-anchor-draw">
+                  <div class="row-flex" style="flex-wrap:wrap; gap:16px; margin-top:12px; align-items:flex-end;">
+                    <div class="form-group" style="flex-direction:row; gap:8px;">
+                      <button class="btn" id="tpl-btn-draw-anchor" title="Draw a box around the label text on the document (e.g. 'Invoice No:')">Draw Anchor</button>
+                      <button class="btn" id="tpl-btn-draw-target" title="Draw a box around where the value appears">Draw Target</button>
+                    </div>
+                    <div class="form-group" style="flex-direction:row; gap:8px;">
+                      <span id="tpl-anchor-status" class="mapping-status">Anchor: not drawn</span>
+                      <span id="tpl-target-status" class="mapping-status">Target: not drawn</span>
+                    </div>
                   </div>
-                </div>
-                <div class="form-group">
-                  <label>Enabled</label>
-                  <label class="toggle">
-                    <input type="checkbox" id="tpl-map-enabled" checked>
-                    <span class="toggle-slider"></span>
-                  </label>
+
+                  <div class="row-flex" style="flex-wrap:wrap; gap:16px; margin-top:12px; align-items:flex-end;">
+                    <div class="form-group">
+                      <label>Anchor text</label>
+                      <input type="text" id="tpl-map-anchor-text" placeholder="auto-detected" style="width:220px;" title="Label text to find on the document — auto-filled from drawn box">
+                    </div>
+                    <div class="form-group">
+                      <label>OCR type</label>
+                      <select id="tpl-map-ocr-type" class="field-select" title="Expected value format — affects post-processing">
+                        <option value="text">Text</option>
+                        <option value="number">Number</option>
+                        <option value="date">Date</option>
+                        <option value="currency">Currency</option>
+                      </select>
+                    </div>
+                    <div class="form-group">
+                      <label>Expansion</label>
+                      <div class="conf-row">
+                        <input type="range" class="conf-slider" id="tpl-map-expansion" min="0" max="20" value="4" title="Extra margin added around the target zone when searching">
+                        <span class="conf-val" id="tpl-map-expansion-val">4%</span>
+                      </div>
+                    </div>
+                    <div class="form-group">
+                      <label>Enabled</label>
+                      <label class="toggle">
+                        <input type="checkbox" id="tpl-map-enabled" checked>
+                        <span class="toggle-slider"></span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div class="row-flex" style="margin-top:14px; gap:8px; flex-wrap:wrap; row-gap:6px;">
+                    <button class="btn primary" id="tpl-btn-save-mapping" disabled title="Save this anchor→target mapping">Save Mapping</button>
+                    <button class="btn" id="tpl-btn-test-mapping" disabled title="Run extraction on the sample document using this mapping">Test</button>
+                    <button class="btn danger" id="tpl-btn-delete-mapping" style="display:none;" title="Delete this mapping">Delete</button>
+                    <button class="btn" id="tpl-btn-cancel-mapping" title="Clear the editor">Reset</button>
+                    <span id="tpl-mapping-msg" class="section-desc" style="margin:0;"></span>
+                  </div>
                 </div>
               </div>
 
-              <div class="row-flex" style="margin-top:14px; gap:8px; flex-wrap:wrap; row-gap:6px;">
-                <button class="btn primary" id="tpl-btn-save-mapping" disabled title="Save this anchor→target mapping">Save Mapping</button>
-                <button class="btn" id="tpl-btn-test-mapping" disabled title="Run extraction on the sample document using this mapping">Test</button>
-                <button class="btn danger" id="tpl-btn-delete-mapping" style="display:none;" title="Delete this mapping">Delete</button>
-                <button class="btn" id="tpl-btn-cancel-mapping" title="Clear the editor">Reset</button>
-                <span id="tpl-mapping-msg" class="section-desc" style="margin:0;"></span>
+              <!-- FIXED VALUE mode -->
+              <div id="tpl-map-fixed-controls" style="display:none;">
+                <p class="section-desc" style="margin-top:12px;">Force a constant value for this field on every document matching this template (e.g. a company name that never changes). Applied automatically during processing; clear it to return the field to normal extraction.</p>
+                <div class="row-flex" style="flex-wrap:wrap; gap:12px; align-items:flex-end;">
+                  <div class="form-group" style="flex:2 1 220px; min-width:0;">
+                    <label>Fixed value</label>
+                    <input type="text" id="tpl-fixed-value-input" class="field-select" placeholder="e.g. Document Solutions Ltd">
+                  </div>
+                  <div class="form-group" style="flex-direction:row; gap:8px;">
+                    <button class="btn primary" id="tpl-fixed-set-btn">Set Fixed Value</button>
+                  </div>
+                </div>
+                <span id="tpl-fixed-msg" class="section-desc" style="display:none; margin:6px 0 0;"></span>
+                <table class="fields-table" style="margin-top:10px;">
+                  <thead>
+                    <tr><th>Field</th><th>Fixed value</th><th></th></tr>
+                  </thead>
+                  <tbody id="tpl-fixed-tbody"></tbody>
+                </table>
+                <div id="tpl-fixed-empty" class="section-desc" style="display:none;">No fixed field values — all fields use normal extraction.</div>
               </div>
               </div>
             </div>
@@ -799,7 +805,7 @@
 
             <details id="tpl-advanced" style="margin-top:18px;">
               <summary style="cursor:pointer; color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.08em;">Advanced</summary>
-              <p class="section-desc" style="margin-top:8px;">Rarely-needed levers — OCR preprocessing, template grouping, fixed values, and the learned selector anchors.</p>
+              <p class="section-desc" style="margin-top:8px;">Rarely-needed levers — OCR preprocessing, template grouping, and the learned selector anchors.</p>
 
             <div class="section" id="tpl-ocr-auto-section" style="display:none;">
               <div class="section-title sub">OCR auto-processing</div>
@@ -833,32 +839,6 @@
                   <div id="tpl-siblings-list" style="display:flex; flex-direction:column; gap:3px;"></div>
                 </div>
               </div>
-            </div>
-
-            <div class="section">
-              <div class="section-title sub">Fixed Field Values</div>
-              <p class="section-desc">Force a constant value for a field on every document that matches this template (e.g. a supplier name that is always the same). Fixed values are applied automatically during processing and reprocess. Clear a value to return the field to normal extraction.</p>
-              <div class="row-flex" style="flex-wrap:wrap; gap:16px; align-items:flex-end;">
-                <div class="form-group">
-                  <label>Field</label>
-                  <select id="tpl-fixed-field-select" class="field-select" style="min-width:190px;" title="Choose the field to fix"></select>
-                </div>
-                <div class="form-group" style="flex:1; min-width:200px;">
-                  <label>Fixed value</label>
-                  <input type="text" id="tpl-fixed-value-input" class="field-select" placeholder="e.g. Document Solutions Ltd">
-                </div>
-                <div class="form-group" style="flex-direction:row; gap:8px;">
-                  <button class="btn" id="tpl-fixed-set-btn">Set Fixed Value</button>
-                </div>
-              </div>
-              <span id="tpl-fixed-msg" class="section-desc" style="display:none; margin:6px 0 0;"></span>
-              <table class="fields-table" style="margin-top:10px;">
-                <thead>
-                  <tr><th>Field</th><th>Fixed value</th><th></th></tr>
-                </thead>
-                <tbody id="tpl-fixed-tbody"></tbody>
-              </table>
-              <div id="tpl-fixed-empty" class="section-desc" style="display:none;">No fixed field values — all fields use normal extraction.</div>
             </div>
 
             <div class="section">
@@ -1286,6 +1266,7 @@
 </div>
 <script src="../shared/theme.js"></script>
 <script src="../shared/helpmode.js"></script>
+<script src="../shared/doctype-editor.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>
