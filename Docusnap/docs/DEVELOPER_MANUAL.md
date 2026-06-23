@@ -82,7 +82,7 @@ contexts exist: **dev** (system Python 3.12 + system Tesseract) and
                        │  commitDocument()         │    │  Year/Month/*.pdf +  │
                        │                           │    │  .metadata/*.xml     │
                        └────────────┬────────────┘    └──────────────────────┘
-                                     │ saveCorrections / _upsertTemplate
+                                     │ saveCorrections (+ landmark refresh)
                                      ▼
                        ┌─────────────────────────┐
                        │ learning tables: hints,   │
@@ -325,8 +325,11 @@ app.whenReady()
                            + .metadata/*.xml sidecar
                         b. learning.saveCorrections() — corrections,
                            supplier_hints, anchor-clearing (§7)
-                        c. _upsertTemplate() — create/update learned template,
-                           possibly reuse via logo-hash match (§8)
+                        c. if already linked to a template: refresh its
+                           cross-sample landmarks. Template create/update
+                           (_upsertTemplate, §8) happens ONLY via explicit
+                           promote-to-template (Add to Template Manager /
+                           Teach wizard), NOT on every confirm.
                         d. documents.update() — status='confirmed',
                            stored_path, supplier_name, doc_date,
                            reference_number, document_type_id
@@ -479,7 +482,7 @@ run via `buildTrainingArgs()`:
 
 | Corpus | Table | Written by | Read by |
 |---|---|---|---|
-| **Templates** | `templates`, `template_fields`, `template_field_mappings` | `_upsertTemplate()` (review/handler.js) on every confirm; admin edits via Template Viewer | Stage 0 (`template_matcher`), Stage 0.5 (`template_mapper`) |
+| **Templates** | `templates`, `template_fields`, `template_field_mappings` | `_upsertTemplate()` (review/handler.js) on explicit **promote** (Add to Template Manager / Teach wizard) — NOT on every confirm; admin edits via Template Viewer | Stage 0 (`template_matcher`), Stage 0.5 (`template_mapper`) |
 | **Field anchors** | `field_anchors` | `learning.saveAnchor()` — called when the user teaches a field via the ⊕ zone-OCR tool (taught fields), and indirectly cleared on manual corrections | Stage 2 (`anchor.extract_with_anchors`) |
 | **Supplier hints** | `supplier_hints` | `learning.saveCorrections()` — every confirmed field value (not just corrections) is upserted as a hint | Stage 2.5a/b |
 | **Logo fingerprints** | `logo_fingerprints` | `save-logo-fingerprint` IPC (admin/edit, via zone-OCR/teaching flow) | Pre-stage and Stage 0 fallback supplier match |
