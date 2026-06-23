@@ -135,6 +135,9 @@ let anchorTaughtFields = new Set(); // field_keys taught via the ⊕ highlight/z
 // leaves NO learned trace, so an accidental wrong pick can't poison the corpus.
 // Keyed by field_key → the saveFieldAnchor payload computed at draw time.
 let pendingAnchors   = {};
+// The draw context of the most recent ⊕ teach, so the readout's Left/Above toggle can
+// re-run label detection in the chosen direction without redrawing the box.
+let lastTeachCtx     = null;   // { fieldKey, rect, imgW, imgH, scaleX, scaleY, value }
 let activeTab        = 'review';
 let isAdmin          = false;   // gates the destructive bulk-delete actions (also enforced server-side)
 let canEdit          = false;   // admin OR edit — gates per-row delete (also enforced server-side)
@@ -188,6 +191,8 @@ document.getElementById('btn-close').addEventListener('click', () => window.docu
 
 // ── Help: user guide + contextual help mode ───────────────────────────────────
 document.getElementById('btn-help-guide')?.addEventListener('click', () => window.docusnap.openHelpWindow('review'));
+// Template Wizard "What's this?" → the Templates & Learning guide (explains ⊕ vs Wizard vs Teach).
+document.getElementById('wiz-help-link')?.addEventListener('click', () => window.docusnap.openHelpWindow('which-tool'));
 
 const HELP_TEXTS = {
   'review-tab':    'Documents waiting to be checked and confirmed.',
@@ -486,6 +491,7 @@ async function _selectDoc(doc, { fieldsOnly = false } = {}) {
   corrections = {};
   anchorTaughtFields = new Set();
   pendingAnchors = {};   // discard any un-confirmed ⊕ teach when the doc changes
+  lastTeachCtx = null; hideAnchorReadout();
 
   document.querySelectorAll('.queue-item').forEach(el => {
     el.classList.toggle('active', parseInt(el.dataset.id) === doc.id);
@@ -562,6 +568,7 @@ async function _selectDoc(doc, { fieldsOnly = false } = {}) {
 
 // ── Page rendering ────────────────────────────────────────────────────────────
 function renderPage() {
+  hideAnchorReadout();   // a stale readout/box doesn't belong on a freshly rendered page
   const placeholder = document.getElementById('doc-placeholder');
   const indicator   = document.getElementById('page-indicator');
 
@@ -822,7 +829,7 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
       <input type="text" class="field-input ${low ? 'low-conf' : ''}"
              data-key="${key}" data-original="${escHtml(val)}"
              value="${escHtml(val)}" placeholder="Not found">
-      <button class="pick-btn" data-key="${key}" title="Pick from document">&#8853;</button>
+      <button class="pick-btn" data-key="${key}" title="Teach this field — draw a box round its value; Scan Finder learns where it sits and reads it on every future document from this supplier">&#8853;</button>
     </div>
     ${noteHtml}${anchorHtml}
   `;
@@ -970,9 +977,11 @@ function clearTraceHighlight() {
 // reads (_crop_and_ocr crops cx±half). Everything else (template_mapping, the
 // inline harvest's inline_box) is [x_tl, y_tl, w, h] TOP-LEFT-based.
 const _CENTRE_BASED_SLICE_STAGES = new Set(['anchor_crop', 'anchor_relocate', 'anchor_registration']);
-function drawTraceBbox(bbox, kind, stage) {
+// `keep` = draw ON TOP of the current highlight without clearing it first — used to
+// overlay the anchor (label) box together with the value box from one click.
+function drawTraceBbox(bbox, kind, stage, keep) {
   if (!bbox || bbox.length < 4 || !traceCanvas.width) return;
-  clearTraceHighlight();
+  if (!keep) clearTraceHighlight();
   const w = traceCanvas.width, h = traceCanvas.height;
   const bw = Math.round(bbox[2] * w), bh = Math.round(bbox[3] * h);
   const isCenterBased = _CENTRE_BASED_SLICE_STAGES.has(stage);
@@ -989,7 +998,10 @@ function drawTraceBbox(bbox, kind, stage) {
   traceCtx.fillStyle = color + '28';
   traceCtx.fillRect(x, y, bw, bh);
   traceCtx.restore();
-  _traceHighlightTimer = setTimeout(clearTraceHighlight, 3500);
+  if (_traceHighlightTimer) clearTimeout(_traceHighlightTimer);   // single shared dwell for both boxes
+  // Long idle dwell so you can actually study the box; it still clears immediately on
+  // the next row click, page change, or doc change (clearTraceHighlight callers).
+  _traceHighlightTimer = setTimeout(clearTraceHighlight, 30000);
 }
 
 selCanvas.addEventListener('mousedown', (e) => {
@@ -1053,10 +1065,11 @@ async function runZoneOcr(rect, fieldKey) {
         corrections[fieldKey] = { original_value: orig, corrected_value: text };
         validateConfirm();
       }
+      lastTeachCtx = { fieldKey, rect, imgW, imgH, scaleX, scaleY, value: text };
       const detected = await captureAnchorContext(rect, fieldKey, text, imgW, imgH, scaleX, scaleY);
       if (detected) {
         anchorTaughtFields.add(fieldKey);
-        showAnchorReadout(detected, text);   // show which anchor was picked, so a wrong snap is visible
+        showAnchorReadout(detected, text);   // show which anchor was picked + the Left/Above toggle
       }
     }
   } catch (err) {
@@ -1097,7 +1110,7 @@ function labelNormBox(box, originDX, originDY, imgW, imgH) {
           box[2] / nW, box[3] / nH];
 }
 
-async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, scaleY) {
+async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, scaleY, forceDir = null) {
   const xNorm    = (rect.x + rect.w / 2) / imgW;
   const yNorm    = (rect.y + rect.h / 2) / imgH;
   const pageZone = yNorm < 0.33 ? 'top' : yNorm < 0.66 ? 'middle' : 'bottom';
@@ -1145,11 +1158,18 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
   } catch {}
 
   // Best-effort: try to find a real label to the left of the box, then above.
-  // Each attempt is independently guarded — a failure here (bad crop, OCR
-  // error) must NOT prevent the guaranteed fallback save below, otherwise
-  // nothing gets learned at all.
-  try {
-    const leftPad    = Math.min(rect.x, 300);
+  // Search the WHOLE row to the LEFT of the value (not a fixed 300px window): on wide
+  // two-column key/value layouts the label ("Make", "IP address") sits far left of its
+  // value — beyond a narrow window — so a TIGHT value box would find nothing to the
+  // left and wrongly fall through to the row ABOVE (grabbing the line above, e.g. the
+  // customer name). The strip stays ONE line tall (rect.h), so it only reads THIS row;
+  // extractLabel takes the token nearest the value. Each attempt is independently
+  // guarded — a failure here (bad crop, OCR error) must NOT prevent the guaranteed
+  // fallback save below, otherwise nothing gets learned at all.
+  // forceDir (from the readout's Left/Above toggle) pins ONE direction: 'right' = label
+  // to the left only, 'below' = label above only; null = auto (left then above).
+  if (forceDir !== 'below') try {
+    const leftPad    = rect.x;   // full span from the page's left edge to the value box
     const leftCanvas = document.createElement('canvas');
     leftCanvas.width  = Math.round(leftPad * scaleX);
     leftCanvas.height = Math.round(rect.h * scaleY);
@@ -1178,8 +1198,12 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
     console.warn('Anchor capture: left-label lookup failed (non-critical):', err);
   }
 
-  try {
-    const abovePad    = Math.min(rect.y, 60);
+  if (forceDir !== 'right') try {
+    // Read ONLY the single line directly above the value, not a fixed 60px band that
+    // bled into ~2 rows (capturing the line above AND the one above that → garbled).
+    // Tie the strip height to the value box's own line height (rect.h), floored so a
+    // very thin draw still reads.
+    const abovePad    = Math.min(rect.y, Math.max(rect.h, 20));
     const aboveCanvas = document.createElement('canvas');
     aboveCanvas.width  = Math.round(rect.w * scaleX);
     aboveCanvas.height = Math.round(abovePad * scaleY);
@@ -1225,17 +1249,47 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
 // label to the LEFT — is VISIBLE and the operator can simply draw again. The detected
 // anchor box flashes on the preview; the message warns on the weak cases (anchored
 // from above, or by position with no label found).
+let _anchorReadoutTimer = null;
+function hideAnchorReadout() {
+  const bar = document.getElementById('anchor-readout');
+  if (bar) { bar.style.display = 'none'; bar.innerHTML = ''; }
+  if (_anchorReadoutTimer) { clearTimeout(_anchorReadoutTimer); _anchorReadoutTimer = null; }
+}
 function showAnchorReadout(detected, value) {
   try { if (detected.normBox) drawTraceBbox(detected.normBox, 'anchor', 'manual'); } catch {}
-  const label = detected.anchor_label || '(none)';
-  const val   = (value || '').trim();
-  if (detected.fallback) {
-    showToast(`No clear label found — anchored by position. Read: "${val}". If it drifts later, draw again next to the label.`, 'warn');
-  } else if (detected.direction === 'below') {
-    showToast(`⚠ Anchor read from ABOVE: "${label}" → "${val}". If that's not the right label, draw again closer to the label on the left.`, 'warn');
-  } else {
-    showToast(`✓ Anchor: "${label}" (label to the left) → "${val}"`, 'ok');
-  }
+  const bar = document.getElementById('anchor-readout');
+  if (!bar) return;
+  const label = escHtml(detected.anchor_label || '(none)');
+  const val   = escHtml((value || '').trim());
+  const isLeft  = detected.direction === 'right';
+  const isAbove = detected.direction === 'below';
+  let msg, warn = false;
+  if (detected.fallback) { msg = `No label found — anchored by position. Read: "${val}"`; warn = true; }
+  else if (isAbove)      { msg = `Anchor (label above): <b>${label}</b> &rarr; "${val}"`; }
+  else                   { msg = `Anchor (label to the left): <b>${label}</b> &rarr; "${val}"`; }
+  bar.className = 'anchor-readout' + (warn ? ' warn' : '');
+  bar.innerHTML =
+    `<span class="ar-msg">${warn ? '&#9888; ' : '&#10003; '}${msg}</span>`
+    + `<span class="ar-dir"><span class="ar-lbl">Label is:</span>`
+    + `<button class="ar-btn ${isLeft ? 'on' : ''}" data-dir="right">&larr; Left</button>`
+    + `<button class="ar-btn ${isAbove ? 'on' : ''}" data-dir="below">&uarr; Above</button></span>`
+    + `<span class="ar-x" title="Dismiss">&times;</span>`;
+  bar.style.display = '';
+  bar.querySelectorAll('.ar-btn').forEach(b => b.addEventListener('click', () => reDetectAnchor(b.dataset.dir)));
+  bar.querySelector('.ar-x')?.addEventListener('click', hideAnchorReadout);
+  if (_anchorReadoutTimer) clearTimeout(_anchorReadoutTimer);
+  _anchorReadoutTimer = setTimeout(hideAnchorReadout, 30000);   // stay long enough to read + act; matches the box dwell
+}
+// Re-run label detection forcing a direction (the Left/Above toggle), reusing the
+// cached draw context — so when auto-detect grabs the wrong neighbour the operator
+// just flips it instead of redrawing. Re-stages pendingAnchors + redraws the box.
+async function reDetectAnchor(dir) {
+  if (!lastTeachCtx) return;
+  const c = lastTeachCtx;
+  try {
+    const detected = await captureAnchorContext(c.rect, c.fieldKey, c.value, c.imgW, c.imgH, c.scaleX, c.scaleY, dir);
+    if (detected) { anchorTaughtFields.add(c.fieldKey); showAnchorReadout(detected, c.value); }
+  } catch (err) { console.warn('Anchor re-detect failed:', err); }
 }
 
 function cleanSupplierName(name) {
@@ -2527,7 +2581,6 @@ function loadWizardField(i) {
 
   const f = wizard.fields[wizard.index];
   const fixedInput  = document.getElementById('wiz-fixed-value');
-  const fixedToggle = document.getElementById('wiz-fixed-toggle');
   const anchorInput = document.getElementById('wiz-anchor-text');
   const ocrInput    = document.getElementById('wiz-ocr-type');
 
@@ -2539,25 +2592,24 @@ function loadWizardField(i) {
   const savedFixed = wizard.fixedByKey && wizard.fixedByKey.get(f.key);
   if (draft) {
     wizard.fixedMode    = draft.fixedMode;
-    fixedToggle.checked = draft.fixedMode;
     fixedInput.value    = draft.fixedValue;
     anchorInput.value   = draft.anchorText;
     ocrInput.value      = draft.ocrType;
     wizard.draftAnchor  = draft.draftAnchor ? { ...draft.draftAnchor } : null;
     wizard.draftTarget  = draft.draftTarget ? { ...draft.draftTarget } : null;
   } else if (savedFixed != null && savedFixed !== '') {
-    wizard.fixedMode = true; fixedToggle.checked = true; fixedInput.value = savedFixed;
+    wizard.fixedMode = true; fixedInput.value = savedFixed;
     anchorInput.value = ''; ocrInput.value = 'text';
   } else if (saved && saved.anchor_x_norm != null && saved.target_x_norm != null
              && (saved.page_number || 0) === currentPage) {   // box belongs to this page
-    wizard.fixedMode = false; fixedToggle.checked = false; fixedInput.value = '';
+    wizard.fixedMode = false; fixedInput.value = '';
     wizard.draftAnchor = { x_norm: saved.anchor_x_norm, y_norm: saved.anchor_y_norm,
                            w_norm: saved.anchor_w_norm, h_norm: saved.anchor_h_norm };
     wizard.draftTarget = { x_norm: saved.target_x_norm, y_norm: saved.target_y_norm,
                            w_norm: saved.target_w_norm, h_norm: saved.target_h_norm };
     anchorInput.value = saved.anchor_text || ''; ocrInput.value = saved.ocr_type || 'text';
   } else {
-    wizard.fixedMode = false; fixedToggle.checked = false; fixedInput.value = '';
+    wizard.fixedMode = false; fixedInput.value = '';
     anchorInput.value = ''; ocrInput.value = 'text';
   }
 
@@ -2574,11 +2626,17 @@ function updateWizardUI() {
   document.getElementById('wiz-anchor-block').style.display = wizard.fixedMode ? 'none' : '';
   document.getElementById('wiz-fixed-block').style.display  = wizard.fixedMode ? '' : 'none';
 
+  // Reflect the active mode on the segmented toggle. Done here (not only in the click
+  // handler) so a field-switch restore — loadWizardField sets wizard.fixedMode then
+  // calls updateWizardUI — shows the correct segment.
+  document.querySelectorAll('#wiz-mode .wiz-seg-btn').forEach(b =>
+    b.classList.toggle('armed', (b.dataset.mode === 'fixed') === wizard.fixedMode));
+
   const st = document.getElementById('wiz-status');
   if (wizard.fixedMode) {
-    const hasVal = !!document.getElementById('wiz-fixed-value').value.trim();
-    st.textContent = hasVal ? 'Fixed value ready ✓' : 'Enter a fixed value';
-    st.className = 'wiz-status' + (hasVal ? ' ok' : '');
+    const fv = document.getElementById('wiz-fixed-value').value.trim();
+    st.textContent = fv ? `Will file: ${fv}` : 'Type the value to file';
+    st.className = 'wiz-status' + (fv ? ' ok' : '');
   } else {
     const a = !!wizard.draftAnchor, t = !!wizard.draftTarget;
     st.textContent = `Anchor: ${a ? 'drawn ✓' : '—'} · Target: ${t ? 'drawn ✓' : '—'}`;
@@ -2797,8 +2855,15 @@ document.getElementById('wiz-show-resolved')?.addEventListener('click', async ()
 });
 document.getElementById('wiz-prev')?.addEventListener('click', () => loadWizardField(wizard.index - 1));
 document.getElementById('wiz-next')?.addEventListener('click', () => loadWizardField(wizard.index + 1));
-document.getElementById('wiz-fixed-toggle')?.addEventListener('change', (e) => {
-  wizard.fixedMode = e.target.checked;
+// Mode toggle (segmented): "Read it from the document" (anchor + target) vs "Always
+// use the same value" (a constant). Mirrors the Settings Template Manager mode; the
+// active segment is reflected by updateWizardUI so a field-switch restore stays right.
+document.getElementById('wiz-mode')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('.wiz-seg-btn');
+  if (!btn) return;
+  const fixed = btn.dataset.mode === 'fixed';
+  if (fixed === wizard.fixedMode) return;   // already in this mode
+  wizard.fixedMode = fixed;
   wizard.drawMode = null;
   wizCanvas.classList.remove('drawing');
   updateWizardUI();
@@ -3102,6 +3167,18 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
       if (!arr || !arr.length) return null;
       return arr.find(s => s.kind === 'target') || arr[0];
     }
+    // The field's located LABEL box (kind="anchor") — the diagnostic anchor_label
+    // slice (Stage 2 ⊕ anchors) or a template_mapping anchor (Stage 0.5). Attached to
+    // every candidate row so clicking a value ALSO reveals where its anchor resolved
+    // (or, if absent, that the label didn't locate on this document).
+    function anchorSlice(field) {
+      const m = sliceMap[field];
+      if (!m) return null;
+      const pref = m['anchor_label'];
+      if (pref) { const hit = pref.find(s => s.kind === 'anchor'); if (hit) return hit; }
+      for (const k of Object.keys(m)) { const hit = m[k].find(s => s.kind === 'anchor'); if (hit) return hit; }
+      return null;
+    }
     if (!byField.size) {
       elEmpty.hidden = false; elFields.innerHTML = '';
       return;
@@ -3125,13 +3202,13 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
             ? `lost — lower confidence (${c.confidence}% < ${wc}%)`
             : (c.vs && c.vs.value != null ? `lost — superseded by "${shown(c.vs.value)}"` : 'lost — superseded');
         }
-        rows.push(cand(STAGE_LABEL[c.stage] || c.stage, c.value, c.confidence, c.method, won ? 'won' : 'lost', won ? '' : reason, pickSlice(field, c.method), rxBadge(field, c.value)));
+        rows.push(cand(STAGE_LABEL[c.stage] || c.stage, c.value, c.confidence, c.method, won ? 'won' : 'lost', won ? '' : reason, pickSlice(field, c.method), rxBadge(field, c.value), anchorSlice(field)));
       }
       for (const r of m.rejects) {
         // A rejected rung IS keyed by its method (e.g. "anchor_crop") — show the
         // exact crop it read so the operator sees WHERE the garbage came from. The
         // rx score explains a format-based rejection at a glance (e.g. rx 0%).
-        rows.push(cand(r.method || 'anchor', r.value, null, null, 'rej', `rejected — ${r.reason || 'failed gate'}`, pickSlice(field, r.method), rxBadge(field, r.value)));
+        rows.push(cand(r.method || 'anchor', r.value, null, null, 'rej', `rejected — ${r.reason || 'failed gate'}`, pickSlice(field, r.method), rxBadge(field, r.value), anchorSlice(field)));
       }
       // Stage 2.5 transforms (denoise / OCR-correct): value rewritten in place.
       for (const t of m.transforms) {
@@ -3167,28 +3244,38 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
       h.addEventListener('click', () => h.parentElement.classList.toggle('open'));
     });
     // Click a candidate row that has slice data → highlight the region on the page.
-    elFields.querySelectorAll('.rdc-cand[data-bbox]').forEach((row) => {
+    elFields.querySelectorAll('.rdc-cand[data-bbox],.rdc-cand[data-anchor-bbox]').forEach((row) => {
       row.addEventListener('click', (e) => {
         e.stopPropagation();   // don't toggle the field block open/closed
         try {
-          const bbox  = JSON.parse(row.dataset.bbox);
-          const page  = parseInt(row.dataset.page, 10) || 0;
-          const kind  = row.dataset.kind  || 'target';
-          const stage = row.dataset.stage || '_';
+          const page = parseInt(row.dataset.page || row.dataset.anchorPage, 10) || 0;
           // If the document is showing a different page, navigate to the correct one first.
           if (page !== currentPage) {
             currentPage = page;
             renderPage();
           }
-          drawTraceBbox(bbox, kind, stage);
+          // Draw the value box (amber) first, then OVERLAY the anchor/label box (blue)
+          // without clearing — so a click shows both where the value was read AND where
+          // its anchor resolved (or just one if the other wasn't captured).
+          let drew = false;
+          if (row.dataset.bbox) {
+            drawTraceBbox(JSON.parse(row.dataset.bbox), row.dataset.kind || 'target', row.dataset.stage || '_');
+            drew = true;
+          }
+          if (row.dataset.anchorBbox) {
+            drawTraceBbox(JSON.parse(row.dataset.anchorBbox), 'anchor', row.dataset.anchorStage || 'anchor_label', drew);
+          }
         } catch (_) {}
       });
     });
   }
 
-  function cand(stage, value, conf, method, tag, reason, slice, rx) {
+  function cand(stage, value, conf, method, tag, reason, slice, rx, aslice) {
     const tagTxt = tag === 'rej' ? 'rejected' : tag;
-    const bboxAttr = slice ? ` data-bbox="${escHtml(JSON.stringify(slice.bbox))}" data-kind="${escHtml(slice.kind || 'target')}" data-page="${slice.page ?? 0}" data-stage="${escHtml(slice.stage || '_')}" style="cursor:pointer" title="Click to highlight region on page"` : '';
+    const tAttr = slice ? ` data-bbox="${escHtml(JSON.stringify(slice.bbox))}" data-kind="${escHtml(slice.kind || 'target')}" data-page="${slice.page ?? 0}" data-stage="${escHtml(slice.stage || '_')}"` : '';
+    const aAttr = aslice ? ` data-anchor-bbox="${escHtml(JSON.stringify(aslice.bbox))}" data-anchor-page="${aslice.page ?? 0}" data-anchor-stage="${escHtml(aslice.stage || 'anchor_label')}"` : '';
+    const clickAttr = (slice || aslice) ? ` style="cursor:pointer" title="Click to highlight the value box (amber)${aslice ? ' + anchor box (blue)' : ''} on the page"` : '';
+    const bboxAttr = tAttr + aAttr + clickAttr;
     return `<div class="rdc-cand"${bboxAttr}>`
       + `<span class="rdc-stage">${escHtml(stage)}</span>`
       + `<span class="rdc-val">${escHtml(shown(value))}${method ? ` <span class="rdc-conf">${escHtml(method)}</span>` : ''}${rx || ''}</span>`
