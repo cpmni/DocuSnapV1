@@ -1053,8 +1053,11 @@ async function runZoneOcr(rect, fieldKey) {
         corrections[fieldKey] = { original_value: orig, corrected_value: text };
         validateConfirm();
       }
-      const anchorSaved = await captureAnchorContext(rect, fieldKey, text, imgW, imgH, scaleX, scaleY);
-      if (anchorSaved) anchorTaughtFields.add(fieldKey);
+      const detected = await captureAnchorContext(rect, fieldKey, text, imgW, imgH, scaleX, scaleY);
+      if (detected) {
+        anchorTaughtFields.add(fieldKey);
+        showAnchorReadout(detected, text);   // show which anchor was picked, so a wrong snap is visible
+      }
     }
   } catch (err) {
     console.error('Zone OCR error:', err);
@@ -1082,6 +1085,16 @@ function labelOffsetFromBox(box, originDX, originDY, xNorm, yNorm, imgW, imgH) {
   // mis-read box never stores a wild vector (extraction then uses the fallback).
   if (!isFinite(dx) || !isFinite(dy) || Math.abs(dx) > 0.6 || Math.abs(dy) > 0.3) return {};
   return { offset_dx_norm: dx, offset_dy_norm: dy };
+}
+
+// The located label's box as page-normalised [x,y,w,h] (top-left), for the
+// "show the detected anchor" overlay. Same crop-origin math as labelOffsetFromBox.
+function labelNormBox(box, originDX, originDY, imgW, imgH) {
+  if (!Array.isArray(box) || box.length < 4) return null;
+  const nW = docImg.naturalWidth || imgW, nH = docImg.naturalHeight || imgH;
+  if (!nW || !nH || !imgW || !imgH) return null;
+  return [(originDX / imgW) + (box[0] / nW), (originDY / imgH) + (box[1] / nH),
+          box[2] / nW, box[3] / nH];
 }
 
 async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, scaleY) {
@@ -1151,13 +1164,14 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
       const leftB64   = leftCanvas.toDataURL('image/png').split(',')[1];
       const leftRes   = await window.docusnap.ocrRegionBoxes?.(leftB64);
       const leftText  = ((leftRes && leftRes.text) || (await window.docusnap.ocrRegion(leftB64)) || '').trim();
-      const leftLabel = extractLabel(leftText);
+      const leftLabel = sanitizeAnchorLabel(extractLabel(leftText) || '');
       if (leftLabel) {
         // Drift-invariant offset: the located label's page position → value centre.
         // Origin of the left crop in DISPLAY px is (rect.x - leftPad, rect.y).
         const off = labelOffsetFromBox(leftRes && leftRes.box, rect.x - leftPad, rect.y, xNorm, yNorm, imgW, imgH);
         pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: leftLabel, direction: 'right', ...off };
-        return true;
+        return { anchor_label: leftLabel, direction: 'right',
+                 normBox: labelNormBox(leftRes && leftRes.box, rect.x - leftPad, rect.y, imgW, imgH) };
       }
     }
   } catch (err) {
@@ -1180,12 +1194,17 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
       const aboveB64   = aboveCanvas.toDataURL('image/png').split(',')[1];
       const aboveRes   = await window.docusnap.ocrRegionBoxes?.(aboveB64);
       const aboveText  = ((aboveRes && aboveRes.text) || (await window.docusnap.ocrRegion(aboveB64)) || '').trim();
-      const aboveLabel = extractLabel(aboveText);
+      // "A value ABOVE is not a label": sanitizeAnchorLabel strips code/serial/number
+      // tokens (a MAC, an IP, a reference, a date), so the above-strip yields a label
+      // ONLY when it's a real caption — never the value sitting in the row above. This
+      // stops the snap latching onto the MAC above instead of the label to the left.
+      const aboveLabel = sanitizeAnchorLabel(extractLabel(aboveText) || '');
       if (aboveLabel) {
         // Origin of the above crop in DISPLAY px is (rect.x, rect.y - abovePad).
         const off = labelOffsetFromBox(aboveRes && aboveRes.box, rect.x, rect.y - abovePad, xNorm, yNorm, imgW, imgH);
         pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: aboveLabel, direction: 'below', ...off };
-        return true;
+        return { anchor_label: aboveLabel, direction: 'below',
+                 normBox: labelNormBox(aboveRes && aboveRes.box, rect.x, rect.y - abovePad, imgW, imgH) };
       }
     }
   } catch (err) {
@@ -1198,7 +1217,25 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
   // un-confirmed teach leaves no trace.
   const fallbackLabel = labelFor(fieldKey) || fieldKey.replace(/_/g, ' ');
   pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: fallbackLabel, direction: 'right' };
-  return true;
+  return { anchor_label: fallbackLabel, direction: 'right', normBox: null, fallback: true };
+}
+
+// Surface WHICH anchor the ⊕ teach auto-detected (its label + where it sits) and the
+// value it read, so a wrong snap — onto the value in the row ABOVE instead of the
+// label to the LEFT — is VISIBLE and the operator can simply draw again. The detected
+// anchor box flashes on the preview; the message warns on the weak cases (anchored
+// from above, or by position with no label found).
+function showAnchorReadout(detected, value) {
+  try { if (detected.normBox) drawTraceBbox(detected.normBox, 'anchor', 'manual'); } catch {}
+  const label = detected.anchor_label || '(none)';
+  const val   = (value || '').trim();
+  if (detected.fallback) {
+    showToast(`No clear label found — anchored by position. Read: "${val}". If it drifts later, draw again next to the label.`, 'warn');
+  } else if (detected.direction === 'below') {
+    showToast(`⚠ Anchor read from ABOVE: "${label}" → "${val}". If that's not the right label, draw again closer to the label on the left.`, 'warn');
+  } else {
+    showToast(`✓ Anchor: "${label}" (label to the left) → "${val}"`, 'ok');
+  }
 }
 
 function cleanSupplierName(name) {
