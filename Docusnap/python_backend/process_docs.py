@@ -63,6 +63,21 @@ def load_json_arg(inline: str | None, filepath: str | None) -> list | dict | Non
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+def doc_overrides(manifest, name, *, enhance=None, known_template_id=None, known_doc_slug=None):
+    """Per-document reprocess overrides from a manifest (batched Reprocess All), each
+    keyed by the file's basename. Falls back to the global args when the manifest has
+    no entry for this file — so single-doc reprocess and folder import (no manifest)
+    are byte-identical. This is what lets batched reprocess share ONE Python process
+    across many docs WITHOUT losing each doc's own template / doc-slug / enhance
+    overrides (the accuracy guarantee)."""
+    o = (manifest or {}).get(name) or {}
+    return (
+        o.get("enhance_params", enhance),                       # None is a valid value
+        o.get("known_template_id") or known_template_id,
+        o.get("known_doc_slug") or known_doc_slug,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--folder",          required=True)
@@ -91,6 +106,11 @@ def main():
     # type). Used in preference to re-detecting from OCR, which fails on a clipped
     # scan and leaves document_slug null — silently disabling the format gates.
     parser.add_argument("--known-doc-slug", default=None)
+    # Batched Reprocess All: a JSON map {basename: {known_template_id, known_doc_slug,
+    # enhance_params}} so ONE Python process can reprocess many docs while each keeps
+    # its OWN overrides (per-doc accuracy). Absent → the global --known-* args apply
+    # (single-doc reprocess / folder import are byte-identical). See doc_overrides().
+    parser.add_argument("--reprocess-manifest", default=None)
     # Dev-only: emit a structured per-field extraction TRACE stream (type:"trace")
     # for the hidden Dev Inspector. Off by default → zero extra output/overhead and
     # the user-facing process-progress stream is byte-identical.
@@ -155,6 +175,7 @@ def main():
     templates      = load_json_arg(None, args.templates_file) or []
     label_overrides = load_json_arg(None, args.label_overrides_file) or []
     enhance_params = load_json_arg(None, args.enhance_file)   or None
+    reprocess_manifest = load_json_arg(None, args.reprocess_manifest) or {}
 
     # Full-page OCR engine (default 'tesseract' = byte-identical). RapidOCR is opt-in
     # and falls back to Tesseract if its runtime/models are unavailable; crop/zone/
@@ -225,11 +246,20 @@ def main():
         emit({"type": "file_begin", "filename": filepath.name})
         _trace_state["doc"] = filepath.name
 
+        # Per-document overrides (batched reprocess) — fall back to the global args
+        # when no manifest entry exists (byte-identical for folder import / single doc).
+        _enh, _kt, _ks = doc_overrides(
+            reprocess_manifest, filepath.name,
+            enhance=enhance_params,
+            known_template_id=args.known_template_id,
+            known_doc_slug=args.known_doc_slug,
+        )
+
         try:
             # OCR
             log(f"  OCR: {filepath.name}")
             ocr_text, page_images = extract_text_and_images(
-                filepath, enhance_params, born_digital=args.born_digital, engine=ocr_engine)
+                filepath, _enh, born_digital=args.born_digital, engine=ocr_engine)
 
             if not ocr_text.strip():
                 raise ValueError("OCR returned no text — is the scan readable?")
@@ -280,10 +310,10 @@ def main():
             # on a clipped scan, nulling the slug and disabling the format gates).
             # Also recover the type NAME + its field set from the known slug so the
             # rest of the pipeline stays consistent with the assigned type.
-            if args.known_doc_slug and doc_types:
+            if _ks and doc_types:
                 for dt in doc_types:
-                    if dt.get("slug") == args.known_doc_slug:
-                        doc_slug      = args.known_doc_slug
+                    if dt.get("slug") == _ks:
+                        doc_slug      = _ks
                         document_type = dt["name"]
                         if dt.get("fields"):
                             active_fields = dt["fields"]
@@ -298,7 +328,7 @@ def main():
             # field set so the slug, fields and (doc-type-scoped) anchors all agree
             # — but NEVER over an explicit known_doc_slug (a reprocess the user
             # already assigned). Reusable for every supplier/doc type.
-            if not args.known_doc_slug and templates and page_images:
+            if not _ks and templates and page_images:
                 try:
                     tmatch = template_matcher.identify_template(page_images[0], ocr_text, templates)
                 except Exception:
@@ -342,7 +372,7 @@ def main():
                 document_type = document_type,
                 document_slug = doc_slug,
                 supplier_name = None,
-                known_template_id = args.known_template_id,
+                known_template_id = _kt,
                 trace         = emit_trace if args.trace else None,
                 slice_dir     = args.slice_dir if args.trace else None,
                 page_text_lines = page_text_lines,
