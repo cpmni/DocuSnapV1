@@ -522,7 +522,13 @@ class ExtractionEngine:
         # touching free-text ones.
         _TYPE2VAL = {"date": "date", "currency": "currency", "number": "currency",
                      "amount": "currency", "alphanumeric": "alphanumeric",
-                     "job_reference": "job_reference", "currency_code": "currency_code"}
+                     "job_reference": "job_reference", "currency_code": "currency_code",
+                     # Explicit "Reference number" field type — the operator's deliberate
+                     # marker that this field holds a CODE (invoice/ticket/job ref), so it's
+                     # gated as alphanumeric and never as currency. Removes the need to
+                     # guess from the field key ("ref"/"cust" abbreviations slip past the
+                     # naming heuristics). Reusable for any supplier/doc type.
+                     "reference": "alphanumeric"}
         field_patterns = dict(self.patterns.get("field_patterns", {}))
         for _f in field_defs:
             _k, _t = _f.get("key"), (_f.get("type") or "").lower()

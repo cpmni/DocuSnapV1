@@ -12,6 +12,9 @@ const FALLBACK_FIELD_KEYS = ['supplier_name', 'invoice_number', 'invoice_date'];
 const TYPE_TO_VALIDATION = {
   date: 'date', currency: 'currency', number: 'currency', amount: 'currency',
   alphanumeric: 'alphanumeric', job_reference: 'job_reference', currency_code: 'currency_code',
+  // Explicit "Reference number" field type -> code (alphanumeric) gate, mirroring
+  // engine.py _TYPE2VAL. So the on-blur validator accepts NNNN-NNNN-N refs.
+  reference: 'alphanumeric',
 };
 // Mirror engine.py _is_ref_field: a reference/ticket field (key ends _number /
 // _no or contains "reference").

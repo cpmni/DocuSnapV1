@@ -172,7 +172,8 @@ function renderNewFields(){
         `<select data-i="${i}"><option value="text"${f.type==='text'?' selected':''}>Text</option>`+
         `<option value="date"${f.type==='date'?' selected':''}>Date</option>`+
         `<option value="currency"${f.type==='currency'?' selected':''}>Currency</option>`+
-        `<option value="number"${f.type==='number'?' selected':''}>Number</option></select>`+
+        `<option value="number"${f.type==='number'?' selected':''}>Number</option>`+
+        `<option value="reference"${f.type==='reference'?' selected':''}>Reference number</option></select>`+
         `<span class="x" data-i="${i}">✕</span>`;
     }
     wrap.appendChild(chip);
