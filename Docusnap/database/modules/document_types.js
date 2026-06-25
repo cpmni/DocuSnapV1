@@ -1,5 +1,7 @@
 'use strict';
 
+const { addLabelOverrides } = require('./label_overrides');
+
 // ── Structural roles ──────────────────────────────────────────────────────────
 // Every document has three STRUCTURAL fields that drive both filing
 // (Company/Year/Month/DocType.Date.Ref) AND all per-supplier learning
@@ -267,8 +269,214 @@ function ensureStructuralRoles(db, typeId) {
   }
 }
 
+// ── Preset document-type catalog ──────────────────────────────────────────────
+//
+// A library of READY-MADE document types a business can tick to add (Settings →
+// Document Types → "Add from catalog…"). Each preset ships sensible fields, the
+// right structural roles, and LIKELY LABEL ALIASES per field. Ticking one creates
+// the type + fields (reusing addType/addField/ensureStructuralRoles) and seeds its
+// label aliases into field_label_overrides (per-install, doc-type-scoped — see
+// label_overrides.js + keyword.merge_label_overrides), so Stage-1 anchored
+// label→value extraction works on document #1 with no teaching.
+//
+// `company_key` is the structural identity/learning-scope field for the type:
+// supplier_name for documents you RECEIVE (purchase invoice, statement, receipt),
+// customer_name for documents about who PAYS/ORDERS you (sales invoice, remittance).
+// The slug is DERIVED from the name (presetSlug, mirroring addType) so labels seed
+// under the exact slug the engine resolves at runtime.
+//
+// Label lists are PRECISION-FIRST and reggie-reviewed. Only DOC-SPECIFIC captions and
+// the NOVEL ref/date fields are seeded as overrides; the canonical fields
+// (supplier_name/customer_name/invoice_number/invoice_date/delivery_date + the generic
+// total) are left to the shipped config/keyword_patterns.json field_patterns — the
+// single source of truth, so the override table can't drift from it. Bare generic
+// captions ("From"/"Date"/"Amount"/"Customer"/"Balance"/"Account") are deliberately
+// DROPPED: the keyword stage applies NO format gate to a field with no shipped pattern
+// entry (keyword.merge_label_overrides seeds labels without a validation key), so a
+// generic caption could anchor the wrong value. Two engine hardenings would let these
+// be relaxed later (a single-word boundary guard in keyword._label_pattern; validation
+// inferred by field-key role in merge_label_overrides) — tracked separately.
+const PRESET_CATALOG = [
+  {
+    name: 'Purchase Invoice', ref_field_key: 'invoice_number', date_field_key: 'invoice_date',
+    company_key: 'supplier_name',
+    fields: [   // all canonical → shipped field_patterns own the labels
+      { key: 'supplier_name',  label: 'Supplier Name',  type: 'text',     required: 1 },
+      { key: 'invoice_number', label: 'Invoice Number', type: 'text',     required: 1 },
+      { key: 'invoice_date',   label: 'Invoice Date',   type: 'date',     required: 1 },
+      { key: 'total_amount',   label: 'Total',          type: 'currency', required: 0 },
+    ],
+  },
+  {
+    name: 'Sales Invoice', ref_field_key: 'invoice_number', date_field_key: 'invoice_date',
+    company_key: 'customer_name',
+    fields: [   // all canonical → shipped field_patterns own the labels
+      { key: 'customer_name',  label: 'Customer Name',  type: 'text',     required: 1 },
+      { key: 'invoice_number', label: 'Invoice Number', type: 'text',     required: 1 },
+      { key: 'invoice_date',   label: 'Invoice Date',   type: 'date',     required: 1 },
+      { key: 'total_amount',   label: 'Total',          type: 'currency', required: 0 },
+    ],
+  },
+  {
+    name: 'Remittance Advice', ref_field_key: 'remittance_number', date_field_key: 'remittance_date',
+    company_key: 'customer_name',
+    fields: [
+      { key: 'customer_name',     label: 'Customer Name',     type: 'text',     required: 1,
+        labels: ['Remitter', 'Paid By', 'Payer', 'From'] },   // "From" = the payer on a remittance
+      { key: 'remittance_number', label: 'Remittance Number', type: 'text',     required: 1,
+        labels: ['Remittance No', 'Remittance Number', 'Advice No', 'Remittance Ref', 'Payment Ref'] },
+      { key: 'remittance_date',   label: 'Remittance Date',   type: 'date',     required: 1,
+        labels: ['Remittance Date', 'Payment Date'] },
+      { key: 'total_amount',      label: 'Amount Paid',       type: 'currency', required: 0,
+        labels: ['Amount Paid', 'Total Paid', 'Payment Amount'] },
+    ],
+  },
+  {
+    name: 'Credit Note', ref_field_key: 'credit_note_number', date_field_key: 'credit_note_date',
+    company_key: 'supplier_name',
+    fields: [
+      { key: 'supplier_name',      label: 'Supplier Name',      type: 'text',     required: 1 },
+      { key: 'credit_note_number', label: 'Credit Note Number', type: 'text',     required: 1,
+        labels: ['Credit Note No', 'Credit Note Number', 'Credit Note #', 'Credit No', 'CN No'] },
+      { key: 'credit_note_date',   label: 'Credit Note Date',   type: 'date',     required: 1,
+        labels: ['Credit Note Date', 'Issue Date'] },
+      { key: 'total_amount',       label: 'Total',              type: 'currency', required: 0,
+        labels: ['Credit Amount', 'Total Credit'] },
+    ],
+  },
+  {
+    name: 'Delivery Note', ref_field_key: 'delivery_number', date_field_key: 'delivery_date',
+    company_key: 'supplier_name',
+    fields: [
+      { key: 'supplier_name',   label: 'Supplier Name',   type: 'text', required: 1,
+        labels: ['Delivered By'] },
+      { key: 'customer_name',   label: 'Customer Name',   type: 'text', required: 0,
+        labels: ['Deliver To', 'Delivery To', 'Ship To'] },
+      { key: 'delivery_number', label: 'Delivery Number', type: 'text', required: 1,
+        labels: ['Delivery No', 'Delivery Number', 'Delivery Note No', 'DN No', 'Despatch No', 'Dispatch No'] },
+      { key: 'delivery_date',   label: 'Delivery Date',   type: 'date', required: 1 },
+    ],
+  },
+  {
+    name: 'Statement', ref_field_key: 'statement_number', date_field_key: 'statement_date',
+    company_key: 'supplier_name',
+    fields: [
+      { key: 'supplier_name',    label: 'Supplier Name',    type: 'text',     required: 1,
+        labels: ['Statement From'] },
+      { key: 'customer_name',    label: 'Customer Name',    type: 'text',     required: 0,
+        labels: ['Statement To'] },
+      { key: 'statement_number', label: 'Statement Number', type: 'text',     required: 1,
+        labels: ['Statement No', 'Statement Number', 'Statement Ref'] },
+      { key: 'statement_date',   label: 'Statement Date',   type: 'date',     required: 1,
+        labels: ['Statement Date', 'As At'] },
+      { key: 'total_amount',     label: 'Balance Due',      type: 'currency', required: 0,
+        labels: ['Balance Due', 'Total Due', 'Amount Due', 'Total Outstanding'] },
+    ],
+  },
+  {
+    name: 'Receipt', ref_field_key: 'receipt_number', date_field_key: 'receipt_date',
+    company_key: 'supplier_name',
+    fields: [
+      { key: 'supplier_name',  label: 'Supplier Name',  type: 'text',     required: 1,
+        labels: ['Merchant', 'Sold By'] },
+      { key: 'receipt_number', label: 'Receipt Number', type: 'text',     required: 1,
+        labels: ['Receipt No', 'Receipt Number', 'Receipt #', 'Transaction No', 'Ref No'] },
+      { key: 'receipt_date',   label: 'Receipt Date',   type: 'date',     required: 1,
+        labels: ['Receipt Date', 'Transaction Date'] },
+      { key: 'total_amount',   label: 'Total',          type: 'currency', required: 0,
+        labels: ['Amount Paid', 'Total Paid'] },
+    ],
+  },
+  {
+    name: 'Quote', ref_field_key: 'quote_number', date_field_key: 'quote_date',
+    company_key: 'supplier_name',
+    fields: [
+      { key: 'supplier_name', label: 'Supplier Name', type: 'text',     required: 1,
+        labels: ['Quote From'] },
+      { key: 'quote_number',  label: 'Quote Number',  type: 'text',     required: 1,
+        labels: ['Quote No', 'Quotation No', 'Quote Number', 'Quote Ref', 'Quote #', 'Estimate No', 'Estimate Ref'] },
+      { key: 'quote_date',    label: 'Quote Date',    type: 'date',     required: 1,
+        labels: ['Quote Date', 'Quotation Date', 'Valid From', 'Date of Quote'] },
+      { key: 'total_amount',  label: 'Total',         type: 'currency', required: 0,
+        labels: ['Quote Total', 'Estimated Total'] },
+    ],
+  },
+];
+
+// Slug a preset's display name EXACTLY as addType does, so labels seed under the
+// same slug the type is created with (and the engine resolves at runtime).
+function presetSlug(name) {
+  return String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '_');
+}
+
+// The catalog for the Settings tick-list: each entry + its derived slug + whether
+// it is already present in this install (so the UI shows it ticked/disabled).
+function getPresetCatalog(db) {
+  const present = db.prepare('SELECT slug FROM document_types').all();
+  const have = new Set(present.map(r => r.slug));
+  return PRESET_CATALOG.map(p => ({
+    name: p.name,
+    slug: presetSlug(p.name),
+    ref_field_key: p.ref_field_key,
+    date_field_key: p.date_field_key,
+    company_key: p.company_key,
+    fields: p.fields.map(f => ({ key: f.key, label: f.label, type: f.type, required: !!f.required })),
+    already_present: have.has(presetSlug(p.name)),
+  }));
+}
+
+// Add the ticked presets. For each requested slug not already present: create the
+// type + fields, force structural roles, then seed the field label aliases — all in
+// ONE transaction per preset (nested addLabelOverrides runs as a savepoint). Returns
+// a per-slug result list; an already-present slug is a no-op ('already_present').
+function addPresetTypes(db, slugs) {
+  const want = new Set((slugs || []).map(s => String(s || '').trim()).filter(Boolean));
+  const results = [];
+  for (const preset of PRESET_CATALOG) {
+    const slug = presetSlug(preset.name);
+    if (!want.has(slug)) continue;
+    if (db.prepare('SELECT id FROM document_types WHERE slug = ?').get(slug)) {
+      results.push({ slug, status: 'already_present' });
+      continue;
+    }
+    try {
+      const out = db.transaction(() => {
+        const info = addType(db, {
+          name: preset.name,
+          ref_field_key: preset.ref_field_key,
+          date_field_key: preset.date_field_key,
+        });
+        const typeId = Number(info.lastInsertRowid);
+        let sort = 10;
+        for (const f of preset.fields) {
+          addField(db, {
+            document_type_id: typeId, key: f.key, label: f.label,
+            type: f.type || 'text', required: f.required ? 1 : 0, sort_order: sort,
+          });
+          sort += 10;
+        }
+        ensureStructuralRoles(db, typeId);   // honours a customer_name company field (Sales Invoice/Remittance)
+        const realSlug = db.prepare('SELECT slug FROM document_types WHERE id = ?').get(typeId).slug;
+        let labelsSeeded = 0;
+        for (const f of preset.fields) {
+          if (Array.isArray(f.labels) && f.labels.length) {
+            const r = addLabelOverrides(db, { doc_type_slug: realSlug, field_key: f.key, labels: f.labels });
+            labelsSeeded += (r && r.inserted) || 0;
+          }
+        }
+        return { typeId, realSlug, labelsSeeded };
+      })();
+      results.push({ slug: out.realSlug, status: 'added', id: out.typeId, labels_seeded: out.labelsSeeded });
+    } catch (e) {
+      results.push({ slug, status: 'error', error: String((e && e.message) || e) });
+    }
+  }
+  return results;
+}
+
 module.exports = {
   seedBuiltInTypes, getAll, getWithFields, getAllWithFields, getAllWithFieldsAll,
   addType, updateType, addField, updateField, deleteField, ensureStructuralRoles,
   COMPANY_KEYS, isStructuralKey,
+  PRESET_CATALOG, presetSlug, getPresetCatalog, addPresetTypes,
 };

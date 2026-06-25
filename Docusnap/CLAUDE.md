@@ -465,6 +465,21 @@ process_docs.py → ExtractionEngine.extract()
              (a year OCR'd "202G" still falls to review). engine.py protects the
              located salvaged methods via _STAGE05_LOCATED_METHODS.
   Stage 1: keyword.py    — regex patterns from keyword_patterns.json (~60-70% fields)
+           LABEL-MATCH BOUNDARY GUARD (_label_pattern, 2026-06): a SINGLE-word ALPHABETIC
+           label now carries the same word-boundary guard as _type_keyword_pattern
+           ((?<![a-z0-9])…(?![a-z0-9])) so a short caption can't anchor on a SUBSTRING of a
+           longer word — "Total" inside "Subtotal" (the silent subtotal-filed-as-total bug),
+           "Date" inside "Mandate", "From" inside "Frome". Multi-word labels are already
+           specific (unchanged); the only loss is a label glued straight onto its value with
+           no separator ("Date2026"). Fixes SHIPPED extraction for every supplier, not just
+           presets. OVERRIDE VALIDATION-BY-ROLE (merge_label_overrides + _infer_validation):
+           a per-install field-label override seeded onto a field with NO shipped pattern
+           entry used to be accepted BLIND (extract_fields gates only when a "validation" key
+           is present). It now gets a format gate inferred from the field-KEY role (mirrors
+           engine._is_ref_field/_TYPE2VAL: *_date→date, *_number/_no/_ref/reference→
+           alphanumeric, amount/total→currency; free-text/name → none) — so a custom ref/date
+           field (remittance_number, statement_date, …) is validated, not blind. Both guarded
+           by tests/test_keyword_label_guard.py.
   Stage 2: anchor.py     — learned label positions + logo supplier ID
            DOC-TYPE SCOPING (_anchor_matches): a learned anchor is keyed
            (supplier, document_type, field_key). It used to fire on SUPPLIER match
@@ -870,6 +885,27 @@ Guarded by `database/modules/test_structural_fields.js`. (NOTE a latent nuance: 
 engine's universal scope key is `supplier_name`, but sales orders carry the company
 as `customer_name` — label-only unification here; a key reconciliation is deferred.)
 
+**PRESET DOCUMENT-TYPE CATALOG** (Settings → Document Types → "Add from catalog…";
+`database/modules/document_types.js` `PRESET_CATALOG`/`getPresetCatalog`/`addPresetTypes`):
+a shipped library of ready-made types a business TICKS to add — Purchase/Sales Invoice,
+Remittance Advice, Credit Note, Delivery Note, Statement, Receipt, Quote. Ticking one
+ATOMICALLY creates the type + fields + structural roles (reuses
+`create-doc-type-with-fields`/`ensureStructuralRoles`) AND seeds its likely field-label
+aliases into `field_label_overrides` (per-install, doc-type-scoped — see
+`keyword.merge_label_overrides`), so Stage-1 anchored extraction has a head start with NO
+teaching. Slug is DERIVED from the name (`presetSlug`, mirrors `addType`); idempotent
+(re-add = no-op); catalog types are `built_in=0` (fully removable). The two invoice
+DIRECTIONS carry the correct company identity — **Purchase Invoice → `supplier_name`, Sales
+Invoice → `customer_name`** — so filing/learning scope is right from the start. reggie-
+reviewed labels: only DOC-SPECIFIC captions + the NOVEL ref/date fields are seeded;
+canonical fields (supplier/customer/invoice_*/total) defer to the shipped
+`keyword_patterns.json` `field_patterns` (single source of truth, no drift); bare generics
+("From"/"Date"/"Amount"/…) dropped (un-shipped fields had no Stage-1 gate — now closed by
+the override validation-by-role above, but the lists stay tight). Phase 2 (DEFERRED): narrow
+DETECTION by the enabled-type set so "tick only what I use" also cuts cross-type confusion
+(today the shipped `document_type_keywords` buckets always score regardless of `enabled`).
+Guarded by `database/modules/test_doctype_presets.js`.
+
 ---
 
 ## Licensing & activation
@@ -1068,6 +1104,7 @@ add-document-type(data), update-document-type(id,changes)
 add-field(data), update-field(id,changes), delete-field(id)
 get-validation-patterns                # validation_patterns from config (cached) — Review on-blur field validation
 create-doc-type-with-fields({name,fields[],ref_field_key,date_field_key})  # transactional; teaching wizard
+get-doctype-catalog, add-doctype-presets(slugs[])   # preset doc-type catalog (admin) — see Preset document-type catalog
 get-teach-target                       # docId the teach window was opened at (pulled once on load)
 get-review-queue, get-deferred-queue, get-review-count, get-deferred-count
 get-document-with-extractions(id), get-document-pages(id,folderPath,filename)

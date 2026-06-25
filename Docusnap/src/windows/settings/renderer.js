@@ -501,6 +501,86 @@ function openNewTypeForm() {
 
 document.getElementById('btn-add-type').addEventListener('click', openNewTypeForm);
 
+// ── Preset catalog: tick ready-made document types to add ─────────────────────
+// Lists the shipped presets (document_types.PRESET_CATALOG) and, on submit, creates
+// each ticked type + fields + structural roles AND seeds its likely field-label
+// aliases (so Stage-1 extraction works without teaching). Already-present types are
+// shown ticked + disabled. Mirrors the showSecretDialog/showTypedConfirmDialog overlay.
+const COMPANY_LABELS = { supplier_name: 'Supplier Name', customer_name: 'Customer Name' };
+
+async function openCatalogModal() {
+  let catalog;
+  try { catalog = await api.getDoctypeCatalog(); }
+  catch (e) { alert('Could not load the catalog: ' + (e && e.message || e)); return; }
+  if (!Array.isArray(catalog) || !catalog.length) return;
+
+  const rows = catalog.map((p) => {
+    const fieldList = p.fields.map(f => escHtml(f.label)).join(', ');
+    const company = COMPANY_LABELS[p.company_key] || p.company_key;
+    const tag = p.already_present
+      ? '<span style="font-size:10px; color:var(--ok); border:1px solid var(--ok); border-radius:999px; padding:1px 7px;">Already added</span>'
+      : '';
+    return `
+      <label style="display:flex; gap:10px; align-items:flex-start; padding:8px 6px; border-radius:8px; cursor:pointer;">
+        <input type="checkbox" data-slug="${escHtml(p.slug)}" ${p.already_present ? 'checked disabled' : ''}
+               style="margin-top:3px;">
+        <div style="flex:1;">
+          <div style="font-size:12px; font-weight:500;">${escHtml(p.name)}
+            <span style="font-weight:400; color:var(--muted);">· company: ${escHtml(company)}</span> ${tag}</div>
+          <div style="font-size:11px; color:var(--muted); line-height:1.5;">${fieldList}</div>
+        </div>
+      </label>`;
+  }).join('');
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText =
+    'position:fixed; inset:0; z-index:9998; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center;';
+  overlay.innerHTML = `
+    <div style="width:460px; max-height:80vh; background:var(--surface); border:1px solid var(--border2);
+                border-radius:10px; padding:18px; display:flex; flex-direction:column; gap:12px;
+                font-family:var(--sans); color:var(--text);">
+      <div style="font-size:13px; font-weight:600;">Add document types from catalog</div>
+      <div style="font-size:11px; color:var(--muted); line-height:1.6;">
+        Tick the document types your business uses. Each one is added with its fields and likely
+        labels, so extraction has a head start before you teach anything.</div>
+      <div id="cat-rows" style="overflow-y:auto; border:1px solid var(--border); border-radius:8px;
+           padding:4px; flex:1; min-height:120px;">${rows}</div>
+      <div style="display:flex; gap:8px;">
+        <button id="cat-cancel" style="flex:1; padding:9px; border-radius:6px; border:1px solid var(--border2);
+                background:transparent; color:var(--muted); font-family:inherit; font-size:12px; cursor:pointer;">Cancel</button>
+        <button id="cat-add" style="flex:1; padding:9px; border-radius:6px; border:none; background:var(--accent);
+                color:#fff; font-family:inherit; font-size:12px; font-weight:500; cursor:pointer;">Add selected</button>
+      </div>
+    </div>`;
+  overlay.setAttribute('data-help-ignore', '1');
+  document.body.appendChild(overlay);
+
+  const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
+  overlay.querySelector('#cat-cancel').addEventListener('click', close);
+
+  overlay.querySelector('#cat-add').addEventListener('click', async () => {
+    const slugs = Array.from(overlay.querySelectorAll('input[type=checkbox]:checked:not(:disabled)'))
+      .map(cb => cb.getAttribute('data-slug'));
+    if (!slugs.length) { close(); return; }
+    const btn = overlay.querySelector('#cat-add');
+    btn.disabled = true; btn.textContent = 'Adding…';
+    try {
+      const res = await api.addDoctypePresets(slugs);
+      close();
+      if (res && res.success) await refreshDocTypesList();
+      else alert('Could not add types: ' + ((res && res.error) || 'unknown error'));
+    } catch (e) {
+      close();
+      alert('Could not add types: ' + (e && e.message || e));
+    }
+  });
+}
+
+document.getElementById('btn-catalog').addEventListener('click', openCatalogModal);
+
 // (FIELDS TAB removed — merged into the Document Types master-detail tab above.
 //  Field add/edit/delete now happens in the shared DocTypeEditor component via the
 //  same add-field / update-field / delete-field IPCs.)

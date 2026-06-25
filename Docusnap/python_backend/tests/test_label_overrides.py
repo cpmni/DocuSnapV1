@@ -76,7 +76,11 @@ def main():
             "invoice_number": {"labels": ["Invoice No"], "directions": ["right"],
                                "base_confidence": 88, "validation": "alphanumeric"},
         },
-        "validation_patterns": {"alphanumeric": ["x"]},
+        # alphanumeric is now EXERCISED at Stage 1 for serial_number: merge_label_overrides
+        # infers a format gate from the field-key role (*_number -> alphanumeric), so this
+        # must be the real-ish pattern — a placeholder like ["x"] would reject a valid code
+        # such as SN-99213 and break the end-to-end override extraction below.
+        "validation_patterns": {"alphanumeric": [r"[A-Za-z0-9][A-Za-z0-9\-\/\.]{2,20}"]},
     }
 
     # 1. No overrides / no slug -> SAME object back (no copy, no-op).

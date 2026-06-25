@@ -113,6 +113,8 @@ contextBridge.exposeInMainWorld('docusnap', {
   getAllDocTypesAll:    ()           => ipcRenderer.invoke('get-all-doc-types-all'),
   addDocumentType:     (data)       => ipcRenderer.invoke('add-document-type', data),
   updateDocumentType:  (id, ch)     => ipcRenderer.invoke('update-document-type', id, ch),
+  getDoctypeCatalog:   ()           => ipcRenderer.invoke('get-doctype-catalog'),
+  addDoctypePresets:   (slugs)      => ipcRenderer.invoke('add-doctype-presets', slugs),
   addField:            (data)       => ipcRenderer.invoke('add-field', data),
   updateField:         (id, ch)     => ipcRenderer.invoke('update-field', id, ch),
   deleteField:         (id)         => ipcRenderer.invoke('delete-field', id),

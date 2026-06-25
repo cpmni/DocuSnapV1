@@ -39,6 +39,28 @@ def load_patterns(config_path: str | None = None) -> dict:
     return {}
 
 
+def _infer_validation(field_key: str) -> "str | None":
+    """Infer the Stage-1 format gate for a field that has NO shipped pattern entry,
+    from its KEY ROLE — mirrors engine._is_ref_field / _TYPE2VAL. Without this, an
+    override-seeded custom field (e.g. remittance_number / remittance_date) is
+    accepted BLIND (extract_fields only gates when a 'validation' key is present),
+    so a generic caption could grab a non-date/non-code value. Returns a
+    validation_patterns key, or None for free-text/name fields (left unconstrained,
+    as the engine leaves 'text' unconstrained)."""
+    k = (field_key or "").strip().lower()
+    if not k:
+        return None
+    if k == "date" or k.endswith("_date"):
+        return "date"
+    if (k.endswith("_number") or k.endswith("_no") or k.endswith("_num")
+            or k.endswith("_ref") or k == "reference" or "reference" in k):
+        return "alphanumeric"
+    if (k == "total_amount" or k.endswith("_amount") or "total" in k
+            or k in ("subtotal", "balance", "amount")):
+        return "currency"
+    return None
+
+
 def merge_label_overrides(patterns: dict, overrides: list, doc_slug: str | None) -> dict:
     """Merge admin keyword label overrides for `doc_slug` onto `patterns`.
 
@@ -72,8 +94,12 @@ def merge_label_overrides(patterns: dict, overrides: list, doc_slug: str | None)
         if entry is None:
             # Custom field with no shipped pattern — seed a sane default so the
             # label alone makes it extractable (value to the right of, or below,
-            # the label).
+            # the label). Attach a format gate inferred from the field-key role so
+            # the value is still validated (date/ref/currency), not accepted blind.
             entry = {"labels": [], "directions": ["right", "below"], "base_confidence": 80}
+            inferred = _infer_validation(key)
+            if inferred:
+                entry["validation"] = inferred
         labels = list(entry.get("labels") or [])
         # PRECEDENCE: an admin override is a deliberate per-install instruction to
         # look for THIS label, so it is consulted BEFORE the shipped/auto labels —
@@ -273,7 +299,18 @@ def _label_pattern(label: str) -> "re.Pattern | None":
     words = label.lower().split()
     if not words:
         return None
-    return re.compile(r'\s*'.join(re.escape(w) for w in words))
+    body = r'\s*'.join(re.escape(w) for w in words)
+    # Single-word ALPHABETIC labels get a word-boundary guard so a short caption
+    # can't anchor on a SUBSTRING of a longer word — "Total" inside "Subtotal"
+    # (the silent subtotal-as-total bug), "Date" inside "Mandate", "From" inside
+    # "Frome", "Account" inside "Accounts". Mirrors _type_keyword_pattern's guard;
+    # multi-word labels are already specific enough to not need it. Net effect on
+    # shipped labels is a fix (no behaviour change except removing wrong substring
+    # hits); the only loss is a label glued straight onto its value with no
+    # separator ("Date2026"), the same tradeoff _type_keyword_pattern accepts.
+    if len(words) == 1 and words[0].isalpha():
+        return re.compile(r'(?<![a-z0-9])' + body + r'(?![a-z0-9])')
+    return re.compile(body)
 
 
 def _type_keyword_pattern(label: str) -> "re.Pattern | None":

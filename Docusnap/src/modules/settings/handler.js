@@ -89,6 +89,23 @@ function register(ctx) {
     }
   });
 
+  // Preset document-type catalog (Settings → Document Types → "Add from catalog…").
+  // get-doctype-catalog lists the ready-made presets + whether each is already in
+  // this install; add-doctype-presets atomically creates each ticked type (+ fields
+  // + structural roles) AND seeds its likely label aliases into field_label_overrides
+  // (per-install, doc-type-scoped — see document_types.addPresetTypes). Admin-gated.
+  ipcMain.handle('get-doctype-catalog', () => { requireRole('admin'); return doctypes.getPresetCatalog(getDb()); });
+  ipcMain.handle('add-doctype-presets', (_e, slugs) => {
+    requireRole('admin');
+    const list = Array.isArray(slugs) ? slugs : (slugs ? [slugs] : []);
+    if (!list.length) return { success: false, error: 'Select at least one document type to add.' };
+    try {
+      return { success: true, results: doctypes.addPresetTypes(getDb(), list) };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
   // ── Fields ──────────────────────────────────────────────────────────────────
   ipcMain.handle('add-field',    (_e, data)    => { requireRole('admin'); return doctypes.addField(getDb(), data); });
   ipcMain.handle('update-field', (_e, id, ch)  => { requireRole('admin'); return doctypes.updateField(getDb(), id, ch); });
