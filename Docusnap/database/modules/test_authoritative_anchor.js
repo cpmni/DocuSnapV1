@@ -126,6 +126,10 @@ let fail = 0;
     supplier_name: 'ds', document_type: 'worksheet', field_key: 'date',
     anchor_label: 'Date', direction: 'right', page_zone: 'top',
     x_norm: 0.25, y_norm: 0.225, w_norm: 0.12, h_norm: 0.020,
+    // "Date" is a REAL detected on-page caption — it equals the field key but must be
+    // KEPT (label_detected), else the field-name guard nulls it and a 2nd anchor row is
+    // inserted instead of updating, so the passive tolerance path never runs.
+    label_detected: true,
   });
   const r = db.prepare(`SELECT * FROM field_anchors WHERE field_key='date'`).get();
   fail += !check('component-wise tolerance treats a one-line vertical move as a correction (snaps to 0.225)',
@@ -145,6 +149,7 @@ let fail = 0;
     supplier_name: 'ds', document_type: 'worksheet', field_key: 'ref',
     anchor_label: 'Ref', direction: 'right', page_zone: 'top',
     x_norm: 0.252, y_norm: 0.203, w_norm: 0.12, h_norm: 0.030,
+    label_detected: true,   // real detected caption "Ref" (== field key) — keep it
   });
   const r = db.prepare(`SELECT * FROM field_anchors WHERE field_key='ref'`).get();
   const blended = (0.20 * 9 + 0.203) / 10; // 0.2003

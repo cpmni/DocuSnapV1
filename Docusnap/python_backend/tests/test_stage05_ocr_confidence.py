@@ -67,7 +67,11 @@ class _FakePage:
 _routed = {}
 
 
-def _ladder_stub(crop, val_type=None, verify_fn=None, meta=None):
+def _ladder_stub(crop, val_type=None, verify_fn=None, meta=None, page=None, box=None):
+    # MUST mirror the real anchor._ocr_crop_laddered signature, incl. page/box (the
+    # preview-scale free-text fast-path). _crop_and_ocr calls it with page=/box=; if the
+    # stub omits them the call raises TypeError, which _crop_and_ocr's except swallows
+    # (returning None) — silently masking the wiring this test verifies.
     _routed["called"] = True
     if meta is not None:
         meta["conf"] = 71

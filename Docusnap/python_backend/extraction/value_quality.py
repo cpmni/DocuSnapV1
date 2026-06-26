@@ -145,11 +145,16 @@ def _token_good(tok):
         return False             # 2-char alpha fragment ("Fr", "St", "WM")
     if not any(c in _VOWELS for c in low):
         return False             # consonant gibberish ("brc")
-    # Proper-noun shape: Title-case, rest lowercase, no 4+ consonant run, len>=4.
-    # (A <=3 char Title token that wasn't a known word/abbrev above is almost
-    # always an OCR truncation — "Cre" from "Crescent" — so it stays "bad".)
-    if len(t) >= 4 and t[0].isupper() and t[1:].islower() and not _has_long_consonant_run(low):
-        return True
+    # Proper-noun shape (len>=4, no 4+ consonant run): Title-case ("Beaumont") OR
+    # ALL-CAPS ("BEAUMONT") — many invoices print the company name in capitals, so
+    # an all-caps alphabetic token is real name content, not gibberish. (A <=3 char
+    # Title token that wasn't a known word/abbrev above is almost always an OCR
+    # truncation — "Cre" from "Crescent" — so it stays "bad".)
+    if len(t) >= 4 and not _has_long_consonant_run(low):
+        title_case = t[0].isupper() and t[1:].islower()
+        all_caps   = t.isalpha() and t.isupper()
+        if title_case or all_caps:
+            return True
     return False
 
 

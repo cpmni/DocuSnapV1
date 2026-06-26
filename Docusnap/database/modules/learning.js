@@ -75,8 +75,15 @@ function _vqTokenGood(tok) {
   if (!/[A-Za-z]/.test(t)) return false;          // digit/symbol-only ("67")
   if (t.length <= 2) return false;                // fragment ("Fr","St","WM")
   if (![...low].some(c => _VQ_VOWELS.has(c))) return false;  // consonant gibberish
-  if (t.length >= 4 && t[0] === t[0].toUpperCase() && t[0] !== t[0].toLowerCase()
-      && t.slice(1) === t.slice(1).toLowerCase() && !_vqLongConsonantRun(low)) return true;
+  // Proper-noun shape (len>=4, no 4+ consonant run): Title-case ("Beaumont") OR
+  // ALL-CAPS ("BEAUMONT") — many invoices print the company name in capitals, so an
+  // all-caps alphabetic token is real name content. Mirrors value_quality._token_good.
+  if (t.length >= 4 && !_vqLongConsonantRun(low)) {
+    const titleCase = t[0] === t[0].toUpperCase() && t[0] !== t[0].toLowerCase()
+                      && t.slice(1) === t.slice(1).toLowerCase();
+    const allCaps   = /^[A-Za-z]+$/.test(t) && t === t.toUpperCase();
+    if (titleCase || allCaps) return true;
+  }
   return false;
 }
 function nameQuality(value) {
