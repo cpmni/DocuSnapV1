@@ -51,3 +51,7 @@ Samples/
 # multi-GB). Reproducible via `py -3.12 -m test_harness.run`; the HARNESS CODE
 # (python_backend/test_harness/) is committed, but its OUTPUT is not.
 python_backend/artifacts/
+
+# Parked website design variants + pricing model — kept out of the app repo but not
+# deleted (recoverable). Move anything here back out if it's needed again.
+_archive/
