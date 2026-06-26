@@ -131,7 +131,7 @@ function _resolveDocFile(db, { docId, folderPath, filename }, deps) {
   return alt;
 }
 
-function getDocumentPages(db, { docId, folderPath, filename }, deps) {
+function getDocumentPages(db, { docId, folderPath, filename, scale }, deps) {
   const { fs, path, spawn, pythonExe, pythonArgs, renderScript } = deps;
   const log = deps.log || console.log;
 
@@ -150,8 +150,13 @@ function getDocumentPages(db, { docId, folderPath, filename }, deps) {
   }
 
   const py = pythonExe();
+  // Optional higher render scale for a CRISP display (e.g. the teach wizard). The OCR
+  // crop is downscaled back to the OCR resolution by the caller, so read quality is
+  // unaffected — this only sharpens what the operator sees. Default (unset) = 1.5 (108 DPI).
+  const renderArgs = ['--file', filePath];
+  if (scale && scale > 0) renderArgs.push('--scale', String(scale));
   return new Promise((resolve) => {
-    const proc = spawn(py, pythonArgs(renderScript, '--file', filePath), { windowsHide: true });
+    const proc = spawn(py, pythonArgs(renderScript, ...renderArgs), { windowsHide: true });
     let out = '';
     let err = '';
     proc.stdout.on('data', d => { out += d.toString(); });

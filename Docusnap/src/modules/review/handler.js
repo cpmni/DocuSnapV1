@@ -88,6 +88,35 @@ function register(ctx) {
     return _validationPatternsCache;
   });
 
+  // ── Built-in field label words (read-only, for the label-overrides UI) ───────
+  // The shipped `field_patterns` own the canonical fields' detection words globally
+  // (invoice_number, supplier_name, total_amount, …). The Settings → label-overrides
+  // screen surfaces these per field so canonical types (invoice/sales order/etc., which
+  // carry NO per-install overrides by design) still show their suggested words. Returns
+  // { field_key: [labelText, …] }, flattening the string | {text,directions} label forms.
+  let _fieldPatternLabelsCache;
+  ipcMain.handle('get-field-patterns', () => {
+    requireLogin();
+    if (_fieldPatternLabelsCache === undefined) {
+      try {
+        const cfgFile = ctx.resourcePath('config', 'keyword_patterns.json');
+        const cfg = JSON.parse(fs.readFileSync(cfgFile, 'utf8'));
+        const out = {};
+        for (const [key, def] of Object.entries(cfg.field_patterns || {})) {
+          const labels = (def && def.labels) || [];
+          out[key] = labels
+            .map(l => (typeof l === 'string' ? l : (l && l.text) || ''))
+            .filter(Boolean);
+        }
+        _fieldPatternLabelsCache = out;
+      } catch (e) {
+        logger?.warn?.(`get-field-patterns: ${e.message}`);
+        _fieldPatternLabelsCache = {};
+      }
+    }
+    return _fieldPatternLabelsCache;
+  });
+
   // WORKFLOW_LOCK (Stage 5b): block a Review-pipeline mutation while the document
   // has an OPEN approval route, so the mailbox and the review/learning pipeline
   // can't both edit the same row. Admin may override (audited). Throws like
@@ -109,6 +138,14 @@ function register(ctx) {
   // every action on them (edit, confirm, defer, reprocess) is Admin/Edit only,
   // so Read Only has no use for the queue contents either (their "view" role
   // is served by Search, which lists filed documents — see search/handler.js).
+  // Type-ahead suggestions: distinct values already CONFIRMED for this field on this
+  // document type (Review text fields, after 3 chars). Read-only; edit/admin gated.
+  ipcMain.handle('get-field-suggestions', (_e, documentId, fieldKey) => {
+    requireRole('admin', 'edit');
+    try { return documents.getFieldValueSuggestions(getDb(), documentId, fieldKey); }
+    catch (e) { logger?.warn?.(`get-field-suggestions: ${e.message}`); return []; }
+  });
+
   ipcMain.handle('get-review-queue',  () => { requireRole('admin', 'edit'); return documents.getReviewQueue(getDb()); });
   ipcMain.handle('get-deferred-queue',() => { requireRole('admin', 'edit'); return documents.getDeferredQueue(getDb()); });
   ipcMain.handle('get-review-count',  () => { requireRole('admin', 'edit'); return documents.getReviewCount(getDb()); });
@@ -140,7 +177,7 @@ function register(ctx) {
   });
 
   // ── Document pages for preview ──────────────────────────────────────────────
-  ipcMain.handle('get-document-pages', async (_e, docId, folderPath, filename) => {
+  ipcMain.handle('get-document-pages', async (_e, docId, folderPath, filename, scale) => {
     requireLogin();
     if (!folderPath || !filename) {
       console.log(`[pages] docId=${docId} missing path — folderPath=${folderPath} filename=${filename}`);
@@ -158,7 +195,7 @@ function register(ctx) {
 
     // Transport-agnostic page render lives in the shared service so the detached
     // client can reuse it; Electron collaborators are injected via deps.
-    return previewService.getDocumentPages(getDb(), { docId, folderPath, filename }, {
+    return previewService.getDocumentPages(getDb(), { docId, folderPath, filename, scale }, {
       fs, path, spawn, pythonExe, pythonArgs,
       renderScript: ctx.resourcePath('python_backend', 'render', 'pages.py'),
     });
@@ -523,6 +560,12 @@ function register(ctx) {
         // resolves (never rejects) and the template still works via anchors meanwhile.
         try { if (ctx.generateLandmarks) await ctx.generateLandmarks(result.templateId); }
         catch (e) { console.error('promote-to-template landmarks:', e.message); }
+        // Same for the keyword FINGERPRINT — a teach-promoted born-digital template
+        // (whose sample doc may have an empty stored ocr_text) would otherwise be born
+        // fingerprint-less and only matchable by an unreliable logo phash. Fills only
+        // when empty; best-effort, never blocks the commit.
+        try { if (ctx.generateFingerprint) await ctx.generateFingerprint(result.templateId); }
+        catch (e) { console.error('promote-to-template fingerprint:', e.message); }
       }
       return { success: true, ...result };
     } catch (e) {

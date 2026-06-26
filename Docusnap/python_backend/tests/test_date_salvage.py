@@ -6,10 +6,12 @@ Unit tests for salvaging a valid date embedded inside noisy OCR text
 (validator.salvage_date + its wiring into validate_and_adjust).
 
 Covers:
-  1. Noisy "2_ 2/4/26bf" -> 02-04-2026, junk discarded, field forced to review
+  1. Noisy "2_ 2/4/26bf" -> 02-04-2026: a SINGLE verbatim date in junk is a clean
+     capture and is NOT forced to review (the date already lived in the string)
+  1b. Several dates in the crop -> salvage had to CHOOSE one -> kept in review
   2. A clean date passes through unchanged (no false review)
   3. A non-date string is NOT coerced into a date
-  4. Another common format (ISO, embedded in junk) is salvaged
+  4. Another common format (ISO, embedded in junk) is salvaged (single -> clean)
   5. A month-name date embedded in junk is salvaged
   6. salvage_date is conservative: plain digit runs / partial dates -> None
   7. A true non-date in a date field is withheld (cleared) + flagged for manual entry
@@ -26,7 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from extraction.validator import salvage_date, validate_and_adjust
+from extraction.validator import salvage_date, salvage_date_detail, validate_and_adjust
 
 
 def check(label: str, condition: bool) -> bool:
@@ -52,19 +54,32 @@ def _run(value, confidence=90):
 def main() -> int:
     failures = 0
 
-    # ── 1. The headline case: embedded date in junk ───────────────────────────
-    section("1. noisy '2_ 2/4/26bf' resolves to a clean, normalised date")
+    # ── 1. Headline: a SINGLE embedded date is a clean verbatim capture ────────
+    section("1. noisy '2_ 2/4/26bf' is recovered verbatim and NOT forced to review")
     r = _run("2_ 2/4/26bf")
     if not check("value normalised to 02-04-2026 (junk discarded)", r["value"] == "02-04-2026"):
         failures += 1
     if not check("no junk characters survive (digits + hyphens only)",
                  all(c.isdigit() or c == '-' for c in r["value"])):
         failures += 1
-    if not check("field forced to review (confidence <= 45, below threshold 70)",
-                 r["confidence"] <= 45):
+    if not check("clean verbatim capture -> NOT forced to review (confidence >= 70)",
+                 r["confidence"] >= 70):
         failures += 1
-    if not check("a 'noisy text' validation note is attached",
-                 "noisy" in (r.get("validation_note") or "")):
+    if not check("no 'please verify' review note attached",
+                 "verify" not in (r.get("validation_note") or "")):
+        failures += 1
+
+    # ── 1b. Several dates present -> salvage chose one -> KEEP review ──────────
+    section("1b. multiple dates in the crop stay in review (salvage had to choose)")
+    r = _run("Invoice 02/04/2026 Due 02/05/2026")
+    if not check("a real date is recovered", r["value"] in ("02-04-2026", "02-05-2026")):
+        failures += 1
+    if not check("forced to review (confidence <= 45)", r["confidence"] <= 45):
+        failures += 1
+    if not check("'please verify' note attached", "verify" in (r.get("validation_note") or "")):
+        failures += 1
+    if not check("salvage_date_detail reports 2 distinct dates",
+                 salvage_date_detail("Invoice 02/04/2026 Due 02/05/2026")[1] == 2):
         failures += 1
 
     # ── 2. Clean date unchanged (no false review) ─────────────────────────────
@@ -75,6 +90,20 @@ def main() -> int:
     if not check("confidence untouched (no review forced)", r["confidence"] == 95):
         failures += 1
     if not check("no validation note added", not r.get("validation_note")):
+        failures += 1
+
+    # ── 2b. A clean date read at LOW confidence is floored to High ─────────────
+    # The screenshot case: an anchor read "29/05/2026" correctly at only 50%, Stage 4
+    # normalised the separator (29/05/2026 -> 29-05-2026), and the field was left at
+    # 50% -> "Check". A well-formed date must not be voted down for a cosmetic format
+    # normalisation.
+    section("2b. a clean date read at low confidence is floored to High (not reviewed)")
+    r = _run("29/05/2026", confidence=50)
+    if not check("normalised to 29-05-2026", r["value"] == "29-05-2026"):
+        failures += 1
+    if not check("low (50) floored to High -> clears review (>= 70)", r["confidence"] >= 70):
+        failures += 1
+    if not check("no review note added", not r.get("validation_note")):
         failures += 1
 
     # ── 3. Non-date string is NOT coerced ─────────────────────────────────────
@@ -90,12 +119,12 @@ def main() -> int:
                  r.get("value") in (None, "") and bool(r.get("validation_note"))):
         failures += 1
 
-    # ── 4. Another common format (ISO) embedded in junk ───────────────────────
-    section("4. ISO date embedded in junk is salvaged")
+    # ── 4. Another common format (ISO) embedded in junk: single -> clean ──────
+    section("4. ISO date embedded in junk is salvaged (single date -> not reviewed)")
     r = _run("xx2025-12-01yy")
     if not check("'xx2025-12-01yy' -> 01-12-2025", r["value"] == "01-12-2025"):
         failures += 1
-    if not check("forced to review", r["confidence"] <= 45):
+    if not check("not forced to review (single verbatim date)", r["confidence"] >= 70):
         failures += 1
 
     # ── 5. Month-name date embedded in junk ───────────────────────────────────

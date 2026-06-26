@@ -524,12 +524,22 @@ def build_format_class_index(formats_data: list) -> dict:
         # class FREETEXT, so this MUST be attached even when the class is freetext —
         # otherwise the entry is dropped below and the repair has nothing to read.
         name_lex = None
+        word_like = None
         try:
             from extraction import value_quality, name_match
             if value_quality.is_name_like_field(field_key):
                 lex = name_match.build_token_lexicon(vcounts or {}, entry.get('confirmed_count'))
                 if lex and lex.get('positions'):
                     name_lex = lex
+                # word_like self-calibration (reggie follow-up): mean name-quality over the
+                # confirmed values. A name-LABELLED but CODE-valued field (e.g. a custom
+                # "vendor_code" holding "AB-1234") scores low -> word_like False, which the
+                # engine's wordness gate reads to SELF-DISABLE the language flag (the field's
+                # own regex owns it). A genuine name field scores high -> word_like True.
+                _vals = list((vcounts or {}).keys()) or samples
+                _qs = [value_quality.name_quality(v) for v in _vals if v]
+                if _qs:
+                    word_like = (sum(_qs) / len(_qs)) >= 0.5
         except Exception:
             name_lex = None
 
@@ -538,6 +548,8 @@ def build_format_class_index(formats_data: list) -> dict:
 
         if name_lex:
             fmt = {**fmt, 'name_lexicon': name_lex}
+        if word_like is not None:
+            fmt = {**fmt, 'word_like': word_like}
         # Additive families VIEW (Phase 2) — diagnostic only; existing consumers read
         # class/separators/shapes and never see this key. Empty when no shapes/counts.
         if fmt.get('shapes') and vcounts:

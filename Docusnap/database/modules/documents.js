@@ -89,6 +89,35 @@ function getWithExtractions(db, id) {
   return doc;
 }
 
+// Distinct values previously CONFIRMED for the same field on the same document type —
+// the source for the Review window's type-ahead suggestions. Scoped to the current
+// document's type, excludes the document itself, capped. Read-only.
+function getFieldValueSuggestions(db, documentId, fieldKey) {
+  const docId = parseInt(documentId, 10);
+  if (!docId || !fieldKey) return [];
+  const rows = db.prepare(`
+    SELECT DISTINCT COALESCE(NULLIF(TRIM(e.display_value), ''), e.raw_value) AS v
+    FROM extractions e
+    JOIN documents d ON d.id = e.document_id
+    WHERE d.document_type_id = (SELECT document_type_id FROM documents WHERE id = @docId)
+      AND e.field_key = @fieldKey
+      AND d.status = 'confirmed'
+      AND d.id != @docId
+    ORDER BY v COLLATE NOCASE
+    LIMIT 500
+  `).all({ docId, fieldKey });
+  const seen = new Set();
+  const out = [];
+  for (const r of rows) {
+    const v = (r.v || '').trim();
+    if (!v) continue;
+    const k = v.toLowerCase();
+    if (seen.has(k)) continue;     // case-insensitive de-dup
+    seen.add(k); out.push(v);
+  }
+  return out;
+}
+
 function getReviewQueue(db) {
   // review_flag_count: how many of the doc's fields carry a validation note or a
   // correction candidate — lets the review list colour "corrected/flagged" rows
@@ -269,6 +298,7 @@ module.exports = {
   insert, update, getById, getWithExtractions,
   getReviewQueue, getDeferredQueue,
   getReviewCount, getDeferredCount, getStuckCount, getStuckQueue,
+  getFieldValueSuggestions,
   confirm, deleteDoc, deleteByStatus, search,
   resolveFilePath, filterExisting, getWorkingPaths,
 };

@@ -33,6 +33,12 @@
   const TYPE_OPTS = [
     ['text', 'Text'], ['date', 'Date'], ['currency', 'Currency'],
     ['number', 'Number'], ['reference', 'Reference number'],
+    // Supplementary structured types (flag-only — surfaced for review, never blocked).
+    // Each has a matching validation_patterns key + engine _TYPE2VAL + renderer
+    // validationKeyFor mirror; keep all in lockstep.
+    ['email', 'Email'], ['percentage', 'Percentage'],
+    ['postcode_uk', 'Postcode (UK)'], ['vat_gb', 'VAT number (GB)'],
+    ['reference_code', 'Reference code'], ['iban', 'IBAN'], ['website', 'Website'],
   ];
 
   const esc = (s) => String(s == null ? '' : s)
@@ -57,12 +63,25 @@
         padding:8px 12px; border:1px solid var(--border); border-radius:8px; background:var(--surface);
       }
       .dte-row.locked { background:var(--surface2); }
-      .dte-row .nm { font-weight:500; font-size:13px; }
-      .dte-row .key { font-family:var(--mono); font-size:10px; color:var(--muted); }
+      /* Name + key share ONE baseline so the label doesn't ride high above its key,
+         and the whole identity block centres on the same line as the right controls. */
+      .dte-row .idn { display:flex; align-items:baseline; gap:8px; min-width:0; }
+      .dte-row .nm { font-weight:500; font-size:13px; line-height:1; }
+      .dte-row .key { font-family:var(--mono); font-size:10px; color:var(--muted); line-height:1; }
       .dte-row .spacer { flex:1; min-width:8px; }
-      .dte-row .lock { color:var(--muted); font-size:12px; cursor:default; }
+      .dte-row .lock { color:var(--muted); font-size:12px; cursor:default; align-self:center; }
       .dte-row select { min-width:128px; }
-      .dte-row .x { cursor:pointer; color:var(--muted); font-weight:700; padding:0 4px; user-select:none; }
+      /* Divider between a field's IDENTITY (lock+name+key) and its TYPE/behaviour
+         controls, plus a tiny caption on each control so its purpose is clear at a
+         glance. Caption travels WITH its control, so it stays correct on ragged rows
+         (toggle present/absent) and in create mode (no toggle). */
+      .dte-row .col-div { width:1px; align-self:stretch; background:var(--border2); margin:-8px 2px -8px 0; flex:0 0 auto; }
+      .dte-row .grp { display:flex; align-items:center; gap:6px; }
+      .dte-row .ctl-cap { font-size:9px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); user-select:none; white-space:nowrap; }
+      /* Remove-button slot is RESERVED on every row (placeholder when not removable) so
+         the divider + Type column line up uniformly across locked and editable rows. */
+      .dte-row .x, .dte-row .x-slot { flex:0 0 auto; width:20px; text-align:center; }
+      .dte-row .x { cursor:pointer; color:var(--muted); font-weight:700; user-select:none; }
       .dte-row .x:hover { color:var(--err); }
       .dte-addrow { display:flex; gap:8px; margin-top:8px; }
       .dte-addrow input { flex:1; min-width:0; }
@@ -129,15 +148,21 @@
       return `
         <div class="dte-row${locked ? ' locked' : ''}" data-i="${i}"${editing ? ` data-fid="${f.id}"` : ''}>
           ${locked ? '<span class="lock" title="Required field - cannot be removed or retyped">&#128274;</span>' : ''}
-          <span class="nm">${esc(f.label)}</span>
-          ${editing ? `<span class="key">${esc(key)}</span>` : ''}
+          <span class="idn"><span class="nm">${esc(f.label)}</span>${editing ? `<span class="key">${esc(key)}</span>` : ''}</span>
           <span class="spacer"></span>
-          ${typeSelectHtml(f.type || 'text', locked)}
-          ${editing ? `<label class="toggle" title="${locked ? 'Required field - always on' : 'Enable or disable this field'}">
+          <span class="col-div" aria-hidden="true"></span>
+          <span class="grp">
+            <span class="ctl-cap" title="The kind of data this field holds">Type</span>
+            ${typeSelectHtml(f.type || 'text', locked)}
+          </span>
+          ${editing ? `<span class="grp">
+            <span class="ctl-cap" title="${locked ? 'Required field - always on' : 'Whether this field is used when filing'}">Enabled</span>
+            <label class="toggle" title="${locked ? 'Required field - always on' : 'Enable or disable this field'}">
               <input type="checkbox" class="dte-en"${enabled ? ' checked' : ''}${locked ? ' disabled' : ''}>
               <span class="toggle-slider"></span>
-            </label>` : ''}
-          ${removable ? '<span class="x" title="Remove field">&#10005;</span>' : ''}
+            </label>
+          </span>` : ''}
+          ${removable ? '<span class="x" title="Remove field">&#10005;</span>' : '<span class="x-slot" aria-hidden="true"></span>'}
         </div>`;
     }
 

@@ -14,7 +14,8 @@ from PIL import Image
 from extraction import registration   # pure NumPy; no cycle (registration imports nothing here)
 
 
-def _qualify_against_format(value, field_key, format_lookup, text_field_keys=None):
+def _qualify_against_format(value, field_key, format_lookup, text_field_keys=None,
+                            val_type=None, validation_patterns=None):
     """Qualify a learned-anchor value against the field's LEARNED format (the same
     doc-type-scoped shape model Stage 4.5 uses). Returns the value to commit —
     possibly TRIMMED to the learned shape (e.g. a column-bleed read reduced to the
@@ -30,11 +31,22 @@ def _qualify_against_format(value, field_key, format_lookup, text_field_keys=Non
     legitimately variable shape, so the learned-SHAPE veto must NOT withhold it HERE — it
     exists to trim column-bleed off STRUCTURED refs. Without this a clean "Beaumont Care
     Homes Ltd - <new site>" was dropped on "format" at Stage 2 before Stage 4.5's softer
-    flag-not-withhold could ever run. Structured refs (NOT in text_field_keys) keep the veto."""
+    flag-not-withhold could ever run. Structured refs (NOT in text_field_keys) keep the veto.
+
+    PRECISE-PATTERN AUTHORITY: a value that FULLY matches a field's PRECISE validation
+    pattern (mac/ip — see _PRECISE_VAL_TYPES) is type-authoritative; the regex IS the
+    format, so the learned digit-position SHAPE must not veto/trim it (a new device's MAC,
+    or an IP with different octet lengths, just differs in shape from history). The generic
+    'alphanumeric' is excluded on purpose. Only fires when the caller threads val_type +
+    validation_patterns; legacy callers stay byte-identical."""
     if not value or format_lookup is None:
         return value
     if text_field_keys and field_key in text_field_keys:
         return value
+    if val_type in _PRECISE_VAL_TYPES and validation_patterns:
+        _pats = validation_patterns.get(val_type)
+        if _pats and _pattern_coverage(str(value), _pats) >= _PATTERN_AUTHORITATIVE_MIN:
+            return value
     try:
         entry = format_lookup(field_key)
     except Exception:
@@ -118,7 +130,8 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
         def _verify(t, _vt=val_type, _fk=field_key, _lbl=label):
             return (bool(t)
                     and _crop_is_credible(t, _vt, validation_patterns, _lbl)
-                    and bool(_qualify_against_format(t, _fk, format_lookup, text_field_keys)))
+                    and bool(_qualify_against_format(t, _fk, format_lookup, text_field_keys,
+                                                     _vt, validation_patterns)))
 
         # ── Primary: image crop + re-OCR (accurate, avoids column bleed) ──────
         if x_norm > 0 and y_norm > 0 and page0 is not None:
@@ -143,7 +156,8 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 # Reject/trim it so value stays None and the label search below gets
                 # a chance to relocate the right value, instead of committing the
                 # garbage at high confidence.
-                qualified = _qualify_against_format(crop_value, field_key, format_lookup, text_field_keys)
+                qualified = _qualify_against_format(crop_value, field_key, format_lookup,
+                                                    text_field_keys, val_type, validation_patterns)
                 if qualified:
                     value  = qualified
                     method = "anchor_crop"
@@ -151,19 +165,21 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 elif on_reject:
                     on_reject(field_key, "anchor_crop", crop_value, "format")
 
-        # ── DRIFT GUARD (labelled free-text): follow the LABEL, not a drifted box ──
-        # A rigid crop that drifted onto an adjacent row can read a plausible free-text
-        # word ("Utax" on the Make row when the Customer value moved down) that PASSES the
-        # loose free-text credibility gate — so the relocate rung below never fires (it only
-        # runs on a failed/weak rigid read) and the wrong row commits at high confidence.
-        # When the anchor carries a real label AND a stored drift offset, locate the label;
-        # if the value's EXPECTED position (located label + offset) is well off the rigid
-        # box, the box is on the wrong row — read beside the LOCATED label instead and
-        # prefer that, but ONLY when the relocated read is itself credible (else keep the
-        # rigid read, so this can never do WORSE than today). Free-text ONLY (structured
-        # fields are pattern-validated and rarely drift onto a credible neighbour); needs a
-        # non-null offset (legacy rows untouched); reuses line_cache so a clean on-row read
-        # pays just one locate. Conservative floor → a correctly placed read is byte-identical.
+        # ── LABEL LOCK (labelled free-text): the value FOLLOWS its located label ──
+        # The operator's model: if the anchor LABEL is found on the page, the value sits at
+        # located-label + the stored offset — full stop, no "did it drift far enough" gate.
+        # A rigid crop reads ABSOLUTE coordinates, so on a variable-layout doc (rows shift)
+        # it lands on a NEIGHBOURING row and reads a plausible free-text word that passes the
+        # loose credibility gate — committing the wrong row at high confidence while the
+        # label sits one row away. So whenever the label LOCATES (real label + stored
+        # offset), re-read the value beside the LOCATED label and PREFER it — but ONLY when
+        # that relocated read is itself credible AND actually DIFFERS from the rigid read.
+        # On a clean page the located label is at its learned spot, so located-label + offset
+        # ≈ the rigid box → the same value → no replacement → byte-identical. This replaces
+        # the old _value_drifted_from_box THRESHOLD (which could miss a sub-threshold one-row
+        # drift): the value now locks to the label, it isn't gated on a drift magnitude.
+        # Free-text ONLY (structured fields are pattern-validated); needs a non-null offset
+        # (legacy rows untouched); reuses line_cache so a clean on-row read pays one locate.
         if value and val_type in (None, "text", "multiline_text") \
                 and (anchor.get("anchor_label") or "").strip() \
                 and anchor.get("offset_dy_norm") is not None and page0 is not None:
@@ -174,7 +190,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                                                (x_norm, y_norm, _dw, _dh), page_text_lines,
                                                line_cache=line_cache)
                 _dlb = (_dloc or {}).get("label_box")
-                if _value_drifted_from_box(_dlb, anchor.get("offset_dy_norm"), y_norm, _dh):
+                if _dlb:   # label LOCATED -> lock the value to it (no drift threshold)
                     _dcand = None
                     # 1) inline harvest off the located label's line (value shares the row)
                     _div = (_dloc.get("inline_value") or "").strip()
@@ -238,14 +254,19 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
             if gval and not _crop_is_credible(gval, val_type, validation_patterns, label):
                 if on_reject: on_reject(field_key, "anchor_registration", gval, "not_credible")
             elif gval:
-                q = _qualify_against_format(gval, field_key, format_lookup, text_field_keys)
-                if q:
-                    if _should_replace(value, q, val_type, validation_patterns):
-                        value  = q
-                        method = "anchor_registration"
-                        ocr_conf, ocr_min = _mg.get('conf'), _mg.get('min_conf')
-                elif on_reject:
-                    on_reject(field_key, "anchor_registration", gval, "format")
+                q = _qualify_against_format(gval, field_key, format_lookup, text_field_keys,
+                                            val_type, validation_patterns)
+                # Landmark-CONFIRMED read: the value was mapped through the page transform
+                # and cleared credibility. A learned-SHAPE mismatch (a variable code that
+                # differs from history) must NOT discard it — keep the credible value (a
+                # column-bleed substring was already trimmed into `q` above when one
+                # existed). The shape veto stays on the UN-anchored rigid path.
+                if not q:
+                    q = gval
+                if _should_replace(value, q, val_type, validation_patterns):
+                    value  = q
+                    method = "anchor_registration"
+                    ocr_conf, ocr_min = _mg.get('conf'), _mg.get('min_conf')
 
         # ── Drift recovery: locate the label, then read the value beside it ───
         # The fixed crop is positionally RIGID — on a shifted/cropped scan (the
@@ -382,14 +403,22 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                                 on_reject(field_key, "anchor_crop_relocated", rval,
                                           "cross_field_code" if _xfield else "not_credible")
                         elif rval:
-                            q = _qualify_against_format(rval, field_key, format_lookup, text_field_keys)
-                            if q:
-                                if _should_replace(value, q, val_type, validation_patterns, inc_ocr_conf=ocr_conf):
-                                    value  = q
-                                    method = "anchor_crop_relocated"
-                                    ocr_conf, ocr_min = _mr.get('conf'), _mr.get('min_conf')
-                            elif on_reject:
-                                on_reject(field_key, "anchor_crop_relocated", rval, "format")
+                            q = _qualify_against_format(rval, field_key, format_lookup,
+                                                        text_field_keys, val_type, validation_patterns)
+                            # Label-CONFIRMED relocation: the value was read beside the
+                            # LOCATED label and cleared credibility + the cross-field /
+                            # column-bleed guards above. A learned-SHAPE mismatch (a device
+                            # serial that differs from history — the "H571Y07217 rejected
+                            # format" bug) must NOT discard it; keep the credible value (a
+                            # column-bleed substring was already trimmed into `q` when one
+                            # existed). The shape veto stays on the UN-anchored rigid path
+                            # so a drifted "Bookinc" is still caught.
+                            if not q:
+                                q = rval
+                            if _should_replace(value, q, val_type, validation_patterns, inc_ocr_conf=ocr_conf):
+                                value  = q
+                                method = "anchor_crop_relocated"
+                                ocr_conf, ocr_min = _mr.get('conf'), _mr.get('min_conf')
 
         # ── Fallback: text-based search in full OCR output ────────────────────
         if not value:
@@ -439,8 +468,14 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
 
         # Final learned-format gate — also covers the text-fallback value, so a
         # label-search read that grabbed the wrong token is rejected/trimmed too.
-        if value:
-            value = _qualify_against_format(value, field_key, format_lookup, text_field_keys)
+        # SKIP for the label-confirmed rungs (inline/relocated/registration): they
+        # already qualified their read and deliberately KEEP a credible value the
+        # learned-SHAPE veto would otherwise drop (a variable code differing from
+        # history); re-running it here would re-null the value. The UN-anchored rigid
+        # crop / text fallback still pass through the veto.
+        if value and method not in _LABEL_CONFIRMED_METHODS:
+            value = _qualify_against_format(value, field_key, format_lookup, text_field_keys,
+                                            val_type, validation_patterns)
 
         # Name-quality gate (Part 3): a NAME/company/address field whose read is a
         # garbled MULTI-WORD string ("Fr eanehae Crane", "67 Boucher Cre") is OCR
@@ -656,7 +691,9 @@ def _locate_in_text_lines(text_lines, lbox, anchor_label):
         ry1 = min(w["y_norm"] for w in run)
         ry2 = max(w["y_norm"] + w["h_norm"] for w in run)
         label_box = {"x_norm": rx1, "y_norm": ry1, "w_norm": rx2 - rx1, "h_norm": ry2 - ry1}
-        rest = words[len(run):]
+        # Clip the harvest to the value's OWN column (drop a far heading/column that
+        # shares the OCR line) by horizontal-gap clustering off the label's right edge.
+        rest = tm.cluster_value_words(words[len(run):], expect_x=rx2)
         if rest:
             inline_value = " ".join(w["text"] for w in rest).strip() or None
             # Tight bbox of the VALUE words (top-left convention) so the dev trace
@@ -911,6 +948,20 @@ def _should_replace(incumbent, candidate, val_type, validation_patterns, inc_ocr
 # rejected. 0.8 keeps a clean ref (with its own -/./ separators) at 1.0 while
 # excluding the MAC class. Shared by Stage 2 (anchor) and Stage 0.5 (template_mapper).
 _CREDIBLE_COVERAGE_MIN = 0.8
+
+# Field validation types whose pattern is PRECISE enough that a full match is
+# type-AUTHORITATIVE — the regex IS the format, so a learned digit-position SHAPE must
+# not veto it. Deliberately EXCLUDES the generic 'alphanumeric' (matches any token, so a
+# drifted "Bookinc" matches it too — a full match there is not authority). mac/ip are
+# CODES whose surface varies legitimately across devices (colons, octet lengths).
+_PRECISE_VAL_TYPES = frozenset({"mac_address", "ip_address"})
+# Coverage (longest single pattern match / value length) that counts as a FULL match.
+_PATTERN_AUTHORITATIVE_MIN = 0.95
+# Label/landmark-CONFIRMED relocation rungs: the value was read beside the located label
+# and already cleared the credibility + column-bleed/code-reject guards, so the learned-
+# SHAPE veto (which exists to catch UN-anchored rigid/keyword drift) must not DROP it for
+# a legitimately-variable code that merely differs in shape from history.
+_LABEL_CONFIRMED_METHODS = frozenset({"anchor_inline", "anchor_crop_relocated", "anchor_registration"})
 
 
 def _pattern_coverage(v: str, pats) -> float:
@@ -1177,7 +1228,78 @@ def _read(img, psm):
     return text, mean, min_conf
 
 
-def _ocr_crop_laddered(crop, val_type=None, verify_fn=None, meta=None):
+_NOISE_RETRY_MIN_CONF = 60.0   # a free-text read with a substantial word below this is
+                               # "shaky" -> worth a smoothed downscale retry.
+
+
+_PREVIEW_DOWNSCALE = 0.4   # 300 DPI extraction render -> ~120 DPI ≈ the 108 DPI on-screen
+                          # preview the draw tool reads. Bench-proven sweet spot (doc 146).
+_PREVIEW_ACCEPT_MIN = 55  # a preview-scale free-text read this confident (min substantial-
+                          # word conf) is taken as the primary read; below it, fall through
+                          # to the full-resolution ladder (tiny text that needs the detail).
+
+
+def _noise_smooth_retry(crop, val_type, base_min, page=None, box=None):
+    """Reproduce the on-screen DRAW TOOL's read so extraction reads what the operator can
+    read perfectly with a target box. The draw tool wins for TWO reasons, both reproduced
+    here: (1) it reads the ~108 DPI PREVIEW image — the 300 DPI extraction render amplifies
+    scan noise into a credible-but-GARBLED name ("Beaumont Care Homes Ltd - Holywood" ->
+    "oceaumont Care homes Lid - nolywooa") that still passes the loose free-text gate, so
+    the ladder commits garbage and the heavy rung's SHARPEN only makes it worse; and (2) a
+    hand-drawn box has vertical HEADROOM, whereas the stored tight box clips glyph
+    tops/bottoms. So when the page + the value's normalised box are available, RE-CROP with
+    headroom and downscale to ≈the preview scale (bench-proven to recover the EXACT
+    "Beaumont Care Homes Ltd - Holywood", min conf 92, where the tight 300 DPI crop reads
+    junk); otherwise just downscale the given crop. Return (seg, mean, min) ONLY when
+    CLEANER than the base read — a higher MINIMUM substantial-word confidence (the mean
+    dilutes a couple of garbled words; the min is the discriminator). The smaller image
+    also OCRs FASTER. Free-text only; gated on a shaky base read, so clean/structured/
+    numeric crops never reach here."""
+    try:
+        candidates = []
+        # PRIMARY: re-crop from the page with vertical headroom, then downscale to the
+        # preview resolution — the closest reproduction of the draw tool's read.
+        if page is not None and box is not None:
+            try:
+                pw, ph = page.size
+                padh = (float(box.get("h_norm") or 0.0)) * 0.5   # headroom for ascenders/descenders
+                x0 = max(0, int(float(box["x_norm"]) * pw))
+                y0 = max(0, int((float(box["y_norm"]) - padh) * ph))
+                x1 = min(pw, int((float(box["x_norm"]) + float(box["w_norm"])) * pw))
+                y1 = min(ph, int((float(box["y_norm"]) + float(box["h_norm"]) + padh) * ph))
+                if x1 > x0 and y1 > y0:
+                    pc = page.crop((x0, y0, x1, y1))
+                    cw, ch = pc.size
+                    candidates.append(pc.resize((max(1, int(cw * _PREVIEW_DOWNSCALE)),
+                                                 max(1, int(ch * _PREVIEW_DOWNSCALE))), Image.LANCZOS))
+            except Exception:
+                pass
+        # FALLBACK: downscale the (tight) crop we were handed — ONLY when we couldn't
+        # re-crop from the page (no page/box, e.g. a stub). When the page re-crop above
+        # succeeded it's the better read, so don't pay a second OCR pass on the tight crop.
+        if not candidates:
+            w, h = crop.size
+            if w >= 240:
+                candidates.append(crop.resize((max(1, int(w * _PREVIEW_DOWNSCALE)),
+                                               max(1, int(h * _PREVIEW_DOWNSCALE))), Image.LANCZOS))
+        best = None
+        for sm in candidates:
+            sp = _light_prep(sm)          # greyscale + upscale-small-only, no autocontrast
+            for psm in (6, 7):
+                t, c, m = _read(sp, psm)
+                seg = clean_crop_segment(t, val_type)
+                if seg:
+                    seg = _repair_single_token(sp, seg, val_type)
+                if seg and (best is None or m > best[2]):
+                    best = (seg, c, m)
+        if best and best[2] > base_min:   # cleaner: higher min substantial-word confidence
+            return best
+    except Exception:
+        pass
+    return None
+
+
+def _ocr_crop_laddered(crop, val_type=None, verify_fn=None, meta=None, page=None, box=None):
     """Light-first OCR ladder on an ALREADY-CROPPED image -> cleaned best-rung text
     (or None). SHARED by anchor._crop_and_ocr (centre+dims crop) and
     template_mapper._crop_and_ocr (drawn-box crop) so every value-crop path reads with the
@@ -1186,11 +1308,30 @@ def _ocr_crop_laddered(crop, val_type=None, verify_fn=None, meta=None):
     (which mangles a clean printed line into junk) is now only a LATER rung, not the
     unconditional one. A gateless caller (verify_fn None -- the Stage 0.5 path, which gates
     separately) accepts the first rung over a conf floor and otherwise returns the best
-    read, so its return shape is unchanged."""
+    read, so its return shape is unchanged.
+
+    page + box (optional, the source page and the value's normalised box): enable the
+    PREVIEW-SCALE FAST PATH for free-text — read the crop the way the on-screen draw tool
+    does (re-crop with headroom, downscale to ≈the 108 DPI preview) which is both cleaner
+    on degraded scans AND faster. Without them the ladder runs unchanged."""
     def _set_meta(c, mn):
         if meta is not None:
             meta['conf'] = c
             meta['min_conf'] = mn
+
+    # ── PREVIEW-SCALE FAST PATH (free-text only) ─────────────────────────────────
+    # The draw tool reads value crops at the ~108 DPI PREVIEW and reads degraded scans
+    # CLEANLY; the 300 DPI extraction render amplifies scan noise into a garbled-but-
+    # credible name. Reproduce the draw tool FIRST for free-text: a confident preview read
+    # is both cleaner and FASTER (smaller image) than the full-res ladder, so it wins
+    # outright; an unconfident one (tiny text needing the detail) falls through. Needs the
+    # page + box to re-crop with headroom — absent (a test stub) → ladder unchanged.
+    if val_type in (None, "text", "multiline_text") and page is not None and box is not None:
+        pv = _noise_smooth_retry(crop, val_type, -1.0, page=page, box=box)
+        if pv is not None and pv[2] >= _PREVIEW_ACCEPT_MIN and (
+                bool(verify_fn(pv[0])) if verify_fn is not None else pv[1] >= 60.0):
+            _set_meta(pv[1], pv[2])
+            return pv[0]
     # Light-first OCR ladder (Oscar): preprocess only when needed. A clean,
     # high-res crop reads correctly with minimal processing — the heavy prep
     # (upscale + SHARPEN) over-processes it and PSM 7 then returns garbage or
@@ -1226,6 +1367,16 @@ def _ocr_crop_laddered(crop, val_type=None, verify_fn=None, meta=None):
         if rseg and rconf > best_conf:
             best_seg, best_conf, best_min = rseg, rconf, rmin
         if _gate(rseg, rconf):
+            # NOISE-SMOOTHING RETRY: a free-text rung can PASS the gate with a garbled-but-
+            # name-shaped read on a noisy high-DPI scan. When its substantial-word floor is
+            # shaky, try a smoothed 0.5x downscale and prefer it if cleaner (see
+            # _noise_smooth_retry). Clean reads (high min) and structured/numeric fields are
+            # byte-identical — the retry is never reached.
+            if val_type in (None, "text", "multiline_text") and rmin < _NOISE_RETRY_MIN_CONF:
+                ds = _noise_smooth_retry(crop, val_type, rmin, page=page, box=box)
+                if ds is not None and (verify_fn is None or verify_fn(ds[0])):
+                    _set_meta(ds[1], ds[2])
+                    return ds[0]
             _set_meta(rconf, rmin)
             return rseg
 
@@ -1300,7 +1451,15 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
         if capture:
             try: capture(crop)
             except Exception: pass   # dev-only slice capture; never disrupt OCR
-        return _ocr_crop_laddered(crop, val_type, verify_fn=verify_fn, meta=meta)
+        # The value's TIGHT normalised box (from the stored centre+dims) lets the
+        # ladder's free-text preview fast-path re-crop with its own headroom at the
+        # preview scale. Only when real dims are stored (not the 200×60 default).
+        _box = None
+        if w_norm > 0 and h_norm > 0:
+            _box = {"x_norm": max(0.0, x_norm - w_norm / 2), "y_norm": max(0.0, y_norm - h_norm / 2),
+                    "w_norm": w_norm, "h_norm": h_norm}
+        return _ocr_crop_laddered(crop, val_type, verify_fn=verify_fn, meta=meta,
+                                  page=page_image, box=_box)
     except Exception:
         return None
 

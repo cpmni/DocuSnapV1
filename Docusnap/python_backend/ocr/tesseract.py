@@ -123,6 +123,7 @@ def extract_text_and_images(
     enhance_params: dict | None = None,
     born_digital: bool = False,
     engine=None,
+    cached_text: str | None = None,
 ) -> tuple[str, list[Image.Image]]:
     """
     Extract OCR text from a document file.
@@ -142,8 +143,18 @@ def extract_text_and_images(
     instead of an OCR read — faster and exact. Image-only/scanned pages have no
     text layer and fall back to OCR unchanged. The page IMAGES are still rendered
     either way (logo/anchor/zone OCR need them). Gated by 'born_digital_enabled'.
+
+    cached_text (default None): REPROCESS optimisation. The full-page OCR (~1.9 s/page
+    on a scanned page) re-reads the SAME pixels every reprocess for a result that never
+    changes; only the learned data does. When the caller already has the text (stored
+    in documents.ocr_text on first import), pass it here: the page IMAGES are still
+    rendered (~0.25 s, needed for crop/logo/zone OCR + registration), but the full-page
+    OCR is SKIPPED and cached_text is returned verbatim. Per-field crop reads + the
+    born-digital page_text_lines (derived by the caller) are unaffected, so extraction
+    is unchanged — only the redundant full-page pass is removed.
     """
-    if engine is None:
+    use_cache = cached_text is not None
+    if engine is None and not use_cache:
         from ocr.engine import TesseractEngine
         engine = TesseractEngine()
 
@@ -158,6 +169,8 @@ def extract_text_and_images(
         for page in doc:
             img = page.render(scale=300 / 72).to_pil()
             pages.append(img)
+            if use_cache:
+                continue                       # reuse stored text; skip full-page OCR
             layer_text = None
             if born_digital:
                 try:
@@ -175,8 +188,11 @@ def extract_text_and_images(
         if img.mode not in ("RGB", "L"):
             img = img.convert("RGB")
         pages = [img]
-        texts.append(engine.read_page(img, enhance_params))
+        if not use_cache:
+            texts.append(engine.read_page(img, enhance_params))
 
+    if use_cache:
+        return cached_text, pages
     return "\n\n--- PAGE BREAK ---\n\n".join(texts), pages
 
 

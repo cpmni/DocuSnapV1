@@ -18,6 +18,7 @@ function register(ctx) {
     'processing_mode', 'processing_concurrency', 'registration_enabled', 'born_digital_enabled',
     'diagnostic_logging', 'theme', 'first_run_completed', 'watch_folder_enabled',
     'confidence_threshold', 'license_enforcement_enabled', 'copy_after_processing_enabled',
+    'name_wordness_flag', 'auto_separate_enabled', 'ocr_engine',
   ]);
 
   // ── Document types ──────────────────────────────────────────────────────────
@@ -222,6 +223,16 @@ function register(ctx) {
     const { supplier_name, document_type } = params || {};
     if (!supplier_name || !supplier_name.trim()) return { changes: 0 };
     const result = learning.clearCorrectionsForScope(getDb(), {
+      supplier_name: supplier_name.trim(), document_type: document_type || null,
+    });
+    return { changes: result.changes };
+  });
+
+  ipcMain.handle('clear-learning-field-rules', (_e, params) => {
+    requireRole('admin');
+    const { supplier_name, document_type } = params || {};
+    if (!supplier_name || !supplier_name.trim()) return { changes: 0 };
+    const result = learning.clearFieldRulesForScope(getDb(), {
       supplier_name: supplier_name.trim(), document_type: document_type || null,
     });
     return { changes: result.changes };

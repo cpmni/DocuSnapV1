@@ -708,6 +708,55 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 34 applied: template_sample_words (cross-sample landmark corpus)');
   }
 
+  // Migration 35: clearer company-role labels (reverses migration 27's "Company"
+  // unification). The single "Company" label proved ambiguous on issuer-style docs —
+  // it reads as either the issuer or the recipient. Relabel the company/identity field
+  // to MATCH its internal KEY so the label tells the operator exactly what belongs
+  // there: supplier_name → "Supplier Name", customer_name → "Customer Name". The KEY
+  // (the per-company learning scope: logo/hints/anchors/templates) is unchanged, so the
+  // learning schema is untouched. Scoped to rows still labelled "Company" so a
+  // hand-edited label is left alone. Idempotent.
+  if (!applied.has(35)) {
+    if (tableExists(db, 'fields')) {
+      try {
+        db.exec(`UPDATE fields SET label = 'Supplier Name'
+                 WHERE key = 'supplier_name' AND label = 'Company'`);
+        db.exec(`UPDATE fields SET label = 'Customer Name'
+                 WHERE key = 'customer_name' AND label = 'Company'`);
+      } catch (e) { console.warn('  migration 35 (company-role relabel):', e.message); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (35)').run();
+    console.log('JS migration 35 applied: relabel company-role field by key (Supplier/Customer Name)');
+  }
+
+  // Migration 36: operator-taught field CLEANUP rules (Review right-click toolkit) —
+  // remove a learned leaked caption ('remove_text') or keep the single pattern-matching
+  // block ('keep_block') for a field, applied at extraction time to strip an adjacent
+  // heading/column OCR bled in. Scoped like the other learning corpora (supplier_name /
+  // document_type / field_key, with '__global__' supplier). token_norm is the normalised
+  // match key for remove_text (NULL for keep_block). Additive + idempotent.
+  if (!applied.has(36)) {
+    if (!tableExists(db, 'field_rules')) {
+      db.exec(`CREATE TABLE field_rules (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        supplier_name TEXT,
+        document_type TEXT,
+        field_key     TEXT    NOT NULL,
+        rule_type     TEXT    NOT NULL,   -- 'remove_text' | 'keep_block'
+        token_norm    TEXT,               -- remove_text: normalised literal; keep_block: NULL
+        created_from  TEXT,               -- remove_text: the raw highlighted text (display)
+        side          TEXT    NOT NULL DEFAULT 'trailing',  -- 'leading' | 'trailing'
+        min_prefix    INTEGER NOT NULL DEFAULT 3,
+        usage_count   INTEGER NOT NULL DEFAULT 0,
+        created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+      )`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_field_rules_scope
+               ON field_rules(supplier_name, document_type, field_key)`);
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (36)').run();
+    console.log('JS migration 36 applied: field_rules (operator field-cleanup toolkit)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

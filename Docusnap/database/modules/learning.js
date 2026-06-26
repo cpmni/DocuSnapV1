@@ -283,7 +283,8 @@ function saveAnchor(db, {
   supplier_name, document_type, field_key,
   anchor_label, direction, page_zone, x_norm, y_norm,
   w_norm = 0, h_norm = 0, authoritative = false,
-  offset_dx_norm = null, offset_dy_norm = null
+  offset_dx_norm = null, offset_dy_norm = null,
+  label_detected = false
 }) {
   // Keep only the stable caption. If sanitising changes the label, the stored
   // drift-invariant offset was measured against the POLLUTED label's position
@@ -296,12 +297,15 @@ function saveAnchor(db, {
     offset_dx_norm = null;
     offset_dy_norm = null;
   }
-  // A field's OWN NAME is never an on-page caption ("Supplier Name" for the
-  // supplier_name field) — an anchor labelled with it can NEVER be located, so it
-  // blind-crops stale coordinates forever and (if authoritative) shadows a correct
-  // mapping. Drop the label so it becomes a pure-coordinate anchor instead of a
-  // phantom-caption one. Reusable guard for every field.
-  if (anchor_label && field_key) {
+  // Drop a PHANTOM field-name label — one SYNTHESISED from the field name (the ⊕
+  // fallback when no caption could be OCR'd, "Supplier Name" for the supplier_name
+  // field) — because the page never says it, so the anchor would blind-crop stale
+  // coordinates forever and (if authoritative) shadow a correct mapping. But a label
+  // OCR'd FROM THE PAGE (label_detected) that merely HAPPENS to equal the field key is
+  // a REAL, locatable caption and must be KEPT — a custom field named exactly what the
+  // document says ("Make" → on-page "Make", "Serial Number" → "Serial number") is the
+  // common case, and dropping it left the field a label-less blind crop that drifts.
+  if (anchor_label && field_key && !label_detected) {
     const ln = anchor_label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
     if (ln === String(field_key).toLowerCase()) {
       anchor_label   = '';
@@ -560,7 +564,12 @@ function getRecoverySummary(db, { supplier_name, document_type } = {}) {
     SELECT COUNT(*) AS n FROM logo_fingerprints WHERE supplier_name = @supplier_name
   `).get({ supplier_name }).n;
 
-  return { anchors, hints, corrections, logos };
+  const rules = db.prepare(`
+    SELECT COUNT(*) AS n FROM field_rules
+    WHERE supplier_name = @supplier_name AND (@dt IS NULL OR document_type = @dt)
+  `).get({ supplier_name, dt }).n;
+
+  return { anchors, hints, corrections, logos, rules };
 }
 
 function getRecoveryDetail(db, { supplier_name, document_type } = {}, limit = 25) {
@@ -594,7 +603,14 @@ function getRecoveryDetail(db, { supplier_name, document_type } = {}, limit = 25
     ORDER BY match_count DESC LIMIT @limit
   `).all({ supplier_name, limit });
 
-  return { anchors, hints, corrections, logos };
+  const rules = db.prepare(`
+    SELECT field_key, rule_type, token_norm, created_from, side, document_type, usage_count, created_at
+    FROM field_rules
+    WHERE supplier_name = @supplier_name AND (@dt IS NULL OR document_type = @dt)
+    ORDER BY created_at DESC LIMIT @limit
+  `).all({ supplier_name, dt, limit });
+
+  return { anchors, hints, corrections, logos, rules };
 }
 
 function clearFieldAnchorsForScope(db, { supplier_name, document_type } = {}) {
@@ -625,6 +641,73 @@ function clearCorrectionsForScope(db, { supplier_name, document_type } = {}) {
   const dt = document_type || null;
   return db.prepare(`
     DELETE FROM corrections
+    WHERE supplier_name = @supplier_name AND (@dt IS NULL OR document_type = @dt)
+  `).run({ supplier_name, dt });
+}
+
+// ── Field cleanup rules (Review right-click toolkit) ─────────────────────────
+// Operator-taught per-(supplier, doctype, field) rules that strip an adjacent
+// heading/column OCR bled into a field. Applied at extraction time (engine Stage
+// 4.5 via python_backend/extraction/field_rules.py). Two rule types: 'remove_text'
+// (a learned leaked caption) and 'keep_block' (keep the single pattern-matching
+// token). Scoped like the other corpora; reversible in Learning Recovery.
+
+const FIELD_RULE_TOKEN_CAP = 40;
+// MIRRORS python_backend/extraction/field_rules.normalize_token so the stored match
+// key is byte-identical to what the engine compares against (casefold + collapse
+// internal whitespace + cap).
+function normalizeFieldRuleToken(raw) {
+  if (!raw) return '';
+  return String(raw).replace(/\s+/g, ' ').trim().toLowerCase().slice(0, FIELD_RULE_TOKEN_CAP);
+}
+
+function saveFieldRule(db, { supplier_name, document_type, field_key, rule_type,
+                            token, side, min_prefix } = {}) {
+  if (!field_key) return { changes: 0 };
+  if (rule_type !== 'remove_text' && rule_type !== 'keep_block') return { changes: 0 };
+  const supplier  = normalizeSupplierName(supplier_name || '__global__') || '__global__';
+  const dt        = document_type || null;
+  const tokenNorm = rule_type === 'remove_text' ? normalizeFieldRuleToken(token) : null;
+  if (rule_type === 'remove_text' && !tokenNorm) return { changes: 0 };
+  const sideVal   = side === 'leading' ? 'leading' : 'trailing';
+  const mp        = parseInt(min_prefix, 10);
+  const minPrefix = Number.isFinite(mp) ? Math.max(0, Math.min(50, mp)) : 3;
+  const createdFrom = rule_type === 'remove_text' ? String(token || '') : null;
+
+  // Null-safe upsert (SQLite `IS` matches NULL == NULL) — one row per
+  // (supplier, doctype, field, rule_type, token_norm).
+  const existing = db.prepare(`
+    SELECT id FROM field_rules
+    WHERE supplier_name = @supplier AND field_key = @field_key AND rule_type = @rule_type
+      AND document_type IS @dt AND token_norm IS @tokenNorm
+  `).get({ supplier, field_key, rule_type, dt, tokenNorm });
+  if (existing) {
+    return db.prepare(`
+      UPDATE field_rules SET usage_count = usage_count + 1, created_from = @createdFrom,
+             side = @sideVal, min_prefix = @minPrefix WHERE id = @id
+    `).run({ id: existing.id, createdFrom, sideVal, minPrefix });
+  }
+  return db.prepare(`
+    INSERT INTO field_rules
+      (supplier_name, document_type, field_key, rule_type, token_norm, created_from, side, min_prefix)
+    VALUES (@supplier, @dt, @field_key, @rule_type, @tokenNorm, @createdFrom, @sideVal, @minPrefix)
+  `).run({ supplier, dt, field_key, rule_type, tokenNorm, createdFrom, sideVal, minPrefix });
+}
+
+// All rules, flat — loaded into the per-batch training snapshot and indexed by the
+// engine on (supplier, doctype, field).
+function getFieldRules(db) {
+  return db.prepare(`
+    SELECT supplier_name, document_type, field_key, rule_type, token_norm, side, min_prefix
+    FROM field_rules ORDER BY field_key, rule_type
+  `).all();
+}
+
+function clearFieldRulesForScope(db, { supplier_name, document_type } = {}) {
+  if (!supplier_name) return { changes: 0 };
+  const dt = document_type || null;
+  return db.prepare(`
+    DELETE FROM field_rules
     WHERE supplier_name = @supplier_name AND (@dt IS NULL OR document_type = @dt)
   `).run({ supplier_name, dt });
 }
@@ -773,6 +856,7 @@ function resetAllLearning(db) {
     counts.field_anchors           = del('DELETE FROM field_anchors');
     counts.logo_fingerprints       = del('DELETE FROM logo_fingerprints');
     counts.corrections             = del('DELETE FROM corrections');
+    counts.field_rules             = del('DELETE FROM field_rules');
     counts.documents_unlinked      = db.prepare(
       'UPDATE documents SET template_id = NULL WHERE template_id IS NOT NULL').run().changes;
     counts.template_field_mappings = del('DELETE FROM template_field_mappings');
@@ -832,6 +916,7 @@ function resetToFreshInstall(db) {
     counts.field_anchors           = del('DELETE FROM field_anchors');
     counts.logo_fingerprints       = del('DELETE FROM logo_fingerprints');
     counts.corrections             = del('DELETE FROM corrections');
+    counts.field_rules             = del('DELETE FROM field_rules');
     // 3. Learned/managed template store (children before parents).
     counts.template_field_mappings = del('DELETE FROM template_field_mappings');
     counts.template_fields         = del('DELETE FROM template_fields');
@@ -884,6 +969,13 @@ function getMemoryInventory(db) {
     FROM logo_fingerprints
     GROUP BY supplier_name
   `).all());
+  rows.push(...db.prepare(`
+    SELECT 'rule' AS type, supplier_name, document_type, field_key,
+           COUNT(*) AS records, NULL AS distinct_values,
+           MAX(created_at) AS last_seen
+    FROM field_rules
+    GROUP BY supplier_name, document_type, field_key
+  `).all());
   rows.sort((a, b) =>
     (b.records - a.records) ||
     String(a.supplier_name || '').localeCompare(String(b.supplier_name || '')));
@@ -913,5 +1005,6 @@ module.exports = {
   getRecoverySummary, getRecoveryDetail, getMemoryInventory, resetAllLearning,
   resetToFreshInstall,
   clearFieldAnchorsForScope, clearSupplierHintsForScope, clearCorrectionsForScope,
+  saveFieldRule, getFieldRules, clearFieldRulesForScope,
   getSetting, setSetting,
 };

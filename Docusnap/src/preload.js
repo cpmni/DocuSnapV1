@@ -119,6 +119,8 @@ contextBridge.exposeInMainWorld('docusnap', {
   updateField:         (id, ch)     => ipcRenderer.invoke('update-field', id, ch),
   deleteField:         (id)         => ipcRenderer.invoke('delete-field', id),
   getValidationPatterns: ()         => ipcRenderer.invoke('get-validation-patterns'),
+  getFieldPatterns:      ()         => ipcRenderer.invoke('get-field-patterns'),
+  getFieldSuggestions:   (docId, key) => ipcRenderer.invoke('get-field-suggestions', docId, key),
 
   // ── Review queue ─────────────────────────────────────────────────────────────
   getReviewQueue:              ()        => ipcRenderer.invoke('get-review-queue'),
@@ -127,7 +129,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   getDeferredCount:            ()        => ipcRenderer.invoke('get-deferred-count'),
   getDocumentWithExtractions:  (id)      => ipcRenderer.invoke('get-document-with-extractions', id),
   notifyDocClosed:             (id)      => ipcRenderer.send('notify-doc-closed', id),
-  getDocumentPages:            (id, fp, fn) => ipcRenderer.invoke('get-document-pages', id, fp, fn),
+  getDocumentPages:            (id, fp, fn, scale) => ipcRenderer.invoke('get-document-pages', id, fp, fn, scale),
   getDocumentThumbnail:        (id, fp, fn) => ipcRenderer.invoke('get-document-thumbnail', id, fp, fn),
   getEnhancedPreview:          (data)       => ipcRenderer.invoke('get-enhanced-preview', data),
   confirmReview:               (payload) => ipcRenderer.invoke('confirm-review', payload),
@@ -150,6 +152,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   ocrRegionBoxes:      (b64)      => ipcRenderer.invoke('ocr-region-boxes', b64),
   testTemplateMapping: (pageB64, mapping, landmarks) => ipcRenderer.invoke('test-template-mapping', pageB64, mapping, landmarks),
   saveFieldAnchor:     (data)     => ipcRenderer.invoke('save-field-anchor', data),
+  saveFieldRule:       (data)     => ipcRenderer.invoke('save-field-rule', data),
   extractLogoHash:     (b64)      => ipcRenderer.invoke('extract-logo-hash', b64),
   matchLogoHash:       (b64)      => ipcRenderer.invoke('match-logo-hash', b64),
   saveLogoFingerprint: (data)     => ipcRenderer.invoke('save-logo-fingerprint', data),
@@ -204,6 +207,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   pickTemplateSampleFile:     ()                  => ipcRenderer.invoke('pick-template-sample-file'),
   importTemplateSampleFile:   (id, filePath)      => ipcRenderer.invoke('import-template-sample-file', id, filePath),
   regenerateTemplateLandmarks:(id)                => ipcRenderer.invoke('regenerate-template-landmarks', id),
+  regenerateTemplateFingerprint:(id)              => ipcRenderer.invoke('regenerate-template-fingerprint', id),
   setTemplateLandmarks:       (id, lms)           => ipcRenderer.invoke('set-template-landmarks', id, lms),
   getTemplateLandmarks:       (id)                => ipcRenderer.invoke('get-template-landmarks', id),
   clearTemplateLandmarks:     (id)                => ipcRenderer.invoke('clear-template-landmarks', id),
@@ -242,6 +246,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   clearLearningAnchors:(params)   => ipcRenderer.invoke('clear-learning-anchors', params),
   clearLearningHints:  (params)   => ipcRenderer.invoke('clear-learning-hints', params),
   clearLearningCorrections: (params) => ipcRenderer.invoke('clear-learning-corrections', params),
+  clearLearningFieldRules: (params) => ipcRenderer.invoke('clear-learning-field-rules', params),
 
   // ── Advanced (Settings tab) — keyword label overrides ───────────────────────
   getLabelOverrides:   ()        => ipcRenderer.invoke('get-label-overrides'),

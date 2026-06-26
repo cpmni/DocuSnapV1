@@ -18,10 +18,13 @@ const btnViewResults = document.getElementById('btn-view-results');
 const btnReviewDocs  = document.getElementById('btn-review-docs');
 const dropzone      = document.getElementById('dropzone');
 const resultsPanel  = document.getElementById('results-panel');
-const logPanel      = document.getElementById('log-panel');
+const logPanel      = document.getElementById('progress-section');  // the prominent progress strip
 const logOutput     = document.getElementById('log-output');
 const logStatus     = document.getElementById('log-status');
 const progressBar   = document.getElementById('progress-bar');
+const progressCount = document.getElementById('progress-count');
+const progressText  = document.getElementById('progress-text');
+const btnToggleLog  = document.getElementById('btn-toggle-log');
 const tableBody     = document.getElementById('table-body');
 
 // Doc-type → structural field keys, so the results table can show the right
@@ -36,34 +39,32 @@ window.docusnap.getAllDocTypes?.().then((types) => {
   }
 }).catch(() => {});
 
-// ── Stage indicator ───────────────────────────────────────────────────────────
-const stageIndicator = document.getElementById('stage-indicator');
-const stageFile      = document.getElementById('stage-file');
-const stageOcr       = document.getElementById('stage-ocr');
-const stageLlm       = document.getElementById('stage-llm');
-const stageSave      = document.getElementById('stage-save');
-
-function setStage(filename, stage) {
-  // stage: null | 'ocr' | 'llm' | 'save' | 'done'
-  if (!filename) { stageIndicator.classList.remove('visible'); return; }
-  stageIndicator.classList.add('visible');
-  stageFile.textContent = filename;
-
-  const stages = { ocr: stageOcr, llm: stageLlm, save: stageSave };
-  const order  = ['ocr', 'llm', 'save'];
-  const idx    = order.indexOf(stage);
-
-  for (let i = 0; i < order.length; i++) {
-    const el = stages[order[i]];
-    el.classList.remove('active', 'done');
-    if (stage === 'done' || i < idx)  el.classList.add('done');
-    else if (i === idx)               el.classList.add('active');
-  }
+// ── Current-file indicator (shown on the progress bar's foot row) ─────────────
+// The stage chips were folded into the prominent progress bar; setStage now just
+// names the document currently being processed. The `stage` arg is ignored (kept so
+// existing call sites are unchanged).
+function setStage(filename, _stage) {
+  if (!filename) { progressText.textContent = ''; progressText.title = ''; return; }
+  progressText.textContent = filename;
+  progressText.title = filename;
 }
 
 function clearStage() {
-  stageIndicator.classList.remove('visible');
-  [stageOcr, stageLlm, stageSave].forEach(el => el.classList.remove('active','done'));
+  progressText.textContent = '';
+  progressText.title = '';
+}
+
+// Toggle the (collapsed-by-default) processing log.
+btnToggleLog?.addEventListener('click', () => {
+  const open = logPanel.classList.toggle('log-open');
+  btnToggleLog.textContent = open ? 'Hide log' : 'View log';
+  if (open) logOutput.scrollTop = logOutput.scrollHeight;
+});
+
+// X / N count under the bar, kept in sync with the batch.
+function updateProgressCount() {
+  if (batch.total > 0) progressCount.textContent = `${batch.done} / ${batch.total}`;
+  else progressCount.textContent = '—';
 }
 
 
@@ -166,9 +167,13 @@ async function startProcessing() {
   btnReviewDocs.classList.remove('visible');
   tableBody.innerHTML = '';                // fresh results for this run
   logPanel.classList.add('visible');
+  logPanel.classList.remove('log-open');   // log collapsed by default — bar is the view
+  if (btnToggleLog) btnToggleLog.textContent = 'View log';
   logOutput.innerHTML = '';
   progressBar.style.width = '0';
-  logStatus.textContent = 'Running…';
+  progressCount.textContent = '—';
+  setStage('');                            // clear the current-file name
+  logStatus.textContent = 'Starting…';
 
   // Wire up progress events
   window.docusnap.removeProgress();
@@ -195,10 +200,12 @@ async function startProcessing() {
   clearStage();
   if (processResult && processResult.stopped) {
     logStatus.textContent = 'Stopped';
+    progressText.textContent = `Stopped — ${batch.done} of ${batch.total} processed`;
     appendLog('Processing stopped.', 'warn');
   } else {
     logStatus.textContent = 'Finished';
     progressBar.style.width = '100%';
+    progressText.textContent = `✓ ${batch.ok} filed${batch.err ? `, ${batch.err} with errors` : ''}`;
     appendLog(`✓ Finished processing — ${batch.ok} filed${batch.err ? `, ${batch.err} with errors` : ''}.`, 'ok');
   }
   // Launchpad + log strip stay on screen. If anything was processed, offer a
@@ -220,9 +227,13 @@ function handleProgress(msg) {
   switch (msg.type) {
 
     case 'start':
+      // The pool emits ONE aggregate start with the FULL folder count, so the bar
+      // total is accurate from the first frame (X / N, not a growing estimate).
       batch.total  = msg.total;     // this run, for the progress bar
       stats.total += msg.total;     // add the batch to the cumulative session "Found"
       updateStats();
+      updateProgressCount();
+      logStatus.textContent = 'Processing';
       appendLog(`Found ${msg.total} document(s) in folder.`);
       break;
 
@@ -239,30 +250,26 @@ function handleProgress(msg) {
       stats.done++;
       if (msg.success) { batch.ok++; stats.ok++; } else { batch.err++; stats.err++; }
       updateStats();
+      updateProgressCount();
       addTableRow(msg);
       if (batch.total > 0) {
         progressBar.style.width = ((batch.done / batch.total) * 100) + '%';
       }
       setStage(msg.original_filename || msg.new_filename, 'save');
-      setTimeout(() => {
-        if (batch.done >= batch.total) clearStage();
-        else setStage(stageFile.textContent, 'done');
-      }, 800);
+      // The results table updates live — offer "View results" as soon as the first
+      // doc lands so the operator can watch it fill (it stays hidden by default).
+      if (batch.done > 0) btnViewResults.style.display = '';
       if (msg.success) {
         appendLog(`  ✓ → ${msg.new_filename}`, 'ok');
       } else {
         appendLog(`  ✗ Error: ${msg.error}`, 'err');
       }
-      // Table rows accumulate, but the results table stays hidden DURING the run
-      // (the launchpad keeps the center). It's revealed at completion below.
       break;
 
     case 'log':
       appendLog(msg.text, msg.level || '');
-      if (msg.text && msg.text.includes('Stage 3:')) {
-        setStage(stageFile.textContent, 'llm');
-      } else if (msg.text && msg.text.includes('OCR:')) {
-        setStage(stageFile.textContent, 'ocr');
+      if (msg.text && msg.text.includes('OCR:')) {
+        setStage(progressText.textContent || '', 'ocr');
       }
       break;
   }

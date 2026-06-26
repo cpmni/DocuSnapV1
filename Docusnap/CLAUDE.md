@@ -153,7 +153,7 @@ docusnap2/
 │   │   ├── ocr_corrector.py             # Stage 2.5: learned OCR misread correction
 │   │   ├── llm.py                       # Stage 3: phi3:mini via Ollama (dormant — 'ai' mode not exposed in UI)
 │   │   ├── validator.py                 # Stage 4: cross-field validation
-│   │   ├── value_quality.py             # name/company/address quality (name_quality, is_name_like_field) — JS mirror in learning.js
+│   │   ├── value_quality.py             # name/company/address quality (name_quality, is_name_like_field) — JS mirror in learning.js. is_name_like_field EXCLUDES technical addresses (mac/ip/hardware/network "address") — they are CODES, not names, so the name-quality/_name_field_code_reject gates must not strip their legitimate value ("D4:F0:C9:25:9B:64", "192.168.1.200"); else a labelled mac_address/ip_address anchor can never fill (the value's relocated read is rejected as "no real word")
 │   │   ├── text_normalise.py            # deterministic compare-time normaliser (NFKC/dash/quote/lower/ws/edge); JS twin database/modules/text_normalise.js
 │   │   └── name_match.py                # Stage 4.5 token-level canonical NAME repair (lexicon + positional repair); suggestion-only
 │   ├── ocr/{tesseract.py,region.py,landmarks.py,text_enhance.py,born_digital.py}  # region.py: interactive draw-tool zone-OCR (review ⊕ picker, Template Wizard read-back, Template Manager) + --boxes label-position capture; LIGHT-FIRST ladder mirroring anchor._crop_and_ocr (light greyscale+upscale-small-only read first, heavy autocontrast+sharpen only when light is EMPTY) so a drawn box reads the SAME as extraction and clean born-digital crops aren't mangled into junk ("Serial number"→"be_7"); landmarks.py: derive registration landmarks from sample page; text_enhance.py: degraded text-line re-read (denoise+Sauvola+unsharp), text-only gate-triggered escalation; born_digital.py: read EXACT text + word boxes from a PDF's embedded text layer (pypdfium2 BSD), skipping OCR for generated PDFs (gated by born_digital_enabled)
@@ -253,6 +253,14 @@ template_logo_hashes — template_id(FK cascade), phash, UNIQUE(template_id,phas
 settings        — key, value (key-value store; incl. registration_enabled —
                   default ON, gates the Stage 0.5 registration rung;
                   born_digital_enabled — default ON, gates PDF text-layer extraction;
+                  name_wordness_flag — default ON, gates the free-text NAME wordness
+                  review FLAG (handler.js buildTrainingArgs → process_docs --name-wordness
+                  → engine.set_name_wordness): a supplier/customer read that doesn't read
+                  like a name (document-chrome stoplist + ref-code bleed + char-trigram
+                  garble via extraction/wordness.py, PLUS history-gated name_match
+                  truncation/fragment flag + word_like self-calibration) is flagged for
+                  review (note + conf≤70), NEVER rejected/rewritten. Inert without the
+                  shipped extraction/data/char_trigrams.json. See test_harness/WORDNESS_NOTES.md;
                   first_run_completed — 'true' once the setup wizard finishes/skips
                   (migration 24 stamps it for already-configured installs so existing
                   users are never re-onboarded))
@@ -338,11 +346,19 @@ process_docs.py → ExtractionEngine.extract()
              NOT the whole OCR LINE box (which overshoots the value and made the
              relocation refuse/misderive → fall to the registration transform → read the
              row ABOVE); _located_too_wide now only guards the legacy no-label_box case.
-             The _extract_one drift guard also runs the relocation whenever the value is
-             INLINE on the label's row (not only when _label_drifted), so the harvest
-             fires for key/value layouts regardless of drift. Brings Stage 0.5 to parity
-             with Stage 2; generalises to every label→value form row. Guarded by
-             tests/test_inline_harvest.py. (DEFERRED, see OCR_WORKFLOW_REVIEW.md:
+             CLEAN ABSOLUTE READ IS AUTHORITATIVE (2026-06, REVISED): _extract_one
+             relocates ONLY when the label is found DISPLACED (_label_drifted) — or when
+             the absolute read FAILED its gate (falls through to the registration arbiter /
+             late fallback). It NO LONGER fires the harvest "regardless of drift" on every
+             key/value row: that re-read the whole OCR LINE and could REPLACE a clean drawn-
+             box read with a garbled line read on a NON-drifted page ("Beaumont Care Homes
+             Ltd - Comber" → "pantionahe MUGS Liu COTVCE"), then lose to a junk keyword. On
+             a clean page the operator's drawn box already sits on the value, so its
+             absolute read (the same one the live draw tool reads at 100%) STANDS; genuine
+             drift the per-label test misses is caught by the registration arbiter below.
+             (Stage 2's inline harvest was already correctly rigid-first — gated by
+             _should_replace, only overriding a WEAK rigid read — so it was unchanged.)
+             Guarded by tests/test_inline_harvest.py + test_template_mapper_drift.py. (DEFERRED, see OCR_WORKFLOW_REVIEW.md:
              resolve_geometry/_extract_one CAPTURE POLLUTION — all rungs capture
              kind="target", so the diagnostic green box can show a non-winning rung; and
              tie _label_drifted's coarse fixed _DRIFT_FLOOR to line height for label-ABOVE
@@ -541,20 +557,25 @@ process_docs.py → ExtractionEngine.extract()
            anchor and poisons normal-page extraction. Legacy rows (NULL offset)
            fall back to the geometric guess. (Stage 2 — cross-field consensus
            resite via a shared drift module — deferred.)
-           DRIFT GUARD — labelled free-text follows the LABEL (anchor.py, 2026-06):
-           a rigid crop that drifted onto an adjacent row can read a plausible free-text
-           word ("Utax" on the Make row when Customer moved down a row) that PASSES the
-           loose free-text gate, so the relocate rung (fires only on a failed/weak rigid
-           read) never runs and the WRONG row commits at high confidence — the anchor knew
-           its label but never used it. For FREE-TEXT fields with a real anchor_label + a
-           stored offset, the label is located and the value's EXPECTED position
-           (located-label + offset) is compared to the rigid box's stored centre
-           (_value_drifted_from_box; > ~1.5 line-heights, conservative floor = off-row); on
-           drift the value is re-read beside the LOCATED label (inline harvest, else crop)
-           and preferred ONLY if itself credible — so the guard can NEVER do worse than the
-           rigid read. Structured fields (pattern-validated) + legacy NULL-offset anchors
-           untouched; reuses line_cache (a clean on-row read pays one locate, byte-identical
-           result). Guarded by tests/test_anchor_drift_guard.py.
+           LABEL LOCK — labelled free-text follows its LOCATED label (anchor.py, 2026-06,
+           REVISED): a rigid crop reads ABSOLUTE coordinates, so on a variable-layout doc
+           (rows shift — Print Tracker alerts, worksheets) it lands on a NEIGHBOURING row and
+           reads a plausible free-text word that PASSES the loose gate ("TK-8375M" on the
+           Description row when the Customer "McMahon Associates" sat one row down), so the
+           relocate rung (fires only on a failed/weak rigid read) never runs and the WRONG
+           row commits at high confidence — the anchor knew its label but never used it. The
+           operator's model: if the LABEL locates, the value sits at located-label + the
+           stored offset, full stop — NO drift-magnitude gate. So for FREE-TEXT fields with a
+           real anchor_label + a stored offset, whenever the label LOCATES (`_dlb` present)
+           the value is re-read beside it (inline harvest, else a crop at located-label +
+           offset) and PREFERRED — but ONLY when that read is itself credible AND actually
+           DIFFERS from the rigid read. On a clean page the label is at its learned spot, so
+           located-label + offset ≈ the rigid box → same value → no replacement →
+           byte-identical. This REPLACED the old _value_drifted_from_box THRESHOLD (which
+           could miss a sub-threshold one-row drift, the "customer→TK-8375M" bug): the value
+           now LOCKS to the label, not to a drift magnitude. Structured fields
+           (pattern-validated) + legacy NULL-offset anchors untouched; reuses line_cache (a
+           clean on-row read pays one locate). Guarded by tests/test_anchor_drift_guard.py.
            ⊕ AUTO-ANCHOR LABEL SEARCH (review/renderer.js captureAnchorContext): the
            left-label search scans the WHOLE row to the left of the value (was a fixed 300px
            window), one line tall — so on wide two-column key/value rows a TIGHT value box
@@ -600,6 +621,29 @@ process_docs.py → ExtractionEngine.extract()
            Guarded by tests/test_precedence.py (garbled yields / clean still wins) +
            the fence that a passive anchor_crop can't displace keyword_override.
            ── 2026 RELIABILITY PASS (find → follow → read, across doc types) ──
+           PREVIEW-SCALE FREE-TEXT READ (anchor._noise_smooth_retry + the
+           _ocr_crop_laddered fast-path, 2026-06 — "read it the way the draw tool does"):
+           the on-screen ⊕/target draw tool reads value crops off the ~108 DPI PREVIEW PNG
+           (render/pages.py scale 1.5) and reads DEGRADED scans CLEANLY, while extraction
+           renders at 300 DPI — which AMPLIFIES scan noise into a credible-but-GARBLED name
+           ("Beaumont Care Homes Ltd - Holywood" → "oceaumont Care homes Lid - nolywooa")
+           that passes the loose free-text gate, so the ladder commits garbage and the
+           heavy SHARPEN rung only makes it worse. TWO reasons the draw tool wins, both
+           reproduced: (1) the low preview resolution, and (2) a hand-drawn box has
+           vertical HEADROOM (the stored tight box clips glyph tops/bottoms). So for
+           FREE-TEXT crops (val_type None/text/multiline) the ladder's FIRST step now
+           RE-CROPS from the page with headroom (±0.5·h) and downscales to ≈the preview
+           scale (_PREVIEW_DOWNSCALE 0.4 → ~120 DPI); a confident read (min substantial-
+           word conf ≥ _PREVIEW_ACCEPT_MIN 55, passing the gate) is taken OUTRIGHT — both
+           CLEANER and FASTER (smaller image, fewer/cheaper passes) than the 300 DPI rungs.
+           Bench-proven on doc 146 to recover the EXACT "Beaumont Care Homes Ltd - Holywood"
+           (min 92) the tight 300 DPI crop reads as junk. Needs page+box (threaded from
+           BOTH _crop_and_ocr paths); absent (a test stub) → ladder unchanged. NUMERIC/code
+           crops and the FULL-PAGE OCR keep the high-res read (detail/keyword completeness;
+           the full-page text is cached on reprocess anyway). A residual low-conf preview
+           read falls through to the full-res ladder below; a still-shaky free-text rung
+           there triggers the same downscale as a retry. Gated to free-text, so clean/
+           structured reads are unaffected. Guarded by the OCR/drift suites.
            LIGHT-FIRST OCR LADDER (_crop_and_ocr): the unconditional heavy prep
            noted above is REPLACED by a ladder — light (greyscale, upscale-small-
            only, NO autocontrast/sharpen) PSM 7 → light PSM 6 → heavy _prep PSM 7/6
@@ -634,12 +678,56 @@ process_docs.py → ExtractionEngine.extract()
            gate (single-token for code fields, so high-DPI garbage like "cield wu"
            or a clipped date yields) — a strictly-credible rigid read is never
            displaced (no unconditional override).
+           INLINE-HARVEST COLUMN CLIP (template_mapper.cluster_value_words, 2026-06 —
+           007's fix): the harvest read the WHOLE OCR line (full page width) and took
+           EVERY word after the label, so a far heading/column on the same row LEAKED
+           into the value ("ABC12345" → "ABC12345 DOCUSYS MODEL NAME"; "JL ABC12345").
+           The drawn box WIDTH was discarded on this path and the only re-narrowing was
+           clean_crop_segment's 4-SPACE split (a 1-3 space column boundary defeats it).
+           cluster_value_words now splits the post-label words into HORIZONTAL-GAP
+           columns (break where the inter-word gap > 1.2× median word height — a true
+           inter-COLUMN gap, DPI-invariant; mirrors the renderer's nearestLeftCluster)
+           and returns the column nearest/after the label's right edge. Wired at BOTH
+           inline-harvest locator sites (template_mapper._locate_anchor + anchor.
+           _locate_in_text_lines). Additive: one column / no wide gap / missing word
+           boxes → byte-identical; full-width search strip (the "far value column"
+           capability) untouched. Guarded by tests/test_inline_column_bleed.py.
+           OPERATOR FIELD-CLEANUP RULES (the residual-case override): a Review
+           right-click toolkit (review/renderer.js field-input contextmenu, gated
+           canEdit) teaches per-(supplier,doctype,field) cleanup rules to strip a leaked
+           heading/column OCR still bled in. Three options w/ tooltips + before→after:
+           "Keep only the main value" (rule_type keep_block — engine keeps the single
+           validation-pattern / digit-bearing token, dropping neighbour words either
+           side), "Remove this text from future scans" (remove_text — reggie's anchored
+           literal matcher, leading/trailing), "Just fix this one" (one-off, no rule).
+           Staged in pendingFieldRules, COMMITTED ON CONFIRM (mirrors pendingAnchors),
+           reversible in Learning Recovery ("Field rules" group + clear). Stored in
+           field_rules (migration 36); loaded via --field-rules-file → engine.
+           set_field_rules; applied in the Stage 4.5 winner loop (EARLY, independent of
+           learned format) by python_backend/extraction/field_rules.py (apply_keep_block
+           / apply_remove_text — pure, guarded, never empties); honest was_corrected +
+           corrected_to + "auto-trimmed, was: …" note, NOT review-forced. Guarded by
+           tests/test_field_rules.py + database/modules/test_field_rules.js.
            ANCHOR-LABEL SANITISATION (learning.sanitizeAnchorLabel, migration 23):
            strip document-specific tokens (reference numbers/dates/serials) from an
            auto-detected ⊕ label so it GENERALISES across documents
            ("2605-0769-1 Work Address" → "Work Address"); on change the now-
            mismatched drift offset is NULLed. Migration 23 cleans existing rows
            (deletes any whose label is entirely document-specific).
+           FIELD-NAME LABEL GUARD — DETECTED vs PHANTOM (learning.saveAnchor, 2026-06):
+           the guard that drops an anchor label equal to the FIELD KEY (a phantom
+           "supplier_name" caption the page never prints → blind-crop) used to fire on
+           ANY match — which wrongly nuked a REAL detected caption for a well-named
+           custom field (field `make` → on-page "Make", `serial_number` → "Serial
+           number", `mac_address`/`ip_address`/`model`), leaving it a label-less blind
+           crop that DRIFTS a row on variable-layout docs (Print Tracker alerts: every
+           anchor read the neighbouring row). Now the ⊕ capture marks a label OCR'd FROM
+           THE PAGE with `label_detected:true` (review/renderer.js, both left+above
+           paths); saveAnchor drops the field-name label ONLY when `!label_detected`
+           (the synthesised fallback), so a real caption that merely equals the field
+           key is KEPT + locatable + keeps its offset. The IPC passes the flag through
+           untouched. (customer→"Entity"/date→"Estimated depletion" were unaffected —
+           their captions differ from the key.)
            VAL_TYPE FROM FIELD TYPE (engine.extract): field_patterns is seeded from
            each CUSTOM field's DB type (date/currency/alphanumeric only — text left
            untouched so name/address reads don't change) and the doc-type reference
@@ -754,6 +842,31 @@ process_docs.py → ExtractionEngine.extract()
              missing or below 70% confidence. DEFAULT.
 - `ai`    — stages 1+2+3 always
 
+**Locate reads at a capped width, not ×2-upscaled** (2026-06 — the biggest per-doc OCR
+win): the anchor/landmark LOCATE (`template_mapper._ocr_lines` → `image_to_data` for word
+boxes) used the value-crop prep `_prep`, which UPSCALES ×2 — ballooning a 2481px page to
+~4962px so a full-page locate took ~3.8s (the dominant cost on import AND reprocess, and it
+runs even with the OCR-text cache because the locate is a SEPARATE pass for word boxes).
+The locate only needs to MATCH label/landmark text and return NORMALISED boxes, so it now
+uses `_prep_for_lines` which CAPS the width at ~1100px (≈120 DPI): the SAME lines are found
+in ~1.1s (2.7× faster, ~2.7s/doc). Geometry-neutral (boxes normalise to the prepped size);
+registration uses normalised landmark positions so the fit is unchanged. Guarded by the
+template-mapper/drift/registration suites.
+
+**Reprocess reuses the stored full-page OCR text** (2026-06): the full-page OCR is
+~1.9s/page and re-reads the SAME pixels every reprocess for a result that never
+changes — only the learned data does. So reprocess now passes the doc's already-stored
+`documents.ocr_text` and `extract_text_and_images(..., cached_text=...)` RENDERS the page
+images (~0.25s, needed for crop/logo/zone OCR + registration) but SKIPS the full-page OCR
+(~90% faster on that step). Per-field crop reads + born-digital `page_text_lines` still
+re-run, so accuracy is unchanged (the field VALUES come from the crop reads against the
+NEW learned anchors, not the full-page text). SINGLE reprocess: `--cached-ocr-file`
+(written into the temp folder); BATCH (Reprocess All): `ocr_text` per-doc in the
+`--reprocess-manifest` (doc_overrides). GATED OFF when a manual/template ENHANCE is active
+(the OCR read would differ) or the stored text is empty → full OCR. First import (no
+manifest/cached file) is byte-identical. Self-populating: a reprocess still stores
+`ocr_text`, so a doc whose stored text was empty is cached after its first reprocess.
+
 **Bounded parallel processing** (setting `processing_concurrency`, 1–5, default 1):
 `process-folder` (processing/handler.js) runs a worker POOL — N Python procs,
 each handling a disjoint round-robin SHARD of the folder's files (passed via the
@@ -794,6 +907,26 @@ samples (with a floor so one noisy sample can't erase a known-good identity);
 an already-established `logo_phash` is kept rather than reclobbered each confirm.
 Prevents one garbled scan from poisoning Stage 0 matching for a whole supplier.
 
+**Born-digital keyword-fingerprint backfill** (`templates/handler.js` `generateFingerprint`
++ `python_backend/template_fingerprint.py`, 2026-06): a template can be born with an EMPTY
+keyword_fingerprint — a BORN-DIGITAL doc (e.g. a Print Tracker email alert) whose stored
+`documents.ocr_text` was never captured yields nothing to `extract_keyword_fingerprint` at
+promote time, so the template is matchable ONLY by its logo phash. That phash is unreliable
+for these: the logo crop is the top-left corner `(0,0→w/2,h/5)`, and on alerts that render a
+`From/Sent/To/Subject` email header above the banner it hashes the HEADER → drifts 12-34
+Hamming vs the accept gate (conf≥60 ⇒ dist≤6) → "No template match" → the whole cascade
+(wrong supplier via the logo fallback, fixed-anchor drift). The fix RE-DERIVES the fingerprint
+from SEVERAL of the template's documents (born-digital aware, the same text path processing
+uses) and keeps only the STABLE words present in a MAJORITY (≥60%) — dropping per-doc
+recipient/entity noise ("Karen"/"McConnell") and keeping the branding ("PRINT","TRACKER",
+"printtrackerpro","Sent","Subject"). Cross-sample so it's layout-agnostic (also strengthens
+invoice/worksheet fingerprints). Runs: (1) a lazy STARTUP BACKFILL (~14s) over every template
+with docs but no fingerprint — fixes existing ones with no re-teach; (2) `promote-to-template`
+(so a teach-created born-digital template isn't born empty); (3) an admin "Regenerate
+fingerprint" button (Template Manager, force overwrite, beside "Regenerate landmarks") +
+`regenerate-template-fingerprint` IPC. FILLS an empty fingerprint only (never clobbers a
+stabilised one) unless forced.
+
 **Field variability is EVIDENCE-based, not schema-guessed** (`_buildTemplateFields`
 in review/handler.js): a confirmed field is frozen as a template `fixed_value`
 ONLY when it's truly constant. The schema heuristic (`_annotateFieldVariability`)
@@ -813,6 +946,21 @@ guards it from ordinary keyword/anchor/identity-rescue overrides (it still yield
 a curated Stage 0.5 mapping and to `keyword_override`, and an authoritative ⊕ anchor
 still wins via Tier A). Guarded by `database/modules/test_fixed_locked.js` +
 test_precedence.py.
+
+**Fixed Supplier Name is IMMUNE to the logo fallback** (engine `_doctype_fixed_supplier`,
+2026-06): a doc type whose Supplier Name (`supplier_name`) is an admin-fixed template
+field has a DETERMINISTIC supplier, so a logo guess must never fill it. The logo
+supplier fallback runs only `if not supplier_name` — but when NO template matched the
+fixed value was never seeded, so a polluted/colliding logo phash filled `supplier_name`
+with a WRONG supplier (the "City Office NI on a Print Tracker doc" bug: the same logo
+learned under several recipient companies, `findLogoMatch` returns the global-closest).
+Now, before the logo fallback, when the doc type IS known the engine looks up that doc
+type's fixed Supplier Name across ALL templates for its slug (prefers a LOCKED value;
+uses a plain fixed value only when every candidate AGREES — ambiguous → skip, never
+guess) and seeds it (method `template_fixed[_locked]`), skipping the logo. Returns None
+when there's no unambiguous fixed value, so every other doc type's logo path is
+byte-identical. Reusable for any fixed-supplier doc type, independent of template-match
+reliability. Guarded by tests/test_fixed_supplier_immune.py.
 
 **Validator date rules (Stage 4)**: dates normalise to DD-MM-YYYY; a valid date
 embedded in OCR junk is salvaged (`salvage_date`, review-forced). The date
@@ -870,14 +1018,16 @@ OutputRoot/
 
 **STRUCTURAL fields (Company / Date / Reference) are PERMANENT** (migration 27,
 `document_types.js`): every type has three locked roles — the COMPANY/identity
-field (`COMPANY_KEYS` = supplier_name | customer_name; label relabelled
-**"Company"**), the `date_field_key`, and the `ref_field_key`. They drive filing
+field (`COMPANY_KEYS` = supplier_name | customer_name; label matches the KEY —
+**"Supplier Name"** / **"Customer Name"** — migration 35 reversed the earlier
+ambiguous **"Company"** unification from migration 27), the `date_field_key`, and
+the `ref_field_key`. They drive filing
 (`Company/Year/Month/DocType.Date.Ref`) AND all per-supplier learning
 (logo_fingerprints/hints/anchors/corrections/template identity key off the company
 scope value), so the FIELD can't be deleted, disabled, renamed or retyped — but the
 per-document VALUE stays editable (correcting a mis-read is what feeds learning).
-The internal key stays `supplier_name`/`customer_name` (only the display LABEL is
-"Company") so the learning schema is untouched. `is_structural` is annotated on each
+The internal key stays `supplier_name`/`customer_name` (only the display LABEL
+changed — "Supplier Name"/"Customer Name") so the learning schema is untouched. `is_structural` is annotated on each
 field (getWithFields/getAllWithFieldsAll) for the Settings UI (locked toggle, no
 delete, 🔒). `updateField`/`deleteField` enforce it server-side;
 `create-doc-type-with-fields` injects a Company field if the caller omits one.

@@ -29,6 +29,27 @@ function seat_state_pill(string $status): string
     return '<span class="pill">free</span>';
 }
 
+// Makes every <tr data-href="…"> in the page navigate on click (whole-row clickable).
+// Clicks landing on an interactive control (link/button/form field inside the row —
+// e.g. the trials Extend/Revoke forms) are ignored, so inline actions still work.
+// Call ONCE after a table whose rows carry data-href. Pure presentation.
+function admin_row_links(): void
+{
+    echo <<<'HTML'
+<script>
+(function () {
+  document.querySelectorAll('tr[data-href]').forEach(function (tr) {
+    tr.style.cursor = 'pointer';
+    tr.addEventListener('click', function (e) {
+      if (e.target.closest('a, button, input, select, textarea, label, form')) return;
+      window.location = tr.getAttribute('data-href');
+    });
+  });
+})();
+</script>
+HTML;
+}
+
 // Top-of-page section nav, current page highlighted (solid vs outline — both .btn classes
 // already exist in admin_page_open's CSS). Call right after admin_page_open() on each page.
 function admin_nav(string $current): void

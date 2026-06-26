@@ -10,9 +10,10 @@ const { addLabelOverrides } = require('./label_overrides');
 // per-document VALUE stays editable (so a mis-read can be corrected — that's what
 // feeds learning), but the FIELD itself cannot be deleted, disabled, renamed or
 // retyped. A field is structural when its key is the type's reference or date key,
-// or it is the COMPANY/identity field. COMPANY_KEYS keeps the internal scope key
-// (`supplier_name`) — only the DISPLAY label is "Company" — so the whole learning
-// schema is untouched; `customer_name` is the company role on sales orders.
+// or it is the COMPANY/identity field. COMPANY_KEYS is the internal scope key; the
+// DISPLAY label matches that key so the operator knows exactly what belongs there —
+// `supplier_name` → "Supplier Name", `customer_name` → "Customer Name" (the company
+// role on sales orders). The key is the learning scope, so the schema is untouched.
 const COMPANY_KEYS = ['supplier_name', 'customer_name'];
 
 function isStructuralKey(dt, key) {
@@ -31,7 +32,7 @@ const BUILT_IN_TYPES = [
     date_field_key: 'invoice_date',
     sort_order:     10,
     fields: [
-      { key: 'supplier_name',  label: 'Company',         type: 'text', required: 1, sort_order: 10 },
+      { key: 'supplier_name',  label: 'Supplier Name',   type: 'text', required: 1, sort_order: 10 },
       { key: 'invoice_date',   label: 'Invoice Date',    type: 'date', required: 1, sort_order: 20 },
       { key: 'invoice_number', label: 'Invoice Number',  type: 'text', required: 1, sort_order: 30 },
     ]
@@ -43,7 +44,7 @@ const BUILT_IN_TYPES = [
     date_field_key: 'order_date',
     sort_order:     20,
     fields: [
-      { key: 'customer_name',       label: 'Company',             type: 'text', required: 1, sort_order: 10 },
+      { key: 'customer_name',       label: 'Customer Name',       type: 'text', required: 1, sort_order: 10 },
       { key: 'order_date',          label: 'Order Date',          type: 'date', required: 1, sort_order: 20 },
       { key: 'sales_order_number',  label: 'Sales Order Number',  type: 'text', required: 1, sort_order: 30 },
     ]
@@ -55,7 +56,7 @@ const BUILT_IN_TYPES = [
     date_field_key: 'po_date',
     sort_order:     30,
     fields: [
-      { key: 'supplier_name', label: 'Company',       type: 'text', required: 1, sort_order: 10 },
+      { key: 'supplier_name', label: 'Supplier Name', type: 'text', required: 1, sort_order: 10 },
       { key: 'po_date',       label: 'PO Date',       type: 'date', required: 1, sort_order: 20 },
       { key: 'po_number',     label: 'PO Number',     type: 'text', required: 1, sort_order: 30 },
     ]
@@ -254,7 +255,7 @@ function ensureStructuralRoles(db, typeId) {
   const keys   = new Set(fields.map(f => f.key));
 
   if (!fields.some(f => COMPANY_KEYS.includes(f.key))) {
-    addField(db, { document_type_id: typeId, key: 'supplier_name', label: 'Company',
+    addField(db, { document_type_id: typeId, key: 'supplier_name', label: 'Supplier Name',
                    type: 'text', required: 1, sort_order: 1 });
   }
 
@@ -322,13 +323,15 @@ const PRESET_CATALOG = [
     company_key: 'customer_name',
     fields: [
       { key: 'customer_name',     label: 'Customer Name',     type: 'text',     required: 1,
-        labels: ['Remitter', 'Paid By', 'Payer', 'From'] },   // "From" = the payer on a remittance
+        // QUALIFIED/directional only — name fields are ungated, so a bare "From"
+        // (also the supplier-address / email-header sense) is unsafe; use the payer-specific forms.
+        labels: ['Remitter', 'Received From', 'Payment From', 'Payer', 'Paid By'] },
       { key: 'remittance_number', label: 'Remittance Number', type: 'text',     required: 1,
-        labels: ['Remittance No', 'Remittance Number', 'Advice No', 'Remittance Ref', 'Payment Ref'] },
+        labels: ['Remittance No', 'Remittance Number', 'Remittance Ref', 'Advice No', 'Payment Ref', 'Payment Reference'] },
       { key: 'remittance_date',   label: 'Remittance Date',   type: 'date',     required: 1,
-        labels: ['Remittance Date', 'Payment Date'] },
+        labels: ['Remittance Date', 'Payment Date', 'Date Paid'] },
       { key: 'total_amount',      label: 'Amount Paid',       type: 'currency', required: 0,
-        labels: ['Amount Paid', 'Total Paid', 'Payment Amount'] },
+        labels: ['Amount Paid', 'Total Paid', 'Payment Amount', 'Net Paid'] },
     ],
   },
   {
@@ -337,11 +340,11 @@ const PRESET_CATALOG = [
     fields: [
       { key: 'supplier_name',      label: 'Supplier Name',      type: 'text',     required: 1 },
       { key: 'credit_note_number', label: 'Credit Note Number', type: 'text',     required: 1,
-        labels: ['Credit Note No', 'Credit Note Number', 'Credit Note #', 'Credit No', 'CN No'] },
+        labels: ['Credit Note No', 'Credit Note Number', 'Credit Note #', 'Credit No', 'CN No', 'Credit Memo No'] },
       { key: 'credit_note_date',   label: 'Credit Note Date',   type: 'date',     required: 1,
-        labels: ['Credit Note Date', 'Issue Date'] },
+        labels: ['Credit Note Date', 'Date of Credit', 'Issue Date'] },
       { key: 'total_amount',       label: 'Total',              type: 'currency', required: 0,
-        labels: ['Credit Amount', 'Total Credit'] },
+        labels: ['Credit Amount', 'Total Credit', 'Credit Total'] },
     ],
   },
   {
@@ -349,11 +352,11 @@ const PRESET_CATALOG = [
     company_key: 'supplier_name',
     fields: [
       { key: 'supplier_name',   label: 'Supplier Name',   type: 'text', required: 1,
-        labels: ['Delivered By'] },
+        labels: ['Delivered By', 'Despatched By', 'Dispatched By'] },
       { key: 'customer_name',   label: 'Customer Name',   type: 'text', required: 0,
-        labels: ['Deliver To', 'Delivery To', 'Ship To'] },
+        labels: ['Deliver To', 'Delivery To', 'Ship To', 'Consignee'] },
       { key: 'delivery_number', label: 'Delivery Number', type: 'text', required: 1,
-        labels: ['Delivery No', 'Delivery Number', 'Delivery Note No', 'DN No', 'Despatch No', 'Dispatch No'] },
+        labels: ['Delivery No', 'Delivery Number', 'Delivery Note No', 'DN No', 'Despatch No', 'Dispatch No', 'Docket No', 'Note No'] },
       { key: 'delivery_date',   label: 'Delivery Date',   type: 'date', required: 1 },
     ],
   },
@@ -364,13 +367,14 @@ const PRESET_CATALOG = [
       { key: 'supplier_name',    label: 'Supplier Name',    type: 'text',     required: 1,
         labels: ['Statement From'] },
       { key: 'customer_name',    label: 'Customer Name',    type: 'text',     required: 0,
-        labels: ['Statement To'] },
+        labels: ['Statement To', 'Account Holder'] },
       { key: 'statement_number', label: 'Statement Number', type: 'text',     required: 1,
         labels: ['Statement No', 'Statement Number', 'Statement Ref'] },
       { key: 'statement_date',   label: 'Statement Date',   type: 'date',     required: 1,
-        labels: ['Statement Date', 'As At'] },
+        labels: ['Statement Date', 'As At', 'As At Date', 'Statement Period'] },
       { key: 'total_amount',     label: 'Balance Due',      type: 'currency', required: 0,
-        labels: ['Balance Due', 'Total Due', 'Amount Due', 'Total Outstanding'] },
+        // single-anchored: "Closing Balance" vs "Opening Balance" rely on direction; never seed bare "Balance".
+        labels: ['Balance Due', 'Total Due', 'Amount Due', 'Total Outstanding', 'Closing Balance'] },
     ],
   },
   {
@@ -380,9 +384,9 @@ const PRESET_CATALOG = [
       { key: 'supplier_name',  label: 'Supplier Name',  type: 'text',     required: 1,
         labels: ['Merchant', 'Sold By'] },
       { key: 'receipt_number', label: 'Receipt Number', type: 'text',     required: 1,
-        labels: ['Receipt No', 'Receipt Number', 'Receipt #', 'Transaction No', 'Ref No'] },
+        labels: ['Receipt No', 'Receipt Number', 'Receipt #', 'Transaction No', 'Transaction ID', 'Ref No'] },
       { key: 'receipt_date',   label: 'Receipt Date',   type: 'date',     required: 1,
-        labels: ['Receipt Date', 'Transaction Date'] },
+        labels: ['Receipt Date', 'Transaction Date', 'Date of Purchase'] },
       { key: 'total_amount',   label: 'Total',          type: 'currency', required: 0,
         labels: ['Amount Paid', 'Total Paid'] },
     ],
@@ -394,11 +398,12 @@ const PRESET_CATALOG = [
       { key: 'supplier_name', label: 'Supplier Name', type: 'text',     required: 1,
         labels: ['Quote From'] },
       { key: 'quote_number',  label: 'Quote Number',  type: 'text',     required: 1,
-        labels: ['Quote No', 'Quotation No', 'Quote Number', 'Quote Ref', 'Quote #', 'Estimate No', 'Estimate Ref'] },
+        labels: ['Quote No', 'Quotation No', 'Quote Number', 'Quotation Number', 'Quote Ref', 'Quote #', 'Estimate No', 'Estimate Ref'] },
       { key: 'quote_date',    label: 'Quote Date',    type: 'date',     required: 1,
-        labels: ['Quote Date', 'Quotation Date', 'Valid From', 'Date of Quote'] },
+        // dropped "Valid From" — that's a validity/terms date, not the quote date.
+        labels: ['Quote Date', 'Quotation Date', 'Date of Quote'] },
       { key: 'total_amount',  label: 'Total',         type: 'currency', required: 0,
-        labels: ['Quote Total', 'Estimated Total'] },
+        labels: ['Quote Total', 'Quotation Total', 'Estimated Total', 'Total Estimate'] },
     ],
   },
 ];

@@ -234,6 +234,53 @@ def repair_name_value(value, lexicon, details=False):
     return (result, strong) if details else result
 
 
+_FRAG_MAXLEN = 2   # a final VARIABLE-position content token this short is a clipped fragment
+
+
+def is_truncated_name(value, lexicon):
+    """True when `value` looks TRUNCATED / FRAGMENTARY vs the confirmed-history name —
+    the dominant name silent-error class character wordness cannot catch (a fragment is
+    itself a real word). Two shapes, both needing the per-field length history (so inert
+    without confirmed history):
+
+      (1) SHORTER than the length history consistently carries (expected_len) — the tail
+          is missing entirely, e.g. "Beaumont Care Homes Ltd -" or "Joinery" (history
+          "Stonebridge Joinery", expected_len 2).
+      (2) FINAL-TOKEN fragment — a right-clip can leave the variable TAIL as a 1-2 char
+          stub ("Beaumont Care Homes Ltd - B" / "...Dundonald H"), so the content-token
+          COUNT still reaches expected_len. Flag when the LAST content token sits at a
+          VARIABLE (non-stable) position, is <= _FRAG_MAXLEN alpha chars, and is not a
+          known business word/abbrev (Ltd/Co). Real site/tail tokens are >= 3 chars.
+
+    Mirrors the content-token iteration (separators don't occupy a position)."""
+    if not value or not lexicon:
+        return False
+    exp = lexicon.get("expected_len") or 0
+    if exp <= 1:
+        return False                       # no usable length expectation
+    content = [t for t in str(value).split() if _is_content(t)]
+    n = len(content)
+    if n == 0:
+        return False
+    if n < exp:
+        return True                        # (1) tail missing entirely
+    # (2) final-token fragment at a variable position.
+    positions = lexicon.get("positions") or {}
+    last_i = n - 1
+    if last_i in positions:
+        return False                       # last token is a learned STABLE token, not a clip
+    alpha = "".join(c for c in content[last_i].lower() if c.isalpha())
+    if len(alpha) > _FRAG_MAXLEN or not alpha:
+        return False
+    try:
+        from extraction.value_quality import ABBREV, COMMON_WORDS
+        if alpha in ABBREV or alpha in COMMON_WORDS:
+            return False                   # a legitimate short word/abbrev tail (Co/Ltd)
+    except Exception:
+        pass
+    return True
+
+
 def conforms_to_lexicon(value, lexicon):
     """True if `value` matches the learned name PATTERN: at EVERY stable position it
     carries the canonical token (exact, normalised), and the remaining positions are

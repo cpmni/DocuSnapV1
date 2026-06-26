@@ -263,7 +263,7 @@ function admin_handle_post(PDO $pdo): void
             $pdo->prepare('UPDATE device_registrations SET trial_end = ? WHERE id = ?')->execute([$newEnd, $trialId]);
             audit_event($pdo, null, (string) $tr['fp_hash'], 'admin.trial_extended', "trial=$trialId plus{$days}d new_end=$newEnd");
             flash_set('ok', "Trial #$trialId extended by $days day(s) — now expires $newEnd.");
-            header('Location: trials.php');
+            header('Location: ' . (($_POST['from'] ?? '') === 'detail' ? 'trial.php?id=' . $trialId : 'trials.php'));
             exit;
         }
 
@@ -281,7 +281,29 @@ function admin_handle_post(PDO $pdo): void
             $pdo->prepare('UPDATE device_registrations SET trial_end = NOW() WHERE id = ?')->execute([$trialId]);
             audit_event($pdo, null, (string) $tr['fp_hash'], 'admin.trial_revoked', "trial=$trialId");
             flash_set('ok', "Trial #$trialId revoked — it is no longer active.");
-            header('Location: trials.php');
+            header('Location: ' . (($_POST['from'] ?? '') === 'detail' ? 'trial.php?id=' . $trialId : 'trials.php'));
+            exit;
+        }
+
+        if ($action === 'set_trial_search_seats') {
+            // Per-trial override of the included detached search-client seats (the
+            // jws.php TRIAL_SEARCH_SEATS default applies when unset). Granted only while
+            // the trial is active and re-issued in the signed token on the next online
+            // check, so the device picks up the new count without re-activating. 0 = none.
+            $trialId = filter_input(INPUT_POST, 'trial_id', FILTER_VALIDATE_INT);
+            $seats   = filter_input(INPUT_POST, 'search_seats', FILTER_VALIDATE_INT);
+            if (!$trialId) throw new RuntimeException('Invalid trial.');
+            if ($seats === false || $seats === null || $seats < 0 || $seats > 1000) {
+                throw new RuntimeException('Search clients must be a whole number between 0 and 1000.');
+            }
+            $row = $pdo->prepare('SELECT fp_hash, trial_start FROM device_registrations WHERE id = ?');
+            $row->execute([$trialId]);
+            $tr = $row->fetch();
+            if (!$tr || $tr['trial_start'] === null) throw new RuntimeException('Trial not found.');
+            $pdo->prepare('UPDATE device_registrations SET trial_search_seats = ? WHERE id = ?')->execute([$seats, $trialId]);
+            audit_event($pdo, null, (string) $tr['fp_hash'], 'admin.trial_search_seats_set', "trial=$trialId seats=$seats");
+            flash_set('ok', "Trial #$trialId now includes $seats search client(s) for its duration — the device updates on its next online check.");
+            header('Location: ' . (($_POST['from'] ?? '') === 'detail' ? 'trial.php?id=' . $trialId : 'trials.php'));
             exit;
         }
 

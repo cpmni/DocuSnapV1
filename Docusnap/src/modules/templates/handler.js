@@ -202,6 +202,82 @@ function register(ctx) {
     } catch (e) { console.error('[landmarks] backfill failed:', e.message); }
   }, 8000);
 
+  // (Re)derive a template's KEYWORD FINGERPRINT from several of its documents,
+  // keeping only the STABLE recurring words (template_fingerprint.py). This is what
+  // lets a BORN-DIGITAL template (e.g. a Print Tracker email alert, whose logo crop
+  // is fooled by a variable From/To/Subject header) be matched by its stable header
+  // vocabulary instead of an unreliable logo phash. By default it only FILLS an
+  // empty fingerprint (never clobbers a stabilised one); force:true overwrites.
+  // Best-effort; never throws. Exposed for the promote-to-template path.
+  async function generateFingerprint(templateId, { force = false } = {}) {
+    const db   = getDb();
+    const tmpl = templates.getById(db, templateId);
+    if (!tmpl) return { success: false, reason: 'no template' };
+    const existing = Array.isArray(tmpl.keyword_fingerprint) ? tmpl.keyword_fingerprint : [];
+    if (existing.length && !force) return { success: true, skipped: true, count: existing.length };
+
+    // Up to 8 of the template's documents (its pinned sample first, then confirmed).
+    const sid  = tmpl.sample_document_id || -1;
+    const docs = db.prepare(`
+      SELECT working_path, stored_path, stored_filename, folder_path, original_filename
+      FROM documents WHERE template_id = ? OR id = ?
+      ORDER BY (id = ?) DESC, confirmed_at DESC LIMIT 8
+    `).all(templateId, sid, sid);
+    const files = [];
+    for (const d of docs) { const f = _resolveDocPath(d); if (f && !files.includes(f)) files.push(f); }
+    if (!files.length) return { success: false, reason: 'no sample files' };
+
+    const learning = require('../../../database/modules/learning');
+    let bornDigital = true, ocrEngine = 'tesseract';
+    try { bornDigital = learning.getSetting(db, 'born_digital_enabled') !== 'false'; } catch {}
+    try { if (learning.getSetting(db, 'ocr_engine') === 'rapidocr') ocrEngine = 'rapidocr'; } catch {}
+
+    const filesFile = path.join(os.tmpdir(), `ds_tfp_${templateId}_${Date.now()}.json`);
+    try { fs.writeFileSync(filesFile, JSON.stringify(files)); }
+    catch (e) { return { success: false, reason: e.message }; }
+    const script = ctx.resourcePath('python_backend', 'template_fingerprint.py');
+    return new Promise((resolve) => {
+      const a = ['--files-file', filesFile, '--tesseract', ctx.tesseractPath(), '--ocr-engine', ocrEngine];
+      if (bornDigital) a.push('--born-digital');
+      const proc = spawn(ctx.pythonExe(), ctx.pythonArgs(script, ...a), { windowsHide: true });
+      let out = '', err = '';
+      proc.stdout.on('data', d => { out += d.toString(); });
+      proc.stderr.on('data', d => { err += d.toString(); });
+      proc.on('close', () => {
+        try { fs.unlinkSync(filesFile); } catch {}
+        if (err) console.error('template_fingerprint stderr:', err.trim());
+        let parsed = null; try { parsed = JSON.parse(out.trim()); } catch {}
+        const fp = (parsed && Array.isArray(parsed.fingerprint)) ? parsed.fingerprint : [];
+        if (fp.length) {
+          try {
+            db.prepare("UPDATE templates SET keyword_fingerprint = ?, updated_at = datetime('now') WHERE id = ?")
+              .run(JSON.stringify(fp), templateId);
+          } catch (e) { console.error('set fingerprint:', e.message); }
+        }
+        resolve({ success: fp.length > 0, count: fp.length, docs: (parsed && parsed.docs) || 0 });
+      });
+      proc.on('error', (e) => { try { fs.unlinkSync(filesFile); } catch {}; resolve({ success: false, reason: e.message }); });
+    });
+  }
+  ctx.generateFingerprint = generateFingerprint;
+
+  // Lazy one-shot backfill: templates with documents but NO keyword fingerprint gain
+  // one with no re-teach (the born-digital empty-fingerprint class). Delayed past the
+  // landmarks backfill so the two never contend; best-effort.
+  setTimeout(async () => {
+    try {
+      const db = getDb();
+      const rows = db.prepare(`
+        SELECT t.id FROM templates t
+        WHERE (t.keyword_fingerprint IS NULL OR t.keyword_fingerprint = '' OR t.keyword_fingerprint = '[]')
+          AND (t.sample_document_id IS NOT NULL
+               OR EXISTS (SELECT 1 FROM documents d WHERE d.template_id = t.id))
+      `).all();
+      for (const r of rows) await generateFingerprint(r.id);
+      if (rows.length) console.log(`[fingerprint] backfilled ${rows.length} template(s)`);
+    } catch (e) { console.error('[fingerprint] backfill failed:', e.message); }
+  }, 14000);
+
   // ── Browse ──────────────────────────────────────────────────────────────────
   ipcMain.handle('get-templates', () => {
     requireRole('admin');
@@ -269,6 +345,13 @@ function register(ctx) {
   ipcMain.handle('regenerate-template-landmarks', async (_e, templateId) => {
     requireRole('admin');
     return generateLandmarks(templateId);
+  });
+
+  // Re-derive the keyword fingerprint from the template's documents (force overwrite),
+  // so an admin can fix a born-digital template whose logo phash is unreliable.
+  ipcMain.handle('regenerate-template-fingerprint', async (_e, templateId) => {
+    requireRole('admin');
+    return generateFingerprint(templateId, { force: true });
   });
 
   // ── Manual registration landmarks ("Enhance detection") ──────────────────────

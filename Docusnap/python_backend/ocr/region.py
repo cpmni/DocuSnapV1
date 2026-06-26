@@ -70,16 +70,24 @@ def main():
     if args.boxes:
         import json
         box = None
+        words = []   # per-word boxes (pre-upscale px) so a caller can split columns
         try:
             data = pytesseract.image_to_data(chosen, config='--oem 3 --psm 6',
                                              output_type=pytesseract.Output.DICT)
             xs, ys, x2s, y2s = [], [], [], []
             for i in range(len(data.get('text', []))):
-                if not (data['text'][i] or '').strip():
+                w = (data['text'][i] or '').strip()
+                if not w:
                     continue
                 xs.append(data['left'][i]); ys.append(data['top'][i])
                 x2s.append(data['left'][i] + data['width'][i])
                 y2s.append(data['top'][i] + data['height'][i])
+                # Each word mapped back to the caller's ORIGINAL (pre-upscale) px, so a
+                # consumer (e.g. the ⊕ anchor capture) can cluster words by horizontal
+                # gap and keep only the column nearest the value.
+                words.append({"text": w,
+                              "box": [data['left'][i] / scale, data['top'][i] / scale,
+                                      data['width'][i] / scale, data['height'][i] / scale]})
             if xs:
                 # Union of word boxes, mapped back to original (pre-upscale) px.
                 l, t = min(xs) / scale, min(ys) / scale
@@ -87,7 +95,7 @@ def main():
                 box = [l, t, bw, bh]
         except Exception:
             box = None
-        print(json.dumps({"text": text, "box": box}), end='', flush=True)
+        print(json.dumps({"text": text, "box": box, "words": words}), end='', flush=True)
         return
 
     print(text, end='', flush=True)

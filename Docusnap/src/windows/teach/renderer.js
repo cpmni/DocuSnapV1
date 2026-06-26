@@ -197,11 +197,20 @@ function tzApply(){
 }
 function tzSet(z){ tzZoom=Math.max(TZ_MIN,Math.min(TZ_MAX,z)); tzApply(); }
 function tzReset(){ tzZoom=1; tzPanX=0; tzPanY=0; tzApply(); }
+// Render the DISPLAY at a higher scale than the 1.5/108 DPI default so the page is crisp
+// on a large/zoomed pane; the OCR crop is downscaled back to OCR_RENDER_SCALE in cropB64
+// so read quality is unchanged. (Only applies to PDFs — an image file is returned at its
+// native scan resolution, not re-rendered, so its OCR crop is left as-is.)
+const TEACH_RENDER_SCALE = 4.0;   // 288 DPI display render (was 3.0/216) — crisper teach preview
+// OCR reads degraded scans cleanest at a low resolution; a value line ~this many px tall
+// is the sweet spot region.py reads well. The OCR crop is downscaled to land near here
+// regardless of the (possibly much higher) DISPLAY render — see cropB64.
+const OCR_TARGET_H = 28;
 async function startRegionStep(){
   canvas=$('pageCanvas'); ctx=canvas.getContext('2d');
   if (!state.img){
     try{
-      const pages=await D.getDocumentPages(state.doc.id, state.doc.folder_path, state.doc.original_filename);
+      const pages=await D.getDocumentPages(state.doc.id, state.doc.folder_path, state.doc.original_filename, TEACH_RENDER_SCALE);
       state.pageDataUrl=Array.isArray(pages)?pages[0]:null;
     }catch{ state.pageDataUrl=null; }
     if (!state.pageDataUrl){ $('rg-prompt').textContent="Couldn't load that page."; return; }
@@ -220,7 +229,8 @@ function fitCanvas(){
   // (#pageCanvas max-width/max-height) downscales it to fit the pane; the transform
   // handles zoom. Only ever downscale an oversized scan (memory guard); never upscale.
   const natW=state.img.naturalWidth, natH=state.img.naturalHeight;
-  const CAP=2800, s=Math.min(1, CAP/Math.max(natW,natH));
+  // Keep the full high-DPI render (was 2800, which downscaled a 4.0 render and softened it).
+  const CAP=4000, s=Math.min(1, CAP/Math.max(natW,natH));
   canvas.width=Math.round(natW*s);
   canvas.height=Math.round(natH*s);
 }
@@ -296,7 +306,19 @@ function promptField(){
   const f=curField(); if(!f) return;
   drawMode='value';
   setValueBanner(f);
-  $('rg-readback').innerHTML=`<div class="muted" style="margin-top:4px">Or, if this field is always the same on every document of this type: <button class="btn link" id="rb-fixed" style="padding:4px 8px">Fixed value</button></div>`;
+  // Fixed-value alternative — presented as a prominent accent card (not a buried muted
+  // link) so a first-time user can clearly see they DON'T have to draw a box for a field
+  // whose value never changes (e.g. the company name).
+  $('rg-readback').innerHTML=
+    `<div style="margin-top:12px;padding:12px 14px;background:var(--accent-bg);border:1px solid var(--accent);`+
+        `border-radius:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">`+
+      `<div style="flex:1;min-width:170px">`+
+        `<div style="font-weight:600;font-size:13px;color:var(--text)">📌 Always the same on every document?</div>`+
+        `<div class="muted" style="font-size:12px;margin-top:3px">If the ${esc(f.label)} never changes (e.g. the `+
+          `company name), you don't need to draw a box — just type it once.</div>`+
+      `</div>`+
+      `<button class="btn" id="rb-fixed" style="white-space:nowrap">Set a fixed value →</button>`+
+    `</div>`;
   $('rb-fixed').onclick=()=>showFixedInput(f);
   drawnBox=null; redrawCanvas();
   renderFieldRail();
@@ -378,25 +400,48 @@ function showValueConfirm(f, r){
 function enterAnchorMode(){
   const f=curField(), r=f&&state.results[f.key]; if(!r) return;
   drawMode='anchor';
-  $('rg-prompt').textContent=`Step 2 — mark the label for ${f.label}`;
-  $('rg-sub').textContent=`Draw a box around the printed label near the value (e.g. "${f.label}:"). You can draw it anywhere — the relative offset is remembered. Or skip if there's no clear label.`;
+  $('rg-prompt').textContent=`Step 2 — confirm the label for ${f.label}`;
+  $('rg-sub').textContent=`Scan Finder follows a printed label so the field keeps reading when the layout shifts. Confirm the detected label and its direction, draw a different box, or continue without one.`;
+  renderAnchorReadout();
+  redrawCanvas();
+}
+// The anchor read-out + the Left/Above direction question. Factored out so the toggle
+// re-renders after a re-detect. The primary button KEEPS the detected label (or accepts
+// position-only) and advances — it never discards a detected label.
+function renderAnchorReadout(){
+  const f=curField(), r=f&&state.results[f.key]; if(!r) return;
   const hasLabel = !!r.anchor_text;
+  const dir = r.anchor_dir || 'left';
   const lbl = hasLabel
-    ?`Auto-detected: <span class="mono">"${esc(r.anchor_text)}"</span>`
-    :'No label auto-detected — will use position only.';
-  // The primary button KEEPS the auto-detected label (or accepts position-only) and
-  // advances — it never discards a detected label, so it's named for what it does
-  // ("Skip label" wrongly implied the detected anchor was being thrown away).
+    ? `Detected label: <span class="mono">"${esc(r.anchor_text)}"</span>`
+    : 'No label found here — try the other direction, draw one, or continue without.';
   const keepText = hasLabel ? 'Keep this label →' : 'Continue without a label →';
   $('rg-readback').innerHTML=
     `<div class="muted" style="font-size:13px">${lbl}</div>`+
-    `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">`+
+    `<div style="margin-top:9px;font-size:13px">Is the label to the <b>left</b> of the value, or <b>above</b> it?</div>`+
+    `<div style="margin-top:6px;display:flex;gap:6px">`+
+      `<button class="btn ${dir==='left'?'primary':'ghost'}" id="rb-dir-left">← Left</button>`+
+      `<button class="btn ${dir==='above'?'primary':'ghost'}" id="rb-dir-above">↑ Above</button>`+
+    `</div>`+
+    `<div style="margin-top:11px;display:flex;gap:8px;flex-wrap:wrap">`+
       `<button class="btn primary" id="rb-skip-anchor">${keepText}</button>`+
       `<button class="btn ghost" id="rb-redraw-val">← Redraw value</button>`+
     `</div>`;
+  $('rb-dir-left').onclick=()=>redetectAnchor('left');
+  $('rb-dir-above').onclick=()=>redetectAnchor('above');
   $('rb-skip-anchor').onclick=()=>{ r.status='done'; drawMode='value'; advanceField(); };
   $('rb-redraw-val').onclick=()=>{ delete state.results[f.key]; promptField(); };
+}
+// Re-run label detection in the chosen direction (the Left/Above toggle) and refresh.
+async function redetectAnchor(dir){
+  const f=curField(), r=f&&state.results[f.key]; if(!r||!r.target) return;
+  $('rg-readback').innerHTML='<span class="muted">Looking '+(dir==='left'?'to the left':'above the value')+'…</span>';
+  try{
+    const a=await autoLabel(r.target, dir);
+    r.anchor=a.box; r.anchor_text=a.anchor_text; r.anchor_dir=a.dir||dir;
+  }catch{ r.anchor_dir=dir; }
   redrawCanvas();
+  renderAnchorReadout();
 }
 async function captureAnchor(box){
   const f=curField(), r=f&&state.results[f.key]; if(!r){ drawMode='value'; return; }
@@ -405,6 +450,8 @@ async function captureAnchor(box){
   text=(text||'').split('\n')[0].slice(0,40);
   r.anchor={x:box.x,y:box.y,w:box.w,h:box.h};
   r.anchor_text = text || r.anchor_text || null;
+  const v=r.target||{};   // direction implied by where they drew it, for the read-out
+  r.anchor_dir = (typeof v.y==='number' && (box.y+box.h) <= (v.y+(v.h||0)*0.5)) ? 'above' : 'left';
   r.anchorManual = true;
   r.status = 'done';
   drawMode='value';
@@ -413,7 +460,7 @@ async function captureAnchor(box){
   advanceField();
 }
 function store(f,box,anchor,value,pending){
-  state.results[f.key]={ value, target:box, anchor:anchor.box, anchor_text:anchor.anchor_text, status:pending?'pending':'done' };
+  state.results[f.key]={ value, target:box, anchor:anchor.box, anchor_text:anchor.anchor_text, anchor_dir:anchor.dir||'left', status:pending?'pending':'done' };
   if (!pending) advanceField();
 }
 function advanceField(){
@@ -426,42 +473,64 @@ function advanceField(){
 $('rg-redraw').onclick=()=>{ const f=curField(); if(f) delete state.results[f.key]; promptField(); };
 $('rg-skip').onclick=()=>{ const f=curField(); if(!f)return; state.results[f.key]={value:'',target:null,anchor:null,anchor_text:null,status:'skip'}; advanceField(); };
 
-// crop a normalized box from the natural image → base64 PNG (no data: prefix)
+// crop a normalized box from the natural image → base64 PNG (no data: prefix).
+// The DISPLAY render is high-DPI for crispness, but OCR reads cleanest at ~108 DPI, so
+// for a PDF (re-rendered at TEACH_RENDER_SCALE) the crop is downscaled back to
+// OCR_RENDER_SCALE before OCR — read quality matches the old behaviour exactly. An image
+// file is at its native scan resolution (not re-rendered), so it's left untouched.
 async function cropB64(box, pad){
   const im=state.img, natW=im.naturalWidth, natH=im.naturalHeight;
   const x=Math.max(0,(box.x-(pad?pad:0))*natW), y=Math.max(0,(box.y-(pad?pad:0))*natH);
   const w=Math.min(natW-x,(box.w+(pad?pad*2:0))*natW), h=Math.min(natH-y,(box.h+(pad?pad*2:0))*natH);
-  const c=document.createElement('canvas'); c.width=Math.max(1,Math.round(w)); c.height=Math.max(1,Math.round(h));
+  // Downscale a TALL (high-DPI) crop so its line-height lands near the OCR sweet spot.
+  // Resolution-INDEPENDENT: it targets the crop's own pixel height, so it never assumes
+  // the display render scale (a scale mismatch can't over-shrink the crop to junk) and
+  // only ever downscales (region.py upscales anything too small itself).
+  const ds = h > OCR_TARGET_H ? (OCR_TARGET_H / h) : 1.0;
+  const c=document.createElement('canvas');
+  c.width=Math.max(1,Math.round(w*ds)); c.height=Math.max(1,Math.round(h*ds));
   c.getContext('2d').drawImage(im,x,y,w,h,0,0,c.width,c.height);
   return c.toDataURL('image/png').split(',')[1];
 }
-// Auto-detect the label: OCR the band immediately LEFT of the value, then ABOVE.
-async function autoLabel(box){
-  const bandW=Math.min(box.x,0.20);
+// Auto-detect the label. Scans the WHOLE row to the LEFT of the value (not a narrow 20%
+// window, which clipped a far-left label), then falls back to ABOVE — mirroring the Review
+// ⊕ search. `forceDir` ('left'|'above') restricts the search to one direction (the toggle).
+async function autoLabel(box, forceDir){
+  const leftW = Math.max(0, box.x);                                   // all the way to the left edge
+  const left  = {x:Math.max(0,box.x-leftW), y:box.y, w:leftW, h:box.h, dir:'left'};
+  const above = {x:box.x, y:Math.max(0,box.y-box.h*1.3), w:box.w, h:box.h*1.1, dir:'above'};
   const tries=[];
-  if (bandW>0.02) tries.push({x:box.x-bandW,y:box.y,w:bandW,h:box.h, dir:'left'});
-  if (box.y>0.02) tries.push({x:box.x,y:Math.max(0,box.y-box.h*1.3),w:box.w,h:box.h*1.1, dir:'above'});
+  if (forceDir==='left')        { if (leftW>0.02) tries.push(left); }
+  else if (forceDir==='above')  { if (box.y>0.02) tries.push(above); }
+  else                          { if (leftW>0.02) tries.push(left); if (box.y>0.02) tries.push(above); }
   for (const band of tries){
     try{
       const res=await D.ocrRegionBoxes(await cropB64(band));
       const text=res&&res.text?String(res.text).trim():'';
       if (text && text.replace(/[^A-Za-z]/g,'').length>=3){
         let abox={x:band.x,y:band.y,w:band.w,h:band.h};
-        if (Array.isArray(res.box)){ // tighten to the detected word (box in crop-original px)
-          const cw=band.w*state.img.naturalWidth, ch=band.h*state.img.naturalHeight;
+        if (Array.isArray(res.box)){ // tighten to the detected word (box in the DOWNSCALED OCR-crop px)
+          // cropB64 downscaled the band crop by the SAME height-target rule, so region.py's
+          // box is in that downscaled space — divide by naturalHeight*ds (computed from the
+          // band's own pixel height) to get the page-normalised position.
+          const bandHpx=band.h*state.img.naturalHeight;
+          const ds=bandHpx>OCR_TARGET_H?(OCR_TARGET_H/bandHpx):1.0;
+          const nW=state.img.naturalWidth*ds, nH=state.img.naturalHeight*ds;
           const [l,t,w,h]=res.box;
-          if (cw>0&&ch>0&&w>0&&h>0){
-            abox={x:band.x+l/state.img.naturalWidth, y:band.y+t/state.img.naturalHeight,
-                  w:w/state.img.naturalWidth, h:h/state.img.naturalHeight};
+          if (nW>0&&nH>0&&w>0&&h>0){
+            abox={x:band.x+l/nW, y:band.y+t/nH, w:w/nW, h:h/nH};
           }
         }
-        return {box:abox, anchor_text:text.split('\n')[0].slice(0,40)};
+        return {box:abox, anchor_text:text.split('\n')[0].slice(0,40), dir:band.dir};
       }
     }catch{}
   }
-  // No label found: use a synthetic anchor just left of the value (no text).
+  // No label found: synthetic anchor in the requested (or left) direction, no text.
+  if (forceDir==='above' && box.y>0.02){
+    return {box:{x:box.x,y:Math.max(0,box.y-box.h*1.2),w:box.w,h:box.h}, anchor_text:null, dir:'above'};
+  }
   const ab={x:Math.max(0,box.x-Math.min(box.x,0.12)),y:box.y,w:Math.min(box.x,0.12)||box.w,h:box.h};
-  return {box:ab, anchor_text:null};
+  return {box:ab, anchor_text:null, dir:'left'};
 }
 
 // ── Step 4: summary + commit ─────────────────────────────────────────────────

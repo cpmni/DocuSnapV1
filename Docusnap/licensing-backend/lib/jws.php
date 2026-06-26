@@ -36,16 +36,47 @@ function jws_sign(array $claims, string $kid): string
     return $signingInput . '.' . b64url($sig);
 }
 
+// Trial entitlement policy: the in-app 14-day trial INCLUDES this many detached
+// SEARCH client seats by DEFAULT (the workflow add-on is NOT included in a trial).
+// A per-trial override (device_registrations.trial_search_seats, set by an admin) can
+// raise or lower this for a specific trial. Granted only while the trial is active —
+// an expired trial grants none, so the capability lasts exactly the trial duration.
+// Carried in the signed token's features map (below) so the desktop enforces it
+// identically to a paid seat (token.featuresOf).
+const TRIAL_SEARCH_SEATS = 2;
+
+/**
+ * Per-feature capacity granted to a trial, given its current state. Same
+ * {core|search|workflow => count} shape the seat token carries. $searchSeats is the
+ * per-trial override; NULL falls back to the TRIAL_SEARCH_SEATS default. Negatives are
+ * floored at 0.
+ */
+function trial_features(string $state, ?int $searchSeats = null): array
+{
+    $active = $state === 'active';
+    $seats  = $searchSeats === null ? TRIAL_SEARCH_SEATS : max(0, $searchSeats);
+    return [
+        'core'     => 1,
+        'search'   => $active ? $seats : 0,
+        'workflow' => 0,
+    ];
+}
+
 /**
  * Build the standard trial claim set. not_after == grace_until == issued_at+7d
  * (v1), both retained. Times are ISO-8601 UTC, server-stamped.
+ *
+ * When $features is non-empty the claim set carries schema_version 2 + a SIGNED
+ * features map (tamper-proof, offline-verifiable) so the desktop grants the trial's
+ * detached-client capacity exactly as it does for a paid seat. Omitting it leaves the
+ * claim set byte-identical to the pre-feature trial token (backward compatible).
  */
-function trial_claims(string $productId, string $fpHash, string $state, string $trialStart, string $trialEnd): array
+function trial_claims(string $productId, string $fpHash, string $state, string $trialStart, string $trialEnd, array $features = []): array
 {
     $now   = new DateTimeImmutable('now', new DateTimeZone('UTC'));
     $grace = $now->add(new DateInterval('P7D'));
     $iso   = fn(DateTimeInterface $d) => $d->format('Y-m-d\TH:i:s\Z');
-    return [
+    $claims = [
         'product_id'  => $productId,
         'subject'     => 'trial:' . $fpHash,
         'kind'        => 'trial',
@@ -57,6 +88,11 @@ function trial_claims(string $productId, string $fpHash, string $state, string $
         'grace_until' => $iso($grace),
         'nonce'       => bin2hex(random_bytes(12)),
     ];
+    if ($features) {
+        $claims['schema_version'] = 2;
+        $claims['features']       = (object) $features;
+    }
+    return $claims;
 }
 
 /**

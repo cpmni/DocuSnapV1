@@ -36,6 +36,7 @@ admin_nav('trials');
 <p class="muted">
   In-app 14-day free trials, one device-bound row each, captured at trial start and
   resumed (never reset) when the device returns. Active trials are listed first.
+  Click a row to see the trial's full details and whether the device has activated a paid licence.
 </p>
 <?php if (!$trials): ?>
   <div class="empty">No trials started yet.</div>
@@ -47,7 +48,7 @@ admin_nav('trials');
   </tr></thead>
   <tbody>
   <?php foreach ($trials as $t): $active = (int) $t['is_active'] === 1; $left = temp_days_left($t['trial_end']); ?>
-    <tr>
+    <tr data-href="trial.php?id=<?= (int) $t['id'] ?>">
       <td><strong><?= $t['customer_name'] ? h($t['customer_name']) : '<span class="muted" style="font-weight:400;">(not captured)</span>' ?></strong></td>
       <td><?= $t['contact_name'] ? h($t['contact_name']) : '<span class="muted">—</span>' ?></td>
       <td class="mono"><?= $t['email'] ? h($t['email']) : '<span class="muted">—</span>' ?></td>
@@ -79,5 +80,6 @@ admin_nav('trials');
   <?php endforeach; ?>
   </tbody>
 </table>
+<?php admin_row_links(); ?>
 <?php endif; ?>
 <?php admin_page_close();

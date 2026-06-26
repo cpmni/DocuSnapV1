@@ -46,3 +46,8 @@ Samples/
 *.key
 *.pfx
 *.p12
+
+# Generated synthetic test-harness corpus (rendered PDFs + page images + OCR JSON,
+# multi-GB). Reproducible via `py -3.12 -m test_harness.run`; the HARNESS CODE
+# (python_backend/test_harness/) is committed, but its OUTPUT is not.
+python_backend/artifacts/

@@ -251,6 +251,34 @@ if (ocrEngineSelect) ocrEngineSelect.addEventListener('change', async () => {
   catch { /* non-fatal; the saved value reloads on next open */ }
 });
 
+// ── Auto document separation (split multi-document PDFs) ───────────────────────
+// Defaults ON (the backend reads 'auto_separate_enabled' with a 'true' default), so an
+// unset install behaves as separation-on; this only persists an explicit choice.
+const autoSeparateToggle = document.getElementById('auto-separate-toggle');
+async function loadAutoSeparate() {
+  if (!autoSeparateToggle) return;
+  autoSeparateToggle.checked = (await api.getSetting('auto_separate_enabled')) !== 'false';
+}
+loadAutoSeparate();
+if (autoSeparateToggle) autoSeparateToggle.addEventListener('change', async () => {
+  try { await api.setSetting('auto_separate_enabled', autoSeparateToggle.checked ? 'true' : 'false'); }
+  catch { /* non-fatal; reloads on next open */ }
+});
+
+// ── Name wordness review flag (flag odd supplier/customer names) ───────────────
+// Defaults ON (backend reads 'name_wordness_flag' with a 'true' default); flag-only,
+// so this only persists an explicit choice and never changes extracted values.
+const nameWordnessToggle = document.getElementById('name-wordness-toggle');
+async function loadNameWordness() {
+  if (!nameWordnessToggle) return;
+  nameWordnessToggle.checked = (await api.getSetting('name_wordness_flag')) !== 'false';
+}
+loadNameWordness();
+if (nameWordnessToggle) nameWordnessToggle.addEventListener('change', async () => {
+  try { await api.setSetting('name_wordness_flag', nameWordnessToggle.checked ? 'true' : 'false'); }
+  catch { /* non-fatal; reloads on next open */ }
+});
+
 // ── Output Structure (folder + file-name builders) ──────────────────────────────
 // Click-to-insert token "blocks" + free-form custom text, for BOTH the subfolder
 // pattern (output_folder_pattern; "/" = a subfolder level) and the file name
@@ -391,7 +419,7 @@ function renderDocTypesList() {
     const fieldCount = (dt.fields || []).length;
     row.innerHTML = `
       <div class="doctype-name">
-        ${escHtml(dt.name)}
+        <span class="doctype-nametext" title="${escHtml(dt.name)}">${escHtml(dt.name)}</span>
         <span class="${dt.built_in ? 'badge-builtin' : 'badge-custom'}">${dt.built_in ? 'built-in' : 'custom'}</span>
       </div>
       <span class="doctype-count" title="${fieldCount} field${fieldCount === 1 ? '' : 's'}">${fieldCount}</span>
@@ -1458,6 +1486,29 @@ document.getElementById('tpl-btn-regen-landmarks').addEventListener('click', asy
   } catch (e) {
     console.warn('regenerateTemplateLandmarks failed:', e.message);
     msg.textContent = 'Could not regenerate landmarks.';
+    msg.style.color = 'var(--err)';
+  }
+});
+
+// Recompute the keyword fingerprint from the template's documents (force) — recovery
+// for a born-digital template that was born with an empty/unreliable fingerprint.
+document.getElementById('tpl-btn-regen-fingerprint').addEventListener('click', async () => {
+  if (!selectedTemplate) return;
+  const msg = document.getElementById('tpl-sample-msg');
+  msg.textContent = 'Regenerating fingerprint…';
+  msg.style.color = 'var(--muted)';
+  try {
+    const res = await api.regenerateTemplateFingerprint(selectedTemplate.id);
+    if (res && res.success) {
+      msg.textContent = `Keyword fingerprint regenerated (${res.count} word${res.count === 1 ? '' : 's'} from ${res.docs} doc${res.docs === 1 ? '' : 's'}).`;
+      msg.style.color = 'var(--ok)';
+    } else {
+      msg.textContent = `Could not regenerate fingerprint${res && res.reason ? ' — ' + res.reason : ''}.`;
+      msg.style.color = 'var(--err)';
+    }
+  } catch (e) {
+    console.warn('regenerateTemplateFingerprint failed:', e.message);
+    msg.textContent = 'Could not regenerate fingerprint.';
     msg.style.color = 'var(--err)';
   }
 });
@@ -2625,7 +2676,7 @@ async function loadMemoryInventory() {
     tbody.innerHTML = '<tr><td colspan="5" class="section-desc">No learned memory recorded yet.</td></tr>';
     return;
   }
-  const TYPE_LABEL = { hint: 'Supplier hint', anchor: 'Field anchor', correction: 'Correction', logo: 'Logo fingerprint' };
+  const TYPE_LABEL = { hint: 'Supplier hint', anchor: 'Field anchor', correction: 'Correction', logo: 'Logo fingerprint', rule: 'Field cleanup rule' };
   for (const r of rows) {
     const parts = [r.supplier_name || '—'];
     if (r.document_type) parts.push(r.document_type);
@@ -2644,7 +2695,8 @@ async function loadMemoryInventory() {
 function renderLearningSummary(summary) {
   document.getElementById('lr-summary').textContent =
     `Field anchors: ${summary.anchors}    ·    Supplier hints: ${summary.hints}    ·    ` +
-    `Corrections: ${summary.corrections}    ·    Logo fingerprints: ${summary.logos}`;
+    `Corrections: ${summary.corrections}    ·    Logo fingerprints: ${summary.logos}` +
+    (summary.rules != null ? `    ·    Field rules: ${summary.rules}` : '');
 }
 
 function renderLearningTemplates(rows, allTemplates) {
@@ -2766,6 +2818,15 @@ function renderLearningDetail(detail) {
       lines.push(`<div>${escHtml(l.phash)}, matched ${l.match_count}×, last ${escHtml(l.last_seen)}</div>`);
     }
   }
+  if ((detail.rules || []).length) {
+    lines.push('<div class="section-title" style="margin-top:10px;">Field Cleanup Rules</div>');
+    for (const r of detail.rules) {
+      const what = r.rule_type === 'keep_block'
+        ? 'keep only the main value'
+        : `remove "${escHtml(r.created_from || r.token_norm || '')}" (${escHtml(r.side || 'trailing')})`;
+      lines.push(`<div>${escHtml(r.field_key)} — ${what}, type: ${escHtml(r.document_type || '—')}, used ${r.usage_count || 0}×, ${escHtml(r.created_at || '')}</div>`);
+    }
+  }
 
   document.getElementById('lr-detail').innerHTML = lines.length ? lines.join('') : '<div>No detail rows.</div>';
 }
@@ -2810,6 +2871,14 @@ async function runLearningSearch() {
   renderLearningSummary(s);
   renderLearningTemplates(data.templates, allTemplates);
   renderLearningDetail(data.detail);
+
+  // The results section (with the per-scope clear options) was hidden until now and
+  // renders below the fold — jump to it so the user can see the newly-available
+  // options. block:'end' keeps the action buttons in view. Deferred to next frame so
+  // the just-shown section has laid out before we scroll.
+  requestAnimationFrame(() => {
+    resultsEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  });
 }
 
 document.getElementById('lr-inv-refresh').addEventListener('click', loadMemoryInventory);
@@ -2902,6 +2971,16 @@ document.getElementById('lr-btn-clear-hints').addEventListener('click', async ()
   if (!confirm(`Clear all supplier hints learned for "${scopeLabel}"? This cannot be undone.`)) return;
   const result = await api.clearLearningHints(lrCurrentScope);
   document.getElementById('lr-msg').textContent = `Cleared ${result.changes} supplier hint(s).`;
+  await runLearningSearch();
+});
+
+document.getElementById('lr-btn-clear-field-rules').addEventListener('click', async () => {
+  if (!lrCurrentScope) return;
+  const { supplier_name, document_type } = lrCurrentScope;
+  const scopeLabel = document_type ? `${supplier_name} / ${document_type}` : supplier_name;
+  if (!confirm(`Clear all field cleanup rules learned for "${scopeLabel}"? This cannot be undone.`)) return;
+  const result = await api.clearLearningFieldRules(lrCurrentScope);
+  document.getElementById('lr-msg').textContent = `Cleared ${result.changes} field cleanup rule(s).`;
   await runLearningSearch();
 });
 
@@ -3090,6 +3169,7 @@ const loAddBtn  = document.getElementById('lo-add');
 const loMsg     = document.getElementById('lo-msg');
 const loList    = document.getElementById('lo-list');
 let _loTypes = [];
+let _loFieldPatterns = null;   // { field_key: [built-in label, …] } — shipped defaults (read-only)
 
 function loSetMsg(kind, text) {
   if (!loMsg) return;
@@ -3181,25 +3261,56 @@ async function loLoadTypes() {
   loPopulateFields();
 }
 
+// Show the selected document type's labels (the doc-type dropdown picks the "block"
+// to view/edit), one section per field in the type's own field order. Each field lists
+// its BUILT-IN words (shipped field_patterns — read-only, always active) AND any custom
+// overrides this install added (removable). Canonical types (invoice/sales order/etc.)
+// carry no overrides by design but DO have rich built-in words, so they're no longer
+// shown as empty.
 async function loLoadList() {
   let rows = [];
   try { rows = (await api.getLabelOverrides()) || []; } catch {}
-  if (!rows.length) {
-    loList.innerHTML = '<span style="color:var(--muted)">No label overrides yet.</span>';
+  if (_loFieldPatterns === null) {
+    try { _loFieldPatterns = (await api.getFieldPatterns()) || {}; } catch { _loFieldPatterns = {}; }
+  }
+  const slug = loDocType ? loDocType.value : '';
+  const t = _loTypes.find(x => x.slug === slug);
+  const typeName = (t && t.name) || slug || '';
+  const fields = (t && t.fields) || [];
+  const fieldLabel = (k) => (fields.find(f => f.key === k) || {}).label || k;
+
+  const ovByField = {};
+  for (const r of rows.filter(r => r.doc_type_slug === slug)) {
+    (ovByField[r.field_key] = ovByField[r.field_key] || []).push(r);
+  }
+  // Every field of the type, in order, then any override-only keys not in the type.
+  const order = fields.map(f => f.key);
+  for (const k of Object.keys(ovByField)) if (!order.includes(k)) order.push(k);
+
+  let html = `<div style="margin-bottom:8px; font-weight:600; color:var(--text);">Labels for ${escHtml(typeName)}</div>`;
+  if (!order.length) {
+    html += '<span style="color:var(--muted)">This document type has no fields.</span>';
+    loList.innerHTML = html;
     return;
   }
-  const byType = {};
-  for (const r of rows) (byType[r.doc_type_slug] = byType[r.doc_type_slug] || []).push(r);
-  const typeName = (slug) => (_loTypes.find(t => t.slug === slug) || {}).name || slug;
-  let html = '';
-  for (const slug of Object.keys(byType).sort()) {
-    html += `<div style="margin-top:10px; font-weight:600; color:var(--text);">${escHtml(typeName(slug))}</div>`;
-    for (const r of byType[slug]) {
+  for (const k of order) {
+    const builtin = _loFieldPatterns[k] || [];
+    const overrides = ovByField[k] || [];
+    html += `<div style="margin-top:12px; font-weight:600; color:var(--text);">${escHtml(fieldLabel(k))}
+      <span style="font-family:var(--mono); color:var(--muted); font-weight:400;">(${escHtml(k)})</span></div>`;
+    if (builtin.length) {
+      html += `<div style="font-size:11px; color:var(--muted); margin:2px 0 1px;">Built-in (always active): `
+        + builtin.map(b => `<span style="font-family:var(--mono); color:var(--muted);">${escHtml(b)}</span>`).join(', ')
+        + '</div>';
+    }
+    for (const r of overrides) {
       html += `<div class="row-flex" style="gap:8px; align-items:center; padding:3px 0;">
-        <span style="font-family:var(--mono); color:var(--muted); min-width:140px;">${escHtml(r.field_key)}</span>
         <span style="font-family:var(--mono); color:var(--accent2);">&ldquo;${escHtml(r.label)}&rdquo;</span>
         <button class="btn" data-lo-del="${r.id}" style="padding:2px 8px; font-size:11px;">Remove</button>
       </div>`;
+    }
+    if (!builtin.length && !overrides.length) {
+      html += '<div style="font-size:11px; color:var(--muted); margin:2px 0;">No words yet — add some above (built-in detection still applies).</div>';
     }
   }
   loList.innerHTML = html;
@@ -3212,7 +3323,7 @@ async function loLoadList() {
 }
 
 if (loDocType && loField && loAddBtn) {
-  loDocType.addEventListener('change', loPopulateFields);
+  loDocType.addEventListener('change', () => { loPopulateFields(); loLoadList(); });
   loAddBtn.addEventListener('click', async () => {
     const data = {
       doc_type_slug: loDocType.value,

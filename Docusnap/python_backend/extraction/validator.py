@@ -115,15 +115,20 @@ def _best_date_candidate(candidates: list[datetime]) -> datetime:
     return min(pool, key=lambda d: abs((now - d).days))
 
 
-def salvage_date(raw: str | None) -> datetime | None:
-    """Return a real date found embedded inside noisy text, or None.
+def salvage_date_detail(raw: str | None) -> "tuple[datetime | None, int]":
+    """Return (best date found embedded in noisy text, number of DISTINCT dates).
 
-    Locates date-shaped substrings (numeric first, then month-name), confirms
-    each with parse_date(), and returns the best-supported one. None when no
-    candidate is a real date — callers fall back to their existing handling.
-    """
+    Locates date-shaped substrings (numeric first, then month-name), confirms each
+    with parse_date(), and returns the best-supported one plus how many distinct
+    calendar dates the text contained. The COUNT is the trust signal: salvage only
+    trims surrounding junk and collapses whitespace around separators — it NEVER
+    changes a digit (a glyph misread like "202G" is not located at all). So a count
+    of 1 means the recovered date is the ONLY date-shaped run present — a verbatim
+    capture that already lived in the string. A count >1 means salvage had to CHOOSE
+    among several dates (a judgement worth a human's confirmation). (0, None) when no
+    candidate is a real date — callers fall back to their existing handling."""
     if not raw:
-        return None
+        return None, 0
     s = str(raw)
     candidates: list[datetime] = []
     for rx in (_NUMERIC_DATE_RE, _MONTH_NAME_DATE_RE):
@@ -135,8 +140,30 @@ def salvage_date(raw: str | None) -> datetime | None:
             if d:
                 candidates.append(d)
     if not candidates:
-        return None
-    return _best_date_candidate(candidates)
+        return None, 0
+    distinct = len({d.date() for d in candidates})
+    return _best_date_candidate(candidates), distinct
+
+
+def salvage_date(raw: str | None) -> datetime | None:
+    """Return a real date found embedded inside noisy text, or None. Thin wrapper
+    over salvage_date_detail() (kept for the existing engine/template_mapper callers)."""
+    return salvage_date_detail(raw)[0]
+
+
+# Confidence for a CLEAN salvage (a single, unambiguous, verbatim date recovered
+# from surrounding junk). Above the default review threshold (70) so an otherwise-
+# correct date isn't sent to review just because crop junk rode along with it.
+_CLEAN_SALVAGE_CONF = 80
+
+# Confidence floor for a date that parses start-to-end (a real, well-formed calendar
+# date). Such a date is reliable regardless of the extraction stage's confidence —
+# which for a freshly-learned anchor is often low (usage-based) — so normalising its
+# separator format (29/05/2026 → 29-05-2026, cosmetic, NOT a correction) must not
+# leave a correctly-read date flagged for review. Set to "High" but below the 95 cap
+# clean keyword reads get, so the ecosystem stays consistent. (Residual risk: an
+# anchor that drifted to a DIFFERENT but valid date — rare for distinctive date text.)
+_CLEAN_DATE_CONF = 90
 
 
 # ── Field-specific OCR-noise sanitisation ─────────────────────────────────────
@@ -280,16 +307,33 @@ def validate_and_adjust(extractions: dict,
 
         d = parse_date(data["value"])
         if d is not None:
-            # Clean date — normalise to consistent format (unchanged behaviour)
-            results[key] = {**data, "value": d.strftime("%d-%m-%Y")}
+            # Clean date — normalise to DD-MM-YYYY. The value was already a valid,
+            # well-formed date; reformatting the separator is cosmetic, not a fix, so
+            # floor the confidence to "High" rather than letting a correctly-read date
+            # stay below the review threshold on a low (e.g. usage-based) anchor score.
+            results[key] = {**data, "value": d.strftime("%d-%m-%Y"),
+                            "confidence": max(data.get("confidence", 0), _CLEAN_DATE_CONF)}
             continue
 
-        # Doesn't parse start-to-end. Before giving up, try to salvage a real
-        # date embedded in OCR junk (e.g. "2_ 2/4/26bf" → 02-04-2026). When one
-        # is found we keep ONLY the normalised date (junk discarded) but force a
-        # review — the input was noisy, so a human should confirm the recovery.
-        salvaged = salvage_date(data["value"])
-        if salvaged is not None:
+        # Doesn't parse start-to-end. Before giving up, try to salvage a real date
+        # embedded in OCR junk (e.g. "2_ 2/4/26bf" → 02-04-2026). salvage only TRIMS
+        # surrounding junk and collapses spacing around separators — it never changes
+        # a digit (a glyph misread like "202G" is not salvaged; it falls through to
+        # the branch below and stays in review). So the recovery is only "guessed"
+        # when SEVERAL date-shaped runs are present and salvage had to choose one.
+        salvaged, n_dates = salvage_date_detail(data["value"])
+        if salvaged is not None and n_dates == 1:
+            # The date was the ONLY one in the text — a verbatim capture that already
+            # lived in the string, just surrounded by junk/odd spacing. Trust it: no
+            # character was guessed, so don't force review for the noise.
+            results[key] = {
+                **data,
+                "value":      salvaged.strftime("%d-%m-%Y"),
+                "confidence": max(data.get("confidence", 0), _CLEAN_SALVAGE_CONF),
+            }
+        elif salvaged is not None:
+            # Multiple dates present — salvage chose one. Keep the review so a human
+            # confirms it picked the field's actual date.
             results[key] = {
                 **data,
                 "value":           salvaged.strftime("%d-%m-%Y"),

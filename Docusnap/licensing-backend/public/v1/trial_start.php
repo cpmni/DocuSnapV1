@@ -60,11 +60,14 @@ try {
         ->execute([$productId, 'product']);
 
     $sel = $pdo->prepare(
-        'SELECT trial_start, trial_end, customer_name, contact_name, email
+        'SELECT trial_start, trial_end, customer_name, contact_name, email, trial_search_seats
          FROM device_registrations WHERE product_id = ? AND fp_hash = ?'
     );
     $sel->execute([$productId, $fpHash]);
     $row = $sel->fetch();
+
+    // Per-trial search-seat override (NULL = policy default). A brand-new trial has none.
+    $searchSeats = ($row && $row['trial_search_seats'] !== null) ? (int) $row['trial_search_seats'] : null;
 
     if ($row && $row['trial_start'] !== null) {
         // RESUME — never move the window. Backfill the customer identity only
@@ -121,7 +124,10 @@ try {
     $state         = ($now < $end) ? 'active' : 'expired';
     $daysRemaining = max(0, (int) ceil(($end->getTimestamp() - $now->getTimestamp()) / 86400));
 
-    $claims = trial_claims($productId, $fpHash, $state, $trialStart, $trialEnd);
+    // Trial includes detached search-client capacity for its duration (see jws.php);
+    // honors the per-trial override when set, else the policy default.
+    $features = trial_features($state, $searchSeats);
+    $claims = trial_claims($productId, $fpHash, $state, $trialStart, $trialEnd, $features);
     $token  = jws_sign($claims, ACTIVE_KID);
 
     audit_event($pdo, null, $fpHash, 'license.trial_started',
@@ -135,6 +141,7 @@ try {
         'trial_end'      => $trialEnd,
         'days_remaining' => $daysRemaining,
         'resumed'        => $resumed,
+        'features'       => $features,
     ]);
 } catch (Throwable $e) {
     error_log('trial_start error: ' . $e->getMessage());

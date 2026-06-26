@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS device_registrations (
   customer_name VARCHAR(190) NULL,   -- customer or company name (required at trial start)
   contact_name  VARCHAR(190) NULL,   -- user name
   email         VARCHAR(190) NULL,   -- contact email (validated when present)
+  trial_search_seats INT NULL,       -- per-trial override of included search-client seats; NULL = policy default (jws.php TRIAL_SEARCH_SEATS)
   UNIQUE KEY uq_fp_product (fp_hash, product_id),
   FOREIGN KEY (product_id) REFERENCES products(product_id)
 );
@@ -131,6 +132,12 @@ BEGIN
                  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'device_registrations'
                    AND COLUMN_NAME = 'email') THEN
     ALTER TABLE device_registrations ADD COLUMN email VARCHAR(190) NULL AFTER contact_name;
+  END IF;
+  -- Per-trial override of included detached search-client seats (NULL = policy default).
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'device_registrations'
+                   AND COLUMN_NAME = 'trial_search_seats') THEN
+    ALTER TABLE device_registrations ADD COLUMN trial_search_seats INT NULL AFTER email;
   END IF;
   -- Feature dimension on entitlements (core | search | workflow). Existing rows
   -- backfill to 'core', so a pre-feature account keeps working as a core licence.

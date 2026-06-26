@@ -235,17 +235,28 @@
     .folder-box.cue { border-color: var(--accent); background: var(--surface2); animation: folder-glow 1.8s ease-in-out infinite; }
     @keyframes folder-glow { 0%,100% { box-shadow: 0 0 0 0 rgba(79,142,247,0); } 50% { box-shadow: 0 0 0 4px rgba(79,142,247,.18); } }
 
-    /* ── Progress log ── */
-    #log-panel { display: none; flex-direction: column; height: 160px; flex-shrink: 0; border-top: 1px solid var(--border); background: var(--bg); }
-    #log-panel.visible { display: flex; }
-    .log-header {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 6px 14px; border-bottom: 1px solid var(--border);
-      font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
-    }
-    #progress-bar-wrap { height: 2px; background: var(--border); }
-    #progress-bar      { height: 2px; background: var(--accent); width: 0; transition: width .3s; }
-    #log-output { flex: 1; overflow-y: auto; padding: 8px 14px; font-family: var(--mono); font-size: 11px; color: var(--muted); line-height: 1.7; }
+    /* ── Prominent processing progress ── */
+    #progress-section { display: none; flex-direction: column; gap: 9px; flex-shrink: 0;
+      padding: 14px 18px; border-top: 1px solid var(--border); background: var(--bg); }
+    #progress-section.visible { display: flex; }
+    #progress-row { display: flex; align-items: center; gap: 14px; }
+    #progress-bar-wrap { flex: 1; height: 22px; background: var(--surface2);
+      border: 1px solid var(--border); border-radius: var(--r-pill, 999px); overflow: hidden; }
+    #progress-bar { height: 100%; background: var(--accent); width: 0; transition: width .3s ease;
+      border-radius: var(--r-pill, 999px); }
+    #progress-count { font-family: var(--mono); font-size: 14px; font-weight: 600; color: var(--text);
+      min-width: 70px; text-align: right; }
+    #progress-foot { display: flex; align-items: center; gap: 10px; }
+    #log-status { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); flex-shrink: 0; }
+    #progress-text { font-family: var(--mono); font-size: 12px; color: var(--accent2);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .btn-mini { font-size: 11px; padding: 4px 11px; border: 1px solid var(--border2);
+      border-radius: var(--r-sm, 9px); background: var(--surface); color: var(--text); cursor: pointer; flex-shrink: 0; }
+    .btn-mini:hover { background: var(--surface2); }
+    #log-output { display: none; max-height: 150px; overflow-y: auto; padding: 8px 12px;
+      font-family: var(--mono); font-size: 11px; color: var(--muted); line-height: 1.7;
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm, 9px); }
+    #progress-section.log-open #log-output { display: block; }
     #log-output .ok   { color: var(--ok); }
     #log-output .warn { color: var(--warn); }
     #log-output .err  { color: var(--err); }
@@ -493,26 +504,20 @@
         </div>
       </div>
 
-      <div id="stage-indicator">
-        <span class="stage-file" id="stage-file">—</span>
-        <div class="stages">
-          <span class="stage" id="stage-ocr">OCR</span>
-          <span style="color:var(--border2)">›</span>
-          <span class="stage" id="stage-llm">Extraction</span>
-          <span style="color:var(--border2)">›</span>
-          <span class="stage" id="stage-save">Saving</span>
+      <!-- Prominent processing progress (default view). The full log and the results
+           table are one click away; the bar + current file is what's shown by default. -->
+      <div id="progress-section">
+        <div id="progress-row">
+          <div id="progress-bar-wrap"><div id="progress-bar"></div></div>
+          <span id="progress-count">—</span>
         </div>
-      </div>
-
-      <div id="log-panel">
-        <div class="log-header">
-          <span>Processing Log</span>
-          <div style="display:flex; align-items:center; gap:10px;">
-            <span id="log-status">Idle</span>
-            <button id="btn-view-results" class="btn-view-results" style="display:none;">View Results</button>
-          </div>
+        <div id="progress-foot">
+          <span id="log-status">Idle</span>
+          <span id="progress-text" title="">—</span>
+          <span style="flex:1"></span>
+          <button id="btn-toggle-log" class="btn-mini">View log</button>
+          <button id="btn-view-results" class="btn-mini" style="display:none;">View results</button>
         </div>
-        <div id="progress-bar-wrap"><div id="progress-bar"></div></div>
         <div id="log-output"></div>
       </div>
 

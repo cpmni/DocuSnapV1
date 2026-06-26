@@ -33,12 +33,24 @@ try {
 }
 app.setPath('userData', _resolvedUserData);
 
+// ── GPU compositing fix (windowed-mode ghosting/stutter) ──────────────────────
+// Some GPU/driver + window-size combinations tore/blended stale frames in the
+// renderer when a window was non-maximized — visible on the physical panel but NOT in
+// a screenshot (the renderer buffer was always correct; the glitch was GPU→display
+// compositing). Disabling hardware acceleration forces software compositing and
+// resolves it. Confirmed by A/B test. The perf cost is negligible here — the UI is
+// static panels + still document images, no WebGL/video — so software rendering is a
+// safe, stable default. Must be called before app 'ready'.
+// (If reclaiming GPU acceleration is ever wanted, try the narrower
+//  commandLine.appendSwitch('disable-gpu-compositing') instead and re-test.)
+app.disableHardwareAcceleration();
+
 // Windows toast attribution: without an explicit AppUserModelID, notifications are
 // labelled "Electron". Match the installer's shortcut AUMID (build.appId in
 // package.json) so toasts show the registered name ("ScanFinder") in the packaged
 // app. No-op on non-Windows; in unpackaged dev there's no registered shortcut, so
 // the name may still fall back to "Electron" — only the packaged app is affected.
-app.setAppUserModelId('com.docusnap.app');
+app.setAppUserModelId('com.scanfinder.app');
 
 // ── Module imports ────────────────────────────────────────────────────────────
 const logger           = require('./modules/logger');
@@ -296,10 +308,13 @@ function launchStartupWindow() {
 
 // Child windows opened from the main shell are parented + kept off the taskbar so
 // the whole suite shares ONE taskbar entry and feels self-contained. Most also
-// lock their opener (modal), like a regular Windows app; the dev inspector stays
-// non-modal so you can watch live processing while using the main window.
+// share ONE taskbar entry and feel self-contained. They are all NON-MODAL: a modal panel
+// LOCKS the main window, so once it's minimised (a tiny skipTaskbar corner box) you can't
+// click its toolbar button to bring it back. Non-modal keeps the main window usable, and
+// createWindow() already restores + focuses the existing window when its button is clicked
+// again. (A future window can still opt INTO modal by being a CHILD_WINDOW not listed here.)
 const CHILD_WINDOWS   = new Set(['review', 'settings', 'search', 'teach', 'dev-inspector']);
-const NON_MODAL_CHILD = new Set(['dev-inspector']);
+const NON_MODAL_CHILD = new Set(['dev-inspector', 'review', 'settings', 'search', 'teach']);
 // Top-level "primary" windows that hide to the tray on a user close (the app then
 // fully quits ONLY via tray Exit). Their programmatic transitions destroy them
 // via destroyWindow(). Child windows close normally.
@@ -400,7 +415,7 @@ function createWindow(name, options, htmlFile) {
       preload:          path.join(__dirname, 'preload.js'),
       contextIsolation: true,
     },
-    icon: path.join(__dirname, '..', '..', 'assets', 'icon.ico'),
+    icon: path.join(__dirname, '..', 'assets', 'icon.ico'),   // src/../assets (was '..','..' — off-by-one that silently dropped the window icon)
   });
   if (win.removeMenu) win.removeMenu();   // no native menu bar (File/Edit/View/Window/Help)
   applyWindowState(win, name, options);   // maximize by default / restore the user's last size
@@ -467,7 +482,7 @@ function refreshTrayMenu() {
 function setupTray() {
   if (tray) return;
   try {
-    tray = new Tray(path.join(__dirname, '..', 'assets', 'icon.ico'));   // ../assets resolves correctly (matches the splash icon, line ~198); the createWindow path has a latent off-by-one that BrowserWindow silently tolerates but Tray would not
+    tray = new Tray(path.join(__dirname, '..', 'assets', 'icon.ico'));   // ../assets — consistent with the splash + createWindow icon paths (Tray throws on a bad path, unlike BrowserWindow which silently drops it)
     tray.setToolTip('ScanFinder');
     tray.on('double-click', () => showPrimaryWindow());
     refreshTrayMenu();

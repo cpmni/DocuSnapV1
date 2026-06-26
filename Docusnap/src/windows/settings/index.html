@@ -134,7 +134,10 @@
       border-radius:7px; margin-bottom:6px; background:var(--surface); transition:opacity .2s;
     }
     .doctype-row.disabled { opacity:.45; }
-    .doctype-name { flex:1; font-weight:500; font-size:13px; display:flex; align-items:center; gap:6px; }
+    .doctype-name { flex:1; font-weight:500; font-size:13px; display:flex; align-items:center; gap:6px; min-width:0; }
+    /* Fixed-width name slot so the built-in/custom badge starts at the SAME x on every
+       row (tidy aligned column); long names ellipsize (full name on hover + in the header). */
+    .doctype-nametext { flex:0 0 140px; max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .badge-builtin { font-size:9px; padding:1px 6px; border-radius:8px; background:var(--surface2); color:var(--muted); border:1px solid var(--border2); }
     .badge-custom  { font-size:9px; padding:1px 6px; border-radius:8px; background:var(--accent-bg); color:var(--accent2); border:1px solid var(--accent-border); }
     .doctype-fields { display:flex; align-items:center; gap:6px; }
@@ -143,6 +146,13 @@
     #dt-master-detail { display:flex; gap:18px; align-items:flex-start; }
     #dt-list-col { width:240px; flex-shrink:0; }
     #dt-detail-col { flex:1; min-width:0; }
+    /* Header over the left list, mirroring the right detail header (.dt-detail-header)
+       so both columns share a heading row. The "Type Name" label sits level with the
+       right "Invoice" heading; the larger bottom margin then absorbs the right side's
+       "FIELDS" label row too, so the FIRST list card drops down to line up with the
+       first field ROW on the right (not the FIELDS label above it). */
+    .dt-list-header { display:flex; align-items:center; gap:10px; margin-bottom:37px; min-height:26px; }
+    .dt-list-header .lbl { font-size:16px; font-weight:600; color:var(--text); }
     .doctype-row { cursor:pointer; }
     .doctype-row.active { border-color:var(--accent); background:var(--accent-bg); }
     .doctype-count { font-size:10px; color:var(--muted); font-family:var(--mono); }
@@ -480,6 +490,34 @@
               </select>
             </div>
           </div>
+
+          <div class="section">
+            <div class="section-title">Document separation</div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Split multi-document PDFs automatically</div>
+                <div class="threshold-sub">When a single PDF contains several separate documents (e.g. a batch of one-page alerts), ScanFinder files each as its own document. Conservative — a normal multi-page invoice is never split, and each part goes to Review before filing.</div>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" id="auto-separate-toggle">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Name checks</div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Flag odd company/customer names for review</div>
+                <div class="threshold-sub">When a Supplier or Customer name reads like a document heading, a reference/code, OCR garble, or a cut-off name, ScanFinder marks it for review instead of filing it silently. It only flags for a human to check — it never changes or deletes the value.</div>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" id="name-wordness-toggle">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -646,6 +684,7 @@
                     <select id="tpl-sample-select" class="field-select" style="flex:1 1 240px; min-width:0;" title="Choose sample document for this template"></select>
                     <button class="btn" id="tpl-btn-import-sample" title="Import a PDF, PNG or JPEG as a sample document">Import Sample…</button>
                     <button class="btn" id="tpl-btn-regen-landmarks" title="Recompute registration landmarks from the current sample (fixes a template that ended up with no/poor landmarks, so drifted scans register correctly)">Regenerate landmarks</button>
+                    <button class="btn" id="tpl-btn-regen-fingerprint" title="Recompute the keyword fingerprint from this template's documents (fixes a born-digital template — e.g. an email alert whose logo varies — so it's matched by its stable header words instead of an unreliable logo)">Regenerate fingerprint</button>
                     <button class="btn" id="tpl-btn-enhance" title="Advanced manual override. Scan Finder detects registration landmarks automatically as documents are processed — only use this if automatic detection keeps failing for this template, and pick words that appear ONCE on the page.">Manual landmarks (advanced)</button>
                   </div>
                   <span class="section-desc" style="display:block; margin:4px 0 0;">Required for anchor/target mapping. Attach any representative PDF, PNG or JPEG.</span>
@@ -966,6 +1005,7 @@
         <div class="row-flex" style="margin-top:16px; gap:8px;">
           <button class="btn danger" id="lr-btn-clear-anchors">Clear field anchors for this scope</button>
           <button class="btn danger" id="lr-btn-clear-hints">Clear supplier hints for this scope</button>
+          <button class="btn danger" id="lr-btn-clear-field-rules">Clear field cleanup rules for this scope</button>
         </div>
         <div id="lr-msg" class="section-desc" style="margin-top:8px;"></div>
 

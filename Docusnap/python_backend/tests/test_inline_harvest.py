@@ -65,21 +65,35 @@ def _run(located, ocr_text_fn):
         located, "alphanumeric", ocr_text_fn, 0.0, VPS, None, None, 0, "reference_number")
 
 
-# 1. Inline value harvested off the located line WINS (old too-wide refusal is gone).
-out = _run(_located(), lambda crop: "WRONG-ROW-NEIGHBOUR")
-check("inline value '2605-0769-1' harvested off the line (NOT a wrong-row crop)",
-      (out or {}).get("value") == "2605-0769-1")
+# 1. RIGID OFFSET PRIMARY: with a stored offset the value box is seated at label+offset
+#    and read THERE (the operator's drawn placement) — it wins even when an inline value is
+#    also present. (The derived box sits at the value's real position 0.25 = inline_box.x,
+#    so in reality the rigid crop reads the value; here a DISTINCT stub value proves the
+#    geometric rung — not the inline harvest — is what won.)
+out = _run(_located(), lambda crop: "2605-0769-9")
+check("rigid geometric read (label+offset) wins over the inline harvest",
+      (out or {}).get("value") == "2605-0769-9")
 check("method is a template_mapping tier", (out or {}).get("method", "").startswith("template_mapping"))
 
-# 2. No inline value (label-above layout): geometric derivation off the TIGHT label_box.
+# 2. No label_box / label-above layout: geometric derivation still reads the value.
 out = _run(_located(inline_value=None, inline_box=None), lambda crop: "INV-DERIVED-9")
-check("geometric fallback (no inline) reads via the label_box-derived crop",
+check("geometric reads via the label_box-derived crop",
       (out or {}).get("value") == "INV-DERIVED-9")
 
-# 3. Inline value that FAILS the gate (junk) falls through to the geometric crop.
-out = _run(_located(inline_value="!!"), lambda crop: "INV-FALLBACK-7")
-check("junk inline value falls through to the geometric crop",
-      (out or {}).get("value") == "INV-FALLBACK-7")
+# 3. Rigid geometric read FAILS the gate (junk) -> the inline harvest is the FALLBACK.
+out = _run(_located(), lambda crop: "!!")
+check("junk geometric read falls back to the inline harvest off the line",
+      (out or {}).get("value") == "2605-0769-1")
+
+# 4. LEGACY mapping with NO stored offset: the line harvest stays the PRIMARY read.
+def _run_no_offset(located, ocr_text_fn):
+    m = _mapping(); m["offset_dx_norm"] = 0.0; m["offset_dy_norm"] = 0.0
+    return tm._relocate_and_read(
+        FakePage(), m, tm._norm_box(m, "anchor"), tm._norm_box(m, "target"),
+        located, "alphanumeric", ocr_text_fn, 0.0, VPS, None, None, 0, "reference_number")
+out = _run_no_offset(_located(), lambda crop: "WRONG-ROW-NEIGHBOUR")
+check("offset-less mapping harvests the inline value off the line",
+      (out or {}).get("value") == "2605-0769-1")
 
 print("\n%s" % ("All inline-harvest checks passed." if not fail else f"{fail} FAILED"))
 sys.exit(1 if fail else 0)

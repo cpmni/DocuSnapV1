@@ -12,7 +12,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from extraction.name_match import build_token_lexicon, repair_name_value, conforms_to_lexicon  # noqa: E402
+from extraction.name_match import (build_token_lexicon, repair_name_value,  # noqa: E402
+                                   conforms_to_lexicon, is_truncated_name)
 
 
 def check(label, cond):
@@ -109,6 +110,26 @@ def main():
                    conforms_to_lexicon("Beaumont Care Homes Ltd -", ltd_site) is False)
     f += not check("no-site 'Ltd' does NOT conform", conforms_to_lexicon("Beaumont Care Homes Ltd", ltd_site) is False)
 
+    print("\nis_truncated_name: a value short of the history length is a fragment (reggie follow-up)")
+    # Single-identity history "Stonebridge Joinery" (expected_len 2): "Joinery" alone is a
+    # truncation — the fragment class character wordness cannot catch.
+    joinery = build_token_lexicon({"Stonebridge Joinery": 4, "Stonebridge Joinery": 4,
+                                   "Stonebridge Joinery": 4}, 4)
+    f += not check("expected_len = 2 for 'Stonebridge Joinery'", joinery.get("expected_len") == 2)
+    f += not check("'Joinery' (1 token) flagged as truncated", is_truncated_name("Joinery", joinery) is True)
+    f += not check("full 'Stonebridge Joinery' NOT truncated", is_truncated_name("Stonebridge Joinery", joinery) is False)
+    f += not check("longer value NOT truncated", is_truncated_name("Stonebridge Joinery Ltd", joinery) is False)
+    f += not check("truncated 'Ltd -' flagged (expected_len 5)", is_truncated_name("Beaumont Care Homes Ltd -", ltd_site) is True)
+    f += not check("empty lexicon -> not truncated", is_truncated_name("x", {"positions": {}, "expected_len": 0}) is False)
+    f += not check("empty value -> not truncated", is_truncated_name("", joinery) is False)
+    # FINAL-TOKEN fragment refinement: a site clipped to a 1-2 char stub still reaches
+    # expected_len (count 5) but the variable TAIL token is a fragment -> truncated.
+    f += not check("final-token fragment '...Ltd - B' flagged", is_truncated_name("Beaumont Care Homes Ltd - B", ltd_site) is True)
+    f += not check("final-token fragment '...Ltd - Ho' flagged", is_truncated_name("Beaumont Care Homes Ltd - Ho", ltd_site) is True)
+    f += not check("trailing junk char '...Bangor H' flagged", is_truncated_name("Beaumont Care Homes Ltd - Bangor H", ltd_site) is True)
+    f += not check("full new site '...Ltd - Clandeboye' NOT a fragment", is_truncated_name("Beaumont Care Homes Ltd - Clandeboye", ltd_site) is False)
+    f += not check("legit short tail in ABBREV/COMMON not flagged", is_truncated_name("Beaumont Care Homes Ltd - Co", ltd_site) is False)
+
     print("\ndeterminism + empties")
     f += not check("lexicon build is deterministic", build_token_lexicon(HISTORY, N) == lex)
     f += not check("empty lexicon -> no repair", repair_name_value("anything", {"positions": {}, "n_docs": 0}) is None)
@@ -133,6 +154,16 @@ def main():
             "sample_values": ["a free note", "another note", "third note here"], "value_counts": HISTORY}]
     e2 = build_format_class_index(fd2).get(("", "invoice", "notes"))
     f += not check("non-name field gets NO name_lexicon", not (e2 and e2.get("name_lexicon")))
+
+    print("\nword_like self-calibration: name field word_like=True; name-LABELLED code field word_like=False (reggie follow-up)")
+    f += not check("name field word_like True", entry is not None and entry.get("word_like") is True)
+    # A name-LABELLED but CODE-valued custom field ("vendor_name" holding codes): word_like
+    # False -> the engine's wordness gate self-disables (the field's own regex owns it).
+    codes = {"AB-1041": 4, "CD-2205": 4, "EF-3309": 4, "GH-4417": 4}
+    fd3 = [{"supplier_name": "", "document_type": "invoice", "field_key": "vendor_name",
+            "sample_values": list(codes.keys()), "value_counts": codes, "confirmed_count": 16}]
+    e3 = build_format_class_index(fd3).get(("", "invoice", "vendor_name"))
+    f += not check("name-labelled CODE field word_like False", e3 is not None and e3.get("word_like") is False)
 
     if f:
         print(f"\n{f} FAILED")

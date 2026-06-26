@@ -106,6 +106,12 @@ function buildTrainingArgs(db, configPath, logger = null) {
   try { allLabelOverrides = require('../../../database/modules/label_overrides').getForExtraction(db); }
   catch (e) { logger?.warn?.(`[training] label overrides load failed: ${e && e.message}`); }
 
+  // Operator-taught field cleanup rules (Review right-click toolkit). Guarded so an
+  // older DB without migration 36 still processes (just with no rules).
+  let allFieldRules = [];
+  try { allFieldRules = learning.getFieldRules(db); }
+  catch (e) { logger?.warn?.(`[training] field rules load failed: ${e && e.message}`); }
+
   // Visible in processing.log so "0 formats loaded" can be traced to its source
   // (a throw above vs genuinely no qualifying confirmed history yet).
   logger?.log?.(`[training] ${allTemplates.length} templates, ${allFormats.length} format groups, ` +
@@ -138,6 +144,7 @@ function buildTrainingArgs(db, configPath, logger = null) {
   const formatsFile   = writeTempJson('formats',   allFormats);
   const templatesFile = writeTempJson('templates', allTemplates);
   const overridesFile = writeTempJson('labeloverrides', allLabelOverrides);
+  const fieldRulesFile = writeTempJson('fieldrules', allFieldRules);
   const cfgFile       = configPath();
 
   // Registration-invariant anchoring ("register, then read"): ON unless an admin
@@ -163,6 +170,15 @@ function buildTrainingArgs(db, configPath, logger = null) {
   try { if (learning.getSetting(db, 'ocr_engine') === 'rapidocr') ocrEngine = 'rapidocr'; }
   catch { /* older DB without the setting -> default tesseract */ }
 
+  // Free-text NAME wordness review flag: ON unless an admin disables it
+  // ('name_wordness_flag' = 'false'). FLAG-ONLY — flags supplier/customer reads that
+  // don't read like a name (document chrome / ref-code bleed / OCR garble / truncation)
+  // so they surface for review; never rejects or rewrites a value. Inert unless the
+  // char-trigram table ships (extraction/data/char_trigrams.json). See extraction/wordness.py.
+  let nameWordnessOn = true;
+  try { nameWordnessOn = learning.getSetting(db, 'name_wordness_flag') !== 'false'; }
+  catch { /* older DB without the setting -> default on */ }
+
   const args = [
     '--fields-file',    fieldsFile,
     '--hints-file',     hintsFile,
@@ -172,16 +188,18 @@ function buildTrainingArgs(db, configPath, logger = null) {
     '--formats-file',   formatsFile,
     '--templates-file', templatesFile,
     '--label-overrides-file', overridesFile,
+    '--field-rules-file', fieldRulesFile,
     '--config-file',    cfgFile,
   ];
   if (registrationOn) args.push('--registration');
   if (bornDigitalOn) args.push('--born-digital');
+  if (nameWordnessOn) args.push('--name-wordness');
   if (ocrEngine === 'rapidocr') args.push('--ocr-engine', 'rapidocr');
 
   return {
     args,
     ocrEngine,   // 'tesseract' | 'rapidocr' — lets callers add RapidOCR-only speed flags
-    tempFiles: [fieldsFile, hintsFile, anchorsFile, logosFile, dtFile, formatsFile, templatesFile, overridesFile],
+    tempFiles: [fieldsFile, hintsFile, anchorsFile, logosFile, dtFile, formatsFile, templatesFile, overridesFile, fieldRulesFile],
   };
 }
 
@@ -378,6 +396,72 @@ function register(ctx) {
     return true;
   });
 
+  // ── Batch document SEPARATION (Stage 1) ───────────────────────────────────────
+  // Split a multi-DOCUMENT PDF (e.g. ten one-page alerts generated into one file) into
+  // separate documents BEFORE the worker pool runs, so each is OCR'd/extracted/filed on
+  // its own instead of as a single document. Conservative + fail-safe: the detector
+  // (segment_docs.py → ocr/segmentation.py) only proposes a split for a confident multi-
+  // first-page batch; a normal multi-page invoice (or any error/timeout) yields ONE
+  // segment and nothing changes. Splits in place (reusing pdf_splitter.py) and moves the
+  // original into a recoverable subfolder the NON-recursive folder scan ignores.
+  const SEPARATED_DIR = '.sf_separated_originals';
+  const runPyJson = (script, args) => new Promise((resolve) => {
+    let out = '';
+    let proc;
+    try { proc = spawn(pythonExe(), pythonArgs(script, ...args), { windowsHide: true }); }
+    catch { return resolve(null); }
+    proc.stdout.on('data', d => { out += d.toString(); });
+    proc.on('close', () => { try { resolve(JSON.parse(out.trim())); } catch { resolve(null); } });
+    proc.on('error', () => resolve(null));
+  });
+
+  async function _separateBatchDocuments(folderPath, templatesFile, log) {
+    let pdfs = [];
+    try {
+      pdfs = fs.readdirSync(folderPath, { withFileTypes: true })
+        .filter(e => e.isFile() && path.extname(e.name).toLowerCase() === '.pdf')
+        .map(e => e.name);
+    } catch { return 0; }
+
+    const segScript   = path.join(path.dirname(backendScript()), 'segment_docs.py');
+    const splitScript = path.join(path.dirname(backendScript()), 'pdf_splitter.py');
+    let separated = 0;
+
+    for (const name of pdfs) {
+      if (_cancelRequested) break;
+      const filePath = path.join(folderPath, name);
+      const det = await runPyJson(segScript,
+        ['--file', filePath, '--templates-file', templatesFile, '--tesseract', tesseractPath()]);
+      const segments = det && det.success && Array.isArray(det.segments) ? det.segments : null;
+      if (!segments || segments.length < 2) continue;   // one document → leave it untouched
+
+      // 0-based inclusive [start,end] → pdf_splitter's 1-based "a-b,c,…".
+      const ranges = segments.map(([s, e]) => (s === e ? `${s + 1}` : `${s + 1}-${e + 1}`)).join(',');
+      const split  = await runPyJson(splitScript,
+        ['--file', filePath, '--ranges', ranges, '--outdir', folderPath]);
+      const made   = (split && split.success && Array.isArray(split.files))
+        ? split.files.filter(f => fs.existsSync(f)) : [];
+      if (made.length < 2) continue;   // splitter failed → leave the original as one doc
+
+      // Move the original OUT of the (non-recursive) scan so it isn't ALSO processed,
+      // while keeping it recoverable.
+      try {
+        const keepDir = path.join(folderPath, SEPARATED_DIR);
+        fs.mkdirSync(keepDir, { recursive: true });
+        fs.renameSync(filePath, path.join(keepDir, name));
+      } catch (e) {
+        // Original not movable → delete the new segments so we never process BOTH the
+        // original and its parts (duplicates). Leave it as a single document.
+        for (const f of made) { try { fs.unlinkSync(f); } catch {} }
+        log?.(`Could not separate ${name} (original locked) — left as one document`, 'warn');
+        continue;
+      }
+      separated += 1;
+      log?.(`Detected ${made.length} documents in ${name} — separated`);
+    }
+    return separated;
+  }
+
   // ── Process folder ──────────────────────────────────────────────────────────
   ipcMain.handle('process-folder', async (event, folderPath) => {
     requireRole('admin', 'edit');
@@ -425,7 +509,7 @@ function register(ctx) {
     // original single-process behaviour). suppressStart hides the worker's own
     // {type:'start'} so a pool can emit ONE aggregate total to the renderer
     // instead of N competing ones (the renderer keys its progress bar off it).
-    const runWorker = (filesFile, suppressStart, ocrThreads = 0) => new Promise((resolve) => {
+    const runWorker = (filesFile, suppressStart, threadCap = 0) => new Promise((resolve) => {
       const py = pythonExe();
       const scriptArgs = [
         '--folder',    folderPath,
@@ -438,7 +522,7 @@ function register(ctx) {
       // threads to cores/workers so they don't oversubscribe the CPU.
       if (ocrEngine === 'rapidocr') {
         if (procMode === 'fast') scriptArgs.push('--ocr-fast');
-        if (ocrThreads > 0) scriptArgs.push('--ocr-threads', String(ocrThreads));
+        if (threadCap > 0) scriptArgs.push('--ocr-threads', String(threadCap));
       }
       if (filesFile) scriptArgs.push('--files-file', filesFile);
       // Emit the dev trace stream + capture OCR slices while the hidden inspector
@@ -450,8 +534,18 @@ function register(ctx) {
         try { fs.mkdirSync(ctx.devSliceDir, { recursive: true }); scriptArgs.push('--slice-dir', ctx.devSliceDir); } catch {}
       }
 
+      // Cap Tesseract's OpenMP threads per worker. Tesseract IS internally
+      // multithreaded (OpenMP) and by default grabs ~all cores PER PROCESS — so N
+      // parallel workers each spawn ~cores threads (≈ N×cores) and thrash an
+      // oversubscribed CPU (the real reason a 10-worker Reprocess All crawled). The
+      // worker POOL is the parallelism; per-process OMP threading fights it. Capping
+      // to cores/workers (threadCap) keeps total threads ≈ cores. threadCap=0 (the
+      // single-worker path) leaves Tesseract free to use every core for the one proc.
+      const env = threadCap > 0
+        ? { ...process.env, OMP_THREAD_LIMIT: String(threadCap) }
+        : process.env;
       const proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs),
-        { windowsHide: true });
+        { windowsHide: true, env });
       _currentBatchProcs.push(proc);
       let buf = '';
 
@@ -498,6 +592,24 @@ function register(ctx) {
       });
     });
 
+    // ── Auto document separation (Stage 1) ── runs BEFORE the worker set is built, so
+    // both the single-worker (scans the folder) and multi-worker (enumerates it) paths
+    // pick up the per-document segments. Gated by a setting (default on); fail-safe, so a
+    // detector/splitter failure just leaves the folder unchanged. See _separateBatchDocuments.
+    if (learning.getSetting(db, 'auto_separate_enabled', 'true') === 'true') {
+      const tIdx = trainingArgs.indexOf('--templates-file');
+      const templatesFile = tIdx >= 0 ? trainingArgs[tIdx + 1] : null;
+      if (templatesFile) {
+        try {
+          const n = await _separateBatchDocuments(folderPath, templatesFile,
+            (text, level) => mirror(event.sender, 'process-progress', { type: 'log', text, level: level || '' }));
+          if (n) logger?.log(`[separation] separated ${n} multi-document PDF(s) before processing`);
+        } catch (e) {
+          logger?.warn(`[separation] pre-pass failed (continuing without split): ${e.message}`);
+        }
+      }
+    }
+
     // Build the worker set. concurrency<=1 keeps the EXACT original path (one
     // worker scans the folder; its own start/total flows straight through).
     let workerPromises;
@@ -521,18 +633,18 @@ function register(ctx) {
       } else {
         const shards = partitionRoundRobin(allFiles, Math.min(concurrency, allFiles.length));
         logger?.log(`Batch start: folder="${folderPath}" mode=${procMode} concurrency=${concurrency} → ${shards.length} workers, ${allFiles.length} files`);
-        // Cap each RapidOCR worker's onnxruntime threads to cores/workers so the
-        // pool doesn't oversubscribe the CPU (RapidOCR is internally multithreaded,
-        // unlike Tesseract). 0 = no cap (Tesseract, or unknown CPU count).
-        const ocrCap = ocrEngine === 'rapidocr'
-          ? Math.max(1, Math.floor((os.cpus().length || 1) / shards.length))
-          : 0;
+        // Per-worker thread cap = cores / workers, so the pool never oversubscribes
+        // the CPU. Applies to BOTH engines: it caps Tesseract's OpenMP threads (via
+        // OMP_THREAD_LIMIT in runWorker — the default engine, previously UNCAPPED and
+        // the cause of N×cores thread thrash) AND RapidOCR's onnxruntime threads (via
+        // --ocr-threads). Single-worker path passes 0 (no cap → use all cores).
+        const threadCap = Math.max(1, Math.floor((os.cpus().length || 1) / shards.length));
         // One aggregate start for the whole batch; per-worker starts suppressed.
         mirror(event.sender, 'process-progress', { type: 'start', total: allFiles.length });
         workerPromises = shards.map(shard => {
           const f = writeTempJson('files', shard);
           shardFiles.push(f);
-          return runWorker(f, true, ocrCap);
+          return runWorker(f, true, threadCap);
         });
       }
     }
@@ -783,6 +895,20 @@ function register(ctx) {
       const enhanceFile = writeTempJson('enhance', effectiveEnhanceParams);
       allTempFiles.push(enhanceFile);
       scriptArgs.push('--enhance-file', enhanceFile);
+    } else {
+      // Reprocess optimisation: reuse this doc's already-stored full-page OCR text so
+      // the ~1.9s/page full-page OCR is skipped (the pixels don't change on reprocess —
+      // only the learned data — and per-field crop reads still re-run, so accuracy is
+      // unchanged). ONLY when no manual/template ENHANCE is active (that would change
+      // the read) and the stored text is non-empty. Written into tmpDir (cleaned with it).
+      try {
+        const otRow = db.prepare('SELECT ocr_text FROM documents WHERE id = ?').get(docId);
+        if (otRow && otRow.ocr_text && otRow.ocr_text.trim()) {
+          const cachedFile = path.join(tmpDir, 'cached_ocr.txt');
+          fs.writeFileSync(cachedFile, otRow.ocr_text, 'utf8');
+          scriptArgs.push('--cached-ocr-file', cachedFile);
+        }
+      } catch { /* fall back to full OCR */ }
     }
 
     return new Promise((resolve) => {
@@ -898,7 +1024,7 @@ function register(ctx) {
     const tmpNames  = [];
     for (const d of docs) {
       try {
-        const row = db.prepare('SELECT working_path, template_id FROM documents WHERE id = ?').get(d.docId);
+        const row = db.prepare('SELECT working_path, template_id, ocr_text FROM documents WHERE id = ?').get(d.docId);
         const srcFile = (row && row.working_path && fs.existsSync(row.working_path))
           ? row.working_path
           : path.join(d.folderPath || '', d.filename || '');
@@ -916,6 +1042,9 @@ function register(ctx) {
           known_template_id: (row && row.template_id) || null,
           known_doc_slug:    (dtRow && dtRow.slug) || null,
           enhance_params:    enh,
+          // Reuse stored full-page OCR text → skip the ~1.9s/page re-OCR (only when no
+          // enhance is active and the text is non-empty; crop reads still re-run).
+          ...(!enh && row && row.ocr_text && row.ocr_text.trim() ? { ocr_text: row.ocr_text } : {}),
         };
         nameToDoc[tmpName] = { docId: d.docId, filename: d.filename, existing };
         tmpNames.push(tmpName);
@@ -934,7 +1063,12 @@ function register(ctx) {
     if (!Number.isFinite(concurrency)) concurrency = 1;
     concurrency = Math.max(1, Math.min(5, concurrency));
     const shards  = partitionRoundRobin(tmpNames, Math.min(concurrency, tmpNames.length));
-    const threads = ocrEngine === 'rapidocr'
+    // Per-worker thread cap = cores / workers, so the pool doesn't oversubscribe the
+    // CPU. Caps Tesseract's OpenMP threads (OMP_THREAD_LIMIT in the spawn env — the
+    // default engine; without it N workers each grab ~all cores ≈ N×cores threads and
+    // thrash, making a parallel run crawl as if it were serial) AND RapidOCR's onnx
+    // threads (--ocr-threads). >1 shard only.
+    const threadCap = shards.length > 1
       ? Math.max(1, Math.floor((os.cpus().length || 1) / shards.length)) : 0;
 
     mirror(event.sender, 'reprocess-progress', { type: 'start', total: tmpNames.length });
@@ -948,12 +1082,15 @@ function register(ctx) {
       const scriptArgs = ['--folder', tmpDir, '--tesseract', tesseractPath(), '--mode', reprMode,
         '--files-file', filesFile, '--reprocess-manifest', manifestFile, ...trainingArgs];
       if (ocrEngine === 'rapidocr' && reprMode === 'fast') scriptArgs.push('--ocr-fast');
-      if (threads > 0) scriptArgs.push('--ocr-threads', String(threads));
+      if (ocrEngine === 'rapidocr' && threadCap > 0) scriptArgs.push('--ocr-threads', String(threadCap));
       if (traceWanted(diagOn)) {
         scriptArgs.push('--trace');
         try { fs.mkdirSync(ctx.devSliceDir, { recursive: true }); scriptArgs.push('--slice-dir', ctx.devSliceDir); } catch {}
       }
-      const proc = spawn(pythonExe(), pythonArgs(backendScript(), ...scriptArgs), { windowsHide: true });
+      const env = threadCap > 0
+        ? { ...process.env, OMP_THREAD_LIMIT: String(threadCap) }
+        : process.env;
+      const proc = spawn(pythonExe(), pythonArgs(backendScript(), ...scriptArgs), { windowsHide: true, env });
       _currentBatchProcs.push(proc);
       let buf = '', settled = false;
       const watchdog = setTimeout(() => {
@@ -1172,6 +1309,16 @@ function register(ctx) {
     return true;
   });
 
+  // Operator-taught field cleanup rule (Review right-click toolkit). Same role gate
+  // as the ⊕ teach; learning.saveFieldRule normalizes + upserts. Returns true so the
+  // renderer can flush staged rules on confirm without a result shape to parse.
+  ipcMain.handle('save-field-rule', (_e, data) => {
+    requireRole('admin', 'edit');
+    const learning = require('../../../database/modules/learning');
+    try { learning.saveFieldRule(getDb(), data || {}); } catch (e) { logger?.warn?.(`save-field-rule: ${e && e.message}`); }
+    return true;
+  });
+
   // ── PDF splitting ───────────────────────────────────────────────────────────
   // Thin wrapper around pdf_splitter.py (pypdf). Splits a single PDF into
   // page-range sub-documents that can then be dropped into the normal process-
@@ -1185,11 +1332,28 @@ function register(ctx) {
       return { success: false, error: 'filePath and ranges or every are required' };
     }
 
+    // Resolve the ACTUAL source file: prefer the app-managed working copy. The original
+    // is DRAINED out of the intake folder into Processed/ once a working copy exists, so
+    // splitting from `filePath` (the original location) would fail "file not found" after
+    // a normal process. Mirrors the reprocess path's working-copy-first resolution.
+    let srcFile = filePath;
+    try {
+      if (docId) {
+        const wp = getDb().prepare('SELECT working_path FROM documents WHERE id = ?').get(docId);
+        if (wp && wp.working_path && fs.existsSync(wp.working_path)) srcFile = wp.working_path;
+      }
+    } catch { /* fall back to filePath */ }
+    if (!srcFile || !fs.existsSync(srcFile)) {
+      return { success: false, error: 'Source PDF not found — the original may have been moved into the Processed folder after processing.' };
+    }
+    // Write the split pages next to the ORIGINAL location (a real user folder), never the
+    // hidden inbox where the working copy lives.
+    const splitOutDir = outDir || (filePath ? path.dirname(filePath) : path.dirname(srcFile));
+
     const py             = pythonExe();
     const splitterScript = path.join(path.dirname(backendScript()), 'pdf_splitter.py');
     const splitArgs      = everyN ? ['--every', String(everyN)] : ['--ranges', ranges];
-    const args           = pythonArgs(splitterScript, '--file', filePath, ...splitArgs);
-    if (outDir) { args.push('--outdir', outDir); }
+    const args           = pythonArgs(splitterScript, '--file', srcFile, ...splitArgs, '--outdir', splitOutDir);
 
     const raw = await new Promise((resolve) => {
       let stdout = '';

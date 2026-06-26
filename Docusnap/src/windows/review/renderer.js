@@ -15,6 +15,13 @@ const TYPE_TO_VALIDATION = {
   // Explicit "Reference number" field type -> code (alphanumeric) gate, mirroring
   // engine.py _TYPE2VAL. So the on-blur validator accepts NNNN-NNNN-N refs.
   reference: 'alphanumeric',
+  // Supplementary structured types — MUST stay in lockstep with engine.py _TYPE2VAL
+  // and config validation_patterns (the same anchored patterns drive both the on-blur
+  // check and the dev-inspector rx% score). email/percentage/postcode_uk/vat_gb/iban/
+  // website are flag-only (UI warn, not engine-withheld); reference_code also gates in
+  // the engine (_TYPE2VAL).
+  email: 'email', percentage: 'percentage', postcode_uk: 'postcode_uk', vat_gb: 'vat_gb',
+  reference_code: 'reference_code', iban: 'iban', website: 'website',
 };
 // Mirror engine.py _is_ref_field: a reference/ticket field (key ends _number /
 // _no or contains "reference").
@@ -135,6 +142,10 @@ let anchorTaughtFields = new Set(); // field_keys taught via the ⊕ highlight/z
 // leaves NO learned trace, so an accidental wrong pick can't poison the corpus.
 // Keyed by field_key → the saveFieldAnchor payload computed at draw time.
 let pendingAnchors   = {};
+// Field cleanup rules taught via the right-click menu this cycle, STAGED in memory
+// and persisted only on Confirm (mirrors pendingAnchors). Keyed field_key → array of
+// saveFieldRule payloads. An un-confirmed teach (skip/defer/doc-change) leaves no trace.
+let pendingFieldRules = {};
 // The draw context of the most recent ⊕ teach, so the readout's Left/Above toggle can
 // re-run label detection in the chosen direction without redrawing the box.
 let lastTeachCtx     = null;   // { fieldKey, rect, imgW, imgH, scaleX, scaleY, value }
@@ -239,6 +250,9 @@ async function loadQueue() {
     canEdit = !!(me && (me.role === 'admin' || me.role === 'edit'));
   } catch { isAdmin = false; canEdit = false; }
   applyAnchorWizardGate();   // Template Wizard is admin-only (mapping IPC is admin-gated server-side)
+  // "+ New type" header launcher — admin only (the create IPC is admin-gated server-side).
+  const _newTypeBtn = document.getElementById('btn-new-doctype');
+  if (_newTypeBtn) { _newTypeBtn.style.display = isAdmin ? '' : 'none'; _newTypeBtn.onclick = openNewTypeModal; }
   queue         = await window.docusnap.getReviewQueue();
   deferredQueue = await window.docusnap.getDeferredQueue();
   allDocTypes   = await window.docusnap.getAllDocTypes();
@@ -266,6 +280,7 @@ function labelFor(key) {
 }
 
 // ── Doc type dropdown ─────────────────────────────────────────────────────────
+const NEW_TYPE_SENTINEL = '__new_type__';   // dropdown launcher value; intercepted, never a real type
 function populateTypeDropdown() {
   const sel = document.getElementById('doctype-select');
   sel.innerHTML = '<option value="">— Select document type —</option>';
@@ -275,9 +290,24 @@ function populateTypeDropdown() {
     opt.textContent = t.name;
     sel.appendChild(opt);
   }
+  // Admin-only "create a new type" launcher, discovered exactly when choosing a type.
+  // The sentinel value is intercepted in the change handler below and never sticks.
+  if (isAdmin) {
+    const div = document.createElement('option');
+    div.disabled = true; div.textContent = '──────────';
+    sel.appendChild(div);
+    const add = document.createElement('option');
+    add.value = NEW_TYPE_SENTINEL; add.textContent = '＋ Create new type…';
+    sel.appendChild(add);
+  }
 }
 
 document.getElementById('doctype-select').addEventListener('change', (e) => {
+  if (e.target.value === NEW_TYPE_SENTINEL) {
+    e.target.value = selectedTypeSlug || '';   // revert — the sentinel never becomes a chosen type
+    openNewTypeModal();
+    return;
+  }
   selectedTypeSlug = e.target.value || null;
   const dt = allDocTypes.find(t => t.slug === selectedTypeSlug);
   fieldDefs = dt ? dt.fields : (allDocTypes[0]?.fields || []);
@@ -300,6 +330,134 @@ document.getElementById('doctype-select').addEventListener('change', (e) => {
   }
   validateConfirm();
 });
+
+// ── Create-a-new-type modal (in-page; reuses the shared DocTypeEditor) ─────────
+// Launched from the "+ New type" header button OR the "＋ Create new type…" dropdown
+// entry. No new window / no new IPC: the editor commits via createDocTypeWithFields and
+// returns the new type, which we splice into the dropdown and auto-select for this doc.
+let _newTypeModalOpen = false;
+function openNewTypeModal() {
+  if (_newTypeModalOpen || !isAdmin) return;
+  if (!window.DocTypeEditor || typeof window.DocTypeEditor.create !== 'function') {
+    _newTypeToast('The document-type editor didn’t load. Try reopening the Review window.');
+    return;
+  }
+  _newTypeModalOpen = true;
+  let closed = false, committing = false, ctl = null;
+
+  const ov = document.createElement('div');
+  ov.setAttribute('data-help-ignore', '');   // help-mode must not swallow clicks inside the modal
+  Object.assign(ov.style, { position: 'fixed', inset: '0', background: 'rgba(8,10,15,.72)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: '99999', padding: '24px' });
+  const box = document.createElement('div');
+  Object.assign(box.style, { width: 'min(560px,94vw)', maxHeight: '88vh', overflowY: 'auto',
+    background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: '12px',
+    padding: '20px', boxShadow: '0 18px 50px rgba(0,0,0,.5)', color: 'var(--text)' });
+  const title = document.createElement('div');
+  title.textContent = 'Create a new document type';
+  Object.assign(title.style, { fontSize: '15px', fontWeight: '600', marginBottom: '14px' });
+  const host = document.createElement('div');
+  const footer = document.createElement('div');
+  Object.assign(footer.style, { display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' });
+  const cancel = document.createElement('button'); cancel.className = 'btn'; cancel.textContent = 'Cancel';
+  const create = document.createElement('button'); create.className = 'btn'; create.textContent = 'Create type'; create.disabled = true;
+  Object.assign(create.style, { background: 'var(--accent)', borderColor: 'var(--accent)', color: 'var(--bg)', fontWeight: '500' });
+
+  const close = () => {
+    if (closed) return; closed = true; _newTypeModalOpen = false;
+    document.removeEventListener('keydown', onKey, true);
+    try { ctl && ctl.destroy(); } catch {}
+    ov.remove();
+  };
+  const onKey = (e) => { if (e.key === 'Escape' && !committing) { e.stopPropagation(); close(); } };
+
+  // Attach the overlay BEFORE mounting the editor, so it renders into a host that's in
+  // the document (Teach/Settings mount it attached; a detached host can break render).
+  footer.append(cancel, create);
+  box.append(title, host, footer);
+  ov.append(box);
+  document.body.append(ov);
+
+  try {
+    ctl = window.DocTypeEditor.create(host, {
+      mode: 'create', api: window.docusnap,
+      // Use the `ready` arg the editor passes — it fires onValidityChange SYNCHRONOUSLY
+      // during create(), before `ctl` is assigned, so `ctl.isReady()` here would NPE.
+      onValidityChange: (ready) => { create.disabled = committing || !ready; },
+    });
+  } catch (err) {
+    close();
+    _newTypeToast('Could not open the type editor: ' + (err && err.message ? err.message : String(err)));
+    return;
+  }
+
+  cancel.addEventListener('click', close);
+  create.addEventListener('click', async () => {
+    if (committing || !ctl.isReady()) return;
+    committing = true; create.disabled = true; create.textContent = 'Creating…';
+    let res; try { res = await ctl.commit(); } catch (e) { res = { success: false, error: e && e.message }; }
+    committing = false; create.textContent = 'Create type';
+    if (closed) return;                          // cancelled mid-flight → ignore the resolved result
+    if (res && res.success && res.type) {
+      const newSlug = res.type.slug;
+      close();
+      try { allDocTypes = await window.docusnap.getAllDocTypes(); } catch {}
+      populateTypeDropdown();
+      const sel = document.getElementById('doctype-select');
+      sel.value = newSlug;
+      sel.dispatchEvent(new Event('change'));    // reuse the existing handler: select + rebuild field rows
+      showNewTypeNudge(res.type);
+    } else {
+      create.disabled = !ctl.isReady();          // failure: the editor already showed the error inline
+    }
+  });
+
+  document.addEventListener('keydown', onKey, true);
+  // Chromium drops focus on a just-appended element — defer to the next frame.
+  requestAnimationFrame(() => { const inp = host.querySelector('input, select'); if (inp) inp.focus(); });
+}
+
+// Minimal visible toast (no deps) — used for create-modal failures/diagnostics.
+function _newTypeToast(msg) {
+  const t = document.createElement('div');
+  t.setAttribute('data-help-ignore', '');
+  t.textContent = msg;
+  Object.assign(t.style, { position: 'fixed', left: '50%', bottom: '72px', transform: 'translateX(-50%)',
+    maxWidth: 'min(90vw,480px)', background: '#1f2d3d', color: '#eaf1f5', padding: '10px 14px',
+    borderRadius: '10px', borderLeft: '3px solid var(--accent)', fontSize: '12px', zIndex: '100000',
+    boxShadow: '0 12px 32px rgba(0,0,0,.5)' });
+  document.body.append(t);
+  setTimeout(() => { t.remove(); }, 6000);
+}
+
+// Calm, opt-in nudge after a type is created: confirm now, or teach where the fields sit.
+function showNewTypeNudge(type) {
+  const scroll = document.getElementById('fields-scroll');
+  if (!scroll) return;
+  document.querySelector('.new-type-nudge')?.remove();
+  const banner = document.createElement('div');
+  banner.className = 'new-type-nudge';
+  banner.setAttribute('data-help-ignore', '');
+  Object.assign(banner.style, { display: 'flex', flexDirection: 'column', gap: '8px',
+    background: 'var(--surface2)', border: '1px solid var(--border2)', borderLeft: '3px solid var(--accent)',
+    borderRadius: '8px', padding: '10px 12px', margin: '0 0 10px', fontSize: '12px', color: 'var(--text)' });
+  const msg = document.createElement('div');
+  const strong = document.createElement('strong'); strong.textContent = '“' + type.name + '” created. ';
+  msg.append(strong, document.createTextNode('Confirm this document now — or teach Scan Finder where each field sits so it auto-fills next time.'));
+  const actions = document.createElement('div');
+  Object.assign(actions.style, { display: 'flex', gap: '8px' });
+  const teach = document.createElement('button'); teach.className = 'btn'; teach.textContent = 'Teach where the fields are';
+  const dismiss = document.createElement('button'); dismiss.className = 'btn'; dismiss.textContent = 'Dismiss';
+  for (const b of [teach, dismiss]) Object.assign(b.style, { fontSize: '11px', padding: '4px 10px' });
+  actions.append(teach, dismiss);
+  banner.append(msg, actions);
+  scroll.prepend(banner);
+  dismiss.addEventListener('click', () => banner.remove());
+  teach.addEventListener('click', () => {
+    banner.remove();
+    if (currentDoc && window.docusnap.openTeachWindowAt) window.docusnap.openTeachWindowAt(currentDoc.id);
+  });
+}
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
 document.getElementById('tab-review').addEventListener('click', () => {
@@ -491,6 +649,7 @@ async function _selectDoc(doc, { fieldsOnly = false } = {}) {
   corrections = {};
   anchorTaughtFields = new Set();
   pendingAnchors = {};   // discard any un-confirmed ⊕ teach when the doc changes
+  pendingFieldRules = {}; // ...and any un-confirmed field cleanup rule
   lastTeachCtx = null; hideAnchorReadout();
 
   document.querySelectorAll('.queue-item').forEach(el => {
@@ -861,6 +1020,72 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
     else clearFieldWarning(row, input);
   });
 
+  // Right-click → field cleanup-rule toolkit (strip a leaked heading/column). Gated
+  // to admin/edit (the save is also role-checked server-side). Read-only users get
+  // the native menu.
+  input.addEventListener('contextmenu', (e) => {
+    if (!canEdit) return;
+    showFieldRuleMenu(e, input, key);
+  });
+
+  // ── Date shortcut + free-text type-ahead ──────────────────────────────────────
+  const fdef  = (fieldDefs || []).find(f => f.key === key);
+  const ftype = ((fdef && fdef.type) || '').toLowerCase();
+  // 't' / 'T' in a DATE field fills today's date (DD-MM-YYYY — the canonical format).
+  if (ftype === 'date') {
+    input.addEventListener('keydown', (e) => {
+      if ((e.key === 't' || e.key === 'T') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        const d = new Date(), p = (n) => String(n).padStart(2, '0');
+        input.value = `${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()}`;
+        input.dispatchEvent(new Event('input', { bubbles: true }));  // update corrections + clear warning
+      }
+    });
+  }
+  // Type-ahead for FREE-TEXT fields (names / generic text — no structured pattern):
+  // after 3 chars, suggest values already confirmed for this field on this doc type.
+  // Native <datalist> (browser handles matching + keyboard); options lazy-loaded once,
+  // and the list is only attached at >= 3 chars so it stays quiet for short input.
+  if (!validationKeyFor(fdef) && currentDoc && currentDoc.id != null) {
+    const dlId = `field-sugg-${key}`;
+    const dl = document.createElement('datalist');
+    dl.id = dlId;
+    row.appendChild(dl);
+    let loaded = false;
+    const ensureLoaded = async () => {
+      if (loaded) return;
+      loaded = true;
+      try {
+        const vals = (await window.docusnap.getFieldSuggestions(currentDoc.id, key)) || [];
+        dl.innerHTML = vals.map(v => `<option value="${escHtml(v)}"></option>`).join('');
+      } catch { /* suggestions are best-effort */ }
+    };
+    // Force-close the native popup. Removing `list` alone does NOT dismiss an already-
+    // open Chromium datalist — only blur does — so blur, then refocus (with `list` gone)
+    // to keep the cursor in the field without the popup reopening.
+    const closeSuggest = () => {
+      input.removeAttribute('list');
+      input.blur();
+      requestAnimationFrame(() => input.focus());
+    };
+    let lastArrowAt = 0;
+    input.addEventListener('input', (e) => {
+      if (e && e.inputType === 'insertReplacementText') {
+        // A datalist value was inserted. Arrow NAVIGATION fires this right after an
+        // Arrow keydown (keep the popup open); a MOUSE PICK fires it with no recent
+        // arrow (that's a commit → close). Enter is handled in keydown below.
+        if (Date.now() - lastArrowAt > 150) setTimeout(closeSuggest, 0);
+        return;
+      }
+      if (input.value.trim().length >= 3) { ensureLoaded(); input.setAttribute('list', dlId); }
+      else input.removeAttribute('list');
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') lastArrowAt = Date.now();
+      else if (e.key === 'Enter' && input.hasAttribute('list')) setTimeout(closeSuggest, 0);
+    });
+  }
+
   row.querySelector('.pick-btn').addEventListener('click', () => {
     if (activeField === key) cancelZoneMode();
     else enterZoneMode(key, labelFor(key));
@@ -1080,6 +1305,149 @@ async function runZoneOcr(rect, fieldKey) {
   cancelZoneMode();
 }
 
+// ── Field cleanup rules — right-click menu ──────────────────────────────────
+// Teach Scan Finder to strip an adjacent heading/column OCR bled into a field.
+// Mirrors the ⊕ model: the field VALUE is fixed immediately; the learned RULE is
+// staged in pendingFieldRules and committed on confirm. Three tooltipped options.
+let _fieldRuleMenuEl = null;
+
+function _frTruncate(s, n = 40) {
+  s = String(s == null ? '' : s);
+  return s.length > n ? s.slice(0, n - 1) + '…' : s;
+}
+
+function closeFieldRuleMenu() {
+  if (_fieldRuleMenuEl) { _fieldRuleMenuEl.remove(); _fieldRuleMenuEl = null; }
+  document.removeEventListener('mousedown', _onFieldRuleMenuOutside, true);
+}
+function _onFieldRuleMenuOutside(e) {
+  if (_fieldRuleMenuEl && !_fieldRuleMenuEl.contains(e.target)) closeFieldRuleMenu();
+}
+
+// Snap [start,end) to whole words within `value`. First SHRINK off any selected
+// whitespace at the edges (so a stray trailing/leading space in the drag doesn't pull
+// in the next word — "7 " must stay "7", not grow into "7 Beaumont"), THEN grow each
+// edge out to the full word it sits inside (so a partial word becomes whole).
+function _snapToWords(value, start, end) {
+  while (start < end && /\s/.test(value[start]))     start++;
+  while (end > start && /\s/.test(value[end - 1]))   end--;
+  if (start >= end) return [start, end];
+  while (start > 0 && /\S/.test(value[start - 1]))   start--;
+  while (end < value.length && /\S/.test(value[end])) end++;
+  return [start, end];
+}
+
+// Name-like / naturally-multi-word fields (names, addresses, companies) must NOT be
+// offered "Keep only the main value": that keeps a single code-shaped token, which is
+// catastrophic when the junk is a stray digit and the value is a name ("7 Beaumont…"
+// → "7"). Mirrors the spirit of python value_quality.is_name_like_field.
+function _isNameLikeField(key) {
+  const s = (String(key || '') + ' ' + String(labelFor(key) || '')).toLowerCase();
+  return /name|address|company|customer|supplier|contact/.test(s);
+}
+
+// Learning scope (supplier + doctype) for a staged rule — same resolution the ⊕
+// teach uses so a rule isn't keyed to a stale identity.
+function _fieldRuleScope() {
+  const docType = currentDoc?.type_slug || currentDoc?.document_type_slug || null;
+  const supplierInput = document.querySelector('.field-input[data-key="supplier_name"]');
+  const supplier = supplierInput?.value?.trim() || currentDoc?.supplier_name || null;
+  return { document_type: docType, supplier_name: cleanSupplierName(supplier) };
+}
+
+// The single code-shaped (digit-bearing) token, mirroring the engine's keep_block
+// tie-break — or null when 0 / >1 such tokens (ambiguous).
+function _keepBlockResult(value) {
+  const toks = (value || '').trim().split(/\s+/);
+  if (toks.length < 2) return null;
+  const digit = toks.filter(t => /\d/.test(t));
+  return digit.length === 1 ? digit[0] : null;
+}
+
+// Apply a value change through the normal 'input' path (records corrections + runs
+// validation), optionally staging a learned rule (committed on confirm).
+function _applyFieldRule(input, key, newValue, rule) {
+  input.value = newValue;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  if (rule) {
+    (pendingFieldRules[key] = pendingFieldRules[key] || []).push(rule);
+    try { showToast('Saved for this document — the rule applies when you Confirm.', 'ok'); } catch {}
+  }
+  closeFieldRuleMenu();
+}
+
+function showFieldRuleMenu(e, input, key) {
+  e.preventDefault();
+  closeFieldRuleMenu();
+  const value = input.value || '';
+  if (!value.trim()) return;
+
+  // Selection → leading/trailing trim (whole-value selection is blocked).
+  let s = input.selectionStart, en = input.selectionEnd;
+  let selected = '', side = null, removeResult = null;
+  if (s != null && en != null && s !== en) {
+    [s, en] = _snapToWords(value, s, en);
+    selected = value.slice(s, en).trim();
+    const touchesStart = !value.slice(0, s).trim();
+    const touchesEnd   = !value.slice(en).trim();
+    if (touchesStart && touchesEnd) { selected = ''; }            // whole value → nothing to trim
+    else if (touchesEnd)  { side = 'trailing'; removeResult = value.slice(0, s).replace(/\s+$/, ''); }
+    else if (touchesStart) { side = 'leading';  removeResult = value.slice(en).replace(/^\s+/, ''); }
+    else { selected = ''; }                                        // interior → not a leak (edit directly)
+  }
+  const trimOk = selected && (side === 'leading' || side === 'trailing')
+              && removeResult && removeResult.trim() && removeResult.trim() !== value.trim();
+
+  const items = [];
+  // "Keep only the main value" is for single-value CODE fields only — never name-like
+  // fields (a name is naturally multi-word; keeping one digit token would gut it).
+  const kb = _isNameLikeField(key) ? null : _keepBlockResult(value);
+  if (kb && kb !== value.trim()) {
+    items.push({
+      label: 'Keep only the main value',
+      sub: `${_frTruncate(value)}  →  ${_frTruncate(kb)}`,
+      tip: 'This field holds one value (e.g. a code). On future scans we keep the value and drop extra words that leak in from a neighbouring heading or column — on either side.',
+      onClick: () => _applyFieldRule(input, key, kb, { ..._fieldRuleScope(), field_key: key, rule_type: 'keep_block' }),
+    });
+  }
+  if (trimOk) {
+    items.push({
+      label: 'Remove this text from future scans',
+      sub: `${_frTruncate(value)}  →  ${_frTruncate(removeResult)}`,
+      tip: `We'll remove "${_frTruncate(selected, 28)}" (and close OCR variants) from this field on future scans, where it ${side === 'leading' ? 'leads' : 'trails'} the value.`,
+      onClick: () => _applyFieldRule(input, key, removeResult, { ..._fieldRuleScope(), field_key: key, rule_type: 'remove_text', token: selected, side }),
+    });
+    items.push({
+      label: 'Just fix this one',
+      sub: `${_frTruncate(value)}  →  ${_frTruncate(removeResult)}`,
+      tip: "Fix only this document. Scan Finder won't change how it reads future scans.",
+      onClick: () => _applyFieldRule(input, key, removeResult, null),
+    });
+  }
+  if (!items.length) return;
+
+  const menu = document.createElement('div');
+  menu.className = 'field-rule-menu';
+  menu.setAttribute('data-help-ignore', '');
+  for (const it of items) {
+    const b = document.createElement('button');
+    b.className = 'frm-item';
+    b.title = it.tip;
+    b.innerHTML = `<span class="frm-label">${escHtml(it.label)}</span><span class="frm-sub">${escHtml(it.sub)}</span>`;
+    b.addEventListener('click', it.onClick);
+    menu.appendChild(b);
+  }
+  document.body.appendChild(menu);
+  _fieldRuleMenuEl = menu;
+  const mw = menu.offsetWidth, mh = menu.offsetHeight;
+  let x = e.clientX, y = e.clientY;
+  if (x + mw > window.innerWidth)  x = window.innerWidth - mw - 8;
+  if (y + mh > window.innerHeight) y = window.innerHeight - mh - 8;
+  menu.style.left = `${Math.max(8, x)}px`;
+  menu.style.top  = `${Math.max(8, y)}px`;
+  setTimeout(() => document.addEventListener('mousedown', _onFieldRuleMenuOutside, true), 0);
+}
+
 // Compute the DRIFT-INVARIANT label→value offset to store with a ⊕ teach.
 // `box` is the label's [left, top, w, h] in the crop's ORIGINAL (natural) pixels
 // (from ocrRegionBoxes). `originDX/DY` are the crop's top-left in DISPLAY px.
@@ -1098,6 +1466,42 @@ function labelOffsetFromBox(box, originDX, originDY, xNorm, yNorm, imgW, imgH) {
   // mis-read box never stores a wild vector (extraction then uses the fallback).
   if (!isFinite(dx) || !isFinite(dy) || Math.abs(dx) > 0.6 || Math.abs(dy) > 0.3) return {};
   return { offset_dx_norm: dx, offset_dy_norm: dy };
+}
+
+// From the OCR word boxes of a left-of-value strip (one line tall), return the
+// RIGHTMOST contiguous block — the caption nearest the value — split from any other
+// column on a wide horizontal gap. Returns { text, box:[l,t,w,h] } in the words' own
+// px space, or null when there are no usable words. This is what stops a wide
+// two-column key/value row ("Ticket No. … Work Address") merging BOTH captions into
+// one bogus anchor: we keep only the caption adjacent to the value. Reusable for any
+// multi-column layout, not one document.
+function nearestLeftCluster(words) {
+  const ws = (words || [])
+    .filter(w => w && Array.isArray(w.box) && w.box.length >= 4 && (w.text || '').trim())
+    .map(w => ({ text: w.text.trim(), l: +w.box[0], t: +w.box[1], w: +w.box[2], h: +w.box[3] }))
+    .filter(w => isFinite(w.l) && isFinite(w.w))
+    .sort((a, b) => a.l - b.l);
+  if (!ws.length) return null;
+  // A real inter-COLUMN gap is several text-heights wide — far larger than the
+  // inter-word space inside one caption. Tie the threshold to the median word height
+  // so it scales with DPI/zoom rather than a brittle pixel constant.
+  const heights = ws.map(w => w.h).filter(h => h > 0).sort((a, b) => a - b);
+  const medH = heights[Math.floor(heights.length / 2)] || 0;
+  const gapThresh = Math.max(medH * 1.2, 8);
+  // Walk left→right; a gap past the threshold starts a new column, discarding
+  // everything to its left. The surviving block is the rightmost (nearest) column.
+  let block = [ws[0]];
+  for (let i = 1; i < ws.length; i++) {
+    const prev = ws[i - 1];
+    const gap = ws[i].l - (prev.l + prev.w);
+    if (gap > gapThresh) block = [ws[i]];
+    else block.push(ws[i]);
+  }
+  const l = Math.min(...block.map(w => w.l));
+  const t = Math.min(...block.map(w => w.t));
+  const r = Math.max(...block.map(w => w.l + w.w));
+  const b = Math.max(...block.map(w => w.t + w.h));
+  return { text: block.map(w => w.text).join(' '), box: [l, t, r - l, b - t] };
 }
 
 // The located label's box as page-normalised [x,y,w,h] (top-left), for the
@@ -1183,15 +1587,25 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
       );
       const leftB64   = leftCanvas.toDataURL('image/png').split(',')[1];
       const leftRes   = await window.docusnap.ocrRegionBoxes?.(leftB64);
-      const leftText  = ((leftRes && leftRes.text) || (await window.docusnap.ocrRegion(leftB64)) || '').trim();
+      // Keep only the column nearest the value, not the whole row to the left — a wide
+      // key/value row OCRs as "label1 …gap… label2" and the far-left caption must not
+      // be glued onto the real adjacent one. Falls back to the full strip when word
+      // boxes aren't available (legacy region.py output).
+      const cluster   = nearestLeftCluster(leftRes && leftRes.words);
+      const leftText  = (cluster ? cluster.text
+                          : ((leftRes && leftRes.text) || (await window.docusnap.ocrRegion(leftB64)) || '')).trim();
+      const leftBox   = cluster ? cluster.box : (leftRes && leftRes.box);
       const leftLabel = sanitizeAnchorLabel(extractLabel(leftText) || '');
       if (leftLabel) {
         // Drift-invariant offset: the located label's page position → value centre.
         // Origin of the left crop in DISPLAY px is (rect.x - leftPad, rect.y).
-        const off = labelOffsetFromBox(leftRes && leftRes.box, rect.x - leftPad, rect.y, xNorm, yNorm, imgW, imgH);
-        pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: leftLabel, direction: 'right', ...off };
+        const off = labelOffsetFromBox(leftBox, rect.x - leftPad, rect.y, xNorm, yNorm, imgW, imgH);
+        // label_detected: this caption was OCR'd from the PAGE (not the field-name
+        // fallback), so the backend must NOT drop it even if it equals the field key
+        // (a "Make" field whose on-page label is literally "Make").
+        pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: leftLabel, direction: 'right', ...off, label_detected: true };
         return { anchor_label: leftLabel, direction: 'right',
-                 normBox: labelNormBox(leftRes && leftRes.box, rect.x - leftPad, rect.y, imgW, imgH) };
+                 normBox: labelNormBox(leftBox, rect.x - leftPad, rect.y, imgW, imgH) };
       }
     }
   } catch (err) {
@@ -1226,7 +1640,7 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
       if (aboveLabel) {
         // Origin of the above crop in DISPLAY px is (rect.x, rect.y - abovePad).
         const off = labelOffsetFromBox(aboveRes && aboveRes.box, rect.x, rect.y - abovePad, xNorm, yNorm, imgW, imgH);
-        pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: aboveLabel, direction: 'below', ...off };
+        pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: aboveLabel, direction: 'below', ...off, label_detected: true };
         return { anchor_label: aboveLabel, direction: 'below',
                  normBox: labelNormBox(aboveRes && aboveRes.box, rect.x, rect.y - abovePad, imgW, imgH) };
       }
@@ -1394,6 +1808,24 @@ async function confirmCurrentDoc({ bulk = false } = {}) {
       }
     }
     pendingAnchors = {};
+  }
+
+  // Flush staged FIELD CLEANUP RULES (right-click menu) — same commit-on-confirm
+  // model as anchors, re-keyed to the confirmed supplier. Best-effort per rule.
+  const ruleKeys = Object.keys(pendingFieldRules);
+  if (ruleKeys.length) {
+    const ruleSupplier = cleanSupplierName(allValues.supplier_name || currentDoc?.supplier_name);
+    for (const fk of ruleKeys) {
+      for (const rule of (pendingFieldRules[fk] || [])) {
+        try {
+          await window.docusnap.saveFieldRule({ ...rule, supplier_name: ruleSupplier });
+        } catch (err) {
+          console.error(`Field rule save failed for "${fk}":`, err);
+          if (!bulk) { try { showToast('Document filed, but a field cleanup rule could not be saved.', 'err'); } catch {} }
+        }
+      }
+    }
+    pendingFieldRules = {};
   }
 
   queue         = queue.filter(d => d.id !== currentDoc.id);
@@ -2011,6 +2443,7 @@ document.getElementById('btn-reprocess').addEventListener('click', async () => {
       currentDoc  = full;    // sync in-memory state to fresh DB record
       corrections = {};      // drop stale corrections; fields are now fresh
       pendingAnchors = {};   // ...and any un-committed ⊕ teach (coords now stale)
+      pendingFieldRules = {};
       syncDocTypeFromRecord(full); // auto-select the newly detected type
     }
     renderFields(full || currentDoc);
@@ -2156,6 +2589,7 @@ document.getElementById('btn-reprocess-all').addEventListener('click', async () 
           currentDoc  = full;
           corrections = {};
           pendingAnchors = {};   // drop any un-committed ⊕ teach (coords now stale)
+          pendingFieldRules = {};
           syncDocTypeFromRecord(full);
           renderFields(full);
         }
@@ -2170,7 +2604,7 @@ document.getElementById('btn-reprocess-all').addEventListener('click', async () 
     btnAll.disabled      = false;
     btnOne.disabled      = false;
     btnStop.style.display = 'none';
-    btnAll.innerHTML     = '&#9654;&#9654; Reprocess All';
+    btnAll.innerHTML     = 'Reprocess all in queue';
   }
 
   const stopped = _batchStopped;

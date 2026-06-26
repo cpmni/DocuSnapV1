@@ -13,7 +13,7 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.docusnap.app",
+    "appId": "com.scanfinder.app",
     "productName": "ScanFinder",
     "copyright": "Copyright © 2026 SOFTWARE COMPANY",
     "win": {

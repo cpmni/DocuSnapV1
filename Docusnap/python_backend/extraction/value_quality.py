@@ -66,22 +66,52 @@ _WORD_RE = re.compile(r"[^\s]+")
 
 
 def is_name_like_field(field_key, label=None):
-    """True for fields that hold a NAME / company / person / address — where OCR
+    """True for fields that hold a NAME / company / person / postal address — where OCR
     gibberish should be quality-checked. Keyed on the field key/label so it works
     for custom fields too. Conservative: only obvious name-ish fields."""
-    hay = f"{field_key or ''} {label or ''}".lower()
+    # Normalise separators to spaces so "mac_address"/"bill_to" tokenise as whole words.
+    hay = re.sub(r"[^a-z0-9]+", " ", f"{field_key or ''} {label or ''}".lower())
     if any(tok in hay for tok in (
         "name", "supplier", "customer", "company", "client", "vendor",
-        "person", "contact", "address", "payee", "bill_to", "ship_to",
+        "person", "contact", "payee", "bill to", "ship to",
     )):
+        return True
+    # "address" is name-like ONLY for a POSTAL/person address. A MAC / IP / hardware /
+    # network "address" is a technical IDENTIFIER (a code: "D4:F0:C9:25:9B:64",
+    # "192.168.1.200") with no real words — classing it name-like makes the name-quality /
+    # code-reject gates strip its legitimate value, so a labelled anchor could never fill
+    # mac_address / ip_address. Exclude the technical-address qualifiers.
+    if "address" in hay and not re.search(
+            r"\b(mac|ip|ipv4|ipv6|hardware|physical|network|gateway|subnet|dns|host|port)\b", hay):
         return True
     # Common ABBREVIATIONS that a substring test would miss ("cust" is not inside
     # "customer") — matched as WHOLE WORDS so they can't false-positive on an
-    # unrelated key ("custom_ref", "custody_value" -> token "custom"/"custody", not
-    # "cust"). A field keyed/labelled "cust" is the customer name and must get the
-    # same edge-strip / name-quality / token-repair treatment as "customer".
-    words = set(re.findall(r"[a-z]+", hay))
-    return bool(words & {"cust"})
+    # unrelated key ("custom_ref", "custody_value"). A field keyed/labelled "cust" is the
+    # customer name and must get the same edge-strip / name-quality / token-repair treatment.
+    return bool(set(hay.split()) & {"cust"})
+
+
+def network_address_validation(field_key, label=None):
+    """Return the validation key 'mac_address' / 'ip_address' for a NETWORK-IDENTIFIER
+    field, else None. A MAC/IP is a CODE with a precise, well-defined format (colons,
+    dotted octets) — not a learned digit-position shape and not a generic 'text' charset —
+    so it gets a first-class validation pattern instead of falling through gates that don't
+    know its punctuation (the ':' flagged "unexpected", the new octet length flagged a
+    "shape" anomaly). Keyed on WHOLE-WORD tokens (mirrors the technical-address exclusion in
+    is_name_like_field) so it can't false-positive on 'description'/'ship'/'recipient'.
+    Reusable for any install whose doc type carries mac/ip fields."""
+    hay = re.sub(r"[^a-z0-9]+", " ", f"{field_key or ''} {label or ''}".lower())
+    toks = set(hay.split())
+    if toks & {"mac", "hardware"}:        # "hardware address" == MAC
+        return "mac_address"
+    if toks & {"ip", "ipv4", "ipv6"}:
+        return "ip_address"
+    return None
+
+
+def is_network_address_field(field_key, label=None):
+    """True for a MAC/IP network-identifier field (see network_address_validation)."""
+    return network_address_validation(field_key, label) is not None
 
 
 def _has_long_consonant_run(low):

@@ -23,7 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from extraction import keyword, anchor, validator, ocr_corrector, template_matcher, template_mapper, format_anomaly_checker, value_quality
+from extraction import keyword, anchor, validator, ocr_corrector, template_matcher, template_mapper, format_anomaly_checker, value_quality, wordness
 
 # LLM import is optional — system works without it in FAST mode
 try:
@@ -112,7 +112,18 @@ _TYPE2VAL = {"date": "date", "currency": "currency", "number": "currency",
              "job_reference": "job_reference", "currency_code": "currency_code",
              # Explicit "Reference number" field type — a deliberate CODE marker;
              # gated alphanumeric, never currency.
-             "reference": "alphanumeric"}
+             "reference": "alphanumeric",
+             # "Reference code" — a STRICTER ref shape that must contain a digit (a
+             # digit-free word like "Reference"/"Customer" fails). A deliberate WITHHOLD
+             # gate, offered as a distinct option rather than mutating "alphanumeric"
+             # (which many fields rely on). reggie Tier-2.
+             "reference_code": "reference_code"}
+# NOTE: the FLAG-ONLY supplementary types (email/percentage/postcode_uk/vat_gb/iban/website)
+# are deliberately NOT mapped here. A _TYPE2VAL entry makes the value's validation_pattern a
+# WITHHOLD gate (a non-matching read is dropped); these are flag-only per review-not-reject —
+# the value is kept and surfaced for review via the renderer on-blur validator
+# (TYPE_TO_VALIDATION) + the Stage-4.5 field_charsets note (both keyed on the field TYPE,
+# independent of _TYPE2VAL). reference_code (above) is the one Tier-2 type that DOES gate.
 
 
 def _seed_field_patterns(base_patterns, field_defs):
@@ -135,7 +146,15 @@ def _seed_field_patterns(base_patterns, field_defs):
         _k, _t = _f.get("key"), (_f.get("type") or "").lower()
         if not _k or _k in field_patterns:
             continue
-        if _t in _TYPE2VAL:
+        # A MAC/IP field is a CODE with a precise format — give it a first-class
+        # validation pattern regardless of the loose DB type the user picked
+        # (text/alphanumeric), so its colons/octets are type-VALID (not "unexpected
+        # characters") and a new device's address isn't flagged as a learned-SHAPE
+        # anomaly. See value_quality.network_address_validation.
+        _net = value_quality.network_address_validation(_k)
+        if _net:
+            field_patterns[_k] = {"validation": _net}
+        elif _t in _TYPE2VAL:
             mapped = _TYPE2VAL[_t]
             if _is_ref_field(_k) and mapped in ("currency", "currency_code"):
                 mapped = "alphanumeric"
@@ -248,6 +267,7 @@ class ExtractionEngine:
         self.noise_profile_index = {}   # populated by set_formats()
         self.format_class_index  = {}   # populated by set_formats()
         self.label_overrides     = []   # populated by set_label_overrides()
+        self.field_rules_index   = {}   # populated by set_field_rules()
         self.registration_enabled = False  # set by set_registration_enabled()
         # Phase 3 candidate-override (default OFF → byte-identical behaviour). Modes:
         # 'off' | 'suggest' (corrected_to only) | 'auto' (value, only for opted-in
@@ -255,6 +275,10 @@ class ExtractionEngine:
         self.candidate_override        = 'off'
         self.candidate_override_fields = set()
         self._field_candidates   = {}    # per-run candidate ledger (built only when override on)
+        # Wordness gate (default OFF → byte-identical). When on, a free-text NAME read
+        # that does not read like a name (document chrome, ref/code bleed, OCR garble)
+        # is FLAGGED for review (note + conf cap); never rejected. See extraction/wordness.py.
+        self.name_wordness       = False
         self._trace              = None  # dev-only trace callback (set per extract())
 
     def log(self, text: str, level: str = ""):
@@ -264,6 +288,11 @@ class ExtractionEngine:
         """Enable the Stage 0.5 registration rung (P4, 'register, then read').
         Inert unless the matched template carries taught landmarks."""
         self.registration_enabled = bool(on)
+
+    def set_name_wordness(self, on: bool):
+        """Enable the free-text NAME wordness review flag (default OFF). Inert unless the
+        char-trigram table ships (extraction/data/char_trigrams.json)."""
+        self.name_wordness = bool(on)
 
     def set_candidate_override(self, mode, fields=None):
         """Enable the Phase 3 post-merge candidate resolver. mode: 'off' (default,
@@ -484,6 +513,69 @@ class ExtractionEngine:
             return (self.format_class_index.get((s, d, fk)) if s else None) \
                    or self.format_class_index.get(('', d, fk))
         return lookup
+
+    def set_field_rules(self, rules: list):
+        """Operator-taught field cleanup rules (Review right-click toolkit). Index
+        by (supplier_lower, doctype_lower, field_key) → [rule, …] so the Stage 4.5
+        winner loop can strip a learned leaked heading/column from a field value."""
+        idx = {}
+        for r in (rules or []):
+            if not isinstance(r, dict) or not r.get('field_key') or not r.get('rule_type'):
+                continue
+            key = ((r.get('supplier_name') or '').lower().strip(),
+                   (r.get('document_type') or '').lower().strip(),
+                   r['field_key'])
+            idx.setdefault(key, []).append(r)
+        self.field_rules_index = idx
+        if idx:
+            self.log(f"  Field cleanup rules: {sum(len(v) for v in idx.values())} loaded")
+
+    def _field_rules_for(self, supplier_name, document_slug, field_key):
+        """Rules in scope for a field, most-specific scope first: supplier+doctype,
+        then doctype-only ('' supplier), then the '__global__' supplier. Each rule is
+        applied in turn; within a scope, remove_text rules run longest-token-first."""
+        if not self.field_rules_index:
+            return []
+        s = (supplier_name or '').lower().strip()
+        d = (document_slug or '').lower().strip()
+        out = []
+        for sk in ([s] if s else []) + ['', '__global__']:
+            out.extend(self.field_rules_index.get((sk, d, field_key), []))
+        # keep_block first, then remove_text longest-token-first (most specific wins).
+        out.sort(key=lambda r: (0 if r.get('rule_type') == 'keep_block' else 1,
+                                -len(r.get('token_norm') or '')))
+        return out
+
+    @staticmethod
+    def _doctype_fixed_supplier(templates, document_slug):
+        """The doc type's FIXED Supplier Name, taken from any template for this
+        doc-type slug. A doc type whose Supplier Name is an admin-fixed template
+        field has a DETERMINISTIC supplier — the page logo is irrelevant — so this
+        lets the fixed value survive a MISSED template match and stay immune to the
+        logo fallback (which otherwise fills supplier_name with a logo guess when no
+        template matched). Prefers an admin-LOCKED value; uses a plain fixed value
+        only when every candidate agrees (ambiguous → None, so we never guess).
+        Returns {'value', 'method'} or None — None leaves behaviour byte-identical."""
+        if not templates or not document_slug:
+            return None
+        slug = str(document_slug).strip()
+        locked, plain = [], []
+        for t in templates:
+            if (t.get('document_type_slug') or '') != slug:
+                continue
+            for f in (t.get('fields') or []):
+                if f.get('key') != 'supplier_name':
+                    continue
+                val = f.get('fixed_value')
+                val = val.strip() if isinstance(val, str) else val
+                if not val:
+                    continue
+                (locked if f.get('fixed_locked') else plain).append(val)
+        for bucket, method in ((locked, 'template_fixed_locked'), (plain, 'template_fixed')):
+            uniq = {v for v in bucket if v}
+            if len(uniq) == 1:
+                return {'value': next(iter(uniq)), 'method': method}
+        return None
 
     def set_formats(self, formats_data: list):
         """Pre-build all format indexes from confirmed value data."""
@@ -728,6 +820,24 @@ class ExtractionEngine:
                     self._trace_stage('0.5_mapping', mapping_results, _pre_s05, results)
                     if applied:
                         self.log(f"  Stage 0.5: {applied} field(s) refined via anchor/target mapping")
+
+        # ── Fixed Supplier Name is IMMUNE to the logo fallback ────────────────
+        # A doc type whose Supplier Name is an admin-fixed template field has a
+        # deterministic supplier, so a logo guess must never fill it. When no
+        # template matched (the fixed value was never seeded) but the doc type IS
+        # known, apply the doc-type's fixed Supplier Name and SKIP the logo match.
+        # Returns None when the doc type has no fixed supplier → logo runs as before.
+        if not supplier_name and document_slug:
+            fixed_sup = self._doctype_fixed_supplier(templates, document_slug)
+            if fixed_sup:
+                supplier_name = fixed_sup['value']
+                results["supplier_name"] = {
+                    "value":      supplier_name,
+                    "confidence": 95,
+                    "method":     fixed_sup['method'],
+                }
+                self.log(f"  Fixed Supplier Name for '{document_slug}': "
+                         f"{supplier_name} — logo fallback skipped")
 
         # ── Pre-stage: logo supplier identification (fallback if no template) ──
         if not supplier_name and logos and page_images:
@@ -1223,6 +1333,47 @@ class ExtractionEngine:
         _pre_val = self._snap(results)
         results = validator.validate_and_adjust(results, field_defs)
 
+        # ── Field cleanup rules (operator-taught, Review right-click toolkit) ──
+        # Strip a learned leaked heading/column from a field's WINNER value
+        # (keep_block keeps the single pattern/code-shaped token; remove_text removes
+        # a learned caption). Runs HERE — independent of learned format history — so it
+        # applies even to fields with no confirmed shape. Honest: rewrites value/
+        # display_value with was_corrected + corrected_to + an "auto-trimmed, was: …"
+        # note; NOT review-forced (the match guards make it deterministic). No-op when
+        # no rule is in scope or every guard refuses → byte-identical.
+        if self.field_rules_index and document_slug:
+            from extraction import field_rules as _field_rules
+            _val_pats = self.patterns.get("validation_patterns") or {}
+            for key, data in list(results.items()):
+                if key.startswith('_') or not isinstance(data, dict):
+                    continue
+                val = data.get('value')
+                if not isinstance(val, str) or not val:
+                    continue
+                rules = self._field_rules_for(supplier_name, document_slug, key)
+                if not rules:
+                    continue
+                original = val
+                cur = val
+                for r in rules:
+                    rt = r.get('rule_type')
+                    if rt == 'keep_block':
+                        _vt = (field_patterns.get(key) or {}).get("validation")
+                        _pl = _val_pats.get(_vt) or []
+                        if isinstance(_pl, str):
+                            _pl = [_pl]
+                        pat = ("(?:" + ")|(?:".join(_pl) + ")") if _pl else None
+                        cur, _ = _field_rules.apply_keep_block(cur, pat)
+                    elif rt == 'remove_text':
+                        cur, _ = _field_rules.apply_remove_text(
+                            cur, r.get('token_norm') or '',
+                            side=r.get('side') or 'trailing',
+                            min_prefix=r.get('min_prefix') or 3)
+                if cur != original:
+                    results[key] = {**data, 'value': cur, 'display_value': cur,
+                                    'was_corrected': True, 'corrected_to': cur,
+                                    'validation_note': f'auto-trimmed, was: "{original}"'}
+
         # ── Stage 4.5: Format anomaly check ──────────────────────────────────
         # Compares each extracted value against the coarse format class learned
         # from confirmed historical values for the same
@@ -1231,12 +1382,17 @@ class ExtractionEngine:
         # already flagged by Stage 4 are skipped to avoid double-penalisation.
         # No correction is proposed here — that is Stage 2 of this feature.
         format_anomaly_flagged = False
-        if self.format_class_index and document_slug:
+        # The wordness gate must run COLD (no learned history) — that is where free-text
+        # name silent-errors are worst — so enter this block when name_wordness is on even
+        # if the format index is empty. When name_wordness is OFF this is byte-identical to
+        # the original `format_class_index and document_slug` guard.
+        if document_slug and (self.format_class_index or self.name_wordness):
             s_lower  = (supplier_name or '').lower().strip()
             dt_lower = document_slug.lower().strip()
             n_flagged = 0
             field_charsets = self.patterns.get('field_charsets') or {}
             field_types    = {f.get('key'): f.get('type') for f in (field_defs or [])}
+            validation_patterns = self.patterns.get('validation_patterns') or {}
             for key, data in list(results.items()):
                 if key.startswith('_') or not isinstance(data, dict):
                     continue
@@ -1261,6 +1417,23 @@ class ExtractionEngine:
                         data = {**data, 'value': _clean, 'display_value': _clean}
                         results[key] = data
                         val = _clean
+                # ── Type-authority gate ── a value that FULLY matches its field's PRECISE
+                # validation pattern (mac/ip) is type-authoritative, and a label/landmark-
+                # CONFIRMED read (relocated/inline/registration / Stage 0.5 mapping) already
+                # cleared the anchor-stage credibility + column-bleed guards. Either way the
+                # generic charset + learned-SHAPE heuristics below must not second-guess it:
+                # a MAC's ':' isn't "unexpected", a new IP/serial just differs in shape from
+                # history. The generic 'alphanumeric' is NOT precise, so an UN-anchored drift
+                # (a rigid "Bookinc" via keyword/anchor_crop) still gets shape-gated.
+                _val_key = (field_patterns.get(key) or {}).get('validation')
+                _authoritative = bool(
+                    _val_key in anchor._PRECISE_VAL_TYPES
+                    and validation_patterns.get(_val_key)
+                    and anchor._pattern_coverage(str(val), validation_patterns[_val_key])
+                        >= anchor._PATTERN_AUTHORITATIVE_MIN)
+                _method = data.get('method') or ''
+                _label_confirmed = (_method in anchor._LABEL_CONFIRMED_METHODS
+                                    or _is_stage05_located(_method))
                 # ── Valid-character policy (Phase 1, backend-only FLAG) ── before the
                 # format lookup so it covers EVERY field, not only those with learned
                 # formats. Surfaces unexpected OCR symbols for the field TYPE (note +
@@ -1268,7 +1441,7 @@ class ExtractionEngine:
                 # normalisers own punctuation); defers to any existing note via the
                 # guard above. See format_anomaly_checker.charset_disallowed +
                 # config field_charsets.
-                if field_charsets:
+                if field_charsets and not _authoritative:
                     _ftype = field_types.get(key)
                     if _ftype not in ('date', 'currency', 'currency_code'):
                         _spec = field_charsets.get(_ftype, field_charsets.get('default'))
@@ -1282,6 +1455,28 @@ class ExtractionEngine:
                             n_flagged += 1
                             format_anomaly_flagged = True
                             continue
+                # ── Wordness gate (default OFF) ── before the format lookup so it works
+                # COLD (no learned history), where free-text name silent-errors are worst.
+                # FLAG-ONLY: a free-text NAME read that doesn't read like a name (document
+                # chrome / ref-code bleed / OCR garble) gets a note + conf cap; the value
+                # is never changed. Gated on is_name_like_field; self-calibrates per field
+                # via the learned word_like flag when history exists (code-like field =>
+                # skip). See extraction/wordness.py + reggie's review.
+                if self.name_wordness and not _authoritative and key in text_field_keys \
+                        and value_quality.is_name_like_field(key):
+                    _fe = (self.format_class_index.get((s_lower, dt_lower, key)) if s_lower else None) \
+                          or self.format_class_index.get(('', dt_lower, key))
+                    _word_like = True if not _fe else _fe.get('word_like', True)
+                    _wnote = wordness.name_structure_flag(str(val), word_like=_word_like)
+                    if _wnote:
+                        results[key] = {
+                            **data,
+                            'confidence':      min(data.get('confidence') or 0, 70),
+                            'validation_note': _wnote,
+                        }
+                        n_flagged += 1
+                        format_anomaly_flagged = True
+                        continue
                 # Supplier-scoped format first; fall back to the doc-type-scoped
                 # one ('' supplier) so qualification works even when the supplier
                 # is never identified (document-agnostic learning).
@@ -1330,7 +1525,24 @@ class ExtractionEngine:
                             n_flagged += 1
                             format_anomaly_flagged = True
                         continue   # one repair/suggestion per field — skip the anomaly path
-                    # No repair needed. If the value CONFORMS to the learned name
+                    # ── Truncation / fragment flag (reggie follow-up) ── the dominant
+                    # name silent-error class character wordness CANNOT catch (a fragment
+                    # is a real word): a value SHORTER than the history length ("...Ltd -"
+                    # with the site cut) OR a final-token fragment ("...Ltd - B"). Run
+                    # BEFORE conforms_to_lexicon: a final-token fragment still CONFORMS
+                    # (stable prefix matches, count reaches expected_len), so conforms would
+                    # otherwise suppress it. History-gated (name_lex present) => inert
+                    # without confirmed history; under the name_wordness opt-in; flag-only.
+                    if self.name_wordness and name_match.is_truncated_name(str(val), name_lex):
+                        results[key] = {
+                            **data,
+                            'confidence':      min(data.get('confidence') or 0, 70),
+                            'validation_note': 'looks shorter than the usual name — please verify',
+                        }
+                        n_flagged += 1
+                        format_anomaly_flagged = True
+                        continue
+                    # No repair / truncation. If the value CONFORMS to the learned name
                     # pattern (every stable PREFIX token matches; only the variable
                     # TAIL differs), the name_lexicon — a more precise model than the
                     # coarse learned SHAPE — says this is the EXPECTED pattern. Suppress
@@ -1341,6 +1553,13 @@ class ExtractionEngine:
                         continue
                 anomaly = format_anomaly_checker.check_value(str(val), fmt_entry)
                 if anomaly:
+                    # Type-authoritative (precise mac/ip pattern) or label/landmark-
+                    # confirmed read — accept clean, no shape flag (see the type-authority
+                    # gate above): the value matches the field's nature / was read beside
+                    # its located label, so a learned digit-position SHAPE mismatch is not
+                    # an anomaly. The UN-anchored rigid/keyword path still falls through.
+                    if _authoritative or _label_confirmed:
+                        continue
                     # Free-text field (name/address): a learned shape must never
                     # withhold or trim a valid value here — its shape varies
                     # legitimately. Keep the value, flag softly for a human to
@@ -1348,6 +1567,22 @@ class ExtractionEngine:
                     # discarded by a longer historical shape. Structured/code
                     # fields fall through to the full shape enforcement below.
                     if key in text_field_keys:
+                        # CLEAN-NAME RELAX: a well-formed name (good name-quality; charset
+                        # already clean by here) whose field has NO learned stable-prefix
+                        # identity — the confirmed names don't share a common prefix because
+                        # the field holds DIFFERENT customers/companies — is NOT flagged
+                        # merely for a length/word-count difference: a new customer
+                        # ("McMahon Associates") is normal, not an anomaly. When the field
+                        # DOES carry a stable prefix (single-identity history), a non-
+                        # conforming value is a genuine anomaly (a TRUNCATED "Beaumont Care
+                        # Homes Ltd -" or a WRONG prefix "Totally Different Co -") and still
+                        # flags — conforms_to_lexicon already suppressed a legitimate new
+                        # tail above. A GARBLED name (quality < 0.5) always flags.
+                        _has_stable_prefix = bool(name_lex and name_lex.get('positions'))
+                        if not _has_stable_prefix \
+                                and value_quality.is_name_like_field(key) \
+                                and value_quality.name_quality(str(val)) >= 0.5:
+                            continue
                         results[key] = {
                             **data,
                             'confidence':      min(data.get('confidence') or 0, 70),

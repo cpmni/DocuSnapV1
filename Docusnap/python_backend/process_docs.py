@@ -63,18 +63,23 @@ def load_json_arg(inline: str | None, filepath: str | None) -> list | dict | Non
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-def doc_overrides(manifest, name, *, enhance=None, known_template_id=None, known_doc_slug=None):
+def doc_overrides(manifest, name, *, enhance=None, known_template_id=None,
+                  known_doc_slug=None, cached_text=None):
     """Per-document reprocess overrides from a manifest (batched Reprocess All), each
     keyed by the file's basename. Falls back to the global args when the manifest has
     no entry for this file — so single-doc reprocess and folder import (no manifest)
     are byte-identical. This is what lets batched reprocess share ONE Python process
     across many docs WITHOUT losing each doc's own template / doc-slug / enhance
-    overrides (the accuracy guarantee)."""
+    overrides (the accuracy guarantee). cached_text = the doc's already-stored full-page
+    OCR text, reused on reprocess to skip the redundant full-page OCR (see
+    extract_text_and_images.cached_text)."""
     o = (manifest or {}).get(name) or {}
+    ct = o.get("ocr_text")
     return (
         o.get("enhance_params", enhance),                       # None is a valid value
         o.get("known_template_id") or known_template_id,
         o.get("known_doc_slug") or known_doc_slug,
+        ct if ct else cached_text,
     )
 
 
@@ -93,6 +98,7 @@ def main():
     parser.add_argument("--formats-file",    default=None)
     parser.add_argument("--templates-file", default=None)
     parser.add_argument("--label-overrides-file", default=None)
+    parser.add_argument("--field-rules-file", default=None)
     parser.add_argument("--enhance-file",   default=None)
     # Parallel processing: when Electron runs a bounded worker pool, each worker
     # gets an explicit JSON list of the filenames (within --folder) it owns, so
@@ -111,6 +117,12 @@ def main():
     # its OWN overrides (per-doc accuracy). Absent → the global --known-* args apply
     # (single-doc reprocess / folder import are byte-identical). See doc_overrides().
     parser.add_argument("--reprocess-manifest", default=None)
+    # Reprocess optimisation: path to a file holding this document's already-stored
+    # full-page OCR text. When present, the full-page OCR (~1.9s/page) is SKIPPED and
+    # this text reused (the pixels — and thus the text — don't change on reprocess; only
+    # the learned data does, and per-field crop reads still re-run). Single-doc reprocess
+    # only; the batch path carries the text per-doc in --reprocess-manifest instead.
+    parser.add_argument("--cached-ocr-file", default=None)
     # Dev-only: emit a structured per-field extraction TRACE stream (type:"trace")
     # for the hidden Dev Inspector. Off by default → zero extra output/overhead and
     # the user-facing process-progress stream is byte-identical.
@@ -124,6 +136,10 @@ def main():
                              "replace value for --candidate-override-fields only)")
     parser.add_argument("--candidate-override-fields", default="",
                         help="comma-separated field TYPES eligible for auto override")
+    parser.add_argument("--name-wordness", action="store_true",
+                        help="flag free-text NAME reads that don't read like a name "
+                             "(document chrome / ref-code bleed / OCR garble); flag-only, "
+                             "default off; inert without extraction/data/char_trigrams.json")
     parser.add_argument("--born-digital", action="store_true",
                         help="use a PDF's embedded text layer (exact) instead of OCR "
                              "for pages that carry one; inert for image-only/scanned PDFs")
@@ -174,8 +190,17 @@ def main():
     formats        = load_json_arg(None, args.formats_file)   or []
     templates      = load_json_arg(None, args.templates_file) or []
     label_overrides = load_json_arg(None, args.label_overrides_file) or []
+    field_rules    = load_json_arg(None, args.field_rules_file) or []
     enhance_params = load_json_arg(None, args.enhance_file)   or None
     reprocess_manifest = load_json_arg(None, args.reprocess_manifest) or {}
+
+    # Single-doc reprocess: the doc's already-stored full-page OCR text (skip re-OCR).
+    global_cached_text = None
+    if args.cached_ocr_file:
+        try:
+            global_cached_text = Path(args.cached_ocr_file).read_text(encoding="utf-8")
+        except Exception:
+            global_cached_text = None
 
     # Full-page OCR engine (default 'tesseract' = byte-identical). RapidOCR is opt-in
     # and falls back to Tesseract if its runtime/models are unavailable; crop/zone/
@@ -207,6 +232,10 @@ def main():
     if args.registration:
         engine.set_registration_enabled(True)
 
+    # Free-text NAME wordness review flag (off unless --name-wordness; flag-only).
+    if args.name_wordness:
+        engine.set_name_wordness(True)
+
     # Phase 3 candidate override (default 'off' → byte-identical behaviour).
     if args.candidate_override and args.candidate_override != "off":
         _co_fields = [t.strip() for t in (args.candidate_override_fields or "").split(",") if t.strip()]
@@ -220,6 +249,11 @@ def main():
     # scoped to each document's detected doc-type slug (see engine Stage 1).
     if label_overrides:
         engine.set_label_overrides(label_overrides)
+
+    # Operator-taught field cleanup rules (Review right-click toolkit) — strip a
+    # learned leaked heading/column at extraction time (engine Stage 4.5).
+    if field_rules:
+        engine.set_field_rules(field_rules)
 
     # Find the files to process. With an explicit --files-file (a parallel
     # worker's shard), process exactly those names — restricted to existing,
@@ -248,18 +282,22 @@ def main():
 
         # Per-document overrides (batched reprocess) — fall back to the global args
         # when no manifest entry exists (byte-identical for folder import / single doc).
-        _enh, _kt, _ks = doc_overrides(
+        _enh, _kt, _ks, _cached = doc_overrides(
             reprocess_manifest, filepath.name,
             enhance=enhance_params,
             known_template_id=args.known_template_id,
             known_doc_slug=args.known_doc_slug,
+            cached_text=global_cached_text,
         )
 
         try:
-            # OCR
-            log(f"  OCR: {filepath.name}")
+            # OCR (skipped on reprocess when the stored full-page text is supplied —
+            # the pixels don't change, only the learned data; per-field crop reads
+            # still re-run, so accuracy is unchanged. See extract_text_and_images.)
+            log(f"  {'render (cached OCR)' if _cached else 'OCR'}: {filepath.name}")
             ocr_text, page_images = extract_text_and_images(
-                filepath, _enh, born_digital=args.born_digital, engine=ocr_engine)
+                filepath, _enh, born_digital=args.born_digital, engine=ocr_engine,
+                cached_text=(_cached if (_cached and _cached.strip()) else None))
 
             if not ocr_text.strip():
                 raise ValueError("OCR returned no text — is the scan readable?")

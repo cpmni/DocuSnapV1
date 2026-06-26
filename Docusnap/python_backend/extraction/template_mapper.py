@@ -520,74 +520,91 @@ def _relocate_and_read(page, mapping, anchor_box, target_box, located, val_type,
     dx = mapping.get("offset_dx_norm") or 0.0
     dy = mapping.get("offset_dy_norm") or 0.0
 
-    # ── 1. INLINE HARVEST off the located label's OWN line (no extra OCR — the line
-    # was already read during the locate). The reliable read for a key/value row. ──
-    iv = located.get("inline_value")
-    if iv:
+    def _geometric():
+        # GEOMETRIC DERIVATION (RIGID OFFSET): seat the value box at the LOCATED label's
+        # origin + the stored label→value offset, with the operator's DRAWN dimensions —
+        # "20px across, 2px down" STAYS 20px across, 2px down. This is what the operator
+        # drew; the value moves rigidly WITH the label, it does not slide with OCR
+        # line-segmentation. Off the tight LABEL box (falls back to the whole line only
+        # when no label_box, and only then does _located_too_wide guard it).
+        lb = located.get("label_box")
+        if lb is None:
+            if _located_too_wide(anchor_box, located):
+                return None
+            lb = located
+        inset_x = max(0.0, (anchor_box["w_norm"] - (lb.get("w_norm") or 0.0)) / 2.0)
+        inset_y = max(0.0, (anchor_box["h_norm"] - (lb.get("h_norm") or 0.0)) / 2.0)
+        derived_target = {
+            "x_norm": _clamp01(lb["x_norm"] - inset_x + dx),
+            "y_norm": _clamp01(lb["y_norm"] - inset_y + dy),
+            "w_norm": target_box["w_norm"],
+            "h_norm": target_box["h_norm"],
+        }
+        _cap = ((lambda c: slice_capture(field_key, "template_mapping", page_idx,
+                   (derived_target["x_norm"], derived_target["y_norm"],
+                    derived_target["w_norm"], derived_target["h_norm"]), c, "target")) if slice_capture else None)
+        _d_meta = {}
+        text = _crop_and_ocr(page, derived_target, val_type, ocr_text_fn, capture=_cap, meta=_d_meta)
+        expanded = False
+        if not text and expansion > 0:
+            text = _crop_and_ocr(page, _expand_box(derived_target, expansion), val_type, ocr_text_fn, meta=_d_meta)
+            expanded = bool(text)
+        # DERIVED rung (label-relocated crop): regex/type is a hard gate; a learned-
+        # shape mismatch flags-and-keeps rather than drops (the rung where column-bleed
+        # actually happens).
+        text, salvaged, shapewarn = _gate_value(
+            text, val_type, field_key, validation_patterns, format_lookup, shape_mode='flag')
+        if not text:
+            return None
+        return _mapping_result(
+            text,
+            located.get("matched_text") is not None and bool(mapping.get("anchor_text")),
+            expanded, salvaged, mapping.get("anchor_text") or field_key,
+            shape_warn=shapewarn, ocr_conf=_d_meta.get('conf'), val_type=val_type,
+            geom=_box_list(derived_target) if slice_capture else None)
+
+    def _inline():
+        # INLINE HARVEST off the located label's OWN line (no extra OCR — the line was
+        # already read during the locate). Reads the value words that follow the label on
+        # the SAME line. Robust to a value in a FAR column the drawn box width can't reach,
+        # but it 'slides' with OCR line-segmentation — so it is the FALLBACK to the rigid
+        # geometric read above (and the PRIMARY read only for a legacy offset-less mapping).
+        iv = located.get("inline_value")
+        if not iv:
+            return None
         hv = _clean_value(iv, val_type)
         if hv and val_type == "alphanumeric" and " " in hv:
             hv = hv.split()[0]          # a code column is one token; drop trailing captions
         hv, iv_salvaged, iv_shapewarn = _gate_value(
             hv, val_type, field_key, validation_patterns, format_lookup, shape_mode='flag')
-        if hv:
-            ib = located.get("inline_box")
-            if slice_capture and ib:
-                try:
-                    pw, ph = page.size
-                    _icrop = page.crop((int(ib["x_norm"] * pw), int(ib["y_norm"] * ph),
-                                        int((ib["x_norm"] + ib["w_norm"]) * pw),
-                                        int((ib["y_norm"] + ib["h_norm"]) * ph)))
-                    slice_capture(field_key, "template_mapping", page_idx,
-                                  (ib["x_norm"], ib["y_norm"], ib["w_norm"], ib["h_norm"]),
-                                  _icrop, "target")
-                except Exception:
-                    pass                # dev-only; never disrupt extraction
-            return _mapping_result(
-                hv, located.get("matched_text") is not None and bool(mapping.get("anchor_text")),
-                False, iv_salvaged, mapping.get("anchor_text") or field_key,
-                shape_warn=iv_shapewarn, val_type=val_type,
-                geom=_box_list(ib) if (slice_capture and ib) else None)
-
-    # ── 2. GEOMETRIC DERIVATION off the tight LABEL box (falls back to the whole
-    # line only when no label_box, and only then does _located_too_wide guard it). ──
-    lb = located.get("label_box")
-    if lb is None:
-        if _located_too_wide(anchor_box, located):
+        if not hv:
             return None
-        lb = located
-    inset_x = max(0.0, (anchor_box["w_norm"] - (lb.get("w_norm") or 0.0)) / 2.0)
-    inset_y = max(0.0, (anchor_box["h_norm"] - (lb.get("h_norm") or 0.0)) / 2.0)
-    derived_target = {
-        "x_norm": _clamp01(lb["x_norm"] - inset_x + dx),
-        "y_norm": _clamp01(lb["y_norm"] - inset_y + dy),
-        "w_norm": target_box["w_norm"],
-        "h_norm": target_box["h_norm"],
-    }
+        ib = located.get("inline_box")
+        if slice_capture and ib:
+            try:
+                pw, ph = page.size
+                _icrop = page.crop((int(ib["x_norm"] * pw), int(ib["y_norm"] * ph),
+                                    int((ib["x_norm"] + ib["w_norm"]) * pw),
+                                    int((ib["y_norm"] + ib["h_norm"]) * ph)))
+                slice_capture(field_key, "template_mapping", page_idx,
+                              (ib["x_norm"], ib["y_norm"], ib["w_norm"], ib["h_norm"]),
+                              _icrop, "target")
+            except Exception:
+                pass                # dev-only; never disrupt extraction
+        return _mapping_result(
+            hv, located.get("matched_text") is not None and bool(mapping.get("anchor_text")),
+            False, iv_salvaged, mapping.get("anchor_text") or field_key,
+            shape_warn=iv_shapewarn, val_type=val_type,
+            geom=_box_list(ib) if (slice_capture and ib) else None)
 
-    _cap = ((lambda c: slice_capture(field_key, "template_mapping", page_idx,
-               (derived_target["x_norm"], derived_target["y_norm"],
-                derived_target["w_norm"], derived_target["h_norm"]), c, "target")) if slice_capture else None)
-    _d_meta = {}
-    text = _crop_and_ocr(page, derived_target, val_type, ocr_text_fn, capture=_cap, meta=_d_meta)
-    expanded = False
-    if not text and expansion > 0:
-        text = _crop_and_ocr(page, _expand_box(derived_target, expansion), val_type, ocr_text_fn, meta=_d_meta)
-        expanded = bool(text)
-
-    # DERIVED rung (label-relocated crop): regex/type is a hard gate; a learned-
-    # shape mismatch flags-and-keeps rather than drops (this is the rung where
-    # column-bleed actually happens).
-    text, salvaged, shapewarn = _gate_value(
-        text, val_type, field_key, validation_patterns, format_lookup,
-        shape_mode='flag')
-    if not text:
-        return None
-    return _mapping_result(
-        text,
-        located.get("matched_text") is not None and bool(mapping.get("anchor_text")),
-        expanded, salvaged, mapping.get("anchor_text") or field_key,
-        shape_warn=shapewarn, ocr_conf=_d_meta.get('conf'), val_type=val_type,
-        geom=_box_list(derived_target) if slice_capture else None)
+    # RIGID OFFSET PRIMARY (the operator's model): when the mapping stored a label→value
+    # offset, the value box follows the located label by that EXACT offset + drawn
+    # dimensions — geometric read FIRST; the line harvest is only the fallback when the
+    # rigid read fails its gate (a far column / an imperfect offset). A LEGACY mapping
+    # with NO stored offset has no rigid link, so the line harvest stays its primary read.
+    if dx or dy:
+        return _geometric() or _inline()
+    return _inline() or _geometric()
 
 
 def _read_registration(page, mapping, target_box, val_type, ocr_text_fn, expansion,
@@ -706,15 +723,17 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
         drift_located = located or _locate_anchor(
             page, anchor_box, anchor_text, 1.0, ocr_lines_fn,
             min_search=_ANCHOR_SEARCH_MIN, line_cache=line_cache)
-        # Prefer the rigid label→value read over the stationary drawn box when the
-        # page has DRIFTED, OR whenever the value is INLINE on the label's own row (a
-        # key/value layout) — there the harvest is the most reliable read regardless
-        # of drift, and the drawn box otherwise commits the row ABOVE on a shifted
-        # scan (the "anchor and data point aren't linked" bug). Falls through to the
-        # absolute read only if the relocation fails the gate.
+        # Prefer the rigid label→value read over the stationary drawn box ONLY when the
+        # page has actually DRIFTED (the label is found displaced beyond tolerance). On a
+        # NON-drifted page the operator's drawn box already sits on the value, so the clean
+        # absolute read it produced — the same one the live draw tool reads at 100% — must
+        # STAND. (Previously this also fired "regardless of drift" whenever the value was
+        # inline on the label's row, i.e. every key/value layout — which re-read the whole
+        # OCR LINE and could replace a clean box read with a garbled line read, e.g.
+        # "Beaumont Care Homes Ltd - Comber" → "pantionahe MUGS Liu COTVCE". Genuine drift
+        # that the per-label test misses is caught by the REGISTRATION ARBITER just below.)
         if (drift_located and drift_located.get("matched_text") is not None
-                and (_label_drifted(anchor_box, drift_located)
-                     or drift_located.get("inline_value"))):
+                and _label_drifted(anchor_box, drift_located)):
             relocated = _relocate_and_read(page, mapping, anchor_box, target_box,
                                            drift_located, val_type, ocr_text_fn,
                                            expansion, validation_patterns,
@@ -819,6 +838,58 @@ def _match_label_run(words, needle):
     return words[:best_k]
 
 
+def cluster_value_words(words, expect_x=None):
+    """Pick the VALUE's own column from the harvested post-label words, so a far
+    neighbouring heading/column on the SAME OCR line can't leak into the value.
+
+    The inline-harvest reads a whole Tesseract line (full page width) and takes
+    EVERY word after the matched label — so "ABC12345 …gap… DOCUSYS MODEL NAME"
+    returns the heading too. The drawn box width is discarded on this path and the
+    only downstream guard (clean_crop_segment's 4-space split) misses a 1-3 space
+    column boundary. This re-imposes the column boundary by HORIZONTAL GAP: split
+    `words` into runs wherever the inter-word gap exceeds a DPI-invariant threshold
+    (a true inter-COLUMN gap is several text-heights wide, far larger than a normal
+    inter-word space, so a legitimate multi-word value like "Beaumont Care Homes
+    Ltd" stays whole), and return the run nearest/after `expect_x` (the located
+    label's right edge → the value-adjacent column). Mirrors the renderer's
+    nearestLeftCluster. Pure; never empty (single run → that run). Falls back to the
+    whole list when word boxes are missing (e.g. a born-digital line with no
+    per-word geometry), so behaviour is byte-identical there."""
+    ws = [w for w in (words or []) if isinstance(w, dict)]
+    if len(ws) <= 1:
+        return ws
+    try:
+        xs = [(float(w["x_norm"]), float(w["w_norm"]), float(w.get("h_norm", 0.0)), w)
+              for w in ws]
+    except (KeyError, TypeError, ValueError):
+        return ws   # incomplete geometry → don't cluster (legacy whole-line join)
+    xs.sort(key=lambda t: t[0])
+    heights = sorted(h for _, _, h, _ in xs if h > 0)
+    med_h = heights[len(heights) // 2] if heights else 0.0
+    # Inter-COLUMN gap ≈ several text-heights; a normal inter-word space is a small
+    # fraction of one. Tie the break to median word height → DPI/zoom invariant.
+    thresh = max(med_h * 1.2, 1e-4)
+    clusters = [[xs[0]]]
+    for i in range(1, len(xs)):
+        px, pw = xs[i - 1][0], xs[i - 1][1]
+        if xs[i][0] - (px + pw) > thresh:
+            clusters.append([xs[i]])
+        else:
+            clusters[-1].append(xs[i])
+    if len(clusters) == 1:
+        return ws   # one column → unchanged
+    if expect_x is None:
+        chosen = clusters[0]
+    else:
+        # Prefer the cluster at/after expect_x (the value column adjacent to the
+        # label's right edge), nearest first; this drops both a trailing heading and
+        # a far right-hand column.
+        chosen = min(clusters,
+                     key=lambda cl: (0 if cl[0][0] >= expect_x else 1,
+                                     abs(cl[0][0] - expect_x)))
+    return [t[3] for t in chosen]
+
+
 def _locate_anchor(page, anchor_box, anchor_text, expansion, ocr_lines_fn,
                    min_search=0.0, capture=None, line_cache=None):
     """
@@ -920,7 +991,9 @@ def _locate_anchor(page, anchor_box, anchor_text, expansion, ocr_lines_fn,
             "w_norm": (rx2 - rx1) * crop_box["w_norm"],
             "h_norm": (ry2 - ry1) * crop_box["h_norm"],
         }
-        rest = bwords[len(run):]
+        # Clip the harvest to the value's OWN column (drop a far heading/column that
+        # shares the OCR line) by horizontal-gap clustering off the label's right edge.
+        rest = cluster_value_words(bwords[len(run):], expect_x=rx2)
         if rest:
             inline_value = " ".join(wd["text"] for wd in rest).strip() or None
             # Page-space bbox of the VALUE words (crop-relative → page), so the dev
@@ -1069,17 +1142,44 @@ def _ocr_text(image):
         return None
 
 
+def _prep_for_lines(image):
+    """Prep for the LOCATE (image_to_data line/word boxes) — distinct from _prep, which
+    is tuned for reading a small value CROP and UPSCALES x2. The locate routinely runs on
+    the WHOLE page, where x2 balloons a 2481px page to ~4962px and image_to_data takes
+    ~3.8s. Position-finding only needs enough resolution to MATCH the label/landmark text
+    and return NORMALISED boxes, so CAP the width (~1100px ≈ 120 DPI for A4): the full-page
+    locate finds the SAME lines in well under half the time (the dominant per-doc cost on
+    import AND reprocess). A small region is upscaled so a short label still reads. Boxes
+    are normalised to the prepped size in _ocr_lines, so the downscale is geometry-neutral.
+    Greyscale + autocontrast, no sharpen (matches the light read)."""
+    img = image.convert("L")
+    w, h = img.size
+    _MAX, _MIN = 1100, 600
+    if w > _MAX:
+        s = _MAX / w
+        img = img.resize((_MAX, max(1, int(h * s))), Image.LANCZOS)
+    elif w < _MIN:
+        s = max(2, _MIN // max(1, w))
+        img = img.resize((w * s, h * s), Image.LANCZOS)
+    return ImageOps.autocontrast(img, cutoff=2)
+
+
 def _ocr_lines(image):
     """
     OCR the crop and group word-level results (image_to_data) into lines by
     (block, paragraph, line), each with crop-relative normalised bounding
     boxes: [{"text","x_norm","y_norm","w_norm","h_norm"}]. Multi-word labels
     like "Invoice Number" then match as a single unit instead of fragmenting.
+
+    Uses _prep_for_lines (caps the width) NOT _prep (x2 upscale): the locate is the
+    dominant per-doc OCR cost and only needs to find positions, so it reads a
+    width-capped page in <half the time with the same lines. Boxes are normalised to
+    the prepped image size below, so the cap is geometry-neutral.
     """
     if pytesseract is None:
         return []
     try:
-        img = _prep(image)
+        img = _prep_for_lines(image)
         w, h = img.size
         if w == 0 or h == 0:
             return []
@@ -1142,7 +1242,10 @@ def _crop_and_ocr(page, box, val_type, ocr_text_fn, capture=None, meta=None):
     # path untouched, so existing mapping tests are unaffected.
     if ocr_text_fn is _ocr_text:
         try:
-            return _ocr_crop_laddered(crop, val_type, verify_fn=None, meta=meta) or None
+            # Pass the page + the (clamped) drawn box so the ladder's free-text preview
+            # fast-path can re-crop at the ~108 DPI preview scale the draw tool reads.
+            return _ocr_crop_laddered(crop, val_type, verify_fn=None, meta=meta,
+                                      page=page, box=_clamp_box(box)) or None
         except Exception:
             return None
     text = ocr_text_fn(crop)

@@ -60,7 +60,7 @@ try {
     }
 
     $sel = $pdo->prepare(
-        'SELECT trial_start, trial_end FROM device_registrations
+        'SELECT trial_start, trial_end, trial_search_seats FROM device_registrations
          WHERE product_id = ? AND fp_hash = ?'
     );
     $sel->execute([$productId, $fpHash]);
@@ -80,7 +80,12 @@ try {
     $state         = ($now < $end) ? 'active' : 'expired';
     $daysRemaining = max(0, (int) ceil(($end->getTimestamp() - $now->getTimestamp()) / 86400));
 
-    $claims = trial_claims($productId, $fpHash, $state, $row['trial_start'], $row['trial_end']);
+    // Trial includes detached search-client capacity for its duration (see jws.php);
+    // honors the per-trial override when set, else the policy default. Re-issued on
+    // every online refresh so the desktop caps stay current.
+    $searchSeats = $row['trial_search_seats'] !== null ? (int) $row['trial_search_seats'] : null;
+    $features = trial_features($state, $searchSeats);
+    $claims = trial_claims($productId, $fpHash, $state, $row['trial_start'], $row['trial_end'], $features);
     $token  = jws_sign($claims, ACTIVE_KID);
 
     audit_event($pdo, null, $fpHash, 'license.validated', "kind=trial state=$state");
@@ -92,6 +97,7 @@ try {
         'trial_start'    => $row['trial_start'],
         'trial_end'      => $row['trial_end'],
         'days_remaining' => $daysRemaining,
+        'features'       => $features,
     ]);
 } catch (Throwable $e) {
     error_log('validate error: ' . $e->getMessage());
