@@ -5,10 +5,15 @@ tests/test_template_mapper_failsafe.py
 Covers the UNIVERSAL extraction-time failsafe + relocation added to
 extraction.template_mapper (Stage 0.5):
 
-  1. Learned-format failsafe — a value whose shape doesn't match what the field
-     has historically been on this template (e.g. "Booking" where a job
-     reference shaped like "2603-1351-1" is expected) is REJECTED before it can
-     be written, so the field is omitted and falls through to review.
+  1. Manual-anchor precedence (supersedes the old learned-shape "drop" failsafe):
+     a learned-SHAPE mismatch ALONE no longer drops a manual mapping — the drawn
+     box is trusted, so a type-valid off-shape value (e.g. "Booking" where history
+     is a "2603-1351-1" job reference) is KEPT (dropping it silently let the wrong
+     auto/keyword value win on reprocess). The real failsafe still in force is the
+     field's REGEX/TYPE: a value that fails it (e.g. "Booking" for a DATE field) is
+     rejected even for a manual mapping. (The learned-shape check now only FLAGS, not
+     drops, on the DERIVED relocation/registration rungs — see test_template_mapper.py
+     test_gate_value_shape_modes / test_template_mapper_drift.)
   2. A value that matches the learned shape is committed normally.
   3. CONSERVATIVE / universal: with no learned format (new template/field, thin
      history) nothing is rejected — the value passes through. So the failsafe
@@ -95,13 +100,30 @@ def main():
         {"text": "Reference", "x_norm": 0.0, "y_norm": 0.5, "w_norm": 0.4, "h_norm": 0.3}
     ]
 
-    # 1. Wrong-shape value rejected when a learned format exists.
-    print("1. learned-format failsafe rejects a wrong-shape value")
+    # 1. Manual-anchor precedence: a learned-SHAPE mismatch ALONE no longer drops a
+    #    manual mapping — the drawn box is trusted, so a type-valid off-shape value is
+    #    KEPT (the old drop-failsafe silently lost a type-valid manual value to the
+    #    wrong auto value on reprocess). The learned-shape check now only FLAGS on the
+    #    DERIVED rungs, never drops (covered by test_template_mapper.py).
+    print("1. learned-shape mismatch ALONE does not drop a manual mapping (kept; precedence)")
     res = template_mapper.extract_with_mappings(
         [page], [ref_mapping()],
         ocr_lines_fn=lines_local, ocr_text_fn=text_queue_stub(["Booking"]),
         format_lookup=FMT_LOOKUP)
-    fails += not check("'Booking' is NOT committed to the reference field",
+    fails += not check("type-valid off-shape 'Booking' is KEPT (not dropped on learned shape)",
+                       res.get("reference", {}).get("value") == "Booking")
+
+    # 1b. The real failsafe still in force: a value FAILING the field's regex/TYPE is
+    #     rejected even for a manual mapping (shape_mode='ignore' still enforces type).
+    print("1b. a value failing the field REGEX/TYPE is rejected (the real failsafe)")
+    DATE_VPS = {"date": [r"\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}"]}
+    res = template_mapper.extract_with_mappings(
+        [page], [ref_mapping()],
+        field_patterns={"reference": {"validation": "date"}},
+        validation_patterns=DATE_VPS,
+        ocr_lines_fn=lines_local, ocr_text_fn=text_queue_stub(["Booking"]),
+        format_lookup=FMT_LOOKUP)
+    fails += not check("'Booking' rejected for a DATE-typed field (regex/type gate)",
                        "reference" not in res)
 
     # 2. Correctly-shaped value passes the failsafe.
