@@ -171,3 +171,17 @@ html #titlebar, html .titlebar { display: none !important; }
 .chip.ok, .chip.confirmed, .chip.approved, .chip.acknowledged { color:var(--ok); background:var(--ok-bg); border-color:var(--ok-border); }
 .chip.warn, .chip.needs_review, .chip.pending { color:var(--warn); background:var(--warn-bg); border-color:var(--warn-border); }
 .chip.err, .chip.rejected, .chip.error { color:var(--err); background:var(--err-bg); border-color:var(--err-border); }
+
+/* Card — a discrete "area" surface for grouping related controls (settings sections,
+   panels, etc.). Token-based so it is dark-safe automatically. `.card-head` is a title row
+   that can carry a right-aligned status chip. Shared so Review/Search can adopt it too. */
+.card { background:var(--surface); border:1px solid var(--border); border-radius:var(--r);
+  box-shadow:var(--shadow); padding:18px 20px; }
+.card + .card { margin-top:16px; }
+.card-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+
+/* Logo theme-swap: show the light-theme artwork by default and the dark-safe artwork on the
+   dark theme (the navy logo would near-vanish on dark). Pair an .logo-light + .logo-dark img. */
+.logo-dark { display:none; }
+:root[data-theme="dark"] .logo-light { display:none; }
+:root[data-theme="dark"] .logo-dark { display:inline-block; }

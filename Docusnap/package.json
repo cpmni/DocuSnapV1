@@ -54,7 +54,10 @@
           "**/*",
           "!**/__pycache__/**",
           "!**/*.pyc",
-          "!**/*.pyo"
+          "!**/*.pyo",
+          "!artifacts/**",
+          "!test_harness/**",
+          "!tests/**"
         ]
       },
       {

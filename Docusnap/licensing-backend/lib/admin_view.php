@@ -61,6 +61,7 @@ function admin_nav(string $current): void
         'accounts' => ['accounts.php',       'Accounts'],            // split (Slice 4)
         'trials'   => ['trials.php',         'Trials'],              // split (Slice 3)
         'temp'     => ['temp.php',           'Temporary licenses'],  // split (Slice 3)
+        'subs'     => ['subscriptions.php',  'Subscriptions'],       // Polar-managed recurring grants
         'products' => ['products.php',       'Products'],            // split (Slice 2)
         'activity' => ['activity.php',       'Activity'],            // split (Slice 2)
     ];

@@ -105,6 +105,13 @@ admin_nav('trials');
         <button class="btn danger" type="submit">Revoke</button>
       </form>
       <?php endif; ?>
+      <form method="post" action="trial.php" class="inline"
+            onsubmit="return confirm('Permanently DELETE trial #<?= (int) $trial['id'] ?>? This removes its record. The device could then start a fresh trial — use Revoke instead for a real customer.');">
+        <?= csrf_field() ?>
+        <input type="hidden" name="action" value="delete_trial">
+        <input type="hidden" name="trial_id" value="<?= (int) $trial['id'] ?>">
+        <button class="btn danger" type="submit">Delete</button>
+      </form>
     </div>
   </div>
 

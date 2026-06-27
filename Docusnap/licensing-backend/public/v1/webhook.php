@@ -10,6 +10,7 @@
 require __DIR__ . '/../../lib/db.php';
 require __DIR__ . '/../../lib/ratelimit.php';
 require __DIR__ . '/../../lib/webhook.php';
+require __DIR__ . '/../../lib/entitlements.php';   // shared seat/feature mutation
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
     send_json(405, ['error' => ['code' => 'method_not_allowed', 'message' => 'POST only', 'request_id' => bin2hex(random_bytes(8))]]);
@@ -90,21 +91,7 @@ try {
     // Additive mutation: upsert the WHITELISTED per-feature seat counts (workflow <=
     // search already enforced in validation). Server-authoritative — the caller can only
     // set these counts on a KNOWN account, nothing else. Setting a feature to 0 retires it.
-    $applied = [];
-    foreach ($ev['features'] as $feature => $seats) {
-        $sel = $pdo->prepare('SELECT id FROM entitlements WHERE account_id = ? AND product_id = ? AND feature = ? AND status = "active" ORDER BY id LIMIT 1');
-        $sel->execute([$accountId, $ev['product_id'], $feature]);
-        $row = $sel->fetch();
-        if ($seats > 0) {
-            if ($row) $pdo->prepare('UPDATE entitlements SET seats_total = ? WHERE id = ?')->execute([$seats, (int) $row['id']]);
-            else      $pdo->prepare('INSERT INTO entitlements (account_id, product_id, feature, seats_total, status) VALUES (?, ?, ?, ?, "active")')
-                          ->execute([$accountId, $ev['product_id'], $feature, $seats]);
-        } elseif ($row) {
-            $pdo->prepare('UPDATE entitlements SET status = "revoked" WHERE id = ?')->execute([(int) $row['id']]);
-        }
-        $applied[] = "$feature=$seats";
-    }
-    $detail = $applied ? implode(' ', $applied) : 'no_feature_change';
+    $detail = webhook_apply_features($pdo, $accountId, $ev['product_id'], $ev['features']);
     $pdo->prepare('UPDATE webhook_events SET account_id = ?, product_id = ?, status = "applied", detail = ? WHERE event_id = ?')
         ->execute([$accountId, $ev['product_id'], $detail, $ev['event_id']]);
     $pdo->commit();

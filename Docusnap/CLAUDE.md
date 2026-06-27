@@ -86,6 +86,30 @@ Electron + Python backend + SQLite. Fully offline capable.
 
 ---
 
+## Business / company details
+**Six Mile Software** is a **trading name (sole trader) — NOT a registered limited
+company** (no Ltd, no Companies House number as of 2026-06). **Scan Finder** is the
+product. Use these for the website (footer, contact, legal/terms), the licensing emails,
+and anywhere a business identity is needed:
+- **Trading name:** Six Mile Software  *(do NOT append "Ltd" or imply incorporation /
+  a company number until one is actually registered)*
+- **NEVER surface the proprietor's personal name** anywhere public (site, footer, emails,
+  Terms/Privacy). Present the business as **"Six Mile Software" + the virtual address +
+  licensing@scanfinder.co.uk only.** (The clean route to full name‑privacy + compliance is
+  to incorporate **Six Mile Software Ltd** — then only the company name/number/registered
+  office appear; until then, lean on Polar being the seller of record, below.)
+- **Address:** Office 1874, 92 Castle Street, Belfast, N. Ireland, BT1 1HE
+  (virtual business address)
+- **Product:** Scan Finder · **domain:** scanfinder.co.uk · **licensing/email sender:**
+  licensing@scanfinder.co.uk
+- **Seller of record:** **Polar** (Merchant of Record) — Polar is the legal seller for
+  purchases, so the customer's purchase contract + VAT/tax sit with Polar, not Six Mile
+  Software. The website/emails still carry the Six Mile Software identity for support.
+- Revisit this whole block (and add the company number) **if/when a limited company is
+  incorporated**.
+
+---
+
 ## Stack
 | Layer | Tech |
 |---|---|

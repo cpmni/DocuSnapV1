@@ -14,12 +14,17 @@ admin_handle_post($pdo);
 $allProducts = $pdo->query('SELECT product_id, name_internal FROM products ORDER BY name_internal')->fetchAll();
 
 // Temporary / time-limited licences = any entitlement that carries an expiry.
+// Admin temporary licences ONLY: an expiring entitlement that is NOT a Polar subscription
+// (polar_ref IS NULL). Polar subs also carry an expiry (their period end) but belong on the
+// account / a Subscriptions view, not here. Name falls back to the account name.
 $tempLicenses = $pdo->query(
     'SELECT e.id, e.account_id, e.product_id, p.name_internal, e.seats_total, e.expires_at, e.status,
-        e.customer_name, e.device_label, e.customer_email, e.notes,
+        COALESCE(NULLIF(e.customer_name, ""), a.name) AS customer_name, e.device_label, e.customer_email, e.notes,
         (SELECT COUNT(*) FROM seats s WHERE s.entitlement_id = e.id AND s.status = "bound") AS seats_used
-     FROM entitlements e LEFT JOIN products p ON p.product_id = e.product_id
-     WHERE e.expires_at IS NOT NULL ORDER BY e.id DESC LIMIT 200'
+     FROM entitlements e
+       LEFT JOIN products p ON p.product_id = e.product_id
+       LEFT JOIN accounts a ON a.id = e.account_id
+     WHERE e.expires_at IS NOT NULL AND e.polar_ref IS NULL ORDER BY e.id DESC LIMIT 200'
 )->fetchAll();
 
 admin_page_open('Temporary licenses');

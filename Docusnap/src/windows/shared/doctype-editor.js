@@ -30,16 +30,30 @@
  *     controller = { isReady, getDraft, commit, destroy, getTypeId }
  */
 (function () {
+  // [value, label, tooltip] — the tooltip shows the accepted format + an example so a
+  // non-technical user can tell the types apart (shown as an <option title> and as a
+  // live hint line under the dropdown). Examples mirror config validation_patterns.
   const TYPE_OPTS = [
-    ['text', 'Text'], ['date', 'Date'], ['currency', 'Currency'],
-    ['number', 'Number'], ['reference', 'Reference number'],
+    ['text', 'Text', 'Any text — names, descriptions, free-form. No format checking.'],
+    ['date', 'Date', 'A date in any common style, tidied to DD-MM-YYYY.  e.g. 12/05/2026 · 12 May 2026'],
+    ['currency', 'Currency', 'A money amount.  e.g. £1,250.00 · 1250.00 GBP'],
+    ['number', 'Number', 'A plain number.  e.g. 42 · 1000'],
+    ['reference', 'Reference number', 'A general reference — letters and/or numbers, may include - / .  e.g. INV-001 · A12345'],
     // Supplementary structured types (flag-only — surfaced for review, never blocked).
     // Each has a matching validation_patterns key + engine _TYPE2VAL + renderer
     // validationKeyFor mirror; keep all in lockstep.
-    ['email', 'Email'], ['percentage', 'Percentage'],
-    ['postcode_uk', 'Postcode (UK)'], ['vat_gb', 'VAT number (GB)'],
-    ['reference_code', 'Reference code'], ['iban', 'IBAN'], ['website', 'Website'],
+    ['email', 'Email', 'An email address.  e.g. name@company.com'],
+    ['percentage', 'Percentage', 'A percentage from 0–100%.  e.g. 20% · 17.5%'],
+    ['postcode_uk', 'Postcode (UK)', 'A UK postcode.  e.g. BT1 4AB · SW1A 1AA'],
+    ['vat_gb', 'VAT number (GB)', 'A UK VAT registration number.  e.g. GB123456789 · 123 4567 89'],
+    ['reference_code', 'Reference code', 'Letters and numbers, MUST include at least one digit (may use - / .).  e.g. ABC12345 · PO-2026-014'],
+    ['iban', 'IBAN', 'An international bank account number.  e.g. GB29NWBK60161331926819'],
+    ['website', 'Website', 'A web address.  e.g. www.company.com · https://company.com'],
+    ['mac_address', 'MAC address', 'A hardware (MAC) address — accepts colons.  e.g. D4:F0:C9:25:9B:64'],
+    ['ip_address', 'IP address', 'An IP address (IPv4 or IPv6) — accepts dots/colons.  e.g. 192.168.1.200 · fe80::1'],
   ];
+  const TYPE_TIP = Object.fromEntries(TYPE_OPTS.map(([v, , t]) => [v, t || '']));
+  const tipFor = (v) => TYPE_TIP[v] || '';
 
   const esc = (s) => String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -59,13 +73,15 @@
       .dte-lbl .muted { text-transform:none; letter-spacing:0; font-weight:400; }
       .dte-fields { display:flex; flex-direction:column; gap:6px; }
       .dte-row {
-        display:flex; align-items:center; gap:10px;
+        display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px;
         padding:8px 12px; border:1px solid var(--border); border-radius:8px; background:var(--surface);
       }
       .dte-row.locked { background:var(--surface2); }
       /* Name + key share ONE baseline so the label doesn't ride high above its key,
-         and the whole identity block centres on the same line as the right controls. */
-      .dte-row .idn { display:flex; align-items:baseline; gap:8px; min-width:0; }
+         and the whole identity block centres on the same line as the right controls.
+         A min-width keeps the name legible and lets the TYPE/ENABLED controls wrap to a
+         second line (instead of overlapping the name) when the panel is narrow. */
+      .dte-row .idn { display:flex; align-items:baseline; gap:8px; min-width:140px; }
       .dte-row .nm { font-weight:500; font-size:13px; line-height:1; }
       .dte-row .key { font-family:var(--mono); font-size:10px; color:var(--muted); line-height:1; }
       .dte-row .spacer { flex:1; min-width:8px; }
@@ -94,8 +110,9 @@
   }
 
   function typeSelectHtml(current, disabled) {
-    const opts = TYPE_OPTS.map(([v, l]) => `<option value="${v}"${v === current ? ' selected' : ''}>${l}</option>`).join('');
-    return `<select class="field-select dte-type"${disabled ? ' disabled' : ''}>${opts}</select>`;
+    const opts = TYPE_OPTS.map(([v, l, t]) =>
+      `<option value="${v}"${v === current ? ' selected' : ''} title="${esc(t || '')}">${l}</option>`).join('');
+    return `<select class="field-select dte-type"${disabled ? ' disabled' : ''} title="${esc(tipFor(current))}">${opts}</select>`;
   }
 
   function create(host, opts) {
@@ -238,6 +255,7 @@
         const typeSel = row.querySelector('.dte-type');
         if (typeSel && !typeSel.disabled) {
           typeSel.addEventListener('change', async () => {
+            typeSel.title = tipFor(typeSel.value);   // keep the closed-select tooltip in sync
             if (mode === 'create') { fields[i].type = typeSel.value; }
             else {
               try { await api.updateField(fid, { type: typeSel.value }); type.fields[i].type = typeSel.value; if (opts.onChange) opts.onChange(); }

@@ -68,4 +68,11 @@ function clearSeatToken(db, fpHash) {
   }
 }
 
-module.exports = { recordDevice, cacheToken, getCachedToken, getActiveToken, clearSeatToken };
+// Drop the cached TRIAL token for this fingerprint (subject 'trial:<fp>'). Used when the
+// backend reports no grant of any kind, so a trial deleted/expired server-side can't keep
+// being honored from the local cache (the client DB persists across reinstalls).
+function clearCachedToken(db, fpHash) {
+  db.prepare('DELETE FROM license_tokens WHERE subject = ?').run('trial:' + fpHash);
+}
+
+module.exports = { recordDevice, cacheToken, getCachedToken, getActiveToken, clearSeatToken, clearCachedToken };

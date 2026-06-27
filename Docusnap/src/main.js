@@ -458,18 +458,33 @@ function showPrimaryWindow() {
   try { if (w.isMinimized()) w.restore(); if (!w.isVisible()) w.show(); w.focus(); } catch { /* stale ref */ }
 }
 
+// LICENCE GATE for tray reveals: a window hidden to the tray must NOT be re-openable
+// after the licence lapses/is revoked. When the user is already in the main shell, re-run
+// the gate; if it no longer allows, route to the license window instead and report blocked.
+// (Pre-login / license states have no main shell to gate, so they pass through.)
+async function trayGateAllows() {
+  if (!(windows['main'] && !windows['main'].isDestroyed())) return true;
+  let gate;
+  try { gate = await licensingModule.decideAccess(); }
+  catch { gate = { decision: 'locked_needs_online', reason: 'gate_error' }; }
+  if (gate && gate.decision === 'allow') return true;
+  showLicenseWindow(gate || { decision: 'locked' });
+  return false;
+}
+async function revealAppGated() { if (await trayGateAllows()) showPrimaryWindow(); }
+
 // Tray menu — auth-gated items are explicitly DISABLED when the role is absent
 // (not silent no-ops). Rebuilt on login/logout via refreshTrayMenu().
 function buildTrayMenu() {
   const canReview   = !!(authModule.hasRole && authModule.hasRole('admin', 'edit'));
   const canSettings = !!(authModule.hasRole && authModule.hasRole('admin'));
   return Menu.buildFromTemplate([
-    { label: 'Open ScanFinder', click: () => showPrimaryWindow() },
+    { label: 'Open ScanFinder', click: () => revealAppGated() },
     { type: 'separator' },
     { label: 'Open Review',   enabled: canReview,
-      click: () => { if (authModule.hasRole('admin', 'edit')) createWindow('review',   { width: 1200, height: 800, minWidth: 900, minHeight: 600 }); } },
+      click: async () => { if (await trayGateAllows() && authModule.hasRole('admin', 'edit')) createWindow('review',   { width: 1200, height: 800, minWidth: 900, minHeight: 600 }); } },
     { label: 'Open Settings', enabled: canSettings,
-      click: () => { if (authModule.hasRole('admin'))         createWindow('settings', { width: 1100, height: 680, minWidth: 900, minHeight: 520 }); } },
+      click: async () => { if (await trayGateAllows() && authModule.hasRole('admin'))         createWindow('settings', { width: 1320, height: 820, minWidth: 1280, minHeight: 660 }); } },
     { type: 'separator' },
     { label: 'Exit ScanFinder', click: () => { isQuitting = true; app.quit(); } },
   ]);
@@ -484,7 +499,7 @@ function setupTray() {
   try {
     tray = new Tray(path.join(__dirname, '..', 'assets', 'icon.ico'));   // ../assets — consistent with the splash + createWindow icon paths (Tray throws on a bad path, unlike BrowserWindow which silently drops it)
     tray.setToolTip('ScanFinder');
-    tray.on('double-click', () => showPrimaryWindow());
+    tray.on('double-click', () => revealAppGated());
     refreshTrayMenu();
   } catch (e) {
     logger.warn?.('[tray] could not create tray icon: ' + (e && e.message));
@@ -572,7 +587,7 @@ function notifyAllWindows(channel, ...args) {
 // double-bind the API/watch. The loser quits; the winner re-shows on 'second-instance'.
 const _gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!_gotSingleInstanceLock) app.quit();
-app.on('second-instance', () => showPrimaryWindow());
+app.on('second-instance', () => revealAppGated());
 
 app.whenReady().then(() => {
   if (!_gotSingleInstanceLock) return;   // a second instance: don't build anything, just quit
@@ -921,7 +936,7 @@ app.whenReady().then(() => {
     // out as Admin-exclusive — Edit/Read Only are not meant to reach it at
     // all, not just see it with options greyed out.
     if (!authModule.hasRole('admin')) return;
-    createWindow('settings', { width: 1100, height: 680, minWidth: 900, minHeight: 520 });
+    createWindow('settings', { width: 1320, height: 820, minWidth: 1280, minHeight: 660 });
   });
 
   // Open Settings focused on a specific template (from Review → "Add to
@@ -930,7 +945,7 @@ app.whenReady().then(() => {
     if (!authModule.hasRole('admin')) return;
     const alreadyOpen = !!windows['settings'];
     pendingSettingsTemplateId = templateId;
-    createWindow('settings', { width: 1100, height: 680, minWidth: 900, minHeight: 520 });
+    createWindow('settings', { width: 1320, height: 820, minWidth: 1280, minHeight: 660 });
     if (alreadyOpen) {
       safeSend(windows['settings']?.webContents, 'navigate-to-template', templateId);
       pendingSettingsTemplateId = null;

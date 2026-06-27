@@ -17,6 +17,14 @@ document.querySelectorAll('.tab').forEach(btn => {
 
 // ── Search client access (admin) — host the detached-client API ────────────────
 let _clientApiWired = false;
+// Set/clear a status pill (theme .chip). cls = '' | 'ok' | 'warn' | 'err'; empty text hides it.
+function setChip(id, text, cls) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.className = 'chip' + (cls ? ' ' + cls : '');
+  el.textContent = text || '';
+  el.style.display = text ? '' : 'none';
+}
 async function initClientApiSection() {
   const tgl = document.getElementById('client-api-toggle');
   const statusEl = document.getElementById('client-api-status');
@@ -27,11 +35,12 @@ async function initClientApiSection() {
   const key  = document.getElementById('client-api-tls-key');
 
   const render = (s) => {
-    if (!s) { statusEl.textContent = 'Unavailable (admin only)'; return; }
+    if (!s) { statusEl.textContent = 'Unavailable (admin only)'; setChip('client-api-chip', '', ''); return; }
     tgl.checked = !!s.enabled;
     statusEl.textContent = s.running
       ? `Running · ${s.tls ? 'https' : 'http'}://${s.host}:${s.port}`
       : (s.enabled ? 'Enabled (starting…)' : 'Off');
+    setChip('client-api-chip', s.running ? 'On' : (s.enabled ? 'Starting…' : 'Off'), s.running ? 'ok' : '');
   };
 
   try { render(await api.clientApiGetStatus()); }
@@ -73,7 +82,8 @@ async function initClientApiSection() {
       const on = !!(ent && ent.workflow && ent.workflow.entitled);
       wfTgl.checked = on;
       wfSub.textContent = on ? 'Licensed' : 'Not licensed';
-    } catch { wfSub.textContent = 'Unknown'; }
+      setChip('wf-chip', on ? 'On' : 'Off', on ? 'ok' : '');
+    } catch { wfSub.textContent = 'Unknown'; setChip('wf-chip', 'Unknown', ''); }
   }
 
   if (_clientApiWired) return; // bind listeners once
@@ -84,6 +94,10 @@ async function initClientApiSection() {
     port.value = (await api.getSetting('client_api_port')) || '';
     cert.value = (await api.getSetting('client_api_tls_cert')) || '';
     key.value  = (await api.getSetting('client_api_tls_key')) || '';
+    // Auto-open the managed-cert disclosure only when a LAN (non-loopback) host is set —
+    // that's when a TLS cert actually matters; loopback stays collapsed.
+    const cd = document.getElementById('cert-details');
+    if (cd) { const h = (host.value || '').trim(); cd.open = !!h && h !== '127.0.0.1' && h !== 'localhost'; }
   } catch { /* ignore */ }
 
   tgl.addEventListener('change', async () => {
@@ -3072,11 +3086,50 @@ async function loadLicenseStatus() {
   if (!licStatusEl) return;
   licStatusEl.textContent = 'Loading…';
   try {
-    renderLicenseStatus(await api.licenseGetDiagnostics());
+    const s = await api.licenseGetDiagnostics();
+    renderLicenseStatus(s);
+    await applyLicenseMode(s);
   } catch (e) {
     licStatusEl.innerHTML = colorSpan('err', 'Could not read licence status: ' + (e.message || 'error'));
   }
 }
+
+// Registered vs unregistered presentation. With an ACTIVE PAID SEAT we show the registered
+// device name + masked activation key and COLLAPSE the entry form (a "Activate a different
+// key…" button re-opens it to add new entitlements / re-key). Trial/none → show the form.
+async function applyLicenseMode(s) {
+  const t = (s && s.token) || {};
+  const licensed = !!(t.hasToken && t.kind === 'seat' && t.state === 'active');
+  // Status pill in the License card header.
+  if (t.hasToken && t.state === 'active') setChip('lic-chip', t.kind === 'trial' ? 'Trial' : 'Active', t.kind === 'trial' ? 'warn' : 'ok');
+  else if (t.hasToken && t.state === 'grace') setChip('lic-chip', 'Grace period', 'warn');
+  else setChip('lic-chip', 'Not activated', 'err');
+  const reg     = document.getElementById('lic-registered');
+  const actSec  = document.getElementById('lic-activate-section');
+  const showBtn = document.getElementById('lic-show-activate');
+  if (licensed) {
+    try {
+      const dev = await api.getSetting('license_device_label');
+      const key = await api.getSetting('license_key_masked');
+      const dEl = document.getElementById('lic-device'); if (dEl) dEl.textContent = dev || 'This device';
+      const kEl = document.getElementById('lic-key');    if (kEl) kEl.textContent = key || '— (re-activate to record)';
+    } catch { /* settings unavailable */ }
+    if (reg) reg.style.display = '';
+    if (actSec) actSec.style.display = 'none';   // collapse the entry form
+    if (showBtn) showBtn.style.display = '';
+  } else {
+    if (reg) reg.style.display = 'none';
+    if (actSec) actSec.style.display = '';       // not licensed → keep the form visible
+    if (showBtn) showBtn.style.display = 'none';
+  }
+}
+// "Activate a different key…" — re-open the (collapsed) entry form to add a new entitlement.
+const licShowActivateBtn = document.getElementById('lic-show-activate');
+if (licShowActivateBtn) licShowActivateBtn.addEventListener('click', () => {
+  const actSec = document.getElementById('lic-activate-section');
+  if (actSec) actSec.style.display = '';
+  const k = document.getElementById('lic-activate-key'); if (k) k.focus();
+});
 if (licRefreshBtn) licRefreshBtn.addEventListener('click', async () => {
   // Re-check the licence against the server NOW (locks the app if it was revoked/expired
   // server-side), then re-render status + seats from the refreshed cache. Offline → cached.
@@ -3084,9 +3137,50 @@ if (licRefreshBtn) licRefreshBtn.addEventListener('click', async () => {
   try { await api.licenseRecheck(); } catch { /* offline — show cached */ }
   await loadLicenseStatus();
   try { if (typeof loadSeats === 'function') await loadSeats(); } catch { /* best-effort */ }
+  // Also re-render the entitlement-driven UI (workflow add-on toggle + client-api/cert),
+  // so a server-side seat/feature change shows right after a re-check — not just the licence
+  // status. initClientApiSection re-reads get-entitlement and is guarded against re-binding.
+  try { if (typeof initClientApiSection === 'function') await initClientApiSection(); } catch { /* best-effort */ }
   licRefreshBtn.disabled = false;
 });
 loadLicenseStatus();
+
+// ── Activate a licence key (enter key → confirm with server → license this device) ──
+// Reuses the SAME license-activate IPC the gate window uses; on success the seat token is
+// cached and enforcement picks it up immediately, so we just re-render status (no app
+// re-gate needed since Settings is open inside an already-allowed session).
+const ACTIVATE_ERRORS = {
+  unknown_account:    'That licence key was not recognised. Check it and try again.',
+  activation_failed:  'Activation failed. Check the key and try again.',
+  seat_limit_reached: 'All seats for this licence are already in use — release a device first.',
+  offline:            'Could not reach the licensing server. Check your connection and try again.',
+};
+const licActKey   = document.getElementById('lic-activate-key');
+const licActLabel = document.getElementById('lic-activate-label');
+const licActBtn   = document.getElementById('lic-activate-btn');
+const licActMsg   = document.getElementById('lic-activate-msg');
+if (licActBtn) licActBtn.addEventListener('click', async () => {
+  const accountKey  = (licActKey.value || '').trim();
+  const deviceLabel = (licActLabel.value || '').trim();
+  if (!accountKey) { licActMsg.innerHTML = colorSpan('err', 'Enter a licence key.'); return; }
+  licActBtn.disabled = true;
+  licActMsg.innerHTML = colorSpan('muted', 'Activating…');
+  try {
+    const res = await api.licenseActivate({ accountKey, deviceLabel });
+    if (res && res.ok) {
+      licActMsg.innerHTML = colorSpan('ok', 'Activated — this device is now licensed.');
+      licActKey.value = '';
+      await loadLicenseStatus();
+      try { if (typeof loadSeats === 'function') await loadSeats(); } catch { /* best-effort */ }
+      try { if (typeof initClientApiSection === 'function') await initClientApiSection(); } catch { /* best-effort */ }
+    } else {
+      licActMsg.innerHTML = colorSpan('err', ACTIVATE_ERRORS[res && res.code] || 'Activation failed.');
+    }
+  } catch {
+    licActMsg.innerHTML = colorSpan('err', ACTIVATE_ERRORS.offline);
+  }
+  licActBtn.disabled = false;
+});
 
 // ── Search client seats (concurrent floating pool) ─────────────────────────────
 const seatsTbody   = document.getElementById('seats-tbody');

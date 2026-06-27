@@ -31,7 +31,11 @@ CREATE TABLE IF NOT EXISTS device_registrations (
 CREATE TABLE IF NOT EXISTS accounts (
   id               BIGINT      NOT NULL AUTO_INCREMENT PRIMARY KEY,
   account_key_hash CHAR(64)    NOT NULL UNIQUE,   -- never store the plaintext key
-  status           VARCHAR(20) NOT NULL DEFAULT 'active'
+  status           VARCHAR(20) NOT NULL DEFAULT 'active',
+  polar_customer_id VARCHAR(190) NULL,            -- Polar.sh customer link (one account per Polar customer)
+  email            VARCHAR(190) NULL,             -- contact email (from the Polar grant); used to (re)send the key
+  name             VARCHAR(190) NULL,             -- contact / billing name (from the Polar grant); for admin identification
+  UNIQUE KEY uq_polar_customer (polar_customer_id)  -- NULLs allowed (unlinked admin/trial accounts)
 );
 
 CREATE TABLE IF NOT EXISTS entitlements (
@@ -47,6 +51,8 @@ CREATE TABLE IF NOT EXISTS entitlements (
   device_label   VARCHAR(120) NULL,   -- optional human-friendly device name
   customer_email VARCHAR(190) NULL,   -- optional; support / expiry reminders only
   notes          TEXT         NULL,   -- internal admin notes
+  polar_ref      VARCHAR(190) NULL,   -- Polar object that granted this entitlement (subscription id, or order id for one-time)
+  polar_price_id VARCHAR(190) NULL,   -- Polar price/SKU that mapped to this entitlement
   FOREIGN KEY (account_id) REFERENCES accounts(id),
   FOREIGN KEY (product_id) REFERENCES products(product_id)
 );
@@ -145,6 +151,39 @@ BEGIN
                  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'entitlements'
                    AND COLUMN_NAME = 'feature') THEN
     ALTER TABLE entitlements ADD COLUMN feature VARCHAR(20) NOT NULL DEFAULT 'core' AFTER product_id;
+  END IF;
+  -- Polar.sh links (commerce adapter — see lib/polar.php). accounts.polar_customer_id
+  -- ties one account to one Polar customer; entitlements.polar_ref/polar_price_id tie a
+  -- grant to the Polar subscription/order + price so renewals extend and cancels revoke.
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'accounts'
+                   AND COLUMN_NAME = 'polar_customer_id') THEN
+    ALTER TABLE accounts ADD COLUMN polar_customer_id VARCHAR(190) NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.STATISTICS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'accounts'
+                   AND INDEX_NAME = 'uq_polar_customer') THEN
+    ALTER TABLE accounts ADD UNIQUE KEY uq_polar_customer (polar_customer_id);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'accounts'
+                   AND COLUMN_NAME = 'email') THEN
+    ALTER TABLE accounts ADD COLUMN email VARCHAR(190) NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'accounts'
+                   AND COLUMN_NAME = 'name') THEN
+    ALTER TABLE accounts ADD COLUMN name VARCHAR(190) NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'entitlements'
+                   AND COLUMN_NAME = 'polar_ref') THEN
+    ALTER TABLE entitlements ADD COLUMN polar_ref VARCHAR(190) NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'entitlements'
+                   AND COLUMN_NAME = 'polar_price_id') THEN
+    ALTER TABLE entitlements ADD COLUMN polar_price_id VARCHAR(190) NULL;
   END IF;
 END //
 DELIMITER ;

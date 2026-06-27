@@ -18,15 +18,21 @@ $astatus = trim((string) ($_GET['astatus'] ?? ''));   // account status filter
 // identifiable, and from_trial flags an account whose bound device started as an
 // in-app trial (its seat fp_hash matches a trial device_registration), so a
 // converted trial is visibly distinct from a directly-issued account.
-$accSql = 'SELECT a.id, a.status,
-    (SELECT e.customer_name FROM entitlements e
+$accSql = 'SELECT a.id, a.status, a.email,
+    COALESCE(a.name,
+      (SELECT e.customer_name FROM entitlements e
         WHERE e.account_id = a.id AND e.customer_name IS NOT NULL AND e.customer_name <> ""
-        ORDER BY (e.status = "active") DESC, e.id DESC LIMIT 1) AS customer_name,
+        ORDER BY (e.status = "active") DESC, e.id DESC LIMIT 1)) AS customer_name,
     (SELECT COUNT(*) FROM seats s JOIN entitlements e ON e.id = s.entitlement_id
         JOIN device_registrations d ON d.fp_hash = s.fp_hash AND d.trial_start IS NOT NULL
         WHERE e.account_id = a.id) AS from_trial,
     (SELECT COUNT(*) FROM entitlements e WHERE e.account_id = a.id AND e.status = "active") AS ent_active,
     (SELECT COALESCE(SUM(e.seats_total),0) FROM entitlements e WHERE e.account_id = a.id AND e.status = "active") AS seats_total,
+    (SELECT COALESCE(SUM(e.seats_total),0) FROM entitlements e WHERE e.account_id = a.id AND e.status = "active" AND (e.feature = "core" OR e.feature IS NULL)) AS f_core,
+    (SELECT COALESCE(SUM(e.seats_total),0) FROM entitlements e WHERE e.account_id = a.id AND e.status = "active" AND e.feature = "search") AS f_search,
+    (SELECT COALESCE(SUM(e.seats_total),0) FROM entitlements e WHERE e.account_id = a.id AND e.status = "active" AND e.feature = "workflow") AS f_workflow,
+    (SELECT COUNT(*) FROM entitlements e WHERE e.account_id = a.id AND e.status = "active" AND (e.expires_at IS NULL OR e.expires_at > NOW())) AS ent_inforce,
+    (SELECT COUNT(*) FROM entitlements e WHERE e.account_id = a.id) AS ent_total,
     (SELECT COUNT(*) FROM seats s JOIN entitlements e ON e.id = s.entitlement_id
         WHERE e.account_id = a.id AND s.status = "bound") AS seats_used
   FROM accounts a';
@@ -67,15 +73,33 @@ admin_nav('accounts');
   <div class="empty">No accounts found.</div>
 <?php else: ?>
 <table>
-  <thead><tr><th>ID</th><th>Customer / Company</th><th>Origin</th><th>Status</th><th>Active entitlements</th><th>Seats used / total</th><th></th></tr></thead>
+  <thead><tr><th>ID</th><th>Customer / Company</th><th>Origin</th><th>Status</th><th>Entitlements</th><th>Seats used / total</th><th></th></tr></thead>
   <tbody>
   <?php foreach ($accounts as $a): ?>
     <tr data-href="account.php?account=<?= (int) $a['id'] ?>">
       <td class="mono">#<?= (int) $a['id'] ?></td>
-      <td><strong><?= $a['customer_name'] ? h($a['customer_name']) : '<span class="muted" style="font-weight:400;">(unnamed)</span>' ?></strong></td>
+      <td><strong><?= $a['customer_name'] ? h($a['customer_name']) : '<span class="muted" style="font-weight:400;">(unnamed)</span>' ?></strong><?= !empty($a['email']) ? '<br><span class="mono muted" style="font-size:11px;">' . h($a['email']) . '</span>' : '' ?></td>
       <td><?= (int) $a['from_trial'] > 0 ? '<span class="pill warn">from trial</span>' : '<span class="muted">direct</span>' ?></td>
-      <td><span class="pill <?= $a['status'] === 'active' ? 'ok' : 'warn' ?>"><?= h($a['status']) ?></span></td>
-      <td><?= (int) $a['ent_active'] ?></td>
+      <td><?php
+        // Honest, licence-aware status — NOT the account record's own flag (which stays
+        // "active" forever). Revoking/expiring entitlements is reflected here.
+        if ($a['status'] !== 'active') {
+            echo '<span class="pill err">' . h($a['status']) . '</span>';        // suspended / revoked account
+        } elseif ((int) $a['ent_inforce'] > 0) {
+            echo '<span class="pill ok">active</span>';                           // a licence is in force
+        } elseif ((int) $a['ent_total'] > 0) {
+            echo '<span class="pill warn">lapsed</span>';                         // had licences, none now (revoked/expired)
+        } else {
+            echo '<span class="pill">no licence</span>';                         // never licensed
+        }
+      ?></td>
+      <td><?php
+        $parts = [];
+        if ((int) $a['f_core']     > 0) $parts[] = 'Core ' . (int) $a['f_core'];
+        if ((int) $a['f_search']   > 0) $parts[] = 'Clients ' . (int) $a['f_search'];
+        if ((int) $a['f_workflow'] > 0) $parts[] = 'Workflow ' . (int) $a['f_workflow'];
+        echo $parts ? implode(' &middot; ', $parts) : '<span class="muted">none</span>';
+      ?></td>
       <td class="mono"><?= (int) $a['seats_used'] ?> / <?= (int) $a['seats_total'] ?></td>
       <td><a href="account.php?account=<?= (int) $a['id'] ?>">View &rarr;</a></td>
     </tr>

@@ -22,6 +22,10 @@ const TYPE_TO_VALIDATION = {
   // the engine (_TYPE2VAL).
   email: 'email', percentage: 'percentage', postcode_uk: 'postcode_uk', vat_gb: 'vat_gb',
   reference_code: 'reference_code', iban: 'iban', website: 'website',
+  // MAC / IP addresses — colon-bearing codes. Flag-only (kept, surfaced for review),
+  // with their own patterns/charsets in config so a value like D4:F0:C9:25:9B:64 or
+  // 192.168.1.200 is type-VALID (the ':' isn't flagged as an unexpected character).
+  mac_address: 'mac_address', ip_address: 'ip_address',
 };
 // Mirror engine.py _is_ref_field: a reference/ticket field (key ends _number /
 // _no or contains "reference").

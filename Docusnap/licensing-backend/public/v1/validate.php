@@ -42,11 +42,13 @@ try {
         $seatsTotal = (int) $seat['seats_total'];
         $expiresAt  = $seat['expires_at'];
         $seatsUsed  = (int) $pdo->query("SELECT COUNT(*) FROM seats WHERE entitlement_id = $entId AND status = 'bound'")->fetchColumn();
-        // Per-feature capacity (search/workflow) for the core to cache + enforce.
-        $featSel = $pdo->prepare('SELECT feature, seats_total FROM entitlements WHERE account_id = ? AND product_id = ? AND status = "active" AND (expires_at IS NULL OR expires_at > NOW()) AND feature IN ("search","workflow")');
+        // Per-feature capacity (search/workflow): SUM across ALL active, non-expired grants
+        // so separate client purchases STACK (each subscription is its own row, see
+        // entitlements.webhook_apply_features).
+        $featSel = $pdo->prepare('SELECT feature, COALESCE(SUM(seats_total),0) AS total FROM entitlements WHERE account_id = ? AND product_id = ? AND status = "active" AND (expires_at IS NULL OR expires_at > NOW()) AND feature IN ("search","workflow") GROUP BY feature');
         $featSel->execute([(int) $seat['account_id'], $productId]);
         $features = ['core' => $seatsTotal, 'search' => 0, 'workflow' => 0];
-        foreach ($featSel as $fr) { $features[$fr['feature']] = (int) $fr['seats_total']; }
+        foreach ($featSel as $fr) { $features[$fr['feature']] = (int) $fr['total']; }
         $expired    = $expiresAt !== null && new DateTimeImmutable($expiresAt) <= new DateTimeImmutable('now');
         $state      = $expired ? 'expired' : 'active';
         $claims     = seat_claims($productId, $fpHash, $state, $entId, (int) $seat['seat_id'], $seatsTotal, $seatsUsed, $expiresAt, $features);

@@ -136,6 +136,13 @@ figure.diagram svg { width:100%; height:auto; display:block; border:1px solid va
 .dg-ok-f    { fill:var(--ok); }   .dg-ok-s   { stroke:var(--ok);   stroke-width:1.4; fill:none; }
 .dg-warn-f  { fill:var(--warn); } .dg-warn-s { stroke:var(--warn); stroke-width:1.4; fill:none; }
 .dg-textline{ stroke:var(--muted); stroke-width:2.4; stroke-linecap:round; opacity:.5; }
+/* Numbered directive callouts on a figure: a filled accent badge + white number,
+   paired with a .dg-callout label line. Used by the annotated screen figures. */
+.dg-num     { fill:var(--accent); stroke:var(--surface); stroke-width:1.5; }
+.dg-numtext { fill:#fff; font-family:var(--sans); font-size:10px; font-weight:700; }
+.dg-callout { fill:var(--text); font-family:var(--sans); font-size:10.5px; }
+.dg-callb   { fill:var(--text); font-family:var(--sans); font-size:10.5px; font-weight:600; }
+.dg-warn-t  { fill:var(--warn); font-family:var(--sans); font-size:10.5px; font-weight:600; }
 
 /* Footer prev/next + back to home (built by help-nav.js) */
 .page-foot { display:flex; align-items:stretch; gap:10px; margin-top:34px; padding-top:18px; border-top:1px solid var(--border); }

@@ -8,6 +8,8 @@
 // declare(strict_types=1) — the monolith was non-strict, so behaviour stays identical.
 // Redirect targets are unchanged (still index.php*) — repointed to per-page files later.
 
+require_once __DIR__ . '/entitlements.php';   // reissue_account_key (Polar key-delivery fallback)
+
 function admin_handle_post(PDO $pdo): void
 {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -121,6 +123,31 @@ function admin_handle_post(PDO $pdo): void
             exit;
         }
 
+        if ($action === 'grant_manual_seats') {
+            // Complimentary / negotiated seats: a SEPARATE entitlement row (polar_ref NULL) that
+            // SUMS on top of any subscription rows (validate aggregates per feature). Removed or
+            // changed via Revoke entitlement. search = client seats; workflow add-on; core installs.
+            $accountId = filter_input(INPUT_POST, 'account_id', FILTER_VALIDATE_INT);
+            $productId = trim((string) ($_POST['product_id'] ?? ''));
+            $feature   = (string) ($_POST['feature'] ?? '');
+            $qty       = filter_input(INPUT_POST, 'qty', FILTER_VALIDATE_INT);
+            $days      = filter_input(INPUT_POST, 'days', FILTER_VALIDATE_INT);   // optional expiry
+            if (!$accountId) throw new RuntimeException('Invalid account.');
+            if ($productId === '') throw new RuntimeException('Choose a product.');
+            if (!in_array($feature, ['core', 'search', 'workflow'], true)) throw new RuntimeException('Invalid feature.');
+            if ($qty === false || $qty === null || $qty < 1 || $qty > 100000) throw new RuntimeException('Quantity must be between 1 and 100000.');
+            $chk = $pdo->prepare('SELECT 1 FROM accounts WHERE id = ?');
+            $chk->execute([$accountId]);
+            if (!$chk->fetchColumn()) throw new RuntimeException('Account not found.');
+            $expiresAt = ($days !== false && $days !== null && $days > 0) ? date('Y-m-d H:i:s', time() + $days * 86400) : null;
+            $pdo->prepare('INSERT INTO entitlements (account_id, product_id, feature, seats_total, status, polar_ref, expires_at) VALUES (?, ?, ?, ?, "active", NULL, ?)')
+                ->execute([$accountId, $productId, $feature, $qty, $expiresAt]);
+            audit_event($pdo, $accountId, null, 'admin.manual_seats_granted', "account=$accountId feature=$feature qty=$qty expires=" . ($expiresAt ?? 'never'));
+            flash_set('ok', "Granted $qty complimentary $feature seat(s)" . ($expiresAt ? " (expires $expiresAt)" : " (no expiry)") . ".");
+            header('Location: account.php?account=' . (int) $accountId);
+            exit;
+        }
+
         if ($action === 'revoke_entitlement') {
             $entId = filter_input(INPUT_POST, 'entitlement_id', FILTER_VALIDATE_INT);
             if (!$entId) throw new RuntimeException('Invalid entitlement.');
@@ -159,6 +186,49 @@ function admin_handle_post(PDO $pdo): void
                 "seat=$seatId entitlement={$seat['ent_id']}");
             flash_set('ok', "Seat #$seatId released.");
             header('Location: account.php?account=' . (int) $seat['account_id']);
+            exit;
+        }
+
+        if ($action === 'reissue_account_key') {
+            $accountId = filter_input(INPUT_POST, 'account_id', FILTER_VALIDATE_INT);
+            if (!$accountId) throw new RuntimeException('Invalid account.');
+            $chk = $pdo->prepare('SELECT 1 FROM accounts WHERE id = ?');
+            $chk->execute([$accountId]);
+            if (!$chk->fetchColumn()) throw new RuntimeException('Account not found.');
+            // Mint a NEW key and rotate the stored hash. We never keep the plaintext, so the
+            // only safe "resend" is a rotate — the previous key stops working immediately.
+            $key = reissue_account_key($pdo, $accountId);
+            // Auto-email the new key to the account's stored contact address (best-effort);
+            // the one-time on-screen copy below is the fallback when there's no email / it fails.
+            $email = account_email($pdo, $accountId);
+            $sent  = $email ? deliver_account_key($email, $key, "account #$accountId (key reissued)") : false;
+            audit_event($pdo, $accountId, null, $sent ? 'admin.key_reissued_emailed' : 'admin.key_reissued',
+                "account=$accountId email=" . ($email ? '1' : '0'));
+            $note = $sent ? " · emailed to $email"
+                          : ($email ? " · email failed — copy it below" : " · no email on file — copy it below");
+            $_SESSION['issued_key'] = ['key' => $key, 'meta' => "account #$accountId · key reissued (the old key no longer works)$note"];
+            flash_set('ok', $sent ? "New key issued and emailed to $email." : 'New key issued — copy it below now, it is shown only once.');
+            header('Location: account.php?account=' . (int) $accountId);
+            exit;
+        }
+
+        if ($action === 'delete_account') {
+            $accountId = filter_input(INPUT_POST, 'account_id', FILTER_VALIDATE_INT);
+            if (!$accountId) throw new RuntimeException('Invalid account.');
+            // Hard delete: remove the account and everything it owns (seats → entitlements →
+            // account) in one transaction. IRREVERSIBLE. The device's cached token keeps
+            // working until its next online validate, which then finds no grant and locks.
+            $pdo->beginTransaction();
+            try {
+                $pdo->prepare('DELETE FROM seats WHERE entitlement_id IN (SELECT id FROM entitlements WHERE account_id = ?)')->execute([$accountId]);
+                $pdo->prepare('DELETE FROM entitlements WHERE account_id = ?')->execute([$accountId]);
+                $n = $pdo->prepare('DELETE FROM accounts WHERE id = ?'); $n->execute([$accountId]);
+                if ($n->rowCount() === 0) throw new RuntimeException('Account not found.');
+                $pdo->commit();
+            } catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); throw $e; }
+            audit_event($pdo, null, null, 'admin.account_deleted', "account=$accountId");
+            flash_set('ok', "Account #$accountId and its entitlements/seats were deleted.");
+            header('Location: accounts.php');   // the account page is gone — go to the list
             exit;
         }
 
@@ -282,6 +352,23 @@ function admin_handle_post(PDO $pdo): void
             audit_event($pdo, null, (string) $tr['fp_hash'], 'admin.trial_revoked', "trial=$trialId");
             flash_set('ok', "Trial #$trialId revoked — it is no longer active.");
             header('Location: ' . (($_POST['from'] ?? '') === 'detail' ? 'trial.php?id=' . $trialId : 'trials.php'));
+            exit;
+        }
+
+        if ($action === 'delete_trial') {
+            // Hard delete the device_registrations row. IRREVERSIBLE. Note: with the row
+            // gone, that device could start a FRESH trial (trial/start resumes by fp_hash),
+            // so prefer Revoke for a real customer; Delete is for cleaning up test trials.
+            $trialId = filter_input(INPUT_POST, 'trial_id', FILTER_VALIDATE_INT);
+            if (!$trialId) throw new RuntimeException('Invalid trial.');
+            $row = $pdo->prepare('SELECT fp_hash FROM device_registrations WHERE id = ?');
+            $row->execute([$trialId]);
+            $tr = $row->fetch();
+            if (!$tr) throw new RuntimeException('Trial not found.');
+            $pdo->prepare('DELETE FROM device_registrations WHERE id = ?')->execute([$trialId]);
+            audit_event($pdo, null, (string) $tr['fp_hash'], 'admin.trial_deleted', "trial=$trialId");
+            flash_set('ok', "Trial #$trialId deleted.");
+            header('Location: trials.php');   // the detail page is gone — go to the list
             exit;
         }
 

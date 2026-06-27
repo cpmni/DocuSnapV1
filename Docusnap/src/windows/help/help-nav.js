@@ -19,9 +19,10 @@
     { file: 'getting-started.html', title: 'Getting Started',       sections: ['main', 'console', 'getting-started', 'login', 'first-run', 'mode'] },
     { file: 'importing.html',       title: 'Importing Documents',   sections: ['import', 'importing', 'begin-import', 'process', 'source-folder'] },
     { file: 'review.html',          title: 'Review Window',         sections: ['review', 'confidence', 'statuses', 'actions'] },
-    { file: 'templates.html',       title: 'Templates & Learning',  sections: ['teach', 'templates', 'learning', 'template-wizard', 'which-tool'] },
-    { file: 'search.html',          title: 'Search & Filing',       sections: ['search', 'filing', 'retrieval'] },
-    { file: 'settings.html',        title: 'Settings & Help',       sections: ['settings', 'help', 'help-mode'] },
+    { file: 'templates.html',       title: 'Templates & Learning',  sections: ['teach', 'templates', 'learning', 'template-wizard', 'which-tool', 'tab-learning', 'tab-templates', 'template-manager', 'anchor-wizard'] },
+    { file: 'document-types.html',  title: 'Document Types & Fields', sections: ['document-types', 'at-a-glance', 'catalog', 'add-catalog', 'add-type', 'tab-doctypes', 'fields', 'field-types', 'locked-fields', 'renaming'] },
+    { file: 'search.html',          title: 'Search & Filing',       sections: ['search', 'filing', 'retrieval', 'output-structure', 'tab-filenaming'] },
+    { file: 'settings.html',        title: 'Settings & Help',       sections: ['settings', 'help', 'help-mode', 'tab-general', 'tab-advanced', 'tab-licensing', 'name-checks', 'backup'] },
     { file: 'troubleshooting.html', title: 'Troubleshooting & FAQ', sections: ['troubleshooting', 'faq'] },
   ];
 

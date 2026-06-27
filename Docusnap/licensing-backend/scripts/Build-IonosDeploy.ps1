@@ -105,9 +105,12 @@ Get-ChildItem $OutPublic -File -Filter '*.php' -ErrorAction SilentlyContinue | R
 Copy-Item (Join-Path $SrcPub 'index.php')  $OutPublic -Force
 Copy-Item (Join-Path $SrcPub 'v1\*.php')    $OutV1    -Force
 Copy-Item (Join-Path $SrcPub 'admin\*')     $OutAdmin -Recurse -Force
-Copy-Item (Join-Path $SrcLib 'db.php')         $OutLib -Force
-Copy-Item (Join-Path $SrcLib 'jws.php')        $OutLib -Force
-Copy-Item (Join-Path $SrcLib 'admin_auth.php') $OutLib -Force
+# ALL shared PHP includes EXCEPT the test_*.php unit tests (host-run only, never served).
+# Wildcard so new libs (admin_actions, admin_view, ratelimit, webhook, polar,
+# entitlements, polar_reconcile, …) ship automatically without editing this list.
+Get-ChildItem (Join-Path $SrcLib '*.php') -File |
+  Where-Object { $_.Name -notlike 'test_*.php' } |
+  ForEach-Object { Copy-Item $_.FullName $OutLib -Force }
 
 # ── SECRETS into keys/ (never into public/) ───────────────────────────────────
 foreach ($f in $seedFiles) { Copy-Item $f.FullName $OutKeys -Force }
@@ -149,9 +152,11 @@ $UserIni = @'
 ; Licensing backend - production PHP settings (IONOS, PHP 8.x).
 ; .user.ini is honoured for scripts in this directory tree (the document root).
 
-; Load the env shim BEFORE any page runs, so lib/db.php getenv() resolves on IONOS.
-; >>> Set to the ABSOLUTE server path of set-env.php (OUTSIDE the docroot).
-auto_prepend_file = "/homepages/REPLACE_ME/activation/set-env.php"
+; set-env.php (DB credentials) is loaded automatically by lib/db.php via a RELATIVE
+; path, so no absolute auto_prepend_file is required. If you prefer the prepend
+; mechanism instead, uncomment the next line and set the ABSOLUTE server path to
+; set-env.php (OUTSIDE the docroot):
+; auto_prepend_file = "/homepages/REPLACE_ME/licensing/set-env.php"
 
 display_errors = Off
 log_errors     = On
@@ -191,6 +196,7 @@ RewriteRule ^v1/activate/?$     v1/activate.php     [L]
 RewriteRule ^v1/validate/?$     v1/validate.php     [L]
 RewriteRule ^v1/revoke/?$       v1/revoke.php       [L]
 RewriteRule ^v1/status/?$       v1/status.php       [L]
+RewriteRule ^v1/polar/webhook/?$ v1/polar_webhook.php [L]
 '@
 
 $setEnvStatus  = Write-IfMissing (Join-Path $OutDir   'set-env.php') $SetEnv

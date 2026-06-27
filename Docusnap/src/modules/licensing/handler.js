@@ -102,6 +102,16 @@ function _syncSignedFeatures(db, claims) {
   } catch { /* non-fatal — falls back to the cached values */ }
 }
 
+// Mask an activation key for display only — keep the leading group + last 4 chars, hide the
+// rest. We NEVER persist the full key (it's a credential); the mask just lets an operator
+// recognise which key is registered on this device.
+function maskActivationKey(k) {
+  k = String(k || '').trim();
+  if (!k) return '';
+  if (k.length <= 10) return '••••';
+  return k.slice(0, 7) + '…' + k.slice(-4);
+}
+
 // Renderer-facing status never includes the raw JWS or fingerprint.
 function readable(body) {
   if (!body) return { state: 'unknown' };
@@ -230,6 +240,11 @@ function register(ctx) {
       if (ok) {
         licensing.recordDevice(db, fpHash);
         cacheFromResponse(db, fpHash, res.body);
+        // Remember the device name + a MASKED key for display in Settings (full key never stored).
+        try {
+          if (deviceLabel) setSetting(db, 'license_device_label', String(deviceLabel));
+          setSetting(db, 'license_key_masked', maskActivationKey(accountKey));
+        } catch { /* settings unavailable — non-fatal */ }
         audit(db, 'license.activated', 'success', res.body.seat_id || fpHash,
           `seats=${res.body.seats_used}/${res.body.seats_total}`);
         return { ok: true, ...readable(res.body) };
@@ -476,21 +491,36 @@ async function decideAccess() {
   // Best-effort online refresh: a fresh signed token restarts the 7-day grace.
   // Short timeout so app startup never blocks on a slow/unreachable backend; a
   // failure here is non-fatal (we fall back to the cached token within grace).
-  let online = false, onlineGrant = false;
+  let online = false, onlineSeatGrant = false, returnedToken = false;
   try {
     const gate = createClient({ baseUrl: cfg.base_url, productId: cfg.product_id, transport: _ctx.licenseTransport, timeoutMs: 2500 });
     const res = await gate.validate(fpHash, null);
     online = true;
-    if (res && res.body && res.body.token) { cacheFromResponse(db, fpHash, res.body); onlineGrant = true; }
+    if (res && res.body && res.body.token) {
+      returnedToken = true;
+      cacheFromResponse(db, fpHash, res.body);
+      // A returned token only KEEPS this device's seat if it's an ACTIVE SEAT grant.
+      const c = token.decodeUnverifiedClaims(res.body.token) || {};
+      onlineSeatGrant = c.kind === 'seat' && c.state === 'active';
+    }
   } catch { /* offline — fall back to cached token within grace */ }
 
-  // A REACHABLE backend that returns no grant for this device (seat released or
-  // revoked server-side, no trial — validate() responds {state:'none'} with no
-  // token) is authoritative: drop the stale cached seat token so the release takes
-  // effect on the next online check instead of riding out the 7-day grace. Offline
-  // (no response) deliberately does NOT clear — that path still honors the cache.
-  if (online && !onlineGrant) {
+  // A REACHABLE backend that did NOT affirm an active SEAT for this device is
+  // authoritative: drop the stale cached seat token so a server-side revoke takes effect
+  // NOW instead of riding out the 7-day grace. This covers BOTH no-token ({state:'none'})
+  // AND the seat->trial fallback: when the device ALSO has a trial record, validate returns
+  // a TRIAL token (even an EXPIRED one) instead of {state:'none'} — which previously looked
+  // like a grant and let the stale 365-day seat token keep winning (seat > trial in
+  // getActiveToken). The trial token, if any, was just cached and is honored on its own
+  // merits (an expired trial locks). Offline (no response) deliberately does NOT clear.
+  if (online && !onlineSeatGrant) {
     licensing.clearSeatToken(db, fpHash);
+    // The backend returned NO token at all ({state:'none'}) → no grant of ANY kind (no seat,
+    // no trial). Drop the stale cached TRIAL token too, so a trial deleted/expired
+    // server-side can't keep showing "N days left" on the device (the persistent app DB
+    // survives reinstalls). A real active trial returns a trial TOKEN (returnedToken=true),
+    // which was just refreshed above, so it is preserved.
+    if (!returnedToken) licensing.clearCachedToken(db, fpHash);
   }
 
   // Advance the persisted monotonic high-water mark (rollback defense) exactly as
