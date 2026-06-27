@@ -143,9 +143,9 @@ docusnap2/
 │   ├── lib/license/{client.js,token.js,fingerprint.js}  # backend HTTP client · offline JWS verify · device fp_hash
 │   ├── services/{searchService,previewService,workflowService,entitlementService,certService,sessionService}.js  # transport-agnostic core (see Detached search client)
 │   └── windows/
-│       ├── main/{index.html,renderer.js}      # incl. empty-state launchpad (Begin Import · Search · Settings · Teach a document). PROCESS FLOW (2026-06): clicking Process KEEPS the launchpad visible (no longer blanks the center) and streams live progress into the bottom 160px log strip; on finish shows "✓ Finished processing — N filed" + a "View Results" button (log header) → opens a 3-FIELD results table (Company/Date/Reference) that replaces the launchpad (← Back returns; data kept). Reference/Date resolve via the doc type's STRUCTURAL keys (ref_field_key/date_field_key from get-all-doc-types, loaded once) read from msg.extractions — so sales orders/POs/custom types populate, not just invoice_* convenience fields. The launchpad + results table both want flex:1, so they're mutually exclusive (can't co-show); the log strip is flex-shrink:0 and coexists. Reprocess-All progress is a BANNER above the buttons (review window), not a mutating button label.
+│       ├── main/{index.html,renderer.js}      # DASHBOARD + NAV RAIL (2026-06-28 redesign, replaced the launchpad). LEFT RAIL = single nav: Home · Import · Review(badge) · Search · Teach · Settings + a rail CLOCK (time large/date small) + "Local only" + a Dark-mode quick toggle at the very foot. CONTENT = a view-router (showView 'home'|'import'); Review/Search/Teach/Settings still open as their own maximised child windows. HOME = attention-led dashboard in ONE auto-fit card grid (repeat(auto-fit,minmax(260px,1fr)) → no empty cells; full-width banners use .dash-span); content column centred + width-capped (clamp(1100px,92vw,1320px)). Cards: Needs-your-attention (review+deferred+stuck counts → Open Review, or "all caught up"); Documents-filed pulse (today/week/month from confirmed_at); Import quick-start; Auto-import (watch status + on/off switch + pick-folder, admin-only); Getting-smarter (suppliers+layouts learned); Where-your-files-go (output folder + Open folder via the open-folder IPC); trial banner (licenseGetDiagnostics, "N of 14 days", calm/warn/crit); first-run setup checklist (auto-hides); Recent activity (recent confirmed; refreshes live on confirm via refreshDashboardIfHome). updateAttention() is the CHEAP count-event repaint; refreshDashboard() (the searchDocuments query) runs on load / Home-open only. IMPORT VIEW = folder picker + Process/Stop + session stats + live results table (Company/Date/Reference/Status) + progress strip; "Filed"/"Needs review" rows open THAT doc via openReviewWindowAt(db_id). Processing text shows "Multi-page document (N pages)" via the file_pages event. Reprocess-All progress is a BANNER (review window).
 │       ├── splash/{index.html,splash.js}      # cosmetic startup splash — shown in whenReady, closed once login loads
-│       ├── review/{index.html,renderer.js}    # incl. zoom/pan preview + hidden admin Template Wizard (⚓): draw anchor/target → save via existing template-mapping IPC; "Show where it reads" overlays (amber) the RESOLVED anchor/target on the current page via test-template-mapping → template_mapper.resolve_geometry (so the operator sees the mapping TRACK a shifted scan, vs the static drawn boxes). FIXED-VALUE MODE is a segmented pill ("Read it from the document" / "Always use the same value"), wording mirrored in Settings → Template Manager. ⊕ teach shows a post-draw READOUT BAR (detected label + value + [← Left]/[↑ Above] direction toggle — see Stage 2 "⊕ AUTO-ANCHOR LABEL SEARCH"). THREE teaching surfaces framed by ROLE so they're legible to non-technical users: Fix a field (⊕) · Teach a document (teach wizard) · Fine-tune a layout (Template Wizard, advanced fallback) — see Help "Which should I use?" (help/templates.html #which-tool)
+│       ├── review/{index.html,renderer.js}    # incl. zoom/pan preview + hidden admin Template Wizard (⚓): draw anchor/target → save via existing template-mapping IPC; "Show where it reads" overlays (amber) the RESOLVED anchor/target on the current page via test-template-mapping → template_mapper.resolve_geometry (so the operator sees the mapping TRACK a shifted scan, vs the static drawn boxes). FIXED-VALUE MODE is a segmented pill ("Read it from the document" / "Always use the same value"), wording mirrored in Settings → Template Manager. ⊕ teach shows a post-draw READOUT BAR (detected label + value + [← Left]/[↑ Above] direction toggle — see Stage 2 "⊕ AUTO-ANCHOR LABEL SEARCH"). THREE teaching surfaces framed by ROLE so they're legible to non-technical users: Fix a field (⊕) · Teach a document (teach wizard) · Fine-tune a layout (Template Wizard, advanced fallback) — see Help "Which should I use?" (help/templates.html #which-tool). "TEACH THIS DOCUMENT" CTA (2026-06-28, renderTeachCta, centred above the preview): shown ONLY for a genuinely-unseen doc — HIDDEN when a template matched (template_id), when the recheck finds a drifted template (`_templateRecheck.matched` — reprocess fixes it, no action), or when ANY field was read by a learned method (keyword/keyword_override/anchor/template_mapping); a recognised sender (logo/keyword) gets a one-time confirm. Launches the Teach wizard at the doc (skips doc-selection). A `doc-types-changed` broadcast (settings/handler on type create/add/presets) refreshes the Review type dropdown + Settings list + main results-table key map live (preload `onDocTypesChanged`).
 │       ├── teach/{index.html,renderer.js}      # guided "Teach a new document" wizard (non-technical) — see Teaching wizard
 │       ├── settings/{index.html,renderer.js}  # incl. Admin Template Viewer + License/Activation-Test tab
 │       ├── search/{index.html,renderer.js,search-results.js,search-preview.js,search-actions.js}  # built search UI; entitlement-gated confidence/mailbox/workflow actions (see Detached search client)
@@ -205,6 +205,9 @@ documents       — document_type_id(FK), original_filename, stored_filename,
                   working_path  ← migration 17: app-managed import copy in
                   userData/inbox/<docId><ext>; preferred by preview/reprocess/
                   confirm so they don't depend on the source folder surviving
+                  page_count  ← migration 37: captured at import; drives the Review
+                  multi-page icon + the "Multi-page document" processing text. NULL
+                  for pre-migration rows (no icon until reprocessed)
                   STATUS: pending|needs_review|deferred|confirmed|deleted|error
 extractions     — document_id(FK), field_key, raw_value, display_value,
                   confidence, was_corrected, corrected_to, extraction_method
@@ -905,6 +908,33 @@ progress bar isn't clobbered. `_currentBatchProcs[]` + `isBatchRunning()` track 
 workers; stop kills every tree. Watch-folder stays serial and defers via
 `isBatchRunning()`.
 
+**Drain to Processed/ + file-handle release** (handler.js, 2026-06-28): a processed
+original is moved out of the intake folder into `Processed/` (or `Errors/`) once a
+verified working copy exists (`drain_processed`, default on). Two reliability fixes:
+(1) the Python worker now CLOSES each pdfium document per file (ocr/tesseract.py
+`extract_text_and_images`/`pdf_to_images`, born-digital page-0) so the source PDF's
+handle is released before drain — Windows can't rename an open file. (2)
+`drainOriginalToFolder` distinguishes a genuine cross-volume move (EXDEV → copy+
+unlink) from a TRANSIENT LOCK (brief Atomics.wait retry); a still-locked file is
+left in place (drained next run) and NEVER left as a duplicate. The drain is
+attempted inline (`_drainNowOrDefer`) and, if still locked, queued (`_pendingDrains`)
+and flushed by `_flushPendingDrains` after the worker exits (manual batch:
+Promise.all; watch: per-file proc close). `file_done` is now persisted SYNCHRONOUSLY
+in the stdout handler (not setImmediate) so `msg.db_id` is set BEFORE the message is
+mirrored (the results-table "open this doc in Review" needs it). [REVIEW FOLLOW-UPS,
+not yet done: the inline drain's Atomics.wait can briefly block the main thread on an
+external lock; a throw in the now-sync `_handleFileMessage` skips the file's progress
+mirror; the EXDEV branch can still leave a duplicate if its unlink throws — all
+edge-case, flagged in the 2026-06-28 review.]
+
+**Document SEPARATION pre-pass** (`_separateBatchDocuments`): before the worker pool,
+each PDF is OCR-scanned to split a multi-document file (e.g. ten one-page alerts in
+one PDF). Runs as a BOUNDED PARALLEL pool (≤ CPU cores, per-proc Tesseract thread
+cap) with live "Preparing N/M" progress; the stop handler ALWAYS sets
+`_cancelRequested` and `process-folder` BAILS after the pre-pass if cancelled (so
+Stop is immediate, not stuck behind a launched worker). Gated by
+`auto_separate_enabled` (default on).
+
 **Critical**: engine.extract() returns a flat dict mixing field data dicts
 `{"value":..,"confidence":..,"method":..}` with plain metadata values
 `_supplier_name`, `_document_type`, `_overall_confidence`, `_needs_review`,
@@ -998,6 +1028,16 @@ WELL-SUPPORTED fields all match (conservative — sparse/unverified docs get no
 boost). Adjusts the displayed score only; per-field notes and needs_review are
 unaffected.
 
+**EMPTY required fields weigh the score down** (`validator.overall_confidence`,
+2026-06-28): when the scored fields come from the type's SCHEMA, an expected
+(required) field that is EMPTY now counts as **0** in the average — so a doc with
+one good field and several empty required fields no longer reads as high/green (the
+"72% with two empty fields" bug). The hard-coded fallback (no `field_defs`) keeps
+the old present-only average (those keys may not exist for a type). Guarded by
+tests/test_confidence_empty_fields.py. (KNOWN TRADE-OFF: a type whose required
+date/ref is legitimately ABSENT on some layouts will be over-flagged — there's no
+"required but sometimes absent" notion yet.)
+
 ---
 
 ## Filing system
@@ -1040,12 +1080,17 @@ OutputRoot/
 | Sales Order | sales_order | sales_order_number | order_date |
 | Purchase Order | purchase_order | po_number | po_date |
 
-**STRUCTURAL fields (Company / Date / Reference) are PERMANENT** (migration 27,
+**STRUCTURAL fields (Document Issuer / Date / Reference) are PERMANENT** (migration 27,
 `document_types.js`): every type has three locked roles — the COMPANY/identity
-field (`COMPANY_KEYS` = supplier_name | customer_name; label matches the KEY —
-**"Supplier Name"** / **"Customer Name"** — migration 35 reversed the earlier
-ambiguous **"Company"** unification from migration 27), the `date_field_key`, and
-the `ref_field_key`. They drive filing
+field (`COMPANY_KEYS` = supplier_name | customer_name), the `date_field_key`, and
+the `ref_field_key`. The identity field's DISPLAY label is **"Document Issuer"** for
+BOTH keys (migration 38, 2026-06-28 — one unambiguous label so an operator never
+enters variable data like a customer name in the identity field; supersedes the
+migration-35 "Supplier Name"/"Customer Name" split and the migration-27 "Company").
+Label-only — the internal KEYS (supplier_name/customer_name) + learning schema are
+untouched. (Deferred: customer_name may later become a SEPARATE recipient field on
+issuer-style types, with supplier_name as the sole identity — a data-model change.)
+They drive filing
 (`Company/Year/Month/DocType.Date.Ref`) AND all per-supplier learning
 (logo_fingerprints/hints/anchors/corrections/template identity key off the company
 scope value), so the FIELD can't be deleted, disabled, renamed or retyped — but the
@@ -1220,12 +1265,19 @@ session}.js`, `src/modules/api/test_{cert_wizard,v1_ca,v1_enroll,v1_workflow,v1_
 
 ## UI conventions
 **Shared theme** — every window's palette + components are centralised in
-`src/windows/shared/theme.css` (loaded by all windows) + `theme.js` (sets
-`data-theme` on `<html>`, persists the choice). **LIGHT is the default** (`:root`);
-DARK is the opt-in (`:root[data-theme="dark"]`). The palette is matched to the
-detached search client. Windows reference the tokens and no longer define their own
-`:root` (the help window's `help.css` was the last self-token holdout — now linked
-to theme.css too).
+`src/windows/shared/theme.css` (loaded by all windows) + `theme.js`. **SIX named
+themes** (2026-06-28): Light · Warm Paper · Nordic Slate (light family) · Dark ·
+Midnight · Graphite (dark family). Each is a `:root[data-theme="X"]` token-override
+block; **Warm Paper is the default**. `theme.js` sets BOTH `data-theme` (palette)
+AND `data-mode` (light|dark family) on `<html>` — `color-scheme` + the logo swap
+key on `data-mode` so all dark themes get native dark scrollbars/logo. `--on-accent`
+token = text colour on a filled accent (lets Midnight's amber use near-black text).
+Subtle background patterns are pure CSS gradients (CSP-safe — NO `url(data:…)`, which
+`img-src 'self'` blocks) on the shell `--bg` only (Warm=dots, Slate=grid, Midnight=
+glow; others flat). Picked via Settings → General → Appearance `<select>`; the
+account menu + the main-window rail-foot toggle are a quick Light⇄Dark flip
+(mode-aware). `set-setting('theme',…)` persists + broadcasts `theme-changed` live.
+Windows reference the tokens and no longer define their own `:root`.
 ```css
 /* light (default) — the client palette */
 --bg:#f4f6fa  --surface:#ffffff  --surface2:#eef1f7  --surface3:#e4e8f1
