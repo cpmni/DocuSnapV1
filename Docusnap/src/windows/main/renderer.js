@@ -13,11 +13,8 @@ const folderBox     = document.getElementById('folder-box');
 const folderDisplay = document.getElementById('folder-display');
 const btnRun        = document.getElementById('btn-run');
 const btnStop       = document.getElementById('btn-stop');
-const btnClear      = document.getElementById('btn-clear');
-const btnViewResults = document.getElementById('btn-view-results');
 const btnReviewDocs  = document.getElementById('btn-review-docs');
-const dropzone      = document.getElementById('dropzone');
-const resultsPanel  = document.getElementById('results-panel');
+const resultsEmpty  = document.getElementById('results-empty');
 const logPanel      = document.getElementById('progress-section');  // the prominent progress strip
 const logOutput     = document.getElementById('log-output');
 const logStatus     = document.getElementById('log-status');
@@ -27,17 +24,305 @@ const progressText  = document.getElementById('progress-text');
 const btnToggleLog  = document.getElementById('btn-toggle-log');
 const tableBody     = document.getElementById('table-body');
 
+// Update a button's text without disturbing its leading inline-SVG icon.
+function setBtnLabel(btn, text) {
+  const lbl = btn && btn.querySelector('.btn-label');
+  if (lbl) lbl.textContent = text;
+  else if (btn) btn.textContent = text;
+}
+
+// ── View router (Home dashboard ↔ Import workspace) ──────────────────────────
+// The nav rail is the single source of navigation. Home/Import switch the
+// in-page view; Review/Search/Teach/Settings open the existing windows (wired
+// further down). Selecting Home refreshes the dashboard's live counts.
+const VIEWS = ['home', 'import'];
+function showView(name) {
+  if (!VIEWS.includes(name)) return;
+  document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${name}`));
+  document.querySelectorAll('.rail-item[data-view]').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
+  if (name === 'home') refreshDashboard();
+}
+document.querySelectorAll('.rail-item[data-view]').forEach((btn) => {
+  btn.addEventListener('click', () => showView(btn.dataset.view));
+});
+
+// ── Rail clock (time large, date underneath) ─────────────────────────────────
+function tickClock() {
+  const now = new Date();
+  const t = document.getElementById('rail-time');
+  const d = document.getElementById('rail-date');
+  if (t) t.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (d) d.textContent = now.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+}
+tickClock();
+setInterval(tickClock, 1000);
+
+// ── Dashboard (Home) ─────────────────────────────────────────────────────────
+let _lastRunSummary = null;                         // {ok,err} of the latest manual run this session
+let _reviewCount = 0, _stuckCount = 0, _deferredCount = 0;  // cached so count-change events stay CHEAP
+
+// CHEAP repaint of the attention card from the cached counts — NO DB query, so it
+// is safe to call on every review/stuck/deferred count-change event, even mid-import.
+function updateAttention() {
+  const reviewEl  = document.getElementById('dash-review-count');
+  const defRow    = document.getElementById('dash-deferred-row');
+  const defEl     = document.getElementById('dash-deferred-count');
+  const stuckRow  = document.getElementById('dash-stuck-row');
+  const stuckEl   = document.getElementById('dash-stuck-count');
+  const attnBody  = document.getElementById('dash-attn-body');
+  const allClear  = document.getElementById('dash-allclear');
+  const openRev   = document.getElementById('dash-open-review');
+  if (reviewEl) reviewEl.textContent = _reviewCount;
+  if (defEl)    defEl.textContent    = _deferredCount;
+  if (defRow)   defRow.style.display   = _deferredCount > 0 ? '' : 'none';
+  if (stuckEl)  stuckEl.textContent  = _stuckCount;
+  if (stuckRow) stuckRow.style.display = _stuckCount > 0 ? '' : 'none';
+  const clear = (_reviewCount + _stuckCount + _deferredCount) === 0;
+  if (attnBody) attnBody.style.display = clear ? 'none' : '';
+  if (allClear) allClear.style.display = clear ? '' : 'none';
+  // Review is Admin/Edit only — hide the deep-link for read-only.
+  if (openRev) openRev.style.display = (!clear && _userCanReview) ? '' : 'none';
+}
+
+// FULL refresh — fetches counts + a confirmed-docs query (recent activity +
+// throughput) + watch/trial/setup state. Only called on load, after role resolves,
+// and when the user opens Home — NEVER per count-change during an import (that would
+// flood the main process with synchronous queries and stall processing).
+async function refreshDashboard() {
+  try { _reviewCount   = await window.docusnap.getReviewCount(); } catch {}
+  try { _stuckCount    = await window.docusnap.getStuckCount(); } catch {}
+  try { _deferredCount = await window.docusnap.getDeferredCount(); } catch {}
+  updateAttention();
+
+  const dashFolder = document.getElementById('dash-folder');
+  if (dashFolder) {
+    if (selectedFolder) { dashFolder.textContent = selectedFolder; dashFolder.classList.add('set'); }
+    else { dashFolder.textContent = 'No source folder chosen yet.'; dashFolder.classList.remove('set'); }
+  }
+  const dashLast = document.getElementById('dash-last-run');
+  if (dashLast) dashLast.textContent = _lastRunSummary
+    ? `Last run: ${_lastRunSummary.ok} filed${_lastRunSummary.err ? `, ${_lastRunSummary.err} with errors` : ''}.`
+    : '';
+
+  // One confirmed-docs fetch feeds BOTH recent activity and the throughput strip.
+  let confirmed = [];
+  try {
+    const res = await window.docusnap.searchDocuments({});
+    confirmed = (res && res.confirmed) ? res.confirmed : [];
+  } catch {}
+  renderRecentActivity(confirmed);
+  renderThroughput(confirmed);
+  renderLearning(confirmed);
+  renderOutput();
+  renderSetupChecklist(confirmed);
+  refreshWatchCard();
+  refreshTrialBanner();
+}
+
+function renderRecentActivity(confirmed) {
+  const list = document.getElementById('recent-list');
+  if (!list) return;
+  const docs = confirmed.slice(0, 6);
+  if (!docs.length) { list.innerHTML = '<div class="recent-empty">No documents filed yet.</div>'; return; }
+  list.innerHTML = '';
+  for (const d of docs) {
+    const row = document.createElement('div');
+    row.className = 'recent-row';
+    row.innerHTML = `
+      <span class="recent-co" title="${escHtml(d.supplier_name || '—')}">${escHtml(d.supplier_name || '—')}</span>
+      <span class="recent-meta">${escHtml(d.type_name || '')}</span>
+      <span class="recent-meta">${escHtml(d.reference_number || '—')}</span>
+      <span class="recent-meta">${escHtml(d.doc_date || '')}</span>`;
+    list.appendChild(row);
+  }
+}
+
+// Count confirmed docs filed today / this week / this month from confirmed_at.
+function renderThroughput(confirmed) {
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const weekAgo = now.getTime() - 7 * 24 * 60 * 60 * 1000;
+  let today = 0, week = 0, month = 0;
+  for (const d of confirmed) {
+    const t = d.confirmed_at ? Date.parse(d.confirmed_at) : NaN;
+    if (Number.isNaN(t)) continue;
+    if (t >= startOfMonth) month++;
+    if (t >= weekAgo) week++;
+    if (t >= startOfToday) today++;
+  }
+  // The confirmed query is capped (200), so wide windows can undercount — show "200+"
+  // honestly when we hit the cap rather than a wrong exact figure.
+  const cap = confirmed.length >= 200;
+  const set = (id, n) => { const el = document.getElementById(id); if (el) el.textContent = (cap && n >= 200) ? '200+' : n; };
+  set('stat-today', today);
+  set('stat-week',  week);
+  set('stat-month', month);
+}
+
+// "Getting smarter" — suppliers recognised + layouts (templates) learned.
+async function renderLearning(confirmed) {
+  const body = document.getElementById('dash-learning-body');
+  if (!body) return;
+  let layouts = null;   // null = couldn't read (e.g. non-admin) → omit, don't show a wrong 0
+  try { const t = await window.docusnap.getTemplates(); if (Array.isArray(t)) layouts = t.length; } catch {}
+  const suppliers = new Set();
+  for (const d of confirmed) { if (d.supplier_name) suppliers.add(d.supplier_name.trim().toLowerCase()); }
+  const ns = suppliers.size, capS = confirmed.length >= 200 ? '+' : '';
+  const sup = `<span class="n">${ns}${capS}</span> ${ns === 1 ? 'supplier' : 'suppliers'}`;
+  body.innerHTML = layouts == null
+    ? `Scan Finder has learned ${sup}.`
+    : `Scan Finder has learned ${sup} and <span class="n">${layouts}</span> ${layouts === 1 ? 'layout' : 'layouts'}.`;
+}
+
+// "Where your files go" — output folder + Open folder.
+async function renderOutput() {
+  const el = document.getElementById('dash-output-folder');
+  if (!el) return;
+  let folder = null;
+  try { folder = await window.docusnap.getSetting('output_folder'); } catch {}
+  el.textContent = (folder && String(folder).trim()) || 'Not set yet — choose one in Settings.';
+  el.dataset.folder = folder || '';
+}
+
+// First-run setup checklist — shown only until the core steps are done, then hidden.
+async function renderSetupChecklist(confirmed) {
+  const card = document.getElementById('dash-setup');
+  const list = document.getElementById('setup-list');
+  if (!card || !list) return;
+  let outputFolder = null;
+  try { outputFolder = await window.docusnap.getSetting('output_folder'); } catch {}
+  const processedAny = (confirmed.length + _reviewCount + _stuckCount + _deferredCount) > 0;
+  const anyConfirmed = confirmed.length > 0;
+  const items = [
+    { done: !!(outputFolder && String(outputFolder).trim()), label: 'Choose where filed documents are saved', go: 'settings' },
+    { done: processedAny, label: 'Process your first batch of documents',           go: 'import' },
+    { done: anyConfirmed, label: 'Review &amp; confirm a document',                  go: 'review' },
+  ];
+  if (items.every((i) => i.done)) { card.style.display = 'none'; return; }   // established user → hide
+  card.style.display = '';
+  list.innerHTML = '';
+  for (const it of items) {
+    const row = document.createElement('div');
+    row.className = 'setup-row' + (it.done ? ' done' : '');
+    row.innerHTML = `
+      <span class="setup-tick"><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg></span>
+      <span class="setup-label">${it.label}</span>
+      <button class="setup-go" data-go="${it.go}">Do this →</button>`;
+    list.appendChild(row);
+  }
+  list.querySelectorAll('.setup-go').forEach((b) => b.addEventListener('click', () => {
+    const go = b.dataset.go;
+    if (go === 'import') showView('import');
+    else if (go === 'review') window.docusnap.openReviewWindow();
+    else window.docusnap.openSettingsWindow();
+  }));
+}
+
+// Auto-import (watch-folder) status. Config IPC is admin-only — hide the card on a
+// non-admin (or any failure) rather than showing an error.
+async function refreshWatchCard() {
+  const card = document.getElementById('dash-watch');
+  const body = document.getElementById('dash-watch-body');
+  const btnLbl = document.getElementById('dash-watch-btn-label');
+  const toggle = document.getElementById('dash-watch-toggle');
+  if (!card || !body) return;
+  let cfg = null;
+  try { cfg = await window.docusnap.getWatchFolderConfig(); } catch { card.style.display = 'none'; return; }
+  card.style.display = '';
+  const hasFolder = !!(cfg && cfg.folder);
+  if (toggle) toggle.checked = !!(cfg && cfg.enabled);
+  if (cfg && cfg.enabled && hasFolder) {
+    body.className = 'dash-watch-body on';
+    body.innerHTML = `On — watching<br><span class="wf-path">${escHtml(cfg.folder)}</span>`;
+  } else if (hasFolder) {
+    body.className = 'dash-watch-body off';
+    body.innerHTML = `Paused<br><span class="wf-path">${escHtml(cfg.folder)}</span>`;
+  } else {
+    body.className = 'dash-watch-body off';
+    body.textContent = 'Pick a folder and new scans dropped into it import automatically.';
+  }
+  if (btnLbl) btnLbl.textContent = hasFolder ? 'Change folder' : 'Choose folder';
+}
+
+// Pick (and enable) the watch folder straight from the card — no trip to Settings.
+async function chooseWatchFolder() {
+  let folder = null;
+  try { folder = await window.docusnap.pickWatchFolder(); } catch {}
+  if (!folder) return;
+  try { await window.docusnap.setWatchFolder(folder); await window.docusnap.setWatchFolderEnabled(true); } catch {}
+  refreshWatchCard();
+}
+
+// Trial banner — driven by the LOCAL cached-token diagnostics (network-free, reliable),
+// not the best-effort online status. Shown only on a trial; colour carries urgency.
+const TRIAL_TOTAL_DAYS = 14;
+async function refreshTrialBanner() {
+  const banner = document.getElementById('dash-trial');
+  const textEl = document.getElementById('dash-trial-text');
+  const fillEl = document.getElementById('dash-trial-fill');
+  if (!banner) return;
+  let tok = null;
+  try { const d = await window.docusnap.licenseGetDiagnostics(); tok = d && d.token; } catch {}
+  const isTrial = !!tok && tok.hasToken && tok.kind === 'trial';
+  let days = (tok && Number.isFinite(tok.days_remaining)) ? tok.days_remaining : null;
+  if (days == null && tok) {
+    const end = tok.entitlement_end || tok.not_after;
+    const t = end ? Date.parse(end) : NaN;
+    if (!Number.isNaN(t)) days = Math.max(0, Math.ceil((t - Date.now()) / 86400000));
+  }
+  if (!isTrial || days == null) { banner.style.display = 'none'; return; }
+
+  banner.style.display = '';
+  const total = Math.max(days, TRIAL_TOTAL_DAYS);   // never show "of N" smaller than days left
+  const used  = Math.max(0, Math.min(total, total - days));
+  if (textEl) {
+    textEl.innerHTML = days <= 0
+      ? 'Trial ended — activate to keep filing'
+      : `Trial — <span class="n">${days}</span> of ${total} days left`;
+  }
+  if (fillEl) fillEl.style.width = `${Math.round((used / total) * 100)}%`;
+  // Urgency: calm > 7 days, warn 3–7, crit <= 2 (or expired).
+  banner.classList.remove('calm', 'warn', 'crit');
+  banner.classList.add(days <= 2 ? 'crit' : days <= 7 ? 'warn' : 'calm');
+}
+
+document.getElementById('dash-open-review')?.addEventListener('click', () => window.docusnap.openReviewWindow());
+document.getElementById('dash-go-import')?.addEventListener('click', () => showView('import'));
+document.getElementById('dash-open-search')?.addEventListener('click', () => window.docusnap.openSearchWindow());
+document.getElementById('dash-watch-config')?.addEventListener('click', chooseWatchFolder);
+document.getElementById('dash-watch-toggle')?.addEventListener('change', async (e) => {
+  const on = e.target.checked;
+  let cfg = null;
+  try { cfg = await window.docusnap.getWatchFolderConfig(); } catch {}
+  if (on && !(cfg && cfg.folder)) { e.target.checked = false; return chooseWatchFolder(); }  // need a folder first
+  try { await window.docusnap.setWatchFolderEnabled(on); } catch {}
+  refreshWatchCard();
+});
+document.getElementById('dash-trial-activate')?.addEventListener('click', () => window.docusnap.openSettingsWindowAtSection('licensing'));
+document.getElementById('dash-open-output')?.addEventListener('click', () => {
+  const folder = document.getElementById('dash-output-folder')?.dataset.folder;
+  if (folder) window.docusnap.openFolder(folder);   // dedicated folder-open (the file channel rejects extension-less paths)
+  else window.docusnap.openSettingsWindow();
+});
+refreshDashboard();
+
 // Doc-type → structural field keys, so the results table can show the right
 // Reference/Date for ANY type (invoice, sales order, PO, custom), not just the
 // invoice_* convenience fields. Keyed by both type name and slug (lowercased).
 const docTypeKeys = {};
-window.docusnap.getAllDocTypes?.().then((types) => {
-  for (const t of (types || [])) {
-    const entry = { ref: t.ref_field_key, date: t.date_field_key };
-    if (t.name) docTypeKeys[t.name.toLowerCase()] = entry;
-    if (t.slug) docTypeKeys[t.slug.toLowerCase()] = entry;
-  }
-}).catch(() => {});
+function loadDocTypeKeys() {
+  return window.docusnap.getAllDocTypes?.().then((types) => {
+    for (const k in docTypeKeys) delete docTypeKeys[k];
+    for (const t of (types || [])) {
+      const entry = { ref: t.ref_field_key, date: t.date_field_key };
+      if (t.name) docTypeKeys[t.name.toLowerCase()] = entry;
+      if (t.slug) docTypeKeys[t.slug.toLowerCase()] = entry;
+    }
+  }).catch(() => {});
+}
+loadDocTypeKeys();
+window.docusnap.onDocTypesChanged?.(() => loadDocTypeKeys());
 
 // ── Current-file indicator (shown on the progress bar's foot row) ─────────────
 // The stage chips were folded into the prominent progress bar; setStage now just
@@ -67,11 +352,8 @@ function updateProgressCount() {
   else progressCount.textContent = '—';
 }
 
-
-// ── Title bar controls ───────────────────────────────────────────────────────
-document.getElementById('btn-min').addEventListener('click',   () => window.docusnap.windowMinimise());
-document.getElementById('btn-max').addEventListener('click',   () => window.docusnap.windowMaximise());
-document.getElementById('btn-close').addEventListener('click', () => window.docusnap.windowClose());
+// Window controls (minimise/maximise/close) are provided by the native OS frame
+// (main.js frame:true); the old in-page buttons + handlers were dead duplicates.
 
 // ── Folder picker ────────────────────────────────────────────────────────────
 async function chooseSourceFolder() {
@@ -87,26 +369,23 @@ async function chooseSourceFolder() {
   folderDisplay.textContent = display;
   folderDisplay.title       = folder;
   folderDisplay.classList.add('set');
-  folderBox.classList.remove('cue');  // stop the launchpad's "pick a folder" pulse
-  dropzone.classList.add('has-folder');  // hide the launchpad's bobbing "pick a folder" cue
+  folderBox.classList.remove('cue');  // stop the "pick a folder" pulse
   btnRun.disabled = false;
+  const dashFolder = document.getElementById('dash-folder');
+  if (dashFolder) { dashFolder.textContent = folder; dashFolder.classList.add('set'); }
 }
 folderBox.addEventListener('click', chooseSourceFolder);
 
-// ── Launchpad (empty initial state) ───────────────────────────────────────────
-// Reuses the existing pick-folder / search / settings actions. The launchpad
-// lives inside #dropzone, so it is hidden automatically when startProcessing()
-// sets dropzone.style.display='none', and re-shown by Clear Results.
-document.getElementById('lp-import')?.addEventListener('click', chooseSourceFolder);
-document.getElementById('lp-search')?.addEventListener('click', () => window.docusnap.openSearchWindow());
-document.getElementById('lp-settings')?.addEventListener('click', () => window.docusnap.openSettingsWindow());
-document.getElementById('lp-teach')?.addEventListener('click', () => window.docusnap.openTeachWindow());
+// ── Rail: Teach ───────────────────────────────────────────────────────────────
+// Review/Search/Settings rail items reuse their original IDs, so their click
+// handlers + role gating (further down) are unchanged.
+document.getElementById('btn-teach')?.addEventListener('click', () => window.docusnap.openTeachWindow());
 
 // ── Help: user guide + contextual help mode ───────────────────────────────────
-document.getElementById('lp-help')?.addEventListener('click', () => window.docusnap.openHelpWindow('overview'));
 document.getElementById('btn-help-guide')?.addEventListener('click', () => window.docusnap.openHelpWindow('main'));
 
 const HELP_TEXTS = {
+  'home':          'Your dashboard: what needs attention, a quick import, and recent activity.',
   'begin-import':  'Pick a folder of scans and process them into the queue.',
   'source-folder': 'The folder Scan Finder imports from. Click to choose a different one.',
   'process':       'Start processing the selected source folder into documents.',
@@ -126,30 +405,16 @@ btnRun.addEventListener('click', async () => {
   startProcessing();
 });
 
-// ── "View Results" — switch from the launchpad+log view to the results table ──
-btnViewResults?.addEventListener('click', () => {
-  dropzone.style.display = 'none';        // results table needs the launchpad's flex:1 space
-  resultsPanel.classList.add('visible');
-});
-
-// ── "Back" — return from the results table to the launchpad (data kept) ───────
-btnClear.addEventListener('click', () => {
-  resultsPanel.classList.remove('visible');
-  dropzone.style.display = '';            // bring the launchpad (action buttons) back
-  // The log strip stays at the bottom with the "Finished" state + View Results,
-  // so the user can re-open the table without re-processing.
-});
-
 // ── Processing ───────────────────────────────────────────────────────────────
 async function startProcessing() {
   running = true;
   btnRun.disabled = true;
-  btnRun.textContent = '⏳ Processing…';
+  setBtnLabel(btnRun, 'Processing…');
   // Reset the stop button every run: it was left disabled+"Stopping…" after a
   // previous stop, so without this a later run shows a stuck, unclickable
   // "Stopping…" and documents keep processing because stop can't be triggered.
   btnStop.disabled = false;
-  btnStop.innerHTML = '&#9632;&nbsp; Stop Processing';
+  setBtnLabel(btnStop, 'Stop Processing');
   btnStop.classList.add('visible');
 
   // Reset only the per-run BATCH (the progress bar). Session Stats are cumulative
@@ -157,15 +422,12 @@ async function startProcessing() {
   batch = { total: 0, done: 0, ok: 0, err: 0 };
   updateStats();
 
-  // Keep the launchpad (the action buttons) visible during processing; show live
-  // progress in the bottom log strip instead of blanking the whole center. The
-  // full results table is revealed as its own view once processing finishes — it
-  // needs the same flex:1 space the launchpad uses, so the two can't coexist.
-  dropzone.style.display = '';
-  resultsPanel.classList.remove('visible');
-  btnViewResults.style.display = 'none';   // hidden until this run finishes
+  // Surface the Import workspace (results table + live progress strip coexist
+  // there) so the operator watches this run fill in real time.
+  showView('import');
   btnReviewDocs.classList.remove('visible');
   tableBody.innerHTML = '';                // fresh results for this run
+  if (resultsEmpty) resultsEmpty.style.display = 'none';
   logPanel.classList.add('visible');
   logPanel.classList.remove('log-open');   // log collapsed by default — bar is the view
   if (btnToggleLog) btnToggleLog.textContent = 'View log';
@@ -187,7 +449,7 @@ async function startProcessing() {
     logStatus.textContent = 'Error';
     running = false;
     btnRun.disabled  = false;
-    btnRun.innerHTML = '&#9654;&nbsp; Process Documents';
+    setBtnLabel(btnRun, 'Process Documents');
     btnStop.classList.remove('visible');
     return;
   }
@@ -195,7 +457,7 @@ async function startProcessing() {
   // Done
   running = false;
   btnRun.disabled  = false;
-  btnRun.innerHTML = '&#9654;&nbsp; Process Documents';
+  setBtnLabel(btnRun, 'Process Documents');
   btnStop.classList.remove('visible');
   clearStage();
   if (processResult && processResult.stopped) {
@@ -208,12 +470,11 @@ async function startProcessing() {
     progressText.textContent = `✓ ${batch.ok} filed${batch.err ? `, ${batch.err} with errors` : ''}`;
     appendLog(`✓ Finished processing — ${batch.ok} filed${batch.err ? `, ${batch.err} with errors` : ''}.`, 'ok');
   }
-  // Launchpad + log strip stay on screen. If anything was processed, offer a
-  // "View Results" button (in the log header) that opens the 3-field table, and a
-  // "Review your documents" call-to-action in the sidebar that jumps to Review.
+  // If anything was processed, offer the "Review your documents" CTA and remember
+  // this run for the dashboard's "last run" line.
   if (batch.done > 0) {
-    btnViewResults.style.display = '';
     if (_userCanReview) btnReviewDocs.classList.add('visible');
+    _lastRunSummary = { ok: batch.ok, err: batch.err };
   }
 }
 
@@ -245,6 +506,14 @@ function handleProgress(msg) {
       }
       break;
 
+    case 'file_pages':
+      // Page count arrives after rendering — flag a multi-page document in the live text.
+      if (msg.pages > 1) {
+        setStage(`${msg.filename} — Multi-page document (${msg.pages} pages)`);
+        appendLog(`   ${msg.filename}: ${msg.pages} pages`);
+      }
+      break;
+
     case 'file_done':
       batch.done++;
       stats.done++;
@@ -256,9 +525,7 @@ function handleProgress(msg) {
         progressBar.style.width = ((batch.done / batch.total) * 100) + '%';
       }
       setStage(msg.original_filename || msg.new_filename, 'save');
-      // The results table updates live — offer "View results" as soon as the first
-      // doc lands so the operator can watch it fill (it stays hidden by default).
-      if (batch.done > 0) btnViewResults.style.display = '';
+      if (resultsEmpty) resultsEmpty.style.display = 'none';
       if (msg.success) {
         appendLog(`  ✓ → ${msg.new_filename}`, 'ok');
       } else {
@@ -268,7 +535,13 @@ function handleProgress(msg) {
 
     case 'log':
       appendLog(msg.text, msg.level || '');
-      if (msg.text && msg.text.includes('OCR:')) {
+      // Pre-processing phase updates (e.g. the document-separation pre-pass that runs
+      // before the first 'start') surface in the headline status + activity line so
+      // the user sees real progress instead of a frozen "Starting…".
+      if (msg.phase) {
+        logStatus.textContent = 'Preparing';
+        setStage(msg.text);
+      } else if (msg.text && msg.text.includes('OCR:')) {
         setStage(progressText.textContent || '', 'ocr');
       }
       break;
@@ -303,7 +576,11 @@ function addTableRow(msg) {
       ? `<button type="button" class="badge warn row-review-link" title="Open the Review window to check and confirm this document">Needs review</button>`
       : `<span class="badge warn" title="This document needs review">Needs review</span>`;
   } else {
-    statusCell = `<span class="badge ok">Filed</span>`;
+    // Filed docs are clickable too — a green "Filed" can still hide a wrong value, so let
+    // the operator jump straight to it in Review to check/correct (Admin/Edit only).
+    statusCell = _userCanReview
+      ? `<button type="button" class="badge ok row-filed-link" title="Open this filed document in Review to check or correct it">Filed</button>`
+      : `<span class="badge ok">Filed</span>`;
   }
 
   tr.innerHTML = `
@@ -313,8 +590,12 @@ function addTableRow(msg) {
     <td>${statusCell}</td>
   `;
 
-  const link = tr.querySelector('.row-review-link');
-  if (link) link.addEventListener('click', () => window.docusnap.openReviewWindow());
+  const link = tr.querySelector('.row-review-link') || tr.querySelector('.row-filed-link');
+  if (link) {
+    const docId = msg.db_id;   // set by _handleFileMessage before this message was mirrored
+    link.addEventListener('click', () =>
+      docId ? window.docusnap.openReviewWindowAt(docId) : window.docusnap.openReviewWindow());
+  }
 
   tableBody.prepend(tr);  // newest at top
 }
@@ -358,7 +639,7 @@ function escHtml(str) {
 // ── Stop button ───────────────────────────────────────────────────────────────
 btnStop?.addEventListener('click', async () => {
   btnStop.disabled = true;
-  btnStop.textContent = 'Stopping…';
+  setBtnLabel(btnStop, 'Stopping…');
   await window.docusnap.stopProcessing();
 });
 
@@ -374,22 +655,28 @@ document.getElementById('btn-settings')?.addEventListener('click', () => {
 });
 
 // ── Review count badge ────────────────────────────────────────────────────────
-async function refreshReviewBadge() {
-  const count = await window.docusnap.getReviewCount();
+function applyReviewCount(count) {
+  _reviewCount = count;
   const badge = document.getElementById('review-badge');
-  if (!badge) return;
-  badge.textContent   = count;
-  badge.style.display = count > 0 ? '' : 'none';
-  document.getElementById('btn-review').style.color = count > 0 ? '#f7b84f' : '#7a82a0';
+  if (badge) { badge.textContent = count; badge.classList.toggle('show', count > 0); }
+  updateAttention();   // cheap DOM-only repaint of the dashboard count
+}
+async function refreshReviewBadge() {
+  try { applyReviewCount(await window.docusnap.getReviewCount()); } catch {}
 }
 refreshReviewBadge();
-window.docusnap.onReviewCountChanged((count) => {
-  const badge = document.getElementById('review-badge');
-  if (!badge) return;
-  badge.textContent   = count;
-  badge.style.display = count > 0 ? '' : 'none';
-  document.getElementById('btn-review').style.color = count > 0 ? '#f7b84f' : '#7a82a0';
-});
+// A confirm/defer/delete elsewhere broadcasts a count change. Keep the attention card
+// cheap always; ALSO refresh the full dashboard (recent activity + throughput) when the
+// change happens while Home is showing — so Recent Activity updates the moment a doc is
+// confirmed. Gated to the Home view (+ debounced) so it never re-queries during an import.
+let _dashRefreshTimer = null;
+function refreshDashboardIfHome() {
+  if (!document.getElementById('view-home')?.classList.contains('active')) return;
+  clearTimeout(_dashRefreshTimer);
+  _dashRefreshTimer = setTimeout(refreshDashboard, 350);
+}
+window.docusnap.onReviewCountChanged((count) => { applyReviewCount(count); refreshDashboardIfHome(); });
+window.docusnap.onDeferredCountChanged?.((count) => { _deferredCount = count || 0; updateAttention(); refreshDashboardIfHome(); });
 
 // ── Search button ─────────────────────────────────────────────────────────────
 document.getElementById('btn-search')?.addEventListener('click', () => {
@@ -523,6 +810,8 @@ const stuckMsg      = document.getElementById('stuck-msg');
 const btnStuckRetry = document.getElementById('btn-stuck-retry');
 
 function renderStuckChip(n) {
+  _stuckCount = n || 0;
+  updateAttention();   // keep the dashboard attention card in sync (cheap)
   if (!stuckChip) return;
   if (!n || n < 1) { stuckChip.style.display = 'none'; return; }
   stuckMsg.textContent = `${n} document${n === 1 ? "" : "s"} couldn't be read`;
@@ -603,12 +892,10 @@ function applyCurrentUser(user) {
   _userCanReview = (user.role !== 'readonly');
   if (!_userCanReview && btnReviewDocs) btnReviewDocs.classList.remove('visible');
 
-  // Launchpad Settings card mirrors the same Admin-only gate as the titlebar nav.
-  const lpSettings = document.getElementById('lp-settings');
-  if (lpSettings) lpSettings.style.display = (user.role === 'admin') ? '' : 'none';
-  // Teaching writes templates/learning — Admin+Edit, like Review (hidden for Read Only).
-  const lpTeach = document.getElementById('lp-teach');
-  if (lpTeach) lpTeach.style.display = (user.role === 'readonly') ? 'none' : '';
+  // Teaching writes templates/learning — Admin+Edit (hidden for Read Only).
+  const btnTeach = document.getElementById('btn-teach');
+  if (btnTeach) btnTeach.style.display = (user.role === 'readonly') ? 'none' : '';
+  refreshDashboard();   // reflect role in the dashboard's Open Review visibility
 }
 
 window.docusnap.authGetCurrentUser().then(applyCurrentUser);
@@ -619,20 +906,26 @@ window.docusnap.onAuthSessionChanged((user) => { if (user) applyCurrentUser(user
 // broadcasts theme-changed so every other open window follows live. The
 // Settings toggle stays in place as the canonical control.
 const btnThemeToggle = document.getElementById('menu-theme');
-function currentTheme() { return document.documentElement.getAttribute('data-theme') || 'light'; }
+// Quick Light⇄Dark flip (mode-aware): the named themes live in Settings → Appearance.
+function isDarkMode() { return document.documentElement.getAttribute('data-mode') === 'dark'; }
+const railDarkToggle = document.getElementById('rail-dark-toggle');
 function refreshThemeMenuLabel() {
   if (btnThemeToggle) btnThemeToggle.textContent =
-    currentTheme() === 'light' ? 'Switch to dark theme' : 'Switch to light theme';
+    isDarkMode() ? 'Switch to light theme' : 'Switch to dark theme';
+  if (railDarkToggle) railDarkToggle.checked = isDarkMode();
+}
+async function setLightDark(next) {   // canonical light/dark flip (shared by menu + rail toggle)
+  applyTheme(next);
+  refreshThemeMenuLabel();
+  try { await window.docusnap.setSetting('theme', next); } catch {}
 }
 refreshThemeMenuLabel();
 window.docusnap.onThemeChanged?.(() => refreshThemeMenuLabel());
-btnThemeToggle?.addEventListener('click', async () => {
-  const next = currentTheme() === 'light' ? 'dark' : 'light';
-  applyTheme(next);
-  refreshThemeMenuLabel();
+btnThemeToggle?.addEventListener('click', () => {
   userMenu.classList.remove('open');
-  try { await window.docusnap.setSetting('theme', next); } catch {}
+  setLightDark(isDarkMode() ? 'light' : 'dark');
 });
+railDarkToggle?.addEventListener('change', (e) => setLightDark(e.target.checked ? 'dark' : 'light'));
 
 userChip?.addEventListener('click', (e) => {
   e.stopPropagation();

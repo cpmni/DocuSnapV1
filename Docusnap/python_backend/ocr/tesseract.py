@@ -31,9 +31,15 @@ def pdf_to_images(filepath: Path, dpi: int = 300) -> list[Image.Image]:
     """Convert each PDF page to a PIL Image using pypdfium2."""
     doc    = pdfium.PdfDocument(str(filepath))
     images = []
-    for page in doc:
-        bitmap = page.render(scale=dpi / 72)
-        images.append(bitmap.to_pil())
+    try:
+        for page in doc:
+            bitmap = page.render(scale=dpi / 72)
+            images.append(bitmap.to_pil())
+            try: page.close()
+            except Exception: pass
+    finally:
+        try: doc.close()       # release the file handle promptly (see extract_text_and_images)
+        except Exception: pass
     return images
 
 
@@ -165,24 +171,34 @@ def extract_text_and_images(
     if ext == ".pdf":
         import pypdfium2 as pdfium
         from ocr import born_digital as _bd
+        # Close the document (and its pages) as soon as we are done rendering, so the
+        # source PDF's file handle is released immediately — otherwise pdfium keeps it
+        # open for the rest of the worker's life and the post-processing "move to
+        # Processed/" rename fails on a Windows file lock. The returned page images are
+        # independent PIL copies (.to_pil()), so they survive the close.
         doc = pdfium.PdfDocument(str(filepath))
-        for page in doc:
-            img = page.render(scale=300 / 72).to_pil()
-            pages.append(img)
-            if use_cache:
-                continue                       # reuse stored text; skip full-page OCR
-            layer_text = None
-            if born_digital:
-                try:
-                    ok, _n, _txt = _bd.assess_page(page)
-                    if ok:
-                        # Positional reading order (page_lines), not the layer's raw
-                        # char order, so label-adjacency keyword extraction matches OCR.
-                        layer_text = _bd.page_text(page)
-                except Exception:
-                    layer_text = None   # any text-layer failure -> OCR fallback
-            texts.append(layer_text if layer_text is not None
-                         else engine.read_page(img, enhance_params))
+        try:
+            for page in doc:
+                img = page.render(scale=300 / 72).to_pil()
+                pages.append(img)
+                if not use_cache:                  # use_cache -> reuse stored text, skip OCR
+                    layer_text = None
+                    if born_digital:
+                        try:
+                            ok, _n, _txt = _bd.assess_page(page)
+                            if ok:
+                                # Positional reading order (page_lines), not the layer's raw
+                                # char order, so label-adjacency keyword extraction matches OCR.
+                                layer_text = _bd.page_text(page)
+                        except Exception:
+                            layer_text = None   # any text-layer failure -> OCR fallback
+                    texts.append(layer_text if layer_text is not None
+                                 else engine.read_page(img, enhance_params))
+                try: page.close()
+                except Exception: pass
+        finally:
+            try: doc.close()
+            except Exception: pass
     else:
         img = Image.open(filepath)
         if img.mode not in ("RGB", "L"):

@@ -20,11 +20,29 @@
       background: var(--surface); border-bottom: 1px solid var(--border);
       flex-shrink: 0;
     }
-    #topbar .tb-btn { display: none; }   /* min/max/close handled by the native frame */
     .tb-left { display: flex; align-items: center; gap: 10px; }
+
+    /* Shared inline-SVG icon sizing (consumes the #i-* sprite via <use>).
+       stroke:currentColor → icons follow the theme text/accent automatically. */
+    .ico { width: 18px; height: 18px; flex: 0 0 auto; fill: none;
+      stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .ico-sm { width: 14px; height: 14px; }
+
+    /* Keyboard focus is visible on this window's own controls (they are not the
+       shared .btn component, so theme.css's focus rules don't reach them). */
+    .tb-nav-btn:focus-visible, .user-chip:focus-visible, .lp-btn:focus-visible,
+    .btn-run:focus-visible, .btn-stop:focus-visible, .btn-review-docs:focus-visible,
+    .folder-box:focus-visible, .btn-clear-stats:focus-visible {
+      outline: 2px solid var(--accent); outline-offset: 2px;
+    }
     .tb-logo { width: 20px; height: 20px; }
     .tb-title { font-size: 12px; font-weight: 500; letter-spacing: 0.08em; color: var(--muted); text-transform: uppercase; }
-    .tb-controls { display: flex; gap: 6px; -webkit-app-region: no-drag; }
+    .tb-controls { display: flex; align-items: center; gap: 8px; -webkit-app-region: no-drag; }
+    /* Uniform height so Help / ? / account sit on one horizontal line. The id-scoped
+       selectors beat helpmode.js's runtime-injected #help-mode-toggle rule. */
+    #topbar .tb-controls > .tb-nav-btn,
+    #topbar .tb-controls #help-mode-toggle,
+    #topbar .tb-controls .user-chip { height: 30px; }
     .tb-btn {
       width: 28px; height: 22px; border-radius: 4px; border: none; cursor: pointer;
       background: transparent; color: var(--muted); font-size: 14px;
@@ -34,14 +52,17 @@
     .tb-btn:hover { background: var(--surface2); color: var(--text); }
     .tb-btn.close:hover { background: var(--err); color: #fff; }
 
-    /* Titlebar nav buttons */
+    /* Toolbar nav buttons — a tidy command-bar group (consistent height, soft
+       hover fill, icon + label). */
     .tb-nav-btn {
-      padding: 7px 14px; border-radius: 9px; border: 1px solid var(--border2);
-      background: var(--surface); color: var(--muted); font-size: 12.5px; font-weight: 600; cursor: pointer;
-      display: flex; align-items: center; gap: 6px; font-family: inherit;
-      transition: all .15s;
+      height: 30px; padding: 0 12px; border-radius: var(--r-sm); border: 1px solid transparent;
+      background: transparent; color: var(--muted); font-size: 12.5px; font-weight: 600; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 6px; font-family: inherit;
+      transition: background .15s, color .15s, border-color .15s;
     }
-    .tb-nav-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .tb-nav-btn:hover { background: var(--accent-bg); color: var(--accent2); }
+    .tb-nav-btn:active { background: var(--surface3); }
+    .tb-nav-btn .ico-sm { width: 15px; height: 15px; }
     .tb-review-badge {
       background: var(--warn); color: var(--bg);
       border-radius: 10px; padding: 1px 6px;
@@ -101,18 +122,173 @@
     #app { display: flex; flex-direction: column; height: 100vh; }
     #body { display: flex; flex: 1; overflow: hidden; }
 
-    /* ── Sidebar ── */
-    #sidebar {
-      width: 240px; flex-shrink: 0;
+    /* ── Navigation rail ── */
+    #navrail {
+      width: 184px; flex-shrink: 0;
       background: var(--surface); border-right: 1px solid var(--border);
-      display: flex; flex-direction: column; padding: 20px 16px; gap: 16px;
+      display: flex; flex-direction: column; padding: 14px 12px; gap: 3px;
     }
-    .sidebar-label { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+    .rail-item {
+      display: flex; align-items: center; gap: 11px;
+      padding: 9px 12px; border-radius: var(--r-sm); border: 1px solid transparent;
+      background: transparent; color: var(--muted); cursor: pointer;
+      font-family: var(--sans); font-size: 13px; font-weight: 600; text-align: left;
+      transition: background .15s, color .15s;
+    }
+    .rail-item .ico { width: 18px; height: 18px; }
+    .rail-item span { flex: 1; }
+    .rail-item:hover { background: var(--surface2); color: var(--text); }
+    .rail-item.active { background: var(--accent-bg); color: var(--accent2); }
+    .rail-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .rail-badge {
+      flex: 0 0 auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--r-pill);
+      background: var(--warn); color: #fff; font-size: 10px; font-weight: 700;
+      display: none; align-items: center; justify-content: center;
+    }
+    .rail-badge.show { display: inline-flex; }
+    .rail-spacer { flex: 1; }
+    .rail-foot {
+      display: flex; align-items: center; gap: 7px; padding: 8px 10px;
+      border-radius: var(--r-sm); background: var(--ok-bg); border: 1px solid var(--ok-border);
+      color: var(--ok); font-size: 11px; font-weight: 600;
+    }
+    .rail-foot .ico-sm { width: 15px; height: 15px; flex: 0 0 auto; }
+    .rail-clock { padding: 4px 10px 10px; text-align: center; }
+    .rail-time { font-family: var(--mono); font-size: 22px; font-weight: 700; color: var(--text); line-height: 1.1; letter-spacing: .02em; }
+    .rail-date { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .rail-dark { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      margin-top: 6px; padding: 6px 10px; border-radius: var(--r-sm); cursor: pointer;
+      font-size: 12px; color: var(--muted); }
+    .rail-dark:hover { background: var(--surface2); color: var(--text); }
+
+    /* ── Content area + view router ── */
+    #content { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+    .view { display: none; flex: 1; min-height: 0; }
+    .view.active { display: flex; flex-direction: column; }
+    /* Centred, width-capped, responsive content column (not full-bleed). */
+    .view-inner { flex: 1; overflow: auto; width: 100%; max-width: clamp(1100px, 92vw, 1320px);
+      margin-inline: auto; padding: 26px clamp(24px, 4vw, 56px); display: flex; flex-direction: column; gap: 18px; }
+    .view-title { font-size: 20px; font-weight: 600; color: var(--text); letter-spacing: .01em; }
+
+    /* ── Dashboard ── */
+    /* auto-fit reflows tiles with NO empty cells as the visible-card count changes;
+       full-width banners opt in with .dash-span. */
+    .dash-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); align-items: stretch; }
+    .dash-span { grid-column: 1 / -1; }
+    /* Uniform info tiles: equal min-height + stretch so a row of small cards matches,
+       with the action (button / note) pinned to the bottom. Banners (.dash-span) opt out. */
+    .dash-grid > .dash-card:not(.dash-span) { min-height: 186px; }
+    .dash-card .dash-btn, .dash-card .dash-card-note { margin-top: auto; }
+    .dash-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+      box-shadow: var(--shadow); padding: 18px 20px; display: flex; flex-direction: column; gap: 12px;
+    }
+    .dash-card-head { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+    .dash-card-head.between { justify-content: space-between; }
+    .dash-card-head .ico-sm { width: 15px; height: 15px; color: var(--accent2); }
+    .dash-attn-body { display: flex; flex-direction: column; gap: 6px; }
+    .dash-attn-row { font-size: 13px; color: var(--text); }
+    .dash-attn-num { font-family: var(--mono); font-size: 17px; font-weight: 700; color: var(--accent2); margin-right: 4px; }
+    .dash-attn-num.err { color: var(--err); }
+    .dash-allclear { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ok); font-weight: 600; }
+    .dash-allclear .ico-sm { width: 15px; height: 15px; }
+    .dash-import-folder { font-family: var(--mono); font-size: 11.5px; color: var(--muted); word-break: break-all; line-height: 1.5; }
+    .dash-import-folder.set { color: var(--accent2); }
+    .dash-import-last { font-size: 12px; color: var(--muted); }
+    .dash-btn {
+      margin-top: auto; align-self: flex-start; display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 14px; border-radius: var(--r-sm); border: 1px solid var(--accent-border);
+      background: var(--accent-bg); color: var(--accent2); cursor: pointer;
+      font-family: var(--sans); font-size: 12.5px; font-weight: 600; transition: filter .15s;
+    }
+    .dash-btn:hover { filter: brightness(.97); }
+    .dash-btn .ico-sm { width: 14px; height: 14px; }
+    .dash-link { background: none; border: none; color: var(--accent2); cursor: pointer; font-family: var(--sans); font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; padding: 0; }
+    .dash-link .ico-sm { width: 13px; height: 13px; }
+    .dash-card.recent { gap: 8px; }
+    .recent-list { display: flex; flex-direction: column; }
+    .recent-row { display: grid; grid-template-columns: 1.6fr 1fr 1fr auto; gap: 12px; align-items: center;
+      padding: 9px 4px; border-top: 1px solid var(--border); font-size: 12.5px; }
+    .recent-row:first-child { border-top: none; }
+    .recent-co { color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .recent-meta { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+    .recent-empty { padding: 14px 4px; font-size: 12.5px; color: var(--muted); }
+
+    /* Setup checklist */
+    .dash-card.setup { border-left: 3px solid var(--accent); }
+    .setup-list { display: flex; flex-direction: column; gap: 2px; }
+    .setup-row { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-top: 1px solid var(--border); font-size: 13px; }
+    .setup-row:first-child { border-top: none; }
+    .setup-tick { width: 18px; height: 18px; flex: 0 0 auto; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      border: 1.5px solid var(--border2); color: transparent; }
+    .setup-row.done .setup-tick { border-color: var(--ok); background: var(--ok-bg); color: var(--ok); }
+    .setup-row.done .setup-label { color: var(--muted); text-decoration: line-through; }
+    .setup-tick .ico { width: 12px; height: 12px; }
+    .setup-label { flex: 1; color: var(--text); }
+    .setup-go { background: none; border: none; color: var(--accent2); font-family: var(--sans); font-size: 12px; font-weight: 600; cursor: pointer; }
+    .setup-row.done .setup-go { display: none; }
+
+    /* Trial banner — colour carries urgency: calm > 7 days, warn 3-7, crit <= 2. */
+    .dash-trial { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: var(--r);
+      border: 1px solid; box-shadow: var(--shadow); font-size: 13px; font-weight: 600; }
+    .dash-trial .ico-sm { width: 16px; height: 16px; flex: 0 0 auto; }
+    .dash-trial .trial-main { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+    .dash-trial .trial-text .n { font-family: var(--mono); font-size: 16px; font-weight: 700; }
+    .dash-trial .trial-bar { height: 5px; border-radius: var(--r-pill); background: var(--surface3); overflow: hidden; }
+    .dash-trial .trial-bar-fill { height: 100%; border-radius: var(--r-pill); transition: width .3s; }
+    .dash-trial.calm { background: var(--accent-bg); border-color: var(--accent-border); color: var(--accent2); }
+    .dash-trial.calm .trial-bar-fill { background: var(--accent); }
+    .dash-trial.warn { background: var(--warn-bg); border-color: var(--warn-border); color: var(--warn); }
+    .dash-trial.warn .trial-bar-fill { background: var(--warn); }
+    .dash-trial.crit { background: var(--err-bg); border-color: var(--err-border); color: var(--err); }
+    .dash-trial.crit .trial-bar-fill { background: var(--err); }
+    .dash-trial .dash-btn { margin: 0; flex: 0 0 auto; }
+
+    /* Documents-filed (stats) card — stats centred + divided, filling the tile. */
+    #dash-pulse .pulse-grid { flex: 1; align-items: center; }
+    .pulse-grid { display: flex; justify-content: space-between; gap: 6px; }
+    .pulse-stat { flex: 1; display: flex; flex-direction: column; gap: 5px; align-items: center; text-align: center; padding: 6px 4px; }
+    .pulse-stat + .pulse-stat { border-left: 1px solid var(--border); }
+    .pulse-val { font-family: var(--mono); font-size: 28px; font-weight: 700; color: var(--text); line-height: 1; }
+    .pulse-lbl { font-size: 10.5px; color: var(--muted); }
+
+    /* Learning + output cards */
+    .learning-body { font-size: 13px; color: var(--text); line-height: 1.6; }
+    .learning-body .n { font-family: var(--mono); font-weight: 700; color: var(--accent2); }
+    .dash-card-note { font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+    .dash-output-folder { font-family: var(--mono); font-size: 11.5px; color: var(--accent2); overflow-wrap: anywhere; word-break: normal; line-height: 1.5; }
+
+    /* Auto-import card */
+    .dash-watch-body { font-size: 12.5px; color: var(--text); line-height: 1.5; }
+    .dash-watch-body .wf-path { font-family: var(--mono); font-size: 11px; color: var(--muted); overflow-wrap: anywhere; word-break: normal; }
+    .dash-watch-body.on   { color: var(--ok); font-weight: 600; }
+    .dash-watch-body.off  { color: var(--muted); }
+    .dash-watch-body.warn { color: var(--warn); font-weight: 600; }
+    .dch-title { display: inline-flex; align-items: center; gap: 8px; }
+    /* Compact on/off switch for the auto-import card */
+    .dash-switch { position: relative; display: inline-block; width: 38px; height: 22px; flex: 0 0 auto; cursor: pointer; }
+    .dash-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+    .dash-switch-track { position: absolute; inset: 0; border-radius: var(--r-pill); background: var(--surface3); border: 1px solid var(--border2); transition: background .15s, border-color .15s; }
+    .dash-switch-track::before { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--surface); box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .15s; }
+    .dash-switch input:checked + .dash-switch-track { background: var(--ok); border-color: var(--ok); }
+    .dash-switch input:checked + .dash-switch-track::before { transform: translateX(16px); }
+    .dash-switch input:focus-visible + .dash-switch-track { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    /* ── Import view header ── */
+    .import-head {
+      flex-shrink: 0; display: grid; grid-template-columns: minmax(220px, 1.4fr) auto auto; gap: 20px;
+      align-items: start; padding: 18px 24px; border-bottom: 1px solid var(--border); background: var(--surface);
+    }
+    .import-actions { display: flex; flex-direction: column; gap: 8px; min-width: 200px; align-self: stretch; justify-content: center; }
+    .import-stats { display: flex; flex-direction: column; gap: 0; min-width: 220px; }
+    .results-empty { padding: 22px 16px; font-size: 12.5px; color: var(--muted); text-align: center; }
+    .sidebar-label { display: flex; align-items: center; gap: 6px; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+    .sidebar-label .ico-sm { stroke-width: 2.2; }
 
     .folder-box {
-      background: var(--bg); border: 1px dashed var(--border2);
-      border-radius: 8px; padding: 14px 12px; cursor: pointer;
-      transition: border-color .2s, background .2s; min-height: 72px;
+      background: var(--bg); border: 1px solid var(--border2);
+      border-radius: var(--r-sm); padding: 14px 12px; cursor: pointer;
+      transition: border-color .2s, background .2s, box-shadow .2s; min-height: 64px;
       display: flex; flex-direction: column; gap: 4px;
     }
     .folder-box:hover { border-color: var(--accent); background: var(--surface2); }
@@ -120,34 +296,40 @@
     .folder-path.set { color: var(--accent2); }
 
     .btn-run {
-      width: 100%; padding: 10px; border-radius: 7px; border: none;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      width: 100%; padding: 11px; border-radius: var(--r-sm); border: none;
       background: var(--accent); color: #fff; font-family: var(--sans);
-      font-size: 13px; font-weight: 500; cursor: pointer;
+      font-size: 13px; font-weight: 600; cursor: pointer;
       transition: opacity .2s, transform .1s;
     }
+    .btn-run .ico { width: 16px; height: 16px; }
     .btn-run:hover:not(:disabled) { opacity: .88; }
     .btn-run:active:not(:disabled) { transform: scale(.98); }
     .btn-run:disabled { opacity: .35; cursor: not-allowed; }
 
     .btn-stop {
-      display: none; width: 100%; padding: 8px; border-radius: 7px;
+      display: none; align-items: center; justify-content: center; gap: 8px;
+      width: 100%; padding: 9px; border-radius: var(--r-sm);
       border: 1px solid var(--err); background: transparent; color: var(--err);
-      font-family: var(--sans); font-size: 12px; font-weight: 500; cursor: pointer;
+      font-family: var(--sans); font-size: 12px; font-weight: 600; cursor: pointer;
       transition: background .15s; margin-top: 6px;
     }
+    .btn-stop .ico { width: 15px; height: 15px; }
     .btn-stop:hover { background: var(--err-bg); }
-    .btn-stop.visible { display: block; }
+    .btn-stop.visible { display: flex; }
 
     /* Appears below Process Documents once a batch finishes — jumps to Review. */
     .btn-review-docs {
-      display: none; width: 100%; padding: 9px; border-radius: 7px;
+      display: none; align-items: center; justify-content: center; gap: 8px;
+      width: 100%; padding: 10px; border-radius: var(--r-sm);
       border: 1px solid var(--ok-border); background: var(--ok-bg); color: var(--ok);
       font-family: var(--sans); font-size: 12.5px; font-weight: 600; cursor: pointer;
       transition: filter .15s, transform .1s; margin-top: 6px;
     }
+    .btn-review-docs .ico { width: 16px; height: 16px; }
     .btn-review-docs:hover  { filter: brightness(.97); }
     .btn-review-docs:active { transform: scale(.98); }
-    .btn-review-docs.visible { display: block; }
+    .btn-review-docs.visible { display: flex; }
 
     /* "Stuck docs" surface — documents that failed extraction (status='error') */
     .stuck-chip {
@@ -164,18 +346,41 @@
     .stuck-retry:hover    { background: var(--warn); color: #fff; }
     .stuck-retry:disabled { opacity: .5; cursor: default; }
 
-    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    .stat-card { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px 8px; text-align: center; }
-    .stat-val { font-family: var(--mono); font-size: 20px; font-weight: 500; color: var(--text); }
-    .stat-lbl { font-size: 10px; color: var(--muted); margin-top: 2px; letter-spacing: .05em; }
+    /* Stats: one prominent "processed of found" headline, OK/Errors as quiet
+       semantic chips (Bob's hierarchy fix — not four equal competing tiles). */
+    .stats-block {
+      background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-sm);
+      padding: 12px 14px; display: flex; flex-direction: column; gap: 10px;
+    }
+    .stat-primary { display: flex; align-items: baseline; gap: 8px; }
+    .stat-primary-val { font-family: var(--mono); font-size: 26px; font-weight: 600; color: var(--text); line-height: 1; }
+    .stat-primary-lbl { font-size: 11px; color: var(--muted); }
+    .stat-primary-lbl span { font-family: var(--mono); color: var(--text); }
+    .stat-chips { display: flex; gap: 8px; }
+    .stat-chip {
+      flex: 1; display: inline-flex; align-items: center; gap: 5px; justify-content: center;
+      padding: 4px 8px; border-radius: var(--r-pill); font-size: 11px;
+      border: 1px solid var(--border2); background: var(--surface); color: var(--muted);
+    }
+    .stat-chip-val { font-family: var(--mono); font-weight: 600; }
+    .stat-chip.ok  { color: var(--ok);  background: var(--ok-bg);  border-color: var(--ok-border); }
+    .stat-chip.err { color: var(--err); background: var(--err-bg); border-color: var(--err-border); }
     .btn-clear-stats {
-      width: 100%; margin-top: 8px; padding: 6px; border-radius: 6px;
+      width: 100%; margin-top: 8px; padding: 6px; border-radius: var(--r-sm);
       border: 1px solid var(--border2); background: transparent; color: var(--muted);
       font-family: var(--sans); font-size: 11px; cursor: pointer; transition: all .15s;
     }
     .btn-clear-stats:hover { border-color: var(--accent); color: var(--accent); }
-    .stat-card.ok .stat-val  { color: var(--ok); }
-    .stat-card.err .stat-val { color: var(--err); }
+
+    /* Footer — privacy as a quiet trust signal, not filler text. */
+    .side-foot { margin-top: auto; display: flex; flex-direction: column; gap: 8px; }
+    .side-foot-formats { font-size: 10px; color: var(--muted); line-height: 1.6; }
+    .side-foot-privacy {
+      display: flex; align-items: center; gap: 7px; padding: 8px 10px;
+      border-radius: var(--r-sm); background: var(--ok-bg); border: 1px solid var(--ok-border);
+      color: var(--ok); font-size: 10.5px; line-height: 1.4;
+    }
+    .side-foot-privacy .ico-sm { width: 15px; height: 15px; flex: 0 0 auto; }
 
     /* ── Main content ── */
     #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
@@ -188,35 +393,44 @@
       color: var(--muted);
     }
     .drop-icon  { font-size: 52px; opacity: .25; }
-    .drop-title { font-size: 16px; font-weight: 300; color: var(--muted); }
+    .drop-title { font-size: 16px; font-weight: 500; color: var(--muted); }
     .drop-sub   { font-size: 12px; color: var(--border2); }
 
-    .launchpad { width: 100%; max-width: 760px; padding: 0 40px; display: flex; flex-direction: column; gap: 26px; }
+    .launchpad { width: 100%; max-width: 720px; padding: 0 40px; display: flex; flex-direction: column; gap: 24px; }
     .lp-head { text-align: center; }
-    .lp-title2 { font-size: 22px; font-weight: 300; color: var(--text); letter-spacing: .02em; }
+    .lp-title2 { font-size: 19px; font-weight: 600; color: var(--text); letter-spacing: .01em; }
     .lp-sub2 { font-size: 12px; color: var(--muted); margin-top: 6px; }
     .lp-grid {
-      display: grid; grid-template-columns: 1.5fr 1fr; grid-template-rows: auto auto; gap: 16px;
+      display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
     }
+    /* Launchpad tiles use the shared card surface + soft elevation (the office-app
+       look) rather than flat bordered boxes. Icons sit in a tinted tile. */
     .lp-btn {
-      display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 8px;
-      padding: 22px; border-radius: 14px; cursor: pointer;
-      border: 1px solid var(--border2); background: var(--surface);
+      display: flex; flex-direction: column; align-items: flex-start; gap: 12px;
+      padding: 18px 20px; border-radius: var(--r); cursor: pointer;
+      border: 1px solid var(--border); background: var(--surface); box-shadow: var(--shadow);
       color: var(--text); font-family: var(--sans); text-align: left;
-      transition: border-color .15s, background .15s, transform .1s;
+      transition: border-color .15s, box-shadow .15s, transform .1s;
     }
-    .lp-btn:hover  { border-color: var(--accent); background: var(--surface2); }
-    .lp-btn:active { transform: scale(.99); }
-    .lp-ico  { font-size: 30px; line-height: 1; }
-    .lp-name { font-size: 16px; font-weight: 600; }
-    .lp-desc { font-size: 11px; color: var(--muted); line-height: 1.5; }
+    .lp-btn:hover  { border-color: var(--accent); box-shadow: 0 8px 22px rgba(20,40,80,.12); transform: translateY(-1px); }
+    .lp-btn:active { transform: translateY(0); }
+    .lp-ico {
+      width: 40px; height: 40px; border-radius: 10px; flex: 0 0 auto;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--surface3); color: var(--muted);
+    }
+    .lp-ico .ico { width: 22px; height: 22px; }
+    .lp-text { display: flex; flex-direction: column; gap: 4px; }
+    .lp-name { font-size: 14.5px; font-weight: 600; }
+    .lp-desc { font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+    /* Primary action: full-width horizontal card, accent cue (left bar + tinted
+       icon) — no gradient wash. */
     .lp-import {
-      grid-row: 1 / span 2;
-      background: linear-gradient(160deg, var(--accent-bg), var(--surface));
-      border-color: var(--accent-border);
+      grid-column: 1 / -1; flex-direction: row; align-items: center; gap: 16px;
+      border-left: 3px solid var(--accent);
     }
-    .lp-import:hover { border-color: var(--accent); }
-    .lp-import .lp-name { color: var(--accent2); }
+    .lp-import .lp-ico  { background: var(--accent-bg); color: var(--accent2); }
+    .lp-import .lp-name { font-size: 15.5px; color: var(--accent2); }
 
     /* Arrow cue pointing at the sidebar's Pick-Folder control */
     .lp-folder-cue {
@@ -329,9 +543,10 @@
     .stage.done { border-color: var(--ok-border); color: var(--ok); background: var(--ok-bg); animation: none; }
     @keyframes pulse-stage { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: var(--bg); }
-    ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+    ::-webkit-scrollbar { width: 11px; height: 11px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 6px; border: 3px solid var(--bg); background-clip: padding-box; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--muted); background-clip: padding-box; border: 3px solid var(--bg); }
 
     /* ── About modal ── */
     .about-overlay {
@@ -364,6 +579,27 @@
   </style>
 </head>
 <body>
+
+<!-- Inline icon sprite (Lucide-style, same-document so it's CSP-safe and offline;
+     uses currentColor so one set works in both light and dark themes). -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-teach" viewBox="0 0 24 24"><path d="M22 10 12 5 2 10l10 5 10-5Z"/><path d="M6 12v5c0 1 2.7 3 6 3s6-2 6-3v-5"/><path d="M22 10v6"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.2V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.2"/></symbol>
+  <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M19 14l.8 2 .2.8.8.2 2 .8-2 .8-.8.2-.2.8-.8 2-.8-2-.2-.8-2-.8 2-.8.8-.2.2-.8z"/></symbol>
+</svg>
+
 <div id="app">
 
   <div id="topbar">
@@ -371,12 +607,7 @@
       <img class="tb-logo logo-light" src="../../../assets/logo-mark.svg" alt="Scan Finder">
       <img class="tb-logo logo-dark" src="../../../assets/logo-mark-dark.svg" alt="" aria-hidden="true">
       <span class="tb-title">ScanFinder</span>
-      <button id="btn-review" class="tb-nav-btn" style="margin-left:12px;" data-help-key="review">
-        Review Queue <span id="review-badge" class="tb-review-badge">0</span>
-      </button>
-      <button id="btn-search" class="tb-nav-btn" data-help-key="search">Search</button>
-      <button id="btn-settings" class="tb-nav-btn" data-help-key="settings">&#9881; Settings</button>
-      <span id="mode-badge" class="tb-mode-badge" style="margin-left:8px;" data-help-key="mode">FAST</span>
+      <span id="mode-badge" class="tb-mode-badge" style="margin-left:12px;" data-help-key="mode">FAST</span>
     </div>
     <div class="tb-controls">
       <button class="tb-nav-btn help-guide-btn" id="btn-help-guide" title="Open the user guide"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>Help</button>
@@ -395,98 +626,222 @@
           <button class="user-menu-item danger" id="menu-sign-out">Sign out</button>
         </div>
       </div>
-      <button class="tb-btn" id="btn-min" title="Minimise">&#8211;</button>
-      <button class="tb-btn" id="btn-max" title="Maximise">&#9633;</button>
-      <button class="tb-btn close" id="btn-close" title="Close">&#215;</button>
     </div>
   </div>
 
   <div id="body">
 
-    <div id="sidebar">
-      <div>
-        <div class="sidebar-label">Source Folder</div>
-        <div class="folder-box cue" id="folder-box" title="Click to choose folder" data-help-key="source-folder">
-          <span class="folder-path" id="folder-display">Click to select a folder&hellip;</span>
-        </div>
+    <!-- Left navigation rail — the single source of navigation. Home/Import switch
+         the in-page view; Review/Search/Teach/Settings open the existing windows. -->
+    <nav id="navrail" aria-label="Main navigation">
+      <button class="rail-item active" id="btn-home" data-view="home" data-help-key="home">
+        <svg class="ico" aria-hidden="true"><use href="#i-home"/></svg><span>Home</span>
+      </button>
+      <button class="rail-item" id="btn-import" data-view="import" data-help-key="begin-import">
+        <svg class="ico" aria-hidden="true"><use href="#i-folder"/></svg><span>Import</span>
+      </button>
+      <button class="rail-item" id="btn-review" data-help-key="review">
+        <svg class="ico" aria-hidden="true"><use href="#i-inbox"/></svg><span>Review</span>
+        <span id="review-badge" class="rail-badge">0</span>
+      </button>
+      <button class="rail-item" id="btn-search" data-help-key="search">
+        <svg class="ico" aria-hidden="true"><use href="#i-search"/></svg><span>Search</span>
+      </button>
+      <button class="rail-item" id="btn-teach" data-help-key="teach">
+        <svg class="ico" aria-hidden="true"><use href="#i-teach"/></svg><span>Teach</span>
+      </button>
+      <button class="rail-item" id="btn-settings" data-help-key="settings">
+        <svg class="ico" aria-hidden="true"><use href="#i-settings"/></svg><span>Settings</span>
+      </button>
+
+      <div class="rail-spacer"></div>
+
+      <div class="rail-clock">
+        <div class="rail-time" id="rail-time">--:--</div>
+        <div class="rail-date" id="rail-date">&mdash;</div>
       </div>
 
-      <button class="btn-run" id="btn-run" disabled data-help-key="process">&#9654;&nbsp; Process Documents</button>
-      <button class="btn-stop" id="btn-stop">&#9632; Stop Processing</button>
-      <button class="btn-review-docs" id="btn-review-docs">&#10003;&nbsp; Review your documents</button>
-      <div class="stuck-chip" id="stuck-chip" style="display:none;">
-        <span class="stuck-msg" id="stuck-msg"></span>
-        <button class="stuck-retry" id="btn-stuck-retry">Try again</button>
+      <div class="rail-foot" title="All processing is local. No data leaves your PC.">
+        <svg class="ico ico-sm" aria-hidden="true"><use href="#i-shield"/></svg>
+        <span>Local only</span>
       </div>
 
-      <div>
-        <div class="sidebar-label">Session Stats</div>
-        <div class="stats-grid">
-          <div class="stat-card"><div class="stat-val" id="stat-total">0</div><div class="stat-lbl">Found</div></div>
-          <div class="stat-card"><div class="stat-val" id="stat-done">0</div><div class="stat-lbl">Done</div></div>
-          <div class="stat-card ok"><div class="stat-val" id="stat-ok">0</div><div class="stat-lbl">OK</div></div>
-          <div class="stat-card err"><div class="stat-val" id="stat-err">0</div><div class="stat-lbl">Errors</div></div>
-        </div>
-        <button class="btn-clear-stats" id="btn-clear-stats" title="Reset the session counters to zero">Clear Stats</button>
-      </div>
+      <label class="rail-dark" title="Toggle dark mode">
+        <span>Dark mode</span>
+        <span class="dash-switch"><input type="checkbox" id="rail-dark-toggle"><span class="dash-switch-track"></span></span>
+      </label>
+    </nav>
 
-      <div style="margin-top:auto; font-size:10px; color:var(--muted); line-height:1.7;">
-        Supported formats:<br>PDF &bull; JPG &bull; PNG &bull; TIFF &bull; BMP<br><br>
-        All processing is done<br>locally on this machine.<br>No data leaves your PC.
-      </div>
-    </div>
+    <!-- Content area — views swapped by the rail. -->
+    <main id="content">
 
-    <div id="main">
+      <!-- ── HOME / dashboard ──────────────────────────────────────────────── -->
+      <section class="view active" id="view-home">
+        <div class="view-inner">
+          <h1 class="view-title">Home</h1>
 
-      <div id="dropzone">
-        <div class="lp-folder-cue">
-          <svg viewBox="0 0 40 24" fill="none">
-            <path d="M38 12 H6" stroke="#6ea8ff" stroke-width="2" stroke-linecap="round"/>
-            <path d="M12 6 L4 12 L12 18" stroke="#6ea8ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span>Pick your source folder</span>
-        </div>
+          <!-- One auto-fit grid: full-width banners (.dash-span) stack; info tiles
+               reflow with no empty cells as the visible-card count changes. -->
+          <div class="dash-grid">
 
-        <div class="launchpad" id="launchpad">
-          <div class="lp-head">
-            <img class="lp-logo logo-light" src="../../../assets/logo-lockup.svg" alt="Scan Finder" style="width:150px;height:auto;margin-bottom:6px;">
-            <img class="lp-logo logo-dark" src="../../../assets/logo-lockup-dark.svg" alt="" aria-hidden="true" style="width:150px;height:auto;margin-bottom:6px;">
-            <div class="lp-sub2">Choose what you&rsquo;d like to do</div>
+            <!-- Trial banner (full width; only while on trial) -->
+            <div class="dash-trial dash-span calm" id="dash-trial" style="display:none;">
+              <svg class="ico ico-sm" aria-hidden="true"><use href="#i-clock"/></svg>
+              <div class="trial-main">
+                <span class="trial-text" id="dash-trial-text">Trial</span>
+                <div class="trial-bar"><div class="trial-bar-fill" id="dash-trial-fill"></div></div>
+              </div>
+              <button class="dash-btn primary" id="dash-trial-activate">Activate</button>
+            </div>
+
+            <!-- Setup checklist (full width; first-runs only) -->
+            <div class="dash-card setup dash-span" id="dash-setup" style="display:none;">
+              <div class="dash-card-head">
+                <svg class="ico ico-sm" aria-hidden="true"><use href="#i-check"/></svg>
+                <span>Finish setting up</span>
+              </div>
+              <div class="setup-list" id="setup-list"></div>
+            </div>
+
+            <!-- Needs your attention -->
+            <div class="dash-card" id="dash-attention">
+              <div class="dash-card-head">
+                <svg class="ico ico-sm" aria-hidden="true"><use href="#i-alert"/></svg>
+                <span>Needs your attention</span>
+              </div>
+              <div class="dash-attn-body" id="dash-attn-body">
+                <div class="dash-attn-row"><span class="dash-attn-num" id="dash-review-count">0</span> waiting in the review queue</div>
+                <div class="dash-attn-row" id="dash-deferred-row" style="display:none;"><span class="dash-attn-num" id="dash-deferred-count">0</span> deferred for later</div>
+                <div class="dash-attn-row" id="dash-stuck-row" style="display:none;"><span class="dash-attn-num err" id="dash-stuck-count">0</span> couldn&rsquo;t be read</div>
+              </div>
+              <div class="dash-allclear" id="dash-allclear" style="display:none;">
+                <svg class="ico ico-sm" aria-hidden="true"><use href="#i-check"/></svg> You&rsquo;re all caught up
+              </div>
+              <button class="dash-btn primary" id="dash-open-review">
+                Open Review <svg class="ico ico-sm" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+              </button>
+            </div>
+
+            <!-- Today's pulse (stats) -->
+            <div class="dash-card" id="dash-pulse">
+              <div class="dash-card-head">
+                <svg class="ico ico-sm" aria-hidden="true"><use href="#i-check"/></svg>
+                <span>Documents filed</span>
+              </div>
+              <div class="pulse-grid">
+                <div class="pulse-stat"><span class="pulse-val" id="stat-today">0</span><span class="pulse-lbl">filed today</span></div>
+                <div class="pulse-stat"><span class="pulse-val" id="stat-week">0</span><span class="pulse-lbl">this week</span></div>
+                <div class="pulse-stat"><span class="pulse-val" id="stat-month">0</span><span class="pulse-lbl">this month</span></div>
+              </div>
+            </div>
+
+            <!-- Import -->
+            <div class="dash-card" id="dash-import">
+              <div class="dash-card-head">
+                <svg class="ico ico-sm" aria-hidden="true"><use href="#i-folder"/></svg>
+                <span>Import documents</span>
+              </div>
+              <div class="dash-import-folder" id="dash-folder">No source folder chosen yet.</div>
+              <div class="dash-import-last" id="dash-last-run"></div>
+              <button class="dash-btn primary" id="dash-go-import">
+                Go to Import <svg class="ico ico-sm" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+              </button>
+            </div>
+
+            <!-- Auto-import (admin only) -->
+            <div class="dash-card" id="dash-watch" style="display:none;">
+              <div class="dash-card-head between">
+                <span class="dch-title"><svg class="ico ico-sm" aria-hidden="true"><use href="#i-inbox"/></svg> Auto-import</span>
+                <label class="dash-switch" title="Turn auto-import on or off">
+                  <input type="checkbox" id="dash-watch-toggle"><span class="dash-switch-track"></span>
+                </label>
+              </div>
+              <div class="dash-watch-body" id="dash-watch-body">&hellip;</div>
+              <button class="dash-btn" id="dash-watch-config">
+                <span id="dash-watch-btn-label">Choose folder</span> <svg class="ico ico-sm" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+              </button>
+            </div>
+
+            <!-- Getting smarter (learning inventory) -->
+            <div class="dash-card" id="dash-learning">
+              <div class="dash-card-head">
+                <svg class="ico ico-sm" aria-hidden="true"><use href="#i-sparkles"/></svg>
+                <span>Getting smarter</span>
+              </div>
+              <div class="learning-body" id="dash-learning-body">&hellip;</div>
+              <div class="dash-card-note">Accuracy improves every time you confirm a document.</div>
+            </div>
+
+            <!-- Where your files go (output folder) -->
+            <div class="dash-card" id="dash-output">
+              <div class="dash-card-head">
+                <svg class="ico ico-sm" aria-hidden="true"><use href="#i-folder"/></svg>
+                <span>Where your files go</span>
+              </div>
+              <div class="dash-output-folder" id="dash-output-folder">&hellip;</div>
+              <button class="dash-btn" id="dash-open-output">
+                Open folder <svg class="ico ico-sm" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+              </button>
+            </div>
+
+            <!-- Recent activity (full width) -->
+            <div class="dash-card recent dash-span">
+              <div class="dash-card-head between">
+                <span>Recent activity</span>
+                <button class="dash-link" id="dash-open-search">Search <svg class="ico ico-sm" aria-hidden="true"><use href="#i-arrow-right"/></svg></button>
+              </div>
+              <div id="recent-list" class="recent-list">
+                <div class="recent-empty">No documents filed yet.</div>
+              </div>
+            </div>
+
           </div>
-          <div class="lp-grid">
-            <button class="lp-btn lp-import" id="lp-import" data-help-key="begin-import">
-              <span class="lp-ico">&#128194;</span>
-              <span class="lp-name">Begin Import</span>
-              <span class="lp-desc">Pick a source folder and process its documents</span>
+        </div>
+      </section>
+
+      <!-- ── IMPORT workspace ──────────────────────────────────────────────── -->
+      <section class="view" id="view-import">
+
+        <div class="import-head">
+          <div class="import-source">
+            <div class="sidebar-label"><svg class="ico ico-sm" aria-hidden="true"><use href="#i-folder"/></svg> Source folder</div>
+            <div class="folder-box cue" id="folder-box" title="Click to choose folder" data-help-key="source-folder">
+              <span class="folder-path" id="folder-display">Click to select a folder&hellip;</span>
+            </div>
+          </div>
+          <div class="import-actions">
+            <button class="btn-run" id="btn-run" disabled data-help-key="process">
+              <svg class="ico" aria-hidden="true"><use href="#i-play"/></svg><span class="btn-label">Process Documents</span>
             </button>
-            <button class="lp-btn" id="lp-search" data-help-key="search">
-              <span class="lp-ico">&#128269;</span>
-              <span class="lp-name">Search</span>
-              <span class="lp-desc">Find documents you&rsquo;ve already filed</span>
+            <button class="btn-stop" id="btn-stop">
+              <svg class="ico" aria-hidden="true"><use href="#i-stop"/></svg><span class="btn-label">Stop Processing</span>
             </button>
-            <button class="lp-btn" id="lp-settings" data-help-key="settings">
-              <span class="lp-ico">&#9881;</span>
-              <span class="lp-name">Settings</span>
-              <span class="lp-desc">Document types, fields &amp; preferences</span>
-            </button>
-            <button class="lp-btn" id="lp-teach" data-help-key="teach">
-              <span class="lp-ico">&#127891;</span>
-              <span class="lp-name">Teach a document</span>
-              <span class="lp-desc">Guide Scan Finder to learn a new layout</span>
-            </button>
-            <button class="lp-btn" id="lp-help" data-help-key="user-guide">
-              <span class="lp-ico">&#10067;</span>
-              <span class="lp-name">User guide</span>
-              <span class="lp-desc">Learn how Scan Finder works</span>
-            </button>
+            <div class="stuck-chip" id="stuck-chip" style="display:none;">
+              <span class="stuck-msg" id="stuck-msg"></span>
+              <button class="stuck-retry" id="btn-stuck-retry">Try again</button>
+            </div>
+          </div>
+          <div class="import-stats">
+            <div class="stats-block">
+              <div class="stat-primary">
+                <span class="stat-primary-val" id="stat-done">0</span>
+                <span class="stat-primary-lbl">processed of <span id="stat-total">0</span> found</span>
+              </div>
+              <div class="stat-chips">
+                <span class="stat-chip ok"><span class="stat-chip-val" id="stat-ok">0</span> OK</span>
+                <span class="stat-chip err"><span class="stat-chip-val" id="stat-err">0</span> Errors</span>
+              </div>
+            </div>
+            <button class="btn-clear-stats" id="btn-clear-stats" title="Reset the session counters to zero">Clear Stats</button>
           </div>
         </div>
-      </div>
 
-      <div id="results-panel">
+      <div id="results-panel" class="visible">
         <div class="results-toolbar">
           <span class="results-title">Processed Documents</span>
-          <button class="btn-clear" id="btn-clear">&larr; Back</button>
+          <button class="btn-review-docs" id="btn-review-docs">
+            <svg class="ico" aria-hidden="true"><use href="#i-check"/></svg><span class="btn-label">Review your documents</span>
+          </button>
         </div>
         <div id="table-wrap">
           <table>
@@ -497,11 +852,11 @@
             </thead>
             <tbody id="table-body"></tbody>
           </table>
+          <div class="results-empty" id="results-empty">No documents processed yet. Pick a source folder above and press Process.</div>
         </div>
       </div>
 
-      <!-- Prominent processing progress (default view). The full log and the results
-           table are one click away; the bar + current file is what's shown by default. -->
+      <!-- Live processing progress strip — coexists with the results table. -->
       <div id="progress-section">
         <div id="progress-row">
           <div id="progress-bar-wrap"><div id="progress-bar"></div></div>
@@ -512,12 +867,12 @@
           <span id="progress-text" title="">—</span>
           <span style="flex:1"></span>
           <button id="btn-toggle-log" class="btn-mini">View log</button>
-          <button id="btn-view-results" class="btn-mini" style="display:none;">View results</button>
         </div>
         <div id="log-output"></div>
       </div>
 
-    </div>
+      </section>
+    </main>
   </div>
 </div>
   <!-- About modal -->

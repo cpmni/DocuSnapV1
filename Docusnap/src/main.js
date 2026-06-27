@@ -32,6 +32,10 @@ try {
   if (fs.existsSync(_legacyDataDir)) _resolvedUserData = _legacyDataDir;
 }
 app.setPath('userData', _resolvedUserData);
+// Brand the app name so native JS dialogs (confirm/alert) are headed "ScanFinder", not the
+// package name "docusnap". Safe: userData is explicitly setPath'd above, so this never
+// moves the on-disk data folder.
+app.setName('ScanFinder');
 
 // ── GPU compositing fix (windowed-mode ghosting/stutter) ──────────────────────
 // Some GPU/driver + window-size combinations tore/blended stale frames in the
@@ -131,6 +135,7 @@ let pendingReviewDocId = null;
 // Template Manager") — pulled by the settings renderer after loadTemplates(), or
 // delivered immediately if the settings window is already open.
 let pendingSettingsTemplateId = null;
+let pendingSettingsSection = null;
 // Same pattern for the teaching wizard opened targeted at a just-scanned doc.
 let pendingTeachDocId = null;
 
@@ -342,8 +347,13 @@ function _boundsVisible(b) {
 // Open maximized by default ("fullscreen"); once the user restores/resizes a
 // window, remember that and honour it next time. Fixed dialogs (resizable:false,
 // e.g. login/licence/onboarding) are left exactly as defined.
+// Windows that should ALWAYS open maximized ("fullscreen"), ignoring any remembered
+// smaller size — the work surfaces the user asked to default to fullscreen.
+const FORCE_MAXIMIZE = new Set(['settings', 'teach', 'review', 'search']);
+
 function applyWindowState(win, name, options) {
   if (options.resizable === false) return;
+  if (FORCE_MAXIMIZE.has(name)) { win.maximize(); return; }   // always open maximized; don't restore a smaller size
   const st = loadWinStates()[name];
   if (st && st.userSized && !st.maximized && st.bounds && _boundsVisible(st.bounds)) win.setBounds(st.bounds);
   else win.maximize();   // no saved size, or it would land off-screen → maximize
@@ -956,6 +966,23 @@ app.whenReady().then(() => {
     const id = pendingSettingsTemplateId;
     pendingSettingsTemplateId = null;
     return id;
+  });
+
+  // Open Settings focused on a specific section/tab (e.g. Activate → 'licensing').
+  ipcMain.on('open-settings-window-at-section', (_e, section) => {
+    if (!authModule.hasRole('admin')) return;
+    const alreadyOpen = !!windows['settings'];
+    pendingSettingsSection = section;
+    createWindow('settings', { width: 1320, height: 820, minWidth: 1280, minHeight: 660 });
+    if (alreadyOpen) {
+      safeSend(windows['settings']?.webContents, 'navigate-to-section', section);
+      pendingSettingsSection = null;
+    }
+  });
+  ipcMain.handle('get-settings-section-target', () => {
+    const s = pendingSettingsSection;
+    pendingSettingsSection = null;
+    return s;
   });
   ipcMain.on('open-search-window', () => {
     if (!authModule.getCurrentUser()) return;

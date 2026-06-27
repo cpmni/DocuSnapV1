@@ -71,6 +71,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   windowClose:        () => ipcRenderer.send('window-close'),
   showInExplorer:     (p) => ipcRenderer.send('show-in-explorer', p),
   openFile:           (p) => ipcRenderer.send('open-file', p),
+  openFolder:         (p) => ipcRenderer.send('open-folder', p),
 
   // ── Window navigation ────────────────────────────────────────────────────────
   openReviewWindow:    ()       => ipcRenderer.send('open-review-window'),
@@ -79,6 +80,9 @@ contextBridge.exposeInMainWorld('docusnap', {
   openSettingsWindowAtTemplate: (templateId) => ipcRenderer.send('open-settings-window-at-template', templateId),
   getSettingsTemplateTarget:    ()           => ipcRenderer.invoke('get-settings-template-target'),
   onNavigateToTemplate:         (cb)         => ipcRenderer.on('navigate-to-template', (_e, id) => cb(id)),
+  openSettingsWindowAtSection:  (section)    => ipcRenderer.send('open-settings-window-at-section', section),
+  getSettingsSectionTarget:     ()           => ipcRenderer.invoke('get-settings-section-target'),
+  onNavigateToSection:          (cb)         => ipcRenderer.on('navigate-to-section', (_e, s) => cb(s)),
   openSearchWindow:    ()       => ipcRenderer.send('open-search-window'),
   getReviewTarget:     ()       => ipcRenderer.invoke('get-review-target'),
   onNavigateToDoc:     (cb)     => ipcRenderer.on('navigate-to-doc', (_e, id) => cb(id)),
@@ -257,6 +261,7 @@ contextBridge.exposeInMainWorld('docusnap', {
 
   // ── Events from main → renderer ──────────────────────────────────────────────
   onThemeChanged:        (cb) => ipcRenderer.on('theme-changed',          (_e, t) => cb(t)),
+  onDocTypesChanged:     (cb) => ipcRenderer.on('doc-types-changed',      ()      => cb()),
   onReviewCountChanged:  (cb) => ipcRenderer.on('review-count-changed',  (_e, n) => cb(n)),
   onDeferredCountChanged:(cb) => ipcRenderer.on('deferred-count-changed', (_e, n) => cb(n)),
   onReprocessProgress:   (cb) => ipcRenderer.on('reprocess-progress',    (_e, m) => cb(m)),

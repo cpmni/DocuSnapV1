@@ -551,6 +551,7 @@ function renderQueueList() {
           <span class="qi-name" title="${escHtml(doc.original_filename)}">${escHtml(doc.original_filename)}</span>
           <div style="display:flex; align-items:center; gap:6px;">
             <span class="qi-supplier" style="flex:1; min-width:0;">${escHtml(doc.supplier_name || '—')}</span>
+            ${doc.page_count > 1 ? `<span class="qi-multipage" title="Multi-page document (${doc.page_count} pages)" style="flex-shrink:0;display:inline-flex;color:var(--muted)"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V6a2 2 0 0 1 2-2h10"/></svg></span>` : ''}
             ${confBadge}
           </div>
         </div>
@@ -655,6 +656,7 @@ async function _selectDoc(doc, { fieldsOnly = false } = {}) {
   pendingAnchors = {};   // discard any un-confirmed ⊕ teach when the doc changes
   pendingFieldRules = {}; // ...and any un-confirmed field cleanup rule
   lastTeachCtx = null; hideAnchorReadout();
+  { const c = document.getElementById('teach-cta'); if (c) { c.style.display = 'none'; c.innerHTML = ''; } }  // clear prior doc's CTA until this doc's recheck answers
 
   document.querySelectorAll('.queue-item').forEach(el => {
     el.classList.toggle('active', parseInt(el.dataset.id) === doc.id);
@@ -721,11 +723,17 @@ async function _selectDoc(doc, { fieldsOnly = false } = {}) {
   if (!fieldsOnly && !doc.template_id) {
     window.docusnap.checkTemplateMatch(doc.id).then(result => {
       if (currentDoc?.id !== doc.id) return; // user switched docs while pending
-      if (result?.matched) {
-        renderedDoc._templateRecheck = result;
-        renderExtractionStatus(renderedDoc);
-      }
-    }).catch(e => console.warn('checkTemplateMatch failed:', e.message));
+      // Record the recheck OUTCOME (matched or not) + a done flag, then re-render —
+      // the "Teach this document" CTA holds until this de-dupe check has answered, so it
+      // can't flash then flip to "Update existing" (see renderTeachCta).
+      renderedDoc._templateRecheck     = result || { matched: false };
+      renderedDoc._templateRecheckDone = true;
+      renderExtractionStatus(renderedDoc);
+    }).catch(e => {
+      console.warn('checkTemplateMatch failed:', e.message);
+      renderedDoc._templateRecheckDone = true;
+      renderExtractionStatus(renderedDoc);
+    });
   }
 }
 
@@ -836,7 +844,10 @@ function renderExtractionStatus(doc) {
     lbl.className   = 'ext-status-lbl';
     lbl.textContent = labelText;
     d.appendChild(lbl);
-    pills.forEach(p => d.appendChild(p));
+    const wrap = document.createElement('div');   // stack the pills vertically, not side by side
+    wrap.className = 'ext-status-pills';
+    pills.forEach(p => wrap.appendChild(p));
+    d.appendChild(wrap);
     return d;
   };
 
@@ -844,6 +855,64 @@ function renderExtractionStatus(doc) {
   const extPills = [pill(extLabel, extCls)];
   if (mappingN > 0) extPills.push(pill(`${mappingN} mapping${mappingN === 1 ? '' : 's'}`, 'ok'));
   el.appendChild(row('Extraction:', ...extPills));
+
+  renderTeachCta(doc);   // the "Teach this document" CTA above the preview keys off the SAME id state
+}
+
+// "Teach this document" CTA above the preview pane. Gated so a SEEN document can't be
+// re-taught into a duplicate (Bob's tiers): on a template → nothing; a template exists
+// but drifted → "Update existing" instead; truly unseen → Teach (with a one-time confirm
+// only when the sender is recognised). Held until the template recheck has answered.
+function renderTeachCta(doc) {
+  const cta = document.getElementById('teach-cta');
+  if (!cta) return;
+  cta.style.display = 'none';
+  cta.innerHTML = '';
+  cta.className = 'teach-cta';
+  if (!doc || !canEdit) return;          // teaching is Admin/Edit only
+  if (doc.template_id) return;           // Tier A — already on a template
+
+  const done    = !!doc._templateRecheckDone;
+  const matched = !!(doc._templateRecheck && doc._templateRecheck.matched);
+  if (!done) return;                     // recheck pending — show nothing (anti-flash)
+
+  // A template for this layout EXISTS but didn't match this scan (drift). Show NOTHING:
+  // teaching would duplicate it, and a reprocess (once a few similar docs are confirmed)
+  // usually makes it match — so there's no action the operator needs to take here.
+  if (matched) return;
+
+  // If the doc is already being read by a LEARNED method (keyword patterns, learned
+  // anchors, or template mappings), it isn't "unseen" — don't offer to teach it. A doc
+  // taught with field targets can extract via patterns/anchors without a template_id.
+  const learned = (doc.extractions || [])
+    .map(e => (e.extraction_method || '').split('+')[0].trim().toLowerCase())
+    .some(m => m === 'keyword' || m.startsWith('anchor') || m.startsWith('template_mapping'));
+  if (learned) return;
+
+  // Tier C/D — no template, recheck clean, nothing learned read it → offer to teach.
+  const hasLogo = !!doc.logo_phash;
+  const hasKw   = !!(doc.keyword_fingerprint && doc.keyword_fingerprint !== 'null');
+  const known   = hasLogo || hasKw;      // Tier C (recognised sender) vs D (cold)
+  cta.innerHTML =
+    `<button class="teach-cta-btn primary" id="teach-cta-go">` +
+      `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px"><path d="M22 10 12 5 2 10l10 5 10-5Z"/><path d="M6 12v5c0 1 2.7 3 6 3s6-2 6-3v-5"/></svg> Teach this document` +
+    `</button>` +
+    `<div class="teach-cta-hint">${known
+      ? 'We recognise this sender but haven&rsquo;t learned this layout yet — teach it once and we&rsquo;ll handle it next time.'
+      : 'Scan Finder hasn&rsquo;t seen this layout — show it where each field is, just once.'}</div>`;
+  cta.style.display = '';
+  document.getElementById('teach-cta-go')?.addEventListener('click', () => {
+    const id = currentDoc?.id;
+    if (!id) return;
+    // Tier C guardrail: the recheck is best-effort, so on a recognised sender confirm once
+    // before teaching, in case a badly-drifted template slipped past it. Tier D = no nag.
+    if (known && !confirm(
+      'Teach this as a NEW document?\n\n' +
+      'We don\'t have a template for this layout. If you have taught a similar document ' +
+      'before, click Cancel and update that one in Template Manager instead, so we don\'t ' +
+      'create a duplicate.')) return;
+    window.docusnap.openTeachWindowAt(id);
+  });
 }
 
 // A document is "flagged" when processing surfaced questionable data on it: a
@@ -1916,7 +1985,7 @@ async function fileAllReady() {
   banner.classList.add('show');
   barFill.style.width = '0';
 
-  let filed = 0, skipped = 0, aborted = false;
+  let filed = 0, skipped = 0, noType = 0, aborted = false;
 
   try {
     for (let i = 0; i < docs.length; i++) {
@@ -1933,7 +2002,11 @@ async function fileAllReady() {
 
       try {
         await selectDoc(doc, { fieldsOnly: true });    // loads fields (no preview render); runs validateConfirm()
-        if (confirmBtn.disabled) { skipped++; continue; } // not ready — leave for review
+        if (confirmBtn.disabled) {                     // not ready — leave for review
+          skipped++;
+          if (!doc.type_slug) noType++;                // dominant reason: no document type detected
+          continue;
+        }
         const r = await confirmCurrentDoc({ bulk: true });
         if (r.filed) {
           filed++;
@@ -1966,19 +2039,22 @@ async function fileAllReady() {
 
   // Banner done-state, then auto-dismiss. Already-filed docs stay filed.
   const stoppedNote = _bulkFileStopped ? ' (stopped)' : '';
+  // Spell out the dominant skip reason — a doc with no detected type can't be filed
+  // (filing needs a type for the folder path). Tells the operator what to do next.
+  const noTypeNote = noType ? ` (${noType} have no document type — reprocess to detect it, or set a type)` : '';
+  const skipNote   = skipped ? ` · ${skipped} left for review${noTypeNote}` : '';
   banner.classList.add('done');
   stopBtn.disabled    = true;
   fileEl.textContent  = '';
   countEl.textContent = aborted
     ? `Stopped — a valid license is required. Filed ${filed} first.`
-    : `Filed ${filed}` + (skipped ? ` · ${skipped} left for review` : '') + stoppedNote;
-  setTimeout(() => banner.classList.remove('show', 'done'), aborted ? 6000 : 3500);
+    : `Filed ${filed}` + skipNote + stoppedNote;
+  setTimeout(() => banner.classList.remove('show', 'done'), (aborted || noType) ? 7000 : 3500);
 
   showToast(
     aborted
       ? `Filing stopped — a valid license is required. Filed ${filed} document${filed === 1 ? '' : 's'}.`
-      : `Filed ${filed} document${filed === 1 ? '' : 's'}` +
-          (skipped ? ` · ${skipped} left for review` : '') + stoppedNote,
+      : `Filed ${filed} document${filed === 1 ? '' : 's'}` + skipNote + stoppedNote,
     (aborted || !filed) ? 'warn' : 'ok');
 }
 document.getElementById('btn-file-all-review')?.addEventListener('click', fileAllReady);
@@ -2775,11 +2851,10 @@ new ResizeObserver(() => {
 // Navigate to a specific doc when Review is already open (e.g. second "Edit in Review" click).
 window.docusnap.onNavigateToDoc((docId) => _navigateToDoc(docId));
 
-function _navigateToDoc(docId) {
+async function _navigateToDoc(docId) {
   const inReview   = queue.find(d => d.id === docId);
   const inDeferred = deferredQueue.find(d => d.id === docId);
-  const doc        = inReview || inDeferred;
-  if (!doc) return;
+  let doc          = inReview || inDeferred;
 
   if (inDeferred && activeTab !== 'deferred') {
     activeTab = 'deferred';
@@ -2793,8 +2868,25 @@ function _navigateToDoc(docId) {
     renderQueueList();
   }
 
+  // Not in a queue (e.g. an already-FILED doc opened from the processed list or Search's
+  // "Edit in Review") — load it directly so it can still be checked/corrected.
+  if (!doc) {
+    try { doc = await window.docusnap.getDocumentWithExtractions(docId); } catch {}
+    if (!doc) return;
+  }
+
   selectDoc(doc);
 }
+
+// A doc type was created/changed in another window (e.g. the Teach wizard) — reload the
+// type list so the dropdown shows it, preserving the current selection.
+window.docusnap.onDocTypesChanged?.(async () => {
+  try { allDocTypes = await window.docusnap.getAllDocTypes(); } catch {}
+  const sel = document.getElementById('doctype-select');
+  const cur = sel ? sel.value : '';
+  populateTypeDropdown();
+  if (sel) sel.value = cur || sel.value;
+});
 
 // Auto-refresh queue when main process signals new docs were added
 window.docusnap.onReviewCountChanged(async (n) => {

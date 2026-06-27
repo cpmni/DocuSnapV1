@@ -35,11 +35,13 @@ function register(ctx) {
     const db = getDb();
     // Atomic: create the type AND force its structural ID fields (Company + Date) so an
     // empty custom type can never exist. A mid-way throw rolls back the whole thing.
-    return db.transaction(() => {
+    const out = db.transaction(() => {
       const res = doctypes.addType(db, data || {});
       doctypes.ensureStructuralRoles(db, res.lastInsertRowid);
       return res;
     })();
+    notifyAllWindows('doc-types-changed');
+    return out;
   });
   ipcMain.handle('update-document-type', (_e, id, ch)  => { requireRole('admin'); return doctypes.updateType(getDb(), id, ch); });
 
@@ -84,6 +86,7 @@ function register(ctx) {
       });
       const id = tx();
       const created = doctypes.getAllWithFieldsAll(db).find(t => t.id === id) || null;
+      notifyAllWindows('doc-types-changed');   // other open windows reload their doc-type lists
       return { success: true, id, type: created };
     } catch (e) {
       return { success: false, error: e.message };  // UNIQUE name clash etc. — atomic rollback
@@ -101,7 +104,9 @@ function register(ctx) {
     const list = Array.isArray(slugs) ? slugs : (slugs ? [slugs] : []);
     if (!list.length) return { success: false, error: 'Select at least one document type to add.' };
     try {
-      return { success: true, results: doctypes.addPresetTypes(getDb(), list) };
+      const results = doctypes.addPresetTypes(getDb(), list);
+      notifyAllWindows('doc-types-changed');
+      return { success: true, results };
     } catch (e) {
       return { success: false, error: e.message };
     }

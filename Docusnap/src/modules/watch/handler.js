@@ -354,6 +354,10 @@ async function _processFile(db, filename) {
       _liveProcs.delete(proc);
       try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
       processing.cleanupTempFiles(tempFiles);
+      // The per-file worker has exited → the source PDF is unlocked, so flush the
+      // deferred drain (move the processed original into Processed/Errors). Let the
+      // file_done setImmediate enqueue first.
+      setImmediate(() => { try { processing.flushPendingDrains(db, _ctx.logger); } catch {} });
       _log('log', `[watch] finished: ${filename} (exit=${code})`);
       resolve();
     });

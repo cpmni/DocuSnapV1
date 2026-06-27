@@ -11,9 +11,9 @@ const { addLabelOverrides } = require('./label_overrides');
 // feeds learning), but the FIELD itself cannot be deleted, disabled, renamed or
 // retyped. A field is structural when its key is the type's reference or date key,
 // or it is the COMPANY/identity field. COMPANY_KEYS is the internal scope key; the
-// DISPLAY label matches that key so the operator knows exactly what belongs there —
-// `supplier_name` → "Supplier Name", `customer_name` → "Customer Name" (the company
-// role on sales orders). The key is the learning scope, so the schema is untouched.
+// DISPLAY label is "Document Issuer" for BOTH (the entity that issued the document) —
+// one unambiguous label so an operator never puts variable data (e.g. a customer name)
+// in the identity field. The KEY is the learning scope, so the schema is untouched.
 const COMPANY_KEYS = ['supplier_name', 'customer_name'];
 
 function isStructuralKey(dt, key) {
@@ -32,7 +32,7 @@ const BUILT_IN_TYPES = [
     date_field_key: 'invoice_date',
     sort_order:     10,
     fields: [
-      { key: 'supplier_name',  label: 'Supplier Name',   type: 'text', required: 1, sort_order: 10 },
+      { key: 'supplier_name',  label: 'Document Issuer',   type: 'text', required: 1, sort_order: 10 },
       { key: 'invoice_date',   label: 'Invoice Date',    type: 'date', required: 1, sort_order: 20 },
       { key: 'invoice_number', label: 'Invoice Number',  type: 'text', required: 1, sort_order: 30 },
     ]
@@ -44,7 +44,7 @@ const BUILT_IN_TYPES = [
     date_field_key: 'order_date',
     sort_order:     20,
     fields: [
-      { key: 'customer_name',       label: 'Customer Name',       type: 'text', required: 1, sort_order: 10 },
+      { key: 'customer_name',       label: 'Document Issuer',       type: 'text', required: 1, sort_order: 10 },
       { key: 'order_date',          label: 'Order Date',          type: 'date', required: 1, sort_order: 20 },
       { key: 'sales_order_number',  label: 'Sales Order Number',  type: 'text', required: 1, sort_order: 30 },
     ]
@@ -56,7 +56,7 @@ const BUILT_IN_TYPES = [
     date_field_key: 'po_date',
     sort_order:     30,
     fields: [
-      { key: 'supplier_name', label: 'Supplier Name', type: 'text', required: 1, sort_order: 10 },
+      { key: 'supplier_name', label: 'Document Issuer', type: 'text', required: 1, sort_order: 10 },
       { key: 'po_date',       label: 'PO Date',       type: 'date', required: 1, sort_order: 20 },
       { key: 'po_number',     label: 'PO Number',     type: 'text', required: 1, sort_order: 30 },
     ]
@@ -255,7 +255,7 @@ function ensureStructuralRoles(db, typeId) {
   const keys   = new Set(fields.map(f => f.key));
 
   if (!fields.some(f => COMPANY_KEYS.includes(f.key))) {
-    addField(db, { document_type_id: typeId, key: 'supplier_name', label: 'Supplier Name',
+    addField(db, { document_type_id: typeId, key: 'supplier_name', label: 'Document Issuer',
                    type: 'text', required: 1, sort_order: 1 });
   }
 
@@ -302,7 +302,7 @@ const PRESET_CATALOG = [
     name: 'Purchase Invoice', ref_field_key: 'invoice_number', date_field_key: 'invoice_date',
     company_key: 'supplier_name',
     fields: [   // all canonical → shipped field_patterns own the labels
-      { key: 'supplier_name',  label: 'Supplier Name',  type: 'text',     required: 1 },
+      { key: 'supplier_name',  label: 'Document Issuer',  type: 'text',     required: 1 },
       { key: 'invoice_number', label: 'Invoice Number', type: 'text',     required: 1 },
       { key: 'invoice_date',   label: 'Invoice Date',   type: 'date',     required: 1 },
       { key: 'total_amount',   label: 'Total',          type: 'currency', required: 0 },
@@ -312,7 +312,7 @@ const PRESET_CATALOG = [
     name: 'Sales Invoice', ref_field_key: 'invoice_number', date_field_key: 'invoice_date',
     company_key: 'customer_name',
     fields: [   // all canonical → shipped field_patterns own the labels
-      { key: 'customer_name',  label: 'Customer Name',  type: 'text',     required: 1 },
+      { key: 'customer_name',  label: 'Document Issuer',  type: 'text',     required: 1 },
       { key: 'invoice_number', label: 'Invoice Number', type: 'text',     required: 1 },
       { key: 'invoice_date',   label: 'Invoice Date',   type: 'date',     required: 1 },
       { key: 'total_amount',   label: 'Total',          type: 'currency', required: 0 },
@@ -322,7 +322,7 @@ const PRESET_CATALOG = [
     name: 'Remittance Advice', ref_field_key: 'remittance_number', date_field_key: 'remittance_date',
     company_key: 'customer_name',
     fields: [
-      { key: 'customer_name',     label: 'Customer Name',     type: 'text',     required: 1,
+      { key: 'customer_name',     label: 'Document Issuer',     type: 'text',     required: 1,
         // QUALIFIED/directional only — name fields are ungated, so a bare "From"
         // (also the supplier-address / email-header sense) is unsafe; use the payer-specific forms.
         labels: ['Remitter', 'Received From', 'Payment From', 'Payer', 'Paid By'] },
@@ -338,7 +338,7 @@ const PRESET_CATALOG = [
     name: 'Credit Note', ref_field_key: 'credit_note_number', date_field_key: 'credit_note_date',
     company_key: 'supplier_name',
     fields: [
-      { key: 'supplier_name',      label: 'Supplier Name',      type: 'text',     required: 1 },
+      { key: 'supplier_name',      label: 'Document Issuer',      type: 'text',     required: 1 },
       { key: 'credit_note_number', label: 'Credit Note Number', type: 'text',     required: 1,
         labels: ['Credit Note No', 'Credit Note Number', 'Credit Note #', 'Credit No', 'CN No', 'Credit Memo No'] },
       { key: 'credit_note_date',   label: 'Credit Note Date',   type: 'date',     required: 1,
@@ -351,9 +351,9 @@ const PRESET_CATALOG = [
     name: 'Delivery Note', ref_field_key: 'delivery_number', date_field_key: 'delivery_date',
     company_key: 'supplier_name',
     fields: [
-      { key: 'supplier_name',   label: 'Supplier Name',   type: 'text', required: 1,
+      { key: 'supplier_name',   label: 'Document Issuer',   type: 'text', required: 1,
         labels: ['Delivered By', 'Despatched By', 'Dispatched By'] },
-      { key: 'customer_name',   label: 'Customer Name',   type: 'text', required: 0,
+      { key: 'customer_name',   label: 'Document Issuer',   type: 'text', required: 0,
         labels: ['Deliver To', 'Delivery To', 'Ship To', 'Consignee'] },
       { key: 'delivery_number', label: 'Delivery Number', type: 'text', required: 1,
         labels: ['Delivery No', 'Delivery Number', 'Delivery Note No', 'DN No', 'Despatch No', 'Dispatch No', 'Docket No', 'Note No'] },
@@ -364,9 +364,9 @@ const PRESET_CATALOG = [
     name: 'Statement', ref_field_key: 'statement_number', date_field_key: 'statement_date',
     company_key: 'supplier_name',
     fields: [
-      { key: 'supplier_name',    label: 'Supplier Name',    type: 'text',     required: 1,
+      { key: 'supplier_name',    label: 'Document Issuer',    type: 'text',     required: 1,
         labels: ['Statement From'] },
-      { key: 'customer_name',    label: 'Customer Name',    type: 'text',     required: 0,
+      { key: 'customer_name',    label: 'Document Issuer',    type: 'text',     required: 0,
         labels: ['Statement To', 'Account Holder'] },
       { key: 'statement_number', label: 'Statement Number', type: 'text',     required: 1,
         labels: ['Statement No', 'Statement Number', 'Statement Ref'] },
@@ -381,7 +381,7 @@ const PRESET_CATALOG = [
     name: 'Receipt', ref_field_key: 'receipt_number', date_field_key: 'receipt_date',
     company_key: 'supplier_name',
     fields: [
-      { key: 'supplier_name',  label: 'Supplier Name',  type: 'text',     required: 1,
+      { key: 'supplier_name',  label: 'Document Issuer',  type: 'text',     required: 1,
         labels: ['Merchant', 'Sold By'] },
       { key: 'receipt_number', label: 'Receipt Number', type: 'text',     required: 1,
         labels: ['Receipt No', 'Receipt Number', 'Receipt #', 'Transaction No', 'Transaction ID', 'Ref No'] },
@@ -395,7 +395,7 @@ const PRESET_CATALOG = [
     name: 'Quote', ref_field_key: 'quote_number', date_field_key: 'quote_date',
     company_key: 'supplier_name',
     fields: [
-      { key: 'supplier_name', label: 'Supplier Name', type: 'text',     required: 1,
+      { key: 'supplier_name', label: 'Document Issuer', type: 'text',     required: 1,
         labels: ['Quote From'] },
       { key: 'quote_number',  label: 'Quote Number',  type: 'text',     required: 1,
         labels: ['Quote No', 'Quotation No', 'Quote Number', 'Quotation Number', 'Quote Ref', 'Quote #', 'Estimate No', 'Estimate Ref'] },

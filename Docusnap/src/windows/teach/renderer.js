@@ -16,6 +16,7 @@ const TYPE_MAP = { Text: 'text', Date: 'date', Currency: 'currency', Number: 'nu
 const state = {
   step: 0,
   maxStep: 5,
+  minStep: 0,          // floor — 2 when launched at a known doc (skip welcome + doc-pick)
   docs: [],            // review-queue rows to choose from
   doc: null,           // chosen row {id, folder_path, original_filename, supplier_name}
   pageDataUrl: null,
@@ -59,7 +60,7 @@ function setStep(n){
 function renderFooter(){
   const dots = $('dots'); dots.innerHTML='';
   for (let i=0;i<=state.maxStep;i++){ const d=document.createElement('span'); d.className='sd'+(i===state.step?' on':''); dots.appendChild(d); }
-  $('btn-back').style.visibility = state.step===0 ? 'hidden' : 'visible';
+  $('btn-back').style.visibility = state.step<=state.minStep ? 'hidden' : 'visible';
   const next = $('btn-next');
   const labels = ["Let's start →","Continue →","Continue →","Review →","File this document","Done"];
   next.textContent = labels[state.step];
@@ -77,7 +78,7 @@ function canAdvance(){
     default: return true;
   }
 }
-$('btn-back').onclick = () => { if (state.step>0) setStep(state.step-1); };
+$('btn-back').onclick = () => { if (state.step>state.minStep) setStep(state.step-1); };
 $('btn-next').onclick = onNext;
 
 async function onNext(){
@@ -188,15 +189,29 @@ async function commitTypeChoice(){
 let canvas, ctx, drag=null, drawnBox=null, drawMode='value';   // 'value' | 'anchor'
 // Zoom/pan for the page canvas — same model as the review preview: a CSS transform
 // (translate=pan, scale=zoom) on the canvas. Wiring + handlers live in bindCanvas.
-let tzZoom=1, tzPanX=0, tzPanY=0, _tzPan=null;
+let tzZoom=1, tzPanX=0, tzPanY=0, _tzPan=null, _fitW=0;
 const TZ_MIN=1, TZ_MAX=4, TZ_STEP=0.25;
+// Zoom by RE-SIZING the canvas (so the browser re-rasterises from the full-res backing
+// store → crisp) rather than transform:scale (which magnifies the already-downscaled
+// raster → blurry). Pan stays a translate. cpoint() normalises via getBoundingClientRect,
+// so drawing coordinates remain correct at any zoom.
 function tzApply(){
   if(!canvas) return;
-  canvas.style.transform=`translate(${tzPanX}px,${tzPanY}px) scale(${tzZoom})`;
+  if (tzZoom<=1){
+    canvas.style.maxWidth=''; canvas.style.maxHeight=''; canvas.style.width=''; canvas.style.height='';
+    canvas.style.transform='translate(0px,0px)';
+  } else {
+    if(!_fitW){ _fitW = canvas.getBoundingClientRect().width || canvas.offsetWidth || 0; }
+    if(_fitW){
+      canvas.style.maxWidth='none'; canvas.style.maxHeight='none';
+      canvas.style.width=(_fitW*tzZoom)+'px'; canvas.style.height='auto';
+    }
+    canvas.style.transform=`translate(${tzPanX}px,${tzPanY}px)`;
+  }
   const lvl=$('tz-level'); if(lvl) lvl.textContent=Math.round(tzZoom*100)+'%';
 }
-function tzSet(z){ tzZoom=Math.max(TZ_MIN,Math.min(TZ_MAX,z)); tzApply(); }
-function tzReset(){ tzZoom=1; tzPanX=0; tzPanY=0; tzApply(); }
+function tzSet(z){ const nz=Math.max(TZ_MIN,Math.min(TZ_MAX,z)); if(nz>1 && tzZoom<=1) _fitW=0; tzZoom=nz; tzApply(); }
+function tzReset(){ tzZoom=1; tzPanX=0; tzPanY=0; _fitW=0; tzApply(); }
 // Render the DISPLAY at a higher scale than the 1.5/108 DPI default so the page is crisp
 // on a large/zoomed pane; the OCR crop is downscaled back to OCR_RENDER_SCALE in cropB64
 // so read quality is unchanged. (Only applies to PDFs — an image file is returned at its
@@ -233,6 +248,7 @@ function fitCanvas(){
   const CAP=4000, s=Math.min(1, CAP/Math.max(natW,natH));
   canvas.width=Math.round(natW*s);
   canvas.height=Math.round(natH*s);
+  _fitW=0;   // new buffer → re-measure the fit width on next zoom
 }
 function redrawCanvas(){
   if (!state.img) return;
@@ -305,6 +321,7 @@ function setValueBanner(f){
 function promptField(){
   const f=curField(); if(!f) return;
   drawMode='value';
+  { const cc=$('rg-confirm'); if(cc) cc.innerHTML=''; }   // clear any prior read-back overlay
   setValueBanner(f);
   // Fixed-value alternative — presented as a prominent accent card (not a buried muted
   // link) so a first-time user can clearly see they DON'T have to draw a box for a field
@@ -325,6 +342,7 @@ function promptField(){
 }
 function showFixedInput(f){
   drawMode='value';
+  { const cc=$('rg-confirm'); if(cc) cc.innerHTML=''; }
   $('rg-prompt').textContent=`${f.label} — type the fixed value`;
   $('rg-sub').textContent=`This value is always the same on every document of this type (e.g. the company name).`;
   const existing=state.results[f.key];
@@ -364,12 +382,13 @@ function renderFieldRail(){
 }
 async function readBack(box){
   const f=curField();
-  $('rg-readback').innerHTML='<span class="muted">Reading…</span>';
+  $('rg-readback').innerHTML='';   // hide the per-field "fixed value?" card while confirming a read
+  $('rg-confirm').innerHTML='<span class="muted">Reading…</span>';
   let value=''; try{ value=(await D.ocrRegion(await cropB64(box)))||''; }catch{}
   value=(value||'').trim();
   const anchor=await autoLabel(box);
   if (!value){
-    $('rg-readback').innerHTML=
+    $('rg-confirm').innerHTML=
       `<div class="warn">Couldn't read that clearly. Try a bigger box, or type the value:</div>`+
       `<div style="margin-top:8px;display:flex;gap:8px;align-items:center">`+
         `<input type="text" id="rb-manual-input" style="flex:1;background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-radius:8px;padding:8px 10px;font-size:14px;font-family:inherit" placeholder="${esc(f.label)} value…">`+
@@ -386,7 +405,7 @@ async function readBack(box){
 }
 // Value is stored; let the user confirm it before moving to the anchor step.
 function showValueConfirm(f, r){
-  $('rg-readback').innerHTML=
+  $('rg-confirm').innerHTML=
     `<div>I read: <span class="val mono">${esc(r.value)}</span> — is that right?</div>`+
     `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">`+
       `<button class="btn primary" id="rb-yes">Yes →</button>`+
@@ -416,7 +435,7 @@ function renderAnchorReadout(){
     ? `Detected label: <span class="mono">"${esc(r.anchor_text)}"</span>`
     : 'No label found here — try the other direction, draw one, or continue without.';
   const keepText = hasLabel ? 'Keep this label →' : 'Continue without a label →';
-  $('rg-readback').innerHTML=
+  $('rg-confirm').innerHTML=
     `<div class="muted" style="font-size:13px">${lbl}</div>`+
     `<div style="margin-top:9px;font-size:13px">Is the label to the <b>left</b> of the value, or <b>above</b> it?</div>`+
     `<div style="margin-top:6px;display:flex;gap:6px">`+
@@ -435,7 +454,7 @@ function renderAnchorReadout(){
 // Re-run label detection in the chosen direction (the Left/Above toggle) and refresh.
 async function redetectAnchor(dir){
   const f=curField(), r=f&&state.results[f.key]; if(!r||!r.target) return;
-  $('rg-readback').innerHTML='<span class="muted">Looking '+(dir==='left'?'to the left':'above the value')+'…</span>';
+  $('rg-confirm').innerHTML='<span class="muted">Looking '+(dir==='left'?'to the left':'above the value')+'…</span>';
   try{
     const a=await autoLabel(r.target, dir);
     r.anchor=a.box; r.anchor_text=a.anchor_text; r.anchor_dir=a.dir||dir;
@@ -445,7 +464,7 @@ async function redetectAnchor(dir){
 }
 async function captureAnchor(box){
   const f=curField(), r=f&&state.results[f.key]; if(!r){ drawMode='value'; return; }
-  $('rg-readback').innerHTML='<span class="muted">Reading the label…</span>';
+  $('rg-confirm').innerHTML='<span class="muted">Reading the label…</span>';
   let text=''; try{ const res=await D.ocrRegionBoxes(await cropB64(box)); text=res&&res.text?String(res.text).trim():''; }catch{}
   text=(text||'').split('\n')[0].slice(0,40);
   r.anchor={x:box.x,y:box.y,w:box.w,h:box.h};
@@ -468,7 +487,7 @@ function advanceField(){
   const next=state.fields.findIndex((f,i)=>i>state.fieldIndex && !state.results[f.key] || (i>state.fieldIndex && state.results[f.key] && state.results[f.key].status==='pending'));
   const firstMissing=state.fields.findIndex(f=>!state.results[f.key]);
   if (firstMissing>=0){ state.fieldIndex=firstMissing; promptField(); }
-  else { renderFieldRail(); $('rg-readback').innerHTML='<div class="muted">All details captured — choose <b>Review →</b> below.</div>'; }
+  else { renderFieldRail(); $('rg-confirm').innerHTML='<div class="muted">All details captured — choose <b>Review →</b> below.</div>'; }
 }
 $('rg-redraw').onclick=()=>{ const f=curField(); if(f) delete state.results[f.key]; promptField(); };
 $('rg-skip').onclick=()=>{ const f=curField(); if(!f)return; state.results[f.key]={value:'',target:null,anchor:null,anchor_text:null,status:'skip'}; advanceField(); };
@@ -618,5 +637,9 @@ $('btn-next').addEventListener('click',()=>{ if(state.step===5) finishDone(); })
       if (hit) state.doc=hit;
     }catch{}
   }
-  setStep(0);
+  // Launched from Review with a known document → skip welcome + document-selection and
+  // go straight to choosing the document type (we already know which doc this is). Floor
+  // Back at the type step so it can't return to the skipped selection.
+  if (state.targetDocId && state.doc) state.minStep = 2;
+  setStep(state.minStep);
 })();

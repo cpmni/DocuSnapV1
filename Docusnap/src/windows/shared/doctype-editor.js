@@ -13,7 +13,7 @@
  *                  There is no transactional "update whole type" backend, so edit
  *                  is per-field, exactly like the old Fields tab.
  *
- * Structural roles (Company=supplier_name + Date) are LOCKED here — the backend is
+ * Structural roles (Document Issuer=supplier_name + Date) are LOCKED here — the backend is
  * the authoritative enforcer (document_types.ensureStructuralRoles); this is the
  * single renderer-side mirror. Reference is a removable default (reference-less
  * types are intentionally allowed).
@@ -60,8 +60,23 @@
   // Field key = a stable identifier (lowercase, underscores). Mirrors the keySlug
   // used by the old add-field form so a hand-typed key style is preserved.
   const slugify = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  // Internal keys a CUSTOM field must never reuse — chiefly the identity field's keys
+  // (and the 'company' alias the Document Issuer field is known by). A custom field whose
+  // label collides with one of these, or with another field already on the type, gets a
+  // 'custom_' prefix so it can't clash with the app's internal references.
+  const RESERVED_KEYS = new Set(['supplier_name', 'customer_name', 'company']);
+  const safeFieldKey = (label, existing = []) => {
+    const base = slugify(label);
+    if (!base) return base;
+    const taken = new Set([...RESERVED_KEYS, ...existing]);
+    let key = taken.has(base) ? 'custom_' + base : base;
+    let k = key, n = 2;
+    while (taken.has(k)) { k = `${key}_${n}`; n++; }
+    return k;
+  };
   const guessType = (label) => /date/i.test(label) ? 'date'
-    : (/total|amount|price|cost|sum|net|gross|vat|tax/i.test(label) ? 'currency' : 'text');
+    : (/total|amount|price|cost|sum|net|gross|vat|tax/i.test(label) ? 'currency'
+    : (/\b(ref|reference|number|no|invoice|order|po|account)\b/i.test(label) ? 'reference' : 'text'));
 
   function injectStyles() {
     if (document.getElementById('dte-styles')) return;
@@ -136,8 +151,8 @@
 
     function seedCreate() {
       fields = [
-        { label: 'Company', key: 'supplier_name', type: 'text', locked: true },
-        { label: 'Reference number', type: 'text' },
+        { label: 'Document Issuer', key: 'supplier_name', type: 'text', locked: true },
+        { label: 'Reference number', type: 'reference' },
         { label: 'Date', type: 'date', locked: true },
       ];
       const g = (re) => { const m = fields.find(f => re.test(f.label) || re.test(f.key || '')); return m ? (m.key || slugify(m.label)) : ''; };
@@ -288,12 +303,13 @@
         const label = (addInput.value || '').trim();
         if (!label) return;
         const ftype = guessType(label);
+        const existingKeys = currentFields().map(f => f.key || slugify(f.label));
         if (mode === 'create') {
-          fields.push({ label, type: ftype });
+          fields.push({ label, type: ftype, key: safeFieldKey(label, existingKeys) });
           render();
           host.querySelector('.dte-add-input').focus();
         } else {
-          const key = slugify(label);
+          const key = safeFieldKey(label, existingKeys);
           if (!key) { showErr('Please enter a field label.'); return; }
           try { await api.addField({ document_type_id: type.id, key, label, type: ftype }); await reload(); }
           catch (e) { showErr('Could not add field: ' + e.message); }

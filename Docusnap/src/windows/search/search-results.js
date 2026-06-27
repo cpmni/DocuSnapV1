@@ -51,9 +51,10 @@ function _resultItem(doc) {
   if      (doc.status === 'needs_review') statusBadge = `<span class="result-status-badge review">Needs Review</span>`;
   else if (doc.status === 'deferred')     statusBadge = `<span class="result-status-badge deferred">Deferred</span>`;
 
-  // Confidence pip — only when the workflow add-on is licensed (enhanced Search).
+  // Confidence pip — enhanced Search only, and ONLY for UNCOMMITTED docs. A confirmed
+  // doc has already been checked + committed, so a detection % against it is misleading.
   let confPip = '';
-  if (window.SearchState.entitled && doc.overall_confidence != null) {
+  if (window.SearchState.entitled && doc.overall_confidence != null && doc.status !== 'confirmed') {
     const w = Math.max(4, Math.min(100, doc.overall_confidence));
     confPip = `<span class="result-conf ${confLevel(doc.overall_confidence)}" title="Extraction confidence ${doc.overall_confidence}%">
       <span class="rc-meter"><i style="width:${w}%"></i></span><span class="rc-val">${doc.overall_confidence}%</span></span>`;

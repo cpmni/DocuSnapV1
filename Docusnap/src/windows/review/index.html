@@ -301,6 +301,19 @@
 
     #doc-placeholder { color: var(--muted); font-size: 14px; margin: auto; }
 
+    /* "Teach this document" CTA — a slim centred card banner above the preview. */
+    .teach-cta { display: flex; flex-direction: column; align-items: center; gap: 5px;
+      margin: 0 auto 10px; padding: 12px 16px; max-width: 560px; text-align: center;
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); box-shadow: var(--shadow); }
+    .teach-cta.warn { border-left: 3px solid var(--warn); }
+    .teach-cta-btn { display: inline-flex; align-items: center; gap: 7px; padding: 9px 16px;
+      border-radius: var(--r-sm); font: 600 13px/1 var(--sans); cursor: pointer; border: 1px solid; }
+    .teach-cta-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); box-shadow: 0 8px 18px -12px var(--accent); }
+    .teach-cta-btn.primary:hover { filter: brightness(1.08); }
+    .teach-cta-btn.ghost { background: transparent; border-color: var(--border2); color: var(--text); }
+    .teach-cta-btn.ghost:hover { background: var(--surface2); border-color: var(--warn); }
+    .teach-cta-hint { font-size: 11.5px; color: var(--muted); line-height: 1.45; max-width: 460px; }
+
     /* ── Fields panel (right) ── */
     #fields-panel { width: 320px; flex-shrink: 0; display: flex; flex-direction: column; overflow: hidden; }
     #fields-header {
@@ -329,8 +342,9 @@
     .add-template-btn:hover:not(:disabled) .add-template-ico { color: var(--accent); }
     .add-template-lbl { display: block; }
     #extraction-status { display: flex; flex-direction: column; gap: 4px; }
-    .ext-status-row { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; }
-    .ext-status-lbl { font-size: 10px; color: var(--muted); white-space: nowrap; width: 74px; flex-shrink: 0; }
+    .ext-status-row { display: flex; align-items: flex-start; gap: 6px; flex-wrap: nowrap; }
+    .ext-status-lbl { font-size: 10px; color: var(--muted); white-space: nowrap; width: 74px; flex-shrink: 0; padding-top: 3px; }
+    .ext-status-pills { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
     .method-pill {
       font-size: 10px; font-family: var(--mono); padding: 1px 7px;
       border-radius: 4px; border: 1px solid currentColor;
@@ -681,6 +695,9 @@
       </div>
 
       <button class="btn" id="btn-acknowledge" style="display:none" title="This document was flagged for review. Mark it reviewed so File All Ready can include it.">&#10003; Mark Reviewed</button>
+
+      <!-- "Teach this document" CTA (shown only for genuinely-unseen docs; see renderTeachCta) -->
+      <div id="teach-cta" class="teach-cta" style="display:none"></div>
 
       <div id="select-hint">
         <span>Drag to select the <span class="hint-field" id="hint-field-name">field</span> value</span>

@@ -757,6 +757,30 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 36 applied: field_rules (operator field-cleanup toolkit)');
   }
 
+  // Migration 37: documents.page_count — captured at import so the Review list can flag
+  // multi-page documents. Additive; NULL for pre-existing rows (no icon until reprocessed).
+  if (!applied.has(37)) {
+    try { db.exec(`ALTER TABLE documents ADD COLUMN page_count INTEGER`); }
+    catch (e) { console.warn(`  documents.page_count: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (37)').run();
+    console.log('JS migration 37 applied: documents.page_count');
+  }
+
+  // Migration 38: relabel the company/identity field to "Document Issuer" for BOTH
+  // company roles — one unambiguous label so an operator never enters variable data
+  // (e.g. a customer name) in the identity field. Label-only; the internal keys
+  // (supplier_name/customer_name) and the learning scope are untouched. Scoped to the
+  // prior auto-set labels so a hand-edited label is left alone. Idempotent.
+  if (!applied.has(38)) {
+    try {
+      db.exec(`UPDATE fields SET label = 'Document Issuer'
+               WHERE key IN ('supplier_name','customer_name')
+                 AND label IN ('Supplier Name','Customer Name','Company')`);
+    } catch (e) { console.warn('  migration 38 (Document Issuer relabel):', e.message); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (38)').run();
+    console.log('JS migration 38 applied: company field → "Document Issuer"');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

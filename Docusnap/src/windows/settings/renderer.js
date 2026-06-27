@@ -548,7 +548,7 @@ document.getElementById('btn-add-type').addEventListener('click', openNewTypeFor
 // each ticked type + fields + structural roles AND seeds its likely field-label
 // aliases (so Stage-1 extraction works without teaching). Already-present types are
 // shown ticked + disabled. Mirrors the showSecretDialog/showTypedConfirmDialog overlay.
-const COMPANY_LABELS = { supplier_name: 'Supplier Name', customer_name: 'Customer Name' };
+const COMPANY_LABELS = { supplier_name: 'Document Issuer', customer_name: 'Document Issuer' };
 
 async function openCatalogModal() {
   let catalog;
@@ -924,16 +924,18 @@ function showTypedConfirmDialog({ title, warningHtml, requiredText, confirmLabel
 // THEME TOGGLE
 // ══════════════════════════════════════════════════════════════════════════════
 
-async function loadThemeToggle() {
-  const theme = await api.getSetting('theme') || 'light';
-  document.getElementById('theme-toggle').checked = (theme === 'light');
+const THEME_VALUES = ['light', 'warm', 'slate', 'dark', 'midnight', 'graphite'];
+async function loadThemeSelect() {
+  const theme = await api.getSetting('theme') || 'warm';
+  const sel = document.getElementById('theme-select');
+  if (sel) sel.value = THEME_VALUES.includes(theme) ? theme : 'warm';
 }
-loadThemeToggle();
+loadThemeSelect();
 
-document.getElementById('theme-toggle').addEventListener('change', async (e) => {
-  const theme = e.target.checked ? 'light' : 'dark';
-  applyTheme(theme);
-  await api.setSetting('theme', theme);
+document.getElementById('theme-select')?.addEventListener('change', async (e) => {
+  const theme = e.target.value;
+  applyTheme(theme);                       // live in this window
+  await api.setSetting('theme', theme);    // persist + broadcast theme-changed to all windows
 });
 
 // "Close button minimises to the tray" — default ON (checked unless explicitly 'false').
@@ -3024,6 +3026,8 @@ populateLearningDocTypes();
 loadDocTypes().then(() => {
   if (allTypesWithFields.length) selectDocType(allTypesWithFields[0].id);
 });
+// A doc type created/changed elsewhere (e.g. the Teach wizard) — reload the list.
+api.onDocTypesChanged?.(() => { loadDocTypes().catch(() => {}); });
 loadUsers();
 loadAuditLog();
 
@@ -3044,6 +3048,18 @@ loadTemplates().then(async () => {
   } catch (e) { console.warn('settings template target failed:', e.message); }
 });
 api.onNavigateToTemplate(openTemplateInEditor);
+
+// Section/tab deep-link (e.g. Home "Activate" → 'licensing'): click the matching tab.
+function gotoSettingsSection(section) {
+  if (!section) return;
+  const tab = document.querySelector(`.tab[data-tab="${section}"]`);
+  if (tab) tab.click();
+}
+(async () => {
+  try { gotoSettingsSection(await api.getSettingsSectionTarget()); }
+  catch (e) { console.warn('settings section target failed:', e.message); }
+})();
+api.onNavigateToSection?.(gotoSettingsSection);
 
 // ══════════════════════════════════════════════════════════════════════════════
 // LICENSING TAB  (admin-only — the whole Settings window is gated to

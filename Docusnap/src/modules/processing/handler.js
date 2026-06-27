@@ -26,6 +26,7 @@ function _diagEnabled(db) {
 
 let _currentBatchProcs = [];     // all running Python worker processes for the active batch (bounded pool)
 let _cancelRequested   = false;  // set true when stop is requested; suppresses buffered stdout
+let _pendingDrains     = [];     // originals to move to Processed/Errors AFTER the worker exits (pdfium holds the PDF open mid-run, so a mid-batch rename is locked)
 
 // Dev-inspector ONLY: in-memory, session-scoped registry of docs processed while
 // the app runs, plus their captured trace events. Never persisted (no SQLite, no
@@ -358,6 +359,19 @@ function register(ctx) {
     }
     shell.openPath(filePath);
   });
+  // Open a FOLDER (not a file) — the file allowlist requires an extension, so folders
+  // need their own check: must be an app-managed root (e.g. the output folder), no UNC.
+  ipcMain.on('open-folder', (_e, dir) => {
+    if (!getCurrentUser()) return;
+    let resolved;
+    try { resolved = path.resolve(dir); } catch { return; }
+    if (!dir || typeof dir !== 'string' || /^[\\/]{2}/.test(dir) || /^[\\/]{2}/.test(resolved)) return;
+    if (!_withinAnyRoot(resolved, _allowedOpenRoots(getDb()))) {
+      logger?.warn?.('[security] blocked open-folder for a disallowed path');
+      return;
+    }
+    shell.openPath(resolved);
+  });
 
   // Diagnostic-only: record a ⊕ teach action — the box coordinates STORED for the
   // anchor plus the value the live zone-OCR read at teach time, and the preview
@@ -376,8 +390,11 @@ function register(ctx) {
   // ── Stop processing ─────────────────────────────────────────────────────────
   ipcMain.handle('stop-processing', () => {
     requireRole('admin', 'edit');
+    // ALWAYS set the cancel flag, even if no child is running this instant — a stop
+    // pressed in the gap between two pre-pass detection spawns must still take, or the
+    // loop keeps going and "Stopping…" hangs.
+    _cancelRequested = true;
     if (_currentBatchProcs.length) {
-      _cancelRequested = true;
       // Kill every worker's full process tree: in dev mode `py.exe` (Python
       // Launcher) is spawned and proc.kill() only kills the launcher, leaving
       // python.exe alive and writing to the inherited pipe. taskkill /T kills
@@ -405,60 +422,85 @@ function register(ctx) {
   // segment and nothing changes. Splits in place (reusing pdf_splitter.py) and moves the
   // original into a recoverable subfolder the NON-recursive folder scan ignores.
   const SEPARATED_DIR = '.sf_separated_originals';
-  const runPyJson = (script, args) => new Promise((resolve) => {
+  const runPyJson = (script, args, env) => new Promise((resolve) => {
     let out = '';
     let proc;
-    try { proc = spawn(pythonExe(), pythonArgs(script, ...args), { windowsHide: true }); }
+    try { proc = spawn(pythonExe(), pythonArgs(script, ...args), { windowsHide: true, env: env || process.env }); }
     catch { return resolve(null); }
+    // Track the pre-pass child in the shared batch list so Stop kills it IMMEDIATELY
+    // (otherwise stop only takes effect after the current detection finishes).
+    _currentBatchProcs.push(proc);
+    const done = (val) => { _currentBatchProcs = _currentBatchProcs.filter(p => p !== proc); resolve(val); };
     proc.stdout.on('data', d => { out += d.toString(); });
-    proc.on('close', () => { try { resolve(JSON.parse(out.trim())); } catch { resolve(null); } });
-    proc.on('error', () => resolve(null));
+    proc.on('close', () => { try { done(JSON.parse(out.trim())); } catch { done(null); } });
+    proc.on('error', () => done(null));
   });
 
-  async function _separateBatchDocuments(folderPath, templatesFile, log) {
+  async function _separateBatchDocuments(folderPath, templatesFile, log, onPhase, parallelism) {
     let pdfs = [];
     try {
       pdfs = fs.readdirSync(folderPath, { withFileTypes: true })
         .filter(e => e.isFile() && path.extname(e.name).toLowerCase() === '.pdf')
         .map(e => e.name);
     } catch { return 0; }
+    if (!pdfs.length) return 0;
 
     const segScript   = path.join(path.dirname(backendScript()), 'segment_docs.py');
     const splitScript = path.join(path.dirname(backendScript()), 'pdf_splitter.py');
-    let separated = 0;
+    let separated = 0, done = 0, next = 0;
 
-    for (const name of pdfs) {
-      if (_cancelRequested) break;
-      const filePath = path.join(folderPath, name);
-      const det = await runPyJson(segScript,
-        ['--file', filePath, '--templates-file', templatesFile, '--tesseract', tesseractPath()]);
-      const segments = det && det.success && Array.isArray(det.segments) ? det.segments : null;
-      if (!segments || segments.length < 2) continue;   // one document → leave it untouched
+    // Bounded parallelism for the detection pre-pass. Each detection spawns Tesseract
+    // (itself multithreaded), so cap each worker's OpenMP threads to cores/P to keep
+    // total threads ≈ cores rather than P×cores of thrash. Each PDF is independent
+    // (detection reads its own file; split writes its own basenames + moves its own
+    // original), so this is safe to run concurrently.
+    const P = Math.max(1, parallelism || 1);
+    const cores = os.cpus().length || 1;
+    const threadCap = Math.max(1, Math.floor(cores / P));
+    const env = P > 1 ? { ...process.env, OMP_THREAD_LIMIT: String(threadCap) } : process.env;
 
-      // 0-based inclusive [start,end] → pdf_splitter's 1-based "a-b,c,…".
-      const ranges = segments.map(([s, e]) => (s === e ? `${s + 1}` : `${s + 1}-${e + 1}`)).join(',');
-      const split  = await runPyJson(splitScript,
-        ['--file', filePath, '--ranges', ranges, '--outdir', folderPath]);
-      const made   = (split && split.success && Array.isArray(split.files))
-        ? split.files.filter(f => fs.existsSync(f)) : [];
-      if (made.length < 2) continue;   // splitter failed → leave the original as one doc
+    onPhase?.(`Preparing — scanning ${pdfs.length} document(s) for multi-page splits…`);
 
-      // Move the original OUT of the (non-recursive) scan so it isn't ALSO processed,
-      // while keeping it recoverable.
-      try {
-        const keepDir = path.join(folderPath, SEPARATED_DIR);
-        fs.mkdirSync(keepDir, { recursive: true });
-        fs.renameSync(filePath, path.join(keepDir, name));
-      } catch (e) {
-        // Original not movable → delete the new segments so we never process BOTH the
-        // original and its parts (duplicates). Leave it as a single document.
-        for (const f of made) { try { fs.unlinkSync(f); } catch {} }
-        log?.(`Could not separate ${name} (original locked) — left as one document`, 'warn');
-        continue;
+    async function worker() {
+      while (!_cancelRequested) {
+        const i = next++;
+        if (i >= pdfs.length) return;
+        const name = pdfs[i];
+        const filePath = path.join(folderPath, name);
+        const det = await runPyJson(segScript,
+          ['--file', filePath, '--templates-file', templatesFile, '--tesseract', tesseractPath()], env);
+        done += 1;
+        onPhase?.(`Preparing ${done}/${pdfs.length}…`);
+        if (_cancelRequested) return;
+        const segments = det && det.success && Array.isArray(det.segments) ? det.segments : null;
+        if (!segments || segments.length < 2) continue;   // one document → leave it untouched
+
+        // 0-based inclusive [start,end] → pdf_splitter's 1-based "a-b,c,…".
+        const ranges = segments.map(([s, e]) => (s === e ? `${s + 1}` : `${s + 1}-${e + 1}`)).join(',');
+        const split  = await runPyJson(splitScript,
+          ['--file', filePath, '--ranges', ranges, '--outdir', folderPath], env);
+        const made   = (split && split.success && Array.isArray(split.files))
+          ? split.files.filter(f => fs.existsSync(f)) : [];
+        if (made.length < 2) continue;   // splitter failed → leave the original as one doc
+
+        // Move the original OUT of the (non-recursive) scan so it isn't ALSO processed,
+        // while keeping it recoverable.
+        try {
+          const keepDir = path.join(folderPath, SEPARATED_DIR);
+          fs.mkdirSync(keepDir, { recursive: true });
+          fs.renameSync(filePath, path.join(keepDir, name));
+        } catch (e) {
+          // Original not movable → delete the new segments so we never process BOTH the
+          // original and its parts (duplicates). Leave it as a single document.
+          for (const f of made) { try { fs.unlinkSync(f); } catch {} }
+          log?.(`Could not separate ${name} (original locked) — left as one document`, 'warn');
+          continue;
+        }
+        separated += 1;
+        log?.(`Detected ${made.length} documents in ${name} — separated`);
       }
-      separated += 1;
-      log?.(`Detected ${made.length} documents in ${name} — separated`);
     }
+    await Promise.all(Array.from({ length: Math.min(P, pdfs.length) }, worker));
     return separated;
   }
 
@@ -564,9 +606,16 @@ function register(ctx) {
             // to user-facing progress or the DB handler.
             if (msg.type === 'trace') { routeTrace(msg); continue; }
             if (suppressStart && msg.type === 'start') continue;
-            if (msg.type === 'file_done') _recordDevDoc(msg);
-            setImmediate(() => _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger));
-            if (msg.type === 'file_done') fileCount++;
+            if (msg.type === 'file_done') {
+              // Persist SYNCHRONOUSLY (better-sqlite3 is sync anyway) so msg.db_id is set
+              // BEFORE we mirror — the renderer's results table needs the doc id to open
+              // THAT document in Review (not the first in the queue).
+              _recordDevDoc(msg);
+              _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger);
+              fileCount++;
+            } else {
+              setImmediate(() => _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger));
+            }
             if (msg.type === 'log') {
               if      (msg.level === 'err')  logger?.err(`Python: ${msg.text}`);
               else if (msg.level === 'warn') logger?.warn(`Python: ${msg.text}`);
@@ -600,14 +649,30 @@ function register(ctx) {
       const tIdx = trainingArgs.indexOf('--templates-file');
       const templatesFile = tIdx >= 0 ? trainingArgs[tIdx + 1] : null;
       if (templatesFile) {
+        // Run detection concurrently (each PDF is independent) so the pre-pass doesn't
+        // serialise a Python cold-start per document. Cap at the CPU core count (≤6).
+        const sepP = Math.max(1, Math.min(os.cpus().length || 1, 6));
         try {
           const n = await _separateBatchDocuments(folderPath, templatesFile,
-            (text, level) => mirror(event.sender, 'process-progress', { type: 'log', text, level: level || '' }));
+            (text, level) => mirror(event.sender, 'process-progress', { type: 'log', text, level: level || '' }),
+            (text) => mirror(event.sender, 'process-progress', { type: 'log', text, phase: true }),
+            sepP);
           if (n) logger?.log(`[separation] separated ${n} multi-document PDF(s) before processing`);
         } catch (e) {
           logger?.warn(`[separation] pre-pass failed (continuing without split): ${e.message}`);
         }
       }
+    }
+
+    // Stop pressed DURING the pre-pass → bail before spawning processing workers,
+    // otherwise the worker would launch and "Stopping…" would hang until it finished.
+    if (_cancelRequested) {
+      _cancelRequested = false;
+      _currentBatchProcs = [];
+      cleanupFiles(tempFiles);
+      cleanupFiles(shardFiles);
+      mirror(event.sender, 'process-progress', { type: 'log', text: 'Stopped before processing.', level: 'warn' });
+      return { success: true, stopped: true };
     }
 
     // Build the worker set. concurrency<=1 keeps the EXACT original path (one
@@ -653,6 +718,11 @@ function register(ctx) {
     const stopped = _cancelRequested;
     _cancelRequested   = false;
     _currentBatchProcs = [];
+    // Let any still-pending per-file setImmediate(_handleFileMessage) callbacks run so
+    // their drains are queued, THEN flush — the workers have exited, so the source PDFs
+    // are unlocked and the moves into Processed/ now succeed.
+    await new Promise((resolve) => setImmediate(resolve));
+    _flushPendingDrains(db, logger);
     cleanupFiles(tempFiles);
     cleanupFiles(shardFiles);
     // Remove any *_ocr.txt plaintext artifacts left by earlier versions of the
@@ -1414,6 +1484,11 @@ function register(ctx) {
 // the new { folder, filename }, or null if the source no longer exists.
 // CALLER must verify a durable copy exists before calling — this DOES remove the
 // original from the intake folder.
+// Best-effort blocking sleep — only ever hit on the drain lock-retry path below.
+function _sleepMs(ms) {
+  try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch {}
+}
+
 function drainOriginalToFolder(fs, path, srcPath, destDir, originalFilename) {
   if (!fs.existsSync(srcPath)) return null;
   if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
@@ -1425,13 +1500,77 @@ function drainOriginalToFolder(fs, path, srcPath, destDir, originalFilename) {
     destPath = path.join(destDir, `${base}-${counter}${ext}`);
     counter++;
   }
-  try {
-    fs.renameSync(srcPath, destPath);
-  } catch {
-    fs.copyFileSync(srcPath, destPath);   // cross-volume (EXDEV) fallback
-    fs.unlinkSync(srcPath);
+  // The OCR worker can still hold a transient handle on the PDF for a moment after it
+  // emits file_done, so an immediate rename fails with a LOCK error (EBUSY/EPERM/
+  // EACCES) — NOT a cross-volume error. The previous code assumed EVERY failure was
+  // cross-volume and did copy+unlink, which on a lock left the copy (a DUPLICATE in
+  // Processed/) but failed the unlink — so the original stayed in the source AND a
+  // duplicate appeared. Now: a genuine EXDEV uses copy+unlink; a lock is retried
+  // briefly; if still locked we leave the original in place (it drains on the next
+  // run) and never create a duplicate.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      fs.renameSync(srcPath, destPath);
+      return { folder: destDir, filename: path.basename(destPath) };
+    } catch (e) {
+      if (e && e.code === 'EXDEV') {           // genuine cross-volume → copy + remove
+        fs.copyFileSync(srcPath, destPath);
+        fs.unlinkSync(srcPath);
+        return { folder: destDir, filename: path.basename(destPath) };
+      }
+      if (attempt >= 4) return null;           // still locked after retries → leave it, no duplicate
+      _sleepMs(80);
+    }
   }
-  return { folder: destDir, filename: path.basename(destPath) };
+}
+
+// Flush the deferred-drain queue: move each processed/failed original into its
+// Processed/Errors subfolder now that the worker PROCESS has exited and released the
+// file handle. Called from the manual batch (after Promise.all) and the watch worker's
+// close handler. Items still locked are re-queued for a later flush (never lost, never
+// duplicated — see drainOriginalToFolder). Best-effort; failures are logged, not fatal.
+// Try to move an original NOW (the worker closes each PDF as it finishes it, so the
+// handle is usually free by file_done → the file moves live, "as processed"). If it is
+// still momentarily locked, queue it for the post-worker flush instead of blocking.
+function _drainNowOrDefer(db, logger, item) {
+  try {
+    const moved = drainOriginalToFolder(fs, path, item.srcPath, item.destDir, item.originalFilename);
+    if (moved) {
+      db.prepare('UPDATE documents SET folder_path = ? WHERE id = ?').run(moved.folder, item.docId);
+      if (moved.filename !== item.originalFilename) {
+        db.prepare('UPDATE documents SET original_filename = ? WHERE id = ?').run(moved.filename, item.docId);
+      }
+      logger?.log(`Drained to ${item.kind}: ${item.originalFilename} → ${moved.folder}`);
+      return;
+    }
+  } catch (e) {
+    logger?.warn(`Inline drain deferred for ${item.originalFilename}: ${e.message}`);
+  }
+  if (fs.existsSync(item.srcPath)) _pendingDrains.push(item);   // still locked → flush after the worker exits
+}
+
+function _flushPendingDrains(db, logger) {
+  if (!_pendingDrains.length) return;
+  const queue = _pendingDrains;
+  _pendingDrains = [];
+  const keep = [];
+  for (const item of queue) {
+    try {
+      const moved = drainOriginalToFolder(fs, path, item.srcPath, item.destDir, item.originalFilename);
+      if (moved) {
+        db.prepare('UPDATE documents SET folder_path = ? WHERE id = ?').run(moved.folder, item.docId);
+        if (moved.filename !== item.originalFilename) {
+          db.prepare('UPDATE documents SET original_filename = ? WHERE id = ?').run(moved.filename, item.docId);
+        }
+        logger?.log(`Drained to ${item.kind}: ${item.originalFilename} → ${moved.folder}`);
+      } else if (fs.existsSync(item.srcPath)) {
+        keep.push(item);   // still locked → retry on the next flush
+      }
+    } catch (e) {
+      logger?.warn(`Could not drain ${item.originalFilename} to ${item.kind}: ${e.message}`);
+    }
+  }
+  if (keep.length) _pendingDrains.push(...keep);
 }
 
 // Make/refresh the app-managed working copy of an intake file at
@@ -1566,15 +1705,11 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger) {
           : null;
         if (wp) { documents.update(db, docId, { working_path: wp }); msg.working_path = wp; }
         const drainEnabled = learning.getSetting(db, 'drain_processed', 'true') !== 'false';
-        if (drainEnabled && wp && fs.existsSync(wp)) {
-          const moved = drainOriginalToFolder(fs, path, srcForCopy, path.join(folderPath, 'Errors'), msg.original_filename);
-          if (moved) {
-            db.prepare('UPDATE documents SET folder_path = ? WHERE id = ?').run(moved.folder, docId);
-            if (moved.filename !== msg.original_filename) {
-              db.prepare('UPDATE documents SET original_filename = ? WHERE id = ?').run(moved.filename, docId);
-            }
-            logger?.log(`Drained failed original to Errors: ${msg.original_filename} → ${moved.folder}`);
-          }
+        if (drainEnabled && wp && fs.existsSync(wp) && srcForCopy) {
+          _drainNowOrDefer(db, logger, {
+            docId, destDir: path.join(folderPath, 'Errors'), kind: 'Errors',
+            srcPath: srcForCopy, originalFilename: msg.original_filename,
+          });
         }
       } catch (e) {
         logger?.warn(`Could not stow failed original ${msg.original_filename || '?'}: ${e.message}`);
@@ -1616,6 +1751,7 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger) {
     keyword_fingerprint: msg.keyword_fingerprint
       ? JSON.stringify(msg.keyword_fingerprint) : null,
     ocr_text:           msg.ocr_text      || null,
+    page_count:         msg.page_count    || null,
   });
 
   const docId = docResult.lastInsertRowid;
@@ -1669,19 +1805,13 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger) {
   if (drainEnabled && msg.working_path && fs.existsSync(msg.working_path)) {
     const explicit = learning.getSetting(db, 'processed_folder', null);
     const destDir  = (explicit && explicit.trim()) || path.join(folderPath, 'Processed');
-    const srcPath  = path.join(folderPath, msg.original_filename);
-    try {
-      const moved = drainOriginalToFolder(fs, path, srcPath, destDir, msg.original_filename);
-      if (moved) {
-        db.prepare('UPDATE documents SET folder_path = ? WHERE id = ?').run(moved.folder, docId);
-        if (moved.filename !== msg.original_filename) {
-          db.prepare('UPDATE documents SET original_filename = ? WHERE id = ?').run(moved.filename, docId);
-        }
-        logger?.log(`Drained to Processed: ${msg.original_filename} → ${moved.folder}`);
-      }
-    } catch (e) {
-      logger?.warn(`Could not drain original to Processed folder: ${e.message}`);
-    }
+    // Move it now if the worker has already released the file (the common case — it
+    // closes each PDF as it finishes); otherwise defer to the post-worker flush.
+    _drainNowOrDefer(db, logger, {
+      docId, destDir, kind: 'Processed',
+      srcPath: path.join(folderPath, msg.original_filename),
+      originalFilename: msg.original_filename,
+    });
   }
 
   // Log extraction result
@@ -1730,6 +1860,7 @@ module.exports = {
   killAll,
   cleanupTempFiles: cleanupFiles,
   handleFileMessage: _handleFileMessage,
+  flushPendingDrains: _flushPendingDrains,
   drainOriginalToFolder,
   ensureWorkingCopy,
   reconcileHolding,

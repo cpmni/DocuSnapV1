@@ -299,6 +299,9 @@ def main():
                 filepath, _enh, born_digital=args.born_digital, engine=ocr_engine,
                 cached_text=(_cached if (_cached and _cached.strip()) else None))
 
+            # Live page count, so the UI can flag a multi-page document while it processes.
+            emit({"type": "file_pages", "filename": filepath.name, "pages": len(page_images)})
+
             if not ocr_text.strip():
                 raise ValueError("OCR returned no text — is the scan readable?")
 
@@ -308,14 +311,22 @@ def main():
             # scanned pages (no text layer) -> anchors fall back to OCR unchanged.
             page_text_lines = None
             if args.born_digital and filepath.suffix.lower() == ".pdf":
+                _bd_doc = None
                 try:
                     import pypdfium2 as _pdfium
                     from ocr import born_digital as _bd
-                    _pg0 = _pdfium.PdfDocument(str(filepath))[0]
+                    _bd_doc = _pdfium.PdfDocument(str(filepath))
+                    _pg0 = _bd_doc[0]
                     if _bd.assess_page(_pg0)[0]:
                         page_text_lines = _bd.page_lines(_pg0)
                 except Exception:
                     page_text_lines = None
+                finally:
+                    # Release the file handle so the post-processing drain can move the
+                    # original out of the source folder (Windows locks an open PDF).
+                    if _bd_doc is not None:
+                        try: _bd_doc.close()
+                        except Exception: pass
 
             # Detect document type
             known_type_names = [dt["name"] for dt in doc_types] if doc_types else None
@@ -468,6 +479,7 @@ def main():
                 "template_id":        template_id,
                 "logo_phash":         logo_phash,
                 "keyword_fingerprint": kw_fingerprint,
+                "page_count":         len(page_images),
                 "mode_used":          "fast",
                 "ocr_text":           ocr_text[:50000],
                 "extractions":        {

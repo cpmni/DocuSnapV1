@@ -434,9 +434,16 @@ def overall_confidence(extractions: dict,
     covers the three built-in document types and silently ignores any custom
     type's fields entirely.
     """
+    # When the key fields come from the type's SCHEMA, an expected field that is EMPTY is
+    # a real failure to extract — it must count as 0, not be skipped. Otherwise a doc with
+    # one good field and several empty required fields scores on the single field and reads
+    # as high/green (the "72% with two empty fields" bug). Only the hard-coded fallback (no
+    # schema) keeps the old present-only average, since those keys may not exist for a type.
+    from_schema = False
     if key_fields is None and field_defs:
         key_fields = [f["key"] for f in field_defs if f.get("required")] \
                      or [f["key"] for f in field_defs]
+        from_schema = True
     if key_fields is None:
         key_fields = [
             "invoice_number", "invoice_date", "total_amount", "supplier_name",
@@ -447,6 +454,8 @@ def overall_confidence(extractions: dict,
         data = extractions.get(k)
         if isinstance(data, dict) and data.get("value"):
             scores.append(data.get("confidence", 0))
+        elif from_schema:
+            scores.append(0)   # an expected (required/schema) field with no value → 0
     return int(sum(scores) / len(scores)) if scores else 0
 
 
