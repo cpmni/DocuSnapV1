@@ -632,6 +632,15 @@ function decisionBar(route) {
     acts.appendChild(mkBtn({ label: 'Reject',    icon: 'reject', variant: 'danger',    sm: false, onClick: () => decide('reject') }));
     acts.appendChild(mkBtn({ label: 'Mark Paid', icon: 'check',  variant: 'secondary', sm: false, onClick: () => decide('paid') }));
   }
+  // Disposition: route the document back to the sender or on to another user. Admin/edit
+  // only (reuses the assign control, which lists the sender for a route-back).
+  if (canDecide()) {
+    let shown = false;
+    acts.appendChild(mkBtn({ label: 'Forward…', icon: 'assign', variant: 'ghost', sm: false, onClick: async () => {
+      if (shown) return; shown = true;
+      wrap.appendChild(await assignControl(route.document_id, route.from_username));
+    } }));
+  }
   return wrap;
 }
 
@@ -761,15 +770,19 @@ function closeBinMenu() { document.getElementById('bin-menu')?.remove(); }
 document.addEventListener('click', closeBinMenu);
 document.addEventListener('scroll', closeBinMenu, true);
 
-async function assignControl(docId) {
+async function assignControl(docId, senderUsername) {
   const wrap = document.createElement('div'); wrap.className = 'wf';
   if (!recipientsCache) {
     const rr = await api.workflow.recipients();
     recipientsCache = (rr.json && rr.json.recipients) || [];
   }
-  const opts = recipientsCache.map((u) => `<option value="${u.id}">${esc(u.displayName || u.username)} (${esc(u.role)})</option>`).join('');
+  // When forwarding a routed doc, pre-select + mark the original sender for a "route back".
+  const opts = recipientsCache.map((u) => {
+    const isSender = senderUsername && u.username === senderUsername;
+    return `<option value="${u.id}"${isSender ? ' selected' : ''}>${esc(u.displayName || u.username)} (${esc(u.role)})${isSender ? ' — sender' : ''}</option>`;
+  }).join('');
   wrap.innerHTML = `
-    <h3>${ico('assign')}Route for approval / acknowledgement</h3>
+    <h3>${ico('assign')}${senderUsername ? 'Forward / route onward' : 'Route for approval / acknowledgement'}</h3>
     <div class="wf-row">
       <select class="a-to">${opts}</select>
       <select class="a-action"><option value="approve">Approve</option><option value="acknowledge">Acknowledge</option></select>

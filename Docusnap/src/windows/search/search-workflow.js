@@ -89,14 +89,29 @@ function _decisionBar(route) {
     acts.appendChild(_btn('Reject', false, () => decide('reject')));
     acts.appendChild(_btn('Mark Paid', false, () => decide('paid')));
   }
+  // Disposition: route back to the sender or on to another user (reuses the assign form,
+  // with the sender pre-selected for a route-back). Admin/edit only.
+  if (_canDecide()) {
+    acts.appendChild(_btn('Forward…', false, () => {
+      if (wrap.querySelector('.wf-assign')) return;
+      wrap.appendChild(_assignForm({ id: route.document_id }, route.from_username));
+    }));
+  }
   return wrap;
 }
 
-function _assignForm(doc) {
+function _assignForm(doc, senderUsername) {
   const wrap = document.createElement('div'); wrap.className = 'wf-assign';
-  const sub = document.createElement('div'); sub.className = 'wf-sub'; sub.textContent = 'Route for approval / acknowledgement';
+  const sub = document.createElement('div'); sub.className = 'wf-sub';
+  sub.textContent = senderUsername ? 'Forward / route onward' : 'Route for approval / acknowledgement';
   const sel = document.createElement('select'); sel.className = 'search-input';
-  for (const u of _recipients) { const o = document.createElement('option'); o.value = u.id; o.textContent = `${u.displayName || u.username} (${u.role})`; sel.appendChild(o); }
+  for (const u of _recipients) {
+    const o = document.createElement('option'); o.value = u.id;
+    const isSender = senderUsername && u.username === senderUsername;
+    o.textContent = `${u.displayName || u.username} (${u.role})${isSender ? ' — sender' : ''}`;
+    if (isSender) o.selected = true;
+    sel.appendChild(o);
+  }
   const act = document.createElement('select'); act.className = 'search-input';
   [['approve', 'Approve'], ['acknowledge', 'Acknowledge']].forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; act.appendChild(o); });
   const note = document.createElement('input'); note.className = 'search-input'; note.placeholder = 'Note (optional)';
