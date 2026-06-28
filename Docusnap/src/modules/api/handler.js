@@ -43,7 +43,8 @@ const path              = require('path');
 const WF_HTTP = { FORBIDDEN: 403, NOT_FOUND: 404, CONFLICT: 409 };
 const wfStatus = (code) => WF_HTTP[code] || 400;
 
-const API_CONTRACT_VERSION = '1.1.0';   // 1.1: recycle-bin endpoints (delete/restore/purge). Major unchanged → back-compat.
+const API_CONTRACT_VERSION = '1.0.0';   // NB: ADDING endpoints (e.g. recycle bin) needs no bump — the
+                                        // handshake checks MAJOR only. Keep server + client in lockstep.
 const API_PREFIX = '/v1';
 const CLIENT_CONTRACT_HEADER = 'x-scanfinder-client-contract';
 

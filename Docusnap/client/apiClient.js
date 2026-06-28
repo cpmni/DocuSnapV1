@@ -23,7 +23,7 @@ const { URL } = require('url');
 
 // The contract version this client build targets — keep in lockstep with the
 // server's API_CONTRACT_VERSION (src/modules/api/handler.js).
-const CLIENT_CONTRACT = '1.1.0';   // 1.1: recycle-bin endpoints (matches server; major unchanged)
+const CLIENT_CONTRACT = '1.0.0';   // keep in lockstep with the server's API_CONTRACT_VERSION
 
 function parseVer(v) {
   const m = String(v || '').match(/^(\d+)\.(\d+)\.(\d+)/);
