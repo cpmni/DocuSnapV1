@@ -61,6 +61,12 @@
     #btn-mailbox { padding: 6px 14px; border-radius: 5px; border: 1px solid var(--border2);
       background: var(--surface2); color: var(--text); font-size: 12px; cursor: pointer; }
     #btn-mailbox:hover { border-color: var(--accent2); color: var(--accent2); }
+    #btn-recycle, #btn-empty-bin { padding: 6px 14px; border-radius: 5px; border: 1px solid var(--border2);
+      background: var(--surface2); color: var(--text); font-family: var(--sans); font-size: 12px; cursor: pointer; }
+    #btn-recycle:hover { border-color: var(--accent2); color: var(--accent2); }
+    #btn-recycle.active { background: var(--accent-bg); border-color: var(--accent); color: var(--accent2); }
+    #btn-empty-bin { color: var(--err); border-color: rgba(214,69,69,.4); }
+    #btn-empty-bin:hover { background: var(--err-bg); border-color: var(--err); }
     body.mailbox-mode #inp-company, body.mailbox-mode #inp-reference, body.mailbox-mode #inp-fulltext,
     body.mailbox-mode #inp-date-from, body.mailbox-mode #inp-date-to, body.mailbox-mode #inp-type,
     body.mailbox-mode .uncommitted-toggle, body.mailbox-mode #btn-search,

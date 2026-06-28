@@ -442,6 +442,12 @@ function rowEl(d) {
     el.classList.add('sel');
     openDocument(d.id);
   });
+  // Right-click a recycle-bin item → restore / delete-permanently menu.
+  el.addEventListener('contextmenu', (e) => {
+    if (d.status !== 'deleted' || !canDecide()) return;
+    e.preventDefault();
+    showBinMenu(e.clientX, e.clientY, d.id);
+  });
   return el;
 }
 
@@ -573,6 +579,21 @@ async function loadRecycleBin() {
   if (!rows.length) { root.innerHTML = '<div class="empty">The recycle bin is empty. Deleted documents appear here and can be restored.</div>'; return; }
   for (const d of rows) root.appendChild(rowEl(d));
 }
+
+// Right-click menu for a recycle-bin item.
+function showBinMenu(x, y, id) {
+  closeBinMenu();
+  const m = document.createElement('div'); m.id = 'bin-menu';
+  m.innerHTML = `<button data-act="restore">Restore</button>` +
+                (role === 'admin' ? `<button data-act="purge" class="danger">Delete permanently</button>` : '');
+  document.body.appendChild(m);
+  m.style.left = Math.min(x, window.innerWidth  - m.offsetWidth  - 6) + 'px';
+  m.style.top  = Math.min(y, window.innerHeight - m.offsetHeight - 6) + 'px';
+  m.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { closeBinMenu(); binAction(b.dataset.act, id); }));
+}
+function closeBinMenu() { document.getElementById('bin-menu')?.remove(); }
+document.addEventListener('click', closeBinMenu);
+document.addEventListener('scroll', closeBinMenu, true);
 
 async function assignControl(docId) {
   const wrap = document.createElement('div'); wrap.className = 'wf';
