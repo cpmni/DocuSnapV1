@@ -509,12 +509,12 @@ async function openDocument(id, route) {
   wrap.innerHTML = html;
   prev.innerHTML = ''; prev.appendChild(wrap);
 
-  // Top action bar: if this document is routed TO me, lead with the decision bar;
-  // otherwise admin/edit get the route-onward form.
-  const incoming = route || myOpenRoutes[id];
+  // Top action bar — ONLY when the workflow/approval add-on is licensed. Without it the
+  // client is search-only: no decision bar, no route-onward form.
+  const incoming = workflowEntitled ? (route || myOpenRoutes[id]) : null;
   if (incoming) {
     wrap.insertBefore(decisionBar(incoming), wrap.querySelector('.fields'));
-  } else if (canDecide()) {
+  } else if (canDecide() && workflowEntitled) {
     const ac = await assignControl(id); wrap.insertBefore(ac, wrap.querySelector('.fields'));
   }
 
