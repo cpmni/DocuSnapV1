@@ -806,6 +806,16 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 39 applied: performance indexes (documents/extractions/learning)');
   }
 
+  // Migration 40: documents.deleted_at — drives the RECYCLE BIN. Delete is now a SOFT
+  // delete (status='deleted', deleted_at=now, files kept) so it's recoverable; the bin
+  // lists deleted docs to restore or permanently remove. NULL for every existing row.
+  if (!applied.has(40)) {
+    try { db.exec(`ALTER TABLE documents ADD COLUMN deleted_at TEXT`); }
+    catch (e) { console.warn(`  documents.deleted_at: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (40)').run();
+    console.log('JS migration 40 applied: documents.deleted_at (recycle bin)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

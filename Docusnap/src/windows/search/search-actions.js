@@ -37,14 +37,30 @@ function renderActions(doc) {
 
   // ── 2. Document actions ─────────────────────────────────────────────────────
   const docSection = _section('Document Actions');
-  if (doc.status === 'confirmed') {
-    if (doc.stored_path) {
-      _btn(docSection, 'Open in Explorer', () => window.docusnap.showInExplorer(doc.stored_path));
-      _btn(docSection, 'Open File',        () => window.docusnap.openFile(doc.stored_path));
-    }
+  const role    = (window.SearchState && window.SearchState.role) || null;
+  const canEdit = role === 'admin' || role === 'edit';
+  const isAdmin = role === 'admin';
+
+  if (doc.status === 'deleted') {
+    // Recycle-bin item: restore (Admin/Edit) or permanently remove (Admin).
+    if (canEdit) _btn(docSection, 'Restore', () => _afterChange(window.docusnap.restoreDocument(doc.id)), true);
+    if (isAdmin) _btn(docSection, 'Delete permanently', () => {
+      if (confirm('Permanently delete this document and its file? This cannot be undone.')) _afterChange(window.docusnap.purgeDocument(doc.id));
+    });
   } else {
-    // Edit in Review: admin/edit only — enforced in main.js open-review-window-at handler.
-    _btn(docSection, 'Edit in Review', () => window.docusnap.openReviewWindowAt(doc.id), true);
+    if (doc.status === 'confirmed') {
+      if (doc.stored_path) {
+        _btn(docSection, 'Open in Explorer', () => window.docusnap.showInExplorer(doc.stored_path));
+        _btn(docSection, 'Open File',        () => window.docusnap.openFile(doc.stored_path));
+      }
+    } else {
+      // Edit in Review: admin/edit only — enforced in main.js open-review-window-at handler.
+      _btn(docSection, 'Edit in Review', () => window.docusnap.openReviewWindowAt(doc.id), true);
+    }
+    // Delete → recycle bin (Admin/Edit). Recoverable; the file is kept.
+    if (canEdit) _btn(docSection, 'Delete', () => {
+      if (confirm('Move this document to the recycle bin? You can restore it later.')) _afterChange(window.docusnap.deleteDocument(doc.id));
+    });
   }
   panel.appendChild(docSection);
 
@@ -76,6 +92,14 @@ function renderActions(doc) {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+// After a delete/restore/purge, refresh the result list so the document moves in/out
+// of view, and clear the now-stale preview.
+function _afterChange(p) {
+  Promise.resolve(p)
+    .then(() => { if (window.SearchQuery) window.SearchQuery.doSearch(); })
+    .catch((e) => console.error('document action failed:', e));
+}
 
 function _section(title) {
   const sec = document.createElement('div');

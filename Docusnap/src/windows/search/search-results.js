@@ -2,17 +2,24 @@
 // Results list — section headers and result items.
 // Delegates selection to SearchPreview.selectDoc via click handlers.
 
-function renderResults({ confirmed = [], uncommitted = [] }) {
+function renderResults({ confirmed = [], uncommitted = [], deleted = [] }) {
   const scroll = document.getElementById('results-scroll');
   const empty  = document.getElementById('results-empty');
   scroll.querySelectorAll('.section-header, .result-item').forEach(el => el.remove());
 
-  if (confirmed.length + uncommitted.length === 0) {
+  if (confirmed.length + uncommitted.length + deleted.length === 0) {
+    empty.textContent = (window.SearchState && window.SearchState.binMode)
+      ? 'The recycle bin is empty.'
+      : 'No documents found. Try different search terms.';
     empty.style.display = '';
     return;
   }
   empty.style.display = 'none';
 
+  if (deleted.length > 0) {
+    scroll.appendChild(_sectionHeader('RECYCLE BIN', deleted.length));
+    deleted.forEach(doc => scroll.appendChild(_resultItem(doc)));
+  }
   if (confirmed.length > 0) {
     scroll.appendChild(_sectionHeader('CONFIRMED', confirmed.length));
     confirmed.forEach(doc => scroll.appendChild(_resultItem(doc)));

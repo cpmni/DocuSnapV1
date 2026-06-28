@@ -282,26 +282,60 @@ function register(ctx) {
   // Delete is the one queue action the user explicitly kept Admin-exclusive
   // (Edit gets the rest of the daily workflow — review, edit, confirm, defer,
   // reprocess — but not permanent deletion of a scanned document).
-  ipcMain.handle('delete-document', async (_e, docId, filePath) => {
+  // Delete is now a SOFT delete → the document goes to the RECYCLE BIN (status='deleted',
+  // recoverable; files are KEPT). Permanent removal is the separate purge below.
+  ipcMain.handle('delete-document', async (_e, docId /*, filePath */) => {
+    requireRole('admin', 'edit');
     const db = getDb();
-    requireUnlocked(db, docId, 'delete'); // Edit/Admin; blocked while under an open approval route
-
-    // Delete file from disk
-    if (filePath && fs.existsSync(filePath)) {
-      try { fs.unlinkSync(filePath); } catch (e) {
-        console.warn('Could not delete file:', filePath, e.message);
-      }
-    }
-    // Also remove the app-managed working copy, if any (avoid orphaned files).
-    const wp = documents.getById(db, docId)?.working_path;
-    if (wp && fs.existsSync(wp)) { try { fs.unlinkSync(wp); } catch {} }
-    // Remove from DB
-    documents.deleteDoc(db, docId);
+    requireUnlocked(db, docId, 'delete'); // blocked while under an open approval route
+    documents.softDelete(db, docId);
     logAudit(db, { action: 'document_deleted', action_category: 'document', target_type: 'document',
-      target_id: docId, document_id: docId, outcome: 'success', metadata: { had_file: !!filePath } });
+      target_id: docId, document_id: docId, outcome: 'success', metadata: { soft: true } });
     notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
     notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
     return true;
+  });
+
+  // Recycle bin: list, restore, and permanently remove deleted documents.
+  ipcMain.handle('get-deleted-queue', () => { requireRole('admin', 'edit'); return documents.getDeletedQueue(getDb()); });
+
+  ipcMain.handle('restore-document', (_e, docId) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    documents.restoreDeleted(db, docId);
+    logAudit(db, { action: 'document_restored', action_category: 'document', target_type: 'document',
+      target_id: docId, document_id: docId, outcome: 'success' });
+    notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
+    notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
+    return true;
+  });
+
+  // Permanent removal (irreversible) — admin only. Unlinks the filed file + the app's
+  // working copy, then deletes the row. `purge-all-deleted` empties the whole bin.
+  function _purgeOne(db, docId) {
+    const doc = documents.getById(db, docId);
+    if (!doc) return;
+    for (const p of [documents.resolveFilePath(doc), doc.working_path]) {
+      if (p && fs.existsSync(p)) { try { fs.unlinkSync(p); } catch (e) { console.warn('purge unlink:', p, e.message); } }
+    }
+    documents.deleteDoc(db, docId);
+  }
+  ipcMain.handle('purge-document', (_e, docId) => {
+    requireRole('admin');
+    const db = getDb();
+    _purgeOne(db, docId);
+    logAudit(db, { action: 'document_purged', action_category: 'document', target_type: 'document',
+      target_id: docId, document_id: docId, outcome: 'success' });
+    return true;
+  });
+  ipcMain.handle('purge-all-deleted', () => {
+    requireRole('admin');
+    const db = getDb();
+    const ids = documents.getDeletedQueue(db).map(d => d.id);
+    for (const id of ids) _purgeOne(db, id);
+    logAudit(db, { action: 'recycle_bin_emptied', action_category: 'document', target_type: 'document',
+      outcome: 'success', metadata: { count: ids.length } });
+    return { purged: ids.length };
   });
 
   // ── Bulk delete of a whole queue (Admin only) ───────────────────────────────
@@ -312,22 +346,11 @@ function register(ctx) {
   // statement. Returning the deleted count lets the renderer report it.
   function _deleteQueue(status, rows, countEvent) {
     const db = getDb();
-    for (const r of rows) {
-      if (r.folder_path && r.original_filename) {
-        const fp = path.join(r.folder_path, r.original_filename);
-        try { if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch (e) {
-          console.warn('Could not delete file:', fp, e.message);
-        }
-      }
-      // Remove the app-managed working copy too (avoid orphaned files).
-      if (r.working_path && fs.existsSync(r.working_path)) {
-        try { fs.unlinkSync(r.working_path); } catch {}
-      }
-    }
-    const result = documents.deleteByStatus(db, status);
+    let n = 0;
+    for (const r of rows) { documents.softDelete(db, r.id); n++; }   // → recycle bin (recoverable; files kept)
     notifyMainWindow(countEvent, status === 'needs_review'
       ? documents.getReviewCount(db) : documents.getDeferredCount(db));
-    return { success: true, deleted: result.changes };
+    return { success: true, deleted: n };
   }
 
   ipcMain.handle('delete-all-review', async () => {

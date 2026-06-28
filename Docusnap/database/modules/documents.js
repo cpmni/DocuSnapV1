@@ -155,6 +155,36 @@ function getDeferredQueue(db) {
   `).all();
 }
 
+// ── Recycle bin (soft delete) ────────────────────────────────────────────────
+// Delete is recoverable: status→'deleted' + deleted_at; the file(s) are KEPT. Restore
+// returns it to a sensible live status; purge (deleteDoc) is the permanent removal.
+function softDelete(db, id) {
+  return db.prepare(
+    "UPDATE documents SET status = 'deleted', deleted_at = ? WHERE id = ?"
+  ).run(new Date().toISOString(), id);
+}
+function restoreDeleted(db, id) {
+  const doc = getById(db, id);
+  if (!doc) return { changes: 0 };
+  // A filed doc returns to 'confirmed'; anything else goes back to the review queue.
+  const to = doc.confirmed_at ? 'confirmed' : 'needs_review';
+  return db.prepare(
+    "UPDATE documents SET status = ?, deleted_at = NULL WHERE id = ?"
+  ).run(to, id);
+}
+function getDeletedQueue(db) {
+  return db.prepare(`
+    SELECT d.*, dt.name as type_name, dt.slug as type_slug
+    FROM documents d
+    LEFT JOIN document_types dt ON dt.id = d.document_type_id
+    WHERE d.status = 'deleted'
+    ORDER BY d.deleted_at DESC
+  `).all();
+}
+function getDeletedCount(db) {
+  return db.prepare("SELECT COUNT(*) as n FROM documents WHERE status = 'deleted'").get().n;
+}
+
 function getReviewCount(db) {
   return db.prepare(
     "SELECT COUNT(*) as n FROM documents WHERE status = 'needs_review'"
@@ -314,6 +344,7 @@ module.exports = {
   insert, update, getById, getWithExtractions,
   getReviewQueue, getDeferredQueue,
   getReviewCount, getDeferredCount, getStuckCount, getStuckQueue, getFiledCounts,
+  softDelete, restoreDeleted, getDeletedQueue, getDeletedCount,
   getFieldValueSuggestions,
   confirm, deleteDoc, deleteByStatus, search,
   resolveFilePath, filterExisting, getWorkingPaths,

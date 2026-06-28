@@ -16,6 +16,7 @@ window.initHelpMode?.('help-mode-toggle', {
   'date-from':   'Show documents dated on or after this date.',
   'date-to':     'Show documents dated on or before this date.',
   'do-search':   'Run the search. Results also update automatically as you type.',
+  'recycle-bin': 'View deleted documents. Restore them, or (admin) delete permanently. Delete sends a document here — it&rsquo;s recoverable.',
   'mailbox':     'Show documents shared with you for approval or acknowledgement (if enabled).',
   'results-pane':'The matching documents. Click one to preview it on the right.',
   'preview-pane':'A preview of the selected document and its filed details.',
@@ -48,6 +49,10 @@ async function _init() {
     window.SearchState.workflowEntitled = !!(e && e.workflow && e.workflow.entitled); // workflow add-on
   } catch { window.SearchState.entitled = false; window.SearchState.workflowEntitled = false; }
   try { const u = await window.docusnap.authGetCurrentUser(); window.SearchState.role = u && u.role; } catch { /* ignore */ }
+  // Recycle bin is for the people who can delete (Admin/Edit).
+  if (window.SearchState.role === 'admin' || window.SearchState.role === 'edit') {
+    const rb = document.getElementById('btn-recycle'); if (rb) rb.style.display = '';
+  }
   if (window.SearchState.entitled) document.body.classList.add('wf-on');              // enhanced search
   if (window.SearchState.workflowEntitled) {
     document.body.classList.add('workflow-on');                                       // mailbox + approvals
