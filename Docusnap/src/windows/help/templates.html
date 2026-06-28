@@ -164,6 +164,58 @@
             <p>For most users, simply confirming documents accurately is all the "teaching" that's needed.</p>
           </section>
 
+          <section id="template-manager">
+            <h2>The Template Manager (advanced)</h2>
+            <p>Admins can inspect everything Scan Finder has learned in <b>Settings &rarr; Templates</b>. You'll rarely
+              need it &mdash; Scan Finder builds templates on its own as you confirm documents &mdash; but it's here for
+              the occasional layout that keeps reading wrong.</p>
+            <figure class="shot-fig">
+              <img class="shot" src="img/template-manager-overview.png" alt="The Template Manager: template list, sample document and the field-mapping panel">
+              <figcaption><b>1</b> the layouts Scan Finder has learned &nbsp;&middot;&nbsp;
+                <b>2</b> a sample document to work from &nbsp;&middot;&nbsp;
+                <b>3</b> where you point out a field &nbsp;&middot;&nbsp;
+                <b>4</b> the field mappings you've saved.</figcaption>
+            </figure>
+
+            <h3>Starting a template by hand</h3>
+            <p>Click <b>+ New Template</b>, give it a name and pick its document type. (Normally you don't do this &mdash;
+              a template appears by itself once you've confirmed a few documents of the same layout.)</p>
+            <figure class="shot-fig">
+              <img class="shot" src="img/template-create.png" alt="Creating a new template: name and document type">
+              <figcaption>Name the template and choose its document type, then <b>Create</b>.</figcaption>
+            </figure>
+
+            <h3>Pointing out a field: anchor and target</h3>
+            <p>You show Scan Finder a field in two parts: the <b>anchor</b> is a fixed label that's always on the page
+              (like "Date:"), and the <b>target</b> is the value to read next to it. Draw a box around each, then click
+              <b>Test</b> to check it read the right thing.</p>
+            <figure class="shot-fig">
+              <img class="shot" src="img/template-anchor.png" alt="An anchor drawn on the 'Date:' label and a target drawn on the date value, with a successful test read">
+              <figcaption><b>1</b> the Draw Anchor / Draw Target buttons &nbsp;&middot;&nbsp;
+                <b>2</b> the anchor on a fixed label &nbsp;&middot;&nbsp;
+                <b>3</b> the target on the value &nbsp;&middot;&nbsp;
+                <b>4</b> Test shows what it read.</figcaption>
+            </figure>
+
+            <h3>Read it, or always use the same value</h3>
+            <p>For each field you can choose <b>Read it from the document</b> (find the value with the anchor and target
+              above) or <b>Always use the same value</b> &mdash; handy for something that never changes on this layout,
+              like a fixed supplier name.</p>
+            <figure class="shot-fig">
+              <img class="shot" src="img/template-fill-mode.png" alt="The 'How is this field filled?' choice: read it from the document, or always use the same value">
+              <figcaption>Pick how each field is filled &mdash; read it from the page, or set a constant value.</figcaption>
+            </figure>
+
+            <h3>Landmarks (only if asked)</h3>
+            <p>Landmarks are a few unique words Scan Finder uses to line up a scan that's shifted or skewed. It works
+              these out <b>automatically</b> &mdash; you only ever set them by hand if automatic detection keeps failing
+              on a difficult layout.</p>
+            <figure class="shot-fig">
+              <img class="shot" src="img/template-landmarks.png" alt="The manual landmarks editor with a few unique words selected">
+              <figcaption>Normally automatic &mdash; pick a few words that appear exactly once if you ever need to set them yourself.</figcaption>
+            </figure>
+          </section>
+
           <div class="callout tip">
             <div class="callout-title">Next step</div>
             <p>See how filed documents are organised and found in <a class="xref" href="search.html">Search &amp; Filing</a>.</p>

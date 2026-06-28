@@ -26,6 +26,60 @@
     { file: 'troubleshooting.html', title: 'Troubleshooting & FAQ', sections: ['troubleshooting', 'faq'] },
   ];
 
+  // ── Search index: every section HEADING in the guide → jump straight to it. The
+  //    nav search box (built below) filters this list; clicking a hit opens that
+  //    page at the section's anchor. Keep in step with the headings on each page. ──
+  const SEARCH_INDEX = [
+    ['Welcome to Scan Finder',                         'index.html',           'overview',         'Home'],
+    ['Quick start — your first filed document',         'index.html',           'quick-start',      'Home'],
+    ['Who Scan Finder is for',                          'index.html',           'who',              'Home'],
+    ['Getting Started',                                 'getting-started.html', 'getting-started',  'Getting Started'],
+    ['Opening the app and signing in',                  'getting-started.html', 'login',            'Getting Started'],
+    ['First-time setup',                                'getting-started.html', 'first-run',        'Getting Started'],
+    ['The home screen',                                 'getting-started.html', 'console',          'Getting Started'],
+    ['Processing mode: Fast or Smart',                  'getting-started.html', 'mode',             'Getting Started'],
+    ['Importing Documents',                             'importing.html',       'importing',        'Importing Documents'],
+    ['Two folders, two different jobs',                 'importing.html',       'folders',          'Importing Documents'],
+    ['How to import and process',                       'importing.html',       'import',           'Importing Documents'],
+    ['What happens after importing',                    'importing.html',       'after',            'Importing Documents'],
+    ['The Review Window',                               'review.html',          'review',           'Review Window'],
+    ['The three areas',                                 'review.html',          'layout',           'Review Window'],
+    ['Reviewing a document, step by step',              'review.html',          'loop',             'Review Window'],
+    ['Editing a field',                                 'review.html',          'editing',          'Review Window'],
+    ['What “confidence” means',                         'review.html',          'confidence',       'Review Window'],
+    ['What the badges and statuses mean',               'review.html',          'statuses',         'Review Window'],
+    ['The action buttons',                              'review.html',          'actions',          'Review Window'],
+    ['When a scan reads badly',                         'review.html',          'recovery',         'Review Window'],
+    ['Templates & Learning',                            'templates.html',       'templates',        'Templates & Learning'],
+    ['How learning works',                              'templates.html',       'learning',         'Templates & Learning'],
+    ['Which teaching tool should I use?',               'templates.html',       'which-tool',       'Templates & Learning'],
+    ['Teach a document',                                'templates.html',       'teach',            'Templates & Learning'],
+    ['The Template Wizard and manual mapping',          'templates.html',       'template-wizard',  'Templates & Learning'],
+    ['Template Manager',                                'templates.html',       'template-manager', 'Templates & Learning'],
+    ['Document Types & Fields',                         'document-types.html',  'document-types',   'Document Types & Fields'],
+    ['A document type at a glance',                     'document-types.html',  'at-a-glance',      'Document Types & Fields'],
+    ['Add a type from the catalog',                     'document-types.html',  'catalog',          'Document Types & Fields'],
+    ['Your own fields',                                 'document-types.html',  'fields',           'Document Types & Fields'],
+    ['The three fields every type has',                 'document-types.html',  'locked-fields',    'Document Types & Fields'],
+    ['Renaming a field',                                'document-types.html',  'renaming',         'Document Types & Fields'],
+    ['Search & Filing',                                 'search.html',          'filing',           'Search & Filing'],
+    ['How documents are filed',                         'search.html',          'how-filed',        'Search & Filing'],
+    ['Customise how documents are named and foldered',  'search.html',          'output-structure', 'Search & Filing'],
+    ['Searching for a document',                        'search.html',          'search',           'Search & Filing'],
+    ['Settings & Help',                                 'settings.html',        'settings',         'Settings & Help'],
+    ['The settings you’ll actually use',                'settings.html',        'common',           'Settings & Help'],
+    ['Folders: output, processed & watch',              'settings.html',        'common',           'Settings & Help'],
+    ['Processing mode & name checks',                   'settings.html',        'common',           'Settings & Help'],
+    ['Colour theme & appearance',                       'settings.html',        'common',           'Settings & Help'],
+    ['Advanced settings',                               'settings.html',        'advanced',         'Settings & Help'],
+    ['Backup & Restore',                                'settings.html',        'advanced',         'Settings & Help'],
+    ['Activation & licensing',                          'settings.html',        'licensing',        'Settings & Help'],
+    ['Where to find help',                              'settings.html',        'help',             'Settings & Help'],
+    ['The “?” help mode',                               'settings.html',        'help-mode',        'Settings & Help'],
+    ['Troubleshooting & FAQ',                           'troubleshooting.html', 'troubleshooting',  'Troubleshooting & FAQ'],
+    ['Common questions',                                'troubleshooting.html', 'faq',              'Troubleshooting & FAQ'],
+  ];
+
   function currentFile() {
     const path = location.pathname.split('/').pop();
     return path && path.length ? path : 'index.html';
@@ -51,6 +105,58 @@
       a.href = p.file;
       a.innerHTML = `<span class="nav-num">${i === 0 ? '' : i}</span>${p.title}`;
       host.appendChild(a);
+    });
+  }
+
+  // ── Search box: jump to any section by its heading ──────────────────────────
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  }
+  // Bold the matched run in the (already-escaped) label.
+  function highlight(label, q) {
+    const esc = escapeHtml(label);
+    if (!q) return esc;
+    const i = label.toLowerCase().indexOf(q);
+    if (i < 0) return esc;
+    return escapeHtml(label.slice(0, i)) + '<b>' + escapeHtml(label.slice(i, i + q.length)) + '</b>' + escapeHtml(label.slice(i + q.length));
+  }
+  function buildSearch() {
+    const nav = document.getElementById('nav');
+    const links = document.getElementById('nav-links');
+    if (!nav || !links) return;
+    const wrap = document.createElement('div');
+    wrap.id = 'help-search';
+    wrap.innerHTML =
+      '<input id="help-search-input" type="search" placeholder="Search the guide…" autocomplete="off" spellcheck="false" aria-label="Search the guide">' +
+      '<div id="help-search-results" hidden></div>';
+    nav.insertBefore(wrap, links);
+    const input = wrap.querySelector('#help-search-input');
+    const out   = wrap.querySelector('#help-search-results');
+
+    function render() {
+      const q = input.value.trim().toLowerCase();
+      if (!q) { out.hidden = true; out.innerHTML = ''; links.style.display = ''; return; }
+      const hits = SEARCH_INDEX
+        .filter(([label, , , page]) => label.toLowerCase().includes(q) || page.toLowerCase().includes(q))
+        .slice(0, 14);
+      out.innerHTML = hits.length
+        ? hits.map(([label, file, hash, page]) =>
+            `<a class="hs-item" href="${file}#${hash}"><span class="hs-label">${highlight(label, q)}</span><span class="hs-page">${escapeHtml(page)}</span></a>`).join('')
+        : `<div class="hs-empty">No matches for &ldquo;${escapeHtml(input.value.trim())}&rdquo;</div>`;
+      out.hidden = false;
+      links.style.display = 'none';   // hide the page list while searching
+    }
+    input.addEventListener('input', render);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { input.value = ''; render(); input.blur(); }
+      else if (e.key === 'Enter') { const first = out.querySelector('a.hs-item'); if (first) { e.preventDefault(); first.click(); } }
+    });
+    // "/" anywhere (outside a text field) focuses search — a familiar docs shortcut.
+    document.addEventListener('keydown', (e) => {
+      if (e.key === '/' && document.activeElement !== input
+          && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '')) {
+        e.preventDefault(); input.focus();
+      }
     });
   }
 
@@ -123,6 +229,7 @@
   document.getElementById('btn-close')?.addEventListener('click', () => window.docusnap?.windowClose?.());
 
   buildNav();
+  buildSearch();
   buildBreadcrumb();
   buildFooter();
   wireShots();

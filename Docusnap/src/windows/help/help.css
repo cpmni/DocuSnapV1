@@ -29,6 +29,22 @@ html, body { height:100%; background:var(--bg); color:var(--text); font-family:v
   padding:18px 12px; display:flex; flex-direction:column; gap:2px; overflow-y:auto;
 }
 .nav-label { font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); margin:0 8px 8px; }
+
+/* Search box (injected into the nav by help-nav.js) — jump to any section by its heading */
+#help-search { margin:0 0 12px; }
+#help-search-input {
+  width:100%; padding:8px 11px; border:1px solid var(--border2); border-radius:7px;
+  background:var(--surface2); color:var(--text); font-family:inherit; font-size:12.5px;
+}
+#help-search-input::placeholder { color:var(--muted); }
+#help-search-input:focus { outline:none; border-color:var(--accent); background:var(--surface); }
+#help-search-results { display:flex; flex-direction:column; gap:1px; margin-top:6px; }
+.hs-item { display:block; padding:7px 9px; border-radius:6px; text-decoration:none; }
+.hs-item:hover, .hs-item:focus { background:var(--surface2); outline:none; }
+.hs-label { display:block; color:var(--text); font-size:12px; line-height:1.35; }
+.hs-label b { color:var(--accent2); font-weight:600; }
+.hs-page  { display:block; color:var(--muted); font-size:10px; margin-top:1px; }
+.hs-empty { color:var(--muted); font-size:11.5px; padding:8px 9px; line-height:1.5; }
 .nav-item {
   display:block; text-align:left; padding:8px 10px; border-radius:7px; border:none; background:transparent;
   color:var(--muted); font-family:inherit; font-size:12.5px; cursor:pointer; text-decoration:none;
