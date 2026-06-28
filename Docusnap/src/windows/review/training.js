@@ -7,31 +7,35 @@
  */
 (function () {
   const STEPS = [
-    { sel: '#queue-list',     title: 'Your review queue',     advance: 'click',
+    { id: 'queue', sel: '#queue-list', title: 'Your review queue', advance: 'click',
       body: 'Every scanned document waiting for you appears here. Click one to open it — and we’ll walk through checking and filing it.' },
-    { sel: '#btn-doc-next',   title: 'Move between documents', advance: 'next',
+    { id: 'nav', sel: '#btn-doc-next', title: 'Move between documents', advance: 'next',
       body: 'Step through your documents with these arrows — or just press the ↑ and ↓ keys, no mouse needed.' },
-    { sel: '#doc-panel',      title: 'The scanned document',  advance: 'next',
+    { id: 'doc', sel: '#doc-panel', title: 'The scanned document', advance: 'next',
       body: 'The scan itself shows in the middle. You can zoom and drag it to read anything closely.' },
-    { sel: '#btn-split-pdf',  title: 'Split a combined PDF',  advance: 'next',
+    { id: 'split', sel: '#btn-split-pdf', title: 'Split a combined PDF', advance: 'next',
       body: 'Sometimes one PDF holds several documents scanned together. The ✂ Split button — it appears on multi-page files — lets you split them into separate documents, each filed on its own.' },
-    { sel: '#fields-panel',   title: 'What Scan Finder read', advance: 'next',
+    { id: 'fieldspanel', sel: '#fields-panel', title: 'What Scan Finder read', advance: 'next',
       body: 'On the right are the details it pulled out — who it’s from, the date, the reference. Your job is just to check them.' },
-    { sel: '#doctype-select', title: 'Choose the document type', advance: 'change', allowNext: true,
-      body: 'Pick what kind of document this is (Invoice, Order…). Choose it now — or, if it’s already correct, just click Next.' },
-    { sel: '#btn-new-doctype', title: 'Create a new type',    advance: 'next',
-      body: 'No suitable type in the list? “+ New type” (for admins) creates one — name it and choose the fields to capture. From then on Scan Finder can detect, read and file that type automatically.' },
-    { sel: '#fields-scroll',  title: 'Check the details',     advance: 'next',
+    // Branch point: pick an existing type (→ skip to "check details"), or "No type yet" → build one.
+    { id: 'doctype', sel: '#doctype-select', title: 'Choose the document type', advance: 'change', allowNext: true,
+      advanceTo: 'fields', branch: { label: 'No type yet', to: 'nt-open', requires: '#btn-new-doctype' },
+      body: 'Pick what kind of document this is (Invoice, Order…). If the right type isn’t in the list, click “No type yet” and we’ll create it together.' },
+    { id: 'nt-open', sel: '#btn-new-doctype', title: 'Create a new type', advance: 'click',
+      body: 'Click “+ New type” to open the type builder.' },
+    { id: 'nt-fill', sel: '#fields-panel', pin: 'bottom', advance: 'next', returnTo: 'doctype', title: 'Build your new type',
+      body: 'Give the type a name, add the fields you want Scan Finder to capture, and Save. We’ll bring you right back here to pick it — and from now on it can detect and file that type automatically.' },
+    { id: 'fields', sel: '#fields-scroll', title: 'Check the details', advance: 'next',
       body: 'Read down the fields and fix anything that looks wrong. To teach a field for next time, click its ⊕ and draw a box round the value.' },
-    { sel: '#btn-acknowledge', title: 'Mark as reviewed (Space)', advance: 'next',
+    { id: 'ack', sel: '#btn-acknowledge', title: 'Mark as reviewed (Space)', advance: 'next',
       body: 'When a document was flagged but you’ve checked everything’s fine, press the Space key (or this button) to mark it reviewed — so “File All Ready” will include it.' },
-    { sel: '#btn-delete',     title: 'Delete a document',     advance: 'next',
+    { id: 'del', sel: '#btn-delete', title: 'Delete a document', advance: 'next',
       body: 'Don’t need it? Delete removes the document from the queue — it goes to the recycle bin, so it can be restored later if needed.' },
-    { sel: '#btn-confirm',    title: 'File the document',     advance: 'click', alsoEnter: true,
+    { id: 'confirm', sel: '#btn-confirm', title: 'File the document', advance: 'click', alsoEnter: true,
       body: 'When everything looks right, click Confirm & File — or just press Enter — to file a tidy copy and jump to the next document. Scan Finder learns from your corrections each time.' },
-    { sel: '#btn-reprocess-all', title: 'Reprocess all — it gets smarter', advance: 'next',
+    { id: 'reproc', sel: '#btn-reprocess-all', title: 'Reprocess all — it gets smarter', advance: 'next',
       body: 'Once you’ve confirmed a few documents, Reprocess all re-reads every document still in the queue using what Scan Finder just learned from your corrections — often filling in fields it missed the first time.' },
-    { sel: '#btn-file-all-review', title: 'File all ready', advance: 'next',
+    { id: 'fileall', sel: '#btn-file-all-review', title: 'File all ready', advance: 'next',
       body: 'When several documents look right, File All Ready files them all at once — they’re tidied away and become searchable later from Search. Anything still missing details is left for you to check.' },
   ];
 
@@ -66,6 +70,7 @@
   function onKey(e) { if (e.key === 'Escape') { e.stopPropagation(); stop(); } }
   function clearStep() { cleanup.forEach(fn => fn()); cleanup = []; }
   function next() { idx++; if (idx >= steps.length) finish(); else render(); }
+  function jumpTo(id) { const i = steps.findIndex(s => s.id === id); if (i < 0) { next(); return; } idx = i; render(); }
   function finish() {
     callout.classList.add('done');
     callout.innerHTML = `<div class="tc-title">You’re all set 🎉</div>
@@ -97,26 +102,36 @@
     if (!visible && isAction) { next(); return; }
 
     callout.classList.remove('done');
-    callout.style.transform = ''; hole.style.opacity = ''; arrow.style.display = '';
+    callout.style.transform = ''; callout.style.bottom = ''; hole.style.opacity = ''; arrow.style.display = '';
+    const fwd = step.advanceTo || step.returnTo;   // forward-jump target id (else linear next)
+    const fwdGo = () => (fwd ? jumpTo(fwd) : next());
+    const reqEl = step.branch && step.branch.requires && q(step.branch.requires);
+    const branchOk = step.branch && (!step.branch.requires || (reqEl && reqEl.getClientRects().length));
     callout.innerHTML = `
       <div class="tc-title">${step.title}</div>
       <div class="tc-body">${step.body}</div>
       <div class="tc-foot">
-        <span class="tc-step">Step ${idx + 1} of ${steps.length}</span>
+        <span class="tc-step">Step ${idx + 1}</span>
         <span class="tc-actions">
           <button class="tc-skip">Skip tour</button>
+          ${branchOk ? `<button class="tc-branch">${step.branch.label}</button>` : ''}
           ${isAction
             ? `<span class="tc-hint">do this to continue</span><button class="${step.allowNext ? 'tc-next' : 'tc-skipstep'}">${step.allowNext ? 'Next →' : 'skip&nbsp;→'}</button>`
             : '<button class="tc-next">Next →</button>'}
         </span>
       </div>`;
     callout.querySelector('.tc-skip').onclick = stop;
-    callout.querySelector('.tc-next')?.addEventListener('click', next);
-    callout.querySelector('.tc-skipstep')?.addEventListener('click', next);
+    callout.querySelector('.tc-next')?.addEventListener('click', fwdGo);
+    callout.querySelector('.tc-skipstep')?.addEventListener('click', fwdGo);
+    callout.querySelector('.tc-branch')?.addEventListener('click', () => jumpTo(step.branch.to));
 
-    if (!visible) {   // explain it centred, no spotlight
+    // No spotlight when the control isn't on screen, or for a "pinned" step (e.g. while the
+    // new-type builder is open) — keep the card out of the way at the bottom.
+    if (!visible || step.pin === 'bottom') {
       hole.style.opacity = '0'; arrow.style.display = 'none';
-      callout.style.left = '50%'; callout.style.top = '50%'; callout.style.transform = 'translate(-50%,-50%)';
+      callout.style.left = '50%';
+      if (step.pin === 'bottom') { callout.style.top = 'auto'; callout.style.bottom = '24px'; callout.style.transform = 'translateX(-50%)'; }
+      else { callout.style.top = '50%'; callout.style.transform = 'translate(-50%,-50%)'; }
       return;
     }
 
@@ -130,7 +145,7 @@
         cleanup.push(() => document.removeEventListener('keydown', ek));
       }
     } else if (step.advance === 'change') {
-      const h = () => next();
+      const h = () => fwdGo();
       target.addEventListener('change', h, { once: true });
       cleanup.push(() => target.removeEventListener('change', h));
     }
@@ -176,5 +191,9 @@
 
   // Wire the launch button if present.
   document.getElementById('btn-training')?.addEventListener('click', start);
+  // When a new type is created during the "build a type" step, jump straight back to picking it.
+  window.docusnap?.onDocTypesChanged?.(() => {
+    if (active && steps[idx] && steps[idx].id === 'nt-fill') jumpTo(steps[idx].returnTo || 'doctype');
+  });
   window.ReviewTraining = { start, stop, isActive: () => active };
 })();
