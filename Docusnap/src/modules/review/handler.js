@@ -506,6 +506,19 @@ function register(ctx) {
       }
     } catch { /* learning is best-effort */ }
 
+    // AUTO-PROMOTE on a TAUGHT confirm (the path-B fix): when the user taught fields on this
+    // document (⊕ targets — taught_fields non-empty), they're building a reusable layout, so
+    // create/refresh a template now and freeze the non-variable TYPED fields (e.g. Document
+    // Issuer) as fixed values via _buildTemplateFields. That is what makes a typed issuer fill
+    // on the next document's reprocess. Plain (un-taught) confirms still create NO template,
+    // by design; bulk "File All Ready" carries no taught_fields, so it's unaffected.
+    // Best-effort + non-fatal — a template-build problem never fails the confirm itself.
+    if (!bulk && Array.isArray(taught_fields) && taught_fields.length && (document_type_slug || dtInfo)) {
+      try {
+        await _upsertTemplate(ctx, db, document_id, { allValues, document_type_slug, supplier_name, dtInfo });
+      } catch (e) { console.warn('Auto-promote on taught confirm failed:', e.message); }
+    }
+
     return { success: true, ...filingResult };
   });
 

@@ -962,6 +962,16 @@ samples (with a floor so one noisy sample can't erase a known-good identity);
 an already-established `logo_phash` is kept rather than reclobbered each confirm.
 Prevents one garbled scan from poisoning Stage 0 matching for a whole supplier.
 
+**Auto-promote a template on a TAUGHT confirm** (`review/handler.js` confirm-review, 2026-06-28):
+`_upsertTemplate` was removed from *every* confirm, but a confirm where the user TAUGHT fields
+(⊕ targets — `taught_fields` non-empty, non-bulk) now calls it: the operator is clearly
+building a reusable layout, so a template is created/refreshed and `_buildTemplateFields`
+freezes the non-variable TYPED fields (e.g. **Document Issuer**, `is_variable` 0) as
+`fixed_value`s. This is what makes a typed issuer FILL on the next document's reprocess
+(previously: drawn targets in Review + a typed issuer + Confirm created NO template, so the
+issuer had no learned artifact). Plain (un-taught) and bulk "File All Ready" confirms still
+create no template, by design. Best-effort + non-fatal — never fails the confirm.
+
 **Born-digital keyword-fingerprint backfill** (`templates/handler.js` `generateFingerprint`
 + `python_backend/template_fingerprint.py`, 2026-06): a template can be born with an EMPTY
 keyword_fingerprint — a BORN-DIGITAL doc (e.g. a Print Tracker email alert) whose stored
