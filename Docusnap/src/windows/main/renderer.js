@@ -238,12 +238,16 @@ async function refreshWatchCard() {
   if (cfg && cfg.enabled && hasFolder) {
     body.className = 'dash-watch-body on';
     body.innerHTML = `On — watching<br><span class="wf-path">${escHtml(cfg.folder)}</span>`;
+    const lt = document.getElementById('dash-watch-light');
+    if (!lt || !lt.classList.contains('processing')) setWatchLight('done');   // green = on & ready
   } else if (hasFolder) {
     body.className = 'dash-watch-body off';
     body.innerHTML = `Paused<br><span class="wf-path">${escHtml(cfg.folder)}</span>`;
+    setWatchLight('');
   } else {
     body.className = 'dash-watch-body off';
     body.textContent = 'Pick a folder and new scans dropped into it import automatically.';
+    setWatchLight('');
   }
   if (btnLbl) btnLbl.textContent = hasFolder ? 'Change folder' : 'Choose folder';
 }
@@ -803,6 +807,15 @@ window.docusnap.onProgress((msg) => {
 // reflected there too. It still does NOT drive the manual progress BAR or the
 // results table (those are built for one discrete user-initiated batch; the
 // watcher streams per-file and runs files in parallel).
+// Auto-import card status light: '' hidden, 'processing' red-blink, 'done' steady green.
+let _watchIdleTimer = null;
+function setWatchLight(state) {
+  const el = document.getElementById('dash-watch-light');
+  if (!el) return;
+  el.className = 'watch-light' + (state ? ' ' + state : '');
+  el.title = state === 'processing' ? 'Importing a document…' : state === 'done' ? 'Auto-import on — ready' : '';
+}
+
 function handleWatchProgress(msg) {
   _lastWatchActivity = Date.now();   // gates the dashboard's heavy refresh while a watch import runs
   // ALWAYS count watch docs in the cumulative Session Stats — even while a manual
@@ -819,6 +832,10 @@ function handleWatchProgress(msg) {
     if (msg.success) stats.ok++; else stats.err++;
     updateStats();
   }
+
+  // Status light: red-blink while a watch import is in flight, green ~1.5s after the last one.
+  if (msg.type === 'file_begin') { clearTimeout(_watchIdleTimer); setWatchLight('processing'); }
+  else if (msg.type === 'file_done') { clearTimeout(_watchIdleTimer); _watchIdleTimer = setTimeout(() => setWatchLight('done'), 1500); }
 
   if (running) return;            // the manual run owns the log strip + status
   logPanel.classList.add('visible');
