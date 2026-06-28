@@ -18,6 +18,44 @@
       --r:12px; --r-sm:9px; --r-pill:999px;
       --display:'IBM Plex Sans',system-ui,sans-serif; --body:'IBM Plex Sans',system-ui,sans-serif;
       --mono:'IBM Plex Mono',ui-monospace,monospace;
+      --on-accent:#fff;
+      color-scheme:light;
+    }
+    /* ── Named themes (mirror the main app) — set via data-theme on <html> ──────── */
+    :root[data-theme="warm"]{
+      --bg:#f5f2ec;--surface:#fffdf9;--surface2:#f0ece3;--border:#e7e0d3;--border2:#d8cfbd;
+      --accent:#1f8270;--accent2:#196b5c;--ok:#1f9d63;--warn:#b07816;--err:#d64545;
+      --text:#2a2620;--muted:#756c5c;--on-accent:#fff;
+      --grad1:#e7ded0;--grad2:#f5f2ec;--nav-bg:rgba(255,253,249,.8);--card-a:#fffdf9;--card-b:#f3eee4;
+      --shadow:0 1px 2px rgba(60,50,30,.06),0 20px 44px -26px rgba(60,50,30,.20); color-scheme:light;
+    }
+    :root[data-theme="slate"]{
+      --bg:#eef1f5;--surface:#ffffff;--surface2:#e6eaf0;--border:#dde2ea;--border2:#c8cfdb;
+      --accent:#4b5bd6;--accent2:#3a48bf;--ok:#1f9d63;--warn:#b07816;--err:#d64545;
+      --text:#1a1e2b;--muted:#5f6883;--on-accent:#fff;
+      --grad1:#dfe5f1;--grad2:#eef1f5;--nav-bg:rgba(255,255,255,.8);--card-a:#ffffff;--card-b:#f3f5f9;
+      --shadow:0 1px 2px rgba(20,30,60,.06),0 20px 44px -26px rgba(20,30,60,.22); color-scheme:light;
+    }
+    :root[data-theme="dark"]{
+      --bg:#0c0e14;--surface:#13161f;--surface2:#1a1e2a;--border:#252836;--border2:#2f3347;
+      --accent:#4f8ef7;--accent2:#6ea8ff;--ok:#3ecf8e;--warn:#f7b84f;--err:#f76f6f;
+      --text:#e2e6f0;--muted:#7a82a0;--on-accent:#fff;
+      --grad1:#141d33;--grad2:#0c0e14;--nav-bg:rgba(19,22,31,.8);--card-a:#161a24;--card-b:#11141c;
+      --shadow:0 1px 2px rgba(0,0,0,.35),0 18px 40px -24px rgba(0,0,0,.7); color-scheme:dark;
+    }
+    :root[data-theme="midnight"]{
+      --bg:#0a0c12;--surface:#12151f;--surface2:#1a1e2b;--border:#232739;--border2:#313650;
+      --accent:#f5a623;--accent2:#ffbe4d;--ok:#3ecf8e;--warn:#f7b84f;--err:#f76f6f;
+      --text:#ece9e3;--muted:#868ca6;--on-accent:#1a1205;
+      --grad1:#1c1605;--grad2:#0a0c12;--nav-bg:rgba(18,21,31,.8);--card-a:#141826;--card-b:#0f121c;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 18px 40px -24px rgba(0,0,0,.75); color-scheme:dark;
+    }
+    :root[data-theme="graphite"]{
+      --bg:#0e0f11;--surface:#161719;--surface2:#1d1f22;--border:#26282b;--border2:#34373c;
+      --accent:#6354d9;--accent2:#7c6cf0;--ok:#3ecf8e;--warn:#f7b84f;--err:#f76f6f;
+      --text:#e8e8ea;--muted:#8a8c93;--on-accent:#fff;
+      --grad1:#161430;--grad2:#0e0f11;--nav-bg:rgba(22,23,25,.8);--card-a:#18191c;--card-b:#121315;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 18px 40px -24px rgba(0,0,0,.7); color-scheme:dark;
     }
     * { box-sizing:border-box; }
     html,body { height:100%; }
@@ -45,7 +83,7 @@
     .btn[disabled], .btn.is-busy { opacity:.55; pointer-events:none; }
     .btn-sm { padding:5px 10px; font-size:12px; gap:6px; }
     .btn-block { width:100%; justify-content:center; }
-    .btn-primary { background:var(--accent); border-color:var(--accent); color:#fff; box-shadow:0 8px 18px -10px var(--accent); }
+    .btn-primary { background:var(--accent); border-color:var(--accent); color:var(--on-accent); box-shadow:0 8px 18px -10px var(--accent); }
     .btn-primary:hover { filter:brightness(1.09); }
     .btn-secondary { background:var(--surface2); border-color:var(--border2); color:var(--text); }
     .btn-secondary:hover { background:var(--border); border-color:var(--accent2); }
@@ -161,6 +199,34 @@
     .side-foot { margin-top:auto; display:flex; flex-direction:column; gap:var(--s3);
       border-top:1px solid var(--border); padding-top:var(--s3); }
     .side-user { display:flex; flex-direction:column; gap:5px; font-size:12px; color:var(--muted); }
+    /* Clock + dark toggle at the foot of the sidebar (bottom-left), like the main app */
+    .side-clock { text-align:center; padding:6px 0 2px; }
+    .side-time { font-family:var(--mono); font-size:20px; font-weight:700; color:var(--text); line-height:1.1; letter-spacing:.02em; }
+    .side-date { font-size:11px; color:var(--muted); margin-top:2px; }
+    .side-dark { display:flex; align-items:center; justify-content:space-between; gap:8px; cursor:pointer;
+      padding:6px var(--s2); border-radius:var(--r-sm); font-size:12px; color:var(--muted); }
+    .side-dark:hover { background:var(--surface2); color:var(--text); }
+    .switch { position:relative; display:inline-block; width:38px; height:22px; flex:0 0 auto; }
+    .switch input { position:absolute; opacity:0; width:0; height:0; }
+    .switch-track { position:absolute; inset:0; border-radius:var(--r-pill); background:var(--surface2);
+      border:1px solid var(--border2); transition:background .15s, border-color .15s; }
+    .switch-track::before { content:""; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%;
+      background:var(--surface); box-shadow:0 1px 2px rgba(0,0,0,.25); transition:transform .15s; }
+    .switch input:checked + .switch-track { background:var(--accent); border-color:var(--accent); }
+    .switch input:checked + .switch-track::before { transform:translateX(16px); }
+    /* Settings view (built into the window) */
+    #view-settings { flex:1; overflow:auto; padding:var(--s5); }
+    .set-section { max-width:560px; }
+    .set-section h2 { font-size:16px; margin:0 0 var(--s2); font-weight:600; }
+    .set-section .sub { color:var(--muted); font-size:13px; margin:0 0 var(--s4); }
+    .set-row { display:flex; align-items:center; justify-content:space-between; gap:var(--s4);
+      padding:var(--s4); border:1px solid var(--border); border-radius:var(--r); background:var(--surface);
+      box-shadow:var(--shadow); margin-bottom:var(--s3); }
+    .set-row .set-lbl { font-size:14px; font-weight:600; }
+    .set-row .set-hint { font-size:12px; color:var(--muted); margin-top:3px; }
+    .set-row select { background:var(--surface2); color:var(--text); border:1px solid var(--border2);
+      border-radius:var(--r-sm); padding:8px 10px; font:inherit; min-width:170px; }
+    .set-row select:focus { outline:none; border-color:var(--accent); }
 
     /* Content area + per-view header */
     .content { flex:1; display:flex; flex-direction:column; min-height:0; }
@@ -245,7 +311,7 @@
       border-radius:var(--r-pill); padding:3px; gap:2px; }
     .seg { display:inline-flex; align-items:center; gap:6px; border:none; background:transparent; color:var(--muted);
       padding:6px 13px; border-radius:var(--r-pill); font:600 13px/1 var(--body); cursor:pointer; transition:background .15s, color .15s; }
-    .seg:hover { color:var(--text); } .seg.active { background:var(--accent); color:#fff; }
+    .seg:hover { color:var(--text); } .seg.active { background:var(--accent); color:var(--on-accent); }
     .seg.active .seg-badge { background:rgba(255,255,255,.25); color:#fff; }
     .mb-list { flex:1; overflow:auto; }
     .mb-row { padding:var(--s4); border-bottom:1px solid var(--border); }
@@ -344,12 +410,18 @@
       <nav class="side-nav">
         <button id="nav-search" class="sidebtn active"><span data-ic="search"></span>Search</button>
         <button id="nav-mailbox" class="sidebtn"><span data-ic="inbox"></span>Mailbox<span id="inbox-badge" class="badge hidden" style="margin-left:auto">0</span></button>
+        <button id="nav-settings" class="sidebtn"><span data-ic="settings"></span>Settings</button>
       </nav>
       <div class="side-foot">
         <div class="conn"><span id="side-conn-dot" class="dot"></span><span id="side-conn-text">…</span></div>
         <div class="side-user"><span id="who" class="mono"></span><span id="role-chip" class="rolechip hidden"></span></div>
         <button id="logout-btn" class="btn btn-ghost btn-sm"><span data-ic="signout"></span>Sign out</button>
         <button id="about-btn" class="btn btn-ghost btn-sm">About</button>
+        <div class="side-clock"><div id="side-time" class="side-time">--:--</div><div id="side-date" class="side-date">&mdash;</div></div>
+        <label class="side-dark" title="Toggle dark mode">
+          <span>Dark mode</span>
+          <span class="switch"><input type="checkbox" id="side-dark-toggle"><span class="switch-track"></span></span>
+        </label>
       </div>
     </aside>
 
@@ -402,6 +474,32 @@
         <button id="mb-refresh" class="btn btn-secondary btn-sm"><span data-ic="refresh"></span>Refresh</button>
       </div>
       <div id="mb-list" class="mb-list"><div class="empty">Loading…</div></div>
+    </div>
+
+    <!-- Settings -->
+    <div id="view-settings" class="hidden">
+      <div class="set-section">
+        <h2>Appearance</h2>
+        <p class="sub">Choose how the search client looks. Your choice is remembered on this computer.</p>
+        <div class="set-row">
+          <div>
+            <div class="set-lbl">Colour theme</div>
+            <div class="set-hint">Light and dark options to match the main app.</div>
+          </div>
+          <select id="theme-select">
+            <optgroup label="Light">
+              <option value="warm">Warm Paper</option>
+              <option value="light">Light</option>
+              <option value="slate">Nordic Slate</option>
+            </optgroup>
+            <optgroup label="Dark">
+              <option value="dark">Dark</option>
+              <option value="midnight">Midnight</option>
+              <option value="graphite">Graphite</option>
+            </optgroup>
+          </select>
+        </div>
+      </div>
     </div>
     </div><!-- /.content -->
   </section>

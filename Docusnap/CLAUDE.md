@@ -1249,6 +1249,15 @@ in-process desktop login never reads these; only the client API enforces MFA whe
 import-profile + fetch-CA-with-fingerprint-confirm + enroll; connect screen; search +
 mailbox UI) · `cert-tool/` (standalone cert-generator GUI) ·
 `scripts/New-ScanFinderCustomerCert.ps1` (per-customer CLI cert; `MSYS_NO_PATHCONV=1`).
+**Client theming (2026-06-28)**: the client carries its OWN copy of the six named themes
+(its `renderer/index.html` has `:root[data-theme="…"]` blocks for the client's token set
+incl. the extra `--grad1/--grad2/--nav-bg/--card-a/--card-b`; `--on-accent` drives the
+accent-text so Midnight's amber reads). A small theme module in `renderer.js`
+(applyTheme/currentTheme/toggleDarkMode, persisted in localStorage `sf-client-theme`; sets
+`data-theme`+`data-mode` on `<html>`, default Warm Paper) + an in-window **Settings view**
+(sidebar `nav-settings` → `#view-settings`, a theme `<select>`) + a sidebar-foot **clock**
+and **Dark-mode toggle** (mirrors the main app's rail). Self-contained — does NOT import the
+core app's theme.css/theme.js.
 
 **Security invariants (preserve)**: real TLS verification with **no silent self-signed
 bypass in the client UI** (only a dev-only `SCANFINDER_CLIENT_ALLOW_SELF_SIGNED=1` env

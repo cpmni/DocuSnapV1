@@ -18,6 +18,40 @@ let currentBox = 'inbox';
 let recipientsCache = null;
 let myOpenRoutes = {}; // document_id -> open route addressed to me (recipient/claimant)
 
+// ── Theme (mirrors the main app's six named themes; persisted on this device) ──
+const THEMES = ['light', 'warm', 'slate', 'dark', 'midnight', 'graphite'];
+const DARK_THEMES = new Set(['dark', 'midnight', 'graphite']);
+const _ls = {
+  get: (k, d) => { try { return localStorage.getItem(k) || d; } catch { return d; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
+};
+function currentTheme() { const t = _ls.get('sf-client-theme', 'warm'); return THEMES.includes(t) ? t : 'warm'; }
+function applyTheme(name) {
+  const t = THEMES.includes(name) ? name : 'warm';
+  const root = document.documentElement;
+  root.setAttribute('data-theme', t);
+  root.setAttribute('data-mode', DARK_THEMES.has(t) ? 'dark' : 'light');
+  _ls.set('sf-client-theme', t);
+  _ls.set(DARK_THEMES.has(t) ? 'sf-client-dark' : 'sf-client-light', t);   // remember last light/dark pick
+  const sel = $('theme-select'); if (sel) sel.value = t;
+  const tog = $('side-dark-toggle'); if (tog) tog.checked = DARK_THEMES.has(t);
+}
+function toggleDarkMode() {
+  const cur = currentTheme();
+  applyTheme(DARK_THEMES.has(cur) ? _ls.get('sf-client-light', 'warm') : _ls.get('sf-client-dark', 'dark'));
+}
+applyTheme(currentTheme());   // apply as early as possible (script runs after DOM parse)
+
+// ── Sidebar clock (bottom-left, like the main app) ──
+function tickClock() {
+  const now = new Date();
+  const t = $('side-time'), d = $('side-date');
+  if (t) t.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (d) d.textContent = now.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
+}
+tickClock();
+setInterval(tickClock, 20000);
+
 // ── Inline SVG icons (CSP-safe: no external icon library) ────────────────────
 const ICO = {
   brand:  '<path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M8.5 13h7"/><path d="M8.5 16.5h4.5"/>',
@@ -35,6 +69,7 @@ const ICO = {
   inbox:  '<path d="M4 13h4l2 3h4l2-3h4"/><path d="M4 13 6 5h12l2 8v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/>',
   doc:    '<path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>',
   lock:   '<rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  settings:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
 };
 const ico = (name, cls = 'ic') =>
   `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICO[name] || ''}</svg>`;
@@ -285,17 +320,26 @@ $('about-licenses').addEventListener('click', async () => {
 // ── View switching ─────────────────────────────────────────────────────────────
 function setView(view) {
   if (view === 'mailbox' && !workflowEntitled) view = 'search'; // workflow add-on not licensed
-  const search = view === 'search';
-  $('view-search').classList.toggle('hidden', !search);
-  $('view-mailbox').classList.toggle('hidden', search);
-  navActive($('nav-search'), search);
-  navActive($('nav-mailbox'), !search);
-  $('vh-title').textContent = search ? 'Search' : 'Mailbox';
-  $('vh-sub').textContent = search ? 'Find and preview filed documents' : 'Approvals routed to and from you';
-  if (!search) loadMailbox();
+  $('view-search').classList.toggle('hidden', view !== 'search');
+  $('view-mailbox').classList.toggle('hidden', view !== 'mailbox');
+  $('view-settings').classList.toggle('hidden', view !== 'settings');
+  navActive($('nav-search'), view === 'search');
+  navActive($('nav-mailbox'), view === 'mailbox');
+  navActive($('nav-settings'), view === 'settings');
+  const meta = {
+    search:   ['Search', 'Find and preview filed documents'],
+    mailbox:  ['Mailbox', 'Approvals routed to and from you'],
+    settings: ['Settings', 'Appearance and preferences'],
+  }[view] || ['Search', ''];
+  $('vh-title').textContent = meta[0];
+  $('vh-sub').textContent = meta[1];
+  if (view === 'mailbox') loadMailbox();
 }
 $('nav-search').addEventListener('click', () => setView('search'));
 $('nav-mailbox').addEventListener('click', () => setView('mailbox'));
+$('nav-settings').addEventListener('click', () => setView('settings'));
+$('theme-select')?.addEventListener('change', (e) => applyTheme(e.target.value));
+$('side-dark-toggle')?.addEventListener('change', toggleDarkMode);
 
 // ── Search ───────────────────────────────────────────────────────────────────
 $('search-btn').addEventListener('click', (e) => withBusy(e.currentTarget, runSearch));
