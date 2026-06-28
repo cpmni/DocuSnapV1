@@ -466,6 +466,7 @@ function renderResults(confirmed, uncommitted, params) {
     : `<strong style="color:var(--text)">${total}</strong> recent document${total === 1 ? '' : 's'}`;
 
   const root = $('results'); root.innerHTML = '';
+  resetRowSelection();
   const addSection = (title, rows) => {
     if (!rows.length) return;
     const h = document.createElement('div'); h.className = 'section-h';
@@ -487,22 +488,46 @@ function confPip(c) {
     <span class="cmeter"><i style="width:${w}%"></i></span><span class="cval mono">${c}%</span></span>`;
 }
 
+// ── Row selection (search results + recycle bin) ─────────────────────────────────
+// Plain click = single select + preview. Ctrl/Cmd + Shift multi-select. Right-click acts
+// on the selection (Delete in search; Restore / Delete permanently in the bin).
+let _csel = new Set();   // selected ids
+let _crowOrder = [];     // ids in render order (shift-range)
+let _canchor = null;     // shift anchor
+function resetRowSelection() { _csel = new Set(); _crowOrder = []; _canchor = null; }
+function refreshRowSel() {
+  document.querySelectorAll('#results .row, #recycle-list .row').forEach((el) => {
+    el.classList.toggle('sel', _csel.has(Number(el.dataset.id)));
+  });
+}
+function onRowClick(e, d) {
+  if (e.ctrlKey || e.metaKey) {
+    if (_csel.has(d.id)) _csel.delete(d.id); else _csel.add(d.id);
+    _canchor = d.id;
+  } else if (e.shiftKey && _canchor != null) {
+    const a = _crowOrder.indexOf(_canchor), b = _crowOrder.indexOf(d.id);
+    if (a >= 0 && b >= 0) { _csel.clear(); for (let i = Math.min(a, b); i <= Math.max(a, b); i++) _csel.add(_crowOrder[i]); }
+  } else {
+    _csel.clear(); _csel.add(d.id); _canchor = d.id;
+    openDocument(d.id);
+  }
+  refreshRowSel();
+}
+
 function rowEl(d) {
-  const el = document.createElement('div'); el.className = 'row';
+  const el = document.createElement('div'); el.className = 'row'; el.dataset.id = d.id;
+  _crowOrder.push(d.id);
   el.innerHTML = `
     <div class="r1"><span class="nm">${esc(d.supplier_name || d.original_filename || 'Untitled')}</span>
       <span class="chip ${esc(d.status)}">${esc(d.status)}</span><span class="spacer"></span>${confPip(d.overall_confidence)}</div>
     <div class="r2 mono">${esc(d.reference_number || '—')} · ${esc(d.doc_date || '—')} · ${esc(d.type_name || d.type_slug || '')}</div>`;
-  el.addEventListener('click', () => {
-    document.querySelectorAll('.row.sel').forEach((n) => n.classList.remove('sel'));
-    el.classList.add('sel');
-    openDocument(d.id);
-  });
-  // Right-click a recycle-bin item → restore / delete-permanently menu.
+  el.addEventListener('click', (e) => onRowClick(e, d));
+  // Right-click → act on the selection (Delete / Restore / Delete permanently). Edit+Admin.
   el.addEventListener('contextmenu', (e) => {
-    if (d.status !== 'deleted' || !canDecide()) return;
+    if (!canDecide()) return;
     e.preventDefault();
-    showBinMenu(e.clientX, e.clientY, d.id);
+    if (!_csel.has(d.id)) { _csel.clear(); _csel.add(d.id); _canchor = d.id; refreshRowSel(); }
+    showRowMenu(e.clientX, e.clientY);
   });
   return el;
 }
@@ -608,20 +633,29 @@ async function openDocument(id, route) {
 }
 
 // Delete (→ bin) / restore / purge a document over /v1, then refresh the active list.
-async function binAction(kind, id) {
-  if (kind === 'delete' && !confirm('Move this document to the recycle bin? You can restore it later.')) return;
-  if (kind === 'purge'  && !confirm('Permanently delete this document and its file? This cannot be undone.')) return;
+// Single-doc action (used by the preview buttons) → delegates to the multi handler.
+function binAction(kind, id) { return binActionMulti(kind, [id]); }
+
+async function binActionMulti(kind, ids) {
+  ids = ids.filter((x) => x != null);
+  if (!ids.length) return;
+  const noun = ids.length > 1 ? `${ids.length} documents` : 'this document';
+  const them = ids.length > 1 ? 'them' : 'it';
+  if (kind === 'delete' && !confirm(`Move ${noun} to the recycle bin? You can restore ${them} later.`)) return;
+  if (kind === 'purge'  && !confirm(`Permanently delete ${noun} and ${ids.length > 1 ? 'their files' : 'its file'}? This cannot be undone.`)) return;
   const fn = kind === 'delete' ? api.recycle.delete : kind === 'restore' ? api.recycle.restore : api.recycle.purge;
-  const r = await fn(id);
-  if (r && r.status === 401) { doLogout(); return; }
-  if (r && r.status === 200) {
-    toast(kind === 'delete' ? 'Moved to recycle bin' : kind === 'restore' ? 'Restored' : 'Deleted permanently', 'ok');
-    $('preview').innerHTML = `<div class="empty">Select a document on the left to preview it.</div>`;
-    const inBin = $('view-recycle') && !$('view-recycle').classList.contains('hidden');
-    if (inBin) loadRecycleBin(); else runSearch();
-  } else {
-    toast((r && r.json && r.json.error) || 'Action failed', 'err');
+  let ok = 0;
+  for (const id of ids) {
+    const r = await fn(id);
+    if (r && r.status === 401) { doLogout(); return; }
+    if (r && r.status === 200) ok++;
   }
+  _csel.clear();
+  const verb = kind === 'delete' ? 'Moved to recycle bin' : kind === 'restore' ? 'Restored' : 'Deleted permanently';
+  toast(ok ? `${verb}${ok > 1 ? ` (${ok})` : ''}` : 'Action failed', ok ? 'ok' : 'err');
+  $('preview').innerHTML = `<div class="empty">Select a document on the left to preview it.</div>`;
+  const inBin = $('view-recycle') && !$('view-recycle').classList.contains('hidden');
+  if (inBin) loadRecycleBin(); else runSearch();
 }
 
 async function loadRecycleBin() {
@@ -632,20 +666,28 @@ async function loadRecycleBin() {
   if (r.status === 401) { doLogout(); return; }
   const rows = (r.json && r.json.deleted) || [];
   root.innerHTML = '';
+  resetRowSelection();
   if (!rows.length) { root.innerHTML = '<div class="empty">The recycle bin is empty. Deleted documents appear here and can be restored.</div>'; return; }
   for (const d of rows) root.appendChild(rowEl(d));
 }
 
-// Right-click menu for a recycle-bin item.
-function showBinMenu(x, y, id) {
+// Right-click menu — acts on the whole selection. In the bin: Restore / Delete permanently.
+// In search results: Delete (→ recycle bin).
+function showRowMenu(x, y) {
   closeBinMenu();
+  const ids = [..._csel];
+  if (!ids.length) return;
+  const inBin = $('view-recycle') && !$('view-recycle').classList.contains('hidden');
+  const sfx = ids.length > 1 ? ` (${ids.length})` : '';
   const m = document.createElement('div'); m.id = 'bin-menu';
-  m.innerHTML = `<button data-act="restore">Restore</button>` +
-                (role === 'admin' ? `<button data-act="purge" class="danger">Delete permanently</button>` : '');
+  m.innerHTML = inBin
+    ? `<button data-act="restore">Restore${sfx}</button>` +
+      (role === 'admin' ? `<button data-act="purge" class="danger">Delete permanently${sfx}</button>` : '')
+    : `<button data-act="delete" class="danger">Delete${sfx}</button>`;
   document.body.appendChild(m);
   m.style.left = Math.min(x, window.innerWidth  - m.offsetWidth  - 6) + 'px';
   m.style.top  = Math.min(y, window.innerHeight - m.offsetHeight - 6) + 'px';
-  m.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { closeBinMenu(); binAction(b.dataset.act, id); }));
+  m.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { closeBinMenu(); binActionMulti(b.dataset.act, [..._csel]); }));
 }
 function closeBinMenu() { document.getElementById('bin-menu')?.remove(); }
 document.addEventListener('click', closeBinMenu);
