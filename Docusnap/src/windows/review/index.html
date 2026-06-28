@@ -331,6 +331,25 @@
     }
     .fields-header-title { font-size: 12px; font-weight: 500; color: var(--text); }
     .fields-header-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .fh-train { font-size: 11px; padding: 4px 10px; background: var(--accent-bg); color: var(--accent2);
+      border: 1px solid var(--accent); border-radius: var(--r-sm); cursor: pointer; white-space: nowrap; margin-left: auto; }
+    .fh-train:hover { background: var(--accent); color: #fff; }
+    /* Interactive training tour (training.js) */
+    .tour-hole { position: fixed; z-index: 9998; border-radius: 8px; box-shadow: 0 0 0 9999px rgba(12,16,24,.55);
+      border: 2px solid var(--accent); pointer-events: none; transition: all .22s ease; }
+    .tour-arrow { position: fixed; z-index: 10000; color: var(--accent); font-size: 18px; line-height: 1;
+      pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,.4); animation: tourbounce 1s infinite; }
+    @keyframes tourbounce { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+    .tour-callout { position: fixed; z-index: 10000; background: var(--surface); border: 1px solid var(--border2);
+      border-radius: 10px; box-shadow: 0 16px 44px rgba(0,0,0,.4); padding: 14px 16px; font-family: var(--sans); }
+    .tour-callout .tc-title { font-weight: 700; font-size: 14px; color: var(--text); margin-bottom: 5px; }
+    .tour-callout .tc-body { font-size: 13px; color: var(--muted); line-height: 1.5; }
+    .tour-callout .tc-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; }
+    .tour-callout .tc-step { font-size: 11px; color: var(--muted); }
+    .tour-callout .tc-actions { display: flex; align-items: center; gap: 8px; }
+    .tour-callout .tc-skip, .tour-callout .tc-skipstep { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 11px; text-decoration: underline; }
+    .tour-callout .tc-next { background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 6px 13px; font-size: 12px; font-weight: 600; cursor: pointer; }
+    .tour-callout .tc-hint { font-size: 11px; color: var(--accent2); font-weight: 600; }
     #fields-header .fh-new-type { flex-shrink: 0; padding: 4px 11px; font-size: 11px; line-height: 1.2; }
     .fields-header-sub   { font-size: 11px; color: var(--text); line-height: 1.4; }
     .fields-header-sub .repick-glyph { color: var(--accent2); font-weight: 700; }
@@ -795,6 +814,7 @@
       <div id="fields-header">
         <div class="fields-header-row">
           <div class="fields-header-title">Extracted Fields</div>
+          <button class="btn fh-train" id="btn-training" title="A step-by-step walkthrough of reviewing a document">Show me how</button>
           <button class="btn fh-new-type" id="btn-new-doctype" data-help-key="new-doctype" style="display:none;" title="Create a new document type without leaving Review">+ New type</button>
         </div>
         <select id="doctype-select" data-help-key="doctype-select"><option value="">— Select document type —</option></select>
@@ -922,5 +942,6 @@
 <script src="../shared/thumbs.js"></script>
 <script src="../shared/doctype-editor.js"></script>
 <script src="renderer.js"></script>
+<script src="training.js"></script>
 </body>
 </html>
