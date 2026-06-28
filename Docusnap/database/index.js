@@ -781,6 +781,31 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 38 applied: company field → "Document Issuer"');
   }
 
+  // Migration 39: performance indexes on the hot user-data tables. Until now only the
+  // PRIMARY KEYs were indexed, so as the corpus grows into six figures these paths
+  // degraded to full scans: the engine's per-doc learning lookups (corrections / hints /
+  // anchors by supplier+type+field, run on every processed document), the Review queue's
+  // per-row extraction subqueries (extractions had no document_id index), and Search /
+  // dashboard filtering+ordering of documents by status/date. All CREATE INDEX IF NOT
+  // EXISTS — idempotent, safe to re-run, and transparent to every code path (the query
+  // planner just starts using them). Pure read-path speedup; no behaviour change.
+  if (!applied.has(39)) {
+    try {
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_extractions_doc       ON extractions(document_id);
+        CREATE INDEX IF NOT EXISTS idx_documents_status_proc ON documents(status, processed_at);
+        CREATE INDEX IF NOT EXISTS idx_documents_status_conf ON documents(status, confirmed_at);
+        CREATE INDEX IF NOT EXISTS idx_documents_supplier    ON documents(supplier_name);
+        CREATE INDEX IF NOT EXISTS idx_documents_type        ON documents(document_type_id);
+        CREATE INDEX IF NOT EXISTS idx_corrections_scope     ON corrections(supplier_name, document_type, field_key);
+        CREATE INDEX IF NOT EXISTS idx_hints_scope           ON supplier_hints(supplier_name, document_type, field_key);
+        CREATE INDEX IF NOT EXISTS idx_anchors_scope         ON field_anchors(supplier_name, document_type, field_key);
+      `);
+    } catch (e) { console.warn('  migration 39 (performance indexes):', e.message); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (39)').run();
+    console.log('JS migration 39 applied: performance indexes (documents/extractions/learning)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the
