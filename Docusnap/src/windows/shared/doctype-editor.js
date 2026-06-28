@@ -116,6 +116,10 @@
       .dte-row .x:hover { color:var(--err); }
       .dte-addrow { display:flex; gap:8px; margin-top:8px; }
       .dte-addrow input { flex:1; min-width:0; }
+      .dte-fieldnote { margin-top:10px; padding:9px 11px; border-radius:8px;
+        background:var(--surface2); border:1px solid var(--border); color:var(--muted);
+        font-size:11.5px; line-height:1.5; }
+      .dte-fieldnote b { color:var(--text); font-weight:600; }
       .dte-roles { display:flex; gap:16px; flex-wrap:wrap; }
       .dte .form-group { display:flex; flex-direction:column; gap:5px; }
       .dte .form-group > label { font-size:11px; color:var(--muted); }
@@ -223,6 +227,11 @@
             <div class="dte-addrow">
               <input type="text" class="field-select dte-add-input" placeholder="Add a field, e.g. Order Number" autocomplete="off">
               <button class="btn dte-add-btn">+ Add field</button>
+            </div>
+            <div class="dte-fieldnote">
+              <b>Tip:</b> each field&rsquo;s <b>Type</b> (the dropdown beside it) tells Scan Finder what to expect &mdash;
+              a date, an amount, a reference number &mdash; so it reads that field more accurately.
+              If you&rsquo;re not sure, choose <b>Text</b>.
             </div>
           </div>
           <div>

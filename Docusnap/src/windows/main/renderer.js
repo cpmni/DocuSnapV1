@@ -120,11 +120,23 @@ async function refreshDashboard() {
   refreshTrialBanner();
 }
 
+let _lastConfirmed = [];   // cached so "Clear" can re-render without another query
 function renderRecentActivity(confirmed) {
+  _lastConfirmed = confirmed || [];
   const list = document.getElementById('recent-list');
   if (!list) return;
-  const docs = confirmed.slice(0, 6);
-  if (!docs.length) { list.innerHTML = '<div class="recent-empty">No documents filed yet.</div>'; return; }
+  // "Clear" hides everything filed up to now; genuinely new activity reappears after.
+  const clearedAt = Number(localStorage.getItem('recentClearedAt') || 0);
+  const visible = (confirmed || []).filter(d => {
+    const t = d.confirmed_at ? Date.parse(d.confirmed_at) : 0;
+    return !clearedAt || (t && t > clearedAt);
+  });
+  const docs = visible.slice(0, 6);
+  if (!docs.length) {
+    const msg = (confirmed && confirmed.length) ? 'Cleared — new activity will show here.' : 'No documents filed yet.';
+    list.innerHTML = `<div class="recent-empty">${msg}</div>`;
+    return;
+  }
   list.innerHTML = '';
   for (const d of docs) {
     const row = document.createElement('div');
@@ -285,6 +297,10 @@ async function refreshTrialBanner() {
 document.getElementById('dash-open-review')?.addEventListener('click', () => window.docusnap.openReviewWindow());
 document.getElementById('dash-go-import')?.addEventListener('click', () => showView('import'));
 document.getElementById('dash-open-search')?.addEventListener('click', () => window.docusnap.openSearchWindow());
+document.getElementById('dash-clear-recent')?.addEventListener('click', () => {
+  localStorage.setItem('recentClearedAt', String(Date.now()));
+  renderRecentActivity(_lastConfirmed);   // hide current entries; new ones reappear on refresh
+});
 document.getElementById('dash-watch-config')?.addEventListener('click', chooseWatchFolder);
 document.getElementById('dash-watch-toggle')?.addEventListener('change', async (e) => {
   const on = e.target.checked;
@@ -295,6 +311,7 @@ document.getElementById('dash-watch-toggle')?.addEventListener('change', async (
   refreshWatchCard();
 });
 document.getElementById('dash-trial-activate')?.addEventListener('click', () => window.docusnap.openSettingsWindowAtSection('licensing'));
+document.getElementById('dash-trial-buy')?.addEventListener('click', () => window.docusnap.openExternal('https://scanfinder.co.uk'));
 document.getElementById('dash-open-output')?.addEventListener('click', () => {
   const folder = document.getElementById('dash-output-folder')?.dataset.folder;
   if (folder) window.docusnap.openFolder(folder);   // dedicated folder-open (the file channel rejects extension-less paths)
@@ -395,6 +412,7 @@ const HELP_TEXTS = {
   'local-only':    'Everything runs on this PC — no documents are uploaded or sent anywhere.',
   'dark-mode':     'Switch between light and dark appearance. The full theme choice is in Settings.',
   'trial':         'Your free-trial status and days remaining. “Activate” adds a licence (admin).',
+  'buy-licence':   'Open the Scan Finder website to purchase a licence.',
   'setup-checklist':'First-time setup steps still to do — this card disappears once you’re set up.',
   'attention':     'What needs you: documents waiting in Review, set aside (deferred), or that couldn’t be read.',
   'pulse':         'How many documents you’ve filed today, this week and this month.',
@@ -403,6 +421,7 @@ const HELP_TEXTS = {
   'learning':      'How many suppliers and layouts Scan Finder has learned so far.',
   'output':        'Where your filed documents are saved. “Open folder” opens it in your file explorer.',
   'recent':        'The documents you filed most recently. “Search” opens the full search window.',
+  'clear-recent':  'Hide the current recent-activity entries. New documents you file will still appear here.',
   'stop':          'Stop the current import. Documents already finished stay done.',
   'stuck':         'Documents that couldn’t be read. “Try again” re-processes them.',
   'stats':         'This session’s totals — processed, OK and errors.',

@@ -213,6 +213,7 @@
     .recent-co { color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .recent-meta { font-family: var(--mono); font-size: 11px; color: var(--muted); }
     .recent-empty { padding: 14px 4px; font-size: 12.5px; color: var(--muted); }
+    .recent-head-actions { display: flex; align-items: center; gap: 14px; }
 
     /* Setup checklist */
     .dash-card.setup { border-left: 3px solid var(--accent); }
@@ -691,6 +692,7 @@
                 <span class="trial-text" id="dash-trial-text">Trial</span>
                 <div class="trial-bar"><div class="trial-bar-fill" id="dash-trial-fill"></div></div>
               </div>
+              <button class="dash-btn" id="dash-trial-buy" data-help-key="buy-licence">Purchase licence</button>
               <button class="dash-btn primary" id="dash-trial-activate">Activate</button>
             </div>
 
@@ -788,7 +790,10 @@
             <div class="dash-card recent dash-span" data-help-key="recent">
               <div class="dash-card-head between">
                 <span>Recent activity</span>
-                <button class="dash-link" id="dash-open-search">Search <svg class="ico ico-sm" aria-hidden="true"><use href="#i-arrow-right"/></svg></button>
+                <span class="recent-head-actions">
+                  <button class="dash-link" id="dash-clear-recent" data-help-key="clear-recent">Clear</button>
+                  <button class="dash-link" id="dash-open-search">Search <svg class="ico ico-sm" aria-hidden="true"><use href="#i-arrow-right"/></svg></button>
+                </span>
               </div>
               <div id="recent-list" class="recent-list">
                 <div class="recent-empty">No documents filed yet.</div>

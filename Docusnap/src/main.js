@@ -917,6 +917,16 @@ app.whenReady().then(() => {
     else win.webContents.once('did-finish-load', push);
   });
 
+  // Open an external link (e.g. "Purchase licence" → the Scan Finder website) in the
+  // user's default browser. Hardened: only http(s) URLs are ever passed to the OS, so a
+  // renderer can't smuggle a file:// or app-protocol URL through this channel.
+  ipcMain.on('open-external', (_e, url) => {
+    try {
+      const u = new URL(String(url || ''));
+      if (u.protocol === 'https:' || u.protocol === 'http:') shell.openExternal(u.href);
+    } catch { /* malformed URL — ignore */ }
+  });
+
   // ── Teach-a-new-document wizard (guided, non-technical) ──────────────────────
   // Writes templates/learning, so Admin+Edit like Review. Mirrors the review
   // opener pattern: open cold, or open targeted at a just-scanned document.
