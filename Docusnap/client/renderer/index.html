@@ -64,19 +64,21 @@
       background-color:var(--bg);
     }
     /* Subtle per-theme background texture (pure CSS → CSP-safe), matching the main app's
-       branding: Warm = dots, Nordic Slate = grid, Midnight = accent glow; others flat. */
+       branding: Warm = dots, Nordic Slate = grid, Midnight = accent glow; others flat.
+       Toned to a whisper, and the work panes sit flat on top so it only shows as light
+       chrome behind the login/connect splash. */
     :root[data-theme="warm"] body {
-      background-image:radial-gradient(circle, color-mix(in srgb, var(--text) 6%, transparent) 1px, transparent 1.5px);
-      background-size:22px 22px;
+      background-image:radial-gradient(circle, color-mix(in srgb, var(--text) 4%, transparent) 1px, transparent 1.5px);
+      background-size:24px 24px;
     }
     :root[data-theme="slate"] body {
       background-image:
-        linear-gradient(color-mix(in srgb, var(--text) 4%, transparent) 1px, transparent 1px),
-        linear-gradient(90deg, color-mix(in srgb, var(--text) 4%, transparent) 1px, transparent 1px);
-      background-size:32px 32px;
+        linear-gradient(color-mix(in srgb, var(--text) 3%, transparent) 1px, transparent 1px),
+        linear-gradient(90deg, color-mix(in srgb, var(--text) 3%, transparent) 1px, transparent 1px);
+      background-size:40px 40px;
     }
     :root[data-theme="midnight"] body {
-      background-image:radial-gradient(120% 90% at 85% -10%, color-mix(in srgb, var(--accent) 9%, transparent) 0%, transparent 55%);
+      background-image:radial-gradient(120% 90% at 85% -10%, color-mix(in srgb, var(--accent) 7%, transparent) 0%, transparent 55%);
       background-attachment:fixed;
     }
     .mono { font-family:var(--mono); font-variant-numeric:tabular-nums; }
@@ -309,7 +311,9 @@
       border:1px solid var(--border); border-radius:var(--r); text-align:center; }
 
     /* Content area + per-view header */
-    .content { flex:1; display:flex; flex-direction:column; min-height:0; min-width:0; }
+    /* Flat fill over the working area so the body texture (below) shows only on the
+       login/connect splash, not behind the results list or the document preview. */
+    .content { flex:1; display:flex; flex-direction:column; min-height:0; min-width:0; background:var(--bg); }
     .view-header { display:flex; align-items:center; justify-content:space-between; gap:var(--s4);
       padding:var(--s4) var(--s5) var(--s3); border-bottom:1px solid var(--border); }
     .vh-title { font-size:19px; font-weight:600; margin:0; letter-spacing:-.01em; }
