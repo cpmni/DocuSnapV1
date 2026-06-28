@@ -167,6 +167,21 @@ function getDeferredCount(db) {
   ).get().n;
 }
 
+// Real "documents filed" totals for the dashboard pulse — counted in SQL (not derived
+// from the capped search list), so they reflect the true volume up to 999+. confirmed_at
+// is ISO-8601 UTC, which compares lexicographically = chronologically; the index
+// idx_documents_status_conf keeps this cheap as the corpus grows.
+function getFiledCounts(db) {
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const weekAgo      = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const stmt = db.prepare(
+    "SELECT COUNT(*) as n FROM documents WHERE status = 'confirmed' AND confirmed_at >= ?"
+  );
+  return { today: stmt.get(startOfToday).n, week: stmt.get(weekAgo).n, month: stmt.get(startOfMonth).n };
+}
+
 // "Stuck" documents — extraction failed, so they hold at status='error'. These
 // are the records behind the launchpad "couldn't be read" surface + reprocess.
 function getStuckCount(db) {
@@ -298,7 +313,7 @@ function getWorkingPaths(db) {
 module.exports = {
   insert, update, getById, getWithExtractions,
   getReviewQueue, getDeferredQueue,
-  getReviewCount, getDeferredCount, getStuckCount, getStuckQueue,
+  getReviewCount, getDeferredCount, getStuckCount, getStuckQueue, getFiledCounts,
   getFieldValueSuggestions,
   confirm, deleteDoc, deleteByStatus, search,
   resolveFilePath, filterExisting, getWorkingPaths,

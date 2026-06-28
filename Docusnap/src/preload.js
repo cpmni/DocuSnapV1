@@ -182,6 +182,7 @@ contextBridge.exposeInMainWorld('docusnap', {
 
   // ── Search ───────────────────────────────────────────────────────────────────
   searchDocuments:     (params)   => ipcRenderer.invoke('search-documents', params),
+  getFiledCounts:      ()         => ipcRenderer.invoke('get-filed-counts'),
 
   // ── Mailbox / approval workflow (in-core; entitlement + role gated) ────────────
   workflow: {

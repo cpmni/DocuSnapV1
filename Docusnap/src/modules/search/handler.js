@@ -15,6 +15,15 @@ const searchService = require('../../services/searchService');
 function register(ctx) {
   const { ipcMain, getDb } = ctx;
   const { requireLogin } = require('../auth/handler');
+  const documents = require('../../../database/modules/documents');
+
+  // Real "documents filed" totals (today / this week / this month) for the dashboard
+  // pulse — a direct SQL count, so it reflects true volume up to 999+ instead of being
+  // capped by the search list. Read-only, login-gated like search.
+  ipcMain.handle('get-filed-counts', () => {
+    requireLogin();
+    return documents.getFiledCounts(getDb());
+  });
 
   ipcMain.handle('search-documents', (_e, params) => {
     // F-01 (multi-point licensing): search is DELIBERATELY left ungated in phase 1.

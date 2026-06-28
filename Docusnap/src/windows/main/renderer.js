@@ -112,7 +112,7 @@ async function refreshDashboard() {
     confirmed = (res && res.confirmed) ? res.confirmed : [];
   } catch {}
   renderRecentActivity(confirmed);
-  renderThroughput(confirmed);
+  renderThroughput();
   renderLearning(confirmed);
   renderOutput();
   renderSetupChecklist(confirmed);
@@ -139,26 +139,16 @@ function renderRecentActivity(confirmed) {
 }
 
 // Count confirmed docs filed today / this week / this month from confirmed_at.
-function renderThroughput(confirmed) {
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-  const weekAgo = now.getTime() - 7 * 24 * 60 * 60 * 1000;
-  let today = 0, week = 0, month = 0;
-  for (const d of confirmed) {
-    const t = d.confirmed_at ? Date.parse(d.confirmed_at) : NaN;
-    if (Number.isNaN(t)) continue;
-    if (t >= startOfMonth) month++;
-    if (t >= weekAgo) week++;
-    if (t >= startOfToday) today++;
-  }
-  // The confirmed query is capped (200), so wide windows can undercount — show "200+"
-  // honestly when we hit the cap rather than a wrong exact figure.
-  const cap = confirmed.length >= 200;
-  const set = (id, n) => { const el = document.getElementById(id); if (el) el.textContent = (cap && n >= 200) ? '200+' : n; };
-  set('stat-today', today);
-  set('stat-week',  week);
-  set('stat-month', month);
+async function renderThroughput() {
+  // Real counts from SQL (not the capped search list), so they show true volume. The
+  // tiles have room for three digits → cap the DISPLAY at "999+".
+  let c = { today: 0, week: 0, month: 0 };
+  try { const r = await window.docusnap.getFiledCounts?.(); if (r) c = r; } catch {}
+  const fmt = (n) => (Number(n) > 999 ? '999+' : String(Number(n) || 0));
+  const set = (id, n) => { const el = document.getElementById(id); if (el) el.textContent = fmt(n); };
+  set('stat-today', c.today);
+  set('stat-week',  c.week);
+  set('stat-month', c.month);
 }
 
 // "Getting smarter" — suppliers recognised + layouts (templates) learned.
