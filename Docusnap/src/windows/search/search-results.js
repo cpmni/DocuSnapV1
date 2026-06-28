@@ -97,7 +97,13 @@ function _resultItem(doc) {
   el.addEventListener('contextmenu', (e) => {
     if (!_canEdit()) return;
     e.preventDefault();
-    if (!_sel().has(doc.id)) { _sel().clear(); _sel().add(doc.id); _anchorId = doc.id; _refreshSelStyles(); _renderToolbar(); }
+    // Right-clicking a row that's NOT already in the selection makes it the SOLE target,
+    // and moves the preview/.active highlight to it — so no previously-clicked row stays lit.
+    if (!_sel().has(doc.id)) {
+      _sel().clear(); _sel().add(doc.id); _anchorId = doc.id;
+      window.SearchPreview.selectDoc(doc);
+      _refreshSelStyles(); _renderToolbar();
+    }
     _showMenu(e.clientX, e.clientY);
   });
   return el;
