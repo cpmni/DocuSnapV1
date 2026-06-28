@@ -211,21 +211,44 @@
     .sidebtn:hover { background:var(--surface2); color:var(--text); }
     .sidebtn.active { background:rgba(59,125,240,.10); color:var(--accent); border-color:rgba(59,125,240,.22); }
     .sidebtn .ic { width:18px; height:18px; }
-    /* Foot = a compact account group, then a tight clock/date/dark group pinned at the
-       very bottom — mirrors the main app's rail foot. */
-    .side-foot { margin-top:auto; display:flex; flex-direction:column; }
-    .side-account { display:flex; flex-direction:column; gap:4px;
+    /* Foot = ONE account button (identity/sign-out/about live in its popover), then a tight
+       clock · status-pill · dark group pinned at the bottom — mirrors the main app's rail. */
+    .side-foot { margin-top:auto; display:flex; flex-direction:column; gap:10px;
       border-top:1px solid var(--border); padding-top:10px; }
-    .side-account-btns { display:flex; flex-direction:column; gap:1px; margin-top:2px; }
-    .side-account .btn-sm { padding:4px 8px; justify-content:flex-start; }
-    .side-user { display:flex; flex-direction:column; gap:3px; font-size:12px; color:var(--muted); }
-    .side-bottom { border-top:1px solid var(--border); margin-top:10px; padding-top:6px; }
-    .side-clock { text-align:center; padding:2px 0 6px; }
+    .account-btn { display:flex; align-items:center; gap:8px; width:100%; padding:6px 8px;
+      border:1px solid transparent; border-radius:var(--r-sm); background:transparent; cursor:pointer;
+      color:var(--text); font:inherit; text-align:left; transition:background .15s; }
+    .account-btn:hover { background:var(--surface2); }
+    .acct-avatar { flex:0 0 auto; width:26px; height:26px; border-radius:50%; display:flex;
+      align-items:center; justify-content:center; background:var(--accent); color:var(--on-accent,#fff);
+      font-size:11px; font-weight:700; text-transform:uppercase; }
+    .acct-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+      font-size:13px; font-weight:600; }
+    .acct-caret { flex:0 0 auto; color:var(--muted); font-size:11px; }
+    .side-bottom { display:flex; flex-direction:column; gap:6px; align-items:stretch; }
+    .side-clock { text-align:center; padding:2px 0; }
     .side-time { font-family:var(--mono); font-size:22px; font-weight:700; color:var(--text); line-height:1.1; letter-spacing:.02em; }
     .side-date { font-size:11px; color:var(--muted); margin-top:2px; }
+    .side-status { display:inline-flex; align-self:center; align-items:center; gap:6px; padding:4px 11px;
+      border-radius:var(--r-pill); font-size:11px; font-weight:600; }
+    .side-status .dot { width:7px; height:7px; }
+    .side-status.status-ok   { background:rgba(31,157,99,.13);  color:var(--ok,#1f9d63); }
+    .side-status.status-warn { background:rgba(176,120,22,.15); color:var(--warn,#b07816); }
+    .side-status.status-err  { background:rgba(214,69,69,.15);  color:var(--err,#d64545); }
     .side-dark { display:flex; align-items:center; justify-content:space-between; gap:8px; cursor:pointer;
       padding:6px var(--s2); border-radius:var(--r-sm); font-size:12px; color:var(--muted); }
     .side-dark:hover { background:var(--surface2); color:var(--text); }
+    /* Account popover (anchored upward off the account button) */
+    #account-menu { position:fixed; z-index:1000; min-width:190px; padding:6px; background:var(--surface);
+      border:1px solid var(--border2); border-radius:10px; box-shadow:0 16px 40px rgba(0,0,0,.4);
+      display:flex; flex-direction:column; gap:2px; }
+    #account-menu .am-head { padding:6px 10px 8px; border-bottom:1px solid var(--border); margin-bottom:4px; }
+    #account-menu .am-name { font-size:13px; font-weight:600; color:var(--text); }
+    #account-menu .am-role { font-size:11px; color:var(--muted); margin-top:1px; }
+    #account-menu button { display:flex; align-items:center; gap:8px; text-align:left; padding:8px 10px;
+      border:none; border-radius:6px; background:transparent; color:var(--text); font:inherit; font-size:13px; cursor:pointer; }
+    #account-menu button:hover { background:var(--surface2); }
+    #account-menu button .ic { width:16px; height:16px; }
     .switch { position:relative; display:inline-block; width:38px; height:22px; flex:0 0 auto; }
     .switch input { position:absolute; opacity:0; width:0; height:0; }
     .switch-track { position:absolute; inset:0; border-radius:var(--r-pill); background:var(--surface2);
@@ -443,16 +466,14 @@
         <button id="nav-settings" class="sidebtn"><span data-ic="settings"></span>Settings</button>
       </nav>
       <div class="side-foot">
-        <div class="side-account">
-          <div class="conn"><span id="side-conn-dot" class="dot"></span><span id="side-conn-text">…</span></div>
-          <div class="side-user"><span id="who" class="mono"></span><span id="role-chip" class="rolechip hidden"></span></div>
-          <div class="side-account-btns">
-            <button id="logout-btn" class="btn btn-ghost btn-sm"><span data-ic="signout"></span>Sign out</button>
-            <button id="about-btn" class="btn btn-ghost btn-sm">About</button>
-          </div>
-        </div>
+        <button id="account-btn" class="account-btn" title="Account">
+          <span class="acct-avatar" id="acct-initials">–</span>
+          <span class="acct-name" id="who">—</span>
+          <span class="acct-caret">⌃</span>
+        </button>
         <div class="side-bottom">
           <div class="side-clock"><div id="side-time" class="side-time">--:--</div><div id="side-date" class="side-date">&mdash;</div></div>
+          <div class="side-status" id="side-status" title="Connection status"><span id="side-conn-dot" class="dot"></span><span id="side-conn-text">…</span></div>
           <label class="side-dark" title="Toggle dark mode">
             <span>Dark mode</span>
             <span class="switch"><input type="checkbox" id="side-dark-toggle"><span class="switch-track"></span></span>

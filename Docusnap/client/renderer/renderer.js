@@ -128,11 +128,18 @@ function toast(msg, kind) {
   setTimeout(() => t.remove(), 2600);
 }
 
-function setConn(mode, text) {
+function setConn(mode, text, short) {
   const cls = 'dot' + (mode === 'ok' ? ' ok' : mode === 'warn' ? ' warn' : mode === 'block' ? ' err' : '');
-  for (const [dotId, txtId] of [['conn-dot', 'conn-text'], ['side-conn-dot', 'side-conn-text']]) {
-    const d = $(dotId); if (d) d.className = cls;
-    const t = $(txtId); if (t) t.textContent = text;
+  // Login screen indicator → full text; sidebar status pill → short label + coloured pill.
+  const ld = $('conn-dot'); if (ld) ld.className = cls;
+  const lt = $('conn-text'); if (lt) lt.textContent = text;
+  const sd = $('side-conn-dot'); if (sd) sd.className = cls;
+  const st = $('side-conn-text'); if (st) st.textContent = short || text;
+  const pill = $('side-status');
+  if (pill) {
+    pill.classList.remove('status-ok', 'status-warn', 'status-err');
+    pill.classList.add(mode === 'warn' ? 'status-warn' : mode === 'block' ? 'status-err' : 'status-ok');
+    pill.title = text;   // full detail (incl. API version) on hover
   }
 }
 
@@ -140,9 +147,9 @@ function showOnly(id) {
   for (const s of ['connect', 'login', 'locked', 'app']) $(s).classList.toggle('hidden', s !== id);
 }
 function applyConn(h) {
-  if (h.mode === 'warn') setConn('warn', h.reason || 'Version drift');
-  else if (h.ok) setConn('ok', `Connected · API v${h.serverVersion}`);
-  else setConn('block', h.reason || 'Not connected');
+  if (h.mode === 'warn') setConn('warn', h.reason || 'Version drift', 'Drift');
+  else if (h.ok) setConn('ok', `Connected · API v${h.serverVersion}`, 'Connected');
+  else setConn('block', h.reason || 'Not connected', 'Offline');
 }
 let _caPem = null; // pinned server certificate (PEM) chosen on the connect screen
 
@@ -269,8 +276,9 @@ $('login-btn').addEventListener('click', async () => {
     // it is licensed, so a search-only client shows no mailbox/workflow mention.
     workflowEntitled = !!(ent.json.workflow && ent.json.workflow.entitled);
     $('nav-mailbox').classList.toggle('hidden', !workflowEntitled);
-    $('who').textContent = r.user.displayName || r.user.username;
-    const rc = $('role-chip'); rc.textContent = role; rc.classList.remove('hidden');
+    const nm = r.user.displayName || r.user.username;
+    $('who').textContent = nm;
+    $('acct-initials').textContent = _initials(nm);   // role now lives in the account popover
     $('unc-wrap').classList.toggle('hidden', !canDecide());
     $('login').classList.add('hidden');
     $('app').classList.remove('hidden');
@@ -302,10 +310,47 @@ function doLogout() {
   $('login').classList.remove('hidden');
   $('p').value = ''; $('totp').value = '';
   $('totp').classList.add('hidden'); $('totp-label').classList.add('hidden');
-  $('role-chip').classList.add('hidden');
+  $('who').textContent = '—'; $('acct-initials').textContent = '–';
 }
-$('logout-btn').addEventListener('click', doLogout);
 $('locked-back').addEventListener('click', doLogout);
+
+// ── Account popover (identity · role · Sign out · About) ──────────────────────────
+function _initials(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '–';
+  return (parts[0][0] + (parts[1] ? parts[1][0] : '')).toUpperCase();
+}
+function closeAccountMenu() { document.getElementById('account-menu')?.remove(); }
+function showAccountMenu() {
+  closeAccountMenu();
+  const btn = $('account-btn'); if (!btn) return;
+  const m = document.createElement('div'); m.id = 'account-menu';
+  const roleLabel = role ? role[0].toUpperCase() + role.slice(1) : '';
+  m.innerHTML =
+    `<div class="am-head"><div class="am-name">${esc($('who').textContent)}</div>` +
+    (roleLabel ? `<div class="am-role">${esc(roleLabel)}</div>` : '') + `</div>` +
+    `<button id="am-signout">${ico('signout', 'ic')}Sign out</button>` +
+    `<button id="am-about"><span class="ic"></span>About</button>`;
+  document.body.appendChild(m);
+  const r = btn.getBoundingClientRect();
+  let top = r.top - m.offsetHeight - 6;                 // open upward (button is at the foot)
+  if (top < 6) top = r.bottom + 6;
+  let left = Math.min(r.left, window.innerWidth - m.offsetWidth - 6);
+  m.style.top = Math.max(6, top) + 'px';
+  m.style.left = Math.max(6, left) + 'px';
+  $('am-signout').addEventListener('click', () => { closeAccountMenu(); doLogout(); });
+  $('am-about').addEventListener('click', () => { closeAccountMenu(); openAbout(); });
+}
+$('account-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  document.getElementById('account-menu') ? closeAccountMenu() : showAccountMenu();
+});
+document.addEventListener('click', (e) => {
+  const m = document.getElementById('account-menu');
+  if (m && !m.contains(e.target) && !$('account-btn').contains(e.target)) closeAccountMenu();
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAccountMenu(); });
+window.addEventListener('blur', closeAccountMenu);
 
 // ── About dialog ────────────────────────────────────────────────────────────────
 let _aboutLoaded = false;
@@ -321,7 +366,6 @@ async function openAbout() {
   }
   $('about-overlay').classList.remove('hidden');
 }
-$('about-btn').addEventListener('click', openAbout);
 $('about-close').addEventListener('click', () => $('about-overlay').classList.add('hidden'));
 $('about-overlay').addEventListener('click', (e) => {
   if (e.target === $('about-overlay')) $('about-overlay').classList.add('hidden');
