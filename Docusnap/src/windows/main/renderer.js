@@ -7,6 +7,7 @@ let results        = [];
 let stats          = { total: 0, done: 0, ok: 0, err: 0 };   // cumulative SESSION stats (manual + watch); never reset per run
 let batch          = { total: 0, done: 0, ok: 0, err: 0 };   // current manual run only — drives the progress bar + finish message
 let _userCanReview = true;   // false for Read Only (gates the "Review your documents" CTA)
+let _isAdmin       = false;  // gates admin-only affordances (e.g. trial Activate → Settings)
 
 // ── Element refs ─────────────────────────────────────────────────────────────
 const folderBox     = document.getElementById('folder-box');
@@ -282,6 +283,10 @@ async function refreshTrialBanner() {
       : `Trial — <span class="n">${days}</span> of ${total} days left`;
   }
   if (fillEl) fillEl.style.width = `${Math.round((used / total) * 100)}%`;
+  // Activation lives in Settings (admin-only), so the Activate button would be a dead
+  // control for Edit/Read-Only — hide it for them (they still see the countdown).
+  const activateBtn = document.getElementById('dash-trial-activate');
+  if (activateBtn) activateBtn.style.display = _isAdmin ? '' : 'none';
   // Urgency: calm > 7 days, warn 3–7, crit <= 2 (or expired).
   banner.classList.remove('calm', 'warn', 'crit');
   banner.classList.add(days <= 2 ? 'crit' : days <= 7 ? 'warn' : 'calm');
@@ -670,8 +675,11 @@ refreshReviewBadge();
 // change happens while Home is showing — so Recent Activity updates the moment a doc is
 // confirmed. Gated to the Home view (+ debounced) so it never re-queries during an import.
 let _dashRefreshTimer = null;
+let _lastWatchActivity = 0;   // set by handleWatchProgress; gates the heavy refresh below
 function refreshDashboardIfHome() {
   if (!document.getElementById('view-home')?.classList.contains('active')) return;
+  if (running) return;                                   // a manual batch owns the queries
+  if (Date.now() - _lastWatchActivity < 2500) return;    // background watch import in flight — don't pile on
   clearTimeout(_dashRefreshTimer);
   _dashRefreshTimer = setTimeout(refreshDashboard, 350);
 }
@@ -766,6 +774,7 @@ window.docusnap.onProgress((msg) => {
 // results table (those are built for one discrete user-initiated batch; the
 // watcher streams per-file and runs files in parallel).
 function handleWatchProgress(msg) {
+  _lastWatchActivity = Date.now();   // gates the dashboard's heavy refresh while a watch import runs
   // ALWAYS count watch docs in the cumulative Session Stats — even while a manual
   // run is active. In-flight watch workers finish DURING a manual run and their
   // file_done still lands here; the old early `if (running) return` dropped those
@@ -890,7 +899,9 @@ function applyCurrentUser(user) {
   if (btnSettingsNav) btnSettingsNav.style.display = (user.role === 'admin')    ? '' : 'none';
   // The post-processing "Review your documents" CTA follows the same Review gate.
   _userCanReview = (user.role !== 'readonly');
+  _isAdmin       = (user.role === 'admin');
   if (!_userCanReview && btnReviewDocs) btnReviewDocs.classList.remove('visible');
+  refreshTrialBanner();   // re-evaluate the trial Activate gate now the role is known
 
   // Teaching writes templates/learning — Admin+Edit (hidden for Read Only).
   const btnTeach = document.getElementById('btn-teach');

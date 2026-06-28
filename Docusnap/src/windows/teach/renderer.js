@@ -310,7 +310,17 @@ function bindCanvas(){
   window.addEventListener('mouseup',()=>{ if(_tzPan){ _tzPan=null; canvas.style.cursor=''; } });
   // CSS auto-fits the full-res buffer to the pane, so the page scales on maximise;
   // redraw so the overlay boxes (and their on-screen stroke width) track the new size.
-  window.addEventListener('resize',()=>{ if(state.img) redrawCanvas(); });
+  // When ZOOMED, the explicit canvas width is _fitW*zoom — _fitW is the OLD pane's fit,
+  // so re-measure it against the resized pane (clear inline sizing → read fit → re-apply).
+  window.addEventListener('resize',()=>{
+    if(!state.img) return;
+    if(tzZoom>1){
+      canvas.style.maxWidth=''; canvas.style.maxHeight=''; canvas.style.width=''; canvas.style.height='';
+      _fitW = canvas.getBoundingClientRect().width || 0;
+      tzApply();
+    }
+    redrawCanvas();
+  });
 }
 function curField(){ return state.fields[state.fieldIndex]; }
 function setValueBanner(f){

@@ -915,17 +915,18 @@ verified working copy exists (`drain_processed`, default on). Two reliability fi
 `extract_text_and_images`/`pdf_to_images`, born-digital page-0) so the source PDF's
 handle is released before drain — Windows can't rename an open file. (2)
 `drainOriginalToFolder` distinguishes a genuine cross-volume move (EXDEV → copy+
-unlink) from a TRANSIENT LOCK (brief Atomics.wait retry); a still-locked file is
-left in place (drained next run) and NEVER left as a duplicate. The drain is
-attempted inline (`_drainNowOrDefer`) and, if still locked, queued (`_pendingDrains`)
-and flushed by `_flushPendingDrains` after the worker exits (manual batch:
-Promise.all; watch: per-file proc close). `file_done` is now persisted SYNCHRONOUSLY
-in the stdout handler (not setImmediate) so `msg.db_id` is set BEFORE the message is
-mirrored (the results-table "open this doc in Review" needs it). [REVIEW FOLLOW-UPS,
-not yet done: the inline drain's Atomics.wait can briefly block the main thread on an
-external lock; a throw in the now-sync `_handleFileMessage` skips the file's progress
-mirror; the EXDEV branch can still leave a duplicate if its unlink throws — all
-edge-case, flagged in the 2026-06-28 review.]
+unlink) from a TRANSIENT LOCK; a still-locked file is left in place (drained next
+run) and NEVER left as a duplicate. The INLINE attempt (`_drainNowOrDefer`, on the
+main thread per file_done) passes `{retry:false}` → ONE non-blocking attempt (no
+Atomics.wait); a locked file is queued (`_pendingDrains`) and flushed by
+`_flushPendingDrains` after the worker exits (manual batch: Promise.all; watch:
+per-file proc close), which retries (`retry` default true). The EXDEV branch guards
+its unlink: if the source is locked it deletes the just-made copy so no duplicate is
+left. `file_done` is persisted SYNCHRONOUSLY in the stdout handler (not setImmediate)
+so `msg.db_id` is set BEFORE the message is mirrored (the results-table "open this doc
+in Review" needs it) — wrapped in try/catch so a per-doc DB error can't skip the
+progress mirror/count. Guarded by test_drain_original.js (EXDEV-locked + retry:false
+no-duplicate cases).
 
 **Document SEPARATION pre-pass** (`_separateBatchDocuments`): before the worker pool,
 each PDF is OCR-scanned to split a multi-document file (e.g. ten one-page alerts in

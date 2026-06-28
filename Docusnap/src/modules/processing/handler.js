@@ -609,9 +609,13 @@ function register(ctx) {
             if (msg.type === 'file_done') {
               // Persist SYNCHRONOUSLY (better-sqlite3 is sync anyway) so msg.db_id is set
               // BEFORE we mirror — the renderer's results table needs the doc id to open
-              // THAT document in Review (not the first in the queue).
+              // THAT document in Review (not the first in the queue). Guard the call so a
+              // per-doc DB error can't skip the progress mirror + count below (which would
+              // stall the bar and drop the doc from the results table); db_id just stays
+              // unset → the row link falls back to opening Review at the first doc.
               _recordDevDoc(msg);
-              _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger);
+              try { _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger); }
+              catch (e) { logger?.err?.(`_handleFileMessage failed: ${msg.original_filename || '?'} — ${e && e.message}`); }
               fileCount++;
             } else {
               setImmediate(() => _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger));
@@ -1489,7 +1493,11 @@ function _sleepMs(ms) {
   try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch {}
 }
 
-function drainOriginalToFolder(fs, path, srcPath, destDir, originalFilename) {
+// opts.retry (default true): retry briefly on a transient lock. The INLINE caller
+// (_drainNowOrDefer, on the main thread per file_done) passes retry:false so it never
+// blocks on Atomics.wait — a locked file is simply deferred to the post-worker flush,
+// which retries (handles are released by then).
+function drainOriginalToFolder(fs, path, srcPath, destDir, originalFilename, opts = {}) {
   if (!fs.existsSync(srcPath)) return null;
   if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
   const ext  = path.extname(originalFilename);
@@ -1500,6 +1508,7 @@ function drainOriginalToFolder(fs, path, srcPath, destDir, originalFilename) {
     destPath = path.join(destDir, `${base}-${counter}${ext}`);
     counter++;
   }
+  const maxAttempts = opts.retry === false ? 1 : 5;
   // The OCR worker can still hold a transient handle on the PDF for a moment after it
   // emits file_done, so an immediate rename fails with a LOCK error (EBUSY/EPERM/
   // EACCES) — NOT a cross-volume error. The previous code assumed EVERY failure was
@@ -1508,20 +1517,28 @@ function drainOriginalToFolder(fs, path, srcPath, destDir, originalFilename) {
   // duplicate appeared. Now: a genuine EXDEV uses copy+unlink; a lock is retried
   // briefly; if still locked we leave the original in place (it drains on the next
   // run) and never create a duplicate.
-  for (let attempt = 0; ; attempt++) {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       fs.renameSync(srcPath, destPath);
       return { folder: destDir, filename: path.basename(destPath) };
     } catch (e) {
       if (e && e.code === 'EXDEV') {           // genuine cross-volume → copy + remove
         fs.copyFileSync(srcPath, destPath);
-        fs.unlinkSync(srcPath);
+        try {
+          fs.unlinkSync(srcPath);
+        } catch {
+          // Copy landed but the source is locked — remove the copy so we never leave a
+          // DUPLICATE; the original drains on a later flush/run.
+          try { fs.unlinkSync(destPath); } catch {}
+          return null;
+        }
         return { folder: destDir, filename: path.basename(destPath) };
       }
-      if (attempt >= 4) return null;           // still locked after retries → leave it, no duplicate
+      if (attempt >= maxAttempts - 1) return null;   // still locked → leave it, no duplicate
       _sleepMs(80);
     }
   }
+  return null;
 }
 
 // Flush the deferred-drain queue: move each processed/failed original into its
@@ -1534,7 +1551,9 @@ function drainOriginalToFolder(fs, path, srcPath, destDir, originalFilename) {
 // still momentarily locked, queue it for the post-worker flush instead of blocking.
 function _drainNowOrDefer(db, logger, item) {
   try {
-    const moved = drainOriginalToFolder(fs, path, item.srcPath, item.destDir, item.originalFilename);
+    // retry:false → a single non-blocking attempt on the main thread; a locked file is
+    // deferred to _flushPendingDrains (after the worker exits), which DOES retry.
+    const moved = drainOriginalToFolder(fs, path, item.srcPath, item.destDir, item.originalFilename, { retry: false });
     if (moved) {
       db.prepare('UPDATE documents SET folder_path = ? WHERE id = ?').run(moved.folder, item.docId);
       if (moved.filename !== item.originalFilename) {

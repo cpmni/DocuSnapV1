@@ -886,7 +886,7 @@ function renderTeachCta(doc) {
   // taught with field targets can extract via patterns/anchors without a template_id.
   const learned = (doc.extractions || [])
     .map(e => (e.extraction_method || '').split('+')[0].trim().toLowerCase())
-    .some(m => m === 'keyword' || m.startsWith('anchor') || m.startsWith('template_mapping'));
+    .some(m => m.startsWith('keyword') || m.startsWith('anchor') || m.startsWith('template_mapping'));
   if (learned) return;
 
   // Tier C/D — no template, recheck clean, nothing learned read it → offer to teach.
