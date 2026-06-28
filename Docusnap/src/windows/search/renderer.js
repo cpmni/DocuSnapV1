@@ -11,6 +11,16 @@ window.initHelpMode?.('help-mode-toggle', {
   'fulltext':    'Searches inside the documents — the OCR’d text content, not just the filed fields. Use it to find a phrase you remember seeing.',
   'type-filter': 'Limit results to one document type (e.g. only Invoices).',
   'uncommitted': 'When ticked, results also include documents that haven’t been confirmed/filed yet — handy for finding a scan still in the queue.',
+  'company':     'Filter by the company (supplier or customer) on the document.',
+  'reference':   'Filter by the document’s reference or main number (e.g. an invoice number).',
+  'date-from':   'Show documents dated on or after this date.',
+  'date-to':     'Show documents dated on or before this date.',
+  'do-search':   'Run the search. Results also update automatically as you type.',
+  'mailbox':     'Show documents shared with you for approval or acknowledgement (if enabled).',
+  'results-pane':'The matching documents. Click one to preview it on the right.',
+  'preview-pane':'A preview of the selected document and its filed details.',
+  'preview-actions':'Open the file, show it in your file explorer, or open it back in Review to change something.',
+  'preview-pages':'Move between the pages of the previewed document.',
   'help-mode':   'Help mode: click any control to see what it does. Press Esc to leave.',
 });
 

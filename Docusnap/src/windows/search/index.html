@@ -238,11 +238,11 @@
   </div>
 
   <div id="search-bar">
-    <input class="search-input" id="inp-company"   type="text" placeholder="Company…">
-    <input class="search-input" id="inp-reference" type="text" placeholder="Reference…">
+    <input class="search-input" id="inp-company" data-help-key="company"   type="text" placeholder="Company…">
+    <input class="search-input" id="inp-reference" data-help-key="reference" type="text" placeholder="Reference…">
     <input class="search-input" id="inp-fulltext"  type="text" placeholder="Full text…" title="Search OCR text content" data-help-key="fulltext">
     <span style="font-size:11px; color:var(--muted); white-space:nowrap;">From</span>
-    <input class="search-input" id="inp-date-from" type="date" title="From date">
+    <input class="search-input" id="inp-date-from" data-help-key="date-from" type="date" title="From date">
     <span style="font-size:11px; color:var(--muted);">to</span>
     <input class="search-input" id="inp-date-to"   type="date" title="To date">
     <select id="inp-type" data-help-key="type-filter">
@@ -252,12 +252,12 @@
       <input type="checkbox" id="chk-uncommitted" checked>
       Include unconfirmed
     </label>
-    <button id="btn-search">Search</button>
-    <button id="btn-mailbox" style="display:none">Mailbox</button>
+    <button id="btn-search" data-help-key="do-search">Search</button>
+    <button id="btn-mailbox" data-help-key="mailbox" style="display:none">Mailbox</button>
   </div>
 
   <div id="body">
-    <div id="results-pane">
+    <div id="results-pane" data-help-key="results-pane">
       <div id="mailbox-tabs" style="display:none">
         <button class="mb-tab active" data-box="inbox">Inbox</button>
         <button class="mb-tab" data-box="sent">Sent</button>
@@ -269,7 +269,7 @@
       </div>
     </div>
 
-    <div id="preview-pane">
+    <div id="preview-pane" data-help-key="preview-pane">
       <div id="preview-empty">Select a document from the results</div>
 
       <div id="preview-doc" style="display:none">
@@ -279,15 +279,15 @@
             <img id="preview-img" style="display:none" alt="Document preview" draggable="false">
           </div>
           <div id="page-nav" style="display:none">
-            <button class="page-nav-btn" id="btn-page-prev" title="Previous page" aria-label="Previous page" disabled>&#8249;</button>
+            <button class="page-nav-btn" id="btn-page-prev" data-help-key="preview-pages" title="Previous page" aria-label="Previous page" disabled>&#8249;</button>
             <span id="page-label" class="page-nav-label">1 / 1</span>
-            <button class="page-nav-btn" id="btn-page-next" title="Next page" aria-label="Next page" disabled>&#8250;</button>
+            <button class="page-nav-btn" id="btn-page-next" data-help-key="preview-pages" title="Next page" aria-label="Next page" disabled>&#8250;</button>
           </div>
         </div>
 
         <div id="preview-sidebar">
           <div id="preview-fields-scroll"></div>
-          <div id="preview-actions"></div>
+          <div id="preview-actions" data-help-key="preview-actions"></div>
         </div>
       </div>
     </div>

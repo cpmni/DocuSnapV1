@@ -406,7 +406,7 @@
   <div id="body">
 
     <!-- ══ GENERAL ══ -->
-    <div class="panel active" id="panel-general">
+    <div class="panel active" id="panel-general" data-help-key="tab-general">
 
       <div class="settings-group folders-group">
         <div class="group-title">Folders</div>
@@ -425,10 +425,10 @@
             <p class="section-desc">Source files are moved here after processing. Leave blank to keep originals in place.</p>
             <div class="row-flex">
               <input type="text" id="processed-folder-path" class="path-input" readonly placeholder="No folder selected (files stay in source)">
-              <button class="btn primary" id="btn-pick-processed">Browse…</button>
+              <button class="btn primary" id="btn-pick-processed" data-help-key="pick-processed">Browse…</button>
             </div>
             <div style="margin-top:6px;">
-              <button class="btn small" id="btn-clear-processed" style="font-size:10px; padding:3px 10px; color:var(--err); border-color:var(--err);">Clear</button>
+              <button class="btn small" id="btn-clear-processed" data-help-key="clear-processed" style="font-size:10px; padding:3px 10px; color:var(--err); border-color:var(--err);">Clear</button>
             </div>
           </div>
 
@@ -437,7 +437,7 @@
             <p class="section-desc">Auto-imports scans dropped here. Files must be stable for 30 seconds before processing — prevents partial-transfer issues with network scanners.</p>
             <div class="row-flex">
               <input type="text" id="watch-folder-path" class="path-input" readonly placeholder="No folder selected">
-              <button class="btn primary" id="btn-pick-watch">Browse…</button>
+              <button class="btn primary" id="btn-pick-watch" data-help-key="pick-watch">Browse…</button>
             </div>
             <div class="threshold-row" style="margin-top:8px;">
               <div>
@@ -615,7 +615,7 @@
     </div>
 
     <!-- ══ DOCUMENT TYPES ══ -->
-    <div class="panel" id="panel-doctypes">
+    <div class="panel" id="panel-doctypes" data-help-key="tab-doctypes">
       <div class="section">
         <div class="section-title">Document Types</div>
         <p class="section-desc">Select a type to edit its fields and filing roles, or create a new one. Each type's Company, Date and Reference roles drive filing and learning.</p>
@@ -637,7 +637,7 @@
     <!-- (The former Fields tab is merged into Document Types above.) -->
 
     <!-- ══ FILE NAMING ══ -->
-    <div class="panel" id="panel-filenaming">
+    <div class="panel" id="panel-filenaming" data-help-key="tab-filenaming">
 
       <div class="section">
         <div class="section-title">Folder Structure</div>
@@ -648,7 +648,7 @@
         </p>
         <div class="row-flex">
           <input type="text" id="folder-pattern-input" class="path-input" placeholder="{supplier}/{year}/{month}" spellcheck="false">
-          <button class="btn" id="btn-reset-folder-pattern">Reset to Default</button>
+          <button class="btn" id="btn-reset-folder-pattern" data-help-key="reset-folder">Reset to Default</button>
         </div>
         <div id="folder-token-list" class="token-list" style="margin-top:10px;"></div>
       </div>
@@ -662,7 +662,7 @@
         </p>
         <div class="row-flex">
           <input type="text" id="filename-pattern-input" class="path-input" placeholder="{docType}.{date}.{ref}" spellcheck="false">
-          <button class="btn" id="btn-reset-filename-pattern">Reset to Default</button>
+          <button class="btn" id="btn-reset-filename-pattern" data-help-key="reset-filename">Reset to Default</button>
         </div>
         <div id="filename-token-list" class="token-list" style="margin-top:10px;"></div>
         <div id="filename-pattern-msg" class="pattern-msg" style="display:none;"></div>
@@ -685,7 +685,7 @@
     </div>
 
     <!-- ══ TEMPLATES ══ -->
-    <div class="panel" id="panel-templates">
+    <div class="panel" id="panel-templates" data-help-key="tab-templates">
       <div class="section">
         <div class="section-title">Template Viewer &amp; Anchor Mapping</div>
         <p class="section-desc">
@@ -700,7 +700,7 @@
           <div class="section-title sub">Templates</div>
           <div id="tpl-list"></div>
           <div style="margin-top:14px;">
-            <button class="btn" id="btn-new-template">+ New Template</button>
+            <button class="btn" id="btn-new-template" data-help-key="new-template">+ New Template</button>
           </div>
           <div class="add-form" id="new-template-form">
             <div class="form-group">
@@ -727,10 +727,10 @@
                   <div class="section-title">Sample document</div>
                   <div class="row-flex" style="gap:8px; align-items:center; flex-wrap:wrap;">
                     <select id="tpl-sample-select" class="field-select" style="flex:1 1 240px; min-width:0;" title="Choose sample document for this template"></select>
-                    <button class="btn" id="tpl-btn-import-sample" title="Import a PDF, PNG or JPEG as a sample document">Import Sample…</button>
-                    <button class="btn" id="tpl-btn-regen-landmarks" title="Recompute registration landmarks from the current sample (fixes a template that ended up with no/poor landmarks, so drifted scans register correctly)">Regenerate landmarks</button>
-                    <button class="btn" id="tpl-btn-regen-fingerprint" title="Recompute the keyword fingerprint from this template's documents (fixes a born-digital template — e.g. an email alert whose logo varies — so it's matched by its stable header words instead of an unreliable logo)">Regenerate fingerprint</button>
-                    <button class="btn" id="tpl-btn-enhance" title="Advanced manual override. Scan Finder detects registration landmarks automatically as documents are processed — only use this if automatic detection keeps failing for this template, and pick words that appear ONCE on the page.">Manual landmarks (advanced)</button>
+                    <button class="btn" id="tpl-btn-import-sample" data-help-key="import-sample" title="Import a PDF, PNG or JPEG as a sample document">Import Sample…</button>
+                    <button class="btn" id="tpl-btn-regen-landmarks" data-help-key="regen-landmarks" title="Recompute registration landmarks from the current sample (fixes a template that ended up with no/poor landmarks, so drifted scans register correctly)">Regenerate landmarks</button>
+                    <button class="btn" id="tpl-btn-regen-fingerprint" data-help-key="regen-fingerprint" title="Recompute the keyword fingerprint from this template's documents (fixes a born-digital template — e.g. an email alert whose logo varies — so it's matched by its stable header words instead of an unreliable logo)">Regenerate fingerprint</button>
+                    <button class="btn" id="tpl-btn-enhance" data-help-key="tpl-enhance" title="Advanced manual override. Scan Finder detects registration landmarks automatically as documents are processed — only use this if automatic detection keeps failing for this template, and pick words that appear ONCE on the page.">Manual landmarks (advanced)</button>
                   </div>
                   <span class="section-desc" style="display:block; margin:4px 0 0;">Required for anchor/target mapping. Attach any representative PDF, PNG or JPEG.</span>
                   <span id="tpl-sample-msg" class="section-desc" style="display:block; margin:4px 0 0;"></span>
@@ -819,8 +819,8 @@
                 <div id="tpl-map-anchor-draw">
                   <div class="row-flex" style="flex-wrap:wrap; gap:16px; margin-top:12px; align-items:flex-end;">
                     <div class="form-group" style="flex-direction:row; gap:8px;">
-                      <button class="btn" id="tpl-btn-draw-anchor" title="Draw a box around the label text on the document (e.g. 'Invoice No:')">Draw Anchor</button>
-                      <button class="btn" id="tpl-btn-draw-target" title="Draw a box around where the value appears">Draw Target</button>
+                      <button class="btn" id="tpl-btn-draw-anchor" data-help-key="draw-anchor" title="Draw a box around the label text on the document (e.g. 'Invoice No:')">Draw Anchor</button>
+                      <button class="btn" id="tpl-btn-draw-target" data-help-key="draw-target" title="Draw a box around where the value appears">Draw Target</button>
                     </div>
                     <div class="form-group" style="flex-direction:row; gap:8px;">
                       <span id="tpl-anchor-status" class="mapping-status">Anchor: not drawn</span>
@@ -859,9 +859,9 @@
                   </div>
 
                   <div class="row-flex" style="margin-top:14px; gap:8px; flex-wrap:wrap; row-gap:6px;">
-                    <button class="btn primary" id="tpl-btn-save-mapping" disabled title="Save this anchor→target mapping">Save Mapping</button>
-                    <button class="btn" id="tpl-btn-test-mapping" disabled title="Run extraction on the sample document using this mapping">Test</button>
-                    <button class="btn danger" id="tpl-btn-delete-mapping" style="display:none;" title="Delete this mapping">Delete</button>
+                    <button class="btn primary" id="tpl-btn-save-mapping" data-help-key="save-mapping" disabled title="Save this anchor→target mapping">Save Mapping</button>
+                    <button class="btn" id="tpl-btn-test-mapping" data-help-key="test-mapping" disabled title="Run extraction on the sample document using this mapping">Test</button>
+                    <button class="btn danger" id="tpl-btn-delete-mapping" data-help-key="delete-mapping" style="display:none;" title="Delete this mapping">Delete</button>
                     <button class="btn" id="tpl-btn-cancel-mapping" title="Clear the editor">Reset</button>
                     <span id="tpl-mapping-msg" class="section-desc" style="margin:0;"></span>
                   </div>
@@ -877,7 +877,7 @@
                     <input type="text" id="tpl-fixed-value-input" class="field-select" placeholder="e.g. Acme Supplies Ltd">
                   </div>
                   <div class="form-group" style="flex-direction:row; gap:8px;">
-                    <button class="btn primary" id="tpl-fixed-set-btn">Set Fixed Value</button>
+                    <button class="btn primary" id="tpl-fixed-set-btn" data-help-key="fixed-value">Set Fixed Value</button>
                   </div>
                 </div>
                 <span id="tpl-fixed-msg" class="section-desc" style="display:none; margin:6px 0 0;"></span>
@@ -957,7 +957,7 @@
             <div class="section" style="margin-top:18px; padding-top:14px; border-top:1px solid var(--err);">
               <div class="section-title sub" style="color:var(--err);">Danger zone</div>
               <div class="row-flex" style="margin:6px 0 0;">
-                <button class="btn danger" id="tpl-btn-delete-template">Delete Template</button>
+                <button class="btn danger" id="tpl-btn-delete-template" data-help-key="delete-template">Delete Template</button>
               </div>
             </div>
 
@@ -969,7 +969,7 @@
     </div>
 
     <!-- ══ LEARNING RECOVERY ══ -->
-    <div class="panel" id="panel-learning">
+    <div class="panel" id="panel-learning" data-help-key="tab-learning">
       <div class="section">
         <div class="section-title">Learning Recovery</div>
         <p class="section-desc">
@@ -983,7 +983,7 @@
           <select id="lr-doctype" class="field-select" style="width:170px;">
             <option value="">All document types</option>
           </select>
-          <button class="btn primary" id="lr-btn-search">Search</button>
+          <button class="btn primary" id="lr-btn-search" data-help-key="lr-search">Search</button>
         </div>
       </div>
 
@@ -1018,7 +1018,7 @@
               template (with its fields and mappings). Documents stay, but lose their template link.
               Core settings are untouched. Use only to reset learned state during development.
             </p>
-            <button class="btn danger" id="lr-btn-reset-all">Clear ALL learning memory</button>
+            <button class="btn danger" id="lr-btn-reset-all" data-help-key="lr-reset-all">Clear ALL learning memory</button>
             <div id="lr-dev-msg" class="section-desc" style="margin-top:8px;"></div>
 
             <!-- Dev-only full wipe (fresh install) — a SUPERSET of the above. Hidden by
@@ -1030,7 +1030,7 @@
                 mappings) and strips learned identity off your documents. Your files are kept. A timestamped
                 database backup is taken first. Dev-only — not shown in packaged builds.
               </p>
-              <button class="btn danger" id="lr-btn-fresh-install">Erase ALL data — fresh install</button>
+              <button class="btn danger" id="lr-btn-fresh-install" data-help-key="lr-fresh">Erase ALL data — fresh install</button>
               <div id="lr-fresh-msg" class="section-desc" style="margin-top:8px;"></div>
             </div>
           </div>
@@ -1048,9 +1048,9 @@
         <div id="lr-detail" style="font-family:var(--mono); font-size:11px; line-height:1.8;"></div>
 
         <div class="row-flex" style="margin-top:16px; gap:8px;">
-          <button class="btn danger" id="lr-btn-clear-anchors">Clear field anchors for this scope</button>
-          <button class="btn danger" id="lr-btn-clear-hints">Clear supplier hints for this scope</button>
-          <button class="btn danger" id="lr-btn-clear-field-rules">Clear field cleanup rules for this scope</button>
+          <button class="btn danger" id="lr-btn-clear-anchors" data-help-key="lr-clear-anchors">Clear field anchors for this scope</button>
+          <button class="btn danger" id="lr-btn-clear-hints" data-help-key="lr-clear-hints">Clear supplier hints for this scope</button>
+          <button class="btn danger" id="lr-btn-clear-field-rules" data-help-key="lr-clear-rules">Clear field cleanup rules for this scope</button>
         </div>
         <div id="lr-msg" class="section-desc" style="margin-top:8px;"></div>
 
@@ -1062,7 +1062,7 @@
               supplier/document type. Use only when learning has become polluted and narrower cleanup
               has failed.
             </p>
-            <button class="btn danger" id="lr-btn-clear-corrections">Clear corrections for this scope</button>
+            <button class="btn danger" id="lr-btn-clear-corrections" data-help-key="lr-clear-corrections">Clear corrections for this scope</button>
           </div>
         </details>
       </div>
@@ -1073,14 +1073,14 @@
     </div>
 
     <!-- ══ USERS ══ -->
-    <div class="panel" id="panel-users">
+    <div class="panel" id="panel-users" data-help-key="tab-users">
 
       <div class="section">
         <div class="section-title">Users</div>
         <p class="section-desc">Who can sign in and what they can do. New accounts get a temporary password; the user sets their own on first sign-in.</p>
         <div id="users-list"></div>
         <div style="margin-top:14px;">
-          <button class="btn" id="btn-add-user">+ Add User</button>
+          <button class="btn" id="btn-add-user" data-help-key="add-user">+ Add User</button>
         </div>
         <div class="add-form" id="add-user-form">
           <div class="form-group">
@@ -1120,7 +1120,7 @@
     </div>
 
     <!-- ══ AUDIT ══ -->
-    <div class="panel" id="panel-audit">
+    <div class="panel" id="panel-audit" data-help-key="tab-audit">
       <style>
         #panel-audit .aud-lbl { display:block; font-size:10px; color:var(--muted); margin-bottom:3px; letter-spacing:.04em; }
         #panel-audit .aud-input { padding:5px 8px; background:var(--surface2); border:1px solid var(--border2);
@@ -1174,7 +1174,7 @@
     </div>
 
     <!-- ══ LICENSING ══ -->
-    <div class="panel" id="panel-licensing">
+    <div class="panel" id="panel-licensing" data-help-key="tab-licensing">
       <div class="section">
         <div class="card-head"><div class="section-title">License</div><span class="chip" id="lic-chip" style="display:none;"></span></div>
         <p class="section-desc">
@@ -1289,7 +1289,7 @@
     </div>
 
     <!-- ══ ADVANCED ══ -->
-    <div class="panel" id="panel-advanced">
+    <div class="panel" id="panel-advanced" data-help-key="tab-advanced">
       <div class="section">
         <div class="section-title">Keyword Label Overrides</div>
         <p class="section-desc">Teach the keyword stage extra <strong>words to look for on the page</strong> for a field, so it's detected on import without per-document teaching.</p>

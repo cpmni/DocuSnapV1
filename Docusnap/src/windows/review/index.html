@@ -572,7 +572,7 @@
         </button>
       </div>
       <div id="queue-scroll-wrap">
-        <div id="queue-list"></div>
+        <div id="queue-list" data-help-key="queue-list"></div>
         <div id="queue-scroll-rail">
           <!-- Prev / next document cycle (round arrows). Reuses cycleDocument() — the
                SAME path ArrowUp/ArrowDown use; clamps + disables at the list ends via
@@ -650,7 +650,7 @@
                   <span id="enh-noise-value" class="enh-num">Off</span>
                 </label>
               </div>
-              <button id="btn-preview-ocr" class="btn preview-ocr">&#9658; Preview OCR</button>
+              <button id="btn-preview-ocr" data-help-key="preview-ocr" class="btn preview-ocr">&#9658; Preview OCR</button>
             </div>
           </div>
         </div>
@@ -659,7 +659,7 @@
       <div id="bulk-file-progress" role="status" aria-live="polite">
         <div class="bfp-row">
           <span class="bfp-count">Filing...</span>
-          <button id="btn-stop-file-all" class="btn bfp-stop">&#9632; Stop</button>
+          <button id="btn-stop-file-all" data-help-key="stop-file-all" class="btn bfp-stop">&#9632; Stop</button>
         </div>
         <div class="bfp-bar"><div class="bfp-bar-fill"></div></div>
         <div class="bfp-file"></div>
@@ -689,12 +689,12 @@
           <button class="doc-nav-btn" id="btn-zoom-in" title="Zoom in">&#43;</button>
           <button class="doc-nav-btn" id="btn-zoom-reset" title="Reset zoom &amp; pan">Reset</button>
         </div>
-        <button class="doc-nav-btn" id="btn-page-prev">&#8249; Prev</button>
+        <button class="doc-nav-btn" id="btn-page-prev" data-help-key="pages">&#8249; Prev</button>
         <span id="page-indicator" style="font-size:11px; color:var(--muted);">—</span>
-        <button class="doc-nav-btn" id="btn-page-next">Next &#8250;</button>
+        <button class="doc-nav-btn" id="btn-page-next" data-help-key="pages">Next &#8250;</button>
       </div>
 
-      <button class="btn" id="btn-acknowledge" style="display:none" title="This document was flagged for review. Mark it reviewed so File All Ready can include it.">&#10003; Mark Reviewed</button>
+      <button class="btn" id="btn-acknowledge" data-help-key="acknowledge" style="display:none" title="This document was flagged for review. Mark it reviewed so File All Ready can include it.">&#10003; Mark Reviewed</button>
 
       <!-- "Teach this document" CTA (shown only for genuinely-unseen docs; see renderTeachCta) -->
       <div id="teach-cta" class="teach-cta" style="display:none"></div>
@@ -736,7 +736,7 @@
         <div class="wiz-step" id="wiz-step">Field — of —</div>
         <div class="wiz-row">
           <span class="wiz-label">Field</span>
-          <select id="wiz-field-select"></select>
+          <select id="wiz-field-select" data-help-key="wiz-field"></select>
         </div>
         <div class="wiz-row">
           <span class="wiz-label">How is this field filled?</span>
@@ -755,8 +755,8 @@
             <option value="currency">Currency</option>
           </select>
           <div class="wiz-draw-row">
-            <button class="btn" id="wiz-draw-anchor">Draw anchor</button>
-            <button class="btn" id="wiz-draw-target">Draw target</button>
+            <button class="btn" id="wiz-draw-anchor" data-help-key="draw-anchor">Draw anchor</button>
+            <button class="btn" id="wiz-draw-target" data-help-key="draw-target">Draw target</button>
           </div>
         </div>
         <div class="wiz-row" id="wiz-fixed-block" style="display:none;">
@@ -765,7 +765,7 @@
         </div>
         <span class="wiz-status" id="wiz-status">Anchor: — · Target: —</span>
         <div class="wiz-footer">
-          <button class="btn" id="wiz-show-resolved" title="OCR this document and overlay (amber) where the mapping ACTUALLY resolves — so you can see the anchor/target track a shifted page">Show where it reads</button>
+          <button class="btn" id="wiz-show-resolved" data-help-key="show-resolved" title="OCR this document and overlay (amber) where the mapping ACTUALLY resolves — so you can see the anchor/target track a shifted page">Show where it reads</button>
         </div>
         <span class="wiz-status" id="wiz-resolved-msg"></span>
         <div class="wiz-footer">
@@ -773,22 +773,22 @@
           <button class="btn" id="wiz-next">Next &#8250;</button>
         </div>
         <div class="wiz-footer">
-          <button class="btn confirm" id="wiz-save" disabled>Save field</button>
+          <button class="btn confirm" id="wiz-save" data-help-key="wiz-save" disabled>Save field</button>
         </div>
         <div class="wiz-footer">
-          <button class="btn" id="wiz-open-manager" style="display:none;">Open in Template Manager</button>
+          <button class="btn" id="wiz-open-manager" data-help-key="open-manager" style="display:none;">Open in Template Manager</button>
         </div>
         <span class="wiz-note">Choose how the field is filled, then Save. "Read it from the document" = draw an anchor + target; "Always use the same value" = type a constant. The template is created/reused on the first save.</span>
       </div>
     </div>
 
-    <div id="fields-panel">
+    <div id="fields-panel" data-help-key="fields-panel">
       <div id="fields-header">
         <div class="fields-header-row">
           <div class="fields-header-title">Extracted Fields</div>
-          <button class="btn fh-new-type" id="btn-new-doctype" style="display:none;" title="Create a new document type without leaving Review">+ New type</button>
+          <button class="btn fh-new-type" id="btn-new-doctype" data-help-key="new-doctype" style="display:none;" title="Create a new document type without leaving Review">+ New type</button>
         </div>
-        <select id="doctype-select"><option value="">— Select document type —</option></select>
+        <select id="doctype-select" data-help-key="doctype-select"><option value="">— Select document type —</option></select>
         <div class="fields-detect-row">
           <div id="extraction-status"></div>
           <div class="fields-detect-spacer" aria-hidden="true"></div>
@@ -811,11 +811,11 @@
       <div id="reprocess-progress" role="status" aria-live="polite"></div>
       <div id="reprocess-bar">
         <button class="btn reprocess"     id="btn-reprocess" data-help-key="reprocess">&#9654;&#9654; Reprocess</button>
-        <button class="btn stop-batch"    id="btn-stop-reprocess" style="display:none;">&#9632; Stop</button>
-        <button class="btn reprocess-all" id="btn-reprocess-all" title="Reprocess every document in the review queue">Reprocess all in queue</button>
+        <button class="btn stop-batch"    id="btn-stop-reprocess" data-help-key="stop-reprocess" style="display:none;">&#9632; Stop</button>
+        <button class="btn reprocess-all" id="btn-reprocess-all" data-help-key="reprocess-all" title="Reprocess every document in the review queue">Reprocess all in queue</button>
       </div>
       <div id="action-bar">
-        <button class="btn danger" id="btn-delete" title="Delete document">&#128465;</button>
+        <button class="btn danger" id="btn-delete" data-help-key="delete" title="Delete document">&#128465;</button>
         <button class="btn confirm" id="btn-confirm" disabled data-help-key="confirm">&#10003; Confirm &amp; File</button>
       </div>
     </div>

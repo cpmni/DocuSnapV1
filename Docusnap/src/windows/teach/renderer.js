@@ -40,6 +40,12 @@ window.initHelpMode?.('help-mode-toggle', {
   'next':      'Move to the next step. On the final step this is what saves the document type, the field map and files the document.',
   'back':      'Return to the previous step. Nothing is saved until the final step, so going back is always safe.',
   'cancel':    'Stop teaching and close. Nothing is saved unless you reach and complete the final step.',
+  'user-guide':'Open the full user guide.',
+  'teach-canvas':'Draw a box around a field’s value on the page. Scan Finder reads it back so you can check it’s right.',
+  'teach-zoom':'Zoom the document in or out; Reset fits it to the pane. The page stays sharp.',
+  'rg-redraw': 'Draw the box again if the read-back wasn’t quite right.',
+  'rg-skip':   'Skip this field for now and carry on with the rest.',
+  'rg-fieldlist':'The fields for this document type, and which ones you’ve pointed out so far.',
   'help-mode': 'Help mode: click any control to see what it does. Press Esc to leave.',
 });
 $('btn-cancel').onclick = () => confirmCancel();

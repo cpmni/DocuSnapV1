@@ -610,10 +610,10 @@
       <span id="mode-badge" class="tb-mode-badge" style="margin-left:12px;" data-help-key="mode">FAST</span>
     </div>
     <div class="tb-controls">
-      <button class="tb-nav-btn help-guide-btn" id="btn-help-guide" title="Open the user guide"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>Help</button>
+      <button class="tb-nav-btn help-guide-btn" id="btn-help-guide" data-help-key="user-guide" title="Open the user guide"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>Help</button>
       <button class="tb-btn" id="help-mode-toggle" data-help-key="help-mode" title="Help mode — click, then click any control to learn what it does">?</button>
       <div class="user-chip-wrap" id="user-chip-wrap">
-        <button class="user-chip" id="user-chip" title="Account">
+        <button class="user-chip" id="user-chip" data-help-key="account" title="Account">
           <span class="user-chip-avatar" id="user-chip-avatar">&#8226;</span>
           <span class="user-chip-name" id="user-chip-name">&hellip;</span>
           <span class="role-pill" id="user-chip-role" data-role="readonly">&hellip;</span>
@@ -656,17 +656,17 @@
 
       <div class="rail-spacer"></div>
 
-      <div class="rail-clock">
+      <div class="rail-clock" data-help-key="clock">
         <div class="rail-time" id="rail-time">--:--</div>
         <div class="rail-date" id="rail-date">&mdash;</div>
       </div>
 
-      <div class="rail-foot" title="All processing is local. No data leaves your PC.">
+      <div class="rail-foot" data-help-key="local-only" title="All processing is local. No data leaves your PC.">
         <svg class="ico ico-sm" aria-hidden="true"><use href="#i-shield"/></svg>
         <span>Local only</span>
       </div>
 
-      <label class="rail-dark" title="Toggle dark mode">
+      <label class="rail-dark" data-help-key="dark-mode" title="Toggle dark mode">
         <span>Dark mode</span>
         <span class="dash-switch"><input type="checkbox" id="rail-dark-toggle"><span class="dash-switch-track"></span></span>
       </label>
@@ -685,7 +685,7 @@
           <div class="dash-grid">
 
             <!-- Trial banner (full width; only while on trial) -->
-            <div class="dash-trial dash-span calm" id="dash-trial" style="display:none;">
+            <div class="dash-trial dash-span calm" id="dash-trial" data-help-key="trial" style="display:none;">
               <svg class="ico ico-sm" aria-hidden="true"><use href="#i-clock"/></svg>
               <div class="trial-main">
                 <span class="trial-text" id="dash-trial-text">Trial</span>
@@ -695,7 +695,7 @@
             </div>
 
             <!-- Setup checklist (full width; first-runs only) -->
-            <div class="dash-card setup dash-span" id="dash-setup" style="display:none;">
+            <div class="dash-card setup dash-span" id="dash-setup" data-help-key="setup-checklist" style="display:none;">
               <div class="dash-card-head">
                 <svg class="ico ico-sm" aria-hidden="true"><use href="#i-check"/></svg>
                 <span>Finish setting up</span>
@@ -704,7 +704,7 @@
             </div>
 
             <!-- Needs your attention -->
-            <div class="dash-card" id="dash-attention">
+            <div class="dash-card" id="dash-attention" data-help-key="attention">
               <div class="dash-card-head">
                 <svg class="ico ico-sm" aria-hidden="true"><use href="#i-alert"/></svg>
                 <span>Needs your attention</span>
@@ -723,7 +723,7 @@
             </div>
 
             <!-- Today's pulse (stats) -->
-            <div class="dash-card" id="dash-pulse">
+            <div class="dash-card" id="dash-pulse" data-help-key="pulse">
               <div class="dash-card-head">
                 <svg class="ico ico-sm" aria-hidden="true"><use href="#i-check"/></svg>
                 <span>Documents filed</span>
@@ -736,7 +736,7 @@
             </div>
 
             <!-- Import -->
-            <div class="dash-card" id="dash-import">
+            <div class="dash-card" id="dash-import" data-help-key="dash-import">
               <div class="dash-card-head">
                 <svg class="ico ico-sm" aria-hidden="true"><use href="#i-folder"/></svg>
                 <span>Import documents</span>
@@ -749,7 +749,7 @@
             </div>
 
             <!-- Auto-import (admin only) -->
-            <div class="dash-card" id="dash-watch" style="display:none;">
+            <div class="dash-card" id="dash-watch" data-help-key="auto-import" style="display:none;">
               <div class="dash-card-head between">
                 <span class="dch-title"><svg class="ico ico-sm" aria-hidden="true"><use href="#i-inbox"/></svg> Auto-import</span>
                 <label class="dash-switch" title="Turn auto-import on or off">
@@ -763,7 +763,7 @@
             </div>
 
             <!-- Getting smarter (learning inventory) -->
-            <div class="dash-card" id="dash-learning">
+            <div class="dash-card" id="dash-learning" data-help-key="learning">
               <div class="dash-card-head">
                 <svg class="ico ico-sm" aria-hidden="true"><use href="#i-sparkles"/></svg>
                 <span>Getting smarter</span>
@@ -773,7 +773,7 @@
             </div>
 
             <!-- Where your files go (output folder) -->
-            <div class="dash-card" id="dash-output">
+            <div class="dash-card" id="dash-output" data-help-key="output">
               <div class="dash-card-head">
                 <svg class="ico ico-sm" aria-hidden="true"><use href="#i-folder"/></svg>
                 <span>Where your files go</span>
@@ -785,7 +785,7 @@
             </div>
 
             <!-- Recent activity (full width) -->
-            <div class="dash-card recent dash-span">
+            <div class="dash-card recent dash-span" data-help-key="recent">
               <div class="dash-card-head between">
                 <span>Recent activity</span>
                 <button class="dash-link" id="dash-open-search">Search <svg class="ico ico-sm" aria-hidden="true"><use href="#i-arrow-right"/></svg></button>
@@ -813,16 +813,16 @@
             <button class="btn-run" id="btn-run" disabled data-help-key="process">
               <svg class="ico" aria-hidden="true"><use href="#i-play"/></svg><span class="btn-label">Process Documents</span>
             </button>
-            <button class="btn-stop" id="btn-stop">
+            <button class="btn-stop" id="btn-stop" data-help-key="stop">
               <svg class="ico" aria-hidden="true"><use href="#i-stop"/></svg><span class="btn-label">Stop Processing</span>
             </button>
-            <div class="stuck-chip" id="stuck-chip" style="display:none;">
+            <div class="stuck-chip" id="stuck-chip" data-help-key="stuck" style="display:none;">
               <span class="stuck-msg" id="stuck-msg"></span>
               <button class="stuck-retry" id="btn-stuck-retry">Try again</button>
             </div>
           </div>
           <div class="import-stats">
-            <div class="stats-block">
+            <div class="stats-block" data-help-key="stats">
               <div class="stat-primary">
                 <span class="stat-primary-val" id="stat-done">0</span>
                 <span class="stat-primary-lbl">processed of <span id="stat-total">0</span> found</span>
@@ -832,14 +832,14 @@
                 <span class="stat-chip err"><span class="stat-chip-val" id="stat-err">0</span> Errors</span>
               </div>
             </div>
-            <button class="btn-clear-stats" id="btn-clear-stats" title="Reset the session counters to zero">Clear Stats</button>
+            <button class="btn-clear-stats" id="btn-clear-stats" data-help-key="clear-stats" title="Reset the session counters to zero">Clear Stats</button>
           </div>
         </div>
 
-      <div id="results-panel" class="visible">
+      <div id="results-panel" data-help-key="results" class="visible">
         <div class="results-toolbar">
           <span class="results-title">Processed Documents</span>
-          <button class="btn-review-docs" id="btn-review-docs">
+          <button class="btn-review-docs" id="btn-review-docs" data-help-key="review-docs">
             <svg class="ico" aria-hidden="true"><use href="#i-check"/></svg><span class="btn-label">Review your documents</span>
           </button>
         </div>
@@ -857,7 +857,7 @@
       </div>
 
       <!-- Live processing progress strip — coexists with the results table. -->
-      <div id="progress-section">
+      <div id="progress-section" data-help-key="progress">
         <div id="progress-row">
           <div id="progress-bar-wrap"><div id="progress-bar"></div></div>
           <span id="progress-count">—</span>
@@ -866,7 +866,7 @@
           <span id="log-status">Idle</span>
           <span id="progress-text" title="">—</span>
           <span style="flex:1"></span>
-          <button id="btn-toggle-log" class="btn-mini">View log</button>
+          <button id="btn-toggle-log" data-help-key="log" class="btn-mini">View log</button>
         </div>
         <div id="log-output"></div>
       </div>

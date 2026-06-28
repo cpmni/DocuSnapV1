@@ -38,7 +38,7 @@
   @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
   h1{font-size:26px;font-weight:650;margin-bottom:14px;letter-spacing:-.01em}
   h2{font-size:21px;font-weight:620;margin-bottom:10px}
-  p.lead{font-size:15px;line-height:1.6;color:#cdd3e3;margin-bottom:16px}
+  p.lead{font-size:15px;line-height:1.6;color:var(--text);margin-bottom:16px}
   .muted{color:var(--muted)}
   .pill-strip{display:flex;gap:10px;align-items:center;color:var(--muted);font-size:13px;margin:18px 0}
   .pill-strip b{color:var(--accent2)}
@@ -155,7 +155,7 @@
   <div class="titlebar">
     <span class="ttl">Teach a new document</span>
     <div class="winbtns">
-      <button class="help-guide-btn" id="btn-help-guide" title="Open the user guide (Teach a document)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></button>
+      <button class="help-guide-btn" id="btn-help-guide" data-help-key="user-guide" title="Open the user guide (Teach a document)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></button>
       <button id="help-mode-toggle" data-help-key="help-mode" title="Help mode — click, then click any control to learn what it does">?</button>
       <button id="win-min" title="Minimise">—</button>
       <button class="close" id="win-close" title="Close">✕</button>
@@ -206,12 +206,12 @@
       <div class="regionwrap">
         <div>
           <div class="canvaswrap" title="Right-drag to pan · +/− to zoom">
-            <canvas id="pageCanvas" draggable="false"></canvas>
+            <canvas id="pageCanvas" data-help-key="teach-canvas" draggable="false"></canvas>
             <div class="zoombar">
-              <button id="tz-out" title="Zoom out">−</button>
+              <button id="tz-out" data-help-key="teach-zoom" title="Zoom out">−</button>
               <span class="lvl" id="tz-level">100%</span>
-              <button id="tz-in" title="Zoom in">+</button>
-              <button id="tz-reset" title="Reset view">⟲</button>
+              <button id="tz-in" data-help-key="teach-zoom" title="Zoom in">+</button>
+              <button id="tz-reset" data-help-key="teach-zoom" title="Reset view">⟲</button>
             </div>
             <!-- Read-back confirmation overlays the BOTTOM of the preview pane so it's
                  right where the user is looking (not below the fold). -->
@@ -221,10 +221,10 @@
         </div>
         <div class="rail">
           <h3 id="rg-progress">Details</h3>
-          <div id="rg-fieldlist"></div>
+          <div id="rg-fieldlist" data-help-key="rg-fieldlist"></div>
           <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px">
-            <button class="btn ghost" id="rg-redraw">Redraw</button>
-            <button class="btn link" id="rg-skip">Skip for now</button>
+            <button class="btn ghost" id="rg-redraw" data-help-key="rg-redraw">Redraw</button>
+            <button class="btn link" id="rg-skip" data-help-key="rg-skip">Skip for now</button>
           </div>
           <div class="muted" style="font-size:12px;margin-top:12px;line-height:1.6">
             <span style="color:#3ecf8e;font-weight:700">▮</span> value (what I read)<br>
