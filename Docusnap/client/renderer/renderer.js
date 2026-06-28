@@ -51,7 +51,7 @@ function tickClock() {
   const now = new Date();
   const t = $('side-time'), d = $('side-date');
   if (t) t.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  if (d) d.textContent = now.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
+  if (d) d.textContent = now.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 }
 tickClock();
 setInterval(tickClock, 20000);

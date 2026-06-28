@@ -211,13 +211,17 @@
     .sidebtn:hover { background:var(--surface2); color:var(--text); }
     .sidebtn.active { background:rgba(59,125,240,.10); color:var(--accent); border-color:rgba(59,125,240,.22); }
     .sidebtn .ic { width:18px; height:18px; }
-    .side-foot { margin-top:auto; display:flex; flex-direction:column; gap:6px;
+    /* Foot = a compact account group, then a tight clock/date/dark group pinned at the
+       very bottom — mirrors the main app's rail foot. */
+    .side-foot { margin-top:auto; display:flex; flex-direction:column; }
+    .side-account { display:flex; flex-direction:column; gap:4px;
       border-top:1px solid var(--border); padding-top:10px; }
-    .side-foot .btn-sm { padding:4px 8px; }   /* tighter Sign out / About */
+    .side-account-btns { display:flex; flex-direction:column; gap:1px; margin-top:2px; }
+    .side-account .btn-sm { padding:4px 8px; justify-content:flex-start; }
     .side-user { display:flex; flex-direction:column; gap:3px; font-size:12px; color:var(--muted); }
-    /* Clock + dark toggle at the foot of the sidebar (bottom-left), like the main app */
-    .side-clock { text-align:center; padding:6px 0 0; }
-    .side-time { font-family:var(--mono); font-size:20px; font-weight:700; color:var(--text); line-height:1.1; letter-spacing:.02em; }
+    .side-bottom { border-top:1px solid var(--border); margin-top:10px; padding-top:6px; }
+    .side-clock { text-align:center; padding:2px 0 6px; }
+    .side-time { font-family:var(--mono); font-size:22px; font-weight:700; color:var(--text); line-height:1.1; letter-spacing:.02em; }
     .side-date { font-size:11px; color:var(--muted); margin-top:2px; }
     .side-dark { display:flex; align-items:center; justify-content:space-between; gap:8px; cursor:pointer;
       padding:6px var(--s2); border-radius:var(--r-sm); font-size:12px; color:var(--muted); }
@@ -439,15 +443,21 @@
         <button id="nav-settings" class="sidebtn"><span data-ic="settings"></span>Settings</button>
       </nav>
       <div class="side-foot">
-        <div class="conn"><span id="side-conn-dot" class="dot"></span><span id="side-conn-text">…</span></div>
-        <div class="side-user"><span id="who" class="mono"></span><span id="role-chip" class="rolechip hidden"></span></div>
-        <button id="logout-btn" class="btn btn-ghost btn-sm"><span data-ic="signout"></span>Sign out</button>
-        <button id="about-btn" class="btn btn-ghost btn-sm">About</button>
-        <div class="side-clock"><div id="side-time" class="side-time">--:--</div><div id="side-date" class="side-date">&mdash;</div></div>
-        <label class="side-dark" title="Toggle dark mode">
-          <span>Dark mode</span>
-          <span class="switch"><input type="checkbox" id="side-dark-toggle"><span class="switch-track"></span></span>
-        </label>
+        <div class="side-account">
+          <div class="conn"><span id="side-conn-dot" class="dot"></span><span id="side-conn-text">…</span></div>
+          <div class="side-user"><span id="who" class="mono"></span><span id="role-chip" class="rolechip hidden"></span></div>
+          <div class="side-account-btns">
+            <button id="logout-btn" class="btn btn-ghost btn-sm"><span data-ic="signout"></span>Sign out</button>
+            <button id="about-btn" class="btn btn-ghost btn-sm">About</button>
+          </div>
+        </div>
+        <div class="side-bottom">
+          <div class="side-clock"><div id="side-time" class="side-time">--:--</div><div id="side-date" class="side-date">&mdash;</div></div>
+          <label class="side-dark" title="Toggle dark mode">
+            <span>Dark mode</span>
+            <span class="switch"><input type="checkbox" id="side-dark-toggle"><span class="switch-track"></span></span>
+          </label>
+        </div>
       </div>
     </aside>
 
