@@ -72,4 +72,48 @@ make("template_manager_anchor_drawn.png", "template-anchor.png", (235, 305, 1900
 make("template_manager_how_is_filed.png",      "template-fill-mode.png",  (1210, 495, 1675, 605))
 make("template_manager_manual_landmarks.png",  "template-landmarks.png",  (575, 355, 1215, 565))
 make("templates_new_template.png",             "template-create.png",     (235, 190, 705, 520))
+
+# ── Main window (the home dashboard) ─────────────────────────────────────────
+make("main.png", "home-dashboard.png", (0, 28, 1920, 1010), badges=[
+    (1, 0.045, 0.10),    # nav rail
+    (2, 0.520, 0.145),   # trial bar
+    (3, 0.295, 0.235),   # needs your attention
+    (4, 0.460, 0.235),   # documents filed
+    (5, 0.300, 0.655),   # recent activity
+])
+
+# ── Import view ──────────────────────────────────────────────────────────────
+make("main_doc_import.png", "import-view.png", (0, 28, 1920, 1010), badges=[
+    (1, 0.210, 0.114),   # source folder
+    (2, 0.810, 0.124),   # Process Documents
+    (3, 0.915, 0.094),   # session stats
+    (4, 0.365, 0.323),   # results table
+    (5, 0.585, 0.241),   # "Review your documents"
+])
+
+# ── Teach: draw a box + live read-back (fills the existing teach figure) ──────
+make("teach_4_confirm_box.png", "teach-draw-box.png", (0, 28, 1186, 1010), badges=[
+    (1, 0.200, 0.061),   # instruction banner
+    (2, 0.650, 0.407),   # the box drawn on the value
+    (3, 0.135, 0.785),   # live read-back (Yes / Redraw)
+    (4, 0.877, 0.175),   # field checklist
+])
+
+# ── Teach: review what was read (clean lower window of the double capture) ────
+make("teach_5.png", "teach-review.png", (120, 290, 1066, 600))
+
+# ── Themes showcase — Warm Paper + Dark home, side by side ───────────────────
+def compose_themes():
+    box = (0, 28, 1920, 1010); tw = 540
+    def prep(src):
+        im = Image.open(os.path.join(SRC, src)).convert("RGB").crop(box)
+        return im.resize((tw, int(im.height * tw / im.width)), Image.LANCZOS)
+    warm, dark = prep("main_theme_warm_paper.png"), prep("main_theme_dark_mode.png")
+    gap = 16; h = max(warm.height, dark.height)
+    canvas = Image.new("RGB", (tw * 2 + gap, h), (255, 255, 255))
+    canvas.paste(warm, (0, 0)); canvas.paste(dark, (tw + gap, 0))
+    canvas.save(os.path.join(OUT, "home-themes.png"))
+    print(f"  home-themes.png  {canvas.size}")
+compose_themes()
+
 print("done")
