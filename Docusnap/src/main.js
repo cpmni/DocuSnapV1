@@ -416,6 +416,10 @@ function createWindow(name, options, htmlFile) {
   const win = new BrowserWindow({
     ...options,
     ...(parentWin ? { parent: parentWin } : {}),
+    // Popout child windows (Review/Settings/Search/Teach/…) get only restore + close —
+    // no minimise (a minimised modal child is an easy way to "lose" the window behind the
+    // locked main shell). Maximise/restore stays. Standalone windows keep their own option.
+    ...(parentWin ? { minimizable: false } : {}),
     modal,
     skipTaskbar,
     show:           manageShow ? false : options.show,
