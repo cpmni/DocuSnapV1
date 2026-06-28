@@ -68,28 +68,28 @@ function _decisionBar(route) {
   banner.textContent = `Routed to you by ${route.from_username} — ${kind}`
     + (route.comment ? `: “${route.comment}”` : '');
   wrap.appendChild(banner);
+  let note = null;
+  if (route.action_required === 'approve' && _canDecide()) {
+    note = document.createElement('input'); note.className = 'search-input wf-note';
+    note.placeholder = 'Add a note (optional — required to reject)';
+    wrap.appendChild(note);
+  }
   const acts = document.createElement('div'); acts.className = 'wf-acts'; wrap.appendChild(acts);
+  const decide = (decision) => {
+    const n = note ? note.value.trim() : '';
+    if (decision === 'reject' && !n) { note.focus(); return; }
+    _run(window.docusnap.workflow.resolve(route.id, decision, n || null, route.version), wrap);
+  };
 
   if (route.action_required === 'acknowledge') {
     acts.appendChild(_btn('Acknowledge', true, () =>
       _run(window.docusnap.workflow.resolve(route.id, 'acknowledge', null, route.version), wrap)));
   } else if (_canDecide()) {
-    acts.appendChild(_btn('Approve', true, () =>
-      _run(window.docusnap.workflow.resolve(route.id, 'approve', null, route.version), wrap)));
-    acts.appendChild(_btn('Reject', false, () => _showReject(wrap, route)));
+    acts.appendChild(_btn('Approve', true, () => decide('approve')));
+    acts.appendChild(_btn('Reject', false, () => decide('reject')));
+    acts.appendChild(_btn('Mark Paid', false, () => decide('paid')));
   }
   return wrap;
-}
-
-function _showReject(wrap, route) {
-  if (wrap.querySelector('.wf-reason')) return;
-  const box = document.createElement('div'); box.className = 'wf-reason';
-  const inp = document.createElement('input'); inp.className = 'search-input'; inp.placeholder = 'Reason for rejecting (required)';
-  const go = _btn('Confirm reject', true, () => {
-    const reason = inp.value.trim(); if (!reason) { inp.focus(); return; }
-    _run(window.docusnap.workflow.resolve(route.id, 'reject', reason, route.version), wrap);
-  });
-  box.append(inp, go); wrap.appendChild(box); inp.focus();
 }
 
 function _assignForm(doc) {

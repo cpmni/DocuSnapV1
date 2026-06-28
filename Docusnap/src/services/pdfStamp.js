@@ -19,6 +19,7 @@ const MAX_NOTES = 600;
 const DECISION_STYLE = {
   approve: { label: 'APPROVED', color: '#2E7D32' },   // green
   reject:  { label: 'REJECTED', color: '#C62828' },   // red
+  paid:    { label: 'PAID',     color: '#1565C0' },   // blue
 };
 
 function hexToRgb(hex) {

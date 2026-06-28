@@ -131,6 +131,10 @@
     .chip.deferred,.chip.recalled { color:var(--muted); background:var(--surface2); }
     .chip.claimed { color:var(--accent2); background:rgba(79,142,247,.12); border-color:rgba(79,142,247,.4); }
     .chip.rejected { color:var(--err); background:rgba(247,111,111,.12); border-color:rgba(247,111,111,.4); }
+    .chip.paid { color:#3b82f6; background:rgba(59,130,246,.12); border-color:rgba(59,130,246,.4); }
+    .dec-note { width:100%; margin:8px 0; padding:8px 10px; border:1px solid var(--border2); border-radius:var(--r-sm);
+      background:var(--surface2); color:var(--text); font:inherit; font-size:13px; }
+    .dec-note:focus { outline:none; border-color:var(--accent); }
     .meter { height:6px; width:120px; background:var(--surface2); border-radius:var(--r-pill); overflow:hidden; }
     .meter > i { display:block; height:100%; border-radius:var(--r-pill); background:var(--ok); }
     .meter.warn > i { background:var(--warn); } .meter.err > i { background:var(--err); }

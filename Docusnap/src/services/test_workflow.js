@@ -97,6 +97,14 @@ function main() {
     db.prepare('SELECT status,workflow_status FROM documents WHERE id=1').get().status === 'confirmed'
     && db.prepare('SELECT workflow_status FROM documents WHERE id=1').get().workflow_status === 'approved');
 
+  // ── mark-paid decision (a deciding action; editor/admin only, optional note) ──
+  const ap = wf.assign(db, admin, { documentId: 1, toUserId: 2, actionRequired: 'approve' });
+  const paid = wf.resolve(db, editor, ap.route.id, { decision: 'paid', comment: 'paid via BACS' });
+  check('editor marks paid -> state paid + note recorded',
+    paid.ok && paid.route.state === 'paid' && paid.route.resolution_comment === 'paid via BACS');
+  check('readonly cannot mark paid (role gate)',
+    wf.resolve(db, reader, wf.assign(db, admin, { documentId: 1, toUserId: 3, actionRequired: 'approve' }).route.id, { decision: 'paid' }).code === 'FORBIDDEN');
+
   // ── optimistic concurrency (stale version loses) ─────────────────────────────
   const a4 = wf.assign(db, admin, { documentId: 1, toUserId: 2, actionRequired: 'approve' });
   const staleV = a4.route.version;        // version before claim

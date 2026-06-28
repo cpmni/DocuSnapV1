@@ -605,12 +605,13 @@ function confLevel(c) { return c == null ? '' : c >= 85 ? '' : c >= 60 ? 'warn' 
 function decisionBar(route) {
   const wrap = document.createElement('div'); wrap.className = 'wf decision';
   const kind = route.action_required === 'approve' ? 'Approval requested' : 'Acknowledgement requested';
+  const canAct = route.action_required === 'approve' && canDecide();
   wrap.innerHTML = `
     <div class="dec-banner">${ico('inbox')}<span>Routed to you by <strong>${esc(route.from_username)}</strong> — ${kind}${route.comment ? ': “' + esc(route.comment) + '”' : ''}</span></div>
-    <div class="dec-acts"></div>
-    <div class="reason hidden"><input placeholder="Reason for rejecting (required)" /></div>`;
+    ${canAct ? `<input class="dec-note" placeholder="Add a note (optional — required to reject)" />` : ''}
+    <div class="dec-acts"></div>`;
   const acts = wrap.querySelector('.dec-acts');
-  const reasonBox = wrap.querySelector('.reason');
+  const noteEl = wrap.querySelector('.dec-note');
   const run = async (p) => {
     const r = await p;
     if (r.status === 401) { doLogout(); return; }
@@ -619,17 +620,18 @@ function decisionBar(route) {
     await refreshBadges();
     openDocument(route.document_id);
   };
+  const decide = (decision) => {
+    const note = noteEl ? noteEl.value.trim() : '';
+    if (decision === 'reject' && !note) { noteEl.focus(); toast('A reason is required to reject.', 'err'); return; }
+    run(api.workflow.resolve(route.id, decision, note || null, route.version));
+  };
   if (route.action_required === 'acknowledge') {
     acts.appendChild(mkBtn({ label: 'Acknowledge', icon: 'check', variant: 'primary', sm: false, onClick: () => run(api.workflow.resolve(route.id, 'acknowledge', null, route.version)) }));
   } else if (canDecide()) {
-    acts.appendChild(mkBtn({ label: 'Approve', icon: 'check', variant: 'primary', sm: false, onClick: () => run(api.workflow.resolve(route.id, 'approve', null, route.version)) }));
-    acts.appendChild(mkBtn({ label: 'Reject', icon: 'reject', variant: 'danger', sm: false, onClick: () => reasonBox.classList.toggle('hidden') }));
+    acts.appendChild(mkBtn({ label: 'Approve',   icon: 'check',  variant: 'primary',   sm: false, onClick: () => decide('approve') }));
+    acts.appendChild(mkBtn({ label: 'Reject',    icon: 'reject', variant: 'danger',    sm: false, onClick: () => decide('reject') }));
+    acts.appendChild(mkBtn({ label: 'Mark Paid', icon: 'check',  variant: 'secondary', sm: false, onClick: () => decide('paid') }));
   }
-  reasonBox.appendChild(mkBtn({ label: 'Confirm reject', icon: 'reject', variant: 'danger', onClick: () => {
-    const reason = reasonBox.querySelector('input').value.trim();
-    if (!reason) { reasonBox.querySelector('input').focus(); return; }
-    run(api.workflow.resolve(route.id, 'reject', reason, route.version));
-  } }));
   return wrap;
 }
 
@@ -822,11 +824,21 @@ function mbRow(rt) {
     <div class="t2">${ico(rt.action_required === 'approve' ? 'check' : 'inbox')}<span>${kind} · ${who} · ${esc(rt.doc_date || '')}</span></div>
     ${rt.comment ? `<div class="quote">“${esc(rt.comment)}”</div>` : ''}
     ${rt.resolution_comment ? `<div class="quote">Reason: ${esc(rt.resolution_comment)}</div>` : ''}
-    <div class="acts"></div>
-    <div class="reason hidden"><input placeholder="Reason for rejecting (required)" /></div>`;
+    <div class="acts"></div>`;
   const acts = el.querySelector('.acts');
-  const reasonBox = el.querySelector('.reason');
   const open = rt.state === 'pending' || rt.state === 'claimed';
+  const canActRow = (currentBox === 'inbox' || currentBox === 'assigned') && open && rt.action_required === 'approve' && canDecide();
+  let noteEl = null;
+  if (canActRow) {
+    noteEl = document.createElement('input'); noteEl.className = 'dec-note';
+    noteEl.placeholder = 'Add a note (optional — required to reject)';
+    el.insertBefore(noteEl, acts);
+  }
+  const decide = (decision) => {
+    const note = noteEl ? noteEl.value.trim() : '';
+    if (decision === 'reject' && !note) { noteEl.focus(); toast('A reason is required to reject.', 'err'); return; }
+    act(api.workflow.resolve(rt.id, decision, note || null, rt.version));
+  };
 
   if (currentBox === 'sent') {
     if (rt.state === 'pending') acts.appendChild(mkBtn({ label: 'Recall', icon: 'recall', variant: 'ghost', onClick: () => act(api.workflow.recall(rt.id, rt.version)) }));
@@ -835,23 +847,18 @@ function mbRow(rt) {
       if (rt.action_required === 'acknowledge') {
         acts.appendChild(mkBtn({ label: 'Acknowledge', icon: 'check', variant: 'primary', onClick: () => act(api.workflow.resolve(rt.id, 'acknowledge', null, rt.version)) }));
       } else if (canDecide()) {
-        acts.appendChild(mkBtn({ label: 'Approve', icon: 'check', variant: 'primary', onClick: () => act(api.workflow.resolve(rt.id, 'approve', null, rt.version)) }));
-        acts.appendChild(mkBtn({ label: 'Reject', icon: 'reject', variant: 'danger', onClick: () => reasonBox.classList.toggle('hidden') }));
+        acts.appendChild(mkBtn({ label: 'Approve',   icon: 'check',  variant: 'primary',   onClick: () => decide('approve') }));
+        acts.appendChild(mkBtn({ label: 'Reject',    icon: 'reject', variant: 'danger',    onClick: () => decide('reject') }));
+        acts.appendChild(mkBtn({ label: 'Mark Paid', icon: 'check',  variant: 'secondary', onClick: () => decide('paid') }));
       }
       if (rt.state === 'pending') acts.appendChild(mkBtn({ label: 'Claim', icon: 'claim', variant: 'secondary', onClick: () => act(api.workflow.claim(rt.id, rt.version)) }));
     }
   }
   const actionable = (currentBox === 'inbox' || currentBox === 'assigned') && open;
   acts.appendChild(mkBtn({ label: 'View doc', icon: 'view', variant: 'ghost', onClick: () => { setView('search'); openDocument(rt.document_id, actionable ? rt : null); } }));
-  if (rt.has_stamp) {   // a stamped APPROVED/REJECTED copy was filed for this decision
+  if (rt.has_stamp) {   // a stamped APPROVED/REJECTED/PAID copy was filed for this decision
     acts.appendChild(mkBtn({ label: 'View stamped copy', icon: 'doc', variant: 'ghost', onClick: () => viewStamped(rt.id) }));
   }
-
-  reasonBox.appendChild(mkBtn({ label: 'Confirm reject', icon: 'reject', variant: 'danger', onClick: () => {
-    const reason = reasonBox.querySelector('input').value.trim();
-    if (!reason) { reasonBox.querySelector('input').focus(); return; }
-    act(api.workflow.resolve(rt.id, 'reject', reason, rt.version));
-  } }));
   return el;
 }
 
