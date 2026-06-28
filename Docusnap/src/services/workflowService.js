@@ -57,6 +57,9 @@ function createWorkflowService(deps = {}) {
   const docs = deps.dbDocuments || require('../../database/modules/documents');
   const now  = deps.now || (() => new Date().toISOString());
   const audit = deps.audit || (() => {});
+  // Visual derivative of an approve/reject decision (a stamped PDF copy). Best-effort +
+  // non-fatal; tests inject a stub so they don't touch the filesystem.
+  const stampDecision = deps.stampDecision || require('./pdfStamp').stampWorkflowDecision;
 
   function _ver(route, expectedVersion) {
     return expectedVersion == null ? route.version : expectedVersion;
@@ -135,9 +138,10 @@ function createWorkflowService(deps = {}) {
       return fail('COMMENT_REQUIRED', 'A reason is required to reject.');
     }
 
+    const resolvedAt = now();
     const newState = decision === 'approve' ? 'approved' : decision === 'reject' ? 'rejected' : 'acknowledged';
     const changed = wf.updateState(db, routeId, _ver(route, expectedVersion), {
-      state: newState, resolution_comment: comment || null, resolved_at: now(),
+      state: newState, resolution_comment: comment || null, resolved_at: resolvedAt,
     });
     if (!changed) return fail('CONFLICT', 'This item was updated by someone else. Refresh and retry.');
     // NOTE: documents.status (filing state) is intentionally NOT touched here.
@@ -145,6 +149,13 @@ function createWorkflowService(deps = {}) {
     audit({ user_id: actor.userId, action: `workflow_${newState}`, action_category: 'workflow', outcome: 'success',
             target_type: 'document', target_id: route.document_id, document_id: route.document_id,
             details: decision === 'reject' ? 'rejected with reason' : undefined });
+    // Stamp a PDF copy of the decision (approve/reject). Fire-and-forget + non-fatal: the
+    // recorded decision above is the source of truth; a stamp failure never rolls it back.
+    if (decision === 'approve' || decision === 'reject') {
+      Promise.resolve()
+        .then(() => stampDecision({ db, route, decision, userName: actor.username, comment, resolvedAt }))
+        .catch(() => {});
+    }
     return { ok: true, route: wf.getRoute(db, routeId) };
   }
 

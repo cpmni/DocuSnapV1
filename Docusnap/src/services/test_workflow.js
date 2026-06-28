@@ -53,7 +53,9 @@ const reader = { userId: 3, username: 'reader', role: 'readonly' };
 function main() {
   const db = freshDb();
   const audits = [];
-  const wf = createWorkflowService({ audit: (e) => audits.push(e) });
+  // Stub the stamp so the suite stays hermetic (no filesystem / PDF work on resolve).
+  const stamps = [];
+  const wf = createWorkflowService({ audit: (e) => audits.push(e), stampDecision: (a) => { stamps.push(a); return Promise.resolve(null); } });
 
   // ── assign authorization + preconditions ─────────────────────────────────────
   check('readonly cannot assign', wf.assign(db, reader, { documentId: 1, toUserId: 3, actionRequired: 'acknowledge' }).code === 'FORBIDDEN');
