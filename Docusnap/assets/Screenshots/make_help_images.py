@@ -102,6 +102,13 @@ make("teach_4_confirm_box.png", "teach-draw-box.png", (0, 28, 1186, 1010), badge
 # ── Teach: review what was read (clean lower window of the double capture) ────
 make("teach_5.png", "teach-review.png", (120, 290, 1066, 600))
 
+# ── Review window (queue · preview · fields) ─────────────────────────────────
+make("review.png", "review-window-annotated.png", (0, 28, 1920, 1010), badges=[
+    (1, 0.050, 0.062),   # the queue (Review / Deferred + doc list)
+    (2, 0.470, 0.380),   # the document preview
+    (3, 0.860, 0.262),   # the extracted fields to check
+])
+
 # ── Themes showcase — Warm Paper + Dark home, side by side ───────────────────
 def compose_themes():
     box = (0, 28, 1920, 1010); tw = 540
