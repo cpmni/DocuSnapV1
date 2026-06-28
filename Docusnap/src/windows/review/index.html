@@ -330,10 +330,12 @@
       background: var(--surface); flex-shrink: 0; display: flex; flex-direction: column; gap: 7px;
     }
     .fields-header-title { font-size: 12px; font-weight: 500; color: var(--text); }
-    .fields-header-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-    .fh-train { font-size: 11px; padding: 4px 10px; background: var(--accent-bg); color: var(--accent2);
-      border: 1px solid var(--accent); border-radius: var(--r-sm); cursor: pointer; white-space: nowrap; margin-left: auto; }
-    .fh-train:hover { background: var(--accent); color: #fff; }
+    .fields-header-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; position: relative; }
+    .fh-train { position: absolute; left: 50%; transform: translateX(-50%);
+      font-size: 12px; font-weight: 700; padding: 5px 15px; background: var(--accent); color: #fff;
+      border: none; border-radius: var(--r-pill); cursor: pointer; white-space: nowrap;
+      box-shadow: 0 2px 9px rgba(59,125,240,.45); transition: background .15s, transform .15s; }
+    .fh-train:hover { background: var(--accent2); transform: translateX(-50%) scale(1.05); }
     /* Interactive training tour (training.js) */
     .tour-hole { position: fixed; z-index: 9998; border-radius: 8px; box-shadow: 0 0 0 9999px rgba(12,16,24,.55);
       border: 2px solid var(--accent); pointer-events: none; transition: all .22s ease; }
@@ -814,7 +816,7 @@
       <div id="fields-header">
         <div class="fields-header-row">
           <div class="fields-header-title">Extracted Fields</div>
-          <button class="btn fh-train" id="btn-training" title="A step-by-step walkthrough of reviewing a document">Show me how</button>
+          <button class="fh-train" id="btn-training" title="A step-by-step walkthrough of reviewing a document">★ Take a tour</button>
           <button class="btn fh-new-type" id="btn-new-doctype" data-help-key="new-doctype" style="display:none;" title="Create a new document type without leaving Review">+ New type</button>
         </div>
         <select id="doctype-select" data-help-key="doctype-select"><option value="">— Select document type —</option></select>

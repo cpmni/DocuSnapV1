@@ -13,12 +13,16 @@
       body: 'The scan itself shows in the middle. You can zoom and drag it to read anything closely.' },
     { sel: '#fields-panel',   title: 'What Scan Finder read', advance: 'next',
       body: 'On the right are the details it pulled out — who it’s from, the date, the reference. Your job is just to check them.' },
-    { sel: '#doctype-select', title: 'Choose the document type', advance: 'change',
-      body: 'Pick what kind of document this is (Invoice, Order…). Go ahead and choose it now.' },
+    { sel: '#doctype-select', title: 'Choose the document type', advance: 'change', allowNext: true,
+      body: 'Pick what kind of document this is (Invoice, Order…). Choose it now — or, if it’s already correct, just click Next.' },
     { sel: '#fields-scroll',  title: 'Check the details',     advance: 'next',
       body: 'Read down the fields and fix anything that looks wrong. To teach a field for next time, click its ⊕ and draw a box round the value.' },
     { sel: '#btn-confirm',    title: 'File the document',     advance: 'click',
-      body: 'When everything looks right, click Confirm & File. Scan Finder files a tidy copy and learns from your corrections. That’s it!' },
+      body: 'When everything looks right, click Confirm & File. Scan Finder files a tidy copy and learns from your corrections.' },
+    { sel: '#btn-reprocess-all', title: 'Reprocess all — it gets smarter', advance: 'next',
+      body: 'Once you’ve confirmed a few documents, Reprocess all re-reads every document still in the queue using what Scan Finder just learned from your corrections — often filling in fields it missed the first time.' },
+    { sel: '#btn-file-all-review', title: 'File all ready', advance: 'next',
+      body: 'When several documents look right, File All Ready files them all at once — they’re tidied away and become searchable later from Search. Anything still missing details is left for you to check.' },
   ];
 
   let steps = [], idx = 0, active = false, hole, callout, arrow, cleanup = [];
@@ -55,18 +59,27 @@
   function finish() {
     callout.classList.add('done');
     callout.innerHTML = `<div class="tc-title">You’re all set 🎉</div>
-      <div class="tc-body">That’s the whole loop — open a document, check the details, pick the type, Confirm & File. You can re-run this any time from “Show me how”.</div>
-      <div class="tc-foot"><span class="tc-step"></span><span class="tc-actions"><button class="tc-next">Done</button></span></div>`;
+      <div class="tc-body">That’s the whole loop — open a document, check the details, pick the type, Confirm & File, then use Reprocess all / File all ready for the rest. You can re-run this any time from “Take a tour”.</div>
+      <div class="tc-foot"><span class="tc-step"></span><span class="tc-actions"><button class="tc-skip">Done</button><button class="tc-next">Do another →</button></span></div>`;
     hole.style.opacity = '0'; arrow.style.display = 'none';
     callout.style.left = '50%'; callout.style.top = '50%'; callout.style.transform = 'translate(-50%,-50%)';
-    callout.querySelector('.tc-next').onclick = stop;
+    callout.querySelector('.tc-skip').onclick = stop;
+    callout.querySelector('.tc-next').onclick = restart;
+  }
+
+  // "Do another" — walk the loop again on the next document in the queue.
+  function restart() {
+    idx = 0;
+    callout.classList.remove('done');
+    callout.style.transform = ''; hole.style.opacity = ''; arrow.style.display = '';
+    render();
   }
 
   function render() {
     clearStep();
     const step = steps[idx];
     const target = q(step.sel);
-    if (!target) { next(); return; }
+    if (!target || !target.getClientRects().length) { next(); return; }   // hidden/absent → skip
     callout.style.transform = ''; hole.style.opacity = ''; arrow.style.display = '';
     const isAction = step.advance === 'click' || step.advance === 'change';
     callout.innerHTML = `
@@ -77,7 +90,7 @@
         <span class="tc-actions">
           <button class="tc-skip">Skip tour</button>
           ${isAction
-            ? '<span class="tc-hint">do this to continue</span><button class="tc-skipstep">skip&nbsp;→</button>'
+            ? `<span class="tc-hint">do this to continue</span><button class="${step.allowNext ? 'tc-next' : 'tc-skipstep'}">${step.allowNext ? 'Next →' : 'skip&nbsp;→'}</button>`
             : '<button class="tc-next">Next →</button>'}
         </span>
       </div>`;
