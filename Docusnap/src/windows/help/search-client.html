@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; script-src 'self'">
+  <title>Scan Finder — Search Client (other PCs)</title>
+  <link rel="stylesheet" href="../shared/theme.css" />
+  <link rel="stylesheet" href="help.css">
+  <script src="../shared/theme.js"></script>
+</head>
+<body>
+  <div id="titlebar">
+    <span class="tb-title">Scan Finder — User Guide</span>
+    <button class="tb-btn close" id="btn-close" title="Close">&#215;</button>
+  </div>
+
+  <div id="shell">
+    <nav id="nav">
+      <div class="nav-label">User Guide</div>
+      <div id="nav-links"></div>
+    </nav>
+
+    <div id="content">
+      <div class="doc">
+        <div class="breadcrumb" id="breadcrumb"></div>
+
+        <main>
+          <section id="search-client">
+            <h1>The Search Client (other PCs)</h1>
+            <p class="lead">The <b>Search Client</b> is a small app your colleagues can run on their own
+              computers to <b>search</b> your filed documents &mdash; and, with the Approvals add-on, to
+              <b>review and sign off</b> documents &mdash; without installing the full Scan Finder.</p>
+            <div class="callout note">
+              <div class="callout-title">Still on your network</div>
+              <p>The Search Client talks <b>only</b> to the PC running the main Scan Finder app, over your
+                <b>local network</b>. Nothing is sent to the internet.</p>
+            </div>
+          </section>
+
+          <section id="client-connect">
+            <h2>How it connects to the main PC</h2>
+            <p>One PC runs the <b>main Scan Finder app</b> (the one that imports and files documents). Every
+              Search Client connects to that PC. To set it up:</p>
+            <ol>
+              <li>On the <b>main PC</b>, open <b>Settings &rarr; Search client access</b> and turn it
+                <b>on</b>. Note the <b>address</b> (the main PC's network address, e.g.
+                <code>192.168.1.50</code>) and the <b>port</b> (a number, <code>8765</code> by default).</li>
+              <li>Still on the main PC, click <b>Export connection profile</b>. This saves a small file that
+                holds the address, port and the security certificate.</li>
+              <li>On the <b>other PC</b>, open the Search Client and choose <b>Import connection profile</b>
+                (or type the address and port by hand and fetch the certificate when asked). The connection is
+                encrypted, and the certificate makes sure the client is talking to <b>your</b> PC and not an
+                impostor.</li>
+              <li>Sign in with the username and password you were given. That's it &mdash; search away.</li>
+            </ol>
+            <div class="callout tip">
+              <div class="callout-title">Good to know</div>
+              <p>The main PC needs to be <b>switched on and running Scan Finder</b> for clients to connect. If
+                the main PC sleeps or closes the app, clients simply show &ldquo;disconnected&rdquo; and
+                reconnect by themselves when it's back.</p>
+            </div>
+          </section>
+
+          <section id="client-firewall">
+            <h2>Letting clients through the firewall</h2>
+            <p>For other PCs to reach the main PC, <b>Windows Firewall on the main PC</b> has to allow the
+              port. You only do this <b>once, on the main PC</b> &mdash; the client PCs need no firewall
+              changes (they make outgoing connections, which are allowed already).</p>
+            <p>To add the exception on the main PC:</p>
+            <ol>
+              <li>Click <b>Start</b>, type <b>Windows Defender Firewall with Advanced Security</b> and open
+                it.</li>
+              <li>Click <b>Inbound Rules</b> on the left, then <b>New Rule…</b> on the right.</li>
+              <li>Choose <b>Port</b> &rarr; <b>Next</b>.</li>
+              <li>Choose <b>TCP</b>, and in <b>Specific local ports</b> type your port
+                (<code>8765</code> unless you changed it) &rarr; <b>Next</b>.</li>
+              <li>Choose <b>Allow the connection</b> &rarr; <b>Next</b>.</li>
+              <li>Tick at least <b>Private</b> (your office network) &rarr; <b>Next</b>.</li>
+              <li>Name it something like <b>Scan Finder search client</b> &rarr; <b>Finish</b>.</li>
+            </ol>
+            <div class="callout note">
+              <div class="callout-title">Use the same port number</div>
+              <p>The port in the firewall rule must match the one shown in <b>Settings &rarr; Search client
+                access</b>. If a client can't connect, a missing or mismatched firewall rule is the most common
+                cause &mdash; check this first.</p>
+            </div>
+          </section>
+
+          <section id="client-seats">
+            <h2>How many people can connect</h2>
+            <p>Your licence includes a number of <b>seats</b>. Each Search Client uses <b>one seat</b> while
+              it's connected. When every seat is in use, the next person to open a client is told the
+              <b>seats are full</b> &mdash; they can get in as soon as someone closes their client, or an
+              administrator frees a seat. So the number of people who can use it <b>at the same time</b> is the
+              number of seats on your licence.</p>
+            <p>There's no separate technical limit to worry about &mdash; it's simply your licence. Need more
+              people on it at once? Add more seats.</p>
+          </section>
+
+          <section id="client-shared">
+            <h2>When several people use it at once</h2>
+            <p>Lots of people can search and open the <b>same</b> document at the same time &mdash; that's
+              fine. Two things keep everyone safe from treading on each other:</p>
+            <ul>
+              <li><b>Deleting is reversible.</b> Deleting a document <b>moves it to the Recycle bin</b> rather
+                than erasing it (the file is kept). So if someone deletes a document another person is looking
+                at, nothing is lost &mdash; it can be <b>restored</b> from the Recycle bin. Only an
+                <b>administrator</b> can permanently remove it.</li>
+              <li><b>Documents in an approval are locked.</b> Once a document has been <b>routed to someone for
+                sign-off</b>, it can't be changed or deleted until that approval is finished &mdash; so it
+                can't be pulled out from under the person making the decision.</li>
+            </ul>
+            <p>The person who deleted a document sees it disappear from their results; anyone still viewing it
+              keeps what's already on their screen until they next search or refresh, where it's then gone (and
+              recoverable from the Recycle bin).</p>
+          </section>
+
+          <div class="callout tip">
+            <div class="callout-title">Next step</div>
+            <p>For how documents are named and found in the first place, see
+              <a class="xref" href="search.html">Search &amp; Filing</a>.</p>
+          </div>
+        </main>
+
+        <nav class="page-foot" id="page-foot"></nav>
+      </div>
+    </div>
+  </div>
+
+  <script src="help-nav.js"></script>
+</body>
+</html>
