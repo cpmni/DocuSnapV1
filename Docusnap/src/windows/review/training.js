@@ -109,16 +109,29 @@
     hole.style.height = (r.height + pad * 2) + 'px';
 
     const cw = 300;
-    const placeBelow = (window.innerHeight - r.bottom) > 170 || r.top < 170;
     callout.style.width = cw + 'px';
-    const top = placeBelow ? r.bottom + 16 : Math.max(12, r.top - callout.offsetHeight - 16);
-    const left = Math.min(Math.max(12, r.left + r.width / 2 - cw / 2), window.innerWidth - cw - 12);
+    const ch = callout.offsetHeight || 150;
+    // A tall pane (queue / preview / fields) leaves no room above or below, so the callout
+    // would land off-screen. Park it bottom-centre with no arrow; small targets get the arrow.
+    const tall = r.height > window.innerHeight * 0.6;
+    let left, top, showArrow = !tall;
+    if (tall) {
+      left = window.innerWidth / 2 - cw / 2;
+      top = window.innerHeight - ch - 24;
+    } else {
+      const placeBelow = (window.innerHeight - r.bottom) > (ch + 28) || r.top < (ch + 28);
+      top = placeBelow ? r.bottom + 16 : r.top - ch - 16;
+      left = r.left + r.width / 2 - cw / 2;
+      arrow.textContent = placeBelow ? '▲' : '▼';
+      arrow.style.top = (placeBelow ? r.bottom + 1 : r.top - 23) + 'px';
+    }
+    // Clamp fully on-screen so instructions are never lost off an edge.
+    left = Math.min(Math.max(12, left), window.innerWidth - cw - 12);
+    top = Math.min(Math.max(12, top), window.innerHeight - ch - 12);
     callout.style.left = left + 'px';
     callout.style.top = top + 'px';
-
-    arrow.textContent = placeBelow ? '▲' : '▼';
-    arrow.style.left = (Math.min(Math.max(r.left + r.width / 2, left + 16), left + cw - 16) - 9) + 'px';
-    arrow.style.top = (placeBelow ? r.bottom + 1 : r.top - 23) + 'px';
+    arrow.style.display = showArrow ? '' : 'none';
+    if (showArrow) arrow.style.left = (Math.min(Math.max(r.left + r.width / 2, left + 16), left + cw - 16) - 9) + 'px';
   }
 
   // Wire the launch button if present.
