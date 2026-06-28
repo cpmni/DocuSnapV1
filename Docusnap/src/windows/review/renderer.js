@@ -916,8 +916,40 @@ function renderTeachCta(doc) {
     `</button>` +
     `<div class="teach-cta-hint">${known
       ? 'We recognise this sender but haven&rsquo;t learned this layout yet — teach it once and we&rsquo;ll handle it next time.'
-      : 'Scan Finder hasn&rsquo;t seen this layout — show it where each field is, just once.'}</div>`;
+      : 'Scan Finder hasn&rsquo;t seen this layout — show it where each field is, just once.'}</div>` +
+    // "…or it's like one you've already set up" — link to an existing template + group
+    // them, so this layout reads automatically without teaching it from scratch.
+    `<div class="teach-cta-like" id="teach-cta-like" style="display:none;">` +
+      `<span class="teach-cta-like-lbl">&hellip;or is it like a document you&rsquo;ve already set up?</span>` +
+      `<div class="teach-cta-like-row">` +
+        `<select class="teach-cta-like-select" id="teach-cta-like-select"><option value="">Loading&hellip;</option></select>` +
+        `<button class="teach-cta-btn ghost" id="teach-cta-like-go" disabled>Link &amp; reprocess</button>` +
+      `</div>` +
+    `</div>`;
   cta.style.display = '';
+
+  // Populate the "like another document" picker with existing templates (same doc type
+  // first). Hidden entirely when there are no templates yet.
+  const likeWrap = document.getElementById('teach-cta-like');
+  const likeSel  = document.getElementById('teach-cta-like-select');
+  const likeGo   = document.getElementById('teach-cta-like-go');
+  if (likeSel && likeGo) {
+    window.docusnap.getTemplates?.().then(list => {
+      const tmpls = Array.isArray(list) ? list : (list && list.templates) || [];
+      if (!tmpls.length) return;                       // nothing to link to yet
+      const slug = selectedTypeSlug || currentDoc?.type_slug || currentDoc?.document_type_slug || null;
+      tmpls.sort((a, b) =>
+        ((b.document_type_slug === slug) - (a.document_type_slug === slug)) ||
+        String(a.name || '').localeCompare(String(b.name || '')));
+      likeSel.innerHTML = '<option value="">Choose a document it&rsquo;s like&hellip;</option>' +
+        tmpls.map(t => `<option value="${t.id}">${escHtml(t.name || 'Untitled')}` +
+          `${t.document_type_slug ? ' · ' + escHtml(String(t.document_type_slug).replace(/_/g, ' ')) : ''}</option>`).join('');
+      if (likeWrap) likeWrap.style.display = '';
+    }).catch(() => {});
+    likeSel.addEventListener('change', () => { likeGo.disabled = !likeSel.value; });
+    likeGo.addEventListener('click', () => linkCurrentDocToTemplate(likeSel.value, likeGo));
+  }
+
   document.getElementById('teach-cta-go')?.addEventListener('click', () => {
     const id = currentDoc?.id;
     if (!id) return;
@@ -930,6 +962,34 @@ function renderTeachCta(doc) {
       'create a duplicate.')) return;
     window.docusnap.openTeachWindowAt(id);
   });
+}
+
+// Link the current (unmatched) document to an EXISTING template: create a template for
+// this doc, group it with the chosen one, then reprocess so it reads via the shared
+// group immediately. Reuses the same field-gathering as "Add to Template Manager".
+async function linkCurrentDocToTemplate(targetId, btn) {
+  if (!targetId || !currentDoc) return;
+  const docTypeSlug = selectedTypeSlug || currentDoc?.type_slug || currentDoc?.document_type_slug || null;
+  if (!docTypeSlug) { showToast('Select a document type before linking.', 'warn'); return; }
+  const allValues = {};
+  document.querySelectorAll('#fields-scroll .field-input').forEach(i => { allValues[i.dataset.key] = i.value; });
+  const supplierInput = document.querySelector('.field-input[data-key="supplier_name"]');
+  const supplierName  = supplierInput?.value?.trim() || currentDoc?.supplier_name || null;
+  if (btn) { btn.disabled = true; btn.textContent = 'Linking…'; }
+  let res;
+  try {
+    res = await window.docusnap.linkDocumentToTemplate({
+      document_id: currentDoc.id, allValues, document_type_slug: docTypeSlug,
+      supplier_name: supplierName, target_template_id: Number(targetId),
+    });
+  } catch (e) { res = { success: false, error: e.message }; }
+  if (res && res.success) {
+    showToast(`Linked to “${res.targetName || 'template'}” — reprocessing…`, 'ok');
+    document.getElementById('btn-reprocess')?.click();   // re-extract; now matches the grouped template
+  } else {
+    if (btn) { btn.disabled = false; btn.textContent = 'Link & reprocess'; }
+    showToast((res && res.error) || 'Could not link this document.', 'err');
+  }
 }
 
 // A document is "flagged" when processing surfaced questionable data on it: a
@@ -2151,6 +2211,22 @@ document.getElementById('btn-doc-next')?.addEventListener('click', () => cycleDo
     localStorage.setItem('review_queue_width', String(parseInt(panel.style.width, 10) || 220));
   });
 })();
+
+// Enter commits the current document — the same as clicking Confirm. It works while
+// editing a single-line field (the value is applied first via blur), but is ignored in
+// multi-line fields and dropdowns, and while any modal/dialog is open. Only fires when
+// Confirm is actually enabled and visible, so it never files an incomplete doc.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' || e.repeat || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+  const t = e.target;
+  if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+  if (document.querySelector('[data-help-ignore]')) return;   // a modal/dialog is open
+  const btn = document.getElementById('btn-confirm');
+  if (!btn || btn.disabled || btn.offsetParent === null) return;   // not ready / not visible
+  e.preventDefault();
+  if (t && typeof t.blur === 'function') t.blur();            // apply any in-progress field edit
+  btn.click();
+});
 
 // Keyboard triage shortcuts (single document-level listener; reuses the exact
 // handlers the on-screen controls use — no second nav/acknowledge path):

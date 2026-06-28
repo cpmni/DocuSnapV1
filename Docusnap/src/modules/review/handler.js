@@ -573,6 +573,49 @@ function register(ctx) {
     }
   });
 
+  // "This is like another document" (Review CTA): the operator says an unmatched doc
+  // belongs with an EXISTING template. Create a template for this doc (reusing the same
+  // promote machinery — sample pin, landmarks, fingerprint), then put both templates in
+  // ONE group so they share learning (engine.select_mapping_source borrows a grouped
+  // sibling's mappings). The renderer reprocesses the doc afterwards so it picks the
+  // group up immediately. Idempotent: if this doc's logo already matched the target, no
+  // duplicate is made and grouping is a no-op.
+  ipcMain.handle('link-document-to-template', async (_e, payload) => {
+    requireRole('admin', 'edit');
+    const { document_id, allValues, document_type_slug, supplier_name, target_template_id } = payload || {};
+    if (!document_id || !allValues || !target_template_id) {
+      return { success: false, error: 'Missing document or target template.' };
+    }
+    const db = getDb();
+    const target = templates.getById(db, target_template_id);
+    if (!target) return { success: false, error: 'That template no longer exists.' };
+    const dtInfo = document_type_slug ? doctypes.getWithFields(db, document_type_slug) : null;
+    if (!dtInfo) return { success: false, error: 'Select a document type before linking.' };
+    try {
+      // 1) Create (or logo-reuse) a template for THIS document.
+      const result = await _upsertTemplate(ctx, db, document_id, {
+        allValues, document_type_slug, supplier_name, dtInfo,
+      });
+      const newId = result.templateId;
+      // Only pin/derive on a genuinely NEW template — never disturb an existing one's sample.
+      if (newId && result.created) {
+        templates.setSampleDocument(db, newId, document_id);
+        try { if (ctx.generateLandmarks)  await ctx.generateLandmarks(newId); }  catch (e) { console.error('link landmarks:', e.message); }
+        try { if (ctx.generateFingerprint) await ctx.generateFingerprint(newId); } catch (e) { console.error('link fingerprint:', e.message); }
+      }
+      // 2) Put both templates in the SAME group (reuse the target's group, else make one).
+      let groupId = target.group_id || null;
+      if (!groupId) {
+        groupId = templates.createGroup(db, (target.name || supplier_name || 'Group').toString());
+        templates.setTemplateGroup(db, target_template_id, groupId);
+      }
+      if (newId && newId !== target_template_id) templates.setTemplateGroup(db, newId, groupId);
+      return { success: true, templateId: newId, groupId, name: result.name, targetName: target.name };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
   ipcMain.on('notify-review-complete', () => {
     if (!hasRole('admin', 'edit')) return;
     const db = getDb();
@@ -653,12 +696,16 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
     const tmpl = templates.getById(db, templateId);
     return { created: false, templateId, name: tmpl?.name || null };
   } else {
-    // Create new template — name from supplier + doc type
+    // Name the template after the Document Issuer value (e.g. "Beaumont Care Homes") so
+    // it's instantly recognisable in Template Manager. A supplier that sends several
+    // layouts gets several same-named templates — that's fine, the slug stays unique
+    // (templates.create suffixes it). Falls back to the doc-type name when there's no
+    // issuer value (e.g. a customer-identity type read nothing).
     const typeName  = document_type_slug
       ? document_type_slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
       : 'Document';
-    const name      = supplier_name
-      ? `${supplier_name} ${typeName}`
+    const name      = (supplier_name && supplier_name.trim())
+      ? supplier_name.trim()
       : `${typeName} Template`;
 
     const newTemplateId = templates.create(db, {

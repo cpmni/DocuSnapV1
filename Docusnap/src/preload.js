@@ -148,6 +148,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   getStuckCount:               ()        => ipcRenderer.invoke('get-stuck-count'),
   getStuckDocs:                ()        => ipcRenderer.invoke('get-stuck-docs'),
   promoteToTemplate:           (data)    => ipcRenderer.invoke('promote-to-template', data),
+  linkDocumentToTemplate:      (data)    => ipcRenderer.invoke('link-document-to-template', data),
   checkTemplateMatch:          (id)      => ipcRenderer.invoke('check-template-match-for-document', id),
   notifyReviewComplete:        ()        => ipcRenderer.send('notify-review-complete'),
 

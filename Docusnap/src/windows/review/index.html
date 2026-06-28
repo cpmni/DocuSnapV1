@@ -313,6 +313,15 @@
     .teach-cta-btn.ghost { background: transparent; border-color: var(--border2); color: var(--text); }
     .teach-cta-btn.ghost:hover { background: var(--surface2); border-color: var(--warn); }
     .teach-cta-hint { font-size: 11.5px; color: var(--muted); line-height: 1.45; max-width: 460px; }
+    /* "…or it's like one you've already set up" — link to an existing template */
+    .teach-cta-like { display: flex; flex-direction: column; align-items: center; gap: 6px;
+      margin-top: 8px; padding-top: 10px; border-top: 1px dashed var(--border2); width: 100%; max-width: 460px; }
+    .teach-cta-like-lbl { font-size: 11.5px; color: var(--muted); }
+    .teach-cta-like-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center; }
+    .teach-cta-like-select { padding: 7px 10px; border-radius: var(--r-sm); border: 1px solid var(--border2);
+      background: var(--surface); color: var(--text); font-family: inherit; font-size: 12.5px; max-width: 240px; }
+    .teach-cta-like-select:focus { outline: none; border-color: var(--accent); }
+    .teach-cta-btn.ghost:disabled { opacity: .5; cursor: not-allowed; }
 
     /* ── Fields panel (right) ── */
     #fields-panel { width: 320px; flex-shrink: 0; display: flex; flex-direction: column; overflow: hidden; }

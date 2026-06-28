@@ -280,7 +280,7 @@ function register(ctx) {
 
   // ── Browse ──────────────────────────────────────────────────────────────────
   ipcMain.handle('get-templates', () => {
-    requireRole('admin');
+    requireRole('admin', 'edit');   // Edit users need the list for Review's "link to an existing document"
     return templates.getAll(getDb());
   });
 
