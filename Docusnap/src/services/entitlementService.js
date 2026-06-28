@@ -21,6 +21,11 @@
 
 const FEATURE = 'detached_client';
 const SETTING_KEY = 'detached_client_licensed';
+// BUNDLING (reversible): for now, a client (search) licence ALSO grants the workflow
+// add-on, and the workflow seat pool defaults to the client seats. `search` and `workflow`
+// stay SEPARATE fields, so flipping this to false cleanly UNTIES them (workflow then needs
+// its own detached_workflow_seats again). This is the ONLY place the two are tied.
+const WORKFLOW_BUNDLED_WITH_CLIENT = true;
 const SEATS_KEY = 'detached_client_seats';        // DEPRECATED local key — never read as entitlement (kept only for the migration test)
 const SEARCH_SEATS_KEY = 'detached_search_seats';   // backend-cached: concurrent search clients
 const WORKFLOW_SEATS_KEY = 'detached_workflow_seats'; // backend-cached: workflow add-on capacity
@@ -60,7 +65,15 @@ function checkClientEntitlement(db, deps = {}) {
   const searchSeats   = _seatCount(getSetting, db, SEARCH_SEATS_KEY);
   const workflowSeats = _seatCount(getSetting, db, WORKFLOW_SEATS_KEY);
   const search   = { entitled: searchSeats > 0,   seats: searchSeats };
-  const workflow = { entitled: workflowSeats > 0, seats: workflowSeats };
+  const ownWorkflow = { entitled: workflowSeats > 0, seats: workflowSeats };
+  // Tied to the client licence for now (see WORKFLOW_BUNDLED_WITH_CLIENT): a client licence
+  // grants workflow, and the workflow pool defaults to the client seats unless the backend
+  // set its own workflow seats. Untie by flipping the constant — nothing else changes.
+  const workflow = WORKFLOW_BUNDLED_WITH_CLIENT
+    ? { entitled: search.entitled || ownWorkflow.entitled,
+        seats: ownWorkflow.seats > 0 ? ownWorkflow.seats : search.seats,
+        bundled: true }
+    : ownWorkflow;
   // Phase 2: the counts above are written from the SIGNED token when one is cached
   // (handler._syncSignedFeatures overrides the unsigned JSON), so an unsigned/tampered
   // JSON response cannot raise the caps; `signed` reflects that source. Old tokens fall

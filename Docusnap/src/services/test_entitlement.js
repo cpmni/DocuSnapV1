@@ -22,13 +22,16 @@ const set = (k, v) => db.prepare(`INSERT INTO settings (key,value) VALUES (?,?)
 // Entitlement is now SEAT-COUNT driven (the backend caches per-feature counts on validate).
 check('unset -> not entitled (default-deny)', checkClientEntitlement(db).entitled === false);
 set(SEARCH_SEATS_KEY, '0'); check('search 0 -> not entitled', checkClientEntitlement(db).entitled === false);
+check('no licence -> workflow off too', checkClientEntitlement(db).workflow.entitled === false);
 set(SEARCH_SEATS_KEY, '2');
 const e2 = checkClientEntitlement(db);
 check('search 2 -> entitled; top-level seats mirror search', e2.entitled === true && e2.seats === 2 && e2.search.entitled === true && e2.search.seats === 2);
-check('workflow off until granted', checkClientEntitlement(db).workflow.entitled === false);
+// BUNDLED (for now): a client (search) licence ALSO grants workflow, seats default to the client seats.
+check('client licence bundles workflow (entitled, seats mirror client)',
+  e2.workflow.entitled === true && e2.workflow.seats === 2 && e2.workflow.bundled === true);
 set(WORKFLOW_SEATS_KEY, '1');
 const e3 = checkClientEntitlement(db);
-check('workflow 1 -> workflow entitled, seats 1', e3.workflow.entitled === true && e3.workflow.seats === 1);
+check('explicit workflow seats take precedence over the bundled default', e3.workflow.entitled === true && e3.workflow.seats === 1);
 check('feature name surfaced', checkClientEntitlement(db).feature === 'detached_client');
 db.close();
 

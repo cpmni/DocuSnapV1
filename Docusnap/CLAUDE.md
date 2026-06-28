@@ -1221,9 +1221,15 @@ MIT — no OpenSSL bundling):
   details for manual cert/key paths.
 
 **Entitlement — `src/services/entitlementService.js`** (`detached_client_licensed`
-setting): the SINGLE gate. `checkClientEntitlement(db)` → `{entitled,feature}`; gates
-BOTH the detached client API and the in-core enhanced search. Manual/admin for now
-(licensing-driven wiring later). Exposed to the renderer via `get-entitlement`.
+setting): the SINGLE gate. `checkClientEntitlement(db)` → `{entitled,feature,search,
+workflow}`; gates BOTH the detached client API and the in-core enhanced search. Manual/admin
+for now (licensing-driven wiring later). Exposed to the renderer via `get-entitlement`.
+**WORKFLOW IS BUNDLED WITH THE CLIENT LICENCE (2026-06-28, reversible):** the constant
+`WORKFLOW_BUNDLED_WITH_CLIENT = true` makes `workflow.entitled = search.entitled` (and
+`workflow.seats` default to the client seats unless the backend set `detached_workflow_seats`),
+so a client licence enables the approval workflow for BOTH the core (its mailbox/assign UI)
+and the detached client. `search`/`workflow` stay SEPARATE result fields — flip the constant
+to `false` to UNTIE them (workflow then needs its own seats again). See [[client-seat-pricing]].
 
 **Mailbox / approval workflow** — `src/services/workflowService.js` +
 `database/modules/workflow.js`:
