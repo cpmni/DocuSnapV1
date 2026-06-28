@@ -272,6 +272,32 @@ function register(ctx) {
   const fs = require('fs');
   const backupService = require('../../services/backupService');
 
+  // The licensing device fingerprint of THIS machine (SHA-256, never the raw id).
+  // Best-effort: returns null on a dev box with no license config — which then never
+  // blocks an import.
+  function _currentDeviceFp() {
+    try {
+      const cfg = JSON.parse(fs.readFileSync(ctx.resourcePath('config', 'license.json'), 'utf8'));
+      return require('../../lib/license/fingerprint').computeFpHash(cfg.product_id);
+    } catch { return null; }
+  }
+  // Device-import gate: a backup is bound to the machine that made it. Another machine
+  // may restore it ONLY if it holds an ACTIVE PAID seat — so a paying customer can
+  // migrate to a new PC, but a fresh trial can't import another machine's learned data
+  // to dodge the trial. Legacy backups (no device_fp) and dev boxes are not blocked.
+  function _deviceImportAllowed(meta) {
+    const backupFp = meta && meta.device_fp;
+    if (!backupFp) return { allowed: true };          // pre-binding backup — can't enforce
+    const curFp = _currentDeviceFp();
+    if (!curFp) return { allowed: true };             // no licensing config (dev) — don't block
+    if (backupFp === curFp) return { allowed: true }; // same machine
+    try {
+      const tok = require('../../../database/modules/licensing').getActiveToken(getDb(), curFp);
+      if (tok && tok.kind === 'seat' && tok.state !== 'revoked') return { allowed: true };  // paid migration
+    } catch { /* fall through to deny */ }
+    return { allowed: false, error: 'This backup was made on a different computer. Restoring it here needs an activated licence on this computer — a free trial can only restore a backup created on the same machine.' };
+  }
+
   ipcMain.handle('settings-backup-export', async (_e, { password } = {}) => {
     requireRole('admin');
     if (!password || !String(password).trim()) return { ok: false, error: 'A password is required.' };
@@ -282,7 +308,7 @@ function register(ctx) {
         filters: [{ name: 'Scan Finder backup', extensions: ['sfbak'] }],
       });
       if (r.canceled || !r.filePath) return { ok: false, canceled: true };
-      const buf = backupService.createBackup(getDb(), password, { appVersion: app.getVersion() });
+      const buf = backupService.createBackup(getDb(), password, { appVersion: app.getVersion(), deviceFp: _currentDeviceFp() || '' });
       fs.writeFileSync(r.filePath, buf);
       logAudit(getDb(), { action: 'settings_backup_export', action_category: 'settings',
         target_type: 'backup', outcome: 'success', metadata: { bytes: buf.length } });
@@ -300,6 +326,8 @@ function register(ctx) {
       });
       if (r.canceled || !r.filePaths || !r.filePaths[0]) return { ok: false, canceled: true };
       const { meta, summary } = backupService.readBackup(fs.readFileSync(r.filePaths[0]), password);
+      const gate = _deviceImportAllowed(meta);
+      if (!gate.allowed) return { ok: false, error: gate.error };
       return { ok: true, path: r.filePaths[0], meta, summary };
     } catch (e) { return { ok: false, error: e.message }; }
   });
@@ -309,7 +337,13 @@ function register(ctx) {
     if (!filePath) return { ok: false, error: 'No backup file selected.' };
     if (!password || !String(password).trim()) return { ok: false, error: 'A password is required.' };
     try {
-      const { payload } = backupService.readBackup(fs.readFileSync(filePath), password);   // re-validate before write
+      const { meta, payload } = backupService.readBackup(fs.readFileSync(filePath), password);   // re-validate before write
+      const gate = _deviceImportAllowed(meta);   // device-bound: block cross-machine trial imports
+      if (!gate.allowed) {
+        logAudit(getDb(), { action: 'settings_backup_restore', action_category: 'settings',
+          target_type: 'backup', outcome: 'failure', metadata: { reason: 'device_mismatch' } });
+        return { ok: false, error: gate.error };
+      }
       const { applied } = backupService.applyBackup(getDb(), payload);
       logAudit(getDb(), { action: 'settings_backup_restore', action_category: 'settings',
         target_type: 'backup', outcome: 'success', metadata: { tables: Object.keys(applied).length } });

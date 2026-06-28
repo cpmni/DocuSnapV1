@@ -1629,6 +1629,16 @@ the operational config to ONE password-encrypted file and restores it after rein
   is REPLACED (delete + insert with original IDs). Two-step UI: preview(decrypt+counts)
   → confirm → apply; restart recommended. Forward-compatible (only restores columns
   that still exist). Guarded by test_backupservice.js.
+- **DEVICE-BOUND IMPORT (anti-trial-stacking)**: the export embeds the licensing device
+  fingerprint (`device_fp` = `computeFpHash(product_id)`, already a SHA-256 — never the raw
+  machine id) in the payload. On import (`-preview` AND `-apply` both gate, via
+  `settings/handler._deviceImportAllowed`), a backup from a DIFFERENT machine is REFUSED
+  unless THIS machine holds an active paid SEAT (`licensing.getActiveToken().kind==='seat'
+  && state!=='revoked'`) — so a fresh trial on a new VM/PC can't import another machine's
+  learned data/settings to dodge the trial, but a paying customer can still migrate to a new
+  PC (activate there first, then import). Same-machine restore (matching fp) always allowed;
+  legacy backups (no `device_fp`) and dev boxes with no license config are NOT blocked. A
+  denied apply is audited (`outcome:'failure', reason:'device_mismatch'`).
 - IPCs (admin): `settings-backup-export` / `-preview` / `-apply`.
 
 ## Main window — "Review your documents" CTA

@@ -91,6 +91,11 @@ function createBackup(db, password, opts = {}) {
     format: FORMAT_VERSION,
     app_version: opts.appVersion || '',
     exported_at: new Date().toISOString(),
+    // Licensing device fingerprint of the machine that made this backup. Used on import
+    // to stop a fresh trial on another machine from importing someone else's learned
+    // data/settings (see settings/handler device-import gate). It's already a SHA-256
+    // hash (never the raw machine id) and the whole file is encrypted; safe to embed.
+    device_fp: opts.deviceFp || '',
     tables,
   };
   return _encrypt(zlib.gzipSync(Buffer.from(JSON.stringify(payload), 'utf8')), password);
@@ -111,7 +116,7 @@ function readBackup(fileBuf, password) {
   const summary = {};
   for (const t of TABLES) summary[t] = Array.isArray(payload.tables[t]) ? payload.tables[t].length : 0;
   return {
-    meta: { format: payload.format, app_version: payload.app_version || '', exported_at: payload.exported_at || '' },
+    meta: { format: payload.format, app_version: payload.app_version || '', exported_at: payload.exported_at || '', device_fp: payload.device_fp || '' },
     payload,
     summary,
   };

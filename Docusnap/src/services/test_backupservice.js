@@ -33,6 +33,11 @@ const r = readBackup(buf, 'pw123');
 check('readBackup returns meta + summary', r.meta.app_version === '2.0.0' && r.summary.document_types === 1);
 check('licensing setting excluded from backup', r.summary.settings === 2);   // output_folder + theme, NOT license_time_hwm
 
+// Device fingerprint round-trip (drives the cross-machine import gate in settings/handler).
+const fpBuf = createBackup(db, 'pw123', { appVersion: '2.0.0', deviceFp: 'FP-ABC' });
+check('device_fp embedded + surfaced in meta', readBackup(fpBuf, 'pw123').meta.device_fp === 'FP-ABC');
+check('device_fp empty when not provided', r.meta.device_fp === '');
+
 const reject = (label, fn) => { let threw = false; try { fn(); } catch { threw = true; } check(label, threw); };
 reject('wrong password rejected', () => readBackup(buf, 'nope'));
 reject('empty password rejected', () => readBackup(buf, ''));
