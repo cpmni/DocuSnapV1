@@ -423,6 +423,7 @@
       <nav class="side-nav">
         <button id="nav-search" class="sidebtn active"><span data-ic="search"></span>Search</button>
         <button id="nav-mailbox" class="sidebtn"><span data-ic="inbox"></span>Mailbox<span id="inbox-badge" class="badge hidden" style="margin-left:auto">0</span></button>
+        <button id="nav-recycle" class="sidebtn" style="display:none"><span data-ic="trash"></span>Recycle bin</button>
         <button id="nav-settings" class="sidebtn"><span data-ic="settings"></span>Settings</button>
       </nav>
       <div class="side-foot">
@@ -487,6 +488,14 @@
         <button id="mb-refresh" class="btn btn-secondary btn-sm"><span data-ic="refresh"></span>Refresh</button>
       </div>
       <div id="mb-list" class="mb-list"><div class="empty">Loading…</div></div>
+    </div>
+
+    <!-- Recycle bin -->
+    <div id="view-recycle" class="hidden">
+      <div class="toolbar"><span class="spacer"></span>
+        <button id="rb-refresh" class="btn btn-secondary btn-sm"><span data-ic="refresh"></span>Refresh</button>
+      </div>
+      <div id="recycle-list" class="mb-list"><div class="empty">Loading…</div></div>
     </div>
 
     <!-- Settings -->

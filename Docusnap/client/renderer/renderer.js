@@ -69,6 +69,7 @@ const ICO = {
   inbox:  '<path d="M4 13h4l2 3h4l2-3h4"/><path d="M4 13 6 5h12l2 8v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/>',
   doc:    '<path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>',
   lock:   '<rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  trash:  '<path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>',
   settings:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
 };
 const ico = (name, cls = 'ic') =>
@@ -245,6 +246,7 @@ $('login-btn').addEventListener('click', async () => {
   const r = await api.login(username, password, totp);
   if (r.ok) {
     role = r.user.role;
+    $('nav-recycle').style.display = canDecide() ? '' : 'none';   // delete/restore is Admin/Edit
     const ent = await api.entitlement();
     if (!(ent.json && ent.json.entitled)) {
       $('login').classList.add('hidden');
@@ -323,21 +325,27 @@ function setView(view) {
   $('view-search').classList.toggle('hidden', view !== 'search');
   $('view-mailbox').classList.toggle('hidden', view !== 'mailbox');
   $('view-settings').classList.toggle('hidden', view !== 'settings');
+  $('view-recycle').classList.toggle('hidden', view !== 'recycle');
   navActive($('nav-search'), view === 'search');
   navActive($('nav-mailbox'), view === 'mailbox');
   navActive($('nav-settings'), view === 'settings');
+  navActive($('nav-recycle'), view === 'recycle');
   const meta = {
     search:   ['Search', 'Find and preview filed documents'],
     mailbox:  ['Mailbox', 'Approvals routed to and from you'],
     settings: ['Settings', 'Appearance and preferences'],
+    recycle:  ['Recycle bin', 'Restore or permanently remove deleted documents'],
   }[view] || ['Search', ''];
   $('vh-title').textContent = meta[0];
   $('vh-sub').textContent = meta[1];
   if (view === 'mailbox') loadMailbox();
+  if (view === 'recycle') loadRecycleBin();
 }
 $('nav-search').addEventListener('click', () => setView('search'));
 $('nav-mailbox').addEventListener('click', () => setView('mailbox'));
 $('nav-settings').addEventListener('click', () => setView('settings'));
+$('nav-recycle').addEventListener('click', () => setView('recycle'));
+$('rb-refresh').addEventListener('click', () => loadRecycleBin());
 $('theme-select')?.addEventListener('change', (e) => applyTheme(e.target.value));
 $('side-dark-toggle')?.addEventListener('change', toggleDarkMode);
 
@@ -484,7 +492,7 @@ async function openDocument(id, route) {
   const wrap = document.createElement('div'); wrap.className = 'fade';
   const title = doc.supplier_name || doc.original_filename || `Document #${doc.id}`;
   let html = `
-    <div class="pv-head">${ico('doc')}<h2>${esc(title)}</h2><span class="chip ${esc(doc.status)}">${esc(doc.status)}</span></div>`;
+    <div class="pv-head">${ico('doc')}<h2>${esc(title)}</h2><span class="chip ${esc(doc.status)}">${esc(doc.status)}</span><span class="spacer"></span><span class="pv-actions" id="pv-actions"></span></div>`;
   if (doc.overall_confidence != null) {
     const lvl = confLevel(doc.overall_confidence);
     html += `<div class="pv-conf"><span>Extraction confidence</span>
@@ -509,6 +517,17 @@ async function openDocument(id, route) {
   wrap.innerHTML = html;
   prev.innerHTML = ''; prev.appendChild(wrap);
 
+  // Delete / restore / purge — Admin & Edit (purge is Admin only). Recoverable bin.
+  const acts = wrap.querySelector('#pv-actions');
+  if (acts && canDecide()) {
+    if (doc.status === 'deleted') {
+      acts.appendChild(mkBtn({ label: 'Restore', icon: 'refresh', variant: 'primary', onClick: () => binAction('restore', doc.id) }));
+      if (role === 'admin') acts.appendChild(mkBtn({ label: 'Delete permanently', icon: 'reject', variant: 'danger', onClick: () => binAction('purge', doc.id) }));
+    } else {
+      acts.appendChild(mkBtn({ label: 'Delete', icon: 'reject', variant: 'danger', onClick: () => binAction('delete', doc.id) }));
+    }
+  }
+
   // Top action bar — ONLY when the workflow/approval add-on is licensed. Without it the
   // client is search-only: no decision bar, no route-onward form.
   const incoming = workflowEntitled ? (route || myOpenRoutes[id]) : null;
@@ -524,6 +543,35 @@ async function openDocument(id, route) {
   if (!imgs.length) { pagesEl.innerHTML = `<div class="empty">No preview available.</div>`; return; }
   pagesEl.innerHTML = '';
   for (const src of imgs) { const im = document.createElement('img'); im.src = src; pagesEl.appendChild(im); }
+}
+
+// Delete (→ bin) / restore / purge a document over /v1, then refresh the active list.
+async function binAction(kind, id) {
+  if (kind === 'delete' && !confirm('Move this document to the recycle bin? You can restore it later.')) return;
+  if (kind === 'purge'  && !confirm('Permanently delete this document and its file? This cannot be undone.')) return;
+  const fn = kind === 'delete' ? api.recycle.delete : kind === 'restore' ? api.recycle.restore : api.recycle.purge;
+  const r = await fn(id);
+  if (r && r.status === 401) { doLogout(); return; }
+  if (r && r.status === 200) {
+    toast(kind === 'delete' ? 'Moved to recycle bin' : kind === 'restore' ? 'Restored' : 'Deleted permanently', 'ok');
+    $('preview').innerHTML = `<div class="empty">Select a document on the left to preview it.</div>`;
+    const inBin = $('view-recycle') && !$('view-recycle').classList.contains('hidden');
+    if (inBin) loadRecycleBin(); else runSearch();
+  } else {
+    toast((r && r.json && r.json.error) || 'Action failed', 'err');
+  }
+}
+
+async function loadRecycleBin() {
+  const root = $('recycle-list');
+  if (!root) return;
+  root.innerHTML = `<div class="empty">${ico('refresh', 'ic spin')}Loading…</div>`;
+  const r = await api.recycle.list();
+  if (r.status === 401) { doLogout(); return; }
+  const rows = (r.json && r.json.deleted) || [];
+  root.innerHTML = '';
+  if (!rows.length) { root.innerHTML = '<div class="empty">The recycle bin is empty. Deleted documents appear here and can be restored.</div>'; return; }
+  for (const d of rows) root.appendChild(rowEl(d));
 }
 
 async function assignControl(docId) {
