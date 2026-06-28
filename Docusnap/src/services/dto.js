@@ -81,7 +81,9 @@ function projectDocumentDetail(doc) {
   return out;
 }
 
-function projectRoute(row) { return pick(row, ROUTE_FIELDS); }
+// Expose only a BOOLEAN that a stamped copy exists — never the server-side file path
+// (the client fetches the stamped pages by route id, mirroring the doc-pages boundary).
+function projectRoute(row) { return { ...pick(row, ROUTE_FIELDS), has_stamp: !!(row && row.stamped_path) }; }
 function projectRoutes(rows) { return (rows || []).map(projectRoute); }
 
 module.exports = {

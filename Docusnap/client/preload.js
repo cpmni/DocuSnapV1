@@ -48,5 +48,6 @@ contextBridge.exposeInMainWorld('scanfinder', {
     resolve:    (id, decision, comment, version) =>
                   ipcRenderer.invoke('client-wf-resolve', { id, decision, comment, version }),
     recall:     (id, version) => ipcRenderer.invoke('client-wf-recall', { id, version }),
+    stamped:    (id) => ipcRenderer.invoke('client-wf-stamped', id),
   },
 });

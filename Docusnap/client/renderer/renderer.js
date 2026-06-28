@@ -843,6 +843,9 @@ function mbRow(rt) {
   }
   const actionable = (currentBox === 'inbox' || currentBox === 'assigned') && open;
   acts.appendChild(mkBtn({ label: 'View doc', icon: 'view', variant: 'ghost', onClick: () => { setView('search'); openDocument(rt.document_id, actionable ? rt : null); } }));
+  if (rt.has_stamp) {   // a stamped APPROVED/REJECTED copy was filed for this decision
+    acts.appendChild(mkBtn({ label: 'View stamped copy', icon: 'doc', variant: 'ghost', onClick: () => viewStamped(rt.id) }));
+  }
 
   reasonBox.appendChild(mkBtn({ label: 'Confirm reject', icon: 'reject', variant: 'danger', onClick: () => {
     const reason = reasonBox.querySelector('input').value.trim();
@@ -857,6 +860,24 @@ async function act(promise) {
   if (r.status === 401) { doLogout(); return; }
   if (r.status !== 200) { toast((r.json && r.json.error) || 'Action failed.', 'err'); return; }
   loadMailbox(); refreshBadges();
+}
+
+// Fetch + show the stamped decision copy (server renders its pages; no path crosses the wire).
+async function viewStamped(routeId) {
+  const r = await api.workflow.stamped(routeId);
+  if (r.status === 401) { doLogout(); return; }
+  const pages = (r.json && r.json.pages) || [];
+  if (r.status !== 200 || !pages.length) { toast((r.json && r.json.error) || 'No stamped copy available.', 'err'); return; }
+  const ov = document.createElement('div'); ov.className = 'about-overlay'; ov.id = 'stamped-overlay';
+  const inner = document.createElement('div'); inner.className = 'stamped-view';
+  inner.innerHTML = `<div class="stamped-head"><span>Stamped copy</span><button class="btn btn-ghost btn-sm" id="stamped-close">Close</button></div><div class="stamped-pages"></div>`;
+  const pagesEl = inner.querySelector('.stamped-pages');
+  for (const src of pages) { const im = document.createElement('img'); im.src = src; pagesEl.appendChild(im); }
+  ov.appendChild(inner); document.body.appendChild(ov);
+  const close = () => ov.remove();
+  inner.querySelector('#stamped-close').addEventListener('click', close);
+  ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
+  document.addEventListener('keydown', function esc(e) { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc); } });
 }
 
 // Per-tab counts (inbox/sent/assigned/completed) + the nav inbox badge.

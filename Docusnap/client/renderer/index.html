@@ -426,6 +426,14 @@
     .about-sub { font-family:var(--mono); font-size:10px; color:var(--muted); margin-top:2px; }
     .about-copy { font-size:11px; color:var(--muted); margin-top:12px; }
     .about-actions { margin-top:16px; }
+    /* Stamped-copy lightbox */
+    .stamped-view { width:min(820px,92vw); max-height:88vh; display:flex; flex-direction:column;
+      background:var(--surface); border:1px solid var(--border2); border-radius:var(--r); box-shadow:var(--shadow); overflow:hidden; }
+    .stamped-head { display:flex; align-items:center; justify-content:space-between; padding:var(--s3) var(--s4);
+      border-bottom:1px solid var(--border); font-weight:600; }
+    .stamped-pages { overflow:auto; padding:var(--s4); display:flex; flex-direction:column; gap:var(--s3);
+      align-items:center; background:var(--bg); }
+    .stamped-pages img { max-width:100%; border:1px solid var(--border); border-radius:var(--r-sm); }
   </style>
 </head>
 <body>

@@ -77,11 +77,15 @@ function getDocumentDetail(db, id, deps = {}) {
  * or null when nothing renderable survives. Shared by getDocumentPages and
  * getThumbnail so the two never drift in how they find the file.
  */
-function _resolveDocFile(db, { docId, folderPath, filename }, deps) {
+function _resolveDocFile(db, { docId, folderPath, filename, exact }, deps) {
   const { fs, path } = deps;
   const log = deps.log || console.log;
 
   const sourcePath = path.join(folderPath, filename);
+
+  // Exact mode: render THIS precise file (e.g. a stamped decision copy) — no working-copy
+  // override and no sibling recovery, since it isn't the document's own source file.
+  if (exact) return fs.existsSync(sourcePath) ? sourcePath : null;
 
   // Prefer the app-managed working copy — the reliable, app-owned location that
   // doesn't depend on the user's source folder. Fall back to the source.
@@ -131,7 +135,7 @@ function _resolveDocFile(db, { docId, folderPath, filename }, deps) {
   return alt;
 }
 
-function getDocumentPages(db, { docId, folderPath, filename, scale }, deps) {
+function getDocumentPages(db, { docId, folderPath, filename, scale, exact }, deps) {
   const { fs, path, spawn, pythonExe, pythonArgs, renderScript } = deps;
   const log = deps.log || console.log;
 
@@ -139,7 +143,7 @@ function getDocumentPages(db, { docId, folderPath, filename, scale }, deps) {
     log(`[pages] docId=${docId} missing path — folderPath=${folderPath} filename=${filename}`);
     return Promise.resolve([]);
   }
-  const filePath = _resolveDocFile(db, { docId, folderPath, filename }, deps);
+  const filePath = _resolveDocFile(db, { docId, folderPath, filename, exact }, deps);
   if (!filePath) return Promise.resolve([]);
 
   const ext = path.extname(filePath).toLowerCase();

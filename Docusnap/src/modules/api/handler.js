@@ -499,6 +499,26 @@ function createRequestListener(ctx) {
                     : sendJson(res, wfStatus(r.code), { error: r.error, code: r.code });
       }
 
+      // Stamped-copy pages of a resolved decision, by route id. The stamped_path is
+      // resolved SERVER-SIDE (never sent to the client, mirroring the doc-pages boundary);
+      // only a party to the route (sender/recipient) or an admin may view it.
+      const wfStamp = pathname.match(new RegExp(`^${API_PREFIX}/workflow/routes/(\\d+)/stamped$`));
+      if (req.method === 'GET' && wfStamp) {
+        const session = requireSession(req, res); if (!session) return;
+        const route = require('../../../database/modules/workflow').getRoute(getDb(), Number(wfStamp[1]));
+        if (!route || !route.stamped_path) return sendJson(res, 404, { error: 'no stamped copy' });
+        if (!(session.userId === route.to_user_id || session.userId === route.from_user_id || session.role === 'admin')) {
+          return sendJson(res, 403, { error: 'forbidden' });
+        }
+        const P = ctx.path || require('path');
+        if (!require('fs').existsSync(route.stamped_path)) return sendJson(res, 404, { error: 'stamped copy missing' });
+        const pages = await previewService.getDocumentPages(getDb(), {
+          docId: route.document_id, folderPath: P.dirname(route.stamped_path),
+          filename: P.basename(route.stamped_path), exact: true,
+        }, pageDeps());
+        return sendJson(res, 200, { pages });
+      }
+
       // Transition a route: claim | resolve | recall.
       const wfAct = pathname.match(new RegExp(`^${API_PREFIX}/workflow/routes/(\\d+)/(claim|resolve|recall)$`));
       if (req.method === 'POST' && wfAct) {

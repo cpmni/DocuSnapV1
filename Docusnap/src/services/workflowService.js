@@ -154,6 +154,7 @@ function createWorkflowService(deps = {}) {
     if (decision === 'approve' || decision === 'reject') {
       Promise.resolve()
         .then(() => stampDecision({ db, route, decision, userName: actor.username, comment, resolvedAt }))
+        .then((stampedPath) => { if (stampedPath) { try { wf.setStampedPath(db, route.id, stampedPath); } catch { /* non-fatal */ } } })
         .catch(() => {});
     }
     return { ok: true, route: wf.getRoute(db, routeId) };

@@ -32,7 +32,7 @@ function freshDb() {
       id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER, from_user_id INTEGER, from_username TEXT,
       to_user_id INTEGER, to_username TEXT, action_required TEXT, state TEXT DEFAULT 'pending',
       comment TEXT, resolution_comment TEXT, claimed_by_id INTEGER, claimed_by_username TEXT,
-      claimed_at TEXT, resolved_at TEXT, version INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now'))
+      claimed_at TEXT, resolved_at TEXT, stamped_path TEXT, version INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now'))
     );
   `);
   db.prepare(`INSERT INTO document_types (id,name,slug) VALUES (1,'Invoice','invoice')`).run();
@@ -113,6 +113,16 @@ function main() {
 
   // ── completed view ───────────────────────────────────────────────────────────
   check('completed view lists resolved items for admin', wf.completed(db, admin).length >= 3);
+
+  // ── stamped-copy recording + DTO exposure ────────────────────────────────────
+  // (resolve() fires the stamp fire-and-forget; here we cover the deterministic pieces.)
+  const dto = require('./dto');
+  check('projectRoute has_stamp=false with no stamp', dto.projectRoute({ id: 1, stamped_path: null }).has_stamp === false);
+  check('projectRoute has_stamp=true with a stamp',   dto.projectRoute({ id: 1, stamped_path: 'C:/x.pdf' }).has_stamp === true);
+  check('projectRoute never leaks the stamped_path',  dto.projectRoute({ id: 1, stamped_path: 'C:/x.pdf' }).stamped_path === undefined);
+  const dbwf = require('../../database/modules/workflow');
+  dbwf.setStampedPath(db, a3.route.id, 'C:/inbox/Invoice.APPROVED-stamped.pdf');
+  check('setStampedPath records the path on the route', dbwf.getRoute(db, a3.route.id).stamped_path === 'C:/inbox/Invoice.APPROVED-stamped.pdf');
 
   // ── 5b: uncommitted docs are routable + workflow_lock editGuard ───────────────
   const un = wf.assign(db, admin, { documentId: 2, toUserId: 2, actionRequired: 'approve' }); // doc2 = needs_review

@@ -231,6 +231,7 @@ ipcMain.handle('client-wf-claim',      guarded((_e, { id, version }) => client.w
 ipcMain.handle('client-wf-resolve',    guarded((_e, { id, decision, comment, version }) =>
   client.workflow.resolve(id, decision, comment, version)));
 ipcMain.handle('client-wf-recall',     guarded((_e, { id, version }) => client.workflow.recall(id, version)));
+ipcMain.handle('client-wf-stamped',    guarded((_e, id) => client.workflow.stamped(id)));
 
 // About box: version details + open the bundled third-party notice.
 ipcMain.handle('client-about', () => {

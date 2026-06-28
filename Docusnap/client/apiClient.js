@@ -163,6 +163,7 @@ function createClient(opts = {}) {
   const resolve = (id, decision, comment, version) =>
     request('POST', `/v1/workflow/routes/${id}/resolve`, { withAuth: true, body: { decision, comment, version } });
   const recall  = (id, version) => request('POST', `/v1/workflow/routes/${id}/recall`, { withAuth: true, body: { version } });
+  const wfStamped = (id) => request('GET', `/v1/workflow/routes/${id}/stamped`, { withAuth: true });   // stamped-copy pages
 
   // One-shot CA bootstrap over an UNTRUSTED connection (no CA pinned yet). The caller
   // MUST confirm the returned fingerprint out-of-band before pinning it.
@@ -200,7 +201,7 @@ function createClient(opts = {}) {
 
   return {
     connect, login, logout, entitlement, search, getDocument, getPages, ping, fetchCa, enroll,
-    workflow: { list: wfList, recipients, assign, claim, resolve, recall },
+    workflow: { list: wfList, recipients, assign, claim, resolve, recall, stamped: wfStamped },
     recycle: { list: binList, delete: binDelete, restore: binRestore, purge: binPurge, purgeAll: binPurgeAll },
     isAuthenticated: () => !!token,
     _setToken: (t) => { token = t; }, // test/diagnostic aid only

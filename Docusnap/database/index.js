@@ -839,6 +839,7 @@ function runJsMigrations(db, applied) {
       claimed_by_username TEXT,
       claimed_at          TEXT,
       resolved_at         TEXT,
+      stamped_path        TEXT,                      -- filed stamped-PDF copy of the decision (server-local)
       version             INTEGER NOT NULL DEFAULT 1,
       created_at          TEXT NOT NULL DEFAULT (datetime('now'))
     )`);
@@ -850,6 +851,11 @@ function runJsMigrations(db, applied) {
   if (tableExists(db, 'documents') && !hasColumn(db, 'documents', 'workflow_status')) {
     try { db.exec(`ALTER TABLE documents ADD COLUMN workflow_status TEXT`); console.log('Workflow schema: added documents.workflow_status'); }
     catch (e) { console.warn(`  documents.workflow_status: ${e.message}`); }
+  }
+  // Stamped-PDF copy of a decision (server-local path). Idempotent, like the table itself.
+  if (tableExists(db, 'document_routes') && !hasColumn(db, 'document_routes', 'stamped_path')) {
+    try { db.exec(`ALTER TABLE document_routes ADD COLUMN stamped_path TEXT`); console.log('Workflow schema: added document_routes.stamped_path'); }
+    catch (e) { console.warn(`  document_routes.stamped_path: ${e.message}`); }
   }
 }
 
