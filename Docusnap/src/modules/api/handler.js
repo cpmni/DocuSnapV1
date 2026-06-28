@@ -29,6 +29,7 @@ const { URL } = require('url');
 
 const searchService  = require('../../services/searchService');
 const previewService = require('../../services/previewService');
+const documents      = require('../../../database/modules/documents');
 const dto            = require('../../services/dto');
 const sessionService    = require('../../services/sessionService');
 const authService       = require('../../services/authService');
@@ -42,7 +43,7 @@ const path              = require('path');
 const WF_HTTP = { FORBIDDEN: 403, NOT_FOUND: 404, CONFLICT: 409 };
 const wfStatus = (code) => WF_HTTP[code] || 400;
 
-const API_CONTRACT_VERSION = '1.0.0';
+const API_CONTRACT_VERSION = '1.1.0';   // 1.1: recycle-bin endpoints (delete/restore/purge). Major unchanged → back-compat.
 const API_PREFIX = '/v1';
 const CLIENT_CONTRACT_HEADER = 'x-scanfinder-client-contract';
 
@@ -54,6 +55,16 @@ function clientContractCompatible(headerVal) {
   if (!headerVal) return true;
   const m = String(headerVal).match(/^(\d+)\./);
   return !!m && m[1] === API_CONTRACT_VERSION.split('.')[0];
+}
+// Permanent purge: remove the filed file + the app-managed working copy. The path is
+// resolved SERVER-SIDE from the document row only (never trusts a client-supplied path).
+function _purgeDocFiles(db, id) {
+  const fs = require('fs');
+  const doc = documents.getById(db, id);
+  if (!doc) return;
+  for (const p of [documents.resolveFilePath(doc), doc.working_path]) {
+    if (p && fs.existsSync(p)) { try { fs.unlinkSync(p); } catch {} }
+  }
 }
 const TOTP_ISSUER = 'ScanFinder';
 const MAX_BODY_BYTES = 1 * 1024 * 1024;
@@ -401,6 +412,63 @@ function createRequestListener(ctx) {
         const pages = await previewService.getDocumentPages(
           getDb(), { docId: id, folderPath, filename }, pageDeps());
         return sendJson(res, 200, { pages });
+      }
+
+      // ── Auth-required: RECYCLE BIN (soft delete / restore / purge) ────────────
+      // Delete is recoverable (status='deleted', files kept) — Admin/Edit. Permanent
+      // removal (purge) is Admin only. Every action is audited; the on-disk path is
+      // resolved SERVER-SIDE only (never from the client) when purging.
+      const isWriter = (s) => s.role === 'admin' || s.role === 'edit';
+
+      if (req.method === 'GET' && pathname === `${API_PREFIX}/documents/deleted`) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        const rows = documents.getDeletedQueue(getDb());
+        return sendJson(res, 200, { deleted: dto.projectSearchResult({ confirmed: rows, uncommitted: [] }).confirmed });
+      }
+
+      const delMatch = pathname.match(new RegExp(`^${API_PREFIX}/documents/(\\d+)/delete$`));
+      if (req.method === 'POST' && delMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        const id = Number(delMatch[1]);
+        documents.softDelete(getDb(), id);
+        audit({ user_id: session.userId, action: 'document_deleted', action_category: 'document',
+                outcome: 'success', document_id: id, metadata: { soft: true, via: 'client' } });
+        return sendJson(res, 200, { ok: true });
+      }
+
+      const restoreMatch = pathname.match(new RegExp(`^${API_PREFIX}/documents/(\\d+)/restore$`));
+      if (req.method === 'POST' && restoreMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        const id = Number(restoreMatch[1]);
+        documents.restoreDeleted(getDb(), id);
+        audit({ user_id: session.userId, action: 'document_restored', action_category: 'document',
+                outcome: 'success', document_id: id, metadata: { via: 'client' } });
+        return sendJson(res, 200, { ok: true });
+      }
+
+      const purgeMatch = pathname.match(new RegExp(`^${API_PREFIX}/documents/(\\d+)/purge$`));
+      if (req.method === 'POST' && purgeMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        if (session.role !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+        const id = Number(purgeMatch[1]);
+        _purgeDocFiles(getDb(), id);
+        documents.deleteDoc(getDb(), id);
+        audit({ user_id: session.userId, action: 'document_purged', action_category: 'document',
+                outcome: 'success', document_id: id, metadata: { via: 'client' } });
+        return sendJson(res, 200, { ok: true });
+      }
+
+      if (req.method === 'POST' && pathname === `${API_PREFIX}/documents/purge-all`) {
+        const session = requireSession(req, res); if (!session) return;
+        if (session.role !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+        const ids = documents.getDeletedQueue(getDb()).map(d => d.id);
+        for (const id of ids) { _purgeDocFiles(getDb(), id); documents.deleteDoc(getDb(), id); }
+        audit({ user_id: session.userId, action: 'recycle_bin_emptied', action_category: 'document',
+                outcome: 'success', metadata: { count: ids.length, via: 'client' } });
+        return sendJson(res, 200, { purged: ids.length });
       }
 
       // ── Auth-required: mailbox / approval workflow ────────────────────────────

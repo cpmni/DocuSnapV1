@@ -32,6 +32,13 @@ contextBridge.exposeInMainWorld('scanfinder', {
   retryConnection:      () => ipcRenderer.invoke('client-retry-connection'),
   about:           () => ipcRenderer.invoke('client-about'),
   openLicenses:    () => ipcRenderer.invoke('client-open-licenses'),
+  recycle: {
+    list:     () => ipcRenderer.invoke('client-recycle-list'),
+    delete:   (id) => ipcRenderer.invoke('client-recycle-delete', id),
+    restore:  (id) => ipcRenderer.invoke('client-recycle-restore', id),
+    purge:    (id) => ipcRenderer.invoke('client-recycle-purge', id),
+    purgeAll: () => ipcRenderer.invoke('client-recycle-purge-all'),
+  },
   workflow: {
     list:       (view) => ipcRenderer.invoke('client-wf-list', view),
     recipients: () => ipcRenderer.invoke('client-wf-recipients'),

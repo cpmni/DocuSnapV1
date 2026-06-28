@@ -99,6 +99,29 @@
     .result-item { padding: 9px 14px; cursor: pointer; border-bottom: 1px solid var(--border); transition: background .1s; }
     .result-item:hover  { background: var(--surface2); }
     .result-item.active { background: var(--accent-bg); border-left: 2px solid var(--accent); padding-left: 12px; }
+    /* Recycle-bin multi-select highlight */
+    .result-item.selected { background: var(--accent-bg); box-shadow: inset 3px 0 0 var(--accent); }
+    /* Recycle-bin selection toolbar (in the results header) */
+    #results-head { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 8px 14px; border-bottom: 1px solid var(--border); background: var(--surface);
+      position: sticky; top: 0; z-index: 2; }
+    #results-head:empty, #results-head.hidden { display: none; }   /* no empty bar outside the bin */
+    .bin-count { font-size: 12px; font-weight: 600; color: var(--text); }
+    .bin-actions { display: flex; gap: 8px; }
+    .btn-sm { padding: 5px 12px; border-radius: 6px; border: 1px solid var(--border2);
+      background: var(--surface); color: var(--text); font-family: var(--sans); font-size: 12px; font-weight: 600; cursor: pointer; }
+    .btn-sm:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-sm.danger { color: var(--err); border-color: var(--err-border, rgba(214,69,69,.4)); }
+    .btn-sm.danger:hover { background: var(--err-bg); border-color: var(--err); }
+    /* Right-click context menu */
+    #bin-context-menu { position: fixed; z-index: 1000; min-width: 170px; padding: 5px;
+      background: var(--surface); border: 1px solid var(--border2); border-radius: 8px;
+      box-shadow: 0 12px 30px rgba(0,0,0,.35); display: flex; flex-direction: column; gap: 2px; }
+    #bin-context-menu button { text-align: left; padding: 8px 10px; border: none; border-radius: 6px;
+      background: transparent; color: var(--text); font-family: var(--sans); font-size: 13px; cursor: pointer; }
+    #bin-context-menu button:hover { background: var(--surface2); }
+    #bin-context-menu button.danger { color: var(--err); }
+    #bin-context-menu button.danger:hover { background: var(--err-bg); }
     /* Result-row page-1 thumbnail (shared/thumbs.js). Empty element = placeholder
        box; the rendered page fills it once loaded. No renderable thumb → empty box. */
     .result-row  { display: flex; align-items: flex-start; gap: 10px; }

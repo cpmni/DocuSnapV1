@@ -205,6 +205,11 @@ ipcMain.handle('client-logout',       () => { stopHeartbeat(); pageCache.clear()
 ipcMain.handle('client-entitlement',  () => client ? client.entitlement() : { status: 0, json: null });
 ipcMain.handle('client-search',       guarded((_e, params) => client.search(params)));
 ipcMain.handle('client-get-document', guarded((_e, id) => client.getDocument(id)));
+ipcMain.handle('client-recycle-list',      guarded(()       => client.recycle.list()));
+ipcMain.handle('client-recycle-delete',    guarded((_e, id) => client.recycle.delete(id)));
+ipcMain.handle('client-recycle-restore',   guarded((_e, id) => client.recycle.restore(id)));
+ipcMain.handle('client-recycle-purge',     guarded((_e, id) => client.recycle.purge(id)));
+ipcMain.handle('client-recycle-purge-all', guarded(()       => client.recycle.purgeAll()));
 ipcMain.handle('client-get-pages',    async (_e, id) => {
   const hit = _pageCacheGet(id);
   if (hit !== undefined) return hit;                 // instant re-click (no network → don't touch conn state)

@@ -23,7 +23,7 @@ const { URL } = require('url');
 
 // The contract version this client build targets — keep in lockstep with the
 // server's API_CONTRACT_VERSION (src/modules/api/handler.js).
-const CLIENT_CONTRACT = '1.0.0';
+const CLIENT_CONTRACT = '1.1.0';   // 1.1: recycle-bin endpoints (matches server; major unchanged)
 
 function parseVer(v) {
   const m = String(v || '').match(/^(\d+)\.(\d+)\.(\d+)/);
@@ -191,9 +191,17 @@ function createClient(opts = {}) {
     return { ok: false, status: r.status, mfaRequired: !!(r.json && r.json.mfaRequired), code: r.json && r.json.code, error: (r.json && r.json.error) || 'Enrollment failed.' };
   }
 
+  // ── Recycle bin (soft delete / restore / permanent purge) ─────────────────────
+  const binList    = () => request('GET',  '/v1/documents/deleted',        { withAuth: true });
+  const binDelete  = (id) => request('POST', `/v1/documents/${id}/delete`,  { withAuth: true });
+  const binRestore = (id) => request('POST', `/v1/documents/${id}/restore`, { withAuth: true });
+  const binPurge   = (id) => request('POST', `/v1/documents/${id}/purge`,   { withAuth: true });
+  const binPurgeAll= () => request('POST',  '/v1/documents/purge-all',      { withAuth: true });
+
   return {
     connect, login, logout, entitlement, search, getDocument, getPages, ping, fetchCa, enroll,
     workflow: { list: wfList, recipients, assign, claim, resolve, recall },
+    recycle: { list: binList, delete: binDelete, restore: binRestore, purge: binPurge, purgeAll: binPurgeAll },
     isAuthenticated: () => !!token,
     _setToken: (t) => { token = t; }, // test/diagnostic aid only
   };
