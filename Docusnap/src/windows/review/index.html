@@ -339,10 +339,10 @@
     /* Interactive training tour (training.js) */
     .tour-hole { position: fixed; z-index: 9998; border-radius: 8px; box-shadow: 0 0 0 9999px rgba(12,16,24,.55);
       border: 2px solid var(--accent); pointer-events: none; transition: all .22s ease; }
-    .tour-arrow { position: fixed; z-index: 10000; color: var(--accent); font-size: 18px; line-height: 1;
+    .tour-arrow { position: fixed; z-index: 100001; color: var(--accent); font-size: 18px; line-height: 1;
       pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,.4); animation: tourbounce 1s infinite; }
     @keyframes tourbounce { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
-    .tour-callout { position: fixed; z-index: 10000; background: var(--surface); border: 1px solid var(--border2);
+    .tour-callout { position: fixed; z-index: 100001; background: var(--surface); border: 1px solid var(--border2);
       border-radius: 10px; box-shadow: 0 16px 44px rgba(0,0,0,.4); padding: 14px 16px; font-family: var(--sans); }
     .tour-callout .tc-title { font-weight: 700; font-size: 14px; color: var(--text); margin-bottom: 5px; }
     .tour-callout .tc-body { font-size: 13px; color: var(--muted); line-height: 1.5; }
