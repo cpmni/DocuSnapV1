@@ -19,7 +19,7 @@ const SUPPORTED_TOKENS = [
   { token: '{docType}',      label: 'Document type',                            example: 'Invoice' },
   { token: '{date}',         label: 'Document date (DD-MM-YYYY)',               example: '15-12-2025' },
   { token: '{ref}',          label: 'Reference number',                         example: 'INV-2025-0142' },
-  { token: '{supplier}',     label: 'Company',                                  example: 'Acme-Supplies-Ltd' },
+  { token: '{supplier}',     label: 'Document Issuer',                          example: 'Acme-Supplies-Ltd' },
   { token: '{year}',         label: 'Document year',                            example: '2025' },
   { token: '{month}',        label: 'Document month name',                      example: 'December' },
   { token: '{originalName}', label: 'Original scanned filename (no extension)', example: 'scan0042' },
