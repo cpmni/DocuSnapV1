@@ -1,46 +1,38 @@
 'use strict';
 // Results list — section headers + result items.
-// Normal mode: click selects → SearchPreview.selectDoc.
-// Recycle-bin mode: multi-select (ctrl/cmd + shift), a selection toolbar, and a
-// right-click menu to Restore / Delete permanently (role-gated).
+// Plain click selects + previews. Ctrl/Cmd and Shift multi-select. Right-click (or the
+// selection toolbar) acts on the selection: in normal results → Delete (→ recycle bin);
+// in the recycle bin → Restore / Delete permanently. All role-gated.
 
-function _binSel()   { const s = window.SearchState; if (!s.binSelection) s.binSelection = new Set(); return s.binSelection; }
+function _sel()      { const s = window.SearchState; if (!s.selection) s.selection = new Set(); return s.selection; }
 function _isBin()    { return !!(window.SearchState && window.SearchState.binMode); }
 function _canEdit()  { const r = window.SearchState && window.SearchState.role; return r === 'admin' || r === 'edit'; }
 function _isAdmin()  { return window.SearchState && window.SearchState.role === 'admin'; }
-let _binOrder = [];   // ids in render order (for shift-range)
-let _anchorId = null; // last single-clicked id (shift-range anchor)
+let _rowOrder = [];   // ids in render order (for shift-range)
+let _anchorId = null; // last single-clicked id (shift anchor)
+let _docById  = {};   // id → doc (for preview on single click)
 
 function renderResults({ confirmed = [], uncommitted = [], deleted = [] }) {
   const scroll = document.getElementById('results-scroll');
   const empty  = document.getElementById('results-empty');
   scroll.querySelectorAll('.section-header, .result-item').forEach(el => el.remove());
 
-  if (confirmed.length + uncommitted.length + deleted.length === 0) {
+  const all = [...deleted, ...confirmed, ...uncommitted];
+  _rowOrder = all.map(d => d.id);
+  _docById  = {}; all.forEach(d => { _docById[d.id] = d; });
+  for (const id of [..._sel()]) if (!_rowOrder.includes(id)) _sel().delete(id);   // drop gone selections
+
+  if (all.length === 0) {
     empty.textContent = _isBin() ? 'The recycle bin is empty.' : 'No documents found. Try different search terms.';
     empty.style.display = '';
-    _binOrder = []; _binSel().clear(); _renderBinToolbar();
+    _sel().clear(); _renderToolbar();
     return;
   }
   empty.style.display = 'none';
 
-  if (deleted.length > 0) {
-    _binOrder = deleted.map(d => d.id);
-    // Drop selections for docs no longer present.
-    for (const id of [..._binSel()]) if (!_binOrder.includes(id)) _binSel().delete(id);
-    scroll.appendChild(_sectionHeader('RECYCLE BIN', deleted.length));
-    deleted.forEach(doc => scroll.appendChild(_resultItem(doc)));
-  } else {
-    _binOrder = []; _binSel().clear();
-  }
-  if (confirmed.length > 0) {
-    scroll.appendChild(_sectionHeader('CONFIRMED', confirmed.length));
-    confirmed.forEach(doc => scroll.appendChild(_resultItem(doc)));
-  }
-  if (uncommitted.length > 0) {
-    scroll.appendChild(_sectionHeader('UNCONFIRMED', uncommitted.length));
-    uncommitted.forEach(doc => scroll.appendChild(_resultItem(doc)));
-  }
+  if (deleted.length)     { scroll.appendChild(_sectionHeader('RECYCLE BIN', deleted.length)); deleted.forEach(d => scroll.appendChild(_resultItem(d))); }
+  if (confirmed.length)   { scroll.appendChild(_sectionHeader('CONFIRMED', confirmed.length));  confirmed.forEach(d => scroll.appendChild(_resultItem(d))); }
+  if (uncommitted.length) { scroll.appendChild(_sectionHeader('UNCONFIRMED', uncommitted.length)); uncommitted.forEach(d => scroll.appendChild(_resultItem(d))); }
 
   const { selectedDoc } = window.SearchState;
   if (selectedDoc) {
@@ -48,7 +40,7 @@ function renderResults({ confirmed = [], uncommitted = [], deleted = [] }) {
     if (el) el.classList.add('active');
   }
   _refreshSelStyles();
-  _renderBinToolbar();
+  _renderToolbar();
 }
 
 function _sectionHeader(label, count) {
@@ -62,7 +54,6 @@ function _resultItem(doc) {
   const el      = document.createElement('div');
   el.className  = 'result-item';
   el.dataset.id = doc.id;
-  el._doc       = doc;
 
   const name     = doc.stored_filename || doc.original_filename || '—';
   const supplier = doc.supplier_name || '—';
@@ -102,86 +93,89 @@ function _resultItem(doc) {
       { id: doc.id, folder_path: folderPath, original_filename: filename });
   }
 
-  el.addEventListener('click', (e) => {
-    if (_isBin()) { _onBinClick(e, doc); }
-    else          { window.SearchPreview.selectDoc(doc); }
-  });
+  el.addEventListener('click', (e) => _onRowClick(e, doc));
   el.addEventListener('contextmenu', (e) => {
-    if (!_isBin()) return;
+    if (!_canEdit()) return;
     e.preventDefault();
-    if (!_binSel().has(doc.id)) { _binSel().clear(); _binSel().add(doc.id); _anchorId = doc.id; _refreshSelStyles(); _renderBinToolbar(); }
-    _showBinMenu(e.clientX, e.clientY);
+    if (!_sel().has(doc.id)) { _sel().clear(); _sel().add(doc.id); _anchorId = doc.id; _refreshSelStyles(); _renderToolbar(); }
+    _showMenu(e.clientX, e.clientY);
   });
   return el;
 }
 
-// ── Recycle-bin selection ─────────────────────────────────────────────────────
-function _onBinClick(e, doc) {
-  const sel = _binSel();
+// ── Selection ─────────────────────────────────────────────────────────────────
+function _onRowClick(e, doc) {
+  const sel = _sel();
   if (e.ctrlKey || e.metaKey) {
     if (sel.has(doc.id)) sel.delete(doc.id); else sel.add(doc.id);
     _anchorId = doc.id;
   } else if (e.shiftKey && _anchorId != null) {
-    const a = _binOrder.indexOf(_anchorId), b = _binOrder.indexOf(doc.id);
-    if (a >= 0 && b >= 0) { sel.clear(); for (let i = Math.min(a, b); i <= Math.max(a, b); i++) sel.add(_binOrder[i]); }
+    const a = _rowOrder.indexOf(_anchorId), b = _rowOrder.indexOf(doc.id);
+    if (a >= 0 && b >= 0) { sel.clear(); for (let i = Math.min(a, b); i <= Math.max(a, b); i++) sel.add(_rowOrder[i]); }
   } else {
     sel.clear(); sel.add(doc.id); _anchorId = doc.id;
-    window.SearchPreview.selectDoc(doc);   // single click also previews
+    window.SearchPreview.selectDoc(doc);   // single click previews
   }
   _refreshSelStyles();
-  _renderBinToolbar();
+  _renderToolbar();
 }
 
 function _refreshSelStyles() {
-  const sel = _binSel();
+  const sel = _sel();
   document.querySelectorAll('#results-scroll .result-item').forEach(el => {
-    el.classList.toggle('selected', _isBin() && sel.has(Number(el.dataset.id)));
+    el.classList.toggle('selected', sel.has(Number(el.dataset.id)));
   });
 }
 
 // Selection toolbar in the results header.
-function _renderBinToolbar() {
+function _renderToolbar() {
   const head = document.getElementById('results-head');
   if (!head) return;
-  const n = _isBin() ? _binSel().size : 0;
-  if (!n) { head.classList.add('hidden'); head.innerHTML = ''; return; }
+  const n = _sel().size;
+  if (!n || !_canEdit()) { head.classList.add('hidden'); head.innerHTML = ''; return; }
   head.classList.remove('hidden');
-  head.innerHTML = `<span class="bin-count">${n} selected</span>
-    <span class="bin-actions">
-      ${_canEdit() ? '<button class="btn-sm bin-restore">Restore</button>' : ''}
-      ${_isAdmin() ? '<button class="btn-sm danger bin-purge">Delete permanently</button>' : ''}
-    </span>`;
+  const actions = _isBin()
+    ? `${_canEdit() ? '<button class="btn-sm bin-restore">Restore</button>' : ''}${_isAdmin() ? '<button class="btn-sm danger bin-purge">Delete permanently</button>' : ''}`
+    : `<button class="btn-sm danger bin-delete">Delete</button>`;
+  head.innerHTML = `<span class="bin-count">${n} selected</span><span class="bin-actions">${actions}</span>`;
   head.querySelector('.bin-restore')?.addEventListener('click', () => _act('restore'));
   head.querySelector('.bin-purge')?.addEventListener('click', () => _act('purge'));
+  head.querySelector('.bin-delete')?.addEventListener('click', () => _act('delete'));
 }
 
 // Right-click menu (acts on the current selection).
-function _showBinMenu(x, y) {
-  _closeBinMenu();
-  const n = _binSel().size;
+function _showMenu(x, y) {
+  _closeMenu();
+  const n = _sel().size;
+  const sfx = n > 1 ? ` (${n})` : '';
   const menu = document.createElement('div');
   menu.id = 'bin-context-menu';
-  menu.innerHTML =
-    (_canEdit() ? `<button data-act="restore">Restore${n > 1 ? ` (${n})` : ''}</button>` : '') +
-    (_isAdmin() ? `<button data-act="purge" class="danger">Delete permanently${n > 1 ? ` (${n})` : ''}</button>` : '');
+  menu.innerHTML = _isBin()
+    ? (_canEdit() ? `<button data-act="restore">Restore${sfx}</button>` : '') +
+      (_isAdmin() ? `<button data-act="purge" class="danger">Delete permanently${sfx}</button>` : '')
+    : `<button data-act="delete" class="danger">Delete${sfx}</button>`;
   document.body.appendChild(menu);
   const mw = menu.offsetWidth, mh = menu.offsetHeight;
   menu.style.left = Math.min(x, window.innerWidth  - mw - 6) + 'px';
   menu.style.top  = Math.min(y, window.innerHeight - mh - 6) + 'px';
-  menu.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { _closeBinMenu(); _act(b.dataset.act); }));
+  menu.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { _closeMenu(); _act(b.dataset.act); }));
 }
-function _closeBinMenu() { document.getElementById('bin-context-menu')?.remove(); }
-document.addEventListener('click', _closeBinMenu);
-document.addEventListener('scroll', _closeBinMenu, true);
+function _closeMenu() { document.getElementById('bin-context-menu')?.remove(); }
+document.addEventListener('click', _closeMenu);
+document.addEventListener('scroll', _closeMenu, true);
 
-// Apply restore / purge to every selected bin item, then refresh the list.
+// Apply the action to every selected row, then refresh.
 async function _act(kind) {
-  const ids = [..._binSel()];
+  const ids = [..._sel()];
   if (!ids.length) return;
-  if (kind === 'purge' && !confirm(`Permanently delete ${ids.length} document${ids.length > 1 ? 's' : ''} and ${ids.length > 1 ? 'their files' : 'its file'}? This cannot be undone.`)) return;
-  const call = kind === 'restore' ? window.docusnap.restoreDocument : window.docusnap.purgeDocument;
+  const noun = ids.length > 1 ? `${ids.length} documents` : 'this document';
+  if (kind === 'delete' && !confirm(`Move ${noun} to the recycle bin? You can restore ${ids.length > 1 ? 'them' : 'it'} later.`)) return;
+  if (kind === 'purge'  && !confirm(`Permanently delete ${noun} and ${ids.length > 1 ? 'their files' : 'its file'}? This cannot be undone.`)) return;
+  const call = kind === 'delete' ? window.docusnap.deleteDocument
+             : kind === 'restore' ? window.docusnap.restoreDocument
+             : window.docusnap.purgeDocument;
   try { for (const id of ids) await call(id); } catch (e) { console.error(`${kind} failed:`, e); }
-  _binSel().clear();
+  _sel().clear();
   if (window.SearchQuery) window.SearchQuery.doSearch();
 }
 

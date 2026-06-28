@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'self';" />
+        content="default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'self';" />
   <title>ScanFinder — Search</title>
   <style>
     :root {
@@ -161,6 +161,8 @@
       border-radius:var(--r); padding:var(--s6); width:360px; box-shadow:var(--shadow); }
     .card h1 { font-family:var(--display); font-size:20px; margin:0 0 var(--s2); letter-spacing:-.01em; }
     .brandmark { width:30px; height:30px; color:var(--accent); margin-bottom:var(--s3); }
+    /* The brand mark is the real logo (one img; src swapped light/dark by syncLogos). */
+    img.brandmark { object-fit:contain; }
     .card .sub { color:var(--muted); font-size:13px; margin:0 0 var(--s4); }
     .conn { display:inline-flex; align-items:center; gap:7px; font-size:12px; color:var(--muted);
       background:var(--surface2); border:1px solid var(--border); border-radius:var(--r-pill); padding:4px 10px; margin-bottom:var(--s4); }
@@ -209,11 +211,12 @@
     .sidebtn:hover { background:var(--surface2); color:var(--text); }
     .sidebtn.active { background:rgba(59,125,240,.10); color:var(--accent); border-color:rgba(59,125,240,.22); }
     .sidebtn .ic { width:18px; height:18px; }
-    .side-foot { margin-top:auto; display:flex; flex-direction:column; gap:var(--s3);
-      border-top:1px solid var(--border); padding-top:var(--s3); }
-    .side-user { display:flex; flex-direction:column; gap:5px; font-size:12px; color:var(--muted); }
+    .side-foot { margin-top:auto; display:flex; flex-direction:column; gap:6px;
+      border-top:1px solid var(--border); padding-top:10px; }
+    .side-foot .btn-sm { padding:4px 8px; }   /* tighter Sign out / About */
+    .side-user { display:flex; flex-direction:column; gap:3px; font-size:12px; color:var(--muted); }
     /* Clock + dark toggle at the foot of the sidebar (bottom-left), like the main app */
-    .side-clock { text-align:center; padding:12px 0 4px; margin-top:6px; border-top:1px solid var(--border); }
+    .side-clock { text-align:center; padding:6px 0 0; }
     .side-time { font-family:var(--mono); font-size:20px; font-weight:700; color:var(--text); line-height:1.1; letter-spacing:.02em; }
     .side-date { font-size:11px; color:var(--muted); margin-top:2px; }
     .side-dark { display:flex; align-items:center; justify-content:space-between; gap:8px; cursor:pointer;

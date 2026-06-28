@@ -26,6 +26,9 @@ const _ls = {
   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
 };
 function currentTheme() { const t = _ls.get('sf-client-theme', 'warm'); return THEMES.includes(t) ? t : 'warm'; }
+// Real logo path for the current mode; syncLogos swaps every brand img on a theme change.
+function _logoSrc() { return DARK_THEMES.has(currentTheme()) ? '../assets/logo-mark-dark.svg' : '../assets/logo-mark.svg'; }
+function syncLogos() { document.querySelectorAll('img[data-logo]').forEach((im) => { im.src = _logoSrc(); }); }
 function applyTheme(name) {
   const t = THEMES.includes(name) ? name : 'warm';
   const root = document.documentElement;
@@ -35,6 +38,7 @@ function applyTheme(name) {
   _ls.set(DARK_THEMES.has(t) ? 'sf-client-dark' : 'sf-client-light', t);   // remember last light/dark pick
   const sel = $('theme-select'); if (sel) sel.value = t;
   const tog = $('side-dark-toggle'); if (tog) tog.checked = DARK_THEMES.has(t);
+  syncLogos();
 }
 function toggleDarkMode() {
   const cur = currentTheme();
@@ -81,7 +85,15 @@ function hydrateIcons() {
     // NB: el.className on an SVGElement is an SVGAnimatedString, not a string —
     // use getAttribute so the size class (e.g. "brandmark") is preserved.
     const cls = el.getAttribute('class') || 'ic';
-    el.outerHTML = ico(el.getAttribute('data-ic'), cls);
+    const name = el.getAttribute('data-ic');
+    if (name === 'brand') {
+      // The real Scan Finder logo (img), not a line icon. ONE img; its src is swapped
+      // light/dark by syncLogos() so it keeps each spot's own display/centring rules.
+      const style = el.getAttribute('style') ? ` style="${el.getAttribute('style')}"` : '';
+      el.outerHTML = `<img class="${cls}" data-logo src="${_logoSrc()}" alt="Scan Finder"${style}>`;
+      return;
+    }
+    el.outerHTML = ico(name, cls);
   });
 }
 
