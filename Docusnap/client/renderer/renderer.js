@@ -17,6 +17,7 @@ let blocked = false;
 let currentBox = 'inbox';
 let recipientsCache = null;
 let myOpenRoutes = {}; // document_id -> open route addressed to me (recipient/claimant)
+let searchPrimed = false; // load the Search view's at-rest recent list once, lazily
 
 // ── Theme (mirrors the main app's six named themes; persisted on this device) ──
 const THEMES = ['light', 'warm', 'slate', 'dark', 'midnight', 'graphite'];
@@ -74,6 +75,7 @@ const ICO = {
   doc:    '<path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>',
   lock:   '<rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
   trash:  '<path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>',
+  home:   '<path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/>',
   settings:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
 };
 const ico = (name, cls = 'ic') =>
@@ -282,10 +284,8 @@ $('login-btn').addEventListener('click', async () => {
     $('unc-wrap').classList.toggle('hidden', !canDecide());
     $('login').classList.add('hidden');
     $('app').classList.remove('hidden');
-    setView('search');
+    setView('home');   // Home dashboard is the default landing view
     renderChips();
-    refreshBadges();
-    runSearch(); // load recent documents at rest instead of an empty form
     return;
   }
   if (r.mfaRequired) {
@@ -378,15 +378,18 @@ $('about-licenses').addEventListener('click', async () => {
 // ── View switching ─────────────────────────────────────────────────────────────
 function setView(view) {
   if (view === 'mailbox' && !workflowEntitled) view = 'search'; // workflow add-on not licensed
+  $('view-home').classList.toggle('hidden', view !== 'home');
   $('view-search').classList.toggle('hidden', view !== 'search');
   $('view-mailbox').classList.toggle('hidden', view !== 'mailbox');
   $('view-settings').classList.toggle('hidden', view !== 'settings');
   $('view-recycle').classList.toggle('hidden', view !== 'recycle');
+  navActive($('nav-home'), view === 'home');
   navActive($('nav-search'), view === 'search');
   navActive($('nav-mailbox'), view === 'mailbox');
   navActive($('nav-settings'), view === 'settings');
   navActive($('nav-recycle'), view === 'recycle');
   const meta = {
+    home:     ['Home', 'Your dashboard'],
     search:   ['Search', 'Find and preview filed documents'],
     mailbox:  ['Mailbox', 'Approvals routed to and from you'],
     settings: ['Settings', 'Appearance and preferences'],
@@ -394,9 +397,12 @@ function setView(view) {
   }[view] || ['Search', ''];
   $('vh-title').textContent = meta[0];
   $('vh-sub').textContent = meta[1];
+  if (view === 'home') loadHome();
+  if (view === 'search' && !searchPrimed) { searchPrimed = true; runSearch(); }   // prime once
   if (view === 'mailbox') loadMailbox();
   if (view === 'recycle') loadRecycleBin();
 }
+$('nav-home').addEventListener('click', () => setView('home'));
 $('nav-search').addEventListener('click', () => setView('search'));
 $('nav-mailbox').addEventListener('click', () => setView('mailbox'));
 $('nav-settings').addEventListener('click', () => setView('settings'));
@@ -404,6 +410,66 @@ $('nav-recycle').addEventListener('click', () => setView('recycle'));
 $('rb-refresh').addEventListener('click', () => loadRecycleBin());
 $('theme-select')?.addEventListener('change', (e) => applyTheme(e.target.value));
 $('side-dark-toggle')?.addEventListener('change', toggleDarkMode);
+
+// ── Home dashboard ───────────────────────────────────────────────────────────────
+function homeSearch() {
+  $('f-text').value = $('home-search-input').value.trim();
+  searchPrimed = true;          // Home drives the run; stop setView from double-running
+  setView('search');
+  runSearch();
+}
+$('home-search-btn')?.addEventListener('click', homeSearch);
+$('home-search-input')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') homeSearch(); });
+
+function homeCard(title, n, sub) {
+  const el = document.createElement('div'); el.className = 'home-card';
+  const has = n != null && n > 0;
+  el.innerHTML = `<div class="hc-title">${esc(title)}</div>
+    <div class="hc-big ${has ? '' : 'muted'}">${n == null ? '—' : n}</div>
+    <div class="hc-sub">${has ? esc(sub) : "you're all caught up"}</div>`;
+  el.appendChild(mkBtn({ label: 'Open Mailbox', icon: 'inbox', variant: 'ghost', onClick: () => setView('mailbox') }));
+  return el;
+}
+
+function recentCard(rows) {
+  const el = document.createElement('div'); el.className = 'home-card home-card-wide';
+  if (!rows.length) { el.innerHTML = `<div class="hc-title">Recently filed</div><div class="hc-empty">No documents filed yet.</div>`; return el; }
+  el.innerHTML = `<div class="hc-title">Recently filed</div><div class="hc-list"></div>`;
+  const list = el.querySelector('.hc-list');
+  for (const d of rows) {
+    const row = document.createElement('button'); row.className = 'hc-row';
+    row.innerHTML = `<span class="hc-row-nm">${esc(d.supplier_name || d.original_filename || 'Untitled')}</span>
+      <span class="hc-row-meta mono">${esc(d.reference_number || '—')} · ${esc(d.doc_date || '')}</span>`;
+    row.addEventListener('click', () => { searchPrimed = true; setView('search'); openDocument(d.id); });
+    list.appendChild(row);
+  }
+  return el;
+}
+
+// Loads the dashboard cards. Reuses the workflow-count fetch and a recent-docs search;
+// each card degrades to "—" on a failed fetch rather than blanking the whole view.
+async function loadHome() {
+  const grid = $('home-grid'); if (!grid) return;
+  const feats = ['Search']; if (workflowEntitled) feats.push('Approvals');
+  $('home-strip').innerHTML = `Signed in as <b>${esc($('who').textContent || '')}</b>` +
+    (role ? ` &middot; ${esc(role[0].toUpperCase() + role.slice(1))}` : '') +
+    ` &nbsp;&middot;&nbsp; ${esc($('side-conn-text').textContent || 'Connected')} &nbsp;&middot;&nbsp; ${feats.join(' · ')}`;
+  grid.innerHTML = `<div class="hc-loading">${ico('refresh', 'ic spin')}Loading…</div>`;
+
+  let recent = [], wf = null;
+  await Promise.all([
+    (async () => { try { const r = await api.search({}); recent = ((r.json && r.json.confirmed) || []).slice(0, 6); } catch { /* card shows empty */ } })(),
+    (async () => { if (workflowEntitled) { try { wf = await refreshBadges(); } catch { /* card shows — */ } } })(),
+  ]);
+
+  grid.innerHTML = '';
+  if (workflowEntitled) {
+    const c = (wf && wf.counts) || {};
+    grid.appendChild(homeCard('Waiting on you', c.inbox, 'awaiting your decision'));
+    if (canDecide()) grid.appendChild(homeCard('Awaiting others', c.sent, 'you sent, not yet actioned'));
+  }
+  grid.appendChild(recentCard(recent));
+}
 
 // ── Search ───────────────────────────────────────────────────────────────────
 $('search-btn').addEventListener('click', (e) => withBusy(e.currentTarget, runSearch));
@@ -796,12 +862,12 @@ async function act(promise) {
 // Per-tab counts (inbox/sent/assigned/completed) + the nav inbox badge.
 async function refreshBadges() {
   const boxes = ['inbox', 'sent', 'assigned', 'completed'];
-  const open = {};
+  const open = {}; const counts = {};
   await Promise.all(boxes.map(async (box) => {
     try {
       const r = await api.workflow.list(box);
       const routes = (r.json && r.json.routes) || [];
-      const n = routes.length;
+      const n = routes.length; counts[box] = n;
       const seg = document.querySelector(`.segmented .seg[data-box="${box}"] [data-count]`);
       if (seg) { seg.textContent = String(n); seg.classList.toggle('hidden', n === 0); }
       if (box === 'inbox') { const b = $('inbox-badge'); b.textContent = String(n); b.classList.toggle('hidden', n === 0); }
@@ -809,9 +875,10 @@ async function refreshBadges() {
       if (box === 'inbox' || box === 'assigned') {
         for (const rt of routes) if (rt.state === 'pending' || rt.state === 'claimed') open[rt.document_id] = rt;
       }
-    } catch { /* ignore */ }
+    } catch { counts[box] = null; }
   }));
   myOpenRoutes = open;
+  return { counts, open };   // Home dashboard reuses these instead of re-fetching
 }
 
 boot();

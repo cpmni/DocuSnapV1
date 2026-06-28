@@ -280,6 +280,34 @@
     #bin-menu button.danger { color:var(--err); }
     #bin-menu button.danger:hover { background:rgba(214,69,69,.12); }
 
+    /* Home dashboard */
+    #view-home { flex:1; overflow:auto; padding:var(--s5); }
+    .home-wrap { max-width:980px; margin:0 auto; display:flex; flex-direction:column; gap:var(--s5); }
+    .home-hero { background:var(--surface); border:1px solid var(--border); border-radius:var(--r);
+      padding:var(--s5); box-shadow:var(--shadow); }
+    .home-hero h2 { margin:0 0 var(--s3); font-size:18px; font-weight:600; }
+    .home-search { display:flex; gap:var(--s2); align-items:center; }
+    .home-search .lead-wrap { flex:1; }
+    .home-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px,1fr)); gap:var(--s4); }
+    .home-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--r);
+      padding:var(--s4); box-shadow:var(--shadow); display:flex; flex-direction:column; gap:5px; }
+    .home-card-wide { grid-column:1 / -1; }
+    .hc-title { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+    .hc-big { font-size:34px; font-weight:700; line-height:1; color:var(--accent); }
+    .hc-big.muted { color:var(--muted); }
+    .hc-sub { font-size:13px; color:var(--muted); }
+    .home-card .btn { margin-top:8px; align-self:flex-start; }
+    .hc-list { display:flex; flex-direction:column; gap:1px; margin-top:4px; }
+    .hc-row { display:flex; justify-content:space-between; gap:var(--s3); align-items:center; padding:8px 10px;
+      border:none; background:transparent; border-radius:var(--r-sm); cursor:pointer; text-align:left;
+      color:var(--text); font:inherit; }
+    .hc-row:hover { background:var(--surface2); }
+    .hc-row-nm { font-weight:600; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .hc-row-meta { font-size:12px; color:var(--muted); flex:0 0 auto; }
+    .hc-empty, .hc-loading { color:var(--muted); font-size:13px; padding:var(--s3) 0; display:flex; align-items:center; gap:8px; }
+    .home-strip { font-size:12px; color:var(--muted); padding:var(--s3) var(--s4); background:var(--surface);
+      border:1px solid var(--border); border-radius:var(--r); text-align:center; }
+
     /* Content area + per-view header */
     .content { flex:1; display:flex; flex-direction:column; min-height:0; min-width:0; }
     .view-header { display:flex; align-items:center; justify-content:space-between; gap:var(--s4);
@@ -460,7 +488,8 @@
         <div><div class="wordmark">ScanFinder</div><div class="subtag">Search client</div></div>
       </div>
       <nav class="side-nav">
-        <button id="nav-search" class="sidebtn active"><span data-ic="search"></span>Search</button>
+        <button id="nav-home" class="sidebtn active"><span data-ic="home"></span>Home</button>
+        <button id="nav-search" class="sidebtn"><span data-ic="search"></span>Search</button>
         <button id="nav-mailbox" class="sidebtn"><span data-ic="inbox"></span>Mailbox<span id="inbox-badge" class="badge hidden" style="margin-left:auto">0</span></button>
         <button id="nav-recycle" class="sidebtn" style="display:none"><span data-ic="trash"></span>Recycle bin</button>
         <button id="nav-settings" class="sidebtn"><span data-ic="settings"></span>Settings</button>
@@ -488,8 +517,23 @@
         <div id="vh-actions" class="vh-actions"></div>
       </header>
 
+    <!-- Home dashboard -->
+    <div id="view-home" class="hidden">
+      <div class="home-wrap">
+        <div class="home-hero">
+          <h2>Find a filed document</h2>
+          <div class="home-search">
+            <span class="lead-wrap"><svg data-ic="search"></svg><input id="home-search-input" class="lead-input" placeholder="Company, reference, or anything in the text" /></span>
+            <button id="home-search-btn" class="btn btn-primary"><span data-ic="search"></span>Search</button>
+          </div>
+        </div>
+        <div class="home-grid" id="home-grid"></div>
+        <div class="home-strip" id="home-strip"></div>
+      </div>
+    </div>
+
     <!-- Search -->
-    <div id="view-search">
+    <div id="view-search" class="hidden">
       <div class="searchbar">
         <div class="search-lead">
           <div class="lead-wrap">
