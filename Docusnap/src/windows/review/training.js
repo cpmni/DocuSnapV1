@@ -7,8 +7,8 @@
  */
 (function () {
   const STEPS = [
-    { sel: '#queue-list',     title: 'Your review queue',     advance: 'next',
-      body: 'Every scanned document waiting for you appears here. Click one to open it — then follow these steps to check and file it.' },
+    { sel: '#queue-list',     title: 'Your review queue',     advance: 'click',
+      body: 'Every scanned document waiting for you appears here. Click one to open it — and we’ll walk through checking and filing it.' },
     { sel: '#doc-panel',      title: 'The scanned document',  advance: 'next',
       body: 'The scan itself shows in the middle. You can zoom and drag it to read anything closely.' },
     { sel: '#fields-panel',   title: 'What Scan Finder read', advance: 'next',
