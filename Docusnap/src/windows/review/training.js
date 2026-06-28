@@ -27,8 +27,8 @@
       body: 'Give the type a name, add the fields you want Scan Finder to capture, and Save. We’ll bring you right back here to pick it — and from now on it can detect and file that type automatically.' },
     { id: 'fields', sel: '#fields-scroll', title: 'Check the details', advance: 'next',
       body: 'Read down the fields and fix anything that looks wrong. To teach a field for next time, click its ⊕ and draw a box round the value.' },
-    { id: 'ack', sel: '#btn-acknowledge', title: 'Mark as reviewed (Space)', advance: 'next',
-      body: 'When a document was flagged but you’ve checked everything’s fine, press the Space key (or this button) to mark it reviewed — so “File All Ready” will include it.' },
+    { id: 'ack', sel: '#fields-panel', centered: true, title: 'Mark as reviewed (Space bar)', advance: 'next',
+      body: 'Some documents get flagged for a second look. If a flagged one looks right, just press the <b>Space bar</b> to mark it as reviewed — it then counts as ready for “File All Ready”. (A ✓ Mark Reviewed button does the same whenever it appears.)' },
     { id: 'del', sel: '#btn-delete', title: 'Delete a document', advance: 'next',
       body: 'Don’t need it? Delete removes the document from the queue — it goes to the recycle bin, so it can be restored later if needed.' },
     { id: 'confirm', sel: '#btn-confirm', title: 'File the document', advance: 'click', alsoEnter: true,
@@ -125,15 +125,24 @@
     callout.querySelector('.tc-skipstep')?.addEventListener('click', fwdGo);
     callout.querySelector('.tc-branch')?.addEventListener('click', () => jumpTo(step.branch.to));
 
-    // No spotlight when the control isn't on screen, or for a "pinned" step (e.g. while the
-    // new-type builder is open) — keep the card out of the way at the bottom.
-    if (!visible || step.pin === 'bottom') {
+    // A "pinned" step keeps the card at the bottom with NO dim (the new-type modal already
+    // has its own backdrop).
+    if (step.pin === 'bottom') {
       hole.style.opacity = '0'; arrow.style.display = 'none';
-      callout.style.left = '50%';
-      if (step.pin === 'bottom') { callout.style.top = 'auto'; callout.style.bottom = '24px'; callout.style.transform = 'translateX(-50%)'; }
-      else { callout.style.top = '50%'; callout.style.transform = 'translate(-50%,-50%)'; }
+      callout.style.left = '50%'; callout.style.top = 'auto'; callout.style.bottom = '24px'; callout.style.transform = 'translateX(-50%)';
       return;
     }
+    // A centred info step (or a control that isn't on screen) still DIMS the background like
+    // every other step — a tiny spotlight hole parked off-screen makes the box-shadow cover
+    // the whole window — then shows the card centred, no arrow.
+    if (!visible || step.centered) {
+      hole.style.border = 'none'; hole.style.opacity = '1';
+      hole.style.left = '-100px'; hole.style.top = '-100px'; hole.style.width = '0px'; hole.style.height = '0px';
+      arrow.style.display = 'none';
+      callout.style.left = '50%'; callout.style.top = '50%'; callout.style.bottom = ''; callout.style.transform = 'translate(-50%,-50%)';
+      return;
+    }
+    hole.style.border = '';   // restore the spotlight ring for normal (spotlighted) steps
 
     if (step.advance === 'click') {
       const h = () => setTimeout(next, 350);          // let the control's own handler run first
