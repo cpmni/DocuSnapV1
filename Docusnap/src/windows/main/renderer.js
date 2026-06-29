@@ -547,23 +547,24 @@ async function autoFileFullConfidence() {
       await new Promise(r => setTimeout(r, 0));   // keep the window responsive
     }
     if (filed > 0) {
-      showAutoFiledToast(filed);
+      showAutoFiledBanner(filed);
       try { updateAttention(); } catch {}
       try { if (typeof refreshDashboardIfHome === 'function') refreshDashboardIfHome(); } catch {}
     }
   } catch (e) { console.warn('auto-file 100% failed:', e.message); }
 }
 
-function showAutoFiledToast(n) {
-  const t = document.createElement('div');
-  t.style.cssText = 'position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:9999;'
-    + 'background:var(--surface);color:var(--text);border:1px solid var(--ok);border-left:4px solid var(--ok);'
-    + 'border-radius:10px;padding:12px 16px;box-shadow:0 12px 34px rgba(0,0,0,.35);font-size:13px;max-width:420px;';
-  t.innerHTML = `<strong>✓ ${n} document${n > 1 ? 's' : ''}</strong> with 100% confidence ${n > 1 ? 'were' : 'was'} filed automatically.`
-    + ` <a href="#" id="auto-filed-search" style="color:var(--accent2);margin-left:6px">View in Search</a>`;
-  document.body.appendChild(t);
-  t.querySelector('#auto-filed-search')?.addEventListener('click', (e) => { e.preventDefault(); window.docusnap.openSearchWindow?.(); t.remove(); });
-  setTimeout(() => t.remove(), 9000);
+// Persistent summary at the top of the results list: N docs auto-filed at 100% confidence,
+// with a "review them" link (opens Search, where the filed copies live). Cleared on the next run.
+function showAutoFiledBanner(n) {
+  const b = document.getElementById('autofiled-banner');
+  if (!b) return;
+  b.innerHTML = `<span class="af-ico">✓</span>`
+    + `<span><b>${n} document${n > 1 ? 's' : ''}</b> auto-filed at 100% confidence — no review needed.</span>`
+    + `<a href="#" class="af-link" id="af-review-link">Click here to review them</a>`;
+  b.style.display = 'flex';
+  const link = b.querySelector('#af-review-link');
+  if (link) link.onclick = (e) => { e.preventDefault(); window.docusnap.openSearchWindow?.(); };
 }
 
 function handleProgress(msg) {
@@ -578,6 +579,7 @@ function handleProgress(msg) {
     case 'start':
       // The pool emits ONE aggregate start with the FULL folder count, so the bar
       // total is accurate from the first frame (X / N, not a growing estimate).
+      { const _ab = document.getElementById('autofiled-banner'); if (_ab) _ab.style.display = 'none'; }  // clear last run's auto-filed summary
       batch.total  = msg.total;     // this run, for the progress bar
       stats.total += msg.total;     // add the batch to the cumulative session "Found"
       updateStats();

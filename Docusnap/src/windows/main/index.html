@@ -505,6 +505,13 @@
     /* Subtle row state in the 3-field results table (status is also in the log). */
     #results-panel tr.row-err    td { color: var(--err); }
     #results-panel tr.row-review td:first-child { color: var(--warn); }
+    /* Auto-filed (100% confidence) summary banner at the top of the results list. */
+    #autofiled-banner { align-items: center; gap: 10px; margin: 0 12px 6px; padding: 9px 14px;
+      background: var(--accent-bg); border: 1px solid var(--ok); border-left: 4px solid var(--ok);
+      border-radius: 9px; font-size: 13px; color: var(--text); }
+    #autofiled-banner .af-ico  { color: var(--ok); font-weight: 700; }
+    #autofiled-banner .af-link { margin-left: auto; color: var(--accent2); cursor: pointer; font-weight: 600; white-space: nowrap; }
+    #autofiled-banner .af-link:hover { text-decoration: underline; }
 
     #table-wrap { flex: 1; overflow: auto; }
     table { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -853,6 +860,8 @@
             <svg class="ico" aria-hidden="true"><use href="#i-check"/></svg><span class="btn-label">Review your documents</span>
           </button>
         </div>
+        <!-- Summary of docs auto-filed at 100% confidence (filled by autoFileFullConfidence). -->
+        <div id="autofiled-banner" style="display:none;"></div>
         <div id="table-wrap">
           <table>
             <thead>
