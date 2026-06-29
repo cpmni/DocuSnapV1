@@ -87,8 +87,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--folder",          required=True)
     parser.add_argument("--tesseract",       default=None)
-    parser.add_argument("--mode",            default="smart",
-                        choices=["fast","smart","ai"])
+    # No hard `choices=`: a stale/legacy mode (e.g. an old "light", or one from a
+    # restored settings backup) must NOT make argparse exit and kill the whole batch.
+    # Anything unrecognised is coerced to "smart" below.
+    parser.add_argument("--mode",            default="smart")
     parser.add_argument("--config-file",     default=None)
     parser.add_argument("--fields-file",     default=None)
     parser.add_argument("--hints-file",      default=None)
@@ -165,6 +167,8 @@ def main():
     parser.add_argument("--anchors",         default=None)
     parser.add_argument("--logos",           default=None)
     args = parser.parse_args()
+    if args.mode not in ("fast", "smart", "ai"):
+        args.mode = "smart"   # tolerate a stale/legacy mode rather than failing the batch
 
     # Dev-only trace emitter (no-op unless --trace). Stamps type/doc/seq/ts so the
     # inspector can order + group events; emitted on the same stdout but with a

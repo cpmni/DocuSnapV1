@@ -10,6 +10,11 @@ const path = require('path');
 const fs   = require('fs');
 const diaglog = require('../diaglog');
 
+// Coerce the stored processing_mode to a value the backend accepts. A stale/legacy value
+// (e.g. an old "light", or one from a restored settings backup) must never reach
+// process_docs.py's --mode and break the whole batch on an arg-parse error.
+const _validMode = (m) => (m === 'fast' || m === 'smart' || m === 'ai') ? m : 'smart';
+
 // Deep diagnostic logging is ON when the env override says so, or the admin
 // setting is 'true'. When on we (a) ask the extractor for the full --trace +
 // --slice-dir even with no inspector window open, and (b) tee every trace event
@@ -528,7 +533,7 @@ function register(ctx) {
     }
 
     const learning  = require('../../../database/modules/learning');
-    const procMode  = learning.getSetting(db, 'processing_mode', 'smart');
+    const procMode  = _validMode(learning.getSetting(db, 'processing_mode', 'smart'));
 
     // Bounded cross-document parallelism. Each worker is a separate Python
     // process handling a disjoint slice of the folder; ALL DB writes still flow
@@ -904,7 +909,7 @@ function register(ctx) {
     const { args: trainingArgs, tempFiles, ocrEngine } = buildTrainingArgs(db, configPath, logger);
     const learning2  = require('../../../database/modules/learning');
     const templates2 = require('../../../database/modules/templates');
-    const reprMode   = learning2.getSetting(db, 'processing_mode', 'smart');
+    const reprMode   = _validMode(learning2.getSetting(db, 'processing_mode', 'smart'));
 
     // Resolve the OCR preprocessing params to actually use:
     //  - manual params (sent only while OCR Preview is active for this
@@ -1084,7 +1089,7 @@ function register(ctx) {
 
     const learning2  = require('../../../database/modules/learning');
     const templates2 = require('../../../database/modules/templates');
-    const reprMode   = learning2.getSetting(db, 'processing_mode', 'smart');
+    const reprMode   = _validMode(learning2.getSetting(db, 'processing_mode', 'smart'));
     const diagOn     = _diagEnabled(db);
     if (diagOn) diaglog.enable();
     const { args: trainingArgs, tempFiles, ocrEngine } = buildTrainingArgs(db, configPath, logger);

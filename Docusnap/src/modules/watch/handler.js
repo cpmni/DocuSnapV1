@@ -296,7 +296,10 @@ async function _processFile(db, filename) {
     return;
   }
 
-  const procMode = learning.getSetting(db, 'processing_mode', 'smart');
+  // Coerce a stale/legacy processing_mode (e.g. an old "light") to a value process_docs.py
+  // accepts — otherwise --mode arg-parse fails and the watch import silently does nothing.
+  const _rawMode = learning.getSetting(db, 'processing_mode', 'smart');
+  const procMode = (_rawMode === 'fast' || _rawMode === 'smart' || _rawMode === 'ai') ? _rawMode : 'smart';
   _log('log', `[watch] processing accepted file: ${filename} (mode=${procMode})`);
 
   await new Promise((resolve) => {

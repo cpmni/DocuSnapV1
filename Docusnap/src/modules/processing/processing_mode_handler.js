@@ -25,8 +25,10 @@ function register(ctx) {
   // touch — they can't process or confirm anything that would trigger it.
   ipcMain.handle('set-processing-mode', (_e, mode) => {
     requireRole('admin', 'edit');
-    learning.setSetting(getDb(), 'processing_mode', mode);
-    notifyMainWindow('processing-mode-changed', mode);
+    // Only ever store a mode the backend accepts (guards against a bad caller / legacy value).
+    const safe = (mode === 'fast' || mode === 'smart' || mode === 'ai') ? mode : 'smart';
+    learning.setSetting(getDb(), 'processing_mode', safe);
+    notifyMainWindow('processing-mode-changed', safe);
     return true;
   });
 
