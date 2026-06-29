@@ -279,6 +279,9 @@
     .field-rule-menu .frm-label { font-size: 12px; font-weight: 600; }
     .field-rule-menu .frm-sub { font-size: 10px; color: var(--muted); font-family: var(--mono);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+    /* A descriptive (non-preview) sub WRAPS to multiple lines instead of clipping. */
+    .field-rule-menu .frm-sub.frm-wrap { white-space: normal; overflow: visible; font-family: inherit;
+      line-height: 1.4; max-width: 300px; }
     .anchor-readout .ar-lbl { color: var(--muted); }
     .anchor-readout .ar-btn { border: 1px solid var(--border2); background: var(--surface2); color: var(--muted);
       border-radius: var(--r-pill, 999px); padding: 3px 9px; font-size: 11px; cursor: pointer; }

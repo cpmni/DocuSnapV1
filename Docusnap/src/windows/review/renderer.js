@@ -1604,8 +1604,10 @@ function showFieldRuleMenu(e, input, key) {
     const on = _hasMultilineRule(key);
     items.push({
       label: on ? '✓ Wrapping is on for this field' : 'This field can wrap to the next line',
-      sub: on ? 'Tap Confirm to save' : 'Read a value that continues onto the line below (e.g. an address)',
-      tip: 'When this value sometimes runs onto a second line (the first line ends with "-"), Scan Finder reads the line below and joins them on future scans. Single-line values are unaffected.',
+      sub: on
+        ? 'Saved when you tap Confirm.'
+        : 'When the value runs onto a second line (the first line ends with “-”), Scan Finder reads the line below and joins them on future scans. Single-line values are unaffected.',
+      wrap: true,   // a descriptive sentence — wrap it instead of the native tooltip
       onClick: on ? () => closeFieldRuleMenu() : () => _stageMultilineRule(key),
     });
   }
@@ -1617,8 +1619,9 @@ function showFieldRuleMenu(e, input, key) {
   for (const it of items) {
     const b = document.createElement('button');
     b.className = 'frm-item';
-    b.title = it.tip;
-    b.innerHTML = `<span class="frm-label">${escHtml(it.label)}</span><span class="frm-sub">${escHtml(it.sub)}</span>`;
+    if (it.tip) b.title = it.tip;   // native tooltip only when set (a wrapping sub needs none)
+    b.innerHTML = `<span class="frm-label">${escHtml(it.label)}</span>`
+                + `<span class="frm-sub${it.wrap ? ' frm-wrap' : ''}">${escHtml(it.sub)}</span>`;
     b.addEventListener('click', it.onClick);
     menu.appendChild(b);
   }
