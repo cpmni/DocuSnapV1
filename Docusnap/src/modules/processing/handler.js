@@ -339,6 +339,30 @@ function register(ctx) {
     return r.canceled ? null : r.filePaths[0];
   });
 
+  // Single-file import for the Teach wizard: pick ONE PDF and stage it in a FRESH temp folder
+  // so the existing process-folder path imports just that one file into the review queue
+  // (so a doc can be taught even when the queue is empty). Returns {folder, filename} for the
+  // renderer to processFolder() then select; null if cancelled, {error} on a copy failure.
+  ipcMain.handle('stage-pdf-for-teach', async (e) => {
+    requireRole('admin', 'edit');
+    const { BrowserWindow } = require('electron');
+    const win = BrowserWindow.fromWebContents(e.sender);
+    const r = await dialog.showOpenDialog(win, {
+      properties: ['openFile'],
+      title: 'Select a PDF to teach',
+      filters: [{ name: 'PDF documents', extensions: ['pdf'] }],
+    });
+    if (r.canceled || !r.filePaths[0]) return null;
+    try {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-teach-'));
+      const base   = path.basename(r.filePaths[0]);
+      fs.copyFileSync(r.filePaths[0], path.join(tmpDir, base));
+      return { folder: tmpDir, filename: base };
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
   // Output folder is an app-wide filing-destination setting — "access all
   // settings" is the Admin-exclusive line drawn for Settings, and this picker
   // only ever appears inside that Admin-gated window.

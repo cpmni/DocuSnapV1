@@ -181,9 +181,13 @@
     <section class="step" data-step="1">
       <h2>Choose the document to learn from</h2>
       <p class="lead">Pick one clear, typical scan. The cleaner the example, the better Scan Finder learns.</p>
+      <div style="margin-bottom:12px; display:flex; align-items:center; gap:10px;">
+        <button id="btn-import-teach" style="padding:8px 14px; border:1px solid var(--accent); background:var(--accent-bg); color:var(--accent2); border-radius:8px; cursor:pointer; font-size:13px; font-weight:600;">📄 Import a PDF to teach…</button>
+        <span id="import-teach-status" class="muted" style="font-size:12px;"></span>
+      </div>
       <div id="doc-picker" class="grid"></div>
-      <p id="doc-picker-empty" class="muted hidden">No documents are waiting to be taught.
-        Scan or import some pages first, then come back here.</p>
+      <p id="doc-picker-empty" class="muted hidden">No documents are waiting to be taught — use
+        “Import a PDF to teach…” above to load one, or scan/import some pages first.</p>
     </section>
 
     <!-- Step 2: Choose / create doc type -->

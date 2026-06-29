@@ -122,6 +122,31 @@ async function renderDocPicker(){
   }
 }
 
+// Import a single PDF to teach (esp. when the queue is empty): stage it in a temp folder,
+// run the normal import path, then pick the new doc from the refreshed queue.
+$('btn-import-teach')?.addEventListener('click', async () => {
+  const btn = $('btn-import-teach'), st = $('import-teach-status');
+  let staged;
+  try { staged = await D.stagePdfForTeach(); } catch { staged = null; }
+  if (!staged) return;                              // cancelled
+  if (staged.error) { if (st) st.textContent = 'Could not open that file.'; return; }
+  const lbl = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Importing…';
+  if (st) st.textContent = 'Reading the document…';
+  try {
+    await D.processFolder(staged.folder);           // same import path → enters the review queue
+    state.docs = await D.getReviewQueue() || [];
+    const match = state.docs.filter(d => d.original_filename === staged.filename).sort((a, b) => b.id - a.id)[0];
+    if (match) state.doc = match;
+    await renderDocPicker(); renderFooter();
+    if (st) st.textContent = match ? 'Imported — selected below.' : 'Imported. Pick it below.';
+  } catch (e) {
+    if (st) st.textContent = 'Import failed: ' + (e.message || 'unknown error');
+  } finally {
+    btn.disabled = false; btn.textContent = lbl;
+  }
+});
+
 // ── Step 2: choose / create type ─────────────────────────────────────────────
 async function renderTypeStep(){
   const grid=$('type-grid'); grid.innerHTML='';
