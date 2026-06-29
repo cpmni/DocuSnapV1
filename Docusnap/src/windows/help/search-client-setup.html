@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; script-src 'self'">
+  <title>Scan Finder — Set up the Search Client</title>
+  <link rel="stylesheet" href="../shared/theme.css" />
+  <link rel="stylesheet" href="help.css">
+  <script src="../shared/theme.js"></script>
+</head>
+<body>
+  <div id="titlebar">
+    <span class="tb-title">Scan Finder — User Guide</span>
+    <button class="tb-btn close" id="btn-close" title="Close">&#215;</button>
+  </div>
+
+  <div id="shell">
+    <nav id="nav">
+      <div class="nav-label">User Guide</div>
+      <div id="nav-links"></div>
+    </nav>
+
+    <div id="content">
+      <div class="doc">
+        <div class="breadcrumb" id="breadcrumb"></div>
+
+        <main>
+          <section id="client-setup">
+            <h1>Set up the Search Client — step by step</h1>
+            <p class="lead">This guide walks you through letting other PCs on your network <b>search your filed
+              documents</b> using the small Search Client app. It's written to be as simple as possible &mdash;
+              you only do the setup <b>once</b>, on the main PC. For background on what the Search Client is, see
+              <a class="xref" href="search-client.html">The Search Client (other PCs)</a>.</p>
+            <div class="callout note">
+              <div class="callout-title">Two PCs, two roles</div>
+              <p>The <b>main PC</b> is the one running the full Scan Finder app (it imports and files documents).
+                The <b>other PCs</b> run the lightweight Search Client. Everything below — turning on access,
+                the certificate, the firewall — is done on the <b>main PC</b>. Nothing leaves your local network.</p>
+            </div>
+          </section>
+
+          <section id="setup-turnon">
+            <h2>Step 1 &mdash; Turn on access &amp; enter the address</h2>
+            <p>On the <b>main PC</b>, open <b>Settings &rarr; Search client access</b>:</p>
+            <ol>
+              <li>Switch <b>Allow search-client connections</b> <b>on</b>.</li>
+              <li>In the <b>address</b> box, enter how the other PCs should reach this one:
+                <ul>
+                  <li>For other computers on your network, enter this PC's <b>network (LAN) address</b> &mdash;
+                    e.g. <code>192.168.1.50</code>. (Not sure of it? See <a class="xref" href="#setup-faq">the FAQ</a>
+                    below: &ldquo;Which address do I enter?&rdquo;.)</li>
+                  <li><code>127.0.0.1</code> means <b>this PC only</b> &mdash; useful for testing, but other PCs
+                    can't reach it.</li>
+                </ul>
+              </li>
+              <li>Leave the <b>port</b> as <code>8765</code> unless you have a reason to change it. (Remember the
+                number &mdash; it must match the firewall rule in <a class="xref" href="#setup-firewall">Step 4</a>.)</li>
+            </ol>
+          </section>
+
+          <section id="setup-cert">
+            <h2>Step 2 &mdash; The security certificate (made for you)</h2>
+            <p>Here's the part people worry about &mdash; and it's the easiest. <b>You don't create or manage any
+              certificate files.</b></p>
+            <div class="callout tip">
+              <div class="callout-title">What happens automatically</div>
+              <p>The moment you turn access on with a network address entered, Scan Finder <b>automatically
+                creates a security certificate for that exact address</b>. That certificate does two jobs: it
+                <b>encrypts</b> the connection, and it lets each Search Client <b>check it's really talking to your
+                PC</b> and not an impostor. If you later change the address or port, Scan Finder <b>re-issues</b>
+                the certificate to match &mdash; again, with nothing for you to do.</p>
+            </div>
+            <p>You can see the certificate's status (and a short <b>fingerprint</b> &mdash; a unique code that
+              identifies it) under <b>Managed TLS certificate</b> in the same panel. You'll use that fingerprint
+              in <a class="xref" href="#setup-connect">Step 3</a> if you connect a client by hand.</p>
+            <div class="callout note">
+              <div class="callout-title">You don't need to be a certificate expert</div>
+              <p>Re-issuing certificates, exporting them, or using your own are tucked under <b>Advanced</b> &mdash;
+                most people never touch them. The automatic certificate is all you need.</p>
+            </div>
+          </section>
+
+          <section id="setup-connect">
+            <h2>Step 3 &mdash; Connect the other PC</h2>
+            <p>On each <b>other PC</b>, open the Search Client and connect using <b>one</b> of these two ways:</p>
+            <ul>
+              <li><b>The easy way &mdash; a connection profile.</b> On the main PC, open <b>Advanced</b> under
+                Search client access and click <b>Export connection profile…</b>. That saves one small file holding
+                the address, port and certificate. Copy it to the other PC (USB stick, shared folder, email on your
+                network) and choose <b>Import connection profile</b> in the Search Client. Done.</li>
+              <li><b>By hand.</b> In the Search Client, type the main PC's <b>address</b> and <b>port</b>. The first
+                time, it shows the certificate's <b>fingerprint</b> and asks you to confirm it &mdash; check it
+                matches the fingerprint shown on the main PC, and accept. This proves the client reached the right
+                PC.</li>
+            </ul>
+            <p>Then sign in with the username and password you were given. That's the setup finished &mdash; from
+              now on the client just reconnects on its own whenever the main PC is on.</p>
+          </section>
+
+          <section id="setup-firewall">
+            <h2>Step 4 &mdash; Allow it through Windows Firewall</h2>
+            <p>For other PCs to reach the main PC, <b>Windows Firewall on the main PC</b> has to allow the port.
+              You do this <b>once, on the main PC only</b> &mdash; the client PCs need no firewall changes (their
+              connections are outgoing, which Windows already allows).</p>
+            <ol>
+              <li>Click <b>Start</b>, type <b>Windows Defender Firewall with Advanced Security</b>, open it.</li>
+              <li>Click <b>Inbound Rules</b> (left), then <b>New Rule…</b> (right).</li>
+              <li>Choose <b>Port</b> &rarr; <b>Next</b>.</li>
+              <li>Choose <b>TCP</b>, and under <b>Specific local ports</b> type your port (<code>8765</code> unless
+                you changed it) &rarr; <b>Next</b>.</li>
+              <li>Choose <b>Allow the connection</b> &rarr; <b>Next</b>.</li>
+              <li>Tick at least <b>Private</b> (your office/home network) &rarr; <b>Next</b>.</li>
+              <li>Name it <b>Scan Finder search client</b> &rarr; <b>Finish</b>.</li>
+            </ol>
+            <div class="callout note">
+              <div class="callout-title">The port must match</div>
+              <p>The port in the firewall rule must be the same as the one in <b>Settings &rarr; Search client
+                access</b>. A missing or mismatched firewall rule is the <b>most common</b> reason a client can't
+                connect &mdash; check this first.</p>
+            </div>
+          </section>
+
+          <section id="setup-faq">
+            <h2>Connection problems &mdash; FAQ</h2>
+
+            <h3 class="faq-q">The client says it can't connect.</h3>
+            <p class="faq-a">Work through these in order:</p>
+            <ol>
+              <li>Is the <b>main PC switched on</b> and <b>Scan Finder running</b> (or running in the tray)? Clients
+                can only reach a running main app.</li>
+              <li>Is <b>Allow search-client connections</b> still <b>on</b> in Settings?</li>
+              <li>Is the <b>firewall rule</b> in place on the main PC, with the <b>same port</b> (<a class="xref"
+                href="#setup-firewall">Step 4</a>)?</li>
+              <li>Are both PCs on the <b>same network</b>? A guest Wi-Fi or VPN can put them on different networks.</li>
+              <li>Is the <b>address</b> the main PC's <b>current</b> LAN address (see below)?</li>
+            </ol>
+
+            <h3 class="faq-q">It worked yesterday but not today.</h3>
+            <p class="faq-a">The main PC's network address may have <b>changed</b> &mdash; many networks hand out
+              addresses that can change after a restart. Two fixes: ask whoever manages your router to give the main
+              PC a <b>fixed (reserved) address</b>, or simply <b>re-export the connection profile</b> and import it
+              on the clients again.</p>
+
+            <h3 class="faq-q">It shows a certificate or security warning / &ldquo;doesn't match&rdquo;.</h3>
+            <p class="faq-a">This normally means the certificate was <b>re-issued</b> &mdash; usually because the
+              address or port changed. On the client, either <b>import a fresh connection profile</b> from the main
+              PC, or <b>re-confirm the fingerprint</b> when prompted. Always check the fingerprint matches the one
+              shown on the main PC.</p>
+
+            <h3 class="faq-q">Which address do I enter?</h3>
+            <p class="faq-a">The main PC's <b>LAN address</b>. To find it: on the main PC press
+              <b>Windows&nbsp;key + R</b>, type <code>cmd</code>, press Enter, type <code>ipconfig</code> and press
+              Enter. Look for <b>IPv4 Address</b> (it usually starts <code>192.168.</code> or <code>10.</code>) &mdash;
+              that's the number to enter. Avoid <code>127.0.0.1</code> for other PCs (that's local-only).</p>
+
+            <h3 class="faq-q">Do the other PCs need a firewall rule too?</h3>
+            <p class="faq-a">No &mdash; only the main PC. The client PCs make outgoing connections, which Windows
+              permits by default.</p>
+
+            <h3 class="faq-q">It says the seats are full.</h3>
+            <p class="faq-a">Your licence includes a set number of <b>seats</b>, and each connected client uses one.
+              When they're all in use, the next person waits until someone closes their client, or an administrator
+              frees a seat under <b>Client seats</b> in Settings. See
+              <a class="xref" href="search-client.html#client-seats">How many people can connect</a>.</p>
+
+            <h3 class="faq-q">Can I test it on the main PC itself first?</h3>
+            <p class="faq-a">Yes &mdash; set the address to <code>127.0.0.1</code> and run a Search Client on the
+              same PC. That confirms the basics work before you involve the network. Switch the address back to the
+              LAN address (and re-export the profile) when you're ready for other PCs.</p>
+          </section>
+
+          <div class="callout tip">
+            <div class="callout-title">Next step</div>
+            <p>For what the Search Client can do once connected (searching, approvals, shared use), see
+              <a class="xref" href="search-client.html">The Search Client (other PCs)</a>.</p>
+          </div>
+        </main>
+
+        <nav class="page-foot" id="page-foot"></nav>
+      </div>
+    </div>
+  </div>
+
+  <script src="help-nav.js"></script>
+</body>
+</html>

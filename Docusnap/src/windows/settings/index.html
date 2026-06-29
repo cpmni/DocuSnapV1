@@ -1269,28 +1269,38 @@
           <input type="text" id="client-api-port" class="path-input" placeholder="8765" style="max-width:90px">
         </div>
 
+        <!-- Self-contained, layman setup helper: address -> auto certificate -> connect -> firewall -> FAQ. -->
+        <div class="row-flex" style="gap:10px; margin-top:12px; align-items:center;">
+          <button class="btn primary" id="btn-client-setup-help">Set up the search client…</button>
+          <span class="threshold-sub" style="flex:1;">New to this? A simple step-by-step guide &mdash; the address, the automatic
+            certificate, the firewall, and fixes for connection problems.</span>
+        </div>
+
         <details id="cert-details" style="margin-top:12px;">
         <summary class="disclose">Managed TLS certificate</summary>
         <div id="client-api-cert" style="margin-top:8px; padding:12px 14px; border:1px solid var(--border); border-radius:9px; background:var(--surface2);">
           <div class="threshold-sub" id="client-api-cert-status">—</div>
           <div id="client-api-cert-fp" style="font-family:var(--mono); font-size:11px; color:var(--muted); margin-top:6px; word-break:break-all;"></div>
+          <p class="section-desc" style="margin-top:8px; margin-bottom:0;">Created automatically for the address above &mdash; nothing to manage.
+            Re-issuing, exporting a connection profile, or using your own certificate live under <b>Advanced</b> below.</p>
+        </div>
+        </details>
+
+        <details style="margin-top:12px;">
+          <summary class="disclose">Advanced — certificate actions &amp; your own certificate</summary>
           <div class="row-flex" style="gap:8px; margin-top:10px;">
             <button class="btn" id="client-api-cert-generate">Generate / re-issue certificate</button>
             <button class="btn" id="client-api-cert-export">Export connection profile…</button>
           </div>
           <div class="threshold-sub" id="client-api-export-status" style="margin-top:6px;"></div>
-        </div>
-        </details>
-
-        <details style="margin-top:12px;">
-          <summary class="disclose">Advanced — use your own certificate</summary>
+          <p class="section-desc" style="margin-top:12px;">Use your own certificate (e.g. an internal-CA cert) instead of the managed one:</p>
           <div class="row-flex" style="gap:8px; margin-top:8px;">
             <input type="text" id="client-api-tls-cert" class="path-input" placeholder="TLS certificate path (.crt)">
           </div>
           <div class="row-flex" style="gap:8px; margin-top:8px;">
             <input type="text" id="client-api-tls-key" class="path-input" placeholder="TLS private-key path (.key)">
           </div>
-          <p class="section-desc" style="margin-top:6px;">Override the managed certificate with your own (e.g. an internal-CA cert). Host/port/cert changes apply the next time you switch access on.</p>
+          <p class="section-desc" style="margin-top:6px;">Override the managed certificate with your own. Host/port/cert changes apply the next time you switch access on.</p>
         </details>
       </div>
 

@@ -138,6 +138,8 @@ document.getElementById('btn-close').addEventListener('click', () => api.windowC
 
 // ── Help: user guide + contextual help mode ───────────────────────────────────
 document.getElementById('btn-help-guide')?.addEventListener('click', () => api.openHelpWindow('settings'));
+// Self-contained "Set up the search client" walkthrough (lives with the cert settings).
+document.getElementById('btn-client-setup-help')?.addEventListener('click', () => api.openHelpWindow('client-cert-setup'));
 
 const HELP_TEXTS = {
   'tab-general':    'Output folder (where filed documents go), the processed-scans folder, processing mode/threads, and re-running first-time setup.',
