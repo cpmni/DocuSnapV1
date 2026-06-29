@@ -1885,8 +1885,96 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger) {
     if (exFields) logger.log(`  Fields: ${exFields}`);
   }
 
+  // AUTO-FILE on import: a 100%-confidence, fully-typed, UN-flagged doc files itself
+  // immediately — for MANUAL import, the WATCH folder, and background runs alike (the single
+  // backend decision point, replacing the old renderer-side pass so it works even when the
+  // window is closed). Async so it never blocks file_done; the drain above handles the original.
+  _maybeAutoFile(db, msg, folderPath, notifyMainWindow, logger);
+
   notifyMainWindow('review-count-changed', documents.getReviewCount(db));
   notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
+}
+
+function _maybeAutoFile(db, msg, folderPath, notifyMainWindow, logger) {
+  try {
+    const learning = require('../../../database/modules/learning');
+    if (learning.getSetting(db, 'auto_file_full_confidence', 'true') === 'false') return;
+    if (msg.overall_confidence !== 100 || !msg.db_id) return;
+    setImmediate(() => {
+      _autoFileDoc(db, msg.db_id, folderPath, notifyMainWindow, logger)
+        .catch(e => { try { logger?.warn?.(`auto-file ${msg.db_id}: ${e.message}`); } catch {} });
+    });
+  } catch {}
+}
+
+async function _autoFileDoc(db, docId, folderPath, notifyMainWindow, logger) {
+  const documents = require('../../../database/modules/documents');
+  const learning  = require('../../../database/modules/learning');
+  const doctypes  = require('../../../database/modules/document_types');
+  const filing    = require('../filing/handler');
+  const doc = documents.getById(db, docId);
+  if (!doc || doc.status !== 'needs_review' || !doc.document_type_id || doc.overall_confidence !== 100) return;
+  // 100% implies all required fields present + high confidence; also refuse a flagged field.
+  const flagged = db.prepare('SELECT COUNT(*) c FROM extractions WHERE document_id = ? AND validation_note IS NOT NULL').get(docId).c;
+  if (flagged) return;
+  const dtRow  = db.prepare('SELECT slug FROM document_types WHERE id = ?').get(doc.document_type_id);
+  const dtInfo = dtRow && dtRow.slug ? doctypes.getWithFields(db, dtRow.slug) : null;
+  if (!dtInfo) return;
+  const outputRoot = learning.getSetting(db, 'output_folder', null);
+  if (!outputRoot) return;   // can't file without a destination
+  const allValues = {};
+  for (const e of db.prepare('SELECT field_key, display_value, raw_value FROM extractions WHERE document_id = ?').all(docId)) {
+    allValues[e.field_key] = e.display_value ?? e.raw_value;
+  }
+  const fr = await filing.commitDocument({
+    db, fs, path, outputRoot,
+    folderPath:       doc.folder_path || folderPath,
+    originalFilename: doc.original_filename,
+    workingPath:      doc.working_path,
+    allValues, documentType: dtInfo.name, dtInfo, logger,
+  });
+  if (!fr || !fr.success) return;
+  documents.confirm(db, docId, { stored_filename: fr.filename, stored_path: fr.filePath });
+  try { db.prepare('UPDATE extractions SET validation_note = NULL, corrected_to = NULL WHERE document_id = ?').run(docId); } catch {}
+  if (doc.working_path) {
+    try { if (fs.existsSync(doc.working_path)) fs.unlinkSync(doc.working_path); } catch {}
+    try { documents.update(db, docId, { working_path: null }); } catch {}
+  }
+  const refField = dtInfo.ref_field_key || 'invoice_number';
+  const dateField = dtInfo.date_field_key || 'invoice_date';
+  try {
+    documents.update(db, docId, {
+      supplier_name:    allValues.supplier_name || doc.supplier_name || null,
+      doc_date:         allValues[dateField]    || null,
+      reference_number: allValues[refField]     || null,
+    });
+  } catch {}
+  _recordAutoFiled(db, docId);
+  logger?.log(`Auto-filed (100%): ${doc.original_filename} → ${fr.filename}`);
+  try {
+    notifyMainWindow?.('doc-auto-filed', { docId, count: getAutoFiledIds(db).length });
+    notifyMainWindow?.('review-count-changed', documents.getReviewCount(db));
+  } catch {}
+}
+
+// Rolling list of recently auto-filed doc ids (the "auto-committed" set the Review window
+// re-surfaces). Settings JSON {ids, at}; capped at 300, time-bounded to ~7 days.
+function getAutoFiledIds(db) {
+  const learning = require('../../../database/modules/learning');
+  try {
+    const o = JSON.parse(learning.getSetting(db, 'recent_auto_filed', '') || 'null');
+    if (!o || !Array.isArray(o.ids)) return [];
+    if (o.at && (Date.now() - o.at) > 7 * 864e5) return [];
+    return o.ids;
+  } catch { return []; }
+}
+function _recordAutoFiled(db, docId) {
+  const learning = require('../../../database/modules/learning');
+  try {
+    const ids = getAutoFiledIds(db);
+    if (!ids.includes(docId)) ids.push(docId);
+    learning.setSetting(db, 'recent_auto_filed', JSON.stringify({ ids: ids.slice(-300), at: Date.now() }));
+  } catch {}
 }
 
 // Quit-time teardown: tree-kill every running manual-batch worker (the same

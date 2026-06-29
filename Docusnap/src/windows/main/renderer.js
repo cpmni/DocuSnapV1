@@ -514,44 +514,35 @@ async function startProcessing() {
   if (batch.done > 0) {
     if (_userCanReview) btnReviewDocs.classList.add('visible');
     _lastRunSummary = { ok: batch.ok, err: batch.err };
-    autoFileFullConfidence();   // file any 100%-confidence docs automatically (setting-gated) + toast
   }
 }
 
-// Auto-file documents at exactly 100% confidence (all required fields present + high
-// confidence) straight after a batch, skipping Review. Reuses the SAME confirm/file IPC as
-// "File All Ready" (confidence-gated). Setting-gated (default ON); never auto-files a flagged
-// doc. Best-effort: a per-doc failure just leaves it queued for normal review.
-async function autoFileFullConfidence() {
-  try {
-    if (!_userCanReview) return;
-    const on = (await window.docusnap.getSetting('auto_file_full_confidence')) !== 'false';
-    if (!on) return;
-    const queue = await window.docusnap.getReviewQueue();
-    const ready = (queue || []).filter(d => d.overall_confidence === 100 && d.type_slug && !d.review_flag_count);
-    if (!ready.length) return;
-    let filed = 0;
-    for (const d of ready) {
-      const full = await window.docusnap.getDocumentWithExtractions(d.id);
-      if (!full) continue;
-      const allValues = {};
-      for (const ex of (full.extractions || [])) allValues[ex.field_key] = ex.display_value ?? ex.raw_value;
-      try {
-        const r = await window.docusnap.confirmReview({
-          document_id: d.id, folder_path: d.folder_path, original_filename: d.original_filename,
-          allValues, supplier_name: d.supplier_name, document_type: full.type_name || d.type_name,
-          document_type_slug: d.type_slug, corrections: {}, taught_fields: [], bulk: true,
-        });
-        if (r && r.success) filed++;
-      } catch { /* leave it for manual review */ }
-      await new Promise(r => setTimeout(r, 0));   // keep the window responsive
-    }
-    if (filed > 0) {
-      showAutoFiledBanner(filed);
-      try { updateAttention(); } catch {}
-      try { if (typeof refreshDashboardIfHome === 'function') refreshDashboardIfHome(); } catch {}
-    }
-  } catch (e) { console.warn('auto-file 100% failed:', e.message); }
+// 100%-confidence auto-filing now runs in the BACKEND (processing/handler _maybeAutoFile) so it
+// covers the WATCH folder and background runs too, not just a manual batch with the window open.
+// The main window just REFLECTS it: the backend emits 'doc-auto-filed' per filed doc; we tally
+// per run and show the results-list banner. Reset on a new manual run (the 'start' case).
+let _autoFiledThisRun = 0;
+window.docusnap.onDocAutoFiled?.((info) => {
+  _autoFiledThisRun += 1;
+  showAutoFiledBanner(_autoFiledThisRun);
+  if (info && info.docId != null) markRowFiled(info.docId);   // flip its results row to "Filed"
+  try { updateAttention(); } catch {}
+  try { if (typeof refreshDashboardIfHome === 'function') refreshDashboardIfHome(); } catch {}
+});
+
+// A doc auto-filed after its results row was added (the row first showed "Needs review"): flip
+// it to a green "Filed (auto)" that still opens the filed copy in Review.
+function markRowFiled(docId) {
+  const tr = tableBody.querySelector(`tr[data-doc-id="${docId}"]`);
+  if (!tr) return;
+  tr.classList.remove('row-review');
+  const td = tr.querySelector('td:last-child');
+  if (!td) return;
+  td.innerHTML = _userCanReview
+    ? `<button type="button" class="badge ok row-filed-link" title="Open this filed document in Review to check or correct it">Filed (auto)</button>`
+    : `<span class="badge ok">Filed (auto)</span>`;
+  const link = td.querySelector('.row-filed-link');
+  if (link) link.addEventListener('click', () => window.docusnap.openReviewWindowAt(docId));
 }
 
 // Persistent summary at the top of the results list: N docs auto-filed at 100% confidence,
@@ -580,6 +571,7 @@ function handleProgress(msg) {
       // The pool emits ONE aggregate start with the FULL folder count, so the bar
       // total is accurate from the first frame (X / N, not a growing estimate).
       { const _ab = document.getElementById('autofiled-banner'); if (_ab) _ab.style.display = 'none'; }  // clear last run's auto-filed summary
+      _autoFiledThisRun = 0;
       batch.total  = msg.total;     // this run, for the progress bar
       stats.total += msg.total;     // add the batch to the cumulative session "Found"
       updateStats();
@@ -641,6 +633,7 @@ function handleProgress(msg) {
 // ── Table row ────────────────────────────────────────────────────────────────
 function addTableRow(msg) {
   const tr = document.createElement('tr');
+  if (msg.db_id != null) tr.dataset.docId = String(msg.db_id);   // so auto-file can flip it to "Filed"
   // The row tint plus a per-row status chip make the outcome plain at a glance,
   // while the table stays compact: Company, Date, Reference, Status.
   if (!msg.success)        tr.classList.add('row-err');
@@ -882,6 +875,7 @@ function handleWatchProgress(msg) {
     stats.done++;
     if (msg.success) stats.ok++; else stats.err++;
     updateStats();
+    addTableRow(msg);   // watch docs show in the results list the same as manual ones
   }
 
   // Status light: red-blink while a watch import is in flight, green ~1.5s after the last one.
