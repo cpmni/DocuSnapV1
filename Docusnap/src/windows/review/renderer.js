@@ -1015,18 +1015,25 @@ function isFlagged(doc) {
 // a static "Reviewed" state. Unflagged docs never show it. Reads currentDoc so
 // it reflects the live queue object (which carries the flag counts + ack stamp).
 function updateAcknowledgeButton() {
-  const btn = document.getElementById('btn-acknowledge');
+  const btn  = document.getElementById('btn-acknowledge');
+  const hint = document.getElementById('ack-hint');
   if (!btn) return;
-  if (!currentDoc || !isFlagged(currentDoc)) { btn.style.display = 'none'; return; }
+  if (!currentDoc || !isFlagged(currentDoc)) {
+    btn.style.display = 'none';
+    if (hint) hint.style.display = 'none';
+    return;
+  }
   btn.style.display = '';
   if (currentDoc.review_acknowledged_at) {
     btn.disabled    = true;
     btn.innerHTML   = '✓ Reviewed';
     btn.style.color = 'var(--ok)';
+    if (hint) hint.style.display = 'none';       // already reviewed — no prompt
   } else {
     btn.disabled    = false;
     btn.innerHTML   = '✓ Mark Reviewed';
     btn.style.color = 'var(--warn)';
+    if (hint) hint.style.display = '';           // actionable — show the Space hint
   }
 }
 

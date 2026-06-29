@@ -178,6 +178,15 @@
       padding: 9px 16px; font-size: 13px; font-weight: 600;
       box-shadow: 0 2px 8px rgba(0,0,0,.35);
     }
+    /* Small hint under Mark Reviewed — shown only while it's actionable (flagged, not yet
+       acknowledged). Tells the operator the Space-bar shortcut. */
+    #ack-hint {
+      position: absolute; top: 84px; left: 12px; z-index: 6;
+      font-size: 11px; color: var(--muted); background: var(--surface);
+      border: 1px solid var(--border2); border-radius: var(--r-pill);
+      padding: 3px 10px; box-shadow: 0 1px 4px rgba(0,0,0,.2); pointer-events: none;
+      display: none;
+    }
     #doc-toolbar {
       display: flex; align-items: center; gap: 8px; padding: 7px 12px;
       border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0;
@@ -742,6 +751,7 @@
       </div>
 
       <button class="btn" id="btn-acknowledge" data-help-key="acknowledge" style="display:none" title="This document was flagged for review. Mark it reviewed so File All Ready can include it.">&#10003; Mark Reviewed</button>
+      <div id="ack-hint">Press <b>Space</b> to confirm reviewed</div>
 
       <!-- "Teach this document" CTA (shown only for genuinely-unseen docs; see renderTeachCta) -->
       <div id="teach-cta" class="teach-cta" style="display:none"></div>
