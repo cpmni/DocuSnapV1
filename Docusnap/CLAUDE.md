@@ -776,9 +776,14 @@ process_docs.py → ExtractionEngine.extract()
            (verify_fn + not-still-truncated + length cap) else KEEP line 1. Covers the rigid /
            relocate / registration rungs (all call _crop_and_ocr). Gate: multiline_enabled setting
            (default ON, --multiline; INERT without a rule). NOT a validation_pattern → no JS
-           mirror. Stage 0.5/template_mapper + born-digital next-line + the teach UI (right-click
-           toggle + tall-box block read) are Phase 2 (deferred). Guarded by
-           tests/test_multiline_continue.py.
+           mirror. TEACH UI (Phase 2, done): a Review field RIGHT-CLICK toggle "This field can wrap to the
+           next line" (showFieldRuleMenu → _stageMultilineRule, name-like fields, staged in
+           pendingFieldRules → saveFieldRule on confirm) + a TALL-BOX auto-rule (a ⊕ draw whose
+           zone-OCR reads 2+ lines auto-stages the rule, silent: region.py --boxes now returns a
+           `lines` count, runZoneOcr reads via ocrRegionBoxes) + a Settings → General "Read values
+           that wrap onto the next line" toggle (multiline_enabled). Stage 0.5/template_mapper +
+           born-digital next-line still deferred (Stage 2 anchor crop covers the common case).
+           Guarded by tests/test_multiline_continue.py + the region.py multi-line test.
            ANCHOR-LABEL SANITISATION (learning.sanitizeAnchorLabel, migration 23):
            strip document-specific tokens (reference numbers/dates/serials) from an
            auto-detected ⊕ label so it GENERALISES across documents

@@ -258,6 +258,17 @@ document.getElementById('auto-file-toggle').addEventListener('change', async (e)
   await api.setSetting('auto_file_full_confidence', e.target.checked ? 'true' : 'false');
 });
 
+// ── Read values that wrap onto the next line (default ON) ──────────────────────
+(async () => {
+  try {
+    const v = await api.getSetting('multiline_enabled');
+    document.getElementById('multiline-toggle').checked = (v !== 'false');   // unset → on
+  } catch { document.getElementById('multiline-toggle').checked = true; }
+})();
+document.getElementById('multiline-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('multiline_enabled', e.target.checked ? 'true' : 'false');
+});
+
 // ── Processing mode ───────────────────────────────────────────────────────────
 async function loadProcessingMode() {
   const mode = await api.getProcessingMode();

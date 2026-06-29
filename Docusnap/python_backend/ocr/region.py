@@ -72,6 +72,7 @@ def main():
     # single-line crop keeps the ladder text — byte-identical. The PSM-6 data is computed once
     # here and REUSED by --boxes below (no extra OCR pass for the box path).
     data6 = None
+    mline = 1   # detected line count (for --boxes consumers, e.g. the ⊕ tall-box auto-rule)
     try:
         data6 = pytesseract.image_to_data(chosen, config='--oem 3 --psm 6',
                                           output_type=pytesseract.Output.DICT)
@@ -90,6 +91,7 @@ def main():
                 g6['w'].append(t6); g6['top'] = min(g6['top'], data6['top'][i])
         seg = [' '.join(g6['w']) for g6 in sorted(groups.values(), key=lambda g: g['top'])]
         seg = [s for s in seg if len(s) >= 2]          # ignore stray 1-char noise "lines"
+        mline = max(1, len(seg))
         if len(seg) >= 2:
             text = ' '.join(seg)
     except Exception:
@@ -126,7 +128,7 @@ def main():
                 box = [l, t, bw, bh]
         except Exception:
             box = None
-        print(json.dumps({"text": text, "box": box, "words": words}), end='', flush=True)
+        print(json.dumps({"text": text, "box": box, "words": words, "lines": mline}), end='', flush=True)
         return
 
     print(text, end='', flush=True)

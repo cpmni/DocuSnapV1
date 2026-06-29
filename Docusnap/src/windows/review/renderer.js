@@ -1428,8 +1428,10 @@ async function runZoneOcr(rect, fieldKey) {
     );
     const base64 = cropCanvas.toDataURL('image/png').split(',')[1];
 
-    const result = await window.docusnap.ocrRegion(base64);
-    const text   = (result || '').trim();
+    // Read via the --boxes path so we also learn the line COUNT (for the tall-box auto-rule).
+    // result.text is the same cleaned, multi-line-aware value the plain path returns.
+    const boxes  = await window.docusnap.ocrRegionBoxes?.(base64);
+    const text   = ((boxes && boxes.text) || (await window.docusnap.ocrRegion(base64)) || '').trim();
 
     if (text) {
       const input = document.querySelector(`.field-input[data-key="${fieldKey}"]`);
@@ -1439,6 +1441,13 @@ async function runZoneOcr(rect, fieldKey) {
         input.classList.add('corrected');
         corrections[fieldKey] = { original_value: orig, corrected_value: text };
         validateConfirm();
+      }
+      // TALL-BOX teach method: the drawn box read 2+ lines, so this value WRAPS — auto-stage a
+      // multiline_continue rule (silent) for free-text/name-like fields, so future wrapping
+      // scans are joined. The right-click "This field can wrap" toggle is the explicit alternative.
+      if (boxes && boxes.lines >= 2 && _isNameLikeField(fieldKey)) {
+        _stageMultilineRule(fieldKey, { silent: true });
+        try { showToast('Looks like this value wraps onto the next line — wrapping enabled, saved on Confirm.', 'ok'); } catch {}
       }
       lastTeachCtx = { fieldKey, rect, imgW, imgH, scaleX, scaleY, value: text };
       const detected = await captureAnchorContext(rect, fieldKey, text, imgW, imgH, scaleX, scaleY);
@@ -1526,6 +1535,20 @@ function _applyFieldRule(input, key, newValue, rule) {
   closeFieldRuleMenu();
 }
 
+// Stage a multiline_continue rule (no value change) so a value that WRAPS onto the next line
+// is joined on future scans. Idempotent per field; committed on Confirm via saveFieldRule.
+function _stageMultilineRule(key, { silent = false } = {}) {
+  pendingFieldRules[key] = pendingFieldRules[key] || [];
+  if (!pendingFieldRules[key].some(r => r.rule_type === 'multiline_continue')) {
+    pendingFieldRules[key].push({ ..._fieldRuleScope(), field_key: key, rule_type: 'multiline_continue', token: '-' });
+    if (!silent) { try { showToast('This field will read values that wrap onto the next line — saved when you Confirm.', 'ok'); } catch {} }
+  }
+  closeFieldRuleMenu();
+}
+function _hasMultilineRule(key) {
+  return (pendingFieldRules[key] || []).some(r => r.rule_type === 'multiline_continue');
+}
+
 function showFieldRuleMenu(e, input, key) {
   e.preventDefault();
   closeFieldRuleMenu();
@@ -1572,6 +1595,18 @@ function showFieldRuleMenu(e, input, key) {
       sub: `${_frTruncate(value)}  →  ${_frTruncate(removeResult)}`,
       tip: "Fix only this document. Scan Finder won't change how it reads future scans.",
       onClick: () => _applyFieldRule(input, key, removeResult, null),
+    });
+  }
+  // "This field can wrap to the next line" — free-text / name-like fields only. Teaches a
+  // multiline_continue rule so a value that wraps (first line ends with "-") is read + joined
+  // on future scans; single-line values are unaffected. Available with no selection.
+  if (_isNameLikeField(key)) {
+    const on = _hasMultilineRule(key);
+    items.push({
+      label: on ? '✓ Wrapping is on for this field' : 'This field can wrap to the next line',
+      sub: on ? 'Tap Confirm to save' : 'Read a value that continues onto the line below (e.g. an address)',
+      tip: 'When this value sometimes runs onto a second line (the first line ends with "-"), Scan Finder reads the line below and joins them on future scans. Single-line values are unaffected.',
+      onClick: on ? () => closeFieldRuleMenu() : () => _stageMultilineRule(key),
     });
   }
   if (!items.length) return;
