@@ -319,6 +319,33 @@ def conforms_to_lexicon(value, lexicon):
 _CONT_DEFAULT_CHARS = "-–—"
 
 
+def matches_stable_prefix(value, lexicon):
+    """True when `value` is CONSISTENT with the learned name's stable prefix — every stable
+    position the value reaches carries the canonical token, AND the value actually covers the
+    FIRST stable position. Unlike conforms_to_lexicon this does NOT require reaching
+    expected_len, so it accepts a genuine TRUNCATION ("Beaumont Care Homes Ltd") while
+    REJECTING an unrelated/drifted value ("2604-0511-1", "Field") whose first token isn't the
+    canonical prefix — the guard that stops a multi-line join firing on a wrong read."""
+    if not value or not lexicon:
+        return False
+    positions = lexicon.get("positions") or {}
+    if not positions:
+        return False
+    content = [t for t in str(value).split() if _is_content(t)]
+    if not content:
+        return False
+    covered = False
+    for i, st in positions.items():
+        if i < len(content):
+            if normalise_for_tokens(content[i]) != st["norm"]:
+                return False               # a covered stable position carries the WRONG token
+            if i == 0:
+                covered = True             # value is anchored to the prefix start
+    # Accept only when the value reaches the FIRST stable position (anchored to the name).
+    # If there's no position-0 stable token, fall back to "at least one stable position matched".
+    return covered or (0 not in positions and any(i < len(content) for i in positions))
+
+
 def _shape_is_complete(value, fmt_entry):
     """Coarse history check used only when there is NO name lexicon: True when the value's
     structural shape (format_anomaly_checker.shape_signature) is one the field has actually
@@ -351,6 +378,12 @@ def should_continue_line(line1, pattern_chars=None, name_lex=None, fmt_entry=Non
     free-text gating and the actual read/join."""
     s = (line1 or "").rstrip()
     if not s:
+        return False
+    # PRECISION GUARD: when we have a name lexicon, the read must be a PLAUSIBLE PREFIX of the
+    # learned name. Otherwise a DRIFTED wrong read (a ref code "2604-0511-1", or "Field")
+    # would wrongly trigger a join (the "multiline applying where it shouldn't" bug). Inert
+    # without confirmed history (no positions → skip, the pattern branch still works cold).
+    if name_lex and name_lex.get("positions") and not matches_stable_prefix(s, name_lex):
         return False
     chars = pattern_chars or _CONT_DEFAULT_CHARS
     if re.search("[" + re.escape(chars) + "]$", s):

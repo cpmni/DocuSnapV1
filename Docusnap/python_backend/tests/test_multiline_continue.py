@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from extraction.name_match import should_continue_line  # noqa: E402
+from extraction.name_match import should_continue_line, matches_stable_prefix  # noqa: E402
 from extraction.text_normalise import normalise_for_tokens  # noqa: E402
 from extraction.anchor import join_continuation, _lines_adjacent, _continuation_ok, _x_overlap  # noqa: E402
 
@@ -48,6 +48,17 @@ check("complete value, reaches expected_len -> no continue", should_continue_lin
 check("no dash but data-truncated -> continue", should_continue_line("Stonebridge", None, LEXJOIN) is True)
 check("no dash, complete vs history -> no continue", should_continue_line("Stonebridge Joinery", None, LEXJOIN) is False)
 check("empty line -> no continue", should_continue_line("") is False)
+# PRECISION GUARD: a drifted wrong read must NOT trigger a join even though it is "short".
+check("drifted ref code (not the prefix) -> NO continue", should_continue_line("2604-0511-1", None, LEX5) is False)
+check("drifted ref + trailing dash -> NO continue (prefix guard)", should_continue_line("2604-0511-1 -", None, LEX5) is False)
+check("wrong-first-token short read -> NO continue", should_continue_line("Field", None, LEX5) is False)
+check("genuine prefix truncation -> continue", should_continue_line("Beaumont Care Homes Ltd", None, LEX5) is True)
+
+print("matches_stable_prefix:")
+check("genuine truncation matches prefix", matches_stable_prefix("Beaumont Care Homes Ltd", LEX5) is True)
+check("full value matches prefix", matches_stable_prefix("Beaumont Care Homes Ltd - Comber", LEX5) is True)
+check("drifted ref does NOT match prefix", matches_stable_prefix("2604-0511-1", LEX5) is False)
+check("wrong first token does NOT match", matches_stable_prefix("Acme Care Homes Ltd", LEX5) is False)
 
 print("join_continuation:")
 check("separator dash keeps ' - '", join_continuation("Beaumont Care Homes Ltd -", "Comber") == "Beaumont Care Homes Ltd - Comber")

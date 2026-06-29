@@ -1526,14 +1526,17 @@ def _x_overlap(a: dict, b: dict) -> float:
 
 
 def _lines_adjacent(l1: dict, l2: dict) -> bool:
-    """Geometry guard: is l2 the wrapped continuation directly below l1 (same column, small
-    gap), as opposed to an unrelated row/column below? Requires same left edge (within ~0.8
-    line-height) OR ≥50% horizontal overlap, AND a vertical gap ≤ ~0.9 line-height. This is
-    what stops the read swallowing a different field sitting one row under the value."""
-    lh = max(1, l1["height"])
-    left_ok = abs(l2["left"] - l1["left"]) <= lh * 0.8 or _x_overlap(l1, l2) >= 0.5
-    gap_ok  = (l2["top"] - (l1["top"] + l1["height"])) <= lh * 0.9
-    return bool(left_ok and gap_ok)
+    """Geometry guard: is l2 the wrapped continuation DIRECTLY below l1 (same column, the very
+    next line), as opposed to an unrelated row/column further down? Requires same left edge
+    (within ~1.2 line-heights) OR ≥50% horizontal overlap, AND a line PITCH (top→top) within
+    ~2.5 line-heights — measured on the pitch, not the gap between tight glyph boxes, because a
+    tight box UNDER-states the line height (the bug that made a normal wrapped line look 'far').
+    This still rejects a row two+ lines down (a different field), the failure to avoid."""
+    lh = max(1, l1.get("height", 0), l2.get("height", 0))
+    left_ok = abs(l2["left"] - l1["left"]) <= lh * 1.2 or _x_overlap(l1, l2) >= 0.5
+    pitch   = l2["top"] - l1["top"]
+    pitch_ok = 0 < pitch <= lh * 2.5
+    return bool(left_ok and pitch_ok)
 
 
 def _continuation_ok(combined: str, original: str, verify_fn, name_lex) -> bool:
