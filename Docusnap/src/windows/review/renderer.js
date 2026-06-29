@@ -2494,12 +2494,24 @@ function highlightActiveField(key) {
 }
 
 document.getElementById('btn-view-learning').addEventListener('click', async () => {
-  const key = lastFocusedFieldKey;
-  if (!key) return;   // the flyout's own hint asks the user to click a field first
   document.getElementById('advanced-bar').style.display = 'none';
   document.getElementById('lh-overlay').style.display = 'block';
-  await loadLearningHistoryFor(key);
+  // Open regardless of focus. With a field already selected, load it; otherwise show an empty
+  // prompt — the modal is non-blocking, so clicking a field then populates it live.
+  if (lastFocusedFieldKey) await loadLearningHistoryFor(lastFocusedFieldKey);
+  else showLearningHistoryEmpty();
 });
+
+function showLearningHistoryEmpty() {
+  _lhField = null; _lhData = []; _lhRendered = [];
+  _lhPending = null; _lhEditing = null; _lhProposals = [];
+  document.getElementById('lh-field').textContent = '(no field selected)';
+  document.getElementById('lh-scope').textContent = 'Click a field on the right to see and tidy its learned values.';
+  document.getElementById('lh-proposals').style.display = 'none';
+  document.getElementById('lh-body').innerHTML =
+    `<tr><td colspan="4" class="lh-empty">👉 Click a field on the right to load its learned values.</td></tr>`;
+  document.querySelectorAll('.field-row-label.lh-active-field').forEach(el => el.classList.remove('lh-active-field'));
+}
 
 async function loadLearningHistoryFor(key) {
   if (!key) return;
