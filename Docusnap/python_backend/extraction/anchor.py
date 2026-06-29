@@ -253,11 +253,20 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                                 if _dq:
                                     _dcand = _dq
                     if _dcand and _dcand.strip().lower() != (value or "").strip().lower():
-                        if on_reject:
-                            on_reject(field_key, "anchor_crop", value, "off_row_drift")
-                        value = _dcand
-                        method = "anchor_crop_relocated"
-                        ocr_conf, ocr_min = None, None
+                        _rv, _dv = (value or "").strip(), _dcand.strip()
+                        # Don't replace a MORE-COMPLETE rigid read with a TRUNCATED relocate:
+                        # the multi-line case where the rigid joined "…Ltd - Jordanstown" but the
+                        # label-lock relocate got only "…Ltd -". A genuinely DIFFERENT relocate
+                        # (the rigid drifted to a wrong row) does NOT prefix-match the rigid, so it
+                        # still wins — preserving the drift fix this lock exists for.
+                        if _rv.lower().startswith(_dv.lower()) and len(_rv) > len(_dv):
+                            pass   # rigid is the relocate value + a continuation — keep it
+                        else:
+                            if on_reject:
+                                on_reject(field_key, "anchor_crop", value, "off_row_drift")
+                            value = _dcand
+                            method = "anchor_crop_relocated"
+                            ocr_conf, ocr_min = None, None
             except Exception:
                 pass  # dev/robustness: the guard must never break a read
 

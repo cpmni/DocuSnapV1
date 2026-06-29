@@ -603,6 +603,14 @@ process_docs.py → ExtractionEngine.extract()
            now LOCKS to the label, not to a drift magnitude. Structured fields
            (pattern-validated) + legacy NULL-offset anchors untouched; reuses line_cache (a
            clean on-row read pays one locate). Guarded by tests/test_anchor_drift_guard.py.
+           COMPLETENESS GUARD (2026-06, multi-line interaction): the label-lock relocate must
+           NOT replace a MORE-COMPLETE rigid read with a TRUNCATED one — when the rigid value
+           STARTS WITH the relocate candidate and is LONGER, the rigid is kept (the multi-line
+           case: the rigid joined "Beaumont Care Homes Ltd - Jordanstown" via the continuation
+           but the relocate crop got only "…Ltd -", and a bare-difference replace was swapping
+           the good join for the truncation + flagging it "looks shorter"). A genuinely
+           DIFFERENT relocate (the rigid drifted to a wrong row) does not prefix-match, so it
+           still wins — the drift fix is preserved.
            ⊕ AUTO-ANCHOR LABEL SEARCH (review/renderer.js captureAnchorContext): the
            left-label search scans the WHOLE row to the left of the value (was a fixed 300px
            window), one line tall — so on wide two-column key/value rows a TIGHT value box
