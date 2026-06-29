@@ -2139,6 +2139,41 @@ async function fileAllReady() {
 }
 document.getElementById('btn-file-all-review')?.addEventListener('click', fileAllReady);
 
+// After Reprocess All, auto-commit any document that came back at 100% confidence (all
+// required fields present + high confidence, never a flagged doc) — the SAME setting + gate
+// as the import-batch auto-file, reusing the bulk confirm path. Best-effort per doc (a
+// failure just leaves it queued). Skips entirely when the setting is off or a manual
+// File-All is already running.
+async function autoCommitFullConfidence() {
+  try {
+    if (bulkFiling) return;
+    if ((await window.docusnap.getSetting('auto_file_full_confidence')) === 'false') return;
+    const ready = (queue || []).filter(d => d.overall_confidence === 100 && d.type_slug && !d.review_flag_count);
+    if (!ready.length) return;
+    bulkFiling = true;
+    let filed = 0;
+    try {
+      for (const doc of ready) {
+        if (!queue.some(d => d.id === doc.id)) continue;
+        try {
+          await selectDoc(doc, { fieldsOnly: true });
+          if (document.getElementById('btn-confirm').disabled) continue;   // not actually ready
+          const r = await confirmCurrentDoc({ bulk: true });
+          if (r && r.filed) { filed++; document.querySelector(`.queue-item[data-id="${doc.id}"]`)?.remove(); }
+        } catch { /* leave it for manual review */ }
+        await new Promise(res => setTimeout(res, 0));   // keep the window responsive
+      }
+    } finally { bulkFiling = false; }
+    if (filed > 0) {
+      queue         = await window.docusnap.getReviewQueue();
+      deferredQueue = await window.docusnap.getDeferredQueue();
+      updateTabCounts();
+      renderQueueList();
+      showToast(`Auto-filed ${filed} document${filed > 1 ? 's' : ''} that scored 100% — no review needed.`, 'ok');
+    }
+  } catch (e) { console.warn('auto-commit 100% failed:', e.message); }
+}
+
 // Cooperative Stop: the in-flight document finishes filing, no new one starts,
 // everything already filed stays filed (this is not an undo). Mirrors Reprocess-All.
 document.getElementById('btn-stop-file-all')?.addEventListener('click', () => {
@@ -3027,6 +3062,8 @@ document.getElementById('btn-reprocess-all').addEventListener('click', async () 
     btnOne.disabled      = false;
     btnStop.style.display = 'none';
     btnAll.innerHTML     = 'Reprocess all in queue';
+    // Auto-commit any docs that reprocessed to 100% (setting-gated) + toast.
+    await autoCommitFullConfidence();
   }
 
   const stopped = _batchStopped;
