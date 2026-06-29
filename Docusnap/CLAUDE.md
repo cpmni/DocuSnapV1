@@ -757,6 +757,28 @@ process_docs.py → ExtractionEngine.extract()
            / apply_remove_text — pure, guarded, never empties); honest was_corrected +
            corrected_to + "auto-trimmed, was: …" note, NOT review-forced. Guarded by
            tests/test_field_rules.py + database/modules/test_field_rules.js.
+           MULTI-LINE CONTINUATION (Phase 1, 2026-06, oscar+reggie-designed): a free-text value
+           that WRAPS onto the next line (a work address whose first line ends "…Ltd -" + a
+           second line "Comber") is read + joined, gated so a single-line read stays
+           byte-identical. TRIGGER (name_match.should_continue_line, pattern-primary +
+           history-guarded): continue when line 1 ends with a trailing dash -/–/— AND history
+           doesn't confirm it complete (conforms_to_lexicon / learned shape), OR when
+           is_truncated_name says the read is short vs expected_len. STORAGE: reuse field_rules
+           with rule_type='multiline_continue' (token_norm = trailing chars, default "-") — NO
+           migration; engine.set_field_rules SPLITS these into self._multiline_index (consulted
+           by the READ step via _make_multiline_lookup), NOT the Stage 4.5 apply loop. READ+JOIN
+           (anchor.py): clean_crop_segment factored to _clean_one_line (its first-line return is
+           byte-identical); _crop_and_ocr, when the field has a rule + should_continue_line fires,
+           extends the crop ~1.3 line-heights, PSM-6 re-reads via _read_block_lines, takes the
+           next line under the geometry guard (_lines_adjacent: same-left/≥50% x-overlap + gap ≤
+           0.9 line — stops swallowing an unrelated row), join_continuation (keep " - " separator
+           / de-hyphenate a word-break / single-space a plain wrap), then _continuation_ok
+           (verify_fn + not-still-truncated + length cap) else KEEP line 1. Covers the rigid /
+           relocate / registration rungs (all call _crop_and_ocr). Gate: multiline_enabled setting
+           (default ON, --multiline; INERT without a rule). NOT a validation_pattern → no JS
+           mirror. Stage 0.5/template_mapper + born-digital next-line + the teach UI (right-click
+           toggle + tall-box block read) are Phase 2 (deferred). Guarded by
+           tests/test_multiline_continue.py.
            ANCHOR-LABEL SANITISATION (learning.sanitizeAnchorLabel, migration 23):
            strip document-specific tokens (reference numbers/dates/serials) from an
            auto-detected ⊕ label so it GENERALISES across documents

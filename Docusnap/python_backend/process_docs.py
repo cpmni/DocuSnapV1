@@ -142,6 +142,10 @@ def main():
                         help="flag free-text NAME reads that don't read like a name "
                              "(document chrome / ref-code bleed / OCR garble); flag-only, "
                              "default off; inert without extraction/data/char_trigrams.json")
+    parser.add_argument("--multiline", action="store_true",
+                        help="enable multi-line continuation reads (a free-text value that "
+                             "wraps onto the next line); inert without a multiline_continue "
+                             "field rule, so single-line reads stay byte-identical")
     parser.add_argument("--born-digital", action="store_true",
                         help="use a PDF's embedded text layer (exact) instead of OCR "
                              "for pages that carry one; inert for image-only/scanned PDFs")
@@ -239,6 +243,10 @@ def main():
     # Free-text NAME wordness review flag (off unless --name-wordness; flag-only).
     if args.name_wordness:
         engine.set_name_wordness(True)
+
+    # Multi-line continuation reads (off unless --multiline; inert without a field rule).
+    if args.multiline:
+        engine.set_multiline_enabled(True)
 
     # Phase 3 candidate override (default 'off' → byte-identical behaviour).
     if args.candidate_override and args.candidate_override != "off":

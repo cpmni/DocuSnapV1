@@ -185,6 +185,12 @@ function buildTrainingArgs(db, configPath, logger = null) {
   try { nameWordnessOn = learning.getSetting(db, 'name_wordness_flag') !== 'false'; }
   catch { /* older DB without the setting -> default on */ }
 
+  // Multi-line continuation reads (default ON; disabled by 'multiline_enabled' = 'false').
+  // Inert without a multiline_continue field rule, so single-line reads stay byte-identical.
+  let multilineOn = true;
+  try { multilineOn = learning.getSetting(db, 'multiline_enabled') !== 'false'; }
+  catch { /* older DB without the setting -> default on */ }
+
   const args = [
     '--fields-file',    fieldsFile,
     '--hints-file',     hintsFile,
@@ -200,6 +206,7 @@ function buildTrainingArgs(db, configPath, logger = null) {
   if (registrationOn) args.push('--registration');
   if (bornDigitalOn) args.push('--born-digital');
   if (nameWordnessOn) args.push('--name-wordness');
+  if (multilineOn) args.push('--multiline');
   if (ocrEngine === 'rapidocr') args.push('--ocr-engine', 'rapidocr');
 
   return {

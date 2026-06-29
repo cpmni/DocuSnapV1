@@ -92,7 +92,8 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                          page_transform = None,
                          on_reject = None,
                          page_text_lines = None,
-                         text_field_keys = None) -> dict:
+                         text_field_keys = None,
+                         multiline_lookup = None) -> dict:
     """
     Attempt to extract field values using saved structural anchors.
 
@@ -143,6 +144,20 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
         ocr_conf = None
         ocr_min  = None
 
+        # Multi-line continuation descriptor (Phase 1): present ONLY when this field has a
+        # multiline_continue rule AND it's a free-text field (the val_type gate already
+        # excludes structured/date/currency; the ref-key check excludes a text-typed ref).
+        # None → every read is single-line / byte-identical.
+        continuation = None
+        if (multiline_lookup is not None and val_type in (None, "text", "multiline_text")
+                and not _is_ref_like_key(field_key)):
+            _ml = multiline_lookup(field_key)
+            if _ml:
+                _fe = format_lookup(field_key) if format_lookup else None
+                continuation = {"pattern_chars": _ml.get("pattern_chars"),
+                                "name_lex": (_fe or {}).get("name_lexicon"),
+                                "fmt_entry": _fe}
+
         # "Did this crop read a value we'd actually commit?" — the same
         # credibility + learned-format gate the merge below applies. Passed into
         # the crop reader so a degraded TEXT line that fails it triggers the
@@ -161,7 +176,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
             _cap = ((lambda c: slice_capture(field_key, "anchor_crop", 0,
                        (x_norm, y_norm, w_norm, h_norm), c, "target")) if slice_capture else None)
             _m = {}
-            crop_value = _crop_and_ocr(page0, x_norm, y_norm, w_norm, h_norm, val_type, capture=_cap, verify_fn=_verify, meta=_m)
+            crop_value = _crop_and_ocr(page0, x_norm, y_norm, w_norm, h_norm, val_type, capture=_cap, verify_fn=_verify, meta=_m, continuation=continuation)
             # A fixed crop is positionally rigid: when an upstream line wraps or
             # the block shifts on a sibling layout, the box can land off-target
             # and return a NON-EMPTY but wrong value (e.g. ">alifornia" from the
@@ -231,7 +246,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                         if _drelo:
                             _drelo = _widen_relocated_crop(_drelo, val_type)
                             _drv = _crop_and_ocr(page0, _drelo[0], _drelo[1], _drelo[2], _drelo[3],
-                                                 val_type, verify_fn=_verify)
+                                                 val_type, verify_fn=_verify, continuation=continuation)
                             if _drv and not _name_field_code_reject(_drv, field_key) \
                                     and _crop_is_credible(_drv, val_type, validation_patterns, label):
                                 _dq = _qualify_against_format(_drv, field_key, format_lookup, text_field_keys)
@@ -271,7 +286,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
             _gcap = ((lambda c: slice_capture(field_key, "anchor_registration", 0,
                         (rcx, rcy, w_norm, h_norm), c, "target")) if slice_capture else None)
             _mg = {}
-            gval = _crop_and_ocr(page0, rcx, rcy, w_norm, h_norm, val_type, capture=_gcap, verify_fn=_verify, meta=_mg)
+            gval = _crop_and_ocr(page0, rcx, rcy, w_norm, h_norm, val_type, capture=_gcap, verify_fn=_verify, meta=_mg, continuation=continuation)
             if gval and not _crop_is_credible(gval, val_type, validation_patterns, label):
                 if on_reject: on_reject(field_key, "anchor_registration", gval, "not_credible")
             elif gval:
@@ -421,7 +436,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                                     relo, c, "target")) if slice_capture else None)
                         _mr = {}
                         rval = _crop_and_ocr(page0, relo[0], relo[1], relo[2], relo[3],
-                                             val_type, capture=_rcap, verify_fn=_verify, meta=_mr)
+                                             val_type, capture=_rcap, verify_fn=_verify, meta=_mr, continuation=continuation)
                         _xfield = bool(rval) and _name_field_code_reject(rval, field_key)
                         if rval and (_xfield or not _crop_is_credible(rval, val_type, validation_patterns, label)):
                             if on_reject:
@@ -1164,22 +1179,30 @@ def clean_crop_segment(text: str | None, val_type: str | None) -> str | None:
     if not text:
         return None
     for line in text.split("\n"):
-        line = line.strip()
-        if not line:
-            continue
-        segment = re.split(r' {4,}', line)[0].strip()
-        if val_type in ('text', 'multiline_text'):
-            segment = _trim_trailing_digit_boundary(segment)
-        parts = segment.split()
-        end = len(parts)
-        for i, w in enumerate(parts):
-            if i >= 2 and w.endswith(','):
-                end = i
-                break
-        segment = ' '.join(parts[:end]).rstrip(',;').strip()
+        segment = _clean_one_line(line, val_type)
         if segment:
             return segment
     return None
+
+
+def _clean_one_line(line: str | None, val_type: str | None) -> str:
+    """Clean ONE OCR line into a value segment (the per-line body of clean_crop_segment):
+    column-gap split (4+ spaces), trailing postcode/year trim for free-text, city-comma cut.
+    Returns '' when nothing usable remains. Factored out so a CONTINUATION line is cleaned
+    IDENTICALLY to line 1 — shared by clean_crop_segment and join_continuation."""
+    line = (line or "").strip()
+    if not line:
+        return ""
+    segment = re.split(r' {4,}', line)[0].strip()
+    if val_type in ('text', 'multiline_text'):
+        segment = _trim_trailing_digit_boundary(segment)
+    parts = segment.split()
+    end = len(parts)
+    for i, w in enumerate(parts):
+        if i >= 2 and w.endswith(','):
+            end = i
+            break
+    return ' '.join(parts[:end]).rstrip(',;').strip()
 
 
 def _clean_text_fallback(value: str | None, val_type: str | None,
@@ -1431,10 +1454,144 @@ def _ocr_crop_laddered(crop, val_type=None, verify_fn=None, meta=None, page=None
     return best_seg or None
 
 
+# ── Multi-line continuation (Phase 1) ─────────────────────────────────────────
+# A value (e.g. a work address) can wrap onto the line below; the first line often ends with
+# a "-". name_match.should_continue_line decides WHEN to continue; these helpers do the
+# geometry-aware read + join. All gated so a single-line read stays byte-identical.
+
+def _is_ref_like_key(key: str | None) -> bool:
+    """Mirror engine._is_ref_field — reference-style fields never continue onto the next line."""
+    k = (key or "").lower()
+    return k.endswith("_number") or k.endswith("_no") or "reference" in k
+
+
+def join_continuation(seg1: str, seg2: str) -> str:
+    """Join a wrapped value's first line + continuation line (both already _clean_one_line'd):
+      • TRUE word-break hyphen ("Indus-" glued to a letter, line 2 lowercase) → de-hyphenate;
+      • trailing separator dash (" -" / "–" / "—") → keep the learned " - " separator;
+      • plain wrap → single space.
+    Pure; returns the non-empty side when the other is empty."""
+    a = (seg1 or "").rstrip()
+    b = (seg2 or "").strip()
+    if not b:
+        return a
+    if not a:
+        return b
+    if re.search(r"[A-Za-z]-$", a) and b[:1].islower():     # true word-break hyphen
+        return a[:-1] + b
+    m = re.search(r"\s*[-–—]\s*$", a)                        # trailing separator dash
+    if m:
+        return a[:m.start()].rstrip() + " - " + b
+    return a + " " + b                                       # plain wrap
+
+
+def _read_block_lines(img, psm: int = 6) -> list:
+    """OCR a crop → per-LINE dicts top→bottom with pixel bbox [{text,left,top,width,height}].
+    Used ONLY on the continuation branch (the single-line path never calls it)."""
+    import pytesseract
+    from pytesseract import Output
+    try:
+        d = pytesseract.image_to_data(img, config=f"--oem 3 --psm {psm}", output_type=Output.DICT)
+    except Exception:
+        return []
+    groups = {}
+    for i in range(len(d.get("text", []))):
+        t = (d["text"][i] or "").strip()
+        try:
+            c = float(d["conf"][i])
+        except Exception:
+            c = -1.0
+        if not t or c < 0:
+            continue
+        key = (d["block_num"][i], d["par_num"][i], d["line_num"][i])
+        L, T, W, H = int(d["left"][i]), int(d["top"][i]), int(d["width"][i]), int(d["height"][i])
+        g = groups.get(key)
+        if g is None:
+            groups[key] = {"w": [t], "x0": L, "y0": T, "x1": L + W, "y1": T + H}
+        else:
+            g["w"].append(t)
+            g["x0"] = min(g["x0"], L); g["y0"] = min(g["y0"], T)
+            g["x1"] = max(g["x1"], L + W); g["y1"] = max(g["y1"], T + H)
+    out = [{"text": " ".join(g["w"]), "left": g["x0"], "top": g["y0"],
+            "width": g["x1"] - g["x0"], "height": g["y1"] - g["y0"]} for g in groups.values()]
+    out.sort(key=lambda r: r["top"])
+    return out
+
+
+def _x_overlap(a: dict, b: dict) -> float:
+    """Horizontal overlap of two line boxes as a fraction of the NARROWER box."""
+    lo = max(a["left"], b["left"])
+    hi = min(a["left"] + a["width"], b["left"] + b["width"])
+    return max(0, hi - lo) / max(1, min(a["width"], b["width"]))
+
+
+def _lines_adjacent(l1: dict, l2: dict) -> bool:
+    """Geometry guard: is l2 the wrapped continuation directly below l1 (same column, small
+    gap), as opposed to an unrelated row/column below? Requires same left edge (within ~0.8
+    line-height) OR ≥50% horizontal overlap, AND a vertical gap ≤ ~0.9 line-height. This is
+    what stops the read swallowing a different field sitting one row under the value."""
+    lh = max(1, l1["height"])
+    left_ok = abs(l2["left"] - l1["left"]) <= lh * 0.8 or _x_overlap(l1, l2) >= 0.5
+    gap_ok  = (l2["top"] - (l1["top"] + l1["height"])) <= lh * 0.9
+    return bool(left_ok and gap_ok)
+
+
+def _continuation_ok(combined: str, original: str, verify_fn, name_lex) -> bool:
+    """Post-join validation: accept only if the join adds real content, passes the field's own
+    credibility gate (verify_fn — the same one the ladder used) and — when history exists — is
+    no longer truncated and isn't implausibly long. Else the caller keeps line 1."""
+    if not combined or len(combined) <= len(original):
+        return False
+    if verify_fn and not verify_fn(combined):
+        return False
+    if name_lex:
+        from extraction import name_match
+        if name_match.is_truncated_name(combined, name_lex):
+            return False
+        exp = name_lex.get("expected_len") or 0
+        if exp:
+            n = sum(1 for t in combined.split() if any(ch.isalnum() for ch in t))
+            if n > exp + 3:
+                return False
+    return True
+
+
+def _maybe_continue(page_image, x1: int, y1: int, x2: int, y2: int,
+                    val_type, value, continuation, verify_fn) -> str:
+    """If `value` (the line-1 read) signals continuation, read the line BELOW from an extended
+    crop and join. Returns the joined value, or `value` unchanged when no continuation applies
+    or the join fails its gate. The caller gates `continuation` to free-text fields with a rule."""
+    try:
+        if not value or not continuation:
+            return value
+        from extraction import name_match
+        if not name_match.should_continue_line(value, continuation.get("pattern_chars"),
+                                                continuation.get("name_lex"), continuation.get("fmt_entry")):
+            return value
+        w, h = page_image.size
+        ext = int(max(1, y2 - y1) * 1.3) + 6           # extend ~1.3 line-heights downward
+        ext_crop = page_image.crop((x1, y1, x2, min(h, y2 + ext)))
+        lines = _read_block_lines(_light_prep(ext_crop), psm=6)
+        if len(lines) < 2:
+            return value
+        l1, l2 = lines[0], lines[1]
+        if not _lines_adjacent(l1, l2):
+            return value
+        seg2 = _clean_one_line(l2["text"], val_type)
+        if not seg2 or seg2.rstrip().endswith(":"):     # empty, or a label caption below
+            return value
+        combined = join_continuation(value, seg2)
+        if _continuation_ok(combined, value, verify_fn, continuation.get("name_lex")):
+            return combined
+        return value
+    except Exception:
+        return value
+
+
 def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
                   w_norm: float = 0.0, h_norm: float = 0.0,
                   val_type: str | None = None, capture = None,
-                  verify_fn = None, meta = None) -> str | None:
+                  verify_fn = None, meta = None, continuation = None) -> str | None:
     """
     Crop a tight region centred on the stored value coordinates and re-OCR it.
     Uses the exact selection dimensions saved by the ⊕ tool (w_norm/h_norm) so
@@ -1486,8 +1643,13 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
         if w_norm > 0 and h_norm > 0:
             _box = {"x_norm": max(0.0, x_norm - w_norm / 2), "y_norm": max(0.0, y_norm - h_norm / 2),
                     "w_norm": w_norm, "h_norm": h_norm}
-        return _ocr_crop_laddered(crop, val_type, verify_fn=verify_fn, meta=meta,
-                                  page=page_image, box=_box)
+        _v = _ocr_crop_laddered(crop, val_type, verify_fn=verify_fn, meta=meta,
+                                page=page_image, box=_box)
+        # Multi-line continuation (gated): only re-reads/joins when a rule + the trailing-
+        # pattern/history signal say the value wraps onto the next line; else byte-identical.
+        if continuation and _v:
+            _v = _maybe_continue(page_image, x1, y1, x2, y2, val_type, _v, continuation, verify_fn)
+        return _v
     except Exception:
         return None
 

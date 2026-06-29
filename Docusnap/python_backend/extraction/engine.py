@@ -268,6 +268,8 @@ class ExtractionEngine:
         self.format_class_index  = {}   # populated by set_formats()
         self.label_overrides     = []   # populated by set_label_overrides()
         self.field_rules_index   = {}   # populated by set_field_rules()
+        self._multiline_index    = {}   # populated by set_field_rules() (multiline_continue)
+        self.multiline_enabled   = False  # set by set_multiline_enabled()
         self.registration_enabled = False  # set by set_registration_enabled()
         # Phase 3 candidate-override (default OFF → byte-identical behaviour). Modes:
         # 'off' | 'suggest' (corrected_to only) | 'auto' (value, only for opted-in
@@ -293,6 +295,12 @@ class ExtractionEngine:
         """Enable the free-text NAME wordness review flag (default OFF). Inert unless the
         char-trigram table ships (extraction/data/char_trigrams.json)."""
         self.name_wordness = bool(on)
+
+    def set_multiline_enabled(self, on: bool):
+        """Enable the multi-line continuation read (default OFF in-engine; the handler passes
+        the default-ON setting). Inert without a multiline_continue rule for the field — so a
+        single-line read stays byte-identical."""
+        self.multiline_enabled = bool(on)
 
     def set_candidate_override(self, mode, fields=None):
         """Enable the Phase 3 post-merge candidate resolver. mode: 'off' (default,
@@ -518,17 +526,43 @@ class ExtractionEngine:
         """Operator-taught field cleanup rules (Review right-click toolkit). Index
         by (supplier_lower, doctype_lower, field_key) → [rule, …] so the Stage 4.5
         winner loop can strip a learned leaked heading/column from a field value."""
-        idx = {}
+        idx, ml = {}, {}
         for r in (rules or []):
             if not isinstance(r, dict) or not r.get('field_key') or not r.get('rule_type'):
                 continue
             key = ((r.get('supplier_name') or '').lower().strip(),
                    (r.get('document_type') or '').lower().strip(),
                    r['field_key'])
+            if r['rule_type'] == 'multiline_continue':
+                # Continuation rule: trailing chars in token_norm (default -/–/—). Consulted
+                # by the anchor READ step (_make_multiline_lookup), NOT the Stage 4.5 apply
+                # loop below — joining must happen at the crop, not as a post-trim.
+                ml[key] = {'pattern_chars': (r.get('token_norm') or '').strip() or '-–—'}
+                continue
             idx.setdefault(key, []).append(r)
         self.field_rules_index = idx
+        self._multiline_index  = ml
         if idx:
             self.log(f"  Field cleanup rules: {sum(len(v) for v in idx.values())} loaded")
+        if ml:
+            self.log(f"  Multi-line continuation rules: {len(ml)} loaded")
+
+    def _make_multiline_lookup(self, supplier_name, document_slug):
+        """Per-field multiline_continue lookup for the anchor read step: supplier+doctype →
+        doctype-only ('') → '__global__'. Returns None when the feature is off or no rule is
+        in scope (→ single-line read, byte-identical)."""
+        if not self.multiline_enabled or not self._multiline_index:
+            return None
+        s = (supplier_name or '').lower().strip()
+        d = (document_slug or '').lower().strip()
+        idx = self._multiline_index
+        def lookup(fk):
+            for sk in ([s] if s else []) + ['', '__global__']:
+                hit = idx.get((sk, d, fk))
+                if hit:
+                    return hit
+            return None
+        return lookup
 
     def _field_rules_for(self, supplier_name, document_slug, field_key):
         """Rules in scope for a field, most-specific scope first: supplier+doctype,
@@ -1003,6 +1037,7 @@ class ExtractionEngine:
                 on_reject=_on_reject,
                 page_text_lines=page_text_lines,
                 text_field_keys=text_field_keys,
+                multiline_lookup=self._make_multiline_lookup(supplier_name, document_slug),
             )
             _pre_s2 = self._snap(results)
             self._remember_candidates('2_anchor', anchor_results)

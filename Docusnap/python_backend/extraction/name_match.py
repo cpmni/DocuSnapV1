@@ -25,6 +25,8 @@ lexicon once per field group (from getFieldFormats `value_counts`) and calls
 `repair_name_value` in the Stage 4.5 text branch as a `corrected_to` SUGGESTION.
 """
 
+import re
+
 from extraction.text_normalise import normalise_for_tokens
 
 _STABLE_FREQ      = 0.6   # a stable token must appear in >= 60% of confirmed docs at its position
@@ -310,3 +312,53 @@ def conforms_to_lexicon(value, lexicon):
         if normalise_for_tokens(content_toks[i]) != st["norm"]:
             return False                   # wrong/garbled token at a stable position
     return True
+
+
+# Trailing continuation markers: hyphen, en-dash, em-dash (the multi-line "this value wraps"
+# cue). A per-field rule may widen this set; dash-only is the default.
+_CONT_DEFAULT_CHARS = "-–—"
+
+
+def _shape_is_complete(value, fmt_entry):
+    """Coarse history check used only when there is NO name lexicon: True when the value's
+    structural shape (format_anomaly_checker.shape_signature) is one the field has actually
+    confirmed — so a value that legitimately ends in a continuation char (its shape is
+    learned) is treated as complete, not truncated. Inert without a learned shape set."""
+    if not fmt_entry:
+        return False
+    shapes = fmt_entry.get("shapes")
+    if not shapes:
+        return False
+    try:
+        from extraction.format_anomaly_checker import shape_signature
+        return shape_signature(str(value)) in shapes
+    except Exception:
+        return False
+
+
+def should_continue_line(line1, pattern_chars=None, name_lex=None, fmt_entry=None):
+    """Per-read decision: should the value on `line1` CONTINUE onto the line below?
+    Pattern-primary, history-guarded (designed with reggie):
+
+        continue := (trailing continuation char AND NOT complete-per-history)
+                    OR is_truncated_name(line1, name_lex)
+
+    A trailing continuation char (default -/–/—) fires on document #1 (no history needed);
+    the history check only SUPPRESSES it for a value that legitimately ends in the char yet
+    already matches confirmed history (conforms_to_lexicon, or the coarse learned-shape).
+    The pure-data branch (is_truncated_name) adds recall for a no-dash truncation and is
+    inert without confirmed history. Returns the BOOLEAN only — the caller owns the
+    free-text gating and the actual read/join."""
+    s = (line1 or "").rstrip()
+    if not s:
+        return False
+    chars = pattern_chars or _CONT_DEFAULT_CHARS
+    if re.search("[" + re.escape(chars) + "]$", s):
+        # Trailing continuation char. Suppress only when history confirms completeness;
+        # the name lexicon is authoritative when present, else the coarse learned-shape.
+        if name_lex:
+            return not conforms_to_lexicon(s, name_lex)
+        return not _shape_is_complete(s, fmt_entry)
+    # No trailing char: fall back to the data-verified truncation signal (history-gated,
+    # inert without confirmed history).
+    return bool(name_lex) and is_truncated_name(s, name_lex)

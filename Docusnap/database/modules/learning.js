@@ -671,11 +671,18 @@ function normalizeFieldRuleToken(raw) {
 function saveFieldRule(db, { supplier_name, document_type, field_key, rule_type,
                             token, side, min_prefix } = {}) {
   if (!field_key) return { changes: 0 };
-  if (rule_type !== 'remove_text' && rule_type !== 'keep_block') return { changes: 0 };
+  if (rule_type !== 'remove_text' && rule_type !== 'keep_block' && rule_type !== 'multiline_continue') return { changes: 0 };
   const supplier  = normalizeSupplierName(supplier_name || '__global__') || '__global__';
   const dt        = document_type || null;
-  const tokenNorm = rule_type === 'remove_text' ? normalizeFieldRuleToken(token) : null;
-  if (rule_type === 'remove_text' && !tokenNorm) return { changes: 0 };
+  // token_norm: the literal to remove (remove_text), or the trailing continuation chars
+  // (multiline_continue; default "-"). keep_block carries none.
+  let tokenNorm = null;
+  if (rule_type === 'remove_text') {
+    tokenNorm = normalizeFieldRuleToken(token);
+    if (!tokenNorm) return { changes: 0 };
+  } else if (rule_type === 'multiline_continue') {
+    tokenNorm = (typeof token === 'string' && token.trim()) ? token.trim() : '-';
+  }
   const sideVal   = side === 'leading' ? 'leading' : 'trailing';
   const mp        = parseInt(min_prefix, 10);
   const minPrefix = Number.isFinite(mp) ? Math.max(0, Math.min(50, mp)) : 3;
