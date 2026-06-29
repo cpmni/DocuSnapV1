@@ -169,6 +169,12 @@ function register(ctx) {
     } catch {}
     return { removed };
   });
+  // Saved field rules (read-only) — lets the Review right-click menu reflect a persisted
+  // rule (e.g. show "wrapping is on" for a field that already has a multiline_continue rule).
+  ipcMain.handle('get-field-rules', () => {
+    requireRole('admin', 'edit');
+    return learning.getFieldRules(getDb());
+  });
   ipcMain.handle('rename-field-value', (_e, scope) => {
     requireRole('admin', 'edit');
     const db = getDb();

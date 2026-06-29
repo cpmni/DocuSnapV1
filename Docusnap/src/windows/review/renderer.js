@@ -150,6 +150,14 @@ let pendingAnchors   = {};
 // and persisted only on Confirm (mirrors pendingAnchors). Keyed field_key → array of
 // saveFieldRule payloads. An un-confirmed teach (skip/defer/doc-change) leaves no trace.
 let pendingFieldRules = {};
+// SAVED field rules (read-only cache) so the right-click menu can reflect a persisted rule
+// (e.g. show "wrapping is on" after a confirm cleared pendingFieldRules). Refreshed on load
+// and after each confirm.
+let _savedFieldRules = [];
+async function _loadSavedFieldRules() {
+  try { _savedFieldRules = (await window.docusnap.getFieldRules?.()) || []; } catch { _savedFieldRules = []; }
+}
+_loadSavedFieldRules();
 // The draw context of the most recent ⊕ teach, so the readout's Left/Above toggle can
 // re-run label detection in the chosen direction without redrawing the box.
 let lastTeachCtx     = null;   // { fieldKey, rect, imgW, imgH, scaleX, scaleY, value }
@@ -1546,7 +1554,15 @@ function _stageMultilineRule(key, { silent = false } = {}) {
   closeFieldRuleMenu();
 }
 function _hasMultilineRule(key) {
-  return (pendingFieldRules[key] || []).some(r => r.rule_type === 'multiline_continue');
+  if ((pendingFieldRules[key] || []).some(r => r.rule_type === 'multiline_continue')) return true;
+  // Also reflect a SAVED rule in scope for this doc (supplier+doctype, or global/doctype-only).
+  const scope    = _fieldRuleScope();
+  const supplier = (scope.supplier_name || '').toLowerCase();
+  const doctype  = (scope.document_type || '').toLowerCase();
+  return _savedFieldRules.some(r =>
+    r.rule_type === 'multiline_continue' && r.field_key === key
+    && (r.document_type || '').toLowerCase() === doctype
+    && ['__global__', '', supplier].includes((r.supplier_name || '').toLowerCase()));
 }
 
 function showFieldRuleMenu(e, input, key) {
@@ -2014,6 +2030,7 @@ async function confirmCurrentDoc({ bulk = false } = {}) {
       }
     }
     pendingFieldRules = {};
+    _loadSavedFieldRules();   // refresh the cache so the menu reflects the just-saved rule
   }
 
   queue         = queue.filter(d => d.id !== currentDoc.id);
