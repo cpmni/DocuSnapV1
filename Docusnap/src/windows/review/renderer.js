@@ -2071,6 +2071,9 @@ async function fileAllReady() {
       countEl.textContent = `Filing ${i + 1} of ${docs.length}` + (skipped ? ` · ${skipped} skipped` : '');
       fileEl.textContent  = doc.original_filename || '';
       barFill.style.width = `${Math.round(((i + 1) / docs.length) * 100)}%`;
+      // Yield to the browser between docs so the window stays responsive (paints the
+      // progress, handles Stop/input) over a big batch instead of showing "Not Responding".
+      await new Promise(r => setTimeout(r, 0));
 
       if (!queue.some(d => d.id === doc.id)) continue; // already handled elsewhere
       // Flagged docs (validation note / correction candidate / below-threshold
