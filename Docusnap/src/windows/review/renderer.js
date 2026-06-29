@@ -2370,7 +2370,10 @@ document.getElementById('btn-doc-next')?.addEventListener('click', () => cycleDo
 // when Confirm is actually enabled and visible, so it never files an incomplete doc.
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter' || e.repeat || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
-  if (document.querySelector('[data-help-ignore]')) return;   // a modal/dialog is open
+  // A modal/dialog is actually OPEN — count only DISPLAYED help-mode-opt-out elements, not the
+  // static, permanently-present learning-history overlay (which carries data-help-ignore while
+  // hidden). A bare querySelector matched that hidden overlay and silently broke Ctrl+Enter.
+  if ([...document.querySelectorAll('[data-help-ignore]')].some(el => getComputedStyle(el).display !== 'none')) return;
   const btn = document.getElementById('btn-confirm');
   if (!btn || btn.disabled || btn.offsetParent === null) return;   // not ready / not visible
   e.preventDefault();
