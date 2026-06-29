@@ -152,6 +152,10 @@
     .threshold-row:last-child { border-bottom:none; }
     .threshold-label { font-size:13px; }
     .threshold-sub { font-size:11px; color:var(--muted); margin-top:2px; }
+    /* Sub-heading that separates non-watch-specific toggles within the Watch Folder card. */
+    .settings-subgroup-divider { font-size:11px; color:var(--muted); margin:14px 0 2px; padding-top:12px;
+      border-top:1px solid var(--border); text-transform:uppercase; letter-spacing:.04em; }
+    .settings-subgroup-divider b { color:var(--text); font-weight:600; }
     .conf-row { display:flex; align-items:center; gap:8px; }
     .conf-slider { width:90px; accent-color:var(--accent); }
     .conf-val { font-family:var(--mono); font-size:11px; color:var(--accent2); min-width:32px; }
@@ -449,6 +453,9 @@
                 <span class="toggle-slider"></span>
               </label>
             </div>
+            <!-- The two toggles below are NOT watch-specific — they govern every import +
+                 extraction. Set off with a divider + sub-heading so the grouping is honest. -->
+            <div class="settings-subgroup-divider">These apply to <b>every import</b> — not just the watch folder</div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Auto-file 100%-confidence documents</div>
