@@ -247,6 +247,17 @@ document.getElementById('watch-folder-toggle').addEventListener('change', async 
   await api.setWatchFolderEnabled(e.target.checked);
 });
 
+// ── Auto-file 100%-confidence documents (default ON) ──────────────────────────
+(async () => {
+  try {
+    const v = await api.getSetting('auto_file_full_confidence');
+    document.getElementById('auto-file-toggle').checked = (v !== 'false');   // unset → on
+  } catch { document.getElementById('auto-file-toggle').checked = true; }
+})();
+document.getElementById('auto-file-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('auto_file_full_confidence', e.target.checked ? 'true' : 'false');
+});
+
 // ── Processing mode ───────────────────────────────────────────────────────────
 async function loadProcessingMode() {
   const mode = await api.getProcessingMode();

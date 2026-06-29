@@ -514,7 +514,56 @@ async function startProcessing() {
   if (batch.done > 0) {
     if (_userCanReview) btnReviewDocs.classList.add('visible');
     _lastRunSummary = { ok: batch.ok, err: batch.err };
+    autoFileFullConfidence();   // file any 100%-confidence docs automatically (setting-gated) + toast
   }
+}
+
+// Auto-file documents at exactly 100% confidence (all required fields present + high
+// confidence) straight after a batch, skipping Review. Reuses the SAME confirm/file IPC as
+// "File All Ready" (confidence-gated). Setting-gated (default ON); never auto-files a flagged
+// doc. Best-effort: a per-doc failure just leaves it queued for normal review.
+async function autoFileFullConfidence() {
+  try {
+    if (!_userCanReview) return;
+    const on = (await window.docusnap.getSetting('auto_file_full_confidence')) !== 'false';
+    if (!on) return;
+    const queue = await window.docusnap.getReviewQueue();
+    const ready = (queue || []).filter(d => d.overall_confidence === 100 && d.type_slug && !d.review_flag_count);
+    if (!ready.length) return;
+    let filed = 0;
+    for (const d of ready) {
+      const full = await window.docusnap.getDocumentWithExtractions(d.id);
+      if (!full) continue;
+      const allValues = {};
+      for (const ex of (full.extractions || [])) allValues[ex.field_key] = ex.display_value ?? ex.raw_value;
+      try {
+        const r = await window.docusnap.confirmReview({
+          document_id: d.id, folder_path: d.folder_path, original_filename: d.original_filename,
+          allValues, supplier_name: d.supplier_name, document_type: full.type_name || d.type_name,
+          document_type_slug: d.type_slug, corrections: {}, taught_fields: [], bulk: true,
+        });
+        if (r && r.success) filed++;
+      } catch { /* leave it for manual review */ }
+      await new Promise(r => setTimeout(r, 0));   // keep the window responsive
+    }
+    if (filed > 0) {
+      showAutoFiledToast(filed);
+      try { updateAttention(); } catch {}
+      try { if (typeof refreshDashboardIfHome === 'function') refreshDashboardIfHome(); } catch {}
+    }
+  } catch (e) { console.warn('auto-file 100% failed:', e.message); }
+}
+
+function showAutoFiledToast(n) {
+  const t = document.createElement('div');
+  t.style.cssText = 'position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:9999;'
+    + 'background:var(--surface);color:var(--text);border:1px solid var(--ok);border-left:4px solid var(--ok);'
+    + 'border-radius:10px;padding:12px 16px;box-shadow:0 12px 34px rgba(0,0,0,.35);font-size:13px;max-width:420px;';
+  t.innerHTML = `<strong>✓ ${n} document${n > 1 ? 's' : ''}</strong> with 100% confidence ${n > 1 ? 'were' : 'was'} filed automatically.`
+    + ` <a href="#" id="auto-filed-search" style="color:var(--accent2);margin-left:6px">View in Search</a>`;
+  document.body.appendChild(t);
+  t.querySelector('#auto-filed-search')?.addEventListener('click', (e) => { e.preventDefault(); window.docusnap.openSearchWindow?.(); t.remove(); });
+  setTimeout(() => t.remove(), 9000);
 }
 
 function handleProgress(msg) {
