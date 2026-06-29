@@ -91,6 +91,20 @@ const ACTIVATE_ERRORS = {
 
 $('recheck').addEventListener('click', () => { api.licenseEnterApp(); });
 
+// Friendly, retryable failure messages for "Start trial" — a reviewer on a flaky/firewalled
+// connection or hitting a busy server must see a clear "try again", never a dead button or a
+// raw error. The backend client already times out (no infinite spin) and the button re-enables.
+const TRIAL_LABEL   = ($('trial') && $('trial').textContent) || 'Start / resume trial';
+const TRIAL_OFFLINE = "Couldn’t start your trial — check your internet connection and try again.";
+const TRIAL_BUSY    = "The licence server is busy right now — please wait a moment and try again.";
+const TRIAL_GENERIC = "Couldn’t start your trial — please try again in a moment.";
+function failTrial(text) {            // a RETRYABLE failure (network / server) — invite a retry
+  const m = $('trial_msg');
+  m.className = 'msg err';
+  m.textContent = text;
+  if ($('trial')) { $('trial').textContent = 'Try again'; $('trial').disabled = false; }
+}
+
 // Basic email shape check (mirrors the main/backend validation). Empty is allowed
 // here — email is optional — but a non-empty value must look like an address.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -119,6 +133,7 @@ $('trial').addEventListener('click', async () => {
   }
 
   msg.textContent = 'Starting your trial…';
+  $('trial').textContent = TRIAL_LABEL;     // reset any prior "Try again" while we attempt
   $('trial').disabled = true;
   try {
     // persists trial window + identity, caches token
@@ -128,27 +143,30 @@ $('trial').addEventListener('click', async () => {
       msg.className = 'msg ok';
       msg.textContent = (res.resumed ? 'Resuming your trial' : 'Trial started') + left + '. Opening…';
       api.licenseEnterApp();              // enter ONLY after capture/validation succeeds
-    } else if (res && res.state === 'expired') {
+      return;                             // leave the button disabled while the shell opens
+    }
+    if (res && res.state === 'expired') {
       msg.className = 'msg err';
       msg.textContent = 'Your trial has ended. Enter a licence key to continue.';
+      $('trial').disabled = false;
     } else if (res && res.code === 'missing_fields') {
       msg.className = 'msg err';
       msg.textContent = 'Enter a customer or company name to start the trial.';
+      $('trial').disabled = false;
     } else if (res && res.code === 'invalid_email') {
       msg.className = 'msg err';
       msg.textContent = 'Enter a valid email address, or leave it blank.';
+      $('trial').disabled = false;
     } else if (res && res.offline) {
-      msg.className = 'msg err';
-      msg.textContent = ACTIVATE_ERRORS.offline; // couldn't reach the server to record the trial
+      failTrial(TRIAL_OFFLINE);           // couldn't reach the server to record the trial
+    } else if (res && /rate|too.?many|busy|throttl|429|503/i.test(String((res && res.code) || ''))) {
+      failTrial(TRIAL_BUSY);              // server rate-limiting / temporarily unavailable
     } else {
-      msg.className = 'msg err';
-      msg.textContent = 'Could not start the trial. Please try again.';
+      failTrial(TRIAL_GENERIC);           // any other backend hiccup — still retryable
     }
   } catch {
-    msg.className = 'msg err';
-    msg.textContent = ACTIVATE_ERRORS.offline;
-  } finally {
-    $('trial').disabled = false;
+    // Network error / timeout — never surface the raw error; offer a clear retry.
+    failTrial(TRIAL_OFFLINE);
   }
 });
 
