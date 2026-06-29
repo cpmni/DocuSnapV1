@@ -2461,12 +2461,16 @@ document.addEventListener('click', (e) => {
 });
 
 // ── Advanced → View learning history ──────────────────────────────────────────
-// Track the field the operator last clicked into, so "View learning history" knows which
-// field's learned values to show.
+// Track the field the operator last clicked into. The modal is NON-blocking (no backdrop),
+// so while it's open the right fields pane stays lit and clickable — clicking a field
+// live-reloads the table for THAT field.
 let lastFocusedFieldKey = null;
 document.getElementById('fields-scroll')?.addEventListener('focusin', (e) => {
   const inp = e.target.closest?.('.field-input');
-  if (inp && inp.dataset.key) lastFocusedFieldKey = inp.dataset.key;
+  if (inp && inp.dataset.key) {
+    lastFocusedFieldKey = inp.dataset.key;
+    if (isLhOpen()) loadLearningHistoryFor(inp.dataset.key);
+  }
 });
 
 document.getElementById('btn-advanced').addEventListener('click', () => {
@@ -2475,32 +2479,48 @@ document.getElementById('btn-advanced').addEventListener('click', () => {
 });
 
 let _lhData = [];                          // unsorted rows from the backend
-let _lhRendered = [];                       // current sorted view (delete keys off the index)
+let _lhRendered = [];                       // current sorted view (row buttons key off the index)
 let _lhSort = { key: 'count', dir: -1 };    // default: most-seen first
 let _lhField = null;                        // { key, label, supplier, slug }
 let _lhPending = null;                       // value awaiting inline delete-confirm
+let _lhEditing = null;                       // value currently being inline-edited
+let _lhProposals = [];                       // pending "fix likely slips" proposals
+
+const isLhOpen = () => document.getElementById('lh-overlay').style.display === 'block';
+
+function highlightActiveField(key) {
+  document.querySelectorAll('.field-row-label.lh-active-field').forEach(el => el.classList.remove('lh-active-field'));
+  if (isLhOpen()) document.querySelector(`.field-row-label[data-key="${key}"]`)?.classList.add('lh-active-field');
+}
 
 document.getElementById('btn-view-learning').addEventListener('click', async () => {
   const key = lastFocusedFieldKey;
   if (!key) return;   // the flyout's own hint asks the user to click a field first
   document.getElementById('advanced-bar').style.display = 'none';
+  document.getElementById('lh-overlay').style.display = 'block';
+  await loadLearningHistoryFor(key);
+});
+
+async function loadLearningHistoryFor(key) {
+  if (!key) return;
   const label    = (typeof labelFor === 'function') ? labelFor(key) : key.replace(/_/g, ' ');
   const slug     = selectedTypeSlug || currentDoc?.type_slug || currentDoc?.document_type_slug || null;
   const supplier = document.querySelector('.field-input[data-key="supplier_name"]')?.value?.trim()
                    || currentDoc?.supplier_name || '';
   _lhField   = { key, label, supplier, slug };
-  _lhPending = null;
+  _lhPending = null; _lhEditing = null; _lhProposals = [];
   _lhSort    = { key: 'count', dir: -1 };
   document.getElementById('lh-field').textContent = label;
   document.getElementById('lh-scope').textContent =
     `Sender: ${supplier || 'any'} · Type: ${slug ? String(slug).replace(/_/g, ' ') : 'this document type'}`;
+  document.getElementById('lh-proposals').style.display = 'none';
   try {
     _lhData = await window.docusnap.getFieldValueHistory(
       { supplier_name: supplier, document_type: slug, field_key: key }) || [];
   } catch { _lhData = []; }
   renderLearningHistory();
-  document.getElementById('lh-overlay').style.display = 'flex';
-});
+  highlightActiveField(key);
+}
 
 function renderLearningHistory() {
   _lhRendered = [..._lhData].sort((a, b) => {
@@ -2512,25 +2532,106 @@ function renderLearningHistory() {
   const body = document.getElementById('lh-body');
   body.innerHTML = _lhRendered.length ? _lhRendered.map((r, i) => {
     const last = r.last_seen ? escHtml(String(r.last_seen).slice(0, 10)) : '—';
-    const cell = (_lhPending === r.value)
-      ? `<span class="lh-confirm">Delete?<button class="lh-yes" data-idx="${i}">Yes</button><button class="lh-no">No</button></span>`
-      : `<button class="lh-del" data-idx="${i}" title="Delete this value from learning">🗑</button>`;
-    return `<tr><td class="lh-val">${escHtml(r.value)}</td><td>${r.count}</td><td>${last}</td><td style="text-align:right;">${cell}</td></tr>`;
+    let valueCell, actionCell;
+    if (_lhEditing === r.value) {
+      valueCell  = `<input class="lh-edit-input" id="lh-edit-input" data-idx="${i}">`;
+      actionCell = `<button class="lh-save" data-idx="${i}" title="Save">✓</button><button class="lh-ecancel" title="Cancel">✗</button>`;
+    } else {
+      valueCell = `<span class="lh-val">${escHtml(r.value)}</span>`;
+      actionCell = (_lhPending === r.value)
+        ? `<span class="lh-confirm">Delete?<button class="lh-yes" data-idx="${i}">Yes</button><button class="lh-no">No</button></span>`
+        : `<button class="lh-edit" data-idx="${i}" title="Fix this value">&#9998;</button><button class="lh-del" data-idx="${i}" title="Delete this value from learning">🗑</button>`;
+    }
+    return `<tr><td>${valueCell}</td><td>${r.count}</td><td>${last}</td><td style="text-align:right; white-space:nowrap;">${actionCell}</td></tr>`;
   }).join('') : `<tr><td colspan="4" class="lh-empty">No learned values yet for this field.</td></tr>`;
   document.querySelectorAll('.lh-table th[data-sort]').forEach(th => {
     const base = th.dataset.sort === 'value' ? 'Value' : th.dataset.sort === 'count' ? 'Times seen' : 'Last seen';
     th.textContent = base + (th.dataset.sort === _lhSort.key ? (_lhSort.dir > 0 ? ' ▲' : ' ▼') : '');
   });
+  if (_lhEditing !== null) {
+    const inp = document.getElementById('lh-edit-input');
+    if (inp) {
+      inp.value = _lhEditing; inp.focus(); inp.select();
+      inp.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); commitLhEdit(inp); }
+        else if (e.key === 'Escape') { e.preventDefault(); _lhEditing = null; renderLearningHistory(); }
+      });
+    }
+  }
+}
+
+// Rename a learned value (oldVal → newVal) via the backend, then reflect it locally
+// (merge counts if the new value already exists, else rename in place).
+async function applyLhRename(oldVal, newVal) {
+  if (!newVal || newVal === oldVal) return;
+  try {
+    await window.docusnap.renameFieldValue(
+      { supplier_name: _lhField.supplier, document_type: _lhField.slug, field_key: _lhField.key, oldValue: oldVal, newValue: newVal });
+    const old      = _lhData.find(x => x.value === oldVal);
+    const existing  = _lhData.find(x => x.value === newVal);
+    if (old && existing) { existing.count += old.count; _lhData = _lhData.filter(x => x.value !== oldVal); }
+    else if (old)        { old.value = newVal; }
+  } catch (e) { console.warn('rename-field-value failed:', e); }
+}
+
+async function commitLhEdit(inp) {
+  const oldVal = _lhEditing, newVal = inp.value.trim();
+  _lhEditing = null;
+  await applyLhRename(oldVal, newVal);
+  renderLearningHistory();
+}
+
+// "Fix likely slips": find values that differ from a strong per-position column consensus at
+// exactly ONE character, where that character is a likely OCR slip (a symbol where alnum is
+// expected, or a known confusion like $↔S / 0↔O / 1↔I) and the corrected value matches the
+// column's dominant shape or an existing value. Pure/data-driven — proposes, never auto-applies.
+const _OCR_PAIRS = new Set(['$S','5S','S5','0O','O0','0Q','Q0','1I','I1','1L','L1','8B','B8','6G','G6','2Z','Z2','7/','/7','€E','£E']);
+const _shapeSig = (s) => s.replace(/[0-9]/g, '#').replace(/[A-Za-z]/g, '@');
+function _likelySlip(from, to) {
+  if (!/[A-Za-z0-9]/.test(from)) return true;                 // a symbol where alnum is expected
+  return _OCR_PAIRS.has((from + to).toUpperCase());
+}
+function computeSlipFixes() {
+  const values = _lhData.map(r => r.value).filter(v => typeof v === 'string' && v.length);
+  if (values.length < 4) return [];                            // need a real column to vote
+  const shapeCount = {};
+  values.forEach(v => { const s = _shapeSig(v); shapeCount[s] = (shapeCount[s] || 0) + 1; });
+  const domShape = Object.entries(shapeCount).sort((a, b) => b[1] - a[1])[0][0];
+  const valueSet = new Set(values);
+  const out = [];
+  for (const v of values) {
+    const diffs = [];
+    for (let i = 0; i < v.length; i++) {
+      const tally = {}; let total = 0;
+      for (const w of values) {
+        if (w === v || w.length <= i) continue;
+        tally[w[i]] = (tally[w[i]] || 0) + 1; total++;
+      }
+      if (total < 3) continue;
+      const [domChar, domN] = Object.entries(tally).sort((a, b) => b[1] - a[1])[0];
+      if (domN / total >= 0.8 && v[i] !== domChar && _likelySlip(v[i], domChar)) diffs.push({ i, to: domChar });
+    }
+    if (diffs.length === 1) {
+      const d = diffs[0], fixed = v.slice(0, d.i) + d.to + v.slice(d.i + 1);
+      if (fixed !== v && (_shapeSig(fixed) === domShape || valueSet.has(fixed))) out.push({ from: v, to: fixed });
+    }
+  }
+  return out;
 }
 
 document.querySelectorAll('.lh-table th[data-sort]').forEach(th => th.addEventListener('click', () => {
   const k = th.dataset.sort;
   if (_lhSort.key === k) _lhSort.dir *= -1; else _lhSort = { key: k, dir: k === 'value' ? 1 : -1 };
-  _lhPending = null;
+  _lhPending = null; _lhEditing = null;
   renderLearningHistory();
 }));
 
 document.getElementById('lh-body').addEventListener('click', async (e) => {
+  const edit = e.target.closest('.lh-edit');
+  if (edit) { _lhEditing = _lhRendered[+edit.dataset.idx]?.value ?? null; _lhPending = null; renderLearningHistory(); return; }
+  if (e.target.closest('.lh-ecancel')) { _lhEditing = null; renderLearningHistory(); return; }
+  const save = e.target.closest('.lh-save');
+  if (save) { const inp = document.getElementById('lh-edit-input'); if (inp) await commitLhEdit(inp); return; }
   const del = e.target.closest('.lh-del');
   if (del) { _lhPending = _lhRendered[+del.dataset.idx]?.value ?? null; renderLearningHistory(); return; }
   if (e.target.closest('.lh-no')) { _lhPending = null; renderLearningHistory(); return; }
@@ -2549,14 +2650,43 @@ document.getElementById('lh-body').addEventListener('click', async (e) => {
   }
 });
 
+document.getElementById('lh-fix').addEventListener('click', () => {
+  const banner = document.getElementById('lh-proposals');
+  _lhProposals = computeSlipFixes();
+  banner.style.display = 'block';
+  if (!_lhProposals.length) {
+    banner.innerHTML = 'No likely single-character slips found in this column.';
+    setTimeout(() => { if (banner.innerHTML.startsWith('No likely')) banner.style.display = 'none'; }, 3500);
+    return;
+  }
+  const shown = _lhProposals.slice(0, 6).map(p => `<b>${escHtml(p.from)} → ${escHtml(p.to)}</b>`).join(', ');
+  banner.innerHTML = `Fix ${_lhProposals.length} likely slip${_lhProposals.length > 1 ? 's' : ''}: ${shown}`
+    + (_lhProposals.length > 6 ? `, +${_lhProposals.length - 6} more` : '')
+    + `<button class="lh-fix lh-apply" id="lh-apply-fixes">Apply</button>`
+    + `<button class="lh-cancel" id="lh-cancel-fixes">Cancel</button>`;
+});
+
+document.getElementById('lh-proposals').addEventListener('click', async (e) => {
+  if (e.target.id === 'lh-cancel-fixes') {
+    _lhProposals = []; document.getElementById('lh-proposals').style.display = 'none'; return;
+  }
+  if (e.target.id === 'lh-apply-fixes') {
+    e.target.disabled = true;
+    for (const p of _lhProposals) await applyLhRename(p.from, p.to);
+    _lhProposals = [];
+    document.getElementById('lh-proposals').style.display = 'none';
+    renderLearningHistory();
+  }
+});
+
 function closeLearningHistory() {
   document.getElementById('lh-overlay').style.display = 'none';
-  _lhPending = null;
+  _lhPending = null; _lhEditing = null; _lhProposals = [];
+  document.getElementById('lh-proposals').style.display = 'none';
+  document.querySelectorAll('.field-row-label.lh-active-field').forEach(el => el.classList.remove('lh-active-field'));
 }
 document.getElementById('lh-close').addEventListener('click', closeLearningHistory);
-document.getElementById('lh-overlay').addEventListener('click', (e) => {
-  if (e.target.id === 'lh-overlay') closeLearningHistory();
-});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && isLhOpen()) closeLearningHistory(); });
 
 document.getElementById('enh-threshold').addEventListener('change', function () {
   const slider = document.getElementById('enh-threshold-level');

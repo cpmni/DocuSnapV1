@@ -169,6 +169,16 @@ function register(ctx) {
     } catch {}
     return { removed };
   });
+  ipcMain.handle('rename-field-value', (_e, scope) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const changed = learning.renameFieldValue(db, scope || {});
+    try {
+      logAudit(db, { action: 'learning_value_renamed', action_category: 'learning',
+        outcome: 'success', metadata: { ...(scope || {}), changed } });
+    } catch {}
+    return { changed };
+  });
 
   // get-document-with-extractions / get-document-pages are shared with the
   // Search window (Read Only previews filed documents there too) — gate to

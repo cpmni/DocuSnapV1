@@ -953,12 +953,31 @@
               background: var(--doc-bg); border: 1px solid var(--border);
               object-fit: cover; object-position: top center; }
 
-  /* Learning-history modal (Advanced → View learning history) */
-  .lh-overlay { position: fixed; inset: 0; z-index: 100002; background: rgba(0,0,0,.45);
-                display: none; align-items: center; justify-content: center; }
-  .lh-modal { background: var(--surface); border: 1px solid var(--border2); border-radius: 12px;
-              width: min(640px, 92vw); max-height: 84vh; display: flex; flex-direction: column;
-              box-shadow: 0 24px 60px rgba(0,0,0,.45); }
+  /* Learning-history modal (Advanced → View learning history) — NON-blocking: no backdrop,
+     positioned left of centre so the right fields pane stays lit and clickable (clicking a
+     field live-reloads the table for that field). */
+  .lh-overlay { position: fixed; inset: 0; z-index: 100002; pointer-events: none; display: none; }
+  .lh-modal { pointer-events: auto; position: fixed; left: 96px; top: 50%; transform: translateY(-50%);
+              background: var(--surface); border: 1px solid var(--border2); border-radius: 12px;
+              width: min(560px, 52vw); max-height: 84vh; display: flex; flex-direction: column;
+              box-shadow: 0 24px 60px rgba(0,0,0,.5); }
+  /* The field whose history is currently shown — "lit up" in the right pane. */
+  .field-row-label.lh-active-field { box-shadow: -3px 0 0 0 var(--accent); color: var(--accent2); }
+  .lh-edit { background: none; border: 1px solid var(--border2); color: var(--muted); border-radius: 6px;
+             padding: 2px 7px; cursor: pointer; font-size: 12px; margin-right: 4px; }
+  .lh-edit:hover { color: var(--accent2); border-color: var(--accent); }
+  .lh-edit-input { width: 100%; font-family: var(--mono, monospace); font-size: 13px; padding: 3px 6px;
+                   border: 1px solid var(--accent); border-radius: 6px; background: var(--surface2); color: var(--text); }
+  .lh-fix { background: var(--accent-bg); border: 1px solid var(--accent); color: var(--accent2);
+            border-radius: 8px; padding: 5px 11px; cursor: pointer; font-size: 12px; }
+  .lh-fix:hover { background: var(--accent); color: var(--on-accent, #fff); }
+  .lh-fix:disabled { opacity: .5; cursor: default; }
+  .lh-proposals { padding: 9px 14px; font-size: 12px; color: var(--text); background: var(--accent-bg);
+                  border-bottom: 1px solid var(--border); line-height: 1.5; }
+  .lh-proposals b { font-family: var(--mono, monospace); }
+  .lh-proposals .lh-apply { margin-left: 8px; }
+  .lh-proposals .lh-cancel { background: var(--surface2); border: 1px solid var(--border2); color: var(--text);
+                             border-radius: 6px; padding: 2px 8px; cursor: pointer; font-size: 11px; margin-left: 4px; }
   .lh-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px;
              border-bottom: 1px solid var(--border); }
   .lh-title { font-size: 14px; font-weight: 600; color: var(--text); }
@@ -991,6 +1010,7 @@
       <button id="lh-close" class="lh-x" title="Close">&times;</button>
     </div>
     <div class="lh-scope" id="lh-scope"></div>
+    <div class="lh-proposals" id="lh-proposals" style="display:none;"></div>
     <div class="lh-tablewrap">
       <table class="lh-table">
         <thead><tr>
@@ -1002,7 +1022,10 @@
         <tbody id="lh-body"></tbody>
       </table>
     </div>
-    <div class="lh-foot">Click a column heading to sort. Delete a value that shouldn't exist for this field (e.g. a misread) to stop it confusing future reads — filed documents keep their files; only that field's value is cleared on the affected documents.</div>
+    <div class="lh-foot" style="display:flex; align-items:center; gap:10px; justify-content:space-between;">
+      <span style="flex:1;">Click a heading to sort, the ✎ to fix a value (e.g. <b>$O2 → SO2</b>), or 🗑 to delete one. Filed documents keep their files; only that field's stored value changes.</span>
+      <button id="lh-fix" class="lh-fix" title="Find values where a single character looks wrong against the column (e.g. a leading $ where every other value starts S) and fix them">Fix likely slips</button>
+    </div>
   </div>
 </div>
 <script src="../shared/theme.js"></script>

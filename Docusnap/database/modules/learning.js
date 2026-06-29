@@ -1049,9 +1049,35 @@ function purgeFieldValue(db, { supplier_name, document_type, field_key, value } 
   return tx();
 }
 
+// Rename a learned VALUE for a (supplier, doc-type, field) scope: oldValue → newValue across
+// the confirmed extractions and corrections that carry it (so the format/shape learner and
+// future reads see the corrected spelling — e.g. an OCR slip "$O2" → "SO2"). The stale hint
+// for the old value is dropped (the corrected value re-learns naturally; avoids a unique
+// clash). Filed documents keep their files — only the stored field value changes. Returns the
+// number of rows touched. Wrapped in a transaction.
+function renameFieldValue(db, { supplier_name, document_type, field_key, oldValue, newValue } = {}) {
+  if (!field_key || !oldValue || newValue == null || newValue === '' || oldValue === newValue) return 0;
+  const sn = supplier_name || '', dts = document_type || '';
+  const tx = db.transaction(() => {
+    let n = 0;
+    n += db.prepare(`
+      UPDATE extractions SET display_value = ?, raw_value = ?
+       WHERE field_key = ? AND display_value = ?
+         AND document_id IN (
+           SELECT d.id FROM documents d LEFT JOIN document_types dt ON dt.id = d.document_type_id
+           WHERE d.status = 'confirmed' AND COALESCE(d.supplier_name,'') = ? AND COALESCE(dt.slug,'') = ?
+         )`).run(newValue, newValue, field_key, oldValue, sn, dts).changes;
+    n += db.prepare(`UPDATE corrections SET corrected_value = ? WHERE field_key = ? AND corrected_value = ? AND COALESCE(supplier_name,'') = ? AND COALESCE(document_type,'') = ?`).run(newValue, field_key, oldValue, sn, dts).changes;
+    // Drop the stale hint for the OLD value (the corrected value re-learns on future confirms).
+    db.prepare(`DELETE FROM supplier_hints WHERE field_key = ? AND hint_value = ? AND COALESCE(supplier_name,'') = ? AND COALESCE(document_type,'') = ?`).run(field_key, oldValue, sn, dts);
+    return n;
+  });
+  return tx();
+}
+
 module.exports = {
   insertExtractions, deleteExtractions,
-  getFieldValueHistory, purgeFieldValue,
+  getFieldValueHistory, purgeFieldValue, renameFieldValue,
   saveCorrections, getHints, isPlausibleSupplierName, normalizeSupplierName,
   saveAnchor, sanitizeAnchorLabel, clearAnchors, getAllAnchors,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
