@@ -81,6 +81,36 @@ def _digit_free_on_digit_field(value, field_key, format_lookup) -> bool:
     return shape_requires_digit(entry)
 
 
+def _partial_of_uniform_shape(value, field_key, format_lookup) -> bool:
+    """True when `value`'s shape is a strict contiguous SUB-RUN of a SINGLE uniform
+    digit-bearing learned shape — a TRUNCATED/partial read of a structured reference
+    ("849-4" = ###-# of the uniform "####-####-#"), NOT a legitimately-new code. Used
+    (alongside _digit_free_on_digit_field) to REFUSE resurrecting a digit-BEARING fragment
+    that a global-transform/relocate read off a NEIGHBOURING row, while leaving a genuinely-
+    new full code (different group structure -> not a sub-run) untouched. Refusal leaves the
+    field empty -> review, never a wrong value. INERT on multi-shape / thin / alpha-only
+    history (mirrors _digit_free_on_digit_field). Data-driven and reusable across every field."""
+    if not value or format_lookup is None:
+        return False
+    try:
+        entry = format_lookup(field_key)
+    except Exception:
+        return False
+    from extraction.format_anomaly_checker import (shape_requires_digit, shape_signature,
+                                                   _shape_canonical)
+    if not shape_requires_digit(entry):
+        return False
+    shapes = (entry or {}).get('shapes') or []
+    fams = {_shape_canonical(s) for s in shapes}
+    if len(fams) != 1:                       # not a single uniform shape -> don't judge
+        return False
+    sig = shape_signature(str(value))
+    if not sig or sig in shapes:             # value already IS a confirmed shape -> not a fragment
+        return False
+    csig, full = _shape_canonical(sig), next(iter(fams))
+    return csig != full and csig in full     # strict contiguous sub-run of the uniform shape
+
+
 def extract_with_anchors(ocr_text: str, anchors: list[dict],
                          supplier_name: str | None,
                          document_type: str | None,
@@ -270,53 +300,6 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
             except Exception:
                 pass  # dev/robustness: the guard must never break a read
 
-        # ── Registration recovery: map the taught value box through the per-page
-        # transform (fitted from the template's landmarks) so the value FOLLOWS a
-        # shifted/skewed/scaled page even when the field's OWN label can't be
-        # re-found — the failure that leaves a worksheet date empty. A multi-
-        # landmark similarity fit (scale+rotation+translation, RANSAC) is stronger
-        # than the single-label relocation below, so it runs FIRST. Runs only
-        # after the rigid crop failed; the mapped read still clears the SAME
-        # credibility + learned-format gates. INERT (ladder byte-identical to
-        # before) when no transform was fitted (flag off / no landmarks / poor fit).
-        if (not value or _is_weak_read(value, val_type)) and page_transform is not None \
-                and x_norm > 0 and y_norm > 0 and page0 is not None:
-            w_norm = anchor.get("w_norm") or 0.0
-            h_norm = anchor.get("h_norm") or 0.0
-            # field_anchors stores the value CENTRE; Transform.apply_box wants a
-            # top-left box. Convert in → map → recentre, KEEPING the original tight
-            # w/h (apply_box's AABB can inflate under rotation; we only want the
-            # corrected POSITION, not a ballooned crop).
-            tl = {"x_norm": x_norm - w_norm / 2.0, "y_norm": y_norm - h_norm / 2.0,
-                  "w_norm": w_norm, "h_norm": h_norm}
-            mapped = page_transform.apply_box(tl)
-            rcx = mapped["x_norm"] + mapped["w_norm"] / 2.0
-            rcy = mapped["y_norm"] + mapped["h_norm"] / 2.0
-            _gcap = ((lambda c: slice_capture(field_key, "anchor_registration", 0,
-                        (rcx, rcy, w_norm, h_norm), c, "target")) if slice_capture else None)
-            _mg = {}
-            gval = _crop_and_ocr(page0, rcx, rcy, w_norm, h_norm, val_type, capture=_gcap, verify_fn=_verify, meta=_mg, continuation=continuation)
-            if gval and not _crop_is_credible(gval, val_type, validation_patterns, label):
-                if on_reject: on_reject(field_key, "anchor_registration", gval, "not_credible")
-            elif gval:
-                q = _qualify_against_format(gval, field_key, format_lookup, text_field_keys,
-                                            val_type, validation_patterns)
-                # Landmark-CONFIRMED read: the value was mapped through the page transform
-                # and cleared credibility. A learned-SHAPE mismatch (a variable code that
-                # differs from history) must NOT discard it — keep the credible value (a
-                # column-bleed substring was already trimmed into `q` above when one
-                # existed). The shape veto stays on the UN-anchored rigid path.
-                # EXCEPTION: don't resurrect a DIGIT-FREE read on a uniformly digit-bearing
-                # field — that's a wrong-row word (e.g. registration drifting onto
-                # "Ticket Type: Field"), not a variable code; leave value empty so the
-                # inline-harvest/relocation below can seat the real NNNN-NNNN-N value.
-                if not q and not _digit_free_on_digit_field(gval, field_key, format_lookup):
-                    q = gval
-                if q and _should_replace(value, q, val_type, validation_patterns):
-                    value  = q
-                    method = "anchor_registration"
-                    ocr_conf, ocr_min = _mg.get('conf'), _mg.get('min_conf')
-
         # ── Drift recovery: locate the label, then read the value beside it ───
         # The fixed crop is positionally RIGID — on a shifted/cropped scan (the
         # page registered higher, a top band clipped) the value moves off the
@@ -465,12 +448,67 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                             # EXCEPTION (same as the registration rung): never resurrect a
                             # DIGIT-FREE read on a uniformly digit-bearing field — a wrong-row
                             # word, not a variable code.
-                            if not q and not _digit_free_on_digit_field(rval, field_key, format_lookup):
+                            if not q and not _digit_free_on_digit_field(rval, field_key, format_lookup) \
+                                    and not _partial_of_uniform_shape(rval, field_key, format_lookup):
                                 q = rval
                             if q and _should_replace(value, q, val_type, validation_patterns, inc_ocr_conf=ocr_conf):
                                 value  = q
                                 method = "anchor_crop_relocated"
                                 ocr_conf, ocr_min = _mr.get('conf'), _mr.get('min_conf')
+
+        # ── Registration recovery (FALLBACK): map the taught value box through the
+        # per-page transform (fitted from the template's landmarks) so the value
+        # FOLLOWS a shifted/skewed/scaled page even when the field's OWN label can't
+        # be re-found — the failure that leaves a worksheet date empty. This now runs
+        # AFTER the label-based drift-recovery above (2026-06 "Stage 2 anchor arbiter"
+        # reorder): the LOCAL precise label read is tried FIRST, because a GLOBAL
+        # similarity fit's ~2% page residual exceeds the tight row pitch in a dense
+        # label block and lands a row off (the "849-4" from "2605-0849-1" bug). So
+        # registration is the fallback its own design always intended — it fires only
+        # when the relocate above left the value None/weak (relocate only assigns
+        # inside its credibility+format+_should_replace gates, so a failed/uncredible
+        # relocate leaves value None, which this `not value` trigger already covers;
+        # no extra trigger clause is needed). The mapped read still clears the SAME
+        # credibility + learned-format gates. INERT (byte-identical) when no transform
+        # was fitted (flag off / no landmarks / poor fit).
+        if (not value or _is_weak_read(value, val_type)) and page_transform is not None \
+                and x_norm > 0 and y_norm > 0 and page0 is not None:
+            w_norm = anchor.get("w_norm") or 0.0
+            h_norm = anchor.get("h_norm") or 0.0
+            # field_anchors stores the value CENTRE; Transform.apply_box wants a
+            # top-left box. Convert in → map → recentre, KEEPING the original tight
+            # w/h (apply_box's AABB can inflate under rotation; we only want the
+            # corrected POSITION, not a ballooned crop).
+            tl = {"x_norm": x_norm - w_norm / 2.0, "y_norm": y_norm - h_norm / 2.0,
+                  "w_norm": w_norm, "h_norm": h_norm}
+            mapped = page_transform.apply_box(tl)
+            rcx = mapped["x_norm"] + mapped["w_norm"] / 2.0
+            rcy = mapped["y_norm"] + mapped["h_norm"] / 2.0
+            _gcap = ((lambda c: slice_capture(field_key, "anchor_registration", 0,
+                        (rcx, rcy, w_norm, h_norm), c, "target")) if slice_capture else None)
+            _mg = {}
+            gval = _crop_and_ocr(page0, rcx, rcy, w_norm, h_norm, val_type, capture=_gcap, verify_fn=_verify, meta=_mg, continuation=continuation)
+            if gval and not _crop_is_credible(gval, val_type, validation_patterns, label):
+                if on_reject: on_reject(field_key, "anchor_registration", gval, "not_credible")
+            elif gval:
+                q = _qualify_against_format(gval, field_key, format_lookup, text_field_keys,
+                                            val_type, validation_patterns)
+                # Landmark-CONFIRMED read: the value was mapped through the page transform
+                # and cleared credibility. A learned-SHAPE mismatch (a variable code that
+                # differs from history) must NOT discard it — keep the credible value (a
+                # column-bleed substring was already trimmed into `q` above when one
+                # existed). The shape veto stays on the UN-anchored rigid path.
+                # EXCEPTION: don't resurrect a DIGIT-FREE read (a wrong-row word like
+                # "Field") OR a digit-bearing FRAGMENT of a uniform learned shape
+                # ("849-4" of "####-####-#") on a uniformly digit-bearing field — leave
+                # value empty so the (already-run) relocate, or review, seats the real value.
+                if not q and not _digit_free_on_digit_field(gval, field_key, format_lookup) \
+                        and not _partial_of_uniform_shape(gval, field_key, format_lookup):
+                    q = gval
+                if q and _should_replace(value, q, val_type, validation_patterns):
+                    value  = q
+                    method = "anchor_registration"
+                    ocr_conf, ocr_min = _mg.get('conf'), _mg.get('min_conf')
 
         # ── Fallback: text-based search in full OCR output ────────────────────
         if not value:

@@ -468,7 +468,7 @@ process_docs.py → ExtractionEngine.extract()
              the template has none, never overwriting an established phash) so a
              sample-pinned template becomes matchable — closing the empty-phash
              ORPHAN class (templates that can never match, e.g. blank create-template
-             rows). (Stage 2 anchor arbiter: deferred.) This REPLACED the old translation-only
+             rows). (Stage 2 anchor arbiter: DONE — see the Stage 2 reorder note below.) This REPLACED the old translation-only
              consensus-drift fallback: page_geometry.py (content-free page-corner
              "landmarks"), _consensus_drift and _drift_fallback were REMOVED — a
              real content-landmark transform strictly supersedes a corner prior +
@@ -644,11 +644,29 @@ process_docs.py → ExtractionEngine.extract()
            real digit-bearing value (or empties → review). Digit-bearing reads (MAC/serial/the
            real ref), alpha-only ref schemes, and thin/varied history are all untouched
            (byte-identical). The rungs also only attempt the replace when the candidate is
-           truthy now (`if q and _should_replace`). NOTE the broader structural fix (oscar's
-           preferred: reorder so relocation/inline-harvest runs BEFORE registration, the
-           "Stage 2 anchor arbiter" — still deferred) catches the digit-BEARING wrong-row
-           class too; this guard is the smallest-safe-change for the digit-free class. Guarded
-           by tests/test_ref_digit_guard.py.
+           truthy now (`if q and _should_replace`). Guarded by tests/test_ref_digit_guard.py.
+           STAGE 2 ANCHOR ARBITER — REORDER (2026-06, DONE; oscar+reggie+geometry-validated):
+           the label-based DRIFT-RECOVERY / inline-harvest rung now runs BEFORE the GLOBAL
+           REGISTRATION rung (registration moved to AFTER relocate, just before the text
+           fallback). The LOCAL precise label read is tried first; registration is the fallback
+           its own design always intended — it fires only when relocate left value None/weak
+           (relocate only assigns inside its credibility+format+_should_replace gates, so a
+           failed/uncredible relocate leaves value None, which registration's existing
+           `not value` trigger already covers — NO extra trigger clause). Fixes the digit-
+           BEARING wrong-row class the digit-free guard above couldn't: a global similarity
+           fit's ~2% page residual exceeds the tight row pitch in a dense label block, so the
+           mapped box lands a row off and reads a credible-but-WRONG fragment ("849-4" from
+           "2605-0849-1") that then SUPPRESSED its own correction. PLUS a new
+           anchor._partial_of_uniform_shape guard ANDed into BOTH resurrection sites
+           (registration + relocate-crop): refuses resurrecting a digit-bearing FRAGMENT whose
+           shape is a strict contiguous sub-run of a SINGLE uniform learned shape ("###-#" of
+           "####-####-#") — closing the label-UNfindable residual — while a genuinely-new
+           differently-shaped code is untouched. CLEAN pages byte-identical (a strict-credible
+           rigid read skips both rungs regardless of order). Guarded by
+           tests/test_anchor_arbiter_reorder.py (+ refreshed test_anchor_registration stub,
+           the multiline harness still 0 false-joins). (Deferred follow-ups: _qualify_against_format
+           arg parity on the inline path for mac/ip; routing 4-4-1 refs to the precise
+           job_reference val_type; a Stage 2 box_divergence arbiter.)
            AUTHORITY PRECEDENCE (engine.extract — the cross-stage winner order):
            authoritative ⊕ anchor > Stage 0.5 mapping > admin label
            (keyword_override) > other (passive anchor / keyword / inline /
