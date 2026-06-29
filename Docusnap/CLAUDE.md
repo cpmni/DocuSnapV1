@@ -619,6 +619,28 @@ process_docs.py → ExtractionEngine.extract()
            candidate ("Booking") cannot displace a digit-bearing incumbent. Guards
            OVERRIDES only — an empty field is still filled (validator then flags).
            Reusable/shape-based, never supplier- or document-specific.
+           DIGIT-PARITY RESURRECTION GUARD (anchor.py, 2026-06, reggie+oscar-reviewed):
+           the registration + relocate rungs QUALIFY a credible read against the learned
+           shape and, when the shape veto rejects it, RESURRECT it anyway (`if not q: q=gval`)
+           — to keep a legitimately-variable CODE (a new MAC/serial that differs in shape
+           from history). That over-reached: it also resurrected a DIGIT-FREE word read off a
+           NEIGHBOURING row ("Field"/the Ticket Type value, or "Booking") on a reference field
+           whose every confirmed value is NNNN-NNNN-N — a clean wrong-row read that then
+           SUPPRESSED the inline-harvest that DOES read the real "2605-0769-1" (the registration
+           transform fits a GLOBAL similarity whose ~2%-page residual exceeds the tight row
+           pitch in a dense label block, so a globally-good fit sits a row off locally).
+           anchor._digit_free_on_digit_field (+ format_anomaly_checker.shape_requires_digit:
+           class digits_only OR every learned shape signature contains '#') now REFUSES the
+           resurrection when the read is digit-free AND the field's history is uniformly
+           digit-bearing → the incumbent stays empty → the inline-harvest/relocation seats the
+           real digit-bearing value (or empties → review). Digit-bearing reads (MAC/serial/the
+           real ref), alpha-only ref schemes, and thin/varied history are all untouched
+           (byte-identical). The rungs also only attempt the replace when the candidate is
+           truthy now (`if q and _should_replace`). NOTE the broader structural fix (oscar's
+           preferred: reorder so relocation/inline-harvest runs BEFORE registration, the
+           "Stage 2 anchor arbiter" — still deferred) catches the digit-BEARING wrong-row
+           class too; this guard is the smallest-safe-change for the digit-free class. Guarded
+           by tests/test_ref_digit_guard.py.
            AUTHORITY PRECEDENCE (engine.extract — the cross-stage winner order):
            authoritative ⊕ anchor > Stage 0.5 mapping > admin label
            (keyword_override) > other (passive anchor / keyword / inline /

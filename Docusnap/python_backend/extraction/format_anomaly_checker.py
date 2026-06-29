@@ -126,6 +126,21 @@ def shape_signature(value: str) -> str:
     return ''.join(out)
 
 
+def shape_requires_digit(format_entry: Optional[dict]) -> bool:
+    """True when the confirmed history is UNIFORMLY digit-bearing: the class is
+    digits_only, OR every learned shape signature contains a digit position ('#',
+    per shape_signature). Pure, data-driven; no supplier/field specifics. Used to
+    refuse RESURRECTING a digit-FREE anchor read (a wrong-row word like "Field") on a
+    field whose every confirmed value carries digits — while leaving alpha-only or
+    digit-bearing reads, and fields with no/varied learned shape, untouched."""
+    if not format_entry:
+        return False
+    if format_entry.get('class') == DIGITS_ONLY:
+        return True
+    shapes = format_entry.get('shapes')
+    return bool(shapes) and all('#' in s for s in shapes)
+
+
 def _shape_to_regex(shape: str) -> str:
     """Turn a shape signature into a regex that matches a STANDALONE run of that
     shape: '#'→a digit, '@'→a letter, any other char→itself (a literal

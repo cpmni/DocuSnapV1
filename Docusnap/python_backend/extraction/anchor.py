@@ -60,6 +60,27 @@ def _qualify_against_format(value, field_key, format_lookup, text_field_keys=Non
     return cleaned or None
 
 
+def _digit_free_on_digit_field(value, field_key, format_lookup) -> bool:
+    """True when `value` carries NO digit yet the field's learned shape is uniformly
+    digit-bearing (shape_requires_digit). Used to REFUSE resurrecting a credible-but-
+    learned-shape-rejected anchor read: the resurrection rule exists to keep a
+    legitimately-variable CODE (a new MAC/serial — which has digits) that merely differs
+    in shape from history, but it must NOT keep a digit-free word read off a neighbouring
+    row (e.g. "Field" / "Booking" on a reference field whose values are all NNNN-NNNN-N).
+    Lets the existing inline-harvest/relocation seat the real digit-bearing value instead.
+    Data-driven and reusable; no learned shape (thin/varied history) → False (unchanged)."""
+    if not value or format_lookup is None:
+        return False
+    if any(c.isdigit() for c in str(value)):
+        return False
+    try:
+        entry = format_lookup(field_key)
+    except Exception:
+        return False
+    from extraction.format_anomaly_checker import shape_requires_digit
+    return shape_requires_digit(entry)
+
+
 def extract_with_anchors(ocr_text: str, anchors: list[dict],
                          supplier_name: str | None,
                          document_type: str | None,
@@ -261,9 +282,13 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 # differs from history) must NOT discard it — keep the credible value (a
                 # column-bleed substring was already trimmed into `q` above when one
                 # existed). The shape veto stays on the UN-anchored rigid path.
-                if not q:
+                # EXCEPTION: don't resurrect a DIGIT-FREE read on a uniformly digit-bearing
+                # field — that's a wrong-row word (e.g. registration drifting onto
+                # "Ticket Type: Field"), not a variable code; leave value empty so the
+                # inline-harvest/relocation below can seat the real NNNN-NNNN-N value.
+                if not q and not _digit_free_on_digit_field(gval, field_key, format_lookup):
                     q = gval
-                if _should_replace(value, q, val_type, validation_patterns):
+                if q and _should_replace(value, q, val_type, validation_patterns):
                     value  = q
                     method = "anchor_registration"
                     ocr_conf, ocr_min = _mg.get('conf'), _mg.get('min_conf')
@@ -413,9 +438,12 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                             # column-bleed substring was already trimmed into `q` when one
                             # existed). The shape veto stays on the UN-anchored rigid path
                             # so a drifted "Bookinc" is still caught.
-                            if not q:
+                            # EXCEPTION (same as the registration rung): never resurrect a
+                            # DIGIT-FREE read on a uniformly digit-bearing field — a wrong-row
+                            # word, not a variable code.
+                            if not q and not _digit_free_on_digit_field(rval, field_key, format_lookup):
                                 q = rval
-                            if _should_replace(value, q, val_type, validation_patterns, inc_ocr_conf=ocr_conf):
+                            if q and _should_replace(value, q, val_type, validation_patterns, inc_ocr_conf=ocr_conf):
                                 value  = q
                                 method = "anchor_crop_relocated"
                                 ocr_conf, ocr_min = _mr.get('conf'), _mr.get('min_conf')
