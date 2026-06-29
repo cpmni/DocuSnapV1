@@ -133,6 +133,8 @@ contextBridge.exposeInMainWorld('docusnap', {
   getReviewCount:              ()        => ipcRenderer.invoke('get-review-count'),
   getDeferredCount:            ()        => ipcRenderer.invoke('get-deferred-count'),
   getFieldRules:               ()        => ipcRenderer.invoke('get-field-rules'),
+  getRecentAutoFiled:          ()        => ipcRenderer.invoke('get-recent-auto-filed'),
+  clearRecentAutoFiled:        ()        => ipcRenderer.invoke('clear-recent-auto-filed'),
   getFieldValueHistory:        (scope)   => ipcRenderer.invoke('get-field-value-history', scope),
   purgeFieldValue:             (scope)   => ipcRenderer.invoke('purge-field-value', scope),
   renameFieldValue:            (scope)   => ipcRenderer.invoke('rename-field-value', scope),

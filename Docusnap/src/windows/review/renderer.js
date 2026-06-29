@@ -291,10 +291,58 @@ async function loadQueue() {
   updateTabCounts();
   renderQueueList();
   if (queue.length > 0) selectDoc(queue[0]);
+  refreshAutoCommittedBar();   // surface recently auto-filed docs for re-checking
 
   // If opened via "Edit in Review" from Search, navigate to the requested doc.
   const targetId = await window.docusnap.getReviewTarget();
   if (targetId) _navigateToDoc(targetId);
+}
+
+// ── "Auto-committed" re-surface ──────────────────────────────────────────────
+// Recently auto-filed (100%) docs can still be checked/edited: a bar offers them, and clicking
+// loads them (now confirmed) into the queue LIST so the operator can open, change and re-file
+// any that need it. The auto-refresh listener is suppressed while this view is active.
+let _viewingAutoFiled = false;
+let _autoFiledDocs    = [];
+
+async function refreshAutoCommittedBar() {
+  const bar = document.getElementById('auto-committed-bar');
+  if (!bar) return;
+  if (_viewingAutoFiled) {
+    bar.innerHTML = `Showing <b>${_autoFiledDocs.length}</b> auto-filed document${_autoFiledDocs.length === 1 ? '' : 's'} — `
+      + `<span class="acb-back">← Back to the review queue</span>`;
+    bar.style.display = 'block';
+    return;
+  }
+  let res = { docs: [] };
+  try { res = (await window.docusnap.getRecentAutoFiled?.()) || res; } catch {}
+  _autoFiledDocs = res.docs || [];
+  if (_autoFiledDocs.length) {
+    bar.innerHTML = `<b>✓ ${_autoFiledDocs.length}</b> document${_autoFiledDocs.length === 1 ? '' : 's'} auto-committed on the last pass — `
+      + `<span class="acb-back">click here to review them</span>`;
+    bar.style.display = 'block';
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+document.getElementById('auto-committed-bar')?.addEventListener('click', async () => {
+  if (_viewingAutoFiled) { await exitAutoFiledView(); return; }
+  if (!_autoFiledDocs.length) return;
+  _viewingAutoFiled = true;
+  queue = _autoFiledDocs.slice();
+  renderQueueList();
+  if (queue.length) selectDoc(queue[0]);
+  refreshAutoCommittedBar();
+});
+
+async function exitAutoFiledView() {
+  _viewingAutoFiled = false;
+  queue = await window.docusnap.getReviewQueue() || [];
+  updateTabCounts();
+  renderQueueList();
+  if (queue.length) selectDoc(queue[0]);
+  refreshAutoCommittedBar();
 }
 
 function reviewFields() {

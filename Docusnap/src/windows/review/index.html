@@ -56,6 +56,11 @@
     /* Queue list + the quick-scroll arrow rail beside it */
     #queue-scroll-wrap { flex: 1; display: flex; min-height: 0; }
     #queue-list { flex: 1; overflow-y: auto; min-width: 0; }
+    #auto-committed-bar { padding: 8px 12px; font-size: 12px; cursor: pointer; line-height: 1.4;
+      background: var(--accent-bg); border-bottom: 1px solid var(--border); color: var(--text); }
+    #auto-committed-bar:hover { filter: brightness(1.04); }
+    #auto-committed-bar b { color: var(--ok); }
+    #auto-committed-bar .acb-back { color: var(--accent2); font-weight: 600; }
     #queue-scroll-rail {
       flex-shrink: 0; width: 42px; display: flex; flex-direction: column;
       align-items: center; justify-content: flex-start; gap: 10px;
@@ -616,6 +621,8 @@
           Deferred <span class="qtab-count" id="tab-deferred-count">0</span>
         </button>
       </div>
+      <!-- "N auto-committed — click to review" bar (recently auto-filed docs, re-surfaced for checking). -->
+      <div id="auto-committed-bar" style="display:none;"></div>
       <div id="queue-scroll-wrap">
         <div id="queue-list" data-help-key="queue-list"></div>
         <div id="queue-scroll-rail">

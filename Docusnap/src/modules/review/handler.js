@@ -175,6 +175,26 @@ function register(ctx) {
     requireRole('admin', 'edit');
     return learning.getFieldRules(getDb());
   });
+
+  // Recently AUTO-FILED (100%-confidence) docs, so the Review window can offer "X auto-committed
+  // — view them" and re-surface them (now confirmed) for checking/editing. Backed by the rolling
+  // recent_auto_filed setting written by processing/handler._recordAutoFiled.
+  ipcMain.handle('get-recent-auto-filed', () => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    let ids = [];
+    try {
+      const o = JSON.parse(learning.getSetting(db, 'recent_auto_filed', '') || 'null');
+      if (o && Array.isArray(o.ids) && (!o.at || (Date.now() - o.at) <= 7 * 864e5)) ids = o.ids;
+    } catch {}
+    const docs = ids.length ? documents.getByIds(db, ids) : [];
+    return { count: docs.length, docs };
+  });
+  ipcMain.handle('clear-recent-auto-filed', () => {
+    requireRole('admin', 'edit');
+    try { learning.setSetting(getDb(), 'recent_auto_filed', JSON.stringify({ ids: [], at: Date.now() })); } catch {}
+    return { ok: true };
+  });
   ipcMain.handle('rename-field-value', (_e, scope) => {
     requireRole('admin', 'edit');
     const db = getDb();

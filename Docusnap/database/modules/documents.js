@@ -155,6 +155,25 @@ function getDeferredQueue(db) {
   `).all();
 }
 
+// Docs by id in the SAME shape as getReviewQueue (any non-deleted status) — used to re-surface
+// the recently AUTO-FILED (confirmed) docs into the Review list so they can be checked/edited.
+function getByIds(db, ids) {
+  if (!Array.isArray(ids) || !ids.length) return [];
+  const ph = ids.map(() => '?').join(',');
+  return db.prepare(`
+    SELECT d.*, dt.name as type_name, dt.slug as type_slug,
+      (SELECT COUNT(*) FROM extractions e
+         WHERE e.document_id = d.id
+           AND ( (e.validation_note IS NOT NULL AND e.validation_note <> '')
+              OR (e.corrected_to   IS NOT NULL AND e.corrected_to   <> '') )
+      ) AS review_flag_count
+    FROM documents d
+    LEFT JOIN document_types dt ON dt.id = d.document_type_id
+    WHERE d.id IN (${ph}) AND d.status != 'deleted'
+    ORDER BY d.confirmed_at DESC, d.id DESC
+  `).all(...ids);
+}
+
 // ── Recycle bin (soft delete) ────────────────────────────────────────────────
 // Delete is recoverable: status→'deleted' + deleted_at; the file(s) are KEPT. Restore
 // returns it to a sensible live status; purge (deleteDoc) is the permanent removal.
@@ -342,7 +361,7 @@ function getWorkingPaths(db) {
 
 module.exports = {
   insert, update, getById, getWithExtractions,
-  getReviewQueue, getDeferredQueue,
+  getReviewQueue, getDeferredQueue, getByIds,
   getReviewCount, getDeferredCount, getStuckCount, getStuckQueue, getFiledCounts,
   softDelete, restoreDeleted, getDeletedQueue, getDeletedCount,
   getFieldValueSuggestions,
