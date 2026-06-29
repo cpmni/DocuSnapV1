@@ -32,7 +32,7 @@
     { id: 'del', sel: '#btn-delete', title: 'Delete a document', advance: 'next',
       body: 'Don’t need it? Delete removes the document from the queue — it goes to the recycle bin, so it can be restored later if needed.' },
     { id: 'confirm', sel: '#btn-confirm', title: 'File the document', advance: 'click', alsoEnter: true,
-      body: 'When everything looks right, click Confirm & File — or just press Enter — to file a tidy copy and jump to the next document. Scan Finder learns from your corrections each time.' },
+      body: 'When everything looks right, click Confirm & File — or press <b>Ctrl + Enter</b> — to file a tidy copy and jump to the next document. Scan Finder learns from your corrections each time.' },
     { id: 'reproc', sel: '#btn-reprocess-all', title: 'Reprocess all — it gets smarter', advance: 'next',
       body: 'Once you’ve confirmed a few documents, Reprocess all re-reads every document still in the queue using what Scan Finder just learned from your corrections — often filling in fields it missed the first time.' },
     { id: 'fileall', sel: '#btn-file-all-review', title: 'File all ready', advance: 'next',
@@ -148,8 +148,8 @@
       const h = () => setTimeout(next, 350);          // let the control's own handler run first
       target.addEventListener('click', h, { once: true });
       cleanup.push(() => target.removeEventListener('click', h));
-      if (step.alsoEnter) {   // Confirm & File also fires on the Enter key
-        const ek = (e) => { if (e.key === 'Enter') { document.removeEventListener('keydown', ek); setTimeout(next, 350); } };
+      if (step.alsoEnter) {   // Confirm & File also fires on Ctrl+Enter (Cmd+Enter on Mac)
+        const ek = (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { document.removeEventListener('keydown', ek); setTimeout(next, 350); } };
         document.addEventListener('keydown', ek);
         cleanup.push(() => document.removeEventListener('keydown', ek));
       }

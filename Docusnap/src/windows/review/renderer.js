@@ -2215,18 +2215,18 @@ document.getElementById('btn-doc-next')?.addEventListener('click', () => cycleDo
   });
 })();
 
-// Enter commits the current document — the same as clicking Confirm. It works while
-// editing a single-line field (the value is applied first via blur), but is ignored in
-// multi-line fields and dropdowns, and while any modal/dialog is open. Only fires when
-// Confirm is actually enabled and visible, so it never files an incomplete doc.
+// Ctrl+Enter (Cmd+Enter on Mac) commits the current document — the same as clicking
+// Confirm. Using a modifier (not plain Enter) means it works from ANY field, including
+// multi-line ones and dropdowns, without clashing with Enter's normal in-field behaviour;
+// the value is applied first via blur. Ignored while a modal/dialog is open, and only fires
+// when Confirm is actually enabled and visible, so it never files an incomplete doc.
 document.addEventListener('keydown', (e) => {
-  if (e.key !== 'Enter' || e.repeat || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
-  const t = e.target;
-  if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+  if (e.key !== 'Enter' || e.repeat || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
   if (document.querySelector('[data-help-ignore]')) return;   // a modal/dialog is open
   const btn = document.getElementById('btn-confirm');
   if (!btn || btn.disabled || btn.offsetParent === null) return;   // not ready / not visible
   e.preventDefault();
+  const t = e.target;
   if (t && typeof t.blur === 'function') t.blur();            // apply any in-progress field edit
   btn.click();
 });
