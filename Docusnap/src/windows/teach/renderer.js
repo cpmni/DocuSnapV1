@@ -134,7 +134,7 @@ $('btn-import-teach')?.addEventListener('click', async () => {
   btn.disabled = true; btn.textContent = 'Importing…';
   if (st) st.textContent = 'Reading the document…';
   try {
-    await D.processFolder(staged.folder);           // same import path → enters the review queue
+    await D.processFolder(staged.folder, { autoFile: false });  // same import path, but DON'T auto-file (keep it in Review to teach)
     state.docs = await D.getReviewQueue() || [];
     const match = state.docs.filter(d => d.original_filename === staged.filename).sort((a, b) => b.id - a.id)[0];
     if (match) state.doc = match;

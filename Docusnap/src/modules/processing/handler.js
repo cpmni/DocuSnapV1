@@ -541,8 +541,11 @@ function register(ctx) {
   }
 
   // ── Process folder ──────────────────────────────────────────────────────────
-  ipcMain.handle('process-folder', async (event, folderPath) => {
+  ipcMain.handle('process-folder', async (event, folderPath, opts) => {
     requireRole('admin', 'edit');
+    // The Teach wizard imports a single PDF with {autoFile:false} so a 100%-confidence doc is
+    // NOT auto-filed out of the review queue before the teach picker can select it.
+    const autoFileRun = !opts || opts.autoFile !== false;
     const db = getDb();
     // Multi-point licensing enforcement (F-01): bulk import is the highest-value
     // extraction write path. Network-free cached-license re-check before any work.
@@ -650,7 +653,7 @@ function register(ctx) {
               // stall the bar and drop the doc from the results table); db_id just stays
               // unset → the row link falls back to opening Review at the first doc.
               _recordDevDoc(msg);
-              try { _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger); }
+              try { _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoFileRun); }
               catch (e) { logger?.err?.(`_handleFileMessage failed: ${msg.original_filename || '?'} — ${e && e.message}`); }
               fileCount++;
             } else {
@@ -1718,7 +1721,7 @@ function runHoldingReconcile(db, logger) {
 }
 
 // ── Internal: save file_done message to DB ────────────────────────────────────
-function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger) {
+function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoFileRun = true) {
   if (msg.type === 'file_begin') {
     logger?.log(`File begin: ${msg.filename}`);
     return;
@@ -1889,7 +1892,8 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger) {
   // immediately — for MANUAL import, the WATCH folder, and background runs alike (the single
   // backend decision point, replacing the old renderer-side pass so it works even when the
   // window is closed). Async so it never blocks file_done; the drain above handles the original.
-  _maybeAutoFile(db, msg, folderPath, notifyMainWindow, logger);
+  // Skipped when the run opted out (the Teach-wizard single-file import keeps the doc in Review).
+  if (autoFileRun) _maybeAutoFile(db, msg, folderPath, notifyMainWindow, logger);
 
   notifyMainWindow('review-count-changed', documents.getReviewCount(db));
   notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));

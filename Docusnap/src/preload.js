@@ -106,7 +106,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   // ── Folder processing ────────────────────────────────────────────────────────
   pickFolder:         ()     => ipcRenderer.invoke('pick-folder'),
   pickOutputFolder:   ()     => ipcRenderer.invoke('pick-output-folder'),
-  processFolder:      (f)    => ipcRenderer.invoke('process-folder', f),
+  processFolder:      (f, opts) => ipcRenderer.invoke('process-folder', f, opts),
   stagePdfForTeach:   ()     => ipcRenderer.invoke('stage-pdf-for-teach'),
   stopProcessing:     ()     => ipcRenderer.invoke('stop-processing'),
   onProgress:         (cb)   => ipcRenderer.on('process-progress', (_e, m) => cb(m)),
