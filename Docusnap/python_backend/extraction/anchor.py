@@ -1208,7 +1208,10 @@ def _clean_one_line(line: str | None, val_type: str | None) -> str:
     parts = segment.split()
     end = len(parts)
     for i, w in enumerate(parts):
-        if i >= 2 and w.endswith(','):
+        # A word ending in ',' after 2+ words is a city separator ("… Ltd, Comber") — but ONLY
+        # when it's followed by more words. A TRAILING comma on the LAST word ("Greenfield
+        # Nursing Home,") is a line-wrap marker, not a city cut, so it must not truncate the value.
+        if i >= 2 and i < len(parts) - 1 and w.endswith(','):
             end = i
             break
     return ' '.join(parts[:end]).rstrip(',;').strip()

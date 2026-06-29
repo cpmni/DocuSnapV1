@@ -385,6 +385,12 @@ def should_continue_line(line1, pattern_chars=None, name_lex=None, fmt_entry=Non
     # without confirmed history (no positions → skip, the pattern branch still works cold).
     if name_lex and name_lex.get("positions") and not matches_stable_prefix(s, name_lex):
         return False
+    # A TRUE word-break hyphen ("…Gar-", a LETTER immediately before the trailing dash) is an
+    # unambiguous mid-word wrap — continue regardless of the completeness check (the value can
+    # reach expected_len yet still be split mid-site). A separator dash ("…Ltd -", a SPACE before
+    # the dash) does NOT match here and falls through to the normal pattern + history logic.
+    if re.search(r"[A-Za-z][-–—]$", s):
+        return True
     chars = pattern_chars or _CONT_DEFAULT_CHARS
     if re.search("[" + re.escape(chars) + "]$", s):
         # Trailing continuation char. Suppress only when history confirms completeness;

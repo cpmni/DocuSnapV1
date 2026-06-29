@@ -792,6 +792,20 @@ process_docs.py → ExtractionEngine.extract()
            that wrap onto the next line" toggle (multiline_enabled). Stage 0.5/template_mapper +
            born-digital next-line still deferred (Stage 2 anchor crop covers the common case).
            Guarded by tests/test_multiline_continue.py + the region.py multi-line test.
+           PRECISION/RECALL GUARDS (2026-06, bulletproofing — test_harness/multiline_measure.py,
+           a 400-doc real-OCR stress test across suppliers/logos × single-line/dash-wrap/
+           complete/drift/word-break/comma: 0 FALSE-JOINS, ~99% recall): (1) name_match.
+           matches_stable_prefix — should_continue_line only fires when the read is a PLAUSIBLE
+           PREFIX of the learned name (shares the canonical first token), so a DRIFTED ref code
+           ("2604-0511-1") or a wrong word can't trigger a join; (2) a TRUE word-break hyphen
+           ("…Gar-", a LETTER immediately before the trailing dash) continues regardless of the
+           completeness check (a separator dash "…Ltd -" with a SPACE before stays history-gated);
+           (3) _lines_adjacent uses the line PITCH (top→top ≤ ~2.5 line-heights), not the tight
+           glyph-box gap (which under-stated line height and made a normal wrapped line look
+           "far" → never joined); (4) clean_crop_segment's city-comma cut skips a TRAILING comma
+           (last word) so "Greenfield Nursing Home," isn't truncated to "Greenfield Nursing"; (5)
+           the LABEL LOCK completeness guard (see above) keeps a more-complete rigid join over a
+           truncated relocate.
            ANCHOR-LABEL SANITISATION (learning.sanitizeAnchorLabel, migration 23):
            strip document-specific tokens (reference numbers/dates/serials) from an
            auto-detected ⊕ label so it GENERALISES across documents
