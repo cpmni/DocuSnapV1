@@ -1033,7 +1033,10 @@ function updateAcknowledgeButton() {
     btn.disabled    = false;
     btn.innerHTML   = '✓ Mark Reviewed';
     btn.style.color = 'var(--warn)';
-    if (hint) hint.style.display = 'block';       // actionable — show the Space hint (CSS default is none)
+    if (hint) {                                    // actionable — show the Space hint (CSS default is none)
+      hint.style.width   = btn.offsetWidth + 'px'; // match the button width → wraps to two lines
+      hint.style.display = 'block';
+    }
   }
 }
 
