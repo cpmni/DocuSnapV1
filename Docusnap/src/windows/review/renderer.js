@@ -2452,6 +2452,110 @@ document.addEventListener('click', (e) => {
       !splitBar.contains(e.target) && !splitBtn.contains(e.target)) {
     splitBar.style.display = 'none';
   }
+  const advBar = document.getElementById('advanced-bar');
+  const advBtn = document.getElementById('btn-advanced');
+  if (advBar && advBar.style.display === 'block' &&
+      !advBar.contains(e.target) && !advBtn.contains(e.target)) {
+    advBar.style.display = 'none';
+  }
+});
+
+// ── Advanced → View learning history ──────────────────────────────────────────
+// Track the field the operator last clicked into, so "View learning history" knows which
+// field's learned values to show.
+let lastFocusedFieldKey = null;
+document.getElementById('fields-scroll')?.addEventListener('focusin', (e) => {
+  const inp = e.target.closest?.('.field-input');
+  if (inp && inp.dataset.key) lastFocusedFieldKey = inp.dataset.key;
+});
+
+document.getElementById('btn-advanced').addEventListener('click', () => {
+  const bar = document.getElementById('advanced-bar');
+  bar.style.display = (bar.style.display === 'block') ? 'none' : 'block';
+});
+
+let _lhData = [];                          // unsorted rows from the backend
+let _lhRendered = [];                       // current sorted view (delete keys off the index)
+let _lhSort = { key: 'count', dir: -1 };    // default: most-seen first
+let _lhField = null;                        // { key, label, supplier, slug }
+let _lhPending = null;                       // value awaiting inline delete-confirm
+
+document.getElementById('btn-view-learning').addEventListener('click', async () => {
+  const key = lastFocusedFieldKey;
+  if (!key) return;   // the flyout's own hint asks the user to click a field first
+  document.getElementById('advanced-bar').style.display = 'none';
+  const label    = (typeof labelFor === 'function') ? labelFor(key) : key.replace(/_/g, ' ');
+  const slug     = selectedTypeSlug || currentDoc?.type_slug || currentDoc?.document_type_slug || null;
+  const supplier = document.querySelector('.field-input[data-key="supplier_name"]')?.value?.trim()
+                   || currentDoc?.supplier_name || '';
+  _lhField   = { key, label, supplier, slug };
+  _lhPending = null;
+  _lhSort    = { key: 'count', dir: -1 };
+  document.getElementById('lh-field').textContent = label;
+  document.getElementById('lh-scope').textContent =
+    `Sender: ${supplier || 'any'} · Type: ${slug ? String(slug).replace(/_/g, ' ') : 'this document type'}`;
+  try {
+    _lhData = await window.docusnap.getFieldValueHistory(
+      { supplier_name: supplier, document_type: slug, field_key: key }) || [];
+  } catch { _lhData = []; }
+  renderLearningHistory();
+  document.getElementById('lh-overlay').style.display = 'flex';
+});
+
+function renderLearningHistory() {
+  _lhRendered = [..._lhData].sort((a, b) => {
+    const k = _lhSort.key;
+    if (k === 'count') return ((a.count || 0) - (b.count || 0)) * _lhSort.dir;
+    const av = String(a[k] || '').toLowerCase(), bv = String(b[k] || '').toLowerCase();
+    return (av < bv ? -1 : av > bv ? 1 : 0) * _lhSort.dir;
+  });
+  const body = document.getElementById('lh-body');
+  body.innerHTML = _lhRendered.length ? _lhRendered.map((r, i) => {
+    const last = r.last_seen ? escHtml(String(r.last_seen).slice(0, 10)) : '—';
+    const cell = (_lhPending === r.value)
+      ? `<span class="lh-confirm">Delete?<button class="lh-yes" data-idx="${i}">Yes</button><button class="lh-no">No</button></span>`
+      : `<button class="lh-del" data-idx="${i}" title="Delete this value from learning">🗑</button>`;
+    return `<tr><td class="lh-val">${escHtml(r.value)}</td><td>${r.count}</td><td>${last}</td><td style="text-align:right;">${cell}</td></tr>`;
+  }).join('') : `<tr><td colspan="4" class="lh-empty">No learned values yet for this field.</td></tr>`;
+  document.querySelectorAll('.lh-table th[data-sort]').forEach(th => {
+    const base = th.dataset.sort === 'value' ? 'Value' : th.dataset.sort === 'count' ? 'Times seen' : 'Last seen';
+    th.textContent = base + (th.dataset.sort === _lhSort.key ? (_lhSort.dir > 0 ? ' ▲' : ' ▼') : '');
+  });
+}
+
+document.querySelectorAll('.lh-table th[data-sort]').forEach(th => th.addEventListener('click', () => {
+  const k = th.dataset.sort;
+  if (_lhSort.key === k) _lhSort.dir *= -1; else _lhSort = { key: k, dir: k === 'value' ? 1 : -1 };
+  _lhPending = null;
+  renderLearningHistory();
+}));
+
+document.getElementById('lh-body').addEventListener('click', async (e) => {
+  const del = e.target.closest('.lh-del');
+  if (del) { _lhPending = _lhRendered[+del.dataset.idx]?.value ?? null; renderLearningHistory(); return; }
+  if (e.target.closest('.lh-no')) { _lhPending = null; renderLearningHistory(); return; }
+  const yes = e.target.closest('.lh-yes');
+  if (yes) {
+    const val = _lhRendered[+yes.dataset.idx]?.value;
+    if (val == null) return;
+    yes.disabled = true;
+    try {
+      await window.docusnap.purgeFieldValue(
+        { supplier_name: _lhField.supplier, document_type: _lhField.slug, field_key: _lhField.key, value: val });
+      _lhData = _lhData.filter(x => x.value !== val);
+    } catch (err) { console.warn('purge-field-value failed:', err); }
+    _lhPending = null;
+    renderLearningHistory();
+  }
+});
+
+function closeLearningHistory() {
+  document.getElementById('lh-overlay').style.display = 'none';
+  _lhPending = null;
+}
+document.getElementById('lh-close').addEventListener('click', closeLearningHistory);
+document.getElementById('lh-overlay').addEventListener('click', (e) => {
+  if (e.target.id === 'lh-overlay') closeLearningHistory();
 });
 
 document.getElementById('enh-threshold').addEventListener('change', function () {

@@ -151,6 +151,25 @@ function register(ctx) {
   ipcMain.handle('get-review-count',  () => { requireRole('admin', 'edit'); return documents.getReviewCount(getDb()); });
   ipcMain.handle('get-deferred-count',() => { requireRole('admin', 'edit'); return documents.getDeferredCount(getDb()); });
 
+  // Advanced → "View learning history": list the confirmed values learned for a
+  // (supplier, doc-type, field) scope, and purge a value that shouldn't exist for the field
+  // (e.g. a drift artifact like "Booking" on a reference field) so it stops polluting the
+  // learned shape/hints. Admin/edit only; purge is audited.
+  ipcMain.handle('get-field-value-history', (_e, scope) => {
+    requireRole('admin', 'edit');
+    return learning.getFieldValueHistory(getDb(), scope || {});
+  });
+  ipcMain.handle('purge-field-value', (_e, scope) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const removed = learning.purgeFieldValue(db, scope || {});
+    try {
+      logAudit(db, { action: 'learning_value_purged', action_category: 'learning',
+        outcome: 'success', metadata: { ...(scope || {}), removed } });
+    } catch {}
+    return { removed };
+  });
+
   // get-document-with-extractions / get-document-pages are shared with the
   // Search window (Read Only previews filed documents there too) — gate to
   // "any signed-in user", not a specific role.

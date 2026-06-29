@@ -131,6 +131,8 @@ contextBridge.exposeInMainWorld('docusnap', {
   getDeferredQueue:            ()        => ipcRenderer.invoke('get-deferred-queue'),
   getReviewCount:              ()        => ipcRenderer.invoke('get-review-count'),
   getDeferredCount:            ()        => ipcRenderer.invoke('get-deferred-count'),
+  getFieldValueHistory:        (scope)   => ipcRenderer.invoke('get-field-value-history', scope),
+  purgeFieldValue:             (scope)   => ipcRenderer.invoke('purge-field-value', scope),
   getDocumentWithExtractions:  (id)      => ipcRenderer.invoke('get-document-with-extractions', id),
   notifyDocClosed:             (id)      => ipcRenderer.send('notify-doc-closed', id),
   getDocumentPages:            (id, fp, fn, scale) => ipcRenderer.invoke('get-document-pages', id, fp, fn, scale),

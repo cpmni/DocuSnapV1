@@ -1003,8 +1003,55 @@ function setSetting(db, key, value) {
   `).run(key, value);
 }
 
+// Distinct confirmed VALUES learned for a (supplier, doc-type, field) scope — the same final
+// values getFieldFormats learns shapes from (the user's corrected value if they edited, else
+// the extracted display value). Powers the "View learning history" table so a value that
+// shouldn't exist for the field (e.g. a drift artifact like "Booking" on a reference field)
+// can be spotted and purged.
+function getFieldValueHistory(db, { supplier_name, document_type, field_key } = {}) {
+  if (!field_key) return [];
+  return db.prepare(`
+    SELECT COALESCE(NULLIF(TRIM(c.corrected_value), ''), e.display_value) AS value,
+           COUNT(*) AS count, MAX(d.confirmed_at) AS last_seen
+    FROM extractions e
+    JOIN documents d ON d.id = e.document_id
+    LEFT JOIN document_types dt ON dt.id = d.document_type_id
+    LEFT JOIN corrections   c  ON c.document_id = e.document_id AND c.field_key = e.field_key
+    WHERE d.status = 'confirmed' AND e.field_key = ?
+      AND COALESCE(d.supplier_name, '') = COALESCE(?, '')
+      AND COALESCE(dt.slug, '')         = COALESCE(?, '')
+    GROUP BY value
+    HAVING value IS NOT NULL AND TRIM(value) <> ''
+    ORDER BY count DESC, value ASC
+  `).all(field_key, supplier_name || '', document_type || '');
+}
+
+// Purge a learned VALUE from every learning source for the scope: the confirmed extractions
+// that carry it (so the format/shape sample drops it), plus any corrections and supplier-hint
+// rows that produce it. Filed documents keep their files — only this field's stored value is
+// cleared on the affected docs (it was a wrong value anyway; reprocess re-reads it). Returns
+// the number of rows removed. Wrapped in a transaction.
+function purgeFieldValue(db, { supplier_name, document_type, field_key, value } = {}) {
+  if (!field_key || value == null || value === '') return 0;
+  const sn = supplier_name || '', dts = document_type || '';
+  const tx = db.transaction(() => {
+    let n = 0;
+    n += db.prepare(`
+      DELETE FROM extractions WHERE field_key = ? AND display_value = ?
+        AND document_id IN (
+          SELECT d.id FROM documents d LEFT JOIN document_types dt ON dt.id = d.document_type_id
+          WHERE d.status = 'confirmed' AND COALESCE(d.supplier_name,'') = ? AND COALESCE(dt.slug,'') = ?
+        )`).run(field_key, value, sn, dts).changes;
+    n += db.prepare(`DELETE FROM corrections    WHERE field_key = ? AND corrected_value = ? AND COALESCE(supplier_name,'') = ? AND COALESCE(document_type,'') = ?`).run(field_key, value, sn, dts).changes;
+    n += db.prepare(`DELETE FROM supplier_hints WHERE field_key = ? AND hint_value      = ? AND COALESCE(supplier_name,'') = ? AND COALESCE(document_type,'') = ?`).run(field_key, value, sn, dts).changes;
+    return n;
+  });
+  return tx();
+}
+
 module.exports = {
   insertExtractions, deleteExtractions,
+  getFieldValueHistory, purgeFieldValue,
   saveCorrections, getHints, isPlausibleSupplierName, normalizeSupplierName,
   saveAnchor, sanitizeAnchorLabel, clearAnchors, getAllAnchors,
   saveLogoFingerprint, getAllLogos, findLogoMatch,

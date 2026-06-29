@@ -132,7 +132,7 @@ docusnap2/
 │   ├── modules/
 │   │   ├── processing/handler.js        # folder import, reprocess, OCR region, logos
 │   │   ├── processing/processing_mode_handler.js # mode get/set, fast-mode suggestion
-│   │   ├── review/handler.js            # queue, confirm, defer, delete, pages
+│   │   ├── review/handler.js            # queue, confirm, defer, delete, pages; Advanced→"View learning history" (get-field-value-history / purge-field-value, admin/edit, audited) → learning.getFieldValueHistory/purgeFieldValue: list the confirmed values learned for a (supplier,doctype,field) scope (same final values getFieldFormats samples) + purge a value that shouldn't exist for the field (e.g. a "Booking" drift artifact on a reference field) from extractions+corrections+supplier_hints so it stops polluting the learned shape. Review toolbar ⚙ Advanced button → flyout → sortable modal (click a heading to sort; sort by Value to make an odd value stand out); inline delete-confirm
 │   │   ├── filing/handler.js            # folder structure, rename, XML metadata
 │   │   ├── settings/handler.js          # doc types, fields, key-value settings
 │   │   ├── templates/handler.js         # Admin Template Viewer — browse/pin samples, anchor→target mapping CRUD; Learning Recovery reassign (link-only, reversible) + MERGE (templates.mergeInto: fold a fragment's doc-links/missing-mappings/fields/landmarks/sample/identity into a canonical row, sum confirmed_count, delete source — IRREVERSIBLE; the cure for near-duplicate "same logo, drifted phash" template fragmentation). Guarded by database/modules/test_template_merge.js

@@ -641,6 +641,17 @@
                 <circle cx="8"  cy="17" r="2.6" fill="currentColor" stroke="none"/>
               </svg>
             </button>
+            <button class="queue-tool-btn" id="btn-advanced" title="Advanced — view & prune a field's learning history (admin)" data-help-key="advanced">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:17px;height:17px;">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              </svg>
+            </button>
+            <div id="advanced-bar" class="rail-flyout" style="display:none;">
+              <div class="rail-flyout-title">Advanced</div>
+              <button id="btn-view-learning" class="btn-secondary" style="width:100%; font-size:11px; padding:6px 8px;">View learning history</button>
+              <div style="font-size:10px; color:var(--muted); margin-top:6px; line-height:1.4;">Click into a field first, then open this to see and prune the values learned for it.</div>
+            </div>
 
             <!-- Flyouts anchored to the rail (shown by the existing handlers; IDs preserved) -->
             <div id="split-bar" class="rail-flyout" style="display:none;">
@@ -941,7 +952,59 @@
   .qi-thumb { flex-shrink: 0; width: 34px; height: 44px; border-radius: 4px;
               background: var(--doc-bg); border: 1px solid var(--border);
               object-fit: cover; object-position: top center; }
+
+  /* Learning-history modal (Advanced → View learning history) */
+  .lh-overlay { position: fixed; inset: 0; z-index: 100002; background: rgba(0,0,0,.45);
+                display: none; align-items: center; justify-content: center; }
+  .lh-modal { background: var(--surface); border: 1px solid var(--border2); border-radius: 12px;
+              width: min(640px, 92vw); max-height: 84vh; display: flex; flex-direction: column;
+              box-shadow: 0 24px 60px rgba(0,0,0,.45); }
+  .lh-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px;
+             border-bottom: 1px solid var(--border); }
+  .lh-title { font-size: 14px; font-weight: 600; color: var(--text); }
+  .lh-title span { color: var(--accent2); }
+  .lh-x { background: none; border: none; color: var(--muted); font-size: 22px; cursor: pointer; line-height: 1; }
+  .lh-x:hover { color: var(--text); }
+  .lh-scope { padding: 8px 18px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--border); }
+  .lh-tablewrap { overflow: auto; flex: 1; }
+  .lh-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .lh-table th { position: sticky; top: 0; background: var(--surface2); color: var(--text); text-align: left;
+                 padding: 9px 14px; font-weight: 600; cursor: pointer; user-select: none; white-space: nowrap;
+                 border-bottom: 1px solid var(--border2); }
+  .lh-table th:hover { color: var(--accent2); }
+  .lh-table td { padding: 8px 14px; border-bottom: 1px solid var(--border); color: var(--text); }
+  .lh-table tr:hover td { background: var(--surface2); }
+  .lh-val { font-family: var(--mono, monospace); }
+  .lh-empty { color: var(--muted); text-align: center; padding: 22px; }
+  .lh-del { background: none; border: 1px solid var(--border2); color: var(--err); border-radius: 6px;
+            padding: 2px 8px; cursor: pointer; font-size: 12px; }
+  .lh-del:hover { background: var(--err); color: #fff; border-color: var(--err); }
+  .lh-confirm button { font-size: 11px; padding: 2px 8px; border-radius: 6px; cursor: pointer; margin-left: 4px; }
+  .lh-confirm .lh-yes { background: var(--err); color: #fff; border: 1px solid var(--err); }
+  .lh-confirm .lh-no  { background: var(--surface2); color: var(--text); border: 1px solid var(--border2); }
+  .lh-foot { padding: 10px 18px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); line-height: 1.45; }
 </style>
+<div id="lh-overlay" class="lh-overlay" data-help-ignore>
+  <div class="lh-modal">
+    <div class="lh-head">
+      <div class="lh-title">Learning history — <span id="lh-field"></span></div>
+      <button id="lh-close" class="lh-x" title="Close">&times;</button>
+    </div>
+    <div class="lh-scope" id="lh-scope"></div>
+    <div class="lh-tablewrap">
+      <table class="lh-table">
+        <thead><tr>
+          <th data-sort="value">Value</th>
+          <th data-sort="count">Times seen</th>
+          <th data-sort="last_seen">Last seen</th>
+          <th style="cursor:default;"></th>
+        </tr></thead>
+        <tbody id="lh-body"></tbody>
+      </table>
+    </div>
+    <div class="lh-foot">Click a column heading to sort. Delete a value that shouldn't exist for this field (e.g. a misread) to stop it confusing future reads — filed documents keep their files; only that field's value is cleared on the affected documents.</div>
+  </div>
+</div>
 <script src="../shared/theme.js"></script>
 <script src="../shared/helpmode.js"></script>
 <script src="../shared/thumbs.js"></script>
