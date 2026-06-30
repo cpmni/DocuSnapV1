@@ -266,6 +266,16 @@ function register(ctx) {
     return true;
   });
 
+  // Opt-in diagnostics — read-only info for the Settings "see exactly what's sent"
+  // view: the master on/off, the full event allowlist (what CAN be sent), and the
+  // events currently buffered on THIS machine (verbatim). Admin only.
+  ipcMain.handle('get-telemetry-info', () => {
+    requireRole('admin');
+    const t = ctx.telemetry;
+    if (!t) return { enabled: false, events: {}, queued: [] };
+    return { enabled: !!t.enabled(), events: t.EVENTS, queued: t.queued() };
+  });
+
   // ── Encrypted settings backup / restore (admin) ─────────────────────────────
   // Config + learning ONLY (no auth/sessions/audit/licensing/documents); crypto +
   // table whitelist live in services/backupService.js. Export writes one encrypted

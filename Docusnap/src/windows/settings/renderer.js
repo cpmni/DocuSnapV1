@@ -3621,6 +3621,56 @@ if (diagToggle) {
   });
 }
 
+// ── Help improve Scan Finder (opt-in diagnostics) ──────────────────────────────
+const telToggle = document.getElementById('telemetry-toggle');
+if (telToggle) {
+  (async () => { try { telToggle.checked = (await api.getSetting('telemetry_enabled')) === 'true'; } catch {} })();
+  telToggle.addEventListener('change', async () => {
+    const on = telToggle.checked;
+    try { await api.setSetting('telemetry_enabled', on ? 'true' : 'false'); }
+    catch { telToggle.checked = !on; }
+  });
+}
+document.getElementById('telemetry-view-btn')?.addEventListener('click', async () => {
+  let info = { enabled: false, events: {}, queued: [] };
+  try { info = await api.getTelemetryInfo(); } catch {}
+  showTelemetryDialog(info);
+});
+
+// Read-only "see exactly what's sent" modal: the master state, the full event
+// allowlist (what CAN be sent), and the events buffered on THIS machine right now.
+function showTelemetryDialog(info) {
+  const names = Object.keys(info.events || {}).sort();
+  const allowRows = names.map(n =>
+    `<div style="font-family:var(--mono);font-size:11px;margin:2px 0;">${escHtml(n)}
+       <span style="color:var(--muted);">${escHtml((info.events[n] || []).join(', ') || '—')}</span></div>`).join('');
+  const q = info.queued || [];
+  const queuedRows = q.length
+    ? q.map(e => `<div style="font-family:var(--mono);font-size:11px;margin:2px 0;">
+         <span style="color:${e.sent ? 'var(--muted)' : 'var(--accent2)'};">${e.sent ? '✓ sent' : '• waiting'}</span>
+         ${escHtml(e.name)} <span style="color:var(--muted);">${escHtml(JSON.stringify(e.props))}</span></div>`).join('')
+    : '<div style="font-size:12px;color:var(--muted);">Nothing is queued.</div>';
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;';
+  overlay.innerHTML = `
+    <div style="width:560px;max-width:92vw;max-height:84vh;overflow:auto;background:var(--surface);border:1px solid var(--border2);
+                border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:14px;color:var(--text);">
+      <div style="font-size:15px;font-weight:600;">Diagnostics — exactly what's sent</div>
+      <div style="font-size:12.5px;line-height:1.6;">Diagnostics is currently <b>${info.enabled ? 'ON' : 'OFF'}</b>.
+        Only the structured events below are ever sent — tied only to an anonymous device id.</div>
+      <div><div style="font-size:12px;font-weight:600;margin-bottom:6px;">What can be sent (event → fields)</div>${allowRows}</div>
+      <div><div style="font-size:12px;font-weight:600;margin:4px 0 6px;">Waiting on this PC right now</div>${queuedRows}</div>
+      <div style="font-size:11px;color:var(--muted);line-height:1.6;"><b>Never sent:</b> your documents, scans, OCR text,
+        supplier/customer names, invoice/reference numbers, totals, dates, file paths, your name, email or licence key.</div>
+      <button id="tel-ok" style="align-self:flex-end;padding:9px 18px;border-radius:8px;border:none;background:var(--accent);
+              color:#fff;font-family:inherit;font-size:12.5px;font-weight:500;cursor:pointer;">Done</button>
+    </div>`;
+  overlay.setAttribute('data-help-ignore', '1');
+  document.body.appendChild(overlay);
+  overlay.querySelector('#tel-ok').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // AUDIT TAB (admin-only — server enforces requireRole('admin'))
 // ══════════════════════════════════════════════════════════════════════════════

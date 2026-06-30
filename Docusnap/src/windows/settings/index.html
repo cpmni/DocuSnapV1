@@ -1459,6 +1459,33 @@
           </label>
         </div>
       </div>
+
+      <div class="section">
+        <div class="section-title">Help improve Scan Finder</div>
+        <p class="section-desc">
+          Optional, off by default. When on, Scan Finder sends <b>anonymous diagnostics</b> — app errors
+          and version/Windows info — so problems can be found and fixed faster. It <b>never</b> includes your
+          documents, scans, names, numbers, totals or file paths. Takes effect immediately; turning it off
+          also clears anything waiting to send.
+        </p>
+        <div class="threshold-row">
+          <div>
+            <div class="threshold-label">Send anonymous diagnostics</div>
+            <div class="threshold-sub">Helps fix bugs. Your documents always stay on this PC.</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="telemetry-toggle">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="threshold-row">
+          <div>
+            <div class="threshold-label">See exactly what's sent</div>
+            <div class="threshold-sub">Review the data waiting to be sent + the full list of what is and isn't collected.</div>
+          </div>
+          <button class="btn" id="telemetry-view-btn">View&hellip;</button>
+        </div>
+      </div>
     </div>
 
   </div>

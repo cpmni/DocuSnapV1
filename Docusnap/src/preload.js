@@ -251,6 +251,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   // ── Settings ─────────────────────────────────────────────────────────────────
   getSetting:          (key)      => ipcRenderer.invoke('get-setting', key),
   setSetting:          (key, val) => ipcRenderer.invoke('set-setting', key, val),
+  getTelemetryInfo:    ()         => ipcRenderer.invoke('get-telemetry-info'),
   backupExport:        (password)        => ipcRenderer.invoke('settings-backup-export', { password }),
   backupPreview:       (password)        => ipcRenderer.invoke('settings-backup-preview', { password }),
   backupApply:         (path, password)  => ipcRenderer.invoke('settings-backup-apply', { path, password }),
