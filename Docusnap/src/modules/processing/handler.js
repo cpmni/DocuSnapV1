@@ -1223,13 +1223,14 @@ function register(ctx) {
         : process.env;
       const proc = spawn(pythonExe(), pythonArgs(backendScript(), ...scriptArgs), { windowsHide: true, env });
       _currentBatchProcs.push(proc);
-      let buf = '', settled = false;
-      const watchdog = setTimeout(() => {
+      let buf = '', settled = false, watchdog = null;
+      const fin = () => { if (settled) return; settled = true; if (watchdog) clearTimeout(watchdog); resolve(); };
+      watchdog = setTimeout(() => {
         logger?.err('reprocess-batch shard timed out');
         try { require('child_process').spawnSync('taskkill', ['/F', '/T', '/PID', String(proc.pid)], { windowsHide: true, stdio: 'ignore' }); } catch {}
         try { proc.kill(); } catch {}
+        fin();   // settle directly — a kill that fails to fire proc.on('close') must not hang Promise.all
       }, 30 * 60 * 1000);
-      const fin = () => { if (settled) return; settled = true; clearTimeout(watchdog); resolve(); };
       proc.stdout.on('data', (data) => {
         buf += data.toString();
         const lines = buf.split('\n'); buf = lines.pop();
