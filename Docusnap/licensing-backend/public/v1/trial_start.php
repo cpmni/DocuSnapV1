@@ -133,6 +133,28 @@ try {
     audit_event($pdo, null, $fpHash, 'license.trial_started',
         'resumed=' . ($resumed ? '1' : '0') . " state=$state customer_set=1 email_set=" . ($emailVal !== null ? '1' : '0'));
 
+    // Email the owner on a GENUINELY NEW trial only — a resume happens on every
+    // re-check / reinstall, so notifying those would spam. Best-effort (notify_owner
+    // never throws); it must not block or fail the trial response.
+    if (!$resumed) {
+        require_once __DIR__ . '/../../lib/notify.php';
+        $body = implode("\n", [
+            'A new 14-day Scan Finder trial has just been activated.',
+            '',
+            'Business:    ' . $custName,
+            'Contact:     ' . ($contactNameVal ?? '-'),
+            'Email:       ' . ($emailVal ?? '-'),
+            'Product:     ' . $productId,
+            'Device fp:   ' . $fpHash,
+            'Trial start: ' . $trialStart,
+            'Trial end:   ' . $trialEnd,
+            'Client IP:   ' . $ip,
+            '',
+            'Automated notification from the Scan Finder licensing backend.',
+        ]);
+        notify_owner('New trial activated - ' . $custName, $body);
+    }
+
     send_json(200, [
         'token'          => $token,
         'kind'           => 'trial',

@@ -1267,6 +1267,14 @@ in `keys/admin_password.hash`, BRIGHT-ONLY theme — manages products/accounts/e
 seats and issues **temporary licenses** (= an entitlement with `expires_at`; one-time key
 shown once). Deploy/verify via `scripts/Configure-WampBackend.ps1` / `Verify-WampBackend-Ready.ps1`
 (the Configure script now fails loudly on mysql errors).
+**OWNER EMAIL ON NEW TRIAL** (`lib/notify.php` + `trial_start.php`): a genuinely-new trial mint
+(`!$resumed`) emails the owner via PHP `mail()` (no composer/SMTP lib) — recipient/sender from
+env `LICENSING_NOTIFY_TO`/`_FROM` (default `licensing@scanfinder.co.uk`), opt-out
+`LICENSING_NOTIFY_ENABLED=false`. **Best-effort only** — a mail failure (incl. mail() unconfigured
+on the WAMP dev box) is swallowed to `error_log` and NEVER breaks the trial response. Resumes are
+NOT emailed (they fire on every re-check). `notify_owner()` is reusable for future events. Body
+carries the business/contact/email + fp_hash (a hash, fine) + IP; never any secret. **Redeploy +
+set the mail env on IONOS for it to actually send.**
 
 **Admin 2FA** (`public/admin/{login,2fa}.php`, `lib/admin_auth.php`): optional TOTP
 (RFC6238, dependency-free pure PHP — backend has NO composer), two-stage login
