@@ -1948,8 +1948,11 @@ npm run build      # → dist\ScanFinder Setup <ver>-r<rev>.exe  (rev = scripts/
 Dev uses `py -3.12 script.py`, packaged uses bundled Python venv.
 Tesseract hardcoded to `C:\Program Files\Tesseract-OCR\tesseract.exe` in dev.
 
-**Build notes**: electron-builder **v26** (the old `win.sign` / `win.signingHashAlgorithms`
-keys are removed — don't re-add them). `postinstall` runs `install-app-deps`; native deps
+**Build notes**: electron-builder is pinned **`^24.13.3`** (installed = 24.13.3 — an earlier note
+saying "v26" was inaccurate; verify with `require('electron-builder/package.json').version`). Avoid
+re-adding the legacy `win.sign` / `win.signingHashAlgorithms` keys. For a future MSIX/Store SKU see
+`MSIX_SETUP.md` (consider upgrading electron-builder for the `appx` target). `postinstall` runs
+`install-app-deps`; native deps
 (`argon2`, `better-sqlite3`) are auto-rebuilt for the Electron ABI during build. Installer is
 **unsigned** → SmartScreen "More info → Run anyway" on the VM. Run gate tests with
 Electron-as-Node, not plain node (native-module ABI).
