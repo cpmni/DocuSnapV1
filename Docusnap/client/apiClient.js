@@ -158,6 +158,9 @@ function createClient(opts = {}) {
     const q = new URLSearchParams({ folderPath: folderPath || '', filename: filename || '' });
     return request('GET', `/v1/documents/${encodeURIComponent(id)}/pages?${q}`, { withAuth: true });
   }
+  async function getThumbnail(id) {
+    return request('GET', `/v1/documents/${encodeURIComponent(id)}/thumbnail`, { withAuth: true });
+  }
   // Lightweight reachability probe (no auth). True if the server responds at all
   // (any status); false if the connection fails (server closed / unreachable) —
   // drives the client's connection-watch heartbeat.
@@ -225,7 +228,7 @@ function createClient(opts = {}) {
   const revRelease  = (id) => request('POST', `/v1/review/${id}/release`,    { withAuth: true });
 
   return {
-    connect, login, logout, changePassword, entitlement, search, getDocument, getPages, ping, fetchCa, enroll,
+    connect, login, logout, changePassword, entitlement, search, getDocument, getPages, getThumbnail, ping, fetchCa, enroll,
     workflow: { list: wfList, recipients, assign, claim, resolve, recall, stamped: wfStamped },
     recycle: { list: binList, delete: binDelete, restore: binRestore, purge: binPurge, purgeAll: binPurgeAll },
     review: { queue: revQueue, deferred: revDeferred, counts: revCounts, docTypes,

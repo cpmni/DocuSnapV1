@@ -497,6 +497,7 @@ function reviewRow(d) {
   const viewers = (d.viewers || []).map((v) => v.displayName || v.username).filter(Boolean);
   const lvl = confLevel(d.overall_confidence);
   el.innerHTML = `
+    <div class="rr-thumb" data-thumb-id="${d.id}"></div>
     <div class="rr-main">
       <div class="rr-title">${esc(title)}</div>
       <div class="rr-sub">${sub}</div>
@@ -507,8 +508,28 @@ function reviewRow(d) {
     document.querySelectorAll('.rv-row').forEach((x) => x.classList.toggle('active', x === el));
     openReviewDoc(d.id);
   });
+  const thumbEl = el.querySelector('.rr-thumb');
+  if (thumbEl && _rvThumbObserver) _rvThumbObserver.observe(thumbEl);   // lazy: load when visible
   return el;
 }
+
+// Lazy page-1 thumbnails for the review list (load only as rows scroll into view, so a
+// 99+ queue doesn't fetch every image up front). One shared observer + a small cache.
+const _rvThumbCache = new Map();
+const _rvThumbObserver = (typeof IntersectionObserver !== 'undefined') ? new IntersectionObserver((entries) => {
+  for (const en of entries) {
+    if (!en.isIntersecting) continue;
+    const box = en.target;
+    _rvThumbObserver.unobserve(box);
+    const id = box.dataset.thumbId;
+    const put = (src) => { if (src && box.isConnected && !box.firstChild) { const im = document.createElement('img'); im.src = src; box.appendChild(im); } };
+    if (_rvThumbCache.has(id)) { put(_rvThumbCache.get(id)); continue; }
+    api.getThumbnail(id).then((r) => {
+      const src = r && r.json && r.json.thumbnail;
+      if (src) { _rvThumbCache.set(id, src); put(src); }
+    }).catch(() => {});
+  }
+}, { rootMargin: '300px' }) : null;
 
 async function openReviewDoc(id) {
   rvLeave();

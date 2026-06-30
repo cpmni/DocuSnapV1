@@ -248,6 +248,13 @@ ipcMain.handle('client-get-pages',    async (_e, id) => {
     return res;
   } catch (e) { if (isNetworkError(e)) markConnection(false); throw e; }
 });
+ipcMain.handle('client-get-thumbnail', async (_e, id) => {
+  try {
+    const res = await client.getThumbnail(id);
+    markConnection(true);
+    return res;
+  } catch (e) { if (isNetworkError(e)) markConnection(false); throw e; }
+});
 ipcMain.handle('client-authed',       () => client ? client.isAuthenticated() : false);
 
 // Mailbox / approval workflow.

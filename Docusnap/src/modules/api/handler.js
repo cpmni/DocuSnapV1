@@ -484,6 +484,26 @@ function createRequestListener(ctx) {
         return sendJson(res, 200, { pages });
       }
 
+      // ── Auth-required: single page-1 thumbnail (for list rows) ────────────────
+      const thumbMatch = pathname.match(new RegExp(`^${API_PREFIX}/documents/(\\d+)/thumbnail$`));
+      if (req.method === 'GET' && thumbMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        const id = Number(thumbMatch[1]);
+        // Same server-side path resolution as /pages (F-02): never trust client paths.
+        let folderPath = null, filename = null;
+        const P = ctx.path || require('path');
+        const row = getDb().prepare(
+          'SELECT working_path, stored_path, folder_path, original_filename FROM documents WHERE id = ?').get(id);
+        if (row) {
+          const pick = row.working_path || row.stored_path
+            || (row.folder_path && row.original_filename ? P.join(row.folder_path, row.original_filename) : null);
+          if (pick) { folderPath = P.dirname(pick); filename = P.basename(pick); }
+        }
+        const thumbnail = await previewService.getThumbnail(
+          getDb(), { docId: id, folderPath, filename }, pageDeps());
+        return sendJson(res, 200, { thumbnail });
+      }
+
       // ── Auth-required: RECYCLE BIN (soft delete / restore / purge) ────────────
       // Delete is recoverable (status='deleted', files kept) — Admin/Edit. Permanent
       // removal (purge) is Admin only. Every action is audited; the on-disk path is
