@@ -9,11 +9,12 @@ document.querySelectorAll('.tab').forEach(btn => {
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
-    // Learning Recovery now lives under the Templates & learning tab; the Audit
-    // log now lives under the Users & activity tab — load each lazily on show.
-    if (btn.dataset.tab === 'templates') loadMemoryInventory();
-    if (btn.dataset.tab === 'users' && !auditState.loaded) loadAudit();
-    if (btn.dataset.tab === 'licensing') initClientApiSection();
+    // Learning Recovery + Keyword Label Overrides live under the Learning tab; the
+    // Audit log lives under the Audit tab; the Search client API lives under the
+    // Search client tab — load each lazily on show.
+    if (btn.dataset.tab === 'learning') loadMemoryInventory();
+    if (btn.dataset.tab === 'audit' && !auditState.loaded) loadAudit();
+    if (btn.dataset.tab === 'searchclient') initClientApiSection();
   });
 });
 
@@ -156,9 +157,12 @@ const HELP_TEXTS = {
   'tab-fields':     'Add, edit, reorder or remove the fields a document type extracts. Built-in fields are locked.',
   'tab-processing': 'How documents are processed — import options (auto-file, wrap, auto-rotate), speed/accuracy mode, parallelism, the OCR engine, document separation, name checks and the review confidence threshold.',
   'tab-appearance': 'The colour theme, what happens when you close the window, and which cards appear on the Home screen.',
-  'tab-templates':  'Browse the layouts Scan Finder has learned, map where each field sits, manage keyword label overrides, and review or clean up learned data if extraction drifts.',
-  'tab-users':      'Manage the people who can sign in and what each is allowed to do (admin / edit / read-only), plus a searchable record of sensitive actions (the audit log).',
-  'tab-licensing':  'Your licence / activation status, and the trial or paid-seat details for this device.',
+  'tab-templates':  'Browse the layouts Scan Finder has learned and map where each field sits on the page.',
+  'tab-learning':   'Teach the keyword stage extra labels to look for, and review or clean up learned data (anchors, hints, corrections) if extraction drifts.',
+  'tab-users':      'Manage the people who can sign in and what each is allowed to do (admin / edit / read-only), plus a record of recent account activity.',
+  'tab-audit':      'A searchable record of sensitive actions — sign-ins, settings and document changes, review actions, licensing and denied access.',
+  'tab-licensing':  'Your licence / activation status, the trial or paid-seat details for this device, and your client seats.',
+  'tab-searchclient':'Let the separate Scan Finder Search client connect over your network, with its managed TLS certificate.',
   'tab-advanced':   'Re-run first-time setup, back up or restore your configuration, and toggle diagnostic logging.',
   'output-folder':  'Pick the folder where confirmed documents are filed. This must be set before any document can be confirmed.',
   'rerun-setup':    'Re-open the welcome wizard to revisit the essentials — theme, output folder and performance — without losing any data.',

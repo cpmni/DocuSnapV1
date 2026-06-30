@@ -408,9 +408,12 @@
     <button class="tab" data-tab="processing" data-help-key="tab-processing"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><circle cx="9" cy="6" r="2"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="15" cy="12" r="2"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="9" cy="18" r="2"/></svg>Processing</button>
     <button class="tab" data-tab="appearance" data-help-key="tab-appearance"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"/></svg>Appearance</button>
     <div class="side-head">Administration</div>
-    <button class="tab" data-tab="templates" data-help-key="tab-templates"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="9" x2="9" y2="20"/></svg>Templates &amp; learning</button>
+    <button class="tab" data-tab="templates" data-help-key="tab-templates"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="9" x2="9" y2="20"/></svg>Templates</button>
+    <button class="tab" data-tab="learning" data-help-key="tab-learning"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c0 1 2.7 2 6 2s6-1 6-2v-5"/></svg>Learning</button>
     <button class="tab" data-tab="users" data-help-key="tab-users"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>Users &amp; activity</button>
+    <button class="tab" data-tab="audit" data-help-key="tab-audit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="18" rx="2"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>Audit</button>
     <button class="tab" data-tab="licensing" data-help-key="tab-licensing"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 21 2"/><path d="M16 7l3 3"/><path d="M18 5l3 3"/></svg>Licensing</button>
+    <button class="tab" data-tab="searchclient" data-help-key="tab-searchclient"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><line x1="8" y1="20" x2="16" y2="20"/><line x1="12" y1="16" x2="12" y2="20"/></svg>Search client</button>
     <button class="tab" data-tab="advanced" data-help-key="tab-advanced"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.3 2.3-2.5-.7-.7-2.5z"/></svg>Advanced</button>
   </div>
 
@@ -1006,8 +1009,51 @@
           </div>
         </div>
       </div>
+    </div>
 
-      <!-- ── Folded in from the old Learning Recovery tab ── -->
+    <!-- ══ LEARNING ══ -->
+    <div class="panel" id="panel-learning" data-help-key="tab-learning">
+
+      <!-- Keyword Label Overrides — moved to the top of the Learning tab -->
+      <div class="section">
+        <div class="section-title">Keyword Label Overrides</div>
+        <p class="section-desc">Teach the keyword stage extra <strong>words to look for on the page</strong> for a field, so it's detected on import without per-document teaching.</p>
+        <details class="info-disclose" style="margin-bottom:12px;"><summary class="disclose">How this works</summary>
+          <p class="section-desc" style="margin-top:8px;">
+            For example, if a worksheet prints <em>“Serial No.”</em> next to the value you want in
+            the <em>Reference</em> field, add it here once and every future worksheet picks it up.
+          </p>
+          <p class="section-desc">
+            On reprocessing, Scan Finder looks for <strong>your words first</strong>, then falls back
+            to its built-in words if yours aren't on the page (built-in words are kept as a fallback,
+            not removed). This applies to <strong>all documents of that type</strong>, not just the one
+            on screen. A field you've taught with a drawn anchor still wins over these words. Overrides
+            are specific to <strong>this installation</strong> — never shared or packaged.
+          </p>
+        </details>
+        <div class="row-flex" style="gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px;">
+          <div style="display:flex; flex-direction:column; gap:4px; min-width:170px;">
+            <label style="font-size:11px; color:var(--muted);">Document type</label>
+            <select id="lo-doctype" class="path-input"></select>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:4px; min-width:170px;">
+            <label style="font-size:11px; color:var(--muted);">Field</label>
+            <select id="lo-field" class="path-input"></select>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:4px; flex:1; min-width:220px;">
+            <label style="font-size:11px; color:var(--muted);">Label(s) as printed — separate with commas</label>
+            <textarea id="lo-label" class="path-input" rows="2" spellcheck="false"
+                      placeholder="e.g. Serial No., Ticket No., Reference No."
+                      style="resize:vertical; min-height:34px; line-height:1.5;"></textarea>
+          </div>
+          <button class="btn primary" id="lo-add">Add labels</button>
+        </div>
+        <div id="lo-msg" class="section-desc"
+             style="display:none; font-family:var(--mono); font-size:11px; margin-bottom:8px;"></div>
+        <div id="lo-list" class="section-desc"></div>
+      </div>
+
+      <!-- ── Learning Recovery ── -->
       <div class="section">
         <div class="section-title">Learning Recovery</div>
         <p class="section-desc">
@@ -1109,44 +1155,6 @@
         <p class="section-desc">No learned data found for this supplier / document type.</p>
       </div>
 
-      <!-- ── Moved here from the old Advanced tab ── -->
-      <div class="section">
-        <div class="section-title">Keyword Label Overrides</div>
-        <p class="section-desc">Teach the keyword stage extra <strong>words to look for on the page</strong> for a field, so it's detected on import without per-document teaching.</p>
-        <details class="info-disclose" style="margin-bottom:12px;"><summary class="disclose">How this works</summary>
-          <p class="section-desc" style="margin-top:8px;">
-            For example, if a worksheet prints <em>“Serial No.”</em> next to the value you want in
-            the <em>Reference</em> field, add it here once and every future worksheet picks it up.
-          </p>
-          <p class="section-desc">
-            On reprocessing, Scan Finder looks for <strong>your words first</strong>, then falls back
-            to its built-in words if yours aren't on the page (built-in words are kept as a fallback,
-            not removed). This applies to <strong>all documents of that type</strong>, not just the one
-            on screen. A field you've taught with a drawn anchor still wins over these words. Overrides
-            are specific to <strong>this installation</strong> — never shared or packaged.
-          </p>
-        </details>
-        <div class="row-flex" style="gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px;">
-          <div style="display:flex; flex-direction:column; gap:4px; min-width:170px;">
-            <label style="font-size:11px; color:var(--muted);">Document type</label>
-            <select id="lo-doctype" class="path-input"></select>
-          </div>
-          <div style="display:flex; flex-direction:column; gap:4px; min-width:170px;">
-            <label style="font-size:11px; color:var(--muted);">Field</label>
-            <select id="lo-field" class="path-input"></select>
-          </div>
-          <div style="display:flex; flex-direction:column; gap:4px; flex:1; min-width:220px;">
-            <label style="font-size:11px; color:var(--muted);">Label(s) as printed — separate with commas</label>
-            <textarea id="lo-label" class="path-input" rows="2" spellcheck="false"
-                      placeholder="e.g. Serial No., Ticket No., Reference No."
-                      style="resize:vertical; min-height:34px; line-height:1.5;"></textarea>
-          </div>
-          <button class="btn primary" id="lo-add">Add labels</button>
-        </div>
-        <div id="lo-msg" class="section-desc"
-             style="display:none; font-family:var(--mono); font-size:11px; margin-bottom:8px;"></div>
-        <div id="lo-list" class="section-desc"></div>
-      </div>
     </div>
 
     <!-- ══ USERS ══ -->
@@ -1194,19 +1202,22 @@
         </table>
       </div>
 
-      <!-- ── Folded in from the old Audit tab ── -->
+    </div>
+
+    <!-- ══ AUDIT ══ -->
+    <div class="panel" id="panel-audit" data-help-key="tab-audit">
       <style>
-        #panel-users .aud-lbl { display:block; font-size:10px; color:var(--muted); margin-bottom:3px; letter-spacing:.04em; }
-        #panel-users .aud-input { padding:5px 8px; background:var(--surface2); border:1px solid var(--border2);
+        #panel-audit .aud-lbl { display:block; font-size:10px; color:var(--muted); margin-bottom:3px; letter-spacing:.04em; }
+        #panel-audit .aud-input { padding:5px 8px; background:var(--surface2); border:1px solid var(--border2);
           color:var(--text); border-radius:5px; font-size:11px; font-family:inherit; }
-        #panel-users .aud-input[type=text] { width:130px; }
-        #panel-users #aud-table td { padding:6px 10px; font-size:11px; vertical-align:top; cursor:pointer; }
-        #panel-users tr.aud-row:hover { background:var(--surface2); }
-        #panel-users .aud-pill { font-size:9px; padding:1px 6px; border-radius:8px; text-transform:uppercase; letter-spacing:.05em; }
-        #panel-users .aud-pill.success { background:var(--ok-bg); color:var(--ok); }
-        #panel-users .aud-pill.failure { background:var(--err-bg); color:var(--err); }
-        #panel-users .aud-pill.denied  { background:var(--warn-bg); color:var(--warn); }
-        #panel-users .aud-detail td { background:var(--bg); color:var(--muted); font-family:var(--mono); font-size:10.5px; white-space:pre-wrap; word-break:break-word; }
+        #panel-audit .aud-input[type=text] { width:130px; }
+        #panel-audit #aud-table td { padding:6px 10px; font-size:11px; vertical-align:top; cursor:pointer; }
+        #panel-audit tr.aud-row:hover { background:var(--surface2); }
+        #panel-audit .aud-pill { font-size:9px; padding:1px 6px; border-radius:8px; text-transform:uppercase; letter-spacing:.05em; }
+        #panel-audit .aud-pill.success { background:var(--ok-bg); color:var(--ok); }
+        #panel-audit .aud-pill.failure { background:var(--err-bg); color:var(--err); }
+        #panel-audit .aud-pill.denied  { background:var(--warn-bg); color:var(--warn); }
+        #panel-audit .aud-detail td { background:var(--bg); color:var(--muted); font-family:var(--mono); font-size:10.5px; white-space:pre-wrap; word-break:break-word; }
       </style>
       <div class="section">
         <div class="section-title">Audit log</div>
@@ -1298,6 +1309,30 @@
         </div>
       </div>
 
+      <div class="section" id="seats-section">
+        <div class="section-title">Client seats — search &amp; workflow</div>
+        <p class="section-desc">Floating search licences: a client holds a seat while connected until you release it here. Workflow is an add‑on claimed on a search seat. Counts come from your licence (read‑only); live usage is shown below.</p>
+        <div class="row-flex" style="gap:10px; align-items:center; margin-bottom:8px;">
+          <div class="threshold-label">Search seats</div>
+          <input type="number" id="seats-count" min="0" max="999" class="path-input" style="max-width:80px" readonly disabled title="Set by your licence — read-only">
+          <span class="threshold-sub">licence-set</span>
+          <button class="btn" id="seats-refresh">Refresh</button>
+          <span class="threshold-sub" id="seats-summary" style="margin-left:auto;"></span>
+        </div>
+        <details id="seats-details" style="margin-top:4px;">
+        <summary class="disclose">Connected clients</summary>
+        <table class="fields-table" id="seats-table" style="margin-top:6px;">
+          <thead><tr><th>User</th><th>Client</th><th>Last seen</th><th></th></tr></thead>
+          <tbody id="seats-tbody"></tbody>
+        </table>
+        <div class="threshold-sub" id="seats-empty" style="margin-top:6px;"></div>
+        </details>
+      </div>
+    </div>
+
+    <!-- ══ SEARCH CLIENT ══ -->
+    <div class="panel" id="panel-searchclient" data-help-key="tab-searchclient">
+
       <div class="section">
         <div class="card-head"><div class="section-title">Search client access</div><span class="chip" id="client-api-chip" style="display:none;"></span></div>
         <p class="section-desc">Let the separate ScanFinder Search client connect over your network. Off by default. A loopback address stays plain HTTP; a LAN address gets an automatic TLS certificate — no manual cert files.</p>
@@ -1351,25 +1386,6 @@
         </details>
       </div>
 
-      <div class="section" id="seats-section">
-        <div class="section-title">Client seats — search &amp; workflow</div>
-        <p class="section-desc">Floating search licences: a client holds a seat while connected until you release it here. Workflow is an add‑on claimed on a search seat. Counts come from your licence (read‑only); live usage is shown below.</p>
-        <div class="row-flex" style="gap:10px; align-items:center; margin-bottom:8px;">
-          <div class="threshold-label">Search seats</div>
-          <input type="number" id="seats-count" min="0" max="999" class="path-input" style="max-width:80px" readonly disabled title="Set by your licence — read-only">
-          <span class="threshold-sub">licence-set</span>
-          <button class="btn" id="seats-refresh">Refresh</button>
-          <span class="threshold-sub" id="seats-summary" style="margin-left:auto;"></span>
-        </div>
-        <details id="seats-details" style="margin-top:4px;">
-        <summary class="disclose">Connected clients</summary>
-        <table class="fields-table" id="seats-table" style="margin-top:6px;">
-          <thead><tr><th>User</th><th>Client</th><th>Last seen</th><th></th></tr></thead>
-          <tbody id="seats-tbody"></tbody>
-        </table>
-        <div class="threshold-sub" id="seats-empty" style="margin-top:6px;"></div>
-        </details>
-      </div>
     </div>
 
     <!-- ══ ADVANCED ══ -->
