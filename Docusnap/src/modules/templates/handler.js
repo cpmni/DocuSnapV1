@@ -35,10 +35,15 @@ function register(ctx) {
   function _resolveDocPath(doc) {
     if (!doc) return null;
     const ok = (p) => (p && fs.existsSync(p) ? p : null);
-    const dir  = doc.stored_path || doc.folder_path;
-    const name = doc.stored_filename || doc.original_filename;
-    return ok(doc.working_path)
-        || ok(dir && name ? path.join(dir, name) : null)
+    // stored_path is the FULL path to the FILED file (set on confirm) — use it once the
+    // doc is COMMITTED; working_path is the app's inbox copy — the UNCOMMITTED version
+    // before filing. Then fall back to the source folder. (The old code treated
+    // stored_path as a directory and join()'d the filename onto it, so a committed doc
+    // whose working copy had since been cleaned up resolved to nothing → "sample file
+    // not found".)
+    return ok(doc.stored_path)
+        || ok(doc.working_path)
+        || ok(doc.folder_path && doc.stored_filename   ? path.join(doc.folder_path, doc.stored_filename)   : null)
         || ok(doc.folder_path && doc.original_filename ? path.join(doc.folder_path, doc.original_filename) : null);
   }
 
