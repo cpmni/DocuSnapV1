@@ -589,7 +589,10 @@ function handleProgress(msg) {
 
     case 'file_begin':
       appendLog(`→ ${msg.filename}`);
-      setStage(msg.filename, 'ocr');
+      // Show clear "Processing X of N — <file>" progress (X = the doc starting now).
+      setStage(batch.total > 0
+        ? `Processing ${Math.min(batch.done + 1, batch.total)} of ${batch.total} — ${msg.filename}`
+        : `Processing — ${msg.filename}`, 'ocr');
       if (batch.total > 0) {
         progressBar.style.width = ((batch.done / batch.total) * 100) + '%';
       }
@@ -859,12 +862,21 @@ window.docusnap.onProgress((msg) => {
 // results table (those are built for one discrete user-initiated batch; the
 // watcher streams per-file and runs files in parallel).
 // Auto-import card status light: '' hidden, 'processing' red-blink, 'done' steady green.
-let _watchIdleTimer = null;
+let _watchIdleTimer = null, _watchBurstDone = 0, _watchBurstActive = false;
 function setWatchLight(state) {
   const el = document.getElementById('dash-watch-light');
   if (!el) return;
   el.className = 'watch-light' + (state ? ' ' + state : '');
   el.title = state === 'processing' ? 'Importing a document…' : state === 'done' ? 'Auto-import on — ready' : '';
+}
+// Live "Processing… (N done)" on the Auto-import card during a watch burst; refreshWatchCard()
+// reverts it to "watching <folder>" when the burst goes idle. (Watch has no fixed batch total.)
+function setWatchCardProcessing() {
+  const body = document.getElementById('dash-watch-body');
+  if (!body) return;
+  body.className = 'dash-watch-body warn';
+  const n = _watchBurstDone;
+  body.innerHTML = `Processing…<br><span class="wf-path">${n} document${n === 1 ? '' : 's'} done this run</span>`;
 }
 
 function handleWatchProgress(msg) {
@@ -885,9 +897,19 @@ function handleWatchProgress(msg) {
     addTableRow(msg);   // watch docs show in the results list the same as manual ones
   }
 
-  // Status light: red-blink while a watch import is in flight, green ~1.5s after the last one.
-  if (msg.type === 'file_begin') { clearTimeout(_watchIdleTimer); setWatchLight('processing'); }
-  else if (msg.type === 'file_done') { clearTimeout(_watchIdleTimer); _watchIdleTimer = setTimeout(() => setWatchLight('done'), 1500); }
+  // Status light + Auto-import card body: live "Processing… (N done)" while a burst is in flight,
+  // reverting to "watching <folder>" ~1.5s after the last file. The burst count resets per burst.
+  if (msg.type === 'file_begin') {
+    clearTimeout(_watchIdleTimer);
+    if (!_watchBurstActive) { _watchBurstActive = true; _watchBurstDone = 0; }
+    setWatchLight('processing');
+    setWatchCardProcessing();
+  } else if (msg.type === 'file_done') {
+    _watchBurstDone++;
+    setWatchCardProcessing();
+    clearTimeout(_watchIdleTimer);
+    _watchIdleTimer = setTimeout(() => { setWatchLight('done'); _watchBurstActive = false; try { refreshWatchCard(); } catch {} }, 1500);
+  }
 
   if (running) return;            // the manual run owns the log strip + status
   logPanel.classList.add('visible');
