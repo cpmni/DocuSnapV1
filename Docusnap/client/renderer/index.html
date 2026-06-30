@@ -365,6 +365,11 @@
     .row .r2 { font-size:12px; color:var(--muted); margin-top:3px; }
 
     .preview { flex:1; min-width:0; overflow:auto; padding:var(--s5); }
+    /* Review uses a 3-column layout (list+thumbnails · preview · fields), scoped so
+       Search/Mailbox/Recycle keep their 2-column results+preview split. */
+    #view-review .results { width:24%; min-width:230px; }
+    #view-review .preview { border-right:1px solid var(--border); }
+    #view-review .rv-panel { width:380px; min-width:320px; flex-shrink:0; overflow:auto; padding:var(--s5); }
     .pv-head { display:flex; align-items:center; gap:var(--s3); margin-bottom:var(--s4); }
     .pv-head .ic { width:18px; height:18px; color:var(--accent); }
     .pv-head h2 { font-size:16px; margin:0; font-weight:600; }
@@ -646,6 +651,7 @@
       <div class="main">
         <div class="results"><div id="review-list"><div class="empty">Loading…</div></div></div>
         <div id="review-preview" class="preview"><div class="empty">Select a document on the left to review and file it.</div></div>
+        <div id="review-fields-panel" class="rv-panel"></div>
       </div>
     </div>
 

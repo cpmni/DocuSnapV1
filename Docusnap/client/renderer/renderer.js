@@ -513,14 +513,17 @@ function reviewRow(d) {
 async function openReviewDoc(id) {
   rvLeave();
   rvCurrentId = id;
-  const prev = $('review-preview');
-  prev.innerHTML = `<div class="empty">${ico('refresh', 'ic spin')}Loading…</div>`;
+  const prev = $('review-preview');           // middle column: the document pages
+  const fpanel = $('review-fields-panel');     // right column: type + fields + actions
+  fpanel.innerHTML = `<div class="empty">${ico('refresh', 'ic spin')}Loading…</div>`;
+  prev.innerHTML = `<div class="empty">${ico('refresh', 'ic spin')}Loading preview…</div>`;
   const [docR, types] = await Promise.all([api.getDocument(id), loadDocTypes()]);
   if (rvCurrentId !== id) return;                 // navigated away while loading
   if (docR.status === 401) { doLogout(); return; }
-  if (docR.status !== 200 || !docR.json) { prev.innerHTML = `<div class="empty">Could not load document.</div>`; return; }
+  if (docR.status !== 200 || !docR.json) { fpanel.innerHTML = `<div class="empty">Could not load document.</div>`; prev.innerHTML = ''; return; }
   const doc = docR.json;
 
+  // ── Right column: type + fields + actions ──
   const wrap = document.createElement('div'); wrap.className = 'fade';
   const title = doc.supplier_name || doc.original_filename || `Document #${doc.id}`;
   let html = `<div class="pv-head">${ico('doc')}<h2>${esc(title)}</h2><span class="chip ${esc(doc.status)}">${esc(doc.status)}</span></div>`;
@@ -532,9 +535,8 @@ async function openReviewDoc(id) {
   html += `<div class="rv-typebar"><label for="rv-type">Document type</label><select id="rv-type"></select></div>`;
   html += `<div class="rv-fields" id="rv-fields"></div>`;
   html += `<div class="rv-actions" id="rv-actions"></div>`;
-  html += `<div class="pages"><div class="empty">${ico('refresh', 'ic spin')}Loading preview…</div></div>`;
   wrap.innerHTML = html;
-  prev.innerHTML = ''; prev.appendChild(wrap);
+  fpanel.innerHTML = ''; fpanel.appendChild(wrap);
 
   const vals = {};
   for (const e of (doc.extractions || [])) vals[e.field_key] = e.display_value || '';
@@ -557,12 +559,13 @@ async function openReviewDoc(id) {
   rvViewingBeat(id);
   rvHeartbeat = setInterval(() => rvViewingBeat(id), 25000);
 
+  // ── Middle column: the document pages ──
   const pg = await api.getPages(id);
   if (rvCurrentId !== id) return;
-  const pagesEl = wrap.querySelector('.pages');
   const imgs = (pg.json && pg.json.pages) || [];
-  if (!imgs.length) { pagesEl.innerHTML = `<div class="empty">No preview available.</div>`; return; }
-  pagesEl.innerHTML = '';
+  if (!imgs.length) { prev.innerHTML = `<div class="empty">No preview available.</div>`; return; }
+  prev.innerHTML = '<div class="pages"></div>';
+  const pagesEl = prev.querySelector('.pages');
   for (const src of imgs) { const im = document.createElement('img'); im.src = src; pagesEl.appendChild(im); }
 }
 
@@ -586,7 +589,7 @@ function renderReviewFields(wrap, type, vals) {
 }
 
 async function rvConfirm(doc, sel) {
-  const wrap = $('review-preview');
+  const wrap = $('review-fields-panel');
   const slug = sel.value;
   const type = (docTypesCache || []).find((t) => t.slug === slug);
   const inputs = [...wrap.querySelectorAll('#rv-fields input')];
@@ -606,12 +609,14 @@ async function rvConfirm(doc, sel) {
   if (r.status === 200 && r.json && r.json.success) {
     toast(`Filed${r.json.filename ? ' as ' + r.json.filename : ''}.`, 'ok');
     rvLeave();
+    $('review-fields-panel').innerHTML = '';
     $('review-preview').innerHTML = `<div class="empty">Filed. Select the next document on the left.</div>`;
     loadReview();
   } else if (r.status === 409) {
     const who = (r.json && r.json.confirmedBy) || 'someone else';
     toast((r.json && r.json.error) || `Already filed by ${who}.`, 'warn');
     rvLeave();
+    $('review-fields-panel').innerHTML = '';
     $('review-preview').innerHTML = `<div class="empty">This document was already filed. Refreshing the list…</div>`;
     loadReview();
   } else {
@@ -624,6 +629,7 @@ async function rvAction(action, id) {
   if (r.status === 200 && r.json && r.json.ok) {
     toast(action === 'undefer' ? 'Moved back to the review queue.' : 'Deferred.', 'ok');
     rvLeave();
+    $('review-fields-panel').innerHTML = '';
     $('review-preview').innerHTML = `<div class="empty">Select a document on the left to review and file it.</div>`;
     loadReview();
   } else {
