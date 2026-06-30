@@ -60,6 +60,7 @@ function createWindow() {
     width: 1180, height: 800, minWidth: 940, minHeight: 600,
     backgroundColor: '#0c0e14',
     title: 'ScanFinder — Search',
+    icon: path.join(__dirname, 'assets', 'icon.ico'),   // app/window/taskbar icon (mirrors the core app)
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
