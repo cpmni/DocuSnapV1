@@ -929,10 +929,15 @@ function register(ctx) {
       outcome: 'success', metadata: { enhanced: !!enhanceParams } });
     // Prefer the app-managed working copy so reprocess doesn't depend on the
     // user's source folder still holding the file; fall back to the source path.
-    const wpRow   = db.prepare('SELECT working_path FROM documents WHERE id = ?').get(docId);
+    // Prefer the working copy; then — for an already-FILED (confirmed) doc, e.g. one the
+    // backend auto-filed and the operator re-surfaced — the FILED copy (stored_path), which
+    // always exists (mirrors documents.resolveFilePath); finally the caller's source path.
+    const wpRow   = db.prepare('SELECT working_path, stored_path, status FROM documents WHERE id = ?').get(docId);
     const srcFile = (wpRow && wpRow.working_path && fs.existsSync(wpRow.working_path))
                   ? wpRow.working_path
-                  : path.join(folderPath, filename);
+                  : (wpRow && wpRow.status === 'confirmed' && wpRow.stored_path && fs.existsSync(wpRow.stored_path))
+                    ? wpRow.stored_path
+                    : path.join(folderPath, filename);
     if (!fs.existsSync(srcFile)) {
       return { success: false, error: 'File not found: ' + srcFile };
     }
