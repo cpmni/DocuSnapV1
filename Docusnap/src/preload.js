@@ -100,6 +100,9 @@ contextBridge.exposeInMainWorld('docusnap', {
   // First-run setup wizard
   onboardingComplete:   ()       => ipcRenderer.send('onboarding-complete'),
   openOnboarding:       ()       => ipcRenderer.send('open-onboarding'),
+  welcomeDone:          (action) => ipcRenderer.send('welcome-done', action),
+  openWelcome:          ()       => ipcRenderer.send('open-welcome'),
+  onWelcomeGotoImport:  (cb)     => ipcRenderer.on('welcome-goto-import', () => cb()),
   suggestedOutputFolder:()       => ipcRenderer.invoke('onboarding-suggested-folder'),
   validateOutputFolder: (folder) => ipcRenderer.invoke('onboarding-validate-folder', folder),
 

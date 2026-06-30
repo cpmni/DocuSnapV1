@@ -143,6 +143,7 @@ const MAIN_WINDOW_OPTIONS    = { width: 1100, height: 750, minWidth: 800, minHei
 const LOGIN_WINDOW_OPTIONS   = { width: 460, height: 660, resizable: false, minimizable: false, maximizable: false };
 const LICENSE_WINDOW_OPTIONS = { width: 460, height: 560, resizable: false, minimizable: false, maximizable: false };
 const ONBOARDING_WINDOW_OPTIONS = { width: 720, height: 640, resizable: false, minimizable: false, maximizable: false };
+const WELCOME_WINDOW_OPTIONS = { width: 720, height: 640, resizable: false, minimizable: false, maximizable: false };
 const HELP_WINDOW_OPTIONS = { width: 940, height: 700, minWidth: 640, minHeight: 460 };
 
 // Programmatic window close that DESTROYS the window even with the tray
@@ -192,6 +193,15 @@ function showOnboarding() {
   destroyWindow('login');
   destroyWindow('license');
 }
+
+// First-run familiarisation tour (concepts), shown once AFTER the setup wizard.
+// Gated by its own `welcome_seen` flag (separate from first_run_completed) and
+// reopenable from the user menu. Reads fail-closed so an error never re-shows it.
+function welcomeSeen() {
+  try { return require('../database/modules/learning').getSetting(getDb(), 'welcome_seen') === 'true'; }
+  catch { return true; }
+}
+function showWelcome() { createWindow('welcome', WELCOME_WINDOW_OPTIONS, 'index.html'); }
 
 // Licensing gate (Phase 2). The MAIN process is the sole decider; the renderer
 // only signals intent. With enforcement OFF (default) decideAccess() returns
@@ -895,7 +905,17 @@ app.whenReady().then(() => {
       }
     } catch (e) { logger.warn?.('onboarding flag write failed: ' + e.message); }
     openMainShell();
+    if (!welcomeSeen()) showWelcome();   // first-run concepts tour, on top of Home
   });
+  // First-run familiarisation tour: close (set the flag) and optionally jump to Import.
+  ipcMain.on('welcome-done', (_e, action) => {
+    try { require('../database/modules/learning').setSetting(getDb(), 'welcome_seen', 'true'); }
+    catch (e) { logger.warn?.('welcome flag write failed: ' + e.message); }
+    destroyWindow('welcome');
+    if (action === 'import') { try { windows['main']?.webContents.send('welcome-goto-import'); } catch {} }
+  });
+  // Reopen the tour from the user menu (no first-run gate — explicit request).
+  ipcMain.on('open-welcome', () => showWelcome());
   // Re-run setup from Settings → General. Admin only (it changes app-wide config).
   ipcMain.on('open-onboarding', () => {
     if (!authModule.hasRole('admin')) return;

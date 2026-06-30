@@ -1189,6 +1189,12 @@ document.getElementById('menu-about')?.addEventListener('click', () => {
   userMenu.classList.remove('open');
   openAbout();
 });
+document.getElementById('menu-welcome')?.addEventListener('click', () => {
+  userMenu.classList.remove('open');
+  window.docusnap.openWelcome?.();
+});
+// The welcome tour's "Go to Import" jumps the open Home shell to the Import view.
+window.docusnap.onWelcomeGotoImport?.(() => showView('import'));
 document.getElementById('about-close')?.addEventListener('click', closeAbout);
 aboutOverlay?.addEventListener('click', (e) => { if (e.target === aboutOverlay) closeAbout(); });
 document.getElementById('about-licenses')?.addEventListener('click', async () => {
