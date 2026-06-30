@@ -45,7 +45,7 @@ DISTRIBUTION & VERIFICATION NOTES
   the full text and are incorporated by reference (see section 3).
 
 Applies to product version: ScanFinder 2.0.0 (core) / 1.0.2 (search client).
-Last reviewed: 2026-06-20.
+Last reviewed: 2026-06-30.
 
 --------------------------------------------------------------------------------
 1. COMPONENT INVENTORY
@@ -71,8 +71,10 @@ Bundled runtimes & binaries (shipped, but not enumerated as npm/PyPI packages)
     tesseract, + tessdata)        trained-data; (c) the Tesseract contributors)
   SQLite (in better-sqlite3)      Public Domain (https://sqlite.org/copyright.html)
 
-Node.js components — production dependency tree (50)
+Node.js components — production dependency tree (55)
   @epic-web/invariant             1.0.0         MIT
+  @pdf-lib/standard-fonts         1.0.0         MIT
+  @pdf-lib/upng                   1.0.1         MIT
   @phc/format                     1.0.0         MIT
   argon2                          0.44.0        MIT
   base64-js                       1.5.1         MIT
@@ -103,7 +105,9 @@ Node.js components — production dependency tree (50)
   node-forge                      1.3.1         (BSD-3-Clause OR GPL-2.0)
   node-gyp-build                  4.8.4         MIT
   once                            1.4.0         ISC
+  pako                            1.0.11        (MIT AND Zlib)
   path-key                        3.1.1         MIT
+  pdf-lib                         1.17.1        MIT
   prebuild-install                7.1.3         MIT
   pump                            3.0.4         MIT
   rc                              1.2.8         (BSD-2-Clause OR MIT OR Apache-2.0)
@@ -118,6 +122,7 @@ Node.js components — production dependency tree (50)
   strip-json-comments             2.0.1         MIT
   tar-fs                          2.1.4         MIT
   tar-stream                      2.2.0         MIT
+  tslib                           1.14.1        0BSD
   tunnel-agent                    0.6.0         Apache-2.0
   util-deprecate                  1.0.2         MIT
   which                           2.0.2         ISC

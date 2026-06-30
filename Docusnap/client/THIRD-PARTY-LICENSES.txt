@@ -10,7 +10,7 @@ any font files (it uses the operating system's fonts).
 
 This file satisfies the attribution requirements of the licenses below.
 
-Last reviewed: 2026-06-20.
+Last reviewed: 2026-06-30.
 
 --------------------------------------------------------------------------------
 COMPONENT INVENTORY
