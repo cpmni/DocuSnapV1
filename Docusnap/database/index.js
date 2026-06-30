@@ -816,6 +816,18 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 40 applied: documents.deleted_at (recycle bin)');
   }
 
+  // Migration 41: documents.confirmed_by_username — WHO filed the document (a real username,
+  // or the sentinel 'Auto-filed (100%)' for the backend 100%-confidence auto-file). Captured
+  // at confirm time. It CANNOT be backfilled once multi-user (client) review can file, so it
+  // is added now: it answers "already filed by <name>" in the concurrency guard and doubles
+  // as a "filed by" label. NULL for every existing row.
+  if (!applied.has(41)) {
+    try { db.exec(`ALTER TABLE documents ADD COLUMN confirmed_by_username TEXT`); }
+    catch (e) { console.warn(`  documents.confirmed_by_username: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (41)').run();
+    console.log('JS migration 41 applied: documents.confirmed_by_username');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

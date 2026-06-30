@@ -34,7 +34,7 @@ function update(db, id, changes) {
                    'status', 'overall_confidence', 'supplier_name',
                    'doc_date', 'reference_number', 'confirmed_at',
                    'error_message', 'template_id', 'working_path',
-                   'review_acknowledged_at', 'page_count'];
+                   'review_acknowledged_at', 'page_count', 'confirmed_by_username'];
   const sets = Object.keys(changes)
     .filter(k => allowed.includes(k))
     .map(k => `${k} = @${k}`)
@@ -248,13 +248,60 @@ function getStuckQueue(db) {
   `).all();
 }
 
-function confirm(db, id, { stored_filename, stored_path }) {
+function confirm(db, id, { stored_filename, stored_path, confirmed_by_username = null }) {
   return update(db, id, {
     status:       'confirmed',
     stored_filename,
     stored_path,
     confirmed_at: new Date().toISOString(),
+    confirmed_by_username,
   });
+}
+
+// ── Atomic, status-guarded transitions (multi-user concurrency guard) ──────────
+// A plain confirm()/update() is an unconditional UPDATE, so two callers (two clients,
+// a client vs the desktop, or the auto-file vs a manual confirm) can both "win" and
+// double-file. These compare-and-set helpers only mutate when the row is STILL in a
+// reviewable state, returning better-sqlite3's `info` so the caller can detect a lost
+// race (`changes === 0`) and respond cleanly ("already filed by <name>"). Atomic because
+// better-sqlite3 is synchronous and the API + IPC share one event loop — no await between
+// the WHERE test and the write, so no second writer can interleave.
+
+// Claim a document as confirmed ONLY if it is still reviewable (needs_review/deferred), or
+// — for the desktop re-file path — already confirmed when allowRefile is set. stored_* may
+// be null when claiming BEFORE filing (the caller fills them in via update() afterwards).
+function confirmIfReviewable(db, id, { stored_filename = null, stored_path = null,
+                                       confirmed_by_username = null, allowRefile = false } = {}) {
+  return db.prepare(`
+    UPDATE documents
+       SET status                = 'confirmed',
+           confirmed_at          = @confirmed_at,
+           confirmed_by_username = @confirmed_by_username,
+           stored_filename       = @stored_filename,
+           stored_path           = @stored_path
+     WHERE id = @id
+       AND ( status IN ('needs_review','deferred')
+          OR (status = 'confirmed' AND @allowRefile = 1) )
+  `).run({
+    id,
+    stored_filename, stored_path, confirmed_by_username,
+    confirmed_at: new Date().toISOString(),
+    allowRefile: allowRefile ? 1 : 0,
+  });
+}
+
+// Move a document to deferred ONLY if it is currently needs_review.
+function deferIfReviewable(db, id) {
+  return db.prepare(
+    `UPDATE documents SET status = 'deferred' WHERE id = ? AND status = 'needs_review'`
+  ).run(id);
+}
+
+// Restore a deferred document to the review queue ONLY if it is currently deferred.
+function restoreIfDeferred(db, id) {
+  return db.prepare(
+    `UPDATE documents SET status = 'needs_review' WHERE id = ? AND status = 'deferred'`
+  ).run(id);
 }
 
 function deleteDoc(db, id) {
@@ -365,6 +412,7 @@ module.exports = {
   getReviewCount, getDeferredCount, getStuckCount, getStuckQueue, getFiledCounts,
   softDelete, restoreDeleted, getDeletedQueue, getDeletedCount,
   getFieldValueSuggestions,
-  confirm, deleteDoc, deleteByStatus, search,
+  confirm, confirmIfReviewable, deferIfReviewable, restoreIfDeferred,
+  deleteDoc, deleteByStatus, search,
   resolveFilePath, filterExisting, getWorkingPaths,
 };

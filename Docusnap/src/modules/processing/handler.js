@@ -1981,15 +1981,28 @@ async function _autoFileDoc(db, docId, folderPath, notifyMainWindow, logger) {
   for (const e of db.prepare('SELECT field_key, display_value, raw_value FROM extractions WHERE document_id = ?').all(docId)) {
     allValues[e.field_key] = e.display_value ?? e.raw_value;
   }
-  const fr = await filing.commitDocument({
-    db, fs, path, outputRoot,
-    folderPath:       doc.folder_path || folderPath,
-    originalFilename: doc.original_filename,
-    workingPath:      doc.working_path,
-    allValues, documentType: dtInfo.name, dtInfo, logger,
-  });
-  if (!fr || !fr.success) return;
-  documents.confirm(db, docId, { stored_filename: fr.filename, stored_path: fr.filePath });
+  // Claim the doc BEFORE filing (atomic compare-and-set) so the 100% auto-file can't
+  // double-file a doc a human confirmed in the gap since the status check above, and so it's
+  // honestly attributed. If the claim doesn't land, someone else already took it — don't file.
+  const claim = documents.confirmIfReviewable(db, docId, { confirmed_by_username: 'Auto-filed (100%)' });
+  if (!claim || claim.changes === 0) return;
+  let fr;
+  try {
+    fr = await filing.commitDocument({
+      db, fs, path, outputRoot,
+      folderPath:       doc.folder_path || folderPath,
+      originalFilename: doc.original_filename,
+      workingPath:      doc.working_path,
+      allValues, documentType: dtInfo.name, dtInfo, logger,
+    });
+  } catch (e) { fr = null; logger?.warn?.(`[auto-file] commit failed for docId=${docId}: ${e && e.message}`); }
+  if (!fr || !fr.success) {
+    // Filing failed after the claim — roll the doc back into the review queue so it isn't
+    // stranded as "confirmed" with no stored file.
+    try { documents.update(db, docId, { status: 'needs_review', confirmed_at: null, confirmed_by_username: null }); } catch {}
+    return;
+  }
+  documents.update(db, docId, { stored_filename: fr.filename, stored_path: fr.filePath });
   try { db.prepare('UPDATE extractions SET validation_note = NULL, corrected_to = NULL WHERE document_id = ?').run(docId); } catch {}
   if (doc.working_path) {
     try { if (fs.existsSync(doc.working_path)) fs.unlinkSync(doc.working_path); } catch {}
