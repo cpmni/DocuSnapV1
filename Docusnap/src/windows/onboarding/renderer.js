@@ -60,8 +60,11 @@ async function loadCurrent() {
   // value (e.g. a legacy 'ai', or an unset/blank) to 'smart' so a card is always
   // selected — otherwise neither Accuracy card highlights and it looks unselectable.
   try { state.mode = (await D.getSetting('processing_mode')) === 'fast' ? 'fast' : 'smart'; } catch {}
-  try { state.copyEnabled = (await D.getSetting('copy_after_processing_enabled')) === 'true'; } catch {}
-  try { state.copyFolder  = (await D.getSetting('copy_after_processing_folder')) || ''; } catch {}
+  // Processed-scans (drain) folder — where each original is MOVED after it's filed.
+  // The SAME `processed_folder` key Settings → Files & filing shows/uses (an explicit
+  // value wins; empty → a "Processed" subfolder beside the scans). Reusing the
+  // copyEnabled/copyFolder state fields (UI is unchanged) to keep the diff small.
+  try { const pf = (await D.getSetting('processed_folder')) || ''; state.copyEnabled = !!pf; state.copyFolder = pf; } catch {}
   try {
     const info = await D.getOutputStructureInfo();
     _obTokens = info.tokens || [];
@@ -154,7 +157,7 @@ async function commitOutputFolder() {
   return true;
 }
 
-// ── Copy processed scans to another folder (optional) ───────────────────────────
+// ── Processed-scans (drain) folder — where originals move after filing ──────────
 $$('[data-copy]').forEach(c => c.addEventListener('click', () => {
   state.copyEnabled = c.dataset.copy === 'yes';
   if (!state.copyEnabled) setHint('copyHint', 'muted', '');
@@ -168,18 +171,20 @@ $('#copyBrowseBtn').addEventListener('click', async () => {
   } catch {}
 });
 
-// Persist the two keys; path required ONLY when enabled. strict=true blocks the
+// Persist `processed_folder`; path required ONLY when enabled. strict=true blocks the
 // wizard on a missing path; strict=false (skip / defaults) treats "enabled but no
 // path" as disabled so it can never block completion.
 async function saveCopySetting(strict) {
   const folder = (state.copyFolder || '').trim();
   if (state.copyEnabled && !folder) {
-    if (strict) { setHint('copyHint', 'err', 'Choose a folder to copy into, or select No.'); return false; }
-    try { await D.setSetting('copy_after_processing_enabled', 'false'); } catch {}
+    if (strict) { setHint('copyHint', 'err', 'Choose a folder, or select Default.'); return false; }
+    try { await D.setSetting('processed_folder', ''); } catch {}
     return true;
   }
-  try { await D.setSetting('copy_after_processing_enabled', state.copyEnabled ? 'true' : 'false'); } catch {}
-  if (state.copyEnabled) { try { await D.setSetting('copy_after_processing_folder', folder); } catch {} }
+  // "Choose a folder" → set the drain folder; "Default" → clear it (a "Processed"
+  // subfolder beside the scans is used). Writes the real `processed_folder` key so the
+  // choice is remembered and shows in Settings → Files & filing.
+  try { await D.setSetting('processed_folder', state.copyEnabled ? folder : ''); } catch {}
   return true;
 }
 
