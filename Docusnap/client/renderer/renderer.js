@@ -448,6 +448,7 @@ $('theme-select')?.addEventListener('change', (e) => applyTheme(e.target.value))
 function rvLeave() {
   if (rvHeartbeat) { clearInterval(rvHeartbeat); rvHeartbeat = null; }
   if (rvCurrentId != null) { try { api.review.release(rvCurrentId); } catch {} rvCurrentId = null; }
+  try { rvDisarmTarget(); } catch {}   // clear any armed targeting when the doc/session changes
 }
 
 async function loadDocTypes() {
@@ -640,9 +641,100 @@ function renderReviewFields(wrap, type, vals) {
     inp.type = 'text'; inp.value = cur; inp.dataset.key = f.key; inp.dataset.orig = cur;
     if (f.required && !cur) div.classList.add('req-empty');
     inp.addEventListener('input', () => div.classList.toggle('req-empty', !!f.required && !inp.value.trim()));
-    div.appendChild(inp);
+    const row = document.createElement('div'); row.className = 'rv-fld-row';
+    row.appendChild(inp);
+    const tbtn = document.createElement('button'); tbtn.type = 'button'; tbtn.className = 'rv-target-btn';
+    tbtn.title = 'Read this value from the document — click, then draw a box around it';
+    tbtn.innerHTML = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="7"/><line x1="12" y1="1" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="23"/><line x1="1" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="23" y2="12"/></svg>`;
+    tbtn.addEventListener('click', () => rvArmTarget(inp));
+    row.appendChild(tbtn);
+    div.appendChild(row);
     c.appendChild(div);
   }
+}
+
+// ── Correction-only targeting: arm a field, draw a box on the page, OCR-fill it ──────
+// The page image we draw on is the ~108 DPI preview (from /v1/pages) the host rendered —
+// so cropping it client-side and OCR-ing it on the host reads identically to the desktop
+// ⊕ tool. We send only the cropped PNG; the host runs region.py and returns text. No
+// learning, no anchors — a pure read-and-fill convenience.
+let rvTargetInput = null;     // the field input currently armed
+let rvDraw = null;            // { img, rect, startX, startY, boxEl } while dragging
+let rvDrawWired = false;
+
+function rvArmTarget(input) {
+  rvTargetInput = input;
+  const prev = $('review-preview');
+  if (prev) prev.classList.add('rv-targeting');
+  rvWireDrawing();
+  toast('Draw a box around the value on the document.', 'ok');
+}
+function rvDisarmTarget() {
+  rvTargetInput = null;
+  const prev = $('review-preview');
+  if (prev) prev.classList.remove('rv-targeting');
+  if (rvDraw && rvDraw.boxEl) rvDraw.boxEl.remove();
+  rvDraw = null;
+}
+function rvUpdateBox(x, y) {
+  if (!rvDraw) return;
+  const l = Math.min(rvDraw.startX, x), t = Math.min(rvDraw.startY, y);
+  const w = Math.abs(x - rvDraw.startX), h = Math.abs(y - rvDraw.startY);
+  Object.assign(rvDraw.boxEl.style, { left: l + 'px', top: t + 'px', width: w + 'px', height: h + 'px' });
+}
+function rvWireDrawing() {
+  if (rvDrawWired) return; rvDrawWired = true;
+  const prev = $('review-preview');
+  if (!prev) return;
+  prev.addEventListener('mousedown', (e) => {
+    if (!rvTargetInput) return;
+    const img = e.target.closest && e.target.closest('.pages img');
+    if (!img) return;
+    e.preventDefault();
+    const boxEl = document.createElement('div'); boxEl.className = 'rv-drawbox';
+    document.body.appendChild(boxEl);
+    rvDraw = { img, rect: img.getBoundingClientRect(), startX: e.clientX, startY: e.clientY, boxEl };
+    rvUpdateBox(e.clientX, e.clientY);
+  });
+  window.addEventListener('mousemove', (e) => { if (rvDraw) rvUpdateBox(e.clientX, e.clientY); });
+  window.addEventListener('mouseup', (e) => { if (rvDraw) rvFinishDraw(e); });
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && rvTargetInput) rvDisarmTarget(); });
+}
+async function rvFinishDraw(e) {
+  const d = rvDraw; const input = rvTargetInput; rvDraw = null;
+  if (d.boxEl) d.boxEl.remove();
+  if (!d || !input) { rvDisarmTarget(); return; }
+  const rect = d.img.getBoundingClientRect();
+  const dl = Math.min(d.startX, e.clientX) - rect.left;
+  const dt = Math.min(d.startY, e.clientY) - rect.top;
+  const dw = Math.abs(e.clientX - d.startX), dh = Math.abs(e.clientY - d.startY);
+  if (dw < 5 || dh < 5) { rvDisarmTarget(); return; }   // a click, not a box
+  // display → natural image pixels
+  const sx = d.img.naturalWidth / rect.width, sy = d.img.naturalHeight / rect.height;
+  let nx = dl * sx, ny = dt * sy, nw = dw * sx, nh = dh * sy;
+  // headroom — region.py reads a tight box worse (clipped glyph tops/bottoms)
+  const padY = nh * 0.5, padX = Math.max(4, nw * 0.05);
+  nx = Math.max(0, nx - padX); ny = Math.max(0, ny - padY);
+  nw = Math.min(d.img.naturalWidth - nx, nw + 2 * padX); nh = Math.min(d.img.naturalHeight - ny, nh + 2 * padY);
+  // crop the natural-resolution region to a canvas → base64 PNG (data URLs aren't tainted)
+  let b64;
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(nw)); canvas.height = Math.max(1, Math.round(nh));
+    canvas.getContext('2d').drawImage(d.img, nx, ny, nw, nh, 0, 0, canvas.width, canvas.height);
+    b64 = canvas.toDataURL('image/png').split(',')[1];
+  } catch { rvDisarmTarget(); toast('Could not capture that region.', 'warn'); return; }
+  const prevVal = input.value, docId = rvCurrentId;
+  input.value = '…'; input.disabled = true;
+  try {
+    const r = await api.review.ocrRegion(docId, b64);
+    if (rvCurrentId !== docId) return;                 // navigated away
+    const text = (r && r.json && typeof r.json.text === 'string') ? r.json.text.trim() : '';
+    input.value = text || prevVal;
+    if (!text) toast('Nothing readable in that box — try again.', 'warn');
+    input.dispatchEvent(new Event('input', { bubbles: true }));   // re-run required/validation
+  } catch { input.value = prevVal; toast('Could not read that region.', 'warn'); }
+  finally { input.disabled = false; rvDisarmTarget(); try { input.focus(); } catch {} }
 }
 
 async function rvConfirm(doc, sel) {

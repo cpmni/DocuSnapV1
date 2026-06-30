@@ -71,6 +71,10 @@ function _purgeDocFiles(db, id) {
 }
 const TOTP_ISSUER = 'ScanFinder';
 const MAX_BODY_BYTES = 1 * 1024 * 1024;
+// Bound concurrent zone-OCR (correction targeting) so many reviewers/drags can't fan
+// out unbounded Tesseract child processes on the host. Module-level (single process).
+const OCR_MAX_INFLIGHT = 3;
+let _ocrInFlight = 0;
 
 function isLoopback(addr) {
   return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
@@ -509,6 +513,49 @@ function createRequestListener(ctx) {
       // removal (purge) is Admin only. Every action is audited; the on-disk path is
       // resolved SERVER-SIDE only (never from the client) when purging.
       const isWriter = (s) => s.role === 'admin' || s.role === 'edit';
+
+      // ── Auth-required (writer): CORRECTION-ONLY targeting — zone-OCR a client-cropped
+      // region → return TEXT so the reviewer can fill a field without typing. The client
+      // sends a small cropped PNG (a region of the page preview it already has); we run
+      // the SAME python_backend/ocr/region.py the desktop ⊕ tool uses, UNCHANGED, and
+      // return text ONLY. There is NO file resolution (the input is the client's pixels,
+      // so there is no path to leak), NO learning, NO anchors/templates — it cannot touch
+      // the extraction or learning pipeline. The doc id scopes the audit row only. Bounded
+      // by the 1 MB body cap + an in-flight concurrency cap (429).
+      const ocrRegionMatch = pathname.match(new RegExp(`^${API_PREFIX}/documents/(\\d+)/ocr-region$`));
+      if (req.method === 'POST' && ocrRegionMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        if (_ocrInFlight >= OCR_MAX_INFLIGHT) return sendJson(res, 429, { error: 'too many OCR requests — retry' });
+        let body; try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+        const b64 = (body && typeof body.imageBase64 === 'string') ? body.imageBase64 : '';
+        if (!b64) return sendJson(res, 400, { error: 'imageBase64 (a small cropped PNG) is required' });
+        const osMod = require('os'); const fsx = ctx.fs || require('fs'); const P = ctx.path || path;
+        const tmp = P.join(osMod.tmpdir(), `ds_v1ocr_${Date.now()}_${Math.random().toString(36).slice(2)}.png`);
+        try { fsx.writeFileSync(tmp, Buffer.from(b64, 'base64')); }
+        catch { return sendJson(res, 400, { error: 'bad image data' }); }
+        const script = ctx.resourcePath('python_backend', 'ocr', 'region.py');
+        _ocrInFlight++;
+        let done = false;
+        const finish = (status, payload) => {
+          if (done) return; done = true; _ocrInFlight--;
+          try { fsx.unlinkSync(tmp); } catch {}
+          sendJson(res, status, payload);
+        };
+        try {
+          const proc = (ctx.spawn || require('child_process').spawn)(ctx.pythonExe(),
+            ctx.pythonArgs(script, '--image-file', tmp, '--tesseract', ctx.tesseractPath()),
+            { windowsHide: true });
+          let out = '', err = '';
+          proc.stdout.on('data', d => { out += d.toString(); });
+          proc.stderr.on('data', d => { err += d.toString(); });
+          proc.on('close', () => { if (err) { try { log('v1 ocr-region stderr: ' + err.trim()); } catch {} } finish(200, { text: out.trim() }); });
+          proc.on('error', (e) => { try { log('v1 ocr-region spawn error: ' + e.message); } catch {} finish(500, { error: 'ocr failed' }); });
+        } catch (e) { finish(500, { error: 'ocr failed' }); }
+        try { audit({ user_id: session.userId, action: 'ocr_region', action_category: 'document',
+                      outcome: 'success', document_id: Number(ocrRegionMatch[1]), metadata: { via: 'client' } }); } catch {}
+        return;
+      }
 
       if (req.method === 'GET' && pathname === `${API_PREFIX}/documents/deleted`) {
         const session = requireSession(req, res); if (!session) return;

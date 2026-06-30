@@ -62,5 +62,6 @@ contextBridge.exposeInMainWorld('scanfinder', {
     undefer:  (id) => ipcRenderer.invoke('client-review-undefer', id),
     viewing:  (id) => ipcRenderer.invoke('client-review-viewing', id),
     release:  (id) => ipcRenderer.invoke('client-review-release', id),
+    ocrRegion:(id, imageBase64) => ipcRenderer.invoke('client-review-ocr-region', id, imageBase64),
   },
 });

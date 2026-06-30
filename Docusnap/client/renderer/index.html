@@ -474,6 +474,15 @@
       background:var(--surface); color:var(--text); font-size:14px; font-family:inherit; }
     .rv-fld.req-empty input { border-color:var(--err); }
     .rv-fld .fwarn { font-size:11px; color:var(--warn); }
+    /* Correction-only targeting: per-field "read from the document" button + draw box */
+    .rv-fld-row { display:flex; align-items:stretch; gap:6px; }
+    .rv-fld-row input { flex:1; min-width:0; }
+    .rv-target-btn { flex-shrink:0; width:34px; display:flex; align-items:center; justify-content:center;
+      border:1px solid var(--border2); background:var(--surface2); color:var(--muted); border-radius:var(--r-sm); cursor:pointer; }
+    .rv-target-btn:hover { border-color:var(--accent); color:var(--accent); }
+    #review-preview.rv-targeting, #review-preview.rv-targeting .pages img { cursor:crosshair; }
+    .rv-drawbox { position:fixed; z-index:9999; border:2px solid var(--accent);
+      background:color-mix(in srgb, var(--accent) 14%, transparent); pointer-events:none; border-radius:2px; }
     .rv-actions { display:flex; gap:var(--s2); margin:var(--s4) 0; flex-wrap:wrap; }
   </style>
 </head>

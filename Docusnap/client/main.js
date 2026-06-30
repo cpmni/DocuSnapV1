@@ -238,6 +238,7 @@ ipcMain.handle('client-review-defer',    guarded((_e, id)          => client.rev
 ipcMain.handle('client-review-undefer',  guarded((_e, id)          => client.review.undefer(id)));
 ipcMain.handle('client-review-viewing',  guarded((_e, id)          => client.review.viewing(id)));
 ipcMain.handle('client-review-release',  guarded((_e, id)          => client.review.release(id)));
+ipcMain.handle('client-review-ocr-region', guarded((_e, id, imageBase64) => client.review.ocrRegion(id, imageBase64)));
 ipcMain.handle('client-get-pages',    async (_e, id) => {
   const hit = _pageCacheGet(id);
   if (hit !== undefined) return hit;                 // instant re-click (no network → don't touch conn state)

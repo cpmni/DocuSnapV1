@@ -226,13 +226,16 @@ function createClient(opts = {}) {
   const revUndefer  = (id) => request('POST', `/v1/documents/${id}/undefer`, { withAuth: true });
   const revViewing  = (id) => request('POST', `/v1/review/${id}/viewing`,    { withAuth: true });
   const revRelease  = (id) => request('POST', `/v1/review/${id}/release`,    { withAuth: true });
+  // Correction-only targeting: send a small cropped PNG of a value region, get text back.
+  const revOcrRegion = (id, imageBase64) => request('POST', `/v1/documents/${id}/ocr-region`, { withAuth: true, body: { imageBase64 } });
 
   return {
     connect, login, logout, changePassword, entitlement, search, getDocument, getPages, getThumbnail, ping, fetchCa, enroll,
     workflow: { list: wfList, recipients, assign, claim, resolve, recall, stamped: wfStamped },
     recycle: { list: binList, delete: binDelete, restore: binRestore, purge: binPurge, purgeAll: binPurgeAll },
     review: { queue: revQueue, deferred: revDeferred, counts: revCounts, docTypes,
-              confirm: revConfirm, defer: revDefer, undefer: revUndefer, viewing: revViewing, release: revRelease },
+              confirm: revConfirm, defer: revDefer, undefer: revUndefer, viewing: revViewing, release: revRelease,
+              ocrRegion: revOcrRegion },
     isAuthenticated: () => !!token,
     _setToken: (t) => { token = t; }, // test/diagnostic aid only
   };
