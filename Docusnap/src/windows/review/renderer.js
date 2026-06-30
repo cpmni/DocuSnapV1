@@ -237,6 +237,7 @@ const HELP_TEXTS = {
   'fields-panel':  'The details read from this document. Click any value to edit it; a note appears if a value looks wrong for its field.',
   'doctype-select':'The document type for this document. Change it if it was detected wrong — the field list updates to match.',
   'new-doctype':   'Create a new document type here, without leaving Review.',
+  'advanced':      'Admin tools for a field’s learning history — view every value Scan Finder has learned for it, fix a likely OCR slip, or remove a value that shouldn’t be there.',
   'preview-ocr':   'Overlay the text Scan Finder read on top of the page, so you can see where each value came from.',
   'pages':         'Move between the pages of a multi-page document.',
   'acknowledge':   'Mark this flagged document as checked, so it can be filed.',
