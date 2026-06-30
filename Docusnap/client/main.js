@@ -69,6 +69,20 @@ function createWindow() {
   });
   if (win.removeMenu) win.removeMenu();
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+
+  // KEYBOARD-FOCUS FIX (window-level — cures EVERY text field, current and future).
+  // Without this, Electron can leave the web page without KEYBOARD focus on Windows, so a
+  // click into a text field shows no cursor / won't type until you click out of the window and
+  // back in (which re-activates keyboard focus). Buttons still work because they respond to the
+  // mouse; only typing breaks. The CORE app already does this (src/main.js grabFocus →
+  // win.webContents.focus()); the client did not. Give the web page keyboard focus on load and
+  // whenever the window regains OS focus. NOTE: this is why NO per-field fix is needed — any
+  // new <input>/<textarea> is covered automatically. (For a field you AUTO-focus when a view or
+  // dialog opens, still defer the .focus() to requestAnimationFrame so Chromium doesn't drop a
+  // focus issued the same tick the element is shown.)
+  const grabFocus = () => { try { if (win && !win.isDestroyed()) win.webContents.focus(); } catch {} };
+  win.webContents.on('did-finish-load', grabFocus);
+  win.on('focus', grabFocus);
 }
 
 // Renderer → main → apiClient. The token is never sent to the renderer.

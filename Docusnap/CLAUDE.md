@@ -1354,6 +1354,17 @@ in-process desktop login never reads these; only the client API enforces MFA whe
 import-profile + fetch-CA-with-fingerprint-confirm + enroll; connect screen; search +
 mailbox UI) · `cert-tool/` (standalone cert-generator GUI) ·
 `scripts/New-ScanFinderCustomerCert.ps1` (per-customer CLI cert; `MSYS_NO_PATHCONV=1`).
+**Client KEYBOARD-FOCUS FIX (2026-06-30) — applies to EVERY text field, current + future:**
+`client/main.js` createWindow gives the web page keyboard focus on `did-finish-load` AND on
+window `focus` (`grabFocus` → `win.webContents.focus()`, mirroring the core app's grabFocus at
+`src/main.js`). Without it Electron leaves the client web page without KEYBOARD focus on Windows,
+so a click into a text field shows no cursor / won't type until you click out of the window and
+back in (buttons still work — they take the mouse; only typing breaks). This is WINDOW-level, so
+**no per-field fix is ever needed** — any new `<input>`/`<textarea>` is covered automatically.
+The ONLY per-field caveat: a field you AUTO-focus when a view/dialog opens must defer its
+`.focus()` to `requestAnimationFrame` (Chromium drops a focus issued the same tick the element is
+shown — see the `totp` field in `renderer.js`). Same root cause + remedy as the core app's
+modal-focus note (rAF-deferred focus).
 **Client theming (2026-06-28)**: the client carries its OWN copy of the six named themes
 (its `renderer/index.html` has `:root[data-theme="…"]` blocks for the client's token set
 incl. the extra `--grad1/--grad2/--nav-bg/--card-a/--card-b`; `--on-accent` drives the

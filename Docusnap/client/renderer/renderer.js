@@ -292,7 +292,8 @@ $('login-btn').addEventListener('click', async () => {
     $('totp-label').classList.remove('hidden');
     $('totp').classList.remove('hidden');
     $('login-err').textContent = 'Enter your authentication code.';
-    $('totp').focus();
+    // Defer to rAF: focusing the field the same tick it's un-hidden can be dropped by Chromium.
+    requestAnimationFrame(() => $('totp').focus());
     return;
   }
   $('login-err').textContent = r.error || 'Sign in failed.';
