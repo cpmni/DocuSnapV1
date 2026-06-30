@@ -5,13 +5,13 @@
 // a user can click through; "Skip setup" accepts the defaults.
 
 const D = window.docusnap;
-const STEPS = 6;               // welcome, output, organization, theme, performance, done
+const STEPS = 7;               // welcome, output, organization, theme, performance, diagnostics, done
 const OUTPUT_STEP = 1;
-const NEXT_LABEL = ['Get started', 'Next', 'Next', 'Next', 'Next', 'Open Scan Finder'];
+const NEXT_LABEL = ['Get started', 'Next', 'Next', 'Next', 'Next', 'Next', 'Open Scan Finder'];
 
 const state = { step: 0, outputFolder: '', outputSaved: false,
                 theme: 'dark', threads: 2, mode: 'smart',
-                copyEnabled: false, copyFolder: '',
+                copyEnabled: false, copyFolder: '', diag: false,
                 folderPattern: '{supplier}/{year}/{month}', filenamePattern: '{docType}.{date}.{ref}' };
 let _obTokens = [];
 
@@ -34,6 +34,7 @@ function paintSelections() {
   $$('[data-mode]').forEach(c => c.classList.toggle('sel', c.dataset.mode === state.mode));
   $('#outPath').textContent = state.outputFolder || '—';
   $$('[data-copy]').forEach(c => c.classList.toggle('sel', (c.dataset.copy === 'yes') === state.copyEnabled));
+  $$('[data-diag]').forEach(c => c.classList.toggle('sel', (c.dataset.diag === 'yes') === state.diag));
   $('#copyPath').textContent = state.copyFolder || '—';
   $('#copyToWrap').style.display = state.copyEnabled ? '' : 'none';
 }
@@ -65,6 +66,7 @@ async function loadCurrent() {
   // value wins; empty → a "Processed" subfolder beside the scans). Reusing the
   // copyEnabled/copyFolder state fields (UI is unchanged) to keep the diff small.
   try { const pf = (await D.getSetting('processed_folder')) || ''; state.copyEnabled = !!pf; state.copyFolder = pf; } catch {}
+  try { state.diag = (await D.getSetting('telemetry_enabled')) === 'true'; } catch {}
   try {
     const info = await D.getOutputStructureInfo();
     _obTokens = info.tokens || [];
@@ -208,6 +210,12 @@ $$('[data-mode]').forEach(c => c.addEventListener('click', async () => {
   paintSelections();
 }));
 
+// ── Diagnostics consent (opt-in, OFF by default) ────────────────────────────────
+$$('[data-diag]').forEach(c => c.addEventListener('click', () => {
+  state.diag = c.dataset.diag === 'yes';
+  paintSelections();
+}));
+
 // ── Navigation ────────────────────────────────────────────────────────────────
 async function persistDefaults() {
   // Make sure every default the user clicked past is actually saved.
@@ -216,6 +224,7 @@ async function persistDefaults() {
   try { await D.setProcessingMode(state.mode); } catch {}
   try { await D.setSetting('output_folder_pattern', state.folderPattern || '{supplier}/{year}/{month}'); } catch {}
   try { await D.setSetting('filename_pattern', state.filenamePattern || '{docType}.{date}.{ref}'); } catch {}
+  try { await D.setSetting('telemetry_enabled', state.diag ? 'true' : 'false'); } catch {}
   await saveCopySetting(false);
 }
 
