@@ -65,6 +65,29 @@ function register(ctx) {
   const workflowService = require('../../services/workflowService');
   const { requireRole, requireLogin, hasRole, logAudit } = require('../auth/handler');
 
+  // Transport-agnostic review orchestration — the SAME confirm/defer/restore the detached-client
+  // /v1 API will call (Phase 3). The desktop injects its Electron-only steps as hooks so this
+  // path stays byte-identical; auth + the workflow lock are enforced at the edge (requireUnlocked).
+  const reviewService = require('../../services/reviewService').createReviewService({
+    documents, learning, doctypes,
+    filing: require('../filing/handler'),
+    fs, path, logger,
+    audit: (db, entry) => logAudit(db, entry),
+    onScheduleSourceMove: (args) => _scheduleSourceMove(ctx, getDb(), documents, args),
+    onTaughtConfirm: (db, docId, info) => _upsertTemplate(ctx, db, docId, info),
+    captureSample: async (tId, docId) => {
+      if (ctx.captureSampleWords) {
+        await ctx.captureSampleWords(tId, docId);
+        if (ctx.generateLandmarks) await ctx.generateLandmarks(tId);
+      }
+    },
+    notifyCounts: (db) => {
+      notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
+      notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
+    },
+    releaseDelayMs: 150,
+  });
+
   // ── Validation patterns (shared source of truth for UI field validation) ─────
   // The Review window validates an edited field on blur (regex/type) using the
   // EXACT same `validation_patterns` the Python extraction qualification uses
@@ -302,22 +325,14 @@ function register(ctx) {
   // ── Defer ───────────────────────────────────────────────────────────────────
   ipcMain.handle('defer-document', (_e, docId) => {
     const db = getDb();
-    requireUnlocked(db, docId, 'defer');
-    documents.update(db, docId, { status: 'deferred' });
-    logAudit(db, { action: 'review_deferred', target_type: 'document', target_id: docId, document_id: docId, outcome: 'success' });
-    notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
-    notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
-    return true;
+    const sess = requireUnlocked(db, docId, 'defer');
+    return reviewService.defer(db, { username: sess.username, role: sess.role }, docId).ok;
   });
 
   ipcMain.handle('restore-deferred', (_e, docId) => {
     const db = getDb();
-    requireUnlocked(db, docId, 'restore');
-    documents.update(db, docId, { status: 'needs_review' });
-    logAudit(db, { action: 'review_restored', target_type: 'document', target_id: docId, document_id: docId, outcome: 'success' });
-    notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
-    notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
-    return true;
+    const sess = requireUnlocked(db, docId, 'restore');
+    return reviewService.restore(db, { username: sess.username, role: sess.role }, docId).ok;
   });
 
   // Mark a flagged document as reviewed. This is the ONLY thing that lets a
@@ -420,183 +435,25 @@ function register(ctx) {
 
   // ── Confirm review ──────────────────────────────────────────────────────────
   ipcMain.handle('confirm-review', async (_e, payload) => {
-    const {
-      document_id, folder_path, original_filename,
-      corrections, allValues, supplier_name,
-      document_type, document_type_slug,
-      taught_fields, bulk,
-    } = payload;
-
-    const db      = getDb();
-    // Multi-point licensing enforcement (F-01): filing a confirmed document is a
-    // high-value write path. Re-check the cached license verdict here (network-free)
-    // so neutralising the single startup gate does not silently re-enable confirms.
+    const db = getDb();
+    // Multi-point licensing enforcement (F-01): filing a confirmed document is a high-value
+    // write path. Re-check the cached license verdict here (network-free) so neutralising the
+    // single startup gate does not silently re-enable confirms.
     const licenseDenial = require('../licensing/handler').licenseDenied(db);
     if (licenseDenial) {
       return { success: false, error: 'A valid license is required to file documents. Please re-activate ScanFinder.', ...licenseDenial };
     }
-    requireUnlocked(db, document_id, 'confirm');
-    const filing  = require('../filing/handler');
-    // The app-managed working copy is the stable source for filing (the user's
-    // original source may be gone). Captured before filing; cleaned up after.
-    const _docRow = documents.getById(db, document_id);
-    const workingPath = _docRow?.working_path || null;
-    // RE-FILE: if the doc is ALREADY filed (confirmed — e.g. re-surfaced auto-filed doc or an
-    // "Edit in Review" from Search), its current filed copy is both the SOURCE and the thing to
-    // replace. Pass it so commitDocument moves-not-duplicates; null for a first-time confirm.
-    const oldStoredPath = (_docRow && _docRow.status === 'confirmed' && _docRow.stored_path) ? _docRow.stored_path : null;
-
-    // Get document type info for filing
-    const dtInfo = document_type_slug
-      ? doctypes.getWithFields(db, document_type_slug)
-      : null;
-
-    // Build the filed path
-    const outputRoot = learning.getSetting(db, 'output_folder', null);
-    if (!outputRoot) {
-      return { success: false, error: 'No output folder set. Please configure it in Settings.' };
+    // requireUnlocked enforces Admin/Edit + the workflow lock at the edge and returns the actor;
+    // the shared reviewService does the claim-before-file, filing, learning and cleanup so the
+    // desktop and the /v1 client API file documents through ONE race-safe path.
+    const sess = requireUnlocked(db, payload.document_id, 'confirm');
+    const r = await reviewService.confirm(db, { username: sess.username, role: sess.role }, payload);
+    if (!r.ok) {
+      return { success: false, error: r.error,
+               ...(r.code ? { code: r.code } : {}),
+               ...(r.confirmedBy ? { confirmedBy: r.confirmedBy } : {}) };
     }
-
-    // Release file handle — renderer should have cleared img.src already. Bulk
-    // "File All Ready" uses the fields-only path that never loads the preview, so
-    // there is no handle to release; skip the per-doc wait (≈15s over 100 docs).
-    if (!bulk) await new Promise(r => setTimeout(r, 150));
-
-    const filingResult = await filing.commitDocument({
-      db, fs, path,
-      outputRoot,
-      folderPath:        folder_path,
-      originalFilename:  original_filename,
-      workingPath,
-      existingFiledPath: oldStoredPath,
-      allValues,
-      documentType:      document_type || dtInfo?.name,
-      dtInfo,
-      logger,
-    });
-
-    if (!filingResult.success) {
-      logger?.err(`Confirm failed: ${original_filename} — ${filingResult.error}`);
-      return filingResult;
-    }
-
-    // Log confirm
-    if (logger) {
-      const fieldSummary = Object.entries(allValues || {})
-        .filter(([, v]) => v)
-        .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
-        .join(' | ');
-      logger.log(
-        `Confirmed: ${original_filename} → type=${document_type_slug || '?'}` +
-        ` supplier=${allValues?.supplier_name || supplier_name || '?'}` +
-        ` filed=${filingResult.filename}`
-      );
-      if (fieldSummary) logger.log(`  Values: ${fieldSummary}`);
-    }
-
-    // Save corrections for learning
-    learning.saveCorrections(
-      db, document_id, corrections || {},
-      supplier_name, document_type_slug, allValues,
-      taught_fields || []
-    );
-
-    // Update document record
-    documents.confirm(db, document_id, {
-      stored_filename: filingResult.filename,
-      stored_path:     filingResult.filePath,
-    });
-
-    logAudit(db, { action: 'review_confirmed', target_type: 'document', target_id: document_id,
-      document_id, outcome: 'success',
-      metadata: { type: document_type_slug || null, filed: filingResult.filename,
-                  fields_changed: Object.keys(corrections || {}).join(',') || null } });
-
-    // Clear the per-field review AIDS now that a human has reviewed and accepted
-    // this document. validation_note / corrected_to are pre-confirmation prompts
-    // (e.g. the Stage 4.5 format-anomaly "/" warning); leaving them on the
-    // extractions meant a re-opened COMMITTED doc still showed the stale warning
-    // even though it was already reviewed. Display-only fields (not read by
-    // learning), scoped to this document, so this is safe and targeted.
-    db.prepare(
-      'UPDATE extractions SET validation_note = NULL, corrected_to = NULL WHERE document_id = ?'
-    ).run(document_id);
-
-    // The working copy has served its purpose (the doc is now filed at
-    // stored_path) — remove it and clear the pointer so resolveFilePath falls
-    // through to the filed copy. Best-effort; a leftover file is harmless.
-    if (workingPath) {
-      try { if (fs.existsSync(workingPath)) fs.unlinkSync(workingPath); } catch {}
-      documents.update(db, document_id, { working_path: null });
-    }
-
-    // RE-FILE cleanup: the doc was already filed and has now moved to a NEW location (its
-    // name/folder changed because a field was edited). Remove the OLD filed copy + its
-    // metadata — only NOW, after the new copy is written AND documents.confirm recorded the
-    // new stored_path, so there's no data-loss window. A same-location re-file overwrote in
-    // place (oldStoredPath === filePath) → nothing to remove.
-    if (oldStoredPath && filingResult.filePath
-        && path.resolve(oldStoredPath) !== path.resolve(filingResult.filePath)) {
-      try { if (fs.existsSync(oldStoredPath)) fs.unlinkSync(oldStoredPath); } catch {}
-      try {
-        const oldExt = path.extname(oldStoredPath);
-        const oldXml = path.join(path.dirname(oldStoredPath), '.metadata',
-                                 path.basename(oldStoredPath, oldExt) + '.xml');
-        if (fs.existsSync(oldXml)) fs.unlinkSync(oldXml);
-      } catch {}
-    }
-
-    // Update supplier name, date, reference for search
-    const refField  = dtInfo?.ref_field_key  || 'invoice_number';
-    const dateField = dtInfo?.date_field_key || 'invoice_date';
-    documents.update(db, document_id, {
-      supplier_name:    allValues.supplier_name || supplier_name || null,
-      doc_date:         allValues[dateField]    || null,
-      reference_number: allValues[refField]     || null,
-      document_type_id: dtInfo?.id             || null,
-    });
-
-    // Defer removal of the original scan until the preview UI is done with
-    // it — see _scheduleSourceMove for why (locked-file failures at confirm
-    // time, documented in processing.log). commitDocument has already copied
-    // the file to its filed location; only the delete-of-original is deferred.
-    if (filingResult.srcPath) {
-      _scheduleSourceMove(ctx, db, documents, {
-        srcPath:          filingResult.srcPath,
-        originalFilename: original_filename,
-      });
-    }
-
-    notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
-    notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
-
-    // Cross-sample landmark learning (Phase 3): feed this confirmed page into the
-    // template's word corpus, then re-derive registration landmarks from words that
-    // RECUR at a stable position across docs (auto, once >=3 docs exist). Fire-and-
-    // forget + best-effort — never blocks or fails the confirm; skips manual sets.
-    try {
-      const tId = documents.getById(db, document_id)?.template_id || null;
-      if (tId && ctx.captureSampleWords) {
-        ctx.captureSampleWords(tId, document_id)
-          .then(() => (ctx.generateLandmarks ? ctx.generateLandmarks(tId) : null))
-          .catch(() => {});
-      }
-    } catch { /* learning is best-effort */ }
-
-    // AUTO-PROMOTE on a TAUGHT confirm (the path-B fix): when the user taught fields on this
-    // document (⊕ targets — taught_fields non-empty), they're building a reusable layout, so
-    // create/refresh a template now and freeze the non-variable TYPED fields (e.g. Document
-    // Issuer) as fixed values via _buildTemplateFields. That is what makes a typed issuer fill
-    // on the next document's reprocess. Plain (un-taught) confirms still create NO template,
-    // by design; bulk "File All Ready" carries no taught_fields, so it's unaffected.
-    // Best-effort + non-fatal — a template-build problem never fails the confirm itself.
-    if (!bulk && Array.isArray(taught_fields) && taught_fields.length && (document_type_slug || dtInfo)) {
-      try {
-        await _upsertTemplate(ctx, db, document_id, { allValues, document_type_slug, supplier_name, dtInfo });
-      } catch (e) { console.warn('Auto-promote on taught confirm failed:', e.message); }
-    }
-
-    return { success: true, ...filingResult };
+    return r;   // { ok:true, success:true, ...filingResult }
   });
 
   // ── Lightweight current-template recheck ────────────────────────────────────
