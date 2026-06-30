@@ -9,8 +9,10 @@ document.querySelectorAll('.tab').forEach(btn => {
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
-    if (btn.dataset.tab === 'learning') loadMemoryInventory();
-    if (btn.dataset.tab === 'audit' && !auditState.loaded) loadAudit();
+    // Learning Recovery now lives under the Templates & learning tab; the Audit
+    // log now lives under the Users & activity tab — load each lazily on show.
+    if (btn.dataset.tab === 'templates') loadMemoryInventory();
+    if (btn.dataset.tab === 'users' && !auditState.loaded) loadAudit();
     if (btn.dataset.tab === 'licensing') initClientApiSection();
   });
 });
@@ -149,16 +151,15 @@ document.getElementById('btn-help-guide')?.addEventListener('click', () => api.o
 document.getElementById('btn-client-setup-help')?.addEventListener('click', () => api.openHelpWindow('client-cert-setup'));
 
 const HELP_TEXTS = {
-  'tab-general':    'Output folder (where filed documents go), the processed-scans folder, processing mode/threads, and re-running first-time setup.',
+  'tab-files':      'Where filed documents go — the output, processed-scans and watch folders — and how they are named (the subfolder layout and file-name pattern).',
   'tab-doctypes':   'Enable or disable document types and choose which field is each type’s main reference number and date.',
   'tab-fields':     'Add, edit, reorder or remove the fields a document type extracts. Built-in fields are locked.',
-  'tab-filenaming': 'Choose how filed documents are named (the DocType.Date.Reference pattern and its parts).',
-  'tab-templates':  'Browse the layouts Scan Finder has learned, pin sample pages, and map where each field sits on a layout.',
-  'tab-learning':   'Recovery tools for the learned data — review and clean up hints, anchors and templates if extraction drifts.',
-  'tab-users':      'Manage the people who can sign in and what each is allowed to do (admin / edit / read-only).',
-  'tab-audit':      'A searchable record of sensitive actions — sign-ins, document opens, review actions, settings and licensing changes.',
+  'tab-processing': 'How documents are processed — import options (auto-file, wrap, auto-rotate), speed/accuracy mode, parallelism, the OCR engine, document separation, name checks and the review confidence threshold.',
+  'tab-appearance': 'The colour theme, what happens when you close the window, and which cards appear on the Home screen.',
+  'tab-templates':  'Browse the layouts Scan Finder has learned, map where each field sits, manage keyword label overrides, and review or clean up learned data if extraction drifts.',
+  'tab-users':      'Manage the people who can sign in and what each is allowed to do (admin / edit / read-only), plus a searchable record of sensitive actions (the audit log).',
   'tab-licensing':  'Your licence / activation status, and the trial or paid-seat details for this device.',
-  'tab-advanced':   'Lower-level toggles (registration, born-digital text, concurrency) — sensible defaults are already set.',
+  'tab-advanced':   'Re-run first-time setup, back up or restore your configuration, and toggle diagnostic logging.',
   'output-folder':  'Pick the folder where confirmed documents are filed. This must be set before any document can be confirmed.',
   'rerun-setup':    'Re-open the welcome wizard to revisit the essentials — theme, output folder and performance — without losing any data.',
   'add-type':       'Create a custom document type with its own fields (e.g. “Delivery Note”) alongside the built-in Invoice / Sales Order / Purchase Order.',
