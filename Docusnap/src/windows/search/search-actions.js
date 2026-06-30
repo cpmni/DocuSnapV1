@@ -62,7 +62,10 @@ function renderActions(doc) {
       if (confirm('Move this document to the recycle bin? You can restore it later.')) _afterChange(window.docusnap.deleteDocument(doc.id));
     });
   }
-  panel.appendChild(docSection);
+  // Only show the section when it actually has actions — otherwise a read-only user
+  // (or a confirmed doc with no openable file) sees a stray empty "Document Actions"
+  // heading. The section starts with just its header child; buttons add more.
+  if (docSection.children.length > 1) panel.appendChild(docSection);
 
   // ── 3. Workflow / approval — ONLY when the workflow add-on is licensed, so an
   //       unlicensed / search-only install shows no "Workflow" section or mention. ─────
