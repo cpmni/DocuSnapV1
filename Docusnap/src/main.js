@@ -883,8 +883,17 @@ app.whenReady().then(() => {
   // The wizard writes individual settings through the existing set-setting path;
   // these signals only own the FLAG + the window/shell swap (main is the decider).
   ipcMain.on('onboarding-complete', () => {
-    try { require('../database/modules/learning').setSetting(getDb(), 'first_run_completed', 'true'); }
-    catch (e) { logger.warn?.('onboarding flag write failed: ' + e.message); }
+    try {
+      const learning = require('../database/modules/learning');
+      learning.setSetting(getDb(), 'first_run_completed', 'true');
+      // First-run dashboard default: show the essentials, hide the extra cards
+      // (Quick find, Filed automatically, Storage, Backup, Search clients). Only
+      // seed when unset so a user's own card choices are never overwritten.
+      if (!learning.getSetting(getDb(), 'dashboard_hidden_cards')) {
+        learning.setSetting(getDb(), 'dashboard_hidden_cards',
+          JSON.stringify(['dash-quickfind', 'dash-autofile', 'dash-storage', 'dash-backup', 'dash-clients']));
+      }
+    } catch (e) { logger.warn?.('onboarding flag write failed: ' + e.message); }
     openMainShell();
   });
   // Re-run setup from Settings → General. Admin only (it changes app-wide config).
