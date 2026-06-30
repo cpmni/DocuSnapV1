@@ -3065,6 +3065,8 @@ document.getElementById('btn-reprocess').addEventListener('click', async () => {
     btn.innerHTML = '&#9654;&#9654; Reprocess with Learned Data';
     btn.style.color = 'var(--err)';
     setTimeout(() => { btn.style.color = ''; }, 2000);
+    // Surface WHY (e.g. "A reprocess is already running") instead of a silent red flash.
+    if (result && result.error) showToast(result.error, result.busy ? 'warn' : 'err');
   }
 });
 
@@ -3178,6 +3180,12 @@ document.getElementById('btn-reprocess-all').addEventListener('click', async () 
     );
     done   = (res && res.done)   || 0;
     failed = (res && res.failed) || 0;
+    // Refused because a single reprocess (or another batch) is already running — clear the
+    // just-shown banner and explain, rather than leaving "Reprocessing 0 of N…" stuck.
+    if (res && res.success === false) {
+      banner.classList.remove('show');
+      if (res.error) showToast(res.error, res.busy ? 'warn' : 'err');
+    }
   } catch (e) {
     console.warn('[Reprocess All]', e.message);
   } finally {

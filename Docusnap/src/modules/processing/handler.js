@@ -30,6 +30,13 @@ function _diagEnabled(db) {
 }
 
 let _currentBatchProcs = [];     // all running Python worker processes for the active batch (bounded pool)
+let _singleReprocessActive = false;  // a single reprocess-document is in flight (NOT in the pool array)
+// ANY OCR/extraction work is in flight — a batch (import / reprocess-all) OR a single reprocess.
+// Used to SERIALISE heavy work: starting a second reprocess while one is running oversubscribes
+// the CPU (every worker + the single proc OCR at once) and can race two merges into the same doc,
+// which presents as the app "freezing". Reprocess entry points refuse when busy; the watch folder
+// already defers on this signal.
+function _anyProcessingBusy() { return _currentBatchProcs.length > 0 || _singleReprocessActive; }
 let _cancelRequested   = false;  // set true when stop is requested; suppresses buffered stdout
 let _pendingDrains     = [];     // originals to move to Processed/Errors AFTER the worker exits (pdfium holds the PDF open mid-run, so a mid-batch rename is locked)
 
@@ -938,6 +945,12 @@ function register(ctx) {
     // pipeline — same network-free cached-license re-check as bulk import.
     const licenseDenial = require('../licensing/handler').licenseDenied(db);
     if (licenseDenial) return { success: false, error: 'A valid license is required to reprocess documents. Please re-activate ScanFinder.', ...licenseDenial };
+    // Serialise heavy work: refuse if a batch (import / reprocess-all) OR another single reprocess
+    // is already running — running both at once oversubscribes the CPU and can race two merges into
+    // the same document, which presents as the app freezing.
+    if (_anyProcessingBusy()) {
+      return { success: false, busy: true, error: 'A reprocess is already running — please wait for it to finish.' };
+    }
     logAudit(db, { action: 'reprocess', target_type: 'document', target_id: docId, document_id: docId,
       outcome: 'success', metadata: { enhanced: !!enhanceParams } });
     // Prefer the app-managed working copy so reprocess doesn't depend on the
@@ -1052,6 +1065,7 @@ function register(ctx) {
       } catch { /* fall back to full OCR */ }
     }
 
+    _singleReprocessActive = true;   // mark busy now we're committed to spawning (cleared in finish())
     return new Promise((resolve) => {
       const py   = pythonExe();
       const proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs),
@@ -1067,6 +1081,7 @@ function register(ctx) {
       const finish = (value) => {
         if (settled) return;
         settled = true;
+        _singleReprocessActive = false;   // release the serialise lock
         if (watchdog) clearTimeout(watchdog);
         try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
         cleanupFiles(allTempFiles);
@@ -1147,6 +1162,11 @@ function register(ctx) {
     const db = getDb();
     const licenseDenial = require('../licensing/handler').licenseDenied(db);
     if (licenseDenial) return { success: false, error: 'A valid license is required to reprocess documents. Please re-activate ScanFinder.', ...licenseDenial };
+    // Serialise: refuse Reprocess All while a single reprocess (or another batch/import) is running —
+    // running both at once oversubscribes the CPU and races merges, which presents as a freeze.
+    if (_anyProcessingBusy()) {
+      return { success: false, busy: true, error: 'A reprocess is already running — please wait for it to finish.' };
+    }
     if (!Array.isArray(docs) || !docs.length) return { success: true, done: 0, failed: 0 };
 
     const learning2  = require('../../../database/modules/learning');
@@ -2076,7 +2096,7 @@ module.exports = {
   ensureWorkingCopy,
   reconcileHolding,
   runHoldingReconcile,
-  isBatchRunning: () => _currentBatchProcs.length > 0,
+  isBatchRunning: () => _anyProcessingBusy(),
   // Exposed for the F-06 path-policy unit test (test_open_path_policy.js).
   _isOpenablePath,
 };
