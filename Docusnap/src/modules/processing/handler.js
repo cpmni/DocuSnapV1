@@ -191,6 +191,13 @@ function buildTrainingArgs(db, configPath, logger = null) {
   try { multilineOn = learning.getSetting(db, 'multiline_enabled') !== 'false'; }
   catch { /* older DB without the setting -> default on */ }
 
+  // Auto-rotate a sideways/upside-down scanned page (default ON; disabled by
+  // 'auto_rotate_enabled' = 'false'). Inert for born-digital + confident-upright pages; the
+  // per-page angles come back in file_done.page_rotations and the working copy is rotated to match.
+  let autoRotateOn = true;
+  try { autoRotateOn = learning.getSetting(db, 'auto_rotate_enabled') !== 'false'; }
+  catch { /* older DB without the setting -> default on */ }
+
   const args = [
     '--fields-file',    fieldsFile,
     '--hints-file',     hintsFile,
@@ -207,6 +214,7 @@ function buildTrainingArgs(db, configPath, logger = null) {
   if (bornDigitalOn) args.push('--born-digital');
   if (nameWordnessOn) args.push('--name-wordness');
   if (multilineOn) args.push('--multiline');
+  if (autoRotateOn) args.push('--auto-rotate');
   if (ocrEngine === 'rapidocr') args.push('--ocr-engine', 'rapidocr');
 
   return {
@@ -268,10 +276,15 @@ function _isOpenablePath(db, rawPath) {
   return false;
 }
 
+// Captured at register() so the module-level _handleFileMessage can spawn standalone helper
+// scripts (e.g. pdf_rotate.py) without threading ctx through every caller.
+let _pyHelpers = null;
+
 function register(ctx) {
   const { ipcMain, getDb, pythonExe, pythonArgs, tesseractPath,
           backendScript, configPath, notifyMainWindow, notifyDevInspector,
           notifyReview, safeSend, spawn, path, fs, logger } = ctx;
+  _pyHelpers = { pythonExe, pythonArgs, backendScript };
 
   // Startup holding-area reconciliation — GC crash debris (.part / orphaned /
   // already-confirmed inbox copies) so the holding queue agrees with the DB on
@@ -1736,6 +1749,25 @@ function runHoldingReconcile(db, logger) {
 }
 
 // ── Internal: save file_done message to DB ────────────────────────────────────
+// Rotate the inbox working copy in place (pypdf via pdf_rotate.py) to match the per-page
+// orientation OSD detected on this import. PDF only, only when a non-zero rotation exists.
+// SYNCHRONOUS (a quick /Rotate rewrite) so it completes before the doc can be auto-filed or
+// drained. Best-effort — a failure just leaves the working copy unrotated (logged).
+function _rotateWorkingCopyIfNeeded(msg, docId, logger) {
+  try {
+    const rots = msg.page_rotations;
+    if (!_pyHelpers || !msg.working_path || !Array.isArray(rots) || !rots.some(r => r)) return;
+    if (!/\.pdf$/i.test(msg.working_path)) return;
+    const script = path.join(path.dirname(_pyHelpers.backendScript()), 'pdf_rotate.py');
+    const r = require('child_process').spawnSync(
+      _pyHelpers.pythonExe(),
+      _pyHelpers.pythonArgs(script, '--file', msg.working_path, '--rotations', rots.join(',')),
+      { windowsHide: true, timeout: 30000, encoding: 'utf8' });
+    if (r.status === 0) logger?.log?.(`Auto-rotated working copy (docId=${docId}): ${rots.filter(x => x).length} page(s)`);
+    else logger?.warn?.(`[auto-rotate] pdf_rotate failed (docId=${docId}): ${String(r.stderr || r.error || '').slice(0, 200)}`);
+  } catch (e) { logger?.warn?.(`[auto-rotate] ${e && e.message}`); }
+}
+
 function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoFileRun = true) {
   if (msg.type === 'file_begin') {
     logger?.log(`File begin: ${msg.filename}`);
@@ -1859,6 +1891,10 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
     if (wp) {
       documents.update(db, docId, { working_path: wp });
       msg.working_path = wp;
+      // Auto-rotate the working copy to match the orientation OSD detected this import, so the
+      // FILED copy + every future reprocess are upright (one detection). Synchronous so it's
+      // done before the doc can be auto-filed. No-op unless a non-zero page rotation exists.
+      _rotateWorkingCopyIfNeeded(msg, docId, logger);
     }
   } catch (e) {
     console.warn(`[import] working copy failed for docId=${docId}: ${e.message}`);

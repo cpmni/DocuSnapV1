@@ -130,6 +130,8 @@ def extract_text_and_images(
     born_digital: bool = False,
     engine=None,
     cached_text: str | None = None,
+    auto_rotate: bool = False,
+    rotations_out: list | None = None,
 ) -> tuple[str, list[Image.Image]]:
     """
     Extract OCR text from a document file.
@@ -180,6 +182,25 @@ def extract_text_and_images(
         try:
             for page in doc:
                 img = page.render(scale=300 / 72).to_pil()
+                # AUTO-ROTATE a sideways/upside-down page (first import only — reprocess re-renders
+                # the already-corrected working copy, so it's gated off under use_cache). Born-digital
+                # pages are upright by construction and skipped. Rotates the image BEFORE OCR + the
+                # returned page list, and records the per-page CLOCKWISE angle (0/90/180/270) so the
+                # caller can rewrite the working-copy PDF to match. INERT (rot=0) when off, born-digital,
+                # low-confidence, or already upright. See ocr/orientation.py for the proven convention.
+                rot = 0
+                if auto_rotate and not use_cache:
+                    _skip = False
+                    if born_digital:
+                        try: _skip = bool(_bd.assess_page(page)[0])
+                        except Exception: _skip = False
+                    if not _skip:
+                        from ocr import orientation as _orientation
+                        rot = _orientation.detect_rotation(img)
+                        if rot:
+                            img = _orientation.correct_image(img, rot)
+                if rotations_out is not None:
+                    rotations_out.append(rot)
                 pages.append(img)
                 if not use_cache:                  # use_cache -> reuse stored text, skip OCR
                     layer_text = None

@@ -271,6 +271,17 @@ document.getElementById('multiline-toggle').addEventListener('change', async (e)
   await api.setSetting('multiline_enabled', e.target.checked ? 'true' : 'false');
 });
 
+// ── Auto-rotate sideways/upside-down scans (default ON) ────────────────────────
+(async () => {
+  try {
+    const v = await api.getSetting('auto_rotate_enabled');
+    document.getElementById('auto-rotate-toggle').checked = (v !== 'false');   // unset → on
+  } catch { document.getElementById('auto-rotate-toggle').checked = true; }
+})();
+document.getElementById('auto-rotate-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('auto_rotate_enabled', e.target.checked ? 'true' : 'false');
+});
+
 // ── Processing mode ───────────────────────────────────────────────────────────
 async function loadProcessingMode() {
   const mode = await api.getProcessingMode();

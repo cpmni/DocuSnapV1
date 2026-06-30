@@ -149,6 +149,11 @@ def main():
     parser.add_argument("--born-digital", action="store_true",
                         help="use a PDF's embedded text layer (exact) instead of OCR "
                              "for pages that carry one; inert for image-only/scanned PDFs")
+    parser.add_argument("--auto-rotate", action="store_true",
+                        help="detect a sideways/upside-down scanned page (Tesseract OSD) and "
+                             "rotate it upright for OCR; the per-page angles are emitted so the "
+                             "caller can rewrite the filed PDF. First import only; born-digital "
+                             "and confident-upright pages are skipped (inert).")
     parser.add_argument("--ocr-engine", default="tesseract",
                         help="full-page OCR engine: 'tesseract' (default, byte-identical) "
                              "| 'rapidocr' (opt-in; falls back to tesseract if the runtime/"
@@ -307,9 +312,13 @@ def main():
             # the pixels don't change, only the learned data; per-field crop reads
             # still re-run, so accuracy is unchanged. See extract_text_and_images.)
             log(f"  {'render (cached OCR)' if _cached else 'OCR'}: {filepath.name}")
+            _rotations = []   # per-page CLOCKWISE auto-rotate angles (filled only on a first import)
             ocr_text, page_images = extract_text_and_images(
                 filepath, _enh, born_digital=args.born_digital, engine=ocr_engine,
-                cached_text=(_cached if (_cached and _cached.strip()) else None))
+                cached_text=(_cached if (_cached and _cached.strip()) else None),
+                auto_rotate=getattr(args, 'auto_rotate', False), rotations_out=_rotations)
+            if any(_rotations):
+                log(f"  auto-rotate: {[r for r in _rotations if r]} (clockwise°) on {filepath.name}")
 
             # Live page count, so the UI can flag a multi-page document while it processes.
             emit({"type": "file_pages", "filename": filepath.name, "pages": len(page_images)})
@@ -482,6 +491,7 @@ def main():
                 "type":               "file_done",
                 "success":            True,
                 "status":             status,
+                "page_rotations":     _rotations,   # per-page clockwise° for the caller to rotate the filed PDF
                 "original_filename":  filepath.name,
                 "overall_confidence": overall_conf,
                 "needs_review":       review_needed,
