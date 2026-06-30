@@ -828,6 +828,23 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 41 applied: documents.confirmed_by_username');
   }
 
+  // Migration 42: opt-in diagnostics buffer (see DIAGNOSTICS_PLAN.md / src/modules/telemetry.js).
+  // Local offline queue for document-data-FREE diagnostic events; `sent` flag is the
+  // send-idempotency key. Inert until the `telemetry_enabled` setting is turned on.
+  if (!applied.has(42)) {
+    db.exec(`CREATE TABLE IF NOT EXISTS telemetry_events (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      ts          TEXT    NOT NULL,
+      name        TEXT    NOT NULL,
+      props_json  TEXT,
+      event_uid   TEXT,
+      sent        INTEGER NOT NULL DEFAULT 0
+    )`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_telemetry_unsent ON telemetry_events (sent, id)`);
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (42)').run();
+    console.log('JS migration 42 applied: telemetry_events');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

@@ -666,9 +666,37 @@ app.whenReady().then(() => {
   // once all IPC handlers below are registered. The main shell only appears later
   // once auth-handler confirms a session is established (see 'auth-enter-app').
 
+  // ── Opt-in diagnostics collector (document-data-FREE; see DIAGNOSTICS_PLAN.md).
+  //    OFF by default → fully inert until the user consents. Best-effort init. ────
+  let telemetry;
+  try {
+    const { createTelemetry } = require('./modules/telemetry');
+    const { defaultTransport } = require('./lib/license/client');
+    const { computeFpHash }    = require('./lib/license/fingerprint');
+    const { getSetting }       = require('../database/modules/learning');
+    const os = require('os');
+    let licCfg = {};
+    try { licCfg = JSON.parse(fs.readFileSync(resourcePath('config', 'license.json'), 'utf8')); } catch {}
+    telemetry = createTelemetry({
+      db: getDb(),
+      getSetting,
+      post: (url, body) => defaultTransport('POST', url, body, 2500),
+      config: { base_url: licCfg.base_url, product_id: licCfg.product_id },
+      fpHash: (() => { try { return computeFpHash(licCfg.product_id); } catch { return null; } })(),
+      appInfo: {
+        app_version:      app.getVersion(),
+        build_rev:        (() => { try { return require('../package.json').buildRev || ''; } catch { return ''; } })(),
+        os_version:       `${os.type()} ${os.release()}`.trim().slice(0, 48),
+        electron_version: process.versions.electron,
+        arch:             process.arch,
+      },
+      logger,
+    });
+  } catch (e) { try { logger?.warn?.('telemetry init skipped: ' + e.message); } catch {} }
+
   // Register all module IPC handlers
   const ctx = {
-    ipcMain, getDb,
+    ipcMain, getDb, telemetry,
     resourcePath, pythonExe, pythonArgs, tesseractPath,
     backendScript, configPath, templatesDir,
     createWindow, getMainWindow, notifyMainWindow, notifyAllWindows, safeSend,
@@ -769,6 +797,18 @@ app.whenReady().then(() => {
   // (entitlement + role gated; reuses workflowService). See modules/workflow/handler.js.
   workflowModule.register(ctx);
 
+  // Diagnostics lifecycle (all gated on consent INSIDE telemetry → inert until opt-in;
+  // never blocks startup): one app_start event, a deferred + periodic best-effort flush,
+  // and the SAFE renderer-crash signal (render-process-gone changes no exit semantics).
+  try {
+    telemetry?.recordAppStart();
+    setTimeout(() => { try { telemetry?.flush(); } catch {} }, 60000 + Math.floor(Math.random() * 30000));
+    setInterval(() => { try { telemetry?.flush(); } catch {} }, 30 * 60 * 1000);
+    app.on('render-process-gone', (_e, _wc, details) => {
+      try { telemetry?.record('renderer_crash', { reason: details && details.reason }); } catch {}
+    });
+  } catch {}
+
   // ── Hidden developer processing inspector (read-only) ───────────────────────
   // Password is verified HERE in the main process; the renderer can only REQUEST
   // unlock and can never self-grant. The inspector window only subscribes to
@@ -831,6 +871,7 @@ app.whenReady().then(() => {
     // Any quit path (tray Exit, OS shutdown, app.quit) → allow the main window to
     // actually close instead of hiding to tray.
     isQuitting = true;
+    try { telemetry?.record('app_exit'); telemetry?.flush(); } catch {}   // best-effort, consent-gated
     // Stop background work so Exit leaves no orphaned python.exe: clear the watch
     // poll timer + kill in-flight watch Python, and tree-kill the manual batch.
     try { watchModule.stopForQuit(); } catch (e) { logger.warn?.('[quit] watch cleanup: ' + (e && e.message)); }
