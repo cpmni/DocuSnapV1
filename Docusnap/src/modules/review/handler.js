@@ -63,7 +63,11 @@ function register(ctx) {
   const templates  = require('../../../database/modules/templates');
   const previewService = require('../../services/previewService');
   const workflowService = require('../../services/workflowService');
-  const { requireRole, requireLogin, hasRole, logAudit } = require('../auth/handler');
+  const { requireRole, requireLogin, hasRole, logAudit, getCurrentUser } = require('../auth/handler');
+  // Shared in-process presence map (the "being reviewed by" signal) — the SAME instance the /v1
+  // client API publishes to, so a desktop reviewer is visible to clients and vice-versa.
+  const presence = require('../../services/presenceService').shared();
+  const _desktopKey = (uid) => `desktop:${uid}`;
 
   // Transport-agnostic review orchestration — the SAME confirm/defer/restore the detached-client
   // /v1 API will call (Phase 3). The desktop injects its Electron-only steps as hooks so this
@@ -233,7 +237,7 @@ function register(ctx) {
   // Search window (Read Only previews filed documents there too) — gate to
   // "any signed-in user", not a specific role.
   ipcMain.handle('get-document-with-extractions', (_e, id) => {
-    requireLogin();
+    const sess = requireLogin();
     const db  = getDb();
     // Pure data assembly (doc + extractions + resolved slug + digit-only fields)
     // lives in the shared service so a detached client can reuse it; auth + audit
@@ -242,8 +246,30 @@ function register(ctx) {
     if (doc) {
       logAudit(db, { action: 'document_open', target_type: 'document', target_id: id,
         document_id: id, outcome: 'success', metadata: { type: doc.type_slug || null, status: doc.status || null } });
+      // Publish desktop REVIEW presence so clients see "being reviewed by <name>" — only for a
+      // review-able doc opened by a reviewer (NOT a read-only Search preview of a filed doc).
+      // A single heartbeat (TTL-expiring); the renderer refreshes it while the doc stays open.
+      if ((doc.status === 'needs_review' || doc.status === 'deferred') && (sess.role === 'admin' || sess.role === 'edit')) {
+        presence.heartbeat(id, { key: _desktopKey(sess.id), username: sess.username, displayName: sess.displayName || sess.username });
+      }
     }
     return doc;
+  });
+
+  // Renderer-driven presence refresh: the open Review window beats every ~25s so a desktop
+  // reviewer stays visible to clients past the 60s TTL while they work. Cheap in-process call;
+  // any signed-in reviewer, review-able doc only.
+  ipcMain.handle('review-heartbeat', (_e, id) => {
+    try {
+      const sess = requireLogin();
+      if (!(sess.role === 'admin' || sess.role === 'edit')) return false;
+      const row = documents.getById(getDb(), id);
+      if (row && (row.status === 'needs_review' || row.status === 'deferred')) {
+        presence.heartbeat(id, { key: _desktopKey(sess.id), username: sess.username, displayName: sess.displayName || sess.username });
+        return true;
+      }
+    } catch { /* not logged in / gone */ }
+    return false;
   });
 
   // Document close — the Review window fires this when it navigates away from a
@@ -252,6 +278,8 @@ function register(ctx) {
     if (docId == null) return;
     try { logAudit(getDb(), { action: 'document_close', target_type: 'document', target_id: docId,
       document_id: docId, outcome: 'success' }); } catch {}
+    // Drop this desktop reviewer's presence immediately (the TTL is the backstop).
+    try { const u = getCurrentUser(); if (u) presence.release(docId, _desktopKey(u.id)); } catch {}
   });
 
   // ── Document pages for preview ──────────────────────────────────────────────

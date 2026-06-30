@@ -184,6 +184,16 @@ function createRequestListener(ctx) {
   const _isCorrections = (o) => o == null || (_isPlainObject(o) &&
     Object.values(o).every(v => v == null || _isPlainObject(v)));
 
+  // Multi-user review presence ("Currently being reviewed by <name>") — the SAME shared in-process
+  // map the desktop publishes to. Advisory only; the atomic confirm is the authority. A viewerKey
+  // is the client's seat key (or a per-user API fallback), so excludes-self works.
+  const presence = ctx.presence || require('../../services/presenceService').shared();
+  const viewerKeyOf = (s) => s.clientKey || `api:${s.userId}`;
+  const viewerOf = (s) => ({
+    key: viewerKeyOf(s), username: s.username,
+    displayName: ((dbAuth.getUserById(getDb(), s.userId) || {}).display_name) || s.username,
+  });
+
   // Detached-client add-on entitlement (ctx may override for tests/demo).
   const checkEntitlement = ctx.checkEntitlement || (() => entitlementService.checkClientEntitlement(getDb()));
   // Routes that expose the licensed feature itself (gated); auth/health/entitlement are not.
@@ -368,7 +378,10 @@ function createRequestListener(ctx) {
       if (req.method === 'POST' && pathname === `${API_PREFIX}/auth/logout`) {
         const tok = bearerToken(req);
         const session = sessions.verify(tok);
-        if (session) audit({ user_id: session.userId, action: 'logout', action_category: 'auth', outcome: 'success' });
+        if (session) {
+          audit({ user_id: session.userId, action: 'logout', action_category: 'auth', outcome: 'success' });
+          try { presence.releaseAll(viewerKeyOf(session)); } catch { /* advisory */ }
+        }
         sessions.revoke(tok);
         return sendJson(res, 200, { ok: true });
       }
@@ -598,12 +611,18 @@ function createRequestListener(ctx) {
       if (req.method === 'GET' && pathname === `${API_PREFIX}/review/queue`) {
         const session = requireSession(req, res); if (!session) return;
         if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
-        return sendJson(res, 200, { queue: dto.projectReviewQueue(reviewSvc.queue(getDb())) });
+        const rows = dto.projectReviewQueue(reviewSvc.queue(getDb()));
+        const selfKey = viewerKeyOf(session);
+        for (const r of rows) r.viewers = presence.viewers(r.id, selfKey);   // who else is in each doc
+        return sendJson(res, 200, { queue: rows });
       }
       if (req.method === 'GET' && pathname === `${API_PREFIX}/review/deferred`) {
         const session = requireSession(req, res); if (!session) return;
         if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
-        return sendJson(res, 200, { deferred: dto.projectReviewQueue(reviewSvc.deferred(getDb())) });
+        const rows = dto.projectReviewQueue(reviewSvc.deferred(getDb()));
+        const selfKey = viewerKeyOf(session);
+        for (const r of rows) r.viewers = presence.viewers(r.id, selfKey);
+        return sendJson(res, 200, { deferred: rows });
       }
       if (req.method === 'GET' && pathname === `${API_PREFIX}/review/counts`) {
         const session = requireSession(req, res); if (!session) return;
@@ -683,6 +702,24 @@ function createRequestListener(ctx) {
         if (!guard.ok) return sendJson(res, 409, { error: guard.error, code: guard.code });
         const r = reviewSvc.restore(getDb(), actorOf(session), id);
         return r.ok ? sendJson(res, 200, { ok: true }) : sendJson(res, 409, { error: r.error, code: r.code });
+      }
+
+      // ── Presence: "I'm viewing this doc" heartbeat + release (advisory) ────────
+      // Register/refresh the caller as a viewer and return the OTHER viewers for the banner.
+      // The client beats this ~every 25s while a doc is open; a hard disconnect is reaped by TTL.
+      const viewingMatch = pathname.match(new RegExp(`^${API_PREFIX}/review/(\\d+)/viewing$`));
+      if (req.method === 'POST' && viewingMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        const id = Number(viewingMatch[1]);
+        presence.heartbeat(id, viewerOf(session));
+        return sendJson(res, 200, { viewers: presence.viewers(id, viewerKeyOf(session)) });
+      }
+      const releaseViewMatch = pathname.match(new RegExp(`^${API_PREFIX}/review/(\\d+)/release$`));
+      if (req.method === 'POST' && releaseViewMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        presence.release(Number(releaseViewMatch[1]), viewerKeyOf(session));
+        return sendJson(res, 200, { ok: true });
       }
 
       return sendJson(res, 404, { error: 'not found' });

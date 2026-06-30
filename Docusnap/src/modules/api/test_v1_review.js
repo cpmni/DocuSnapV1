@@ -20,6 +20,7 @@ const { runMigrations } = require('../../../database/index');
 const documents = require('../../../database/modules/documents');
 const learning  = require('../../../database/modules/learning');
 const reviewServiceMod = require('../../services/reviewService');
+const presenceMod = require('../../services/presenceService');
 const licensing = require('../licensing/handler');
 
 const PWD = 'Review-Test-9';
@@ -83,6 +84,7 @@ async function main() {
     getDb: () => db,
     learning: { getDigitsOnlyFields: () => [] },
     reviewService,
+    presence: presenceMod.createPresenceService(),   // fresh, isolated from the shared singleton
     checkEntitlement: () => entitled
       ? ({ entitled: true, feature: 'detached_client', search: { entitled: true, seats: 99 }, workflow: { entitled: true, seats: 99 } })
       : ({ entitled: false, feature: 'detached_client', search: { entitled: false }, workflow: { entitled: false } }),
@@ -153,6 +155,20 @@ async function main() {
 
   // ── Invalid body shape rejected ───────────────────────────────────────────────
   check('non-object allValues → 400', (await request(port, 'POST', '/v1/documents/4/confirm', { token: editT, body: { allValues: 'nope', corrections: {} } })).status === 400);
+
+  // ── Presence ("being reviewed by") — doc 4 is needs_review ────────────────────
+  const vE = await request(port, 'POST', '/v1/review/4/viewing', { token: editT });
+  check('editor viewing doc 4 → 200, no other viewers yet', vE.status === 200 && vE.json.viewers.length === 0);
+  const vA = await request(port, 'POST', '/v1/review/4/viewing', { token: adminT });
+  check('admin viewing doc 4 → sees the editor', vA.json.viewers.length === 1 && vA.json.viewers[0].username === 'editor');
+  const ql = await request(port, 'GET', '/v1/review/queue', { token: editT });
+  const doc4 = ql.json.queue.find(r => r.id === 4);
+  check('queue embeds viewers (editor sees admin on doc 4)', !!doc4 && Array.isArray(doc4.viewers) && doc4.viewers.some(v => v.username === 'admin'));
+  check('  → caller excluded from its own doc-4 viewers', doc4.viewers.every(v => v.username !== 'editor'));
+  await request(port, 'POST', '/v1/review/4/release', { token: editT });
+  const vA2 = await request(port, 'POST', '/v1/review/4/viewing', { token: adminT });
+  check('after editor releases, admin sees no other viewers', vA2.json.viewers.length === 0);
+  check('readonly viewing → 403', (await request(port, 'POST', '/v1/review/4/viewing', { token: readT })).status === 403);
 
   await new Promise(r => server.close(r));
   licensing.licenseDenied = _origLicenseDenied;   // restore (test isolation)
