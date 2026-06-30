@@ -62,7 +62,7 @@ function createClient(opts = {}) {
     ? new https.Agent({ keepAlive: true, ca, rejectUnauthorized: true })
     : null;
 
-  function request(method, p, { body, withAuth, insecure } = {}) {
+  function request(method, p, { body, withAuth, insecure, timeoutMs } = {}) {
     return new Promise((resolve, reject) => {
       let u;
       try { u = new URL(baseUrl + p); } catch (e) { return reject(e); }
@@ -94,6 +94,11 @@ function createClient(opts = {}) {
         });
       });
       req.on('error', reject);
+      // Idle-timeout so an unreachable / non-responding server fails fast instead of hanging
+      // on the OS TCP timeout (which left the client on a blank screen). It's an IDLE timeout,
+      // so a working-but-slow response that keeps streaming bytes won't trip it. Generous
+      // default for large previews; connect()/health passes a short one for snappy failure.
+      req.setTimeout(timeoutMs || 20000, () => req.destroy(new Error('connection timed out')));
       if (data) req.write(data);
       req.end();
     });
@@ -102,7 +107,7 @@ function createClient(opts = {}) {
   /** Handshake: returns { ok, mode:'ok'|'warn'|'block', reason, serverVersion }. */
   async function connect() {
     let r;
-    try { r = await request('GET', '/v1/health'); }
+    try { r = await request('GET', '/v1/health', { timeoutMs: 8000 }); }
     catch (e) { return { ok: false, mode: 'block', reason: `cannot reach server: ${e.message}`, serverVersion: null }; }
     if (r.status !== 200 || !r.json) {
       return { ok: false, mode: 'block', reason: `unexpected health response (${r.status})`, serverVersion: null };

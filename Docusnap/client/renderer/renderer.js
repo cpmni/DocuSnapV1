@@ -146,7 +146,7 @@ function setConn(mode, text, short) {
 }
 
 function showOnly(id) {
-  for (const s of ['connect', 'login', 'locked', 'app']) $(s).classList.toggle('hidden', s !== id);
+  for (const s of ['connecting', 'connect', 'login', 'locked', 'app']) $(s).classList.toggle('hidden', s !== id);
 }
 function applyConn(h) {
   if (h.mode === 'warn') setConn('warn', h.reason || 'Version drift', 'Drift');
@@ -196,9 +196,21 @@ async function boot() {
   const cfg = await api.getServer();
   if (cfg && cfg.host) {
     fillServerForm(cfg);
+    // Show the "Connecting…" spinner IMMEDIATELY so the saved-server connect attempt is never a
+    // blank screen (the request can take a few seconds, or time out if the core PC is off).
+    const sub = $('connecting-sub');
+    if (sub) sub.textContent = `Reaching ${cfg.host}${cfg.port ? ':' + cfg.port : ''}…`;
+    showOnly('connecting');
     const h = await api.connect();   // client already built from the saved server
     applyConn(h);
-    if (h.ok) showOnly('login'); else showConnect(h.reason || 'Could not reach the saved server.');
+    if (h.ok) {
+      showOnly('login');
+    } else {
+      // Couldn't reach it — most often the core app isn't open. Say so plainly and drop to the
+      // connection page so they can check the address / retry once the core is running.
+      showConnect('Couldn’t reach the main Scan Finder app. Make sure it’s open on the other PC '
+        + '(with “Allow search-client connections” switched on), then press Connect.');
+    }
   } else {
     showConnect();
   }
