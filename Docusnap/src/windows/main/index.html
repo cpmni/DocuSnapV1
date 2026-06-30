@@ -174,7 +174,12 @@
     /* auto-fit reflows tiles with NO empty cells as the visible-card count changes;
        full-width banners opt in with .dash-span. */
     .dash-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); align-items: stretch; }
+    .dash-grid + .dash-grid { margin-top: 16px; }
     .dash-span { grid-column: 1 / -1; }
+    /* Subsection divider between the status tier and the files-&-folders tier. */
+    .dash-section { display: flex; align-items: center; gap: 8px; margin: 24px 2px 12px;
+      font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+    .dash-section .ico-sm { width: 15px; height: 15px; color: var(--accent2); }
     /* Uniform info tiles: equal min-height + stretch so a row of small cards matches,
        with the action (button / note) pinned to the bottom. Banners (.dash-span) opt out. */
     .dash-grid > .dash-card:not(.dash-span) { min-height: 186px; }
@@ -183,9 +188,14 @@
       background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
       box-shadow: var(--shadow); padding: 18px 20px; display: flex; flex-direction: column; gap: 12px;
     }
-    .dash-card-head { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+    .dash-card-head { display: flex; align-items: center; gap: 9px; font-size: 11.5px; font-weight: 700; letter-spacing: .055em; text-transform: uppercase; color: var(--text); }
     .dash-card-head.between { justify-content: space-between; }
     .dash-card-head .ico-sm { width: 15px; height: 15px; color: var(--accent2); }
+    /* Leading-icon "chip": a tinted rounded badge so each card heading POPS — theme-adaptive
+       (uses --accent-bg / --accent2 so every palette fits). Scoped to the head's OWN leading
+       icon (direct first child) so button/link/title-nested icons are unaffected. */
+    .dash-card-head > .ico-sm:first-child { width: 27px; height: 27px; padding: 6px; border-radius: 8px;
+      background: var(--accent-bg); color: var(--accent2); flex: 0 0 auto; box-sizing: border-box; }
     .dash-attn-body { display: flex; flex-direction: column; gap: 6px; }
     .dash-attn-row { font-size: 13px; color: var(--text); }
     .dash-attn-num { font-family: var(--mono); font-size: 17px; font-weight: 700; color: var(--accent2); margin-right: 4px; }
@@ -695,6 +705,7 @@
 
           <!-- One auto-fit grid: full-width banners (.dash-span) stack; info tiles
                reflow with no empty cells as the visible-card count changes. -->
+          <!-- STATUS TIER: what needs attention + how things are going -->
           <div class="dash-grid">
 
             <!-- Trial banner (full width; only while on trial) -->
@@ -749,18 +760,21 @@
               </div>
             </div>
 
-            <!-- Import -->
-            <div class="dash-card" id="dash-import" data-help-key="dash-import">
+            <!-- Getting smarter (learning inventory) -->
+            <div class="dash-card" id="dash-learning" data-help-key="learning">
               <div class="dash-card-head">
-                <svg class="ico ico-sm" aria-hidden="true"><use href="#i-folder"/></svg>
-                <span>Import documents</span>
+                <svg class="ico ico-sm" aria-hidden="true"><use href="#i-sparkles"/></svg>
+                <span>Getting smarter</span>
               </div>
-              <div class="dash-import-folder" id="dash-folder">No source folder chosen yet.</div>
-              <div class="dash-import-last" id="dash-last-run"></div>
-              <button class="dash-btn primary" id="dash-go-import">
-                Go to Import <svg class="ico ico-sm" aria-hidden="true"><use href="#i-arrow-right"/></svg>
-              </button>
+              <div class="learning-body" id="dash-learning-body">&hellip;</div>
+              <div class="dash-card-note">Accuracy improves every time you confirm a document.</div>
             </div>
+
+          </div>
+
+          <!-- FILES & FOLDERS TIER: where documents come from and where they go -->
+          <div class="dash-section"><svg class="ico ico-sm" aria-hidden="true"><use href="#i-folder"/></svg> Files &amp; folders</div>
+          <div class="dash-grid">
 
             <!-- Auto-import (admin only) -->
             <div class="dash-card" id="dash-watch" data-help-key="auto-import" style="display:none;">
@@ -776,14 +790,17 @@
               </button>
             </div>
 
-            <!-- Getting smarter (learning inventory) -->
-            <div class="dash-card" id="dash-learning" data-help-key="learning">
+            <!-- Import -->
+            <div class="dash-card" id="dash-import" data-help-key="dash-import">
               <div class="dash-card-head">
-                <svg class="ico ico-sm" aria-hidden="true"><use href="#i-sparkles"/></svg>
-                <span>Getting smarter</span>
+                <svg class="ico ico-sm" aria-hidden="true"><use href="#i-folder"/></svg>
+                <span>Import documents</span>
               </div>
-              <div class="learning-body" id="dash-learning-body">&hellip;</div>
-              <div class="dash-card-note">Accuracy improves every time you confirm a document.</div>
+              <div class="dash-import-folder" id="dash-folder">No source folder chosen yet.</div>
+              <div class="dash-import-last" id="dash-last-run"></div>
+              <button class="dash-btn primary" id="dash-go-import">
+                Go to Import <svg class="ico ico-sm" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+              </button>
             </div>
 
             <!-- Where your files go (output folder) -->
@@ -798,7 +815,10 @@
               </button>
             </div>
 
-            <!-- Recent activity (full width) -->
+          </div>
+
+          <!-- ACTIVITY: recent filings (full width) -->
+          <div class="dash-grid">
             <div class="dash-card recent dash-span" data-help-key="recent">
               <div class="dash-card-head between">
                 <span>Recent activity</span>
@@ -811,7 +831,6 @@
                 <div class="recent-empty">No documents filed yet.</div>
               </div>
             </div>
-
           </div>
         </div>
       </section>
