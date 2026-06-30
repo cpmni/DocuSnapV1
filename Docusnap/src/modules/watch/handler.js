@@ -241,7 +241,7 @@ function _drainQueue(db) {
   const learning = require('../../../database/modules/learning');
   let concurrency = parseInt(learning.getSetting(db, 'processing_concurrency', '1'), 10);
   if (!Number.isFinite(concurrency)) concurrency = 1;
-  concurrency = Math.max(1, Math.min(10, concurrency));   // mirrors processing/handler.js
+  concurrency = Math.max(1, Math.min(5, concurrency));   // mirrors processing/handler.js (cap 5)
 
   while (_inFlight < concurrency && _queue.length > 0) {
     const filename = _queue.shift();

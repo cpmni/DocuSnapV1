@@ -576,10 +576,10 @@ function register(ctx) {
     // OCR/extraction, never DB/learning state. Default 1 = unchanged sequential.
     let concurrency = parseInt(learning.getSetting(db, 'processing_concurrency', '1'), 10);
     if (!Number.isFinite(concurrency)) concurrency = 1;
-    // TESTING: cap raised 5 → 10 to evaluate higher parallelism. Revert to
-    // Math.min(5, …) before shipping (values above the CPU core count usually
-    // thrash rather than speed up).
-    concurrency = Math.max(1, Math.min(10, concurrency));
+    // Cap at 5: cross-document parallelism only helps up to ~the CPU core count;
+    // above that the per-proc Tesseract/threadCap split starves and the batch thrashes
+    // rather than speeds up. Default is 1.
+    concurrency = Math.max(1, Math.min(5, concurrency));
 
     _cancelRequested   = false;
     _currentBatchProcs = [];
@@ -1174,11 +1174,10 @@ function register(ctx) {
     const manifestFile = writeTempJson('rbmanifest', manifest);
     let concurrency = parseInt(learning2.getSetting(db, 'processing_concurrency', '1'), 10);
     if (!Number.isFinite(concurrency)) concurrency = 1;
-    // Match the import cap (10): Reprocess All is pure cross-document parallelism (each
-    // doc's pipeline is unchanged), and threadCap below keeps total OMP/onnx threads ≈
-    // cores, so a higher worker count speeds the batch without oversubscribing the CPU.
-    // (Was capped at 5, which throttled Reprocess All below the user's chosen concurrency.)
-    concurrency = Math.max(1, Math.min(10, concurrency));
+    // Match the import cap (5): Reprocess All is pure cross-document parallelism (each
+    // doc's pipeline is unchanged); threadCap below keeps total OMP/onnx threads ≈ cores,
+    // and capping concurrency at 5 avoids oversubscribing the CPU on typical machines.
+    concurrency = Math.max(1, Math.min(5, concurrency));
     const shards  = partitionRoundRobin(tmpNames, Math.min(concurrency, tmpNames.length));
     // Per-worker thread cap = cores / workers, so the pool doesn't oversubscribe the
     // CPU. Caps Tesseract's OpenMP threads (OMP_THREAD_LIMIT in the spawn env — the
