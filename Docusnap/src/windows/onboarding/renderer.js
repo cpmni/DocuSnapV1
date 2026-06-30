@@ -56,7 +56,10 @@ async function loadCurrent() {
     state.outputFolder = (await D.getSetting('output_folder')) || (await D.suggestedOutputFolder()) || '';
   } catch {}
   try { const c = parseInt(await D.getSetting('processing_concurrency'), 10); if (c >= 1) state.threads = c; } catch {}
-  try { state.mode = (await D.getSetting('processing_mode')) || 'smart'; } catch {}
+  // The wizard only offers Thorough (smart) / Quick (fast); map any other stored
+  // value (e.g. a legacy 'ai', or an unset/blank) to 'smart' so a card is always
+  // selected — otherwise neither Accuracy card highlights and it looks unselectable.
+  try { state.mode = (await D.getSetting('processing_mode')) === 'fast' ? 'fast' : 'smart'; } catch {}
   try { state.copyEnabled = (await D.getSetting('copy_after_processing_enabled')) === 'true'; } catch {}
   try { state.copyFolder  = (await D.getSetting('copy_after_processing_folder')) || ''; } catch {}
   try {

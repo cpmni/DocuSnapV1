@@ -201,7 +201,12 @@ function welcomeSeen() {
   try { return require('../database/modules/learning').getSetting(getDb(), 'welcome_seen') === 'true'; }
   catch { return true; }
 }
-function showWelcome() { createWindow('welcome', WELCOME_WINDOW_OPTIONS, 'index.html'); }
+function showWelcome() {
+  const w = createWindow('welcome', WELCOME_WINDOW_OPTIONS, 'index.html');
+  // Owned child of the main shell (stays above it) + pull focus on first paint so
+  // it can't open behind the main window that was created just before it.
+  try { w?.once('ready-to-show', () => { if (!w.isDestroyed()) { w.show(); w.focus(); } }); } catch {}
+}
 
 // Licensing gate (Phase 2). The MAIN process is the sole decider; the renderer
 // only signals intent. With enforcement OFF (default) decideAccess() returns
@@ -328,8 +333,8 @@ function launchStartupWindow() {
 // click its toolbar button to bring it back. Non-modal keeps the main window usable, and
 // createWindow() already restores + focuses the existing window when its button is clicked
 // again. (A future window can still opt INTO modal by being a CHILD_WINDOW not listed here.)
-const CHILD_WINDOWS   = new Set(['review', 'settings', 'search', 'teach', 'dev-inspector']);
-const NON_MODAL_CHILD = new Set(['dev-inspector', 'review', 'settings', 'search', 'teach']);
+const CHILD_WINDOWS   = new Set(['review', 'settings', 'search', 'teach', 'dev-inspector', 'welcome']);
+const NON_MODAL_CHILD = new Set(['dev-inspector', 'review', 'settings', 'search', 'teach', 'welcome']);
 // Top-level "primary" windows that hide to the tray on a user close (the app then
 // fully quits ONLY via tray Exit). Their programmatic transitions destroy them
 // via destroyWindow(). Child windows close normally.
