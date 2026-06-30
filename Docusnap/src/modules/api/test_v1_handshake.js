@@ -49,7 +49,7 @@ async function main() {
   const port = server.address().port;
   const baseUrl = `http://127.0.0.1:${port}`;
 
-  // Compatible client (1.0.0) — normal operation.
+  // Compatible client (current contract) — normal operation.
   const good = createClient({ baseUrl });
   let h = await good.connect();
   check('compatible client connect -> ok', h.mode === 'ok');
@@ -59,7 +59,7 @@ async function main() {
   // Incompatible client (2.0.0) — health open, everything else 426.
   const bad = createClient({ baseUrl, expectedContract: '2.0.0' });
   h = await bad.connect();
-  check('incompatible client connect -> block (sees server v1.0.0)', h.mode === 'block' && h.serverVersion === '1.0.0');
+  check('incompatible client connect -> block (sees server v1.1.0)', h.mode === 'block' && h.serverVersion === '1.1.0');
   li = await bad.login('admin', PWD);
   check('incompatible client login refused -> 426', li.status === 426);
   const s = await bad.search({});

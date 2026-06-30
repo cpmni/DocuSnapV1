@@ -71,7 +71,7 @@ async function main() {
   // ── handshake ─────────────────────────────────────────────────────────────────
   let c = createClient({ baseUrl });
   let h = await c.connect();
-  check('connect -> ok, server v1.0.0', h.ok && h.mode === 'ok' && h.serverVersion === '1.0.0');
+  check('connect -> ok, server v1.1.0', h.ok && h.mode === 'ok' && h.serverVersion === '1.1.0');
   check('connect blocks on major mismatch',
     (await createClient({ baseUrl, expectedContract: '2.0.0' }).connect()).mode === 'block');
   check('connect warns on minor drift',

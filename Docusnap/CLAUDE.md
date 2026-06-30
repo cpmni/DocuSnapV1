@@ -1325,6 +1325,17 @@ the add-on off. (Design history: `memory/scanfinder-*` + the plan in `.claude/pl
   + route create/claim/resolve/recall, **`GET /v1/ca`** (pairing-gated; returns the CA
   PEM + fingerprint for trust bootstrap — NEVER the CA key), **`POST /v1/enroll`**
   (pairing → entitlement(402) → creds(401/429/MFA) → returns CA + session token + user).
+- **REVIEW over `/v1` (Phase 3, Admin/Edit, search-entitled)**: `GET /v1/review/{queue,deferred,counts}`
+  (path-free `dto.projectReviewQueue` — field VALUES are fetched per-doc via `GET /v1/documents/{id}`),
+  `GET /v1/doc-types` (`dto.projectDocTypes` — type dropdown / required-field / on-blur validation),
+  `POST /v1/documents/{id}/{confirm,defer,undefer}` (undefer = restore-from-deferred, distinct from
+  the recycle `/restore`). confirm routes through the shared `reviewService` (claim-before-file → a
+  lost race is **409 ALREADY_FILED** naming the winner; workflow-locked → **409 WORKFLOW_LOCKED**;
+  license re-check → 403). **F-02 preserved**: the body carries field VALUES only — `folder_path`/
+  paths are IGNORED, the source is resolved SERVER-SIDE from the doc row; the confirm DTO is
+  `{success,filename,isDuplicate}` (never filePath/srcPath). API contract bumped **1.0.0 → 1.1.0**
+  (server `API_CONTRACT_VERSION` + client `CLIENT_CONTRACT`; lockstep is MAJOR-only so older clients
+  just lack the review UI). Guarded by `src/modules/api/test_v1_review.js`.
 - Admin IPC: `client-api-{get-status,set-enabled,cert-status,cert-generate,cert-export}`.
 
 **TLS — managed certs + Certificate Wizard** (`src/services/certService.js`, node-forge,

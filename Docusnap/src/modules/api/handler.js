@@ -30,6 +30,8 @@ const { URL } = require('url');
 const searchService  = require('../../services/searchService');
 const previewService = require('../../services/previewService');
 const documents      = require('../../../database/modules/documents');
+const doctypes       = require('../../../database/modules/document_types');
+const reviewService  = require('../../services/reviewService');
 const dto            = require('../../services/dto');
 const sessionService    = require('../../services/sessionService');
 const authService       = require('../../services/authService');
@@ -43,7 +45,7 @@ const path              = require('path');
 const WF_HTTP = { FORBIDDEN: 403, NOT_FOUND: 404, CONFLICT: 409 };
 const wfStatus = (code) => WF_HTTP[code] || 400;
 
-const API_CONTRACT_VERSION = '1.0.0';   // NB: ADDING endpoints (e.g. recycle bin) needs no bump — the
+const API_CONTRACT_VERSION = '1.1.0';   // NB: ADDING endpoints (e.g. recycle bin) needs no bump — the
                                         // handshake checks MAJOR only. Keep server + client in lockstep.
 const API_PREFIX = '/v1';
 const CLIENT_CONTRACT_HEADER = 'x-scanfinder-client-contract';
@@ -154,10 +156,39 @@ function createRequestListener(ctx) {
   const workflow = ctx.workflowService || workflowService.createWorkflowService({ audit });
   const actorOf = (session) => ({ userId: session.userId, username: session.username, role: session.role });
 
+  // The SAME transport-agnostic review orchestration the desktop uses (Phase 2). The API injects
+  // its own hooks: file immediately (a client holds no host file handle), drain the original best-
+  // effort, broadcast counts to the desktop badge when possible, and never teach (no template
+  // promote). The atomic claim-before-file makes a client confirm race-safe vs the desktop + auto-file.
+  const reviewSvc = ctx.reviewService || reviewService.createReviewService({
+    audit: (_db, entry) => audit(entry),
+    notifyCounts: (db) => {
+      if (!ctx.notifyMainWindow) return;
+      try {
+        ctx.notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
+        ctx.notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
+      } catch { /* best-effort */ }
+    },
+    onScheduleSourceMove: ({ srcPath }) => {
+      try { require('../filing/handler').removeSourceFile(ctx.fs || require('fs'), srcPath, ctx.logger).catch(() => {}); }
+      catch { /* best-effort drain */ }
+    },
+    releaseDelayMs: 0,
+  });
+
+  // Belt-and-braces shape guards for the client-supplied field VALUES (filing/learning also
+  // sanitise; this rejects an obviously malformed body early). VALUES only — never paths.
+  const _isPlainObject = (o) => !!o && typeof o === 'object' && !Array.isArray(o);
+  const _isFlatValues = (o) => o == null || (_isPlainObject(o) &&
+    Object.values(o).every(v => v == null || typeof v === 'string' || typeof v === 'number'));
+  const _isCorrections = (o) => o == null || (_isPlainObject(o) &&
+    Object.values(o).every(v => v == null || _isPlainObject(v)));
+
   // Detached-client add-on entitlement (ctx may override for tests/demo).
   const checkEntitlement = ctx.checkEntitlement || (() => entitlementService.checkClientEntitlement(getDb()));
   // Routes that expose the licensed feature itself (gated); auth/health/entitlement are not.
-  const FEATURE_ROUTE = new RegExp(`^${API_PREFIX}/(search|documents|workflow)(/|$)`);
+  // review + doc-types ride the SAME search/client entitlement (role supplies the privilege).
+  const FEATURE_ROUTE = new RegExp(`^${API_PREFIX}/(search|documents|workflow|review|doc-types)(/|$)`);
   const WORKFLOW_ROUTE = new RegExp(`^${API_PREFIX}/workflow(/|$)`);   // gated on the workflow add-on, not just search
 
   const pageDeps = () => ({
@@ -557,6 +588,101 @@ function createRequestListener(ctx) {
         else r = workflow.resolve(getDb(), actor, id, { decision: body.decision, comment: body.comment, expectedVersion: body.version });
         return r.ok ? sendJson(res, 200, { route: dto.projectRoute(r.route) })
                     : sendJson(res, wfStatus(r.code), { error: r.error, code: r.code });
+      }
+
+      // ── Auth-required: REVIEW QUEUE + confirm / defer / undefer (Admin/Edit) ───
+      // The detached client clears the SHARED needs_review queue. Role-gated server-side
+      // (not UI-only); confirm resolves on-disk locations from the doc row (F-02) and routes
+      // through the SAME race-safe reviewService the desktop uses (claim-before-file → the loser
+      // of a race gets 409 ALREADY_FILED). Field VALUES travel in the body; paths never do.
+      if (req.method === 'GET' && pathname === `${API_PREFIX}/review/queue`) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        return sendJson(res, 200, { queue: dto.projectReviewQueue(reviewSvc.queue(getDb())) });
+      }
+      if (req.method === 'GET' && pathname === `${API_PREFIX}/review/deferred`) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        return sendJson(res, 200, { deferred: dto.projectReviewQueue(reviewSvc.deferred(getDb())) });
+      }
+      if (req.method === 'GET' && pathname === `${API_PREFIX}/review/counts`) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        return sendJson(res, 200, reviewSvc.counts(getDb()));
+      }
+
+      // Document types + field definitions (review type dropdown, required-field highlighting).
+      if (req.method === 'GET' && pathname === `${API_PREFIX}/doc-types`) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        return sendJson(res, 200, { types: dto.projectDocTypes(doctypes.getAllWithFieldsAll(getDb())) });
+      }
+
+      // Confirm / file a reviewed document.
+      const confirmMatch = pathname.match(new RegExp(`^${API_PREFIX}/documents/(\\d+)/confirm$`));
+      if (req.method === 'POST' && confirmMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        const id = Number(confirmMatch[1]);
+        // Multi-point licensing enforcement (filing is a high-value write path).
+        if (require('../licensing/handler').licenseDenied(getDb())) {
+          return sendJson(res, 403, { error: 'A valid license is required to file documents.', code: 'LICENSE' });
+        }
+        // Workflow lock: a routed doc can't be reviewed/filed (admin override audited by the guard).
+        const guard = workflowService.editGuard(getDb(), id, session.role);
+        if (!guard.ok) return sendJson(res, 409, { error: guard.error, code: guard.code });
+        let body; try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+        if (!_isFlatValues(body.allValues) || !_isCorrections(body.corrections)) {
+          return sendJson(res, 400, { error: 'invalid field values' });
+        }
+        // SECURITY (F-02): the on-disk source is resolved SERVER-SIDE from the doc row — the body
+        // carries field VALUES only, never paths.
+        const row = getDb().prepare('SELECT folder_path, original_filename FROM documents WHERE id = ?').get(id);
+        if (!row) return sendJson(res, 404, { error: 'not found' });
+        const slug = body.document_type_slug ? String(body.document_type_slug) : null;
+        if (slug && !doctypes.getWithFields(getDb(), slug)) return sendJson(res, 400, { error: 'unknown document type' });
+        const r = await reviewSvc.confirm(getDb(), actorOf(session), {
+          document_id: id,
+          folder_path: row.folder_path,
+          original_filename: row.original_filename,
+          corrections: body.corrections || {},
+          allValues: body.allValues || {},
+          supplier_name: body.supplier_name || null,
+          document_type: body.document_type || null,
+          document_type_slug: slug,
+          taught_fields: [],   // the client never teaches
+          bulk: false,
+        });
+        if (!r.ok) {
+          const status = (r.code === 'ALREADY_FILED' || r.code === 'NO_OUTPUT') ? 409 : 400;
+          return sendJson(res, status, { error: r.error, code: r.code || null, ...(r.confirmedBy ? { confirmedBy: r.confirmedBy } : {}) });
+        }
+        // DTO: filename only — never filePath/metadataPath/srcPath.
+        return sendJson(res, 200, { success: true, filename: r.filename, isDuplicate: !!r.isDuplicate });
+      }
+
+      // Defer a reviewed document.
+      const deferMatch = pathname.match(new RegExp(`^${API_PREFIX}/documents/(\\d+)/defer$`));
+      if (req.method === 'POST' && deferMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        const id = Number(deferMatch[1]);
+        const guard = workflowService.editGuard(getDb(), id, session.role);
+        if (!guard.ok) return sendJson(res, 409, { error: guard.error, code: guard.code });
+        const r = reviewSvc.defer(getDb(), actorOf(session), id);
+        return r.ok ? sendJson(res, 200, { ok: true }) : sendJson(res, 409, { error: r.error, code: r.code });
+      }
+
+      // Restore a deferred document to the review queue (distinct from the recycle-bin /restore).
+      const undeferMatch = pathname.match(new RegExp(`^${API_PREFIX}/documents/(\\d+)/undefer$`));
+      if (req.method === 'POST' && undeferMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        const id = Number(undeferMatch[1]);
+        const guard = workflowService.editGuard(getDb(), id, session.role);
+        if (!guard.ok) return sendJson(res, 409, { error: guard.error, code: guard.code });
+        const r = reviewSvc.restore(getDb(), actorOf(session), id);
+        return r.ok ? sendJson(res, 200, { ok: true }) : sendJson(res, 409, { error: r.error, code: r.code });
       }
 
       return sendJson(res, 404, { error: 'not found' });
