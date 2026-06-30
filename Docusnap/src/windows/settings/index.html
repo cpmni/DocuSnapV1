@@ -156,6 +156,10 @@
     .settings-subgroup-divider { font-size:11px; color:var(--muted); margin:14px 0 2px; padding-top:12px;
       border-top:1px solid var(--border); text-transform:uppercase; letter-spacing:.04em; }
     .settings-subgroup-divider b { color:var(--text); font-weight:600; }
+    /* Section sub-heading inside the Home-dashboard card list (mirrors the dashboard tiers). */
+    .dash-cards-subhead { font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
+      color:var(--accent2); margin:16px 0 4px; }
+    .dash-cards-subhead:first-child { margin-top:0; }
     .conf-row { display:flex; align-items:center; gap:8px; }
     .conf-slider { width:90px; accent-color:var(--accent); }
     .conf-val { font-family:var(--mono); font-size:11px; color:var(--accent2); min-width:32px; }
@@ -453,38 +457,37 @@
                 <span class="toggle-slider"></span>
               </label>
             </div>
-            <!-- The two toggles below are NOT watch-specific — they govern every import +
-                 extraction. Set off with a divider + sub-heading so the grouping is honest. -->
-            <div class="settings-subgroup-divider">These apply to <b>every import</b> — not just the watch folder</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Import & processing options — NOT watch-specific; they govern EVERY import. Their own
+           full-width group so they don't look like (or get cramped into) the Watch Folder column. -->
+      <div class="settings-group">
+        <div class="group-title">Import &amp; processing</div>
+        <div class="group-body">
+          <div class="section">
+            <p class="section-desc">These apply to <b>every import</b> — manual, watch-folder and background alike.</p>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Auto-file 100%-confidence documents</div>
                 <div class="threshold-sub">Skip Review for documents read with full confidence — file them automatically after processing</div>
               </div>
-              <label class="toggle">
-                <input type="checkbox" id="auto-file-toggle">
-                <span class="toggle-slider"></span>
-              </label>
+              <label class="toggle"><input type="checkbox" id="auto-file-toggle"><span class="toggle-slider"></span></label>
             </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Read values that wrap onto the next line</div>
                 <div class="threshold-sub">When a field is taught to wrap (e.g. an address whose first line ends “-”), read the line below and join them. Single-line values are unaffected.</div>
               </div>
-              <label class="toggle">
-                <input type="checkbox" id="multiline-toggle">
-                <span class="toggle-slider"></span>
-              </label>
+              <label class="toggle"><input type="checkbox" id="multiline-toggle"><span class="toggle-slider"></span></label>
             </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Auto-rotate sideways or upside-down scans</div>
                 <div class="threshold-sub">Detects a page scanned in the wrong orientation and turns it upright — both for reading and in the filed PDF. Only acts on a confident result; pages it isn't sure about are left as-is.</div>
               </div>
-              <label class="toggle">
-                <input type="checkbox" id="auto-rotate-toggle">
-                <span class="toggle-slider"></span>
-              </label>
+              <label class="toggle"><input type="checkbox" id="auto-rotate-toggle"><span class="toggle-slider"></span></label>
             </div>
           </div>
         </div>

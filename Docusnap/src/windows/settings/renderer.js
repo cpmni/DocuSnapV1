@@ -292,20 +292,26 @@ document.getElementById('auto-rotate-toggle').addEventListener('change', async (
 // ── Home dashboard cards (show/hide) ───────────────────────────────────────────
 // A toggle per Home card. Checked = shown, unchecked = hidden. Stored as a JSON list of HIDDEN
 // card ids in `dashboard_hidden_cards`; the main window applies it live (dashboard-cards-changed).
-const DASH_CARDS = [
-  ['dash-quickfind', 'Quick find'],
-  ['dash-attention', 'Needs your attention'],
-  ['dash-pulse',     'Documents filed'],
-  ['dash-autofile',  'Filed automatically'],
-  ['dash-learning',  'Getting smarter'],
-  ['dash-tips',      'Did you know'],
-  ['dash-watch',     'Auto-import'],
-  ['dash-import',    'Import documents'],
-  ['dash-output',    'Where your files go'],
-  ['dash-storage',   'Storage'],
-  ['dash-backup',    'Backup'],
-  ['dash-clients',   'Search clients'],
-  ['dash-recent',    'Recent activity'],
+// Grouped to mirror the Home screen's two tiers, so the toggles read in the same order/sections
+// as the dashboard itself.
+const DASH_CARD_SECTIONS = [
+  ['Top', [
+    ['dash-quickfind', 'Quick find'],
+    ['dash-attention', 'Needs your attention'],
+    ['dash-pulse',     'Documents filed'],
+    ['dash-autofile',  'Filed automatically'],
+    ['dash-learning',  'Getting smarter'],
+    ['dash-tips',      'Did you know'],
+    ['dash-recent',    'Recent activity'],
+  ]],
+  ['Files & folders', [
+    ['dash-watch',   'Auto-import'],
+    ['dash-import',  'Import documents'],
+    ['dash-output',  'Where your files go'],
+    ['dash-storage', 'Storage'],
+    ['dash-backup',  'Backup'],
+    ['dash-clients', 'Search clients'],
+  ]],
 ];
 async function _readHiddenCards() {
   try { const raw = await api.getSetting('dashboard_hidden_cards'); const a = raw ? JSON.parse(raw) : []; return Array.isArray(a) ? a : []; }
@@ -316,11 +322,15 @@ async function _readHiddenCards() {
   if (!wrap) return;
   const hidden = await _readHiddenCards();
   wrap.innerHTML = '';
-  for (const [id, label] of DASH_CARDS) {
-    const row = document.createElement('div'); row.className = 'threshold-row';
-    row.innerHTML = `<div><div class="threshold-label">${label}</div></div>
-      <label class="toggle"><input type="checkbox" data-card="${id}"${hidden.includes(id) ? '' : ' checked'}><span class="toggle-slider"></span></label>`;
-    wrap.appendChild(row);
+  for (const [section, cards] of DASH_CARD_SECTIONS) {
+    const head = document.createElement('div'); head.className = 'dash-cards-subhead'; head.textContent = section;
+    wrap.appendChild(head);
+    for (const [id, label] of cards) {
+      const row = document.createElement('div'); row.className = 'threshold-row';
+      row.innerHTML = `<div><div class="threshold-label">${label}</div></div>
+        <label class="toggle"><input type="checkbox" data-card="${id}"${hidden.includes(id) ? '' : ' checked'}><span class="toggle-slider"></span></label>`;
+      wrap.appendChild(row);
+    }
   }
   wrap.addEventListener('change', async (e) => {
     const cb = e.target.closest('input[data-card]');
