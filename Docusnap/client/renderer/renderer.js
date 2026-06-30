@@ -513,23 +513,56 @@ function reviewRow(d) {
   return el;
 }
 
-// Lazy page-1 thumbnails for the review list (load only as rows scroll into view, so a
-// 99+ queue doesn't fetch every image up front). One shared observer + a small cache.
-const _rvThumbCache = new Map();
+// Prioritised, lazy page-1 thumbnails for the review list. The observer only tracks
+// which rows are in/near view; a small scheduler then loads with bounded concurrency,
+// ALWAYS picking the row closest to the viewport first. So jumping to the bottom of a
+// 500-row queue immediately switches loading to the rows now in view instead of
+// finishing the top — rows that scroll away are dropped from the queue (re-added if you
+// return). Bounded concurrency also shields the host, and loading is paused while a
+// preview opens so a click is never stuck behind background thumbnails. Cache persists
+// for the session, so a revisited (or re-rendered) row shows instantly.
+const _rvThumbCache = new Map();   // id -> dataURL
+const _rvThumbWant  = new Map();   // id -> box (rows that want a thumb right now)
+const _rvThumbBusy  = new Set();   // ids being fetched
+let   _rvThumbPaused = false;      // true while a preview is loading
+const _RV_THUMB_MAX = 3;           // in-flight cap (priority + host protection)
+
+function _rvThumbShow(box, src) {
+  if (src && box && box.isConnected && !box.firstChild) { const im = document.createElement('img'); im.src = src; box.appendChild(im); }
+}
+function _rvThumbPump() {
+  if (_rvThumbPaused) return;
+  while (_rvThumbBusy.size < _RV_THUMB_MAX && _rvThumbWant.size) {
+    let pickId = null, pickBox = null, best = Infinity;
+    for (const [id, box] of _rvThumbWant) {                 // closest-to-viewport wins → in-view first
+      if (!box.isConnected) { _rvThumbWant.delete(id); continue; }
+      const d = Math.abs(box.getBoundingClientRect().top);
+      if (d < best) { best = d; pickId = id; pickBox = box; }
+    }
+    if (pickId == null) break;
+    _rvThumbWant.delete(pickId);
+    if (_rvThumbCache.has(pickId)) { _rvThumbShow(pickBox, _rvThumbCache.get(pickId)); continue; }
+    _rvThumbBusy.add(pickId);
+    api.getThumbnail(pickId).then((r) => {
+      const src = r && r.json && r.json.thumbnail;
+      if (src) { _rvThumbCache.set(pickId, src); _rvThumbShow(pickBox, src); }
+    }).catch(() => {}).finally(() => { _rvThumbBusy.delete(pickId); _rvThumbPump(); });
+  }
+}
 const _rvThumbObserver = (typeof IntersectionObserver !== 'undefined') ? new IntersectionObserver((entries) => {
   for (const en of entries) {
-    if (!en.isIntersecting) continue;
-    const box = en.target;
-    _rvThumbObserver.unobserve(box);
-    const id = box.dataset.thumbId;
-    const put = (src) => { if (src && box.isConnected && !box.firstChild) { const im = document.createElement('img'); im.src = src; box.appendChild(im); } };
-    if (_rvThumbCache.has(id)) { put(_rvThumbCache.get(id)); continue; }
-    api.getThumbnail(id).then((r) => {
-      const src = r && r.json && r.json.thumbnail;
-      if (src) { _rvThumbCache.set(id, src); put(src); }
-    }).catch(() => {});
+    const box = en.target, id = box.dataset.thumbId;
+    if (en.isIntersecting) {
+      if (_rvThumbCache.has(id)) { _rvThumbShow(box, _rvThumbCache.get(id)); _rvThumbObserver.unobserve(box); }
+      else if (!box.firstChild) _rvThumbWant.set(id, box);
+    } else {
+      _rvThumbWant.delete(id);   // scrolled away before loading → drop from the queue
+    }
   }
-}, { rootMargin: '300px' }) : null;
+  _rvThumbPump();
+}, { rootMargin: '250px' }) : null;
+// Pause/resume background thumbnails so an opened preview gets the host's full attention.
+function rvThumbsPause(p) { _rvThumbPaused = p; if (!p) _rvThumbPump(); }
 
 async function openReviewDoc(id) {
   rvLeave();
@@ -580,8 +613,11 @@ async function openReviewDoc(id) {
   rvViewingBeat(id);
   rvHeartbeat = setInterval(() => rvViewingBeat(id), 25000);
 
-  // ── Middle column: the document pages ──
-  const pg = await api.getPages(id);
+  // ── Middle column: the document pages ── (pause background thumbnails so the click
+  // isn't stuck behind them; pages are cached host-side, so a revisit is instant).
+  rvThumbsPause(true);
+  let pg;
+  try { pg = await api.getPages(id); } finally { rvThumbsPause(false); }
   if (rvCurrentId !== id) return;
   const imgs = (pg.json && pg.json.pages) || [];
   if (!imgs.length) { prev.innerHTML = `<div class="empty">No preview available.</div>`; return; }
