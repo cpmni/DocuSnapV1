@@ -520,9 +520,16 @@ async function startProcessing() {
 // 100%-confidence auto-filing now runs in the BACKEND (processing/handler _maybeAutoFile) so it
 // covers the WATCH folder and background runs too, not just a manual batch with the window open.
 // The main window just REFLECTS it: the backend emits 'doc-auto-filed' per filed doc; we tally
-// per run and show the results-list banner. Reset on a new manual run (the 'start' case).
+// the current BURST and show the results-list banner. Reset on a new manual run (the 'start'
+// case) AND when a burst begins — the first auto-file after a quiet gap — so a long watch
+// session doesn't grow the count unbounded (manual import + watch handled uniformly here).
 let _autoFiledThisRun = 0;
+let _lastAutoFiledAt  = 0;
+const _AUTOFILE_BURST_GAP_MS = 60000;
 window.docusnap.onDocAutoFiled?.((info) => {
+  const now = Date.now();
+  if (now - _lastAutoFiledAt > _AUTOFILE_BURST_GAP_MS) _autoFiledThisRun = 0;   // new burst after a quiet gap
+  _lastAutoFiledAt = now;
   _autoFiledThisRun += 1;
   showAutoFiledBanner(_autoFiledThisRun);
   if (info && info.docId != null) markRowFiled(info.docId);   // flip its results row to "Filed"
