@@ -423,6 +423,26 @@ $('nav-settings').addEventListener('click', () => setView('settings'));
 $('nav-recycle').addEventListener('click', () => setView('recycle'));
 $('rb-refresh').addEventListener('click', () => loadRecycleBin());
 $('theme-select')?.addEventListener('change', (e) => applyTheme(e.target.value));
+
+// ── Change password (Settings → Your account) ──────────────────────────────────
+$('cp-btn')?.addEventListener('click', async () => {
+  const cur = $('cp-current').value, nw = $('cp-new').value, cf = $('cp-confirm').value;
+  const msg = $('cp-msg'); msg.textContent = ''; msg.style.color = '';
+  if (!cur)            { msg.textContent = 'Enter your current password.'; return; }
+  if (nw.length < 8)   { msg.textContent = 'New password must be at least 8 characters.'; return; }
+  if (nw !== cf)       { msg.textContent = 'New passwords do not match.'; return; }
+  if (nw === cur)      { msg.textContent = 'New password must be different from your current one.'; return; }
+  const btn = $('cp-btn'), orig = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = ico('refresh', 'ic spin') + '<span>Changing…</span>';
+  let r; try { r = await api.changePassword(cur, nw); } catch { r = { ok: false, error: 'Could not reach the server.' }; }
+  btn.disabled = false; btn.innerHTML = orig;
+  if (r && r.ok) {
+    msg.style.color = 'var(--ok)'; msg.textContent = 'Password changed.';
+    $('cp-current').value = ''; $('cp-new').value = ''; $('cp-confirm').value = '';
+  } else {
+    msg.textContent = (r && r.error) || 'Could not change your password.';
+  }
+});
 $('side-dark-toggle')?.addEventListener('change', toggleDarkMode);
 
 // ── Home dashboard ───────────────────────────────────────────────────────────────

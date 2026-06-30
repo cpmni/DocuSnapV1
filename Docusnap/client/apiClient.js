@@ -130,6 +130,13 @@ function createClient(opts = {}) {
     };
   }
 
+  async function changePassword(currentPassword, newPassword) {
+    const r = await request('POST', '/v1/auth/change-password',
+                            { body: { currentPassword, newPassword }, withAuth: true });
+    if (r.status === 200 && r.json && r.json.ok) return { ok: true };
+    return { ok: false, error: (r.json && r.json.error) || 'Could not change your password.' };
+  }
+
   async function logout() {
     if (token) { try { await request('POST', '/v1/auth/logout', { withAuth: true }); } catch { /* best effort */ } }
     token = null;
@@ -207,7 +214,7 @@ function createClient(opts = {}) {
   const binPurgeAll= () => request('POST',  '/v1/documents/purge-all',      { withAuth: true });
 
   return {
-    connect, login, logout, entitlement, search, getDocument, getPages, ping, fetchCa, enroll,
+    connect, login, logout, changePassword, entitlement, search, getDocument, getPages, ping, fetchCa, enroll,
     workflow: { list: wfList, recipients, assign, claim, resolve, recall, stamped: wfStamped },
     recycle: { list: binList, delete: binDelete, restore: binRestore, purge: binPurge, purgeAll: binPurgeAll },
     isAuthenticated: () => !!token,

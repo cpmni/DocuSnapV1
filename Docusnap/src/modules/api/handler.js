@@ -342,6 +342,31 @@ function createRequestListener(ctx) {
         return sendJson(res, 200, { ok: true });
       }
 
+      // ── Auth-required: self-service password change (so a client user who signed
+      //    in with an admin-issued TEMP password can set their own). Verifies the
+      //    current password; same 8–128 policy as the desktop self-service change. ──
+      if (req.method === 'POST' && pathname === `${API_PREFIX}/auth/change-password`) {
+        const session = requireSession(req, res); if (!session) return;
+        let body; try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+        const pwMod = require('../auth/password');
+        const user  = dbAuth.getUserById(getDb(), session.userId);
+        if (!user) return sendJson(res, 401, { error: 'Account no longer exists.' });
+        const cur = String((body && body.currentPassword) || '');
+        const nw  = String((body && body.newPassword) || '');
+        const ok  = await pwMod.verifyPassword(user.password_hash, cur);
+        if (!ok) {
+          audit({ user_id: user.id, action: 'password_change', action_category: 'auth', outcome: 'failure',
+                  actor_username: user.username, details: 'client_bad_current' });
+          return sendJson(res, 400, { error: 'Current password is incorrect.' });
+        }
+        if (nw.length < 8 || nw.length > 128) return sendJson(res, 400, { error: 'New password must be 8–128 characters.' });
+        if (nw === cur) return sendJson(res, 400, { error: 'New password must be different from your current password.' });
+        dbAuth.setUserPassword(getDb(), user.id, await pwMod.hashPassword(nw), false);
+        audit({ user_id: user.id, action: 'password_change', action_category: 'auth', outcome: 'success',
+                actor_username: user.username, details: 'self_service_client' });
+        return sendJson(res, 200, { ok: true });
+      }
+
       // ── Auth-required: TOTP enrolment (setup → returns secret; confirm → enables) ─
       if (req.method === 'POST' && pathname === `${API_PREFIX}/auth/totp/setup`) {
         const session = requireSession(req, res); if (!session) return;

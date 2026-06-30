@@ -217,6 +217,10 @@ ipcMain.handle('client-login',        async (_e, { username, password, totp }) =
   return r;
 });
 ipcMain.handle('client-logout',       () => { stopHeartbeat(); pageCache.clear(); return client ? client.logout() : { ok: true }; });
+ipcMain.handle('client-change-password', async (_e, { currentPassword, newPassword } = {}) => {
+  if (!client) return { ok: false, error: 'Not connected to a server.' };
+  return client.changePassword(currentPassword, newPassword);
+});
 ipcMain.handle('client-entitlement',  () => client ? client.entitlement() : { status: 0, json: null });
 ipcMain.handle('client-search',       guarded((_e, params) => client.search(params)));
 ipcMain.handle('client-get-document', guarded((_e, id) => client.getDocument(id)));

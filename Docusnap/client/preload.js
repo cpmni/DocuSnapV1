@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('scanfinder', {
   connect:         () => ipcRenderer.invoke('client-connect'),
   login:           (username, password, totp) => ipcRenderer.invoke('client-login', { username, password, totp }),
   logout:          () => ipcRenderer.invoke('client-logout'),
+  changePassword:  (currentPassword, newPassword) => ipcRenderer.invoke('client-change-password', { currentPassword, newPassword }),
   entitlement:     () => ipcRenderer.invoke('client-entitlement'),
   search:          (params) => ipcRenderer.invoke('client-search', params),
   getDocument:     (id) => ipcRenderer.invoke('client-get-document', id),
