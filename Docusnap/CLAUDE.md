@@ -143,7 +143,7 @@ docusnap2/
 │   ├── lib/license/{client.js,token.js,fingerprint.js}  # backend HTTP client · offline JWS verify · device fp_hash
 │   ├── services/{searchService,previewService,workflowService,reviewService,presenceService,entitlementService,certService,sessionService}.js  # transport-agnostic core (see Detached search client). presenceService = the "Currently being reviewed by <name>" signal: an in-memory Map<docId,Map<viewerKey,{username,displayName,lastSeen}>> SHARED SINGLETON (shared()) the desktop + /v1 API both publish to; TTL ~60s self-expires a crashed/disconnected viewer; ADVISORY ONLY (the atomic confirm is the authority, so stale presence can't cause a wrong outcome). heartbeat/release/releaseAll/viewers(excludeSelf). Guarded by src/services/test_presence.js. reviewService = createReviewService({deps}) → queue/deferred/counts/confirm/defer/restore, shared by the desktop IPC + (Phase 3) the /v1 client API; explicit actor {username,role} (auth+workflow-lock enforced at the edge). CONFIRM CLAIMS the doc atomically (documents.confirmIfReviewable) BEFORE filing so two confirms can't both file it (loser → ALREADY_FILED w/ the winner's name); re-file (already-confirmed) skips the claim; Electron-only steps (source-move, landmark capture, taught-confirm promote, count broadcast) are INJECTED hooks → desktop path byte-identical. Guarded by src/services/test_reviewservice.js + database/modules/test_documents_cas.js
 │   └── windows/
-│       ├── main/{index.html,renderer.js}      # DASHBOARD + NAV RAIL (2026-06-28 redesign, replaced the launchpad). LEFT RAIL = single nav: Home · Import · Review(badge) · Search · Teach · Settings + a rail CLOCK (time large/date small) + "Local only" + a Dark-mode quick toggle at the very foot. CONTENT = a view-router (showView 'home'|'import'); Review/Search/Teach/Settings still open as their own maximised child windows. HOME = attention-led dashboard in ONE auto-fit card grid (repeat(auto-fit,minmax(260px,1fr)) → no empty cells; full-width banners use .dash-span); content column centred + width-capped (clamp(1100px,92vw,1320px)). Cards: Needs-your-attention (review+deferred+stuck counts → Open Review, or "all caught up"); Documents-filed pulse (today/week/month from confirmed_at); Import quick-start; Auto-import (watch status + on/off switch + pick-folder, admin-only); Getting-smarter (suppliers+layouts learned); Where-your-files-go (output folder + Open folder via the open-folder IPC); trial banner (licenseGetDiagnostics, "N of 14 days", calm/warn/crit); first-run setup checklist (auto-hides); Recent activity (recent confirmed; refreshes live on confirm via refreshDashboardIfHome). updateAttention() is the CHEAP count-event repaint; refreshDashboard() (the searchDocuments query) runs on load / Home-open only. IMPORT VIEW = folder picker + Process/Stop + session stats + live results table (Company/Date/Reference/Status) + progress strip; "Filed"/"Needs review" rows open THAT doc via openReviewWindowAt(db_id). Processing text shows "Multi-page document (N pages)" via the file_pages event. Reprocess-All progress is a BANNER (review window).
+│       ├── main/{index.html,renderer.js}      # DASHBOARD + NAV RAIL (2026-06-28 redesign, replaced the launchpad). LEFT RAIL = single nav: Home · Import · Review(badge) · Search · Teach · Settings + a rail CLOCK (time large/date small) + "Local only" + a Dark-mode quick toggle at the very foot. CONTENT = a view-router (showView 'home'|'import'); Review/Search/Teach/Settings still open as their own maximised child windows. HOME = attention-led dashboard in ONE auto-fit card grid (repeat(auto-fit,minmax(260px,1fr)) → no empty cells; full-width banners use .dash-span); content column centred + width-capped (clamp(1100px,92vw,1320px)). Cards: Needs-your-attention (review+deferred+stuck counts → Open Review, or "all caught up"); Documents-filed pulse (today/week/month from confirmed_at); Import quick-start; Auto-import (watch status + on/off switch + pick-folder, admin-only); Getting-smarter (suppliers+layouts learned); Where-your-files-go (output folder + Open folder via the open-folder IPC); trial banner (licenseGetDiagnostics, "N of 14 days", calm/warn/crit); first-run setup checklist (auto-hides); Recent activity (recent confirmed; refreshes live on confirm via refreshDashboardIfHome). updateAttention() is the CHEAP count-event repaint; refreshDashboard() (the searchDocuments query) runs on load / Home-open only. IMPORT VIEW = folder picker + Process/Stop + session stats + live results table (Company/Date/Reference/Status) + progress strip; "Filed"/"Needs review" rows open THAT doc via openReviewWindowAt(db_id). Processing text shows "Multi-page document (N pages)" via the file_pages event. Reprocess-All progress is a BANNER (review window). CARD SET EXPANDED + CUSTOMISABLE (2026-06-30): two-tier grid — TOP (Quick find · Needs-attention · Documents-filed · Filed-automatically=auto-file % · Getting-smarter · Did-you-know tips · Recent-activity) + FILES & FOLDERS (Auto-import · Import · Where-your-files-go · Storage=free disk via fs.statfsSync · Backup=last-backup-at · Search-clients); the data cards are fed by the `get-dashboard-extra` IPC. Each card is individually toggleable in Settings → **Appearance → Home screen** (`dashboard_hidden_cards` JSON array of card ids → `applyDashboardCardPrefs` toggles `.card-hidden`; `dashboard-cards-changed` broadcast repaints live). The FIRST-RUN DEFAULT hides Quick find/Filed automatically/Storage/Backup/Search clients (seeded in `onboarding-complete`, unset-only — see First-run wizard).
 │       ├── splash/{index.html,splash.js}      # cosmetic startup splash — shown in whenReady, closed once login loads
 │       ├── review/{index.html,renderer.js}    # incl. zoom/pan preview + hidden admin Template Wizard (⚓): draw anchor/target → save via existing template-mapping IPC; "Show where it reads" overlays (amber) the RESOLVED anchor/target on the current page via test-template-mapping → template_mapper.resolve_geometry (so the operator sees the mapping TRACK a shifted scan, vs the static drawn boxes). FIXED-VALUE MODE is a segmented pill ("Read it from the document" / "Always use the same value"), wording mirrored in Settings → Template Manager. ⊕ teach shows a post-draw READOUT BAR (detected label + value + [← Left]/[↑ Above] direction toggle — see Stage 2 "⊕ AUTO-ANCHOR LABEL SEARCH"). THREE teaching surfaces framed by ROLE so they're legible to non-technical users: Fix a field (⊕) · Teach a document (teach wizard) · Fine-tune a layout (Template Wizard, advanced fallback) — see Help "Which should I use?" (help/templates.html #which-tool). "TEACH THIS DOCUMENT" CTA (2026-06-28, renderTeachCta, centred above the preview): shown ONLY for a genuinely-unseen doc — HIDDEN when a template matched (template_id), when the recheck finds a drifted template (`_templateRecheck.matched` — reprocess fixes it, no action), or when ANY field was read by a learned method (keyword/keyword_override/anchor/template_mapping); a recognised sender (logo/keyword) gets a one-time confirm. Launches the Teach wizard at the doc (skips doc-selection). A `doc-types-changed` broadcast (settings/handler on type create/add/presets) refreshes the Review type dropdown + Settings list + main results-table key map live (preload `onDocTypesChanged`).
 │       ├── teach/{index.html,renderer.js}      # guided "Teach a new document" wizard (non-technical) — see Teaching wizard
@@ -151,6 +151,7 @@ docusnap2/
 │       ├── search/{index.html,renderer.js,search-results.js,search-preview.js,search-actions.js}  # built search UI; entitlement-gated confidence/mailbox/workflow actions (see Detached search client)
 │       ├── dev-inspector/{index.html,renderer.js}  # hidden read-only processing inspector (Ctrl+Shift+D+M, pw SFDEV) — see Dev inspector
 │       ├── onboarding/{index.html,renderer.js} # first-run setup wizard — see First-run wizard
+│       ├── welcome/{index.html,renderer.js}    # first-run familiarisation TOUR (6-card concepts carousel; owned child of main, reopenable from user menu) — see First-run wizard
 │       ├── license/{index.html,renderer.js}   # activation/trial screen shown when the gate locks
 │       ├── help/                              # User Guide window (index + content pages, help.css, help-nav.js) — native frame, themed
 │       └── shared/{theme.css,theme.js,helpmode.js}  # centralised palette/components · theme toggle · data-help-key help-mode
@@ -1474,6 +1475,22 @@ is now font-src 'self'. Don't reintroduce a CDN <link>.
   `window-state.json`).
 - **Settings & Review use a left-sidebar shell**; buttons/inputs are the rounded
   client-style components from theme.css.
+- **Settings tab structure (11 tabs, 2026-06-30 reorg — the "General" junk-drawer is
+  GONE):** a `Setup` cluster — **Files & filing** (folders + output structure) ·
+  **Document Types** · **Processing** (mode/parallel/OCR/separation/name-checks + the
+  import toggles auto-file/multiline/auto-rotate + Review confidence threshold) ·
+  **Appearance** (theme + Home-screen cards + window behaviour) — then an
+  `Administration` cluster (side-head divider) — **Templates** (the `#tpl-dock` viewer
+  only) · **Learning** (Keyword Label Overrides at top + Learning Recovery + memory
+  inventory) · **Users** (accounts + recent activity) · **Audit** (the audit log) ·
+  **Licensing** (licence + activation + seats; `#wf-section` workflow stays HIDDEN) ·
+  **Search client** (the `#client-api-*` access card) · **Advanced** (Backup & Restore
+  + Diagnostic Logging + Re-run setup). The renderer (`settings/renderer.js`) tab-click
+  handler is generic on `data-tab`→`panel-<slug>`; only these slugs carry lazy-init —
+  `learning`→`loadMemoryInventory`, `audit`→`loadAudit`, `searchclient`→
+  `initClientApiSection`. Every control is wired by element ID, so a section moves
+  between tabs intact. (Done via two reviewed worktree passes; guarded by the
+  div-balance + tab↔panel pairing checks.)
 - **Help-mode** (`src/windows/shared/helpmode.js`): elements tagged `data-help-key`
   highlight and deep-link into the User Guide window (`src/windows/help/`).
 - **List thumbnails** (`src/windows/shared/thumbs.js`): page-1 PDF thumbnails in the
@@ -1764,8 +1781,22 @@ on any already-configured DB (has an `output_folder`) so existing users are neve
 re-onboarded — NEVER infer "clean install" from empty state.
 - **Gate/flow (main.js):** `enterMainApp()` → gate `allow` → `needsOnboarding()` →
   `showOnboarding()` (else `openMainShell()`). `onboarding-complete` sets the flag
-  + opens the shell. `open-onboarding` (admin) re-runs it from Settings → General
+  + opens the shell, then (FIRST RUN only) seeds the default `dashboard_hidden_cards`
+  (hides Quick find / Filed automatically / Storage / Backup / Search clients — only
+  when unset, never overwriting a user's choice) and shows the WELCOME TOUR (below).
+  `open-onboarding` (admin) re-runs the setup wizard from Settings → **Advanced**
   ("Re-run setup"). Reads fail-open — a read error never blocks app entry.
+- **Welcome/familiarisation TOUR** (`src/windows/welcome/{index.html,renderer.js}`):
+  a SEPARATE 6-card concepts carousel (1 what it's for · 2 how it works + offline/
+  private · 3 one document TYPE → many layouts · 4 teach by drawing a box around the
+  value · 5 Review→Confirm files+teaches, high-confidence auto-files · 6 You're ready
+  → "Go to Import"), shown ONCE after the setup wizard on first run, gated by its OWN
+  `welcome_seen` flag (separate from `first_run_completed`). An OWNED non-modal child
+  of the main window (in CHILD_WINDOWS + NON_MODAL_CHILD → stays above the core app,
+  focuses on first paint — a standalone window sank behind the shell). `welcome-done`
+  sets the flag (+ action `'import'` messages the Home shell `welcome-goto-import` →
+  `showView('import')`); reopenable any time via the user-menu "Show welcome tour"
+  (`open-welcome`). Read-only/teaching — writes no settings. Content per bob's outline.
 - **Steps (6):** welcome + offline/privacy note → **output folder** (the ONLY
   required step: pre-filled `Documents\Scan Finder` via `onboarding-suggested-folder`,
   write-validated by `onboarding-validate-folder` which mkdirs + probes; ALSO carries
@@ -1999,7 +2030,16 @@ Tesseract hardcoded to `C:\Program Files\Tesseract-OCR\tesseract.exe` in dev.
 **Build notes**: electron-builder is pinned **`^24.13.3`** (installed = 24.13.3 — an earlier note
 saying "v26" was inaccurate; verify with `require('electron-builder/package.json').version`). Avoid
 re-adding the legacy `win.sign` / `win.signingHashAlgorithms` keys. For a future MSIX/Store SKU see
-`MSIX_SETUP.md` (consider upgrading electron-builder for the `appx` target). `postinstall` runs
+`MSIX_SETUP.md` (consider upgrading electron-builder for the `appx` target). A TEST `.appx`
+builds via `electron-builder --win appx` (placeholder identity `SixMileSoftware.ScanFinder` /
+`CN=Six Mile Software`) — but it REQUIRES **Windows Developer Mode ON** (or an elevated shell):
+electron-builder extracts its bundled `winCodeSign` toolset using SYMLINKS, which Windows blocks
+without that privilege, so `makeappx.exe` never lands and the build dies `spawn UNKNOWN`/`ENOENT`.
+The resulting `.appx` is unsigned (Store signs on submission; for local sideload self-sign a cert
+whose subject == the appx Publisher, then `Add-AppxPackage`). An opt-in document-data-FREE
+diagnostics/error-reporting feature is DESIGNED but NOT built — see `DIAGNOSTICS_PLAN.md`
+(Phase 0 first; strict enumerated allowlist, no field values even masked, consent-gated).
+`postinstall` runs
 `install-app-deps`; native deps
 (`argon2`, `better-sqlite3`) are auto-rebuilt for the Electron ABI during build. Installer is
 **unsigned** → SmartScreen "More info → Run anyway" on the VM. Run gate tests with
