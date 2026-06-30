@@ -26,12 +26,13 @@ check('no licence -> workflow off too', checkClientEntitlement(db).workflow.enti
 set(SEARCH_SEATS_KEY, '2');
 const e2 = checkClientEntitlement(db);
 check('search 2 -> entitled; top-level seats mirror search', e2.entitled === true && e2.seats === 2 && e2.search.entitled === true && e2.search.seats === 2);
-// BUNDLED (for now): a client (search) licence ALSO grants workflow, seats default to the client seats.
-check('client licence bundles workflow (entitled, seats mirror client)',
-  e2.workflow.entitled === true && e2.workflow.seats === 2 && e2.workflow.bundled === true);
+// MASTER SWITCH OFF (pre-release): workflow is hidden everywhere regardless of seats — entitled
+// stays FALSE even with a client/workflow licence. The bundling logic is preserved behind the
+// WORKFLOW_FEATURE_ENABLED flag; re-enable the flag (and these asserts) when workflow ships.
+check('workflow master-disabled: a client licence does NOT grant workflow', e2.workflow.entitled === false && e2.workflow.disabled === true);
 set(WORKFLOW_SEATS_KEY, '1');
 const e3 = checkClientEntitlement(db);
-check('explicit workflow seats take precedence over the bundled default', e3.workflow.entitled === true && e3.workflow.seats === 1);
+check('workflow master-disabled: explicit workflow seats still do not grant it', e3.workflow.entitled === false);
 check('feature name surfaced', checkClientEntitlement(db).feature === 'detached_client');
 db.close();
 

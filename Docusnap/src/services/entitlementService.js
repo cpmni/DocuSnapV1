@@ -26,6 +26,15 @@ const SETTING_KEY = 'detached_client_licensed';
 // stay SEPARATE fields, so flipping this to false cleanly UNTIES them (workflow then needs
 // its own detached_workflow_seats again). This is the ONLY place the two are tied.
 const WORKFLOW_BUNDLED_WITH_CLIENT = true;
+// MASTER FEATURE SWITCH (pre-release, 2026-06): the mailbox / document-assignment / approval
+// WORKFLOW is HIDDEN for the initial release — it needs its own testing flow and may be licensed
+// separately later. While false, `workflow.entitled` is ALWAYS false regardless of seats, so every
+// surface that gates on it goes inert: the client's Mailbox nav, the core Search window's
+// `body.workflow-on` UI (mailbox tab + approval/assign actions), and the desktop/`/v1` workflow
+// endpoints (FEATURE_NOT_LICENSED). ALL the workflow CODE stays intact behind this one flag — flip
+// to true (or wire it to a real signed-token feature claim) to turn the whole feature back on with
+// no other change. Keep new workflow work modular behind this gate.
+const WORKFLOW_FEATURE_ENABLED = false;
 const SEATS_KEY = 'detached_client_seats';        // DEPRECATED local key — never read as entitlement (kept only for the migration test)
 const SEARCH_SEATS_KEY = 'detached_search_seats';   // backend-cached: concurrent search clients
 const WORKFLOW_SEATS_KEY = 'detached_workflow_seats'; // backend-cached: workflow add-on capacity
@@ -69,11 +78,13 @@ function checkClientEntitlement(db, deps = {}) {
   // Tied to the client licence for now (see WORKFLOW_BUNDLED_WITH_CLIENT): a client licence
   // grants workflow, and the workflow pool defaults to the client seats unless the backend
   // set its own workflow seats. Untie by flipping the constant — nothing else changes.
-  const workflow = WORKFLOW_BUNDLED_WITH_CLIENT
-    ? { entitled: search.entitled || ownWorkflow.entitled,
-        seats: ownWorkflow.seats > 0 ? ownWorkflow.seats : search.seats,
-        bundled: true }
-    : ownWorkflow;
+  const workflow = !WORKFLOW_FEATURE_ENABLED
+    ? { entitled: false, seats: 0, disabled: true }   // master switch off → hidden everywhere
+    : WORKFLOW_BUNDLED_WITH_CLIENT
+      ? { entitled: search.entitled || ownWorkflow.entitled,
+          seats: ownWorkflow.seats > 0 ? ownWorkflow.seats : search.seats,
+          bundled: true }
+      : ownWorkflow;
   // Phase 2: the counts above are written from the SIGNED token when one is cached
   // (handler._syncSignedFeatures overrides the unsigned JSON), so an unsigned/tampered
   // JSON response cannot raise the caps; `signed` reflects that source. Old tokens fall

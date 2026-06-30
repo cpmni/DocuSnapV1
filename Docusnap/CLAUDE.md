@@ -1368,6 +1368,15 @@ for now (licensing-driven wiring later). Exposed to the renderer via `get-entitl
 so a client licence enables the approval workflow for BOTH the core (its mailbox/assign UI)
 and the detached client. `search`/`workflow` stay SEPARATE result fields — flip the constant
 to `false` to UNTIE them (workflow then needs its own seats again). See [[client-seat-pricing]].
+**MASTER SWITCH — WORKFLOW HIDDEN PRE-RELEASE (2026-06):** `WORKFLOW_FEATURE_ENABLED = false` in
+entitlementService.js forces `workflow.entitled = false` (+ `workflow.disabled = true`) REGARDLESS
+of seats, so the mailbox / document-assignment / approval feature is HIDDEN everywhere it gates on
+that: the client's Mailbox nav (+ `setView` redirect), the core Search window's `body.workflow-on`
+UI (mailbox tab + assign/approve actions), the desktop/`/v1` workflow endpoints (FEATURE_NOT_LICENSED),
+and the Settings → "Workflow add-on" section (hidden on `workflow.disabled`). ALL the workflow CODE
+(workflowService, document_routes, the handlers, the `/v1` routes — still proven by test_v1_workflow
+which injects entitlement) stays intact behind this ONE flag — flip to `true` (or wire to a signed-
+token feature claim) to turn it all back on. Keep future workflow work modular behind this gate.
 
 **Mailbox / approval workflow** — `src/services/workflowService.js` +
 `database/modules/workflow.js`:

@@ -79,10 +79,17 @@ async function initClientApiSection() {
     wfTgl.disabled = true;
     try {
       const ent = await api.getEntitlement();
-      const on = !!(ent && ent.workflow && ent.workflow.entitled);
-      wfTgl.checked = on;
-      wfSub.textContent = on ? 'Licensed' : 'Not licensed';
-      setChip('wf-chip', on ? 'On' : 'Off', on ? 'ok' : '');
+      // Pre-release: the workflow feature is master-disabled (entitlement returns workflow.disabled).
+      // Hide the whole section so there's no mention of the unbuilt feature; un-hides automatically
+      // when the WORKFLOW_FEATURE_ENABLED flag is flipped back on.
+      if (ent && ent.workflow && ent.workflow.disabled) {
+        const sec = document.getElementById('wf-section'); if (sec) sec.style.display = 'none';
+      } else {
+        const on = !!(ent && ent.workflow && ent.workflow.entitled);
+        wfTgl.checked = on;
+        wfSub.textContent = on ? 'Licensed' : 'Not licensed';
+        setChip('wf-chip', on ? 'On' : 'Off', on ? 'ok' : '');
+      }
     } catch { wfSub.textContent = 'Unknown'; setChip('wf-chip', 'Unknown', ''); }
   }
 
