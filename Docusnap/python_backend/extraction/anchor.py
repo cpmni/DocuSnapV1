@@ -505,7 +505,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 if not q and not _digit_free_on_digit_field(gval, field_key, format_lookup) \
                         and not _partial_of_uniform_shape(gval, field_key, format_lookup):
                     q = gval
-                if q and _should_replace(value, q, val_type, validation_patterns):
+                if q and _should_replace(value, q, val_type, validation_patterns, inc_ocr_conf=ocr_conf):
                     value  = q
                     method = "anchor_registration"
                     ocr_conf, ocr_min = _mg.get('conf'), _mg.get('min_conf')
