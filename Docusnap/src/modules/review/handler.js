@@ -439,7 +439,12 @@ function register(ctx) {
     const filing  = require('../filing/handler');
     // The app-managed working copy is the stable source for filing (the user's
     // original source may be gone). Captured before filing; cleaned up after.
-    const workingPath = documents.getById(db, document_id)?.working_path || null;
+    const _docRow = documents.getById(db, document_id);
+    const workingPath = _docRow?.working_path || null;
+    // RE-FILE: if the doc is ALREADY filed (confirmed — e.g. re-surfaced auto-filed doc or an
+    // "Edit in Review" from Search), its current filed copy is both the SOURCE and the thing to
+    // replace. Pass it so commitDocument moves-not-duplicates; null for a first-time confirm.
+    const oldStoredPath = (_docRow && _docRow.status === 'confirmed' && _docRow.stored_path) ? _docRow.stored_path : null;
 
     // Get document type info for filing
     const dtInfo = document_type_slug
@@ -463,6 +468,7 @@ function register(ctx) {
       folderPath:        folder_path,
       originalFilename:  original_filename,
       workingPath,
+      existingFiledPath: oldStoredPath,
       allValues,
       documentType:      document_type || dtInfo?.name,
       dtInfo,
@@ -522,6 +528,22 @@ function register(ctx) {
     if (workingPath) {
       try { if (fs.existsSync(workingPath)) fs.unlinkSync(workingPath); } catch {}
       documents.update(db, document_id, { working_path: null });
+    }
+
+    // RE-FILE cleanup: the doc was already filed and has now moved to a NEW location (its
+    // name/folder changed because a field was edited). Remove the OLD filed copy + its
+    // metadata — only NOW, after the new copy is written AND documents.confirm recorded the
+    // new stored_path, so there's no data-loss window. A same-location re-file overwrote in
+    // place (oldStoredPath === filePath) → nothing to remove.
+    if (oldStoredPath && filingResult.filePath
+        && path.resolve(oldStoredPath) !== path.resolve(filingResult.filePath)) {
+      try { if (fs.existsSync(oldStoredPath)) fs.unlinkSync(oldStoredPath); } catch {}
+      try {
+        const oldExt = path.extname(oldStoredPath);
+        const oldXml = path.join(path.dirname(oldStoredPath), '.metadata',
+                                 path.basename(oldStoredPath, oldExt) + '.xml');
+        if (fs.existsSync(oldXml)) fs.unlinkSync(oldXml);
+      } catch {}
     }
 
     // Update supplier name, date, reference for search

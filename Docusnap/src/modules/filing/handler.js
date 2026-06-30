@@ -85,6 +85,7 @@ async function commitDocument({
   folderPath,
   originalFilename,
   workingPath,
+  existingFiledPath,   // RE-FILE of an already-filed doc: the doc's current stored_path (else null)
   allValues,
   documentType,
   dtInfo,
@@ -157,23 +158,36 @@ async function commitDocument({
   fs.mkdirSync(metaDir,   { recursive: true });
 
   // ── 4. Handle duplicates ─────────────────────────────────────────────────────
+  // A RE-FILE (existingFiledPath set) of THIS doc to the SAME name is an in-place
+  // update, not a collision — exclude the doc's own current copy so it isn't suffixed
+  // "-DUPLICATE". A genuine collision with a DIFFERENT doc's file still suffixes.
+  const efpResolved = existingFiledPath ? path.resolve(existingFiledPath) : null;
   const finalFilename = resolveDuplicateFilename(
-    baseFilename, ext, (name) => fs.existsSync(path.join(targetDir, name))
+    baseFilename, ext,
+    (name) => { const p = path.join(targetDir, name); return fs.existsSync(p) && path.resolve(p) !== efpResolved; }
   );
 
   const targetPath = path.join(targetDir, finalFilename);
   const srcPath    = path.join(folderPath, originalFilename);
   // Prefer the app-managed working copy as the stable source for filing, so
   // confirm succeeds even if the user's original source file has been removed.
-  // srcPath (the original) is still returned for the caller's deferred cleanup.
-  const copyFrom   = (workingPath && fs.existsSync(workingPath)) ? workingPath : srcPath;
+  // For a RE-FILE of a confirmed doc (working copy long gone), fall back to the
+  // doc's EXISTING filed copy. srcPath (the original) is still returned for cleanup.
+  const copyFrom   = (workingPath && fs.existsSync(workingPath)) ? workingPath
+                   : (existingFiledPath && fs.existsSync(existingFiledPath)) ? existingFiledPath
+                   : srcPath;
 
   // ── 5. Copy document, then delete original ───────────────────────────────────
   if (!fs.existsSync(copyFrom)) {
     return { success: false, error: `Source file not found: ${copyFrom}` };
   }
 
-  fs.copyFileSync(copyFrom, targetPath);
+  // Guard a same-path re-file: copying a file onto itself truncates it. When the
+  // existing filed copy IS the target (re-file in place, unchanged name), skip the
+  // copy — only the metadata XML below needs rewriting with the updated values.
+  if (path.resolve(copyFrom) !== path.resolve(targetPath)) {
+    fs.copyFileSync(copyFrom, targetPath);
+  }
 
   // Original removal is deferred by the caller (review/handler.js schedules
   // it via removeSourceFile() below) until the preview UI is done with the
