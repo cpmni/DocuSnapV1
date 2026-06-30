@@ -2645,9 +2645,36 @@ function highlightActiveField(key) {
   if (isLhOpen()) document.querySelector(`.field-row-label[data-key="${key}"]`)?.classList.add('lh-active-field');
 }
 
+// Make the (non-blocking) learning-history modal DRAGGABLE by its header, so it can be moved
+// off whatever field/preview the operator wants to see. Idempotent (wired once).
+function makeLhDraggable() {
+  const modal = document.querySelector('#lh-overlay .lh-modal');
+  const head  = document.querySelector('#lh-overlay .lh-head');
+  if (!modal || !head || head._lhDragWired) return;
+  head._lhDragWired = true;
+  head.style.cursor = 'move';
+  let dragging = false, sx = 0, sy = 0, startLeft = 0, startTop = 0;
+  head.addEventListener('mousedown', (e) => {
+    if (e.target.closest('button')) return;            // ignore the close (×) button
+    const r = modal.getBoundingClientRect();
+    modal.style.transform = 'none';                    // drop the CSS vertical-centring
+    modal.style.left = r.left + 'px'; modal.style.top = r.top + 'px';
+    startLeft = r.left; startTop = r.top; sx = e.clientX; sy = e.clientY; dragging = true;
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const nl = Math.max(0, Math.min(window.innerWidth  - 80, startLeft + (e.clientX - sx)));
+    const nt = Math.max(0, Math.min(window.innerHeight - 40, startTop  + (e.clientY - sy)));
+    modal.style.left = nl + 'px'; modal.style.top = nt + 'px';
+  });
+  window.addEventListener('mouseup', () => { dragging = false; });
+}
+
 document.getElementById('btn-view-learning').addEventListener('click', async () => {
   document.getElementById('advanced-bar').style.display = 'none';
   document.getElementById('lh-overlay').style.display = 'block';
+  makeLhDraggable();
   // Open regardless of focus. With a field already selected, load it; otherwise show an empty
   // prompt — the modal is non-blocking, so clicking a field then populates it live.
   if (lastFocusedFieldKey) await loadLearningHistoryFor(lastFocusedFieldKey);
