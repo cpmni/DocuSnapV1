@@ -354,6 +354,16 @@ function register(ctx) {
     });
     if (r.canceled || !r.filePaths[0]) return null;
     try {
+      // Sweep leftover staging folders from previous teaches first (teach-imports are
+      // sequential, so any prior sf-teach-* is finished) — bounds the temp clutter to ≤1.
+      try {
+        const tmpRoot = os.tmpdir();
+        for (const name of fs.readdirSync(tmpRoot)) {
+          if (name.startsWith('sf-teach-')) {
+            try { fs.rmSync(path.join(tmpRoot, name), { recursive: true, force: true }); } catch {}
+          }
+        }
+      } catch {}
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-teach-'));
       const base   = path.basename(r.filePaths[0]);
       fs.copyFileSync(r.filePaths[0], path.join(tmpDir, base));
