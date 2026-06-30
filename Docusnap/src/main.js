@@ -770,6 +770,10 @@ app.whenReady().then(() => {
     } catch {}
   };
   ipcMain.handle('dev-inspector-unlock', (_e, password) => {
+    // DEV-ONLY: the standalone main-window inspector is removed from packaged/customer builds
+    // (kept for `npm start` development). The in-REVIEW trace console below stays available in
+    // packaged builds for on-site diagnosis. Neither is documented in the help files.
+    if (app.isPackaged) return false;
     if (password !== 'SFDEV') return false;         // never log the password
     const win = createWindow('dev-inspector', {
       width: 960, height: 720, minWidth: 640, minHeight: 480,
