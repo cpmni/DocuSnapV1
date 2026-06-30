@@ -18,6 +18,10 @@ let currentBox = 'inbox';
 let recipientsCache = null;
 let myOpenRoutes = {}; // document_id -> open route addressed to me (recipient/claimant)
 let searchPrimed = false; // load the Search view's at-rest recent list once, lazily
+let reviewBox = 'queue';   // review sub-tab: 'queue' | 'deferred'
+let docTypesCache = null;  // [{slug,name,ref_field_key,date_field_key,fields:[...]}] for the type dropdown
+let rvCurrentId = null;    // doc open in the Review detail pane
+let rvHeartbeat = null;    // presence "I'm viewing this" timer
 
 // ── Theme (mirrors the main app's six named themes; persisted on this device) ──
 const THEMES = ['light', 'warm', 'slate', 'dark', 'midnight', 'graphite'];
@@ -281,6 +285,8 @@ $('login-btn').addEventListener('click', async () => {
   if (r.ok) {
     role = r.user.role;
     $('nav-recycle').style.display = canDecide() ? '' : 'none';   // delete/restore is Admin/Edit
+    $('nav-review').style.display  = canDecide() ? '' : 'none';   // review/file is Admin/Edit
+    if (canDecide()) refreshReviewCounts();                       // seed the Review nav badge
     const ent = await api.entitlement();
     if (!(ent.json && ent.json.entitled)) {
       $('login').classList.add('hidden');
@@ -317,6 +323,7 @@ for (const id of ['u', 'p', 'totp']) {
 }
 
 function doLogout() {
+  rvLeave();   // release any review presence before the session ends
   api.logout();
   role = null; recipientsCache = null;
   $('app').classList.add('hidden');
@@ -392,20 +399,25 @@ $('about-licenses').addEventListener('click', async () => {
 // ── View switching ─────────────────────────────────────────────────────────────
 function setView(view) {
   if (view === 'mailbox' && !workflowEntitled) view = 'search'; // workflow add-on not licensed
+  if (view === 'review' && !canDecide()) view = 'search';       // review is Admin/Edit only
+  if (view !== 'review') rvLeave();   // leaving Review releases presence on the open doc
   $('view-home').classList.toggle('hidden', view !== 'home');
   $('view-search').classList.toggle('hidden', view !== 'search');
   $('view-mailbox').classList.toggle('hidden', view !== 'mailbox');
+  $('view-review').classList.toggle('hidden', view !== 'review');
   $('view-settings').classList.toggle('hidden', view !== 'settings');
   $('view-recycle').classList.toggle('hidden', view !== 'recycle');
   navActive($('nav-home'), view === 'home');
   navActive($('nav-search'), view === 'search');
   navActive($('nav-mailbox'), view === 'mailbox');
+  navActive($('nav-review'), view === 'review');
   navActive($('nav-settings'), view === 'settings');
   navActive($('nav-recycle'), view === 'recycle');
   const meta = {
     home:     ['Home', 'Your dashboard'],
     search:   ['Search', 'Find and preview filed documents'],
     mailbox:  ['Mailbox', 'Approvals routed to and from you'],
+    review:   ['Review', 'Check and file documents waiting in the queue'],
     settings: ['Settings', 'Appearance and preferences'],
     recycle:  ['Recycle bin', 'Restore or permanently remove deleted documents'],
   }[view] || ['Search', ''];
@@ -414,15 +426,226 @@ function setView(view) {
   if (view === 'home') loadHome();
   if (view === 'search' && !searchPrimed) { searchPrimed = true; runSearch(); }   // prime once
   if (view === 'mailbox') loadMailbox();
+  if (view === 'review') loadReview();
   if (view === 'recycle') loadRecycleBin();
 }
 $('nav-home').addEventListener('click', () => setView('home'));
 $('nav-search').addEventListener('click', () => setView('search'));
 $('nav-mailbox').addEventListener('click', () => setView('mailbox'));
+$('nav-review').addEventListener('click', () => setView('review'));
 $('nav-settings').addEventListener('click', () => setView('settings'));
 $('nav-recycle').addEventListener('click', () => setView('recycle'));
+$('rv-refresh').addEventListener('click', () => loadReview());
+document.querySelectorAll('[data-rbox]').forEach((b) => b.addEventListener('click', () => {
+  reviewBox = b.dataset.rbox;
+  document.querySelectorAll('[data-rbox]').forEach((x) => x.classList.toggle('active', x === b));
+  loadReview();
+}));
 $('rb-refresh').addEventListener('click', () => loadRecycleBin());
 $('theme-select')?.addEventListener('change', (e) => applyTheme(e.target.value));
+
+// ── Review (clear the needs_review queue: edit fields, then file or defer) ──────
+function rvLeave() {
+  if (rvHeartbeat) { clearInterval(rvHeartbeat); rvHeartbeat = null; }
+  if (rvCurrentId != null) { try { api.review.release(rvCurrentId); } catch {} rvCurrentId = null; }
+}
+
+async function loadDocTypes() {
+  if (docTypesCache) return docTypesCache;
+  const r = await api.review.docTypes();
+  docTypesCache = (r && r.json && r.json.types) || [];
+  return docTypesCache;
+}
+
+function setRvCount(box, n) {
+  const b = document.querySelector(`[data-rcount="${box}"]`);
+  if (b) { b.textContent = n > 99 ? '99+' : String(n || 0); b.classList.toggle('hidden', !n); }
+}
+async function refreshReviewCounts() {
+  try {
+    const r = await api.review.counts();
+    const c = (r && r.json) || {};
+    const badge = $('review-badge');
+    if (badge) { const n = c.review || 0; badge.textContent = n > 99 ? '99+' : String(n); badge.classList.toggle('hidden', !n); }
+    setRvCount('queue', c.review); setRvCount('deferred', c.deferred);
+  } catch { /* best-effort */ }
+}
+
+async function loadReview() {
+  const list = $('review-list');
+  list.innerHTML = `<div class="empty">${ico('refresh', 'ic spin')}Loading…</div>`;
+  const r = reviewBox === 'deferred' ? await api.review.deferred() : await api.review.queue();
+  if (r.status === 401) { doLogout(); return; }
+  if (r.status === 403) { list.innerHTML = `<div class="empty">You don't have permission to review.</div>`; return; }
+  if (r.status === 402) { list.innerHTML = `<div class="empty">Not licensed.</div>`; return; }
+  const rows = (r.json && (r.json.queue || r.json.deferred)) || [];
+  refreshReviewCounts();
+  if (!rows.length) {
+    list.innerHTML = `<div class="empty">${reviewBox === 'deferred' ? 'No deferred documents.' : 'Nothing to review — all caught up. 🎉'}</div>`;
+    return;
+  }
+  list.innerHTML = '';
+  for (const d of rows) list.appendChild(reviewRow(d));
+}
+
+function reviewRow(d) {
+  const el = document.createElement('button');
+  el.className = 'rv-row';
+  el.dataset.id = d.id;
+  const title = d.supplier_name || d.original_filename || `Document #${d.id}`;
+  const sub = [d.type_name || d.type_slug, d.reference_number, d.doc_date].filter(Boolean).map(esc).join(' · ');
+  const viewers = (d.viewers || []).map((v) => v.displayName || v.username).filter(Boolean);
+  const lvl = confLevel(d.overall_confidence);
+  el.innerHTML = `
+    <div class="rr-main">
+      <div class="rr-title">${esc(title)}</div>
+      <div class="rr-sub">${sub}</div>
+      ${viewers.length ? `<div class="rr-viewing">${ico('claim')}${esc(viewers.join(', '))} reviewing</div>` : ''}
+    </div>
+    ${d.overall_confidence != null ? `<span class="meter ${lvl}" title="${d.overall_confidence}%"><i style="width:${Math.max(4, Math.min(100, d.overall_confidence))}%"></i></span>` : ''}`;
+  el.addEventListener('click', () => {
+    document.querySelectorAll('.rv-row').forEach((x) => x.classList.toggle('active', x === el));
+    openReviewDoc(d.id);
+  });
+  return el;
+}
+
+async function openReviewDoc(id) {
+  rvLeave();
+  rvCurrentId = id;
+  const prev = $('review-preview');
+  prev.innerHTML = `<div class="empty">${ico('refresh', 'ic spin')}Loading…</div>`;
+  const [docR, types] = await Promise.all([api.getDocument(id), loadDocTypes()]);
+  if (rvCurrentId !== id) return;                 // navigated away while loading
+  if (docR.status === 401) { doLogout(); return; }
+  if (docR.status !== 200 || !docR.json) { prev.innerHTML = `<div class="empty">Could not load document.</div>`; return; }
+  const doc = docR.json;
+
+  const wrap = document.createElement('div'); wrap.className = 'fade';
+  const title = doc.supplier_name || doc.original_filename || `Document #${doc.id}`;
+  let html = `<div class="pv-head">${ico('doc')}<h2>${esc(title)}</h2><span class="chip ${esc(doc.status)}">${esc(doc.status)}</span></div>`;
+  html += `<div class="rv-banner hidden" id="rv-banner"></div>`;
+  if (doc.overall_confidence != null) {
+    const lvl = confLevel(doc.overall_confidence);
+    html += `<div class="pv-conf"><span>Extraction confidence</span><span class="meter ${lvl}"><i style="width:${Math.max(4, Math.min(100, doc.overall_confidence))}%"></i></span><span class="cval mono">${doc.overall_confidence}%</span></div>`;
+  }
+  html += `<div class="rv-typebar"><label for="rv-type">Document type</label><select id="rv-type"></select></div>`;
+  html += `<div class="rv-fields" id="rv-fields"></div>`;
+  html += `<div class="rv-actions" id="rv-actions"></div>`;
+  html += `<div class="pages"><div class="empty">${ico('refresh', 'ic spin')}Loading preview…</div></div>`;
+  wrap.innerHTML = html;
+  prev.innerHTML = ''; prev.appendChild(wrap);
+
+  const vals = {};
+  for (const e of (doc.extractions || [])) vals[e.field_key] = e.display_value || '';
+  if (!vals.supplier_name && doc.supplier_name) vals.supplier_name = doc.supplier_name;
+
+  const sel = wrap.querySelector('#rv-type');
+  for (const t of types) {
+    const o = document.createElement('option'); o.value = t.slug; o.textContent = t.name;
+    if (t.slug === doc.type_slug) o.selected = true; sel.appendChild(o);
+  }
+  const renderFor = (slug) => renderReviewFields(wrap, types.find((t) => t.slug === slug) || null, vals);
+  sel.addEventListener('change', () => renderFor(sel.value));
+  renderFor(sel.value || doc.type_slug);
+
+  const acts = wrap.querySelector('#rv-actions');
+  acts.appendChild(mkBtn({ label: 'Confirm & file', icon: 'check', variant: 'primary', onClick: () => rvConfirm(doc, sel) }));
+  if (reviewBox === 'deferred') acts.appendChild(mkBtn({ label: 'Back to queue', icon: 'refresh', onClick: () => rvAction('undefer', doc.id) }));
+  else acts.appendChild(mkBtn({ label: 'Defer', icon: 'claim', onClick: () => rvAction('defer', doc.id) }));
+
+  rvViewingBeat(id);
+  rvHeartbeat = setInterval(() => rvViewingBeat(id), 25000);
+
+  const pg = await api.getPages(id);
+  if (rvCurrentId !== id) return;
+  const pagesEl = wrap.querySelector('.pages');
+  const imgs = (pg.json && pg.json.pages) || [];
+  if (!imgs.length) { pagesEl.innerHTML = `<div class="empty">No preview available.</div>`; return; }
+  pagesEl.innerHTML = '';
+  for (const src of imgs) { const im = document.createElement('img'); im.src = src; pagesEl.appendChild(im); }
+}
+
+function renderReviewFields(wrap, type, vals) {
+  const c = wrap.querySelector('#rv-fields');
+  if (!c) return;
+  c.innerHTML = '';
+  const fields = (type && type.fields) || [];
+  if (!fields.length) { c.innerHTML = `<div class="empty" style="padding:12px">This type has no fields.</div>`; return; }
+  for (const f of fields) {
+    const div = document.createElement('div'); div.className = 'rv-fld';
+    const cur = vals[f.key] != null ? vals[f.key] : '';
+    div.innerHTML = `<label>${esc(f.label || f.key)}${f.required ? ' <span class="req">*</span>' : ''}</label>`;
+    const inp = document.createElement('input');
+    inp.type = 'text'; inp.value = cur; inp.dataset.key = f.key; inp.dataset.orig = cur;
+    if (f.required && !cur) div.classList.add('req-empty');
+    inp.addEventListener('input', () => div.classList.toggle('req-empty', !!f.required && !inp.value.trim()));
+    div.appendChild(inp);
+    c.appendChild(div);
+  }
+}
+
+async function rvConfirm(doc, sel) {
+  const wrap = $('review-preview');
+  const slug = sel.value;
+  const type = (docTypesCache || []).find((t) => t.slug === slug);
+  const inputs = [...wrap.querySelectorAll('#rv-fields input')];
+  const allValues = {}; const corrections = {};
+  for (const inp of inputs) {
+    const k = inp.dataset.key; const v = inp.value.trim();
+    allValues[k] = v;
+    if (v !== (inp.dataset.orig || '')) corrections[k] = { original_value: inp.dataset.orig || '', corrected_value: v };
+  }
+  const missing = inputs.filter((i) => i.closest('.rv-fld').querySelector('.req') && !i.value.trim());
+  if (missing.length) { toast('Please fill the required fields (marked *).', 'warn'); missing[0].focus(); return; }
+  const supplier = allValues.supplier_name || allValues.customer_name || doc.supplier_name || null;
+  const r = await api.review.confirm(doc.id, {
+    allValues, corrections, supplier_name: supplier,
+    document_type_slug: slug, document_type: type ? type.name : null,
+  });
+  if (r.status === 200 && r.json && r.json.success) {
+    toast(`Filed${r.json.filename ? ' as ' + r.json.filename : ''}.`, 'ok');
+    rvLeave();
+    $('review-preview').innerHTML = `<div class="empty">Filed. Select the next document on the left.</div>`;
+    loadReview();
+  } else if (r.status === 409) {
+    const who = (r.json && r.json.confirmedBy) || 'someone else';
+    toast((r.json && r.json.error) || `Already filed by ${who}.`, 'warn');
+    rvLeave();
+    $('review-preview').innerHTML = `<div class="empty">This document was already filed. Refreshing the list…</div>`;
+    loadReview();
+  } else {
+    toast((r.json && r.json.error) || 'Could not file the document.', 'err');
+  }
+}
+
+async function rvAction(action, id) {
+  const r = action === 'undefer' ? await api.review.undefer(id) : await api.review.defer(id);
+  if (r.status === 200 && r.json && r.json.ok) {
+    toast(action === 'undefer' ? 'Moved back to the review queue.' : 'Deferred.', 'ok');
+    rvLeave();
+    $('review-preview').innerHTML = `<div class="empty">Select a document on the left to review and file it.</div>`;
+    loadReview();
+  } else {
+    toast((r.json && r.json.error) || 'That document has already changed — refreshing.', 'warn');
+    loadReview();
+  }
+}
+
+async function rvViewingBeat(id) {
+  try {
+    const r = await api.review.viewing(id);
+    if (rvCurrentId !== id) return;
+    const banner = $('rv-banner'); if (!banner) return;
+    const viewers = ((r.json && r.json.viewers) || []).map((v) => v.displayName || v.username).filter(Boolean);
+    if (viewers.length) {
+      banner.innerHTML = `${ico('claim')}<span>Also being reviewed by <strong>${esc(viewers.join(', '))}</strong> — whoever files first wins.</span>`;
+      banner.classList.remove('hidden');
+    } else banner.classList.add('hidden');
+  } catch { /* advisory only */ }
+}
+
+window.addEventListener('beforeunload', () => { if (rvCurrentId != null) { try { api.review.release(rvCurrentId); } catch {} } });
 
 // ── Change password (Settings → Your account) ──────────────────────────────────
 $('cp-btn')?.addEventListener('click', async () => {

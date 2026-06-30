@@ -1391,7 +1391,7 @@ in-process desktop login never reads these; only the client API enforces MFA whe
 
 **Components**: `client/` (detached Electron app — `apiClient.js` pins the CA / supports
 import-profile + fetch-CA-with-fingerprint-confirm + enroll; connect screen; search +
-mailbox UI) · `cert-tool/` (standalone cert-generator GUI) ·
+mailbox UI + **REVIEW UI (Phase 5)**) · `cert-tool/` (standalone cert-generator GUI) ·
 `scripts/New-ScanFinderCustomerCert.ps1` (per-customer CLI cert; `MSYS_NO_PATHCONV=1`).
 **Client KEYBOARD-FOCUS FIX (2026-06-30) — applies to EVERY text field, current + future:**
 `client/main.js` createWindow gives the web page keyboard focus on `did-finish-load` AND on

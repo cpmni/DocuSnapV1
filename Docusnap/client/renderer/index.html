@@ -441,6 +441,32 @@
     .stamped-pages { overflow:auto; padding:var(--s4); display:flex; flex-direction:column; gap:var(--s3);
       align-items:center; background:var(--bg); }
     .stamped-pages img { max-width:100%; border:1px solid var(--border); border-radius:var(--r-sm); }
+    /* Review */
+    .rv-row { width:100%; text-align:left; padding:var(--s4); border:none; border-bottom:1px solid var(--border);
+      background:transparent; cursor:pointer; display:flex; align-items:center; gap:var(--s3); color:var(--text); }
+    .rv-row:hover { background:var(--surface2); }
+    .rv-row.active { background:var(--accent-bg); }
+    .rv-row .rr-main { flex:1; min-width:0; }
+    .rv-row .rr-title { font-weight:600; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .rv-row .rr-sub { font-size:12px; color:var(--muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .rv-row .rr-viewing { font-size:11px; color:var(--warn); margin-top:3px; display:flex; align-items:center; gap:4px; }
+    .rv-row .rr-viewing .ic { width:12px; height:12px; }
+    .rv-banner { background:var(--accent-bg); border:1px solid var(--border2); border-radius:var(--r-sm);
+      padding:8px 12px; margin-bottom:var(--s3); font-size:13px; color:var(--text); display:flex; align-items:center; gap:7px; }
+    .rv-banner .ic { width:15px; height:15px; color:var(--warn); }
+    .rv-typebar { display:flex; align-items:center; gap:var(--s2); margin:var(--s3) 0; }
+    .rv-typebar label { font-size:12px; color:var(--muted); font-weight:600; }
+    .rv-typebar select { flex:1; padding:8px 10px; border:1px solid var(--border2); border-radius:var(--r-sm);
+      background:var(--surface); color:var(--text); font-size:14px; }
+    .rv-fields { display:flex; flex-direction:column; gap:var(--s3); margin:var(--s3) 0; }
+    .rv-fld { display:flex; flex-direction:column; gap:4px; }
+    .rv-fld > label { font-size:12px; color:var(--muted); font-weight:600; }
+    .rv-fld > label .req { color:var(--err); }
+    .rv-fld input { padding:8px 10px; border:1px solid var(--border2); border-radius:var(--r-sm);
+      background:var(--surface); color:var(--text); font-size:14px; font-family:inherit; }
+    .rv-fld.req-empty input { border-color:var(--err); }
+    .rv-fld .fwarn { font-size:11px; color:var(--warn); }
+    .rv-actions { display:flex; gap:var(--s2); margin:var(--s4) 0; flex-wrap:wrap; }
   </style>
 </head>
 <body>
@@ -520,6 +546,7 @@
         <button id="nav-home" class="sidebtn active"><span data-ic="home"></span>Home</button>
         <button id="nav-search" class="sidebtn"><span data-ic="search"></span>Search</button>
         <button id="nav-mailbox" class="sidebtn"><span data-ic="inbox"></span>Mailbox<span id="inbox-badge" class="badge hidden" style="margin-left:auto">0</span></button>
+        <button id="nav-review" class="sidebtn" style="display:none"><span data-ic="check"></span>Review<span id="review-badge" class="badge hidden" style="margin-left:auto">0</span></button>
         <button id="nav-recycle" class="sidebtn" style="display:none"><span data-ic="trash"></span>Recycle bin</button>
         <button id="nav-settings" class="sidebtn"><span data-ic="settings"></span>Settings</button>
       </nav>
@@ -604,6 +631,22 @@
         <button id="mb-refresh" class="btn btn-secondary btn-sm"><span data-ic="refresh"></span>Refresh</button>
       </div>
       <div id="mb-list" class="mb-list"><div class="empty">Loading…</div></div>
+    </div>
+
+    <!-- Review -->
+    <div id="view-review" class="hidden">
+      <div class="toolbar" style="align-items:center">
+        <div class="segmented">
+          <button class="seg active" data-rbox="queue"><span data-ic="inbox"></span>To review<span class="seg-badge badge hidden" data-rcount="queue"></span></button>
+          <button class="seg" data-rbox="deferred"><span data-ic="claim"></span>Deferred<span class="seg-badge badge hidden" data-rcount="deferred"></span></button>
+        </div>
+        <span class="spacer"></span>
+        <button id="rv-refresh" class="btn btn-secondary btn-sm"><span data-ic="refresh"></span>Refresh</button>
+      </div>
+      <div class="main">
+        <div class="results"><div id="review-list"><div class="empty">Loading…</div></div></div>
+        <div id="review-preview" class="preview"><div class="empty">Select a document on the left to review and file it.</div></div>
+      </div>
     </div>
 
     <!-- Recycle bin -->

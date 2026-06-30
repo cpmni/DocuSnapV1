@@ -213,10 +213,23 @@ function createClient(opts = {}) {
   const binPurge   = (id) => request('POST', `/v1/documents/${id}/purge`,   { withAuth: true });
   const binPurgeAll= () => request('POST',  '/v1/documents/purge-all',      { withAuth: true });
 
+  // ── Review (queue + confirm/defer + presence) ─────────────────────────────────
+  const revQueue    = () => request('GET', '/v1/review/queue',    { withAuth: true });
+  const revDeferred = () => request('GET', '/v1/review/deferred', { withAuth: true });
+  const revCounts   = () => request('GET', '/v1/review/counts',   { withAuth: true });
+  const docTypes    = () => request('GET', '/v1/doc-types',       { withAuth: true });
+  const revConfirm  = (id, payload) => request('POST', `/v1/documents/${id}/confirm`, { withAuth: true, body: payload || {} });
+  const revDefer    = (id) => request('POST', `/v1/documents/${id}/defer`,   { withAuth: true });
+  const revUndefer  = (id) => request('POST', `/v1/documents/${id}/undefer`, { withAuth: true });
+  const revViewing  = (id) => request('POST', `/v1/review/${id}/viewing`,    { withAuth: true });
+  const revRelease  = (id) => request('POST', `/v1/review/${id}/release`,    { withAuth: true });
+
   return {
     connect, login, logout, changePassword, entitlement, search, getDocument, getPages, ping, fetchCa, enroll,
     workflow: { list: wfList, recipients, assign, claim, resolve, recall, stamped: wfStamped },
     recycle: { list: binList, delete: binDelete, restore: binRestore, purge: binPurge, purgeAll: binPurgeAll },
+    review: { queue: revQueue, deferred: revDeferred, counts: revCounts, docTypes,
+              confirm: revConfirm, defer: revDefer, undefer: revUndefer, viewing: revViewing, release: revRelease },
     isAuthenticated: () => !!token,
     _setToken: (t) => { token = t; }, // test/diagnostic aid only
   };

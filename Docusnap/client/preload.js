@@ -51,4 +51,15 @@ contextBridge.exposeInMainWorld('scanfinder', {
     recall:     (id, version) => ipcRenderer.invoke('client-wf-recall', { id, version }),
     stamped:    (id) => ipcRenderer.invoke('client-wf-stamped', id),
   },
+  review: {
+    queue:    () => ipcRenderer.invoke('client-review-queue'),
+    deferred: () => ipcRenderer.invoke('client-review-deferred'),
+    counts:   () => ipcRenderer.invoke('client-review-counts'),
+    docTypes: () => ipcRenderer.invoke('client-doc-types'),
+    confirm:  (id, payload) => ipcRenderer.invoke('client-review-confirm', id, payload),
+    defer:    (id) => ipcRenderer.invoke('client-review-defer', id),
+    undefer:  (id) => ipcRenderer.invoke('client-review-undefer', id),
+    viewing:  (id) => ipcRenderer.invoke('client-review-viewing', id),
+    release:  (id) => ipcRenderer.invoke('client-review-release', id),
+  },
 });

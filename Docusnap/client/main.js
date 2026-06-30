@@ -229,6 +229,15 @@ ipcMain.handle('client-recycle-delete',    guarded((_e, id) => client.recycle.de
 ipcMain.handle('client-recycle-restore',   guarded((_e, id) => client.recycle.restore(id)));
 ipcMain.handle('client-recycle-purge',     guarded((_e, id) => client.recycle.purge(id)));
 ipcMain.handle('client-recycle-purge-all', guarded(()       => client.recycle.purgeAll()));
+ipcMain.handle('client-review-queue',    guarded(()                => client.review.queue()));
+ipcMain.handle('client-review-deferred', guarded(()                => client.review.deferred()));
+ipcMain.handle('client-review-counts',   guarded(()                => client.review.counts()));
+ipcMain.handle('client-doc-types',       guarded(()                => client.review.docTypes()));
+ipcMain.handle('client-review-confirm',  guarded((_e, id, payload) => client.review.confirm(id, payload)));
+ipcMain.handle('client-review-defer',    guarded((_e, id)          => client.review.defer(id)));
+ipcMain.handle('client-review-undefer',  guarded((_e, id)          => client.review.undefer(id)));
+ipcMain.handle('client-review-viewing',  guarded((_e, id)          => client.review.viewing(id)));
+ipcMain.handle('client-review-release',  guarded((_e, id)          => client.review.release(id)));
 ipcMain.handle('client-get-pages',    async (_e, id) => {
   const hit = _pageCacheGet(id);
   if (hit !== undefined) return hit;                 // instant re-click (no network → don't touch conn state)
