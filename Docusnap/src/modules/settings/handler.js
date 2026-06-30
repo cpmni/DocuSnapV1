@@ -19,7 +19,7 @@ function register(ctx) {
     'diagnostic_logging', 'theme', 'first_run_completed', 'watch_folder_enabled',
     'confidence_threshold', 'license_enforcement_enabled', 'copy_after_processing_enabled',
     'name_wordness_flag', 'auto_separate_enabled', 'ocr_engine', 'multiline_enabled',
-    'auto_rotate_enabled',
+    'auto_rotate_enabled', 'dashboard_hidden_cards',
   ]);
 
   // ── Document types ──────────────────────────────────────────────────────────
@@ -258,6 +258,7 @@ function register(ctx) {
     const db = getDb();
     learning.setSetting(db, key, val);
     if (key === 'theme') notifyAllWindows('theme-changed', val);
+    if (key === 'dashboard_hidden_cards') notifyAllWindows('dashboard-cards-changed');
     logAudit(db, { action: 'setting_changed', action_category: 'settings', target_type: 'setting',
       target_id: key, outcome: 'success',
       metadata: { key, value: _SAFE_SETTING_VALUE.has(key) ? String(val).slice(0, 120) : '[set]' } });

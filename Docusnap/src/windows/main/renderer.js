@@ -118,6 +118,7 @@ async function refreshDashboard() {
   renderSetupChecklist(confirmed);
   refreshWatchCard();
   refreshTrialBanner();
+  applyDashboardCardPrefs();   // re-assert user hide/show after the cards re-render
 }
 
 let _lastConfirmed = [];   // cached so "Clear" can re-render without another query
@@ -301,6 +302,47 @@ async function refreshTrialBanner() {
 document.getElementById('dash-open-review')?.addEventListener('click', () => window.docusnap.openReviewWindow());
 document.getElementById('dash-go-import')?.addEventListener('click', () => showView('import'));
 document.getElementById('dash-open-search')?.addEventListener('click', () => window.docusnap.openSearchWindow());
+
+// ── Dashboard card customisation (Settings → Home dashboard) ───────────────────
+// A user-hidden card gets .card-hidden (display:none !important), which overrides each card's
+// OWN show/hide logic — so a hidden card stays hidden, and a card never user-hidden still follows
+// its own rules. The trial/setup banners are system-state and aren't user-toggleable.
+async function applyDashboardCardPrefs() {
+  let hidden = [];
+  try { const raw = await window.docusnap.getSetting('dashboard_hidden_cards'); if (raw) hidden = JSON.parse(raw); } catch {}
+  if (!Array.isArray(hidden)) hidden = [];
+  for (const card of document.querySelectorAll('#view-home .dash-card')) {
+    if (card.id) card.classList.toggle('card-hidden', hidden.includes(card.id));
+  }
+}
+window.docusnap.onDashboardCardsChanged?.(() => applyDashboardCardPrefs());
+
+// Quick find — jump to Search (carrying the typed text where supported).
+document.getElementById('dash-qf-form')?.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const q = (document.getElementById('dash-qf-input')?.value || '').trim();
+  window.docusnap.openSearchWindow(q);
+});
+
+// Did you know — rotating one-line tips.
+const DASH_TIPS = [
+  ['Teach a document', 'Open a tricky scan in Review and use “Teach this document” so Scan Finder files its layout automatically next time.'],
+  ['Auto-import', 'Point Scan Finder at a watched folder and new scans process the moment they land — no clicks needed.'],
+  ['100% files itself', 'A document read with full confidence is filed automatically — you only review the ones that need a second look.'],
+  ['Fast vs Smart', 'Switch processing mode in Settings — Fast is instant; Smart double-checks the key fields.'],
+  ['Output structure', 'In Settings → Output Structure you can change how files are named and foldered using simple building blocks.'],
+  ['It keeps learning', 'Every correction you confirm teaches Scan Finder — accuracy climbs the more you use it.'],
+];
+let _tipIdx = Math.floor(Math.random() * DASH_TIPS.length);
+function renderTip() {
+  const body = document.getElementById('dash-tips-body');
+  if (!body) return;
+  const [k, v] = DASH_TIPS[_tipIdx % DASH_TIPS.length];
+  body.innerHTML = `<span class="tip-k">${escHtml(k)}:</span> ${escHtml(v)}`;
+}
+document.getElementById('dash-tip-next')?.addEventListener('click', () => { _tipIdx = (_tipIdx + 1) % DASH_TIPS.length; renderTip(); });
+renderTip();
+applyDashboardCardPrefs();
 document.getElementById('dash-clear-recent')?.addEventListener('click', () => {
   localStorage.setItem('recentClearedAt', String(Date.now()));
   renderRecentActivity(_lastConfirmed);   // hide current entries; new ones reappear on refresh

@@ -83,7 +83,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   openSettingsWindowAtSection:  (section)    => ipcRenderer.send('open-settings-window-at-section', section),
   getSettingsSectionTarget:     ()           => ipcRenderer.invoke('get-settings-section-target'),
   onNavigateToSection:          (cb)         => ipcRenderer.on('navigate-to-section', (_e, s) => cb(s)),
-  openSearchWindow:    ()       => ipcRenderer.send('open-search-window'),
+  openSearchWindow:    (q)      => ipcRenderer.send('open-search-window', q),
   getReviewTarget:     ()       => ipcRenderer.invoke('get-review-target'),
   onNavigateToDoc:     (cb)     => ipcRenderer.on('navigate-to-doc', (_e, id) => cb(id)),
   // User-guide / help window (optional section to jump to, e.g. 'review')
@@ -277,6 +277,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   // ── Events from main → renderer ──────────────────────────────────────────────
   onThemeChanged:        (cb) => ipcRenderer.on('theme-changed',          (_e, t) => cb(t)),
   onDocTypesChanged:     (cb) => ipcRenderer.on('doc-types-changed',      ()      => cb()),
+  onDashboardCardsChanged: (cb) => ipcRenderer.on('dashboard-cards-changed', ()   => cb()),
   onReviewCountChanged:  (cb) => ipcRenderer.on('review-count-changed',  (_e, n) => cb(n)),
   onDeferredCountChanged:(cb) => ipcRenderer.on('deferred-count-changed', (_e, n) => cb(n)),
   onReprocessProgress:   (cb) => ipcRenderer.on('reprocess-progress',    (_e, m) => cb(m)),

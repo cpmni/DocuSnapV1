@@ -289,6 +289,45 @@ document.getElementById('auto-rotate-toggle').addEventListener('change', async (
   await api.setSetting('auto_rotate_enabled', e.target.checked ? 'true' : 'false');
 });
 
+// ── Home dashboard cards (show/hide) ───────────────────────────────────────────
+// A toggle per Home card. Checked = shown, unchecked = hidden. Stored as a JSON list of HIDDEN
+// card ids in `dashboard_hidden_cards`; the main window applies it live (dashboard-cards-changed).
+const DASH_CARDS = [
+  ['dash-quickfind', 'Quick find'],
+  ['dash-attention', 'Needs your attention'],
+  ['dash-pulse',     'Documents filed'],
+  ['dash-learning',  'Getting smarter'],
+  ['dash-tips',      'Did you know'],
+  ['dash-watch',     'Auto-import'],
+  ['dash-import',    'Import documents'],
+  ['dash-output',    'Where your files go'],
+  ['dash-recent',    'Recent activity'],
+];
+async function _readHiddenCards() {
+  try { const raw = await api.getSetting('dashboard_hidden_cards'); const a = raw ? JSON.parse(raw) : []; return Array.isArray(a) ? a : []; }
+  catch { return []; }
+}
+(async () => {
+  const wrap = document.getElementById('dash-cards-toggles');
+  if (!wrap) return;
+  const hidden = await _readHiddenCards();
+  wrap.innerHTML = '';
+  for (const [id, label] of DASH_CARDS) {
+    const row = document.createElement('div'); row.className = 'threshold-row';
+    row.innerHTML = `<div><div class="threshold-label">${label}</div></div>
+      <label class="toggle"><input type="checkbox" data-card="${id}"${hidden.includes(id) ? '' : ' checked'}><span class="toggle-slider"></span></label>`;
+    wrap.appendChild(row);
+  }
+  wrap.addEventListener('change', async (e) => {
+    const cb = e.target.closest('input[data-card]');
+    if (!cb) return;
+    let h = await _readHiddenCards();
+    h = h.filter((x) => x !== cb.dataset.card);
+    if (!cb.checked) h.push(cb.dataset.card);   // unchecked = hidden
+    await api.setSetting('dashboard_hidden_cards', JSON.stringify(h));
+  });
+})();
+
 // ── Processing mode ───────────────────────────────────────────────────────────
 async function loadProcessingMode() {
   const mode = await api.getProcessingMode();
