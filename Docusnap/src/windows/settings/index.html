@@ -158,8 +158,13 @@
     .settings-subgroup-divider b { color:var(--text); font-weight:600; }
     /* Section sub-heading inside the Home-dashboard card list (mirrors the dashboard tiers). */
     .dash-cards-subhead { font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
-      color:var(--accent2); margin:16px 0 4px; }
+      color:var(--accent2); margin:18px 0 8px; padding-bottom:6px; border-bottom:1px solid var(--border); }
     .dash-cards-subhead:first-child { margin-top:0; }
+    /* Multi-column toggle grid (reuses the .folders-group grid idea) so 13 switches read as a few
+       short columns, not one tall ledger. No per-row borders — they'd go ragged across columns. */
+    .dash-cards-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(250px, 1fr));
+      gap:0 32px; align-items:start; margin-bottom:6px; }
+    .dash-cards-grid .threshold-row { border-bottom:none; padding:8px 0; }
     .conf-row { display:flex; align-items:center; gap:8px; }
     .conf-slider { width:90px; accent-color:var(--accent); }
     .conf-val { font-family:var(--mono); font-size:11px; color:var(--accent2); min-width:32px; }
@@ -619,12 +624,6 @@
           </div>
 
           <div class="section">
-            <div class="section-title">Home dashboard</div>
-            <div class="threshold-sub" style="margin-bottom:10px">Choose which cards appear on the Home screen. Changes apply straight away.</div>
-            <div id="dash-cards-toggles"></div>
-          </div>
-
-          <div class="section">
             <div class="section-title">Review</div>
             <div class="threshold-row">
               <div>
@@ -636,6 +635,18 @@
                 <span class="conf-val" id="global-threshold-val">70%</span>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Home screen — its OWN full-width group (so Theme + Review pair as two tidy short columns
+           above, and the 13 card toggles span full width as a multi-column grid below). -->
+      <div class="settings-group">
+        <div class="group-title">Home screen</div>
+        <div class="group-body">
+          <div class="section">
+            <div class="threshold-sub" style="margin-bottom:6px">Choose which cards appear on the Home screen. Changes apply straight away.</div>
+            <div id="dash-cards-toggles"></div>
           </div>
         </div>
       </div>

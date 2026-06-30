@@ -325,12 +325,14 @@ async function _readHiddenCards() {
   for (const [section, cards] of DASH_CARD_SECTIONS) {
     const head = document.createElement('div'); head.className = 'dash-cards-subhead'; head.textContent = section;
     wrap.appendChild(head);
+    const grid = document.createElement('div'); grid.className = 'dash-cards-grid';   // multi-column
     for (const [id, label] of cards) {
       const row = document.createElement('div'); row.className = 'threshold-row';
       row.innerHTML = `<div><div class="threshold-label">${label}</div></div>
         <label class="toggle"><input type="checkbox" data-card="${id}"${hidden.includes(id) ? '' : ' checked'}><span class="toggle-slider"></span></label>`;
-      wrap.appendChild(row);
+      grid.appendChild(row);
     }
+    wrap.appendChild(grid);
   }
   wrap.addEventListener('change', async (e) => {
     const cb = e.target.closest('input[data-card]');
