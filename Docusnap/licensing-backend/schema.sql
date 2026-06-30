@@ -114,6 +114,23 @@ CREATE TABLE IF NOT EXISTS webhook_events (
   received_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Opt-in, DOCUMENT-DATA-FREE diagnostics ingest (POST /v1/diagnostics). Only
+-- enumerated event names + typed/enumerated props the client allowlisted ever land
+-- here. PRIVACY: NO IP/email/name/account is stored — client_ip in diagnostics.php
+-- is used only for rate-limiting, never written to a row. See DIAGNOSTICS_PLAN.md.
+CREATE TABLE IF NOT EXISTS telemetry_events (
+  id          BIGINT       AUTO_INCREMENT PRIMARY KEY,
+  fp_hash     CHAR(64)     NOT NULL,                 -- pseudonymous device id
+  ts          VARCHAR(40)  NULL,                     -- device-coarse (hourly) timestamp, as sent
+  name        VARCHAR(64)  NOT NULL,                 -- enumerated event name
+  props_json  JSON         NULL,                     -- enumerated/typed props ONLY
+  event_uid   CHAR(32)     NULL,                     -- client idempotency key
+  received_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_fp_uid (fp_hash, event_uid),       -- dedupe re-sent events
+  KEY idx_name (name),
+  KEY idx_received (received_at)
+);
+
 -- ── Idempotent migrations ────────────────────────────────────────────────────
 -- CREATE TABLE IF NOT EXISTS above only covers FRESH installs; an existing DB
 -- keeps its old column set. This block back-fills new columns on re-import
