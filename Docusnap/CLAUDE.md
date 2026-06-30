@@ -646,6 +646,19 @@ process_docs.py → ExtractionEngine.extract()
            real ref), alpha-only ref schemes, and thin/varied history are all untouched
            (byte-identical). The rungs also only attempt the replace when the candidate is
            truthy now (`if q and _should_replace`). Guarded by tests/test_ref_digit_guard.py.
+           SLIP-FIX (anchor._slipfix_to_shape, 2026-06, reggie-designed): a crop read that FAILS the
+           credibility gate but is EXACTLY ONE known OCR-confusion substitution from the field's
+           UNIFORM learned shape is RECOVERED instead of discarded — "$02"→"S02" when every confirmed
+           value is "@##" (the "$"→"S" misread the gate rejects because "$" isn't alnum, leaving the
+           field EMPTY; the Stage-2.5 ocr_corrector runs AFTER the gate + skips empties, so 6 commits
+           never helped). Fires ONLY when: structured field, single uniform learned shape, exactly one
+           position violates it, that char has a known-confusion replacement for the EXPECTED class
+           (ocr_corrector.SYMBOL_TO_UPPER {$→S,€→E,£→E} — twin of the renderer's _OCR_PAIRS — / DIGIT_TO_UPPER
+           / LETTER_TO_DIGIT), and the result matches BOTH the shape AND the regex. RECOVER-AND-FLAG:
+           method anchor_crop_slipfix, conf≤70, was_corrected+corrected_to(==value, shows the "✓ auto-
+           corrected" badge)+validation_note, review-forced. Wired at the rigid anchor_crop not_credible
+           reject; byte-identical on thin/varied/free-text history (no uniform shape) or >1 substitution.
+           Guarded by tests/test_slipfix_to_shape.py.
            STAGE 2 ANCHOR ARBITER — REORDER (2026-06, DONE; oscar+reggie+geometry-validated):
            the label-based DRIFT-RECOVERY / inline-harvest rung now runs BEFORE the GLOBAL
            REGISTRATION rung (registration moved to AFTER relocate, just before the text

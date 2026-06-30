@@ -66,6 +66,16 @@ DIGIT_TO_UPPER = {
     '7': 'T',
 }
 
+# When we EXPECT an uppercase letter but OCR produced a SYMBOL (e.g. a leading "S" on a code
+# read as "$"). Mirrors the symbol cases of the renderer's _OCR_PAIRS (review/renderer.js) —
+# keep the two in sync (they are twins, like text_normalise.py/.js). Used by the slip-fix that
+# recovers a gate-rejected read which is ONE known-confusion substitution from the learned shape.
+SYMBOL_TO_UPPER = {
+    '$': 'S',
+    '€': 'E',
+    '£': 'E',
+}
+
 # When we EXPECT a lowercase letter but OCR produced a digit
 DIGIT_TO_LOWER = {
     '0': 'o',

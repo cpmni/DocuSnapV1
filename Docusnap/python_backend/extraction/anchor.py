@@ -111,6 +111,68 @@ def _partial_of_uniform_shape(value, field_key, format_lookup) -> bool:
     return csig != full and csig in full     # strict contiguous sub-run of the uniform shape
 
 
+def _slipfix_to_shape(value, field_key, format_lookup, val_type, validation_patterns,
+                      label=None, text_field_keys=None):
+    """Recover a crop read that FAILED the credibility gate when it is exactly ONE known OCR-
+    confusion substitution away from the field's UNIFORM learned shape — e.g. "$02" -> "S02"
+    when every confirmed value is "@##" (the "$"→"S" misread). Returns the repaired value, or
+    None (leave it rejected). Precision-first: fires ONLY when the field is structured with a
+    single uniform learned shape, exactly ONE position violates that shape, the offending char
+    has a KNOWN-confusion replacement for the EXPECTED class, and the result then matches BOTH
+    the shape AND the field regex. Reusable across every code field; INERT on thin/varied/free-
+    text history. (reggie-designed. The confusion maps mirror review/renderer.js _OCR_PAIRS.)"""
+    if not value or format_lookup is None:
+        return None
+    if text_field_keys and field_key in text_field_keys:
+        return None
+    try:
+        entry = format_lookup(field_key)
+    except Exception:
+        return None
+    if not entry:
+        return None
+    from extraction.format_anomaly_checker import shape_signature, _shape_canonical
+    from extraction.ocr_corrector import SYMBOL_TO_UPPER, DIGIT_TO_UPPER, LETTER_TO_DIGIT
+    shapes = (entry or {}).get('shapes') or []
+    if not shapes or len({_shape_canonical(s) for s in shapes}) != 1:
+        return None
+    v = str(value)
+    for s in shapes:
+        if len(s) != len(v):
+            continue
+        bad = []
+        for i, (cv, cs) in enumerate(zip(v, s)):
+            if cs == '@':
+                if not cv.isalpha(): bad.append(i)
+            elif cs == '#':
+                if not cv.isdigit(): bad.append(i)
+            elif cv != cs:           # separator literal
+                bad.append(i)
+        if len(bad) != 1:
+            continue
+        i = bad[0]; cv = v[i]; cs = s[i]
+        repl = None
+        if cs == '@':                # expected a letter
+            if not cv.isalnum():     # a symbol where a letter belongs (the "$"→"S" class)
+                repl = SYMBOL_TO_UPPER.get(cv)
+            elif cv.isdigit():
+                repl = DIGIT_TO_UPPER.get(cv)
+            elif cv.islower():
+                repl = cv.upper()
+        elif cs == '#':              # expected a digit
+            if cv.isalpha():
+                repl = LETTER_TO_DIGIT.get(cv)
+        if not repl:
+            continue
+        candidate = v[:i] + repl + v[i + 1:]
+        if shape_signature(candidate) in shapes \
+                and _crop_is_credible(candidate, val_type, validation_patterns, label) \
+                and _qualify_against_format(candidate, field_key, format_lookup,
+                                            text_field_keys, val_type, validation_patterns):
+            return candidate
+    return None
+
+
 def extract_with_anchors(ocr_text: str, anchors: list[dict],
                          supplier_name: str | None,
                          document_type: str | None,
@@ -214,7 +276,16 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
             # this field; otherwise leave value=None so the anchor_label +
             # direction search below runs and gets a chance to relocate it.
             if crop_value and not _crop_is_credible(crop_value, val_type, validation_patterns, label):
-                if on_reject: on_reject(field_key, "anchor_crop", crop_value, "not_credible")
+                # SLIP-FIX: recover a read that's ONE known OCR-confusion substitution from the
+                # field's uniform learned shape ("$02"->"S02") instead of discarding it. Recover-
+                # and-flag — the result block caps conf <=70 + notes it for review.
+                _slip = _slipfix_to_shape(crop_value, field_key, format_lookup, val_type,
+                                          validation_patterns, label, text_field_keys)
+                if _slip:
+                    value, method = _slip, "anchor_crop_slipfix"
+                    ocr_conf, ocr_min = _m.get('conf'), _m.get('min_conf')
+                elif on_reject:
+                    on_reject(field_key, "anchor_crop", crop_value, "not_credible")
             elif crop_value:
                 # Also qualify against the learned format: a fixed crop that drifted
                 # onto the wrong row reads a NON-EMPTY, credible-looking but wrong
@@ -595,6 +666,8 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 # + residual), not usage_count. Ranks above single-label relocate
                 # (stronger geometry) and below a clean rigid crop.
                 conf = min(93, registration.registration_confidence(page_transform))
+            elif method == "anchor_crop_slipfix":
+                conf = min(70, conf)   # recover-and-flag: a gate-rejected read repaired to the learned shape
             # ── OCR-QUALITY CAP (FREE-TEXT ONLY): for a name/address field there is
             # no regex to validate the read, so the crop's mean OCR confidence is the
             # only quality signal — without this a garbled crop ("Aaiumant Care Homes
@@ -670,6 +743,14 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 # no min-conf signal (None → Tier-A unaffected).
                 "ocr_min_conf": ocr_min if _is_free_text else None,
             }
+            if method == "anchor_crop_slipfix":
+                # Recover-and-flag: surface as an auto-correction (value==corrected_to) routed to
+                # review, the same posture as a salvaged date / weak name-repair.
+                results[field_key].update({
+                    "was_corrected":   True,
+                    "corrected_to":    value.strip(),
+                    "validation_note": "Corrected a likely OCR misread to the learned format — please verify.",
+                })
 
     return results
 
