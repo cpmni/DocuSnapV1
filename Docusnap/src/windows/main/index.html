@@ -190,6 +190,9 @@
     /* Did you know (tips) */
     .tips-body { font-size: 13px; line-height: 1.55; color: var(--text); }
     .tips-body .tip-k { color: var(--accent2); font-weight: 700; }
+    /* Data cards (auto-file %, storage, clients) — a big headline number + a note. */
+    .big-num { font-size: 30px; font-weight: 700; color: var(--text); line-height: 1.1; }
+    .big-num .of { font-size: 16px; color: var(--muted); font-weight: 600; }
     /* Uniform info tiles: equal min-height + stretch so a row of small cards matches,
        with the action (button / note) pinned to the bottom. Banners (.dash-span) opt out. */
     .dash-grid > .dash-card:not(.dash-span) { min-height: 186px; }
@@ -783,6 +786,16 @@
               </div>
             </div>
 
+            <!-- Filed automatically (auto-file rate this week) -->
+            <div class="dash-card" id="dash-autofile" data-help-key="autofile">
+              <div class="dash-card-head">
+                <svg class="ico ico-sm" aria-hidden="true"><use href="#i-check"/></svg>
+                <span>Filed automatically</span>
+              </div>
+              <div class="autofile-body" id="dash-autofile-body">&hellip;</div>
+              <div class="dash-card-note">Documents read with full confidence file themselves.</div>
+            </div>
+
             <!-- Getting smarter (learning inventory) -->
             <div class="dash-card" id="dash-learning" data-help-key="learning">
               <div class="dash-card-head">
@@ -846,6 +859,36 @@
               <button class="dash-btn" id="dash-open-output">
                 Open folder <svg class="ico ico-sm" aria-hidden="true"><use href="#i-arrow-right"/></svg>
               </button>
+            </div>
+
+            <!-- Storage (free disk + documents filed) -->
+            <div class="dash-card" id="dash-storage" data-help-key="storage">
+              <div class="dash-card-head">
+                <svg class="ico ico-sm" aria-hidden="true"><use href="#i-folder"/></svg>
+                <span>Storage</span>
+              </div>
+              <div class="storage-body" id="dash-storage-body">&hellip;</div>
+            </div>
+
+            <!-- Backup status -->
+            <div class="dash-card" id="dash-backup" data-help-key="backup">
+              <div class="dash-card-head">
+                <svg class="ico ico-sm" aria-hidden="true"><use href="#i-shield"/></svg>
+                <span>Backup</span>
+              </div>
+              <div class="backup-body" id="dash-backup-body">&hellip;</div>
+              <button class="dash-btn" id="dash-backup-now">
+                Back up now <svg class="ico ico-sm" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+              </button>
+            </div>
+
+            <!-- Search clients (LAN add-on; hidden unless licensed) -->
+            <div class="dash-card" id="dash-clients" data-help-key="clients" style="display:none;">
+              <div class="dash-card-head">
+                <svg class="ico ico-sm" aria-hidden="true"><use href="#i-inbox"/></svg>
+                <span>Search clients</span>
+              </div>
+              <div class="clients-body" id="dash-clients-body">&hellip;</div>
             </div>
 
           </div>

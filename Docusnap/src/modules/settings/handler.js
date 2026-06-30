@@ -312,6 +312,7 @@ function register(ctx) {
       if (r.canceled || !r.filePath) return { ok: false, canceled: true };
       const buf = backupService.createBackup(getDb(), password, { appVersion: app.getVersion(), deviceFp: _currentDeviceFp() || '' });
       fs.writeFileSync(r.filePath, buf);
+      try { learning.setSetting(getDb(), 'last_backup_at', new Date().toISOString()); } catch { /* dashboard hint only */ }
       logAudit(getDb(), { action: 'settings_backup_export', action_category: 'settings',
         target_type: 'backup', outcome: 'success', metadata: { bytes: buf.length } });
       return { ok: true, path: r.filePath };

@@ -118,6 +118,7 @@ async function refreshDashboard() {
   renderSetupChecklist(confirmed);
   refreshWatchCard();
   refreshTrialBanner();
+  renderDashboardExtra();      // auto-file % · storage · backup · search clients
   applyDashboardCardPrefs();   // re-assert user hide/show after the cards re-render
 }
 
@@ -187,6 +188,53 @@ async function renderOutput() {
   try { folder = await window.docusnap.getSetting('output_folder'); } catch {}
   el.textContent = (folder && String(folder).trim()) || 'Not set yet — choose one in Settings.';
   el.dataset.folder = folder || '';
+}
+
+// Fixed-unit byte formatter for the Storage card.
+function fmtBytes(n) {
+  if (n == null) return '—';
+  const u = ['B', 'KB', 'MB', 'GB', 'TB']; let i = 0; n = Number(n);
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return `${n.toFixed(n < 10 && i > 0 ? 1 : 0)} ${u[i]}`;
+}
+
+// Data cards — Filed automatically · Storage · Backup · Search clients (one best-effort IPC).
+async function renderDashboardExtra() {
+  let x = {};
+  try { x = await window.docusnap.getDashboardExtra(); } catch {}
+
+  const af = document.getElementById('dash-autofile-body');
+  if (af) af.innerHTML = (x.autoFiled && x.autoFiled.total > 0)
+    ? `<div class="big-num">${x.autoFiled.pct}%</div><div class="dash-card-note">filed automatically this week — ${x.autoFiled.auto} of ${x.autoFiled.total} documents.</div>`
+    : `<div class="dash-card-note">No documents filed yet this week.</div>`;
+
+  const st = document.getElementById('dash-storage-body');
+  if (st) {
+    const free = x.storage && x.storage.freeBytes != null ? fmtBytes(x.storage.freeBytes) : '—';
+    const docs = x.storage ? (x.storage.docs || 0) : 0;
+    st.innerHTML = `<div class="big-num">${free}</div><div class="dash-card-note">free on your files drive · ${docs} document${docs === 1 ? '' : 's'} filed.</div>`;
+  }
+
+  const bk = document.getElementById('dash-backup-body');
+  if (bk) {
+    const last = x.lastBackupAt ? new Date(x.lastBackupAt) : null;
+    bk.innerHTML = last
+      ? `<div class="dash-card-note">Last backup: <strong>${escHtml(last.toLocaleDateString())}</strong>, ${escHtml(last.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))}.</div>`
+      : `<div class="dash-card-note">No backup yet — protect your settings &amp; learned data.</div>`;
+  }
+
+  const clCard = document.getElementById('dash-clients');
+  const cl = document.getElementById('dash-clients-body');
+  if (clCard && cl) {
+    if (x.clients && x.clients.entitled) {
+      clCard.style.display = '';
+      const names = (x.clients.names || []).map(escHtml).join(', ');
+      cl.innerHTML = `<div class="big-num">${x.clients.inUse}<span class="of">/${x.clients.cap}</span></div><div class="dash-card-note">client seat${x.clients.cap === 1 ? '' : 's'} in use${names ? ' · ' + names : ''}.</div>`;
+    } else {
+      clCard.style.display = 'none';   // not licensed → omit the card
+    }
+  }
+  applyDashboardCardPrefs();   // a user-hide still wins over the entitlement-driven show above
 }
 
 // First-run setup checklist — shown only until the core steps are done, then hidden.
@@ -342,6 +390,7 @@ function renderTip() {
 }
 document.getElementById('dash-tip-next')?.addEventListener('click', () => { _tipIdx = (_tipIdx + 1) % DASH_TIPS.length; renderTip(); });
 renderTip();
+document.getElementById('dash-backup-now')?.addEventListener('click', () => window.docusnap.openSettingsWindow());
 applyDashboardCardPrefs();
 document.getElementById('dash-clear-recent')?.addEventListener('click', () => {
   localStorage.setItem('recentClearedAt', String(Date.now()));

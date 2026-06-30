@@ -296,11 +296,15 @@ const DASH_CARDS = [
   ['dash-quickfind', 'Quick find'],
   ['dash-attention', 'Needs your attention'],
   ['dash-pulse',     'Documents filed'],
+  ['dash-autofile',  'Filed automatically'],
   ['dash-learning',  'Getting smarter'],
   ['dash-tips',      'Did you know'],
   ['dash-watch',     'Auto-import'],
   ['dash-import',    'Import documents'],
   ['dash-output',    'Where your files go'],
+  ['dash-storage',   'Storage'],
+  ['dash-backup',    'Backup'],
+  ['dash-clients',   'Search clients'],
   ['dash-recent',    'Recent activity'],
 ];
 async function _readHiddenCards() {
