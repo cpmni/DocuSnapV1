@@ -155,7 +155,9 @@ function createClient(opts = {}) {
   // (any status); false if the connection fails (server closed / unreachable) —
   // drives the client's connection-watch heartbeat.
   async function ping() {
-    try { await request('GET', '/v1/health'); return true; }
+    // Short timeout so the heartbeat + the connection-lost "Retry now" fail fast (8s) rather
+    // than holding the spinner for the full default, matching connect()/health.
+    try { await request('GET', '/v1/health', { timeoutMs: 8000 }); return true; }
     catch { return false; }
   }
 

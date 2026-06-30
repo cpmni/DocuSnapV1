@@ -180,7 +180,8 @@ function wireConnLost() {
   const btn = $('conn-lost-retry');
   if (btn) btn.addEventListener('click', async () => {
     const orig = btn.innerHTML;
-    btn.disabled = true; btn.textContent = 'Reconnecting…';
+    btn.disabled = true;
+    btn.innerHTML = ico('refresh', 'ic spin') + '<span>Reconnecting…</span>';   // spinner during the re-check (fast — connect() now times out at 8s)
     let ok = false;
     try { const r = await api.retryConnection(); ok = !!(r && r.ok); } catch { /* stays lost */ }
     btn.disabled = false; btn.innerHTML = orig;
