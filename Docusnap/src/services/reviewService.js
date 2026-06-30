@@ -156,11 +156,16 @@ function createReviewService(deps = {}) {
     if (filingResult.srcPath) onScheduleSourceMove({ srcPath: filingResult.srcPath, originalFilename: original_filename });
     notifyCounts(db);
 
-    // Cross-sample landmark learning (best-effort, fire-and-forget upstream).
-    try {
-      const tId = documents.getById(db, document_id)?.template_id || null;
-      if (tId) await captureSample(tId, document_id);
-    } catch { /* best-effort */ }
+    // Cross-sample landmark learning (best-effort). SKIPPED in bulk "File All Ready":
+    // the hook spawns a Python landmark regen per doc against the SAME template, which
+    // made bulk filing crawl one-at-a-time. Single confirms + the startup backfill
+    // still cover it (the template's landmarks already exist from promote-time).
+    if (!bulk) {
+      try {
+        const tId = documents.getById(db, document_id)?.template_id || null;
+        if (tId) await captureSample(tId, document_id);
+      } catch { /* best-effort */ }
+    }
 
     // Auto-promote on a TAUGHT confirm (desktop only — the client never teaches).
     if (!bulk && Array.isArray(taught_fields) && taught_fields.length && (document_type_slug || dtInfo)) {
