@@ -712,8 +712,11 @@ async function rvFinishDraw(e) {
   // display → natural image pixels
   const sx = d.img.naturalWidth / rect.width, sy = d.img.naturalHeight / rect.height;
   let nx = dl * sx, ny = dt * sy, nw = dw * sx, nh = dh * sy;
-  // headroom — region.py reads a tight box worse (clipped glyph tops/bottoms)
-  const padY = nh * 0.5, padX = Math.max(4, nw * 0.05);
+  // Small headroom only: region.py gets a pre-cropped image (it can't re-crop with its own
+  // glyph headroom the way the desktop path does), so pad just enough to avoid clipping glyph
+  // ascenders/descenders. 50% of the box height grabbed the whole line ABOVE the selection —
+  // keep it well under one line so a value line's neighbour is never captured.
+  const padY = Math.min(nh * 0.15, 10), padX = Math.max(4, nw * 0.05);
   nx = Math.max(0, nx - padX); ny = Math.max(0, ny - padY);
   nw = Math.min(d.img.naturalWidth - nx, nw + 2 * padX); nh = Math.min(d.img.naturalHeight - ny, nh + 2 * padY);
   // crop the natural-resolution region to a canvas → base64 PNG (data URLs aren't tainted)
