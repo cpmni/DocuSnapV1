@@ -503,8 +503,8 @@ function reviewRow(d) {
       <div class="rr-title">${esc(title)}</div>
       <div class="rr-sub">${sub}</div>
       ${viewers.length ? `<div class="rr-viewing">${ico('claim')}${esc(viewers.join(', '))} reviewing</div>` : ''}
-    </div>
-    ${d.overall_confidence != null ? `<span class="meter ${lvl}" title="${d.overall_confidence}%"><i style="width:${Math.max(4, Math.min(100, d.overall_confidence))}%"></i></span>` : ''}`;
+      ${d.overall_confidence != null ? `<span class="meter ${lvl}" title="${d.overall_confidence}%"><i style="width:${Math.max(4, Math.min(100, d.overall_confidence))}%"></i></span>` : ''}
+    </div>`;
   el.addEventListener('click', () => {
     document.querySelectorAll('.rv-row').forEach((x) => x.classList.toggle('active', x === el));
     openReviewDoc(d.id);
