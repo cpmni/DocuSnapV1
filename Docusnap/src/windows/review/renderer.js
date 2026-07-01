@@ -1971,22 +1971,46 @@ function showAnchorReadout(detected, value) {
   try { if (detected.normBox) drawTraceBbox(detected.normBox, 'anchor', 'manual'); } catch {}
   const bar = document.getElementById('anchor-readout');
   if (!bar) return;
-  const label = escHtml(detected.anchor_label || '(none)');
   const val   = escHtml((value || '').trim());
   const isLeft  = detected.direction === 'right';
   const isAbove = detected.direction === 'below';
-  let msg, warn = false;
-  if (detected.fallback) { msg = `No label found — anchored by position. Read: "${val}"`; warn = true; }
-  else if (isAbove)      { msg = `Anchor (label above): <b>${label}</b> &rarr; "${val}"`; }
-  else                   { msg = `Anchor (label to the left): <b>${label}</b> &rarr; "${val}"`; }
+  const suspicious = !detected.fallback && labelLooksSuspicious(detected.anchor_label);
+  const warn = detected.fallback || suspicious;
+  let msg;
+  if (detected.fallback) {
+    msg = `<span class="ar-msg">&#9888; No label found — anchored by position. Read: "${val}"</span>`;
+  } else {
+    // The label is EDITABLE — an auto-detect off a noisy scan can be misread ("verial No."),
+    // and a wrong label never re-locates. The operator can correct it here before Confirm.
+    const lead = suspicious
+      ? '&#9888; This label looks misread — check it matches the caption on the page:'
+      : `&#10003; Anchor (label ${isAbove ? 'above' : 'to the left'}):`;
+    msg = `<span class="ar-msg">${lead} `
+      + `<input class="ar-label-edit" spellcheck="false" title="The caption this field sits beside — edit if it was misread" `
+      + `style="font:inherit;font-weight:600;padding:1px 5px;min-width:90px;border:1px solid var(--border2);border-radius:5px;background:var(--surface)"> `
+      + `&rarr; "${val}"</span>`;
+  }
   bar.className = 'anchor-readout' + (warn ? ' warn' : '');
-  bar.innerHTML =
-    `<span class="ar-msg">${warn ? '&#9888; ' : '&#10003; '}${msg}</span>`
+  bar.innerHTML = msg
     + `<span class="ar-dir"><span class="ar-lbl">Label is:</span>`
     + `<button class="ar-btn ${isLeft ? 'on' : ''}" data-dir="right">&larr; Left</button>`
     + `<button class="ar-btn ${isAbove ? 'on' : ''}" data-dir="below">&uarr; Above</button></span>`
     + `<span class="ar-x" title="Dismiss">&times;</span>`;
   bar.style.display = '';
+  // Populate + wire the editable label (value set via JS to avoid attribute-escaping issues).
+  const lblInput = bar.querySelector('.ar-label-edit');
+  if (lblInput) {
+    lblInput.value = detected.anchor_label || '';
+    lblInput.addEventListener('change', () => {
+      const fk = lastTeachCtx?.fieldKey;
+      const cleaned = sanitizeAnchorLabel(lblInput.value);
+      if (fk && pendingAnchors[fk]) {
+        pendingAnchors[fk].anchor_label = cleaned || (labelFor(fk) || fk.replace(/_/g, ' '));
+        pendingAnchors[fk].label_detected = !!cleaned;   // a typed caption is a real label
+      }
+      lblInput.classList.toggle('bad', labelLooksSuspicious(cleaned));
+    });
+  }
   bar.querySelectorAll('.ar-btn').forEach(b => b.addEventListener('click', () => reDetectAnchor(b.dataset.dir)));
   bar.querySelector('.ar-x')?.addEventListener('click', hideAnchorReadout);
   if (_anchorReadoutTimer) clearTimeout(_anchorReadoutTimer);
@@ -4121,6 +4145,20 @@ function sanitizeAnchorLabel(label) {
     if ((tok.match(/\d/g) || []).length >= 3) return false;  // code-like serial
     return true;
   }).join(' ').trim();
+}
+
+// An auto-detected label captured off a NOISY scan can be garbled ("Serial No." read
+// as "verial No.", "Description" as "�escription"). A garbled label never re-locates on
+// future pages, so the taught anchor silently reads nothing forever. Flag the obvious
+// garble so the ⊕ readout can warn + let the operator fix the label before it's saved.
+function labelLooksSuspicious(label) {
+  if (!label || !label.trim()) return true;
+  if (/�/.test(label)) return true;                                 // OCR replacement char �
+  if (/[^\p{L}\p{N}\s.,'&()/:#%\-]/u.test(label)) return true;           // junk symbols real captions don't carry
+  // a long alphabetic token with NO vowel reads as garble ("brtnz", "vrntx")
+  const toks = label.split(/\s+/).map(t => t.replace(/[^a-zA-Z]/g, '')).filter(t => t.length >= 4);
+  if (toks.some(t => !/[aeiouy]/i.test(t))) return true;
+  return false;
 }
 
 // OCR a NORMALISED box on the current page image (docImg) via the existing
