@@ -550,6 +550,16 @@
               </div>
               <label class="toggle"><input type="checkbox" id="auto-file-toggle"><span class="toggle-slider"></span></label>
             </div>
+            <div class="threshold-row" id="auto-file-threshold-row">
+              <div>
+                <div class="threshold-label">Auto-file confidence threshold</div>
+                <div class="threshold-sub">File automatically when overall confidence is at least this — <b>and</b> the document is fully typed with no field flagged for review. Lower it once you trust the reads on your regular suppliers (confidence climbs toward ~98% as Scan Finder learns them). Applies only while auto-file above is on.</div>
+              </div>
+              <div class="conf-row">
+                <input type="range" class="conf-slider" id="auto-file-threshold" min="80" max="100" value="100">
+                <span class="conf-val" id="auto-file-threshold-val">100%</span>
+              </div>
+            </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Read values that wrap onto the next line</div>

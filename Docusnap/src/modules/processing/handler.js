@@ -1974,7 +1974,12 @@ function _maybeAutoFile(db, msg, folderPath, notifyMainWindow, logger) {
   try {
     const learning = require('../../../database/modules/learning');
     if (learning.getSetting(db, 'auto_file_full_confidence', 'true') === 'false') return;
-    if (msg.overall_confidence !== 100 || !msg.db_id) return;
+    // Configurable threshold (default 100 = full confidence only). Below 100, a doc auto-files
+    // only when it ALSO passed clean (needs_review false → fully typed, no field flagged) — the
+    // flag/needs-review gate is the real safety, the threshold just says "confident enough".
+    const thr = parseInt(learning.getSetting(db, 'auto_file_threshold', '100'), 10) || 100;
+    if (!msg.db_id || (msg.overall_confidence || 0) < thr) return;
+    if (thr < 100 && msg.needs_review) return;
     setImmediate(() => {
       _autoFileDoc(db, msg.db_id, folderPath, notifyMainWindow, logger)
         .catch(e => { try { logger?.warn?.(`auto-file ${msg.db_id}: ${e.message}`); } catch {} });

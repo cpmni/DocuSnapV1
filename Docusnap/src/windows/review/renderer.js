@@ -2267,7 +2267,10 @@ async function autoCommitFullConfidence() {
   try {
     if (bulkFiling) return;
     if ((await window.docusnap.getSetting('auto_file_full_confidence')) === 'false') return;
-    const ready = (queue || []).filter(d => d.overall_confidence === 100 && d.type_slug && !d.review_flag_count);
+    // Configurable threshold (default 100). The type + un-flagged (!review_flag_count) gates
+    // are the safety: only a fully-typed doc with NO field flagged for review auto-files.
+    const thr = parseInt((await window.docusnap.getSetting('auto_file_threshold')) || '100', 10) || 100;
+    const ready = (queue || []).filter(d => (d.overall_confidence || 0) >= thr && d.type_slug && !d.review_flag_count);
     if (!ready.length) return;
     bulkFiling = true;
     let filed = 0;

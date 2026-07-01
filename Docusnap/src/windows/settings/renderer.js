@@ -270,6 +270,29 @@ document.getElementById('watch-folder-toggle').addEventListener('change', async 
 })();
 document.getElementById('auto-file-toggle').addEventListener('change', async (e) => {
   await api.setSetting('auto_file_full_confidence', e.target.checked ? 'true' : 'false');
+  _syncAutoFileThresholdEnabled(e.target.checked);
+});
+
+// ── Auto-file confidence threshold slider (default 100 = full confidence only) ────
+function _syncAutoFileThresholdEnabled(on) {
+  const row = document.getElementById('auto-file-threshold-row');
+  if (row) row.style.opacity = on ? '' : '0.5';
+  const sl = document.getElementById('auto-file-threshold');
+  if (sl) sl.disabled = !on;
+}
+(async () => {
+  try {
+    const t = parseInt((await api.getSetting('auto_file_threshold')) || '100', 10) || 100;
+    document.getElementById('auto-file-threshold').value = t;
+    document.getElementById('auto-file-threshold-val').textContent = t + '%';
+    _syncAutoFileThresholdEnabled((await api.getSetting('auto_file_full_confidence')) !== 'false');
+  } catch {}
+})();
+document.getElementById('auto-file-threshold').addEventListener('input', (e) => {
+  document.getElementById('auto-file-threshold-val').textContent = e.target.value + '%';
+});
+document.getElementById('auto-file-threshold').addEventListener('change', async (e) => {
+  await api.setSetting('auto_file_threshold', String(e.target.value));
 });
 
 // ── Read values that wrap onto the next line (default ON) ──────────────────────
