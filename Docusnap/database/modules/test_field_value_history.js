@@ -17,7 +17,7 @@ const check = (label, cond) => { if (!cond) FAILS++; console.log(`  ${cond ? 'OK
 const db = new Database(':memory:');
 db.exec(`
   CREATE TABLE document_types (id INTEGER PRIMARY KEY, slug TEXT);
-  CREATE TABLE documents (id INTEGER PRIMARY KEY, supplier_name TEXT, document_type_id INTEGER, status TEXT, confirmed_at TEXT);
+  CREATE TABLE documents (id INTEGER PRIMARY KEY, supplier_name TEXT, document_type_id INTEGER, status TEXT, confirmed_at TEXT, original_filename TEXT);
   CREATE TABLE extractions (id INTEGER PRIMARY KEY, document_id INTEGER, field_key TEXT, raw_value TEXT, display_value TEXT);
   CREATE TABLE corrections (id INTEGER PRIMARY KEY, document_id INTEGER, field_key TEXT, original_value TEXT, corrected_value TEXT, supplier_name TEXT, document_type TEXT);
   CREATE TABLE supplier_hints (id INTEGER PRIMARY KEY, supplier_name TEXT, document_type TEXT, field_key TEXT, hint_value TEXT, usage_count INTEGER);
@@ -28,7 +28,7 @@ const SN = 'Document Solutions', FK = 'reference_number';
 let docId = 0;
 const addDoc = (val, when) => {
   docId++;
-  db.prepare(`INSERT INTO documents (id, supplier_name, document_type_id, status, confirmed_at) VALUES (?,?,1,'confirmed',?)`).run(docId, SN, when);
+  db.prepare(`INSERT INTO documents (id, supplier_name, document_type_id, status, confirmed_at, original_filename) VALUES (?,?,1,'confirmed',?,?)`).run(docId, SN, when, `f${docId}.pdf`);
   db.prepare(`INSERT INTO extractions (document_id, field_key, raw_value, display_value) VALUES (?,?,?,?)`).run(docId, FK, val, val);
 };
 addDoc('SO2', '2026-06-01'); addDoc('SO3', '2026-06-02'); addDoc('$O2', '2026-06-03');
@@ -61,6 +61,17 @@ console.log('guards:');
 check('rename to same value is a no-op', learning.renameFieldValue(db, { ...scope, oldValue: 'SO2', newValue: 'SO2' }) === 0);
 check('rename with empty newValue is a no-op', learning.renameFieldValue(db, { ...scope, oldValue: 'SO2', newValue: '' }) === 0);
 check('purge with no value is a no-op', learning.purgeFieldValue(db, scope) === 0);
+
+console.log('getDocumentsForFieldValue (Learning-history "Open in Review"):');
+// End state: SO2 is carried by doc 1 (display) AND doc 3 (renamed from $O2); SO3 was purged.
+const so2docs = learning.getDocumentsForFieldValue(db, { ...scope, value: 'SO2' });
+check('SO2 maps to its 2 source docs', so2docs.length === 2);
+check('docs carry id + original_filename + confirmed_at',
+      so2docs.every(d => d.id && d.original_filename && d.confirmed_at));
+check('purged SO3 maps to no docs', learning.getDocumentsForFieldValue(db, { ...scope, value: 'SO3' }).length === 0);
+check('empty value -> no docs', learning.getDocumentsForFieldValue(db, { ...scope, value: '' }).length === 0);
+check('wrong-supplier scope -> no docs',
+      learning.getDocumentsForFieldValue(db, { supplier_name: 'Other', document_type: 'worksheet', field_key: FK, value: 'SO2' }).length === 0);
 
 db.close();
 console.log(`\n${FAILS === 0 ? 'ALL PASS' : FAILS + ' FAILED'}`);

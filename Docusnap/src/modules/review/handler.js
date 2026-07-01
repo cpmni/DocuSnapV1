@@ -186,6 +186,11 @@ function register(ctx) {
     requireRole('admin', 'edit');
     return learning.getFieldValueHistory(getDb(), scope || {});
   });
+  // Source documents behind a learned value (Learning-history → "Open in Review"). Read-only.
+  ipcMain.handle('get-documents-for-field-value', (_e, scope) => {
+    requireRole('admin', 'edit');
+    return learning.getDocumentsForFieldValue(getDb(), scope || {});
+  });
   ipcMain.handle('purge-field-value', (_e, scope) => {
     requireRole('admin', 'edit');
     const db = getDb();

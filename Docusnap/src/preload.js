@@ -139,6 +139,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   getRecentAutoFiled:          ()        => ipcRenderer.invoke('get-recent-auto-filed'),
   clearRecentAutoFiled:        ()        => ipcRenderer.invoke('clear-recent-auto-filed'),
   getFieldValueHistory:        (scope)   => ipcRenderer.invoke('get-field-value-history', scope),
+  getDocumentsForFieldValue:   (scope)   => ipcRenderer.invoke('get-documents-for-field-value', scope),
   purgeFieldValue:             (scope)   => ipcRenderer.invoke('purge-field-value', scope),
   renameFieldValue:            (scope)   => ipcRenderer.invoke('rename-field-value', scope),
   getDocumentWithExtractions:  (id)      => ipcRenderer.invoke('get-document-with-extractions', id),

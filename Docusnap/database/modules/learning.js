@@ -1033,6 +1033,27 @@ function getFieldValueHistory(db, { supplier_name, document_type, field_key } = 
   `).all(field_key, supplier_name || '', document_type || '');
 }
 
+// List the CONFIRMED documents whose final value for this (supplier, doc-type, field) scope
+// equals `value` — so the Learning-history modal can jump from a learned value to the source
+// documents that taught it (to re-check/correct them via "Edit in Review"). Same scope +
+// final-value expression getFieldValueHistory groups by, so a value shown there maps back to
+// exactly these docs. Returns [{id, original_filename, confirmed_at}], newest first.
+function getDocumentsForFieldValue(db, { supplier_name, document_type, field_key, value } = {}) {
+  if (!field_key || value == null || value === '') return [];
+  return db.prepare(`
+    SELECT d.id, d.original_filename, d.confirmed_at
+    FROM extractions e
+    JOIN documents d ON d.id = e.document_id
+    LEFT JOIN document_types dt ON dt.id = d.document_type_id
+    LEFT JOIN corrections   c  ON c.document_id = e.document_id AND c.field_key = e.field_key
+    WHERE d.status = 'confirmed' AND e.field_key = ?
+      AND COALESCE(d.supplier_name, '') = COALESCE(?, '')
+      AND COALESCE(dt.slug, '')         = COALESCE(?, '')
+      AND COALESCE(NULLIF(TRIM(c.corrected_value), ''), e.display_value) = ?
+    ORDER BY d.confirmed_at DESC, d.id DESC
+  `).all(field_key, supplier_name || '', document_type || '', value);
+}
+
 // Purge a learned VALUE from every learning source for the scope: the confirmed extractions
 // that carry it (so the format/shape sample drops it), plus any corrections and supplier-hint
 // rows that produce it. Filed documents keep their files — only this field's stored value is
@@ -1084,7 +1105,7 @@ function renameFieldValue(db, { supplier_name, document_type, field_key, oldValu
 
 module.exports = {
   insertExtractions, deleteExtractions,
-  getFieldValueHistory, purgeFieldValue, renameFieldValue,
+  getFieldValueHistory, getDocumentsForFieldValue, purgeFieldValue, renameFieldValue,
   saveCorrections, getHints, isPlausibleSupplierName, normalizeSupplierName,
   saveAnchor, sanitizeAnchorLabel, clearAnchors, getAllAnchors,
   saveLogoFingerprint, getAllLogos, findLogoMatch,

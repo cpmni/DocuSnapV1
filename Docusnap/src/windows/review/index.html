@@ -1022,6 +1022,18 @@
   .lh-confirm .lh-yes { background: var(--err); color: #fff; border: 1px solid var(--err); }
   .lh-confirm .lh-no  { background: var(--surface2); color: var(--text); border: 1px solid var(--border2); }
   .lh-foot { padding: 10px 18px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); line-height: 1.45; }
+  .lh-docs { background: none; border: 1px solid var(--border2); color: var(--muted); border-radius: 6px;
+             padding: 2px 8px; cursor: pointer; font-size: 12px; margin-right: 4px; }
+  .lh-docs:hover, .lh-docs.lh-docs-on { color: var(--accent2); border-color: var(--accent); }
+  .lh-docs-row td { background: var(--surface2); padding: 6px 14px 10px 14px; }
+  .lh-docs-list { display: flex; flex-direction: column; gap: 4px; }
+  .lh-docs-empty { color: var(--muted); font-size: 12px; }
+  .lh-doc { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+  .lh-doc-name { font-family: var(--mono, monospace); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lh-doc-when { color: var(--muted); }
+  .lh-open-doc { background: var(--accent-bg); border: 1px solid var(--accent); color: var(--accent2);
+                 border-radius: 6px; padding: 2px 10px; cursor: pointer; font-size: 12px; white-space: nowrap; }
+  .lh-open-doc:hover { background: var(--accent); color: var(--on-accent, #fff); }
 </style>
 <div id="lh-overlay" class="lh-overlay" data-help-ignore>
   <div class="lh-modal">

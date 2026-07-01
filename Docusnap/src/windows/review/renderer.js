@@ -2642,6 +2642,8 @@ let _lhField = null;                        // { key, label, supplier, slug }
 let _lhPending = null;                       // value awaiting inline delete-confirm
 let _lhEditing = null;                       // value currently being inline-edited
 let _lhProposals = [];                       // pending "fix likely slips" proposals
+let _lhExpanded = new Set();                  // values whose source-doc submenu is open
+let _lhDocs = {};                             // value -> source docs (lazy) | 'loading'
 
 const isLhOpen = () => document.getElementById('lh-overlay').style.display === 'block';
 
@@ -2705,6 +2707,7 @@ async function loadLearningHistoryFor(key) {
                    || currentDoc?.supplier_name || '';
   _lhField   = { key, label, supplier, slug };
   _lhPending = null; _lhEditing = null; _lhProposals = [];
+  _lhExpanded = new Set(); _lhDocs = {};   // drop any prior field's source-doc submenus
   _lhSort    = { key: 'count', dir: -1 };
   document.getElementById('lh-field').textContent = label;
   document.getElementById('lh-scope').textContent =
@@ -2716,6 +2719,21 @@ async function loadLearningHistoryFor(key) {
   } catch { _lhData = []; }
   renderLearningHistory();
   highlightActiveField(key);
+}
+
+// The source-doc submenu for one learned value (lazy-loaded into _lhDocs).
+function renderLhDocs(value) {
+  const docs = _lhDocs[value];
+  if (docs === 'loading') return `<div class="lh-docs-list lh-docs-empty">Loading documents…</div>`;
+  if (!Array.isArray(docs)) return '';
+  if (!docs.length) return `<div class="lh-docs-list lh-docs-empty">No filed documents carry this exact value.</div>`;
+  return `<div class="lh-docs-list">` + docs.map(d => {
+    const when = d.confirmed_at ? escHtml(String(d.confirmed_at).slice(0, 10)) : '';
+    const name = escHtml(d.original_filename || ('#' + d.id));
+    return `<div class="lh-doc"><span class="lh-doc-name" title="${name}">${name}</span>`
+      + `<span class="lh-doc-when">${when}</span>`
+      + `<button class="lh-open-doc" data-docid="${d.id}" title="Open this document in Review to re-check it">Open in Review</button></div>`;
+  }).join('') + `</div>`;
 }
 
 function renderLearningHistory() {
@@ -2734,11 +2752,18 @@ function renderLearningHistory() {
       actionCell = `<button class="lh-save" data-idx="${i}" title="Save">✓</button><button class="lh-ecancel" title="Cancel">✗</button>`;
     } else {
       valueCell = `<span class="lh-val">${escHtml(r.value)}</span>`;
+      const on = _lhExpanded.has(r.value) ? ' lh-docs-on' : '';
       actionCell = (_lhPending === r.value)
         ? `<span class="lh-confirm">Delete?<button class="lh-yes" data-idx="${i}">Yes</button><button class="lh-no">No</button></span>`
-        : `<button class="lh-edit" data-idx="${i}" title="Fix this value">&#9998;</button><button class="lh-del" data-idx="${i}" title="Delete this value from learning">🗑</button>`;
+        : `<button class="lh-docs${on}" data-idx="${i}" title="Show the documents that have this value">&#128196;</button>`
+          + `<button class="lh-edit" data-idx="${i}" title="Fix this value">&#9998;</button>`
+          + `<button class="lh-del" data-idx="${i}" title="Delete this value from learning">🗑</button>`;
     }
-    return `<tr><td>${valueCell}</td><td>${r.count}</td><td>${last}</td><td style="text-align:right; white-space:nowrap;">${actionCell}</td></tr>`;
+    let row = `<tr><td>${valueCell}</td><td>${r.count}</td><td>${last}</td><td style="text-align:right; white-space:nowrap;">${actionCell}</td></tr>`;
+    if (_lhExpanded.has(r.value) && _lhEditing !== r.value) {
+      row += `<tr class="lh-docs-row"><td colspan="4">${renderLhDocs(r.value)}</td></tr>`;
+    }
+    return row;
   }).join('') : `<tr><td colspan="4" class="lh-empty">No learned values yet for this field.</td></tr>`;
   document.querySelectorAll('.lh-table th[data-sort]').forEach(th => {
     const base = th.dataset.sort === 'value' ? 'Value' : th.dataset.sort === 'count' ? 'Times seen' : 'Last seen';
@@ -2823,6 +2848,30 @@ document.querySelectorAll('.lh-table th[data-sort]').forEach(th => th.addEventLi
 }));
 
 document.getElementById('lh-body').addEventListener('click', async (e) => {
+  // Toggle the source-doc submenu for a learned value (lazy-load on first open).
+  const docsBtn = e.target.closest('.lh-docs');
+  if (docsBtn) {
+    const val = _lhRendered[+docsBtn.dataset.idx]?.value;
+    if (val == null) return;
+    if (_lhExpanded.has(val)) { _lhExpanded.delete(val); renderLearningHistory(); return; }
+    _lhExpanded.add(val);
+    if (!(val in _lhDocs)) {
+      _lhDocs[val] = 'loading'; renderLearningHistory();
+      try {
+        _lhDocs[val] = await window.docusnap.getDocumentsForFieldValue(
+          { supplier_name: _lhField.supplier, document_type: _lhField.slug, field_key: _lhField.key, value: val }) || [];
+      } catch (err) { console.warn('get-documents-for-field-value failed:', err); _lhDocs[val] = []; }
+    }
+    renderLearningHistory();
+    return;
+  }
+  // Open a source document in Review (Edit-in-place; stays Filed) for re-checking.
+  const openBtn = e.target.closest('.lh-open-doc');
+  if (openBtn) {
+    const docId = parseInt(openBtn.dataset.docid, 10);
+    if (docId) { closeLearningHistory(); _navigateToDoc(docId); }
+    return;
+  }
   const edit = e.target.closest('.lh-edit');
   if (edit) { _lhEditing = _lhRendered[+edit.dataset.idx]?.value ?? null; _lhPending = null; renderLearningHistory(); return; }
   if (e.target.closest('.lh-ecancel')) { _lhEditing = null; renderLearningHistory(); return; }
