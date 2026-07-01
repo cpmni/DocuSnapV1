@@ -244,7 +244,27 @@ learned scope (anchors/hints/label-overrides) keys off the slug.
   should use `safeSend` for consistency — each is already try/catch-wrapped, so not a bug.)
 - Delete-All-Review is admin-only + confirm-gated; document types aren't UI-deletable (no delete-type IPC),
   so "delete a type with documents" isn't reachable.
+- **Corrupt / zero-byte / malformed PDF import** — sound: `process_docs.py`'s per-file loop wraps each
+  file in try/except (~L310-537), emits a `status:error` doc, and CONTINUES the batch — one bad file
+  can't kill the run. (Residual, unverified: a NATIVE Tesseract/pdfium segfault or an OCR *hang* on a
+  pathological page would kill/stall the worker — there's no per-file timeout — but that needs a crafted
+  file to confirm; lower priority.)
+- **Licensing clock-rollback** — sound: expiry uses `effectiveNow = max(now, high-water-mark)`
+  (`src/lib/license/token.js:104`; HWM persisted + advanced in `licensing/handler.js`), so winding the
+  system clock back cannot extend a trial/seat.
+- **SQL injection** — sound: `documents.search()` (~L318) appends only fixed clause strings and binds all
+  user input via named parameters (`@company`/`@reference`/`@fullText`); `_clearDanglingDocRefs`'s
+  interpolated `whereSql` is a developer-controlled literal, never user input. No string-concatenated
+  user values reach a query.
 
 ---
 
 *No code was changed in producing this report. Each item lists a fix DIRECTION only — decide what to act on.*
+
+## Audit coverage
+Surfaces traced: Review (confirm gate, ⊕ teaching, bulk File-All, reprocess, delete), Document Types &
+Fields (slug/key derivation, structural roles), Filing (buildXml, folder/filename tokens, duplicates),
+Learning/extraction poisoning, Backup/Restore (crypto + FK integrity), Import/Watch (corrupt files, folder
+overlap), processing event-loop + window lifecycle, Licensing (clock-rollback), Search (injection). Lower-
+risk surfaces given lighter coverage: the detached `/v1` client API depth, onboarding folder-writability
+edge cases, help-mode — candidates for a follow-up pass.
