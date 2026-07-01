@@ -738,6 +738,9 @@ function createRequestListener(ctx) {
           document_type_slug: slug,
           taught_fields: [],   // the client never teaches
           bulk: false,
+          // allowRefile deliberately OMITTED (server-decided, never client-supplied): the client
+          // only ever confirms QUEUE items, so a confirm on an already-filed doc must lose the race
+          // (ALREADY_FILED), not silently re-file/overwrite. A malicious body can't opt into re-file.
         });
         if (!r.ok) {
           const status = (r.code === 'ALREADY_FILED' || r.code === 'NO_OUTPUT') ? 409 : 400;

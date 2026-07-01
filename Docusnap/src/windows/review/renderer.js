@@ -2033,6 +2033,11 @@ async function confirmCurrentDoc({ bulk = false } = {}) {
     supplier_name:      currentDoc.supplier_name,
     document_type_slug: selectedTypeSlug || currentDoc?.type_slug || null,
     taught_fields:      [...anchorTaughtFields],
+    // RE-FILE intent: only a doc opened while ALREADY confirmed ("Edit in Review" on a filed /
+    // auto-filed doc) may re-file. A doc opened from the review queue (needs_review/deferred) must
+    // NOT — so if another reviewer filed it first, this confirm loses cleanly (ALREADY_FILED)
+    // rather than silently overwriting them. See reviewService.confirm.
+    allowRefile:        currentDoc?.status === 'confirmed',
     // In bulk the fields-only path never loaded the preview image, so there is
     // no img.src file handle to wait on — let the backend skip its 150ms release.
     bulk,

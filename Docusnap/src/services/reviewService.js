@@ -14,7 +14,9 @@
  *    two confirms of one doc (two clients, a client vs the desktop, auto-file vs manual) can't
  *    both file it — the loser gets ALREADY_FILED with the winner's name. A re-file (an already-
  *    confirmed doc, "Edit in Review") skips the claim (it can't lose a needs_review race, and a
- *    claim-then-rollback would strand its filed state).
+ *    claim-then-rollback would strand its filed state) — but ONLY when the caller passes an
+ *    explicit `allowRefile` intent, so a queue confirm that raced into an already-filed doc still
+ *    loses cleanly (ALREADY_FILED) instead of silently overwriting the first reviewer.
  *  - The Electron-only steps (source-move, landmark capture, taught-confirm template promote,
  *    count broadcast) are INJECTED hooks so the desktop path is byte-identical and the API path
  *    simply omits them.
@@ -57,7 +59,14 @@ function createReviewService(deps = {}) {
     // RE-FILE: an already-confirmed doc (re-surfaced auto-filed doc / "Edit in Review") — its
     // current filed copy is both the source and the thing to replace. null for a first confirm.
     const oldStoredPath = (docRow && docRow.status === 'confirmed' && docRow.stored_path) ? docRow.stored_path : null;
-    const isRefile = !!oldStoredPath;
+    // Re-file requires EXPLICIT caller intent, not merely the doc's state. A confirm that arrived
+    // from the review QUEUE (the caller loaded a needs_review doc) must NOT silently take the
+    // re-file path if the doc was filed by someone else in the meantime — without allowRefile it
+    // falls through to the atomic claim below and the loser gets ALREADY_FILED (naming the winner),
+    // instead of a last-writer-wins overwrite. Only a deliberate re-file entry point sets the flag:
+    // desktop "Edit in Review" on an already-confirmed doc (renderer: allowRefile = status==='confirmed').
+    // The /v1 client path never sets it (server-decided) — the client only ever confirms queue items.
+    const isRefile = !!oldStoredPath && !!(payload && payload.allowRefile === true);
 
     const dtInfo = document_type_slug ? doctypes.getWithFields(db, document_type_slug) : null;
     const outputRoot = learning.getSetting(db, 'output_folder', null);

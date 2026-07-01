@@ -89,14 +89,26 @@ const basePayload = (id, extra = {}) => ({
   check('  → names the winner (sarah)', r3.confirmedBy === 'sarah');
   check('  → bob did NOT file (commit not called for d3)', get(db, d3).stored_path === null);
 
-  // ── Re-file path: an already-filed doc (stored set) re-files, not ALREADY_FILED ─
+  // ── Re-file path: a DELIBERATE re-file ("Edit in Review", allowRefile:true) re-files ──────
   const d4 = newDoc(db);
   documents.update(db, d4, { status: 'confirmed', stored_path: '/out/OLD.pdf', stored_filename: 'OLD.pdf', confirmed_by_username: 'sarah' });
   const commitsBefore = calls.commit;
-  const r4 = await svc.confirm(db, { username: 'bob', role: 'edit' }, basePayload(d4));
-  check('re-file of an already-filed doc succeeds', r4.ok === true);
+  const r4 = await svc.confirm(db, { username: 'bob', role: 'edit' }, basePayload(d4, { allowRefile: true }));
+  check('deliberate re-file (allowRefile) of an already-filed doc succeeds', r4.ok === true);
   check('  → it actually re-filed (commit called)', calls.commit === commitsBefore + 1);
   check('  → confirmed_by updated to the re-filer (bob)', get(db, d4).confirmed_by_username === 'bob');
+
+  // ── Re-file GUARD (2026-06-30 gap): a QUEUE confirm that raced into an already-filed doc (NO
+  //    allowRefile intent) must LOSE cleanly (ALREADY_FILED), never silently overwrite reviewer #1 ─
+  const d4b = newDoc(db);
+  documents.update(db, d4b, { status: 'confirmed', stored_path: '/out/A.pdf', stored_filename: 'A.pdf', confirmed_by_username: 'sarah' });
+  const commitsBeforeGuard = calls.commit;
+  const r4b = await svc.confirm(db, { username: 'bob', role: 'edit' }, basePayload(d4b));  // no allowRefile → a queue confirm
+  check('raced queue confirm on a filed doc → ALREADY_FILED (no silent overwrite)', r4b.ok === false && r4b.code === 'ALREADY_FILED');
+  check('  → names the winner (sarah)', r4b.confirmedBy === 'sarah');
+  check('  → bob did NOT re-file (commit NOT called)', calls.commit === commitsBeforeGuard);
+  check('  → confirmed_by stays sarah (first reviewer preserved)', get(db, d4b).confirmed_by_username === 'sarah');
+  check('  → stored_path unchanged (original filing intact)', get(db, d4b).stored_path === '/out/A.pdf');
 
   // ── Filing failure rolls a first-confirm back to the queue ────────────────────
   filingMode = 'fail';
