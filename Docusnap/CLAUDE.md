@@ -812,7 +812,10 @@ process_docs.py → ExtractionEngine.extract()
            drifted and the label-relocated read won). A currency value has no internal space,
            so a space/comma+space between a digit and a following 3-digit group is a thousands
            boundary → collapsed back to a comma BEFORE the pattern match (looped for millions
-           "$1 234 567" → "$1,234,567"). Applied in _clean_text_fallback (anchor_inline) AND
+           "$1 234 567" → "$1,234,567"). ALSO rejoins the DECIMAL point split by OCR spacing
+           ("$5,767 .71" / "$5,767. 71" → "$5,767.71") and a dropped point with a trailing
+           2-digit cents group ("$5,767 71" → "$5,767.71", end-anchored so a 2-digit tail can't
+           be mistaken for a thousands group) — else the value truncated to "$5,767". Applied in _clean_text_fallback (anchor_inline) AND
            _clean_one_line/clean_crop_segment (anchor_crop, which used to leave a malformed
            "$10 576.31"). ONLY for val_type=='currency' — free-text/name with internal digits
            is untouched; contiguous/no-space values are returned verbatim. Guarded by

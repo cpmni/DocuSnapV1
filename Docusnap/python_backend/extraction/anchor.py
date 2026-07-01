@@ -1401,11 +1401,18 @@ def _normalise_currency_spacing(value: str | None) -> str | None:
         return value
     prev = None
     out = value
-    # Loop so consecutive groups both collapse ("$1 234 567" → "$1,234,567") — each pass
-    # rejoins one boundary; re.sub's non-overlapping scan gets adjacent ones, the loop the rest.
+    # 1) THOUSANDS: a space/comma between a digit and a 3-digit group → comma. Loop so
+    # consecutive groups both collapse ("$1 234 567" → "$1,234,567"); re.sub's non-overlapping
+    # scan gets adjacent ones, the loop the rest.
     while prev != out:
         prev = out
         out = re.sub(r'(?<=\d)[,\s]+(?=\d{3}(?:\D|$))', ',', out)
+    # 2) DECIMAL point split by OCR spacing: "5,767 .71" / "5,767. 71" / "5,767 . 71" → "5,767.71".
+    out = re.sub(r'(?<=\d)\s*\.\s*(?=\d)', '.', out)
+    # 3) trailing 2-digit DECIMAL with the point dropped entirely: "5,767 71" → "5,767.71".
+    # End-anchored (a thousands group is 3 digits, so a 2-digit group at the very end is the
+    # cents) so it can't be mistaken for a thousands boundary.
+    out = re.sub(r'(?<=\d)\s+(?=\d{2}\s*$)', '.', out)
     return out
 
 
