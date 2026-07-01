@@ -21,6 +21,7 @@
   .accept{display:flex;align-items:center;gap:9px;font-size:13px;cursor:pointer;user-select:none}
   .accept input{width:16px;height:16px;cursor:pointer}
   .spacer{flex:1}
+  .gate-msg{font-size:12px;color:var(--warn);margin-left:14px}
   .btn{border:1px solid var(--border2);background:var(--surface2);color:var(--text);border-radius:var(--r-sm,9px);
     padding:10px 18px;font-size:13.5px;cursor:pointer;font-family:inherit}
   .btn:hover{border-color:var(--accent)}
@@ -37,10 +38,13 @@
     <h1>Before you start — please review the Terms</h1>
     <div class="sub">You need to accept the Disclaimer &amp; Terms of Use to use Scan Finder.
       <button id="openext" type="button">Open in a separate window</button></div>
+    <div class="sub">Questions about these terms? Contact <b>licensing@scanfinder.co.uk</b>.
+      Purchases &amp; refunds are handled by our reseller, Polar.</div>
   </header>
   <div id="doc">Loading…</div>
   <div id="foot">
     <label class="accept"><input type="checkbox" id="accept-cb"> I have read and accept the Terms of Use.</label>
+    <span id="gate-msg" class="gate-msg"></span>
     <div class="spacer"></div>
     <button id="decline" class="btn ghost">Decline &amp; Quit</button>
     <button id="continue" class="btn primary" disabled>Accept &amp; Continue</button>

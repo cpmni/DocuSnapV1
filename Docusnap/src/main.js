@@ -212,9 +212,16 @@ function termsAccepted() {
 }
 
 function showLegalGate() {
-  createWindow('legal', LEGAL_WINDOW_OPTIONS, 'index.html');
+  const w = createWindow('legal', LEGAL_WINDOW_OPTIONS, 'index.html');
   destroyWindow('login');
   destroyWindow('license');
+  // NOT a PRIMARY_WINDOW (so it never hides-to-tray into a headless, unrecoverable
+  // state with terms unaccepted). Closing the gate with the X = Decline & Quit.
+  // destroyWindow sets _allowClose for the accept/programmatic path, so those close cleanly.
+  try {
+    w?.on('close', () => { if (!isQuitting && !w._allowClose) { isQuitting = true; app.quit(); } });
+    w?.once('ready-to-show', () => { if (!w.isDestroyed()) { w.show(); w.focus(); } });
+  } catch {}
 }
 
 // First-run familiarisation tour (concepts), shown once AFTER the setup wizard.
@@ -380,7 +387,7 @@ const NON_MODAL_CHILD = new Set(['dev-inspector', 'review', 'settings', 'search'
 // Top-level "primary" windows that hide to the tray on a user close (the app then
 // fully quits ONLY via tray Exit). Their programmatic transitions destroy them
 // via destroyWindow(). Child windows close normally.
-const PRIMARY_WINDOWS = new Set(['login', 'license', 'onboarding', 'legal', 'main']);
+const PRIMARY_WINDOWS = new Set(['login', 'license', 'onboarding', 'main']);
 
 const winStateFile = () => path.join(app.getPath('userData'), 'window-state.json');
 function loadWinStates() { try { return JSON.parse(fs.readFileSync(winStateFile(), 'utf8')); } catch { return {}; } }
@@ -543,6 +550,8 @@ async function trayGateAllows() {
   return false;
 }
 async function revealAppGated() { if (await trayGateAllows()) showPrimaryWindow(); }
+// True only when the main shell is up — the app is fully entered (past login + all gates).
+function inShell() { return !!(windows['main'] && !windows['main'].isDestroyed()); }
 
 // Tray menu — auth-gated items are explicitly DISABLED when the role is absent
 // (not silent no-ops). Rebuilt on login/logout via refreshTrayMenu().
@@ -552,10 +561,13 @@ function buildTrayMenu() {
   return Menu.buildFromTemplate([
     { label: 'Open ScanFinder', click: () => revealAppGated() },
     { type: 'separator' },
+    // inShell(): the privileged openers must NEVER open a functional window unless the
+    // MAIN shell is up — so a pre-shell gate (legal/onboarding/license) can't be bypassed
+    // from the tray regardless of the menu's enabled state or refreshTrayMenu timing.
     { label: 'Open Review',   enabled: canReview,
-      click: async () => { if (await trayGateAllows() && authModule.hasRole('admin', 'edit')) createWindow('review',   { width: 1200, height: 800, minWidth: 900, minHeight: 600 }); } },
+      click: async () => { if (inShell() && await trayGateAllows() && authModule.hasRole('admin', 'edit')) createWindow('review',   { width: 1200, height: 800, minWidth: 900, minHeight: 600 }); } },
     { label: 'Open Settings', enabled: canSettings,
-      click: async () => { if (await trayGateAllows() && authModule.hasRole('admin'))         createWindow('settings', { width: 1320, height: 820, minWidth: 1280, minHeight: 660 }); } },
+      click: async () => { if (inShell() && await trayGateAllows() && authModule.hasRole('admin'))         createWindow('settings', { width: 1320, height: 820, minWidth: 1280, minHeight: 660 }); } },
     { type: 'separator' },
     { label: 'Exit ScanFinder', click: () => { isQuitting = true; app.quit(); } },
   ]);
@@ -822,23 +834,38 @@ app.whenReady().then(() => {
   // Single source of truth: bundled LEGAL.txt (also the installer's licence page).
   // resourcePath resolves it in dev (repo root) AND packaged (extraResources).
   const legalPath = () => resourcePath('LEGAL.txt');
+  // SHA-256 of the exact LEGAL.txt bytes accepted — recorded WITH the acceptance so we can
+  // prove WHICH text was agreed (not just "the July version"). '' if the file can't be read.
+  const legalTextHash = () => {
+    try { return require('crypto').createHash('sha256').update(fs.readFileSync(legalPath())).digest('hex'); }
+    catch { return ''; }
+  };
   ipcMain.handle('get-legal-text', () => {
     try { return { version: LEGAL_VERSION, text: fs.readFileSync(legalPath(), 'utf8') }; }
     catch { return { version: LEGAL_VERSION, text: '' }; }
   });
   ipcMain.on('open-legal', async () => { try { await shell.openPath(legalPath()); } catch {} });
-  // Record acceptance LOCALLY (version + timestamp only — no personal data/telemetry),
-  // then continue the entry flow (onboarding or shell).
-  ipcMain.on('legal-accept', () => {
+  // The mutating handlers are the gate's authority — only the legal window may call them,
+  // so a first-party (or compromised) renderer can't self-accept or quit the app.
+  const fromLegalWindow = (e) => BrowserWindow.fromWebContents(e.sender) === windows['legal'];
+  // Record acceptance LOCALLY only — { version, hash, app_version, accepted_at }. No personal
+  // data, no telemetry. The hash is evidence of the exact text; re-prompting still keys on
+  // LEGAL_VERSION (a material bump), so an editorial typo fix won't eject everyone.
+  ipcMain.on('legal-accept', (e) => {
+    if (!fromLegalWindow(e)) return;
+    // Never record acceptance of terms that failed to load (empty text) — the user can't
+    // have read them; leave unaccepted so the gate re-shows.
+    if (!legalTextHash()) { logger.warn?.('terms acceptance refused: LEGAL.txt unreadable'); return; }
     try {
       require('../database/modules/learning').setSetting(getDb(), 'terms_accepted',
-        JSON.stringify({ version: LEGAL_VERSION, accepted_at: new Date().toISOString() }));
-    } catch (e) { logger.warn?.('terms acceptance write failed: ' + e.message); }
+        JSON.stringify({ version: LEGAL_VERSION, hash: legalTextHash(),
+                         app_version: app.getVersion(), accepted_at: new Date().toISOString() }));
+    } catch (err) { logger.warn?.('terms acceptance write failed: ' + err.message); }
     destroyWindow('legal');
     if (needsOnboarding()) { showOnboarding(); return; }
     openMainShell();
   });
-  ipcMain.on('legal-decline', () => { isQuitting = true; app.quit(); });
+  ipcMain.on('legal-decline', (e) => { if (!fromLegalWindow(e)) return; isQuitting = true; app.quit(); });
 
   processingModule.register(ctx);
   reviewModule.register(ctx);

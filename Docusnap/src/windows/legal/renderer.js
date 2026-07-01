@@ -8,17 +8,41 @@ const D = window.docusnap;
 const docEl = document.getElementById('doc');
 const cb = document.getElementById('accept-cb');
 const cont = document.getElementById('continue');
+const declineBtn = document.getElementById('decline');
+const msg = document.getElementById('gate-msg');
+
+let textOk = false;   // only allow acceptance once the terms actually loaded
 
 (async () => {
   try {
     const { text } = await D.getLegalText();
-    docEl.textContent = text && text.trim() ? text : 'The Terms of Use could not be loaded. You can still open them in a separate window, or decline.';
+    if (text && text.trim()) { docEl.textContent = text; textOk = true; }
+    else {
+      docEl.textContent = 'The Terms of Use could not be loaded. Please reopen them in a separate window, or decline. You cannot accept terms that have not loaded.';
+      cb.disabled = true;
+    }
   } catch {
-    docEl.textContent = 'The Terms of Use could not be loaded. You can still open them in a separate window, or decline.';
+    docEl.textContent = 'The Terms of Use could not be loaded. Please reopen them in a separate window, or decline.';
+    cb.disabled = true;
   }
+  syncContinue();
 })();
 
-cb.addEventListener('change', () => { cont.disabled = !cb.checked; });
-cont.addEventListener('click', () => { if (cb.checked) D.legalAccept?.(); });
-document.getElementById('decline').addEventListener('click', () => D.legalDecline?.());
+// Accept is enabled ONLY when the terms loaded AND the box is ticked.
+function syncContinue() { cont.disabled = !(textOk && cb.checked); }
+cb.addEventListener('change', syncContinue);
+cont.addEventListener('click', () => { if (textOk && cb.checked) D.legalAccept?.(); });
+
+// Decline is a two-step confirm — a paid customer shouldn't lose access on a stray click,
+// and the "relaunch to see the terms again" recovery isn't obvious, so we say it.
+let declineArmed = false;
+declineBtn.addEventListener('click', () => {
+  if (!declineArmed) {
+    declineArmed = true;
+    declineBtn.textContent = 'Quit without accepting';
+    msg.textContent = 'You can’t use Scan Finder without accepting. Accept above, or click again to quit (you can reopen and accept any time).';
+    return;
+  }
+  D.legalDecline?.();
+});
 document.getElementById('openext').addEventListener('click', () => D.openLegal?.());
