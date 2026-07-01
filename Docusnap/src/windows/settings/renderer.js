@@ -1097,7 +1097,8 @@ function showTypedConfirmDialog({ title, warningHtml, requiredText, confirmLabel
 // THEME TOGGLE
 // ══════════════════════════════════════════════════════════════════════════════
 
-const THEME_VALUES = ['light', 'warm', 'slate', 'dark', 'midnight', 'graphite'];
+const THEME_VALUES = ['light', 'warm', 'slate', 'dark', 'midnight', 'graphite',
+                      'spring', 'summer', 'autumn', 'winter', 'festive'];
 async function loadThemeSelect() {
   const theme = await api.getSetting('theme') || 'warm';
   const sel = document.getElementById('theme-select');
