@@ -57,7 +57,9 @@ def main() -> int:
         r = _run(d)
         if not check(f"{years}-year-old date '{d}' has no validation note", not r.get("validation_note")):
             failures += 1
-        if not check(f"{years}-year-old date keeps full confidence", r["confidence"] == 90):
+        # Not penalised for age: a clean parse floors to _CLEAN_DATE_CONF (>=90),
+        # never reduced below the input for being old.
+        if not check(f"{years}-year-old date keeps its confidence (>=90, not penalised for age)", r["confidence"] >= 90):
             failures += 1
 
     # ── 2. Future dates ARE flagged ───────────────────────────────────────────

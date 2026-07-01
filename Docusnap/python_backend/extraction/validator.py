@@ -163,7 +163,7 @@ _CLEAN_SALVAGE_CONF = 80
 # leave a correctly-read date flagged for review. Set to "High" but below the 95 cap
 # clean keyword reads get, so the ecosystem stays consistent. (Residual risk: an
 # anchor that drifted to a DIFFERENT but valid date — rare for distinctive date text.)
-_CLEAN_DATE_CONF = 90
+_CLEAN_DATE_CONF = 94
 
 
 # ── Field-specific OCR-noise sanitisation ─────────────────────────────────────
@@ -251,19 +251,34 @@ def validate_and_adjust(extractions: dict,
         else:
             results[key] = {"value": None, "confidence": 0, "method": "unknown"}
 
-    # 0. Reject values that are clearly mis-captured labels, not values.
-    # A label-shaped string (ends with ':') is the universal signal that an
-    # anchor/crop landed on the field's LABEL rather than its value — e.g. an
-    # anchor_crop returning "Total:" for invoice_number at 85% confidence
-    # (observed in processing.log — high enough to skip review entirely).
-    # No legitimate value for any field type (reference number, date, amount,
-    # name) naturally ends with a bare colon, so this is a safe, layout- and
-    # supplier-agnostic guard against that failure class, not a one-off patch.
+    # 0. Reject values that are clearly mis-captured LABELS, not values.
+    # A trailing ':' usually means an anchor/crop landed on the field's LABEL
+    # rather than its value — e.g. an anchor_crop returning "Total:" for
+    # invoice_number at 85% confidence (observed in processing.log).
+    # BUT a genuine value can pick up a STRAY trailing colon when the crop bleeds
+    # into a neighbouring label ("12/01/2026 :", "2601-0371-1 :") — that is crop
+    # noise, not a mis-captured label, and flagging it forces a needless review.
+    # So distinguish the two by what remains once the trailing colon is trimmed:
+    #   • a DATE field whose trimmed value still PARSES as a date, or
+    #   • any other field whose trimmed value still carries a DIGIT
+    # is a real value with a stray colon → trim it and move on. A bare word label
+    # ("Total", "Ticket No.") has no digit and no date → still flagged. Layout-
+    # and supplier-agnostic; only narrows a known false-positive class.
+    _field_types = {f.get("key"): (f.get("type") or "") for f in field_defs}
     for key, data in results.items():
         if key.startswith('_') or not isinstance(data, dict):
             continue
         val = data.get("value")
-        if isinstance(val, str) and val.strip().endswith(':'):
+        if not (isinstance(val, str) and val.strip().endswith(':')):
+            continue
+        trimmed = val.strip().rstrip(':').strip()
+        is_real_value = (parse_date(trimmed) is not None) \
+            if _field_types.get(key) == "date" \
+            else any(ch.isdigit() for ch in trimmed)
+        if is_real_value:
+            # Real value with a crop-bled trailing colon → clean it, don't flag.
+            results[key] = {**data, "value": trimmed}
+        else:
             results[key] = {
                 **data,
                 "confidence": min(data.get("confidence", 0), 35),

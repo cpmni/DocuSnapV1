@@ -102,6 +102,36 @@ def main():
     if not check("no validation_note added", "validation_note" not in inv3):
         failures += 1
 
+    # Case 4: a genuine DATE that picked up a STRAY trailing colon from a
+    # neighbouring label ("12/01/2026 :", crop bleed) is NOT a mis-captured label.
+    # It must be cleaned + normalised and pass WITHOUT the label flag — the exact
+    # false-positive fixed here (a Purchase Order's invoice_date wrongly flagged).
+    extractions4 = {
+        "invoice_number": {"value": "INV-88213", "confidence": 92, "method": "keyword"},
+        "invoice_date":   {"value": "12/01/2026 :", "confidence": 90, "method": "anchor_crop"},
+        "supplier_name":  {"value": "Greenfield Logistics Ltd", "confidence": 90, "method": "logo"},
+    }
+    d4 = validate_and_adjust(extractions4, FIELD_DEFS)["invoice_date"]
+    print("Case 4: date with a stray trailing colon ('12/01/2026 :') is cleaned, not flagged")
+    if not check("not flagged as a label", "label" not in d4.get("validation_note", "").lower()):
+        failures += 1
+    if not check("normalised to a clean date (12-01-2026)", d4["value"] == "12-01-2026"):
+        failures += 1
+
+    # Case 5: a coded value (reference) with a stray trailing colon still carries a
+    # digit → a real value with crop noise → trimmed, not flagged.
+    extractions5 = {
+        "invoice_number": {"value": "2601-0371-1 :", "confidence": 88, "method": "anchor_crop"},
+        "invoice_date":   {"value": "12-08-2026", "confidence": 90, "method": "keyword"},
+        "supplier_name":  {"value": "Greenfield Logistics Ltd", "confidence": 90, "method": "logo"},
+    }
+    inv5 = validate_and_adjust(extractions5, FIELD_DEFS)["invoice_number"]
+    print("Case 5: coded value with a stray trailing colon ('2601-0371-1 :') is cleaned, not flagged")
+    if not check("no label validation_note", "label" not in inv5.get("validation_note", "").lower()):
+        failures += 1
+    if not check("trailing colon trimmed", inv5["value"] == "2601-0371-1"):
+        failures += 1
+
     print()
     if failures:
         print(f"{failures} check(s) failed — label-shaped-value guard regressed.")
