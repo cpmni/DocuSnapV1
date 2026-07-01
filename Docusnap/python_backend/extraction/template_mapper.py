@@ -1084,13 +1084,33 @@ def _label_score(needle, haystack):
     1.0), blended with ratio() so a tight exact line still scores high. A
     different nearby label shares little of the needle, so it stays rejected —
     preferring the correct local label without widening the search.
+
+    WORD-BOUNDARY GUARD: plain substring containment is too loose — "total" sits
+    inside "subtotal", "date" inside "mandate", "amount" inside "amount due" — so
+    a short label would score a PERFECT 1.0 on a DIFFERENT, longer on-page label
+    and, on the resulting score tie, be chosen by mere PROXIMITY, silently
+    relocating e.g. a Total anchor onto the Subtotal row (variable line-item
+    layouts float the totals block, so which is nearer flips per document). A
+    whole-needle occurrence counts only when it is NOT glued to a surrounding
+    alphanumeric — the same (?<![a-z0-9])…(?![a-z0-9]) guard keyword._label_pattern
+    uses. A needle that appears ONLY as a glued sub-token is rejected OUTRIGHT
+    (0.0) so its incidental character overlap can't sneak past the threshold via
+    ratio() when the real standalone label is absent. This also closes the second
+    false-1.0 path: find_longest_match's whole-needle run only reaches 1.0 when
+    the needle is a substring, which is now handled here first. A genuine
+    boundary-aligned prefix ("serial" of "serial number") still scores 1.0.
     """
     if not needle:
         return 1.0
     if not haystack:
         return 0.0
-    if needle in haystack:
+    # Boundary-aligned occurrence of the whole needle = a true label hit.
+    if re.search(r'(?<![a-z0-9])' + re.escape(needle) + r'(?![a-z0-9])', haystack):
         return 1.0
+    # Present, but glued inside a larger token (sub|total) → a false label. Reject
+    # so it can neither win a 1.0 tie nor pass threshold on shared characters.
+    if needle in haystack:
+        return 0.0
     sm = difflib.SequenceMatcher(None, needle, haystack)
     longest = sm.find_longest_match(0, len(needle), 0, len(haystack)).size
     return max(longest / len(needle), sm.ratio())

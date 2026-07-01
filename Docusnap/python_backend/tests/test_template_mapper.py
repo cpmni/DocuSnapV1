@@ -795,10 +795,67 @@ def test_manual_anchor_shape_precedence():
     return failures
 
 
+def test_label_score_word_boundary():
+    failures = 0
+    print("_label_score: word-boundary guard — a short label can't match inside a longer one")
+
+    # Direct scoring: a standalone label is a perfect hit; the SAME label glued
+    # inside a longer on-page word ("total" in "subtotal", "date" in "mandate")
+    # is rejected outright, not scored 1.0. This is the reusable fix — it protects
+    # every field whose label is a substring of another label on the page.
+    if not check("standalone 'total' -> 1.0", template_mapper._label_score("total", "total 6570.99") == 1.0):
+        failures += 1
+    if not check("'total' glued inside 'subtotal' -> 0.0 (was a false 1.0)",
+                 template_mapper._label_score("total", "subtotal 7157.70") == 0.0):
+        failures += 1
+    if not check("colon-suffixed 'total:' still rejected inside 'subtotal:'",
+                 template_mapper._label_score("total:", "subtotal:") == 0.0):
+        failures += 1
+    if not check("'date' glued inside 'mandate' -> 0.0", template_mapper._label_score("date", "mandate reference") == 0.0):
+        failures += 1
+    if not check("'date' standalone in 'invoice date' -> 1.0",
+                 template_mapper._label_score("date", "invoice date") == 1.0):
+        failures += 1
+    # A genuine boundary-aligned prefix of a longer label must still score 1.0.
+    if not check("boundary-aligned prefix 'serial' of 'serial number' -> 1.0 (unchanged)",
+                 template_mapper._label_score("serial", "serial number") == 1.0):
+        failures += 1
+    # OCR-misread fuzzy matching (no exact containment) is untouched.
+    if not check("OCR fuzzy 'invoice number'~'invoice numben' still passes threshold, below 1.0",
+                 0.6 <= template_mapper._label_score("invoice number", "invoice numben") < 1.0):
+        failures += 1
+
+    # End-to-end: a Total anchor's search region holds BOTH rows, with Subtotal
+    # positioned NEAREST the taught box (so the old proximity tie-break would have
+    # picked it). The boundary guard makes Total the sole 1.0, so score — not
+    # proximity — decides, and the anchor locates Total.
+    page = FakePage()
+    anchor_box = {"x_norm": 0.42, "y_norm": 0.58, "w_norm": 0.16, "h_norm": 0.08}
+    both = [
+        {"text": "Subtotal 7157.70", "x_norm": 0.0, "y_norm": 0.35, "w_norm": 1.0, "h_norm": 0.30},
+        {"text": "Total 6570.99",    "x_norm": 0.0, "y_norm": 0.70, "w_norm": 1.0, "h_norm": 0.30},
+    ]
+    located = template_mapper._locate_anchor(page, anchor_box, "Total", 0.0, lines_stub(both))
+    if not check("locates the Total row, not the nearer Subtotal row",
+                 located is not None and (located.get("matched_text") or "").lower().startswith("total")):
+        failures += 1
+
+    # A region that has ONLY a Subtotal row must now report "not found" (was a
+    # false locate), so the caller falls back cleanly instead of reading subtotal.
+    only_sub = [{"text": "Subtotal 7157.70", "x_norm": 0.0, "y_norm": 0.45, "w_norm": 1.0, "h_norm": 0.30}]
+    none_located = template_mapper._locate_anchor(page, anchor_box, "Total", 0.0, lines_stub(only_sub))
+    if not check("Subtotal-only region -> None (no false 'total' locate)", none_located is None):
+        failures += 1
+
+    print()
+    return failures
+
+
 def main():
     failures = 0
     failures += test_geometry_helpers()
     failures += test_locate_anchor()
+    failures += test_label_score_word_boundary()
     failures += test_extract_with_mappings()
     failures += test_derived_target_no_leading_inset_clip()
     failures += test_locate_anchor_padded_box()
