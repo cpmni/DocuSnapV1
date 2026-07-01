@@ -3152,6 +3152,7 @@ document.getElementById('lr-btn-clear-anchors').addEventListener('click', async 
   if (!confirm(`Clear all field anchors learned for "${scopeLabel}"? This cannot be undone.`)) return;
   const result = await api.clearLearningAnchors(lrCurrentScope);
   document.getElementById('lr-msg').textContent = `Cleared ${result.changes} field anchor(s).`;
+  await loadMemoryInventory();   // refresh the inventory counts, not just the scope search
   await runLearningSearch();
 });
 
@@ -3162,6 +3163,7 @@ document.getElementById('lr-btn-clear-hints').addEventListener('click', async ()
   if (!confirm(`Clear all supplier hints learned for "${scopeLabel}"? This cannot be undone.`)) return;
   const result = await api.clearLearningHints(lrCurrentScope);
   document.getElementById('lr-msg').textContent = `Cleared ${result.changes} supplier hint(s).`;
+  await loadMemoryInventory();
   await runLearningSearch();
 });
 
@@ -3172,6 +3174,7 @@ document.getElementById('lr-btn-clear-field-rules').addEventListener('click', as
   if (!confirm(`Clear all field cleanup rules learned for "${scopeLabel}"? This cannot be undone.`)) return;
   const result = await api.clearLearningFieldRules(lrCurrentScope);
   document.getElementById('lr-msg').textContent = `Cleared ${result.changes} field cleanup rule(s).`;
+  await loadMemoryInventory();
   await runLearningSearch();
 });
 
@@ -3192,6 +3195,7 @@ document.getElementById('lr-btn-clear-corrections').addEventListener('click', as
   if (!confirmed) return;
   const result = await api.clearLearningCorrections(lrCurrentScope);
   document.getElementById('lr-msg').textContent = `Cleared ${result.changes} correction(s).`;
+  await loadMemoryInventory();
   await runLearningSearch();
 });
 
