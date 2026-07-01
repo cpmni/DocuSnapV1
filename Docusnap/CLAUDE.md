@@ -1143,6 +1143,26 @@ when there's no unambiguous fixed value, so every other doc type's logo path is
 byte-identical. Reusable for any fixed-supplier doc type, independent of template-match
 reliability. Guarded by tests/test_fixed_supplier_immune.py.
 
+**Logo supplier match FAILS SAFE on ambiguity** (`anchor.try_logo_supplier_match` +
+`_pick_unambiguous_supplier`, 2026-07): the logo fallback used to return the
+GLOBAL-CLOSEST logo, so when two DIFFERENT suppliers' stored logos were both near the
+page phash it confidently picked whichever was marginally nearer — a WRONG supplier,
+which mis-scopes every per-supplier learning corpus (hints/anchors/corrections/template
+identity) and files under the wrong company. `compute_logo_hash` is a 64-bit GREYSCALE
+phash, so marks sharing a coarse layout — or differing mainly by COLOUR (greyscale
+discards it) — land only a few hamming apart (measured: colour-only-distinct logos → 0).
+Now the match groups logos by supplier (multi-reference rows for ONE supplier are the
+same identity, never a rival), and accepts the winner ONLY when it clears the confidence
+gate AND is at least `LOGO_AMBIGUITY_MARGIN` (4) hamming closer than the next DIFFERENT
+supplier; on a near-tie it returns None → supplier stays empty for the keyword/template
+signals or manual review, instead of a confident wrong guess. INERT for genuinely
+distinct logos (winner far clearer than the margin even after scan drift → accepted
+unchanged; a well-separated 5-logo bench matched 5/5 under scan noise), so no regression
+for real distinct-logo installs; it only REJECTS a previously over-confident wrong guess.
+Decision factored into the pure `_pick_unambiguous_supplier` — guarded by
+tests/test_logo_ambiguity.py. (The stress-test 48% scanned-supplier rate was a corpus
+artifact: five logos distinguished ONLY by colour, phash's blind spot.)
+
 **Validator date rules (Stage 4)**: dates normalise to DD-MM-YYYY; a valid date
 embedded in OCR junk is salvaged (`salvage_date`, review-forced). The date
 sanity check is FUTURE-ONLY — old archival dates are expected and never flagged;
