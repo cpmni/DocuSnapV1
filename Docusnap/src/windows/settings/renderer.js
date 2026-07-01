@@ -280,19 +280,38 @@ function _syncAutoFileThresholdEnabled(on) {
   const sl = document.getElementById('auto-file-threshold');
   if (sl) sl.disabled = !on;
 }
+// Invariant: the Review confidence threshold must never exceed the auto-file threshold —
+// you can't require review at a HIGHER confidence than the level you auto-file at (it would
+// leave a contradictory band: above auto-file yet still "needs review"). Enforce it by capping
+// the review slider's max at the auto-file value and clamping/persisting review if it was above.
+function enforceAutoFileInvariant(persistReview) {
+  const autoEl = document.getElementById('auto-file-threshold');
+  const rev    = document.getElementById('global-threshold');
+  if (!autoEl || !rev) return;
+  const auto = parseInt(autoEl.value, 10) || 100;
+  rev.max = String(auto);
+  if ((parseInt(rev.value, 10) || 0) > auto) {
+    rev.value = String(auto);
+    const rl = document.getElementById('global-threshold-val'); if (rl) rl.textContent = auto + '%';
+    if (persistReview) api.setSetting('confidence_threshold', String(auto));
+  }
+}
 (async () => {
   try {
     const t = parseInt((await api.getSetting('auto_file_threshold')) || '100', 10) || 100;
     document.getElementById('auto-file-threshold').value = t;
     document.getElementById('auto-file-threshold-val').textContent = t + '%';
     _syncAutoFileThresholdEnabled((await api.getSetting('auto_file_full_confidence')) !== 'false');
+    enforceAutoFileInvariant(true);
   } catch {}
 })();
 document.getElementById('auto-file-threshold').addEventListener('input', (e) => {
   document.getElementById('auto-file-threshold-val').textContent = e.target.value + '%';
+  enforceAutoFileInvariant(false);   // lowering auto-file pulls the review cap (+ value) down with it
 });
 document.getElementById('auto-file-threshold').addEventListener('change', async (e) => {
   await api.setSetting('auto_file_threshold', String(e.target.value));
+  enforceAutoFileInvariant(true);
 });
 
 // ── Read values that wrap onto the next line (default ON) ──────────────────────
@@ -546,6 +565,7 @@ async function loadThreshold() {
   const n   = val != null ? parseInt(val) : 70;
   thresholdSlider.value    = n;
   thresholdVal.textContent = n + '%';
+  if (typeof enforceAutoFileInvariant === 'function') enforceAutoFileInvariant(true);   // review <= auto-file
 }
 loadThreshold();
 
