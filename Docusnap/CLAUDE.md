@@ -651,6 +651,21 @@ process_docs.py → ExtractionEngine.extract()
            the label in the chosen direction (captureAnchorContext forceDir) for label-above
            layouts or a wrong auto-pick; the readout also flashes the detected anchor box.
            sanitizeAnchorLabel still rejects a value-shaped "label".
+           GARBLED-LABEL GUARD + EDITABLE READOUT (2026-07): on a NOISY scan the auto-label
+           capture could grab a MISREAD caption ("Serial No."→"verial No.", "Description"→a
+           curly-quote-prefixed "escription") — a garbled label never re-locates on future
+           pages, so the taught anchor silently reads NOTHING forever (the "won't learn what
+           I target" symptom). The readout bar's label is now an EDITABLE input (not static
+           text), so any misdetection — including plausible garble like "verial No." — is
+           correctable before Confirm (a typed caption → label_detected true); `labelLooksSuspicious`
+           (replacement char / junk symbol / long vowel-less token) flips the bar to a
+           WARNING ("this label looks misread — check it matches the caption"). A one-off
+           cleanup deletes any stored anchor whose label carries a non-ASCII/control char.
+           SEPARATELY, a doc-type change in Review now DISCARDS staged ⊕ draws (pendingAnchors/
+           pendingFieldRules — each was captured under the PREVIOUS type and is keyed to it),
+           so teaching under Invoice then switching to a worksheet can't leak boxes into the
+           wrong layout (mirrors what changing DOCUMENTS already does); typed field VALUES are
+           kept, only the un-committed drawings clear + a toast prompts a re-draw.
            CREDIBILITY GATE (engine.extract): a Stage-2 candidate may not OVERRIDE
            an existing incumbent unless credible for the field class — date fields
            require validator.parse_date(); ref fields (_is_ref_field: ..._number/
@@ -1298,6 +1313,21 @@ Guarded by `database/modules/test_structural_fields.js`. (NOTE a latent nuance: 
 engine's universal scope key is `supplier_name`, but sales orders carry the company
 as `customer_name` — label-only unification here; a key reconciliation is deferred.)
 
+**DANGLING STRUCTURAL ROLE — self-heal + Confirm resilience** (2026-07): a type's
+`ref_field_key`/`date_field_key` can end up pointing at a field that no longer exists
+(the Reference field was deleted, or a type was created with a role key that never
+matched a real field). That made Review's Confirm gate IMPOSSIBLE to satisfy — the
+required key matched NO field, so Confirm sat disabled with nothing on screen to fill
+(the "won't let me file, no empty field visible" trap). Three guards: (1)
+`repairStructuralRoles()` CLEARS a dangling role to NULL on the UI type-list loads
+(`getAllWithFields`/`getAllWithFieldsAll`) so the Settings dropdown shows it as unset +
+re-pickable (not auto-repointed — guessing ticket_no vs serial_number is the user's
+call); (2) `updateType` REFUSES to set a role to a field key that doesn't exist (can't
+create a new dangling role); (3) the Review renderer's `validateConfirm` DETECTS a
+dangling role (required key with no matching field) and shows a clear note ("This
+type's Reference field isn't set up. Choose it in Settings → Document Types") instead
+of a silent block. Guarded by `test_structural_fields.js`.
+
 **PRESET DOCUMENT-TYPE CATALOG** (Settings → Document Types → "Add from catalog…";
 `database/modules/document_types.js` `PRESET_CATALOG`/`getPresetCatalog`/`addPresetTypes`):
 a shipped library of ready-made types a business TICKS to add — Purchase/Sales Invoice,
@@ -1383,6 +1413,39 @@ key/URI entry is the fallback when the file is absent. **When editing admin_auth
 
 **Secrets**: never log/echo account or activation keys; never re-display a one-time key
 after issuance; never expose `account_key_hash` or the raw fingerprint.
+
+---
+
+## Legal / Terms acceptance (2026-07)
+A version-stamped Disclaimer & Terms-of-Use acceptance gate. SINGLE SOURCE OF TRUTH:
+one bundled **`LEGAL.txt`** (repo root; DRAFT pending solicitor review — see the
+`[SOLICITOR:]` markers) shipped via `build.extraResources` AND used as the installer's
+NSIS licence page (`build.nsis.license = "LEGAL.txt"` — only renders with `oneClick:false`;
+coexists with the custom `installer.nsh`). Surfaced in three places from that one file:
+- **Installer** — accept-to-continue licence page (weak evidence; bypassable via silent
+  `/S` — the in-app gate is the real record).
+- **First-run / version-bump gate** — `src/windows/legal/{index.html,renderer.js}`, shown
+  by `enterMainApp()` AFTER the licence gate + BEFORE onboarding/shell whenever stored
+  acceptance ≠ `LEGAL_VERSION` (main.js). Enforced in MAIN (never renderer-only). UX:
+  "Before you start — please review the Terms" · editable-text (unused) scroll box ·
+  checkbox · **Accept & Continue** (disabled until ticked AND the text actually loaded —
+  can't accept unread/empty terms) · **Decline & Quit** (two-step confirm + contact line)
+  · "Open in a separate window". `legal` is NOT a `PRIMARY_WINDOW` (so an X-close =
+  Decline & Quit, never a headless hide-to-tray dead-end); `legal-accept`/`legal-decline`
+  are sender-verified (only the legal window may call them). Also: the tray Review/Settings
+  openers now require the MAIN shell (`inShell()`), closing a latent pre-shell bypass.
+- **Re-read any time** — About box "Terms & Disclaimer" + Settings → Advanced → Legal,
+  both `→ open-legal` (shell.openPath of the bundled file).
+
+Acceptance stored LOCALLY only: `settings.terms_accepted = { version, hash(LEGAL.txt),
+app_version, accepted_at }` — no personal data, no telemetry, no external calls; the hash
+proves WHICH text was accepted (re-prompt still keys on `LEGAL_VERSION`, a MATERIAL bump).
+`termsAccepted()` fails OPEN to "not accepted" (a read error never skips the gate). To
+re-prompt everyone: bump `LEGAL_VERSION` (main.js) + the file's `Version:` header.
+IPC: `get-legal-text`, `open-legal`, `legal-accept`, `legal-decline`. Reviewed by eric
+(Electron) + bob (product) + an AI legal-advisor pass; the legal-review action items
+(remove the DRAFT banner, contracting-party identity, CRA/UCTA liability wording, a
+separate Privacy Notice for the licensing telemetry) are OWNER/solicitor tasks, not code.
 
 ---
 
