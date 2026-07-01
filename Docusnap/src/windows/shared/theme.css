@@ -145,6 +145,52 @@
   color-scheme:dark;
 }
 
+/* ── Seasonal (light family) — fresh, characterful palettes ── */
+/* Spring — soft new-growth green, blossom-clean surfaces */
+:root[data-theme="spring"] {
+  --bg:#f1f8f0; --surface:#ffffff; --surface2:#e8f3e6; --surface3:#dcecd8;
+  --border:#dcebd7; --border2:#c4dcbd;
+  --accent:#4aa35c; --accent2:#3b8a4b; --accent-bg:#e4f4e6; --accent-border:#bfe2c2; --on-accent:#fff;
+  --text:#25322a; --muted:#5f7663; --muted2:#93a894; --doc-bg:#e8f3e6;
+  --shadow:0 1px 2px rgba(40,80,50,.06), 0 20px 44px -26px rgba(40,80,50,.20);
+}
+/* Summer — bright sunshine yellow/gold, warm and open (needs dark on-accent) */
+:root[data-theme="summer"] {
+  --bg:#fdf8e6; --surface:#fffdf4; --surface2:#f8f0d4; --surface3:#f0e5bf;
+  --border:#f1e7c6; --border2:#e4d29a;
+  --accent:#f5b300; --accent2:#dd9c00; --accent-bg:#fdf0c2; --accent-border:#f0d98f; --on-accent:#3a2c00;
+  --text:#3a3218; --muted:#7f7038; --muted2:#b3a266; --doc-bg:#f8f0d4;
+  --shadow:0 1px 2px rgba(120,90,10,.07), 0 20px 44px -26px rgba(120,90,10,.22);
+}
+/* Autumn — warm amber & pumpkin, toasty cream surfaces */
+:root[data-theme="autumn"] {
+  --bg:#faf3ea; --surface:#fffdfa; --surface2:#f4e8da; --surface3:#ecdcc8;
+  --border:#eaddcb; --border2:#dcc7ab;
+  --accent:#c15a20; --accent2:#a44a18; --accent-bg:#f7e6d6; --accent-border:#e6c5a5; --on-accent:#fff;
+  --text:#352819; --muted:#7c6650; --muted2:#ab9376; --doc-bg:#f4e8da;
+  --shadow:0 1px 2px rgba(90,50,20,.07), 0 20px 44px -26px rgba(90,50,20,.22);
+}
+/* Winter — crisp icy BLUE, cool and clean */
+:root[data-theme="winter"] {
+  --bg:#e7eff9; --surface:#ffffff; --surface2:#dce8f7; --surface3:#cbdcf1;
+  --border:#d3e1f3; --border2:#afc9ec;
+  --accent:#2f6fd0; --accent2:#245ab3; --accent-bg:#dae8fb; --accent-border:#aecaf1; --on-accent:#fff;
+  --text:#17253e; --muted:#516585; --muted2:#8a9cbd; --doc-bg:#dce8f7;
+  --shadow:0 1px 2px rgba(20,45,90,.07), 0 20px 44px -26px rgba(20,45,90,.24);
+}
+/* ── Festive (dark family) — cosy evergreen night, holly-RED accent, gold highlights ── */
+:root[data-theme="festive"] {
+  --bg:#0d1a12; --surface:#142418; --surface2:#1c3222; --surface3:#26422e;
+  --border:#223a2a; --border2:#315540;
+  --accent:#d83c3c; --accent2:#ef5a5a; --accent-bg:#33100f; --accent-border:#63201f; --on-accent:#fff;
+  --ok:#4bd08a; --ok-bg:#0d2e1e; --ok-border:#1a4a2e;
+  --warn:#f0c04a; --warn-bg:#2e2400; --warn-border:#4a3a1a;   /* festive gold */
+  --err:#ff6b6b; --err-bg:#2e0d0d; --err-border:#4a1f1f;
+  --text:#edeadf; --muted:#93a894; --muted2:#5f7566; --doc-bg:#081209;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 18px 40px -24px rgba(0,0,0,.75);
+  color-scheme:dark;
+}
+
 /* ── Subtle background patterns (pure CSS gradients → CSP-safe; shell --bg only,
       never on cards/inputs/previews). color-mix adapts the texture to each theme. ── */
 :root[data-theme="warm"] body {
@@ -163,6 +209,23 @@
   background-color:var(--bg);
   background-image:radial-gradient(120% 90% at 85% -10%, color-mix(in srgb, var(--accent) 9%, transparent) 0%, transparent 55%);
   background-attachment:fixed;
+}
+/* Seasonal themes — faint repeating seasonal artwork (CSP-safe 'self' SVG tiles,
+   never data: URIs). background-attachment:fixed so the motif stays put while the
+   shell scrolls; the tiles are pre-tinted + very low opacity so they read as texture. */
+:root[data-theme="spring"] body { background-color:var(--bg); background-image:url('patterns/spring.svg'); background-size:150px 150px; background-attachment:fixed; }
+:root[data-theme="summer"] body { background-color:var(--bg); background-image:url('patterns/summer.svg'); background-size:150px 150px; background-attachment:fixed; }
+:root[data-theme="autumn"] body { background-color:var(--bg); background-image:url('patterns/autumn.svg'); background-size:150px 150px; background-attachment:fixed; }
+:root[data-theme="winter"] body { background-color:var(--bg); background-image:url('patterns/winter.svg'); background-size:150px 150px; background-attachment:fixed; }
+/* Festive — a warm gold hearth glow from the top OVER the holly tile. */
+:root[data-theme="festive"] body {
+  background-color:var(--bg);
+  background-image:
+    radial-gradient(120% 90% at 50% -10%, color-mix(in srgb, #e6c34a 12%, transparent) 0%, transparent 55%),
+    url('patterns/festive.svg');
+  background-repeat:no-repeat, repeat;
+  background-size:cover, 150px 150px;
+  background-attachment:fixed, fixed;
 }
 
 /* ──────────────────────────────────────────────────────────────────────────────
