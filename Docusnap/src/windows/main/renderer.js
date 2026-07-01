@@ -392,6 +392,90 @@ document.getElementById('dash-tip-next')?.addEventListener('click', () => { _tip
 renderTip();
 document.getElementById('dash-backup-now')?.addEventListener('click', () => window.docusnap.openSettingsWindow());
 applyDashboardCardPrefs();
+
+// ── Home card drag-to-reorder (grab a card's header; smooth FLIP; order persists per section) ──
+// Cards stay WITHIN their section grid. Order is a same-window UI preference → localStorage.
+const DASH_ORDER_KEY = 'dashboard_card_order';
+function _loadDashOrder() { try { return JSON.parse(localStorage.getItem(DASH_ORDER_KEY)) || {}; } catch { return {}; } }
+function _saveDashOrder(section, ids) {
+  const o = _loadDashOrder(); o[section] = ids;
+  try { localStorage.setItem(DASH_ORDER_KEY, JSON.stringify(o)); } catch {}
+}
+function applyDashCardOrder() {
+  const o = _loadDashOrder();
+  for (const grid of document.querySelectorAll('#view-home .dash-grid[data-grid]')) {
+    const ids = o[grid.dataset.grid];
+    if (!Array.isArray(ids)) continue;
+    for (const id of ids) { const el = document.getElementById(id); if (el && el.parentElement === grid) grid.appendChild(el); }
+  }
+}
+// FLIP: record positions, mutate the DOM, then animate each moved card from its old spot to 0.
+function _dashFlip(grid, mutate) {
+  const cards = [...grid.querySelectorAll(':scope > .dash-card')];
+  const first = new Map(cards.map(c => [c, c.getBoundingClientRect()]));
+  mutate();
+  for (const c of cards) {
+    if (c.classList.contains('dash-dragging')) continue;
+    const f = first.get(c), l = c.getBoundingClientRect();
+    const dx = f.left - l.left, dy = f.top - l.top;
+    if (dx || dy) {
+      c.style.transition = 'none';
+      c.style.transform = `translate(${dx}px, ${dy}px)`;
+      requestAnimationFrame(() => { c.style.transition = 'transform 180ms ease'; c.style.transform = ''; });
+    }
+  }
+}
+let _dashDrag = null;
+function initDashSortable() {
+  applyDashCardOrder();
+  for (const grid of document.querySelectorAll('#view-home .dash-grid[data-grid]')) {
+    if (grid.dataset.sortWired) continue;
+    grid.dataset.sortWired = '1';   // delegate on the grid (survives card content re-renders)
+    grid.addEventListener('mousedown', (e) => {
+      if (e.button !== 0 || e.target.closest('button, a, input, select, textarea')) return;
+      const head = e.target.closest('.dash-card-head');
+      const card = head && head.closest('.dash-card');
+      if (!head || !card || card.parentElement !== grid || card.classList.contains('card-hidden')) return;
+      e.preventDefault();
+      const rect = card.getBoundingClientRect();
+      const ph = document.createElement('div');
+      ph.className = 'dash-ph' + (card.classList.contains('dash-span') ? ' dash-span' : '');
+      ph.style.height = rect.height + 'px';
+      grid.insertBefore(ph, card.nextSibling);
+      Object.assign(card.style, { width: rect.width + 'px', height: rect.height + 'px',
+        position: 'fixed', left: rect.left + 'px', top: rect.top + 'px', margin: '0',
+        zIndex: '1000', pointerEvents: 'none' });
+      card.classList.add('dash-dragging');
+      document.body.style.userSelect = 'none'; document.body.style.cursor = 'grabbing';
+      _dashDrag = { card, grid, ph, offX: e.clientX - rect.left, offY: e.clientY - rect.top };
+    });
+  }
+}
+window.addEventListener('mousemove', (e) => {
+  const d = _dashDrag; if (!d) return;
+  d.card.style.left = (e.clientX - d.offX) + 'px';
+  d.card.style.top  = (e.clientY - d.offY) + 'px';
+  const cards = [...d.grid.querySelectorAll(':scope > .dash-card')].filter(c => c !== d.card && !c.classList.contains('card-hidden'));
+  for (const c of cards) {
+    const r = c.getBoundingClientRect();
+    if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+      const ref = (e.clientY < r.top + r.height / 2) ? c : c.nextElementSibling;   // insert placeholder before `ref`
+      if (ref !== d.ph && d.ph.nextElementSibling !== ref) _dashFlip(d.grid, () => d.grid.insertBefore(d.ph, ref));
+      break;
+    }
+  }
+});
+window.addEventListener('mouseup', () => {
+  const d = _dashDrag; if (!d) return; _dashDrag = null;
+  const c = d.card;
+  d.grid.insertBefore(c, d.ph); d.ph.remove();
+  Object.assign(c.style, { width: '', height: '', position: '', left: '', top: '', margin: '', zIndex: '', pointerEvents: '' });
+  c.classList.remove('dash-dragging');
+  document.body.style.userSelect = ''; document.body.style.cursor = '';
+  _saveDashOrder(d.grid.dataset.grid, [...d.grid.querySelectorAll(':scope > .dash-card')].map(x => x.id).filter(Boolean));
+});
+initDashSortable();
+
 document.getElementById('dash-clear-recent')?.addEventListener('click', () => {
   localStorage.setItem('recentClearedAt', String(Date.now()));
   renderRecentActivity(_lastConfirmed);   // hide current entries; new ones reappear on refresh

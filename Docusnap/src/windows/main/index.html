@@ -197,6 +197,10 @@
        with the action (button / note) pinned to the bottom. Banners (.dash-span) opt out. */
     .dash-grid > .dash-card:not(.dash-span) { min-height: 186px; }
     .dash-card .dash-btn, .dash-card .dash-card-note { margin-top: auto; }
+    /* Drag-to-reorder: grab a card's header, others FLIP-dock around it, order persists. */
+    .dash-grid[data-grid] .dash-card-head { cursor: grab; user-select: none; }
+    .dash-card.dash-dragging { box-shadow: 0 10px 26px rgba(0,0,0,.20); transform: scale(1.02); opacity: .97; }
+    .dash-ph { border: 2px dashed var(--border2); border-radius: var(--r, 12px); background: var(--surface2); opacity: .7; }
     .dash-card {
       background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
       box-shadow: var(--shadow); padding: 18px 20px; display: flex; flex-direction: column; gap: 12px;
@@ -720,7 +724,7 @@
           <!-- One auto-fit grid: full-width banners (.dash-span) stack; info tiles
                reflow with no empty cells as the visible-card count changes. -->
           <!-- STATUS TIER: what needs attention + how things are going -->
-          <div class="dash-grid">
+          <div class="dash-grid" data-grid="top">
 
             <!-- Trial banner (full width; only while on trial) -->
             <div class="dash-trial dash-span calm" id="dash-trial" data-help-key="trial" style="display:none;">
@@ -821,7 +825,7 @@
 
           <!-- FILES & FOLDERS TIER: where documents come from and where they go -->
           <div class="dash-section"><svg class="ico ico-sm" aria-hidden="true"><use href="#i-folder"/></svg> Files &amp; folders</div>
-          <div class="dash-grid">
+          <div class="dash-grid" data-grid="files">
 
             <!-- Auto-import (admin only) -->
             <div class="dash-card" id="dash-watch" data-help-key="auto-import" style="display:none;">
