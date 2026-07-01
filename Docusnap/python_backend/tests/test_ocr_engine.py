@@ -96,8 +96,11 @@ r3._engine = _fake_rapid                                 # bypass real init
 check("rapidocr reading order top->bottom", r3.read_page(Image.new("L", (80, 80), 255)) == "hello\nworld")
 
 # ── 4. mid-run inference failure -> Tesseract for that page + warn ────────────────
+# The Tesseract full-page path now goes through reconstruct_page_text (word-geometry
+# line rebuild), so the fallback is stubbed there rather than at ocr_image.
 _orig_ocr_image = tess_mod.ocr_image
-tess_mod.ocr_image = lambda img, config="--oem 3 --psm 3": "TESS-FALLBACK"
+_orig_recon = tess_mod.reconstruct_page_text
+tess_mod.reconstruct_page_text = lambda img, config="--oem 3 --psm 3": "TESS-FALLBACK"
 try:
     r4 = RapidOcrEngine()
     def _boom(arr, **kwargs): raise RuntimeError("inference boom")
@@ -106,7 +109,7 @@ try:
     check("rapidocr mid-run failure -> Tesseract text", res4 == "TESS-FALLBACK")
     check("rapidocr mid-run failure -> warn log", '"level": "warn"' in out4 and "RapidOCR failed" in out4)
 finally:
-    tess_mod.ocr_image = _orig_ocr_image
+    tess_mod.reconstruct_page_text = _orig_recon
 
 # ── 5. seam: extract_text_and_images routes full-page read through engine ─────────
 with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -135,15 +138,15 @@ rc._engine = _spy_cls
 rc.read_page(Image.new("L", (16, 16), 255))
 check("read_page forwards use_cls=False to engine", _seen.get("use_cls") is False)
 
-# ── 6. default (engine=None) is the Tesseract path -> ocr_image (byte-identical) ──
+# ── 6. default (engine=None) is the Tesseract path -> reconstruct_page_text ───────
 with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
     png = _png(td)
-    tess_mod.ocr_image = lambda img, config="--oem 3 --psm 3": "DEFAULT-TESS"
+    tess_mod.reconstruct_page_text = lambda img, config="--oem 3 --psm 3": "DEFAULT-TESS"
     try:
         text, _pages = tess_mod.extract_text_and_images(png, None)   # no engine arg
-        check("default engine routes through Tesseract ocr_image", text == "DEFAULT-TESS")
+        check("default engine routes through Tesseract reconstruct_page_text", text == "DEFAULT-TESS")
     finally:
-        tess_mod.ocr_image = _orig_ocr_image
+        tess_mod.reconstruct_page_text = _orig_recon
 
 # ── 7. born-digital guard: text layer used WITHOUT calling the OCR engine ─────────
 import pypdfium2 as _pdfium
@@ -175,6 +178,34 @@ try:
 finally:
     _pdfium.PdfDocument, _bd.assess_page = _saved[0], _saved[1]
     if _saved[2] is not None: _bd.page_text = _saved[2]
+
+# ── 10. reconstruct_page_text: far-right value stays on its label's line ──────────
+# The scanned totals column-split fix: rebuild reading lines from word GEOMETRY so a
+# label and its far-right value on the SAME physical row land on ONE line (with a
+# 4-space column break), rather than being split into detached columns as plain
+# image_to_string does. Stubs image_to_data so it needs no real OCR.
+import pytesseract as _pt
+_orig_i2d = _pt.image_to_data
+def _fake_i2d(img, config=None, output_type=None):
+    # two label|value rows, each with a wide inter-column gap (label left, value far right)
+    return {
+        "text":   ["Subtotal:", "$377.94", "Total:", "$396.12"],
+        "left":   [1900, 2300, 1900, 2300],
+        "top":    [500, 500, 560, 560],
+        "width":  [200, 250, 160, 250],
+        "height": [30, 30, 30, 30],
+    }
+_pt.image_to_data = _fake_i2d
+try:
+    _lines = tess_mod.reconstruct_page_text(Image.new("L", (10, 10), 255)).split("\n")
+    _total = [l for l in _lines if l.startswith("Total:")]
+    check("reconstruct: subtotal label+value on ONE line",
+          any(l.startswith("Subtotal:") and "$377.94" in l for l in _lines))
+    check("reconstruct: total label+value on ONE line",
+          len(_total) == 1 and "$396.12" in _total[0])
+    check("reconstruct: wide gap emits a 4-space column break", "    " in _total[0])
+finally:
+    _pt.image_to_data = _orig_i2d
 
 # ── 8. leak-prevention: crop/zone/anchor/landmark paths don't import the seam ─────
 for rel in ("ocr/region.py", "ocr/landmarks.py", "ocr/text_enhance.py",

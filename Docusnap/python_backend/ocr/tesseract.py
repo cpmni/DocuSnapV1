@@ -27,6 +27,63 @@ def ocr_image(img: Image.Image, config: str = "--oem 3 --psm 3") -> str:
     return pytesseract.image_to_string(img, config=config)
 
 
+def reconstruct_page_text(img: Image.Image, config: str = "--oem 3 --psm 3") -> str:
+    """Full-page OCR text with reading lines rebuilt from word GEOMETRY.
+
+    Tesseract's page segmentation (the plain image_to_string in ocr_image) treats a wide
+    inter-column gap as a COLUMN break, so a right-aligned totals block OCRs as two detached
+    columns: the labels ("Subtotal:" / "Total:") on their own lines and the values
+    ("$387.74") stranded in a separate block further down the text. The line-based keyword
+    matcher (extraction/keyword.py) then can't pair a label with its value, so the total /
+    subtotal read EMPTY on scanned pages (born-digital pages keep exact word positions and
+    never hit this path). This rebuilds lines from image_to_data word boxes grouped by
+    VISUAL ROW (y-centre band), so a label and its far-right value on the SAME physical row
+    stay on ONE line. A wide intra-row x-gap emits a column break (4+ spaces) so keyword.py's
+    existing column-split guard still separates genuinely distinct columns. Same words
+    Tesseract recognises — only their grouping into lines changes. Falls back to plain
+    image_to_string on any error, so it can never read WORSE than before.
+    """
+    try:
+        data = pytesseract.image_to_data(img, config=config, output_type=pytesseract.Output.DICT)
+    except Exception:
+        return ocr_image(img, config)
+    words = []
+    for i in range(len(data.get("text", []))):
+        t = (data["text"][i] or "").strip()
+        if not t:
+            continue
+        try:
+            l, top, w, h = (int(data["left"][i]), int(data["top"][i]),
+                            int(data["width"][i]), int(data["height"][i]))
+        except (KeyError, TypeError, ValueError):
+            continue
+        words.append((l, top, w, h, t))
+    if not words:
+        return ""
+    heights = sorted(h for _, _, _, h, _ in words if h > 0)
+    med_h = heights[len(heights) // 2] if heights else 10
+    band = max(med_h * 0.8, 8)        # same-visual-row y-centre tolerance
+    col_gap = max(med_h * 1.5, 12)    # x-gap wide enough to be a column break (4-space)
+    words.sort(key=lambda wd: wd[1] + wd[3] / 2.0)   # top-to-bottom by y-centre
+    rows = []                                          # each: [sum_yc, n, [words]]
+    for wd in words:
+        yc = wd[1] + wd[3] / 2.0
+        if rows and yc - (rows[-1][0] / rows[-1][1]) <= band:
+            rows[-1][0] += yc; rows[-1][1] += 1; rows[-1][2].append(wd)
+        else:
+            rows.append([yc, 1, [wd]])
+    lines = []
+    for _sum, _n, ws in rows:
+        ws.sort(key=lambda wd: wd[0])                  # left-to-right within the row
+        out = [ws[0][4]]
+        for a, b in zip(ws, ws[1:]):
+            gap = b[0] - (a[0] + a[2])
+            out.append("    " if gap > col_gap else " ")
+            out.append(b[4])
+        lines.append("".join(out))
+    return "\n".join(lines)
+
+
 def pdf_to_images(filepath: Path, dpi: int = 300) -> list[Image.Image]:
     """Convert each PDF page to a PIL Image using pypdfium2."""
     doc    = pdfium.PdfDocument(str(filepath))

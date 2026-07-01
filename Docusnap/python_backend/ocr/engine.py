@@ -30,9 +30,14 @@ class TesseractEngine:
     name = "tesseract"
 
     def read_page(self, img, enhance_params=None):
-        # Lazy import to avoid any import cycle with ocr.tesseract.
-        from ocr.tesseract import ocr_image, preprocess_for_ocr
-        return ocr_image(preprocess_for_ocr(img, enhance_params))
+        # Lazy import to avoid any import cycle with ocr.tesseract. Full-page text is
+        # rebuilt from word GEOMETRY (reconstruct_page_text) so a right-aligned totals
+        # value stays on its label's line instead of being stranded in a separate column
+        # by Tesseract's page segmentation — see reconstruct_page_text. Same recognised
+        # words as the old ocr_image; only their grouping into reading lines changes, and
+        # it falls back to ocr_image on any error.
+        from ocr.tesseract import reconstruct_page_text, preprocess_for_ocr
+        return reconstruct_page_text(preprocess_for_ocr(img, enhance_params))
 
 
 class RapidOcrEngine:
