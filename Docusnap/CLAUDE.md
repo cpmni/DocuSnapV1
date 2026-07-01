@@ -614,9 +614,18 @@ process_docs.py → ExtractionEngine.extract()
            located-label + offset ≈ the rigid box → same value → no replacement →
            byte-identical. This REPLACED the old _value_drifted_from_box THRESHOLD (which
            could miss a sub-threshold one-row drift, the "customer→TK-8375M" bug): the value
-           now LOCKS to the label, not to a drift magnitude. Structured fields
-           (pattern-validated) + legacy NULL-offset anchors untouched; reuses line_cache (a
-           clean on-row read pays one locate). Guarded by tests/test_anchor_drift_guard.py.
+           now LOCKS to the label, not to a drift magnitude. NOW COVERS CURRENCY (2026-07):
+           the lock was free-text-only on the "structured fields are pattern-validated"
+           assumption — but a CURRENCY value in a stacked totals block is the other case where
+           "regex-valid" ≠ "right row": Subtotal/Discount/Shipping/Total are ALL valid
+           currency, so a variable Discount line pushes Total down a row and the rigid crop
+           reads the Shipping "$111.94" and PASSES the currency gate (the live "total reads
+           $111.94 / $10 on a $1,955.03 invoice" bug). val_type=='currency' now locks to its
+           located label too (the name-specific strip_name_edges is skipped for it so the "$"
+           survives); date/ref stay pattern-trusted (rarely stacked same-type + they carry
+           digit-parity/partial-shape guards on the later rungs). Legacy NULL-offset anchors
+           untouched; reuses line_cache (a clean on-row read pays one locate). Guarded by
+           tests/test_anchor_drift_guard.py + tests/test_currency_label_lock.py.
            COMPLETENESS GUARD (2026-06, multi-line interaction): the label-lock relocate must
            NOT replace a MORE-COMPLETE rigid read with a TRUNCATED one — when the rigid value
            STARTS WITH the relocate candidate and is LONGER, the rigid is kept (the multi-line
