@@ -794,6 +794,20 @@ process_docs.py → ExtractionEngine.extract()
            _locate_in_text_lines). Additive: one column / no wide gap / missing word
            boxes → byte-identical; full-width search strip (the "far value column"
            capability) untouched. Guarded by tests/test_inline_column_bleed.py.
+           CURRENCY THOUSANDS-SEPARATOR REJOIN (anchor._normalise_currency_spacing, 2026-07):
+           OCR (and some PDF text layers) render a thousands separator as a SPACE, or split a
+           value across word tokens, so "$10,576.31" reads as "$10 576.31" / "$10, 576.31".
+           _clean_text_fallback returns the FIRST match of the currency validation pattern (a
+           CONTIGUOUS run), so it TRUNCATED at the gap → "$10" (the real "total reads $10 for a
+           $10,576.31 invoice" bug, esp. on the anchor_inline path where the totals block
+           drifted and the label-relocated read won). A currency value has no internal space,
+           so a space/comma+space between a digit and a following 3-digit group is a thousands
+           boundary → collapsed back to a comma BEFORE the pattern match (looped for millions
+           "$1 234 567" → "$1,234,567"). Applied in _clean_text_fallback (anchor_inline) AND
+           _clean_one_line/clean_crop_segment (anchor_crop, which used to leave a malformed
+           "$10 576.31"). ONLY for val_type=='currency' — free-text/name with internal digits
+           is untouched; contiguous/no-space values are returned verbatim. Guarded by
+           tests/test_currency_spacing.py.
            OPERATOR FIELD-CLEANUP RULES (the residual-case override): a Review
            right-click toolkit (review/renderer.js field-input contextmenu, gated
            canEdit) teaches per-(supplier,doctype,field) cleanup rules to strip a leaked
