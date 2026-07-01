@@ -797,11 +797,18 @@ def _pick_unambiguous_supplier(by_supplier: dict) -> dict | None:
     ranked = sorted(by_supplier.items(), key=lambda kv: kv[1]["dist"])
     best_name, best_info = ranked[0]
     best_dist = best_info["dist"]
-    confidence = max(0, 100 - best_dist * 6)
-    if confidence < 60:
+    base_conf = max(0, 100 - best_dist * 6)
+    if base_conf < 60:                      # ACCEPTANCE keys on the raw hash distance
         return None
     if len(ranked) > 1 and (ranked[1][1]["dist"] - best_dist) < LOGO_AMBIGUITY_MARGIN:
         return None
+    # A well-ESTABLISHED logo (confirmed many times) is a reliable identity even at a
+    # moderate hash distance — a slightly-noisy scan shouldn't drag a 200x-confirmed
+    # supplier to 64%. Reward confirmations with a saturating bonus, capped below 100
+    # (a logo alone never reaches auto-file). Acceptance above is unchanged (base only).
+    mc = best_info.get("match_count") or 0
+    bonus = 32 if mc >= 10 else 18 if mc >= 4 else 8 if mc >= 2 else 0
+    confidence = min(98, base_conf + bonus)
     return {"supplier_name": best_name, "confidence": confidence,
             "match_count": best_info["match_count"]}
 

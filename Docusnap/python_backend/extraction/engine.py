@@ -1698,6 +1698,37 @@ class ExtractionEngine:
         # candidate_override is enabled (then the ledger built during merge is read).
         self._resolve_candidates(results, field_defs, supplier_name, document_slug)
 
+        # ── LEARNED-AGREEMENT CONFIDENCE BOOST ────────────────────────────────
+        # A value that is CONSISTENT with a well-supported learned format for its scope is
+        # more trustworthy the more it has been confirmed — so let per-field confidence GROW
+        # with the field's history (calibration, not inflation): a supplier confirmed hundreds
+        # of times shouldn't keep reading 93%. Gated tight: the field must have a value, NO
+        # validation_note (it passed Stage 4/4.5 clean), and a learned format entry (>=3 distinct
+        # confirmed values). The bonus scales with the confirmed-history `support` and is CAPPED
+        # AT 98 so a boost ALONE never reaches the auto-file threshold (100) — auto-file stays a
+        # deliberate, separately-gated decision. Runs before overall_confidence so the doc
+        # average lifts too. Best-effort: never breaks extraction.
+        try:
+            _boost_lookup = self._make_format_lookup(supplier_name, document_slug)
+            for _k, _d in results.items():
+                if _k.startswith('_') or not isinstance(_d, dict):
+                    continue
+                if not _d.get('value') or _d.get('validation_note'):
+                    continue
+                _fe = _boost_lookup(_k)
+                if not _fe:
+                    continue
+                _sup = _fe.get('support') or 0
+                if _sup < 3:
+                    continue
+                _cur = _d.get('confidence') or 0
+                if _cur >= 98:
+                    continue
+                _b = 5 if _sup >= 20 else 4 if _sup >= 5 else 2
+                _d['confidence'] = min(98, _cur + _b)
+        except Exception:
+            pass
+
         # ── Metadata ──────────────────────────────────────────────────────────
         overall_conf  = validator.overall_confidence(results, field_defs)
         # Document-level format-consistency weighting: penalise the document when

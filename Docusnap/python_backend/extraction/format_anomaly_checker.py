@@ -571,6 +571,13 @@ def build_format_class_index(formats_data: list) -> dict:
             fams = shape_families(vcounts)
             if fams:
                 fmt = {**fmt, 'shape_families': fams}
+        # How much confirmed history backs this format — the learned-agreement confidence
+        # boost (engine Stage 4.5) scales with it. confirmed_count (total confirmed docs) is
+        # the strongest signal; fall back to the distinct-sample count (already >= 3 here).
+        _support = entry.get('confirmed_count')
+        if not _support and vcounts:
+            _support = sum(int(n or 0) for n in vcounts.values())
+        fmt = {**fmt, 'support': int(_support) if _support else len(samples)}
         index[(supplier, doc_type, field_key)] = fmt
 
     return index

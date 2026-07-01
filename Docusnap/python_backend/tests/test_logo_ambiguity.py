@@ -48,7 +48,16 @@ check("single supplier -> accepted", r and r["supplier_name"] == "Acme")
 # Confidence gate (dist<=6 => 100-dist*6 >= 60) still applies.
 check("dist 7 fails the confidence gate -> None", pick(sup(Acme=7)) is None)
 r = pick(sup(Acme=6))
-check("dist 6 passes the gate (single) -> accepted", r and r["confidence"] == 64)
+check("dist 6 passes the gate (single, new logo) -> confidence 64", r and r["confidence"] == 64)
+
+# An ESTABLISHED logo (many confirmations) is a reliable identity even at a moderate hash
+# distance — reward it, capped below 100 so a logo alone never auto-files.
+def supc(name, dist, count):
+    return {name: {"dist": dist, "match_count": count}}
+check("established logo (count 10) at dist 6 -> boosted to 96", (pick(supc("Acme", 6, 10)) or {}).get("confidence") == 96)
+check("a few confirmations (count 2) at dist 6 -> +8 -> 72", (pick(supc("Acme", 6, 2)) or {}).get("confidence") == 72)
+check("boost capped at 98 (close + very established)", (pick(supc("Acme", 2, 300)) or {}).get("confidence") == 98)
+check("count bonus does NOT loosen acceptance (dist 8 base 52 < 60 -> None)", pick(supc("Acme", 8, 300)) is None)
 
 # A close runner-up that is a WORSE supplier still blocks a gate-passing winner.
 check("gate-passing winner but ambiguous -> None", pick(sup(Acme=2, Bolt=3)) is None)

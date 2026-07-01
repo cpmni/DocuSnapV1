@@ -1208,6 +1208,19 @@ WELL-SUPPORTED fields all match (conservative — sparse/unverified docs get no
 boost). Adjusts the displayed score only; per-field notes and needs_review are
 unaffected.
 
+**Confidence GROWS with learning (2026-07)** — two calibration boosts so a repeatedly-
+confirmed doc stops reading 93% when everything's correct. Both CAP at 98 so a boost
+alone never reaches the auto-file threshold. (1) LOGO match_count (anchor._pick_unambiguous_supplier):
+a logo confirmed many times is a reliable identity even at a moderate hash distance — the
+reported supplier confidence gets a saturating bonus (+8/+18/+32 for ≥2/≥4/≥10 confirmations)
+on top of the base 100-dist*6, so a 288×-confirmed "SuperStore" reads ~96%, not 64%. ACCEPTANCE
+still keys on the raw distance (base ≥60), so the bonus never loosens matching. (2) LEARNED-
+AGREEMENT per-field boost (engine Stage 4.5, before overall_confidence): a field with a value,
+NO validation_note (passed clean), and a WELL-SUPPORTED learned format (format_anomaly_checker
+attaches `support` = confirmed_count / summed value_counts, ≥3) gets +2/+4/+5 for support
+≥3/≥5/≥20 — lifting date/number/total from ~93 toward ~98 as the field's history accumulates.
+Guarded by tests/test_logo_ambiguity.py (+ format_anomaly `support`).
+
 **EMPTY required fields weigh the score down** (`validator.overall_confidence`,
 2026-06-28): when the scored fields come from the type's SCHEMA, an expected
 (required) field that is EMPTY now counts as **0** in the average — so a doc with
