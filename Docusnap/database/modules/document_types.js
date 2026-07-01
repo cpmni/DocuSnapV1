@@ -123,6 +123,26 @@ function _annotateFieldVariability(dt) {
   return dt;
 }
 
+// A structural role (ref_field_key/date_field_key) can end up pointing at a field
+// that no longer exists — e.g. the Reference field was deleted, or a type was created
+// with a role key that never matched a real field. That "dangling role" makes Review's
+// Confirm gate impossible to satisfy (the required key matches no field). Self-heal by
+// CLEARING a dangling role to NULL so the state is honest ("unset") and the Settings UI
+// prompts the user to pick the right field. Idempotent; writes only when it changes
+// something. Operates on an already-loaded dt (with dt.fields). Not auto-repointed —
+// guessing the correct field (e.g. ticket_no vs serial_number) is the user's call.
+function repairStructuralRoles(db, dt) {
+  if (!dt || !Array.isArray(dt.fields)) return dt;
+  const keys = new Set(dt.fields.map(f => f.key));
+  for (const role of ['ref_field_key', 'date_field_key']) {
+    if (dt[role] && !keys.has(dt[role])) {
+      try { db.prepare(`UPDATE document_types SET ${role} = NULL WHERE id = ?`).run(dt.id); } catch { /* read-only ctx */ }
+      dt[role] = null;
+    }
+  }
+  return dt;
+}
+
 // ── CRUD ──────────────────────────────────────────────────────────────────────
 
 function getAll(db) {
@@ -154,6 +174,7 @@ function getAllWithFields(db) {
       WHERE document_type_id = ? AND enabled = 1
       ORDER BY sort_order
     `).all(dt.id);
+    repairStructuralRoles(db, dt);   // self-heal a dangling ref/date role before annotating
     _annotateFieldVariability(dt);
   }
   return types;
@@ -167,6 +188,7 @@ function getAllWithFieldsAll(db) {
     dt.fields = db.prepare(`
       SELECT * FROM fields WHERE document_type_id = ? ORDER BY sort_order
     `).all(dt.id);
+    repairStructuralRoles(db, dt);   // self-heal a dangling ref/date role before annotating
     _annotateFieldVariability(dt);   // adds is_structural so the Settings UI can lock roles
   }
   return types;
@@ -229,6 +251,19 @@ function deleteField(db, id) {
 function updateType(db, id, changes) {
   const allowed = ['name', 'enabled', 'ref_field_key',
                    'date_field_key', 'sort_order'];
+  changes = { ...changes };
+  // A structural role must point at a field that EXISTS on this type — never let a
+  // caller create a dangling ref/date role (which would make Review's Confirm gate
+  // impossible to satisfy). A non-null role key with no matching field is dropped from
+  // the update; clearing a role to null/'' is always allowed.
+  for (const role of ['ref_field_key', 'date_field_key']) {
+    if (role in changes && changes[role]) {
+      const exists = db.prepare(
+        'SELECT 1 FROM fields WHERE document_type_id = ? AND key = ? LIMIT 1'
+      ).get(id, changes[role]);
+      if (!exists) delete changes[role];
+    }
+  }
   const sets = Object.keys(changes)
     .filter(k => allowed.includes(k))
     .map(k => `${k} = @${k}`)

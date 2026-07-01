@@ -137,6 +137,28 @@ function main() {
   f += !check('idempotent: Company not duplicated', fieldsOf(db, e1).filter(x => x.key === 'supplier_name').length === 1);
   f += !check('idempotent: Date not duplicated', fieldsOf(db, e1).filter(x => x.key === 'date').length === 1);
 
+  // 12. Dangling structural role (the "deleted the Reference field" case) is self-healed
+  //     on the UI list-load paths: a ref_field_key pointing at a non-existent field is
+  //     cleared to NULL so Review's Confirm gate isn't impossible + Settings can re-pick.
+  const w = doctypes.addType(db, { name: 'Service Worksh' }).lastInsertRowid;
+  doctypes.addField(db, { document_type_id: w, key: 'ticket_no', label: 'Ticket No.', type: 'text' });
+  doctypes.addField(db, { document_type_id: w, key: 'date', label: 'Date', type: 'date' });
+  db.prepare('UPDATE document_types SET ref_field_key = ?, date_field_key = ? WHERE id = ?')
+    .run('reference_number', 'date', w);  // ref dangling, date valid
+  const healed = doctypes.getAllWithFieldsAll(db).find(t => t.id === w);
+  f += !check('dangling ref_field_key surfaced as null after load', healed.ref_field_key === null);
+  f += !check('dangling ref cleared in the DB (self-heal persisted)', dtRow(db, w).ref_field_key === null);
+  f += !check('valid date role untouched by repair', dtRow(db, w).date_field_key === 'date');
+
+  // 13. updateType refuses to (re)create a dangling role, but allows a valid key + clearing.
+  doctypes.updateType(db, w, { ref_field_key: 'does_not_exist' });
+  f += !check('updateType drops a non-existent role key', dtRow(db, w).ref_field_key === null);
+  doctypes.updateType(db, w, { ref_field_key: 'ticket_no' });
+  f += !check('updateType accepts a real field as the ref role', dtRow(db, w).ref_field_key === 'ticket_no');
+  f += !check('ticket_no now structural', doctypes.isStructuralKey(dtRow(db, w), 'ticket_no'));
+  doctypes.updateType(db, w, { ref_field_key: null });
+  f += !check('updateType allows clearing a role to null', dtRow(db, w).ref_field_key === null);
+
   db.close();
   console.log(f ? `\n${f} FAILED` : '\nAll structural-field checks passed');
   process.exit(f ? 1 : 0);

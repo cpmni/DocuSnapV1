@@ -1339,8 +1339,30 @@ function validateConfirm() {
   const dt       = allDocTypes.find(t => t.slug === selectedTypeSlug);
   const dateKey  = dt?.date_field_key  || 'invoice_date';
   const refKey   = dt?.ref_field_key   || 'invoice_number';
-  const required = [dateKey, refKey];
+  const note     = document.getElementById('confirm-config-note');
 
+  // A structural role can point at a field that no longer exists on the type (a
+  // dangling ref_field_key/date_field_key — e.g. the Reference field was deleted).
+  // That required key then matches NO input, so it could never be satisfied and
+  // Confirm would sit disabled with nothing on screen to fill. Detect that and say
+  // so plainly, with the fix, instead of blocking silently.
+  const fieldExists = (key) => !!document.querySelector(`.field-input[data-key="${key}"]`);
+  const dangling = [{ key: dateKey, role: 'Date' }, { key: refKey, role: 'Reference' }]
+    .filter(r => !fieldExists(r.key));
+  if (note) {
+    if (dangling.length) {
+      note.textContent = `This document type’s ${dangling.map(d => d.role).join(' and ')} field `
+        + `${dangling.length > 1 ? 'aren’t' : 'isn’t'} set up. `
+        + `Choose ${dangling.length > 1 ? 'them' : 'it'} in Settings → Document Types, then reopen this document.`;
+      Object.assign(note.style, { display: '', color: 'var(--warn)', fontSize: '12px',
+        lineHeight: '1.4', padding: '6px 4px' });
+    } else {
+      note.style.display = 'none';
+    }
+  }
+  if (dangling.length) { btn.disabled = true; markRequiredMissing([]); return; }
+
+  const required = [dateKey, refKey];
   const missing = required.filter(key => {
     const input = document.querySelector(`.field-input[data-key="${key}"]`);
     return !input || !input.value.trim();
