@@ -151,7 +151,8 @@ docusnap2/
 │       ├── search/{index.html,renderer.js,search-results.js,search-preview.js,search-actions.js}  # built search UI; entitlement-gated confidence/mailbox/workflow actions (see Detached search client)
 │       ├── dev-inspector/{index.html,renderer.js}  # hidden read-only processing inspector (Ctrl+Shift+D+M, pw SFDEV) — see Dev inspector
 │       ├── onboarding/{index.html,renderer.js} # first-run setup wizard — see First-run wizard
-│       ├── welcome/{index.html,renderer.js}    # first-run familiarisation TOUR (6-card concepts carousel; owned child of main, reopenable from user menu) — see First-run wizard
+│       ├── welcome/{index.html,renderer.js}    # first-run familiarisation TOUR (6-card concepts carousel; owned child of main, reopenable from user menu) — see First-run wizard. LAST-CARD FORK (2026-07): primary "Try a practice run" (→ welcomeDone('practice') → main opens the tutorial AFTER welcome closes so it parents to the shell, not the closing tour) + secondary "Import my documents".
+│       ├── tutorial/{index.html,renderer.js,fixtures.js}  # SANDBOXED beginner "practice run" (2026-07) — Import→Review→teach→Confirm over 3 bundled watermarked sample docs, ENTIRELY in-renderer over pre-baked fixtures. NO real DB/learning/output touched (structural isolation — no wired write path; per bob+eric). Reuses the real Review UI look. DRAW-A-BOX TEACH SIM: arm a field → drag a box round its value on the HTML-rendered doc → it "reads" the value in (mirrors the ⊕ target tool; the low field on doc 2 must be taught to proceed) — pure simulation, not real OCR. Only disk side-effect: `tutorial-file-sample` copies a bundled PDF into %TEMP%/scanfinder-practice for the "before→after filing" reveal (`tutorial-open-folder` opens it directly — the generic open-folder guard blocks TEMP; wiped on window close + before-quit). Backend: src/modules/tutorial/handler.js. Entry points: welcome-tour fork + Home "Practice run" card (dash-practice, toggleable + draggable) + user-menu "Try a practice run"; `practice_run_completed` softens the card copy once done. Samples ship via extraResources; .gitattributes pins *.pdf binary (autocrlf would corrupt the xref).
 │       ├── license/{index.html,renderer.js}   # activation/trial screen shown when the gate locks
 │       ├── help/                              # User Guide window (index + content pages, help.css, help-nav.js) — native frame, themed
 │       └── shared/{theme.css,theme.js,helpmode.js}  # centralised palette/components · theme toggle · data-help-key help-mode
@@ -1530,10 +1531,16 @@ session}.js`, `src/modules/api/test_{cert_wizard,v1_ca,v1_enroll,v1_workflow,v1_
 
 ## UI conventions
 **Shared theme** — every window's palette + components are centralised in
-`src/windows/shared/theme.css` (loaded by all windows) + `theme.js`. **SIX named
-themes** (2026-06-28): Light · Warm Paper · Nordic Slate (light family) · Dark ·
-Midnight · Graphite (dark family). Each is a `:root[data-theme="X"]` token-override
-block; **Warm Paper is the default**. `theme.js` sets BOTH `data-theme` (palette)
+`src/windows/shared/theme.css` (loaded by all windows) + `theme.js`. **ELEVEN named
+themes**: the core SIX (2026-06-28) — Light · Warm Paper · Nordic Slate (light
+family) · Dark · Midnight · Graphite (dark family) — PLUS a **Seasonal** group
+(2026-07): Spring · Summer (sunshine-yellow) · Autumn · Winter (icy-blue) light +
+**Festive** (dark, evergreen-green with a holly-RED accent + gold). Each is a
+`:root[data-theme="X"]` token-override block; **Warm Paper is the default**. The
+seasonal themes carry faint repeating **SVG-tile artwork** (leaves/suns/snowflakes/
+holly) served as CSP-safe `'self'` files from `shared/patterns/*.svg` (NEVER
+`data:` URIs — `img-src 'self'` blocks those), `background-attachment:fixed`, baked
+low opacity. `DARK_THEMES` in theme.js gates the dark family (incl. `festive`). `theme.js` sets BOTH `data-theme` (palette)
 AND `data-mode` (light|dark family) on `<html>` — `color-scheme` + the logo swap
 key on `data-mode` so all dark themes get native dark scrollbars/logo. `--on-accent`
 token = text colour on a filled accent (lets Midnight's amber use near-black text).
