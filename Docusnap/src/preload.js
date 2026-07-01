@@ -105,6 +105,11 @@ contextBridge.exposeInMainWorld('docusnap', {
   // Sandboxed practice run (Import→Review→Confirm on a bundled sample). The
   // file-sample call is the ONLY side-effect and writes only under TEMP.
   openTutorial:         ()       => ipcRenderer.send('open-tutorial'),
+  // Legal / Terms — read the bundled text, open it externally, record/decline acceptance.
+  getLegalText:         ()       => ipcRenderer.invoke('get-legal-text'),
+  openLegal:            ()       => ipcRenderer.send('open-legal'),
+  legalAccept:          ()       => ipcRenderer.send('legal-accept'),
+  legalDecline:         ()       => ipcRenderer.send('legal-decline'),
   tutorialDone:         (action) => ipcRenderer.send('tutorial-done', action),
   tutorialFileSample:   (data)   => ipcRenderer.invoke('tutorial-file-sample', data),
   tutorialOpenFolder:   ()       => ipcRenderer.send('tutorial-open-folder'),

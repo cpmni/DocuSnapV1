@@ -220,6 +220,7 @@ document.getElementById('btn-pick-output').addEventListener('click', async () =>
 
 // Re-run the first-time setup wizard (admin-gated in main).
 document.getElementById('btn-rerun-setup')?.addEventListener('click', () => api.openOnboarding());
+document.getElementById('btn-view-legal')?.addEventListener('click', () => api.openLegal?.());
 
 // ── Processed folder ──────────────────────────────────────────────────────────
 async function loadProcessedFolder() {

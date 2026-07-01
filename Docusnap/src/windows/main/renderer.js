@@ -1294,6 +1294,7 @@ document.getElementById('menu-tutorial')?.addEventListener('click', () => {
 });
 // The welcome tour's "Go to Import" jumps the open Home shell to the Import view.
 window.docusnap.onWelcomeGotoImport?.(() => showView('import'));
+document.getElementById('about-legal')?.addEventListener('click', () => window.docusnap.openLegal?.());
 document.getElementById('about-close')?.addEventListener('click', closeAbout);
 aboutOverlay?.addEventListener('click', (e) => { if (e.target === aboutOverlay) closeAbout(); });
 document.getElementById('about-licenses')?.addEventListener('click', async () => {

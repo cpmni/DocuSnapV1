@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self';" />
+<title>Scan Finder — Terms of Use</title>
+<script src="../shared/theme.js"></script>
+<link rel="stylesheet" href="../shared/theme.css" />
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{display:flex;flex-direction:column;background:var(--bg);color:var(--text);
+    font-family:'IBM Plex Sans',system-ui,sans-serif;overflow:hidden}
+  header{flex:none;padding:18px 24px 12px}
+  header h1{font-size:18px;font-weight:700;letter-spacing:-.01em}
+  header .sub{font-size:12px;color:var(--muted);margin-top:3px}
+  #doc{flex:1;margin:0 24px;padding:16px;overflow:auto;background:var(--surface);
+    border:1px solid var(--border);border-radius:var(--r-sm,9px);
+    font-family:'IBM Plex Mono',monospace;font-size:12px;line-height:1.55;white-space:pre-wrap;color:var(--text)}
+  #foot{flex:none;display:flex;align-items:center;gap:14px;padding:14px 24px;border-top:1px solid var(--border);background:var(--surface)}
+  .accept{display:flex;align-items:center;gap:9px;font-size:13px;cursor:pointer;user-select:none}
+  .accept input{width:16px;height:16px;cursor:pointer}
+  .spacer{flex:1}
+  .btn{border:1px solid var(--border2);background:var(--surface2);color:var(--text);border-radius:var(--r-sm,9px);
+    padding:10px 18px;font-size:13.5px;cursor:pointer;font-family:inherit}
+  .btn:hover{border-color:var(--accent)}
+  .btn:disabled{opacity:.5;cursor:default}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent,#fff)}
+  .btn.primary:hover:not(:disabled){background:var(--accent2)}
+  .btn.ghost{background:transparent;border-color:transparent;color:var(--muted)}
+  .btn.ghost:hover{color:var(--text);border-color:var(--border)}
+  #openext{font-size:12px;color:var(--accent2);background:none;border:none;cursor:pointer;padding:0;font-family:inherit;text-decoration:underline}
+</style>
+</head>
+<body>
+  <header>
+    <h1>Before you start — please review the Terms</h1>
+    <div class="sub">You need to accept the Disclaimer &amp; Terms of Use to use Scan Finder.
+      <button id="openext" type="button">Open in a separate window</button></div>
+  </header>
+  <div id="doc">Loading…</div>
+  <div id="foot">
+    <label class="accept"><input type="checkbox" id="accept-cb"> I have read and accept the Terms of Use.</label>
+    <div class="spacer"></div>
+    <button id="decline" class="btn ghost">Decline &amp; Quit</button>
+    <button id="continue" class="btn primary" disabled>Accept &amp; Continue</button>
+  </div>
+  <script src="renderer.js"></script>
+</body>
+</html>

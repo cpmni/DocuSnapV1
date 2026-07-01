@@ -40,12 +40,17 @@
       "uninstallerIcon": "assets/icon.ico",
       "installerHeaderIcon": "assets/icon.ico",
       "deleteAppDataOnUninstall": false,
-      "include": "installer.nsh"
+      "include": "installer.nsh",
+      "license": "LEGAL.txt"
     },
     "extraResources": [
       {
         "from": "THIRD-PARTY-LICENSES.txt",
         "to": "THIRD-PARTY-LICENSES.txt"
+      },
+      {
+        "from": "LEGAL.txt",
+        "to": "LEGAL.txt"
       },
       {
         "from": "python_backend/",

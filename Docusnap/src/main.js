@@ -144,6 +144,9 @@ const MAIN_WINDOW_OPTIONS    = { width: 1100, height: 750, minWidth: 800, minHei
 const LOGIN_WINDOW_OPTIONS   = { width: 460, height: 660, resizable: false, minimizable: false, maximizable: false };
 const LICENSE_WINDOW_OPTIONS = { width: 460, height: 560, resizable: false, minimizable: false, maximizable: false };
 const ONBOARDING_WINDOW_OPTIONS = { width: 720, height: 640, resizable: false, minimizable: false, maximizable: false };
+const LEGAL_WINDOW_OPTIONS = { width: 720, height: 680, resizable: false, minimizable: false, maximizable: false };
+// Bump this (and LEGAL.txt's "Version:" header) to re-prompt everyone for acceptance.
+const LEGAL_VERSION = '2026-07-01';
 const WELCOME_WINDOW_OPTIONS = { width: 720, height: 640, resizable: false, minimizable: false, maximizable: false };
 const TUTORIAL_WINDOW_OPTIONS = { width: 980, height: 720, minWidth: 760, minHeight: 560, minimizable: false, maximizable: false };
 const HELP_WINDOW_OPTIONS = { width: 940, height: 700, minWidth: 640, minHeight: 460 };
@@ -196,6 +199,24 @@ function showOnboarding() {
   destroyWindow('license');
 }
 
+// Legal/Terms acceptance is recorded LOCALLY as { version, accepted_at } — no personal
+// data, no telemetry. A mismatch with the current LEGAL_VERSION re-prompts (so a terms
+// update is handled predictably). Read fail-open only to a "not accepted" state, never
+// to "accepted", so a read error can never silently skip the gate.
+function termsAccepted() {
+  try {
+    const raw = require('../database/modules/learning').getSetting(getDb(), 'terms_accepted');
+    if (!raw) return false;
+    return JSON.parse(raw).version === LEGAL_VERSION;
+  } catch { return false; }
+}
+
+function showLegalGate() {
+  createWindow('legal', LEGAL_WINDOW_OPTIONS, 'index.html');
+  destroyWindow('login');
+  destroyWindow('license');
+}
+
 // First-run familiarisation tour (concepts), shown once AFTER the setup wizard.
 // Gated by its own `welcome_seen` flag (separate from first_run_completed) and
 // reopenable from the user menu. Reads fail-closed so an error never re-shows it.
@@ -235,6 +256,9 @@ async function enterMainApp() {
   try { gate = await licensingModule.decideAccess(); }
   catch (e) { logger.err('licensing gate error (failing closed): ' + e.message); gate = { decision: 'locked_needs_online', reason: 'gate_error' }; }
   if (gate.decision === 'allow') {
+    // Terms acceptance is enforced HERE, in the main process (never renderer-only),
+    // after the licence gate and before onboarding/shell — so it can't be bypassed.
+    if (!termsAccepted()) { showLegalGate(); return; }
     if (needsOnboarding()) { showOnboarding(); return; }
     openMainShell();
     return;
@@ -356,7 +380,7 @@ const NON_MODAL_CHILD = new Set(['dev-inspector', 'review', 'settings', 'search'
 // Top-level "primary" windows that hide to the tray on a user close (the app then
 // fully quits ONLY via tray Exit). Their programmatic transitions destroy them
 // via destroyWindow(). Child windows close normally.
-const PRIMARY_WINDOWS = new Set(['login', 'license', 'onboarding', 'main']);
+const PRIMARY_WINDOWS = new Set(['login', 'license', 'onboarding', 'legal', 'main']);
 
 const winStateFile = () => path.join(app.getPath('userData'), 'window-state.json');
 function loadWinStates() { try { return JSON.parse(fs.readFileSync(winStateFile(), 'utf8')); } catch { return {}; } }
@@ -793,6 +817,28 @@ app.whenReady().then(() => {
     const err = await shell.openPath(p);   // '' on success
     return { ok: err === '', error: err || undefined };
   });
+
+  // ── Legal / Terms ──────────────────────────────────────────────────────────
+  // Single source of truth: bundled LEGAL.txt (also the installer's licence page).
+  // resourcePath resolves it in dev (repo root) AND packaged (extraResources).
+  const legalPath = () => resourcePath('LEGAL.txt');
+  ipcMain.handle('get-legal-text', () => {
+    try { return { version: LEGAL_VERSION, text: fs.readFileSync(legalPath(), 'utf8') }; }
+    catch { return { version: LEGAL_VERSION, text: '' }; }
+  });
+  ipcMain.on('open-legal', async () => { try { await shell.openPath(legalPath()); } catch {} });
+  // Record acceptance LOCALLY (version + timestamp only — no personal data/telemetry),
+  // then continue the entry flow (onboarding or shell).
+  ipcMain.on('legal-accept', () => {
+    try {
+      require('../database/modules/learning').setSetting(getDb(), 'terms_accepted',
+        JSON.stringify({ version: LEGAL_VERSION, accepted_at: new Date().toISOString() }));
+    } catch (e) { logger.warn?.('terms acceptance write failed: ' + e.message); }
+    destroyWindow('legal');
+    if (needsOnboarding()) { showOnboarding(); return; }
+    openMainShell();
+  });
+  ipcMain.on('legal-decline', () => { isQuitting = true; app.quit(); });
 
   processingModule.register(ctx);
   reviewModule.register(ctx);

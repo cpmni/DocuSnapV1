@@ -1,0 +1,78 @@
+SCAN FINDER — DISCLAIMER & TERMS OF USE
+
+Version: 2026-07-01
+
+DRAFT — This is a first-pass placeholder for the business owner's review. It is NOT
+final legal advice and should be reviewed by a qualified legal professional before
+release.
+
+--------------------------------------------------------------------------------
+
+1. PROVIDER
+Scan Finder ("the Software") is provided by Six Mile Software ("we", "us", "our"),
+a sole trader based at Office 1874, 92 Castle Street, Belfast, Northern Ireland,
+BT1 1HE. Contact: licensing@scanfinder.co.uk.
+
+2. DISCLAIMER OF WARRANTIES
+The Software is provided "AS IS" and "AS AVAILABLE", without warranties of any kind,
+whether express or implied, including but not limited to fitness for a particular
+purpose, accuracy, reliability, or non-infringement. Scan Finder performs automated
+optical character recognition (OCR) and data extraction; RESULTS MAY CONTAIN ERRORS
+AND ARE NOT GUARANTEED TO BE ACCURATE OR COMPLETE. You are responsible for reviewing
+and verifying all extracted data, filed documents, and generated file names before
+relying on them for any purpose.
+
+3. NOT PROFESSIONAL ADVICE
+The Software does not provide legal, financial, tax, accounting, or other
+professional advice. It is a document-processing tool only.
+
+4. YOUR DATA AND PRIVACY
+The Software processes your documents locally on your device and is designed to
+operate offline; your documents are not transmitted to us. YOU ARE SOLELY
+RESPONSIBLE for your documents, for maintaining your own backups, and for complying
+with all laws and regulations applicable to the data you process — including any
+data-protection obligations you owe to third parties whose information appears in
+your documents.
+
+5. LICENCE
+Subject to these Terms and to your valid licence or trial, we grant you a
+non-exclusive, non-transferable, revocable right to install and use the Software on
+your permitted device(s). You may not copy (except for reasonable backup),
+reverse-engineer, decompile, resell, sublicense, rent, or redistribute the Software
+except to the extent this restriction is prohibited by applicable law.
+
+6. PURCHASES
+Purchases and payments are handled by our reseller, Polar (acting as Merchant of
+Record). Your purchase contract and any applicable taxes are with Polar, not with
+Six Mile Software. Licence and trial entitlements are enforced by the Software.
+
+7. LIMITATION OF LIABILITY
+To the maximum extent permitted by law, we shall not be liable for any indirect,
+incidental, special, or consequential loss or damage, nor for any loss of data,
+profits, revenue, goodwill, or business, arising out of or in connection with your
+use of, or inability to use, the Software. Our total aggregate liability arising out
+of or relating to the Software shall not exceed the amount you paid (if any) for the
+Software in the twelve (12) months preceding the event giving rise to the claim.
+Nothing in these Terms excludes or limits any liability that cannot be excluded or
+limited under applicable law (including liability for death or personal injury
+caused by negligence, or for fraud).
+
+8. CHANGES TO THESE TERMS
+We may update these Terms from time to time. When an updated version is presented to
+you, your continued use of the Software constitutes acceptance of the updated Terms.
+
+9. TERMINATION
+Your rights under these Terms end automatically if you breach them. On termination
+you must stop using the Software.
+
+10. GOVERNING LAW
+These Terms are governed by the laws of Northern Ireland, and you agree to the
+exclusive jurisdiction of its courts, subject to any mandatory consumer-protection
+rights available to you.
+
+--------------------------------------------------------------------------------
+
+By installing, accepting, or using Scan Finder you acknowledge that you have read and
+agree to this Disclaimer and these Terms of Use.
+
+(c) Six Mile Software. All rights reserved.
