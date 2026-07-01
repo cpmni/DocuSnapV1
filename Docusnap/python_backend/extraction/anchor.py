@@ -315,9 +315,16 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
         # ≈ the rigid box → the same value → no replacement → byte-identical. This replaces
         # the old _value_drifted_from_box THRESHOLD (which could miss a sub-threshold one-row
         # drift): the value now locks to the label, it isn't gated on a drift magnitude.
-        # Free-text ONLY (structured fields are pattern-validated); needs a non-null offset
-        # (legacy rows untouched); reuses line_cache so a clean on-row read pays one locate.
-        if value and val_type in (None, "text", "multiline_text") \
+        # Free-text AND CURRENCY: free-text has a loose gate, but a CURRENCY value in a
+        # stacked totals block is the OTHER case where "regex-valid" doesn't mean "right
+        # row" — Subtotal/Discount/Shipping/Total are ALL valid currency, so a rigid crop
+        # that drifts one row (a Discount line pushed Total down) reads e.g. the Shipping
+        # "$111.94" and PASSES the currency gate, committing the wrong total while the
+        # "Total:" label sits a row below. So currency locks to its located label too;
+        # date/ref stay pattern-trusted (their neighbours are rarely same-type + they carry
+        # their own digit-parity/partial-shape guards on the later rungs). Needs a non-null
+        # offset (legacy rows untouched); reuses line_cache so a clean on-row read pays one locate.
+        if value and val_type in (None, "text", "multiline_text", "currency") \
                 and (anchor.get("anchor_label") or "").strip() \
                 and anchor.get("offset_dy_norm") is not None and page0 is not None:
             try:
@@ -333,9 +340,9 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                     _div = (_dloc.get("inline_value") or "").strip()
                     if _div:
                         _dc = _clean_text_fallback(_div, val_type, validation_patterns) or clean_crop_segment(_div, val_type)
-                        if _dc:
+                        if _dc and val_type in (None, "text", "multiline_text"):
                             from extraction.value_quality import strip_name_edges
-                            _dc = strip_name_edges(_dc)
+                            _dc = strip_name_edges(_dc)   # name edge-trim would eat a currency "$"
                         if _dc and not _name_field_code_reject(_dc, field_key) \
                                 and _crop_is_credible(_dc, val_type, validation_patterns, label) \
                                 and _qualify_against_format(_dc, field_key, format_lookup, text_field_keys):
