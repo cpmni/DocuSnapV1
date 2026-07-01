@@ -755,12 +755,54 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
     return results
 
 
+# A logo match is only trusted when the winning supplier is DECISIVELY closer than
+# any OTHER supplier: if a different supplier's logo sits within this many hamming of
+# the winner, the (greyscale) phash can't reliably tell them apart, so we must not guess.
+LOGO_AMBIGUITY_MARGIN = 4
+
+
+def _pick_unambiguous_supplier(by_supplier: dict) -> dict | None:
+    """Given {supplier_name: {'dist': int, 'match_count': int}} (each supplier's
+    CLOSEST logo distance to the page phash), return the trusted winner
+    {supplier_name, confidence, match_count} or None.
+
+    Accept the closest supplier ONLY when it clears the confidence gate (dist small
+    enough that 100-dist*6 >= 60) AND is at least LOGO_AMBIGUITY_MARGIN hamming closer
+    than the next DIFFERENT supplier. On a near-tie return None so a colour-blind phash
+    can't confidently file under the wrong company. Pure/deterministic — unit-tested."""
+    if not by_supplier:
+        return None
+    ranked = sorted(by_supplier.items(), key=lambda kv: kv[1]["dist"])
+    best_name, best_info = ranked[0]
+    best_dist = best_info["dist"]
+    confidence = max(0, 100 - best_dist * 6)
+    if confidence < 60:
+        return None
+    if len(ranked) > 1 and (ranked[1][1]["dist"] - best_dist) < LOGO_AMBIGUITY_MARGIN:
+        return None
+    return {"supplier_name": best_name, "confidence": confidence,
+            "match_count": best_info["match_count"]}
+
+
 def try_logo_supplier_match(page_image: Image.Image,
                             logos: list[dict],
                             threshold: int = 12) -> dict | None:
     """
     Attempt to identify supplier from logo perceptual hash.
     Returns {"supplier_name": str, "confidence": int} or None.
+
+    AMBIGUITY GUARD: a WRONG supplier is worse than none — it mis-scopes every
+    per-supplier learning corpus (hints/anchors/corrections/template identity) and
+    files the document under the wrong company. compute_logo_hash is a 64-bit
+    GREYSCALE phash, so two marks that share a coarse layout (or differ mainly by
+    COLOUR — which greyscale discards) can land only a few hamming apart. Picking the
+    global-closest then confidently returns whichever supplier's stored logo happens
+    to be marginally nearer. So the winner is accepted ONLY when the next DIFFERENT
+    supplier is at least LOGO_AMBIGUITY_MARGIN further away; on a near-tie we return
+    None (leave supplier for the keyword/template signals or manual review) instead of
+    guessing. A decisively-closer match (genuinely distinct logos) is unaffected, and a
+    single-supplier logo set can never be ambiguous — so this only REJECTS a previously
+    over-confident wrong guess, never accepts anything new.
     """
     if not logos or page_image is None:
         return None
@@ -776,20 +818,21 @@ def try_logo_supplier_match(page_image: Image.Image,
         crop   = crop.filter(ImageFilter.GaussianBlur(radius=1))
         phash  = str(imagehash.phash(crop, hash_size=8))
 
-        best = None
-        best_dist = threshold + 1
-
+        # Closest logo distance PER SUPPLIER (several stored logos for one supplier —
+        # the multi-reference set — are the SAME identity, never a rival).
+        by_supplier: dict[str, dict] = {}
         for fp in logos:
+            name = fp.get("supplier_name")
+            if not name:
+                continue
             dist = _hamming(phash, fp.get("phash", ""))
-            if dist < best_dist:
-                best_dist = dist
-                best = {
-                    "supplier_name": fp["supplier_name"],
-                    "confidence":    max(0, 100 - dist * 6),
-                    "match_count":   fp.get("match_count", 1),
-                }
+            cur = by_supplier.get(name)
+            if cur is None or dist < cur["dist"]:
+                by_supplier[name] = {"dist": dist, "match_count": fp.get("match_count", 1)}
+        if not by_supplier:
+            return None
 
-        return best if best and best["confidence"] >= 60 else None
+        return _pick_unambiguous_supplier(by_supplier)
 
     except ImportError:
         return None
