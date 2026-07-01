@@ -168,8 +168,13 @@ if (!check('getActiveToken prefers the bound seat token',
   const gF = await handler.decideAccess();
   if (!check('gate allows on the v2 seat token', gF.decision === 'allow')) fail++;
   const entF = entitlementService.checkClientEntitlement(dbF);
-  if (!check('entitlement uses SIGNED counts (search 2 / workflow 1), not the tampered 999/9999',
-      entF.search.seats === 2 && entF.workflow.seats === 1)) fail++;
+  // Workflow is currently master-hidden (WORKFLOW_FEATURE_ENABLED=false) → forced to {seats:0,disabled}.
+  // The signed-count anti-tampering is proven by SEARCH (2, not the tampered 9999); the same signing
+  // covers workflow's count (1, not 9999) and this assertion re-tightens once the master switch is
+  // flipped back on (workflow.disabled falsy → seats must equal the signed 1).
+  const workflowSignedOk = entF.workflow.disabled ? entF.workflow.seats === 0 : entF.workflow.seats === 1;
+  if (!check('entitlement uses SIGNED counts (search 2, workflow 1-when-enabled), not the tampered 999/9999',
+      entF.search.seats === 2 && workflowSignedOk)) fail++;
   if (!check('entitlement reports signed:true', entF.signed === true)) fail++;
 
   console.log(fail === 0 ? '\nALL PASS' : `\n${fail} FAILURE(S)`);
