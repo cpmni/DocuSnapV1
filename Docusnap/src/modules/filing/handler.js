@@ -336,6 +336,16 @@ function formatDate(d) {
   return `${dd}-${mm}-${yyyy}`;
 }
 
+// The CANONICAL date normaliser — the ONE place a submitted date string is turned into the
+// core's stored/filed format (DD-MM-YYYY). Reused by the filename builder AND the confirm path
+// (reviewService) so a desktop or /v1 client never re-implements date parsing: they submit
+// whatever the user typed, the core normalises it. Returns null when it can't parse (caller
+// keeps the user's value rather than losing it).
+function normaliseDate(raw) {
+  const d = parseDate(raw);
+  return d ? formatDate(d) : null;
+}
+
 function _scheduleDelete(fs, filePath, attempts) {
   setTimeout(() => {
     try { fs.unlinkSync(filePath); }
@@ -343,4 +353,4 @@ function _scheduleDelete(fs, filePath, attempts) {
   }, 2000);
 }
 
-module.exports = { register, commitDocument, removeSourceFile, sanitiseFolderName };
+module.exports = { register, commitDocument, removeSourceFile, sanitiseFolderName, normaliseDate };

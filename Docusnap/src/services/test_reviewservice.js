@@ -35,14 +35,16 @@ let filingMode = 'ok';   // 'ok' | 'fail'
 const calls = { audit: [], saveCorrections: 0, notifyCounts: 0, sourceMove: 0, taught: 0, captured: 0, commit: 0 };
 const svc = createReviewService({
   documents,
-  learning: { getSetting: () => '/out', saveCorrections: () => { calls.saveCorrections++; } },
+  learning: { getSetting: () => '/out', saveCorrections: (_db, _id, corr, _s, _slug, allValues) => { calls.saveCorrections++; calls.lastAllValues = allValues; calls.lastCorrections = corr; } },
   doctypes: { getWithFields: () => ({ id: 1, name: 'Invoice', ref_field_key: 'invoice_number', date_field_key: 'invoice_date' }) },
-  filing: { commitDocument: async () => {
-    calls.commit++;
-    return filingMode === 'fail'
-      ? { success: false, error: 'disk full' }
-      : { success: true, filename: 'F.pdf', filePath: '/out/F.pdf', metadataPath: '/out/.metadata/F.xml', srcPath: '/in/scan.pdf' };
-  } },
+  filing: {
+    normaliseDate: require('../modules/filing/handler').normaliseDate,   // the real canonical normaliser
+    commitDocument: async ({ allValues }) => {
+      calls.commit++; calls.commitAllValues = allValues;
+      return filingMode === 'fail'
+        ? { success: false, error: 'disk full' }
+        : { success: true, filename: 'F.pdf', filePath: '/out/F.pdf', metadataPath: '/out/.metadata/F.xml', srcPath: '/in/scan.pdf' };
+    } },
   fs: { existsSync: () => false, unlinkSync: () => {} },
   path: require('path'),
   logger: null,
@@ -80,6 +82,21 @@ const basePayload = (id, extra = {}) => ({
   const d2 = newDoc(db);
   await svc.confirm(db, { username: 'sarah', role: 'admin' }, basePayload(d2, { taught_fields: ['invoice_number'] }));
   check('taught confirm fires onTaughtConfirm', calls.taught === 1);
+
+  // ── Central date normalisation: a client's typed date becomes canonical DD-MM-YYYY once ──
+  const dNorm1 = newDoc(db);
+  await svc.confirm(db, { username: 'sarah', role: 'admin' }, basePayload(dNorm1, {
+    allValues: { supplier_name: 'Acme', invoice_number: 'INV-9', invoice_date: 'Aug 03 2012' },
+    corrections: { invoice_date: { original_value: '2012-08-03', corrected_value: 'Aug 03 2012' } },
+  }));
+  check('date normalised for filing (Aug 03 2012 → 03-08-2012)', calls.commitAllValues.invoice_date === '03-08-2012');
+  check('date normalised for learning (saveCorrections allValues)', calls.lastAllValues.invoice_date === '03-08-2012');
+  check('date normalised in the correction record too', calls.lastCorrections.invoice_date.corrected_value === '03-08-2012');
+  const dNorm2 = newDoc(db);
+  await svc.confirm(db, { username: 'sarah', role: 'admin' }, basePayload(dNorm2, {
+    allValues: { supplier_name: 'Acme', invoice_number: 'INV-10', invoice_date: 'whenever' },
+  }));
+  check('unparseable date left as typed, not dropped', calls.commitAllValues.invoice_date === 'whenever');
 
   // ── ALREADY_FILED: a doc claimed by someone else (confirmed, no stored yet) ───
   const d3 = newDoc(db);

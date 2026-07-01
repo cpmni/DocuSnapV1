@@ -69,6 +69,28 @@ function createReviewService(deps = {}) {
     const isRefile = !!oldStoredPath && !!(payload && payload.allowRefile === true);
 
     const dtInfo = document_type_slug ? doctypes.getWithFields(db, document_type_slug) : null;
+
+    // CENTRAL DATE NORMALISATION — the ONE point where a submitted date becomes the core's
+    // canonical DD-MM-YYYY. Whatever a client (desktop or /v1) sends (a user might type
+    // "Aug 03 2012", "2012-08-03", "3/8/2012"), normalise it HERE, before BOTH filing and the
+    // learned corrections, so the stored value, the filename and the learning corpus all agree
+    // and no client re-implements date parsing. Unparseable values are left as typed (never
+    // dropped). Reuses filing.normaliseDate (same logic the filename builder uses).
+    if (dtInfo && allValues && typeof filing.normaliseDate === 'function') {
+      const dateKeys = new Set();
+      if (Array.isArray(dtInfo.fields)) for (const f of dtInfo.fields) if (f && f.type === 'date') dateKeys.add(f.key);
+      if (dtInfo.date_field_key) dateKeys.add(dtInfo.date_field_key);
+      for (const k of dateKeys) {
+        const norm = filing.normaliseDate(allValues[k]);
+        if (norm && norm !== allValues[k]) {
+          allValues[k] = norm;
+          if (corrections && corrections[k] && corrections[k].corrected_value != null) {
+            corrections[k].corrected_value = norm;
+          }
+        }
+      }
+    }
+
     const outputRoot = learning.getSetting(db, 'output_folder', null);
     if (!outputRoot) return fail('NO_OUTPUT', 'No output folder set. Please configure it in Settings.');
 
