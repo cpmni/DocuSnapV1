@@ -57,6 +57,42 @@
       --grad1:#161430;--grad2:#0e0f11;--nav-bg:rgba(22,23,25,.8);--card-a:#18191c;--card-b:#121315;
       --shadow:0 1px 2px rgba(0,0,0,.4),0 18px 40px -24px rgba(0,0,0,.7); color-scheme:dark;
     }
+    /* ── Seasonal (mirror the main app) ─────────────────────────────────────────── */
+    :root[data-theme="spring"]{
+      --bg:#f1f8f0;--surface:#ffffff;--surface2:#e8f3e6;--border:#dcebd7;--border2:#c4dcbd;
+      --accent:#4aa35c;--accent2:#3b8a4b;--ok:#1f9d63;--warn:#b07816;--err:#d64545;
+      --text:#25322a;--muted:#5f7663;--on-accent:#fff;
+      --grad1:#dfeede;--grad2:#f1f8f0;--nav-bg:rgba(255,255,255,.8);--card-a:#ffffff;--card-b:#eef6ec;
+      --shadow:0 1px 2px rgba(40,80,50,.06),0 20px 44px -26px rgba(40,80,50,.20); color-scheme:light;
+    }
+    :root[data-theme="summer"]{
+      --bg:#fdf8e6;--surface:#fffdf4;--surface2:#f8f0d4;--border:#f1e7c6;--border2:#e4d29a;
+      --accent:#f5b300;--accent2:#dd9c00;--ok:#1f9d63;--warn:#b07816;--err:#d64545;
+      --text:#3a3218;--muted:#7f7038;--on-accent:#3a2c00;
+      --grad1:#f6ead0;--grad2:#fdf8e6;--nav-bg:rgba(255,253,244,.82);--card-a:#fffdf4;--card-b:#f9f2db;
+      --shadow:0 1px 2px rgba(120,90,10,.07),0 20px 44px -26px rgba(120,90,10,.22); color-scheme:light;
+    }
+    :root[data-theme="autumn"]{
+      --bg:#faf3ea;--surface:#fffdfa;--surface2:#f4e8da;--border:#eaddcb;--border2:#dcc7ab;
+      --accent:#c15a20;--accent2:#a44a18;--ok:#1f9d63;--warn:#b07816;--err:#d64545;
+      --text:#352819;--muted:#7c6650;--on-accent:#fff;
+      --grad1:#f0e0cd;--grad2:#faf3ea;--nav-bg:rgba(255,253,250,.82);--card-a:#fffdfa;--card-b:#f7eee0;
+      --shadow:0 1px 2px rgba(90,50,20,.07),0 20px 44px -26px rgba(90,50,20,.22); color-scheme:light;
+    }
+    :root[data-theme="winter"]{
+      --bg:#e7eff9;--surface:#ffffff;--surface2:#dce8f7;--border:#d3e1f3;--border2:#afc9ec;
+      --accent:#2f6fd0;--accent2:#245ab3;--ok:#1f9d63;--warn:#b07816;--err:#d64545;
+      --text:#17253e;--muted:#516585;--on-accent:#fff;
+      --grad1:#d6e4f6;--grad2:#e7eff9;--nav-bg:rgba(255,255,255,.82);--card-a:#ffffff;--card-b:#e3ecf8;
+      --shadow:0 1px 2px rgba(20,45,90,.07),0 20px 44px -26px rgba(20,45,90,.24); color-scheme:light;
+    }
+    :root[data-theme="festive"]{
+      --bg:#0d1a12;--surface:#142418;--surface2:#1c3222;--border:#223a2a;--border2:#315540;
+      --accent:#d83c3c;--accent2:#ef5a5a;--ok:#4bd08a;--warn:#f0c04a;--err:#ff6b6b;
+      --text:#edeadf;--muted:#93a894;--on-accent:#fff;
+      --grad1:#12241a;--grad2:#0d1a12;--nav-bg:rgba(20,36,24,.82);--card-a:#152619;--card-b:#101f15;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 18px 40px -24px rgba(0,0,0,.75); color-scheme:dark;
+    }
     * { box-sizing:border-box; }
     html,body { height:100%; }
     body {
@@ -80,6 +116,17 @@
     :root[data-theme="midnight"] body {
       background-image:radial-gradient(120% 90% at 85% -10%, color-mix(in srgb, var(--accent) 7%, transparent) 0%, transparent 55%);
       background-attachment:fixed;
+    }
+    /* Seasonal — faint repeating SVG-tile artwork ('self' files → CSP-safe, never data:). */
+    :root[data-theme="spring"] body { background-image:url('patterns/spring.svg'); background-size:150px 150px; background-attachment:fixed; }
+    :root[data-theme="summer"] body { background-image:url('patterns/summer.svg'); background-size:150px 150px; background-attachment:fixed; }
+    :root[data-theme="autumn"] body { background-image:url('patterns/autumn.svg'); background-size:150px 150px; background-attachment:fixed; }
+    :root[data-theme="winter"] body { background-image:url('patterns/winter.svg'); background-size:150px 150px; background-attachment:fixed; }
+    :root[data-theme="festive"] body {
+      background-image:
+        radial-gradient(120% 90% at 50% -10%, color-mix(in srgb, #e6c34a 12%, transparent) 0%, transparent 55%),
+        url('patterns/festive.svg');
+      background-repeat:no-repeat, repeat; background-size:cover, 150px 150px; background-attachment:fixed, fixed;
     }
     .mono { font-family:var(--mono); font-variant-numeric:tabular-nums; }
     .hidden { display:none !important; }
@@ -706,6 +753,13 @@
               <option value="dark">Dark</option>
               <option value="midnight">Midnight</option>
               <option value="graphite">Graphite</option>
+            </optgroup>
+            <optgroup label="Seasonal">
+              <option value="spring">Spring</option>
+              <option value="summer">Summer</option>
+              <option value="autumn">Autumn</option>
+              <option value="winter">Winter</option>
+              <option value="festive">Festive</option>
             </optgroup>
           </select>
         </div>

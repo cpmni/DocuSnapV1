@@ -24,8 +24,9 @@ let rvCurrentId = null;    // doc open in the Review detail pane
 let rvHeartbeat = null;    // presence "I'm viewing this" timer
 
 // ── Theme (mirrors the main app's six named themes; persisted on this device) ──
-const THEMES = ['light', 'warm', 'slate', 'dark', 'midnight', 'graphite'];
-const DARK_THEMES = new Set(['dark', 'midnight', 'graphite']);
+const THEMES = ['light', 'warm', 'slate', 'dark', 'midnight', 'graphite',
+                'spring', 'summer', 'autumn', 'winter', 'festive'];
+const DARK_THEMES = new Set(['dark', 'midnight', 'graphite', 'festive']);
 const _ls = {
   get: (k, d) => { try { return localStorage.getItem(k) || d; } catch { return d; } },
   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
