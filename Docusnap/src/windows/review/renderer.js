@@ -386,7 +386,20 @@ document.getElementById('doctype-select').addEventListener('change', (e) => {
     openNewTypeModal();
     return;
   }
+  const prevSlug = selectedTypeSlug;
   selectedTypeSlug = e.target.value || null;
+  // A type change invalidates any in-progress ⊕ teaching: each staged draw was captured
+  // under the PREVIOUS type (and is keyed to it), so committing it under the new type
+  // would leak boxes into the wrong layout. Discard staged teaching on a real type
+  // change — mirrors what changing DOCUMENTS already does (see loadDocument).
+  if (prevSlug !== selectedTypeSlug &&
+      (Object.keys(pendingAnchors).length || Object.keys(pendingFieldRules).length)) {
+    pendingAnchors = {};
+    pendingFieldRules = {};
+    anchorTaughtFields = new Set();
+    try { hideAnchorReadout(); } catch {}
+    try { showToast('Your in-progress field drawings were cleared because the document type changed — please re-draw them for the new type.', 'warn'); } catch {}
+  }
   const dt = allDocTypes.find(t => t.slug === selectedTypeSlug);
   fieldDefs = dt ? dt.fields : (allDocTypes[0]?.fields || []);
   if (currentDoc) {
