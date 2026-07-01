@@ -370,6 +370,9 @@
     #view-review .results { width:18%; min-width:173px; }
     #view-review .preview { border-right:1px solid var(--border); }
     #view-review .rv-panel { width:380px; min-width:320px; flex-shrink:0; overflow:auto; padding:var(--s5); }
+    /* Draggable pane dividers — resize the search/review columns (widths persist per view). */
+    .pane-resizer { flex:0 0 5px; align-self:stretch; cursor:col-resize; background:var(--border); transition:background .15s; }
+    .pane-resizer:hover { background:var(--accent); }
     .pv-head { display:flex; align-items:center; gap:var(--s3); margin-bottom:var(--s4); }
     .pv-head .ic { width:18px; height:18px; color:var(--accent); }
     .pv-head h2 { font-size:16px; margin:0; font-weight:600; }
@@ -631,6 +634,7 @@
           <div id="results-head" class="results-head hidden"></div>
           <div id="results"><div class="empty">Search by company, reference, date or full text to find filed documents.</div></div>
         </div>
+        <div class="pane-resizer" data-resize="prev" data-key="client_search_list" title="Drag to resize"></div>
         <div id="preview" class="preview"><div class="empty">Select a document on the left to preview its pages and fields.</div></div>
       </div>
     </div>
@@ -662,7 +666,9 @@
       </div>
       <div class="main">
         <div class="results"><div id="review-list"><div class="empty">Loading…</div></div></div>
+        <div class="pane-resizer" data-resize="prev" data-key="client_review_list" title="Drag to resize"></div>
         <div id="review-preview" class="preview"><div class="empty">Select a document on the left to review and file it.</div></div>
+        <div class="pane-resizer" data-resize="next" data-key="client_review_fields" title="Drag to resize"></div>
         <div id="review-fields-panel" class="rv-panel"></div>
       </div>
     </div>

@@ -1337,4 +1337,39 @@ async function refreshBadges() {
   return { counts, open };   // Home dashboard reuses these instead of re-fetching
 }
 
+// Draggable pane dividers — resize the search/review columns. `data-resize="prev"` widens the
+// pane to the LEFT of the grip (the list), `"next"` the pane to the RIGHT (the review fields);
+// the flex preview between them takes the slack. Width persists per view in localStorage.
+function initPaneResizers() {
+  const MIN = 150, MAX = 900;
+  document.querySelectorAll('.pane-resizer').forEach((grip) => {
+    const side = grip.dataset.resize;
+    const key  = grip.dataset.key;
+    const target = side === 'prev' ? grip.previousElementSibling : grip.nextElementSibling;
+    if (!target) return;
+    const saved = parseInt(localStorage.getItem(key), 10);
+    if (saved >= MIN && saved <= MAX) target.style.width = saved + 'px';
+    let dragging = false;
+    grip.addEventListener('mousedown', (e) => {
+      dragging = true; e.preventDefault();
+      document.body.style.cursor = 'col-resize'; document.body.style.userSelect = 'none';
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!dragging) return;
+      const r = target.getBoundingClientRect();
+      let w = side === 'prev' ? (e.clientX - r.left) : (r.right - e.clientX);
+      w = Math.max(MIN, Math.min(MAX, w));
+      target.style.width = w + 'px';
+    });
+    window.addEventListener('mouseup', () => {
+      if (!dragging) return;
+      dragging = false;
+      document.body.style.cursor = ''; document.body.style.userSelect = '';
+      const w = parseInt(target.style.width, 10);
+      if (w) localStorage.setItem(key, String(w));
+    });
+  });
+}
+initPaneResizers();
+
 boot();
