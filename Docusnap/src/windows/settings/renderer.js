@@ -349,6 +349,7 @@ const DASH_CARD_SECTIONS = [
     ['dash-autofile',  'Filed automatically'],
     ['dash-learning',  'Getting smarter'],
     ['dash-tips',      'Did you know'],
+    ['dash-practice',  'Practice run'],
     ['dash-recent',    'Recent activity'],
   ]],
   ['Files & folders', [

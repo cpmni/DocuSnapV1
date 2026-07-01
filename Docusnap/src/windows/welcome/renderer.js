@@ -10,10 +10,11 @@ const backBtn = document.getElementById('back');
 const nextBtn = document.getElementById('next');
 const skipBtn = document.getElementById('skip');
 
-// A secondary "Explore on my own" sits beside the primary CTA on the last card only.
+// A secondary "Import my documents" sits beside the primary CTA on the last card only.
+// (The primary CTA on the last card offers the guided practice run instead.)
 const exploreBtn = document.createElement('button');
 exploreBtn.className = 'btn ghost';
-exploreBtn.textContent = 'Explore on my own';
+exploreBtn.textContent = 'Import my documents';
 exploreBtn.style.display = 'none';
 nextBtn.parentNode.insertBefore(exploreBtn, nextBtn);
 
@@ -25,15 +26,15 @@ function render() {
   dots.forEach((d, i) => d.classList.toggle('on', i === step));
   backBtn.style.visibility = step === 0 ? 'hidden' : 'visible';
   const last = step === STEPS - 1;
-  nextBtn.textContent = last ? 'Go to Import' : 'Next';
+  nextBtn.textContent = last ? 'Try a practice run' : 'Next';
   exploreBtn.style.display = last ? '' : 'none';
 }
 
 function finish(action) { try { D.welcomeDone(action); } catch {} }
 
 backBtn.addEventListener('click', () => { if (step > 0) { step--; render(); } });
-nextBtn.addEventListener('click', () => { if (step < STEPS - 1) { step++; render(); } else finish('import'); });
-exploreBtn.addEventListener('click', () => finish('close'));
+nextBtn.addEventListener('click', () => { if (step < STEPS - 1) { step++; render(); } else finish('practice'); });
+exploreBtn.addEventListener('click', () => finish('import'));
 skipBtn.addEventListener('click', () => finish('close'));
 document.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowRight' && step < STEPS - 1) { step++; render(); }

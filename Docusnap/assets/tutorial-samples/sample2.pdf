@@ -1,0 +1,45 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 716 >>
+stream
+BT /F1 26 Tf 1 0 0 1 60 720 Td (Practice Supplies Ltd) Tj ET
+BT /F1 15 Tf 1 0 0 1 60 686 Td (INVOICE) Tj ET
+BT /F1 12 Tf 1 0 0 1 60 636 Td (Reference:) Tj ET
+BT /F1 12 Tf 1 0 0 1 220 636 Td (INV-1042) Tj ET
+BT /F1 12 Tf 1 0 0 1 60 610 Td (Date:) Tj ET
+BT /F1 12 Tf 1 0 0 1 220 610 Td (15 June 2026) Tj ET
+BT /F1 12 Tf 1 0 0 1 60 584 Td (Subtotal:) Tj ET
+BT /F1 12 Tf 1 0 0 1 220 584 Td (1,041.67) Tj ET
+BT /F1 12 Tf 1 0 0 1 60 558 Td (VAT \(20%\):) Tj ET
+BT /F1 12 Tf 1 0 0 1 220 558 Td (208.33) Tj ET
+BT /F1 12 Tf 1 0 0 1 60 532 Td (Total:) Tj ET
+BT /F1 12 Tf 1 0 0 1 220 532 Td (1,250.00) Tj ET
+0.8 0.8 0.8 RG 1 w 60 500 m 540 500 l S
+BT /F1 34 Tf 0.85 0.85 0.85 rg 1 0 0 1 95 380 Td (SAMPLE - PRACTICE ONLY) Tj ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000001008 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1078
+%%EOF

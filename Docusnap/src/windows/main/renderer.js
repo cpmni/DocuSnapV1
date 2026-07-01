@@ -496,6 +496,17 @@ document.getElementById('dash-open-output')?.addEventListener('click', () => {
   if (folder) window.docusnap.openFolder(folder);   // dedicated folder-open (the file channel rejects extension-less paths)
   else window.docusnap.openSettingsWindow();
 });
+document.getElementById('dash-practice-btn')?.addEventListener('click', () => window.docusnap.openTutorial?.());
+// Once a practice run has been completed, soften the card's first-run copy (still repeatable).
+(async () => {
+  try {
+    if ((await window.docusnap.getSetting('practice_run_completed')) === 'true') {
+      const lbl = document.getElementById('dash-practice-label'); if (lbl) lbl.textContent = 'Practice again';
+      const note = document.getElementById('dash-practice-note');
+      if (note) note.textContent = 'Run through import, review and confirm again any time — with safe sample documents.';
+    }
+  } catch {}
+})();
 refreshDashboard();
 
 // Doc-type → structural field keys, so the results table can show the right
@@ -1276,6 +1287,10 @@ document.getElementById('menu-about')?.addEventListener('click', () => {
 document.getElementById('menu-welcome')?.addEventListener('click', () => {
   userMenu.classList.remove('open');
   window.docusnap.openWelcome?.();
+});
+document.getElementById('menu-tutorial')?.addEventListener('click', () => {
+  userMenu.classList.remove('open');
+  window.docusnap.openTutorial?.();
 });
 // The welcome tour's "Go to Import" jumps the open Home shell to the Import view.
 window.docusnap.onWelcomeGotoImport?.(() => showView('import'));

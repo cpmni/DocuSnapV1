@@ -662,6 +662,7 @@
           <button class="user-menu-item" id="menu-change-password">Change password&hellip;</button>
           <button class="user-menu-item" id="menu-theme">Switch theme</button>
           <button class="user-menu-item" id="menu-welcome">Show welcome tour</button>
+          <button class="user-menu-item" id="menu-tutorial">Try a practice run</button>
           <button class="user-menu-item" id="menu-about">About ScanFinder&hellip;</button>
           <div class="user-menu-sep"></div>
           <button class="user-menu-item danger" id="menu-sign-out">Sign out</button>
@@ -819,6 +820,18 @@
               </div>
               <div class="tips-body" id="dash-tips-body">&hellip;</div>
               <button class="dash-btn" id="dash-tip-next" type="button">Another tip <svg class="ico ico-sm" aria-hidden="true"><use href="#i-arrow-right"/></svg></button>
+            </div>
+
+            <!-- Practice run (guided sandbox — safe sample documents) -->
+            <div class="dash-card" id="dash-practice" data-help-key="practice">
+              <div class="dash-card-head">
+                <svg class="ico ico-sm" aria-hidden="true"><use href="#i-play"/></svg>
+                <span>Practice run</span>
+              </div>
+              <div class="dash-card-note" id="dash-practice-note">New here? Walk through import, review and confirm with safe sample documents &mdash; nothing touches your real files.</div>
+              <button class="dash-btn primary" id="dash-practice-btn" type="button">
+                <span id="dash-practice-label">Try a practice run</span> <svg class="ico ico-sm" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+              </button>
             </div>
 
           </div>

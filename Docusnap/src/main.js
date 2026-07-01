@@ -72,6 +72,7 @@ const templatesModule      = require('./modules/templates/handler');
 const licensingModule      = require('./modules/licensing/handler');
 const apiModule            = require('./modules/api/handler');
 const workflowModule       = require('./modules/workflow/handler');
+const tutorialModule       = require('./modules/tutorial/handler');
 
 // ── DB ────────────────────────────────────────────────────────────────────────
 let _db = null;
@@ -144,6 +145,7 @@ const LOGIN_WINDOW_OPTIONS   = { width: 460, height: 660, resizable: false, mini
 const LICENSE_WINDOW_OPTIONS = { width: 460, height: 560, resizable: false, minimizable: false, maximizable: false };
 const ONBOARDING_WINDOW_OPTIONS = { width: 720, height: 640, resizable: false, minimizable: false, maximizable: false };
 const WELCOME_WINDOW_OPTIONS = { width: 720, height: 640, resizable: false, minimizable: false, maximizable: false };
+const TUTORIAL_WINDOW_OPTIONS = { width: 980, height: 720, minWidth: 760, minHeight: 560, minimizable: false, maximizable: false };
 const HELP_WINDOW_OPTIONS = { width: 940, height: 700, minWidth: 640, minHeight: 460 };
 
 // Programmatic window close that DESTROYS the window even with the tray
@@ -206,6 +208,22 @@ function showWelcome() {
   // Owned child of the main shell (stays above it) + pull focus on first paint so
   // it can't open behind the main window that was created just before it.
   try { w?.once('ready-to-show', () => { if (!w.isDestroyed()) { w.show(); w.focus(); } }); } catch {}
+}
+
+// Wipe the practice run's throwaway temp tree. Backstop teardown so closing the
+// window with the X (not just the Done buttons) never leaves sample copies behind.
+function wipeTutorialTemp() {
+  try { fs.rmSync(tutorialModule.practiceRoot({ app }), { recursive: true, force: true }); } catch {}
+}
+
+// Sandboxed beginner "practice run" (Import → Review → Confirm on a bundled sample).
+// Owned non-modal child, focus on first paint — same pattern as the welcome tour.
+function showTutorial() {
+  const w = createWindow('tutorial', TUTORIAL_WINDOW_OPTIONS, 'index.html');
+  try {
+    w?.once('ready-to-show', () => { if (!w.isDestroyed()) { w.show(); w.focus(); } });
+    w?.on('closed', wipeTutorialTemp);
+  } catch {}
 }
 
 // Licensing gate (Phase 2). The MAIN process is the sole decider; the renderer
@@ -333,8 +351,8 @@ function launchStartupWindow() {
 // click its toolbar button to bring it back. Non-modal keeps the main window usable, and
 // createWindow() already restores + focuses the existing window when its button is clicked
 // again. (A future window can still opt INTO modal by being a CHILD_WINDOW not listed here.)
-const CHILD_WINDOWS   = new Set(['review', 'settings', 'search', 'teach', 'dev-inspector', 'welcome']);
-const NON_MODAL_CHILD = new Set(['dev-inspector', 'review', 'settings', 'search', 'teach', 'welcome']);
+const CHILD_WINDOWS   = new Set(['review', 'settings', 'search', 'teach', 'dev-inspector', 'welcome', 'tutorial']);
+const NON_MODAL_CHILD = new Set(['dev-inspector', 'review', 'settings', 'search', 'teach', 'welcome', 'tutorial']);
 // Top-level "primary" windows that hide to the tray on a user close (the app then
 // fully quits ONLY via tray Exit). Their programmatic transitions destroy them
 // via destroyWindow(). Child windows close normally.
@@ -796,6 +814,7 @@ app.whenReady().then(() => {
   // In-process mailbox/approval workflow for the core app's enhanced Search
   // (entitlement + role gated; reuses workflowService). See modules/workflow/handler.js.
   workflowModule.register(ctx);
+  tutorialModule.register(ctx);
 
   // Diagnostics lifecycle (all gated on consent INSIDE telemetry → inert until opt-in;
   // never blocks startup): one app_start event, a deferred + periodic best-effort flush,
@@ -877,6 +896,7 @@ app.whenReady().then(() => {
     try { watchModule.stopForQuit(); } catch (e) { logger.warn?.('[quit] watch cleanup: ' + (e && e.message)); }
     try { processingModule.killAll(); } catch (e) { logger.warn?.('[quit] processing cleanup: ' + (e && e.message)); }
     try { fs.rmSync(devSliceDir, { recursive: true, force: true }); } catch {}
+    try { wipeTutorialTemp(); } catch {}
     try { diaglog.close(); } catch {}
   });
 
@@ -957,11 +977,27 @@ app.whenReady().then(() => {
   ipcMain.on('welcome-done', (_e, action) => {
     try { require('../database/modules/learning').setSetting(getDb(), 'welcome_seen', 'true'); }
     catch (e) { logger.warn?.('welcome flag write failed: ' + e.message); }
+    const wl = windows['welcome'];
     destroyWindow('welcome');
     if (action === 'import') { try { windows['main']?.webContents.send('welcome-goto-import'); } catch {} }
+    // Open the practice run only AFTER the welcome window has fully closed — otherwise
+    // createWindow parents the tutorial to the still-focused (closing) welcome window,
+    // so it dies with it. Deferring to 'closed' lets it parent to the main shell.
+    else if (action === 'practice') {
+      if (wl && !wl.isDestroyed()) wl.once('closed', () => showTutorial());
+      else showTutorial();
+    }
   });
   // Reopen the tour from the user menu (no first-run gate — explicit request).
   ipcMain.on('open-welcome', () => showWelcome());
+  // Sandboxed practice run — open from the user menu (Slice 3 adds the other entry points).
+  ipcMain.on('open-tutorial', () => showTutorial());
+  // Close the practice run and optionally jump the Home shell to Import.
+  ipcMain.on('tutorial-done', (_e, action) => {
+    try { require('../database/modules/learning').setSetting(getDb(), 'practice_run_completed', 'true'); } catch {}
+    destroyWindow('tutorial');   // fires 'closed' → wipeTutorialTemp
+    if (action === 'import') { try { windows['main']?.webContents.send('welcome-goto-import'); } catch {} }
+  });
   // Re-run setup from Settings → General. Admin only (it changes app-wide config).
   ipcMain.on('open-onboarding', () => {
     if (!authModule.hasRole('admin')) return;

@@ -102,6 +102,13 @@ contextBridge.exposeInMainWorld('docusnap', {
   openOnboarding:       ()       => ipcRenderer.send('open-onboarding'),
   welcomeDone:          (action) => ipcRenderer.send('welcome-done', action),
   openWelcome:          ()       => ipcRenderer.send('open-welcome'),
+  // Sandboxed practice run (Import→Review→Confirm on a bundled sample). The
+  // file-sample call is the ONLY side-effect and writes only under TEMP.
+  openTutorial:         ()       => ipcRenderer.send('open-tutorial'),
+  tutorialDone:         (action) => ipcRenderer.send('tutorial-done', action),
+  tutorialFileSample:   (data)   => ipcRenderer.invoke('tutorial-file-sample', data),
+  tutorialOpenFolder:   ()       => ipcRenderer.send('tutorial-open-folder'),
+  tutorialCleanup:      ()       => ipcRenderer.invoke('tutorial-cleanup'),
   onWelcomeGotoImport:  (cb)     => ipcRenderer.on('welcome-goto-import', () => cb()),
   suggestedOutputFolder:()       => ipcRenderer.invoke('onboarding-suggested-folder'),
   validateOutputFolder: (folder) => ipcRenderer.invoke('onboarding-validate-folder', folder),

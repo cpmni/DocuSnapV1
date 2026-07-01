@@ -68,6 +68,13 @@
         ]
       },
       {
+        "from": "assets/tutorial-samples/",
+        "to": "assets/tutorial-samples",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
         "from": "vendor/",
         "to": "vendor",
         "filter": [
