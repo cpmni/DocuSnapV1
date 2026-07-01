@@ -1365,6 +1365,8 @@ def _clean_one_line(line: str | None, val_type: str | None) -> str:
     if not line:
         return ""
     segment = re.split(r' {4,}', line)[0].strip()
+    if val_type == 'currency':
+        segment = _normalise_currency_spacing(segment)   # rejoin an OCR-split thousands sep
     if val_type in ('text', 'multiline_text'):
         segment = _trim_trailing_digit_boundary(segment)
     parts = segment.split()
@@ -1377,6 +1379,27 @@ def _clean_one_line(line: str | None, val_type: str | None) -> str:
             end = i
             break
     return ' '.join(parts[:end]).rstrip(',;').strip()
+
+
+def _normalise_currency_spacing(value: str | None) -> str | None:
+    """Rejoin a thousands separator that OCR (or a PDF text layer) rendered as a SPACE, or
+    split across word tokens, so "$10,576.31" reads as "$10 576.31" / "$10, 576.31" / even
+    "$1 234 567.89". A currency value has no internal space, so a space (or comma+space)
+    sitting between a digit and a following 3-digit group is a thousands boundary — collapse
+    it back to a comma. Without this a currency read is TRUNCATED at the gap: the value regex
+    (a contiguous match) stops at the space and returns just "$10". Non-numeric text and an
+    already-contiguous value are untouched (no space → returned verbatim). Reusable across
+    every supplier/field — no per-document logic."""
+    if not value or ' ' not in value:
+        return value
+    prev = None
+    out = value
+    # Loop so consecutive groups both collapse ("$1 234 567" → "$1,234,567") — each pass
+    # rejoins one boundary; re.sub's non-overlapping scan gets adjacent ones, the loop the rest.
+    while prev != out:
+        prev = out
+        out = re.sub(r'(?<=\d)[,\s]+(?=\d{3}(?:\D|$))', ',', out)
+    return out
 
 
 def _clean_text_fallback(value: str | None, val_type: str | None,
@@ -1393,8 +1416,11 @@ def _clean_text_fallback(value: str | None, val_type: str | None,
         return None
     STRUCTURED = {"date", "currency", "currency_code", "job_reference"}
     if val_type in STRUCTURED:
+        # Rejoin an OCR-split thousands separator FIRST, else the contiguous currency
+        # pattern truncates "$10 576.31" to "$10" (see _normalise_currency_spacing).
+        v = _normalise_currency_spacing(value) if val_type == "currency" else value
         for p in (validation_patterns or {}).get(val_type) or []:
-            m = re.search(p, value, re.IGNORECASE)
+            m = re.search(p, v, re.IGNORECASE)
             if m:
                 return m.group(0).strip(" -:;,")
     return clean_crop_segment(value, val_type)
