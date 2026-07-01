@@ -31,7 +31,7 @@ for (let i = 0; i < STEPS; i++) {
 function paintSelections() {
   $$('[data-theme-choice]').forEach(c => c.classList.toggle('sel', c.dataset.themeChoice === state.theme));
   $$('[data-threads]').forEach(c => c.classList.toggle('sel', Number(c.dataset.threads) === state.threads));
-  $$('[data-mode]').forEach(c => c.classList.toggle('sel', c.dataset.mode === state.mode));
+  $$('.card[data-mode]').forEach(c => c.classList.toggle('sel', c.dataset.mode === state.mode));
   $('#outPath').textContent = state.outputFolder || '—';
   $$('[data-copy]').forEach(c => c.classList.toggle('sel', (c.dataset.copy === 'yes') === state.copyEnabled));
   $$('[data-diag]').forEach(c => c.classList.toggle('sel', (c.dataset.diag === 'yes') === state.diag));
@@ -204,7 +204,7 @@ $$('[data-threads]').forEach(c => c.addEventListener('click', async () => {
   try { await D.setSetting('processing_concurrency', String(state.threads)); } catch {}
   paintSelections();
 }));
-$$('[data-mode]').forEach(c => c.addEventListener('click', async () => {
+$$('.card[data-mode]').forEach(c => c.addEventListener('click', async () => {
   state.mode = c.dataset.mode;
   try { await D.setProcessingMode(state.mode); } catch {}
   paintSelections();

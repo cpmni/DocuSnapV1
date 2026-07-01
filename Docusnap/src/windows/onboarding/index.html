@@ -48,10 +48,10 @@
     padding:15px;cursor:pointer;transition:border-color .15s,background .15s,transform .15s,box-shadow .15s;
     -webkit-app-region:no-drag}
   .card:hover{border-color:var(--border2)}
-  /* The chosen card lifts + grows a touch so the selection is unmistakable. transform
-     doesn't reflow siblings (no jitter); z-index keeps its shadow above the neighbours. */
+  /* The chosen card is marked by the accent border, tint and a soft lift. No scale —
+     on wide rows (e.g. the 2-card Accuracy row) scaling overlapped the neighbour. */
   .card.sel{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 9%,var(--surface));
-    transform:scale(1.045);box-shadow:0 8px 22px rgba(0,0,0,.10);position:relative;z-index:1}
+    box-shadow:0 6px 18px rgba(0,0,0,.10);position:relative;z-index:1}
   .card .ttl{font-size:14px;font-weight:600;margin-bottom:4px}
   .card .desc{font-size:12px;color:var(--muted);line-height:1.45}
   .footer{display:flex;align-items:center;gap:10px;padding:18px 40px;border-top:1px solid var(--border);background:var(--surface)}
