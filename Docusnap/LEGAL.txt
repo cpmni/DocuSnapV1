@@ -1,78 +1,231 @@
-SCAN FINDER — DISCLAIMER & TERMS OF USE
+SCAN FINDER — END USER LICENCE AGREEMENT, DISCLAIMER & TERMS OF USE
 
 Version: 2026-07-01
 
-DRAFT — This is a first-pass placeholder for the business owner's review. It is NOT
-final legal advice and should be reviewed by a qualified legal professional before
-release.
+================================================================================
+WORKING DRAFT — FOR LEGAL REVIEW ONLY. NOT YET IN FORCE.
+This document is a first-pass draft prepared for the business owner and must be
+reviewed and finalised by a qualified solicitor (Northern Ireland / England &
+Wales, with consumer-contract and data-protection experience) before it is shown
+to customers or any money is charged. It is NOT legal advice. Passages marked
+"[SOLICITOR:]" flag decisions that require professional judgement. This entire
+banner MUST be removed once the document is finalised for release.
+================================================================================
 
 --------------------------------------------------------------------------------
+1. DEFINITIONS
+--------------------------------------------------------------------------------
+"We", "us", "our", "the Provider" means Six Mile Software, the trading name under
+which its sole-trader proprietor carries on business, of Office 1874, 92 Castle
+Street, Belfast, Northern Ireland, BT1 1HE. Contact: licensing@scanfinder.co.uk.
+[SOLICITOR: confirm the enforceable contracting-party identity. A sole trader is
+the individual; naming only a trading name may be insufficient to form a binding
+contract and to meet the consumer "trader identity + geographic address" duty.
+Preferred routes: (a) incorporate "Six Mile Software Ltd" and name the company; or
+(b) keep the sole-trader formulation above so the individual remains identifiable
+via the business address without displaying the personal name. Advise.]
 
-1. PROVIDER
-Scan Finder ("the Software") is provided by Six Mile Software ("we", "us", "our"),
-a sole trader based at Office 1874, 92 Castle Street, Belfast, Northern Ireland,
-BT1 1HE. Contact: licensing@scanfinder.co.uk.
+"You", "the Licensee" means the individual or organisation that installs or uses
+the Software. If you use the Software on behalf of an organisation, you confirm
+you are authorised to accept these terms on its behalf.
 
-2. DISCLAIMER OF WARRANTIES
-The Software is provided "AS IS" and "AS AVAILABLE", without warranties of any kind,
-whether express or implied, including but not limited to fitness for a particular
-purpose, accuracy, reliability, or non-infringement. Scan Finder performs automated
-optical character recognition (OCR) and data extraction; RESULTS MAY CONTAIN ERRORS
-AND ARE NOT GUARANTEED TO BE ACCURATE OR COMPLETE. You are responsible for reviewing
-and verifying all extracted data, filed documents, and generated file names before
-relying on them for any purpose.
+"Software" means the Scan Finder desktop application, including its installer,
+updates, and accompanying documentation.
 
-3. NOT PROFESSIONAL ADVICE
-The Software does not provide legal, financial, tax, accounting, or other
-professional advice. It is a document-processing tool only.
+"Consumer" means an individual acting wholly or mainly outside their trade,
+business, craft or profession. "Business" means any other Licensee.
 
-4. YOUR DATA AND PRIVACY
+"Polar" means Paddle/Polar, our reseller acting as Merchant of Record for
+purchases (see clause 8). [SOLICITOR: confirm the correct legal name of the MoR.]
+
+--------------------------------------------------------------------------------
+2. LICENCE GRANT AND SCOPE
+--------------------------------------------------------------------------------
+Subject to these terms and to a valid licence or trial, we grant you a personal,
+non-exclusive, non-transferable, revocable licence to install and use the Software
+on the number of devices permitted by your licence, for your own document-
+processing purposes. Licence entitlements (including any device/seat limit and,
+where applicable, an update period) are enforced by the Software and by your
+licence key. [SOLICITOR: confirm seat/device model and any update-period wording
+against the actual product tiers.]
+
+--------------------------------------------------------------------------------
+3. RESTRICTIONS AND ACCEPTABLE USE
+--------------------------------------------------------------------------------
+Except to the extent permitted by law (including any non-excludable right to
+decompile for interoperability) or expressly allowed by these terms, you must not:
+(a) copy the Software except for reasonable backup;
+(b) reverse-engineer, decompile, or disassemble it;
+(c) resell, rent, lease, sublicense, distribute, or make it available to third
+    parties;
+(d) remove or alter any proprietary notices;
+(e) use the Software unlawfully, or to process data you have no right to process.
+
+--------------------------------------------------------------------------------
+4. INTELLECTUAL PROPERTY
+--------------------------------------------------------------------------------
+The Software is licensed, not sold. We (or our licensors) retain all intellectual
+property rights in and to the Software. Nothing in these terms transfers any such
+rights to you. "Scan Finder" and "Six Mile Software" are our trading marks and may
+not be used without our written permission.
+
+The Software includes third-party open-source components, which are provided under
+their own licences. The applicable notices are included with the Software (see the
+bundled "Third-Party Licenses" document, available from the About screen).
+
+--------------------------------------------------------------------------------
+5. UPDATES, TRIAL AND SUPPORT
+--------------------------------------------------------------------------------
+We may make updates or security patches available; where your licence includes an
+update period, updates provided during that period are covered by your licence, and
+a validly purchased perpetual licence continues to work after the update period
+ends. A free trial (where offered) is provided on the same "as is" basis as the
+paid Software for evaluation only. We aim to provide reasonable technical support
+via licensing@scanfinder.co.uk but, except as required by law or by any separate
+written support agreement, support is provided on a reasonable-efforts basis with
+no guaranteed response time. [SOLICITOR: align with the actual updates/support
+commitment you wish to make.]
+
+--------------------------------------------------------------------------------
+6. DISCLAIMER OF WARRANTIES
+--------------------------------------------------------------------------------
+Except as expressly stated in these terms and to the fullest extent permitted by
+law, the Software is provided "AS IS" and "AS AVAILABLE", without warranties of any
+kind, whether express or implied, including fitness for a particular purpose,
+accuracy, reliability, or non-infringement. In particular, the Software performs
+automated optical character recognition (OCR) and data extraction: RESULTS MAY
+CONTAIN ERRORS AND ARE NOT GUARANTEED TO BE ACCURATE OR COMPLETE, and you are
+responsible for reviewing and verifying all extracted data, filed documents, and
+generated file names before relying on them for any purpose.
+
+Nothing in this clause affects your statutory rights as a Consumer under the
+Consumer Rights Act 2015 (including that digital content be of satisfactory
+quality, fit for purpose and as described), which cannot be excluded or limited.
+[SOLICITOR: confirm the consumer-rights saver wording.]
+
+--------------------------------------------------------------------------------
+7. NOT PROFESSIONAL ADVICE
+--------------------------------------------------------------------------------
+The Software does not provide legal, financial, tax, accounting or other
+professional advice, and must not be relied upon as a substitute for it. It is a
+document-processing tool only.
+
+--------------------------------------------------------------------------------
+8. YOUR DOCUMENTS, DATA AND PRIVACY
+--------------------------------------------------------------------------------
 The Software processes your documents locally on your device and is designed to
-operate offline; your documents are not transmitted to us. YOU ARE SOLELY
-RESPONSIBLE for your documents, for maintaining your own backups, and for complying
-with all laws and regulations applicable to the data you process — including any
-data-protection obligations you owe to third parties whose information appears in
-your documents.
+operate offline; your document content is NOT transmitted to us. You are solely
+responsible for your documents, for maintaining your own backups, and for
+complying with all laws applicable to the data you process, including any data-
+protection obligations you owe to third parties whose information appears in your
+documents.
 
-5. LICENCE
-Subject to these Terms and to your valid licence or trial, we grant you a
-non-exclusive, non-transferable, revocable right to install and use the Software on
-your permitted device(s). You may not copy (except for reasonable backup),
-reverse-engineer, decompile, resell, sublicense, rent, or redistribute the Software
-except to the extent this restriction is prohibited by applicable law.
-
-6. PURCHASES
-Purchases and payments are handled by our reseller, Polar (acting as Merchant of
-Record). Your purchase contract and any applicable taxes are with Polar, not with
-Six Mile Software. Licence and trial entitlements are enforced by the Software.
-
-7. LIMITATION OF LIABILITY
-To the maximum extent permitted by law, we shall not be liable for any indirect,
-incidental, special, or consequential loss or damage, nor for any loss of data,
-profits, revenue, goodwill, or business, arising out of or in connection with your
-use of, or inability to use, the Software. Our total aggregate liability arising out
-of or relating to the Software shall not exceed the amount you paid (if any) for the
-Software in the twelve (12) months preceding the event giving rise to the claim.
-Nothing in these Terms excludes or limits any liability that cannot be excluded or
-limited under applicable law (including liability for death or personal injury
-caused by negligence, or for fraud).
-
-8. CHANGES TO THESE TERMS
-We may update these Terms from time to time. When an updated version is presented to
-you, your continued use of the Software constitutes acceptance of the updated Terms.
-
-9. TERMINATION
-Your rights under these Terms end automatically if you breach them. On termination
-you must stop using the Software.
-
-10. GOVERNING LAW
-These Terms are governed by the laws of Northern Ireland, and you agree to the
-exclusive jurisdiction of its courts, subject to any mandatory consumer-protection
-rights available to you.
+However, when you start a trial or activate a licence, limited technical data is
+sent to us to deliver and enforce licensing: your email address, a hashed device
+identifier, and your IP address. We act as a data controller for that limited
+processing. How we handle it — including our lawful basis, retention, and your
+rights — is described in our Privacy Notice at [PRIVACY-NOTICE-URL].
+[SOLICITOR/OWNER: a separate Privacy Notice is required for this licensing
+telemetry (lawful basis under UK GDPR, retention, data-subject rights, processors
+incl. the hosting provider and Polar, and the ICO complaint route). Confirm whether
+the processing triggers the ICO data-protection fee. The "documents stay local"
+statement above must remain accurate.]
 
 --------------------------------------------------------------------------------
+9. PURCHASES, PRICES AND REFUNDS
+--------------------------------------------------------------------------------
+Purchases and payments are handled by our reseller, Polar, acting as Merchant of
+Record. Your purchase contract, invoicing and any applicable taxes are with Polar,
+not with the Provider. Refund requests are handled through Polar in accordance with
+its policy [POLAR-REFUND-URL]; we provide the software and technical support.
 
-By installing, accepting, or using Scan Finder you acknowledge that you have read and
-agree to this Disclaimer and these Terms of Use.
+If you are a Consumer, your statutory rights are not affected by this arrangement.
+For downloadable digital content you may have a 14-day right to cancel, which is
+lost only where you have given express consent to supply beginning immediately and
+acknowledged that you thereby lose that right. [SOLICITOR: confirm IN WRITING with
+Polar which party presents the 14-day cancellation right, the immediate-supply
+waiver, and the pre-contract information required by the Consumer Contracts
+(Information, Cancellation and Additional Charges) Regulations 2013. Where Polar is
+the seller of record to the consumer, these duties likely sit with Polar — get
+this confirmed.]
 
-(c) Six Mile Software. All rights reserved.
+--------------------------------------------------------------------------------
+10. LIMITATION OF LIABILITY
+--------------------------------------------------------------------------------
+(a) Nothing in these terms excludes or limits any liability that cannot be excluded
+    or limited by law, including liability for death or personal injury caused by
+    negligence, for fraud or fraudulent misrepresentation, or for any statutory
+    rights that may not lawfully be excluded.
+
+(b) If you are a Consumer: we are responsible for loss or damage you suffer that is
+    a foreseeable result of our breach of these terms or our negligence, but we are
+    not responsible for any loss or damage that is not foreseeable. Your statutory
+    rights (including under the Consumer Rights Act 2015, and the remedy in section
+    46 of that Act for damage to a device or to other digital content) are
+    unaffected by this clause.
+
+(c) If you are a Business: subject to (a), we shall not be liable for any indirect,
+    incidental, special or consequential loss, nor for any loss of profits,
+    revenue, goodwill, business, or data; and our total aggregate liability arising
+    out of or relating to the Software shall not exceed the amount you paid (if any)
+    for the Software in the twelve (12) months preceding the event giving rise to
+    the claim.
+
+[SOLICITOR: this three-limb split is a starting point only. Confirm the consumer
+wording, the reasonableness of the business cap under the Unfair Contract Terms Act
+1977, and that no part purports to exclude what the CRA/UCTA forbids.]
+
+--------------------------------------------------------------------------------
+11. CHANGES TO THESE TERMS
+--------------------------------------------------------------------------------
+We may update these terms. Where a change is material, we will present the updated
+terms to you for acceptance the next time you use the Software; continued use after
+acceptance constitutes agreement. If you do not accept, you may stop using the
+Software. Changes will not apply retroactively to a completed purchase in a way that
+reduces your statutory rights.
+
+--------------------------------------------------------------------------------
+12. TERMINATION
+--------------------------------------------------------------------------------
+Your licence ends automatically if you materially breach these terms and (where the
+breach is capable of remedy) fail to remedy it within a reasonable time of being
+asked. On termination you must stop using and remove the Software. A validly
+purchased perpetual licence is not otherwise revoked. Termination does not entitle
+you to a refund except as required by law or under Polar's policy. Clauses that by
+their nature should survive termination (including clauses 3, 4, 6, 10, 13 and 14)
+survive.
+
+--------------------------------------------------------------------------------
+13. GENERAL
+--------------------------------------------------------------------------------
+Entire agreement: these terms, together with any licence details and our Privacy
+Notice, are the entire agreement between you and us regarding the Software; if you
+are a Consumer, this does not affect your statutory rights.
+Severability: if any provision is found unenforceable, the remaining provisions
+continue in force.
+No waiver: a delay in enforcing these terms is not a waiver.
+Assignment: we may assign or transfer these terms (for example if the business is
+incorporated or sold); you may not assign them without our consent.
+Force majeure: we are not liable for failure or delay caused by events beyond our
+reasonable control (relevant mainly to the online licensing/activation service).
+Export & sanctions: you must not use or export the Software in breach of applicable
+sanctions or export-control laws.
+Notices: legal notices to us should be sent to licensing@scanfinder.co.uk.
+Complaints: please contact licensing@scanfinder.co.uk. If you are a Consumer you may
+also have the right to complain to the Information Commissioner's Office (ICO) about
+data-protection matters.
+
+--------------------------------------------------------------------------------
+14. GOVERNING LAW AND JURISDICTION
+--------------------------------------------------------------------------------
+These terms are governed by the laws of Northern Ireland. The courts of Northern
+Ireland have exclusive jurisdiction for Business Licensees. If you are a Consumer,
+you may bring proceedings in the courts of the UK nation in which you live, and any
+mandatory consumer-protection rights available to you there continue to apply.
+
+--------------------------------------------------------------------------------
+By ticking "I have read and accept the Terms of Use" and continuing, or by
+installing or using Scan Finder, you acknowledge that you have read and agree to
+this End User Licence Agreement, Disclaimer and Terms of Use.
+
+(c) 2026 Six Mile Software. All rights reserved.
