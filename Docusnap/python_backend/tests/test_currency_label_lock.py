@@ -68,25 +68,24 @@ def _run(rigid_value, located_ret):
         anchor._crop_and_ocr, anchor._locate_for_relocation, anchor._filter_anchors = saved
 
 
-print("Currency LABEL LOCK:")
+print("Currency: rigid crop SKIPPED, value read via the located label:")
 
-# a) DRIFT: rigid crop reads the Shipping row ($111.94, valid currency); the located "Total:"
-#    label inline-harvests the real total -> value follows the label.
+# a) DRIFT: the rigid crop is SKIPPED for a currency anchor with a label + offset (it would
+#    read the Shipping "$111.94" a row off). The located "Total:" label inline-harvests the
+#    real total via the drift-recovery rung -> value follows the label.
 got = _run("$111.94", _located("$1,955.03")).get("total", {})
-check(f"drifted currency follows the label (got {got.get('value')!r})", got.get("value") == "$1,955.03")
-check(f"method is anchor_crop_relocated (got {got.get('method')})", got.get("method") == "anchor_crop_relocated")
+check(f"currency reads via the label, not the drifted rigid (got {got.get('value')!r})", got.get("value") == "$1,955.03")
+check(f"method is anchor_inline (got {got.get('method')})", got.get("method") == "anchor_inline")
 
-# b) CLEAN page: the located label + offset ≈ the rigid box, so the re-read matches -> no
-#    replacement, rigid wins, byte-identical.
+# b) CLEAN page: same value on the located line -> still read via the label (rigid skipped),
+#    same correct value.
 got = _run("$1,955.03", _located("$1,955.03")).get("total", {})
-check(f"clean page keeps the rigid read (got {got.get('value')!r})", got.get("value") == "$1,955.03")
-check(f"clean page method is anchor_crop (got {got.get('method')})", got.get("method") == "anchor_crop")
+check(f"clean page reads the correct value via the label (got {got.get('value')!r})", got.get("value") == "$1,955.03")
 
-# c) label UN-findable: nothing to lock to, rigid read stays (documents the limitation —
-#    recovery needs the label; no worse than before).
-got = _run("$111.94", None).get("total", {})
-check(f"no located label -> rigid kept (got {got.get('value')!r}/{got.get('method')})",
-      got.get("value") == "$111.94" and got.get("method") == "anchor_crop")
+# c) label UN-findable + rigid skipped -> field left empty for review (the documented trade-off:
+#    a totals label is reliable, and empty→review beats committing a wrong rigid read).
+res = _run("$111.94", None)
+check("no located label -> total left empty (rigid was skipped)", "total" not in res)
 
 print(f"\n{'ALL PASS' if FAILS == 0 else str(FAILS) + ' FAILED'}")
 sys.exit(1 if FAILS else 0)

@@ -620,12 +620,19 @@ process_docs.py → ExtractionEngine.extract()
            "regex-valid" ≠ "right row": Subtotal/Discount/Shipping/Total are ALL valid
            currency, so a variable Discount line pushes Total down a row and the rigid crop
            reads the Shipping "$111.94" and PASSES the currency gate (the live "total reads
-           $111.94 / $10 on a $1,955.03 invoice" bug). val_type=='currency' now locks to its
-           located label too (the name-specific strip_name_edges is skipped for it so the "$"
-           survives); date/ref stay pattern-trusted (rarely stacked same-type + they carry
-           digit-parity/partial-shape guards on the later rungs). Legacy NULL-offset anchors
-           untouched; reuses line_cache (a clean on-row read pays one locate). Guarded by
-           tests/test_anchor_drift_guard.py + tests/test_currency_label_lock.py.
+           $111.94 / $10 on a $1,955.03 invoice" bug). RESOLVED BY SKIPPING THE RIGID CROP:
+           for a currency anchor with a real label + offset the rigid crop is SKIPPED entirely
+           (anchor.py `_skip_rigid`) — its box misses on a variable totals block anyway (garbage
+           "Oo" / a wrong-but-valid neighbour) — so value stays None, the label-lock below
+           no-ops, and the DRIFT-RECOVERY rung relocates + reads beside the located "Total:"
+           label (same credibility+format gates, method anchor_inline). Saves the always-wasted
+           rigid OCR + the trace no longer shows a scary "anchor_crop rejected". Trade-off: if
+           the label can't be found the total is left for review (a totals label OCRs reliably;
+           empty→review beats a wrong rigid). date/ref keep rigid-first (their neighbours are
+           rarely same-type + digit-parity/partial-shape guards on the later rungs). Legacy
+           NULL-offset currency anchors keep rigid-first. Guarded by tests/test_anchor_drift_guard.py
+           + tests/test_currency_label_lock.py. (The label-lock's own currency branch is now
+           redundant with the skip and left inert.)
            COMPLETENESS GUARD (2026-06, multi-line interaction): the label-lock relocate must
            NOT replace a MORE-COMPLETE rigid read with a TRUNCATED one — when the rigid value
            STARTS WITH the relocate candidate and is LONGER, the rigid is kept (the multi-line

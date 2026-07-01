@@ -261,8 +261,23 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                     and bool(_qualify_against_format(t, _fk, format_lookup, text_field_keys,
                                                      _vt, validation_patterns)))
 
+        # SKIP THE RIGID CROP for a currency anchor with a real label + stored offset: its
+        # value lives in a VARIABLE totals block (a Discount line shifts Total down), so the
+        # absolute box misses on most docs — reading garbage ("Oo") or a valid-but-WRONG
+        # neighbouring row ("$111.94" from Shipping). The "Total:" label is the reliable
+        # anchor, so go STRAIGHT to the label-based read: value stays None here, the label-lock
+        # below no-ops (needs a value), and the drift-recovery rung relocates + reads beside the
+        # located label (same credibility + format gates). Saves the always-wasted rigid OCR and
+        # the trace no longer shows a scary "anchor_crop rejected". Free-text keeps its rigid-
+        # first path (its multi-line completeness guard compares to the rigid). If the label
+        # genuinely can't be found the field is left for review — better than a wrong rigid read.
+        _skip_rigid = (val_type == "currency"
+                       and (anchor.get("anchor_label") or "").strip()
+                       and anchor.get("offset_dy_norm") is not None
+                       and page0 is not None)
+
         # ── Primary: image crop + re-OCR (accurate, avoids column bleed) ──────
-        if x_norm > 0 and y_norm > 0 and page0 is not None:
+        if not _skip_rigid and x_norm > 0 and y_norm > 0 and page0 is not None:
             w_norm   = anchor.get("w_norm") or 0.0
             h_norm   = anchor.get("h_norm") or 0.0
             _cap = ((lambda c: slice_capture(field_key, "anchor_crop", 0,
