@@ -1590,6 +1590,27 @@ session}.js`, `src/modules/api/test_{cert_wizard,v1_ca,v1_enroll,v1_workflow,v1_
 `src/modules/review/test_workflow_lock.js`, `src/modules/workflow/test_workflow_ipc.js`,
 `client/test_apiclient.js`.
 
+**Multi-user CONCURRENCY STRESS harness** — `stress_test/concurrency_harness.js` (run:
+`ELECTRON_RUN_AS_NODE=1 node_modules/.bin/electron stress_test/concurrency_harness.js`; `KEEP=1`
+to keep the temp sandbox). Stands up the REAL `/v1` server + real `reviewService`/`filing` against
+a FULLY SANDBOXED temp DB + temp import/inbox/output (never the live DB), then drives it with 4
+concurrent HTTP "staff" (edit-role) racing the confirm/defer/undefer path — the exact contract the
+detached client uses. Proves the claim-then-file design (`documents.confirmIfReviewable` atomic CAS
+→ `filing.commitDocument` → rollback-on-failure) is race-safe: 360 docs get a 4-way simultaneous
+confirm (1440 requests → exactly ONE 200 + THREE 409 `ALREADY_FILED` each — never a double-file or a
+lost doc), plus defer/undefer perturbation races, a concurrent filename-collision burst (`-DUPLICATE`
+under contention), and focused adversarial cases (defer-vs-defer, undefer-vs-undefer, re-confirm-an-
+already-filed doc = 409 no-overwrite, filing-failure rollback = clean revert never stranded confirmed,
+workflow-locked confirm = 409 no-claim-leak, divergent-value confirm = winner's value/location no
+blend). The two strongest oracles: a per-working-copy UNIQUE CONTENT MARKER (every filed PDF must
+carry ITS OWN doc's bytes — catches cross-doc/overwrite mixups) + a BIJECTION check (DB `stored_path`
+set ≡ physical files — catches loss/dupe/orphan in one assertion). End-state invariants: every doc
+filed exactly once to its correct `Supplier/Year/Month` location, inbox + the original IMPORT folder
+empty, no half-confirmed rows. 35/35 checks green (2026-07-02). Race matrix designed via a software-
+testing subagent pass; safe to extend with the deferred barrier-gated-stub filing backend (forces
+contenders into the post-claim/pre-copy `await` window — a regression guard for if anyone adds an
+`await` inside `commitDocument`, which would reopen the existsSync→copy collision race).
+
 ---
 
 ## UI conventions
