@@ -146,6 +146,10 @@ let anchorTaughtFields = new Set(); // field_keys taught via the ⊕ highlight/z
 // leaves NO learned trace, so an accidental wrong pick can't poison the corpus.
 // Keyed by field_key → the saveFieldAnchor payload computed at draw time.
 let pendingAnchors   = {};
+// When set, the next box drawn on the preview is a MANUAL ANCHOR (a label to point at,
+// e.g. "Invoice Total") for this field — not a value read. Armed by the readout's
+// "Draw the anchor" button; consumed on mouseup by runAnchorDraw.
+let anchorDrawField  = null;
 // Field cleanup rules taught via the right-click menu this cycle, STAGED in memory
 // and persisted only on Confirm (mirrors pendingAnchors). Keyed field_key → array of
 // saveFieldRule payloads. An un-confirmed teach (skip/defer/doc-change) leaves no trace.
@@ -1482,6 +1486,7 @@ function enterZoneMode(key, label) {
 
 function cancelZoneMode() {
   activeField = null;
+  anchorDrawField = null;
   isDragging  = false;
   dragRect    = null;
   selCanvas.classList.remove('active');
@@ -1552,7 +1557,7 @@ function drawTraceBbox(bbox, kind, stage, keep) {
 }
 
 selCanvas.addEventListener('mousedown', (e) => {
-  if (!activeField) return;
+  if (!activeField && !anchorDrawField) return;
   isDragging = true;
   const p    = canvasPoint(e, selCanvas);   // zoom/pan-compensated canvas-buffer px
   dragStart  = { x: p.x, y: p.y };
@@ -1572,10 +1577,11 @@ selCanvas.addEventListener('mousemove', (e) => {
 });
 
 selCanvas.addEventListener('mouseup', async (e) => {
-  if (!isDragging || !dragRect || !activeField) return;
+  if (!isDragging || !dragRect || (!activeField && !anchorDrawField)) return;
   isDragging = false;
   if (dragRect.w < 10 || dragRect.h < 10) { clearCanvas(); return; }
-  await runZoneOcr(dragRect, activeField);
+  if (anchorDrawField) { const f = anchorDrawField; await runAnchorDraw(dragRect, f); }
+  else await runZoneOcr(dragRect, activeField);
 });
 
 // ── Zone OCR ──────────────────────────────────────────────────────────────────
@@ -2064,7 +2070,8 @@ function showAnchorReadout(detected, value) {
   bar.innerHTML = msg
     + `<span class="ar-dir"><span class="ar-lbl">Label is:</span>`
     + `<button class="ar-btn ${isLeft ? 'on' : ''}" data-dir="right">&larr; Left</button>`
-    + `<button class="ar-btn ${isAbove ? 'on' : ''}" data-dir="below">&uarr; Above</button></span>`
+    + `<button class="ar-btn ${isAbove ? 'on' : ''}" data-dir="below">&uarr; Above</button>`
+    + `<button class="ar-btn ar-draw" title="Draw a box around the exact label to anchor on (e.g. &quot;Invoice Total&quot;) — useful when the value sits beside a repeating word like GBP">&#9998; Draw the anchor</button></span>`
     + `<span class="ar-x" title="Dismiss">&times;</span>`;
   bar.style.display = '';
   // Populate + wire the editable label (value set via JS to avoid attribute-escaping issues).
@@ -2081,7 +2088,8 @@ function showAnchorReadout(detected, value) {
       lblInput.classList.toggle('bad', labelLooksSuspicious(cleaned));
     });
   }
-  bar.querySelectorAll('.ar-btn').forEach(b => b.addEventListener('click', () => reDetectAnchor(b.dataset.dir)));
+  bar.querySelectorAll('.ar-btn[data-dir]').forEach(b => b.addEventListener('click', () => reDetectAnchor(b.dataset.dir)));
+  bar.querySelector('.ar-draw')?.addEventListener('click', () => enterAnchorDrawMode(lastTeachCtx?.fieldKey));
   bar.querySelector('.ar-x')?.addEventListener('click', hideAnchorReadout);
   if (_anchorReadoutTimer) clearTimeout(_anchorReadoutTimer);
   _anchorReadoutTimer = setTimeout(hideAnchorReadout, 30000);   // stay long enough to read + act; matches the box dwell
@@ -2096,6 +2104,81 @@ async function reDetectAnchor(dir) {
     const detected = await captureAnchorContext(c.rect, c.fieldKey, c.value, c.imgW, c.imgH, c.scaleX, c.scaleY, dir);
     if (detected) { anchorTaughtFields.add(c.fieldKey); showAnchorReadout(detected, c.value); }
   } catch (err) { console.warn('Anchor re-detect failed:', err); }
+}
+
+// ── Manual anchor draw ────────────────────────────────────────────────────────
+// The operator draws a box around the EXACT label to anchor on (e.g. "Invoice Total")
+// when auto-detect found nothing usable or grabbed a repeating word (GBP, a column
+// header). Arms the same draw canvas; the next box is read as the anchor, not a value.
+function enterAnchorDrawMode(fieldKey) {
+  if (!fieldKey || !lastTeachCtx || lastTeachCtx.fieldKey !== fieldKey) {
+    try { showToast('Draw the value box first, then draw its anchor.', 'warn'); } catch {}
+    return;
+  }
+  cancelZoneMode();
+  anchorDrawField = fieldKey;
+  hintField.textContent = `Draw a box around the label for “${labelFor(fieldKey) || fieldKey}” (e.g. Invoice Total)`;
+  selectHint.classList.add('visible');
+  selCanvas.classList.add('active');
+}
+
+// OCR the drawn anchor box, derive the label + a drift-invariant offset to the value,
+// and stage it as the field's anchor (authoritative, like a normal ⊕ teach).
+async function runAnchorDraw(aRect, fieldKey) {
+  const c = lastTeachCtx;
+  anchorDrawField = null;
+  selectHint.classList.remove('visible');
+  selCanvas.classList.remove('active');
+  clearCanvas();
+  if (!c || c.fieldKey !== fieldKey) return;
+  ocrOverlay.classList.add('visible');
+  try {
+    const { imgW, imgH, scaleX, scaleY, rect } = c;
+    const crop = document.createElement('canvas');
+    crop.width  = Math.round(aRect.w * scaleX);
+    crop.height = Math.round(aRect.h * scaleY);
+    if (crop.width > 6 && crop.height > 6) {
+      crop.getContext('2d').drawImage(
+        docImg,
+        Math.round(aRect.x * scaleX), Math.round(aRect.y * scaleY),
+        crop.width, crop.height, 0, 0, crop.width, crop.height);
+      const b64  = crop.toDataURL('image/png').split(',')[1];
+      const res  = await window.docusnap.ocrRegionBoxes?.(b64);
+      const raw  = ((res && res.text) || (await window.docusnap.ocrRegion(b64)) || '').trim();
+      const label = sanitizeAnchorLabel(raw) || raw;
+      // Value centre (normalised) from the value box; anchor box top-left (normalised).
+      const xNorm = (rect.x + rect.w / 2) / imgW, yNorm = (rect.y + rect.h / 2) / imgH;
+      const off = labelOffsetFromBox([0, 0], aRect.x, aRect.y, xNorm, yNorm, imgW, imgH);
+      // Direction: the anchor sits ABOVE the value (label-above) when the vertical gap
+      // dominates the horizontal one; otherwise it's to the LEFT (label-left).
+      const dcx = (rect.x + rect.w / 2) - (aRect.x + aRect.w / 2);
+      const dcy = (rect.y + rect.h / 2) - (aRect.y + aRect.h / 2);
+      const direction = (dcy > 0 && Math.abs(dcy) > Math.abs(dcx)) ? 'below' : 'right';
+      const supplierInput = document.querySelector('.field-input[data-key="supplier_name"]');
+      const liveSupplier  = supplierInput?.value?.trim() || currentDoc?.supplier_name;
+      pendingAnchors[fieldKey] = {
+        supplier_name: cleanSupplierName(liveSupplier),
+        document_type: currentDoc?.type_slug || currentDoc?.document_type_slug || null,
+        field_key: fieldKey,
+        page_zone: yNorm < 0.33 ? 'top' : yNorm < 0.66 ? 'middle' : 'bottom',
+        x_norm: xNorm, y_norm: yNorm, w_norm: rect.w / imgW, h_norm: rect.h / imgH,
+        authoritative: true,
+        anchor_label: label || (labelFor(fieldKey) || fieldKey.replace(/_/g, ' ')),
+        direction, ...off,
+        label_detected: !!label,   // a hand-drawn, OCR'd caption is a real page label
+      };
+      anchorTaughtFields.add(fieldKey);
+      // Overlay the drawn anchor box + show the readout with the caption for review/edit.
+      showAnchorReadout({
+        anchor_label: pendingAnchors[fieldKey].anchor_label, direction, fallback: false,
+        normBox: [aRect.x / imgW, aRect.y / imgH, aRect.w / imgW, aRect.h / imgH],
+      }, c.value);
+    }
+  } catch (err) {
+    console.warn('Manual anchor draw failed:', err);
+  } finally {
+    ocrOverlay.classList.remove('visible');
+  }
 }
 
 function cleanSupplierName(name) {
