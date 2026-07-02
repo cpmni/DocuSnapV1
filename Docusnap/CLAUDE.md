@@ -1611,6 +1611,24 @@ testing subagent pass; safe to extend with the deferred barrier-gated-stub filin
 contenders into the post-claim/pre-copy `await` window — a regression guard for if anyone adds an
 `await` inside `commitDocument`, which would reopen the existsSync→copy collision race).
 
+**Extraction ACCURACY regression harness** — `stress_test/accuracy_harness.js` (run:
+`ELECTRON_RUN_AS_NODE=1 node_modules/.bin/electron stress_test/accuracy_harness.js`). Runs the REAL
+Python backend (`process_docs.py`, mode=fast, sharded ×8) over the whole 400-doc synthetic corpus
+(`stress_test/corpus/` + `ground_truth.json` — a LOCAL dev artifact, NOT committed: 200 text-layer +
+200 scanned, 3 types × 5 companies) against a FRESH temp DB with only the built-in types + the
+SHIPPED `keyword_patterns.json` and NO learned data — so it measures out-of-the-box (document #1)
+accuracy, the reproducible regression signal (learning only improves on it). Scores type/supplier/
+ref/date/subtotal/total split correct/wrong/missing, by variant (text vs scanned) and by type; writes
+`stress_test/out/accuracy_baseline.md`. **Baseline (2026-07-02, ~37s):** type 97% · ref 96.5% · date
+97% · subtotal 100% · total 100% (text-layer docs ~100% across the board). supplier is 0% BY DESIGN at
+baseline (identified by LOGO/learning, not a shipped keyword label — climbs with confirmed docs). The
+harness ADDS total_amount+subtotal currency fields to the built-in types before running, because
+migration 3 trimmed the built-ins to name/date/ref — without that the money fields have no schema slot
+and read 0% (a schema artifact, not an extraction miss). Almost all misses are on SCANNED sales_order/
+purchase_order docs whose OCR'd title mis-detects as invoice → the invoice ref/date keys then miss
+(cascade a learned template closes). (`stress_test/analyze.js` is the older variant that runs against a
+pre-LEARNED `stress.db` instead of a fresh one — use accuracy_harness.js for the clean baseline.)
+
 ---
 
 ## UI conventions

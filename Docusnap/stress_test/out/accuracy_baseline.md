@@ -1,0 +1,44 @@
+# Baseline extraction accuracy — 400-doc corpus, fresh DB (shipped config, no learned data)
+
+_Generated 2026-07-02T11:18:56.173Z · mode=fast · 400/400 docs processed_
+
+## Accuracy by field × variant
+| Field | Text (200) | Scanned (200) | Overall |
+|---|---|---|---|
+| type | 100.0% (200/200) | 94.0% (188/200) | 97.0% |
+| supplier | 0.0% (0/200) | 0.0% (0/200) | 0.0% |
+| ref | 100.0% (200/200) | 93.0% (186/200) | 96.5% |
+| date | 100.0% (200/200) | 94.0% (188/200) | 97.0% |
+| subtotal | 100.0% (200/200) | 100.0% (200/200) | 100.0% |
+| total | 100.0% (200/200) | 100.0% (200/200) | 100.0% |
+
+## Correct / wrong / missing (overall)
+| Field | Correct | Wrong | Missing |
+|---|---|---|---|
+| type | 97.0% | 3.0% | 0.0% |
+| supplier | 0.0% | 0.0% | 100.0% |
+| ref | 96.5% | 0.3% | 3.3% |
+| date | 97.0% | 0.0% | 3.0% |
+| subtotal | 100.0% | 0.0% | 0.0% |
+| total | 100.0% | 0.0% | 0.0% |
+
+## Ref / Date / Total accuracy by document type
+| Type | ref | date | total |
+|---|---|---|---|
+| invoice | 99.3% (133/134) | 100.0% (134/134) | 100.0% (134/134) |
+| sales_order | 97.0% (129/133) | 97.7% (130/133) | 100.0% (133/133) |
+| purchase_order | 93.2% (124/133) | 93.2% (124/133) | 100.0% (133/133) |
+
+**Overall confidence** — text: min 62 / mean 70 / max 86 · scanned: min 31 / mean 68 / max 86
+
+## Example failures
+- **type**: scanned_sales_order_SC_SO-40223.pdf: want sales_order got invoice · scanned_sales_order_GF_SO-30232.pdf: want sales_order got invoice · scanned_purchase_order_GF_PO-30242.pdf: want purchase_order got invoice · scanned_purchase_order_AI_PO-10260.pdf: want purchase_order got invoice · scanned_sales_order_AI_SO-10280.pdf: want sales_order got invoice
+- **supplier**: want "Acme Industrial" got NULL · want "Bluewave Supplies" got NULL · want "Greenfield Trading" got NULL · want "Sunrise Components" got NULL · want "Meridian Logistics" got NULL
+- **ref**: want SO-40223 got NULL · want SO-30232 got NULL · want PO-30242 got NULL · want SO-30247 got '8030247' · want PO-10260 got NULL
+- **date**: want 24-03-2023 got NULL · want 13-11-2025 got NULL · want 13-09-2024 got NULL · want 14-01-2022 got NULL · want 26-04-2024 got NULL
+
+## Notes (how to read this)
+- **supplier 0% is EXPECTED at baseline** — the document issuer is identified by LOGO fingerprint + learning, not a shipped keyword label (a company name at the top of a page has no caption to anchor on). It climbs toward ~95%+ as a supplier's docs are confirmed; this harness deliberately runs with NO learned data.
+- **Text-layer (born-digital) docs are ~100%** on every structural + money field — the ceiling.
+- **Almost all misses are on SCANNED docs**, and cluster on `sales_order`/`purchase_order`: OCR noise on the title/labels can mis-detect the type as `invoice`, which then cascades — the `invoice_number`/`invoice_date` keys don't match the SO/PO labels, so ref/date read NULL. A learned TEMPLATE match locks the type and closes this cascade (out of scope for a no-learning baseline).
+- **ref/date/total/subtotal on text docs and on correctly-typed scanned docs are at or near 100%** — the shipped keyword/anchor extraction is sound; the baseline weakness is scanned-doc type detection for the two non-invoice types.
