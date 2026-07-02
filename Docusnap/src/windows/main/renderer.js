@@ -306,7 +306,11 @@ async function chooseWatchFolder() {
   let folder = null;
   try { folder = await window.docusnap.pickWatchFolder(); } catch {}
   if (!folder) return;
-  try { await window.docusnap.setWatchFolder(folder); await window.docusnap.setWatchFolderEnabled(true); } catch {}
+  try {
+    const res = await window.docusnap.setWatchFolder(folder);
+    if (res && res.ok === false) { alert(res.error || 'That folder can’t be used for auto-import.'); return; }
+    await window.docusnap.setWatchFolderEnabled(true);
+  } catch {}
   refreshWatchCard();
 }
 

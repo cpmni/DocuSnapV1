@@ -1,5 +1,15 @@
 # Scan Finder — Overnight Adversarial QA Audit (2026-07-02)
 
+> **STATUS 2026-07-02 — ALL 11 FINDINGS FIXED + TESTED.** Every item below is now
+> resolved in code. New shared helpers: `database/modules/slug.js` (`safeSlug`/
+> `uniqueSlug`, closes #7/#9 root cause) and `src/modules/path_overlap.js`
+> (`foldersOverlap`, #8). New/updated tests: `database/modules/test_slug.js`,
+> `src/services/test_backup_retype.js` (#1), `src/modules/test_path_overlap.js` (#8),
+> extended `src/modules/filing/test_filename_pattern.js` (#10). See CLAUDE.md's
+> "Known bugs" → "RESOLVED QA FINDINGS" for the per-item landing notes. The report
+> body below is preserved as the original findings record.
+
+
 **Goal:** find ways a user can break or corrupt the software, or footguns/glitches the UI
 allows — *without changing any code*. Everything below is a read-only trace of the code;
 **no source was modified.** Nothing here has been fixed — this is a findings report for you

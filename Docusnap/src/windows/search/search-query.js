@@ -15,7 +15,18 @@ function getParams() {
   };
 }
 
+// Show an inline hint when the From date is after the To date — otherwise the
+// search just returns nothing with no explanation (QA audit #11). ISO date strings
+// (yyyy-mm-dd) compare lexicographically, so a plain string compare is correct.
+function _updateDateRangeNote() {
+  const from = document.getElementById('inp-date-from').value;
+  const to   = document.getElementById('inp-date-to').value;
+  const note = document.getElementById('date-range-note');
+  if (note) note.style.display = (from && to && from > to) ? '' : 'none';
+}
+
 async function doSearch() {
+  _updateDateRangeNote();
   const bin = !!(window.SearchState && window.SearchState.binMode);
   try {
     if (bin) {

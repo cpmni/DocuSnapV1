@@ -646,9 +646,12 @@ function renderQueueList() {
       </div>
     `;
     if (window.Thumbs) window.Thumbs.lazy(el.querySelector('.qi-thumb'), doc);
-    el.addEventListener('click', () => selectDoc(doc));
+    // During a File All Ready run, user selection/delete must NOT reassign the
+    // module-global currentDoc mid-file (QA audit #5) — ignore row clicks + the
+    // per-row × until the bulk run finishes (the loop drives selectDoc itself).
+    el.addEventListener('click', () => { if (bulkFiling) return; selectDoc(doc); });
     const delBtn = el.querySelector('.qi-delete');
-    if (delBtn) delBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteFromQueue(doc); });
+    if (delBtn) delBtn.addEventListener('click', (e) => { e.stopPropagation(); if (bulkFiling) return; deleteFromQueue(doc); });
     list.appendChild(el);
   }
 }
@@ -1350,18 +1353,25 @@ function validateConfirm() {
   }
 
   const dt       = allDocTypes.find(t => t.slug === selectedTypeSlug);
-  const dateKey  = dt?.date_field_key  || 'invoice_date';
-  const refKey   = dt?.ref_field_key   || 'invoice_number';
+  // A role is either ASSIGNED (points at a real field key) or legitimately UNSET.
+  // Do NOT fall back to the literal invoice_number/invoice_date — a custom type
+  // keyed only by a date (delivery note, worksheet), or a type whose ref role was
+  // self-healed to NULL, then gates on a phantom field that can never be filled,
+  // permanently disabling Confirm (QA audit #2). Honour the type: require only the
+  // roles it actually designates. This matches the backend, which deliberately
+  // refuses to force a reference role.
+  const dateKey  = dt?.date_field_key || null;
+  const refKey   = dt?.ref_field_key  || null;
   const note     = document.getElementById('confirm-config-note');
 
-  // A structural role can point at a field that no longer exists on the type (a
-  // dangling ref_field_key/date_field_key — e.g. the Reference field was deleted).
-  // That required key then matches NO input, so it could never be satisfied and
-  // Confirm would sit disabled with nothing on screen to fill. Detect that and say
-  // so plainly, with the fix, instead of blocking silently.
+  // A role that IS ASSIGNED but points at a field that no longer exists on the type
+  // (a dangling pointer — e.g. the Reference field was deleted) can never be
+  // satisfied, so say so plainly. An UNSET role is fine and is skipped.
   const fieldExists = (key) => !!document.querySelector(`.field-input[data-key="${key}"]`);
-  const dangling = [{ key: dateKey, role: 'Date' }, { key: refKey, role: 'Reference' }]
-    .filter(r => !fieldExists(r.key));
+  const dangling = [
+    dateKey ? { key: dateKey, role: 'Date' } : null,
+    refKey  ? { key: refKey,  role: 'Reference' } : null,
+  ].filter(r => r && !fieldExists(r.key));
   if (note) {
     if (dangling.length) {
       note.textContent = `This document type’s ${dangling.map(d => d.role).join(' and ')} field `
@@ -1375,14 +1385,41 @@ function validateConfirm() {
   }
   if (dangling.length) { btn.disabled = true; markRequiredMissing([]); return; }
 
-  const required = [dateKey, refKey];
+  // Required = only the roles that are actually assigned AND present on screen.
+  const required = [dateKey, refKey].filter(k => k && fieldExists(k));
   const missing = required.filter(key => {
     const input = document.querySelector(`.field-input[data-key="${key}"]`);
     return !input || !input.value.trim();
   });
 
+  // Empty Document Issuer: WARN, don't block (the app's review-not-reject posture).
+  // A blank issuer files under "Unknown Company" and won't learn this sender — the
+  // consequence is named here, and confirmCurrentDoc asks for a deliberate confirm.
+  const issuerNote = document.getElementById('confirm-issuer-note');
+  if (issuerNote) {
+    const issuerKey = issuerBlankKey();
+    if (issuerKey && !missing.length) {
+      issuerNote.textContent = 'Document Issuer is blank — this will file under “Unknown Company” and '
+        + 'won’t learn this sender. You can still confirm.';
+      Object.assign(issuerNote.style, { display: '', color: 'var(--warn)', fontSize: '12px',
+        lineHeight: '1.4', padding: '6px 4px' });
+    } else {
+      issuerNote.style.display = 'none';
+    }
+  }
+
   markRequiredMissing(missing);
   btn.disabled = missing.length > 0;
+}
+
+// The identity/Document-Issuer field key (supplier_name | customer_name) on screen
+// when it is BLANK; null when present-and-filled or the type has no issuer field.
+function issuerBlankKey() {
+  for (const key of ['supplier_name', 'customer_name']) {
+    const input = document.querySelector(`.field-input[data-key="${key}"]`);
+    if (input) return input.value.trim() ? null : key;
+  }
+  return null;
 }
 
 function markRequiredMissing(missingKeys) {
@@ -2052,8 +2089,12 @@ function extractLabel(text) {
 // blindly — and the on-screen-image steps (logo-fingerprint save + image-clear
 // animation) are skipped, since File All cycles documents itself. The file-by-
 // file behaviour is otherwise unchanged.
-async function confirmCurrentDoc({ bulk = false } = {}) {
+async function confirmCurrentDoc({ bulk = false, expectId = null } = {}) {
   if (!currentDoc) return { error: 'No document selected.' };
+  // Bulk-race guard: the caller (File All Ready) captures the doc it intends to
+  // file; if a delete / row-click reassigned the module-global `currentDoc` in an
+  // await gap, bail instead of filing the WRONG document (QA audit #5).
+  if (expectId != null && currentDoc.id !== expectId) return { skipped: true, reason: 'selection changed' };
 
   const allValues = {};
   document.querySelectorAll('#fields-scroll .field-input').forEach(input => {
@@ -2068,6 +2109,20 @@ async function confirmCurrentDoc({ bulk = false } = {}) {
     if (v && !/^\d+$/.test(v)) {
       if (bulk) return { skipped: true, reason: 'needs check' };
       if (!confirm(`"${labelFor(key)}" — Are you sure this is correct? This field usually contains only digits.`)) {
+        return { cancelled: true };
+      }
+    }
+  }
+
+  // Empty Document Issuer (supplier/customer identity): files under "Unknown Company"
+  // and can't learn this sender. Warn-and-allow — a deliberate confirm in single mode;
+  // in bulk it's "not cleanly ready", so the doc is left in the queue for review.
+  {
+    const issuerKey = ['supplier_name', 'customer_name'].find(k => k in allValues);
+    if (issuerKey && !(allValues[issuerKey] || '').trim()) {
+      if (bulk) return { skipped: true, reason: 'issuer blank' };
+      if (!confirm('Document Issuer is blank.\n\nThis document will be filed under "Unknown Company" and '
+                 + 'the app won’t learn this sender. File it anyway?')) {
         return { cancelled: true };
       }
     }
@@ -2222,7 +2277,10 @@ async function fileAllReady() {
   const fileEl   = banner.querySelector('.bfp-file');
   const stopBtn  = document.getElementById('btn-stop-file-all');
   // These act on currentDoc, which the loop reassigns rapidly — disable for the run.
-  const lockBtns = ['btn-file-all-review', 'btn-skip', 'btn-defer', 'btn-delete-all-review']
+  // btn-delete (single Delete) is included: without it a mid-run delete reassigns
+  // currentDoc in an await gap and could file the wrong doc (QA audit #5). Per-row ×
+  // and queue-row clicks are separately gated on `bulkFiling`.
+  const lockBtns = ['btn-file-all-review', 'btn-skip', 'btn-defer', 'btn-delete-all-review', 'btn-delete']
     .map(id => document.getElementById(id)).filter(Boolean);
 
   // Release any preview image handle held from a doc the user was viewing — ONCE,
@@ -2265,7 +2323,7 @@ async function fileAllReady() {
           if (!doc.type_slug) noType++;                // dominant reason: no document type detected
           continue;
         }
-        const r = await confirmCurrentDoc({ bulk: true });
+        const r = await confirmCurrentDoc({ bulk: true, expectId: doc.id });
         if (r.filed) {
           filed++;
           // Drop the row the moment it's filed, so the queue shrinks live.
@@ -2339,7 +2397,7 @@ async function autoCommitFullConfidence() {
         try {
           await selectDoc(doc, { fieldsOnly: true });
           if (document.getElementById('btn-confirm').disabled) continue;   // not actually ready
-          const r = await confirmCurrentDoc({ bulk: true });
+          const r = await confirmCurrentDoc({ bulk: true, expectId: doc.id });
           if (r && r.filed) { filed++; document.querySelector(`.queue-item[data-id="${doc.id}"]`)?.remove(); }
         } catch { /* leave it for manual review */ }
         await new Promise(res => setTimeout(res, 0));   // keep the window responsive
@@ -3130,8 +3188,26 @@ function syncDocTypeFromRecord(doc) {
 }
 
 // ── Reprocess ─────────────────────────────────────────────────────────────────
-document.getElementById('btn-reprocess').addEventListener('click', async () => {
+
+// Does the OPEN document carry un-committed review work that a reprocess would
+// silently discard (hand-typed corrections, a manual type override, or a staged ⊕
+// teach / field rule)? Used to warn before reprocessing (QA audit #3).
+function hasPendingReviewEdits() {
+  if (corrections && Object.keys(corrections).length) return true;
+  if (typeof pendingAnchors === 'object' && pendingAnchors && Object.keys(pendingAnchors).length) return true;
+  if (typeof pendingFieldRules === 'object' && pendingFieldRules && Object.keys(pendingFieldRules).length) return true;
+  const detected = currentDoc && currentDoc.type_slug;
+  if (selectedTypeSlug && detected && selectedTypeSlug !== detected) return true;   // manual type override
+  return false;
+}
+const REPROCESS_DISCARD_WARNING =
+  'Reprocessing re-reads this document with the latest learned data and REPLACES the '
+  + 'fields on screen — your unsaved edits and type choice for this document will be lost.\n\nContinue?';
+
+document.getElementById('btn-reprocess').addEventListener('click', async (e) => {
   if (!currentDoc) return;
+  // Warn only on a genuine user click (programmatic .click() re-extracts are trusted).
+  if (e?.isTrusted && hasPendingReviewEdits() && !confirm(REPROCESS_DISCARD_WARNING)) return;
   const btn = document.getElementById('btn-reprocess');
   btn.disabled = true;
   btn.innerHTML = '<span class="btn-spinner"></span> Reprocessing…';
@@ -3254,6 +3330,8 @@ document.getElementById('btn-stop-reprocess').addEventListener('click', () => {
 document.getElementById('btn-reprocess-all').addEventListener('click', async () => {
   if (queue.length === 0) { showToast('No documents in queue', 'warn'); return; }
   if (_batchActive) return;
+  // The open document's unsaved edits/type choice are re-rendered away too (QA audit #3).
+  if (hasPendingReviewEdits() && !confirm(REPROCESS_DISCARD_WARNING)) return;
 
   const btnAll  = document.getElementById('btn-reprocess-all');
   const btnOne  = document.getElementById('btn-reprocess');

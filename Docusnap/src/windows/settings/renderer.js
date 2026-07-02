@@ -253,7 +253,8 @@ loadWatchFolder();
 document.getElementById('btn-pick-watch').addEventListener('click', async () => {
   const folder = await api.pickWatchFolder();
   if (folder) {
-    await api.setWatchFolder(folder);
+    const res = await api.setWatchFolder(folder);
+    if (res && res.ok === false) { alert(res.error || 'That folder can’t be used as a watch folder.'); return; }
     document.getElementById('watch-folder-path').value = folder;
   }
 });

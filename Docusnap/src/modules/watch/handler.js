@@ -23,6 +23,23 @@
 const os   = require('os');
 const path = require('path');
 const fs   = require('fs');
+const { foldersOverlap } = require('../path_overlap');
+
+// A watch folder must not overlap the output tree or the drain "Processed" folder,
+// or filed copies get re-imported in a loop (flat output pattern) → unbounded
+// -DUPLICATE growth (QA audit #8). Returns a friendly message on conflict, else null.
+function _watchFolderConflict(learning, db, folder) {
+  if (!folder) return null;   // clearing the folder is always fine
+  const out = learning.getSetting(db, 'output_folder', null);
+  if (out && foldersOverlap(folder, out)) {
+    return 'This can’t be your output folder (or a folder inside it) — filed documents would be re-imported in a loop. Please choose a separate folder.';
+  }
+  const processed = learning.getSetting(db, 'processed_folder', null);
+  if (processed && foldersOverlap(folder, processed)) {
+    return 'This can’t be your “Processed” folder (or a folder inside it). Please choose a separate folder.';
+  }
+  return null;
+}
 
 const SUPPORTED_EXTENSIONS = new Set(
   ['.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.tif', '.bmp']
@@ -399,10 +416,12 @@ function register(ctx) {
   ipcMain.handle('set-watch-folder', (_e, folderPath) => {
     requireRole('admin');
     const db = getDb();
+    const conflict = _watchFolderConflict(learning, db, folderPath);
+    if (conflict) { _log('warn', `[watch] rejected folder (overlap): ${folderPath}`); return { ok: false, error: conflict }; }
     learning.setSetting(db, 'watch_folder', folderPath || '');
     _log('log', `[watch] folder set: ${folderPath || '(cleared)'}`);
     if (learning.getSetting(db, 'watch_folder_enabled', '0') === '1') _start(db);
-    return true;
+    return { ok: true };
   });
 
   ipcMain.handle('set-watch-folder-enabled', (_e, enabled) => {

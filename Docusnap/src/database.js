@@ -211,8 +211,10 @@ function getAllFields() {
 }
 
 function addCustomField({ key, label, type = 'text', confidence_threshold = 70 }) {
-  // Sanitise key: lowercase, underscores only
-  const safeKey = key.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+  // Sanitise key via the shared canonical rule (collapse/trim/fallback) so a
+  // malformed key can't reach filing (buildXml crash).
+  const { safeSlug } = require('../database/modules/slug');
+  const safeKey = safeSlug(key, { fallback: 'field' });
   const maxOrder = open().prepare(
     `SELECT COALESCE(MAX(sort_order), 100) as m FROM fields`
   ).get().m;

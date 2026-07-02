@@ -1746,27 +1746,47 @@ license-state(gate)                    # pushed to the license window with the b
 
 ## Known bugs (fix these first)
 
-### OPEN QA FINDINGS (2026-07-02 audit — see `NIGHT_QA_AUDIT_2026-07-02.md`)
-An overnight read-only adversarial audit (tester + eric/reggie/bob consults) logged **11
-unfixed findings** in `NIGHT_QA_AUDIT_2026-07-02.md` (repo root) — read it before touching
-Review-confirm, backup/restore, document-type/field creation, or the processing event loop.
-Headlines (each has repro + code location + fix direction in the report; NOT yet implemented):
-- **HIGH** — backup restore silently RE-TYPES documents or aborts opaquely (FK/id hazard,
-  `backupService.js`); a type with NO ref/date role can NEVER be confirmed — dead-end
-  (`review/renderer.js validateConfirm` `|| 'invoice_number'`/`'invoice_date'` fallback vs
-  the backend's deliberate "reference optional"); "Reprocess" silently discards in-progress
-  manual edits + type choice; batch processing FREEZES all windows (synchronous
-  `spawnSync(pdf_rotate)` + `copyFileSync` on the `file_done` path in `processing/handler.js`).
-- **MED** — "File All Ready" race can file the WRONG doc (delete/row-click in the await gap);
-  empty Document Issuer silently files under "Unknown Company"; non-Latin/emoji type names
-  collapse to slug `"_"` → UNIQUE collision; watch folder overlapping the output folder (flat
-  pattern) → unbounded `-DUPLICATE` growth.
-- **LOW** — `buildXml` throws on a malformed field key → orphan file + stuck doc; empty-sanitised
-  supplier drops the company folder; search has no From>To guard.
-- **ROOT CAUSE (slug/key):** five derivations disagree — reggie's canonical `safeSlug` unifies them;
-  smallest crash-stopper is hardening `buildXml` (`filing/handler.js:273`). Verified SOUND (don't
-  re-audit): CAS confirm, SQL-injection (search is parameterized), clock-rollback HWM, corrupt-file
-  per-file isolation, window-lifecycle destroy-guards.
+### RESOLVED QA FINDINGS (2026-07-02 audit — all 11 fixed + tested; see `NIGHT_QA_AUDIT_2026-07-02.md`)
+The overnight read-only adversarial audit's **11 findings are now all FIXED**. Landing notes:
+- **#1 (HIGH) backup restore re-typing / opaque FK abort** — `backupService.applyBackup` no
+  longer delete-by-id + reinsert-original-id for parents the EXCLUDED `documents` table
+  references. Parents (document_types by `slug`, template_groups by `name`, templates by `slug`)
+  are UPSERTed by NATURAL KEY preserving the LOCAL id → a surviving doc is never silently
+  re-typed and never FK-aborts; children (fields, template_*) are scoped-replaced with the
+  parent FK remapped via an old→new id map; a `templates.sample_document_id` whose doc is
+  absent here is NULLed. Guarded by `src/services/test_backup_retype.js`.
+- **#2 (HIGH) no-ref/date type dead-end** — `review/renderer.js validateConfirm` requires a
+  ref/date role only when it's actually assigned (`dt?.ref_field_key || null`, no
+  `invoice_number`/`invoice_date` literal fallback); the dangling-role warning now fires only
+  for a role that IS set but points at a missing field — honouring the backend's "reference optional".
+- **#3 (HIGH) reprocess discards edits** — `hasPendingReviewEdits()` guards both Reprocess +
+  Reprocess-All with a confirm() when corrections / a manual type override / a staged ⊕ teach are
+  pending (skipped for programmatic `.click()` re-extracts via `e.isTrusted`).
+- **#4 (MED-HIGH) batch freeze** — the working-copy COPY (async `fs.promises.copyFile`) and the
+  `pdf_rotate` cold-start (async `spawn`) are moved OFF the synchronous `file_done` path into a
+  deferred `setImmediate` chain (copy→rotate→drain→auto-file); DB writes stay synchronous. The
+  batch awaits all per-file IO (`pendingFileIo`) before flushing drains.
+- **#5 (MED) File-All-Ready wrong-doc race** — `confirmCurrentDoc` takes an `expectId` and bails
+  if `currentDoc.id` changed; the bulk lock now includes single Delete, and per-row ×/row-clicks
+  are gated on `bulkFiling`.
+- **#6 (MED) empty issuer** — warn-and-allow: an amber note + a deliberate confirm in single
+  mode; a bulk File-All skips a blank-issuer doc instead of silently filing under "Unknown Company".
+- **#7/#9 (root cause) slug/key derivation** — ONE shared `database/modules/slug.js`
+  (`safeSlug`/`uniqueSlug`: NFKD-fold → collapse → trim → cap → fallback → uniqueness suffix)
+  used by `addType`/`addField`/`presetSlug`/`create-doc-type-with-fields`/`addCustomField`; symbol/
+  non-Latin names get a unique fallback slug (no UNIQUE collision). `buildXml` hardened with
+  `key.split('_').filter(Boolean)` + `if(!tag) continue`, and the whole XML write is try/caught so
+  an XML defect can't strand a copied file. Guarded by `test_slug.js`. (Existing rows are NOT
+  re-slugged — learned scope keys off the stored slug.)
+- **#8 (MED) watch/output overlap** — `src/modules/path_overlap.js` `foldersOverlap`; `set-watch-folder`
+  returns `{ok:false,error}` on overlap with output/Processed (renderers surface it), and
+  `process-folder` refuses importing the output/Processed tree. Guarded by `test_path_overlap.js`.
+- **#10 (LOW) empty-sanitised supplier** — filing substitutes `Unknown Company` when the resolved
+  `{supplier}` level sanitises to empty (`buildFilenameStem` pre-check), never dropping the company
+  folder. Guarded in `test_filename_pattern.js`.
+- **#11 (LOW) search From>To** — inline note in the search bar when From date > To date.
+- Verified SOUND (don't re-audit): CAS confirm, SQL-injection (search is parameterized),
+  clock-rollback HWM, corrupt-file per-file isolation, window-lifecycle destroy-guards.
 
 ### BUG 1+2 — `str object has no attribute get`
 **File**: `python_backend/process_docs.py`

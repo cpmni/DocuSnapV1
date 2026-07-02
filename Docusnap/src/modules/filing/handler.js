@@ -19,7 +19,7 @@ const MONTH_NAMES = [
 
 const {
   DEFAULT_PATTERN, DEFAULT_FOLDER_PATTERN, SUPPORTED_TOKENS, FIELD_TOKENS,
-  buildFilename, buildFolderSegments, resolveDuplicateFilename,
+  buildFilename, buildFolderSegments, buildFilenameStem, resolveDuplicateFilename,
 } = require('./filename_pattern');
 
 // ── Register IPC ──────────────────────────────────────────────────────────────
@@ -97,7 +97,13 @@ async function commitDocument({
 
   const rawRef       = allValues[refField]  || allValues['reference_number'] || null;
   const rawDate      = allValues[dateField] || allValues['invoice_date']     || null;
-  const supplierName = allValues['supplier_name'] || 'Unknown Company';
+  // #10: a supplier value that is falsy OR sanitises away ("..", "///", "***")
+  // must still produce a company folder — not silently drop the level and file the
+  // doc directly under Year/Month. Mirror the segment sanitiser (buildFolderSegments
+  // runs the same buildFilenameStem per level) and fall back to a neutral name when
+  // it comes up empty.
+  const supplierStem = buildFilenameStem(String(allValues['supplier_name'] || ''), {});
+  const supplierName = supplierStem || 'Unknown Company';
 
   const dateObj = parseDate(rawDate);
   const ext     = path.extname(originalFilename).toLowerCase();
@@ -195,20 +201,30 @@ async function commitDocument({
   // failures that happen when the source is still open for preview.
 
   // ── 6. Write metadata XML ─────────────────────────────────────────────────────
+  // The XML sidecar is best-effort: the FILED PDF (step 5) is the primary artifact
+  // and search reads the DB, not this file. A defect here must NOT throw out of
+  // commitDocument — that would roll the doc back to needs_review while LEAVING the
+  // copied PDF orphaned in the output tree (and wedge the doc on retry).
   const xmlFilename = path.basename(finalFilename, ext) + '.xml';
   const xmlPath     = path.join(metaDir, xmlFilename);
-  const xmlContent  = buildXml({
-    allValues, documentType, originalFilename,
-    storedAs: finalFilename,
-    processedAt: new Date().toISOString(),
-  });
-  fs.writeFileSync(xmlPath, xmlContent, 'utf-8');
+  let metadataPath = null;
+  try {
+    const xmlContent = buildXml({
+      allValues, documentType, originalFilename,
+      storedAs: finalFilename,
+      processedAt: new Date().toISOString(),
+    });
+    fs.writeFileSync(xmlPath, xmlContent, 'utf-8');
+    metadataPath = xmlPath;
+  } catch (e) {
+    if (logger && logger.warn) logger.warn(`metadata XML skipped for ${finalFilename}: ${e.message}`);
+  }
 
   return {
     success:      true,
     filename:     finalFilename,
     filePath:     targetPath,
-    metadataPath: xmlPath,
+    metadataPath,
     isDuplicate:  finalFilename.includes('-DUPLICATE'),
     srcPath,      // caller schedules removal once the original is no longer in use
   };
@@ -270,7 +286,12 @@ function buildXml({ allValues, documentType, originalFilename,
   ];
   for (const [key, val] of Object.entries(allValues)) {
     if (!val || key.startsWith('_')) continue;
-    const tag = key.split('_').map(w => w[0].toUpperCase() + w.slice(1)).join('');
+    // filter(Boolean) drops EMPTY segments so a malformed key ("ref__", "amount_",
+    // "_") can't make w[0] undefined -> TypeError, which (running AFTER the file
+    // copy, with no try/catch) strands the copied file + wedges the doc in review.
+    const tag = key.split('_').filter(Boolean)
+      .map(w => w[0].toUpperCase() + w.slice(1)).join('');
+    if (!tag) continue;
     lines.push(`    <${tag}>${esc(val)}</${tag}>`);
   }
   lines.push('  </Fields>');

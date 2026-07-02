@@ -577,6 +577,22 @@ function register(ctx) {
     // NOT auto-filed out of the review queue before the teach picker can select it.
     const autoFileRun = !opts || opts.autoFile !== false;
     const db = getDb();
+    // Refuse importing the OUTPUT tree (or the drain "Processed" folder): filed docs
+    // would be re-processed, and with a flat output pattern re-imported in a loop (QA
+    // audit #8). The teach/single-file path imports from a temp staging folder, so it
+    // never trips this.
+    {
+      const learning = require('../../../database/modules/learning');
+      const { foldersOverlap } = require('../path_overlap');
+      const out = learning.getSetting(db, 'output_folder', null);
+      const processed = learning.getSetting(db, 'processed_folder', null);
+      if (out && foldersOverlap(folderPath, out)) {
+        return { success: false, error: 'This is your output folder (or a folder inside it). Importing it would re-process already-filed documents. Please choose a different folder.' };
+      }
+      if (processed && foldersOverlap(folderPath, processed)) {
+        return { success: false, error: 'This is your “Processed” folder. Importing it would re-process already-filed documents. Please choose a different folder.' };
+      }
+    }
     // Multi-point licensing enforcement (F-01): bulk import is the highest-value
     // extraction write path. Network-free cached-license re-check before any work.
     const licenseDenial = require('../licensing/handler').licenseDenied(db);
@@ -615,6 +631,7 @@ function register(ctx) {
     _currentBatchProcs = [];
     let fileCount   = 0;
     const shardFiles = [];   // per-worker --files-file temp paths to clean up
+    const pendingFileIo = [];   // deferred per-file working-copy/rotate/drain/auto-file promises
 
     // Spawn one Python worker. filesFile=null → it scans the whole folder (the
     // original single-process behaviour). suppressStart hides the worker's own
@@ -683,7 +700,10 @@ function register(ctx) {
               // stall the bar and drop the doc from the results table); db_id just stays
               // unset → the row link falls back to opening Review at the first doc.
               _recordDevDoc(msg);
-              try { _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoFileRun); }
+              try {
+                const io = _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoFileRun);
+                if (io && typeof io.then === 'function') pendingFileIo.push(io);
+              }
               catch (e) { logger?.err?.(`_handleFileMessage failed: ${msg.original_filename || '?'} — ${e && e.message}`); }
               fileCount++;
             } else {
@@ -791,10 +811,10 @@ function register(ctx) {
     const stopped = _cancelRequested;
     _cancelRequested   = false;
     _currentBatchProcs = [];
-    // Let any still-pending per-file setImmediate(_handleFileMessage) callbacks run so
-    // their drains are queued, THEN flush — the workers have exited, so the source PDFs
-    // are unlocked and the moves into Processed/ now succeed.
-    await new Promise((resolve) => setImmediate(resolve));
+    // Wait for every deferred per-file IO (async working-copy/rotate/drain/auto-file)
+    // to finish so their drains are queued/attempted, THEN flush — the workers have
+    // exited, so the source PDFs are unlocked and the moves into Processed/ now succeed.
+    await Promise.allSettled(pendingFileIo.splice(0));
     _flushPendingDrains(db, logger);
     cleanupFiles(tempFiles);
     cleanupFiles(shardFiles);
@@ -1768,24 +1788,54 @@ function runHoldingReconcile(db, logger) {
   }
 }
 
-// ── Internal: save file_done message to DB ────────────────────────────────────
 // Rotate the inbox working copy in place (pypdf via pdf_rotate.py) to match the per-page
 // orientation OSD detected on this import. PDF only, only when a non-zero rotation exists.
-// SYNCHRONOUS (a quick /Rotate rewrite) so it completes before the doc can be auto-filed or
-// drained. Best-effort — a failure just leaves the working copy unrotated (logged).
-function _rotateWorkingCopyIfNeeded(msg, docId, logger) {
+// ASYNC (non-blocking child_process.spawn) so the synchronous Python cold-start never
+// freezes the main thread on the file_done path (QA audit #4). Best-effort; resolves after
+// the rotate finishes (or is skipped) — a failure just leaves the copy unrotated (logged).
+function _rotateWorkingCopyIfNeededAsync(msg, docId, logger) {
+  return new Promise((resolve) => {
+    try {
+      const rots = msg.page_rotations;
+      if (!_pyHelpers || !msg.working_path || !Array.isArray(rots) || !rots.some(r => r)) return resolve();
+      if (!/\.pdf$/i.test(msg.working_path)) return resolve();
+      const script = path.join(path.dirname(_pyHelpers.backendScript()), 'pdf_rotate.py');
+      const child = require('child_process').spawn(
+        _pyHelpers.pythonExe(),
+        _pyHelpers.pythonArgs(script, '--file', msg.working_path, '--rotations', rots.join(',')),
+        { windowsHide: true });
+      let stderr = '';
+      const timer = setTimeout(() => { try { child.kill(); } catch {} }, 30000);
+      child.stderr?.on('data', d => { stderr += d.toString(); });
+      child.on('error', (e) => { clearTimeout(timer); logger?.warn?.(`[auto-rotate] ${e && e.message}`); resolve(); });
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        if (code === 0) logger?.log?.(`Auto-rotated working copy (docId=${docId}): ${rots.filter(x => x).length} page(s)`);
+        else logger?.warn?.(`[auto-rotate] pdf_rotate failed (docId=${docId}): ${stderr.slice(0, 200)}`);
+        resolve();
+      });
+    } catch (e) { logger?.warn?.(`[auto-rotate] ${e && e.message}`); resolve(); }
+  });
+}
+
+// ASYNC twin of ensureWorkingCopy — the multi-MB copyFileSync is what froze windows
+// during a batch (QA audit #4). Same atomic .part→rename, resolves to the working_path.
+async function ensureWorkingCopyAsync(fs, path, inboxDir, srcPath, docId, originalFilename) {
+  if (!fs.existsSync(srcPath)) return null;
+  if (!fs.existsSync(inboxDir)) fs.mkdirSync(inboxDir, { recursive: true });
+  const rawExt = path.extname(originalFilename || '');
+  const ext    = /^\.[A-Za-z0-9]+$/.test(rawExt) ? rawExt : '';
+  const dest   = path.join(inboxDir, `${docId}${ext}`);
+  const part   = `${dest}.part`;
   try {
-    const rots = msg.page_rotations;
-    if (!_pyHelpers || !msg.working_path || !Array.isArray(rots) || !rots.some(r => r)) return;
-    if (!/\.pdf$/i.test(msg.working_path)) return;
-    const script = path.join(path.dirname(_pyHelpers.backendScript()), 'pdf_rotate.py');
-    const r = require('child_process').spawnSync(
-      _pyHelpers.pythonExe(),
-      _pyHelpers.pythonArgs(script, '--file', msg.working_path, '--rotations', rots.join(',')),
-      { windowsHide: true, timeout: 30000, encoding: 'utf8' });
-    if (r.status === 0) logger?.log?.(`Auto-rotated working copy (docId=${docId}): ${rots.filter(x => x).length} page(s)`);
-    else logger?.warn?.(`[auto-rotate] pdf_rotate failed (docId=${docId}): ${String(r.stderr || r.error || '').slice(0, 200)}`);
-  } catch (e) { logger?.warn?.(`[auto-rotate] ${e && e.message}`); }
+    await fs.promises.copyFile(srcPath, part);
+    await fs.promises.rename(part, dest);   // atomic publish
+    return dest;
+  } catch (e) {
+    try { if (fs.existsSync(part)) await fs.promises.unlink(part); } catch {}
+    try { if (fs.existsSync(dest)) await fs.promises.unlink(dest); } catch {}
+    return null;
+  }
 }
 
 function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoFileRun = true) {
@@ -1897,53 +1947,7 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
 
   msg.db_id = docId;
 
-  // ── Copy-on-import: keep an app-managed working copy ─────────────────────────
-  // So preview / reprocess / confirm never depend on the user's source folder
-  // surviving. Filename is the docId under userData (collision-proof — unique PK
-  // — and no user-supplied text in the path). Best-effort: on any failure leave
-  // working_path NULL and fall back to the source path / recovery logic as before.
-  // Runs BEFORE the drain below so it copies the file in place.
-  try {
-    const { app }    = require('electron');
-    const inboxDir   = path.join(app.getPath('userData'), 'inbox');
-    const srcForCopy = path.join(folderPath, msg.original_filename);
-    const wp = ensureWorkingCopy(fs, path, inboxDir, srcForCopy, docId, msg.original_filename);
-    if (wp) {
-      documents.update(db, docId, { working_path: wp });
-      msg.working_path = wp;
-      // Auto-rotate the working copy to match the orientation OSD detected this import, so the
-      // FILED copy + every future reprocess are upright (one detection). Synchronous so it's
-      // done before the doc can be auto-filed. No-op unless a non-zero page rotation exists.
-      _rotateWorkingCopyIfNeeded(msg, docId, logger);
-    }
-  } catch (e) {
-    console.warn(`[import] working copy failed for docId=${docId}: ${e.message}`);
-  }
-
-  // ── Drain the original out of the intake folder (Slice 2) ────────────────────
-  // Once a VERIFIED working copy exists, move the original from the source/watch
-  // folder into a "Processed" subfolder so it can't be re-pulled on the next
-  // manual run or after a restart (folder scans are non-recursive → subfolders are
-  // skipped). Move, never delete, for data-loss safety. Gated on:
-  //   • drain_processed setting (default ON; set 'false' to keep originals in place)
-  //   • the inbox working copy existing on disk (so the original is never the only
-  //     copy when it leaves the intake folder).
-  // An explicit processed_folder setting still wins (back-compat); otherwise the
-  // target is <intakeFolder>/Processed, which works for BOTH manual and watch.
-  const drainEnabled = learning.getSetting(db, 'drain_processed', 'true') !== 'false';
-  if (drainEnabled && msg.working_path && fs.existsSync(msg.working_path)) {
-    const explicit = learning.getSetting(db, 'processed_folder', null);
-    const destDir  = (explicit && explicit.trim()) || path.join(folderPath, 'Processed');
-    // Move it now if the worker has already released the file (the common case — it
-    // closes each PDF as it finishes); otherwise defer to the post-worker flush.
-    _drainNowOrDefer(db, logger, {
-      docId, destDir, kind: 'Processed',
-      srcPath: path.join(folderPath, msg.original_filename),
-      originalFilename: msg.original_filename,
-    });
-  }
-
-  // Log extraction result
+  // Log extraction result (cheap, synchronous — no file IO).
   if (logger) {
     const exFields = msg.extractions
       ? Object.entries(msg.extractions)
@@ -1959,15 +1963,62 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
     if (exFields) logger.log(`  Fields: ${exFields}`);
   }
 
-  // AUTO-FILE on import: a 100%-confidence, fully-typed, UN-flagged doc files itself
-  // immediately — for MANUAL import, the WATCH folder, and background runs alike (the single
-  // backend decision point, replacing the old renderer-side pass so it works even when the
-  // window is closed). Async so it never blocks file_done; the drain above handles the original.
-  // Skipped when the run opted out (the Teach-wizard single-file import keeps the doc in Review).
-  if (autoFileRun) _maybeAutoFile(db, msg, folderPath, notifyMainWindow, logger);
-
   notifyMainWindow('review-count-changed', documents.getReviewCount(db));
   notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
+
+  // ── Deferred FILE IO (QA audit #4) ───────────────────────────────────────────
+  // Everything above is fast, indexed DB work that MUST stay on the synchronous
+  // file_done path (so msg.db_id is set before the message is mirrored). Everything
+  // BELOW is heavy file/process work — a multi-MB copy and a synchronous Python
+  // cold-start for auto-rotate — which used to run inline and froze Review/Settings/
+  // main for hundreds of ms to seconds during a batch. It's deferred to a setImmediate
+  // and uses ASYNC copy + spawn, so the event loop keeps painting and handling IPC.
+  // The returned promise lets the batch await all per-file IO before flushing drains.
+  return new Promise((resolve) => {
+    setImmediate(async () => {
+      // Copy-on-import: an app-managed working copy so preview/reprocess/confirm never
+      // depend on the source folder surviving. Best-effort → leave working_path NULL on
+      // failure. Runs BEFORE the drain so it copies the file in place, and BEFORE
+      // auto-file so the (rotated) working copy is what gets filed.
+      try {
+        const { app }    = require('electron');
+        const inboxDir   = path.join(app.getPath('userData'), 'inbox');
+        const srcForCopy = path.join(folderPath, msg.original_filename);
+        const wp = await ensureWorkingCopyAsync(fs, path, inboxDir, srcForCopy, docId, msg.original_filename);
+        if (wp) {
+          documents.update(db, docId, { working_path: wp });
+          msg.working_path = wp;
+          // Auto-rotate to the orientation OSD detected this import (async, non-blocking),
+          // so the FILED copy + every future reprocess are upright from one detection.
+          await _rotateWorkingCopyIfNeededAsync(msg, docId, logger);
+        }
+      } catch (e) {
+        console.warn(`[import] working copy failed for docId=${docId}: ${e.message}`);
+      }
+
+      // Drain the original out of the intake folder once a VERIFIED working copy exists
+      // (move, never delete). Gated on drain_processed + the copy existing on disk.
+      try {
+        const drainEnabled = learning.getSetting(db, 'drain_processed', 'true') !== 'false';
+        if (drainEnabled && msg.working_path && fs.existsSync(msg.working_path)) {
+          const explicit = learning.getSetting(db, 'processed_folder', null);
+          const destDir  = (explicit && explicit.trim()) || path.join(folderPath, 'Processed');
+          _drainNowOrDefer(db, logger, {
+            docId, destDir, kind: 'Processed',
+            srcPath: path.join(folderPath, msg.original_filename),
+            originalFilename: msg.original_filename,
+          });
+        }
+      } catch (e) { logger?.warn?.(`[drain] docId=${docId}: ${e && e.message}`); }
+
+      // AUTO-FILE: a 100%-confidence, fully-typed, un-flagged doc files itself (the single
+      // backend decision point — works even with the window closed). Skipped when the run
+      // opted out (Teach-wizard single-file import keeps the doc in Review).
+      if (autoFileRun) _maybeAutoFile(db, msg, folderPath, notifyMainWindow, logger);
+
+      resolve();
+    });
+  });
 }
 
 function _maybeAutoFile(db, msg, folderPath, notifyMainWindow, logger) {

@@ -10,6 +10,7 @@ function register(ctx) {
   const doctypes  = require('../../../database/modules/document_types');
   const learning  = require('../../../database/modules/learning');
   const templates = require('../../../database/modules/templates');
+  const { safeSlug } = require('../../../database/modules/slug');
   const { requireRole, requireLogin, logAudit } = require('../auth/handler');
   // Setting keys whose VALUE is safe to record verbatim in the audit trail
   // (mode/threads/flags). Anything else (paths, patterns, unknown keys) logs the
@@ -60,7 +61,9 @@ function register(ctx) {
     if (!name) return { success: false, error: 'A document type name is required.' };
     const fields = Array.isArray(data && data.fields) ? data.fields : [];
     if (!fields.length) return { success: false, error: 'Add at least one field.' };
-    const slug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9_]/g, '_');
+    // Match addField's key derivation EXACTLY so ref/date roles bind to the keys
+    // the fields are actually created with (shared canonical safeSlug).
+    const slug = (s) => safeSlug(s, { fallback: 'field' });
     const refKey  = data.ref_field_key  ? slug(data.ref_field_key)  : null;
     const dateKey = data.date_field_key ? slug(data.date_field_key) : null;
     try {

@@ -1,6 +1,7 @@
 'use strict';
 
 const { addLabelOverrides } = require('./label_overrides');
+const { safeSlug, uniqueSlug } = require('./slug');
 
 // ── Structural roles ──────────────────────────────────────────────────────────
 // Every document has three STRUCTURAL fields that drive both filing
@@ -195,7 +196,12 @@ function getAllWithFieldsAll(db) {
 }
 
 function addType(db, { name, ref_field_key, date_field_key }) {
-  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+  // Canonical slug + a live uniqueness suffix: two distinct names that collapse
+  // to the same base (e.g. non-Latin "发票"/"账单" -> the fallback) no longer throw
+  // a raw "UNIQUE constraint failed: document_types.slug". (Name is separately
+  // UNIQUE, so a true duplicate name still errors as before.)
+  const slugTaken = db.prepare('SELECT 1 FROM document_types WHERE slug = ?');
+  const slug = uniqueSlug(name, (s) => slugTaken.get(s), { fallback: 'type' });
   return db.prepare(`
     INSERT INTO document_types (name, slug, built_in, ref_field_key, date_field_key)
     VALUES (?, ?, 0, ?, ?)
@@ -204,7 +210,9 @@ function addType(db, { name, ref_field_key, date_field_key }) {
 
 function addField(db, { document_type_id, key, label, type = 'text',
                         required = 0, sort_order = 100 }) {
-  const safeKey = key.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+  // Canonical key (collapse non-alnum runs, trim edges, non-empty fallback) so a
+  // malformed key like "ref__"/"_"/"amount_" can't reach filing (buildXml crash).
+  const safeKey = safeSlug(key, { fallback: 'field' });
   return db.prepare(`
     INSERT INTO fields (document_type_id, key, label, type, required, sort_order)
     VALUES (?, ?, ?, ?, ?, ?)
@@ -446,7 +454,7 @@ const PRESET_CATALOG = [
 // Slug a preset's display name EXACTLY as addType does, so labels seed under the
 // same slug the type is created with (and the engine resolves at runtime).
 function presetSlug(name) {
-  return String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '_');
+  return safeSlug(name, { fallback: 'type' });
 }
 
 // The catalog for the Settings tick-list: each entry + its derived slug + whether

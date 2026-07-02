@@ -33,8 +33,14 @@ const {
   DEFAULT_PATTERN, validatePattern,
   sanitiseFilenameStem,
   buildFilename, resolveDuplicateFilename,
-  DEFAULT_FOLDER_PATTERN, FIELD_TOKENS, buildFolderSegments,
+  DEFAULT_FOLDER_PATTERN, FIELD_TOKENS, buildFolderSegments, buildFilenameStem,
 } = require('./filename_pattern');
+
+// #10: the filing handler's supplier fallback — a value that sanitises to empty
+// must still yield a company folder ("Unknown Company"), not drop the level.
+function supplierFolderFallback(raw) {
+  return buildFilenameStem(String(raw || ''), {}) || 'Unknown Company';
+}
 
 function check(label, condition, detail) {
   const ok = !!condition;
@@ -261,6 +267,17 @@ function main() {
     buildFolderSegments('{docType}', { ...fv, docType: 'CON' })[0] === 'CON_')) failures++;
   if (!check('builder blocks are the meaningful field tokens only',
     FIELD_TOKENS.map(t => t.token).join(',') === '{supplier},{docType},{date},{ref},{year},{month}')) failures++;
+
+  // #10: empty-sanitising supplier keeps a company folder (never files under Year/Month directly).
+  for (const bad of ['..', '///', '***', '   ', '.']) {
+    if (!check(`supplier "${bad}" falls back to Unknown Company`,
+      supplierFolderFallback(bad) === 'Unknown Company')) failures++;
+    const segs = buildFolderSegments(DEFAULT_FOLDER_PATTERN, { ...fv, supplier: supplierFolderFallback(bad) });
+    if (!check(`supplier "${bad}" keeps the company folder level`,
+      segs[0] === 'Unknown-Company' && segs.length === 3)) failures++;
+  }
+  if (!check('a real supplier is untouched by the fallback',
+    supplierFolderFallback('Acme Supplies Ltd') === 'Acme Supplies Ltd')) failures++;
 
   console.log();
   if (failures) {

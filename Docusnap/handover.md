@@ -13,23 +13,18 @@ Live DB: `%APPDATA%\ScanFinder\docusnap.db` (WAL mode — safe read-only queries
 
 ---
 
-## 🔴 TOP PRIORITY — open QA findings (nothing implemented yet)
-An overnight **read-only** adversarial audit produced **`NIGHT_QA_AUDIT_2026-07-02.md`** (repo
-root) — 11 code-grounded, unfixed findings with repro + fix directions. Also summarised at the
-top of CLAUDE.md's "Known bugs". The user has NOT chosen which to fix — ask, or start with the
-two HIGH ones they flagged:
-1. **Backup restore silently RE-TYPES documents / aborts opaquely** (`src/services/backupService.js`
-   delete-by-id + reinsert-original-id vs the excluded `documents` FK edges). Fix = natural-key
-   UPSERT on `slug`/`(type,key)` + id remap; NULL a missing `templates.sample_document_id`. (eric.)
-2. **A type with no Reference/Date role can NEVER be confirmed** (`src/windows/review/renderer.js`
-   `validateConfirm` `|| 'invoice_number'` / `|| 'invoice_date'` fallback → phantom dangling role →
-   Confirm permanently disabled). Fix = require ref/date ONLY when the role is actually set
-   (`refKey = dt?.ref_field_key || null`). (bob confirmed; also the empty-issuer warn call.)
-Other findings (MED/LOW): reprocess-discards-edits, batch event-loop freeze (async the
-`spawnSync(pdf_rotate)`+`copyFileSync` off `file_done`), File-All-Ready wrong-doc race
-(`expectId` guard), non-Latin slug collision + the slug/key canonicalisation (reggie's `safeSlug`),
-watch/output overlap loop, `buildXml` crash (smallest crash-stopper:
-`key.split('_').filter(Boolean)...` at `filing/handler.js:273`). See the report for all.
+## ✅ DONE — all 11 QA findings fixed + tested (2026-07-02)
+The 11 findings in **`NIGHT_QA_AUDIT_2026-07-02.md`** are ALL implemented, tested, and clean on
+`node --check`. Per-item landing notes are in CLAUDE.md → "RESOLVED QA FINDINGS". Highlights:
+backup restore now natural-key UPSERTs parents preserving local ids (no silent re-type / FK abort,
+`test_backup_retype.js`); no-ref/date type confirm dead-end removed; reprocess warns before
+discarding edits; batch file-copy + pdf_rotate moved off the `file_done` path (async, no freeze);
+File-All-Ready `expectId` race guard + wider bulk lock; empty-issuer warn-and-allow; ONE shared
+`database/modules/slug.js` `safeSlug`/`uniqueSlug` (root cause of #7/#9) + `buildXml` hardened;
+`src/modules/path_overlap.js` blocks watch/import overlapping the output tree; empty-sanitised
+supplier keeps an "Unknown Company" folder; search shows a From>To hint. New tests: `test_slug.js`,
+`test_backup_retype.js`, `test_path_overlap.js`, extended `test_filename_pattern.js`.
+**NOT yet committed** — review the diff, then commit/push when ready.
 
 ---
 
