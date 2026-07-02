@@ -14,6 +14,7 @@ import json
 import time
 import shutil
 import argparse
+import threading
 from pathlib import Path
 from datetime import datetime
 
@@ -28,11 +29,53 @@ from extraction import template_matcher
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+_emit_lock = threading.Lock()
+
 def emit(obj: dict):
-    print(json.dumps(obj), flush=True)
+    # Lock-guarded so the per-file watchdog thread can't interleave a partial line with the
+    # main thread's output.
+    with _emit_lock:
+        print(json.dumps(obj), flush=True)
 
 def log(text: str, level: str = ""):
     emit({"type": "log", "text": text, "level": level})
+
+
+# ── Per-file watchdog ─────────────────────────────────────────────────────────
+# A single pathological page can hang a native Tesseract/pdfium call that no Python
+# try/except (and, on Windows, no signal) can interrupt. When --file-timeout > 0, a
+# daemon thread watches the file the main thread is on; if it overruns, it emits an
+# error file_done for that file (so it's surfaced as status=error + drained to Errors/
+# by the handler, never re-attempted) then force-exits, escaping the wedged call —
+# instead of stalling the whole batch forever. The remaining files stay in the intake
+# folder and are picked up on the next run / watch scan.
+_watch = {"name": None, "started": 0.0}
+
+def _mark_file(name):
+    _watch["name"] = name
+    _watch["started"] = time.monotonic()
+
+def _clear_file():
+    _watch["name"] = None
+
+def _start_file_watchdog(timeout_s: float):
+    if not timeout_s or timeout_s <= 0:
+        return
+    def _loop():
+        while True:
+            time.sleep(1.0)
+            name = _watch["name"]
+            if name is not None and (time.monotonic() - _watch["started"]) > timeout_s:
+                try:
+                    emit({"type": "file_done", "success": False, "status": "error",
+                          "original_filename": name,
+                          "error": f"processing timed out after {int(timeout_s)}s (skipped to protect the batch)"})
+                except Exception:
+                    pass
+                try: sys.stdout.flush()
+                except Exception: pass
+                os._exit(0)   # escape the wedged native call; the process is unrecoverable
+    threading.Thread(target=_loop, daemon=True, name="file-watchdog").start()
 
 def sanitise_extractions(extractions: dict) -> dict:
     """
@@ -167,6 +210,12 @@ def main():
                              "when running parallel workers so they don't oversubscribe the CPU. "
                              "Ignored by Tesseract.")
     parser.add_argument("--trace", action="store_true")
+    # Per-file WATCHDOG timeout (seconds; 0 = disabled). A single pathological page can hang
+    # a native Tesseract/pdfium call, which no Python try/except or (on Windows) signal can
+    # interrupt. When set, a daemon thread force-terminates this worker if one file exceeds the
+    # timeout — after emitting a file_done error for it so the doc is surfaced (status=error,
+    # drained to Errors/ by the handler, never re-attempted) instead of stalling the batch forever.
+    parser.add_argument("--file-timeout", type=float, default=0.0)
     # Dev-only: directory for temporary OCR crop slices (set by the handler only
     # while the inspector is open). Ignored unless --trace is also set.
     parser.add_argument("--slice-dir", default=None)
@@ -293,7 +342,10 @@ def main():
     emit({"type": "start", "total": len(files)})
     processed_at = datetime.now().isoformat(timespec="seconds")
 
+    _start_file_watchdog(getattr(args, "file_timeout", 0.0))
+
     for filepath in files:
+        _mark_file(filepath.name)   # arm the per-file watchdog for this file
         emit({"type": "file_begin", "filename": filepath.name})
         _trace_state["doc"] = filepath.name
 
@@ -535,6 +587,8 @@ def main():
                 "original_filename": filepath.name,
                 "error":             str(exc),
             })
+        finally:
+            _clear_file()   # disarm the watchdog between files (only an in-progress file can time out)
 
 
 def _get_val(extractions: dict, keys: list[str]) -> str | None:

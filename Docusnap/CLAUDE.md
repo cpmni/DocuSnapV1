@@ -1073,6 +1073,20 @@ progress bar isn't clobbered. `_currentBatchProcs[]` + `isBatchRunning()` track 
 workers; stop kills every tree. Watch-folder stays serial and defers via
 `isBatchRunning()`.
 
+**Per-file WATCHDOG timeout** (`file_timeout_seconds` setting, default 300 = 5 min, 0 = off;
+Settings → Processing → "Per-document safety timeout"): a single pathological page can hang a
+NATIVE Tesseract/pdfium call that NO Python try/except and (on Windows) no signal can interrupt,
+which would stall a whole worker (and its shard) forever. `buildTrainingArgs` passes `--file-timeout
+<seconds>` to every worker; `process_docs.py` runs a daemon WATCHDOG thread (`_start_file_watchdog`)
+that arms per file (`_mark_file`/`_clear_file` around the loop body) and, if one file overruns,
+emits an ERROR `file_done` for it (so `_handleFileMessage` records it `status:error` + drains it to
+`Errors/` → surfaced as a stuck doc, never re-attempted) then `os._exit(0)` to escape the wedged
+call. `emit()` is `threading.Lock`-guarded so the watchdog can't interleave a partial line. The
+worker's REMAINING shard files stay in the intake (not drained) → picked up next run / watch scan.
+Generous default so a legitimately large multi-page scan never false-trips; a false trip only
+demotes that doc to a retryable error, never loses it. Guarded by
+`python_backend/tests/test_file_timeout_watchdog.py` (subprocess drives the real watchdog).
+
 **Drain to Processed/ + file-handle release** (handler.js, 2026-06-28): a processed
 original is moved out of the intake folder into `Processed/` (or `Errors/`) once a
 verified working copy exists (`drain_processed`, default on). Two reliability fixes:

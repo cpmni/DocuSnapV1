@@ -617,6 +617,18 @@
                 <option value="5">5</option>
               </select>
             </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Per-document safety timeout</div>
+                <div class="threshold-sub">If a single document ever gets stuck being read (a rare unreadable page), skip it after this long and carry on — it's marked as an error you can retry, so one bad file can't freeze a whole batch.</div>
+              </div>
+              <select id="file-timeout-select" class="field-select" style="width:120px;">
+                <option value="0">Off</option>
+                <option value="120">2 minutes</option>
+                <option value="300">5 minutes</option>
+                <option value="600">10 minutes</option>
+              </select>
+            </div>
           </div>
 
           <div class="section">

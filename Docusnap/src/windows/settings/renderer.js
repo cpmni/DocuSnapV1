@@ -422,6 +422,20 @@ concurrencySelect.addEventListener('change', async () => {
   await api.setSetting('processing_concurrency', concurrencySelect.value);
 });
 
+// ── Per-document safety timeout (file watchdog; seconds, 0 = off) ──────────────
+const fileTimeoutSelect = document.getElementById('file-timeout-select');
+if (fileTimeoutSelect) {
+  (async () => {
+    let n = parseInt(await api.getSetting('file_timeout_seconds'), 10);
+    if (!Number.isFinite(n) || n < 0) n = 300;                 // default 5 min
+    if (!['0', '120', '300', '600'].includes(String(n))) n = 300;   // snap to an offered option
+    fileTimeoutSelect.value = String(n);
+  })();
+  fileTimeoutSelect.addEventListener('change', async () => {
+    await api.setSetting('file_timeout_seconds', fileTimeoutSelect.value);
+  });
+}
+
 // ── Full-page OCR engine (Stage 2 selector) ───────────────────────────────────
 // The backend seam (processing/handler.js + Python) already consumes `ocr_engine`;
 // this only persists the choice. Unset shows Tesseract, matching the shipped default

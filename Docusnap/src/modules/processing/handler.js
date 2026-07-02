@@ -224,6 +224,15 @@ function buildTrainingArgs(db, configPath, logger = null) {
   if (autoRotateOn) args.push('--auto-rotate');
   if (ocrEngine === 'rapidocr') args.push('--ocr-engine', 'rapidocr');
 
+  // Per-file watchdog: force-terminates a worker wedged on a single pathological page
+  // (a native Tesseract/pdfium hang no Python try/except can catch) after emitting an
+  // error for that doc, so one bad file can't stall the whole batch. Generous default so
+  // a legitimately large multi-page scan never false-trips; 0 disables. Setting in seconds.
+  let fileTimeout = 300;
+  try { const v = parseInt(learning.getSetting(db, 'file_timeout_seconds', '300'), 10); if (Number.isFinite(v) && v >= 0) fileTimeout = v; }
+  catch { /* older DB -> default */ }
+  if (fileTimeout > 0) args.push('--file-timeout', String(fileTimeout));
+
   return {
     args,
     ocrEngine,   // 'tesseract' | 'rapidocr' — lets callers add RapidOCR-only speed flags
