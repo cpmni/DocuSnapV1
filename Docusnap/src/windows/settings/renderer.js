@@ -12,7 +12,7 @@ document.querySelectorAll('.tab').forEach(btn => {
     // Learning Recovery + Keyword Label Overrides live under the Learning tab; the
     // Audit log lives under the Audit tab; the Search client API lives under the
     // Search client tab — load each lazily on show.
-    if (btn.dataset.tab === 'learning') loadMemoryInventory();
+    if (btn.dataset.tab === 'learning') { loadMemoryInventory(); recInit(); }
     if (btn.dataset.tab === 'audit' && !auditState.loaded) loadAudit();
     if (btn.dataset.tab === 'searchclient') initClientApiSection();
   });
@@ -665,9 +665,23 @@ function renderDocTypeDetail(type) {
         <span class="toggle-slider"></span>
       </label>
       <span id="dt-enable-lbl" class="field-label-small">${type.enabled ? 'Enabled' : 'Disabled'}</span>
+      <button class="btn" id="dt-fix-type" title="Reset what's been learned for this type if it's reading documents wrong" style="padding:4px 10px; font-size:12px;">Fix this type…</button>
       ${type.built_in ? '' : '<button class="btn-icon" id="dt-hide" title="Hide this type">&#215;</button>'}
     </div>
     <div id="dt-editor-host"></div>`;
+
+  document.getElementById('dt-fix-type')?.addEventListener('click', async () => {
+    const learnTab = document.querySelector('.tab[data-tab="learning"]');
+    if (learnTab) learnTab.click();               // activates the Learning panel + recInit()
+    await recInit();                              // idempotent — ensure the dropdown is populated
+    const sel = document.getElementById('rec-doctype');
+    if (sel && type.slug) {
+      sel.value = type.slug;
+      document.getElementById('rec-supplier').value = '';
+      await recCheck();
+    }
+    document.getElementById('rec-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
 
   document.getElementById('dt-enable').addEventListener('change', async (e) => {
     const enabled = e.target.checked ? 1 : 0;
@@ -3085,6 +3099,117 @@ async function runLearningSearch() {
   requestAnimationFrame(() => {
     resultsEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
   });
+}
+
+// ── "Fix a document type" recovery wizard ─────────────────────────────────────
+let _recWired = false, _recSetAsideIds = [];
+function _recEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+async function recInit() {
+  const sel = document.getElementById('rec-doctype');
+  if (!sel) return;
+  // Populate the type dropdown (slug → name), preserving a prior selection.
+  let types = [];
+  try { types = (await api.getAllDocTypesAll()) || []; } catch {}
+  const prev = sel.value;
+  sel.innerHTML = types.map(t => `<option value="${_recEsc(t.slug)}">${_recEsc(t.name)}</option>`).join('');
+  if (prev && types.some(t => t.slug === prev)) sel.value = prev;
+
+  if (_recWired) return;
+  _recWired = true;
+  document.getElementById('rec-check').addEventListener('click', recCheck);
+  document.getElementById('rec-apply').addEventListener('click', recApply);
+  document.getElementById('rec-undo').addEventListener('click', recUndo);
+  document.getElementById('rec-tick-none').addEventListener('click', () => {
+    document.querySelectorAll('#rec-doclist input[type=checkbox]').forEach(c => { c.checked = false; }); recUpdateCount();
+  });
+  // Re-checking after a change hides the (now stale) result/undo.
+  ['rec-doctype', 'rec-supplier'].forEach(id => document.getElementById(id).addEventListener('input', () => {
+    document.getElementById('rec-step2').style.display = 'none';
+  }));
+}
+
+function recUpdateCount() {
+  const n = document.querySelectorAll('#rec-doclist input[type=checkbox]:checked').length;
+  document.getElementById('rec-doc-count').textContent = n ? `${n} selected` : 'none selected';
+}
+
+async function recCheck() {
+  const slug = document.getElementById('rec-doctype').value;
+  const supplier = document.getElementById('rec-supplier').value.trim();
+  if (!slug) return;
+  let ov = null;
+  try { ov = await api.recoveryOverview({ document_type_slug: slug, supplier_name: supplier || null }); } catch (e) { alert('Could not load recovery info: ' + (e.message || e)); return; }
+  if (!ov || ov.error) { alert(ov && ov.error || 'Could not load recovery info.'); return; }
+
+  const L = ov.learned || {};
+  const supText = supplier ? ` from “${_recEsc(supplier)}”` : '';
+  document.getElementById('rec-inventory').innerHTML =
+    `For <strong>${_recEsc(document.getElementById('rec-doctype').selectedOptions[0].textContent)}</strong>${supText}, Scan Finder has learned ` +
+    `<strong>${L.anchors || 0}</strong> field position(s), <strong>${L.hints || 0}</strong> fill-in hint(s), and ` +
+    `<strong>${L.fieldRules || 0}</strong> cleanup rule(s), from <strong>${ov.confirmedCount || 0}</strong> confirmed document(s).`;
+  document.getElementById('rec-forget-sup').textContent = supplier ? ` from “${supplier}”` : '';
+
+  const docs = ov.documents || [];
+  const list = document.getElementById('rec-doclist');
+  list.innerHTML = docs.length ? docs.map(d => {
+    const meta = [d.supplier_name, d.reference_number, d.doc_date].filter(Boolean).join(' · ');
+    return `<label style="display:flex; gap:8px; align-items:center; padding:3px 4px; font-size:12px;">
+      <input type="checkbox" value="${d.id}">
+      <span style="flex:1; min-width:0;"><span style="font-family:var(--mono);">${_recEsc(d.original_filename)}</span>${meta ? ` — <span style="color:var(--muted);">${_recEsc(meta)}</span>` : ''}</span>
+    </label>`;
+  }).join('') : '<div class="section-desc" style="margin:4px;">No confirmed documents in this scope.</div>';
+  list.querySelectorAll('input[type=checkbox]').forEach(c => c.addEventListener('change', recUpdateCount));
+
+  document.getElementById('rec-forget').checked = false;
+  document.getElementById('rec-requeue').checked = false;
+  document.getElementById('rec-result').style.display = 'none';
+  document.getElementById('rec-undo').style.display = 'none';
+  document.getElementById('rec-step2').style.display = '';
+  recUpdateCount();
+}
+
+async function recApply() {
+  const slug = document.getElementById('rec-doctype').value;
+  const supplier = document.getElementById('rec-supplier').value.trim();
+  const ids = [...document.querySelectorAll('#rec-doclist input[type=checkbox]:checked')].map(c => parseInt(c.value, 10));
+  const forgetLearning = document.getElementById('rec-forget').checked;
+  const requeue = document.getElementById('rec-requeue').checked;
+  if (!ids.length && !forgetLearning && !requeue) { alert('Choose the documents to set aside and/or tick “Also forget what I’ve learned”.'); return; }
+
+  const bits = [];
+  if (ids.length) bits.push(`set aside ${ids.length} document(s) (recoverable)`);
+  if (forgetLearning) bits.push(`forget the learned field positions, hints and cleanup rules for this type`);
+  if (requeue) bits.push(`send this type's confirmed documents back to Review`);
+  if (!confirm(`Fix “${document.getElementById('rec-doctype').selectedOptions[0].textContent}”?\n\nThis will ${bits.join(', and ')}.\n\nA backup is taken first; set-aside documents can be restored from the recycle bin.`)) return;
+
+  let res = null;
+  try { res = await api.recoveryApply({ document_type_slug: slug, supplier_name: supplier || null, documentIds: ids, forgetLearning, requeue }); }
+  catch (e) { alert('Recovery failed: ' + (e.message || e)); return; }
+  if (!res || !res.ok) { alert(res && res.error || 'Recovery failed.'); return; }
+
+  const s = res.summary || {};
+  _recSetAsideIds = res.setAsideIds || [];
+  const done = [];
+  if (s.setAside) done.push(`Set aside ${s.setAside} document(s) → recycle bin`);
+  if (s.anchors || s.hints || s.fieldRules || s.corrections) done.push(`Forgot ${s.anchors || 0} field position(s), ${s.hints || 0} hint(s), ${s.fieldRules || 0} rule(s)${s.corrections ? `, ${s.corrections} correction(s)` : ''}`);
+  if (s.requeued) done.push(`Sent ${s.requeued} document(s) back to Review`);
+  const result = document.getElementById('rec-result');
+  result.innerHTML = `✓ Done.<br>${done.map(_recEsc).join('<br>')}` +
+    (res.backup ? `<br>Backup saved.` : '') +
+    `<br><br>Tip: reprocess this type's documents (Review → Reprocess all) so it relearns from a clean slate.`;
+  result.style.display = '';
+  document.getElementById('rec-undo').style.display = _recSetAsideIds.length ? '' : 'none';
+  loadMemoryInventory();
+}
+
+async function recUndo() {
+  if (!_recSetAsideIds.length) return;
+  let r = null;
+  try { r = await api.recoveryRestoreDocs(_recSetAsideIds); } catch (e) { alert('Undo failed: ' + (e.message || e)); return; }
+  document.getElementById('rec-result').innerHTML = `↩ Restored ${r && r.restored || 0} document(s) from the recycle bin. (Learning that was forgotten is covered by the automatic backup.)`;
+  document.getElementById('rec-undo').style.display = 'none';
+  _recSetAsideIds = [];
 }
 
 document.getElementById('lr-inv-refresh').addEventListener('click', loadMemoryInventory);

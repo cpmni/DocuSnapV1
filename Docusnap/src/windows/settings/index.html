@@ -1043,6 +1043,49 @@
     <!-- ══ LEARNING ══ -->
     <div class="panel" id="panel-learning" data-help-key="tab-learning">
 
+      <!-- ── Fix a document type (recovery wizard) — the easy front door ── -->
+      <div class="section" id="rec-section" data-help-key="fix-a-type">
+        <div class="section-title">Fix a document type</div>
+        <p class="section-desc">If a document type has started reading everything wrong — usually because the wrong versions of a document got filed, or spurious values were typed in — reset what Scan Finder has learned for it and set aside the documents that confused it. Everything here is recoverable.</p>
+        <div class="row-flex" style="gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px;">
+          <div style="display:flex; flex-direction:column; gap:4px; min-width:180px;">
+            <label style="font-size:11px; color:var(--muted);">Document type</label>
+            <select id="rec-doctype" class="field-select"></select>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:4px; min-width:210px;">
+            <label style="font-size:11px; color:var(--muted);">Just one company? (optional)</label>
+            <input type="text" id="rec-supplier" class="path-input" placeholder="Leave blank for the whole type" spellcheck="false">
+          </div>
+          <button class="btn primary" id="rec-check">Check</button>
+        </div>
+
+        <div id="rec-step2" style="display:none;">
+          <div id="rec-inventory" class="section-desc" style="margin-bottom:12px;"></div>
+          <div id="rec-doclist-wrap" style="margin-bottom:12px;">
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+              <strong style="font-size:12px;">Documents to set aside</strong>
+              <button class="btn" id="rec-tick-none" style="padding:2px 8px; font-size:11px;">Clear all</button>
+              <span id="rec-doc-count" class="section-desc" style="margin:0;"></span>
+            </div>
+            <div id="rec-doclist" style="max-height:220px; overflow:auto; border:1px solid var(--border); border-radius:8px; padding:6px;"></div>
+          </div>
+          <label class="row-flex" style="gap:8px; align-items:flex-start; margin-bottom:8px;">
+            <input type="checkbox" id="rec-forget">
+            <span class="section-desc" style="margin:0;">Also forget what I've learned for this type<span id="rec-forget-sup"></span> — field positions, fill-in hints and cleanup rules. It re-learns from the documents you keep.</span>
+          </label>
+          <details style="margin-bottom:10px;"><summary class="disclose" style="font-size:12px;">Advanced</summary>
+            <label class="row-flex" style="gap:8px; align-items:flex-start; margin-top:8px;">
+              <input type="checkbox" id="rec-requeue">
+              <span class="section-desc" style="margin:0;">Send this type's confirmed documents back to Review to start over. Use only if the type is badly confused — you'll need to re-confirm them.</span>
+            </label>
+          </details>
+          <p class="section-desc" style="font-style:italic;">Setting documents aside moves them to the recycle bin (recoverable). Learning is cleared, but documents you keep can teach it again — that's why we set the odd ones aside. A backup is taken automatically before anything is forgotten.</p>
+          <button class="btn danger" id="rec-apply">Fix it</button>
+          <div id="rec-result" class="section-desc" style="display:none; margin-top:12px; font-family:var(--mono); font-size:11px; line-height:1.7;"></div>
+          <button class="btn" id="rec-undo" style="display:none; margin-top:8px;">Undo — restore the documents I set aside</button>
+        </div>
+      </div>
+
       <!-- Keyword Label Overrides — moved to the top of the Learning tab -->
       <div class="section">
         <div class="section-title">Keyword Label Overrides</div>
