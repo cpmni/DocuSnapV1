@@ -58,6 +58,18 @@ def set_currency(code):
     _REGION_CURRENCY = c if c in _CODE_TO_SYMBOL else None
 
 
+def strip_currency(value):
+    """Remove any currency symbol/code (and the space it leaves) from a money value, leaving
+    JUST the number: "$12,268.80" -> "12,268.80"; "GBP 118.83" -> "118.83"; "€1234.56" ->
+    "1234.56". A value with no currency marker, and non-amounts, pass through unchanged."""
+    if not value:
+        return value
+    s = str(value)
+    s = re.sub(r"[£$€¥₹]", "", s)
+    s = re.sub(r"\b(?:GBP|USD|EUR|JPY|INR|CAD|AUD|NZD|CHF|CNY|ZAR)\b", "", s, flags=re.IGNORECASE)
+    return s.strip()
+
+
 def assign_currency(value):
     """Prepend the region currency symbol to a BARE amount (a number with NO symbol/code).
     No-op when the region currency is unset, the value already carries a currency (never

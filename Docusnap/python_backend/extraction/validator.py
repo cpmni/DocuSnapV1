@@ -299,16 +299,15 @@ def validate_and_adjust(extractions: dict,
     # and supplier-agnostic; only narrows a known false-positive class.
     _field_types = {f.get("key"): (f.get("type") or "") for f in field_defs}
 
-    # Region-normalise every currency/number value to canonical 1234.56 (a no-op for anglo/
-    # indian → byte-identical), then ASSIGN the region currency symbol to a BARE amount (no
-    # symbol/code) when one is configured — so whatever path read it, the STORED amount is one
-    # well-defined shape for filing/search/maths AND carries its currency. Both no-ops by
-    # default (anglo format + no region currency) → byte-identical for existing installs.
+    # Money fields store JUST THE NUMBER: region-normalise to canonical 1234.56 (a no-op for
+    # anglo/indian) THEN strip the currency symbol/code, so a detected "$12,268.80" / "GBP
+    # 118.83" / "€1.234,56" is stored as the bare amount ("12,268.80" / "118.83" / "1234.56").
+    # The currency is a separate concept (the region_currency setting), not baked into the value.
     for key, data in results.items():
         if key.startswith('_') or not isinstance(data, dict):
             continue
         if _field_types.get(key) in ("currency", "number") and isinstance(data.get("value"), str):
-            _new = number_format.assign_currency(number_format.canonical(data["value"]))
+            _new = number_format.strip_currency(number_format.canonical(data["value"]))
             if _new != data.get("value"):
                 data["value"] = _new
                 if data.get("display_value") is not None:
