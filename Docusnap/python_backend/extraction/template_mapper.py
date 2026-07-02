@@ -80,6 +80,11 @@ _DRIFT_FLOOR = 0.02
 _SHAPE_WARN_NOTE = ("manually mapped value differs from the usual format for this "
                     "field — please verify")
 
+# Types whose format is fully defined by their own precise validator/normaliser, so the
+# learned-SHAPE veto must be skipped (they vary legitimately — see _gate_value).
+_SELF_VALIDATING_TYPES = frozenset({'date', 'currency', 'currency_code',
+                                    'mac_address', 'ip_address'})
+
 
 def extract_with_mappings(page_images, mappings, field_patterns=None,
                           ocr_lines_fn=None, ocr_text_fn=None, slice_capture=None,
@@ -377,7 +382,15 @@ def _gate_value(text, val_type, field_key, validation_patterns, format_lookup,
     if not val_type and ocr_conf is not None and ocr_conf < _FREE_TEXT_RESCUE_CONF:
         return None, False, False
     shape_warn = False
-    if shape_mode != 'ignore' and _format_rejects(text, field_key, format_lookup):
+    # A field whose FORMAT is fully defined by its own precise validator/normaliser
+    # (date, currency, MAC, IP — already qualified by _crop_is_credible above) must NOT
+    # ALSO be vetoed/flagged by the learned-SHAPE statistics: those values vary
+    # legitimately (every device a different IP, every doc a different date/amount), so a
+    # "differs from the usual format" flag on a type-valid value is a false positive. CODE
+    # types (alphanumeric/reference/job_reference) keep the shape check — that's where a
+    # wrong-column bleed of the right shape actually happens.
+    if (shape_mode != 'ignore' and val_type not in _SELF_VALIDATING_TYPES
+            and _format_rejects(text, field_key, format_lookup)):
         if shape_mode == 'flag':
             shape_warn = True
         else:

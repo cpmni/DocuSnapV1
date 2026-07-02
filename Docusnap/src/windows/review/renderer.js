@@ -1120,11 +1120,16 @@ function renderReviewReason(doc) {
   if (!doc) return;
 
   const lowN = doc.below_threshold_count || 0;
-  // review_flag_count is computed server-side for the queue; if it's absent
-  // (e.g. the detailed record after a reprocess), derive it from the notes.
-  const flagN = (doc.review_flag_count != null)
-    ? doc.review_flag_count
-    : (doc.extractions || []).filter(e => e.validation_note || e.corrected_to).length;
+  // Only surface flags for fields that belong to THIS document's CURRENT type — a stale
+  // extraction left over from a previous type (e.g. an old "invoice_number" note after the
+  // doc was re-typed to Print Tracker) must not appear as a phantom flag the user can't see
+  // or fix. When the detailed extractions are loaded, derive the count from them (filtered);
+  // fall back to the server review_flag_count only before they arrive.
+  const _typeKeys = new Set(reviewFields());
+  const _relevant = (doc.extractions || []).filter(e => _typeKeys.has(e.field_key));
+  const flagN = (doc.extractions && doc.extractions.length)
+    ? _relevant.filter(e => e.validation_note || e.corrected_to).length
+    : (doc.review_flag_count || 0);
 
   if (lowN === 0 && flagN === 0) return;   // clean — no banner
 
@@ -1137,7 +1142,7 @@ function renderReviewReason(doc) {
   if (lowN)  cues.push(`<span class="rr-cue low" title="These fields scored below the confidence threshold set in Settings. Compare the value with the document.">Low confidence · ${lowN}</span>`);
   if (flagN) cues.push(`<span class="rr-cue flag" title="A formatting check found these values look different from what's usual for this field. They may still be correct — just confirm them.">Format check · ${flagN}</span>`);
 
-  const notes = (doc.extractions || [])
+  const notes = _relevant
     .filter(e => e.validation_note)
     .map(e => ({ key: e.field_key, note: e.validation_note }));
   const MAX = 4;
