@@ -2181,6 +2181,10 @@ module.exports = {
   reconcileHolding,
   runHoldingReconcile,
   isBatchRunning: () => _anyProcessingBusy(),
+  // Shared with the watch-folder handler so it can batch + shard its queue exactly like a
+  // manual import (one Python process per shard of MANY files, not one process per file).
+  maxConcurrency,
+  partitionRoundRobin,
   // Exposed for the F-06 path-policy unit test (test_open_path_policy.js).
   _isOpenablePath,
 };

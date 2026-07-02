@@ -235,16 +235,14 @@ function _poll(db) {
   _drainQueue(db);
 }
 
-// ── Parallel processing — up to `processing_concurrency` files at once ───────
-// Mirrors the manual folder-import worker pool: each in-flight _processFile is a
-// separate Python process on a disjoint file, while ALL DB writes still funnel
-// through processing.handleFileMessage on the single-threaded JS event loop
-// (better-sqlite3 is synchronous), so parallelism only speeds the CPU-bound
-// OCR/extraction — never DB/learning state. concurrency=1 keeps the original
-// one-at-a-time behaviour. Re-entrant and idempotent: _queue.shift() hands each
-// filename to exactly one worker, and the `_inFlight < concurrency` gate stops
-// oversubscription no matter how often it's called (poll 'stable' + each
-// worker's finally both re-invoke it).
+// ── Batched parallel processing — mirrors the manual folder-import worker pool ──
+// The whole current queue is drained as ONE batch, sharded round-robin across up to
+// `processing_concurrency` Python workers — each worker handling MANY files in a single
+// interpreter start. ALL DB writes still funnel through processing.handleFileMessage on the
+// single-threaded JS event loop (better-sqlite3 is synchronous), so parallelism only speeds
+// the CPU-bound OCR/extraction — never DB/learning state. (Replaced the old one-Python-
+// process-per-file model, which paid the ~1-2s interpreter/OCR cold-start on EVERY file and
+// made the watch far slower than a manual import.)
 function _drainQueue(db) {
   if (!_watchFolder || _queue.length === 0) return;
 
@@ -254,61 +252,68 @@ function _drainQueue(db) {
     // resources. Retry on the next poll tick (or when a worker frees up).
     return;
   }
+  // Process ONE batch of the whole current queue at a time. This is the key speed fix:
+  // the old model spawned a fresh Python process PER FILE, so every file paid the ~1-2s
+  // interpreter/OCR cold-start (numpy/pytesseract/model load) — dwarfing the actual work
+  // and making the watch far slower than a manual import (which runs one process over the
+  // whole batch). Now we drain the queue and shard it across up to `processing_concurrency`
+  // workers, each Python process handling MANY files → the cold-start is paid once per
+  // worker, not once per file. A batch already in flight (_inFlight>0) defers to the next
+  // tick (files that land meanwhile just queue for the following batch).
+  if (_inFlight > 0) return;
 
   const learning = require('../../../database/modules/learning');
   let concurrency = parseInt(learning.getSetting(db, 'processing_concurrency', '1'), 10);
   if (!Number.isFinite(concurrency)) concurrency = 1;
-  concurrency = Math.max(1, Math.min(5, concurrency));   // mirrors processing/handler.js (cap 5)
+  concurrency = Math.max(1, Math.min(processing.maxConcurrency(), concurrency));   // core-aware, matches manual import
 
-  while (_inFlight < concurrency && _queue.length > 0) {
-    const filename = _queue.shift();
-    _inFlight++;
-    _processFile(db, filename)
-      .catch(e => _log('err', `[watch] processing error: ${filename} — ${e.message}`))
+  const files  = _queue.splice(0, _queue.length);   // take the whole current queue
+  const shards = processing.partitionRoundRobin(files, Math.min(concurrency, files.length));
+  _inFlight = shards.length;
+  for (const shard of shards) {
+    _processBatch(db, shard)
+      .catch(e => _log('err', `[watch] batch processing error — ${e.message}`))
       .finally(() => {
-        const rec = _tracked.get(filename);
-        if (rec) rec.state = 'done';
+        for (const f of shard) { const rec = _tracked.get(f); if (rec) rec.state = 'done'; }
         _inFlight--;
-        _drainQueue(db);   // top the pool back up from the queue
+        if (_inFlight === 0) _drainQueue(db);   // whole batch done — pick up anything that arrived
       });
   }
 }
 
-async function _processFile(db, filename) {
+async function _processBatch(db, filenames) {
   const { spawn, pythonExe, pythonArgs, tesseractPath, backendScript,
           configPath, notifyMainWindow } = _ctx;
   const processing = require('../processing/handler');
   const learning   = require('../../../database/modules/learning');
 
-  // Capture the folder now: _stop() (e.g. an admin re-points the watch folder)
-  // may null the module var while this file is still in flight, and the captured
-  // path must stay valid for handleFileMessage's persistent folder_path. More
-  // likely to matter now that several files run concurrently.
+  // Capture the folder now: _stop() (e.g. an admin re-points the watch folder) may null
+  // the module var while files are still in flight, and the captured path must stay valid
+  // for handleFileMessage's persistent folder_path.
   const watchFolder = _watchFolder;
-  const srcPath = path.join(watchFolder, filename);
-
-  // Re-verify right before handing off — the file may have been removed,
-  // renamed, or already picked up between being queued and its turn arriving.
-  if (!fs.existsSync(srcPath)) {
-    _log('log', `[watch] skipped — file no longer present: ${filename}`);
-    _tracked.delete(filename);
-    return;
-  }
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'docusnap-watch-'));
-  try {
-    fs.copyFileSync(srcPath, path.join(tmpDir, filename));
-  } catch (e) {
-    _log('warn', `[watch] could not stage file for processing — skipping: ${filename} — ${e.message}`);
-    try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
-    return;
+  // Stage every still-present file into ONE temp folder so process_docs.py handles the whole
+  // shard in a SINGLE interpreter start — the cold-start is paid once per shard, not per
+  // file. A file removed/renamed between queueing and now is simply skipped.
+  let staged = 0;
+  for (const filename of filenames) {
+    const srcPath = path.join(watchFolder, filename);
+    if (!fs.existsSync(srcPath)) {
+      _log('log', `[watch] skipped — file no longer present: ${filename}`);
+      _tracked.delete(filename);
+      continue;
+    }
+    try { fs.copyFileSync(srcPath, path.join(tmpDir, filename)); staged++; }
+    catch (e) { _log('warn', `[watch] could not stage file — skipping: ${filename} — ${e.message}`); }
   }
+  if (staged === 0) { try { fs.rmSync(tmpDir, { recursive: true }); } catch {} return; }
 
   let trainingArgs, tempFiles;
   try {
     ({ args: trainingArgs, tempFiles } = processing.buildTrainingArgs(db, configPath));
   } catch (e) {
-    _log('err', `[watch] setup error for ${filename}: ${e.message}`);
+    _log('err', `[watch] setup error: ${e.message}`);
     try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
     return;
   }
@@ -317,7 +322,7 @@ async function _processFile(db, filename) {
   // accepts — otherwise --mode arg-parse fails and the watch import silently does nothing.
   const _rawMode = learning.getSetting(db, 'processing_mode', 'smart');
   const procMode = (_rawMode === 'fast' || _rawMode === 'smart' || _rawMode === 'ai') ? _rawMode : 'smart';
-  _log('log', `[watch] processing accepted file: ${filename} (mode=${procMode})`);
+  _log('log', `[watch] processing ${staged} file(s) (mode=${procMode})`);
 
   await new Promise((resolve) => {
     const py = pythonExe();
@@ -340,23 +345,19 @@ async function _processFile(db, filename) {
         if (!trimmed) continue;
         try {
           const msg = JSON.parse(trimmed);
-          // Route through the SAME message handler as a manual folder
-          // import — but pointed at the real watch-folder path, not the
-          // isolated temp dir, so documents.folder_path keeps resolving to
-          // a persistent location (preview, confirm, reprocess, the
-          // processed-folder move all join folder_path + original_filename).
+          // Route through the SAME message handler as a manual folder import — but pointed
+          // at the real watch-folder path, not the isolated temp dir, so
+          // documents.folder_path keeps resolving to a persistent location (preview,
+          // confirm, reprocess, the processed-folder move all join folder_path + filename).
           setImmediate(() => processing.handleFileMessage(db, msg, watchFolder, notifyMainWindow, _ctx.logger));
           if (msg.type === 'log') {
             if      (msg.level === 'err')  _log('err',  `[watch] Python: ${msg.text}`);
             else if (msg.level === 'warn') _log('warn', `[watch] Python: ${msg.text}`);
           }
-          // Tag the SHARED 'process-progress' as watch-sourced so the main
-          // window's manual-batch handler (handleProgress, which persists after a
-          // run) can ignore it — otherwise it double-counts watch docs and resets
-          // "Found" to the watcher's per-file total of 1.
+          // Tag the SHARED 'process-progress' as watch-sourced so the main window's
+          // manual-batch handler (handleProgress, which persists after a run) can ignore it.
           notifyMainWindow('process-progress', { ...msg, source: 'watch' });
-          // Dedicated channel for the main-window log strip + Session Stats —
-          // isolated from the manual 'process-progress' listener churn.
+          // Dedicated channel for the main-window log strip + Session Stats.
           notifyMainWindow('watch-progress', msg);
         } catch {
           notifyMainWindow('process-progress', { type: 'log', text: trimmed, source: 'watch' });
@@ -374,11 +375,11 @@ async function _processFile(db, filename) {
       _liveProcs.delete(proc);
       try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
       processing.cleanupTempFiles(tempFiles);
-      // The per-file worker has exited → the source PDF is unlocked, so flush the
-      // deferred drain (move the processed original into Processed/Errors). Let the
-      // file_done setImmediate enqueue first.
+      // The worker has exited → the source PDFs are unlocked, so flush the deferred drain
+      // (move the processed originals into Processed/Errors). Let the file_done setImmediate
+      // enqueue first.
       setImmediate(() => { try { processing.flushPendingDrains(db, _ctx.logger); } catch {} });
-      _log('log', `[watch] finished: ${filename} (exit=${code})`);
+      _log('log', `[watch] finished batch of ${staged} (exit=${code})`);
       resolve();
     });
   });
