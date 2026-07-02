@@ -1585,10 +1585,32 @@ endpoint; enrollment needs an integrity check (fingerprint confirm / pairing cod
 silent auto-grab. (Host-side TLS tests can be MITM'd by AVG's HTTPS scanning — verify
 from the VM; see `memory/avg-https-mitm-local-tls`.)
 
+**⚠ KNOWN GAP — /v1 session revocation lag (2026-07-02, found by `test_v1_security.js`):**
+`sessionService` has `revokeUser(userId)` ("admin disable / role change / password reset"),
+but the admin auth handlers (`auth-set-user-active` / `auth-set-user-role` / password reset in
+`src/modules/auth/handler.js`) DON'T call it, and `requireSession` verifies the opaque token
+in-memory WITHOUT re-checking `users.is_active`/role. So a deactivated/demoted user keeps their
+live `/v1` access (and old role) until the token expires (≤12h absolute / 30m idle). Desktop
+in-process login is UNAFFECTED (separate `currentSession`). FIX = a shared session-store singleton
+(mirror `presenceService.shared()`; api `handler.js:152` already accepts `ctx.sessionStore`) +
+`sessions.revokeUser(userId)` from those three admin handlers. Lower urgency while the detached
+client is entitlement-gated/pre-release, but close before it ships. Recorded as a soft "KNOWN GAP"
+in the security suite (flips to a hard OK once fixed).
+
 **Tests** (Electron-as-Node): `src/services/test_{certservice,workflow,entitlement,
 session}.js`, `src/modules/api/test_{cert_wizard,v1_ca,v1_enroll,v1_workflow,v1_*}.js`,
 `src/modules/review/test_workflow_lock.js`, `src/modules/workflow/test_workflow_ipc.js`,
-`client/test_apiclient.js`.
+`client/test_apiclient.js`, `src/modules/api/test_v1_security.js` (auth/role-gating/F-02
+traversal/SQL-injection/malformed-body/entitlement probes + the session-revocation KNOWN GAP above).
+
+**Robustness suites added 2026-07-02** (all Electron-as-Node, hermetic): `src/modules/filing/
+test_filing_edge_cases.js` (reserved device names, >260 long paths, Unicode/RTL/emoji suppliers,
+empty-after-sanitise → Unknown Company, traversal containment, on-disk -DUPLICATE chains, re-file
+no-suffix, malformed field keys don't crash filing, date normalisation) · `src/modules/processing/
+test_working_copy_durability.js` (real-fs `ensureWorkingCopy` + the async #4 twin: atomic
+.part→rename, byte-faithful copy, missing-source→null, unsafe-extension sanitise, stale-.part
+resilience; + a real-fs `reconcileHolding` pass proving a crash only leaves EXTRA files, never
+loses a doc). `ensureWorkingCopyAsync` is now exported for the test.
 
 **Multi-user CONCURRENCY STRESS harness** — `stress_test/concurrency_harness.js` (run:
 `ELECTRON_RUN_AS_NODE=1 node_modules/.bin/electron stress_test/concurrency_harness.js`; `KEEP=1`

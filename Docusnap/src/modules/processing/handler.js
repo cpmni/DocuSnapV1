@@ -2150,6 +2150,7 @@ module.exports = {
   flushPendingDrains: _flushPendingDrains,
   drainOriginalToFolder,
   ensureWorkingCopy,
+  ensureWorkingCopyAsync,
   reconcileHolding,
   runHoldingReconcile,
   isBatchRunning: () => _anyProcessingBusy(),
