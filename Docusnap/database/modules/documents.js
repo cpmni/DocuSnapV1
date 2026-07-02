@@ -223,6 +223,17 @@ function requeueConfirmedDocsForScope(db, { supplier_name, document_type_slug } 
   `).run({ sn, slug: document_type_slug });
 }
 
+// Send ONE confirmed document back to the review queue ("Send back to Review" in Learning
+// Repair) so it stops feeding the confirmed-only derived learning and can be re-checked.
+// KEEPS stored_filename/stored_path — their presence on a needs_review doc is the
+// "previously filed" signal that lets reviewService re-file IN PLACE on re-confirm
+// (no -DUPLICATE). Status-guarded: only a currently-confirmed doc moves.
+function deconfirmDocument(db, id) {
+  return db.prepare(
+    "UPDATE documents SET status = 'needs_review', confirmed_at = NULL, confirmed_by_username = NULL WHERE id = ? AND status = 'confirmed'"
+  ).run(id);
+}
+
 // List a scope's CONFIRMED documents (for the recovery preview / set-aside picker).
 function getConfirmedDocsForScope(db, { supplier_name, document_type_slug } = {}) {
   if (!document_type_slug) return [];
@@ -445,7 +456,7 @@ module.exports = {
   getReviewQueue, getDeferredQueue, getByIds,
   getReviewCount, getDeferredCount, getStuckCount, getStuckQueue, getFiledCounts,
   softDelete, restoreDeleted, getDeletedQueue, getDeletedCount,
-  requeueConfirmedDocsForScope, getConfirmedDocsForScope,
+  requeueConfirmedDocsForScope, getConfirmedDocsForScope, deconfirmDocument,
   getFieldValueSuggestions,
   confirm, confirmIfReviewable, deferIfReviewable, restoreIfDeferred,
   deleteDoc, deleteByStatus, search,

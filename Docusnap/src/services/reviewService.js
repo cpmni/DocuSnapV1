@@ -56,17 +56,19 @@ function createReviewService(deps = {}) {
 
     const docRow = documents.getById(db, document_id);
     const workingPath = docRow?.working_path || null;
-    // RE-FILE: an already-confirmed doc (re-surfaced auto-filed doc / "Edit in Review") — its
-    // current filed copy is both the source and the thing to replace. null for a first confirm.
-    const oldStoredPath = (docRow && docRow.status === 'confirmed' && docRow.stored_path) ? docRow.stored_path : null;
-    // Re-file requires EXPLICIT caller intent, not merely the doc's state. A confirm that arrived
-    // from the review QUEUE (the caller loaded a needs_review doc) must NOT silently take the
-    // re-file path if the doc was filed by someone else in the meantime — without allowRefile it
-    // falls through to the atomic claim below and the loser gets ALREADY_FILED (naming the winner),
-    // instead of a last-writer-wins overwrite. Only a deliberate re-file entry point sets the flag:
-    // desktop "Edit in Review" on an already-confirmed doc (renderer: allowRefile = status==='confirmed').
-    // The /v1 client path never sets it (server-decided) — the client only ever confirms queue items.
-    const isRefile = !!oldStoredPath && !!(payload && payload.allowRefile === true);
+    // PREVIOUSLY-FILED copy: the doc's current filed copy, captured REGARDLESS of status and
+    // BEFORE the claim below (which nulls the row's stored_path). Two cases carry one:
+    //   • an already-confirmed doc ("Edit in Review" / re-surfaced auto-filed doc), and
+    //   • a doc that was filed, then sent back to the review queue by Learning Repair
+    //     (deconfirmDocument KEEPS stored_path). In BOTH, passing it as existingFiledPath makes
+    //     the re-confirm REPLACE the original copy IN PLACE instead of minting a -DUPLICATE.
+    const oldStoredPath = (docRow && docRow.stored_path) ? docRow.stored_path : null;
+    // isRefile = SKIP the atomic claim. Only an ALREADY-CONFIRMED doc with explicit caller intent
+    // does so ("Edit in Review"; renderer: allowRefile = status==='confirmed'). A confirm from the
+    // review QUEUE (needs_review — incl. a Learning-Repair send-back) must still CLAIM (so a lost
+    // race gets ALREADY_FILED, not a last-writer overwrite), yet it still replaces its own old copy
+    // in place via oldStoredPath above. The /v1 client never sets allowRefile (server-decided).
+    const isRefile = !!oldStoredPath && docRow.status === 'confirmed' && !!(payload && payload.allowRefile === true);
 
     const dtInfo = document_type_slug ? doctypes.getWithFields(db, document_type_slug) : null;
 
@@ -124,8 +126,12 @@ function createReviewService(deps = {}) {
     if (!filingResult || !filingResult.success) {
       // Filing failed AFTER the claim — roll the doc back to the queue so it isn't stranded as
       // "confirmed" with no stored file. (A re-file was never re-claimed, so leave it as-is.)
+      // The claim nulled stored_*; if this doc was PREVIOUSLY filed (oldStoredPath), restore that
+      // pointer so a Learning-Repair send-back doesn't lose track of its still-on-disk copy.
       if (!isRefile) {
-        try { documents.update(db, document_id, { status: 'needs_review', confirmed_at: null, confirmed_by_username: null }); } catch {}
+        const restore = { status: 'needs_review', confirmed_at: null, confirmed_by_username: null };
+        if (oldStoredPath) { restore.stored_path = oldStoredPath; restore.stored_filename = docRow.stored_filename || null; }
+        try { documents.update(db, document_id, restore); } catch {}
       }
       logger?.err?.(`Confirm failed: ${original_filename} — ${filingResult && filingResult.error}`);
       return { ok: false, ...filingResult };

@@ -288,6 +288,10 @@ contextBridge.exposeInMainWorld('docusnap', {
   recoveryOverview:    (scope)   => ipcRenderer.invoke('recovery-overview', scope),
   recoveryApply:       (payload) => ipcRenderer.invoke('recovery-apply', payload),
   recoveryRestoreDocs: (ids)     => ipcRenderer.invoke('recovery-restore-docs', ids),
+  // Learning Repair (browse/preview/suspects/send-to-review)
+  repairOverview:      (scope)   => ipcRenderer.invoke('repair-overview', scope),
+  repairDeconfirm:     (id)      => ipcRenderer.invoke('repair-deconfirm', id),
+  repairDelete:        (id)      => ipcRenderer.invoke('repair-delete', id),
 
   // ── Advanced (Settings tab) — keyword label overrides ───────────────────────
   getLabelOverrides:   ()        => ipcRenderer.invoke('get-label-overrides'),

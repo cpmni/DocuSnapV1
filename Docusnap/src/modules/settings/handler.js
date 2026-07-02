@@ -293,6 +293,52 @@ function register(ctx) {
     return { restored };
   });
 
+  // ── Learning Repair (browse + preview + suspects + send-to-review) ───────────
+  const repairSuspects = require('../../services/repairSuspects');
+  ipcMain.handle('repair-overview', (_e, scope) => {
+    requireRole('admin');
+    const db = getDb();
+    const documents = require('../../../database/modules/documents');
+    const s = scope || {};
+    if (!s.document_type_slug) return { error: 'A document type is required.' };
+    const sc = { supplier_name: s.supplier_name || null, document_type_slug: s.document_type_slug };
+    const docs = documents.getConfirmedDocsForScope(db, sc);
+    let suspects = { byId: {}, count: 0 };
+    try { suspects = repairSuspects.computeSuspects(db, { document_type_slug: s.document_type_slug, supplier_name: s.supplier_name || null }); }
+    catch (e) { try { ctx.logger?.warn?.(`[repair] suspects failed: ${e.message}`); } catch {} }
+    return { scope: sc, confirmedCount: docs.length, documents: docs, suspects };
+  });
+  // Send ONE confirmed doc back to the review queue (respects the workflow lock).
+  ipcMain.handle('repair-deconfirm', (_e, id) => {
+    requireRole('admin');
+    const db = getDb();
+    const documents = require('../../../database/modules/documents');
+    const docId = Number(id);
+    try {
+      const guard = require('../../services/workflowService').editGuard(db, docId, 'admin');
+      if (guard && guard.ok === false) return { ok: false, error: guard.error || 'This document is locked by an approval route.', code: guard.code };
+    } catch { /* workflow off → no lock */ }
+    const r = documents.deconfirmDocument(db, docId);
+    if (r.changes) {
+      try { logAudit(db, { action: 'repair_send_to_review', action_category: 'document', target_type: 'document', target_id: docId, outcome: 'success' }); } catch {}
+      notifyAllWindows('review-count-changed', documents.getReviewCount(db));
+    }
+    return { ok: r.changes > 0 };
+  });
+  // Delete ONE confirmed doc to the recycle bin (recoverable; Undo via recovery-restore-docs).
+  ipcMain.handle('repair-delete', (_e, id) => {
+    requireRole('admin');
+    const db = getDb();
+    const documents = require('../../../database/modules/documents');
+    const docId = Number(id);
+    const r = documents.softDelete(db, docId);
+    if (r.changes) {
+      try { logAudit(db, { action: 'repair_delete', action_category: 'document', target_type: 'document', target_id: docId, outcome: 'success' }); } catch {}
+      notifyAllWindows('review-count-changed', documents.getReviewCount(db));
+    }
+    return { ok: r.changes > 0 };
+  });
+
   // ── App settings (key-value) ─────────────────────────────────────────────────
   // get-setting stays open even pre-login: theme.js reads 'theme' from every
   // window — including the login screen, before currentSession exists — to

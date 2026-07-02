@@ -1134,7 +1134,7 @@ function renameFieldValue(db, { supplier_name, document_type, field_key, oldValu
 module.exports = {
   insertExtractions, deleteExtractions,
   getFieldValueHistory, getDocumentsForFieldValue, purgeFieldValue, renameFieldValue,
-  saveCorrections, getHints, isPlausibleSupplierName, normalizeSupplierName,
+  saveCorrections, getHints, isPlausibleSupplierName, nameQuality, normalizeSupplierName,
   saveAnchor, sanitizeAnchorLabel, clearAnchors, getAllAnchors,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
   getFieldFormats, getDigitsOnlyFields,
