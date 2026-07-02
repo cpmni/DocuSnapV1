@@ -149,7 +149,7 @@ function createRequestListener(ctx) {
   const log = ctx.logger?.log?.bind(ctx.logger) || (() => {});
   const learning = ctx.learning || require('../../../database/modules/learning');
   const dbAuth = ctx.dbAuth || require('../../../database/modules/auth');
-  const sessions = ctx.sessionStore || sessionService.createSessionStore();
+  const sessions = ctx.sessionStore || sessionService.shared();
   const authenticator = ctx.authenticator || authService.createAuthenticator();
 
   const audit = (entry) => {

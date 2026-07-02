@@ -770,8 +770,10 @@ app.whenReady().then(() => {
     spawn: require('child_process').spawn,
     path,
     // Detached-client auth sessions + the concurrent (sticky) seat pool, owned by
-    // main so the /v1 API and the admin Licensing IPC share one instance.
-    sessionStore: require('./services/sessionService').createSessionStore(),
+    // main so the /v1 API and the admin Licensing IPC share one instance. Uses the
+    // shared() singleton so the admin auth handlers can REVOKE a user's /v1 sessions
+    // (disable / role change / password reset) against the very store the API uses.
+    sessionStore: require('./services/sessionService').shared(),
     seatPool:     require('./services/seatPool').createSeatPool({ getDb }),
   };
 

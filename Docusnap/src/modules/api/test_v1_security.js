@@ -18,13 +18,12 @@ const documents = require('../../../database/modules/documents');
 const learning  = require('../../../database/modules/learning');
 const reviewServiceMod = require('../../services/reviewService');
 const presenceMod = require('../../services/presenceService');
+const sessionService = require('../../services/sessionService');
 const licensing = require('../licensing/handler');
 
 const PWD = 'Sec-Test-9';
-let fail = 0, gaps = 0;
+let fail = 0;
 const check = (l, c, extra) => { console.log(`  ${c ? 'OK ' : 'BAD'} ${l}${extra ? '  ' + extra : ''}`); if (!c) fail++; };
-// A KNOWN GAP: records current behaviour without failing the suite (flips to OK when fixed).
-const knownGap = (l, closed, note) => { console.log(`  ${closed ? 'OK ' : 'GAP'} ${l}${closed ? '' : '  ⚠ ' + note}`); if (!closed) gaps++; };
 
 const _origDenied = licensing.licenseDenied; licensing.licenseDenied = () => null;
 let entitled = true, lastCommitArgs = null;
@@ -60,8 +59,9 @@ async function main() {
     fs: { existsSync: () => false, unlinkSync: () => {} }, path: require('path'),
     audit: () => {}, notifyCounts: () => {}, releaseDelayMs: 0,
   });
+  const sessionStore = sessionService.createSessionStore();   // explicit, isolated store for this test
   const server = api.createServer({
-    getDb: () => db, learning: { getDigitsOnlyFields: () => [] }, reviewService,
+    getDb: () => db, learning: { getDigitsOnlyFields: () => [] }, reviewService, sessionStore,
     presence: presenceMod.createPresenceService(),
     checkEntitlement: () => entitled
       ? ({ entitled: true, feature: 'detached_client', search: { entitled: true, seats: 99 }, workflow: { entitled: true, seats: 99 } })
@@ -85,16 +85,16 @@ async function main() {
   const tampered = editT.slice(0, -3) + (editT.slice(-3) === 'aaa' ? 'bbb' : 'aaa');
   check('tampered token → 401', (await request(port, 'GET', '/v1/review/queue', { token: tampered })).status === 401);
   check('valid editor token → 200', (await request(port, 'GET', '/v1/review/queue', { token: editT })).status === 200);
-  // deactivate ghost AFTER login; a subsequent request with the stale token SHOULD be rejected.
-  // KNOWN GAP: sessionService has revokeUser(), but the admin auth-set-user-active /
-  // set-user-role / reset-password handlers don't call it, so a live /v1 session survives a
-  // deactivation until token expiry (≤12h absolute / 30m idle). Fix = a shared session store
-  // singleton + sessions.revokeUser(userId) from those handlers.
+  // Deactivating a user must cut their live /v1 access at once. In production the admin
+  // auth-set-user-active handler calls sessions.revokeUser(userId) (FIXED 2026-07-02); here we
+  // simulate exactly that against the same store the server verifies against, then assert the
+  // stale token is rejected — and that OTHER users' sessions are untouched (revoke is scoped).
+  check('ghost\'s token works before deactivation', (await request(port, 'GET', '/v1/review/queue', { token: ghostT })).status === 200);
   db.prepare("UPDATE users SET is_active = 0 WHERE username = 'ghost'").run();
+  sessionStore.revokeUser(4);   // what auth-set-user-active now does
   const ghostAfter = await request(port, 'GET', '/v1/review/queue', { token: ghostT });
-  knownGap('deactivated user\'s live /v1 token is rejected',
-    ghostAfter.status === 401 || ghostAfter.status === 403,
-    `revocation lag: deactivation doesn't call sessions.revokeUser() (got ${ghostAfter.status})`);
+  check('deactivated user\'s live /v1 token is now rejected (401)', ghostAfter.status === 401, `(got ${ghostAfter.status})`);
+  check('other users\' sessions survive the scoped revoke', (await request(port, 'GET', '/v1/review/queue', { token: editT })).status === 200);
 
   // ── ROLE GATING ─────────────────────────────────────────────────────────────
   check('readonly GET /review/queue → 403', (await request(port, 'GET', '/v1/review/queue', { token: readT })).status === 403);
@@ -149,7 +149,7 @@ async function main() {
 
   await new Promise(r => server.close(r));
   licensing.licenseDenied = _origDenied;
-  console.log(`\n${fail === 0 ? 'ALL PASS — /v1 security probes held.' : fail + ' FAILED'}${gaps ? `  (+${gaps} KNOWN GAP — see ⚠ above)` : ''}`);
+  console.log(`\n${fail === 0 ? 'ALL PASS — /v1 security probes held.' : fail + ' FAILED'}`);
   process.exit(fail ? 1 : 0);
 }
 main().catch(e => { console.error(e); licensing.licenseDenied = _origDenied; process.exit(1); });

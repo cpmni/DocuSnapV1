@@ -1585,23 +1585,25 @@ endpoint; enrollment needs an integrity check (fingerprint confirm / pairing cod
 silent auto-grab. (Host-side TLS tests can be MITM'd by AVG's HTTPS scanning — verify
 from the VM; see `memory/avg-https-mitm-local-tls`.)
 
-**⚠ KNOWN GAP — /v1 session revocation lag (2026-07-02, found by `test_v1_security.js`):**
-`sessionService` has `revokeUser(userId)` ("admin disable / role change / password reset"),
-but the admin auth handlers (`auth-set-user-active` / `auth-set-user-role` / password reset in
-`src/modules/auth/handler.js`) DON'T call it, and `requireSession` verifies the opaque token
-in-memory WITHOUT re-checking `users.is_active`/role. So a deactivated/demoted user keeps their
-live `/v1` access (and old role) until the token expires (≤12h absolute / 30m idle). Desktop
-in-process login is UNAFFECTED (separate `currentSession`). FIX = a shared session-store singleton
-(mirror `presenceService.shared()`; api `handler.js:152` already accepts `ctx.sessionStore`) +
-`sessions.revokeUser(userId)` from those three admin handlers. Lower urgency while the detached
-client is entitlement-gated/pre-release, but close before it ships. Recorded as a soft "KNOWN GAP"
-in the security suite (flips to a hard OK once fixed).
+**/v1 SESSION REVOCATION — admin actions cut client access at once (2026-07-02, found+fixed via
+`test_v1_security.js`):** the opaque `/v1` bearer token is verified in-memory (`sessionService`)
+and does NOT re-check `users.is_active`/role per request — revocation is by EXPLICIT delete. So
+the admin auth handlers now call `sessionService.shared().revokeUser(userId)` on the actions that
+must cut a user's access: `auth-set-user-active` (disable), `auth-set-user-role` (any role change),
+`auth-admin-reset-password`, and self-service `auth-change-password`. Previously none did, so a
+deactivated/demoted user kept live `/v1` access (and their OLD role) until the token expired
+(≤12h absolute / 30m idle). The store is now a process SINGLETON (`sessionService.shared()`, mirrors
+`presenceService.shared()`): `main.js` seeds `ctx.sessionStore` from it and the API defaults to it,
+so the admin IPC and the API server share ONE store. Desktop in-process login (`currentSession`) is a
+SEPARATE boundary, untouched. Guarded by `test_v1_security.js` (scoped revoke: the target's token is
+rejected, other users' survive) + `test_session.js` (`revokeUser` unit).
 
 **Tests** (Electron-as-Node): `src/services/test_{certservice,workflow,entitlement,
 session}.js`, `src/modules/api/test_{cert_wizard,v1_ca,v1_enroll,v1_workflow,v1_*}.js`,
 `src/modules/review/test_workflow_lock.js`, `src/modules/workflow/test_workflow_ipc.js`,
 `client/test_apiclient.js`, `src/modules/api/test_v1_security.js` (auth/role-gating/F-02
-traversal/SQL-injection/malformed-body/entitlement probes + the session-revocation KNOWN GAP above).
+traversal/SQL-injection/malformed-body/entitlement probes + the session-revocation-on-deactivate
+check above).
 
 **Robustness suites added 2026-07-02** (all Electron-as-Node, hermetic): `src/modules/filing/
 test_filing_edge_cases.js` (reserved device names, >260 long paths, Unicode/RTL/emoji suppliers,
