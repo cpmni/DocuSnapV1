@@ -330,7 +330,7 @@ function register(ctx) {
       FROM documents
       WHERE template_id = ? AND status = 'confirmed'
       ORDER BY confirmed_at DESC
-      LIMIT 30
+      LIMIT 20
     `).all(templateId);
   });
 
