@@ -1740,7 +1740,7 @@ is now font-src 'self'. Don't reintroduce a CDN <link>.
   **Appearance** (theme + Home-screen cards + window behaviour) — then an
   `Administration` cluster (side-head divider) — **Templates** (the `#tpl-dock` viewer
   only) · **Learning** (Keyword Label Overrides at top + Learning Recovery + memory
-  inventory) · **Users** (accounts + recent activity) · **Audit** (the audit log) ·
+  inventory) · **Learning Repair** (see below) · **Users** (accounts + recent activity) · **Audit** (the audit log) ·
   **Licensing** (licence + activation + seats; `#wf-section` workflow stays HIDDEN) ·
   **Search client** (the `#client-api-*` access card) · **Advanced** (Backup & Restore
   + Diagnostic Logging + Re-run setup). The renderer (`settings/renderer.js`) tab-click
@@ -2144,6 +2144,86 @@ the operational config to ONE password-encrypted file and restores it after rein
   legacy backups (no `device_fp`) and dev boxes with no license config are NOT blocked. A
   denied apply is audited (`outcome:'failure', reason:'device_mismatch'`).
 - IPCs (admin): `settings-backup-export` / `-preview` / `-apply`.
+
+## Learning Repair (admin) — un-poison a document type
+Settings → **Learning Repair** (`panel-repair`, its OWN Administration tab; NOT an add-on to
+Learning). The foolproof tool for when a type "learns wrong": browse a type's confirmed docs,
+SEE each one, and send a bad one back to Review. **Design principle (bob):** the tool never
+decides — it draws the eye to a few candidates and the human looks at the picture and decides;
+auto-detection is *"worth a look,"* never *"this is wrong."* The primary action is low-stakes
+because Review is a safe holding area (send a good doc back by mistake → just re-confirm it,
+**replace-in-place, no -DUPLICATE**).
+- **Grounding fact:** learning is DERIVED LIVE from `confirmed` docs (`getFieldFormats` filters
+  `WHERE d.status='confirmed'`), so the ONLY way to stop a doc poisoning the model is to move it
+  OFF `confirmed` — clearing learning tables alone doesn't un-poison. Hence de-confirm/soft-delete
+  are the real levers, not just "forget learning".
+- **Backend send-to-review + replace-in-place:** `documents.deconfirmDocument(db,id)` →
+  `status='needs_review'`, nulls `confirmed_at`/`confirmed_by_username` but **KEEPS
+  `stored_path`/`stored_filename`** (their presence on a needs_review doc = the "previously filed"
+  signal). `reviewService.confirm` captures `oldStoredPath = docRow.stored_path` **regardless of
+  status** BEFORE the claim (which nulls it) and re-files IN PLACE (`isRefile` when a prior
+  stored_path exists + `payload.allowRefile`), so a sent-back doc overwrites its original copy
+  instead of minting `-DUPLICATE`. A never-filed needs_review doc has no stored_path → byte-identical
+  to today. De-confirm respects the workflow `editGuard` (a doc with an open route can't be sent
+  back). Guarded by `src/services/test_reviewservice_refile.js`.
+- **Suspect detectors — `src/services/repairSuspects.js`** (precision-first, JS-only, every rule an
+  AND-gate + thin-evidence gate so a GOOD doc is never force-flagged). **SCOPE SPLIT (2026-07):**
+  "might not belong" is a WHOLE-TYPE judgement — an outlier is BY DEFINITION a different supplier
+  from the norm, so Detector A + the outlier field-explanations run on the FULL type pool (the
+  supplier filter is IGNORED for them); only Detector B (per-value anomalies) stays scoped to the
+  supplier CONTAINS filter for per-supplier format precision. This fixed the "outliers don't show
+  up when I search a supplier" bug (a supplier filter used to collapse the comparison pool below the
+  ≥8-phash gate). **Detector A — outlier docs** ("might not belong"): single-link
+  phash cluster at Hamming ≤10; needs ≥8 usable phashes (SKIP null/short — `hammingDistance` returns
+  64 on those, a trap), a legit cluster is ≥3 docs OR ≥15% of pool (multi-modal guard for suppliers
+  with 2-3 layouts), an outlier needs a tiny cluster + >16 Hamming to nearest legit + keyword
+  Jaccard <0.30. **`explainOutlierFields`** then points at WHICH of an outlier's fields look off +
+  why (reused per-field `kind:'data'` reasons) by comparing each value to the type-wide dominant
+  shape (structured/ref fields → "formatted differently from this type's usual '…'") or name quality
+  (name fields) — so the fields panel shows an inline amber note under the offending field, not just
+  a whole-doc verdict. **Detector B — anomalous values** ("data looks off"): B1 off-shape singleton vs a
+  single dominant shape (≥80%, `shapeSignature` = digit→#/letter→@/sep literal) — carries an
+  `example` (a value matching the dominant shape, shown as "the others usually look like …"); B2
+  garbled name (`nameQuality<0.5` + multi-token + singleton, with a RECURRENCE EXEMPTION —
+  `value_counts≥2` never flagged, names/addresses vary legitimately); B3 disallowed charset
+  (U+FFFD/control chars, or letters in currency/number). Per-scope gate `confirmedCount≥6`.
+  **`isRefLike` key-role coercion** (mirrors engine `_is_ref_field`: `*_no`/`*_number`/`*_ref`/
+  `reference`): a ref field typed plain `text` (the built-in ref fields ARE — migration 3) is still
+  shape-checked by BOTH Detector B and `explainOutlierFields`, else `invoice_number` `152888` (6-digit)
+  vs the type's usual 5-digit shape would never flag.
+  `computeSuspects` → `{ byId:{ [id]:{ reasons:[{kind:'belong'|'data', field?, value?, example?, text}], severity } }, count }`
+  (dedupes to one reason per field; outlier detection on the full pool, Detector B on the scoped pool).
+  Guarded by `src/services/test_repair_suspects.js`.
+- **IPC (admin) — `settings/handler.js`:** `repair-overview({document_type_slug, supplier_name?})`
+  → `{scope, confirmedCount, documents, suspects}` — `confirmedCount` = the supplier-scoped browse
+  pool, but full-type-pool outlier docs (a DIFFERENT supplier than the filter) are UNIONED into
+  `documents` (`documents.getConfirmedDocsByIds`) so a supplier search still surfaces + can open them;
+  `repair-doc-fields(id)` → `{fields:[{field_key,value}]}` the CONFIRMED per-field values
+  (`documents.getConfirmedFieldValues`: correction wins over the raw OCR read, so the fields panel
+  shows the confirmed `152888`, not a superseded misread `"St"`); `repair-deconfirm(id)` (editGuard-checked,
+  audited `repair_send_to_review`, broadcasts `review-count-changed`); `repair-delete(id)`
+  (`documents.softDelete` → recycle bin, undo via existing `recovery-restore-docs`). Preload:
+  `repairOverview/DocFields/Deconfirm/Delete`.
+- **UI — `panel-repair`** (`settings/index.html` + renderer `repairInit`/`rpLoad`/`rpRenderList`/
+  `rpSelect`/`rpShowPage`/`rpRenderFields`/`rpRenderSuspectStrip`): type picker ("Learned from N
+  documents") + a **CONTAINS supplier filter** (partial company name; `LIKE '%term%'` in BOTH
+  `getConfirmedDocsForScope` AND `computeSuspects` — NOT exact) → a "Worth a look" strip (merged
+  A+B suspects) + a master list with **Up/Down arrow nav** + a **zoom/pan preview pane** (page image via
+  `get-document-pages`, ‹ › multi-page; **scroll-wheel to zoom, right-mouse-button drag to pan — no
+  grab**, mirrors the Review preview; resets to fit on each doc via `rpResetView`) beside a
+  **field-values panel** (`rpRenderFields` fetches `repair-doc-fields` for CONFIRMED values;
+  every field's value listed, flagged fields amber + reason/example inline, whole-doc "belong"
+  reasons in a top box). Actions: **Send back to Review** (primary) ·
+  **Delete** (recycle bin) · **Looks fine ✓** (session-only dismiss). "Start over for this type
+  (advanced)" (forget learning / requeue whole type via `recovery-apply`) is collapsed at the very
+  bottom behind a confirm. **Preview/thumbnail file args:** confirmed docs resolve the FILED copy
+  via `rpFileArgs(doc)` (stored_path dir + stored_filename, mirrors `tplFileArgs`/search `fileArgs`)
+  — `thumbs.js` short-circuits to NO thumbnail on a falsy `folder_path`, so passing `''` silently
+  broke thumbnails; `getConfirmedDocsForScope` now returns `stored_path`/`folder_path`/`working_path`
+  for this. NOTE (superseded 2026-07): outlier detection used to be scope-dependent, so a true outlier
+  of a DIFFERENT company was hidden under a company search — now Detector A runs on the full type pool
+  and the handler UNIONS those outlier docs into the browse list, so they surface regardless of the
+  supplier filter (Detector B's per-value flags stay supplier-scoped).
 
 ## Main window — "Review your documents" CTA
 After a batch finishes, a green "✓ Review your documents" button appears in the sidebar

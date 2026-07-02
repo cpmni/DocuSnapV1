@@ -1385,22 +1385,50 @@ function validateConfirm() {
   }
   if (dangling.length) { btn.disabled = true; markRequiredMissing([]); return; }
 
-  // Required = only the roles that are actually assigned AND present on screen.
-  const required = [dateKey, refKey].filter(k => k && fieldExists(k));
+  // Required = the assigned date/ref roles PLUS any CUSTOM field flagged Required in the
+  // Type Manager (fields.required) — minus the Document-Issuer identity, which is warn-only
+  // (handled below). Only fields actually present on screen are gated.
+  const ISSUER_KEYS = ['supplier_name', 'customer_name'];
+  const requiredKeys = new Set([dateKey, refKey]);
+  for (const f of (dt?.fields || [])) {
+    if (f.required && f.enabled !== 0 && !ISSUER_KEYS.includes(f.key)) requiredKeys.add(f.key);
+  }
+  const required = [...requiredKeys].filter(k => k && fieldExists(k));
   const missing = required.filter(key => {
     const input = document.querySelector(`.field-input[data-key="${key}"]`);
     return !input || !input.value.trim();
   });
 
-  // Empty Document Issuer: WARN, don't block (the app's review-not-reject posture).
-  // A blank issuer files under "Unknown Company" and won't learn this sender — the
-  // consequence is named here, and confirmCurrentDoc asks for a deliberate confirm.
   const issuerNote = document.getElementById('confirm-issuer-note');
+  const issuerKey  = issuerBlankKey();
+
+  if (missing.length) {
+    // These roles are needed to file (the filename is built from them), so Confirm stays
+    // disabled — but say plainly WHAT to add and WHY, instead of a silent greyed-out button.
+    if (note) {
+      const labels = missing.map(k => `<b>${escHtml(labelFor(k))}</b>`);
+      const list = labels.length > 1
+        ? labels.slice(0, -1).join(', ') + ' and ' + labels[labels.length - 1]
+        : labels[0];
+      note.innerHTML = `To file this document, please fill in ${list} — `
+        + `${missing.length > 1 ? 'these fields are' : 'this field is'} needed to file it.`
+        + (issuerKey ? ' The Document Issuer is empty too — add it so the app can learn this sender.' : '');
+      Object.assign(note.style, { display: '', color: 'var(--warn)', fontSize: '12px',
+        lineHeight: '1.4', padding: '6px 4px' });
+    }
+    if (issuerNote) issuerNote.style.display = 'none';
+    markRequiredMissing(missing);
+    btn.disabled = true;
+    return;
+  }
+
+  // Required roles are all present. A blank Document Issuer is a WARN, not a block (the
+  // app's review-not-reject posture) — name the consequence and let the user file anyway.
+  if (note) note.style.display = 'none';
   if (issuerNote) {
-    const issuerKey = issuerBlankKey();
-    if (issuerKey && !missing.length) {
-      issuerNote.textContent = 'Document Issuer is blank — this will file under “Unknown Company” and '
-        + 'won’t learn this sender. You can still confirm.';
+    if (issuerKey) {
+      issuerNote.textContent = 'No Document Issuer yet — if you file now it will be saved under '
+        + '“Unknown Company” and the app won’t learn this sender. Add the issuer above, or file anyway.';
       Object.assign(issuerNote.style, { display: '', color: 'var(--warn)', fontSize: '12px',
         lineHeight: '1.4', padding: '6px 4px' });
     } else {
@@ -1408,8 +1436,8 @@ function validateConfirm() {
     }
   }
 
-  markRequiredMissing(missing);
-  btn.disabled = missing.length > 0;
+  markRequiredMissing([]);
+  btn.disabled = false;
 }
 
 // The identity/Document-Issuer field key (supplier_name | customer_name) on screen

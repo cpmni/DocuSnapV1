@@ -65,3 +65,21 @@ contextBridge.exposeInMainWorld('scanfinder', {
     ocrRegion:(id, imageBase64) => ipcRenderer.invoke('client-review-ocr-region', id, imageBase64),
   },
 });
+
+// ── Keyboard-focus repair (Windows) — mirrors the core app's preload ───────────
+// Electron on Windows can leave the render widget WITHOUT keyboard focus while the OS
+// window still has focus, so a click into a text field shows no caret until you click
+// out of the app and back in. The window-level grabFocus (client/main.js) can't catch a
+// loss that happens without an OS focus change (a dialog closing, a view swap). When a
+// pointer press enters a text control while the document lacks focus, ask main to
+// re-focus the webContents, then re-assert the caret. No-op when focus is already fine.
+window.addEventListener('pointerdown', (e) => {
+  try {
+    if (document.hasFocus()) return;
+    const t = e.target;
+    const el = t && t.closest && t.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]');
+    if (!el) return;
+    ipcRenderer.send('ensure-window-focus');
+    requestAnimationFrame(() => { try { el.focus(); } catch {} });
+  } catch { /* never break a click */ }
+}, true);

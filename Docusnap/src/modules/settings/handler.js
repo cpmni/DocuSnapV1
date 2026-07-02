@@ -303,10 +303,26 @@ function register(ctx) {
     if (!s.document_type_slug) return { error: 'A document type is required.' };
     const sc = { supplier_name: s.supplier_name || null, document_type_slug: s.document_type_slug };
     const docs = documents.getConfirmedDocsForScope(db, sc);
+    const confirmedCount = docs.length;   // "Learned from N" = the browsed (supplier-filtered) pool
     let suspects = { byId: {}, count: 0 };
     try { suspects = repairSuspects.computeSuspects(db, { document_type_slug: s.document_type_slug, supplier_name: s.supplier_name || null }); }
     catch (e) { try { ctx.logger?.warn?.(`[repair] suspects failed: ${e.message}`); } catch {} }
-    return { scope: sc, confirmedCount: docs.length, documents: docs, suspects };
+    // "Might not belong" outliers are detected across the WHOLE type, so a flagged doc may be a
+    // DIFFERENT supplier than the browse filter — union those in so they still render (strip +
+    // list + preview), otherwise a supplier search would hide the very outliers it should surface.
+    const have = new Set(docs.map(d => d.id));
+    const missing = Object.keys(suspects.byId).map(Number).filter(id => !have.has(id));
+    if (missing.length) { try { docs.push(...documents.getConfirmedDocsByIds(db, missing)); } catch {} }
+    return { scope: sc, confirmedCount, documents: docs, suspects };
+  });
+  // Each field's CONFIRMED value (correction wins over the raw OCR read) for the Learning
+  // Repair fields panel — so it agrees with the suspect reason, not a superseded misread.
+  ipcMain.handle('repair-doc-fields', (_e, id) => {
+    requireRole('admin');
+    const db = getDb();
+    const documents = require('../../../database/modules/documents');
+    try { return { fields: documents.getConfirmedFieldValues(db, Number(id)) }; }
+    catch (e) { return { fields: [], error: e.message || String(e) }; }
   });
   // Send ONE confirmed doc back to the review queue (respects the workflow lock).
   ipcMain.handle('repair-deconfirm', (_e, id) => {

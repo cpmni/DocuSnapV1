@@ -192,6 +192,13 @@
             ${typeSelectHtml(f.type || 'text', locked)}
           </span>
           ${editing ? `<span class="grp">
+            <span class="ctl-cap" title="Whether a document must have this field filled before it can be filed">Required</span>
+            <label class="toggle" title="${locked ? 'Structural field — always required' : 'Require this field before a document can be confirmed & filed'}">
+              <input type="checkbox" class="dte-req"${f.required ? ' checked' : ''}${locked ? ' disabled' : ''}>
+              <span class="toggle-slider"></span>
+            </label>
+          </span>` : ''}
+          ${editing ? `<span class="grp">
             <span class="ctl-cap" title="${locked ? 'Required field - always on' : 'Whether this field is used when filing'}">Enabled</span>
             <label class="toggle" title="${locked ? 'Required field - always on' : 'Enable or disable this field'}">
               <input type="checkbox" class="dte-en"${enabled ? ' checked' : ''}${locked ? ' disabled' : ''}>
@@ -231,7 +238,9 @@
             <div class="dte-fieldnote">
               <b>Tip:</b> each field&rsquo;s <b>Type</b> (the dropdown beside it) tells Scan Finder what to expect &mdash;
               a date, an amount, a reference number &mdash; so it reads that field more accurately.
-              If you&rsquo;re not sure, choose <b>Text</b>.
+              If you&rsquo;re not sure, choose <b>Text</b>.${mode === 'edit' ? `
+              <br><b>Required</b> means a document can&rsquo;t be filed until this field is filled in.
+              It applies to documents you file from now on &mdash; already-filed documents aren&rsquo;t affected.` : ''}
             </div>
           </div>
           <div>
@@ -285,6 +294,13 @@
               try { await api.updateField(fid, { type: typeSel.value }); type.fields[i].type = typeSel.value; if (opts.onChange) opts.onChange(); }
               catch (e) { showErr('Could not change type: ' + e.message); }
             }
+          });
+        }
+        const reqCb = row.querySelector('.dte-req');
+        if (reqCb && !reqCb.disabled) {
+          reqCb.addEventListener('change', async () => {
+            try { await api.updateField(fid, { required: reqCb.checked ? 1 : 0 }); type.fields[i].required = reqCb.checked ? 1 : 0; if (opts.onChange) opts.onChange(); }
+            catch (e) { showErr('Could not change field: ' + e.message); reqCb.checked = !reqCb.checked; }
           });
         }
         const enCb = row.querySelector('.dte-en');

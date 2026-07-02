@@ -84,7 +84,16 @@ function createWindow() {
   const grabFocus = () => { try { if (win && !win.isDestroyed()) win.webContents.focus(); } catch {} };
   win.webContents.on('did-finish-load', grabFocus);
   win.on('focus', grabFocus);
+  win.on('show', grabFocus);
 }
+
+// Renderer-driven keyboard-focus repair (Windows): the preload requests this when a
+// click enters a text field while the render widget lacks OS keyboard focus (the
+// "click a box, no caret until I alt-tab out and back" bug). Re-focusing the sending
+// webContents re-syncs it without an OS window-focus change. Sender-scoped + guarded.
+ipcMain.on('ensure-window-focus', (e) => {
+  try { const wc = e.sender; if (wc && !wc.isDestroyed()) wc.focus(); } catch {}
+});
 
 // Renderer → main → apiClient. The token is never sent to the renderer.
 // Server selection: the renderer asks for the saved address, or sets a new one

@@ -3101,126 +3101,47 @@ async function runLearningSearch() {
   });
 }
 
-// ── "Fix a document type" recovery wizard ─────────────────────────────────────
-let _recWired = false, _recSetAsideIds = [], _recSuggestedCount = 0;
-function _recEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
-
-async function recInit() {
-  const sel = document.getElementById('rec-doctype');
-  if (!sel) return;
-  // Populate the type dropdown (slug → name), preserving a prior selection.
-  let types = [];
-  try { types = (await api.getAllDocTypesAll()) || []; } catch {}
-  const prev = sel.value;
-  sel.innerHTML = types.map(t => `<option value="${_recEsc(t.slug)}">${_recEsc(t.name)}</option>`).join('');
-  if (prev && types.some(t => t.slug === prev)) sel.value = prev;
-
-  if (_recWired) return;
-  _recWired = true;
-  document.getElementById('rec-check').addEventListener('click', recCheck);
-  document.getElementById('rec-apply').addEventListener('click', recApply);
-  document.getElementById('rec-undo').addEventListener('click', recUndo);
-  document.getElementById('rec-tick-none').addEventListener('click', () => {
-    document.querySelectorAll('#rec-doclist input[type=checkbox]').forEach(c => { c.checked = false; }); recUpdateCount();
-  });
-  // Re-checking after a change hides the (now stale) result/undo.
-  ['rec-doctype', 'rec-supplier'].forEach(id => document.getElementById(id).addEventListener('input', () => {
-    document.getElementById('rec-step2').style.display = 'none';
-  }));
-}
-
-function recUpdateCount() {
-  const n = document.querySelectorAll('#rec-doclist input[type=checkbox]:checked').length;
-  const el = document.getElementById('rec-doc-count');
-  if (n) { el.textContent = `${n} selected`; el.style.color = ''; }
-  else if (_recSuggestedCount) { el.innerHTML = `<span style="color:var(--warn);">${_recSuggestedCount} look like they're also filed under another type — likely culprits</span>`; }
-  else { el.textContent = 'none selected'; el.style.color = ''; }
-}
-
-async function recCheck() {
-  const slug = document.getElementById('rec-doctype').value;
-  const supplier = document.getElementById('rec-supplier').value.trim();
-  if (!slug) return;
-  let ov = null;
-  try { ov = await api.recoveryOverview({ document_type_slug: slug, supplier_name: supplier || null }); } catch (e) { alert('Could not load recovery info: ' + (e.message || e)); return; }
-  if (!ov || ov.error) { alert(ov && ov.error || 'Could not load recovery info.'); return; }
-
-  const L = ov.learned || {};
-  const supText = supplier ? ` from “${_recEsc(supplier)}”` : '';
-  document.getElementById('rec-inventory').innerHTML =
-    `For <strong>${_recEsc(document.getElementById('rec-doctype').selectedOptions[0].textContent)}</strong>${supText}, Scan Finder has learned ` +
-    `<strong>${L.anchors || 0}</strong> field position(s), <strong>${L.hints || 0}</strong> fill-in hint(s), and ` +
-    `<strong>${L.fieldRules || 0}</strong> cleanup rule(s), from <strong>${ov.confirmedCount || 0}</strong> confirmed document(s).`;
-  document.getElementById('rec-forget-sup').textContent = supplier ? ` from “${supplier}”` : '';
-
-  const docs = ov.documents || [];
-  const suggested = new Set(ov.suggestedIds || []);
-  const list = document.getElementById('rec-doclist');
-  list.innerHTML = docs.length ? docs.map(d => {
-    const meta = [d.supplier_name, d.reference_number, d.doc_date].filter(Boolean).join(' · ');
-    const sug = suggested.has(d.id);
-    return `<label style="display:flex; gap:8px; align-items:center; padding:3px 4px; font-size:12px;${sug ? ' background:var(--warn-bg,rgba(176,120,22,.10)); border-radius:6px;' : ''}">
-      <input type="checkbox" value="${d.id}">
-      <span style="flex:1; min-width:0;"><span style="font-family:var(--mono);">${_recEsc(d.original_filename)}</span>${meta ? ` — <span style="color:var(--muted);">${_recEsc(meta)}</span>` : ''}${sug ? ' <span style="color:var(--warn); font-size:11px;">⚠ also filed under another type</span>' : ''}</span>
-    </label>`;
-  }).join('') : '<div class="section-desc" style="margin:4px;">No confirmed documents in this scope.</div>';
-  list.querySelectorAll('input[type=checkbox]').forEach(c => c.addEventListener('change', recUpdateCount));
-  _recSuggestedCount = suggested.size;
-
-  document.getElementById('rec-forget').checked = false;
-  document.getElementById('rec-requeue').checked = false;
-  document.getElementById('rec-result').style.display = 'none';
-  document.getElementById('rec-undo').style.display = 'none';
-  document.getElementById('rec-step2').style.display = '';
-  recUpdateCount();
-}
-
-async function recApply() {
-  const slug = document.getElementById('rec-doctype').value;
-  const supplier = document.getElementById('rec-supplier').value.trim();
-  const ids = [...document.querySelectorAll('#rec-doclist input[type=checkbox]:checked')].map(c => parseInt(c.value, 10));
-  const forgetLearning = document.getElementById('rec-forget').checked;
-  const requeue = document.getElementById('rec-requeue').checked;
-  if (!ids.length && !forgetLearning && !requeue) { alert('Choose the documents to set aside and/or tick “Also forget what I’ve learned”.'); return; }
-
-  const bits = [];
-  if (ids.length) bits.push(`set aside ${ids.length} document(s) (recoverable)`);
-  if (forgetLearning) bits.push(`forget the learned field positions, hints and cleanup rules for this type`);
-  if (requeue) bits.push(`send this type's confirmed documents back to Review`);
-  if (!confirm(`Fix “${document.getElementById('rec-doctype').selectedOptions[0].textContent}”?\n\nThis will ${bits.join(', and ')}.\n\nA backup is taken first; set-aside documents can be restored from the recycle bin.`)) return;
-
-  let res = null;
-  try { res = await api.recoveryApply({ document_type_slug: slug, supplier_name: supplier || null, documentIds: ids, forgetLearning, requeue }); }
-  catch (e) { alert('Recovery failed: ' + (e.message || e)); return; }
-  if (!res || !res.ok) { alert(res && res.error || 'Recovery failed.'); return; }
-
-  const s = res.summary || {};
-  _recSetAsideIds = res.setAsideIds || [];
-  const done = [];
-  if (s.setAside) done.push(`Set aside ${s.setAside} document(s) → recycle bin`);
-  if (s.anchors || s.hints || s.fieldRules || s.corrections) done.push(`Forgot ${s.anchors || 0} field position(s), ${s.hints || 0} hint(s), ${s.fieldRules || 0} rule(s)${s.corrections ? `, ${s.corrections} correction(s)` : ''}`);
-  if (s.requeued) done.push(`Sent ${s.requeued} document(s) back to Review`);
-  const result = document.getElementById('rec-result');
-  result.innerHTML = `✓ Done.<br>${done.map(_recEsc).join('<br>')}` +
-    (res.backup ? `<br>Backup saved.` : '') +
-    `<br><br>Tip: reprocess this type's documents (Review → Reprocess all) so it relearns from a clean slate.`;
-  result.style.display = '';
-  document.getElementById('rec-undo').style.display = _recSetAsideIds.length ? '' : 'none';
-  loadMemoryInventory();
-}
-
-async function recUndo() {
-  if (!_recSetAsideIds.length) return;
-  let r = null;
-  try { r = await api.recoveryRestoreDocs(_recSetAsideIds); } catch (e) { alert('Undo failed: ' + (e.message || e)); return; }
-  document.getElementById('rec-result').innerHTML = `↩ Restored ${r && r.restored || 0} document(s) from the recycle bin. (Learning that was forgotten is covered by the automatic backup.)`;
-  document.getElementById('rec-undo').style.display = 'none';
-  _recSetAsideIds = [];
-}
-
 // ── Learning Repair tab ─────────────────────────────────────────────────────────
 let _rpWired = false, _rpDocs = [], _rpSuspects = {}, _rpFilter = 'all', _rpSel = null, _rpPages = [], _rpPage = 0, _rpDismissed = new Set();
 function _rpEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+// Preview zoom/pan — scroll-wheel to zoom, right-mouse-button drag to pan (no grab cursor),
+// mirroring the Review window's preview. Left-drag is untouched.
+let _rpZoom = 1, _rpPanX = 0, _rpPanY = 0, _rpPanStart = null;
+const RP_ZOOM_MIN = 1, RP_ZOOM_MAX = 4, RP_ZOOM_STEP = 0.25;
+function rpApplyView() {
+  const img = document.getElementById('rp-img');
+  if (img) img.style.transform = `translate(${_rpPanX}px, ${_rpPanY}px) scale(${_rpZoom})`;
+}
+function rpResetView() { _rpZoom = 1; _rpPanX = 0; _rpPanY = 0; rpApplyView(); }
+function rpWirePreviewZoom() {
+  const area = document.getElementById('rp-img-area');
+  const img = document.getElementById('rp-img');
+  if (!area || !img) return;
+  img.style.transformOrigin = 'center center';
+  img.setAttribute('draggable', 'false');
+  area.addEventListener('contextmenu', (e) => { if (_rpPages.length) e.preventDefault(); });
+  area.addEventListener('dragstart', (e) => e.preventDefault());
+  area.addEventListener('wheel', (e) => {
+    if (!_rpPages.length) return;
+    e.preventDefault();
+    _rpZoom = Math.max(RP_ZOOM_MIN, Math.min(RP_ZOOM_MAX, _rpZoom + (e.deltaY < 0 ? RP_ZOOM_STEP : -RP_ZOOM_STEP)));
+    if (_rpZoom === 1) { _rpPanX = 0; _rpPanY = 0; }   // snap back to centred when fully zoomed out
+    rpApplyView();
+  }, { passive: false });
+  area.addEventListener('mousedown', (e) => {
+    if (e.button !== 2 || !_rpPages.length) return;    // right button only
+    _rpPanStart = { x: e.clientX, y: e.clientY, panX: _rpPanX, panY: _rpPanY };
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!_rpPanStart) return;
+    _rpPanX = _rpPanStart.panX + (e.clientX - _rpPanStart.x);
+    _rpPanY = _rpPanStart.panY + (e.clientY - _rpPanStart.y);
+    rpApplyView();
+  });
+  window.addEventListener('mouseup', () => { _rpPanStart = null; });
+}
 
 async function repairInit() {
   const sel = document.getElementById('rp-doctype');
@@ -3235,6 +3156,7 @@ async function repairInit() {
   document.getElementById('rp-load').addEventListener('click', rpLoad);
   document.getElementById('rp-page-prev').addEventListener('click', () => rpShowPage(_rpPage - 1));
   document.getElementById('rp-page-next').addEventListener('click', () => rpShowPage(_rpPage + 1));
+  rpWirePreviewZoom();
   document.getElementById('rp-send').addEventListener('click', rpSend);
   document.getElementById('rp-delete').addEventListener('click', rpDelete);
   document.getElementById('rp-fine').addEventListener('click', rpDismiss);
@@ -3295,6 +3217,17 @@ function rpRenderSuspectStrip() {
   document.querySelectorAll('#rp-suspects-list .rp-suspect').forEach(el => el.addEventListener('click', () => rpSelect(Number(el.dataset.id))));
 }
 
+// Repair docs are all confirmed — resolve the FILED copy (stored_path/stored_filename),
+// falling back to the source. Mirrors tplFileArgs / search's fileArgs so the preview +
+// thumbnail render the real file instead of relying on a relative-path recovery.
+function rpFileArgs(doc) {
+  if (doc && doc.stored_path && doc.stored_filename) {
+    const lastSep = Math.max(doc.stored_path.lastIndexOf('\\'), doc.stored_path.lastIndexOf('/'));
+    return { folderPath: doc.stored_path.substring(0, lastSep), filename: doc.stored_filename };
+  }
+  return { folderPath: (doc && doc.folder_path) || '', filename: (doc && doc.original_filename) || '' };
+}
+
 function rpRenderList() {
   const list = rpFiltered();
   const el = document.getElementById('rp-doclist');
@@ -3309,23 +3242,24 @@ function rpRenderList() {
     </div>`;
   }).join('') : '<div class="section-desc" style="padding:16px; text-align:center;">No documents in this view.</div>';
   el.querySelectorAll('.rp-row').forEach(r => r.addEventListener('click', () => rpSelect(Number(r.dataset.id))));
-  if (window.Thumbs) el.querySelectorAll('.rp-thumb').forEach(img => { const d = _rpDocs.find(x => x.id === Number(img.dataset.id)); if (d) window.Thumbs.lazy(img, { id: d.id, folder_path: '', original_filename: d.original_filename }); });
+  if (window.Thumbs) el.querySelectorAll('.rp-thumb').forEach(img => { const d = _rpDocs.find(x => x.id === Number(img.dataset.id)); if (d) { const fa = rpFileArgs(d); window.Thumbs.lazy(img, { id: d.id, folder_path: fa.folderPath, original_filename: fa.filename }); } });
 }
 
 async function rpSelect(id) {
   const doc = _rpDocs.find(d => d.id === id); if (!doc) return;
   _rpSel = id;
+  rpResetView();   // start each document at fit (100%), centred
   document.querySelectorAll('#rp-doclist .rp-row').forEach(r => r.classList.toggle('active', Number(r.dataset.id) === id));
   document.getElementById('rp-preview-empty').style.display = 'none';
   document.getElementById('rp-preview').style.display = '';
   document.getElementById('rp-action-msg').textContent = '';
   document.getElementById('rp-fine').style.display = rpSuspectKinds(id).size ? '' : 'none';
-  rpRenderReasons(id);
+  rpRenderFields(id);
   document.getElementById('rp-img-loading').style.display = ''; document.getElementById('rp-img-loading').textContent = 'Loading…';
   document.getElementById('rp-img').style.display = 'none';
   _rpPages = []; _rpPage = 0;
   let pages = [];
-  try { pages = await api.getDocumentPages(id, '', doc.original_filename) || []; } catch { pages = []; }
+  { const fa = rpFileArgs(doc); try { pages = await api.getDocumentPages(id, fa.folderPath, fa.filename) || []; } catch { pages = []; } }
   if (_rpSel !== id) return;   // selection moved while loading
   _rpPages = pages;
   if (pages.length) rpShowPage(0);
@@ -3341,12 +3275,46 @@ function rpShowPage(idx) {
   document.getElementById('rp-page-label').textContent = `${_rpPage + 1} / ${_rpPages.length}`;
 }
 
-function rpRenderReasons(id) {
+async function rpRenderFields(id) {
+  const el = document.getElementById('rp-fields');
   const reasons = (_rpSuspects[id] && _rpSuspects[id].reasons) || [];
-  document.getElementById('rp-fields').innerHTML = reasons.length
-    ? '<div style="border:1px solid var(--warn); border-radius:8px; padding:8px 10px; background:var(--surface2);">' +
-        reasons.map(r => `<div>${r.kind === 'belong' ? '◆' : '⚠'} ${_rpEsc(r.text)}</div>`).join('') + '</div>'
-    : '<div class="section-desc" style="margin:0;">Nothing looks off with this document — it matches the others.</div>';
+  const docReasons = reasons.filter(r => r.kind === 'belong');
+  const fieldReason = {};
+  for (const r of reasons) if (r.field) fieldReason[r.field] = r;
+
+  // Top box: whole-document "might not belong" reasons (if any).
+  let top = '';
+  if (docReasons.length) {
+    top = '<div style="border:1px solid var(--accent2); border-radius:8px; padding:8px 10px; background:var(--surface2); margin-bottom:8px;">' +
+      docReasons.map(r => `<div>◆ ${_rpEsc(r.text)}</div>`).join('') + '</div>';
+  }
+  el.innerHTML = top + '<div class="section-desc" style="margin:0;">Loading fields…</div>';
+
+  // Confirmed values (correction wins over the raw OCR read), so a superseded misread like
+  // "St" shows as the confirmed "152888" — agreeing with the suspect reason.
+  let res = null;
+  try { res = await api.repairDocFields(id); } catch { res = null; }
+  if (_rpSel !== id) return;   // selection moved while loading
+
+  const exs = (res && Array.isArray(res.fields)) ? res.fields.filter(e => e.value) : [];
+  const titleCase = (k) => k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  let body = '';
+  if (exs.length) {
+    body = '<div style="border:1px solid var(--border); border-radius:8px; overflow:hidden;">';
+    for (const e of exs) {
+      const fr = fieldReason[e.field_key];
+      body += `<div style="display:flex; gap:8px; padding:5px 10px; ${fr ? 'background:var(--surface2);' : ''} border-bottom:1px solid var(--border);">` +
+        `<span style="color:var(--muted); min-width:130px; flex-shrink:0;">${_rpEsc(titleCase(e.field_key))}</span>` +
+        `<span style="flex:1; ${fr ? 'color:var(--warn); font-weight:600;' : ''}">${_rpEsc(e.value)}${fr ? ' ⚠' : ''}</span></div>`;
+      if (fr) body += `<div style="padding:2px 10px 6px 138px; font-size:11px; color:var(--warn); border-bottom:1px solid var(--border);">${_rpEsc(fr.text)}</div>`;
+    }
+    body += '</div>';
+  } else if (!docReasons.length) {
+    body = '<div class="section-desc" style="margin:0;">Nothing looks off with this document — it matches the others.</div>';
+  } else {
+    body = '<div class="section-desc" style="margin:0;">No extracted field values recorded for this document.</div>';
+  }
+  el.innerHTML = top + body;
 }
 
 function rpRemoveCurrent(msg) {
@@ -3385,7 +3353,7 @@ function rpDismiss() {
   _rpDismissed.add(_rpSel);
   document.getElementById('rp-fine').style.display = 'none';
   document.getElementById('rp-action-msg').textContent = 'Dismissed — this one won’t be flagged again for now.';
-  rpRenderReasons(_rpSel); rpRenderSuspectStrip(); rpRenderList();
+  rpRenderFields(_rpSel); rpRenderSuspectStrip(); rpRenderList();
 }
 
 async function rpForget() {

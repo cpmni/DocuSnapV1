@@ -41,6 +41,13 @@ const fb1 = R.detectAnomalousValues(b1);
 check('B1 flags the off-shape singleton ref', fb1.some(s => s.id === 6 && s.field === 'ref'));
 check('B1 does NOT flag a conforming ref', !fb1.some(s => s.id === 1));
 
+// B1 for a ref field typed plain 'text' (built-in ref fields are) — must still shape-check
+// via the key-role coercion (the live invoice_number case).
+const b1t = [];
+for (let i = 1; i <= 5; i++) b1t.push({ document_id: i, field_key: 'invoice_number', value: `1184${i}`, field_type: 'text' });
+b1t.push({ document_id: 6, field_key: 'invoice_number', value: '152888', field_type: 'text' });   // 6-digit off-shape singleton
+check('B1 flags a TEXT-typed ref off-shape singleton (key-role coercion)', R.detectAnomalousValues(b1t).some(s => s.id === 6 && s.field === 'invoice_number'));
+
 // B1 recurrence exemption: a SECOND shape that recurs (≥2) is learned, not flagged.
 const b1r = b1.slice(0, 5).concat([
   { document_id: 6, field_key: 'ref', value: '9999999', field_type: 'alphanumeric' },
@@ -70,6 +77,32 @@ check('B3 flags letters in a currency field', R.detectAnomalousValues(b3).some(s
 // Thin-evidence gate: a field with < 6 confirmed values → nothing flagged.
 const thin = b1.slice(0, 4);
 check('thin field (<6) → no flags', R.detectAnomalousValues(thin).length === 0);
+
+// ── Outlier field explanations (per-field "why it looks out of place") ────────────
+console.log('explainOutlierFields — per-field reasons for an outlier doc');
+// 6 conforming refs '####' + the outlier doc (id 99) with an off-shape '######' ref
+// and a garbled supplier name. Only the outlier's fields get explained.
+const ov = [];
+for (let i = 1; i <= 6; i++) {
+  ov.push({ document_id: i, field_key: 'invoice_number', value: `31${i}0`, field_type: 'alphanumeric' });
+  ov.push({ document_id: i, field_key: 'supplier_name', value: 'SuperStore', field_type: 'text' });
+}
+ov.push({ document_id: 99, field_key: 'invoice_number', value: '152888', field_type: 'alphanumeric' });
+ov.push({ document_id: 99, field_key: 'supplier_name', value: 'xzq wq zzt', field_type: 'text' });
+const ef = R.explainOutlierFields(ov, [99]);
+check('explains the outlier ref (off-shape)', ef.some(s => s.id === 99 && s.field === 'invoice_number' && /usual format/.test(s.text)));
+check('explanation carries a dominant-shape example', ef.some(s => s.field === 'invoice_number' && s.example));
+check('explains the outlier garbled name', ef.some(s => s.id === 99 && s.field === 'supplier_name'));
+check('does NOT explain a conforming (non-outlier) doc', !ef.some(s => s.id !== 99));
+check('no outlier ids → nothing explained', R.explainOutlierFields(ov, []).length === 0);
+
+// A ref field typed plain 'text' (built-in ref fields are) must STILL get shape-checked via
+// the key-role coercion — this is the live invoice_number=######  vs dominant ##### case.
+const ovText = [];
+for (let i = 1; i <= 6; i++) ovText.push({ document_id: i, field_key: 'invoice_number', value: `3${i}150`, field_type: 'text' });
+ovText.push({ document_id: 99, field_key: 'invoice_number', value: '152888', field_type: 'text' });
+check('explains a TEXT-typed ref field via key-role coercion', R.explainOutlierFields(ovText, [99]).some(s => s.id === 99 && s.field === 'invoice_number'));
+check('isRefLike matches invoice_number / po_number / reference', R.isRefLike('invoice_number') && R.isRefLike('po_number') && R.isRefLike('reference') && !R.isRefLike('customer_name'));
 
 console.log(`\n${fail ? fail + ' FAILED' : 'All repairSuspects detector checks passed.'}`);
 process.exit(fail ? 1 : 0);

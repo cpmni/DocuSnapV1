@@ -540,14 +540,9 @@
     .btn.stop-batch:hover    { background:var(--warn-bg); }
     .btn.stop-batch:disabled { opacity:.4; cursor:not-allowed; }
 
-    #enhance-bar { padding: 6px 14px 0; flex-shrink: 0; }
-    #btn-enhance-toggle {
-      width: 100%; padding: 5px 0 4px; background: none; border: none;
-      border-top: 1px solid var(--border); color: var(--muted);
-      font-size: 10px; font-family: var(--sans); cursor: pointer;
-      text-align: left; letter-spacing: .04em; display: flex; align-items: center; gap: 4px;
-    }
-    #btn-enhance-toggle:hover { color: var(--accent2); }
+    /* #btn-enhance-toggle is a .queue-tool-btn in the tool rail — it inherits the shared
+       grey background/border/hover/open styling like the split/anchor/advanced buttons.
+       (The old full-width text-button override + its #enhance-bar were removed.) */
     #enhance-controls { display: none; padding: 5px 0 2px; flex-direction: column; gap: 6px; }
     #enhance-controls.open { display: flex; }
     .enh-row { display: flex; align-items: center; gap: 14px; }

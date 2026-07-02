@@ -237,16 +237,81 @@ function deconfirmDocument(db, id) {
 // List a scope's CONFIRMED documents (for the recovery preview / set-aside picker).
 function getConfirmedDocsForScope(db, { supplier_name, document_type_slug } = {}) {
   if (!document_type_slug) return [];
-  const sn = supplier_name || null;
+  // Supplier is a forgiving CONTAINS filter (partial company name), NOT an exact match —
+  // so "acme" finds "Acme Industrial Ltd" and near-duplicate/garbled variants too.
+  const sn = (supplier_name && String(supplier_name).trim()) ? String(supplier_name).trim() : null;
   return db.prepare(`
     SELECT d.id, d.original_filename, d.supplier_name, d.doc_date, d.reference_number,
-           d.confirmed_at, d.stored_filename
+           d.confirmed_at, d.stored_filename, d.stored_path, d.folder_path, d.working_path
     FROM documents d
     WHERE d.status = 'confirmed'
-      AND (@sn IS NULL OR d.supplier_name = @sn)
+      AND (@sn IS NULL OR d.supplier_name LIKE '%' || @sn || '%')
       AND d.document_type_id = (SELECT id FROM document_types WHERE slug = @slug)
     ORDER BY d.confirmed_at DESC
   `).all({ sn, slug: document_type_slug });
+}
+
+// Same column projection as getConfirmedDocsForScope, but for a specific id set — used by
+// Learning Repair to union full-type-pool outliers into a supplier-filtered browse list.
+function getConfirmedDocsByIds(db, ids) {
+  const list = [...new Set((ids || []).map(Number).filter(Number.isFinite))];
+  if (!list.length) return [];
+  const ph = list.map(() => '?').join(',');
+  return db.prepare(`
+    SELECT d.id, d.original_filename, d.supplier_name, d.doc_date, d.reference_number,
+           d.confirmed_at, d.stored_filename, d.stored_path, d.folder_path, d.working_path
+    FROM documents d
+    WHERE d.status = 'confirmed' AND d.id IN (${ph})
+    ORDER BY d.confirmed_at DESC
+  `).all(...list);
+}
+
+// Each field's CONFIRMED value for a doc, for the Learning Repair fields panel. A UNION so
+// the panel never shows "nothing recorded" for a confirmed doc that clearly has values:
+//   (1) the document's authoritative identity (company + the type's ref/date roles, from the
+//       documents row — always present post-confirm) FIRST, so Supplier/Date/Reference lead;
+//   (2) extraction rows (correction (latest) wins over the raw OCR read — shows confirmed
+//       "152888", not a superseded misread "St");
+//   (3) correction-only fields (a value learned at confirm with NO extraction row, e.g. a
+//       supplier_name that was empty at extraction time).
+// De-duped by field_key (first writer wins → identity is authoritative). Read-only.
+function getConfirmedFieldValues(db, id) {
+  const doc = db.prepare(`
+    SELECT d.supplier_name, d.reference_number, d.doc_date,
+           dt.ref_field_key, dt.date_field_key
+    FROM documents d LEFT JOIN document_types dt ON dt.id = d.document_type_id
+    WHERE d.id = ?`).get(id);
+  const out = [];
+  const seen = new Set();
+  const push = (key, value) => {
+    if (!key || value == null) return;
+    const v = String(value).trim();
+    if (!v || seen.has(key)) return;
+    seen.add(key); out.push({ field_key: key, value: v });
+  };
+  if (doc) {
+    push('supplier_name', doc.supplier_name);
+    if (doc.date_field_key) push(doc.date_field_key, doc.doc_date);
+    if (doc.ref_field_key)  push(doc.ref_field_key,  doc.reference_number);
+  }
+  const exRows = db.prepare(`
+    SELECT e.field_key AS field_key,
+           TRIM(COALESCE(
+             (SELECT c.corrected_value FROM corrections c
+                WHERE c.document_id = e.document_id AND c.field_key = e.field_key
+                ORDER BY c.rowid DESC LIMIT 1),
+             NULLIF(TRIM(e.display_value), ''),
+             e.raw_value)) AS value
+    FROM extractions e
+    WHERE e.document_id = ?
+    ORDER BY e.rowid
+  `).all(id);
+  for (const r of exRows) push(r.field_key, r.value);
+  const corrRows = db.prepare(
+    'SELECT field_key, corrected_value FROM corrections WHERE document_id = ? ORDER BY rowid'
+  ).all(id);
+  for (const r of corrRows) push(r.field_key, r.corrected_value);
+  return out;
 }
 
 function getReviewCount(db) {
@@ -456,7 +521,7 @@ module.exports = {
   getReviewQueue, getDeferredQueue, getByIds,
   getReviewCount, getDeferredCount, getStuckCount, getStuckQueue, getFiledCounts,
   softDelete, restoreDeleted, getDeletedQueue, getDeletedCount,
-  requeueConfirmedDocsForScope, getConfirmedDocsForScope, deconfirmDocument,
+  requeueConfirmedDocsForScope, getConfirmedDocsForScope, getConfirmedDocsByIds, getConfirmedFieldValues, deconfirmDocument,
   getFieldValueSuggestions,
   confirm, confirmIfReviewable, deferIfReviewable, restoreIfDeferred,
   deleteDoc, deleteByStatus, search,

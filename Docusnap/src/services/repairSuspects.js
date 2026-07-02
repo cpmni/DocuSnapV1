@@ -64,6 +64,15 @@ function isNameLike(key) {
   return /(^|_)(supplier|customer|company|vendor|client|name|address|payee|remitter)($|_)/.test(k);
 }
 
+// Reference/code-like field key (mirrors engine._is_ref_field): a structured code even when
+// the field is typed plain "text" (the built-in ref fields are — migration 3), so shape
+// checks must still apply. Covers invoice_number, po_number, sales_order_number, ticket_no,
+// serial_number, *_ref, reference.
+function isRefLike(key) {
+  const k = String(key || '').toLowerCase();
+  return /_(no|number|ref)$/.test(k) || /(^|_)reference($|_)/.test(k);
+}
+
 // ── Detector A: outlier documents ───────────────────────────────────────────────
 // rows: [{ id, logo_phash, keyword_fingerprint(array|json string), overall_confidence }]
 function detectOutlierDocs(rows) {
@@ -140,9 +149,11 @@ function detectAnomalousValues(vals) {
     const distinct = valueCounts.size;
     if (distinct < 3) continue;
 
-    const structured = g.type && STRUCTURED_CLASSES.has(g.type) && !isNameLike(field);
-    // Dominant shape (structured only).
-    let shapeSet = null, dominantShare = 0;
+    // A ref/code key (invoice_number, po_number, reference, …) is structured even when the
+    // field is typed plain "text" (the built-in ref fields are) — mirror engine._is_ref_field.
+    const structured = ((g.type && STRUCTURED_CLASSES.has(g.type)) || isRefLike(field)) && !isNameLike(field);
+    // Dominant shape (structured only) + an EXAMPLE value that follows it (the "usual" look).
+    let shapeSet = null, dominantShare = 0, dominantExample = null;
     if (structured) {
       const shapeCounts = new Map();
       for (const r of rows) { const s = shapeSignature(r.value); shapeCounts.set(s, (shapeCounts.get(s) || 0) + 1); }
@@ -150,6 +161,9 @@ function detectAnomalousValues(vals) {
       // (so it stays flaggable), while a genuinely-recurring second format is exempt.
       shapeSet = new Set([...shapeCounts].filter(([, c]) => c >= 2).map(([s]) => s));
       dominantShare = Math.max(...shapeCounts.values()) / confirmedCount;
+      let best = null, bestC = 0;
+      for (const [s, c] of shapeCounts) if (c > bestC) { bestC = c; best = s; }
+      dominantExample = (rows.find(r => shapeSignature(r.value) === best) || {}).value || null;
     }
     const nameLike = isNameLike(field) || g.type === 'text' && isNameLike(field);
 
@@ -159,15 +173,15 @@ function detectAnomalousValues(vals) {
       // for currency/number fields also fire on letters.
       if (BAD_CHARS.test(r.value)
           || ((g.type === 'currency' || g.type === 'number') && /[A-Za-z]/.test(r.value))) {
-        out.push({ id: r.doc, kind: 'data', field,
+        out.push({ id: r.doc, kind: 'data', field, value: r.value,
           text: `The ${field.replace(/_/g, ' ')} “${r.value}” contains characters we don't usually see here — worth a look.`,
           severity: 4 });
         continue;
       }
       // B1 — structured shape miss (single dominant shape ≥80%, off-shape singleton).
       if (structured && dominantShare >= 0.80 && singleton && !shapeSet.has(shapeSignature(r.value))) {
-        out.push({ id: r.doc, kind: 'data', field,
-          text: `The ${field.replace(/_/g, ' ')} “${r.value}” looks unusual for this type — the others follow a different pattern.`,
+        out.push({ id: r.doc, kind: 'data', field, value: r.value, example: dominantExample,
+          text: `The ${field.replace(/_/g, ' ')} “${r.value}” looks unusual for this type${dominantExample ? ` — the others usually look like “${dominantExample}”` : ' — the others follow a different pattern'}.`,
           severity: 3 });
         continue;
       }
@@ -178,9 +192,58 @@ function detectAnomalousValues(vals) {
         const badSupplier = (field === 'supplier_name' || field === 'customer_name')
           && learning.isPlausibleSupplierName && !learning.isPlausibleSupplierName(r.value);
         if ((q < 0.5 && multi) || badSupplier) {
-          out.push({ id: r.doc, kind: 'data', field,
+          out.push({ id: r.doc, kind: 'data', field, value: r.value,
             text: `The ${field.replace(/_/g, ' ')} “${r.value}” doesn't read like the others — you may want to check it.`,
             severity: 2 });
+        }
+      }
+    }
+  }
+  return out;
+}
+
+// ── Outlier field explanations ────────────────────────────────────────────────────
+// For a doc already flagged as a whole-document outlier ("might not belong"), point at
+// WHICH field values look off and why — comparing each of the outlier's values to the
+// type-wide norm. Emits kind:'data' + field reasons, so the Learning Repair fields panel
+// renders an inline amber note under the offending field with no extra UI work.
+// vals: the FULL-type-pool value rows (same shape as detectAnomalousValues' input).
+function explainOutlierFields(vals, outlierIds) {
+  const idset = new Set((outlierIds || []).map(Number));
+  if (!idset.size) return [];
+  const byField = new Map();
+  for (const r of (vals || [])) {
+    const v = (r.value == null ? '' : String(r.value)).trim();
+    if (!v) continue;
+    if (!byField.has(r.field_key)) byField.set(r.field_key, { type: r.field_type || null, rows: [] });
+    byField.get(r.field_key).rows.push({ doc: r.document_id, value: v });
+  }
+  const out = [];
+  for (const [field, g] of byField) {
+    const total = g.rows.length;
+    if (total < 4) continue;   // need a little evidence before calling one shape "usual"
+    const label = field.replace(/_/g, ' ');
+    const structured = ((g.type && STRUCTURED_CLASSES.has(g.type)) || isRefLike(field)) && !isNameLike(field);
+    // Dominant shape + an example value that follows it (structured fields only).
+    let dominantShape = null, dominantShare = 0, example = null;
+    if (structured) {
+      const shapeCounts = new Map();
+      for (const r of g.rows) { const s = shapeSignature(r.value); shapeCounts.set(s, (shapeCounts.get(s) || 0) + 1); }
+      let bestC = 0;
+      for (const [s, c] of shapeCounts) if (c > bestC) { bestC = c; dominantShape = s; }
+      dominantShare = bestC / total;
+      example = (g.rows.find(r => shapeSignature(r.value) === dominantShape) || {}).value || null;
+    }
+    for (const r of g.rows) {
+      if (!idset.has(Number(r.doc))) continue;
+      if (structured && dominantShare >= 0.6 && shapeSignature(r.value) !== dominantShape) {
+        out.push({ id: r.doc, kind: 'data', field, value: r.value, example,
+          text: `The ${label} “${r.value}” doesn’t match this type’s usual format${example ? ` of “${example}”` : ''} — this is part of why it looks out of place.` });
+      } else if (isNameLike(field)) {
+        const q = learning.nameQuality ? learning.nameQuality(r.value) : 1;
+        if (q < 0.5 && r.value.split(/\s+/).filter(Boolean).length >= 2) {
+          out.push({ id: r.doc, kind: 'data', field, value: r.value,
+            text: `The ${label} “${r.value}” doesn’t read like a typical name for this type.` });
         }
       }
     }
@@ -192,17 +255,22 @@ function detectAnomalousValues(vals) {
 function computeSuspects(db, { document_type_slug, supplier_name } = {}) {
   const empty = { byId: {}, count: 0 };
   if (!document_type_slug) return empty;
-  const sn = supplier_name || null, dt = document_type_slug;
+  const dt = document_type_slug;
+  // "Might not belong" is a WHOLE-TYPE judgement: an outlier is BY DEFINITION a different
+  // supplier from the norm, so a supplier "search" must NOT scope it away (that was the
+  // "outliers don't show up when I search" bug). Detector A + the outlier field-explanations
+  // run on the FULL type pool; Detector B (per-value anomalies) stays scoped to any supplier
+  // filter, preserving its per-supplier format precision.
+  const sn = (supplier_name && String(supplier_name).trim()) ? String(supplier_name).trim() : null;
 
   const docRows = db.prepare(`
     SELECT d.id, d.logo_phash, d.keyword_fingerprint, d.overall_confidence
     FROM documents d
     WHERE d.status = 'confirmed'
       AND d.document_type_id = (SELECT id FROM document_types WHERE slug = @dt)
-      AND (@sn IS NULL OR d.supplier_name = @sn)
-  `).all({ dt, sn });
+  `).all({ dt });
 
-  const valRows = db.prepare(`
+  const valSelect = (scoped) => db.prepare(`
     SELECT e.document_id, e.field_key,
            TRIM(COALESCE(c.corrected_value, e.display_value, e.raw_value)) AS value,
            fld.type AS field_type
@@ -212,15 +280,26 @@ function computeSuspects(db, { document_type_slug, supplier_name } = {}) {
     LEFT JOIN fields fld ON fld.document_type_id = d.document_type_id AND fld.key = e.field_key
     WHERE d.status = 'confirmed'
       AND d.document_type_id = (SELECT id FROM document_types WHERE slug = @dt)
-      AND (@sn IS NULL OR d.supplier_name = @sn)
-  `).all({ dt, sn });
+      ${scoped ? "AND (@sn IS NULL OR d.supplier_name LIKE '%' || @sn || '%')" : ''}
+  `).all(scoped ? { dt, sn } : { dt });
+
+  const valRowsFull   = valSelect(false);
+  const valRowsScoped = sn ? valSelect(true) : valRowsFull;
 
   const byId = {};
-  const add = (id, reason) => { (byId[id] || (byId[id] = { reasons: [], severity: 0 })).reasons.push(reason); };
-  for (const s of detectOutlierDocs(docRows)) { add(s.id, { kind: 'belong', text: s.text }); byId[s.id].severity = Math.max(byId[s.id].severity, 3); }
-  for (const s of detectAnomalousValues(valRows)) { add(s.id, { kind: 'data', field: s.field, text: s.text }); byId[s.id].severity = Math.max(byId[s.id].severity, s.severity || 2); }
+  const add = (id, reason, sev) => {
+    const b = byId[id] || (byId[id] = { reasons: [], severity: 0 });
+    if (reason.field && b.reasons.some(r => r.field === reason.field)) return;   // one reason per field
+    b.reasons.push(reason);
+    b.severity = Math.max(b.severity, sev || 0);
+  };
+
+  const outliers = detectOutlierDocs(docRows);
+  for (const s of outliers) add(s.id, { kind: 'belong', text: s.text }, 3);
+  for (const s of detectAnomalousValues(valRowsScoped)) add(s.id, { kind: 'data', field: s.field, value: s.value, example: s.example || null, text: s.text }, s.severity || 2);
+  for (const s of explainOutlierFields(valRowsFull, outliers.map(o => o.id))) add(s.id, { kind: 'data', field: s.field, value: s.value, example: s.example || null, text: s.text }, 2);
 
   return { byId, count: Object.keys(byId).length };
 }
 
-module.exports = { computeSuspects, detectOutlierDocs, detectAnomalousValues, shapeSignature, hammingHex, jaccard, isNameLike };
+module.exports = { computeSuspects, detectOutlierDocs, detectAnomalousValues, explainOutlierFields, shapeSignature, hammingHex, jaccard, isNameLike, isRefLike };

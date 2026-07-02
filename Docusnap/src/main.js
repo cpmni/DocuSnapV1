@@ -687,7 +687,24 @@ app.whenReady().then(() => {
   app.on('browser-window-created', (_e, win) => {
     const grabFocus = () => { try { win.focus(); win.webContents.focus(); } catch {} };
     win.on('show', grabFocus);
+    win.on('focus', grabFocus);   // restore-from-minimise / click-back-in re-syncs keyboard focus too
     if (win.isVisible()) grabFocus();
+  });
+
+  // Renderer-driven keyboard-focus repair (Windows): the preload asks for this when a
+  // click enters a text field while the render widget lacks OS keyboard focus (the
+  // "click a box, no caret until I alt-tab out and back" bug). Re-focusing the sending
+  // webContents re-syncs it without an OS window-focus change. Sender-scoped + guarded.
+  ipcMain.on('ensure-window-focus', (e) => {
+    try {
+      const wc = e.sender; if (!wc || wc.isDestroyed()) return;
+      // Focus the owning WINDOW first, then the webContents — on Windows, after a native
+      // dialog closes wc.focus() alone can leave keyboard focus unrouted until the window
+      // itself is re-focused. Both are no-ops when already focused.
+      const win = BrowserWindow.fromWebContents(wc);
+      if (win && !win.isDestroyed()) win.focus();
+      wc.focus();
+    } catch {}
   });
 
   // Splash first, before any other startup work, so it appears immediately.

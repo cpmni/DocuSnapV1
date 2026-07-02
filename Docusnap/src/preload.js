@@ -290,6 +290,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   recoveryRestoreDocs: (ids)     => ipcRenderer.invoke('recovery-restore-docs', ids),
   // Learning Repair (browse/preview/suspects/send-to-review)
   repairOverview:      (scope)   => ipcRenderer.invoke('repair-overview', scope),
+  repairDocFields:     (id)      => ipcRenderer.invoke('repair-doc-fields', id),
   repairDeconfirm:     (id)      => ipcRenderer.invoke('repair-deconfirm', id),
   repairDelete:        (id)      => ipcRenderer.invoke('repair-delete', id),
 
@@ -339,12 +340,18 @@ contextBridge.exposeInMainWorld('docusnap', {
 // when focus is already fine, so a normal click is untouched.
 window.addEventListener('pointerdown', (e) => {
   try {
-    if (document.hasFocus()) return;   // focus is fine → nothing to repair
     const t = e.target;
     const el = t && t.closest && t.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]');
     if (!el) return;                    // only repair when actually entering a field
+    // ALWAYS re-assert webContents keyboard focus on a text-field press. document.hasFocus()
+    // is UNRELIABLE here: after a native confirm()/alert() (the Review window uses these for
+    // the digit/issuer/delete prompts) — or a child window closing — the window reports
+    // focused while the render widget has lost keyboard focus, so the old `hasFocus()` guard
+    // skipped the repair in exactly the case that needs it ("clicked the box, can't type
+    // until I alt-tab out and back"). wc.focus() is cheap + idempotent on a normal click.
     ipcRenderer.send('ensure-window-focus');
-    // Re-assert the caret after the webContents regains OS keyboard focus (next frame).
-    requestAnimationFrame(() => { try { el.focus(); } catch {} });
+    // Re-assert the caret next frame ONLY if the press didn't already focus the field — so a
+    // normal click's caret position is never disturbed; the broken case gets its focus back.
+    requestAnimationFrame(() => { try { if (document.activeElement !== el) el.focus(); } catch {} });
   } catch { /* never let focus repair break a click */ }
 }, true);
