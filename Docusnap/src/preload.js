@@ -284,6 +284,10 @@ contextBridge.exposeInMainWorld('docusnap', {
   clearLearningHints:  (params)   => ipcRenderer.invoke('clear-learning-hints', params),
   clearLearningCorrections: (params) => ipcRenderer.invoke('clear-learning-corrections', params),
   clearLearningFieldRules: (params) => ipcRenderer.invoke('clear-learning-field-rules', params),
+  // "Fix a document type" recovery (scope reset + document set-aside)
+  recoveryOverview:    (scope)   => ipcRenderer.invoke('recovery-overview', scope),
+  recoveryApply:       (payload) => ipcRenderer.invoke('recovery-apply', payload),
+  recoveryRestoreDocs: (ids)     => ipcRenderer.invoke('recovery-restore-docs', ids),
 
   // ── Advanced (Settings tab) — keyword label overrides ───────────────────────
   getLabelOverrides:   ()        => ipcRenderer.invoke('get-label-overrides'),
@@ -317,3 +321,26 @@ contextBridge.exposeInMainWorld('docusnap', {
   devGetSessionDoc:    (key)     => ipcRenderer.invoke('dev-get-session-doc', key),
   devGetSlice:         (path)    => ipcRenderer.invoke('dev-get-slice', path),
 });
+
+// ── Keyboard-focus repair (Windows) ────────────────────────────────────────────
+// Electron on Windows can leave a window's render widget WITHOUT keyboard focus while
+// the OS window still HAS focus — so clicking a text field shows no caret and won't
+// type until you click out of the app and back in (which forces an OS focus re-sync).
+// The window 'show'/'focus' grabFocus in main can't catch this: no OS focus change
+// happens (e.g. after a native confirm()/alert() dialog, or a child window closes).
+// Repair it from the renderer — which runs in EVERY window via this preload: when a
+// pointer press lands on a text control while the document lacks keyboard focus, ask
+// main to re-focus the webContents, then re-assert focus on the pressed control. The
+// preload shares the page DOM (contextIsolation isolates JS scope, not the DOM). No-op
+// when focus is already fine, so a normal click is untouched.
+window.addEventListener('pointerdown', (e) => {
+  try {
+    if (document.hasFocus()) return;   // focus is fine → nothing to repair
+    const t = e.target;
+    const el = t && t.closest && t.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]');
+    if (!el) return;                    // only repair when actually entering a field
+    ipcRenderer.send('ensure-window-focus');
+    // Re-assert the caret after the webContents regains OS keyboard focus (next frame).
+    requestAnimationFrame(() => { try { el.focus(); } catch {} });
+  } catch { /* never let focus repair break a click */ }
+}, true);

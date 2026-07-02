@@ -247,6 +247,52 @@ function register(ctx) {
     return { changes: result.changes };
   });
 
+  // ── "Fix a document type" recovery ───────────────────────────────────────────
+  // A single, safe recovery for a (document type, optional supplier) scope: set aside the
+  // offending confirmed docs (recycle bin — reversible) + optionally forget the scope's
+  // learning. Composes the scope clears + softDelete via recoveryService; never touches
+  // logo_fingerprints/templates. See src/services/recoveryService.js.
+  const recoverySvc = require('../../services/recoveryService').createRecoveryService({ learning });
+  ipcMain.handle('recovery-overview', (_e, scope) => {
+    requireRole('admin');
+    return recoverySvc.overview(getDb(), scope || {});
+  });
+  ipcMain.handle('recovery-apply', (_e, payload) => {
+    requireRole('admin');
+    const db = getDb();
+    const p = payload || {};
+    // .bak safety net for the NON-reversible learning clears (set-aside alone is reversible
+    // via the recycle bin). Best-effort — recovery still proceeds if the copy fails.
+    let backup = null;
+    if (p.forgetLearning || p.requeue) {
+      try {
+        const fs = ctx.fs || require('fs');
+        if (db.name && fs.existsSync(db.name)) {
+          const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+          backup = `${db.name}.bak-recovery-${stamp}`;
+          fs.copyFileSync(db.name, backup);
+        }
+      } catch (e) { backup = null; try { ctx.logger?.warn?.(`[recovery] DB backup failed: ${e.message}`); } catch {} }
+    }
+    const res = recoverySvc.apply(db, {}, p);
+    try {
+      logAudit(db, { action: 'recovery_apply', action_category: 'processing', target_type: 'document_type',
+        outcome: res.ok ? 'success' : 'failure',
+        metadata: { type: p.document_type_slug || null, supplier: p.supplier_name || null, ...(res.summary || {}) } });
+    } catch {}
+    if (res.ok) notifyAllWindows('review-count-changed', require('../../../database/modules/documents').getReviewCount(db));
+    return { ...res, backup };
+  });
+  // Undo: restore set-aside docs from the recycle bin.
+  ipcMain.handle('recovery-restore-docs', (_e, ids) => {
+    requireRole('admin');
+    const db = getDb();
+    const documents = require('../../../database/modules/documents');
+    let restored = 0;
+    for (const id of (Array.isArray(ids) ? ids : [])) { try { restored += documents.restoreDeleted(db, id).changes || 0; } catch {} }
+    return { restored };
+  });
+
   // ── App settings (key-value) ─────────────────────────────────────────────────
   // get-setting stays open even pre-login: theme.js reads 'theme' from every
   // window — including the login screen, before currentSession exists — to
