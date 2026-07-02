@@ -1653,6 +1653,27 @@ purchase_order docs whose OCR'd title mis-detects as invoice → the invoice ref
 (cascade a learned template closes). (`stress_test/analyze.js` is the older variant that runs against a
 pre-LEARNED `stress.db` instead of a fresh one — use accuracy_harness.js for the clean baseline.)
 
+**Import LOAD & ROBUSTNESS harness** — `stress_test/import_load_harness.js` (run:
+`ELECTRON_RUN_AS_NODE=1 node_modules/.bin/electron stress_test/import_load_harness.js`). Hammers the
+real Python backend under PARALLELISM (sharded ×8, mirrors the manual/watch worker pool) over a
+large MIXED batch = ~160 valid corpus docs (text + scanned interleaved) + 8 PATHOLOGICAL files
+(zero-byte, random garbage, truncated PDF, plain-text-renamed-.pdf, header-only, uppercase-ext,
+Unicode name, 2 MB non-PDF bulk). THE INVARIANT: no input file is ever lost on import — every file
+is accounted for by EXACTLY ONE `file_done` (valid→success, corrupt→ISOLATED `status:error`), and one
+bad file must NEVER crash a worker and drop the rest of its shard. **Result (2026-07-02, ~41s):**
+168/168 file_done, all 8 shards exit 0, 160/160 valid ok, the 4 clearly-corrupt files isolated as
+error, 0 lost — proves per-file try/except isolation holds under load (the 2 "parsed clean"
+pathological files are the odd/Unicode-named copies that are ACTUALLY valid PDFs). Sandboxed (temp
+import folder + fresh in-memory DB snapshot; never the live DB). Residual not covered: a NATIVE
+Tesseract/pdfium segfault or an OCR HANG on a crafted page (no per-file timeout — see the audit's
+"corrupt file" note) needs a crafted file to trigger.
+
+**Manual renderer-race checklist** — `stress_test/MANUAL_RENDERER_TESTS.md`: step-by-step manual
+scripts for the fixes that live purely in the Electron RENDERER and can't be driven headlessly
+(File-All-Ready wrong-doc race #5, reprocess-discards-edits warning #3, empty-issuer warn #6,
+no-reference-type Confirm dead-end #2, dashboard Auto-import toggle-vs-drag). Each lists the action +
+expected result + fail signals. Migrate a case out once it's automatable via a UI-automation harness.
+
 ---
 
 ## UI conventions
