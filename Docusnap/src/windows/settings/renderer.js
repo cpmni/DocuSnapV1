@@ -3102,7 +3102,7 @@ async function runLearningSearch() {
 }
 
 // ── "Fix a document type" recovery wizard ─────────────────────────────────────
-let _recWired = false, _recSetAsideIds = [];
+let _recWired = false, _recSetAsideIds = [], _recSuggestedCount = 0;
 function _recEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
 async function recInit() {
@@ -3131,7 +3131,10 @@ async function recInit() {
 
 function recUpdateCount() {
   const n = document.querySelectorAll('#rec-doclist input[type=checkbox]:checked').length;
-  document.getElementById('rec-doc-count').textContent = n ? `${n} selected` : 'none selected';
+  const el = document.getElementById('rec-doc-count');
+  if (n) { el.textContent = `${n} selected`; el.style.color = ''; }
+  else if (_recSuggestedCount) { el.innerHTML = `<span style="color:var(--warn);">${_recSuggestedCount} look like they're also filed under another type — likely culprits</span>`; }
+  else { el.textContent = 'none selected'; el.style.color = ''; }
 }
 
 async function recCheck() {
@@ -3151,15 +3154,18 @@ async function recCheck() {
   document.getElementById('rec-forget-sup').textContent = supplier ? ` from “${supplier}”` : '';
 
   const docs = ov.documents || [];
+  const suggested = new Set(ov.suggestedIds || []);
   const list = document.getElementById('rec-doclist');
   list.innerHTML = docs.length ? docs.map(d => {
     const meta = [d.supplier_name, d.reference_number, d.doc_date].filter(Boolean).join(' · ');
-    return `<label style="display:flex; gap:8px; align-items:center; padding:3px 4px; font-size:12px;">
+    const sug = suggested.has(d.id);
+    return `<label style="display:flex; gap:8px; align-items:center; padding:3px 4px; font-size:12px;${sug ? ' background:var(--warn-bg,rgba(176,120,22,.10)); border-radius:6px;' : ''}">
       <input type="checkbox" value="${d.id}">
-      <span style="flex:1; min-width:0;"><span style="font-family:var(--mono);">${_recEsc(d.original_filename)}</span>${meta ? ` — <span style="color:var(--muted);">${_recEsc(meta)}</span>` : ''}</span>
+      <span style="flex:1; min-width:0;"><span style="font-family:var(--mono);">${_recEsc(d.original_filename)}</span>${meta ? ` — <span style="color:var(--muted);">${_recEsc(meta)}</span>` : ''}${sug ? ' <span style="color:var(--warn); font-size:11px;">⚠ also filed under another type</span>' : ''}</span>
     </label>`;
   }).join('') : '<div class="section-desc" style="margin:4px;">No confirmed documents in this scope.</div>';
   list.querySelectorAll('input[type=checkbox]').forEach(c => c.addEventListener('change', recUpdateCount));
+  _recSuggestedCount = suggested.size;
 
   document.getElementById('rec-forget').checked = false;
   document.getElementById('rec-requeue').checked = false;

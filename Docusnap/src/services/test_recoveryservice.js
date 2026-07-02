@@ -83,9 +83,17 @@ check('Undo restores the set-aside docs to confirmed', invBad.every(id => docume
 // ── guard: nothing selected ───────────────────────────────────────────────────
 check('apply with nothing selected → error', svc.apply(db, {}, { document_type_slug: 'invoice' }).ok === false);
 
+// ── diagnosis: same doc filed under two types is flagged (read-only suggestion) ──
+const dupInv = confirmedDoc({ supplier: 'Dup', typeId: invId, field: 'total_amount', value: '$1.00' });
+const dupSO  = confirmedDoc({ supplier: 'Dup', typeId: soId,  field: 'total_amount', value: '$1.00' });
+documents.update(db, dupInv, { reference_number: 'DUP-REF-1' });
+documents.update(db, dupSO,  { reference_number: 'DUP-REF-1' });
+check('diagnosis flags a doc also filed under another type', (svc.overview(db, { document_type_slug: 'invoice', supplier_name: 'Dup' }).suggestedIds || []).includes(dupInv));
+check('diagnosis leaves a normal doc unflagged', !(svc.overview(db, { document_type_slug: 'invoice', supplier_name: 'Beta' }).suggestedIds || []).includes(betaGood));
+
 // ── requeue variant (whole-type de-confirm) ───────────────────────────────────
 const rq = svc.apply(db, {}, { document_type_slug: 'sales_order', requeue: true });
-check('requeue de-confirms the sales_order docs', rq.summary.requeued === 3 && soBad.every(id => documents.getById(db, id).status === 'needs_review'));
+check('requeue de-confirms the sales_order docs', rq.summary.requeued === 4 && soBad.every(id => documents.getById(db, id).status === 'needs_review'), `(${rq.summary.requeued})`);
 
 db.close();
 console.log(`\n${fail ? fail + ' FAILED' : 'All recoveryService checks passed.'}`);

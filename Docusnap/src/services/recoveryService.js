@@ -25,11 +25,30 @@ function createRecoveryService(deps = {}) {
     `SELECT COUNT(*) AS n FROM ${table} WHERE (@sn IS NULL OR supplier_name = @sn) AND (@dt IS NULL OR document_type = @dt)`
   ).get({ sn: sn || null, dt: dt || null }).n;
 
+  // Light, READ-ONLY diagnosis: confirmed docs in THIS scope whose reference number or
+  // filename ALSO appears under a DIFFERENT document type — the classic "same document
+  // filed under two types" poison. Returned as SUGGESTIONS to highlight, never auto-ticked.
+  function _crossTypeSuspects(db, sn, dt) {
+    try {
+      return db.prepare(`
+        SELECT DISTINCT d.id
+        FROM documents d
+        JOIN document_types t ON t.id = d.document_type_id AND t.slug = @dt
+        JOIN documents o ON o.status = 'confirmed' AND o.id <> d.id
+             AND o.document_type_id <> d.document_type_id
+             AND ( (d.reference_number IS NOT NULL AND TRIM(d.reference_number) <> '' AND o.reference_number = d.reference_number)
+                OR (o.original_filename = d.original_filename) )
+        WHERE d.status = 'confirmed' AND (@sn IS NULL OR d.supplier_name = @sn)
+      `).all({ sn: sn || null, dt }).map(r => r.id);
+    } catch { return []; }
+  }
+
   // Read-only summary for the wizard preview.
   function overview(db, { document_type_slug, supplier_name } = {}) {
     if (!document_type_slug) return { error: 'A document type is required.' };
     const sn = supplier_name || null, dt = document_type_slug;
     const docs = documents.getConfirmedDocsForScope(db, { supplier_name: sn, document_type_slug: dt });
+    const suggestedIds = _crossTypeSuspects(db, sn, dt);
     return {
       scope: { document_type_slug: dt, supplier_name: sn },
       learned: {
@@ -40,7 +59,9 @@ function createRecoveryService(deps = {}) {
       },
       confirmedCount: docs.length,
       documents: docs,
-      // diagnosis suggestions are attached by the caller (Slice 4) — read-only, never auto-run.
+      // Read-only suggestions to HIGHLIGHT (never pre-tick / auto-run): docs that also
+      // appear under another type — the likely "filed under the wrong type" culprits.
+      suggestedIds,
     };
   }
 
