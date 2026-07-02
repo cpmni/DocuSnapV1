@@ -436,7 +436,10 @@ function initDashSortable() {
     if (grid.dataset.sortWired) continue;
     grid.dataset.sortWired = '1';   // delegate on the grid (survives card content re-renders)
     grid.addEventListener('mousedown', (e) => {
-      if (e.button !== 0 || e.target.closest('button, a, input, select, textarea')) return;
+      // Don't start a drag from an interactive control living in the header — e.g. the
+      // Auto-import on/off switch is a <label>/.dash-switch (its checkbox is visually
+      // hidden), so a plain `input` exclusion missed it and the drag swallowed the toggle.
+      if (e.button !== 0 || e.target.closest('button, a, input, select, textarea, label, .dash-switch')) return;
       const head = e.target.closest('.dash-card-head');
       const card = head && head.closest('.dash-card');
       if (!head || !card || card.parentElement !== grid || card.classList.contains('card-hidden')) return;
