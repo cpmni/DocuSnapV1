@@ -1746,6 +1746,28 @@ license-state(gate)                    # pushed to the license window with the b
 
 ## Known bugs (fix these first)
 
+### OPEN QA FINDINGS (2026-07-02 audit — see `NIGHT_QA_AUDIT_2026-07-02.md`)
+An overnight read-only adversarial audit (tester + eric/reggie/bob consults) logged **11
+unfixed findings** in `NIGHT_QA_AUDIT_2026-07-02.md` (repo root) — read it before touching
+Review-confirm, backup/restore, document-type/field creation, or the processing event loop.
+Headlines (each has repro + code location + fix direction in the report; NOT yet implemented):
+- **HIGH** — backup restore silently RE-TYPES documents or aborts opaquely (FK/id hazard,
+  `backupService.js`); a type with NO ref/date role can NEVER be confirmed — dead-end
+  (`review/renderer.js validateConfirm` `|| 'invoice_number'`/`'invoice_date'` fallback vs
+  the backend's deliberate "reference optional"); "Reprocess" silently discards in-progress
+  manual edits + type choice; batch processing FREEZES all windows (synchronous
+  `spawnSync(pdf_rotate)` + `copyFileSync` on the `file_done` path in `processing/handler.js`).
+- **MED** — "File All Ready" race can file the WRONG doc (delete/row-click in the await gap);
+  empty Document Issuer silently files under "Unknown Company"; non-Latin/emoji type names
+  collapse to slug `"_"` → UNIQUE collision; watch folder overlapping the output folder (flat
+  pattern) → unbounded `-DUPLICATE` growth.
+- **LOW** — `buildXml` throws on a malformed field key → orphan file + stuck doc; empty-sanitised
+  supplier drops the company folder; search has no From>To guard.
+- **ROOT CAUSE (slug/key):** five derivations disagree — reggie's canonical `safeSlug` unifies them;
+  smallest crash-stopper is hardening `buildXml` (`filing/handler.js:273`). Verified SOUND (don't
+  re-audit): CAS confirm, SQL-injection (search is parameterized), clock-rollback HWM, corrupt-file
+  per-file isolation, window-lifecycle destroy-guards.
+
 ### BUG 1+2 — `str object has no attribute get`
 **File**: `python_backend/process_docs.py`
 **Cause**: engine.extract() returns _ prefixed metadata as plain strings mixed
