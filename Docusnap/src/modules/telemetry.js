@@ -25,7 +25,7 @@ const EVENTS = {
   app_start:           ['app_version', 'build_rev', 'os_version', 'electron_version', 'arch'],
   app_exit:            [],
   main_crash:          ['error_class', 'file', 'line'],
-  renderer_crash:      ['reason', 'file', 'line'],
+  renderer_crash:      ['reason', 'window', 'exit_code', 'file', 'line'],
   unhandled_error:     ['error_class', 'file', 'line'],
   python_exit:         ['exit_code', 'stage'],
   extraction_error:    ['stage', 'error_class', 'file', 'line'],

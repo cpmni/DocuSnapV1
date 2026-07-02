@@ -113,7 +113,10 @@ async function selectDoc(doc) {
   ph.innerHTML      = '<div class="spinner"></div>';
 
   const full = await window.docusnap.getDocumentWithExtractions(doc.id);
-  renderPreviewFields(full || doc);
+  // `full` (getWithExtractions → getById) carries the extractions but NOT type_name (no
+  // join to document_types), while the search-result `doc` DOES — so merge, keeping doc's
+  // type_name/type_slug (otherwise the preview "Type" always shows "-").
+  renderPreviewFields({ ...doc, ...(full || {}) });
   window.SearchActions.renderActions(doc);
 
   const { folderPath, filename } = _fileArgs(doc);

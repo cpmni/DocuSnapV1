@@ -469,8 +469,23 @@ function search(db, { company, reference, dateFrom, dateTo,
     params.docType = docType;
   }
   if (fullText && fullText.trim()) {
-    sql += ` AND d.ocr_text LIKE @fullText`;
-    params.fullText = `%${fullText.trim()}%`;
+    // "Full text" searches ALL of a document's data — the OCR page text, the core identity
+    // columns, AND every extracted/corrected field value (amounts, dates, codes, names…) —
+    // so a value is found wherever it lives, of ANY type, not only in the OCR layer (which
+    // can be empty). Thousands separators are stripped from BOTH sides so "1137" finds
+    // "1,137" and "1,137" finds "1137". Case-insensitive (SQLite LIKE on ASCII). The
+    // EXISTS subqueries key on document_id (indexed) so this stays cheap.
+    sql += ` AND (
+      REPLACE(COALESCE(d.ocr_text,''), ',', '')           LIKE @fullText
+      OR REPLACE(COALESCE(d.supplier_name,''), ',', '')   LIKE @fullText
+      OR REPLACE(COALESCE(d.reference_number,''), ',', '') LIKE @fullText
+      OR REPLACE(COALESCE(d.doc_date,''), ',', '')        LIKE @fullText
+      OR EXISTS (SELECT 1 FROM extractions e WHERE e.document_id = d.id
+                 AND REPLACE(COALESCE(e.display_value, e.raw_value, ''), ',', '') LIKE @fullText)
+      OR EXISTS (SELECT 1 FROM corrections c WHERE c.document_id = d.id
+                 AND REPLACE(COALESCE(c.corrected_value,''), ',', '') LIKE @fullText)
+    )`;
+    params.fullText = `%${fullText.trim().replace(/,/g, '')}%`;
   }
 
   sql += ` ORDER BY d.confirmed_at DESC, d.processed_at DESC LIMIT @limit`;

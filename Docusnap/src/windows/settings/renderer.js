@@ -412,10 +412,27 @@ document.querySelectorAll('input[name="proc-mode"]').forEach(r => {
 // ── Parallel document processing (worker count) ───────────────────────────────
 const concurrencySelect = document.getElementById('processing-concurrency');
 async function loadProcessingConcurrency() {
+  // Size the picker to THIS PC's cores (core-aware cap in the processing handler), so a
+  // powerful machine can go higher and a modest one can't oversubscribe.
+  let cores = 4, cap = 4;
+  try { const info = await api.getConcurrencyInfo(); if (info) { cores = info.cores || cores; cap = info.maxConcurrency || cap; } } catch {}
+  cap = Math.max(1, cap);
+  concurrencySelect.innerHTML = Array.from({ length: cap }, (_, i) =>
+    `<option value="${i + 1}">${i + 1}</option>`).join('');
+
   let n = parseInt(await api.getSetting('processing_concurrency'), 10);
   if (!Number.isFinite(n)) n = 1;
-  n = Math.max(1, Math.min(5, n));   // cross-document parallelism ceiling (default 1)
+  n = Math.max(1, Math.min(cap, n));   // clamp the stored value to this PC's ceiling
   concurrencySelect.value = String(n);
+
+  const help = document.getElementById('concurrency-help');
+  if (help) {
+    help.textContent =
+      `How many documents ScanFinder reads at the same time. This PC has ${cores} processor `
+      + `core${cores === 1 ? '' : 's'}, so you can go up to ${cap}. Higher is faster on a powerful `
+      + `PC with plenty of memory, but each extra document uses more CPU and RAM — on a modest or `
+      + `busy PC, too many can actually slow things down or run low on memory. If unsure, 1–2 is safe.`;
+  }
 }
 loadProcessingConcurrency();
 

@@ -296,6 +296,17 @@ function _isOpenablePath(db, rawPath) {
 // scripts (e.g. pdf_rotate.py) without threading ctx through every caller.
 let _pyHelpers = null;
 
+// Core-aware ceiling for cross-document parallelism (the `processing_concurrency` setting).
+// Parallelism only helps up to ~the machine's CPU cores — beyond that the per-worker
+// Tesseract/threadCap split floors to 1 and the extra processes just thrash the CPU + RAM
+// (each worker holds 300-DPI page images). So the cap tracks the detected core count, with a
+// hard ceiling of 10 (past which the single-threaded JS persistence step is the bottleneck
+// regardless of CPU). A modest PC therefore can't oversubscribe; a powerful one can go higher.
+function maxConcurrency() {
+  const cores = os.cpus().length || 1;
+  return Math.max(1, Math.min(10, cores));
+}
+
 function register(ctx) {
   const { ipcMain, getDb, pythonExe, pythonArgs, tesseractPath,
           backendScript, configPath, notifyMainWindow, notifyDevInspector,
@@ -631,10 +642,10 @@ function register(ctx) {
     // OCR/extraction, never DB/learning state. Default 1 = unchanged sequential.
     let concurrency = parseInt(learning.getSetting(db, 'processing_concurrency', '1'), 10);
     if (!Number.isFinite(concurrency)) concurrency = 1;
-    // Cap at 5: cross-document parallelism only helps up to ~the CPU core count;
-    // above that the per-proc Tesseract/threadCap split starves and the batch thrashes
-    // rather than speeds up. Default is 1.
-    concurrency = Math.max(1, Math.min(5, concurrency));
+    // Core-aware ceiling (see maxConcurrency): cross-document parallelism only helps up to
+    // ~the CPU core count; above that the per-worker Tesseract/threadCap split starves and the
+    // batch thrashes rather than speeds up. Default is 1.
+    concurrency = Math.max(1, Math.min(maxConcurrency(), concurrency));
 
     _cancelRequested   = false;
     _currentBatchProcs = [];
@@ -853,6 +864,13 @@ function register(ctx) {
   // ── Stuck (failed) documents — the launchpad "couldn't be read" surface ──────
   // Ungated reads (a count/list is not sensitive); the "Try again" action reuses
   // the role-gated reprocess-document IPC below.
+  // CPU info for the Settings "Documents processed at once" control — lets the renderer
+  // size the picker to this machine's cores and explain the choice. Read-only.
+  ipcMain.handle('get-concurrency-info', () => ({
+    cores: os.cpus().length || 1,
+    maxConcurrency: maxConcurrency(),
+  }));
+
   ipcMain.handle('get-stuck-count', () =>
     require('../../../database/modules/documents').getStuckCount(getDb()));
   ipcMain.handle('get-stuck-docs', () =>

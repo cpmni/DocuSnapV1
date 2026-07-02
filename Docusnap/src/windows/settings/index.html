@@ -607,15 +607,11 @@
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Documents processed at once</div>
-                <div class="threshold-sub">How many documents ScanFinder may OCR/process at the same time. Higher values may be faster on powerful PCs but use more CPU and memory.</div>
+                <div class="threshold-sub" id="concurrency-help">How many documents ScanFinder may read at the same time. Higher values are faster on powerful PCs but use more CPU and memory.</div>
               </div>
-              <!-- TESTING: options 6–10 added to evaluate higher parallelism; trim back to 5 before shipping -->
+              <!-- Options are populated by the renderer, sized to this PC's CPU cores (get-concurrency-info). -->
               <select id="processing-concurrency" class="field-select" style="width:80px;">
                 <option value="1">1</option>
-                <option value="2">2</option>
-                <option value="3">3</option>
-                <option value="4">4</option>
-                <option value="5">5</option>
               </select>
             </div>
             <div class="threshold-row">

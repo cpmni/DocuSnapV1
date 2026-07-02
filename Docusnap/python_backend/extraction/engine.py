@@ -1469,6 +1469,45 @@ class ExtractionEngine:
                 _method = data.get('method') or ''
                 _label_confirmed = (_method in anchor._LABEL_CONFIRMED_METHODS
                                     or _is_stage05_located(_method))
+                # ── Precise-type integrity (MAC/IP) ── a field with a PRECISE format whose
+                # value does NOT satisfy it is malformed — an OCR slip like a non-hex 'T' in
+                # a MAC ("00:26:T3:F9:56:38"). The generic charset below can't catch it (a
+                # letter is charset-valid), and the precise pattern is otherwise used only to
+                # GRANT authority, never to flag a miss. So when a non-authoritative value sits
+                # on a precise-type field: trim surrounding junk if a valid address is embedded
+                # (silent — fixes a trailing OCR control char that also caused the bogus
+                # "unexpected characters ()" flag); else recover a single OCR-confusion slip if
+                # it makes the value fully valid (recover-and-FLAG, review-forced); else flag it.
+                if (_val_key in anchor._PRECISE_VAL_TYPES
+                        and validation_patterns.get(_val_key) and not _authoritative):
+                    _norm, _kind = value_quality.normalize_network_address(
+                        str(val), _val_key, validation_patterns[_val_key])
+                    _nice = {'mac_address': 'MAC address',
+                             'ip_address': 'IP address'}.get(_val_key, _val_key.replace('_', ' '))
+                    if _kind == 'clean':
+                        results[key] = {**data, 'value': _norm, 'display_value': _norm}
+                        continue                       # valid after trimming junk — no flag
+                    if _kind == 'repaired':
+                        results[key] = {
+                            **data, 'value': _norm, 'display_value': _norm,
+                            'was_corrected': True, 'corrected_to': _norm,
+                            'confidence':      min(data.get('confidence') or 0, 70),
+                            'validation_note': "auto-corrected a likely misread (was “"
+                                               + str(val) + "”) — please verify",
+                        }
+                        n_flagged += 1
+                        format_anomaly_flagged = True
+                        continue
+                    if _kind == 'invalid':
+                        results[key] = {
+                            **data,
+                            'confidence':      min(data.get('confidence') or 0, 70),
+                            'validation_note': "doesn’t look like a valid " + _nice
+                                               + " — please verify",
+                        }
+                        n_flagged += 1
+                        format_anomaly_flagged = True
+                        continue
                 # ── Valid-character policy (Phase 1, backend-only FLAG) ── before the
                 # format lookup so it covers EVERY field, not only those with learned
                 # formats. Surfaces unexpected OCR symbols for the field TYPE (note +
@@ -1481,11 +1520,16 @@ class ExtractionEngine:
                     if _ftype not in ('date', 'currency', 'currency_code'):
                         _spec = field_charsets.get(_ftype, field_charsets.get('default'))
                         _bad = format_anomaly_checker.charset_disallowed(str(val), _spec)
-                        if _bad:
+                        # Only flag chars that are actually VISIBLE — an invisible control/
+                        # zero-width char (OCR noise) must not render as "unexpected characters
+                        # ()" with an empty list. The replacement char U+FFFD IS printable, so a
+                        # genuine garble still flags. Nothing visible => no flag.
+                        _bad_shown = [c for c in _bad if c.isprintable() and not c.isspace()]
+                        if _bad_shown:
                             results[key] = {
                                 **data,
                                 'confidence':      min(data.get('confidence') or 0, 70),
-                                'validation_note': "unexpected characters (" + " ".join(_bad) + ") - please verify",
+                                'validation_note': "unexpected characters (" + " ".join(_bad_shown) + ") - please verify",
                             }
                             n_flagged += 1
                             format_anomaly_flagged = True

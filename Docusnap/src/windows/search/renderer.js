@@ -61,7 +61,18 @@ async function _init() {
   }
   window.SearchPreview.initPageNav();
   window.SearchQuery.initInputs();
+  // Pre-fill from the Home "Quick find" card (full-text — the broadest match) before searching.
+  try {
+    const q = await window.docusnap.getSearchTarget();
+    if (q) { const el = document.getElementById('inp-fulltext'); if (el) el.value = q; }
+  } catch { /* no target */ }
   window.SearchQuery.doSearch();
 }
+
+// If Search is ALREADY open when Quick-find fires, fill the full-text box + re-run live.
+window.docusnap.onSearchSetQuery?.((q) => {
+  const el = document.getElementById('inp-fulltext');
+  if (el) { el.value = q || ''; window.SearchQuery.doSearch(); }
+});
 
 _init();

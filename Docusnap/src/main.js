@@ -132,6 +132,9 @@ let tray = null;          // system-tray icon; kept referenced so it isn't garba
 // Cleared by get-review-target (pulled by the renderer after loadQueue) or
 // consumed immediately if the review window is already open.
 let pendingReviewDocId = null;
+// Full-text query to pre-fill when the Search window opens via the Home "Quick find" card.
+// Pulled by the search renderer via get-search-target, or pushed if the window is already open.
+let pendingSearchQuery = null;
 // Same pattern for "open Settings focused on a template" (from Review's "Add to
 // Template Manager") — pulled by the settings renderer after loadTemplates(), or
 // delivered immediately if the settings window is already open.
@@ -915,8 +918,21 @@ app.whenReady().then(() => {
     telemetry?.recordAppStart();
     setTimeout(() => { try { telemetry?.flush(); } catch {} }, 60000 + Math.floor(Math.random() * 30000));
     setInterval(() => { try { telemetry?.flush(); } catch {} }, 30 * 60 * 1000);
-    app.on('render-process-gone', (_e, _wc, details) => {
-      try { telemetry?.record('renderer_crash', { reason: details && details.reason }); } catch {}
+    app.on('render-process-gone', (_e, wc, details) => {
+      // Identify WHICH window died (by its HTML file basename — 'review'/'settings'/'main'/…,
+      // no document data) + the exit code, and LOG it locally too — "reason: crashed" alone
+      // (telemetry-only) can't be diagnosed. reason is one of crashed|oom|killed|
+      // abnormal-exit|launch-failed|integrity-failure.
+      let winName = 'unknown';
+      try {
+        const u = wc && !wc.isDestroyed() ? wc.getURL() : '';
+        const m = /([^/\\]+)\.html/i.exec(u || '');
+        if (m) winName = m[1];
+      } catch {}
+      const reason   = details && details.reason;
+      const exitCode = details && details.exitCode;
+      try { logger?.err?.(`[renderer-crash] window=${winName} reason=${reason} exitCode=${exitCode}`); } catch {}
+      try { telemetry?.record('renderer_crash', { reason, window: winName, exit_code: exitCode }); } catch {}
     });
   } catch {}
 
@@ -1205,9 +1221,23 @@ app.whenReady().then(() => {
     pendingSettingsSection = null;
     return s;
   });
-  ipcMain.on('open-search-window', () => {
+  ipcMain.on('open-search-window', (_e, q) => {
     if (!authModule.getCurrentUser()) return;
+    const query = (typeof q === 'string' && q.trim()) ? q.trim() : null;
+    const alreadyOpen = !!windows['search'];
+    pendingSearchQuery = query;
     createWindow('search', { width: 1200, height: 780, minWidth: 1000, minHeight: 600 });
+    if (alreadyOpen && query) {
+      // Window already loaded — push the query directly (no get-search-target poll).
+      safeSend(windows['search']?.webContents, 'search-set-query', query);
+      pendingSearchQuery = null;
+    }
+  });
+  // The search renderer pulls this once on load to pre-fill the Quick-find query (else null).
+  ipcMain.handle('get-search-target', () => {
+    const q = pendingSearchQuery;
+    pendingSearchQuery = null;
+    return q;
   });
 
   // All IPC handlers are registered — now serialize the startup windows: the

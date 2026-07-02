@@ -84,6 +84,8 @@ contextBridge.exposeInMainWorld('docusnap', {
   getSettingsSectionTarget:     ()           => ipcRenderer.invoke('get-settings-section-target'),
   onNavigateToSection:          (cb)         => ipcRenderer.on('navigate-to-section', (_e, s) => cb(s)),
   openSearchWindow:    (q)      => ipcRenderer.send('open-search-window', q),
+  getSearchTarget:     ()       => ipcRenderer.invoke('get-search-target'),
+  onSearchSetQuery:    (cb)     => ipcRenderer.on('search-set-query', (_e, q) => cb(q)),
   getReviewTarget:     ()       => ipcRenderer.invoke('get-review-target'),
   onNavigateToDoc:     (cb)     => ipcRenderer.on('navigate-to-doc', (_e, id) => cb(id)),
   // User-guide / help window (optional section to jump to, e.g. 'review')
@@ -264,6 +266,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   // ── Settings ─────────────────────────────────────────────────────────────────
   getSetting:          (key)      => ipcRenderer.invoke('get-setting', key),
   setSetting:          (key, val) => ipcRenderer.invoke('set-setting', key, val),
+  getConcurrencyInfo:  ()         => ipcRenderer.invoke('get-concurrency-info'),
   getTelemetryInfo:    ()         => ipcRenderer.invoke('get-telemetry-info'),
   backupExport:        (password)        => ipcRenderer.invoke('settings-backup-export', { password }),
   backupPreview:       (password)        => ipcRenderer.invoke('settings-backup-preview', { password }),

@@ -384,6 +384,7 @@ const DASH_TIPS = [
   ['Fast vs Smart', 'Switch processing mode in Settings — Fast is instant; Smart double-checks the key fields.'],
   ['Output structure', 'In Settings → Output Structure you can change how files are named and foldered using simple building blocks.'],
   ['It keeps learning', 'Every correction you confirm teaches Scan Finder — accuracy climbs the more you use it.'],
+  ['Search anything', 'The Search “Search anything” box is full-text — it looks through everything on a document (text, references, amounts, dates and codes), not just the company. Numbers ignore commas, so 1137 finds 1,137.'],
 ];
 let _tipIdx = Math.floor(Math.random() * DASH_TIPS.length);
 function renderTip() {

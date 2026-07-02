@@ -114,6 +114,59 @@ def is_network_address_field(field_key, label=None):
     return network_address_validation(field_key, label) is not None
 
 
+# An OCR glyph -> the HEX digit it was most likely misread FROM. Restricted to substitutions
+# that are safe only in a hex (MAC) context; mirrors the ocr_corrector confusion pairs. Used
+# ONLY to recover a value that then FULLY matches the field's precise pattern — never to guess.
+_HEX_OCR_CONFUSION = {
+    'O': '0', 'o': '0', 'Q': '0', 'D': '0',
+    'I': '1', 'l': '1', 'i': '1', '|': '1',
+    'Z': '2', 'z': '2',
+    'T': '7',
+    'S': '5', 's': '5',
+    'G': '6',
+    'B': '8',
+    'g': '9', 'q': '9',
+}
+
+
+def normalize_network_address(value, val_key, patterns):
+    """Reconcile a MAC/IP value against its PRECISE pattern. Returns (result, kind):
+
+      (value,  'ok')       already exactly valid — no change
+      (found,  'clean')    a valid MAC/IP is embedded with surrounding junk (e.g. a trailing
+                           OCR control char that pushed it below the authoritative coverage,
+                           or a "IP: " prefix) — `found` is the trimmed clean value
+      (fixed,  'repaired') MAC only: a single OCR-confusion substitution ("T3"->"73") makes it
+                           fully valid — recover-and-FLAG upstream, never a silent rewrite
+      (value,  'invalid')  not a valid MAC/IP and unrecoverable — flag upstream
+
+    A malformed IP is only ever flagged (its decimal octets carry no safe glyph map)."""
+    if not value:
+        return value, 'ok'
+    pats = patterns if isinstance(patterns, list) else [patterns]
+    for p in pats:
+        m = re.search(p, value)
+        if m:
+            found = m.group(0)
+            return (found, 'ok' if found == value else 'clean')
+    if val_key == 'mac_address':
+        out, changed = [], 0
+        for c in value:
+            if c in '0123456789abcdefABCDEF' or c in ':-.':
+                out.append(c)
+            elif c in _HEX_OCR_CONFUSION:
+                out.append(_HEX_OCR_CONFUSION[c]); changed += 1
+            else:
+                out.append(c)          # unknown glyph — leave it (the match will then fail)
+        cand = ''.join(out)
+        if changed:
+            for p in pats:
+                m = re.search(p, cand)
+                if m:
+                    return m.group(0), 'repaired'
+    return value, 'invalid'
+
+
 def _has_long_consonant_run(low):
     run = 0
     for c in low:

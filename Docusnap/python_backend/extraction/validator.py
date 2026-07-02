@@ -272,7 +272,13 @@ def validate_and_adjust(extractions: dict,
         if not (isinstance(val, str) and val.strip().endswith(':')):
             continue
         trimmed = val.strip().rstrip(':').strip()
-        is_real_value = (parse_date(trimmed) is not None) \
+        # A bare mis-captured LABEL ("Date:", "Estimated depletion:", "Total:") has NO digit.
+        # A real value — including a textual date parse_date can't parse ("September 1, 2026:")
+        # or a partial date — always carries a digit, so a DATE field accepts either a parseable
+        # date OR any digit-bearing trimmed value (was parse_date-only, which false-flagged a
+        # valid textual date as "looks like a label"). Non-date fields already use the digit test.
+        is_real_value = (parse_date(trimmed) is not None
+                         or any(ch.isdigit() for ch in trimmed)) \
             if _field_types.get(key) == "date" \
             else any(ch.isdigit() for ch in trimmed)
         if is_real_value:
