@@ -189,6 +189,10 @@ def main():
                         help="enable multi-line continuation reads (a free-text value that "
                              "wraps onto the next line); inert without a multiline_continue "
                              "field rule, so single-line reads stay byte-identical")
+    parser.add_argument("--date-order", choices=("dmy", "mdy", "ymd", "auto"), default="dmy",
+                        help="region date ordering for AMBIGUOUS numeric dates (03/04/2026): "
+                             "dmy=UK/EU (default), mdy=US, ymd=ISO-first. A day-value >12 is "
+                             "unambiguous in any mode; ISO and month-name dates always parse.")
     parser.add_argument("--born-digital", action="store_true",
                         help="use a PDF's embedded text layer (exact) instead of OCR "
                              "for pages that carry one; inert for image-only/scanned PDFs")
@@ -301,6 +305,10 @@ def main():
     # Multi-line continuation reads (off unless --multiline; inert without a field rule).
     if args.multiline:
         engine.set_multiline_enabled(True)
+
+    # Region date ordering (default 'dmy' = byte-identical to the historical behaviour).
+    from extraction import validator as _validator
+    _validator.set_date_order(args.date_order)
 
     # Phase 3 candidate override (default 'off' → byte-identical behaviour).
     if args.candidate_override and args.candidate_override != "off":

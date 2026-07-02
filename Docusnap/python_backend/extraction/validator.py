@@ -20,13 +20,17 @@ _DAY_NAME_RE = re.compile(
 # Strip ordinal suffixes: "1st" → "1", "22nd" → "22", "3rd" → "3"
 _ORDINAL_RE = re.compile(r'\b(\d{1,2})(st|nd|rd|th)\b', re.IGNORECASE)
 
-DATE_FORMATS = [
-    # Fully numeric — DD-first (UK/EU)
-    "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y",
-    "%d/%m/%y", "%d-%m-%y", "%d.%m.%y",
-    # Fully numeric — YYYY-first (ISO)
-    "%Y-%m-%d", "%Y/%m/%d",
-    # Day + full month name
+# Fully-numeric ordering-SENSITIVE formats — the ONLY axis a region setting changes.
+# DD-first (UK/EU/most of the world) vs MM-first (US). "03/04/2026" is 3 Apr under _DMY,
+# 4 Mar under _MDY; a day-value > 12 makes only one order parse regardless.
+_NUMERIC_DMY = ["%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y",
+                "%d/%m/%y", "%d-%m-%y", "%d.%m.%y"]
+_NUMERIC_MDY = ["%m/%d/%Y", "%m-%d-%Y", "%m.%d.%Y",
+                "%m/%d/%y", "%m-%d-%y", "%m.%d.%y"]
+# ISO (big-endian) — never ambiguous.
+_NUMERIC_ISO = ["%Y-%m-%d", "%Y/%m/%d"]
+# Month-NAME formats — never ambiguous (the month is spelled out), so order-independent.
+_MONTH_NAME_FORMATS = [
     "%d %B %Y", "%d %b %Y",       # 01 May 2024 / 01 May 24
     "%d %B %y", "%d %b %y",
     "%d %B, %Y", "%d %b, %Y",     # 01 May, 2024
@@ -34,16 +38,43 @@ DATE_FORMATS = [
     "%d/%B/%Y", "%d/%b/%Y",       # 01/May/2024
     "%d-%B-%y", "%d-%b-%y",       # 01-May-24
     "%d/%B/%y", "%d/%b/%y",       # 01/May/24
-    # Month name + day (US-ish)
     "%B %d, %Y", "%b %d, %Y",     # May 01, 2024
     "%B %d %Y", "%b %d %Y",       # May 01 2024 (no comma)
     "%B-%d-%Y", "%b-%d-%Y",       # May-01-2024
     "%B %d, %y", "%b %d, %y",     # May 01, 24
     "%B %d %y", "%b %d %y",       # May 01 24 (no comma)
     "%B-%d-%y", "%b-%d-%y",       # May-01-24
-    # US numeric — lowest priority (ambiguous with DD/MM)
-    "%m/%d/%Y", "%m-%d-%Y",
 ]
+
+# Region date order, set ONCE per process by set_date_order() (from process_docs
+# --date-order → the region_date_order setting). Default 'dmy' = the historical behaviour,
+# so every existing install is byte-identical until a user picks a different region.
+_DATE_ORDER = "dmy"
+
+
+def set_date_order(order):
+    """Set the region date-ordering for numeric dates: dmy | mdy | ymd | auto (default dmy)."""
+    global _DATE_ORDER
+    o = (order or "dmy").strip().lower()
+    _DATE_ORDER = o if o in ("dmy", "mdy", "ymd", "auto") else "dmy"
+
+
+def _formats_for_order(order):
+    """Build the strptime priority list for a date order. The unambiguous formats (ISO +
+    month-name) are always tried; only the DD-first vs MM-first numeric PRIORITY changes."""
+    order = (order or "dmy").lower()
+    non_numeric = _NUMERIC_ISO + _MONTH_NAME_FORMATS
+    if order == "mdy":               # US — MM/DD first, DD/MM as the fallback
+        return _NUMERIC_MDY + non_numeric + _NUMERIC_DMY
+    if order == "ymd":               # ISO-first regions (CN/JP/KR) — then DD-first for the rest
+        return _NUMERIC_ISO + _NUMERIC_DMY + _MONTH_NAME_FORMATS + _NUMERIC_MDY
+    # dmy (default) and auto — DD/MM first, US last (byte-identical to the historical list).
+    return _NUMERIC_DMY + non_numeric + _NUMERIC_MDY
+
+
+# Backwards-compatible module constant (the default DMY ordering) — some callers/tests
+# import DATE_FORMATS directly.
+DATE_FORMATS = _formats_for_order("dmy")
 
 # How far ahead of "now" a date may sit before it is treated as anomalous.
 # Document dates are issue dates that live in the past or present — old dates are
@@ -53,7 +84,7 @@ DATE_FORMATS = [
 # is CLEARLY in the future, not merely unusual.
 _FUTURE_DATE_TOLERANCE_DAYS = 366
 
-def parse_date(raw: str | None) -> datetime | None:
+def parse_date(raw: str | None, date_order: str | None = None) -> datetime | None:
     if not raw:
         return None
     s = str(raw).strip()
@@ -63,7 +94,7 @@ def parse_date(raw: str | None) -> datetime | None:
     s = _ORDINAL_RE.sub(r'\1', s)
     # Collapse runs of whitespace that ordinal removal may have created
     s = re.sub(r'\s{2,}', ' ', s).strip()
-    for fmt in DATE_FORMATS:
+    for fmt in _formats_for_order(date_order or _DATE_ORDER):
         try:
             return datetime.strptime(s, fmt)
         except ValueError:

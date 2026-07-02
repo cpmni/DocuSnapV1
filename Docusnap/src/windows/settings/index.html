@@ -640,6 +640,17 @@
                 <option value="rapidocr">RapidOCR (beta)</option>
               </select>
             </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Date format (region)</div>
+                <div class="threshold-sub">How to read an ambiguous numeric date like 03/04/2026. Day-first is 3 April (UK, Europe, most of the world); Month-first is 4 March (US); ISO is year-first. Dates written with a month name, or where the day is over 12, are read correctly whichever you pick.</div>
+              </div>
+              <select id="date-order-select" class="field-select" style="width:220px;">
+                <option value="dmy">Day/Month/Year — 03/04/2026 = 3 Apr (UK/EU)</option>
+                <option value="mdy">Month/Day/Year — 03/04/2026 = 4 Mar (US)</option>
+                <option value="ymd">Year/Month/Day — ISO (2026-04-03)</option>
+              </select>
+            </div>
           </div>
 
           <div class="section">

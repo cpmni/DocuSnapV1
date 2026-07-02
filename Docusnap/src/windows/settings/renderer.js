@@ -471,6 +471,19 @@ if (ocrEngineSelect) ocrEngineSelect.addEventListener('change', async () => {
   catch { /* non-fatal; the saved value reloads on next open */ }
 });
 
+// ── Date format (region) — how an ambiguous numeric date is read ──────────────
+const dateOrderSelect = document.getElementById('date-order-select');
+async function loadDateOrder() {
+  if (!dateOrderSelect) return;
+  const v = (await api.getSetting('region_date_order') || 'dmy').toLowerCase();
+  dateOrderSelect.value = ['dmy', 'mdy', 'ymd'].includes(v) ? v : 'dmy';
+}
+loadDateOrder();
+if (dateOrderSelect) dateOrderSelect.addEventListener('change', async () => {
+  try { await api.setSetting('region_date_order', dateOrderSelect.value); }
+  catch { /* non-fatal; reloads on next open */ }
+});
+
 // ── Auto document separation (split multi-document PDFs) ───────────────────────
 // Defaults ON (the backend reads 'auto_separate_enabled' with a 'true' default), so an
 // unset install behaves as separation-on; this only persists an explicit choice.

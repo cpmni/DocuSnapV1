@@ -224,6 +224,14 @@ function buildTrainingArgs(db, configPath, logger = null) {
   if (autoRotateOn) args.push('--auto-rotate');
   if (ocrEngine === 'rapidocr') args.push('--ocr-engine', 'rapidocr');
 
+  // Region date ordering for AMBIGUOUS numeric dates (default 'dmy' = UK/EU, byte-identical
+  // to before). 'mdy' = US, 'ymd' = ISO-first. A day-value >12 and month-name/ISO dates are
+  // unambiguous in any mode. See REGION_SETTINGS_PLAN.md.
+  let dateOrder = 'dmy';
+  try { const v = (learning.getSetting(db, 'region_date_order', 'dmy') || 'dmy').toLowerCase();
+        if (['dmy', 'mdy', 'ymd', 'auto'].includes(v)) dateOrder = v; } catch { /* default */ }
+  args.push('--date-order', dateOrder);
+
   // Per-file watchdog: force-terminates a worker wedged on a single pathological page
   // (a native Tesseract/pdfium hang no Python try/except can catch) after emitting an
   // error for that doc, so one bad file can't stall the whole batch. Generous default so
