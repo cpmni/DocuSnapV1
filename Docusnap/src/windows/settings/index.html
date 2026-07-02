@@ -410,6 +410,7 @@
     <div class="side-head">Administration</div>
     <button class="tab" data-tab="templates" data-help-key="tab-templates"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="9" x2="9" y2="20"/></svg>Templates</button>
     <button class="tab" data-tab="learning" data-help-key="tab-learning"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c0 1 2.7 2 6 2s6-1 6-2v-5"/></svg>Learning</button>
+    <button class="tab" data-tab="repair" data-help-key="tab-repair"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.3 2.3-2.5-.7-.7-2.5z"/></svg>Learning Repair</button>
     <button class="tab" data-tab="users" data-help-key="tab-users"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>Users &amp; activity</button>
     <button class="tab" data-tab="audit" data-help-key="tab-audit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="18" rx="2"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>Audit</button>
     <button class="tab" data-tab="licensing" data-help-key="tab-licensing"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 21 2"/><path d="M16 7l3 3"/><path d="M18 5l3 3"/></svg>Licensing</button>
@@ -1043,48 +1044,7 @@
     <!-- ══ LEARNING ══ -->
     <div class="panel" id="panel-learning" data-help-key="tab-learning">
 
-      <!-- ── Fix a document type (recovery wizard) — the easy front door ── -->
-      <div class="section" id="rec-section" data-help-key="fix-a-type">
-        <div class="section-title">Fix a document type</div>
-        <p class="section-desc">If a document type has started reading everything wrong — usually because the wrong versions of a document got filed, or spurious values were typed in — reset what Scan Finder has learned for it and set aside the documents that confused it. Everything here is recoverable.</p>
-        <div class="row-flex" style="gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px;">
-          <div style="display:flex; flex-direction:column; gap:4px; min-width:180px;">
-            <label style="font-size:11px; color:var(--muted);">Document type</label>
-            <select id="rec-doctype" class="field-select"></select>
-          </div>
-          <div style="display:flex; flex-direction:column; gap:4px; min-width:210px;">
-            <label style="font-size:11px; color:var(--muted);">Just one company? (optional)</label>
-            <input type="text" id="rec-supplier" class="path-input" placeholder="Leave blank for the whole type" spellcheck="false">
-          </div>
-          <button class="btn primary" id="rec-check">Check</button>
-        </div>
-
-        <div id="rec-step2" style="display:none;">
-          <div id="rec-inventory" class="section-desc" style="margin-bottom:12px;"></div>
-          <div id="rec-doclist-wrap" style="margin-bottom:12px;">
-            <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
-              <strong style="font-size:12px;">Documents to set aside</strong>
-              <button class="btn" id="rec-tick-none" style="padding:2px 8px; font-size:11px;">Clear all</button>
-              <span id="rec-doc-count" class="section-desc" style="margin:0;"></span>
-            </div>
-            <div id="rec-doclist" style="max-height:220px; overflow:auto; border:1px solid var(--border); border-radius:8px; padding:6px;"></div>
-          </div>
-          <label class="row-flex" style="gap:8px; align-items:flex-start; margin-bottom:8px;">
-            <input type="checkbox" id="rec-forget">
-            <span class="section-desc" style="margin:0;">Also forget what I've learned for this type<span id="rec-forget-sup"></span> — field positions, fill-in hints and cleanup rules. It re-learns from the documents you keep.</span>
-          </label>
-          <details style="margin-bottom:10px;"><summary class="disclose" style="font-size:12px;">Advanced</summary>
-            <label class="row-flex" style="gap:8px; align-items:flex-start; margin-top:8px;">
-              <input type="checkbox" id="rec-requeue">
-              <span class="section-desc" style="margin:0;">Send this type's confirmed documents back to Review to start over. Use only if the type is badly confused — you'll need to re-confirm them.</span>
-            </label>
-          </details>
-          <p class="section-desc" style="font-style:italic;">Setting documents aside moves them to the recycle bin (recoverable). Learning is cleared, but documents you keep can teach it again — that's why we set the odd ones aside. A backup is taken automatically before anything is forgotten.</p>
-          <button class="btn danger" id="rec-apply">Fix it</button>
-          <div id="rec-result" class="section-desc" style="display:none; margin-top:12px; font-family:var(--mono); font-size:11px; line-height:1.7;"></div>
-          <button class="btn" id="rec-undo" style="display:none; margin-top:8px;">Undo — restore the documents I set aside</button>
-        </div>
-      </div>
+      <!-- (The "Fix a document type" wizard moved to its own "Learning Repair" tab.) -->
 
       <!-- Keyword Label Overrides — moved to the top of the Learning tab -->
       <div class="section">
@@ -1227,6 +1187,73 @@
         <p class="section-desc">No learned data found for this supplier / document type.</p>
       </div>
 
+    </div>
+
+    <!-- ══ LEARNING REPAIR ══ -->
+    <div class="panel" id="panel-repair" data-help-key="tab-repair">
+      <div class="section">
+        <div class="section-title">Learning Repair</div>
+        <p class="section-desc">Check the documents Scan Finder has learned from for a document type, and send anything that looks off back to Review. Nothing here is destructive — <strong>Send back to Review</strong> just puts a document in your Review list (confirm it there and it goes right back), and <strong>Delete</strong> goes to the recycle bin.</p>
+        <div class="row-flex" style="gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:4px;">
+          <div style="display:flex; flex-direction:column; gap:4px; min-width:200px;">
+            <label style="font-size:11px; color:var(--muted);">Document type</label>
+            <select id="rp-doctype" class="field-select"></select>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:4px; min-width:210px;">
+            <label style="font-size:11px; color:var(--muted);">Just one company? (optional)</label>
+            <input type="text" id="rp-supplier" class="path-input" placeholder="Leave blank for the whole type" spellcheck="false">
+          </div>
+          <button class="btn primary" id="rp-load">Open</button>
+          <span id="rp-count" class="section-desc" style="margin:0;"></span>
+        </div>
+      </div>
+
+      <div class="section" id="rp-worklist" style="display:none;">
+        <div id="rp-suspects-strip" style="display:none; margin-bottom:14px; border:1px solid var(--warn); border-radius:10px; padding:10px 12px; background:var(--surface2);">
+          <div style="font-weight:600; margin-bottom:6px;">A few documents worth a look</div>
+          <div id="rp-suspects-list" style="font-size:12px;"></div>
+        </div>
+        <div style="display:flex; gap:16px; align-items:flex-start;">
+          <div style="flex:1 1 260px; min-width:240px; max-width:340px;">
+            <div class="row-flex" id="rp-filters" style="gap:6px; margin-bottom:8px; flex-wrap:wrap;">
+              <button class="btn rp-chip active" data-filter="all" style="padding:3px 9px; font-size:11px;">All</button>
+              <button class="btn rp-chip" data-filter="belong" style="padding:3px 9px; font-size:11px;">Might not belong</button>
+              <button class="btn rp-chip" data-filter="data" style="padding:3px 9px; font-size:11px;">Data looks off</button>
+            </div>
+            <div id="rp-doclist" tabindex="0" style="max-height:520px; overflow:auto; border:1px solid var(--border); border-radius:10px; outline:none;"></div>
+          </div>
+          <div style="flex:2 1 380px; min-width:340px;">
+            <div id="rp-preview-empty" class="section-desc" style="padding:44px 12px; text-align:center;">Select a document on the left, or click the list and use ↑/↓ to move through them.</div>
+            <div id="rp-preview" style="display:none;">
+              <div id="rp-img-area" style="position:relative; border:1px solid var(--border); border-radius:10px; overflow:hidden; background:var(--doc-bg); min-height:280px; display:flex; align-items:center; justify-content:center;">
+                <img id="rp-img" style="max-width:100%; max-height:520px; display:block;" alt="">
+                <span id="rp-img-loading" class="section-desc" style="position:absolute;">Loading…</span>
+              </div>
+              <div class="row-flex" style="gap:10px; align-items:center; justify-content:center; margin:6px 0;">
+                <button class="btn" id="rp-page-prev" style="padding:2px 12px;">&#8249;</button>
+                <span id="rp-page-label" class="section-desc" style="margin:0;">1 / 1</span>
+                <button class="btn" id="rp-page-next" style="padding:2px 12px;">&#8250;</button>
+              </div>
+              <div id="rp-fields" style="margin:8px 0; font-size:12px; line-height:1.7;"></div>
+              <div class="row-flex" style="gap:8px; margin-top:10px; flex-wrap:wrap;">
+                <button class="btn primary" id="rp-send">Send back to Review</button>
+                <button class="btn danger" id="rp-delete">Delete…</button>
+                <button class="btn" id="rp-fine" style="display:none;">Looks fine &#10003;</button>
+              </div>
+              <div id="rp-action-msg" class="section-desc" style="margin-top:8px;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section" id="rp-advanced-wrap" style="display:none;">
+        <details>
+          <summary class="disclose" style="font-size:12px;">Start over for this type (advanced)</summary>
+          <p class="section-desc" style="margin-top:8px;">Forget everything Scan Finder has learned for this type — field positions, fill-in hints and cleanup rules. It relearns from the documents you keep. A backup is taken first.</p>
+          <button class="btn danger" id="rp-forget">Forget learning for this type</button>
+          <div id="rp-forget-msg" class="section-desc" style="margin-top:8px;"></div>
+        </details>
+      </div>
     </div>
 
     <!-- ══ USERS ══ -->
@@ -1573,6 +1600,7 @@
 <script src="../shared/theme.js"></script>
 <script src="../shared/helpmode.js"></script>
 <script src="../shared/doctype-editor.js"></script>
+<script src="../shared/thumbs.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

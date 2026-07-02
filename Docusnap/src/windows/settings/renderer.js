@@ -12,7 +12,8 @@ document.querySelectorAll('.tab').forEach(btn => {
     // Learning Recovery + Keyword Label Overrides live under the Learning tab; the
     // Audit log lives under the Audit tab; the Search client API lives under the
     // Search client tab — load each lazily on show.
-    if (btn.dataset.tab === 'learning') { loadMemoryInventory(); recInit(); }
+    if (btn.dataset.tab === 'learning') loadMemoryInventory();
+    if (btn.dataset.tab === 'repair') repairInit();
     if (btn.dataset.tab === 'audit' && !auditState.loaded) loadAudit();
     if (btn.dataset.tab === 'searchclient') initClientApiSection();
   });
@@ -671,16 +672,15 @@ function renderDocTypeDetail(type) {
     <div id="dt-editor-host"></div>`;
 
   document.getElementById('dt-fix-type')?.addEventListener('click', async () => {
-    const learnTab = document.querySelector('.tab[data-tab="learning"]');
-    if (learnTab) learnTab.click();               // activates the Learning panel + recInit()
-    await recInit();                              // idempotent — ensure the dropdown is populated
-    const sel = document.getElementById('rec-doctype');
+    const repairTab = document.querySelector('.tab[data-tab="repair"]');
+    if (repairTab) repairTab.click();             // activates the Learning Repair panel + repairInit()
+    await repairInit();                           // idempotent — ensure the dropdown is populated
+    const sel = document.getElementById('rp-doctype');
     if (sel && type.slug) {
       sel.value = type.slug;
-      document.getElementById('rec-supplier').value = '';
-      await recCheck();
+      document.getElementById('rp-supplier').value = '';
+      await rpLoad();
     }
-    document.getElementById('rec-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 
   document.getElementById('dt-enable').addEventListener('change', async (e) => {
@@ -3216,6 +3216,189 @@ async function recUndo() {
   document.getElementById('rec-result').innerHTML = `↩ Restored ${r && r.restored || 0} document(s) from the recycle bin. (Learning that was forgotten is covered by the automatic backup.)`;
   document.getElementById('rec-undo').style.display = 'none';
   _recSetAsideIds = [];
+}
+
+// ── Learning Repair tab ─────────────────────────────────────────────────────────
+let _rpWired = false, _rpDocs = [], _rpSuspects = {}, _rpFilter = 'all', _rpSel = null, _rpPages = [], _rpPage = 0, _rpDismissed = new Set();
+function _rpEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+async function repairInit() {
+  const sel = document.getElementById('rp-doctype');
+  if (!sel) return;
+  let types = [];
+  try { types = (await api.getAllDocTypesAll()) || []; } catch {}
+  const prev = sel.value;
+  sel.innerHTML = types.map(t => `<option value="${_rpEsc(t.slug)}">${_rpEsc(t.name)}</option>`).join('');
+  if (prev && types.some(t => t.slug === prev)) sel.value = prev;
+  if (_rpWired) return;
+  _rpWired = true;
+  document.getElementById('rp-load').addEventListener('click', rpLoad);
+  document.getElementById('rp-page-prev').addEventListener('click', () => rpShowPage(_rpPage - 1));
+  document.getElementById('rp-page-next').addEventListener('click', () => rpShowPage(_rpPage + 1));
+  document.getElementById('rp-send').addEventListener('click', rpSend);
+  document.getElementById('rp-delete').addEventListener('click', rpDelete);
+  document.getElementById('rp-fine').addEventListener('click', rpDismiss);
+  document.getElementById('rp-forget').addEventListener('click', rpForget);
+  document.querySelectorAll('#rp-filters .rp-chip').forEach(b => b.addEventListener('click', () => {
+    _rpFilter = b.dataset.filter;
+    document.querySelectorAll('#rp-filters .rp-chip').forEach(x => x.classList.toggle('active', x === b));
+    rpRenderList();
+  }));
+  document.getElementById('rp-doclist').addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    e.preventDefault();
+    const list = rpFiltered(); if (!list.length) return;
+    let i = _rpSel ? list.findIndex(d => d.id === _rpSel) : -1;
+    i = Math.max(0, Math.min(list.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)));
+    rpSelect(list[i].id);
+    const row = document.querySelector(`#rp-doclist .rp-row[data-id="${list[i].id}"]`);
+    if (row) row.scrollIntoView({ block: 'nearest' });
+  });
+}
+
+async function rpLoad() {
+  const slug = document.getElementById('rp-doctype').value;
+  const supplier = document.getElementById('rp-supplier').value.trim();
+  if (!slug) return;
+  let ov = null;
+  try { ov = await api.repairOverview({ document_type_slug: slug, supplier_name: supplier || null }); }
+  catch (e) { alert('Could not load: ' + (e.message || e)); return; }
+  if (!ov || ov.error) { alert(ov && ov.error || 'Could not load.'); return; }
+  _rpDocs = ov.documents || [];
+  _rpSuspects = (ov.suspects && ov.suspects.byId) || {};
+  _rpDismissed = new Set(); _rpSel = null; _rpPages = []; _rpPage = 0; _rpFilter = 'all';
+  document.querySelectorAll('#rp-filters .rp-chip').forEach(x => x.classList.toggle('active', x.dataset.filter === 'all'));
+  document.getElementById('rp-count').textContent = `Learned from ${_rpDocs.length} document(s)`;
+  document.getElementById('rp-worklist').style.display = _rpDocs.length ? '' : 'none';
+  document.getElementById('rp-advanced-wrap').style.display = _rpDocs.length ? '' : 'none';
+  document.getElementById('rp-preview').style.display = 'none';
+  document.getElementById('rp-preview-empty').style.display = '';
+  document.getElementById('rp-preview-empty').textContent = 'Select a document on the left, or click the list and use ↑/↓ to move through them.';
+  rpRenderSuspectStrip();
+  rpRenderList();
+}
+
+function rpSuspectKinds(id) { const s = _rpSuspects[id]; if (!s || _rpDismissed.has(id)) return new Set(); return new Set((s.reasons || []).map(r => r.kind)); }
+function rpFiltered() { return _rpFilter === 'all' ? _rpDocs : _rpDocs.filter(d => rpSuspectKinds(d.id).has(_rpFilter)); }
+
+function rpRenderSuspectStrip() {
+  const ids = Object.keys(_rpSuspects).map(Number).filter(id => !_rpDismissed.has(id) && _rpDocs.some(d => d.id === id));
+  const strip = document.getElementById('rp-suspects-strip');
+  if (!ids.length) { strip.style.display = 'none'; return; }
+  strip.style.display = '';
+  document.getElementById('rp-suspects-list').innerHTML = ids.slice(0, 12).map(id => {
+    const d = _rpDocs.find(x => x.id === id); if (!d) return '';
+    const reason = (_rpSuspects[id].reasons || [])[0] || {};
+    const chip = reason.kind === 'belong' ? '<span style="color:var(--accent2);">Might not belong</span>' : '<span style="color:var(--warn);">Data looks off</span>';
+    return `<div class="rp-suspect" data-id="${id}" style="cursor:pointer; padding:3px 2px;">• ${chip} — <span style="font-family:var(--mono);">${_rpEsc(d.original_filename)}</span> <span style="color:var(--muted);">${_rpEsc(reason.text || '')}</span></div>`;
+  }).join('');
+  document.querySelectorAll('#rp-suspects-list .rp-suspect').forEach(el => el.addEventListener('click', () => rpSelect(Number(el.dataset.id))));
+}
+
+function rpRenderList() {
+  const list = rpFiltered();
+  const el = document.getElementById('rp-doclist');
+  el.innerHTML = list.length ? list.map(d => {
+    const kinds = rpSuspectKinds(d.id);
+    const tag = kinds.has('belong') ? '<span style="color:var(--accent2); font-size:10px;">◆ different</span>'
+              : kinds.has('data') ? '<span style="color:var(--warn); font-size:10px;">⚠ data</span>' : '';
+    const meta = [d.supplier_name, d.reference_number, d.doc_date].filter(Boolean).join(' · ');
+    return `<div class="doctype-row rp-row${d.id === _rpSel ? ' active' : ''}" data-id="${d.id}" style="cursor:pointer; align-items:center; gap:8px;">
+      <img class="rp-thumb" data-id="${d.id}" alt="" style="width:32px;height:42px;object-fit:cover;border-radius:4px;flex-shrink:0;background:var(--surface3);">
+      <div style="flex:1; min-width:0;"><div style="font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${_rpEsc(d.original_filename)}</div><div style="font-size:11px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${_rpEsc(meta)} ${tag}</div></div>
+    </div>`;
+  }).join('') : '<div class="section-desc" style="padding:16px; text-align:center;">No documents in this view.</div>';
+  el.querySelectorAll('.rp-row').forEach(r => r.addEventListener('click', () => rpSelect(Number(r.dataset.id))));
+  if (window.Thumbs) el.querySelectorAll('.rp-thumb').forEach(img => { const d = _rpDocs.find(x => x.id === Number(img.dataset.id)); if (d) window.Thumbs.lazy(img, { id: d.id, folder_path: '', original_filename: d.original_filename }); });
+}
+
+async function rpSelect(id) {
+  const doc = _rpDocs.find(d => d.id === id); if (!doc) return;
+  _rpSel = id;
+  document.querySelectorAll('#rp-doclist .rp-row').forEach(r => r.classList.toggle('active', Number(r.dataset.id) === id));
+  document.getElementById('rp-preview-empty').style.display = 'none';
+  document.getElementById('rp-preview').style.display = '';
+  document.getElementById('rp-action-msg').textContent = '';
+  document.getElementById('rp-fine').style.display = rpSuspectKinds(id).size ? '' : 'none';
+  rpRenderReasons(id);
+  document.getElementById('rp-img-loading').style.display = ''; document.getElementById('rp-img-loading').textContent = 'Loading…';
+  document.getElementById('rp-img').style.display = 'none';
+  _rpPages = []; _rpPage = 0;
+  let pages = [];
+  try { pages = await api.getDocumentPages(id, '', doc.original_filename) || []; } catch { pages = []; }
+  if (_rpSel !== id) return;   // selection moved while loading
+  _rpPages = pages;
+  if (pages.length) rpShowPage(0);
+  else { document.getElementById('rp-img-loading').textContent = 'Preview unavailable for this document.'; }
+}
+
+function rpShowPage(idx) {
+  if (!_rpPages.length) return;
+  _rpPage = Math.max(0, Math.min(_rpPages.length - 1, idx));
+  const img = document.getElementById('rp-img');
+  img.src = _rpPages[_rpPage]; img.style.display = '';
+  document.getElementById('rp-img-loading').style.display = 'none';
+  document.getElementById('rp-page-label').textContent = `${_rpPage + 1} / ${_rpPages.length}`;
+}
+
+function rpRenderReasons(id) {
+  const reasons = (_rpSuspects[id] && _rpSuspects[id].reasons) || [];
+  document.getElementById('rp-fields').innerHTML = reasons.length
+    ? '<div style="border:1px solid var(--warn); border-radius:8px; padding:8px 10px; background:var(--surface2);">' +
+        reasons.map(r => `<div>${r.kind === 'belong' ? '◆' : '⚠'} ${_rpEsc(r.text)}</div>`).join('') + '</div>'
+    : '<div class="section-desc" style="margin:0;">Nothing looks off with this document — it matches the others.</div>';
+}
+
+function rpRemoveCurrent(msg) {
+  _rpDocs = _rpDocs.filter(d => d.id !== _rpSel);
+  delete _rpSuspects[_rpSel];
+  _rpSel = null;
+  document.getElementById('rp-count').textContent = `Learned from ${_rpDocs.length} document(s)`;
+  rpRenderSuspectStrip(); rpRenderList();
+  document.getElementById('rp-preview').style.display = 'none';
+  document.getElementById('rp-preview-empty').style.display = '';
+  document.getElementById('rp-preview-empty').textContent = msg + ' Pick another document to continue.';
+}
+
+async function rpSend() {
+  if (!_rpSel) return;
+  const doc = _rpDocs.find(d => d.id === _rpSel);
+  if (!confirm(`Send “${doc.original_filename}” back to Review?\n\nThis just moves it to your Review list — nothing is deleted. If it was fine, confirm it there and it goes right back to where it was.`)) return;
+  let r = null;
+  try { r = await api.repairDeconfirm(_rpSel); } catch (e) { alert('Failed: ' + (e.message || e)); return; }
+  if (!r || !r.ok) { document.getElementById('rp-action-msg').textContent = (r && r.error) || 'Could not send this document back (it may be locked by an approval route).'; return; }
+  rpRemoveCurrent('Sent back to Review.');
+}
+
+async function rpDelete() {
+  if (!_rpSel) return;
+  const doc = _rpDocs.find(d => d.id === _rpSel);
+  if (!confirm(`Delete “${doc.original_filename}”?\n\nIt goes to the recycle bin (recoverable) and stops teaching this type.`)) return;
+  let r = null;
+  try { r = await api.repairDelete(_rpSel); } catch (e) { alert('Failed: ' + (e.message || e)); return; }
+  if (!r || !r.ok) { document.getElementById('rp-action-msg').textContent = 'Could not delete this document.'; return; }
+  rpRemoveCurrent('Moved to the recycle bin.');
+}
+
+function rpDismiss() {
+  if (!_rpSel) return;
+  _rpDismissed.add(_rpSel);
+  document.getElementById('rp-fine').style.display = 'none';
+  document.getElementById('rp-action-msg').textContent = 'Dismissed — this one won’t be flagged again for now.';
+  rpRenderReasons(_rpSel); rpRenderSuspectStrip(); rpRenderList();
+}
+
+async function rpForget() {
+  const slug = document.getElementById('rp-doctype').value;
+  const supplier = document.getElementById('rp-supplier').value.trim();
+  if (!confirm(`Forget everything Scan Finder has learned for this type${supplier ? ` from “${supplier}”` : ''}?\n\nA backup is taken first; the documents you keep will teach it again on the next reprocess.`)) return;
+  let r = null;
+  try { r = await api.recoveryApply({ document_type_slug: slug, supplier_name: supplier || null, forgetLearning: true }); }
+  catch (e) { alert('Failed: ' + (e.message || e)); return; }
+  const s = (r && r.summary) || {};
+  document.getElementById('rp-forget-msg').textContent = (r && r.ok)
+    ? `Forgot ${s.anchors || 0} field position(s), ${s.hints || 0} hint(s), ${s.fieldRules || 0} rule(s).${r.backup ? ' Backup saved.' : ''} Reprocess this type's documents to relearn.`
+    : ((r && r.error) || 'Could not forget the learning.');
 }
 
 document.getElementById('lr-inv-refresh').addEventListener('click', loadMemoryInventory);
