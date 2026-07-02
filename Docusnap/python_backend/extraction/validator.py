@@ -300,17 +300,19 @@ def validate_and_adjust(extractions: dict,
     _field_types = {f.get("key"): (f.get("type") or "") for f in field_defs}
 
     # Region-normalise every currency/number value to canonical 1234.56 (a no-op for anglo/
-    # indian → byte-identical), so whatever path read it (keyword/anchor/mapping) the STORED
-    # amount is one well-defined shape for filing, search and the maths cross-check below.
+    # indian → byte-identical), then ASSIGN the region currency symbol to a BARE amount (no
+    # symbol/code) when one is configured — so whatever path read it, the STORED amount is one
+    # well-defined shape for filing/search/maths AND carries its currency. Both no-ops by
+    # default (anglo format + no region currency) → byte-identical for existing installs.
     for key, data in results.items():
         if key.startswith('_') or not isinstance(data, dict):
             continue
         if _field_types.get(key) in ("currency", "number") and isinstance(data.get("value"), str):
-            _canon = number_format.canonical(data["value"])
-            if _canon != data.get("value"):
-                data["value"] = _canon
+            _new = number_format.assign_currency(number_format.canonical(data["value"]))
+            if _new != data.get("value"):
+                data["value"] = _new
                 if data.get("display_value") is not None:
-                    data["display_value"] = _canon
+                    data["display_value"] = _new
 
     for key, data in results.items():
         if key.startswith('_') or not isinstance(data, dict):

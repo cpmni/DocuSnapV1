@@ -35,6 +35,40 @@ _NUM_RE = re.compile(r"\d[\d.,'   ]*\d|\d")
 # --number-format → the region_number_format setting). Default 'anglo' = byte-identical.
 _NUMBER_FORMAT = "anglo"
 
+# ── Region currency assignment (Phase 3) ──────────────────────────────────────────
+# Map an ISO 4217 code to the symbol that appears on a document. Ambiguous symbols ($ =
+# USD/CAD/AUD/NZD) are fine for display; the ISO code disambiguates in metadata.
+_CODE_TO_SYMBOL = {
+    "GBP": "£", "USD": "$", "EUR": "€", "JPY": "¥", "INR": "₹",
+    "CAD": "$", "AUD": "$", "NZD": "$", "CHF": "CHF ", "CNY": "¥", "ZAR": "R",
+}
+# A value already carries a currency if it has a symbol OR a 3-letter code.
+_HAS_CURRENCY_RE = re.compile(
+    r"[£$€¥₹]|\b(?:GBP|USD|EUR|JPY|INR|CAD|AUD|NZD|CHF|CNY|ZAR)\b", re.IGNORECASE)
+
+# Process-wide region currency (ISO code) or None = don't assign. Set by set_currency().
+_REGION_CURRENCY = None
+
+
+def set_currency(code):
+    """Set the region currency to assign to UNMARKED money amounts (ISO 4217 code), or clear
+    it with '', 'none' or an unknown code. Default (None) = never assign → byte-identical."""
+    global _REGION_CURRENCY
+    c = (code or "").strip().upper()
+    _REGION_CURRENCY = c if c in _CODE_TO_SYMBOL else None
+
+
+def assign_currency(value):
+    """Prepend the region currency symbol to a BARE amount (a number with NO symbol/code).
+    No-op when the region currency is unset, the value already carries a currency (never
+    overwrite the document's own), or the value isn't an amount."""
+    if not value or _REGION_CURRENCY is None:
+        return value
+    s = str(value).strip()
+    if not s or _HAS_CURRENCY_RE.search(s) or not re.search(r"\d", s):
+        return value
+    return _CODE_TO_SYMBOL[_REGION_CURRENCY] + s
+
 
 def set_format(fmt):
     """Set the process-wide region number format: anglo|continental|french|swiss|indian."""
