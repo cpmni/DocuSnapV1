@@ -651,6 +651,19 @@
                 <option value="ymd">Year/Month/Day — ISO (2026-04-03)</option>
               </select>
             </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Number format (region)</div>
+                <div class="threshold-sub">How money amounts group thousands and mark the decimal. Amounts are stored in a standard form regardless, so this only affects how they're read from your documents.</div>
+              </div>
+              <select id="number-format-select" class="field-select" style="width:220px;">
+                <option value="anglo">1,234.56 — comma/point (UK, US, most)</option>
+                <option value="continental">1.234,56 — point/comma (Germany, Spain, Italy…)</option>
+                <option value="french">1 234,56 — space/comma (France)</option>
+                <option value="swiss">1'234.56 — apostrophe/point (Switzerland)</option>
+                <option value="indian">12,34,567.89 — Indian grouping</option>
+              </select>
+            </div>
           </div>
 
           <div class="section">

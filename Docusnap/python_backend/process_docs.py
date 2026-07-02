@@ -193,6 +193,12 @@ def main():
                         help="region date ordering for AMBIGUOUS numeric dates (03/04/2026): "
                              "dmy=UK/EU (default), mdy=US, ymd=ISO-first. A day-value >12 is "
                              "unambiguous in any mode; ISO and month-name dates always parse.")
+    parser.add_argument("--number-format",
+                        choices=("anglo", "continental", "french", "swiss", "indian"),
+                        default="anglo",
+                        help="region grouping/decimal style for money amounts: anglo=1,234.56 "
+                             "(default), continental=1.234,56, french=1 234,56, swiss=1'234.56, "
+                             "indian=12,34,567.89. Amounts are normalised to canonical 1234.56.")
     parser.add_argument("--born-digital", action="store_true",
                         help="use a PDF's embedded text layer (exact) instead of OCR "
                              "for pages that carry one; inert for image-only/scanned PDFs")
@@ -309,6 +315,10 @@ def main():
     # Region date ordering (default 'dmy' = byte-identical to the historical behaviour).
     from extraction import validator as _validator
     _validator.set_date_order(args.date_order)
+
+    # Region number format for money amounts (default 'anglo' = byte-identical).
+    from extraction import number_format as _number_format
+    _number_format.set_format(args.number_format)
 
     # Phase 3 candidate override (default 'off' → byte-identical behaviour).
     if args.candidate_override and args.candidate_override != "off":

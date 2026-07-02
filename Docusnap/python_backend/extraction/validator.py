@@ -8,6 +8,8 @@ Catches obvious errors before they reach the review queue.
 import re
 from datetime import datetime
 
+from extraction import number_format   # region-aware amount normaliser
+
 
 # ── Date parsing ──────────────────────────────────────────────────────────────
 
@@ -296,6 +298,20 @@ def validate_and_adjust(extractions: dict,
     # ("Total", "Ticket No.") has no digit and no date → still flagged. Layout-
     # and supplier-agnostic; only narrows a known false-positive class.
     _field_types = {f.get("key"): (f.get("type") or "") for f in field_defs}
+
+    # Region-normalise every currency/number value to canonical 1234.56 (a no-op for anglo/
+    # indian → byte-identical), so whatever path read it (keyword/anchor/mapping) the STORED
+    # amount is one well-defined shape for filing, search and the maths cross-check below.
+    for key, data in results.items():
+        if key.startswith('_') or not isinstance(data, dict):
+            continue
+        if _field_types.get(key) in ("currency", "number") and isinstance(data.get("value"), str):
+            _canon = number_format.canonical(data["value"])
+            if _canon != data.get("value"):
+                data["value"] = _canon
+                if data.get("display_value") is not None:
+                    data["display_value"] = _canon
+
     for key, data in results.items():
         if key.startswith('_') or not isinstance(data, dict):
             continue

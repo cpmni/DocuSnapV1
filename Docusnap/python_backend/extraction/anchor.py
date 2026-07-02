@@ -12,6 +12,7 @@ import re
 from PIL import Image
 
 from extraction import registration   # pure NumPy; no cycle (registration imports nothing here)
+from extraction import number_format   # region-aware amount normaliser (no cycle)
 
 
 def _qualify_against_format(value, field_key, format_lookup, text_field_keys=None,
@@ -1259,7 +1260,11 @@ def _crop_is_credible(value: str, val_type: str | None,
         # Date / currency keep substring matching + their upstream salvage path (a
         # "£1,234.00" or junk-wrapped date is rescued later, never rejected here).
         if val_type in ("date", "currency", "currency_code"):
-            return any(re.search(p, v, re.IGNORECASE) for p in pats)
+            # Region-normalise an amount to canonical 1234.56 before the (Anglo) currency
+            # pattern check, so a Continental "1.234,56" / Swiss "1'234.56" is accepted.
+            # No-op for anglo → byte-identical.
+            _v = number_format.canonical(v) if val_type == "currency" else v
+            return any(re.search(p, _v, re.IGNORECASE) for p in pats)
         # Other typed fields (alphanumeric / reference / code): the pattern must
         # COVER most of the value, so a colon-laden MAC matching only a sub-run is
         # rejected and the field relocates/falls to review instead of committing junk.
@@ -1395,7 +1400,9 @@ def _clean_one_line(line: str | None, val_type: str | None) -> str:
         return ""
     segment = re.split(r' {4,}', line)[0].strip()
     if val_type == 'currency':
-        segment = _normalise_currency_spacing(segment)   # rejoin an OCR-split thousands sep
+        # Region-normalise (Continental/Swiss/… → canonical 1234.56; no-op for anglo) BEFORE
+        # the Anglo OCR-split-thousands rejoin, so the stored amount is canonical.
+        segment = _normalise_currency_spacing(number_format.canonical(segment))   # rejoin an OCR-split thousands sep
     if val_type in ('text', 'multiline_text'):
         segment = _trim_trailing_digit_boundary(segment)
     parts = segment.split()

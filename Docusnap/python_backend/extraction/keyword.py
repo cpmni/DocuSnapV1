@@ -11,6 +11,8 @@ import re
 import json
 from pathlib import Path
 
+from extraction import number_format   # region-aware amount normaliser
+
 
 def load_patterns(config_path: str | None = None) -> dict:
     """Load keyword patterns from config file."""
@@ -274,6 +276,12 @@ def extract_fields(ocr_text: str, field_keys: list[str],
             value, direction = found
             if not value or len(value.strip()) < 1:
                 continue
+
+            # Region-normalise a currency amount to canonical 1234.56 (no-op for anglo) so a
+            # Continental "1.234,56" / Swiss "1'234.56" passes the Anglo currency pattern below
+            # and is stored canonically.
+            if fp.get("validation") == "currency":
+                value = number_format.canonical(value)
 
             # Validate value format if validator defined
             val_type = fp.get("validation")

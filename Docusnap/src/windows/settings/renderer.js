@@ -484,6 +484,20 @@ if (dateOrderSelect) dateOrderSelect.addEventListener('change', async () => {
   catch { /* non-fatal; reloads on next open */ }
 });
 
+// ── Number format (region) — how money amounts group thousands / mark the decimal ──
+const numberFormatSelect = document.getElementById('number-format-select');
+const _NUM_FMTS = ['anglo', 'continental', 'french', 'swiss', 'indian'];
+async function loadNumberFormat() {
+  if (!numberFormatSelect) return;
+  const v = (await api.getSetting('region_number_format') || 'anglo').toLowerCase();
+  numberFormatSelect.value = _NUM_FMTS.includes(v) ? v : 'anglo';
+}
+loadNumberFormat();
+if (numberFormatSelect) numberFormatSelect.addEventListener('change', async () => {
+  try { await api.setSetting('region_number_format', numberFormatSelect.value); }
+  catch { /* non-fatal; reloads on next open */ }
+});
+
 // ── Auto document separation (split multi-document PDFs) ───────────────────────
 // Defaults ON (the backend reads 'auto_separate_enabled' with a 'true' default), so an
 // unset install behaves as separation-on; this only persists an explicit choice.

@@ -232,6 +232,12 @@ function buildTrainingArgs(db, configPath, logger = null) {
         if (['dmy', 'mdy', 'ymd', 'auto'].includes(v)) dateOrder = v; } catch { /* default */ }
   args.push('--date-order', dateOrder);
 
+  // Region number format for money amounts (default 'anglo' = byte-identical). See Phase 2.
+  let numFmt = 'anglo';
+  try { const v = (learning.getSetting(db, 'region_number_format', 'anglo') || 'anglo').toLowerCase();
+        if (['anglo', 'continental', 'french', 'swiss', 'indian'].includes(v)) numFmt = v; } catch { /* default */ }
+  args.push('--number-format', numFmt);
+
   // Per-file watchdog: force-terminates a worker wedged on a single pathological page
   // (a native Tesseract/pdfium hang no Python try/except can catch) after emitting an
   // error for that doc, so one bad file can't stall the whole batch. Generous default so
