@@ -225,11 +225,33 @@ def extract_fields(ocr_text: str, field_keys: list[str],
     results        = {}
     lines          = ocr_text.split("\n")
 
+    # Role aliases: a doc type may key its money fields "total"/"subtotal" while the shipped
+    # config lives under "total_amount"/"subtotal". Without this a "total"-keyed field gets NO
+    # labels and is skipped by keyword extraction entirely — so on an UNSEEN layout (no learned
+    # anchor) it's left to whatever stray anchor happens to fire, which reads a table cell
+    # ("0 0.01") instead of the labelled "Invoice Total 118.83". Map role-equivalent keys to the
+    # shipped pattern so a labelled total/subtotal read is always attempted. The harness + the
+    # shipped presets use "total_amount"/"subtotal" directly (this only ADDS coverage for the
+    # aliases), so it can't regress them.
+    _TOTAL_ALIASES = {'total', 'grand_total', 'invoice_total', 'total_due', 'amount_due',
+                      'balance_due', 'total_payable', 'amount_payable', 'total_inc_vat'}
+    _SUBTOTAL_ALIASES = {'sub_total', 'net_total', 'net_amount'}
+
+    def _pattern_key(k):
+        if k in field_patterns:
+            return k
+        if k in _TOTAL_ALIASES and 'total_amount' in field_patterns:
+            return 'total_amount'
+        if k in _SUBTOTAL_ALIASES and 'subtotal' in field_patterns:
+            return 'subtotal'
+        return None
+
     for field_key in field_keys:
-        if field_key not in field_patterns:
+        pk = _pattern_key(field_key)
+        if pk is None:
             continue
 
-        fp      = field_patterns[field_key]
+        fp      = field_patterns[pk]
         labels  = fp.get("labels", [])
         dirs    = fp.get("directions", ["right"])
         base_conf = fp.get("base_confidence", 75)
@@ -359,7 +381,19 @@ def _search_for_label(lines: list[str], label: str,
             # Split on column gaps (4+ spaces) — same as 'below' direction.
             # Multi-column OCR often interleaves adjacent columns on the same line;
             # take only the first column segment to avoid grabbing unrelated text.
-            after = re.split(r' {4,}', after)[0].strip()
+            _segs = [s.strip() for s in re.split(r' {4,}', after) if s.strip()]
+            after = _segs[0] if _segs else ''
+            # A totals row often reads "Invoice Total | GBP | 118.83" — the column right after
+            # the label is a bare currency CODE/symbol (no digits). Skip it to the AMOUNT column
+            # so the value is the number, not "GBP". Reusable for any LABEL CODE AMOUNT layout;
+            # only fires when the first segment is EXACTLY a currency code/symbol AND a later
+            # column carries digits (else it's left untouched).
+            if (after and not re.search(r'\d', after)
+                    and re.fullmatch(r'[£$€¥]|GBP|USD|EUR|JPY|CAD|AUD|CHF|CNY|INR', after, re.I)):
+                for _s in _segs[1:]:
+                    if re.search(r'\d', _s):
+                        after = _s
+                        break
             # Reject if the extracted text itself looks like another label, or contains
             # an embedded label:value pair (e.g. "Ship Mode: Second Class", "Date: Sep 07")
             # which means we grabbed neighbouring column content, not the actual value.

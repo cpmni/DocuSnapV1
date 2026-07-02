@@ -96,7 +96,12 @@
         "Invoice ID",
         "Bill No",
         "Bill Number",
-        {"text": "#", "directions": ["right"]}
+        {
+          "text": "#",
+          "directions": [
+            "right"
+          ]
+        }
       ],
       "directions": [
         "right",
@@ -145,8 +150,18 @@
     },
     "supplier_name": {
       "labels": [
-        {"text": "Bill From", "directions": ["below"]},
-        {"text": "BILL FROM", "directions": ["below"]},
+        {
+          "text": "Bill From",
+          "directions": [
+            "below"
+          ]
+        },
+        {
+          "text": "BILL FROM",
+          "directions": [
+            "below"
+          ]
+        },
         "Supplier",
         "Vendor",
         "Issued By",
@@ -172,10 +187,30 @@
         "Customer",
         "Client",
         "Attention",
-        {"text": "BILLING ADDRESS", "directions": ["below"]},
-        {"text": "Billing Address", "directions": ["below"]},
-        {"text": "BILL TO", "directions": ["below"]},
-        {"text": "Invoiced To", "directions": ["below"]}
+        {
+          "text": "BILLING ADDRESS",
+          "directions": [
+            "below"
+          ]
+        },
+        {
+          "text": "Billing Address",
+          "directions": [
+            "below"
+          ]
+        },
+        {
+          "text": "BILL TO",
+          "directions": [
+            "below"
+          ]
+        },
+        {
+          "text": "Invoiced To",
+          "directions": [
+            "below"
+          ]
+        }
       ],
       "directions": [
         "right",
@@ -186,21 +221,21 @@
     },
     "total_amount": {
       "labels": [
-        "Total",
+        "Invoice Total",
+        "Grand Total",
         "Total Due",
         "Amount Due",
         "Balance Due",
-        "Grand Total",
         "Total Payable",
         "Net Payable",
-        "Total Amount",
         "Amount Payable",
         "Please Pay",
+        "Amount to Pay",
         "Total Inc VAT",
         "Total Including VAT",
         "Total Inc. VAT",
-        "Amount to Pay",
-        "Invoice Total"
+        "Total Amount",
+        "Total"
       ],
       "directions": [
         "right"
@@ -453,7 +488,7 @@
       "(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\s+\\d{1,2},?\\s+\\d{2,4}"
     ],
     "currency": [
-      "[\u00a3$\u20ac\u00a5]\\s*[\\d,]+\\.?\\d*",
+      "[£$€¥]\\s*[\\d,]+\\.?\\d*",
       "[\\d,]+\\.\\d{2}\\s*(?:GBP|USD|EUR|JPY)?",
       "(?:GBP|USD|EUR)\\s*[\\d,]+\\.?\\d*"
     ],
@@ -498,14 +533,14 @@
     ]
   },
   "currency_symbols": {
-    "\u00a3": "GBP",
+    "£": "GBP",
     "$": "USD",
-    "\u20ac": "EUR",
-    "\u00a5": "JPY"
+    "€": "EUR",
+    "¥": "JPY"
   },
   "field_charsets": {
     "_comment": "Phase 1 valid-character policy. BACKEND-ONLY flag (never served via get-validation-patterns; never strips a value). Per field TYPE: the EXTRA non-alphanumeric, non-whitespace chars allowed besides A-Za-z0-9 + whitespace. null = no constraint. 'default' applies to any unlisted type. The engine skips date/currency types.",
-    "default": "-'#+&()/\\@:;,.\u00a3$%\u20ac\u00a5",
+    "default": "-'#+&()/\\@:;,.£$%€¥",
     "text": "-'&(),.",
     "alphanumeric": "-./#",
     "ip_address": ".:",
