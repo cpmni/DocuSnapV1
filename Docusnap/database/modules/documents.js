@@ -204,6 +204,40 @@ function getDeletedCount(db) {
   return db.prepare("SELECT COUNT(*) as n FROM documents WHERE status = 'deleted'").get().n;
 }
 
+// ── Recovery: de-confirm a scope's documents ─────────────────────────────────
+// A scoped, lighter mirror of resetToFreshInstall's document reset: move CONFIRMED docs
+// for a (optional supplier, doc-type slug) scope back to needs_review so they stop feeding
+// the CONFIRMED-only derived learning (getFieldFormats / getFieldValueHistory). Keeps
+// supplier_name / document_type_id / working_path / extractions so a reprocess re-files
+// correctly. Requires the doc-type SLUG (never scopes to "all types"). The heaviest
+// recovery intensity — "start this type's learning over" — used only when the user opts in.
+function requeueConfirmedDocsForScope(db, { supplier_name, document_type_slug } = {}) {
+  if (!document_type_slug) return { changes: 0 };
+  const sn = supplier_name || null;
+  return db.prepare(`
+    UPDATE documents
+       SET status = 'needs_review', confirmed_at = NULL, confirmed_by_username = NULL
+     WHERE status = 'confirmed'
+       AND (@sn IS NULL OR supplier_name = @sn)
+       AND document_type_id = (SELECT id FROM document_types WHERE slug = @slug)
+  `).run({ sn, slug: document_type_slug });
+}
+
+// List a scope's CONFIRMED documents (for the recovery preview / set-aside picker).
+function getConfirmedDocsForScope(db, { supplier_name, document_type_slug } = {}) {
+  if (!document_type_slug) return [];
+  const sn = supplier_name || null;
+  return db.prepare(`
+    SELECT d.id, d.original_filename, d.supplier_name, d.doc_date, d.reference_number,
+           d.confirmed_at, d.stored_filename
+    FROM documents d
+    WHERE d.status = 'confirmed'
+      AND (@sn IS NULL OR d.supplier_name = @sn)
+      AND d.document_type_id = (SELECT id FROM document_types WHERE slug = @slug)
+    ORDER BY d.confirmed_at DESC
+  `).all({ sn, slug: document_type_slug });
+}
+
 function getReviewCount(db) {
   return db.prepare(
     "SELECT COUNT(*) as n FROM documents WHERE status = 'needs_review'"
@@ -411,6 +445,7 @@ module.exports = {
   getReviewQueue, getDeferredQueue, getByIds,
   getReviewCount, getDeferredCount, getStuckCount, getStuckQueue, getFiledCounts,
   softDelete, restoreDeleted, getDeletedQueue, getDeletedCount,
+  requeueConfirmedDocsForScope, getConfirmedDocsForScope,
   getFieldValueSuggestions,
   confirm, confirmIfReviewable, deferIfReviewable, restoreIfDeferred,
   deleteDoc, deleteByStatus, search,

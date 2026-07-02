@@ -620,22 +620,50 @@ function getRecoveryDetail(db, { supplier_name, document_type } = {}, limit = 25
   return { anchors, hints, corrections, logos, rules };
 }
 
+// Read-only: the confirmed VALUES the given documents contributed to the learned model
+// (via their extractions/corrections), for the recovery preview's "what will setting
+// these aside reach" transparency. NOTE supplier_hints/field_anchors/field_rules carry no
+// document_id — they aggregate by scope — so setting a doc aside removes its pull on the
+// DERIVED format/value model (getFieldFormats/getFieldValueHistory are confirmed-only) but
+// not on those already-aggregated artifacts, which re-learn from the remaining good docs.
+function getLearningFootprintForDocuments(db, ids) {
+  const list = (Array.isArray(ids) ? ids : []).map(n => parseInt(n, 10)).filter(Number.isInteger);
+  if (!list.length) return { documentIds: [], values: [] };
+  const ph = list.map(() => '?').join(',');
+  const values = db.prepare(`
+    SELECT e.document_id, e.field_key,
+           TRIM(COALESCE(c.corrected_value, e.display_value, e.raw_value)) AS value,
+           d.supplier_name, dt.slug AS document_type
+    FROM extractions e
+    JOIN documents d ON d.id = e.document_id
+    LEFT JOIN document_types dt ON dt.id = d.document_type_id
+    LEFT JOIN corrections c ON c.document_id = e.document_id AND c.field_key = e.field_key
+    WHERE e.document_id IN (${ph})
+    ORDER BY e.document_id, e.field_key
+  `).all(...list);
+  return { documentIds: list, values: values.filter(v => v.value) };
+}
+
+// Scope deleters — supplier_name AND/OR document_type. At least one must be given
+// (never wipe the whole table). Passing only document_type (slug) clears that whole
+// doc-type across ALL suppliers — the "reset a document type" case — and naturally
+// sweeps the '__global__' fill-empty hint copies saveCorrections also writes.
 function clearFieldAnchorsForScope(db, { supplier_name, document_type } = {}) {
-  if (!supplier_name) return { changes: 0 };
-  const dt = document_type || null;
+  const sn = supplier_name || null, dt = document_type || null;
+  if (!sn && !dt) return { changes: 0 };
   return db.prepare(`
     DELETE FROM field_anchors
-    WHERE supplier_name = @supplier_name AND (@dt IS NULL OR document_type = @dt)
-  `).run({ supplier_name, dt });
+    WHERE (@sn IS NULL OR supplier_name = @sn) AND (@dt IS NULL OR document_type = @dt)
+  `).run({ sn, dt });
 }
 
 function clearSupplierHintsForScope(db, { supplier_name, document_type } = {}) {
-  if (!supplier_name) return { changes: 0 };
-  const dt = document_type || null;
+  const sn = supplier_name || null, dt = document_type || null;
+  if (!sn && !dt) return { changes: 0 };
   return db.prepare(`
     DELETE FROM supplier_hints
-    WHERE supplier_name = @supplier_name AND (@dt IS NULL OR document_type = @dt)
-  `).run({ supplier_name, dt });
+    WHERE (@sn IS NULL OR supplier_name = @sn) AND (@dt IS NULL OR document_type = @dt)
+  `).run({ sn, dt });
 }
 
 // Extreme-use recovery only — corrections are the audit trail behind
@@ -644,12 +672,12 @@ function clearSupplierHintsForScope(db, { supplier_name, document_type } = {}) {
 // hints/anchors already derived from them; it only stops them counting
 // toward future format-consensus and audit history for this exact scope.
 function clearCorrectionsForScope(db, { supplier_name, document_type } = {}) {
-  if (!supplier_name) return { changes: 0 };
-  const dt = document_type || null;
+  const sn = supplier_name || null, dt = document_type || null;
+  if (!sn && !dt) return { changes: 0 };
   return db.prepare(`
     DELETE FROM corrections
-    WHERE supplier_name = @supplier_name AND (@dt IS NULL OR document_type = @dt)
-  `).run({ supplier_name, dt });
+    WHERE (@sn IS NULL OR supplier_name = @sn) AND (@dt IS NULL OR document_type = @dt)
+  `).run({ sn, dt });
 }
 
 // ── Field cleanup rules (Review right-click toolkit) ─────────────────────────
@@ -718,12 +746,12 @@ function getFieldRules(db) {
 }
 
 function clearFieldRulesForScope(db, { supplier_name, document_type } = {}) {
-  if (!supplier_name) return { changes: 0 };
-  const dt = document_type || null;
+  const sn = supplier_name || null, dt = document_type || null;
+  if (!sn && !dt) return { changes: 0 };
   return db.prepare(`
     DELETE FROM field_rules
-    WHERE supplier_name = @supplier_name AND (@dt IS NULL OR document_type = @dt)
-  `).run({ supplier_name, dt });
+    WHERE (@sn IS NULL OR supplier_name = @sn) AND (@dt IS NULL OR document_type = @dt)
+  `).run({ sn, dt });
 }
 
 // ── Format templates (OCR correction) ────────────────────────────────────────
@@ -1111,7 +1139,7 @@ module.exports = {
   saveLogoFingerprint, getAllLogos, findLogoMatch,
   getFieldFormats, getDigitsOnlyFields,
   getRecoverySummary, getRecoveryDetail, getMemoryInventory, resetAllLearning,
-  resetToFreshInstall,
+  resetToFreshInstall, getLearningFootprintForDocuments,
   clearFieldAnchorsForScope, clearSupplierHintsForScope, clearCorrectionsForScope,
   saveFieldRule, getFieldRules, clearFieldRulesForScope,
   getSetting, setSetting,
