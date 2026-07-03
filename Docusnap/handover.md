@@ -4,9 +4,14 @@ Branch: **feat/tray-stage1**. Repo root is `c:\GIT Projects\` (the app lives in 
 `Docusnap/` subfolder; git paths show a `Docusnap/` prefix — remember when using
 `git show HEAD:Docusnap/...`).
 
-✅ **Tree is CLEAN — everything committed + pushed** (HEAD ~`6b49bc7`). Only expected untracked
+✅ **Tree is CLEAN — everything committed + pushed** (HEAD ~`69c6d1a`). Only expected untracked
 artifacts remain (audit `.md`s, `assets/Screenshots/`, `output/`, `stress_test/`, `night_audit/`,
 `dist/`, `client/dist/`).
+
+📚 **CLAUDE.md was split (2026-07-03, `69c6d1a`)** into a lean index + `docs/` deep-reference set —
+read the pointed-to doc when a task touches that area: `docs/extraction-pipeline.md` ·
+`docs/detached-client.md` · `docs/features.md` (first-run/backup/**Learning Repair**/teaching/dev
+inspector) · `docs/history.md` (**resolved QA findings** + build-stage history) · `docs/licensing.md`.
 
 ---
 
@@ -48,7 +53,7 @@ Live DB: `%APPDATA%\ScanFinder\docusnap.db` (WAL mode — safe read-only queries
 
 ## ⚠ In-flight this session — UNCOMMITTED (review the diff, then commit/push)
 **Learning Repair** (new admin Settings tab to un-poison a document type — full spec now in
-CLAUDE.md → "Learning Repair (admin)"). The backend + tab shell were built + committed EARLIER
+`docs/features.md` → "Learning Repair (admin)"). The backend + tab shell were built + committed EARLIER
 this session (`repairSuspects.js`, `deconfirmDocument`, replace-in-place `reviewService`, the
 `repair-*` IPC, `panel-repair` UI, tests `test_repair_suspects.js` + `test_reviewservice_refile.js`
 — both green). The **uncommitted** working-tree changes are the last polish pass + the user's live
@@ -90,13 +95,13 @@ All edited files pass `node --check`; `test_repair_suspects.js` (12/12) + `test_
    Repair preview (`rpWirePreviewZoom`/`rpResetView`), mirroring the Review preview.
 Files: `src/services/repairSuspects.js` (+test, 19/19), `src/modules/settings/handler.js`,
 `database/modules/documents.js`, `src/preload.js`, `src/windows/settings/{renderer.js,index.html}`,
-CLAUDE.md (Learning Repair section refreshed).
+`docs/features.md` (Learning Repair section; split out of CLAUDE.md 2026-07-03).
 
 ---
 
 ## ✅ DONE — all 11 QA findings fixed + tested (2026-07-02)
 The 11 findings in **`NIGHT_QA_AUDIT_2026-07-02.md`** are ALL implemented, tested, and clean on
-`node --check`. Per-item landing notes are in CLAUDE.md → "RESOLVED QA FINDINGS". Highlights:
+`node --check`. Per-item landing notes are in `docs/history.md` → "RESOLVED QA FINDINGS". Highlights:
 backup restore now natural-key UPSERTs parents preserving local ids (no silent re-type / FK abort,
 `test_backup_retype.js`); no-ref/date type confirm dead-end removed; reprocess warns before
 discarding edits; batch file-copy + pdf_rotate moved off the `file_done` path (async, no freeze);
