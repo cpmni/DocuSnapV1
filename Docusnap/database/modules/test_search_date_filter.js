@@ -28,6 +28,8 @@ db.exec(`
     doc_date TEXT, document_type_id INTEGER, status TEXT, ocr_text TEXT,
     confirmed_at TEXT, processed_at TEXT
   );
+  CREATE TABLE extractions (document_id INTEGER, field_key TEXT, display_value TEXT, raw_value TEXT);
+  CREATE TABLE corrections (document_id INTEGER, field_key TEXT, corrected_value TEXT);
 `);
 db.prepare(`INSERT INTO document_types (id,name,slug) VALUES (1,'Invoice','invoice')`).run();
 const ins = db.prepare(`INSERT INTO documents

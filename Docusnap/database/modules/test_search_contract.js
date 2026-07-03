@@ -67,6 +67,10 @@ function freshDb() {
       original_filename TEXT, stored_filename TEXT, stored_path TEXT, folder_path TEXT,
       confirmed_at TEXT, processed_at TEXT
     );
+    -- Full-text search now also spans extracted + corrected field VALUES (money/dates/codes),
+    -- so the search contract must exercise those tables too (always present in the real schema).
+    CREATE TABLE extractions (document_id INTEGER, field_key TEXT, display_value TEXT, raw_value TEXT);
+    CREATE TABLE corrections (document_id INTEGER, field_key TEXT, corrected_value TEXT);
   `);
   db.prepare(`INSERT INTO document_types (id,name,slug) VALUES (1,'Invoice','invoice'),(2,'Purchase Order','purchase_order')`).run();
   return db;
