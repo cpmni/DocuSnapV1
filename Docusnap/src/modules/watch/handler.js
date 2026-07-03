@@ -243,6 +243,13 @@ function _poll(db) {
 // the CPU-bound OCR/extraction — never DB/learning state. (Replaced the old one-Python-
 // process-per-file model, which paid the ~1-2s interpreter/OCR cold-start on EVERY file and
 // made the watch far slower than a manual import.)
+//
+// KNOWN LIMITATION (release audit BLOCKER-2a, documented not fixed): the watch does NOT run
+// the multi-document SEPARATION pre-pass that a manual import does — a PDF that bundles several
+// documents is imported as ONE. Bringing separation here safely needs a drain rework (splitting
+// happens on the staged temp copy, so the split parts don't exist back in the watch folder,
+// which would strand the original and re-import it) — deferred. For now: drop MULTI-document
+// PDFs into a MANUAL import (which splits them); single-document scans are the watch's use case.
 function _drainQueue(db) {
   if (!_watchFolder || _queue.length === 0) return;
 
@@ -252,6 +259,24 @@ function _drainQueue(db) {
     // resources. Retry on the next poll tick (or when a worker frees up).
     return;
   }
+  const learning = require('../../../database/modules/learning');
+  // PARITY WITH MANUAL IMPORT (release audit BLOCKER-2):
+  // (1) License enforcement — the watch is the highest-value write path; a revoked/expired
+  //     seat must not keep auto-importing + auto-filing. Defer (retry next poll) when denied.
+  try {
+    if (require('../licensing/handler').licenseDenied(db)) {
+      _log('warn', '[watch] paused — a valid license is required to process documents.');
+      return;
+    }
+  } catch { /* licensing module unavailable in a stripped build → proceed */ }
+  // (2) POLL-TIME overlap check — the set-time check can be bypassed if output/Processed is
+  //     later reconfigured to overlap the watch folder, causing a filed-copy re-import loop.
+  try {
+    if (_watchFolderConflict(learning, db, _watchFolder)) {
+      _log('warn', '[watch] paused — the watch folder now overlaps the output/Processed folder.');
+      return;
+    }
+  } catch { /* be permissive on a check error */ }
   // Process ONE batch of the whole current queue at a time. This is the key speed fix:
   // the old model spawned a fresh Python process PER FILE, so every file paid the ~1-2s
   // interpreter/OCR cold-start (numpy/pytesseract/model load) — dwarfing the actual work
@@ -262,7 +287,6 @@ function _drainQueue(db) {
   // tick (files that land meanwhile just queue for the following batch).
   if (_inFlight > 0) return;
 
-  const learning = require('../../../database/modules/learning');
   let concurrency = parseInt(learning.getSetting(db, 'processing_concurrency', '1'), 10);
   if (!Number.isFinite(concurrency)) concurrency = 1;
   concurrency = Math.max(1, Math.min(processing.maxConcurrency(), concurrency));   // core-aware, matches manual import
