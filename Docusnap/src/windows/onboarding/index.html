@@ -140,6 +140,24 @@
       </div>
 
       <div class="field">
+        <label class="lbl">Your region — how dates and amounts are written on your documents</label>
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          <select id="ob-date-order" class="pathbox" style="flex:1;min-width:220px">
+            <option value="dmy">Dates: Day/Month/Year — 03/04/2026 = 3 Apr (UK/EU)</option>
+            <option value="mdy">Dates: Month/Day/Year — 03/04/2026 = 4 Mar (US)</option>
+            <option value="ymd">Dates: Year/Month/Day — ISO (2026-04-03)</option>
+          </select>
+          <select id="ob-number-format" class="pathbox" style="flex:1;min-width:220px">
+            <option value="anglo">Amounts: 1,234.56 (UK, US, most)</option>
+            <option value="continental">Amounts: 1.234,56 (Germany, Spain, Italy…)</option>
+            <option value="french">Amounts: 1 234,56 (France)</option>
+            <option value="swiss">Amounts: 1'234.56 (Switzerland)</option>
+            <option value="indian">Amounts: 12,34,567.89 (India)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field">
         <label class="lbl">Preview</label>
         <div id="ob-output-preview" class="pathbox" style="white-space:normal;line-height:1.5">…</div>
       </div>

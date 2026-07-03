@@ -198,6 +198,18 @@ $$('[data-theme-choice]').forEach(c => c.addEventListener('click', async () => {
   paintSelections();
 }));
 
+// ── Region (date order + number format) ────────────────────────────────────────
+// Set at first-run so US/EU documents parse correctly from the very first import; both
+// default to the historical UK/EU behaviour, changeable later in Settings → Processing.
+const _obDateOrder = document.getElementById('ob-date-order');
+const _obNumFmt    = document.getElementById('ob-number-format');
+(async () => {
+  try { const v = (await D.getSetting('region_date_order') || 'dmy'); if (_obDateOrder) _obDateOrder.value = ['dmy','mdy','ymd'].includes(v) ? v : 'dmy'; } catch {}
+  try { const v = (await D.getSetting('region_number_format') || 'anglo'); if (_obNumFmt) _obNumFmt.value = ['anglo','continental','french','swiss','indian'].includes(v) ? v : 'anglo'; } catch {}
+})();
+_obDateOrder?.addEventListener('change', async () => { try { await D.setSetting('region_date_order', _obDateOrder.value); } catch {} });
+_obNumFmt?.addEventListener('change', async () => { try { await D.setSetting('region_number_format', _obNumFmt.value); } catch {} });
+
 // ── Performance ────────────────────────────────────────────────────────────────
 $$('[data-threads]').forEach(c => c.addEventListener('click', async () => {
   state.threads = Number(c.dataset.threads);
