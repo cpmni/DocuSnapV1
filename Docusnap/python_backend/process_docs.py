@@ -199,10 +199,6 @@ def main():
                         help="region grouping/decimal style for money amounts: anglo=1,234.56 "
                              "(default), continental=1.234,56, french=1 234,56, swiss=1'234.56, "
                              "indian=12,34,567.89. Amounts are normalised to canonical 1234.56.")
-    parser.add_argument("--region-currency", default="",
-                        help="ISO 4217 code (GBP/USD/EUR/…) to prepend to a BARE money amount "
-                             "that carries no symbol/code. Empty (default) = never assign. Never "
-                             "overwrites a currency the document already shows.")
     parser.add_argument("--born-digital", action="store_true",
                         help="use a PDF's embedded text layer (exact) instead of OCR "
                              "for pages that carry one; inert for image-only/scanned PDFs")
@@ -320,11 +316,10 @@ def main():
     from extraction import validator as _validator
     _validator.set_date_order(args.date_order)
 
-    # Region number format for money amounts (default 'anglo' = byte-identical).
+    # Region number format for money amounts (default 'anglo' = byte-identical). Detected money
+    # is normalised to canonical AND the currency symbol is stripped (money = numbers only).
     from extraction import number_format as _number_format
     _number_format.set_format(args.number_format)
-    # Region currency to assign to bare amounts (default '' = none = byte-identical).
-    _number_format.set_currency(args.region_currency)
 
     # Phase 3 candidate override (default 'off' → byte-identical behaviour).
     if args.candidate_override and args.candidate_override != "off":

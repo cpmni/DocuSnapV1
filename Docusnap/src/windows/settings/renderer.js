@@ -498,19 +498,6 @@ if (numberFormatSelect) numberFormatSelect.addEventListener('change', async () =
   catch { /* non-fatal; reloads on next open */ }
 });
 
-// ── Currency for amounts — assign a symbol to bare money values ────────────────
-const regionCurrencySelect = document.getElementById('region-currency-select');
-async function loadRegionCurrency() {
-  if (!regionCurrencySelect) return;
-  const v = (await api.getSetting('region_currency') || '').toUpperCase();
-  const opts = Array.from(regionCurrencySelect.options).map(o => o.value);
-  regionCurrencySelect.value = opts.includes(v) ? v : '';
-}
-loadRegionCurrency();
-if (regionCurrencySelect) regionCurrencySelect.addEventListener('change', async () => {
-  try { await api.setSetting('region_currency', regionCurrencySelect.value); }
-  catch { /* non-fatal; reloads on next open */ }
-});
 
 // ── Auto document separation (split multi-document PDFs) ───────────────────────
 // Defaults ON (the backend reads 'auto_separate_enabled' with a 'true' default), so an

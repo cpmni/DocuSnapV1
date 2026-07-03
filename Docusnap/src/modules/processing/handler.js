@@ -238,10 +238,6 @@ function buildTrainingArgs(db, configPath, logger = null) {
         if (['anglo', 'continental', 'french', 'swiss', 'indian'].includes(v)) numFmt = v; } catch { /* default */ }
   args.push('--number-format', numFmt);
 
-  // Region currency to assign to bare money amounts (default '' = none = byte-identical). Phase 3.
-  try { const c = (learning.getSetting(db, 'region_currency', '') || '').toUpperCase().trim();
-        if (/^[A-Z]{3}$/.test(c)) args.push('--region-currency', c); } catch { /* none */ }
-
   // Per-file watchdog: force-terminates a worker wedged on a single pathological page
   // (a native Tesseract/pdfium hang no Python try/except can catch) after emitting an
   // error for that doc, so one bad file can't stall the whole batch. Generous default so

@@ -18,8 +18,15 @@ work on a single, well-defined shape regardless of the operator's region.
 
 `anglo` (and `indian`, which already use '.' decimal + ',' thousands) return the value
 UNCHANGED — byte-identical to the historical behaviour, so an existing install is
-unaffected until a user picks a non-Anglo region. Pure, offline, no deps. A JS twin lives
-in database/modules/number_format.js (keep them in lockstep).
+unaffected until a user picks a non-Anglo region. Pure, offline, no deps.
+
+Runs BACKEND-only: extracted money is normalised (and the currency symbol stripped) at
+extraction time, so the stored value is always canonical numbers-only — the renderer's
+on-blur validator and Search work on that canonical value (the shared bare-number
+`validation_patterns.currency` entry accepts it). A renderer-side JS twin for accepting a
+region-FORMATTED amount typed into the Search box (e.g. a Continental user typing
+"1.234,56") is a deferred follow-up (see REGION_SETTINGS_PLAN.md); there is intentionally
+no JS twin today.
 """
 
 import re
@@ -35,28 +42,6 @@ _NUM_RE = re.compile(r"\d[\d.,'   ]*\d|\d")
 # --number-format → the region_number_format setting). Default 'anglo' = byte-identical.
 _NUMBER_FORMAT = "anglo"
 
-# ── Region currency assignment (Phase 3) ──────────────────────────────────────────
-# Map an ISO 4217 code to the symbol that appears on a document. Ambiguous symbols ($ =
-# USD/CAD/AUD/NZD) are fine for display; the ISO code disambiguates in metadata.
-_CODE_TO_SYMBOL = {
-    "GBP": "£", "USD": "$", "EUR": "€", "JPY": "¥", "INR": "₹",
-    "CAD": "$", "AUD": "$", "NZD": "$", "CHF": "CHF ", "CNY": "¥", "ZAR": "R",
-}
-# A value already carries a currency if it has a symbol OR a 3-letter code.
-_HAS_CURRENCY_RE = re.compile(
-    r"[£$€¥₹]|\b(?:GBP|USD|EUR|JPY|INR|CAD|AUD|NZD|CHF|CNY|ZAR)\b", re.IGNORECASE)
-
-# Process-wide region currency (ISO code) or None = don't assign. Set by set_currency().
-_REGION_CURRENCY = None
-
-
-def set_currency(code):
-    """Set the region currency to assign to UNMARKED money amounts (ISO 4217 code), or clear
-    it with '', 'none' or an unknown code. Default (None) = never assign → byte-identical."""
-    global _REGION_CURRENCY
-    c = (code or "").strip().upper()
-    _REGION_CURRENCY = c if c in _CODE_TO_SYMBOL else None
-
 
 def strip_currency(value):
     """Remove any currency symbol/code (and the space it leaves) from a money value, leaving
@@ -68,18 +53,6 @@ def strip_currency(value):
     s = re.sub(r"[£$€¥₹]", "", s)
     s = re.sub(r"\b(?:GBP|USD|EUR|JPY|INR|CAD|AUD|NZD|CHF|CNY|ZAR)\b", "", s, flags=re.IGNORECASE)
     return s.strip()
-
-
-def assign_currency(value):
-    """Prepend the region currency symbol to a BARE amount (a number with NO symbol/code).
-    No-op when the region currency is unset, the value already carries a currency (never
-    overwrite the document's own), or the value isn't an amount."""
-    if not value or _REGION_CURRENCY is None:
-        return value
-    s = str(value).strip()
-    if not s or _HAS_CURRENCY_RE.search(s) or not re.search(r"\d", s):
-        return value
-    return _CODE_TO_SYMBOL[_REGION_CURRENCY] + s
 
 
 def set_format(fmt):
@@ -108,11 +81,27 @@ def to_canonical(value, fmt="anglo"):
     if fmt not in _FORMATS or fmt in ("anglo", "indian"):
         return value
 
+    def _last_sep(num):
+        # The DECIMAL separator is the LAST '.' or ',' in the run. anglo/canonical use '.',
+        # continental/french use ',' — so this discriminates the two even under a wrong region,
+        # guarding a mixed inbox: an anglo "1,234.56" (last sep '.') is left AS-IS instead of
+        # being mangled to "1.23456". (Trade-off: a rare continental whole-thousands value with
+        # no decimal, "1.234", is left as anglo.)
+        last = None
+        for ch in num:
+            if ch in ".,":
+                last = ch
+        return last
+
     def _norm(m):
         num = m.group(0)
         if fmt == "continental":     # . thousands, , decimal
+            if _last_sep(num) != ",":
+                return num            # doesn't look continental → leave (don't corrupt anglo)
             return num.replace(".", "").replace(",", ".")
         if fmt == "french":          # space (incl. NBSP/thin) thousands, , decimal
+            if _last_sep(num) != ",":
+                return num            # not french-shaped: leave (guard mixed inbox)
             return re.sub(r"[   ]", "", num).replace(",", ".")
         if fmt == "swiss":           # ' thousands, . decimal
             return num.replace("'", "")

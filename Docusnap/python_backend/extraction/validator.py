@@ -302,7 +302,7 @@ def validate_and_adjust(extractions: dict,
     # Money fields store JUST THE NUMBER: region-normalise to canonical 1234.56 (a no-op for
     # anglo/indian) THEN strip the currency symbol/code, so a detected "$12,268.80" / "GBP
     # 118.83" / "€1.234,56" is stored as the bare amount ("12,268.80" / "118.83" / "1234.56").
-    # The currency is a separate concept (the region_currency setting), not baked into the value.
+    # The currency is deliberately NOT baked into the value (money = numbers only).
     for key, data in results.items():
         if key.startswith('_') or not isinstance(data, dict):
             continue
