@@ -429,26 +429,54 @@ def validate_and_adjust(extractions: dict,
                 results[key] = {**data, "value": None, "confidence": 0,
                                 "validation_note": "not a valid date — please enter manually"}
 
-    # 2. Validate currency fields and cross-check subtotal + VAT ≈ total
-    subtotal = parse_amount(results.get("subtotal", {}).get("value"))
-    vat      = parse_amount(results.get("vat_tax",  {}).get("value"))
-    total    = parse_amount(results.get("total_amount", {}).get("value"))
+    # 2. TOTAL RECONCILIATION (Stage 3) — the reliable disambiguator between the real
+    # total and a positional misread of a neighbouring currency (subtotal/shipping/a
+    # stale total position). A total can't be trusted by FORMAT alone (every row in a
+    # totals block is valid currency) or by POSITION (the total row moves down as line
+    # items grow). So cross-check it against the subtotal + whatever components exist:
+    #   CLOSE      — total ≈ subtotal + tax + shipping − discount → trust (leave as-is),
+    #                even on a mediocre scan (maths beats OCR confidence).
+    #   CONTRADICT — flag + cap confidence + note → needs_review (a low confidence on a
+    #                required field forces review via overall_confidence/needs_review):
+    #                  · total < subtotal (and no discount to explain it) — a smaller line
+    #                    was read as the total;
+    #                  · tax present but total ≈ subtotal — the SUBTOTAL row was grabbed;
+    #                  · components present but nothing reconciles — maths doesn't add up;
+    #                  · total ≫ subtotal (>2.5×) with no tax/shipping captured to explain
+    #                    it — a wrong-cell read (the "$3,446.16 on a $105.96 invoice" shape).
+    #   NEUTRAL    — only the subtotal is known and total ≥ subtotal by a plausible margin
+    #                (uncaptured shipping/tax) — precision-first, no penalty.
+    # Keys off whatever component fields the type actually defines (shipping/discount are
+    # optional and absent by default) — reggie-designed, reusable across invoice layouts.
+    _RECONCILE_CAP = 50   # low enough to force review on a required total field
+    total_data = results.get("total_amount", {})
+    total      = parse_amount(total_data.get("value"))
+    subtotal   = parse_amount(results.get("subtotal", {}).get("value"))
+    tax        = parse_amount(results.get("vat_tax",  {}).get("value"))
+    shipping   = parse_amount(results.get("shipping", {}).get("value"))
+    discount   = parse_amount(results.get("discount", {}).get("value"))
 
-    if subtotal and vat and total:
-        expected = subtotal + vat
-        diff     = abs(expected - total)
-        tolerance = total * 0.02  # 2% tolerance for rounding
-
-        if diff > tolerance:
-            # Numbers don't add up — flag total and VAT
-            for key in ("total_amount", "vat_tax"):
-                if key in results and results[key].get("value"):
-                    note = f"maths check failed: {subtotal}+{vat}≠{total}"
-                    results[key] = {
-                        **results[key],
-                        "confidence": min(results[key]["confidence"], 50),
-                        "validation_note": note,
-                    }
+    if total and total > 0 and subtotal and subtotal > 0 and total_data.get("value"):
+        tol        = max(total * 0.02, 0.05)   # 2% or 5 cents, absorbs rounding/OCR
+        components = subtotal + (tax or 0) + (shipping or 0) - (discount or 0)
+        note = None
+        if abs(total - components) <= tol:
+            pass                                                   # CLOSE → trust
+        elif total < subtotal - tol and discount is None:
+            note = "the total is less than the subtotal — please check"
+        elif tax and abs(total - subtotal) <= tol:
+            note = "the total looks like the subtotal (tax not included) — please check"
+        elif (tax is not None or shipping is not None):
+            note = "the total doesn't add up against the line amounts — please check"
+        elif total > subtotal * 2.5:
+            note = "the total is much larger than the subtotal — please check"
+        # else: only the subtotal is known and total is a plausible subtotal+shipping — neutral.
+        if note:
+            results["total_amount"] = {
+                **total_data,
+                "confidence":      min(total_data.get("confidence", 0), _RECONCILE_CAP),
+                "validation_note": note,
+            }
 
     # 3. Sanity check — a document date should not be in the future. Old dates
     # are expected (this system files historical paperwork) and are NEVER flagged
