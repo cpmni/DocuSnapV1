@@ -62,18 +62,33 @@ def reconstruct_page_text(img: Image.Image, config: str = "--oem 3 --psm 3") -> 
         return ""
     heights = sorted(h for _, _, _, h, _ in words if h > 0)
     med_h = heights[len(heights) // 2] if heights else 10
-    band = max(med_h * 0.8, 8)        # same-visual-row y-centre tolerance
     col_gap = max(med_h * 1.5, 12)    # x-gap wide enough to be a column break (4-space)
+    cap = max(med_h * 1.2, 10)        # centres this far apart are DIFFERENT rows even if boxes overlap
     words.sort(key=lambda wd: wd[1] + wd[3] / 2.0)   # top-to-bottom by y-centre
-    rows = []                                          # each: [sum_yc, n, [words]]
+    # Group into VISUAL ROWS by vertical OVERLAP, not centre proximity. A bold/larger label
+    # (a "Total:" row set heavier than the line items) has a taller box whose y-centre can sit
+    # more than the old 0.8*med_h from its normal-weight value, so centre-distance banding split
+    # the label from its value onto two lines and the totals never paired with their labels
+    # (oscar's diagnosis of the empty-Total case). Two words on the SAME physical row overlap
+    # vertically regardless of font weight; two adjacent rows barely overlap. The centre-distance
+    # `cap` is a backstop so genuinely-tight separate lines can't be over-merged.
+    rows = []                                          # each: [top, bottom, sum_yc, n, [words]]
     for wd in words:
+        top_w, bot_w = wd[1], wd[1] + wd[3]
         yc = wd[1] + wd[3] / 2.0
-        if rows and yc - (rows[-1][0] / rows[-1][1]) <= band:
-            rows[-1][0] += yc; rows[-1][1] += 1; rows[-1][2].append(wd)
-        else:
-            rows.append([yc, 1, [wd]])
+        placed = False
+        if rows:
+            r = rows[-1]
+            overlap = min(bot_w, r[1]) - max(top_w, r[0])
+            shorter = min(wd[3], r[1] - r[0]) or 1
+            if overlap >= 0.3 * shorter and abs(yc - r[2] / r[3]) <= cap:
+                r[0] = min(r[0], top_w); r[1] = max(r[1], bot_w)
+                r[2] += yc; r[3] += 1; r[4].append(wd)
+                placed = True
+        if not placed:
+            rows.append([top_w, bot_w, yc, 1, [wd]])
     lines = []
-    for _sum, _n, ws in rows:
+    for _t, _b, _sum, _n, ws in rows:
         ws.sort(key=lambda wd: wd[0])                  # left-to-right within the row
         out = [ws[0][4]]
         for a, b in zip(ws, ws[1:]):

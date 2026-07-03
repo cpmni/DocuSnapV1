@@ -282,6 +282,10 @@ def extract_fields(ocr_text: str, field_keys: list[str],
             # and is stored canonically.
             if fp.get("validation") == "currency":
                 value = number_format.canonical(value)
+                # Rejoin an OCR-split thousands/decimal ("$15 707.84" → "$15,707.84") BEFORE
+                # the contiguous currency pattern below truncates it to "$15". Shared with
+                # anchor.py so the crop and keyword paths agree on OCR-split money.
+                value = number_format.normalise_currency_spacing(value)
 
             # Validate value format if validator defined
             val_type = fp.get("validation")

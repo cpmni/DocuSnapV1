@@ -1417,32 +1417,10 @@ def _clean_one_line(line: str | None, val_type: str | None) -> str:
     return ' '.join(parts[:end]).rstrip(',;').strip()
 
 
-def _normalise_currency_spacing(value: str | None) -> str | None:
-    """Rejoin a thousands separator that OCR (or a PDF text layer) rendered as a SPACE, or
-    split across word tokens, so "$10,576.31" reads as "$10 576.31" / "$10, 576.31" / even
-    "$1 234 567.89". A currency value has no internal space, so a space (or comma+space)
-    sitting between a digit and a following 3-digit group is a thousands boundary — collapse
-    it back to a comma. Without this a currency read is TRUNCATED at the gap: the value regex
-    (a contiguous match) stops at the space and returns just "$10". Non-numeric text and an
-    already-contiguous value are untouched (no space → returned verbatim). Reusable across
-    every supplier/field — no per-document logic."""
-    if not value or ' ' not in value:
-        return value
-    prev = None
-    out = value
-    # 1) THOUSANDS: a space/comma between a digit and a 3-digit group → comma. Loop so
-    # consecutive groups both collapse ("$1 234 567" → "$1,234,567"); re.sub's non-overlapping
-    # scan gets adjacent ones, the loop the rest.
-    while prev != out:
-        prev = out
-        out = re.sub(r'(?<=\d)[,\s]+(?=\d{3}(?:\D|$))', ',', out)
-    # 2) DECIMAL point split by OCR spacing: "5,767 .71" / "5,767. 71" / "5,767 . 71" → "5,767.71".
-    out = re.sub(r'(?<=\d)\s*\.\s*(?=\d)', '.', out)
-    # 3) trailing 2-digit DECIMAL with the point dropped entirely: "5,767 71" → "5,767.71".
-    # End-anchored (a thousands group is 3 digits, so a 2-digit group at the very end is the
-    # cents) so it can't be mistaken for a thousands boundary.
-    out = re.sub(r'(?<=\d)\s+(?=\d{2}\s*$)', '.', out)
-    return out
+# Lifted to number_format so the Stage-1 keyword currency path can share it — it was
+# anchor-only, so the two paths drifted ("$15 707.84" truncated to "$15" on the keyword
+# path). The alias keeps this module's existing call sites unchanged.
+_normalise_currency_spacing = number_format.normalise_currency_spacing
 
 
 def _clean_text_fallback(value: str | None, val_type: str | None,

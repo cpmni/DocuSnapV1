@@ -207,6 +207,28 @@ try:
 finally:
     _pt.image_to_data = _orig_i2d
 
+# ── 10b. reconstruct: a BOLD/larger Total label bands with its value (overlap banding) ──
+# The empty-Total case: a "Total:" row set in a larger/bolder font has a TALL box whose
+# y-centre sits more than the old 0.8*med_h band from its normal-weight value (here centres
+# differ by 27px with med_h 30 -> old band 24 -> they SPLIT onto two lines and never paired).
+# Overlap banding groups by vertical box overlap, so label + value re-unite on ONE line.
+def _fake_i2d_bold(img, config=None, output_type=None):
+    return {
+        "text":   ["Item", "$50.00", "Total:", "$396.12"],
+        "left":   [200,    2300,     1900,     2300],
+        "top":    [400,    400,      520,      574],   # label h84 top520 & value h30 top574 share baseline 604
+        "width":  [150,    200,      160,      250],
+        "height": [30,     30,       84,       30],
+    }
+_pt.image_to_data = _fake_i2d_bold
+try:
+    _lines = tess_mod.reconstruct_page_text(Image.new("L", (10, 10), 255)).split("\n")
+    _total = [l for l in _lines if l.startswith("Total:")]
+    check("reconstruct: bold/larger Total label bands with its value (overlap banding)",
+          len(_total) == 1 and "$396.12" in _total[0])
+finally:
+    _pt.image_to_data = _orig_i2d
+
 # ── 8. leak-prevention: crop/zone/anchor/landmark paths don't import the seam ─────
 for rel in ("ocr/region.py", "ocr/landmarks.py", "ocr/text_enhance.py",
             "extraction/anchor.py", "extraction/template_mapper.py"):
