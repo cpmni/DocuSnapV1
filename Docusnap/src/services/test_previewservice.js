@@ -7,7 +7,7 @@
 
 const Database = require('better-sqlite3');
 const path = require('path');
-const { getThumbnail, getDocumentPages } = require('./previewService');
+const { getThumbnail, getDocumentPages, resolveDocFile } = require('./previewService');
 
 let fail = 0;
 const check = (label, cond) => { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}`); if (!cond) fail++; };
@@ -122,6 +122,36 @@ function deps(extra) {
       deps({ fs: { existsSync: (p) => p === wp }, spawn: fakeSpawn(capPages, JSON.stringify(['data:image/png;base64,QQ=='])) }));
     const fileOf = (args) => args[args.indexOf('--file') + 1];
     check('thumb + pages resolve the same file (working_path)', fileOf(capThumb.args) === wp && fileOf(capPages.args) === wp);
+    db.close();
+  }
+
+  // 7) resolveDocFile (now shared by reprocess): a stale/nested folder_path must
+  //    NOT defeat resolution — recover the FILED stored_path, exactly like the
+  //    preview. This is the bug where an auto-filed doc whose original was drained
+  //    into `Processed\Processed` reported "File not found" on reprocess while the
+  //    preview still rendered it.
+  {
+    const db = makeDb();
+    const stored   = 'C:\\output\\SuperStore\\2012\\Invoice.pdf';
+    const staleDir = 'C:\\src\\Kyle Test\\Processed\\Processed';
+    db.prepare('INSERT INTO documents (id, working_path, stored_path, folder_path, original_filename) VALUES (?,?,?,?,?)')
+      .run(20, null, stored, staleDir, 'Invoice.pdf');
+
+    const r1 = resolveDocFile(db, { docId: 20, folderPath: staleDir, filename: 'Invoice.pdf' },
+      { fs: { existsSync: (p) => p === stored }, path, log: () => {} });
+    check('resolveDocFile recovers stored_path when folder_path is stale (bug #3)', r1 === stored);
+
+    // Working copy present → preferred outright.
+    const wp = 'C:\\inbox\\20.pdf';
+    db.prepare('UPDATE documents SET working_path = ? WHERE id = ?').run(wp, 20);
+    const r2 = resolveDocFile(db, { docId: 20, folderPath: staleDir, filename: 'Invoice.pdf' },
+      { fs: { existsSync: (p) => p === wp || p === stored }, path, log: () => {} });
+    check('resolveDocFile prefers the working copy when it exists', r2 === wp);
+
+    // Nothing on disk → null (an honest miss, never the stale path).
+    const r3 = resolveDocFile(db, { docId: 20, folderPath: staleDir, filename: 'Invoice.pdf' },
+      { fs: { existsSync: () => false }, path, log: () => {} });
+    check('resolveDocFile returns null when nothing is recoverable', r3 === null);
     db.close();
   }
 

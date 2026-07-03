@@ -143,6 +143,17 @@ function saveCorrections(db, document_id, corrections,
        @supplier_name, @document_type)
   `);
 
+  // Reflect a confirmed edit back onto the STORED extraction. getWithExtractions
+  // (the Review / Search / Learning-History reload) reads extractions.display_value
+  // and does NOT merge the corrections table — so without this an edit made on an
+  // already-confirmed doc (Learning History "Open in Review", Learning Repair
+  // send-back) persisted only in corrections/hints/the re-filed copy and looked
+  // "lost" when the doc was reopened. No-op when the field has no extraction row.
+  const updateExtractionValue = db.prepare(`
+    UPDATE extractions SET display_value = @corrected_value, was_corrected = 1
+    WHERE document_id = @document_id AND field_key = @field_key
+  `);
+
   const upsertHint = db.prepare(`
     INSERT INTO supplier_hints
       (supplier_name, document_type, field_key, hint_value, usage_count, last_seen)
@@ -161,6 +172,8 @@ function saveCorrections(db, document_id, corrections,
         document_id, field_key, original_value, corrected_value,
         supplier_name: effectiveSupplier, document_type: document_type || null,
       });
+      // Keep the stored extraction in step with the confirmed value (see above).
+      updateExtractionValue.run({ document_id, field_key, corrected_value: corrected_value ?? '' });
       if (corrected_value) {
         upsertHint.run({
           supplier_name: effectiveSupplier, document_type: document_type || null,

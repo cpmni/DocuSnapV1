@@ -107,14 +107,20 @@ function seedBuiltInTypes(db) {
 //
 // The document type's own schema already encodes this: the designated
 // reference/date fields are by definition unique per document, and so is any
-// field typed as a date. Everything else defaults to "constant" — which is
-// also the right default for supplier_name/customer_name/addresses/terms.
+// field typed as a date OR as CURRENCY — a total/subtotal/tax/amount differs on
+// every document, so replaying a remembered value (via supplier hints) or
+// freezing one as a template fixed_value is exactly how one invoice's total
+// ($3,446.16) ends up stamped onto every other invoice whose total read empty
+// (a self-reinforcing monoculture the evidence-based variability guard can't
+// break once every confirmed doc carries the same wrong value). Everything else
+// defaults to "constant" — the right default for supplier/customer/addresses/terms.
 function _annotateFieldVariability(dt) {
   for (const f of dt.fields || []) {
     f.is_variable = (
       f.key === dt.ref_field_key ||
       f.key === dt.date_field_key ||
-      f.type === 'date'
+      f.type === 'date' ||
+      f.type === 'currency'
     ) ? 1 : 0;
     // STRUCTURAL = Company / Date / Reference role: permanent, can't be deleted,
     // disabled, renamed or retyped (the value stays editable). Surfaced so the

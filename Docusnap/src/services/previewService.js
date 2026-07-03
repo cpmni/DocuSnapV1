@@ -238,4 +238,4 @@ function getThumbnail(db, { docId, folderPath, filename }, deps) {
   });
 }
 
-module.exports = { getDocumentDetail, getDocumentPages, getThumbnail };
+module.exports = { getDocumentDetail, getDocumentPages, getThumbnail, resolveDocFile: _resolveDocFile };

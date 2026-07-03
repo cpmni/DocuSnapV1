@@ -1014,19 +1014,20 @@ function register(ctx) {
     }
     logAudit(db, { action: 'reprocess', target_type: 'document', target_id: docId, document_id: docId,
       outcome: 'success', metadata: { enhanced: !!enhanceParams } });
-    // Prefer the app-managed working copy so reprocess doesn't depend on the
-    // user's source folder still holding the file; fall back to the source path.
-    // Prefer the working copy; then — for an already-FILED (confirmed) doc, e.g. one the
-    // backend auto-filed and the operator re-surfaced — the FILED copy (stored_path), which
-    // always exists (mirrors documents.resolveFilePath); finally the caller's source path.
-    const wpRow   = db.prepare('SELECT working_path, stored_path, status FROM documents WHERE id = ?').get(docId);
-    const srcFile = (wpRow && wpRow.working_path && fs.existsSync(wpRow.working_path))
-                  ? wpRow.working_path
-                  : (wpRow && wpRow.status === 'confirmed' && wpRow.stored_path && fs.existsSync(wpRow.stored_path))
-                    ? wpRow.stored_path
-                    : path.join(folderPath, filename);
-    if (!fs.existsSync(srcFile)) {
-      return { success: false, error: 'File not found: ' + srcFile };
+    // Resolve the source file with the SAME robust recovery the PREVIEW uses
+    // (previewService._resolveDocFile): app working copy → filed stored_path →
+    // any surviving sibling copy of the same document. The previous inline chain
+    // (working_path → confirmed stored_path → folderPath/filename) gave up the
+    // moment folder_path had gone stale — e.g. an auto-filed doc whose original
+    // was drained into a nested `Processed\Processed` — and reported "File not
+    // found" on a doc the preview could still render. Using one resolver keeps
+    // reprocess able to find the file exactly wherever the preview can show it.
+    const previewService = require('../../services/previewService');
+    const srcFile = previewService.resolveDocFile(
+      db, { docId, folderPath, filename }, { fs, path, log: (m) => logger?.log?.(m) }
+    );
+    if (!srcFile || !fs.existsSync(srcFile)) {
+      return { success: false, error: 'File not found: ' + (srcFile || path.join(folderPath, filename)) };
     }
 
     // Snapshot existing extractions
