@@ -4,14 +4,63 @@ Branch: **feat/tray-stage1**. Repo root is `c:\GIT Projects\` (the app lives in 
 `Docusnap/` subfolder; git paths show a `Docusnap/` prefix — remember when using
 `git show HEAD:Docusnap/...`).
 
-✅ **Tree is CLEAN — everything committed + pushed** (HEAD ~`69c6d1a`). Only expected untracked
-artifacts remain (audit `.md`s, `assets/Screenshots/`, `output/`, `stress_test/`, `night_audit/`,
-`dist/`, `client/dist/`).
+✅ **Everything committed + pushed** (HEAD `20678db` = origin). The ONLY uncommitted tracked change
+is **focus tracing in `src/main.js` + `src/preload.js`, left in place ON PURPOSE** (behavior-neutral
+`[FOCUS]` logs — see tonight's section). Otherwise only expected untracked artifacts (audit `.md`s,
+`assets/Screenshots/`, `output/`, `stress_test/`, `night_audit/`, `dist/`, `client/dist/`).
 
 📚 **CLAUDE.md was split (2026-07-03, `69c6d1a`)** into a lean index + `docs/` deep-reference set —
 read the pointed-to doc when a task touches that area: `docs/extraction-pipeline.md` ·
 `docs/detached-client.md` · `docs/features.md` (first-run/backup/**Learning Repair**/teaching/dev
 inspector) · `docs/history.md` (**resolved QA findings** + build-stage history) · `docs/licensing.md`.
+
+---
+
+## LATEST — 2026-07-03 (late) — TOTAL-EXTRACTION FIXES (real-doc verified) + multi-page finding
+The Total field read empty/wrong on scanned invoices and — worse — AUTO-FILED wrong at 100%. Root-caused
+with **oscar** (OCR) + **reggie** (patterns). All committed + pushed; **HEAD `20678db`**.
+- **`b75b583`** — 3 safety fixes: (1) **currency fields are now `is_variable`** (`document_types._annotateFieldVariability`)
+  so supplier-hints / template-freeze can NEVER stamp a learned total onto another doc — this was the **`$3,446.16`
+  on 167 confirmed docs** bug; (2) `saveCorrections` writes an edit back to `extractions.display_value` (an edit on an
+  ALREADY-confirmed doc via Learning History / Learning Repair no longer looks "lost" on reopen — `getWithExtractions`
+  doesn't merge the corrections table); (3) reprocess resolves the file via `previewService.resolveDocFile`
+  (working→stored→sibling recovery) so an auto-filed doc whose original drained into a nested `Processed\Processed`
+  no longer errors "File not found".
+- **`a1d9f0c`** — Stage 1+2: keyword currency path now shares `number_format.normalise_currency_spacing`
+  (`"$15 707.84"→"$15,707.84"`, was anchor-only → the two paths had drifted); `reconstruct_page_text` bands OCR rows
+  by vertical **OVERLAP** not y-centre (a bold `Total:` label's tall box split from its value → empty total).
+- **`20678db`** — Stage 3 guardrail: `validator.py` cross-checks total vs subtotal(+tax/shipping/discount) — CLOSE→trust,
+  CONTRADICT (total<subtotal / subtotal-grab / doesn't-add-up / >2.5× subtotal, no components)→cap conf + note + review,
+  NEUTRAL→no penalty.
+- **Bench (400-doc `accuracy_harness.js`):** subtotal/total held **100%**, scanned type/date **94→96%**, no regressions.
+  Tests: `test_total_reconciliation.py` (8 branches), `test_keyword_currency_rejoin.py`, `test_currency_variability.js`,
+  `test_save_corrections.js`, `test_previewservice.js` (resolver), `test_ocr_engine.py` (bold-label case).
+- **REAL-DOC VERIFIED:** the live DB (`%APPDATA%\ScanFinder\docusnap.db`) had `$3,446.16` stamped on **167** confirmed
+  docs; reprocessing two of them (`#24455`, `#16411`) with the new code reads distinct CORRECT totals
+  (`$10,984.31` / `$6,306.19`). Root cause: old OCR couldn't pair the bold `Total:` with its value → empty → the hint
+  filled it; now the total reads → not empty → no stamping. is_variable is the belt-and-braces for the still-empty case.
+
+⚠ **UNCOMMITTED BY DESIGN — focus tracing** (`src/main.js` + `src/preload.js`, CORE app only): behavior-neutral
+`[FOCUS] <ts> …` logs that route renderer + main focus events to the `npm start` terminal. Left in place to catch the
+**INTERMITTENT keyboard-focus bug** (click a text field → no caret until you click out+back in; reproduces in dev).
+Next repro: copy the `[FOCUS]` lines around a bad click and diagnose. Leading hypothesis: competing async `focus()`
+calls (main `browser-window-created` grabFocus on window 'focus' + the `ensure-window-focus` IPC + the preload rAF
+`el.focus()`) race the user's click and clobber the caret. Remove tracing with `git checkout -- src/main.js src/preload.js`.
+
+**OPEN FOLLOW-UPS (owner / next session):**
+1. **Clean up the 167 poisoned docs** — they are STILL STORED with `$3,446.16` (the fix only stops NEW stamping).
+   Reprocess + re-confirm to correct each, AND purge the `total_amount` supplier-hint (`$3,446.16`) via Learning
+   Recovery so it stops being the "learned" value. (Can be scripted.)
+2. **Multi-page invoices — INVESTIGATED, NOT FIXED.** Labelled fields DO span all pages (full OCR text is all pages
+   concatenated with `--- PAGE BREAK ---`; keyword searches every line), so invoice#-on-p1 / total-on-p2 works via
+   keyword. GAPS: (a) ⊕ anchors are **page-1-only** (`field_anchors` has no page col; `anchor.py` uses `page_images[0]`);
+   (b) the **teach wizard hardcodes `page_number:0`** (`teach/renderer.js:638`) so a page-2 taught field saves as page 1
+   (Stage 0.5 `template_mapper` IS page-aware IF `page_number` were set); (c) keyword **first-match-wins** can grab a
+   page-1 running "Total" over the last-page grand total. Fix order: teach-wizard page capture (small) → grand-total
+   selection (small; ties to Stage 3 arithmetic) → `field_anchors.page_number` migration + `anchor.py` page select (larger).
+   Needs a REAL multi-page sample to verify.
+3. **Stage 4 total follow-ups (deferred):** Balance-Due dual-read corroboration; add `shipping`/`discount` fields for the
+   EXACT equation; oscar's PSM-6 targeted totals-block re-read.
 
 ---
 
