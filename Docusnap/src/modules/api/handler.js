@@ -993,7 +993,16 @@ function pairingOk(url, learning, db) {
   if (!code) return { ok: true };
   try { exp = learning.getSetting(db, 'client_api_pairing_expires'); } catch { /* ignore */ }
   if (exp && Date.now() > Number(exp)) return { ok: false, reason: 'expired' };
-  return (url.searchParams.get('code') || '') === code ? { ok: true } : { ok: false, reason: 'bad_code' };
+  // Constant-time compare of the pairing code (no early-exit timing side-channel). The
+  // length pre-check both guards timingSafeEqual (which throws on unequal lengths) and is a
+  // negligible leak for a short-lived pairing secret.
+  const provided = url.searchParams.get('code') || '';
+  let match = false;
+  try {
+    const a = Buffer.from(provided), b = Buffer.from(String(code));
+    match = a.length === b.length && require('crypto').timingSafeEqual(a, b);
+  } catch { match = false; }
+  return match ? { ok: true } : { ok: false, reason: 'bad_code' };
 }
 
 /**
