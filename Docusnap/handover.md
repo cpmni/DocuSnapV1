@@ -1,13 +1,43 @@
-# HANDOVER — read first on startup (refreshed 2026-07-02, PM)
+# HANDOVER — read first on startup (refreshed 2026-07-03)
 
 Branch: **feat/tray-stage1**. Repo root is `c:\GIT Projects\` (the app lives in the
 `Docusnap/` subfolder; git paths show a `Docusnap/` prefix — remember when using
 `git show HEAD:Docusnap/...`).
 
-⚠ **UNCOMMITTED work in the tree right now** (Learning Repair polish + keyboard-focus fix) —
-see "In-flight this session" below. Review the diff, then commit/push. Everything ELSE below
-is committed + pushed. Otherwise the tree only has expected untracked artifacts
-(audit `.md`s, `assets/Screenshots/`, `output/`, `stress_test/`, `night_audit/`).
+✅ **Tree is CLEAN — everything committed + pushed** (HEAD ~`6b49bc7`). Only expected untracked
+artifacts remain (audit `.md`s, `assets/Screenshots/`, `output/`, `stress_test/`, `night_audit/`,
+`dist/`, `client/dist/`).
+
+---
+
+## LATEST — 2026-07-03 (release prep)
+**Installers built** (both at commit 6b49bc7): core `dist/ScanFinder Setup 2.0.0-r20260703-0933-6b49bc7.exe`
++ client `client/dist/ScanFinder Search Client Setup 1.0.2-r20260703-*.exe`. Rebuild: core `npm run build`
+(CLOSE the dev app first — EPERM on better_sqlite3.node); client `cd client && npm run dist`. `vendor/python`
+is present so the license gate + packaging work here.
+
+**This session shipped (all committed):**
+- 6 extraction-error fixes (MAC slip-fix, empty-paren charset, date-label, shape-warn suppression, phantom
+  cross-type flag, complex-invoice TOTALS via keyword alias + currency-column-skip + label priority).
+- **Regional settings (Phases 1-3)**: `region_date_order` (dmy/mdy/ymd) + `region_number_format`
+  (continental/french/swiss/indian → canonical) in Settings → Processing. Money fields now **store just the
+  number** (currency symbol STRIPPED — `number_format.strip_currency`). Guards: mixed-inbox amount corruption
+  (only convert when the value looks like the region), bare-number on-blur currency pattern. Tests:
+  `test_number_format.py`, `test_date_order.py`. The Phase-3 currency-ASSIGN feature was REMOVED (superseded).
+- **Batched watch folder** (was one Python proc per file → cold-start per file; now sharded batch) + license
+  enforcement + poll-time overlap parity. ⚠ Watch still does NOT separate multi-doc PDFs (documented in-code;
+  import those manually — a safe fix needs a drain rework).
+- Core-aware concurrency cap; full-text search over ALL fields + bidirectional comma numbers; Review
+  **"Draw the anchor"** button; keyboard-focus repair; renderer-crash instrumentation.
+
+**Overnight 5-agent release test plan + risk register → `night_audit/RELEASE_TEST_PLAN_2026-07-02.md`.**
+Verdict: default (anglo/dmy) install release-ready; the "CRITICAL double-file race" in `v1_stress_findings.json`
+is a STALE harness artifact (v1_stress.js stubs commitDocument — real CAS is safe 35/35). **Deferred (owner
+decisions):** watch multi-doc separation (BLOCKER-2a); regional pickers not in first-run onboarding (B1d);
+a renderer JS twin for region-FORMATTED Search input; client "draw-box OCR returns empty" (pre-existing);
+413-vs-reset on oversized /v1 body (L3). PHP licensing-backend needs its own security pass.
+
+---
 
 Dev run: `npm start`. Tests: Python files run DIRECTLY (`py -3.12 python_backend/tests/x.py`,
 NOT pytest-the-dir); JS via `ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron <file>`.
