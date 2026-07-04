@@ -28,8 +28,11 @@ files are on disk; this captures the why). Repo root is `c:\GIT Projects\`; git 
   consistent-customer repair — see test_stage45); #6 a ref field with date-shaped values misclassified
   `date_like`. A broad engine "type-valid ⇒ never withhold" guard was TRIED and REVERTED: refs are
   typed `text` (loose regex) in the real DB, so it let a MALFORMED ref (`9999-9999`, missing its 3rd
-  group) through — the shape gate is needed exactly there. gary's property/matrix test design
-  (`type-valid value never nulled/magnitude-altered`) is the follow-up to guard the whole class.
+  group) through — the shape gate is needed exactly there. **PERMANENT CLASS-GUARD landed:**
+  `tests/test_gate_class_invariants.py` asserts the gate's invariants over a GENERATED matrix
+  (deterministic — Hypothesis isn't in the env): (A) extract never merges amounts / strips a sign,
+  (B) idempotence, (C) no mid-code truncation, (D) length/separator variants accepted, (E) different
+  STRUCTURE still flagged — so a NEW instance of the over-fire class trips it, not just the fixed ones.
 - **Supplier IDENTITY not vetoed by the GLOBAL name format (2026-07-04).** `engine.py` Stage 4.5:
   the `supplier_name`/`customer_name` identity field was validated against the doc-type-GLOBAL
   ('' supplier) format, which aggregates DIFFERENT suppliers. A corpus 90% "SuperStore" learned
