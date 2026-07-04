@@ -36,6 +36,9 @@ const BUILT_IN_TYPES = [
       { key: 'supplier_name',  label: 'Document Issuer',   type: 'text', required: 1, sort_order: 10 },
       { key: 'invoice_date',   label: 'Invoice Date',    type: 'date', required: 1, sort_order: 20 },
       { key: 'invoice_number', label: 'Invoice Number',  type: 'text', required: 1, sort_order: 30 },
+      // NOTE: money fields (total/subtotal/VAT/shipping/discount) are deliberately NOT seeded.
+      // The reconciliation components are SHADOW-extracted in the background for the
+      // "mathematically verified" check; they are only shown as fields if the USER adds them.
     ]
   },
   {
@@ -92,6 +95,34 @@ function seedBuiltInTypes(db) {
     }
   });
   seed();
+  _cleanupAutoMoneyFields(db);
+}
+
+// One-time cleanup: an interim build auto-added money component fields
+// (total_amount/subtotal/vat_tax/shipping/discount) to built-in types. Those are now
+// SHADOW-extracted in the background for the reconciliation check instead of shown as
+// fields, so remove the auto-added ones. GUARDED: only a field that is built_in=1 (auto —
+// a user's own field is built_in=0) AND carries NO confirmed data is removed, so a
+// user-created or populated field is never touched. Idempotent + inert once clean.
+const _AUTO_MONEY_KEYS = ['total_amount', 'subtotal', 'vat_tax', 'shipping', 'discount'];
+function _cleanupAutoMoneyFields(db) {
+  try {
+    const placeholders = _AUTO_MONEY_KEYS.map(() => '?').join(',');
+    const rows = db.prepare(`
+      SELECT f.id FROM fields f
+      JOIN document_types dt ON dt.id = f.document_type_id
+      WHERE dt.built_in = 1 AND f.built_in = 1 AND f.key IN (${placeholders})
+        AND NOT EXISTS (
+          SELECT 1 FROM extractions e
+          JOIN documents d ON d.id = e.document_id
+          WHERE e.field_key = f.key AND d.document_type_id = f.document_type_id
+            AND d.status = 'confirmed' AND COALESCE(e.display_value, '') <> ''
+        )
+    `).all(..._AUTO_MONEY_KEYS);
+    if (!rows.length) return;
+    const del = db.prepare('DELETE FROM fields WHERE id = ?');
+    db.transaction(() => { for (const r of rows) del.run(r.id); })();
+  } catch (e) { /* cleanup is best-effort — never block startup */ }
 }
 
 // ── Field variability (schema-derived) ────────────────────────────────────────

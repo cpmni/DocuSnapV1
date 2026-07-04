@@ -813,6 +813,9 @@ function getFieldFormats(db) {
                                AND c.field_key  = e.field_key
     WHERE d.status          = 'confirmed'
       AND (e.display_value IS NOT NULL OR c.corrected_value IS NOT NULL)
+      -- Never learn from SHADOW reconciliation reads: they back the "verified" total check
+      -- for fields the type doesn't define, and are unconfirmed by the user.
+      AND (e.extraction_method IS NULL OR e.extraction_method <> 'shadow_reconcile')
     ORDER BY d.confirmed_at DESC, d.id DESC
   `).all();
 
@@ -852,12 +855,15 @@ function getFieldFormats(db) {
     }
   }
 
-  // Only return groups with 3+ distinct confirmed values (enough to learn a pattern).
-  // confirmed_count (total confirmed instances, not deduped) lets consumers like
-  // ocr_corrector's noise-profile inference enforce their own, stricter "enough
-  // examples" thresholds without a second DB round-trip.
+  // Emit a group when EITHER: 3+ DISTINCT confirmed values (enough to learn a VARIABLE
+  // pattern), OR the SAME value recurs strongly (3+ confirmations, few distinct) — a
+  // CONSTANT field like a model/serial code whose value OCR keeps misreading. The latter
+  // is what enables ocr_corrector's O→0/I→1 character fix for constant-value fields, which
+  // by definition have <3 distinct values (mirrors ocr_corrector.MIN_CONFIRMED_FOR_SINGLE_SHAPE=3).
+  // confirmed_count (total confirmed instances, not deduped) is carried so consumers can
+  // apply their own stricter thresholds (e.g. the noise-profile gate needs 10+).
   return Object.values(groups)
-    .filter(g => g._values.size >= 3)
+    .filter(g => g._values.size >= 3 || g._count >= 3)
     .map(({ _values, _valueCounts, _count, ...rest }) => ({
       ...rest,
       sample_values:   [..._values].slice(0, 20),
@@ -1144,9 +1150,71 @@ function renameFieldValue(db, { supplier_name, document_type, field_key, oldValu
   return tx();
 }
 
+// Count the rows that key off a given supplier IDENTITY, per learning table — for the
+// Learning-Recovery "rename supplier" preview (so an admin sees the blast radius before
+// applying). COALESCE so a NULL supplier_name matches an empty-string query symmetrically.
+function getSupplierScopeCounts(db, name) {
+  const s = (name || '').trim();
+  const one = (t) => db.prepare(`SELECT COUNT(*) n FROM ${t} WHERE COALESCE(supplier_name,'') = ?`).get(s).n;
+  return {
+    documents:         one('documents'),
+    supplier_hints:    one('supplier_hints'),
+    field_anchors:     one('field_anchors'),
+    logo_fingerprints: one('logo_fingerprints'),
+    corrections:       one('corrections'),
+  };
+}
+
+// Rename a SUPPLIER IDENTITY everywhere it is a learning-scope key, atomically. The per-field
+// learning-history tools (purge/rename) can't repair the identity field itself, because they
+// are SCOPED BY supplier — the supplier IS the scope key. This rewrites that key across every
+// table that carries it so a wrong/merged identity (e.g. a supplier read that swallowed the
+// customer, "Profile Construction ACME Inc" -> "Profile Construction") can be corrected in one
+// move and stops propagating via the logo/hint scope.
+//
+//   • documents.supplier_name          — the universal learning scope + folder key
+//   • supplier_hints / field_anchors   — UNIQUE(supplier,…): rename what doesn't collide with an
+//                                        existing row under the new name, DROP the leftover old
+//                                        duplicate (merge). No usage_count sum — the surviving
+//                                        new row's count stands (precision over a rare merge).
+//   • logo_fingerprints / corrections  — plain rename (no scope-unique constraint)
+//   • the stored supplier_name FIELD value (extractions + corrections) on those docs, where it
+//     still equals the OLD identity — so the value shown/learned matches the renamed scope.
+//
+// FILES ARE NOT MOVED: a confirmed doc already filed under the old company folder keeps its
+// file (still reachable via stored_path); only the DB identity changes. Re-file via reprocess
+// if folder consolidation is wanted. Wrapped in a transaction. Returns before/after scope counts.
+// (customer_name-identity types — sales orders — are out of scope here; supplier_name is the
+// universal scope key. NOTE: not version-stamped — a schema-free data operation.)
+function renameSupplier(db, { oldName, newName } = {}) {
+  const from = (oldName || '').trim(), to = (newName || '').trim();
+  if (!from || !to || from === to) return { renamed: 0, before: null, after: null };
+  const before = getSupplierScopeCounts(db, from);
+  const tx = db.transaction(() => {
+    // UNIQUE-scoped learning tables: rename non-colliding rows, drop leftover old duplicates.
+    for (const t of ['supplier_hints', 'field_anchors']) {
+      db.prepare(`UPDATE OR IGNORE ${t} SET supplier_name = @to WHERE supplier_name = @from`).run({ to, from });
+      db.prepare(`DELETE FROM ${t} WHERE supplier_name = @from`).run({ from });
+    }
+    // Plain rename (no scope-unique constraint).
+    db.prepare(`UPDATE logo_fingerprints SET supplier_name = @to WHERE supplier_name = @from`).run({ to, from });
+    db.prepare(`UPDATE corrections        SET supplier_name = @to WHERE COALESCE(supplier_name,'') = @from`).run({ to, from });
+    db.prepare(`UPDATE documents          SET supplier_name = @to WHERE COALESCE(supplier_name,'') = @from`).run({ to, from });
+    // The stored IDENTITY value on those docs (only where it still equals the old name), so the
+    // supplier_name field value matches the renamed scope + re-learns cleanly.
+    db.prepare(`UPDATE extractions SET display_value = @to, raw_value = @to
+                 WHERE field_key = 'supplier_name' AND display_value = @from`).run({ to, from });
+    db.prepare(`UPDATE corrections SET corrected_value = @to
+                 WHERE field_key = 'supplier_name' AND corrected_value = @from`).run({ to, from });
+  });
+  tx();
+  return { renamed: 1, before, after: getSupplierScopeCounts(db, to) };
+}
+
 module.exports = {
   insertExtractions, deleteExtractions,
   getFieldValueHistory, getDocumentsForFieldValue, purgeFieldValue, renameFieldValue,
+  getSupplierScopeCounts, renameSupplier,
   saveCorrections, getHints, isPlausibleSupplierName, nameQuality, normalizeSupplierName,
   saveAnchor, sanitizeAnchorLabel, clearAnchors, getAllAnchors,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
