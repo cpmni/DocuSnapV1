@@ -47,6 +47,11 @@ except ImportError:
 # rejecting the partial-garble case (min word conf ~55) the mean alone misses.
 _TIER_A_OCR_MIN = 70
 
+# The supplier IDENTITY fields — their VALUE is the learning scope key, so a GLOBAL ('' supplier)
+# format aggregates DIFFERENT suppliers and must never constrain them (see the fmt_entry fallback
+# in the Stage 4.5 loop). Mirrors COMPANY_KEYS in database/modules/document_types.js.
+_IDENTITY_FIELD_KEYS = frozenset({"supplier_name", "customer_name"})
+
 _STAGE05_LOCATED_METHODS = (
     "template_mapping", "template_mapping_expanded",
     "template_mapping_salvaged", "template_mapping_expanded_salvaged",
@@ -644,6 +649,39 @@ class ExtractionEngine:
     def detect_document_type(self, ocr_text: str,
                              known_types: list | None = None) -> dict | None:
         return keyword.detect_document_type(ocr_text, self.patterns, known_types)
+
+    # Reconciliation roles that back the "mathematically verified" total check.
+    _RECONCILE_COMPONENT_ROLES = ('subtotal', 'vat_tax', 'shipping', 'discount')
+
+    def _shadow_reconcile_components(self, results, field_defs, ocr_text, patterns):
+        """Shadow-extract the reconciliation COMPONENTS the doc type doesn't define as fields,
+        so the total-reconciliation check can run without the user having to add them. Only
+        runs when a real TOTAL field exists (nothing to verify otherwise). Values are tagged
+        method='shadow_reconcile' so downstream code shows/learns nothing from them."""
+        try:
+            canon = ('total_amount',) + self._RECONCILE_COMPONENT_ROLES
+            covered = set()
+            for f in (field_defs or []):
+                k = f.get('key')
+                if k in canon:
+                    covered.add(k)
+                    continue
+                for role, aliases in keyword.ROLE_KEY_ALIASES.items():
+                    if k in aliases:
+                        covered.add(role)
+            if 'total_amount' not in covered:      # no total to reconcile against
+                return
+            uncovered = [r for r in self._RECONCILE_COMPONENT_ROLES if r not in covered]
+            if not uncovered:
+                return
+            shadow = keyword.extract_fields(ocr_text, uncovered, patterns) or {}
+            for k, data in shadow.items():
+                if data and data.get('value') and not (results.get(k) or {}).get('value'):
+                    d = dict(data)
+                    d['method'] = 'shadow_reconcile'
+                    results[k] = d
+        except Exception:
+            pass  # background aid — must never break extraction
 
     def extract(self,
                 ocr_text:      str,
@@ -1362,6 +1400,14 @@ class ExtractionEngine:
         else:
             self.log(f"  Stage 3: skipped ({self.mode.capitalize()} Mode)")
 
+        # ── Background reconciliation components (SHADOW) ──────────────────────
+        # Read subtotal/VAT/shipping/discount that the doc type does NOT define as fields,
+        # purely so the total-reconciliation guardrail + the "mathematically verified" badge
+        # can run WITHOUT cluttering the type with fields the user never created. Marked
+        # method='shadow_reconcile' → persisted for the check but never displayed and never
+        # learned (Review shows only type fields; getFieldFormats skips the shadow method).
+        self._shadow_reconcile_components(results, field_defs, ocr_text, patterns_for_run)
+
         # ── Stage 4: Validation ───────────────────────────────────────────────
         self.log("  Stage 4: validating…")
         self._t('stage_start', stage='4_validate')
@@ -1556,11 +1602,22 @@ class ExtractionEngine:
                         n_flagged += 1
                         format_anomaly_flagged = True
                         continue
-                # Supplier-scoped format first; fall back to the doc-type-scoped
-                # one ('' supplier) so qualification works even when the supplier
-                # is never identified (document-agnostic learning).
-                fmt_entry = (self.format_class_index.get((s_lower, dt_lower, key)) if s_lower else None) \
-                            or self.format_class_index.get(('', dt_lower, key))
+                # Supplier-scoped format first; fall back to the doc-type-scoped one ('' supplier)
+                # so qualification works even when the supplier is never identified (document-
+                # agnostic learning). BUT NOT for the supplier IDENTITY field itself
+                # (supplier_name/customer_name): its value IS the scope key, so a GLOBAL format
+                # aggregates DIFFERENT suppliers by definition. A corpus dominated by one supplier
+                # (e.g. 90% "SuperStore") then learns that single name's shape ('@@@@@@@@@@') +
+                # position-0 prefix ("SuperStore") as "the usual" and flags every OTHER supplier's
+                # name ("City Office NI") as a format anomaly. The identity field is only compared
+                # against ITS OWN supplier's scoped history (one company = one stable name); a
+                # garbled identity is still caught by the name-quality / wordness path, which needs
+                # no cross-supplier shape. A NON-identity name field (a per-type customer that IS
+                # consistent) keeps the global fallback, so canonical-token repair still works.
+                # (Cf. the numeric shape fold — the same "variable value, dominant-shape veto" trap.)
+                fmt_entry = self.format_class_index.get((s_lower, dt_lower, key)) if s_lower else None
+                if not fmt_entry and key not in _IDENTITY_FIELD_KEYS:
+                    fmt_entry = self.format_class_index.get(('', dt_lower, key))
                 if not fmt_entry:
                     continue
                 # ── Canonical token repair for NAME-LIKE fields ── runs INDEPENDENT of

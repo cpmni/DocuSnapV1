@@ -449,18 +449,40 @@ def validate_and_adjust(extractions: dict,
     # Keys off whatever component fields the type actually defines (shipping/discount are
     # optional and absent by default) — reggie-designed, reusable across invoice layouts.
     _RECONCILE_CAP = 50   # low enough to force review on a required total field
-    total_data = results.get("total_amount", {})
+    # Resolve each money ROLE to whatever key the doc type actually used (canonical key first,
+    # then any alias-keyed field that carries a value) so the maths reconciles regardless of
+    # naming — "Postage"/"Carriage" as shipping, "VAT"/"GST" as tax, "Balance Due" as total.
+    # Shares keyword.ROLE_KEY_ALIASES (single source with the extractor).
+    from extraction.keyword import ROLE_KEY_ALIASES
+    def _role_field(role):
+        d = results.get(role)
+        if isinstance(d, dict) and d.get("value"):
+            return role, d
+        for k, data in results.items():
+            if k in ROLE_KEY_ALIASES.get(role, ()) and isinstance(data, dict) and data.get("value"):
+                return k, data
+        return role, {}
+    total_key, total_data = _role_field("total_amount")
     total      = parse_amount(total_data.get("value"))
-    subtotal   = parse_amount(results.get("subtotal", {}).get("value"))
-    tax        = parse_amount(results.get("vat_tax",  {}).get("value"))
-    shipping   = parse_amount(results.get("shipping", {}).get("value"))
-    discount   = parse_amount(results.get("discount", {}).get("value"))
+    subtotal   = parse_amount(_role_field("subtotal")[1].get("value"))
+    tax        = parse_amount(_role_field("vat_tax")[1].get("value"))
+    shipping   = parse_amount(_role_field("shipping")[1].get("value"))
+    discount   = parse_amount(_role_field("discount")[1].get("value"))
 
     if total and total > 0 and subtotal and subtotal > 0 and total_data.get("value"):
         tol        = max(total * 0.02, 0.05)   # 2% or 5 cents, absorbs rounding/OCR
-        components = subtotal + (tax or 0) + (shipping or 0) - (discount or 0)
+        _tax = tax or 0
+        # Shipping and discount may be SEPARATE additions OR line items ALREADY inside the
+        # subtotal (a "Delivery Charge" line, a per-line discount) — the layout doesn't say
+        # which. Try both so a genuinely-balanced invoice (subtotal+tax = total, with a
+        # delivery line already in the subtotal) isn't flagged for a modelling assumption.
+        # Reconciles if ANY plausible composition lands within tolerance.
+        reconciles = any(
+            abs(total - (subtotal + _tax + s * (shipping or 0) - d * (discount or 0))) <= tol
+            for s in (0, 1) for d in (0, 1)
+        )
         note = None
-        if abs(total - components) <= tol:
+        if reconciles:
             pass                                                   # CLOSE → trust
         elif total < subtotal - tol and discount is None:
             note = "the total is less than the subtotal — please check"
@@ -472,7 +494,7 @@ def validate_and_adjust(extractions: dict,
             note = "the total is much larger than the subtotal — please check"
         # else: only the subtotal is known and total is a plausible subtotal+shipping — neutral.
         if note:
-            results["total_amount"] = {
+            results[total_key] = {
                 **total_data,
                 "confidence":      min(total_data.get("confidence", 0), _RECONCILE_CAP),
                 "validation_note": note,
@@ -632,11 +654,22 @@ def format_consistency_delta(extractions: dict,
 
 
 def needs_review(extractions: dict, field_defs: list[dict]) -> bool:
-    """True if any enabled field is below its confidence threshold."""
+    """True if any field needs a human check: a REQUIRED field that is missing/empty, OR any
+    present field below its confidence threshold.
+
+    A missing required field (e.g. the Document Issuer that logo/keyword extraction couldn't
+    find on a fresh install) used to be SKIPPED here — so a doc with a blank company read as
+    "ready to file" and would file under "Unknown Company". A required field the app couldn't
+    fill is exactly what a human must supply, so it now flags for review.
+    """
     for f in field_defs:
         key       = f["key"]
         threshold = f.get("confidence_threshold", 70)
         data      = extractions.get(key)
+        if f.get("required"):
+            val = data.get("value") if isinstance(data, dict) else data
+            if val is None or str(val).strip() == "":
+                return True
         if not isinstance(data, dict):
             continue
         if data.get("confidence", 0) < threshold:

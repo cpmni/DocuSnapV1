@@ -242,6 +242,14 @@ def extract_text_and_images(
     texts = []
     pages = []
 
+    # Born-digital text is a near-free text-layer read (no OCR), so it is regenerated FRESH
+    # even on reprocess (use_cache) — the cache only exists to skip expensive OCR. Without this,
+    # a stale cache (text generated before a born_digital text-gen change, e.g. the column-break
+    # split) silently re-serves the OLD text, so a reprocess never picks the improvement up (the
+    # "supplier still merged after reprocess" trap). Tracks whether EVERY page yielded fresh text;
+    # if a scanned page under use_cache did not, we fall back to the cache for the whole doc.
+    all_fresh = True
+
     if ext == ".pdf":
         import pypdfium2 as pdfium
         from ocr import born_digital as _bd
@@ -274,19 +282,23 @@ def extract_text_and_images(
                 if rotations_out is not None:
                     rotations_out.append(rot)
                 pages.append(img)
-                if not use_cache:                  # use_cache -> reuse stored text, skip OCR
-                    layer_text = None
-                    if born_digital:
-                        try:
-                            ok, _n, _txt = _bd.assess_page(page)
-                            if ok:
-                                # Positional reading order (page_lines), not the layer's raw
-                                # char order, so label-adjacency keyword extraction matches OCR.
-                                layer_text = _bd.page_text(page)
-                        except Exception:
-                            layer_text = None   # any text-layer failure -> OCR fallback
-                    texts.append(layer_text if layer_text is not None
-                                 else engine.read_page(img, enhance_params))
+                # Born-digital text: regenerate FRESH every run (cheap, authoritative), even
+                # under use_cache. Positional reading order (page_lines), not the layer's raw
+                # char order, so label-adjacency keyword extraction matches OCR.
+                layer_text = None
+                if born_digital:
+                    try:
+                        ok, _n, _txt = _bd.assess_page(page)
+                        if ok:
+                            layer_text = _bd.page_text(page)
+                    except Exception:
+                        layer_text = None   # any text-layer failure -> OCR / cache fallback
+                if layer_text is not None:
+                    texts.append(layer_text)
+                elif not use_cache:                 # scanned page, fresh run -> OCR it
+                    texts.append(engine.read_page(img, enhance_params))
+                else:                               # scanned page under use_cache -> honour cache
+                    all_fresh = False
                 try: page.close()
                 except Exception: pass
         finally:
@@ -299,8 +311,12 @@ def extract_text_and_images(
         pages = [img]
         if not use_cache:
             texts.append(engine.read_page(img, enhance_params))
+        else:
+            all_fresh = False   # a raster image has no text layer -> honour the OCR cache
 
-    if use_cache:
+    # Prefer freshly-derived text whenever we have it for EVERY page (fully born-digital, or a
+    # non-cache run); only fall back to the cache when a scanned/mixed page was skipped under it.
+    if use_cache and not all_fresh:
         return cached_text, pages
     return "\n\n--- PAGE BREAK ---\n\n".join(texts), pages
 

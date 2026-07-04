@@ -4,7 +4,7 @@ page-normalised coordinate transform (y-flip), and word/line grouping. Uses a
 FAKE pypdfium2 page (scripted char boxes), so it needs no real PDF and no
 Tesseract — mirroring the repo's stubbed-OCR test convention.
 """
-import os, sys
+import os, sys, re
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from ocr import born_digital as bd
 
@@ -92,6 +92,27 @@ check("dotted numeric date stays intact",
       bd._join_words([_w("6"), _w("."), _w("3"), _w("."), _w("2026")]), "6.3.2026")
 check("'#'+digits stays separate (not attaching punct)",
       bd._join_words([_w("#"), _w("2371")]), "# 2371")
+
+print("Column-gap break in line reconstruction (_join_words):")
+def _wg(t, x1, x2, h=0.012):  # a word with geometry, on one row
+    return {"text": t, "x1": x1, "x2": x2, "y1": 0.20, "y2": 0.20 + h}
+# Two side-by-side columns on one visual row (BILL FROM value …big gap… BILL TO value): a
+# column-wide gap must emit a 4-space break so keyword.py's `{4,}`-space guard takes only the
+# value's own column — the fix for the merged-supplier "Profile Construction ACME Inc" bug.
+col = bd._join_words([_wg("Profile", 0.120, 0.161), _wg("Construction", 0.166, 0.245),
+                      _wg("ACME", 0.384, 0.428), _wg("Inc", 0.432, 0.451)])
+check("column gap emits a 4-space break", "    " in col, True)
+check("splits into the two company columns",
+      [s.strip() for s in re.split(r' {4,}', col) if s.strip()],
+      ["Profile Construction", "ACME Inc"])
+# A NORMAL inter-word space (small gap) is NOT a column break.
+check("normal word gap stays a single space",
+      bd._join_words([_wg("Profile", 0.120, 0.161), _wg("Construction", 0.166, 0.245)]),
+      "Profile Construction")
+# Regression guard: a wide-but-value gap ("# 2371", ~0.06 apart) must NOT be mistaken for a
+# column — else a '#'-prefixed invoice number would be truncated to '#'.
+check("wide value gap '# 2371' stays joined (not a column)",
+      bd._join_words([_wg("#", 0.817, 0.830), _wg("2371", 0.890, 0.942)]), "# 2371")
 
 if fails:
     print(f"\n{len(fails)} FAILED"); sys.exit(1)

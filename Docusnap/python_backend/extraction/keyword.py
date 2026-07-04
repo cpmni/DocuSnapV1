@@ -213,6 +213,30 @@ def detect_document_type(ocr_text: str, patterns: dict,
     }
 
 
+# Role → key-aliases. A doc type may key its money fields with any of these variants; both
+# keyword extraction (below) AND the total-reconciliation guardrail (validator.py) resolve
+# them to the canonical shipped field so a labelled read is always attempted and the maths
+# can reconcile whatever the field was named. SINGLE SOURCE — imported by validator. Only
+# ADDS coverage for the aliases; canonical keys (total_amount/subtotal/vat_tax/shipping/
+# discount) are matched directly first, so shipped presets/harness are unaffected. Curated
+# precision-first — bare ambiguous keys ('delivery', 'transport', 'post') are excluded in
+# favour of specific ones ('delivery_charge', 'transport_cost').
+ROLE_KEY_ALIASES = {
+    'total_amount': {'total', 'grand_total', 'invoice_total', 'total_due', 'amount_due',
+                     'balance_due', 'total_payable', 'amount_payable', 'total_inc_vat'},
+    'subtotal':     {'sub_total', 'net_total', 'net_amount', 'goods_total'},
+    'vat_tax':      {'tax', 'vat', 'sales_tax', 'gst', 'hst', 'pst', 'qst',
+                     'output_tax', 'value_added_tax'},
+    'shipping':     {'postage', 'carriage', 'delivery_charge', 'delivery_cost', 'delivery_fee',
+                     'freight', 'freightage', 'handling', 'shipping_handling', 'dispatch',
+                     'despatch', 'forwarding', 'consignment', 'mailing', 'franking', 'courier',
+                     'transport_cost', 'pp'},
+    'discount':     {'less_discount', 'total_discount', 'reduction', 'deduction', 'rebate',
+                     'markdown', 'concession', 'allowance', 'promo', 'promotion', 'voucher',
+                     'credit', 'savings'},
+}
+
+
 # ── Field extraction ──────────────────────────────────────────────────────────
 
 def extract_fields(ocr_text: str, field_keys: list[str],
@@ -235,17 +259,13 @@ def extract_fields(ocr_text: str, field_keys: list[str],
     # shipped pattern so a labelled total/subtotal read is always attempted. The harness + the
     # shipped presets use "total_amount"/"subtotal" directly (this only ADDS coverage for the
     # aliases), so it can't regress them.
-    _TOTAL_ALIASES = {'total', 'grand_total', 'invoice_total', 'total_due', 'amount_due',
-                      'balance_due', 'total_payable', 'amount_payable', 'total_inc_vat'}
-    _SUBTOTAL_ALIASES = {'sub_total', 'net_total', 'net_amount'}
-
     def _pattern_key(k):
         if k in field_patterns:
             return k
-        if k in _TOTAL_ALIASES and 'total_amount' in field_patterns:
-            return 'total_amount'
-        if k in _SUBTOTAL_ALIASES and 'subtotal' in field_patterns:
-            return 'subtotal'
+        # Map a role-equivalent key (e.g. "postage"/"vat"/"amount_due") to its shipped pattern.
+        for canon, aliases in ROLE_KEY_ALIASES.items():
+            if k in aliases and canon in field_patterns:
+                return canon
         return None
 
     for field_key in field_keys:

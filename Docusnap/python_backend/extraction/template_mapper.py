@@ -904,7 +904,7 @@ def cluster_value_words(words, expect_x=None):
 
 
 def _locate_anchor(page, anchor_box, anchor_text, expansion, ocr_lines_fn,
-                   min_search=0.0, capture=None, line_cache=None):
+                   min_search=0.0, capture=None, line_cache=None, confirm_value=None):
     """
     Search the (optionally expanded) drawn anchor region for the stored label
     text and report where it ACTUALLY sits on this page, in page-relative
@@ -978,6 +978,21 @@ def _locate_anchor(page, anchor_box, anchor_text, expansion, ocr_lines_fn,
 
     floor = max(best_score - _SCORE_TIE_EPSILON, (_FUZZY_MATCH_THRESHOLD if needle else 0.0))
     candidates = [(s, ln) for s, ln in scored if s >= floor]
+    # VALUE-AGREEMENT: when the caller passes a trustworthy rigid read (confirm_value),
+    # prefer the label occurrence whose LINE actually carries that value — even a
+    # LOWER-scoring one. A section header "Item Information" scores 1.0 but its
+    # neighbour is "Information"; the real row "ttem 1102V03NL1" scores only 0.75
+    # (OCR garbled the "Item" label to "ttem") yet carries the taught value. Value
+    # agreement is stable where the label OCR is not, so this beats any geometric
+    # tie-break. Restricted to fuzzy-threshold occurrences; if NONE carry the value
+    # (a genuinely DRIFTED rigid read isn't beside any label — the case the label-lock
+    # exists to fix), selection is unchanged and relocation proceeds as before.
+    if confirm_value:
+        cv = _normalise(str(confirm_value))
+        carriers = [(s, ln) for s, ln in scored
+                    if s >= _FUZZY_MATCH_THRESHOLD and cv and cv in _normalise(ln.get("text", ""))]
+        if carriers:
+            candidates = carriers
     chosen_score, best = min(candidates, key=lambda sl: (_page_dist(sl[1]), -sl[0]))
 
     # Recover the matched LABEL's own sub-box from the line's word boxes, plus any
@@ -1115,6 +1130,15 @@ def _label_score(needle, haystack):
     """
     if not needle:
         return 1.0
+    # A taught label usually keeps its trailing caption punctuation ("Total:"), but OCR may
+    # or may not read the colon. A colon-glued needle DEFEATS the word-boundary guard below
+    # when the separator is dropped: "total:" scores a fuzzy 0.83 on BOTH "total" AND
+    # "subtotal", tying → proximity silently relocates a Total anchor onto the Subtotal row.
+    # Strip the needle's EDGE caption punctuation (but keep a bare "#") so the boundary guard
+    # is robust to however OCR read the colon — "total:" → "total" → "subtotal" scores 0.0.
+    _core = re.sub(r'^[^a-z0-9#]+|[^a-z0-9#]+$', '', needle)
+    if _core:
+        needle = _core
     if not haystack:
         return 0.0
     # Boundary-aligned occurrence of the whole needle = a true label hit.

@@ -346,9 +346,17 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
             try:
                 _dh = anchor.get("h_norm") or 0.0
                 _dw = anchor.get("w_norm") or 0.0
+                # VALUE-AGREEMENT: when the rigid crop already read a STRICTLY-CREDIBLE
+                # value at the taught box, pass it as confirm_value so the locate prefers
+                # the label occurrence whose line CARRIES that value (the real row, even if
+                # OCR garbled its "Item"→"ttem" and dropped its score) over a higher-scoring
+                # section header ("Item Information") whose neighbour is a different word.
+                # If NO occurrence carries the value (a genuinely DRIFTED rigid read), the
+                # locate is unchanged and relocation still fixes the drift.
+                _cv = value if _strict_credible(value, val_type, validation_patterns, ocr_conf=ocr_conf) else None
                 _dloc = _locate_for_relocation(page0, anchor["anchor_label"], direction,
                                                (x_norm, y_norm, _dw, _dh), page_text_lines,
-                                               line_cache=line_cache)
+                                               line_cache=line_cache, confirm_value=_cv)
                 _dlb = (_dloc or {}).get("label_box")
                 if _dlb:   # label LOCATED -> lock the value to it (no drift threshold)
                     _dcand = None
@@ -385,6 +393,17 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                         # still wins — preserving the drift fix this lock exists for.
                         if _rv.lower().startswith(_dv.lower()) and len(_rv) > len(_dv):
                             pass   # rigid is the relocate value + a continuation — keep it
+                        elif _strict_credible(value, val_type, validation_patterns, ocr_conf=ocr_conf) \
+                                and _digit_free_on_digit_field(_dcand, field_key, format_lookup) \
+                                and not _digit_free_on_digit_field(value, field_key, format_lookup):
+                            # DEFENSE-IN-DEPTH backstop (reggie): even when the label
+                            # locates unambiguously, a digit-free WORD ("Information")
+                            # must not displace a strictly-credible, code-shaped rigid
+                            # read ("1102V03NL1") on a field whose confirmed history is
+                            # UNIFORMLY digit-bearing. Inert unless that shape is learned,
+                            # so variable free-text (a drifted NAME) and currency drift
+                            # fixes are untouched. Complements the ambiguous-label guard.
+                            pass   # keep the rigid read
                         else:
                             if on_reject:
                                 on_reject(field_key, "anchor_crop", value, "off_row_drift")
@@ -890,7 +909,7 @@ def _widen_relocated_crop(box, val_type):
     return (cx, cy, w + 2 * pad_w, h + 2 * pad_h)
 
 
-def _locate_in_text_lines(text_lines, lbox, anchor_label):
+def _locate_in_text_lines(text_lines, lbox, anchor_label, confirm_value=None):
     """BORN-DIGITAL path: locate the label among PRECOMPUTED text-layer lines
     (exact vector text, already page-normalised) within the lbox row band, with NO
     crop and NO OCR. Returns the SAME result shape as template_mapper._locate_anchor
@@ -921,8 +940,16 @@ def _locate_in_text_lines(text_lines, lbox, anchor_label):
         cy = ln["y_norm"] + ln["h_norm"] / 2.0
         return math.hypot(cx - acx, cy - acy)
 
-    chosen_score, best = min(((s, ln) for s, ln in cands if s >= floor),
-                             key=lambda sl: (_dist(sl[1]), -sl[0]))
+    _tied = [(s, ln) for s, ln in cands if s >= floor]
+    # VALUE-AGREEMENT (see template_mapper._locate_anchor): prefer a label occurrence
+    # whose line carries the trustworthy rigid read, even if lower-scoring.
+    if confirm_value:
+        cv = tm._normalise(str(confirm_value))
+        carriers = [(s, ln) for s, ln in cands
+                    if s >= tm._FUZZY_MATCH_THRESHOLD and cv and cv in tm._normalise(ln.get("text", ""))]
+        if carriers:
+            _tied = carriers
+    chosen_score, best = min(_tied, key=lambda sl: (_dist(sl[1]), -sl[0]))
 
     label_box = None
     inline_value = None
@@ -956,7 +983,7 @@ def _locate_in_text_lines(text_lines, lbox, anchor_label):
 
 
 def _locate_for_relocation(page0, anchor_label, direction, vbox, page_text_lines=None,
-                           line_cache=None):
+                           line_cache=None, confirm_value=None):
     """Find `anchor_label` on THIS page and return template_mapper._locate_anchor's
     result (now carrying the matched LABEL-WORD box and any value harvested off the
     same line), or None. Shared by the relocation crop placement AND the inline
@@ -990,16 +1017,16 @@ def _locate_for_relocation(page0, anchor_label, direction, vbox, page_text_lines
 
     # Born-digital: locate EXACTLY in the embedded text layer (no crop, no OCR).
     if page_text_lines:
-        return _locate_in_text_lines(page_text_lines, lbox, label)
+        return _locate_in_text_lines(page_text_lines, lbox, label, confirm_value=confirm_value)
 
     from extraction import template_mapper as tm
     # Local search first (covers normal drift), then page-wide (clipped/heavily
     # shifted scans move the label out of the local window).
     located = tm._locate_anchor(page0, lbox, label, 0.0, tm._ocr_lines,
-                                min_search=0.10, line_cache=line_cache)
+                                min_search=0.10, line_cache=line_cache, confirm_value=confirm_value)
     if not located:
         located = tm._locate_anchor(page0, lbox, label, 1.0, tm._ocr_lines,
-                                    min_search=0.10, line_cache=line_cache)
+                                    min_search=0.10, line_cache=line_cache, confirm_value=confirm_value)
     return located
 
 

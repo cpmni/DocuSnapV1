@@ -75,26 +75,43 @@ def page_text(page):
 # born-digital field/supplier — no document-specific logic.
 _ATTACH_PUNCT = set(',.;:!?)]}%')
 
+# A gap this many median glyph-HEIGHTS wide (or the norm floor) is an inter-COLUMN break,
+# not a word space — a true column gap spans several text-heights; a normal inter-word space
+# is a fraction of one. Tying it to height keeps it zoom-invariant. Mirrors the OCR path
+# (reconstruct_page_text / cluster_value_words) so born-digital columns split the SAME way
+# scanned ones do.
+_COLUMN_GAP_MULT  = 4.0    # a column gap is MANY glyph-heights; keep this well above a wide
+_COLUMN_GAP_FLOOR = 0.07   # value space ("# 2371") so only a true inter-column gap (~0.14+) trips
+
 def _join_words(words):
-    parts = []
-    for w in words:
+    if not words:
+        return ""
+    # Median word height → a zoom-invariant column-gap threshold. Without a column break a
+    # multi-column row ("BILL FROM value …big gap… BILL TO value") joins into one string, so a
+    # keyword read of that line grabs BOTH columns (the merged-supplier "Profile Construction
+    # ACME Inc" bug). Emit 4 spaces at a column-wide gap so keyword.py's existing `{4,}`-space
+    # column guard takes only the value's own column — reusable for every born-digital field.
+    heights = sorted((w.get("y2", 0.0) - w.get("y1", 0.0)) for w in words)
+    med_h   = heights[len(heights) // 2] if heights else 0.0
+    col_gap = max(med_h * _COLUMN_GAP_MULT, _COLUMN_GAP_FLOOR)
+    out  = words[0].get("text", "")
+    prev = words[0]
+    for w in words[1:]:
         t = w.get("text", "")
-        if not parts:
-            parts.append(t)
-            continue
-        prev = parts[-1]
         # (1) a leading attaching-punctuation token glues to the previous word
         #     ("6"+","->"6,", "42"+"."->"42.")
         glue = bool(t) and t[0] in _ATTACH_PUNCT
         # (2) a digit token continues a number after a decimal point ("42."+"35"->
         #     "42.35"); a DATE comma ("6,"+"2026") is NOT glued, so it keeps its space.
-        if not glue and prev[-1:] == '.' and len(prev) >= 2 and prev[-2].isdigit() and t[:1].isdigit():
+        if not glue and out[-1:] == '.' and len(out) >= 2 and out[-2].isdigit() and t[:1].isdigit():
             glue = True
         if glue:
-            parts[-1] = prev + t
+            out += t
         else:
-            parts.append(t)
-    return " ".join(parts)
+            gap  = w.get("x1", 0.0) - prev.get("x2", 0.0)
+            out += ("    " if gap > col_gap else " ") + t   # 4 spaces = a column break
+        prev = w
+    return out
 
 
 def page_lines(page):

@@ -268,8 +268,17 @@
         "Tax",
         "VAT Amount",
         "Tax Amount",
+        "Tax Total",
+        "Total Tax",
+        "VAT Total",
+        "Total VAT",
         "GST",
+        "HST",
+        "PST",
+        "QST",
         "Sales Tax",
+        "Output Tax",
+        "Import VAT",
         "V.A.T",
         "Value Added Tax",
         "VAT 20%",
@@ -281,6 +290,65 @@
       ],
       "validation": "currency",
       "base_confidence": 85
+    },
+    "shipping": {
+      "labels": [
+        "Shipping",
+        "Shipping & Handling",
+        "Shipping and Handling",
+        "Shipping Cost",
+        "Postage",
+        "Postage & Packing",
+        "Postage and Packing",
+        "P&P",
+        "P & P",
+        "Carriage",
+        "Delivery Charge",
+        "Delivery Fee",
+        "Delivery Cost",
+        "Freight",
+        "Freightage",
+        "Handling",
+        "Handling Charge",
+        "Courier",
+        "Mailing",
+        "Franking",
+        "Dispatch",
+        "Despatch",
+        "Forwarding",
+        "Consignment",
+        "Transport Cost"
+      ],
+      "directions": [
+        "right"
+      ],
+      "validation": "currency",
+      "base_confidence": 80
+    },
+    "discount": {
+      "labels": [
+        "Discount",
+        "Less Discount",
+        "Total Discount",
+        "Discount Applied",
+        "Reduction",
+        "Price Reduction",
+        "Deduction",
+        "Rebate",
+        "Markdown",
+        "Concession",
+        "Allowance",
+        "Promotion",
+        "Promo",
+        "Voucher",
+        "Credit",
+        "Savings"
+      ],
+      "directions": [
+        "right"
+      ],
+      "validation": "currency",
+      "base_confidence": 80
     },
     "currency": {
       "labels": [
