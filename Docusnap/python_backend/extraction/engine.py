@@ -47,6 +47,11 @@ except ImportError:
 # rejecting the partial-garble case (min word conf ~55) the mean alone misses.
 _TIER_A_OCR_MIN = 70
 
+# Reconciliation-aware total pick: a balancing CANDIDATE must be at least this confident to replace
+# a non-balancing total, so a weak/garbage read can't win on maths alone (the real keyword total
+# reads ~88-93). See _reconciliation_pick_total.
+_RECON_PICK_MIN_CONF = 70
+
 # The supplier IDENTITY fields — their VALUE is the learning scope key, so a GLOBAL ('' supplier)
 # format aggregates DIFFERENT suppliers and must never constrain them (see the fmt_entry fallback
 # in the Stage 4.5 loop). Mirrors COMPANY_KEYS in database/modules/document_types.js.
@@ -321,7 +326,10 @@ class ExtractionEngine:
     # when candidate_override is 'off' both helpers short-circuit so there is zero
     # extra work and zero behaviour change.
     def _remember_candidates(self, stage: str, produced: dict):
-        if self.candidate_override == 'off' or not produced:
+        # Always build the per-run ledger (reset per doc in extract()): it feeds the always-on
+        # reconciliation-aware total pick (_reconciliation_pick_total), and — only when
+        # candidate_override is on — Stage 4.6. Cost is a few dict appends per field per stage.
+        if not produced:
             return
         for key, data in produced.items():
             if key.startswith('_') or not isinstance(data, dict):
@@ -682,6 +690,54 @@ class ExtractionEngine:
                     results[k] = d
         except Exception:
             pass  # background aid — must never break extraction
+
+    def _reconciliation_pick_total(self, results, field_defs):
+        """Reconciliation-aware total pick. If the resolved `total` does NOT balance against the
+        components (subtotal + tax + shipping - discount) but a confident REMEMBERED candidate
+        DOES, swap to it. Objective arithmetic beats a drifted total-mapping / wrong-row anchor
+        that displaced a correct keyword read (the "total grabbed the Net-Total row 84.40 over the
+        Invoice-Total 101.28" case).
+
+        A genuinely-CORRECT total — including a hand-drawn ⊕ teach — reconciles, so it passes the
+        first check and is NEVER touched: the reconciliation check IS the protection, so no special
+        authoritative carve-out is needed. Only a total that PROVABLY doesn't add up is reconsidered,
+        and only replaced by a candidate that (a) actually balances and (b) is confident (>= floor),
+        so a weak/garbage read can't win. The swap is review-flagged. Runs AFTER shadow-reconcile
+        (all components present) and BEFORE the Stage-4 flag, so a swapped total validates clean.
+        Best-effort — never breaks extraction."""
+        try:
+            from extraction import validator as _v
+            total_key = None
+            for k in ('total_amount', *keyword.ROLE_KEY_ALIASES.get('total_amount', ())):
+                d = results.get(k)
+                if isinstance(d, dict) and d.get('value'):
+                    total_key = k
+                    break
+            if not total_key:
+                return
+            inc = results[total_key]
+            if _v.total_reconciles(inc.get('value'), results):
+                return   # already balances (a correct total, incl. a correct teach) — leave it
+            inc_v = str(inc.get('value') or '')
+            # Highest-confidence DISTINCT, CONFIDENT candidate that reconciles wins.
+            for c in sorted(self._field_candidates.get(total_key) or [], key=lambda c: -(c.get('confidence') or 0)):
+                cv = c.get('value')
+                if not cv or str(cv) == inc_v or (c.get('confidence') or 0) < _RECON_PICK_MIN_CONF:
+                    continue
+                if _v.total_reconciles(cv, results):
+                    self._t('reconcile_pick', field=total_key, was=inc_v, now=str(cv),
+                            method=c.get('method'), confidence=c.get('confidence'))
+                    results[total_key] = {
+                        **inc,
+                        'value':           cv,
+                        'display_value':   cv,
+                        'method':          c.get('method') or inc.get('method'),
+                        'confidence':      max(inc.get('confidence') or 0, c.get('confidence') or 0),
+                        'validation_note': 'adjusted to the total that balances against the line amounts — please verify',
+                    }
+                    return
+        except Exception:
+            pass  # reconciliation aid — must never break extraction
 
     def extract(self,
                 ocr_text:      str,
@@ -1407,6 +1463,13 @@ class ExtractionEngine:
         # method='shadow_reconcile' → persisted for the check but never displayed and never
         # learned (Review shows only type fields; getFieldFormats skips the shadow method).
         self._shadow_reconcile_components(results, field_defs, ocr_text, patterns_for_run)
+
+        # ── Reconciliation-aware total pick ────────────────────────────────────
+        # A drifted total-mapping / wrong-row anchor can displace a correct keyword total (it read
+        # the "Net Total" row, 84.40, over the true "Invoice Total", 101.28). Now that every
+        # component is present, prefer the total CANDIDATE that actually BALANCES over one that
+        # doesn't — objective maths, never over an explicit ⊕ teach. Before the Stage-4 flag.
+        self._reconciliation_pick_total(results, field_defs)
 
         # ── Stage 4: Validation ───────────────────────────────────────────────
         self.log("  Stage 4: validating…")

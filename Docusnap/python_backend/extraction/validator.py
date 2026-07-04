@@ -262,6 +262,46 @@ def parse_amount(raw: str | None) -> float | None:
         return None
 
 
+# ── Total reconciliation (shared: the Stage-4 flag AND the engine's reconciliation-aware pick) ──
+
+def _reconcile_components(results: dict) -> dict:
+    """Resolve the money ROLES (subtotal/vat_tax/shipping/discount) from `results` as parsed
+    amounts — the canonical key first, then any ROLE_KEY_ALIASES-keyed field carrying a value, so
+    the maths works whatever the doc type named them ("Postage" as shipping, "GST" as tax)."""
+    from extraction.keyword import ROLE_KEY_ALIASES
+    def role(r):
+        d = results.get(r)
+        if isinstance(d, dict) and d.get("value"):
+            return d
+        for k, data in results.items():
+            if k in ROLE_KEY_ALIASES.get(r, ()) and isinstance(data, dict) and data.get("value"):
+                return data
+        return {}
+    return {
+        'subtotal': parse_amount(role('subtotal').get('value')),
+        'tax':      parse_amount(role('vat_tax').get('value')),
+        'shipping': parse_amount(role('shipping').get('value')),
+        'discount': parse_amount(role('discount').get('value')),
+    }
+
+
+def total_reconciles(total_value, results: dict):
+    """True when `total_value` BALANCES against the components in `results` — subtotal + tax +
+    shipping - discount, with shipping/discount tried IN and OUT of the subtotal (a delivery/
+    discount line may already sit inside it). None when there is no subtotal to check against
+    (unknown, NOT 'reconciles'). Shared by the Stage-4 flag and the engine's reconciliation-aware
+    total pick (prefer the total CANDIDATE that balances over a drifted mapping / wrong-row read)."""
+    total = parse_amount(total_value)
+    comp = _reconcile_components(results)
+    subtotal = comp['subtotal']
+    if not (total and total > 0 and subtotal and subtotal > 0):
+        return None
+    tol = max(total * 0.02, 0.05)
+    _tax = comp['tax'] or 0
+    return any(abs(total - (subtotal + _tax + s * (comp['shipping'] or 0) - d * (comp['discount'] or 0))) <= tol
+               for s in (0, 1) for d in (0, 1))
+
+
 # ── Main validation ───────────────────────────────────────────────────────────
 
 def validate_and_adjust(extractions: dict,
@@ -471,16 +511,10 @@ def validate_and_adjust(extractions: dict,
 
     if total and total > 0 and subtotal and subtotal > 0 and total_data.get("value"):
         tol        = max(total * 0.02, 0.05)   # 2% or 5 cents, absorbs rounding/OCR
-        _tax = tax or 0
-        # Shipping and discount may be SEPARATE additions OR line items ALREADY inside the
-        # subtotal (a "Delivery Charge" line, a per-line discount) — the layout doesn't say
-        # which. Try both so a genuinely-balanced invoice (subtotal+tax = total, with a
-        # delivery line already in the subtotal) isn't flagged for a modelling assumption.
-        # Reconciles if ANY plausible composition lands within tolerance.
-        reconciles = any(
-            abs(total - (subtotal + _tax + s * (shipping or 0) - d * (discount or 0))) <= tol
-            for s in (0, 1) for d in (0, 1)
-        )
+        # Shipping/discount may be SEPARATE additions OR line items ALREADY inside the subtotal —
+        # total_reconciles tries both compositions (shared with the engine's reconciliation-aware
+        # total pick so the "does it balance?" rule is defined in exactly one place).
+        reconciles = bool(total_reconciles(total_data.get("value"), results))
         note = None
         if reconciles:
             pass                                                   # CLOSE → trust
