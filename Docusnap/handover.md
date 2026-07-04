@@ -8,6 +8,25 @@ files are on disk; this captures the why). Repo root is `c:\GIT Projects\`; git 
 `Docusnap/` prefix.
 
 ## In progress — UNCOMMITTED (this session)
+- **Format-gate "trust-first" hardening pass (2026-07-04) — audit + 2 fixes, 4 deferred.** Three
+  independent passes (main + gary + reggie) confirmed ONE recurring class: the Stage 4.5 format gate
+  OVER-FIRES on legitimately-variable data — it WITHHOLDS/TRUNCATES/flags a VALID value because its
+  shape/separator is under-represented. Unifying invariant: *never withhold or truncate a value that
+  satisfies the field's TYPE regex on shape grounds; flag softly instead.* **FIXED + COMMITTED:**
+  (1) a REGRESSION I introduced — `_numeric_family_regex` `\d[\d,\s]*` let `\s` span the gap between
+  two amounts (`extract_accepted_shape("12.50 34.00")`→`"12.50 34"`, silent magnitude corruption) and
+  stripped a leading `-` (credit `-84.40`→`84.40`); now `\d+(?:[,\s]\d{3})*` + optional `-`.
+  (2) `_fold_shape` now folds a SINGLE running-number group behind a letter prefix (`INV001` vs `INV1234`
+  → `@@@#`), the most common invoice/PO/SO number shape — was withheld; multi-group refs stay exact.
+  **IDENTIFIED, DEFERRED (no clean/safe fix yet — real but lower-severity):** #3 `extract_accepted_shape`
+  can truncate a longer valid value to a short accepted shape; #4 a valid alternate SEPARATOR (`AB-126`
+  vs `AB/###`) is withheld; #5 non-identity name fields (`buyer_name`) still take the entity-mixing
+  global fallback (soft-flag only; generalising the identity exemption BREAKS the legit `Lid→Ltd`
+  consistent-customer repair — see test_stage45); #6 a ref field with date-shaped values misclassified
+  `date_like`. A broad engine "type-valid ⇒ never withhold" guard was TRIED and REVERTED: refs are
+  typed `text` (loose regex) in the real DB, so it let a MALFORMED ref (`9999-9999`, missing its 3rd
+  group) through — the shape gate is needed exactly there. gary's property/matrix test design
+  (`type-valid value never nulled/magnitude-altered`) is the follow-up to guard the whole class.
 - **Supplier IDENTITY not vetoed by the GLOBAL name format (2026-07-04).** `engine.py` Stage 4.5:
   the `supplier_name`/`customer_name` identity field was validated against the doc-type-GLOBAL
   ('' supplier) format, which aggregates DIFFERENT suppliers. A corpus 90% "SuperStore" learned
