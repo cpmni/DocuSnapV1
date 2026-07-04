@@ -18,9 +18,12 @@ files are on disk; this captures the why). Repo root is `c:\GIT Projects\`; git 
   stripped a leading `-` (credit `-84.40`→`84.40`); now `\d+(?:[,\s]\d{3})*` + optional `-`.
   (2) `_fold_shape` now folds a SINGLE running-number group behind a letter prefix (`INV001` vs `INV1234`
   → `@@@#`), the most common invoice/PO/SO number shape — was withheld; multi-group refs stay exact.
-  **IDENTIFIED, DEFERRED (no clean/safe fix yet — real but lower-severity):** #3 `extract_accepted_shape`
-  can truncate a longer valid value to a short accepted shape; #4 a valid alternate SEPARATOR (`AB-126`
-  vs `AB/###`) is withheld; #5 non-identity name fields (`buyer_name`) still take the entity-mixing
+  (3) `extract_accepted_shape` no longer TRUNCATES a value that continues as code past the match
+  (`5678-1234`→`5678`): a match bounded by a ref separator + more alnum is rejected; genuine word/space
+  bleed still trims. (4) ref separators `-` `/` `.` are INTERCHANGEABLE — `_fold_shape` canonicalises
+  them (shape) + `classify_format` widens a code field's seps to `-/.` (charset), so a valid `AB-126`
+  vs an `AB/###` corpus is no longer WITHHELD; group STRUCTURE still enforced.
+  **IDENTIFIED, DEFERRED (real but lower-severity):** #5 non-identity name fields (`buyer_name`) still take the entity-mixing
   global fallback (soft-flag only; generalising the identity exemption BREAKS the legit `Lid→Ltd`
   consistent-customer repair — see test_stage45); #6 a ref field with date-shaped values misclassified
   `date_like`. A broad engine "type-valid ⇒ never withhold" guard was TRIED and REVERTED: refs are
