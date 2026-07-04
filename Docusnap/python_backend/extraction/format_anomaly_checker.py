@@ -19,6 +19,7 @@ also guarded here for belt-and-braces safety.
 
 import re
 import sys
+import math
 from pathlib import Path
 from typing import Optional
 
@@ -45,12 +46,22 @@ _CURRENCY_CODES   = ('GBP', 'USD', 'EUR', 'JPY')
 _SAMPLE_POOL_SIZE = 5   # use the N most-recent distinct values as the candidate pool
 _SAMPLE_SIZE      = 3   # draw this many from the pool for consensus check
 
-# A within-class shape is only ACCEPTED (added to the learned set) once it has
-# been seen in at least this many confirmed documents. Below the threshold a new
-# shape is still flagged for review, so a one-off OCR-garbled structure never
-# gets learned; once a genuinely recurring shape clears it, that shape stops
-# being flagged — this is how the field "learns" a second legitimate structure.
-_SHAPE_ACCEPT_MIN = 3
+# A within-class shape is only ACCEPTED (added to the learned/trusted set) once it clears an
+# evidence bar. Below the bar a new shape is still FLAGGED for review (check_value low-severity),
+# so a one-off OCR-garbled structure never gets silently trusted; once a genuinely recurring
+# shape clears it, that shape stops being flagged — how a field "learns" a second structure.
+#
+# ANTI-POISONING: the bar is corpus-size-PROPORTIONAL, not a flat count — so a few bad
+# confirmations can't poison a large corpus. A shape is trusted iff it clears the ABSOLUTE
+# escape (a genuine minority series that has accrued this many docs is always legit) OR both
+# the floor AND a fraction of the corpus. Mirrors name_match.py's proven floor-AND-ratio model
+# (_STABLE_MIN_DOCS/_STABLE_FREQ). Identical to the old flat "count >= 3" for corpora up to
+# ~30 docs (ceil(0.10*N) <= 3), so cold-start / small fields are unaffected; it only tightens
+# as the corpus grows: 3-of-10 accepted, 3-of-100 suppressed. Validated offline against the
+# real corpus (0 currently-trusted shapes suppressed). See tools/poison_gate_dryrun.py.
+_SHAPE_ACCEPT_MIN   = 3      # floor — a shape needs at least this many docs regardless of ratio
+_SHAPE_ACCEPT_RATIO = 0.10   # ...AND at least this fraction of the confirmed corpus, once it grows
+_SHAPE_ACCEPT_ABS   = 8      # absolute-trust escape: a real minority series at this many docs is kept
 
 
 # ── Single-value classification ───────────────────────────────────────────────
@@ -157,6 +168,51 @@ def _shape_to_regex(shape: str) -> str:
     return r'(?<![A-Za-z0-9])' + ''.join(body) + r'(?![A-Za-z0-9])'
 
 
+def _fold_shape(sig: str) -> str:
+    """Fold a PURELY-NUMERIC shape signature to a length- and thousands-grouping-
+    INVARIANT family, so a number's digit-count and thousands grouping never create a
+    spurious "wrong shape" anomaly:
+
+        '#####' / '######'    -> '#'     (invoice numbers legitimately vary in length)
+        '###.##' / '#,###.##'  -> '#.#'  (an amount that crosses into the thousands)
+
+    A shape carrying LETTERS ('@') or STRUCTURAL separators (anything but the numeric
+    thousands/decimal set ',' '.' ' ') is returned UNCHANGED — there the digit-group
+    length + separator structure IS meaningful (e.g. a '####-####-#' reference), so the
+    exact-shape guard that shape_signature exists for is fully preserved.
+
+    WHY: a number's length and thousands grouping are inherently variable. Encoding the
+    exact digit count into the accepted-shape veto silently REJECTED or TRUNCATED valid
+    values whose length happened to be rarer than the corpus norm — a 6-digit invoice
+    number in a 5-digit-dominated corpus was withheld ("format" reject), and a £1,000s
+    total among mostly sub-£1,000 history was trimmed to its 3-digit tail ('4,699.20' ->
+    '699.20'). Folding collapses all same-class numbers into ONE family, so it clears the
+    proportional acceptance bar together and no legitimate amount/reference is an anomaly.
+    Pure/deterministic."""
+    if not sig or '@' in sig:
+        return sig
+    if any(c not in '#,. ' for c in sig):   # a structural separator -> not a bare number
+        return sig
+    folded = sig.replace(',', '').replace(' ', '')   # drop thousands separators
+    return re.sub(r'#+', '#', folded)                # collapse the digit run(s) -> length-invariant
+
+
+def _is_numeric_family(shape: str) -> bool:
+    """True when `shape` is a folded numeric family (only '#' and a decimal '.', no
+    letters/structural separators) — its '#' denotes a whole digit RUN, so column-bleed
+    extraction needs the run-aware regex below, not the per-glyph _shape_to_regex."""
+    return bool(shape) and all(c in '#.' for c in shape)
+
+
+def _numeric_family_regex(fam: str) -> str:
+    """Regex for a folded numeric family: each '#' is a full digit RUN (optionally
+    thousands-grouped), '.' the literal decimal point. Boundary-guarded like
+    _shape_to_regex so it grabs a standalone amount ("152567", "4,699.20") out of
+    column-bleed and never a slice of a longer alphanumeric run."""
+    body = [r'\d[\d,\s]*' if c == '#' else re.escape(c) for c in fam]
+    return r'(?<![A-Za-z0-9])' + ''.join(body) + r'(?![A-Za-z0-9])'
+
+
 def extract_accepted_shape(value: str, format_entry: dict) -> Optional[str]:
     """If `value` carries column-bleed/junk wrapped around a substring that
     matches one of the field's learned accepted SHAPES, return just that
@@ -170,12 +226,15 @@ def extract_accepted_shape(value: str, format_entry: dict) -> Optional[str]:
     if not shapes:
         return None
     v = (value or '').strip()
-    if not v or shape_signature(v) in shapes:
+    if not v or _fold_shape(shape_signature(v)) in shapes:
         return None
     best = None
     for shape in shapes:
         try:
-            m = re.search(_shape_to_regex(shape), v)
+            # A folded numeric family's '#' is a whole digit RUN → run-aware regex; a
+            # structured/code shape stays per-glyph so it can't over-match a longer run.
+            rx = _numeric_family_regex(shape) if _is_numeric_family(shape) else _shape_to_regex(shape)
+            m = re.search(rx, v)
         except re.error:
             continue
         if m and (best is None or len(m.group(0)) > len(best)):
@@ -248,7 +307,7 @@ def shape_match_score(value: str, format_entry: dict) -> float:
     shapes = (format_entry or {}).get('shapes')
     if not value or not shapes:
         return 0.0
-    if shape_signature(value) in shapes:
+    if _fold_shape(shape_signature(value)) in shapes:
         return 1.0
     if extract_accepted_shape(value, format_entry):
         return 0.8
@@ -319,18 +378,38 @@ def classify_format(values: list[str], value_counts: dict | None = None) -> dict
     # variation learns no shape constraint at all.
     shapes = frozenset()
     if cls in _SHAPED_CLASSES:
+        # Shapes are FOLDED (_fold_shape) so a purely-numeric field's digit-count and
+        # thousands grouping don't fragment one legitimate family across many exact-length
+        # shapes (which then each fell below the acceptance bar). Structured refs/codes fold
+        # to themselves, so their exact-shape guard is untouched.
         if value_counts:
             shape_counts: dict[str, int] = {}
             for val, n in value_counts.items():
-                sig = shape_signature(val)
+                sig = _fold_shape(shape_signature(val))
                 if sig:
                     shape_counts[sig] = shape_counts.get(sig, 0) + int(n or 0)
+            # Corpus-size-proportional trust (anti-poisoning): a shape is trusted iff it clears
+            # the absolute escape, OR both the floor and a fraction of the corpus N. So a couple
+            # of bad confirmations can't join the trusted set on a large corpus, while a genuine
+            # new format still establishes with proportional support. See constants above.
+            N   = sum(int(n or 0) for n in value_counts.values())
+            thr = max(_SHAPE_ACCEPT_MIN, math.ceil(_SHAPE_ACCEPT_RATIO * N))
             shapes = frozenset(sig for sig, c in shape_counts.items()
-                               if c >= _SHAPE_ACCEPT_MIN)
+                               if c >= _SHAPE_ACCEPT_ABS or c >= thr)
         else:
-            pool_shapes = {shape_signature(v) for v in pool}
+            pool_shapes = {_fold_shape(shape_signature(v)) for v in pool}
             if len(pool_shapes) == 1:
                 shapes = frozenset(pool_shapes)
+
+    # NUMERIC-FAMILY separator tolerance: when every learned shape is a folded numeric
+    # family (a money/amount field), the thousands/decimal separators ',' '.' ' ' are ALL
+    # universally valid — so a value that crosses into the thousands ('4,699.20') is never
+    # flagged for an "unexpected" comma just because the sampled pool happened to be
+    # sub-thousand (no comma). Same corpus-skew class as the shape fold, on the separator
+    # axis. Only widens a field already proven numeric; structured refs keep their exact
+    # learned separators.
+    if cls == ALPHANUM_SEP and shapes and all(_is_numeric_family(s) for s in shapes):
+        seps = seps | frozenset(',. ')
 
     return {'class': cls, 'separators': seps, 'shapes': shapes}
 
@@ -411,11 +490,13 @@ def check_value(value: str, format_entry: dict) -> Optional[dict]:
     # confirmed enough times) is never penalised. Empty/absent set → no shape
     # constraint. Low severity: it forces review, never an auto-correction.
     shapes = format_entry.get('shapes')
-    if shapes and shape_signature(v) not in shapes:
-        return {
-            'anomaly':  f"{cls} field, shape {shape_signature(v)!r} not in learned shapes {sorted(shapes)!r}",
-            'severity': 'low',
-        }
+    if shapes:
+        vsig = _fold_shape(shape_signature(v))   # numeric length/grouping-invariant; raw for structured
+        if vsig not in shapes:
+            return {
+                'anomaly':  f"{cls} field, shape {vsig!r} not in learned shapes {sorted(shapes)!r}",
+                'severity': 'low',
+            }
 
     return None
 
