@@ -205,12 +205,18 @@ def _is_numeric_family(shape: str) -> bool:
 
 
 def _numeric_family_regex(fam: str) -> str:
-    """Regex for a folded numeric family: each '#' is a full digit RUN (optionally
-    thousands-grouped), '.' the literal decimal point. Boundary-guarded like
-    _shape_to_regex so it grabs a standalone amount ("152567", "4,699.20") out of
-    column-bleed and never a slice of a longer alphanumeric run."""
-    body = [r'\d[\d,\s]*' if c == '#' else re.escape(c) for c in fam]
-    return r'(?<![A-Za-z0-9])' + ''.join(body) + r'(?![A-Za-z0-9])'
+    """Regex for a folded numeric family: each '#' is a digit RUN with optional THOUSANDS
+    grouping, '.' the literal decimal point. Boundary-guarded like _shape_to_regex so it grabs a
+    standalone amount ("152567", "4,699.20") out of column-bleed and never a slice of a longer
+    alphanumeric run.
+
+    A '#' is `\\d+(?:[,\\s]\\d{3})*` — a run that only continues across a comma/space when the
+    NEXT group is exactly 3 digits (a thousands boundary). It must NOT be `\\d[\\d,\\s]*`: that
+    let a space span the gap between two amounts on one line, so "12.50 34.00" recovered as
+    "12.50 34" — silent MAGNITUDE corruption. An optional leading '-' keeps a credit/negative
+    amount's sign, so "-84.40" is matched WHOLE (never stripped to "84.40")."""
+    body = [r'\d+(?:[,\s]\d{3})*' if c == '#' else re.escape(c) for c in fam]
+    return r'(?<![A-Za-z0-9])-?' + ''.join(body) + r'(?![A-Za-z0-9])'
 
 
 def extract_accepted_shape(value: str, format_entry: dict) -> Optional[str]:

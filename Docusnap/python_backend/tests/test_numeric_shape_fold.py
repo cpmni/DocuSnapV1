@@ -82,6 +82,26 @@ check("bleed '152567 Work Address' recovers '152567'",
       extract_accepted_shape('152567 Work Address', inv_entry) == '152567')
 
 
+# ── MAGNITUDE / SIGN preservation: extract_accepted_shape must NEVER corrupt a number ──
+# The folded numeric-family regex must not let a space span the gap between two amounts, nor
+# strip a leading sign — both silently write a WRONG number (found pressure-testing the fold).
+print("\nmagnitude/sign preservation (extract_accepted_shape never corrupts an amount)")
+amt = {f"{i}.{i % 100:02d}": 1 for i in range(20, 90)}          # money field, shapes == {'#.#'}
+amt_entry = classify_format(list(amt), amt)
+check("two amounts on one line are NOT merged ('12.50 34.00' -> '12.50', not '12.50 34')",
+      extract_accepted_shape('12.50 34.00', amt_entry) == '12.50')
+check("a wider space still isn't spanned ('12.50  34.00' -> '12.50')",
+      extract_accepted_shape('12.50  34.00', amt_entry) == '12.50')
+check("a NEGATIVE amount keeps its sign ('-84.40' stays '-84.40', never '84.40')",
+      extract_accepted_shape('-84.40', amt_entry) == '-84.40')
+check("a negative thousands amount keeps sign+grouping ('-1,234.56')",
+      extract_accepted_shape('-1,234.56', amt_entry) == '-1,234.56')
+check("a genuine thousands-grouped amount is accepted, not trimmed ('1 234.56' -> None)",
+      extract_accepted_shape('1 234.56', amt_entry) is None)
+check("trailing word junk is still trimmed ('84.40 credit' -> '84.40')",
+      extract_accepted_shape('84.40 credit', amt_entry) == '84.40')
+
+
 if fails:
     print(f"\n{len(fails)} FAILED"); sys.exit(1)
 print("\nAll numeric-shape-fold checks passed.")
