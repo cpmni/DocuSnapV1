@@ -8,6 +8,19 @@ files are on disk; this captures the why). Repo root is `c:\GIT Projects\`; git 
 `Docusnap/` prefix.
 
 ## In progress — UNCOMMITTED (this session)
+- **Scanned-totals sparse-column OCR recovery (2026-07-04).** On a SCANNED invoice the totals block
+  is a sparse right-aligned column (`Net Total  GBP  84.40`); Tesseract PSM-3 page segmentation drops
+  the AMOUNT column (reads the line-item 84.40 but not 16.88/101.28), so subtotal/total read EMPTY.
+  `ocr/tesseract.reconstruct_page_text` now runs a supplementary PSM-6 "uniform block" pass and merges
+  back ONLY high-confidence words in a region PSM-3 left EMPTY (`_center_in_any`), so PSM-3's clean
+  reads win and no PSM-6 header-noise is imported. +1 OCR pass per SCANNED page (born-digital skips
+  this path); best-effort. Guarded by `test_reconstruct_sparse_merge.py`. VERIFIED: amounts recovered,
+  keyword now reads subtotal=84.40 / total=101.28 / vat_tax=16.88 correctly. ⚠ NEWLY EXPOSED (separate,
+  pre-existing): for City Office NI (doc 87) the Stage-2 anchor (template 4 registration) reads a WRONG
+  `total`=84.40 and OVERRIDES the now-correct keyword 101.28 (reconciliation FLAGS it "total looks like
+  the subtotal"). A bad/drifted template-total mapping — clear/re-teach it, or make the anchor↔keyword
+  merge reconciliation-aware (prefer the candidate that reconciles). NOT the OCR issue. Also still open:
+  invoice-number crop drift (192074 vs 152574).
 - **Format-gate "trust-first" hardening pass (2026-07-04) — audit + 2 fixes, 4 deferred.** Three
   independent passes (main + gary + reggie) confirmed ONE recurring class: the Stage 4.5 format gate
   OVER-FIRES on legitimately-variable data — it WITHHOLDS/TRUNCATES/flags a VALID value because its
