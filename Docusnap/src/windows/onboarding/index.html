@@ -21,7 +21,11 @@
   .dot{height:4px;flex:1;border-radius:2px;background:var(--border2);transition:background .2s}
   .dot.active{background:var(--accent)}
   .dot.done{background:var(--accent2)}
-  .panel{display:none;flex:1;flex-direction:column;animation:fade .25s ease}
+  /* Each step scrolls internally when its content is taller than the window (min-height:0
+     lets a flex child shrink below its content so overflow-y can take effect) — so no step
+     can clip its lower controls (e.g. the Output-organization Preview) whatever the theme
+     font metrics. The footer nav lives outside .stage, so it stays fixed while content scrolls. */
+  .panel{display:none;flex:1;min-height:0;flex-direction:column;animation:fade .25s ease;overflow-y:auto}
   .panel.show{display:flex}
   @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
   h1{font-size:23px;font-weight:600;margin-bottom:8px}
@@ -110,6 +114,7 @@
           <div class="card" data-copy="yes"><div class="ttl">Choose a folder</div>
             <div class="desc">Move filed originals into a specific folder you pick (e.g. an archive or shared drive).</div></div>
         </div>
+        <div class="hint ok" style="margin-top:8px">🔒 Your original scans are never deleted — they&rsquo;re just moved into a &ldquo;Processed&rdquo; folder so you can always find them again.</div>
         <div id="copyToWrap" style="display:none;margin-top:14px">
           <label class="lbl">Processed scans folder</label>
           <div class="pathrow">
@@ -124,11 +129,13 @@
     <!-- 2 Output organization -->
     <section class="panel" data-step="2">
       <h2>How should filed documents be organised?</h2>
-      <p class="sub">Set this up now so everything is filed consistently from the start. Click a block to
-        insert it, or type your own text. You can change it any time in Settings.</p>
+      <p class="sub"><b>Most people leave this as-is.</b> By default, documents are filed by
+        <b>Company → Year → Month</b>, named <b>Type · Date · Reference</b> — the boxes below are already
+        set up that way. Only change them if you want a different layout (advanced). You can change it any
+        time in Settings.</p>
 
       <div class="field">
-        <label class="lbl">Subfolders inside the output folder — use / for a new level</label>
+        <label class="lbl">Folder layout <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(optional — click a block to add it, or type your own; use / for a new folder level)</span></label>
         <input type="text" id="ob-folder-pattern" class="pathbox" style="width:100%;font-family:'IBM Plex Mono',monospace" spellcheck="false">
         <div id="ob-folder-tokens" class="ob-tokens"></div>
       </div>

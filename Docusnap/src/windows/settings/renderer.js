@@ -3509,6 +3509,45 @@ document.getElementById('lr-btn-clear-hints').addEventListener('click', async ()
   await runLearningSearch();
 });
 
+document.getElementById('lr-btn-rename-supplier').addEventListener('click', async () => {
+  const msg = document.getElementById('lr-msg');
+  if (!lrCurrentScope || !lrCurrentScope.supplier_name) {
+    msg.textContent = 'Search a supplier first, then enter the corrected name.'; return;
+  }
+  const from = lrCurrentScope.supplier_name;
+  const to   = document.getElementById('lr-rename-new').value.trim();
+  if (!to)         { msg.textContent = 'Enter the corrected supplier name.'; return; }
+  if (to === from) { msg.textContent = 'The corrected name is the same as the current name.'; return; }
+  // Blast-radius preview so the operator sees what the rename touches before confirming.
+  let counts = null;
+  try { counts = await api.getSupplierScopeCounts(from); } catch {}
+  const blast = counts
+    ? `${counts.documents} document(s), ${counts.supplier_hints} hint(s), ${counts.field_anchors} anchor(s), `
+      + `${counts.logo_fingerprints} logo(s), ${counts.corrections} correction(s)`
+    : 'all learning rows';
+  const confirmed = await showTypedConfirmDialog({
+    title: 'Rename supplier everywhere',
+    warningHtml:
+      `Rename <strong style="color:var(--text);">${escHtml(from)}</strong> to ` +
+      `<strong style="color:var(--text);">${escHtml(to)}</strong> across ${escHtml(blast)}. ` +
+      `The stored Document Issuer value on those documents is updated too. Filed documents keep ` +
+      `their files (folders are not moved). This cannot be automatically undone.`,
+    requiredText: from,
+    confirmLabel: 'Rename supplier',
+  });
+  if (!confirmed) return;
+  try {
+    const res = await api.renameSupplier({ oldName: from, newName: to });
+    msg.textContent = res.renamed ? `Renamed "${from}" → "${to}".` : 'Nothing to rename.';
+    document.getElementById('lr-rename-new').value = '';
+    document.getElementById('lr-supplier').value = to;   // re-point the panel at the new name
+    await loadMemoryInventory();
+    await runLearningSearch();
+  } catch (e) {
+    msg.textContent = 'Rename failed: ' + e.message;
+  }
+});
+
 document.getElementById('lr-btn-clear-field-rules').addEventListener('click', async () => {
   if (!lrCurrentScope) return;
   const { supplier_name, document_type } = lrCurrentScope;

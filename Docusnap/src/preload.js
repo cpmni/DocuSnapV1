@@ -287,6 +287,8 @@ contextBridge.exposeInMainWorld('docusnap', {
   clearLearningHints:  (params)   => ipcRenderer.invoke('clear-learning-hints', params),
   clearLearningCorrections: (params) => ipcRenderer.invoke('clear-learning-corrections', params),
   clearLearningFieldRules: (params) => ipcRenderer.invoke('clear-learning-field-rules', params),
+  getSupplierScopeCounts: (name)    => ipcRenderer.invoke('get-supplier-scope-counts', name),
+  renameSupplier:      (payload)  => ipcRenderer.invoke('rename-supplier', payload),
   // "Fix a document type" recovery (scope reset + document set-aside)
   recoveryOverview:    (scope)   => ipcRenderer.invoke('recovery-overview', scope),
   recoveryApply:       (payload) => ipcRenderer.invoke('recovery-apply', payload),
@@ -341,20 +343,33 @@ contextBridge.exposeInMainWorld('docusnap', {
 // main to re-focus the webContents, then re-assert focus on the pressed control. The
 // preload shares the page DOM (contextIsolation isolates JS scope, not the DOM). No-op
 // when focus is already fine, so a normal click is untouched.
+// ── TEMP FOCUS TRACE (remove after diagnosis) — everything routes to the npm-start terminal ──
+const _ftag = (n) => { try { return n ? (n.tagName + (n.id ? '#' + n.id : '')) : 'none'; } catch { return '?'; } };
+document.addEventListener('focusout', (e) => {
+  try { ipcRenderer.send('focus-trace', `preload.focusOUT from=${_ftag(e.target)} -> next=${_ftag(document.activeElement)}`); } catch {}
+}, true);
+
 window.addEventListener('pointerdown', (e) => {
   try {
     const t = e.target;
     const el = t && t.closest && t.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]');
     if (!el) return;                    // only repair when actually entering a field
+    ipcRenderer.send('focus-trace', `preload.pointerdown field=${_ftag(el)} activeElBefore=${_ftag(document.activeElement)} hasFocus=${document.hasFocus()}`);  // TEMP
     // ALWAYS re-assert webContents keyboard focus on a text-field press. document.hasFocus()
     // is UNRELIABLE here: after a native confirm()/alert() (the Review window uses these for
     // the digit/issuer/delete prompts) — or a child window closing — the window reports
     // focused while the render widget has lost keyboard focus, so the old `hasFocus()` guard
     // skipped the repair in exactly the case that needs it ("clicked the box, can't type
     // until I alt-tab out and back"). wc.focus() is cheap + idempotent on a normal click.
-    ipcRenderer.send('ensure-window-focus');
+    ipcRenderer.send('ensure-window-focus', { pageHasFocus: document.hasFocus() });
     // Re-assert the caret next frame ONLY if the press didn't already focus the field — so a
     // normal click's caret position is never disturbed; the broken case gets its focus back.
-    requestAnimationFrame(() => { try { if (document.activeElement !== el) el.focus(); } catch {} });
+    requestAnimationFrame(() => {
+      try {
+        const already = document.activeElement === el;
+        if (!already) el.focus();
+        ipcRenderer.send('focus-trace', `preload.rAF elFocusApplied=${!already} activeElNow=${_ftag(document.activeElement)} hasFocus=${document.hasFocus()}`);  // TEMP
+      } catch {}
+    });
   } catch { /* never let focus repair break a click */ }
 }, true);

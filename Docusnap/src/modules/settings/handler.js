@@ -225,6 +225,28 @@ function register(ctx) {
     return { changes: result.changes };
   });
 
+  // Blast-radius preview for renaming a supplier IDENTITY: per-table row counts under a name.
+  ipcMain.handle('get-supplier-scope-counts', (_e, name) => {
+    requireRole('admin');
+    return learning.getSupplierScopeCounts(getDb(), (name || '').trim());
+  });
+
+  // Rename a supplier IDENTITY across every learning-scope table (documents/hints/anchors/
+  // logos/corrections + the stored identity value) — the reusable fix for a wrong/merged
+  // supplier name that the per-field learning-history tools can't reach (they are scoped BY
+  // supplier). Admin-only + audited. Files are not moved (see learning.renameSupplier).
+  ipcMain.handle('rename-supplier', (_e, payload) => {
+    requireRole('admin');
+    const { oldName, newName } = payload || {};
+    const from = (oldName || '').trim(), to = (newName || '').trim();
+    if (!from || !to || from === to) return { renamed: 0 };
+    const db = getDb();
+    const result = learning.renameSupplier(db, { oldName: from, newName: to });
+    logAudit(db, { action: 'rename_supplier', target_type: 'supplier', outcome: 'success',
+      metadata: { from, to, before: result.before, after: result.after } });
+    return result;
+  });
+
   // Extreme-use recovery — see clearCorrectionsForScope in learning.js for
   // why this is kept separate from the anchors/hints clears above.
   ipcMain.handle('clear-learning-corrections', (_e, params) => {

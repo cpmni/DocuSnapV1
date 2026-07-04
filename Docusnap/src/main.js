@@ -146,7 +146,7 @@ let pendingTeachDocId = null;
 const MAIN_WINDOW_OPTIONS    = { width: 1100, height: 750, minWidth: 800, minHeight: 560 };
 const LOGIN_WINDOW_OPTIONS   = { width: 460, height: 660, resizable: false, minimizable: false, maximizable: false };
 const LICENSE_WINDOW_OPTIONS = { width: 460, height: 560, resizable: false, minimizable: false, maximizable: false };
-const ONBOARDING_WINDOW_OPTIONS = { width: 720, height: 640, resizable: false, minimizable: false, maximizable: false };
+const ONBOARDING_WINDOW_OPTIONS = { width: 720, height: 720, resizable: false, minimizable: false, maximizable: false };
 const LEGAL_WINDOW_OPTIONS = { width: 720, height: 680, resizable: false, minimizable: false, maximizable: false };
 // Bump this (and LEGAL.txt's "Version:" header) to re-prompt everyone for acceptance.
 const LEGAL_VERSION = '2026-07-01';
@@ -688,27 +688,61 @@ app.whenReady().then(() => {
   // login/main/license swap, child windows (settings/review/search), and any
   // window added later. Re-fires on every show so restore-from-minimise re-focuses.
   app.on('browser-window-created', (_e, win) => {
-    const grabFocus = () => { try { win.focus(); win.webContents.focus(); } catch {} };
-    win.on('show', grabFocus);
-    win.on('focus', grabFocus);   // restore-from-minimise / click-back-in re-syncs keyboard focus too
-    if (win.isVisible()) grabFocus();
+    // ── TEMP FOCUS TRACE (remove after diagnosis) — behaviour unchanged, logs order only ──
+    const _fwin = () => { try { return (win.getTitle && win.getTitle()) || win.id; } catch { return '?'; } };
+    const _inv = () => {   // TEMP FOCUS TRACE — app-wide focus owner + window inventory (eric)
+      try {
+        const fw = BrowserWindow.getFocusedWindow();
+        return `focusedWin=${fw ? (fw.getTitle() || fw.id) : 'NULL'} | ` +
+          BrowserWindow.getAllWindows().map(w => `${(w.getTitle() || w.id)}:vis=${w.isVisible()},foc=${w.isFocused()}`).join(' | ');
+      } catch { return '?'; }
+    };
+    const grabFocus = (src) => {
+      try {
+        console.log(`[FOCUS] ${Date.now()} main.grabFocus(${src || '?'}) win=${_fwin()} visible=${win.isVisible && win.isVisible()} ${_inv()}`);
+        win.focus(); win.webContents.focus();
+      } catch {}
+    };
+    win.on('show', () => grabFocus('show'));
+    // Do NOT re-issue win.focus() on the window's OWN focus event — on Windows that is a
+    // redundant SetForegroundWindow (denied when the process lacks foreground rights) and
+    // just adds thrash during the splash→login→shell handoff. Route keys into the web
+    // widget only; the OS focus event itself already made this the key window. (eric)
+    win.on('focus', () => { try { win.webContents.focus(); } catch {} });
+    if (win.isVisible()) grabFocus('initial');
   });
 
   // Renderer-driven keyboard-focus repair (Windows): the preload asks for this when a
   // click enters a text field while the render widget lacks OS keyboard focus (the
   // "click a box, no caret until I alt-tab out and back" bug). Re-focusing the sending
   // webContents re-syncs it without an OS window-focus change. Sender-scoped + guarded.
-  ipcMain.on('ensure-window-focus', (e) => {
+  ipcMain.on('ensure-window-focus', (e, info) => {
     try {
       const wc = e.sender; if (!wc || wc.isDestroyed()) return;
       // Focus the owning WINDOW first, then the webContents — on Windows, after a native
       // dialog closes wc.focus() alone can leave keyboard focus unrouted until the window
       // itself is re-focused. Both are no-ops when already focused.
       const win = BrowserWindow.fromWebContents(wc);
-      if (win && !win.isDestroyed()) win.focus();
+      const _fw = BrowserWindow.getFocusedWindow();   // TEMP FOCUS TRACE
+      const _dt = wc.isDevToolsFocused && wc.isDevToolsFocused();
+      console.log(`[FOCUS] ${Date.now()} main.ensure-window-focus focusedWin=${_fw ? (_fw.getTitle() || _fw.id) : 'NULL'} wcFocused=${wc.isFocused()} devtoolsFocused=${_dt} pageHasFocus=${info && info.pageHasFocus}`);   // TEMP FOCUS TRACE (eric)
+      if (win && !win.isDestroyed()) {
+        // The window keeps BrowserWindow focus, but returning from a native window.confirm()
+        // (Review uses native confirm() for digit/issuer/delete/reprocess prompts) drops
+        // Blink's FRAME page-focus. wc.focus() is widget-level and can't restore it — the
+        // input stays document.activeElement (Backspace routes) but there is no caret and
+        // typing is refused. A real blur→focus activation CYCLE re-runs Chromium's focus
+        // controller and restores page-focus. Gated on the renderer reporting page focus is
+        // ACTUALLY lost, so a healthy click never flickers. (eric diagnosis)
+        if (info && info.pageHasFocus === false) { win.blur(); win.focus(); }
+        else win.focus();
+      }
       wc.focus();
     } catch {}
   });
+
+  // ── TEMP FOCUS TRACE (remove after diagnosis) — renderer focus events → this terminal ──
+  ipcMain.on('focus-trace', (_e, msg) => { try { console.log(`[FOCUS] ${Date.now()} ${msg}`); } catch {} });
 
   // Splash first, before any other startup work, so it appears immediately.
   createSplash();

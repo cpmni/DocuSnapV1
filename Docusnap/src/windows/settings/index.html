@@ -1188,6 +1188,18 @@
           <button class="btn danger" id="lr-btn-clear-hints" data-help-key="lr-clear-hints">Clear supplier hints for this scope</button>
           <button class="btn danger" id="lr-btn-clear-field-rules" data-help-key="lr-clear-rules">Clear field cleanup rules for this scope</button>
         </div>
+
+        <div class="section-title" style="margin-top:18px;">Rename / fix this supplier</div>
+        <div class="section-desc" style="margin-bottom:8px;">
+          Corrects a wrong or merged Document Issuer everywhere it is a learning key — the
+          documents, hints, anchors, logo and corrections for this supplier — in one move, so
+          it stops re-appearing on new scans. Filed documents keep their files.
+        </div>
+        <div class="row-flex" style="gap:8px; align-items:center;">
+          <input type="text" id="lr-rename-new" class="path-input" placeholder="Corrected supplier name…" style="max-width:280px;" spellcheck="false">
+          <button class="btn" id="lr-btn-rename-supplier" data-help-key="lr-rename-supplier">Rename this supplier</button>
+        </div>
+
         <div id="lr-msg" class="section-desc" style="margin-top:8px;"></div>
 
         <details id="lr-advanced" style="margin-top:18px;">

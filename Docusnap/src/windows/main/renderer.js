@@ -652,7 +652,7 @@ async function startProcessing() {
 
   // Reset only the per-run BATCH (the progress bar). Session Stats are cumulative
   // across the session (manual + watch), so they are NOT wiped here.
-  batch = { total: 0, done: 0, ok: 0, err: 0 };
+  batch = { total: 0, done: 0, ok: 0, err: 0, review: 0 };
   updateStats();
 
   // Surface the Import workspace (results table + live progress strip coexist
@@ -700,8 +700,21 @@ async function startProcessing() {
   } else {
     logStatus.textContent = 'Finished';
     progressBar.style.width = '100%';
-    progressText.textContent = `✓ ${batch.ok} filed${batch.err ? `, ${batch.err} with errors` : ''}`;
-    appendLog(`✓ Finished processing — ${batch.ok} filed${batch.err ? `, ${batch.err} with errors` : ''}.`, 'ok');
+    // Be HONEST about the two-step model: a "needs review" doc is NOT filed yet — the user
+    // must still open Review and Confirm it. Saying "N filed" for those made people stop early.
+    const review = batch.review || 0;
+    const filed  = Math.max(0, batch.ok - review);   // processed cleanly / auto-filed (no review needed)
+    const errPart = batch.err ? `, ${batch.err} with errors` : '';
+    let msg;
+    if (review > 0) {
+      msg = `✓ ${batch.done} processed — ${review} need${review === 1 ? 's' : ''} your review before filing`
+          + (filed ? `, ${filed} ready` : '') + errPart;
+    } else {
+      msg = `✓ ${filed} processed and ready to file${errPart}`;
+    }
+    progressText.textContent = msg;
+    appendLog(`✓ Finished — ${msg.replace(/^✓ /, '')}`, review > 0 ? 'warn' : 'ok');
+    if (review > 0) appendLog('Open "Review your documents" to check and Confirm & File them — processing alone does not file them.', 'warn');
   }
   // If anything was processed, offer the "Review your documents" CTA and remember
   // this run for the dashboard's "last run" line.
@@ -803,7 +816,7 @@ function handleProgress(msg) {
     case 'file_done':
       batch.done++;
       stats.done++;
-      if (msg.success) { batch.ok++; stats.ok++; } else { batch.err++; stats.err++; }
+      if (msg.success) { batch.ok++; stats.ok++; if (msg.needs_review) batch.review++; } else { batch.err++; stats.err++; }
       updateStats();
       updateProgressCount();
       addTableRow(msg);
@@ -860,8 +873,8 @@ function addTableRow(msg) {
     statusCell = `<span class="badge err" title="${escHtml(msg.error || 'Processing error')}">Error</span>`;
   } else if (msg.needs_review) {
     statusCell = _userCanReview
-      ? `<button type="button" class="badge warn row-review-link" title="Open the Review window to check and confirm this document">Needs review</button>`
-      : `<span class="badge warn" title="This document needs review">Needs review</span>`;
+      ? `<button type="button" class="badge warn row-review-link" title="Not filed yet — click to open Review, check the details and Confirm & File it">Confirm to file →</button>`
+      : `<span class="badge warn" title="This document needs review before it can be filed">Needs review</span>`;
   } else {
     // Filed docs are clickable too — a green "Filed" can still hide a wrong value, so let
     // the operator jump straight to it in Review to check/correct (Admin/Edit only).
@@ -908,7 +921,7 @@ function updateStats() {
 // the way to start a fresh count without restarting the app.
 document.getElementById('btn-clear-stats')?.addEventListener('click', () => {
   stats = { total: 0, done: 0, ok: 0, err: 0 };
-  batch = { total: 0, done: 0, ok: 0, err: 0 };
+  batch = { total: 0, done: 0, ok: 0, err: 0, review: 0 };
   updateStats();
   if (progressBar) progressBar.style.width = '0';
 });
