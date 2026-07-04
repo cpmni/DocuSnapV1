@@ -688,28 +688,16 @@ app.whenReady().then(() => {
   // login/main/license swap, child windows (settings/review/search), and any
   // window added later. Re-fires on every show so restore-from-minimise re-focuses.
   app.on('browser-window-created', (_e, win) => {
-    // ── TEMP FOCUS TRACE (remove after diagnosis) — behaviour unchanged, logs order only ──
-    const _fwin = () => { try { return (win.getTitle && win.getTitle()) || win.id; } catch { return '?'; } };
-    const _inv = () => {   // TEMP FOCUS TRACE — app-wide focus owner + window inventory (eric)
-      try {
-        const fw = BrowserWindow.getFocusedWindow();
-        return `focusedWin=${fw ? (fw.getTitle() || fw.id) : 'NULL'} | ` +
-          BrowserWindow.getAllWindows().map(w => `${(w.getTitle() || w.id)}:vis=${w.isVisible()},foc=${w.isFocused()}`).join(' | ');
-      } catch { return '?'; }
+    const grabFocus = () => {
+      try { win.focus(); win.webContents.focus(); } catch {}
     };
-    const grabFocus = (src) => {
-      try {
-        console.log(`[FOCUS] ${Date.now()} main.grabFocus(${src || '?'}) win=${_fwin()} visible=${win.isVisible && win.isVisible()} ${_inv()}`);
-        win.focus(); win.webContents.focus();
-      } catch {}
-    };
-    win.on('show', () => grabFocus('show'));
+    win.on('show', grabFocus);
     // Do NOT re-issue win.focus() on the window's OWN focus event — on Windows that is a
     // redundant SetForegroundWindow (denied when the process lacks foreground rights) and
     // just adds thrash during the splash→login→shell handoff. Route keys into the web
     // widget only; the OS focus event itself already made this the key window. (eric)
     win.on('focus', () => { try { win.webContents.focus(); } catch {} });
-    if (win.isVisible()) grabFocus('initial');
+    if (win.isVisible()) grabFocus();
   });
 
   // Renderer-driven keyboard-focus repair (Windows): the preload asks for this when a
@@ -723,9 +711,6 @@ app.whenReady().then(() => {
       // dialog closes wc.focus() alone can leave keyboard focus unrouted until the window
       // itself is re-focused. Both are no-ops when already focused.
       const win = BrowserWindow.fromWebContents(wc);
-      const _fw = BrowserWindow.getFocusedWindow();   // TEMP FOCUS TRACE
-      const _dt = wc.isDevToolsFocused && wc.isDevToolsFocused();
-      console.log(`[FOCUS] ${Date.now()} main.ensure-window-focus focusedWin=${_fw ? (_fw.getTitle() || _fw.id) : 'NULL'} wcFocused=${wc.isFocused()} devtoolsFocused=${_dt} pageHasFocus=${info && info.pageHasFocus}`);   // TEMP FOCUS TRACE (eric)
       if (win && !win.isDestroyed()) {
         // The window keeps BrowserWindow focus, but returning from a native window.confirm()
         // (Review uses native confirm() for digit/issuer/delete/reprocess prompts) drops
@@ -740,9 +725,6 @@ app.whenReady().then(() => {
       wc.focus();
     } catch {}
   });
-
-  // ── TEMP FOCUS TRACE (remove after diagnosis) — renderer focus events → this terminal ──
-  ipcMain.on('focus-trace', (_e, msg) => { try { console.log(`[FOCUS] ${Date.now()} ${msg}`); } catch {} });
 
   // Splash first, before any other startup work, so it appears immediately.
   createSplash();
