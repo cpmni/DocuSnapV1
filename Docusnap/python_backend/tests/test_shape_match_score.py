@@ -23,7 +23,9 @@ def check(label, cond):
 def main():
     f = 0
     REF = {"shapes": frozenset({"####-####-#"})}
-    MULTI = {"shapes": frozenset({"####-####-#", "@@##"})}
+    # classify_format stores FOLDED shapes: a single running-number group behind a letter prefix
+    # folds ('@@##' -> '@@#'), a multi-group ref stays exact.
+    MULTI = {"shapes": frozenset({"####-####-#", "@@#"})}
 
     print("shape_match_score")
     f += not check("exact match -> 1.0", fac.shape_match_score("1234-5678-9", REF) == 1.0)

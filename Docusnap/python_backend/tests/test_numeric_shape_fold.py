@@ -43,7 +43,12 @@ check("'###.##' and '#,###.##' fold to the same '#.#'",
 check("space-thousands '# ###.##' folds to '#.#'", _fold_shape('# ###.##') == '#.#')
 check("structured '####-####-#' is UNCHANGED (separator is meaningful)",
       _fold_shape('####-####-#') == '####-####-#')
-check("code '@@##' with letters is UNCHANGED", _fold_shape('@@##') == '@@##')
+check("a SINGLE running-number group folds behind a letter prefix ('@@##' -> '@@#')",
+      _fold_shape('@@##') == '@@#')
+check("'INV###'/'INV####' fold to one family ('@@@###' -> '@@@#')",
+      _fold_shape('@@@###') == '@@@#' and _fold_shape('@@@####') == '@@@#')
+check("a MULTI-group ref keeps exact structure ('####-####-#' unchanged)",
+      _fold_shape('####-####-#') == '####-####-#')
 
 
 # ── Scenario 1: currency crossing into thousands is never an anomaly/truncated ─

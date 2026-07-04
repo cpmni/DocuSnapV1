@@ -188,13 +188,25 @@ def _fold_shape(sig: str) -> str:
     total among mostly sub-£1,000 history was trimmed to its 3-digit tail ('4,699.20' ->
     '699.20'). Folding collapses all same-class numbers into ONE family, so it clears the
     proportional acceptance bar together and no legitimate amount/reference is an anomaly.
+
+    A shape with LETTERS ('@') or a STRUCTURAL separator gets the SAME length-invariance for a
+    SINGLE running-number group (a fixed prefix + counter): '@@@###'/'@@@####' -> '@@@#',
+    '@@-####' -> '@@-#', '@@@-####' -> '@@@-#'. This is the identical fix for the most common
+    invoice/PO/SO/order-number shape (INV001 -> INV1234 rolled the counter to 4 digits), which
+    the pure-numeric branch alone left withheld. A MULTI-group reference (>= 2 digit runs, e.g.
+    '####-####-#') is returned UNCHANGED — there the per-group lengths + separator STRUCTURE are
+    meaningful (a truncated/mis-structured code), so the exact-shape drift guard stays intact.
     Pure/deterministic."""
-    if not sig or '@' in sig:
+    if not sig:
         return sig
-    if any(c not in '#,. ' for c in sig):   # a structural separator -> not a bare number
-        return sig
-    folded = sig.replace(',', '').replace(' ', '')   # drop thousands separators
-    return re.sub(r'#+', '#', folded)                # collapse the digit run(s) -> length-invariant
+    if '@' not in sig and all(c in '#,. ' for c in sig):
+        # PURE NUMERIC: drop thousands separators, collapse EVERY digit run -> length/grouping-invariant.
+        return re.sub(r'#+', '#', sig.replace(',', '').replace(' ', ''))
+    # Has letters / a structural separator: fold a SINGLE running-number group (prefix + counter);
+    # keep a multi-group ref exact (its structure is the guard).
+    if len(re.findall(r'#+', sig)) == 1:
+        return re.sub(r'#+', '#', sig)
+    return sig
 
 
 def _is_numeric_family(shape: str) -> bool:
