@@ -1161,6 +1161,150 @@ function renderReviewReason(doc) {
   el.hidden = false;
 }
 
+// ── Totals reconciliation (positive "mathematically verified" badge) ───────────
+// Mirrors the backend guardrail's CLOSE case (validator.py total-reconciliation):
+// total ≈ subtotal + tax + shipping − discount within 2% / 5p. Computed here from the
+// ON-SCREEN field values so it LIVE-UPDATES as the operator edits the total/components,
+// and needs no stored flag. Purely a reassurance label — never gates Confirm.
+function _parseAmount(raw) {
+  if (raw == null) return null;
+  const m = String(raw).match(/([\d,]+\.?\d*)/);   // twin of validator.CURRENCY_RE capture
+  if (!m) return null;
+  const v = parseFloat(m[1].replace(/,/g, ''));
+  return Number.isNaN(v) ? null : v;
+}
+// Map a field (key + human label) to its amount ROLE. Order matters: the more specific
+// component roles are tested BEFORE 'total' so "Subtotal" is never mistaken for the total.
+function _amountRole(key, label) {
+  // Underscore is a WORD char, so a snake_case key like 'vat_tax' has NO \b boundary
+  // around 'vat'/'tax' — the \b-anchored tax/total rules below then silently miss it and
+  // the shadow VAT component maps to no role (breaking the "mathematically verified" badge
+  // on a genuinely balanced invoice). Fold '_' to a space so the boundaries fire; the
+  // separator-tolerant patterns ('sub[\s_-]?total') are unaffected.
+  const s = `${key || ''} ${label || ''}`.toLowerCase().replace(/_/g, ' ');
+  // Kept in sync with the backend keyword.ROLE_KEY_ALIASES + keyword_patterns.json labels.
+  if (/sub[\s_-]?total|net[\s_-]?(total|amount)|goods[\s_-]?total|\bnett?\b|ex[\s_-]?vat/.test(s))
+    return 'subtotal';
+  if (/discount|reduction|deduction|rebate|markdown|concession|allowance|promo|promotion|voucher|savings|\bcredit\b/.test(s))
+    return 'discount';
+  if (/shipping|postage|carriage|freight|freightage|handling|courier|mailing|franking|dispatch|despatch|forwarding|consignment|p\s*&\s*p|p\s+and\s+p|delivery[\s_-]?(charge|cost|fee)|transport[\s_-]?cost/.test(s))
+    return 'shipping';
+  if (/\b(vat|tax|gst|hst|pst|qst)\b/.test(s)) return 'tax';
+  if (key === 'total_amount' ||
+      (/\b(grand[\s_-]?total|total|amount[\s_-]?due|balance[\s_-]?due|amount[\s_-]?payable|total[\s_-]?due|total[\s_-]?payable|invoice[\s_-]?total)\b/.test(s)
+       && !/sub/.test(s)))                                    return 'total';
+  return null;
+}
+// Read the live role amounts from the rendered inputs and decide whether the total
+// reconciles. Returns {verified, totalKey}; verified is only true when BOTH a total and a
+// subtotal are present and the arithmetic checks out (NEUTRAL "only a subtotal" is not a
+// claim of verification).
+function _totalsReconcileState() {
+  const roles = {};
+  const setRole = (role, key, amount) => {
+    if (!role) return;
+    if (role === 'total') { if (key === 'total_amount' || !roles.total) roles.total = { key, amount }; }
+    else if (!roles[role]) roles[role] = { key, amount };
+  };
+  // 1) VISIBLE currency fields (live DOM values, so the badge updates as the user edits).
+  //    A currency-type gate stops a "Delivery Date" (date) or "Credit Note No" (text) from
+  //    being read as a money component.
+  document.querySelectorAll('#fields-scroll .field-row[data-key]').forEach(row => {
+    const key = row.dataset.key;
+    const input = row.querySelector('input.field-input');
+    if (!input) return;
+    const fdef = (fieldDefs || []).find(f => f.key === key);
+    if (fdef && fdef.type && fdef.type !== 'currency') return;
+    setRole(_amountRole(key, labelFor(key)), key, _parseAmount(input.value));
+  });
+  // 2) SHADOW components — subtotal/VAT/shipping/discount read in the BACKGROUND (not shown
+  //    as fields). Only fill a role the visible fields didn't already provide, so the maths
+  //    reconciles without the user having to add those fields.
+  for (const e of ((currentDoc && currentDoc.extractions) || [])) {
+    if (e.extraction_method !== 'shadow_reconcile') continue;
+    setRole(_amountRole(e.field_key, e.field_key), e.field_key,
+            _parseAmount(e.display_value != null ? e.display_value : (e.raw_value || '')));
+  }
+  const total = roles.total;
+  if (!total) return { verified: false, totalKey: null };
+  const sub = roles.subtotal ? roles.subtotal.amount : null;
+  if (total.amount == null || total.amount <= 0 || sub == null || sub <= 0)
+    return { verified: false, totalKey: total.key };
+  const tax  = (roles.tax && roles.tax.amount) || 0;
+  const ship = (roles.shipping && roles.shipping.amount) || 0;
+  const disc = (roles.discount && roles.discount.amount) || 0;
+  const tol  = Math.max(total.amount * 0.02, 0.05);
+  // Shipping/discount may be separate additions OR line items already inside the subtotal —
+  // verified if ANY plausible composition matches (mirrors validator.py reconciliation).
+  let verified = false;
+  for (const s of [0, 1]) for (const d of [0, 1])
+    if (Math.abs(total.amount - (sub + tax + s * ship - d * disc)) <= tol) verified = true;
+  return { verified, totalKey: total.key };
+}
+function updateTotalsVerifiedBadge() {
+  document.querySelectorAll('#fields-scroll .field-note.verified').forEach(n => n.remove());
+  let st; try { st = _totalsReconcileState(); } catch { return; }
+  if (!st || !st.verified || !st.totalKey) return;
+  const row = document.querySelector(`#fields-scroll .field-row[data-key="${CSS.escape(st.totalKey)}"]`);
+  if (!row) return;
+  const div = document.createElement('div');
+  div.className = 'field-note verified';
+  div.innerHTML = `<span class="corrected-badge" title="This total reconciles against the subtotal and any tax, shipping and discount on the document">✓ Value mathematically verified</span>`;
+  const wrap = row.querySelector('.field-input-wrap');
+  if (wrap) wrap.insertAdjacentElement('afterend', div); else row.appendChild(div);
+}
+
+// ── Drawn-value normalisation (⊕ teach) ───────────────────────────────────────
+// When a target box is drawn, tidy the OCR read to match the FIELD TYPE so the input
+// shows the clean value: strip the currency symbol from a currency field; parse a date
+// field to the app's canonical DD-MM-YYYY, disambiguating day/month order via the region
+// setting (region_date_order). Never blanks a read — an unparseable date keeps the raw text.
+function _stripCurrencySymbol(s) {
+  return String(s)
+    .replace(/[£$€¥₹]/g, '')
+    .replace(/\b(?:GBP|USD|EUR|JPY|AUD|CAD|CHF|INR|NZD|CNY|ZAR)\b/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+const _DRAWN_MONTHS = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
+function _fmtDMY(d, mo, y) { const p = n => String(n).padStart(2, '0'); return `${p(d)}-${p(mo)}-${y}`; }
+function _parseDrawnDate(raw, order) {
+  const t = String(raw).trim();
+  let m = t.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);   // a/b/yyyy — order-dependent
+  if (m) {
+    const a = +m[1], b = +m[2], y = +m[3];
+    let day, mon;
+    if (a > 12)               { day = a; mon = b; }   // first > 12 → must be the day
+    else if (b > 12)          { mon = a; day = b; }   // second > 12 → must be the day
+    else if (order === 'mdy') { mon = a; day = b; }   // US
+    else                      { day = a; mon = b; }   // dmy (default) / ymd fallback
+    if (mon >= 1 && mon <= 12 && day >= 1 && day <= 31) return _fmtDMY(day, mon, y);
+    return null;
+  }
+  m = t.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/);       // ISO yyyy-mm-dd (unambiguous)
+  if (m) { const mo = +m[2], day = +m[3]; if (mo >= 1 && mo <= 12 && day >= 1 && day <= 31) return _fmtDMY(day, mo, +m[1]); }
+  m = t.match(/^([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{4})$/);        // MMM DD YYYY (unambiguous)
+  if (m) { const mo = _DRAWN_MONTHS[m[1].slice(0, 3).toLowerCase()]; if (mo) return _fmtDMY(+m[2], mo, +m[3]); }
+  m = t.match(/^(\d{1,2})\s+([A-Za-z]{3,9}),?\s+(\d{4})$/);        // DD MMM YYYY (unambiguous)
+  if (m) { const mo = _DRAWN_MONTHS[m[2].slice(0, 3).toLowerCase()]; if (mo) return _fmtDMY(+m[1], mo, +m[3]); }
+  return null;
+}
+let _regionDateOrder = null;
+async function _getRegionDateOrder() {
+  if (_regionDateOrder) return _regionDateOrder;
+  let v = 'dmy';
+  try { v = ((await window.docusnap.getSetting('region_date_order')) || 'dmy').toLowerCase(); } catch {}
+  _regionDateOrder = ['dmy', 'mdy', 'ymd', 'auto'].includes(v) ? v : 'dmy';
+  return _regionDateOrder;
+}
+async function normalizeDrawnValue(fieldKey, text) {
+  const fdef = (fieldDefs || []).find(f => f.key === fieldKey);
+  const type = ((fdef && fdef.type) || '').toLowerCase();
+  if (type === 'currency') return _stripCurrencySymbol(text) || text;
+  if (type === 'date')     return _parseDrawnDate(text, await _getRegionDateOrder()) || text;
+  return text;
+}
+
 // ── Fields panel ──────────────────────────────────────────────────────────────
 function renderFields(doc) {
   const scroll = document.getElementById('fields-scroll');
@@ -1183,6 +1327,7 @@ function renderFields(doc) {
   }
   validateConfirm();
   updateAcknowledgeButton();
+  updateTotalsVerifiedBadge();
 }
 
 function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, method) {
@@ -1221,9 +1366,14 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   const row = document.createElement('div');
   row.className   = 'field-row';
   row.dataset.key = key;
+  // Plain-language gloss for the identity field — "Document Issuer" reads as ambiguous to
+  // non-technical / non-native users (own company vs the other party). Spell out it's the SENDER.
+  const _issuerHint = (key === 'supplier_name' || key === 'customer_name')
+    ? ' title="The company the document is FROM — the sender who issued it (e.g. the supplier on an invoice). Not your own company."'
+    : '';
   row.innerHTML = `
     <div class="field-row-header">
-      <span class="field-row-label" data-key="${key}">${escHtml(labelFor(key))}</span>
+      <span class="field-row-label" data-key="${key}"${_issuerHint}>${escHtml(labelFor(key))}</span>
       ${confLabel}
     </div>
     <div class="field-input-wrap">
@@ -1249,6 +1399,7 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
     // flashes mid-type (e.g. an unfinished "12-05" looks invalid until complete).
     clearFieldWarning(row);
     validateConfirm();
+    updateTotalsVerifiedBadge();   // live-update the "mathematically verified" total badge
   });
 
   // Immediate regex/type validation on focus-out. Synchronous + warn-only: it sets
@@ -1387,7 +1538,7 @@ function validateConfirm() {
         + `${dangling.length > 1 ? 'aren’t' : 'isn’t'} set up. `
         + `Choose ${dangling.length > 1 ? 'them' : 'it'} in Settings → Document Types, then reopen this document.`;
       Object.assign(note.style, { display: '', color: 'var(--warn)', fontSize: '12px',
-        lineHeight: '1.4', padding: '6px 4px' });
+        lineHeight: '1.4', padding: '6px 14px' });
     } else {
       note.style.display = 'none';
     }
@@ -1423,7 +1574,7 @@ function validateConfirm() {
         + `${missing.length > 1 ? 'these fields are' : 'this field is'} needed to file it.`
         + (issuerKey ? ' The Document Issuer is empty too — add it so the app can learn this sender.' : '');
       Object.assign(note.style, { display: '', color: 'var(--warn)', fontSize: '12px',
-        lineHeight: '1.4', padding: '6px 4px' });
+        lineHeight: '1.4', padding: '6px 14px' });
     }
     if (issuerNote) issuerNote.style.display = 'none';
     markRequiredMissing(missing);
@@ -1439,7 +1590,7 @@ function validateConfirm() {
       issuerNote.textContent = 'No Document Issuer yet — if you file now it will be saved under '
         + '“Unknown Company” and the app won’t learn this sender. Add the issuer above, or file anyway.';
       Object.assign(issuerNote.style, { display: '', color: 'var(--warn)', fontSize: '12px',
-        lineHeight: '1.4', padding: '6px 4px' });
+        lineHeight: '1.4', padding: '6px 14px' });
     } else {
       issuerNote.style.display = 'none';
     }
@@ -1609,7 +1760,10 @@ async function runZoneOcr(rect, fieldKey) {
     // Read via the --boxes path so we also learn the line COUNT (for the tall-box auto-rule).
     // result.text is the same cleaned, multi-line-aware value the plain path returns.
     const boxes  = await window.docusnap.ocrRegionBoxes?.(base64);
-    const text   = ((boxes && boxes.text) || (await window.docusnap.ocrRegion(base64)) || '').trim();
+    const rawText = ((boxes && boxes.text) || (await window.docusnap.ocrRegion(base64)) || '').trim();
+    // Tidy to the field type — strip a currency symbol, parse a date to canonical DD-MM-YYYY
+    // (region-aware). Used for the input value, the correction, and the learned anchor value.
+    const text   = rawText ? await normalizeDrawnValue(fieldKey, rawText) : rawText;
 
     if (text) {
       const input = document.querySelector(`.field-input[data-key="${fieldKey}"]`);
