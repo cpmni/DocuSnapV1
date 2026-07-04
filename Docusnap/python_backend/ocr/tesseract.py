@@ -27,6 +27,46 @@ def ocr_image(img: Image.Image, config: str = "--oem 3 --psm 3") -> str:
     return pytesseract.image_to_string(img, config=config)
 
 
+# Supplementary "uniform block" pass (PSM 6) used to RECOVER a sparse column that PSM 3's page
+# segmentation drops (see reconstruct_page_text). Confidence-gated so only clean words are merged.
+_SUPP_CONFIG   = "--oem 3 --psm 6"
+_SUPP_MIN_CONF = 50
+
+
+def _words_from_data(data) -> list:
+    """image_to_data DICT -> [(left, top, w, h, text, conf)]. Skips empty tokens + bad rows."""
+    words = []
+    texts = data.get("text", [])
+    confs = data.get("conf", [])
+    for i in range(len(texts)):
+        t = (texts[i] or "").strip()
+        if not t:
+            continue
+        try:
+            l, top, w, h = (int(data["left"][i]), int(data["top"][i]),
+                            int(data["width"][i]), int(data["height"][i]))
+        except (KeyError, TypeError, ValueError):
+            continue
+        try:
+            c = float(confs[i])
+        except (IndexError, TypeError, ValueError):
+            c = -1.0
+        words.append((l, top, w, h, t, c))
+    return words
+
+
+def _center_in_any(word, boxes) -> bool:
+    """True when `word`'s CENTRE falls inside any (l, top, w, h) box — i.e. this region was
+    already recognised, so a supplementary re-read of it must NOT be merged (avoid duplicates
+    and importing a noisier second-pass read of an already-clean word)."""
+    cx = word[0] + word[2] / 2.0
+    cy = word[1] + word[3] / 2.0
+    for (bl, bt, bw, bh) in boxes:
+        if bl <= cx <= bl + bw and bt <= cy <= bt + bh:
+            return True
+    return False
+
+
 def reconstruct_page_text(img: Image.Image, config: str = "--oem 3 --psm 3") -> str:
     """Full-page OCR text with reading lines rebuilt from word GEOMETRY.
 
@@ -42,25 +82,34 @@ def reconstruct_page_text(img: Image.Image, config: str = "--oem 3 --psm 3") -> 
     existing column-split guard still separates genuinely distinct columns. Same words
     Tesseract recognises — only their grouping into lines changes. Falls back to plain
     image_to_string on any error, so it can never read WORSE than before.
+
+    SPARSE-COLUMN RECOVERY: PSM 3 recognises the totals LABELS but not the far-right AMOUNT
+    column (a sparse right-aligned block sits outside the main text flow, so page segmentation
+    drops the values entirely — subtotal/total then read EMPTY even though the number is
+    plainly printed). A second "uniform block" pass (PSM 6) DOES recognise them; we merge back
+    ONLY the high-confidence words that land in a region PSM 3 left EMPTY (centre not inside any
+    PSM-3 box). PSM 3's clean reads win everywhere it recognised text, so no second-pass noise
+    is imported on an already-read row (PSM 6 alone garbles the ruled table-header row). Adds one
+    OCR pass per SCANNED page only (born-digital never reaches here); best-effort, so a failure
+    leaves the PSM-3 result untouched — it can never read worse. (oscar's sparse-column diagnosis.)
     """
     try:
         data = pytesseract.image_to_data(img, config=config, output_type=pytesseract.Output.DICT)
     except Exception:
         return ocr_image(img, config)
-    words = []
-    for i in range(len(data.get("text", []))):
-        t = (data["text"][i] or "").strip()
-        if not t:
-            continue
-        try:
-            l, top, w, h = (int(data["left"][i]), int(data["top"][i]),
-                            int(data["width"][i]), int(data["height"][i]))
-        except (KeyError, TypeError, ValueError):
-            continue
-        words.append((l, top, w, h, t))
+    words = _words_from_data(data)
     if not words:
         return ""
-    heights = sorted(h for _, _, _, h, _ in words if h > 0)
+    try:
+        supp = pytesseract.image_to_data(img, config=_SUPP_CONFIG, output_type=pytesseract.Output.DICT)
+        boxes = [(w[0], w[1], w[2], w[3]) for w in words]
+        for sw in _words_from_data(supp):
+            if sw[5] >= _SUPP_MIN_CONF and any(ch.isalnum() for ch in sw[4]) \
+                    and not _center_in_any(sw, boxes):
+                words.append(sw)
+    except Exception:
+        pass   # supplementary recovery is additive-only; never break the PSM-3 result
+    heights = sorted(wd[3] for wd in words if wd[3] > 0)
     med_h = heights[len(heights) // 2] if heights else 10
     col_gap = max(med_h * 1.5, 12)    # x-gap wide enough to be a column break (4-space)
     cap = max(med_h * 1.2, 10)        # centres this far apart are DIFFERENT rows even if boxes overlap
