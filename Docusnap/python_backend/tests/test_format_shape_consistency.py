@@ -137,10 +137,16 @@ def main() -> int:
                  letter_anom and letter_anom.get('severity') == 'high'
                  and 'unexpected character' in letter_anom.get('anomaly', '')):
         failures += 1
-    sep_anom = check_value('1111/1111-1', entry)   # '/' not in learned seps {'-'}
-    if not check("unexpected separator in alphanum_sep still flagged LOW (char path)",
-                 sep_anom and sep_anom.get('severity') == 'low'
-                 and 'unexpected character' in sep_anom.get('anomaly', '')):
+    # Ref separators '-' '/' '.' are INTERCHANGEABLE (trust-first): a '/' where the corpus learned
+    # '-' is a formatting/OCR variant, not an anomaly — the group STRUCTURE still matches.
+    if not check("interchangeable ref separator '1111/1111-1' is TOLERATED (not flagged)",
+                 check_value('1111/1111-1', entry) is None):
+        failures += 1
+    # A NON-ref separator (space) is still an unexpected character on the char path.
+    space_anom = check_value('1111 1111-1', entry)
+    if not check("a non-ref separator (space) still flagged LOW (char path)",
+                 space_anom and space_anom.get('severity') == 'low'
+                 and 'unexpected character' in space_anom.get('anomaly', '')):
         failures += 1
 
     # ── 6b. Count-gated multi-shape learning (STRUCTURED shapes) ──────────────

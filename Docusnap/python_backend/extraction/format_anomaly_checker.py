@@ -202,8 +202,13 @@ def _fold_shape(sig: str) -> str:
     if '@' not in sig and all(c in '#,. ' for c in sig):
         # PURE NUMERIC: drop thousands separators, collapse EVERY digit run -> length/grouping-invariant.
         return re.sub(r'#+', '#', sig.replace(',', '').replace(' ', ''))
-    # Has letters / a structural separator: fold a SINGLE running-number group (prefix + counter);
-    # keep a multi-group ref exact (its structure is the guard).
+    # Has letters / a structural separator. First canonicalise the INTERCHANGEABLE ref separators
+    # ('-' '/' '.') to one marker, so a supplier that writes "AB-126" and "AB/126" (or "12.34" vs
+    # "12-34") folds to ONE family — a separator-CHARACTER-only difference is not a format anomaly.
+    # The group STRUCTURE (number of groups + their digit lengths) is preserved, so a truncated /
+    # mis-structured ref ("####-####" vs "####-####-#") is still caught.
+    sig = re.sub(r'[-/.]', '-', sig)
+    # Then fold a SINGLE running-number group's length (prefix + counter); keep a multi-group ref exact.
     if len(re.findall(r'#+', sig)) == 1:
         return re.sub(r'#+', '#', sig)
     return sig
@@ -239,7 +244,13 @@ def extract_accepted_shape(value: str, format_entry: dict) -> Optional[str]:
     Universal and learned: driven entirely by the field's own accepted shapes,
     never a per-field pattern. Returns None when no shapes are learned, the value
     already IS an accepted shape (nothing to trim), or no accepted-shape run is
-    found inside it. Picks the LONGEST match so a fuller value wins."""
+    found inside it. Picks the LONGEST match so a fuller value wins.
+
+    A match is REJECTED when it would cut a CONTINUING code: if the matched run is bounded by a
+    ref separator ('-' '/' '.') that runs on into more alnum, the value continues as valid code
+    past the match, so trimming would silently drop part of it ("5678-1234" must not return
+    "5678"). Genuine column-bleed is bounded by a SPACE/word ("152567 Work Address"), not
+    separator+alnum, so it still trims."""
     shapes = (format_entry or {}).get('shapes')
     if not shapes:
         return None
@@ -252,11 +263,16 @@ def extract_accepted_shape(value: str, format_entry: dict) -> Optional[str]:
             # A folded numeric family's '#' is a whole digit RUN → run-aware regex; a
             # structured/code shape stays per-glyph so it can't over-match a longer run.
             rx = _numeric_family_regex(shape) if _is_numeric_family(shape) else _shape_to_regex(shape)
-            m = re.search(rx, v)
+            matches = list(re.finditer(rx, v))
         except re.error:
             continue
-        if m and (best is None or len(m.group(0)) > len(best)):
-            best = m.group(0)
+        for m in matches:
+            if re.match(r'[-/.][A-Za-z0-9]', v[m.end():m.end() + 2]):
+                continue   # code continues to the RIGHT (a separator + more alnum) → don't truncate
+            if re.search(r'[A-Za-z0-9][-/.]$', v[:m.start()]):
+                continue   # code continued from the LEFT → this run is a middle slice, not the value
+            if best is None or len(m.group(0)) > len(best):
+                best = m.group(0)
     return best
 
 
@@ -428,6 +444,14 @@ def classify_format(values: list[str], value_counts: dict | None = None) -> dict
     # learned separators.
     if cls == ALPHANUM_SEP and shapes and all(_is_numeric_family(s) for s in shapes):
         seps = seps | frozenset(',. ')
+
+    # REF-SEPARATOR tolerance: when a structured code field's learned separators are all drawn
+    # from the interchangeable ref set ('-' '/' '.'), accept ANY of them — a supplier that writes
+    # "AB-126" and "AB/126" interchangeably shouldn't have the rarer separator flagged as an
+    # "unexpected character" just because the sampled pool used the other. Pairs with the
+    # separator-fold in _fold_shape (which already folds the SHAPE); this clears the CHARSET axis.
+    elif cls == ALPHANUM_SEP and seps and seps <= frozenset('-/.'):
+        seps = seps | frozenset('-/.')
 
     return {'class': cls, 'separators': seps, 'shapes': shapes}
 

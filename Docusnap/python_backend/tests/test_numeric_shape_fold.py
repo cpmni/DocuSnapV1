@@ -107,6 +107,30 @@ check("trailing word junk is still trimmed ('84.40 credit' -> '84.40')",
       extract_accepted_shape('84.40 credit', amt_entry) == '84.40')
 
 
+# ── #3 CONTINUING-CODE guard: extract_accepted_shape must not TRUNCATE a value that continues
+#      as valid code past the match (a ref separator + more alnum), only genuine word/space bleed.
+print("\n#3 no truncation of a continuing code (separator + more alnum)")
+multi = {"shapes": frozenset({"#", "####-####-#"})}   # a field with BOTH a short + a long shape
+check("'5678-1234' NOT truncated to '5678' (code continues past the match)",
+      extract_accepted_shape("5678-1234", multi) is None)
+check("but genuine bleed still trims ('2605-0769-1 Work Address' -> '2605-0769-1')",
+      extract_accepted_shape("2605-0769-1 Work Address", {"shapes": frozenset({"####-####-#"})})
+      == "2605-0769-1")
+
+
+# ── #4 INTERCHANGEABLE ref separators: '-' '/' '.' fold to one family (shape AND charset), so a
+#      supplier writing "AB-126" and "AB/126" isn't flagged; group STRUCTURE is still enforced.
+print("\n#4 interchangeable ref separators (-, /, .)")
+check("'@@-###' and '@@/###' fold to the same family",
+      _fold_shape('@@-###') == _fold_shape('@@/###'))
+ab_slash = {f"AB/{100 + i}": 1 for i in range(12)}
+check("'AB-126' NOT flagged against an 'AB/###' corpus (separator interchange)",
+      check_value('AB-126', classify_format(list(ab_slash), ab_slash)) is None)
+ref_dash = {f"{1000 + i}-{2000 + i}-{i % 9}": 1 for i in range(12)}   # ####-####-#
+check("a DIFFERENT structure is STILL caught ('9999-9999' missing its 3rd group)",
+      check_value('9999-9999', classify_format(list(ref_dash), ref_dash)) is not None)
+
+
 if fails:
     print(f"\n{len(fails)} FAILED"); sys.exit(1)
 print("\nAll numeric-shape-fold checks passed.")
