@@ -43,6 +43,29 @@ def main():
     f += not check(f'total_amount reads the Total (120), not the Subtotal (100) [got {got!r}]',
                    "120" in got and "100" not in got)
 
+    # ── 1c. MULTI-WORD totals-block role collision (the "Sub Total"/"Total VAT" bug) ──
+    # The bare "Total" label is a standalone WORD inside longer phrases for a DIFFERENT money role;
+    # the single-word boundary guard doesn't catch these (space, not a glued substring), and they
+    # sit ABOVE the grand total so first-match grabbed them. _total_role_collision fixes it.
+    def _tot(ocr):
+        return (keyword.extract_fields(ocr, ["total_amount"], patterns).get("total_amount") or {}).get("value", "")
+    g1 = _tot("Sub Total    3,299.90\nSales Tax 0%    0.00\nTotal    3,799.90")
+    f += not check(f'"Sub Total 3299.90 / Total 3799.90" reads 3799.90, not the sub total [got {g1!r}]',
+                   "3,799.90".replace(",", "") in g1.replace(",", "") and "3,299.90".replace(",", "") not in g1.replace(",", ""))
+    g2 = _tot("Subtotal 482,499.75\nTotal VAT 96,499.95\nTotal 578,999.70")
+    f += not check(f'"Total VAT 96499.95 / Total 578999.70" reads 578999.70, not the VAT line [got {g2!r}]',
+                   "578999.70" in g2.replace(",", "") and "96499.95" not in g2.replace(",", ""))
+    # precision: the grand-total senses "Total Amount" / "Total Inc VAT" (their own labels) still read.
+    g3 = _tot("Total Amount 118.83")
+    f += not check(f'"Total Amount 118.83" still reads 118.83 [got {g3!r}]', "118.83" in g3)
+    g4 = _tot("Sub Total 500.00\nTotal Inc VAT 600.00")
+    f += not check(f'"Total Inc VAT 600" reads 600, not the Sub Total [got {g4!r}]',
+                   "600" in g4.replace(",", "") and "500" not in g4.replace(",", ""))
+    # pure-function guard
+    f += not check('_total_role_collision: "Sub Total" -> True', keyword._total_role_collision("Sub Total  9", 4, 9) is True)
+    f += not check('_total_role_collision: "Total VAT" -> True', keyword._total_role_collision("Total VAT 9", 0, 5) is True)
+    f += not check('_total_role_collision: standalone "Total" -> False', keyword._total_role_collision("Total  9", 0, 5) is False)
+
     # ── 1b. leading pure-punctuation residue column (reggie) ──
     # A caption ending in "." ("Invoice No.") isn't consumed by the label pattern, so the "."
     # lands as its OWN wide-gap column ahead of the value; the residue must be dropped so the

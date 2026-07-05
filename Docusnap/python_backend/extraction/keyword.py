@@ -390,6 +390,32 @@ def _type_keyword_pattern(label: str) -> "re.Pattern | None":
     return re.compile(body)
 
 
+# A bare "Total" label sits INSIDE longer totals-block phrases that belong to a DIFFERENT money
+# role. The keyword word-boundary guard only stops the single-WORD substring ("Total"⊂"Subtotal");
+# these are multi-WORD phrases where "Total" is a standalone word, so they slip through and — being
+# ABOVE the real grand-total line — win first-match:
+#   PRECEDE: "Sub Total" / "Net Total" / "Goods Total"  → a SUBTOTAL, not the grand total.
+#   FOLLOW:  "Total VAT" / "Total Tax" / "Total Discount"→ a tax/adjustment line, not the grand total.
+# The grand-total senses "Total Amount / Due / Payable / Inc VAT" are NOT in the follow set (and have
+# their own specific labels), so they still match. Reusable across every supplier/layout.
+_TOTAL_ROLE_PRECEDE_STOP = frozenset({"sub", "net", "goods", "gross"})
+_TOTAL_ROLE_FOLLOW_STOP  = frozenset({"vat", "tax", "gst", "discount", "shipping",
+                                      "freight", "carriage", "surcharge", "handling"})
+
+
+def _total_role_collision(line: str, start: int, end: int) -> bool:
+    """True when a bare "Total" match at [start,end) is actually part of a different-role totals-block
+    phrase (a subtotal or a tax/adjustment line), detected by the immediately adjacent WORD. Pure/
+    unit-tested. Only the generic "Total" label consults it; specific labels are unambiguous."""
+    prec = re.search(r'([a-z]+)\W*$', line[:start].lower())
+    if prec and prec.group(1) in _TOTAL_ROLE_PRECEDE_STOP:
+        return True
+    foll = re.match(r'\W*([a-z]+)', line[end:].lower())
+    if foll and foll.group(1) in _TOTAL_ROLE_FOLLOW_STOP:
+        return True
+    return False
+
+
 def _search_for_label(lines: list[str], label: str,
                       directions: list[str]) -> tuple[str, str] | None:
     """
@@ -399,10 +425,15 @@ def _search_for_label(lines: list[str], label: str,
     if pattern is None:
         return None
 
+    _is_bare_total = label.strip().lower() == 'total'
     for i, line in enumerate(lines):
         line_lower = line.lower()
         m = pattern.search(line_lower)
         if not m:
+            continue
+        # The generic "Total" must not poach a "Sub Total" (subtotal) or "Total VAT" (tax) line —
+        # skip to the real grand-total line below. See _total_role_collision.
+        if _is_bare_total and _total_role_collision(line, m.start(), m.end()):
             continue
 
         # Try RIGHT direction — value is on the same line after the label
