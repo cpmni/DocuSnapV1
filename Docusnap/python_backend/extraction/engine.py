@@ -1120,6 +1120,13 @@ class ExtractionEngine:
             _on_reject = ((lambda fk, st, v, r: self._t(
                 "anchor_reject", field=fk, method=st, value=v, reason=r))
                 if self._trace else None)
+            # Display labels of the IDENTITY fields ("Document Issuer") — an identity anchor whose
+            # CAPTURED label IS one of these is a teaching artifact (the field's own display name,
+            # never a printed caption), so it can only be a blind cross-supplier positional SWEEP,
+            # not a real located read (the PROFLE + #119 class). Passed to the read-stage guard.
+            _identity_labels = {(f.get('label') or '').strip().lower()
+                                for f in field_defs if f.get('key') in _IDENTITY_FIELD_KEYS}
+            _identity_labels.discard('')
             anchor_results = anchor.extract_with_anchors(
                 ocr_text, anchors, supplier_name, document_slug,
                 page_images=page_images,
@@ -1132,6 +1139,7 @@ class ExtractionEngine:
                 page_text_lines=page_text_lines,
                 text_field_keys=text_field_keys,
                 multiline_lookup=self._make_multiline_lookup(supplier_name, document_slug),
+                identity_labels=_identity_labels,
             )
             _pre_s2 = self._snap(results)
             self._remember_candidates('2_anchor', anchor_results)

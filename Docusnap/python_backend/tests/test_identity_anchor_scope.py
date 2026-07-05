@@ -64,6 +64,33 @@ check("GLOBAL identity anchor (no scope) blind -> KEEP (a fixed-position issuer 
 check("customer_name is an identity field too (blind cross-supplier) -> DROP",
       blind('customer_name', A('customer_name', 'acme', 'sales_order'), 'other co', located_ok=False) is True)
 
+print("\nREAD gate — a BLIND identity anchor whose label IS the field's own display name (artifact):")
+# The captured label is the field's DISPLAY name ("Document Issuer"), never a printed caption — a
+# teaching artifact. In the BLIND (not-located) path it's dropped regardless of supplier scope.
+# (This does NOT extend to a fuzzy-inline 'located' read off the same label: dropping that
+#  net-regresses the real corpus — see the #119 note in _is_blind_cross_supplier_identity.)
+_ID_LABELS = {'document issuer'}
+def AL(field, sup, label, dtype='invoice'):
+    a = A(field, sup, dtype); a['anchor_label'] = label; return a
+check("BLIND GLOBAL identity anchor labelled 'Document Issuer' -> DROP (positional artifact)",
+      blind('supplier_name', AL('supplier_name', '', 'Document Issuer'), 'profile construction',
+            located_ok=False, identity_labels=_ID_LABELS) is True)
+check("BLIND SAME-supplier identity anchor labelled 'Document Issuer' -> DROP (still an artifact)",
+      blind('supplier_name', AL('supplier_name', 'contoso asia', 'Document Issuer'), 'contoso asia',
+            located_ok=False, identity_labels=_ID_LABELS) is True)
+check("BLIND identity anchor with a REAL caption ('Supplier') -> falls to scope check (same-sup KEEP)",
+      blind('supplier_name', AL('supplier_name', 'contoso asia', 'Supplier'), 'contoso asia',
+            located_ok=False, identity_labels=_ID_LABELS) is False)
+check("LOCATED 'Document Issuer' read -> KEEP here (guard is not-located only; corpus-proven)",
+      blind('supplier_name', AL('supplier_name', '', 'Document Issuer'), 'profile construction',
+            located_ok=True, identity_labels=_ID_LABELS) is False)
+check("no identity_labels passed -> label branch inert, scope logic unchanged (same-sup KEEP)",
+      blind('supplier_name', AL('supplier_name', 'contoso asia', 'Document Issuer'), 'contoso asia',
+            located_ok=False) is False)
+check("positional field labelled 'Document Issuer' -> KEEP (not an identity field)",
+      blind('invoice_number', AL('invoice_number', '', 'Document Issuer'), 'profile construction',
+            located_ok=False, identity_labels=_ID_LABELS) is False)
+
 print("\nPOSITIONAL field (invoice_number / po_number) is NEVER subject to the identity gate:")
 check("Contoso invoice_number anchor still cross-applies at the filter",
       anchor._anchor_matches(A('invoice_number', 'contoso asia'), 'profile construction', 'invoice') is True)

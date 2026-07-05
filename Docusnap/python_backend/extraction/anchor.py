@@ -186,7 +186,8 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                          on_reject = None,
                          page_text_lines = None,
                          text_field_keys = None,
-                         multiline_lookup = None) -> dict:
+                         multiline_lookup = None,
+                         identity_labels = None) -> dict:
     """
     Attempt to extract field values using saved structural anchors.
 
@@ -810,7 +811,8 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 # "Contoso / Document Issuer" teach landing on a Profile invoice → "PROFLE
                 # CONSTRUCTION"). Drop it so identity resolves from THIS doc's own page; a LOCATED
                 # identity read (kept above) still corrects a wrong template supplier guess.
-                if _is_blind_cross_supplier_identity(field_key, anchor, supplier_name, located_ok):
+                if _is_blind_cross_supplier_identity(field_key, anchor, supplier_name, located_ok,
+                                                     identity_labels):
                     if on_reject:
                         on_reject(field_key, method, value, "blind_cross_supplier_identity")
                     continue
@@ -2027,17 +2029,31 @@ _IDENTITY_FIELD_KEYS = frozenset({"supplier_name", "customer_name"})
 
 
 def _is_blind_cross_supplier_identity(field_key: str, anchor: dict,
-                                      supplier_name: str | None, located_ok: bool) -> bool:
-    """True when an identity (supplier_name/customer_name) anchor scoped to a DIFFERENT supplier
-    resolved as a BLIND read (its label absent on this page → not located). Such a read is a
-    blind guess of WHO the doc is — a "Contoso / Document Issuer" teach landing on a Profile
-    invoice crop-garbles the issuer to "PROFLE CONSTRUCTION" — so it must be dropped and identity
-    left to this doc's own page (keyword/logo). A LOCATED identity read (its label found here → it
-    read the value beside the doc's OWN caption) is NOT blind and is kept, so a supplier's own
-    labelled anchor still CORRECTS a wrong template supplier guess. A POSITIONAL field's anchor
-    (invoice_number) is never subject to this — the doc-type IS its layout. Pure/unit-tested."""
+                                      supplier_name: str | None, located_ok: bool,
+                                      identity_labels = None) -> bool:
+    """True when an identity (supplier_name/customer_name) anchor resolved as a BLIND read (its
+    label absent on this page → not located) that is a blind guess of WHO the doc is. Two cases:
+      1. CROSS-SUPPLIER — the anchor is scoped to a DIFFERENT supplier: a "Contoso / Document
+         Issuer" teach landing on a Profile invoice crop-garbles the issuer to "PROFLE CONSTRUCTION".
+      2. DISPLAY-NAME LABEL — the anchor's captured label IS the identity field's own display name
+         (`identity_labels`, e.g. "Document Issuer"), a teaching artifact never printed on the page.
+    A LOCATED identity read (its label found here → it read the value beside the doc's OWN caption)
+    is NOT blind and is kept, so a supplier's own labelled anchor still CORRECTS a wrong template
+    supplier guess. A POSITIONAL field's anchor (invoice_number) is never subject to this — the
+    doc-type IS its layout. Pure/unit-tested."""
     if located_ok or field_key not in _IDENTITY_FIELD_KEYS:
         return False
+    # A captured label that IS the identity field's own DISPLAY name ("Document Issuer") is a
+    # teaching artifact — that name is never a printed page caption, so the anchor never had a real
+    # label to locate against; its blind rigid read is a pure positional sweep. Drop it regardless
+    # of supplier scope (global/same/cross). NOTE: this only reaches the BLIND (not-located) path;
+    # the same anchor resolving via a fuzzy inline "location" is deliberately NOT dropped here —
+    # removing it net-regresses the real corpus (it reads some docs' identity correctly), so #119's
+    # inline-harvest mis-read is left to a template/logo supplier-precedence fix, not this guard.
+    if identity_labels:
+        a_lbl = (anchor.get("anchor_label") or "").strip().lower()
+        if a_lbl and a_lbl in identity_labels:
+            return True
     a_sup = (anchor.get("supplier_name") or "").lower().strip()
     return bool(a_sup and a_sup != (supplier_name or "").lower().strip())
 
