@@ -1756,6 +1756,27 @@ class ExtractionEngine:
                     # site's length was never confirmed before.
                     if name_match.conforms_to_lexicon(str(val), name_lex):
                         continue
+                # ── MISREAD-SEPARATOR recover-and-flag (reggie) ── a value carrying a foreign,
+                # known-confusable separator ("PO.20011") where THIS field's history is uniformly a
+                # DIFFERENT one ("PO-…") is a likely OCR misread that PASSES both the charset and the
+                # (deliberately separator-folded) shape check — so it would file SILENTLY. Flag it
+                # with the corrected value offered as a suggestion (never a silent rewrite). Gated
+                # exactly like the shape check below: an authoritative/label-confirmed read wins on
+                # type alone, structured refs only (key not in text_field_keys). Inert unless the
+                # field learned a dominant separator (sep_uniform), so a mixed-separator field and
+                # the deliberate interchangeable-separator fold are untouched.
+                if not _authoritative and not _label_confirmed and key not in text_field_keys:
+                    _sepfix = format_anomaly_checker.propose_sep_fix(str(val), fmt_entry)
+                    if _sepfix:
+                        results[key] = {
+                            **data,
+                            'confidence':      min(data.get('confidence') or 0, 70),
+                            'corrected_to':    _sepfix,
+                            'validation_note': f"possible misread separator — did you mean '{_sepfix}'? please verify",
+                        }
+                        n_flagged += 1
+                        format_anomaly_flagged = True
+                        continue
                 anomaly = format_anomaly_checker.check_value(str(val), fmt_entry)
                 if anomaly:
                     # Type-authoritative (precise mac/ip pattern) or label/landmark-

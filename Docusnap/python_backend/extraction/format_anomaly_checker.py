@@ -63,6 +63,18 @@ _SHAPE_ACCEPT_MIN   = 3      # floor — a shape needs at least this many docs r
 _SHAPE_ACCEPT_RATIO = 0.10   # ...AND at least this fraction of the confirmed corpus, once it grows
 _SHAPE_ACCEPT_ABS   = 8      # absolute-trust escape: a real minority series at this many docs is kept
 
+# ── Misread-separator recovery (reggie) ── a structured ref's separator is interchangeable
+# BY DESIGN (see _fold_shape), so a value whose separator differs from the field's OWN
+# DOMINANT learned separator is a likely OCR MISREAD, not a format variant — recover-and-flag.
+# Derived from the field's raw value_counts (the fold/widen erase the literal separator
+# downstream), so it stays INERT on a field whose history genuinely mixes separators.
+_REF_SEPS      = frozenset('-/.')                       # interchangeable ref separators _fold_shape folds
+_SEP_DOMINANCE = 0.90                                   # one separator must cover >= this doc-share to be "uniform"
+# Scoped separator OCR confusions — deliberately NOT in the global glyph maps (which are alnum-only
+# and would fight the fold). A thin/degraded dash reads as a dot or mid-dot. '/' is left OUT ('/'↔'-'
+# is a weak visual confusion + '/' is a common DELIBERATE separator); unicode – — are text_normalise's.
+_SEP_CONFUSIONS = {'.': frozenset('-'), '·': frozenset('-')}   # misread char -> the learned separator(s) it can be
+
 
 # ── Single-value classification ───────────────────────────────────────────────
 
@@ -616,6 +628,56 @@ def charset_disallowed(value, allowed_extra) -> list:
     return sorted(bad)
 
 
+# ── Misread-separator recovery (reggie) ─────────────────────────────────────────
+
+def learn_ref_separator(value_counts: dict, shapes) -> "str | None":
+    """The single ref separator that DOMINATES a structured-code field's confirmed history,
+    or None. Derived from RAW value_counts, BEFORE _fold_shape / the separator-widen erase the
+    literal char (a uniform-dash, a uniform-dot and a mixed field ALL end up storing
+    shapes={'@@-#'}). Counts only a value carrying EXACTLY ONE distinct ref-separator char
+    (0 or >1 → abstain, conservative); excludes numeric-family money shapes (their '.' is a
+    decimal). Returns the top separator only when it covers >= _SEP_DOMINANCE of the counted docs
+    over >= _SHAPE_ACCEPT_MIN docs — so a genuinely MIXED-separator field returns None and the
+    misread check below stays INERT, preserving the deliberate interchangeable-separator fold.
+    Pure/deterministic."""
+    if not shapes or any(_is_numeric_family(s) for s in shapes):
+        return None
+    counts, total = {}, 0
+    for val, n in (value_counts or {}).items():
+        n = int(n or 0)
+        if n <= 0:
+            continue
+        seps = {c for c in (val or '') if c in _REF_SEPS}
+        if len(seps) == 1:
+            s = next(iter(seps))
+            counts[s] = counts.get(s, 0) + n
+            total += n
+    if not counts or total < _SHAPE_ACCEPT_MIN:
+        return None
+    top, tc = max(counts.items(), key=lambda kv: kv[1])
+    return top if (tc / total) >= _SEP_DOMINANCE else None
+
+
+def propose_sep_fix(value: str, format_entry: dict) -> "str | None":
+    """If `value` carries a FOREIGN, known-confusable separator where the field's history is
+    dominated by a DIFFERENT one (sep_uniform), return the value with every foreign separator
+    swapped to the learned one — provided the swap lands on a learned shape. A likely OCR misread
+    ("PO.20011" -> "PO-20011" when history is uniformly '-'). Else None. Recover-and-FLAG: the
+    caller SUGGESTS this (corrected_to), never silently rewrites. Pure/deterministic."""
+    sep = (format_entry or {}).get('sep_uniform')
+    if not sep or not value:
+        return None
+    v = str(value)
+    wrong = {c for c in v if c in _REF_SEPS and c != sep}
+    if not wrong or not all(sep in _SEP_CONFUSIONS.get(w, ()) for w in wrong):
+        return None
+    cand = ''.join(sep if c in wrong else c for c in v)
+    shapes = (format_entry or {}).get('shapes') or ()
+    if shapes and _fold_shape(shape_signature(cand)) not in shapes:   # belt-and-braces vs a spurious swap
+        return None
+    return cand if cand != v else None
+
+
 # ── Index builder ─────────────────────────────────────────────────────────────
 
 def build_format_class_index(formats_data: list) -> dict:
@@ -694,6 +756,12 @@ def build_format_class_index(formats_data: list) -> dict:
             fams = shape_families(vcounts)
             if fams:
                 fmt = {**fmt, 'shape_families': fams}
+        # Dominant learned SEPARATOR (reggie) — carries the raw '-'/'.'/'/' the fold erases, so
+        # Stage 4.5 can flag a MISREAD separator ("PO.20011" where history is uniformly "PO-…").
+        # Additive: absent unless one separator dominates a non-numeric structured code.
+        _sep_uni = learn_ref_separator(vcounts or {}, fmt.get('shapes'))
+        if _sep_uni:
+            fmt = {**fmt, 'sep_uniform': _sep_uni}
         # How much confirmed history backs this format — the learned-agreement confidence
         # boost (engine Stage 4.5) scales with it. confirmed_count (total confirmed docs) is
         # the strongest signal; fall back to the distinct-sample count (already >= 3 here).
