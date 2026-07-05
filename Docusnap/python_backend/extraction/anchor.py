@@ -806,6 +806,14 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                         page_text_lines, line_cache=line_cache))
             if not located_ok:
                 conf = min(conf, 50)   # blind rigid read (label absent/unfound) — untrustworthy
+                # A BLIND cross-supplier IDENTITY crop is a blind guess of WHO the doc is (a
+                # "Contoso / Document Issuer" teach landing on a Profile invoice → "PROFLE
+                # CONSTRUCTION"). Drop it so identity resolves from THIS doc's own page; a LOCATED
+                # identity read (kept above) still corrects a wrong template supplier guess.
+                if _is_blind_cross_supplier_identity(field_key, anchor, supplier_name, located_ok):
+                    if on_reject:
+                        on_reject(field_key, method, value, "blind_cross_supplier_identity")
+                    continue
             results[field_key] = {
                 "value":      value.strip(),
                 "confidence": conf,
@@ -2012,9 +2020,26 @@ def _filter_anchors(anchors: list[dict],
 
 
 # The IDENTITY fields — their value + on-page position vary BY supplier, so a supplier-
-# specific identity anchor must NOT cross-apply to a different supplier via the doc-type
-# sweep (see _anchor_matches). Mirrors engine._IDENTITY_FIELD_KEYS / COMPANY_KEYS in JS.
+# specific identity anchor is trusted on a DIFFERENT supplier's doc only when it reads that
+# doc's OWN labelled value (see _is_blind_cross_supplier_identity). Mirrors
+# engine._IDENTITY_FIELD_KEYS / COMPANY_KEYS in JS.
 _IDENTITY_FIELD_KEYS = frozenset({"supplier_name", "customer_name"})
+
+
+def _is_blind_cross_supplier_identity(field_key: str, anchor: dict,
+                                      supplier_name: str | None, located_ok: bool) -> bool:
+    """True when an identity (supplier_name/customer_name) anchor scoped to a DIFFERENT supplier
+    resolved as a BLIND read (its label absent on this page → not located). Such a read is a
+    blind guess of WHO the doc is — a "Contoso / Document Issuer" teach landing on a Profile
+    invoice crop-garbles the issuer to "PROFLE CONSTRUCTION" — so it must be dropped and identity
+    left to this doc's own page (keyword/logo). A LOCATED identity read (its label found here → it
+    read the value beside the doc's OWN caption) is NOT blind and is kept, so a supplier's own
+    labelled anchor still CORRECTS a wrong template supplier guess. A POSITIONAL field's anchor
+    (invoice_number) is never subject to this — the doc-type IS its layout. Pure/unit-tested."""
+    if located_ok or field_key not in _IDENTITY_FIELD_KEYS:
+        return False
+    a_sup = (anchor.get("supplier_name") or "").lower().strip()
+    return bool(a_sup and a_sup != (supplier_name or "").lower().strip())
 
 
 def _anchor_matches(anchor: dict, supplier_name: str | None,
@@ -2046,16 +2071,18 @@ def _anchor_matches(anchor: dict, supplier_name: str | None,
     # "Polychemtex Inc.". A doc-type conflict still vetoes a supplier match.
     if a_sup and s_name and a_sup == s_name:
         return not type_conflict
-    # Doc type match (e.g. a DIFFERENT supplier, same layout family). But NOT for the
-    # IDENTITY field: a supplier_name/customer_name anchor is inherently supplier-SPECIFIC
-    # (it reads THAT company's issuer name/position), so a "Contoso" Document-Issuer teach
-    # must not read a Profile invoice's issuer as Contoso (or crop-garble it to "PROFLE
-    # CONSTRUCTION"). The doc-type IS the layout for a POSITIONAL field (invoice_number is
-    # always top-right), but the identity field's VALUE + position vary BY supplier — so the
-    # cross-supplier doc-type sweep is wrong for it; it applies only to its own supplier (or
-    # global) above. Verified on the real-doc corpus: removing this cross-apply LIFTS supplier
-    # accuracy (95.6% -> 96.2%), it never lowers it — the swept anchor was net-harmful.
-    if a_type and d_type and a_type == d_type and anchor.get("field_key") not in _IDENTITY_FIELD_KEYS:
+    # Doc type match (e.g. a DIFFERENT supplier, same layout family): the doc-type IS the
+    # layout, so a field taught under one supplier can read another supplier's SAME-type doc.
+    # This ADMITS identity (supplier_name/customer_name) anchors too — but an identity anchor is
+    # supplier-SPECIFIC, so a cross-supplier one is trusted ONLY when it reads the doc's OWN
+    # labelled value (a LOCATED read). A BLIND cross-supplier identity crop — its label absent
+    # here, e.g. a "Contoso / Document Issuer" teach landing on a Profile invoice and crop-
+    # garbling it to "PROFLE CONSTRUCTION" — is dropped at the READ stage (see the located gate
+    # in extract_with_anchors + _is_blind_cross_supplier_identity), NOT here: filtering it out
+    # pre-read would also block a supplier's OWN labelled anchor from CORRECTING a wrong template
+    # supplier guess (Greenfield reading "Supplier: Greenfield" over an "Acme" template match —
+    # test_supplier_identity_stability), which is a legitimate identity re-resolution.
+    if a_type and d_type and a_type == d_type:
         return True
 
     return False
