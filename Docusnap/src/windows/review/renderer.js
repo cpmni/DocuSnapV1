@@ -132,6 +132,9 @@ function clearFieldWarning(row, input) {
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let queue            = [];
+// Review-queue view: group rows by sender (default) vs raw newest-first. A same-window
+// UI preference (persisted in localStorage, not a DB setting), like the queue splitter.
+let queueGrouped     = (localStorage.getItem('review_queue_grouped') || 'true') !== 'false';
 let deferredQueue    = [];
 let bulkFiling       = false; // true while File All Ready runs; suppresses the auto-refresh listener so its per-doc confirm broadcasts can't clobber the loop's local queue mid-run
 let allDocTypes      = [];
@@ -594,6 +597,8 @@ function renderQueueList() {
   if (queue.length === 0) {
     empty.style.display = '';
     reviewActions.style.display = 'none';
+    const vb0 = document.getElementById('queue-view-bar');
+    if (vb0) vb0.style.display = 'none';
     setQueueWrapVisible(false);
     if (!currentDoc) clearDocPanel();
     return;
@@ -606,63 +611,131 @@ function renderQueueList() {
   reviewActions.style.display = 'flex';
   document.getElementById('btn-delete-all-review').style.display = isAdmin ? '' : 'none';
 
-  for (const doc of queue) {
-    const el = document.createElement('div');
-    el.className  = 'queue-item';
-    el.dataset.id = doc.id;
-    // Row colour reflects actual review reasons (not raw confidence or missing
-    // doc-row fields, which are only set on confirm):
-    //   orange = a field is below its per-field threshold set in Settings, OR a
-    //            value was flagged for review during processing (validation note
-    //            / correction candidate).
-    //   red    = critically low overall confidence (<40) — existing critical state.
-    //   green  = otherwise clean.
-    const conf    = doc.overall_confidence;
-    const flagged = isFlagged(doc);
-    let sev = '';   // '', 'high'(green), 'mid'(orange), 'low'(red)
-    if (conf != null) {
-      if (conf < 40)    sev = 'low';
-      else if (flagged) sev = 'mid';
-      else              sev = 'high';
+  // View toggle: grouped by sender (default) vs newest-first. Grouping turns a long
+  // chronological scatter into a few named sender piles, so a batch from one sender —
+  // and its shared blocker — is obvious. The ↑/↓ nav follows the SAME order
+  // (reviewDisplayOrder), so the arrows and the visible list never disagree.
+  const viewBar = document.getElementById('queue-view-bar');
+  if (viewBar) viewBar.style.display = '';
+  const viewLbl = document.getElementById('queue-view-label');
+  if (viewLbl) viewLbl.textContent = queueGrouped ? 'Grouped by sender' : 'Newest first';
+
+  if (queueGrouped) {
+    for (const g of reviewDisplayGroups()) {
+      const head = document.createElement('div');
+      head.className = 'queue-group-head';
+      const attn = g.need ? ` · <span class="qgh-attn">${g.need} need${g.need > 1 ? '' : 's'} a look</span>` : '';
+      head.innerHTML = `<span class="qgh-name" title="${escHtml(g.supplier)}">${escHtml(g.supplier)}</span>`
+                     + `<span class="qgh-meta">${g.docs.length} document${g.docs.length > 1 ? 's' : ''}${attn}</span>`;
+      list.appendChild(head);
+      for (const doc of g.docs) list.appendChild(buildQueueItem(doc));
     }
-    if (sev === 'low')      el.classList.add('qi-conf-low');
-    else if (sev === 'mid') el.classList.add('qi-conf-mid');
-    if (currentDoc && doc.id === currentDoc.id) el.classList.add('active');
-    // Human-readable reason on hover: green = clean, orange = needs a check
-    // (low confidence and/or a format flag), red = critically low confidence.
-    const sevWord = sev === 'low'  ? 'Low confidence'
-                  : sev === 'mid'  ? 'Needs a quick check'
-                  :                  'Looks good';
-    const confBadge = conf == null ? '' :
-      `<span class="conf-badge ${sev}" style="flex-shrink:0;" title="${sevWord} — ${conf}% confidence">${conf}%</span>`;
-    el.innerHTML = `
-      <div style="display:flex; align-items:flex-start; gap:8px;">
-        <img class="qi-thumb" alt="">
-        <div style="flex:1; min-width:0;">
-          <span class="qi-name" title="${escHtml(doc.original_filename)}">${escHtml(doc.original_filename)}</span>
-          <div style="display:flex; align-items:center; gap:6px;">
-            <span class="qi-supplier" style="flex:1; min-width:0;">${escHtml(doc.supplier_name || '—')}</span>
-            ${doc.page_count > 1 ? `<span class="qi-multipage" title="Multi-page document (${doc.page_count} pages)" style="flex-shrink:0;display:inline-flex;color:var(--muted)"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V6a2 2 0 0 1 2-2h10"/></svg></span>` : ''}
-            ${confBadge}
-          </div>
-        </div>
-        ${canEdit ? `<button class="qi-btn danger qi-delete" title="Delete document" aria-label="Delete document" style="flex-shrink:0; padding:2px 7px; font-size:13px;">&#215;</button>` : ''}
-      </div>
-    `;
-    if (window.Thumbs) window.Thumbs.lazy(el.querySelector('.qi-thumb'), doc);
-    // During a File All Ready run, user selection/delete must NOT reassign the
-    // module-global currentDoc mid-file (QA audit #5) — ignore row clicks + the
-    // per-row × until the bulk run finishes (the loop drives selectDoc itself).
-    el.addEventListener('click', () => { if (bulkFiling) return; selectDoc(doc); });
-    const delBtn = el.querySelector('.qi-delete');
-    if (delBtn) delBtn.addEventListener('click', (e) => { e.stopPropagation(); if (bulkFiling) return; deleteFromQueue(doc); });
-    list.appendChild(el);
+  } else {
+    for (const doc of queue) list.appendChild(buildQueueItem(doc));
   }
+}
+
+// The review queue's DISPLAY grouping: sender -> its docs, most attention-needing /
+// largest piles first (stable WITHIN a sender, so the processed_at order holds). Shared
+// by renderQueueList (DOM) and reviewDisplayOrder (the ↑/↓ nav) so they always agree.
+function reviewDisplayGroups() {
+  const groups = new Map();
+  for (const doc of queue) {
+    const key = (doc.supplier_name || '').trim() || '—';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(doc);
+  }
+  const entries = [...groups.entries()].map(([supplier, docs]) => ({
+    supplier, docs,
+    need: docs.filter(d => isFlagged(d) || (d.missing_required_labels || '').trim()).length,
+  }));
+  entries.sort((a, b) => b.need - a.need || b.docs.length - a.docs.length || a.supplier.localeCompare(b.supplier));
+  return entries;
+}
+
+// The flat doc order the queue is actually SHOWN in (grouped or chronological). The nav
+// (cycleDocument / updateDocNavButtons) uses this so ↑/↓ track the visible order.
+function reviewDisplayOrder() {
+  return queueGrouped ? reviewDisplayGroups().flatMap(g => g.docs) : queue;
+}
+
+// One queue row (thumbnail · name · sender · badges · blocker · delete). Shared by the
+// grouped and flat rendering paths.
+function buildQueueItem(doc) {
+  const el = document.createElement('div');
+  el.className  = 'queue-item';
+  el.dataset.id = doc.id;
+  // Row colour reflects actual review reasons (not raw confidence or missing
+  // doc-row fields, which are only set on confirm):
+  //   orange = a field is below its per-field threshold set in Settings, OR a
+  //            value was flagged for review during processing (validation note
+  //            / correction candidate).
+  //   red    = critically low overall confidence (<40) — existing critical state.
+  //   green  = otherwise clean.
+  const conf    = doc.overall_confidence;
+  const flagged = isFlagged(doc);
+  // A required field (the Date/Reference role, or a custom Required field) that read
+  // EMPTY blocks Confirm even at high confidence — so a row must NOT wear a green
+  // "Looks good" while being un-fileable. missing_required_labels (from
+  // getReviewQueue) mirrors the confirm gate; we lead the row with that blocker.
+  const missingReq = (doc.missing_required_labels || '').split(',').map(s => s.trim()).filter(Boolean);
+  const blocked    = missingReq.length > 0;
+  let sev = '';   // '', 'high'(green), 'mid'(orange), 'low'(red)
+  if (conf != null) {
+    if (conf < 40)               sev = 'low';
+    else if (flagged || blocked) sev = 'mid';
+    else                         sev = 'high';
+  } else if (blocked || flagged) {
+    sev = 'mid';   // no overall score yet, but we already know it needs attention
+  }
+  if (sev === 'low')      el.classList.add('qi-conf-low');
+  else if (sev === 'mid') el.classList.add('qi-conf-mid');
+  if (currentDoc && doc.id === currentDoc.id) el.classList.add('active');
+  // Human-readable reason on hover: green = clean, orange = needs a check
+  // (low confidence and/or a format flag), red = critically low confidence.
+  const sevWord = sev === 'low'  ? 'Low confidence'
+                : blocked        ? 'Missing a required field — can’t file yet'
+                : sev === 'mid'  ? 'Needs a quick check'
+                :                  'Looks good';
+  const confBadge = conf == null ? '' :
+    `<span class="conf-badge ${sev}" style="flex-shrink:0;" title="${sevWord} — ${conf}% confidence">${conf}%</span>`;
+  // Lead with the actual blocker (the missing field), not the reassuring score.
+  const blockerLine = blocked
+    ? `<div class="qi-blocker" title="Can’t be filed until this is filled in"
+           style="color:var(--warn); font-size:11px; font-weight:600; margin-top:2px; display:flex; align-items:center; gap:4px;">`
+      + `<span aria-hidden="true">⚠</span>Needs: ${escHtml(missingReq[0])}`
+      + `${missingReq.length > 1 ? ` +${missingReq.length - 1} more` : ''}</div>`
+    : '';
+  el.innerHTML = `
+    <div style="display:flex; align-items:flex-start; gap:8px;">
+      <img class="qi-thumb" alt="">
+      <div style="flex:1; min-width:0;">
+        <span class="qi-name" title="${escHtml(doc.original_filename)}">${escHtml(doc.original_filename)}</span>
+        <div style="display:flex; align-items:center; gap:6px;">
+          <span class="qi-supplier" style="flex:1; min-width:0;">${escHtml(doc.supplier_name || '—')}</span>
+          ${doc.page_count > 1 ? `<span class="qi-multipage" title="Multi-page document (${doc.page_count} pages)" style="flex-shrink:0;display:inline-flex;color:var(--muted)"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V6a2 2 0 0 1 2-2h10"/></svg></span>` : ''}
+          ${confBadge}
+        </div>
+        ${blockerLine}
+      </div>
+      ${canEdit ? `<button class="qi-btn danger qi-delete" title="Delete document" aria-label="Delete document" style="flex-shrink:0; padding:2px 7px; font-size:13px;">&#215;</button>` : ''}
+    </div>
+  `;
+  if (window.Thumbs) window.Thumbs.lazy(el.querySelector('.qi-thumb'), doc);
+  // During a File All Ready run, user selection/delete must NOT reassign the
+  // module-global currentDoc mid-file (QA audit #5) — ignore row clicks + the
+  // per-row × until the bulk run finishes (the loop drives selectDoc itself).
+  el.addEventListener('click', () => { if (bulkFiling) return; selectDoc(doc); });
+  const delBtn = el.querySelector('.qi-delete');
+  if (delBtn) delBtn.addEventListener('click', (e) => { e.stopPropagation(); if (bulkFiling) return; deleteFromQueue(doc); });
+  return el;
 }
 
 // ── Deferred list (deferred tab) ─────────────────────────────────────────────
 function renderDeferredList() {
   document.getElementById('review-actions').style.display = 'none';   // review-only block; not for Deferred
+  const vbD = document.getElementById('queue-view-bar');
+  if (vbD) vbD.style.display = 'none';   // sender-grouping toggle is review-only
   const list   = document.getElementById('queue-list');
   const empty  = document.getElementById('queue-empty');
   const footer = document.getElementById('deferred-footer');
@@ -2700,7 +2773,7 @@ document.getElementById('btn-stop-file-all')?.addEventListener('click', () => {
 // so navigation is predictable, and keeps the chosen item scrolled into view.
 // Native list scrolling (wheel / scrollbar) is unaffected.
 function cycleDocument(direction) {
-  const list = activeTab === 'deferred' ? deferredQueue : queue;
+  const list = activeTab === 'deferred' ? deferredQueue : reviewDisplayOrder();
   if (!list.length) return;
   const idx     = currentDoc ? list.findIndex(d => d.id === currentDoc.id) : -1;
   const nextIdx = idx === -1 ? 0 : idx + direction;   // up = -1 (prev), down = +1 (next)
@@ -2719,7 +2792,7 @@ function updateDocNavButtons() {
   const prev = document.getElementById('btn-doc-prev');
   const next = document.getElementById('btn-doc-next');
   if (!prev || !next) return;
-  const list = activeTab === 'deferred' ? deferredQueue : queue;
+  const list = activeTab === 'deferred' ? deferredQueue : reviewDisplayOrder();
   const idx  = currentDoc ? list.findIndex(d => d.id === currentDoc.id) : -1;
   prev.disabled = idx <= 0;
   next.disabled = idx === -1 || idx >= list.length - 1;
@@ -2727,6 +2800,14 @@ function updateDocNavButtons() {
 
 document.getElementById('btn-doc-prev')?.addEventListener('click', () => cycleDocument(-1));
 document.getElementById('btn-doc-next')?.addEventListener('click', () => cycleDocument(1));
+
+// Sender-grouping toggle (grouped ⇄ newest-first); persists the choice per-window.
+document.getElementById('btn-group-toggle')?.addEventListener('click', () => {
+  queueGrouped = !queueGrouped;
+  localStorage.setItem('review_queue_grouped', String(queueGrouped));
+  renderQueueList();
+  updateDocNavButtons();   // the active doc's position changed in the new order
+});
 
 // Expandable file column — drag the splitter to widen/narrow the queue panel.
 // Width persists in localStorage so a chosen width survives reopening. Clamped so

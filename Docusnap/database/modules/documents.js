@@ -137,7 +137,27 @@ function getReviewQueue(db) {
            AND e.confidence IS NOT NULL
            AND (f.enabled IS NULL OR f.enabled = 1)
            AND e.confidence < COALESCE(f.confidence_threshold, 70)
-      ) AS below_threshold_count
+      ) AS below_threshold_count,
+      -- missing_required_labels: the labels of the fields that BLOCK confirm and are
+      -- still EMPTY — the assigned Date/Reference roles + any custom field flagged
+      -- Required, EXCLUDING the identity (Document-Issuer is warn-only, not a hard
+      -- block). Mirrors validateConfirm in review/renderer.js. Lets the queue colour a
+      -- row that "looks good" (high confidence, no flags) but actually can't be filed
+      -- because a required field read empty (unset roles are NULL and skipped). A field
+      -- counts as filled if EITHER its display or raw value is non-empty.
+      (SELECT GROUP_CONCAT(f.label, ', ')
+         FROM fields f
+        WHERE f.document_type_id = d.document_type_id
+          AND (f.enabled IS NULL OR f.enabled = 1)
+          AND ( f.key = dt.ref_field_key
+                OR f.key = dt.date_field_key
+                OR (f.required = 1 AND f.key NOT IN ('supplier_name','customer_name')) )
+          AND NOT EXISTS (
+                SELECT 1 FROM extractions e
+                 WHERE e.document_id = d.id AND e.field_key = f.key
+                   AND ( (e.display_value IS NOT NULL AND TRIM(e.display_value) <> '')
+                      OR (e.raw_value     IS NOT NULL AND TRIM(e.raw_value)     <> '') ) )
+      ) AS missing_required_labels
     FROM documents d
     LEFT JOIN document_types dt ON dt.id = d.document_type_id
     WHERE d.status = 'needs_review'
