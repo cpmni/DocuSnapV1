@@ -18,7 +18,9 @@ const path = require('path'); const fs = require('fs'); const os = require('os')
 const { spawn } = require('child_process');
 const Database = require('better-sqlite3');
 const REPO = 'c:/GIT Projects/Docusnap', ST = path.join(REPO, 'stress_test');
-const CORPUS = path.join(ST, 'corpus'), CFG = path.join(REPO, 'config', 'keyword_patterns.json');
+const CORPUS = process.env.CORPUS ? path.resolve(process.env.CORPUS) : path.join(ST, 'corpus');
+const ANCHORS_SRC = path.join(ST, 'corpus', 'teach_anchors.json');   // layout-universal: same boxes for any corpus
+const CFG = path.join(REPO, 'config', 'keyword_patterns.json');
 const PROCESS_DOCS = path.join(REPO, 'python_backend', 'process_docs.py');
 const TESS = 'C:/Program Files/Tesseract-OCR/tesseract.exe';
 const STRESS_DB = path.join(ST, 'stress.db'), TEACH_DB = path.join(ST, 'teach.db');
@@ -39,7 +41,7 @@ function prepareDb() {
   for (const ext of ['', '-wal', '-shm']) { try { fs.unlinkSync(TEACH_DB + ext); } catch {} }
   fs.copyFileSync(STRESS_DB, TEACH_DB);
   const db = new Database(TEACH_DB);
-  const anchors = JSON.parse(fs.readFileSync(path.join(CORPUS, 'teach_anchors.json'), 'utf8'));
+  const anchors = JSON.parse(fs.readFileSync(ANCHORS_SRC, 'utf8'));
   db.prepare('DELETE FROM field_anchors').run();   // start clean (idempotent re-runs)
   const ins = db.prepare(`INSERT INTO field_anchors
     (supplier_name, document_type, field_key, anchor_label, direction, page_zone,

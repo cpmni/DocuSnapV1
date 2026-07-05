@@ -5,7 +5,8 @@ const path = require('path'); const fs = require('fs'); const os = require('os')
 const { spawn } = require('child_process');
 const Database = require('better-sqlite3');
 const REPO = 'c:/GIT Projects/Docusnap', ST = path.join(REPO, 'stress_test');
-const CORPUS = path.join(ST, 'corpus'), CFG = path.join(REPO, 'config', 'keyword_patterns.json');
+const CORPUS = process.env.CORPUS ? path.resolve(process.env.CORPUS) : path.join(ST, 'corpus');
+const CFG = path.join(REPO, 'config', 'keyword_patterns.json');
 const PROCESS_DOCS = path.join(REPO, 'python_backend', 'process_docs.py');
 const TESS = 'C:/Program Files/Tesseract-OCR/tesseract.exe';
 const learning = require(path.join(REPO, 'database', 'modules', 'learning.js'));
@@ -81,9 +82,17 @@ const ef = (m, k) => { const e = m.extractions && m.extractions[k]; return e && 
       // (precision gap: stage produced an incorrect value) — the two need different fixes.
       if (!s[f]) {
         const val = ef(m, key);
-        const F = fieldFail[f] || (fieldFail[f] = { et: 0, es: 0, wt: 0, ws: 0, ex: [] });
-        if (val == null || String(val).trim() === '') { if (v === 'text') F.et++; else F.es++; }
-        else { if (v === 'text') F.wt++; else F.ws++; if (F.ex.length < 4) F.ex.push(`[${mth}] '${val}'`); }
+        const empty = (val == null || String(val).trim() === '');
+        // A wrong value WITH a review flag (validation_note) is CAUGHT; without one it is a
+        // SILENT mis-file — the truly dangerous class. Track them apart.
+        const flagged = !!(ex && String(ex.validation_note || '').trim());
+        const F = fieldFail[f] || (fieldFail[f] = { et: 0, es: 0, wt: 0, ws: 0, silent: 0, ex: [] });
+        if (empty) { if (v === 'text') F.et++; else F.es++; }
+        else {
+          if (v === 'text') F.wt++; else F.ws++;
+          if (!flagged) F.silent++;
+          if (F.ex.length < 4) F.ex.push(`[${mth}${flagged ? ' flagged' : ' SILENT'}] '${val}'`);
+        }
       }
     }
     conf[v].push(m.overall_confidence || 0);
@@ -124,30 +133,34 @@ const ef = (m, k) => { const e = m.extractions && m.extractions[k]; return e && 
   // ── Per-field recall vs precision gaps — the "what to attack first" table ──
   out.push(`\n## Per-field failure breakdown — recall (empty) vs precision (wrong)`);
   out.push(`EMPTY = the field was left blank (a RECALL gap — no stage read it). WRONG = a value was produced but it's incorrect (a PRECISION gap — the dangerous, silent-mis-file kind).`);
-  out.push('| Field | empty text | empty scan | wrong text | wrong scan | wrong examples |');
-  out.push('|---|---|---|---|---|---|');
+  out.push('| Field | empty text | empty scan | wrong text | wrong scan | of which SILENT | wrong examples |');
+  out.push('|---|---|---|---|---|---|---|');
   for (const f of ['supplier', 'ref', 'date', 'subtotal', 'total_amount']) {
-    const F = fieldFail[f] || { et: 0, es: 0, wt: 0, ws: 0, ex: [] };
-    out.push(`| ${f} | ${F.et} | ${F.es} | ${F.wt} | ${F.ws} | ${F.ex.slice(0, 3).join(' ; ') || '—'} |`);
+    const F = fieldFail[f] || { et: 0, es: 0, wt: 0, ws: 0, silent: 0, ex: [] };
+    out.push(`| ${f} | ${F.et} | ${F.es} | ${F.wt} | ${F.ws} | ${F.silent || 0} | ${F.ex.slice(0, 3).join(' ; ') || '—'} |`);
   }
+  const FLD = ['supplier', 'ref', 'date', 'subtotal', 'total_amount'];
+  const totalSilent = FLD.reduce((s, f) => s + ((fieldFail[f] && fieldFail[f].silent) || 0), 0);
+  const totalWrongF = FLD.reduce((s, f) => s + (fieldFail[f] ? fieldFail[f].wt + fieldFail[f].ws : 0), 0);
+  out.push(`\n**Silent mis-files: ${totalSilent} of ${totalWrongF} wrong values carried NO review flag** — the rest were flagged for a human (caught). SILENT wrongs are the true risk.`);
   // ── CI-style PER-STAGE GATE (GATE=1) — enforce "each stage does its job" ──
   // Fail (exit 1) if any high-volume stage's PRECISION drops below its floor, or the total
   // WRONG-value count (the silent-mis-file class) exceeds the cap. A plain run just reports.
   let gateBreach = 0;
   if (process.env.GATE === '1') {
     const FLOOR = m => m === 'keyword' ? 0.995 : /^(logo|anchor)/.test(m) ? 0.99 : /^template/.test(m) ? 0.98 : 0.95;
-    const MIN_WINS = 20, MAX_WRONG = 3;
+    const MIN_WINS = 20, MAX_SILENT = 2;
     out.push('\n## Per-stage precision GATE');
-    let totalWrong = 0;
     for (const [m, M] of Object.entries(methodStats)) {
-      if (!m.startsWith('(')) totalWrong += M.n - M.ok;          // '(no-extraction)' = empties, not wrong values
       if (m.startsWith('(') || M.n < MIN_WINS) continue;         // skip empties + low-volume noise
       const prec = M.ok / M.n, floor = FLOOR(m), pass = prec >= floor;
       if (!pass) gateBreach++;
       out.push(`- ${pass ? 'PASS' : 'FAIL'} \`${m}\` ${pct(M.ok, M.n)} vs floor ${(floor * 100).toFixed(1)}%  [${M.n} wins]`);
     }
-    if (totalWrong > MAX_WRONG) { gateBreach++; out.push(`- FAIL total wrong values ${totalWrong} > ${MAX_WRONG} (silent-mis-file cap)`); }
-    else out.push(`- PASS total wrong values ${totalWrong} <= ${MAX_WRONG}`);
+    // The dangerous class is a wrong value with NO review flag (a silent mis-file); a flagged
+    // wrong is caught by design. Cap SILENT, not total wrongs.
+    if (totalSilent > MAX_SILENT) { gateBreach++; out.push(`- FAIL silent mis-files ${totalSilent} > ${MAX_SILENT} (unflagged wrong values)`); }
+    else out.push(`- PASS silent mis-files ${totalSilent} <= ${MAX_SILENT}`);
     out.push(gateBreach ? `\n**GATE FAILED (${gateBreach} breach) — a stage regressed.**`
                         : `\n**GATE PASSED — every high-volume stage is within its precision floor.**`);
   }
