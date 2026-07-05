@@ -135,6 +135,10 @@ let queue            = [];
 // Review-queue view: group rows by sender (default) vs raw newest-first. A same-window
 // UI preference (persisted in localStorage, not a DB setting), like the queue splitter.
 let queueGrouped     = (localStorage.getItem('review_queue_grouped') || 'true') !== 'false';
+// Which sender groups are EXPANDED in the grouped list. Default: none (all collapsed).
+// Same-session UI state (not persisted) — each window open starts fully collapsed;
+// selecting a doc auto-expands its group so the review flow stays visible.
+let expandedSuppliers = new Set();
 let deferredQueue    = [];
 let bulkFiling       = false; // true while File All Ready runs; suppresses the auto-refresh listener so its per-doc confirm broadcasts can't clobber the loop's local queue mid-run
 let allDocTypes      = [];
@@ -290,6 +294,20 @@ async function loadQueue() {
   // "+ New type" header launcher — admin only (the create IPC is admin-gated server-side).
   const _newTypeBtn = document.getElementById('btn-new-doctype');
   if (_newTypeBtn) { _newTypeBtn.style.display = isAdmin ? '' : 'none'; _newTypeBtn.onclick = openNewTypeModal; }
+  // "Save as template" (promote-to-template) is an ADVANCED admin tool — gate it like
+  // "+ New type" and the Template Wizard so it stops leaking to operators (it was the only
+  // advanced template control with no role gate). Learning is unaffected either way.
+  const _promoteBtn = document.getElementById('btn-add-template');
+  if (_promoteBtn) _promoteBtn.style.display = isAdmin ? '' : 'none';
+  // Admin-only "Edit type" shortcut: deep-links to Settings -> Document Types to edit the
+  // CURRENT type's fields/roles (fixes the dangling-role dead-end where Confirm is blocked
+  // and the field to fix isn't on screen). Deep-link only — no in-place editing here.
+  const _editTypeBtn = document.getElementById('btn-edit-doctype');
+  if (_editTypeBtn) {
+    _editTypeBtn.style.display = isAdmin ? '' : 'none';
+    _editTypeBtn.onclick = () => window.docusnap.openSettingsWindowAtSection('doctypes');
+  }
+  updateEditTypeBtn();
   queue         = await window.docusnap.getReviewQueue();
   deferredQueue = await window.docusnap.getDeferredQueue();
   allDocTypes   = await window.docusnap.getAllDocTypes();
@@ -298,7 +316,7 @@ async function loadQueue() {
   populateTypeDropdown();
   updateTabCounts();
   renderQueueList();
-  if (queue.length > 0) selectDoc(queue[0]);
+  if (queue.length > 0 && !queueGrouped) selectDoc(queue[0]);   // grouped starts all-collapsed; user picks a group
   refreshAutoCommittedBar();   // surface recently auto-filed docs for re-checking
 
   // If opened via "Edit in Review" from Search, navigate to the requested doc.
@@ -387,6 +405,15 @@ function populateTypeDropdown() {
   }
 }
 
+// The admin "Edit type" shortcut is only meaningful with a type selected — it opens
+// Settings -> Document Types to edit the current type's fields/roles (e.g. to fix a
+// dangling Reference/Date role that is blocking Confirm). Enabled state tracks the
+// dropdown selection.
+function updateEditTypeBtn() {
+  const b = document.getElementById('btn-edit-doctype');
+  if (b) b.disabled = !selectedTypeSlug;
+}
+
 document.getElementById('doctype-select').addEventListener('change', (e) => {
   if (e.target.value === NEW_TYPE_SENTINEL) {
     e.target.value = selectedTypeSlug || '';   // revert — the sentinel never becomes a chosen type
@@ -395,6 +422,7 @@ document.getElementById('doctype-select').addEventListener('change', (e) => {
   }
   const prevSlug = selectedTypeSlug;
   selectedTypeSlug = e.target.value || null;
+  updateEditTypeBtn();
   // A type change invalidates any in-progress ⊕ teaching: each staged draw was captured
   // under the PREVIOUS type (and is keyed to it), so committing it under the new type
   // would leak boxes into the wrong layout. Discard staged teaching on a real type
@@ -622,13 +650,22 @@ function renderQueueList() {
 
   if (queueGrouped) {
     for (const g of reviewDisplayGroups()) {
+      const open = expandedSuppliers.has(g.supplier);
       const head = document.createElement('div');
-      head.className = 'queue-group-head';
+      head.className = 'queue-group-head' + (open ? ' open' : '');
       const attn = g.need ? ` · <span class="qgh-attn">${g.need} need${g.need > 1 ? '' : 's'} a look</span>` : '';
-      head.innerHTML = `<span class="qgh-name" title="${escHtml(g.supplier)}">${escHtml(g.supplier)}</span>`
+      head.innerHTML = `<span class="qgh-caret" aria-hidden="true"></span>`
+                     + `<span class="qgh-name" title="${escHtml(g.supplier)}">${escHtml(g.supplier)}</span>`
                      + `<span class="qgh-meta">${g.docs.length} document${g.docs.length > 1 ? 's' : ''}${attn}</span>`;
+      head.setAttribute('role', 'button');
+      head.setAttribute('aria-expanded', open ? 'true' : 'false');
+      head.addEventListener('click', () => {
+        if (expandedSuppliers.has(g.supplier)) expandedSuppliers.delete(g.supplier);
+        else expandedSuppliers.add(g.supplier);
+        renderQueueList();
+      });
       list.appendChild(head);
-      for (const doc of g.docs) list.appendChild(buildQueueItem(doc));
+      if (open) for (const doc of g.docs) list.appendChild(buildQueueItem(doc));
     }
   } else {
     for (const doc of queue) list.appendChild(buildQueueItem(doc));
@@ -649,7 +686,10 @@ function reviewDisplayGroups() {
     supplier, docs,
     need: docs.filter(d => isFlagged(d) || (d.missing_required_labels || '').trim()).length,
   }));
-  entries.sort((a, b) => b.need - a.need || b.docs.length - a.docs.length || a.supplier.localeCompare(b.supplier));
+  // STABLE within a review session: order by HAS-attention (a boolean that only flips
+  // when a group's LAST flagged doc clears) rather than the raw count, which would
+  // reshuffle the list on every confirm. Then biggest batch first, then name.
+  entries.sort((a, b) => (b.need > 0) - (a.need > 0) || b.docs.length - a.docs.length || a.supplier.localeCompare(b.supplier));
   return entries;
 }
 
@@ -801,6 +841,14 @@ function renderDeferredList() {
 
 // ── Select document ───────────────────────────────────────────────────────────
 async function selectDoc(doc, opts) {
+  // Grouped mode: make sure the doc's sender group is EXPANDED before we select — the
+  // active-row highlight is toggled on the rendered element (_selectDoc), so a doc in a
+  // collapsed group would have no row to light up. Covers confirm-advance / keyboard nav
+  // stepping into the next group.
+  if (queueGrouped && doc) {
+    const key = (doc.supplier_name || '').trim() || '—';
+    if (!expandedSuppliers.has(key)) { expandedSuppliers.add(key); renderQueueList(); }
+  }
   try { await _selectDoc(doc, opts); } catch(err) {
     console.error('selectDoc failed:', err);
     showToast('Error loading doc: ' + err.message, 'err');
@@ -843,6 +891,7 @@ async function _selectDoc(doc, { fieldsOnly = false } = {}) {
   selectedTypeSlug = doc.type_slug || null;
   const sel = document.getElementById('doctype-select');
   sel.value = selectedTypeSlug || '';
+  updateEditTypeBtn();
   const dt = allDocTypes.find(t => t.slug === selectedTypeSlug);
   fieldDefs = dt ? dt.fields : (allDocTypes[0]?.fields || []);
 
@@ -2563,7 +2612,10 @@ document.getElementById('btn-confirm').addEventListener('click', async () => {
   // Remember where the doc sits BEFORE confirmCurrentDoc removes it from the list,
   // so we can advance to the NEXT doc (the one that shifts into this slot) rather
   // than snapping back to the top — the operator has already worked down the list.
-  const list = activeTab === 'deferred' ? deferredQueue : queue;
+  // Advance within the VISIBLE (grouped) order, not the raw chronological queue — else
+  // confirming "City Office doc 1" jumps to whatever chronological doc lands in this slot
+  // instead of "City Office doc 2".
+  const list = activeTab === 'deferred' ? deferredQueue : reviewDisplayOrder();
   const idx  = list.findIndex(d => d.id === currentDoc?.id);
   const r = await confirmCurrentDoc();
   if (r.cancelled) return;
@@ -2692,7 +2744,7 @@ async function fileAllReady() {
 
   updateTabCounts();
   renderQueueList();
-  if (queue.length > 0) selectDoc(queue[0]);
+  if (queue.length > 0 && !queueGrouped) selectDoc(queue[0]);   // grouped starts all-collapsed; user picks a group
   else { currentDoc = null; clearDocPanel(); }
   if (filed) window.docusnap.notifyReviewComplete();
 
@@ -2901,7 +2953,7 @@ document.getElementById('btn-defer').addEventListener('click', async () => {
   queue         = queue.filter(d => d.id !== currentDoc.id);
   updateTabCounts();
   renderQueueList();
-  if (queue.length > 0) selectDoc(queue[0]);
+  if (queue.length > 0 && !queueGrouped) selectDoc(queue[0]);   // grouped starts all-collapsed; user picks a group
   else { currentDoc = null; clearDocPanel(); }
   window.docusnap.notifyReviewComplete();
 });
@@ -2995,7 +3047,8 @@ function advanceAfterAction(removedIdx = 0) {
     else { currentDoc = null; clearDocPanel(); }
   } else {
     renderQueueList();
-    if (queue.length > 0) selectDoc(queue[Math.min(at, queue.length - 1)]);
+    const order = reviewDisplayOrder();   // grouped display order — the doc now AT `at` is the next one
+    if (order.length > 0) selectDoc(order[Math.min(at, order.length - 1)]);
     else { currentDoc = null; clearDocPanel(); }
   }
 }

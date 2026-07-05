@@ -71,9 +71,14 @@
     .qview-toggle svg { flex-shrink: 0; color: var(--muted); }
     #queue-view-label { font-weight: 600; }
     .qview-toggle .qview-swap { margin-left: auto; color: var(--muted); font-size: 13px; }
-    .queue-group-head { display: flex; align-items: baseline; gap: 8px;
-      padding: 9px 10px 3px; border-top: 1px solid var(--border); }
+    .queue-group-head { display: flex; align-items: center; gap: 8px;
+      padding: 9px 10px; border-top: 1px solid var(--border); cursor: pointer; user-select: none; }
     .queue-group-head:first-child { border-top: none; }
+    .queue-group-head:hover { background: var(--surface2); }
+    .queue-group-head .qgh-caret { flex-shrink: 0; width: 0; height: 0;
+      border-left: 5px solid var(--muted); border-top: 4px solid transparent;
+      border-bottom: 4px solid transparent; transition: transform .15s; }
+    .queue-group-head.open .qgh-caret { transform: rotate(90deg); }
     .queue-group-head .qgh-name { font-size: 12px; font-weight: 700; color: var(--text);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
     .queue-group-head .qgh-meta { font-size: 10px; color: var(--muted);
@@ -879,6 +884,7 @@
           <div class="fields-header-title">Extracted Fields</div>
           <button class="fh-train" id="btn-training" title="A step-by-step walkthrough of reviewing a document">★ Take a tour</button>
           <button class="btn fh-new-type" id="btn-new-doctype" data-help-key="new-doctype" style="display:none;" title="Create a new document type without leaving Review">+ New type</button>
+          <button class="btn fh-new-type" id="btn-edit-doctype" style="display:none;" title="Edit this document type's fields and roles in Settings (admin) — e.g. to set up a missing Reference/Date field">&#9998; Edit type</button>
         </div>
         <select id="doctype-select" data-help-key="doctype-select"><option value="">— Select document type —</option></select>
         <div class="fields-detect-row">
@@ -892,7 +898,7 @@
               <line x1="17.25" y1="14.5" x2="17.25" y2="20"/>
               <line x1="14.5" y1="17.25" x2="20" y2="17.25"/>
             </svg>
-            <span class="add-template-lbl">Template Manager</span>
+            <span class="add-template-lbl">Save as template</span>
           </button>
         </div>
         <div class="fields-header-sub"><strong>Teach a field:</strong> click the <span class="repick-glyph">⊕</span> on it and draw a box round its value — Scan Finder learns where it lives and reads it on every future document from this supplier. Saved when you confirm.</div>
