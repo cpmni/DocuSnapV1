@@ -647,6 +647,18 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
   // Build template field rules from confirmed values
   const fields = _buildTemplateFields(db, allValues, dtInfo);
 
+  // The Document-Issuer value the operator CONFIRMED for this doc. COLD extraction reads no
+  // supplier, so the `supplier_name` param is empty at a supplier's FIRST confirm even though the
+  // user just typed the issuer in Review — fall back to the confirmed field values (allValues,
+  // string-keyed by field_key), where the identity field carries it. This is what lets a template
+  // be NAMED after its issuer ("City Office NI") instead of the generic "<Type> Template".
+  const confirmedIssuer = String(
+    (supplier_name && supplier_name.trim())
+    || (allValues && allValues.supplier_name)
+    || (allValues && allValues.customer_name)
+    || ''
+  ).trim();
+
   // `doc.template_id` reflects whatever Stage 0 matched DURING PROCESSING —
   // which, for a freshly-scanned batch, runs before any of that batch's own
   // confirmations have created a template. Confirming document #1 creates
@@ -692,6 +704,17 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
     // garble / per-document tokens can't poison Stage 0 matching and strand the
     // learned anchors — see templates.stabiliseFingerprint / chooseLogoPhash.
     templates.update(db, templateId, { logo_phash, keyword_fingerprint, fields });
+    // Heal a generic auto-name: a COLD first confirm named this template "<Type> Template" (no
+    // supplier read yet); a later confirm of the SAME template now carries the real issuer, so
+    // adopt it. Cosmetic (the name plays no role in matching/filing/learning-scope), and scoped to
+    // a STILL-generic name so a hand-edited or already-issuer name is left alone.
+    if (confirmedIssuer) {
+      const cur = templates.getById(db, templateId);
+      if (cur && /\btemplate$/i.test((cur.name || '').trim())
+          && cur.name.trim().toLowerCase() !== confirmedIssuer.toLowerCase()) {
+        try { templates.rename(db, templateId, confirmedIssuer); } catch {}
+      }
+    }
     if (!doc.template_id) {
       db.prepare('UPDATE documents SET template_id = ? WHERE id = ?').run(templateId, document_id);
     }
@@ -707,9 +730,7 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
     const typeName  = document_type_slug
       ? document_type_slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
       : 'Document';
-    const name      = (supplier_name && supplier_name.trim())
-      ? supplier_name.trim()
-      : `${typeName} Template`;
+    const name      = confirmedIssuer || `${typeName} Template`;
 
     const newTemplateId = templates.create(db, {
       name,
