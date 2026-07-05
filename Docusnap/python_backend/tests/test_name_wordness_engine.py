@@ -90,6 +90,30 @@ def main():
     check("code-history field (word_like False): language flag self-disabled",
           "read like a name" not in (r.get("validation_note") or ""))
 
+    print("\nC. identity R2 fix - repair + truncation restored, cross-supplier NOT vetoed")
+    # C1 — canonical name-repair FIRES for the identity field (the untested 0cbafb8 gap that
+    #      let R2 ship green): a misread stable token auto-corrects to the learned canonical.
+    r = _run("supplier_name", "Beaumont Care Homes Lid - Bangor", history=BEAU, wordness_on=True)
+    check("identity misread auto-repaired (Lid->Ltd)",
+          r.get("value") == "Beaumont Care Homes Ltd - Bangor")
+    check("identity repair marked was_corrected", bool(r.get("was_corrected")))
+
+    # C2 — a DIFFERENT, legitimately shorter supplier against a single-identity history is
+    #      NOT truncation-flagged (Hunk C: not anchored to the stable prefix) and NOT shape-
+    #      flagged (Hunk B: identity bypasses the cross-supplier veto). It's a new company.
+    r = _run("supplier_name", "McMahon Associates Ltd", history=BEAU, wordness_on=True)
+    check("different supplier NOT flagged shorter-than-usual",
+          "shorter than the usual" not in (r.get("validation_note") or ""))
+    check("different supplier NOT flagged format-differs",
+          "format differs" not in (r.get("validation_note") or ""))
+    check("different supplier value preserved", r.get("value") == "McMahon Associates Ltd")
+
+    # C3 — customer_name is an identity field too (symmetry): the same repair/truncation net
+    #      applies (both keys are in _IDENTITY_FIELD_KEYS).
+    r = _run("customer_name", "Beaumont Care Homes Ltd", history=BEAU, wordness_on=True)
+    check("customer_name truncation flagged (identity symmetry)",
+          "shorter than the usual" in (r.get("validation_note") or ""))
+
     if F:
         print(f"\n{F} FAILED")
         return 1

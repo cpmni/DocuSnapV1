@@ -1667,19 +1667,18 @@ class ExtractionEngine:
                         continue
                 # Supplier-scoped format first; fall back to the doc-type-scoped one ('' supplier)
                 # so qualification works even when the supplier is never identified (document-
-                # agnostic learning). BUT NOT for the supplier IDENTITY field itself
-                # (supplier_name/customer_name): its value IS the scope key, so a GLOBAL format
-                # aggregates DIFFERENT suppliers by definition. A corpus dominated by one supplier
-                # (e.g. 90% "SuperStore") then learns that single name's shape ('@@@@@@@@@@') +
-                # position-0 prefix ("SuperStore") as "the usual" and flags every OTHER supplier's
-                # name ("City Office NI") as a format anomaly. The identity field is only compared
-                # against ITS OWN supplier's scoped history (one company = one stable name); a
-                # garbled identity is still caught by the name-quality / wordness path, which needs
-                # no cross-supplier shape. A NON-identity name field (a per-type customer that IS
-                # consistent) keeps the global fallback, so canonical-token repair still works.
-                # (Cf. the numeric shape fold — the same "variable value, dominant-shape veto" trap.)
+                # agnostic learning). The IDENTITY fields (supplier_name/customer_name) get this
+                # global fallback TOO — they need its name_lexicon for the canonical name-repair
+                # (Lid→Ltd, PROFLE→Profile) + truncation flag below, and those are identity's most-
+                # corrected, weakest safety net. What identity must NOT inherit from the global
+                # format is the coarse cross-supplier SHAPE veto: its value IS the scope key, so a
+                # global format aggregates DIFFERENT companies (a corpus 90% "SuperStore" learns
+                # that one shape and would flag every OTHER supplier's clean name). That veto is
+                # bypassed for identity at the shape-check below (see _IDENTITY_FIELD_KEYS there),
+                # NOT by starving it of the lexicon. (Cf. 0cbafb8, which killed the veto by dropping
+                # the whole fallback and silently lost identity's repair + truncation with it — R2.)
                 fmt_entry = self.format_class_index.get((s_lower, dt_lower, key)) if s_lower else None
-                if not fmt_entry and key not in _IDENTITY_FIELD_KEYS:
+                if not fmt_entry:
                     fmt_entry = self.format_class_index.get(('', dt_lower, key))
                 if not fmt_entry:
                     continue
@@ -1732,7 +1731,14 @@ class ExtractionEngine:
                     # (stable prefix matches, count reaches expected_len), so conforms would
                     # otherwise suppress it. History-gated (name_lex present) => inert
                     # without confirmed history; under the name_wordness opt-in; flag-only.
-                    if self.name_wordness and name_match.is_truncated_name(str(val), name_lex):
+                    # For IDENTITY, only flag truncation when the value is anchored to the
+                    # learned stable prefix — the global fallback aggregates DIFFERENT companies,
+                    # so a legitimately shorter OTHER supplier ("McMahon Associates Ltd" vs a
+                    # "Beaumont…"-dominated history) would otherwise false-flag as shorter-than-
+                    # usual. Non-identity name fields (single-identity scope) keep the plain check.
+                    if self.name_wordness and name_match.is_truncated_name(str(val), name_lex) \
+                            and (key not in _IDENTITY_FIELD_KEYS
+                                 or name_match.matches_stable_prefix(str(val), name_lex)):
                         results[key] = {
                             **data,
                             'confidence':      min(data.get('confidence') or 0, 70),
@@ -1781,6 +1787,16 @@ class ExtractionEngine:
                         if not _has_stable_prefix \
                                 and value_quality.is_name_like_field(key) \
                                 and value_quality.name_quality(str(val)) >= 0.5:
+                            continue
+                        # IDENTITY (supplier_name/customer_name): never apply the coarse cross-
+                        # supplier SHAPE veto. Its value IS the learning scope key, so the global
+                        # ('' supplier) format aggregates DIFFERENT companies by definition — a
+                        # corpus dominated by one supplier would flag every OTHER supplier's clean
+                        # name as "format differs". A garbled identity is still caught by the
+                        # name-quality/wordness path + canonical repair above, which need no cross-
+                        # supplier shape. (Restores 0cbafb8's intent WITHOUT starving identity of
+                        # the name_lexicon repair/truncation net — R2.)
+                        if key in _IDENTITY_FIELD_KEYS:
                             continue
                         results[key] = {
                             **data,
