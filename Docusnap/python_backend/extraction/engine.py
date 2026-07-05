@@ -764,6 +764,66 @@ class ExtractionEngine:
                         'validation_note': 'adjusted to the total that balances against the line amounts — please verify',
                     }
                     return
+
+            # ── PASS 2: JOINT subtotal+total pick ─────────────────────────────────────────────
+            # Pass 1 found no reconciling TOTAL because the SUBTOTAL it balances against is ITSELF
+            # wrong — the classic case being an authoritative anchor whose registration read dropped
+            # BOTH subtotal and total onto a '1.00' quantity cell (City Office #152577), beating the
+            # correct keyword reads. Search candidate (subtotal, total) PAIRS from the remembered
+            # ledger: the confident pair that BALANCES (subtotal + tax + shipping − discount == total)
+            # wins, restoring the keyword reads the mis-landed anchor displaced. Reconciliation is the
+            # objective arbiter, so this overrides even an authoritative anchor whose value provably
+            # doesn't add up (a correct teach reconciles and already returned at the top).
+            sub_key = None
+            for k in ('subtotal', *keyword.ROLE_KEY_ALIASES.get('subtotal', ())):
+                d = results.get(k)
+                if isinstance(d, dict) and d.get('value'):
+                    sub_key = k
+                    break
+            if not sub_key:
+                return
+            sub_inc   = results.get(sub_key) or {}
+            sub_inc_v = str(sub_inc.get('value') or '')
+            sub_cands = [sub_inc, *(self._field_candidates.get(sub_key) or [])]
+            tot_cands = [inc,     *(self._field_candidates.get(total_key) or [])]
+            best = None   # (combined_conf, sv, tv, sub_cand, tot_cand)
+            for sc in sub_cands:
+                sv = sc.get('value')
+                if not sv or (sc.get('confidence') or 0) < _RECON_PICK_MIN_CONF:
+                    continue
+                _saved = results.get(sub_key)
+                results[sub_key] = {**(_saved or {}), 'value': sv}   # test this subtotal
+                try:
+                    for tc in tot_cands:
+                        tv = tc.get('value')
+                        if not tv or (tc.get('confidence') or 0) < _RECON_PICK_MIN_CONF:
+                            continue
+                        if str(sv) == sub_inc_v and str(tv) == inc_v:
+                            continue   # the current (non-reconciling) pair
+                        if _v.total_reconciles(tv, results):
+                            score = (sc.get('confidence') or 0) + (tc.get('confidence') or 0)
+                            if best is None or score > best[0]:
+                                best = (score, sv, tv, sc, tc)
+                finally:
+                    results[sub_key] = _saved
+            if best:
+                _, sv, tv, sc, tc = best
+                self._t('reconcile_pick', field=sub_key,   was=sub_inc_v, now=str(sv),
+                        method=sc.get('method'), confidence=sc.get('confidence'))
+                self._t('reconcile_pick', field=total_key, was=inc_v,     now=str(tv),
+                        method=tc.get('method'), confidence=tc.get('confidence'))
+                results[sub_key] = {
+                    **sub_inc, 'value': sv, 'display_value': sv,
+                    'method':          sc.get('method') or sub_inc.get('method'),
+                    'confidence':      max(sub_inc.get('confidence') or 0, sc.get('confidence') or 0),
+                    'validation_note': 'adjusted to the subtotal that balances against the total — please verify',
+                }
+                results[total_key] = {
+                    **inc, 'value': tv, 'display_value': tv,
+                    'method':          tc.get('method') or inc.get('method'),
+                    'confidence':      max(inc.get('confidence') or 0, tc.get('confidence') or 0),
+                    'validation_note': 'adjusted to the total that balances against the line amounts — please verify',
+                }
         except Exception:
             pass  # reconciliation aid — must never break extraction
 
