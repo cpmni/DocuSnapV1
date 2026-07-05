@@ -4792,11 +4792,15 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
     // sliceMap[field][stage] = [ {kind, bbox, page}, ... ] — links candidates to page regions
     const sliceMap = {};
     const get = (f) => {
-      if (!byField.has(f)) byField.set(f, { merges: [], rejects: [], transforms: [], validations: [], final: null });
+      if (!byField.has(f)) byField.set(f, { merges: [], rejects: [], transforms: [], validations: [], final: null, reconcile: null });
       return byField.get(f);
     };
     for (const ev of events) {
-      if (!ev || ev.field == null) continue;
+      if (!ev) continue;
+      // reconcile is a CROSS-field TOTAL calc (keyed by total_key, carries no `field`) — attach it
+      // to the total field's block before the per-field guard below.
+      if (ev.event === 'reconcile') { if (ev.total_key) get(ev.total_key).reconcile = ev; continue; }
+      if (ev.field == null) continue;
       if (ev.event === 'merge') get(ev.field).merges.push(ev);
       else if (ev.event === 'anchor_reject') get(ev.field).rejects.push(ev);
       else if (ev.event === 'transform') get(ev.field).transforms.push(ev);   // Stage 2.5 denoise/correct
@@ -4903,6 +4907,18 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
         const why = validationWhy(v);
         if (why) txt += `<div class="rdc-why">${why}</div>`;
         rows.push(noteRow('validate', txt, 'valid'));
+      }
+      // Stage 4 TOTAL reconciliation maths (SFDEV): the exact sum it balanced against, so a
+      // "doesn't add up" flag on correct-looking figures is explained — most often a MISSING
+      // component (e.g. an un-captured "Discount (10%)") the total legitimately reflects.
+      if (m.reconcile) {
+        const rc = m.reconcile;
+        const comp = (lbl, v) => v === 'MISSING'
+          ? `<span style="color:var(--warn)">MISSING</span>(${lbl})`
+          : `${escHtml(String(v))}(${lbl})`;
+        const calc = `${escHtml(String(rc.subtotal))} + ${comp('tax', rc.tax)} + ${comp('ship', rc.shipping)} − ${comp('disc', rc.discount)} = <b>${escHtml(String(rc.computed))}</b>`
+          + ` &nbsp;vs total <b>${escHtml(String(rc.total))}</b> &nbsp;(Δ ${escHtml(String(rc.delta))}, tol ${escHtml(String(rc.tol))}) → ${rc.reconciles ? 'reconciles' : "doesn't reconcile"}`;
+        rows.push(noteRow('reconcile', calc + (rc.verdict ? `<div class="rdc-why">${escHtml(String(rc.verdict))}</div>` : ''), 'valid'));
       }
       if (!rows.length) rows.push(`<div class="rdc-cand"><span class="rdc-reason" style="padding-left:0">matched on the OCR text layer (no per-stage crop trace)</span></div>`);
 

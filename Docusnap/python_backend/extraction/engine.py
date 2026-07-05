@@ -1550,7 +1550,8 @@ class ExtractionEngine:
         self.log("  Stage 4: validating…")
         self._t('stage_start', stage='4_validate')
         _pre_val = self._snap(results)
-        results = validator.validate_and_adjust(results, field_defs)
+        results = validator.validate_and_adjust(
+            results, field_defs, trace=(self._t if self._trace else None))
 
         # ── Field cleanup rules (operator-taught, Review right-click toolkit) ──
         # Strip a learned leaked heading/column from a field's WINNER value

@@ -305,10 +305,16 @@ def total_reconciles(total_value, results: dict):
 # ── Main validation ───────────────────────────────────────────────────────────
 
 def validate_and_adjust(extractions: dict,
-                        field_defs:  list[dict]) -> dict:
+                        field_defs:  list[dict],
+                        trace = None) -> dict:
     """
     Cross-validate extracted fields and adjust confidence scores.
     Returns the same dict with confidence scores modified.
+
+    `trace` (optional): a dev-only event callback (engine._t). When supplied, the TOTAL
+    reconciliation emits a `reconcile` event with the exact maths it used — each money
+    component (with MISSING flagged), the computed sum, the delta vs the total, the
+    tolerance, and the verdict — so SFDEV can show WHY a correct-looking total was flagged.
     """
     # Normalise all values to {"value": ..., "confidence": ...} dicts
     # Skip internal metadata keys (prefixed with _)
@@ -527,6 +533,21 @@ def validate_and_adjust(extractions: dict,
         elif total > subtotal * 2.5:
             note = "the total is much larger than the subtotal — please check"
         # else: only the subtotal is known and total is a plausible subtotal+shipping — neutral.
+        # Dev trace (SFDEV): show the exact reconciliation maths — what value each money role
+        # resolved to (MISSING when a component wasn't captured, the usual reason a correct-looking
+        # total is flagged, e.g. an un-captured "Discount (10%)"), the primary composition sum, the
+        # delta vs the total, the tolerance, and the verdict. total_reconciles ALSO tries shipping/
+        # discount folded INTO the subtotal, so `reconciles` can be True even when this primary
+        # composition's delta exceeds tol — the flag chain above is the authority.
+        if trace:
+            _fmt = lambda v: 'MISSING' if v is None else round(v, 2)
+            _computed = round((subtotal or 0) + (tax or 0) + (shipping or 0) - (discount or 0), 2)
+            trace('reconcile',
+                  total_key=total_key, total=round(total, 2), subtotal=round(subtotal, 2),
+                  tax=_fmt(tax), shipping=_fmt(shipping), discount=_fmt(discount),
+                  formula='subtotal + tax + shipping - discount',
+                  computed=_computed, delta=round(abs(total - _computed), 2), tol=round(tol, 2),
+                  reconciles=reconciles, verdict=(note or 'OK — reconciles / plausible'))
         if note:
             results[total_key] = {
                 **total_data,
