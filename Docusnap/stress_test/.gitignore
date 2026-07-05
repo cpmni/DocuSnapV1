@@ -1,0 +1,7 @@
+# Generated corpus + run artifacts — regenerate with gen_corpus.py / gen_teach_anchors.py
+corpus/
+out/
+*.db
+*.db-shm
+*.db-wal
+*.log
