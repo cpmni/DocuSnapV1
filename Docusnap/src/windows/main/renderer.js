@@ -1024,7 +1024,7 @@ async function checkFastModeSuggestion(supplierName) {
     <div style="color:var(--muted); margin-bottom:10px; line-height:1.5;">
       You've confirmed ${suggestion.docCount} documents from
       <strong style="color:var(--text)">${escHtml(suggestion.supplier)}</strong>.
-      Fast Mode will process these instantly without AI.
+      Fast Mode will process these instantly.
     </div>
     <div style="display:flex; gap:8px;">
       <button id="toast-fast" style="

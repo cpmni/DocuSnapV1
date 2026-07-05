@@ -1034,7 +1034,6 @@ function renderExtractionStatus(doc) {
   const mappingN  = baseMethods.filter(m => m.startsWith('template_mapping')).length;
   const anchorN   = baseMethods.filter(m => m.startsWith('anchor')).length;
   const keywordN  = baseMethods.filter(m => m === 'keyword').length;
-  const aiN       = baseMethods.filter(m => m.startsWith('llm')).length;
   const knownN    = baseMethods.filter(m => m && m !== 'unknown').length;
 
   let extLabel, extCls;
@@ -1043,7 +1042,6 @@ function renderExtractionStatus(doc) {
                                                    extLabel = 'Template mappings'; extCls = 'ok'; }
   else if (anchorN > 0 && anchorN >= keywordN)  { extLabel = 'Learned anchors';   extCls = 'info'; }
   else if (keywordN > 0)                         { extLabel = 'Keyword patterns';  extCls = 'info'; }
-  else if (aiN > 0)                              { extLabel = 'AI fallback';       extCls = 'warn'; }
   else                                           { extLabel = 'Mixed methods';     extCls = 'info'; }
 
   // ── Render ─────────────────────────────────────────────────────────────────
