@@ -33,18 +33,31 @@ function getAll(db) {
 // garble: "50 Asia" once vs "Contoso Asia" thrice). Returns the top issuer + its count + the total
 // confirmed-with-issuer count so the extraction engine can require a CLEAR majority before letting
 // a template identity override a per-doc field read. Read-only; additive to getAll.
+//
+// DEFENSIVE: this is an additive nicety and getAll runs in the Template Manager, the promote/confirm
+// WRITE path, and the extraction snapshot — so it must NEVER break core template loading. Any error
+// (e.g. a minimal caller/fixture DB whose `documents` table lacks a column) is swallowed → null →
+// the engine's template-supplier precedence simply stays inert (as when a template has no dominant
+// issuer). Ordered by count only; no confirmed_at tiebreaker — a tie can never be a STRICT majority
+// (count*2 > total is false when the top two are equal), so the engine returns None for it anyway,
+// making any tie-break pick unobservable — and requiring confirmed_at would couple this to the full
+// documents schema for no behavioural gain.
 function getDominantSupplier(db, templateId) {
-  const rows = db.prepare(`
-    SELECT supplier_name AS value, COUNT(*) AS n
-    FROM documents
-    WHERE template_id = ? AND status = 'confirmed'
-      AND supplier_name IS NOT NULL AND TRIM(supplier_name) <> ''
-    GROUP BY supplier_name
-    ORDER BY n DESC, MAX(confirmed_at) DESC
-  `).all(templateId);
-  if (!rows.length) return null;
-  const total = rows.reduce((s, r) => s + r.n, 0);
-  return { value: rows[0].value, count: rows[0].n, total };
+  try {
+    const rows = db.prepare(`
+      SELECT supplier_name AS value, COUNT(*) AS n
+      FROM documents
+      WHERE template_id = ? AND status = 'confirmed'
+        AND supplier_name IS NOT NULL AND TRIM(supplier_name) <> ''
+      GROUP BY supplier_name
+      ORDER BY n DESC
+    `).all(templateId);
+    if (!rows.length) return null;
+    const total = rows.reduce((s, r) => s + r.n, 0);
+    return { value: rows[0].value, count: rows[0].n, total };
+  } catch {
+    return null;
+  }
 }
 
 function getById(db, id) {
