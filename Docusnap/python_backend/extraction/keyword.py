@@ -453,8 +453,15 @@ def _search_for_label(lines: list[str], label: str,
             # first column carrying real content instead. Precision-preserving: only skips
             # while a following column exists, and NEVER skips a segment with any letter or
             # digit. Generalises to every "…No." ref label (Invoice/PO/SO) in a wide-gap band.
+            # Also drop a leading PARENTHETICAL PERCENTAGE annotation column: a money line reads
+            # "Discount (10%): | $231.81" or "VAT (20%): | £64.56" — the "(10%):" isn't the value
+            # (the AMOUNT is), so a discount/tax read grabbed it, failed currency validation, and
+            # left reconciliation blind ("total < subtotal, no discount to explain it" false flag).
+            # Tolerates wrapping parens and a trailing ":"/"." ("(10%):", "10%", "8.5 %").
             _si = 0
-            while _si + 1 < len(_segs) and re.fullmatch(r'[.\-–:#|)*]+', _segs[_si]):
+            while _si + 1 < len(_segs) and (
+                    re.fullmatch(r'[.\-–:#|)*]+', _segs[_si])
+                    or re.fullmatch(r'\(?\s*\d+(?:\.\d+)?\s*%\s*\)?\s*[:.]?', _segs[_si])):
                 _si += 1
             after = _segs[_si] if _segs else ''
             # A totals row often reads "Invoice Total | GBP | 118.83" — the column right after

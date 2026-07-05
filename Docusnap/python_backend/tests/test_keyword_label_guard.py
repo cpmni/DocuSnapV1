@@ -66,6 +66,16 @@ def main():
     f += not check('_total_role_collision: "Total VAT" -> True', keyword._total_role_collision("Total VAT 9", 0, 5) is True)
     f += not check('_total_role_collision: standalone "Total" -> False', keyword._total_role_collision("Total  9", 0, 5) is False)
 
+    # ── 1d. parenthetical PERCENTAGE annotation column (the "Discount (10%): $231.81" bug) ──
+    # A money line's "(10%):" annotation sits AHEAD of the amount; the value-picker grabbed it and
+    # failed currency validation, so discount/tax read NOTHING — leaving total reconciliation blind
+    # (the "total < subtotal, no discount to explain it" false flag on a correct total).
+    dsc = (keyword.extract_fields("Discount (10%):    $231.81", ["discount"], patterns).get("discount") or {}).get("value", "")
+    f += not check(f'"Discount (10%): $231.81" reads 231.81, not the "(10%):" annotation [got {dsc!r}]',
+                   "231.81" in dsc.replace(",", "") and "%" not in dsc)
+    dsc2 = (keyword.extract_fields("Discount: $50.00", ["discount"], patterns).get("discount") or {}).get("value", "")
+    f += not check(f'plain "Discount: $50.00" (no annotation) still reads 50.00 [got {dsc2!r}]', "50.00" in dsc2)
+
     # ── 1b. leading pure-punctuation residue column (reggie) ──
     # A caption ending in "." ("Invoice No.") isn't consumed by the label pattern, so the "."
     # lands as its OWN wide-gap column ahead of the value; the residue must be dropped so the
