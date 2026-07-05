@@ -413,6 +413,50 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
             except Exception:
                 pass  # dev/robustness: the guard must never break a read
 
+        # ── AUTHORITATIVE-CROP CROSS-CHECK (structured ref fields) ────────────
+        # A taught (authoritative) rigid crop that reads a VALID-SHAPED ref number wins
+        # OUTRIGHT at Tier-A (a structured value is regex-validated, never conf-capped), so
+        # when the 2× upscale/sharpen crop OCR MANGLES a digit (City Office invoice
+        # "152574" → "192074" — both valid shapes) the WRONG value files SILENTLY at 97%,
+        # unflagged. The full-page native-DPI OCR reads the same "Invoice No." line
+        # correctly, so cross-check: locate the label and harvest its inline value off the
+        # full page; if that read is credible AND DISAGREES with the crop, the crop may NOT
+        # win silently — prefer the full-page value + recover-and-flag for review (the same
+        # posture as slip-fix). INVARIANT (oscar): an authoritative anchor wins silently ONLY
+        # when two INDEPENDENT reads of the field AGREE; on disagreement -> review. A digit
+        # whitelist can't fix this (both reads are digits) — the reusable guard is the cross-
+        # read agreement, not a per-field recipe, so it covers every supplier/ref field.
+        # Byte-identical when the reads agree, the label can't be cross-read, or the harvest
+        # isn't a credible DIFFERENT value. Ref-only + authoritative + a plain rigid
+        # anchor_crop (the free-text/currency label-lock above already covers those types;
+        # date stays pattern-trusted). Reuses line_cache — one locate per label per page.
+        if value and method == "anchor_crop" and _is_ref_like_key(field_key) \
+                and anchor.get("last_authoritative_at") \
+                and (anchor.get("anchor_label") or "").strip() and page0 is not None:
+            try:
+                _xh = anchor.get("h_norm") or 0.0
+                _xw = anchor.get("w_norm") or 0.0
+                # UNBIASED locate (no confirm_value): we want the label's TRUE inline value,
+                # not the label occurrence that happens to carry the possibly-wrong crop read.
+                _xloc = _locate_for_relocation(page0, anchor["anchor_label"], direction,
+                                               (x_norm, y_norm, _xw, _xh), page_text_lines,
+                                               line_cache=line_cache)
+                _xiv = ((_xloc or {}).get("inline_value") or "").strip()
+                if _xiv:
+                    _xc = _clean_text_fallback(_xiv, val_type, validation_patterns) \
+                          or clean_crop_segment(_xiv, val_type)
+                    if _xc and _crop_is_credible(_xc, val_type, validation_patterns, label) \
+                            and _qualify_against_format(_xc, field_key, format_lookup, text_field_keys) \
+                            and _xc.strip().lower() != value.strip().lower():
+                        # Two independent reads DISAGREE -> the crop can't win silently.
+                        if on_reject:
+                            on_reject(field_key, "anchor_crop", value, "crop_fullpage_disagree")
+                        value  = _xc.strip()                 # prefer the full-page native read
+                        method = "anchor_crop_crosscheck"
+                        ocr_conf, ocr_min = None, None
+            except Exception:
+                pass  # robustness: a cross-check failure must never break the read
+
         # ── Drift recovery: locate the label, then read the value beside it ───
         # The fixed crop is positionally RIGID — on a shifted/cropped scan (the
         # page registered higher, a top band clipped) the value moves off the
@@ -710,6 +754,8 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 conf = min(93, registration.registration_confidence(page_transform))
             elif method == "anchor_crop_slipfix":
                 conf = min(70, conf)   # recover-and-flag: a gate-rejected read repaired to the learned shape
+            elif method == "anchor_crop_crosscheck":
+                conf = min(70, conf)   # cross-read disagreement: full-page value preferred, routed to review
             # ── OCR-QUALITY CAP (FREE-TEXT ONLY): for a name/address field there is
             # no regex to validate the read, so the crop's mean OCR confidence is the
             # only quality signal — without this a garbled crop ("Aaiumant Care Homes
@@ -740,7 +786,8 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
             # confidence. Cost (one locate) is paid ONLY for authoritative rigid
             # anchors — the Tier-A claimants; passive/label-less anchors are unchanged.
             located_ok = method in ("anchor", "anchor_inline",
-                                    "anchor_crop_relocated", "anchor_registration")
+                                    "anchor_crop_relocated", "anchor_registration",
+                                    "anchor_crop_crosscheck")
             if not located_ok:                            # a RIGID anchor_crop read
                 if not anchor.get("last_authoritative_at"):
                     located_ok = True                     # passive: 'located' never consulted (Tier-A needs authoritative)
@@ -792,6 +839,15 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                     "was_corrected":   True,
                     "corrected_to":    value.strip(),
                     "validation_note": "Corrected a likely OCR misread to the learned format — please verify.",
+                })
+            elif method == "anchor_crop_crosscheck":
+                # Recover-and-flag: the taught crop and the full-page read of the same label
+                # DISAGREED; we took the full-page value (native-DPI, generally the truer read)
+                # but never let a disagreement file silently — surface it for a human to confirm.
+                results[field_key].update({
+                    "was_corrected":   True,
+                    "corrected_to":    value.strip(),
+                    "validation_note": "The taught position and the full-page read disagreed — using the full-page value; please verify.",
                 })
 
     return results

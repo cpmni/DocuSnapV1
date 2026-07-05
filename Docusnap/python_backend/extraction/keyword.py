@@ -414,7 +414,18 @@ def _search_for_label(lines: list[str], label: str,
             # Multi-column OCR often interleaves adjacent columns on the same line;
             # take only the first column segment to avoid grabbing unrelated text.
             _segs = [s.strip() for s in re.split(r' {4,}', after) if s.strip()]
-            after = _segs[0] if _segs else ''
+            # Drop a leading PURE-punctuation residue column: a label caption that ends in
+            # "." ("Invoice No.") isn't consumed by the label pattern, so the "." lands as
+            # its own column AHEAD of the value ("Invoice No. |  . |  152574") and the old
+            # code took "." — then the same-row read failed and the "below" fallback grabbed
+            # the wrong column (the "G2 Environmental" cell under "Invoice To"). Take the
+            # first column carrying real content instead. Precision-preserving: only skips
+            # while a following column exists, and NEVER skips a segment with any letter or
+            # digit. Generalises to every "…No." ref label (Invoice/PO/SO) in a wide-gap band.
+            _si = 0
+            while _si + 1 < len(_segs) and re.fullmatch(r'[.\-–:#|)*]+', _segs[_si]):
+                _si += 1
+            after = _segs[_si] if _segs else ''
             # A totals row often reads "Invoice Total | GBP | 118.83" — the column right after
             # the label is a bare currency CODE/symbol (no digits). Skip it to the AMOUNT column
             # so the value is the number, not "GBP". Reusable for any LABEL CODE AMOUNT layout;

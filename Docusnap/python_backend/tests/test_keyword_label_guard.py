@@ -43,6 +43,25 @@ def main():
     f += not check(f'total_amount reads the Total (120), not the Subtotal (100) [got {got!r}]',
                    "120" in got and "100" not in got)
 
+    # ── 1b. leading pure-punctuation residue column (reggie) ──
+    # A caption ending in "." ("Invoice No.") isn't consumed by the label pattern, so the "."
+    # lands as its OWN wide-gap column ahead of the value; the residue must be dropped so the
+    # real value in the next column is read (was: took ".", the same-row read failed, and the
+    # "below" fallback grabbed a wrong column — the City Office "G2" bug).
+    inv = (keyword.extract_fields("Invoice No.        152574", ["invoice_number"], patterns)
+           .get("invoice_number") or {}).get("value", "")
+    f += not check(f'"Invoice No.  <gap>  152574" reads 152574, not the "." residue [got {inv!r}]',
+                   inv == "152574")
+    # precision 1: a value that legitimately starts with a symbol ("#152574") is NOT skipped
+    # (the residue rule only drops PURE-punctuation columns).
+    inv2 = (keyword.extract_fields("Invoice No.        #152574", ["invoice_number"], patterns)
+            .get("invoice_number") or {}).get("value", "")
+    f += not check(f'"#152574" (punct+digits) preserved [got {inv2!r}]', "152574" in inv2)
+    # precision 2: a normal single-column value is byte-identical (rule doesn't fire).
+    inv3 = (keyword.extract_fields("Invoice No: INV-2044", ["invoice_number"], patterns)
+            .get("invoice_number") or {}).get("value", "")
+    f += not check(f'normal single-column value unchanged [got {inv3!r}]', inv3 == "INV-2044")
+
     # ── 2. validation inferred by field-key role ──
     f += not check('_infer_validation(remittance_date) = date', keyword._infer_validation("remittance_date") == "date")
     f += not check('_infer_validation(remittance_number) = alphanumeric', keyword._infer_validation("remittance_number") == "alphanumeric")
