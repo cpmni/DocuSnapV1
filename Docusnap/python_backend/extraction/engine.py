@@ -105,6 +105,34 @@ def _supplier_identity_decision(existing: dict | None, candidate: dict | None) -
     return None
 
 
+def _genuine_template_supplier(matched_tmpl: dict | None) -> str | None:
+    """The matched template's DOMINANT confirmed issuer identity when it is a CLEAR majority, else
+    None. Uses the learned issuer DISTRIBUTION (templates.getAll emits dominant_supplier / _count /
+    _total = the top confirmed issuer, its count, and the total confirmed-with-issuer docs on this
+    template), NOT the template's cosmetic NAME. The name is only the FIRST-confirmed issuer, which
+    can be an outlier or OCR garble — e.g. a template NAMED "50 Asia" (1 confirm) whose docs are
+    really "Contoso Asia" (3 confirms); trusting the name would impose the garble. The value the
+    MAJORITY of confirmed docs agree on is a reliable identity — a stronger "who is this?" signal
+    than a per-doc field read a teaching artifact produced. Requires a STRICT majority (> half) and
+    at least 2 agreeing confirms, so a split/ambiguous or single-confirm template imposes nothing.
+    Backward-safe: absent dominant_* fields (old caller/DB) → None → the precedence rule is inert.
+    Identification itself stays logo_phash / keyword_fingerprint (template_matcher) — unaffected."""
+    if not matched_tmpl:
+        return None
+    value = (matched_tmpl.get("dominant_supplier") or "").strip()
+    if not value:
+        return None
+    try:
+        count = int(matched_tmpl.get("dominant_supplier_count") or 0)
+        total = int(matched_tmpl.get("dominant_supplier_total") or 0)
+    except (TypeError, ValueError):
+        return None
+    # Strict majority: > half of the confirmed-with-issuer docs agree, and at least 2 do.
+    if count >= 2 and count * 2 > total:
+        return value
+    return None
+
+
 def _is_ref_field(key: str) -> bool:
     """Reference-number-style fields, by naming convention (no supplier/doc
     specifics): invoice_number / po_number / sales_order_number (..._number),
@@ -1304,6 +1332,45 @@ class ExtractionEngine:
         # identity kept driving downstream lookups/persistence while the
         # displayed field already held the corrected value, silently writing
         # the wrong supplier into the learning corpus on every confirm.
+        # ── Template supplier precedence (the #119 / #75 class) ──────────────────
+        # A genuine matched-template identity — the template's DOMINANT confirmed issuer (the
+        # value the MAJORITY of the confirmed docs that formed it carry; see
+        # _genuine_template_supplier — NOT the cosmetic first-confirmed NAME, which can be a
+        # minority garble) — is a stronger "who is this?" signal than an identity field READ
+        # produced by a teaching-ARTIFACT anchor. A swept "Contoso / Document Issuer" anchor
+        # (its captured label IS the field's
+        # own display name, never a real caption) fuzzy-locates an unrelated row on THIS doc and
+        # harvests a wrong fragment ("Solutions" onto a City Office invoice) at 90% via the
+        # LOCATED anchor_inline path — so neither the blind-read guard nor a plain confidence
+        # contest catches it. When such an artifact read DISAGREES with the genuine template
+        # name, prefer the template name. Deliberately NARROW: it fires ONLY for an artifact-
+        # labelled anchor read, so it leaves untouched — a doc whose identity really IS that
+        # value (the same anchor reading it correctly, where template + read AGREE); a read off a
+        # REAL caption (Greenfield's "Supplier:" located read — its label is not the field's
+        # display name, so this never fires and the legitimate re-resolution stands); a keyword
+        # read; and any doc that matched only a generic template. Reusable: any doc where a swept
+        # artifact anchor contradicts a confirmed template identity.
+        _sn = results.get('supplier_name')
+        _tmpl_sup = _genuine_template_supplier(matched_tmpl)
+        if _sn and _sn.get('value') and _tmpl_sup:
+            def _ns(v):
+                return keyword.normalize_supplier_name(v or '').strip().lower()
+            if _ns(_sn.get('value')) != _ns(_tmpl_sup):
+                _id_labels = {(f.get('label') or '').strip().lower()
+                              for f in field_defs if f.get('key') in _IDENTITY_FIELD_KEYS}
+                _id_labels.discard('')
+                _sn_label = (_sn.get('anchor') or '').strip().lower()
+                if (str(_sn.get('method') or '').startswith('anchor')
+                        and _sn_label and _sn_label in _id_labels):
+                    self.log(f"  Template supplier precedence: identity anchor read "
+                             f"'{_sn.get('value')}' via artifact label '{_sn_label}' "
+                             f"disagrees with template identity '{_tmpl_sup}' — using template")
+                    results['supplier_name'] = {
+                        "value":      _tmpl_sup,
+                        "confidence": 90,
+                        "method":     "template_identity",
+                    }
+
         resolved_supplier = (results.get('supplier_name') or {}).get('value') or None
         if resolved_supplier and resolved_supplier != supplier_name:
             if supplier_name:

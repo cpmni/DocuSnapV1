@@ -20,8 +20,31 @@ function getAll(db) {
     t.logo_phashes        = getLogoHashes(db, t.id);
     t.keyword_fingerprint = _parseJson(t.keyword_fingerprint, []);
     t.ocr_auto_params     = _parseJson(t.ocr_auto_params, null);
+    const dom             = getDominantSupplier(db, t.id);
+    t.dominant_supplier       = dom ? dom.value  : null;
+    t.dominant_supplier_count = dom ? dom.count  : 0;
+    t.dominant_supplier_total = dom ? dom.total  : 0;
   }
   return rows;
+}
+
+// The issuer identity the template's CONFIRMED docs actually carry, as a distribution — NOT the
+// template's cosmetic `name` (which is only the FIRST-confirmed issuer and can be an outlier/OCR
+// garble: "50 Asia" once vs "Contoso Asia" thrice). Returns the top issuer + its count + the total
+// confirmed-with-issuer count so the extraction engine can require a CLEAR majority before letting
+// a template identity override a per-doc field read. Read-only; additive to getAll.
+function getDominantSupplier(db, templateId) {
+  const rows = db.prepare(`
+    SELECT supplier_name AS value, COUNT(*) AS n
+    FROM documents
+    WHERE template_id = ? AND status = 'confirmed'
+      AND supplier_name IS NOT NULL AND TRIM(supplier_name) <> ''
+    GROUP BY supplier_name
+    ORDER BY n DESC, MAX(confirmed_at) DESC
+  `).all(templateId);
+  if (!rows.length) return null;
+  const total = rows.reduce((s, r) => s + r.n, 0);
+  return { value: rows[0].value, count: rows[0].n, total };
 }
 
 function getById(db, id) {
