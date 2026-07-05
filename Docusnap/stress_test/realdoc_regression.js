@@ -47,10 +47,14 @@ function docTypesWithFields(db) {
 
 function snap(db) {
   const dts = docTypesWithFields(db);
+  let anchors = safe(() => learning.getAllAnchors(db), []);
+  // Ablation: NO_IDENTITY_ANCHORS=1 drops supplier_name/customer_name anchors — proves whether
+  // an identity anchor (which is supplier-specific) is helping or hurting when swept cross-supplier.
+  if (process.env.NO_IDENTITY_ANCHORS) anchors = anchors.filter(a => !['supplier_name', 'customer_name'].includes(a.field_key));
   return { args: [
     '--fields-file', w('f', dts.flatMap(d => d.fields)),
     '--hints-file', w('h', safe(() => learning.getHints(db), [])),
-    '--anchors-file', w('a', safe(() => learning.getAllAnchors(db), [])),
+    '--anchors-file', w('a', anchors),
     '--logos-file', w('l', safe(() => learning.getAllLogos(db), [])),
     '--doc-types-file', w('d', dts),
     '--formats-file', w('fm', safe(() => learning.getFieldFormats(db), [])),
@@ -124,7 +128,10 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
       if (s[f] === false) {
         const exr = key && m.extractions && m.extractions[key];
         const got = f === 'supplier' ? m.supplier_name : ef(m, key);
-        const flagged = f === 'supplier' ? false : !!(exr && String(exr.validation_note || '').trim());
+        // A wrong value is only truly SILENT if it carries NO review note AND is above the
+        // review threshold (70) — i.e. it would actually auto-file. Below-threshold reads
+        // surface as needs-a-check in the app, so they're caught, not silent.
+        const flagged = !!(exr && (String(exr.validation_note || '').trim() || (exr.confidence != null && exr.confidence < 70)));
         if (!flagged) silentWrong++;
         regress.push(`#${g.id} ${g.type_slug} ${f}: want '${want}' got '${got}'${flagged ? ' [flagged]' : ' [SILENT]'}`);
       }

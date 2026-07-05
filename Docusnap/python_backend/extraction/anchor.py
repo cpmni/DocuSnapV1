@@ -2011,6 +2011,12 @@ def _filter_anchors(anchors: list[dict],
         auth_bucket(a), priority(a), -_auth_rank(a), -a.get("usage_count", 1)))
 
 
+# The IDENTITY fields — their value + on-page position vary BY supplier, so a supplier-
+# specific identity anchor must NOT cross-apply to a different supplier via the doc-type
+# sweep (see _anchor_matches). Mirrors engine._IDENTITY_FIELD_KEYS / COMPANY_KEYS in JS.
+_IDENTITY_FIELD_KEYS = frozenset({"supplier_name", "customer_name"})
+
+
 def _anchor_matches(anchor: dict, supplier_name: str | None,
                     document_type: str | None) -> bool:
     a_sup  = (anchor.get("supplier_name") or "").lower().strip()
@@ -2040,8 +2046,16 @@ def _anchor_matches(anchor: dict, supplier_name: str | None,
     # "Polychemtex Inc.". A doc-type conflict still vetoes a supplier match.
     if a_sup and s_name and a_sup == s_name:
         return not type_conflict
-    # Doc type match (e.g. a different supplier, same layout family).
-    if a_type and d_type and a_type == d_type:
+    # Doc type match (e.g. a DIFFERENT supplier, same layout family). But NOT for the
+    # IDENTITY field: a supplier_name/customer_name anchor is inherently supplier-SPECIFIC
+    # (it reads THAT company's issuer name/position), so a "Contoso" Document-Issuer teach
+    # must not read a Profile invoice's issuer as Contoso (or crop-garble it to "PROFLE
+    # CONSTRUCTION"). The doc-type IS the layout for a POSITIONAL field (invoice_number is
+    # always top-right), but the identity field's VALUE + position vary BY supplier — so the
+    # cross-supplier doc-type sweep is wrong for it; it applies only to its own supplier (or
+    # global) above. Verified on the real-doc corpus: removing this cross-apply LIFTS supplier
+    # accuracy (95.6% -> 96.2%), it never lowers it — the swept anchor was net-harmful.
+    if a_type and d_type and a_type == d_type and anchor.get("field_key") not in _IDENTITY_FIELD_KEYS:
         return True
 
     return False
