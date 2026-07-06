@@ -436,6 +436,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
         # the label cross-read off the real caption gets the right date → DISAGREEMENT flips+flags.
         # The date disagreement compares CALENDAR dates (parse_date), so a format-only difference
         # (29/05/2026 vs 29-05-2026) is NOT a flip. Reuses line_cache — one locate per label per page.
+        _xcheck_note = None   # flag-only note (value-below-label false-locate); set below, applied at the result build
         if value and method == "anchor_crop" and (_is_ref_like_key(field_key) or val_type == "date") \
                 and anchor.get("last_authoritative_at") \
                 and (anchor.get("anchor_label") or "").strip() and page0 is not None:
@@ -452,23 +453,47 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                     _xc = _clean_text_fallback(_xiv, val_type, validation_patterns) \
                           or clean_crop_segment(_xiv, val_type)
                     if _xc and _crop_is_credible(_xc, val_type, validation_patterns, label) \
-                            and _qualify_against_format(_xc, field_key, format_lookup, text_field_keys):
-                        # DISAGREEMENT test. For a DATE compare CALENDAR dates (parse_date), not raw
-                        # strings, so a format-only difference (29/05/2026 vs 29-05-2026) is NOT a flip
-                        # and an unparseable read never flips; ref/text keep the string compare.
-                        if val_type == "date":
-                            from extraction.validator import parse_date
-                            _da, _db = parse_date(_xc), parse_date(value)
-                            _disagree = bool(_da and _db and _da.date() != _db.date())
-                        else:
-                            _disagree = _xc.strip().lower() != value.strip().lower()
-                        if _disagree:
-                            # Two independent reads DISAGREE -> the crop can't win silently.
-                            if on_reject:
-                                on_reject(field_key, "anchor_crop", value, "crop_fullpage_disagree")
-                            value  = _xc.strip()             # prefer the full-page native read
-                            method = "anchor_crop_crosscheck"
-                            ocr_conf, ocr_min = None, None
+                            and _qualify_against_format(_xc, field_key, format_lookup, text_field_keys) \
+                            and _reads_disagree(_xc, value, val_type):
+                        # Two independent reads DISAGREE (calendar-aware for dates) -> the taught crop
+                        # can't win silently: prefer the full-page native read + flag for review.
+                        if on_reject:
+                            on_reject(field_key, "anchor_crop", value, "crop_fullpage_disagree")
+                        value  = _xc.strip()             # prefer the full-page native read
+                        method = "anchor_crop_crosscheck"
+                        ocr_conf, ocr_min = None, None
+                elif _xloc and _xloc.get("label_box") \
+                        and (_xloc.get("match_score") or 0) >= 0.9 \
+                        and anchor.get("offset_dx_norm") is not None \
+                        and _named_cross_supplier(anchor, supplier_name):
+                    # FLAG-ONLY geometric detector — the value-BELOW-label cross-supplier false-locate.
+                    # The label LOCATED with high confidence but its value is NOT on the label's line
+                    # (inline harvest empty -> a label-above layout), so the rigid ABSOLUTE crop may have
+                    # read a DIFFERENT supplier's field at the taught box. Re-read a crop seated at
+                    # located-label + stored offset. On disagreement we do NOT trust this re-OCR enough
+                    # to REPLACE a value that drives filing + learning (unlike the inline read, taken off
+                    # the label's OWN OCR line) -> so KEEP the rigid value and only cap + flag for review,
+                    # never a silent confident-wrong file. SCOPED to a NAMED different supplier (a
+                    # same-supplier re-read can mis-seat and cry wolf; a genuine same-supplier drift
+                    # already fails credibility and is handled by the drift-recovery rung below);
+                    # match_score >= 0.9 so a MIS-located label can't manufacture a spurious flag.
+                    # 007-reviewed: flag-only, NOT flip -- the geometric read is a weaker signal than the
+                    # inline twin and the real-doc A/B is structurally blind to this path, so we DETECT a
+                    # disagreement, never SUBSTITUTE.
+                    _gbox = _place_from_located(_xloc, direction, (x_norm, y_norm, _xw, _xh),
+                                                offset=(anchor.get("offset_dx_norm"),
+                                                        anchor.get("offset_dy_norm")))
+                    _gv = (_crop_and_ocr(page0, _gbox[0], _gbox[1], _gbox[2], _gbox[3], val_type,
+                                         verify_fn=_verify, continuation=continuation) if _gbox else None)
+                    _gc = (_clean_text_fallback(_gv, val_type, validation_patterns)
+                           or clean_crop_segment(_gv, val_type)) if _gv else None
+                    if _gc and _crop_is_credible(_gc, val_type, validation_patterns, label) \
+                            and _qualify_against_format(_gc, field_key, format_lookup, text_field_keys) \
+                            and _reads_disagree(_gc, value, val_type):
+                        if on_reject:
+                            on_reject(field_key, "anchor_crop", value, "crop_belowlabel_disagree")
+                        _xcheck_note = ("The taught position and the value beside this document's "
+                                        "own label disagreed - please verify.")
             except Exception:
                 pass  # robustness: a cross-check failure must never break the read
 
@@ -771,6 +796,8 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 conf = min(70, conf)   # recover-and-flag: a gate-rejected read repaired to the learned shape
             elif method == "anchor_crop_crosscheck":
                 conf = min(70, conf)   # cross-read disagreement: full-page value preferred, routed to review
+            if _xcheck_note:
+                conf = min(70, conf)   # flag-only value-below-label disagreement: keep the value, route to review
             # ── OCR-QUALITY CAP (FREE-TEXT ONLY): for a name/address field there is
             # no regex to validate the read, so the crop's mean OCR confidence is the
             # only quality signal — without this a garbled crop ("Aaiumant Care Homes
@@ -874,6 +901,10 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                     "corrected_to":    value.strip(),
                     "validation_note": "The taught position and the full-page read disagreed — using the full-page value; please verify.",
                 })
+            if _xcheck_note and field_key in results:
+                # FLAG-ONLY (value-below-label cross-supplier false-locate): KEEP the rigid value (no
+                # was_corrected / corrected_to) — only surface the cross-read disagreement for a human.
+                results[field_key]["validation_note"] = _xcheck_note
 
     return results
 
@@ -2044,6 +2075,29 @@ def _filter_anchors(anchors: list[dict],
 # doc's OWN labelled value (see _is_blind_cross_supplier_anchor). Mirrors
 # engine._IDENTITY_FIELD_KEYS / COMPANY_KEYS in JS.
 _IDENTITY_FIELD_KEYS = frozenset({"supplier_name", "customer_name"})
+
+
+def _named_cross_supplier(anchor: dict, supplier_name: str | None) -> bool:
+    """A NAMED (not global/unknown) different-supplier anchor — the scope for a cross-supplier read
+    guard. Mirrors the positional branch of _is_blind_cross_supplier_anchor."""
+    a_sup = (anchor.get("supplier_name") or "").lower().strip()
+    return bool(a_sup and a_sup not in ("__global__", "__unknown__")
+                and a_sup != (supplier_name or "").lower().strip())
+
+
+def _reads_disagree(a, b, val_type) -> bool:
+    """Do two independent reads of a field carry genuinely DIFFERENT values? For a DATE, compare
+    CALENDAR dates (parse_date) so a format-only difference (29/05/2026 vs 29-05-2026) is NOT a
+    disagreement and an unparseable read never counts; everything else is a case-insensitive string
+    compare. Shared by the authoritative-crop cross-check's inline AND value-below branches."""
+    a, b = (a or "").strip(), (b or "").strip()
+    if not a or not b:
+        return False
+    if val_type == "date":
+        from extraction.validator import parse_date
+        da, db = parse_date(a), parse_date(b)
+        return bool(da and db and da.date() != db.date())
+    return a.lower() != b.lower()
 
 
 def _is_blind_cross_supplier_anchor(field_key: str, anchor: dict,
