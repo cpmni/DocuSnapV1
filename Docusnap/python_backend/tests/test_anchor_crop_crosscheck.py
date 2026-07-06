@@ -40,8 +40,10 @@ class FakePage:
         return ("crop", box)
 
 
-# A ref validation broad enough for both the crop read and the full-page read.
-VPS = {"alphanumeric": [r"[A-Za-z0-9][A-Za-z0-9\-\/\.]{2,20}"]}
+# A ref validation broad enough for both the crop read and the full-page read; a date pattern
+# broad enough for numeric DD/MM/YYYY in either separator.
+VPS = {"alphanumeric": [r"[A-Za-z0-9][A-Za-z0-9\-\/\.]{2,20}"],
+       "date": [r"\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}"]}
 
 
 def _anchor(**ov):
@@ -54,7 +56,7 @@ def _anchor(**ov):
     return a
 
 
-def _run(anchor_row, *, crop_reads, inline_reads):
+def _run(anchor_row, *, crop_reads, inline_reads, field_key="invoice_number", validation="alphanumeric"):
     """Drive extract_with_anchors with the rigid crop stubbed to `crop_reads` and the
     full-page label harvest stubbed to return `inline_reads` beside a located label."""
     orig_crop, orig_loc, orig_filter = (anchor._crop_and_ocr,
@@ -69,12 +71,12 @@ def _run(anchor_row, *, crop_reads, inline_reads):
         res = anchor.extract_with_anchors(
             "stub page text", [anchor_row], "City Office NI", "Invoice",
             page_images=[FakePage()],
-            field_patterns={"invoice_number": {"validation": "alphanumeric"}},
+            field_patterns={field_key: {"validation": validation}},
             validation_patterns=VPS, format_lookup=None)
     finally:
         (anchor._crop_and_ocr, anchor._locate_for_relocation,
          anchor._filter_anchors) = orig_crop, orig_loc, orig_filter
-    return res.get("invoice_number") or {}
+    return res.get(field_key) or {}
 
 
 # 1. DISAGREEMENT: crop mangles 152574 -> 192074; the full page reads 152574.
@@ -107,6 +109,25 @@ print("\n4. no credible full-page read -> byte-identical (can't prove disagreeme
 r = _run(_anchor(), crop_reads="192074", inline_reads="")
 check("crop kept when the label can't be cross-read", r.get("value") == "192074")
 check("method stays anchor_crop", r.get("method") == "anchor_crop")
+
+# 5. DATE cross-check (the cross-supplier false-locate residual): the rigid crop reads a
+#    wrong-but-valid DATE at the absolute box; the label cross-read gets a DIFFERENT valid date
+#    -> flip to the full-page date + flag. (Extends the guard beyond ref to date fields.)
+print("\n5. DATE crop/full-page DISAGREE -> full-page date, routed to review")
+_da = _anchor(field_key="invoice_date", anchor_label="Invoice Date")
+r = _run(_da, crop_reads="01/06/2026", inline_reads="29/05/2026",
+         field_key="invoice_date", validation="date")
+check("method is the cross-check (crop did not win silently)", r.get("method") == "anchor_crop_crosscheck")
+check("value flipped to the full-page date (29/05)", "29" in (r.get("value") or "") and "05" in (r.get("value") or ""))
+check("routed to review (confidence capped)", (r.get("confidence") or 100) <= 70)
+
+# 6. DATE same calendar date, DIFFERENT separator -> NOT a disagreement (calendar-aware compare)
+#    -> crop kept, byte-identical. This is the guard that a mere format difference can't false-flip.
+print("\n6. DATE same date, different format -> byte-identical (calendar-aware compare)")
+r = _run(_anchor(field_key="invoice_date", anchor_label="Invoice Date"),
+         crop_reads="29/05/2026", inline_reads="29-05-2026",
+         field_key="invoice_date", validation="date")
+check("crop kept (format-only difference is not a disagreement)", r.get("method") == "anchor_crop")
 
 print(f"\n{'ALL PASS' if FAILS == 0 else str(FAILS) + ' FAILED'}")
 sys.exit(1 if FAILS else 0)

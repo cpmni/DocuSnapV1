@@ -678,11 +678,13 @@ same-supplier / global-scoped anchors are kept (a global positional's fixed-posi
 intended). Key insight: `located_ok` (does the taught label appear on THIS page?) IS the per-read
 "same layout?" signal, so no template-scoping was needed. Guarded by `test_identity_anchor_scope.py`;
 A/B `realdoc_regression` 738 docs, 0 regressions, M=0, no per-field accuracy drop.
-RESIDUAL (still OPEN, low-severity, unchanged from the identity guard): `located_ok` proves the caption
-is PRESENT, not that the value was read at it — a cross-supplier layout sharing the SAME caption at a
-DIFFERENT position ("false-locate") keeps a wrong ABSOLUTE value uncapped (a strong rigid read skips
-relocation). Closing it = elevate the label-relative offset read (`_place_from_located`) over the
-absolute read (the deferred "fixed-positioning-from-label" idea).
+RESIDUAL (mostly closed 2026-07-06): the false-locate — a cross-supplier layout sharing the SAME
+caption at a DIFFERENT position, so the rigid ABSOLUTE crop reads a wrong-but-valid value — is now
+cross-read against the label's REAL inline value for FREE-TEXT/CURRENCY (the LABEL LOCK) and for
+REF + DATE (the authoritative-crop cross-check, `anchor.py`, extended to dates with a calendar-aware
+compare); on disagreement the located read wins + flags for review. Remaining sliver (low-severity): a
+value printed BELOW its label (inline harvest empty) on a cross-supplier false-locate isn't cross-read
+— needs the geometric `_place_from_located` path (the deferred "fixed-positioning-from-label" idea).
 
 
 ### Resolved QA / audit history — see `docs/history.md`

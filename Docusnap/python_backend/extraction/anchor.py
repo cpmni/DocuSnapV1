@@ -414,7 +414,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
             except Exception:
                 pass  # dev/robustness: the guard must never break a read
 
-        # ── AUTHORITATIVE-CROP CROSS-CHECK (structured ref fields) ────────────
+        # ── AUTHORITATIVE-CROP CROSS-CHECK (structured ref + date fields) ─────
         # A taught (authoritative) rigid crop that reads a VALID-SHAPED ref number wins
         # OUTRIGHT at Tier-A (a structured value is regex-validated, never conf-capped), so
         # when the 2× upscale/sharpen crop OCR MANGLES a digit (City Office invoice
@@ -428,10 +428,15 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
         # whitelist can't fix this (both reads are digits) — the reusable guard is the cross-
         # read agreement, not a per-field recipe, so it covers every supplier/ref field.
         # Byte-identical when the reads agree, the label can't be cross-read, or the harvest
-        # isn't a credible DIFFERENT value. Ref-only + authoritative + a plain rigid
-        # anchor_crop (the free-text/currency label-lock above already covers those types;
-        # date stays pattern-trusted). Reuses line_cache — one locate per label per page.
-        if value and method == "anchor_crop" and _is_ref_like_key(field_key) \
+        # isn't a credible DIFFERENT value. Covers REF + DATE fields + authoritative + a plain
+        # rigid anchor_crop (the free-text/currency label-lock above already covers those types).
+        # DATE was pattern-trusted, but the cross-supplier FALSE-LOCATE residual breaks that: the
+        # taught caption also exists on ANOTHER supplier's layout at a DIFFERENT position, so the
+        # rigid ABSOLUTE crop reads a wrong-but-valid-shaped DATE (shape check can't catch it) while
+        # the label cross-read off the real caption gets the right date → DISAGREEMENT flips+flags.
+        # The date disagreement compares CALENDAR dates (parse_date), so a format-only difference
+        # (29/05/2026 vs 29-05-2026) is NOT a flip. Reuses line_cache — one locate per label per page.
+        if value and method == "anchor_crop" and (_is_ref_like_key(field_key) or val_type == "date") \
                 and anchor.get("last_authoritative_at") \
                 and (anchor.get("anchor_label") or "").strip() and page0 is not None:
             try:
@@ -447,14 +452,23 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                     _xc = _clean_text_fallback(_xiv, val_type, validation_patterns) \
                           or clean_crop_segment(_xiv, val_type)
                     if _xc and _crop_is_credible(_xc, val_type, validation_patterns, label) \
-                            and _qualify_against_format(_xc, field_key, format_lookup, text_field_keys) \
-                            and _xc.strip().lower() != value.strip().lower():
-                        # Two independent reads DISAGREE -> the crop can't win silently.
-                        if on_reject:
-                            on_reject(field_key, "anchor_crop", value, "crop_fullpage_disagree")
-                        value  = _xc.strip()                 # prefer the full-page native read
-                        method = "anchor_crop_crosscheck"
-                        ocr_conf, ocr_min = None, None
+                            and _qualify_against_format(_xc, field_key, format_lookup, text_field_keys):
+                        # DISAGREEMENT test. For a DATE compare CALENDAR dates (parse_date), not raw
+                        # strings, so a format-only difference (29/05/2026 vs 29-05-2026) is NOT a flip
+                        # and an unparseable read never flips; ref/text keep the string compare.
+                        if val_type == "date":
+                            from extraction.validator import parse_date
+                            _da, _db = parse_date(_xc), parse_date(value)
+                            _disagree = bool(_da and _db and _da.date() != _db.date())
+                        else:
+                            _disagree = _xc.strip().lower() != value.strip().lower()
+                        if _disagree:
+                            # Two independent reads DISAGREE -> the crop can't win silently.
+                            if on_reject:
+                                on_reject(field_key, "anchor_crop", value, "crop_fullpage_disagree")
+                            value  = _xc.strip()             # prefer the full-page native read
+                            method = "anchor_crop_crosscheck"
+                            ocr_conf, ocr_min = None, None
             except Exception:
                 pass  # robustness: a cross-check failure must never break the read
 
