@@ -229,7 +229,10 @@ function scopeTrust(db, supplier, slug, opts = {}) {
 function docTrustGate(db, docId, supplier, slug, opts = {}) {
   const doc = db.prepare('SELECT id, template_id, document_type_id FROM documents WHERE id = ?').get(docId);
   if (!doc) return { ok: false, reason: 'no-doc' };
-  if (opts.requireTemplate !== false && !doc.template_id) return { ok: false, reason: 'no-template' };
+  // opts.templateMatched / opts.extractions let a caller evaluate a REPROCESSED result (not the
+  // stored row) — the reliability harness uses this to ask "would THIS reprocessed read auto-file".
+  const templateMatched = (opts.templateMatched !== undefined) ? opts.templateMatched : !!doc.template_id;
+  if (opts.requireTemplate !== false && !templateMatched) return { ok: false, reason: 'no-template' };
 
   const sup  = _norm(supplier);
   const sl   = String(slug || '').toLowerCase().trim();
@@ -238,7 +241,7 @@ function docTrustGate(db, docId, supplier, slug, opts = {}) {
     db.prepare('SELECT key, type FROM fields WHERE document_type_id = ?').all(doc.document_type_id)
       .map(r => [r.key, r.type])
   );
-  const exs = db.prepare(
+  const exs = opts.extractions || db.prepare(
     'SELECT field_key, display_value, raw_value, validation_note FROM extractions WHERE document_id = ?'
   ).all(docId);
 
@@ -307,9 +310,11 @@ function isAutoFileEligible(db, doc, opts = {}) {
   // Flagged = a real validation note OR a pending Stage-4.5 correction candidate (corrected_to).
   // Unifying both auto-file sites on note-OR-corrected_to resolves the two-site divergence on the
   // SAFER side (the backend previously filed corrected_to docs that the renderer held).
-  const flagged = db.prepare(
-    "SELECT COUNT(*) c FROM extractions WHERE document_id = ? AND ((validation_note IS NOT NULL AND TRIM(validation_note) <> '') OR (corrected_to IS NOT NULL AND TRIM(corrected_to) <> ''))"
-  ).get(doc.id).c;
+  const flagged = opts.extractions
+    ? opts.extractions.filter(e => String(e.validation_note || '').trim() || String(e.corrected_to || '').trim()).length
+    : db.prepare(
+        "SELECT COUNT(*) c FROM extractions WHERE document_id = ? AND ((validation_note IS NOT NULL AND TRIM(validation_note) <> '') OR (corrected_to IS NOT NULL AND TRIM(corrected_to) <> ''))"
+      ).get(doc.id).c;
   if (flagged) return { eligible: false, floor, trusted: t.trusted, reason: 'flagged' };
   // The structural gate guards the graduation DISCOUNT — a sub-100 read filing at the 98 floor.
   // A FULL-100 read meets the original full-confidence bar, so it files gate-free (exactly as it

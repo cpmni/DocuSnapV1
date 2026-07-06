@@ -26,6 +26,7 @@ const TESS = 'C:/Program Files/Tesseract-OCR/tesseract.exe';
 const LIVE_DB = path.join(process.env.APPDATA, 'ScanFinder', 'docusnap.db');
 const learning = require(path.join(REPO, 'database', 'modules', 'learning.js'));
 const templates = require(path.join(REPO, 'database', 'modules', 'templates.js'));
+const trust = require(path.join(REPO, 'database', 'modules', 'trust.js'));
 let labelOverrides = null; try { labelOverrides = require(path.join(REPO, 'database', 'modules', 'label_overrides.js')); } catch {}
 
 const normSupplier = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -83,6 +84,7 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   const db = new Database(LIVE_DB, { readonly: true, fileMustExist: true });
   const nameToSlug = {}; for (const r of db.prepare('SELECT name, slug FROM document_types').all()) nameToSlug[r.name] = r.slug;
   const roles = {}; for (const r of db.prepare('SELECT slug, ref_field_key, date_field_key FROM document_types').all()) roles[r.slug] = { ref: r.ref_field_key, date: r.date_field_key };
+  const slugToId = {}; for (const r of db.prepare('SELECT id, slug FROM document_types').all()) slugToId[r.slug] = r.id;
   const conf = db.prepare(`SELECT d.id, d.supplier_name, d.reference_number, d.doc_date, d.stored_path, d.working_path, dt.slug type_slug
     FROM documents d LEFT JOIN document_types dt ON dt.id = d.document_type_id WHERE d.status = 'confirmed'`).all();
   const exByDoc = {};
@@ -110,6 +112,7 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   const acc = {}; for (const f of F) acc[f] = { ok: 0, n: 0 };
   const regress = [];
   let silentWrong = 0;
+  let autoFiledN = 0, silentAutoFile = 0; const autoFileMisses = [];
   for (const fname of files) {
     const m = res[fname]; const g = gt[fname]; if (!m) continue;
     const rk = (roles[g.type_slug] || {}).ref, dk = (roles[g.type_slug] || {}).date;
@@ -123,6 +126,23 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
       subtotal: g.subtotal != null ? normMoney(ef(m, 'subtotal')) === normMoney(g.subtotal) : null,
     };
     for (const f of F) { if (s[f] == null) continue; acc[f].n++; if (s[f]) acc[f].ok++; }
+    // #6 auto-file SOUNDNESS — would the REAL gate auto-file this reprocessed read, and is it wrong?
+    const detId = slugToId[detSlug];
+    let wouldFile = false;
+    if (detId != null && m.overall_confidence != null) {
+      const rex = Object.entries(m.extractions || {}).map(([k, e]) => ({
+        field_key: k,
+        display_value: (e && typeof e === 'object') ? e.value : e,
+        validation_note: (e && typeof e === 'object') ? e.validation_note : null,
+      }));
+      const fakeDoc = { id: g.id, supplier_name: m.supplier_name, document_type_id: detId, overall_confidence: m.overall_confidence };
+      try { wouldFile = trust.isAutoFileEligible(db, fakeDoc, { extractions: rex }).eligible; } catch {}
+    }
+    if (wouldFile) autoFiledN++;
+    if (wouldFile && F.some(f => s[f] === false)) {
+      silentAutoFile++;
+      autoFileMisses.push(`#${g.id} ${g.type_slug} would-auto-file but WRONG on: ${F.filter(f => s[f] === false).join(',')}`);
+    }
     // Regressions on the filing-critical fields; flag whether the wrong read carried a review note (SILENT = didn't).
     for (const [f, key, want] of [['supplier', 'supplier_name', g.supplier], ['ref', rk, g.ref], ['date', dk, g.date]]) {
       if (s[f] === false) {
@@ -149,9 +169,11 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   for (const f of F) out.push(`| ${f} | ${acc[f].ok} | ${acc[f].n} | ${pct(acc[f].ok, acc[f].n)} |`);
   out.push(`\n**Regressions (a confirmed value the pipeline no longer reproduces): ${regress.length}** — of which ${silentWrong} SILENT (wrong + no review flag).`);
   for (const r of regress.slice(0, 60)) out.push(`- ${r}`);
+  out.push(`\n**Auto-file soundness (#6): ${autoFiledN}/${files.length} reprocessed docs would auto-file; ${silentAutoFile} would auto-file a WRONG value (must be 0).**`);
+  for (const r of autoFileMisses.slice(0, 40)) out.push(`- ${r}`);
   const txt = out.join('\n');
   fs.writeFileSync(path.join(OUT, 'realdoc_regression.md'), txt);
   console.log(txt);
 
-  if (process.env.GATE === '1' && silentWrong > 0) process.exit(1);   // any SILENT real-doc regression fails the gate
+  if (process.env.GATE === '1' && (silentWrong > 0 || silentAutoFile > 0)) process.exit(1);   // any SILENT regression OR wrong auto-file fails the gate
 })();

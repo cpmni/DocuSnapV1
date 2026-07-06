@@ -383,6 +383,55 @@ function main() {
       trust.isAutoFileEligible(db, mk(98)).eligible === false);
   }
 
+  // ── 19. auto-file SOUNDNESS matrix (#6): refuse structurally-wrong reads at the discount ──
+  // The invariant: on the graduation-discount path (sub-100), a read that is structurally wrong
+  // must NOT auto-file. Plus liveness (a clean read DOES file, so the gate isn't vacuously safe),
+  // and an honest note on the residual the shape gate cannot catch.
+  section('19. auto-file soundness — refuse structurally-wrong reads');
+  {
+    const db = makeDb();
+    const tid = seedType(db);
+    seedCleanScope(db, tid, 10, 'Anconia Corp', i => ({ item: `M00${i}8` }));   // item learns a CODE shape
+    const cand = (extra, notes) => getDoc(db, seedDoc(db, tid, {
+      supplier: 'Anconia Corp', when: '2026-06-09T10:00:00Z', status: 'needs_review', template: 7, conf: 98,
+      fields: { supplier_name: 'Anconia Corp', invoice_date: '05-06-2026', invoice_number: 'INV9001', total: '250.00', item: 'M0018', ...extra },
+      notes: notes || {},
+    }));
+    const elig = d => trust.isAutoFileEligible(db, d).eligible;
+    check("clean 98% read → ELIGIBLE (liveness, not vacuous)",       elig(cand({})) === true);
+    check("untyped item reads a word ('Information') → REFUSED",     elig(cand({ item: 'Information' })) === false);
+    check("code field reads a word ('Information') → REFUSED",       elig(cand({ invoice_number: 'Information' })) === false);
+    check("out-of-range date (45/67/8901) → REFUSED",                elig(cand({ invoice_date: '45/67/8901' })) === false);
+    check("a flagged field (validation_note) → REFUSED",             elig(cand({}, { total: 'please verify' })) === false);
+    check("empty optional item → still ELIGIBLE (empty is safe)",    elig(cand({ item: '' })) === true);
+    // RESIDUAL (documented): a wrong-but-VALID-SHAPE value the shape gate cannot see — needs a
+    // cross-field / checksum / learned-consistency signal (e.g. #15 currency dp-consistency).
+    check("[residual] decimal-shifted total (123456) PASSES — shape gate can't catch it (see #15)", elig(cand({ total: '123456' })) === true);
+  }
+
+  // ── 20. result-eval (#6 harness enabler): judge a REPROCESSED result via opts.extractions ──
+  section('20. isAutoFileEligible via opts.extractions (reprocessed-result eval)');
+  {
+    const db = makeDb(); const tid = seedType(db); seedCleanScope(db, tid, 10, 'Anconia Corp');
+    const doc = getDoc(db, seedDoc(db, tid, { supplier: 'Anconia Corp', when: '2026-06-10T10:00:00Z', status: 'needs_review', template: 7, conf: 98,
+      fields: { supplier_name: 'Anconia Corp', invoice_date: '05-06-2026', invoice_number: 'INV1000', total: '250.00' } }));
+    const d98 = { ...doc, overall_confidence: 98 };
+    const cleanEx = [
+      { field_key: 'supplier_name', display_value: 'Anconia Corp' },
+      { field_key: 'invoice_date',  display_value: '05-06-2026' },
+      { field_key: 'invoice_number', display_value: 'INV1000' },
+      { field_key: 'total',         display_value: '250.00' },
+    ];
+    check("reprocessed clean result → eligible",
+      trust.isAutoFileEligible(db, d98, { extractions: cleanEx, templateMatched: true }).eligible === true);
+    check("reprocessed result with item='Information' → blocked",
+      trust.isAutoFileEligible(db, d98, { extractions: [...cleanEx, { field_key: 'item', display_value: 'Information' }], templateMatched: true }).eligible === false);
+    check("reprocessed result with a flagged field → blocked",
+      trust.isAutoFileEligible(db, d98, { extractions: cleanEx.map(e => e.field_key === 'total' ? { ...e, validation_note: 'verify' } : e), templateMatched: true }).eligible === false);
+    check("reprocessed result with no template match → blocked",
+      trust.isAutoFileEligible(db, d98, { extractions: cleanEx, templateMatched: false }).eligible === false);
+  }
+
   console.log(`\n${fails === 0 ? 'ALL PASS' : fails + ' FAILED'}`);
   process.exit(fails === 0 ? 0 : 1);
 }
