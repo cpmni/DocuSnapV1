@@ -4036,21 +4036,32 @@ window.docusnap.onDocTypesChanged?.(async () => {
   if (sel) sel.value = cur || sel.value;
 });
 
-// Auto-refresh queue when main process signals new docs were added
-window.docusnap.onReviewCountChanged(async (n) => {
-  // While File All Ready is running, each per-doc confirm broadcasts this event
-  // back to us; re-fetching here would clobber the loop's local queue mid-run and
-  // leave just-filed docs as ghosts in the list. fileAllReady does one clean
-  // refresh once it finishes, so it's safe to ignore these interim signals.
-  if (bulkFiling) return;
+// Auto-refresh the queue when the main process signals the review count changed. DEBOUNCED: as a
+// batch processes, each doc first lands as needs_review (a count-change) and — when it qualifies —
+// AUTO-FILES a moment later (another count-change), so an immediate re-render made those docs FLASH
+// into the queue and straight back out. Coalescing a burst into ONE refresh shortly after it settles
+// skips the transient states: by then an auto-filed doc is already confirmed (never in the queue), so
+// only genuine needs_review docs remain, and the "N auto-committed" tally ticks up ONCE instead of
+// the list churning per doc. A single isolated change still lands in well under a second.
+let _reviewRefreshTimer = null;
+async function _refreshQueueFromBroadcast() {
+  // File All Ready does its own clean refresh when it finishes; the auto-filed VIEW owns the list
+  // while active (a background count-change must not clobber it — see refreshAutoCommittedBar).
+  if (bulkFiling || _viewingAutoFiled) return;
   const prevId  = currentDoc?.id;
   queue         = await window.docusnap.getReviewQueue();
   deferredQueue = await window.docusnap.getDeferredQueue();
   updateTabCounts();
   if (activeTab === 'review')   renderQueueList();
   if (activeTab === 'deferred') renderDeferredList();
-  // Auto-select first doc if nothing is currently loaded
+  refreshAutoCommittedBar();   // tick the auto-committed tally up after the burst (fetches fresh)
   if (!prevId && queue.length > 0 && activeTab === 'review') selectDoc(queue[0]);
+}
+window.docusnap.onReviewCountChanged(() => {
+  // Ignore File All Ready's interim per-doc broadcasts — its own clean refresh follows the run.
+  if (bulkFiling) return;
+  if (_reviewRefreshTimer) clearTimeout(_reviewRefreshTimer);
+  _reviewRefreshTimer = setTimeout(() => { _reviewRefreshTimer = null; _refreshQueueFromBroadcast(); }, 800);
 });
 
 // ── Preview zoom / pan ────────────────────────────────────────────────────────

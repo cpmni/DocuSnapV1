@@ -62,6 +62,21 @@ function register(ctx) {
     } catch { /* leave undefined */ }
     // 4) Last backup timestamp (stamped by settings-backup-export).
     try { out.lastBackupAt = learning.getSetting(db, 'last_backup_at', null); } catch { /* none */ }
+    // 5) Suppliers now AUTO-FILING — distinct suppliers among the GRADUATED (supplier, doc-type)
+    //    scopes, i.e. the SAME roster the Settings "Suppliers handled automatically" list shows. The
+    //    dashboard's old "learned N suppliers" counted distinct suppliers in a recent CONFIRMED sample,
+    //    which diverged from that roster (the reported ambiguity); this is the truthful, roster-
+    //    consistent tally of who actually auto-commits.
+    try {
+      const trust = require('../../../database/modules/trust');
+      const scopes = trust.listGraduatedScopes(db) || [];
+      const sups = new Set();
+      for (const s of scopes) {
+        const n = String(s.supplier || s.supplier_name || '').trim().toLowerCase();
+        if (n) sups.add(n);
+      }
+      out.autoFilingSuppliers = { suppliers: sups.size, scopes: scopes.length };
+    } catch { /* leave undefined */ }
     return out;
   });
 

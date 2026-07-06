@@ -165,19 +165,27 @@ async function renderThroughput() {
   set('stat-month', c.month);
 }
 
-// "Getting smarter" — suppliers recognised + layouts (templates) learned.
+// "Getting smarter" — suppliers now AUTO-FILING + layouts (templates) learned.
 async function renderLearning(confirmed) {
   const body = document.getElementById('dash-learning-body');
   if (!body) return;
   let layouts = null;   // null = couldn't read (e.g. non-admin) → omit, don't show a wrong 0
   try { const t = await window.docusnap.getTemplates(); if (Array.isArray(t)) layouts = t.length; } catch {}
-  const suppliers = new Set();
-  for (const d of confirmed) { if (d.supplier_name) suppliers.add(d.supplier_name.trim().toLowerCase()); }
-  const ns = suppliers.size, capS = confirmed.length >= 200 ? '+' : '';
-  const sup = `<span class="n">${ns}${capS}</span> ${ns === 1 ? 'supplier' : 'suppliers'}`;
-  body.innerHTML = layouts == null
-    ? `Scan Finder has learned ${sup}.`
-    : `Scan Finder has learned ${sup} and <span class="n">${layouts}</span> ${layouts === 1 ? 'layout' : 'layouts'}.`;
+  // The truthful "suppliers auto-committing" tally comes from the graduation ROSTER (the same list
+  // Settings shows), NOT a distinct-count of a recent CONFIRMED sample — that sample count diverged
+  // from the roster (the reported ambiguity). Fall back to the sample only if the tally is missing.
+  let na = null;
+  try { const x = await window.docusnap.getDashboardExtra(); if (x && x.autoFilingSuppliers) na = x.autoFilingSuppliers.suppliers; } catch {}
+  if (na == null) {
+    const s = new Set();
+    for (const d of confirmed) { if (d.supplier_name) s.add(d.supplier_name.trim().toLowerCase()); }
+    na = s.size;
+  }
+  const lay = layouts == null ? ''
+    : ` · learned <span class="n">${layouts}</span> ${layouts === 1 ? 'layout' : 'layouts'}`;
+  body.innerHTML = na > 0
+    ? `<span class="n">${na}</span> ${na === 1 ? 'supplier' : 'suppliers'} now file automatically${lay}.`
+    : `No suppliers file automatically yet — they graduate after a run of clean confirmations${lay}.`;
 }
 
 // "Where your files go" — output folder + Open folder.
@@ -616,7 +624,7 @@ const HELP_TEXTS = {
   'pulse':         'How many documents you’ve filed today, this week and this month.',
   'dash-import':   'Your last source folder and a shortcut to the Import screen.',
   'auto-import':   'Watch a folder and import any scans dropped into it automatically (admin).',
-  'learning':      'How many suppliers and layouts Scan Finder has learned so far.',
+  'learning':      'How many suppliers now file automatically (the graduation roster), plus the layouts learned.',
   'output':        'Where your filed documents are saved. “Open folder” opens it in your file explorer.',
   'recent':        'The documents you filed most recently. “Search” opens the full search window.',
   'clear-recent':  'Hide the current recent-activity entries. New documents you file will still appear here.',
