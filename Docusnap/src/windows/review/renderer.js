@@ -3164,7 +3164,10 @@ document.getElementById('fields-scroll')?.addEventListener('focusin', (e) => {
   const inp = e.target.closest?.('.field-input');
   if (inp && inp.dataset.key) {
     lastFocusedFieldKey = inp.dataset.key;
-    if (isLhOpen()) loadLearningHistoryFor(inp.dataset.key);
+    // (Re)load only when focusing a DIFFERENT field. Re-focusing the field the modal already shows
+    // — e.g. clicking into it to fix a doc opened from that value's source-doc list — must NOT
+    // reload, or it wipes the expanded doc list the operator is working through.
+    if (isLhOpen() && (!_lhField || _lhField.key !== inp.dataset.key)) loadLearningHistoryFor(inp.dataset.key);
   }
 });
 
@@ -3407,7 +3410,9 @@ document.getElementById('lh-body').addEventListener('click', async (e) => {
   const openBtn = e.target.closest('.lh-open-doc');
   if (openBtn) {
     const docId = parseInt(openBtn.dataset.docid, 10);
-    if (docId) { closeLearningHistory(); _navigateToDoc(docId); }
+    // Keep the (non-blocking) learning-history modal OPEN so the operator can work down the source
+    // -doc list — open a doc, fix it, then click the next one — without reopening the list each time.
+    if (docId) _navigateToDoc(docId);
     return;
   }
   const edit = e.target.closest('.lh-edit');
