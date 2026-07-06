@@ -227,6 +227,32 @@ function register(ctx) {
     try { learning.setSetting(getDb(), 'recent_auto_filed', JSON.stringify({ ids: [], at: Date.now() })); } catch {}
     return { ok: true };
   });
+
+  // Batch auto-file eligibility for the renderer Reprocess-All path — the SAME predicate the
+  // backend import path uses (scope graduation floor + structural safety gate), decided
+  // server-side with getFieldFormats scanned ONCE. Keeps the two auto-file sites from drifting.
+  ipcMain.handle('get-auto-file-eligible', (_e, docIds) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const trust = require('../../../database/modules/trust');
+    const rows = (Array.isArray(docIds) ? docIds : []).map(id => documents.getById(db, id)).filter(Boolean);
+    return { ids: trust.autoFileEligibleIds(db, rows) };
+  });
+
+  // Graduation roster + per-supplier opt-out (Slice 5 UX — the "Suppliers handled automatically"
+  // controls). Admin/edit gated like the rest of the review admin surface.
+  ipcMain.handle('get-graduated-suppliers', () => {
+    requireRole('admin', 'edit');
+    const trust = require('../../../database/modules/trust');
+    return { scopes: trust.listGraduatedScopes(getDb()) };
+  });
+  ipcMain.handle('set-graduation-optout', (_e, p) => {
+    requireRole('admin', 'edit');
+    if (!p || !p.supplier || !p.slug) return { ok: false };
+    const trust = require('../../../database/modules/trust');
+    trust.setScopeOptOut(getDb(), p.supplier, p.slug, !!p.optedOut);
+    return { ok: true };
+  });
   ipcMain.handle('rename-field-value', (_e, scope) => {
     requireRole('admin', 'edit');
     const db = getDb();

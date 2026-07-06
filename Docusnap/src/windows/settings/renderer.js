@@ -12,7 +12,7 @@ document.querySelectorAll('.tab').forEach(btn => {
     // Learning Recovery + Keyword Label Overrides live under the Learning tab; the
     // Audit log lives under the Audit tab; the Search client API lives under the
     // Search client tab — load each lazily on show.
-    if (btn.dataset.tab === 'learning') loadMemoryInventory();
+    if (btn.dataset.tab === 'learning') { loadMemoryInventory(); loadGraduationRoster(); }
     if (btn.dataset.tab === 'repair') repairInit();
     if (btn.dataset.tab === 'audit' && !auditState.loaded) loadAudit();
     if (btn.dataset.tab === 'searchclient') initClientApiSection();
@@ -2926,6 +2926,49 @@ async function populateLearningDocTypes() {
     opt.value = dt.slug;
     opt.textContent = dt.name;
     select.appendChild(opt);
+  }
+}
+
+// "Suppliers handled automatically" — the graduation master switch + roster + per-supplier
+// opt-outs (Slice 5 UX). Anti-black-box: the user can always SEE which suppliers auto-file and
+// turn any (or all) off. Reads the shared trust predicate's roster via the /learning tab IPCs.
+async function loadGraduationRoster() {
+  const master = document.getElementById('grad-master');
+  const roster = document.getElementById('grad-roster');
+  if (!master || !roster) return;
+  try { master.checked = (await api.getSetting('supplier_graduation_enabled')) !== 'false'; } catch {}
+  master.onchange = async () => {
+    try { await api.setSetting('supplier_graduation_enabled', master.checked ? 'true' : 'false'); } catch {}
+    loadGraduationRoster();
+  };
+  if (!master.checked) { roster.innerHTML = '<em>Auto-filing from learned suppliers is off.</em>'; return; }
+  let scopes = [];
+  try { scopes = ((await api.getGraduatedSuppliers()) || {}).scopes || []; } catch {}
+  if (!scopes.length) {
+    roster.innerHTML = '<em>No suppliers have graduated yet — Scan Finder is still learning. Keep confirming and they’ll appear here.</em>';
+    return;
+  }
+  roster.innerHTML = '';
+  for (const s of scopes) {
+    const row = document.createElement('label');
+    row.className = 'row-flex';
+    row.style.cssText = 'gap:8px; align-items:center; padding:6px 0; border-bottom:1px solid var(--border); cursor:pointer;';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = !s.opted_out;   // checked = auto-filing ON for this supplier
+    cb.onchange = async () => {
+      try { await api.setGraduationOptout({ supplier: s.supplier, slug: s.slug, optedOut: !cb.checked }); } catch {}
+    };
+    const txt = document.createElement('span');
+    const strong = document.createElement('strong'); strong.textContent = s.supplier;
+    txt.appendChild(strong);
+    txt.appendChild(document.createTextNode(` · ${s.doctype || s.slug} `));
+    const muted = document.createElement('span');
+    muted.style.color = 'var(--muted)';
+    muted.textContent = `(${s.confirmed_count} confirmed)`;
+    txt.appendChild(muted);
+    row.appendChild(cb); row.appendChild(txt);
+    roster.appendChild(row);
   }
 }
 

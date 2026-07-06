@@ -344,7 +344,8 @@ async function refreshAutoCommittedBar() {
   try { res = (await window.docusnap.getRecentAutoFiled?.()) || res; } catch {}
   _autoFiledDocs = res.docs || [];
   if (_autoFiledDocs.length) {
-    bar.innerHTML = `<b>✓ ${_autoFiledDocs.length}</b> document${_autoFiledDocs.length === 1 ? '' : 's'} auto-committed on the last pass — `
+    bar.innerHTML = `<span class="acb-dismiss" title="Dismiss this notice" aria-label="Dismiss">×</span>`
+      + `<b>✓ ${_autoFiledDocs.length}</b> document${_autoFiledDocs.length === 1 ? '' : 's'} auto-committed on the last pass — `
       + `<span class="acb-back">click here to review them</span>`;
     bar.style.display = 'block';
   } else {
@@ -352,7 +353,17 @@ async function refreshAutoCommittedBar() {
   }
 }
 
-document.getElementById('auto-committed-bar')?.addEventListener('click', async () => {
+document.getElementById('auto-committed-bar')?.addEventListener('click', async (e) => {
+  // "×" dismiss: clear the recent-auto-filed batch so this notice stays gone until the
+  // NEXT auto-file pass repopulates it (clearRecentAutoFiled resets the rolling setting).
+  if (e.target.closest('.acb-dismiss')) {
+    e.stopPropagation();
+    try { await window.docusnap.clearRecentAutoFiled?.(); } catch {}
+    _autoFiledDocs = [];
+    const bar = document.getElementById('auto-committed-bar');
+    if (bar) bar.style.display = 'none';
+    return;
+  }
   if (_viewingAutoFiled) { await exitAutoFiledView(); return; }
   if (!_autoFiledDocs.length) return;
   _viewingAutoFiled = true;
@@ -2768,19 +2779,24 @@ async function fileAllReady() {
 }
 document.getElementById('btn-file-all-review')?.addEventListener('click', fileAllReady);
 
-// After Reprocess All, auto-commit any document that came back at 100% confidence (all
-// required fields present + high confidence, never a flagged doc) — the SAME setting + gate
-// as the import-batch auto-file, reusing the bulk confirm path. Best-effort per doc (a
-// failure just leaves it queued). Skips entirely when the setting is off or a manual
-// File-All is already running.
+// After Reprocess All, auto-commit any document the SHARED server-side predicate deems
+// eligible (a trusted supplier's clean docs at the graduation floor, or a full-confidence doc)
+// — the SAME predicate the import-batch auto-file uses, so the two paths can't diverge.
+// Best-effort per doc (a failure just leaves it queued). Skips when the setting is off or a
+// manual File-All is already running.
 async function autoCommitFullConfidence() {
   try {
     if (bulkFiling) return;
     if ((await window.docusnap.getSetting('auto_file_full_confidence')) === 'false') return;
-    // Configurable threshold (default 100). The type + un-flagged (!review_flag_count) gates
-    // are the safety: only a fully-typed doc with NO field flagged for review auto-files.
-    const thr = parseInt((await window.docusnap.getSetting('auto_file_threshold')) || '100', 10) || 100;
-    const ready = (queue || []).filter(d => (d.overall_confidence || 0) >= thr && d.type_slug && !d.review_flag_count);
+    // Eligibility is decided SERVER-SIDE by the shared predicate (scope graduation floor +
+    // structural safety gate), the SAME one the backend import path uses — so the two auto-file
+    // sites can't diverge. One IPC, getFieldFormats scanned once for the whole queue.
+    let eligibleIds = new Set();
+    try {
+      const res = await window.docusnap.getAutoFileEligible((queue || []).map(d => d.id));
+      eligibleIds = new Set((res && res.ids) || []);
+    } catch { return; }
+    const ready = (queue || []).filter(d => eligibleIds.has(d.id));
     if (!ready.length) return;
     bulkFiling = true;
     let filed = 0;
@@ -2801,7 +2817,7 @@ async function autoCommitFullConfidence() {
       deferredQueue = await window.docusnap.getDeferredQueue();
       updateTabCounts();
       renderQueueList();
-      showToast(`Auto-filed ${filed} document${filed > 1 ? 's' : ''} that scored 100% — no review needed.`, 'ok');
+      showToast(`Auto-filed ${filed} document${filed > 1 ? 's' : ''} — no review needed.`, 'ok');
     }
   } catch (e) { console.warn('auto-commit 100% failed:', e.message); }
 }

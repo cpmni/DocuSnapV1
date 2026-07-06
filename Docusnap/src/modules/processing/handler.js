@@ -2066,13 +2066,17 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
 function _maybeAutoFile(db, msg, folderPath, notifyMainWindow, logger) {
   try {
     const learning = require('../../../database/modules/learning');
+    const trust    = require('../../../database/modules/trust');
     if (learning.getSetting(db, 'auto_file_full_confidence', 'true') === 'false') return;
-    // Configurable threshold (default 100 = full confidence only). Below 100, a doc auto-files
-    // only when it ALSO passed clean (needs_review false → fully typed, no field flagged) — the
-    // flag/needs-review gate is the real safety, the threshold just says "confident enough".
-    const thr = parseInt(learning.getSetting(db, 'auto_file_threshold', '100'), 10) || 100;
-    if (!msg.db_id || (msg.overall_confidence || 0) < thr) return;
-    if (thr < 100 && msg.needs_review) return;
+    // Cheap pre-filter off the file_done msg; the AUTHORITATIVE decision (scope graduation floor
+    // + structural gate) is in _autoFileDoc via trust.isAutoFileEligible. The lowest an effective
+    // floor can be is min(userThreshold, graduation 98) — below that a doc can never auto-file.
+    const userThr = parseInt(learning.getSetting(db, 'auto_file_threshold', '100'), 10) || 100;
+    const preFloor = Math.min(userThr, trust.TRUSTED_FLOOR);
+    if (!msg.db_id || (msg.overall_confidence || 0) < preFloor) return;
+    // Any sub-100 auto-file (graduation or a lowered slider) must be a CLEAN doc — never one
+    // that processing flagged for review.
+    if (preFloor < 100 && msg.needs_review) return;
     setImmediate(() => {
       _autoFileDoc(db, msg.db_id, folderPath, notifyMainWindow, logger)
         .catch(e => { try { logger?.warn?.(`auto-file ${msg.db_id}: ${e.message}`); } catch {} });
@@ -2085,11 +2089,14 @@ async function _autoFileDoc(db, docId, folderPath, notifyMainWindow, logger) {
   const learning  = require('../../../database/modules/learning');
   const doctypes  = require('../../../database/modules/document_types');
   const filing    = require('../filing/handler');
+  const trust     = require('../../../database/modules/trust');
   const doc = documents.getById(db, docId);
-  if (!doc || doc.status !== 'needs_review' || !doc.document_type_id || doc.overall_confidence !== 100) return;
-  // 100% implies all required fields present + high confidence; also refuse a flagged field.
-  const flagged = db.prepare('SELECT COUNT(*) c FROM extractions WHERE document_id = ? AND validation_note IS NOT NULL').get(docId).c;
-  if (flagged) return;
+  if (!doc || doc.status !== 'needs_review') return;   // status / claim guard
+  // Authoritative auto-file decision via the SHARED predicate: the scope graduation floor (a
+  // trusted supplier files at 98, else the user's auto_file_threshold), the flagged-field
+  // refusal, and — for any sub-100 file — the structural safety gate. Re-checked here against
+  // the DB (not the stale file_done msg) so a doc a human touched in the gap can't slip through.
+  if (!trust.isAutoFileEligible(db, doc).eligible) return;
   const dtRow  = db.prepare('SELECT slug FROM document_types WHERE id = ?').get(doc.document_type_id);
   const dtInfo = dtRow && dtRow.slug ? doctypes.getWithFields(db, dtRow.slug) : null;
   if (!dtInfo) return;
