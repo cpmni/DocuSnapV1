@@ -676,6 +676,16 @@
           <label class="fieldlbl"><span>Reference</span><input id="f-reference" placeholder="INV-…" /></label>
           <label class="fieldlbl"><span>From</span><input id="f-from" type="date" /></label>
           <label class="fieldlbl"><span>To</span><input id="f-to" type="date" /></label>
+          <label class="fieldlbl"><span>Total</span>
+            <span style="display:flex; gap:4px; align-items:center;">
+              <select id="f-total-op" style="width:auto;">
+                <option value="eq">=</option>
+                <option value="gt">&gt;</option>
+                <option value="lt">&lt;</option>
+              </select>
+              <input id="f-total" inputmode="decimal" placeholder="amount" style="flex:1;" />
+            </span>
+          </label>
           <label id="unc-wrap" class="hidden" style="font-size:12px;color:var(--muted);display:flex;gap:6px;align-items:center">
             <input id="f-unc" type="checkbox" style="width:auto" /> include uncommitted</label>
         </div>

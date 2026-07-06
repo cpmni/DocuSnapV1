@@ -446,7 +446,7 @@ function deleteDoc(db, id) {
 }
 
 function search(db, { company, reference, dateFrom, dateTo,
-                      docType, status = 'confirmed', fullText, limit = 200 }) {
+                      docType, status = 'confirmed', fullText, total, totalOp, limit = 200 }) {
   let sql = `
     SELECT d.*, dt.name as type_name, dt.slug as type_slug
     FROM documents d
@@ -506,6 +506,22 @@ function search(db, { company, reference, dateFrom, dateTo,
                  AND REPLACE(COALESCE(c.corrected_value,''), ',', '') LIKE @fullText)
     )`;
     params.fullText = `%${fullText.trim().replace(/,/g, '')}%`;
+  }
+  // TOTAL amount filter — Equals / Above / Below a value. The total lives in extractions (the
+  // currency total field), stored as a display string ("£1,046.16"), so parse it numerically in
+  // SQL (strip currency symbols / commas / spaces → CAST AS REAL) and compare against the common
+  // total field keys. Equals uses a small tolerance (float compare); a non-numeric/empty value is
+  // excluded by the digit guard.
+  const _total = (total === 0 || total) ? parseFloat(String(total).replace(/[^0-9.\-]/g, '')) : NaN;
+  if (!isNaN(_total)) {
+    const op  = totalOp === 'gt' ? '>' : totalOp === 'lt' ? '<' : '=';
+    const CLEAN = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(e.display_value, e.raw_value, ''),',',''),'£',''),'$',''),'€',''),' ','')";
+    const NUM = `CAST(${CLEAN} AS REAL)`;
+    const cmp = op === '=' ? `ABS(${NUM} - @total) < 0.005` : `${NUM} ${op} @total`;
+    sql += ` AND EXISTS (SELECT 1 FROM extractions e WHERE e.document_id = d.id
+      AND e.field_key IN ('total_amount','total','grand_total')
+      AND ${CLEAN} GLOB '*[0-9]*' AND ${cmp})`;
+    params.total = _total;
   }
 
   sql += ` ORDER BY d.confirmed_at DESC, d.processed_at DESC LIMIT @limit`;

@@ -48,8 +48,8 @@ function searchDocuments({ db, params, role }, deps = {}) {
   const onlyExisting = (rows) => documents.filterExisting(rows, existsFn);
 
   const { company, reference, dateFrom, dateTo,
-          docType, includeUncommitted, fullText } = params || {};
-  const common = { company, reference, dateFrom, dateTo, docType, fullText };
+          docType, includeUncommitted, fullText, total, totalOp } = params || {};
+  const common = { company, reference, dateFrom, dateTo, docType, fullText, total, totalOp };
 
   // Confirmed documents — what "search/view documents" means for every role.
   const confirmed = onlyExisting(documents.search(db, { ...common, status: 'confirmed' }));

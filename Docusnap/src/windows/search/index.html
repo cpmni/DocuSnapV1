@@ -40,9 +40,7 @@
     }
     .search-input:focus { border-color: var(--accent); }
     .search-input::placeholder { color: var(--muted); }
-    #inp-company   { width: 180px; }
-    #inp-reference { width: 120px; }
-    #inp-fulltext  { width: 180px; }
+    #inp-fulltext  { width: 320px; }
     #inp-date-from, #inp-date-to { width: 120px; }
     #inp-type {
       background: var(--bg); border: 1px solid var(--border2); border-radius: 5px;
@@ -67,8 +65,9 @@
     #btn-recycle.active { background: var(--accent-bg); border-color: var(--accent); color: var(--accent2); }
     #btn-empty-bin { color: var(--err); border-color: rgba(214,69,69,.4); }
     #btn-empty-bin:hover { background: var(--err-bg); border-color: var(--err); }
-    body.mailbox-mode #inp-company, body.mailbox-mode #inp-reference, body.mailbox-mode #inp-fulltext,
-    body.mailbox-mode #inp-date-from, body.mailbox-mode #inp-date-to, body.mailbox-mode #inp-type,
+    body.mailbox-mode #inp-fulltext,
+    body.mailbox-mode #inp-date-from, body.mailbox-mode #inp-date-to,
+    body.mailbox-mode #inp-total, body.mailbox-mode #inp-total-op, body.mailbox-mode #inp-type,
     body.mailbox-mode .uncommitted-toggle, body.mailbox-mode #btn-search,
     body.mailbox-mode #search-bar > span { display: none !important; }
 
@@ -272,13 +271,17 @@
   </div>
 
   <div id="search-bar">
-    <input class="search-input" id="inp-company" data-help-key="company"   type="text" placeholder="Document Issuer…">
-    <input class="search-input" id="inp-reference" data-help-key="reference" type="text" placeholder="Reference…">
     <input class="search-input" id="inp-fulltext"  type="text" placeholder="Search anything…" title="Searches everything on the document — text, references, amounts, dates and codes. Numbers ignore commas (1137 finds 1,137)." data-help-key="fulltext">
     <span style="font-size:11px; color:var(--muted); white-space:nowrap;">From</span>
     <input class="search-input" id="inp-date-from" data-help-key="date-from" type="date" title="From date">
     <span style="font-size:11px; color:var(--muted);">to</span>
     <input class="search-input" id="inp-date-to"   type="date" title="To date">
+    <select id="inp-total-op" class="search-input" title="Total amount filter" style="width:auto;" data-help-key="total-op">
+      <option value="eq">Total =</option>
+      <option value="gt">Total &gt;</option>
+      <option value="lt">Total &lt;</option>
+    </select>
+    <input class="search-input" id="inp-total" type="text" inputmode="decimal" placeholder="amount" title="Filter by total amount (uses the operator on the left)" style="width:90px;" data-help-key="total">
     <select id="inp-type" data-help-key="type-filter">
       <option value="">All types</option>
     </select>

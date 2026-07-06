@@ -921,6 +921,8 @@ async function runSearch() {
     dateFrom:  $('f-from').value || undefined,
     dateTo:    $('f-to').value || undefined,
     fullText:  $('f-text').value.trim() || undefined,
+    total:     $('f-total').value.trim() || undefined,
+    totalOp:   $('f-total-op').value || undefined,
     includeUncommitted: $('f-unc').checked,
   };
   const r = await api.search(params);

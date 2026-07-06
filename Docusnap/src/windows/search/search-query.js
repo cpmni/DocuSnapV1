@@ -5,12 +5,12 @@ let _timer = null;
 
 function getParams() {
   return {
-    company:            document.getElementById('inp-company').value.trim()   || undefined,
-    reference:          document.getElementById('inp-reference').value.trim() || undefined,
     fullText:           document.getElementById('inp-fulltext').value.trim()  || undefined,
     dateFrom:           document.getElementById('inp-date-from').value        || undefined,
     dateTo:             document.getElementById('inp-date-to').value          || undefined,
     docType:            document.getElementById('inp-type').value             || undefined,
+    total:              document.getElementById('inp-total').value.trim()     || undefined,
+    totalOp:            document.getElementById('inp-total-op').value         || undefined,
     includeUncommitted: document.getElementById('chk-uncommitted').checked,
   };
 }
@@ -43,13 +43,14 @@ async function doSearch() {
 }
 
 function initInputs() {
-  ['inp-company', 'inp-reference', 'inp-fulltext', 'inp-date-from', 'inp-date-to'].forEach(id => {
+  ['inp-fulltext', 'inp-total', 'inp-date-from', 'inp-date-to'].forEach(id => {
     document.getElementById(id).addEventListener('input', () => {
       clearTimeout(_timer);
       _timer = setTimeout(doSearch, 300);
     });
   });
   document.getElementById('inp-type').addEventListener('change', doSearch);
+  document.getElementById('inp-total-op').addEventListener('change', doSearch);
   document.getElementById('chk-uncommitted').addEventListener('change', doSearch);
   document.getElementById('btn-search').addEventListener('click', () => {
     if (window.SearchState && window.SearchState.binMode) { _setBin(false); }   // Search exits the bin
