@@ -10,6 +10,7 @@
 const { app, BrowserWindow, ipcMain, screen, shell, Tray, Menu, Notification } = require('electron');
 const path = require('path');
 const fs   = require('fs');
+const { repairKeyboardFocus } = require('./lib/focusRepair');
 
 // ── App-data directory (brand rename: DocuSnap → ScanFinder) ──────────────────
 // On-disk data lives under userData (SQLite DB, users, cached license tokens,
@@ -710,19 +711,11 @@ app.whenReady().then(() => {
       // Focus the owning WINDOW first, then the webContents — on Windows, after a native
       // dialog closes wc.focus() alone can leave keyboard focus unrouted until the window
       // itself is re-focused. Both are no-ops when already focused.
+      // Widget-level focus repair (blurWebView + wc.focus) — NEVER a window blur/focus. See
+      // src/lib/focusRepair.js for the full rationale (the win.blur()/win.focus() title-bar-flash
+      // storm eric traced). Extracted so it's unit-testable off the app lifecycle.
       const win = BrowserWindow.fromWebContents(wc);
-      if (win && !win.isDestroyed()) {
-        // The window keeps BrowserWindow focus, but returning from a native window.confirm()
-        // (Review uses native confirm() for digit/issuer/delete/reprocess prompts) drops
-        // Blink's FRAME page-focus. wc.focus() is widget-level and can't restore it — the
-        // input stays document.activeElement (Backspace routes) but there is no caret and
-        // typing is refused. A real blur→focus activation CYCLE re-runs Chromium's focus
-        // controller and restores page-focus. Gated on the renderer reporting page focus is
-        // ACTUALLY lost, so a healthy click never flickers. (eric diagnosis)
-        if (info && info.pageHasFocus === false) { win.blur(); win.focus(); }
-        else win.focus();
-      }
-      wc.focus();
+      repairKeyboardFocus(win, wc, info);
     } catch {}
   });
 
