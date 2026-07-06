@@ -73,6 +73,25 @@
   .ob-chip .ob-chip-lbl{color:var(--muted);margin-left:6px;font-family:'IBM Plex Sans',sans-serif}
   input.pathbox{outline:none}
   input.pathbox:focus{border-color:var(--accent)}
+
+  /* Step 2 (filing layout) — grouped panel + real section-header hierarchy */
+  .filing{display:flex;flex-direction:column;background:var(--surface2);
+    border:1px solid var(--border);border-radius:var(--r,12px);padding:18px 18px 16px;margin-bottom:24px}
+  .grp{display:flex;flex-direction:column;gap:5px}
+  .grp + .grp{margin-top:18px}
+  .ghead{font-size:14px;font-weight:600;color:var(--text)}
+  .ghelp{font-size:12px;color:var(--muted);margin:-3px 0 1px}
+  .ghelp b{color:var(--text);font-weight:600}
+  /* Pill field stays white (--surface) so it pops on the grey panel; chips + preview go
+     outline-white inside the panel so they don't disappear into it (the contrast gotcha). */
+  .filing .pe-chip{background:var(--surface)}
+  .pv-divider{height:1px;background:var(--border);margin:17px 0 13px}
+  .pv-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:7px}
+  .ob-preview{background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-sm,9px);
+    padding:11px 13px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--text);
+    line-height:1.6;word-break:break-word}
+  .region{margin-bottom:22px}
+  .foot-note{font-size:12px;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -129,25 +148,32 @@
     <!-- 2 Output organization -->
     <section class="panel" data-step="2">
       <h2>How should filed documents be organised?</h2>
-      <p class="sub"><b>Most people leave this as-is.</b> By default, documents are filed by
-        <b>Company → Year → Month</b>, named <b>Type · Date · Reference</b> — the boxes below are already
-        set up that way. Only change them if you want a different layout (advanced). You can change it any
-        time in Settings.</p>
+      <p class="sub">Most people leave this as-is — files are grouped by <b>Issuer › Year › Month</b> and
+        named <b>Type · Date · Reference</b>. Adjust the blocks below if you'd like a different layout.</p>
 
-      <div class="field">
-        <label class="lbl">Folder layout <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(optional — click a block to add it, or type your own; use / for a new folder level)</span></label>
-        <input type="text" id="ob-folder-pattern" class="pathbox" style="width:100%;font-family:'IBM Plex Mono',monospace" spellcheck="false">
-        <div id="ob-folder-tokens" class="ob-tokens"></div>
+      <div class="filing">
+        <div class="grp">
+          <div class="ghead">Folders</div>
+          <div class="ghelp">Grouped inside your output folder. Type <b>/</b> for a new level.</div>
+          <div id="ob-folder-pattern"></div>
+          <div id="ob-folder-tokens" class="ob-tokens"></div>
+        </div>
+
+        <div class="grp">
+          <div class="ghead">File name</div>
+          <div class="ghelp">How each saved file is named.</div>
+          <div id="ob-filename-pattern"></div>
+          <div id="ob-filename-tokens" class="ob-tokens"></div>
+        </div>
+
+        <div class="pv-divider"></div>
+        <div class="pv-label">Preview</div>
+        <div id="ob-output-preview" class="ob-preview">…</div>
       </div>
 
-      <div class="field">
-        <label class="lbl">File name</label>
-        <input type="text" id="ob-filename-pattern" class="pathbox" style="width:100%;font-family:'IBM Plex Mono',monospace" spellcheck="false">
-        <div id="ob-filename-tokens" class="ob-tokens"></div>
-      </div>
-
-      <div class="field">
-        <label class="lbl">Your region — how dates and amounts are written on your documents</label>
+      <div class="grp region">
+        <div class="ghead">Regional format</div>
+        <div class="ghelp">How dates and amounts are written on the documents you scan — this helps Scan Finder read them correctly.</div>
         <div style="display:flex;gap:12px;flex-wrap:wrap">
           <select id="ob-date-order" class="pathbox" style="flex:1;min-width:220px">
             <option value="dmy">Dates: Day/Month/Year — 03/04/2026 = 3 Apr (UK/EU)</option>
@@ -164,10 +190,7 @@
         </div>
       </div>
 
-      <div class="field">
-        <label class="lbl">Preview</label>
-        <div id="ob-output-preview" class="pathbox" style="white-space:normal;line-height:1.5">…</div>
-      </div>
+      <p class="foot-note">You can change all of this later in Settings.</p>
     </section>
 
     <!-- 3 Theme -->
@@ -248,6 +271,7 @@
     <button class="btn primary" id="nextBtn">Next</button>
   </div>
 
+  <script src="../shared/pattern-editor.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

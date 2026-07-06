@@ -6,6 +6,13 @@
         content="default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'self';" />
   <title>ScanFinder — Search</title>
   <style>
+    /* Interface, not a document: click-drag on the app chrome must not select text.
+       Inputs / textareas / true contenteditable / .selectable opt back in. */
+    html, body { -webkit-user-select:none; user-select:none; }
+    input, textarea, [contenteditable="true"], [contenteditable=""], .selectable {
+      -webkit-user-select:text; user-select:text;
+    }
+
     :root {
       /* Light theme (default). */
       --bg:#f4f6fa; --surface:#ffffff; --surface2:#eef1f7; --border:#e4e7ef; --border2:#d2d8e4;

@@ -476,7 +476,7 @@
           own text. Use <span class="field-key">/</span> to make a new subfolder level.
         </p>
         <div class="row-flex">
-          <input type="text" id="folder-pattern-input" class="path-input" placeholder="{supplier}/{year}/{month}" spellcheck="false">
+          <div id="folder-pattern-input" style="flex:1;min-width:0"></div>
           <button class="btn" id="btn-reset-folder-pattern" data-help-key="reset-folder">Reset to Default</button>
         </div>
         <div id="folder-token-list" class="token-list" style="margin-top:10px;"></div>
@@ -490,7 +490,7 @@
           automatically.
         </p>
         <div class="row-flex">
-          <input type="text" id="filename-pattern-input" class="path-input" placeholder="{docType}.{date}.{ref}" spellcheck="false">
+          <div id="filename-pattern-input" style="flex:1;min-width:0"></div>
           <button class="btn" id="btn-reset-filename-pattern" data-help-key="reset-filename">Reset to Default</button>
         </div>
         <div id="filename-token-list" class="token-list" style="margin-top:10px;"></div>
@@ -1649,6 +1649,7 @@
 <script src="../shared/helpmode.js"></script>
 <script src="../shared/doctype-editor.js"></script>
 <script src="../shared/thumbs.js"></script>
+<script src="../shared/pattern-editor.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

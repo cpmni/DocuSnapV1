@@ -539,45 +539,48 @@ const outputPathPreview    = document.getElementById('output-path-preview');
 let _defaultFolderPattern   = '{supplier}/{year}/{month}';
 let _defaultFilenamePattern = '{docType}.{date}.{ref}';
 let _outPreviewDebounce = null;
+let folderPatternEditor = null, filenamePatternEditor = null;   // shared/pattern-editor.js
 
 async function loadOutputStructure() {
-  if (!folderPatternInput) return;
+  if (!folderPatternInput || typeof window.createPatternEditor !== 'function') return;
   const info = await api.getOutputStructureInfo();
   _defaultFolderPattern   = info.defaultFolder   || _defaultFolderPattern;
   _defaultFilenamePattern = info.defaultFilename || _defaultFilenamePattern;
 
-  renderOutputTokenList('folder-token-list',   info.tokens, folderPatternInput);
-  renderOutputTokenList('filename-token-list', info.tokens, filenamePatternInput);
+  // Swap the raw "{token}/..." text inputs for pill editors (shared/pattern-editor.js) -
+  // each known token becomes a friendly block; the STORED value stays the same pattern
+  // string, so preview + filing are unchanged.
+  if (!folderPatternEditor) folderPatternEditor = window.createPatternEditor(folderPatternInput,
+    { tokens: info.tokens, placeholder: 'Click a block below, or type - use / for a new folder level',
+      onChange: () => { saveOutputSetting(folderPatternInput); scheduleOutputPreview(); } });
+  if (!filenamePatternEditor) filenamePatternEditor = window.createPatternEditor(filenamePatternInput,
+    { tokens: info.tokens, placeholder: 'Click a block below, or type',
+      onChange: () => { saveOutputSetting(filenamePatternInput); scheduleOutputPreview(); } });
 
-  folderPatternInput.value   = (await api.getSetting('output_folder_pattern')) || _defaultFolderPattern;
-  filenamePatternInput.value = (await api.getSetting('filename_pattern'))       || _defaultFilenamePattern;
+  renderOutputTokenList('folder-token-list',   info.tokens, folderPatternEditor);
+  renderOutputTokenList('filename-token-list', info.tokens, filenamePatternEditor);
+
+  folderPatternEditor.setValue((await api.getSetting('output_folder_pattern')) || _defaultFolderPattern);
+  filenamePatternEditor.setValue((await api.getSetting('filename_pattern'))     || _defaultFilenamePattern);
   updateOutputPreview();
 }
 loadOutputStructure();
 
-function renderOutputTokenList(listId, tokens, targetInput) {
+function renderOutputTokenList(listId, tokens, editor) {
   const list = document.getElementById(listId);
   if (!list) return;
   list.innerHTML = '';
   for (const t of (tokens || [])) {
     const chip = document.createElement('span');
-    chip.className = 'token-chip';
+    chip.className = 'pe-chip';
     chip.title = `Insert ${t.token} — example: ${t.example}`;
-    chip.innerHTML = `${escHtml(t.token)}<span class="token-label">${escHtml(t.label)}</span>`;
-    chip.addEventListener('click', () => insertOutputToken(targetInput, t.token));
+    chip.textContent = t.short || t.label;
+    chip.addEventListener('mousedown', (e) => e.preventDefault());   // keep the caret in the field
+    chip.addEventListener('click', () => editor.insertToken(t.token));
     list.appendChild(chip);
   }
 }
-
-function insertOutputToken(input, token) {
-  const start = input.selectionStart ?? input.value.length;
-  const end   = input.selectionEnd   ?? input.value.length;
-  input.value = input.value.slice(0, start) + token + input.value.slice(end);
-  input.focus();
-  input.selectionStart = input.selectionEnd = start + token.length;
-  saveOutputSetting(input);
-  scheduleOutputPreview();
-}
+// (insertOutputToken removed - palette chips now call editor.insertToken, pattern-editor.js.)
 
 function scheduleOutputPreview() {
   clearTimeout(_outPreviewDebounce);
@@ -585,8 +588,9 @@ function scheduleOutputPreview() {
 }
 
 async function updateOutputPreview() {
+  if (!folderPatternEditor || !filenamePatternEditor) return;
   const root   = (await api.getSetting('output_folder')) || 'Output folder';
-  const result = await api.previewOutputPath(folderPatternInput.value.trim(), filenamePatternInput.value.trim());
+  const result = await api.previewOutputPath(folderPatternEditor.getValue().trim(), filenamePatternEditor.getValue().trim());
   outputPathPreview.textContent = [root, ...(result.segments || []), result.filename].join('  ›  ');
   if (result.warning) {
     filenamePatternMsg.textContent   = `⚠ ${result.warning}`;
@@ -598,23 +602,19 @@ async function updateOutputPreview() {
 }
 
 async function saveOutputSetting(input) {
-  if (input === folderPatternInput)   await api.setSetting('output_folder_pattern', folderPatternInput.value.trim());
-  if (input === filenamePatternInput) await api.setSetting('filename_pattern',      filenamePatternInput.value.trim());
+  if (input === folderPatternInput)   await api.setSetting('output_folder_pattern', folderPatternEditor.getValue().trim());
+  if (input === filenamePatternInput) await api.setSetting('filename_pattern',      filenamePatternEditor.getValue().trim());
 }
 
-for (const input of [folderPatternInput, filenamePatternInput]) {
-  if (!input) continue;
-  input.addEventListener('input',  scheduleOutputPreview);
-  input.addEventListener('change', () => saveOutputSetting(input));
-}
+// Save + live preview are driven by each editor's onChange (wired in loadOutputStructure).
 
 document.getElementById('btn-reset-folder-pattern')?.addEventListener('click', async () => {
-  folderPatternInput.value = _defaultFolderPattern;
+  folderPatternEditor?.setValue(_defaultFolderPattern);
   await saveOutputSetting(folderPatternInput);
   updateOutputPreview();
 });
 document.getElementById('btn-reset-filename-pattern')?.addEventListener('click', async () => {
-  filenamePatternInput.value = _defaultFilenamePattern;
+  filenamePatternEditor?.setValue(_defaultFilenamePattern);
   await saveOutputSetting(filenamePatternInput);
   updateOutputPreview();
 });

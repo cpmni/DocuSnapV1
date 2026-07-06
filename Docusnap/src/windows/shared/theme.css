@@ -25,6 +25,19 @@
 @font-face { font-family:'IBM Plex Mono'; font-style:normal; font-weight:500; font-display:swap; src:url('fonts/IBMPlexMono-500.woff2') format('woff2'); }
 @font-face { font-family:'IBM Plex Mono'; font-style:normal; font-weight:600; font-display:swap; src:url('fonts/IBMPlexMono-600.woff2') format('woff2'); }
 
+/* Interface, not a document --------------------------------------------------
+ * Click-drag on the app chrome must NOT select text (this is a desktop UI, not a
+ * web page). Editable/selectable surfaces opt back in: inputs, textareas, true
+ * contenteditable fields, and anything explicitly marked .selectable. Loaded by
+ * every window, so this one rule covers the whole core app. */
+html, body { -webkit-user-select: none; user-select: none; }
+input, textarea,
+[contenteditable="true"], [contenteditable=""],
+.selectable {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 :root {
   /* ── Light (default) — the client palette ── */
   --bg:        #f4f6fa;

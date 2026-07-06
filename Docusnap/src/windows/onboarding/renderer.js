@@ -14,6 +14,7 @@ const state = { step: 0, outputFolder: '', outputSaved: false,
                 copyEnabled: false, copyFolder: '', diag: false,
                 folderPattern: '{supplier}/{year}/{month}', filenamePattern: '{docType}.{date}.{ref}' };
 let _obTokens = [];
+let folderEditor = null, filenameEditor = null;   // shared/pattern-editor.js pill editors
 
 const $  = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
@@ -79,55 +80,54 @@ async function loadCurrent() {
 }
 
 // ── Output organization (folder + file-name builders) ────────────────────────────
-function obRenderTokens(listId, input) {
+function obRenderTokens(listId, editor) {
   const list = document.getElementById(listId);
   if (!list) return;
   list.innerHTML = '';
   for (const t of _obTokens) {
     const chip = document.createElement('span');
-    chip.className = 'ob-chip';
-    chip.title = `Insert ${t.token}`;
-    chip.innerHTML = `${t.token}<span class="ob-chip-lbl">${t.label}</span>`;
-    chip.addEventListener('click', () => obInsert(input, t.token));
+    chip.className = 'pe-chip';                     // a friendly "block" — no {token} code on screen
+    chip.title = `Add ${t.label}`;
+    chip.textContent = t.short || t.label;
+    chip.addEventListener('mousedown', (e) => e.preventDefault());   // keep the caret in the field
+    chip.addEventListener('click', () => editor.insertToken(t.token));
     list.appendChild(chip);
   }
 }
-function obInsert(input, token) {
-  const s = input.selectionStart ?? input.value.length;
-  const e = input.selectionEnd   ?? input.value.length;
-  input.value = input.value.slice(0, s) + token + input.value.slice(e);
-  input.focus();
-  input.selectionStart = input.selectionEnd = s + token.length;
-  obSaveAndPreview();
-}
 let _obPreviewDebounce = null;
 async function obUpdatePreview() {
-  const fEl = $('#ob-folder-pattern'), nEl = $('#ob-filename-pattern'), pEl = $('#ob-output-preview');
-  if (!fEl || !nEl || !pEl) return;
+  const pEl = $('#ob-output-preview');
+  if (!pEl || !folderEditor || !filenameEditor) return;
   try {
     const root = (await D.getSetting('output_folder')) || state.outputFolder || 'Output folder';
-    const r = await D.previewOutputPath(fEl.value.trim(), nEl.value.trim());
+    const r = await D.previewOutputPath(folderEditor.getValue().trim(), filenameEditor.getValue().trim());
     pEl.textContent = [root, ...(r.segments || []), r.filename].join('  ›  ');
   } catch {}
 }
 async function obSaveAndPreview() {
-  const fEl = $('#ob-folder-pattern'), nEl = $('#ob-filename-pattern');
-  state.folderPattern   = (fEl.value || '').trim();
-  state.filenamePattern = (nEl.value || '').trim();
+  if (!folderEditor || !filenameEditor) return;
+  state.folderPattern   = (folderEditor.getValue() || '').trim();
+  state.filenamePattern = (filenameEditor.getValue() || '').trim();
   try { await D.setSetting('output_folder_pattern', state.folderPattern); } catch {}
   try { await D.setSetting('filename_pattern', state.filenamePattern); } catch {}
   clearTimeout(_obPreviewDebounce);
   _obPreviewDebounce = setTimeout(obUpdatePreview, 250);
 }
+// Swap the two raw "{token}/…" text inputs for pill editors (shared/pattern-editor.js):
+// each known token renders as a friendly block; separators/custom text stay typed. The
+// STORED value is still the same pattern string, so preview + filing are unchanged.
 function setupOrganization() {
   const fEl = $('#ob-folder-pattern'), nEl = $('#ob-filename-pattern');
   if (!fEl || !nEl) return;
-  fEl.value = state.folderPattern;
-  nEl.value = state.filenamePattern;
-  obRenderTokens('ob-folder-tokens', fEl);
-  obRenderTokens('ob-filename-tokens', nEl);
-  fEl.addEventListener('input', obSaveAndPreview);
-  nEl.addEventListener('input', obSaveAndPreview);
+  if (typeof window.createPatternEditor !== 'function') return;   // widget missing → keep saved defaults
+  if (!folderEditor) folderEditor = window.createPatternEditor(fEl,
+    { tokens: _obTokens, onChange: obSaveAndPreview, placeholder: 'Click a block below, or type — use / for a new folder level' });
+  if (!filenameEditor) filenameEditor = window.createPatternEditor(nEl,
+    { tokens: _obTokens, onChange: obSaveAndPreview, placeholder: 'Click a block below, or type' });
+  folderEditor.setValue(state.folderPattern);
+  filenameEditor.setValue(state.filenamePattern);
+  obRenderTokens('ob-folder-tokens', folderEditor);
+  obRenderTokens('ob-filename-tokens', filenameEditor);
   obUpdatePreview();
 }
 

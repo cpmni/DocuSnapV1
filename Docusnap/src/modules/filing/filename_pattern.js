@@ -15,14 +15,17 @@
 
 const DEFAULT_PATTERN = '{docType}.{date}.{ref}';
 
+// `short` = the compact caption shown ON the pill block in the visual pattern
+// editor (shared/pattern-editor.js); `label` is the fuller description kept for the
+// palette tooltip. Additive display metadata only — validation keys off `token`.
 const SUPPORTED_TOKENS = [
-  { token: '{docType}',      label: 'Document type',                            example: 'Invoice' },
-  { token: '{date}',         label: 'Document date (DD-MM-YYYY)',               example: '15-12-2025' },
-  { token: '{ref}',          label: 'Reference number',                         example: 'INV-2025-0142' },
-  { token: '{supplier}',     label: 'Document Issuer',                          example: 'Acme-Supplies-Ltd' },
-  { token: '{year}',         label: 'Document year',                            example: '2025' },
-  { token: '{month}',        label: 'Document month name',                      example: 'December' },
-  { token: '{originalName}', label: 'Original scanned filename (no extension)', example: 'scan0042' },
+  { token: '{docType}',      label: 'Document type',                            short: 'Type',      example: 'Invoice' },
+  { token: '{date}',         label: 'Document date (DD-MM-YYYY)',               short: 'Date',      example: '15-12-2025' },
+  { token: '{ref}',          label: 'Reference number',                         short: 'Reference', example: 'INV-2025-0142' },
+  { token: '{supplier}',     label: 'Document Issuer',                          short: 'Issuer',    example: 'Acme-Supplies-Ltd' },
+  { token: '{year}',         label: 'Document year',                            short: 'Year',      example: '2025' },
+  { token: '{month}',        label: 'Document month name',                      short: 'Month',     example: 'December' },
+  { token: '{originalName}', label: 'Original scanned filename (no extension)', short: 'Filename',  example: 'scan0042' },
 ];
 
 // The curated, meaningful blocks offered in the builder UI (Settings + first-run
