@@ -807,14 +807,15 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                         page_text_lines, line_cache=line_cache))
             if not located_ok:
                 conf = min(conf, 50)   # blind rigid read (label absent/unfound) — untrustworthy
-                # A BLIND cross-supplier IDENTITY crop is a blind guess of WHO the doc is (a
-                # "Contoso / Document Issuer" teach landing on a Profile invoice → "PROFLE
-                # CONSTRUCTION"). Drop it so identity resolves from THIS doc's own page; a LOCATED
-                # identity read (kept above) still corrects a wrong template supplier guess.
-                if _is_blind_cross_supplier_identity(field_key, anchor, supplier_name, located_ok,
-                                                     identity_labels):
+                # A BLIND read from a NAMED different supplier's anchor is a positional guess learned
+                # on another layout — for identity a guess of WHO the doc is ("Contoso / Document
+                # Issuer" → "PROFLE CONSTRUCTION"), for a positional field the #1 invoice_number bleed
+                # (supplier A's top-right anchor locking supplier B's top-left region). Drop it so the
+                # field resolves from THIS doc's own page; a LOCATED read (kept above) still wins.
+                if _is_blind_cross_supplier_anchor(field_key, anchor, supplier_name, located_ok,
+                                                   identity_labels):
                     if on_reject:
-                        on_reject(field_key, method, value, "blind_cross_supplier_identity")
+                        on_reject(field_key, method, value, "blind_cross_supplier_anchor")
                     continue
             results[field_key] = {
                 "value":      value.strip(),
@@ -2026,39 +2027,60 @@ def _filter_anchors(anchors: list[dict],
 
 # The IDENTITY fields — their value + on-page position vary BY supplier, so a supplier-
 # specific identity anchor is trusted on a DIFFERENT supplier's doc only when it reads that
-# doc's OWN labelled value (see _is_blind_cross_supplier_identity). Mirrors
+# doc's OWN labelled value (see _is_blind_cross_supplier_anchor). Mirrors
 # engine._IDENTITY_FIELD_KEYS / COMPANY_KEYS in JS.
 _IDENTITY_FIELD_KEYS = frozenset({"supplier_name", "customer_name"})
 
 
-def _is_blind_cross_supplier_identity(field_key: str, anchor: dict,
-                                      supplier_name: str | None, located_ok: bool,
-                                      identity_labels = None) -> bool:
-    """True when an identity (supplier_name/customer_name) anchor resolved as a BLIND read (its
-    label absent on this page → not located) that is a blind guess of WHO the doc is. Two cases:
-      1. CROSS-SUPPLIER — the anchor is scoped to a DIFFERENT supplier: a "Contoso / Document
-         Issuer" teach landing on a Profile invoice crop-garbles the issuer to "PROFLE CONSTRUCTION".
-      2. DISPLAY-NAME LABEL — the anchor's captured label IS the identity field's own display name
-         (`identity_labels`, e.g. "Document Issuer"), a teaching artifact never printed on the page.
-    A LOCATED identity read (its label found here → it read the value beside the doc's OWN caption)
-    is NOT blind and is kept, so a supplier's own labelled anchor still CORRECTS a wrong template
-    supplier guess. A POSITIONAL field's anchor (invoice_number) is never subject to this — the
-    doc-type IS its layout. Pure/unit-tested."""
-    if located_ok or field_key not in _IDENTITY_FIELD_KEYS:
+def _is_blind_cross_supplier_anchor(field_key: str, anchor: dict,
+                                    supplier_name: str | None, located_ok: bool,
+                                    identity_labels = None) -> bool:
+    """True when an anchor resolved as a BLIND read (its label absent on this page → not located)
+    that is a positional guess learned on a DIFFERENT supplier's layout, so its absolute-box read is
+    untrustworthy here and is dropped (the field falls through to keyword/registration/hint/empty).
+
+    Generalises the former identity-only guard (2026-07) to fix the #1 cross-supplier POSITIONAL
+    bleed: an authoritative invoice_number anchor taught for supplier A (pinned top-right) is admitted
+    onto supplier B's same-type doc by _anchor_matches ("doc-type IS the layout"), ranked first by
+    _filter_anchors' auth_bucket, and — until now — blind-read at A's absolute position, locking B's
+    top-left region. A NAMED different-supplier BLIND read is now dropped for ANY field.
+
+    Kept (returns False):
+      * a LOCATED read (label found here → same layout → value read beside THIS doc's own caption) —
+        for EVERY field, so an authoritative anchor whose label is genuinely present still wins (the
+        "authoritative wins" invariant), and a supplier's OWN labelled identity anchor still CORRECTS
+        a wrong template supplier guess (Greenfield-over-Acme; test_supplier_identity_stability);
+      * a SAME-supplier anchor, and — for a POSITIONAL field — a GLOBAL/UNKNOWN-scoped anchor, whose
+        fixed-position blind read is its INTENDED use (identity keeps its stricter scope check).
+    Extra IDENTITY-only drop: a captured label that IS the identity field's own DISPLAY name
+    ("Document Issuer", in `identity_labels`) is a teaching artifact never printed on the page — a
+    pure positional sweep — dropped regardless of scope. (Only the BLIND path reaches here; a fuzzy
+    inline "located" read off that label is deliberately NOT dropped — removing it net-regresses the
+    corpus, #119 — left to a template/logo supplier-precedence fix.)
+
+    RESIDUAL (not closed here, unchanged from the identity guard): `located_ok` proves the caption is
+    PRESENT, not that the value was read at it. A strongly-credible rigid ABSOLUTE read skips
+    relocation (see extract_with_anchors), so a cross-supplier layout that shares the SAME caption at
+    a DIFFERENT position ("false-locate") keeps a wrong absolute value uncapped — closing that needs
+    the label-relative offset read elevated over the absolute read, a separate slice. Pure/unit-tested."""
+    if located_ok:
         return False
-    # A captured label that IS the identity field's own DISPLAY name ("Document Issuer") is a
-    # teaching artifact — that name is never a printed page caption, so the anchor never had a real
-    # label to locate against; its blind rigid read is a pure positional sweep. Drop it regardless
-    # of supplier scope (global/same/cross). NOTE: this only reaches the BLIND (not-located) path;
-    # the same anchor resolving via a fuzzy inline "location" is deliberately NOT dropped here —
-    # removing it net-regresses the real corpus (it reads some docs' identity correctly), so #119's
-    # inline-harvest mis-read is left to a template/logo supplier-precedence fix, not this guard.
-    if identity_labels:
+    is_identity = field_key in _IDENTITY_FIELD_KEYS
+    if is_identity and identity_labels:
         a_lbl = (anchor.get("anchor_label") or "").strip().lower()
         if a_lbl and a_lbl in identity_labels:
             return True
-    a_sup = (anchor.get("supplier_name") or "").lower().strip()
-    return bool(a_sup and a_sup != (supplier_name or "").lower().strip())
+    a_sup  = (anchor.get("supplier_name") or "").lower().strip()
+    s_name = (supplier_name or "").lower().strip()
+    if is_identity:
+        # Unchanged identity scope: a NAMED (or literal-sentinel) different scope drops; an
+        # empty-supplier ('') anchor stays KEEP (falsy) — a fixed-position issuer teach.
+        return bool(a_sup and a_sup != s_name)
+    # POSITIONAL / structured field: only a NAMED different supplier's blind read is a wrong-layout
+    # sweep. A global/unknown-scoped anchor's fixed-position blind read is its intended use → keep.
+    if a_sup in ("__global__", "__unknown__", ""):
+        return False
+    return a_sup != s_name
 
 
 def _anchor_matches(anchor: dict, supplier_name: str | None,
@@ -2097,7 +2119,7 @@ def _anchor_matches(anchor: dict, supplier_name: str | None,
     # labelled value (a LOCATED read). A BLIND cross-supplier identity crop — its label absent
     # here, e.g. a "Contoso / Document Issuer" teach landing on a Profile invoice and crop-
     # garbling it to "PROFLE CONSTRUCTION" — is dropped at the READ stage (see the located gate
-    # in extract_with_anchors + _is_blind_cross_supplier_identity), NOT here: filtering it out
+    # in extract_with_anchors + _is_blind_cross_supplier_anchor), NOT here: filtering it out
     # pre-read would also block a supplier's OWN labelled anchor from CORRECTING a wrong template
     # supplier guess (Greenfield reading "Supplier: Greenfield" over an "Acme" template match —
     # test_supplier_identity_stability), which is a legitimate identity re-resolution.

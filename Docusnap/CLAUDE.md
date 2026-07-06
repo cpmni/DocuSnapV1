@@ -178,7 +178,8 @@ docusnap2/
 │       ├── documents.js                 # document CRUD, search(), getReviewQueue()
 │       ├── learning.js                 # hints, anchors, logos, getSetting/setSetting
 │       ├── templates.js                # template CRUD, field mappings, sample-document linkage
-│       └── licensing.js                # client license_tokens cache (cacheToken/getActiveToken/clearSeatToken)
+│       ├── licensing.js                # client license_tokens cache (cacheToken/getActiveToken/clearSeatToken)
+│       └── trust.js                    # supplier GRADUATION / safe eventual auto-file: a (supplier,doc-type) scope earns a 98 auto-file floor after W=10 CLEAN confirmations. isAutoFileEligible = the ONE predicate BOTH auto-file sites share (backend _autoFileDoc/_maybeAutoFile + renderer via get-auto-file-eligible), gated per-doc by a STRUCTURAL safety gate that applies ONLY when overall_confidence<100 (a full-100 read files gate-free — else legit variable free-text fields block 100% docs). scopeTrust/docTrustGate/classifyLearnedShape/validDate/validIban(mod-97)/validVatGb; STRICT_TYPES excludes 'alphanumeric'; master switch supplier_graduation_enabled + per-scope graduation_optout; listGraduatedScopes feeds the Settings roster. Guarded by database/modules/test_scope_trust.js + the real-doc soundness gate in stress_test/realdoc_regression.js (M=0 = no would-auto-file-a-wrong-value)
 ├── python_backend/
 │   ├── process_docs.py                  # CLI entry point, streams JSON to stdout
 │   ├── extraction/
@@ -663,6 +664,25 @@ license-state(gate)                    # pushed to the license window with the b
 ---
 
 ## Known bugs (fix these first)
+
+### FIXED (residual noted) — cross-supplier POSITIONAL anchor bleed (2026-07-06)
+A ⊕-taught AUTHORITATIVE anchor for a POSITIONAL field (e.g. `invoice_number`) was applied ACROSS
+suppliers: `_anchor_matches` admits it on doc-type match, `_filter_anchors` ranks authoritative teaches
+ahead of supplier-priority, and the read-stage guard was IDENTITY-ONLY — so Anconia's `INVOICE NUMBER`
+anchor (pinned top-right) blind-read the top-left "Invoice To" on a City Office invoice (LATENT: masked
+by the multi-method net until keyword doesn't fire). FIX (007-reviewed): the read-stage guard
+`_is_blind_cross_supplier_anchor` (renamed from `_is_blind_cross_supplier_identity`, anchor.py) now
+drops a BLIND (`not located_ok`) read from a NAMED different supplier for ANY field — a LOCATED read
+(taught label found here → same layout) is still kept for every field (authoritative-wins holds), and
+same-supplier / global-scoped anchors are kept (a global positional's fixed-position blind read is
+intended). Key insight: `located_ok` (does the taught label appear on THIS page?) IS the per-read
+"same layout?" signal, so no template-scoping was needed. Guarded by `test_identity_anchor_scope.py`;
+A/B `realdoc_regression` 738 docs, 0 regressions, M=0, no per-field accuracy drop.
+RESIDUAL (still OPEN, low-severity, unchanged from the identity guard): `located_ok` proves the caption
+is PRESENT, not that the value was read at it — a cross-supplier layout sharing the SAME caption at a
+DIFFERENT position ("false-locate") keeps a wrong ABSOLUTE value uncapped (a strong rigid read skips
+relocation). Closing it = elevate the label-relative offset read (`_place_from_located`) over the
+absolute read (the deferred "fixed-positioning-from-label" idea).
 
 
 ### Resolved QA / audit history — see `docs/history.md`
