@@ -359,6 +359,30 @@ function main() {
     check("docTrustGate passes a valid IBAN",     trust.docTrustGate(db, mkDoc('GB82WEST12345698765432'), 'Acme', 'payment').ok === true);
   }
 
+  // ── 18. a full-100 read files gate-free even in a graduated scope (the D:\ worksheet case) ──
+  section('18. 100% read skips the structural gate; the discount still gets it');
+  {
+    const db = makeDb();
+    const tid = seedType(db, [['customer', 'text', 0]]);   // optional, legitimately-variable free-text
+    const names = ['Beaumont Care Homes Ltd - Croagh', 'Beaumont - Comber', 'Beaumont - Clandeboye',
+                   'ACME Inc', 'Globex Ltd', 'Initech', 'Umbrella Co', 'Stark Ind', 'Wayne LLC', 'Oscorp'];
+    seedCleanScope(db, tid, 10, 'Document Solutions', i => ({ customer: names[i - 1] }));
+    const mk = (conf) => getDoc(db, seedDoc(db, tid, {
+      supplier: 'Document Solutions', when: '2026-06-08T10:00:00Z', status: 'needs_review', template: 7, conf,
+      fields: { supplier_name: 'Document Solutions', invoice_date: '05-06-2026', invoice_number: 'INV7001', total: '250.00',
+                customer: 'New Customer Ltd - Belfast' },
+    }));
+    const d100 = mk(100);
+    check("scope graduated (variable customer is OPTIONAL, so it doesn't block graduation)",
+      trust.scopeTrust(db, 'Document Solutions', 'invoice').trusted === true);
+    check("docTrustGate DOES block the variable free-text customer",
+      trust.docTrustGate(db, d100.id, 'Document Solutions', 'invoice').reason === 'unverifiable-value:customer');
+    check("100% doc → ELIGIBLE (full read files gate-free, as pre-graduation)",
+      trust.isAutoFileEligible(db, d100).eligible === true);
+    check("98% doc → NOT eligible (discount → gate applies → customer blocks)",
+      trust.isAutoFileEligible(db, mk(98)).eligible === false);
+  }
+
   console.log(`\n${fails === 0 ? 'ALL PASS' : fails + ' FAILED'}`);
   process.exit(fails === 0 ? 0 : 1);
 }

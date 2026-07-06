@@ -311,7 +311,13 @@ function isAutoFileEligible(db, doc, opts = {}) {
     "SELECT COUNT(*) c FROM extractions WHERE document_id = ? AND ((validation_note IS NOT NULL AND TRIM(validation_note) <> '') OR (corrected_to IS NOT NULL AND TRIM(corrected_to) <> ''))"
   ).get(doc.id).c;
   if (flagged) return { eligible: false, floor, trusted: t.trusted, reason: 'flagged' };
-  if (floor < 100) {
+  // The structural gate guards the graduation DISCOUNT — a sub-100 read filing at the 98 floor.
+  // A FULL-100 read meets the original full-confidence bar, so it files gate-free (exactly as it
+  // did before the scope graduated). Otherwise graduation would perversely make a 100% doc LESS
+  // likely to auto-file than an ungraduated one: a legitimately-variable free-text field (e.g. a
+  // per-doc `customer` name) can never match a non-freetext learned shape, so the gate would
+  // block an otherwise-perfect 100% doc. Gate the discount, trust the full read.
+  if ((doc.overall_confidence || 0) < 100) {
     const g = docTrustGate(db, doc.id, doc.supplier_name, slug, opts);
     if (!g.ok) return { eligible: false, floor, trusted: t.trusted, reason: g.reason };
   }
@@ -353,7 +359,7 @@ function listGraduatedScopes(db) {
   for (const r of rows) {
     const t = scopeTrust(db, r.supplier, r.slug, { formats });
     if (t.trusted) out.push({
-      supplier: r.supplier, slug: r.slug, doctype: r.doctype,
+      supplier: r.supplier, slug: r.slug, doctype: r.doctype, key: _scopeKey(r.supplier, r.slug),
       confirmed_count: t.confirmedCount, opted_out: optOut.includes(_scopeKey(r.supplier, r.slug)),
     });
   }

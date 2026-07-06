@@ -742,6 +742,7 @@ window.docusnap.onDocAutoFiled?.((info) => {
   if (info && info.docId != null) markRowFiled(info.docId);   // flip its results row to "Filed"
   try { updateAttention(); } catch {}
   try { if (typeof refreshDashboardIfHome === 'function') refreshDashboardIfHome(); } catch {}
+  try { checkGraduationAnnounce(); } catch {}
 });
 
 // A doc auto-filed after its results row was added (the row first showed "Needs review"): flip
@@ -765,12 +766,62 @@ function showAutoFiledBanner(n) {
   const b = document.getElementById('autofiled-banner');
   if (!b) return;
   b.innerHTML = `<span class="af-ico">✓</span>`
-    + `<span><b>${n} document${n > 1 ? 's' : ''}</b> auto-filed at 100% confidence — no review needed.</span>`
+    + `<span><b>${n} document${n > 1 ? 's' : ''}</b> auto-filed — no review needed.</span>`
     + `<a href="#" class="af-link" id="af-review-link">Click here to review them</a>`;
   b.style.display = 'flex';
   const link = b.querySelector('#af-review-link');
   if (link) link.onclick = (e) => { e.preventDefault(); window.docusnap.openSearchWindow?.(); };
 }
+
+// ── Graduation announce (#10) ────────────────────────────────────────────────
+// When a (supplier, doc-type) FIRST graduates to auto-filing, tell the user once — so it's never
+// a silent behaviour change (bob's "announced, never silent"). Diffs the live roster against a
+// remembered set (graduation_announced); on the FIRST ever run it seeds the set silently, so only
+// FUTURE graduations announce (existing ones aren't dumped as if they just happened).
+const _gaEsc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+async function checkGraduationAnnounce() {
+  try {
+    if ((await window.docusnap.getSetting('supplier_graduation_enabled')) === 'false') return;
+    const res = await window.docusnap.getGraduatedSuppliers?.();
+    const scopes = ((res && res.scopes) || []).filter(s => s.key && !s.opted_out);
+    const raw = await window.docusnap.getSetting('graduation_announced');
+    if (raw == null || raw === '') {   // never announced → seed silently, announce only future
+      await window.docusnap.setSetting('graduation_announced', JSON.stringify(scopes.map(s => s.key)));
+      return;
+    }
+    let announced = [];
+    try { const p = JSON.parse(raw); if (Array.isArray(p)) announced = p; } catch {}
+    const set = new Set(announced);
+    const fresh = scopes.filter(s => !set.has(s.key));
+    if (!fresh.length) return;
+    showGradAnnounce(fresh);
+    for (const s of fresh) set.add(s.key);
+    await window.docusnap.setSetting('graduation_announced', JSON.stringify([...set]));
+  } catch { /* best-effort */ }
+}
+
+function showGradAnnounce(scopes) {
+  const b = document.getElementById('grad-announce');
+  if (!b) return;
+  const names = [...new Set(scopes.map(s => s.supplier))];
+  const who = names.length === 1
+    ? `<b>${_gaEsc(names[0])}</b>`
+    : `<b>${_gaEsc(names[0])}</b> and ${names.length - 1} other supplier${names.length > 2 ? 's' : ''}`;
+  b.innerHTML = `<span class="af-ico">★</span>`
+    + `<span>Scan Finder has learned ${who} — it will now file their clean documents automatically. `
+    + `You can still open any filed doc, or turn this off per supplier in Settings.</span>`
+    + `<a href="#" class="af-link" id="grad-manage">Manage</a>`
+    + `<span class="grad-dismiss" id="grad-dismiss" title="Dismiss">×</span>`;
+  b.style.display = 'flex';
+  const mg = b.querySelector('#grad-manage');
+  if (mg) mg.onclick = (e) => { e.preventDefault(); window.docusnap.openSettingsWindowAtSection?.('learning'); };
+  const dm = b.querySelector('#grad-dismiss');
+  if (dm) dm.onclick = () => { b.style.display = 'none'; };
+}
+
+// Catch graduations that happened while the window was closed (their first auto-file was in the
+// background), once the IPC bridge is ready.
+setTimeout(() => { try { checkGraduationAnnounce(); } catch {} }, 1500);
 
 function handleProgress(msg) {
   // Watch-folder events arrive on this shared channel too (tagged source:'watch').

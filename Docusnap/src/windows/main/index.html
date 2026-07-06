@@ -539,6 +539,15 @@
     #autofiled-banner .af-ico  { color: var(--ok); font-weight: 700; }
     #autofiled-banner .af-link { margin-left: auto; color: var(--accent2); cursor: pointer; font-weight: 600; white-space: nowrap; }
     #autofiled-banner .af-link:hover { text-decoration: underline; }
+    /* Graduation announce — a one-time "learned this supplier" notice (#10). */
+    #grad-announce { align-items: center; gap: 10px; margin: 0 12px 6px; padding: 9px 14px;
+      background: var(--accent-bg); border: 1px solid var(--accent); border-left: 4px solid var(--accent);
+      border-radius: 9px; font-size: 13px; color: var(--text); }
+    #grad-announce .af-ico { color: var(--accent2); font-weight: 700; }
+    #grad-announce .af-link { margin-left: auto; color: var(--accent2); cursor: pointer; font-weight: 600; white-space: nowrap; }
+    #grad-announce .af-link:hover { text-decoration: underline; }
+    #grad-announce .grad-dismiss { cursor: pointer; color: var(--muted); font-weight: 700; padding: 0 4px; }
+    #grad-announce .grad-dismiss:hover { color: var(--err); }
 
     #table-wrap { flex: 1; overflow: auto; }
     table { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -975,6 +984,7 @@
         </div>
         <!-- Summary of docs auto-filed at 100% confidence (filled by autoFileFullConfidence). -->
         <div id="autofiled-banner" style="display:none;"></div>
+        <div id="grad-announce" style="display:none;"></div>
         <div id="table-wrap">
           <table>
             <thead>
