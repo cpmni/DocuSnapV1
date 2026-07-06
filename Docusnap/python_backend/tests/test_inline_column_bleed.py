@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from extraction.template_mapper import cluster_value_words
+from extraction.template_mapper import cluster_value_words, _match_label_run
 
 H = 0.02   # word height (normalised)
 
@@ -73,6 +73,40 @@ def main():
     rest = [w("ABC12345", 0.30, 0.08), w("DOCUSYS", 0.60, 0.07)]
     f += check("expect_x None -> first cluster",
                text_of(cluster_value_words(rest, expect_x=None)) == "ABC12345")
+
+    # ── _match_label_run: tight label run + end index (the merged-row label_box fix) ──
+    # Shared by the OCR (_locate_anchor) AND born-digital (_locate_in_text_lines) label
+    # localizers, so testing it here covers both paths.
+
+    # 9. MERGED two-column row: a left-hand customer block shares the OCR row's y-band
+    #    with the right-hand "Invoice Date" caption + value. The label run must be JUST
+    #    [Invoice, Date] — NOT the whole prefix from the left column (the old prefix-only
+    #    scan returned [Mcgee, Solicitors, Invoice, Date], so label_box spanned the row).
+    row = [w("Mcgee", 0.06, 0.06), w("Solicitors", 0.13, 0.10),
+           w("Invoice", 0.60, 0.07), w("Date", 0.68, 0.05),
+           w("29/05/2026", 0.80, 0.10)]
+    m = _match_label_run(row, "invoice date")
+    f += check("merged-row label run is tight [Invoice Date]",
+               m is not None and text_of(m[0]) == "Invoice Date")
+    # 10. end index points AT the value, so value = words[end:] drops BOTH the left
+    #     column and the label (len(run) would be 2 here → wrong slice start).
+    f += check("merged-row end index points at the value (words[end:])",
+               m is not None and m[1] == 4 and
+               text_of(cluster_value_words(row[m[1]:],
+                       expect_x=row[3]["x_norm"] + row[3]["w_norm"])) == "29/05/2026")
+
+    # 11. Regression — single-column "label value" row is byte-identical to the old
+    #     prefix behaviour: run is the leading label, value follows at end index.
+    row2 = [w("Ticket", 0.10, 0.06), w("No.", 0.17, 0.04), w("2605-0769-1", 0.30, 0.12)]
+    m2 = _match_label_run(row2, "ticket no")
+    f += check("single-column label run [Ticket No.] at end=2",
+               m2 is not None and text_of(m2[0]) == "Ticket No." and m2[1] == 2)
+
+    # 12. Below threshold / no needle / empty -> None (caller falls back to whole-line box).
+    f += check("no label match -> None",
+               _match_label_run([w("Alpha", 0.1, 0.05), w("Beta", 0.2, 0.05)], "invoice date") is None)
+    f += check("empty words -> None", _match_label_run([], "invoice date") is None)
+    f += check("no needle -> None", _match_label_run(row, "") is None)
 
     print("\nAll inline-column-bleed checks passed" if not f else f"\n{f} check(s) FAILED")
     sys.exit(1 if f else 0)

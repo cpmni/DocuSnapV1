@@ -1021,8 +1021,9 @@ def _locate_in_text_lines(text_lines, lbox, anchor_label, confirm_value=None):
     inline_value = None
     inline_box = None
     words = best.get("words") or []
-    run = tm._match_label_run(words, needle)
-    if run:
+    _lm = tm._match_label_run(words, needle)
+    if _lm:
+        run, _lend = _lm
         rx1 = min(w["x_norm"] for w in run)
         rx2 = max(w["x_norm"] + w["w_norm"] for w in run)
         ry1 = min(w["y_norm"] for w in run)
@@ -1030,7 +1031,9 @@ def _locate_in_text_lines(text_lines, lbox, anchor_label, confirm_value=None):
         label_box = {"x_norm": rx1, "y_norm": ry1, "w_norm": rx2 - rx1, "h_norm": ry2 - ry1}
         # Clip the harvest to the value's OWN column (drop a far heading/column that
         # shares the OCR line) by horizontal-gap clustering off the label's right edge.
-        rest = tm.cluster_value_words(words[len(run):], expect_x=rx2)
+        # Value words follow the label run's END index — not len(run): the run can
+        # start internally on a merged two-column row (see _match_label_run).
+        rest = tm.cluster_value_words(words[_lend:], expect_x=rx2)
         if rest:
             inline_value = " ".join(w["text"] for w in rest).strip() or None
             # Tight bbox of the VALUE words (top-left convention) so the dev trace

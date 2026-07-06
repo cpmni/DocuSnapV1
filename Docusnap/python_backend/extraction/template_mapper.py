@@ -540,11 +540,14 @@ def _relocate_and_read(page, mapping, anchor_box, target_box, located, val_type,
         # drew; the value moves rigidly WITH the label, it does not slide with OCR
         # line-segmentation. Off the tight LABEL box (falls back to the whole line only
         # when no label_box, and only then does _located_too_wide guard it).
-        lb = located.get("label_box")
-        if lb is None:
-            if _located_too_wide(anchor_box, located):
-                return None
-            lb = located
+        lb = located.get("label_box") or located
+        # Refuse to seat the value off a label that spans the row — a merged two-column
+        # OCR line whose tighten failed, or a label-less proximity locate. The width
+        # guard now applies to a PRESENT-but-over-wide label_box too, not only the
+        # label-less fallback: an over-wide non-None box used to bypass it and derive
+        # the value crop off a false (far-left) origin.
+        if _located_too_wide(anchor_box, lb):
+            return None
         inset_x = max(0.0, (anchor_box["w_norm"] - (lb.get("w_norm") or 0.0)) / 2.0)
         inset_y = max(0.0, (anchor_box["h_norm"] - (lb.get("h_norm") or 0.0)) / 2.0)
         derived_target = {
@@ -830,25 +833,44 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
 # ── Anchor relocation ─────────────────────────────────────────────────────────
 
 def _match_label_run(words, needle):
-    """The leading contiguous words on the located line that form the matched
-    LABEL, so the trailing VALUE words of a "label …gap… value" key/value row are
-    excluded. Grows the run left→right and keeps the SMALLEST run that MAXIMISES
-    the label match — a prefix of a multi-word label (e.g. "Serial") scores high
-    on ratio() alone but the full "Serial number" scores higher, and adding the
-    value words doesn't improve it, so the label-complete run wins. Returns the
-    word-dict list, or None when even the best run is below threshold (caller then
-    uses the whole-line box, as before)."""
+    """The tightest contiguous run of words on the located line that forms the
+    matched LABEL, plus the index just PAST it — returned as `(run_words, end_index)`
+    so a caller harvests the value from `words[end_index:]`.
+
+    Excludes the trailing VALUE words of a "label …gap… value" key/value row AND —
+    critically — the words of any OTHER COLUMN that PRECEDES the label on a MERGED
+    two-column OCR row (a left-hand address block sharing the row's y-band with a
+    right-hand "Invoice Date" caption). The old scan tested PREFIXES only
+    (`words[:k]`), assuming the label was the line's LEADING text; on such a merged
+    row the smallest prefix that CONTAINED the label also swallowed the whole
+    preceding column, so `label_box` spanned the row and the offset / crop-relocate
+    that seats a value off label-origin derived from a false (far-left) origin.
+
+    Now scans ALL contiguous windows `words[i:j]` and returns the SMALLEST-span
+    window that MAXIMISES the label match (a boundary-aligned whole-needle hit scores
+    1.0 via `_label_score`, so the tightest occurrence of the label wins and both the
+    value and any preceding column fall outside it). Ties break toward the window
+    nearest the value — the largest start index — since on a key/value row the label
+    sits immediately LEFT of its value. The caller MUST slice `words[end_index:]`,
+    NOT `words[len(run):]`, which re-includes the label the instant the run starts
+    internally. Returns None when the best window is below threshold (caller then uses
+    the whole-line box, as before). O(n²) windows; n = words on a line (small)."""
     if not needle or not words:
         return None
-    best_k, best_score = 0, -1.0
-    for k in range(1, len(words) + 1):
-        acc = _normalise(" ".join(wd["text"] for wd in words[:k]))
-        s = _label_score(needle, acc)
-        if s > best_score + 1e-9:        # strictly better → smaller k keeps ties
-            best_score, best_k = s, k
-    if best_score < _FUZZY_MATCH_THRESHOLD:
+    n = len(words)
+    best = None   # (score, -span, start): maximise → high score, tight span, rightmost
+    for i in range(n):
+        acc_parts = []
+        for j in range(i + 1, n + 1):
+            acc_parts.append(words[j - 1].get("text", ""))
+            s = _label_score(needle, _normalise(" ".join(acc_parts)))
+            key = (s, -(j - i), i)
+            if best is None or key > best[0]:
+                best = (key, i, j)
+    if best is None or best[0][0] < _FUZZY_MATCH_THRESHOLD:
         return None
-    return words[:best_k]
+    _, i, j = best
+    return words[i:j], j
 
 
 def cluster_value_words(words, expect_x=None):
@@ -1007,8 +1029,9 @@ def _locate_anchor(page, anchor_box, anchor_text, expansion, ocr_lines_fn,
     inline_value = None
     inline_box = None
     bwords = best.get("words") or []
-    run = _match_label_run(bwords, needle) if needle else None
-    if run:
+    _lm = _match_label_run(bwords, needle) if needle else None
+    if _lm:
+        run, _lend = _lm
         rx1 = min(wd["x_norm"] for wd in run)
         rx2 = max(wd["x_norm"] + wd["w_norm"] for wd in run)
         ry1 = min(wd["y_norm"] for wd in run)
@@ -1021,7 +1044,10 @@ def _locate_anchor(page, anchor_box, anchor_text, expansion, ocr_lines_fn,
         }
         # Clip the harvest to the value's OWN column (drop a far heading/column that
         # shares the OCR line) by horizontal-gap clustering off the label's right edge.
-        rest = cluster_value_words(bwords[len(run):], expect_x=rx2)
+        # Value words are those AFTER the label run's END index — not len(run): the run
+        # can start internally on a merged two-column row, so bwords[len(run):] would
+        # re-include the label's own words.
+        rest = cluster_value_words(bwords[_lend:], expect_x=rx2)
         if rest:
             inline_value = " ".join(wd["text"] for wd in rest).strip() or None
             # Page-space bbox of the VALUE words (crop-relative → page), so the dev
