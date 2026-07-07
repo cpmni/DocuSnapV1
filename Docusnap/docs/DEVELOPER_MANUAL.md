@@ -189,8 +189,8 @@ docusnap2/
 │   │   └── format_anomaly_checker.py  # Stage 4.5: format-class anomaly detection
 │   ├── ocr/{tesseract.py,region.py}    # Page OCR + zone-selection OCR
 │   ├── ocr_region.py             # CLI wrapper around ocr/region.py (used by ocr-region IPC)
-│   ├── logo/fingerprint.py        # Logo perceptual-hash extraction/matching
-│   ├── logo_fingerprint.py        # CLI wrapper around logo/fingerprint.py
+│   ├── logo/fingerprint.py        # Logo perceptual-hash extraction/matching (spawned directly)
+│   ├── logo_hash.py               # Shared logo crop+preprocess+hash recipe (logo/fingerprint.py + template_matcher)
 │   ├── pdf_splitter.py            # CLI for split-pdf IPC
 │   ├── render/pages.py            # PDF→PNG rendering (review/search/template preview)
 │   ├── render_pages.py            # CLI wrapper around render/pages.py

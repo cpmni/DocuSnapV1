@@ -11,7 +11,6 @@
       "invoice number",
       "invoice ref",
       "invoice date",
-      "remittance",
       "bill to",
       "billed to"
     ],
@@ -76,6 +75,31 @@
       "receipt number",
       "received from",
       "paid by"
+    ],
+    "Remittance Advice": [
+      "remittance advice",
+      "payment advice",
+      "remittance",
+      "bacs",
+      "payment date",
+      "we have paid",
+      "amount paid"
+    ],
+    "Letter": [
+      "yours sincerely",
+      "yours faithfully",
+      "kind regards",
+      "dear sir",
+      "dear madam",
+      "to whom it may concern",
+      "please find enclosed"
+    ],
+    "Order Form": [
+      "order form",
+      "please supply",
+      "order request",
+      "please complete this form",
+      "quantity required"
     ]
   },
   "field_patterns": {

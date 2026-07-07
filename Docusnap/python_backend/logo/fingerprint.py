@@ -12,61 +12,16 @@ Returns JSON: {"phash": "...", "ahash": "..."}
 """
 
 import sys
+import os
 import json
 import argparse
-import imagehash
-from PIL import Image, ImageFilter, ImageOps
+from PIL import Image
 
-# ── Logo region extraction ────────────────────────────────────────────────────
-
-def extract_logo_region(img: Image.Image) -> Image.Image:
-    """
-    Crop the top portion of the page where logos almost always appear.
-    Uses the top 20% of the page, full width — covers letterheads.
-    Also tries a left-biased crop since logos are usually top-left.
-    """
-    w, h = img.size
-
-    # Primary: top-left quadrant (most logos live here)
-    top_left = img.crop((0, 0, w // 2, h // 5))
-
-    # Secondary: full top strip
-    top_strip = img.crop((0, 0, w, h // 6))
-
-    return top_left, top_strip
-
-
-def preprocess_for_hash(img: Image.Image) -> Image.Image:
-    """
-    Normalise the image before hashing so minor scan differences don't
-    cause false mismatches. Convert to greyscale, boost contrast, resize.
-    """
-    img = img.convert('L')                      # greyscale
-    img = ImageOps.autocontrast(img, cutoff=5)  # boost contrast
-    img = img.resize((256, 256), Image.LANCZOS) # normalise size
-    img = img.filter(ImageFilter.GaussianBlur(radius=1))  # reduce noise
-    return img
-
-
-def compute_hashes(img: Image.Image) -> dict:
-    """Compute multiple hash types for robustness."""
-    processed = preprocess_for_hash(img)
-    return {
-        "phash": str(imagehash.phash(processed, hash_size=8)),    # perceptual
-        "ahash": str(imagehash.average_hash(processed, hash_size=8)),  # average
-        "dhash": str(imagehash.dhash(processed, hash_size=8)),    # difference
-    }
-
-
-def hamming_distance(h1: str, h2: str) -> int:
-    """Count differing bits between two hex hash strings."""
-    if not h1 or not h2 or len(h1) != len(h2):
-        return 64
-    dist = 0
-    for c1, c2 in zip(h1, h2):
-        xor = int(c1, 16) ^ int(c2, 16)
-        dist += bin(xor).count('1')
-    return dist
+# The crop + preprocess + hash recipe is SHARED with the Stage-0 extraction matcher
+# (extraction/template_matcher.compute_logo_hash) via one module — logo_hash.py — so a
+# taught logo and an extracted logo are always hashed identically (no silent drift).
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from logo_hash import extract_logo_region, compute_hashes, hamming_distance  # noqa: E402
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
