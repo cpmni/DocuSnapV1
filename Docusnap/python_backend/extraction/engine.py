@@ -32,6 +32,15 @@ try:
 except ImportError:
     LLM_AVAILABLE = False
 
+# Identity-fusion (text-led SUPPLIER identity) is optional — it needs rapidfuzz, which is
+# not yet in the bundled runtime. Used ONLY by the shadow measurement (extract(identity_
+# shadow=True)); when absent the shadow silently disables and extraction is unaffected.
+try:
+    from extraction import identity_fusion
+    IDENTITY_FUSION_AVAILABLE = True
+except Exception:
+    IDENTITY_FUSION_AVAILABLE = False
+
 
 # Stage 0.5 LOCATED-path mapping methods (admin-drawn anchor→target zones that
 # located their anchor on this page). Curated ground truth — protected from
@@ -719,6 +728,45 @@ class ExtractionEngine:
         except Exception:
             pass  # background aid — must never break extraction
 
+    def _shadow_identity(self, ocr_text, logos, hints, anchors, resolved_supplier):
+        """SHADOW measurement only (extract(identity_shadow=True)): run the text-led supplier
+        identity (extraction/identity_fusion) over the page CHROME and record whether it AGREES
+        with the pipeline's resolved supplier — WITHOUT changing any decision. Mirrors
+        _shadow_reconcile_components: a background aid that must never break extraction. Returns
+        a compact verdict dict, or None when unavailable / not enough signal."""
+        try:
+            if not IDENTITY_FUSION_AVAILABLE:
+                return None
+            # Known-supplier gazetteer = every supplier the system has already learned, taken
+            # from the logo/hint/anchor scopes ALREADY loaded for this doc (no new plumbing).
+            known, seen = [], set()
+            for src in (logos or [], hints or [], anchors or []):
+                for row in src:
+                    nm = ((row or {}).get("supplier_name") or "").strip()
+                    if nm and nm.lower() not in seen:
+                        seen.add(nm.lower())
+                        known.append(nm)
+            if not known:
+                return None
+            # Flat chrome from the geometry-ordered page text (first 6 + last 3 non-empty lines
+            # = header/footer band). Measured to hold identity precision / silent-wrong vs the
+            # geometry crop (only accept-rate is a touch lower), so no word-geometry plumbing.
+            lines = [l for l in (ocr_text or "").splitlines() if l.strip()]
+            chrome = " ".join(lines[:6] + lines[-3:])
+            res = identity_fusion.identify_supplier(chrome, known)
+            picked, accepted = res.get("supplier"), bool(res.get("accepted"))
+            return {
+                "resolved":   resolved_supplier,
+                "text_led":   picked,
+                "accepted":   accepted,
+                "confidence": res.get("confidence"),
+                "known_n":    len(known),
+                "agree":      accepted and picked == resolved_supplier,
+                "conflict":   accepted and bool(resolved_supplier) and picked != resolved_supplier,
+            }
+        except Exception:
+            return None  # background aid — must never break extraction
+
     def _reconciliation_pick_total(self, results, field_defs):
         """Reconciliation-aware total pick. If the resolved `total` does NOT balance against the
         components (subtotal + tax + shipping - discount) but a confident REMEMBERED candidate
@@ -842,7 +890,8 @@ class ExtractionEngine:
                 known_template_id: int | None = None,
                 trace = None,
                 slice_dir = None,
-                page_text_lines: list | None = None) -> dict:
+                page_text_lines: list | None = None,
+                identity_shadow: bool = False) -> dict:
         """
         Run extraction pipeline according to current mode.
         Returns dict with field values + metadata keys prefixed with _.
@@ -2102,6 +2151,11 @@ class ExtractionEngine:
         results["_document_type_slug"]   = matched_tmpl.get("document_type_slug") if matched_tmpl else None
         results["_logo_phash"]           = logo_phash
         results["_keyword_fingerprint"]  = kw_fingerprint
+        # SHADOW ONLY (default off → byte-identical): record the text-led identity verdict for
+        # measurement. Changes NO field value and NO supplier decision; emitted for a bench.
+        if identity_shadow:
+            results["_identity_shadow"] = self._shadow_identity(
+                ocr_text, logos, hints, anchors, supplier_name)
 
         # Final resolved value per field — the inspector marks any earlier
         # candidate whose value differs from this as a superseded intermediate.

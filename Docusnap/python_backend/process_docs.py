@@ -220,6 +220,9 @@ def main():
                              "when running parallel workers so they don't oversubscribe the CPU. "
                              "Ignored by Tesseract.")
     parser.add_argument("--trace", action="store_true")
+    # SHADOW measurement: compute the text-led supplier-identity verdict per doc and emit it
+    # in file_done (extraction/identity_fusion). Changes no decision; off => output unchanged.
+    parser.add_argument("--identity-shadow", action="store_true")
     # Per-file WATCHDOG timeout (seconds; 0 = disabled). A single pathological page can hang
     # a native Tesseract/pdfium call, which no Python try/except or (on Windows) signal can
     # interrupt. When set, a daemon thread force-terminates this worker if one file exceeds the
@@ -517,6 +520,7 @@ def main():
                 trace         = emit_trace if args.trace else None,
                 slice_dir     = args.slice_dir if args.trace else None,
                 page_text_lines = page_text_lines,
+                identity_shadow = args.identity_shadow,
             )
 
             # Pull out metadata keys before sanitising
@@ -539,6 +543,7 @@ def main():
             template_id      = raw_extractions.pop("_template_id", None)
             logo_phash       = raw_extractions.pop("_logo_phash", None)
             kw_fingerprint   = raw_extractions.pop("_keyword_fingerprint", [])
+            identity_shadow_v = raw_extractions.pop("_identity_shadow", None)
             raw_extractions.pop("_mode_used", None)
             raw_extractions.pop("_document_slug", None)
 
@@ -572,6 +577,7 @@ def main():
                 "template_id":        template_id,
                 "logo_phash":         logo_phash,
                 "keyword_fingerprint": kw_fingerprint,
+                **({"identity_shadow": identity_shadow_v} if identity_shadow_v else {}),
                 "page_count":         len(page_images),
                 "mode_used":          "fast",
                 "ocr_text":           ocr_text[:50000],
