@@ -62,28 +62,6 @@ Verify:
 
 
 ────────────────────────────────────────────────────────────────────────────────
-1.4  Ollama + Phi-3 Mini model
-────────────────────────────────────────────────────────────────────────────────
-Download Ollama from: https://ollama.com
-  → Windows installer, run it
-  → Ollama runs silently in the system tray after install
-
-Pull the Phi-3 Mini model (much smaller than Mistral — ~2.4 GB download):
-
-  ollama pull phi3:mini
-
-Wait for the download to complete. Verify:
-  ollama list        (should show phi3:mini)
-  ollama run phi3:mini "Say hello"   (should respond)
-
-WHY PHI-3 MINI instead of Mistral 7B?
-  • 2.4 GB vs 4.1 GB — fits comfortably in 4GB GPU
-  • Loads in ~5 seconds vs ~30 seconds
-  • Performance on structured document extraction is comparable
-  • Much smaller installer for customers
-
-
-────────────────────────────────────────────────────────────────────────────────
 1.5  Python packages
 ────────────────────────────────────────────────────────────────────────────────
 Open a terminal and run:
@@ -152,7 +130,7 @@ Rebuild better-sqlite3 for Electron's Node version:
 ────────────────────────────────────────────────────────────────────────────────
   npm start
 
-The app window should open. Tesseract and Ollama should be detected automatically.
+The app window should open. Tesseract should be detected automatically.
 Test with a few sample documents before building the installer.
 
 
@@ -209,27 +187,6 @@ STEP A — Bundle Python (3.12 — Windows EMBEDDABLE package, NOT a venv):
 STEP B — Bundle Tesseract:
 
   xcopy /E /I "C:\Program Files\Tesseract-OCR" vendor\tesseract
-
-STEP C — Bundle Ollama + Phi-3 Mini model:
-
-  mkdir vendor\ollama
-  copy "%LOCALAPPDATA%\Programs\Ollama\ollama.exe" vendor\ollama\
-
-  :: Copy the model weights (downloaded by 'ollama pull phi3:mini')
-  xcopy /E /I "%USERPROFILE%\.ollama\models" vendor\ollama_models
-
-  NOTE: The Phi-3 Mini model is optional.
-  Without it: installer is ~280MB (Fast Mode + Smart Mode with no AI)
-  With it:    installer is ~2.7GB (all modes including AI mode)
-
-  OPTION A — Small installer (recommended for most customers):
-    Skip the Ollama/model bundling. Customers download model on demand
-    from inside the app (Settings → AI Mode → Download AI Model).
-
-  OPTION B — Full offline installer:
-    Include Ollama + model for customers with no reliable internet.
-    Distribute on USB stick.
-
 
 ────────────────────────────────────────────────────────────────────────────────
 3.2  Add an app icon (optional but recommended)
@@ -348,33 +305,8 @@ To test the Python extraction engine standalone:
 
 
 ================================================================================
-PART 7 — SWITCHING MODELS
+PART 7 — TROUBLESHOOTING
 ================================================================================
-
-Current model: phi3:mini
-To switch to a different model:
-
-1. Pull the new model:
-   ollama pull <model-name>
-   e.g. ollama pull llama3.2:1b  (even smaller)
-        ollama pull phi3:medium   (more accurate, needs more VRAM)
-
-2. Update the model name in two places:
-   src/modules/processing/handler.js  → '--model', 'phi3:mini'  (change both instances)
-   python_backend/extraction/llm.py   → MODEL_NAME = "phi3:mini"
-
-3. For the bundled installer: copy new model weights to vendor\ollama_models\
-
-4. npm run build
-
-
-================================================================================
-PART 8 — TROUBLESHOOTING
-================================================================================
-
-"AI model warm-up failed"
-  → Open a terminal: ollama serve
-  → Leave it open and try again
 
 "OCR returned no text"
   → Check Tesseract is installed: tesseract --version

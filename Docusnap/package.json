@@ -1,7 +1,7 @@
 {
   "name": "docusnap",
   "version": "2.0.0",
-  "description": "Local document OCR and AI field extraction",
+  "description": "Local document OCR and field extraction",
   "author": "SOFTWARE COMPANY",
   "main": "src/main.js",
   "scripts": {

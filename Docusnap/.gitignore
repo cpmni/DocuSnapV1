@@ -1,10 +1,6 @@
-vendor/ollama_models/
-vendor/tesseract/tessdata/
-vendor/ollama/
-vendor/python_env/
-vendor/python/
-vendor/python_venv_backup/
-vendor/tesseract/
+# Bundled runtime (Python venv, Tesseract, etc.) — assembled at build time per BUILD.txt,
+# never committed. Blanket-ignored so a stale vendor/ollama/ (removed 2026-07) can't reappear.
+vendor/
 dist/
 node_modules/
 __pycache__/
@@ -51,6 +47,13 @@ Samples/
 # multi-GB). Reproducible via `py -3.12 -m test_harness.run`; the HARNESS CODE
 # (python_backend/test_harness/) is committed, but its OUTPUT is not.
 python_backend/artifacts/
+
+# Local extraction/fingerprinting research scratch (prototypes + a multi-hundred-MB
+# OCR cache). The shipped harnesses live in stress_test/*.js; sandbox/ is throwaway.
+sandbox/
+
+# Generated measurement reports written by the stress_test harnesses.
+stress_test/out/
 
 # Parked website design variants + pricing model — kept out of the app repo but not
 # deleted (recoverable). Move anything here back out if it's needed again.
