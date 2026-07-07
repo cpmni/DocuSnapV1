@@ -387,6 +387,7 @@ Stored in `settings.processing_mode` (`fast | smart`, default `smart`):
 | 2.5d | `ocr_corrector.correct_extraction` / `try_correct` | Apply learned per-template character substitution maps (`LETTER_TO_DIGIT`, `DIGIT_TO_UPPER`, `DIGIT_TO_LOWER`) | appends `"+corrected"`, boost 0–20 |
 | **4** | `validator.validate_and_adjust` | Label-shaped-value guard (value ending `:` → cap 35), date/reference noise stripping, date parsing/normalisation to `DD-MM-YYYY`, subtotal+VAT≈total cross-check (2% tolerance, cap 50 on mismatch), date sanity (>10y old/future → cap 40), currency inference from symbol | various caps + `validation_note` |
 | **4.5** | `format_anomaly_checker.check_value` | Compare value against the supplier/doc-type/field's inferred **format class** (from ≥3 confirmed historical samples). On violation: cap confidence at **45**, set `validation_note`, force `_needs_review`. Skips fields already flagged by Stage 4 | cap 45 |
+| **4.5b** | `identity_fusion` (`extraction/identity_fusion.py`) | **Text-led SUPPLIER identity conflict flag** — LIVE, opt-in default-on (`identity_conflict_flag`). Reads the issuer-band letterhead (top lines, truncated at the first recipient marker like "Bill To", footer excluded) and fuzzy-matches (rapidfuzz) the known-supplier gazetteer built from the logo/hint/anchor scopes. If it confidently reads a **different** known supplier than the pipeline resolved (a CONFLICT), it raises `_needs_review` + a "Letterhead may read *X* — detected *Y*" note on the identity field and caps that field's confidence at 70. NEVER overrides, fills, or flags on agree/abstain. Validated 99.4% precision / 0 false-alarms on 166 real confirmed docs. Inert-safe if rapidfuzz is absent (guarded import). | flag-only |
 
 ### 6.3 Merge / override algorithm (critical)
 
@@ -425,7 +426,8 @@ results["_document_type"]        # display name
 results["_document_slug"]        # e.g. "invoice" — used for all learning lookups
 results["_overall_confidence"]   # weighted avg over required fields
 results["_needs_review"]         # bool — any field below threshold OR format anomaly
-results["_mode_used"]            # "fast" | "smart" | "ai"
+results["_mode_used"]            # "fast" | "smart"
+results["_identity_shadow"]      # optional supplier-identity verdict (measurement/flag; see §6.2 Stage 4.5b)
 results["_template_id"]          # matched template id, or None
 results["_logo_phash"]           # page-1 perceptual hash, or None
 results["_keyword_fingerprint"]  # list[str] — stable branding keywords
@@ -752,9 +754,10 @@ re-enabling restores the previously learned baseline.
 
 ## 10. Windows / UI Surfaces
 
-All windows share: frameless chrome (`#0c0e14` background, custom
-titlebar/drag region), `src/windows/shared/theme.js` (dark/light, synced via
-`settings.theme` + `theme-changed` broadcast), and the `window.docusnap`
+All windows share: **native OS window frames** (`main.js` `frame:true`; the old
+custom drag titlebars were removed and are hidden globally in `theme.css`),
+`src/windows/shared/theme.js` (**eleven** named light/dark themes — Warm Paper is
+the default — synced via `settings.theme` + `theme-changed` broadcast), and the `window.docusnap`
 bridge from `preload.js`.
 
 ### 10.1 Login (`src/windows/login/`)
@@ -1455,6 +1458,58 @@ transparency. Pointers into the detailed sections above.
   option (inline text → locked on commit); `autoLabel()` requires ≥3 alpha chars;
   type selector Text/Date/Currency/Number. (Watch for smart quotes in injected HTML
   — they silently break the buttons' class/id.)
+
+---
+
+## 22. Recent changes (2026-07)
+
+> **Note on currency.** `CLAUDE.md` is the authoritative *living* index of the architecture and
+> always reflects the latest state; this manual is refreshed in passes. Where the two disagree,
+> trust `CLAUDE.md` and the code. The sections below capture the most impactful 2026-07 changes.
+> Some 2026-06/07 UI work (the dashboard + left nav-rail home screen, the eleven named themes incl.
+> the seasonal set, the preset doc-type catalog, supplier graduation/auto-file, the first-run
+> wizard/welcome tour/practice tutorial) is documented in `CLAUDE.md` and is only partially
+> reflected in §10/§4 here — consult `CLAUDE.md` for those surfaces.
+
+### 22.1 AI/LLM (Ollama + phi3) removed
+The dormant `ai` processing mode + the Ollama/phi3 LLM (former Stage 3, `extraction/llm.py`) were
+**removed entirely**. `llm.py` is deleted; the engine's LLM import, `ollama_url`/`model` ctor params,
+`warmup()`, the Stage-3 `use_llm` block and `_should_use_llm()` are gone; `process_docs.py` and every
+mode validator accept only `fast`/`smart` (a stale `ai` falls back to `smart`). **Extraction output is
+byte-identical** — the LLM only ran in the never-shipped `ai` mode. There is no bundled model, no
+Ollama, no network dependency. `get-ai-status`/`pull-ai-model`/`pull-progress` IPC are gone.
+
+### 22.2 RapidOCR removed — Tesseract-only full-page OCR
+The opt-in RapidOCR engine was **removed** (Slice 1 unbundled it; Slice 2 deleted the code). Full-page
+OCR is **Tesseract only** (`ocr/engine.py` `TesseractEngine`; `get_engine()` returns Tesseract for any
+name, tolerating a stale `'rapidocr'` setting). Deleted: `requirements-ocr.txt`,
+`scripts/check-rapidocr-bundled.js`, `tools/ocr_bake_off.py`, `OCR_RUNTIME.md`, the Settings OCR-engine
+selector, and the `--ocr-engine`/`--ocr-fast`/`--ocr-threads` plumbing. `threadCap` (Tesseract OpenMP
+cap via `OMP_THREAD_LIMIT`) is **kept**. Byte-identical (Tesseract was already the default). Build
+machine: `pip uninstall` the rapidocr/onnxruntime/opencv/shapely/pyclipper stack from `vendor/python`
+and regenerate `THIRD-PARTY-LICENSES.txt`.
+
+### 22.3 Full-page OCR text is geometry-reconstructed
+`TesseractEngine.read_page` rebuilds page text from word **geometry** (`reconstruct_page_text`): words
+are grouped into visual rows by y-centre so a right-aligned totals value stays on its label's line
+instead of being stranded in a separate OCR column (took scanned subtotal/total ~63%→100%). Born-digital
+PDFs read their embedded text layer directly (`born_digital.py`, `born_digital_enabled`); pages are
+auto-rotated on first import via Tesseract OSD (`ocr/orientation.py`, `auto_rotate_enabled`).
+
+### 22.4 identity_fusion — supplier-conflict review flag (LIVE)
+New Stage 4.5b (see §6.2). `extraction/identity_fusion.py` reads the issuer-band letterhead and
+fuzzy-matches (rapidfuzz, MIT) the known-supplier gazetteer; on a confident conflict with the pipeline's
+resolved supplier it raises `_needs_review` + a note — flag-only, never overrides/fills. **Default on**
+(`identity_conflict_flag`); validated 99.4% precision / 0 false-alarms on 166 real confirmed docs;
+inert-safe if rapidfuzz is absent. `rapidfuzz` must be `pip install`ed into `vendor/python` on the build
+machine for it to run in packaged builds (already in BUILD.txt). Guarded by `tests/test_identity_fusion.py`.
+
+### 22.5 Cross-supplier positional-anchor fixes (2026-07)
+A ⊕-taught authoritative anchor for a positional field is no longer applied blind across suppliers: a
+BLIND read from a *named different* supplier is dropped (`_is_blind_cross_supplier_anchor`), while a
+LOCATED read (taught label found on this page → same layout) is kept. The false-locate residual is
+cross-checked against the label's real inline value (label-lock for free-text/currency; authoritative-crop
+cross-check for ref + date). See `CLAUDE.md` "Known bugs" and `docs/extraction-pipeline.md`.
 
 ---
 
