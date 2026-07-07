@@ -205,6 +205,14 @@ function buildTrainingArgs(db, configPath, logger = null) {
   try { autoRotateOn = learning.getSetting(db, 'auto_rotate_enabled') !== 'false'; }
   catch { /* older DB without the setting -> default on */ }
 
+  // Text-led supplier-identity CONFLICT flag: OPT-IN (default OFF; enabled by
+  // 'identity_conflict_flag' = 'true'). FLAG-ONLY — when the issuer-band letterhead reads a
+  // DIFFERENT known supplier than the pipeline resolved, the doc goes to Review with a note;
+  // never overrides/fills. Inert unless identity_fusion imports (needs the bundled rapidfuzz).
+  let identityConflictOn = false;
+  try { identityConflictOn = learning.getSetting(db, 'identity_conflict_flag') === 'true'; }
+  catch { /* older DB without the setting -> default off */ }
+
   const args = [
     '--fields-file',    fieldsFile,
     '--hints-file',     hintsFile,
@@ -222,6 +230,7 @@ function buildTrainingArgs(db, configPath, logger = null) {
   if (nameWordnessOn) args.push('--name-wordness');
   if (multilineOn) args.push('--multiline');
   if (autoRotateOn) args.push('--auto-rotate');
+  if (identityConflictOn) args.push('--identity-conflict');
   if (ocrEngine === 'rapidocr') args.push('--ocr-engine', 'rapidocr');
 
   // Region date ordering for AMBIGUOUS numeric dates (default 'dmy' = UK/EU, byte-identical

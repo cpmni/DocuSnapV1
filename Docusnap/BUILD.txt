@@ -88,10 +88,10 @@ WHY PHI-3 MINI instead of Mistral 7B?
 ────────────────────────────────────────────────────────────────────────────────
 Open a terminal and run:
 
-  py -3.12 -m pip install pytesseract pillow pypdfium2 requests imagehash pypdf
+  py -3.12 -m pip install pytesseract pillow pypdfium2 requests imagehash pypdf rapidfuzz
 
 Verify:
-  py -3.12 -c "import pytesseract, PIL, pypdfium2, requests, imagehash, pypdf; print('OK')"
+  py -3.12 -c "import pytesseract, PIL, pypdfium2, requests, imagehash, pypdf, rapidfuzz; print('OK')"
 
 OPTIONAL — RapidOCR full-page OCR engine (beta, opt-in; NOT required):
   py -3.12 -m pip install -r python_backend\requirements-ocr.txt
@@ -187,7 +187,10 @@ STEP A — Bundle Python (3.12 — Windows EMBEDDABLE package, NOT a venv):
 
   4. Install the backend dependencies (pypdf is REQUIRED — process_docs / pdf_splitter /
      render all import it; it is easy to omit because it is not a top-level app file):
-       vendor\python\python.exe -m pip install pytesseract pillow pypdfium2 requests imagehash pypdf
+       vendor\python\python.exe -m pip install pytesseract pillow pypdfium2 requests imagehash pypdf rapidfuzz
+       (rapidfuzz = MIT, no runtime deps — powers the text-led supplier-identity conflict flag,
+        extraction/identity_fusion.py; the license gate auto-allows MIT. If absent the feature
+        silently no-ops. Regenerate THIRD-PARTY-LICENSES.txt after: node scripts/gen-third-party-notices.js)
 
   ⚠ Use the SAME Python version as §1.2 (3.12 is the tested, known-good series).
     Verify the bundled interpreter before continuing:

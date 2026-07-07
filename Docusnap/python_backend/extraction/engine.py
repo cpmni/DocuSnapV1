@@ -328,6 +328,7 @@ class ExtractionEngine:
         # that does not read like a name (document chrome, ref/code bleed, OCR garble)
         # is FLAGGED for review (note + conf cap); never rejected. See extraction/wordness.py.
         self.name_wordness       = False
+        self._identity_conflict  = False  # active flag-only supplier-conflict (set_identity_conflict)
         self._trace              = None  # dev-only trace callback (set per extract())
 
     def log(self, text: str, level: str = ""):
@@ -342,6 +343,14 @@ class ExtractionEngine:
         """Enable the free-text NAME wordness review flag (default OFF). Inert unless the
         char-trigram table ships (extraction/data/char_trigrams.json)."""
         self.name_wordness = bool(on)
+
+    def set_identity_conflict(self, on: bool):
+        """Enable the ACTIVE text-led supplier-identity conflict flag (default OFF, opt-in). When
+        on, a CONFLICT (the issuer-band letterhead reads a DIFFERENT known supplier than the
+        pipeline resolved) raises needs_review + an advisory note on the identity field — it never
+        overrides a value, fills an empty one, or flags on abstain/agree. Inert unless
+        identity_fusion imports (needs rapidfuzz); see _compute_identity_verdict."""
+        self._identity_conflict = bool(on)
 
     def set_multiline_enabled(self, on: bool):
         """Enable the multi-line continuation read (default OFF in-engine; the handler passes
@@ -728,12 +737,13 @@ class ExtractionEngine:
         except Exception:
             pass  # background aid — must never break extraction
 
-    def _shadow_identity(self, ocr_text, logos, hints, anchors, resolved_supplier):
-        """SHADOW measurement only (extract(identity_shadow=True)): run the text-led supplier
-        identity (extraction/identity_fusion) over the page CHROME and record whether it AGREES
-        with the pipeline's resolved supplier — WITHOUT changing any decision. Mirrors
-        _shadow_reconcile_components: a background aid that must never break extraction. Returns
-        a compact verdict dict, or None when unavailable / not enough signal."""
+    def _compute_identity_verdict(self, ocr_text, logos, hints, anchors, resolved_supplier):
+        """Compute the text-led SUPPLIER identity verdict (extraction/identity_fusion) over the page
+        CHROME: does the issuer-band letterhead read the SAME supplier the pipeline resolved? Used by
+        BOTH the shadow measurement (extract(identity_shadow=True), records only) and the active
+        conflict flag (set_identity_conflict(True), raises needs_review on a CONFLICT). Mirrors
+        _shadow_reconcile_components: a background aid that must never break extraction. Returns a
+        compact verdict dict, or None when unavailable / not enough signal."""
         try:
             if not IDENTITY_FUSION_AVAILABLE:
                 return None
@@ -2152,11 +2162,25 @@ class ExtractionEngine:
         results["_document_type_slug"]   = matched_tmpl.get("document_type_slug") if matched_tmpl else None
         results["_logo_phash"]           = logo_phash
         results["_keyword_fingerprint"]  = kw_fingerprint
-        # SHADOW ONLY (default off → byte-identical): record the text-led identity verdict for
-        # measurement. Changes NO field value and NO supplier decision; emitted for a bench.
-        if identity_shadow:
-            results["_identity_shadow"] = self._shadow_identity(
-                ocr_text, logos, hints, anchors, supplier_name)
+        # Text-led SUPPLIER identity verdict — computed when EITHER the shadow measurement OR the
+        # active conflict flag is live (both default off → byte-identical: verdict never computed).
+        if identity_shadow or self._identity_conflict:
+            _idv = self._compute_identity_verdict(ocr_text, logos, hints, anchors, supplier_name)
+            if identity_shadow:
+                results["_identity_shadow"] = _idv          # measurement path — records only
+            if self._identity_conflict and _idv and _idv.get("conflict"):
+                # FLAG-ONLY: the letterhead reads a DIFFERENT known supplier than the pipeline
+                # resolved. Force review + an advisory note on the identity field. NEVER override
+                # the value, fill an empty one, or flag on abstain/agree.
+                results["_needs_review"] = True
+                for _idk in ("supplier_name", "customer_name"):
+                    _f = results.get(_idk)
+                    if isinstance(_f, dict) and _f.get("value"):
+                        _f["validation_note"] = (
+                            f"Letterhead may read “{_idv.get('text_led')}” — "
+                            f"detected “{_idv.get('resolved')}”. Please confirm the issuer.")
+                        _f["confidence"] = min(int(_f.get("confidence") or 100), 70)
+                        break
 
         # Final resolved value per field — the inspector marks any earlier
         # candidate whose value differs from this as a superseded intermediate.

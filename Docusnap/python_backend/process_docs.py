@@ -223,6 +223,9 @@ def main():
     # SHADOW measurement: compute the text-led supplier-identity verdict per doc and emit it
     # in file_done (extraction/identity_fusion). Changes no decision; off => output unchanged.
     parser.add_argument("--identity-shadow", action="store_true")
+    # ACTIVE flag-only: a supplier-identity CONFLICT (letterhead reads a different known supplier
+    # than the pipeline resolved) raises needs_review + a note; never overrides/fills. Off => unchanged.
+    parser.add_argument("--identity-conflict", action="store_true")
     # Per-file WATCHDOG timeout (seconds; 0 = disabled). A single pathological page can hang
     # a native Tesseract/pdfium call, which no Python try/except or (on Windows) signal can
     # interrupt. When set, a daemon thread force-terminates this worker if one file exceeds the
@@ -310,6 +313,10 @@ def main():
     # Free-text NAME wordness review flag (off unless --name-wordness; flag-only).
     if args.name_wordness:
         engine.set_name_wordness(True)
+
+    # Text-led supplier-identity conflict flag (off unless --identity-conflict; flag-only).
+    if args.identity_conflict:
+        engine.set_identity_conflict(True)
 
     # Multi-line continuation reads (off unless --multiline; inert without a field rule).
     if args.multiline:

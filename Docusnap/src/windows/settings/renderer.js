@@ -527,6 +527,20 @@ if (nameWordnessToggle) nameWordnessToggle.addEventListener('change', async () =
   catch { /* non-fatal; reloads on next open */ }
 });
 
+// ── Supplier-identity conflict flag (letterhead reads a different known supplier) ──
+// OPT-IN, default OFF (backend reads 'identity_conflict_flag' with a 'false' default). Flag-only,
+// so this only persists an explicit choice and never changes extracted values.
+const identityConflictToggle = document.getElementById('identity-conflict-toggle');
+async function loadIdentityConflict() {
+  if (!identityConflictToggle) return;
+  identityConflictToggle.checked = (await api.getSetting('identity_conflict_flag')) === 'true';
+}
+loadIdentityConflict();
+if (identityConflictToggle) identityConflictToggle.addEventListener('change', async () => {
+  try { await api.setSetting('identity_conflict_flag', identityConflictToggle.checked ? 'true' : 'false'); }
+  catch { /* non-fatal; reloads on next open */ }
+});
+
 // ── Output Structure (folder + file-name builders) ──────────────────────────────
 // Click-to-insert token "blocks" + free-form custom text, for BOTH the subfolder
 // pattern (output_folder_pattern; "/" = a subfolder level) and the file name

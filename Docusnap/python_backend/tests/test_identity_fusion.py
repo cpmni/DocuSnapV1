@@ -79,6 +79,26 @@ def test_integration_picks_issuer_not_recipient():
     assert "Beacon Hill School" not in C(text)
 
 
+def test_verdict_conflict_agree_abstain():
+    # engine._compute_identity_verdict is a pure function of its args + module globals, so we call
+    # it unbound (self=None). Needs rapidfuzz; skips cleanly if the runtime lacks it.
+    from extraction import engine as _engine
+    if not _engine.IDENTITY_FUSION_AVAILABLE:
+        print("  (skipped — rapidfuzz not installed)"); return
+    V = _engine.ExtractionEngine._compute_identity_verdict
+    logos = [{"supplier_name": "Crestwave Systems Ltd"}, {"supplier_name": "Northgate Supplies Ltd"}]
+    ocr = "Crestwave Systems Ltd\n12 High Street, Belfast\nINVOICE No 4471\nTotal 10.00\nThank you"
+    # CONFLICT: the pipeline resolved Northgate, but the letterhead reads Crestwave -> flag
+    v = V(None, ocr, logos, [], [], "Northgate Supplies Ltd")
+    assert v and v["conflict"] and v["text_led"] == "Crestwave Systems Ltd", v
+    # AGREE: the pipeline resolved Crestwave (matches the letterhead) -> no flag
+    v2 = V(None, ocr, logos, [], [], "Crestwave Systems Ltd")
+    assert v2 and not v2["conflict"] and v2["agree"], v2
+    # ABSTAIN: chrome names no known supplier -> not accepted -> no conflict (safe)
+    v3 = V(None, "RANDOM HEADER LINE\nbody text\nfooter text", logos, [], [], "Northgate Supplies Ltd")
+    assert v3 and not v3["accepted"] and not v3["conflict"], v3
+
+
 def _run():
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:
