@@ -748,11 +748,12 @@ class ExtractionEngine:
                         known.append(nm)
             if not known:
                 return None
-            # Flat chrome from the geometry-ordered page text (first 6 + last 3 non-empty lines
-            # = header/footer band). Measured to hold identity precision / silent-wrong vs the
-            # geometry crop (only accept-rate is a touch lower), so no word-geometry plumbing.
-            lines = [l for l in (ocr_text or "").splitlines() if l.strip()]
-            chrome = " ".join(lines[:6] + lines[-3:])
+            # ISSUER-band chrome: the top letterhead lines TRUNCATED at the first recipient marker
+            # ("Bill To"/"Customer"/"FAO"/…), footer excluded (identity_fusion.issuer_chrome,
+            # reggie-reviewed). Replaces a flat first-6/last-3 chrome that let identify_supplier
+            # match a NON-issuer name in the gazetteer (recipient block / printer footer / line
+            # item) — the real-engine precision hole the shadow measurement surfaced.
+            chrome = identity_fusion.issuer_chrome(ocr_text)
             res = identity_fusion.identify_supplier(chrome, known)
             picked, accepted = res.get("supplier"), bool(res.get("accepted"))
             return {
