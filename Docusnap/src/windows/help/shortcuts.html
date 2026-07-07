@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; script-src 'self'">
+  <title>Scan Finder — Keyboard Shortcuts</title>
+  <link rel="stylesheet" href="../shared/theme.css" />
+  <link rel="stylesheet" href="help.css">
+  <script src="../shared/theme.js"></script>
+</head>
+<body>
+  <div id="titlebar">
+    <span class="tb-title">Scan Finder — User Guide</span>
+    <button class="tb-btn close" id="btn-close" title="Close">&#215;</button>
+  </div>
+
+  <div id="shell">
+    <nav id="nav">
+      <div class="nav-label">User Guide</div>
+      <div id="nav-links"></div>
+    </nav>
+
+    <div id="content">
+      <div class="doc">
+        <div class="breadcrumb" id="breadcrumb"></div>
+
+        <main>
+          <section id="shortcuts">
+            <h1>Keyboard shortcuts &amp; handy gestures</h1>
+            <p class="lead">You never <i>need</i> a keyboard shortcut &mdash; every action has a button. But once
+              you're reviewing a lot of documents, a few keys make it much faster. Here's everything, no matter
+              how small.</p>
+
+            <div class="callout tip">
+              <div class="callout-title">The big three (Review)</div>
+              <ul>
+                <li><span class="sc-keys"><kbd>Ctrl</kbd> + <kbd>Enter</kbd></span> &mdash; <b>Confirm &amp; File</b> the document you're on.</li>
+                <li><span class="sc-keys"><kbd>Space</kbd></span> &mdash; <b>Mark Reviewed</b>.</li>
+                <li><span class="sc-keys"><kbd>&uarr;</kbd></span> / <span class="sc-keys"><kbd>&darr;</kbd></span> &mdash; move to the <b>previous / next</b> document.</li>
+              </ul>
+              <p style="margin:6px 0 0">Learn just those three and reviewing becomes a rhythm: check, <kbd>Ctrl</kbd>+<kbd>Enter</kbd>, <kbd>&darr;</kbd>, repeat.</p>
+            </div>
+          </section>
+
+          <section id="sc-review">
+            <h2>Review window</h2>
+            <table class="refkey">
+              <thead><tr><th>Key</th><th>What it does</th></tr></thead>
+              <tbody>
+                <tr><td class="sc-keys"><kbd>Ctrl</kbd> + <kbd>Enter</kbd></td><td><b>Confirm &amp; File</b> the current document. Any half-typed field is applied first. (Ignored while a pop-up is open or Confirm is greyed out.)</td></tr>
+                <tr><td class="sc-keys"><kbd>Space</kbd></td><td><b>Mark Reviewed</b> (when that button is showing). Doesn't fire while you're typing in a field.</td></tr>
+                <tr><td class="sc-keys"><kbd>&uarr;</kbd> / <kbd>&darr;</kbd></td><td>Previous / next document in the queue.</td></tr>
+                <tr><td class="sc-keys"><kbd>t</kbd></td><td>In a <b>date</b> field, drops in <b>today's date</b>.</td></tr>
+                <tr><td class="sc-keys"><kbd>&darr;</kbd> / <kbd>&uarr;</kbd> then <kbd>Enter</kbd></td><td>In a <b>text</b> field, moves through the suggestions (values you've used before) and picks one.</td></tr>
+                <tr><td class="sc-keys"><kbd>Esc</kbd></td><td>Close whatever's open &mdash; the expanded field editor, the learning-history panel, or Help mode.</td></tr>
+                <tr><td class="sc-keys"><kbd>Enter</kbd> / <kbd>Esc</kbd></td><td>When the <b>Split PDF</b> bar is open: run the split / cancel it.</td></tr>
+                <tr><td class="sc-keys"><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>Delete the box you've selected in the <b>Template Wizard</b> (admin drawing tool).</td></tr>
+              </tbody>
+            </table>
+            <div class="callout note">
+              <div class="callout-title">Taking the guided tour?</div>
+              <p>On the "Confirm &amp; File" step, <kbd>Ctrl</kbd>+<kbd>Enter</kbd> advances the tour just like the real action; <kbd>Esc</kbd> stops the tour at any time.</p>
+            </div>
+          </section>
+
+          <section id="sc-search">
+            <h2>Search window</h2>
+            <p>Search is <b>type-ahead</b> &mdash; just start typing in the search box and results update as you go
+              (no need to press Enter). Selecting rows works like a file list:</p>
+            <table class="refkey">
+              <thead><tr><th>Action</th><th>What it does</th></tr></thead>
+              <tbody>
+                <tr><td class="sc-keys">Click a row</td><td>Preview that document.</td></tr>
+                <tr><td class="sc-keys"><kbd>Ctrl</kbd> + click</td><td>Add / remove that row from a multi-selection.</td></tr>
+                <tr><td class="sc-keys"><kbd>Shift</kbd> + click</td><td>Select a whole range of rows.</td></tr>
+                <tr><td class="sc-keys">Right-click a row</td><td>A menu with actions for that document (Delete, or Restore / Delete permanently in the Bin). Some options depend on your role.</td></tr>
+              </tbody>
+            </table>
+          </section>
+
+          <section id="sc-settings">
+            <h2>Settings &amp; Templates</h2>
+            <table class="refkey">
+              <thead><tr><th>Key</th><th>What it does</th></tr></thead>
+              <tbody>
+                <tr><td class="sc-keys"><kbd>&larr;</kbd> <kbd>&uarr;</kbd> <kbd>&darr;</kbd> <kbd>&rarr;</kbd></td><td>In the <b>Template Manager</b>, nudge the selected mapping box a tiny step. Hold <kbd>Shift</kbd> for a bigger step.</td></tr>
+                <tr><td class="sc-keys"><kbd>&uarr;</kbd> / <kbd>&darr;</kbd></td><td>Move through the document list in the Learning-review pane.</td></tr>
+                <tr><td class="sc-keys"><kbd>Enter</kbd></td><td>Run the search in the Learning-review and Audit filter boxes.</td></tr>
+                <tr><td class="sc-keys"><kbd>Enter</kbd> / <kbd>Esc</kbd></td><td>Confirm / cancel a pop-up (adding a document type, naming a template group, and similar).</td></tr>
+              </tbody>
+            </table>
+          </section>
+
+          <section id="sc-around">
+            <h2>Around the app</h2>
+            <table class="refkey">
+              <thead><tr><th>Key</th><th>Where &amp; what it does</th></tr></thead>
+              <tbody>
+                <tr><td class="sc-keys"><kbd>/</kbd></td><td><b>User Guide</b> &mdash; jump to the guide's search box.</td></tr>
+                <tr><td class="sc-keys"><kbd>Enter</kbd> / <kbd>Esc</kbd></td><td><b>User Guide</b> search &mdash; open the first result / clear the box.</td></tr>
+                <tr><td class="sc-keys"><kbd>&larr;</kbd> / <kbd>&rarr;</kbd> &middot; <kbd>Esc</kbd></td><td><b>Welcome tour</b> &mdash; previous / next card, or close.</td></tr>
+                <tr><td class="sc-keys"><kbd>Esc</kbd></td><td><b>Practice run</b> &mdash; if a field is armed, unarm it; otherwise close the practice.</td></tr>
+                <tr><td class="sc-keys"><kbd>Enter</kbd></td><td><b>Sign-in</b> &mdash; submit the login form.</td></tr>
+                <tr><td class="sc-keys"><kbd>Esc</kbd></td><td>Exit <b>Help mode</b> (the "?" tool) anywhere it's on.</td></tr>
+              </tbody>
+            </table>
+          </section>
+
+          <section id="sc-mouse">
+            <h2>Handy mouse gestures</h2>
+            <p>Some of the most useful actions are done with the mouse and aren't obvious at first:</p>
+            <table class="refkey">
+              <thead><tr><th>Gesture</th><th>What it does</th></tr></thead>
+              <tbody>
+                <tr><td class="sc-keys">Scroll wheel over a preview</td><td>Zoom the document in / out (Review, Template Manager and the teaching tools).</td></tr>
+                <tr><td class="sc-keys">Right-click-drag a preview</td><td>Pan the zoomed document around.</td></tr>
+                <tr><td class="sc-keys">Left-drag a box on the scan</td><td>With a field armed (the <b>&#x2295;</b> "pick from document" tool, or a teaching tool), draw a box round a value and Scan Finder reads it in.</td></tr>
+                <tr><td class="sc-keys">Drag the queue divider</td><td>In Review, drag the line between the file list and the document to make either wider. Your width is remembered.</td></tr>
+                <tr><td class="sc-keys">Drag a home-screen card by its header</td><td>Re-arrange the cards on the home screen; the layout is saved.</td></tr>
+                <tr><td class="sc-keys">Right-click a field in Review</td><td>A small clean-up menu (for example, strip a leaked heading from a value). Admin / Edit users only.</td></tr>
+              </tbody>
+            </table>
+          </section>
+
+          <div class="callout note">
+            <div class="callout-title">Prefer buttons? That's fine.</div>
+            <p>Every shortcut here has a button or menu item too &mdash; shortcuts are just a faster way to do the
+              same thing. And the <b>?</b> Help mode (top of the window) lets you click any control to see what it does.</p>
+          </div>
+        </main>
+
+        <nav class="page-foot" id="page-foot"></nav>
+      </div>
+    </div>
+  </div>
+
+  <script src="help-nav.js"></script>
+</body>
+</html>

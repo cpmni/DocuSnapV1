@@ -25,6 +25,7 @@
     { file: 'search-client.html',   title: 'Search Client (other PCs)', sections: ['search-client', 'client-connect', 'client-firewall', 'client-seats', 'client-shared'] },
     { file: 'search-client-setup.html', title: 'Set up the Search Client', sections: ['client-setup', 'client-cert-setup', 'setup-turnon', 'setup-cert', 'setup-connect', 'setup-firewall', 'setup-faq'] },
     { file: 'settings.html',        title: 'Settings & Help',       sections: ['settings', 'help', 'help-mode', 'tab-general', 'tab-advanced', 'tab-licensing', 'name-checks', 'backup'] },
+    { file: 'shortcuts.html',       title: 'Keyboard Shortcuts',    sections: ['shortcuts', 'sc-review', 'sc-search', 'sc-settings', 'sc-around', 'sc-mouse', 'keyboard', 'gestures'] },
     { file: 'troubleshooting.html', title: 'Troubleshooting & FAQ', sections: ['troubleshooting', 'faq'] },
   ];
 
@@ -88,6 +89,12 @@
     ['Activation & licensing',                          'settings.html',        'licensing',        'Settings & Help'],
     ['Where to find help',                              'settings.html',        'help',             'Settings & Help'],
     ['The “?” help mode',                               'settings.html',        'help-mode',        'Settings & Help'],
+    ['Keyboard shortcuts & handy gestures',             'shortcuts.html',       'shortcuts',        'Keyboard Shortcuts'],
+    ['Review window shortcuts',                         'shortcuts.html',       'sc-review',        'Keyboard Shortcuts'],
+    ['Confirm & File shortcut (Ctrl+Enter)',            'shortcuts.html',       'sc-review',        'Keyboard Shortcuts'],
+    ['Search window shortcuts',                         'shortcuts.html',       'sc-search',        'Keyboard Shortcuts'],
+    ['Settings & template shortcuts',                   'shortcuts.html',       'sc-settings',      'Keyboard Shortcuts'],
+    ['Handy mouse gestures',                            'shortcuts.html',       'sc-mouse',         'Keyboard Shortcuts'],
     ['Troubleshooting & FAQ',                           'troubleshooting.html', 'troubleshooting',  'Troubleshooting & FAQ'],
     ['Common questions',                                'troubleshooting.html', 'faq',              'Troubleshooting & FAQ'],
   ];
