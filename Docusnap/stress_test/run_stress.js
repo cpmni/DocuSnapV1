@@ -94,7 +94,7 @@ function runProcessParallel(snapshot, files) {
   });
   const runOne = (shardFile) => new Promise((resolve) => {
     const args = ['-3.12', PROCESS_DOCS, '--folder', CORPUS, '--files-file', shardFile,
-      '--mode', MODE, '--tesseract', TESS, '--ocr-threads', '1', ...snapshot.args];
+      '--mode', MODE, '--tesseract', TESS, ...snapshot.args];
     const proc = spawn('py', args, { windowsHide: true });
     let out = '', err = '';
     proc.stdout.on('data', d => out += d.toString());

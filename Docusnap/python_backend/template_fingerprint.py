@@ -47,7 +47,6 @@ def main():
     ap.add_argument("--files-file", required=True)
     ap.add_argument("--tesseract", default=None)
     ap.add_argument("--born-digital", action="store_true")
-    ap.add_argument("--ocr-engine", default="tesseract")
     args = ap.parse_args()
 
     if args.tesseract:
@@ -59,7 +58,7 @@ def main():
     engine = None
     try:
         from ocr.engine import get_engine
-        engine = get_engine(args.ocr_engine)
+        engine = get_engine()
     except Exception:
         engine = None
 

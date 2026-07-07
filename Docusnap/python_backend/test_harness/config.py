@@ -22,7 +22,7 @@ DEFAULT_CONFIG = {
     # --- harness runtime knobs (not in the spec example, sensible defaults) ---
     "render_dpi": 150,          # scanned-page raster DPI (file-size vs detail trade-off)
     "keep_page_images": True,   # also save per-page PNGs (off => smaller artifacts)
-    "ocr_engines": ["tesseract"],   # benchmark set; add "rapidocr" for an A/B second pass
+    "ocr_engines": ["tesseract"],   # benchmark set (full-page OCR is Tesseract only)
     "tesseract_path": r"C:\Program Files\Tesseract-OCR\tesseract.exe",
     "gzip_ocr_json": True,
 }

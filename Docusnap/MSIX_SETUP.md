@@ -36,7 +36,7 @@ current `npm run build` (NSIS) is untouched.
 ```
 Add a separate script (keeps `npm run build` = NSIS only):
 ```json
-"build:store": "node scripts/check-licenses.js && node scripts/check-rapidocr-bundled.js && node -e \"const c=require('child_process');process.env.BUILD_REV=require('./scripts/build-rev').buildRev();c.execSync('electron-builder --win appx --config.extraMetadata.buildRev=' + process.env.BUILD_REV + ' --config.extraMetadata.version=' + require('./scripts/build-rev').msixVersion(),{stdio:'inherit',env:process.env})\""
+"build:store": "node scripts/check-licenses.js && node -e \"const c=require('child_process');process.env.BUILD_REV=require('./scripts/build-rev').buildRev();c.execSync('electron-builder --win appx --config.extraMetadata.buildRev=' + process.env.BUILD_REV + ' --config.extraMetadata.version=' + require('./scripts/build-rev').msixVersion(),{stdio:'inherit',env:process.env})\""
 ```
 electron-builder auto-injects **`runFullTrust`** for the appx target. `extraResources` + `asarUnpack`
 translate cleanly (they're just payload files; `process.resourcesPath` resolves the same in-package).

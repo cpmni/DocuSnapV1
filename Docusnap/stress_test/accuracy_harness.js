@@ -99,7 +99,7 @@ function runBackend(args, filenames) {
   const shardFiles = shards.filter(s => s.length).map(names => tmp('shard', names));
   const runOne = (shardFile) => new Promise((resolve) => {
     const p = spawn('py', ['-3.12', PROCESS_DOCS, '--folder', CORPUS, '--files-file', shardFile,
-      '--mode', 'fast', '--tesseract', TESS, '--ocr-threads', '1', ...args], { windowsHide: true });
+      '--mode', 'fast', '--tesseract', TESS, ...args], { windowsHide: true });
     let out = ''; p.stdout.on('data', d => (out += d)); p.stderr.on('data', () => {});
     p.on('close', () => resolve(out)); p.on('error', () => resolve(''));
   });

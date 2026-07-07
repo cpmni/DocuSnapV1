@@ -207,18 +207,6 @@ def main():
                              "rotate it upright for OCR; the per-page angles are emitted so the "
                              "caller can rewrite the filed PDF. First import only; born-digital "
                              "and confident-upright pages are skipped (inert).")
-    parser.add_argument("--ocr-engine", default="tesseract",
-                        help="full-page OCR engine: 'tesseract' (default, byte-identical) "
-                             "| 'rapidocr' (opt-in; falls back to tesseract if the runtime/"
-                             "models are unavailable). Crop/zone/anchor OCR always uses Tesseract.")
-    parser.add_argument("--ocr-fast", action="store_true",
-                        help="RapidOCR speed mode: skip the angle classifier (use_cls=False) "
-                             "for upright pages. Set by the app in Fast mode; ignored by Tesseract.")
-    parser.add_argument("--ocr-threads", type=int, default=0,
-                        help="RapidOCR onnxruntime intra-op thread cap PER worker (0/unset = "
-                             "onnxruntime default = all cores). The app passes cores/concurrency "
-                             "when running parallel workers so they don't oversubscribe the CPU. "
-                             "Ignored by Tesseract.")
     parser.add_argument("--trace", action="store_true")
     # SHADOW measurement: compute the text-led supplier-identity verdict per doc and emit it
     # in file_done (extraction/identity_fusion). Changes no decision; off => output unchanged.
@@ -280,16 +268,10 @@ def main():
         except Exception:
             global_cached_text = None
 
-    # Full-page OCR engine (default 'tesseract' = byte-identical). RapidOCR is opt-in
-    # and falls back to Tesseract if its runtime/models are unavailable; crop/zone/
-    # anchor OCR is unaffected by this selection. Named ocr_engine to avoid colliding
-    # with the ExtractionEngine `engine` below.
+    # Full-page OCR engine (Tesseract only). Named ocr_engine to avoid colliding with the
+    # ExtractionEngine `engine` below.
     from ocr.engine import get_engine
-    ocr_engine = get_engine(
-        args.ocr_engine,
-        use_cls=not args.ocr_fast,
-        intra_op_num_threads=(args.ocr_threads if args.ocr_threads and args.ocr_threads > 0 else None),
-    )
+    ocr_engine = get_engine()
 
     emit({
         "type": "log",

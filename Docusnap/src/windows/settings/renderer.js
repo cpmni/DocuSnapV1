@@ -454,22 +454,6 @@ if (fileTimeoutSelect) {
   });
 }
 
-// ── Full-page OCR engine (Stage 2 selector) ───────────────────────────────────
-// The backend seam (processing/handler.js + Python) already consumes `ocr_engine`;
-// this only persists the choice. Unset shows Tesseract, matching the shipped default
-// (the backend defaults the same way and only adds --ocr-engine for 'rapidocr'), so
-// existing installs are unaffected until an admin opts in.
-const ocrEngineSelect = document.getElementById('ocr-engine-select');
-async function loadOcrEngine() {
-  if (!ocrEngineSelect) return;
-  const v = await api.getSetting('ocr_engine');
-  ocrEngineSelect.value = (v === 'rapidocr') ? 'rapidocr' : 'tesseract';
-}
-loadOcrEngine();
-if (ocrEngineSelect) ocrEngineSelect.addEventListener('change', async () => {
-  try { await api.setSetting('ocr_engine', ocrEngineSelect.value === 'rapidocr' ? 'rapidocr' : 'tesseract'); }
-  catch { /* non-fatal; the saved value reloads on next open */ }
-});
 
 // ── Date format (region) — how an ambiguous numeric date is read ──────────────
 const dateOrderSelect = document.getElementById('date-order-select');

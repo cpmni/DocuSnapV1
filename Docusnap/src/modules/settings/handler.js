@@ -19,7 +19,7 @@ function register(ctx) {
     'processing_mode', 'processing_concurrency', 'registration_enabled', 'born_digital_enabled',
     'diagnostic_logging', 'theme', 'first_run_completed', 'watch_folder_enabled',
     'confidence_threshold', 'license_enforcement_enabled', 'copy_after_processing_enabled',
-    'name_wordness_flag', 'auto_separate_enabled', 'ocr_engine', 'multiline_enabled',
+    'name_wordness_flag', 'auto_separate_enabled', 'multiline_enabled',
     'auto_rotate_enabled', 'dashboard_hidden_cards', 'telemetry_enabled',
   ]);
 

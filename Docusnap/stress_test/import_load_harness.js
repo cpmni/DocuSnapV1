@@ -81,7 +81,7 @@ function runSharded(args, dir, filenames, N) {
   const shardFiles = shards.filter(s => s.length).map(names => tmp('shard', names));
   const runOne = (shardFile, idx) => new Promise((resolve) => {
     const p = spawn('py', ['-3.12', PROCESS_DOCS, '--folder', dir, '--files-file', shardFile,
-      '--mode', 'fast', '--tesseract', TESS, '--ocr-threads', '1', ...args], { windowsHide: true });
+      '--mode', 'fast', '--tesseract', TESS, ...args], { windowsHide: true });
     let out = '', errored = false;
     p.stdout.on('data', d => (out += d)); p.stderr.on('data', () => {});
     p.on('error', () => { errored = true; });

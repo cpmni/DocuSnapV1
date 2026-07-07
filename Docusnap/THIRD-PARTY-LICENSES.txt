@@ -180,17 +180,6 @@ NumPy               Copyright (c) 2005-2024, NumPy Developers.
 SciPy               Copyright (c) 2001-2024, SciPy Developers.
 imagehash           Copyright (c) 2013-2022, Johannes Buchner.
 pypdf               Copyright (c) 2006-2008, Mathieu Fenniak, and contributors.
-rapidocr-onnxruntime Copyright (c) RapidAI. Published under Apache-2.0, which
-                    covers the model assets BUNDLED in the wheel and shipped here:
-                    ch_PP-OCRv4_det_infer.onnx, ch_PP-OCRv4_rec_infer.onnx, and
-                    ch_ppocr_mobile_v2.0_cls_infer.onnx (PP-OCR models originating
-                    from PaddleOCR, (c) PaddlePaddle Authors, Apache-2.0). Verified
-                    against rapidocr-onnxruntime 1.3.25 as shipped. RapidOCR is an
-                    OPT-IN engine; default OCR is Tesseract.
-onnxruntime         Copyright (c) Microsoft Corporation.
-opencv-python       Copyright (c) Olli-Pekka Heinisuo and contributors; OpenCV team.
-shapely             Copyright (c) 2007, Sean Gillies and contributors.
-pyclipper           Copyright (c) The pyclipper authors; Clipper (c) Angus Johnson.
 PyYAML              Copyright (c) 2017-2021 Ingy doet Net; (c) 2006-2016 Kirill Simonov.
 CPython             Copyright (c) 2001-2024 Python Software Foundation. All Rights Reserved.
 IBM Plex            Copyright (c) 2017 IBM Corp. with Reserved Font Name "Plex".
@@ -217,8 +206,8 @@ MPL-2.0, CC0-1.0, Python-2.0) follow at sections 3.8-3.13.
 
 ................................................................................
 3.1  MIT License
-     (Applies to: better-sqlite3, argon2 node binding, onnxruntime, pyclipper,
-      PyYAML, Electron, and any component marked "MIT" above.)
+     (Applies to: better-sqlite3, argon2 node binding, PyYAML, Electron, and any
+      component marked "MIT" above.)
 ................................................................................
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -365,8 +354,7 @@ NOTE ON ELECTRON / CHROMIUM / FFMPEG:
 
 ................................................................................
 3.6  Apache License, Version 2.0
-     (Applies to: pytesseract, Tesseract OCR, rapidocr-onnxruntime + PP-OCR
-      models, opencv-python; and pypdfium2 where Apache-2.0 applies.)
+     (Applies to: pytesseract, Tesseract OCR; and pypdfium2 where Apache-2.0 applies.)
 ................................................................................
 
 

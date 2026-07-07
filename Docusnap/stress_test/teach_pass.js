@@ -69,7 +69,7 @@ function runP(s, files) {
   const N = 8; const shards = Array.from({ length: N }, () => []); files.forEach((f, i) => shards[i % N].push(f));
   const sf = shards.filter(x => x.length).map(names => w('shard', names));
   const one = (shardFile) => new Promise(res => {
-    const p = spawn('py', ['-3.12', PROCESS_DOCS, '--folder', CORPUS, '--files-file', shardFile, '--mode', 'fast', '--tesseract', TESS, '--ocr-threads', '1', ...s.args], { windowsHide: true });
+    const p = spawn('py', ['-3.12', PROCESS_DOCS, '--folder', CORPUS, '--files-file', shardFile, '--mode', 'fast', '--tesseract', TESS, ...s.args], { windowsHide: true });
     let out = ''; p.stdout.on('data', d => out += d); p.stderr.on('data', () => {}); p.on('close', () => res(out)); p.on('error', () => res(''));
   });
   return Promise.all(sf.map(one)).then(outs => {

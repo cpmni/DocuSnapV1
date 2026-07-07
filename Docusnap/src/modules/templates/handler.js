@@ -233,16 +233,15 @@ function register(ctx) {
     if (!files.length) return { success: false, reason: 'no sample files' };
 
     const learning = require('../../../database/modules/learning');
-    let bornDigital = true, ocrEngine = 'tesseract';
+    let bornDigital = true;
     try { bornDigital = learning.getSetting(db, 'born_digital_enabled') !== 'false'; } catch {}
-    try { if (learning.getSetting(db, 'ocr_engine') === 'rapidocr') ocrEngine = 'rapidocr'; } catch {}
 
     const filesFile = path.join(os.tmpdir(), `ds_tfp_${templateId}_${Date.now()}.json`);
     try { fs.writeFileSync(filesFile, JSON.stringify(files)); }
     catch (e) { return { success: false, reason: e.message }; }
     const script = ctx.resourcePath('python_backend', 'template_fingerprint.py');
     return new Promise((resolve) => {
-      const a = ['--files-file', filesFile, '--tesseract', ctx.tesseractPath(), '--ocr-engine', ocrEngine];
+      const a = ['--files-file', filesFile, '--tesseract', ctx.tesseractPath()];
       if (bornDigital) a.push('--born-digital');
       const proc = spawn(ctx.pythonExe(), ctx.pythonArgs(script, ...a), { windowsHide: true });
       let out = '', err = '';

@@ -159,7 +159,7 @@ function runProcess(snap, truth) {
   const one = (names) => new Promise(res => {
     const sf = wj('shard', names);
     const p = spawn('py', ['-3.12', PROCESS_DOCS, '--folder', folder, '--files-file', sf, '--mode', MODE,
-      '--tesseract', TESS, '--ocr-threads', '1', '--identity-shadow', ...(process.env.CONFLICT ? ['--identity-conflict'] : []), ...snap.args], { windowsHide: true });
+      '--tesseract', TESS, '--identity-shadow', ...(process.env.CONFLICT ? ['--identity-conflict'] : []), ...snap.args], { windowsHide: true, env: { ...process.env, OMP_THREAD_LIMIT: '1' } });
     let out = '', err = ''; p.stdout.on('data', d => out += d); p.stderr.on('data', d => err += d);
     p.on('close', () => { try { fs.unlinkSync(sf); } catch {} res({ out, err }); }); p.on('error', e => res({ out: '', err: String(e) }));
   });

@@ -128,7 +128,7 @@ and anywhere a business identity is needed:
 | Desktop shell | Electron 31, Node.js, better-sqlite3 |
 | UI | Vanilla HTML/CSS/JS; **native OS window frames**; shared light/dark theme (`src/windows/shared/theme.css`) |
 | LAN add-on | TLS `/v1` API (Node `https`) + detached Electron search client; certs via node-forge (`src/services/certService.js`) — see Detached search client |
-| OCR | Tesseract 5 via pytesseract + pypdfium2 (the opt-in RapidOCR engine is BEING REMOVED, 2026-07 — Slice 1 unbundled it from the build; Slice 2 removes the code/UI/deps — see HANDOVER_2026-07-07.md) |
+| OCR | Tesseract 5 via pytesseract + pypdfium2 |
 | Database | SQLite via better-sqlite3 |
 | Platform | Windows only |
 
