@@ -625,7 +625,6 @@ process_docs.py → ExtractionEngine.extract()
            _locate_in_text_lines). Detected by GLYPH COUNT + an alpha-ratio hybrid
            guard; INERT for image-only/scanned pages (fall back to OCR). Gated by
            born_digital_enabled (default ON).
-  Stage 3: llm.py        — phi3:mini, ONLY for missing fields (smart/ai mode)
   Stage 4: validator.py  — date normalise/salvage, currency infer, maths cross-check
   Stage 4.5: format_anomaly_checker.py — coarse-class + learned-shape consistency
              vs confirmed history; engine then weights _overall_confidence by

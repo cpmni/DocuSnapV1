@@ -129,7 +129,6 @@ and anywhere a business identity is needed:
 | UI | Vanilla HTML/CSS/JS; **native OS window frames**; shared light/dark theme (`src/windows/shared/theme.css`) |
 | LAN add-on | TLS `/v1` API (Node `https`) + detached Electron search client; certs via node-forge (`src/services/certService.js`) — see Detached search client |
 | OCR | Tesseract 5 via pytesseract + pypdfium2 (the opt-in RapidOCR engine is BEING REMOVED, 2026-07 — Slice 1 unbundled it from the build; Slice 2 removes the code/UI/deps — see HANDOVER_2026-07-07.md) |
-| AI extraction | phi3:mini via Ollama (dormant — `ai` mode not exposed in shipped UI; not bundled in installer) |
 | Database | SQLite via better-sqlite3 |
 | Platform | Windows only |
 
@@ -190,7 +189,6 @@ docusnap2/
 │   │   ├── keyword.py                   # Stage 1: regex pattern matching (incl. job_no 4-4-1 shape, separator-normalised)
 │   │   ├── anchor.py                    # Stage 2: spatial anchors + logo match
 │   │   ├── ocr_corrector.py             # Stage 2.5: learned OCR misread correction
-│   │   ├── llm.py                       # Stage 3: phi3:mini via Ollama (dormant — 'ai' mode not exposed in UI)
 │   │   ├── validator.py                 # Stage 4: cross-field validation
 │   │   ├── value_quality.py             # name/company/address quality (name_quality, is_name_like_field) — JS mirror in learning.js. is_name_like_field EXCLUDES technical addresses (mac/ip/hardware/network "address") — they are CODES, not names, so the name-quality/_name_field_code_reject gates must not strip their legitimate value ("D4:F0:C9:25:9B:64", "192.168.1.200"); else a labelled mac_address/ip_address anchor can never fill (the value's relocated read is rejected as "no real word")
 │   │   ├── text_normalise.py            # deterministic compare-time normaliser (NFKC/dash/quote/lower/ws/edge); JS twin database/modules/text_normalise.js
@@ -336,14 +334,13 @@ document_routes — document_id(FK cascade), from/to_user_id+username,
   word-boundary guards (e.g. "Total" must not match inside "Subtotal").
 - **Stage 2** `anchor.py` — learned label positions + logo supplier ID; drift recovery, label-lock,
   digit-parity guard, slip-fix, inline harvest, multi-line continuation.
-- **Stage 3** `llm.py` — phi3:mini, DORMANT (smart/ai only, not shipped in UI).
 - **Stage 4** `validator.py` — date normalise/salvage, currency infer, cross-field maths.
 - **Stage 4.5** `format_anomaly_checker.py` — coarse-class + learned-shape consistency vs confirmed
   history; free-text guard; token-level name repair; format-weighted overall confidence.
 - **Stage 4.6** candidate override — gated, DEFAULT-OFF.
 
-**Three modes** (`processing_mode`): `fast` (stages 1+2, sub-second) · `smart` (DEFAULT; +stage 3 only
-if invoice_number/date/total missing or <70%) · `ai` (always +3).
+**Two modes** (`processing_mode`): `fast` (stages 1+2, sub-second) · `smart` (DEFAULT; currently
+identical to fast — kept distinct for future use).
 
 ⚠ **Critical invariants — always honour these (full rationale in the doc):**
 - engine.extract() returns a FLAT dict mixing field dicts `{value,confidence,method}` with `_`-prefixed
@@ -615,8 +612,8 @@ search-documents(params)
 get-setting(key), set-setting(key,value)
 get-output-structure-info, preview-output-path({folderPattern,filenamePattern})  # Output Structure builders
 settings-backup-export({password}), settings-backup-preview({password}), settings-backup-apply({path,password})  # admin; see Settings backup
-get-ai-status, get-processing-mode, set-processing-mode(mode)
-pull-ai-model, check-fast-mode-suggestion(supplierName)
+get-processing-mode, set-processing-mode(mode)
+check-fast-mode-suggestion(supplierName)
 license-get-status, license-start-trial, license-activate(data), license-revoke(data)
 license-test-activate(data)            # admin local test — never mutates real state
 license-get-enforcement, license-set-enforcement(on)   # admin-gated; Settings → Activation
@@ -643,7 +640,6 @@ license-enter-app                      # REQUEST entry; main re-decides via deci
 ```
 review-count-changed(n), deferred-count-changed(n)
 processing-mode-changed(mode)
-pull-progress({status,completed,total})
 reprocess-progress(msg), process-progress(msg)
 process-trace(ev)                      # dev-inspector + (when its console is active) the REVIEW window; never the main window. See Dev inspector / Review trace console
 license-state(gate)                    # pushed to the license window with the blocked-state reason
@@ -734,7 +730,7 @@ additions" notes have moved to **`docs/history.md`**. Still genuinely OUTSTANDIN
 ## Fast Mode suggestion
 After confirming a doc, call `check-fast-mode-suggestion(supplierName)`.
 If returns non-null, show toast: "Switch to Fast Mode? You've confirmed N docs
-from [supplier]. Fast Mode processes instantly without AI."
+from [supplier]. Fast Mode processes instantly."
 Buttons: "Switch to Fast Mode" → `set-processing-mode('fast')` | "Not now"
 
 ---

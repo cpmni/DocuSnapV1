@@ -159,10 +159,6 @@ Python components — bundled interpreter, vendor/python (26)
 User-interface fonts (self-hosted asset files, src/windows/shared/fonts)
   IBM Plex Sans / IBM Plex Mono   SIL Open Font License 1.1 (c) 2017 IBM Corp.
 
-NOT distributed (excluded from the installer; listed for completeness)
-  Ollama + phi3:mini              excluded via build config (if ever bundled,
-                                  both are MIT, (c) Microsoft / Ollama authors)
-
 --------------------------------------------------------------------------------
 2. PER-COMPONENT COPYRIGHT NOTICES
 --------------------------------------------------------------------------------

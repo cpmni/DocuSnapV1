@@ -13,7 +13,7 @@ const diaglog = require('../diaglog');
 // Coerce the stored processing_mode to a value the backend accepts. A stale/legacy value
 // (e.g. an old "light", or one from a restored settings backup) must never reach
 // process_docs.py's --mode and break the whole batch on an arg-parse error.
-const _validMode = (m) => (m === 'fast' || m === 'smart' || m === 'ai') ? m : 'smart';
+const _validMode = (m) => (m === 'fast' || m === 'smart') ? m : 'smart';
 
 // Deep diagnostic logging is ON when the env override says so, or the admin
 // setting is 'true'. When on we (a) ask the extractor for the full --trace +

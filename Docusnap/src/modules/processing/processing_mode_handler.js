@@ -26,7 +26,7 @@ function register(ctx) {
   ipcMain.handle('set-processing-mode', (_e, mode) => {
     requireRole('admin', 'edit');
     // Only ever store a mode the backend accepts (guards against a bad caller / legacy value).
-    const safe = (mode === 'fast' || mode === 'smart' || mode === 'ai') ? mode : 'smart';
+    const safe = (mode === 'fast' || mode === 'smart') ? mode : 'smart';
     learning.setSetting(getDb(), 'processing_mode', safe);
     notifyMainWindow('processing-mode-changed', safe);
     return true;

@@ -1,17 +1,13 @@
 """
 extraction/engine.py
 --------------------
-Orchestrates the extraction pipeline across three modes:
+Orchestrates the extraction pipeline across two modes:
 
-  FAST  — keyword + anchor only. No LLM. Sub-second per document.
+  FAST  — keyword + anchor only. Sub-second per document.
            Used when supplier is well-trained.
 
-  SMART — keyword + anchor only, same as FAST. Default mode. (LLM
-           fallback for missing required fields was disabled — see
-           _should_use_llm — kept distinct from FAST for future use.)
-
-  AI    — LLM always runs after keyword + anchor, regardless of
-           confidence. Slowest, most thorough for unknown documents.
+  SMART — keyword + anchor only, same as FAST. Default mode.
+           (Kept distinct from FAST for future use.)
 
 Usage:
   engine = ExtractionEngine(mode='smart', ...)
@@ -24,13 +20,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from extraction import keyword, anchor, validator, ocr_corrector, template_matcher, template_mapper, format_anomaly_checker, value_quality, wordness
-
-# LLM import is optional — system works without it in FAST mode
-try:
-    from extraction import llm as llm_module
-    LLM_AVAILABLE = True
-except ImportError:
-    LLM_AVAILABLE = False
 
 # Identity-fusion (text-led SUPPLIER identity) is optional — it needs rapidfuzz, which is
 # not yet in the bundled runtime. Used ONLY by the shadow measurement (extract(identity_
@@ -299,16 +288,12 @@ def select_mapping_source(matched_tmpl: dict, templates: list | None) -> tuple[l
 class ExtractionEngine:
 
     def __init__(self,
-                 mode:         str = "smart",   # fast | smart | ai
+                 mode:         str = "smart",   # fast | smart
                  config_path:  str | None = None,
-                 ollama_url:   str = "http://127.0.0.1:11434/api/generate",
-                 model:        str = "phi3:mini",
                  emit_fn            = None):
 
         self.mode         = mode.lower()
         self.patterns     = keyword.load_patterns(config_path)
-        self.ollama_url   = ollama_url
-        self.model        = model
         self.emit         = emit_fn or (lambda msg: None)
         self.format_index        = {}   # populated by set_formats()
         self.noise_profile_index = {}   # populated by set_formats()
@@ -681,24 +666,6 @@ class ExtractionEngine:
         self.log(f"  OCR corrector: {n} format templates, {m} learned noise profile(s) loaded")
         if p:
             self.log(f"  Format checker: {p} format class rule(s) loaded")
-
-    def warmup(self) -> bool:
-        """Warm up Ollama model. Returns True if AI is available."""
-        if self.mode == "fast":
-            self.log("  Fast Mode — AI not used.")
-            return False
-        if not LLM_AVAILABLE:
-            self.log("  LLM module not available — running in Fast Mode.", "warn")
-            self.mode = "fast"
-            return False
-        self.log("  Warming up AI model…")
-        ok = llm_module.warmup(self.ollama_url, self.model)
-        if ok:
-            self.log(f"  AI model ready ({self.model}).")
-        else:
-            self.log("  AI model not available — falling back to Fast Mode.", "warn")
-            self.mode = "fast"
-        return ok
 
     def detect_document_type(self, ocr_text: str,
                              known_types: list | None = None) -> dict | None:
@@ -1623,34 +1590,6 @@ class ExtractionEngine:
             if n_corrected:
                 self.log(f"  Stage 2.5: {n_corrected} OCR correction(s) applied")
 
-        # ── Decide whether to call LLM ────────────────────────────────────────
-        use_llm = self._should_use_llm(results, document_slug)
-
-        if use_llm:
-            missing = [f for f in field_defs
-                       if not results.get(f["key"], {}).get("value")]
-            if missing:
-                self.log(
-                    f"  Stage 3: AI extraction for {len(missing)} fields…"
-                )
-                llm_results = llm_module.extract_missing_fields(
-                    ocr_text, filename, field_defs,
-                    already_found    = results,
-                    hints            = hints,
-                    document_type    = document_type,
-                    supplier_name    = supplier_name,
-                    ollama_url       = self.ollama_url,
-                    model            = self.model,
-                )
-                self._remember_candidates('3_llm', llm_results)
-                for key, data in llm_results.items():
-                    if data.get("value") and not results.get(key, {}).get("value"):
-                        results[key] = data
-                final = len([v for v in results.values() if v.get("value")])
-                self.log(f"  Stage 3: +{final - found} fields from AI")
-        else:
-            self.log(f"  Stage 3: skipped ({self.mode.capitalize()} Mode)")
-
         # ── Background reconciliation components (SHADOW) ──────────────────────
         # Read subtotal/VAT/shipping/discount that the doc type does NOT define as fields,
         # purely so the total-reconciliation guardrail + the "mathematically verified" badge
@@ -2269,12 +2208,3 @@ class ExtractionEngine:
                     }
 
         return results
-
-    def _should_use_llm(self, current_results: dict,
-                        document_slug: str | None) -> bool:
-        """Decide whether to call the LLM based on current mode and coverage."""
-        # Fast and Smart modes both use keyword+anchor only — no Ollama required.
-        # LLM is reserved for 'ai' mode only (not exposed in UI).
-        if self.mode == "ai":
-            return LLM_AVAILABLE
-        return False

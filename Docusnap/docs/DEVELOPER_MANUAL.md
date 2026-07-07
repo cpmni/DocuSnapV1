@@ -53,9 +53,8 @@ document types). A user points it at a folder of scanned PDFs/images; the app:
    so future documents from the same supplier need less (or no) manual
    correction.
 
-The app is **fully offline-capable**: OCR runs locally via Tesseract, the
-database is a local SQLite file, and the (currently dormant) AI extraction
-stage uses a local Ollama model rather than a cloud API.
+The app is **fully offline-capable**: OCR runs locally via Tesseract and the
+database is a local SQLite file — no cloud APIs.
 
 **Platform**: Windows only (desktop Electron app). Two distinct runtime
 contexts exist: **dev** (system Python 3.12 + system Tesseract) and
@@ -101,7 +100,6 @@ contexts exist: **dev** (system Python 3.12 + system Tesseract) and
 | Auth hashing | **argon2 ^0.44.0** | Used for password hashing in `database/modules/auth.js` |
 | UI | Vanilla HTML/CSS/JS, **frameless windows** | Custom titlebar, `-webkit-app-region: drag`. No framework (no React/Vue) |
 | OCR | **Tesseract 5** via `pytesseract` + `pypdfium2` | `pypdfium2` renders PDF pages to images for OCR and for preview |
-| AI extraction | **phi3:mini via Ollama** | **Dormant** — Stage 3 code exists (`llm.py`) but `ai` mode is not exposed in the shipped Settings UI and Ollama/the model is not bundled in the installer |
 | Database | **SQLite** via better-sqlite3, WAL journal mode, foreign keys ON | Single file at `{userData}/docusnap.db` |
 | Packaging | **electron-builder ^24.13.3** | NSIS installer, Windows x64 only, code signing disabled |
 
@@ -184,7 +182,6 @@ docusnap2/
 │   │   ├── keyword.py            # Stage 1: regex pattern matching + doc-type detection
 │   │   ├── anchor.py             # Stage 2: spatial anchors + logo supplier match
 │   │   ├── ocr_corrector.py      # Stage 2.5: learned OCR misread correction + noise stripping
-│   │   ├── llm.py                # Stage 3: phi3:mini via Ollama (dormant)
 │   │   ├── validator.py          # Stage 4: cross-field validation
 │   │   └── format_anomaly_checker.py  # Stage 4.5: format-class anomaly detection
 │   ├── ocr/{tesseract.py,region.py}    # Page OCR + zone-selection OCR
@@ -365,16 +362,14 @@ in `python_backend/extraction/engine.py`.
 
 ### 6.1 Modes
 
-Stored in `settings.processing_mode` (`fast | smart | ai`, default `smart`):
+Stored in `settings.processing_mode` (`fast | smart`, default `smart`):
 
-| Mode | Stages run | LLM (Stage 3) |
-|---|---|---|
-| `fast` | 0, 0.5, 1, 2, 2.5, 4, 4.5 | never |
-| `smart` (default) | same as fast | only if `invoice_number`/`invoice_date`/`total_amount` missing or confidence < 70% |
-| `ai` | same as fast | always |
+| Mode | Stages run |
+|---|---|
+| `fast` | 0, 0.5, 1, 2, 2.5, 4, 4.5 |
+| `smart` (default) | same as fast (kept distinct for future use) |
 
-`_should_use_llm()` returns `True` only in `ai` mode **and** when the LLM is
-available; `fast`/`smart` paths short-circuit before any Ollama call.
+(The former `ai`/LLM Stage 3 was removed 2026-07.)
 
 ### 6.2 Stage-by-stage
 
@@ -390,7 +385,6 @@ available; `fast`/`smart` paths short-circuit before any Ollama call.
 | 2.5b | engine.py `_apply_hints` | Fill **missing** fields from confirmed, non-variable supplier hints (usage_count ≥2) | `hint` |
 | 2.5c | `ocr_corrector.denoise_value` | Strip learned noise edges (e.g. `"# 14269"` → `"14269"`) for `invoice_number`-style fields with a learned digits-only profile (≥10 confirmed samples) | `+5` confidence boost |
 | 2.5d | `ocr_corrector.correct_extraction` / `try_correct` | Apply learned per-template character substitution maps (`LETTER_TO_DIGIT`, `DIGIT_TO_UPPER`, `DIGIT_TO_LOWER`) | appends `"+corrected"`, boost 0–20 |
-| **3** | `llm.py` (dormant in shipped UI) | phi3:mini fills only fields still missing | `llm` |
 | **4** | `validator.validate_and_adjust` | Label-shaped-value guard (value ending `:` → cap 35), date/reference noise stripping, date parsing/normalisation to `DD-MM-YYYY`, subtotal+VAT≈total cross-check (2% tolerance, cap 50 on mismatch), date sanity (>10y old/future → cap 40), currency inference from symbol | various caps + `validation_note` |
 | **4.5** | `format_anomaly_checker.check_value` | Compare value against the supplier/doc-type/field's inferred **format class** (from ≥3 confirmed historical samples). On violation: cap confidence at **45**, set `validation_note`, force `_needs_review`. Skips fields already flagged by Stage 4 | cap 45 |
 
@@ -405,7 +399,6 @@ available; `fast`/`smart` paths short-circuit before any Ollama call.
 | 1 (keyword) | Confidence comparison only: `data["confidence"] > existing["confidence"]` |
 | 2 (anchor) | **Taught override**: a result with `method == "anchor_crop"` overrides anything **except** another taught source (`anchor_crop`, `template_mapping`, `template_mapping_expanded`) — those contend on confidence. This lets a freshly-taught anchor (usage_count=1, ~85%) beat an already-wrong keyword hit (88–93%) |
 | 2.5b (hints) | Fill-missing only: `if not existing or not existing.get("value")` |
-| 3 (LLM) | Fill-missing only |
 | 4 / 4.5 (validation) | In-place modification — may **lower** confidence/add `validation_note`, never raises it |
 
 ### 6.4 Supplier identity re-resolution
@@ -785,7 +778,7 @@ usernames so failed-login timing doesn't reveal whether an account exists.
 ### 10.2 Main window (`src/windows/main/`)
 
 Folder-import UI: folder picker → Run/Stop/Clear → progress log + results
-table + stage indicator (`ocr`/`llm`/`save`/`done`). Listens to
+table + stage indicator (`ocr`/`save`/`done`). Listens to
 `process-progress` events (`start`, `file_begin`, `file_done`, `log`) via
 `onProgress`. Run button disabled while `running`.
 
@@ -1305,7 +1298,7 @@ load-bearing differences to remember when debugging a packaged-only issue:
 | **Folder watch / auto-import** | `src/modules/watch/handler.js` (`classifyPoll`, polling, integration with `processing.handleFileMessage`) |
 | **Validation rules** (date/currency/maths cross-checks) | `python_backend/extraction/validator.py` |
 | **Format-anomaly detection** | `python_backend/extraction/format_anomaly_checker.py`; `database/modules/learning.js` `getFieldFormats()` |
-| **Processing mode (fast/smart/ai) & fast-mode suggestion** | `src/modules/processing/processing_mode_handler.js`; gating logic in `python_backend/extraction/engine.py` `_should_use_llm` |
+| **Processing mode (fast/smart) & fast-mode suggestion** | `src/modules/processing/processing_mode_handler.js` |
 | **PDF splitting** | `python_backend/pdf_splitter.py` (+ CLI wrapper); IPC `split-pdf` in `src/modules/processing/handler.js` |
 
 ---

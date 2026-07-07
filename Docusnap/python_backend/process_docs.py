@@ -241,7 +241,7 @@ def main():
     parser.add_argument("--anchors",         default=None)
     parser.add_argument("--logos",           default=None)
     args = parser.parse_args()
-    if args.mode not in ("fast", "smart", "ai"):
+    if args.mode not in ("fast", "smart"):
         args.mode = "smart"   # tolerate a stale/legacy mode rather than failing the batch
 
     # Dev-only trace emitter (no-op unless --trace). Stamps type/doc/seq/ts so the

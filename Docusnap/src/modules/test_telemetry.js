@@ -29,7 +29,7 @@ const count = (db) => db.prepare('SELECT COUNT(*) AS c FROM telemetry_events').g
   ok(safeValue('error_class', 'AttributeError') === 'AttributeError', 'an exception type name is kept');
   ok(safeValue('file', 'C:/Users/me/scans/anchor.py') === undefined, 'a path-shaped file is dropped');
   ok(safeValue('file', 'anchor.py') === 'anchor.py', 'our own source basename is kept');
-  ok(safeValue('mode', 'ai') === undefined && safeValue('mode', 'fast') === 'fast', 'mode is a strict enum');
+  ok(safeValue('mode', 'bogus') === undefined && safeValue('mode', 'fast') === 'fast', 'mode is a strict enum');
   ok(safeValue('line', '412') === 412, 'line coerces to int');
   ok(safeValue('error_code', 'EBUSY') === 'EBUSY' && safeValue('error_code', 'whoops') === undefined, 'error_code enum');
   ok(safeValue('os_version', 'Windows_NT 10.0.26200') === 'Windows_NT 10.0.26200', 'os_version string kept');

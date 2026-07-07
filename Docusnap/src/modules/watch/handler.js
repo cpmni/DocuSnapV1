@@ -345,7 +345,7 @@ async function _processBatch(db, filenames) {
   // Coerce a stale/legacy processing_mode (e.g. an old "light") to a value process_docs.py
   // accepts — otherwise --mode arg-parse fails and the watch import silently does nothing.
   const _rawMode = learning.getSetting(db, 'processing_mode', 'smart');
-  const procMode = (_rawMode === 'fast' || _rawMode === 'smart' || _rawMode === 'ai') ? _rawMode : 'smart';
+  const procMode = (_rawMode === 'fast' || _rawMode === 'smart') ? _rawMode : 'smart';
   _log('log', `[watch] processing ${staged} file(s) (mode=${procMode})`);
 
   await new Promise((resolve) => {
