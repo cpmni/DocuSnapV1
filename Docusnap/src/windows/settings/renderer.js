@@ -528,12 +528,12 @@ if (nameWordnessToggle) nameWordnessToggle.addEventListener('change', async () =
 });
 
 // ── Supplier-identity conflict flag (letterhead reads a different known supplier) ──
-// OPT-IN, default OFF (backend reads 'identity_conflict_flag' with a 'false' default). Flag-only,
+// ON by default (backend reads 'identity_conflict_flag' with a 'true' default). Flag-only,
 // so this only persists an explicit choice and never changes extracted values.
 const identityConflictToggle = document.getElementById('identity-conflict-toggle');
 async function loadIdentityConflict() {
   if (!identityConflictToggle) return;
-  identityConflictToggle.checked = (await api.getSetting('identity_conflict_flag')) === 'true';
+  identityConflictToggle.checked = (await api.getSetting('identity_conflict_flag')) !== 'false';
 }
 loadIdentityConflict();
 if (identityConflictToggle) identityConflictToggle.addEventListener('change', async () => {
