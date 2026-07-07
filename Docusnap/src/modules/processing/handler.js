@@ -321,6 +321,16 @@ function maxConcurrency() {
   return Math.max(1, Math.min(10, cores));
 }
 
+// A sensible DEFAULT parallelism for a fresh install / unset setting: scale with the CPU
+// cores but leave ~2 cores of headroom for the OS/UI and each worker's Tesseract threads +
+// 300-DPI page images. The old hardcoded defaults (runtime 1, wizard 2) left multi-core PCs
+// idle; a user can still pick anything up to maxConcurrency() in Settings.
+// e.g. 2-core -> 1, 4-core -> 2, 6-core -> 4, 8-core -> 6.
+function defaultConcurrency() {
+  const cores = os.cpus().length || 1;
+  return Math.max(1, Math.min(maxConcurrency(), cores - 2));
+}
+
 function register(ctx) {
   const { ipcMain, getDb, pythonExe, pythonArgs, tesseractPath,
           backendScript, configPath, notifyMainWindow, notifyDevInspector,
@@ -653,8 +663,8 @@ function register(ctx) {
     // process handling a disjoint slice of the folder; ALL DB writes still flow
     // through _handleFileMessage on the single-threaded JS event loop (better-
     // sqlite3 is synchronous), so concurrency only parallelizes the CPU-bound
-    // OCR/extraction, never DB/learning state. Default 1 = unchanged sequential.
-    let concurrency = parseInt(learning.getSetting(db, 'processing_concurrency', '1'), 10);
+    // OCR/extraction, never DB/learning state. Default is core-aware (defaultConcurrency).
+    let concurrency = parseInt(learning.getSetting(db, 'processing_concurrency', String(defaultConcurrency())), 10);
     if (!Number.isFinite(concurrency)) concurrency = 1;
     // Core-aware ceiling (see maxConcurrency): cross-document parallelism only helps up to
     // ~the CPU core count; above that the per-worker Tesseract/threadCap split starves and the
@@ -883,6 +893,7 @@ function register(ctx) {
   ipcMain.handle('get-concurrency-info', () => ({
     cores: os.cpus().length || 1,
     maxConcurrency: maxConcurrency(),
+    recommended: defaultConcurrency(),
   }));
 
   ipcMain.handle('get-stuck-count', () =>
@@ -1282,7 +1293,7 @@ function register(ctx) {
     }
 
     const manifestFile = writeTempJson('rbmanifest', manifest);
-    let concurrency = parseInt(learning2.getSetting(db, 'processing_concurrency', '1'), 10);
+    let concurrency = parseInt(learning2.getSetting(db, 'processing_concurrency', String(defaultConcurrency())), 10);
     if (!Number.isFinite(concurrency)) concurrency = 1;
     // Match the import cap (5): Reprocess All is pure cross-document parallelism (each
     // doc's pipeline is unchanged); threadCap below keeps total OMP/onnx threads ≈ cores,
@@ -2206,6 +2217,7 @@ module.exports = {
   // Shared with the watch-folder handler so it can batch + shard its queue exactly like a
   // manual import (one Python process per shard of MANY files, not one process per file).
   maxConcurrency,
+  defaultConcurrency,
   partitionRoundRobin,
   // Exposed for the F-06 path-policy unit test (test_open_path_policy.js).
   _isOpenablePath,

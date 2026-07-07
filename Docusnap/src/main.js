@@ -178,10 +178,22 @@ function showLoginScreen() {
 
 // Raw shell open — only ever reached AFTER the licensing gate has allowed it.
 function openMainShell() {
-  createWindow('main', MAIN_WINDOW_OPTIONS, 'index.html');
-  destroyWindow('login');
-  destroyWindow('license');
-  destroyWindow('onboarding');
+  const main = createWindow('main', MAIN_WINDOW_OPTIONS, 'index.html');
+  // Keep the current cover window (login / license / onboarding) on screen until the main
+  // shell has actually PAINTED (ready-to-show), so a slow first run never flashes a blank /
+  // naked swap (the "loaded with icons but no text" report). Backstop-destroy so the cover
+  // windows are never leaked if ready-to-show never fires.
+  const teardown = () => {
+    destroyWindow('login');
+    destroyWindow('license');
+    destroyWindow('onboarding');
+  };
+  if (main && !main.isDestroyed()) {
+    main.once('ready-to-show', teardown);   // createWindow also shows main here, so it's a seamless swap
+    setTimeout(teardown, 12000);            // never leak the cover windows if ready-to-show never fires
+  } else {
+    teardown();
+  }
   refreshTrayMenu();   // reflect logged-in state (enable Review/Settings)
   startLicenseRevalidation();   // P0: catch a server-side revoke WHILE running, not only at launch
 }
@@ -505,8 +517,13 @@ function createWindow(name, options, htmlFile) {
   if (manageShow) {
     win.once('ready-to-show', () => { if (!win.isDestroyed()) win.show(); });
     // Backstop: never leave a window stuck hidden if ready-to-show never fires
-    // (e.g. a renderer error) — reveal anyway after a short grace period.
-    setTimeout(() => { if (!win.isDestroyed() && !win.isVisible()) win.show(); }, 2000);
+    // (e.g. a renderer error) — reveal anyway after a grace period. Kept GENEROUS
+    // (12s, was 2s): the 2s window was measured from construction (before loadFile),
+    // so on a slow-but-fine FIRST run (Windows Defender scanning the unsigned payload +
+    // cold disk cache) it pre-empted ready-to-show and revealed a not-yet-painted,
+    // text-less shell. ready-to-show still reveals promptly on a normal run; this only
+    // extends how long we wait before force-showing a genuinely-wedged renderer.
+    setTimeout(() => { if (!win.isDestroyed() && !win.isVisible()) win.show(); }, 12000);
   }
 
   win.loadFile(path.join(__dirname, 'windows', name, 'index.html'));

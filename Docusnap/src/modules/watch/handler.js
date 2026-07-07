@@ -287,7 +287,7 @@ function _drainQueue(db) {
   // tick (files that land meanwhile just queue for the following batch).
   if (_inFlight > 0) return;
 
-  let concurrency = parseInt(learning.getSetting(db, 'processing_concurrency', '1'), 10);
+  let concurrency = parseInt(learning.getSetting(db, 'processing_concurrency', String(processing.defaultConcurrency())), 10);
   if (!Number.isFinite(concurrency)) concurrency = 1;
   concurrency = Math.max(1, Math.min(processing.maxConcurrency(), concurrency));   // core-aware, matches manual import
 

@@ -57,6 +57,9 @@ async function loadCurrent() {
   try {
     state.outputFolder = (await D.getSetting('output_folder')) || (await D.suggestedOutputFolder()) || '';
   } catch {}
+  // Default to a core-aware value (this PC's cores minus headroom) unless the user already
+  // chose one — a fresh multi-core PC shouldn't be stuck at a hardcoded 2.
+  try { const info = await D.getConcurrencyInfo(); if (info && info.recommended >= 1) state.threads = info.recommended; } catch {}
   try { const c = parseInt(await D.getSetting('processing_concurrency'), 10); if (c >= 1) state.threads = c; } catch {}
   // The wizard only offers Thorough (smart) / Quick (fast); map any other stored
   // value (e.g. a legacy 'ai', or an unset/blank) to 'smart' so a card is always
