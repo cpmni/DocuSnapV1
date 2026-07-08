@@ -567,6 +567,13 @@
     /* Stacked: full-width primary on top, demoted "Reprocess All" beneath, so the
        long "Reprocess with Learned Data" label fits the 320px panel and the heavy
        queue-wide action reads as clearly secondary (no longer clipped off the edge). */
+    /* Import/watch activity bar — explains why Reprocess is paused while documents import. */
+    #processing-activity { margin: 8px 14px 0; padding: 8px 10px; border-radius: 8px; flex-shrink: 0;
+      background: var(--accent-bg); border: 1px solid var(--accent); color: var(--accent2);
+      font-size: 11px; line-height: 1.4; display: flex; align-items: center; gap: 8px; }
+    #processing-activity .pa-spinner { width: 12px; height: 12px; flex-shrink: 0; border-radius: 50%;
+      border: 2px solid var(--accent); border-top-color: transparent; animation: pa-spin .8s linear infinite; }
+    @keyframes pa-spin { to { transform: rotate(360deg); } }
     #reprocess-bar, #reprocess-queue-bar { padding: 8px 14px 0; flex-shrink: 0; display: flex; flex-direction: column; gap: 6px; }
     #reprocess-queue-bar { padding-bottom: 10px; }
     /* Section headings that separate "actions for THIS document" from "actions for ALL documents". */
@@ -928,7 +935,9 @@
       <div id="fields-scroll"></div>
 
       <div id="reprocess-progress" role="status" aria-live="polite"></div>
-      <!-- Actions for THIS document: re-extract it, then file/delete it (action-bar below). -->
+      <!-- Import/watch activity: shown while documents are being imported, so the operator sees
+           WHY "Reprocess" is unavailable (heavy work is serialised). -->
+      <div id="processing-activity" role="status" aria-live="polite" style="display:none;"></div>
       <div id="reprocess-bar">
         <div class="action-group-head">This document</div>
         <button class="btn reprocess"     id="btn-reprocess" data-help-key="reprocess">&#9654;&#9654; Reprocess</button>

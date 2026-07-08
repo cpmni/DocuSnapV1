@@ -37,6 +37,24 @@ let _singleReprocessActive = false;  // a single reprocess-document is in flight
 // which presents as the app "freezing". Reprocess entry points refuse when busy; the watch folder
 // already defers on this signal.
 function _anyProcessingBusy() { return _currentBatchProcs.length > 0 || _singleReprocessActive; }
+
+// ── Processing-activity signal for OTHER windows (esp. Review) ─────────────────────────
+// A single-doc reprocess is REFUSED while an import/watch batch is running (heavy work is
+// serialised). Broadcast a lightweight activity state to ALL windows so the Review window can
+// show WHY reprocess is unavailable + a progress indicator. Import and watch both route file
+// completions through _handleFileMessage, so one bump there drives the count for either source.
+let _activity  = null;   // null | { source:'import'|'watch', done, total }
+let _notifyAll = null;   // ctx.notifyAllWindows, set in register()
+function _broadcastActivity() {
+  try {
+    _notifyAll?.('processing-activity', _activity
+      ? { active: true, source: _activity.source, done: _activity.done, total: _activity.total }
+      : { active: false });
+  } catch { /* never let a UI signal break processing */ }
+}
+function _beginActivity(source, total) { _activity = { source, done: 0, total: total || 0 }; _broadcastActivity(); }
+function _bumpActivity()               { if (_activity) { _activity.done++; _broadcastActivity(); } }
+function _endActivity(source)          { if (_activity && _activity.source === source) { _activity = null; _broadcastActivity(); } }
 let _cancelRequested   = false;  // set true when stop is requested; suppresses buffered stdout
 let _pendingDrains     = [];     // originals to move to Processed/Errors AFTER the worker exits (pdfium holds the PDF open mid-run, so a mid-batch rename is locked)
 
@@ -351,6 +369,7 @@ function register(ctx) {
           backendScript, configPath, notifyMainWindow, notifyDevInspector,
           notifyReview, safeSend, spawn, path, fs, logger } = ctx;
   _pyHelpers = { pythonExe, pythonArgs, backendScript };
+  _notifyAll = ctx.notifyAllWindows;   // broadcast import/watch activity to Review (see _broadcastActivity)
 
   // Startup holding-area reconciliation — GC crash debris (.part / orphaned /
   // already-confirmed inbox copies) so the holding queue agrees with the DB on
@@ -826,6 +845,7 @@ function register(ctx) {
     // Build the worker set. concurrency<=1 keeps the EXACT original path (one
     // worker scans the folder; its own start/total flows straight through).
     let workerPromises;
+    let batchTotal = 0;              // # files to import (for the Review activity bar; 0 = unknown)
     if (concurrency <= 1) {
       logger?.log(`Batch start: folder="${folderPath}" mode=${procMode} concurrency=1`);
       workerPromises = [runWorker(null, false)];
@@ -844,6 +864,7 @@ function register(ctx) {
         logger?.log(`Batch start: folder="${folderPath}" mode=${procMode} concurrency=1 (only ${allFiles.length} file)`);
         workerPromises = [runWorker(null, false)];
       } else {
+        batchTotal = allFiles.length;
         const shards = partitionRoundRobin(allFiles, Math.min(concurrency, allFiles.length));
         logger?.log(`Batch start: folder="${folderPath}" mode=${procMode} concurrency=${concurrency} → ${shards.length} workers, ${allFiles.length} files`);
         // Per-worker thread cap = cores / workers, so the pool never oversubscribes the
@@ -861,10 +882,14 @@ function register(ctx) {
       }
     }
 
+    // Signal Review an import is running (reprocess paused) — placed AFTER worker setup so a setup
+    // throw can't leave the bar stuck; the workers resolve (never reject), so _endActivity always fires.
+    _beginActivity('import', batchTotal);
     const codes   = await Promise.all(workerPromises);
     const stopped = _cancelRequested;
     _cancelRequested   = false;
     _currentBatchProcs = [];
+    _endActivity('import');   // import finished — clear the Review activity bar + re-enable reprocess
     // Wait for every deferred per-file IO (async working-copy/rotate/drain/auto-file)
     // to finish so their drains are queued/attempted, THEN flush — the workers have
     // exited, so the source PDFs are unlocked and the moves into Processed/ now succeed.
@@ -900,6 +925,12 @@ function register(ctx) {
   // the role-gated reprocess-document IPC below.
   // CPU info for the Settings "Documents processed at once" control — lets the renderer
   // size the picker to this machine's cores and explain the choice. Read-only.
+  // Current import/watch activity — so a Review window opened DURING a running batch can sync
+  // its "documents are being imported" bar immediately (the broadcast only fires on transitions).
+  ipcMain.handle('get-processing-activity', () => _activity
+    ? { active: true, source: _activity.source, done: _activity.done, total: _activity.total }
+    : { active: false });
+
   ipcMain.handle('get-concurrency-info', () => ({
     cores: os.cpus().length || 1,
     maxConcurrency: maxConcurrency(),
@@ -1902,6 +1933,7 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
     return;
   }
   if (msg.type !== 'file_done') return;
+  _bumpActivity();   // one document finished (import or watch) — advance the Review activity bar
 
   if (!msg.success) {
     logger?.err(`File failed: ${msg.original_filename || '?'} — ${msg.error || 'unknown error'}`);
@@ -2219,6 +2251,10 @@ module.exports = {
   reconcileHolding,
   runHoldingReconcile,
   isBatchRunning: () => _anyProcessingBusy(),
+  // Watch-folder activity → the Review "documents are being imported" bar (file bumps happen
+  // automatically via handleFileMessage). beginWatchActivity(total) on drain, endWatchActivity() when idle.
+  beginWatchActivity: (total) => _beginActivity('watch', total),
+  endWatchActivity:   ()      => _endActivity('watch'),
   // Shared with the watch-folder handler so it can batch + shard its queue exactly like a
   // manual import (one Python process per shard of MANY files, not one process per file).
   maxConcurrency,

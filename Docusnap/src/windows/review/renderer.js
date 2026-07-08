@@ -3710,8 +3710,43 @@ const REPROCESS_DISCARD_WARNING =
   'Reprocessing re-reads this document with the latest learned data and REPLACES the '
   + 'fields on screen — your unsaved edits and type choice for this document will be lost.\n\nContinue?';
 
+// ── Import/watch activity → "why reprocess is paused" bar + reprocess-button disable ──────
+// A single-doc / batch reprocess is REFUSED while an import or watch-folder batch is running
+// (heavy work is serialised). Previously a click just flashed the button red + toasted; now a
+// persistent bar explains it and the reprocess buttons are disabled so the click can't flash.
+// Synced on load (getProcessingActivity) + live via the processing-activity broadcast.
+let _processingActive = false;
+function applyProcessingActivity(s) {
+  _processingActive = !!(s && s.active);
+  const bar = document.getElementById('processing-activity');
+  if (bar) {
+    if (_processingActive) {
+      const where = s.source === 'watch' ? 'the watch folder' : 'import';
+      const prog  = s.total ? ` — ${Math.min(s.done || 0, s.total)} of ${s.total}` : '';
+      bar.innerHTML = `<span class="pa-spinner"></span><span>Processing new documents from ${where}${prog}. Reprocess is paused until this finishes.</span>`;
+      bar.style.display = 'flex';
+    } else {
+      bar.style.display = 'none';
+    }
+  }
+  // Import/watch and a manual reprocess never run at the same time (heavy work is serialised),
+  // so toggling these here can't clash with a reprocess-in-progress's own disabled state.
+  for (const id of ['btn-reprocess', 'btn-reprocess-supplier', 'btn-reprocess-all']) {
+    const b = document.getElementById(id);
+    if (!b) continue;
+    b.disabled = _processingActive;
+    if (_processingActive) b.title = 'Documents are being imported — reprocess will be available once it finishes.';
+    else b.removeAttribute('title');
+  }
+}
+try {
+  window.docusnap.onProcessingActivity?.(applyProcessingActivity);
+  window.docusnap.getProcessingActivity?.().then(applyProcessingActivity).catch(() => {});
+} catch { /* older main without the activity signal — bar simply never shows */ }
+
 document.getElementById('btn-reprocess').addEventListener('click', async (e) => {
   if (!currentDoc) return;
+  if (_processingActive) { showToast('Documents are being imported — please wait, then reprocess.', 'warn'); return; }
   // Warn only on a genuine user click (programmatic .click() re-extracts are trusted).
   if (e?.isTrusted && hasPendingReviewEdits() && !confirm(REPROCESS_DISCARD_WARNING)) return;
   const btn = document.getElementById('btn-reprocess');
