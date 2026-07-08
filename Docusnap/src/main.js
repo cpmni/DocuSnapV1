@@ -745,6 +745,13 @@ app.whenReady().then(() => {
     // just adds thrash during the splash→login→shell handoff. Route keys into the web
     // widget only; the OS focus event itself already made this the key window. (eric)
     win.on('focus', () => { try { win.webContents.focus(); } catch {} });
+    // Keyboard-focus repair TRIGGER (eric): any OS activation transition — a native
+    // confirm()/alert(), an app-switch, opening a child window — blurs this window and can
+    // leave Blink's render widget with STALE-TRUE focus state (click a field, no caret, until
+    // you alt-tab out and back). Mark the window "focus suspect" on blur; the next text-field
+    // press (ensure-window-focus below) then does the real blurWebView()+focus transition and
+    // clears the flag. This is the reliable signal document.hasFocus() failed to provide.
+    win.on('blur', () => { win.__focusSuspect = true; });
     if (win.isVisible()) grabFocus();
   });
 
@@ -762,7 +769,22 @@ app.whenReady().then(() => {
       // src/lib/focusRepair.js for the full rationale (the win.blur()/win.focus() title-bar-flash
       // storm eric traced). Extracted so it's unit-testable off the app lifecycle.
       const win = BrowserWindow.fromWebContents(wc);
-      repairKeyboardFocus(win, wc, info);
+      // Fold in the reliable main-side "focus suspect" flag (set on win.on('blur')) so the
+      // blurWebView() transition runs when it's actually needed, not gated on the renderer's
+      // unreliable document.hasFocus(). Consume (clear) it after the repair.
+      const suspect = !!(win && win.__focusSuspect);
+      repairKeyboardFocus(win, wc, { ...(info || {}), suspect });
+      if (win && !win.isDestroyed()) win.__focusSuspect = false;
+    } catch {}
+  });
+
+  // A renderer signals that a native confirm()/alert() just returned — mark that window's
+  // widget focus SUSPECT so the next text-field press repairs it. Deterministic for the dialog
+  // case (no dependence on win.on('blur') firing for the native dialog). Sender-scoped.
+  ipcMain.on('mark-focus-suspect', (e) => {
+    try {
+      const win = BrowserWindow.fromWebContents(e.sender);
+      if (win && !win.isDestroyed()) win.__focusSuspect = true;
     } catch {}
   });
 

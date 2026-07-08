@@ -1,5 +1,19 @@
 'use strict';
 
+// Keyboard-focus repair (Windows): a native confirm()/alert() drops Blink's render-widget
+// keyboard focus while the window still reports focused, so the NEXT text-field click shows no
+// caret until you alt-tab out and back. Wrap the native dialogs once so that whenever one
+// returns we flag this window "focus suspect" in main; the pointerdown repair (preload →
+// ensure-window-focus → focusRepair.blurWebView) then does the real transition on the next field
+// press. Single point, no call-site changes, no async refactor. Guarded so it never breaks a dialog.
+(function instrumentNativeDialogsForFocusRepair() {
+  const mark = () => { try { window.docusnap?.markFocusSuspect?.(); } catch {} };
+  const _confirm = window.confirm.bind(window);
+  const _alert = window.alert.bind(window);
+  window.confirm = (...a) => { try { return _confirm(...a); } finally { mark(); } };
+  window.alert = (...a) => { try { return _alert(...a); } finally { mark(); } };
+})();
+
 // Fallback fields shown when no doc type is selected
 const FALLBACK_FIELD_KEYS = ['supplier_name', 'invoice_number', 'invoice_date'];
 

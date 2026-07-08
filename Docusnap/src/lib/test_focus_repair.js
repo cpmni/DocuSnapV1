@@ -55,5 +55,19 @@ const makeWc = (destroyed = false) => {
   check('undefined info → blurWebView NOT called', win.calls.blurWebView === 0);
   check('undefined info → wc.focus called', wc.calls.focus === 1); }
 
+// 6. SUSPECT flag (main-side, from win.on('blur')) forces the repair EVEN WHEN the renderer
+//    self-reports healthy — the residual-bug fix: document.hasFocus() lies TRUE post-dialog.
+{ const win = makeWin(), wc = makeWc();
+  repairKeyboardFocus(win, wc, { pageHasFocus: true, suspect: true });
+  check('suspect + hasFocus-true → blurWebView STILL called', win.calls.blurWebView === 1);
+  check('suspect → no forbidden win.blur/win.focus', win.calls.blur === 0 && win.calls.focus === 0);
+  check('suspect → wc.focus called', wc.calls.focus === 1); }
+
+// 7. NOT suspect + healthy → pure wc.focus path, no blur (a normal click's caret is untouched).
+{ const win = makeWin(), wc = makeWc();
+  repairKeyboardFocus(win, wc, { pageHasFocus: true, suspect: false });
+  check('healthy + not suspect → blurWebView NOT called', win.calls.blurWebView === 0);
+  check('healthy + not suspect → wc.focus called', wc.calls.focus === 1); }
+
 console.log(fails ? `\n${fails} FAILED` : '\nAll focus-repair checks passed');
 process.exit(fails ? 1 : 0);

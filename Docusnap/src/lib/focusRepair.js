@@ -13,11 +13,18 @@
 // the title bar forever demanding activation (the "Review title bar flashing fast, cursor trapped"
 // storm, reproduced on 2 PCs). blurWebView() delivers the same widget blur with ZERO OS activation.
 //
+// TRIGGER (eric): the blurWebView() transition runs when the widget focus is SUSPECT. The reliable
+// signal is `info.suspect` — set main-side from win.on('blur') (the OS activation transition after a
+// native dialog / app-switch / child window, i.e. exactly the "alt-tab out and back fixes it" case),
+// NOT the renderer's document.hasFocus(), which reports stale-TRUE in the broken state and used to
+// make the fix skip itself. `pageHasFocus === false` is kept as an OR-fallback so we never repair
+// LESS than before. A healthy click (suspect false, pageHasFocus true) takes the pure wc.focus()
+// path — no blur — so a normal click's caret is never disturbed.
 // INVARIANT (guarded by test_focus_repair.js): this path must NEVER call win.blur()/win.focus().
 function repairKeyboardFocus(win, wc, info) {
   try {
     if (win && !win.isDestroyed()) {
-      if (info && info.pageHasFocus === false) win.blurWebView();
+      if (info && (info.suspect === true || info.pageHasFocus === false)) win.blurWebView();
     }
     if (wc && !wc.isDestroyed()) wc.focus();
   } catch { /* focus repair must never throw into the IPC handler */ }

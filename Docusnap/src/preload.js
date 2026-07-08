@@ -166,6 +166,10 @@ contextBridge.exposeInMainWorld('docusnap', {
   renameFieldValue:            (scope)   => ipcRenderer.invoke('rename-field-value', scope),
   acceptNameValue:             (p)       => ipcRenderer.invoke('accept-name-value', p),
   acceptIssuer:                (p)       => ipcRenderer.invoke('accept-issuer', p),
+  // Tell main the render widget's keyboard focus is now SUSPECT (call right after a native
+  // confirm()/alert() returns) so the next text-field press does the real blurWebView() repair
+  // even if the window's own 'blur' event didn't fire for the dialog. See focusRepair.js.
+  markFocusSuspect:            ()        => ipcRenderer.send('mark-focus-suspect'),
   getDocumentWithExtractions:  (id)      => ipcRenderer.invoke('get-document-with-extractions', id),
   notifyDocClosed:             (id)      => ipcRenderer.send('notify-doc-closed', id),
   reviewHeartbeat:             (id)      => ipcRenderer.invoke('review-heartbeat', id),
