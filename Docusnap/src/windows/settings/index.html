@@ -134,19 +134,6 @@
     .btn-icon { background:none; border:none; cursor:pointer; color:var(--muted); font-size:14px; padding:4px 6px; border-radius:4px; }
     .btn-icon:hover { color:var(--err); background:var(--surface2); }
 
-    /* ── Processing mode ── */
-    .mode-group { display:flex; flex-direction:column; gap:6px; }
-    .mode-option { display:flex; align-items:flex-start; gap:10px; cursor:pointer; }
-    .mode-option input[type=radio] { margin-top:3px; accent-color:var(--accent); flex-shrink:0; }
-    .mode-card {
-      flex:1; background:var(--surface); border:1px solid var(--border);
-      border-radius:7px; padding:10px 14px; transition:border-color .15s;
-    }
-    .mode-option:has(input:checked) .mode-card { border-color:var(--accent); background:var(--accent-bg); }
-    .mode-name { font-weight:500; font-size:13px; display:flex; align-items:center; gap:6px; margin-bottom:3px; }
-    .mode-desc { font-size:11px; color:var(--muted); line-height:1.5; }
-    .badge-default { font-size:9px; padding:1px 6px; border-radius:8px; background:var(--ok-bg); color:var(--ok); border:1px solid var(--ok-border); }
-
     /* ── Threshold / toggle rows ── */
     .threshold-row { display:flex; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--border); }
     .threshold-row:last-child { border-bottom:none; }
@@ -582,26 +569,6 @@
       <div class="settings-group">
         <div class="group-title">Processing</div>
         <div class="group-body">
-          <div class="section">
-            <div class="section-title">Processing Mode</div>
-            <div class="mode-group">
-              <label class="mode-option">
-                <input type="radio" name="proc-mode" value="fast">
-                <div class="mode-card">
-                  <div class="mode-name">Fast</div>
-                  <div class="mode-desc">Regex patterns + learned positions only. Sub-second per document.</div>
-                </div>
-              </label>
-              <label class="mode-option">
-                <input type="radio" name="proc-mode" value="smart">
-                <div class="mode-card">
-                  <div class="mode-name">Smart <span class="badge-default">Default</span></div>
-                  <div class="mode-desc">Runs extra checks on the key fields when they're missing or low-confidence. All processing stays on this PC.</div>
-                </div>
-              </label>
-            </div>
-          </div>
-
           <div class="section">
             <div class="section-title">Parallel document processing</div>
             <div class="threshold-row">

@@ -68,16 +68,6 @@
       border-radius: 10px; padding: 1px 6px;
       font-size: 10px; font-weight: 600; display: none;
     }
-    .tb-mode-badge {
-      -webkit-app-region: no-drag;
-      padding: 2px 8px; border-radius: 10px; font-size: 10px;
-      font-family: inherit; border: 1px solid;
-      background: var(--ok-bg); color: var(--ok); border-color: var(--ok-border);
-    }
-    .tb-mode-badge[data-mode="smart"] {
-      background: var(--accent-bg); color: var(--accent2); border-color: var(--accent-border);
-    }
-
     /* ── Account chip & menu ── */
     .user-chip-wrap { position: relative; -webkit-app-region: no-drag; }
     .user-chip {
@@ -656,7 +646,6 @@
       <img class="tb-logo logo-light" src="../../../assets/logo-mark.svg" alt="Scan Finder">
       <img class="tb-logo logo-dark" src="../../../assets/logo-mark-dark.svg" alt="" aria-hidden="true">
       <span class="tb-title">ScanFinder</span>
-      <span id="mode-badge" class="tb-mode-badge" style="margin-left:12px;" data-help-key="mode">FAST</span>
     </div>
     <div class="tb-controls">
       <button class="tb-nav-btn help-guide-btn" id="btn-help-guide" data-help-key="user-guide" title="Open the user guide"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>Help</button>

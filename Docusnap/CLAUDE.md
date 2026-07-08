@@ -347,8 +347,12 @@ document_routes — document_id(FK cascade), from/to_user_id+username,
   history; free-text guard; token-level name repair; format-weighted overall confidence.
 - **Stage 4.6** candidate override — gated, DEFAULT-OFF.
 
-**Two modes** (`processing_mode`): `fast` (stages 1+2, sub-second) · `smart` (DEFAULT; currently
-identical to fast — kept distinct for future use).
+**Processing mode** (`processing_mode`, default `smart`): `fast` and `smart` are now IDENTICAL
+(stages 1+2) — they diverged only for the removed AI mode. The user-facing Fast/Smart CHOICE was
+COLLAPSED (2026-07-08): no Settings selector, no topbar mode badge, no "Switch to Fast Mode?"
+suggestion toast. The `processing_mode` setting + `--mode` plumbing REMAIN for tolerance (a stored
+`fast`/`smart` is still honoured; `set-processing-mode` stays registered + admin/edit-gated;
+`check-fast-mode-suggestion` is a retired no-op). Reintroduce a mode only if the stages diverge again.
 
 ⚠ **Critical invariants — always honour these (full rationale in the doc):**
 - engine.extract() returns a FLAT dict mixing field dicts `{value,confidence,method}` with `_`-prefixed

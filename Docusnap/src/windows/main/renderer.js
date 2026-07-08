@@ -389,7 +389,6 @@ const DASH_TIPS = [
   ['Teach a document', 'Open a tricky scan in Review and use “Teach this document” so Scan Finder files its layout automatically next time.'],
   ['Auto-import', 'Point Scan Finder at a watched folder and new scans process the moment they land — no clicks needed.'],
   ['100% files itself', 'A document read with full confidence is filed automatically — you only review the ones that need a second look.'],
-  ['Fast vs Smart', 'Switch processing mode in Settings — Fast is instant; Smart double-checks the key fields.'],
   ['Output structure', 'In Settings → Output Structure you can change how files are named and foldered using simple building blocks.'],
   ['It keeps learning', 'Every correction you confirm teaches Scan Finder — accuracy climbs the more you use it.'],
   ['Search anything', 'The Search “Search anything” box is full-text — it looks through everything on a document (text, references, amounts, dates and codes), not just the company. Numbers ignore commas, so 1137 finds 1,137.'],
@@ -612,7 +611,6 @@ const HELP_TEXTS = {
   'settings':      'Document types, fields, folders and preferences (admin).',
   'teach':         'Guide Scan Finder, step by step, to learn a new document layout.',
   'user-guide':    'Open the full user guide.',
-  'mode':          'Current processing mode (Fast or Smart). Click to change it in Settings.',
   'account':       'Your account — change password, switch theme, see About, or sign out.',
   'clock':         'Today’s date and the current time.',
   'local-only':    'Everything runs on this PC — no documents are uploaded or sent anywhere.',
@@ -1045,80 +1043,10 @@ document.getElementById('btn-search')?.addEventListener('click', () => {
   window.docusnap.openSearchWindow();
 });
 
-// ── Processing mode badge ─────────────────────────────────────────────────────
-const modeBadge = document.getElementById('mode-badge');
-
-async function updateModeBadge() {
-  if (!modeBadge) return;
-  const mode = await window.docusnap.getProcessingMode();
-  modeBadge.textContent = mode === 'fast' ? 'FAST' : 'SMART';
-  modeBadge.dataset.mode = mode;
-  modeBadge.title = `Processing mode: ${mode}. Click to change in Settings.`;
-}
-
-updateModeBadge();
-modeBadge?.addEventListener('click', () => window.docusnap.openSettingsWindow());
-
-window.docusnap.onProcessingModeChanged?.((mode) => updateModeBadge());
-
-// ── Fast Mode suggestion notification ────────────────────────────────────────
-async function checkFastModeSuggestion(supplierName) {
-  if (!supplierName) return;
-  const suggestion = await window.docusnap.checkFastModeSuggestion(supplierName);
-  if (!suggestion) return;
-
-  // Show a subtle toast notification — themed so it stays readable on BOTH
-  // light (default) and dark; raw dark-hex here was invisible on light.
-  const toast = document.createElement('div');
-  toast.style.cssText = `
-    position: fixed; bottom: 20px; right: 20px; z-index: 9999;
-    background: var(--surface); border: 1px solid var(--ok); border-radius: var(--r-sm);
-    padding: 12px 16px; max-width: 320px; font-size: 12px; color: var(--text);
-    box-shadow: 0 4px 20px rgba(0,0,0,0.18);
-  `;
-  toast.innerHTML = `
-    <div style="font-weight:600; color:var(--ok); margin-bottom:6px;">
-      ⚡ Switch to Fast Mode?
-    </div>
-    <div style="color:var(--muted); margin-bottom:10px; line-height:1.5;">
-      You've confirmed ${suggestion.docCount} documents from
-      <strong style="color:var(--text)">${escHtml(suggestion.supplier)}</strong>.
-      Fast Mode will process these instantly.
-    </div>
-    <div style="display:flex; gap:8px;">
-      <button id="toast-fast" style="
-        flex:1; padding:6px; border-radius:var(--r-sm); border:1px solid var(--ok);
-        background:var(--ok); color:#fff; cursor:pointer; font-size:11px;">
-        Switch to Fast Mode
-      </button>
-      <button id="toast-dismiss" style="
-        padding:6px 10px; border-radius:var(--r-sm); border:1px solid var(--border2);
-        background:transparent; color:var(--muted); cursor:pointer; font-size:11px;">
-        Not now
-      </button>
-    </div>
-  `;
-  document.body.appendChild(toast);
-
-  toast.querySelector('#toast-fast').addEventListener('click', async () => {
-    await window.docusnap.setProcessingMode('fast');
-    updateModeBadge();
-    toast.remove();
-  });
-  toast.querySelector('#toast-dismiss').addEventListener('click', () => toast.remove());
-
-  // Auto-dismiss after 12 seconds
-  setTimeout(() => toast.remove(), 12000);
-}
-
-// Hook into file_done messages to check Fast Mode suggestion
-const _origHandleProgress = handleProgress;
-// Override to also check Fast Mode after each confirmed document
-window.docusnap.onProgress((msg) => {
-  if (msg.type === 'file_done' && msg.success && msg.supplier_name) {
-    checkFastModeSuggestion(msg.supplier_name);
-  }
-});
+// Processing mode (Fast/Smart) was collapsed to a single mode — the two were identical
+// after the AI-mode removal — so the topbar mode badge and the "Switch to Fast Mode?"
+// suggestion toast are gone. The backend still stores `processing_mode` (default 'smart')
+// and honours it for tolerance, but there is no longer a user-facing choice.
 
 // ── Watch-folder activity in the live log strip + Session Stats ──────────────
 // The watch folder emits the same per-file progress as a manual run, on its own

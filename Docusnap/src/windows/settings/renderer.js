@@ -156,7 +156,7 @@ const HELP_TEXTS = {
   'tab-files':      'Where filed documents go — the output, processed-scans and watch folders — and how they are named (the subfolder layout and file-name pattern).',
   'tab-doctypes':   'Enable or disable document types and choose which field is each type’s main reference number and date.',
   'tab-fields':     'Add, edit, reorder or remove the fields a document type extracts. Built-in fields are locked.',
-  'tab-processing': 'How documents are processed — import options (auto-file, wrap, auto-rotate), speed/accuracy mode, parallelism, the OCR engine, document separation, name checks and the review confidence threshold.',
+  'tab-processing': 'How documents are processed — import options (auto-file, wrap, auto-rotate), parallelism, the OCR engine, document separation, name checks and the review confidence threshold.',
   'tab-appearance': 'The colour theme, what happens when you close the window, and which cards appear on the Home screen.',
   'tab-templates':  'Browse the layouts Scan Finder has learned and map where each field sits on the page.',
   'tab-learning':   'Teach the keyword stage extra labels to look for, and review or clean up learned data (anchors, hints, corrections) if extraction drifts.',
@@ -395,19 +395,9 @@ async function _readHiddenCards() {
   });
 })();
 
-// ── Processing mode ───────────────────────────────────────────────────────────
-async function loadProcessingMode() {
-  const mode = await api.getProcessingMode();
-  const radio = document.querySelector(`input[name="proc-mode"][value="${mode}"]`);
-  if (radio) radio.checked = true;
-}
-loadProcessingMode();
-
-document.querySelectorAll('input[name="proc-mode"]').forEach(r => {
-  r.addEventListener('change', async () => {
-    if (r.checked) await api.setProcessingMode(r.value);
-  });
-});
+// Processing mode (Fast/Smart) was collapsed to one mode — the two became identical after
+// the AI-mode removal — so there is no longer a user-facing selector here. The backend still
+// stores `processing_mode` (default 'smart') and honours it for tolerance.
 
 // ── Parallel document processing (worker count) ───────────────────────────────
 const concurrencySelect = document.getElementById('processing-concurrency');
