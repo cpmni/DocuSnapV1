@@ -131,6 +131,22 @@ CREATE TABLE IF NOT EXISTS telemetry_events (
   KEY idx_received (received_at)
 );
 
+-- Advisory "latest release" per distribution channel — feeds the in-app update banner via
+-- lib/release.php (rides /v1/validate + /v1/status, UNSIGNED, non-gating). One row per channel.
+-- latest_version is the clean 3-part SemVer the client compares against its own app.getVersion();
+-- update_url is the Store deep-link (ms-windows-store://…) or an https download/listing URL.
+-- min_supported_version is reserved for a FUTURE forced-update slice (not read by the client yet).
+-- Empty latest_version ⇒ the banner never shows (inert), so the seeded row is safe until set.
+CREATE TABLE IF NOT EXISTS releases (
+  channel               VARCHAR(16)  NOT NULL PRIMARY KEY,   -- 'msstore' | 'nsis'
+  latest_version        VARCHAR(32)  NOT NULL DEFAULT '',
+  update_url            VARCHAR(512) NOT NULL DEFAULT '',
+  min_supported_version VARCHAR(32)  NULL,
+  updated_at            DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+-- Seed an INERT msstore row (empty version → no banner) so an admin has a row to UPDATE on release.
+INSERT IGNORE INTO releases (channel, latest_version, update_url) VALUES ('msstore', '', '');
+
 -- ── Idempotent migrations ────────────────────────────────────────────────────
 -- CREATE TABLE IF NOT EXISTS above only covers FRESH installs; an existing DB
 -- keeps its old column set. This block back-fills new columns on re-import

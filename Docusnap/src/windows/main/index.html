@@ -261,6 +261,14 @@
     .dash-trial.crit { background: var(--err-bg); border-color: var(--err-border); color: var(--err); }
     .dash-trial.crit .trial-bar-fill { background: var(--err); }
     .dash-trial .dash-btn { margin: 0; flex: 0 0 auto; }
+    /* Update-available banner — INFO/neutral tone (a newer version is good news, not a problem). */
+    .dash-update { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: var(--r);
+      border: 1px solid var(--accent-border); background: var(--accent-bg); color: var(--accent2); }
+    .dash-update .ico-sm { width: 16px; height: 16px; flex: 0 0 auto; }
+    .dash-update .update-main { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .dash-update .update-text { font-weight: 600; }
+    .dash-update .update-sub { font-size: 11px; opacity: .8; }
+    .dash-update .dash-btn { margin: 0; flex: 0 0 auto; }
 
     /* Documents-filed (stats) card — stats centred + divided, filling the tile. */
     #dash-pulse .pulse-grid { flex: 1; align-items: center; }
@@ -734,6 +742,18 @@
               </div>
               <button class="dash-btn" id="dash-trial-buy" data-help-key="buy-licence">Purchase licence</button>
               <button class="dash-btn primary" id="dash-trial-activate">Activate</button>
+            </div>
+
+            <!-- Update-available banner (advisory; info tone; shown only when a newer version exists
+                 and it hasn't been dismissed for that version). -->
+            <div class="dash-update dash-span" id="dash-update" data-help-key="update" style="display:none;">
+              <svg class="ico ico-sm" aria-hidden="true"><use href="#i-sparkles"/></svg>
+              <div class="update-main">
+                <span class="update-text" id="dash-update-text">A new version is available.</span>
+                <span class="update-sub">Checked during your normal licence check — your version stays on your device until you update.</span>
+              </div>
+              <button class="dash-btn" id="dash-update-dismiss">Dismiss</button>
+              <button class="dash-btn primary" id="dash-update-btn">Update</button>
             </div>
 
             <!-- Setup checklist (full width; first-runs only) -->

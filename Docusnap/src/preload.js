@@ -46,6 +46,10 @@ contextBridge.exposeInMainWorld('docusnap', {
   // Read-only diagnostic: what the gate sees on this device (enforcement + cached
   // token state + offline decision). No network call, no state change.
   licenseGetDiagnostics: ()   => ipcRenderer.invoke('license-get-diagnostics'),
+  // Advisory update banner (slice 1): resolved "is a newer version available?" + open the
+  // backend-supplied update URL (validated main-side against a scheme allowlist).
+  getUpdateInfo:         ()   => ipcRenderer.invoke('get-update-info'),
+  openUpdateUrl:         ()   => ipcRenderer.send('open-update-url'),
   // Manual "re-check licence now": runs the authoritative gate (re-validate) and locks the
   // app if the licence was revoked/expired server-side. Returns the gate decision.
   licenseRecheck:        ()   => ipcRenderer.invoke('license-recheck'),
