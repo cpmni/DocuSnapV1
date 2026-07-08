@@ -423,19 +423,25 @@ function isAutoFileEligible(db, doc, opts = {}) {
         "SELECT COUNT(*) c FROM extractions WHERE document_id = ? AND ((validation_note IS NOT NULL AND TRIM(validation_note) <> '') OR (corrected_to IS NOT NULL AND TRIM(corrected_to) <> ''))"
       ).get(doc.id).c;
   if (flagged) return { eligible: false, floor, trusted: t.trusted, reason: 'flagged' };
-  // Structural safety gate. Two regimes:
-  //  • sub-100 (a graduated read filing at the 98/95 discount) → the FULL gate (template + every
-  //    valued field verifiable), since the discount is where confidence is lowest.
-  //  • at 100 (Slice 7) → the LENIENT `at100` gate: no template requirement and no block on a
-  //    genuinely-unverifiable field (freetext / no-history / ambiguous 'constant'), so a
-  //    legitimately-variable free-text field (a per-doc `customer` name) and logo-only suppliers
-  //    still auto-file exactly as before — but a DETERMINISTICALLY-invalid strict value (bad
-  //    calendar date, checksum-failing IBAN/VAT, dropped-decimal total) or a value that violates a
-  //    STRUCTURED learned shape (a code field learned as "xxxx-xxxx-x" reading "Information") is now
-  //    caught at 100% too, closing the confidently-wrong hole the old gate-free path left open.
-  const g = docTrustGate(db, doc.id, doc.supplier_name, slug,
-    { ...opts, at100: (doc.overall_confidence || 0) >= 100 });
-  if (!g.ok) return { eligible: false, floor, trusted: t.trusted, reason: g.reason };
+  // Structural safety gate.
+  //  • sub-100 (a graduated read filing at the 95 discount) → the FULL gate ALWAYS runs (template +
+  //    every valued field verifiable), since the discount is where confidence is lowest.
+  //  • at 100 → the read met the original full-confidence bar, so it files GATE-FREE by default
+  //    (the pre-"Slice 7" behaviour): type + un-flagged is the safety, exactly as it was before.
+  //    The stricter lenient `at100` gate (deterministic strict re-checks + structured-shape block)
+  //    is OPT-IN via `strict_100_autofile` (default off) — it over-blocked legit 100% docs in the
+  //    field (a supplier's whole batch stopped auto-filing), and the `item="Information"` class it
+  //    targeted is now covered by the flagged check above + the Stage-2.5d dominant snap. The
+  //    `flagged` check (validation_note / corrected_to) STILL applies at 100% regardless.
+  const conf = doc.overall_confidence || 0;
+  if (conf < 100) {
+    const g = docTrustGate(db, doc.id, doc.supplier_name, slug, opts);
+    if (!g.ok) return { eligible: false, floor, trusted: t.trusted, reason: g.reason };
+  } else if ((opts.strict100 !== undefined ? opts.strict100
+              : learning.getSetting(db, 'strict_100_autofile', 'false') === 'true')) {
+    const g = docTrustGate(db, doc.id, doc.supplier_name, slug, { ...opts, at100: true });
+    if (!g.ok) return { eligible: false, floor, trusted: t.trusted, reason: g.reason };
+  }
   return { eligible: true, floor, trusted: t.trusted, reason: 'ok' };
 }
 

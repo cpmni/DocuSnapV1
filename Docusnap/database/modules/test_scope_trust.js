@@ -496,12 +496,18 @@ function main() {
       fields: { supplier_name: 'Anconia Corp', invoice_date: '05-06-2026', invoice_number: 'INV9', total: '250.00', item: 'M0018', customer: 'A New Customer Ltd', ...extra },
     }));
     const elig = d => trust.isAutoFileEligible(db, d).eligible;
+    // DEFAULT (strict_100_autofile OFF): a full-100 read files GATE-FREE (pre-Slice-7). The stricter
+    // at100 gate over-blocked legit 100% docs in the field, so it is opt-in now.
+    const eligStrict = d => trust.isAutoFileEligible(db, d, { strict100: true }).eligible;
     check("100% clean read → ELIGIBLE (liveness)",                         elig(at100({})) === true);
     check("100% variable customer (freetext) NOT blocked (no regression)", elig(at100({ customer: 'Totally Unseen Name Corp' })) === true);
-    // THE user's case: a code-shaped field reading a word must not auto-file at 100%.
-    check("100% item='Information' vs learned CODE shape → BLOCKED",       elig(at100({ item: 'Information' })) === false);
-    check("100% bad calendar date (45/67/8901) → BLOCKED",                 elig(at100({ invoice_date: '45/67/8901' })) === false);
-    check("100% dropped-decimal total (25000) → BLOCKED",                  elig(at100({ total: '25000' })) === false);
+    // DEFAULT OFF: the cases the at100 gate targeted now auto-file (gate-free, as pre-Slice-7).
+    check("DEFAULT off: 100% item='Information' → ELIGIBLE (gate-free)",   elig(at100({ item: 'Information' })) === true);
+    check("DEFAULT off: 100% bad date → ELIGIBLE (gate-free)",            elig(at100({ invoice_date: '45/67/8901' })) === true);
+    // OPT-IN (strict100): the lenient at100 gate fires and blocks those.
+    check("strict100 ON: 100% item='Information' → BLOCKED",               eligStrict(at100({ item: 'Information' })) === false);
+    check("strict100 ON: 100% bad calendar date → BLOCKED",               eligStrict(at100({ invoice_date: '45/67/8901' })) === false);
+    check("strict100 ON: 100% dropped-decimal total → BLOCKED",           eligStrict(at100({ total: '25000' })) === false);
     // Anti-regression: logo-only 100% (no template) still auto-files (no template requirement at 100).
     const noTpl = getDoc(db, seedDoc(db, tid, { supplier: 'Anconia Corp', when: '2026-06-11T10:05:00Z', status: 'needs_review', template: null, conf: 100,
       fields: { supplier_name: 'Anconia Corp', invoice_date: '05-06-2026', invoice_number: 'INV9', total: '250.00', item: 'M0018', customer: 'X Co' } }));
