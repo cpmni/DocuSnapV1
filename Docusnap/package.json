@@ -2,7 +2,7 @@
   "name": "docusnap",
   "version": "2.0.0",
   "description": "Local document OCR and field extraction",
-  "author": "SOFTWARE COMPANY",
+  "author": "Six Mile Software",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
@@ -14,7 +14,7 @@
   "build": {
     "appId": "com.scanfinder.app",
     "productName": "ScanFinder",
-    "copyright": "Copyright © 2026 SOFTWARE COMPANY",
+    "copyright": "Copyright © 2026 Six Mile Software",
     "win": {
       "target": [
         {

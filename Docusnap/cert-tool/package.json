@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "description": "Generate per-customer TLS certificates for the ScanFinder detached-client API.",
-  "author": "SOFTWARE COMPANY",
+  "author": "Six Mile Software",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -12,7 +12,7 @@
   "build": {
     "appId": "com.scanfinder.certtool",
     "productName": "ScanFinder Cert Tool",
-    "copyright": "Copyright © 2026 SOFTWARE COMPANY",
+    "copyright": "Copyright © 2026 Six Mile Software",
     "win": {
       "target": [
         { "target": "nsis", "arch": ["x64"] }
