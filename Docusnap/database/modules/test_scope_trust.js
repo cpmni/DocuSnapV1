@@ -363,6 +363,26 @@ function main() {
     check("docTrustGate passes a valid IBAN",     trust.docTrustGate(db, mkDoc('GB82WEST12345698765432'), 'Acme', 'payment').ok === true);
   }
 
+  // ── 17b. currency decimal-place consistency (reggie T4, #9) ─────────────────
+  section('17b. currency decimal-place consistency');
+  const HIST2DP = ['100.00', '250.00', '99.99', '12.50', '7.00', '1000.00'];   // all 2-dp, 6 samples
+  check("2-dp value vs 2-dp history → consistent",       trust.currencyDpConsistent('1234.56', HIST2DP) === true);
+  check("dropped-decimal 0-dp value vs 2-dp history → INCONSISTENT", trust.currencyDpConsistent('123456', HIST2DP) === false);
+  check("whole-pound value vs MIXED history → allowed",  trust.currencyDpConsistent('1234', ['100', '250.00', '99', '12.50', '7', '1000']) === true);
+  check("too little history (<5) → allowed",             trust.currencyDpConsistent('123456', ['100.00', '250.00']) === true);
+  check("tiny 0-dp value → allowed (low blast radius)",  trust.currencyDpConsistent('5', HIST2DP) === true);
+  {
+    // Integration: the seeded scope's `total` history is all 2-dp (X.50), so a dropped-decimal
+    // total blocks the doc while a normal 2-dp total passes.
+    const db = makeDb(); const tid = seedType(db); seedCleanScope(db, tid, 10, 'Anconia Corp');
+    const cand = (total) => trust.docTrustGate(db, seedDoc(db, tid, {
+      supplier: 'Anconia Corp', when: '2026-06-07T11:00:00Z', status: 'needs_review', template: 7, conf: 98,
+      fields: { supplier_name: 'Anconia Corp', invoice_date: '05-06-2026', invoice_number: 'INV7', total },
+    }), 'Anconia Corp', 'invoice');
+    check("docTrustGate blocks a dropped-decimal total (123456)", cand('123456').reason === 'currency-dp:total');
+    check("docTrustGate passes a normal 2-dp total (250.00)",     cand('250.00').ok === true);
+  }
+
   // ── 18. a full-100 read files gate-free even in a graduated scope (the D:\ worksheet case) ──
   section('18. 100% read skips the structural gate; the discount still gets it');
   {
@@ -408,9 +428,12 @@ function main() {
     check("out-of-range date (45/67/8901) → REFUSED",                elig(cand({ invoice_date: '45/67/8901' })) === false);
     check("a flagged field (validation_note) → REFUSED",             elig(cand({}, { total: 'please verify' })) === false);
     check("empty optional item → still ELIGIBLE (empty is safe)",    elig(cand({ item: '' })) === true);
-    // RESIDUAL (documented): a wrong-but-VALID-SHAPE value the shape gate cannot see — needs a
-    // cross-field / checksum / learned-consistency signal (e.g. #15 currency dp-consistency).
-    check("[residual] decimal-shifted total (123456) PASSES — shape gate can't catch it (see #15)", elig(cand({ total: '123456' })) === true);
+    // Previously a documented RESIDUAL (a wrong-but-valid-SHAPE value the plain shape gate can't
+    // see); now CLOSED by the currency decimal-place-consistency signal (#9/reggie T4): a 0-dp
+    // total against this scope's all-2-dp learned history is a dropped-decimal 100× error → REFUSED.
+    check("decimal-shifted total (123456) → REFUSED (currency dp-consistency, #9)", elig(cand({ total: '123456' })) === false);
+    // The true residual now is a same-dp wrong value (e.g. 250.00 → 520.00) — a transposition that
+    // keeps 2 dp; that needs cross-field maths, not a shape/dp check.
   }
 
   // ── 20. result-eval (#6 harness enabler): judge a REPROCESSED result via opts.extractions ──

@@ -113,6 +113,32 @@ function _validIban(v) {
   return rem === 1;
 }
 
+// Currency decimal-place-count consistency (reggie T4). A dropped decimal turns "1234.56"
+// into "123456" — a 100× mis-file that keeps a valid currency SHAPE (so no note fires) and
+// would auto-file. Tightening the regex is wrong (whole-pound / ¥ amounts are legitimately
+// 0-dp). Instead: learn the field's decimal-place habit and block a 0-dp value ONLY when the
+// scope's confirmed history is OVERWHELMINGLY 2-dp — i.e. this supplier always prints pence,
+// so a sudden large round number is a probable dropped decimal. Conservative by construction:
+// needs ≥5 samples that are ≥90% two-dp before it will judge at all, and it never false-blocks
+// a value that itself carries 2 dp. Values are the app's canonical money form (symbol stripped,
+// '.' decimal — thousands separators already normalised out), so only '.' marks the decimal.
+function _currencyDp(v) {
+  const m = String(v == null ? '' : v).trim().match(/\.(\d+)\s*$/);   // canonical decimal is '.'
+  return m ? m[1].length : 0;
+}
+function _currencyDpConsistent(value, sampleValues) {
+  const vals = (sampleValues || []).map(x => String(x == null ? '' : x).trim())
+    .filter(x => x && _currencyish(x));
+  if (vals.length < 5) return true;                              // too little history to judge
+  const twoDp = vals.filter(x => _currencyDp(x) === 2).length;
+  if (twoDp / vals.length < 0.9) return true;                    // mixed/whole-pound supplier → don't judge
+  if (_currencyDp(value) === 2) return true;                     // value matches the learned 2-dp habit
+  // 0/1-dp value against an all-2-dp history: suspicious only when the number is sizeable (a
+  // genuine tiny whole amount like "5" is low-blast-radius and plausibly real).
+  const intDigits = String(value).replace(/[^\d]/g, '').length - _currencyDp(value);
+  return intDigits < 3;                                          // ≥3 integer digits + 0-dp → dropped-decimal suspect
+}
+
 // GB VAT modulus-97 checksum (reggie T3): first 7 digits weighted 8,7,6,5,4,3,2, plus the 2 check
 // digits, must be a multiple of 97 (classic method) or with +55 added (post-2010 "9755" method).
 // Accepts a 9-digit number or a 12-digit branch-trader number (checksum uses the first 9).
@@ -270,6 +296,10 @@ function docTrustGate(db, docId, supplier, slug, opts = {}) {
       if (_t === 'date'   && !_validDate(v))   return { ok: false, reason: `invalid-date:${e.field_key}` };
       if (_t === 'iban'   && !_validIban(v))   return { ok: false, reason: `invalid-iban:${e.field_key}` };
       if (_t === 'vat_gb' && !_validVatGb(v))  return { ok: false, reason: `invalid-vat:${e.field_key}` };
+      if (_t === 'currency') {
+        const f = fmts.get(e.field_key);
+        if (f && !_currencyDpConsistent(v, f.sampleValues)) return { ok: false, reason: `currency-dp:${e.field_key}` };
+      }
       continue;
     }
     const f = fmts.get(e.field_key);
@@ -395,6 +425,7 @@ module.exports = {
   TRUST_WINDOW, TRUST_MAX_CORRECTIONS, TRUSTED_FLOOR, UNTRUSTED_FLOOR, STRICT_TYPES,
   classifyLearnedShape, valueMatchesShape, fieldVerifiable,
   validDate: _validDate, validIban: _validIban, validVatGb: _validVatGb,
+  currencyDpConsistent: _currencyDpConsistent,
   scopeTrust, docTrustGate, isAutoFileEligible, autoFileEligibleIds,
   listGraduatedScopes, setScopeOptOut,
 };
