@@ -178,7 +178,7 @@ docusnap2/
 │       ├── learning.js                 # hints, anchors, logos, getSetting/setSetting
 │       ├── templates.js                # template CRUD, field mappings, sample-document linkage
 │       ├── licensing.js                # client license_tokens cache (cacheToken/getActiveToken/clearSeatToken)
-│       └── trust.js                    # supplier GRADUATION / safe eventual auto-file: a (supplier,doc-type) scope earns a 98 auto-file floor after W=10 CLEAN confirmations. isAutoFileEligible = the ONE predicate BOTH auto-file sites share (backend _autoFileDoc/_maybeAutoFile + renderer via get-auto-file-eligible), gated per-doc by a STRUCTURAL safety gate that applies ONLY when overall_confidence<100 (a full-100 read files gate-free — else legit variable free-text fields block 100% docs). scopeTrust/docTrustGate/classifyLearnedShape/validDate/validIban(mod-97)/validVatGb; STRICT_TYPES excludes 'alphanumeric'; master switch supplier_graduation_enabled + per-scope graduation_optout; listGraduatedScopes feeds the Settings roster. Guarded by database/modules/test_scope_trust.js + the real-doc soundness gate in stress_test/realdoc_regression.js (M=0 = no would-auto-file-a-wrong-value)
+│       └── trust.js                    # supplier GRADUATION / safe eventual auto-file: a (supplier,doc-type) scope earns a 95 auto-file floor (TRUSTED_FLOOR; lowered from 98 in 2026-07 — clean template_fixed/anchor learned reads genuinely PLATEAU at 95-97, so a 98 floor sat just ABOVE where graduated suppliers actually land and never fired; the numeric floor is a coarse gate, docTrustGate is the real safety) after W=10 CLEAN confirmations. isAutoFileEligible = the ONE predicate BOTH auto-file sites share (backend _autoFileDoc/_maybeAutoFile + renderer via get-auto-file-eligible), gated per-doc by a STRUCTURAL safety gate that applies ONLY when overall_confidence<100 (a full-100 read files gate-free — else legit variable free-text fields block 100% docs). scopeTrust/docTrustGate/classifyLearnedShape/validDate/validIban(mod-97)/validVatGb; STRICT_TYPES excludes 'alphanumeric'; master switch supplier_graduation_enabled + per-scope graduation_optout; listGraduatedScopes feeds the Settings roster. Guarded by database/modules/test_scope_trust.js + the real-doc soundness gate in stress_test/realdoc_regression.js (M=0 = no would-auto-file-a-wrong-value)
 ├── python_backend/
 │   ├── process_docs.py                  # CLI entry point, streams JSON to stdout
 │   ├── extraction/
@@ -302,7 +302,15 @@ settings        — key, value (key-value store; incl. registration_enabled —
                   garble via extraction/wordness.py, PLUS history-gated name_match
                   truncation/fragment flag + word_like self-calibration) is flagged for
                   review (note + conf≤70), NEVER rejected/rewritten. Inert without the
-                  shipped extraction/data/char_trigrams.json. See test_harness/WORDNESS_NOTES.md;
+                  shipped extraction/data/char_trigrams.json. OPERATOR OVERRIDE (2026-07,
+                  `accepted_name_values` settings JSON): a Review "✓ This name is correct"
+                  button (on a wordness-flagged name field) → accept-name-value IPC →
+                  learning.addAcceptedName adds the exact value to an allowlist fed to the
+                  engine (buildTrainingArgs --accepted-names-file → engine.set_accepted_names);
+                  a name in that set is EXEMPT from the wordness + truncation flags forever
+                  (the cure for a legit acronym company like "Cloud VPS" whose "VPS" token
+                  reads low on the char model). The button also clears the flag on the current
+                  doc immediately. See test_harness/WORDNESS_NOTES.md;
                   first_run_completed — 'true' once the setup wizard finishes/skips
                   (migration 24 stamps it for already-configured installs so existing
                   users are never re-onboarded))

@@ -158,6 +158,13 @@ function buildTrainingArgs(db, configPath, logger = null) {
   const templatesFile = writeTempJson('templates', allTemplates);
   const overridesFile = writeTempJson('labeloverrides', allLabelOverrides);
   const fieldRulesFile = writeTempJson('fieldrules', allFieldRules);
+  // Operator-accepted NAME allowlist (Review "This name is correct" button): exempts these
+  // exact values from the wordness/truncation flags. Empty by default. Guarded so an older DB
+  // still processes.
+  let allAcceptedNames = [];
+  try { allAcceptedNames = learning.getAcceptedNames(db); }
+  catch (e) { logger?.warn?.(`[training] accepted names load failed: ${e && e.message}`); }
+  const acceptedNamesFile = writeTempJson('acceptednames', allAcceptedNames);
   const cfgFile       = configPath();
 
   // Registration-invariant anchoring ("register, then read"): ON unless an admin
@@ -216,6 +223,7 @@ function buildTrainingArgs(db, configPath, logger = null) {
     '--templates-file', templatesFile,
     '--label-overrides-file', overridesFile,
     '--field-rules-file', fieldRulesFile,
+    '--accepted-names-file', acceptedNamesFile,
     '--config-file',    cfgFile,
   ];
   if (registrationOn) args.push('--registration');
@@ -250,7 +258,7 @@ function buildTrainingArgs(db, configPath, logger = null) {
 
   return {
     args,
-    tempFiles: [fieldsFile, hintsFile, anchorsFile, logosFile, dtFile, formatsFile, templatesFile, overridesFile, fieldRulesFile],
+    tempFiles: [fieldsFile, hintsFile, anchorsFile, logosFile, dtFile, formatsFile, templatesFile, overridesFile, fieldRulesFile, acceptedNamesFile],
   };
 }
 

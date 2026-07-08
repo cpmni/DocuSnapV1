@@ -253,6 +253,35 @@ function register(ctx) {
     trust.setScopeOptOut(getDb(), p.supplier, p.slug, !!p.optedOut);
     return { ok: true };
   });
+  // Operator marks a flagged NAME value as valid ("This name is correct" button on a
+  // wordness-flagged supplier/customer field). Adds the exact value to the accepted-names
+  // allowlist so the wordness/truncation flags skip it on EVERY future doc, and clears the
+  // name flag on THIS doc's field so it stops nagging immediately. Durable effect is the
+  // allowlist (fed to the engine via buildTrainingArgs); the note-clear is live UX.
+  ipcMain.handle('accept-name-value', (_e, p) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const value = p && typeof p.value === 'string' ? p.value.trim() : '';
+    if (!value) return { ok: false, error: 'empty-value' };
+    const list = learning.addAcceptedName(db, value);
+    // Clear only a NAME-related flag on the current doc's field (leave e.g. an identity-conflict
+    // note intact). The wordness/truncation notes all speak to "reads like a name".
+    let cleared = 0;
+    if (p.docId && p.fieldKey) {
+      const row = db.prepare('SELECT validation_note FROM extractions WHERE document_id = ? AND field_key = ?')
+        .get(p.docId, p.fieldKey);
+      const note = row && String(row.validation_note || '');
+      if (note && /read like a name|reference\/code, not a name|document heading, not a name|truncat|cut off/i.test(note)) {
+        cleared = db.prepare('UPDATE extractions SET validation_note = NULL WHERE document_id = ? AND field_key = ?')
+          .run(p.docId, p.fieldKey).changes;
+      }
+    }
+    try {
+      logAudit(db, { action: 'name_value_accepted', action_category: 'learning',
+        outcome: 'success', metadata: { value, field_key: p.fieldKey || null, doc_id: p.docId || null, cleared } });
+    } catch {}
+    return { ok: true, accepted: list, cleared };
+  });
   ipcMain.handle('rename-field-value', (_e, scope) => {
     requireRole('admin', 'edit');
     const db = getDb();

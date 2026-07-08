@@ -313,6 +313,12 @@ class ExtractionEngine:
         # that does not read like a name (document chrome, ref/code bleed, OCR garble)
         # is FLAGGED for review (note + conf cap); never rejected. See extraction/wordness.py.
         self.name_wordness       = False
+        # Operator-accepted NAME values — an allowlist of exact name strings the user has
+        # explicitly marked "this IS a valid name" (Review "This name is correct" button).
+        # A name value normalised into this set is EXEMPT from the wordness / truncation
+        # flags, so a legitimate acronym-bearing company ("Cloud VPS") stops being flagged
+        # once confirmed once. Empty by default → byte-identical. See _accept_norm().
+        self.accepted_names      = set()
         self._identity_conflict  = False  # active flag-only supplier-conflict (set_identity_conflict)
         self._trace              = None  # dev-only trace callback (set per extract())
 
@@ -328,6 +334,19 @@ class ExtractionEngine:
         """Enable the free-text NAME wordness review flag (default OFF). Inert unless the
         char-trigram table ships (extraction/data/char_trigrams.json)."""
         self.name_wordness = bool(on)
+
+    @staticmethod
+    def _accept_norm(value) -> str:
+        """Canonical form for the accepted-names allowlist match (lowercase, ws-collapsed,
+        trimmed). The JS side (learning.acceptName / buildTrainingArgs) stores the SAME
+        canonical form, so a taught 'Cloud VPS' matches 'cloud   vps' / ' Cloud VPS '."""
+        return " ".join(str(value or "").strip().lower().split())
+
+    def set_accepted_names(self, names) -> None:
+        """Load the operator-accepted NAME allowlist (exact values the user marked valid).
+        A name value in this set is exempt from the wordness + truncation flags. Empty/None
+        → no change from default (byte-identical)."""
+        self.accepted_names = {self._accept_norm(n) for n in (names or []) if str(n or "").strip()}
 
     def set_identity_conflict(self, on: bool):
         """Enable the ACTIVE text-led supplier-identity conflict flag (default OFF, opt-in). When
@@ -1786,7 +1805,8 @@ class ExtractionEngine:
                 # via the learned word_like flag when history exists (code-like field =>
                 # skip). See extraction/wordness.py + reggie's review.
                 if self.name_wordness and not _authoritative and key in text_field_keys \
-                        and value_quality.is_name_like_field(key):
+                        and value_quality.is_name_like_field(key) \
+                        and self._accept_norm(val) not in self.accepted_names:
                     _fe = (self.format_class_index.get((s_lower, dt_lower, key)) if s_lower else None) \
                           or self.format_class_index.get(('', dt_lower, key))
                     _word_like = True if not _fe else _fe.get('word_like', True)
@@ -1872,6 +1892,7 @@ class ExtractionEngine:
                     # "Beaumont…"-dominated history) would otherwise false-flag as shorter-than-
                     # usual. Non-identity name fields (single-identity scope) keep the plain check.
                     if self.name_wordness and name_match.is_truncated_name(str(val), name_lex) \
+                            and self._accept_norm(val) not in self.accepted_names \
                             and (key not in _IDENTITY_FIELD_KEYS
                                  or name_match.matches_stable_prefix(str(val), name_lex)):
                         results[key] = {

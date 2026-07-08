@@ -1482,10 +1482,19 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   const acceptHtml = (correctedTo && !isApplied)
     ? ` <button type="button" class="accept-btn" data-key="${key}">Accept</button>`
     : '';
+  // "This name is correct" — for a NAME field flagged by the wordness/truncation signal
+  // (a legitimate acronym-bearing company like "Cloud VPS" reads low on the character
+  // model). One click marks the exact value as an accepted name so the flag never fires
+  // for it again (on this or any future document); see accept-name-value IPC.
+  const isNameFlag = !!note && !isApplied && _isNameLikeField(key)
+    && /read like a name|not a name|document heading|truncat|cut off/i.test(note);
+  const nameAcceptHtml = isNameFlag
+    ? ` <button type="button" class="name-accept-btn" data-key="${key}" title="Tell Scan Finder this really is a valid name, so it stops flagging it for review on future documents">✓ This name is correct</button>`
+    : '';
   const noteHtml = isApplied
     ? `<div class="field-note corrected"><span class="corrected-badge" title="An OCR misread was auto-corrected to the spelling that recurs in your confirmed data">✓ auto-corrected</span> ${escHtml(note || '')}</div>`
     : (note || correctedTo)
-      ? `<div class="field-note">${escHtml(note || '')}${acceptHtml}</div>`
+      ? `<div class="field-note">${escHtml(note || '')}${acceptHtml}${nameAcceptHtml}</div>`
       : '';
   // Anchor provenance: only for anchor-based extraction sources, and only when a
   // label was captured. Other methods (keyword, template, llm, manual) show nothing.
@@ -1626,6 +1635,33 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
       input.dispatchEvent(new Event('input', { bubbles: true }));
       acceptBtn.disabled = true;
       acceptBtn.textContent = 'Applied';
+    });
+  }
+
+  // "This name is correct" — persist the value to the accepted-names allowlist (so the
+  // wordness flag never fires for it again) and clear the flag on this doc immediately.
+  const nameAcceptBtn = row.querySelector('.name-accept-btn');
+  if (nameAcceptBtn) {
+    nameAcceptBtn.addEventListener('click', async () => {
+      nameAcceptBtn.disabled = true;
+      try {
+        const res = await window.docusnap.acceptNameValue({
+          docId: currentDoc?.id, fieldKey: key, value: input.value,
+        });
+        if (res && res.ok) {
+          nameAcceptBtn.textContent = "✓ Saved — won't flag this again";
+          const noteEl = row.querySelector('.field-note');
+          if (noteEl) noteEl.remove();
+          clearFieldWarning(row);
+          // Drop this field from the in-memory flag tally so Confirm gating + the
+          // auto-file eligibility reflect the accept without a reload.
+          const ex = (currentDoc?.extractions || []).find(e => e.field_key === key);
+          if (ex) ex.validation_note = null;
+          validateConfirm();
+        } else {
+          nameAcceptBtn.disabled = false;
+        }
+      } catch { nameAcceptBtn.disabled = false; }
     });
   }
 

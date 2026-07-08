@@ -129,7 +129,7 @@ function main() {
     const db = makeDb(); const tid = seedType(db); seedCleanScope(db, tid, 10);
     const t = trust.scopeTrust(db, 'Anconia Corp', 'invoice');
     check("10 clean confirmations → TRUSTED",    t.trusted === true && t.reason === 'ok');
-    check("trusted floor is 98",                 t.floor === 98);
+    check("trusted floor is 95",                 t.floor === trust.TRUSTED_FLOOR && t.floor === 95);
   }
 
   // ── 5. scopeTrust — cleanliness / reversibility ─────────────────────────────
@@ -265,8 +265,12 @@ function main() {
     }));
     const e98 = trust.isAutoFileEligible(db, mk(98));
     check("trusted scope, clean 98% + template → eligible", e98.eligible === true);
-    check("...effective floor is 98",                       e98.floor === 98);
-    check("trusted scope, 97% (below floor) → NOT eligible", trust.isAutoFileEligible(db, mk(97)).eligible === false);
+    check("...effective floor is 95",                       e98.floor === 95);
+    // Regression for the real-corpus PLATEAU: clean template_fixed/anchor learned reads land
+    // at 95-97, which the old 98 floor rejected (graduation dead letter). They must now file.
+    check("trusted scope, clean 96% (learned plateau) → eligible", trust.isAutoFileEligible(db, mk(96)).eligible === true);
+    check("trusted scope, clean 95% (at the floor) → eligible",    trust.isAutoFileEligible(db, mk(95)).eligible === true);
+    check("trusted scope, 94% (below the 95 floor) → NOT eligible", trust.isAutoFileEligible(db, mk(94)).eligible === false);
     check("trusted scope, 99% + item='Information' → NOT eligible (structural gate)",
       trust.isAutoFileEligible(db, mk(99, { item: 'Information' })).eligible === false);
     check("trusted scope, 99% + no template → NOT eligible",

@@ -497,6 +497,16 @@
     }
     .accept-btn:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-bg); }
     .accept-btn:disabled { color: var(--muted); cursor: default; border-color: var(--border); }
+    /* "This name is correct" — same shape as .accept-btn but in the OK/green key, since it
+       affirms a value rather than applying a suggested change. */
+    .name-accept-btn {
+      font-size: 10px; font-family: var(--sans); line-height: 1;
+      padding: 1px 6px; margin-left: 6px; vertical-align: baseline;
+      border: 1px solid var(--border2); border-radius: 4px;
+      background: transparent; color: var(--ok); cursor: pointer;
+    }
+    .name-accept-btn:hover:not(:disabled) { border-color: var(--ok); background: var(--surface2); }
+    .name-accept-btn:disabled { color: var(--muted); cursor: default; border-color: var(--border); }
     .field-input.zone-active {
       border-color: var(--accent) !important;
       box-shadow: 0 0 0 2px rgba(79,142,247,.25);

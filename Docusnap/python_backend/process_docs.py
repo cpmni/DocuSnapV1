@@ -144,6 +144,7 @@ def main():
     parser.add_argument("--templates-file", default=None)
     parser.add_argument("--label-overrides-file", default=None)
     parser.add_argument("--field-rules-file", default=None)
+    parser.add_argument("--accepted-names-file", default=None)
     parser.add_argument("--enhance-file",   default=None)
     # Parallel processing: when Electron runs a bounded worker pool, each worker
     # gets an explicit JSON list of the filenames (within --folder) it owns, so
@@ -257,6 +258,7 @@ def main():
     templates      = load_json_arg(None, args.templates_file) or []
     label_overrides = load_json_arg(None, args.label_overrides_file) or []
     field_rules    = load_json_arg(None, args.field_rules_file) or []
+    accepted_names = load_json_arg(None, args.accepted_names_file) or []
     enhance_params = load_json_arg(None, args.enhance_file)   or None
     reprocess_manifest = load_json_arg(None, args.reprocess_manifest) or {}
 
@@ -295,6 +297,12 @@ def main():
     # Free-text NAME wordness review flag (off unless --name-wordness; flag-only).
     if args.name_wordness:
         engine.set_name_wordness(True)
+
+    # Operator-accepted NAME allowlist — values the user marked "this is a valid name" so
+    # the wordness/truncation flags skip them (e.g. an acronym company "Cloud VPS"). Empty
+    # → byte-identical.
+    if accepted_names:
+        engine.set_accepted_names(accepted_names)
 
     # Text-led supplier-identity conflict flag (off unless --identity-conflict; flag-only).
     if args.identity_conflict:

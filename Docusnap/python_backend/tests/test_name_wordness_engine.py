@@ -29,10 +29,12 @@ def check(label, cond):
     F += (not cond)
 
 
-def _run(field_key, value, *, history=None, wordness_on=True, ftype="text"):
+def _run(field_key, value, *, history=None, wordness_on=True, ftype="text", accepted=None):
     """extract() with a single field whose value comes from the (stubbed) keyword stage."""
     eng = ExtractionEngine(mode="fast", config_path=CONFIG if os.path.exists(CONFIG) else None)
     eng.set_name_wordness(wordness_on)
+    if accepted:
+        eng.set_accepted_names(accepted)
     if history:
         eng.set_formats([{
             "supplier_name": "", "document_type": "invoice", "field_key": field_key,
@@ -47,7 +49,7 @@ def _run(field_key, value, *, history=None, wordness_on=True, ftype="text"):
     tm.identify_template = lambda *a, **k: None
     kwmod.extract_fields = lambda *a, **k: {field_key: {"value": value, "confidence": 88, "method": "keyword"}}
     anc.extract_with_anchors = lambda *a, **k: {}
-    val.validate_and_adjust = lambda results, field_defs: results       # isolate Stage 4.5
+    val.validate_and_adjust = lambda results, field_defs, **kwargs: results   # isolate Stage 4.5
     try:
         res = eng.extract(ocr_text="stub", page_images=[], filename="t.pdf",
                           field_defs=[{"key": field_key, "type": ftype}], hints=[],
@@ -89,6 +91,17 @@ def main():
     r = _run("vendor_name", "INVOI", history=CODES, wordness_on=True)
     check("code-history field (word_like False): language flag self-disabled",
           "read like a name" not in (r.get("validation_note") or ""))
+
+    print("\nA2. accepted-names allowlist (operator 'This name is correct' button)")
+    # An acronym-bearing company ("Cloud VPS": 'VPS' scores low on the char model) IS flagged
+    # by default — the exact complaint the accept button fixes.
+    r = _run("supplier_name", "Cloud VPS", history=None, wordness_on=True)
+    check("acronym company 'Cloud VPS' wordness-flagged by default",
+          "read like a name" in (r.get("validation_note") or ""))
+    # Once the operator accepts it, the flag never fires again (any casing/whitespace).
+    r = _run("supplier_name", "Cloud VPS", history=None, wordness_on=True, accepted=["cloud vps"])
+    check("accepted name 'Cloud VPS' NOT flagged", not (r.get("validation_note") or ""))
+    check("accepted name value preserved", r.get("value") == "Cloud VPS")
 
     print("\nC. identity R2 fix - repair + truncation restored, cross-supplier NOT vetoed")
     # C1 — canonical name-repair FIRES for the identity field (the untested 0cbafb8 gap that

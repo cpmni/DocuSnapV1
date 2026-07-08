@@ -31,7 +31,18 @@
 // A scope graduates at W clean confirmations; a conservative install can raise W.
 const TRUST_WINDOW           = 10;   // confirmed docs in scope, and the correction window
 const TRUST_MAX_CORRECTIONS  = 0;    // corrections tolerated within the last-W window
-const TRUSTED_FLOOR          = 98;   // auto-file floor once graduated (the learned-read ceiling)
+// Auto-file floor once graduated. Set to 95 (not the old 98) because clean, correct,
+// template-matched learned reads genuinely PLATEAU at 95-97 in practice — a template_fixed
+// supplier read caps ~95, an anchor read ~92-95 — so a 98 floor sat just ABOVE where a
+// graduated supplier's reads actually land and made graduation a dead letter (SuperStore:
+// 228 clean confirmations, reads 96-97, never auto-filed). The numeric floor is only a
+// coarse gate; the REAL safety for any sub-100 auto-file is docTrustGate (template match +
+// every valued field strict-typed-clean or matching its learned non-freetext shape + zero
+// flags), which every one of these plateau docs already passes. Lowering to 95 admits the
+// clean plateau without widening the silent-miss surface (a wrong-but-regex-valid read keeps
+// HIGH confidence regardless of this floor; a genuinely uncertain field drags overall <95 and
+// is still held). A field dropping to ~85 (overall <95) still routes to Review.
+const TRUSTED_FLOOR          = 95;
 const UNTRUSTED_FLOOR        = 100;  // ungraduated scopes keep today's full-confidence-only bar
 
 // Types whose validation pattern genuinely CONSTRAINS the value, so a clean read (no

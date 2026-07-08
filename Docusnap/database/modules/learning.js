@@ -1057,6 +1057,36 @@ function setSetting(db, key, value) {
   `).run(key, value);
 }
 
+// ── Operator-accepted NAME allowlist ────────────────────────────────────────────
+// Exact name values the user has explicitly marked "this IS a valid name" via the Review
+// "This name is correct" button, so the free-text wordness/truncation flags skip them
+// (e.g. an acronym-bearing company like "Cloud VPS" whose "VPS" token reads low on the
+// character-language model). Stored as ONE settings JSON array of canonical forms; the
+// Python engine (engine._accept_norm / set_accepted_names) uses the SAME canonical form.
+const ACCEPTED_NAMES_KEY = 'accepted_name_values';
+function _acceptNorm(value) {
+  return String(value == null ? '' : value).trim().toLowerCase().replace(/\s+/g, ' ');
+}
+function getAcceptedNames(db) {
+  try { const a = JSON.parse(getSetting(db, ACCEPTED_NAMES_KEY, '[]') || '[]'); return Array.isArray(a) ? a : []; }
+  catch { return []; }
+}
+/** Add a name to the allowlist (canonicalised, de-duplicated). Returns the updated list. */
+function addAcceptedName(db, value) {
+  const norm = _acceptNorm(value);
+  if (!norm) return getAcceptedNames(db);
+  const list = getAcceptedNames(db);
+  if (!list.includes(norm)) { list.push(norm); setSetting(db, ACCEPTED_NAMES_KEY, JSON.stringify(list)); }
+  return list;
+}
+/** Remove a name from the allowlist (canonicalised). Returns the updated list. */
+function removeAcceptedName(db, value) {
+  const norm = _acceptNorm(value);
+  const list = getAcceptedNames(db).filter(n => n !== norm);
+  setSetting(db, ACCEPTED_NAMES_KEY, JSON.stringify(list));
+  return list;
+}
+
 // Distinct confirmed VALUES learned for a (supplier, doc-type, field) scope — the same final
 // values getFieldFormats learns shapes from (the user's corrected value if they edited, else
 // the extracted display value). Powers the "View learning history" table so a value that
@@ -1224,4 +1254,5 @@ module.exports = {
   clearFieldAnchorsForScope, clearSupplierHintsForScope, clearCorrectionsForScope,
   saveFieldRule, getFieldRules, clearFieldRulesForScope,
   getSetting, setSetting,
+  getAcceptedNames, addAcceptedName, removeAcceptedName,
 };
