@@ -2220,41 +2220,11 @@ function labelOffsetFromBox(box, originDX, originDY, xNorm, yNorm, imgW, imgH) {
   return { offset_dx_norm: dx, offset_dy_norm: dy };
 }
 
-// From the OCR word boxes of a left-of-value strip (one line tall), return the
-// RIGHTMOST contiguous block — the caption nearest the value — split from any other
-// column on a wide horizontal gap. Returns { text, box:[l,t,w,h] } in the words' own
-// px space, or null when there are no usable words. This is what stops a wide
-// two-column key/value row ("Ticket No. … Work Address") merging BOTH captions into
-// one bogus anchor: we keep only the caption adjacent to the value. Reusable for any
-// multi-column layout, not one document.
-function nearestLeftCluster(words) {
-  const ws = (words || [])
-    .filter(w => w && Array.isArray(w.box) && w.box.length >= 4 && (w.text || '').trim())
-    .map(w => ({ text: w.text.trim(), l: +w.box[0], t: +w.box[1], w: +w.box[2], h: +w.box[3] }))
-    .filter(w => isFinite(w.l) && isFinite(w.w))
-    .sort((a, b) => a.l - b.l);
-  if (!ws.length) return null;
-  // A real inter-COLUMN gap is several text-heights wide — far larger than the
-  // inter-word space inside one caption. Tie the threshold to the median word height
-  // so it scales with DPI/zoom rather than a brittle pixel constant.
-  const heights = ws.map(w => w.h).filter(h => h > 0).sort((a, b) => a - b);
-  const medH = heights[Math.floor(heights.length / 2)] || 0;
-  const gapThresh = Math.max(medH * 1.2, 8);
-  // Walk left→right; a gap past the threshold starts a new column, discarding
-  // everything to its left. The surviving block is the rightmost (nearest) column.
-  let block = [ws[0]];
-  for (let i = 1; i < ws.length; i++) {
-    const prev = ws[i - 1];
-    const gap = ws[i].l - (prev.l + prev.w);
-    if (gap > gapThresh) block = [ws[i]];
-    else block.push(ws[i]);
-  }
-  const l = Math.min(...block.map(w => w.l));
-  const t = Math.min(...block.map(w => w.t));
-  const r = Math.max(...block.map(w => w.l + w.w));
-  const b = Math.max(...block.map(w => w.t + w.h));
-  return { text: block.map(w => w.text).join(' '), box: [l, t, r - l, b - t] };
-}
+// nearestLeftCluster / extractLabel / sanitizeAnchorLabel / labelLooksSuspicious now live in the
+// SHARED module src/windows/shared/anchorLabel.js (loaded before this script) so the Teach wizard
+// uses the exact same label-quality logic — they can no longer diverge. Thin delegates keep the
+// existing call sites unchanged.
+function nearestLeftCluster(words) { return window.AnchorLabel.nearestLeftCluster(words); }
 
 // The located label's box as page-normalised [x,y,w,h] (top-left), for the
 // "show the detected anchor" overlay. Same crop-origin math as labelOffsetFromBox.
@@ -2567,12 +2537,7 @@ function cleanSupplierName(name) {
   return name;
 }
 
-function extractLabel(text) {
-  const cleaned = text.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
-  const tail    = cleaned.slice(-40).trim();
-  if (tail.length > 3 && /[a-zA-Z]/.test(tail)) return tail;
-  return null;
-}
+function extractLabel(text) { return window.AnchorLabel.extractLabel(text); }
 
 // ── Confirm ───────────────────────────────────────────────────────────────────
 // Confirm + file the CURRENT document. Shared by the single Confirm button and
@@ -4801,28 +4766,8 @@ function advanceWizardField() {
 // auto-derived label GENERALISES across documents (e.g. "2605-0769-1 Work Address"
 // -> "Work Address"). Same rule both ends so a wizard-captured label matches what
 // extraction re-locates.
-function sanitizeAnchorLabel(label) {
-  if (!label || typeof label !== 'string') return '';
-  return label.trim().split(/\s+/).filter(tok => {
-    if (!/[a-zA-Z]/.test(tok)) return false;                 // bare number / ref / date
-    if ((tok.match(/\d/g) || []).length >= 3) return false;  // code-like serial
-    return true;
-  }).join(' ').trim();
-}
-
-// An auto-detected label captured off a NOISY scan can be garbled ("Serial No." read
-// as "verial No.", "Description" as "�escription"). A garbled label never re-locates on
-// future pages, so the taught anchor silently reads nothing forever. Flag the obvious
-// garble so the ⊕ readout can warn + let the operator fix the label before it's saved.
-function labelLooksSuspicious(label) {
-  if (!label || !label.trim()) return true;
-  if (/�/.test(label)) return true;                                 // OCR replacement char �
-  if (/[^\p{L}\p{N}\s.,'&()/:#%\-]/u.test(label)) return true;           // junk symbols real captions don't carry
-  // a long alphabetic token with NO vowel reads as garble ("brtnz", "vrntx")
-  const toks = label.split(/\s+/).map(t => t.replace(/[^a-zA-Z]/g, '')).filter(t => t.length >= 4);
-  if (toks.some(t => !/[aeiouy]/i.test(t))) return true;
-  return false;
-}
+function sanitizeAnchorLabel(label) { return window.AnchorLabel.sanitizeAnchorLabel(label); }
+function labelLooksSuspicious(label) { return window.AnchorLabel.labelLooksSuspicious(label); }
 
 // OCR a NORMALISED box on the current page image (docImg) via the existing
 // ocr-region IPC (same light-first region.py recipe the target read-back uses).

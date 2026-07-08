@@ -475,9 +475,14 @@ function renderAnchorReadout(){
   const lbl = hasLabel
     ? `Detected label: <span class="mono">"${esc(r.anchor_text)}"</span>`
     : 'No label found here — try the other direction, draw one, or continue without.';
+  // A garbled auto-label (OCR noise) never re-locates on future pages → the field silently reads
+  // nothing forever. Warn so the operator redraws the label or toggles direction before saving.
+  const warn = (hasLabel && r.anchorSuspicious)
+    ? `<div style="font-size:12px;color:var(--warn);margin-top:4px">⚠ This label looks misread — draw a cleaner box around the label, or switch direction, so it keeps matching on future documents.</div>`
+    : '';
   const keepText = hasLabel ? 'Keep this label →' : 'Continue without a label →';
   $('rg-confirm').innerHTML=
-    `<div class="muted" style="font-size:13px">${lbl}</div>`+
+    `<div class="muted" style="font-size:13px">${lbl}</div>${warn}`+
     `<div style="margin-top:9px;font-size:13px">Is the label to the <b>left</b> of the value, or <b>above</b> it?</div>`+
     `<div style="margin-top:6px;display:flex;gap:6px">`+
       `<button class="btn ${dir==='left'?'primary':'ghost'}" id="rb-dir-left">← Left</button>`+
@@ -498,7 +503,7 @@ async function redetectAnchor(dir){
   $('rg-confirm').innerHTML='<span class="muted">Looking '+(dir==='left'?'to the left':'above the value')+'…</span>';
   try{
     const a=await autoLabel(r.target, dir);
-    r.anchor=a.box; r.anchor_text=a.anchor_text; r.anchor_dir=a.dir||dir;
+    r.anchor=a.box; r.anchor_text=a.anchor_text; r.anchor_dir=a.dir||dir; r.anchorSuspicious=!!a.suspicious;
   }catch{ r.anchor_dir=dir; }
   redrawCanvas();
   renderAnchorReadout();
@@ -507,9 +512,14 @@ async function captureAnchor(box){
   const f=curField(), r=f&&state.results[f.key]; if(!r){ drawMode='value'; return; }
   $('rg-confirm').innerHTML='<span class="muted">Reading the label…</span>';
   let text=''; try{ const res=await D.ocrRegionBoxes(await cropB64(box)); text=res&&res.text?String(res.text).trim():''; }catch{}
-  text=(text||'').split('\n')[0].slice(0,40);
+  // Sanitize the manually-drawn label the same way (strip value-shaped tokens); if that empties
+  // it, respect the operator's explicit pick with the raw first line.
+  const A=window.AnchorLabel;
+  const clean=A.sanitizeAnchorLabel(A.extractLabel(text) || '');
+  text = clean || (text||'').split('\n')[0].slice(0,40);
   r.anchor={x:box.x,y:box.y,w:box.w,h:box.h};
   r.anchor_text = text || r.anchor_text || null;
+  r.anchorSuspicious = r.anchor_text ? A.labelLooksSuspicious(r.anchor_text) : false;
   const v=r.target||{};   // direction implied by where they drew it, for the read-out
   r.anchor_dir = (typeof v.y==='number' && (box.y+box.h) <= (v.y+(v.h||0)*0.5)) ? 'above' : 'left';
   r.anchorManual = true;
@@ -520,7 +530,7 @@ async function captureAnchor(box){
   advanceField();
 }
 function store(f,box,anchor,value,pending){
-  state.results[f.key]={ value, target:box, anchor:anchor.box, anchor_text:anchor.anchor_text, anchor_dir:anchor.dir||'left', status:pending?'pending':'done' };
+  state.results[f.key]={ value, target:box, anchor:anchor.box, anchor_text:anchor.anchor_text, anchor_dir:anchor.dir||'left', anchorSuspicious:!!anchor.suspicious, status:pending?'pending':'done' };
   if (!pending) advanceField();
 }
 function advanceField(){
@@ -556,6 +566,7 @@ async function cropB64(box, pad){
 // window, which clipped a far-left label), then falls back to ABOVE — mirroring the Review
 // ⊕ search. `forceDir` ('left'|'above') restricts the search to one direction (the toggle).
 async function autoLabel(box, forceDir){
+  const A = window.AnchorLabel;
   const leftW = Math.max(0, box.x);                                   // all the way to the left edge
   const left  = {x:Math.max(0,box.x-leftW), y:box.y, w:leftW, h:box.h, dir:'left'};
   const above = {x:box.x, y:Math.max(0,box.y-box.h*1.3), w:box.w, h:box.h*1.1, dir:'above'};
@@ -566,22 +577,29 @@ async function autoLabel(box, forceDir){
   for (const band of tries){
     try{
       const res=await D.ocrRegionBoxes(await cropB64(band));
-      const text=res&&res.text?String(res.text).trim():'';
-      if (text && text.replace(/[^A-Za-z]/g,'').length>=3){
+      // SAME label-quality pipeline as the Review ⊕ tool (shared/anchorLabel.js): for a LEFT band
+      // keep only the column NEAREST the value — so a wide two-column key/value row doesn't glue
+      // the far-left caption onto the adjacent one (the "label spans to the left" bug) — then
+      // strip value-shaped tokens (a code / date / ref is never a label). A bare-text fallback
+      // keeps older region.py output (no per-word boxes) working.
+      const cluster = (band.dir==='left') ? A.nearestLeftCluster(res && res.words) : null;
+      const rawText = (cluster ? cluster.text : (res && res.text ? String(res.text) : '')).trim();
+      const label   = A.sanitizeAnchorLabel(A.extractLabel(rawText) || '');
+      if (label){
         let abox={x:band.x,y:band.y,w:band.w,h:band.h};
-        if (Array.isArray(res.box)){ // tighten to the detected word (box in the DOWNSCALED OCR-crop px)
-          // cropB64 downscaled the band crop by the SAME height-target rule, so region.py's
-          // box is in that downscaled space — divide by naturalHeight*ds (computed from the
-          // band's own pixel height) to get the page-normalised position.
+        // The cluster/word box is in the DOWNSCALED OCR-crop px (cropB64's height-target ds);
+        // divide by naturalHeight*ds (from the band's own pixel height) to get page-norm coords.
+        const srcBox = cluster ? cluster.box : (Array.isArray(res.box) ? res.box : null);
+        if (srcBox){
           const bandHpx=band.h*state.img.naturalHeight;
           const ds=bandHpx>OCR_TARGET_H?(OCR_TARGET_H/bandHpx):1.0;
           const nW=state.img.naturalWidth*ds, nH=state.img.naturalHeight*ds;
-          const [l,t,w,h]=res.box;
+          const [l,t,w,h]=srcBox;
           if (nW>0&&nH>0&&w>0&&h>0){
             abox={x:band.x+l/nW, y:band.y+t/nH, w:w/nW, h:h/nH};
           }
         }
-        return {box:abox, anchor_text:text.split('\n')[0].slice(0,40), dir:band.dir};
+        return {box:abox, anchor_text:label, dir:band.dir, suspicious:A.labelLooksSuspicious(label)};
       }
     }catch{}
   }
