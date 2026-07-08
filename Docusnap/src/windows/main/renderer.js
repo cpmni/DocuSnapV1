@@ -1293,6 +1293,11 @@ function applyCurrentUser(user) {
   // Teaching writes templates/learning — Admin+Edit (hidden for Read Only).
   const btnTeach = document.getElementById('btn-teach');
   if (btnTeach) btnTeach.style.display = (user.role === 'readonly') ? 'none' : '';
+  // Import is Admin/Edit too (the pick-folder + process-folder IPCs require admin/edit).
+  // For read-only it was a silent dead control — the folder picker just got rejected with
+  // nothing visible (§4a #1). Hide it so the rail reflects what the role can actually do.
+  const btnImport = document.getElementById('btn-import');
+  if (btnImport) btnImport.style.display = (user.role === 'readonly') ? 'none' : '';
   refreshDashboard();   // reflect role in the dashboard's Open Review visibility
 }
 

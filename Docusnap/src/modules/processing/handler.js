@@ -395,9 +395,12 @@ function register(ctx) {
   // ── Folder picker ───────────────────────────────────────────────────────────
   const { dialog, shell } = require('electron');
 
-  // Dev-inspector read-only session getters (no mutation; in-memory only).
-  ipcMain.handle('dev-get-session-docs', () => _devSession.docs.slice().reverse());
-  ipcMain.handle('dev-get-session-doc',  (_e, key) => _devSession.traceByDoc.get(key) || []);
+  // Dev-inspector read-only session getters (no mutation; in-memory only). Role-gated to
+  // admin/edit (defence-in-depth, §4a #3): the trace payload carries in-review document
+  // metadata a read-only user is otherwise denied, and these IPCs are reachable via devtools
+  // even in packaged builds where the inspector WINDOW is disabled.
+  ipcMain.handle('dev-get-session-docs', () => { requireRole('admin', 'edit'); return _devSession.docs.slice().reverse(); });
+  ipcMain.handle('dev-get-session-doc',  (_e, key) => { requireRole('admin', 'edit'); return _devSession.traceByDoc.get(key) || []; });
 
   // Source folder for "Process Documents" — part of the daily Admin/Edit workflow.
   ipcMain.handle('pick-folder', async (e) => {

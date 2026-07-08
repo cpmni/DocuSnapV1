@@ -1005,13 +1005,17 @@ app.whenReady().then(() => {
     ctx.reviewTraceActive = false;
     return true;
   });
-  // Read-only state getter (boolean) — no mutation, safe to expose.
+  // Read-only state getter (boolean) — no mutation. Login/role-gated (§4a #3) to keep the
+  // devtools-reachable dev IPCs behind the same admin/edit boundary as the review surface.
   ipcMain.handle('dev-inspector-running', () => {
+    if (!(authModule.hasRole && authModule.hasRole('admin', 'edit'))) return false;
     try { return processingModule.isBatchRunning(); } catch { return false; }
   });
   // Serve a captured OCR slice as a base64 data URI — path MUST resolve inside the
-  // dev slice dir (prevents the renderer reading arbitrary files). Dev-only.
+  // dev slice dir (prevents the renderer reading arbitrary files). Dev-only + role-gated:
+  // a slice is cropped document imagery, so keep it off a read-only user (§4a #3).
   ipcMain.handle('dev-get-slice', (_e, slicePath) => {
+    if (!(authModule.hasRole && authModule.hasRole('admin', 'edit'))) return null;
     try {
       const root = path.resolve(devSliceDir);
       const abs  = path.resolve(String(slicePath || ''));

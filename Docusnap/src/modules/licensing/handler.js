@@ -268,6 +268,14 @@ function register(ctx) {
   // result with no token or fingerprint.
   ipcMain.handle('license-test-activate', async (_e, data) => {
     const db = getDb();
+    // Admin-only (§4a #2): this is the Settings → Activation Test tool, reached only from the
+    // already-admin-gated Settings window (post-login) — never part of the pre-main license-gate
+    // flow — so a role guard here can't lock anyone out of real activation. Defence-in-depth
+    // against a devtools call from a non-admin session.
+    if (!authHandler.hasRole('admin')) {
+      audit(db, 'license.test_activate', 'denied', null, 'non-admin');
+      return { ok: false, code: 'forbidden' };
+    }
     const baseUrl   = ((data && data.baseUrl)   || '').trim();
     const productId = ((data && data.productId) || '').trim();
     const accountKey = (data && data.accountKey) || '';
