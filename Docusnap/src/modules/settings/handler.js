@@ -390,6 +390,9 @@ function register(ctx) {
     requireRole('admin');
     const db = getDb();
     learning.setSetting(db, key, val);
+    // Mirror the output/documents folder into the registry the moment it changes so the
+    // uninstaller's data-wipe guard always has the current path (see lib/outputPathRegistry).
+    if (key === 'output_folder') { try { require('../../lib/outputPathRegistry').recordOutputPath(val); } catch {} }
     if (key === 'theme') notifyAllWindows('theme-changed', val);
     if (key === 'dashboard_hidden_cards') notifyAllWindows('dashboard-cards-changed');
     if (key === 'telemetry_enabled') { try { ctx.telemetry?.refreshConsent(); } catch {} }

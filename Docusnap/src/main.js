@@ -779,6 +779,15 @@ app.whenReady().then(() => {
   // startup (fully guarded inside the helper).
   sweepInboxOrphans();
 
+  // Best-effort: mirror the chosen output/documents folder into the registry so the
+  // uninstaller can refuse to delete an app-data folder that contains it (belt-and-braces
+  // against a data-wipe ever touching the user's processed documents). Refreshed each launch;
+  // also re-written whenever the folder changes (set-setting 'output_folder'). Fully guarded.
+  try {
+    const { recordOutputPath } = require('./lib/outputPathRegistry');
+    recordOutputPath(require('../database/modules/learning').getSetting(getDb(), 'output_folder', null));
+  } catch (e) { try { logger?.warn?.(`[output-path-registry] startup hook skipped: ${e.message}`); } catch {} }
+
   // Best-effort audit-log retention: archive audit_log rows older than the window
   // (settings `audit_retention_days`, default 180; 0 disables) into monthly files
   // under userData/audit-archive — MOVE, never delete-without-archive. Throttled to
