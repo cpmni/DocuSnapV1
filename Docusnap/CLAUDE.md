@@ -691,15 +691,25 @@ license-state(gate)                    # pushed to the license window with the b
 
 ## Known bugs (fix these first)
 
-### ⛔ OPEN + CRITICAL (2026-07-08) — real-doc harness RED: 57 regressions + M=1. READ `HANDOVER_2026-07-08.md` FIRST.
-`stress_test/realdoc_regression.js` on the live DB reports 57 regressions (42 silent) + **M=1**
-(#404 would auto-file a WRONG ref+date — must be 0). invoice_ref reads collapse to fragments/labels
-on the synthetic suppliers (City Office `152567→'1/2'`, Cloud VPS `122786→'6102'`, Anconia
-`179914→null`). User: "most of these docs used to process." NOT yet isolated: probably POLLUTED
-LEARNED DATA (invoice_number anchors/templates mis-taught during the session), vs the unmerged
-`fix/ocr-multicol-precedence` branch code. **Do the baseline-vs-branch harness comparison in the
-handover BEFORE building/merging that branch.** Unmerged branches: `feat/review-import-activity`
-(built r20260708-2024), `fix/ocr-multicol-precedence` (not built). See `HANDOVER_2026-07-08.md`.
+### ✅ RESOLVED (2026-07-09) — the 2026-07-08 real-doc harness RED was NOT a code regression. See `HANDOVER_2026-07-09.md`.
+Isolated (baseline `main` vs branch on the SAME live DB): the RED was (1) ONE accidental AUTHORITATIVE
+⊕ teach — `field_anchors` id=24, Cloud VPS `invoice_number`, label "Invoice" — which (per
+`learning.saveAnchor`) swept every other supplier's invoice_number anchor AND bled cross-supplier,
+false-locating on the generic caption "Invoice" to crop-read a wrong-but-valid neighbour (City Office
+`1828987`@87), overriding the correct keyword read (`152567`@98); and (2) partly-POISONED test GT (user
+mis-confirmed page-numbers/fragments while bug-hunting — #404 GT `22163`/`16-03-2026` but the doc's own
+OCR+filename say `22162`/`03-06-2026`; #896 GT `1/2`; #962/#1012 GT `102`). `main` was actually WORSE on
+safety (would-auto-file-wrong=25 vs the branch's 1). **True silent-wrong-auto-file = 0.** FIX SHIPPED
+(branch `fix/autofile-critical-field-floor`): a filing-critical per-field confidence floor in
+`trust.js` `isAutoFileEligible` (`critical_field_conf_floor`, default 88, 0=off) — a present ref/date
+value must itself clear the floor to auto-file, at every floor incl. 100; HOLD-only, so it can't cause a
+wrong auto-file; took would-auto-file-wrong 25→1 (the 1 = poisoned #404). The branch
+`fix/ocr-multicol-precedence` (oscar grouping + reggie guard) is NOT the cause and is safe to build.
+DAYTIME cause fix (reggie, not done — delicate): stop a NAMED cross-supplier authoritative read that
+located only via a WEAK/generic caption from being auto-trusted as "same layout" in `anchor.py`
+(`anchor_crop_relocated` is always `located_ok=True`, so it skips the cross-supplier guard). Cleanup:
+Settings → Learning → Learning Recovery (clear the Cloud VPS anchor), or `py
+stress_test/_clean_mistaught_anchor.py delete`.
 
 ### FIXED (residual noted) — cross-supplier POSITIONAL anchor bleed (2026-07-06)
 A ⊕-taught AUTHORITATIVE anchor for a POSITIONAL field (e.g. `invoice_number`) was applied ACROSS
