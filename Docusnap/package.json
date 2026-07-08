@@ -1,21 +1,20 @@
 {
   "name": "docusnap",
   "version": "2.0.0",
-  "description": "Local document OCR and AI field extraction",
-  "author": "SOFTWARE COMPANY",
+  "description": "Local document OCR and field extraction",
+  "author": "Six Mile Software",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "build": "node scripts/check-licenses.js && node scripts/check-rapidocr-bundled.js && node -e \"const c=require('child_process');process.env.BUILD_REV=process.env.BUILD_REV||'local';c.execSync('electron-builder --win --x64',{stdio:'inherit',env:process.env})\"",
+    "build": "node scripts/check-licenses.js && node -e \"const c=require('child_process');process.env.BUILD_REV=require('./scripts/build-rev').buildRev();c.execSync('electron-builder --win --x64 --config.extraMetadata.buildRev=' + process.env.BUILD_REV,{stdio:'inherit',env:process.env})\"",
     "check:licenses": "node scripts/check-licenses.js",
-    "check:rapidocr": "node scripts/check-rapidocr-bundled.js",
     "check:help": "node scripts/check-help-coverage.js",
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.docusnap.app",
+    "appId": "com.scanfinder.app",
     "productName": "ScanFinder",
-    "copyright": "Copyright © 2026 SOFTWARE COMPANY",
+    "copyright": "Copyright © 2026 Six Mile Software",
     "win": {
       "target": [
         {
@@ -40,12 +39,17 @@
       "uninstallerIcon": "assets/icon.ico",
       "installerHeaderIcon": "assets/icon.ico",
       "deleteAppDataOnUninstall": false,
-      "include": "installer.nsh"
+      "include": "installer.nsh",
+      "license": "LEGAL.txt"
     },
     "extraResources": [
       {
         "from": "THIRD-PARTY-LICENSES.txt",
         "to": "THIRD-PARTY-LICENSES.txt"
+      },
+      {
+        "from": "LEGAL.txt",
+        "to": "LEGAL.txt"
       },
       {
         "from": "python_backend/",
@@ -54,7 +58,10 @@
           "**/*",
           "!**/__pycache__/**",
           "!**/*.pyc",
-          "!**/*.pyo"
+          "!**/*.pyo",
+          "!artifacts/**",
+          "!test_harness/**",
+          "!tests/**"
         ]
       },
       {
@@ -65,12 +72,17 @@
         ]
       },
       {
+        "from": "assets/tutorial-samples/",
+        "to": "assets/tutorial-samples",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
         "from": "vendor/",
         "to": "vendor",
         "filter": [
-          "**/*",
-          "!ollama/**/*",
-          "!ollama_models/**/*"
+          "**/*"
         ]
       }
     ],
@@ -95,6 +107,7 @@
   "dependencies": {
     "argon2": "^0.44.0",
     "better-sqlite3": "^12.10.0",
-    "node-forge": "1.3.1"
+    "node-forge": "1.3.1",
+    "pdf-lib": "^1.17.1"
   }
 }

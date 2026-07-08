@@ -94,6 +94,19 @@ def render_crop():
     return img
 
 
+def render_multiline():
+    """A taller crop covering a value that WRAPS onto TWO lines (a work address). PSM 7
+    (single-line) mangles this into one garbled line; the multi-line-aware PSM-6 rebuild
+    must read BOTH lines and join them."""
+    W, H = 340, 82
+    img = Image.new("L", (W, H), color=245)
+    d = ImageDraw.Draw(img)
+    f = _font(20)
+    d.text((6, 8),  "Beaumont Care Homes Ltd -", fill=20, font=f)
+    d.text((6, 44), "Jordanstown",              fill=20, font=f)
+    return img
+
+
 def heavy_read(img):
     """Reproduce the OLD region.py recipe VERBATIM, including the small-crop
     upscale: greyscale -> upscale(if w<300) -> autocontrast(cutoff=2) -> SHARPEN,
@@ -158,6 +171,20 @@ def main():
         else:
             print(f"  WARN heavy recipe read this crop cleanly here ({heavy!r}); "
                   f"repro weaker on this Tesseract build, primary check still applies")
+
+    print("region.py multi-line: a 2-line value reads BOTH lines (not garbled to one)")
+    ml = render_multiline()
+    with tempfile.TemporaryDirectory() as td:
+        png = Path(td) / "ml.png"
+        ml.save(png)
+        out = region_cli_read(png)
+        n = _norm(out)
+        if not check(f"reads line 1 (Beaumont…Ltd) (got {out!r})", "beaumont" in n and "ltd" in n):
+            failures += 1
+        # The continuation line is what PSM-7 single-line mode drops/mangles; the PSM-6
+        # rebuild must include it.
+        if not check(f"reads line 2 (Jordanstown), joined in (got {out!r})", "jordanstown" in n):
+            failures += 1
 
     print()
     if failures:

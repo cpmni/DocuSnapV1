@@ -9,14 +9,26 @@ document.querySelectorAll('.tab').forEach(btn => {
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
-    if (btn.dataset.tab === 'learning') loadMemoryInventory();
+    // Learning Recovery + Keyword Label Overrides live under the Learning tab; the
+    // Audit log lives under the Audit tab; the Search client API lives under the
+    // Search client tab — load each lazily on show.
+    if (btn.dataset.tab === 'learning') { loadMemoryInventory(); loadGraduationRoster(); }
+    if (btn.dataset.tab === 'repair') repairInit();
     if (btn.dataset.tab === 'audit' && !auditState.loaded) loadAudit();
-    if (btn.dataset.tab === 'licensing') initClientApiSection();
+    if (btn.dataset.tab === 'searchclient') initClientApiSection();
   });
 });
 
 // ── Search client access (admin) — host the detached-client API ────────────────
 let _clientApiWired = false;
+// Set/clear a status pill (theme .chip). cls = '' | 'ok' | 'warn' | 'err'; empty text hides it.
+function setChip(id, text, cls) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.className = 'chip' + (cls ? ' ' + cls : '');
+  el.textContent = text || '';
+  el.style.display = text ? '' : 'none';
+}
 async function initClientApiSection() {
   const tgl = document.getElementById('client-api-toggle');
   const statusEl = document.getElementById('client-api-status');
@@ -27,11 +39,12 @@ async function initClientApiSection() {
   const key  = document.getElementById('client-api-tls-key');
 
   const render = (s) => {
-    if (!s) { statusEl.textContent = 'Unavailable (admin only)'; return; }
+    if (!s) { statusEl.textContent = 'Unavailable (admin only)'; setChip('client-api-chip', '', ''); return; }
     tgl.checked = !!s.enabled;
     statusEl.textContent = s.running
       ? `Running · ${s.tls ? 'https' : 'http'}://${s.host}:${s.port}`
       : (s.enabled ? 'Enabled (starting…)' : 'Off');
+    setChip('client-api-chip', s.running ? 'On' : (s.enabled ? 'Starting…' : 'Off'), s.running ? 'ok' : '');
   };
 
   try { render(await api.clientApiGetStatus()); }
@@ -59,22 +72,29 @@ async function initClientApiSection() {
   };
   try { renderCert(await api.clientApiCertStatus()); } catch { /* ignore */ }
 
-  // Workflow add-on entitlement (drives enhanced Search here + the detached client).
+  // Workflow add-on entitlement — READ-ONLY. It is driven by the licence (the verified
+  // token / backend per-feature counts), never a local setting. The old toggle wrote
+  // `detached_client_licensed`, which nothing authoritative consumes, so it could mislead
+  // an operator into thinking they had (un)licensed the feature. We now only REFLECT the
+  // real entitlement from get-entitlement; this control cannot create it.
   const wfTgl = document.getElementById('wf-addon-toggle');
   const wfSub = document.getElementById('wf-addon-sub');
   if (wfTgl && wfSub) {
+    wfTgl.disabled = true;
     try {
-      const on = (await api.getSetting('detached_client_licensed')) === 'true';
-      wfTgl.checked = on; wfSub.textContent = on ? 'Licensed' : 'Off';
-    } catch { /* ignore */ }
-    if (!wfTgl.dataset.wired) {
-      wfTgl.dataset.wired = '1';
-      wfTgl.addEventListener('change', async () => {
-        try { await api.setSetting('detached_client_licensed', wfTgl.checked ? 'true' : 'false');
-          wfSub.textContent = wfTgl.checked ? 'Licensed' : 'Off'; }
-        catch (e) { wfSub.textContent = 'Error: ' + (e && e.message); wfTgl.checked = !wfTgl.checked; }
-      });
-    }
+      const ent = await api.getEntitlement();
+      // Pre-release: the workflow feature is master-disabled (entitlement returns workflow.disabled).
+      // Hide the whole section so there's no mention of the unbuilt feature; un-hides automatically
+      // when the WORKFLOW_FEATURE_ENABLED flag is flipped back on.
+      if (ent && ent.workflow && ent.workflow.disabled) {
+        const sec = document.getElementById('wf-section'); if (sec) sec.style.display = 'none';
+      } else {
+        const on = !!(ent && ent.workflow && ent.workflow.entitled);
+        wfTgl.checked = on;
+        wfSub.textContent = on ? 'Licensed' : 'Not licensed';
+        setChip('wf-chip', on ? 'On' : 'Off', on ? 'ok' : '');
+      }
+    } catch { wfSub.textContent = 'Unknown'; setChip('wf-chip', 'Unknown', ''); }
   }
 
   if (_clientApiWired) return; // bind listeners once
@@ -85,6 +105,10 @@ async function initClientApiSection() {
     port.value = (await api.getSetting('client_api_port')) || '';
     cert.value = (await api.getSetting('client_api_tls_cert')) || '';
     key.value  = (await api.getSetting('client_api_tls_key')) || '';
+    // Auto-open the managed-cert disclosure only when a LAN (non-loopback) host is set —
+    // that's when a TLS cert actually matters; loopback stays collapsed.
+    const cd = document.getElementById('cert-details');
+    if (cd) { const h = (host.value || '').trim(); cd.open = !!h && h !== '127.0.0.1' && h !== 'localhost'; }
   } catch { /* ignore */ }
 
   tgl.addEventListener('change', async () => {
@@ -125,22 +149,53 @@ document.getElementById('btn-close').addEventListener('click', () => api.windowC
 
 // ── Help: user guide + contextual help mode ───────────────────────────────────
 document.getElementById('btn-help-guide')?.addEventListener('click', () => api.openHelpWindow('settings'));
+// Self-contained "Set up the search client" walkthrough (lives with the cert settings).
+document.getElementById('btn-client-setup-help')?.addEventListener('click', () => api.openHelpWindow('client-cert-setup'));
 
 const HELP_TEXTS = {
-  'tab-general':    'Output folder (where filed documents go), the processed-scans folder, processing mode/threads, and re-running first-time setup.',
+  'tab-files':      'Where filed documents go — the output, processed-scans and watch folders — and how they are named (the subfolder layout and file-name pattern).',
   'tab-doctypes':   'Enable or disable document types and choose which field is each type’s main reference number and date.',
   'tab-fields':     'Add, edit, reorder or remove the fields a document type extracts. Built-in fields are locked.',
-  'tab-filenaming': 'Choose how filed documents are named (the DocType.Date.Reference pattern and its parts).',
-  'tab-templates':  'Browse the layouts Scan Finder has learned, pin sample pages, and map where each field sits on a layout.',
-  'tab-learning':   'Recovery tools for the learned data — review and clean up hints, anchors and templates if extraction drifts.',
-  'tab-users':      'Manage the people who can sign in and what each is allowed to do (admin / edit / read-only).',
-  'tab-audit':      'A searchable record of sensitive actions — sign-ins, document opens, review actions, settings and licensing changes.',
-  'tab-licensing':  'Your licence / activation status, and the trial or paid-seat details for this device.',
-  'tab-advanced':   'Lower-level toggles (registration, born-digital text, concurrency) — sensible defaults are already set.',
+  'tab-processing': 'How documents are processed — import options (auto-file, wrap, auto-rotate), parallelism, the OCR engine, document separation, name checks and the review confidence threshold.',
+  'tab-appearance': 'The colour theme, what happens when you close the window, and which cards appear on the Home screen.',
+  'tab-templates':  'Browse the layouts Scan Finder has learned and map where each field sits on the page.',
+  'tab-learning':   'Teach the keyword stage extra labels to look for, and review or clean up learned data (anchors, hints, corrections) if extraction drifts.',
+  'tab-users':      'Manage the people who can sign in and what each is allowed to do (admin / edit / read-only), plus a record of recent account activity.',
+  'tab-audit':      'A searchable record of sensitive actions — sign-ins, settings and document changes, review actions, licensing and denied access.',
+  'tab-licensing':  'Your licence / activation status, the trial or paid-seat details for this device, and your client seats.',
+  'tab-searchclient':'Let the separate Scan Finder Search client connect over your network, with its managed TLS certificate.',
+  'tab-advanced':   'Re-run first-time setup, back up or restore your configuration, and toggle diagnostic logging.',
   'output-folder':  'Pick the folder where confirmed documents are filed. This must be set before any document can be confirmed.',
   'rerun-setup':    'Re-open the welcome wizard to revisit the essentials — theme, output folder and performance — without losing any data.',
   'add-type':       'Create a custom document type with its own fields (e.g. “Delivery Note”) alongside the built-in Invoice / Sales Order / Purchase Order.',
   'add-field':      'Add a custom field to the selected document type: a label, an auto-generated key, a value type and whether it’s required.',
+  'add-catalog':    'Add a ready-made document type (Purchase/Sales Invoice, Credit Note, Statement, Receipt…) with its fields already set up.',
+  'pick-output':    'Choose the folder where confirmed documents are filed. Must be set before any document can be confirmed.',
+  'pick-processed': 'Choose where each original scan is moved after it’s filed. Leave blank to keep originals where they are.',
+  'clear-processed':'Stop moving originals — leave them in the source folder after filing.',
+  'pick-watch':     'Choose a folder to watch; scans dropped in are imported automatically.',
+  'reset-folder':   'Reset the folder layout to the default: Company / Year / Month.',
+  'reset-filename': 'Reset the file-name pattern to the default: Type.Date.Reference.',
+  'new-template':   'Create a template by hand. Usually you don’t need to — templates appear on their own as you confirm documents.',
+  'import-sample':  'Attach a clean sample document for this template to draw anchors and read fields against.',
+  'regen-landmarks':'Re-work out the unique words used to line up shifted/skewed scans for this template.',
+  'regen-fingerprint':'Rebuild the word “fingerprint” that recognises this layout, from its confirmed documents.',
+  'tpl-enhance':    'Re-read the sample with stronger image cleanup — for faint or noisy scans.',
+  'draw-anchor':    'Draw a box around a fixed label on the page (e.g. “Date:”) that Scan Finder can always find.',
+  'draw-target':    'Draw a box around the value to read — the one that sits next to the anchor label.',
+  'save-mapping':   'Save this field’s anchor + target so future documents of this layout read it automatically.',
+  'test-mapping':   'Check what the current anchor/target reads on this sample before saving.',
+  'delete-mapping': 'Remove this saved field mapping. The field falls back to normal reading.',
+  'fixed-value':    'Always use the same value for this field on this layout (instead of reading it from the page).',
+  'delete-template':'Delete this whole template. Scan Finder will re-learn the layout from future confirmations.',
+  'lr-search':      'Find what Scan Finder has learned for a supplier or document type, so you can review or clear it.',
+  'lr-reset-all':   'Erase ALL learned data (hints, anchors, templates). Your filed documents are not touched. Cannot be undone.',
+  'lr-fresh':       'Wipe everything back to a clean install — settings, learning and document records. Cannot be undone.',
+  'lr-clear-anchors':'Clear the learned field positions (anchors) for the chosen scope.',
+  'lr-clear-hints':  'Clear the learned “fill empty fields” hints for the chosen scope.',
+  'lr-clear-rules':  'Clear the learned field-cleanup rules for the chosen scope.',
+  'lr-clear-corrections':'Clear the saved corrections history for the chosen scope.',
+  'add-user':       'Add a person who can sign in, and set what they’re allowed to do (admin / edit / read-only).',
   'help-mode':      'Help mode: click any control to see what it does. Press Esc to leave.',
 };
 window.initHelpMode?.('help-mode-toggle', HELP_TEXTS);
@@ -166,6 +221,7 @@ document.getElementById('btn-pick-output').addEventListener('click', async () =>
 
 // Re-run the first-time setup wizard (admin-gated in main).
 document.getElementById('btn-rerun-setup')?.addEventListener('click', () => api.openOnboarding());
+document.getElementById('btn-view-legal')?.addEventListener('click', () => api.openLegal?.());
 
 // ── Processed folder ──────────────────────────────────────────────────────────
 async function loadProcessedFolder() {
@@ -198,7 +254,8 @@ loadWatchFolder();
 document.getElementById('btn-pick-watch').addEventListener('click', async () => {
   const folder = await api.pickWatchFolder();
   if (folder) {
-    await api.setWatchFolder(folder);
+    const res = await api.setWatchFolder(folder);
+    if (res && res.ok === false) { alert(res.error || 'That folder can’t be used as a watch folder.'); return; }
     document.getElementById('watch-folder-path').value = folder;
   }
 });
@@ -207,27 +264,165 @@ document.getElementById('watch-folder-toggle').addEventListener('change', async 
   await api.setWatchFolderEnabled(e.target.checked);
 });
 
-// ── Processing mode ───────────────────────────────────────────────────────────
-async function loadProcessingMode() {
-  const mode = await api.getProcessingMode();
-  const radio = document.querySelector(`input[name="proc-mode"][value="${mode}"]`);
-  if (radio) radio.checked = true;
-}
-loadProcessingMode();
-
-document.querySelectorAll('input[name="proc-mode"]').forEach(r => {
-  r.addEventListener('change', async () => {
-    if (r.checked) await api.setProcessingMode(r.value);
-  });
+// ── Auto-file 100%-confidence documents (default ON) ──────────────────────────
+(async () => {
+  try {
+    const v = await api.getSetting('auto_file_full_confidence');
+    document.getElementById('auto-file-toggle').checked = (v !== 'false');   // unset → on
+  } catch { document.getElementById('auto-file-toggle').checked = true; }
+})();
+document.getElementById('auto-file-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('auto_file_full_confidence', e.target.checked ? 'true' : 'false');
+  _syncAutoFileThresholdEnabled(e.target.checked);
 });
+
+// ── Auto-file confidence threshold slider (default 100 = full confidence only) ────
+function _syncAutoFileThresholdEnabled(on) {
+  const row = document.getElementById('auto-file-threshold-row');
+  if (row) row.style.opacity = on ? '' : '0.5';
+  const sl = document.getElementById('auto-file-threshold');
+  if (sl) sl.disabled = !on;
+}
+// Invariant: the Review confidence threshold must never exceed the auto-file threshold —
+// you can't require review at a HIGHER confidence than the level you auto-file at (it would
+// leave a contradictory band: above auto-file yet still "needs review"). Enforce it by capping
+// the review slider's max at the auto-file value and clamping/persisting review if it was above.
+function enforceAutoFileInvariant(persistReview) {
+  const autoEl = document.getElementById('auto-file-threshold');
+  const rev    = document.getElementById('global-threshold');
+  if (!autoEl || !rev) return;
+  const auto = parseInt(autoEl.value, 10) || 100;
+  rev.max = String(auto);
+  if ((parseInt(rev.value, 10) || 0) > auto) {
+    rev.value = String(auto);
+    const rl = document.getElementById('global-threshold-val'); if (rl) rl.textContent = auto + '%';
+    if (persistReview) api.setSetting('confidence_threshold', String(auto));
+  }
+}
+(async () => {
+  try {
+    const t = parseInt((await api.getSetting('auto_file_threshold')) || '100', 10) || 100;
+    document.getElementById('auto-file-threshold').value = t;
+    document.getElementById('auto-file-threshold-val').textContent = t + '%';
+    _syncAutoFileThresholdEnabled((await api.getSetting('auto_file_full_confidence')) !== 'false');
+    enforceAutoFileInvariant(true);
+  } catch {}
+})();
+document.getElementById('auto-file-threshold').addEventListener('input', (e) => {
+  document.getElementById('auto-file-threshold-val').textContent = e.target.value + '%';
+  enforceAutoFileInvariant(false);   // lowering auto-file pulls the review cap (+ value) down with it
+});
+document.getElementById('auto-file-threshold').addEventListener('change', async (e) => {
+  await api.setSetting('auto_file_threshold', String(e.target.value));
+  enforceAutoFileInvariant(true);
+});
+
+// ── Read values that wrap onto the next line (default ON) ──────────────────────
+(async () => {
+  try {
+    const v = await api.getSetting('multiline_enabled');
+    document.getElementById('multiline-toggle').checked = (v !== 'false');   // unset → on
+  } catch { document.getElementById('multiline-toggle').checked = true; }
+})();
+document.getElementById('multiline-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('multiline_enabled', e.target.checked ? 'true' : 'false');
+});
+
+// ── Auto-rotate sideways/upside-down scans (default ON) ────────────────────────
+(async () => {
+  try {
+    const v = await api.getSetting('auto_rotate_enabled');
+    document.getElementById('auto-rotate-toggle').checked = (v !== 'false');   // unset → on
+  } catch { document.getElementById('auto-rotate-toggle').checked = true; }
+})();
+document.getElementById('auto-rotate-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('auto_rotate_enabled', e.target.checked ? 'true' : 'false');
+});
+
+// ── Home dashboard cards (show/hide) ───────────────────────────────────────────
+// A toggle per Home card. Checked = shown, unchecked = hidden. Stored as a JSON list of HIDDEN
+// card ids in `dashboard_hidden_cards`; the main window applies it live (dashboard-cards-changed).
+// Grouped to mirror the Home screen's two tiers, so the toggles read in the same order/sections
+// as the dashboard itself.
+const DASH_CARD_SECTIONS = [
+  ['Top', [
+    ['dash-quickfind', 'Quick find'],
+    ['dash-attention', 'Needs your attention'],
+    ['dash-pulse',     'Documents filed'],
+    ['dash-autofile',  'Filed automatically'],
+    ['dash-learning',  'Getting smarter'],
+    ['dash-tips',      'Did you know'],
+    ['dash-practice',  'Practice run'],
+    ['dash-recent',    'Recent activity'],
+  ]],
+  ['Files & folders', [
+    ['dash-watch',   'Auto-import'],
+    ['dash-import',  'Import documents'],
+    ['dash-output',  'Where your files go'],
+    ['dash-storage', 'Storage'],
+    ['dash-backup',  'Backup'],
+    ['dash-clients', 'Search clients'],
+  ]],
+];
+async function _readHiddenCards() {
+  try { const raw = await api.getSetting('dashboard_hidden_cards'); const a = raw ? JSON.parse(raw) : []; return Array.isArray(a) ? a : []; }
+  catch { return []; }
+}
+(async () => {
+  const wrap = document.getElementById('dash-cards-toggles');
+  if (!wrap) return;
+  const hidden = await _readHiddenCards();
+  wrap.innerHTML = '';
+  for (const [section, cards] of DASH_CARD_SECTIONS) {
+    const head = document.createElement('div'); head.className = 'dash-cards-subhead'; head.textContent = section;
+    wrap.appendChild(head);
+    const grid = document.createElement('div'); grid.className = 'dash-cards-grid';   // multi-column
+    for (const [id, label] of cards) {
+      const row = document.createElement('div'); row.className = 'threshold-row';
+      row.innerHTML = `<div><div class="threshold-label">${label}</div></div>
+        <label class="toggle"><input type="checkbox" data-card="${id}"${hidden.includes(id) ? '' : ' checked'}><span class="toggle-slider"></span></label>`;
+      grid.appendChild(row);
+    }
+    wrap.appendChild(grid);
+  }
+  wrap.addEventListener('change', async (e) => {
+    const cb = e.target.closest('input[data-card]');
+    if (!cb) return;
+    let h = await _readHiddenCards();
+    h = h.filter((x) => x !== cb.dataset.card);
+    if (!cb.checked) h.push(cb.dataset.card);   // unchecked = hidden
+    await api.setSetting('dashboard_hidden_cards', JSON.stringify(h));
+  });
+})();
+
+// Processing mode (Fast/Smart) was collapsed to one mode — the two became identical after
+// the AI-mode removal — so there is no longer a user-facing selector here. The backend still
+// stores `processing_mode` (default 'smart') and honours it for tolerance.
 
 // ── Parallel document processing (worker count) ───────────────────────────────
 const concurrencySelect = document.getElementById('processing-concurrency');
 async function loadProcessingConcurrency() {
+  // Size the picker to THIS PC's cores (core-aware cap in the processing handler), so a
+  // powerful machine can go higher and a modest one can't oversubscribe.
+  let cores = 4, cap = 4, recommended = 2;
+  try { const info = await api.getConcurrencyInfo(); if (info) { cores = info.cores || cores; cap = info.maxConcurrency || cap; recommended = info.recommended || recommended; } } catch {}
+  cap = Math.max(1, cap);
+  concurrencySelect.innerHTML = Array.from({ length: cap }, (_, i) =>
+    `<option value="${i + 1}">${i + 1}</option>`).join('');
+
   let n = parseInt(await api.getSetting('processing_concurrency'), 10);
-  if (!Number.isFinite(n)) n = 1;
-  n = Math.max(1, Math.min(5, n));
+  if (!Number.isFinite(n)) n = recommended;   // core-aware default when never set
+  n = Math.max(1, Math.min(cap, n));   // clamp the stored value to this PC's ceiling
   concurrencySelect.value = String(n);
+
+  const help = document.getElementById('concurrency-help');
+  if (help) {
+    help.textContent =
+      `How many documents ScanFinder reads at the same time. This PC has ${cores} processor `
+      + `core${cores === 1 ? '' : 's'}, so you can go up to ${cap}. Higher is faster on a powerful `
+      + `PC with plenty of memory, but each extra document uses more CPU and RAM — on a modest or `
+      + `busy PC, too many can actually slow things down or run low on memory. If unsure, 1–2 is safe.`;
+  }
 }
 loadProcessingConcurrency();
 
@@ -235,21 +430,89 @@ concurrencySelect.addEventListener('change', async () => {
   await api.setSetting('processing_concurrency', concurrencySelect.value);
 });
 
-// ── Full-page OCR engine (Stage 2 selector) ───────────────────────────────────
-// The backend seam (processing/handler.js + Python) already consumes `ocr_engine`;
-// this only persists the choice. Unset shows Tesseract, matching the shipped default
-// (the backend defaults the same way and only adds --ocr-engine for 'rapidocr'), so
-// existing installs are unaffected until an admin opts in.
-const ocrEngineSelect = document.getElementById('ocr-engine-select');
-async function loadOcrEngine() {
-  if (!ocrEngineSelect) return;
-  const v = await api.getSetting('ocr_engine');
-  ocrEngineSelect.value = (v === 'rapidocr') ? 'rapidocr' : 'tesseract';
+// ── Per-document safety timeout (file watchdog; seconds, 0 = off) ──────────────
+const fileTimeoutSelect = document.getElementById('file-timeout-select');
+if (fileTimeoutSelect) {
+  (async () => {
+    let n = parseInt(await api.getSetting('file_timeout_seconds'), 10);
+    if (!Number.isFinite(n) || n < 0) n = 300;                 // default 5 min
+    if (!['0', '120', '300', '600'].includes(String(n))) n = 300;   // snap to an offered option
+    fileTimeoutSelect.value = String(n);
+  })();
+  fileTimeoutSelect.addEventListener('change', async () => {
+    await api.setSetting('file_timeout_seconds', fileTimeoutSelect.value);
+  });
 }
-loadOcrEngine();
-if (ocrEngineSelect) ocrEngineSelect.addEventListener('change', async () => {
-  try { await api.setSetting('ocr_engine', ocrEngineSelect.value === 'rapidocr' ? 'rapidocr' : 'tesseract'); }
-  catch { /* non-fatal; the saved value reloads on next open */ }
+
+
+// ── Date format (region) — how an ambiguous numeric date is read ──────────────
+const dateOrderSelect = document.getElementById('date-order-select');
+async function loadDateOrder() {
+  if (!dateOrderSelect) return;
+  const v = (await api.getSetting('region_date_order') || 'dmy').toLowerCase();
+  dateOrderSelect.value = ['dmy', 'mdy', 'ymd'].includes(v) ? v : 'dmy';
+}
+loadDateOrder();
+if (dateOrderSelect) dateOrderSelect.addEventListener('change', async () => {
+  try { await api.setSetting('region_date_order', dateOrderSelect.value); }
+  catch { /* non-fatal; reloads on next open */ }
+});
+
+// ── Number format (region) — how money amounts group thousands / mark the decimal ──
+const numberFormatSelect = document.getElementById('number-format-select');
+const _NUM_FMTS = ['anglo', 'continental', 'french', 'swiss', 'indian'];
+async function loadNumberFormat() {
+  if (!numberFormatSelect) return;
+  const v = (await api.getSetting('region_number_format') || 'anglo').toLowerCase();
+  numberFormatSelect.value = _NUM_FMTS.includes(v) ? v : 'anglo';
+}
+loadNumberFormat();
+if (numberFormatSelect) numberFormatSelect.addEventListener('change', async () => {
+  try { await api.setSetting('region_number_format', numberFormatSelect.value); }
+  catch { /* non-fatal; reloads on next open */ }
+});
+
+
+// ── Auto document separation (split multi-document PDFs) ───────────────────────
+// Defaults ON (the backend reads 'auto_separate_enabled' with a 'true' default), so an
+// unset install behaves as separation-on; this only persists an explicit choice.
+const autoSeparateToggle = document.getElementById('auto-separate-toggle');
+async function loadAutoSeparate() {
+  if (!autoSeparateToggle) return;
+  autoSeparateToggle.checked = (await api.getSetting('auto_separate_enabled')) !== 'false';
+}
+loadAutoSeparate();
+if (autoSeparateToggle) autoSeparateToggle.addEventListener('change', async () => {
+  try { await api.setSetting('auto_separate_enabled', autoSeparateToggle.checked ? 'true' : 'false'); }
+  catch { /* non-fatal; reloads on next open */ }
+});
+
+// ── Name wordness review flag (flag odd supplier/customer names) ───────────────
+// Defaults ON (backend reads 'name_wordness_flag' with a 'true' default); flag-only,
+// so this only persists an explicit choice and never changes extracted values.
+const nameWordnessToggle = document.getElementById('name-wordness-toggle');
+async function loadNameWordness() {
+  if (!nameWordnessToggle) return;
+  nameWordnessToggle.checked = (await api.getSetting('name_wordness_flag')) !== 'false';
+}
+loadNameWordness();
+if (nameWordnessToggle) nameWordnessToggle.addEventListener('change', async () => {
+  try { await api.setSetting('name_wordness_flag', nameWordnessToggle.checked ? 'true' : 'false'); }
+  catch { /* non-fatal; reloads on next open */ }
+});
+
+// ── Supplier-identity conflict flag (letterhead reads a different known supplier) ──
+// ON by default (backend reads 'identity_conflict_flag' with a 'true' default). Flag-only,
+// so this only persists an explicit choice and never changes extracted values.
+const identityConflictToggle = document.getElementById('identity-conflict-toggle');
+async function loadIdentityConflict() {
+  if (!identityConflictToggle) return;
+  identityConflictToggle.checked = (await api.getSetting('identity_conflict_flag')) !== 'false';
+}
+loadIdentityConflict();
+if (identityConflictToggle) identityConflictToggle.addEventListener('change', async () => {
+  try { await api.setSetting('identity_conflict_flag', identityConflictToggle.checked ? 'true' : 'false'); }
+  catch { /* non-fatal; reloads on next open */ }
 });
 
 // ── Output Structure (folder + file-name builders) ──────────────────────────────
@@ -264,45 +527,48 @@ const outputPathPreview    = document.getElementById('output-path-preview');
 let _defaultFolderPattern   = '{supplier}/{year}/{month}';
 let _defaultFilenamePattern = '{docType}.{date}.{ref}';
 let _outPreviewDebounce = null;
+let folderPatternEditor = null, filenamePatternEditor = null;   // shared/pattern-editor.js
 
 async function loadOutputStructure() {
-  if (!folderPatternInput) return;
+  if (!folderPatternInput || typeof window.createPatternEditor !== 'function') return;
   const info = await api.getOutputStructureInfo();
   _defaultFolderPattern   = info.defaultFolder   || _defaultFolderPattern;
   _defaultFilenamePattern = info.defaultFilename || _defaultFilenamePattern;
 
-  renderOutputTokenList('folder-token-list',   info.tokens, folderPatternInput);
-  renderOutputTokenList('filename-token-list', info.tokens, filenamePatternInput);
+  // Swap the raw "{token}/..." text inputs for pill editors (shared/pattern-editor.js) -
+  // each known token becomes a friendly block; the STORED value stays the same pattern
+  // string, so preview + filing are unchanged.
+  if (!folderPatternEditor) folderPatternEditor = window.createPatternEditor(folderPatternInput,
+    { tokens: info.tokens, placeholder: 'Click a block below, or type - use / for a new folder level',
+      onChange: () => { saveOutputSetting(folderPatternInput); scheduleOutputPreview(); } });
+  if (!filenamePatternEditor) filenamePatternEditor = window.createPatternEditor(filenamePatternInput,
+    { tokens: info.tokens, placeholder: 'Click a block below, or type',
+      onChange: () => { saveOutputSetting(filenamePatternInput); scheduleOutputPreview(); } });
 
-  folderPatternInput.value   = (await api.getSetting('output_folder_pattern')) || _defaultFolderPattern;
-  filenamePatternInput.value = (await api.getSetting('filename_pattern'))       || _defaultFilenamePattern;
+  renderOutputTokenList('folder-token-list',   info.tokens, folderPatternEditor);
+  renderOutputTokenList('filename-token-list', info.tokens, filenamePatternEditor);
+
+  folderPatternEditor.setValue((await api.getSetting('output_folder_pattern')) || _defaultFolderPattern);
+  filenamePatternEditor.setValue((await api.getSetting('filename_pattern'))     || _defaultFilenamePattern);
   updateOutputPreview();
 }
 loadOutputStructure();
 
-function renderOutputTokenList(listId, tokens, targetInput) {
+function renderOutputTokenList(listId, tokens, editor) {
   const list = document.getElementById(listId);
   if (!list) return;
   list.innerHTML = '';
   for (const t of (tokens || [])) {
     const chip = document.createElement('span');
-    chip.className = 'token-chip';
+    chip.className = 'pe-chip';
     chip.title = `Insert ${t.token} — example: ${t.example}`;
-    chip.innerHTML = `${escHtml(t.token)}<span class="token-label">${escHtml(t.label)}</span>`;
-    chip.addEventListener('click', () => insertOutputToken(targetInput, t.token));
+    chip.textContent = t.short || t.label;
+    chip.addEventListener('mousedown', (e) => e.preventDefault());   // keep the caret in the field
+    chip.addEventListener('click', () => editor.insertToken(t.token));
     list.appendChild(chip);
   }
 }
-
-function insertOutputToken(input, token) {
-  const start = input.selectionStart ?? input.value.length;
-  const end   = input.selectionEnd   ?? input.value.length;
-  input.value = input.value.slice(0, start) + token + input.value.slice(end);
-  input.focus();
-  input.selectionStart = input.selectionEnd = start + token.length;
-  saveOutputSetting(input);
-  scheduleOutputPreview();
-}
+// (insertOutputToken removed - palette chips now call editor.insertToken, pattern-editor.js.)
 
 function scheduleOutputPreview() {
   clearTimeout(_outPreviewDebounce);
@@ -310,8 +576,9 @@ function scheduleOutputPreview() {
 }
 
 async function updateOutputPreview() {
+  if (!folderPatternEditor || !filenamePatternEditor) return;
   const root   = (await api.getSetting('output_folder')) || 'Output folder';
-  const result = await api.previewOutputPath(folderPatternInput.value.trim(), filenamePatternInput.value.trim());
+  const result = await api.previewOutputPath(folderPatternEditor.getValue().trim(), filenamePatternEditor.getValue().trim());
   outputPathPreview.textContent = [root, ...(result.segments || []), result.filename].join('  ›  ');
   if (result.warning) {
     filenamePatternMsg.textContent   = `⚠ ${result.warning}`;
@@ -323,23 +590,19 @@ async function updateOutputPreview() {
 }
 
 async function saveOutputSetting(input) {
-  if (input === folderPatternInput)   await api.setSetting('output_folder_pattern', folderPatternInput.value.trim());
-  if (input === filenamePatternInput) await api.setSetting('filename_pattern',      filenamePatternInput.value.trim());
+  if (input === folderPatternInput)   await api.setSetting('output_folder_pattern', folderPatternEditor.getValue().trim());
+  if (input === filenamePatternInput) await api.setSetting('filename_pattern',      filenamePatternEditor.getValue().trim());
 }
 
-for (const input of [folderPatternInput, filenamePatternInput]) {
-  if (!input) continue;
-  input.addEventListener('input',  scheduleOutputPreview);
-  input.addEventListener('change', () => saveOutputSetting(input));
-}
+// Save + live preview are driven by each editor's onChange (wired in loadOutputStructure).
 
 document.getElementById('btn-reset-folder-pattern')?.addEventListener('click', async () => {
-  folderPatternInput.value = _defaultFolderPattern;
+  folderPatternEditor?.setValue(_defaultFolderPattern);
   await saveOutputSetting(folderPatternInput);
   updateOutputPreview();
 });
 document.getElementById('btn-reset-filename-pattern')?.addEventListener('click', async () => {
-  filenamePatternInput.value = _defaultFilenamePattern;
+  filenamePatternEditor?.setValue(_defaultFilenamePattern);
   await saveOutputSetting(filenamePatternInput);
   updateOutputPreview();
 });
@@ -353,6 +616,7 @@ async function loadThreshold() {
   const n   = val != null ? parseInt(val) : 70;
   thresholdSlider.value    = n;
   thresholdVal.textContent = n + '%';
+  if (typeof enforceAutoFileInvariant === 'function') enforceAutoFileInvariant(true);   // review <= auto-file
 }
 loadThreshold();
 
@@ -374,250 +638,234 @@ async function loadDocTypes() {
   renderDocTypesList();
 }
 
+// Combined Document Types tab = master (left list) + detail (right pane). The
+// detail pane delegates the fields + filing-role editing to the shared
+// DocTypeEditor component (also used by the Teach wizard) so there's one editor.
+let selectedDocTypeId = null;
+let dtEditor = null;            // active DocTypeEditor controller; destroy before re-mount
+
 function renderDocTypesList() {
   const list = document.getElementById('doctypes-list');
   list.innerHTML = '';
 
   for (const dt of allTypesWithFields) {
     const row = document.createElement('div');
-    row.className = 'doctype-row' + (dt.enabled ? '' : ' disabled');
-
-    const fieldOpts = dt.fields.map(f =>
-      `<option value="${escHtml(f.key)}">${escHtml(f.label)}</option>`
-    ).join('');
-    const noneOpt = '<option value="">— none —</option>';
-
+    row.className = 'doctype-row'
+      + (dt.enabled ? '' : ' disabled')
+      + (dt.id === selectedDocTypeId ? ' active' : '');
+    const fieldCount = (dt.fields || []).length;
     row.innerHTML = `
-      <label class="toggle">
-        <input type="checkbox" class="dt-toggle" data-id="${dt.id}" ${dt.enabled ? 'checked' : ''}>
-        <span class="toggle-slider"></span>
-      </label>
       <div class="doctype-name">
-        ${escHtml(dt.name)}
+        <span class="doctype-nametext" title="${escHtml(dt.name)}">${escHtml(dt.name)}</span>
         <span class="${dt.built_in ? 'badge-builtin' : 'badge-custom'}">${dt.built_in ? 'built-in' : 'custom'}</span>
       </div>
-      <div class="doctype-fields">
-        <span class="field-label-small">Ref:</span>
-        <select class="field-select dt-ref" data-id="${dt.id}">
-          ${noneOpt}${fieldOpts}
-        </select>
-        <span class="field-label-small">Date:</span>
-        <select class="field-select dt-date" data-id="${dt.id}">
-          ${noneOpt}${fieldOpts}
-        </select>
-        ${!dt.built_in
-          ? `<button class="btn-icon dt-delete" data-id="${dt.id}" title="Delete type">&#215;</button>`
-          : ''}
-      </div>
+      <span class="doctype-count" title="${fieldCount} field${fieldCount === 1 ? '' : 's'}">${fieldCount}</span>
     `;
-
-    // Set current ref/date values
-    const refSel  = row.querySelector('.dt-ref');
-    const dateSel = row.querySelector('.dt-date');
-    if (dt.ref_field_key)  refSel.value  = dt.ref_field_key;
-    if (dt.date_field_key) dateSel.value = dt.date_field_key;
-
-    // Toggle enable/disable
-    row.querySelector('.dt-toggle').addEventListener('change', async (e) => {
-      const enabled = e.target.checked ? 1 : 0;
-      await api.updateDocumentType(dt.id, { enabled });
-      row.classList.toggle('disabled', !e.target.checked);
-    });
-
-    // Ref field change
-    refSel.addEventListener('change', async () => {
-      await api.updateDocumentType(dt.id, { ref_field_key: refSel.value || null });
-    });
-
-    // Date field change
-    dateSel.addEventListener('change', async () => {
-      await api.updateDocumentType(dt.id, { date_field_key: dateSel.value || null });
-    });
-
-    // Delete custom type
-    const delBtn = row.querySelector('.dt-delete');
-    if (delBtn) {
-      delBtn.addEventListener('click', async () => {
-        if (!confirm(`Delete "${dt.name}"? This cannot be undone.`)) return;
-        // No delete-document-type IPC exists yet; mark disabled as a fallback
-        await api.updateDocumentType(dt.id, { enabled: 0 });
-        await loadDocTypes();
-      });
-    }
-
+    row.addEventListener('click', () => selectDocType(dt.id));
     list.appendChild(row);
   }
 }
 
-// ── Add custom type ───────────────────────────────────────────────────────────
-const addTypeForm = document.getElementById('add-type-form');
-
-document.getElementById('btn-add-type').addEventListener('click', () => {
-  addTypeForm.classList.add('visible');
-  document.getElementById('new-type-name').focus();
-});
-
-document.getElementById('btn-cancel-type').addEventListener('click', () => {
-  addTypeForm.classList.remove('visible');
-  document.getElementById('new-type-name').value = '';
-});
-
-document.getElementById('btn-save-type').addEventListener('click', async () => {
-  const name = document.getElementById('new-type-name').value.trim();
-  if (!name) { alert('Please enter a type name.'); return; }
-  await api.addDocumentType({ name });
-  addTypeForm.classList.remove('visible');
-  document.getElementById('new-type-name').value = '';
-  await loadDocTypes();
-  await loadFieldsTabTypes();
-});
-
-// ══════════════════════════════════════════════════════════════════════════════
-// FIELDS TAB
-// ══════════════════════════════════════════════════════════════════════════════
-
-let enabledDocTypes  = [];
-let selectedTypeId   = null;
-
-async function loadFieldsTabTypes() {
-  enabledDocTypes = await api.getAllDocTypes();
-  renderTypeTabs();
-  if (enabledDocTypes.length > 0) {
-    if (!selectedTypeId || !enabledDocTypes.find(t => t.id === selectedTypeId)) {
-      selectedTypeId = enabledDocTypes[0].id;
-    }
-    renderFieldsTable();
-  } else {
-    document.getElementById('fields-tbody').innerHTML = '';
-  }
+async function refreshDocTypesList() {
+  allTypesWithFields = await api.getAllDocTypesAll();
+  renderDocTypesList();
 }
 
-function renderTypeTabs() {
-  const tabsEl = document.getElementById('type-tabs');
-  tabsEl.innerHTML = '';
-  for (const dt of enabledDocTypes) {
-    const btn = document.createElement('button');
-    btn.className = 'type-tab' + (dt.id === selectedTypeId ? ' active' : '');
-    btn.textContent = dt.name;
-    btn.addEventListener('click', () => {
-      selectedTypeId = dt.id;
-      renderTypeTabs();
-      renderFieldsTable();
-      const sel = document.getElementById('new-doctype');
-      if (sel) sel.value = dt.id;
+function showDetailEmpty() {
+  if (dtEditor) { dtEditor.destroy(); dtEditor = null; }
+  document.getElementById('dt-detail').innerHTML = '';
+  document.getElementById('dt-detail-empty').style.display = '';
+}
+
+function selectDocType(id) {
+  selectedDocTypeId = id;
+  renderDocTypesList();
+  const type = allTypesWithFields.find(t => t.id === id);
+  if (!type) { showDetailEmpty(); return; }
+  renderDocTypeDetail(type);
+}
+
+function renderDocTypeDetail(type) {
+  if (dtEditor) { dtEditor.destroy(); dtEditor = null; }
+  document.getElementById('dt-detail-empty').style.display = 'none';
+  const detail = document.getElementById('dt-detail');
+  detail.innerHTML = `
+    <div class="dt-detail-header">
+      <h3>${escHtml(type.name)}</h3>
+      <span class="${type.built_in ? 'badge-builtin' : 'badge-custom'}">${type.built_in ? 'built-in' : 'custom'}</span>
+      <span style="flex:1"></span>
+      <label class="toggle" title="Enable or disable this type for filing">
+        <input type="checkbox" id="dt-enable" ${type.enabled ? 'checked' : ''}>
+        <span class="toggle-slider"></span>
+      </label>
+      <span id="dt-enable-lbl" class="field-label-small">${type.enabled ? 'Enabled' : 'Disabled'}</span>
+      <button class="btn" id="dt-fix-type" title="Reset what's been learned for this type if it's reading documents wrong" style="padding:4px 10px; font-size:12px;">Fix this type…</button>
+      ${type.built_in ? '' : '<button class="btn-icon" id="dt-hide" title="Hide this type">&#215;</button>'}
+    </div>
+    <div id="dt-editor-host"></div>`;
+
+  document.getElementById('dt-fix-type')?.addEventListener('click', async () => {
+    const repairTab = document.querySelector('.tab[data-tab="repair"]');
+    if (repairTab) repairTab.click();             // activates the Learning Repair panel + repairInit()
+    await repairInit();                           // idempotent — ensure the dropdown is populated
+    const sel = document.getElementById('rp-doctype');
+    if (sel && type.slug) {
+      sel.value = type.slug;
+      document.getElementById('rp-supplier').value = '';
+      await rpLoad();
+    }
+  });
+
+  document.getElementById('dt-enable').addEventListener('change', async (e) => {
+    const enabled = e.target.checked ? 1 : 0;
+    await api.updateDocumentType(type.id, { enabled });
+    document.getElementById('dt-enable-lbl').textContent = enabled ? 'Enabled' : 'Disabled';
+    await refreshDocTypesList();
+  });
+  const hideBtn = document.getElementById('dt-hide');
+  if (hideBtn) {
+    hideBtn.addEventListener('click', async () => {
+      if (!confirm(`Hide "${type.name}"? It will be disabled and no longer offered when filing new documents. You can switch it back on anytime. Documents already filed are unaffected.`)) return;
+      await api.updateDocumentType(type.id, { enabled: 0 });
+      await refreshDocTypesList();
+      selectDocType(type.id);
     });
-    tabsEl.appendChild(btn);
   }
+
+  dtEditor = window.DocTypeEditor.create(
+    document.getElementById('dt-editor-host'),
+    { mode: 'edit', api, initial: type, onChange: refreshDocTypesList }
+  );
 }
 
-function renderFieldsTable() {
-  const dt    = enabledDocTypes.find(t => t.id === selectedTypeId);
-  const tbody = document.getElementById('fields-tbody');
-  tbody.innerHTML = '';
-  if (!dt) return;
+// ── New type (inline friendly creator, shared with the Teach wizard) ───────────
+function openNewTypeForm() {
+  selectedDocTypeId = null;
+  renderDocTypesList();
+  if (dtEditor) { dtEditor.destroy(); dtEditor = null; }
+  document.getElementById('dt-detail-empty').style.display = 'none';
+  const detail = document.getElementById('dt-detail');
+  detail.innerHTML = `
+    <div class="dt-detail-header"><h3>New document type</h3></div>
+    <div id="dt-editor-host"></div>
+    <div style="margin-top:16px; display:flex; gap:8px;">
+      <button class="btn primary" id="dt-create-btn" disabled>Create type</button>
+      <button class="btn" id="dt-cancel-btn">Cancel</button>
+    </div>`;
 
-  for (const f of dt.fields) {
-    const tr = document.createElement('tr');
-    // Structural roles (Company / Date / Reference) are PERMANENT: they drive
-    // filing + all learning, so they can't be disabled or deleted (the per-document
-    // value stays editable in Review). Lock the toggle and show a 🔒 instead of a
-    // delete button.
-    const structural = f.is_structural === 1;
-    tr.innerHTML = `
-      <td>${escHtml(f.label)}${structural ? ' <span class="field-lock" title="Permanent field — required for filing and learning">🔒</span>' : ''}</td>
-      <td><span class="field-key">${escHtml(f.key)}</span></td>
-      <td>${escHtml(f.type)}</td>
-      <td>
-        <label class="toggle">
-          <input type="checkbox" data-field-id="${f.id}" ${f.enabled !== 0 ? 'checked' : ''} ${structural ? 'disabled' : ''}>
-          <span class="toggle-slider"></span>
-        </label>
-      </td>
-      <td>
-        ${structural
-          ? `<span class="badge-builtin">permanent</span>`
-          : f.built_in
-            ? `<span class="badge-builtin">built-in</span>`
-            : `<span class="badge-custom">custom</span>
-               <button class="btn-icon" data-delete="${f.id}">&#215;</button>`}
-      </td>
-    `;
-
-    const toggle = tr.querySelector('input[type=checkbox]');
-    if (!structural) {
-      toggle.addEventListener('change', async (e) => {
-        await api.updateField(f.id, { enabled: e.target.checked ? 1 : 0 });
-      });
+  dtEditor = window.DocTypeEditor.create(
+    document.getElementById('dt-editor-host'),
+    {
+      mode: 'create',
+      api,
+      onValidityChange: (ready) => {
+        const b = document.getElementById('dt-create-btn');
+        if (b) b.disabled = !ready;
+      },
     }
+  );
 
-    const delBtn = tr.querySelector('[data-delete]');
-    if (delBtn) {
-      delBtn.addEventListener('click', async () => {
-        if (!confirm('Delete this custom field? This cannot be undone.')) return;
-        await api.deleteField(f.id);
-        await loadFieldsTabTypes();
-      });
+  document.getElementById('dt-create-btn').addEventListener('click', async () => {
+    const res = await dtEditor.commit();
+    if (res && res.success) {
+      await refreshDocTypesList();
+      const newId = res.type ? res.type.id : null;
+      if (newId) selectDocType(newId);
+      else showDetailEmpty();
     }
-
-    tbody.appendChild(tr);
-  }
+  });
+  document.getElementById('dt-cancel-btn').addEventListener('click', showDetailEmpty);
 }
 
-// ── Add custom field ──────────────────────────────────────────────────────────
-const addFieldForm = document.getElementById('add-field-form');
-const newLabel     = document.getElementById('new-label');
-const newKey       = document.getElementById('new-key');
+document.getElementById('btn-add-type').addEventListener('click', openNewTypeForm);
 
-// Field key = a stable identifier (lowercase, underscores). Keeps underscores,
-// unlike a display-name slug, so a hand-typed "po_number" survives.
-const keySlug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-// The Key field is EDITABLE: auto-derive it from the Label until the user types
-// in it themselves, then stop overriding (the conventional label→slug pattern).
-let keyEdited = false;
+// ── Preset catalog: tick ready-made document types to add ─────────────────────
+// Lists the shipped presets (document_types.PRESET_CATALOG) and, on submit, creates
+// each ticked type + fields + structural roles AND seeds its likely field-label
+// aliases (so Stage-1 extraction works without teaching). Already-present types are
+// shown ticked + disabled. Mirrors the showSecretDialog/showTypedConfirmDialog overlay.
+const COMPANY_LABELS = { supplier_name: 'Document Issuer', customer_name: 'Document Issuer' };
 
-document.getElementById('btn-add-field').addEventListener('click', () => {
-  addFieldForm.classList.add('visible');
-  keyEdited = false;
-  newLabel.focus();
-});
+async function openCatalogModal() {
+  let catalog;
+  try { catalog = await api.getDoctypeCatalog(); }
+  catch (e) { alert('Could not load the catalog: ' + (e && e.message || e)); return; }
+  if (!Array.isArray(catalog) || !catalog.length) return;
 
-document.getElementById('btn-cancel-field').addEventListener('click', () => {
-  addFieldForm.classList.remove('visible');
-  newLabel.value = '';
-  newKey.value   = '';
-  keyEdited = false;
-});
+  const rows = catalog.map((p) => {
+    const fieldList = p.fields.map(f => escHtml(f.label)).join(', ');
+    const company = COMPANY_LABELS[p.company_key] || p.company_key;
+    const tag = p.already_present
+      ? '<span style="font-size:10px; color:var(--ok); border:1px solid var(--ok); border-radius:999px; padding:1px 7px;">Already added</span>'
+      : '';
+    return `
+      <label style="display:flex; gap:10px; align-items:flex-start; padding:8px 6px; border-radius:8px; cursor:pointer;">
+        <input type="checkbox" data-slug="${escHtml(p.slug)}" ${p.already_present ? 'checked disabled' : ''}
+               style="margin-top:3px;">
+        <div style="flex:1;">
+          <div style="font-size:12px; font-weight:500;">${escHtml(p.name)}
+            <span style="font-weight:400; color:var(--muted);">· company: ${escHtml(company)}</span> ${tag}</div>
+          <div style="font-size:11px; color:var(--muted); line-height:1.5;">${fieldList}</div>
+        </div>
+      </label>`;
+  }).join('');
 
-newLabel.addEventListener('input', () => {
-  if (!keyEdited) newKey.value = keySlug(newLabel.value);
-});
-newKey.addEventListener('input', () => {
-  // Once the user edits the key, it's theirs — stop auto-deriving (resume if emptied).
-  keyEdited = newKey.value.trim() !== '';
-});
+  const overlay = document.createElement('div');
+  overlay.style.cssText =
+    'position:fixed; inset:0; z-index:9998; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center;';
+  overlay.innerHTML = `
+    <div style="width:460px; max-height:80vh; background:var(--surface); border:1px solid var(--border2);
+                border-radius:10px; padding:18px; display:flex; flex-direction:column; gap:12px;
+                font-family:var(--sans); color:var(--text);">
+      <div style="font-size:13px; font-weight:600;">Add document types from catalog</div>
+      <div style="font-size:11px; color:var(--muted); line-height:1.6;">
+        Tick the document types your business uses. Each one is added with its fields and likely
+        labels, so extraction has a head start before you teach anything.</div>
+      <div id="cat-rows" style="overflow-y:auto; border:1px solid var(--border); border-radius:8px;
+           padding:4px; flex:1; min-height:120px;">${rows}</div>
+      <div style="display:flex; gap:8px;">
+        <button id="cat-cancel" style="flex:1; padding:9px; border-radius:6px; border:1px solid var(--border2);
+                background:transparent; color:var(--muted); font-family:inherit; font-size:12px; cursor:pointer;">Cancel</button>
+        <button id="cat-add" style="flex:1; padding:9px; border-radius:6px; border:none; background:var(--accent);
+                color:#fff; font-family:inherit; font-size:12px; font-weight:500; cursor:pointer;">Add selected</button>
+      </div>
+    </div>`;
+  overlay.setAttribute('data-help-ignore', '1');
+  document.body.appendChild(overlay);
 
-document.getElementById('btn-save-field').addEventListener('click', async () => {
-  const label = newLabel.value.trim();
-  const key   = keySlug(newKey.value);
-  const type  = document.getElementById('new-field-type').value;
+  const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
+  overlay.querySelector('#cat-cancel').addEventListener('click', close);
 
-  if (!label || !key) { alert('Please enter a field label.'); return; }
-  if (!selectedTypeId) { alert('Please select a document type tab first.'); return; }
+  overlay.querySelector('#cat-add').addEventListener('click', async () => {
+    const slugs = Array.from(overlay.querySelectorAll('input[type=checkbox]:checked:not(:disabled)'))
+      .map(cb => cb.getAttribute('data-slug'));
+    if (!slugs.length) { close(); return; }
+    const btn = overlay.querySelector('#cat-add');
+    btn.disabled = true; btn.textContent = 'Adding…';
+    try {
+      const res = await api.addDoctypePresets(slugs);
+      close();
+      if (res && res.success) await refreshDocTypesList();
+      else alert('Could not add types: ' + ((res && res.error) || 'unknown error'));
+    } catch (e) {
+      close();
+      alert('Could not add types: ' + (e && e.message || e));
+    }
+  });
+}
 
-  await api.addField({ document_type_id: selectedTypeId, key, label, type });
+document.getElementById('btn-catalog').addEventListener('click', openCatalogModal);
 
-  addFieldForm.classList.remove('visible');
-  newLabel.value = '';
-  newKey.value   = '';
-  keyEdited = false;
-
-  await loadFieldsTabTypes();
-  await loadDocTypes();
-});
+// (FIELDS TAB removed — merged into the Document Types master-detail tab above.
+//  Field add/edit/delete now happens in the shared DocTypeEditor component via the
+//  same add-field / update-field / delete-field IPCs.)
 
 // ── Helper ────────────────────────────────────────────────────────────────────
 function escHtml(str) {
-  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 function formatWhen(when) {
@@ -912,16 +1160,30 @@ function showTypedConfirmDialog({ title, warningHtml, requiredText, confirmLabel
 // THEME TOGGLE
 // ══════════════════════════════════════════════════════════════════════════════
 
-async function loadThemeToggle() {
-  const theme = await api.getSetting('theme') || 'light';
-  document.getElementById('theme-toggle').checked = (theme === 'light');
+const THEME_VALUES = ['light', 'warm', 'slate', 'dark', 'midnight', 'graphite',
+                      'spring', 'summer', 'autumn', 'winter', 'festive'];
+async function loadThemeSelect() {
+  const theme = await api.getSetting('theme') || 'warm';
+  const sel = document.getElementById('theme-select');
+  if (sel) sel.value = THEME_VALUES.includes(theme) ? theme : 'warm';
 }
-loadThemeToggle();
+loadThemeSelect();
 
-document.getElementById('theme-toggle').addEventListener('change', async (e) => {
-  const theme = e.target.checked ? 'light' : 'dark';
-  applyTheme(theme);
-  await api.setSetting('theme', theme);
+document.getElementById('theme-select')?.addEventListener('change', async (e) => {
+  const theme = e.target.value;
+  applyTheme(theme);                       // live in this window
+  await api.setSetting('theme', theme);    // persist + broadcast theme-changed to all windows
+});
+
+// "Close button minimises to the tray" — default ON (checked unless explicitly 'false').
+async function loadCloseToTrayToggle() {
+  const v = await api.getSetting('close_to_tray');
+  document.getElementById('close-to-tray-toggle').checked = (v !== 'false');
+}
+loadCloseToTrayToggle();
+
+document.getElementById('close-to-tray-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('close_to_tray', e.target.checked ? 'true' : 'false');
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -945,6 +1207,9 @@ let tplDraftTarget     = null;
 let tplIsDragging      = false;
 let tplDragStart       = null;
 let tplDragRect        = null;
+// Enhance-detection (manual landmark) draw state — independent of tplMapMode.
+let tplLandmarkMode    = false;  // drawing manual registration landmarks
+let tplLandmarkDraft   = [];     // [{label_text,x_norm,y_norm,w_norm,h_norm,ocr_conf,page_number}]
 // Select / move state — left-click on an existing box selects it; dragging moves it.
 let tplSelectedBox = null;   // { fieldKey, boxType:'anchor'|'target' } | null
 let tplIsMoving    = false;
@@ -1251,6 +1516,7 @@ tplNewGroupInput.addEventListener('keydown', (e) => {
 });
 
 async function selectTemplate(id) {
+  if (tplLandmarkMode) exitEnhanceMode();   // leave Enhance-detection before switching templates
   document.querySelectorAll('.tpl-row').forEach(r => r.classList.toggle('active', parseInt(r.dataset.id) === id));
   // If the selected row is inside a collapsed group node, expand it
   const activeRow = document.querySelector('.tpl-row.active');
@@ -1288,7 +1554,7 @@ async function selectTemplate(id) {
   renderSelectorAnchorsTable(detail);
   await loadSamplePages(detail);
   await populateMapFieldSelect(detail);
-  await renderFixedFieldsSection(detail);
+  await renderFixedFieldsTable(detail);
 }
 
 function renderDetectionMethod(detail) {
@@ -1329,6 +1595,11 @@ function renderOcrAutoStatus(detail) {
   if (!row || !toggle) return;
 
   const hasRule = !!(detail.ocr_auto_params);
+  // The titled "OCR auto-processing" section in the Advanced area only appears
+  // once a rule exists for this template (matches the original behaviour of
+  // showing nothing when there is no rule — now with a section label when there is).
+  const section = document.getElementById('tpl-ocr-auto-section');
+  if (section) section.style.display = hasRule ? 'block' : 'none';
   row.style.display  = hasRule ? 'flex' : 'none';
   desc.style.display = hasRule ? 'block' : 'none';
   if (!hasRule) return;
@@ -1472,6 +1743,184 @@ document.getElementById('tpl-btn-regen-landmarks').addEventListener('click', asy
   }
 });
 
+// Recompute the keyword fingerprint from the template's documents (force) — recovery
+// for a born-digital template that was born with an empty/unreliable fingerprint.
+document.getElementById('tpl-btn-regen-fingerprint').addEventListener('click', async () => {
+  if (!selectedTemplate) return;
+  const msg = document.getElementById('tpl-sample-msg');
+  msg.textContent = 'Regenerating fingerprint…';
+  msg.style.color = 'var(--muted)';
+  try {
+    const res = await api.regenerateTemplateFingerprint(selectedTemplate.id);
+    if (res && res.success) {
+      msg.textContent = `Keyword fingerprint regenerated (${res.count} word${res.count === 1 ? '' : 's'} from ${res.docs} doc${res.docs === 1 ? '' : 's'}).`;
+      msg.style.color = 'var(--ok)';
+    } else {
+      msg.textContent = `Could not regenerate fingerprint${res && res.reason ? ' — ' + res.reason : ''}.`;
+      msg.style.color = 'var(--err)';
+    }
+  } catch (e) {
+    console.warn('regenerateTemplateFingerprint failed:', e.message);
+    msg.textContent = 'Could not regenerate fingerprint.';
+    msg.style.color = 'var(--err)';
+  }
+});
+
+// ── Enhance detection: manual registration landmarks ─────────────────────────
+// Let the admin draw up to 5 STABLE landmarks (logo / title / fixed field labels)
+// instead of relying on auto-derivation, which can latch onto document-variable
+// text. Reuses the canvas draw gesture + the ocr-region recipe; saved source='manual'
+// and protected from auto-regeneration. Global per-template — no per-document logic.
+function landmarkMsg(text, kind) {
+  const m = document.getElementById('tpl-landmark-msg');
+  if (!m) return;
+  m.textContent = text || '';
+  m.style.color = kind === 'ok' ? 'var(--ok)' : kind === 'warn' ? 'var(--warn)'
+                : kind === 'err' ? 'var(--err)' : 'var(--muted)';
+}
+
+function renderLandmarkList() {
+  const list = document.getElementById('tpl-landmark-list');
+  if (list) {
+    list.innerHTML = '';
+    tplLandmarkDraft.forEach((l, i) => {
+      const chip = document.createElement('span');
+      chip.style.cssText = 'display:inline-flex; align-items:center; gap:7px; background:var(--surface2); '
+        + 'border:1px solid var(--border2); border-radius:999px; padding:4px 11px; font-size:12px;';
+      chip.innerHTML = `<span>${escHtml(l.label_text)}</span>`
+        + `<span data-i="${i}" title="Remove" style="cursor:pointer; color:var(--muted); font-weight:700;">&#10005;</span>`;
+      chip.querySelector('[data-i]').addEventListener('click', () => {
+        tplLandmarkDraft.splice(i, 1); renderLandmarkList(); redrawTplCanvas();
+      });
+      list.appendChild(chip);
+    });
+  }
+  const c = document.getElementById('tpl-landmark-count');
+  if (c) c.textContent = `${tplLandmarkDraft.length} / 5 drawn`;
+  const save = document.getElementById('tpl-btn-landmark-save');
+  if (save) save.disabled = tplLandmarkDraft.length === 0;
+}
+
+function drawLandmarkDraft() {
+  const w = tplCanvas.width, h = tplCanvas.height;
+  const AMBER = '#e0a32e';
+  for (const l of tplLandmarkDraft) {
+    if ((l.page_number || 0) !== tplCurrentPage) continue;
+    drawNormBox(l.x_norm, l.y_norm, l.w_norm, l.h_norm, w, h, AMBER, l.label_text, true);
+  }
+  if (tplDragRect) {
+    const dx = Math.round(tplDragRect.x), dy = Math.round(tplDragRect.y);
+    const dw = Math.round(tplDragRect.w), dh = Math.round(tplDragRect.h);
+    tplCtx.lineWidth = 1; tplCtx.strokeStyle = AMBER; tplCtx.setLineDash([5, 4]);
+    tplCtx.strokeRect(dx + 0.5, dy + 0.5, dw, dh); tplCtx.setLineDash([]);
+    tplCtx.fillStyle = AMBER + '20'; tplCtx.fillRect(dx, dy, dw, dh);
+  }
+}
+
+// OCR the drawn box (same crop->base64->ocr-region round trip the anchor auto-label
+// uses) and add it as a landmark. Empty reads are rejected — a landmark needs text.
+async function addLandmarkFromRect(rect, norm) {
+  if (tplLandmarkDraft.length >= 5) { landmarkMsg('Up to 5 landmarks — remove one first.', 'warn'); redrawTplCanvas(); return; }
+  landmarkMsg('Reading…', 'muted');
+  let text = '';
+  try {
+    const scaleX = tplImg.naturalWidth  / tplImg.offsetWidth;
+    const scaleY = tplImg.naturalHeight / tplImg.offsetHeight;
+    const crop = document.createElement('canvas');
+    crop.width  = Math.max(1, Math.round(rect.w * scaleX));
+    crop.height = Math.max(1, Math.round(rect.h * scaleY));
+    crop.getContext('2d').drawImage(
+      tplImg, Math.round(rect.x * scaleX), Math.round(rect.y * scaleY),
+      crop.width, crop.height, 0, 0, crop.width, crop.height);
+    text = (await api.ocrRegion(crop.toDataURL('image/png').split(',')[1]) || '').trim();
+  } catch (e) { console.warn('landmark OCR failed:', e.message); }
+  text = text.replace(/\s+/g, ' ').trim();
+  if (!text) { landmarkMsg("Couldn't read text there — draw a tighter box around printed words.", 'warn'); redrawTplCanvas(); return; }
+  tplLandmarkDraft.push({
+    label_text: text,
+    x_norm: norm.x_norm, y_norm: norm.y_norm, w_norm: norm.w_norm, h_norm: norm.h_norm,
+    ocr_conf: 95, page_number: tplCurrentPage,   // admin-asserted landmark (high trust)
+  });
+  landmarkMsg(`Added "${text}".`, 'ok');
+  renderLandmarkList();
+  redrawTplCanvas();
+}
+
+async function enterEnhanceMode() {
+  if (!selectedTemplate) return;
+  if (!tplPageImages.length) {
+    const sm = document.getElementById('tpl-sample-msg');
+    if (sm) { sm.textContent = 'Attach a sample document first (Import Sample…).'; sm.style.color = 'var(--warn)'; }
+    return;
+  }
+  tplPreviewMode = false;                 // mutually exclusive with the registration preview
+  const pcb = document.getElementById('tpl-preview-registration'); if (pcb) pcb.checked = false;
+  const pstat = document.getElementById('tpl-preview-status'); if (pstat) pstat.textContent = '';
+  exitDrawMode();                         // clear any mapping-draw arming
+  let existing = [];
+  try { existing = await api.getTemplateLandmarks(selectedTemplate.id) || []; } catch {}
+  tplLandmarkDraft = existing.slice(0, 5).map(l => ({
+    label_text: l.label_text,
+    x_norm: l.x_norm, y_norm: l.y_norm, w_norm: l.w_norm, h_norm: l.h_norm,
+    ocr_conf: l.ocr_conf == null ? null : l.ocr_conf, page_number: l.page_number || 0,
+  }));
+  tplLandmarkMode = true;
+  tplCanvas.classList.add('drawing');
+  document.getElementById('tpl-landmark-panel').style.display = '';
+  document.getElementById('tpl-btn-enhance').classList.add('primary');
+  landmarkMsg(existing.length ? 'Editing current landmarks — draw to add, ✕ to remove.'
+                              : 'Draw a box around each stable landmark.', 'muted');
+  renderLandmarkList();
+  redrawTplCanvas();
+}
+
+function exitEnhanceMode() {
+  tplLandmarkMode = false;
+  tplIsDragging   = false;
+  tplDragRect     = null;
+  tplCanvas.classList.remove('drawing');
+  const panel = document.getElementById('tpl-landmark-panel'); if (panel) panel.style.display = 'none';
+  const btn = document.getElementById('tpl-btn-enhance'); if (btn) btn.classList.remove('primary');
+  redrawTplCanvas();
+}
+
+document.getElementById('tpl-btn-enhance').addEventListener('click', () => {
+  if (tplLandmarkMode) exitEnhanceMode(); else enterEnhanceMode();
+});
+
+document.getElementById('tpl-btn-landmark-cancel').addEventListener('click', exitEnhanceMode);
+
+document.getElementById('tpl-btn-landmark-save').addEventListener('click', async () => {
+  if (!selectedTemplate || !tplLandmarkDraft.length) return;
+  landmarkMsg('Saving…', 'muted');
+  try {
+    const res = await api.setTemplateLandmarks(selectedTemplate.id, tplLandmarkDraft);
+    if (res && res.success) {
+      const n = res.count;
+      await selectTemplate(selectedTemplate.id);
+      exitEnhanceMode();
+      const sm = document.getElementById('tpl-sample-msg');
+      if (sm) {
+        sm.textContent = `Saved ${n} manual landmark${n === 1 ? '' : 's'} — registration will use these (protected from auto-regeneration).`;
+        sm.style.color = n >= 2 ? 'var(--ok)' : 'var(--warn)';
+      }
+    } else { landmarkMsg('Could not save landmarks.', 'err'); }
+  } catch (e) { landmarkMsg('Error: ' + e.message, 'err'); }
+});
+
+document.getElementById('tpl-btn-landmark-auto').addEventListener('click', async () => {
+  if (!selectedTemplate) return;
+  if (!confirm('Discard manual landmarks and let Scan Finder detect them automatically from the sample?')) return;
+  landmarkMsg('Reverting to automatic…', 'muted');
+  try {
+    const res = await api.clearTemplateLandmarks(selectedTemplate.id);
+    await selectTemplate(selectedTemplate.id);
+    exitEnhanceMode();
+    const sm = document.getElementById('tpl-sample-msg');
+    if (sm) { sm.textContent = `Reverted to automatic landmarks${res && res.count ? ` (${res.count})` : ''}.`; sm.style.color = 'var(--muted)'; }
+  } catch (e) { landmarkMsg('Error: ' + e.message, 'err'); }
+});
+
 // Mirrors fileArgs() in search/renderer.js — confirmed documents resolve their
 // preview path from stored_path/stored_filename, everything else from
 // folder_path/original_filename. Sample documents pinned here are always
@@ -1503,7 +1952,24 @@ async function loadSamplePages(detail) {
   renderTplPage();
 }
 
+// Show/hide the "Map a Field" editor body by MODE (anchor vs fixed value) and, in
+// anchor mode, gate the draw controls on a usable sample. Drawing an anchor/target
+// needs page images (enterDrawMode also hard-guards on tplPageImages); fixed values
+// don't, so they stay available even without a sample. Driven from renderTplPage
+// (the sample-load funnel), the Mode dropdown, and field selection.
+function updateMapModeUI() {
+  const anchorMode = (document.getElementById('tpl-map-mode')?.value || 'anchor') === 'anchor';
+  const hasSample  = tplPageImages.length > 0;
+  const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
+  show('tpl-map-fixed-controls',  !anchorMode);
+  show('tpl-map-anchor-controls',  anchorMode);
+  show('tpl-map-anchor-draw',      anchorMode && hasSample);
+  show('tpl-map-no-sample',        anchorMode && !hasSample);
+  if (!anchorMode || !hasSample) exitDrawMode();
+}
+
 function renderTplPage() {
+  updateMapModeUI();
   const placeholder = document.getElementById('tpl-doc-placeholder');
   const wrap        = document.getElementById('tpl-img-wrap');
   const indicator   = document.getElementById('tpl-page-indicator');
@@ -1525,6 +1991,7 @@ function renderTplPage() {
     tplCanvas.width  = tplImg.offsetWidth;
     tplCanvas.height = tplImg.offsetHeight;
     redrawTplCanvas();
+    if (tplPreviewMode) runRegistrationPreview();
   };
   tplImg.src = tplPageImages[tplCurrentPage];
   indicator.textContent = `Page ${tplCurrentPage + 1} / ${tplPageImages.length}`;
@@ -1608,12 +2075,142 @@ new ResizeObserver(() => {
   redrawTplCanvas();
 }).observe(tplImg);
 
+// ── Registration preview (admin verification) ────────────────────────────────
+// "Does each mapping track THIS document?" For every enabled mapping on the page,
+// run the SAME resolver reprocess uses (test-template-mapping -> resolve_geometry,
+// fed the template's landmarks) and overlay where the anchor/value ACTUALLY land
+// (solid, coloured) against where they were DRAWN (faint grey). Switching the
+// sample doc re-runs it, so the admin watches the boxes follow each layout — the
+// fast way to confirm registration/landmarks work (or spot a field that needs a
+// better anchor). On-demand admin path; N Tesseract resolves run SEQUENTIALLY so
+// the temp-file (Date.now()) handler stays collision-free.
+let tplPreviewMode = false;
+let tplPreviewBoxes = {};            // field_key -> {anchor_box,target_box,value,method}
+let tplPreviewRunToken = 0;          // discards a run whose doc/page changed mid-resolve
+
+function currentTplPageB64() {
+  if (!tplImg || !tplImg.naturalWidth) return null;
+  const c = document.createElement('canvas');
+  c.width = tplImg.naturalWidth; c.height = tplImg.naturalHeight;
+  c.getContext('2d').drawImage(tplImg, 0, 0);
+  return c.toDataURL('image/png').split(',')[1];
+}
+
+async function runRegistrationPreview() {
+  if (!tplPreviewMode || !selectedTemplate) return;
+  const statusEl = document.getElementById('tpl-preview-status');
+  const mappings = (selectedTemplate.field_mappings || [])
+    .filter(m => m.enabled && (m.page_number || 0) === tplCurrentPage);
+  if (!mappings.length) {
+    tplPreviewBoxes = {}; redrawTplCanvas();
+    if (statusEl) statusEl.textContent = 'No enabled mappings on this page to preview.';
+    return;
+  }
+  const pageB64 = currentTplPageB64();
+  if (!pageB64) return;
+  const landmarks = selectedTemplate.landmarks || [];
+  const token = ++tplPreviewRunToken;
+  const results = {};
+  let i = 0;
+  for (const m of mappings) {
+    if (statusEl) statusEl.textContent = `Resolving ${++i}/${mappings.length} — ${m.field_key}…`;
+    try {
+      const out = (await api.testTemplateMapping(pageB64, m, landmarks)) || {};
+      if (token !== tplPreviewRunToken) return;          // doc/page changed — abandon stale run
+      results[m.field_key] = {
+        anchor_box: out.anchor_box || null, target_box: out.target_box || null,
+        value: (out.value || '').trim() || null, method: out.method || null,
+      };
+    } catch { results[m.field_key] = { anchor_box: null, target_box: null, value: null }; }
+  }
+  if (token !== tplPreviewRunToken) return;
+  tplPreviewBoxes = results;
+  const located = Object.values(results).filter(r => r.target_box).length;
+  // Per-field diagnostic: which rung resolved it (REG=global transform, map=anchor+offset,
+  // anc=anchor) and how far the resolved box moved VERTICALLY from where it was drawn.
+  const diag = mappings.map(m => {
+    const r = results[m.field_key] || {};
+    let where = 'not located';
+    if (Array.isArray(r.target_box)) {
+      const dyPct = Math.round((r.target_box[1] - (m.target_y_norm || 0)) * 1000) / 10;
+      where = Math.abs(dyPct) < 1 ? 'at drawn position'
+            : `moved ${dyPct > 0 ? 'DOWN' : 'UP'} ${Math.abs(dyPct)}%`;
+    }
+    return `${m.field_key}: ${shortMethod(r.method)} · ${where}`;
+  });
+  if (statusEl) statusEl.innerHTML =
+    escHtml(`Resolved ${located}/${mappings.length} · ${landmarks.length} landmarks · REG=transform, map=anchor+offset`) +
+    '<br>' + diag.map(d => escHtml(d)).join('<br>');
+  redrawTplCanvas();
+}
+
+// Overlay: faint grey = the stored (drawn) boxes; solid colour = where each field
+// RESOLVES on this page (anchor blue, value green); amber = located nothing.
+function drawRegistrationPreview() {
+  if (!selectedTemplate) return;
+  const w = tplCanvas.width, h = tplCanvas.height;
+  for (const m of (selectedTemplate.field_mappings || [])) {
+    if (!m.enabled || (m.page_number || 0) !== tplCurrentPage) continue;
+    // DRAWN (stored) position — faint grey + label, so it can be compared to the value.
+    drawNormBox(m.anchor_x_norm, m.anchor_y_norm, m.anchor_w_norm, m.anchor_h_norm, w, h, '#9aa3b2', null, false);
+    drawNormBox(m.target_x_norm, m.target_y_norm, m.target_w_norm, m.target_h_norm, w, h, '#9aa3b2', null, false);
+    drawPreviewLabel(`${m.field_key} (drawn)`,
+      [m.target_x_norm, m.target_y_norm, m.target_w_norm, m.target_h_norm], w, h, '#6b7280');
+    const r = tplPreviewBoxes[m.field_key];
+    if (!r) continue;
+    if (r.anchor_box) drawArrBox(r.anchor_box, w, h, '#4f8ef7');
+    if (r.target_box) {
+      drawArrBox(r.target_box, w, h, '#3ecf8e');
+      // [rung] = which mechanism placed this box: REG=global transform, map=anchor+offset.
+      drawPreviewLabel(`${m.field_key}${r.value ? ' = ' + r.value : ''} [${shortMethod(r.method)}]`,
+        r.target_box, w, h, '#2f9e63');
+    } else {
+      drawNormBox(m.target_x_norm, m.target_y_norm, m.target_w_norm, m.target_h_norm, w, h, '#e0a23c', null, true);
+      drawPreviewLabel(`${m.field_key}: not located`,
+        [m.target_x_norm, m.target_y_norm, m.target_w_norm, m.target_h_norm], w, h, '#b07816');
+    }
+  }
+}
+
+// Short rung code for the diagnostic overlay/status: which mechanism placed the box.
+function shortMethod(m) {
+  if (!m) return 'none';
+  if (m.startsWith('template_registration')) return 'REG';
+  if (m.startsWith('template_mapping')) return 'map';
+  if (m.startsWith('anchor')) return 'anc';
+  return m.slice(0, 8);
+}
+function drawArrBox(arr, w, h, color) {
+  if (Array.isArray(arr) && arr.length >= 4) drawNormBox(arr[0], arr[1], arr[2], arr[3], w, h, color, null, true);
+}
+function drawPreviewLabel(text, arr, w, h, color) {
+  if (!text || !Array.isArray(arr) || arr[0] == null) return;
+  const x = Math.round(arr[0] * w), y = Math.round(arr[1] * h);
+  tplCtx.font = '11px sans-serif';
+  const tw = Math.ceil(tplCtx.measureText(text).width);
+  const ly = Math.max(0, y - 14);
+  tplCtx.fillStyle = color;
+  tplCtx.fillRect(x, ly, tw + 6, 13);
+  tplCtx.fillStyle = '#fff';
+  tplCtx.fillText(text, x + 3, ly + 10);
+}
+
+document.getElementById('tpl-preview-registration').addEventListener('change', (e) => {
+  tplPreviewMode = !!e.target.checked;
+  const s = document.getElementById('tpl-preview-status');
+  if (tplPreviewMode && tplLandmarkMode) exitEnhanceMode();   // mutually exclusive
+  if (tplPreviewMode) { runRegistrationPreview(); }
+  else { tplPreviewBoxes = {}; if (s) s.textContent = ''; redrawTplCanvas(); }
+});
+
 // Full redraw: saved (enabled) mappings underneath, then whatever the editor
 // currently has in flight (draft anchor/target boxes, live drag rectangle) on
 // top — so drawing a new box never has to fight the persisted overlay for
 // visibility.
 function redrawTplCanvas() {
   tplCtx.clearRect(0, 0, tplCanvas.width, tplCanvas.height);
+  if (tplPreviewMode) { drawRegistrationPreview(); return; }
+  if (tplLandmarkMode) { drawLandmarkDraft(); return; }
   drawSavedMappings();
   const w = tplCanvas.width, h = tplCanvas.height;
   if (tplDraftAnchor && (tplDraftAnchor.page_number || 0) === tplCurrentPage) {
@@ -1764,8 +2361,8 @@ tplCanvas.addEventListener('mousedown', (e) => {
   if (e.button !== 0 || !tplPageImages.length) return;
   const pt = tplCanvasPoint(e);
 
-  if (tplMapMode) {
-    // Draw mode: start a new box
+  if (tplMapMode || tplLandmarkMode) {
+    // Draw mode — a mapping anchor/target box, OR an Enhance-detection landmark.
     tplIsDragging = true;
     tplDragStart  = pt;
     tplDragRect   = { x: pt.x, y: pt.y, w: 0, h: 0 };
@@ -1832,12 +2429,14 @@ tplCanvas.addEventListener('mouseup', () => {
     tplIsDragging = false;
     const rect = tplDragRect;
     tplDragRect  = null;
-    if (!rect || !tplMapMode || rect.w < 8 || rect.h < 8) { redrawTplCanvas(); return; }
+    if (!rect || rect.w < 8 || rect.h < 8) { redrawTplCanvas(); return; }
     const norm = {
       x_norm: rect.x / tplCanvas.width,   y_norm: rect.y / tplCanvas.height,
       w_norm: rect.w / tplCanvas.width,   h_norm: rect.h / tplCanvas.height,
       page_number: tplCurrentPage,
     };
+    if (tplLandmarkMode) { addLandmarkFromRect(rect, norm); return; }   // stays armed for the next landmark
+    if (!tplMapMode) { redrawTplCanvas(); return; }
     if (tplMapMode === 'anchor') { tplDraftAnchor = norm; autoDetectAnchorText(rect); }
     else                         { tplDraftTarget = norm; }
     exitDrawMode();
@@ -1925,10 +2524,33 @@ async function populateMapFieldSelect(detail) {
     opt.textContent = `${f.label} (${f.key})`;
     select.appendChild(opt);
   }
-  select.onchange = () => loadMappingIntoEditor(select.value || null);
+  select.onchange = () => selectMapField(select.value || null);
 
-  if (fields.length) { select.value = fields[0].key; loadMappingIntoEditor(fields[0].key); }
-  else loadMappingIntoEditor(null);
+  if (fields.length) { select.value = fields[0].key; selectMapField(fields[0].key); }
+  else selectMapField(null);
+}
+
+// Selecting a field always returns the editor to ANCHOR mode (the default); the
+// user opts a field into a Fixed value via the Mode dropdown. So a field change
+// resets the mode, loads that field's anchor mapping, and re-applies mode visibility.
+function selectMapField(fieldKey) {
+  const modeSel = document.getElementById('tpl-map-mode');
+  if (modeSel) modeSel.value = 'anchor';
+  loadMappingIntoEditor(fieldKey);
+  updateMapModeUI();
+}
+
+// Prefill the Fixed value input from the currently-selected field's stored fixed
+// value (if any) and clear any stale status message. Called when switching to
+// Fixed value mode and after a clear.
+function syncFixedInput() {
+  const fieldKey = document.getElementById('tpl-map-field-select')?.value;
+  const input = document.getElementById('tpl-fixed-value-input');
+  const ex = (selectedTemplate?.fields || []).find(
+    f => f.field_key === fieldKey && !f.is_variable && f.fixed_value);
+  if (input) input.value = ex ? ex.fixed_value : '';
+  const msg = document.getElementById('tpl-fixed-msg');
+  if (msg) { msg.style.display = 'none'; msg.textContent = ''; }
 }
 
 function loadMappingIntoEditor(fieldKey) {
@@ -1999,6 +2621,11 @@ function updateMappingEditorState() {
 
 document.getElementById('tpl-map-expansion').addEventListener('input', (e) => {
   document.getElementById('tpl-map-expansion-val').textContent = e.target.value + '%';
+});
+
+document.getElementById('tpl-map-mode')?.addEventListener('change', (e) => {
+  if (e.target.value === 'fixed') syncFixedInput();
+  updateMapModeUI();
 });
 
 document.getElementById('tpl-btn-cancel-mapping').addEventListener('click', () => {
@@ -2165,47 +2792,26 @@ function renderMappingsTable(detail) {
     tr.addEventListener('click', () => {
       const select = document.getElementById('tpl-map-field-select');
       select.value = m.field_key;
-      loadMappingIntoEditor(m.field_key);
+      selectMapField(m.field_key);   // resets to anchor mode + loads the mapping
     });
     tbody.appendChild(tr);
   }
 }
 
 // ── Fixed field values ─────────────────────────────────────────────────────────
-// Admin-managed constant values for template fields. The field dropdown reuses
-// the document type's own field schema (allTypesWithFields — same source as the
-// mapping field selector), so it offers every field even when no template_fields
-// row exists yet (e.g. a supplier_name that was never captured on confirm). The
-// table lists only fields currently fixed, so it's clear at a glance which fields
-// are constant and which use normal extraction.
-async function renderFixedFieldsSection(detail) {
+// Admin-managed constant values for template fields, set via the Map a Field
+// editor's "Fixed value" mode (the field selector + this table are shared with
+// anchor mode). This renders only the list of fields currently fixed — so it's
+// clear at a glance which fields are constant and which use normal extraction —
+// plus a Clear button per row. The field selector is populated by
+// populateMapFieldSelect; the input is prefilled by syncFixedInput.
+async function renderFixedFieldsTable(detail) {
   if (!allTypesWithFields.length) {
     try { await loadDocTypes(); } catch (e) { console.warn('loadDocTypes (fixed fields) failed:', e.message); }
   }
   const dt       = allTypesWithFields.find(t => t.slug === detail.document_type_slug);
   const dtFields = (dt ? dt.fields : []) || [];
   const labelFor = (key) => { const f = dtFields.find(f => f.key === key); return f ? f.label : key; };
-
-  // Field dropdown + value prefill from any existing fixed value
-  const select = document.getElementById('tpl-fixed-field-select');
-  const input  = document.getElementById('tpl-fixed-value-input');
-  if (select) {
-    select.innerHTML = '';
-    for (const f of dtFields) {
-      const opt = document.createElement('option');
-      opt.value = f.key;
-      opt.textContent = `${f.label} (${f.key})`;
-      select.appendChild(opt);
-    }
-    const syncInput = () => {
-      const ex = (selectedTemplate?.fields || []).find(
-        f => f.field_key === select.value && !f.is_variable && f.fixed_value);
-      if (input) input.value = ex ? ex.fixed_value : '';
-    };
-    select.onchange = syncInput;
-    if (dtFields.length) select.value = dtFields[0].key;
-    syncInput();
-  }
 
   // Table of fields that are currently fixed
   const tbody = document.getElementById('tpl-fixed-tbody');
@@ -2229,7 +2835,7 @@ async function renderFixedFieldsSection(detail) {
 
 async function setFixedFieldValue() {
   if (!selectedTemplate) return;
-  const select = document.getElementById('tpl-fixed-field-select');
+  const select = document.getElementById('tpl-map-field-select');
   const input  = document.getElementById('tpl-fixed-value-input');
   const msg    = document.getElementById('tpl-fixed-msg');
   const fieldKey = select?.value;
@@ -2239,7 +2845,7 @@ async function setFixedFieldValue() {
     const res = await api.setTemplateFieldFixed(selectedTemplate.id, fieldKey, value);
     if (res?.success && res.template) {
       selectedTemplate = res.template;
-      await renderFixedFieldsSection(res.template);
+      await renderFixedFieldsTable(res.template);
       if (msg) { msg.style.display = ''; msg.textContent = value
         ? `Fixed value set for "${fieldKey}".`
         : `Fixed value cleared for "${fieldKey}".`; }
@@ -2257,7 +2863,8 @@ async function clearFixedFieldValue(fieldKey) {
     const res = await api.setTemplateFieldFixed(selectedTemplate.id, fieldKey, '');
     if (res?.success && res.template) {
       selectedTemplate = res.template;
-      await renderFixedFieldsSection(res.template);
+      await renderFixedFieldsTable(res.template);
+      syncFixedInput();
     }
   } catch (e) {
     console.warn('clearFixedFieldValue failed:', e.message);
@@ -2310,6 +2917,49 @@ async function populateLearningDocTypes() {
   }
 }
 
+// "Suppliers handled automatically" — the graduation master switch + roster + per-supplier
+// opt-outs (Slice 5 UX). Anti-black-box: the user can always SEE which suppliers auto-file and
+// turn any (or all) off. Reads the shared trust predicate's roster via the /learning tab IPCs.
+async function loadGraduationRoster() {
+  const master = document.getElementById('grad-master');
+  const roster = document.getElementById('grad-roster');
+  if (!master || !roster) return;
+  try { master.checked = (await api.getSetting('supplier_graduation_enabled')) !== 'false'; } catch {}
+  master.onchange = async () => {
+    try { await api.setSetting('supplier_graduation_enabled', master.checked ? 'true' : 'false'); } catch {}
+    loadGraduationRoster();
+  };
+  if (!master.checked) { roster.innerHTML = '<em>Auto-filing from learned suppliers is off.</em>'; return; }
+  let scopes = [];
+  try { scopes = ((await api.getGraduatedSuppliers()) || {}).scopes || []; } catch {}
+  if (!scopes.length) {
+    roster.innerHTML = '<em>No suppliers have graduated yet — Scan Finder is still learning. Keep confirming and they’ll appear here.</em>';
+    return;
+  }
+  roster.innerHTML = '';
+  for (const s of scopes) {
+    const row = document.createElement('label');
+    row.className = 'row-flex';
+    row.style.cssText = 'gap:8px; align-items:center; padding:6px 0; border-bottom:1px solid var(--border); cursor:pointer;';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = !s.opted_out;   // checked = auto-filing ON for this supplier
+    cb.onchange = async () => {
+      try { await api.setGraduationOptout({ supplier: s.supplier, slug: s.slug, optedOut: !cb.checked }); } catch {}
+    };
+    const txt = document.createElement('span');
+    const strong = document.createElement('strong'); strong.textContent = s.supplier;
+    txt.appendChild(strong);
+    txt.appendChild(document.createTextNode(` · ${s.doctype || s.slug} `));
+    const muted = document.createElement('span');
+    muted.style.color = 'var(--muted)';
+    muted.textContent = `(${s.confirmed_count} confirmed)`;
+    txt.appendChild(muted);
+    row.appendChild(cb); row.appendChild(txt);
+    roster.appendChild(row);
+  }
+}
+
 async function loadMemoryInventory() {
   const tbody = document.getElementById('lr-inventory-tbody');
   if (!tbody) return;
@@ -2322,7 +2972,7 @@ async function loadMemoryInventory() {
     tbody.innerHTML = '<tr><td colspan="5" class="section-desc">No learned memory recorded yet.</td></tr>';
     return;
   }
-  const TYPE_LABEL = { hint: 'Supplier hint', anchor: 'Field anchor', correction: 'Correction', logo: 'Logo fingerprint' };
+  const TYPE_LABEL = { hint: 'Supplier hint', anchor: 'Field anchor', correction: 'Correction', logo: 'Logo fingerprint', rule: 'Field cleanup rule' };
   for (const r of rows) {
     const parts = [r.supplier_name || '—'];
     if (r.document_type) parts.push(r.document_type);
@@ -2341,7 +2991,8 @@ async function loadMemoryInventory() {
 function renderLearningSummary(summary) {
   document.getElementById('lr-summary').textContent =
     `Field anchors: ${summary.anchors}    ·    Supplier hints: ${summary.hints}    ·    ` +
-    `Corrections: ${summary.corrections}    ·    Logo fingerprints: ${summary.logos}`;
+    `Corrections: ${summary.corrections}    ·    Logo fingerprints: ${summary.logos}` +
+    (summary.rules != null ? `    ·    Field rules: ${summary.rules}` : '');
 }
 
 function renderLearningTemplates(rows, allTemplates) {
@@ -2463,6 +3114,15 @@ function renderLearningDetail(detail) {
       lines.push(`<div>${escHtml(l.phash)}, matched ${l.match_count}×, last ${escHtml(l.last_seen)}</div>`);
     }
   }
+  if ((detail.rules || []).length) {
+    lines.push('<div class="section-title" style="margin-top:10px;">Field Cleanup Rules</div>');
+    for (const r of detail.rules) {
+      const what = r.rule_type === 'keep_block'
+        ? 'keep only the main value'
+        : `remove "${escHtml(r.created_from || r.token_norm || '')}" (${escHtml(r.side || 'trailing')})`;
+      lines.push(`<div>${escHtml(r.field_key)} — ${what}, type: ${escHtml(r.document_type || '—')}, used ${r.usage_count || 0}×, ${escHtml(r.created_at || '')}</div>`);
+    }
+  }
 
   document.getElementById('lr-detail').innerHTML = lines.length ? lines.join('') : '<div>No detail rows.</div>';
 }
@@ -2507,6 +3167,282 @@ async function runLearningSearch() {
   renderLearningSummary(s);
   renderLearningTemplates(data.templates, allTemplates);
   renderLearningDetail(data.detail);
+
+  // The results section (with the per-scope clear options) was hidden until now and
+  // renders below the fold — jump to it so the user can see the newly-available
+  // options. block:'end' keeps the action buttons in view. Deferred to next frame so
+  // the just-shown section has laid out before we scroll.
+  requestAnimationFrame(() => {
+    resultsEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  });
+}
+
+// ── Learning Repair tab ─────────────────────────────────────────────────────────
+let _rpWired = false, _rpDocs = [], _rpSuspects = {}, _rpFilter = 'all', _rpSel = null, _rpPages = [], _rpPage = 0, _rpDismissed = new Set();
+function _rpEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+// Preview zoom/pan — scroll-wheel to zoom, right-mouse-button drag to pan (no grab cursor),
+// mirroring the Review window's preview. Left-drag is untouched.
+let _rpZoom = 1, _rpPanX = 0, _rpPanY = 0, _rpPanStart = null;
+const RP_ZOOM_MIN = 1, RP_ZOOM_MAX = 4, RP_ZOOM_STEP = 0.25;
+function rpApplyView() {
+  const img = document.getElementById('rp-img');
+  if (img) img.style.transform = `translate(${_rpPanX}px, ${_rpPanY}px) scale(${_rpZoom})`;
+}
+function rpResetView() { _rpZoom = 1; _rpPanX = 0; _rpPanY = 0; rpApplyView(); }
+function rpWirePreviewZoom() {
+  const area = document.getElementById('rp-img-area');
+  const img = document.getElementById('rp-img');
+  if (!area || !img) return;
+  img.style.transformOrigin = 'center center';
+  img.setAttribute('draggable', 'false');
+  area.addEventListener('contextmenu', (e) => { if (_rpPages.length) e.preventDefault(); });
+  area.addEventListener('dragstart', (e) => e.preventDefault());
+  area.addEventListener('wheel', (e) => {
+    if (!_rpPages.length) return;
+    e.preventDefault();
+    _rpZoom = Math.max(RP_ZOOM_MIN, Math.min(RP_ZOOM_MAX, _rpZoom + (e.deltaY < 0 ? RP_ZOOM_STEP : -RP_ZOOM_STEP)));
+    if (_rpZoom === 1) { _rpPanX = 0; _rpPanY = 0; }   // snap back to centred when fully zoomed out
+    rpApplyView();
+  }, { passive: false });
+  area.addEventListener('mousedown', (e) => {
+    if (e.button !== 2 || !_rpPages.length) return;    // right button only
+    _rpPanStart = { x: e.clientX, y: e.clientY, panX: _rpPanX, panY: _rpPanY };
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!_rpPanStart) return;
+    _rpPanX = _rpPanStart.panX + (e.clientX - _rpPanStart.x);
+    _rpPanY = _rpPanStart.panY + (e.clientY - _rpPanStart.y);
+    rpApplyView();
+  });
+  window.addEventListener('mouseup', () => { _rpPanStart = null; });
+}
+
+async function repairInit() {
+  const sel = document.getElementById('rp-doctype');
+  if (!sel) return;
+  let types = [];
+  try { types = (await api.getAllDocTypesAll()) || []; } catch {}
+  const prev = sel.value;
+  sel.innerHTML = types.map(t => `<option value="${_rpEsc(t.slug)}">${_rpEsc(t.name)}</option>`).join('');
+  if (prev && types.some(t => t.slug === prev)) sel.value = prev;
+  if (_rpWired) return;
+  _rpWired = true;
+  document.getElementById('rp-load').addEventListener('click', rpLoad);
+  document.getElementById('rp-page-prev').addEventListener('click', () => rpShowPage(_rpPage - 1));
+  document.getElementById('rp-page-next').addEventListener('click', () => rpShowPage(_rpPage + 1));
+  rpWirePreviewZoom();
+  document.getElementById('rp-send').addEventListener('click', rpSend);
+  document.getElementById('rp-delete').addEventListener('click', rpDelete);
+  document.getElementById('rp-fine').addEventListener('click', rpDismiss);
+  document.getElementById('rp-forget').addEventListener('click', rpForget);
+  document.querySelectorAll('#rp-filters .rp-chip').forEach(b => b.addEventListener('click', () => {
+    _rpFilter = b.dataset.filter;
+    document.querySelectorAll('#rp-filters .rp-chip').forEach(x => x.classList.toggle('active', x === b));
+    rpRenderList();
+  }));
+  document.getElementById('rp-doclist').addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    e.preventDefault();
+    const list = rpFiltered(); if (!list.length) return;
+    let i = _rpSel ? list.findIndex(d => d.id === _rpSel) : -1;
+    i = Math.max(0, Math.min(list.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)));
+    rpSelect(list[i].id);
+    const row = document.querySelector(`#rp-doclist .rp-row[data-id="${list[i].id}"]`);
+    if (row) row.scrollIntoView({ block: 'nearest' });
+  });
+}
+
+async function rpLoad() {
+  const slug = document.getElementById('rp-doctype').value;
+  const supplier = document.getElementById('rp-supplier').value.trim();
+  if (!slug) return;
+  let ov = null;
+  try { ov = await api.repairOverview({ document_type_slug: slug, supplier_name: supplier || null }); }
+  catch (e) { alert('Could not load: ' + (e.message || e)); return; }
+  if (!ov || ov.error) { alert(ov && ov.error || 'Could not load.'); return; }
+  _rpDocs = ov.documents || [];
+  _rpSuspects = (ov.suspects && ov.suspects.byId) || {};
+  _rpDismissed = new Set(); _rpSel = null; _rpPages = []; _rpPage = 0; _rpFilter = 'all';
+  document.querySelectorAll('#rp-filters .rp-chip').forEach(x => x.classList.toggle('active', x.dataset.filter === 'all'));
+  document.getElementById('rp-count').textContent = `Learned from ${_rpDocs.length} document(s)`;
+  document.getElementById('rp-worklist').style.display = _rpDocs.length ? '' : 'none';
+  document.getElementById('rp-advanced-wrap').style.display = _rpDocs.length ? '' : 'none';
+  document.getElementById('rp-preview').style.display = 'none';
+  document.getElementById('rp-preview-empty').style.display = '';
+  document.getElementById('rp-preview-empty').textContent = 'Select a document on the left, or click the list and use ↑/↓ to move through them.';
+  rpRenderSuspectStrip();
+  rpRenderList();
+}
+
+function rpSuspectKinds(id) { const s = _rpSuspects[id]; if (!s || _rpDismissed.has(id)) return new Set(); return new Set((s.reasons || []).map(r => r.kind)); }
+function rpFiltered() { return _rpFilter === 'all' ? _rpDocs : _rpDocs.filter(d => rpSuspectKinds(d.id).has(_rpFilter)); }
+
+function rpRenderSuspectStrip() {
+  const ids = Object.keys(_rpSuspects).map(Number).filter(id => !_rpDismissed.has(id) && _rpDocs.some(d => d.id === id));
+  const strip = document.getElementById('rp-suspects-strip');
+  if (!ids.length) { strip.style.display = 'none'; return; }
+  strip.style.display = '';
+  document.getElementById('rp-suspects-list').innerHTML = ids.slice(0, 12).map(id => {
+    const d = _rpDocs.find(x => x.id === id); if (!d) return '';
+    const reason = (_rpSuspects[id].reasons || [])[0] || {};
+    const chip = reason.kind === 'belong' ? '<span style="color:var(--accent2);">Might not belong</span>' : '<span style="color:var(--warn);">Data looks off</span>';
+    return `<div class="rp-suspect" data-id="${id}" style="cursor:pointer; padding:3px 2px;">• ${chip} — <span style="font-family:var(--mono);">${_rpEsc(d.original_filename)}</span> <span style="color:var(--muted);">${_rpEsc(reason.text || '')}</span></div>`;
+  }).join('');
+  document.querySelectorAll('#rp-suspects-list .rp-suspect').forEach(el => el.addEventListener('click', () => rpSelect(Number(el.dataset.id))));
+}
+
+// Repair docs are all confirmed — resolve the FILED copy (stored_path/stored_filename),
+// falling back to the source. Mirrors tplFileArgs / search's fileArgs so the preview +
+// thumbnail render the real file instead of relying on a relative-path recovery.
+function rpFileArgs(doc) {
+  if (doc && doc.stored_path && doc.stored_filename) {
+    const lastSep = Math.max(doc.stored_path.lastIndexOf('\\'), doc.stored_path.lastIndexOf('/'));
+    return { folderPath: doc.stored_path.substring(0, lastSep), filename: doc.stored_filename };
+  }
+  return { folderPath: (doc && doc.folder_path) || '', filename: (doc && doc.original_filename) || '' };
+}
+
+function rpRenderList() {
+  const list = rpFiltered();
+  const el = document.getElementById('rp-doclist');
+  el.innerHTML = list.length ? list.map(d => {
+    const kinds = rpSuspectKinds(d.id);
+    const tag = kinds.has('belong') ? '<span style="color:var(--accent2); font-size:10px;">◆ different</span>'
+              : kinds.has('data') ? '<span style="color:var(--warn); font-size:10px;">⚠ data</span>' : '';
+    const meta = [d.supplier_name, d.reference_number, d.doc_date].filter(Boolean).join(' · ');
+    return `<div class="doctype-row rp-row${d.id === _rpSel ? ' active' : ''}" data-id="${d.id}" style="cursor:pointer; align-items:center; gap:8px;">
+      <img class="rp-thumb" data-id="${d.id}" alt="" style="width:32px;height:42px;object-fit:cover;border-radius:4px;flex-shrink:0;background:var(--surface3);">
+      <div style="flex:1; min-width:0;"><div style="font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${_rpEsc(d.original_filename)}</div><div style="font-size:11px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${_rpEsc(meta)} ${tag}</div></div>
+    </div>`;
+  }).join('') : '<div class="section-desc" style="padding:16px; text-align:center;">No documents in this view.</div>';
+  el.querySelectorAll('.rp-row').forEach(r => r.addEventListener('click', () => rpSelect(Number(r.dataset.id))));
+  if (window.Thumbs) el.querySelectorAll('.rp-thumb').forEach(img => { const d = _rpDocs.find(x => x.id === Number(img.dataset.id)); if (d) { const fa = rpFileArgs(d); window.Thumbs.lazy(img, { id: d.id, folder_path: fa.folderPath, original_filename: fa.filename }); } });
+}
+
+async function rpSelect(id) {
+  const doc = _rpDocs.find(d => d.id === id); if (!doc) return;
+  _rpSel = id;
+  rpResetView();   // start each document at fit (100%), centred
+  document.querySelectorAll('#rp-doclist .rp-row').forEach(r => r.classList.toggle('active', Number(r.dataset.id) === id));
+  document.getElementById('rp-preview-empty').style.display = 'none';
+  document.getElementById('rp-preview').style.display = '';
+  document.getElementById('rp-action-msg').textContent = '';
+  document.getElementById('rp-fine').style.display = rpSuspectKinds(id).size ? '' : 'none';
+  rpRenderFields(id);
+  document.getElementById('rp-img-loading').style.display = ''; document.getElementById('rp-img-loading').textContent = 'Loading…';
+  document.getElementById('rp-img').style.display = 'none';
+  _rpPages = []; _rpPage = 0;
+  let pages = [];
+  { const fa = rpFileArgs(doc); try { pages = await api.getDocumentPages(id, fa.folderPath, fa.filename) || []; } catch { pages = []; } }
+  if (_rpSel !== id) return;   // selection moved while loading
+  _rpPages = pages;
+  if (pages.length) rpShowPage(0);
+  else { document.getElementById('rp-img-loading').textContent = 'Preview unavailable for this document.'; }
+}
+
+function rpShowPage(idx) {
+  if (!_rpPages.length) return;
+  _rpPage = Math.max(0, Math.min(_rpPages.length - 1, idx));
+  const img = document.getElementById('rp-img');
+  img.src = _rpPages[_rpPage]; img.style.display = '';
+  document.getElementById('rp-img-loading').style.display = 'none';
+  document.getElementById('rp-page-label').textContent = `${_rpPage + 1} / ${_rpPages.length}`;
+}
+
+async function rpRenderFields(id) {
+  const el = document.getElementById('rp-fields');
+  const reasons = (_rpSuspects[id] && _rpSuspects[id].reasons) || [];
+  const docReasons = reasons.filter(r => r.kind === 'belong');
+  const fieldReason = {};
+  for (const r of reasons) if (r.field) fieldReason[r.field] = r;
+
+  // Top box: whole-document "might not belong" reasons (if any).
+  let top = '';
+  if (docReasons.length) {
+    top = '<div style="border:1px solid var(--accent2); border-radius:8px; padding:8px 10px; background:var(--surface2); margin-bottom:8px;">' +
+      docReasons.map(r => `<div>◆ ${_rpEsc(r.text)}</div>`).join('') + '</div>';
+  }
+  el.innerHTML = top + '<div class="section-desc" style="margin:0;">Loading fields…</div>';
+
+  // Confirmed values (correction wins over the raw OCR read), so a superseded misread like
+  // "St" shows as the confirmed "152888" — agreeing with the suspect reason.
+  let res = null;
+  try { res = await api.repairDocFields(id); } catch { res = null; }
+  if (_rpSel !== id) return;   // selection moved while loading
+
+  const exs = (res && Array.isArray(res.fields)) ? res.fields.filter(e => e.value) : [];
+  const titleCase = (k) => k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  let body = '';
+  if (exs.length) {
+    body = '<div style="border:1px solid var(--border); border-radius:8px; overflow:hidden;">';
+    for (const e of exs) {
+      const fr = fieldReason[e.field_key];
+      body += `<div style="display:flex; gap:8px; padding:5px 10px; ${fr ? 'background:var(--surface2);' : ''} border-bottom:1px solid var(--border);">` +
+        `<span style="color:var(--muted); min-width:130px; flex-shrink:0;">${_rpEsc(titleCase(e.field_key))}</span>` +
+        `<span style="flex:1; ${fr ? 'color:var(--warn); font-weight:600;' : ''}">${_rpEsc(e.value)}${fr ? ' ⚠' : ''}</span></div>`;
+      if (fr) body += `<div style="padding:2px 10px 6px 138px; font-size:11px; color:var(--warn); border-bottom:1px solid var(--border);">${_rpEsc(fr.text)}</div>`;
+    }
+    body += '</div>';
+  } else if (!docReasons.length) {
+    body = '<div class="section-desc" style="margin:0;">Nothing looks off with this document — it matches the others.</div>';
+  } else {
+    body = '<div class="section-desc" style="margin:0;">No extracted field values recorded for this document.</div>';
+  }
+  el.innerHTML = top + body;
+}
+
+function rpRemoveCurrent(msg) {
+  _rpDocs = _rpDocs.filter(d => d.id !== _rpSel);
+  delete _rpSuspects[_rpSel];
+  _rpSel = null;
+  document.getElementById('rp-count').textContent = `Learned from ${_rpDocs.length} document(s)`;
+  rpRenderSuspectStrip(); rpRenderList();
+  document.getElementById('rp-preview').style.display = 'none';
+  document.getElementById('rp-preview-empty').style.display = '';
+  document.getElementById('rp-preview-empty').textContent = msg + ' Pick another document to continue.';
+}
+
+async function rpSend() {
+  if (!_rpSel) return;
+  const doc = _rpDocs.find(d => d.id === _rpSel);
+  if (!confirm(`Send “${doc.original_filename}” back to Review?\n\nThis just moves it to your Review list — nothing is deleted. If it was fine, confirm it there and it goes right back to where it was.`)) return;
+  let r = null;
+  try { r = await api.repairDeconfirm(_rpSel); } catch (e) { alert('Failed: ' + (e.message || e)); return; }
+  if (!r || !r.ok) { document.getElementById('rp-action-msg').textContent = (r && r.error) || 'Could not send this document back (it may be locked by an approval route).'; return; }
+  rpRemoveCurrent('Sent back to Review.');
+}
+
+async function rpDelete() {
+  if (!_rpSel) return;
+  const doc = _rpDocs.find(d => d.id === _rpSel);
+  if (!confirm(`Delete “${doc.original_filename}”?\n\nIt goes to the recycle bin (recoverable) and stops teaching this type.`)) return;
+  let r = null;
+  try { r = await api.repairDelete(_rpSel); } catch (e) { alert('Failed: ' + (e.message || e)); return; }
+  if (!r || !r.ok) { document.getElementById('rp-action-msg').textContent = 'Could not delete this document.'; return; }
+  rpRemoveCurrent('Moved to the recycle bin.');
+}
+
+function rpDismiss() {
+  if (!_rpSel) return;
+  _rpDismissed.add(_rpSel);
+  document.getElementById('rp-fine').style.display = 'none';
+  document.getElementById('rp-action-msg').textContent = 'Dismissed — this one won’t be flagged again for now.';
+  rpRenderFields(_rpSel); rpRenderSuspectStrip(); rpRenderList();
+}
+
+async function rpForget() {
+  const slug = document.getElementById('rp-doctype').value;
+  const supplier = document.getElementById('rp-supplier').value.trim();
+  if (!confirm(`Forget everything Scan Finder has learned for this type${supplier ? ` from “${supplier}”` : ''}?\n\nA backup is taken first; the documents you keep will teach it again on the next reprocess.`)) return;
+  let r = null;
+  try { r = await api.recoveryApply({ document_type_slug: slug, supplier_name: supplier || null, forgetLearning: true }); }
+  catch (e) { alert('Failed: ' + (e.message || e)); return; }
+  const s = (r && r.summary) || {};
+  document.getElementById('rp-forget-msg').textContent = (r && r.ok)
+    ? `Forgot ${s.anchors || 0} field position(s), ${s.hints || 0} hint(s), ${s.fieldRules || 0} rule(s).${r.backup ? ' Backup saved.' : ''} Reprocess this type's documents to relearn.`
+    : ((r && r.error) || 'Could not forget the learning.');
 }
 
 document.getElementById('lr-inv-refresh').addEventListener('click', loadMemoryInventory);
@@ -2589,6 +3525,7 @@ document.getElementById('lr-btn-clear-anchors').addEventListener('click', async 
   if (!confirm(`Clear all field anchors learned for "${scopeLabel}"? This cannot be undone.`)) return;
   const result = await api.clearLearningAnchors(lrCurrentScope);
   document.getElementById('lr-msg').textContent = `Cleared ${result.changes} field anchor(s).`;
+  await loadMemoryInventory();   // refresh the inventory counts, not just the scope search
   await runLearningSearch();
 });
 
@@ -2599,6 +3536,57 @@ document.getElementById('lr-btn-clear-hints').addEventListener('click', async ()
   if (!confirm(`Clear all supplier hints learned for "${scopeLabel}"? This cannot be undone.`)) return;
   const result = await api.clearLearningHints(lrCurrentScope);
   document.getElementById('lr-msg').textContent = `Cleared ${result.changes} supplier hint(s).`;
+  await loadMemoryInventory();
+  await runLearningSearch();
+});
+
+document.getElementById('lr-btn-rename-supplier').addEventListener('click', async () => {
+  const msg = document.getElementById('lr-msg');
+  if (!lrCurrentScope || !lrCurrentScope.supplier_name) {
+    msg.textContent = 'Search a supplier first, then enter the corrected name.'; return;
+  }
+  const from = lrCurrentScope.supplier_name;
+  const to   = document.getElementById('lr-rename-new').value.trim();
+  if (!to)         { msg.textContent = 'Enter the corrected supplier name.'; return; }
+  if (to === from) { msg.textContent = 'The corrected name is the same as the current name.'; return; }
+  // Blast-radius preview so the operator sees what the rename touches before confirming.
+  let counts = null;
+  try { counts = await api.getSupplierScopeCounts(from); } catch {}
+  const blast = counts
+    ? `${counts.documents} document(s), ${counts.supplier_hints} hint(s), ${counts.field_anchors} anchor(s), `
+      + `${counts.logo_fingerprints} logo(s), ${counts.corrections} correction(s)`
+    : 'all learning rows';
+  const confirmed = await showTypedConfirmDialog({
+    title: 'Rename supplier everywhere',
+    warningHtml:
+      `Rename <strong style="color:var(--text);">${escHtml(from)}</strong> to ` +
+      `<strong style="color:var(--text);">${escHtml(to)}</strong> across ${escHtml(blast)}. ` +
+      `The stored Document Issuer value on those documents is updated too. Filed documents keep ` +
+      `their files (folders are not moved). This cannot be automatically undone.`,
+    requiredText: from,
+    confirmLabel: 'Rename supplier',
+  });
+  if (!confirmed) return;
+  try {
+    const res = await api.renameSupplier({ oldName: from, newName: to });
+    msg.textContent = res.renamed ? `Renamed "${from}" → "${to}".` : 'Nothing to rename.';
+    document.getElementById('lr-rename-new').value = '';
+    document.getElementById('lr-supplier').value = to;   // re-point the panel at the new name
+    await loadMemoryInventory();
+    await runLearningSearch();
+  } catch (e) {
+    msg.textContent = 'Rename failed: ' + e.message;
+  }
+});
+
+document.getElementById('lr-btn-clear-field-rules').addEventListener('click', async () => {
+  if (!lrCurrentScope) return;
+  const { supplier_name, document_type } = lrCurrentScope;
+  const scopeLabel = document_type ? `${supplier_name} / ${document_type}` : supplier_name;
+  if (!confirm(`Clear all field cleanup rules learned for "${scopeLabel}"? This cannot be undone.`)) return;
+  const result = await api.clearLearningFieldRules(lrCurrentScope);
+  document.getElementById('lr-msg').textContent = `Cleared ${result.changes} field cleanup rule(s).`;
+  await loadMemoryInventory();
   await runLearningSearch();
 });
 
@@ -2619,14 +3607,18 @@ document.getElementById('lr-btn-clear-corrections').addEventListener('click', as
   if (!confirmed) return;
   const result = await api.clearLearningCorrections(lrCurrentScope);
   document.getElementById('lr-msg').textContent = `Cleared ${result.changes} correction(s).`;
+  await loadMemoryInventory();
   await runLearningSearch();
 });
 
 populateLearningDocTypes();
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-loadDocTypes();
-loadFieldsTabTypes();
+loadDocTypes().then(() => {
+  if (allTypesWithFields.length) selectDocType(allTypesWithFields[0].id);
+});
+// A doc type created/changed elsewhere (e.g. the Teach wizard) — reload the list.
+api.onDocTypesChanged?.(() => { loadDocTypes().catch(() => {}); });
 loadUsers();
 loadAuditLog();
 
@@ -2647,6 +3639,18 @@ loadTemplates().then(async () => {
   } catch (e) { console.warn('settings template target failed:', e.message); }
 });
 api.onNavigateToTemplate(openTemplateInEditor);
+
+// Section/tab deep-link (e.g. Home "Activate" → 'licensing'): click the matching tab.
+function gotoSettingsSection(section) {
+  if (!section) return;
+  const tab = document.querySelector(`.tab[data-tab="${section}"]`);
+  if (tab) tab.click();
+}
+(async () => {
+  try { gotoSettingsSection(await api.getSettingsSectionTarget()); }
+  catch (e) { console.warn('settings section target failed:', e.message); }
+})();
+api.onNavigateToSection?.(gotoSettingsSection);
 
 // ══════════════════════════════════════════════════════════════════════════════
 // LICENSING TAB  (admin-only — the whole Settings window is gated to
@@ -2689,13 +3693,101 @@ async function loadLicenseStatus() {
   if (!licStatusEl) return;
   licStatusEl.textContent = 'Loading…';
   try {
-    renderLicenseStatus(await api.licenseGetDiagnostics());
+    const s = await api.licenseGetDiagnostics();
+    renderLicenseStatus(s);
+    await applyLicenseMode(s);
   } catch (e) {
     licStatusEl.innerHTML = colorSpan('err', 'Could not read licence status: ' + (e.message || 'error'));
   }
 }
-if (licRefreshBtn) licRefreshBtn.addEventListener('click', loadLicenseStatus);
+
+// Registered vs unregistered presentation. With an ACTIVE PAID SEAT we show the registered
+// device name + masked activation key and COLLAPSE the entry form (a "Activate a different
+// key…" button re-opens it to add new entitlements / re-key). Trial/none → show the form.
+async function applyLicenseMode(s) {
+  const t = (s && s.token) || {};
+  const licensed = !!(t.hasToken && t.kind === 'seat' && t.state === 'active');
+  // Status pill in the License card header.
+  if (t.hasToken && t.state === 'active') setChip('lic-chip', t.kind === 'trial' ? 'Trial' : 'Active', t.kind === 'trial' ? 'warn' : 'ok');
+  else if (t.hasToken && t.state === 'grace') setChip('lic-chip', 'Grace period', 'warn');
+  else setChip('lic-chip', 'Not activated', 'err');
+  const reg     = document.getElementById('lic-registered');
+  const actSec  = document.getElementById('lic-activate-section');
+  const showBtn = document.getElementById('lic-show-activate');
+  if (licensed) {
+    try {
+      const dev = await api.getSetting('license_device_label');
+      const key = await api.getSetting('license_key_masked');
+      const dEl = document.getElementById('lic-device'); if (dEl) dEl.textContent = dev || 'This device';
+      const kEl = document.getElementById('lic-key');    if (kEl) kEl.textContent = key || '— (re-activate to record)';
+    } catch { /* settings unavailable */ }
+    if (reg) reg.style.display = '';
+    if (actSec) actSec.style.display = 'none';   // collapse the entry form
+    if (showBtn) showBtn.style.display = '';
+  } else {
+    if (reg) reg.style.display = 'none';
+    if (actSec) actSec.style.display = '';       // not licensed → keep the form visible
+    if (showBtn) showBtn.style.display = 'none';
+  }
+}
+// "Activate a different key…" — re-open the (collapsed) entry form to add a new entitlement.
+const licShowActivateBtn = document.getElementById('lic-show-activate');
+if (licShowActivateBtn) licShowActivateBtn.addEventListener('click', () => {
+  const actSec = document.getElementById('lic-activate-section');
+  if (actSec) actSec.style.display = '';
+  const k = document.getElementById('lic-activate-key'); if (k) k.focus();
+});
+if (licRefreshBtn) licRefreshBtn.addEventListener('click', async () => {
+  // Re-check the licence against the server NOW (locks the app if it was revoked/expired
+  // server-side), then re-render status + seats from the refreshed cache. Offline → cached.
+  licRefreshBtn.disabled = true;
+  try { await api.licenseRecheck(); } catch { /* offline — show cached */ }
+  await loadLicenseStatus();
+  try { if (typeof loadSeats === 'function') await loadSeats(); } catch { /* best-effort */ }
+  // Also re-render the entitlement-driven UI (workflow add-on toggle + client-api/cert),
+  // so a server-side seat/feature change shows right after a re-check — not just the licence
+  // status. initClientApiSection re-reads get-entitlement and is guarded against re-binding.
+  try { if (typeof initClientApiSection === 'function') await initClientApiSection(); } catch { /* best-effort */ }
+  licRefreshBtn.disabled = false;
+});
 loadLicenseStatus();
+
+// ── Activate a licence key (enter key → confirm with server → license this device) ──
+// Reuses the SAME license-activate IPC the gate window uses; on success the seat token is
+// cached and enforcement picks it up immediately, so we just re-render status (no app
+// re-gate needed since Settings is open inside an already-allowed session).
+const ACTIVATE_ERRORS = {
+  unknown_account:    'That licence key was not recognised. Check it and try again.',
+  activation_failed:  'Activation failed. Check the key and try again.',
+  seat_limit_reached: 'All seats for this licence are already in use — release a device first.',
+  offline:            'Could not reach the licensing server. Check your connection and try again.',
+};
+const licActKey   = document.getElementById('lic-activate-key');
+const licActLabel = document.getElementById('lic-activate-label');
+const licActBtn   = document.getElementById('lic-activate-btn');
+const licActMsg   = document.getElementById('lic-activate-msg');
+if (licActBtn) licActBtn.addEventListener('click', async () => {
+  const accountKey  = (licActKey.value || '').trim();
+  const deviceLabel = (licActLabel.value || '').trim();
+  if (!accountKey) { licActMsg.innerHTML = colorSpan('err', 'Enter a licence key.'); return; }
+  licActBtn.disabled = true;
+  licActMsg.innerHTML = colorSpan('muted', 'Activating…');
+  try {
+    const res = await api.licenseActivate({ accountKey, deviceLabel });
+    if (res && res.ok) {
+      licActMsg.innerHTML = colorSpan('ok', 'Activated — this device is now licensed.');
+      licActKey.value = '';
+      await loadLicenseStatus();
+      try { if (typeof loadSeats === 'function') await loadSeats(); } catch { /* best-effort */ }
+      try { if (typeof initClientApiSection === 'function') await initClientApiSection(); } catch { /* best-effort */ }
+    } else {
+      licActMsg.innerHTML = colorSpan('err', ACTIVATE_ERRORS[res && res.code] || 'Activation failed.');
+    }
+  } catch {
+    licActMsg.innerHTML = colorSpan('err', ACTIVATE_ERRORS.offline);
+  }
+  licActBtn.disabled = false;
+});
 
 // ── Search client seats (concurrent floating pool) ─────────────────────────────
 const seatsTbody   = document.getElementById('seats-tbody');
@@ -2716,17 +3808,24 @@ async function loadSeats() {
   if (!seatsTbody) return;
   try {
     const s = await api.licenseSeatsStatus();
-    if (seatsCountIn && document.activeElement !== seatsCountIn) seatsCountIn.value = s.seats;
-    if (seatsSummary) seatsSummary.innerHTML = s.entitled
-      ? `${colorSpan(s.free > 0 ? 'ok' : 'warn', s.inUse + ' in use')} of ${escHtml(String(s.seats))} (${escHtml(String(s.free))} free)`
-      : colorSpan('muted', 'Add-on not licensed — enable “Workflow add-on” above');
+    const sf = s.search   || { seats: s.seats || 0, inUse: s.inUse || 0, free: s.free || 0 };
+    const wf = s.workflow || { seats: 0, inUse: 0, free: 0 };
+    if (seatsCountIn && document.activeElement !== seatsCountIn) seatsCountIn.value = sf.seats;
+    if (seatsSummary) {
+      const part = (label, f) => f.seats > 0
+        ? colorSpan(f.free > 0 ? 'ok' : 'warn', `${label} ${f.inUse}/${f.seats}`)
+        : colorSpan('muted', `${label} — not licensed`);
+      seatsSummary.innerHTML = `${part('Search', sf)} &nbsp;·&nbsp; ${part('Workflow', wf)}`;
+    }
     const rows = s.leases || [];
     if (seatsEmpty) seatsEmpty.textContent = rows.length ? '' : 'No clients are currently holding a seat.';
     seatsTbody.innerHTML = rows.map(r => `
       <tr>
         <td>${escHtml(r.username || '—')}</td>
-        <td>${escHtml(r.hostname || '—')}</td>
-        <td style="font-family:var(--mono)">${escHtml(r.ip || '—')}</td>
+        <td>
+          <div>${escHtml(r.hostname || r.ip || '—')}${r.workflowEnabled ? ' <span style="font-size:10px; background:var(--accent-bg); color:var(--accent); padding:1px 6px; border-radius:8px; margin-left:6px; vertical-align:middle;">workflow</span>' : ''}</div>
+          ${r.hostname && r.ip ? `<div style="color:var(--muted); font-size:11px; font-family:var(--mono)">${escHtml(r.ip)}</div>` : ''}
+        </td>
         <td title="${escHtml(r.lastSeen ? new Date(r.lastSeen).toLocaleString() : '')}">${escHtml(_seatAgo(r.lastSeen))}</td>
         <td><button class="btn danger" data-seat="${escHtml(r.id)}">Release</button></td>
       </tr>`).join('');
@@ -2742,13 +3841,20 @@ async function loadSeats() {
   }
 }
 
-document.getElementById('seats-refresh')?.addEventListener('click', loadSeats);
-document.getElementById('seats-save')?.addEventListener('click', async () => {
-  if (!seatsCountIn) return;
-  const n = Math.max(0, Math.min(999, parseInt(seatsCountIn.value, 10) || 0));
-  try { await api.setSetting('detached_client_seats', String(n)); } catch { /* surfaced on reload */ }
+document.getElementById('seats-refresh')?.addEventListener('click', async (e) => {
+  const btn = e.currentTarget; if (btn) btn.disabled = true;
+  // Re-check the licence against the server (locks the app if it was revoked/expired), then
+  // re-render seats + licence status from the refreshed cache. Offline → cached counts.
+  try { await api.licenseRecheck(); } catch { /* offline — show cached */ }
   await loadSeats();
+  try { if (typeof loadLicenseStatus === 'function') await loadLicenseStatus(); } catch { /* best-effort */ }
+  if (btn) btn.disabled = false;
 });
+// The search-seat count is READ-ONLY: it comes from the licence (the backend-cached,
+// token-verified per-feature count that loadSeats displays), not a local override. The old
+// "Save" path wrote `detached_client_seats`, which entitlement could fall back to — a local
+// self-grant. That write path is removed; the field below is display-only.
+if (seatsCountIn) seatsCountIn.readOnly = true;
 loadSeats();
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2764,6 +3870,7 @@ const loAddBtn  = document.getElementById('lo-add');
 const loMsg     = document.getElementById('lo-msg');
 const loList    = document.getElementById('lo-list');
 let _loTypes = [];
+let _loFieldPatterns = null;   // { field_key: [built-in label, …] } — shipped defaults (read-only)
 
 function loSetMsg(kind, text) {
   if (!loMsg) return;
@@ -2855,25 +3962,56 @@ async function loLoadTypes() {
   loPopulateFields();
 }
 
+// Show the selected document type's labels (the doc-type dropdown picks the "block"
+// to view/edit), one section per field in the type's own field order. Each field lists
+// its BUILT-IN words (shipped field_patterns — read-only, always active) AND any custom
+// overrides this install added (removable). Canonical types (invoice/sales order/etc.)
+// carry no overrides by design but DO have rich built-in words, so they're no longer
+// shown as empty.
 async function loLoadList() {
   let rows = [];
   try { rows = (await api.getLabelOverrides()) || []; } catch {}
-  if (!rows.length) {
-    loList.innerHTML = '<span style="color:var(--muted)">No label overrides yet.</span>';
+  if (_loFieldPatterns === null) {
+    try { _loFieldPatterns = (await api.getFieldPatterns()) || {}; } catch { _loFieldPatterns = {}; }
+  }
+  const slug = loDocType ? loDocType.value : '';
+  const t = _loTypes.find(x => x.slug === slug);
+  const typeName = (t && t.name) || slug || '';
+  const fields = (t && t.fields) || [];
+  const fieldLabel = (k) => (fields.find(f => f.key === k) || {}).label || k;
+
+  const ovByField = {};
+  for (const r of rows.filter(r => r.doc_type_slug === slug)) {
+    (ovByField[r.field_key] = ovByField[r.field_key] || []).push(r);
+  }
+  // Every field of the type, in order, then any override-only keys not in the type.
+  const order = fields.map(f => f.key);
+  for (const k of Object.keys(ovByField)) if (!order.includes(k)) order.push(k);
+
+  let html = `<div style="margin-bottom:8px; font-weight:600; color:var(--text);">Labels for ${escHtml(typeName)}</div>`;
+  if (!order.length) {
+    html += '<span style="color:var(--muted)">This document type has no fields.</span>';
+    loList.innerHTML = html;
     return;
   }
-  const byType = {};
-  for (const r of rows) (byType[r.doc_type_slug] = byType[r.doc_type_slug] || []).push(r);
-  const typeName = (slug) => (_loTypes.find(t => t.slug === slug) || {}).name || slug;
-  let html = '';
-  for (const slug of Object.keys(byType).sort()) {
-    html += `<div style="margin-top:10px; font-weight:600; color:var(--text);">${escHtml(typeName(slug))}</div>`;
-    for (const r of byType[slug]) {
+  for (const k of order) {
+    const builtin = _loFieldPatterns[k] || [];
+    const overrides = ovByField[k] || [];
+    html += `<div style="margin-top:12px; font-weight:600; color:var(--text);">${escHtml(fieldLabel(k))}
+      <span style="font-family:var(--mono); color:var(--muted); font-weight:400;">(${escHtml(k)})</span></div>`;
+    if (builtin.length) {
+      html += `<div style="font-size:11px; color:var(--muted); margin:2px 0 1px;">Built-in (always active): `
+        + builtin.map(b => `<span style="font-family:var(--mono); color:var(--muted);">${escHtml(b)}</span>`).join(', ')
+        + '</div>';
+    }
+    for (const r of overrides) {
       html += `<div class="row-flex" style="gap:8px; align-items:center; padding:3px 0;">
-        <span style="font-family:var(--mono); color:var(--muted); min-width:140px;">${escHtml(r.field_key)}</span>
         <span style="font-family:var(--mono); color:var(--accent2);">&ldquo;${escHtml(r.label)}&rdquo;</span>
         <button class="btn" data-lo-del="${r.id}" style="padding:2px 8px; font-size:11px;">Remove</button>
       </div>`;
+    }
+    if (!builtin.length && !overrides.length) {
+      html += '<div style="font-size:11px; color:var(--muted); margin:2px 0;">No words yet — add some above (built-in detection still applies).</div>';
     }
   }
   loList.innerHTML = html;
@@ -2886,7 +4024,7 @@ async function loLoadList() {
 }
 
 if (loDocType && loField && loAddBtn) {
-  loDocType.addEventListener('change', loPopulateFields);
+  loDocType.addEventListener('change', () => { loPopulateFields(); loLoadList(); });
   loAddBtn.addEventListener('click', async () => {
     const data = {
       doc_type_slug: loDocType.value,
@@ -2943,6 +4081,56 @@ if (diagToggle) {
       diagToggle.checked = !on;
     }
   });
+}
+
+// ── Help improve Scan Finder (opt-in diagnostics) ──────────────────────────────
+const telToggle = document.getElementById('telemetry-toggle');
+if (telToggle) {
+  (async () => { try { telToggle.checked = (await api.getSetting('telemetry_enabled')) === 'true'; } catch {} })();
+  telToggle.addEventListener('change', async () => {
+    const on = telToggle.checked;
+    try { await api.setSetting('telemetry_enabled', on ? 'true' : 'false'); }
+    catch { telToggle.checked = !on; }
+  });
+}
+document.getElementById('telemetry-view-btn')?.addEventListener('click', async () => {
+  let info = { enabled: false, events: {}, queued: [] };
+  try { info = await api.getTelemetryInfo(); } catch {}
+  showTelemetryDialog(info);
+});
+
+// Read-only "see exactly what's sent" modal: the master state, the full event
+// allowlist (what CAN be sent), and the events buffered on THIS machine right now.
+function showTelemetryDialog(info) {
+  const names = Object.keys(info.events || {}).sort();
+  const allowRows = names.map(n =>
+    `<div style="font-family:var(--mono);font-size:11px;margin:2px 0;">${escHtml(n)}
+       <span style="color:var(--muted);">${escHtml((info.events[n] || []).join(', ') || '—')}</span></div>`).join('');
+  const q = info.queued || [];
+  const queuedRows = q.length
+    ? q.map(e => `<div style="font-family:var(--mono);font-size:11px;margin:2px 0;">
+         <span style="color:${e.sent ? 'var(--muted)' : 'var(--accent2)'};">${e.sent ? '✓ sent' : '• waiting'}</span>
+         ${escHtml(e.name)} <span style="color:var(--muted);">${escHtml(JSON.stringify(e.props))}</span></div>`).join('')
+    : '<div style="font-size:12px;color:var(--muted);">Nothing is queued.</div>';
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;';
+  overlay.innerHTML = `
+    <div style="width:560px;max-width:92vw;max-height:84vh;overflow:auto;background:var(--surface);border:1px solid var(--border2);
+                border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:14px;color:var(--text);">
+      <div style="font-size:15px;font-weight:600;">Diagnostics — exactly what's sent</div>
+      <div style="font-size:12.5px;line-height:1.6;">Diagnostics is currently <b>${info.enabled ? 'ON' : 'OFF'}</b>.
+        Only the structured events below are ever sent — tied only to an anonymous device id.</div>
+      <div><div style="font-size:12px;font-weight:600;margin-bottom:6px;">What can be sent (event → fields)</div>${allowRows}</div>
+      <div><div style="font-size:12px;font-weight:600;margin:4px 0 6px;">Waiting on this PC right now</div>${queuedRows}</div>
+      <div style="font-size:11px;color:var(--muted);line-height:1.6;"><b>Never sent:</b> your documents, scans, OCR text,
+        supplier/customer names, invoice/reference numbers, totals, dates, file paths, your name, email or licence key.</div>
+      <button id="tel-ok" style="align-self:flex-end;padding:9px 18px;border-radius:8px;border:none;background:var(--accent);
+              color:#fff;font-family:inherit;font-size:12.5px;font-weight:500;cursor:pointer;">Done</button>
+    </div>`;
+  overlay.setAttribute('data-help-ignore', '1');
+  document.body.appendChild(overlay);
+  overlay.querySelector('#tel-ok').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

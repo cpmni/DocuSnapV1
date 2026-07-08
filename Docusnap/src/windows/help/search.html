@@ -35,7 +35,9 @@
           <section id="how-filed">
             <h2>How documents are filed</h2>
             <p>When you click <b>Confirm &amp; File</b>, Scan Finder saves a tidy copy in your <b>output folder</b>,
-              organised by company, year and month, with a clear, consistent file name.</p>
+              organised the way you set it up &mdash; by default, by <b>Document Issuer</b>, year and month, with a
+              clear, consistent file name. You can change this layout any time in <b>Settings &rarr; Output Structure</b>
+              (below).</p>
             <figure class="diagram">
               <svg viewBox="0 0 680 200" role="img" aria-label="How filed documents are organised into folders">
                 <title>The filing structure</title>
@@ -58,14 +60,33 @@
                 <text class="dg-mono" x="156" y="144">Invoice.15-12-2025.INV-001.pdf</text>
                 <text class="dg-sub"  x="156" y="172">a matching details file is kept alongside it</text>
               </svg>
-              <figcaption>Filed documents are grouped by company, year and month, and named <code>Type.Date.Reference</code>.</figcaption>
+              <figcaption>The default layout: grouped by Document Issuer, year and month, named <code>Type.Date.Reference</code> &mdash; all adjustable in Output Structure.</figcaption>
             </figure>
             <div class="callout note">
               <div class="callout-title">What happens to the original?</div>
-              <p>Scan Finder saves the filed copy in your output folder and removes the original scan from the
-                source folder once it's safely filed &mdash; so you won't accidentally process the same document
-                twice. The tidy copy in your output folder is the one to keep.</p>
+              <p>Nothing is ever deleted. Once a document is safely filed, Scan Finder keeps its own copy and
+                <b>moves</b> the original scan out of your source folder into a <b>Processed</b> folder &mdash; so you
+                won't accidentally process the same document twice, and the original is still there if you need it.
+                The tidy copy in your output folder is the one to keep.</p>
             </div>
+          </section>
+
+          <section id="output-structure">
+            <h2>Customise how documents are named and foldered</h2>
+            <p>The layout above is the default, but you can change it in <b>Settings &rarr; Output Structure</b> using
+              two simple builders. Click the blocks you want, and a live preview shows the result.</p>
+            <figure class="shot-fig">
+              <img class="shot" src="img/output-structure.png" alt="The Output Structure screen: folder pattern, building blocks, file-name pattern and a live preview">
+              <figcaption><b>1</b> the folder pattern &mdash; use <code>/</code> to start a new subfolder level &nbsp;&middot;&nbsp;
+                <b>2</b> click a building block to insert it &nbsp;&middot;&nbsp;
+                <b>3</b> the file-name pattern &nbsp;&middot;&nbsp;
+                <b>4</b> a live preview of exactly where a document will be saved.</figcaption>
+            </figure>
+            <ul>
+              <li><b>Building blocks</b> &mdash; Document Issuer, Year, Month, Type, Date and Reference. Click one to add it.</li>
+              <li><b>A &ldquo; / &rdquo; starts a new folder level</b> &mdash; e.g. <code>Document Issuer / Year / Month</code> makes three nested folders.</li>
+              <li><b>Live preview</b> &mdash; shows the finished path before you save, so there are no surprises.</li>
+            </ul>
           </section>
 
           <section id="search">
@@ -83,6 +104,19 @@
               <img class="shot" src="img/search-results.png" alt="The Search window: filters at the top, a list of results, and a preview pane">
               <figcaption>Filter on the left, preview on the right &mdash; then open the document however you like.</figcaption>
             </figure>
+
+            <div class="callout note">
+              <div class="callout-title">Selecting results</div>
+              <ul>
+                <li><b>Click</b> a row to preview it.</li>
+                <li><b>Ctrl+click</b> to pick several, or <b>Shift+click</b> to select a whole range &mdash; then act
+                  on them together (for example, delete them in one go).</li>
+                <li><b>Right-click</b> a row for its menu. In the <b>Bin</b>, that's where you <b>Restore</b> a document
+                  or delete it permanently.</li>
+              </ul>
+              <p style="margin:6px 0 0">The full selection and shortcut list is on the
+                <a class="xref" href="shortcuts.html">Keyboard shortcuts</a> page.</p>
+            </div>
           </section>
 
           <section id="retrieval">
@@ -94,7 +128,7 @@
 
           <div class="callout tip">
             <div class="callout-title">Next step</div>
-            <p>Want to change the output folder or processing mode? See <a class="xref" href="settings.html">Settings &amp; Help</a>.</p>
+            <p>Want to change the output folder or how documents are filed? See <a class="xref" href="settings.html">Settings &amp; Help</a>.</p>
           </div>
         </main>
 

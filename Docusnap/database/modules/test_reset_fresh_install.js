@@ -62,6 +62,7 @@ db.exec(`
   CREATE TABLE field_anchors (id INTEGER PRIMARY KEY AUTOINCREMENT, supplier_name TEXT, document_type TEXT, field_key TEXT, last_seen TEXT);
   CREATE TABLE logo_fingerprints (id INTEGER PRIMARY KEY AUTOINCREMENT, supplier_name TEXT, phash TEXT, last_seen TEXT);
   CREATE TABLE corrections (id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER, field_key TEXT, corrected_value TEXT, supplier_name TEXT, document_type TEXT, corrected_at TEXT);
+  CREATE TABLE field_rules (id INTEGER PRIMARY KEY AUTOINCREMENT, supplier_name TEXT, document_type TEXT, field_key TEXT);
   CREATE TABLE template_fields (id INTEGER PRIMARY KEY AUTOINCREMENT, template_id INTEGER REFERENCES templates(id) ON DELETE CASCADE, field_key TEXT);
   CREATE TABLE template_field_mappings (id INTEGER PRIMARY KEY AUTOINCREMENT, template_id INTEGER REFERENCES templates(id) ON DELETE CASCADE, field_key TEXT);
 `);

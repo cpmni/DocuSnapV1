@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS device_registrations (
   customer_name VARCHAR(190) NULL,   -- customer or company name (required at trial start)
   contact_name  VARCHAR(190) NULL,   -- user name
   email         VARCHAR(190) NULL,   -- contact email (validated when present)
+  trial_search_seats INT NULL,       -- per-trial override of included search-client seats; NULL = policy default (jws.php TRIAL_SEARCH_SEATS)
   UNIQUE KEY uq_fp_product (fp_hash, product_id),
   FOREIGN KEY (product_id) REFERENCES products(product_id)
 );
@@ -30,13 +31,18 @@ CREATE TABLE IF NOT EXISTS device_registrations (
 CREATE TABLE IF NOT EXISTS accounts (
   id               BIGINT      NOT NULL AUTO_INCREMENT PRIMARY KEY,
   account_key_hash CHAR(64)    NOT NULL UNIQUE,   -- never store the plaintext key
-  status           VARCHAR(20) NOT NULL DEFAULT 'active'
+  status           VARCHAR(20) NOT NULL DEFAULT 'active',
+  polar_customer_id VARCHAR(190) NULL,            -- Polar.sh customer link (one account per Polar customer)
+  email            VARCHAR(190) NULL,             -- contact email (from the Polar grant); used to (re)send the key
+  name             VARCHAR(190) NULL,             -- contact / billing name (from the Polar grant); for admin identification
+  UNIQUE KEY uq_polar_customer (polar_customer_id)  -- NULLs allowed (unlinked admin/trial accounts)
 );
 
 CREATE TABLE IF NOT EXISTS entitlements (
   id          BIGINT      NOT NULL AUTO_INCREMENT PRIMARY KEY,
   account_id  BIGINT      NOT NULL,
   product_id  CHAR(36)    NOT NULL,
+  feature     VARCHAR(20) NOT NULL DEFAULT 'core',   -- core | search | workflow (search/workflow are capacity counts)
   seats_total INT         NOT NULL DEFAULT 1,
   expires_at  DATETIME    NULL,
   status      VARCHAR(20) NOT NULL DEFAULT 'active',
@@ -45,6 +51,8 @@ CREATE TABLE IF NOT EXISTS entitlements (
   device_label   VARCHAR(120) NULL,   -- optional human-friendly device name
   customer_email VARCHAR(190) NULL,   -- optional; support / expiry reminders only
   notes          TEXT         NULL,   -- internal admin notes
+  polar_ref      VARCHAR(190) NULL,   -- Polar object that granted this entitlement (subscription id, or order id for one-time)
+  polar_price_id VARCHAR(190) NULL,   -- Polar price/SKU that mapped to this entitlement
   FOREIGN KEY (account_id) REFERENCES accounts(id),
   FOREIGN KEY (product_id) REFERENCES products(product_id)
 );
@@ -91,6 +99,38 @@ CREATE TABLE IF NOT EXISTS rate_limits (
   window_start BIGINT       NOT NULL DEFAULT 0    -- unix epoch seconds
 );
 
+-- Phase 2b: processed purchase-webhook events (idempotency + audit). The external
+-- event_id is the idempotency key (PRIMARY KEY): a second delivery of the same id
+-- fails the INSERT and is a NO-OP that returns the recorded outcome. Stores the
+-- OUTCOME only — NEVER the raw payload, account_key, or signature. Whole-table
+-- addition, so CREATE-IF-NOT-EXISTS is fully idempotent on re-import.
+CREATE TABLE IF NOT EXISTS webhook_events (
+  event_id    VARCHAR(190) NOT NULL PRIMARY KEY,   -- external idempotency key
+  event_type  VARCHAR(60)  NOT NULL,
+  account_id  BIGINT       NULL,
+  product_id  CHAR(36)     NULL,
+  status      VARCHAR(20)  NOT NULL DEFAULT 'received',  -- received | applied | rejected
+  detail      TEXT         NULL,                          -- human-readable outcome; never secrets/payload
+  received_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Opt-in, DOCUMENT-DATA-FREE diagnostics ingest (POST /v1/diagnostics). Only
+-- enumerated event names + typed/enumerated props the client allowlisted ever land
+-- here. PRIVACY: NO IP/email/name/account is stored — client_ip in diagnostics.php
+-- is used only for rate-limiting, never written to a row. See DIAGNOSTICS_PLAN.md.
+CREATE TABLE IF NOT EXISTS telemetry_events (
+  id          BIGINT       AUTO_INCREMENT PRIMARY KEY,
+  fp_hash     CHAR(64)     NOT NULL,                 -- pseudonymous device id
+  ts          VARCHAR(40)  NULL,                     -- device-coarse (hourly) timestamp, as sent
+  name        VARCHAR(64)  NOT NULL,                 -- enumerated event name
+  props_json  JSON         NULL,                     -- enumerated/typed props ONLY
+  event_uid   CHAR(32)     NULL,                     -- client idempotency key
+  received_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_fp_uid (fp_hash, event_uid),       -- dedupe re-sent events
+  KEY idx_name (name),
+  KEY idx_received (received_at)
+);
+
 -- ── Idempotent migrations ────────────────────────────────────────────────────
 -- CREATE TABLE IF NOT EXISTS above only covers FRESH installs; an existing DB
 -- keeps its old column set. This block back-fills new columns on re-import
@@ -115,6 +155,52 @@ BEGIN
                  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'device_registrations'
                    AND COLUMN_NAME = 'email') THEN
     ALTER TABLE device_registrations ADD COLUMN email VARCHAR(190) NULL AFTER contact_name;
+  END IF;
+  -- Per-trial override of included detached search-client seats (NULL = policy default).
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'device_registrations'
+                   AND COLUMN_NAME = 'trial_search_seats') THEN
+    ALTER TABLE device_registrations ADD COLUMN trial_search_seats INT NULL AFTER email;
+  END IF;
+  -- Feature dimension on entitlements (core | search | workflow). Existing rows
+  -- backfill to 'core', so a pre-feature account keeps working as a core licence.
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'entitlements'
+                   AND COLUMN_NAME = 'feature') THEN
+    ALTER TABLE entitlements ADD COLUMN feature VARCHAR(20) NOT NULL DEFAULT 'core' AFTER product_id;
+  END IF;
+  -- Polar.sh links (commerce adapter — see lib/polar.php). accounts.polar_customer_id
+  -- ties one account to one Polar customer; entitlements.polar_ref/polar_price_id tie a
+  -- grant to the Polar subscription/order + price so renewals extend and cancels revoke.
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'accounts'
+                   AND COLUMN_NAME = 'polar_customer_id') THEN
+    ALTER TABLE accounts ADD COLUMN polar_customer_id VARCHAR(190) NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.STATISTICS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'accounts'
+                   AND INDEX_NAME = 'uq_polar_customer') THEN
+    ALTER TABLE accounts ADD UNIQUE KEY uq_polar_customer (polar_customer_id);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'accounts'
+                   AND COLUMN_NAME = 'email') THEN
+    ALTER TABLE accounts ADD COLUMN email VARCHAR(190) NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'accounts'
+                   AND COLUMN_NAME = 'name') THEN
+    ALTER TABLE accounts ADD COLUMN name VARCHAR(190) NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'entitlements'
+                   AND COLUMN_NAME = 'polar_ref') THEN
+    ALTER TABLE entitlements ADD COLUMN polar_ref VARCHAR(190) NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'entitlements'
+                   AND COLUMN_NAME = 'polar_price_id') THEN
+    ALTER TABLE entitlements ADD COLUMN polar_price_id VARCHAR(190) NULL;
   END IF;
 END //
 DELIMITER ;

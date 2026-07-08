@@ -11,7 +11,6 @@
       "invoice number",
       "invoice ref",
       "invoice date",
-      "remittance",
       "bill to",
       "billed to"
     ],
@@ -76,6 +75,31 @@
       "receipt number",
       "received from",
       "paid by"
+    ],
+    "Remittance Advice": [
+      "remittance advice",
+      "payment advice",
+      "remittance",
+      "bacs",
+      "payment date",
+      "we have paid",
+      "amount paid"
+    ],
+    "Letter": [
+      "yours sincerely",
+      "yours faithfully",
+      "kind regards",
+      "dear sir",
+      "dear madam",
+      "to whom it may concern",
+      "please find enclosed"
+    ],
+    "Order Form": [
+      "order form",
+      "please supply",
+      "order request",
+      "please complete this form",
+      "quantity required"
     ]
   },
   "field_patterns": {
@@ -96,7 +120,12 @@
         "Invoice ID",
         "Bill No",
         "Bill Number",
-        {"text": "#", "directions": ["right"]}
+        {
+          "text": "#",
+          "directions": [
+            "right"
+          ]
+        }
       ],
       "directions": [
         "right",
@@ -145,8 +174,18 @@
     },
     "supplier_name": {
       "labels": [
-        {"text": "Bill From", "directions": ["below"]},
-        {"text": "BILL FROM", "directions": ["below"]},
+        {
+          "text": "Bill From",
+          "directions": [
+            "below"
+          ]
+        },
+        {
+          "text": "BILL FROM",
+          "directions": [
+            "below"
+          ]
+        },
         "Supplier",
         "Vendor",
         "Issued By",
@@ -172,10 +211,30 @@
         "Customer",
         "Client",
         "Attention",
-        {"text": "BILLING ADDRESS", "directions": ["below"]},
-        {"text": "Billing Address", "directions": ["below"]},
-        {"text": "BILL TO", "directions": ["below"]},
-        {"text": "Invoiced To", "directions": ["below"]}
+        {
+          "text": "BILLING ADDRESS",
+          "directions": [
+            "below"
+          ]
+        },
+        {
+          "text": "Billing Address",
+          "directions": [
+            "below"
+          ]
+        },
+        {
+          "text": "BILL TO",
+          "directions": [
+            "below"
+          ]
+        },
+        {
+          "text": "Invoiced To",
+          "directions": [
+            "below"
+          ]
+        }
       ],
       "directions": [
         "right",
@@ -186,21 +245,21 @@
     },
     "total_amount": {
       "labels": [
-        "Total",
+        "Invoice Total",
+        "Grand Total",
         "Total Due",
         "Amount Due",
         "Balance Due",
-        "Grand Total",
         "Total Payable",
         "Net Payable",
-        "Total Amount",
         "Amount Payable",
         "Please Pay",
+        "Amount to Pay",
         "Total Inc VAT",
         "Total Including VAT",
         "Total Inc. VAT",
-        "Amount to Pay",
-        "Invoice Total"
+        "Total Amount",
+        "Total"
       ],
       "directions": [
         "right"
@@ -233,8 +292,17 @@
         "Tax",
         "VAT Amount",
         "Tax Amount",
+        "Tax Total",
+        "Total Tax",
+        "VAT Total",
+        "Total VAT",
         "GST",
+        "HST",
+        "PST",
+        "QST",
         "Sales Tax",
+        "Output Tax",
+        "Import VAT",
         "V.A.T",
         "Value Added Tax",
         "VAT 20%",
@@ -246,6 +314,65 @@
       ],
       "validation": "currency",
       "base_confidence": 85
+    },
+    "shipping": {
+      "labels": [
+        "Shipping",
+        "Shipping & Handling",
+        "Shipping and Handling",
+        "Shipping Cost",
+        "Postage",
+        "Postage & Packing",
+        "Postage and Packing",
+        "P&P",
+        "P & P",
+        "Carriage",
+        "Delivery Charge",
+        "Delivery Fee",
+        "Delivery Cost",
+        "Freight",
+        "Freightage",
+        "Handling",
+        "Handling Charge",
+        "Courier",
+        "Mailing",
+        "Franking",
+        "Dispatch",
+        "Despatch",
+        "Forwarding",
+        "Consignment",
+        "Transport Cost"
+      ],
+      "directions": [
+        "right"
+      ],
+      "validation": "currency",
+      "base_confidence": 80
+    },
+    "discount": {
+      "labels": [
+        "Discount",
+        "Less Discount",
+        "Total Discount",
+        "Discount Applied",
+        "Reduction",
+        "Price Reduction",
+        "Deduction",
+        "Rebate",
+        "Markdown",
+        "Concession",
+        "Allowance",
+        "Promotion",
+        "Promo",
+        "Voucher",
+        "Credit",
+        "Savings"
+      ],
+      "directions": [
+        "right"
+      ],
+      "validation": "currency",
+      "base_confidence": 80
     },
     "currency": {
       "labels": [
@@ -453,9 +580,10 @@
       "(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\s+\\d{1,2},?\\s+\\d{2,4}"
     ],
     "currency": [
-      "[\u00a3$\u20ac\u00a5]\\s*[\\d,]+\\.?\\d*",
+      "[£$€¥]\\s*[\\d,]+\\.?\\d*",
       "[\\d,]+\\.\\d{2}\\s*(?:GBP|USD|EUR|JPY)?",
-      "(?:GBP|USD|EUR)\\s*[\\d,]+\\.?\\d*"
+      "(?:GBP|USD|EUR)\\s*[\\d,]+\\.?\\d*",
+      "^[\\d,]+(?:\\.\\d{1,2})?$"
     ],
     "alphanumeric": [
       "[A-Za-z0-9][A-Za-z0-9\\-\\/\\.]{2,20}"
@@ -465,19 +593,58 @@
     ],
     "currency_code": [
       "^(?:GBP|USD|EUR|JPY|CAD|AUD|CHF|CNY|INR)$"
+    ],
+    "ip_address": [
+      "\\b\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\b",
+      "(?:[0-9A-Fa-f]{1,4}:){2,7}[0-9A-Fa-f]{1,4}"
+    ],
+    "mac_address": [
+      "\\b(?:[0-9A-Fa-f]{2}[:\\-]){5}[0-9A-Fa-f]{2}\\b",
+      "\\b(?:[0-9A-Fa-f]{4}\\.){2}[0-9A-Fa-f]{4}\\b"
+    ],
+    "email": [
+      "^[A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,}$"
+    ],
+    "percentage": [
+      "^\\d{1,3}(?:\\.\\d{1,2})?\\s?%$"
+    ],
+    "postcode_uk": [
+      "^[A-Za-z]{1,2}\\d[A-Za-z\\d]?\\s?\\d[A-Za-z]{2}$"
+    ],
+    "vat_gb": [
+      "^(?:GB)?\\s?\\d{3}\\s?\\d{4}\\s?\\d{2}(?:\\s?\\d{3})?$",
+      "^GB(?:GD|HA)\\d{3}$"
+    ],
+    "reference_code": [
+      "^(?=[A-Za-z0-9][A-Za-z0-9\\-/.]*\\d)[A-Za-z0-9][A-Za-z0-9\\-/.]{2,20}$"
+    ],
+    "iban": [
+      "^[A-Za-z]{2}\\d{2}[A-Za-z0-9]{11,30}$"
+    ],
+    "website": [
+      "^(?:https?://)?(?:[A-Za-z0-9\\-]+\\.)+[A-Za-z]{2,}(?:/[^\\s]*)?$"
     ]
   },
   "currency_symbols": {
-    "\u00a3": "GBP",
+    "£": "GBP",
     "$": "USD",
-    "\u20ac": "EUR",
-    "\u00a5": "JPY"
+    "€": "EUR",
+    "¥": "JPY"
   },
   "field_charsets": {
     "_comment": "Phase 1 valid-character policy. BACKEND-ONLY flag (never served via get-validation-patterns; never strips a value). Per field TYPE: the EXTRA non-alphanumeric, non-whitespace chars allowed besides A-Za-z0-9 + whitespace. null = no constraint. 'default' applies to any unlisted type. The engine skips date/currency types.",
-    "default": "-'#+&()/\\@:;,.\u00a3$%\u20ac\u00a5",
+    "default": "-'#+&()/\\@:;,.£$%€¥",
     "text": "-'&(),.",
     "alphanumeric": "-./#",
+    "ip_address": ".:",
+    "mac_address": ":-.",
+    "email": "@.-_+%",
+    "percentage": ".%",
+    "postcode_uk": "",
+    "vat_gb": "",
+    "reference_code": "-/.",
+    "iban": "",
+    "website": ":/.-_?=&",
     "multiline_text": null
   }
 }

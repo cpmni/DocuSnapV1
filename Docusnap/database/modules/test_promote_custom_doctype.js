@@ -56,9 +56,16 @@ function freshDb() {
       created_at TEXT DEFAULT (datetime('now')), updated_at TEXT);
     CREATE TABLE template_fields (id INTEGER PRIMARY KEY AUTOINCREMENT,
       template_id INTEGER REFERENCES templates(id) ON DELETE CASCADE, field_key TEXT, anchor_label TEXT,
-      direction TEXT, fixed_value TEXT, is_variable INTEGER, UNIQUE(template_id, field_key));
+      direction TEXT, fixed_value TEXT, is_variable INTEGER,
+      fixed_locked INTEGER NOT NULL DEFAULT 0,   -- migration 31 (admin-locked fixed value)
+      UNIQUE(template_id, field_key));
     CREATE TABLE template_field_mappings (id INTEGER PRIMARY KEY AUTOINCREMENT,
       template_id INTEGER REFERENCES templates(id) ON DELETE CASCADE, field_key TEXT, region_hint TEXT, enabled INTEGER DEFAULT 1);
+    CREATE TABLE template_logo_hashes (id INTEGER PRIMARY KEY AUTOINCREMENT,   -- migration 26 (multi-ref logo set)
+      template_id INTEGER REFERENCES templates(id) ON DELETE CASCADE, phash TEXT, UNIQUE(template_id, phash));
+    CREATE TABLE template_landmarks (id INTEGER PRIMARY KEY AUTOINCREMENT,     -- migration 22 (registration landmarks)
+      template_id INTEGER REFERENCES templates(id) ON DELETE CASCADE, label_text TEXT,
+      x_norm REAL, y_norm REAL, w_norm REAL, h_norm REAL, ocr_conf REAL, page_number INTEGER);
   `);
   // A CUSTOM doc type with its own ref/date keys + fields.
   db.prepare(`INSERT INTO document_types (id,name,slug,built_in,ref_field_key,date_field_key)

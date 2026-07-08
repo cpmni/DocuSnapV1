@@ -54,7 +54,7 @@ function makeDb() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       template_id INTEGER NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
       label_text TEXT, x_norm REAL, y_norm REAL, w_norm REAL, h_norm REAL, ocr_conf REAL,
-      page_number INTEGER DEFAULT 0
+      page_number INTEGER DEFAULT 0, source TEXT NOT NULL DEFAULT 'auto'
     );
     CREATE TABLE template_logo_hashes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

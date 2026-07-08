@@ -5,15 +5,16 @@
 // a user can click through; "Skip setup" accepts the defaults.
 
 const D = window.docusnap;
-const STEPS = 6;               // welcome, output, organization, theme, performance, done
+const STEPS = 7;               // welcome, output, organization, theme, performance, diagnostics, done
 const OUTPUT_STEP = 1;
-const NEXT_LABEL = ['Get started', 'Next', 'Next', 'Next', 'Next', 'Open Scan Finder'];
+const NEXT_LABEL = ['Get started', 'Next', 'Next', 'Next', 'Next', 'Next', 'Open Scan Finder'];
 
 const state = { step: 0, outputFolder: '', outputSaved: false,
                 theme: 'dark', threads: 2, mode: 'smart',
-                copyEnabled: false, copyFolder: '',
+                copyEnabled: false, copyFolder: '', diag: false,
                 folderPattern: '{supplier}/{year}/{month}', filenamePattern: '{docType}.{date}.{ref}' };
 let _obTokens = [];
+let folderEditor = null, filenameEditor = null;   // shared/pattern-editor.js pill editors
 
 const $  = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
@@ -31,9 +32,10 @@ for (let i = 0; i < STEPS; i++) {
 function paintSelections() {
   $$('[data-theme-choice]').forEach(c => c.classList.toggle('sel', c.dataset.themeChoice === state.theme));
   $$('[data-threads]').forEach(c => c.classList.toggle('sel', Number(c.dataset.threads) === state.threads));
-  $$('[data-mode]').forEach(c => c.classList.toggle('sel', c.dataset.mode === state.mode));
+  $$('.card[data-mode]').forEach(c => c.classList.toggle('sel', c.dataset.mode === state.mode));
   $('#outPath').textContent = state.outputFolder || '—';
   $$('[data-copy]').forEach(c => c.classList.toggle('sel', (c.dataset.copy === 'yes') === state.copyEnabled));
+  $$('[data-diag]').forEach(c => c.classList.toggle('sel', (c.dataset.diag === 'yes') === state.diag));
   $('#copyPath').textContent = state.copyFolder || '—';
   $('#copyToWrap').style.display = state.copyEnabled ? '' : 'none';
 }
@@ -55,10 +57,20 @@ async function loadCurrent() {
   try {
     state.outputFolder = (await D.getSetting('output_folder')) || (await D.suggestedOutputFolder()) || '';
   } catch {}
+  // Default to a core-aware value (this PC's cores minus headroom) unless the user already
+  // chose one — a fresh multi-core PC shouldn't be stuck at a hardcoded 2.
+  try { const info = await D.getConcurrencyInfo(); if (info && info.recommended >= 1) state.threads = info.recommended; } catch {}
   try { const c = parseInt(await D.getSetting('processing_concurrency'), 10); if (c >= 1) state.threads = c; } catch {}
-  try { state.mode = (await D.getSetting('processing_mode')) || 'smart'; } catch {}
-  try { state.copyEnabled = (await D.getSetting('copy_after_processing_enabled')) === 'true'; } catch {}
-  try { state.copyFolder  = (await D.getSetting('copy_after_processing_folder')) || ''; } catch {}
+  // The wizard only offers Thorough (smart) / Quick (fast); map any other stored
+  // value (e.g. a legacy 'ai', or an unset/blank) to 'smart' so a card is always
+  // selected — otherwise neither Accuracy card highlights and it looks unselectable.
+  try { state.mode = (await D.getSetting('processing_mode')) === 'fast' ? 'fast' : 'smart'; } catch {}
+  // Processed-scans (drain) folder — where each original is MOVED after it's filed.
+  // The SAME `processed_folder` key Settings → Files & filing shows/uses (an explicit
+  // value wins; empty → a "Processed" subfolder beside the scans). Reusing the
+  // copyEnabled/copyFolder state fields (UI is unchanged) to keep the diff small.
+  try { const pf = (await D.getSetting('processed_folder')) || ''; state.copyEnabled = !!pf; state.copyFolder = pf; } catch {}
+  try { state.diag = (await D.getSetting('telemetry_enabled')) === 'true'; } catch {}
   try {
     const info = await D.getOutputStructureInfo();
     _obTokens = info.tokens || [];
@@ -71,55 +83,54 @@ async function loadCurrent() {
 }
 
 // ── Output organization (folder + file-name builders) ────────────────────────────
-function obRenderTokens(listId, input) {
+function obRenderTokens(listId, editor) {
   const list = document.getElementById(listId);
   if (!list) return;
   list.innerHTML = '';
   for (const t of _obTokens) {
     const chip = document.createElement('span');
-    chip.className = 'ob-chip';
-    chip.title = `Insert ${t.token}`;
-    chip.innerHTML = `${t.token}<span class="ob-chip-lbl">${t.label}</span>`;
-    chip.addEventListener('click', () => obInsert(input, t.token));
+    chip.className = 'pe-chip';                     // a friendly "block" — no {token} code on screen
+    chip.title = `Add ${t.label}`;
+    chip.textContent = t.short || t.label;
+    chip.addEventListener('mousedown', (e) => e.preventDefault());   // keep the caret in the field
+    chip.addEventListener('click', () => editor.insertToken(t.token));
     list.appendChild(chip);
   }
 }
-function obInsert(input, token) {
-  const s = input.selectionStart ?? input.value.length;
-  const e = input.selectionEnd   ?? input.value.length;
-  input.value = input.value.slice(0, s) + token + input.value.slice(e);
-  input.focus();
-  input.selectionStart = input.selectionEnd = s + token.length;
-  obSaveAndPreview();
-}
 let _obPreviewDebounce = null;
 async function obUpdatePreview() {
-  const fEl = $('#ob-folder-pattern'), nEl = $('#ob-filename-pattern'), pEl = $('#ob-output-preview');
-  if (!fEl || !nEl || !pEl) return;
+  const pEl = $('#ob-output-preview');
+  if (!pEl || !folderEditor || !filenameEditor) return;
   try {
     const root = (await D.getSetting('output_folder')) || state.outputFolder || 'Output folder';
-    const r = await D.previewOutputPath(fEl.value.trim(), nEl.value.trim());
+    const r = await D.previewOutputPath(folderEditor.getValue().trim(), filenameEditor.getValue().trim());
     pEl.textContent = [root, ...(r.segments || []), r.filename].join('  ›  ');
   } catch {}
 }
 async function obSaveAndPreview() {
-  const fEl = $('#ob-folder-pattern'), nEl = $('#ob-filename-pattern');
-  state.folderPattern   = (fEl.value || '').trim();
-  state.filenamePattern = (nEl.value || '').trim();
+  if (!folderEditor || !filenameEditor) return;
+  state.folderPattern   = (folderEditor.getValue() || '').trim();
+  state.filenamePattern = (filenameEditor.getValue() || '').trim();
   try { await D.setSetting('output_folder_pattern', state.folderPattern); } catch {}
   try { await D.setSetting('filename_pattern', state.filenamePattern); } catch {}
   clearTimeout(_obPreviewDebounce);
   _obPreviewDebounce = setTimeout(obUpdatePreview, 250);
 }
+// Swap the two raw "{token}/…" text inputs for pill editors (shared/pattern-editor.js):
+// each known token renders as a friendly block; separators/custom text stay typed. The
+// STORED value is still the same pattern string, so preview + filing are unchanged.
 function setupOrganization() {
   const fEl = $('#ob-folder-pattern'), nEl = $('#ob-filename-pattern');
   if (!fEl || !nEl) return;
-  fEl.value = state.folderPattern;
-  nEl.value = state.filenamePattern;
-  obRenderTokens('ob-folder-tokens', fEl);
-  obRenderTokens('ob-filename-tokens', nEl);
-  fEl.addEventListener('input', obSaveAndPreview);
-  nEl.addEventListener('input', obSaveAndPreview);
+  if (typeof window.createPatternEditor !== 'function') return;   // widget missing → keep saved defaults
+  if (!folderEditor) folderEditor = window.createPatternEditor(fEl,
+    { tokens: _obTokens, onChange: obSaveAndPreview, placeholder: 'Click a block below, or type — use / for a new folder level' });
+  if (!filenameEditor) filenameEditor = window.createPatternEditor(nEl,
+    { tokens: _obTokens, onChange: obSaveAndPreview, placeholder: 'Click a block below, or type' });
+  folderEditor.setValue(state.folderPattern);
+  filenameEditor.setValue(state.filenamePattern);
+  obRenderTokens('ob-folder-tokens', folderEditor);
+  obRenderTokens('ob-filename-tokens', filenameEditor);
   obUpdatePreview();
 }
 
@@ -151,7 +162,7 @@ async function commitOutputFolder() {
   return true;
 }
 
-// ── Copy processed scans to another folder (optional) ───────────────────────────
+// ── Processed-scans (drain) folder — where originals move after filing ──────────
 $$('[data-copy]').forEach(c => c.addEventListener('click', () => {
   state.copyEnabled = c.dataset.copy === 'yes';
   if (!state.copyEnabled) setHint('copyHint', 'muted', '');
@@ -165,18 +176,20 @@ $('#copyBrowseBtn').addEventListener('click', async () => {
   } catch {}
 });
 
-// Persist the two keys; path required ONLY when enabled. strict=true blocks the
+// Persist `processed_folder`; path required ONLY when enabled. strict=true blocks the
 // wizard on a missing path; strict=false (skip / defaults) treats "enabled but no
 // path" as disabled so it can never block completion.
 async function saveCopySetting(strict) {
   const folder = (state.copyFolder || '').trim();
   if (state.copyEnabled && !folder) {
-    if (strict) { setHint('copyHint', 'err', 'Choose a folder to copy into, or select No.'); return false; }
-    try { await D.setSetting('copy_after_processing_enabled', 'false'); } catch {}
+    if (strict) { setHint('copyHint', 'err', 'Choose a folder, or select Default.'); return false; }
+    try { await D.setSetting('processed_folder', ''); } catch {}
     return true;
   }
-  try { await D.setSetting('copy_after_processing_enabled', state.copyEnabled ? 'true' : 'false'); } catch {}
-  if (state.copyEnabled) { try { await D.setSetting('copy_after_processing_folder', folder); } catch {} }
+  // "Choose a folder" → set the drain folder; "Default" → clear it (a "Processed"
+  // subfolder beside the scans is used). Writes the real `processed_folder` key so the
+  // choice is remembered and shows in Settings → Files & filing.
+  try { await D.setSetting('processed_folder', state.copyEnabled ? folder : ''); } catch {}
   return true;
 }
 
@@ -188,15 +201,33 @@ $$('[data-theme-choice]').forEach(c => c.addEventListener('click', async () => {
   paintSelections();
 }));
 
+// ── Region (date order + number format) ────────────────────────────────────────
+// Set at first-run so US/EU documents parse correctly from the very first import; both
+// default to the historical UK/EU behaviour, changeable later in Settings → Processing.
+const _obDateOrder = document.getElementById('ob-date-order');
+const _obNumFmt    = document.getElementById('ob-number-format');
+(async () => {
+  try { const v = (await D.getSetting('region_date_order') || 'dmy'); if (_obDateOrder) _obDateOrder.value = ['dmy','mdy','ymd'].includes(v) ? v : 'dmy'; } catch {}
+  try { const v = (await D.getSetting('region_number_format') || 'anglo'); if (_obNumFmt) _obNumFmt.value = ['anglo','continental','french','swiss','indian'].includes(v) ? v : 'anglo'; } catch {}
+})();
+_obDateOrder?.addEventListener('change', async () => { try { await D.setSetting('region_date_order', _obDateOrder.value); } catch {} });
+_obNumFmt?.addEventListener('change', async () => { try { await D.setSetting('region_number_format', _obNumFmt.value); } catch {} });
+
 // ── Performance ────────────────────────────────────────────────────────────────
 $$('[data-threads]').forEach(c => c.addEventListener('click', async () => {
   state.threads = Number(c.dataset.threads);
   try { await D.setSetting('processing_concurrency', String(state.threads)); } catch {}
   paintSelections();
 }));
-$$('[data-mode]').forEach(c => c.addEventListener('click', async () => {
+$$('.card[data-mode]').forEach(c => c.addEventListener('click', async () => {
   state.mode = c.dataset.mode;
   try { await D.setProcessingMode(state.mode); } catch {}
+  paintSelections();
+}));
+
+// ── Diagnostics consent (opt-in, OFF by default) ────────────────────────────────
+$$('[data-diag]').forEach(c => c.addEventListener('click', () => {
+  state.diag = c.dataset.diag === 'yes';
   paintSelections();
 }));
 
@@ -208,6 +239,7 @@ async function persistDefaults() {
   try { await D.setProcessingMode(state.mode); } catch {}
   try { await D.setSetting('output_folder_pattern', state.folderPattern || '{supplier}/{year}/{month}'); } catch {}
   try { await D.setSetting('filename_pattern', state.filenamePattern || '{docType}.{date}.{ref}'); } catch {}
+  try { await D.setSetting('telemetry_enabled', state.diag ? 'true' : 'false'); } catch {}
   await saveCopySetting(false);
 }
 

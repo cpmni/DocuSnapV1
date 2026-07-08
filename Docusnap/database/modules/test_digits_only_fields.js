@@ -29,7 +29,7 @@ db.exec(`
   );
   CREATE TABLE extractions (
     id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER,
-    field_key TEXT, display_value TEXT
+    field_key TEXT, display_value TEXT, extraction_method TEXT
   );
   CREATE TABLE corrections (
     id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER,

@@ -16,6 +16,7 @@ const TYPE_MAP = { Text: 'text', Date: 'date', Currency: 'currency', Number: 'nu
 const state = {
   step: 0,
   maxStep: 5,
+  minStep: 0,          // floor — 2 when launched at a known doc (skip welcome + doc-pick)
   docs: [],            // review-queue rows to choose from
   doc: null,           // chosen row {id, folder_path, original_filename, supplier_name}
   pageDataUrl: null,
@@ -39,6 +40,12 @@ window.initHelpMode?.('help-mode-toggle', {
   'next':      'Move to the next step. On the final step this is what saves the document type, the field map and files the document.',
   'back':      'Return to the previous step. Nothing is saved until the final step, so going back is always safe.',
   'cancel':    'Stop teaching and close. Nothing is saved unless you reach and complete the final step.',
+  'user-guide':'Open the full user guide.',
+  'teach-canvas':'Draw a box around a field’s value on the page. Scan Finder reads it back so you can check it’s right.',
+  'teach-zoom':'Zoom the document in or out; Reset fits it to the pane. The page stays sharp.',
+  'rg-redraw': 'Draw the box again if the read-back wasn’t quite right.',
+  'rg-skip':   'Skip this field for now and carry on with the rest.',
+  'rg-fieldlist':'The fields for this document type, and which ones you’ve pointed out so far.',
   'help-mode': 'Help mode: click any control to see what it does. Press Esc to leave.',
 });
 $('btn-cancel').onclick = () => confirmCancel();
@@ -59,7 +66,7 @@ function setStep(n){
 function renderFooter(){
   const dots = $('dots'); dots.innerHTML='';
   for (let i=0;i<=state.maxStep;i++){ const d=document.createElement('span'); d.className='sd'+(i===state.step?' on':''); dots.appendChild(d); }
-  $('btn-back').style.visibility = state.step===0 ? 'hidden' : 'visible';
+  $('btn-back').style.visibility = state.step<=state.minStep ? 'hidden' : 'visible';
   const next = $('btn-next');
   const labels = ["Let's start →","Continue →","Continue →","Review →","File this document","Done"];
   next.textContent = labels[state.step];
@@ -77,7 +84,7 @@ function canAdvance(){
     default: return true;
   }
 }
-$('btn-back').onclick = () => { if (state.step>0) setStep(state.step-1); };
+$('btn-back').onclick = () => { if (state.step>state.minStep) setStep(state.step-1); };
 $('btn-next').onclick = onNext;
 
 async function onNext(){
@@ -115,6 +122,31 @@ async function renderDocPicker(){
   }
 }
 
+// Import a single PDF to teach (esp. when the queue is empty): stage it in a temp folder,
+// run the normal import path, then pick the new doc from the refreshed queue.
+$('btn-import-teach')?.addEventListener('click', async () => {
+  const btn = $('btn-import-teach'), st = $('import-teach-status');
+  let staged;
+  try { staged = await D.stagePdfForTeach(); } catch { staged = null; }
+  if (!staged) return;                              // cancelled
+  if (staged.error) { if (st) st.textContent = 'Could not open that file.'; return; }
+  const lbl = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Importing…';
+  if (st) st.textContent = 'Reading the document…';
+  try {
+    await D.processFolder(staged.folder, { autoFile: false });  // same import path, but DON'T auto-file (keep it in Review to teach)
+    state.docs = await D.getReviewQueue() || [];
+    const match = state.docs.filter(d => d.original_filename === staged.filename).sort((a, b) => b.id - a.id)[0];
+    if (match) state.doc = match;
+    await renderDocPicker(); renderFooter();
+    if (st) st.textContent = match ? 'Imported — selected below.' : 'Imported. Pick it below.';
+  } catch (e) {
+    if (st) st.textContent = 'Import failed: ' + (e.message || 'unknown error');
+  } finally {
+    btn.disabled = false; btn.textContent = lbl;
+  }
+});
+
 // ── Step 2: choose / create type ─────────────────────────────────────────────
 async function renderTypeStep(){
   const grid=$('type-grid'); grid.innerHTML='';
@@ -131,90 +163,50 @@ async function renderTypeStep(){
   nu.onclick=()=>selectType(nu,true);
   grid.appendChild(nu);
 }
+let dtEditor = null;   // shared DocTypeEditor (create mode); mounted lazily on "It's something new"
+
 function selectType(card,isNew){
   document.querySelectorAll('#type-grid .card').forEach(c=>c.classList.remove('sel'));
   card.classList.add('sel');
   $('new-type-panel').classList.toggle('hidden', !isNew);
-  if (isNew && !state.newFields.length){
-    // Seed the structural roles. Company + Date are MANDATORY (the backend force-
-    // creates them — ensureStructuralRoles) so they are LOCKED here (no delete/retype),
-    // mirroring Settings. Company uses the canonical scope key `supplier_name` so the
-    // backend recognises it and won't inject a duplicate — only the DISPLAY label is
-    // "Company". Reference is a pre-filled DEFAULT but intentionally REMOVABLE: the
-    // backend deliberately allows reference-less types (forcing a ref where there is
-    // none poisons filename/reference learning — see document_types.ensureStructuralRoles).
-    state.newFields=[
-      {label:'Company',          key:'supplier_name', type:'text', locked:true},
-      {label:'Reference number',                      type:'text'},
-      {label:'Date',                                  type:'date', locked:true},
-    ];
-    renderNewFields();
+  // Mount the shared friendly creator lazily and keep it across toggles, so the
+  // user's in-progress draft survives switching between cards. The component owns
+  // the locked structural roles (Company/Date) + the removable Reference seed.
+  if (isNew && !dtEditor && window.DocTypeEditor){
+    dtEditor = window.DocTypeEditor.create($('nt-editor-host'), {
+      mode:'create', api:D,
+      onValidityChange: () => renderFooter(),   // live-enable the Continue button
+    });
   }
   renderFooter();
 }
 function isNewTypeSelected(){ const s=$('type-grid').querySelector('.card.sel'); return s && s.id==='card-new'; }
-function newTypeReady(){
-  return $('nt-name').value.trim() && state.newFields.length>=1;
-}
-function slugify(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9_]/g,'_').replace(/^_+|_+$/g,''); }
-function renderNewFields(){
-  const wrap=$('nt-fields'); wrap.innerHTML='';
-  state.newFields.forEach((f,i)=>{
-    f.key = f.key || slugify(f.label);   // preserve an explicit key (e.g. supplier_name)
-    const chip=document.createElement('span'); chip.className='chip'+(f.locked?' locked':'');
-    if (f.locked){
-      // Structural role: fixed type, no delete (mirrors the Settings 🔒 lock).
-      const tl = f.type==='date'?'Date':(f.type==='currency'?'Currency':(f.type==='number'?'Number':'Text'));
-      chip.innerHTML=`<span>${esc(f.label)}</span><span class="ftype">${tl}</span>`+
-        `<span class="lock" title="Required field — it can’t be removed or retyped">🔒</span>`;
-    } else {
-      chip.innerHTML=`<span>${esc(f.label)}</span>`+
-        `<select data-i="${i}"><option value="text"${f.type==='text'?' selected':''}>Text</option>`+
-        `<option value="date"${f.type==='date'?' selected':''}>Date</option>`+
-        `<option value="currency"${f.type==='currency'?' selected':''}>Currency</option>`+
-        `<option value="number"${f.type==='number'?' selected':''}>Number</option></select>`+
-        `<span class="x" data-i="${i}">✕</span>`;
-    }
-    wrap.appendChild(chip);
-  });
-  wrap.querySelectorAll('select').forEach(sel=>sel.onchange=e=>{ state.newFields[+e.target.dataset.i].type=e.target.value; });
-  wrap.querySelectorAll('.x').forEach(x=>x.onclick=e=>{ state.newFields.splice(+e.target.dataset.i,1); renderNewFields(); renderKeySelectors(); renderFooter(); });
-  renderKeySelectors();
-}
-function renderKeySelectors(){
-  const opts=`<option value="">— choose —</option>`+state.newFields.map(f=>`<option value="${esc(f.key)}">${esc(f.label)}</option>`).join('');
-  const ref=$('nt-ref'), date=$('nt-date');
-  const prevR=ref.value, prevD=date.value;
-  ref.innerHTML=opts; date.innerHTML=opts;
-  // sensible pre-guesses
-  const g=(re)=>{const m=state.newFields.find(f=>re.test(f.label)||re.test(f.key));return m?m.key:'';};
-  ref.value = prevR || g(/number|no\b|ref|invoice|order/i) || '';
-  date.value= prevD || g(/date/i) || (state.newFields.find(f=>f.type==='date')||{}).key || '';
-}
-$('nt-field-add').onclick=()=>{ const v=$('nt-field-input').value.trim(); if(!v)return; state.newFields.push({label:v,type:/date/i.test(v)?'date':(/total|amount|price|cost/i.test(v)?'currency':'text')}); $('nt-field-input').value=''; renderNewFields(); renderFooter(); };
-$('nt-field-input').addEventListener('keydown',e=>{ if(e.key==='Enter'){e.preventDefault();$('nt-field-add').click();}});
-$('nt-name').addEventListener('input',renderFooter);
+function newTypeReady(){ return !!dtEditor && dtEditor.isReady(); }
+// (The inline create-form — chips, key selectors, and their listeners — is gone;
+//  the shared DocTypeEditor component now owns the new-type fields + role pickers.)
 
 async function commitTypeChoice(){
-  $('nt-err').textContent='';
   if (!isNewTypeSelected()){
     const card=$('type-grid').querySelector('.card.sel');
     state.docTypeSlug=card.dataset.slug; state.docTypeName=card.dataset.name;
     let types=[]; try{ types=await D.getAllDocTypes()||[]; }catch{}
     const t=types.find(x=>x.slug===state.docTypeSlug);
     state.fields=(t&&t.fields?t.fields:[]).filter(f=>f.enabled!==0).map(f=>({key:f.key,label:f.label,type:f.type,required:!!f.required}));
-    if (!state.fields.length){ $('nt-err').textContent='That type has no fields to teach.'; return false; }
+    if (!state.fields.length){ toast('That type has no fields to teach.'); return false; }
     return true;
   }
-  // create new type transactionally
-  const name=$('nt-name').value.trim();
-  const fields=state.newFields.map(f=>({key:f.key||slugify(f.label),label:f.label,type:f.type}));
-  const ref=$('nt-ref').value||null, date=$('nt-date').value||null;
-  const res=await D.createDocTypeWithFields({name,fields,ref_field_key:ref,date_field_key:date});
-  if (!res||!res.success){ $('nt-err').textContent=(res&&res.error)||'Could not create the type.'; return false; }
-  state.docTypeSlug=res.type?res.type.slug:slugify(name);
-  state.docTypeName=name;
-  state.fields=fields.map(f=>({key:f.key,label:f.label,type:f.type,required:(f.key===slugify(ref)||f.key===slugify(date))}));
+  // Create the new type via the shared editor (immediate commit; teach keeps its
+  // original step-2 timing). The editor surfaces its own validation errors inline.
+  if (!dtEditor) return false;
+  const res=await dtEditor.commit();
+  if (!res||!res.success) return false;
+  const t=res.type;
+  state.docTypeSlug = t ? t.slug : null;
+  state.docTypeName = t ? t.name : '';
+  state.fields=(t&&t.fields?t.fields:[]).map(f=>({
+    key:f.key, label:f.label, type:f.type,
+    required:(f.key===t.ref_field_key || f.key===t.date_field_key),
+  }));
   return true;
 }
 
@@ -228,20 +220,43 @@ async function commitTypeChoice(){
 let canvas, ctx, drag=null, drawnBox=null, drawMode='value';   // 'value' | 'anchor'
 // Zoom/pan for the page canvas — same model as the review preview: a CSS transform
 // (translate=pan, scale=zoom) on the canvas. Wiring + handlers live in bindCanvas.
-let tzZoom=1, tzPanX=0, tzPanY=0, _tzPan=null;
+let tzZoom=1, tzPanX=0, tzPanY=0, _tzPan=null, _fitW=0;
 const TZ_MIN=1, TZ_MAX=4, TZ_STEP=0.25;
+// Zoom by RE-SIZING the canvas (so the browser re-rasterises from the full-res backing
+// store → crisp) rather than transform:scale (which magnifies the already-downscaled
+// raster → blurry). Pan stays a translate. cpoint() normalises via getBoundingClientRect,
+// so drawing coordinates remain correct at any zoom.
 function tzApply(){
   if(!canvas) return;
-  canvas.style.transform=`translate(${tzPanX}px,${tzPanY}px) scale(${tzZoom})`;
+  if (tzZoom<=1){
+    canvas.style.maxWidth=''; canvas.style.maxHeight=''; canvas.style.width=''; canvas.style.height='';
+    canvas.style.transform='translate(0px,0px)';
+  } else {
+    if(!_fitW){ _fitW = canvas.getBoundingClientRect().width || canvas.offsetWidth || 0; }
+    if(_fitW){
+      canvas.style.maxWidth='none'; canvas.style.maxHeight='none';
+      canvas.style.width=(_fitW*tzZoom)+'px'; canvas.style.height='auto';
+    }
+    canvas.style.transform=`translate(${tzPanX}px,${tzPanY}px)`;
+  }
   const lvl=$('tz-level'); if(lvl) lvl.textContent=Math.round(tzZoom*100)+'%';
 }
-function tzSet(z){ tzZoom=Math.max(TZ_MIN,Math.min(TZ_MAX,z)); tzApply(); }
-function tzReset(){ tzZoom=1; tzPanX=0; tzPanY=0; tzApply(); }
+function tzSet(z){ const nz=Math.max(TZ_MIN,Math.min(TZ_MAX,z)); if(nz>1 && tzZoom<=1) _fitW=0; tzZoom=nz; tzApply(); }
+function tzReset(){ tzZoom=1; tzPanX=0; tzPanY=0; _fitW=0; tzApply(); }
+// Render the DISPLAY at a higher scale than the 1.5/108 DPI default so the page is crisp
+// on a large/zoomed pane; the OCR crop is downscaled back to OCR_RENDER_SCALE in cropB64
+// so read quality is unchanged. (Only applies to PDFs — an image file is returned at its
+// native scan resolution, not re-rendered, so its OCR crop is left as-is.)
+const TEACH_RENDER_SCALE = 4.0;   // 288 DPI display render (was 3.0/216) — crisper teach preview
+// OCR reads degraded scans cleanest at a low resolution; a value line ~this many px tall
+// is the sweet spot region.py reads well. The OCR crop is downscaled to land near here
+// regardless of the (possibly much higher) DISPLAY render — see cropB64.
+const OCR_TARGET_H = 28;
 async function startRegionStep(){
   canvas=$('pageCanvas'); ctx=canvas.getContext('2d');
   if (!state.img){
     try{
-      const pages=await D.getDocumentPages(state.doc.id, state.doc.folder_path, state.doc.original_filename);
+      const pages=await D.getDocumentPages(state.doc.id, state.doc.folder_path, state.doc.original_filename, TEACH_RENDER_SCALE);
       state.pageDataUrl=Array.isArray(pages)?pages[0]:null;
     }catch{ state.pageDataUrl=null; }
     if (!state.pageDataUrl){ $('rg-prompt').textContent="Couldn't load that page."; return; }
@@ -260,9 +275,11 @@ function fitCanvas(){
   // (#pageCanvas max-width/max-height) downscales it to fit the pane; the transform
   // handles zoom. Only ever downscale an oversized scan (memory guard); never upscale.
   const natW=state.img.naturalWidth, natH=state.img.naturalHeight;
-  const CAP=2800, s=Math.min(1, CAP/Math.max(natW,natH));
+  // Keep the full high-DPI render (was 2800, which downscaled a 4.0 render and softened it).
+  const CAP=4000, s=Math.min(1, CAP/Math.max(natW,natH));
   canvas.width=Math.round(natW*s);
   canvas.height=Math.round(natH*s);
+  _fitW=0;   // new buffer → re-measure the fit width on next zoom
 }
 function redrawCanvas(){
   if (!state.img) return;
@@ -324,7 +341,17 @@ function bindCanvas(){
   window.addEventListener('mouseup',()=>{ if(_tzPan){ _tzPan=null; canvas.style.cursor=''; } });
   // CSS auto-fits the full-res buffer to the pane, so the page scales on maximise;
   // redraw so the overlay boxes (and their on-screen stroke width) track the new size.
-  window.addEventListener('resize',()=>{ if(state.img) redrawCanvas(); });
+  // When ZOOMED, the explicit canvas width is _fitW*zoom — _fitW is the OLD pane's fit,
+  // so re-measure it against the resized pane (clear inline sizing → read fit → re-apply).
+  window.addEventListener('resize',()=>{
+    if(!state.img) return;
+    if(tzZoom>1){
+      canvas.style.maxWidth=''; canvas.style.maxHeight=''; canvas.style.width=''; canvas.style.height='';
+      _fitW = canvas.getBoundingClientRect().width || 0;
+      tzApply();
+    }
+    redrawCanvas();
+  });
 }
 function curField(){ return state.fields[state.fieldIndex]; }
 function setValueBanner(f){
@@ -335,20 +362,34 @@ function setValueBanner(f){
 function promptField(){
   const f=curField(); if(!f) return;
   drawMode='value';
+  { const cc=$('rg-confirm'); if(cc) cc.innerHTML=''; }   // clear any prior read-back overlay
   setValueBanner(f);
-  $('rg-readback').innerHTML=`<div class="muted" style="margin-top:4px">Or, if this field is always the same on every document of this type: <button class="btn link" id="rb-fixed" style="padding:4px 8px">Fixed value</button></div>`;
+  // Fixed-value alternative — presented as a prominent accent card (not a buried muted
+  // link) so a first-time user can clearly see they DON'T have to draw a box for a field
+  // whose value never changes (e.g. the company name).
+  $('rg-readback').innerHTML=
+    `<div style="margin-top:12px;padding:12px 14px;background:var(--accent-bg);border:1px solid var(--accent);`+
+        `border-radius:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">`+
+      `<div style="flex:1;min-width:170px">`+
+        `<div style="font-weight:600;font-size:13px;color:var(--text)">📌 Always the same on every document?</div>`+
+        `<div class="muted" style="font-size:12px;margin-top:3px">If the ${esc(f.label)} never changes (e.g. the `+
+          `company name), you don't need to draw a box — just type it once.</div>`+
+      `</div>`+
+      `<button class="btn" id="rb-fixed" style="white-space:nowrap">Set a fixed value →</button>`+
+    `</div>`;
   $('rb-fixed').onclick=()=>showFixedInput(f);
   drawnBox=null; redrawCanvas();
   renderFieldRail();
 }
 function showFixedInput(f){
   drawMode='value';
+  { const cc=$('rg-confirm'); if(cc) cc.innerHTML=''; }
   $('rg-prompt').textContent=`${f.label} — type the fixed value`;
   $('rg-sub').textContent=`This value is always the same on every document of this type (e.g. the company name).`;
   const existing=state.results[f.key];
   const prev=(existing&&existing.status==='fixed')?existing.value||'':'';
   $('rg-readback').innerHTML=
-    `<input type="text" id="rb-fixed-input" value="${esc(prev)}" placeholder="e.g. Document Solutions" `+
+    `<input type="text" id="rb-fixed-input" value="${esc(prev)}" placeholder="e.g. Acme Supplies Ltd" `+
     `style="width:100%;background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-radius:8px;padding:10px 12px;font-size:14px;font-family:inherit;margin-bottom:10px">`+
     `<div style="display:flex;gap:8px">`+
       `<button class="btn primary" id="rb-fixed-save">Save →</button>`+
@@ -382,12 +423,13 @@ function renderFieldRail(){
 }
 async function readBack(box){
   const f=curField();
-  $('rg-readback').innerHTML='<span class="muted">Reading…</span>';
+  $('rg-readback').innerHTML='';   // hide the per-field "fixed value?" card while confirming a read
+  $('rg-confirm').innerHTML='<span class="muted">Reading…</span>';
   let value=''; try{ value=(await D.ocrRegion(await cropB64(box)))||''; }catch{}
   value=(value||'').trim();
   const anchor=await autoLabel(box);
   if (!value){
-    $('rg-readback').innerHTML=
+    $('rg-confirm').innerHTML=
       `<div class="warn">Couldn't read that clearly. Try a bigger box, or type the value:</div>`+
       `<div style="margin-top:8px;display:flex;gap:8px;align-items:center">`+
         `<input type="text" id="rb-manual-input" style="flex:1;background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-radius:8px;padding:8px 10px;font-size:14px;font-family:inherit" placeholder="${esc(f.label)} value…">`+
@@ -404,7 +446,7 @@ async function readBack(box){
 }
 // Value is stored; let the user confirm it before moving to the anchor step.
 function showValueConfirm(f, r){
-  $('rg-readback').innerHTML=
+  $('rg-confirm').innerHTML=
     `<div>I read: <span class="val mono">${esc(r.value)}</span> — is that right?</div>`+
     `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">`+
       `<button class="btn primary" id="rb-yes">Yes →</button>`+
@@ -418,28 +460,58 @@ function showValueConfirm(f, r){
 function enterAnchorMode(){
   const f=curField(), r=f&&state.results[f.key]; if(!r) return;
   drawMode='anchor';
-  $('rg-prompt').textContent=`Step 2 — mark the label for ${f.label}`;
-  $('rg-sub').textContent=`Draw a box around the printed label near the value (e.g. "${f.label}:"). You can draw it anywhere — the relative offset is remembered. Or skip if there's no clear label.`;
-  const lbl=r.anchor_text
-    ?`Auto-detected: <span class="mono">"${esc(r.anchor_text)}"</span>`
-    :'No label auto-detected — will use position only.';
-  $('rg-readback').innerHTML=
+  $('rg-prompt').textContent=`Step 2 — confirm the label for ${f.label}`;
+  $('rg-sub').textContent=`Scan Finder follows a printed label so the field keeps reading when the layout shifts. Confirm the detected label and its direction, draw a different box, or continue without one.`;
+  renderAnchorReadout();
+  redrawCanvas();
+}
+// The anchor read-out + the Left/Above direction question. Factored out so the toggle
+// re-renders after a re-detect. The primary button KEEPS the detected label (or accepts
+// position-only) and advances — it never discards a detected label.
+function renderAnchorReadout(){
+  const f=curField(), r=f&&state.results[f.key]; if(!r) return;
+  const hasLabel = !!r.anchor_text;
+  const dir = r.anchor_dir || 'left';
+  const lbl = hasLabel
+    ? `Detected label: <span class="mono">"${esc(r.anchor_text)}"</span>`
+    : 'No label found here — try the other direction, draw one, or continue without.';
+  const keepText = hasLabel ? 'Keep this label →' : 'Continue without a label →';
+  $('rg-confirm').innerHTML=
     `<div class="muted" style="font-size:13px">${lbl}</div>`+
-    `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">`+
-      `<button class="btn primary" id="rb-skip-anchor">Skip label →</button>`+
+    `<div style="margin-top:9px;font-size:13px">Is the label to the <b>left</b> of the value, or <b>above</b> it?</div>`+
+    `<div style="margin-top:6px;display:flex;gap:6px">`+
+      `<button class="btn ${dir==='left'?'primary':'ghost'}" id="rb-dir-left">← Left</button>`+
+      `<button class="btn ${dir==='above'?'primary':'ghost'}" id="rb-dir-above">↑ Above</button>`+
+    `</div>`+
+    `<div style="margin-top:11px;display:flex;gap:8px;flex-wrap:wrap">`+
+      `<button class="btn primary" id="rb-skip-anchor">${keepText}</button>`+
       `<button class="btn ghost" id="rb-redraw-val">← Redraw value</button>`+
     `</div>`;
+  $('rb-dir-left').onclick=()=>redetectAnchor('left');
+  $('rb-dir-above').onclick=()=>redetectAnchor('above');
   $('rb-skip-anchor').onclick=()=>{ r.status='done'; drawMode='value'; advanceField(); };
   $('rb-redraw-val').onclick=()=>{ delete state.results[f.key]; promptField(); };
+}
+// Re-run label detection in the chosen direction (the Left/Above toggle) and refresh.
+async function redetectAnchor(dir){
+  const f=curField(), r=f&&state.results[f.key]; if(!r||!r.target) return;
+  $('rg-confirm').innerHTML='<span class="muted">Looking '+(dir==='left'?'to the left':'above the value')+'…</span>';
+  try{
+    const a=await autoLabel(r.target, dir);
+    r.anchor=a.box; r.anchor_text=a.anchor_text; r.anchor_dir=a.dir||dir;
+  }catch{ r.anchor_dir=dir; }
   redrawCanvas();
+  renderAnchorReadout();
 }
 async function captureAnchor(box){
   const f=curField(), r=f&&state.results[f.key]; if(!r){ drawMode='value'; return; }
-  $('rg-readback').innerHTML='<span class="muted">Reading the label…</span>';
+  $('rg-confirm').innerHTML='<span class="muted">Reading the label…</span>';
   let text=''; try{ const res=await D.ocrRegionBoxes(await cropB64(box)); text=res&&res.text?String(res.text).trim():''; }catch{}
   text=(text||'').split('\n')[0].slice(0,40);
   r.anchor={x:box.x,y:box.y,w:box.w,h:box.h};
   r.anchor_text = text || r.anchor_text || null;
+  const v=r.target||{};   // direction implied by where they drew it, for the read-out
+  r.anchor_dir = (typeof v.y==='number' && (box.y+box.h) <= (v.y+(v.h||0)*0.5)) ? 'above' : 'left';
   r.anchorManual = true;
   r.status = 'done';
   drawMode='value';
@@ -448,7 +520,7 @@ async function captureAnchor(box){
   advanceField();
 }
 function store(f,box,anchor,value,pending){
-  state.results[f.key]={ value, target:box, anchor:anchor.box, anchor_text:anchor.anchor_text, status:pending?'pending':'done' };
+  state.results[f.key]={ value, target:box, anchor:anchor.box, anchor_text:anchor.anchor_text, anchor_dir:anchor.dir||'left', status:pending?'pending':'done' };
   if (!pending) advanceField();
 }
 function advanceField(){
@@ -456,47 +528,69 @@ function advanceField(){
   const next=state.fields.findIndex((f,i)=>i>state.fieldIndex && !state.results[f.key] || (i>state.fieldIndex && state.results[f.key] && state.results[f.key].status==='pending'));
   const firstMissing=state.fields.findIndex(f=>!state.results[f.key]);
   if (firstMissing>=0){ state.fieldIndex=firstMissing; promptField(); }
-  else { renderFieldRail(); $('rg-readback').innerHTML='<div class="muted">All details captured — choose <b>Review →</b> below.</div>'; }
+  else { renderFieldRail(); $('rg-confirm').innerHTML='<div class="muted">All details captured — choose <b>Review →</b> below.</div>'; }
 }
 $('rg-redraw').onclick=()=>{ const f=curField(); if(f) delete state.results[f.key]; promptField(); };
 $('rg-skip').onclick=()=>{ const f=curField(); if(!f)return; state.results[f.key]={value:'',target:null,anchor:null,anchor_text:null,status:'skip'}; advanceField(); };
 
-// crop a normalized box from the natural image → base64 PNG (no data: prefix)
+// crop a normalized box from the natural image → base64 PNG (no data: prefix).
+// The DISPLAY render is high-DPI for crispness, but OCR reads cleanest at ~108 DPI, so
+// for a PDF (re-rendered at TEACH_RENDER_SCALE) the crop is downscaled back to
+// OCR_RENDER_SCALE before OCR — read quality matches the old behaviour exactly. An image
+// file is at its native scan resolution (not re-rendered), so it's left untouched.
 async function cropB64(box, pad){
   const im=state.img, natW=im.naturalWidth, natH=im.naturalHeight;
   const x=Math.max(0,(box.x-(pad?pad:0))*natW), y=Math.max(0,(box.y-(pad?pad:0))*natH);
   const w=Math.min(natW-x,(box.w+(pad?pad*2:0))*natW), h=Math.min(natH-y,(box.h+(pad?pad*2:0))*natH);
-  const c=document.createElement('canvas'); c.width=Math.max(1,Math.round(w)); c.height=Math.max(1,Math.round(h));
+  // Downscale a TALL (high-DPI) crop so its line-height lands near the OCR sweet spot.
+  // Resolution-INDEPENDENT: it targets the crop's own pixel height, so it never assumes
+  // the display render scale (a scale mismatch can't over-shrink the crop to junk) and
+  // only ever downscales (region.py upscales anything too small itself).
+  const ds = h > OCR_TARGET_H ? (OCR_TARGET_H / h) : 1.0;
+  const c=document.createElement('canvas');
+  c.width=Math.max(1,Math.round(w*ds)); c.height=Math.max(1,Math.round(h*ds));
   c.getContext('2d').drawImage(im,x,y,w,h,0,0,c.width,c.height);
   return c.toDataURL('image/png').split(',')[1];
 }
-// Auto-detect the label: OCR the band immediately LEFT of the value, then ABOVE.
-async function autoLabel(box){
-  const bandW=Math.min(box.x,0.20);
+// Auto-detect the label. Scans the WHOLE row to the LEFT of the value (not a narrow 20%
+// window, which clipped a far-left label), then falls back to ABOVE — mirroring the Review
+// ⊕ search. `forceDir` ('left'|'above') restricts the search to one direction (the toggle).
+async function autoLabel(box, forceDir){
+  const leftW = Math.max(0, box.x);                                   // all the way to the left edge
+  const left  = {x:Math.max(0,box.x-leftW), y:box.y, w:leftW, h:box.h, dir:'left'};
+  const above = {x:box.x, y:Math.max(0,box.y-box.h*1.3), w:box.w, h:box.h*1.1, dir:'above'};
   const tries=[];
-  if (bandW>0.02) tries.push({x:box.x-bandW,y:box.y,w:bandW,h:box.h, dir:'left'});
-  if (box.y>0.02) tries.push({x:box.x,y:Math.max(0,box.y-box.h*1.3),w:box.w,h:box.h*1.1, dir:'above'});
+  if (forceDir==='left')        { if (leftW>0.02) tries.push(left); }
+  else if (forceDir==='above')  { if (box.y>0.02) tries.push(above); }
+  else                          { if (leftW>0.02) tries.push(left); if (box.y>0.02) tries.push(above); }
   for (const band of tries){
     try{
       const res=await D.ocrRegionBoxes(await cropB64(band));
       const text=res&&res.text?String(res.text).trim():'';
       if (text && text.replace(/[^A-Za-z]/g,'').length>=3){
         let abox={x:band.x,y:band.y,w:band.w,h:band.h};
-        if (Array.isArray(res.box)){ // tighten to the detected word (box in crop-original px)
-          const cw=band.w*state.img.naturalWidth, ch=band.h*state.img.naturalHeight;
+        if (Array.isArray(res.box)){ // tighten to the detected word (box in the DOWNSCALED OCR-crop px)
+          // cropB64 downscaled the band crop by the SAME height-target rule, so region.py's
+          // box is in that downscaled space — divide by naturalHeight*ds (computed from the
+          // band's own pixel height) to get the page-normalised position.
+          const bandHpx=band.h*state.img.naturalHeight;
+          const ds=bandHpx>OCR_TARGET_H?(OCR_TARGET_H/bandHpx):1.0;
+          const nW=state.img.naturalWidth*ds, nH=state.img.naturalHeight*ds;
           const [l,t,w,h]=res.box;
-          if (cw>0&&ch>0&&w>0&&h>0){
-            abox={x:band.x+l/state.img.naturalWidth, y:band.y+t/state.img.naturalHeight,
-                  w:w/state.img.naturalWidth, h:h/state.img.naturalHeight};
+          if (nW>0&&nH>0&&w>0&&h>0){
+            abox={x:band.x+l/nW, y:band.y+t/nH, w:w/nW, h:h/nH};
           }
         }
-        return {box:abox, anchor_text:text.split('\n')[0].slice(0,40)};
+        return {box:abox, anchor_text:text.split('\n')[0].slice(0,40), dir:band.dir};
       }
     }catch{}
   }
-  // No label found: use a synthetic anchor just left of the value (no text).
+  // No label found: synthetic anchor in the requested (or left) direction, no text.
+  if (forceDir==='above' && box.y>0.02){
+    return {box:{x:box.x,y:Math.max(0,box.y-box.h*1.2),w:box.w,h:box.h}, anchor_text:null, dir:'above'};
+  }
   const ab={x:Math.max(0,box.x-Math.min(box.x,0.12)),y:box.y,w:Math.min(box.x,0.12)||box.w,h:box.h};
-  return {box:ab, anchor_text:null};
+  return {box:ab, anchor_text:null, dir:'left'};
 }
 
 // ── Step 4: summary + commit ─────────────────────────────────────────────────
@@ -584,5 +678,9 @@ $('btn-next').addEventListener('click',()=>{ if(state.step===5) finishDone(); })
       if (hit) state.doc=hit;
     }catch{}
   }
-  setStep(0);
+  // Launched from Review with a known document → skip welcome + document-selection and
+  // go straight to choosing the document type (we already know which doc this is). Floor
+  // Back at the type step so it can't return to the skipped selection.
+  if (state.targetDocId && state.doc) state.minStep = 2;
+  setStep(state.minStep);
 })();

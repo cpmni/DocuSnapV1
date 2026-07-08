@@ -1,11 +1,18 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="warm" data-mode="light"><!-- default at parse time → no flash before applyTheme runs -->
 <head>
   <meta charset="utf-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'self';" />
+        content="default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'self';" />
   <title>ScanFinder — Search</title>
   <style>
+    /* Interface, not a document: click-drag on the app chrome must not select text.
+       Inputs / textareas / true contenteditable / .selectable opt back in. */
+    html, body { -webkit-user-select:none; user-select:none; }
+    input, textarea, [contenteditable="true"], [contenteditable=""], .selectable {
+      -webkit-user-select:text; user-select:text;
+    }
+
     :root {
       /* Light theme (default). */
       --bg:#f4f6fa; --surface:#ffffff; --surface2:#eef1f7; --border:#e4e7ef; --border2:#d2d8e4;
@@ -18,15 +25,115 @@
       --r:12px; --r-sm:9px; --r-pill:999px;
       --display:'IBM Plex Sans',system-ui,sans-serif; --body:'IBM Plex Sans',system-ui,sans-serif;
       --mono:'IBM Plex Mono',ui-monospace,monospace;
+      --on-accent:#fff;
+      color-scheme:light;
+    }
+    /* ── Named themes (mirror the main app) — set via data-theme on <html> ──────── */
+    :root[data-theme="warm"]{
+      --bg:#f5f2ec;--surface:#fffdf9;--surface2:#f0ece3;--border:#e7e0d3;--border2:#d8cfbd;
+      --accent:#1f8270;--accent2:#196b5c;--ok:#1f9d63;--warn:#b07816;--err:#d64545;
+      --text:#2a2620;--muted:#756c5c;--on-accent:#fff;
+      --grad1:#e7ded0;--grad2:#f5f2ec;--nav-bg:rgba(255,253,249,.8);--card-a:#fffdf9;--card-b:#f3eee4;
+      --shadow:0 1px 2px rgba(60,50,30,.06),0 20px 44px -26px rgba(60,50,30,.20); color-scheme:light;
+    }
+    :root[data-theme="slate"]{
+      --bg:#eef1f5;--surface:#ffffff;--surface2:#e6eaf0;--border:#dde2ea;--border2:#c8cfdb;
+      --accent:#4b5bd6;--accent2:#3a48bf;--ok:#1f9d63;--warn:#b07816;--err:#d64545;
+      --text:#1a1e2b;--muted:#5f6883;--on-accent:#fff;
+      --grad1:#dfe5f1;--grad2:#eef1f5;--nav-bg:rgba(255,255,255,.8);--card-a:#ffffff;--card-b:#f3f5f9;
+      --shadow:0 1px 2px rgba(20,30,60,.06),0 20px 44px -26px rgba(20,30,60,.22); color-scheme:light;
+    }
+    :root[data-theme="dark"]{
+      --bg:#0c0e14;--surface:#13161f;--surface2:#1a1e2a;--border:#252836;--border2:#2f3347;
+      --accent:#4f8ef7;--accent2:#6ea8ff;--ok:#3ecf8e;--warn:#f7b84f;--err:#f76f6f;
+      --text:#e2e6f0;--muted:#7a82a0;--on-accent:#fff;
+      --grad1:#141d33;--grad2:#0c0e14;--nav-bg:rgba(19,22,31,.8);--card-a:#161a24;--card-b:#11141c;
+      --shadow:0 1px 2px rgba(0,0,0,.35),0 18px 40px -24px rgba(0,0,0,.7); color-scheme:dark;
+    }
+    :root[data-theme="midnight"]{
+      --bg:#0a0c12;--surface:#12151f;--surface2:#1a1e2b;--border:#232739;--border2:#313650;
+      --accent:#f5a623;--accent2:#ffbe4d;--ok:#3ecf8e;--warn:#f7b84f;--err:#f76f6f;
+      --text:#ece9e3;--muted:#868ca6;--on-accent:#1a1205;
+      --grad1:#1c1605;--grad2:#0a0c12;--nav-bg:rgba(18,21,31,.8);--card-a:#141826;--card-b:#0f121c;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 18px 40px -24px rgba(0,0,0,.75); color-scheme:dark;
+    }
+    :root[data-theme="graphite"]{
+      --bg:#0e0f11;--surface:#161719;--surface2:#1d1f22;--border:#26282b;--border2:#34373c;
+      --accent:#6354d9;--accent2:#7c6cf0;--ok:#3ecf8e;--warn:#f7b84f;--err:#f76f6f;
+      --text:#e8e8ea;--muted:#8a8c93;--on-accent:#fff;
+      --grad1:#161430;--grad2:#0e0f11;--nav-bg:rgba(22,23,25,.8);--card-a:#18191c;--card-b:#121315;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 18px 40px -24px rgba(0,0,0,.7); color-scheme:dark;
+    }
+    /* ── Seasonal (mirror the main app) ─────────────────────────────────────────── */
+    :root[data-theme="spring"]{
+      --bg:#f1f8f0;--surface:#ffffff;--surface2:#e8f3e6;--border:#dcebd7;--border2:#c4dcbd;
+      --accent:#4aa35c;--accent2:#3b8a4b;--ok:#1f9d63;--warn:#b07816;--err:#d64545;
+      --text:#25322a;--muted:#5f7663;--on-accent:#fff;
+      --grad1:#dfeede;--grad2:#f1f8f0;--nav-bg:rgba(255,255,255,.8);--card-a:#ffffff;--card-b:#eef6ec;
+      --shadow:0 1px 2px rgba(40,80,50,.06),0 20px 44px -26px rgba(40,80,50,.20); color-scheme:light;
+    }
+    :root[data-theme="summer"]{
+      --bg:#fdf8e6;--surface:#fffdf4;--surface2:#f8f0d4;--border:#f1e7c6;--border2:#e4d29a;
+      --accent:#f5b300;--accent2:#dd9c00;--ok:#1f9d63;--warn:#b07816;--err:#d64545;
+      --text:#3a3218;--muted:#7f7038;--on-accent:#3a2c00;
+      --grad1:#f6ead0;--grad2:#fdf8e6;--nav-bg:rgba(255,253,244,.82);--card-a:#fffdf4;--card-b:#f9f2db;
+      --shadow:0 1px 2px rgba(120,90,10,.07),0 20px 44px -26px rgba(120,90,10,.22); color-scheme:light;
+    }
+    :root[data-theme="autumn"]{
+      --bg:#faf3ea;--surface:#fffdfa;--surface2:#f4e8da;--border:#eaddcb;--border2:#dcc7ab;
+      --accent:#c15a20;--accent2:#a44a18;--ok:#1f9d63;--warn:#b07816;--err:#d64545;
+      --text:#352819;--muted:#7c6650;--on-accent:#fff;
+      --grad1:#f0e0cd;--grad2:#faf3ea;--nav-bg:rgba(255,253,250,.82);--card-a:#fffdfa;--card-b:#f7eee0;
+      --shadow:0 1px 2px rgba(90,50,20,.07),0 20px 44px -26px rgba(90,50,20,.22); color-scheme:light;
+    }
+    :root[data-theme="winter"]{
+      --bg:#e7eff9;--surface:#ffffff;--surface2:#dce8f7;--border:#d3e1f3;--border2:#afc9ec;
+      --accent:#2f6fd0;--accent2:#245ab3;--ok:#1f9d63;--warn:#b07816;--err:#d64545;
+      --text:#17253e;--muted:#516585;--on-accent:#fff;
+      --grad1:#d6e4f6;--grad2:#e7eff9;--nav-bg:rgba(255,255,255,.82);--card-a:#ffffff;--card-b:#e3ecf8;
+      --shadow:0 1px 2px rgba(20,45,90,.07),0 20px 44px -26px rgba(20,45,90,.24); color-scheme:light;
+    }
+    :root[data-theme="festive"]{
+      --bg:#0d1a12;--surface:#142418;--surface2:#1c3222;--border:#223a2a;--border2:#315540;
+      --accent:#d83c3c;--accent2:#ef5a5a;--ok:#4bd08a;--warn:#f0c04a;--err:#ff6b6b;
+      --text:#edeadf;--muted:#93a894;--on-accent:#fff;
+      --grad1:#12241a;--grad2:#0d1a12;--nav-bg:rgba(20,36,24,.82);--card-a:#152619;--card-b:#101f15;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 18px 40px -24px rgba(0,0,0,.75); color-scheme:dark;
     }
     * { box-sizing:border-box; }
     html,body { height:100%; }
     body {
       margin:0; font-family:var(--body); color:var(--text); font-size:14px;
-      background:
-        radial-gradient(120% 90% at 85% -10%, var(--grad1) 0%, transparent 55%),
-        radial-gradient(90% 70% at 0% 0%, var(--grad1) 0%, transparent 50%),
-        var(--grad2);
+      background-color:var(--bg);
+    }
+    /* Subtle per-theme background texture (pure CSS → CSP-safe), matching the main app's
+       branding: Warm = dots, Nordic Slate = grid, Midnight = accent glow; others flat.
+       Toned to a whisper, and the work panes sit flat on top so it only shows as light
+       chrome behind the login/connect splash. */
+    :root[data-theme="warm"] body {
+      background-image:radial-gradient(circle, color-mix(in srgb, var(--text) 4%, transparent) 1px, transparent 1.5px);
+      background-size:24px 24px;
+    }
+    :root[data-theme="slate"] body {
+      background-image:
+        linear-gradient(color-mix(in srgb, var(--text) 3%, transparent) 1px, transparent 1px),
+        linear-gradient(90deg, color-mix(in srgb, var(--text) 3%, transparent) 1px, transparent 1px);
+      background-size:40px 40px;
+    }
+    :root[data-theme="midnight"] body {
+      background-image:radial-gradient(120% 90% at 85% -10%, color-mix(in srgb, var(--accent) 7%, transparent) 0%, transparent 55%);
+      background-attachment:fixed;
+    }
+    /* Seasonal — faint repeating SVG-tile artwork ('self' files → CSP-safe, never data:). */
+    :root[data-theme="spring"] body { background-image:url('patterns/spring.svg'); background-size:150px 150px; background-attachment:fixed; }
+    :root[data-theme="summer"] body { background-image:url('patterns/summer.svg'); background-size:150px 150px; background-attachment:fixed; }
+    :root[data-theme="autumn"] body { background-image:url('patterns/autumn.svg'); background-size:150px 150px; background-attachment:fixed; }
+    :root[data-theme="winter"] body { background-image:url('patterns/winter.svg'); background-size:150px 150px; background-attachment:fixed; }
+    :root[data-theme="festive"] body {
+      background-image:
+        radial-gradient(120% 90% at 50% -10%, color-mix(in srgb, #e6c34a 12%, transparent) 0%, transparent 55%),
+        url('patterns/festive.svg');
+      background-repeat:no-repeat, repeat; background-size:cover, 150px 150px; background-attachment:fixed, fixed;
     }
     .mono { font-family:var(--mono); font-variant-numeric:tabular-nums; }
     .hidden { display:none !important; }
@@ -45,7 +152,7 @@
     .btn[disabled], .btn.is-busy { opacity:.55; pointer-events:none; }
     .btn-sm { padding:5px 10px; font-size:12px; gap:6px; }
     .btn-block { width:100%; justify-content:center; }
-    .btn-primary { background:var(--accent); border-color:var(--accent); color:#fff; box-shadow:0 8px 18px -10px var(--accent); }
+    .btn-primary { background:var(--accent); border-color:var(--accent); color:var(--on-accent); box-shadow:0 8px 18px -10px var(--accent); }
     .btn-primary:hover { filter:brightness(1.09); }
     .btn-secondary { background:var(--surface2); border-color:var(--border2); color:var(--text); }
     .btn-secondary:hover { background:var(--border); border-color:var(--accent2); }
@@ -55,6 +162,9 @@
     .btn-danger:hover { background:rgba(247,111,111,.14); border-color:var(--err); }
     .btn .ic.spin { animation:spin .8s linear infinite; }
     @keyframes spin { to { transform:rotate(360deg); } }
+    .conn-spinner { width:38px; height:38px; margin:20px auto 14px; border-radius:50%;
+      border:3px solid var(--border, rgba(127,127,127,.25)); border-top-color:var(--accent, #5b8cff);
+      animation:spin .8s linear infinite; }
 
     /* ── Inputs ──────────────────────────────────────────────────────────────── */
     input {
@@ -78,6 +188,10 @@
     .chip.deferred,.chip.recalled { color:var(--muted); background:var(--surface2); }
     .chip.claimed { color:var(--accent2); background:rgba(79,142,247,.12); border-color:rgba(79,142,247,.4); }
     .chip.rejected { color:var(--err); background:rgba(247,111,111,.12); border-color:rgba(247,111,111,.4); }
+    .chip.paid { color:#3b82f6; background:rgba(59,130,246,.12); border-color:rgba(59,130,246,.4); }
+    .dec-note { width:100%; margin:8px 0; padding:8px 10px; border:1px solid var(--border2); border-radius:var(--r-sm);
+      background:var(--surface2); color:var(--text); font:inherit; font-size:13px; }
+    .dec-note:focus { outline:none; border-color:var(--accent); }
     .meter { height:6px; width:120px; background:var(--surface2); border-radius:var(--r-pill); overflow:hidden; }
     .meter > i { display:block; height:100%; border-radius:var(--r-pill); background:var(--ok); }
     .meter.warn > i { background:var(--warn); } .meter.err > i { background:var(--err); }
@@ -110,6 +224,8 @@
       border-radius:var(--r); padding:var(--s6); width:360px; box-shadow:var(--shadow); }
     .card h1 { font-family:var(--display); font-size:20px; margin:0 0 var(--s2); letter-spacing:-.01em; }
     .brandmark { width:30px; height:30px; color:var(--accent); margin-bottom:var(--s3); }
+    /* The brand mark is the real logo (one img; src swapped light/dark by syncLogos). */
+    img.brandmark { object-fit:contain; }
     .card .sub { color:var(--muted); font-size:13px; margin:0 0 var(--s4); }
     .conn { display:inline-flex; align-items:center; gap:7px; font-size:12px; color:var(--muted);
       background:var(--surface2); border:1px solid var(--border); border-radius:var(--r-pill); padding:4px 10px; margin-bottom:var(--s4); }
@@ -142,7 +258,7 @@
 
     /* ── App shell ───────────────────────────────────────────────────────────── */
     #app { height:100vh; display:flex; flex-direction:row; }
-    #view-search, #view-mailbox { flex:1; display:flex; flex-direction:column; min-height:0; }
+    #view-search, #view-mailbox, #view-review, #view-recycle { flex:1; display:flex; flex-direction:column; min-height:0; min-width:0; }
 
     /* Sidebar shell */
     .sidebar { width:216px; flex:0 0 216px; display:flex; flex-direction:column; gap:var(--s5);
@@ -158,12 +274,107 @@
     .sidebtn:hover { background:var(--surface2); color:var(--text); }
     .sidebtn.active { background:rgba(59,125,240,.10); color:var(--accent); border-color:rgba(59,125,240,.22); }
     .sidebtn .ic { width:18px; height:18px; }
-    .side-foot { margin-top:auto; display:flex; flex-direction:column; gap:var(--s3);
-      border-top:1px solid var(--border); padding-top:var(--s3); }
-    .side-user { display:flex; flex-direction:column; gap:5px; font-size:12px; color:var(--muted); }
+    /* Foot = ONE account button (identity/sign-out/about live in its popover), then a tight
+       clock · status-pill · dark group pinned at the bottom — mirrors the main app's rail. */
+    .side-foot { margin-top:auto; display:flex; flex-direction:column; gap:10px;
+      border-top:1px solid var(--border); padding-top:10px; }
+    .account-btn { display:flex; align-items:center; gap:8px; width:100%; padding:6px 8px;
+      border:1px solid transparent; border-radius:var(--r-sm); background:transparent; cursor:pointer;
+      color:var(--text); font:inherit; text-align:left; transition:background .15s; }
+    .account-btn:hover { background:var(--surface2); }
+    .acct-avatar { flex:0 0 auto; width:26px; height:26px; border-radius:50%; display:flex;
+      align-items:center; justify-content:center; background:var(--accent); color:var(--on-accent,#fff);
+      font-size:11px; font-weight:700; text-transform:uppercase; }
+    .acct-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+      font-size:13px; font-weight:600; }
+    .acct-caret { flex:0 0 auto; color:var(--muted); font-size:11px; }
+    .side-bottom { display:flex; flex-direction:column; gap:6px; align-items:stretch; }
+    .side-clock { text-align:center; padding:2px 0; }
+    .side-time { font-family:var(--mono); font-size:22px; font-weight:700; color:var(--text); line-height:1.1; letter-spacing:.02em; }
+    .side-date { font-size:11px; color:var(--muted); margin-top:2px; }
+    .side-status { display:inline-flex; align-self:center; align-items:center; gap:6px; padding:4px 11px;
+      border-radius:var(--r-pill); font-size:11px; font-weight:600; }
+    .side-status .dot { width:7px; height:7px; }
+    .side-status.status-ok   { background:rgba(31,157,99,.13);  color:var(--ok,#1f9d63); }
+    .side-status.status-warn { background:rgba(176,120,22,.15); color:var(--warn,#b07816); }
+    .side-status.status-err  { background:rgba(214,69,69,.15);  color:var(--err,#d64545); }
+    .side-dark { display:flex; align-items:center; justify-content:space-between; gap:8px; cursor:pointer;
+      padding:6px var(--s2); border-radius:var(--r-sm); font-size:12px; color:var(--muted); }
+    .side-dark:hover { background:var(--surface2); color:var(--text); }
+    /* Account popover (anchored upward off the account button) */
+    #account-menu { position:fixed; z-index:1000; min-width:190px; padding:6px; background:var(--surface);
+      border:1px solid var(--border2); border-radius:10px; box-shadow:0 16px 40px rgba(0,0,0,.4);
+      display:flex; flex-direction:column; gap:2px; }
+    #account-menu .am-head { padding:6px 10px 8px; border-bottom:1px solid var(--border); margin-bottom:4px; }
+    #account-menu .am-name { font-size:13px; font-weight:600; color:var(--text); }
+    #account-menu .am-role { font-size:11px; color:var(--muted); margin-top:1px; }
+    #account-menu button { display:flex; align-items:center; gap:8px; text-align:left; padding:8px 10px;
+      border:none; border-radius:6px; background:transparent; color:var(--text); font:inherit; font-size:13px; cursor:pointer; }
+    #account-menu button:hover { background:var(--surface2); }
+    #account-menu button .ic { width:16px; height:16px; }
+    .switch { position:relative; display:inline-block; width:38px; height:22px; flex:0 0 auto; }
+    .switch input { position:absolute; opacity:0; width:0; height:0; }
+    .switch-track { position:absolute; inset:0; border-radius:var(--r-pill); background:var(--surface2);
+      border:1px solid var(--border2); transition:background .15s, border-color .15s; }
+    .switch-track::before { content:""; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%;
+      background:var(--surface); box-shadow:0 1px 2px rgba(0,0,0,.25); transition:transform .15s; }
+    .switch input:checked + .switch-track { background:var(--accent); border-color:var(--accent); }
+    .switch input:checked + .switch-track::before { transform:translateX(16px); }
+    /* Settings view (built into the window) */
+    #view-settings { flex:1; overflow:auto; padding:var(--s5); }
+    .set-section { max-width:560px; }
+    .set-section h2 { font-size:16px; margin:0 0 var(--s2); font-weight:600; }
+    .set-section .sub { color:var(--muted); font-size:13px; margin:0 0 var(--s4); }
+    .set-row { display:flex; align-items:center; justify-content:space-between; gap:var(--s4);
+      padding:var(--s4); border:1px solid var(--border); border-radius:var(--r); background:var(--surface);
+      box-shadow:var(--shadow); margin-bottom:var(--s3); }
+    .set-row .set-lbl { font-size:14px; font-weight:600; }
+    .set-row .set-hint { font-size:12px; color:var(--muted); margin-top:3px; }
+    .set-row select { background:var(--surface2); color:var(--text); border:1px solid var(--border2);
+      border-radius:var(--r-sm); padding:8px 10px; font:inherit; min-width:170px; }
+    .set-row select:focus { outline:none; border-color:var(--accent); }
+    /* Recycle-bin right-click menu */
+    #bin-menu { position:fixed; z-index:1000; min-width:170px; padding:5px; background:var(--surface);
+      border:1px solid var(--border2); border-radius:8px; box-shadow:0 12px 30px rgba(0,0,0,.35);
+      display:flex; flex-direction:column; gap:2px; }
+    #bin-menu button { text-align:left; padding:8px 10px; border:none; border-radius:6px; background:transparent;
+      color:var(--text); font:inherit; font-size:13px; cursor:pointer; }
+    #bin-menu button:hover { background:var(--surface2); }
+    #bin-menu button.danger { color:var(--err); }
+    #bin-menu button.danger:hover { background:rgba(214,69,69,.12); }
+
+    /* Home dashboard */
+    #view-home { flex:1; overflow:auto; padding:var(--s5); }
+    .home-wrap { max-width:980px; margin:0 auto; display:flex; flex-direction:column; gap:var(--s5); }
+    .home-hero { background:var(--surface); border:1px solid var(--border); border-radius:var(--r);
+      padding:var(--s5); box-shadow:var(--shadow); }
+    .home-hero h2 { margin:0 0 var(--s3); font-size:18px; font-weight:600; }
+    .home-search { display:flex; gap:var(--s2); align-items:center; }
+    .home-search .lead-wrap { flex:1; }
+    .home-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px,1fr)); gap:var(--s4); }
+    .home-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--r);
+      padding:var(--s4); box-shadow:var(--shadow); display:flex; flex-direction:column; gap:5px; }
+    .home-card-wide { grid-column:1 / -1; }
+    .hc-title { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+    .hc-big { font-size:34px; font-weight:700; line-height:1; color:var(--accent); }
+    .hc-big.muted { color:var(--muted); }
+    .hc-sub { font-size:13px; color:var(--muted); }
+    .home-card .btn { margin-top:8px; align-self:flex-start; }
+    .hc-list { display:flex; flex-direction:column; gap:1px; margin-top:4px; }
+    .hc-row { display:flex; justify-content:space-between; gap:var(--s3); align-items:center; padding:8px 10px;
+      border:none; background:transparent; border-radius:var(--r-sm); cursor:pointer; text-align:left;
+      color:var(--text); font:inherit; }
+    .hc-row:hover { background:var(--surface2); }
+    .hc-row-nm { font-weight:600; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .hc-row-meta { font-size:12px; color:var(--muted); flex:0 0 auto; }
+    .hc-empty, .hc-loading { color:var(--muted); font-size:13px; padding:var(--s3) 0; display:flex; align-items:center; gap:8px; }
+    .home-strip { font-size:12px; color:var(--muted); padding:var(--s3) var(--s4); background:var(--surface);
+      border:1px solid var(--border); border-radius:var(--r); text-align:center; }
 
     /* Content area + per-view header */
-    .content { flex:1; display:flex; flex-direction:column; min-height:0; }
+    /* Flat fill over the working area so the body texture (below) shows only on the
+       login/connect splash, not behind the results list or the document preview. */
+    .content { flex:1; display:flex; flex-direction:column; min-height:0; min-width:0; background:var(--bg); }
     .view-header { display:flex; align-items:center; justify-content:space-between; gap:var(--s4);
       padding:var(--s4) var(--s5) var(--s3); border-bottom:1px solid var(--border); }
     .vh-title { font-size:19px; font-weight:600; margin:0; letter-spacing:-.01em; }
@@ -194,7 +405,7 @@
       border-radius:var(--r-pill); padding:5px 12px; font-size:12px; cursor:pointer; transition:border-color .15s, color .15s; }
     .chip-btn:hover { border-color:var(--accent2); color:var(--text); }
 
-    .main { flex:1; display:flex; min-height:0; }
+    .main { flex:1; display:flex; min-height:0; min-width:0; }
     .results { width:42%; min-width:300px; border-right:1px solid var(--border); overflow:auto; }
     .results-head { padding:var(--s3) var(--s4); font-size:12px; color:var(--muted); position:sticky; top:0;
       background:var(--bg); border-bottom:1px solid var(--border); }
@@ -207,7 +418,15 @@
     .row .r1 .nm { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .row .r2 { font-size:12px; color:var(--muted); margin-top:3px; }
 
-    .preview { flex:1; overflow:auto; padding:var(--s5); }
+    .preview { flex:1; min-width:0; overflow:auto; padding:var(--s5); }
+    /* Review uses a 3-column layout (list+thumbnails · preview · fields), scoped so
+       Search/Mailbox/Recycle keep their 2-column results+preview split. */
+    #view-review .results { width:18%; min-width:173px; }
+    #view-review .preview { border-right:1px solid var(--border); }
+    #view-review .rv-panel { width:380px; min-width:320px; flex-shrink:0; overflow:auto; padding:var(--s5); }
+    /* Draggable pane dividers — resize the search/review columns (widths persist per view). */
+    .pane-resizer { flex:0 0 5px; align-self:stretch; cursor:col-resize; background:var(--border); transition:background .15s; }
+    .pane-resizer:hover { background:var(--accent); }
     .pv-head { display:flex; align-items:center; gap:var(--s3); margin-bottom:var(--s4); }
     .pv-head .ic { width:18px; height:18px; color:var(--accent); }
     .pv-head h2 { font-size:16px; margin:0; font-weight:600; }
@@ -245,7 +464,7 @@
       border-radius:var(--r-pill); padding:3px; gap:2px; }
     .seg { display:inline-flex; align-items:center; gap:6px; border:none; background:transparent; color:var(--muted);
       padding:6px 13px; border-radius:var(--r-pill); font:600 13px/1 var(--body); cursor:pointer; transition:background .15s, color .15s; }
-    .seg:hover { color:var(--text); } .seg.active { background:var(--accent); color:#fff; }
+    .seg:hover { color:var(--text); } .seg.active { background:var(--accent); color:var(--on-accent); }
     .seg.active .seg-badge { background:rgba(255,255,255,.25); color:#fff; }
     .mb-list { flex:1; overflow:auto; }
     .mb-row { padding:var(--s4); border-bottom:1px solid var(--border); }
@@ -276,10 +495,76 @@
     .about-sub { font-family:var(--mono); font-size:10px; color:var(--muted); margin-top:2px; }
     .about-copy { font-size:11px; color:var(--muted); margin-top:12px; }
     .about-actions { margin-top:16px; }
+    /* Stamped-copy lightbox */
+    .stamped-view { width:min(820px,92vw); max-height:88vh; display:flex; flex-direction:column;
+      background:var(--surface); border:1px solid var(--border2); border-radius:var(--r); box-shadow:var(--shadow); overflow:hidden; }
+    .stamped-head { display:flex; align-items:center; justify-content:space-between; padding:var(--s3) var(--s4);
+      border-bottom:1px solid var(--border); font-weight:600; }
+    .stamped-pages { overflow:auto; padding:var(--s4); display:flex; flex-direction:column; gap:var(--s3);
+      align-items:center; background:var(--bg); }
+    .stamped-pages img { max-width:100%; border:1px solid var(--border); border-radius:var(--r-sm); }
+    /* Review */
+    .rv-row { width:100%; text-align:left; padding:var(--s4); border:none; border-bottom:1px solid var(--border);
+      background:transparent; cursor:pointer; display:flex; align-items:center; gap:var(--s3); color:var(--text); }
+    .rv-row:hover { background:var(--surface2); }
+    .rv-row.active { background:var(--accent-bg); }
+    .rv-row .rr-main { flex:1; min-width:0; }
+    .rv-row .rr-title { font-weight:600; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .rv-row .rr-sub { font-size:12px; color:var(--muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .rv-row .rr-main .meter { width:100%; margin-top:7px; }   /* confidence bar sits BELOW the text */
+    .rv-row .rr-viewing { font-size:11px; color:var(--warn); margin-top:3px; display:flex; align-items:center; gap:4px; }
+    .rv-row .rr-viewing .ic { width:12px; height:12px; }
+    .rv-row .rr-thumb { width:42px; height:54px; flex-shrink:0; border-radius:4px; overflow:hidden;
+      background:var(--surface2); border:1px solid var(--border); }
+    .rv-row .rr-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+    .rv-banner { background:var(--accent-bg); border:1px solid var(--border2); border-radius:var(--r-sm);
+      padding:8px 12px; margin-bottom:var(--s3); font-size:13px; color:var(--text); display:flex; align-items:center; gap:7px; }
+    .rv-banner .ic { width:15px; height:15px; color:var(--warn); }
+    .rv-typebar { display:flex; align-items:center; gap:var(--s2); margin:var(--s3) 0; }
+    .rv-typebar label { font-size:12px; color:var(--muted); font-weight:600; }
+    .rv-typebar select { flex:1; padding:8px 10px; border:1px solid var(--border2); border-radius:var(--r-sm);
+      background:var(--surface); color:var(--text); font-size:14px; }
+    .rv-fields { display:flex; flex-direction:column; gap:var(--s3); margin:var(--s3) 0; }
+    .rv-fld { display:flex; flex-direction:column; gap:4px; }
+    .rv-fld > label { font-size:12px; color:var(--muted); font-weight:600; }
+    .rv-fld > label .req { color:var(--err); }
+    .rv-fld input { padding:8px 10px; border:1px solid var(--border2); border-radius:var(--r-sm);
+      background:var(--surface); color:var(--text); font-size:14px; font-family:inherit; }
+    .rv-fld.req-empty input { border-color:var(--err); }
+    .rv-fld .fwarn { font-size:11px; color:var(--warn); }
+    /* A field the host flagged for review (validation_note) — tint the row so the reviewer
+       sees WHICH field to check; the ⚠ .note line below it says why. */
+    .rv-fld.fld-warn > label { color:var(--warn); }
+    .rv-fld.fld-warn input { border-color:var(--warn); }
+    .rv-fld-conf { float:right; font-weight:400; }
+    /* Correction-only targeting: per-field "read from the document" button + draw box */
+    .rv-fld-row { display:flex; align-items:stretch; gap:6px; }
+    .rv-fld-row input { flex:1; min-width:0; }
+    .rv-target-btn { flex-shrink:0; width:34px; display:flex; align-items:center; justify-content:center;
+      border:1px solid var(--border2); background:var(--surface2); color:var(--muted); border-radius:var(--r-sm); cursor:pointer; }
+    .rv-target-btn:hover { border-color:var(--accent); color:var(--accent); }
+    /* Explicit crosshair (black core + white halo) so it paints solid immediately — the
+       keyword `crosshair` is adaptive/inverting and flickers light→dark on first paint. */
+    #review-preview.rv-targeting, #review-preview.rv-targeting .pages img {
+      cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M12 3V21M3 12H21' stroke='white' stroke-width='3' fill='none'/%3E%3Cpath d='M12 3V21M3 12H21' stroke='black' stroke-width='1.3' fill='none'/%3E%3C/svg%3E") 12 12, crosshair;
+    }
+    .rv-drawbox { position:fixed; z-index:9999; border:2px solid var(--accent);
+      background:color-mix(in srgb, var(--accent) 14%, transparent); pointer-events:none; border-radius:2px; }
+    .rv-actions { display:flex; gap:var(--s2); margin:var(--s4) 0; flex-wrap:wrap; }
   </style>
 </head>
 <body>
   <!-- Connect to server -->
+  <!-- Shown immediately on boot while reaching a SAVED server, so it's never a blank screen. -->
+  <section id="connecting" class="hidden">
+    <div class="card" style="text-align:center;">
+      <svg class="brandmark" data-ic="brand"></svg>
+      <div class="conn-spinner"></div>
+      <h1 style="margin-bottom:6px;">Connecting…</h1>
+      <p class="sub" id="connecting-sub">Reaching the main Scan Finder app…</p>
+    </div>
+  </section>
+
   <section id="connect" class="hidden">
     <div class="card">
       <svg class="brandmark" data-ic="brand"></svg>
@@ -342,14 +627,27 @@
         <div><div class="wordmark">ScanFinder</div><div class="subtag">Search client</div></div>
       </div>
       <nav class="side-nav">
-        <button id="nav-search" class="sidebtn active"><span data-ic="search"></span>Search</button>
+        <button id="nav-home" class="sidebtn active"><span data-ic="home"></span>Home</button>
+        <button id="nav-search" class="sidebtn"><span data-ic="search"></span>Search</button>
         <button id="nav-mailbox" class="sidebtn"><span data-ic="inbox"></span>Mailbox<span id="inbox-badge" class="badge hidden" style="margin-left:auto">0</span></button>
+        <button id="nav-review" class="sidebtn" style="display:none"><span data-ic="check"></span>Review<span id="review-badge" class="badge hidden" style="margin-left:auto">0</span></button>
+        <button id="nav-recycle" class="sidebtn" style="display:none"><span data-ic="trash"></span>Recycle bin</button>
+        <button id="nav-settings" class="sidebtn"><span data-ic="settings"></span>Settings</button>
       </nav>
       <div class="side-foot">
-        <div class="conn"><span id="side-conn-dot" class="dot"></span><span id="side-conn-text">…</span></div>
-        <div class="side-user"><span id="who" class="mono"></span><span id="role-chip" class="rolechip hidden"></span></div>
-        <button id="logout-btn" class="btn btn-ghost btn-sm"><span data-ic="signout"></span>Sign out</button>
-        <button id="about-btn" class="btn btn-ghost btn-sm">About</button>
+        <button id="account-btn" class="account-btn" title="Account">
+          <span class="acct-avatar" id="acct-initials">–</span>
+          <span class="acct-name" id="who">—</span>
+          <span class="acct-caret">⌃</span>
+        </button>
+        <div class="side-bottom">
+          <div class="side-clock"><div id="side-time" class="side-time">--:--</div><div id="side-date" class="side-date">&mdash;</div></div>
+          <div class="side-status" id="side-status" title="Connection status"><span id="side-conn-dot" class="dot"></span><span id="side-conn-text">…</span></div>
+          <label class="side-dark" title="Toggle dark mode">
+            <span>Dark mode</span>
+            <span class="switch"><input type="checkbox" id="side-dark-toggle"><span class="switch-track"></span></span>
+          </label>
+        </div>
       </div>
     </aside>
 
@@ -359,8 +657,23 @@
         <div id="vh-actions" class="vh-actions"></div>
       </header>
 
+    <!-- Home dashboard -->
+    <div id="view-home" class="hidden">
+      <div class="home-wrap">
+        <div class="home-hero">
+          <h2>Find a filed document</h2>
+          <div class="home-search">
+            <span class="lead-wrap"><svg data-ic="search"></svg><input id="home-search-input" class="lead-input" placeholder="Company, reference, or anything in the text" /></span>
+            <button id="home-search-btn" class="btn btn-primary"><span data-ic="search"></span>Search</button>
+          </div>
+        </div>
+        <div class="home-grid" id="home-grid"></div>
+        <div class="home-strip" id="home-strip"></div>
+      </div>
+    </div>
+
     <!-- Search -->
-    <div id="view-search">
+    <div id="view-search" class="hidden">
       <div class="searchbar">
         <div class="search-lead">
           <div class="lead-wrap">
@@ -375,6 +688,16 @@
           <label class="fieldlbl"><span>Reference</span><input id="f-reference" placeholder="INV-…" /></label>
           <label class="fieldlbl"><span>From</span><input id="f-from" type="date" /></label>
           <label class="fieldlbl"><span>To</span><input id="f-to" type="date" /></label>
+          <label class="fieldlbl"><span>Total</span>
+            <span style="display:flex; gap:4px; align-items:center;">
+              <select id="f-total-op" style="width:auto;">
+                <option value="eq">=</option>
+                <option value="gt">&gt;</option>
+                <option value="lt">&lt;</option>
+              </select>
+              <input id="f-total" inputmode="decimal" placeholder="amount" style="flex:1;" />
+            </span>
+          </label>
           <label id="unc-wrap" class="hidden" style="font-size:12px;color:var(--muted);display:flex;gap:6px;align-items:center">
             <input id="f-unc" type="checkbox" style="width:auto" /> include uncommitted</label>
         </div>
@@ -385,6 +708,7 @@
           <div id="results-head" class="results-head hidden"></div>
           <div id="results"><div class="empty">Search by company, reference, date or full text to find filed documents.</div></div>
         </div>
+        <div class="pane-resizer" data-resize="prev" data-key="client_search_list" title="Drag to resize"></div>
         <div id="preview" class="preview"><div class="empty">Select a document on the left to preview its pages and fields.</div></div>
       </div>
     </div>
@@ -402,6 +726,75 @@
         <button id="mb-refresh" class="btn btn-secondary btn-sm"><span data-ic="refresh"></span>Refresh</button>
       </div>
       <div id="mb-list" class="mb-list"><div class="empty">Loading…</div></div>
+    </div>
+
+    <!-- Review -->
+    <div id="view-review" class="hidden">
+      <div class="toolbar" style="align-items:center">
+        <div class="segmented">
+          <button class="seg active" data-rbox="queue"><span data-ic="inbox"></span>To review<span class="seg-badge badge hidden" data-rcount="queue"></span></button>
+          <button class="seg" data-rbox="deferred"><span data-ic="claim"></span>Deferred<span class="seg-badge badge hidden" data-rcount="deferred"></span></button>
+        </div>
+        <span class="spacer"></span>
+        <button id="rv-refresh" class="btn btn-secondary btn-sm"><span data-ic="refresh"></span>Refresh</button>
+      </div>
+      <div class="main">
+        <div class="results"><div id="review-list"><div class="empty">Loading…</div></div></div>
+        <div class="pane-resizer" data-resize="prev" data-key="client_review_list" title="Drag to resize"></div>
+        <div id="review-preview" class="preview"><div class="empty">Select a document on the left to review and file it.</div></div>
+        <div class="pane-resizer" data-resize="next" data-key="client_review_fields" title="Drag to resize"></div>
+        <div id="review-fields-panel" class="rv-panel"></div>
+      </div>
+    </div>
+
+    <!-- Recycle bin -->
+    <div id="view-recycle" class="hidden">
+      <div class="toolbar"><span class="spacer"></span>
+        <button id="rb-refresh" class="btn btn-secondary btn-sm"><span data-ic="refresh"></span>Refresh</button>
+      </div>
+      <div id="recycle-list" class="mb-list"><div class="empty">Loading…</div></div>
+    </div>
+
+    <!-- Settings -->
+    <div id="view-settings" class="hidden">
+      <div class="set-section">
+        <h2>Appearance</h2>
+        <p class="sub">Choose how the search client looks. Your choice is remembered on this computer.</p>
+        <div class="set-row">
+          <div>
+            <div class="set-lbl">Colour theme</div>
+            <div class="set-hint">Light and dark options to match the main app.</div>
+          </div>
+          <select id="theme-select">
+            <optgroup label="Light">
+              <option value="warm">Warm Paper</option>
+              <option value="light">Light</option>
+              <option value="slate">Nordic Slate</option>
+            </optgroup>
+            <optgroup label="Dark">
+              <option value="dark">Dark</option>
+              <option value="midnight">Midnight</option>
+              <option value="graphite">Graphite</option>
+            </optgroup>
+            <optgroup label="Seasonal">
+              <option value="spring">Spring</option>
+              <option value="summer">Summer</option>
+              <option value="autumn">Autumn</option>
+              <option value="winter">Winter</option>
+              <option value="festive">Festive</option>
+            </optgroup>
+          </select>
+        </div>
+      </div>
+      <div class="set-section">
+        <h2>Your account</h2>
+        <p class="sub">Change the password you use to sign in to this search client.</p>
+        <label class="fieldlbl"><span>Current password</span><input id="cp-current" type="password" autocomplete="current-password" /></label>
+        <label class="fieldlbl"><span>New password</span><input id="cp-new" type="password" autocomplete="new-password" placeholder="At least 8 characters" /></label>
+        <label class="fieldlbl"><span>Confirm new password</span><input id="cp-confirm" type="password" autocomplete="new-password" /></label>
+        <div id="cp-msg" class="err" style="margin-top:6px;"></div>
+        <button id="cp-btn" class="btn btn-primary btn-sm" style="margin-top:8px;">Change password</button>
+      </div>
     </div>
     </div><!-- /.content -->
   </section>
@@ -428,6 +821,18 @@
         <button id="about-licenses" class="btn btn-secondary btn-sm">Third-Party Licenses</button>
       </div>
       <button id="about-close" class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px">Close</button>
+    </div>
+  </div>
+
+  <!-- Connection-lost modal -->
+  <div id="conn-lost" class="about-overlay hidden">
+    <div class="about-card" role="alertdialog" aria-modal="true" aria-labelledby="conn-lost-title">
+      <svg class="brandmark" data-ic="refresh" style="width:42px;height:42px;color:#e0a948"></svg>
+      <div id="conn-lost-title" class="about-title">Connection lost</div>
+      <div class="about-sub" id="conn-lost-msg">The ScanFinder server is unreachable — it may have been closed, or the network dropped. Your session resumes automatically when it’s back.</div>
+      <div class="about-actions">
+        <button id="conn-lost-retry" class="btn btn-primary btn-sm"><span data-ic="refresh"></span>Retry now</button>
+      </div>
     </div>
   </div>
 

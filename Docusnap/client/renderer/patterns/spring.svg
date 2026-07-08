@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
+  <!-- Spring: a leaf and a blossom, faint -->
+  <g opacity="0.06">
+    <path d="M30 18 C40 24 40 40 30 46 C20 40 20 24 30 18 Z" fill="#3f8b4d"/>
+    <path d="M30 20 L30 44" stroke="#2b6e39" stroke-width="1" fill="none"/>
+  </g>
+  <g opacity="0.06">
+    <g fill="#e58fb0">
+      <circle cx="88" cy="76" r="5"/><circle cx="98" cy="84" r="5"/>
+      <circle cx="94" cy="96" r="5"/><circle cx="82" cy="96" r="5"/>
+      <circle cx="78" cy="84" r="5"/>
+    </g>
+    <circle cx="88" cy="87" r="3.6" fill="#f2c14e"/>
+  </g>
+</svg>

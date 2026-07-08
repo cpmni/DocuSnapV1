@@ -1,13 +1,24 @@
 // Applies synchronously from localStorage so there's no flash on load.
 // DOMContentLoaded syncs from DB and wires up the IPC listener.
+
+// Dark-FAMILY themes (drive native scrollbars/caret + the logo swap via data-mode).
+const DARK_THEMES = new Set(['dark', 'midnight', 'graphite', 'festive']);
+
+function _applyThemeAttrs(theme) {
+  theme = theme || 'light';
+  const root = document.documentElement;
+  root.setAttribute('data-theme', theme);
+  root.setAttribute('data-mode', DARK_THEMES.has(theme) ? 'dark' : 'light');
+}
+
 (function () {
-  const saved = localStorage.getItem('docusnap_theme') || 'light';
-  document.documentElement.setAttribute('data-theme', saved);
+  _applyThemeAttrs(localStorage.getItem('docusnap_theme') || 'warm');   // default theme: Warm Paper
 })();
 
 function applyTheme(theme) {
+  theme = theme || 'warm';
   localStorage.setItem('docusnap_theme', theme);
-  document.documentElement.setAttribute('data-theme', theme);
+  _applyThemeAttrs(theme);
 }
 
 window.addEventListener('DOMContentLoaded', async () => {

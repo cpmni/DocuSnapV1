@@ -46,6 +46,9 @@ contextBridge.exposeInMainWorld('docusnap', {
   // Read-only diagnostic: what the gate sees on this device (enforcement + cached
   // token state + offline decision). No network call, no state change.
   licenseGetDiagnostics: ()   => ipcRenderer.invoke('license-get-diagnostics'),
+  // Manual "re-check licence now": runs the authoritative gate (re-validate) and locks the
+  // app if the licence was revoked/expired server-side. Returns the gate decision.
+  licenseRecheck:        ()   => ipcRenderer.invoke('license-recheck'),
   // Detached search-client API hosting (admin-only; Settings → Search client access).
   clientApiGetStatus:  ()    => ipcRenderer.invoke('client-api-get-status'),
   clientApiSetEnabled: (on)  => ipcRenderer.invoke('client-api-set-enabled', on),
@@ -68,6 +71,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   windowClose:        () => ipcRenderer.send('window-close'),
   showInExplorer:     (p) => ipcRenderer.send('show-in-explorer', p),
   openFile:           (p) => ipcRenderer.send('open-file', p),
+  openFolder:         (p) => ipcRenderer.send('open-folder', p),
 
   // ── Window navigation ────────────────────────────────────────────────────────
   openReviewWindow:    ()       => ipcRenderer.send('open-review-window'),
@@ -76,7 +80,12 @@ contextBridge.exposeInMainWorld('docusnap', {
   openSettingsWindowAtTemplate: (templateId) => ipcRenderer.send('open-settings-window-at-template', templateId),
   getSettingsTemplateTarget:    ()           => ipcRenderer.invoke('get-settings-template-target'),
   onNavigateToTemplate:         (cb)         => ipcRenderer.on('navigate-to-template', (_e, id) => cb(id)),
-  openSearchWindow:    ()       => ipcRenderer.send('open-search-window'),
+  openSettingsWindowAtSection:  (section)    => ipcRenderer.send('open-settings-window-at-section', section),
+  getSettingsSectionTarget:     ()           => ipcRenderer.invoke('get-settings-section-target'),
+  onNavigateToSection:          (cb)         => ipcRenderer.on('navigate-to-section', (_e, s) => cb(s)),
+  openSearchWindow:    (q)      => ipcRenderer.send('open-search-window', q),
+  getSearchTarget:     ()       => ipcRenderer.invoke('get-search-target'),
+  onSearchSetQuery:    (cb)     => ipcRenderer.on('search-set-query', (_e, q) => cb(q)),
   getReviewTarget:     ()       => ipcRenderer.invoke('get-review-target'),
   onNavigateToDoc:     (cb)     => ipcRenderer.on('navigate-to-doc', (_e, id) => cb(id)),
   // User-guide / help window (optional section to jump to, e.g. 'review')
@@ -93,13 +102,29 @@ contextBridge.exposeInMainWorld('docusnap', {
   // First-run setup wizard
   onboardingComplete:   ()       => ipcRenderer.send('onboarding-complete'),
   openOnboarding:       ()       => ipcRenderer.send('open-onboarding'),
+  welcomeDone:          (action) => ipcRenderer.send('welcome-done', action),
+  openWelcome:          ()       => ipcRenderer.send('open-welcome'),
+  // Sandboxed practice run (Import→Review→Confirm on a bundled sample). The
+  // file-sample call is the ONLY side-effect and writes only under TEMP.
+  openTutorial:         ()       => ipcRenderer.send('open-tutorial'),
+  // Legal / Terms — read the bundled text, open it externally, record/decline acceptance.
+  getLegalText:         ()       => ipcRenderer.invoke('get-legal-text'),
+  openLegal:            ()       => ipcRenderer.send('open-legal'),
+  legalAccept:          ()       => ipcRenderer.send('legal-accept'),
+  legalDecline:         ()       => ipcRenderer.send('legal-decline'),
+  tutorialDone:         (action) => ipcRenderer.send('tutorial-done', action),
+  tutorialFileSample:   (data)   => ipcRenderer.invoke('tutorial-file-sample', data),
+  tutorialOpenFolder:   ()       => ipcRenderer.send('tutorial-open-folder'),
+  tutorialCleanup:      ()       => ipcRenderer.invoke('tutorial-cleanup'),
+  onWelcomeGotoImport:  (cb)     => ipcRenderer.on('welcome-goto-import', () => cb()),
   suggestedOutputFolder:()       => ipcRenderer.invoke('onboarding-suggested-folder'),
   validateOutputFolder: (folder) => ipcRenderer.invoke('onboarding-validate-folder', folder),
 
   // ── Folder processing ────────────────────────────────────────────────────────
   pickFolder:         ()     => ipcRenderer.invoke('pick-folder'),
   pickOutputFolder:   ()     => ipcRenderer.invoke('pick-output-folder'),
-  processFolder:      (f)    => ipcRenderer.invoke('process-folder', f),
+  processFolder:      (f, opts) => ipcRenderer.invoke('process-folder', f, opts),
+  stagePdfForTeach:   ()     => ipcRenderer.invoke('stage-pdf-for-teach'),
   stopProcessing:     ()     => ipcRenderer.invoke('stop-processing'),
   onProgress:         (cb)   => ipcRenderer.on('process-progress', (_e, m) => cb(m)),
   removeProgress:     ()     => ipcRenderer.removeAllListeners('process-progress'),
@@ -110,19 +135,35 @@ contextBridge.exposeInMainWorld('docusnap', {
   getAllDocTypesAll:    ()           => ipcRenderer.invoke('get-all-doc-types-all'),
   addDocumentType:     (data)       => ipcRenderer.invoke('add-document-type', data),
   updateDocumentType:  (id, ch)     => ipcRenderer.invoke('update-document-type', id, ch),
+  getDoctypeCatalog:   ()           => ipcRenderer.invoke('get-doctype-catalog'),
+  addDoctypePresets:   (slugs)      => ipcRenderer.invoke('add-doctype-presets', slugs),
   addField:            (data)       => ipcRenderer.invoke('add-field', data),
   updateField:         (id, ch)     => ipcRenderer.invoke('update-field', id, ch),
   deleteField:         (id)         => ipcRenderer.invoke('delete-field', id),
   getValidationPatterns: ()         => ipcRenderer.invoke('get-validation-patterns'),
+  getFieldPatterns:      ()         => ipcRenderer.invoke('get-field-patterns'),
+  getFieldSuggestions:   (docId, key) => ipcRenderer.invoke('get-field-suggestions', docId, key),
 
   // ── Review queue ─────────────────────────────────────────────────────────────
   getReviewQueue:              ()        => ipcRenderer.invoke('get-review-queue'),
   getDeferredQueue:            ()        => ipcRenderer.invoke('get-deferred-queue'),
   getReviewCount:              ()        => ipcRenderer.invoke('get-review-count'),
   getDeferredCount:            ()        => ipcRenderer.invoke('get-deferred-count'),
+  getFieldRules:               ()        => ipcRenderer.invoke('get-field-rules'),
+  getRecentAutoFiled:          ()        => ipcRenderer.invoke('get-recent-auto-filed'),
+  clearRecentAutoFiled:        ()        => ipcRenderer.invoke('clear-recent-auto-filed'),
+  getAutoFileEligible:         (ids)     => ipcRenderer.invoke('get-auto-file-eligible', ids),
+  getGraduatedSuppliers:       ()        => ipcRenderer.invoke('get-graduated-suppliers'),
+  setGraduationOptout:         (p)       => ipcRenderer.invoke('set-graduation-optout', p),
+  getFieldValueHistory:        (scope)   => ipcRenderer.invoke('get-field-value-history', scope),
+  getDocumentsForFieldValue:   (scope)   => ipcRenderer.invoke('get-documents-for-field-value', scope),
+  purgeFieldValue:             (scope)   => ipcRenderer.invoke('purge-field-value', scope),
+  renameFieldValue:            (scope)   => ipcRenderer.invoke('rename-field-value', scope),
+  acceptNameValue:             (p)       => ipcRenderer.invoke('accept-name-value', p),
   getDocumentWithExtractions:  (id)      => ipcRenderer.invoke('get-document-with-extractions', id),
   notifyDocClosed:             (id)      => ipcRenderer.send('notify-doc-closed', id),
-  getDocumentPages:            (id, fp, fn) => ipcRenderer.invoke('get-document-pages', id, fp, fn),
+  reviewHeartbeat:             (id)      => ipcRenderer.invoke('review-heartbeat', id),
+  getDocumentPages:            (id, fp, fn, scale) => ipcRenderer.invoke('get-document-pages', id, fp, fn, scale),
   getDocumentThumbnail:        (id, fp, fn) => ipcRenderer.invoke('get-document-thumbnail', id, fp, fn),
   getEnhancedPreview:          (data)       => ipcRenderer.invoke('get-enhanced-preview', data),
   confirmReview:               (payload) => ipcRenderer.invoke('confirm-review', payload),
@@ -130,18 +171,27 @@ contextBridge.exposeInMainWorld('docusnap', {
   restoreDeferred:             (id)      => ipcRenderer.invoke('restore-deferred', id),
   acknowledgeReview:           (id)      => ipcRenderer.invoke('acknowledge-review', id),
   deleteDocument:              (id, fp)  => ipcRenderer.invoke('delete-document', id, fp),
+  getDeletedQueue:             ()        => ipcRenderer.invoke('get-deleted-queue'),
+  restoreDocument:             (id)      => ipcRenderer.invoke('restore-document', id),
+  purgeDocument:               (id)      => ipcRenderer.invoke('purge-document', id),
+  purgeAllDeleted:             ()        => ipcRenderer.invoke('purge-all-deleted'),
   deleteAllReview:             ()        => ipcRenderer.invoke('delete-all-review'),
   deleteAllDeferred:           ()        => ipcRenderer.invoke('delete-all-deferred'),
   reprocessDocument:           (data)    => ipcRenderer.invoke('reprocess-document', data),
+  reprocessBatch:              (docs)    => ipcRenderer.invoke('reprocess-batch', docs),
+  getStuckCount:               ()        => ipcRenderer.invoke('get-stuck-count'),
+  getStuckDocs:                ()        => ipcRenderer.invoke('get-stuck-docs'),
   promoteToTemplate:           (data)    => ipcRenderer.invoke('promote-to-template', data),
+  linkDocumentToTemplate:      (data)    => ipcRenderer.invoke('link-document-to-template', data),
   checkTemplateMatch:          (id)      => ipcRenderer.invoke('check-template-match-for-document', id),
   notifyReviewComplete:        ()        => ipcRenderer.send('notify-review-complete'),
 
   // ── Zone OCR & learning ──────────────────────────────────────────────────────
   ocrRegion:           (b64)      => ipcRenderer.invoke('ocr-region', b64),
   ocrRegionBoxes:      (b64)      => ipcRenderer.invoke('ocr-region-boxes', b64),
-  testTemplateMapping: (pageB64, mapping) => ipcRenderer.invoke('test-template-mapping', pageB64, mapping),
+  testTemplateMapping: (pageB64, mapping, landmarks) => ipcRenderer.invoke('test-template-mapping', pageB64, mapping, landmarks),
   saveFieldAnchor:     (data)     => ipcRenderer.invoke('save-field-anchor', data),
+  saveFieldRule:       (data)     => ipcRenderer.invoke('save-field-rule', data),
   extractLogoHash:     (b64)      => ipcRenderer.invoke('extract-logo-hash', b64),
   matchLogoHash:       (b64)      => ipcRenderer.invoke('match-logo-hash', b64),
   saveLogoFingerprint: (data)     => ipcRenderer.invoke('save-logo-fingerprint', data),
@@ -166,6 +216,9 @@ contextBridge.exposeInMainWorld('docusnap', {
 
   // ── Search ───────────────────────────────────────────────────────────────────
   searchDocuments:     (params)   => ipcRenderer.invoke('search-documents', params),
+  getFiledCounts:      ()         => ipcRenderer.invoke('get-filed-counts'),
+  getDashboardExtra:   ()         => ipcRenderer.invoke('get-dashboard-extra'),
+  openExternal:        (url)      => ipcRenderer.send('open-external', url),
 
   // ── Mailbox / approval workflow (in-core; entitlement + role gated) ────────────
   workflow: {
@@ -196,6 +249,10 @@ contextBridge.exposeInMainWorld('docusnap', {
   pickTemplateSampleFile:     ()                  => ipcRenderer.invoke('pick-template-sample-file'),
   importTemplateSampleFile:   (id, filePath)      => ipcRenderer.invoke('import-template-sample-file', id, filePath),
   regenerateTemplateLandmarks:(id)                => ipcRenderer.invoke('regenerate-template-landmarks', id),
+  regenerateTemplateFingerprint:(id)              => ipcRenderer.invoke('regenerate-template-fingerprint', id),
+  setTemplateLandmarks:       (id, lms)           => ipcRenderer.invoke('set-template-landmarks', id, lms),
+  getTemplateLandmarks:       (id)                => ipcRenderer.invoke('get-template-landmarks', id),
+  clearTemplateLandmarks:     (id)                => ipcRenderer.invoke('clear-template-landmarks', id),
   saveTemplateMapping:        (id, mapping)       => ipcRenderer.invoke('save-template-mapping', id, mapping),
   setTemplateMappingEnabled:  (id, key, enabled)  => ipcRenderer.invoke('set-template-mapping-enabled', id, key, enabled),
   deleteTemplateMapping:      (id, key)           => ipcRenderer.invoke('delete-template-mapping', id, key),
@@ -213,6 +270,8 @@ contextBridge.exposeInMainWorld('docusnap', {
   // ── Settings ─────────────────────────────────────────────────────────────────
   getSetting:          (key)      => ipcRenderer.invoke('get-setting', key),
   setSetting:          (key, val) => ipcRenderer.invoke('set-setting', key, val),
+  getConcurrencyInfo:  ()         => ipcRenderer.invoke('get-concurrency-info'),
+  getTelemetryInfo:    ()         => ipcRenderer.invoke('get-telemetry-info'),
   backupExport:        (password)        => ipcRenderer.invoke('settings-backup-export', { password }),
   backupPreview:       (password)        => ipcRenderer.invoke('settings-backup-preview', { password }),
   backupApply:         (path, password)  => ipcRenderer.invoke('settings-backup-apply', { path, password }),
@@ -231,6 +290,18 @@ contextBridge.exposeInMainWorld('docusnap', {
   clearLearningAnchors:(params)   => ipcRenderer.invoke('clear-learning-anchors', params),
   clearLearningHints:  (params)   => ipcRenderer.invoke('clear-learning-hints', params),
   clearLearningCorrections: (params) => ipcRenderer.invoke('clear-learning-corrections', params),
+  clearLearningFieldRules: (params) => ipcRenderer.invoke('clear-learning-field-rules', params),
+  getSupplierScopeCounts: (name)    => ipcRenderer.invoke('get-supplier-scope-counts', name),
+  renameSupplier:      (payload)  => ipcRenderer.invoke('rename-supplier', payload),
+  // "Fix a document type" recovery (scope reset + document set-aside)
+  recoveryOverview:    (scope)   => ipcRenderer.invoke('recovery-overview', scope),
+  recoveryApply:       (payload) => ipcRenderer.invoke('recovery-apply', payload),
+  recoveryRestoreDocs: (ids)     => ipcRenderer.invoke('recovery-restore-docs', ids),
+  // Learning Repair (browse/preview/suspects/send-to-review)
+  repairOverview:      (scope)   => ipcRenderer.invoke('repair-overview', scope),
+  repairDocFields:     (id)      => ipcRenderer.invoke('repair-doc-fields', id),
+  repairDeconfirm:     (id)      => ipcRenderer.invoke('repair-deconfirm', id),
+  repairDelete:        (id)      => ipcRenderer.invoke('repair-delete', id),
 
   // ── Advanced (Settings tab) — keyword label overrides ───────────────────────
   getLabelOverrides:   ()        => ipcRenderer.invoke('get-label-overrides'),
@@ -241,6 +312,8 @@ contextBridge.exposeInMainWorld('docusnap', {
 
   // ── Events from main → renderer ──────────────────────────────────────────────
   onThemeChanged:        (cb) => ipcRenderer.on('theme-changed',          (_e, t) => cb(t)),
+  onDocTypesChanged:     (cb) => ipcRenderer.on('doc-types-changed',      ()      => cb()),
+  onDashboardCardsChanged: (cb) => ipcRenderer.on('dashboard-cards-changed', ()   => cb()),
   onReviewCountChanged:  (cb) => ipcRenderer.on('review-count-changed',  (_e, n) => cb(n)),
   onDeferredCountChanged:(cb) => ipcRenderer.on('deferred-count-changed', (_e, n) => cb(n)),
   onReprocessProgress:   (cb) => ipcRenderer.on('reprocess-progress',    (_e, m) => cb(m)),
@@ -254,8 +327,45 @@ contextBridge.exposeInMainWorld('docusnap', {
   // extraction trace route to this window. No window is opened.
   reviewTraceSet:      (on, pw) => ipcRenderer.invoke('review-trace-set', on, pw),
   onProcessProgress:   (cb) => ipcRenderer.on('process-progress', (_e, m) => cb(m)),
+  onWatchProgress:     (cb) => ipcRenderer.on('watch-progress',   (_e, m) => cb(m)),
+  onDocAutoFiled:      (cb) => ipcRenderer.on('doc-auto-filed',   (_e, info) => cb(info)),
+  onStuckCountChanged: (cb) => ipcRenderer.on('stuck-count-changed', (_e, n) => cb(n)),
   onProcessTrace:      (cb) => ipcRenderer.on('process-trace',    (_e, m) => cb(m)),
   devGetSessionDocs:   ()        => ipcRenderer.invoke('dev-get-session-docs'),
   devGetSessionDoc:    (key)     => ipcRenderer.invoke('dev-get-session-doc', key),
   devGetSlice:         (path)    => ipcRenderer.invoke('dev-get-slice', path),
 });
+
+// ── Keyboard-focus repair (Windows) ────────────────────────────────────────────
+// Electron on Windows can leave a window's render widget WITHOUT keyboard focus while
+// the OS window still HAS focus — so clicking a text field shows no caret and won't
+// type until you click out of the app and back in (which forces an OS focus re-sync).
+// The window 'show'/'focus' grabFocus in main can't catch this: no OS focus change
+// happens (e.g. after a native confirm()/alert() dialog, or a child window closes).
+// Repair it from the renderer — which runs in EVERY window via this preload: when a
+// pointer press lands on a text control while the document lacks keyboard focus, ask
+// main to re-focus the webContents, then re-assert focus on the pressed control. The
+// preload shares the page DOM (contextIsolation isolates JS scope, not the DOM). No-op
+// when focus is already fine, so a normal click is untouched.
+window.addEventListener('pointerdown', (e) => {
+  try {
+    const t = e.target;
+    const el = t && t.closest && t.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]');
+    if (!el) return;                    // only repair when actually entering a field
+    // ALWAYS re-assert webContents keyboard focus on a text-field press. document.hasFocus()
+    // is UNRELIABLE here: after a native confirm()/alert() (the Review window uses these for
+    // the digit/issuer/delete prompts) — or a child window closing — the window reports
+    // focused while the render widget has lost keyboard focus, so the old `hasFocus()` guard
+    // skipped the repair in exactly the case that needs it ("clicked the box, can't type
+    // until I alt-tab out and back"). wc.focus() is cheap + idempotent on a normal click.
+    ipcRenderer.send('ensure-window-focus', { pageHasFocus: document.hasFocus() });
+    // Re-assert the caret next frame ONLY if the press didn't already focus the field — so a
+    // normal click's caret position is never disturbed; the broken case gets its focus back.
+    requestAnimationFrame(() => {
+      try {
+        const already = document.activeElement === el;
+        if (!already) el.focus();
+      } catch {}
+    });
+  } catch { /* never let focus repair break a click */ }
+}, true);

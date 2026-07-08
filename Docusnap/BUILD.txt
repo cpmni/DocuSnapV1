@@ -62,43 +62,18 @@ Verify:
 
 
 ────────────────────────────────────────────────────────────────────────────────
-1.4  Ollama + Phi-3 Mini model
-────────────────────────────────────────────────────────────────────────────────
-Download Ollama from: https://ollama.com
-  → Windows installer, run it
-  → Ollama runs silently in the system tray after install
-
-Pull the Phi-3 Mini model (much smaller than Mistral — ~2.4 GB download):
-
-  ollama pull phi3:mini
-
-Wait for the download to complete. Verify:
-  ollama list        (should show phi3:mini)
-  ollama run phi3:mini "Say hello"   (should respond)
-
-WHY PHI-3 MINI instead of Mistral 7B?
-  • 2.4 GB vs 4.1 GB — fits comfortably in 4GB GPU
-  • Loads in ~5 seconds vs ~30 seconds
-  • Performance on structured document extraction is comparable
-  • Much smaller installer for customers
-
-
-────────────────────────────────────────────────────────────────────────────────
 1.5  Python packages
 ────────────────────────────────────────────────────────────────────────────────
 Open a terminal and run:
 
-  py -3.12 -m pip install pytesseract pillow pypdfium2 requests imagehash pypdf
+  py -3.12 -m pip install pytesseract pillow pypdfium2 requests imagehash pypdf rapidfuzz
 
 Verify:
-  py -3.12 -c "import pytesseract, PIL, pypdfium2, requests, imagehash, pypdf; print('OK')"
+  py -3.12 -c "import pytesseract, PIL, pypdfium2, requests, imagehash, pypdf, rapidfuzz; print('OK')"
 
-OPTIONAL — RapidOCR full-page OCR engine (beta, opt-in; NOT required):
-  py -3.12 -m pip install -r python_backend\requirements-ocr.txt
-  The app defaults to Tesseract and falls back to it automatically if RapidOCR
-  is absent, so this is only needed to try RapidOCR (Settings -> OCR engine).
-  Bundled PP-OCR models are offline (no download). Adds ~80-180 MB.
-  Full provisioning + offline verification: python_backend\OCR_RUNTIME.md
+Note: full-page OCR is Tesseract ONLY. RapidOCR was removed entirely (2026-07) — there is
+no OCR-engine toggle and no requirements-ocr.txt. If an OLD vendor\python still carries the
+RapidOCR stack, remove it to shed ~80-180 MB (see §3 build-machine note below).
 
 
 ────────────────────────────────────────────────────────────────────────────────
@@ -152,7 +127,7 @@ Rebuild better-sqlite3 for Electron's Node version:
 ────────────────────────────────────────────────────────────────────────────────
   npm start
 
-The app window should open. Tesseract and Ollama should be detected automatically.
+The app window should open. Tesseract should be detected automatically.
 Test with a few sample documents before building the installer.
 
 
@@ -187,54 +162,28 @@ STEP A — Bundle Python (3.12 — Windows EMBEDDABLE package, NOT a venv):
 
   4. Install the backend dependencies (pypdf is REQUIRED — process_docs / pdf_splitter /
      render all import it; it is easy to omit because it is not a top-level app file):
-       vendor\python\python.exe -m pip install pytesseract pillow pypdfium2 requests imagehash pypdf
+       vendor\python\python.exe -m pip install pytesseract pillow pypdfium2 requests imagehash pypdf rapidfuzz
+       (rapidfuzz = MIT, no runtime deps — powers the text-led supplier-identity conflict flag,
+        extraction/identity_fusion.py; the license gate auto-allows MIT. If absent the feature
+        silently no-ops. Regenerate THIRD-PARTY-LICENSES.txt after: node scripts/gen-third-party-notices.js)
 
-  ⚠ MUST be Python 3.12 (see 1.2). Do NOT use 3.13/3.14: rapidocr-onnxruntime ships
-    NO wheels for Python >=3.13 (every release is Requires-Python <3.13), so the
-    RapidOCR step below cannot resolve on a 3.13/3.14 runtime and RapidOCR would be
-    SILENTLY ABSENT from the dist. Verify the bundled interpreter before continuing:
-      vendor\python\python.exe --version    (must report 3.12.x)
+  ⚠ Use the SAME Python version as §1.2 (3.12 is the tested, known-good series).
+    Verify the bundled interpreter before continuing:
+      vendor\python\python.exe --version
+    (The old hard 3.12-ONLY constraint came from rapidocr-onnxruntime having no
+    >=3.13 wheels; RapidOCR is no longer bundled, so that constraint is lifted — but
+    stay on the §1.2 version unless you re-verify the whole backend on a newer one.)
 
-  REQUIRED — bundle the RapidOCR full-page OCR engine (opt-in AT RUNTIME):
-    vendor\python\python.exe -m pip install -r python_backend\requirements-ocr.txt
-    Installs RapidOCR + onnxruntime + its bundled PP-OCR ONNX models (offline, no
-    download) under vendor\python\Lib\site-packages\rapidocr_onnxruntime\models\.
-    Adds ~80-180 MB to the installer. The shipped OCR DEFAULT stays Tesseract;
-    RapidOCR is bundled so the per-install Settings -> OCR engine toggle works
-    without the customer installing anything (and falls back to Tesseract if the
-    runtime ever fails to init). Details: python_backend\OCR_RUNTIME.md
-    Verify it actually landed in the bundled runtime (no network):
-      vendor\python\python.exe -c "from rapidocr_onnxruntime import RapidOCR; RapidOCR(); print('RapidOCR OK')"
-
-  NOTE: `npm run build` runs scripts\check-rapidocr-bundled.js FIRST and ABORTS the
-  build if RapidOCR is missing/broken in vendor\python (e.g. a wrong-version runtime
-  that cannot host it). Override only deliberately with SCANFINDER_SKIP_RAPIDOCR_CHECK=1
-  (a knowingly Tesseract-only build).
+  RapidOCR is NO LONGER BUNDLED (unbundled + full code removal done 2026-07, Slice 2). The
+  full-page OCR engine ships as TESSERACT ONLY — do NOT pip install requirements-ocr.txt
+  into vendor\python. This drops ~80-180 MB from the installer and removes both the manual
+  provisioning step and the prebuild guard that could block a release. If a build machine's
+  vendor\python was provisioned earlier, reclaim the space:
+    vendor\python\python.exe -m pip uninstall -y rapidocr-onnxruntime onnxruntime opencv-python shapely pyclipper
 
 STEP B — Bundle Tesseract:
 
   xcopy /E /I "C:\Program Files\Tesseract-OCR" vendor\tesseract
-
-STEP C — Bundle Ollama + Phi-3 Mini model:
-
-  mkdir vendor\ollama
-  copy "%LOCALAPPDATA%\Programs\Ollama\ollama.exe" vendor\ollama\
-
-  :: Copy the model weights (downloaded by 'ollama pull phi3:mini')
-  xcopy /E /I "%USERPROFILE%\.ollama\models" vendor\ollama_models
-
-  NOTE: The Phi-3 Mini model is optional.
-  Without it: installer is ~280MB (Fast Mode + Smart Mode with no AI)
-  With it:    installer is ~2.7GB (all modes including AI mode)
-
-  OPTION A — Small installer (recommended for most customers):
-    Skip the Ollama/model bundling. Customers download model on demand
-    from inside the app (Settings → AI Mode → Download AI Model).
-
-  OPTION B — Full offline installer:
-    Include Ollama + model for customers with no reliable internet.
-    Distribute on USB stick.
-
 
 ────────────────────────────────────────────────────────────────────────────────
 3.2  Add an app icon (optional but recommended)
@@ -353,33 +302,8 @@ To test the Python extraction engine standalone:
 
 
 ================================================================================
-PART 7 — SWITCHING MODELS
+PART 7 — TROUBLESHOOTING
 ================================================================================
-
-Current model: phi3:mini
-To switch to a different model:
-
-1. Pull the new model:
-   ollama pull <model-name>
-   e.g. ollama pull llama3.2:1b  (even smaller)
-        ollama pull phi3:medium   (more accurate, needs more VRAM)
-
-2. Update the model name in two places:
-   src/modules/processing/handler.js  → '--model', 'phi3:mini'  (change both instances)
-   python_backend/extraction/llm.py   → MODEL_NAME = "phi3:mini"
-
-3. For the bundled installer: copy new model weights to vendor\ollama_models\
-
-4. npm run build
-
-
-================================================================================
-PART 8 — TROUBLESHOOTING
-================================================================================
-
-"AI model warm-up failed"
-  → Open a terminal: ollama serve
-  → Leave it open and try again
 
 "OCR returned no text"
   → Check Tesseract is installed: tesseract --version

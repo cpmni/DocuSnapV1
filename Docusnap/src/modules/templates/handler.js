@@ -14,6 +14,7 @@
 
 const path = require('path');
 const fs   = require('fs');
+const os   = require('os');
 
 // Extensions the existing get-document-pages preview path actually renders
 // correctly (PDF via render/pages.py; PNG/JPEG inline as a data URI — see
@@ -34,10 +35,15 @@ function register(ctx) {
   function _resolveDocPath(doc) {
     if (!doc) return null;
     const ok = (p) => (p && fs.existsSync(p) ? p : null);
-    const dir  = doc.stored_path || doc.folder_path;
-    const name = doc.stored_filename || doc.original_filename;
-    return ok(doc.working_path)
-        || ok(dir && name ? path.join(dir, name) : null)
+    // stored_path is the FULL path to the FILED file (set on confirm) — use it once the
+    // doc is COMMITTED; working_path is the app's inbox copy — the UNCOMMITTED version
+    // before filing. Then fall back to the source folder. (The old code treated
+    // stored_path as a directory and join()'d the filename onto it, so a committed doc
+    // whose working copy had since been cleaned up resolved to nothing → "sample file
+    // not found".)
+    return ok(doc.stored_path)
+        || ok(doc.working_path)
+        || ok(doc.folder_path && doc.stored_filename   ? path.join(doc.folder_path, doc.stored_filename)   : null)
         || ok(doc.folder_path && doc.original_filename ? path.join(doc.folder_path, doc.original_filename) : null);
   }
 
@@ -47,50 +53,143 @@ function register(ctx) {
   // anchor/offset path until landmarks exist. Reuses the same Python/Tesseract
   // the rest of processing uses (ocr/landmarks.py). This is the SAME mechanism
   // for new templates (auto on sample pin) and the existing-corpus backfill.
-  function generateLandmarks(templateId) {
+  // Taught value/anchor zones the auto landmark selector must AVOID — those regions
+  // hold per-document VALUES, never stable chrome (Phase 2 value-zone exclusion).
+  function _excludeBoxesFor(db, templateId) {
+    const boxes = [];
+    try {
+      for (const m of (templates.getMappings(db, templateId) || [])) {
+        if (m.target_x_norm != null) boxes.push({ x: m.target_x_norm, y: m.target_y_norm, w: m.target_w_norm, h: m.target_h_norm });
+        if (m.anchor_x_norm != null) boxes.push({ x: m.anchor_x_norm, y: m.anchor_y_norm, w: m.anchor_w_norm, h: m.anchor_h_norm });
+      }
+    } catch (e) { /* best-effort */ }
+    return boxes;
+  }
+
+  // Capture a confirmed document's high-conf words into the cross-sample corpus
+  // (Phase 3). Best-effort + async — one OCR spawn; never blocks/raises into the
+  // confirm path. Idempotent per doc (replaceSampleWords).
+  function captureSampleWords(templateId, docId) {
     return new Promise((resolve) => {
       try {
         const db = getDb();
-        const tmpl = templates.getById(db, templateId);
-        if (!tmpl || !tmpl.sample_document_id) return resolve({ success: false, reason: 'no sample' });
-        const doc  = db.prepare('SELECT * FROM documents WHERE id = ?').get(tmpl.sample_document_id);
+        if (!templateId || templates.hasManualLandmarks(db, templateId)) return resolve(false);
+        const doc  = db.prepare('SELECT * FROM documents WHERE id = ?').get(docId);
         const file = _resolveDocPath(doc);
-        if (!file) return resolve({ success: false, reason: 'sample file not found' });
+        if (!file) return resolve(false);
         const script = ctx.resourcePath('python_backend', 'ocr', 'landmarks.py');
         const proc = spawn(ctx.pythonExe(),
-          ctx.pythonArgs(script, '--file', file, '--page', '0', '--emit-phash', '--tesseract', ctx.tesseractPath()),
+          ctx.pythonArgs(script, '--file', file, '--page', '0', '--emit-words', '--tesseract', ctx.tesseractPath()),
           { windowsHide: true });
         let out = '', err = '';
         proc.stdout.on('data', d => { out += d.toString(); });
         proc.stderr.on('data', d => { err += d.toString(); });
         proc.on('close', () => {
-          if (err) console.error('landmarks stderr:', err.trim());
-          // --emit-phash returns {landmarks, logo_phash}; tolerate the legacy array.
-          let parsed = null;
-          try { parsed = JSON.parse(out.trim()); } catch {}
-          const list  = Array.isArray(parsed) ? parsed : (parsed && parsed.landmarks) || [];
-          const phash = (parsed && !Array.isArray(parsed)) ? parsed.logo_phash : null;
-          if (Array.isArray(list) && list.length) {
-            try { templates.setLandmarks(db, templateId, list); }
-            catch (e) { console.error('setLandmarks:', e.message); }
+          if (err) console.error('capture-words stderr:', err.trim());
+          let words = []; try { words = JSON.parse(out.trim()) || []; } catch {}
+          if (Array.isArray(words) && words.length) {
+            try { templates.replaceSampleWords(db, templateId, docId, words); }
+            catch (e) { console.error('replaceSampleWords:', e.message); }
           }
-          // Seed identity from the sample ONLY when the template has none — never
-          // overwrite an established phash (consistent with chooseLogoPhash). This
-          // is what stops empty-phash orphan templates that can never be matched.
-          if (phash && !tmpl.logo_phash) {
-            try {
-              db.prepare("UPDATE templates SET logo_phash = ?, updated_at = datetime('now') WHERE id = ? AND (logo_phash IS NULL OR logo_phash = '')").run(phash, templateId);
-            } catch (e) { console.error('seed logo_phash:', e.message); }
-          }
-          resolve({ success: list.length > 0, count: list.length, phashSeeded: !!(phash && !tmpl.logo_phash) });
+          resolve(true);
         });
-        proc.on('error', (e) => { console.error('landmarks spawn:', e.message); resolve({ success: false, reason: e.message }); });
-      } catch (e) {
-        console.error('generateLandmarks:', e.message);
-        resolve({ success: false, reason: e.message });
-      }
+        proc.on('error', (e) => { console.error('capture-words spawn:', e.message); resolve(false); });
+      } catch (e) { console.error('captureSampleWords:', e.message); resolve(false); }
     });
   }
+  ctx.captureSampleWords = captureSampleWords;
+
+  // Derive landmarks from the cross-sample corpus once >=3 confirmed docs exist —
+  // the reliable AUTOMATIC source (recurring + positionally-stable words; no human
+  // picking). Returns {derived,count}; never touches a manual set; writes 'cross_sample'.
+  function tryCrossSampleLandmarks(db, templateId) {
+    return new Promise((resolve) => {
+      try {
+        if (templates.hasManualLandmarks(db, templateId)) return resolve({ derived: false });
+        if (templates.countSampleDocs(db, templateId) < 3) return resolve({ derived: false });
+        const docs = templates.getSampleWordsByDoc(db, templateId);
+        if (!docs.length) return resolve({ derived: false });
+        const tmp = path.join(os.tmpdir(), `ds_xsample_${templateId}_${Date.now()}.json`);
+        fs.writeFileSync(tmp, JSON.stringify({ docs, exclude_boxes: _excludeBoxesFor(db, templateId) }));
+        const script = ctx.resourcePath('python_backend', 'ocr', 'landmarks.py');
+        const proc = spawn(ctx.pythonExe(), ctx.pythonArgs(script, '--cross-sample-file', tmp), { windowsHide: true });
+        let out = '', err = '';
+        proc.stdout.on('data', d => { out += d.toString(); });
+        proc.stderr.on('data', d => { err += d.toString(); });
+        proc.on('close', () => {
+          try { fs.unlinkSync(tmp); } catch {}
+          if (err) console.error('cross-sample stderr:', err.trim());
+          let list = []; try { list = JSON.parse(out.trim()) || []; } catch {}
+          if (Array.isArray(list) && list.length) {
+            try { templates.setLandmarks(db, templateId, list, 'cross_sample'); return resolve({ derived: true, count: list.length }); }
+            catch (e) { console.error('setLandmarks(cross):', e.message); }
+          }
+          resolve({ derived: false });
+        });
+        proc.on('error', (e) => { try { fs.unlinkSync(tmp); } catch {}; console.error('cross-sample spawn:', e.message); resolve({ derived: false }); });
+      } catch (e) { console.error('tryCrossSampleLandmarks:', e.message); resolve({ derived: false }); }
+    });
+  }
+
+  async function generateLandmarks(templateId) {
+    const db = getDb();
+    // Manual landmarks are an explicit admin override — never clobber them with an
+    // auto re-derivation. Clear them ("Use automatic") to revert to automatic.
+    if (templates.hasManualLandmarks(db, templateId)) {
+      return { success: true, manual: true, count: templates.getLandmarks(db, templateId).length };
+    }
+    // Prefer cross-sample recurrence (>=3 confirmed docs) — the reliable automatic
+    // source. Falls through to the single-sample bootstrap otherwise.
+    try {
+      const cross = await tryCrossSampleLandmarks(db, templateId);
+      if (cross && cross.derived) return { success: cross.count > 0, count: cross.count, source: 'cross_sample' };
+    } catch (e) { console.error('cross-sample landmarks:', e.message); }
+
+    const tmpl = templates.getById(db, templateId);
+    if (!tmpl || !tmpl.sample_document_id) return { success: false, reason: 'no sample' };
+    const doc  = db.prepare('SELECT * FROM documents WHERE id = ?').get(tmpl.sample_document_id);
+    const file = _resolveDocPath(doc);
+    if (!file) return { success: false, reason: 'sample file not found' };
+    const exclude = JSON.stringify(_excludeBoxesFor(db, templateId));
+    const script = ctx.resourcePath('python_backend', 'ocr', 'landmarks.py');
+    return new Promise((resolve) => {
+      const proc = spawn(ctx.pythonExe(),
+        ctx.pythonArgs(script, '--file', file, '--page', '0', '--emit-phash',
+                       '--exclude-boxes', exclude, '--tesseract', ctx.tesseractPath()),
+        { windowsHide: true });
+      let out = '', err = '';
+      proc.stdout.on('data', d => { out += d.toString(); });
+      proc.stderr.on('data', d => { err += d.toString(); });
+      proc.on('close', () => {
+        if (err) console.error('landmarks stderr:', err.trim());
+        // --emit-phash returns {landmarks, logo_phash}; tolerate the legacy array.
+        let parsed = null;
+        try { parsed = JSON.parse(out.trim()); } catch {}
+        const list  = Array.isArray(parsed) ? parsed : (parsed && parsed.landmarks) || [];
+        const phash = (parsed && !Array.isArray(parsed)) ? parsed.logo_phash : null;
+        if (Array.isArray(list) && list.length) {
+          try { templates.setLandmarks(db, templateId, list); }
+          catch (e) { console.error('setLandmarks:', e.message); }
+        }
+        // Seed identity from the sample ONLY when the template has none — never
+        // overwrite an established phash (consistent with chooseLogoPhash).
+        if (phash && !tmpl.logo_phash) {
+          try {
+            db.prepare("UPDATE templates SET logo_phash = ?, updated_at = datetime('now') WHERE id = ? AND (logo_phash IS NULL OR logo_phash = '')").run(phash, templateId);
+          } catch (e) { console.error('seed logo_phash:', e.message); }
+        }
+        resolve({ success: list.length > 0, count: list.length, phashSeeded: !!(phash && !tmpl.logo_phash) });
+      });
+      proc.on('error', (e) => { console.error('landmarks spawn:', e.message); resolve({ success: false, reason: e.message }); });
+    });
+  }
+  // Expose the landmark generator so the teach-wizard commit path
+  // (review/handler.js -> promote-to-template) can derive landmarks right after it pins
+  // its sample. Every OTHER sample-pin path (set-template-sample / import-sample) already
+  // calls generateLandmarks, but promote-to-template only set the sample — so teach-created
+  // templates were born with NO landmarks and registration (the drift correction) stayed
+  // inert, letting a mapping box drift onto the wrong row. Best-effort; never throws.
+  ctx.generateLandmarks = generateLandmarks;
 
   // Lazy one-shot backfill: existing templates that have a pinned sample but no
   // landmarks gain them with NO re-teach. Delayed + sequential so it never
@@ -108,9 +207,84 @@ function register(ctx) {
     } catch (e) { console.error('[landmarks] backfill failed:', e.message); }
   }, 8000);
 
+  // (Re)derive a template's KEYWORD FINGERPRINT from several of its documents,
+  // keeping only the STABLE recurring words (template_fingerprint.py). This is what
+  // lets a BORN-DIGITAL template (e.g. a Print Tracker email alert, whose logo crop
+  // is fooled by a variable From/To/Subject header) be matched by its stable header
+  // vocabulary instead of an unreliable logo phash. By default it only FILLS an
+  // empty fingerprint (never clobbers a stabilised one); force:true overwrites.
+  // Best-effort; never throws. Exposed for the promote-to-template path.
+  async function generateFingerprint(templateId, { force = false } = {}) {
+    const db   = getDb();
+    const tmpl = templates.getById(db, templateId);
+    if (!tmpl) return { success: false, reason: 'no template' };
+    const existing = Array.isArray(tmpl.keyword_fingerprint) ? tmpl.keyword_fingerprint : [];
+    if (existing.length && !force) return { success: true, skipped: true, count: existing.length };
+
+    // Up to 8 of the template's documents (its pinned sample first, then confirmed).
+    const sid  = tmpl.sample_document_id || -1;
+    const docs = db.prepare(`
+      SELECT working_path, stored_path, stored_filename, folder_path, original_filename
+      FROM documents WHERE template_id = ? OR id = ?
+      ORDER BY (id = ?) DESC, confirmed_at DESC LIMIT 8
+    `).all(templateId, sid, sid);
+    const files = [];
+    for (const d of docs) { const f = _resolveDocPath(d); if (f && !files.includes(f)) files.push(f); }
+    if (!files.length) return { success: false, reason: 'no sample files' };
+
+    const learning = require('../../../database/modules/learning');
+    let bornDigital = true;
+    try { bornDigital = learning.getSetting(db, 'born_digital_enabled') !== 'false'; } catch {}
+
+    const filesFile = path.join(os.tmpdir(), `ds_tfp_${templateId}_${Date.now()}.json`);
+    try { fs.writeFileSync(filesFile, JSON.stringify(files)); }
+    catch (e) { return { success: false, reason: e.message }; }
+    const script = ctx.resourcePath('python_backend', 'template_fingerprint.py');
+    return new Promise((resolve) => {
+      const a = ['--files-file', filesFile, '--tesseract', ctx.tesseractPath()];
+      if (bornDigital) a.push('--born-digital');
+      const proc = spawn(ctx.pythonExe(), ctx.pythonArgs(script, ...a), { windowsHide: true });
+      let out = '', err = '';
+      proc.stdout.on('data', d => { out += d.toString(); });
+      proc.stderr.on('data', d => { err += d.toString(); });
+      proc.on('close', () => {
+        try { fs.unlinkSync(filesFile); } catch {}
+        if (err) console.error('template_fingerprint stderr:', err.trim());
+        let parsed = null; try { parsed = JSON.parse(out.trim()); } catch {}
+        const fp = (parsed && Array.isArray(parsed.fingerprint)) ? parsed.fingerprint : [];
+        if (fp.length) {
+          try {
+            db.prepare("UPDATE templates SET keyword_fingerprint = ?, updated_at = datetime('now') WHERE id = ?")
+              .run(JSON.stringify(fp), templateId);
+          } catch (e) { console.error('set fingerprint:', e.message); }
+        }
+        resolve({ success: fp.length > 0, count: fp.length, docs: (parsed && parsed.docs) || 0 });
+      });
+      proc.on('error', (e) => { try { fs.unlinkSync(filesFile); } catch {}; resolve({ success: false, reason: e.message }); });
+    });
+  }
+  ctx.generateFingerprint = generateFingerprint;
+
+  // Lazy one-shot backfill: templates with documents but NO keyword fingerprint gain
+  // one with no re-teach (the born-digital empty-fingerprint class). Delayed past the
+  // landmarks backfill so the two never contend; best-effort.
+  setTimeout(async () => {
+    try {
+      const db = getDb();
+      const rows = db.prepare(`
+        SELECT t.id FROM templates t
+        WHERE (t.keyword_fingerprint IS NULL OR t.keyword_fingerprint = '' OR t.keyword_fingerprint = '[]')
+          AND (t.sample_document_id IS NOT NULL
+               OR EXISTS (SELECT 1 FROM documents d WHERE d.template_id = t.id))
+      `).all();
+      for (const r of rows) await generateFingerprint(r.id);
+      if (rows.length) console.log(`[fingerprint] backfilled ${rows.length} template(s)`);
+    } catch (e) { console.error('[fingerprint] backfill failed:', e.message); }
+  }, 14000);
+
   // ── Browse ──────────────────────────────────────────────────────────────────
   ipcMain.handle('get-templates', () => {
-    requireRole('admin');
+    requireRole('admin', 'edit');   // Edit users need the list for Review's "link to an existing document"
     return templates.getAll(getDb());
   });
 
@@ -155,7 +329,7 @@ function register(ctx) {
       FROM documents
       WHERE template_id = ? AND status = 'confirmed'
       ORDER BY confirmed_at DESC
-      LIMIT 30
+      LIMIT 20
     `).all(templateId);
   });
 
@@ -174,6 +348,41 @@ function register(ctx) {
   // the UI can report it; replaces all landmark rows (templates.setLandmarks).
   ipcMain.handle('regenerate-template-landmarks', async (_e, templateId) => {
     requireRole('admin');
+    return generateLandmarks(templateId);
+  });
+
+  // Re-derive the keyword fingerprint from the template's documents (force overwrite),
+  // so an admin can fix a born-digital template whose logo phash is unreliable.
+  ipcMain.handle('regenerate-template-fingerprint', async (_e, templateId) => {
+    requireRole('admin');
+    return generateFingerprint(templateId, { force: true });
+  });
+
+  // ── Manual registration landmarks ("Enhance detection") ──────────────────────
+  // The admin draws stable labels (logo/title/field labels) on the sample; the
+  // renderer OCRs each drawn box via the existing ocr-region recipe and sends the
+  // normalised boxes + text here. Stored source='manual' so auto-generation never
+  // overwrites them (generateLandmarks guard). Global, per-template, layout-agnostic
+  // — it does not special-case any document. Capped defensively.
+  ipcMain.handle('set-template-landmarks', (_e, templateId, landmarks) => {
+    requireRole('admin');
+    const db = getDb();
+    const rows = (Array.isArray(landmarks) ? landmarks : [])
+      .filter(l => l && l.label_text != null && String(l.label_text).trim())
+      .slice(0, 8);
+    const saved = templates.setLandmarks(db, templateId, rows, 'manual');
+    return { success: true, count: saved.length, landmarks: saved };
+  });
+
+  ipcMain.handle('get-template-landmarks', (_e, templateId) => {
+    requireRole('admin');
+    return templates.getLandmarks(getDb(), templateId);
+  });
+
+  // Revert to automatic detection: drop the manual set and re-derive from the sample.
+  ipcMain.handle('clear-template-landmarks', async (_e, templateId) => {
+    requireRole('admin');
+    templates.clearLandmarks(getDb(), templateId);
     return generateLandmarks(templateId);
   });
 

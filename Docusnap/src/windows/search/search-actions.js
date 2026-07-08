@@ -37,42 +37,72 @@ function renderActions(doc) {
 
   // ── 2. Document actions ─────────────────────────────────────────────────────
   const docSection = _section('Document Actions');
-  if (doc.status === 'confirmed') {
-    if (doc.stored_path) {
-      _btn(docSection, 'Open in Explorer', () => window.docusnap.showInExplorer(doc.stored_path));
-      _btn(docSection, 'Open File',        () => window.docusnap.openFile(doc.stored_path));
-    }
-  } else {
-    // Edit in Review: admin/edit only — enforced in main.js open-review-window-at handler.
-    _btn(docSection, 'Edit in Review', () => window.docusnap.openReviewWindowAt(doc.id), true);
-  }
-  panel.appendChild(docSection);
+  const role    = (window.SearchState && window.SearchState.role) || null;
+  const canEdit = role === 'admin' || role === 'edit';
+  const isAdmin = role === 'admin';
 
-  // ── 3. Workflow / approval ──────────────────────────────────────────────────
-  const wfSection = _section('Workflow');
-  let hasWorkflowActions = false;
-  for (const provider of _providers) {
-    try {
-      const acts = provider(doc) || [];
-      for (const act of acts) {
-        if (act.node) wfSection.appendChild(act.node);            // rich panel (decision bar / assign form)
-        else _btn(wfSection, act.label, act.onClick, !!act.primary);
-        hasWorkflowActions = true;
+  if (doc.status === 'deleted') {
+    // Recycle-bin item: restore (Admin/Edit) or permanently remove (Admin).
+    if (canEdit) _btn(docSection, 'Restore', () => _afterChange(window.docusnap.restoreDocument(doc.id)), true);
+    if (isAdmin) _btn(docSection, 'Delete permanently', () => {
+      if (confirm('Permanently delete this document and its file? This cannot be undone.')) _afterChange(window.docusnap.purgeDocument(doc.id));
+    });
+  } else {
+    if (doc.status === 'confirmed') {
+      if (doc.stored_path) {
+        _btn(docSection, 'Open in Explorer', () => window.docusnap.showInExplorer(doc.stored_path));
+        _btn(docSection, 'Open File',        () => window.docusnap.openFile(doc.stored_path));
       }
-    } catch (err) {
-      console.error('SearchActions provider error:', err);
+    } else {
+      // Edit in Review: admin/edit only — enforced in main.js open-review-window-at handler.
+      _btn(docSection, 'Edit in Review', () => window.docusnap.openReviewWindowAt(doc.id), true);
     }
+    // Delete → recycle bin (Admin/Edit). Recoverable; the file is kept.
+    if (canEdit) _btn(docSection, 'Delete', () => {
+      if (confirm('Move this document to the recycle bin? You can restore it later.')) _afterChange(window.docusnap.deleteDocument(doc.id));
+    });
   }
-  if (!hasWorkflowActions) {
-    const note = document.createElement('span');
-    note.className   = 'ap-future-note';
-    note.textContent = 'Approval and workflow features will appear here.';
-    wfSection.appendChild(note);
+  // Only show the section when it actually has actions — otherwise a read-only user
+  // (or a confirmed doc with no openable file) sees a stray empty "Document Actions"
+  // heading. The section starts with just its header child; buttons add more.
+  if (docSection.children.length > 1) panel.appendChild(docSection);
+
+  // ── 3. Workflow / approval — ONLY when the workflow add-on is licensed, so an
+  //       unlicensed / search-only install shows no "Workflow" section or mention. ─────
+  if (window.SearchState && window.SearchState.workflowEntitled) {
+    const wfSection = _section('Workflow');
+    let hasWorkflowActions = false;
+    for (const provider of _providers) {
+      try {
+        const acts = provider(doc) || [];
+        for (const act of acts) {
+          if (act.node) wfSection.appendChild(act.node);            // rich panel (decision bar / assign form)
+          else _btn(wfSection, act.label, act.onClick, !!act.primary);
+          hasWorkflowActions = true;
+        }
+      } catch (err) {
+        console.error('SearchActions provider error:', err);
+      }
+    }
+    if (!hasWorkflowActions) {
+      const note = document.createElement('span');
+      note.className   = 'ap-future-note';
+      note.textContent = 'Approval and workflow features will appear here.';
+      wfSection.appendChild(note);
+    }
+    panel.appendChild(wfSection);
   }
-  panel.appendChild(wfSection);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+// After a delete/restore/purge, refresh the result list so the document moves in/out
+// of view, and clear the now-stale preview.
+function _afterChange(p) {
+  Promise.resolve(p)
+    .then(() => { if (window.SearchQuery) window.SearchQuery.doSearch(); })
+    .catch((e) => console.error('document action failed:', e));
+}
 
 function _section(title) {
   const sec = document.createElement('div');

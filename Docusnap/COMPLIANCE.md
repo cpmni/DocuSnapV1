@@ -59,8 +59,7 @@ Policy decisions encoded in the script:
   (only after reading the package's actual LICENSE file). Genuine copyleft → replace
   the dependency.
 
-The gate is wired into `npm run build` (runs before the RapidOCR check), so a bad
-license cannot be packaged.
+The gate is wired into `npm run build`, so a bad license cannot be packaged.
 
 ### 2. Notice generator — `scripts/gen-third-party-notices.js`
 

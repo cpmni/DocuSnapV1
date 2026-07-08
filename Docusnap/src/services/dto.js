@@ -48,6 +48,16 @@ const ROUTE_FIELDS = [
   'supplier_name', 'reference_number', 'doc_date', 'doc_status', 'type_name', 'type_slug',
 ];
 
+// The review-queue list row: the search row + the multi-page count (a number). The field
+// VALUES for editing are fetched per-doc via projectDocumentDetail, so the list stays light
+// and path-free.
+const REVIEW_QUEUE_FIELDS = [...SEARCH_ROW_FIELDS, 'page_count'];
+
+// Document-type + field-definition fields the review UI needs (type dropdown, required-field
+// highlighting, on-blur validation). Doc types carry no filesystem fields, but stay allowlisted.
+const DOC_TYPE_FIELDS = ['id', 'name', 'slug', 'ref_field_key', 'date_field_key', 'enabled', 'built_in'];
+const DOC_TYPE_FIELD_FIELDS = ['id', 'key', 'label', 'type', 'required', 'built_in', 'is_structural'];
+
 // Fields that must never appear in any DTO. Asserted by the conformance test.
 const FORBIDDEN_FIELDS = ['stored_path', 'folder_path', 'working_path', 'ocr_text'];
 
@@ -81,11 +91,25 @@ function projectDocumentDetail(doc) {
   return out;
 }
 
-function projectRoute(row) { return pick(row, ROUTE_FIELDS); }
+// Expose only a BOOLEAN that a stamped copy exists — never the server-side file path
+// (the client fetches the stamped pages by route id, mirroring the doc-pages boundary).
+function projectRoute(row) { return { ...pick(row, ROUTE_FIELDS), has_stamp: !!(row && row.stamped_path) }; }
 function projectRoutes(rows) { return (rows || []).map(projectRoute); }
+
+/** Project the review/deferred queue list (path-free). */
+function projectReviewQueue(rows) { return (rows || []).map(r => pick(r, REVIEW_QUEUE_FIELDS)); }
+
+/** Project document types + their field definitions for the review type dropdown. */
+function projectDocType(t) {
+  const out = pick(t, DOC_TYPE_FIELDS);
+  out.fields = Array.isArray(t && t.fields) ? t.fields.map(f => pick(f, DOC_TYPE_FIELD_FIELDS)) : [];
+  return out;
+}
+function projectDocTypes(types) { return (types || []).map(projectDocType); }
 
 module.exports = {
   projectSearchRow, projectSearchResult, projectDocumentDetail,
-  projectRoute, projectRoutes,
-  SEARCH_ROW_FIELDS, DETAIL_EXTRA_FIELDS, EXTRACTION_FIELDS, ROUTE_FIELDS, FORBIDDEN_FIELDS,
+  projectRoute, projectRoutes, projectReviewQueue, projectDocType, projectDocTypes,
+  SEARCH_ROW_FIELDS, DETAIL_EXTRA_FIELDS, EXTRACTION_FIELDS, ROUTE_FIELDS,
+  REVIEW_QUEUE_FIELDS, DOC_TYPE_FIELDS, DOC_TYPE_FIELD_FIELDS, FORBIDDEN_FIELDS,
 };

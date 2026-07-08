@@ -1,0 +1,34 @@
+{
+  "_comment": [
+    "Polar SKU → entitlement map. COPY this to keys/polar_map.json on the host and fill",
+    "in your real Polar price/product ids and your product UUID(s). keys/ is gitignored,",
+    "so the live map is never committed. Match is by price id first, then product id.",
+    "features: core = desktop install seats (usually 1); search/workflow = the detached",
+    "CLIENT seats layered on top of core. term: 'sub' (expires with the billing period)",
+    "or 'perpetual' (no expiry — a one-time order)."
+  ],
+  "prices": {
+    "price_REPLACE_solo": {
+      "product_id": "00000000-0000-0000-0000-000000000000",
+      "features": { "core": 1 },
+      "term": "sub"
+    },
+    "price_REPLACE_team5": {
+      "product_id": "00000000-0000-0000-0000-000000000000",
+      "features": { "core": 1, "search": 5, "workflow": 5 },
+      "term": "sub"
+    },
+    "price_REPLACE_perpetual": {
+      "product_id": "00000000-0000-0000-0000-000000000000",
+      "features": { "core": 1 },
+      "term": "perpetual"
+    }
+  },
+  "products": {
+    "prod_REPLACE_fallback": {
+      "product_id": "00000000-0000-0000-0000-000000000000",
+      "features": { "core": 1 },
+      "term": "sub"
+    }
+  }
+}

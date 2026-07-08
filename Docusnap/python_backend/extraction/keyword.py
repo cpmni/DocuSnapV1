@@ -11,6 +11,8 @@ import re
 import json
 from pathlib import Path
 
+from extraction import number_format   # region-aware amount normaliser
+
 
 def load_patterns(config_path: str | None = None) -> dict:
     """Load keyword patterns from config file."""
@@ -37,6 +39,28 @@ def load_patterns(config_path: str | None = None) -> dict:
             # practice — it's a safety net.
             return {}
     return {}
+
+
+def _infer_validation(field_key: str) -> "str | None":
+    """Infer the Stage-1 format gate for a field that has NO shipped pattern entry,
+    from its KEY ROLE — mirrors engine._is_ref_field / _TYPE2VAL. Without this, an
+    override-seeded custom field (e.g. remittance_number / remittance_date) is
+    accepted BLIND (extract_fields only gates when a 'validation' key is present),
+    so a generic caption could grab a non-date/non-code value. Returns a
+    validation_patterns key, or None for free-text/name fields (left unconstrained,
+    as the engine leaves 'text' unconstrained)."""
+    k = (field_key or "").strip().lower()
+    if not k:
+        return None
+    if k == "date" or k.endswith("_date"):
+        return "date"
+    if (k.endswith("_number") or k.endswith("_no") or k.endswith("_num")
+            or k.endswith("_ref") or k == "reference" or "reference" in k):
+        return "alphanumeric"
+    if (k == "total_amount" or k.endswith("_amount") or "total" in k
+            or k in ("subtotal", "balance", "amount")):
+        return "currency"
+    return None
 
 
 def merge_label_overrides(patterns: dict, overrides: list, doc_slug: str | None) -> dict:
@@ -72,8 +96,12 @@ def merge_label_overrides(patterns: dict, overrides: list, doc_slug: str | None)
         if entry is None:
             # Custom field with no shipped pattern — seed a sane default so the
             # label alone makes it extractable (value to the right of, or below,
-            # the label).
+            # the label). Attach a format gate inferred from the field-key role so
+            # the value is still validated (date/ref/currency), not accepted blind.
             entry = {"labels": [], "directions": ["right", "below"], "base_confidence": 80}
+            inferred = _infer_validation(key)
+            if inferred:
+                entry["validation"] = inferred
         labels = list(entry.get("labels") or [])
         # PRECEDENCE: an admin override is a deliberate per-install instruction to
         # look for THIS label, so it is consulted BEFORE the shipped/auto labels —
@@ -185,6 +213,30 @@ def detect_document_type(ocr_text: str, patterns: dict,
     }
 
 
+# Role → key-aliases. A doc type may key its money fields with any of these variants; both
+# keyword extraction (below) AND the total-reconciliation guardrail (validator.py) resolve
+# them to the canonical shipped field so a labelled read is always attempted and the maths
+# can reconcile whatever the field was named. SINGLE SOURCE — imported by validator. Only
+# ADDS coverage for the aliases; canonical keys (total_amount/subtotal/vat_tax/shipping/
+# discount) are matched directly first, so shipped presets/harness are unaffected. Curated
+# precision-first — bare ambiguous keys ('delivery', 'transport', 'post') are excluded in
+# favour of specific ones ('delivery_charge', 'transport_cost').
+ROLE_KEY_ALIASES = {
+    'total_amount': {'total', 'grand_total', 'invoice_total', 'total_due', 'amount_due',
+                     'balance_due', 'total_payable', 'amount_payable', 'total_inc_vat'},
+    'subtotal':     {'sub_total', 'net_total', 'net_amount', 'goods_total'},
+    'vat_tax':      {'tax', 'vat', 'sales_tax', 'gst', 'hst', 'pst', 'qst',
+                     'output_tax', 'value_added_tax'},
+    'shipping':     {'postage', 'carriage', 'delivery_charge', 'delivery_cost', 'delivery_fee',
+                     'freight', 'freightage', 'handling', 'shipping_handling', 'dispatch',
+                     'despatch', 'forwarding', 'consignment', 'mailing', 'franking', 'courier',
+                     'transport_cost', 'pp'},
+    'discount':     {'less_discount', 'total_discount', 'reduction', 'deduction', 'rebate',
+                     'markdown', 'concession', 'allowance', 'promo', 'promotion', 'voucher',
+                     'credit', 'savings'},
+}
+
+
 # ── Field extraction ──────────────────────────────────────────────────────────
 
 def extract_fields(ocr_text: str, field_keys: list[str],
@@ -199,11 +251,29 @@ def extract_fields(ocr_text: str, field_keys: list[str],
     results        = {}
     lines          = ocr_text.split("\n")
 
+    # Role aliases: a doc type may key its money fields "total"/"subtotal" while the shipped
+    # config lives under "total_amount"/"subtotal". Without this a "total"-keyed field gets NO
+    # labels and is skipped by keyword extraction entirely — so on an UNSEEN layout (no learned
+    # anchor) it's left to whatever stray anchor happens to fire, which reads a table cell
+    # ("0 0.01") instead of the labelled "Invoice Total 118.83". Map role-equivalent keys to the
+    # shipped pattern so a labelled total/subtotal read is always attempted. The harness + the
+    # shipped presets use "total_amount"/"subtotal" directly (this only ADDS coverage for the
+    # aliases), so it can't regress them.
+    def _pattern_key(k):
+        if k in field_patterns:
+            return k
+        # Map a role-equivalent key (e.g. "postage"/"vat"/"amount_due") to its shipped pattern.
+        for canon, aliases in ROLE_KEY_ALIASES.items():
+            if k in aliases and canon in field_patterns:
+                return canon
+        return None
+
     for field_key in field_keys:
-        if field_key not in field_patterns:
+        pk = _pattern_key(field_key)
+        if pk is None:
             continue
 
-        fp      = field_patterns[field_key]
+        fp      = field_patterns[pk]
         labels  = fp.get("labels", [])
         dirs    = fp.get("directions", ["right"])
         base_conf = fp.get("base_confidence", 75)
@@ -226,6 +296,16 @@ def extract_fields(ocr_text: str, field_keys: list[str],
             value, direction = found
             if not value or len(value.strip()) < 1:
                 continue
+
+            # Region-normalise a currency amount to canonical 1234.56 (no-op for anglo) so a
+            # Continental "1.234,56" / Swiss "1'234.56" passes the Anglo currency pattern below
+            # and is stored canonically.
+            if fp.get("validation") == "currency":
+                value = number_format.canonical(value)
+                # Rejoin an OCR-split thousands/decimal ("$15 707.84" → "$15,707.84") BEFORE
+                # the contiguous currency pattern below truncates it to "$15". Shared with
+                # anchor.py so the crop and keyword paths agree on OCR-split money.
+                value = number_format.normalise_currency_spacing(value)
 
             # Validate value format if validator defined
             val_type = fp.get("validation")
@@ -273,7 +353,18 @@ def _label_pattern(label: str) -> "re.Pattern | None":
     words = label.lower().split()
     if not words:
         return None
-    return re.compile(r'\s*'.join(re.escape(w) for w in words))
+    body = r'\s*'.join(re.escape(w) for w in words)
+    # Single-word ALPHABETIC labels get a word-boundary guard so a short caption
+    # can't anchor on a SUBSTRING of a longer word — "Total" inside "Subtotal"
+    # (the silent subtotal-as-total bug), "Date" inside "Mandate", "From" inside
+    # "Frome", "Account" inside "Accounts". Mirrors _type_keyword_pattern's guard;
+    # multi-word labels are already specific enough to not need it. Net effect on
+    # shipped labels is a fix (no behaviour change except removing wrong substring
+    # hits); the only loss is a label glued straight onto its value with no
+    # separator ("Date2026"), the same tradeoff _type_keyword_pattern accepts.
+    if len(words) == 1 and words[0].isalpha():
+        return re.compile(r'(?<![a-z0-9])' + body + r'(?![a-z0-9])')
+    return re.compile(body)
 
 
 def _type_keyword_pattern(label: str) -> "re.Pattern | None":
@@ -299,6 +390,32 @@ def _type_keyword_pattern(label: str) -> "re.Pattern | None":
     return re.compile(body)
 
 
+# A bare "Total" label sits INSIDE longer totals-block phrases that belong to a DIFFERENT money
+# role. The keyword word-boundary guard only stops the single-WORD substring ("Total"⊂"Subtotal");
+# these are multi-WORD phrases where "Total" is a standalone word, so they slip through and — being
+# ABOVE the real grand-total line — win first-match:
+#   PRECEDE: "Sub Total" / "Net Total" / "Goods Total"  → a SUBTOTAL, not the grand total.
+#   FOLLOW:  "Total VAT" / "Total Tax" / "Total Discount"→ a tax/adjustment line, not the grand total.
+# The grand-total senses "Total Amount / Due / Payable / Inc VAT" are NOT in the follow set (and have
+# their own specific labels), so they still match. Reusable across every supplier/layout.
+_TOTAL_ROLE_PRECEDE_STOP = frozenset({"sub", "net", "goods", "gross"})
+_TOTAL_ROLE_FOLLOW_STOP  = frozenset({"vat", "tax", "gst", "discount", "shipping",
+                                      "freight", "carriage", "surcharge", "handling"})
+
+
+def _total_role_collision(line: str, start: int, end: int) -> bool:
+    """True when a bare "Total" match at [start,end) is actually part of a different-role totals-block
+    phrase (a subtotal or a tax/adjustment line), detected by the immediately adjacent WORD. Pure/
+    unit-tested. Only the generic "Total" label consults it; specific labels are unambiguous."""
+    prec = re.search(r'([a-z]+)\W*$', line[:start].lower())
+    if prec and prec.group(1) in _TOTAL_ROLE_PRECEDE_STOP:
+        return True
+    foll = re.match(r'\W*([a-z]+)', line[end:].lower())
+    if foll and foll.group(1) in _TOTAL_ROLE_FOLLOW_STOP:
+        return True
+    return False
+
+
 def _search_for_label(lines: list[str], label: str,
                       directions: list[str]) -> tuple[str, str] | None:
     """
@@ -308,10 +425,15 @@ def _search_for_label(lines: list[str], label: str,
     if pattern is None:
         return None
 
+    _is_bare_total = label.strip().lower() == 'total'
     for i, line in enumerate(lines):
         line_lower = line.lower()
         m = pattern.search(line_lower)
         if not m:
+            continue
+        # The generic "Total" must not poach a "Sub Total" (subtotal) or "Total VAT" (tax) line —
+        # skip to the real grand-total line below. See _total_role_collision.
+        if _is_bare_total and _total_role_collision(line, m.start(), m.end()):
             continue
 
         # Try RIGHT direction — value is on the same line after the label
@@ -322,7 +444,37 @@ def _search_for_label(lines: list[str], label: str,
             # Split on column gaps (4+ spaces) — same as 'below' direction.
             # Multi-column OCR often interleaves adjacent columns on the same line;
             # take only the first column segment to avoid grabbing unrelated text.
-            after = re.split(r' {4,}', after)[0].strip()
+            _segs = [s.strip() for s in re.split(r' {4,}', after) if s.strip()]
+            # Drop a leading PURE-punctuation residue column: a label caption that ends in
+            # "." ("Invoice No.") isn't consumed by the label pattern, so the "." lands as
+            # its own column AHEAD of the value ("Invoice No. |  . |  152574") and the old
+            # code took "." — then the same-row read failed and the "below" fallback grabbed
+            # the wrong column (the "G2 Environmental" cell under "Invoice To"). Take the
+            # first column carrying real content instead. Precision-preserving: only skips
+            # while a following column exists, and NEVER skips a segment with any letter or
+            # digit. Generalises to every "…No." ref label (Invoice/PO/SO) in a wide-gap band.
+            # Also drop a leading PARENTHETICAL PERCENTAGE annotation column: a money line reads
+            # "Discount (10%): | $231.81" or "VAT (20%): | £64.56" — the "(10%):" isn't the value
+            # (the AMOUNT is), so a discount/tax read grabbed it, failed currency validation, and
+            # left reconciliation blind ("total < subtotal, no discount to explain it" false flag).
+            # Tolerates wrapping parens and a trailing ":"/"." ("(10%):", "10%", "8.5 %").
+            _si = 0
+            while _si + 1 < len(_segs) and (
+                    re.fullmatch(r'[.\-–:#|)*]+', _segs[_si])
+                    or re.fullmatch(r'\(?\s*\d+(?:\.\d+)?\s*%\s*\)?\s*[:.]?', _segs[_si])):
+                _si += 1
+            after = _segs[_si] if _segs else ''
+            # A totals row often reads "Invoice Total | GBP | 118.83" — the column right after
+            # the label is a bare currency CODE/symbol (no digits). Skip it to the AMOUNT column
+            # so the value is the number, not "GBP". Reusable for any LABEL CODE AMOUNT layout;
+            # only fires when the first segment is EXACTLY a currency code/symbol AND a later
+            # column carries digits (else it's left untouched).
+            if (after and not re.search(r'\d', after)
+                    and re.fullmatch(r'[£$€¥]|GBP|USD|EUR|JPY|CAD|AUD|CHF|CNY|INR', after, re.I)):
+                for _s in _segs[1:]:
+                    if re.search(r'\d', _s):
+                        after = _s
+                        break
             # Reject if the extracted text itself looks like another label, or contains
             # an embedded label:value pair (e.g. "Ship Mode: Second Class", "Date: Sep 07")
             # which means we grabbed neighbouring column content, not the actual value.

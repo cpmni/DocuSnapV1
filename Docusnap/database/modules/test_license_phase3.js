@@ -146,6 +146,37 @@ if (!check('getActiveToken prefers the bound seat token',
   const r4 = await hB['license-activate'](null, { accountKey: 'GOOD-KEY' });
   if (!check('seat-limit -> blocked with clear code', r4.ok === false && r4.code === 'seat_limit_reached')) fail++;
 
+  // ── Phase 2: signed per-feature capacity → tamper-proof enforcement ──────────
+  const entitlementService = require('../../src/services/entitlementService');
+  const verifyClaims = (extra) => tokenLib.verify(sign({ ...seatClaims(), ...extra }), { fpHash: FP, productId: PID, publicKeys: PUB }).claims;
+  if (!check('featuresOf reads signed counts from a verified v2 token',
+      JSON.stringify(tokenLib.featuresOf(verifyClaims({ schema_version: 2, features: { core: 1, search: 2, workflow: 1 } }))) === JSON.stringify({ core: 1, search: 2, workflow: 1 }))) fail++;
+  if (!check('old seat token (no features) -> featuresOf null (Phase 1 fallback)',
+      tokenLib.featuresOf(verifyClaims({})) === null)) fail++;
+
+  // End-to-end: decideAccess syncs the SIGNED caps into entitlementService, and a
+  // tampered UNSIGNED count (a pre-set cached setting AND the JSON body) cannot raise them.
+  const dbF = new Database(':memory:'); runMigrations(dbF);
+  learning.setSetting(dbF, 'license_enforcement_enabled', 'true');
+  learning.setSetting(dbF, 'detached_search_seats', '999');       // pre-tampered cached value
+  const v2tok = (fp) => sign({ ...seatClaims({ fp }), schema_version: 2, features: { core: 1, search: 2, workflow: 1 } });
+  makeCtx(dbF, (m, u, body) => Promise.resolve(
+    (m === 'POST' && (u.endsWith('/validate') || u.endsWith('/activate')))
+      ? { status: 200, body: { token: v2tok(body.fp_hash), kind: 'seat', state: 'active', seat_id: 's1',
+          seats_total: 2, seats_used: 1, expires_at: null, features: { core: 1, search: 9999, workflow: 9999 } } } // tampered UNSIGNED json
+      : { status: 200, body: { state: 'none' } }));
+  const gF = await handler.decideAccess();
+  if (!check('gate allows on the v2 seat token', gF.decision === 'allow')) fail++;
+  const entF = entitlementService.checkClientEntitlement(dbF);
+  // Workflow is currently master-hidden (WORKFLOW_FEATURE_ENABLED=false) → forced to {seats:0,disabled}.
+  // The signed-count anti-tampering is proven by SEARCH (2, not the tampered 9999); the same signing
+  // covers workflow's count (1, not 9999) and this assertion re-tightens once the master switch is
+  // flipped back on (workflow.disabled falsy → seats must equal the signed 1).
+  const workflowSignedOk = entF.workflow.disabled ? entF.workflow.seats === 0 : entF.workflow.seats === 1;
+  if (!check('entitlement uses SIGNED counts (search 2, workflow 1-when-enabled), not the tampered 999/9999',
+      entF.search.seats === 2 && workflowSignedOk)) fail++;
+  if (!check('entitlement reports signed:true', entF.signed === true)) fail++;
+
   console.log(fail === 0 ? '\nALL PASS' : `\n${fail} FAILURE(S)`);
   process.exit(fail === 0 ? 0 : 1);
 })();

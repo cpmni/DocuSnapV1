@@ -40,9 +40,7 @@
     }
     .search-input:focus { border-color: var(--accent); }
     .search-input::placeholder { color: var(--muted); }
-    #inp-company   { width: 150px; }
-    #inp-reference { width: 120px; }
-    #inp-fulltext  { width: 180px; }
+    #inp-fulltext  { width: 320px; }
     #inp-date-from, #inp-date-to { width: 120px; }
     #inp-type {
       background: var(--bg); border: 1px solid var(--border2); border-radius: 5px;
@@ -61,8 +59,15 @@
     #btn-mailbox { padding: 6px 14px; border-radius: 5px; border: 1px solid var(--border2);
       background: var(--surface2); color: var(--text); font-size: 12px; cursor: pointer; }
     #btn-mailbox:hover { border-color: var(--accent2); color: var(--accent2); }
-    body.mailbox-mode #inp-company, body.mailbox-mode #inp-reference, body.mailbox-mode #inp-fulltext,
-    body.mailbox-mode #inp-date-from, body.mailbox-mode #inp-date-to, body.mailbox-mode #inp-type,
+    #btn-recycle, #btn-empty-bin { padding: 6px 14px; border-radius: 5px; border: 1px solid var(--border2);
+      background: var(--surface2); color: var(--text); font-family: var(--sans); font-size: 12px; cursor: pointer; }
+    #btn-recycle:hover { border-color: var(--accent2); color: var(--accent2); }
+    #btn-recycle.active { background: var(--accent-bg); border-color: var(--accent); color: var(--accent2); }
+    #btn-empty-bin { color: var(--err); border-color: rgba(214,69,69,.4); }
+    #btn-empty-bin:hover { background: var(--err-bg); border-color: var(--err); }
+    body.mailbox-mode #inp-fulltext,
+    body.mailbox-mode #inp-date-from, body.mailbox-mode #inp-date-to,
+    body.mailbox-mode #inp-total, body.mailbox-mode #inp-total-op, body.mailbox-mode #inp-type,
     body.mailbox-mode .uncommitted-toggle, body.mailbox-mode #btn-search,
     body.mailbox-mode #search-bar > span { display: none !important; }
 
@@ -78,6 +83,11 @@
     .wf-state.approved, .wf-state.acknowledged { background: var(--ok-bg); color: var(--ok); }
     .wf-state.rejected { background: var(--err-bg); color: var(--err); }
     .wf-state.recalled { background: var(--surface2); color: var(--muted); }
+    .wf-state.paid { background: rgba(59,130,246,.14); color: #3b82f6; }
+    .wf-stamp-link { border: none; background: none; padding: 0; color: var(--accent2); font-size: 11px;
+      cursor: pointer; text-decoration: underline; font-family: var(--sans); }
+    .wf-stamp-link:hover { color: var(--accent); }
+    .wf-note { margin: 8px 0; width: 100%; }
 
     #body { display: flex; flex: 1; overflow: hidden; }
 
@@ -99,6 +109,29 @@
     .result-item { padding: 9px 14px; cursor: pointer; border-bottom: 1px solid var(--border); transition: background .1s; }
     .result-item:hover  { background: var(--surface2); }
     .result-item.active { background: var(--accent-bg); border-left: 2px solid var(--accent); padding-left: 12px; }
+    /* Recycle-bin multi-select highlight */
+    .result-item.selected { background: var(--accent-bg); box-shadow: inset 3px 0 0 var(--accent); }
+    /* Recycle-bin selection toolbar (in the results header) */
+    #results-head { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 8px 14px; border-bottom: 1px solid var(--border); background: var(--surface);
+      position: sticky; top: 0; z-index: 2; }
+    #results-head:empty, #results-head.hidden { display: none; }   /* no empty bar outside the bin */
+    .bin-count { font-size: 12px; font-weight: 600; color: var(--text); }
+    .bin-actions { display: flex; gap: 8px; }
+    .btn-sm { padding: 5px 12px; border-radius: 6px; border: 1px solid var(--border2);
+      background: var(--surface); color: var(--text); font-family: var(--sans); font-size: 12px; font-weight: 600; cursor: pointer; }
+    .btn-sm:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-sm.danger { color: var(--err); border-color: var(--err-border, rgba(214,69,69,.4)); }
+    .btn-sm.danger:hover { background: var(--err-bg); border-color: var(--err); }
+    /* Right-click context menu */
+    #bin-context-menu { position: fixed; z-index: 1000; min-width: 170px; padding: 5px;
+      background: var(--surface); border: 1px solid var(--border2); border-radius: 8px;
+      box-shadow: 0 12px 30px rgba(0,0,0,.35); display: flex; flex-direction: column; gap: 2px; }
+    #bin-context-menu button { text-align: left; padding: 8px 10px; border: none; border-radius: 6px;
+      background: transparent; color: var(--text); font-family: var(--sans); font-size: 13px; cursor: pointer; }
+    #bin-context-menu button:hover { background: var(--surface2); }
+    #bin-context-menu button.danger { color: var(--err); }
+    #bin-context-menu button.danger:hover { background: var(--err-bg); }
     /* Result-row page-1 thumbnail (shared/thumbs.js). Empty element = placeholder
        box; the rendered page fills it once loaded. No renderable thumb → empty box. */
     .result-row  { display: flex; align-items: flex-start; gap: 10px; }
@@ -238,13 +271,17 @@
   </div>
 
   <div id="search-bar">
-    <input class="search-input" id="inp-company"   type="text" placeholder="Company…">
-    <input class="search-input" id="inp-reference" type="text" placeholder="Reference…">
-    <input class="search-input" id="inp-fulltext"  type="text" placeholder="Full text…" title="Search OCR text content" data-help-key="fulltext">
+    <input class="search-input" id="inp-fulltext"  type="text" placeholder="Search anything…" title="Searches everything on the document — text, references, amounts, dates and codes. Numbers ignore commas (1137 finds 1,137)." data-help-key="fulltext">
     <span style="font-size:11px; color:var(--muted); white-space:nowrap;">From</span>
-    <input class="search-input" id="inp-date-from" type="date" title="From date">
+    <input class="search-input" id="inp-date-from" data-help-key="date-from" type="date" title="From date">
     <span style="font-size:11px; color:var(--muted);">to</span>
     <input class="search-input" id="inp-date-to"   type="date" title="To date">
+    <select id="inp-total-op" class="search-input" title="Total amount filter" style="width:auto;" data-help-key="total-op">
+      <option value="eq">Total =</option>
+      <option value="gt">Total &gt;</option>
+      <option value="lt">Total &lt;</option>
+    </select>
+    <input class="search-input" id="inp-total" type="text" inputmode="decimal" placeholder="amount" title="Filter by total amount (uses the operator on the left)" style="width:90px;" data-help-key="total">
     <select id="inp-type" data-help-key="type-filter">
       <option value="">All types</option>
     </select>
@@ -252,12 +289,17 @@
       <input type="checkbox" id="chk-uncommitted" checked>
       Include unconfirmed
     </label>
-    <button id="btn-search">Search</button>
-    <button id="btn-mailbox" style="display:none">Mailbox</button>
+    <button id="btn-search" data-help-key="do-search">Search</button>
+    <button id="btn-recycle" data-help-key="recycle-bin" style="display:none">Recycle bin</button>
+    <button id="btn-empty-bin" style="display:none">Empty bin</button>
+    <button id="btn-mailbox" data-help-key="mailbox" style="display:none">Mailbox</button>
+  </div>
+  <div id="date-range-note" style="display:none; padding:2px 12px; font-size:12px; color:var(--warn);">
+    “From” date is after “To” date — no documents can match. Swap them or clear one.
   </div>
 
   <div id="body">
-    <div id="results-pane">
+    <div id="results-pane" data-help-key="results-pane">
       <div id="mailbox-tabs" style="display:none">
         <button class="mb-tab active" data-box="inbox">Inbox</button>
         <button class="mb-tab" data-box="sent">Sent</button>
@@ -269,7 +311,7 @@
       </div>
     </div>
 
-    <div id="preview-pane">
+    <div id="preview-pane" data-help-key="preview-pane">
       <div id="preview-empty">Select a document from the results</div>
 
       <div id="preview-doc" style="display:none">
@@ -279,15 +321,15 @@
             <img id="preview-img" style="display:none" alt="Document preview" draggable="false">
           </div>
           <div id="page-nav" style="display:none">
-            <button class="page-nav-btn" id="btn-page-prev" title="Previous page" aria-label="Previous page" disabled>&#8249;</button>
+            <button class="page-nav-btn" id="btn-page-prev" data-help-key="preview-pages" title="Previous page" aria-label="Previous page" disabled>&#8249;</button>
             <span id="page-label" class="page-nav-label">1 / 1</span>
-            <button class="page-nav-btn" id="btn-page-next" title="Next page" aria-label="Next page" disabled>&#8250;</button>
+            <button class="page-nav-btn" id="btn-page-next" data-help-key="preview-pages" title="Next page" aria-label="Next page" disabled>&#8250;</button>
           </div>
         </div>
 
         <div id="preview-sidebar">
           <div id="preview-fields-scroll"></div>
-          <div id="preview-actions"></div>
+          <div id="preview-actions" data-help-key="preview-actions"></div>
         </div>
       </div>
     </div>

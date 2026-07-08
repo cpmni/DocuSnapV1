@@ -18,7 +18,9 @@
 
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 const { createClient } = require('./apiClient');
 
 const ALLOW_SELF_SIGNED = process.env.SCANFINDER_CLIENT_ALLOW_SELF_SIGNED === '1';
@@ -27,7 +29,18 @@ let serverConfig = null;   // { host, port, tls } | null
 let client = null;         // rebuilt whenever the server changes
 
 const configPath = () => path.join(app.getPath('userData'), 'scanfinder-client.json');
+const clientIdPath = () => path.join(app.getPath('userData'), 'scanfinder-client-id');
 const urlOf = (c) => `${c.tls ? 'https' : 'http'}://${c.host}:${c.port}`;
+
+// A stable per-install id, generated ONCE and reused, so a returning client keeps its
+// sticky seat across DHCP/IP changes (the server keys seats on client_id, else
+// username@ip — an IP change otherwise looks like a brand-new client).
+function getClientId() {
+  try { const id = fs.readFileSync(clientIdPath(), 'utf8').trim(); if (id) return id; } catch { /* generate below */ }
+  const id = crypto.randomUUID();
+  try { fs.writeFileSync(clientIdPath(), id); } catch { /* best-effort; falls back to username@ip server-side */ }
+  return id;
+}
 
 function loadServerConfig() {
   const env = process.env.SCANFINDER_CLIENT_API_URL; // env override wins (dev/launcher)
@@ -35,13 +48,19 @@ function loadServerConfig() {
   try { return JSON.parse(fs.readFileSync(configPath(), 'utf8')); } catch { return null; }
 }
 function saveServerConfig(c) { try { fs.writeFileSync(configPath(), JSON.stringify(c, null, 2)); } catch { /* ignore */ } }
-function buildClient(c) { client = createClient({ baseUrl: urlOf(c), allowSelfSigned: ALLOW_SELF_SIGNED, ca: c.caPem || undefined }); }
+function buildClient(c) {
+  client = createClient({
+    baseUrl: urlOf(c), allowSelfSigned: ALLOW_SELF_SIGNED, ca: c.caPem || undefined,
+    clientId: getClientId(), hostname: os.hostname(),
+  });
+}
 
 function createWindow() {
   win = new BrowserWindow({
     width: 1180, height: 800, minWidth: 940, minHeight: 600,
     backgroundColor: '#0c0e14',
     title: 'ScanFinder — Search',
+    icon: path.join(__dirname, 'assets', 'icon.ico'),   // app/window/taskbar icon (mirrors the core app)
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -51,7 +70,30 @@ function createWindow() {
   });
   if (win.removeMenu) win.removeMenu();
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+
+  // KEYBOARD-FOCUS FIX (window-level — cures EVERY text field, current and future).
+  // Without this, Electron can leave the web page without KEYBOARD focus on Windows, so a
+  // click into a text field shows no cursor / won't type until you click out of the window and
+  // back in (which re-activates keyboard focus). Buttons still work because they respond to the
+  // mouse; only typing breaks. The CORE app already does this (src/main.js grabFocus →
+  // win.webContents.focus()); the client did not. Give the web page keyboard focus on load and
+  // whenever the window regains OS focus. NOTE: this is why NO per-field fix is needed — any
+  // new <input>/<textarea> is covered automatically. (For a field you AUTO-focus when a view or
+  // dialog opens, still defer the .focus() to requestAnimationFrame so Chromium doesn't drop a
+  // focus issued the same tick the element is shown.)
+  const grabFocus = () => { try { if (win && !win.isDestroyed()) win.webContents.focus(); } catch {} };
+  win.webContents.on('did-finish-load', grabFocus);
+  win.on('focus', grabFocus);
+  win.on('show', grabFocus);
 }
+
+// Renderer-driven keyboard-focus repair (Windows): the preload requests this when a
+// click enters a text field while the render widget lacks OS keyboard focus (the
+// "click a box, no caret until I alt-tab out and back" bug). Re-focusing the sending
+// webContents re-syncs it without an OS window-focus change. Sender-scoped + guarded.
+ipcMain.on('ensure-window-focus', (e) => {
+  try { const wc = e.sender; if (wc && !wc.isDestroyed()) wc.focus(); } catch {}
+});
 
 // Renderer → main → apiClient. The token is never sent to the renderer.
 // Server selection: the renderer asks for the saved address, or sets a new one
@@ -106,31 +148,153 @@ ipcMain.handle('client-fetch-ca', async (_e, { host, port, code } = {}) => {
   try { return await tmp.fetchCa(code); } catch (e) { return { ok: false, error: e.message }; }
 });
 
+// ── Page cache ────────────────────────────────────────────────────────────────
+// Rendering a document's pages is the slow path (the host renders PDF→PNG on
+// demand + base64-transfers them, ~1s). Cache successful page payloads by docId
+// so re-clicking a document is instant. Bounded LRU; held in the MAIN process
+// (out of the renderer, like the auth token) and cleared on logout — these are
+// authenticated document images.
+const PAGE_CACHE_MAX = 20;
+const pageCache = new Map();   // id -> { status, json }
+function _pageCacheGet(id) {
+  if (!pageCache.has(id)) return undefined;
+  const v = pageCache.get(id);
+  pageCache.delete(id); pageCache.set(id, v);   // bump to most-recently-used
+  return v;
+}
+function _pageCacheSet(id, v) {
+  pageCache.set(id, v);
+  while (pageCache.size > PAGE_CACHE_MAX) pageCache.delete(pageCache.keys().next().value);
+}
+
+// ── Connection watch ──────────────────────────────────────────────────────────
+// Detect when the server (the core app) becomes unreachable — proactively via a
+// heartbeat while signed in, and reactively when any authed call hits a network
+// error — and tell the renderer so it can show a "connection lost" overlay with a
+// Retry. Reachability only: a server that's UP but returns an error status counts
+// as connected (session/permission handling stays in the existing 401 path).
+let connAlive = true;
+let heartbeatTimer = null;
+const HEARTBEAT_MS = 5000;
+
+function markConnection(alive) {
+  if (alive === connAlive) return;                 // edge-triggered: only on change
+  connAlive = alive;
+  if (win && !win.isDestroyed()) {
+    try { win.webContents.send(alive ? 'client-connection-restored' : 'client-connection-lost'); } catch { /* window gone */ }
+  }
+}
+function isNetworkError(e) {
+  const code = e && e.code;
+  if (code && ['ECONNREFUSED','ECONNRESET','ETIMEDOUT','ENOTFOUND','EHOSTUNREACH','EHOSTDOWN','ENETUNREACH','EPIPE','ECONNABORTED','EAI_AGAIN'].includes(code)) return true;
+  return /socket hang up|network|ECONN|timed?\s*out|getaddrinfo/i.test((e && e.message) || '');
+}
+// Wrap an authed IPC handler so a NETWORK failure flips the connection state (a
+// real network success clears it). Re-throws so the renderer's own handling runs.
+function guarded(fn) {
+  return async (...args) => {
+    try { const r = await fn(...args); markConnection(true); return r; }
+    catch (e) { if (isNetworkError(e)) markConnection(false); throw e; }
+  };
+}
+async function pingServer() {
+  if (!client) return false;
+  try { return await client.ping(); } catch { return false; }
+}
+function startHeartbeat() {
+  stopHeartbeat();
+  connAlive = true;
+  heartbeatTimer = setInterval(async () => { markConnection(await pingServer()); }, HEARTBEAT_MS);
+}
+function stopHeartbeat() {
+  if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+  connAlive = true;
+}
+// Manual retry from the "connection lost" overlay — force an immediate re-check.
+ipcMain.handle('client-retry-connection', async () => {
+  const ok = await pingServer();
+  markConnection(ok);
+  return { ok };
+});
+
 ipcMain.handle('client-config',       () => ({ apiUrl: serverConfig ? urlOf(serverConfig) : null }));
 ipcMain.handle('client-connect',      () => client ? client.connect() : { ok: false, mode: 'block', reason: 'No server configured.' });
-ipcMain.handle('client-login',        (_e, { username, password, totp }) => client ? client.login(username, password, totp) : { ok: false, error: 'No server configured.' });
-ipcMain.handle('client-logout',       () => client ? client.logout() : { ok: true });
+ipcMain.handle('client-login',        async (_e, { username, password, totp }) => {
+  if (!client) return { ok: false, error: 'No server configured.' };
+  // A network hiccup at login (DNS/TLS/timeout) used to REJECT the invoke, leaving the
+  // Sign-in button doing nothing with no message. Mirror client-set-server: turn a thrown
+  // transport error into a normal { ok:false, error } the renderer already renders.
+  let r;
+  try { r = await client.login(username, password, totp); }
+  catch (e) { return { ok: false, error: (e && e.message) || 'Could not reach the server.' }; }
+  if (client.isAuthenticated()) startHeartbeat();   // watch the connection for this session
+  return r;
+});
+ipcMain.handle('client-logout',       () => { stopHeartbeat(); pageCache.clear(); return client ? client.logout() : { ok: true }; });
+ipcMain.handle('client-change-password', async (_e, { currentPassword, newPassword } = {}) => {
+  if (!client) return { ok: false, error: 'Not connected to a server.' };
+  try { return await client.changePassword(currentPassword, newPassword); }
+  catch (e) { return { ok: false, error: (e && e.message) || 'Could not reach the server.' }; }
+});
 ipcMain.handle('client-entitlement',  () => client ? client.entitlement() : { status: 0, json: null });
-ipcMain.handle('client-search',       (_e, params) => client.search(params));
-ipcMain.handle('client-get-document', (_e, id) => client.getDocument(id));
-ipcMain.handle('client-get-pages',    (_e, id) => client.getPages(id));
+ipcMain.handle('client-search',       guarded((_e, params) => client.search(params)));
+ipcMain.handle('client-get-document', guarded((_e, id) => client.getDocument(id)));
+ipcMain.handle('client-recycle-list',      guarded(()       => client.recycle.list()));
+ipcMain.handle('client-recycle-delete',    guarded((_e, id) => client.recycle.delete(id)));
+ipcMain.handle('client-recycle-restore',   guarded((_e, id) => client.recycle.restore(id)));
+ipcMain.handle('client-recycle-purge',     guarded((_e, id) => client.recycle.purge(id)));
+ipcMain.handle('client-recycle-purge-all', guarded(()       => client.recycle.purgeAll()));
+ipcMain.handle('client-review-queue',    guarded(()                => client.review.queue()));
+ipcMain.handle('client-review-deferred', guarded(()                => client.review.deferred()));
+ipcMain.handle('client-review-counts',   guarded(()                => client.review.counts()));
+ipcMain.handle('client-doc-types',       guarded(()                => client.review.docTypes()));
+ipcMain.handle('client-review-confirm',  guarded((_e, id, payload) => client.review.confirm(id, payload)));
+ipcMain.handle('client-review-defer',    guarded((_e, id)          => client.review.defer(id)));
+ipcMain.handle('client-review-undefer',  guarded((_e, id)          => client.review.undefer(id)));
+ipcMain.handle('client-review-viewing',  guarded((_e, id)          => client.review.viewing(id)));
+ipcMain.handle('client-review-release',  guarded((_e, id)          => client.review.release(id)));
+ipcMain.handle('client-review-ocr-region', guarded((_e, id, imageBase64) => client.review.ocrRegion(id, imageBase64)));
+ipcMain.handle('client-get-pages',    async (_e, id) => {
+  const hit = _pageCacheGet(id);
+  if (hit !== undefined) return hit;                 // instant re-click (no network → don't touch conn state)
+  try {
+    const res = await client.getPages(id);
+    markConnection(true);
+    if (res && res.status === 200 && res.json) _pageCacheSet(id, res);   // cache only successful payloads
+    return res;
+  } catch (e) { if (isNetworkError(e)) markConnection(false); throw e; }
+});
+ipcMain.handle('client-get-thumbnail', async (_e, id) => {
+  try {
+    const res = await client.getThumbnail(id);
+    markConnection(true);
+    return res;
+  } catch (e) { if (isNetworkError(e)) markConnection(false); throw e; }
+});
 ipcMain.handle('client-authed',       () => client ? client.isAuthenticated() : false);
 
 // Mailbox / approval workflow.
-ipcMain.handle('client-wf-list',       (_e, view) => client.workflow.list(view));
-ipcMain.handle('client-wf-recipients', () => client.workflow.recipients());
-ipcMain.handle('client-wf-assign',     (_e, { documentId, toUserId, actionRequired, comment }) =>
-  client.workflow.assign(documentId, toUserId, actionRequired, comment));
-ipcMain.handle('client-wf-claim',      (_e, { id, version }) => client.workflow.claim(id, version));
-ipcMain.handle('client-wf-resolve',    (_e, { id, decision, comment, version }) =>
-  client.workflow.resolve(id, decision, comment, version));
-ipcMain.handle('client-wf-recall',     (_e, { id, version }) => client.workflow.recall(id, version));
+ipcMain.handle('client-wf-list',       guarded((_e, view) => client.workflow.list(view)));
+ipcMain.handle('client-wf-recipients', guarded(() => client.workflow.recipients()));
+ipcMain.handle('client-wf-assign',     guarded((_e, { documentId, toUserId, actionRequired, comment }) =>
+  client.workflow.assign(documentId, toUserId, actionRequired, comment)));
+ipcMain.handle('client-wf-claim',      guarded((_e, { id, version }) => client.workflow.claim(id, version)));
+ipcMain.handle('client-wf-resolve',    guarded((_e, { id, decision, comment, version }) =>
+  client.workflow.resolve(id, decision, comment, version)));
+ipcMain.handle('client-wf-recall',     guarded((_e, { id, version }) => client.workflow.recall(id, version)));
+ipcMain.handle('client-wf-stamped',    guarded((_e, id) => client.workflow.stamped(id)));
 
 // About box: version details + open the bundled third-party notice.
 ipcMain.handle('client-about', () => {
-  let copyright = '';
+  let copyright = '', buildRev = null;
   try { copyright = require('./package.json').build.copyright || ''; } catch { /* ignore */ }
-  return { name: app.getName(), version: app.getVersion(), electron: process.versions.electron, copyright };
+  // Build stamp: baked into the packaged package.json by electron-builder
+  // (extraMetadata.buildRev = BUILD_REV); in unpackaged dev, read the live git sha.
+  try { buildRev = require('./package.json').buildRev || null; } catch { /* not baked */ }
+  if (!buildRev && !app.isPackaged) {
+    try { buildRev = require('child_process').execSync('git rev-parse --short HEAD', { cwd: __dirname, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() || null; } catch { /* no git */ }
+  }
+  return { name: app.getName(), version: app.getVersion(), electron: process.versions.electron, buildRev, copyright };
 });
 ipcMain.handle('client-open-licenses', async () => {
   // Dev: file sits beside main.js; packaged: extraResources drops it in resources/.

@@ -53,9 +53,8 @@ document types). A user points it at a folder of scanned PDFs/images; the app:
    so future documents from the same supplier need less (or no) manual
    correction.
 
-The app is **fully offline-capable**: OCR runs locally via Tesseract, the
-database is a local SQLite file, and the (currently dormant) AI extraction
-stage uses a local Ollama model rather than a cloud API.
+The app is **fully offline-capable**: OCR runs locally via Tesseract and the
+database is a local SQLite file — no cloud APIs.
 
 **Platform**: Windows only (desktop Electron app). Two distinct runtime
 contexts exist: **dev** (system Python 3.12 + system Tesseract) and
@@ -82,7 +81,7 @@ contexts exist: **dev** (system Python 3.12 + system Tesseract) and
                        │  commitDocument()         │    │  Year/Month/*.pdf +  │
                        │                           │    │  .metadata/*.xml     │
                        └────────────┬────────────┘    └──────────────────────┘
-                                     │ saveCorrections / _upsertTemplate
+                                     │ saveCorrections (+ landmark refresh)
                                      ▼
                        ┌─────────────────────────┐
                        │ learning tables: hints,   │
@@ -101,7 +100,6 @@ contexts exist: **dev** (system Python 3.12 + system Tesseract) and
 | Auth hashing | **argon2 ^0.44.0** | Used for password hashing in `database/modules/auth.js` |
 | UI | Vanilla HTML/CSS/JS, **frameless windows** | Custom titlebar, `-webkit-app-region: drag`. No framework (no React/Vue) |
 | OCR | **Tesseract 5** via `pytesseract` + `pypdfium2` | `pypdfium2` renders PDF pages to images for OCR and for preview |
-| AI extraction | **phi3:mini via Ollama** | **Dormant** — Stage 3 code exists (`llm.py`) but `ai` mode is not exposed in the shipped Settings UI and Ollama/the model is not bundled in the installer |
 | Database | **SQLite** via better-sqlite3, WAL journal mode, foreign keys ON | Single file at `{userData}/docusnap.db` |
 | Packaging | **electron-builder ^24.13.3** | NSIS installer, Windows x64 only, code signing disabled |
 
@@ -184,13 +182,12 @@ docusnap2/
 │   │   ├── keyword.py            # Stage 1: regex pattern matching + doc-type detection
 │   │   ├── anchor.py             # Stage 2: spatial anchors + logo supplier match
 │   │   ├── ocr_corrector.py      # Stage 2.5: learned OCR misread correction + noise stripping
-│   │   ├── llm.py                # Stage 3: phi3:mini via Ollama (dormant)
 │   │   ├── validator.py          # Stage 4: cross-field validation
 │   │   └── format_anomaly_checker.py  # Stage 4.5: format-class anomaly detection
 │   ├── ocr/{tesseract.py,region.py}    # Page OCR + zone-selection OCR
 │   ├── ocr_region.py             # CLI wrapper around ocr/region.py (used by ocr-region IPC)
-│   ├── logo/fingerprint.py        # Logo perceptual-hash extraction/matching
-│   ├── logo_fingerprint.py        # CLI wrapper around logo/fingerprint.py
+│   ├── logo/fingerprint.py        # Logo perceptual-hash extraction/matching (spawned directly)
+│   ├── logo_hash.py               # Shared logo crop+preprocess+hash recipe (logo/fingerprint.py + template_matcher)
 │   ├── pdf_splitter.py            # CLI for split-pdf IPC
 │   ├── render/pages.py            # PDF→PNG rendering (review/search/template preview)
 │   ├── render_pages.py            # CLI wrapper around render/pages.py
@@ -325,8 +322,11 @@ app.whenReady()
                            + .metadata/*.xml sidecar
                         b. learning.saveCorrections() — corrections,
                            supplier_hints, anchor-clearing (§7)
-                        c. _upsertTemplate() — create/update learned template,
-                           possibly reuse via logo-hash match (§8)
+                        c. if already linked to a template: refresh its
+                           cross-sample landmarks. Template create/update
+                           (_upsertTemplate, §8) happens ONLY via explicit
+                           promote-to-template (Add to Template Manager /
+                           Teach wizard), NOT on every confirm.
                         d. documents.update() — status='confirmed',
                            stored_path, supplier_name, doc_date,
                            reference_number, document_type_id
@@ -362,16 +362,14 @@ in `python_backend/extraction/engine.py`.
 
 ### 6.1 Modes
 
-Stored in `settings.processing_mode` (`fast | smart | ai`, default `smart`):
+Stored in `settings.processing_mode` (`fast | smart`, default `smart`):
 
-| Mode | Stages run | LLM (Stage 3) |
-|---|---|---|
-| `fast` | 0, 0.5, 1, 2, 2.5, 4, 4.5 | never |
-| `smart` (default) | same as fast | only if `invoice_number`/`invoice_date`/`total_amount` missing or confidence < 70% |
-| `ai` | same as fast | always |
+| Mode | Stages run |
+|---|---|
+| `fast` | 0, 0.5, 1, 2, 2.5, 4, 4.5 |
+| `smart` (default) | same as fast (kept distinct for future use) |
 
-`_should_use_llm()` returns `True` only in `ai` mode **and** when the LLM is
-available; `fast`/`smart` paths short-circuit before any Ollama call.
+(The former `ai`/LLM Stage 3 was removed 2026-07.)
 
 ### 6.2 Stage-by-stage
 
@@ -387,9 +385,9 @@ available; `fast`/`smart` paths short-circuit before any Ollama call.
 | 2.5b | engine.py `_apply_hints` | Fill **missing** fields from confirmed, non-variable supplier hints (usage_count ≥2) | `hint` |
 | 2.5c | `ocr_corrector.denoise_value` | Strip learned noise edges (e.g. `"# 14269"` → `"14269"`) for `invoice_number`-style fields with a learned digits-only profile (≥10 confirmed samples) | `+5` confidence boost |
 | 2.5d | `ocr_corrector.correct_extraction` / `try_correct` | Apply learned per-template character substitution maps (`LETTER_TO_DIGIT`, `DIGIT_TO_UPPER`, `DIGIT_TO_LOWER`) | appends `"+corrected"`, boost 0–20 |
-| **3** | `llm.py` (dormant in shipped UI) | phi3:mini fills only fields still missing | `llm` |
 | **4** | `validator.validate_and_adjust` | Label-shaped-value guard (value ending `:` → cap 35), date/reference noise stripping, date parsing/normalisation to `DD-MM-YYYY`, subtotal+VAT≈total cross-check (2% tolerance, cap 50 on mismatch), date sanity (>10y old/future → cap 40), currency inference from symbol | various caps + `validation_note` |
 | **4.5** | `format_anomaly_checker.check_value` | Compare value against the supplier/doc-type/field's inferred **format class** (from ≥3 confirmed historical samples). On violation: cap confidence at **45**, set `validation_note`, force `_needs_review`. Skips fields already flagged by Stage 4 | cap 45 |
+| **4.5b** | `identity_fusion` (`extraction/identity_fusion.py`) | **Text-led SUPPLIER identity conflict flag** — LIVE, opt-in default-on (`identity_conflict_flag`). Reads the issuer-band letterhead (top lines, truncated at the first recipient marker like "Bill To", footer excluded) and fuzzy-matches (rapidfuzz) the known-supplier gazetteer built from the logo/hint/anchor scopes. If it confidently reads a **different** known supplier than the pipeline resolved (a CONFLICT), it raises `_needs_review` + a "Letterhead may read *X* — detected *Y*" note on the identity field and caps that field's confidence at 70. NEVER overrides, fills, or flags on agree/abstain. Validated 99.4% precision / 0 false-alarms on 166 real confirmed docs. Inert-safe if rapidfuzz is absent (guarded import). | flag-only |
 
 ### 6.3 Merge / override algorithm (critical)
 
@@ -402,7 +400,6 @@ available; `fast`/`smart` paths short-circuit before any Ollama call.
 | 1 (keyword) | Confidence comparison only: `data["confidence"] > existing["confidence"]` |
 | 2 (anchor) | **Taught override**: a result with `method == "anchor_crop"` overrides anything **except** another taught source (`anchor_crop`, `template_mapping`, `template_mapping_expanded`) — those contend on confidence. This lets a freshly-taught anchor (usage_count=1, ~85%) beat an already-wrong keyword hit (88–93%) |
 | 2.5b (hints) | Fill-missing only: `if not existing or not existing.get("value")` |
-| 3 (LLM) | Fill-missing only |
 | 4 / 4.5 (validation) | In-place modification — may **lower** confidence/add `validation_note`, never raises it |
 
 ### 6.4 Supplier identity re-resolution
@@ -429,7 +426,8 @@ results["_document_type"]        # display name
 results["_document_slug"]        # e.g. "invoice" — used for all learning lookups
 results["_overall_confidence"]   # weighted avg over required fields
 results["_needs_review"]         # bool — any field below threshold OR format anomaly
-results["_mode_used"]            # "fast" | "smart" | "ai"
+results["_mode_used"]            # "fast" | "smart"
+results["_identity_shadow"]      # optional supplier-identity verdict (measurement/flag; see §6.2 Stage 4.5b)
 results["_template_id"]          # matched template id, or None
 results["_logo_phash"]           # page-1 perceptual hash, or None
 results["_keyword_fingerprint"]  # list[str] — stable branding keywords
@@ -479,7 +477,7 @@ run via `buildTrainingArgs()`:
 
 | Corpus | Table | Written by | Read by |
 |---|---|---|---|
-| **Templates** | `templates`, `template_fields`, `template_field_mappings` | `_upsertTemplate()` (review/handler.js) on every confirm; admin edits via Template Viewer | Stage 0 (`template_matcher`), Stage 0.5 (`template_mapper`) |
+| **Templates** | `templates`, `template_fields`, `template_field_mappings` | `_upsertTemplate()` (review/handler.js) on explicit **promote** (Add to Template Manager / Teach wizard) — NOT on every confirm; admin edits via Template Viewer | Stage 0 (`template_matcher`), Stage 0.5 (`template_mapper`) |
 | **Field anchors** | `field_anchors` | `learning.saveAnchor()` — called when the user teaches a field via the ⊕ zone-OCR tool (taught fields), and indirectly cleared on manual corrections | Stage 2 (`anchor.extract_with_anchors`) |
 | **Supplier hints** | `supplier_hints` | `learning.saveCorrections()` — every confirmed field value (not just corrections) is upserted as a hint | Stage 2.5a/b |
 | **Logo fingerprints** | `logo_fingerprints` | `save-logo-fingerprint` IPC (admin/edit, via zone-OCR/teaching flow) | Pre-stage and Stage 0 fallback supplier match |
@@ -756,9 +754,10 @@ re-enabling restores the previously learned baseline.
 
 ## 10. Windows / UI Surfaces
 
-All windows share: frameless chrome (`#0c0e14` background, custom
-titlebar/drag region), `src/windows/shared/theme.js` (dark/light, synced via
-`settings.theme` + `theme-changed` broadcast), and the `window.docusnap`
+All windows share: **native OS window frames** (`main.js` `frame:true`; the old
+custom drag titlebars were removed and are hidden globally in `theme.css`),
+`src/windows/shared/theme.js` (**eleven** named light/dark themes — Warm Paper is
+the default — synced via `settings.theme` + `theme-changed` broadcast), and the `window.docusnap`
 bridge from `preload.js`.
 
 ### 10.1 Login (`src/windows/login/`)
@@ -782,7 +781,7 @@ usernames so failed-login timing doesn't reveal whether an account exists.
 ### 10.2 Main window (`src/windows/main/`)
 
 Folder-import UI: folder picker → Run/Stop/Clear → progress log + results
-table + stage indicator (`ocr`/`llm`/`save`/`done`). Listens to
+table + stage indicator (`ocr`/`save`/`done`). Listens to
 `process-progress` events (`start`, `file_begin`, `file_done`, `log`) via
 `onProgress`. Run button disabled while `running`.
 
@@ -1302,7 +1301,7 @@ load-bearing differences to remember when debugging a packaged-only issue:
 | **Folder watch / auto-import** | `src/modules/watch/handler.js` (`classifyPoll`, polling, integration with `processing.handleFileMessage`) |
 | **Validation rules** (date/currency/maths cross-checks) | `python_backend/extraction/validator.py` |
 | **Format-anomaly detection** | `python_backend/extraction/format_anomaly_checker.py`; `database/modules/learning.js` `getFieldFormats()` |
-| **Processing mode (fast/smart/ai) & fast-mode suggestion** | `src/modules/processing/processing_mode_handler.js`; gating logic in `python_backend/extraction/engine.py` `_should_use_llm` |
+| **Processing mode (fast/smart) & fast-mode suggestion** | `src/modules/processing/processing_mode_handler.js` |
 | **PDF splitting** | `python_backend/pdf_splitter.py` (+ CLI wrapper); IPC `split-pdf` in `src/modules/processing/handler.js` |
 
 ---
@@ -1459,6 +1458,58 @@ transparency. Pointers into the detailed sections above.
   option (inline text → locked on commit); `autoLabel()` requires ≥3 alpha chars;
   type selector Text/Date/Currency/Number. (Watch for smart quotes in injected HTML
   — they silently break the buttons' class/id.)
+
+---
+
+## 22. Recent changes (2026-07)
+
+> **Note on currency.** `CLAUDE.md` is the authoritative *living* index of the architecture and
+> always reflects the latest state; this manual is refreshed in passes. Where the two disagree,
+> trust `CLAUDE.md` and the code. The sections below capture the most impactful 2026-07 changes.
+> Some 2026-06/07 UI work (the dashboard + left nav-rail home screen, the eleven named themes incl.
+> the seasonal set, the preset doc-type catalog, supplier graduation/auto-file, the first-run
+> wizard/welcome tour/practice tutorial) is documented in `CLAUDE.md` and is only partially
+> reflected in §10/§4 here — consult `CLAUDE.md` for those surfaces.
+
+### 22.1 AI/LLM (Ollama + phi3) removed
+The dormant `ai` processing mode + the Ollama/phi3 LLM (former Stage 3, `extraction/llm.py`) were
+**removed entirely**. `llm.py` is deleted; the engine's LLM import, `ollama_url`/`model` ctor params,
+`warmup()`, the Stage-3 `use_llm` block and `_should_use_llm()` are gone; `process_docs.py` and every
+mode validator accept only `fast`/`smart` (a stale `ai` falls back to `smart`). **Extraction output is
+byte-identical** — the LLM only ran in the never-shipped `ai` mode. There is no bundled model, no
+Ollama, no network dependency. `get-ai-status`/`pull-ai-model`/`pull-progress` IPC are gone.
+
+### 22.2 RapidOCR removed — Tesseract-only full-page OCR
+The opt-in RapidOCR engine was **removed** (Slice 1 unbundled it; Slice 2 deleted the code). Full-page
+OCR is **Tesseract only** (`ocr/engine.py` `TesseractEngine`; `get_engine()` returns Tesseract for any
+name, tolerating a stale `'rapidocr'` setting). Deleted: `requirements-ocr.txt`,
+`scripts/check-rapidocr-bundled.js`, `tools/ocr_bake_off.py`, `OCR_RUNTIME.md`, the Settings OCR-engine
+selector, and the `--ocr-engine`/`--ocr-fast`/`--ocr-threads` plumbing. `threadCap` (Tesseract OpenMP
+cap via `OMP_THREAD_LIMIT`) is **kept**. Byte-identical (Tesseract was already the default). Build
+machine: `pip uninstall` the rapidocr/onnxruntime/opencv/shapely/pyclipper stack from `vendor/python`
+and regenerate `THIRD-PARTY-LICENSES.txt`.
+
+### 22.3 Full-page OCR text is geometry-reconstructed
+`TesseractEngine.read_page` rebuilds page text from word **geometry** (`reconstruct_page_text`): words
+are grouped into visual rows by y-centre so a right-aligned totals value stays on its label's line
+instead of being stranded in a separate OCR column (took scanned subtotal/total ~63%→100%). Born-digital
+PDFs read their embedded text layer directly (`born_digital.py`, `born_digital_enabled`); pages are
+auto-rotated on first import via Tesseract OSD (`ocr/orientation.py`, `auto_rotate_enabled`).
+
+### 22.4 identity_fusion — supplier-conflict review flag (LIVE)
+New Stage 4.5b (see §6.2). `extraction/identity_fusion.py` reads the issuer-band letterhead and
+fuzzy-matches (rapidfuzz, MIT) the known-supplier gazetteer; on a confident conflict with the pipeline's
+resolved supplier it raises `_needs_review` + a note — flag-only, never overrides/fills. **Default on**
+(`identity_conflict_flag`); validated 99.4% precision / 0 false-alarms on 166 real confirmed docs;
+inert-safe if rapidfuzz is absent. `rapidfuzz` must be `pip install`ed into `vendor/python` on the build
+machine for it to run in packaged builds (already in BUILD.txt). Guarded by `tests/test_identity_fusion.py`.
+
+### 22.5 Cross-supplier positional-anchor fixes (2026-07)
+A ⊕-taught authoritative anchor for a positional field is no longer applied blind across suppliers: a
+BLIND read from a *named different* supplier is dropped (`_is_blind_cross_supplier_anchor`), while a
+LOCATED read (taught label found on this page → same layout) is kept. The false-locate residual is
+cross-checked against the label's real inline value (label-lock for free-text/currency; authoritative-crop
+cross-check for ref + date). See `CLAUDE.md` "Known bugs" and `docs/extraction-pipeline.md`.
 
 ---
 

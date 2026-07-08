@@ -25,6 +25,19 @@
 @font-face { font-family:'IBM Plex Mono'; font-style:normal; font-weight:500; font-display:swap; src:url('fonts/IBMPlexMono-500.woff2') format('woff2'); }
 @font-face { font-family:'IBM Plex Mono'; font-style:normal; font-weight:600; font-display:swap; src:url('fonts/IBMPlexMono-600.woff2') format('woff2'); }
 
+/* Interface, not a document --------------------------------------------------
+ * Click-drag on the app chrome must NOT select text (this is a desktop UI, not a
+ * web page). Editable/selectable surfaces opt back in: inputs, textareas, true
+ * contenteditable fields, and anything explicitly marked .selectable. Loaded by
+ * every window, so this one rule covers the whole core app. */
+html, body { -webkit-user-select: none; user-select: none; }
+input, textarea,
+[contenteditable="true"], [contenteditable=""],
+.selectable {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 :root {
   /* ── Light (default) — the client palette ── */
   --bg:        #f4f6fa;
@@ -38,6 +51,7 @@
   --accent2:   #2f6fe0;
   --accent-bg: #e7f0ff;
   --accent-border: #bcd5ff;
+  --on-accent: #fff;          /* text/icon colour ON a filled accent button (themes may override) */
 
   --ok:        #1f9d63;
   --ok-bg:     #e3f6ed;
@@ -100,6 +114,133 @@
   color-scheme: dark;
 }
 
+/* ── Warm Paper — light, warm ivory shell, teal accent ── */
+:root[data-theme="warm"] {
+  --bg:#f5f2ec; --surface:#fffdf9; --surface2:#f0ece3; --surface3:#e7e1d5;
+  --border:#e7e0d3; --border2:#d8cfbd;
+  --accent:#1f8270; --accent2:#196b5c; --accent-bg:#e2f1ee; --accent-border:#b3ddd5; --on-accent:#fff;
+  --text:#2a2620; --muted:#756c5c; --muted2:#a59a86; --doc-bg:#f0ece3;
+  --shadow:0 1px 2px rgba(60,50,30,.06), 0 20px 44px -26px rgba(60,50,30,.20);
+}
+
+/* ── Nordic Slate — light, cool greys, indigo accent ── */
+:root[data-theme="slate"] {
+  --bg:#eef1f5; --surface:#ffffff; --surface2:#e6eaf0; --surface3:#dae0e9;
+  --border:#dde2ea; --border2:#c8cfdb;
+  --accent:#4b5bd6; --accent2:#3a48bf; --accent-bg:#e7e9fb; --accent-border:#c3c8f3; --on-accent:#fff;
+  --text:#1a1e2b; --muted:#5f6883; --muted2:#9098ad; --doc-bg:#e6eaf0;
+  --shadow:0 1px 2px rgba(20,30,60,.06), 0 20px 44px -26px rgba(20,30,60,.22);
+}
+
+/* ── Midnight — dark, premium, signal-amber accent (needs near-black --on-accent) ── */
+:root[data-theme="midnight"] {
+  --bg:#0a0c12; --surface:#12151f; --surface2:#1a1e2b; --surface3:#232838;
+  --border:#232739; --border2:#313650;
+  --accent:#f5a623; --accent2:#ffbe4d; --accent-bg:#2a1e05; --accent-border:#5a4316; --on-accent:#1a1205;
+  --ok:#3ecf8e; --ok-bg:#0d2e1e; --ok-border:#1a4a2e;
+  --warn:#f7b84f; --warn-bg:#2e1a00; --warn-border:#4a3a1a;
+  --err:#f76f6f; --err-bg:#2e0d0d; --err-border:#4a1f1f;
+  --text:#ece9e3; --muted:#868ca6; --muted2:#565d78; --doc-bg:#06080d;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 18px 40px -24px rgba(0,0,0,.75);
+  color-scheme:dark;
+}
+
+/* ── Graphite — dark, true-neutral charcoal, violet accent ── */
+:root[data-theme="graphite"] {
+  --bg:#0e0f11; --surface:#161719; --surface2:#1d1f22; --surface3:#26282c;
+  --border:#26282b; --border2:#34373c;
+  --accent:#6354d9; --accent2:#7c6cf0; --accent-bg:#191634; --accent-border:#322c63; --on-accent:#fff;
+  --ok:#3ecf8e; --ok-bg:#0d2e1e; --ok-border:#1a4a2e;
+  --warn:#f7b84f; --warn-bg:#2e1a00; --warn-border:#4a3a1a;
+  --err:#f76f6f; --err-bg:#2e0d0d; --err-border:#4a1f1f;
+  --text:#e8e8ea; --muted:#8a8c93; --muted2:#5a5c63; --doc-bg:#0a0b0c;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 18px 40px -24px rgba(0,0,0,.7);
+  color-scheme:dark;
+}
+
+/* ── Seasonal (light family) — fresh, characterful palettes ── */
+/* Spring — soft new-growth green, blossom-clean surfaces */
+:root[data-theme="spring"] {
+  --bg:#f1f8f0; --surface:#ffffff; --surface2:#e8f3e6; --surface3:#dcecd8;
+  --border:#dcebd7; --border2:#c4dcbd;
+  --accent:#4aa35c; --accent2:#3b8a4b; --accent-bg:#e4f4e6; --accent-border:#bfe2c2; --on-accent:#fff;
+  --text:#25322a; --muted:#5f7663; --muted2:#93a894; --doc-bg:#e8f3e6;
+  --shadow:0 1px 2px rgba(40,80,50,.06), 0 20px 44px -26px rgba(40,80,50,.20);
+}
+/* Summer — bright sunshine yellow/gold, warm and open (needs dark on-accent) */
+:root[data-theme="summer"] {
+  --bg:#fdf8e6; --surface:#fffdf4; --surface2:#f8f0d4; --surface3:#f0e5bf;
+  --border:#f1e7c6; --border2:#e4d29a;
+  --accent:#f5b300; --accent2:#dd9c00; --accent-bg:#fdf0c2; --accent-border:#f0d98f; --on-accent:#3a2c00;
+  --text:#3a3218; --muted:#7f7038; --muted2:#b3a266; --doc-bg:#f8f0d4;
+  --shadow:0 1px 2px rgba(120,90,10,.07), 0 20px 44px -26px rgba(120,90,10,.22);
+}
+/* Autumn — warm amber & pumpkin, toasty cream surfaces */
+:root[data-theme="autumn"] {
+  --bg:#faf3ea; --surface:#fffdfa; --surface2:#f4e8da; --surface3:#ecdcc8;
+  --border:#eaddcb; --border2:#dcc7ab;
+  --accent:#c15a20; --accent2:#a44a18; --accent-bg:#f7e6d6; --accent-border:#e6c5a5; --on-accent:#fff;
+  --text:#352819; --muted:#7c6650; --muted2:#ab9376; --doc-bg:#f4e8da;
+  --shadow:0 1px 2px rgba(90,50,20,.07), 0 20px 44px -26px rgba(90,50,20,.22);
+}
+/* Winter — crisp icy BLUE, cool and clean */
+:root[data-theme="winter"] {
+  --bg:#e7eff9; --surface:#ffffff; --surface2:#dce8f7; --surface3:#cbdcf1;
+  --border:#d3e1f3; --border2:#afc9ec;
+  --accent:#2f6fd0; --accent2:#245ab3; --accent-bg:#dae8fb; --accent-border:#aecaf1; --on-accent:#fff;
+  --text:#17253e; --muted:#516585; --muted2:#8a9cbd; --doc-bg:#dce8f7;
+  --shadow:0 1px 2px rgba(20,45,90,.07), 0 20px 44px -26px rgba(20,45,90,.24);
+}
+/* ── Festive (dark family) — cosy evergreen night, holly-RED accent, gold highlights ── */
+:root[data-theme="festive"] {
+  --bg:#0d1a12; --surface:#142418; --surface2:#1c3222; --surface3:#26422e;
+  --border:#223a2a; --border2:#315540;
+  --accent:#d83c3c; --accent2:#ef5a5a; --accent-bg:#33100f; --accent-border:#63201f; --on-accent:#fff;
+  --ok:#4bd08a; --ok-bg:#0d2e1e; --ok-border:#1a4a2e;
+  --warn:#f0c04a; --warn-bg:#2e2400; --warn-border:#4a3a1a;   /* festive gold */
+  --err:#ff6b6b; --err-bg:#2e0d0d; --err-border:#4a1f1f;
+  --text:#edeadf; --muted:#93a894; --muted2:#5f7566; --doc-bg:#081209;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 18px 40px -24px rgba(0,0,0,.75);
+  color-scheme:dark;
+}
+
+/* ── Subtle background patterns (pure CSS gradients → CSP-safe; shell --bg only,
+      never on cards/inputs/previews). color-mix adapts the texture to each theme. ── */
+:root[data-theme="warm"] body {
+  background-color:var(--bg);
+  background-image:radial-gradient(circle, color-mix(in srgb, var(--text) 6%, transparent) 1px, transparent 1.5px);
+  background-size:22px 22px;
+}
+:root[data-theme="slate"] body {
+  background-color:var(--bg);
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--text) 4%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--text) 4%, transparent) 1px, transparent 1px);
+  background-size:32px 32px;
+}
+:root[data-theme="midnight"] body {
+  background-color:var(--bg);
+  background-image:radial-gradient(120% 90% at 85% -10%, color-mix(in srgb, var(--accent) 9%, transparent) 0%, transparent 55%);
+  background-attachment:fixed;
+}
+/* Seasonal themes — faint repeating seasonal artwork (CSP-safe 'self' SVG tiles,
+   never data: URIs). background-attachment:fixed so the motif stays put while the
+   shell scrolls; the tiles are pre-tinted + very low opacity so they read as texture. */
+:root[data-theme="spring"] body { background-color:var(--bg); background-image:url('patterns/spring.svg'); background-size:150px 150px; background-attachment:fixed; }
+:root[data-theme="summer"] body { background-color:var(--bg); background-image:url('patterns/summer.svg'); background-size:150px 150px; background-attachment:fixed; }
+:root[data-theme="autumn"] body { background-color:var(--bg); background-image:url('patterns/autumn.svg'); background-size:150px 150px; background-attachment:fixed; }
+:root[data-theme="winter"] body { background-color:var(--bg); background-image:url('patterns/winter.svg'); background-size:150px 150px; background-attachment:fixed; }
+/* Festive — a warm gold hearth glow from the top OVER the holly tile. */
+:root[data-theme="festive"] body {
+  background-color:var(--bg);
+  background-image:
+    radial-gradient(120% 90% at 50% -10%, color-mix(in srgb, #e6c34a 12%, transparent) 0%, transparent 55%),
+    url('patterns/festive.svg');
+  background-repeat:no-repeat, repeat;
+  background-size:cover, 150px 150px;
+  background-attachment:fixed, fixed;
+}
+
 /* ──────────────────────────────────────────────────────────────────────────────
  * Client-matched components — the "proper app" feel: larger rounded buttons,
  * filled primaries with a soft shadow, rounded padded inputs.
@@ -123,7 +264,7 @@ html .btn:focus-visible { outline:2px solid var(--accent2); outline-offset:2px; 
 
 /* Primary (filled blue, soft shadow) — covers the app's primary button names */
 html .btn-primary, html .btn.primary, html .btn-run, html .btn.confirm {
-  background:var(--accent); border-color:var(--accent); color:#fff; box-shadow:0 8px 18px -12px var(--accent);
+  background:var(--accent); border-color:var(--accent); color:var(--on-accent); box-shadow:0 8px 18px -12px var(--accent);
 }
 html .btn-primary:hover, html .btn.primary:hover, html .btn-run:hover:not(:disabled) {
   filter:brightness(1.08); background:var(--accent); border-color:var(--accent);
@@ -171,3 +312,20 @@ html #titlebar, html .titlebar { display: none !important; }
 .chip.ok, .chip.confirmed, .chip.approved, .chip.acknowledged { color:var(--ok); background:var(--ok-bg); border-color:var(--ok-border); }
 .chip.warn, .chip.needs_review, .chip.pending { color:var(--warn); background:var(--warn-bg); border-color:var(--warn-border); }
 .chip.err, .chip.rejected, .chip.error { color:var(--err); background:var(--err-bg); border-color:var(--err-border); }
+
+/* Card — a discrete "area" surface for grouping related controls (settings sections,
+   panels, etc.). Token-based so it is dark-safe automatically. `.card-head` is a title row
+   that can carry a right-aligned status chip. Shared so Review/Search can adopt it too. */
+.card { background:var(--surface); border:1px solid var(--border); border-radius:var(--r);
+  box-shadow:var(--shadow); padding:18px 20px; }
+.card + .card { margin-top:16px; }
+.card-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+
+/* Logo theme-swap: show the light artwork by default and the dark-safe artwork on any
+   DARK-FAMILY theme (keyed on data-mode, not a specific theme name, so Midnight/Graphite
+   swap too). Pair an .logo-light + .logo-dark img. */
+.logo-dark { display:none; }
+:root[data-mode="dark"] .logo-light { display:none; }
+:root[data-mode="dark"] .logo-dark { display:inline-block; }
+/* Native scrollbars/caret/controls follow the family (covers all dark themes). */
+:root[data-mode="dark"] { color-scheme: dark; }

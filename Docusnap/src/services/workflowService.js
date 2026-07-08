@@ -57,6 +57,9 @@ function createWorkflowService(deps = {}) {
   const docs = deps.dbDocuments || require('../../database/modules/documents');
   const now  = deps.now || (() => new Date().toISOString());
   const audit = deps.audit || (() => {});
+  // Visual derivative of an approve/reject decision (a stamped PDF copy). Best-effort +
+  // non-fatal; tests inject a stub so they don't touch the filesystem.
+  const stampDecision = deps.stampDecision || require('./pdfStamp').stampWorkflowDecision;
 
   function _ver(route, expectedVersion) {
     return expectedVersion == null ? route.version : expectedVersion;
@@ -121,23 +124,28 @@ function createWorkflowService(deps = {}) {
       return fail('FORBIDDEN', 'This item is claimed by someone else.');
     }
 
-    // Decision must match what was requested.
-    const okForApprove = route.action_required === 'approve' && (decision === 'approve' || decision === 'reject');
+    // Decision must match what was requested. An "approve" request accepts approve | reject
+    // | paid (a deciding action); "acknowledge" accepts only acknowledge.
+    const DECIDE = ['approve', 'reject', 'paid'];
+    const okForApprove = route.action_required === 'approve' && DECIDE.includes(decision);
     const okForAck     = route.action_required === 'acknowledge' && decision === 'acknowledge';
     if (!okForApprove && !okForAck) {
       return fail('INVALID', `Decision "${decision}" is not valid for an "${route.action_required}" request.`);
     }
-    // Least privilege: approve/reject need admin|edit; acknowledge is open to all.
-    if ((decision === 'approve' || decision === 'reject') && !ACTOR_CAN_DECIDE.includes(actor.role)) {
-      return fail('FORBIDDEN', 'Your role cannot approve or reject — only acknowledge.');
+    // Least privilege: approve/reject/paid need admin|edit; acknowledge is open to all.
+    if (DECIDE.includes(decision) && !ACTOR_CAN_DECIDE.includes(actor.role)) {
+      return fail('FORBIDDEN', 'Your role cannot approve, reject or mark paid — only acknowledge.');
     }
     if (decision === 'reject' && !String(comment || '').trim()) {
       return fail('COMMENT_REQUIRED', 'A reason is required to reject.');
     }
 
-    const newState = decision === 'approve' ? 'approved' : decision === 'reject' ? 'rejected' : 'acknowledged';
+    const resolvedAt = now();
+    const newState = decision === 'approve' ? 'approved'
+      : decision === 'reject' ? 'rejected'
+      : decision === 'paid' ? 'paid' : 'acknowledged';
     const changed = wf.updateState(db, routeId, _ver(route, expectedVersion), {
-      state: newState, resolution_comment: comment || null, resolved_at: now(),
+      state: newState, resolution_comment: comment || null, resolved_at: resolvedAt,
     });
     if (!changed) return fail('CONFLICT', 'This item was updated by someone else. Refresh and retry.');
     // NOTE: documents.status (filing state) is intentionally NOT touched here.
@@ -145,6 +153,14 @@ function createWorkflowService(deps = {}) {
     audit({ user_id: actor.userId, action: `workflow_${newState}`, action_category: 'workflow', outcome: 'success',
             target_type: 'document', target_id: route.document_id, document_id: route.document_id,
             details: decision === 'reject' ? 'rejected with reason' : undefined });
+    // Stamp a PDF copy of the decision (approve/reject/paid). Fire-and-forget + non-fatal:
+    // the recorded decision above is the source of truth; a stamp failure never rolls it back.
+    if (decision === 'approve' || decision === 'reject' || decision === 'paid') {
+      Promise.resolve()
+        .then(() => stampDecision({ db, route, decision, userName: actor.username, comment, resolvedAt }))
+        .then((stampedPath) => { if (stampedPath) { try { wf.setStampedPath(db, route.id, stampedPath); } catch { /* non-fatal */ } } })
+        .catch(() => {});
+    }
     return { ok: true, route: wf.getRoute(db, routeId) };
   }
 

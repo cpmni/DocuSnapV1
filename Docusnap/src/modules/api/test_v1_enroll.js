@@ -17,7 +17,7 @@ const api = require('./handler');
 const pw = require('../auth/password');
 const certService = require('../../services/certService');
 const realLearning = require('../../../database/modules/learning');
-const { SETTING_KEY } = require('../../services/entitlementService');
+const { SEARCH_SEATS_KEY } = require('../../services/entitlementService');
 
 const PWD = 'Enroll-Test-7';
 let fail = 0;
@@ -67,8 +67,8 @@ async function main() {
   check('not licensed → 402 FEATURE_NOT_LICENSED', r.status === 402 && r.json.code === 'FEATURE_NOT_LICENSED');
   check('not licensed → body has NO caPem (no leak)', !(r.json && r.json.caPem));
 
-  // License the add-on.
-  set(db, SETTING_KEY, 'true');
+  // License the add-on (seat-count driven).
+  set(db, SEARCH_SEATS_KEY, '2');
 
   // Licensed + good creds → 200, CA + token + user; token authorizes a feature route.
   r = await post(base, '/v1/enroll', { username: 'admin', password: PWD });

@@ -88,4 +88,10 @@ function createSessionStore(opts = {}) {
   return { issue, verify, revoke, revokeUser, sweep, size };
 }
 
-module.exports = { createSessionStore, DEFAULT_ABSOLUTE_MS, DEFAULT_IDLE_MS };
+// Process-wide singleton so the /v1 API server (which issues + verifies tokens) and
+// the in-process admin auth handlers (which must REVOKE a user's sessions on disable /
+// role change / password reset) operate on the SAME store. Mirrors presenceService.shared().
+let _shared = null;
+function shared() { if (!_shared) _shared = createSessionStore(); return _shared; }
+
+module.exports = { createSessionStore, shared, DEFAULT_ABSOLUTE_MS, DEFAULT_IDLE_MS };

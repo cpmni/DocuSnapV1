@@ -110,15 +110,22 @@ def main() -> int:
                  check_value('999-99', v_entry) is None):
         failures += 1
 
-    # ── 5. digits_only digit-count shape ──────────────────────────────────────
-    section("5. digits_only: wrong digit count flagged, right count passes")
+    # ── 5. digits_only: LENGTH is folded (a number's length is variable) ──────
+    # A pure-numeric field's digit COUNT is length-invariant: '######'/'#######' fold
+    # to '#', so a legitimately longer/shorter number is NOT a "wrong shape" anomaly.
+    # (This is the fix for the 6-digit-invoice-in-a-5-digit-corpus reject + the
+    # thousands-currency truncation — encoding exact digit count into the veto was
+    # rejecting/truncating valid values whose length was rarer than the corpus norm.)
+    section("5. digits_only: digit-count is length-invariant (folded to '#')")
     dd = [_entry('Beta Co', 'invoice', 'code', ['123456', '234567', '345678'])]
     d_entry = build_format_class_index(dd).get(('beta co', 'invoice', 'code'))
-    if not check("learned shape is '######' (six digits)",
-                 d_entry.get('shapes') == frozenset({'######'})):
+    if not check("learned shape folds to '#' (any digit run)",
+                 d_entry.get('shapes') == frozenset({'#'})):
         failures += 1
-    if not check("'1234567' (7 digits) flagged even though still all-digits",
-                 check_value('1234567', d_entry) is not None):
+    if not check("'1234567' (7 digits) NOT flagged — length varies legitimately",
+                 check_value('1234567', d_entry) is None):
+        failures += 1
+    if not check("'12' (2 digits) NOT flagged either", check_value('12', d_entry) is None):
         failures += 1
     if not check("'555666' (6 digits) passes", check_value('555666', d_entry) is None):
         failures += 1
@@ -130,43 +137,51 @@ def main() -> int:
                  letter_anom and letter_anom.get('severity') == 'high'
                  and 'unexpected character' in letter_anom.get('anomaly', '')):
         failures += 1
-    sep_anom = check_value('1111/1111-1', entry)   # '/' not in learned seps {'-'}
-    if not check("unexpected separator in alphanum_sep still flagged LOW (char path)",
-                 sep_anom and sep_anom.get('severity') == 'low'
-                 and 'unexpected character' in sep_anom.get('anomaly', '')):
+    # Ref separators '-' '/' '.' are INTERCHANGEABLE (trust-first): a '/' where the corpus learned
+    # '-' is a formatting/OCR variant, not an anomaly — the group STRUCTURE still matches.
+    if not check("interchangeable ref separator '1111/1111-1' is TOLERATED (not flagged)",
+                 check_value('1111/1111-1', entry) is None):
+        failures += 1
+    # A NON-ref separator (space) is still an unexpected character on the char path.
+    space_anom = check_value('1111 1111-1', entry)
+    if not check("a non-ref separator (space) still flagged LOW (char path)",
+                 space_anom and space_anom.get('severity') == 'low'
+                 and 'unexpected character' in space_anom.get('anomaly', '')):
         failures += 1
 
-    # ── 6b. Count-gated multi-shape learning (value_counts path) ──────────────
-    section("6b. a second shape is accepted once confirmed enough times")
-    # A ref field that is usually 5 digits, now also seen as 4 digits. The 4-digit
-    # shape is below the accept threshold at first (flagged), then clears it.
-    base5 = {'12345': 4, '23456': 3, '34567': 2}        # '#####' confirmed 9x
+    # ── 6b. Count-gated multi-shape learning (STRUCTURED shapes) ──────────────
+    # Numeric LENGTH now folds (test 5), so a second digit-length is not a distinct
+    # shape. Count-gated multi-shape learning still applies to STRUCTURED shapes,
+    # where the separator layout IS meaningful and a poisoned structure must stay
+    # flagged until it has proportional support.
+    section("6b. a second STRUCTURED shape is accepted once confirmed enough times")
+    base = {'11-1111': 4, '22-2222': 3, '33-3333': 2}   # '##-####' confirmed 9x
     mc_entry = build_format_class_index([{
         'supplier_name': 'Gamma Co', 'document_type': 'invoice', 'field_key': 'ref',
-        'sample_values': list(base5), 'confirmed_count': 9, 'value_counts': base5,
+        'sample_values': list(base), 'confirmed_count': 9, 'value_counts': base,
     }]).get(('gamma co', 'invoice', 'ref'))
-    if not check("only the well-supported 5-digit shape learned",
-                 mc_entry and mc_entry.get('shapes') == frozenset({'#####'})):
+    if not check("only the well-supported '##-####' shape learned",
+                 mc_entry and mc_entry.get('shapes') == frozenset({'##-####'})):
         failures += 1
-    if not check("a stray 4-digit value is flagged while under the threshold",
-                 check_value('9999', mc_entry) is not None):
+    if not check("a stray '###-###' value is flagged while under the threshold",
+                 check_value('999-999', mc_entry) is not None):
         failures += 1
 
-    # Now the 4-digit shape has been confirmed _SHAPE_ACCEPT_MIN times.
-    both = {**base5, '8888': 3, '7777': 1}              # '####' confirmed 4x (>=3)
+    # Now the '###-###' shape has been confirmed _SHAPE_ACCEPT_MIN times.
+    both = {**base, '999-999': 3, '888-888': 1}         # '###-###' confirmed 4x (>=3)
     mc2 = build_format_class_index([{
         'supplier_name': 'Gamma Co', 'document_type': 'invoice', 'field_key': 'ref',
         'sample_values': list(both), 'confirmed_count': 13, 'value_counts': both,
     }]).get(('gamma co', 'invoice', 'ref'))
-    if not check("both shapes now accepted",
-                 mc2 and mc2.get('shapes') == frozenset({'#####', '####'})):
+    if not check("both structured shapes now accepted",
+                 mc2 and mc2.get('shapes') == frozenset({'##-####', '###-###'})):
         failures += 1
-    if not check("a 4-digit value is no longer flagged", check_value('9999', mc2) is None):
+    if not check("a '###-###' value is no longer flagged", check_value('111-222', mc2) is None):
         failures += 1
-    if not check("a 5-digit value is still accepted", check_value('55555', mc2) is None):
+    if not check("a '##-####' value is still accepted", check_value('55-5555', mc2) is None):
         failures += 1
-    if not check("a 3-digit value (never confirmed) is still flagged",
-                 check_value('123', mc2) is not None):
+    if not check("a never-confirmed '#-##' shape is still flagged",
+                 check_value('1-22', mc2) is not None):
         failures += 1
 
     # ── 7. shape_signature is correct + deterministic ─────────────────────────

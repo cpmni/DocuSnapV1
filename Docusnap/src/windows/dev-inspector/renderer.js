@@ -207,12 +207,15 @@ function buildModel(events) {
   const get = (f) => {
     if (!docModels.has(f)) docModels.set(f, {
       field: f, wins: [], losers: [], transforms: [], validations: [],
-      reprocess: [], final: null,
+      reprocess: [], final: null, reconcile: null,
     });
     return docModels.get(f);
   };
   for (const ev of events) {
-    if (!ev || ev.field == null) {
+    if (!ev) continue;
+    // reconcile is a cross-field TOTAL calc (keyed by total_key, no `field`) — attach to the total.
+    if (ev.event === 'reconcile') { if (ev.total_key) get(ev.total_key).reconcile = ev; continue; }
+    if (ev.field == null) {
       // stage_start / stage_end carry no field — ignored (structure only).
       continue;
     }
@@ -326,6 +329,14 @@ function renderField(field, m, flagged, open) {
     if (v.corrected_to) val += ` <span class="arrow">→ candidate</span> <span class="to">${escapeHtml(v.corrected_to)}</span>`;
     const desc = v.note ? `<span class="desc">${escapeHtml(v.note)}</span>` : '';
     nodes.push(chainNode(sm, val, v.confidence, null, field, false, false, desc));
+  }
+  // Stage 4 TOTAL reconciliation maths (SFDEV): the exact sum + which component was MISSING.
+  if (m.reconcile) {
+    const rc = m.reconcile;
+    const c = (lbl, val) => val === 'MISSING' ? `MISSING(${lbl})` : `${val}(${lbl})`;
+    const calc = `${rc.subtotal} + ${c('tax', rc.tax)} + ${c('ship', rc.shipping)} − ${c('disc', rc.discount)} = ${rc.computed} vs total ${rc.total} (Δ ${rc.delta}, tol ${rc.tol}) → ${rc.reconciles ? 'reconciles' : "doesn't reconcile"}`;
+    const desc = rc.verdict ? `<span class="desc">${escapeHtml(String(rc.verdict))}</span>` : '';
+    nodes.push(chainNode(stageMeta('4_validate'), escapeHtml(calc), null, 'reconcile', field, false, false, desc));
   }
   // Final node
   if (m.final) {

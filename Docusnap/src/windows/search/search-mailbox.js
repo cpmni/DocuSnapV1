@@ -3,13 +3,13 @@
 // between search results and approval-route lists (Inbox/Sent/Assigned/Completed),
 // reusing the workflow IPC. Selecting a route loads the document into the preview,
 // where search-workflow's decision bar handles approve/reject/acknowledge.
-// Inert unless the workflow add-on is licensed (SearchState.entitled).
+// Inert unless the workflow add-on is licensed (SearchState.workflowEntitled).
 
 let _active = false;
 let _box = 'inbox';
 
 function init() {
-  if (!window.SearchState.entitled) return;
+  if (!window.SearchState.workflowEntitled) return;
   const btn = document.getElementById('btn-mailbox');
   if (!btn) return;
   btn.style.display = '';
@@ -55,12 +55,18 @@ function _routeItem(r) {
       <span class="wf-state ${escHtml(r.state)}">${escHtml(r.state)}</span>
     </div>
     <div class="result-filename">${escHtml(kind)} · ${escHtml(who)}</div>
-    <div class="result-footer"><span class="result-date">${escHtml(r.doc_date || '')}</span></div>`;
+    <div class="result-footer"><span class="result-date">${escHtml(r.doc_date || '')}</span>${
+      r.stamped_path ? `<button class="wf-stamp-link" type="button">View stamped copy</button>` : ''}</div>`;
   el.addEventListener('click', async () => {
     document.querySelectorAll('.result-item').forEach(n => n.classList.remove('active'));
     el.classList.add('active');
     const full = await window.docusnap.getDocumentWithExtractions(r.document_id);
     if (full) window.SearchPreview.selectDoc(full);
+  });
+  // The stamped decision copy lives locally on this PC — open it directly.
+  el.querySelector('.wf-stamp-link')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    window.docusnap.openFile(r.stamped_path);
   });
   return el;
 }

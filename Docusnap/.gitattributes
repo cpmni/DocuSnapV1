@@ -1,0 +1,21 @@
+# Treat binary assets as binary so autocrlf never rewrites their bytes
+# (line-ending conversion corrupts PDFs — it shifts the xref byte offsets — and
+# mangles images/fonts). Text stays normalised to LF in the repo.
+* text=auto
+
+*.pdf   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.icns  binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary
+*.traineddata binary
+*.exe   binary
+*.dll   binary
+*.node  binary
+*.zip   binary

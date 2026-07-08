@@ -27,13 +27,140 @@ def ocr_image(img: Image.Image, config: str = "--oem 3 --psm 3") -> str:
     return pytesseract.image_to_string(img, config=config)
 
 
+# Supplementary "uniform block" pass (PSM 6) used to RECOVER a sparse column that PSM 3's page
+# segmentation drops (see reconstruct_page_text). Confidence-gated so only clean words are merged.
+_SUPP_CONFIG   = "--oem 3 --psm 6"
+_SUPP_MIN_CONF = 50
+
+
+def _words_from_data(data) -> list:
+    """image_to_data DICT -> [(left, top, w, h, text, conf)]. Skips empty tokens + bad rows."""
+    words = []
+    texts = data.get("text", [])
+    confs = data.get("conf", [])
+    for i in range(len(texts)):
+        t = (texts[i] or "").strip()
+        if not t:
+            continue
+        try:
+            l, top, w, h = (int(data["left"][i]), int(data["top"][i]),
+                            int(data["width"][i]), int(data["height"][i]))
+        except (KeyError, TypeError, ValueError):
+            continue
+        try:
+            c = float(confs[i])
+        except (IndexError, TypeError, ValueError):
+            c = -1.0
+        words.append((l, top, w, h, t, c))
+    return words
+
+
+def _center_in_any(word, boxes) -> bool:
+    """True when `word`'s CENTRE falls inside any (l, top, w, h) box — i.e. this region was
+    already recognised, so a supplementary re-read of it must NOT be merged (avoid duplicates
+    and importing a noisier second-pass read of an already-clean word)."""
+    cx = word[0] + word[2] / 2.0
+    cy = word[1] + word[3] / 2.0
+    for (bl, bt, bw, bh) in boxes:
+        if bl <= cx <= bl + bw and bt <= cy <= bt + bh:
+            return True
+    return False
+
+
+def reconstruct_page_text(img: Image.Image, config: str = "--oem 3 --psm 3") -> str:
+    """Full-page OCR text with reading lines rebuilt from word GEOMETRY.
+
+    Tesseract's page segmentation (the plain image_to_string in ocr_image) treats a wide
+    inter-column gap as a COLUMN break, so a right-aligned totals block OCRs as two detached
+    columns: the labels ("Subtotal:" / "Total:") on their own lines and the values
+    ("$387.74") stranded in a separate block further down the text. The line-based keyword
+    matcher (extraction/keyword.py) then can't pair a label with its value, so the total /
+    subtotal read EMPTY on scanned pages (born-digital pages keep exact word positions and
+    never hit this path). This rebuilds lines from image_to_data word boxes grouped by
+    VISUAL ROW (y-centre band), so a label and its far-right value on the SAME physical row
+    stay on ONE line. A wide intra-row x-gap emits a column break (4+ spaces) so keyword.py's
+    existing column-split guard still separates genuinely distinct columns. Same words
+    Tesseract recognises — only their grouping into lines changes. Falls back to plain
+    image_to_string on any error, so it can never read WORSE than before.
+
+    SPARSE-COLUMN RECOVERY: PSM 3 recognises the totals LABELS but not the far-right AMOUNT
+    column (a sparse right-aligned block sits outside the main text flow, so page segmentation
+    drops the values entirely — subtotal/total then read EMPTY even though the number is
+    plainly printed). A second "uniform block" pass (PSM 6) DOES recognise them; we merge back
+    ONLY the high-confidence words that land in a region PSM 3 left EMPTY (centre not inside any
+    PSM-3 box). PSM 3's clean reads win everywhere it recognised text, so no second-pass noise
+    is imported on an already-read row (PSM 6 alone garbles the ruled table-header row). Adds one
+    OCR pass per SCANNED page only (born-digital never reaches here); best-effort, so a failure
+    leaves the PSM-3 result untouched — it can never read worse. (oscar's sparse-column diagnosis.)
+    """
+    try:
+        data = pytesseract.image_to_data(img, config=config, output_type=pytesseract.Output.DICT)
+    except Exception:
+        return ocr_image(img, config)
+    words = _words_from_data(data)
+    if not words:
+        return ""
+    try:
+        supp = pytesseract.image_to_data(img, config=_SUPP_CONFIG, output_type=pytesseract.Output.DICT)
+        boxes = [(w[0], w[1], w[2], w[3]) for w in words]
+        for sw in _words_from_data(supp):
+            if sw[5] >= _SUPP_MIN_CONF and any(ch.isalnum() for ch in sw[4]) \
+                    and not _center_in_any(sw, boxes):
+                words.append(sw)
+    except Exception:
+        pass   # supplementary recovery is additive-only; never break the PSM-3 result
+    heights = sorted(wd[3] for wd in words if wd[3] > 0)
+    med_h = heights[len(heights) // 2] if heights else 10
+    col_gap = max(med_h * 1.5, 12)    # x-gap wide enough to be a column break (4-space)
+    cap = max(med_h * 1.2, 10)        # centres this far apart are DIFFERENT rows even if boxes overlap
+    words.sort(key=lambda wd: wd[1] + wd[3] / 2.0)   # top-to-bottom by y-centre
+    # Group into VISUAL ROWS by vertical OVERLAP, not centre proximity. A bold/larger label
+    # (a "Total:" row set heavier than the line items) has a taller box whose y-centre can sit
+    # more than the old 0.8*med_h from its normal-weight value, so centre-distance banding split
+    # the label from its value onto two lines and the totals never paired with their labels
+    # (oscar's diagnosis of the empty-Total case). Two words on the SAME physical row overlap
+    # vertically regardless of font weight; two adjacent rows barely overlap. The centre-distance
+    # `cap` is a backstop so genuinely-tight separate lines can't be over-merged.
+    rows = []                                          # each: [top, bottom, sum_yc, n, [words]]
+    for wd in words:
+        top_w, bot_w = wd[1], wd[1] + wd[3]
+        yc = wd[1] + wd[3] / 2.0
+        placed = False
+        if rows:
+            r = rows[-1]
+            overlap = min(bot_w, r[1]) - max(top_w, r[0])
+            shorter = min(wd[3], r[1] - r[0]) or 1
+            if overlap >= 0.3 * shorter and abs(yc - r[2] / r[3]) <= cap:
+                r[0] = min(r[0], top_w); r[1] = max(r[1], bot_w)
+                r[2] += yc; r[3] += 1; r[4].append(wd)
+                placed = True
+        if not placed:
+            rows.append([top_w, bot_w, yc, 1, [wd]])
+    lines = []
+    for _t, _b, _sum, _n, ws in rows:
+        ws.sort(key=lambda wd: wd[0])                  # left-to-right within the row
+        out = [ws[0][4]]
+        for a, b in zip(ws, ws[1:]):
+            gap = b[0] - (a[0] + a[2])
+            out.append("    " if gap > col_gap else " ")
+            out.append(b[4])
+        lines.append("".join(out))
+    return "\n".join(lines)
+
+
 def pdf_to_images(filepath: Path, dpi: int = 300) -> list[Image.Image]:
     """Convert each PDF page to a PIL Image using pypdfium2."""
     doc    = pdfium.PdfDocument(str(filepath))
     images = []
-    for page in doc:
-        bitmap = page.render(scale=dpi / 72)
-        images.append(bitmap.to_pil())
+    try:
+        for page in doc:
+            bitmap = page.render(scale=dpi / 72)
+            images.append(bitmap.to_pil())
+            try: page.close()
+            except Exception: pass
+    finally:
+        try: doc.close()       # release the file handle promptly (see extract_text_and_images)
+        except Exception: pass
     return images
 
 
@@ -123,6 +250,9 @@ def extract_text_and_images(
     enhance_params: dict | None = None,
     born_digital: bool = False,
     engine=None,
+    cached_text: str | None = None,
+    auto_rotate: bool = False,
+    rotations_out: list | None = None,
 ) -> tuple[str, list[Image.Image]]:
     """
     Extract OCR text from a document file.
@@ -142,8 +272,18 @@ def extract_text_and_images(
     instead of an OCR read — faster and exact. Image-only/scanned pages have no
     text layer and fall back to OCR unchanged. The page IMAGES are still rendered
     either way (logo/anchor/zone OCR need them). Gated by 'born_digital_enabled'.
+
+    cached_text (default None): REPROCESS optimisation. The full-page OCR (~1.9 s/page
+    on a scanned page) re-reads the SAME pixels every reprocess for a result that never
+    changes; only the learned data does. When the caller already has the text (stored
+    in documents.ocr_text on first import), pass it here: the page IMAGES are still
+    rendered (~0.25 s, needed for crop/logo/zone OCR + registration), but the full-page
+    OCR is SKIPPED and cached_text is returned verbatim. Per-field crop reads + the
+    born-digital page_text_lines (derived by the caller) are unaffected, so extraction
+    is unchanged — only the redundant full-page pass is removed.
     """
-    if engine is None:
+    use_cache = cached_text is not None
+    if engine is None and not use_cache:
         from ocr.engine import TesseractEngine
         engine = TesseractEngine()
 
@@ -151,32 +291,82 @@ def extract_text_and_images(
     texts = []
     pages = []
 
+    # Born-digital text is a near-free text-layer read (no OCR), so it is regenerated FRESH
+    # even on reprocess (use_cache) — the cache only exists to skip expensive OCR. Without this,
+    # a stale cache (text generated before a born_digital text-gen change, e.g. the column-break
+    # split) silently re-serves the OLD text, so a reprocess never picks the improvement up (the
+    # "supplier still merged after reprocess" trap). Tracks whether EVERY page yielded fresh text;
+    # if a scanned page under use_cache did not, we fall back to the cache for the whole doc.
+    all_fresh = True
+
     if ext == ".pdf":
         import pypdfium2 as pdfium
         from ocr import born_digital as _bd
+        # Close the document (and its pages) as soon as we are done rendering, so the
+        # source PDF's file handle is released immediately — otherwise pdfium keeps it
+        # open for the rest of the worker's life and the post-processing "move to
+        # Processed/" rename fails on a Windows file lock. The returned page images are
+        # independent PIL copies (.to_pil()), so they survive the close.
         doc = pdfium.PdfDocument(str(filepath))
-        for page in doc:
-            img = page.render(scale=300 / 72).to_pil()
-            pages.append(img)
-            layer_text = None
-            if born_digital:
-                try:
-                    ok, _n, _txt = _bd.assess_page(page)
-                    if ok:
-                        # Positional reading order (page_lines), not the layer's raw
-                        # char order, so label-adjacency keyword extraction matches OCR.
-                        layer_text = _bd.page_text(page)
-                except Exception:
-                    layer_text = None   # any text-layer failure -> OCR fallback
-            texts.append(layer_text if layer_text is not None
-                         else engine.read_page(img, enhance_params))
+        try:
+            for page in doc:
+                img = page.render(scale=300 / 72).to_pil()
+                # AUTO-ROTATE a sideways/upside-down page (first import only — reprocess re-renders
+                # the already-corrected working copy, so it's gated off under use_cache). Born-digital
+                # pages are upright by construction and skipped. Rotates the image BEFORE OCR + the
+                # returned page list, and records the per-page CLOCKWISE angle (0/90/180/270) so the
+                # caller can rewrite the working-copy PDF to match. INERT (rot=0) when off, born-digital,
+                # low-confidence, or already upright. See ocr/orientation.py for the proven convention.
+                rot = 0
+                if auto_rotate and not use_cache:
+                    _skip = False
+                    if born_digital:
+                        try: _skip = bool(_bd.assess_page(page)[0])
+                        except Exception: _skip = False
+                    if not _skip:
+                        from ocr import orientation as _orientation
+                        rot = _orientation.detect_rotation(img)
+                        if rot:
+                            img = _orientation.correct_image(img, rot)
+                if rotations_out is not None:
+                    rotations_out.append(rot)
+                pages.append(img)
+                # Born-digital text: regenerate FRESH every run (cheap, authoritative), even
+                # under use_cache. Positional reading order (page_lines), not the layer's raw
+                # char order, so label-adjacency keyword extraction matches OCR.
+                layer_text = None
+                if born_digital:
+                    try:
+                        ok, _n, _txt = _bd.assess_page(page)
+                        if ok:
+                            layer_text = _bd.page_text(page)
+                    except Exception:
+                        layer_text = None   # any text-layer failure -> OCR / cache fallback
+                if layer_text is not None:
+                    texts.append(layer_text)
+                elif not use_cache:                 # scanned page, fresh run -> OCR it
+                    texts.append(engine.read_page(img, enhance_params))
+                else:                               # scanned page under use_cache -> honour cache
+                    all_fresh = False
+                try: page.close()
+                except Exception: pass
+        finally:
+            try: doc.close()
+            except Exception: pass
     else:
         img = Image.open(filepath)
         if img.mode not in ("RGB", "L"):
             img = img.convert("RGB")
         pages = [img]
-        texts.append(engine.read_page(img, enhance_params))
+        if not use_cache:
+            texts.append(engine.read_page(img, enhance_params))
+        else:
+            all_fresh = False   # a raster image has no text layer -> honour the OCR cache
 
+    # Prefer freshly-derived text whenever we have it for EVERY page (fully born-digital, or a
+    # non-cache run); only fall back to the cache when a scanned/mixed page was skipped under it.
+    if use_cache and not all_fresh:
+        return cached_text, pages
     return "\n\n--- PAGE BREAK ---\n\n".join(texts), pages
 
 

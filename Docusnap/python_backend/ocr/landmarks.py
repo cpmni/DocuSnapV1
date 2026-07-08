@@ -33,12 +33,44 @@ def _is_word(text):
     return alpha >= max(3, int(len(t) * 0.6))   # alphabetic-dominant
 
 
-def select_landmarks(words, *, max_n=5, min_conf=80, page_number=0):
+def _norm_boxes(boxes):
+    """Normalise an exclude-box list (dicts or 4-tuples) to (x, y, w, h) tuples."""
+    out = []
+    for b in (boxes or []):
+        if isinstance(b, dict):
+            try:
+                out.append((float(b.get("x", b.get("x_norm", 0))),
+                            float(b.get("y", b.get("y_norm", 0))),
+                            float(b.get("w", b.get("w_norm", 0))),
+                            float(b.get("h", b.get("h_norm", 0)))))
+            except (TypeError, ValueError):
+                continue
+        elif b:
+            try:
+                out.append(tuple(float(v) for v in list(b)[:4]))
+            except (TypeError, ValueError):
+                continue
+    return out
+
+
+def _overlaps(box, boxes):
+    """AABB intersection: does `box` (x,y,w,h) touch any of `boxes`?"""
+    bx, by, bw, bh = box
+    for ex, ey, ew, eh in boxes:
+        if bx < ex + ew and bx + bw > ex and by < ey + eh and by + bh > ey:
+            return True
+    return False
+
+
+def select_landmarks(words, *, max_n=5, min_conf=80, page_number=0, exclude_boxes=()):
     """Pick up to `max_n` stable, unique, well-spread landmarks from `words`.
 
     `words`: iterable of dicts with text, conf, x_norm, y_norm, w_norm, h_norm
-    (coords normalised to the page). Returns a list of landmark dicts ready for
-    templates.setLandmarks. Deterministic for a given input."""
+    (coords normalised to the page). `exclude_boxes`: taught VALUE/anchor zones — a
+    word overlapping one is rejected (those regions hold per-document values, never
+    stable chrome). Returns a list of landmark dicts ready for templates.setLandmarks.
+    Deterministic for a given input."""
+    ex = _norm_boxes(exclude_boxes)
     # Confidence + shape filter.
     cand = []
     for w in words:
@@ -49,10 +81,12 @@ def select_landmarks(words, *, max_n=5, min_conf=80, page_number=0):
         text = (w.get("text") or "").strip()
         if conf < min_conf or not _is_word(text):
             continue
+        box = (float(w["x_norm"]), float(w["y_norm"]), float(w["w_norm"]), float(w["h_norm"]))
+        if ex and _overlaps(box, ex):
+            continue   # never anchor on a taught value/anchor zone — those are variable
         cand.append({
             "label_text": text,
-            "x_norm": float(w["x_norm"]), "y_norm": float(w["y_norm"]),
-            "w_norm": float(w["w_norm"]), "h_norm": float(w["h_norm"]),
+            "x_norm": box[0], "y_norm": box[1], "w_norm": box[2], "h_norm": box[3],
             "ocr_conf": conf, "page_number": page_number,
         })
 
@@ -84,6 +118,84 @@ def select_landmarks(words, *, max_n=5, min_conf=80, page_number=0):
         picked.append(best)
         pool.remove(best)
     return picked
+
+
+def select_cross_sample(docs_words, *, max_n=5, min_docs_frac=0.6, pos_tol=0.015,
+                        min_conf=80, page_number=0, exclude_boxes=()):
+    """Cross-sample landmark selection — the AUTOMATIC, no-human-judgement path.
+
+    `docs_words`: a list of per-document word lists (each word a dict with text/conf
+    and normalised x/y/w/h). A word becomes a landmark candidate only if it RECURS,
+    at a STABLE position, across the confirmed corpus:
+      * appears in >= ceil(min_docs_frac * N) documents (k-of-N, mirrors the keyword
+        fingerprint's 0.6 intersection floor) — drops per-document VALUES; and
+      * its centroid is stable across those docs (max pairwise distance <= pos_tol,
+        kept tighter than registration's inlier band so a word that recurs but MOVES
+        — a value that happens to repeat — is dropped).
+    Survivors (one per text, at their MEDIAN centroid) are then run through
+    select_landmarks for the existing uniqueness + spatial-spread + value-zone guard.
+    This is what a human can't eyeball (e.g. that "Ticket" repeats 4x on a form)."""
+    import math
+    from collections import defaultdict
+
+    docs = [d for d in (docs_words or []) if d]
+    n = len(docs)
+    if n < 1:
+        return []
+    need = max(2, math.ceil(min_docs_frac * n))
+
+    # group by normalised text -> {doc_index: (cx, cy, conf, word)} (best per doc)
+    groups = defaultdict(dict)
+    for di, words in enumerate(docs):
+        # A re-locatable landmark must be UNIQUE on its own page — a word that
+        # appears more than once in a doc ("Ticket" x4 on a form) is ambiguous to
+        # re-find, so drop it for THAT doc before considering cross-doc recurrence.
+        counts = defaultdict(int)
+        for w in words:
+            t = (w.get("text") or "").strip().lower()
+            if t:
+                counts[t] += 1
+        for w in words:
+            try:
+                conf = float(w.get("conf"))
+            except (TypeError, ValueError):
+                continue
+            text = (w.get("text") or "").strip()
+            if conf < min_conf or not _is_word(text):
+                continue
+            if counts[text.lower()] != 1:
+                continue                                # ambiguous on this page
+            cx = float(w["x_norm"]) + float(w["w_norm"]) / 2.0
+            cy = float(w["y_norm"]) + float(w["h_norm"]) / 2.0
+            prev = groups[text.lower()].get(di)
+            if prev is None or conf > prev[2]:
+                groups[text.lower()][di] = (cx, cy, conf, w)
+
+    survivors = []
+    for key, perdoc in groups.items():
+        if len(perdoc) < need:
+            continue                                    # not recurring enough
+        centres = [(v[0], v[1]) for v in perdoc.values()]
+        stable = all(
+            ((centres[i][0] - centres[j][0]) ** 2 + (centres[i][1] - centres[j][1]) ** 2) ** 0.5 <= pos_tol
+            for i in range(len(centres)) for j in range(i + 1, len(centres))
+        )
+        if not stable:
+            continue                                    # recurs but moves -> a value
+        xs = sorted(c[0] for c in centres)
+        ys = sorted(c[1] for c in centres)
+        mx, my = xs[len(xs) // 2], ys[len(ys) // 2]     # median centroid
+        best = max(perdoc.values(), key=lambda v: v[2])
+        w = best[3]
+        survivors.append({
+            "text": (w.get("text") or "").strip(),
+            "conf": best[2],
+            "x_norm": mx - float(w["w_norm"]) / 2.0, "y_norm": my - float(w["h_norm"]) / 2.0,
+            "w_norm": float(w["w_norm"]), "h_norm": float(w["h_norm"]),
+        })
+
+    return select_landmarks(survivors, max_n=max_n, min_conf=min_conf,
+                            page_number=page_number, exclude_boxes=exclude_boxes)
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
@@ -125,7 +237,27 @@ def _main():
     parser.add_argument("--min-conf", type=float, default=80.0)
     parser.add_argument("--emit-phash", action="store_true",
                         help="also compute the page's logo phash and emit {landmarks, logo_phash}")
+    parser.add_argument("--exclude-boxes", default=None,
+                        help="JSON list of taught value/anchor boxes to avoid as landmarks")
+    parser.add_argument("--emit-words", action="store_true",
+                        help="emit the filtered candidate words (for cross-sample capture), not a selection")
+    parser.add_argument("--cross-sample-file", default=None,
+                        help="JSON {docs:[[words],...], exclude_boxes:[...]} -> cross-sample landmarks (no image)")
     args = parser.parse_args()
+
+    # Cross-sample selection needs NO image — handle it before any OCR setup.
+    if args.cross_sample_file:
+        try:
+            with open(args.cross_sample_file, encoding="utf-8") as f:
+                payload = json.load(f)
+        except Exception:
+            print("[]")
+            return 0
+        docs = payload.get("docs") or []
+        ex = payload.get("exclude_boxes") or []
+        print(json.dumps(select_cross_sample(docs, max_n=args.max, min_conf=args.min_conf,
+                                             exclude_boxes=ex)))
+        return 0
 
     import pytesseract
     from PIL import Image
@@ -154,8 +286,33 @@ def _main():
             "w_norm": data["width"][i] / W,
             "h_norm": data["height"][i] / H,
         })
+    exclude = []
+    if args.exclude_boxes:
+        try:
+            exclude = json.loads(args.exclude_boxes) or []
+        except Exception:
+            exclude = []
+
+    if args.emit_words:
+        # Raw filtered candidate words for cross-sample capture — top by confidence.
+        cands = []
+        for w in words:
+            try:
+                conf = float(w["conf"])
+            except (TypeError, ValueError):
+                continue
+            text = (w["text"] or "").strip()
+            if conf < args.min_conf or not _is_word(text):
+                continue
+            cands.append({"text": text, "conf": conf,
+                          "x_norm": w["x_norm"], "y_norm": w["y_norm"],
+                          "w_norm": w["w_norm"], "h_norm": w["h_norm"]})
+        cands.sort(key=lambda c: c["conf"], reverse=True)
+        print(json.dumps(cands[:40]))
+        return 0
+
     out = select_landmarks(words, max_n=args.max, min_conf=args.min_conf,
-                           page_number=args.page)
+                           page_number=args.page, exclude_boxes=exclude)
     if args.emit_phash:
         # Reuse the SAME logo hash the matcher uses (resizes the crop to a fixed
         # 256x256 before hashing, so it's largely render-DPI-independent). Lets the

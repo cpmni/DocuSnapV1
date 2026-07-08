@@ -111,4 +111,26 @@ function evaluate(jws, { fpHash, productId, publicKeys, now, highWaterMark }) {
   return { decision: 'locked_needs_online', reason: 'stale_past_grace', claims: v.claims };
 }
 
-module.exports = { verify, evaluate, decodeUnverifiedClaims, TokenError };
+/**
+ * Phase 2: read the SIGNED per-feature seat capacity from a VERIFIED token's claims
+ * (pass the claims object returned by verify()/evaluate(), NEVER
+ * decodeUnverifiedClaims()). Returns a plain { feature: count } map (e.g.
+ * { core, search, workflow }) when the token is a schema_version >= 2 token carrying a
+ * well-formed features OBJECT; returns null for older tokens / trials (the caller then
+ * falls back to the Phase 1 path). Counts are coerced to non-negative integers; any
+ * malformed shape -> null, so a tampered/garbled claim can never grant access.
+ */
+function featuresOf(claims) {
+  if (!claims || typeof claims !== 'object') return null;
+  if (!(Number(claims.schema_version) >= 2)) return null;
+  const f = claims.features;
+  if (!f || typeof f !== 'object' || Array.isArray(f)) return null;
+  const out = {};
+  for (const k of Object.keys(f)) {
+    const n = Number(f[k]);
+    if (Number.isFinite(n) && n >= 0) out[k] = Math.floor(n);
+  }
+  return out;
+}
+
+module.exports = { verify, evaluate, decodeUnverifiedClaims, featuresOf, TokenError };

@@ -411,6 +411,7 @@ function runJsMigrations(db, applied) {
         h_norm       REAL    NOT NULL,
         ocr_conf     REAL,
         page_number  INTEGER NOT NULL DEFAULT 0,
+        source       TEXT    NOT NULL DEFAULT 'auto',
         created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
       )`);
       db.exec(`CREATE INDEX IF NOT EXISTS idx_template_landmarks_template
@@ -655,6 +656,195 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 31 applied: template_fields.fixed_locked (admin-locked fixed values)');
   }
 
+  // Migration 32: workflow add-on flag on a client seat. Workflow is an upgrade ON a held
+  // search seat (workflow ≤ search), capped independently; this records which seats hold it
+  // so the pool can count workflow occupancy. Display/enforcement only — never an identity.
+  // Additive + idempotent.
+  if (!applied.has(32)) {
+    if (tableExists(db, 'client_seats') && !hasColumn(db, 'client_seats', 'workflow_enabled')) {
+      try { db.exec(`ALTER TABLE client_seats ADD COLUMN workflow_enabled INTEGER NOT NULL DEFAULT 0`); }
+      catch (e) { console.warn(`  client_seats.workflow_enabled: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (32)').run();
+    console.log('JS migration 32 applied: client_seats.workflow_enabled (workflow add-on)');
+  }
+
+  // Migration 33: manual registration landmarks ("Enhance detection" in the Template
+  // Manager). source = 'auto' (derived by ocr/landmarks.py) | 'manual' (admin-drawn).
+  // Auto-derivation can latch onto document-VARIABLE text; a manual set lets an admin
+  // pin guaranteed-stable chrome and is PROTECTED from auto-regeneration. Additive +
+  // idempotent; existing rows default to 'auto', so behaviour is unchanged.
+  if (!applied.has(33)) {
+    if (tableExists(db, 'template_landmarks') && !hasColumn(db, 'template_landmarks', 'source')) {
+      try { db.exec(`ALTER TABLE template_landmarks ADD COLUMN source TEXT NOT NULL DEFAULT 'auto'`); }
+      catch (e) { console.warn(`  template_landmarks.source: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (33)').run();
+    console.log('JS migration 33 applied: template_landmarks.source (manual landmarks)');
+  }
+
+  // Migration 34: cross-sample landmark corpus. Per-confirmed-document word lists
+  // (high-conf, alphabetic, normalised boxes) accumulate here; once >=3 docs exist a
+  // template's registration landmarks are auto-derived from words that RECUR at a
+  // STABLE position across docs (ocr/landmarks.select_cross_sample) — the automatic,
+  // no-human-picking path. Additive; cascade-deletes with the template.
+  if (!applied.has(34)) {
+    if (!tableExists(db, 'template_sample_words')) {
+      db.exec(`CREATE TABLE template_sample_words (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        template_id  INTEGER NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
+        doc_id       INTEGER,
+        label_text   TEXT    NOT NULL,
+        x_norm       REAL    NOT NULL,
+        y_norm       REAL    NOT NULL,
+        w_norm       REAL    NOT NULL,
+        h_norm       REAL    NOT NULL,
+        ocr_conf     REAL,
+        created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+      )`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_tpl_sample_words_tpl ON template_sample_words(template_id)`);
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (34)').run();
+    console.log('JS migration 34 applied: template_sample_words (cross-sample landmark corpus)');
+  }
+
+  // Migration 35: clearer company-role labels (reverses migration 27's "Company"
+  // unification). The single "Company" label proved ambiguous on issuer-style docs —
+  // it reads as either the issuer or the recipient. Relabel the company/identity field
+  // to MATCH its internal KEY so the label tells the operator exactly what belongs
+  // there: supplier_name → "Supplier Name", customer_name → "Customer Name". The KEY
+  // (the per-company learning scope: logo/hints/anchors/templates) is unchanged, so the
+  // learning schema is untouched. Scoped to rows still labelled "Company" so a
+  // hand-edited label is left alone. Idempotent.
+  if (!applied.has(35)) {
+    if (tableExists(db, 'fields')) {
+      try {
+        db.exec(`UPDATE fields SET label = 'Supplier Name'
+                 WHERE key = 'supplier_name' AND label = 'Company'`);
+        db.exec(`UPDATE fields SET label = 'Customer Name'
+                 WHERE key = 'customer_name' AND label = 'Company'`);
+      } catch (e) { console.warn('  migration 35 (company-role relabel):', e.message); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (35)').run();
+    console.log('JS migration 35 applied: relabel company-role field by key (Supplier/Customer Name)');
+  }
+
+  // Migration 36: operator-taught field CLEANUP rules (Review right-click toolkit) —
+  // remove a learned leaked caption ('remove_text') or keep the single pattern-matching
+  // block ('keep_block') for a field, applied at extraction time to strip an adjacent
+  // heading/column OCR bled in. Scoped like the other learning corpora (supplier_name /
+  // document_type / field_key, with '__global__' supplier). token_norm is the normalised
+  // match key for remove_text (NULL for keep_block). Additive + idempotent.
+  if (!applied.has(36)) {
+    if (!tableExists(db, 'field_rules')) {
+      db.exec(`CREATE TABLE field_rules (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        supplier_name TEXT,
+        document_type TEXT,
+        field_key     TEXT    NOT NULL,
+        rule_type     TEXT    NOT NULL,   -- 'remove_text' | 'keep_block'
+        token_norm    TEXT,               -- remove_text: normalised literal; keep_block: NULL
+        created_from  TEXT,               -- remove_text: the raw highlighted text (display)
+        side          TEXT    NOT NULL DEFAULT 'trailing',  -- 'leading' | 'trailing'
+        min_prefix    INTEGER NOT NULL DEFAULT 3,
+        usage_count   INTEGER NOT NULL DEFAULT 0,
+        created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+      )`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_field_rules_scope
+               ON field_rules(supplier_name, document_type, field_key)`);
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (36)').run();
+    console.log('JS migration 36 applied: field_rules (operator field-cleanup toolkit)');
+  }
+
+  // Migration 37: documents.page_count — captured at import so the Review list can flag
+  // multi-page documents. Additive; NULL for pre-existing rows (no icon until reprocessed).
+  if (!applied.has(37)) {
+    try { db.exec(`ALTER TABLE documents ADD COLUMN page_count INTEGER`); }
+    catch (e) { console.warn(`  documents.page_count: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (37)').run();
+    console.log('JS migration 37 applied: documents.page_count');
+  }
+
+  // Migration 38: relabel the company/identity field to "Document Issuer" for BOTH
+  // company roles — one unambiguous label so an operator never enters variable data
+  // (e.g. a customer name) in the identity field. Label-only; the internal keys
+  // (supplier_name/customer_name) and the learning scope are untouched. Scoped to the
+  // prior auto-set labels so a hand-edited label is left alone. Idempotent.
+  if (!applied.has(38)) {
+    try {
+      db.exec(`UPDATE fields SET label = 'Document Issuer'
+               WHERE key IN ('supplier_name','customer_name')
+                 AND label IN ('Supplier Name','Customer Name','Company')`);
+    } catch (e) { console.warn('  migration 38 (Document Issuer relabel):', e.message); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (38)').run();
+    console.log('JS migration 38 applied: company field → "Document Issuer"');
+  }
+
+  // Migration 39: performance indexes on the hot user-data tables. Until now only the
+  // PRIMARY KEYs were indexed, so as the corpus grows into six figures these paths
+  // degraded to full scans: the engine's per-doc learning lookups (corrections / hints /
+  // anchors by supplier+type+field, run on every processed document), the Review queue's
+  // per-row extraction subqueries (extractions had no document_id index), and Search /
+  // dashboard filtering+ordering of documents by status/date. All CREATE INDEX IF NOT
+  // EXISTS — idempotent, safe to re-run, and transparent to every code path (the query
+  // planner just starts using them). Pure read-path speedup; no behaviour change.
+  if (!applied.has(39)) {
+    try {
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_extractions_doc       ON extractions(document_id);
+        CREATE INDEX IF NOT EXISTS idx_documents_status_proc ON documents(status, processed_at);
+        CREATE INDEX IF NOT EXISTS idx_documents_status_conf ON documents(status, confirmed_at);
+        CREATE INDEX IF NOT EXISTS idx_documents_supplier    ON documents(supplier_name);
+        CREATE INDEX IF NOT EXISTS idx_documents_type        ON documents(document_type_id);
+        CREATE INDEX IF NOT EXISTS idx_corrections_scope     ON corrections(supplier_name, document_type, field_key);
+        CREATE INDEX IF NOT EXISTS idx_hints_scope           ON supplier_hints(supplier_name, document_type, field_key);
+        CREATE INDEX IF NOT EXISTS idx_anchors_scope         ON field_anchors(supplier_name, document_type, field_key);
+      `);
+    } catch (e) { console.warn('  migration 39 (performance indexes):', e.message); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (39)').run();
+    console.log('JS migration 39 applied: performance indexes (documents/extractions/learning)');
+  }
+
+  // Migration 40: documents.deleted_at — drives the RECYCLE BIN. Delete is now a SOFT
+  // delete (status='deleted', deleted_at=now, files kept) so it's recoverable; the bin
+  // lists deleted docs to restore or permanently remove. NULL for every existing row.
+  if (!applied.has(40)) {
+    try { db.exec(`ALTER TABLE documents ADD COLUMN deleted_at TEXT`); }
+    catch (e) { console.warn(`  documents.deleted_at: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (40)').run();
+    console.log('JS migration 40 applied: documents.deleted_at (recycle bin)');
+  }
+
+  // Migration 41: documents.confirmed_by_username — WHO filed the document (a real username,
+  // or the sentinel 'Auto-filed (100%)' for the backend 100%-confidence auto-file). Captured
+  // at confirm time. It CANNOT be backfilled once multi-user (client) review can file, so it
+  // is added now: it answers "already filed by <name>" in the concurrency guard and doubles
+  // as a "filed by" label. NULL for every existing row.
+  if (!applied.has(41)) {
+    try { db.exec(`ALTER TABLE documents ADD COLUMN confirmed_by_username TEXT`); }
+    catch (e) { console.warn(`  documents.confirmed_by_username: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (41)').run();
+    console.log('JS migration 41 applied: documents.confirmed_by_username');
+  }
+
+  // Migration 42: opt-in diagnostics buffer (see DIAGNOSTICS_PLAN.md / src/modules/telemetry.js).
+  // Local offline queue for document-data-FREE diagnostic events; `sent` flag is the
+  // send-idempotency key. Inert until the `telemetry_enabled` setting is turned on.
+  if (!applied.has(42)) {
+    db.exec(`CREATE TABLE IF NOT EXISTS telemetry_events (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      ts          TEXT    NOT NULL,
+      name        TEXT    NOT NULL,
+      props_json  TEXT,
+      event_uid   TEXT,
+      sent        INTEGER NOT NULL DEFAULT 0
+    )`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_telemetry_unsent ON telemetry_events (sent, id)`);
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (42)').run();
+    console.log('JS migration 42 applied: telemetry_events');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the
@@ -678,6 +868,7 @@ function runJsMigrations(db, applied) {
       claimed_by_username TEXT,
       claimed_at          TEXT,
       resolved_at         TEXT,
+      stamped_path        TEXT,                      -- filed stamped-PDF copy of the decision (server-local)
       version             INTEGER NOT NULL DEFAULT 1,
       created_at          TEXT NOT NULL DEFAULT (datetime('now'))
     )`);
@@ -689,6 +880,11 @@ function runJsMigrations(db, applied) {
   if (tableExists(db, 'documents') && !hasColumn(db, 'documents', 'workflow_status')) {
     try { db.exec(`ALTER TABLE documents ADD COLUMN workflow_status TEXT`); console.log('Workflow schema: added documents.workflow_status'); }
     catch (e) { console.warn(`  documents.workflow_status: ${e.message}`); }
+  }
+  // Stamped-PDF copy of a decision (server-local path). Idempotent, like the table itself.
+  if (tableExists(db, 'document_routes') && !hasColumn(db, 'document_routes', 'stamped_path')) {
+    try { db.exec(`ALTER TABLE document_routes ADD COLUMN stamped_path TEXT`); console.log('Workflow schema: added document_routes.stamped_path'); }
+    catch (e) { console.warn(`  document_routes.stamped_path: ${e.message}`); }
   }
 }
 

@@ -48,9 +48,9 @@ function main() {
   const db = makeDb();
   doctypes.seedBuiltInTypes(db);
 
-  // 1. Relabel: the company/identity field is "Company" on every built-in type.
-  f += !check('invoice supplier_name relabelled to "Company"', field(db, 'supplier_name').label === 'Company');
-  f += !check('sales-order customer_name relabelled to "Company"', field(db, 'customer_name').label === 'Company');
+  // 1. Label: the company/identity field is labelled "Document Issuer" (both roles).
+  f += !check('invoice supplier_name labelled "Document Issuer"', field(db, 'supplier_name').label === 'Document Issuer');
+  f += !check('sales-order customer_name labelled "Document Issuer"', field(db, 'customer_name').label === 'Document Issuer');
 
   // 2. is_structural annotation (Company / Date / Reference roles).
   const inv = doctypes.getWithFields(db, 'invoice');
@@ -63,7 +63,7 @@ function main() {
   doctypes.updateField(db, fieldId(db, 'supplier_name'),
     { label: 'Vendor', enabled: 0, type: 'multiline_text' });
   const sn = field(db, 'supplier_name');
-  f += !check('structural field NOT renamed', sn.label === 'Company');
+  f += !check('structural field NOT renamed', sn.label === 'Document Issuer');
   f += !check('structural field NOT disabled', sn.enabled === 1);
   f += !check('structural field NOT retyped', sn.type === 'text');
   // ...but a tunable (threshold) still applies.
@@ -89,7 +89,7 @@ function main() {
   // 6. Empty custom type -> Company + Date created, date_field_key set, both protected.
   const e1 = doctypes.addType(db, { name: 'Empty Custom' }).lastInsertRowid;
   doctypes.ensureStructuralRoles(db, e1);
-  f += !check('custom: Company field created', fkey(db, e1, 'supplier_name')?.label === 'Company');
+  f += !check('custom: Document Issuer field created', fkey(db, e1, 'supplier_name')?.label === 'Document Issuer');
   f += !check('custom: Date field created (type date)', fkey(db, e1, 'date')?.type === 'date');
   f += !check('custom: date_field_key set to date', dtRow(db, e1).date_field_key === 'date');
   f += !check('custom: Company + Date are structural',
@@ -136,6 +136,28 @@ function main() {
   doctypes.ensureStructuralRoles(db, e1);
   f += !check('idempotent: Company not duplicated', fieldsOf(db, e1).filter(x => x.key === 'supplier_name').length === 1);
   f += !check('idempotent: Date not duplicated', fieldsOf(db, e1).filter(x => x.key === 'date').length === 1);
+
+  // 12. Dangling structural role (the "deleted the Reference field" case) is self-healed
+  //     on the UI list-load paths: a ref_field_key pointing at a non-existent field is
+  //     cleared to NULL so Review's Confirm gate isn't impossible + Settings can re-pick.
+  const w = doctypes.addType(db, { name: 'Service Worksh' }).lastInsertRowid;
+  doctypes.addField(db, { document_type_id: w, key: 'ticket_no', label: 'Ticket No.', type: 'text' });
+  doctypes.addField(db, { document_type_id: w, key: 'date', label: 'Date', type: 'date' });
+  db.prepare('UPDATE document_types SET ref_field_key = ?, date_field_key = ? WHERE id = ?')
+    .run('reference_number', 'date', w);  // ref dangling, date valid
+  const healed = doctypes.getAllWithFieldsAll(db).find(t => t.id === w);
+  f += !check('dangling ref_field_key surfaced as null after load', healed.ref_field_key === null);
+  f += !check('dangling ref cleared in the DB (self-heal persisted)', dtRow(db, w).ref_field_key === null);
+  f += !check('valid date role untouched by repair', dtRow(db, w).date_field_key === 'date');
+
+  // 13. updateType refuses to (re)create a dangling role, but allows a valid key + clearing.
+  doctypes.updateType(db, w, { ref_field_key: 'does_not_exist' });
+  f += !check('updateType drops a non-existent role key', dtRow(db, w).ref_field_key === null);
+  doctypes.updateType(db, w, { ref_field_key: 'ticket_no' });
+  f += !check('updateType accepts a real field as the ref role', dtRow(db, w).ref_field_key === 'ticket_no');
+  f += !check('ticket_no now structural', doctypes.isStructuralKey(dtRow(db, w), 'ticket_no'));
+  doctypes.updateType(db, w, { ref_field_key: null });
+  f += !check('updateType allows clearing a role to null', dtRow(db, w).ref_field_key === null);
 
   db.close();
   console.log(f ? `\n${f} FAILED` : '\nAll structural-field checks passed');

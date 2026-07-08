@@ -12,7 +12,19 @@ never the trust anchor. Additive-only; breaking changes become `/v2`.
 grace_until` in v1, both retained), `nonce`.
 - trial kind adds: `trial_start`, `trial_end`.
 - seat kind adds: `entitlement_id`, `seat_id`, `seats_total`, `seats_used`,
-  `expires_at`.
+  `expires_at`, and (schema_version 2) `schema_version`, `features`.
+
+### Phase 2: signed per-feature capacity (`schema_version: 2`, seat tokens)
+A seat token carries `schema_version: 2` and a `features` OBJECT mapping each licensed
+feature to its seat capacity, e.g. `{"core":1,"search":2,"workflow":1}`. These counts are
+SIGNED (tamper-proof, offline-verifiable), so the desktop enforces the per-feature caps
+(concurrent search clients, the workflow add-on) from the TOKEN rather than the unsigned
+JSON body. ADDITIVE / backward-compatible: a verifier that doesn't read `features` ignores
+it, and an OLDER token without `schema_version`/`features` is still valid — the desktop then
+falls back to the Phase 1 per-feature counts carried in the (unsigned) JSON response.
+Once a v2 token is present its signed `features` take precedence; the unsigned JSON cannot
+raise the caps. activate/validate retain the JSON `features` field only for that Phase-1
+fallback.
 
 ## Endpoints
 | Method | Path | Purpose | Request | Response |

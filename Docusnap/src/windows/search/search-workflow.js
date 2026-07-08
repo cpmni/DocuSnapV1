@@ -3,7 +3,7 @@
 // workflow IPC (window.docusnap.workflow.* → workflowService). Registers an action
 // provider with SearchActions that renders, for the selected document, either a
 // DECISION BAR (when the doc is routed to me) or a ROUTE/ASSIGN form (admin/edit).
-// Inert unless the workflow add-on is licensed (SearchState.entitled).
+// Inert unless the workflow add-on is licensed (SearchState.workflowEntitled).
 
 let _recipients = [];                 // active users (populated only for routers)
 let _myOpenRoutes = {};               // document_id -> open route addressed to me
@@ -11,7 +11,7 @@ let _myOpenRoutes = {};               // document_id -> open route addressed to 
 const _canDecide = () => window.SearchState.role === 'admin' || window.SearchState.role === 'edit';
 
 async function init() {
-  if (!window.SearchState.entitled) return;
+  if (!window.SearchState.workflowEntitled) return;
   await refresh();
   window.SearchActions.registerActionProvider(_provide);
 }
@@ -54,7 +54,7 @@ function _btn(label, primary, onClick) {
 }
 
 function _provide(doc) {
-  if (!window.SearchState.entitled) return [];
+  if (!window.SearchState.workflowEntitled) return [];
   const route = _myOpenRoutes[doc.id];
   if (route) return [{ node: _decisionBar(route) }];
   if (_recipients.length) return [{ node: _assignForm(doc) }]; // recipients only returned to admin/edit
@@ -68,35 +68,50 @@ function _decisionBar(route) {
   banner.textContent = `Routed to you by ${route.from_username} — ${kind}`
     + (route.comment ? `: “${route.comment}”` : '');
   wrap.appendChild(banner);
+  let note = null;
+  if (route.action_required === 'approve' && _canDecide()) {
+    note = document.createElement('input'); note.className = 'search-input wf-note';
+    note.placeholder = 'Add a note (optional — required to reject)';
+    wrap.appendChild(note);
+  }
   const acts = document.createElement('div'); acts.className = 'wf-acts'; wrap.appendChild(acts);
+  const decide = (decision) => {
+    const n = note ? note.value.trim() : '';
+    if (decision === 'reject' && !n) { note.focus(); return; }
+    _run(window.docusnap.workflow.resolve(route.id, decision, n || null, route.version), wrap);
+  };
 
   if (route.action_required === 'acknowledge') {
     acts.appendChild(_btn('Acknowledge', true, () =>
       _run(window.docusnap.workflow.resolve(route.id, 'acknowledge', null, route.version), wrap)));
   } else if (_canDecide()) {
-    acts.appendChild(_btn('Approve', true, () =>
-      _run(window.docusnap.workflow.resolve(route.id, 'approve', null, route.version), wrap)));
-    acts.appendChild(_btn('Reject', false, () => _showReject(wrap, route)));
+    acts.appendChild(_btn('Approve', true, () => decide('approve')));
+    acts.appendChild(_btn('Reject', false, () => decide('reject')));
+    acts.appendChild(_btn('Mark Paid', false, () => decide('paid')));
+  }
+  // Disposition: route back to the sender or on to another user (reuses the assign form,
+  // with the sender pre-selected for a route-back). Admin/edit only.
+  if (_canDecide()) {
+    acts.appendChild(_btn('Forward…', false, () => {
+      if (wrap.querySelector('.wf-assign')) return;
+      wrap.appendChild(_assignForm({ id: route.document_id }, route.from_username));
+    }));
   }
   return wrap;
 }
 
-function _showReject(wrap, route) {
-  if (wrap.querySelector('.wf-reason')) return;
-  const box = document.createElement('div'); box.className = 'wf-reason';
-  const inp = document.createElement('input'); inp.className = 'search-input'; inp.placeholder = 'Reason for rejecting (required)';
-  const go = _btn('Confirm reject', true, () => {
-    const reason = inp.value.trim(); if (!reason) { inp.focus(); return; }
-    _run(window.docusnap.workflow.resolve(route.id, 'reject', reason, route.version), wrap);
-  });
-  box.append(inp, go); wrap.appendChild(box); inp.focus();
-}
-
-function _assignForm(doc) {
+function _assignForm(doc, senderUsername) {
   const wrap = document.createElement('div'); wrap.className = 'wf-assign';
-  const sub = document.createElement('div'); sub.className = 'wf-sub'; sub.textContent = 'Route for approval / acknowledgement';
+  const sub = document.createElement('div'); sub.className = 'wf-sub';
+  sub.textContent = senderUsername ? 'Forward / route onward' : 'Route for approval / acknowledgement';
   const sel = document.createElement('select'); sel.className = 'search-input';
-  for (const u of _recipients) { const o = document.createElement('option'); o.value = u.id; o.textContent = `${u.displayName || u.username} (${u.role})`; sel.appendChild(o); }
+  for (const u of _recipients) {
+    const o = document.createElement('option'); o.value = u.id;
+    const isSender = senderUsername && u.username === senderUsername;
+    o.textContent = `${u.displayName || u.username} (${u.role})${isSender ? ' — sender' : ''}`;
+    if (isSender) o.selected = true;
+    sel.appendChild(o);
+  }
   const act = document.createElement('select'); act.className = 'search-input';
   [['approve', 'Approve'], ['acknowledge', 'Acknowledge']].forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; act.appendChild(o); });
   const note = document.createElement('input'); note.className = 'search-input'; note.placeholder = 'Note (optional)';

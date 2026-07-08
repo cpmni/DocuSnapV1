@@ -1,0 +1,7 @@
+[
+  {
+    "sev": "MED",
+    "area": "limits",
+    "msg": ">1MB body → 0 (expected 400/413 — body cap)"
+  }
+]

@@ -121,11 +121,26 @@ def main():
     e2._resolve_candidates(r2, NUM_DEFS, "", "invoice")
     f += not check("second resolver pass is a no-op", r2 == snap)
 
-    print("\nledger not built when override is off (zero overhead/behaviour)")
+    print("\nledger ALWAYS built now (feeds the reconciliation total-pick); OVERRIDE still gated off (35963b4)")
+    # 35963b4 made _remember_candidates ALWAYS build the per-run ledger: the always-on
+    # reconciliation-aware total pick (_reconciliation_pick_total) reads it. The Stage 4.6
+    # OVERRIDE stays SEPARATELY gated off (proven by "default OFF -> no change" above), so a
+    # populated ledger is ZERO behaviour change on its own.
     eoff = ExtractionEngine(mode="fast", config_path=None)
+    eoff.set_candidate_override("off")
     eoff._field_candidates = {}
     eoff._remember_candidates("1_keyword", {"invoice_number": {"value": "X", "method": "keyword", "confidence": 90}})
-    f += not check("_remember_candidates is a no-op when off", eoff._field_candidates == {})
+    f += not check("_remember_candidates records to the ledger even when override off",
+                   [c["value"] for c in eoff._field_candidates.get("invoice_number", [])] == ["X"])
+    # ...and with that ledger populated, the override is STILL a no-op when off.
+    roff = {"invoice_number": {"value": "Booking", "method": "keyword", "confidence": 90}}
+    snap_off = copy.deepcopy(roff)
+    eoff._resolve_candidates(roff, NUM_DEFS, "", "invoice")
+    f += not check("override still a no-op when off despite a populated ledger", roff == snap_off)
+    # the empty/blank-value guard is intact (nothing recorded for a None value).
+    eoff._field_candidates = {}
+    eoff._remember_candidates("1_keyword", {"invoice_number": {"value": None, "method": "keyword"}})
+    f += not check("blank value still not recorded", eoff._field_candidates == {})
 
     if f:
         print(f"\n{f} FAILED")

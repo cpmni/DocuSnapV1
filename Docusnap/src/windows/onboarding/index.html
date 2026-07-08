@@ -21,7 +21,11 @@
   .dot{height:4px;flex:1;border-radius:2px;background:var(--border2);transition:background .2s}
   .dot.active{background:var(--accent)}
   .dot.done{background:var(--accent2)}
-  .panel{display:none;flex:1;flex-direction:column;animation:fade .25s ease}
+  /* Each step scrolls internally when its content is taller than the window (min-height:0
+     lets a flex child shrink below its content so overflow-y can take effect) — so no step
+     can clip its lower controls (e.g. the Output-organization Preview) whatever the theme
+     font metrics. The footer nav lives outside .stage, so it stays fixed while content scrolls. */
+  .panel{display:none;flex:1;min-height:0;flex-direction:column;animation:fade .25s ease;overflow-y:auto}
   .panel.show{display:flex}
   @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
   h1{font-size:23px;font-weight:600;margin-bottom:8px}
@@ -45,9 +49,13 @@
   .hint.ok{color:var(--ok)} .hint.err{color:var(--err)} .hint.muted{color:var(--muted)}
   .cards{display:flex;gap:12px;flex-wrap:wrap}
   .card{flex:1;min-width:150px;background:var(--surface);border:1.5px solid var(--border);border-radius:10px;
-    padding:15px;cursor:pointer;transition:border-color .15s,background .15s;-webkit-app-region:no-drag}
+    padding:15px;cursor:pointer;transition:border-color .15s,background .15s,transform .15s,box-shadow .15s;
+    -webkit-app-region:no-drag}
   .card:hover{border-color:var(--border2)}
-  .card.sel{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 9%,var(--surface))}
+  /* The chosen card is marked by the accent border, tint and a soft lift. No scale —
+     on wide rows (e.g. the 2-card Accuracy row) scaling overlapped the neighbour. */
+  .card.sel{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 9%,var(--surface));
+    box-shadow:0 6px 18px rgba(0,0,0,.10);position:relative;z-index:1}
   .card .ttl{font-size:14px;font-weight:600;margin-bottom:4px}
   .card .desc{font-size:12px;color:var(--muted);line-height:1.45}
   .footer{display:flex;align-items:center;gap:10px;padding:18px 40px;border-top:1px solid var(--border);background:var(--surface)}
@@ -65,6 +73,25 @@
   .ob-chip .ob-chip-lbl{color:var(--muted);margin-left:6px;font-family:'IBM Plex Sans',sans-serif}
   input.pathbox{outline:none}
   input.pathbox:focus{border-color:var(--accent)}
+
+  /* Step 2 (filing layout) — grouped panel + real section-header hierarchy */
+  .filing{display:flex;flex-direction:column;background:var(--surface2);
+    border:1px solid var(--border);border-radius:var(--r,12px);padding:18px 18px 16px;margin-bottom:24px}
+  .grp{display:flex;flex-direction:column;gap:5px}
+  .grp + .grp{margin-top:18px}
+  .ghead{font-size:14px;font-weight:600;color:var(--text)}
+  .ghelp{font-size:12px;color:var(--muted);margin:-3px 0 1px}
+  .ghelp b{color:var(--text);font-weight:600}
+  /* Pill field stays white (--surface) so it pops on the grey panel; chips + preview go
+     outline-white inside the panel so they don't disappear into it (the contrast gotcha). */
+  .filing .pe-chip{background:var(--surface)}
+  .pv-divider{height:1px;background:var(--border);margin:17px 0 13px}
+  .pv-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:7px}
+  .ob-preview{background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-sm,9px);
+    padding:11px 13px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--text);
+    line-height:1.6;word-break:break-word}
+  .region{margin-bottom:22px}
+  .foot-note{font-size:12px;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -99,15 +126,16 @@
       </div>
 
       <div class="field">
-        <label class="lbl">Copy processed scans to another folder?</label>
+        <label class="lbl">Where should original scans go after they&rsquo;re filed?</label>
         <div class="cards">
-          <div class="card" data-copy="no"><div class="ttl">No</div>
-            <div class="desc">Filed copies stay in the output folder above.</div></div>
-          <div class="card" data-copy="yes"><div class="ttl">Yes</div>
-            <div class="desc">Also place a copy in a second folder you choose (e.g. a backup or shared drive).</div></div>
+          <div class="card" data-copy="no"><div class="ttl">Default</div>
+            <div class="desc">Move them into a &ldquo;Processed&rdquo; folder alongside your scans.</div></div>
+          <div class="card" data-copy="yes"><div class="ttl">Choose a folder</div>
+            <div class="desc">Move filed originals into a specific folder you pick (e.g. an archive or shared drive).</div></div>
         </div>
+        <div class="hint ok" style="margin-top:8px">🔒 Your original scans are never deleted — they&rsquo;re just moved into a &ldquo;Processed&rdquo; folder so you can always find them again.</div>
         <div id="copyToWrap" style="display:none;margin-top:14px">
-          <label class="lbl">Copy-to folder</label>
+          <label class="lbl">Processed scans folder</label>
           <div class="pathrow">
             <div class="pathbox" id="copyPath">—</div>
             <button class="btn" id="copyBrowseBtn">Browse…</button>
@@ -120,25 +148,49 @@
     <!-- 2 Output organization -->
     <section class="panel" data-step="2">
       <h2>How should filed documents be organised?</h2>
-      <p class="sub">Set this up now so everything is filed consistently from the start. Click a block to
-        insert it, or type your own text. You can change it any time in Settings.</p>
+      <p class="sub">Most people leave this as-is — files are grouped by <b>Issuer › Year › Month</b> and
+        named <b>Type · Date · Reference</b>. Adjust the blocks below if you'd like a different layout.</p>
 
-      <div class="field">
-        <label class="lbl">Subfolders inside the output folder — use / for a new level</label>
-        <input type="text" id="ob-folder-pattern" class="pathbox" style="width:100%;font-family:'IBM Plex Mono',monospace" spellcheck="false">
-        <div id="ob-folder-tokens" class="ob-tokens"></div>
+      <div class="filing">
+        <div class="grp">
+          <div class="ghead">Folders</div>
+          <div class="ghelp">Grouped inside your output folder. Type <b>/</b> for a new level.</div>
+          <div id="ob-folder-pattern"></div>
+          <div id="ob-folder-tokens" class="ob-tokens"></div>
+        </div>
+
+        <div class="grp">
+          <div class="ghead">File name</div>
+          <div class="ghelp">How each saved file is named.</div>
+          <div id="ob-filename-pattern"></div>
+          <div id="ob-filename-tokens" class="ob-tokens"></div>
+        </div>
+
+        <div class="pv-divider"></div>
+        <div class="pv-label">Preview</div>
+        <div id="ob-output-preview" class="ob-preview">…</div>
       </div>
 
-      <div class="field">
-        <label class="lbl">File name</label>
-        <input type="text" id="ob-filename-pattern" class="pathbox" style="width:100%;font-family:'IBM Plex Mono',monospace" spellcheck="false">
-        <div id="ob-filename-tokens" class="ob-tokens"></div>
+      <div class="grp region">
+        <div class="ghead">Regional format</div>
+        <div class="ghelp">How dates and amounts are written on the documents you scan — this helps Scan Finder read them correctly.</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          <select id="ob-date-order" class="pathbox" style="flex:1;min-width:220px">
+            <option value="dmy">Dates: Day/Month/Year — 03/04/2026 = 3 Apr (UK/EU)</option>
+            <option value="mdy">Dates: Month/Day/Year — 03/04/2026 = 4 Mar (US)</option>
+            <option value="ymd">Dates: Year/Month/Day — ISO (2026-04-03)</option>
+          </select>
+          <select id="ob-number-format" class="pathbox" style="flex:1;min-width:220px">
+            <option value="anglo">Amounts: 1,234.56 (UK, US, most)</option>
+            <option value="continental">Amounts: 1.234,56 (Germany, Spain, Italy…)</option>
+            <option value="french">Amounts: 1 234,56 (France)</option>
+            <option value="swiss">Amounts: 1'234.56 (Switzerland)</option>
+            <option value="indian">Amounts: 12,34,567.89 (India)</option>
+          </select>
+        </div>
       </div>
 
-      <div class="field">
-        <label class="lbl">Preview</label>
-        <div id="ob-output-preview" class="pathbox" style="white-space:normal;line-height:1.5">…</div>
-      </div>
+      <p class="foot-note">You can change all of this later in Settings.</p>
     </section>
 
     <!-- 3 Theme -->
@@ -175,8 +227,30 @@
       </div>
     </section>
 
-    <!-- 5 Done -->
+    <!-- 5 Diagnostics (opt-in, OFF by default) -->
     <section class="panel" data-step="5">
+      <h2>Help improve Scan Finder?</h2>
+      <p class="sub">Optional &mdash; and off unless you turn it on. Share anonymous diagnostics so we can find
+        and fix problems faster.</p>
+      <div class="field">
+        <div class="cards">
+          <div class="card" data-diag="no"><div class="ttl">No thanks</div>
+            <div class="desc">Send nothing. You can turn this on later in Settings.</div></div>
+          <div class="card" data-diag="yes"><div class="ttl">Yes, help out</div>
+            <div class="desc">Share app errors and version info so bugs get fixed faster.</div></div>
+        </div>
+        <div class="privacy" style="margin-top:14px">
+          <div class="lock">🔒</div>
+          <div class="txt"><b>Your documents never leave your PC.</b><br>
+            Diagnostics includes only app errors, the app version and your Windows version &mdash; never your
+            scans, names, numbers, totals or file paths. You can see exactly what&rsquo;s sent, and change this,
+            anytime in Settings.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6 Done -->
+    <section class="panel" data-step="6">
       <h1>You're all set ✓</h1>
       <p class="sub">Scan Finder is ready. Drop in a folder of scans from the home screen, or teach it a
         new document type whenever you like.</p>
@@ -197,6 +271,7 @@
     <button class="btn primary" id="nextBtn">Next</button>
   </div>
 
+  <script src="../shared/pattern-editor.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

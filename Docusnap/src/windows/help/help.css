@@ -29,6 +29,22 @@ html, body { height:100%; background:var(--bg); color:var(--text); font-family:v
   padding:18px 12px; display:flex; flex-direction:column; gap:2px; overflow-y:auto;
 }
 .nav-label { font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); margin:0 8px 8px; }
+
+/* Search box (injected into the nav by help-nav.js) — jump to any section by its heading */
+#help-search { margin:0 0 12px; }
+#help-search-input {
+  width:100%; padding:8px 11px; border:1px solid var(--border2); border-radius:7px;
+  background:var(--surface2); color:var(--text); font-family:inherit; font-size:12.5px;
+}
+#help-search-input::placeholder { color:var(--muted); }
+#help-search-input:focus { outline:none; border-color:var(--accent); background:var(--surface); }
+#help-search-results { display:flex; flex-direction:column; gap:1px; margin-top:6px; }
+.hs-item { display:block; padding:7px 9px; border-radius:6px; text-decoration:none; }
+.hs-item:hover, .hs-item:focus { background:var(--surface2); outline:none; }
+.hs-label { display:block; color:var(--text); font-size:12px; line-height:1.35; }
+.hs-label b { color:var(--accent2); font-weight:600; }
+.hs-page  { display:block; color:var(--muted); font-size:10px; margin-top:1px; }
+.hs-empty { color:var(--muted); font-size:11.5px; padding:8px 9px; line-height:1.5; }
 .nav-item {
   display:block; text-align:left; padding:8px 10px; border-radius:7px; border:none; background:transparent;
   color:var(--muted); font-family:inherit; font-size:12.5px; cursor:pointer; text-decoration:none;
@@ -106,6 +122,15 @@ html, body { height:100%; background:var(--bg); color:var(--text); font-family:v
 .pill.err  { background:rgba(247,111,111,.16); color:var(--err); }
 .pill.mut  { background:var(--surface2); color:var(--muted); }
 
+/* Keycaps — used on the Keyboard Shortcuts page and in in-context shortcut mentions. */
+kbd { display:inline-block; min-width:1.1em; padding:1px 6px; margin:0 1px;
+      font-family:var(--mono); font-size:11.5px; line-height:1.55; text-align:center;
+      color:var(--text); background:var(--surface2); border:1px solid var(--border2);
+      border-bottom-width:2px; border-radius:5px; white-space:nowrap; }
+.refkey td kbd { margin:1px; }
+.sc-keys { white-space:nowrap; }   /* keep a combo like Ctrl + Enter on one line */
+.refkey td.sc-keys { width:34%; color:var(--text); }
+
 /* Screenshots — <figure class="shot-fig"><img class="shot" …><figcaption></figure>.
    help-nav.js swaps a missing image for the placeholder below, so the guide reads
    cleanly before real captures exist and auto-upgrades when a PNG is dropped in. */
@@ -136,6 +161,13 @@ figure.diagram svg { width:100%; height:auto; display:block; border:1px solid va
 .dg-ok-f    { fill:var(--ok); }   .dg-ok-s   { stroke:var(--ok);   stroke-width:1.4; fill:none; }
 .dg-warn-f  { fill:var(--warn); } .dg-warn-s { stroke:var(--warn); stroke-width:1.4; fill:none; }
 .dg-textline{ stroke:var(--muted); stroke-width:2.4; stroke-linecap:round; opacity:.5; }
+/* Numbered directive callouts on a figure: a filled accent badge + white number,
+   paired with a .dg-callout label line. Used by the annotated screen figures. */
+.dg-num     { fill:var(--accent); stroke:var(--surface); stroke-width:1.5; }
+.dg-numtext { fill:#fff; font-family:var(--sans); font-size:10px; font-weight:700; }
+.dg-callout { fill:var(--text); font-family:var(--sans); font-size:10.5px; }
+.dg-callb   { fill:var(--text); font-family:var(--sans); font-size:10.5px; font-weight:600; }
+.dg-warn-t  { fill:var(--warn); font-family:var(--sans); font-size:10.5px; font-weight:600; }
 
 /* Footer prev/next + back to home (built by help-nav.js) */
 .page-foot { display:flex; align-items:stretch; gap:10px; margin-top:34px; padding-top:18px; border-top:1px solid var(--border); }

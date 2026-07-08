@@ -91,6 +91,23 @@ const ACTIVATE_ERRORS = {
 
 $('recheck').addEventListener('click', () => { api.licenseEnterApp(); });
 
+// Friendly, retryable failure messages for "Start trial" — a reviewer on a flaky/firewalled
+// connection or hitting a busy server must see a clear "try again", never a dead button or a
+// raw error. The backend client already times out (no infinite spin) and the button re-enables.
+const TRIAL_LABEL   = ($('trial') && $('trial').textContent) || 'Start / resume trial';
+const TRIAL_OFFLINE = "Couldn’t start your trial — check your internet connection and try again.";
+const TRIAL_BUSY    = "The licence server is busy right now — please wait a moment and try again.";
+const TRIAL_GENERIC = "Couldn’t start your trial — please try again in a moment.";
+function failRetry(msgEl, btn, text) {   // a RETRYABLE failure (network/server) — invite a retry
+  if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = text; }
+  if (btn)   { btn.textContent = 'Try again'; btn.disabled = false; }
+}
+function failTrial(text) { failRetry($('trial_msg'), $('trial'), text); }
+const ACTIVATE_LABEL = ($('activate') && $('activate').textContent) || 'Activate';
+const RELEASE_LABEL  = ($('release')  && $('release').textContent)  || 'Release this device';
+const ACT_OFFLINE = "Couldn’t activate — check your internet connection and try again.";
+const REL_OFFLINE = "Couldn’t reach the licence server to release this device — check your connection and try again.";
+
 // Basic email shape check (mirrors the main/backend validation). Empty is allowed
 // here — email is optional — but a non-empty value must look like an address.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -119,6 +136,7 @@ $('trial').addEventListener('click', async () => {
   }
 
   msg.textContent = 'Starting your trial…';
+  $('trial').textContent = TRIAL_LABEL;     // reset any prior "Try again" while we attempt
   $('trial').disabled = true;
   try {
     // persists trial window + identity, caches token
@@ -128,27 +146,30 @@ $('trial').addEventListener('click', async () => {
       msg.className = 'msg ok';
       msg.textContent = (res.resumed ? 'Resuming your trial' : 'Trial started') + left + '. Opening…';
       api.licenseEnterApp();              // enter ONLY after capture/validation succeeds
-    } else if (res && res.state === 'expired') {
+      return;                             // leave the button disabled while the shell opens
+    }
+    if (res && res.state === 'expired') {
       msg.className = 'msg err';
       msg.textContent = 'Your trial has ended. Enter a licence key to continue.';
+      $('trial').disabled = false;
     } else if (res && res.code === 'missing_fields') {
       msg.className = 'msg err';
       msg.textContent = 'Enter a customer or company name to start the trial.';
+      $('trial').disabled = false;
     } else if (res && res.code === 'invalid_email') {
       msg.className = 'msg err';
       msg.textContent = 'Enter a valid email address, or leave it blank.';
+      $('trial').disabled = false;
     } else if (res && res.offline) {
-      msg.className = 'msg err';
-      msg.textContent = ACTIVATE_ERRORS.offline; // couldn't reach the server to record the trial
+      failTrial(TRIAL_OFFLINE);           // couldn't reach the server to record the trial
+    } else if (res && /rate|too.?many|busy|throttl|429|503/i.test(String((res && res.code) || ''))) {
+      failTrial(TRIAL_BUSY);              // server rate-limiting / temporarily unavailable
     } else {
-      msg.className = 'msg err';
-      msg.textContent = 'Could not start the trial. Please try again.';
+      failTrial(TRIAL_GENERIC);           // any other backend hiccup — still retryable
     }
   } catch {
-    msg.className = 'msg err';
-    msg.textContent = ACTIVATE_ERRORS.offline;
-  } finally {
-    $('trial').disabled = false;
+    // Network error / timeout — never surface the raw error; offer a clear retry.
+    failTrial(TRIAL_OFFLINE);
   }
 });
 
@@ -159,20 +180,28 @@ $('activate').addEventListener('click', async () => {
   const msg = $('msg');
   msg.className = 'msg'; msg.textContent = '';
   if (!accountKey) { msg.className = 'msg err'; msg.textContent = 'Enter an activation key.'; return; }
+  msg.className = 'msg'; msg.textContent = 'Activating…';
+  $('activate').textContent = ACTIVATE_LABEL;   // reset any prior "Try again"
   $('activate').disabled = true;
   try {
     const res = await api.licenseActivate({ accountKey, deviceLabel });
     if (res && res.ok) {
       msg.className = 'msg ok'; msg.textContent = 'Activated. Opening…';
       api.licenseEnterApp(); // main re-decides on the freshly cached seat token
+      return;                // leave the button disabled while the shell opens
+    }
+    if (res && (res.offline || res.code === 'offline')) {
+      failRetry(msg, $('activate'), ACT_OFFLINE);          // network — invite a retry
     } else {
+      // A definite answer from the server (wrong key / no seats) — keep the specific guidance,
+      // re-enable, but don't relabel "Try again" (retrying the same key won't help).
       msg.className = 'msg err';
       msg.textContent = ACTIVATE_ERRORS[res && res.code] || 'Activation failed.';
+      $('activate').disabled = false;
     }
   } catch {
-    msg.className = 'msg err'; msg.textContent = ACTIVATE_ERRORS.offline;
+    failRetry(msg, $('activate'), ACT_OFFLINE);            // network error / timeout — no stack trace
   }
-  $('activate').disabled = false;
 });
 
 // Release this device's seat (revoke -> reactivate building block). Frees the
@@ -183,15 +212,24 @@ $('release').addEventListener('click', async () => {
   const msg = $('msg');
   msg.className = 'msg'; msg.textContent = '';
   if (!accountKey) { msg.className = 'msg err'; msg.textContent = 'Enter your activation key to release this device.'; return; }
+  msg.className = 'msg'; msg.textContent = 'Releasing this device…';
+  $('release').textContent = RELEASE_LABEL;     // reset any prior "Try again"
   $('release').disabled = true;
   try {
     const res = await api.licenseRevoke({ accountKey });
-    if (res && res.ok) { msg.className = 'msg ok'; msg.textContent = 'This device was released.'; refresh(); }
-    else { msg.className = 'msg err'; msg.textContent = ACTIVATE_ERRORS[res && res.code] || 'Could not release this device.'; }
+    if (res && res.ok) {
+      msg.className = 'msg ok'; msg.textContent = 'This device was released.';
+      $('release').disabled = false; refresh();
+    } else if (res && (res.offline || res.code === 'offline')) {
+      failRetry(msg, $('release'), REL_OFFLINE);            // network — invite a retry
+    } else {
+      msg.className = 'msg err';
+      msg.textContent = ACTIVATE_ERRORS[res && res.code] || 'Could not release this device.';
+      $('release').disabled = false;
+    }
   } catch {
-    msg.className = 'msg err'; msg.textContent = ACTIVATE_ERRORS.offline;
+    failRetry(msg, $('release'), REL_OFFLINE);              // network error / timeout — no stack trace
   }
-  $('release').disabled = false;
 });
 
 $('min').addEventListener('click', () => api.windowMinimise());

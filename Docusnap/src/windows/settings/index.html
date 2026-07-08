@@ -35,43 +35,83 @@
       padding:16px 12px; background:var(--surface); border-right:1px solid var(--border); overflow-y:auto;
     }
     .side-head { font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
-      color:var(--muted); padding:2px 14px 12px; }
+      color:var(--muted); padding:2px 8px 7px; margin:0 6px 5px;
+      border-bottom:1px solid var(--border2); }
+    /* group heads after the first get extra top space to separate the groups */
+    .tab + .side-head { padding-top:16px; }
     .tab {
       width:100%; text-align:left; padding:9px 14px; border-radius:8px; border:1px solid transparent;
       background:transparent; color:var(--muted); font-family:var(--sans);
       font-size:13px; font-weight:600; cursor:pointer; transition:all .15s;
+      display:flex; align-items:center; gap:10px;
     }
+    .tab > svg { width:16px; height:16px; flex-shrink:0; opacity:.9; }
     .tab:hover { color:var(--text); background:var(--surface2); }
     .tab.active { background:var(--accent-bg); color:var(--accent2); border-color:var(--accent-border); }
 
     /* ── Body / panels ── */
     #app { display:flex; flex-direction:row; height:100vh; }
     #body { flex:1; overflow-y:auto; padding:26px 32px; }
-    .panel { display:none; }
+    /* Cap the content width and centre it so panels don't stretch edge-to-edge on a
+       maximised/wide window (the scrollbar stays at the window edge; content is focused). */
+    .panel { display:none; max-width:1100px; margin:0 auto; }
     .panel.active { display:block; }
+    /* The Template Manager packs in a lot (preview + editor + field tables), so let it use
+       the FULL window width instead of the centred 1100px column. */
+    #panel-templates { max-width:none; }
 
     /* ── Sections ── */
     .section { margin-bottom:28px; }
+
+    /* CARD GROUPING (visual-refresh): every TOP-LEVEL section / settings-group in a panel
+       becomes a discrete card (surface + border + soft shadow) so areas stand out clearly.
+       Token-based → dark-safe. Nested columns (.group-body > .section) stay plain. */
+    .panel > .section,
+    .panel > .settings-group {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+      box-shadow: var(--shadow); padding: 20px 22px; margin-bottom: 16px;
+    }
+    .panel > .section:last-child, .panel > .settings-group:last-child { margin-bottom: 0; }
 
     /* Settings groups: a labelled category whose sections flow LEFT→RIGHT and wrap
        — an item sits beside the previous when there's room, else starts a new row. */
     .settings-group { margin-bottom: 30px; }
     .settings-group > .group-title {
-      font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
-      color: var(--accent2); margin: 0 0 14px; padding-bottom: 9px; border-bottom: 1px solid var(--border);
+      font-size: 15px; font-weight: 600; letter-spacing: 0; text-transform: none;
+      color: var(--text); margin: 0 0 14px; padding-bottom: 10px; border-bottom: 1px solid var(--border);
     }
     .group-body { display: flex; flex-wrap: wrap; gap: 22px 36px; align-items: flex-start; }
     .group-body > .section { flex: 1 1 340px; min-width: 0; margin-bottom: 0; }
+    /* Folders group: cap at 3 columns, and give the three descriptions a uniform height
+       so the path-input rows line up across columns (the watch description is tallest). */
+    .folders-group .group-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); align-items: start; }
+    .folders-group .group-body > .section { flex: none; }
+    .folders-group .group-body .section-desc { min-height: 4.8em; }
     /* Top-level section headings: stronger contrast/weight so they read as the
        primary label of each block. Restrained — no colour/decoration, same
        uppercase tracking as before, just promoted from muted 10px to text 11px. */
-    .section-title { font-size:11px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--text); margin-bottom:12px; }
+    .section-title { font-size:14px; font-weight:600; letter-spacing:0; text-transform:none; color:var(--text); margin-bottom:10px; }
+    /* Card header row: a section title with a right-aligned status pill. */
+    .card-head { margin-bottom:10px; }
+    .card-head > .section-title { margin-bottom:0; }
     /* Subordinate (sub-section) headings: kept muted/light so they sit clearly
        below a top-level .section-title. Apply `sub` to nested headings. */
     .section-title.sub { font-size:10px; font-weight:500; letter-spacing:.1em; color:var(--muted); margin-bottom:8px; }
     .section-desc { font-size:12px; color:var(--muted); line-height:1.6; margin-bottom:10px; }
-    /* Divider between adjacent sections within a panel tab (not template dock — that has its own rule) */
-    .panel > .section + .section { border-top:1px solid var(--border); margin-top:-14px; padding-top:14px; }
+    /* Progressive-disclosure expander: a clean chevron summary for tucking advanced/rare
+       options or long explanations behind a click. */
+    details > summary.disclose { cursor:pointer; color:var(--accent2); font-size:13px; font-weight:700;
+      padding:4px 0; list-style:none; display:inline-flex; align-items:center; gap:7px; user-select:none; }
+    details > summary.disclose:hover { color:var(--accent); }
+    details > summary.disclose::-webkit-details-marker { display:none; }
+    details > summary.disclose::before { content:'\25B8'; font-size:10px; color:var(--accent2); transition:transform .15s; }
+    details[open] > summary.disclose::before { transform:rotate(90deg); }
+    /* Explanatory disclosure: when open, the body sits in a tinted inset panel so it pops
+       out from the white card. */
+    details.info-disclose[open] { background:var(--surface2); border:1px solid var(--border);
+      border-radius:var(--r-sm); padding:2px 14px 12px; }
+    details.info-disclose > summary.disclose { padding:9px 0 5px; }
+    /* (Cards now separate adjacent sections — the old hairline divider was removed.) */
     .row-flex { display:flex; gap:8px; align-items:center; }
     .path-input {
       flex:1; background:var(--bg); border:1px solid var(--border2);
@@ -94,24 +134,24 @@
     .btn-icon { background:none; border:none; cursor:pointer; color:var(--muted); font-size:14px; padding:4px 6px; border-radius:4px; }
     .btn-icon:hover { color:var(--err); background:var(--surface2); }
 
-    /* ── Processing mode ── */
-    .mode-group { display:flex; flex-direction:column; gap:6px; }
-    .mode-option { display:flex; align-items:flex-start; gap:10px; cursor:pointer; }
-    .mode-option input[type=radio] { margin-top:3px; accent-color:var(--accent); flex-shrink:0; }
-    .mode-card {
-      flex:1; background:var(--surface); border:1px solid var(--border);
-      border-radius:7px; padding:10px 14px; transition:border-color .15s;
-    }
-    .mode-option:has(input:checked) .mode-card { border-color:var(--accent); background:var(--accent-bg); }
-    .mode-name { font-weight:500; font-size:13px; display:flex; align-items:center; gap:6px; margin-bottom:3px; }
-    .mode-desc { font-size:11px; color:var(--muted); line-height:1.5; }
-    .badge-default { font-size:9px; padding:1px 6px; border-radius:8px; background:var(--ok-bg); color:var(--ok); border:1px solid var(--ok-border); }
-
     /* ── Threshold / toggle rows ── */
     .threshold-row { display:flex; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--border); }
     .threshold-row:last-child { border-bottom:none; }
     .threshold-label { font-size:13px; }
     .threshold-sub { font-size:11px; color:var(--muted); margin-top:2px; }
+    /* Sub-heading that separates non-watch-specific toggles within the Watch Folder card. */
+    .settings-subgroup-divider { font-size:11px; color:var(--muted); margin:14px 0 2px; padding-top:12px;
+      border-top:1px solid var(--border); text-transform:uppercase; letter-spacing:.04em; }
+    .settings-subgroup-divider b { color:var(--text); font-weight:600; }
+    /* Section sub-heading inside the Home-dashboard card list (mirrors the dashboard tiers). */
+    .dash-cards-subhead { font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
+      color:var(--accent2); margin:18px 0 8px; padding-bottom:6px; border-bottom:1px solid var(--border); }
+    .dash-cards-subhead:first-child { margin-top:0; }
+    /* Multi-column toggle grid (reuses the .folders-group grid idea) so 13 switches read as a few
+       short columns, not one tall ledger. No per-row borders — they'd go ragged across columns. */
+    .dash-cards-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(250px, 1fr));
+      gap:0 32px; align-items:start; margin-bottom:6px; }
+    .dash-cards-grid .threshold-row { border-bottom:none; padding:8px 0; }
     .conf-row { display:flex; align-items:center; gap:8px; }
     .conf-slider { width:90px; accent-color:var(--accent); }
     .conf-val { font-family:var(--mono); font-size:11px; color:var(--accent2); min-width:32px; }
@@ -131,11 +171,30 @@
       border-radius:7px; margin-bottom:6px; background:var(--surface); transition:opacity .2s;
     }
     .doctype-row.disabled { opacity:.45; }
-    .doctype-name { flex:1; font-weight:500; font-size:13px; display:flex; align-items:center; gap:6px; }
+    .doctype-name { flex:1; font-weight:500; font-size:13px; display:flex; align-items:center; gap:6px; min-width:0; }
+    /* Fixed-width name slot so the built-in/custom badge starts at the SAME x on every
+       row (tidy aligned column); long names ellipsize (full name on hover + in the header). */
+    .doctype-nametext { flex:0 0 140px; max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .badge-builtin { font-size:9px; padding:1px 6px; border-radius:8px; background:var(--surface2); color:var(--muted); border:1px solid var(--border2); }
     .badge-custom  { font-size:9px; padding:1px 6px; border-radius:8px; background:var(--accent-bg); color:var(--accent2); border:1px solid var(--accent-border); }
     .doctype-fields { display:flex; align-items:center; gap:6px; }
     .field-label-small { font-size:10px; color:var(--muted); white-space:nowrap; }
+    /* ── Combined Document Types tab — master-detail ── */
+    #dt-master-detail { display:flex; flex-wrap:wrap; gap:18px; align-items:flex-start; }
+    #dt-list-col { flex:1 1 240px; min-width:220px; }
+    #dt-detail-col { flex:3 1 360px; min-width:340px; }
+    /* Header over the left list, mirroring the right detail header (.dt-detail-header)
+       so both columns share a heading row. The "Type Name" label sits level with the
+       right "Invoice" heading; the larger bottom margin then absorbs the right side's
+       "FIELDS" label row too, so the FIRST list card drops down to line up with the
+       first field ROW on the right (not the FIELDS label above it). */
+    .dt-list-header { display:flex; align-items:center; gap:10px; margin-bottom:37px; min-height:26px; }
+    .dt-list-header .lbl { font-size:16px; font-weight:600; color:var(--text); }
+    .doctype-row { cursor:pointer; }
+    .doctype-row.active { border-color:var(--accent); background:var(--accent-bg); }
+    .doctype-count { font-size:10px; color:var(--muted); font-family:var(--mono); }
+    .dt-detail-header { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:18px; }
+    .dt-detail-header h3 { margin:0; font-size:16px; }
     .field-select {
       background:var(--bg); border:1px solid var(--border2); border-radius:5px;
       padding:4px 8px; color:var(--text); font-family:var(--sans);
@@ -217,13 +276,13 @@
     .form-group input:focus, .form-group select:focus { border-color:var(--accent); }
 
     /* ── Templates tab ── */
-    #tpl-layout { display:flex; gap:18px; align-items:flex-start; }
-    #tpl-list-col { width:240px; flex-shrink:0; }
-    #tpl-viewer-col { flex:1; min-width:0; }
-    #tpl-detail-layout { display:flex; gap:16px; align-items:flex-start; }
-    #tpl-preview-pane { flex:1; min-width:0; }
+    #tpl-layout { display:flex; flex-wrap:wrap; gap:18px; align-items:flex-start; }
+    #tpl-list-col { flex:1 1 240px; min-width:220px; max-width:320px; }
+    #tpl-viewer-col { flex:4 1 420px; min-width:360px; }
+    #tpl-detail-layout { display:flex; flex-wrap:wrap; gap:16px; align-items:flex-start; }
+    #tpl-preview-pane { flex:1 1 360px; min-width:320px; }
     #tpl-dock {
-      width:400px; flex-shrink:0; max-height:calc(100vh - 220px);
+      flex:1 1 400px; width:400px; max-width:100%; max-height:calc(100vh - 220px);
       overflow-y:auto; padding-right:4px;
     }
     .tpl-zoom-controls {
@@ -286,10 +345,14 @@
     #tpl-img-wrap {
       position:relative; display:inline-block; line-height:0;
       transform-origin:0 0; transition:transform .12s ease-out;
+      /* Border lives on the WRAPPER, not the image, so #tpl-img offsetWidth/Height
+         (which sizes the overlay canvas) equals the image CONTENT box — otherwise a
+         1px border-box vs content-box gap shifts every overlay box uniformly. */
+      border:1px solid var(--border); border-radius:4px;
     }
     #tpl-img {
       max-width:100%; max-height:calc(100vh - 360px); width:auto; height:auto;
-      border:1px solid var(--border); border-radius:4px; display:block;
+      display:block;
     }
     #tpl-overlay-canvas { position:absolute; inset:0; border-radius:4px; pointer-events:auto; cursor:default; }
     #tpl-overlay-canvas.drawing {
@@ -299,11 +362,15 @@
     .mapping-status.ok   { background:var(--ok-bg);   color:var(--ok);   border-color:var(--ok-border); }
     .mapping-status.warn { background:var(--warn-bg); color:var(--warn); }
     .mapping-status.err  { background:var(--err-bg);  color:var(--err); }
-    /* Saved Mappings: widen last-test column so values are readable */
-    #tpl-mappings-table th:nth-child(5),
-    #tpl-mappings-table td:nth-child(5) { min-width:170px; }
-    /* Visual dividers between dock sections */
-    .tpl-dock .section { border-top:1px solid var(--border); padding-top:14px; margin-top:0; }
+    /* Saved Mappings: keep the table inside the narrow 400px dock — fixed layout
+       + cell wrapping rather than forcing a horizontal scrollbar. */
+    #tpl-mappings-table { table-layout:fixed; }
+    #tpl-dock .fields-table th, #tpl-dock .fields-table td { word-break:break-word; }
+    /* 2px divider + clearer (promoted) heading above each dock section. The dock
+       is id="tpl-dock", so this must be an id selector — the old .tpl-dock class
+       selector never matched, which is why the dividers were missing. */
+    #tpl-dock .section { border-top:2px solid var(--border2); padding-top:16px; margin-top:16px; }
+    #tpl-dock .section-title.sub { font-size:11px; font-weight:600; letter-spacing:.1em; color:var(--text); }
 
     ::-webkit-scrollbar { width:5px; }
     ::-webkit-scrollbar-thumb { background:var(--border2); border-radius:3px; }
@@ -322,25 +389,28 @@
   </div>
 
   <div id="tab-bar">
-    <div class="side-head">Settings</div>
-    <button class="tab active" data-tab="general" data-help-key="tab-general">General</button>
-    <button class="tab" data-tab="doctypes" data-help-key="tab-doctypes">Document Types</button>
-    <button class="tab" data-tab="fields" data-help-key="tab-fields">Fields</button>
-    <button class="tab" data-tab="filenaming" data-help-key="tab-filenaming">Output Structure</button>
-    <button class="tab" data-tab="templates" data-help-key="tab-templates">Templates</button>
-    <button class="tab" data-tab="learning" data-help-key="tab-learning">Learning Recovery</button>
-    <button class="tab" data-tab="users" data-help-key="tab-users">Users</button>
-    <button class="tab" data-tab="audit" data-help-key="tab-audit">Audit</button>
-    <button class="tab" data-tab="licensing" data-help-key="tab-licensing">Licensing</button>
-    <button class="tab" data-tab="advanced" data-help-key="tab-advanced">Advanced</button>
+    <div class="side-head">Setup</div>
+    <button class="tab active" data-tab="files" data-help-key="tab-files"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Files &amp; filing</button>
+    <button class="tab" data-tab="doctypes" data-help-key="tab-doctypes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>Document Types</button>
+    <button class="tab" data-tab="processing" data-help-key="tab-processing"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><circle cx="9" cy="6" r="2"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="15" cy="12" r="2"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="9" cy="18" r="2"/></svg>Processing</button>
+    <button class="tab" data-tab="appearance" data-help-key="tab-appearance"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"/></svg>Appearance</button>
+    <div class="side-head">Administration</div>
+    <button class="tab" data-tab="templates" data-help-key="tab-templates"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="9" x2="9" y2="20"/></svg>Templates</button>
+    <button class="tab" data-tab="learning" data-help-key="tab-learning"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c0 1 2.7 2 6 2s6-1 6-2v-5"/></svg>Learning</button>
+    <button class="tab" data-tab="repair" data-help-key="tab-repair"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.3 2.3-2.5-.7-.7-2.5z"/></svg>Learning Repair</button>
+    <button class="tab" data-tab="users" data-help-key="tab-users"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>Users &amp; activity</button>
+    <button class="tab" data-tab="audit" data-help-key="tab-audit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="18" rx="2"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>Audit</button>
+    <button class="tab" data-tab="licensing" data-help-key="tab-licensing"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 21 2"/><path d="M16 7l3 3"/><path d="M18 5l3 3"/></svg>Licensing</button>
+    <button class="tab" data-tab="searchclient" data-help-key="tab-searchclient"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><line x1="8" y1="20" x2="16" y2="20"/><line x1="12" y1="16" x2="12" y2="20"/></svg>Search client</button>
+    <button class="tab" data-tab="advanced" data-help-key="tab-advanced"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.3 2.3-2.5-.7-.7-2.5z"/></svg>Advanced</button>
   </div>
 
   <div id="body">
 
-    <!-- ══ GENERAL ══ -->
-    <div class="panel active" id="panel-general">
+    <!-- ══ FILES & FILING ══ -->
+    <div class="panel active" id="panel-files" data-help-key="tab-files">
 
-      <div class="settings-group">
+      <div class="settings-group folders-group">
         <div class="group-title">Folders</div>
         <div class="group-body">
           <div class="section">
@@ -357,17 +427,21 @@
             <p class="section-desc">Source files are moved here after processing. Leave blank to keep originals in place.</p>
             <div class="row-flex">
               <input type="text" id="processed-folder-path" class="path-input" readonly placeholder="No folder selected (files stay in source)">
-              <button class="btn primary" id="btn-pick-processed">Browse…</button>
+              <button class="btn primary" id="btn-pick-processed" data-help-key="pick-processed">Browse…</button>
             </div>
             <div style="margin-top:6px;">
-              <button class="btn small" id="btn-clear-processed" style="font-size:10px; padding:3px 10px; color:var(--err); border-color:var(--err);">Clear</button>
+              <button class="btn small" id="btn-clear-processed" data-help-key="clear-processed" style="font-size:10px; padding:3px 10px; color:var(--err); border-color:var(--err);">Clear</button>
             </div>
           </div>
 
           <div class="section">
             <div class="section-title">Watch Folder</div>
             <p class="section-desc">Auto-imports scans dropped here. Files must be stable for 30 seconds before processing — prevents partial-transfer issues with network scanners.</p>
-            <div class="threshold-row">
+            <div class="row-flex">
+              <input type="text" id="watch-folder-path" class="path-input" readonly placeholder="No folder selected">
+              <button class="btn primary" id="btn-pick-watch" data-help-key="pick-watch">Browse…</button>
+            </div>
+            <div class="threshold-row" style="margin-top:8px;">
               <div>
                 <div class="threshold-label">Enable watch-folder monitoring</div>
                 <div class="threshold-sub">Polls for new files and imports stable ones automatically</div>
@@ -377,193 +451,20 @@
                 <span class="toggle-slider"></span>
               </label>
             </div>
-            <div class="row-flex" style="margin-top:10px;">
-              <input type="text" id="watch-folder-path" class="path-input" readonly placeholder="No folder selected">
-              <button class="btn primary" id="btn-pick-watch">Browse…</button>
-            </div>
           </div>
         </div>
       </div>
-
-      <div class="settings-group">
-        <div class="group-title">Processing</div>
-        <div class="group-body">
-          <div class="section">
-            <div class="section-title">Processing Mode</div>
-            <div class="mode-group">
-              <label class="mode-option">
-                <input type="radio" name="proc-mode" value="fast">
-                <div class="mode-card">
-                  <div class="mode-name">Fast</div>
-                  <div class="mode-desc">Regex patterns + learned positions only. Sub-second per document.</div>
-                </div>
-              </label>
-              <label class="mode-option">
-                <input type="radio" name="proc-mode" value="smart">
-                <div class="mode-card">
-                  <div class="mode-name">Smart <span class="badge-default">Default</span></div>
-                  <div class="mode-desc">Uses advanced extraction only when key fields are missing or confidence is low.</div>
-                </div>
-              </label>
-            </div>
-          </div>
-
-          <div class="section">
-            <div class="section-title">Parallel document processing</div>
-            <div class="threshold-row">
-              <div>
-                <div class="threshold-label">Documents processed at once</div>
-                <div class="threshold-sub">How many documents ScanFinder may OCR/process at the same time. Higher values may be faster on powerful PCs but use more CPU and memory.</div>
-              </div>
-              <select id="processing-concurrency" class="field-select" style="width:80px;">
-                <option value="1">1</option>
-                <option value="2">2</option>
-                <option value="3">3</option>
-                <option value="4">4</option>
-                <option value="5">5</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="section">
-            <div class="section-title">OCR engine</div>
-            <div class="threshold-row">
-              <div>
-                <div class="threshold-label">Full-page OCR engine</div>
-                <div class="threshold-sub">Governs full-page document text only — zone, teach and template field reads always use Tesseract. RapidOCR is beta and falls back to Tesseract automatically if it isn't available.</div>
-              </div>
-              <select id="ocr-engine-select" class="field-select" style="width:160px;">
-                <option value="tesseract">Tesseract</option>
-                <option value="rapidocr">RapidOCR (beta)</option>
-              </select>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="settings-group">
-        <div class="group-title">Appearance &amp; Review</div>
-        <div class="group-body">
-          <div class="section">
-            <div class="section-title">Interface</div>
-            <div class="threshold-row">
-              <div>
-                <div class="threshold-label">Light Mode</div>
-                <div class="threshold-sub">Switch between dark and light interface</div>
-              </div>
-              <label class="toggle">
-                <input type="checkbox" id="theme-toggle">
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-          </div>
-
-          <div class="section">
-            <div class="section-title">Review</div>
-            <div class="threshold-row">
-              <div>
-                <div class="threshold-label">Confidence threshold</div>
-                <div class="threshold-sub">Flag a document for review if any field falls below this confidence</div>
-              </div>
-              <div class="conf-row">
-                <input type="range" class="conf-slider" id="global-threshold" min="0" max="100" value="70">
-                <span class="conf-val" id="global-threshold-val">70%</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="settings-group">
-        <div class="group-title">Setup</div>
-        <div class="group-body">
-          <div class="section">
-            <div class="section-title">First-time setup</div>
-            <p class="section-desc">Re-run the welcome wizard to revisit the essentials — theme, output folder and performance.</p>
-            <div class="row-flex">
-              <button class="btn" id="btn-rerun-setup" data-help-key="rerun-setup">Re-run setup wizard…</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-    </div>
-
-    <!-- ══ DOCUMENT TYPES ══ -->
-    <div class="panel" id="panel-doctypes">
-      <div class="section">
-        <div class="section-title">Document Types</div>
-        <p class="section-desc">Enable or disable types, and set which fields are used for filing (reference number and date).</p>
-        <div id="doctypes-list"></div>
-        <div style="margin-top:14px;">
-          <button class="btn" id="btn-add-type" data-help-key="add-type">+ Add Custom Type</button>
-        </div>
-        <div class="add-form" id="add-type-form">
-          <div class="form-group">
-            <label>Type Name</label>
-            <input type="text" id="new-type-name" placeholder="e.g. Delivery Note" style="width:180px">
-          </div>
-          <div class="form-group" style="flex-direction:row; gap:8px; align-items:flex-end;">
-            <button class="btn primary" id="btn-save-type">Save</button>
-            <button class="btn" id="btn-cancel-type">Cancel</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ══ FIELDS ══ -->
-    <div class="panel" id="panel-fields">
-      <div class="section">
-        <p class="section-desc">Fields are scoped to a document type. Built-in fields cannot be deleted.</p>
-        <div id="type-tabs"></div>
-        <table class="fields-table">
-          <thead>
-            <tr><th>Field</th><th>Key</th><th>Type</th><th>Enabled</th><th></th></tr>
-          </thead>
-          <tbody id="fields-tbody"></tbody>
-        </table>
-        <div style="margin-top:12px;">
-          <button class="btn" id="btn-add-field" data-help-key="add-field">+ Add Custom Field</button>
-        </div>
-        <div class="add-form" id="add-field-form">
-          <div class="form-group">
-            <label>Label</label>
-            <input type="text" id="new-label" placeholder="e.g. Customer" style="width:140px">
-          </div>
-          <div class="form-group">
-            <label>Key (auto)</label>
-            <input type="text" id="new-key" placeholder="customer" style="width:120px">
-          </div>
-          <div class="form-group">
-            <label>Type</label>
-            <select id="new-field-type">
-              <option value="text">Text</option>
-              <option value="date">Date</option>
-              <option value="number">Number</option>
-              <option value="currency">Currency</option>
-            </select>
-          </div>
-          <div class="form-group" style="flex-direction:row; gap:8px; align-items:flex-end;">
-            <button class="btn primary" id="btn-save-field">Save</button>
-            <button class="btn" id="btn-cancel-field">Cancel</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ══ FILE NAMING ══ -->
-    <div class="panel" id="panel-filenaming">
 
       <div class="section">
         <div class="section-title">Folder Structure</div>
         <p class="section-desc">
           Build the <strong>subfolders</strong> created inside your output folder (the output
-          folder itself is set on the General tab). Click a block to insert it, or type your
+          folder itself is set above). Click a block to insert it, or type your
           own text. Use <span class="field-key">/</span> to make a new subfolder level.
         </p>
         <div class="row-flex">
-          <input type="text" id="folder-pattern-input" class="path-input" placeholder="{supplier}/{year}/{month}" spellcheck="false">
-          <button class="btn" id="btn-reset-folder-pattern">Reset to Default</button>
+          <div id="folder-pattern-input" style="flex:1;min-width:0"></div>
+          <button class="btn" id="btn-reset-folder-pattern" data-help-key="reset-folder">Reset to Default</button>
         </div>
         <div id="folder-token-list" class="token-list" style="margin-top:10px;"></div>
       </div>
@@ -576,8 +477,8 @@
           automatically.
         </p>
         <div class="row-flex">
-          <input type="text" id="filename-pattern-input" class="path-input" placeholder="{docType}.{date}.{ref}" spellcheck="false">
-          <button class="btn" id="btn-reset-filename-pattern">Reset to Default</button>
+          <div id="filename-pattern-input" style="flex:1;min-width:0"></div>
+          <button class="btn" id="btn-reset-filename-pattern" data-help-key="reset-filename">Reset to Default</button>
         </div>
         <div id="filename-token-list" class="token-list" style="margin-top:10px;"></div>
         <div id="filename-pattern-msg" class="pattern-msg" style="display:none;"></div>
@@ -599,8 +500,252 @@
 
     </div>
 
+    <!-- ══ DOCUMENT TYPES ══ -->
+    <div class="panel" id="panel-doctypes" data-help-key="tab-doctypes">
+      <div class="section">
+        <div class="section-title">Document Types</div>
+        <p class="section-desc">Select a type to edit its fields and filing roles, or create a new one. Each type's Company, Date and Reference roles drive filing and learning.</p>
+        <div id="dt-master-detail">
+          <div id="dt-list-col">
+            <div class="dt-list-header"><span class="lbl">Type Name</span></div>
+            <div id="doctypes-list"></div>
+            <button class="btn" id="btn-catalog" data-help-key="add-catalog" style="margin-top:6px; width:100%;">+ Add from catalog…</button>
+            <button class="btn" id="btn-add-type" data-help-key="add-type" style="margin-top:6px; width:100%;">+ New type</button>
+          </div>
+          <div id="dt-detail-col">
+            <div id="dt-detail-empty" class="section-desc">Select a document type on the left to edit it, or "+ New type" to create one.</div>
+            <div id="dt-detail"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- (The former Fields tab is merged into Document Types above.) -->
+
+    <!-- ══ PROCESSING ══ -->
+    <div class="panel" id="panel-processing" data-help-key="tab-processing">
+
+      <!-- Import & processing options — NOT watch-specific; they govern EVERY import. -->
+      <div class="settings-group">
+        <div class="group-title">Import &amp; processing</div>
+        <div class="group-body">
+          <div class="section">
+            <p class="section-desc">These apply to <b>every import</b> — manual, watch-folder and background alike.</p>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Auto-file 100%-confidence documents</div>
+                <div class="threshold-sub">Skip Review for documents read with full confidence — file them automatically after processing</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="auto-file-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row" id="auto-file-threshold-row">
+              <div>
+                <div class="threshold-label">Auto-file confidence threshold</div>
+                <div class="threshold-sub">File automatically when overall confidence is at least this — <b>and</b> the document is fully typed with no field flagged for review. Lower it once you trust the reads on your regular suppliers (confidence climbs toward ~98% as Scan Finder learns them). Applies only while auto-file above is on.</div>
+              </div>
+              <div class="conf-row">
+                <input type="range" class="conf-slider" id="auto-file-threshold" min="80" max="100" value="100">
+                <span class="conf-val" id="auto-file-threshold-val">100%</span>
+              </div>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Read values that wrap onto the next line</div>
+                <div class="threshold-sub">When a field is taught to wrap (e.g. an address whose first line ends “-”), read the line below and join them. Single-line values are unaffected.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="multiline-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Auto-rotate sideways or upside-down scans</div>
+                <div class="threshold-sub">Detects a page scanned in the wrong orientation and turns it upright — both for reading and in the filed PDF. Only acts on a confident result; pages it isn't sure about are left as-is.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="auto-rotate-toggle"><span class="toggle-slider"></span></label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <div class="group-title">Processing</div>
+        <div class="group-body">
+          <div class="section">
+            <div class="section-title">Parallel document processing</div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Documents processed at once</div>
+                <div class="threshold-sub" id="concurrency-help">How many documents ScanFinder may read at the same time. Higher values are faster on powerful PCs but use more CPU and memory.</div>
+              </div>
+              <!-- Options are populated by the renderer, sized to this PC's CPU cores (get-concurrency-info). -->
+              <select id="processing-concurrency" class="field-select" style="width:80px;">
+                <option value="1">1</option>
+              </select>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Per-document safety timeout</div>
+                <div class="threshold-sub">If a single document ever gets stuck being read (a rare unreadable page), skip it after this long and carry on — it's marked as an error you can retry, so one bad file can't freeze a whole batch.</div>
+              </div>
+              <select id="file-timeout-select" class="field-select" style="width:120px;">
+                <option value="0">Off</option>
+                <option value="120">2 minutes</option>
+                <option value="300">5 minutes</option>
+                <option value="600">10 minutes</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Reading formats</div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Date format (region)</div>
+                <div class="threshold-sub">How to read an ambiguous numeric date like 03/04/2026. Day-first is 3 April (UK, Europe, most of the world); Month-first is 4 March (US); ISO is year-first. Dates written with a month name, or where the day is over 12, are read correctly whichever you pick.</div>
+              </div>
+              <select id="date-order-select" class="field-select" style="width:220px;">
+                <option value="dmy">Day/Month/Year — 03/04/2026 = 3 Apr (UK/EU)</option>
+                <option value="mdy">Month/Day/Year — 03/04/2026 = 4 Mar (US)</option>
+                <option value="ymd">Year/Month/Day — ISO (2026-04-03)</option>
+              </select>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Number format (region)</div>
+                <div class="threshold-sub">How money amounts group thousands and mark the decimal. Amounts are stored in a standard form regardless, so this only affects how they're read from your documents.</div>
+              </div>
+              <select id="number-format-select" class="field-select" style="width:220px;">
+                <option value="anglo">1,234.56 — comma/point (UK, US, most)</option>
+                <option value="continental">1.234,56 — point/comma (Germany, Spain, Italy…)</option>
+                <option value="french">1 234,56 — space/comma (France)</option>
+                <option value="swiss">1'234.56 — apostrophe/point (Switzerland)</option>
+                <option value="indian">12,34,567.89 — Indian grouping</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Document separation</div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Split multi-document PDFs automatically</div>
+                <div class="threshold-sub">When a single PDF contains several separate documents (e.g. a batch of one-page alerts), ScanFinder files each as its own document. Conservative — a normal multi-page invoice is never split, and each part goes to Review before filing.</div>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" id="auto-separate-toggle">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Name checks</div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Flag odd company/customer names for review</div>
+                <div class="threshold-sub">When a Supplier or Customer name reads like a document heading, a reference/code, OCR garble, or a cut-off name, ScanFinder marks it for review instead of filing it silently. It only flags for a human to check — it never changes or deletes the value.</div>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" id="name-wordness-toggle">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Flag likely supplier misreads for review</div>
+                <div class="threshold-sub">When the letterhead at the top of the page names a different known supplier than the one ScanFinder detected, the document is sent to Review with a note — instead of being filed silently. Flag-only: it never changes the value or auto-corrects.</div>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" id="identity-conflict-toggle">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Review</div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Confidence threshold</div>
+                <div class="threshold-sub">Flag a document for review if any field falls below this confidence</div>
+              </div>
+              <div class="conf-row">
+                <input type="range" class="conf-slider" id="global-threshold" min="0" max="100" value="70">
+                <span class="conf-val" id="global-threshold-val">70%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ══ APPEARANCE ══ -->
+    <div class="panel" id="panel-appearance" data-help-key="tab-appearance">
+
+      <div class="settings-group">
+        <div class="group-title">Appearance</div>
+        <div class="group-body">
+          <div class="section">
+            <div class="section-title">Theme</div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Colour theme</div>
+                <div class="threshold-sub">Changes the whole app's colours. Everything stays offline.</div>
+              </div>
+              <select id="theme-select" style="min-width:180px">
+                <optgroup label="Light">
+                  <option value="light">Light</option>
+                  <option value="warm">Warm Paper</option>
+                  <option value="slate">Nordic Slate</option>
+                </optgroup>
+                <optgroup label="Dark">
+                  <option value="dark">Dark</option>
+                  <option value="midnight">Midnight</option>
+                  <option value="graphite">Graphite</option>
+                </optgroup>
+                <optgroup label="Seasonal">
+                  <option value="spring">Spring</option>
+                  <option value="summer">Summer</option>
+                  <option value="autumn">Autumn</option>
+                  <option value="winter">Winter</option>
+                  <option value="festive">Festive</option>
+                </optgroup>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Window Behaviour</div>
+        <p class="section-desc">Keep ScanFinder running in the background when you close its window, so watch-folder import, processing and remote search clients stay available. Fully exit from the tray icon’s right-click menu.</p>
+        <div class="threshold-row">
+          <div>
+            <div class="threshold-label">Close button minimises to the tray</div>
+            <div class="threshold-sub">When on, closing the window hides it to the notification area instead of quitting</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="close-to-tray-toggle">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Home screen — choose which cards appear on the Home screen. -->
+      <div class="settings-group">
+        <div class="group-title">Home screen</div>
+        <div class="group-body">
+          <div class="section">
+            <div class="threshold-sub" style="margin-bottom:6px">Choose which cards appear on the Home screen. Changes apply straight away.</div>
+            <div id="dash-cards-toggles"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
     <!-- ══ TEMPLATES ══ -->
-    <div class="panel" id="panel-templates">
+    <div class="panel" id="panel-templates" data-help-key="tab-templates">
       <div class="section">
         <div class="section-title">Template Viewer &amp; Anchor Mapping</div>
         <p class="section-desc">
@@ -615,7 +760,7 @@
           <div class="section-title sub">Templates</div>
           <div id="tpl-list"></div>
           <div style="margin-top:14px;">
-            <button class="btn" id="btn-new-template">+ New Template</button>
+            <button class="btn" id="btn-new-template" data-help-key="new-template">+ New Template</button>
           </div>
           <div class="add-form" id="new-template-form">
             <div class="form-group">
@@ -638,6 +783,38 @@
             <div id="tpl-detail-layout">
 
               <div id="tpl-preview-pane">
+                <div id="tpl-sample-bar" class="section" style="margin:0 0 14px;">
+                  <div class="section-title">Sample document</div>
+                  <div class="row-flex" style="gap:8px; align-items:center; flex-wrap:wrap;">
+                    <select id="tpl-sample-select" class="field-select" style="flex:1 1 240px; min-width:0;" title="Choose sample document for this template"></select>
+                    <button class="btn" id="tpl-btn-import-sample" data-help-key="import-sample" title="Import a PDF, PNG or JPEG as a sample document">Import Sample…</button>
+                    <button class="btn" id="tpl-btn-regen-landmarks" data-help-key="regen-landmarks" title="Recompute registration landmarks from the current sample (fixes a template that ended up with no/poor landmarks, so drifted scans register correctly)">Regenerate landmarks</button>
+                    <button class="btn" id="tpl-btn-regen-fingerprint" data-help-key="regen-fingerprint" title="Recompute the keyword fingerprint from this template's documents (fixes a born-digital template — e.g. an email alert whose logo varies — so it's matched by its stable header words instead of an unreliable logo)">Regenerate fingerprint</button>
+                    <button class="btn" id="tpl-btn-enhance" data-help-key="tpl-enhance" title="Advanced manual override. Scan Finder detects registration landmarks automatically as documents are processed — only use this if automatic detection keeps failing for this template, and pick words that appear ONCE on the page.">Manual landmarks (advanced)</button>
+                  </div>
+                  <span class="section-desc" style="display:block; margin:4px 0 0;">Required for anchor/target mapping. Attach any representative PDF, PNG or JPEG.</span>
+                  <span id="tpl-sample-msg" class="section-desc" style="display:block; margin:4px 0 0;"></span>
+                  <label class="row-flex" style="gap:6px; align-items:center; margin:8px 0 0; cursor:pointer;" title="Resolve every mapping on the loaded sample using the template's landmarks and overlay where each anchor/value ACTUALLY lands. Switch samples to watch the boxes track each layout.">
+                    <input type="checkbox" id="tpl-preview-registration">
+                    <span>Preview registration on this doc (overlay where each field resolves)</span>
+                  </label>
+                  <span id="tpl-preview-status" class="section-desc" style="display:block; margin:4px 0 0;"></span>
+
+                  <div id="tpl-landmark-panel" style="display:none; margin-top:10px; border-top:1px solid var(--border2); padding-top:10px;">
+                    <div class="section-title sub">Manual landmarks — advanced override</div>
+                    <p class="section-desc" style="margin:0 0 8px;"><strong>You normally don't need this.</strong> Scan Finder learns registration landmarks <strong>automatically</strong> once a few documents have been processed for this template. Use this only if automatic detection keeps failing. Draw a box around up to 5 things that appear <strong>exactly once</strong> on every document (the logo, the title) — <strong>avoid words that repeat on the page</strong> (e.g. "Ticket", which appears several times) and multi-word phrases, or they can't be re-located on a shifted scan.</p>
+                    <div id="tpl-landmark-list" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;"></div>
+                    <div class="row-flex" style="gap:8px; align-items:center; flex-wrap:wrap;">
+                      <span id="tpl-landmark-count" class="field-label-small">0 / 5 drawn</span>
+                      <span style="flex:1"></span>
+                      <button class="btn" id="tpl-btn-landmark-auto" title="Discard manual landmarks and let Scan Finder detect them automatically from the sample">Use automatic</button>
+                      <button class="btn" id="tpl-btn-landmark-cancel">Cancel</button>
+                      <button class="btn primary" id="tpl-btn-landmark-save" disabled>Save landmarks</button>
+                    </div>
+                    <span id="tpl-landmark-msg" class="section-desc" style="display:block; margin:6px 0 0;"></span>
+                  </div>
+                </div>
+
                 <div id="tpl-doc-toolbar" class="row-flex" style="margin-bottom:8px; flex-wrap:wrap; row-gap:8px;">
                   <button class="btn" id="tpl-btn-page-prev">&#8249; Prev</button>
                   <span id="tpl-page-indicator" style="font-size:11px; color:var(--muted);">—</span>
@@ -674,106 +851,104 @@
                 </div>
                 <div class="threshold-sub" id="tpl-detail-meta">—</div>
                 <div id="tpl-detection-method" style="margin-top:5px; display:flex; flex-wrap:wrap; gap:5px; align-items:center;"></div>
-                <div id="tpl-ocr-auto-row" style="margin-top:5px; display:none; flex-wrap:wrap; gap:8px; align-items:center;">
-                  <span class="tpl-method-pill ok" id="tpl-ocr-auto-pill">OCR auto-processing active</span>
-                  <label class="toggle">
-                    <input type="checkbox" id="tpl-ocr-auto-toggle">
-                    <span class="toggle-slider"></span>
-                  </label>
-                </div>
-                <p class="section-desc" id="tpl-ocr-auto-desc" style="display:none; margin:2px 0 0;">
-                  Applies learned image preprocessing (skew/threshold/noise cleanup) before OCR for documents
-                  matching this template — does not rewrite extracted field values.
-                </p>
                 <span id="tpl-name-msg" class="section-desc" style="display:block; margin:4px 0 0;"></span>
-
-                <div class="form-group" style="margin:12px 0 0;">
-                  <label>Group / Family</label>
-                  <div class="row-flex" style="gap:6px; align-items:center; margin-top:4px;">
-                    <select id="tpl-group-select" class="field-select" style="flex:1;"></select>
-                    <button class="btn" id="tpl-btn-new-group" style="white-space:nowrap; padding:4px 10px; font-size:11px;">+ New</button>
-                  </div>
-                  <div id="tpl-new-group-row" class="row-flex" style="display:none; gap:6px; margin-top:6px; align-items:center;">
-                    <input type="text" id="tpl-new-group-input" class="field-select" placeholder="Group name…" style="flex:1;">
-                    <button class="btn primary" id="tpl-btn-save-group" style="white-space:nowrap; padding:4px 10px; font-size:11px;">Save</button>
-                    <button class="btn" id="tpl-btn-cancel-group" title="Cancel" aria-label="Cancel new group" style="white-space:nowrap; padding:4px 10px; font-size:11px;">&#215;</button>
-                  </div>
-                  <div id="tpl-siblings" style="margin-top:6px; display:none;">
-                    <div class="threshold-sub" style="margin-bottom:4px;">Siblings in same group:</div>
-                    <div id="tpl-siblings-list" style="display:flex; flex-direction:column; gap:3px;"></div>
-                  </div>
-                </div>
-
-                <div class="row-flex" style="margin:14px 0;">
-                  <button class="btn danger" id="tpl-btn-delete-template">Delete Template</button>
-                </div>
-
-                <div class="form-group" style="margin-bottom:6px;">
-                  <label>Sample document</label>
-                  <div class="row-flex" style="gap:8px; align-items:center;">
-                    <select id="tpl-sample-select" class="field-select" style="flex:1;" title="Choose sample document for this template"></select>
-                    <button class="btn" id="tpl-btn-import-sample" title="Import a PDF, PNG or JPEG as a sample document">Import Sample…</button>
-                    <button class="btn" id="tpl-btn-regen-landmarks" title="Recompute registration landmarks from the current sample (fixes a template that ended up with no/poor landmarks, so drifted scans register correctly)">Regenerate landmarks</button>
-                  </div>
-                  <span class="section-desc" style="display:block; margin:4px 0 0;">Required for anchor/target mapping. Attach any representative PDF, PNG or JPEG.</span>
-                  <span id="tpl-sample-msg" class="section-desc" style="display:block; margin:4px 0 0;"></span>
-                </div>
 
             <div class="section" style="margin-top:14px;">
               <div class="section-title sub">Map a Field</div>
-              <p class="section-desc">Draw an anchor label and target zone on the preview. Falls back to standard extraction if the anchor isn't found.</p>
+              <p class="section-desc">Choose how this field is filled — read it from the page with an anchor + target zone, or force a constant value. Anchor mode falls back to standard extraction if the anchor isn't found.</p>
 
+              <div id="tpl-map-controls">
               <div class="row-flex" style="flex-wrap:wrap; gap:16px; align-items:flex-end;">
                 <div class="form-group">
                   <label>Field</label>
-                  <select id="tpl-map-field-select" class="field-select" style="min-width:190px;" title="Choose the field to map"></select>
-                </div>
-                <div class="form-group" style="flex-direction:row; gap:8px;">
-                  <button class="btn" id="tpl-btn-draw-anchor" title="Draw a box around the label text on the document (e.g. 'Invoice No:')">Draw Anchor</button>
-                  <button class="btn" id="tpl-btn-draw-target" title="Draw a box around where the value appears">Draw Target</button>
-                </div>
-                <div class="form-group" style="flex-direction:row; gap:8px;">
-                  <span id="tpl-anchor-status" class="mapping-status">Anchor: not drawn</span>
-                  <span id="tpl-target-status" class="mapping-status">Target: not drawn</span>
-                </div>
-              </div>
-
-              <div class="row-flex" style="flex-wrap:wrap; gap:16px; margin-top:12px; align-items:flex-end;">
-                <div class="form-group">
-                  <label>Anchor text</label>
-                  <input type="text" id="tpl-map-anchor-text" placeholder="auto-detected" style="width:220px;" title="Label text to find on the document — auto-filled from drawn box">
+                  <select id="tpl-map-field-select" class="field-select" style="min-width:190px;" title="Choose the field to configure"></select>
                 </div>
                 <div class="form-group">
-                  <label>OCR type</label>
-                  <select id="tpl-map-ocr-type" class="field-select" title="Expected value format — affects post-processing">
-                    <option value="text">Text</option>
-                    <option value="number">Number</option>
-                    <option value="date">Date</option>
-                    <option value="currency">Currency</option>
+                  <label>How is this field filled?</label>
+                  <select id="tpl-map-mode" class="field-select" style="min-width:200px;" title="Read it from the document: find this value on each scan. Always use the same value: file a constant on every matching document.">
+                    <option value="anchor">Read it from the document</option>
+                    <option value="fixed">Always use the same value</option>
                   </select>
                 </div>
-                <div class="form-group">
-                  <label>Expansion</label>
-                  <div class="conf-row">
-                    <input type="range" class="conf-slider" id="tpl-map-expansion" min="0" max="20" value="4" title="Extra margin added around the target zone when searching">
-                    <span class="conf-val" id="tpl-map-expansion-val">4%</span>
+              </div>
+
+              <!-- ANCHOR mode -->
+              <div id="tpl-map-anchor-controls">
+                <div id="tpl-map-no-sample" class="section-desc" style="display:none; border-left:2px solid var(--warn); padding-left:8px; color:var(--warn); margin-top:12px;">Attach a sample document (Sample document → Import Sample…) to draw anchors. You can still set a fixed value without one.</div>
+
+                <div id="tpl-map-anchor-draw">
+                  <div class="row-flex" style="flex-wrap:wrap; gap:16px; margin-top:12px; align-items:flex-end;">
+                    <div class="form-group" style="flex-direction:row; gap:8px;">
+                      <button class="btn" id="tpl-btn-draw-anchor" data-help-key="draw-anchor" title="Draw a box around the label text on the document (e.g. 'Invoice No:')">Draw Anchor</button>
+                      <button class="btn" id="tpl-btn-draw-target" data-help-key="draw-target" title="Draw a box around where the value appears">Draw Target</button>
+                    </div>
+                    <div class="form-group" style="flex-direction:row; gap:8px;">
+                      <span id="tpl-anchor-status" class="mapping-status">Anchor: not drawn</span>
+                      <span id="tpl-target-status" class="mapping-status">Target: not drawn</span>
+                    </div>
                   </div>
-                </div>
-                <div class="form-group">
-                  <label>Enabled</label>
-                  <label class="toggle">
-                    <input type="checkbox" id="tpl-map-enabled" checked>
-                    <span class="toggle-slider"></span>
-                  </label>
+
+                  <div class="row-flex" style="flex-wrap:wrap; gap:16px; margin-top:12px; align-items:flex-end;">
+                    <div class="form-group">
+                      <label>Anchor text</label>
+                      <input type="text" id="tpl-map-anchor-text" placeholder="auto-detected" style="width:220px;" title="Label text to find on the document — auto-filled from drawn box">
+                    </div>
+                    <div class="form-group">
+                      <label>OCR type</label>
+                      <select id="tpl-map-ocr-type" class="field-select" title="Expected value format — affects post-processing">
+                        <option value="text">Text</option>
+                        <option value="number">Number</option>
+                        <option value="date">Date</option>
+                        <option value="currency">Currency</option>
+                      </select>
+                    </div>
+                    <div class="form-group">
+                      <label>Expansion</label>
+                      <div class="conf-row">
+                        <input type="range" class="conf-slider" id="tpl-map-expansion" min="0" max="20" value="4" title="Extra margin added around the target zone when searching">
+                        <span class="conf-val" id="tpl-map-expansion-val">4%</span>
+                      </div>
+                    </div>
+                    <div class="form-group">
+                      <label>Enabled</label>
+                      <label class="toggle">
+                        <input type="checkbox" id="tpl-map-enabled" checked>
+                        <span class="toggle-slider"></span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div class="row-flex" style="margin-top:14px; gap:8px; flex-wrap:wrap; row-gap:6px;">
+                    <button class="btn primary" id="tpl-btn-save-mapping" data-help-key="save-mapping" disabled title="Save this anchor→target mapping">Save Mapping</button>
+                    <button class="btn" id="tpl-btn-test-mapping" data-help-key="test-mapping" disabled title="Run extraction on the sample document using this mapping">Test</button>
+                    <button class="btn danger" id="tpl-btn-delete-mapping" data-help-key="delete-mapping" style="display:none;" title="Delete this mapping">Delete</button>
+                    <button class="btn" id="tpl-btn-cancel-mapping" title="Clear the editor">Reset</button>
+                    <span id="tpl-mapping-msg" class="section-desc" style="margin:0;"></span>
+                  </div>
                 </div>
               </div>
 
-              <div class="row-flex" style="margin-top:14px; gap:8px; flex-wrap:wrap; row-gap:6px;">
-                <button class="btn primary" id="tpl-btn-save-mapping" disabled title="Save this anchor→target mapping">Save Mapping</button>
-                <button class="btn" id="tpl-btn-test-mapping" disabled title="Run extraction on the sample document using this mapping">Test</button>
-                <button class="btn danger" id="tpl-btn-delete-mapping" style="display:none;" title="Delete this mapping">Delete</button>
-                <button class="btn" id="tpl-btn-cancel-mapping" title="Clear the editor">Reset</button>
-                <span id="tpl-mapping-msg" class="section-desc" style="margin:0;"></span>
+              <!-- FIXED VALUE mode -->
+              <div id="tpl-map-fixed-controls" style="display:none;">
+                <p class="section-desc" style="margin-top:12px;">Force a constant value for this field on every document matching this template (e.g. a company name that never changes). Applied automatically during processing; clear it to return the field to normal extraction.</p>
+                <div class="row-flex" style="flex-wrap:wrap; gap:12px; align-items:flex-end;">
+                  <div class="form-group" style="flex:2 1 220px; min-width:0;">
+                    <label>Fixed value</label>
+                    <input type="text" id="tpl-fixed-value-input" class="field-select" placeholder="e.g. Acme Supplies Ltd">
+                  </div>
+                  <div class="form-group" style="flex-direction:row; gap:8px;">
+                    <button class="btn primary" id="tpl-fixed-set-btn" data-help-key="fixed-value">Set Fixed Value</button>
+                  </div>
+                </div>
+                <span id="tpl-fixed-msg" class="section-desc" style="display:none; margin:6px 0 0;"></span>
+                <table class="fields-table" style="margin-top:10px;">
+                  <thead>
+                    <tr><th>Field</th><th>Fixed value</th><th></th></tr>
+                  </thead>
+                  <tbody id="tpl-fixed-tbody"></tbody>
+                </table>
+                <div id="tpl-fixed-empty" class="section-desc" style="display:none;">No fixed field values — all fields use normal extraction.</div>
+              </div>
               </div>
             </div>
 
@@ -789,30 +964,42 @@
               <div id="tpl-mappings-empty" class="section-desc" style="display:none;">No mappings yet — standard pipeline applies.</div>
             </div>
 
+            <details id="tpl-advanced" style="margin-top:18px;">
+              <summary style="cursor:pointer; color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.08em;">Advanced</summary>
+              <p class="section-desc" style="margin-top:8px;">Rarely-needed levers — OCR preprocessing, template grouping, and the learned selector anchors.</p>
+
+            <div class="section" id="tpl-ocr-auto-section" style="display:none;">
+              <div class="section-title sub">OCR auto-processing</div>
+              <div id="tpl-ocr-auto-row" style="margin-top:5px; display:none; flex-wrap:wrap; gap:8px; align-items:center;">
+                <span class="tpl-method-pill ok" id="tpl-ocr-auto-pill">OCR auto-processing active</span>
+                <label class="toggle">
+                  <input type="checkbox" id="tpl-ocr-auto-toggle">
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              <p class="section-desc" id="tpl-ocr-auto-desc" style="display:none; margin:2px 0 0;">
+                Applies learned image preprocessing (skew/threshold/noise cleanup) before OCR for documents
+                matching this template — does not rewrite extracted field values.
+              </p>
+            </div>
+
             <div class="section">
-              <div class="section-title sub">Fixed Field Values</div>
-              <p class="section-desc">Force a constant value for a field on every document that matches this template (e.g. a supplier name that is always the same). Fixed values are applied automatically during processing and reprocess. Clear a value to return the field to normal extraction.</p>
-              <div class="row-flex" style="flex-wrap:wrap; gap:16px; align-items:flex-end;">
-                <div class="form-group">
-                  <label>Field</label>
-                  <select id="tpl-fixed-field-select" class="field-select" style="min-width:190px;" title="Choose the field to fix"></select>
+              <div class="section-title sub">Group / Family</div>
+              <div class="form-group" style="margin:6px 0 0;">
+                <div class="row-flex" style="gap:6px; align-items:center; margin-top:4px;">
+                  <select id="tpl-group-select" class="field-select" style="flex:1;"></select>
+                  <button class="btn" id="tpl-btn-new-group" style="white-space:nowrap; padding:4px 10px; font-size:11px;">+ New</button>
                 </div>
-                <div class="form-group" style="flex:1; min-width:200px;">
-                  <label>Fixed value</label>
-                  <input type="text" id="tpl-fixed-value-input" class="field-select" placeholder="e.g. Document Solutions Ltd">
+                <div id="tpl-new-group-row" class="row-flex" style="display:none; gap:6px; margin-top:6px; align-items:center;">
+                  <input type="text" id="tpl-new-group-input" class="field-select" placeholder="Group name…" style="flex:1;">
+                  <button class="btn primary" id="tpl-btn-save-group" style="white-space:nowrap; padding:4px 10px; font-size:11px;">Save</button>
+                  <button class="btn" id="tpl-btn-cancel-group" title="Cancel" aria-label="Cancel new group" style="white-space:nowrap; padding:4px 10px; font-size:11px;">&#215;</button>
                 </div>
-                <div class="form-group" style="flex-direction:row; gap:8px;">
-                  <button class="btn" id="tpl-fixed-set-btn">Set Fixed Value</button>
+                <div id="tpl-siblings" style="margin-top:6px; display:none;">
+                  <div class="threshold-sub" style="margin-bottom:4px;">Siblings in same group:</div>
+                  <div id="tpl-siblings-list" style="display:flex; flex-direction:column; gap:3px;"></div>
                 </div>
               </div>
-              <span id="tpl-fixed-msg" class="section-desc" style="display:none; margin:6px 0 0;"></span>
-              <table class="fields-table" style="margin-top:10px;">
-                <thead>
-                  <tr><th>Field</th><th>Fixed value</th><th></th></tr>
-                </thead>
-                <tbody id="tpl-fixed-tbody"></tbody>
-              </table>
-              <div id="tpl-fixed-empty" class="section-desc" style="display:none;">No fixed field values — all fields use normal extraction.</div>
             </div>
 
             <div class="section">
@@ -825,6 +1012,14 @@
                 <tbody id="tpl-fields-tbody"></tbody>
               </table>
             </div>
+            </details>
+
+            <div class="section" style="margin-top:18px; padding-top:14px; border-top:1px solid var(--err);">
+              <div class="section-title sub" style="color:var(--err);">Danger zone</div>
+              <div class="row-flex" style="margin:6px 0 0;">
+                <button class="btn danger" id="tpl-btn-delete-template" data-help-key="delete-template">Delete Template</button>
+              </div>
+            </div>
 
               </div>
             </div>
@@ -833,8 +1028,66 @@
       </div>
     </div>
 
-    <!-- ══ LEARNING RECOVERY ══ -->
-    <div class="panel" id="panel-learning">
+    <!-- ══ LEARNING ══ -->
+    <div class="panel" id="panel-learning" data-help-key="tab-learning">
+
+      <!-- (The "Fix a document type" wizard moved to its own "Learning Repair" tab.) -->
+
+      <!-- ── Suppliers handled automatically (graduation) ── -->
+      <div class="section" id="grad-section">
+        <div class="section-title">Suppliers handled automatically</div>
+        <p class="section-desc">
+          Once Scan Finder has confirmed enough clean documents from a supplier, it can file new
+          clean ones for you automatically — you'll still find every one under Recent activity and
+          can send any back to review. Turn it off globally, or for a single supplier.
+        </p>
+        <label class="row-flex" style="gap:8px; align-items:center; margin-bottom:12px; cursor:pointer;">
+          <input type="checkbox" id="grad-master"/>
+          <span>Let Scan Finder auto-file documents from suppliers it has learned</span>
+        </label>
+        <div id="grad-roster" class="section-desc" style="font-family:var(--mono); font-size:12px;"></div>
+      </div>
+
+      <!-- Keyword Label Overrides — moved to the top of the Learning tab -->
+      <div class="section">
+        <div class="section-title">Keyword Label Overrides</div>
+        <p class="section-desc">Teach the keyword stage extra <strong>words to look for on the page</strong> for a field, so it's detected on import without per-document teaching.</p>
+        <details class="info-disclose" style="margin-bottom:12px;"><summary class="disclose">How this works</summary>
+          <p class="section-desc" style="margin-top:8px;">
+            For example, if a worksheet prints <em>“Serial No.”</em> next to the value you want in
+            the <em>Reference</em> field, add it here once and every future worksheet picks it up.
+          </p>
+          <p class="section-desc">
+            On reprocessing, Scan Finder looks for <strong>your words first</strong>, then falls back
+            to its built-in words if yours aren't on the page (built-in words are kept as a fallback,
+            not removed). This applies to <strong>all documents of that type</strong>, not just the one
+            on screen. A field you've taught with a drawn anchor still wins over these words. The extra
+            words you add are saved on <strong>this computer only</strong>.
+          </p>
+        </details>
+        <div class="row-flex" style="gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px;">
+          <div style="display:flex; flex-direction:column; gap:4px; min-width:170px;">
+            <label style="font-size:11px; color:var(--muted);">Document type</label>
+            <select id="lo-doctype" class="path-input"></select>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:4px; min-width:170px;">
+            <label style="font-size:11px; color:var(--muted);">Field</label>
+            <select id="lo-field" class="path-input"></select>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:4px; flex:1; min-width:220px;">
+            <label style="font-size:11px; color:var(--muted);">Label(s) as printed — separate with commas</label>
+            <textarea id="lo-label" class="path-input" rows="2" spellcheck="false"
+                      placeholder="e.g. Serial No., Ticket No., Reference No."
+                      style="resize:vertical; min-height:34px; line-height:1.5;"></textarea>
+          </div>
+          <button class="btn primary" id="lo-add">Add labels</button>
+        </div>
+        <div id="lo-msg" class="section-desc"
+             style="display:none; font-family:var(--mono); font-size:11px; margin-bottom:8px;"></div>
+        <div id="lo-list" class="section-desc"></div>
+      </div>
+
+      <!-- ── Learning Recovery ── -->
       <div class="section">
         <div class="section-title">Learning Recovery</div>
         <p class="section-desc">
@@ -848,7 +1101,7 @@
           <select id="lr-doctype" class="field-select" style="width:170px;">
             <option value="">All document types</option>
           </select>
-          <button class="btn primary" id="lr-btn-search">Search</button>
+          <button class="btn primary" id="lr-btn-search" data-help-key="lr-search">Search</button>
         </div>
       </div>
 
@@ -883,7 +1136,7 @@
               template (with its fields and mappings). Documents stay, but lose their template link.
               Core settings are untouched. Use only to reset learned state during development.
             </p>
-            <button class="btn danger" id="lr-btn-reset-all">Clear ALL learning memory</button>
+            <button class="btn danger" id="lr-btn-reset-all" data-help-key="lr-reset-all">Clear ALL learning memory</button>
             <div id="lr-dev-msg" class="section-desc" style="margin-top:8px;"></div>
 
             <!-- Dev-only full wipe (fresh install) — a SUPERSET of the above. Hidden by
@@ -895,7 +1148,7 @@
                 mappings) and strips learned identity off your documents. Your files are kept. A timestamped
                 database backup is taken first. Dev-only — not shown in packaged builds.
               </p>
-              <button class="btn danger" id="lr-btn-fresh-install">Erase ALL data — fresh install</button>
+              <button class="btn danger" id="lr-btn-fresh-install" data-help-key="lr-fresh">Erase ALL data — fresh install</button>
               <div id="lr-fresh-msg" class="section-desc" style="margin-top:8px;"></div>
             </div>
           </div>
@@ -913,9 +1166,22 @@
         <div id="lr-detail" style="font-family:var(--mono); font-size:11px; line-height:1.8;"></div>
 
         <div class="row-flex" style="margin-top:16px; gap:8px;">
-          <button class="btn danger" id="lr-btn-clear-anchors">Clear field anchors for this scope</button>
-          <button class="btn danger" id="lr-btn-clear-hints">Clear supplier hints for this scope</button>
+          <button class="btn danger" id="lr-btn-clear-anchors" data-help-key="lr-clear-anchors">Clear field anchors for this scope</button>
+          <button class="btn danger" id="lr-btn-clear-hints" data-help-key="lr-clear-hints">Clear supplier hints for this scope</button>
+          <button class="btn danger" id="lr-btn-clear-field-rules" data-help-key="lr-clear-rules">Clear field cleanup rules for this scope</button>
         </div>
+
+        <div class="section-title" style="margin-top:18px;">Rename / fix this supplier</div>
+        <div class="section-desc" style="margin-bottom:8px;">
+          Corrects a wrong or merged Document Issuer everywhere it is a learning key — the
+          documents, hints, anchors, logo and corrections for this supplier — in one move, so
+          it stops re-appearing on new scans. Filed documents keep their files.
+        </div>
+        <div class="row-flex" style="gap:8px; align-items:center;">
+          <input type="text" id="lr-rename-new" class="path-input" placeholder="Corrected supplier name…" style="max-width:280px;" spellcheck="false">
+          <button class="btn" id="lr-btn-rename-supplier" data-help-key="lr-rename-supplier">Rename this supplier</button>
+        </div>
+
         <div id="lr-msg" class="section-desc" style="margin-top:8px;"></div>
 
         <details id="lr-advanced" style="margin-top:18px;">
@@ -926,7 +1192,7 @@
               supplier/document type. Use only when learning has become polluted and narrower cleanup
               has failed.
             </p>
-            <button class="btn danger" id="lr-btn-clear-corrections">Clear corrections for this scope</button>
+            <button class="btn danger" id="lr-btn-clear-corrections" data-help-key="lr-clear-corrections">Clear corrections for this scope</button>
           </div>
         </details>
       </div>
@@ -934,17 +1200,86 @@
       <div class="section" id="lr-empty" style="display:none;">
         <p class="section-desc">No learned data found for this supplier / document type.</p>
       </div>
+
+    </div>
+
+    <!-- ══ LEARNING REPAIR ══ -->
+    <div class="panel" id="panel-repair" data-help-key="tab-repair">
+      <div class="section">
+        <div class="section-title">Learning Repair</div>
+        <p class="section-desc">Check the documents Scan Finder has learned from for a document type, and send anything that looks off back to Review. Nothing here is destructive — <strong>Send back to Review</strong> just puts a document in your Review list (confirm it there and it goes right back), and <strong>Delete</strong> goes to the recycle bin.</p>
+        <div class="row-flex" style="gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:4px;">
+          <div style="display:flex; flex-direction:column; gap:4px; min-width:200px;">
+            <label style="font-size:11px; color:var(--muted);">Document type</label>
+            <select id="rp-doctype" class="field-select"></select>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:4px; min-width:210px;">
+            <label style="font-size:11px; color:var(--muted);">Just one company? (optional)</label>
+            <input type="text" id="rp-supplier" class="path-input" placeholder="Leave blank for the whole type" spellcheck="false">
+          </div>
+          <button class="btn primary" id="rp-load">Open</button>
+          <span id="rp-count" class="section-desc" style="margin:0;"></span>
+        </div>
+      </div>
+
+      <div class="section" id="rp-worklist" style="display:none;">
+        <div id="rp-suspects-strip" style="display:none; margin-bottom:14px; border:1px solid var(--warn); border-radius:10px; padding:10px 12px; background:var(--surface2);">
+          <div style="font-weight:600; margin-bottom:6px;">A few documents worth a look</div>
+          <div id="rp-suspects-list" style="font-size:12px;"></div>
+        </div>
+        <div style="display:flex; gap:16px; align-items:flex-start;">
+          <div style="flex:1 1 260px; min-width:240px; max-width:340px;">
+            <div class="row-flex" id="rp-filters" style="gap:6px; margin-bottom:8px; flex-wrap:wrap;">
+              <button class="btn rp-chip active" data-filter="all" style="padding:3px 9px; font-size:11px;">All</button>
+              <button class="btn rp-chip" data-filter="belong" style="padding:3px 9px; font-size:11px;">Might not belong</button>
+              <button class="btn rp-chip" data-filter="data" style="padding:3px 9px; font-size:11px;">Data looks off</button>
+            </div>
+            <div id="rp-doclist" tabindex="0" style="max-height:520px; overflow:auto; border:1px solid var(--border); border-radius:10px; outline:none;"></div>
+          </div>
+          <div style="flex:2 1 380px; min-width:340px;">
+            <div id="rp-preview-empty" class="section-desc" style="padding:44px 12px; text-align:center;">Select a document on the left, or click the list and use ↑/↓ to move through them.</div>
+            <div id="rp-preview" style="display:none;">
+              <div id="rp-img-area" style="position:relative; border:1px solid var(--border); border-radius:10px; overflow:hidden; background:var(--doc-bg); min-height:280px; display:flex; align-items:center; justify-content:center;">
+                <img id="rp-img" style="max-width:100%; max-height:520px; display:block;" alt="">
+                <span id="rp-img-loading" class="section-desc" style="position:absolute;">Loading…</span>
+              </div>
+              <div class="section-desc" style="text-align:center; margin:4px 0 0; font-size:11px;">Scroll to zoom · right-click and drag to pan</div>
+              <div class="row-flex" style="gap:10px; align-items:center; justify-content:center; margin:6px 0;">
+                <button class="btn" id="rp-page-prev" style="padding:2px 12px;">&#8249;</button>
+                <span id="rp-page-label" class="section-desc" style="margin:0;">1 / 1</span>
+                <button class="btn" id="rp-page-next" style="padding:2px 12px;">&#8250;</button>
+              </div>
+              <div id="rp-fields" style="margin:8px 0; font-size:12px; line-height:1.7;"></div>
+              <div class="row-flex" style="gap:8px; margin-top:10px; flex-wrap:wrap;">
+                <button class="btn primary" id="rp-send">Send back to Review</button>
+                <button class="btn danger" id="rp-delete">Delete…</button>
+                <button class="btn" id="rp-fine" style="display:none;">Looks fine &#10003;</button>
+              </div>
+              <div id="rp-action-msg" class="section-desc" style="margin-top:8px;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section" id="rp-advanced-wrap" style="display:none;">
+        <details>
+          <summary class="disclose" style="font-size:12px;">Start over for this type (advanced)</summary>
+          <p class="section-desc" style="margin-top:8px;">Forget everything Scan Finder has learned for this type — field positions, fill-in hints and cleanup rules. It relearns from the documents you keep. A backup is taken first.</p>
+          <button class="btn danger" id="rp-forget">Forget learning for this type</button>
+          <div id="rp-forget-msg" class="section-desc" style="margin-top:8px;"></div>
+        </details>
+      </div>
     </div>
 
     <!-- ══ USERS ══ -->
-    <div class="panel" id="panel-users">
+    <div class="panel" id="panel-users" data-help-key="tab-users">
 
       <div class="section">
         <div class="section-title">Users</div>
         <p class="section-desc">Who can sign in and what they can do. New accounts get a temporary password; the user sets their own on first sign-in.</p>
         <div id="users-list"></div>
         <div style="margin-top:14px;">
-          <button class="btn" id="btn-add-user">+ Add User</button>
+          <button class="btn" id="btn-add-user" data-help-key="add-user">+ Add User</button>
         </div>
         <div class="add-form" id="add-user-form">
           <div class="form-group">
@@ -984,7 +1319,7 @@
     </div>
 
     <!-- ══ AUDIT ══ -->
-    <div class="panel" id="panel-audit">
+    <div class="panel" id="panel-audit" data-help-key="tab-audit">
       <style>
         #panel-audit .aud-lbl { display:block; font-size:10px; color:var(--muted); margin-bottom:3px; letter-spacing:.04em; }
         #panel-audit .aud-input { padding:5px 8px; background:var(--surface2); border:1px solid var(--border2);
@@ -1038,37 +1373,83 @@
     </div>
 
     <!-- ══ LICENSING ══ -->
-    <div class="panel" id="panel-licensing">
+    <div class="panel" id="panel-licensing" data-help-key="tab-licensing">
       <div class="section">
-        <div class="section-title">License</div>
+        <div class="card-head"><div class="section-title">License</div><span class="chip" id="lic-chip" style="display:none;"></span></div>
         <p class="section-desc">
           The licence currently in force on this device.
         </p>
         <div class="row-flex" style="gap:8px; margin-bottom:10px;">
           <button class="btn" id="lic-refresh">Refresh</button>
+          <button class="btn" id="lic-show-activate" style="display:none;">Activate a different key…</button>
         </div>
         <div id="lic-status" class="section-desc"
              style="font-family:var(--mono); font-size:12px; line-height:1.75;">Loading…</div>
+        <div id="lic-registered" class="section-desc"
+             style="display:none; font-family:var(--mono); font-size:12px; line-height:1.9; margin-top:10px;">
+          <div>Device&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <span id="lic-device" style="color:var(--text)">—</span></div>
+          <div>Activation key&nbsp; <span id="lic-key" style="color:var(--text)">—</span></div>
+        </div>
       </div>
 
-      <div class="section">
-        <div class="section-title">Workflow add-on</div>
-        <p class="section-desc">Unlocks the enhanced Search experience — confidence cues, approval workflow and mailbox — in this app and for the detached client. Normally set by your licence; toggle here for setup/testing.</p>
+      <div class="section" id="lic-activate-section">
+        <div class="section-title">Activate a licence key</div>
+        <p class="section-desc">Enter the licence key from your purchase email to license this device. You can do this
+          any time — including during a trial — and it confirms the key with the licensing server.</p>
+        <div class="row-flex" style="gap:8px; margin-bottom:8px;">
+          <input type="text" id="lic-activate-key" class="path-input"
+                 placeholder="Licence key (e.g. SF-XXXX-XXXX-XXXX-XXXX-XXXX)" autocomplete="off">
+        </div>
+        <div class="row-flex" style="gap:8px; margin-bottom:8px;">
+          <input type="text" id="lic-activate-label" class="path-input"
+                 placeholder="Device name (optional, e.g. Reception PC)" style="max-width:280px" autocomplete="off">
+          <button class="btn primary" id="lic-activate-btn">Activate</button>
+        </div>
+        <div id="lic-activate-msg" class="section-desc" style="font-size:12px; min-height:1em;"></div>
+      </div>
+
+      <div class="section" id="wf-section">
+        <div class="card-head"><div class="section-title">Workflow add-on</div><span class="chip" id="wf-chip" style="display:none;"></span></div>
+        <p class="section-desc">Unlocks the enhanced Search experience — confidence cues, approval workflow and mailbox. Set by your licence (read‑only).</p>
         <div class="threshold-row">
           <div>
             <div class="threshold-label">Workflow add-on licensed</div>
             <div class="threshold-sub" id="wf-addon-sub">Off</div>
           </div>
           <label class="toggle">
-            <input type="checkbox" id="wf-addon-toggle">
+            <input type="checkbox" id="wf-addon-toggle" disabled title="Set by your licence — read-only">
             <span class="toggle-slider"></span>
           </label>
         </div>
       </div>
 
+      <div class="section" id="seats-section">
+        <div class="section-title">Client seats — search &amp; workflow</div>
+        <p class="section-desc">Floating search licences: a client holds a seat while connected until you release it here. Workflow is an add‑on claimed on a search seat. Counts come from your licence (read‑only); live usage is shown below.</p>
+        <div class="row-flex" style="gap:10px; align-items:center; margin-bottom:8px;">
+          <div class="threshold-label">Search seats</div>
+          <input type="number" id="seats-count" min="0" max="999" class="path-input" style="max-width:80px" readonly disabled title="Set by your licence — read-only">
+          <span class="threshold-sub">licence-set</span>
+          <button class="btn" id="seats-refresh">Refresh</button>
+          <span class="threshold-sub" id="seats-summary" style="margin-left:auto;"></span>
+        </div>
+        <details id="seats-details" style="margin-top:4px;">
+        <summary class="disclose">Connected clients</summary>
+        <table class="fields-table" id="seats-table" style="margin-top:6px;">
+          <thead><tr><th>User</th><th>Client</th><th>Last seen</th><th></th></tr></thead>
+          <tbody id="seats-tbody"></tbody>
+        </table>
+        <div class="threshold-sub" id="seats-empty" style="margin-top:6px;"></div>
+        </details>
+      </div>
+    </div>
+
+    <!-- ══ SEARCH CLIENT ══ -->
+    <div class="panel" id="panel-searchclient" data-help-key="tab-searchclient">
+
       <div class="section">
-        <div class="section-title">Search client access</div>
-        <p class="section-desc">Host the read-only API so the detached ScanFinder Search client can connect over your network. Off by default; a loopback host stays plain HTTP, and a LAN host gets an automatic, managed TLS certificate — no manual cert files.</p>
+        <div class="card-head"><div class="section-title">Search client access</div><span class="chip" id="client-api-chip" style="display:none;"></span></div>
+        <p class="section-desc">Let the separate ScanFinder Search client connect over your network. Off by default. A loopback address stays plain HTTP; a LAN address gets an automatic TLS certificate — no manual cert files.</p>
         <div class="threshold-row">
           <div>
             <div class="threshold-label">Allow search-client connections</div>
@@ -1084,97 +1465,71 @@
           <input type="text" id="client-api-port" class="path-input" placeholder="8765" style="max-width:90px">
         </div>
 
-        <div id="client-api-cert" style="margin-top:12px; padding:12px 14px; border:1px solid var(--border); border-radius:9px; background:var(--surface2);">
-          <div class="threshold-label" style="margin-bottom:4px;">Managed TLS certificate</div>
+        <!-- Self-contained, layman setup helper: address -> auto certificate -> connect -> firewall -> FAQ. -->
+        <div class="row-flex" style="gap:10px; margin-top:12px; align-items:center;">
+          <button class="btn primary" id="btn-client-setup-help">Set up the search client…</button>
+          <span class="threshold-sub" style="flex:1;">New to this? A simple step-by-step guide &mdash; the address, the automatic
+            certificate, the firewall, and fixes for connection problems.</span>
+        </div>
+
+        <details id="cert-details" style="margin-top:12px;">
+        <summary class="disclose">Managed TLS certificate</summary>
+        <div id="client-api-cert" style="margin-top:8px; padding:12px 14px; border:1px solid var(--border); border-radius:9px; background:var(--surface2);">
           <div class="threshold-sub" id="client-api-cert-status">—</div>
           <div id="client-api-cert-fp" style="font-family:var(--mono); font-size:11px; color:var(--muted); margin-top:6px; word-break:break-all;"></div>
+          <p class="section-desc" style="margin-top:8px; margin-bottom:0;">Created automatically for the address above &mdash; nothing to manage.
+            Re-issuing, exporting a connection profile, or using your own certificate live under <b>Advanced</b> below.</p>
+        </div>
+        </details>
+
+        <details style="margin-top:12px;">
+          <summary class="disclose">Advanced — certificate actions &amp; your own certificate</summary>
           <div class="row-flex" style="gap:8px; margin-top:10px;">
             <button class="btn" id="client-api-cert-generate">Generate / re-issue certificate</button>
             <button class="btn" id="client-api-cert-export">Export connection profile…</button>
           </div>
           <div class="threshold-sub" id="client-api-export-status" style="margin-top:6px;"></div>
-        </div>
-
-        <details style="margin-top:12px;">
-          <summary style="cursor:pointer; color:var(--muted); font-size:12px;">Advanced — use your own certificate</summary>
+          <p class="section-desc" style="margin-top:12px;">Use your own certificate (e.g. an internal-CA cert) instead of the managed one:</p>
           <div class="row-flex" style="gap:8px; margin-top:8px;">
             <input type="text" id="client-api-tls-cert" class="path-input" placeholder="TLS certificate path (.crt)">
           </div>
           <div class="row-flex" style="gap:8px; margin-top:8px;">
             <input type="text" id="client-api-tls-key" class="path-input" placeholder="TLS private-key path (.key)">
           </div>
-          <p class="section-desc" style="margin-top:6px;">Override the managed certificate with your own (e.g. an internal-CA cert). Host/port/cert changes apply the next time you switch access on.</p>
+          <p class="section-desc" style="margin-top:6px;">Override the managed certificate with your own. Host/port/cert changes apply the next time you switch access on.</p>
         </details>
       </div>
 
-      <div class="section" id="seats-section">
-        <div class="section-title">Search client seats (concurrent)</div>
-        <p class="section-desc">Floating licences — any machine can connect while a seat is free, and a seat stays held by its client until you release it here (it is never auto-freed). Set the licensed seat count to match your licence.</p>
-        <div class="row-flex" style="gap:10px; align-items:center; margin-bottom:8px;">
-          <div class="threshold-label">Licensed seats</div>
-          <input type="number" id="seats-count" min="0" max="999" class="path-input" style="max-width:80px">
-          <button class="btn" id="seats-save">Save</button>
-          <button class="btn" id="seats-refresh">Refresh</button>
-          <span class="threshold-sub" id="seats-summary" style="margin-left:auto;"></span>
-        </div>
-        <table class="fields-table" id="seats-table" style="margin-top:6px;">
-          <thead><tr><th>User</th><th>Hostname</th><th>IP address</th><th>Last seen</th><th></th></tr></thead>
-          <tbody id="seats-tbody"></tbody>
-        </table>
-        <div class="threshold-sub" id="seats-empty" style="margin-top:6px;"></div>
-      </div>
     </div>
 
     <!-- ══ ADVANCED ══ -->
-    <div class="panel" id="panel-advanced">
+    <div class="panel" id="panel-advanced" data-help-key="tab-advanced">
       <div class="section">
-        <div class="section-title">Keyword Label Overrides</div>
-        <p class="section-desc">
-          Teach the keyword stage extra <strong>words to look for on the page</strong> for a
-          field on a document type, so it's detected immediately on import without
-          per-document teaching. For example, if a worksheet prints <em>“Serial No.”</em>
-          next to the value you want in the <em>Reference</em> field, add it here once and
-          every future worksheet picks it up.
-        </p>
-        <p class="section-desc">
-          On reprocessing, Scan Finder looks for <strong>your words first</strong>, then
-          falls back to its built-in words if yours aren't on the page (your built-in words
-          are kept as a fallback, not removed). This applies to <strong>all documents of
-          that type</strong>, not just the one on screen. A field you've taught with a
-          drawn anchor still wins over these words. Overrides are specific to
-          <strong>this installation</strong> — never shared or packaged.
-        </p>
-        <div class="row-flex" style="gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px;">
-          <div style="display:flex; flex-direction:column; gap:4px; min-width:170px;">
-            <label style="font-size:11px; color:var(--muted);">Document type</label>
-            <select id="lo-doctype" class="path-input"></select>
-          </div>
-          <div style="display:flex; flex-direction:column; gap:4px; min-width:170px;">
-            <label style="font-size:11px; color:var(--muted);">Field</label>
-            <select id="lo-field" class="path-input"></select>
-          </div>
-          <div style="display:flex; flex-direction:column; gap:4px; flex:1; min-width:220px;">
-            <label style="font-size:11px; color:var(--muted);">Label(s) as printed — separate with commas</label>
-            <textarea id="lo-label" class="path-input" rows="2" spellcheck="false"
-                      placeholder="e.g. Serial No., Ticket No., Reference No."
-                      style="resize:vertical; min-height:34px; line-height:1.5;"></textarea>
-          </div>
-          <button class="btn primary" id="lo-add">Add labels</button>
+        <div class="section-title">First-time setup</div>
+        <p class="section-desc">Re-run the welcome wizard to revisit the essentials — theme, output folder and performance.</p>
+        <div class="row-flex">
+          <button class="btn" id="btn-rerun-setup" data-help-key="rerun-setup">Re-run setup wizard…</button>
         </div>
-        <div id="lo-msg" class="section-desc"
-             style="display:none; font-family:var(--mono); font-size:11px; margin-bottom:8px;"></div>
-        <div id="lo-list" class="section-desc"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Legal</div>
+        <p class="section-desc">The Disclaimer &amp; Terms of Use you accepted. Open them any time.</p>
+        <div class="row-flex">
+          <button class="btn" id="btn-view-legal">View Terms &amp; Disclaimer…</button>
+        </div>
       </div>
 
       <div class="section">
         <div class="section-title">Backup &amp; Restore</div>
-        <p class="section-desc">
-          Export your configuration — document types, fields, templates &amp; mappings,
-          file-naming, folders, and learned data (anchors, hints, corrections, logos) —
-          to a single <strong>encrypted</strong> file, then restore it after reinstalling.
-          The file does <strong>not</strong> contain your documents, users, or login
-          details. Keep the password safe: without it the backup cannot be opened.
-        </p>
+        <p class="section-desc">Export your configuration to a single <strong>encrypted</strong> file, then restore it after reinstalling.</p>
+        <details class="info-disclose" style="margin-bottom:10px;"><summary class="disclose">What's included &amp; safety</summary>
+          <p class="section-desc" style="margin-top:8px;">
+            Includes document types, fields, templates &amp; mappings, file-naming, folders, and learned
+            data (anchors, hints, corrections, logos). It does <strong>not</strong> contain your documents,
+            users, or login details. Keep the password safe — without it the backup cannot be opened.
+          </p>
+        </details>
         <div class="row-flex" style="gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:8px;">
           <div style="display:flex; flex-direction:column; gap:4px; min-width:170px;">
             <label style="font-size:11px; color:var(--muted);">Backup password</label>
@@ -1226,12 +1581,42 @@
           </label>
         </div>
       </div>
+
+      <div class="section">
+        <div class="section-title">Help improve Scan Finder</div>
+        <p class="section-desc">
+          Optional, off by default. When on, Scan Finder sends <b>anonymous diagnostics</b> — app errors
+          and version/Windows info — so problems can be found and fixed faster. It <b>never</b> includes your
+          documents, scans, names, numbers, totals or file paths. Takes effect immediately; turning it off
+          also clears anything waiting to send.
+        </p>
+        <div class="threshold-row">
+          <div>
+            <div class="threshold-label">Send anonymous diagnostics</div>
+            <div class="threshold-sub">Helps fix bugs. Your documents always stay on this PC.</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="telemetry-toggle">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="threshold-row">
+          <div>
+            <div class="threshold-label">See exactly what's sent</div>
+            <div class="threshold-sub">Review the data waiting to be sent + the full list of what is and isn't collected.</div>
+          </div>
+          <button class="btn" id="telemetry-view-btn">View&hellip;</button>
+        </div>
+      </div>
     </div>
 
   </div>
 </div>
 <script src="../shared/theme.js"></script>
 <script src="../shared/helpmode.js"></script>
+<script src="../shared/doctype-editor.js"></script>
+<script src="../shared/thumbs.js"></script>
+<script src="../shared/pattern-editor.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

@@ -66,6 +66,16 @@ DIGIT_TO_UPPER = {
     '7': 'T',
 }
 
+# When we EXPECT an uppercase letter but OCR produced a SYMBOL (e.g. a leading "S" on a code
+# read as "$"). Mirrors the symbol cases of the renderer's _OCR_PAIRS (review/renderer.js) —
+# keep the two in sync (they are twins, like text_normalise.py/.js). Used by the slip-fix that
+# recovers a gate-rejected read which is ONE known-confusion substitution from the learned shape.
+SYMBOL_TO_UPPER = {
+    '$': 'S',
+    '€': 'E',
+    '£': 'E',
+}
+
 # When we EXPECT a lowercase letter but OCR produced a digit
 DIGIT_TO_LOWER = {
     '0': 'o',
@@ -98,14 +108,30 @@ def value_to_template(value: str) -> str:
     return ''.join(out)
 
 
-def derive_template(values: list) -> str | None:
+# A SINGLE distinct value confirmed at least this many times is a trustworthy correction
+# template (a constant field — a model/serial code — that OCR keeps misreading, e.g.
+# "1102V03NL1" read as "1102VO3NL1"). Constant fields have <2 DISTINCT values, so the
+# multi-value consensus path can never learn them; this recurrence gate does. Kept low
+# because an identical value confirmed a few times is already strong evidence. Mirror the
+# JS-side count gate in learning.js getFieldFormats (which must also EMIT such a group).
+MIN_CONFIRMED_FOR_SINGLE_SHAPE = 3
+
+
+def derive_template(values: list, confirmed_count: int = 0) -> str | None:
     """
-    Infer a consensus format template from multiple confirmed values.
+    Infer a consensus format template from confirmed values.
     Returns a template string, or None if the values are too inconsistent.
 
-    Requires at least 2 values of the same length to produce a template.
+    Multiple values of the same length yield a consensus template. A SINGLE distinct value
+    yields a template ONLY when it recurs (confirmed_count >= MIN_CONFIRMED_FOR_SINGLE_SHAPE)
+    — the strongest possible template (every position fixed), used to fix OCR character
+    confusions (O→0, I→1, S→5) in a constant-value field.
     """
     clean = [v for v in values if v and v.strip()]
+    if not clean:
+        return None
+    if len(clean) == 1:
+        return value_to_template(clean[0]) if confirmed_count >= MIN_CONFIRMED_FOR_SINGLE_SHAPE else None
     if len(clean) < 2:
         return None
 
@@ -249,11 +275,16 @@ def build_format_index(formats_data: list) -> dict:
         doc_type  = (entry.get('document_type') or '').lower().strip()
         field_key = entry.get('field_key', '')
         samples   = entry.get('sample_values') or []
+        confirmed = entry.get('confirmed_count', 0) or 0
 
-        if not field_key or len(samples) < 2:
+        # A single recurring value (len<2 distinct) is allowed through when confirmed enough
+        # times — the constant-value OCR-correction case (see derive_template).
+        if not field_key:
+            continue
+        if len(samples) < 2 and confirmed < MIN_CONFIRMED_FOR_SINGLE_SHAPE:
             continue
 
-        tmpl = derive_template(samples)
+        tmpl = derive_template(samples, confirmed_count=confirmed)
         if not tmpl:
             continue
 

@@ -189,16 +189,15 @@ def extract_keyword_fingerprint(ocr_text: str, max_words: int = 10) -> list:
 
 
 def compute_logo_hash(page_image: Image.Image) -> str | None:
-    """Compute a perceptual hash of the top-left logo region."""
+    """Compute a perceptual hash of the top-left logo region.
+
+    Delegates to the SHARED recipe in logo_hash.py so the interactive teach path
+    (logo/fingerprint.py) and this Stage-0 matcher hash a logo identically — a taught
+    logo and an extracted logo can never silently drift apart. Byte-identical to the
+    former inline recipe (top-left crop, grey/autocontrast/resize-256/blur, phash-8)."""
     try:
-        import imagehash
-        from PIL import ImageOps, ImageFilter
-        w, h  = page_image.size
-        crop  = page_image.crop((0, 0, w // 2, h // 5)).convert('L')
-        crop  = ImageOps.autocontrast(crop, cutoff=5)
-        crop  = crop.resize((256, 256), Image.LANCZOS)
-        crop  = crop.filter(ImageFilter.GaussianBlur(radius=1))
-        return str(imagehash.phash(crop, hash_size=8))
+        import logo_hash
+        return logo_hash.logo_phash(page_image)
     except Exception:
         return None
 

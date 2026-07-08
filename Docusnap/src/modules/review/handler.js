@@ -63,7 +63,34 @@ function register(ctx) {
   const templates  = require('../../../database/modules/templates');
   const previewService = require('../../services/previewService');
   const workflowService = require('../../services/workflowService');
-  const { requireRole, requireLogin, hasRole, logAudit } = require('../auth/handler');
+  const { requireRole, requireLogin, hasRole, logAudit, getCurrentUser } = require('../auth/handler');
+  // Shared in-process presence map (the "being reviewed by" signal) — the SAME instance the /v1
+  // client API publishes to, so a desktop reviewer is visible to clients and vice-versa.
+  const presence = require('../../services/presenceService').shared();
+  const _desktopKey = (uid) => `desktop:${uid}`;
+
+  // Transport-agnostic review orchestration — the SAME confirm/defer/restore the detached-client
+  // /v1 API will call (Phase 3). The desktop injects its Electron-only steps as hooks so this
+  // path stays byte-identical; auth + the workflow lock are enforced at the edge (requireUnlocked).
+  const reviewService = require('../../services/reviewService').createReviewService({
+    documents, learning, doctypes,
+    filing: require('../filing/handler'),
+    fs, path, logger,
+    audit: (db, entry) => logAudit(db, entry),
+    onScheduleSourceMove: (args) => _scheduleSourceMove(ctx, getDb(), documents, args),
+    onTaughtConfirm: (db, docId, info) => _upsertTemplate(ctx, db, docId, info),
+    captureSample: async (tId, docId) => {
+      if (ctx.captureSampleWords) {
+        await ctx.captureSampleWords(tId, docId);
+        if (ctx.generateLandmarks) await ctx.generateLandmarks(tId);
+      }
+    },
+    notifyCounts: (db) => {
+      notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
+      notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
+    },
+    releaseDelayMs: 150,
+  });
 
   // ── Validation patterns (shared source of truth for UI field validation) ─────
   // The Review window validates an edited field on blur (regex/type) using the
@@ -88,6 +115,35 @@ function register(ctx) {
     return _validationPatternsCache;
   });
 
+  // ── Built-in field label words (read-only, for the label-overrides UI) ───────
+  // The shipped `field_patterns` own the canonical fields' detection words globally
+  // (invoice_number, supplier_name, total_amount, …). The Settings → label-overrides
+  // screen surfaces these per field so canonical types (invoice/sales order/etc., which
+  // carry NO per-install overrides by design) still show their suggested words. Returns
+  // { field_key: [labelText, …] }, flattening the string | {text,directions} label forms.
+  let _fieldPatternLabelsCache;
+  ipcMain.handle('get-field-patterns', () => {
+    requireLogin();
+    if (_fieldPatternLabelsCache === undefined) {
+      try {
+        const cfgFile = ctx.resourcePath('config', 'keyword_patterns.json');
+        const cfg = JSON.parse(fs.readFileSync(cfgFile, 'utf8'));
+        const out = {};
+        for (const [key, def] of Object.entries(cfg.field_patterns || {})) {
+          const labels = (def && def.labels) || [];
+          out[key] = labels
+            .map(l => (typeof l === 'string' ? l : (l && l.text) || ''))
+            .filter(Boolean);
+        }
+        _fieldPatternLabelsCache = out;
+      } catch (e) {
+        logger?.warn?.(`get-field-patterns: ${e.message}`);
+        _fieldPatternLabelsCache = {};
+      }
+    }
+    return _fieldPatternLabelsCache;
+  });
+
   // WORKFLOW_LOCK (Stage 5b): block a Review-pipeline mutation while the document
   // has an OPEN approval route, so the mailbox and the review/learning pipeline
   // can't both edit the same row. Admin may override (audited). Throws like
@@ -109,16 +165,139 @@ function register(ctx) {
   // every action on them (edit, confirm, defer, reprocess) is Admin/Edit only,
   // so Read Only has no use for the queue contents either (their "view" role
   // is served by Search, which lists filed documents — see search/handler.js).
+  // Type-ahead suggestions: distinct values already CONFIRMED for this field on this
+  // document type (Review text fields, after 3 chars). Read-only; edit/admin gated.
+  ipcMain.handle('get-field-suggestions', (_e, documentId, fieldKey) => {
+    requireRole('admin', 'edit');
+    try { return documents.getFieldValueSuggestions(getDb(), documentId, fieldKey); }
+    catch (e) { logger?.warn?.(`get-field-suggestions: ${e.message}`); return []; }
+  });
+
   ipcMain.handle('get-review-queue',  () => { requireRole('admin', 'edit'); return documents.getReviewQueue(getDb()); });
   ipcMain.handle('get-deferred-queue',() => { requireRole('admin', 'edit'); return documents.getDeferredQueue(getDb()); });
   ipcMain.handle('get-review-count',  () => { requireRole('admin', 'edit'); return documents.getReviewCount(getDb()); });
   ipcMain.handle('get-deferred-count',() => { requireRole('admin', 'edit'); return documents.getDeferredCount(getDb()); });
 
+  // Advanced → "View learning history": list the confirmed values learned for a
+  // (supplier, doc-type, field) scope, and purge a value that shouldn't exist for the field
+  // (e.g. a drift artifact like "Booking" on a reference field) so it stops polluting the
+  // learned shape/hints. Admin/edit only; purge is audited.
+  ipcMain.handle('get-field-value-history', (_e, scope) => {
+    requireRole('admin', 'edit');
+    return learning.getFieldValueHistory(getDb(), scope || {});
+  });
+  // Source documents behind a learned value (Learning-history → "Open in Review"). Read-only.
+  ipcMain.handle('get-documents-for-field-value', (_e, scope) => {
+    requireRole('admin', 'edit');
+    return learning.getDocumentsForFieldValue(getDb(), scope || {});
+  });
+  ipcMain.handle('purge-field-value', (_e, scope) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const removed = learning.purgeFieldValue(db, scope || {});
+    try {
+      logAudit(db, { action: 'learning_value_purged', action_category: 'learning',
+        outcome: 'success', metadata: { ...(scope || {}), removed } });
+    } catch {}
+    return { removed };
+  });
+  // Saved field rules (read-only) — lets the Review right-click menu reflect a persisted
+  // rule (e.g. show "wrapping is on" for a field that already has a multiline_continue rule).
+  ipcMain.handle('get-field-rules', () => {
+    requireRole('admin', 'edit');
+    return learning.getFieldRules(getDb());
+  });
+
+  // Recently AUTO-FILED (100%-confidence) docs, so the Review window can offer "X auto-committed
+  // — view them" and re-surface them (now confirmed) for checking/editing. Backed by the rolling
+  // recent_auto_filed setting written by processing/handler._recordAutoFiled.
+  ipcMain.handle('get-recent-auto-filed', () => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    let ids = [];
+    try {
+      const o = JSON.parse(learning.getSetting(db, 'recent_auto_filed', '') || 'null');
+      if (o && Array.isArray(o.ids) && (!o.at || (Date.now() - o.at) <= 7 * 864e5)) ids = o.ids;
+    } catch {}
+    const docs = ids.length ? documents.getByIds(db, ids) : [];
+    return { count: docs.length, docs };
+  });
+  ipcMain.handle('clear-recent-auto-filed', () => {
+    requireRole('admin', 'edit');
+    try { learning.setSetting(getDb(), 'recent_auto_filed', JSON.stringify({ ids: [], at: Date.now() })); } catch {}
+    return { ok: true };
+  });
+
+  // Batch auto-file eligibility for the renderer Reprocess-All path — the SAME predicate the
+  // backend import path uses (scope graduation floor + structural safety gate), decided
+  // server-side with getFieldFormats scanned ONCE. Keeps the two auto-file sites from drifting.
+  ipcMain.handle('get-auto-file-eligible', (_e, docIds) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const trust = require('../../../database/modules/trust');
+    const rows = (Array.isArray(docIds) ? docIds : []).map(id => documents.getById(db, id)).filter(Boolean);
+    return { ids: trust.autoFileEligibleIds(db, rows) };
+  });
+
+  // Graduation roster + per-supplier opt-out (Slice 5 UX — the "Suppliers handled automatically"
+  // controls). Admin/edit gated like the rest of the review admin surface.
+  ipcMain.handle('get-graduated-suppliers', () => {
+    requireRole('admin', 'edit');
+    const trust = require('../../../database/modules/trust');
+    return { scopes: trust.listGraduatedScopes(getDb()) };
+  });
+  ipcMain.handle('set-graduation-optout', (_e, p) => {
+    requireRole('admin', 'edit');
+    if (!p || !p.supplier || !p.slug) return { ok: false };
+    const trust = require('../../../database/modules/trust');
+    trust.setScopeOptOut(getDb(), p.supplier, p.slug, !!p.optedOut);
+    return { ok: true };
+  });
+  // Operator marks a flagged NAME value as valid ("This name is correct" button on a
+  // wordness-flagged supplier/customer field). Adds the exact value to the accepted-names
+  // allowlist so the wordness/truncation flags skip it on EVERY future doc, and clears the
+  // name flag on THIS doc's field so it stops nagging immediately. Durable effect is the
+  // allowlist (fed to the engine via buildTrainingArgs); the note-clear is live UX.
+  ipcMain.handle('accept-name-value', (_e, p) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const value = p && typeof p.value === 'string' ? p.value.trim() : '';
+    if (!value) return { ok: false, error: 'empty-value' };
+    const list = learning.addAcceptedName(db, value);
+    // Clear only a NAME-related flag on the current doc's field (leave e.g. an identity-conflict
+    // note intact). The wordness/truncation notes all speak to "reads like a name".
+    let cleared = 0;
+    if (p.docId && p.fieldKey) {
+      const row = db.prepare('SELECT validation_note FROM extractions WHERE document_id = ? AND field_key = ?')
+        .get(p.docId, p.fieldKey);
+      const note = row && String(row.validation_note || '');
+      if (note && /read like a name|reference\/code, not a name|document heading, not a name|truncat|cut off/i.test(note)) {
+        cleared = db.prepare('UPDATE extractions SET validation_note = NULL WHERE document_id = ? AND field_key = ?')
+          .run(p.docId, p.fieldKey).changes;
+      }
+    }
+    try {
+      logAudit(db, { action: 'name_value_accepted', action_category: 'learning',
+        outcome: 'success', metadata: { value, field_key: p.fieldKey || null, doc_id: p.docId || null, cleared } });
+    } catch {}
+    return { ok: true, accepted: list, cleared };
+  });
+  ipcMain.handle('rename-field-value', (_e, scope) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const changed = learning.renameFieldValue(db, scope || {});
+    try {
+      logAudit(db, { action: 'learning_value_renamed', action_category: 'learning',
+        outcome: 'success', metadata: { ...(scope || {}), changed } });
+    } catch {}
+    return { changed };
+  });
+
   // get-document-with-extractions / get-document-pages are shared with the
   // Search window (Read Only previews filed documents there too) — gate to
   // "any signed-in user", not a specific role.
   ipcMain.handle('get-document-with-extractions', (_e, id) => {
-    requireLogin();
+    const sess = requireLogin();
     const db  = getDb();
     // Pure data assembly (doc + extractions + resolved slug + digit-only fields)
     // lives in the shared service so a detached client can reuse it; auth + audit
@@ -127,8 +306,30 @@ function register(ctx) {
     if (doc) {
       logAudit(db, { action: 'document_open', target_type: 'document', target_id: id,
         document_id: id, outcome: 'success', metadata: { type: doc.type_slug || null, status: doc.status || null } });
+      // Publish desktop REVIEW presence so clients see "being reviewed by <name>" — only for a
+      // review-able doc opened by a reviewer (NOT a read-only Search preview of a filed doc).
+      // A single heartbeat (TTL-expiring); the renderer refreshes it while the doc stays open.
+      if ((doc.status === 'needs_review' || doc.status === 'deferred') && (sess.role === 'admin' || sess.role === 'edit')) {
+        presence.heartbeat(id, { key: _desktopKey(sess.id), username: sess.username, displayName: sess.displayName || sess.username });
+      }
     }
     return doc;
+  });
+
+  // Renderer-driven presence refresh: the open Review window beats every ~25s so a desktop
+  // reviewer stays visible to clients past the 60s TTL while they work. Cheap in-process call;
+  // any signed-in reviewer, review-able doc only.
+  ipcMain.handle('review-heartbeat', (_e, id) => {
+    try {
+      const sess = requireLogin();
+      if (!(sess.role === 'admin' || sess.role === 'edit')) return false;
+      const row = documents.getById(getDb(), id);
+      if (row && (row.status === 'needs_review' || row.status === 'deferred')) {
+        presence.heartbeat(id, { key: _desktopKey(sess.id), username: sess.username, displayName: sess.displayName || sess.username });
+        return true;
+      }
+    } catch { /* not logged in / gone */ }
+    return false;
   });
 
   // Document close — the Review window fires this when it navigates away from a
@@ -137,10 +338,12 @@ function register(ctx) {
     if (docId == null) return;
     try { logAudit(getDb(), { action: 'document_close', target_type: 'document', target_id: docId,
       document_id: docId, outcome: 'success' }); } catch {}
+    // Drop this desktop reviewer's presence immediately (the TTL is the backstop).
+    try { const u = getCurrentUser(); if (u) presence.release(docId, _desktopKey(u.id)); } catch {}
   });
 
   // ── Document pages for preview ──────────────────────────────────────────────
-  ipcMain.handle('get-document-pages', async (_e, docId, folderPath, filename) => {
+  ipcMain.handle('get-document-pages', async (_e, docId, folderPath, filename, scale) => {
     requireLogin();
     if (!folderPath || !filename) {
       console.log(`[pages] docId=${docId} missing path — folderPath=${folderPath} filename=${filename}`);
@@ -158,7 +361,7 @@ function register(ctx) {
 
     // Transport-agnostic page render lives in the shared service so the detached
     // client can reuse it; Electron collaborators are injected via deps.
-    return previewService.getDocumentPages(getDb(), { docId, folderPath, filename }, {
+    return previewService.getDocumentPages(getDb(), { docId, folderPath, filename, scale }, {
       fs, path, spawn, pythonExe, pythonArgs,
       renderScript: ctx.resourcePath('python_backend', 'render', 'pages.py'),
     });
@@ -210,22 +413,14 @@ function register(ctx) {
   // ── Defer ───────────────────────────────────────────────────────────────────
   ipcMain.handle('defer-document', (_e, docId) => {
     const db = getDb();
-    requireUnlocked(db, docId, 'defer');
-    documents.update(db, docId, { status: 'deferred' });
-    logAudit(db, { action: 'review_deferred', target_type: 'document', target_id: docId, document_id: docId, outcome: 'success' });
-    notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
-    notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
-    return true;
+    const sess = requireUnlocked(db, docId, 'defer');
+    return reviewService.defer(db, { username: sess.username, role: sess.role }, docId).ok;
   });
 
   ipcMain.handle('restore-deferred', (_e, docId) => {
     const db = getDb();
-    requireUnlocked(db, docId, 'restore');
-    documents.update(db, docId, { status: 'needs_review' });
-    logAudit(db, { action: 'review_restored', target_type: 'document', target_id: docId, document_id: docId, outcome: 'success' });
-    notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
-    notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
-    return true;
+    const sess = requireUnlocked(db, docId, 'restore');
+    return reviewService.restore(db, { username: sess.username, role: sess.role }, docId).ok;
   });
 
   // Mark a flagged document as reviewed. This is the ONLY thing that lets a
@@ -245,26 +440,60 @@ function register(ctx) {
   // Delete is the one queue action the user explicitly kept Admin-exclusive
   // (Edit gets the rest of the daily workflow — review, edit, confirm, defer,
   // reprocess — but not permanent deletion of a scanned document).
-  ipcMain.handle('delete-document', async (_e, docId, filePath) => {
+  // Delete is now a SOFT delete → the document goes to the RECYCLE BIN (status='deleted',
+  // recoverable; files are KEPT). Permanent removal is the separate purge below.
+  ipcMain.handle('delete-document', async (_e, docId /*, filePath */) => {
+    requireRole('admin', 'edit');
     const db = getDb();
-    requireUnlocked(db, docId, 'delete'); // Edit/Admin; blocked while under an open approval route
-
-    // Delete file from disk
-    if (filePath && fs.existsSync(filePath)) {
-      try { fs.unlinkSync(filePath); } catch (e) {
-        console.warn('Could not delete file:', filePath, e.message);
-      }
-    }
-    // Also remove the app-managed working copy, if any (avoid orphaned files).
-    const wp = documents.getById(db, docId)?.working_path;
-    if (wp && fs.existsSync(wp)) { try { fs.unlinkSync(wp); } catch {} }
-    // Remove from DB
-    documents.deleteDoc(db, docId);
+    requireUnlocked(db, docId, 'delete'); // blocked while under an open approval route
+    documents.softDelete(db, docId);
     logAudit(db, { action: 'document_deleted', action_category: 'document', target_type: 'document',
-      target_id: docId, document_id: docId, outcome: 'success', metadata: { had_file: !!filePath } });
+      target_id: docId, document_id: docId, outcome: 'success', metadata: { soft: true } });
     notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
     notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
     return true;
+  });
+
+  // Recycle bin: list, restore, and permanently remove deleted documents.
+  ipcMain.handle('get-deleted-queue', () => { requireRole('admin', 'edit'); return documents.getDeletedQueue(getDb()); });
+
+  ipcMain.handle('restore-document', (_e, docId) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    documents.restoreDeleted(db, docId);
+    logAudit(db, { action: 'document_restored', action_category: 'document', target_type: 'document',
+      target_id: docId, document_id: docId, outcome: 'success' });
+    notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
+    notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
+    return true;
+  });
+
+  // Permanent removal (irreversible) — admin only. Unlinks the filed file + the app's
+  // working copy, then deletes the row. `purge-all-deleted` empties the whole bin.
+  function _purgeOne(db, docId) {
+    const doc = documents.getById(db, docId);
+    if (!doc) return;
+    for (const p of [documents.resolveFilePath(doc), doc.working_path]) {
+      if (p && fs.existsSync(p)) { try { fs.unlinkSync(p); } catch (e) { console.warn('purge unlink:', p, e.message); } }
+    }
+    documents.deleteDoc(db, docId);
+  }
+  ipcMain.handle('purge-document', (_e, docId) => {
+    requireRole('admin');
+    const db = getDb();
+    _purgeOne(db, docId);
+    logAudit(db, { action: 'document_purged', action_category: 'document', target_type: 'document',
+      target_id: docId, document_id: docId, outcome: 'success' });
+    return true;
+  });
+  ipcMain.handle('purge-all-deleted', () => {
+    requireRole('admin');
+    const db = getDb();
+    const ids = documents.getDeletedQueue(db).map(d => d.id);
+    for (const id of ids) _purgeOne(db, id);
+    logAudit(db, { action: 'recycle_bin_emptied', action_category: 'document', target_type: 'document',
+      outcome: 'success', metadata: { count: ids.length } });
+    return { purged: ids.length };
   });
 
   // ── Bulk delete of a whole queue (Admin only) ───────────────────────────────
@@ -275,22 +504,11 @@ function register(ctx) {
   // statement. Returning the deleted count lets the renderer report it.
   function _deleteQueue(status, rows, countEvent) {
     const db = getDb();
-    for (const r of rows) {
-      if (r.folder_path && r.original_filename) {
-        const fp = path.join(r.folder_path, r.original_filename);
-        try { if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch (e) {
-          console.warn('Could not delete file:', fp, e.message);
-        }
-      }
-      // Remove the app-managed working copy too (avoid orphaned files).
-      if (r.working_path && fs.existsSync(r.working_path)) {
-        try { fs.unlinkSync(r.working_path); } catch {}
-      }
-    }
-    const result = documents.deleteByStatus(db, status);
+    let n = 0;
+    for (const r of rows) { documents.softDelete(db, r.id); n++; }   // → recycle bin (recoverable; files kept)
     notifyMainWindow(countEvent, status === 'needs_review'
       ? documents.getReviewCount(db) : documents.getDeferredCount(db));
-    return { success: true, deleted: result.changes };
+    return { success: true, deleted: n };
   }
 
   ipcMain.handle('delete-all-review', async () => {
@@ -305,133 +523,25 @@ function register(ctx) {
 
   // ── Confirm review ──────────────────────────────────────────────────────────
   ipcMain.handle('confirm-review', async (_e, payload) => {
-    const {
-      document_id, folder_path, original_filename,
-      corrections, allValues, supplier_name,
-      document_type, document_type_slug,
-      taught_fields,
-    } = payload;
-
-    const db      = getDb();
-    // Multi-point licensing enforcement (F-01): filing a confirmed document is a
-    // high-value write path. Re-check the cached license verdict here (network-free)
-    // so neutralising the single startup gate does not silently re-enable confirms.
+    const db = getDb();
+    // Multi-point licensing enforcement (F-01): filing a confirmed document is a high-value
+    // write path. Re-check the cached license verdict here (network-free) so neutralising the
+    // single startup gate does not silently re-enable confirms.
     const licenseDenial = require('../licensing/handler').licenseDenied(db);
     if (licenseDenial) {
       return { success: false, error: 'A valid license is required to file documents. Please re-activate ScanFinder.', ...licenseDenial };
     }
-    requireUnlocked(db, document_id, 'confirm');
-    const filing  = require('../filing/handler');
-    // The app-managed working copy is the stable source for filing (the user's
-    // original source may be gone). Captured before filing; cleaned up after.
-    const workingPath = documents.getById(db, document_id)?.working_path || null;
-
-    // Get document type info for filing
-    const dtInfo = document_type_slug
-      ? doctypes.getWithFields(db, document_type_slug)
-      : null;
-
-    // Build the filed path
-    const outputRoot = learning.getSetting(db, 'output_folder', null);
-    if (!outputRoot) {
-      return { success: false, error: 'No output folder set. Please configure it in Settings.' };
+    // requireUnlocked enforces Admin/Edit + the workflow lock at the edge and returns the actor;
+    // the shared reviewService does the claim-before-file, filing, learning and cleanup so the
+    // desktop and the /v1 client API file documents through ONE race-safe path.
+    const sess = requireUnlocked(db, payload.document_id, 'confirm');
+    const r = await reviewService.confirm(db, { username: sess.username, role: sess.role }, payload);
+    if (!r.ok) {
+      return { success: false, error: r.error,
+               ...(r.code ? { code: r.code } : {}),
+               ...(r.confirmedBy ? { confirmedBy: r.confirmedBy } : {}) };
     }
-
-    // Release file handle — renderer should have cleared img.src already
-    await new Promise(r => setTimeout(r, 150));
-
-    const filingResult = await filing.commitDocument({
-      db, fs, path,
-      outputRoot,
-      folderPath:        folder_path,
-      originalFilename:  original_filename,
-      workingPath,
-      allValues,
-      documentType:      document_type || dtInfo?.name,
-      dtInfo,
-      logger,
-    });
-
-    if (!filingResult.success) {
-      logger?.err(`Confirm failed: ${original_filename} — ${filingResult.error}`);
-      return filingResult;
-    }
-
-    // Log confirm
-    if (logger) {
-      const fieldSummary = Object.entries(allValues || {})
-        .filter(([, v]) => v)
-        .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
-        .join(' | ');
-      logger.log(
-        `Confirmed: ${original_filename} → type=${document_type_slug || '?'}` +
-        ` supplier=${allValues?.supplier_name || supplier_name || '?'}` +
-        ` filed=${filingResult.filename}`
-      );
-      if (fieldSummary) logger.log(`  Values: ${fieldSummary}`);
-    }
-
-    // Save corrections for learning
-    learning.saveCorrections(
-      db, document_id, corrections || {},
-      supplier_name, document_type_slug, allValues,
-      taught_fields || []
-    );
-
-    // Update document record
-    documents.confirm(db, document_id, {
-      stored_filename: filingResult.filename,
-      stored_path:     filingResult.filePath,
-    });
-
-    logAudit(db, { action: 'review_confirmed', target_type: 'document', target_id: document_id,
-      document_id, outcome: 'success',
-      metadata: { type: document_type_slug || null, filed: filingResult.filename,
-                  fields_changed: Object.keys(corrections || {}).join(',') || null } });
-
-    // Clear the per-field review AIDS now that a human has reviewed and accepted
-    // this document. validation_note / corrected_to are pre-confirmation prompts
-    // (e.g. the Stage 4.5 format-anomaly "/" warning); leaving them on the
-    // extractions meant a re-opened COMMITTED doc still showed the stale warning
-    // even though it was already reviewed. Display-only fields (not read by
-    // learning), scoped to this document, so this is safe and targeted.
-    db.prepare(
-      'UPDATE extractions SET validation_note = NULL, corrected_to = NULL WHERE document_id = ?'
-    ).run(document_id);
-
-    // The working copy has served its purpose (the doc is now filed at
-    // stored_path) — remove it and clear the pointer so resolveFilePath falls
-    // through to the filed copy. Best-effort; a leftover file is harmless.
-    if (workingPath) {
-      try { if (fs.existsSync(workingPath)) fs.unlinkSync(workingPath); } catch {}
-      documents.update(db, document_id, { working_path: null });
-    }
-
-    // Update supplier name, date, reference for search
-    const refField  = dtInfo?.ref_field_key  || 'invoice_number';
-    const dateField = dtInfo?.date_field_key || 'invoice_date';
-    documents.update(db, document_id, {
-      supplier_name:    allValues.supplier_name || supplier_name || null,
-      doc_date:         allValues[dateField]    || null,
-      reference_number: allValues[refField]     || null,
-      document_type_id: dtInfo?.id             || null,
-    });
-
-    // Defer removal of the original scan until the preview UI is done with
-    // it — see _scheduleSourceMove for why (locked-file failures at confirm
-    // time, documented in processing.log). commitDocument has already copied
-    // the file to its filed location; only the delete-of-original is deferred.
-    if (filingResult.srcPath) {
-      _scheduleSourceMove(ctx, db, documents, {
-        srcPath:          filingResult.srcPath,
-        originalFilename: original_filename,
-      });
-    }
-
-    notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
-    notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
-
-    return { success: true, ...filingResult };
+    return r;   // { ok:true, success:true, ...filingResult }
   });
 
   // ── Lightweight current-template recheck ────────────────────────────────────
@@ -500,8 +610,65 @@ function register(ctx) {
       // it is the right representative sample.
       if (result.templateId) {
         templates.setSampleDocument(db, result.templateId, document_id);
+        // Derive registration landmarks from the just-pinned sample (best-effort), so a
+        // teach-created template gets the SAME drift correction as every other pin path
+        // (set-template-sample / import-sample). Without this, teach templates had no
+        // landmarks -> registration inert -> a mapping box drifts onto the wrong row
+        // (the "90 Galaorm Road 7" case). Never blocks the commit; generateLandmarks
+        // resolves (never rejects) and the template still works via anchors meanwhile.
+        try { if (ctx.generateLandmarks) await ctx.generateLandmarks(result.templateId); }
+        catch (e) { console.error('promote-to-template landmarks:', e.message); }
+        // Same for the keyword FINGERPRINT — a teach-promoted born-digital template
+        // (whose sample doc may have an empty stored ocr_text) would otherwise be born
+        // fingerprint-less and only matchable by an unreliable logo phash. Fills only
+        // when empty; best-effort, never blocks the commit.
+        try { if (ctx.generateFingerprint) await ctx.generateFingerprint(result.templateId); }
+        catch (e) { console.error('promote-to-template fingerprint:', e.message); }
       }
       return { success: true, ...result };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  // "This is like another document" (Review CTA): the operator says an unmatched doc
+  // belongs with an EXISTING template. Create a template for this doc (reusing the same
+  // promote machinery — sample pin, landmarks, fingerprint), then put both templates in
+  // ONE group so they share learning (engine.select_mapping_source borrows a grouped
+  // sibling's mappings). The renderer reprocesses the doc afterwards so it picks the
+  // group up immediately. Idempotent: if this doc's logo already matched the target, no
+  // duplicate is made and grouping is a no-op.
+  ipcMain.handle('link-document-to-template', async (_e, payload) => {
+    requireRole('admin', 'edit');
+    const { document_id, allValues, document_type_slug, supplier_name, target_template_id } = payload || {};
+    if (!document_id || !allValues || !target_template_id) {
+      return { success: false, error: 'Missing document or target template.' };
+    }
+    const db = getDb();
+    const target = templates.getById(db, target_template_id);
+    if (!target) return { success: false, error: 'That template no longer exists.' };
+    const dtInfo = document_type_slug ? doctypes.getWithFields(db, document_type_slug) : null;
+    if (!dtInfo) return { success: false, error: 'Select a document type before linking.' };
+    try {
+      // 1) Create (or logo-reuse) a template for THIS document.
+      const result = await _upsertTemplate(ctx, db, document_id, {
+        allValues, document_type_slug, supplier_name, dtInfo,
+      });
+      const newId = result.templateId;
+      // Only pin/derive on a genuinely NEW template — never disturb an existing one's sample.
+      if (newId && result.created) {
+        templates.setSampleDocument(db, newId, document_id);
+        try { if (ctx.generateLandmarks)  await ctx.generateLandmarks(newId); }  catch (e) { console.error('link landmarks:', e.message); }
+        try { if (ctx.generateFingerprint) await ctx.generateFingerprint(newId); } catch (e) { console.error('link fingerprint:', e.message); }
+      }
+      // 2) Put both templates in the SAME group (reuse the target's group, else make one).
+      let groupId = target.group_id || null;
+      if (!groupId) {
+        groupId = templates.createGroup(db, (target.name || supplier_name || 'Group').toString());
+        templates.setTemplateGroup(db, target_template_id, groupId);
+      }
+      if (newId && newId !== target_template_id) templates.setTemplateGroup(db, newId, groupId);
+      return { success: true, templateId: newId, groupId, name: result.name, targetName: target.name };
     } catch (e) {
       return { success: false, error: e.message };
     }
@@ -534,6 +701,18 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
 
   // Build template field rules from confirmed values
   const fields = _buildTemplateFields(db, allValues, dtInfo);
+
+  // The Document-Issuer value the operator CONFIRMED for this doc. COLD extraction reads no
+  // supplier, so the `supplier_name` param is empty at a supplier's FIRST confirm even though the
+  // user just typed the issuer in Review — fall back to the confirmed field values (allValues,
+  // string-keyed by field_key), where the identity field carries it. This is what lets a template
+  // be NAMED after its issuer ("City Office NI") instead of the generic "<Type> Template".
+  const confirmedIssuer = String(
+    (supplier_name && supplier_name.trim())
+    || (allValues && allValues.supplier_name)
+    || (allValues && allValues.customer_name)
+    || ''
+  ).trim();
 
   // `doc.template_id` reflects whatever Stage 0 matched DURING PROCESSING —
   // which, for a freshly-scanned batch, runs before any of that batch's own
@@ -580,6 +759,17 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
     // garble / per-document tokens can't poison Stage 0 matching and strand the
     // learned anchors — see templates.stabiliseFingerprint / chooseLogoPhash.
     templates.update(db, templateId, { logo_phash, keyword_fingerprint, fields });
+    // Heal a generic auto-name: a COLD first confirm named this template "<Type> Template" (no
+    // supplier read yet); a later confirm of the SAME template now carries the real issuer, so
+    // adopt it. Cosmetic (the name plays no role in matching/filing/learning-scope), and scoped to
+    // a STILL-generic name so a hand-edited or already-issuer name is left alone.
+    if (confirmedIssuer) {
+      const cur = templates.getById(db, templateId);
+      if (cur && /\btemplate$/i.test((cur.name || '').trim())
+          && cur.name.trim().toLowerCase() !== confirmedIssuer.toLowerCase()) {
+        try { templates.rename(db, templateId, confirmedIssuer); } catch {}
+      }
+    }
     if (!doc.template_id) {
       db.prepare('UPDATE documents SET template_id = ? WHERE id = ?').run(templateId, document_id);
     }
@@ -587,13 +777,15 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
     const tmpl = templates.getById(db, templateId);
     return { created: false, templateId, name: tmpl?.name || null };
   } else {
-    // Create new template — name from supplier + doc type
+    // Name the template after the Document Issuer value (e.g. "Beaumont Care Homes") so
+    // it's instantly recognisable in Template Manager. A supplier that sends several
+    // layouts gets several same-named templates — that's fine, the slug stays unique
+    // (templates.create suffixes it). Falls back to the doc-type name when there's no
+    // issuer value (e.g. a customer-identity type read nothing).
     const typeName  = document_type_slug
       ? document_type_slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
       : 'Document';
-    const name      = supplier_name
-      ? `${supplier_name} ${typeName}`
-      : `${typeName} Template`;
+    const name      = confirmedIssuer || `${typeName} Template`;
 
     const newTemplateId = templates.create(db, {
       name,

@@ -30,9 +30,9 @@ try {
     // Seat-aware: if a bound SEAT exists for this fingerprint, re-issue a fresh
     // seat token (this is what refreshes the 7-day grace for paid users online).
     $seatSel = $pdo->prepare(
-        'SELECT s.id AS seat_id, s.entitlement_id, e.seats_total, e.expires_at
+        'SELECT s.id AS seat_id, s.entitlement_id, e.account_id, e.seats_total, e.expires_at
          FROM seats s JOIN entitlements e ON e.id = s.entitlement_id
-         WHERE s.fp_hash = ? AND s.status = "bound" AND e.product_id = ? AND e.status = "active"
+         WHERE s.fp_hash = ? AND s.status = "bound" AND e.product_id = ? AND e.feature = "core" AND e.status = "active"
          LIMIT 1'
     );
     $seatSel->execute([$fpHash, $productId]);
@@ -42,19 +42,27 @@ try {
         $seatsTotal = (int) $seat['seats_total'];
         $expiresAt  = $seat['expires_at'];
         $seatsUsed  = (int) $pdo->query("SELECT COUNT(*) FROM seats WHERE entitlement_id = $entId AND status = 'bound'")->fetchColumn();
+        // Per-feature capacity (search/workflow): SUM across ALL active, non-expired grants
+        // so separate client purchases STACK (each subscription is its own row, see
+        // entitlements.webhook_apply_features).
+        $featSel = $pdo->prepare('SELECT feature, COALESCE(SUM(seats_total),0) AS total FROM entitlements WHERE account_id = ? AND product_id = ? AND status = "active" AND (expires_at IS NULL OR expires_at > NOW()) AND feature IN ("search","workflow") GROUP BY feature');
+        $featSel->execute([(int) $seat['account_id'], $productId]);
+        $features = ['core' => $seatsTotal, 'search' => 0, 'workflow' => 0];
+        foreach ($featSel as $fr) { $features[$fr['feature']] = (int) $fr['total']; }
         $expired    = $expiresAt !== null && new DateTimeImmutable($expiresAt) <= new DateTimeImmutable('now');
         $state      = $expired ? 'expired' : 'active';
-        $claims     = seat_claims($productId, $fpHash, $state, $entId, (int) $seat['seat_id'], $seatsTotal, $seatsUsed, $expiresAt);
+        $claims     = seat_claims($productId, $fpHash, $state, $entId, (int) $seat['seat_id'], $seatsTotal, $seatsUsed, $expiresAt, $features);
         $token      = jws_sign($claims, ACTIVE_KID);
         audit_event($pdo, null, $fpHash, 'license.validated', "kind=seat state=$state");
         send_json(200, ['token' => $token, 'kind' => 'seat', 'state' => $state,
             'entitlement_id' => $entId, 'seat_id' => (int) $seat['seat_id'],
-            'seats_total' => $seatsTotal, 'seats_used' => $seatsUsed, 'expires_at' => $expiresAt]);
+            'seats_total' => $seatsTotal, 'seats_used' => $seatsUsed, 'expires_at' => $expiresAt,
+            'features' => $features]);
         return;
     }
 
     $sel = $pdo->prepare(
-        'SELECT trial_start, trial_end FROM device_registrations
+        'SELECT trial_start, trial_end, trial_search_seats FROM device_registrations
          WHERE product_id = ? AND fp_hash = ?'
     );
     $sel->execute([$productId, $fpHash]);
@@ -74,7 +82,12 @@ try {
     $state         = ($now < $end) ? 'active' : 'expired';
     $daysRemaining = max(0, (int) ceil(($end->getTimestamp() - $now->getTimestamp()) / 86400));
 
-    $claims = trial_claims($productId, $fpHash, $state, $row['trial_start'], $row['trial_end']);
+    // Trial includes detached search-client capacity for its duration (see jws.php);
+    // honors the per-trial override when set, else the policy default. Re-issued on
+    // every online refresh so the desktop caps stay current.
+    $searchSeats = $row['trial_search_seats'] !== null ? (int) $row['trial_search_seats'] : null;
+    $features = trial_features($state, $searchSeats);
+    $claims = trial_claims($productId, $fpHash, $state, $row['trial_start'], $row['trial_end'], $features);
     $token  = jws_sign($claims, ACTIVE_KID);
 
     audit_event($pdo, null, $fpHash, 'license.validated', "kind=trial state=$state");
@@ -86,6 +99,7 @@ try {
         'trial_start'    => $row['trial_start'],
         'trial_end'      => $row['trial_end'],
         'days_remaining' => $daysRemaining,
+        'features'       => $features,
     ]);
 } catch (Throwable $e) {
     error_log('validate error: ' . $e->getMessage());

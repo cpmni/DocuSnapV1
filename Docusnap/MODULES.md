@@ -31,7 +31,6 @@ docusnap/
 │   │   ├── engine.py               ← Orchestrates all 4 stages
 │   │   ├── keyword.py              ← Stage 1: pattern matching
 │   │   ├── anchor.py               ← Stage 2: spatial anchors + logo
-│   │   ├── llm.py                  ← Stage 3: Phi-3 Mini via Ollama (dormant — 'ai' mode not exposed in UI, not bundled)
 │   │   └── validator.py            ← Stage 4: cross-field validation
 │   ├── ocr/
 │   │   ├── tesseract.py            ← Page OCR + PDF rendering
@@ -101,21 +100,13 @@ All learning-related data:
 
 ### Stage 1 — `extraction/keyword.py`
 Rule-based pattern matching. Reads `config/keyword_patterns.json`.
-Handles 60-70% of fields on well-structured documents. No LLM needed.
+Handles 60-70% of fields on well-structured documents.
 Fast: typically < 100ms per document.
 
 ### Stage 2 — `extraction/anchor.py`
 Learned spatial anchors. Uses saved `field_anchors` records to find values
 by their position relative to known label text.
 Also handles logo-based supplier identification.
-
-### Stage 3 — `extraction/llm.py`
-Phi-3 Mini via Ollama. Only called for fields not found by stages 1-2,
-and only in `ai` mode — which is dormant (`_should_use_llm` gates it off,
-and the shipped Settings UI exposes only Fast/Smart). Ollama is not bundled
-in the installer; this stage never runs in the shipped product.
-Uses learned hints from `supplier_hints` table as few-shot examples.
-Model: `phi3:mini` (configurable).
 
 ### Stage 4 — `extraction/validator.py`
 Cross-field validation:
@@ -172,9 +163,6 @@ New document arrives
         │
         ▼
   Stage 2: Anchor matching (learned layouts) ────────── additional fields
-        │
-        ▼
-  Stage 3: LLM — Phi-3 Mini (remaining fields only) ── fills the gaps
         │
         ▼
   Stage 4: Validation (cross-field checks)

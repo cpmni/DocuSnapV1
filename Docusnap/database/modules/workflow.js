@@ -72,6 +72,11 @@ function setDocWorkflowStatus(db, documentId, status) {
   db.prepare('UPDATE documents SET workflow_status = ? WHERE id = ?').run(status, documentId);
 }
 
+// Record the filed stamped-PDF copy of a resolved decision (server-local path).
+function setStampedPath(db, routeId, stampedPath) {
+  db.prepare('UPDATE document_routes SET stamped_path = ? WHERE id = ?').run(stampedPath, routeId);
+}
+
 // True when a document has an OPEN routing task (pending or claimed). This is the
 // workflow_lock signal: while it holds, the Review pipeline must not mutate the
 // document (see workflowService.editGuard) so the two systems can't both edit the
@@ -84,5 +89,5 @@ function hasActiveRoute(db, documentId) {
 
 module.exports = {
   insertRoute, getRoute, listInbox, listSent, listAssigned, listCompleted,
-  updateState, setDocWorkflowStatus, hasActiveRoute, OPEN_STATES, CLOSED_STATES,
+  updateState, setDocWorkflowStatus, setStampedPath, hasActiveRoute, OPEN_STATES, CLOSED_STATES,
 };

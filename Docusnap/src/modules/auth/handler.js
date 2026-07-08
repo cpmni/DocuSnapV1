@@ -147,6 +147,15 @@ function register(ctx) {
   const audit = (entry) => { try { auth.addAuditEntry(getDb(), entry); } catch (e) { logger?.warn(`[auth] audit write failed: ${e.message}`); } };
   const broadcastSession = () => notifyAllWindows('auth-session-changed', currentSession);
 
+  // Kill a user's live DETACHED-CLIENT (/v1) sessions immediately on an admin action that
+  // must cut their access — disable, role change, password reset. Without this a deactivated/
+  // demoted user keeps their opaque bearer token (and old role) until it expires (≤12h). The
+  // /v1 session store is a process singleton shared with the API server; the in-process desktop
+  // login (currentSession) is a SEPARATE boundary and is untouched. Best-effort, never throws.
+  const revokeClientSessions = (userId) => {
+    try { require('../../services/sessionService').shared().revokeUser(userId); } catch {}
+  };
+
   // ── Status (drives which screen the login window shows) ────────────────────
   ipcMain.handle('auth-get-status', () => ({
     needsFirstRunSetup: auth.countUsers(getDb()) === 0,
@@ -259,6 +268,7 @@ function register(ctx) {
     }
 
     auth.setUserPassword(db, user.id, await pw.hashPassword(newPassword), false);
+    revokeClientSessions(user.id);   // changing the password kills any live /v1 sessions on the old one
     audit({ user_id: user.id, action: 'password_change', target_type: 'user', target_id: user.id, details: 'self_service' });
     return { success: true };
   });
@@ -369,6 +379,7 @@ function register(ctx) {
     }
 
     auth.setUserRole(db, target.id, data.role);
+    revokeClientSessions(target.id);   // their new role must take effect on the client immediately
     audit({ user_id: currentSession.id, action: 'role_change', target_type: 'user', target_id: target.id, details: `${target.role} -> ${data.role}` });
     return { success: true };
   });
@@ -390,6 +401,7 @@ function register(ctx) {
     }
 
     auth.setUserActive(db, target.id, wantActive);
+    if (!wantActive) revokeClientSessions(target.id);   // a disabled user loses /v1 access at once
     audit({ user_id: currentSession.id, action: wantActive ? 'user_enabled' : 'user_disabled', target_type: 'user', target_id: target.id });
     return { success: true };
   });
@@ -403,6 +415,7 @@ function register(ctx) {
     const tempPassword  = pw.generateTempPassword();
     const password_hash = await pw.hashPassword(tempPassword);
     auth.setUserPassword(db, target.id, password_hash, true);
+    revokeClientSessions(target.id);   // old password's sessions die with the reset
     audit({ user_id: currentSession.id, action: 'password_reset', target_type: 'user', target_id: target.id, details: 'admin_reset' });
 
     return { success: true, tempPassword };

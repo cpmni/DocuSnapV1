@@ -19,7 +19,7 @@ const MONTH_NAMES = [
 
 const {
   DEFAULT_PATTERN, DEFAULT_FOLDER_PATTERN, SUPPORTED_TOKENS, FIELD_TOKENS,
-  buildFilename, buildFolderSegments, resolveDuplicateFilename,
+  buildFilename, buildFolderSegments, buildFilenameStem, resolveDuplicateFilename,
 } = require('./filename_pattern');
 
 // ── Register IPC ──────────────────────────────────────────────────────────────
@@ -85,6 +85,7 @@ async function commitDocument({
   folderPath,
   originalFilename,
   workingPath,
+  existingFiledPath,   // RE-FILE of an already-filed doc: the doc's current stored_path (else null)
   allValues,
   documentType,
   dtInfo,
@@ -96,7 +97,13 @@ async function commitDocument({
 
   const rawRef       = allValues[refField]  || allValues['reference_number'] || null;
   const rawDate      = allValues[dateField] || allValues['invoice_date']     || null;
-  const supplierName = allValues['supplier_name'] || 'Unknown Company';
+  // #10: a supplier value that is falsy OR sanitises away ("..", "///", "***")
+  // must still produce a company folder — not silently drop the level and file the
+  // doc directly under Year/Month. Mirror the segment sanitiser (buildFolderSegments
+  // runs the same buildFilenameStem per level) and fall back to a neutral name when
+  // it comes up empty.
+  const supplierStem = buildFilenameStem(String(allValues['supplier_name'] || ''), {});
+  const supplierName = supplierStem || 'Unknown Company';
 
   const dateObj = parseDate(rawDate);
   const ext     = path.extname(originalFilename).toLowerCase();
@@ -157,23 +164,36 @@ async function commitDocument({
   fs.mkdirSync(metaDir,   { recursive: true });
 
   // ── 4. Handle duplicates ─────────────────────────────────────────────────────
+  // A RE-FILE (existingFiledPath set) of THIS doc to the SAME name is an in-place
+  // update, not a collision — exclude the doc's own current copy so it isn't suffixed
+  // "-DUPLICATE". A genuine collision with a DIFFERENT doc's file still suffixes.
+  const efpResolved = existingFiledPath ? path.resolve(existingFiledPath) : null;
   const finalFilename = resolveDuplicateFilename(
-    baseFilename, ext, (name) => fs.existsSync(path.join(targetDir, name))
+    baseFilename, ext,
+    (name) => { const p = path.join(targetDir, name); return fs.existsSync(p) && path.resolve(p) !== efpResolved; }
   );
 
   const targetPath = path.join(targetDir, finalFilename);
   const srcPath    = path.join(folderPath, originalFilename);
   // Prefer the app-managed working copy as the stable source for filing, so
   // confirm succeeds even if the user's original source file has been removed.
-  // srcPath (the original) is still returned for the caller's deferred cleanup.
-  const copyFrom   = (workingPath && fs.existsSync(workingPath)) ? workingPath : srcPath;
+  // For a RE-FILE of a confirmed doc (working copy long gone), fall back to the
+  // doc's EXISTING filed copy. srcPath (the original) is still returned for cleanup.
+  const copyFrom   = (workingPath && fs.existsSync(workingPath)) ? workingPath
+                   : (existingFiledPath && fs.existsSync(existingFiledPath)) ? existingFiledPath
+                   : srcPath;
 
   // ── 5. Copy document, then delete original ───────────────────────────────────
   if (!fs.existsSync(copyFrom)) {
     return { success: false, error: `Source file not found: ${copyFrom}` };
   }
 
-  fs.copyFileSync(copyFrom, targetPath);
+  // Guard a same-path re-file: copying a file onto itself truncates it. When the
+  // existing filed copy IS the target (re-file in place, unchanged name), skip the
+  // copy — only the metadata XML below needs rewriting with the updated values.
+  if (path.resolve(copyFrom) !== path.resolve(targetPath)) {
+    fs.copyFileSync(copyFrom, targetPath);
+  }
 
   // Original removal is deferred by the caller (review/handler.js schedules
   // it via removeSourceFile() below) until the preview UI is done with the
@@ -181,20 +201,30 @@ async function commitDocument({
   // failures that happen when the source is still open for preview.
 
   // ── 6. Write metadata XML ─────────────────────────────────────────────────────
+  // The XML sidecar is best-effort: the FILED PDF (step 5) is the primary artifact
+  // and search reads the DB, not this file. A defect here must NOT throw out of
+  // commitDocument — that would roll the doc back to needs_review while LEAVING the
+  // copied PDF orphaned in the output tree (and wedge the doc on retry).
   const xmlFilename = path.basename(finalFilename, ext) + '.xml';
   const xmlPath     = path.join(metaDir, xmlFilename);
-  const xmlContent  = buildXml({
-    allValues, documentType, originalFilename,
-    storedAs: finalFilename,
-    processedAt: new Date().toISOString(),
-  });
-  fs.writeFileSync(xmlPath, xmlContent, 'utf-8');
+  let metadataPath = null;
+  try {
+    const xmlContent = buildXml({
+      allValues, documentType, originalFilename,
+      storedAs: finalFilename,
+      processedAt: new Date().toISOString(),
+    });
+    fs.writeFileSync(xmlPath, xmlContent, 'utf-8');
+    metadataPath = xmlPath;
+  } catch (e) {
+    if (logger && logger.warn) logger.warn(`metadata XML skipped for ${finalFilename}: ${e.message}`);
+  }
 
   return {
     success:      true,
     filename:     finalFilename,
     filePath:     targetPath,
-    metadataPath: xmlPath,
+    metadataPath,
     isDuplicate:  finalFilename.includes('-DUPLICATE'),
     srcPath,      // caller schedules removal once the original is no longer in use
   };
@@ -256,7 +286,12 @@ function buildXml({ allValues, documentType, originalFilename,
   ];
   for (const [key, val] of Object.entries(allValues)) {
     if (!val || key.startsWith('_')) continue;
-    const tag = key.split('_').map(w => w[0].toUpperCase() + w.slice(1)).join('');
+    // filter(Boolean) drops EMPTY segments so a malformed key ("ref__", "amount_",
+    // "_") can't make w[0] undefined -> TypeError, which (running AFTER the file
+    // copy, with no try/catch) strands the copied file + wedges the doc in review.
+    const tag = key.split('_').filter(Boolean)
+      .map(w => w[0].toUpperCase() + w.slice(1)).join('');
+    if (!tag) continue;
     lines.push(`    <${tag}>${esc(val)}</${tag}>`);
   }
   lines.push('  </Fields>');
@@ -322,6 +357,16 @@ function formatDate(d) {
   return `${dd}-${mm}-${yyyy}`;
 }
 
+// The CANONICAL date normaliser — the ONE place a submitted date string is turned into the
+// core's stored/filed format (DD-MM-YYYY). Reused by the filename builder AND the confirm path
+// (reviewService) so a desktop or /v1 client never re-implements date parsing: they submit
+// whatever the user typed, the core normalises it. Returns null when it can't parse (caller
+// keeps the user's value rather than losing it).
+function normaliseDate(raw) {
+  const d = parseDate(raw);
+  return d ? formatDate(d) : null;
+}
+
 function _scheduleDelete(fs, filePath, attempts) {
   setTimeout(() => {
     try { fs.unlinkSync(filePath); }
@@ -329,4 +374,4 @@ function _scheduleDelete(fs, filePath, attempts) {
   }, 2000);
 }
 
-module.exports = { register, commitDocument, removeSourceFile, sanitiseFolderName };
+module.exports = { register, commitDocument, removeSourceFile, sanitiseFolderName, normaliseDate };

@@ -56,6 +56,38 @@
     /* Queue list + the quick-scroll arrow rail beside it */
     #queue-scroll-wrap { flex: 1; display: flex; min-height: 0; }
     #queue-list { flex: 1; overflow-y: auto; min-width: 0; }
+    #auto-committed-bar { padding: 8px 12px; font-size: 12px; cursor: pointer; line-height: 1.4;
+      background: var(--accent-bg); border-bottom: 1px solid var(--border); color: var(--text); }
+    #auto-committed-bar:hover { filter: brightness(1.04); }
+    #auto-committed-bar b { color: var(--ok); }
+    #auto-committed-bar .acb-back { color: var(--accent2); font-weight: 600; }
+    #auto-committed-bar .acb-dismiss { float: right; margin-left: 12px; cursor: pointer;
+      color: var(--muted); font-weight: 700; font-size: 15px; line-height: 1.2; padding: 0 4px;
+      border-radius: 4px; }
+    #auto-committed-bar .acb-dismiss:hover { color: var(--err); background: var(--surface2); }
+    /* Sender-grouping toggle bar + group headers (review queue) */
+    #queue-view-bar { padding: 6px 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    .qview-toggle { display: flex; align-items: center; gap: 6px; width: 100%;
+      background: var(--surface2); border: 1px solid var(--border); border-radius: var(--r-sm);
+      padding: 5px 9px; font-size: 11px; color: var(--text); cursor: pointer;
+      transition: background .15s, border-color .15s; }
+    .qview-toggle:hover { background: var(--surface3); border-color: var(--border2); }
+    .qview-toggle svg { flex-shrink: 0; color: var(--muted); }
+    #queue-view-label { font-weight: 600; }
+    .qview-toggle .qview-swap { margin-left: auto; color: var(--muted); font-size: 13px; }
+    .queue-group-head { display: flex; align-items: center; gap: 8px;
+      padding: 9px 10px; border-top: 1px solid var(--border); cursor: pointer; user-select: none; }
+    .queue-group-head:first-child { border-top: none; }
+    .queue-group-head:hover { background: var(--surface2); }
+    .queue-group-head .qgh-caret { flex-shrink: 0; width: 0; height: 0;
+      border-left: 5px solid var(--muted); border-top: 4px solid transparent;
+      border-bottom: 4px solid transparent; transition: transform .15s; }
+    .queue-group-head.open .qgh-caret { transform: rotate(90deg); }
+    .queue-group-head .qgh-name { font-size: 12px; font-weight: 700; color: var(--text);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+    .queue-group-head .qgh-meta { font-size: 10px; color: var(--muted);
+      margin-left: auto; white-space: nowrap; flex-shrink: 0; }
+    .queue-group-head .qgh-attn { color: var(--warn); font-weight: 600; }
     #queue-scroll-rail {
       flex-shrink: 0; width: 42px; display: flex; flex-direction: column;
       align-items: center; justify-content: flex-start; gap: 10px;
@@ -178,6 +210,15 @@
       padding: 9px 16px; font-size: 13px; font-weight: 600;
       box-shadow: 0 2px 8px rgba(0,0,0,.35);
     }
+    /* Small hint under Mark Reviewed — shown only while it's actionable (flagged, not yet
+       acknowledged). Tells the operator the Space-bar shortcut. */
+    #ack-hint {
+      position: absolute; top: 86px; left: 12px; z-index: 6; box-sizing: border-box;
+      font-size: 11px; line-height: 1.35; color: var(--muted); background: var(--surface);
+      border: 1px solid var(--border2); border-radius: var(--r-sm);
+      padding: 5px 10px; box-shadow: 0 1px 4px rgba(0,0,0,.2); pointer-events: none;
+      text-align: center; white-space: normal; display: none;
+    }
     #doc-toolbar {
       display: flex; align-items: center; gap: 8px; padding: 7px 12px;
       border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0;
@@ -245,6 +286,11 @@
     .wiz-title { display: flex; align-items: center; justify-content: space-between;
       font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text);
       cursor: move; user-select: none; }   /* drag the title bar to move the panel */
+    .wiz-intro { font-size: 10.5px; line-height: 1.45; color: var(--muted); background: var(--surface2);
+      border: 1px solid var(--border2); border-radius: var(--r-sm, 9px); padding: 7px 9px; margin-bottom: 8px; }
+    .wiz-intro strong { color: var(--text); }
+    .wiz-intro .repick-glyph { color: var(--accent2); font-weight: 700; }
+    .wiz-help-link { color: var(--accent2); cursor: pointer; text-decoration: underline; white-space: nowrap; }
     .wiz-close { background: none; border: none; color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; }
     .wiz-close:hover { color: var(--err); }
     .wiz-step { font-size: 10px; color: var(--accent2); font-family: var(--mono); }
@@ -255,8 +301,38 @@
       padding: 5px 8px; color: var(--text); font-family: var(--sans); font-size: 11px; outline: none;
     }
     #wizard-panel select:focus, #wizard-panel input[type="text"]:focus { border-color: var(--accent); }
-    .wiz-fixed-row { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
-    .wiz-fixed-row input { accent-color: var(--accent); cursor: pointer; }
+    .anchor-readout { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 20;
+      max-width: 92%; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      background: var(--surface); border: 1px solid var(--border2); border-radius: var(--r-sm, 9px);
+      padding: 7px 11px; box-shadow: 0 4px 14px rgba(0,0,0,.18); font-size: 12px; color: var(--text); }
+    .anchor-readout.warn { border-color: var(--warn); }
+    .anchor-readout .ar-msg { font-family: var(--mono); }
+    .anchor-readout .ar-msg b { color: var(--accent2); }
+    .anchor-readout .ar-dir { display: inline-flex; gap: 4px; align-items: center; }
+    /* Right-click field cleanup-rule menu */
+    .field-rule-menu { position: fixed; z-index: 100; min-width: 240px; max-width: 380px;
+      background: var(--surface); border: 1px solid var(--border2); border-radius: 10px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.4); padding: 5px; display: flex; flex-direction: column; gap: 2px; }
+    .field-rule-menu .frm-item { display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+      text-align: left; background: transparent; border: none; cursor: pointer; width: 100%;
+      padding: 8px 10px; border-radius: 7px; color: var(--text); }
+    .field-rule-menu .frm-item:hover { background: var(--accent-bg); }
+    .field-rule-menu .frm-label { font-size: 12px; font-weight: 600; }
+    .field-rule-menu .frm-sub { font-size: 10px; color: var(--muted); font-family: var(--mono);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+    /* A descriptive (non-preview) sub WRAPS to multiple lines instead of clipping. */
+    .field-rule-menu .frm-sub.frm-wrap { white-space: normal; overflow: visible; font-family: inherit;
+      line-height: 1.4; max-width: 300px; }
+    .anchor-readout .ar-lbl { color: var(--muted); }
+    .anchor-readout .ar-btn { border: 1px solid var(--border2); background: var(--surface2); color: var(--muted);
+      border-radius: var(--r-pill, 999px); padding: 3px 9px; font-size: 11px; cursor: pointer; }
+    .anchor-readout .ar-btn.on { background: var(--accent-bg); color: var(--accent2); border-color: var(--accent); font-weight: 600; }
+    .anchor-readout .ar-x { cursor: pointer; color: var(--muted); font-size: 15px; line-height: 1; }
+    .wiz-seg { display: flex; border: 1px solid var(--border2); border-radius: var(--r-pill, 999px); overflow: hidden; }
+    .wiz-seg-btn { flex: 1; padding: 7px 9px; font-size: 11px; line-height: 1.2; border: 0; background: var(--surface2); color: var(--muted); cursor: pointer; font-family: var(--sans); transition: background .12s, color .12s; }
+    .wiz-seg-btn + .wiz-seg-btn { border-left: 1px solid var(--border2); }
+    .wiz-seg-btn.armed { background: var(--accent-bg); color: var(--accent2); font-weight: 600; }
+    .wiz-seg-btn:hover:not(.armed) { color: var(--accent2); }
     .wiz-draw-row { display: flex; gap: 6px; }
     .wiz-draw-row .btn { flex: 1; font-size: 10px; }
     .wiz-draw-row .btn.armed { border-color: var(--accent); background: var(--accent-bg); color: var(--accent2); }
@@ -269,6 +345,28 @@
 
     #doc-placeholder { color: var(--muted); font-size: 14px; margin: auto; }
 
+    /* "Teach this document" CTA — a slim centred card banner above the preview. */
+    .teach-cta { display: flex; flex-direction: column; align-items: center; gap: 5px;
+      margin: 0 auto 10px; padding: 12px 16px; max-width: 560px; text-align: center;
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); box-shadow: var(--shadow); }
+    .teach-cta.warn { border-left: 3px solid var(--warn); }
+    .teach-cta-btn { display: inline-flex; align-items: center; gap: 7px; padding: 9px 16px;
+      border-radius: var(--r-sm); font: 600 13px/1 var(--sans); cursor: pointer; border: 1px solid; }
+    .teach-cta-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); box-shadow: 0 8px 18px -12px var(--accent); }
+    .teach-cta-btn.primary:hover { filter: brightness(1.08); }
+    .teach-cta-btn.ghost { background: transparent; border-color: var(--border2); color: var(--text); }
+    .teach-cta-btn.ghost:hover { background: var(--surface2); border-color: var(--warn); }
+    .teach-cta-hint { font-size: 11.5px; color: var(--muted); line-height: 1.45; max-width: 460px; }
+    /* "…or it's like one you've already set up" — link to an existing template */
+    .teach-cta-like { display: flex; flex-direction: column; align-items: center; gap: 6px;
+      margin-top: 8px; padding-top: 10px; border-top: 1px dashed var(--border2); width: 100%; max-width: 460px; }
+    .teach-cta-like-lbl { font-size: 11.5px; color: var(--muted); }
+    .teach-cta-like-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center; }
+    .teach-cta-like-select { padding: 7px 10px; border-radius: var(--r-sm); border: 1px solid var(--border2);
+      background: var(--surface); color: var(--text); font-family: inherit; font-size: 12.5px; max-width: 240px; }
+    .teach-cta-like-select:focus { outline: none; border-color: var(--accent); }
+    .teach-cta-btn.ghost:disabled { opacity: .5; cursor: not-allowed; }
+
     /* ── Fields panel (right) ── */
     #fields-panel { width: 320px; flex-shrink: 0; display: flex; flex-direction: column; overflow: hidden; }
     #fields-header {
@@ -276,7 +374,34 @@
       background: var(--surface); flex-shrink: 0; display: flex; flex-direction: column; gap: 7px;
     }
     .fields-header-title { font-size: 12px; font-weight: 500; color: var(--text); }
-    .fields-header-sub   { font-size: 10px; color: var(--muted); }
+    .fields-header-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; position: relative; }
+    .fh-train { position: absolute; left: 50%; transform: translateX(-50%);
+      font-size: 11px; font-weight: 700; padding: 4px 13px; background: var(--accent); color: #fff;
+      border: none; border-radius: var(--r-pill); cursor: pointer; white-space: nowrap;
+      box-shadow: 0 2px 9px rgba(59,125,240,.45); transition: background .15s, transform .15s; }
+    .fh-train:hover { background: var(--accent2); transform: translateX(-50%) scale(1.05); }
+    /* Interactive training tour (training.js) */
+    .tour-hole { position: fixed; z-index: 9998; border-radius: 8px; box-shadow: 0 0 0 9999px rgba(12,16,24,.55);
+      border: 2px solid var(--accent); pointer-events: none; transition: all .22s ease; }
+    .tour-arrow { position: fixed; z-index: 100001; color: var(--accent); font-size: 18px; line-height: 1;
+      pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,.4); animation: tourbounce 1s infinite; }
+    @keyframes tourbounce { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+    .tour-callout { position: fixed; z-index: 100001; background: var(--surface); border: 1px solid var(--border2);
+      border-radius: 10px; box-shadow: 0 16px 44px rgba(0,0,0,.4); padding: 14px 16px; font-family: var(--sans); }
+    .tour-callout .tc-title { font-weight: 700; font-size: 14px; color: var(--text); margin-bottom: 5px; }
+    .tour-callout .tc-body { font-size: 13px; color: var(--muted); line-height: 1.5; }
+    .tour-callout .tc-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; }
+    .tour-callout .tc-step { font-size: 11px; color: var(--muted); }
+    .tour-callout .tc-actions { display: flex; align-items: center; gap: 8px; }
+    .tour-callout .tc-skip, .tour-callout .tc-skipstep { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 11px; text-decoration: underline; }
+    .tour-callout .tc-next { background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 6px 13px; font-size: 12px; font-weight: 600; cursor: pointer; }
+    .tour-callout .tc-hint { font-size: 11px; color: var(--accent2); font-weight: 600; }
+    .tour-callout .tc-branch { background: var(--surface2); color: var(--accent2); border: 1px solid var(--accent);
+      border-radius: 6px; padding: 5px 11px; font-size: 12px; font-weight: 600; cursor: pointer; }
+    .tour-callout .tc-branch:hover { background: var(--accent); color: #fff; }
+    #fields-header .fh-new-type { flex-shrink: 0; padding: 4px 11px; font-size: 11px; line-height: 1.2; }
+    .fields-header-sub   { font-size: 11px; color: var(--text); line-height: 1.4; }
+    .fields-header-sub .repick-glyph { color: var(--accent2); font-weight: 700; }
     /* Detection-methods row (below the doc-type dropdown): methods on the left,
        a vertical spacer, then the Add-to-Template button on the right. */
     .fields-detect-row { display: flex; align-items: center; gap: 8px; }
@@ -294,8 +419,9 @@
     .add-template-btn:hover:not(:disabled) .add-template-ico { color: var(--accent); }
     .add-template-lbl { display: block; }
     #extraction-status { display: flex; flex-direction: column; gap: 4px; }
-    .ext-status-row { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; }
-    .ext-status-lbl { font-size: 10px; color: var(--muted); white-space: nowrap; width: 74px; flex-shrink: 0; }
+    .ext-status-row { display: flex; align-items: flex-start; gap: 6px; flex-wrap: nowrap; }
+    .ext-status-lbl { font-size: 10px; color: var(--muted); white-space: nowrap; width: 74px; flex-shrink: 0; padding-top: 3px; }
+    .ext-status-pills { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
     .method-pill {
       font-size: 10px; font-family: var(--mono); padding: 1px 7px;
       border-radius: 4px; border: 1px solid currentColor;
@@ -340,10 +466,29 @@
     /* Auto-corrected (Stage 4.5 strong token repair): a calm, positive note — the
        fix is already in the field, so it reads as info, not a warning. */
     .field-note.corrected { color: var(--muted); }
+    /* Total reconciled against subtotal + tax/shipping/discount — a positive, green note. */
+    .field-note.verified { color: var(--ok); }
     .corrected-badge { display: inline-block; font-family: var(--sans); font-size: 9px;
       font-weight: 600; line-height: 1; padding: 2px 6px; margin-right: 4px; border-radius: var(--r-pill);
       background: rgba(31,157,99,.16); color: var(--ok); vertical-align: baseline; }
     .field-anchor-note { font-size: 10px; color: var(--muted); font-family: var(--mono); margin-top: 1px; }
+    /* "Why this needs review" plain-language summary, pinned above the fields list */
+    #review-reason {
+      margin: 10px 14px 2px; padding: 9px 11px; border-radius: 8px; flex-shrink: 0;
+      background: var(--surface2); border: 1px solid var(--border2);
+      border-left: 3px solid var(--warn);
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    #review-reason[hidden] { display: none; }
+    .rr-lead { font-size: 11.5px; color: var(--text); line-height: 1.45; }
+    .rr-cues { display: flex; flex-wrap: wrap; gap: 6px; }
+    .rr-cue { font-size: 10px; font-weight: 600; padding: 1px 8px; border-radius: var(--r-pill); cursor: default; }
+    .rr-cue.low  { background: var(--err-bg);  color: var(--err); }
+    .rr-cue.flag { background: var(--warn-bg); color: var(--warn); }
+    .rr-notes { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 2px; }
+    .rr-notes li { font-size: 10.5px; color: var(--muted); line-height: 1.4; }
+    .rr-notes li strong { color: var(--text); font-weight: 600; }
+    .rr-notes li.rr-more { list-style: none; margin-left: -16px; font-style: italic; }
     .accept-btn {
       font-size: 10px; font-family: var(--sans); line-height: 1;
       padding: 1px 6px; margin-left: 6px; vertical-align: baseline;
@@ -352,6 +497,16 @@
     }
     .accept-btn:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-bg); }
     .accept-btn:disabled { color: var(--muted); cursor: default; border-color: var(--border); }
+    /* "This name is correct" — same shape as .accept-btn but in the OK/green key, since it
+       affirms a value rather than applying a suggested change. */
+    .name-accept-btn {
+      font-size: 10px; font-family: var(--sans); line-height: 1;
+      padding: 1px 6px; margin-left: 6px; vertical-align: baseline;
+      border: 1px solid var(--border2); border-radius: 4px;
+      background: transparent; color: var(--ok); cursor: pointer;
+    }
+    .name-accept-btn:hover:not(:disabled) { border-color: var(--ok); background: var(--surface2); }
+    .name-accept-btn:disabled { color: var(--muted); cursor: default; border-color: var(--border); }
     .field-input.zone-active {
       border-color: var(--accent) !important;
       box-shadow: 0 0 0 2px rgba(79,142,247,.25);
@@ -392,25 +547,41 @@
     }
     #reprocess-progress.show { display: block; }
     #reprocess-progress.done { background: var(--surface2); border-color: var(--border2); color: var(--muted); }
-    #reprocess-bar { padding: 8px 14px 0; flex-shrink: 0; display: flex; gap: 6px; }
-    .btn.reprocess { flex: 1; color: var(--accent2); border-color: var(--accent); font-size: 11px; }
+    /* File All Ready progress banner — queue-footer twin of the reprocess banner */
+    #bulk-file-progress {
+      display: none; margin: 0 0 8px; padding: 8px 10px; border-radius: 6px;
+      background: var(--accent-bg); border: 1px solid var(--accent); color: var(--text); font-size: 11px;
+    }
+    #bulk-file-progress.show { display: block; }
+    #bulk-file-progress.done { background: var(--surface2); border-color: var(--border2); color: var(--muted); }
+    #bulk-file-progress .bfp-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    #bulk-file-progress .bfp-count { font-weight: 600; }
+    #bulk-file-progress .bfp-bar { height: 4px; background: var(--surface3); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+    #bulk-file-progress .bfp-bar-fill { height: 100%; width: 0; background: var(--accent); transition: width .1s; }
+    #bulk-file-progress .bfp-file { margin-top: 4px; font-family: var(--mono); font-size: 10px; color: var(--muted);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #bulk-file-progress .bfp-note { margin-top: 4px; font-size: 10px; color: var(--muted); }
+    .btn.bfp-stop { padding: 3px 10px; font-size: 11px; color: var(--warn); border-color: var(--warn); flex-shrink: 0; }
+    .btn.bfp-stop:hover    { background: var(--warn-bg); }
+    .btn.bfp-stop:disabled { opacity: .5; cursor: default; }
+    /* Stacked: full-width primary on top, demoted "Reprocess All" beneath, so the
+       long "Reprocess with Learned Data" label fits the 320px panel and the heavy
+       queue-wide action reads as clearly secondary (no longer clipped off the edge). */
+    #reprocess-bar { padding: 8px 14px 0; flex-shrink: 0; display: flex; flex-direction: column; gap: 6px; }
+    .btn.reprocess { color: var(--accent2); border-color: var(--accent); font-size: 11px; }
     .btn.reprocess:hover     { background: var(--accent-bg); }
     .btn.reprocess:disabled  { opacity: .4; cursor: not-allowed; }
-    .btn.reprocess-all { flex-shrink: 0; color: var(--muted); border-color: var(--border2); font-size: 11px; }
-    .btn.reprocess-all:hover    { background: var(--accent-bg); color: var(--accent2); border-color: var(--accent); }
+    /* Quiet secondary text-button — no border/fill, smaller, muted. */
+    .btn.reprocess-all { background: transparent; border-color: transparent; color: var(--muted); font-size: 10px; padding-top: 3px; padding-bottom: 3px; }
+    .btn.reprocess-all:hover    { background: var(--accent-bg); color: var(--accent2); }
     .btn.reprocess-all:disabled { opacity: .4; cursor: not-allowed; }
     .btn.stop-batch { flex-shrink:0; color:var(--warn); border-color:var(--warn); font-size:11px; }
     .btn.stop-batch:hover    { background:var(--warn-bg); }
     .btn.stop-batch:disabled { opacity:.4; cursor:not-allowed; }
 
-    #enhance-bar { padding: 6px 14px 0; flex-shrink: 0; }
-    #btn-enhance-toggle {
-      width: 100%; padding: 5px 0 4px; background: none; border: none;
-      border-top: 1px solid var(--border); color: var(--muted);
-      font-size: 10px; font-family: var(--sans); cursor: pointer;
-      text-align: left; letter-spacing: .04em; display: flex; align-items: center; gap: 4px;
-    }
-    #btn-enhance-toggle:hover { color: var(--accent2); }
+    /* #btn-enhance-toggle is a .queue-tool-btn in the tool rail — it inherits the shared
+       grey background/border/hover/open styling like the split/anchor/advanced buttons.
+       (The old full-width text-button override + its #enhance-bar were removed.) */
     #enhance-controls { display: none; padding: 5px 0 2px; flex-direction: column; gap: 6px; }
     #enhance-controls.open { display: flex; }
     .enh-row { display: flex; align-items: center; gap: 14px; }
@@ -484,8 +655,22 @@
           Deferred <span class="qtab-count" id="tab-deferred-count">0</span>
         </button>
       </div>
+      <!-- "N auto-committed — click to review" bar (recently auto-filed docs, re-surfaced for checking). -->
+      <div id="auto-committed-bar" style="display:none;"></div>
+      <!-- Review-queue view toggle: group the list by sender (default) or show newest-first. -->
+      <div id="queue-view-bar" style="display:none;">
+        <button id="btn-group-toggle" class="qview-toggle"
+                title="Switch between grouping the list by sender and showing newest first">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
+            <circle cx="3.5" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="3.5" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="3.5" cy="18" r="1.3" fill="currentColor" stroke="none"/>
+          </svg>
+          <span id="queue-view-label">Grouped by sender</span>
+          <span class="qview-swap" aria-hidden="true">⇄</span>
+        </button>
+      </div>
       <div id="queue-scroll-wrap">
-        <div id="queue-list"></div>
+        <div id="queue-list" data-help-key="queue-list"></div>
         <div id="queue-scroll-rail">
           <!-- Prev / next document cycle (round arrows). Reuses cycleDocument() — the
                SAME path ArrowUp/ArrowDown use; clamps + disables at the list ends via
@@ -503,7 +688,7 @@
           <!-- Document tools (compact icon triggers; wide controls open as rail-anchored flyouts) -->
           <div class="rail-group rail-tools-group">
             <button class="queue-tool-btn" id="btn-split-pdf" style="display:none;" title="Split PDF…" data-help-key="split">&#9986;</button>
-            <button class="queue-tool-btn" id="btn-anchor-wizard" style="display:none;" title="Template Wizard — map fields (admin)" data-help-key="anchor-wizard">
+            <button class="queue-tool-btn" id="btn-anchor-wizard" style="display:none;" title="Template Wizard — fine-tune a layout, pin fields precisely (admin)" data-help-key="anchor-wizard">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:17px;height:17px;">
                 <circle cx="12" cy="5" r="2.2"/>
                 <line x1="12" y1="7.2" x2="12" y2="21"/>
@@ -521,6 +706,17 @@
                 <circle cx="8"  cy="17" r="2.6" fill="currentColor" stroke="none"/>
               </svg>
             </button>
+            <button class="queue-tool-btn" id="btn-advanced" title="Advanced — view & prune a field's learning history (admin)" data-help-key="advanced">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:17px;height:17px;">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              </svg>
+            </button>
+            <div id="advanced-bar" class="rail-flyout" style="display:none;">
+              <div class="rail-flyout-title">Advanced</div>
+              <button id="btn-view-learning" class="btn-secondary" style="width:100%; font-size:11px; padding:6px 8px;">View learning history</button>
+              <div style="font-size:10px; color:var(--muted); margin-top:6px; line-height:1.4;">Opens the values learned for a field — click any field on the right to load or switch it.</div>
+            </div>
 
             <!-- Flyouts anchored to the rail (shown by the existing handlers; IDs preserved) -->
             <div id="split-bar" class="rail-flyout" style="display:none;">
@@ -563,12 +759,21 @@
                   <span id="enh-noise-value" class="enh-num">Off</span>
                 </label>
               </div>
-              <button id="btn-preview-ocr" class="btn preview-ocr">&#9658; Preview OCR</button>
+              <button id="btn-preview-ocr" data-help-key="preview-ocr" class="btn preview-ocr">&#9658; Preview OCR</button>
             </div>
           </div>
         </div>
       </div>
       <div id="queue-empty">✓ All reviewed</div>
+      <div id="bulk-file-progress" role="status" aria-live="polite">
+        <div class="bfp-row">
+          <span class="bfp-count">Filing...</span>
+          <button id="btn-stop-file-all" data-help-key="stop-file-all" class="btn bfp-stop">&#9632; Stop</button>
+        </div>
+        <div class="bfp-bar"><div class="bfp-bar-fill"></div></div>
+        <div class="bfp-file"></div>
+        <div class="bfp-note">Already-filed documents stay filed - Stop is not an undo.</div>
+      </div>
       <div id="review-actions">
         <div class="ra-row">
           <button class="btn skip" id="btn-skip" data-help-key="skip">Skip</button>
@@ -593,12 +798,16 @@
           <button class="doc-nav-btn" id="btn-zoom-in" title="Zoom in">&#43;</button>
           <button class="doc-nav-btn" id="btn-zoom-reset" title="Reset zoom &amp; pan">Reset</button>
         </div>
-        <button class="doc-nav-btn" id="btn-page-prev">&#8249; Prev</button>
+        <button class="doc-nav-btn" id="btn-page-prev" data-help-key="pages">&#8249; Prev</button>
         <span id="page-indicator" style="font-size:11px; color:var(--muted);">—</span>
-        <button class="doc-nav-btn" id="btn-page-next">Next &#8250;</button>
+        <button class="doc-nav-btn" id="btn-page-next" data-help-key="pages">Next &#8250;</button>
       </div>
 
-      <button class="btn" id="btn-acknowledge" style="display:none" title="This document was flagged for review. Mark it reviewed so File All Ready can include it.">&#10003; Mark Reviewed</button>
+      <button class="btn" id="btn-acknowledge" data-help-key="acknowledge" style="display:none" title="This document was flagged for review. Mark it reviewed so File All Ready can include it.">&#10003; Mark Reviewed</button>
+      <div id="ack-hint">Press <b>Space</b> to confirm reviewed</div>
+
+      <!-- "Teach this document" CTA (shown only for genuinely-unseen docs; see renderTeachCta) -->
+      <div id="teach-cta" class="teach-cta" style="display:none"></div>
 
       <div id="select-hint">
         <span>Drag to select the <span class="hint-field" id="hint-field-name">field</span> value</span>
@@ -612,6 +821,7 @@
 
       <div id="doc-viewer">
         <span id="doc-placeholder">Select a document from the queue</span>
+        <div id="anchor-readout" class="anchor-readout" style="display:none"></div>
         <div id="doc-img-wrap" style="display:none">
           <img id="doc-img" alt="Document preview" draggable="false">
           <canvas id="sel-canvas"></canvas>
@@ -629,15 +839,22 @@
         <div class="wiz-title">Template Wizard
           <button class="wiz-close" id="wiz-close" title="Close">&times;</button>
         </div>
+        <div class="wiz-intro">
+          <strong>Fine-tune this layout (advanced).</strong> Pin exactly where each field's label and value sit. Most of the time, teaching a field with the <span class="repick-glyph">⊕</span> in Review is enough — use this only when a field keeps coming out wrong on a recurring layout.
+          <a class="wiz-help-link" id="wiz-help-link">What's this?</a>
+        </div>
         <div class="wiz-step" id="wiz-step">Field — of —</div>
         <div class="wiz-row">
           <span class="wiz-label">Field</span>
-          <select id="wiz-field-select"></select>
+          <select id="wiz-field-select" data-help-key="wiz-field"></select>
         </div>
-        <label class="wiz-fixed-row">
-          <input type="checkbox" id="wiz-fixed-toggle">
-          Fixed text (skip target OCR)
-        </label>
+        <div class="wiz-row">
+          <span class="wiz-label">How is this field filled?</span>
+          <div class="wiz-seg" id="wiz-mode" role="group" aria-label="How is this field filled?">
+            <button type="button" class="wiz-seg-btn armed" data-mode="anchor">Read it from the document</button>
+            <button type="button" class="wiz-seg-btn" data-mode="fixed">Always use the same value</button>
+          </div>
+        </div>
         <div class="wiz-row" id="wiz-anchor-block">
           <span class="wiz-label">Anchor label</span>
           <input type="text" id="wiz-anchor-text" placeholder="e.g. Invoice Number">
@@ -648,17 +865,17 @@
             <option value="currency">Currency</option>
           </select>
           <div class="wiz-draw-row">
-            <button class="btn" id="wiz-draw-anchor">Draw anchor</button>
-            <button class="btn" id="wiz-draw-target">Draw target</button>
+            <button class="btn" id="wiz-draw-anchor" data-help-key="draw-anchor">Draw anchor</button>
+            <button class="btn" id="wiz-draw-target" data-help-key="draw-target">Draw target</button>
           </div>
         </div>
         <div class="wiz-row" id="wiz-fixed-block" style="display:none;">
-          <span class="wiz-label">Fixed value</span>
-          <input type="text" id="wiz-fixed-value" placeholder="Value to file for this field">
+          <span class="wiz-label">Value to always file</span>
+          <input type="text" id="wiz-fixed-value" placeholder="e.g. Acme Supplies Ltd">
         </div>
         <span class="wiz-status" id="wiz-status">Anchor: — · Target: —</span>
         <div class="wiz-footer">
-          <button class="btn" id="wiz-show-resolved" title="OCR this document and overlay (amber) where the mapping ACTUALLY resolves — so you can see the anchor/target track a shifted page">Show where it reads</button>
+          <button class="btn" id="wiz-show-resolved" data-help-key="show-resolved" title="OCR this document and overlay (amber) where the mapping ACTUALLY resolves — so you can see the anchor/target track a shifted page">Show where it reads</button>
         </div>
         <span class="wiz-status" id="wiz-resolved-msg"></span>
         <div class="wiz-footer">
@@ -666,23 +883,28 @@
           <button class="btn" id="wiz-next">Next &#8250;</button>
         </div>
         <div class="wiz-footer">
-          <button class="btn confirm" id="wiz-save" disabled>Save field</button>
+          <button class="btn confirm" id="wiz-save" data-help-key="wiz-save" disabled>Save field</button>
         </div>
         <div class="wiz-footer">
-          <button class="btn" id="wiz-open-manager" style="display:none;">Open in Template Manager</button>
+          <button class="btn" id="wiz-open-manager" data-help-key="open-manager" style="display:none;">Open in Template Manager</button>
         </div>
-        <span class="wiz-note">Draw an anchor + target (or tick Fixed text), then Save. The template is created/reused on first save.</span>
+        <span class="wiz-note">Choose how the field is filled, then Save. "Read it from the document" = draw an anchor + target; "Always use the same value" = type a constant. The template is created/reused on the first save.</span>
       </div>
     </div>
 
-    <div id="fields-panel">
+    <div id="fields-panel" data-help-key="fields-panel">
       <div id="fields-header">
-        <div class="fields-header-title">Extracted Fields</div>
-        <select id="doctype-select"><option value="">— Select document type —</option></select>
+        <div class="fields-header-row">
+          <div class="fields-header-title">Extracted Fields</div>
+          <button class="fh-train" id="btn-training" title="A step-by-step walkthrough of reviewing a document">★ Take a tour</button>
+          <button class="btn fh-new-type" id="btn-new-doctype" data-help-key="new-doctype" style="display:none;" title="Create a new document type without leaving Review">+ New type</button>
+          <button class="btn fh-new-type" id="btn-edit-doctype" style="display:none;" title="Edit this document type's fields and roles in Settings (admin) — e.g. to set up a missing Reference/Date field">&#9998; Edit type</button>
+        </div>
+        <select id="doctype-select" data-help-key="doctype-select"><option value="">— Select document type —</option></select>
         <div class="fields-detect-row">
           <div id="extraction-status"></div>
           <div class="fields-detect-spacer" aria-hidden="true"></div>
-          <button class="btn add-template-btn" id="btn-add-template" title="Save the current reviewed values as a managed template for this layout — for recurring suppliers/layouts that keep misdetecting">
+          <button class="btn add-template-btn" id="btn-add-template" data-help-key="template-manager" title="Save the current reviewed values as a managed template for this layout — for recurring suppliers/layouts that keep misdetecting">
             <svg class="add-template-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/>
               <rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/>
@@ -690,21 +912,24 @@
               <line x1="17.25" y1="14.5" x2="17.25" y2="20"/>
               <line x1="14.5" y1="17.25" x2="20" y2="17.25"/>
             </svg>
-            <span class="add-template-lbl">Template Manager</span>
+            <span class="add-template-lbl">Save as template</span>
           </button>
         </div>
-        <div class="fields-header-sub">Click ⊕ then drag on the document to pick a value</div>
+        <div class="fields-header-sub"><strong>Teach a field:</strong> click the <span class="repick-glyph">⊕</span> on it and draw a box round its value — Scan Finder learns where it lives and reads it on every future document from this supplier. Saved when you confirm.</div>
       </div>
+      <div id="review-reason" hidden></div>
       <div id="fields-scroll"></div>
 
       <div id="reprocess-progress" role="status" aria-live="polite"></div>
       <div id="reprocess-bar">
-        <button class="btn reprocess"     id="btn-reprocess">&#9654;&#9654; Reprocess</button>
-        <button class="btn stop-batch"    id="btn-stop-reprocess" style="display:none;">&#9632; Stop</button>
-        <button class="btn reprocess-all" id="btn-reprocess-all" title="Reprocess every document in the review queue">&#9654;&#9654; Reprocess All</button>
+        <button class="btn reprocess"     id="btn-reprocess" data-help-key="reprocess">&#9654;&#9654; Reprocess</button>
+        <button class="btn stop-batch"    id="btn-stop-reprocess" data-help-key="stop-reprocess" style="display:none;">&#9632; Stop</button>
+        <button class="btn reprocess-all" id="btn-reprocess-all" data-help-key="reprocess-all" title="Reprocess every document in the review queue">Reprocess all in queue</button>
       </div>
+      <div id="confirm-config-note" style="display:none;"></div>
+      <div id="confirm-issuer-note" style="display:none;"></div>
       <div id="action-bar">
-        <button class="btn danger" id="btn-delete" title="Delete document">&#128465;</button>
+        <button class="btn danger" id="btn-delete" data-help-key="delete" title="Delete document">&#128465;</button>
         <button class="btn confirm" id="btn-confirm" disabled data-help-key="confirm">&#10003; Confirm &amp; File</button>
       </div>
     </div>
@@ -796,10 +1021,99 @@
   .qi-thumb { flex-shrink: 0; width: 34px; height: 44px; border-radius: 4px;
               background: var(--doc-bg); border: 1px solid var(--border);
               object-fit: cover; object-position: top center; }
+
+  /* Learning-history modal (Advanced → View learning history) — NON-blocking: no backdrop,
+     positioned left of centre so the right fields pane stays lit and clickable (clicking a
+     field live-reloads the table for that field). */
+  .lh-overlay { position: fixed; inset: 0; z-index: 100002; pointer-events: none; display: none; }
+  .lh-modal { pointer-events: auto; position: fixed; left: 96px; top: 50%; transform: translateY(-50%);
+              background: var(--surface); border: 1px solid var(--border2); border-radius: 12px;
+              width: min(560px, 52vw); max-height: 84vh; display: flex; flex-direction: column;
+              box-shadow: 0 24px 60px rgba(0,0,0,.5); }
+  /* The field whose history is currently shown — "lit up" in the right pane. */
+  .field-row-label.lh-active-field { box-shadow: -3px 0 0 0 var(--accent); color: var(--accent2); }
+  .lh-edit { background: none; border: 1px solid var(--border2); color: var(--muted); border-radius: 6px;
+             padding: 2px 7px; cursor: pointer; font-size: 12px; margin-right: 4px; }
+  .lh-edit:hover { color: var(--accent2); border-color: var(--accent); }
+  .lh-edit-input { width: 100%; font-family: var(--mono, monospace); font-size: 13px; padding: 3px 6px;
+                   border: 1px solid var(--accent); border-radius: 6px; background: var(--surface2); color: var(--text); }
+  .lh-fix { background: var(--accent-bg); border: 1px solid var(--accent); color: var(--accent2);
+            border-radius: 8px; padding: 5px 11px; cursor: pointer; font-size: 12px; }
+  .lh-fix:hover { background: var(--accent); color: var(--on-accent, #fff); }
+  .lh-fix:disabled { opacity: .5; cursor: default; }
+  .lh-proposals { padding: 9px 14px; font-size: 12px; color: var(--text); background: var(--accent-bg);
+                  border-bottom: 1px solid var(--border); line-height: 1.5; }
+  .lh-proposals b { font-family: var(--mono, monospace); }
+  .lh-proposals .lh-apply { margin-left: 8px; }
+  .lh-proposals .lh-cancel { background: var(--surface2); border: 1px solid var(--border2); color: var(--text);
+                             border-radius: 6px; padding: 2px 8px; cursor: pointer; font-size: 11px; margin-left: 4px; }
+  .lh-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px;
+             border-bottom: 1px solid var(--border); }
+  .lh-title { font-size: 14px; font-weight: 600; color: var(--text); }
+  .lh-title span { color: var(--accent2); }
+  .lh-x { background: none; border: none; color: var(--muted); font-size: 22px; cursor: pointer; line-height: 1; }
+  .lh-x:hover { color: var(--text); }
+  .lh-scope { padding: 8px 18px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--border); }
+  .lh-tablewrap { overflow: auto; flex: 1; }
+  .lh-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .lh-table th { position: sticky; top: 0; background: var(--surface2); color: var(--text); text-align: left;
+                 padding: 9px 14px; font-weight: 600; cursor: pointer; user-select: none; white-space: nowrap;
+                 border-bottom: 1px solid var(--border2); }
+  .lh-table th:hover { color: var(--accent2); }
+  .lh-table td { padding: 8px 14px; border-bottom: 1px solid var(--border); color: var(--text); }
+  .lh-table tr:hover td { background: var(--surface2); }
+  .lh-val { font-family: var(--mono, monospace); }
+  .lh-empty { color: var(--muted); text-align: center; padding: 22px; }
+  .lh-del { background: none; border: 1px solid var(--border2); color: var(--err); border-radius: 6px;
+            padding: 2px 8px; cursor: pointer; font-size: 12px; }
+  .lh-del:hover { background: var(--err); color: #fff; border-color: var(--err); }
+  .lh-confirm button { font-size: 11px; padding: 2px 8px; border-radius: 6px; cursor: pointer; margin-left: 4px; }
+  .lh-confirm .lh-yes { background: var(--err); color: #fff; border: 1px solid var(--err); }
+  .lh-confirm .lh-no  { background: var(--surface2); color: var(--text); border: 1px solid var(--border2); }
+  .lh-foot { padding: 10px 18px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); line-height: 1.45; }
+  .lh-docs { background: none; border: 1px solid var(--border2); color: var(--muted); border-radius: 6px;
+             padding: 2px 8px; cursor: pointer; font-size: 12px; margin-right: 4px; }
+  .lh-docs:hover, .lh-docs.lh-docs-on { color: var(--accent2); border-color: var(--accent); }
+  .lh-docs-row td { background: var(--surface2); padding: 6px 14px 10px 14px; }
+  .lh-docs-list { display: flex; flex-direction: column; gap: 4px; }
+  .lh-docs-empty { color: var(--muted); font-size: 12px; }
+  .lh-doc { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+  .lh-doc-name { font-family: var(--mono, monospace); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lh-doc-when { color: var(--muted); }
+  .lh-open-doc { background: var(--accent-bg); border: 1px solid var(--accent); color: var(--accent2);
+                 border-radius: 6px; padding: 2px 10px; cursor: pointer; font-size: 12px; white-space: nowrap; }
+  .lh-open-doc:hover { background: var(--accent); color: var(--on-accent, #fff); }
 </style>
+<div id="lh-overlay" class="lh-overlay" data-help-ignore>
+  <div class="lh-modal">
+    <div class="lh-head">
+      <div class="lh-title">Learning history — <span id="lh-field"></span></div>
+      <button id="lh-close" class="lh-x" title="Close">&times;</button>
+    </div>
+    <div class="lh-scope" id="lh-scope"></div>
+    <div class="lh-proposals" id="lh-proposals" style="display:none;"></div>
+    <div class="lh-tablewrap">
+      <table class="lh-table">
+        <thead><tr>
+          <th data-sort="value">Value</th>
+          <th data-sort="count">Times seen</th>
+          <th data-sort="last_seen">Last seen</th>
+          <th style="cursor:default;"></th>
+        </tr></thead>
+        <tbody id="lh-body"></tbody>
+      </table>
+    </div>
+    <div class="lh-foot" style="display:flex; align-items:center; gap:10px; justify-content:space-between;">
+      <span style="flex:1;">Click a heading to sort, the ✎ to fix a value (e.g. <b>$O2 → SO2</b>), or 🗑 to delete one. Filed documents keep their files; only that field's stored value changes.</span>
+      <button id="lh-fix" class="lh-fix" title="Find values where a single character looks wrong against the column (e.g. a leading $ where every other value starts S) and fix them">Fix likely slips</button>
+    </div>
+  </div>
+</div>
 <script src="../shared/theme.js"></script>
 <script src="../shared/helpmode.js"></script>
 <script src="../shared/thumbs.js"></script>
+<script src="../shared/doctype-editor.js"></script>
 <script src="renderer.js"></script>
+<script src="training.js"></script>
 </body>
 </html>

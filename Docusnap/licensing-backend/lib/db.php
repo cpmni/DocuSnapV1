@@ -4,6 +4,15 @@
 // localhost defaults, so the same code runs on the WAMP dev VM and the future
 // IONOS host with no code change (only env/config differs).
 
+// Load the production env shim (set-env.php) by a RELATIVE path so the deploy works
+// regardless of any .user.ini auto_prepend_file absolute path. set-env.php is a sibling
+// of lib/ (i.e. <app>/set-env.php). INERT on dev where the file does not exist, and
+// idempotent (require_once) if .user.ini also prepended it. Every entry point that needs
+// the DB requires db.php, so this guarantees getenv('LICENSING_DB_*') is populated.
+$__ds_env = __DIR__ . '/../set-env.php';
+if (is_file($__ds_env)) { require_once $__ds_env; }
+unset($__ds_env);
+
 function db(): PDO
 {
     static $pdo = null;

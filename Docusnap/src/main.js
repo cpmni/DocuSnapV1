@@ -7,19 +7,55 @@
  * Each module registers its own IPC handlers via module.register(ipcMain, getDb, ...).
  */
 
-const { app, BrowserWindow, ipcMain, screen, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, shell, Tray, Menu, Notification } = require('electron');
 const path = require('path');
 const fs   = require('fs');
+const { repairKeyboardFocus } = require('./lib/focusRepair');
 
-// ── App-data directory (brand-rename safety) ──────────────────────────────────
-// The product is shown to users as "ScanFinder", but its on-disk data lives in
-// %APPDATA%\DocuSnap (SQLite DB, users, cached license tokens, inbox, templates,
-// processing.log). Electron derives userData from productName, so renaming
-// productName alone would repoint userData at a NEW empty %APPDATA%\ScanFinder
-// folder and orphan every existing install's data. Pin userData to the original
-// folder so the rename stays purely cosmetic — no data migration. Must run
-// before app 'ready' / first DB open.
-app.setPath('userData', path.join(app.getPath('appData'), 'DocuSnap'));
+// ── App-data directory (brand rename: DocuSnap → ScanFinder) ──────────────────
+// On-disk data lives under userData (SQLite DB, users, cached license tokens,
+// inbox, templates, certs, processing.log). The folder is now %APPDATA%\ScanFinder
+// (matching productName), but legacy installs kept it in %APPDATA%\DocuSnap. The
+// first launch of a renamed build performs a ONE-TIME migration: if the new folder
+// doesn't exist yet but the legacy one does, the whole folder is renamed across —
+// preserving every existing install's data (DB, settings, license tokens, learned
+// templates). If that rename fails (a file is busy), fall back to the legacy folder
+// so data is never orphaned. Must run before app 'ready' / first DB open.
+const _appDataDir    = app.getPath('appData');
+const _userDataDir   = path.join(_appDataDir, 'ScanFinder');
+const _legacyDataDir = path.join(_appDataDir, 'DocuSnap');
+let   _resolvedUserData = _userDataDir;
+try {
+  if (!fs.existsSync(_userDataDir) && fs.existsSync(_legacyDataDir)) {
+    fs.renameSync(_legacyDataDir, _userDataDir);
+  }
+} catch (e) {
+  if (fs.existsSync(_legacyDataDir)) _resolvedUserData = _legacyDataDir;
+}
+app.setPath('userData', _resolvedUserData);
+// Brand the app name so native JS dialogs (confirm/alert) are headed "ScanFinder", not the
+// package name "docusnap". Safe: userData is explicitly setPath'd above, so this never
+// moves the on-disk data folder.
+app.setName('ScanFinder');
+
+// ── GPU compositing fix (windowed-mode ghosting/stutter) ──────────────────────
+// Some GPU/driver + window-size combinations tore/blended stale frames in the
+// renderer when a window was non-maximized — visible on the physical panel but NOT in
+// a screenshot (the renderer buffer was always correct; the glitch was GPU→display
+// compositing). Disabling hardware acceleration forces software compositing and
+// resolves it. Confirmed by A/B test. The perf cost is negligible here — the UI is
+// static panels + still document images, no WebGL/video — so software rendering is a
+// safe, stable default. Must be called before app 'ready'.
+// (If reclaiming GPU acceleration is ever wanted, try the narrower
+//  commandLine.appendSwitch('disable-gpu-compositing') instead and re-test.)
+app.disableHardwareAcceleration();
+
+// Windows toast attribution: without an explicit AppUserModelID, notifications are
+// labelled "Electron". Match the installer's shortcut AUMID (build.appId in
+// package.json) so toasts show the registered name ("ScanFinder") in the packaged
+// app. No-op on non-Windows; in unpackaged dev there's no registered shortcut, so
+// the name may still fall back to "Electron" — only the packaged app is affected.
+app.setAppUserModelId('com.scanfinder.app');
 
 // ── Module imports ────────────────────────────────────────────────────────────
 const logger           = require('./modules/logger');
@@ -37,6 +73,7 @@ const templatesModule      = require('./modules/templates/handler');
 const licensingModule      = require('./modules/licensing/handler');
 const apiModule            = require('./modules/api/handler');
 const workflowModule       = require('./modules/workflow/handler');
+const tutorialModule       = require('./modules/tutorial/handler');
 
 // ── DB ────────────────────────────────────────────────────────────────────────
 let _db = null;
@@ -89,40 +126,76 @@ function templatesDir() {
 
 // ── Window management ─────────────────────────────────────────────────────────
 const windows = {};
+let isQuitting = false;   // true only when a real quit is underway (tray Exit / OS) — lets the main window actually close instead of hiding to tray
+let tray = null;          // system-tray icon; kept referenced so it isn't garbage-collected
 
 // Doc id to focus when the review window opens via "Edit in Review" from Search.
 // Cleared by get-review-target (pulled by the renderer after loadQueue) or
 // consumed immediately if the review window is already open.
 let pendingReviewDocId = null;
+// Full-text query to pre-fill when the Search window opens via the Home "Quick find" card.
+// Pulled by the search renderer via get-search-target, or pushed if the window is already open.
+let pendingSearchQuery = null;
 // Same pattern for "open Settings focused on a template" (from Review's "Add to
 // Template Manager") — pulled by the settings renderer after loadTemplates(), or
 // delivered immediately if the settings window is already open.
 let pendingSettingsTemplateId = null;
+let pendingSettingsSection = null;
 // Same pattern for the teaching wizard opened targeted at a just-scanned doc.
 let pendingTeachDocId = null;
 
 const MAIN_WINDOW_OPTIONS    = { width: 1100, height: 750, minWidth: 800, minHeight: 560 };
 const LOGIN_WINDOW_OPTIONS   = { width: 460, height: 660, resizable: false, minimizable: false, maximizable: false };
 const LICENSE_WINDOW_OPTIONS = { width: 460, height: 560, resizable: false, minimizable: false, maximizable: false };
-const ONBOARDING_WINDOW_OPTIONS = { width: 720, height: 640, resizable: false, minimizable: false, maximizable: false };
+const ONBOARDING_WINDOW_OPTIONS = { width: 720, height: 720, resizable: false, minimizable: false, maximizable: false };
+const LEGAL_WINDOW_OPTIONS = { width: 720, height: 680, resizable: false, minimizable: false, maximizable: false };
+// Bump this (and LEGAL.txt's "Version:" header) to re-prompt everyone for acceptance.
+const LEGAL_VERSION = '2026-07-01';
+const WELCOME_WINDOW_OPTIONS = { width: 720, height: 640, resizable: false, minimizable: false, maximizable: false };
+const TUTORIAL_WINDOW_OPTIONS = { width: 980, height: 720, minWidth: 760, minHeight: 560, minimizable: false, maximizable: false };
 const HELP_WINDOW_OPTIONS = { width: 940, height: 700, minWidth: 640, minHeight: 460 };
+
+// Programmatic window close that DESTROYS the window even with the tray
+// close-interceptor active. Primary windows hide to tray on a USER close; the
+// app's own transitions (login↔shell, onboarding) must instead destroy them, or
+// a re-shown hidden window would pile up and could leak the previous user's
+// session. _allowClose tells the interceptor to let this close through.
+function destroyWindow(name) {
+  const w = windows[name];
+  if (w && !w.isDestroyed()) { w._allowClose = true; w.close(); }
+}
 
 // Swap the whole app shell between "logged out" and "in the app". The login
 // window is always created BEFORE the others are closed, so the app never
-// passes through a zero-window moment that would trip window-all-closed.
+// passes through a zero-window moment.
 function showLoginScreen() {
   createWindow('login', LOGIN_WINDOW_OPTIONS, 'index.html');
-  Object.keys(windows).forEach((name) => {
-    if (name !== 'login') windows[name]?.close();
-  });
+  // Destroy (not hide) every other window — especially the main shell, so logging
+  // out can't leave a hidden previous-user session reachable from the tray.
+  Object.keys(windows).forEach((name) => { if (name !== 'login') destroyWindow(name); });
+  refreshTrayMenu();   // reflect logged-out state (disable Review/Settings)
 }
 
 // Raw shell open — only ever reached AFTER the licensing gate has allowed it.
 function openMainShell() {
-  createWindow('main', MAIN_WINDOW_OPTIONS, 'index.html');
-  windows['login']?.close();
-  windows['license']?.close();
-  windows['onboarding']?.close();
+  const main = createWindow('main', MAIN_WINDOW_OPTIONS, 'index.html');
+  // Keep the current cover window (login / license / onboarding) on screen until the main
+  // shell has actually PAINTED (ready-to-show), so a slow first run never flashes a blank /
+  // naked swap (the "loaded with icons but no text" report). Backstop-destroy so the cover
+  // windows are never leaked if ready-to-show never fires.
+  const teardown = () => {
+    destroyWindow('login');
+    destroyWindow('license');
+    destroyWindow('onboarding');
+  };
+  if (main && !main.isDestroyed()) {
+    main.once('ready-to-show', teardown);   // createWindow also shows main here, so it's a seamless swap
+    setTimeout(teardown, 12000);            // never leak the cover windows if ready-to-show never fires
+  } else {
+    teardown();
+  }
+  refreshTrayMenu();   // reflect logged-in state (enable Review/Settings)
+  startLicenseRevalidation();   // P0: catch a server-side revoke WHILE running, not only at launch
 }
 
 // First-run setup wizard. Shows ONLY when `first_run_completed` !== 'true' (a
@@ -138,8 +211,63 @@ function needsOnboarding() {
 
 function showOnboarding() {
   createWindow('onboarding', ONBOARDING_WINDOW_OPTIONS, 'index.html');
-  windows['login']?.close();
-  windows['license']?.close();
+  destroyWindow('login');
+  destroyWindow('license');
+}
+
+// Legal/Terms acceptance is recorded LOCALLY as { version, accepted_at } — no personal
+// data, no telemetry. A mismatch with the current LEGAL_VERSION re-prompts (so a terms
+// update is handled predictably). Read fail-open only to a "not accepted" state, never
+// to "accepted", so a read error can never silently skip the gate.
+function termsAccepted() {
+  try {
+    const raw = require('../database/modules/learning').getSetting(getDb(), 'terms_accepted');
+    if (!raw) return false;
+    return JSON.parse(raw).version === LEGAL_VERSION;
+  } catch { return false; }
+}
+
+function showLegalGate() {
+  const w = createWindow('legal', LEGAL_WINDOW_OPTIONS, 'index.html');
+  destroyWindow('login');
+  destroyWindow('license');
+  // NOT a PRIMARY_WINDOW (so it never hides-to-tray into a headless, unrecoverable
+  // state with terms unaccepted). Closing the gate with the X = Decline & Quit.
+  // destroyWindow sets _allowClose for the accept/programmatic path, so those close cleanly.
+  try {
+    w?.on('close', () => { if (!isQuitting && !w._allowClose) { isQuitting = true; app.quit(); } });
+    w?.once('ready-to-show', () => { if (!w.isDestroyed()) { w.show(); w.focus(); } });
+  } catch {}
+}
+
+// First-run familiarisation tour (concepts), shown once AFTER the setup wizard.
+// Gated by its own `welcome_seen` flag (separate from first_run_completed) and
+// reopenable from the user menu. Reads fail-closed so an error never re-shows it.
+function welcomeSeen() {
+  try { return require('../database/modules/learning').getSetting(getDb(), 'welcome_seen') === 'true'; }
+  catch { return true; }
+}
+function showWelcome() {
+  const w = createWindow('welcome', WELCOME_WINDOW_OPTIONS, 'index.html');
+  // Owned child of the main shell (stays above it) + pull focus on first paint so
+  // it can't open behind the main window that was created just before it.
+  try { w?.once('ready-to-show', () => { if (!w.isDestroyed()) { w.show(); w.focus(); } }); } catch {}
+}
+
+// Wipe the practice run's throwaway temp tree. Backstop teardown so closing the
+// window with the X (not just the Done buttons) never leaves sample copies behind.
+function wipeTutorialTemp() {
+  try { fs.rmSync(tutorialModule.practiceRoot({ app }), { recursive: true, force: true }); } catch {}
+}
+
+// Sandboxed beginner "practice run" (Import → Review → Confirm on a bundled sample).
+// Owned non-modal child, focus on first paint — same pattern as the welcome tour.
+function showTutorial() {
+  const w = createWindow('tutorial', TUTORIAL_WINDOW_OPTIONS, 'index.html');
+  try {
+    w?.once('ready-to-show', () => { if (!w.isDestroyed()) { w.show(); w.focus(); } });
+    w?.on('closed', wipeTutorialTemp);
+  } catch {}
 }
 
 // Licensing gate (Phase 2). The MAIN process is the sole decider; the renderer
@@ -151,6 +279,9 @@ async function enterMainApp() {
   try { gate = await licensingModule.decideAccess(); }
   catch (e) { logger.err('licensing gate error (failing closed): ' + e.message); gate = { decision: 'locked_needs_online', reason: 'gate_error' }; }
   if (gate.decision === 'allow') {
+    // Terms acceptance is enforced HERE, in the main process (never renderer-only),
+    // after the licence gate and before onboarding/shell — so it can't be bypassed.
+    if (!termsAccepted()) { showLegalGate(); return; }
     if (needsOnboarding()) { showOnboarding(); return; }
     openMainShell();
     return;
@@ -159,6 +290,7 @@ async function enterMainApp() {
 }
 
 function showLicenseWindow(gate) {
+  stopLicenseRevalidation();   // we're leaving the main shell — no periodic re-check while locked
   const alreadyOpen = !!windows['license'];
   const win = createWindow('license', LICENSE_WINDOW_OPTIONS, 'index.html');
   Object.keys(windows).forEach((name) => {
@@ -173,6 +305,33 @@ function showLicenseWindow(gate) {
   // "Opening…" with the real denial reason instead of appearing stuck.
   if (alreadyOpen && !win.webContents.isLoading()) pushState();
   else win.webContents.once('did-finish-load', pushState);
+}
+
+// Periodic licence re-validation (P0). decideAccess() only runs at startup; without this,
+// a licence revoked or expired SERVER-SIDE while the app is already running would not be
+// noticed until the next launch. This re-runs the SAME authoritative gate on a timer and,
+// on any non-'allow' verdict, locks the running app to the license window. It never locks
+// on a transient offline blip: decideAccess() falls back to the cached token within the
+// offline grace (returns 'allow'); only a REACHABLE backend with no grant (revoked /
+// released) — or grace genuinely expired — yields a lock, so offline grace is preserved.
+const LICENSE_REVALIDATE_MS = 6 * 60 * 60 * 1000; // 6h
+let _revalTimer = null;
+function startLicenseRevalidation() {
+  if (_revalTimer) return;                          // already running
+  _revalTimer = setInterval(async () => {
+    if (!windows['main']) return;                   // only meaningful while the main shell is open
+    let gate;
+    try { gate = await licensingModule.decideAccess(); }
+    catch (e) { logger?.warn?.('periodic licence re-check errored (ignored): ' + e.message); return; }
+    if (gate && gate.decision !== 'allow') {
+      logger?.warn?.(`periodic licence re-check: ${gate.decision} (${gate.reason}) — locking`);
+      showLicenseWindow(gate);                       // stops the timer + swaps to the license window
+    }
+  }, LICENSE_REVALIDATE_MS);
+  if (_revalTimer.unref) _revalTimer.unref();        // don't keep the event loop alive on its own
+}
+function stopLicenseRevalidation() {
+  if (_revalTimer) { clearInterval(_revalTimer); _revalTimer = null; }
 }
 
 // Lightweight startup splash — purely cosmetic, no IPC, no preload. Shown
@@ -234,10 +393,17 @@ function launchStartupWindow() {
 
 // Child windows opened from the main shell are parented + kept off the taskbar so
 // the whole suite shares ONE taskbar entry and feels self-contained. Most also
-// lock their opener (modal), like a regular Windows app; the dev inspector stays
-// non-modal so you can watch live processing while using the main window.
-const CHILD_WINDOWS   = new Set(['review', 'settings', 'search', 'teach', 'dev-inspector']);
-const NON_MODAL_CHILD = new Set(['dev-inspector']);
+// share ONE taskbar entry and feel self-contained. They are all NON-MODAL: a modal panel
+// LOCKS the main window, so once it's minimised (a tiny skipTaskbar corner box) you can't
+// click its toolbar button to bring it back. Non-modal keeps the main window usable, and
+// createWindow() already restores + focuses the existing window when its button is clicked
+// again. (A future window can still opt INTO modal by being a CHILD_WINDOW not listed here.)
+const CHILD_WINDOWS   = new Set(['review', 'settings', 'search', 'teach', 'dev-inspector', 'welcome', 'tutorial']);
+const NON_MODAL_CHILD = new Set(['dev-inspector', 'review', 'settings', 'search', 'teach', 'welcome', 'tutorial']);
+// Top-level "primary" windows that hide to the tray on a user close (the app then
+// fully quits ONLY via tray Exit). Their programmatic transitions destroy them
+// via destroyWindow(). Child windows close normally.
+const PRIMARY_WINDOWS = new Set(['login', 'license', 'onboarding', 'main']);
 
 const winStateFile = () => path.join(app.getPath('userData'), 'window-state.json');
 function loadWinStates() { try { return JSON.parse(fs.readFileSync(winStateFile(), 'utf8')); } catch { return {}; } }
@@ -261,8 +427,13 @@ function _boundsVisible(b) {
 // Open maximized by default ("fullscreen"); once the user restores/resizes a
 // window, remember that and honour it next time. Fixed dialogs (resizable:false,
 // e.g. login/licence/onboarding) are left exactly as defined.
+// Windows that should ALWAYS open maximized ("fullscreen"), ignoring any remembered
+// smaller size — the work surfaces the user asked to default to fullscreen.
+const FORCE_MAXIMIZE = new Set(['settings', 'teach', 'review', 'search']);
+
 function applyWindowState(win, name, options) {
   if (options.resizable === false) return;
+  if (FORCE_MAXIMIZE.has(name)) { win.maximize(); return; }   // always open maximized; don't restore a smaller size
   const st = loadWinStates()[name];
   if (st && st.userSized && !st.maximized && st.bounds && _boundsVisible(st.bounds)) win.setBounds(st.bounds);
   else win.maximize();   // no saved size, or it would land off-screen → maximize
@@ -325,6 +496,10 @@ function createWindow(name, options, htmlFile) {
   const win = new BrowserWindow({
     ...options,
     ...(parentWin ? { parent: parentWin } : {}),
+    // Popout child windows (Review/Settings/Search/Teach/…) get only restore + close —
+    // no minimise (a minimised modal child is an easy way to "lose" the window behind the
+    // locked main shell). Maximise/restore stays. Standalone windows keep their own option.
+    ...(parentWin ? { minimizable: false } : {}),
     modal,
     skipTaskbar,
     show:           manageShow ? false : options.show,
@@ -334,7 +509,7 @@ function createWindow(name, options, htmlFile) {
       preload:          path.join(__dirname, 'preload.js'),
       contextIsolation: true,
     },
-    icon: path.join(__dirname, '..', '..', 'assets', 'icon.ico'),
+    icon: path.join(__dirname, '..', 'assets', 'icon.ico'),   // src/../assets (was '..','..' — off-by-one that silently dropped the window icon)
   });
   if (win.removeMenu) win.removeMenu();   // no native menu bar (File/Edit/View/Window/Help)
   applyWindowState(win, name, options);   // maximize by default / restore the user's last size
@@ -342,14 +517,123 @@ function createWindow(name, options, htmlFile) {
   if (manageShow) {
     win.once('ready-to-show', () => { if (!win.isDestroyed()) win.show(); });
     // Backstop: never leave a window stuck hidden if ready-to-show never fires
-    // (e.g. a renderer error) — reveal anyway after a short grace period.
-    setTimeout(() => { if (!win.isDestroyed() && !win.isVisible()) win.show(); }, 2000);
+    // (e.g. a renderer error) — reveal anyway after a grace period. Kept GENEROUS
+    // (12s, was 2s): the 2s window was measured from construction (before loadFile),
+    // so on a slow-but-fine FIRST run (Windows Defender scanning the unsigned payload +
+    // cold disk cache) it pre-empted ready-to-show and revealed a not-yet-painted,
+    // text-less shell. ready-to-show still reveals promptly on a normal run; this only
+    // extends how long we wait before force-showing a genuinely-wedged renderer.
+    setTimeout(() => { if (!win.isDestroyed() && !win.isVisible()) win.show(); }, 12000);
   }
 
   win.loadFile(path.join(__dirname, 'windows', name, 'index.html'));
   win.on('closed', () => { delete windows[name]; });
+  // Minimise-to-tray: closing ANY primary window (login/license/onboarding/main)
+  // hides it so the core keeps running for watch/processing/remote clients. The
+  // app fully quits ONLY via tray Exit (which sets isQuitting). The app's own
+  // transitions destroy windows via destroyWindow() (sets win._allowClose) — so a
+  // logout/swap can't leave a hidden previous-user shell reachable from the tray.
+  if (PRIMARY_WINDOWS.has(name)) {
+    win.on('close', (e) => {
+      if (!isQuitting && !win._allowClose && closeToTrayEnabled()) {
+        e.preventDefault();
+        win.hide();
+        maybeShowTrayHint();
+      }
+    });
+  }
   windows[name] = win;
   return win;
+}
+
+// ── System tray (minimise-to-background; Stage 1) ─────────────────────────────
+// Re-show whichever primary window exists — the main shell when logged in, else
+// the login window — reusing createWindow's restore-if-hidden/minimised path.
+function showPrimaryWindow() {
+  const name = (windows['main']  && !windows['main'].isDestroyed())  ? 'main'
+             : (windows['login'] && !windows['login'].isDestroyed()) ? 'login' : null;
+  if (!name) return;
+  const w = windows[name];
+  try { if (w.isMinimized()) w.restore(); if (!w.isVisible()) w.show(); w.focus(); } catch { /* stale ref */ }
+}
+
+// LICENCE GATE for tray reveals: a window hidden to the tray must NOT be re-openable
+// after the licence lapses/is revoked. When the user is already in the main shell, re-run
+// the gate; if it no longer allows, route to the license window instead and report blocked.
+// (Pre-login / license states have no main shell to gate, so they pass through.)
+async function trayGateAllows() {
+  if (!(windows['main'] && !windows['main'].isDestroyed())) return true;
+  let gate;
+  try { gate = await licensingModule.decideAccess(); }
+  catch { gate = { decision: 'locked_needs_online', reason: 'gate_error' }; }
+  if (gate && gate.decision === 'allow') return true;
+  showLicenseWindow(gate || { decision: 'locked' });
+  return false;
+}
+async function revealAppGated() { if (await trayGateAllows()) showPrimaryWindow(); }
+// True only when the main shell is up — the app is fully entered (past login + all gates).
+function inShell() { return !!(windows['main'] && !windows['main'].isDestroyed()); }
+
+// Tray menu — auth-gated items are explicitly DISABLED when the role is absent
+// (not silent no-ops). Rebuilt on login/logout via refreshTrayMenu().
+function buildTrayMenu() {
+  const canReview   = !!(authModule.hasRole && authModule.hasRole('admin', 'edit'));
+  const canSettings = !!(authModule.hasRole && authModule.hasRole('admin'));
+  return Menu.buildFromTemplate([
+    { label: 'Open ScanFinder', click: () => revealAppGated() },
+    { type: 'separator' },
+    // inShell(): the privileged openers must NEVER open a functional window unless the
+    // MAIN shell is up — so a pre-shell gate (legal/onboarding/license) can't be bypassed
+    // from the tray regardless of the menu's enabled state or refreshTrayMenu timing.
+    { label: 'Open Review',   enabled: canReview,
+      click: async () => { if (inShell() && await trayGateAllows() && authModule.hasRole('admin', 'edit')) createWindow('review',   { width: 1200, height: 800, minWidth: 900, minHeight: 600 }); } },
+    { label: 'Open Settings', enabled: canSettings,
+      click: async () => { if (inShell() && await trayGateAllows() && authModule.hasRole('admin'))         createWindow('settings', { width: 1320, height: 820, minWidth: 1280, minHeight: 660 }); } },
+    { type: 'separator' },
+    { label: 'Exit ScanFinder', click: () => { isQuitting = true; app.quit(); } },
+  ]);
+}
+
+function refreshTrayMenu() {
+  try { if (tray && !tray.isDestroyed()) tray.setContextMenu(buildTrayMenu()); } catch { /* tray gone */ }
+}
+
+function setupTray() {
+  if (tray) return;
+  try {
+    tray = new Tray(path.join(__dirname, '..', 'assets', 'icon.ico'));   // ../assets — consistent with the splash + createWindow icon paths (Tray throws on a bad path, unlike BrowserWindow which silently drops it)
+    tray.setToolTip('ScanFinder');
+    tray.on('double-click', () => revealAppGated());
+    refreshTrayMenu();
+  } catch (e) {
+    logger.warn?.('[tray] could not create tray icon: ' + (e && e.message));
+  }
+}
+
+// Stage 2: "Close button minimises to tray" setting (default ON). When OFF, the
+// close-interceptor lets primary windows close and window-all-closed quits — the
+// pre-tray behaviour. Fail-open to the tray behaviour on any read error.
+function closeToTrayEnabled() {
+  try { return require('../database/modules/learning').getSetting(getDb(), 'close_to_tray', 'true') !== 'false'; }
+  catch { return true; }
+}
+
+// Show a ONE-TIME notification the first time the app hides to the tray, so the
+// user isn't left wondering where the window went. Tracked by a setting so it
+// never repeats. Best-effort — a notification failure must not break hide-to-tray.
+function maybeShowTrayHint() {
+  try {
+    const learning = require('../database/modules/learning');
+    if (learning.getSetting(getDb(), 'tray_hint_shown', 'false') === 'true') return;
+    learning.setSetting(getDb(), 'tray_hint_shown', 'true');
+    if (Notification.isSupported && Notification.isSupported()) {
+      new Notification({
+        title: 'Still running in the background',
+        body: 'Minimised to the notification area — watch-folder import and remote search clients keep working. Right-click the tray icon to open it or exit.',
+        icon: path.join(__dirname, '..', 'assets', 'icon.ico'),
+      }).show();
+    }
+  } catch { /* best-effort */ }
 }
 
 // Best-effort startup integrity sweep of the managed import inbox. Copy-on-
@@ -402,7 +686,15 @@ function notifyAllWindows(channel, ...args) {
 }
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────
+// Single instance: relaunching (e.g. the shortcut while the app is hidden in the
+// tray) must re-show the running instance, NOT spawn a second core that would
+// double-bind the API/watch. The loser quits; the winner re-shows on 'second-instance'.
+const _gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!_gotSingleInstanceLock) app.quit();
+app.on('second-instance', () => revealAppGated());
+
 app.whenReady().then(() => {
+  if (!_gotSingleInstanceLock) return;   // a second instance: don't build anything, just quit
   // Frameless windows shown via show()/swap don't reliably take OS keyboard focus
   // on Windows — especially after the alwaysOnTop splash closes and the next
   // window is show()'d in the same step. The result is a visible window whose
@@ -414,9 +706,34 @@ app.whenReady().then(() => {
   // login/main/license swap, child windows (settings/review/search), and any
   // window added later. Re-fires on every show so restore-from-minimise re-focuses.
   app.on('browser-window-created', (_e, win) => {
-    const grabFocus = () => { try { win.focus(); win.webContents.focus(); } catch {} };
+    const grabFocus = () => {
+      try { win.focus(); win.webContents.focus(); } catch {}
+    };
     win.on('show', grabFocus);
+    // Do NOT re-issue win.focus() on the window's OWN focus event — on Windows that is a
+    // redundant SetForegroundWindow (denied when the process lacks foreground rights) and
+    // just adds thrash during the splash→login→shell handoff. Route keys into the web
+    // widget only; the OS focus event itself already made this the key window. (eric)
+    win.on('focus', () => { try { win.webContents.focus(); } catch {} });
     if (win.isVisible()) grabFocus();
+  });
+
+  // Renderer-driven keyboard-focus repair (Windows): the preload asks for this when a
+  // click enters a text field while the render widget lacks OS keyboard focus (the
+  // "click a box, no caret until I alt-tab out and back" bug). Re-focusing the sending
+  // webContents re-syncs it without an OS window-focus change. Sender-scoped + guarded.
+  ipcMain.on('ensure-window-focus', (e, info) => {
+    try {
+      const wc = e.sender; if (!wc || wc.isDestroyed()) return;
+      // Focus the owning WINDOW first, then the webContents — on Windows, after a native
+      // dialog closes wc.focus() alone can leave keyboard focus unrouted until the window
+      // itself is re-focused. Both are no-ops when already focused.
+      // Widget-level focus repair (blurWebView + wc.focus) — NEVER a window blur/focus. See
+      // src/lib/focusRepair.js for the full rationale (the win.blur()/win.focus() title-bar-flash
+      // storm eric traced). Extracted so it's unit-testable off the app lifecycle.
+      const win = BrowserWindow.fromWebContents(wc);
+      repairKeyboardFocus(win, wc, info);
+    } catch {}
   });
 
   // Splash first, before any other startup work, so it appears immediately.
@@ -449,9 +766,37 @@ app.whenReady().then(() => {
   // once all IPC handlers below are registered. The main shell only appears later
   // once auth-handler confirms a session is established (see 'auth-enter-app').
 
+  // ── Opt-in diagnostics collector (document-data-FREE; see DIAGNOSTICS_PLAN.md).
+  //    OFF by default → fully inert until the user consents. Best-effort init. ────
+  let telemetry;
+  try {
+    const { createTelemetry } = require('./modules/telemetry');
+    const { defaultTransport } = require('./lib/license/client');
+    const { computeFpHash }    = require('./lib/license/fingerprint');
+    const { getSetting }       = require('../database/modules/learning');
+    const os = require('os');
+    let licCfg = {};
+    try { licCfg = JSON.parse(fs.readFileSync(resourcePath('config', 'license.json'), 'utf8')); } catch {}
+    telemetry = createTelemetry({
+      db: getDb(),
+      getSetting,
+      post: (url, body) => defaultTransport('POST', url, body, 2500),
+      config: { base_url: licCfg.base_url, product_id: licCfg.product_id },
+      fpHash: (() => { try { return computeFpHash(licCfg.product_id); } catch { return null; } })(),
+      appInfo: {
+        app_version:      app.getVersion(),
+        build_rev:        (() => { try { return require('../package.json').buildRev || ''; } catch { return ''; } })(),
+        os_version:       `${os.type()} ${os.release()}`.trim().slice(0, 48),
+        electron_version: process.versions.electron,
+        arch:             process.arch,
+      },
+      logger,
+    });
+  } catch (e) { try { logger?.warn?.('telemetry init skipped: ' + e.message); } catch {} }
+
   // Register all module IPC handlers
   const ctx = {
-    ipcMain, getDb,
+    ipcMain, getDb, telemetry,
     resourcePath, pythonExe, pythonArgs, tesseractPath,
     backendScript, configPath, templatesDir,
     createWindow, getMainWindow, notifyMainWindow, notifyAllWindows, safeSend,
@@ -471,8 +816,10 @@ app.whenReady().then(() => {
     spawn: require('child_process').spawn,
     path,
     // Detached-client auth sessions + the concurrent (sticky) seat pool, owned by
-    // main so the /v1 API and the admin Licensing IPC share one instance.
-    sessionStore: require('./services/sessionService').createSessionStore(),
+    // main so the /v1 API and the admin Licensing IPC share one instance. Uses the
+    // shared() singleton so the admin auth handlers can REVOKE a user's /v1 sessions
+    // (disable / role change / password reset) against the very store the API uses.
+    sessionStore: require('./services/sessionService').shared(),
     seatPool:     require('./services/seatPool').createSeatPool({ getDb }),
   };
 
@@ -487,6 +834,24 @@ app.whenReady().then(() => {
   // The renderer can never self-grant access into the main shell.
   ipcMain.on('license-enter-app', () => enterMainApp());
 
+  // Manual "re-check licence now" (Settings → Licensing "Refresh"). Runs the SAME
+  // authoritative gate as startup/periodic, so a server-side revoke or expiry takes effect
+  // ON DEMAND: it re-validates and, on any non-'allow' verdict, locks the running app to
+  // the license window. On 'allow' the cached token + per-feature counts were just
+  // refreshed by decideAccess, so the Settings display reflects the latest state. Never
+  // throws into the renderer; an unexpected error leaves the app running (the startup +
+  // 6h periodic checks still apply), so a transient glitch can't lock a working user out.
+  ipcMain.handle('license-recheck', async () => {
+    let gate;
+    try { gate = await licensingModule.decideAccess(); }
+    catch (e) { logger?.warn?.('manual licence re-check errored: ' + e.message); return { decision: 'error', reason: 'recheck_error' }; }
+    if (gate && gate.decision !== 'allow') {
+      stopLicenseRevalidation();
+      showLicenseWindow(gate);
+    }
+    return gate;
+  });
+
   // Runtime flag for renderer dev-gating (e.g. the dev-only "Erase ALL data" button
   // in Settings → Learning Recovery). True only in an unpackaged/dev build; the
   // renderer keeps the control hidden in packaged/production builds.
@@ -494,9 +859,15 @@ app.whenReady().then(() => {
 
   // ── About box: version details + third-party attribution ───────────────────
   ipcMain.handle('get-app-about', () => {
-    let copyright = '';
+    let copyright = '', buildRev = null;
     try { copyright = require('../package.json').build.copyright || ''; } catch { /* ignore */ }
-    return { name: app.getName(), version: app.getVersion(), electron: process.versions.electron, copyright };
+    // Build stamp: baked into the packaged package.json by electron-builder
+    // (extraMetadata.buildRev = BUILD_REV); in unpackaged dev, read the live git sha.
+    try { buildRev = require('../package.json').buildRev || null; } catch { /* not baked */ }
+    if (!buildRev && !app.isPackaged) {
+      try { buildRev = require('child_process').execSync('git rev-parse --short HEAD', { cwd: __dirname, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() || null; } catch { /* no git */ }
+    }
+    return { name: app.getName(), version: app.getVersion(), electron: process.versions.electron, buildRev, copyright };
   });
   // Opens the bundled THIRD-PARTY-LICENSES.txt in the OS default viewer.
   // resourcePath resolves it in BOTH dev (repo root) and packaged (extraResources).
@@ -506,6 +877,43 @@ app.whenReady().then(() => {
     const err = await shell.openPath(p);   // '' on success
     return { ok: err === '', error: err || undefined };
   });
+
+  // ── Legal / Terms ──────────────────────────────────────────────────────────
+  // Single source of truth: bundled LEGAL.txt (also the installer's licence page).
+  // resourcePath resolves it in dev (repo root) AND packaged (extraResources).
+  const legalPath = () => resourcePath('LEGAL.txt');
+  // SHA-256 of the exact LEGAL.txt bytes accepted — recorded WITH the acceptance so we can
+  // prove WHICH text was agreed (not just "the July version"). '' if the file can't be read.
+  const legalTextHash = () => {
+    try { return require('crypto').createHash('sha256').update(fs.readFileSync(legalPath())).digest('hex'); }
+    catch { return ''; }
+  };
+  ipcMain.handle('get-legal-text', () => {
+    try { return { version: LEGAL_VERSION, text: fs.readFileSync(legalPath(), 'utf8') }; }
+    catch { return { version: LEGAL_VERSION, text: '' }; }
+  });
+  ipcMain.on('open-legal', async () => { try { await shell.openPath(legalPath()); } catch {} });
+  // The mutating handlers are the gate's authority — only the legal window may call them,
+  // so a first-party (or compromised) renderer can't self-accept or quit the app.
+  const fromLegalWindow = (e) => BrowserWindow.fromWebContents(e.sender) === windows['legal'];
+  // Record acceptance LOCALLY only — { version, hash, app_version, accepted_at }. No personal
+  // data, no telemetry. The hash is evidence of the exact text; re-prompting still keys on
+  // LEGAL_VERSION (a material bump), so an editorial typo fix won't eject everyone.
+  ipcMain.on('legal-accept', (e) => {
+    if (!fromLegalWindow(e)) return;
+    // Never record acceptance of terms that failed to load (empty text) — the user can't
+    // have read them; leave unaccepted so the gate re-shows.
+    if (!legalTextHash()) { logger.warn?.('terms acceptance refused: LEGAL.txt unreadable'); return; }
+    try {
+      require('../database/modules/learning').setSetting(getDb(), 'terms_accepted',
+        JSON.stringify({ version: LEGAL_VERSION, hash: legalTextHash(),
+                         app_version: app.getVersion(), accepted_at: new Date().toISOString() }));
+    } catch (err) { logger.warn?.('terms acceptance write failed: ' + err.message); }
+    destroyWindow('legal');
+    if (needsOnboarding()) { showOnboarding(); return; }
+    openMainShell();
+  });
+  ipcMain.on('legal-decline', (e) => { if (!fromLegalWindow(e)) return; isQuitting = true; app.quit(); });
 
   processingModule.register(ctx);
   reviewModule.register(ctx);
@@ -527,6 +935,32 @@ app.whenReady().then(() => {
   // In-process mailbox/approval workflow for the core app's enhanced Search
   // (entitlement + role gated; reuses workflowService). See modules/workflow/handler.js.
   workflowModule.register(ctx);
+  tutorialModule.register(ctx);
+
+  // Diagnostics lifecycle (all gated on consent INSIDE telemetry → inert until opt-in;
+  // never blocks startup): one app_start event, a deferred + periodic best-effort flush,
+  // and the SAFE renderer-crash signal (render-process-gone changes no exit semantics).
+  try {
+    telemetry?.recordAppStart();
+    setTimeout(() => { try { telemetry?.flush(); } catch {} }, 60000 + Math.floor(Math.random() * 30000));
+    setInterval(() => { try { telemetry?.flush(); } catch {} }, 30 * 60 * 1000);
+    app.on('render-process-gone', (_e, wc, details) => {
+      // Identify WHICH window died (by its HTML file basename — 'review'/'settings'/'main'/…,
+      // no document data) + the exit code, and LOG it locally too — "reason: crashed" alone
+      // (telemetry-only) can't be diagnosed. reason is one of crashed|oom|killed|
+      // abnormal-exit|launch-failed|integrity-failure.
+      let winName = 'unknown';
+      try {
+        const u = wc && !wc.isDestroyed() ? wc.getURL() : '';
+        const m = /([^/\\]+)\.html/i.exec(u || '');
+        if (m) winName = m[1];
+      } catch {}
+      const reason   = details && details.reason;
+      const exitCode = details && details.exitCode;
+      try { logger?.err?.(`[renderer-crash] window=${winName} reason=${reason} exitCode=${exitCode}`); } catch {}
+      try { telemetry?.record('renderer_crash', { reason, window: winName, exit_code: exitCode }); } catch {}
+    });
+  } catch {}
 
   // ── Hidden developer processing inspector (read-only) ───────────────────────
   // Password is verified HERE in the main process; the renderer can only REQUEST
@@ -544,6 +978,10 @@ app.whenReady().then(() => {
     } catch {}
   };
   ipcMain.handle('dev-inspector-unlock', (_e, password) => {
+    // DEV-ONLY: the standalone main-window inspector is removed from packaged/customer builds
+    // (kept for `npm start` development). The in-REVIEW trace console below stays available in
+    // packaged builds for on-site diagnosis. Neither is documented in the help files.
+    if (app.isPackaged) return false;
     if (password !== 'SFDEV') return false;         // never log the password
     const win = createWindow('dev-inspector', {
       width: 960, height: 720, minWidth: 640, minHeight: 480,
@@ -567,13 +1005,17 @@ app.whenReady().then(() => {
     ctx.reviewTraceActive = false;
     return true;
   });
-  // Read-only state getter (boolean) — no mutation, safe to expose.
+  // Read-only state getter (boolean) — no mutation. Login/role-gated (§4a #3) to keep the
+  // devtools-reachable dev IPCs behind the same admin/edit boundary as the review surface.
   ipcMain.handle('dev-inspector-running', () => {
+    if (!(authModule.hasRole && authModule.hasRole('admin', 'edit'))) return false;
     try { return processingModule.isBatchRunning(); } catch { return false; }
   });
   // Serve a captured OCR slice as a base64 data URI — path MUST resolve inside the
-  // dev slice dir (prevents the renderer reading arbitrary files). Dev-only.
+  // dev slice dir (prevents the renderer reading arbitrary files). Dev-only + role-gated:
+  // a slice is cropped document imagery, so keep it off a read-only user (§4a #3).
   ipcMain.handle('dev-get-slice', (_e, slicePath) => {
+    if (!(authModule.hasRole && authModule.hasRole('admin', 'edit'))) return null;
     try {
       const root = path.resolve(devSliceDir);
       const abs  = path.resolve(String(slicePath || ''));
@@ -583,7 +1025,16 @@ app.whenReady().then(() => {
   });
   // Fallback cleanup on clean exit.
   app.on('before-quit', () => {
+    // Any quit path (tray Exit, OS shutdown, app.quit) → allow the main window to
+    // actually close instead of hiding to tray.
+    isQuitting = true;
+    try { telemetry?.record('app_exit'); telemetry?.flush(); } catch {}   // best-effort, consent-gated
+    // Stop background work so Exit leaves no orphaned python.exe: clear the watch
+    // poll timer + kill in-flight watch Python, and tree-kill the manual batch.
+    try { watchModule.stopForQuit(); } catch (e) { logger.warn?.('[quit] watch cleanup: ' + (e && e.message)); }
+    try { processingModule.killAll(); } catch (e) { logger.warn?.('[quit] processing cleanup: ' + (e && e.message)); }
     try { fs.rmSync(devSliceDir, { recursive: true, force: true }); } catch {}
+    try { wipeTutorialTemp(); } catch {}
     try { diaglog.close(); } catch {}
   });
 
@@ -646,9 +1097,44 @@ app.whenReady().then(() => {
   // The wizard writes individual settings through the existing set-setting path;
   // these signals only own the FLAG + the window/shell swap (main is the decider).
   ipcMain.on('onboarding-complete', () => {
-    try { require('../database/modules/learning').setSetting(getDb(), 'first_run_completed', 'true'); }
-    catch (e) { logger.warn?.('onboarding flag write failed: ' + e.message); }
+    try {
+      const learning = require('../database/modules/learning');
+      learning.setSetting(getDb(), 'first_run_completed', 'true');
+      // First-run dashboard default: show the essentials, hide the extra cards
+      // (Quick find, Filed automatically, Storage, Backup, Search clients). Only
+      // seed when unset so a user's own card choices are never overwritten.
+      if (!learning.getSetting(getDb(), 'dashboard_hidden_cards')) {
+        learning.setSetting(getDb(), 'dashboard_hidden_cards',
+          JSON.stringify(['dash-quickfind', 'dash-autofile', 'dash-storage', 'dash-backup', 'dash-clients']));
+      }
+    } catch (e) { logger.warn?.('onboarding flag write failed: ' + e.message); }
     openMainShell();
+    if (!welcomeSeen()) showWelcome();   // first-run concepts tour, on top of Home
+  });
+  // First-run familiarisation tour: close (set the flag) and optionally jump to Import.
+  ipcMain.on('welcome-done', (_e, action) => {
+    try { require('../database/modules/learning').setSetting(getDb(), 'welcome_seen', 'true'); }
+    catch (e) { logger.warn?.('welcome flag write failed: ' + e.message); }
+    const wl = windows['welcome'];
+    destroyWindow('welcome');
+    if (action === 'import') { try { windows['main']?.webContents.send('welcome-goto-import'); } catch {} }
+    // Open the practice run only AFTER the welcome window has fully closed — otherwise
+    // createWindow parents the tutorial to the still-focused (closing) welcome window,
+    // so it dies with it. Deferring to 'closed' lets it parent to the main shell.
+    else if (action === 'practice') {
+      if (wl && !wl.isDestroyed()) wl.once('closed', () => showTutorial());
+      else showTutorial();
+    }
+  });
+  // Reopen the tour from the user menu (no first-run gate — explicit request).
+  ipcMain.on('open-welcome', () => showWelcome());
+  // Sandboxed practice run — open from the user menu (Slice 3 adds the other entry points).
+  ipcMain.on('open-tutorial', () => showTutorial());
+  // Close the practice run and optionally jump the Home shell to Import.
+  ipcMain.on('tutorial-done', (_e, action) => {
+    try { require('../database/modules/learning').setSetting(getDb(), 'practice_run_completed', 'true'); } catch {}
+    destroyWindow('tutorial');   // fires 'closed' → wipeTutorialTemp
+    if (action === 'import') { try { windows['main']?.webContents.send('welcome-goto-import'); } catch {} }
   });
   // Re-run setup from Settings → General. Admin only (it changes app-wide config).
   ipcMain.on('open-onboarding', () => {
@@ -688,6 +1174,16 @@ app.whenReady().then(() => {
     else win.webContents.once('did-finish-load', push);
   });
 
+  // Open an external link (e.g. "Purchase licence" → the Scan Finder website) in the
+  // user's default browser. Hardened: only http(s) URLs are ever passed to the OS, so a
+  // renderer can't smuggle a file:// or app-protocol URL through this channel.
+  ipcMain.on('open-external', (_e, url) => {
+    try {
+      const u = new URL(String(url || ''));
+      if (u.protocol === 'https:' || u.protocol === 'http:') shell.openExternal(u.href);
+    } catch { /* malformed URL — ignore */ }
+  });
+
   // ── Teach-a-new-document wizard (guided, non-technical) ──────────────────────
   // Writes templates/learning, so Admin+Edit like Review. Mirrors the review
   // opener pattern: open cold, or open targeted at a just-scanned document.
@@ -717,7 +1213,7 @@ app.whenReady().then(() => {
     // out as Admin-exclusive — Edit/Read Only are not meant to reach it at
     // all, not just see it with options greyed out.
     if (!authModule.hasRole('admin')) return;
-    createWindow('settings', { width: 1100, height: 680, minWidth: 900, minHeight: 520 });
+    createWindow('settings', { width: 1320, height: 820, minWidth: 1280, minHeight: 660 });
   });
 
   // Open Settings focused on a specific template (from Review → "Add to
@@ -726,7 +1222,7 @@ app.whenReady().then(() => {
     if (!authModule.hasRole('admin')) return;
     const alreadyOpen = !!windows['settings'];
     pendingSettingsTemplateId = templateId;
-    createWindow('settings', { width: 1100, height: 680, minWidth: 900, minHeight: 520 });
+    createWindow('settings', { width: 1320, height: 820, minWidth: 1280, minHeight: 660 });
     if (alreadyOpen) {
       safeSend(windows['settings']?.webContents, 'navigate-to-template', templateId);
       pendingSettingsTemplateId = null;
@@ -738,15 +1234,51 @@ app.whenReady().then(() => {
     pendingSettingsTemplateId = null;
     return id;
   });
-  ipcMain.on('open-search-window', () => {
+
+  // Open Settings focused on a specific section/tab (e.g. Activate → 'licensing').
+  ipcMain.on('open-settings-window-at-section', (_e, section) => {
+    if (!authModule.hasRole('admin')) return;
+    const alreadyOpen = !!windows['settings'];
+    pendingSettingsSection = section;
+    createWindow('settings', { width: 1320, height: 820, minWidth: 1280, minHeight: 660 });
+    if (alreadyOpen) {
+      safeSend(windows['settings']?.webContents, 'navigate-to-section', section);
+      pendingSettingsSection = null;
+    }
+  });
+  ipcMain.handle('get-settings-section-target', () => {
+    const s = pendingSettingsSection;
+    pendingSettingsSection = null;
+    return s;
+  });
+  ipcMain.on('open-search-window', (_e, q) => {
     if (!authModule.getCurrentUser()) return;
+    const query = (typeof q === 'string' && q.trim()) ? q.trim() : null;
+    const alreadyOpen = !!windows['search'];
+    pendingSearchQuery = query;
     createWindow('search', { width: 1200, height: 780, minWidth: 1000, minHeight: 600 });
+    if (alreadyOpen && query) {
+      // Window already loaded — push the query directly (no get-search-target poll).
+      safeSend(windows['search']?.webContents, 'search-set-query', query);
+      pendingSearchQuery = null;
+    }
+  });
+  // The search renderer pulls this once on load to pre-fill the Quick-find query (else null).
+  ipcMain.handle('get-search-target', () => {
+    const q = pendingSearchQuery;
+    pendingSearchQuery = null;
+    return q;
   });
 
   // All IPC handlers are registered — now serialize the startup windows: the
   // splash stays alone for ~2s, then the (preloaded, hidden) login window is
   // revealed as the single follow-on. No overlap with the splash.
+  setupTray();          // system-tray icon, present for the life of the app
   launchStartupWindow();
 });
 
-app.on('window-all-closed', () => { app.quit(); });
+// With "close to tray" ON, primary windows hide (kept alive) so this never fires
+// during normal use, and a real quit comes via tray Exit (isQuitting). With the
+// setting OFF, windows close normally and this restores the plain quit-on-close
+// behaviour. Either way the app never lingers headless.
+app.on('window-all-closed', () => { if (isQuitting || !closeToTrayEnabled()) app.quit(); });

@@ -32,7 +32,7 @@ function freshDb() {
       id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER, from_user_id INTEGER, from_username TEXT,
       to_user_id INTEGER, to_username TEXT, action_required TEXT, state TEXT DEFAULT 'pending',
       comment TEXT, resolution_comment TEXT, claimed_by_id INTEGER, claimed_by_username TEXT,
-      claimed_at TEXT, resolved_at TEXT, version INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now'))
+      claimed_at TEXT, resolved_at TEXT, stamped_path TEXT, version INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now'))
     );
   `);
   db.prepare(`INSERT INTO document_types (id,name,slug) VALUES (1,'Invoice','invoice')`).run();
@@ -53,7 +53,9 @@ const reader = { userId: 3, username: 'reader', role: 'readonly' };
 function main() {
   const db = freshDb();
   const audits = [];
-  const wf = createWorkflowService({ audit: (e) => audits.push(e) });
+  // Stub the stamp so the suite stays hermetic (no filesystem / PDF work on resolve).
+  const stamps = [];
+  const wf = createWorkflowService({ audit: (e) => audits.push(e), stampDecision: (a) => { stamps.push(a); return Promise.resolve(null); } });
 
   // ── assign authorization + preconditions ─────────────────────────────────────
   check('readonly cannot assign', wf.assign(db, reader, { documentId: 1, toUserId: 3, actionRequired: 'acknowledge' }).code === 'FORBIDDEN');
@@ -95,6 +97,14 @@ function main() {
     db.prepare('SELECT status,workflow_status FROM documents WHERE id=1').get().status === 'confirmed'
     && db.prepare('SELECT workflow_status FROM documents WHERE id=1').get().workflow_status === 'approved');
 
+  // ── mark-paid decision (a deciding action; editor/admin only, optional note) ──
+  const ap = wf.assign(db, admin, { documentId: 1, toUserId: 2, actionRequired: 'approve' });
+  const paid = wf.resolve(db, editor, ap.route.id, { decision: 'paid', comment: 'paid via BACS' });
+  check('editor marks paid -> state paid + note recorded',
+    paid.ok && paid.route.state === 'paid' && paid.route.resolution_comment === 'paid via BACS');
+  check('readonly cannot mark paid (role gate)',
+    wf.resolve(db, reader, wf.assign(db, admin, { documentId: 1, toUserId: 3, actionRequired: 'approve' }).route.id, { decision: 'paid' }).code === 'FORBIDDEN');
+
   // ── optimistic concurrency (stale version loses) ─────────────────────────────
   const a4 = wf.assign(db, admin, { documentId: 1, toUserId: 2, actionRequired: 'approve' });
   const staleV = a4.route.version;        // version before claim
@@ -111,6 +121,16 @@ function main() {
 
   // ── completed view ───────────────────────────────────────────────────────────
   check('completed view lists resolved items for admin', wf.completed(db, admin).length >= 3);
+
+  // ── stamped-copy recording + DTO exposure ────────────────────────────────────
+  // (resolve() fires the stamp fire-and-forget; here we cover the deterministic pieces.)
+  const dto = require('./dto');
+  check('projectRoute has_stamp=false with no stamp', dto.projectRoute({ id: 1, stamped_path: null }).has_stamp === false);
+  check('projectRoute has_stamp=true with a stamp',   dto.projectRoute({ id: 1, stamped_path: 'C:/x.pdf' }).has_stamp === true);
+  check('projectRoute never leaks the stamped_path',  dto.projectRoute({ id: 1, stamped_path: 'C:/x.pdf' }).stamped_path === undefined);
+  const dbwf = require('../../database/modules/workflow');
+  dbwf.setStampedPath(db, a3.route.id, 'C:/inbox/Invoice.APPROVED-stamped.pdf');
+  check('setStampedPath records the path on the route', dbwf.getRoute(db, a3.route.id).stamped_path === 'C:/inbox/Invoice.APPROVED-stamped.pdf');
 
   // ── 5b: uncommitted docs are routable + workflow_lock editGuard ───────────────
   const un = wf.assign(db, admin, { documentId: 2, toUserId: 2, actionRequired: 'approve' }); // doc2 = needs_review

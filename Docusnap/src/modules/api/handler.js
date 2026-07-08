@@ -29,6 +29,9 @@ const { URL } = require('url');
 
 const searchService  = require('../../services/searchService');
 const previewService = require('../../services/previewService');
+const documents      = require('../../../database/modules/documents');
+const doctypes       = require('../../../database/modules/document_types');
+const reviewService  = require('../../services/reviewService');
 const dto            = require('../../services/dto');
 const sessionService    = require('../../services/sessionService');
 const authService       = require('../../services/authService');
@@ -42,7 +45,8 @@ const path              = require('path');
 const WF_HTTP = { FORBIDDEN: 403, NOT_FOUND: 404, CONFLICT: 409 };
 const wfStatus = (code) => WF_HTTP[code] || 400;
 
-const API_CONTRACT_VERSION = '1.0.0';
+const API_CONTRACT_VERSION = '1.1.0';   // NB: ADDING endpoints (e.g. recycle bin) needs no bump — the
+                                        // handshake checks MAJOR only. Keep server + client in lockstep.
 const API_PREFIX = '/v1';
 const CLIENT_CONTRACT_HEADER = 'x-scanfinder-client-contract';
 
@@ -55,8 +59,22 @@ function clientContractCompatible(headerVal) {
   const m = String(headerVal).match(/^(\d+)\./);
   return !!m && m[1] === API_CONTRACT_VERSION.split('.')[0];
 }
+// Permanent purge: remove the filed file + the app-managed working copy. The path is
+// resolved SERVER-SIDE from the document row only (never trusts a client-supplied path).
+function _purgeDocFiles(db, id) {
+  const fs = require('fs');
+  const doc = documents.getById(db, id);
+  if (!doc) return;
+  for (const p of [documents.resolveFilePath(doc), doc.working_path]) {
+    if (p && fs.existsSync(p)) { try { fs.unlinkSync(p); } catch {} }
+  }
+}
 const TOTP_ISSUER = 'ScanFinder';
 const MAX_BODY_BYTES = 1 * 1024 * 1024;
+// Bound concurrent zone-OCR (correction targeting) so many reviewers/drags can't fan
+// out unbounded Tesseract child processes on the host. Module-level (single process).
+const OCR_MAX_INFLIGHT = 3;
+let _ocrInFlight = 0;
 
 function isLoopback(addr) {
   return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
@@ -131,7 +149,7 @@ function createRequestListener(ctx) {
   const log = ctx.logger?.log?.bind(ctx.logger) || (() => {});
   const learning = ctx.learning || require('../../../database/modules/learning');
   const dbAuth = ctx.dbAuth || require('../../../database/modules/auth');
-  const sessions = ctx.sessionStore || sessionService.createSessionStore();
+  const sessions = ctx.sessionStore || sessionService.shared();
   const authenticator = ctx.authenticator || authService.createAuthenticator();
 
   const audit = (entry) => {
@@ -142,10 +160,50 @@ function createRequestListener(ctx) {
   const workflow = ctx.workflowService || workflowService.createWorkflowService({ audit });
   const actorOf = (session) => ({ userId: session.userId, username: session.username, role: session.role });
 
+  // The SAME transport-agnostic review orchestration the desktop uses (Phase 2). The API injects
+  // its own hooks: file immediately (a client holds no host file handle), drain the original best-
+  // effort, broadcast counts to the desktop badge when possible, and never teach (no template
+  // promote). The atomic claim-before-file makes a client confirm race-safe vs the desktop + auto-file.
+  const reviewSvc = ctx.reviewService || reviewService.createReviewService({
+    audit: (_db, entry) => audit(entry),
+    notifyCounts: (db) => {
+      if (!ctx.notifyMainWindow) return;
+      try {
+        ctx.notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
+        ctx.notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
+      } catch { /* best-effort */ }
+    },
+    onScheduleSourceMove: ({ srcPath }) => {
+      try { require('../filing/handler').removeSourceFile(ctx.fs || require('fs'), srcPath, ctx.logger).catch(() => {}); }
+      catch { /* best-effort drain */ }
+    },
+    releaseDelayMs: 0,
+  });
+
+  // Belt-and-braces shape guards for the client-supplied field VALUES (filing/learning also
+  // sanitise; this rejects an obviously malformed body early). VALUES only — never paths.
+  const _isPlainObject = (o) => !!o && typeof o === 'object' && !Array.isArray(o);
+  const _isFlatValues = (o) => o == null || (_isPlainObject(o) &&
+    Object.values(o).every(v => v == null || typeof v === 'string' || typeof v === 'number'));
+  const _isCorrections = (o) => o == null || (_isPlainObject(o) &&
+    Object.values(o).every(v => v == null || _isPlainObject(v)));
+
+  // Multi-user review presence ("Currently being reviewed by <name>") — the SAME shared in-process
+  // map the desktop publishes to. Advisory only; the atomic confirm is the authority. A viewerKey
+  // is the client's seat key (or a per-user API fallback), so excludes-self works.
+  const presence = ctx.presence || require('../../services/presenceService').shared();
+  const viewerKeyOf = (s) => s.clientKey || `api:${s.userId}`;
+  const viewerOf = (s) => ({
+    key: viewerKeyOf(s), username: s.username,
+    displayName: ((dbAuth.getUserById(getDb(), s.userId) || {}).display_name) || s.username,
+  });
+
   // Detached-client add-on entitlement (ctx may override for tests/demo).
   const checkEntitlement = ctx.checkEntitlement || (() => entitlementService.checkClientEntitlement(getDb()));
   // Routes that expose the licensed feature itself (gated); auth/health/entitlement are not.
-  const FEATURE_ROUTE = new RegExp(`^${API_PREFIX}/(search|documents|workflow)(/|$)`);
+  // review + doc-types ride the SAME search/client entitlement (role supplies the privilege).
+  const FEATURE_ROUTE = new RegExp(`^${API_PREFIX}/(search|documents|workflow|review|doc-types)(/|$)`);
+  const WORKFLOW_ROUTE = new RegExp(`^${API_PREFIX}/workflow(/|$)`);   // gated on the workflow add-on, not just search
 
   const pageDeps = () => ({
     fs: ctx.fs || require('fs'),
@@ -193,11 +251,33 @@ function createRequestListener(ctx) {
       // sign in and discover it is not licensed.
       if (FEATURE_ROUTE.test(pathname)) {
         const ent = checkEntitlement();
-        if (!ent.entitled) {
+        const isWorkflow = WORKFLOW_ROUTE.test(pathname);
+        // search/documents need the SEARCH entitlement; workflow needs the WORKFLOW add-on.
+        // (Legacy/overridden ents without per-feature info still gate search via top-level.)
+        const feat = isWorkflow ? ent.workflow : (ent.search || { entitled: ent.entitled, seats: ent.seats });
+        if (!feat || !feat.entitled) {
           return sendJson(res, 402, {
-            error: 'The ScanFinder search client is not licensed for this server.',
-            code: 'FEATURE_NOT_LICENSED', feature: ent.feature,
+            error: isWorkflow
+              ? 'The workflow add-on is not licensed for this server.'
+              : 'The ScanFinder search client is not licensed for this server.',
+            code: 'FEATURE_NOT_LICENSED', feature: isWorkflow ? 'workflow' : ent.feature,
           });
+        }
+        // Workflow consumes a sub-seat ON the client's held search seat (workflow ≤ search,
+        // capped independently). Resolve the session here so the claim keys on its seat.
+        if (isWorkflow) {
+          const session = requireSession(req, res); if (!session) return;
+          if (ctx.seatPool && session.clientKey) {
+            const w = ctx.seatPool.claimWorkflow(session.clientKey, feat.seats);
+            if (!w.ok) {
+              return sendJson(res, 402, {
+                error: w.code === 'NO_SEAT'
+                  ? 'A search seat is required before using workflow.'
+                  : 'All workflow seats are in use.',
+                code: w.code === 'NO_SEAT' ? 'NO_SEARCH_SEAT' : 'WORKFLOW_LIMIT', feature: 'workflow',
+              });
+            }
+          }
         }
       }
 
@@ -302,8 +382,36 @@ function createRequestListener(ctx) {
       if (req.method === 'POST' && pathname === `${API_PREFIX}/auth/logout`) {
         const tok = bearerToken(req);
         const session = sessions.verify(tok);
-        if (session) audit({ user_id: session.userId, action: 'logout', action_category: 'auth', outcome: 'success' });
+        if (session) {
+          audit({ user_id: session.userId, action: 'logout', action_category: 'auth', outcome: 'success' });
+          try { presence.releaseAll(viewerKeyOf(session)); } catch { /* advisory */ }
+        }
         sessions.revoke(tok);
+        return sendJson(res, 200, { ok: true });
+      }
+
+      // ── Auth-required: self-service password change (so a client user who signed
+      //    in with an admin-issued TEMP password can set their own). Verifies the
+      //    current password; same 8–128 policy as the desktop self-service change. ──
+      if (req.method === 'POST' && pathname === `${API_PREFIX}/auth/change-password`) {
+        const session = requireSession(req, res); if (!session) return;
+        let body; try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+        const pwMod = require('../auth/password');
+        const user  = dbAuth.getUserById(getDb(), session.userId);
+        if (!user) return sendJson(res, 401, { error: 'Account no longer exists.' });
+        const cur = String((body && body.currentPassword) || '');
+        const nw  = String((body && body.newPassword) || '');
+        const ok  = await pwMod.verifyPassword(user.password_hash, cur);
+        if (!ok) {
+          audit({ user_id: user.id, action: 'password_change', action_category: 'auth', outcome: 'failure',
+                  actor_username: user.username, details: 'client_bad_current' });
+          return sendJson(res, 400, { error: 'Current password is incorrect.' });
+        }
+        if (nw.length < 8 || nw.length > 128) return sendJson(res, 400, { error: 'New password must be 8–128 characters.' });
+        if (nw === cur) return sendJson(res, 400, { error: 'New password must be different from your current password.' });
+        dbAuth.setUserPassword(getDb(), user.id, await pwMod.hashPassword(nw), false);
+        audit({ user_id: user.id, action: 'password_change', action_category: 'auth', outcome: 'success',
+                actor_username: user.username, details: 'self_service_client' });
         return sendJson(res, 200, { ok: true });
       }
 
@@ -380,6 +488,126 @@ function createRequestListener(ctx) {
         return sendJson(res, 200, { pages });
       }
 
+      // ── Auth-required: single page-1 thumbnail (for list rows) ────────────────
+      const thumbMatch = pathname.match(new RegExp(`^${API_PREFIX}/documents/(\\d+)/thumbnail$`));
+      if (req.method === 'GET' && thumbMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        const id = Number(thumbMatch[1]);
+        // Same server-side path resolution as /pages (F-02): never trust client paths.
+        let folderPath = null, filename = null;
+        const P = ctx.path || require('path');
+        const row = getDb().prepare(
+          'SELECT working_path, stored_path, folder_path, original_filename FROM documents WHERE id = ?').get(id);
+        if (row) {
+          const pick = row.working_path || row.stored_path
+            || (row.folder_path && row.original_filename ? P.join(row.folder_path, row.original_filename) : null);
+          if (pick) { folderPath = P.dirname(pick); filename = P.basename(pick); }
+        }
+        const thumbnail = await previewService.getThumbnail(
+          getDb(), { docId: id, folderPath, filename }, pageDeps());
+        return sendJson(res, 200, { thumbnail });
+      }
+
+      // ── Auth-required: RECYCLE BIN (soft delete / restore / purge) ────────────
+      // Delete is recoverable (status='deleted', files kept) — Admin/Edit. Permanent
+      // removal (purge) is Admin only. Every action is audited; the on-disk path is
+      // resolved SERVER-SIDE only (never from the client) when purging.
+      const isWriter = (s) => s.role === 'admin' || s.role === 'edit';
+
+      // ── Auth-required (writer): CORRECTION-ONLY targeting — zone-OCR a client-cropped
+      // region → return TEXT so the reviewer can fill a field without typing. The client
+      // sends a small cropped PNG (a region of the page preview it already has); we run
+      // the SAME python_backend/ocr/region.py the desktop ⊕ tool uses, UNCHANGED, and
+      // return text ONLY. There is NO file resolution (the input is the client's pixels,
+      // so there is no path to leak), NO learning, NO anchors/templates — it cannot touch
+      // the extraction or learning pipeline. The doc id scopes the audit row only. Bounded
+      // by the 1 MB body cap + an in-flight concurrency cap (429).
+      const ocrRegionMatch = pathname.match(new RegExp(`^${API_PREFIX}/documents/(\\d+)/ocr-region$`));
+      if (req.method === 'POST' && ocrRegionMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        if (_ocrInFlight >= OCR_MAX_INFLIGHT) return sendJson(res, 429, { error: 'too many OCR requests — retry' });
+        let body; try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+        const b64 = (body && typeof body.imageBase64 === 'string') ? body.imageBase64 : '';
+        if (!b64) return sendJson(res, 400, { error: 'imageBase64 (a small cropped PNG) is required' });
+        const osMod = require('os'); const fsx = ctx.fs || require('fs'); const P = ctx.path || path;
+        const tmp = P.join(osMod.tmpdir(), `ds_v1ocr_${Date.now()}_${Math.random().toString(36).slice(2)}.png`);
+        try { fsx.writeFileSync(tmp, Buffer.from(b64, 'base64')); }
+        catch { return sendJson(res, 400, { error: 'bad image data' }); }
+        const script = ctx.resourcePath('python_backend', 'ocr', 'region.py');
+        _ocrInFlight++;
+        let done = false;
+        const finish = (status, payload) => {
+          if (done) return; done = true; _ocrInFlight--;
+          try { fsx.unlinkSync(tmp); } catch {}
+          sendJson(res, status, payload);
+        };
+        try {
+          const proc = (ctx.spawn || require('child_process').spawn)(ctx.pythonExe(),
+            ctx.pythonArgs(script, '--image-file', tmp, '--tesseract', ctx.tesseractPath()),
+            { windowsHide: true });
+          let out = '', err = '';
+          proc.stdout.on('data', d => { out += d.toString(); });
+          proc.stderr.on('data', d => { err += d.toString(); });
+          proc.on('close', () => { if (err) { try { log('v1 ocr-region stderr: ' + err.trim()); } catch {} } finish(200, { text: out.trim() }); });
+          proc.on('error', (e) => { try { log('v1 ocr-region spawn error: ' + e.message); } catch {} finish(500, { error: 'ocr failed' }); });
+        } catch (e) { finish(500, { error: 'ocr failed' }); }
+        try { audit({ user_id: session.userId, action: 'ocr_region', action_category: 'document',
+                      outcome: 'success', document_id: Number(ocrRegionMatch[1]), metadata: { via: 'client' } }); } catch {}
+        return;
+      }
+
+      if (req.method === 'GET' && pathname === `${API_PREFIX}/documents/deleted`) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        const rows = documents.getDeletedQueue(getDb());
+        return sendJson(res, 200, { deleted: dto.projectSearchResult({ confirmed: rows, uncommitted: [] }).confirmed });
+      }
+
+      const delMatch = pathname.match(new RegExp(`^${API_PREFIX}/documents/(\\d+)/delete$`));
+      if (req.method === 'POST' && delMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        const id = Number(delMatch[1]);
+        documents.softDelete(getDb(), id);
+        audit({ user_id: session.userId, action: 'document_deleted', action_category: 'document',
+                outcome: 'success', document_id: id, metadata: { soft: true, via: 'client' } });
+        return sendJson(res, 200, { ok: true });
+      }
+
+      const restoreMatch = pathname.match(new RegExp(`^${API_PREFIX}/documents/(\\d+)/restore$`));
+      if (req.method === 'POST' && restoreMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        const id = Number(restoreMatch[1]);
+        documents.restoreDeleted(getDb(), id);
+        audit({ user_id: session.userId, action: 'document_restored', action_category: 'document',
+                outcome: 'success', document_id: id, metadata: { via: 'client' } });
+        return sendJson(res, 200, { ok: true });
+      }
+
+      const purgeMatch = pathname.match(new RegExp(`^${API_PREFIX}/documents/(\\d+)/purge$`));
+      if (req.method === 'POST' && purgeMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        if (session.role !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+        const id = Number(purgeMatch[1]);
+        _purgeDocFiles(getDb(), id);
+        documents.deleteDoc(getDb(), id);
+        audit({ user_id: session.userId, action: 'document_purged', action_category: 'document',
+                outcome: 'success', document_id: id, metadata: { via: 'client' } });
+        return sendJson(res, 200, { ok: true });
+      }
+
+      if (req.method === 'POST' && pathname === `${API_PREFIX}/documents/purge-all`) {
+        const session = requireSession(req, res); if (!session) return;
+        if (session.role !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+        const ids = documents.getDeletedQueue(getDb()).map(d => d.id);
+        for (const id of ids) { _purgeDocFiles(getDb(), id); documents.deleteDoc(getDb(), id); }
+        audit({ user_id: session.userId, action: 'recycle_bin_emptied', action_category: 'document',
+                outcome: 'success', metadata: { count: ids.length, via: 'client' } });
+        return sendJson(res, 200, { purged: ids.length });
+      }
+
       // ── Auth-required: mailbox / approval workflow ────────────────────────────
       const wfList = pathname.match(new RegExp(`^${API_PREFIX}/workflow/(inbox|sent|assigned|completed)$`));
       if (req.method === 'GET' && wfList) {
@@ -407,6 +635,26 @@ function createRequestListener(ctx) {
                     : sendJson(res, wfStatus(r.code), { error: r.error, code: r.code });
       }
 
+      // Stamped-copy pages of a resolved decision, by route id. The stamped_path is
+      // resolved SERVER-SIDE (never sent to the client, mirroring the doc-pages boundary);
+      // only a party to the route (sender/recipient) or an admin may view it.
+      const wfStamp = pathname.match(new RegExp(`^${API_PREFIX}/workflow/routes/(\\d+)/stamped$`));
+      if (req.method === 'GET' && wfStamp) {
+        const session = requireSession(req, res); if (!session) return;
+        const route = require('../../../database/modules/workflow').getRoute(getDb(), Number(wfStamp[1]));
+        if (!route || !route.stamped_path) return sendJson(res, 404, { error: 'no stamped copy' });
+        if (!(session.userId === route.to_user_id || session.userId === route.from_user_id || session.role === 'admin')) {
+          return sendJson(res, 403, { error: 'forbidden' });
+        }
+        const P = ctx.path || require('path');
+        if (!require('fs').existsSync(route.stamped_path)) return sendJson(res, 404, { error: 'stamped copy missing' });
+        const pages = await previewService.getDocumentPages(getDb(), {
+          docId: route.document_id, folderPath: P.dirname(route.stamped_path),
+          filename: P.basename(route.stamped_path), exact: true,
+        }, pageDeps());
+        return sendJson(res, 200, { pages });
+      }
+
       // Transition a route: claim | resolve | recall.
       const wfAct = pathname.match(new RegExp(`^${API_PREFIX}/workflow/routes/(\\d+)/(claim|resolve|recall)$`));
       if (req.method === 'POST' && wfAct) {
@@ -420,6 +668,128 @@ function createRequestListener(ctx) {
         else r = workflow.resolve(getDb(), actor, id, { decision: body.decision, comment: body.comment, expectedVersion: body.version });
         return r.ok ? sendJson(res, 200, { route: dto.projectRoute(r.route) })
                     : sendJson(res, wfStatus(r.code), { error: r.error, code: r.code });
+      }
+
+      // ── Auth-required: REVIEW QUEUE + confirm / defer / undefer (Admin/Edit) ───
+      // The detached client clears the SHARED needs_review queue. Role-gated server-side
+      // (not UI-only); confirm resolves on-disk locations from the doc row (F-02) and routes
+      // through the SAME race-safe reviewService the desktop uses (claim-before-file → the loser
+      // of a race gets 409 ALREADY_FILED). Field VALUES travel in the body; paths never do.
+      if (req.method === 'GET' && pathname === `${API_PREFIX}/review/queue`) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        const rows = dto.projectReviewQueue(reviewSvc.queue(getDb()));
+        const selfKey = viewerKeyOf(session);
+        for (const r of rows) r.viewers = presence.viewers(r.id, selfKey);   // who else is in each doc
+        return sendJson(res, 200, { queue: rows });
+      }
+      if (req.method === 'GET' && pathname === `${API_PREFIX}/review/deferred`) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        const rows = dto.projectReviewQueue(reviewSvc.deferred(getDb()));
+        const selfKey = viewerKeyOf(session);
+        for (const r of rows) r.viewers = presence.viewers(r.id, selfKey);
+        return sendJson(res, 200, { deferred: rows });
+      }
+      if (req.method === 'GET' && pathname === `${API_PREFIX}/review/counts`) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        return sendJson(res, 200, reviewSvc.counts(getDb()));
+      }
+
+      // Document types + field definitions (review type dropdown, required-field highlighting).
+      if (req.method === 'GET' && pathname === `${API_PREFIX}/doc-types`) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        return sendJson(res, 200, { types: dto.projectDocTypes(doctypes.getAllWithFieldsAll(getDb())) });
+      }
+
+      // Confirm / file a reviewed document.
+      const confirmMatch = pathname.match(new RegExp(`^${API_PREFIX}/documents/(\\d+)/confirm$`));
+      if (req.method === 'POST' && confirmMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        const id = Number(confirmMatch[1]);
+        // Multi-point licensing enforcement (filing is a high-value write path).
+        if (require('../licensing/handler').licenseDenied(getDb())) {
+          return sendJson(res, 403, { error: 'A valid license is required to file documents.', code: 'LICENSE' });
+        }
+        // Workflow lock: a routed doc can't be reviewed/filed (admin override audited by the guard).
+        const guard = workflowService.editGuard(getDb(), id, session.role);
+        if (!guard.ok) return sendJson(res, 409, { error: guard.error, code: guard.code });
+        let body; try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+        if (!_isFlatValues(body.allValues) || !_isCorrections(body.corrections)) {
+          return sendJson(res, 400, { error: 'invalid field values' });
+        }
+        // SECURITY (F-02): the on-disk source is resolved SERVER-SIDE from the doc row — the body
+        // carries field VALUES only, never paths.
+        const row = getDb().prepare('SELECT folder_path, original_filename FROM documents WHERE id = ?').get(id);
+        if (!row) return sendJson(res, 404, { error: 'not found' });
+        const slug = body.document_type_slug ? String(body.document_type_slug) : null;
+        if (slug && !doctypes.getWithFields(getDb(), slug)) return sendJson(res, 400, { error: 'unknown document type' });
+        const r = await reviewSvc.confirm(getDb(), actorOf(session), {
+          document_id: id,
+          folder_path: row.folder_path,
+          original_filename: row.original_filename,
+          corrections: body.corrections || {},
+          allValues: body.allValues || {},
+          supplier_name: body.supplier_name || null,
+          document_type: body.document_type || null,
+          document_type_slug: slug,
+          taught_fields: [],   // the client never teaches
+          bulk: false,
+          // allowRefile deliberately OMITTED (server-decided, never client-supplied): the client
+          // only ever confirms QUEUE items, so a confirm on an already-filed doc must lose the race
+          // (ALREADY_FILED), not silently re-file/overwrite. A malicious body can't opt into re-file.
+        });
+        if (!r.ok) {
+          const status = (r.code === 'ALREADY_FILED' || r.code === 'NO_OUTPUT') ? 409 : 400;
+          return sendJson(res, status, { error: r.error, code: r.code || null, ...(r.confirmedBy ? { confirmedBy: r.confirmedBy } : {}) });
+        }
+        // DTO: filename only — never filePath/metadataPath/srcPath.
+        return sendJson(res, 200, { success: true, filename: r.filename, isDuplicate: !!r.isDuplicate });
+      }
+
+      // Defer a reviewed document.
+      const deferMatch = pathname.match(new RegExp(`^${API_PREFIX}/documents/(\\d+)/defer$`));
+      if (req.method === 'POST' && deferMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        const id = Number(deferMatch[1]);
+        const guard = workflowService.editGuard(getDb(), id, session.role);
+        if (!guard.ok) return sendJson(res, 409, { error: guard.error, code: guard.code });
+        const r = reviewSvc.defer(getDb(), actorOf(session), id);
+        return r.ok ? sendJson(res, 200, { ok: true }) : sendJson(res, 409, { error: r.error, code: r.code });
+      }
+
+      // Restore a deferred document to the review queue (distinct from the recycle-bin /restore).
+      const undeferMatch = pathname.match(new RegExp(`^${API_PREFIX}/documents/(\\d+)/undefer$`));
+      if (req.method === 'POST' && undeferMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        const id = Number(undeferMatch[1]);
+        const guard = workflowService.editGuard(getDb(), id, session.role);
+        if (!guard.ok) return sendJson(res, 409, { error: guard.error, code: guard.code });
+        const r = reviewSvc.restore(getDb(), actorOf(session), id);
+        return r.ok ? sendJson(res, 200, { ok: true }) : sendJson(res, 409, { error: r.error, code: r.code });
+      }
+
+      // ── Presence: "I'm viewing this doc" heartbeat + release (advisory) ────────
+      // Register/refresh the caller as a viewer and return the OTHER viewers for the banner.
+      // The client beats this ~every 25s while a doc is open; a hard disconnect is reaped by TTL.
+      const viewingMatch = pathname.match(new RegExp(`^${API_PREFIX}/review/(\\d+)/viewing$`));
+      if (req.method === 'POST' && viewingMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        const id = Number(viewingMatch[1]);
+        presence.heartbeat(id, viewerOf(session));
+        return sendJson(res, 200, { viewers: presence.viewers(id, viewerKeyOf(session)) });
+      }
+      const releaseViewMatch = pathname.match(new RegExp(`^${API_PREFIX}/review/(\\d+)/release$`));
+      if (req.method === 'POST' && releaseViewMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        presence.release(Number(releaseViewMatch[1]), viewerKeyOf(session));
+        return sendJson(res, 200, { ok: true });
       }
 
       return sendJson(res, 404, { error: 'not found' });
@@ -623,7 +993,16 @@ function pairingOk(url, learning, db) {
   if (!code) return { ok: true };
   try { exp = learning.getSetting(db, 'client_api_pairing_expires'); } catch { /* ignore */ }
   if (exp && Date.now() > Number(exp)) return { ok: false, reason: 'expired' };
-  return (url.searchParams.get('code') || '') === code ? { ok: true } : { ok: false, reason: 'bad_code' };
+  // Constant-time compare of the pairing code (no early-exit timing side-channel). The
+  // length pre-check both guards timingSafeEqual (which throws on unequal lengths) and is a
+  // negligible leak for a short-lived pairing secret.
+  const provided = url.searchParams.get('code') || '';
+  let match = false;
+  try {
+    const a = Buffer.from(provided), b = Buffer.from(String(code));
+    match = a.length === b.length && require('crypto').timingSafeEqual(a, b);
+  } catch { match = false; }
+  return match ? { ok: true } : { ok: false, reason: 'bad_code' };
 }
 
 /**
@@ -674,9 +1053,16 @@ function register(ctx) {
     requireRole('admin');
     const ent = entitlementService.checkClientEntitlement(getDb());
     const leases = ctx.seatPool ? ctx.seatPool.list() : [];
+    const wfInUse  = leases.filter(l => l.workflowEnabled).length;
+    const search   = ent.search   || { entitled: ent.entitled, seats: ent.seats };
+    const workflow = ent.workflow || { entitled: false, seats: 0 };
     return {
       entitled: ent.entitled, feature: ent.feature, seats: ent.seats,
       inUse: leases.length, free: Math.max(0, ent.seats - leases.length),
+      // Per-feature (Stage 2 display): search = the base concurrent seat pool;
+      // workflow = the add-on sub-seats held ON a search seat (workflow <= search).
+      search:   { seats: search.seats,   inUse: leases.length, free: Math.max(0, search.seats - leases.length) },
+      workflow: { seats: workflow.seats, inUse: wfInUse,        free: Math.max(0, workflow.seats - wfInUse) },
       leases,
     };
   });

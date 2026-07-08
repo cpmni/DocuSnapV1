@@ -23,7 +23,7 @@ const { URL } = require('url');
 
 // The contract version this client build targets — keep in lockstep with the
 // server's API_CONTRACT_VERSION (src/modules/api/handler.js).
-const CLIENT_CONTRACT = '1.0.0';
+const CLIENT_CONTRACT = '1.1.0';   // keep in lockstep with the server's API_CONTRACT_VERSION
 
 function parseVer(v) {
   const m = String(v || '').match(/^(\d+)\.(\d+)\.(\d+)/);
@@ -49,9 +49,20 @@ function createClient(opts = {}) {
   const expectedContract = opts.expectedContract || CLIENT_CONTRACT;
   const allowSelfSigned = !!opts.allowSelfSigned; // dev-only escape hatch (env), not the UI
   const ca = opts.ca || null;                     // pinned server cert/CA (PEM) — verification stays ON
+  const clientId = opts.clientId || null;         // stable per-install id → sticky seat survives a DHCP/IP change
+  const hostname = opts.hostname || null;         // display-only client identity (never used for enforcement)
   let token = null;
 
-  function request(method, p, { body, withAuth, insecure } = {}) {
+  // Reuse one keep-alive TLS connection for the pinned-CA path (search / detail /
+  // pages all hit the same host) instead of a fresh TCP+TLS handshake per request.
+  // CA verification stays FULLY ON — the pinned `ca` + rejectUnauthorized live on
+  // the agent. Insecure one-shot bootstrap calls (fetchCa/enroll) and the dev
+  // self-signed escape do NOT pool — they keep their per-request override below.
+  const secureAgent = (ca && !allowSelfSigned)
+    ? new https.Agent({ keepAlive: true, ca, rejectUnauthorized: true })
+    : null;
+
+  function request(method, p, { body, withAuth, insecure, timeoutMs } = {}) {
     return new Promise((resolve, reject) => {
       let u;
       try { u = new URL(baseUrl + p); } catch (e) { return reject(e); }
@@ -64,8 +75,15 @@ function createClient(opts = {}) {
         method, headers, hostname: u.hostname, port: u.port,
         path: u.pathname + u.search,
       };
-      if (u.protocol === 'https:' && (allowSelfSigned || insecure)) reqOpts.rejectUnauthorized = false; // insecure = one-shot CA bootstrap
-      if (u.protocol === 'https:' && ca && !insecure) reqOpts.ca = ca; // trust this cert/CA; full verification kept on
+      if (u.protocol === 'https:') {
+        if (insecure || allowSelfSigned) {
+          reqOpts.rejectUnauthorized = false;   // one-shot CA bootstrap / dev escape — no pooling
+        } else if (secureAgent) {
+          reqOpts.agent = secureAgent;          // pinned-CA keep-alive (ca + verification on the agent)
+        } else if (ca) {
+          reqOpts.ca = ca;                       // pinned CA without a pooled agent (fallback)
+        }
+      }
       const req = lib.request(reqOpts, (res) => {
         let out = '';
         res.on('data', d => { out += d; });
@@ -76,6 +94,11 @@ function createClient(opts = {}) {
         });
       });
       req.on('error', reject);
+      // Idle-timeout so an unreachable / non-responding server fails fast instead of hanging
+      // on the OS TCP timeout (which left the client on a blank screen). It's an IDLE timeout,
+      // so a working-but-slow response that keeps streaming bytes won't trip it. Generous
+      // default for large previews; connect()/health passes a short one for snappy failure.
+      req.setTimeout(timeoutMs || 20000, () => req.destroy(new Error('connection timed out')));
       if (data) req.write(data);
       req.end();
     });
@@ -84,7 +107,7 @@ function createClient(opts = {}) {
   /** Handshake: returns { ok, mode:'ok'|'warn'|'block', reason, serverVersion }. */
   async function connect() {
     let r;
-    try { r = await request('GET', '/v1/health'); }
+    try { r = await request('GET', '/v1/health', { timeoutMs: 8000 }); }
     catch (e) { return { ok: false, mode: 'block', reason: `cannot reach server: ${e.message}`, serverVersion: null }; }
     if (r.status !== 200 || !r.json) {
       return { ok: false, mode: 'block', reason: `unexpected health response (${r.status})`, serverVersion: null };
@@ -94,7 +117,7 @@ function createClient(opts = {}) {
   }
 
   async function login(username, password, totp) {
-    const r = await request('POST', '/v1/auth/login', { body: { username, password, totp } });
+    const r = await request('POST', '/v1/auth/login', { body: { username, password, totp, client_id: clientId, hostname } });
     if (r.status === 200 && r.json && r.json.token) {
       token = r.json.token;
       return { ok: true, user: r.json.user, expiresAt: r.json.expiresAt };
@@ -105,6 +128,13 @@ function createClient(opts = {}) {
       error: (r.json && r.json.error) || 'Login failed.',
       retryAfterMs: r.json && r.json.retryAfterMs,
     };
+  }
+
+  async function changePassword(currentPassword, newPassword) {
+    const r = await request('POST', '/v1/auth/change-password',
+                            { body: { currentPassword, newPassword }, withAuth: true });
+    if (r.status === 200 && r.json && r.json.ok) return { ok: true };
+    return { ok: false, error: (r.json && r.json.error) || 'Could not change your password.' };
   }
 
   async function logout() {
@@ -128,6 +158,18 @@ function createClient(opts = {}) {
     const q = new URLSearchParams({ folderPath: folderPath || '', filename: filename || '' });
     return request('GET', `/v1/documents/${encodeURIComponent(id)}/pages?${q}`, { withAuth: true });
   }
+  async function getThumbnail(id) {
+    return request('GET', `/v1/documents/${encodeURIComponent(id)}/thumbnail`, { withAuth: true });
+  }
+  // Lightweight reachability probe (no auth). True if the server responds at all
+  // (any status); false if the connection fails (server closed / unreachable) —
+  // drives the client's connection-watch heartbeat.
+  async function ping() {
+    // Short timeout so the heartbeat + the connection-lost "Retry now" fail fast (8s) rather
+    // than holding the spinner for the full default, matching connect()/health.
+    try { await request('GET', '/v1/health', { timeoutMs: 8000 }); return true; }
+    catch { return false; }
+  }
 
   // ── Mailbox / approval workflow ───────────────────────────────────────────────
   const wfList    = (view) => request('GET', `/v1/workflow/${view}`, { withAuth: true });
@@ -138,6 +180,7 @@ function createClient(opts = {}) {
   const resolve = (id, decision, comment, version) =>
     request('POST', `/v1/workflow/routes/${id}/resolve`, { withAuth: true, body: { decision, comment, version } });
   const recall  = (id, version) => request('POST', `/v1/workflow/routes/${id}/recall`, { withAuth: true, body: { version } });
+  const wfStamped = (id) => request('GET', `/v1/workflow/routes/${id}/stamped`, { withAuth: true });   // stamped-copy pages
 
   // One-shot CA bootstrap over an UNTRUSTED connection (no CA pinned yet). The caller
   // MUST confirm the returned fingerprint out-of-band before pinning it.
@@ -158,7 +201,7 @@ function createClient(opts = {}) {
   // token in one step (sets the token on success). Bootstrap (insecure) fetch.
   async function enroll(username, password, totpCode, code) {
     const q = code ? `?code=${encodeURIComponent(code)}` : '';
-    const r = await request('POST', `/v1/enroll${q}`, { body: { username, password, totp: totpCode }, insecure: true });
+    const r = await request('POST', `/v1/enroll${q}`, { body: { username, password, totp: totpCode, client_id: clientId, hostname }, insecure: true });
     if (r.status === 200 && r.json && r.json.token) {
       token = r.json.token;
       return { ok: true, caPem: r.json.caPem, caFingerprint: r.json.caFingerprintSha256, user: r.json.user, expiresAt: r.json.expiresAt };
@@ -166,9 +209,33 @@ function createClient(opts = {}) {
     return { ok: false, status: r.status, mfaRequired: !!(r.json && r.json.mfaRequired), code: r.json && r.json.code, error: (r.json && r.json.error) || 'Enrollment failed.' };
   }
 
+  // ── Recycle bin (soft delete / restore / permanent purge) ─────────────────────
+  const binList    = () => request('GET',  '/v1/documents/deleted',        { withAuth: true });
+  const binDelete  = (id) => request('POST', `/v1/documents/${id}/delete`,  { withAuth: true });
+  const binRestore = (id) => request('POST', `/v1/documents/${id}/restore`, { withAuth: true });
+  const binPurge   = (id) => request('POST', `/v1/documents/${id}/purge`,   { withAuth: true });
+  const binPurgeAll= () => request('POST',  '/v1/documents/purge-all',      { withAuth: true });
+
+  // ── Review (queue + confirm/defer + presence) ─────────────────────────────────
+  const revQueue    = () => request('GET', '/v1/review/queue',    { withAuth: true });
+  const revDeferred = () => request('GET', '/v1/review/deferred', { withAuth: true });
+  const revCounts   = () => request('GET', '/v1/review/counts',   { withAuth: true });
+  const docTypes    = () => request('GET', '/v1/doc-types',       { withAuth: true });
+  const revConfirm  = (id, payload) => request('POST', `/v1/documents/${id}/confirm`, { withAuth: true, body: payload || {} });
+  const revDefer    = (id) => request('POST', `/v1/documents/${id}/defer`,   { withAuth: true });
+  const revUndefer  = (id) => request('POST', `/v1/documents/${id}/undefer`, { withAuth: true });
+  const revViewing  = (id) => request('POST', `/v1/review/${id}/viewing`,    { withAuth: true });
+  const revRelease  = (id) => request('POST', `/v1/review/${id}/release`,    { withAuth: true });
+  // Correction-only targeting: send a small cropped PNG of a value region, get text back.
+  const revOcrRegion = (id, imageBase64) => request('POST', `/v1/documents/${id}/ocr-region`, { withAuth: true, body: { imageBase64 } });
+
   return {
-    connect, login, logout, entitlement, search, getDocument, getPages, fetchCa, enroll,
-    workflow: { list: wfList, recipients, assign, claim, resolve, recall },
+    connect, login, logout, changePassword, entitlement, search, getDocument, getPages, getThumbnail, ping, fetchCa, enroll,
+    workflow: { list: wfList, recipients, assign, claim, resolve, recall, stamped: wfStamped },
+    recycle: { list: binList, delete: binDelete, restore: binRestore, purge: binPurge, purgeAll: binPurgeAll },
+    review: { queue: revQueue, deferred: revDeferred, counts: revCounts, docTypes,
+              confirm: revConfirm, defer: revDefer, undefer: revUndefer, viewing: revViewing, release: revRelease,
+              ocrRegion: revOcrRegion },
     isAuthenticated: () => !!token,
     _setToken: (t) => { token = t; }, // test/diagnostic aid only
   };

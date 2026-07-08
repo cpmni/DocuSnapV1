@@ -1,17 +1,13 @@
 """
 extraction/engine.py
 --------------------
-Orchestrates the extraction pipeline across three modes:
+Orchestrates the extraction pipeline across two modes:
 
-  FAST  — keyword + anchor only. No LLM. Sub-second per document.
+  FAST  — keyword + anchor only. Sub-second per document.
            Used when supplier is well-trained.
 
-  SMART — keyword + anchor only, same as FAST. Default mode. (LLM
-           fallback for missing required fields was disabled — see
-           _should_use_llm — kept distinct from FAST for future use.)
-
-  AI    — LLM always runs after keyword + anchor, regardless of
-           confidence. Slowest, most thorough for unknown documents.
+  SMART — keyword + anchor only, same as FAST. Default mode.
+           (Kept distinct from FAST for future use.)
 
 Usage:
   engine = ExtractionEngine(mode='smart', ...)
@@ -23,14 +19,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from extraction import keyword, anchor, validator, ocr_corrector, template_matcher, template_mapper, format_anomaly_checker, value_quality
+from extraction import keyword, anchor, validator, ocr_corrector, template_matcher, template_mapper, format_anomaly_checker, value_quality, wordness
 
-# LLM import is optional — system works without it in FAST mode
+# Identity-fusion (text-led SUPPLIER identity) is optional — it needs rapidfuzz, which is
+# not yet in the bundled runtime. Used ONLY by the shadow measurement (extract(identity_
+# shadow=True)); when absent the shadow silently disables and extraction is unaffected.
 try:
-    from extraction import llm as llm_module
-    LLM_AVAILABLE = True
-except ImportError:
-    LLM_AVAILABLE = False
+    from extraction import identity_fusion
+    IDENTITY_FUSION_AVAILABLE = True
+except Exception:
+    IDENTITY_FUSION_AVAILABLE = False
 
 
 # Stage 0.5 LOCATED-path mapping methods (admin-drawn anchor→target zones that
@@ -46,6 +44,16 @@ except ImportError:
 # loses to a clean alternative. 70 keeps confidently-read teaches winning while
 # rejecting the partial-garble case (min word conf ~55) the mean alone misses.
 _TIER_A_OCR_MIN = 70
+
+# Reconciliation-aware total pick: a balancing CANDIDATE must be at least this confident to replace
+# a non-balancing total, so a weak/garbage read can't win on maths alone (the real keyword total
+# reads ~88-93). See _reconciliation_pick_total.
+_RECON_PICK_MIN_CONF = 70
+
+# The supplier IDENTITY fields — their VALUE is the learning scope key, so a GLOBAL ('' supplier)
+# format aggregates DIFFERENT suppliers and must never constrain them (see the fmt_entry fallback
+# in the Stage 4.5 loop). Mirrors COMPANY_KEYS in database/modules/document_types.js.
+_IDENTITY_FIELD_KEYS = frozenset({"supplier_name", "customer_name"})
 
 _STAGE05_LOCATED_METHODS = (
     "template_mapping", "template_mapping_expanded",
@@ -95,6 +103,34 @@ def _supplier_identity_decision(existing: dict | None, candidate: dict | None) -
     return None
 
 
+def _genuine_template_supplier(matched_tmpl: dict | None) -> str | None:
+    """The matched template's DOMINANT confirmed issuer identity when it is a CLEAR majority, else
+    None. Uses the learned issuer DISTRIBUTION (templates.getAll emits dominant_supplier / _count /
+    _total = the top confirmed issuer, its count, and the total confirmed-with-issuer docs on this
+    template), NOT the template's cosmetic NAME. The name is only the FIRST-confirmed issuer, which
+    can be an outlier or OCR garble — e.g. a template NAMED "50 Asia" (1 confirm) whose docs are
+    really "Contoso Asia" (3 confirms); trusting the name would impose the garble. The value the
+    MAJORITY of confirmed docs agree on is a reliable identity — a stronger "who is this?" signal
+    than a per-doc field read a teaching artifact produced. Requires a STRICT majority (> half) and
+    at least 2 agreeing confirms, so a split/ambiguous or single-confirm template imposes nothing.
+    Backward-safe: absent dominant_* fields (old caller/DB) → None → the precedence rule is inert.
+    Identification itself stays logo_phash / keyword_fingerprint (template_matcher) — unaffected."""
+    if not matched_tmpl:
+        return None
+    value = (matched_tmpl.get("dominant_supplier") or "").strip()
+    if not value:
+        return None
+    try:
+        count = int(matched_tmpl.get("dominant_supplier_count") or 0)
+        total = int(matched_tmpl.get("dominant_supplier_total") or 0)
+    except (TypeError, ValueError):
+        return None
+    # Strict majority: > half of the confirmed-with-issuer docs agree, and at least 2 do.
+    if count >= 2 and count * 2 > total:
+        return value
+    return None
+
+
 def _is_ref_field(key: str) -> bool:
     """Reference-number-style fields, by naming convention (no supplier/doc
     specifics): invoice_number / po_number / sales_order_number (..._number),
@@ -102,6 +138,66 @@ def _is_ref_field(key: str) -> bool:
     types that follow the same convention."""
     k = (key or "").lower()
     return k.endswith("_number") or k.endswith("_no") or "reference" in k
+
+
+# Field TYPE → credibility validation key. Only STRUCTURED / code types are mapped;
+# text/multiline_text are deliberately ABSENT so free-text fields stay unconstrained
+# (seeding "text" would flip on the degraded-text escalation for name/address reads).
+_TYPE2VAL = {"date": "date", "currency": "currency", "number": "currency",
+             "amount": "currency", "alphanumeric": "alphanumeric",
+             "job_reference": "job_reference", "currency_code": "currency_code",
+             # Explicit "Reference number" field type — a deliberate CODE marker;
+             # gated alphanumeric, never currency.
+             "reference": "alphanumeric",
+             # "Reference code" — a STRICTER ref shape that must contain a digit (a
+             # digit-free word like "Reference"/"Customer" fails). A deliberate WITHHOLD
+             # gate, offered as a distinct option rather than mutating "alphanumeric"
+             # (which many fields rely on). reggie Tier-2.
+             "reference_code": "reference_code"}
+# NOTE: the FLAG-ONLY supplementary types (email/percentage/postcode_uk/vat_gb/iban/website)
+# are deliberately NOT mapped here. A _TYPE2VAL entry makes the value's validation_pattern a
+# WITHHOLD gate (a non-matching read is dropped); these are flag-only per review-not-reject —
+# the value is kept and surfaced for review via the renderer on-blur validator
+# (TYPE_TO_VALIDATION) + the Stage-4.5 field_charsets note (both keyed on the field TYPE,
+# independent of _TYPE2VAL). reference_code (above) is the one Tier-2 type that DOES gate.
+
+
+def _seed_field_patterns(base_patterns, field_defs):
+    """Seed per-field credibility patterns from each field's configured TYPE so a
+    CUSTOM doc-type field (no keyword-config entry) is gated by its real type rather
+    than loose free-text (which lets high-DPI crop garbage commit unchallenged). The
+    keyword config wins where it already carries an entry.
+
+    Ref-role coercion — both cases resolve to "alphanumeric", the right gate for a CODE:
+      * a ref field a user typed Number/Currency (the money pattern rejects NNNN-NNNN-N
+        refs); and
+      * the doc-type REFERENCE role typed plain "text" — the structural ref field is
+        created as text, so it slips past _TYPE2VAL and would be graded FREE TEXT,
+        accepting OCR garbage like "en rT" at the absolute drawn box and never
+        relocating to its anchor. Free-text name/address fields (not _is_ref_field)
+        stay unconstrained. Reusable for every supplier/template with a text ref role.
+    """
+    field_patterns = dict(base_patterns or {})
+    for _f in (field_defs or []):
+        _k, _t = _f.get("key"), (_f.get("type") or "").lower()
+        if not _k or _k in field_patterns:
+            continue
+        # A MAC/IP field is a CODE with a precise format — give it a first-class
+        # validation pattern regardless of the loose DB type the user picked
+        # (text/alphanumeric), so its colons/octets are type-VALID (not "unexpected
+        # characters") and a new device's address isn't flagged as a learned-SHAPE
+        # anomaly. See value_quality.network_address_validation.
+        _net = value_quality.network_address_validation(_k)
+        if _net:
+            field_patterns[_k] = {"validation": _net}
+        elif _t in _TYPE2VAL:
+            mapped = _TYPE2VAL[_t]
+            if _is_ref_field(_k) and mapped in ("currency", "currency_code"):
+                mapped = "alphanumeric"
+            field_patterns[_k] = {"validation": mapped}
+        elif _is_ref_field(_k):
+            field_patterns[_k] = {"validation": "alphanumeric"}
+    return field_patterns
 
 
 def _ref_override_plausible(value) -> bool:
@@ -192,21 +288,20 @@ def select_mapping_source(matched_tmpl: dict, templates: list | None) -> tuple[l
 class ExtractionEngine:
 
     def __init__(self,
-                 mode:         str = "smart",   # fast | smart | ai
+                 mode:         str = "smart",   # fast | smart
                  config_path:  str | None = None,
-                 ollama_url:   str = "http://127.0.0.1:11434/api/generate",
-                 model:        str = "phi3:mini",
                  emit_fn            = None):
 
         self.mode         = mode.lower()
         self.patterns     = keyword.load_patterns(config_path)
-        self.ollama_url   = ollama_url
-        self.model        = model
         self.emit         = emit_fn or (lambda msg: None)
         self.format_index        = {}   # populated by set_formats()
         self.noise_profile_index = {}   # populated by set_formats()
         self.format_class_index  = {}   # populated by set_formats()
         self.label_overrides     = []   # populated by set_label_overrides()
+        self.field_rules_index   = {}   # populated by set_field_rules()
+        self._multiline_index    = {}   # populated by set_field_rules() (multiline_continue)
+        self.multiline_enabled   = False  # set by set_multiline_enabled()
         self.registration_enabled = False  # set by set_registration_enabled()
         # Phase 3 candidate-override (default OFF → byte-identical behaviour). Modes:
         # 'off' | 'suggest' (corrected_to only) | 'auto' (value, only for opted-in
@@ -214,6 +309,17 @@ class ExtractionEngine:
         self.candidate_override        = 'off'
         self.candidate_override_fields = set()
         self._field_candidates   = {}    # per-run candidate ledger (built only when override on)
+        # Wordness gate (default OFF → byte-identical). When on, a free-text NAME read
+        # that does not read like a name (document chrome, ref/code bleed, OCR garble)
+        # is FLAGGED for review (note + conf cap); never rejected. See extraction/wordness.py.
+        self.name_wordness       = False
+        # Operator-accepted NAME values — an allowlist of exact name strings the user has
+        # explicitly marked "this IS a valid name" (Review "This name is correct" button).
+        # A name value normalised into this set is EXEMPT from the wordness / truncation
+        # flags, so a legitimate acronym-bearing company ("Cloud VPS") stops being flagged
+        # once confirmed once. Empty by default → byte-identical. See _accept_norm().
+        self.accepted_names      = set()
+        self._identity_conflict  = False  # active flag-only supplier-conflict (set_identity_conflict)
         self._trace              = None  # dev-only trace callback (set per extract())
 
     def log(self, text: str, level: str = ""):
@@ -223,6 +329,38 @@ class ExtractionEngine:
         """Enable the Stage 0.5 registration rung (P4, 'register, then read').
         Inert unless the matched template carries taught landmarks."""
         self.registration_enabled = bool(on)
+
+    def set_name_wordness(self, on: bool):
+        """Enable the free-text NAME wordness review flag (default OFF). Inert unless the
+        char-trigram table ships (extraction/data/char_trigrams.json)."""
+        self.name_wordness = bool(on)
+
+    @staticmethod
+    def _accept_norm(value) -> str:
+        """Canonical form for the accepted-names allowlist match (lowercase, ws-collapsed,
+        trimmed). The JS side (learning.acceptName / buildTrainingArgs) stores the SAME
+        canonical form, so a taught 'Cloud VPS' matches 'cloud   vps' / ' Cloud VPS '."""
+        return " ".join(str(value or "").strip().lower().split())
+
+    def set_accepted_names(self, names) -> None:
+        """Load the operator-accepted NAME allowlist (exact values the user marked valid).
+        A name value in this set is exempt from the wordness + truncation flags. Empty/None
+        → no change from default (byte-identical)."""
+        self.accepted_names = {self._accept_norm(n) for n in (names or []) if str(n or "").strip()}
+
+    def set_identity_conflict(self, on: bool):
+        """Enable the ACTIVE text-led supplier-identity conflict flag (default OFF, opt-in). When
+        on, a CONFLICT (the issuer-band letterhead reads a DIFFERENT known supplier than the
+        pipeline resolved) raises needs_review + an advisory note on the identity field — it never
+        overrides a value, fills an empty one, or flags on abstain/agree. Inert unless
+        identity_fusion imports (needs rapidfuzz); see _compute_identity_verdict."""
+        self._identity_conflict = bool(on)
+
+    def set_multiline_enabled(self, on: bool):
+        """Enable the multi-line continuation read (default OFF in-engine; the handler passes
+        the default-ON setting). Inert without a multiline_continue rule for the field — so a
+        single-line read stays byte-identical."""
+        self.multiline_enabled = bool(on)
 
     def set_candidate_override(self, mode, fields=None):
         """Enable the Phase 3 post-merge candidate resolver. mode: 'off' (default,
@@ -238,7 +376,10 @@ class ExtractionEngine:
     # when candidate_override is 'off' both helpers short-circuit so there is zero
     # extra work and zero behaviour change.
     def _remember_candidates(self, stage: str, produced: dict):
-        if self.candidate_override == 'off' or not produced:
+        # Always build the per-run ledger (reset per doc in extract()): it feeds the always-on
+        # reconciliation-aware total pick (_reconciliation_pick_total), and — only when
+        # candidate_override is on — Stage 4.6. Cost is a few dict appends per field per stage.
+        if not produced:
             return
         for key, data in produced.items():
             if key.startswith('_') or not isinstance(data, dict):
@@ -444,6 +585,95 @@ class ExtractionEngine:
                    or self.format_class_index.get(('', d, fk))
         return lookup
 
+    def set_field_rules(self, rules: list):
+        """Operator-taught field cleanup rules (Review right-click toolkit). Index
+        by (supplier_lower, doctype_lower, field_key) → [rule, …] so the Stage 4.5
+        winner loop can strip a learned leaked heading/column from a field value."""
+        idx, ml = {}, {}
+        for r in (rules or []):
+            if not isinstance(r, dict) or not r.get('field_key') or not r.get('rule_type'):
+                continue
+            key = ((r.get('supplier_name') or '').lower().strip(),
+                   (r.get('document_type') or '').lower().strip(),
+                   r['field_key'])
+            if r['rule_type'] == 'multiline_continue':
+                # Continuation rule: trailing chars in token_norm (default -/–/—). Consulted
+                # by the anchor READ step (_make_multiline_lookup), NOT the Stage 4.5 apply
+                # loop below — joining must happen at the crop, not as a post-trim.
+                ml[key] = {'pattern_chars': (r.get('token_norm') or '').strip() or '-–—'}
+                continue
+            idx.setdefault(key, []).append(r)
+        self.field_rules_index = idx
+        self._multiline_index  = ml
+        if idx:
+            self.log(f"  Field cleanup rules: {sum(len(v) for v in idx.values())} loaded")
+        if ml:
+            self.log(f"  Multi-line continuation rules: {len(ml)} loaded")
+
+    def _make_multiline_lookup(self, supplier_name, document_slug):
+        """Per-field multiline_continue lookup for the anchor read step: supplier+doctype →
+        doctype-only ('') → '__global__'. Returns None when the feature is off or no rule is
+        in scope (→ single-line read, byte-identical)."""
+        if not self.multiline_enabled or not self._multiline_index:
+            return None
+        s = (supplier_name or '').lower().strip()
+        d = (document_slug or '').lower().strip()
+        idx = self._multiline_index
+        def lookup(fk):
+            for sk in ([s] if s else []) + ['', '__global__']:
+                hit = idx.get((sk, d, fk))
+                if hit:
+                    return hit
+            return None
+        return lookup
+
+    def _field_rules_for(self, supplier_name, document_slug, field_key):
+        """Rules in scope for a field, most-specific scope first: supplier+doctype,
+        then doctype-only ('' supplier), then the '__global__' supplier. Each rule is
+        applied in turn; within a scope, remove_text rules run longest-token-first."""
+        if not self.field_rules_index:
+            return []
+        s = (supplier_name or '').lower().strip()
+        d = (document_slug or '').lower().strip()
+        out = []
+        for sk in ([s] if s else []) + ['', '__global__']:
+            out.extend(self.field_rules_index.get((sk, d, field_key), []))
+        # keep_block first, then remove_text longest-token-first (most specific wins).
+        out.sort(key=lambda r: (0 if r.get('rule_type') == 'keep_block' else 1,
+                                -len(r.get('token_norm') or '')))
+        return out
+
+    @staticmethod
+    def _doctype_fixed_supplier(templates, document_slug):
+        """The doc type's FIXED Supplier Name, taken from any template for this
+        doc-type slug. A doc type whose Supplier Name is an admin-fixed template
+        field has a DETERMINISTIC supplier — the page logo is irrelevant — so this
+        lets the fixed value survive a MISSED template match and stay immune to the
+        logo fallback (which otherwise fills supplier_name with a logo guess when no
+        template matched). Prefers an admin-LOCKED value; uses a plain fixed value
+        only when every candidate agrees (ambiguous → None, so we never guess).
+        Returns {'value', 'method'} or None — None leaves behaviour byte-identical."""
+        if not templates or not document_slug:
+            return None
+        slug = str(document_slug).strip()
+        locked, plain = [], []
+        for t in templates:
+            if (t.get('document_type_slug') or '') != slug:
+                continue
+            for f in (t.get('fields') or []):
+                if f.get('key') != 'supplier_name':
+                    continue
+                val = f.get('fixed_value')
+                val = val.strip() if isinstance(val, str) else val
+                if not val:
+                    continue
+                (locked if f.get('fixed_locked') else plain).append(val)
+        for bucket, method in ((locked, 'template_fixed_locked'), (plain, 'template_fixed')):
+            uniq = {v for v in bucket if v}
+            if len(uniq) == 1:
+                return {'value': next(iter(uniq)), 'method': method}
+        return None
+
     def set_formats(self, formats_data: list):
         """Pre-build all format indexes from confirmed value data."""
         self.format_index        = ocr_corrector.build_format_index(formats_data)
@@ -456,27 +686,191 @@ class ExtractionEngine:
         if p:
             self.log(f"  Format checker: {p} format class rule(s) loaded")
 
-    def warmup(self) -> bool:
-        """Warm up Ollama model. Returns True if AI is available."""
-        if self.mode == "fast":
-            self.log("  Fast Mode — AI not used.")
-            return False
-        if not LLM_AVAILABLE:
-            self.log("  LLM module not available — running in Fast Mode.", "warn")
-            self.mode = "fast"
-            return False
-        self.log("  Warming up AI model…")
-        ok = llm_module.warmup(self.ollama_url, self.model)
-        if ok:
-            self.log(f"  AI model ready ({self.model}).")
-        else:
-            self.log("  AI model not available — falling back to Fast Mode.", "warn")
-            self.mode = "fast"
-        return ok
-
     def detect_document_type(self, ocr_text: str,
                              known_types: list | None = None) -> dict | None:
         return keyword.detect_document_type(ocr_text, self.patterns, known_types)
+
+    # Reconciliation roles that back the "mathematically verified" total check.
+    _RECONCILE_COMPONENT_ROLES = ('subtotal', 'vat_tax', 'shipping', 'discount')
+
+    def _shadow_reconcile_components(self, results, field_defs, ocr_text, patterns):
+        """Shadow-extract the reconciliation COMPONENTS the doc type doesn't define as fields,
+        so the total-reconciliation check can run without the user having to add them. Only
+        runs when a real TOTAL field exists (nothing to verify otherwise). Values are tagged
+        method='shadow_reconcile' so downstream code shows/learns nothing from them."""
+        try:
+            canon = ('total_amount',) + self._RECONCILE_COMPONENT_ROLES
+            covered = set()
+            for f in (field_defs or []):
+                k = f.get('key')
+                if k in canon:
+                    covered.add(k)
+                    continue
+                for role, aliases in keyword.ROLE_KEY_ALIASES.items():
+                    if k in aliases:
+                        covered.add(role)
+            if 'total_amount' not in covered:      # no total to reconcile against
+                return
+            uncovered = [r for r in self._RECONCILE_COMPONENT_ROLES if r not in covered]
+            if not uncovered:
+                return
+            shadow = keyword.extract_fields(ocr_text, uncovered, patterns) or {}
+            for k, data in shadow.items():
+                if data and data.get('value') and not (results.get(k) or {}).get('value'):
+                    d = dict(data)
+                    d['method'] = 'shadow_reconcile'
+                    results[k] = d
+        except Exception:
+            pass  # background aid — must never break extraction
+
+    def _compute_identity_verdict(self, ocr_text, logos, hints, anchors, resolved_supplier):
+        """Compute the text-led SUPPLIER identity verdict (extraction/identity_fusion) over the page
+        CHROME: does the issuer-band letterhead read the SAME supplier the pipeline resolved? Used by
+        BOTH the shadow measurement (extract(identity_shadow=True), records only) and the active
+        conflict flag (set_identity_conflict(True), raises needs_review on a CONFLICT). Mirrors
+        _shadow_reconcile_components: a background aid that must never break extraction. Returns a
+        compact verdict dict, or None when unavailable / not enough signal."""
+        try:
+            if not IDENTITY_FUSION_AVAILABLE:
+                return None
+            # Known-supplier gazetteer = every supplier the system has already learned, taken
+            # from the logo/hint/anchor scopes ALREADY loaded for this doc (no new plumbing).
+            known, seen = [], set()
+            for src in (logos or [], hints or [], anchors or []):
+                for row in src:
+                    nm = ((row or {}).get("supplier_name") or "").strip()
+                    if nm and nm.lower() not in seen:
+                        seen.add(nm.lower())
+                        known.append(nm)
+            if not known:
+                return None
+            # ISSUER-band chrome: the top letterhead lines TRUNCATED at the first recipient marker
+            # ("Bill To"/"Customer"/"FAO"/…), footer excluded (identity_fusion.issuer_chrome,
+            # reggie-reviewed). Replaces a flat first-6/last-3 chrome that let identify_supplier
+            # match a NON-issuer name in the gazetteer (recipient block / printer footer / line
+            # item) — the real-engine precision hole the shadow measurement surfaced.
+            chrome = identity_fusion.issuer_chrome(ocr_text)
+            res = identity_fusion.identify_supplier(chrome, known)
+            picked, accepted = res.get("supplier"), bool(res.get("accepted"))
+            return {
+                "resolved":   resolved_supplier,
+                "text_led":   picked,
+                "accepted":   accepted,
+                "confidence": res.get("confidence"),
+                "known_n":    len(known),
+                "agree":      accepted and picked == resolved_supplier,
+                "conflict":   accepted and bool(resolved_supplier) and picked != resolved_supplier,
+            }
+        except Exception:
+            return None  # background aid — must never break extraction
+
+    def _reconciliation_pick_total(self, results, field_defs):
+        """Reconciliation-aware total pick. If the resolved `total` does NOT balance against the
+        components (subtotal + tax + shipping - discount) but a confident REMEMBERED candidate
+        DOES, swap to it. Objective arithmetic beats a drifted total-mapping / wrong-row anchor
+        that displaced a correct keyword read (the "total grabbed the Net-Total row 84.40 over the
+        Invoice-Total 101.28" case).
+
+        A genuinely-CORRECT total — including a hand-drawn ⊕ teach — reconciles, so it passes the
+        first check and is NEVER touched: the reconciliation check IS the protection, so no special
+        authoritative carve-out is needed. Only a total that PROVABLY doesn't add up is reconsidered,
+        and only replaced by a candidate that (a) actually balances and (b) is confident (>= floor),
+        so a weak/garbage read can't win. The swap is review-flagged. Runs AFTER shadow-reconcile
+        (all components present) and BEFORE the Stage-4 flag, so a swapped total validates clean.
+        Best-effort — never breaks extraction."""
+        try:
+            from extraction import validator as _v
+            total_key = None
+            for k in ('total_amount', *keyword.ROLE_KEY_ALIASES.get('total_amount', ())):
+                d = results.get(k)
+                if isinstance(d, dict) and d.get('value'):
+                    total_key = k
+                    break
+            if not total_key:
+                return
+            inc = results[total_key]
+            if _v.total_reconciles(inc.get('value'), results):
+                return   # already balances (a correct total, incl. a correct teach) — leave it
+            inc_v = str(inc.get('value') or '')
+            # Highest-confidence DISTINCT, CONFIDENT candidate that reconciles wins.
+            for c in sorted(self._field_candidates.get(total_key) or [], key=lambda c: -(c.get('confidence') or 0)):
+                cv = c.get('value')
+                if not cv or str(cv) == inc_v or (c.get('confidence') or 0) < _RECON_PICK_MIN_CONF:
+                    continue
+                if _v.total_reconciles(cv, results):
+                    self._t('reconcile_pick', field=total_key, was=inc_v, now=str(cv),
+                            method=c.get('method'), confidence=c.get('confidence'))
+                    results[total_key] = {
+                        **inc,
+                        'value':           cv,
+                        'display_value':   cv,
+                        'method':          c.get('method') or inc.get('method'),
+                        'confidence':      max(inc.get('confidence') or 0, c.get('confidence') or 0),
+                        'validation_note': 'adjusted to the total that balances against the line amounts — please verify',
+                    }
+                    return
+
+            # ── PASS 2: JOINT subtotal+total pick ─────────────────────────────────────────────
+            # Pass 1 found no reconciling TOTAL because the SUBTOTAL it balances against is ITSELF
+            # wrong — the classic case being an authoritative anchor whose registration read dropped
+            # BOTH subtotal and total onto a '1.00' quantity cell (City Office #152577), beating the
+            # correct keyword reads. Search candidate (subtotal, total) PAIRS from the remembered
+            # ledger: the confident pair that BALANCES (subtotal + tax + shipping − discount == total)
+            # wins, restoring the keyword reads the mis-landed anchor displaced. Reconciliation is the
+            # objective arbiter, so this overrides even an authoritative anchor whose value provably
+            # doesn't add up (a correct teach reconciles and already returned at the top).
+            sub_key = None
+            for k in ('subtotal', *keyword.ROLE_KEY_ALIASES.get('subtotal', ())):
+                d = results.get(k)
+                if isinstance(d, dict) and d.get('value'):
+                    sub_key = k
+                    break
+            if not sub_key:
+                return
+            sub_inc   = results.get(sub_key) or {}
+            sub_inc_v = str(sub_inc.get('value') or '')
+            sub_cands = [sub_inc, *(self._field_candidates.get(sub_key) or [])]
+            tot_cands = [inc,     *(self._field_candidates.get(total_key) or [])]
+            best = None   # (combined_conf, sv, tv, sub_cand, tot_cand)
+            for sc in sub_cands:
+                sv = sc.get('value')
+                if not sv or (sc.get('confidence') or 0) < _RECON_PICK_MIN_CONF:
+                    continue
+                _saved = results.get(sub_key)
+                results[sub_key] = {**(_saved or {}), 'value': sv}   # test this subtotal
+                try:
+                    for tc in tot_cands:
+                        tv = tc.get('value')
+                        if not tv or (tc.get('confidence') or 0) < _RECON_PICK_MIN_CONF:
+                            continue
+                        if str(sv) == sub_inc_v and str(tv) == inc_v:
+                            continue   # the current (non-reconciling) pair
+                        if _v.total_reconciles(tv, results):
+                            score = (sc.get('confidence') or 0) + (tc.get('confidence') or 0)
+                            if best is None or score > best[0]:
+                                best = (score, sv, tv, sc, tc)
+                finally:
+                    results[sub_key] = _saved
+            if best:
+                _, sv, tv, sc, tc = best
+                self._t('reconcile_pick', field=sub_key,   was=sub_inc_v, now=str(sv),
+                        method=sc.get('method'), confidence=sc.get('confidence'))
+                self._t('reconcile_pick', field=total_key, was=inc_v,     now=str(tv),
+                        method=tc.get('method'), confidence=tc.get('confidence'))
+                results[sub_key] = {
+                    **sub_inc, 'value': sv, 'display_value': sv,
+                    'method':          sc.get('method') or sub_inc.get('method'),
+                    'confidence':      max(sub_inc.get('confidence') or 0, sc.get('confidence') or 0),
+                    'validation_note': 'adjusted to the subtotal that balances against the total — please verify',
+                }
+                results[total_key] = {
+                    **inc, 'value': tv, 'display_value': tv,
+                    'method':          tc.get('method') or inc.get('method'),
+                    'confidence':      max(inc.get('confidence') or 0, tc.get('confidence') or 0),
+                    'validation_note': 'adjusted to the total that balances against the line amounts — please verify',
+                }
+        except Exception:
+            pass  # reconciliation aid — must never break extraction
 
     def extract(self,
                 ocr_text:      str,
@@ -493,7 +887,8 @@ class ExtractionEngine:
                 known_template_id: int | None = None,
                 trace = None,
                 slice_dir = None,
-                page_text_lines: list | None = None) -> dict:
+                page_text_lines: list | None = None,
+                identity_shadow: bool = False) -> dict:
         """
         Run extraction pipeline according to current mode.
         Returns dict with field values + metadata keys prefixed with _.
@@ -508,35 +903,11 @@ class ExtractionEngine:
         self._field_candidates = {}   # Phase 3 ledger (built only when candidate_override on)
         results      = {}
         field_keys   = [f["key"] for f in field_defs]
-        # Seed field_patterns from each field's configured TYPE so CUSTOM doc-type
-        # fields (which have no entry in the keyword config) are gated by their real
-        # type — date / currency / alphanumeric — instead of silently falling back
-        # to loose free-text (which lets high-DPI crop garbage like "ZWIVLZIZULO" or
-        # "cield wu" commit unchallenged). The keyword config still wins where it
-        # carries a richer entry for a known field. Reusable for every custom type.
-        # Only STRUCTURED / code types are seeded (date, currency, alphanumeric).
-        # text/multiline_text are deliberately NOT seeded — leaving them unset
-        # preserves the existing free-text behaviour exactly (seeding "text" would
-        # flip on the degraded-text escalation for name/address fields and change
-        # their reads). So this strengthens gating for typed fields without
-        # touching free-text ones.
-        _TYPE2VAL = {"date": "date", "currency": "currency", "number": "currency",
-                     "amount": "currency", "alphanumeric": "alphanumeric",
-                     "job_reference": "job_reference", "currency_code": "currency_code"}
-        field_patterns = dict(self.patterns.get("field_patterns", {}))
-        for _f in field_defs:
-            _k, _t = _f.get("key"), (_f.get("type") or "").lower()
-            if _k and _k not in field_patterns and _t in _TYPE2VAL:
-                mapped = _TYPE2VAL[_t]
-                # A reference/ticket/job field typed as "number" or "currency" gets
-                # the currency validation pattern (£\d+, \d+\.\d{2}) which rejects
-                # NNNN-NNNN-N ticket references.  Coerce any _is_ref_field key to
-                # "alphanumeric" — the right gate for a code — regardless of how the
-                # user labelled the field in Settings. Fixes the systemic case where
-                # a user picks "Number" thinking it means "reference number."
-                if _is_ref_field(_k) and mapped in ("currency", "currency_code"):
-                    mapped = "alphanumeric"
-                field_patterns[_k] = {"validation": mapped}
+        # Seed field_patterns from each field's configured TYPE (+ the ref-role
+        # coercion) so CUSTOM doc-type fields and the structural REFERENCE role are
+        # gated by their real type instead of loose free-text. The keyword config
+        # still wins where it carries a richer entry. See _seed_field_patterns.
+        field_patterns = _seed_field_patterns(self.patterns.get("field_patterns", {}), field_defs)
         # Date-typed fields get a merge guard: a candidate that doesn't parse as
         # a real date must never displace one that does (e.g. a mis-cropped
         # taught anchor returning a bare "March" overriding a valid full date).
@@ -685,16 +1056,50 @@ class ExtractionEngine:
                         # seeds it exists to refine — including an admin-LOCKED fixed
                         # value (a drawn zone on a real sample is the more specific
                         # curated source, per the intended precedence).
-                        is_curated_refinement = (existing is None
+                        # A garbled FREE-TEXT mapping read no longer rides curated authority:
+                        # Stage A caps such a read to its real OCR mean (~70), so a low-confidence
+                        # free-text mapping forfeits the is_curated_refinement fast-track and must
+                        # instead win on confidence — where it loses to a clean incumbent/anchor, so
+                        # a mangled crop can't out-rank the correct value on authority alone.
+                        # Threshold 75: a clean free-text mapping caps at >=78 (Stage A base 78
+                        # no-label / 90 with-label); only a garbled one (~70) is demoted. Structured
+                        # mappings (regex-validated, never capped, not in text_field_keys) are unaffected.
+                        _ft_mapping_weak = (key in text_field_keys
+                                            and data.get("confidence", 0) < 75)
+                        is_curated_refinement = ((not _ft_mapping_weak)
+                                                  and (existing is None
                                                   or existing.get("method") in
                                                      ("template_fixed", "template_anchor",
-                                                      "template_fixed_locked"))
-                        if is_curated_refinement or data["confidence"] > existing.get("confidence", 0):
+                                                      "template_fixed_locked")))
+                        # `existing is not None` guard: a weak free-text mapping with no
+                        # incumbent (existing None) has is_curated_refinement False, so the
+                        # confidence branch must not deref None — it simply forfeits and the
+                        # field is left for Stage 1/2 to fill.
+                        if is_curated_refinement or (existing is not None
+                                                     and data["confidence"] > existing.get("confidence", 0)):
                             results[key] = data
                             applied += 1
                     self._trace_stage('0.5_mapping', mapping_results, _pre_s05, results)
                     if applied:
                         self.log(f"  Stage 0.5: {applied} field(s) refined via anchor/target mapping")
+
+        # ── Fixed Supplier Name is IMMUNE to the logo fallback ────────────────
+        # A doc type whose Supplier Name is an admin-fixed template field has a
+        # deterministic supplier, so a logo guess must never fill it. When no
+        # template matched (the fixed value was never seeded) but the doc type IS
+        # known, apply the doc-type's fixed Supplier Name and SKIP the logo match.
+        # Returns None when the doc type has no fixed supplier → logo runs as before.
+        if not supplier_name and document_slug:
+            fixed_sup = self._doctype_fixed_supplier(templates, document_slug)
+            if fixed_sup:
+                supplier_name = fixed_sup['value']
+                results["supplier_name"] = {
+                    "value":      supplier_name,
+                    "confidence": 95,
+                    "method":     fixed_sup['method'],
+                }
+                self.log(f"  Fixed Supplier Name for '{document_slug}': "
+                         f"{supplier_name} — logo fallback skipped")
 
         # ── Pre-stage: logo supplier identification (fallback if no template) ──
         if not supplier_name and logos and page_images:
@@ -849,6 +1254,13 @@ class ExtractionEngine:
             _on_reject = ((lambda fk, st, v, r: self._t(
                 "anchor_reject", field=fk, method=st, value=v, reason=r))
                 if self._trace else None)
+            # Display labels of the IDENTITY fields ("Document Issuer") — an identity anchor whose
+            # CAPTURED label IS one of these is a teaching artifact (the field's own display name,
+            # never a printed caption), so it can only be a blind cross-supplier positional SWEEP,
+            # not a real located read (the PROFLE + #119 class). Passed to the read-stage guard.
+            _identity_labels = {(f.get('label') or '').strip().lower()
+                                for f in field_defs if f.get('key') in _IDENTITY_FIELD_KEYS}
+            _identity_labels.discard('')
             anchor_results = anchor.extract_with_anchors(
                 ocr_text, anchors, supplier_name, document_slug,
                 page_images=page_images,
@@ -859,6 +1271,9 @@ class ExtractionEngine:
                 page_transform=anchor_page_transform,
                 on_reject=_on_reject,
                 page_text_lines=page_text_lines,
+                text_field_keys=text_field_keys,
+                multiline_lookup=self._make_multiline_lookup(supplier_name, document_slug),
+                identity_labels=_identity_labels,
             )
             _pre_s2 = self._snap(results)
             self._remember_candidates('2_anchor', anchor_results)
@@ -939,7 +1354,20 @@ class ExtractionEngine:
                 # an inline/text read with no crop conf = None) still wins outright.
                 _omin = data.get("ocr_min_conf")
                 _ocr_clean = (_omin is None) or (_omin >= _TIER_A_OCR_MIN)
-                if data.get("authoritative") and data.get("value") and data.get("located", True) and _ocr_clean:
+                # COVERAGE gate on the outright win (belt-and-braces with the anchor.py
+                # credibility coverage check): an authoritative read of a TYPED field
+                # must match MOST of its validation pattern, so a clean-but-wrong value
+                # the pattern only matches on a sub-run (a colon-laden MAC, coverage
+                # ~0.18) cannot win Tier-A over a full-match mapping — it falls through
+                # to the contest where the rx-100% mapping wins. Untyped / date /
+                # currency carry no pattern here → no constraint (byte-identical).
+                _cov_ok = True
+                _vt = (field_patterns.get(key) or {}).get("validation") if field_patterns else None
+                if _vt and _vt not in ("date", "currency", "currency_code"):
+                    _cpats = (self.patterns.get("validation_patterns") or {}).get(_vt)
+                    if _cpats:
+                        _cov_ok = anchor._pattern_coverage(data.get("value"), _cpats) >= 0.8
+                if data.get("authoritative") and data.get("value") and data.get("located", True) and _ocr_clean and _cov_ok:
                     results[key] = data
                     continue
                 # Precedence: a deliberately DRAWN source outranks an AUTO-LEARNED
@@ -1010,6 +1438,45 @@ class ExtractionEngine:
         # identity kept driving downstream lookups/persistence while the
         # displayed field already held the corrected value, silently writing
         # the wrong supplier into the learning corpus on every confirm.
+        # ── Template supplier precedence (the #119 / #75 class) ──────────────────
+        # A genuine matched-template identity — the template's DOMINANT confirmed issuer (the
+        # value the MAJORITY of the confirmed docs that formed it carry; see
+        # _genuine_template_supplier — NOT the cosmetic first-confirmed NAME, which can be a
+        # minority garble) — is a stronger "who is this?" signal than an identity field READ
+        # produced by a teaching-ARTIFACT anchor. A swept "Contoso / Document Issuer" anchor
+        # (its captured label IS the field's
+        # own display name, never a real caption) fuzzy-locates an unrelated row on THIS doc and
+        # harvests a wrong fragment ("Solutions" onto a City Office invoice) at 90% via the
+        # LOCATED anchor_inline path — so neither the blind-read guard nor a plain confidence
+        # contest catches it. When such an artifact read DISAGREES with the genuine template
+        # name, prefer the template name. Deliberately NARROW: it fires ONLY for an artifact-
+        # labelled anchor read, so it leaves untouched — a doc whose identity really IS that
+        # value (the same anchor reading it correctly, where template + read AGREE); a read off a
+        # REAL caption (Greenfield's "Supplier:" located read — its label is not the field's
+        # display name, so this never fires and the legitimate re-resolution stands); a keyword
+        # read; and any doc that matched only a generic template. Reusable: any doc where a swept
+        # artifact anchor contradicts a confirmed template identity.
+        _sn = results.get('supplier_name')
+        _tmpl_sup = _genuine_template_supplier(matched_tmpl)
+        if _sn and _sn.get('value') and _tmpl_sup:
+            def _ns(v):
+                return keyword.normalize_supplier_name(v or '').strip().lower()
+            if _ns(_sn.get('value')) != _ns(_tmpl_sup):
+                _id_labels = {(f.get('label') or '').strip().lower()
+                              for f in field_defs if f.get('key') in _IDENTITY_FIELD_KEYS}
+                _id_labels.discard('')
+                _sn_label = (_sn.get('anchor') or '').strip().lower()
+                if (str(_sn.get('method') or '').startswith('anchor')
+                        and _sn_label and _sn_label in _id_labels):
+                    self.log(f"  Template supplier precedence: identity anchor read "
+                             f"'{_sn.get('value')}' via artifact label '{_sn_label}' "
+                             f"disagrees with template identity '{_tmpl_sup}' — using template")
+                    results['supplier_name'] = {
+                        "value":      _tmpl_sup,
+                        "confidence": 90,
+                        "method":     "template_identity",
+                    }
+
         resolved_supplier = (results.get('supplier_name') or {}).get('value') or None
         if resolved_supplier and resolved_supplier != supplier_name:
             if supplier_name:
@@ -1142,39 +1609,68 @@ class ExtractionEngine:
             if n_corrected:
                 self.log(f"  Stage 2.5: {n_corrected} OCR correction(s) applied")
 
-        # ── Decide whether to call LLM ────────────────────────────────────────
-        use_llm = self._should_use_llm(results, document_slug)
+        # ── Background reconciliation components (SHADOW) ──────────────────────
+        # Read subtotal/VAT/shipping/discount that the doc type does NOT define as fields,
+        # purely so the total-reconciliation guardrail + the "mathematically verified" badge
+        # can run WITHOUT cluttering the type with fields the user never created. Marked
+        # method='shadow_reconcile' → persisted for the check but never displayed and never
+        # learned (Review shows only type fields; getFieldFormats skips the shadow method).
+        self._shadow_reconcile_components(results, field_defs, ocr_text, patterns_for_run)
 
-        if use_llm:
-            missing = [f for f in field_defs
-                       if not results.get(f["key"], {}).get("value")]
-            if missing:
-                self.log(
-                    f"  Stage 3: AI extraction for {len(missing)} fields…"
-                )
-                llm_results = llm_module.extract_missing_fields(
-                    ocr_text, filename, field_defs,
-                    already_found    = results,
-                    hints            = hints,
-                    document_type    = document_type,
-                    supplier_name    = supplier_name,
-                    ollama_url       = self.ollama_url,
-                    model            = self.model,
-                )
-                self._remember_candidates('3_llm', llm_results)
-                for key, data in llm_results.items():
-                    if data.get("value") and not results.get(key, {}).get("value"):
-                        results[key] = data
-                final = len([v for v in results.values() if v.get("value")])
-                self.log(f"  Stage 3: +{final - found} fields from AI")
-        else:
-            self.log(f"  Stage 3: skipped ({self.mode.capitalize()} Mode)")
+        # ── Reconciliation-aware total pick ────────────────────────────────────
+        # A drifted total-mapping / wrong-row anchor can displace a correct keyword total (it read
+        # the "Net Total" row, 84.40, over the true "Invoice Total", 101.28). Now that every
+        # component is present, prefer the total CANDIDATE that actually BALANCES over one that
+        # doesn't — objective maths, never over an explicit ⊕ teach. Before the Stage-4 flag.
+        self._reconciliation_pick_total(results, field_defs)
 
         # ── Stage 4: Validation ───────────────────────────────────────────────
         self.log("  Stage 4: validating…")
         self._t('stage_start', stage='4_validate')
         _pre_val = self._snap(results)
-        results = validator.validate_and_adjust(results, field_defs)
+        results = validator.validate_and_adjust(
+            results, field_defs, trace=(self._t if self._trace else None))
+
+        # ── Field cleanup rules (operator-taught, Review right-click toolkit) ──
+        # Strip a learned leaked heading/column from a field's WINNER value
+        # (keep_block keeps the single pattern/code-shaped token; remove_text removes
+        # a learned caption). Runs HERE — independent of learned format history — so it
+        # applies even to fields with no confirmed shape. Honest: rewrites value/
+        # display_value with was_corrected + corrected_to + an "auto-trimmed, was: …"
+        # note; NOT review-forced (the match guards make it deterministic). No-op when
+        # no rule is in scope or every guard refuses → byte-identical.
+        if self.field_rules_index and document_slug:
+            from extraction import field_rules as _field_rules
+            _val_pats = self.patterns.get("validation_patterns") or {}
+            for key, data in list(results.items()):
+                if key.startswith('_') or not isinstance(data, dict):
+                    continue
+                val = data.get('value')
+                if not isinstance(val, str) or not val:
+                    continue
+                rules = self._field_rules_for(supplier_name, document_slug, key)
+                if not rules:
+                    continue
+                original = val
+                cur = val
+                for r in rules:
+                    rt = r.get('rule_type')
+                    if rt == 'keep_block':
+                        _vt = (field_patterns.get(key) or {}).get("validation")
+                        _pl = _val_pats.get(_vt) or []
+                        if isinstance(_pl, str):
+                            _pl = [_pl]
+                        pat = ("(?:" + ")|(?:".join(_pl) + ")") if _pl else None
+                        cur, _ = _field_rules.apply_keep_block(cur, pat)
+                    elif rt == 'remove_text':
+                        cur, _ = _field_rules.apply_remove_text(
+                            cur, r.get('token_norm') or '',
+                            side=r.get('side') or 'trailing',
+                            min_prefix=r.get('min_prefix') or 3)
+                if cur != original:
+                    results[key] = {**data, 'value': cur, 'display_value': cur,
+                                    'was_corrected': True, 'corrected_to': cur,
+                                    'validation_note': f'auto-trimmed, was: "{original}"'}
 
         # ── Stage 4.5: Format anomaly check ──────────────────────────────────
         # Compares each extracted value against the coarse format class learned
@@ -1184,12 +1680,17 @@ class ExtractionEngine:
         # already flagged by Stage 4 are skipped to avoid double-penalisation.
         # No correction is proposed here — that is Stage 2 of this feature.
         format_anomaly_flagged = False
-        if self.format_class_index and document_slug:
+        # The wordness gate must run COLD (no learned history) — that is where free-text
+        # name silent-errors are worst — so enter this block when name_wordness is on even
+        # if the format index is empty. When name_wordness is OFF this is byte-identical to
+        # the original `format_class_index and document_slug` guard.
+        if document_slug and (self.format_class_index or self.name_wordness):
             s_lower  = (supplier_name or '').lower().strip()
             dt_lower = document_slug.lower().strip()
             n_flagged = 0
             field_charsets = self.patterns.get('field_charsets') or {}
             field_types    = {f.get('key'): f.get('type') for f in (field_defs or [])}
+            validation_patterns = self.patterns.get('validation_patterns') or {}
             for key, data in list(results.items()):
                 if key.startswith('_') or not isinstance(data, dict):
                     continue
@@ -1214,6 +1715,62 @@ class ExtractionEngine:
                         data = {**data, 'value': _clean, 'display_value': _clean}
                         results[key] = data
                         val = _clean
+                # ── Type-authority gate ── a value that FULLY matches its field's PRECISE
+                # validation pattern (mac/ip) is type-authoritative, and a label/landmark-
+                # CONFIRMED read (relocated/inline/registration / Stage 0.5 mapping) already
+                # cleared the anchor-stage credibility + column-bleed guards. Either way the
+                # generic charset + learned-SHAPE heuristics below must not second-guess it:
+                # a MAC's ':' isn't "unexpected", a new IP/serial just differs in shape from
+                # history. The generic 'alphanumeric' is NOT precise, so an UN-anchored drift
+                # (a rigid "Bookinc" via keyword/anchor_crop) still gets shape-gated.
+                _val_key = (field_patterns.get(key) or {}).get('validation')
+                _authoritative = bool(
+                    _val_key in anchor._PRECISE_VAL_TYPES
+                    and validation_patterns.get(_val_key)
+                    and anchor._pattern_coverage(str(val), validation_patterns[_val_key])
+                        >= anchor._PATTERN_AUTHORITATIVE_MIN)
+                _method = data.get('method') or ''
+                _label_confirmed = (_method in anchor._LABEL_CONFIRMED_METHODS
+                                    or _is_stage05_located(_method))
+                # ── Precise-type integrity (MAC/IP) ── a field with a PRECISE format whose
+                # value does NOT satisfy it is malformed — an OCR slip like a non-hex 'T' in
+                # a MAC ("00:26:T3:F9:56:38"). The generic charset below can't catch it (a
+                # letter is charset-valid), and the precise pattern is otherwise used only to
+                # GRANT authority, never to flag a miss. So when a non-authoritative value sits
+                # on a precise-type field: trim surrounding junk if a valid address is embedded
+                # (silent — fixes a trailing OCR control char that also caused the bogus
+                # "unexpected characters ()" flag); else recover a single OCR-confusion slip if
+                # it makes the value fully valid (recover-and-FLAG, review-forced); else flag it.
+                if (_val_key in anchor._PRECISE_VAL_TYPES
+                        and validation_patterns.get(_val_key) and not _authoritative):
+                    _norm, _kind = value_quality.normalize_network_address(
+                        str(val), _val_key, validation_patterns[_val_key])
+                    _nice = {'mac_address': 'MAC address',
+                             'ip_address': 'IP address'}.get(_val_key, _val_key.replace('_', ' '))
+                    if _kind == 'clean':
+                        results[key] = {**data, 'value': _norm, 'display_value': _norm}
+                        continue                       # valid after trimming junk — no flag
+                    if _kind == 'repaired':
+                        results[key] = {
+                            **data, 'value': _norm, 'display_value': _norm,
+                            'was_corrected': True, 'corrected_to': _norm,
+                            'confidence':      min(data.get('confidence') or 0, 70),
+                            'validation_note': "auto-corrected a likely misread (was “"
+                                               + str(val) + "”) — please verify",
+                        }
+                        n_flagged += 1
+                        format_anomaly_flagged = True
+                        continue
+                    if _kind == 'invalid':
+                        results[key] = {
+                            **data,
+                            'confidence':      min(data.get('confidence') or 0, 70),
+                            'validation_note': "doesn’t look like a valid " + _nice
+                                               + " — please verify",
+                        }
+                        n_flagged += 1
+                        format_anomaly_flagged = True
+                        continue
                 # ── Valid-character policy (Phase 1, backend-only FLAG) ── before the
                 # format lookup so it covers EVERY field, not only those with learned
                 # formats. Surfaces unexpected OCR symbols for the field TYPE (note +
@@ -1221,25 +1778,63 @@ class ExtractionEngine:
                 # normalisers own punctuation); defers to any existing note via the
                 # guard above. See format_anomaly_checker.charset_disallowed +
                 # config field_charsets.
-                if field_charsets:
+                if field_charsets and not _authoritative:
                     _ftype = field_types.get(key)
                     if _ftype not in ('date', 'currency', 'currency_code'):
                         _spec = field_charsets.get(_ftype, field_charsets.get('default'))
                         _bad = format_anomaly_checker.charset_disallowed(str(val), _spec)
-                        if _bad:
+                        # Only flag chars that are actually VISIBLE — an invisible control/
+                        # zero-width char (OCR noise) must not render as "unexpected characters
+                        # ()" with an empty list. The replacement char U+FFFD IS printable, so a
+                        # genuine garble still flags. Nothing visible => no flag.
+                        _bad_shown = [c for c in _bad if c.isprintable() and not c.isspace()]
+                        if _bad_shown:
                             results[key] = {
                                 **data,
                                 'confidence':      min(data.get('confidence') or 0, 70),
-                                'validation_note': "unexpected characters (" + " ".join(_bad) + ") - please verify",
+                                'validation_note': "unexpected characters (" + " ".join(_bad_shown) + ") - please verify",
                             }
                             n_flagged += 1
                             format_anomaly_flagged = True
                             continue
-                # Supplier-scoped format first; fall back to the doc-type-scoped
-                # one ('' supplier) so qualification works even when the supplier
-                # is never identified (document-agnostic learning).
-                fmt_entry = (self.format_class_index.get((s_lower, dt_lower, key)) if s_lower else None) \
-                            or self.format_class_index.get(('', dt_lower, key))
+                # ── Wordness gate (default OFF) ── before the format lookup so it works
+                # COLD (no learned history), where free-text name silent-errors are worst.
+                # FLAG-ONLY: a free-text NAME read that doesn't read like a name (document
+                # chrome / ref-code bleed / OCR garble) gets a note + conf cap; the value
+                # is never changed. Gated on is_name_like_field; self-calibrates per field
+                # via the learned word_like flag when history exists (code-like field =>
+                # skip). See extraction/wordness.py + reggie's review.
+                if self.name_wordness and not _authoritative and key in text_field_keys \
+                        and value_quality.is_name_like_field(key) \
+                        and self._accept_norm(val) not in self.accepted_names:
+                    _fe = (self.format_class_index.get((s_lower, dt_lower, key)) if s_lower else None) \
+                          or self.format_class_index.get(('', dt_lower, key))
+                    _word_like = True if not _fe else _fe.get('word_like', True)
+                    _wnote = wordness.name_structure_flag(str(val), word_like=_word_like)
+                    if _wnote:
+                        results[key] = {
+                            **data,
+                            'confidence':      min(data.get('confidence') or 0, 70),
+                            'validation_note': _wnote,
+                        }
+                        n_flagged += 1
+                        format_anomaly_flagged = True
+                        continue
+                # Supplier-scoped format first; fall back to the doc-type-scoped one ('' supplier)
+                # so qualification works even when the supplier is never identified (document-
+                # agnostic learning). The IDENTITY fields (supplier_name/customer_name) get this
+                # global fallback TOO — they need its name_lexicon for the canonical name-repair
+                # (Lid→Ltd, PROFLE→Profile) + truncation flag below, and those are identity's most-
+                # corrected, weakest safety net. What identity must NOT inherit from the global
+                # format is the coarse cross-supplier SHAPE veto: its value IS the scope key, so a
+                # global format aggregates DIFFERENT companies (a corpus 90% "SuperStore" learns
+                # that one shape and would flag every OTHER supplier's clean name). That veto is
+                # bypassed for identity at the shape-check below (see _IDENTITY_FIELD_KEYS there),
+                # NOT by starving it of the lexicon. (Cf. 0cbafb8, which killed the veto by dropping
+                # the whole fallback and silently lost identity's repair + truncation with it — R2.)
+                fmt_entry = self.format_class_index.get((s_lower, dt_lower, key)) if s_lower else None
+                if not fmt_entry:
+                    fmt_entry = self.format_class_index.get(('', dt_lower, key))
                 if not fmt_entry:
                     continue
                 # ── Canonical token repair for NAME-LIKE fields ── runs INDEPENDENT of
@@ -1283,7 +1878,32 @@ class ExtractionEngine:
                             n_flagged += 1
                             format_anomaly_flagged = True
                         continue   # one repair/suggestion per field — skip the anomaly path
-                    # No repair needed. If the value CONFORMS to the learned name
+                    # ── Truncation / fragment flag (reggie follow-up) ── the dominant
+                    # name silent-error class character wordness CANNOT catch (a fragment
+                    # is a real word): a value SHORTER than the history length ("...Ltd -"
+                    # with the site cut) OR a final-token fragment ("...Ltd - B"). Run
+                    # BEFORE conforms_to_lexicon: a final-token fragment still CONFORMS
+                    # (stable prefix matches, count reaches expected_len), so conforms would
+                    # otherwise suppress it. History-gated (name_lex present) => inert
+                    # without confirmed history; under the name_wordness opt-in; flag-only.
+                    # For IDENTITY, only flag truncation when the value is anchored to the
+                    # learned stable prefix — the global fallback aggregates DIFFERENT companies,
+                    # so a legitimately shorter OTHER supplier ("McMahon Associates Ltd" vs a
+                    # "Beaumont…"-dominated history) would otherwise false-flag as shorter-than-
+                    # usual. Non-identity name fields (single-identity scope) keep the plain check.
+                    if self.name_wordness and name_match.is_truncated_name(str(val), name_lex) \
+                            and self._accept_norm(val) not in self.accepted_names \
+                            and (key not in _IDENTITY_FIELD_KEYS
+                                 or name_match.matches_stable_prefix(str(val), name_lex)):
+                        results[key] = {
+                            **data,
+                            'confidence':      min(data.get('confidence') or 0, 70),
+                            'validation_note': 'looks shorter than the usual name — please verify',
+                        }
+                        n_flagged += 1
+                        format_anomaly_flagged = True
+                        continue
+                    # No repair / truncation. If the value CONFORMS to the learned name
                     # pattern (every stable PREFIX token matches; only the variable
                     # TAIL differs), the name_lexicon — a more precise model than the
                     # coarse learned SHAPE — says this is the EXPECTED pattern. Suppress
@@ -1292,8 +1912,36 @@ class ExtractionEngine:
                     # site's length was never confirmed before.
                     if name_match.conforms_to_lexicon(str(val), name_lex):
                         continue
+                # ── MISREAD-SEPARATOR recover-and-flag (reggie) ── a value carrying a foreign,
+                # known-confusable separator ("PO.20011") where THIS field's history is uniformly a
+                # DIFFERENT one ("PO-…") is a likely OCR misread that PASSES both the charset and the
+                # (deliberately separator-folded) shape check — so it would file SILENTLY. Flag it
+                # with the corrected value offered as a suggestion (never a silent rewrite). Gated
+                # exactly like the shape check below: an authoritative/label-confirmed read wins on
+                # type alone, structured refs only (key not in text_field_keys). Inert unless the
+                # field learned a dominant separator (sep_uniform), so a mixed-separator field and
+                # the deliberate interchangeable-separator fold are untouched.
+                if not _authoritative and not _label_confirmed and key not in text_field_keys:
+                    _sepfix = format_anomaly_checker.propose_sep_fix(str(val), fmt_entry)
+                    if _sepfix:
+                        results[key] = {
+                            **data,
+                            'confidence':      min(data.get('confidence') or 0, 70),
+                            'corrected_to':    _sepfix,
+                            'validation_note': f"possible misread separator — did you mean '{_sepfix}'? please verify",
+                        }
+                        n_flagged += 1
+                        format_anomaly_flagged = True
+                        continue
                 anomaly = format_anomaly_checker.check_value(str(val), fmt_entry)
                 if anomaly:
+                    # Type-authoritative (precise mac/ip pattern) or label/landmark-
+                    # confirmed read — accept clean, no shape flag (see the type-authority
+                    # gate above): the value matches the field's nature / was read beside
+                    # its located label, so a learned digit-position SHAPE mismatch is not
+                    # an anomaly. The UN-anchored rigid/keyword path still falls through.
+                    if _authoritative or _label_confirmed:
+                        continue
                     # Free-text field (name/address): a learned shape must never
                     # withhold or trim a valid value here — its shape varies
                     # legitimately. Keep the value, flag softly for a human to
@@ -1301,6 +1949,32 @@ class ExtractionEngine:
                     # discarded by a longer historical shape. Structured/code
                     # fields fall through to the full shape enforcement below.
                     if key in text_field_keys:
+                        # CLEAN-NAME RELAX: a well-formed name (good name-quality; charset
+                        # already clean by here) whose field has NO learned stable-prefix
+                        # identity — the confirmed names don't share a common prefix because
+                        # the field holds DIFFERENT customers/companies — is NOT flagged
+                        # merely for a length/word-count difference: a new customer
+                        # ("McMahon Associates") is normal, not an anomaly. When the field
+                        # DOES carry a stable prefix (single-identity history), a non-
+                        # conforming value is a genuine anomaly (a TRUNCATED "Beaumont Care
+                        # Homes Ltd -" or a WRONG prefix "Totally Different Co -") and still
+                        # flags — conforms_to_lexicon already suppressed a legitimate new
+                        # tail above. A GARBLED name (quality < 0.5) always flags.
+                        _has_stable_prefix = bool(name_lex and name_lex.get('positions'))
+                        if not _has_stable_prefix \
+                                and value_quality.is_name_like_field(key) \
+                                and value_quality.name_quality(str(val)) >= 0.5:
+                            continue
+                        # IDENTITY (supplier_name/customer_name): never apply the coarse cross-
+                        # supplier SHAPE veto. Its value IS the learning scope key, so the global
+                        # ('' supplier) format aggregates DIFFERENT companies by definition — a
+                        # corpus dominated by one supplier would flag every OTHER supplier's clean
+                        # name as "format differs". A garbled identity is still caught by the
+                        # name-quality/wordness path + canonical repair above, which need no cross-
+                        # supplier shape. (Restores 0cbafb8's intent WITHOUT starving identity of
+                        # the name_lexicon repair/truncation net — R2.)
+                        if key in _IDENTITY_FIELD_KEYS:
+                            continue
                         results[key] = {
                             **data,
                             'confidence':      min(data.get('confidence') or 0, 70),
@@ -1381,6 +2055,37 @@ class ExtractionEngine:
         # candidate_override is enabled (then the ledger built during merge is read).
         self._resolve_candidates(results, field_defs, supplier_name, document_slug)
 
+        # ── LEARNED-AGREEMENT CONFIDENCE BOOST ────────────────────────────────
+        # A value that is CONSISTENT with a well-supported learned format for its scope is
+        # more trustworthy the more it has been confirmed — so let per-field confidence GROW
+        # with the field's history (calibration, not inflation): a supplier confirmed hundreds
+        # of times shouldn't keep reading 93%. Gated tight: the field must have a value, NO
+        # validation_note (it passed Stage 4/4.5 clean), and a learned format entry (>=3 distinct
+        # confirmed values). The bonus scales with the confirmed-history `support` and is CAPPED
+        # AT 98 so a boost ALONE never reaches the auto-file threshold (100) — auto-file stays a
+        # deliberate, separately-gated decision. Runs before overall_confidence so the doc
+        # average lifts too. Best-effort: never breaks extraction.
+        try:
+            _boost_lookup = self._make_format_lookup(supplier_name, document_slug)
+            for _k, _d in results.items():
+                if _k.startswith('_') or not isinstance(_d, dict):
+                    continue
+                if not _d.get('value') or _d.get('validation_note'):
+                    continue
+                _fe = _boost_lookup(_k)
+                if not _fe:
+                    continue
+                _sup = _fe.get('support') or 0
+                if _sup < 3:
+                    continue
+                _cur = _d.get('confidence') or 0
+                if _cur >= 98:
+                    continue
+                _b = 5 if _sup >= 20 else 4 if _sup >= 5 else 2
+                _d['confidence'] = min(98, _cur + _b)
+        except Exception:
+            pass
+
         # ── Metadata ──────────────────────────────────────────────────────────
         overall_conf  = validator.overall_confidence(results, field_defs)
         # Document-level format-consistency weighting: penalise the document when
@@ -1417,6 +2122,25 @@ class ExtractionEngine:
         results["_document_type_slug"]   = matched_tmpl.get("document_type_slug") if matched_tmpl else None
         results["_logo_phash"]           = logo_phash
         results["_keyword_fingerprint"]  = kw_fingerprint
+        # Text-led SUPPLIER identity verdict — computed when EITHER the shadow measurement OR the
+        # active conflict flag is live (both default off → byte-identical: verdict never computed).
+        if identity_shadow or self._identity_conflict:
+            _idv = self._compute_identity_verdict(ocr_text, logos, hints, anchors, supplier_name)
+            if identity_shadow:
+                results["_identity_shadow"] = _idv          # measurement path — records only
+            if self._identity_conflict and _idv and _idv.get("conflict"):
+                # FLAG-ONLY: the letterhead reads a DIFFERENT known supplier than the pipeline
+                # resolved. Force review + an advisory note on the identity field. NEVER override
+                # the value, fill an empty one, or flag on abstain/agree.
+                results["_needs_review"] = True
+                for _idk in ("supplier_name", "customer_name"):
+                    _f = results.get(_idk)
+                    if isinstance(_f, dict) and _f.get("value"):
+                        _f["validation_note"] = (
+                            f"Letterhead may read “{_idv.get('text_led')}” — "
+                            f"detected “{_idv.get('resolved')}”. Please confirm the issuer.")
+                        _f["confidence"] = min(int(_f.get("confidence") or 100), 70)
+                        break
 
         # Final resolved value per field — the inspector marks any earlier
         # candidate whose value differs from this as a superseded intermediate.
@@ -1451,6 +2175,25 @@ class ExtractionEngine:
         s_lower    = supplier_name.lower().strip()
         field_meta = {f["key"]: f for f in field_defs}
 
+        # Evidence-based variability: a field with >=2 DISTINCT confirmed values for
+        # this supplier+type is variable IN FACT (e.g. a per-document customer name),
+        # even when the schema doesn't flag it is_variable (free-text fields never are).
+        # Replaying the most-frequent value onto a new document is exactly how one doc's
+        # customer gets stamped onto another's. Count distinct values within the SAME
+        # scope a hint would apply in, and skip those fields — the field falls to review
+        # (empty) instead of being guessed. Mirrors the evidence-based freeze guard in
+        # review/handler.js _buildTemplateFields.
+        distinct_vals: dict[str, set] = {}
+        for h in hints:
+            hk = h.get("field_key")
+            hv = (h.get("hint_value") or "").strip().lower()
+            if not hk or not hv:
+                continue
+            hs = (h.get("supplier_name") or "").lower().strip()
+            ht = h.get("document_type") or ""
+            if hs == s_lower and ((not ht) or ht == (document_slug or "")):
+                distinct_vals.setdefault(hk, set()).add(hv)
+
         for hint in hints:
             h_sup   = (hint.get("supplier_name") or "").lower().strip()
             h_type  = hint.get("document_type") or ""
@@ -1464,6 +2207,8 @@ class ExtractionEngine:
                 continue
             if field_meta[h_key].get("is_variable"):
                 continue
+            if len(distinct_vals.get(h_key, ())) >= 2:
+                continue   # variable BY EVIDENCE — multiple confirmed values; never replay one
 
             # Exact (normalised) supplier match. Substring matching here
             # would let one supplier's hints bleed into another's whenever
@@ -1484,12 +2229,3 @@ class ExtractionEngine:
                     }
 
         return results
-
-    def _should_use_llm(self, current_results: dict,
-                        document_slug: str | None) -> bool:
-        """Decide whether to call the LLM based on current mode and coverage."""
-        # Fast and Smart modes both use keyword+anchor only — no Ollama required.
-        # LLM is reserved for 'ai' mode only (not exposed in UI).
-        if self.mode == "ai":
-            return LLM_AVAILABLE
-        return False

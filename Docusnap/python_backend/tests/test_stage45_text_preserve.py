@@ -179,6 +179,31 @@ def test_varied_site_new_name_not_flagged():
     return f
 
 
+def test_identity_field_not_flagged_by_global_supplier_shape():
+    """A supplier IDENTITY field (supplier_name/customer_name) must NOT be validated against the
+    GLOBAL cross-supplier format: its value IS the scope key, so the global aggregates DIFFERENT
+    suppliers. When one supplier dominates the corpus (SuperStore = 78 of 84 docs) the global
+    learns ONLY that name's shape ('@@@@@@@@@@') + "SuperStore" prefix, and without the exemption
+    every OTHER supplier ("City Office NI") is flagged 'format differs'. A NON-identity name field
+    keeps the global fallback (so canonical-token repair still works)."""
+    f = 0
+    SUP_HIST = ["SuperStore", "City Office NI", "Profile Construction", "Contoso Asia"]
+    counts = {"SuperStore": 78, "City Office NI": 3, "Profile Construction": 2, "Contoso Asia": 1}
+    print("identity field: a different supplier's name is NOT flagged by the dominated global format")
+    sup_fmt = [{"supplier_name": "", "document_type": "wsheet", "field_key": "supplier_name",
+                "sample_values": SUP_HIST, "confirmed_count": 84, "value_counts": counts}]
+    r = _run_fmt({"supplier_name": {"value": "City Office NI", "confidence": 90, "method": "logo"}},
+                 sup_fmt, [{"key": "supplier_name", "type": "text"}])
+    sup = _f(r, "supplier_name")
+    f += not check("identity value kept", sup.get("value") == "City Office NI")
+    f += not check("identity NOT flagged 'format differs'", not sup.get("validation_note"))
+    f += not check("identity confidence not capped", (sup.get("confidence") or 0) >= 90)
+    # (The non-identity global fallback stays active — proven by the Lid->Ltd customer repair in
+    # test_strong_token_repair_auto_applied, which relies on the '' global customer format.)
+    print()
+    return f
+
+
 def main():
     fails = 0
     fails += test_text_value_preserved_on_shape_mismatch()
@@ -186,6 +211,7 @@ def main():
     fails += test_ref_field_still_shape_enforced()
     fails += test_strong_token_repair_auto_applied()
     fails += test_varied_site_new_name_not_flagged()
+    fails += test_identity_field_not_flagged_by_global_supplier_shape()
     if fails:
         print(f"{fails} check(s) failed — Stage 4.5 free-text preservation regressed.")
         return 1

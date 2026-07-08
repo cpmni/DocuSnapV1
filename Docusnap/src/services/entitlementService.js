@@ -21,7 +21,24 @@
 
 const FEATURE = 'detached_client';
 const SETTING_KEY = 'detached_client_licensed';
-const SEATS_KEY = 'detached_client_seats';   // licensed concurrent-client seat count
+// BUNDLING (reversible): for now, a client (search) licence ALSO grants the workflow
+// add-on, and the workflow seat pool defaults to the client seats. `search` and `workflow`
+// stay SEPARATE fields, so flipping this to false cleanly UNTIES them (workflow then needs
+// its own detached_workflow_seats again). This is the ONLY place the two are tied.
+const WORKFLOW_BUNDLED_WITH_CLIENT = true;
+// MASTER FEATURE SWITCH (pre-release, 2026-06): the mailbox / document-assignment / approval
+// WORKFLOW is HIDDEN for the initial release — it needs its own testing flow and may be licensed
+// separately later. While false, `workflow.entitled` is ALWAYS false regardless of seats, so every
+// surface that gates on it goes inert: the client's Mailbox nav, the core Search window's
+// `body.workflow-on` UI (mailbox tab + approval/assign actions), and the desktop/`/v1` workflow
+// endpoints (FEATURE_NOT_LICENSED). ALL the workflow CODE stays intact behind this one flag — flip
+// to true (or wire it to a real signed-token feature claim) to turn the whole feature back on with
+// no other change. Keep new workflow work modular behind this gate.
+const WORKFLOW_FEATURE_ENABLED = false;
+const SEATS_KEY = 'detached_client_seats';        // DEPRECATED local key — never read as entitlement (kept only for the migration test)
+const SEARCH_SEATS_KEY = 'detached_search_seats';   // backend-cached: concurrent search clients
+const WORKFLOW_SEATS_KEY = 'detached_workflow_seats'; // backend-cached: workflow add-on capacity
+const SIGNED_KEY = 'detached_features_signed';      // set when the counts came from the SIGNED token (Phase 2)
 
 function _readSetting(db, key) {
   try {
@@ -32,18 +49,52 @@ function _readSetting(db, key) {
   }
 }
 
+// Resolve a non-negative seat count from `key`. Entitlement is driven PURELY by this
+// count (>0 ⇒ entitled), and the count is only ever written by the licensing handler from
+// the VERIFIED token / backend /v1 response. There is NO local fallback key — a
+// hand-edited local setting can never fabricate entitlement (P0 self-grant fix).
+function _seatCount(getSetting, db, key) {
+  const raw = parseInt(getSetting(db, key), 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : 0;
+}
+
 /**
- * @returns {{ entitled:boolean, feature:string, seats:number, reason:string }}
- *   seats = the licensed concurrent-client seat cap (0 when not entitled; defaults to
- *   1 when entitled but the count is unset). The detached-client SEAT POOL enforces it.
+ * @returns {{ entitled:boolean, feature:string, seats:number, reason:string,
+ *             search:{entitled:boolean,seats:number}, workflow:{entitled:boolean,seats:number} }}
+ *   PER-FEATURE: `search` is the base detached-client capability (a connected client holds
+ *   a search seat); `workflow` is an add-on ON a held search seat (workflow ≤ search by
+ *   construction at the backend). Top-level entitled/seats mirror SEARCH so existing
+ *   callers (the seat pool / claimSeat) are unchanged. Counts come ONLY from the settings
+ *   the licensing handler writes from the VERIFIED token / backend /v1 response
+ *   (detached_search_seats / detached_workflow_seats) — there is NO local fallback, so a
+ *   locally-edited setting can never fabricate entitlement. Default-deny: unset ⇒ 0 ⇒ not entitled.
  */
 function checkClientEntitlement(db, deps = {}) {
   const getSetting = deps.getSetting || _readSetting;
-  const val = getSetting(db, SETTING_KEY);
-  const entitled = val === 'true' || val === '1';
-  const seatsRaw = parseInt(getSetting(db, SEATS_KEY), 10);
-  const seats = entitled ? (Number.isFinite(seatsRaw) && seatsRaw > 0 ? seatsRaw : 1) : 0;
-  return { entitled, feature: FEATURE, seats, reason: entitled ? 'licensed' : 'not_licensed' };
+  const searchSeats   = _seatCount(getSetting, db, SEARCH_SEATS_KEY);
+  const workflowSeats = _seatCount(getSetting, db, WORKFLOW_SEATS_KEY);
+  const search   = { entitled: searchSeats > 0,   seats: searchSeats };
+  const ownWorkflow = { entitled: workflowSeats > 0, seats: workflowSeats };
+  // Tied to the client licence for now (see WORKFLOW_BUNDLED_WITH_CLIENT): a client licence
+  // grants workflow, and the workflow pool defaults to the client seats unless the backend
+  // set its own workflow seats. Untie by flipping the constant — nothing else changes.
+  const workflow = !WORKFLOW_FEATURE_ENABLED
+    ? { entitled: false, seats: 0, disabled: true }   // master switch off → hidden everywhere
+    : WORKFLOW_BUNDLED_WITH_CLIENT
+      ? { entitled: search.entitled || ownWorkflow.entitled,
+          seats: ownWorkflow.seats > 0 ? ownWorkflow.seats : search.seats,
+          bundled: true }
+      : ownWorkflow;
+  // Phase 2: the counts above are written from the SIGNED token when one is cached
+  // (handler._syncSignedFeatures overrides the unsigned JSON), so an unsigned/tampered
+  // JSON response cannot raise the caps; `signed` reflects that source. Old tokens fall
+  // back to the Phase 1 JSON-cached counts (signed:false).
+  const signed = getSetting(db, SIGNED_KEY) === 'true';
+  return {
+    entitled: search.entitled, feature: FEATURE, seats: search.seats,
+    reason: search.entitled ? 'licensed' : 'not_licensed',
+    search, workflow, signed,
+  };
 }
 
-module.exports = { checkClientEntitlement, FEATURE, SETTING_KEY, SEATS_KEY };
+module.exports = { checkClientEntitlement, FEATURE, SETTING_KEY, SEATS_KEY, SEARCH_SEATS_KEY, WORKFLOW_SEATS_KEY, SIGNED_KEY };

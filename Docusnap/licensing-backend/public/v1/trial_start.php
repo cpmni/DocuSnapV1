@@ -60,11 +60,14 @@ try {
         ->execute([$productId, 'product']);
 
     $sel = $pdo->prepare(
-        'SELECT trial_start, trial_end, customer_name, contact_name, email
+        'SELECT trial_start, trial_end, customer_name, contact_name, email, trial_search_seats
          FROM device_registrations WHERE product_id = ? AND fp_hash = ?'
     );
     $sel->execute([$productId, $fpHash]);
     $row = $sel->fetch();
+
+    // Per-trial search-seat override (NULL = policy default). A brand-new trial has none.
+    $searchSeats = ($row && $row['trial_search_seats'] !== null) ? (int) $row['trial_search_seats'] : null;
 
     if ($row && $row['trial_start'] !== null) {
         // RESUME — never move the window. Backfill the customer identity only
@@ -121,11 +124,36 @@ try {
     $state         = ($now < $end) ? 'active' : 'expired';
     $daysRemaining = max(0, (int) ceil(($end->getTimestamp() - $now->getTimestamp()) / 86400));
 
-    $claims = trial_claims($productId, $fpHash, $state, $trialStart, $trialEnd);
+    // Trial includes detached search-client capacity for its duration (see jws.php);
+    // honors the per-trial override when set, else the policy default.
+    $features = trial_features($state, $searchSeats);
+    $claims = trial_claims($productId, $fpHash, $state, $trialStart, $trialEnd, $features);
     $token  = jws_sign($claims, ACTIVE_KID);
 
     audit_event($pdo, null, $fpHash, 'license.trial_started',
         'resumed=' . ($resumed ? '1' : '0') . " state=$state customer_set=1 email_set=" . ($emailVal !== null ? '1' : '0'));
+
+    // Email the owner on a GENUINELY NEW trial only — a resume happens on every
+    // re-check / reinstall, so notifying those would spam. Best-effort (notify_owner
+    // never throws); it must not block or fail the trial response.
+    if (!$resumed) {
+        require_once __DIR__ . '/../../lib/notify.php';
+        $body = implode("\n", [
+            'A new 14-day Scan Finder trial has just been activated.',
+            '',
+            'Business:    ' . $custName,
+            'Contact:     ' . ($contactNameVal ?? '-'),
+            'Email:       ' . ($emailVal ?? '-'),
+            'Product:     ' . $productId,
+            'Device fp:   ' . $fpHash,
+            'Trial start: ' . $trialStart,
+            'Trial end:   ' . $trialEnd,
+            'Client IP:   ' . $ip,
+            '',
+            'Automated notification from the Scan Finder licensing backend.',
+        ]);
+        notify_owner('New trial activated - ' . $custName, $body);
+    }
 
     send_json(200, [
         'token'          => $token,
@@ -135,6 +163,7 @@ try {
         'trial_end'      => $trialEnd,
         'days_remaining' => $daysRemaining,
         'resumed'        => $resumed,
+        'features'       => $features,
     ]);
 } catch (Throwable $e) {
     error_log('trial_start error: ' . $e->getMessage());

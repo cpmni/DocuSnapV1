@@ -47,9 +47,9 @@ def _anchor(**ov):
 def _run(monkey_crop, page_transform, orig=None):
     """Run extract_with_anchors with stubbed crop/relocate/filter. `monkey_crop`
     takes (x,y) crop centre and returns the OCR'd value (or None)."""
-    saved = (anchor._crop_and_ocr, anchor._relocate_value_by_label, anchor._filter_anchors)
-    anchor._crop_and_ocr = lambda page, x, y, w, h, vt, capture=None, verify_fn=None, meta=None: monkey_crop(x, y)
-    anchor._relocate_value_by_label = lambda *a, **k: None       # force the no-label case
+    saved = (anchor._crop_and_ocr, anchor._locate_for_relocation, anchor._filter_anchors)
+    anchor._crop_and_ocr = lambda page, x, y, w, h, vt, capture=None, verify_fn=None, meta=None, continuation=None: monkey_crop(x, y)
+    anchor._locate_for_relocation = lambda *a, **k: None          # force the no-label case (relocate finds nothing)
     anchor._filter_anchors = lambda anchors, s, d: list(anchors)
     try:
         return anchor.extract_with_anchors(
@@ -57,7 +57,7 @@ def _run(monkey_crop, page_transform, orig=None):
             page_images=[FakePage()], field_patterns={"date": {"validation": "date"}},
             validation_patterns=DATE_PATS, page_transform=page_transform)
     finally:
-        anchor._crop_and_ocr, anchor._relocate_value_by_label, anchor._filter_anchors = saved
+        anchor._crop_and_ocr, anchor._locate_for_relocation, anchor._filter_anchors = saved
 
 
 def test_shifted_recovery():

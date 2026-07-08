@@ -75,8 +75,15 @@ function _vqTokenGood(tok) {
   if (!/[A-Za-z]/.test(t)) return false;          // digit/symbol-only ("67")
   if (t.length <= 2) return false;                // fragment ("Fr","St","WM")
   if (![...low].some(c => _VQ_VOWELS.has(c))) return false;  // consonant gibberish
-  if (t.length >= 4 && t[0] === t[0].toUpperCase() && t[0] !== t[0].toLowerCase()
-      && t.slice(1) === t.slice(1).toLowerCase() && !_vqLongConsonantRun(low)) return true;
+  // Proper-noun shape (len>=4, no 4+ consonant run): Title-case ("Beaumont") OR
+  // ALL-CAPS ("BEAUMONT") — many invoices print the company name in capitals, so an
+  // all-caps alphabetic token is real name content. Mirrors value_quality._token_good.
+  if (t.length >= 4 && !_vqLongConsonantRun(low)) {
+    const titleCase = t[0] === t[0].toUpperCase() && t[0] !== t[0].toLowerCase()
+                      && t.slice(1) === t.slice(1).toLowerCase();
+    const allCaps   = /^[A-Za-z]+$/.test(t) && t === t.toUpperCase();
+    if (titleCase || allCaps) return true;
+  }
   return false;
 }
 function nameQuality(value) {
@@ -136,6 +143,17 @@ function saveCorrections(db, document_id, corrections,
        @supplier_name, @document_type)
   `);
 
+  // Reflect a confirmed edit back onto the STORED extraction. getWithExtractions
+  // (the Review / Search / Learning-History reload) reads extractions.display_value
+  // and does NOT merge the corrections table — so without this an edit made on an
+  // already-confirmed doc (Learning History "Open in Review", Learning Repair
+  // send-back) persisted only in corrections/hints/the re-filed copy and looked
+  // "lost" when the doc was reopened. No-op when the field has no extraction row.
+  const updateExtractionValue = db.prepare(`
+    UPDATE extractions SET display_value = @corrected_value, was_corrected = 1
+    WHERE document_id = @document_id AND field_key = @field_key
+  `);
+
   const upsertHint = db.prepare(`
     INSERT INTO supplier_hints
       (supplier_name, document_type, field_key, hint_value, usage_count, last_seen)
@@ -154,6 +172,8 @@ function saveCorrections(db, document_id, corrections,
         document_id, field_key, original_value, corrected_value,
         supplier_name: effectiveSupplier, document_type: document_type || null,
       });
+      // Keep the stored extraction in step with the confirmed value (see above).
+      updateExtractionValue.run({ document_id, field_key, corrected_value: corrected_value ?? '' });
       if (corrected_value) {
         upsertHint.run({
           supplier_name: effectiveSupplier, document_type: document_type || null,
@@ -283,7 +303,8 @@ function saveAnchor(db, {
   supplier_name, document_type, field_key,
   anchor_label, direction, page_zone, x_norm, y_norm,
   w_norm = 0, h_norm = 0, authoritative = false,
-  offset_dx_norm = null, offset_dy_norm = null
+  offset_dx_norm = null, offset_dy_norm = null,
+  label_detected = false
 }) {
   // Keep only the stable caption. If sanitising changes the label, the stored
   // drift-invariant offset was measured against the POLLUTED label's position
@@ -296,12 +317,15 @@ function saveAnchor(db, {
     offset_dx_norm = null;
     offset_dy_norm = null;
   }
-  // A field's OWN NAME is never an on-page caption ("Supplier Name" for the
-  // supplier_name field) — an anchor labelled with it can NEVER be located, so it
-  // blind-crops stale coordinates forever and (if authoritative) shadows a correct
-  // mapping. Drop the label so it becomes a pure-coordinate anchor instead of a
-  // phantom-caption one. Reusable guard for every field.
-  if (anchor_label && field_key) {
+  // Drop a PHANTOM field-name label — one SYNTHESISED from the field name (the ⊕
+  // fallback when no caption could be OCR'd, "Supplier Name" for the supplier_name
+  // field) — because the page never says it, so the anchor would blind-crop stale
+  // coordinates forever and (if authoritative) shadow a correct mapping. But a label
+  // OCR'd FROM THE PAGE (label_detected) that merely HAPPENS to equal the field key is
+  // a REAL, locatable caption and must be KEPT — a custom field named exactly what the
+  // document says ("Make" → on-page "Make", "Serial Number" → "Serial number") is the
+  // common case, and dropping it left the field a label-less blind crop that drifts.
+  if (anchor_label && field_key && !label_detected) {
     const ln = anchor_label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
     if (ln === String(field_key).toLowerCase()) {
       anchor_label   = '';
@@ -560,7 +584,12 @@ function getRecoverySummary(db, { supplier_name, document_type } = {}) {
     SELECT COUNT(*) AS n FROM logo_fingerprints WHERE supplier_name = @supplier_name
   `).get({ supplier_name }).n;
 
-  return { anchors, hints, corrections, logos };
+  const rules = db.prepare(`
+    SELECT COUNT(*) AS n FROM field_rules
+    WHERE supplier_name = @supplier_name AND (@dt IS NULL OR document_type = @dt)
+  `).get({ supplier_name, dt }).n;
+
+  return { anchors, hints, corrections, logos, rules };
 }
 
 function getRecoveryDetail(db, { supplier_name, document_type } = {}, limit = 25) {
@@ -594,25 +623,60 @@ function getRecoveryDetail(db, { supplier_name, document_type } = {}, limit = 25
     ORDER BY match_count DESC LIMIT @limit
   `).all({ supplier_name, limit });
 
-  return { anchors, hints, corrections, logos };
+  const rules = db.prepare(`
+    SELECT field_key, rule_type, token_norm, created_from, side, document_type, usage_count, created_at
+    FROM field_rules
+    WHERE supplier_name = @supplier_name AND (@dt IS NULL OR document_type = @dt)
+    ORDER BY created_at DESC LIMIT @limit
+  `).all({ supplier_name, dt, limit });
+
+  return { anchors, hints, corrections, logos, rules };
 }
 
+// Read-only: the confirmed VALUES the given documents contributed to the learned model
+// (via their extractions/corrections), for the recovery preview's "what will setting
+// these aside reach" transparency. NOTE supplier_hints/field_anchors/field_rules carry no
+// document_id — they aggregate by scope — so setting a doc aside removes its pull on the
+// DERIVED format/value model (getFieldFormats/getFieldValueHistory are confirmed-only) but
+// not on those already-aggregated artifacts, which re-learn from the remaining good docs.
+function getLearningFootprintForDocuments(db, ids) {
+  const list = (Array.isArray(ids) ? ids : []).map(n => parseInt(n, 10)).filter(Number.isInteger);
+  if (!list.length) return { documentIds: [], values: [] };
+  const ph = list.map(() => '?').join(',');
+  const values = db.prepare(`
+    SELECT e.document_id, e.field_key,
+           TRIM(COALESCE(c.corrected_value, e.display_value, e.raw_value)) AS value,
+           d.supplier_name, dt.slug AS document_type
+    FROM extractions e
+    JOIN documents d ON d.id = e.document_id
+    LEFT JOIN document_types dt ON dt.id = d.document_type_id
+    LEFT JOIN corrections c ON c.document_id = e.document_id AND c.field_key = e.field_key
+    WHERE e.document_id IN (${ph})
+    ORDER BY e.document_id, e.field_key
+  `).all(...list);
+  return { documentIds: list, values: values.filter(v => v.value) };
+}
+
+// Scope deleters — supplier_name AND/OR document_type. At least one must be given
+// (never wipe the whole table). Passing only document_type (slug) clears that whole
+// doc-type across ALL suppliers — the "reset a document type" case — and naturally
+// sweeps the '__global__' fill-empty hint copies saveCorrections also writes.
 function clearFieldAnchorsForScope(db, { supplier_name, document_type } = {}) {
-  if (!supplier_name) return { changes: 0 };
-  const dt = document_type || null;
+  const sn = supplier_name || null, dt = document_type || null;
+  if (!sn && !dt) return { changes: 0 };
   return db.prepare(`
     DELETE FROM field_anchors
-    WHERE supplier_name = @supplier_name AND (@dt IS NULL OR document_type = @dt)
-  `).run({ supplier_name, dt });
+    WHERE (@sn IS NULL OR supplier_name = @sn) AND (@dt IS NULL OR document_type = @dt)
+  `).run({ sn, dt });
 }
 
 function clearSupplierHintsForScope(db, { supplier_name, document_type } = {}) {
-  if (!supplier_name) return { changes: 0 };
-  const dt = document_type || null;
+  const sn = supplier_name || null, dt = document_type || null;
+  if (!sn && !dt) return { changes: 0 };
   return db.prepare(`
     DELETE FROM supplier_hints
-    WHERE supplier_name = @supplier_name AND (@dt IS NULL OR document_type = @dt)
-  `).run({ supplier_name, dt });
+    WHERE (@sn IS NULL OR supplier_name = @sn) AND (@dt IS NULL OR document_type = @dt)
+  `).run({ sn, dt });
 }
 
 // Extreme-use recovery only — corrections are the audit trail behind
@@ -621,12 +685,86 @@ function clearSupplierHintsForScope(db, { supplier_name, document_type } = {}) {
 // hints/anchors already derived from them; it only stops them counting
 // toward future format-consensus and audit history for this exact scope.
 function clearCorrectionsForScope(db, { supplier_name, document_type } = {}) {
-  if (!supplier_name) return { changes: 0 };
-  const dt = document_type || null;
+  const sn = supplier_name || null, dt = document_type || null;
+  if (!sn && !dt) return { changes: 0 };
   return db.prepare(`
     DELETE FROM corrections
-    WHERE supplier_name = @supplier_name AND (@dt IS NULL OR document_type = @dt)
-  `).run({ supplier_name, dt });
+    WHERE (@sn IS NULL OR supplier_name = @sn) AND (@dt IS NULL OR document_type = @dt)
+  `).run({ sn, dt });
+}
+
+// ── Field cleanup rules (Review right-click toolkit) ─────────────────────────
+// Operator-taught per-(supplier, doctype, field) rules that strip an adjacent
+// heading/column OCR bled into a field. Applied at extraction time (engine Stage
+// 4.5 via python_backend/extraction/field_rules.py). Two rule types: 'remove_text'
+// (a learned leaked caption) and 'keep_block' (keep the single pattern-matching
+// token). Scoped like the other corpora; reversible in Learning Recovery.
+
+const FIELD_RULE_TOKEN_CAP = 40;
+// MIRRORS python_backend/extraction/field_rules.normalize_token so the stored match
+// key is byte-identical to what the engine compares against (casefold + collapse
+// internal whitespace + cap).
+function normalizeFieldRuleToken(raw) {
+  if (!raw) return '';
+  return String(raw).replace(/\s+/g, ' ').trim().toLowerCase().slice(0, FIELD_RULE_TOKEN_CAP);
+}
+
+function saveFieldRule(db, { supplier_name, document_type, field_key, rule_type,
+                            token, side, min_prefix } = {}) {
+  if (!field_key) return { changes: 0 };
+  if (rule_type !== 'remove_text' && rule_type !== 'keep_block' && rule_type !== 'multiline_continue') return { changes: 0 };
+  const supplier  = normalizeSupplierName(supplier_name || '__global__') || '__global__';
+  const dt        = document_type || null;
+  // token_norm: the literal to remove (remove_text), or the trailing continuation chars
+  // (multiline_continue; default "-"). keep_block carries none.
+  let tokenNorm = null;
+  if (rule_type === 'remove_text') {
+    tokenNorm = normalizeFieldRuleToken(token);
+    if (!tokenNorm) return { changes: 0 };
+  } else if (rule_type === 'multiline_continue') {
+    tokenNorm = (typeof token === 'string' && token.trim()) ? token.trim() : '-';
+  }
+  const sideVal   = side === 'leading' ? 'leading' : 'trailing';
+  const mp        = parseInt(min_prefix, 10);
+  const minPrefix = Number.isFinite(mp) ? Math.max(0, Math.min(50, mp)) : 3;
+  const createdFrom = rule_type === 'remove_text' ? String(token || '') : null;
+
+  // Null-safe upsert (SQLite `IS` matches NULL == NULL) — one row per
+  // (supplier, doctype, field, rule_type, token_norm).
+  const existing = db.prepare(`
+    SELECT id FROM field_rules
+    WHERE supplier_name = @supplier AND field_key = @field_key AND rule_type = @rule_type
+      AND document_type IS @dt AND token_norm IS @tokenNorm
+  `).get({ supplier, field_key, rule_type, dt, tokenNorm });
+  if (existing) {
+    return db.prepare(`
+      UPDATE field_rules SET usage_count = usage_count + 1, created_from = @createdFrom,
+             side = @sideVal, min_prefix = @minPrefix WHERE id = @id
+    `).run({ id: existing.id, createdFrom, sideVal, minPrefix });
+  }
+  return db.prepare(`
+    INSERT INTO field_rules
+      (supplier_name, document_type, field_key, rule_type, token_norm, created_from, side, min_prefix)
+    VALUES (@supplier, @dt, @field_key, @rule_type, @tokenNorm, @createdFrom, @sideVal, @minPrefix)
+  `).run({ supplier, dt, field_key, rule_type, tokenNorm, createdFrom, sideVal, minPrefix });
+}
+
+// All rules, flat — loaded into the per-batch training snapshot and indexed by the
+// engine on (supplier, doctype, field).
+function getFieldRules(db) {
+  return db.prepare(`
+    SELECT supplier_name, document_type, field_key, rule_type, token_norm, side, min_prefix
+    FROM field_rules ORDER BY field_key, rule_type
+  `).all();
+}
+
+function clearFieldRulesForScope(db, { supplier_name, document_type } = {}) {
+  const sn = supplier_name || null, dt = document_type || null;
+  if (!sn && !dt) return { changes: 0 };
+  return db.prepare(`
+    DELETE FROM field_rules
+    WHERE (@sn IS NULL OR supplier_name = @sn) AND (@dt IS NULL OR document_type = @dt)
+  `).run({ sn, dt });
 }
 
 // ── Format templates (OCR correction) ────────────────────────────────────────
@@ -675,6 +813,9 @@ function getFieldFormats(db) {
                                AND c.field_key  = e.field_key
     WHERE d.status          = 'confirmed'
       AND (e.display_value IS NOT NULL OR c.corrected_value IS NOT NULL)
+      -- Never learn from SHADOW reconciliation reads: they back the "verified" total check
+      -- for fields the type doesn't define, and are unconfirmed by the user.
+      AND (e.extraction_method IS NULL OR e.extraction_method <> 'shadow_reconcile')
     ORDER BY d.confirmed_at DESC, d.id DESC
   `).all();
 
@@ -714,12 +855,15 @@ function getFieldFormats(db) {
     }
   }
 
-  // Only return groups with 3+ distinct confirmed values (enough to learn a pattern).
-  // confirmed_count (total confirmed instances, not deduped) lets consumers like
-  // ocr_corrector's noise-profile inference enforce their own, stricter "enough
-  // examples" thresholds without a second DB round-trip.
+  // Emit a group when EITHER: 3+ DISTINCT confirmed values (enough to learn a VARIABLE
+  // pattern), OR the SAME value recurs strongly (3+ confirmations, few distinct) — a
+  // CONSTANT field like a model/serial code whose value OCR keeps misreading. The latter
+  // is what enables ocr_corrector's O→0/I→1 character fix for constant-value fields, which
+  // by definition have <3 distinct values (mirrors ocr_corrector.MIN_CONFIRMED_FOR_SINGLE_SHAPE=3).
+  // confirmed_count (total confirmed instances, not deduped) is carried so consumers can
+  // apply their own stricter thresholds (e.g. the noise-profile gate needs 10+).
   return Object.values(groups)
-    .filter(g => g._values.size >= 3)
+    .filter(g => g._values.size >= 3 || g._count >= 3)
     .map(({ _values, _valueCounts, _count, ...rest }) => ({
       ...rest,
       sample_values:   [..._values].slice(0, 20),
@@ -773,6 +917,7 @@ function resetAllLearning(db) {
     counts.field_anchors           = del('DELETE FROM field_anchors');
     counts.logo_fingerprints       = del('DELETE FROM logo_fingerprints');
     counts.corrections             = del('DELETE FROM corrections');
+    counts.field_rules             = del('DELETE FROM field_rules');
     counts.documents_unlinked      = db.prepare(
       'UPDATE documents SET template_id = NULL WHERE template_id IS NOT NULL').run().changes;
     counts.template_field_mappings = del('DELETE FROM template_field_mappings');
@@ -832,6 +977,7 @@ function resetToFreshInstall(db) {
     counts.field_anchors           = del('DELETE FROM field_anchors');
     counts.logo_fingerprints       = del('DELETE FROM logo_fingerprints');
     counts.corrections             = del('DELETE FROM corrections');
+    counts.field_rules             = del('DELETE FROM field_rules');
     // 3. Learned/managed template store (children before parents).
     counts.template_field_mappings = del('DELETE FROM template_field_mappings');
     counts.template_fields         = del('DELETE FROM template_fields');
@@ -884,6 +1030,13 @@ function getMemoryInventory(db) {
     FROM logo_fingerprints
     GROUP BY supplier_name
   `).all());
+  rows.push(...db.prepare(`
+    SELECT 'rule' AS type, supplier_name, document_type, field_key,
+           COUNT(*) AS records, NULL AS distinct_values,
+           MAX(created_at) AS last_seen
+    FROM field_rules
+    GROUP BY supplier_name, document_type, field_key
+  `).all());
   rows.sort((a, b) =>
     (b.records - a.records) ||
     String(a.supplier_name || '').localeCompare(String(b.supplier_name || '')));
@@ -904,14 +1057,202 @@ function setSetting(db, key, value) {
   `).run(key, value);
 }
 
+// ── Operator-accepted NAME allowlist ────────────────────────────────────────────
+// Exact name values the user has explicitly marked "this IS a valid name" via the Review
+// "This name is correct" button, so the free-text wordness/truncation flags skip them
+// (e.g. an acronym-bearing company like "Cloud VPS" whose "VPS" token reads low on the
+// character-language model). Stored as ONE settings JSON array of canonical forms; the
+// Python engine (engine._accept_norm / set_accepted_names) uses the SAME canonical form.
+const ACCEPTED_NAMES_KEY = 'accepted_name_values';
+function _acceptNorm(value) {
+  return String(value == null ? '' : value).trim().toLowerCase().replace(/\s+/g, ' ');
+}
+function getAcceptedNames(db) {
+  try { const a = JSON.parse(getSetting(db, ACCEPTED_NAMES_KEY, '[]') || '[]'); return Array.isArray(a) ? a : []; }
+  catch { return []; }
+}
+/** Add a name to the allowlist (canonicalised, de-duplicated). Returns the updated list. */
+function addAcceptedName(db, value) {
+  const norm = _acceptNorm(value);
+  if (!norm) return getAcceptedNames(db);
+  const list = getAcceptedNames(db);
+  if (!list.includes(norm)) { list.push(norm); setSetting(db, ACCEPTED_NAMES_KEY, JSON.stringify(list)); }
+  return list;
+}
+/** Remove a name from the allowlist (canonicalised). Returns the updated list. */
+function removeAcceptedName(db, value) {
+  const norm = _acceptNorm(value);
+  const list = getAcceptedNames(db).filter(n => n !== norm);
+  setSetting(db, ACCEPTED_NAMES_KEY, JSON.stringify(list));
+  return list;
+}
+
+// Distinct confirmed VALUES learned for a (supplier, doc-type, field) scope — the same final
+// values getFieldFormats learns shapes from (the user's corrected value if they edited, else
+// the extracted display value). Powers the "View learning history" table so a value that
+// shouldn't exist for the field (e.g. a drift artifact like "Booking" on a reference field)
+// can be spotted and purged.
+function getFieldValueHistory(db, { supplier_name, document_type, field_key } = {}) {
+  if (!field_key) return [];
+  return db.prepare(`
+    SELECT COALESCE(NULLIF(TRIM(c.corrected_value), ''), e.display_value) AS value,
+           COUNT(*) AS count, MAX(d.confirmed_at) AS last_seen
+    FROM extractions e
+    JOIN documents d ON d.id = e.document_id
+    LEFT JOIN document_types dt ON dt.id = d.document_type_id
+    LEFT JOIN corrections   c  ON c.document_id = e.document_id AND c.field_key = e.field_key
+    WHERE d.status = 'confirmed' AND e.field_key = ?
+      AND COALESCE(d.supplier_name, '') = COALESCE(?, '')
+      AND COALESCE(dt.slug, '')         = COALESCE(?, '')
+    GROUP BY value
+    HAVING value IS NOT NULL AND TRIM(value) <> ''
+    ORDER BY count DESC, value ASC
+  `).all(field_key, supplier_name || '', document_type || '');
+}
+
+// List the CONFIRMED documents whose final value for this (supplier, doc-type, field) scope
+// equals `value` — so the Learning-history modal can jump from a learned value to the source
+// documents that taught it (to re-check/correct them via "Edit in Review"). Same scope +
+// final-value expression getFieldValueHistory groups by, so a value shown there maps back to
+// exactly these docs. Returns [{id, original_filename, confirmed_at}], newest first.
+function getDocumentsForFieldValue(db, { supplier_name, document_type, field_key, value } = {}) {
+  if (!field_key || value == null || value === '') return [];
+  return db.prepare(`
+    SELECT d.id, d.original_filename, d.confirmed_at
+    FROM extractions e
+    JOIN documents d ON d.id = e.document_id
+    LEFT JOIN document_types dt ON dt.id = d.document_type_id
+    LEFT JOIN corrections   c  ON c.document_id = e.document_id AND c.field_key = e.field_key
+    WHERE d.status = 'confirmed' AND e.field_key = ?
+      AND COALESCE(d.supplier_name, '') = COALESCE(?, '')
+      AND COALESCE(dt.slug, '')         = COALESCE(?, '')
+      AND COALESCE(NULLIF(TRIM(c.corrected_value), ''), e.display_value) = ?
+    ORDER BY d.confirmed_at DESC, d.id DESC
+  `).all(field_key, supplier_name || '', document_type || '', value);
+}
+
+// Purge a learned VALUE from every learning source for the scope: the confirmed extractions
+// that carry it (so the format/shape sample drops it), plus any corrections and supplier-hint
+// rows that produce it. Filed documents keep their files — only this field's stored value is
+// cleared on the affected docs (it was a wrong value anyway; reprocess re-reads it). Returns
+// the number of rows removed. Wrapped in a transaction.
+function purgeFieldValue(db, { supplier_name, document_type, field_key, value } = {}) {
+  if (!field_key || value == null || value === '') return 0;
+  const sn = supplier_name || '', dts = document_type || '';
+  const tx = db.transaction(() => {
+    let n = 0;
+    n += db.prepare(`
+      DELETE FROM extractions WHERE field_key = ? AND display_value = ?
+        AND document_id IN (
+          SELECT d.id FROM documents d LEFT JOIN document_types dt ON dt.id = d.document_type_id
+          WHERE d.status = 'confirmed' AND COALESCE(d.supplier_name,'') = ? AND COALESCE(dt.slug,'') = ?
+        )`).run(field_key, value, sn, dts).changes;
+    n += db.prepare(`DELETE FROM corrections    WHERE field_key = ? AND corrected_value = ? AND COALESCE(supplier_name,'') = ? AND COALESCE(document_type,'') = ?`).run(field_key, value, sn, dts).changes;
+    n += db.prepare(`DELETE FROM supplier_hints WHERE field_key = ? AND hint_value      = ? AND COALESCE(supplier_name,'') = ? AND COALESCE(document_type,'') = ?`).run(field_key, value, sn, dts).changes;
+    return n;
+  });
+  return tx();
+}
+
+// Rename a learned VALUE for a (supplier, doc-type, field) scope: oldValue → newValue across
+// the confirmed extractions and corrections that carry it (so the format/shape learner and
+// future reads see the corrected spelling — e.g. an OCR slip "$O2" → "SO2"). The stale hint
+// for the old value is dropped (the corrected value re-learns naturally; avoids a unique
+// clash). Filed documents keep their files — only the stored field value changes. Returns the
+// number of rows touched. Wrapped in a transaction.
+function renameFieldValue(db, { supplier_name, document_type, field_key, oldValue, newValue } = {}) {
+  if (!field_key || !oldValue || newValue == null || newValue === '' || oldValue === newValue) return 0;
+  const sn = supplier_name || '', dts = document_type || '';
+  const tx = db.transaction(() => {
+    let n = 0;
+    n += db.prepare(`
+      UPDATE extractions SET display_value = ?, raw_value = ?
+       WHERE field_key = ? AND display_value = ?
+         AND document_id IN (
+           SELECT d.id FROM documents d LEFT JOIN document_types dt ON dt.id = d.document_type_id
+           WHERE d.status = 'confirmed' AND COALESCE(d.supplier_name,'') = ? AND COALESCE(dt.slug,'') = ?
+         )`).run(newValue, newValue, field_key, oldValue, sn, dts).changes;
+    n += db.prepare(`UPDATE corrections SET corrected_value = ? WHERE field_key = ? AND corrected_value = ? AND COALESCE(supplier_name,'') = ? AND COALESCE(document_type,'') = ?`).run(newValue, field_key, oldValue, sn, dts).changes;
+    // Drop the stale hint for the OLD value (the corrected value re-learns on future confirms).
+    db.prepare(`DELETE FROM supplier_hints WHERE field_key = ? AND hint_value = ? AND COALESCE(supplier_name,'') = ? AND COALESCE(document_type,'') = ?`).run(field_key, oldValue, sn, dts);
+    return n;
+  });
+  return tx();
+}
+
+// Count the rows that key off a given supplier IDENTITY, per learning table — for the
+// Learning-Recovery "rename supplier" preview (so an admin sees the blast radius before
+// applying). COALESCE so a NULL supplier_name matches an empty-string query symmetrically.
+function getSupplierScopeCounts(db, name) {
+  const s = (name || '').trim();
+  const one = (t) => db.prepare(`SELECT COUNT(*) n FROM ${t} WHERE COALESCE(supplier_name,'') = ?`).get(s).n;
+  return {
+    documents:         one('documents'),
+    supplier_hints:    one('supplier_hints'),
+    field_anchors:     one('field_anchors'),
+    logo_fingerprints: one('logo_fingerprints'),
+    corrections:       one('corrections'),
+  };
+}
+
+// Rename a SUPPLIER IDENTITY everywhere it is a learning-scope key, atomically. The per-field
+// learning-history tools (purge/rename) can't repair the identity field itself, because they
+// are SCOPED BY supplier — the supplier IS the scope key. This rewrites that key across every
+// table that carries it so a wrong/merged identity (e.g. a supplier read that swallowed the
+// customer, "Profile Construction ACME Inc" -> "Profile Construction") can be corrected in one
+// move and stops propagating via the logo/hint scope.
+//
+//   • documents.supplier_name          — the universal learning scope + folder key
+//   • supplier_hints / field_anchors   — UNIQUE(supplier,…): rename what doesn't collide with an
+//                                        existing row under the new name, DROP the leftover old
+//                                        duplicate (merge). No usage_count sum — the surviving
+//                                        new row's count stands (precision over a rare merge).
+//   • logo_fingerprints / corrections  — plain rename (no scope-unique constraint)
+//   • the stored supplier_name FIELD value (extractions + corrections) on those docs, where it
+//     still equals the OLD identity — so the value shown/learned matches the renamed scope.
+//
+// FILES ARE NOT MOVED: a confirmed doc already filed under the old company folder keeps its
+// file (still reachable via stored_path); only the DB identity changes. Re-file via reprocess
+// if folder consolidation is wanted. Wrapped in a transaction. Returns before/after scope counts.
+// (customer_name-identity types — sales orders — are out of scope here; supplier_name is the
+// universal scope key. NOTE: not version-stamped — a schema-free data operation.)
+function renameSupplier(db, { oldName, newName } = {}) {
+  const from = (oldName || '').trim(), to = (newName || '').trim();
+  if (!from || !to || from === to) return { renamed: 0, before: null, after: null };
+  const before = getSupplierScopeCounts(db, from);
+  const tx = db.transaction(() => {
+    // UNIQUE-scoped learning tables: rename non-colliding rows, drop leftover old duplicates.
+    for (const t of ['supplier_hints', 'field_anchors']) {
+      db.prepare(`UPDATE OR IGNORE ${t} SET supplier_name = @to WHERE supplier_name = @from`).run({ to, from });
+      db.prepare(`DELETE FROM ${t} WHERE supplier_name = @from`).run({ from });
+    }
+    // Plain rename (no scope-unique constraint).
+    db.prepare(`UPDATE logo_fingerprints SET supplier_name = @to WHERE supplier_name = @from`).run({ to, from });
+    db.prepare(`UPDATE corrections        SET supplier_name = @to WHERE COALESCE(supplier_name,'') = @from`).run({ to, from });
+    db.prepare(`UPDATE documents          SET supplier_name = @to WHERE COALESCE(supplier_name,'') = @from`).run({ to, from });
+    // The stored IDENTITY value on those docs (only where it still equals the old name), so the
+    // supplier_name field value matches the renamed scope + re-learns cleanly.
+    db.prepare(`UPDATE extractions SET display_value = @to, raw_value = @to
+                 WHERE field_key = 'supplier_name' AND display_value = @from`).run({ to, from });
+    db.prepare(`UPDATE corrections SET corrected_value = @to
+                 WHERE field_key = 'supplier_name' AND corrected_value = @from`).run({ to, from });
+  });
+  tx();
+  return { renamed: 1, before, after: getSupplierScopeCounts(db, to) };
+}
+
 module.exports = {
   insertExtractions, deleteExtractions,
-  saveCorrections, getHints, isPlausibleSupplierName, normalizeSupplierName,
+  getFieldValueHistory, getDocumentsForFieldValue, purgeFieldValue, renameFieldValue,
+  getSupplierScopeCounts, renameSupplier,
+  saveCorrections, getHints, isPlausibleSupplierName, nameQuality, normalizeSupplierName,
   saveAnchor, sanitizeAnchorLabel, clearAnchors, getAllAnchors,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
   getFieldFormats, getDigitsOnlyFields,
   getRecoverySummary, getRecoveryDetail, getMemoryInventory, resetAllLearning,
-  resetToFreshInstall,
+  resetToFreshInstall, getLearningFootprintForDocuments,
   clearFieldAnchorsForScope, clearSupplierHintsForScope, clearCorrectionsForScope,
+  saveFieldRule, getFieldRules, clearFieldRulesForScope,
   getSetting, setSetting,
+  getAcceptedNames, addAcceptedName, removeAcceptedName,
 };

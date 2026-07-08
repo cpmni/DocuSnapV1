@@ -11,6 +11,17 @@ window.initHelpMode?.('help-mode-toggle', {
   'fulltext':    'Searches inside the documents — the OCR’d text content, not just the filed fields. Use it to find a phrase you remember seeing.',
   'type-filter': 'Limit results to one document type (e.g. only Invoices).',
   'uncommitted': 'When ticked, results also include documents that haven’t been confirmed/filed yet — handy for finding a scan still in the queue.',
+  'company':     'Filter by the company (supplier or customer) on the document.',
+  'reference':   'Filter by the document’s reference or main number (e.g. an invoice number).',
+  'date-from':   'Show documents dated on or after this date.',
+  'date-to':     'Show documents dated on or before this date.',
+  'do-search':   'Run the search. Results also update automatically as you type.',
+  'recycle-bin': 'View deleted documents. Restore them, or (admin) delete permanently. Delete sends a document here — it&rsquo;s recoverable.',
+  'mailbox':     'Show documents shared with you for approval or acknowledgement (if enabled).',
+  'results-pane':'The matching documents. Click one to preview it on the right.',
+  'preview-pane':'A preview of the selected document and its filed details.',
+  'preview-actions':'Open the file, show it in your file explorer, or open it back in Review to change something.',
+  'preview-pages':'Move between the pages of the previewed document.',
   'help-mode':   'Help mode: click any control to see what it does. Press Esc to leave.',
 });
 
@@ -27,21 +38,41 @@ async function _loadDocTypes() {
 
 async function _init() {
   await _loadDocTypes();
-  // Workflow add-on: when licensed the Search window gains the enhanced experience
-  // (confidence signature, workflow actions, mailbox); otherwise it stays basic.
+  // Entitlements drive the experience, and SEARCH and WORKFLOW are SEPARATE add-ons:
+  //  • search   → the enhanced Search surface (confidence signatures, validation notes);
+  //  • workflow → the mailbox + approval actions. The workflow UI appears ONLY when the
+  //    workflow add-on is licensed, so a search-only (or unlicensed) install shows NO
+  //    mailbox/workflow mention at all.
   try {
     const e = await window.docusnap.getEntitlement();
-    window.SearchState.entitled = !!(e && e.entitled);
-  } catch { window.SearchState.entitled = false; }
+    window.SearchState.entitled = !!(e && e.entitled);                                // search
+    window.SearchState.workflowEntitled = !!(e && e.workflow && e.workflow.entitled); // workflow add-on
+  } catch { window.SearchState.entitled = false; window.SearchState.workflowEntitled = false; }
   try { const u = await window.docusnap.authGetCurrentUser(); window.SearchState.role = u && u.role; } catch { /* ignore */ }
-  if (window.SearchState.entitled) {
-    document.body.classList.add('wf-on');
+  // Recycle bin is for the people who can delete (Admin/Edit).
+  if (window.SearchState.role === 'admin' || window.SearchState.role === 'edit') {
+    const rb = document.getElementById('btn-recycle'); if (rb) rb.style.display = '';
+  }
+  if (window.SearchState.entitled) document.body.classList.add('wf-on');              // enhanced search
+  if (window.SearchState.workflowEntitled) {
+    document.body.classList.add('workflow-on');                                       // mailbox + approvals
     if (window.SearchWorkflow) await window.SearchWorkflow.init();
     if (window.SearchMailbox) window.SearchMailbox.init();
   }
   window.SearchPreview.initPageNav();
   window.SearchQuery.initInputs();
+  // Pre-fill from the Home "Quick find" card (full-text — the broadest match) before searching.
+  try {
+    const q = await window.docusnap.getSearchTarget();
+    if (q) { const el = document.getElementById('inp-fulltext'); if (el) el.value = q; }
+  } catch { /* no target */ }
   window.SearchQuery.doSearch();
 }
+
+// If Search is ALREADY open when Quick-find fires, fill the full-text box + re-run live.
+window.docusnap.onSearchSetQuery?.((q) => {
+  const el = document.getElementById('inp-fulltext');
+  if (el) { el.value = q || ''; window.SearchQuery.doSearch(); }
+});
 
 _init();

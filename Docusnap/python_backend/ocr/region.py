@@ -64,22 +64,63 @@ def main():
             chosen, text = rimg, t
             break
 
+    # MULTI-LINE AWARE: a drawn box can cover a value that WRAPS onto 2+ lines (e.g. a work
+    # address "Beaumont Care Homes Ltd -" / "Jordanstown"). PSM 7 (single-line mode) wins the
+    # ladder first but MANGLES a multi-line crop into one garbled line ("p sverablseti Care
+    # Homes Ltd -"). So re-segment the CHOSEN image with PSM 6 (block mode); when it's
+    # genuinely multi-line, rebuild the value line-by-line (top→bottom, joined by a space). A
+    # single-line crop keeps the ladder text — byte-identical. The PSM-6 data is computed once
+    # here and REUSED by --boxes below (no extra OCR pass for the box path).
+    data6 = None
+    mline = 1   # detected line count (for --boxes consumers, e.g. the ⊕ tall-box auto-rule)
+    try:
+        data6 = pytesseract.image_to_data(chosen, config='--oem 3 --psm 6',
+                                          output_type=pytesseract.Output.DICT)
+        groups = {}
+        for i in range(len(data6.get('text', []))):
+            t6 = (data6['text'][i] or '').strip()
+            try: cf6 = float(data6['conf'][i])
+            except Exception: cf6 = -1.0
+            if not t6 or cf6 < 0:
+                continue
+            k6 = (data6['block_num'][i], data6['par_num'][i], data6['line_num'][i])
+            g6 = groups.get(k6)
+            if g6 is None:
+                groups[k6] = {'w': [t6], 'top': data6['top'][i]}
+            else:
+                g6['w'].append(t6); g6['top'] = min(g6['top'], data6['top'][i])
+        seg = [' '.join(g6['w']) for g6 in sorted(groups.values(), key=lambda g: g['top'])]
+        seg = [s for s in seg if len(s) >= 2]          # ignore stray 1-char noise "lines"
+        mline = max(1, len(seg))
+        if len(seg) >= 2:
+            text = ' '.join(seg)
+    except Exception:
+        data6 = None
+
     # Clean up common OCR artifacts
     text = text.replace('\n', ' ').replace('\r', '').strip()
 
     if args.boxes:
         import json
         box = None
+        words = []   # per-word boxes (pre-upscale px) so a caller can split columns
         try:
-            data = pytesseract.image_to_data(chosen, config='--oem 3 --psm 6',
-                                             output_type=pytesseract.Output.DICT)
+            data = data6 if data6 is not None else pytesseract.image_to_data(
+                chosen, config='--oem 3 --psm 6', output_type=pytesseract.Output.DICT)
             xs, ys, x2s, y2s = [], [], [], []
             for i in range(len(data.get('text', []))):
-                if not (data['text'][i] or '').strip():
+                w = (data['text'][i] or '').strip()
+                if not w:
                     continue
                 xs.append(data['left'][i]); ys.append(data['top'][i])
                 x2s.append(data['left'][i] + data['width'][i])
                 y2s.append(data['top'][i] + data['height'][i])
+                # Each word mapped back to the caller's ORIGINAL (pre-upscale) px, so a
+                # consumer (e.g. the ⊕ anchor capture) can cluster words by horizontal
+                # gap and keep only the column nearest the value.
+                words.append({"text": w,
+                              "box": [data['left'][i] / scale, data['top'][i] / scale,
+                                      data['width'][i] / scale, data['height'][i] / scale]})
             if xs:
                 # Union of word boxes, mapped back to original (pre-upscale) px.
                 l, t = min(xs) / scale, min(ys) / scale
@@ -87,7 +128,7 @@ def main():
                 box = [l, t, bw, bh]
         except Exception:
             box = None
-        print(json.dumps({"text": text, "box": box}), end='', flush=True)
+        print(json.dumps({"text": text, "box": box, "words": words, "lines": mline}), end='', flush=True)
         return
 
     print(text, end='', flush=True)

@@ -38,21 +38,94 @@
           </section>
 
           <section id="common">
-            <h2>Settings you may need</h2>
+            <h2>How Settings is organised</h2>
+            <p>Settings is split into clearly-named tabs. The everyday ones are at the top; admin tools are below a
+              divider. Most have a sensible default &mdash; you rarely need to change anything.</p>
             <ul>
-              <li><b>Output folder</b> &mdash; where your filed documents are saved. Change this if you want
-                documents to go somewhere else.</li>
-              <li><b>Processed-scans folder</b> &mdash; where originals are kept track of after processing.</li>
-              <li><b>Processing mode</b> &mdash; <b>Fast</b> (instant) or <b>Smart</b> (the default, more thorough).
-                Pick whichever suits your documents.</li>
-              <li><b>Performance / threads</b> &mdash; how many documents to work on at once. More can speed up
-                large imports on a capable computer; the default is a safe choice.</li>
-              <li><b>Document types &amp; fields</b> &mdash; turn document types on or off and add your own fields
-                (for example a "PO number") to a type.</li>
-              <li><b>Templates</b> &mdash; review the layouts Scan Finder has learned.</li>
-              <li><b>Activation</b> &mdash; shows your licence status.</li>
-              <li><b>Re-run setup</b> &mdash; opens the first-time setup wizard again.</li>
+              <li><b>Files &amp; filing</b> &mdash; your folders (where scans come from and where filed documents go) and
+                how files are named.</li>
+              <li><b>Document Types</b> &mdash; the kinds of document you handle and their fields.</li>
+              <li><b>Processing</b> &mdash; how scans are read: speed vs accuracy, plus the automatic helpers below.</li>
+              <li><b>Appearance</b> &mdash; the colour theme, which Home-screen cards show, and how the window behaves.</li>
             </ul>
+            <p>Admin tools sit below: <b>Templates &amp; learning</b>, <b>Users &amp; activity</b>, <b>Licensing</b>
+              and <b>Advanced</b>.</p>
+
+            <h3>Files &amp; filing</h3>
+            <p>The folders Scan Finder works with. Only the <b>Output Folder</b> is required.</p>
+            <figure class="shot-fig">
+              <img class="shot" src="img/settings-general-folders.png" alt="The folder settings: Output, Processed Scans and Watch folders">
+              <figcaption><b>Output</b> &mdash; where filed documents go &nbsp;&middot;&nbsp;
+                <b>Processed Scans</b> &mdash; where each original is moved after filing, nothing is deleted (leave blank
+                to keep originals in place) &nbsp;&middot;&nbsp; <b>Watch</b> &mdash; drop scans here to import them
+                automatically. This tab also sets how filed documents are <b>named and foldered</b>.</figcaption>
+            </figure>
+
+            <h3>Processing</h3>
+            <p>How Scan Finder reads your scans. Sensible defaults &mdash; change these only if you want to:</p>
+            <ul>
+              <li><b>Processing mode</b> &mdash; <b>Fast</b> (instant) or <b>Smart</b> (the default, more thorough).</li>
+              <li><b>Auto-file 100%-confidence documents</b> &mdash; when a document is read with full confidence,
+                Scan Finder files it automatically and skips Review. You still review anything less certain.</li>
+              <li><b>Auto-rotate sideways or upside-down scans</b> &mdash; detects a page scanned the wrong way up and
+                turns it upright &mdash; for reading <em>and</em> in the filed PDF. It only acts when it's confident;
+                pages it isn't sure about are left as-is.</li>
+              <li><b>Read values that wrap onto the next line</b> &mdash; joins a value that continues on the line below,
+                such as a long address.</li>
+              <li><b>Name checks</b> &mdash; flags an odd-looking supplier or customer name for a quick look rather than
+                filing it silently. A real name that gets flagged just needs confirming &mdash; that teaches it.</li>
+              <li><b>Confidence threshold</b> &mdash; documents with any field below this are sent to Review for a check.</li>
+              <li><b>Performance / threads</b> &mdash; how many documents to work on at once. More can speed up large
+                imports on a capable computer; the default is safe.</li>
+            </ul>
+
+            <h3>Appearance</h3>
+            <ul>
+              <li><b>Colour theme</b> &mdash; six themes, light and dark, applied to the whole app.</li>
+              <li><b>Home screen</b> &mdash; tick which cards appear on your Home dashboard (Quick find, Documents filed,
+                Storage, Backup&hellip;). Turn off any you don't use &mdash; the change applies straight away.</li>
+              <li><b>Window behaviour</b> &mdash; whether closing the window <b>minimises Scan Finder to the tray</b> (so
+                watch-folder import and remote search clients keep running) or fully quits it. Exit from the tray icon's
+                right-click menu.</li>
+            </ul>
+            <figure class="shot-fig">
+              <img class="shot" src="img/home-themes.png" alt="The home screen shown in a light theme (Warm Paper) and a dark theme">
+              <figcaption>Six themes, light and dark &mdash; here&rsquo;s the home screen in <b>Warm Paper</b> (left) and <b>Dark</b> (right).</figcaption>
+            </figure>
+
+            <div class="callout note">
+              <div class="callout-title">Set up on their own pages</div>
+              <p>Bigger setup areas have their own guide pages:
+                <a class="xref" href="document-types.html">Document Types &amp; Fields</a> (turn types on/off, add
+                fields, add from the catalog) and
+                <a class="xref" href="search.html#output-structure">Output Structure</a> (how documents are named and
+                foldered, found under <b>Files &amp; filing</b>). The layouts Scan Finder has learned live under
+                <a class="xref" href="templates.html">Templates &amp; learning</a>.</p>
+            </div>
+          </section>
+
+          <section id="advanced">
+            <h2>Admin &amp; advanced settings</h2>
+            <p>Below the divider. You can safely leave these alone, but a few are genuinely useful:</p>
+            <ul>
+              <li><b>Advanced &rarr; Backup &amp; Restore</b> &mdash; export your whole setup (settings, document types,
+                fields and everything Scan Finder has learned) to a single <b>password-protected file</b>, and restore it
+                after a reinstall or on a new computer. A reassuring safety net; the file is encrypted, so keep the
+                password somewhere safe. The Home screen's <b>Backup</b> card shows when you last did this.</li>
+              <li><b>Advanced &rarr; Re-run setup</b> &mdash; opens the first-time setup wizard again.</li>
+              <li><b>Templates &amp; learning &rarr; Keyword Label Overrides</b> &mdash; teach extra words that mean the
+                same as a field's label, per document type (for example, if your invoices say &ldquo;Our ref&rdquo;
+                instead of &ldquo;Reference&rdquo;). Optional and advanced &mdash; most people never need it.</li>
+              <li><b>Users &amp; activity</b> &mdash; add staff accounts (admin / edit / read-only) and review the
+                activity log of what's been done.</li>
+            </ul>
+          </section>
+
+          <section id="licensing">
+            <h2>Activation &amp; licensing</h2>
+            <p>Scan Finder runs on a free trial or a paid licence, tied to this computer, and works fully offline. The
+              <b>Activation</b> area shows your current status. If you're unsure about your licence, ask whoever set up
+              Scan Finder for you.</p>
           </section>
 
           <section id="help">

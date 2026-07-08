@@ -227,11 +227,22 @@ def main() -> int:
         failures += 1
 
     if sep_entry:
-        if not check("'INV/001' (slash not in learned set) flagged as anomaly",
-                     check_value('INV/001', sep_entry) is not None):
+        # Ref separators '-' '/' '.' are INTERCHANGEABLE: a supplier writing INV-001 and INV/001
+        # interchangeably shouldn't have the rarer one flagged (trust-first — an OCR '-'<->'/' slip
+        # or a formatting variant). Group STRUCTURE is still enforced (see below).
+        if not check("'INV/001' TOLERATED — '/' is an interchangeable ref separator (not flagged)",
+                     check_value('INV/001', sep_entry) is None):
             failures += 1
         if not check("'INV-999' passes alphanum_sep check",
                      check_value('INV-999', sep_entry) is None):
+            failures += 1
+        # A NON-ref separator (space) is still an unexpected character.
+        if not check("'INV 001' (space) still flagged — not an interchangeable ref separator",
+                     check_value('INV 001', sep_entry) is not None):
+            failures += 1
+        # STRUCTURE is still enforced: an extra group is a shape anomaly even with a ref separator.
+        if not check("'INV-001-2' (extra group) still flagged on structure",
+                     check_value('INV-001-2', sep_entry) is not None):
             failures += 1
 
     # ── 8. date_like history ──────────────────────────────────────────────────

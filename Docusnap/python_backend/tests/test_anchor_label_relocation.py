@@ -8,10 +8,23 @@ codebase convention of testing extraction logic directly.
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from extraction import anchor
 from extraction import template_mapper
+
+
+@pytest.fixture(autouse=True)
+def _restore_locate_anchor():
+    """Save/restore template_mapper._locate_anchor around every test so the stub
+    installed by _patch() never LEAKS to other test files (it was previously left in
+    place, which made tests/test_template_mapper.py::test_locate_anchor fail when run
+    in the same pytest session)."""
+    _orig = template_mapper._locate_anchor
+    yield
+    template_mapper._locate_anchor = _orig
 
 
 class _StubLocate:

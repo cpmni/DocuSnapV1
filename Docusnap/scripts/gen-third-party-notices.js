@@ -69,10 +69,6 @@ if (pythonPresent) {
 s += 'User-interface fonts (self-hosted asset files, src/windows/shared/fonts)\n';
 s += '  IBM Plex Sans / IBM Plex Mono   SIL Open Font License 1.1 (c) 2017 IBM Corp.\n\n';
 
-s += 'NOT distributed (excluded from the installer; listed for completeness)\n';
-s += '  Ollama + phi3:mini              excluded via build config (if ever bundled,\n';
-s += '                                  both are MIT, (c) Microsoft / Ollama authors)\n\n';
-
 // ── Splice the new inventory into the existing notice ────────────────────────
 let txt = fs.readFileSync(NOTICE, 'utf8');
 const re = /-{60,}\r?\n1\. COMPONENT INVENTORY\r?\n-{60,}\r?\n[\s\S]*?(?=-{60,}\r?\n2\. PER-COMPONENT COPYRIGHT)/;

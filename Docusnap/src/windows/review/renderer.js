@@ -12,6 +12,20 @@ const FALLBACK_FIELD_KEYS = ['supplier_name', 'invoice_number', 'invoice_date'];
 const TYPE_TO_VALIDATION = {
   date: 'date', currency: 'currency', number: 'currency', amount: 'currency',
   alphanumeric: 'alphanumeric', job_reference: 'job_reference', currency_code: 'currency_code',
+  // Explicit "Reference number" field type -> code (alphanumeric) gate, mirroring
+  // engine.py _TYPE2VAL. So the on-blur validator accepts NNNN-NNNN-N refs.
+  reference: 'alphanumeric',
+  // Supplementary structured types — MUST stay in lockstep with engine.py _TYPE2VAL
+  // and config validation_patterns (the same anchored patterns drive both the on-blur
+  // check and the dev-inspector rx% score). email/percentage/postcode_uk/vat_gb/iban/
+  // website are flag-only (UI warn, not engine-withheld); reference_code also gates in
+  // the engine (_TYPE2VAL).
+  email: 'email', percentage: 'percentage', postcode_uk: 'postcode_uk', vat_gb: 'vat_gb',
+  reference_code: 'reference_code', iban: 'iban', website: 'website',
+  // MAC / IP addresses — colon-bearing codes. Flag-only (kept, surfaced for review),
+  // with their own patterns/charsets in config so a value like D4:F0:C9:25:9B:64 or
+  // 192.168.1.200 is type-VALID (the ':' isn't flagged as an unexpected character).
+  mac_address: 'mac_address', ip_address: 'ip_address',
 };
 // Mirror engine.py _is_ref_field: a reference/ticket field (key ends _number /
 // _no or contains "reference").
@@ -30,6 +44,11 @@ function validationKeyFor(def) {
   if ((mapped === 'currency' || mapped === 'currency_code') && isRefFieldKey(def.key)) {
     mapped = 'alphanumeric';
   }
+  // The doc-type REFERENCE role is created as plain "text", so it would be left
+  // free-text (no constraint). It holds a CODE — gate it as alphanumeric, mirroring
+  // engine.py's _seed_field_patterns ref-role coercion, so the on-blur validator and
+  // the backend agree for text-typed ref fields.
+  if (!mapped && isRefFieldKey(def.key)) mapped = 'alphanumeric';
   return mapped;
 }
 let validationPatterns = null;   // { date:[RegExp,…], … } compiled once from config
@@ -67,7 +86,22 @@ function fieldValidationError(key, value) {
   if (!valKey) return null;                      // free-text / untyped → no constraint
   const pats = validationPatterns && validationPatterns[valKey];
   if (!pats || !pats.length) return null;
-  if (pats.some(re => re.test(v))) return null;
+  // Date/currency: a substring match is fine (the value legitimately sits inside
+  // formatting, and salvage handles the rest). Other typed fields (codes/refs):
+  // require >=80% COVERAGE — the longest matching span over the value — the SAME
+  // metric the backend credibility gate (anchor._pattern_coverage) and the dev-
+  // inspector "rx %" badge use, so the on-blur warning, the badge and extraction
+  // stay one definition (a colon-laden MAC scores ~18% → warns, never silently OK).
+  if (valKey === 'date' || valKey === 'currency' || valKey === 'currency_code') {
+    if (pats.some(re => re.test(v))) return null;
+  } else {
+    let best = 0;
+    for (const re of pats) {
+      let m = null; try { m = v.match(re); } catch { m = null; }
+      if (m && m[0]) best = Math.max(best, m[0].length / v.length);
+    }
+    if (best >= 0.8) return null;
+  }
   return valKey === 'date'          ? 'Not a valid date'
        : valKey === 'currency'      ? 'Not a valid amount'
        : valKey === 'currency_code' ? 'Not a valid currency code'
@@ -98,6 +132,13 @@ function clearFieldWarning(row, input) {
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let queue            = [];
+// Review-queue view: group rows by sender (default) vs raw newest-first. A same-window
+// UI preference (persisted in localStorage, not a DB setting), like the queue splitter.
+let queueGrouped     = (localStorage.getItem('review_queue_grouped') || 'true') !== 'false';
+// Which sender groups are EXPANDED in the grouped list. Default: none (all collapsed).
+// Same-session UI state (not persisted) — each window open starts fully collapsed;
+// selecting a doc auto-expands its group so the review flow stays visible.
+let expandedSuppliers = new Set();
 let deferredQueue    = [];
 let bulkFiling       = false; // true while File All Ready runs; suppresses the auto-refresh listener so its per-doc confirm broadcasts can't clobber the loop's local queue mid-run
 let allDocTypes      = [];
@@ -112,6 +153,25 @@ let anchorTaughtFields = new Set(); // field_keys taught via the ⊕ highlight/z
 // leaves NO learned trace, so an accidental wrong pick can't poison the corpus.
 // Keyed by field_key → the saveFieldAnchor payload computed at draw time.
 let pendingAnchors   = {};
+// When set, the next box drawn on the preview is a MANUAL ANCHOR (a label to point at,
+// e.g. "Invoice Total") for this field — not a value read. Armed by the readout's
+// "Draw the anchor" button; consumed on mouseup by runAnchorDraw.
+let anchorDrawField  = null;
+// Field cleanup rules taught via the right-click menu this cycle, STAGED in memory
+// and persisted only on Confirm (mirrors pendingAnchors). Keyed field_key → array of
+// saveFieldRule payloads. An un-confirmed teach (skip/defer/doc-change) leaves no trace.
+let pendingFieldRules = {};
+// SAVED field rules (read-only cache) so the right-click menu can reflect a persisted rule
+// (e.g. show "wrapping is on" after a confirm cleared pendingFieldRules). Refreshed on load
+// and after each confirm.
+let _savedFieldRules = [];
+async function _loadSavedFieldRules() {
+  try { _savedFieldRules = (await window.docusnap.getFieldRules?.()) || []; } catch { _savedFieldRules = []; }
+}
+_loadSavedFieldRules();
+// The draw context of the most recent ⊕ teach, so the readout's Left/Above toggle can
+// re-run label detection in the chosen direction without redrawing the box.
+let lastTeachCtx     = null;   // { fieldKey, rect, imgW, imgH, scaleX, scaleY, value }
 let activeTab        = 'review';
 let isAdmin          = false;   // gates the destructive bulk-delete actions (also enforced server-side)
 let canEdit          = false;   // admin OR edit — gates per-row delete (also enforced server-side)
@@ -165,20 +225,43 @@ document.getElementById('btn-close').addEventListener('click', () => window.docu
 
 // ── Help: user guide + contextual help mode ───────────────────────────────────
 document.getElementById('btn-help-guide')?.addEventListener('click', () => window.docusnap.openHelpWindow('review'));
+// Template Wizard "What's this?" → the Templates & Learning guide (explains ⊕ vs Wizard vs Teach).
+document.getElementById('wiz-help-link')?.addEventListener('click', () => window.docusnap.openHelpWindow('which-tool'));
 
 const HELP_TEXTS = {
   'review-tab':    'Documents waiting to be checked and confirmed.',
   'deferred-tab':  'Documents you set aside to deal with later.',
-  'doc-nav':       'Step to the previous / next document in the list.',
+  'nav-prev':      'Go to the previous document in the list.',
+  'nav-next':      'Go to the next document in the list.',
   'split':         'Split a multi-page PDF — by page range, every page, or every N pages.',
-  'anchor-wizard': 'Template Wizard (admin): map where each field sits on this layout.',
-  'enhance':       'Re-read a poor scan with stronger image cleanup, then re-extract.',
+  'anchor-wizard': 'Teach this layout (admin): if a supplier keeps misreading, map where each field sits so future documents from them read correctly.',
+  'enhance':       'If the scan is faint or noisy, re-read it with stronger image cleanup, then re-extract.',
+  'template-manager': 'If this supplier/layout keeps misdetecting, save the reviewed values as a managed template so the next document is recognised automatically.',
+  'reprocess':     'If you changed the document type or fixed settings, run extraction again on this document to refresh the values.',
   'zoom':          'Zoom and pan the document preview; Reset returns to fit.',
   'confirm':       'Accept the values shown and file this document.',
   'skip':          'Move to the next document without filing this one.',
   'defer':         'Set this document aside in the Deferred tab to handle later.',
   'file-all':      'File every queued document whose type and required fields are complete. Incomplete ones are left for manual review.',
-  'delete-all':    'Delete every document in this tab. This cannot be undone.',
+  'delete-all':    'Move every document in this tab to the recycle bin (you can restore them from Search → Recycle bin).',
+  'queue-list':    'The documents in this tab. Click one to open it; the ↑/↓ buttons (and arrow keys) also move between them.',
+  'fields-panel':  'The details read from this document. Click any value to edit it; a note appears if a value looks wrong for its field.',
+  'doctype-select':'The document type for this document. Change it if it was detected wrong — the field list updates to match.',
+  'new-doctype':   'Create a new document type here, without leaving Review.',
+  'advanced':      'Admin tools for a field’s learning history — view every value Scan Finder has learned for it, fix a likely OCR slip, or remove a value that shouldn’t be there.',
+  'preview-ocr':   'Overlay the text Scan Finder read on top of the page, so you can see where each value came from.',
+  'pages':         'Move between the pages of a multi-page document.',
+  'acknowledge':   'Mark this flagged document as checked, so it can be filed.',
+  'delete':        'Move this document to the recycle bin — recoverable from Search → Recycle bin.',
+  'reprocess-all': 'Re-run extraction on every document in the queue — useful after teaching or changing settings.',
+  'stop-file-all': 'Stop filing the rest. Documents already filed stay filed.',
+  'stop-reprocess':'Stop reprocessing the rest. Already-done documents keep their new values.',
+  'draw-anchor':   'Draw a box around a fixed label on the page (e.g. “Date:”) for the wizard to track.',
+  'draw-target':   'Draw a box around the value to read, next to the anchor label.',
+  'wiz-save':      'Save this field mapping for the layout, so future documents read it automatically.',
+  'show-resolved': 'Show where the saved mapping actually reads on this page (highlighted in amber).',
+  'open-manager':  'Open the full Template Manager (in Settings) for this layout.',
+  'wiz-field':     'Pick which field you’re mapping in the wizard.',
   'help-mode':     'Help mode: click any control to see what it does. Press Esc to leave.',
 };
 window.initHelpMode?.('help-mode-toggle', HELP_TEXTS);
@@ -208,6 +291,23 @@ async function loadQueue() {
     canEdit = !!(me && (me.role === 'admin' || me.role === 'edit'));
   } catch { isAdmin = false; canEdit = false; }
   applyAnchorWizardGate();   // Template Wizard is admin-only (mapping IPC is admin-gated server-side)
+  // "+ New type" header launcher — admin only (the create IPC is admin-gated server-side).
+  const _newTypeBtn = document.getElementById('btn-new-doctype');
+  if (_newTypeBtn) { _newTypeBtn.style.display = isAdmin ? '' : 'none'; _newTypeBtn.onclick = openNewTypeModal; }
+  // "Save as template" (promote-to-template) is an ADVANCED admin tool — gate it like
+  // "+ New type" and the Template Wizard so it stops leaking to operators (it was the only
+  // advanced template control with no role gate). Learning is unaffected either way.
+  const _promoteBtn = document.getElementById('btn-add-template');
+  if (_promoteBtn) _promoteBtn.style.display = isAdmin ? '' : 'none';
+  // Admin-only "Edit type" shortcut: deep-links to Settings -> Document Types to edit the
+  // CURRENT type's fields/roles (fixes the dangling-role dead-end where Confirm is blocked
+  // and the field to fix isn't on screen). Deep-link only — no in-place editing here.
+  const _editTypeBtn = document.getElementById('btn-edit-doctype');
+  if (_editTypeBtn) {
+    _editTypeBtn.style.display = isAdmin ? '' : 'none';
+    _editTypeBtn.onclick = () => window.docusnap.openSettingsWindowAtSection('doctypes');
+  }
+  updateEditTypeBtn();
   queue         = await window.docusnap.getReviewQueue();
   deferredQueue = await window.docusnap.getDeferredQueue();
   allDocTypes   = await window.docusnap.getAllDocTypes();
@@ -216,11 +316,70 @@ async function loadQueue() {
   populateTypeDropdown();
   updateTabCounts();
   renderQueueList();
-  if (queue.length > 0) selectDoc(queue[0]);
+  if (queue.length > 0 && !queueGrouped) selectDoc(queue[0]);   // grouped starts all-collapsed; user picks a group
+  refreshAutoCommittedBar();   // surface recently auto-filed docs for re-checking
 
   // If opened via "Edit in Review" from Search, navigate to the requested doc.
   const targetId = await window.docusnap.getReviewTarget();
   if (targetId) _navigateToDoc(targetId);
+}
+
+// ── "Auto-committed" re-surface ──────────────────────────────────────────────
+// Recently auto-filed (100%) docs can still be checked/edited: a bar offers them, and clicking
+// loads them (now confirmed) into the queue LIST so the operator can open, change and re-file
+// any that need it. The auto-refresh listener is suppressed while this view is active.
+let _viewingAutoFiled = false;
+let _autoFiledDocs    = [];
+
+async function refreshAutoCommittedBar() {
+  const bar = document.getElementById('auto-committed-bar');
+  if (!bar) return;
+  if (_viewingAutoFiled) {
+    bar.innerHTML = `Showing <b>${_autoFiledDocs.length}</b> auto-filed document${_autoFiledDocs.length === 1 ? '' : 's'} — `
+      + `<span class="acb-back">← Back to the review queue</span>`;
+    bar.style.display = 'block';
+    return;
+  }
+  let res = { docs: [] };
+  try { res = (await window.docusnap.getRecentAutoFiled?.()) || res; } catch {}
+  _autoFiledDocs = res.docs || [];
+  if (_autoFiledDocs.length) {
+    bar.innerHTML = `<span class="acb-dismiss" title="Dismiss this notice" aria-label="Dismiss">×</span>`
+      + `<b>✓ ${_autoFiledDocs.length}</b> document${_autoFiledDocs.length === 1 ? '' : 's'} auto-committed on the last pass — `
+      + `<span class="acb-back">click here to review them</span>`;
+    bar.style.display = 'block';
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+document.getElementById('auto-committed-bar')?.addEventListener('click', async (e) => {
+  // "×" dismiss: clear the recent-auto-filed batch so this notice stays gone until the
+  // NEXT auto-file pass repopulates it (clearRecentAutoFiled resets the rolling setting).
+  if (e.target.closest('.acb-dismiss')) {
+    e.stopPropagation();
+    try { await window.docusnap.clearRecentAutoFiled?.(); } catch {}
+    _autoFiledDocs = [];
+    const bar = document.getElementById('auto-committed-bar');
+    if (bar) bar.style.display = 'none';
+    return;
+  }
+  if (_viewingAutoFiled) { await exitAutoFiledView(); return; }
+  if (!_autoFiledDocs.length) return;
+  _viewingAutoFiled = true;
+  queue = _autoFiledDocs.slice();
+  renderQueueList();
+  if (queue.length) selectDoc(queue[0]);
+  refreshAutoCommittedBar();
+});
+
+async function exitAutoFiledView() {
+  _viewingAutoFiled = false;
+  queue = await window.docusnap.getReviewQueue() || [];
+  updateTabCounts();
+  renderQueueList();
+  if (queue.length) selectDoc(queue[0]);
+  refreshAutoCommittedBar();
 }
 
 function reviewFields() {
@@ -235,6 +394,7 @@ function labelFor(key) {
 }
 
 // ── Doc type dropdown ─────────────────────────────────────────────────────────
+const NEW_TYPE_SENTINEL = '__new_type__';   // dropdown launcher value; intercepted, never a real type
 function populateTypeDropdown() {
   const sel = document.getElementById('doctype-select');
   sel.innerHTML = '<option value="">— Select document type —</option>';
@@ -244,10 +404,48 @@ function populateTypeDropdown() {
     opt.textContent = t.name;
     sel.appendChild(opt);
   }
+  // Admin-only "create a new type" launcher, discovered exactly when choosing a type.
+  // The sentinel value is intercepted in the change handler below and never sticks.
+  if (isAdmin) {
+    const div = document.createElement('option');
+    div.disabled = true; div.textContent = '──────────';
+    sel.appendChild(div);
+    const add = document.createElement('option');
+    add.value = NEW_TYPE_SENTINEL; add.textContent = '＋ Create new type…';
+    sel.appendChild(add);
+  }
+}
+
+// The admin "Edit type" shortcut is only meaningful with a type selected — it opens
+// Settings -> Document Types to edit the current type's fields/roles (e.g. to fix a
+// dangling Reference/Date role that is blocking Confirm). Enabled state tracks the
+// dropdown selection.
+function updateEditTypeBtn() {
+  const b = document.getElementById('btn-edit-doctype');
+  if (b) b.disabled = !selectedTypeSlug;
 }
 
 document.getElementById('doctype-select').addEventListener('change', (e) => {
+  if (e.target.value === NEW_TYPE_SENTINEL) {
+    e.target.value = selectedTypeSlug || '';   // revert — the sentinel never becomes a chosen type
+    openNewTypeModal();
+    return;
+  }
+  const prevSlug = selectedTypeSlug;
   selectedTypeSlug = e.target.value || null;
+  updateEditTypeBtn();
+  // A type change invalidates any in-progress ⊕ teaching: each staged draw was captured
+  // under the PREVIOUS type (and is keyed to it), so committing it under the new type
+  // would leak boxes into the wrong layout. Discard staged teaching on a real type
+  // change — mirrors what changing DOCUMENTS already does (see loadDocument).
+  if (prevSlug !== selectedTypeSlug &&
+      (Object.keys(pendingAnchors).length || Object.keys(pendingFieldRules).length)) {
+    pendingAnchors = {};
+    pendingFieldRules = {};
+    anchorTaughtFields = new Set();
+    try { hideAnchorReadout(); } catch {}
+    try { showToast('Your in-progress field drawings were cleared because the document type changed — please re-draw them for the new type.', 'warn'); } catch {}
+  }
   const dt = allDocTypes.find(t => t.slug === selectedTypeSlug);
   fieldDefs = dt ? dt.fields : (allDocTypes[0]?.fields || []);
   if (currentDoc) {
@@ -269,6 +467,134 @@ document.getElementById('doctype-select').addEventListener('change', (e) => {
   }
   validateConfirm();
 });
+
+// ── Create-a-new-type modal (in-page; reuses the shared DocTypeEditor) ─────────
+// Launched from the "+ New type" header button OR the "＋ Create new type…" dropdown
+// entry. No new window / no new IPC: the editor commits via createDocTypeWithFields and
+// returns the new type, which we splice into the dropdown and auto-select for this doc.
+let _newTypeModalOpen = false;
+function openNewTypeModal() {
+  if (_newTypeModalOpen || !isAdmin) return;
+  if (!window.DocTypeEditor || typeof window.DocTypeEditor.create !== 'function') {
+    _newTypeToast('The document-type editor didn’t load. Try reopening the Review window.');
+    return;
+  }
+  _newTypeModalOpen = true;
+  let closed = false, committing = false, ctl = null;
+
+  const ov = document.createElement('div');
+  ov.setAttribute('data-help-ignore', '');   // help-mode must not swallow clicks inside the modal
+  Object.assign(ov.style, { position: 'fixed', inset: '0', background: 'rgba(8,10,15,.72)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: '99999', padding: '24px' });
+  const box = document.createElement('div');
+  Object.assign(box.style, { width: 'min(560px,94vw)', maxHeight: '88vh', overflowY: 'auto',
+    background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: '12px',
+    padding: '20px', boxShadow: '0 18px 50px rgba(0,0,0,.5)', color: 'var(--text)' });
+  const title = document.createElement('div');
+  title.textContent = 'Create a new document type';
+  Object.assign(title.style, { fontSize: '15px', fontWeight: '600', marginBottom: '14px' });
+  const host = document.createElement('div');
+  const footer = document.createElement('div');
+  Object.assign(footer.style, { display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' });
+  const cancel = document.createElement('button'); cancel.className = 'btn'; cancel.textContent = 'Cancel';
+  const create = document.createElement('button'); create.className = 'btn'; create.textContent = 'Create type'; create.disabled = true;
+  Object.assign(create.style, { background: 'var(--accent)', borderColor: 'var(--accent)', color: 'var(--bg)', fontWeight: '500' });
+
+  const close = () => {
+    if (closed) return; closed = true; _newTypeModalOpen = false;
+    document.removeEventListener('keydown', onKey, true);
+    try { ctl && ctl.destroy(); } catch {}
+    ov.remove();
+  };
+  const onKey = (e) => { if (e.key === 'Escape' && !committing) { e.stopPropagation(); close(); } };
+
+  // Attach the overlay BEFORE mounting the editor, so it renders into a host that's in
+  // the document (Teach/Settings mount it attached; a detached host can break render).
+  footer.append(cancel, create);
+  box.append(title, host, footer);
+  ov.append(box);
+  document.body.append(ov);
+
+  try {
+    ctl = window.DocTypeEditor.create(host, {
+      mode: 'create', api: window.docusnap,
+      // Use the `ready` arg the editor passes — it fires onValidityChange SYNCHRONOUSLY
+      // during create(), before `ctl` is assigned, so `ctl.isReady()` here would NPE.
+      onValidityChange: (ready) => { create.disabled = committing || !ready; },
+    });
+  } catch (err) {
+    close();
+    _newTypeToast('Could not open the type editor: ' + (err && err.message ? err.message : String(err)));
+    return;
+  }
+
+  cancel.addEventListener('click', close);
+  create.addEventListener('click', async () => {
+    if (committing || !ctl.isReady()) return;
+    committing = true; create.disabled = true; create.textContent = 'Creating…';
+    let res; try { res = await ctl.commit(); } catch (e) { res = { success: false, error: e && e.message }; }
+    committing = false; create.textContent = 'Create type';
+    if (closed) return;                          // cancelled mid-flight → ignore the resolved result
+    if (res && res.success && res.type) {
+      const newSlug = res.type.slug;
+      close();
+      try { allDocTypes = await window.docusnap.getAllDocTypes(); } catch {}
+      populateTypeDropdown();
+      const sel = document.getElementById('doctype-select');
+      sel.value = newSlug;
+      sel.dispatchEvent(new Event('change'));    // reuse the existing handler: select + rebuild field rows
+      showNewTypeNudge(res.type);
+    } else {
+      create.disabled = !ctl.isReady();          // failure: the editor already showed the error inline
+    }
+  });
+
+  document.addEventListener('keydown', onKey, true);
+  // Chromium drops focus on a just-appended element — defer to the next frame.
+  requestAnimationFrame(() => { const inp = host.querySelector('input, select'); if (inp) inp.focus(); });
+}
+
+// Minimal visible toast (no deps) — used for create-modal failures/diagnostics.
+function _newTypeToast(msg) {
+  const t = document.createElement('div');
+  t.setAttribute('data-help-ignore', '');
+  t.textContent = msg;
+  Object.assign(t.style, { position: 'fixed', left: '50%', bottom: '72px', transform: 'translateX(-50%)',
+    maxWidth: 'min(90vw,480px)', background: '#1f2d3d', color: '#eaf1f5', padding: '10px 14px',
+    borderRadius: '10px', borderLeft: '3px solid var(--accent)', fontSize: '12px', zIndex: '100000',
+    boxShadow: '0 12px 32px rgba(0,0,0,.5)' });
+  document.body.append(t);
+  setTimeout(() => { t.remove(); }, 6000);
+}
+
+// Calm, opt-in nudge after a type is created: confirm now, or teach where the fields sit.
+function showNewTypeNudge(type) {
+  const scroll = document.getElementById('fields-scroll');
+  if (!scroll) return;
+  document.querySelector('.new-type-nudge')?.remove();
+  const banner = document.createElement('div');
+  banner.className = 'new-type-nudge';
+  banner.setAttribute('data-help-ignore', '');
+  Object.assign(banner.style, { display: 'flex', flexDirection: 'column', gap: '8px',
+    background: 'var(--surface2)', border: '1px solid var(--border2)', borderLeft: '3px solid var(--accent)',
+    borderRadius: '8px', padding: '10px 12px', margin: '0 0 10px', fontSize: '12px', color: 'var(--text)' });
+  const msg = document.createElement('div');
+  const strong = document.createElement('strong'); strong.textContent = '“' + type.name + '” created. ';
+  msg.append(strong, document.createTextNode('Confirm this document now — or teach Scan Finder where each field sits so it auto-fills next time.'));
+  const actions = document.createElement('div');
+  Object.assign(actions.style, { display: 'flex', gap: '8px' });
+  const teach = document.createElement('button'); teach.className = 'btn'; teach.textContent = 'Teach where the fields are';
+  const dismiss = document.createElement('button'); dismiss.className = 'btn'; dismiss.textContent = 'Dismiss';
+  for (const b of [teach, dismiss]) Object.assign(b.style, { fontSize: '11px', padding: '4px 10px' });
+  actions.append(teach, dismiss);
+  banner.append(msg, actions);
+  scroll.prepend(banner);
+  dismiss.addEventListener('click', () => banner.remove());
+  teach.addEventListener('click', () => {
+    banner.remove();
+    if (currentDoc && window.docusnap.openTeachWindowAt) window.docusnap.openTeachWindowAt(currentDoc.id);
+  });
+}
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
 document.getElementById('tab-review').addEventListener('click', () => {
@@ -310,6 +636,8 @@ function renderQueueList() {
   if (queue.length === 0) {
     empty.style.display = '';
     reviewActions.style.display = 'none';
+    const vb0 = document.getElementById('queue-view-bar');
+    if (vb0) vb0.style.display = 'none';
     setQueueWrapVisible(false);
     if (!currentDoc) clearDocPanel();
     return;
@@ -322,54 +650,143 @@ function renderQueueList() {
   reviewActions.style.display = 'flex';
   document.getElementById('btn-delete-all-review').style.display = isAdmin ? '' : 'none';
 
-  for (const doc of queue) {
-    const el = document.createElement('div');
-    el.className  = 'queue-item';
-    el.dataset.id = doc.id;
-    // Row colour reflects actual review reasons (not raw confidence or missing
-    // doc-row fields, which are only set on confirm):
-    //   orange = a field is below its per-field threshold set in Settings, OR a
-    //            value was flagged for review during processing (validation note
-    //            / correction candidate).
-    //   red    = critically low overall confidence (<40) — existing critical state.
-    //   green  = otherwise clean.
-    const conf    = doc.overall_confidence;
-    const flagged = isFlagged(doc);
-    let sev = '';   // '', 'high'(green), 'mid'(orange), 'low'(red)
-    if (conf != null) {
-      if (conf < 40)    sev = 'low';
-      else if (flagged) sev = 'mid';
-      else              sev = 'high';
+  // View toggle: grouped by sender (default) vs newest-first. Grouping turns a long
+  // chronological scatter into a few named sender piles, so a batch from one sender —
+  // and its shared blocker — is obvious. The ↑/↓ nav follows the SAME order
+  // (reviewDisplayOrder), so the arrows and the visible list never disagree.
+  const viewBar = document.getElementById('queue-view-bar');
+  if (viewBar) viewBar.style.display = '';
+  const viewLbl = document.getElementById('queue-view-label');
+  if (viewLbl) viewLbl.textContent = queueGrouped ? 'Grouped by sender' : 'Newest first';
+
+  if (queueGrouped) {
+    for (const g of reviewDisplayGroups()) {
+      const open = expandedSuppliers.has(g.supplier);
+      const head = document.createElement('div');
+      head.className = 'queue-group-head' + (open ? ' open' : '');
+      const attn = g.need ? ` · <span class="qgh-attn">${g.need} need${g.need > 1 ? '' : 's'} a look</span>` : '';
+      head.innerHTML = `<span class="qgh-caret" aria-hidden="true"></span>`
+                     + `<span class="qgh-name" title="${escHtml(g.supplier)}">${escHtml(g.supplier)}</span>`
+                     + `<span class="qgh-meta">${g.docs.length} document${g.docs.length > 1 ? 's' : ''}${attn}</span>`;
+      head.setAttribute('role', 'button');
+      head.setAttribute('aria-expanded', open ? 'true' : 'false');
+      head.addEventListener('click', () => {
+        if (expandedSuppliers.has(g.supplier)) expandedSuppliers.delete(g.supplier);
+        else expandedSuppliers.add(g.supplier);
+        renderQueueList();
+      });
+      list.appendChild(head);
+      if (open) for (const doc of g.docs) list.appendChild(buildQueueItem(doc));
     }
-    if (sev === 'low')      el.classList.add('qi-conf-low');
-    else if (sev === 'mid') el.classList.add('qi-conf-mid');
-    if (currentDoc && doc.id === currentDoc.id) el.classList.add('active');
-    const confBadge = conf == null ? '' :
-      `<span class="conf-badge ${sev}" style="flex-shrink:0;">${conf}%</span>`;
-    el.innerHTML = `
-      <div style="display:flex; align-items:flex-start; gap:8px;">
-        <img class="qi-thumb" alt="">
-        <div style="flex:1; min-width:0;">
-          <span class="qi-name" title="${escHtml(doc.original_filename)}">${escHtml(doc.original_filename)}</span>
-          <div style="display:flex; align-items:center; gap:6px;">
-            <span class="qi-supplier" style="flex:1; min-width:0;">${escHtml(doc.supplier_name || '—')}</span>
-            ${confBadge}
-          </div>
-        </div>
-        ${canEdit ? `<button class="qi-btn danger qi-delete" title="Delete document" aria-label="Delete document" style="flex-shrink:0; padding:2px 7px; font-size:13px;">&#215;</button>` : ''}
-      </div>
-    `;
-    if (window.Thumbs) window.Thumbs.lazy(el.querySelector('.qi-thumb'), doc);
-    el.addEventListener('click', () => selectDoc(doc));
-    const delBtn = el.querySelector('.qi-delete');
-    if (delBtn) delBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteFromQueue(doc); });
-    list.appendChild(el);
+  } else {
+    for (const doc of queue) list.appendChild(buildQueueItem(doc));
   }
+}
+
+// The review queue's DISPLAY grouping: sender -> its docs, most attention-needing /
+// largest piles first (stable WITHIN a sender, so the processed_at order holds). Shared
+// by renderQueueList (DOM) and reviewDisplayOrder (the ↑/↓ nav) so they always agree.
+function reviewDisplayGroups() {
+  const groups = new Map();
+  for (const doc of queue) {
+    const key = (doc.supplier_name || '').trim() || '—';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(doc);
+  }
+  const entries = [...groups.entries()].map(([supplier, docs]) => ({
+    supplier, docs,
+    need: docs.filter(d => isFlagged(d) || (d.missing_required_labels || '').trim()).length,
+  }));
+  // STABLE within a review session: order by HAS-attention (a boolean that only flips
+  // when a group's LAST flagged doc clears) rather than the raw count, which would
+  // reshuffle the list on every confirm. Then biggest batch first, then name.
+  entries.sort((a, b) => (b.need > 0) - (a.need > 0) || b.docs.length - a.docs.length || a.supplier.localeCompare(b.supplier));
+  return entries;
+}
+
+// The flat doc order the queue is actually SHOWN in (grouped or chronological). The nav
+// (cycleDocument / updateDocNavButtons) uses this so ↑/↓ track the visible order.
+function reviewDisplayOrder() {
+  return queueGrouped ? reviewDisplayGroups().flatMap(g => g.docs) : queue;
+}
+
+// One queue row (thumbnail · name · sender · badges · blocker · delete). Shared by the
+// grouped and flat rendering paths.
+function buildQueueItem(doc) {
+  const el = document.createElement('div');
+  el.className  = 'queue-item';
+  el.dataset.id = doc.id;
+  // Row colour reflects actual review reasons (not raw confidence or missing
+  // doc-row fields, which are only set on confirm):
+  //   orange = a field is below its per-field threshold set in Settings, OR a
+  //            value was flagged for review during processing (validation note
+  //            / correction candidate).
+  //   red    = critically low overall confidence (<40) — existing critical state.
+  //   green  = otherwise clean.
+  const conf    = doc.overall_confidence;
+  const flagged = isFlagged(doc);
+  // A required field (the Date/Reference role, or a custom Required field) that read
+  // EMPTY blocks Confirm even at high confidence — so a row must NOT wear a green
+  // "Looks good" while being un-fileable. missing_required_labels (from
+  // getReviewQueue) mirrors the confirm gate; we lead the row with that blocker.
+  const missingReq = (doc.missing_required_labels || '').split(',').map(s => s.trim()).filter(Boolean);
+  const blocked    = missingReq.length > 0;
+  let sev = '';   // '', 'high'(green), 'mid'(orange), 'low'(red)
+  if (conf != null) {
+    if (conf < 40)               sev = 'low';
+    else if (flagged || blocked) sev = 'mid';
+    else                         sev = 'high';
+  } else if (blocked || flagged) {
+    sev = 'mid';   // no overall score yet, but we already know it needs attention
+  }
+  if (sev === 'low')      el.classList.add('qi-conf-low');
+  else if (sev === 'mid') el.classList.add('qi-conf-mid');
+  if (currentDoc && doc.id === currentDoc.id) el.classList.add('active');
+  // Human-readable reason on hover: green = clean, orange = needs a check
+  // (low confidence and/or a format flag), red = critically low confidence.
+  const sevWord = sev === 'low'  ? 'Low confidence'
+                : blocked        ? 'Missing a required field — can’t file yet'
+                : sev === 'mid'  ? 'Needs a quick check'
+                :                  'Looks good';
+  const confBadge = conf == null ? '' :
+    `<span class="conf-badge ${sev}" style="flex-shrink:0;" title="${sevWord} — ${conf}% confidence">${conf}%</span>`;
+  // Lead with the actual blocker (the missing field), not the reassuring score.
+  const blockerLine = blocked
+    ? `<div class="qi-blocker" title="Can’t be filed until this is filled in"
+           style="color:var(--warn); font-size:11px; font-weight:600; margin-top:2px; display:flex; align-items:center; gap:4px;">`
+      + `<span aria-hidden="true">⚠</span>Needs: ${escHtml(missingReq[0])}`
+      + `${missingReq.length > 1 ? ` +${missingReq.length - 1} more` : ''}</div>`
+    : '';
+  el.innerHTML = `
+    <div style="display:flex; align-items:flex-start; gap:8px;">
+      <img class="qi-thumb" alt="">
+      <div style="flex:1; min-width:0;">
+        <span class="qi-name" title="${escHtml(doc.original_filename)}">${escHtml(doc.original_filename)}</span>
+        <div style="display:flex; align-items:center; gap:6px;">
+          <span class="qi-supplier" style="flex:1; min-width:0;">${escHtml(doc.supplier_name || '—')}</span>
+          ${doc.page_count > 1 ? `<span class="qi-multipage" title="Multi-page document (${doc.page_count} pages)" style="flex-shrink:0;display:inline-flex;color:var(--muted)"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V6a2 2 0 0 1 2-2h10"/></svg></span>` : ''}
+          ${confBadge}
+        </div>
+        ${blockerLine}
+      </div>
+      ${canEdit ? `<button class="qi-btn danger qi-delete" title="Delete document" aria-label="Delete document" style="flex-shrink:0; padding:2px 7px; font-size:13px;">&#215;</button>` : ''}
+    </div>
+  `;
+  if (window.Thumbs) window.Thumbs.lazy(el.querySelector('.qi-thumb'), doc);
+  // During a File All Ready run, user selection/delete must NOT reassign the
+  // module-global currentDoc mid-file (QA audit #5) — ignore row clicks + the
+  // per-row × until the bulk run finishes (the loop drives selectDoc itself).
+  el.addEventListener('click', () => { if (bulkFiling) return; selectDoc(doc); });
+  const delBtn = el.querySelector('.qi-delete');
+  if (delBtn) delBtn.addEventListener('click', (e) => { e.stopPropagation(); if (bulkFiling) return; deleteFromQueue(doc); });
+  return el;
 }
 
 // ── Deferred list (deferred tab) ─────────────────────────────────────────────
 function renderDeferredList() {
   document.getElementById('review-actions').style.display = 'none';   // review-only block; not for Deferred
+  const vbD = document.getElementById('queue-view-bar');
+  if (vbD) vbD.style.display = 'none';   // sender-grouping toggle is review-only
   const list   = document.getElementById('queue-list');
   const empty  = document.getElementById('queue-empty');
   const footer = document.getElementById('deferred-footer');
@@ -434,8 +851,16 @@ function renderDeferredList() {
 }
 
 // ── Select document ───────────────────────────────────────────────────────────
-async function selectDoc(doc) {
-  try { await _selectDoc(doc); } catch(err) {
+async function selectDoc(doc, opts) {
+  // Grouped mode: make sure the doc's sender group is EXPANDED before we select — the
+  // active-row highlight is toggled on the rendered element (_selectDoc), so a doc in a
+  // collapsed group would have no row to light up. Covers confirm-advance / keyboard nav
+  // stepping into the next group.
+  if (queueGrouped && doc) {
+    const key = (doc.supplier_name || '').trim() || '—';
+    if (!expandedSuppliers.has(key)) { expandedSuppliers.add(key); renderQueueList(); }
+  }
+  try { await _selectDoc(doc, opts); } catch(err) {
     console.error('selectDoc failed:', err);
     showToast('Error loading doc: ' + err.message, 'err');
   }
@@ -444,7 +869,10 @@ async function selectDoc(doc) {
   updateDocNavButtons();
   scrollActiveItemIntoView();
 }
-async function _selectDoc(doc) {
+// fieldsOnly: bulk "File All Ready" needs only the field VALUES + readiness, so
+// it skips the PDF→PNG preview render (the dominant per-doc cost) and the
+// display-only template recheck. Single-document review passes nothing → full path.
+async function _selectDoc(doc, { fieldsOnly = false } = {}) {
   _clearPreviewState();
   cancelZoneMode();
   currentDoc  = doc;
@@ -452,6 +880,9 @@ async function _selectDoc(doc) {
   corrections = {};
   anchorTaughtFields = new Set();
   pendingAnchors = {};   // discard any un-confirmed ⊕ teach when the doc changes
+  pendingFieldRules = {}; // ...and any un-confirmed field cleanup rule
+  lastTeachCtx = null; hideAnchorReadout();
+  { const c = document.getElementById('teach-cta'); if (c) { c.style.display = 'none'; c.innerHTML = ''; } }  // clear prior doc's CTA until this doc's recheck answers
 
   document.querySelectorAll('.queue-item').forEach(el => {
     el.classList.toggle('active', parseInt(el.dataset.id) === doc.id);
@@ -471,20 +902,27 @@ async function _selectDoc(doc) {
   selectedTypeSlug = doc.type_slug || null;
   const sel = document.getElementById('doctype-select');
   sel.value = selectedTypeSlug || '';
+  updateEditTypeBtn();
   const dt = allDocTypes.find(t => t.slug === selectedTypeSlug);
   fieldDefs = dt ? dt.fields : (allDocTypes[0]?.fields || []);
 
-  // Load pages and fields independently — a missing file must not block field rendering
-  try {
-    pageImages = (doc.folder_path && doc.original_filename)
-      ? await window.docusnap.getDocumentPages(doc.id, doc.folder_path, doc.original_filename)
-      : [];
-  } catch (e) {
-    console.warn('getDocumentPages failed:', e.message);
+  // Load pages and fields independently — a missing file must not block field
+  // rendering. fieldsOnly skips the preview render entirely (bulk filing reads
+  // only the field values, never the image).
+  if (fieldsOnly) {
     pageImages = [];
+  } else {
+    try {
+      pageImages = (doc.folder_path && doc.original_filename)
+        ? await window.docusnap.getDocumentPages(doc.id, doc.folder_path, doc.original_filename)
+        : [];
+    } catch (e) {
+      console.warn('getDocumentPages failed:', e.message);
+      pageImages = [];
+    }
+    if (currentDoc?.id !== doc.id) return;   // a newer doc was selected while pages loaded — don't clobber its preview (this same _selectDoc set currentDoc=doc at the top, so the latest selection always passes)
+    renderPage();
   }
-  if (currentDoc?.id !== doc.id) return;   // a newer doc was selected while pages loaded — don't clobber its preview (this same _selectDoc set currentDoc=doc at the top, so the latest selection always passes)
-  renderPage();
 
   noteDocOpened(doc.id);
   let full = null;
@@ -495,6 +933,12 @@ async function _selectDoc(doc) {
   }
   if (currentDoc?.id !== doc.id) return;   // superseded while extractions loaded — leave the newer doc's fields intact
   const renderedDoc = full || doc;
+  // The detailed `full` record doesn't carry the queue's review-reason counts;
+  // bring them over so the "why review" banner matches the queue colouring.
+  if (full && full !== doc) {
+    full.below_threshold_count = doc.below_threshold_count;
+    full.review_flag_count     = doc.review_flag_count;
+  }
   renderFields(renderedDoc);
 
   // Lightweight current-template recheck — this doc had no template match at
@@ -502,19 +946,27 @@ async function _selectDoc(doc) {
   // since (e.g. via "Add to Template Manager" on another document from the
   // same supplier). Read-only UI refresh: does not reprocess, does not write
   // template_id, and is skipped entirely once a template_id is already set.
-  if (!doc.template_id) {
+  // Skipped in fieldsOnly (bulk) — it's a display-only refresh and adds an IPC/doc.
+  if (!fieldsOnly && !doc.template_id) {
     window.docusnap.checkTemplateMatch(doc.id).then(result => {
       if (currentDoc?.id !== doc.id) return; // user switched docs while pending
-      if (result?.matched) {
-        renderedDoc._templateRecheck = result;
-        renderExtractionStatus(renderedDoc);
-      }
-    }).catch(e => console.warn('checkTemplateMatch failed:', e.message));
+      // Record the recheck OUTCOME (matched or not) + a done flag, then re-render —
+      // the "Teach this document" CTA holds until this de-dupe check has answered, so it
+      // can't flash then flip to "Update existing" (see renderTeachCta).
+      renderedDoc._templateRecheck     = result || { matched: false };
+      renderedDoc._templateRecheckDone = true;
+      renderExtractionStatus(renderedDoc);
+    }).catch(e => {
+      console.warn('checkTemplateMatch failed:', e.message);
+      renderedDoc._templateRecheckDone = true;
+      renderExtractionStatus(renderedDoc);
+    });
   }
 }
 
 // ── Page rendering ────────────────────────────────────────────────────────────
 function renderPage() {
+  hideAnchorReadout();   // a stale readout/box doesn't belong on a freshly rendered page
   const placeholder = document.getElementById('doc-placeholder');
   const indicator   = document.getElementById('page-indicator');
 
@@ -593,7 +1045,6 @@ function renderExtractionStatus(doc) {
   const mappingN  = baseMethods.filter(m => m.startsWith('template_mapping')).length;
   const anchorN   = baseMethods.filter(m => m.startsWith('anchor')).length;
   const keywordN  = baseMethods.filter(m => m === 'keyword').length;
-  const aiN       = baseMethods.filter(m => m.startsWith('llm')).length;
   const knownN    = baseMethods.filter(m => m && m !== 'unknown').length;
 
   let extLabel, extCls;
@@ -602,7 +1053,6 @@ function renderExtractionStatus(doc) {
                                                    extLabel = 'Template mappings'; extCls = 'ok'; }
   else if (anchorN > 0 && anchorN >= keywordN)  { extLabel = 'Learned anchors';   extCls = 'info'; }
   else if (keywordN > 0)                         { extLabel = 'Keyword patterns';  extCls = 'info'; }
-  else if (aiN > 0)                              { extLabel = 'AI fallback';       extCls = 'warn'; }
   else                                           { extLabel = 'Mixed methods';     extCls = 'info'; }
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -619,7 +1069,10 @@ function renderExtractionStatus(doc) {
     lbl.className   = 'ext-status-lbl';
     lbl.textContent = labelText;
     d.appendChild(lbl);
-    pills.forEach(p => d.appendChild(p));
+    const wrap = document.createElement('div');   // stack the pills vertically, not side by side
+    wrap.className = 'ext-status-pills';
+    pills.forEach(p => wrap.appendChild(p));
+    d.appendChild(wrap);
     return d;
   };
 
@@ -627,6 +1080,124 @@ function renderExtractionStatus(doc) {
   const extPills = [pill(extLabel, extCls)];
   if (mappingN > 0) extPills.push(pill(`${mappingN} mapping${mappingN === 1 ? '' : 's'}`, 'ok'));
   el.appendChild(row('Extraction:', ...extPills));
+
+  renderTeachCta(doc);   // the "Teach this document" CTA above the preview keys off the SAME id state
+}
+
+// "Teach this document" CTA above the preview pane. Gated so a SEEN document can't be
+// re-taught into a duplicate (Bob's tiers): on a template → nothing; a template exists
+// but drifted → "Update existing" instead; truly unseen → Teach (with a one-time confirm
+// only when the sender is recognised). Held until the template recheck has answered.
+function renderTeachCta(doc) {
+  const cta = document.getElementById('teach-cta');
+  if (!cta) return;
+  cta.style.display = 'none';
+  cta.innerHTML = '';
+  cta.className = 'teach-cta';
+  if (!doc || !canEdit) return;          // teaching is Admin/Edit only
+  if (doc.template_id) return;           // Tier A — already on a template
+
+  const done    = !!doc._templateRecheckDone;
+  const matched = !!(doc._templateRecheck && doc._templateRecheck.matched);
+  if (!done) return;                     // recheck pending — show nothing (anti-flash)
+
+  // A template for this layout EXISTS but didn't match this scan (drift). Show NOTHING:
+  // teaching would duplicate it, and a reprocess (once a few similar docs are confirmed)
+  // usually makes it match — so there's no action the operator needs to take here.
+  if (matched) return;
+
+  // If the doc is already being read by a LEARNED method (keyword patterns, learned
+  // anchors, or template mappings), it isn't "unseen" — don't offer to teach it. A doc
+  // taught with field targets can extract via patterns/anchors without a template_id.
+  const learned = (doc.extractions || [])
+    .map(e => (e.extraction_method || '').split('+')[0].trim().toLowerCase())
+    .some(m => m.startsWith('keyword') || m.startsWith('anchor') || m.startsWith('template_mapping'));
+  if (learned) return;
+
+  // Tier C/D — no template, recheck clean, nothing learned read it → offer to teach.
+  const hasLogo = !!doc.logo_phash;
+  const hasKw   = !!(doc.keyword_fingerprint && doc.keyword_fingerprint !== 'null');
+  const known   = hasLogo || hasKw;      // Tier C (recognised sender) vs D (cold)
+  cta.innerHTML =
+    `<button class="teach-cta-btn primary" id="teach-cta-go">` +
+      `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px"><path d="M22 10 12 5 2 10l10 5 10-5Z"/><path d="M6 12v5c0 1 2.7 3 6 3s6-2 6-3v-5"/></svg> Teach this document` +
+    `</button>` +
+    `<div class="teach-cta-hint">${known
+      ? 'We recognise this sender but haven&rsquo;t learned this layout yet — teach it once and we&rsquo;ll handle it next time.'
+      : 'Scan Finder hasn&rsquo;t seen this layout — show it where each field is, just once.'}</div>` +
+    // "…or it's like one you've already set up" — link to an existing template + group
+    // them, so this layout reads automatically without teaching it from scratch.
+    `<div class="teach-cta-like" id="teach-cta-like" style="display:none;">` +
+      `<span class="teach-cta-like-lbl">&hellip;or is it like a document you&rsquo;ve already set up?</span>` +
+      `<div class="teach-cta-like-row">` +
+        `<select class="teach-cta-like-select" id="teach-cta-like-select"><option value="">Loading&hellip;</option></select>` +
+        `<button class="teach-cta-btn ghost" id="teach-cta-like-go" disabled>Link &amp; reprocess</button>` +
+      `</div>` +
+    `</div>`;
+  cta.style.display = '';
+
+  // Populate the "like another document" picker with existing templates (same doc type
+  // first). Hidden entirely when there are no templates yet.
+  const likeWrap = document.getElementById('teach-cta-like');
+  const likeSel  = document.getElementById('teach-cta-like-select');
+  const likeGo   = document.getElementById('teach-cta-like-go');
+  if (likeSel && likeGo) {
+    window.docusnap.getTemplates?.().then(list => {
+      const tmpls = Array.isArray(list) ? list : (list && list.templates) || [];
+      if (!tmpls.length) return;                       // nothing to link to yet
+      const slug = selectedTypeSlug || currentDoc?.type_slug || currentDoc?.document_type_slug || null;
+      tmpls.sort((a, b) =>
+        ((b.document_type_slug === slug) - (a.document_type_slug === slug)) ||
+        String(a.name || '').localeCompare(String(b.name || '')));
+      likeSel.innerHTML = '<option value="">Choose a document it&rsquo;s like&hellip;</option>' +
+        tmpls.map(t => `<option value="${t.id}">${escHtml(t.name || 'Untitled')}` +
+          `${t.document_type_slug ? ' · ' + escHtml(String(t.document_type_slug).replace(/_/g, ' ')) : ''}</option>`).join('');
+      if (likeWrap) likeWrap.style.display = '';
+    }).catch(() => {});
+    likeSel.addEventListener('change', () => { likeGo.disabled = !likeSel.value; });
+    likeGo.addEventListener('click', () => linkCurrentDocToTemplate(likeSel.value, likeGo));
+  }
+
+  document.getElementById('teach-cta-go')?.addEventListener('click', () => {
+    const id = currentDoc?.id;
+    if (!id) return;
+    // Tier C guardrail: the recheck is best-effort, so on a recognised sender confirm once
+    // before teaching, in case a badly-drifted template slipped past it. Tier D = no nag.
+    if (known && !confirm(
+      'Teach this as a NEW document?\n\n' +
+      'We don\'t have a template for this layout. If you have taught a similar document ' +
+      'before, click Cancel and update that one in Template Manager instead, so we don\'t ' +
+      'create a duplicate.')) return;
+    window.docusnap.openTeachWindowAt(id);
+  });
+}
+
+// Link the current (unmatched) document to an EXISTING template: create a template for
+// this doc, group it with the chosen one, then reprocess so it reads via the shared
+// group immediately. Reuses the same field-gathering as "Add to Template Manager".
+async function linkCurrentDocToTemplate(targetId, btn) {
+  if (!targetId || !currentDoc) return;
+  const docTypeSlug = selectedTypeSlug || currentDoc?.type_slug || currentDoc?.document_type_slug || null;
+  if (!docTypeSlug) { showToast('Select a document type before linking.', 'warn'); return; }
+  const allValues = {};
+  document.querySelectorAll('#fields-scroll .field-input').forEach(i => { allValues[i.dataset.key] = i.value; });
+  const supplierInput = document.querySelector('.field-input[data-key="supplier_name"]');
+  const supplierName  = supplierInput?.value?.trim() || currentDoc?.supplier_name || null;
+  if (btn) { btn.disabled = true; btn.textContent = 'Linking…'; }
+  let res;
+  try {
+    res = await window.docusnap.linkDocumentToTemplate({
+      document_id: currentDoc.id, allValues, document_type_slug: docTypeSlug,
+      supplier_name: supplierName, target_template_id: Number(targetId),
+    });
+  } catch (e) { res = { success: false, error: e.message }; }
+  if (res && res.success) {
+    showToast(`Linked to “${res.targetName || 'template'}” — reprocessing…`, 'ok');
+    document.getElementById('btn-reprocess')?.click();   // re-extract; now matches the grouped template
+  } else {
+    if (btn) { btn.disabled = false; btn.textContent = 'Link & reprocess'; }
+    showToast((res && res.error) || 'Could not link this document.', 'err');
+  }
 }
 
 // A document is "flagged" when processing surfaced questionable data on it: a
@@ -644,26 +1215,237 @@ function isFlagged(doc) {
 // a static "Reviewed" state. Unflagged docs never show it. Reads currentDoc so
 // it reflects the live queue object (which carries the flag counts + ack stamp).
 function updateAcknowledgeButton() {
-  const btn = document.getElementById('btn-acknowledge');
+  const btn  = document.getElementById('btn-acknowledge');
+  const hint = document.getElementById('ack-hint');
   if (!btn) return;
-  if (!currentDoc || !isFlagged(currentDoc)) { btn.style.display = 'none'; return; }
+  if (!currentDoc || !isFlagged(currentDoc)) {
+    btn.style.display = 'none';
+    if (hint) hint.style.display = 'none';
+    return;
+  }
   btn.style.display = '';
   if (currentDoc.review_acknowledged_at) {
     btn.disabled    = true;
     btn.innerHTML   = '✓ Reviewed';
     btn.style.color = 'var(--ok)';
+    if (hint) hint.style.display = 'none';       // already reviewed — no prompt
   } else {
     btn.disabled    = false;
     btn.innerHTML   = '✓ Mark Reviewed';
     btn.style.color = 'var(--warn)';
+    if (hint) {                                    // actionable — show the Space hint (CSS default is none)
+      hint.style.width   = btn.offsetWidth + 'px'; // match the button width → wraps to two lines
+      hint.style.display = 'block';
+    }
   }
+}
+
+// ── "Why this needs review" summary ─────────────────────────────────────────
+// Plain-language explanation of why a document is in the queue, composed from
+// the SAME signals the queue colouring uses: below_threshold_count (fields under
+// their per-field confidence threshold) and review_flag_count (values a
+// processing check flagged), plus the verbatim per-field notes already produced
+// during processing. Keeps the two "orange" causes — low confidence vs a format
+// flag — distinguishable as two labelled cues.
+function renderReviewReason(doc) {
+  const el = document.getElementById('review-reason');
+  if (!el) return;
+  el.innerHTML = '';
+  el.hidden    = true;
+  if (!doc) return;
+
+  const lowN = doc.below_threshold_count || 0;
+  // Only surface flags for fields that belong to THIS document's CURRENT type — a stale
+  // extraction left over from a previous type (e.g. an old "invoice_number" note after the
+  // doc was re-typed to Print Tracker) must not appear as a phantom flag the user can't see
+  // or fix. When the detailed extractions are loaded, derive the count from them (filtered);
+  // fall back to the server review_flag_count only before they arrive.
+  const _typeKeys = new Set(reviewFields());
+  const _relevant = (doc.extractions || []).filter(e => _typeKeys.has(e.field_key));
+  const flagN = (doc.extractions && doc.extractions.length)
+    ? _relevant.filter(e => e.validation_note || e.corrected_to).length
+    : (doc.review_flag_count || 0);
+
+  if (lowN === 0 && flagN === 0) return;   // clean — no banner
+
+  const parts = [];
+  if (lowN)  parts.push(`${lowN} field${lowN === 1 ? ' was' : 's were'} read with low confidence`);
+  if (flagN) parts.push(`${flagN} field${flagN === 1 ? ' was' : 's were'} flagged by a formatting check`);
+  const lead = `Needs a quick check — ${parts.join(', and ')}.`;
+
+  const cues = [];
+  if (lowN)  cues.push(`<span class="rr-cue low" title="These fields scored below the confidence threshold set in Settings. Compare the value with the document.">Low confidence · ${lowN}</span>`);
+  if (flagN) cues.push(`<span class="rr-cue flag" title="A formatting check found these values look different from what's usual for this field. They may still be correct — just confirm them.">Format check · ${flagN}</span>`);
+
+  const notes = _relevant
+    .filter(e => e.validation_note)
+    .map(e => ({ key: e.field_key, note: e.validation_note }));
+  const MAX = 4;
+  const noteList = notes.length
+    ? `<ul class="rr-notes">${notes.slice(0, MAX).map(n =>
+         `<li><strong>${escHtml(labelFor(n.key))}:</strong> ${escHtml(n.note)}</li>`).join('')}${
+         notes.length > MAX ? `<li class="rr-more">+${notes.length - MAX} more</li>` : ''}</ul>`
+    : '';
+
+  el.innerHTML = `<div class="rr-lead">${escHtml(lead)}</div>` +
+                 `<div class="rr-cues">${cues.join('')}</div>` + noteList;
+  el.hidden = false;
+}
+
+// ── Totals reconciliation (positive "mathematically verified" badge) ───────────
+// Mirrors the backend guardrail's CLOSE case (validator.py total-reconciliation):
+// total ≈ subtotal + tax + shipping − discount within 2% / 5p. Computed here from the
+// ON-SCREEN field values so it LIVE-UPDATES as the operator edits the total/components,
+// and needs no stored flag. Purely a reassurance label — never gates Confirm.
+function _parseAmount(raw) {
+  if (raw == null) return null;
+  const m = String(raw).match(/([\d,]+\.?\d*)/);   // twin of validator.CURRENCY_RE capture
+  if (!m) return null;
+  const v = parseFloat(m[1].replace(/,/g, ''));
+  return Number.isNaN(v) ? null : v;
+}
+// Map a field (key + human label) to its amount ROLE. Order matters: the more specific
+// component roles are tested BEFORE 'total' so "Subtotal" is never mistaken for the total.
+function _amountRole(key, label) {
+  // Underscore is a WORD char, so a snake_case key like 'vat_tax' has NO \b boundary
+  // around 'vat'/'tax' — the \b-anchored tax/total rules below then silently miss it and
+  // the shadow VAT component maps to no role (breaking the "mathematically verified" badge
+  // on a genuinely balanced invoice). Fold '_' to a space so the boundaries fire; the
+  // separator-tolerant patterns ('sub[\s_-]?total') are unaffected.
+  const s = `${key || ''} ${label || ''}`.toLowerCase().replace(/_/g, ' ');
+  // Kept in sync with the backend keyword.ROLE_KEY_ALIASES + keyword_patterns.json labels.
+  if (/sub[\s_-]?total|net[\s_-]?(total|amount)|goods[\s_-]?total|\bnett?\b|ex[\s_-]?vat/.test(s))
+    return 'subtotal';
+  if (/discount|reduction|deduction|rebate|markdown|concession|allowance|promo|promotion|voucher|savings|\bcredit\b/.test(s))
+    return 'discount';
+  if (/shipping|postage|carriage|freight|freightage|handling|courier|mailing|franking|dispatch|despatch|forwarding|consignment|p\s*&\s*p|p\s+and\s+p|delivery[\s_-]?(charge|cost|fee)|transport[\s_-]?cost/.test(s))
+    return 'shipping';
+  if (/\b(vat|tax|gst|hst|pst|qst)\b/.test(s)) return 'tax';
+  if (key === 'total_amount' ||
+      (/\b(grand[\s_-]?total|total|amount[\s_-]?due|balance[\s_-]?due|amount[\s_-]?payable|total[\s_-]?due|total[\s_-]?payable|invoice[\s_-]?total)\b/.test(s)
+       && !/sub/.test(s)))                                    return 'total';
+  return null;
+}
+// Read the live role amounts from the rendered inputs and decide whether the total
+// reconciles. Returns {verified, totalKey}; verified is only true when BOTH a total and a
+// subtotal are present and the arithmetic checks out (NEUTRAL "only a subtotal" is not a
+// claim of verification).
+function _totalsReconcileState() {
+  const roles = {};
+  const setRole = (role, key, amount) => {
+    if (!role) return;
+    if (role === 'total') { if (key === 'total_amount' || !roles.total) roles.total = { key, amount }; }
+    else if (!roles[role]) roles[role] = { key, amount };
+  };
+  // 1) VISIBLE currency fields (live DOM values, so the badge updates as the user edits).
+  //    A currency-type gate stops a "Delivery Date" (date) or "Credit Note No" (text) from
+  //    being read as a money component.
+  document.querySelectorAll('#fields-scroll .field-row[data-key]').forEach(row => {
+    const key = row.dataset.key;
+    const input = row.querySelector('input.field-input');
+    if (!input) return;
+    const fdef = (fieldDefs || []).find(f => f.key === key);
+    if (fdef && fdef.type && fdef.type !== 'currency') return;
+    setRole(_amountRole(key, labelFor(key)), key, _parseAmount(input.value));
+  });
+  // 2) SHADOW components — subtotal/VAT/shipping/discount read in the BACKGROUND (not shown
+  //    as fields). Only fill a role the visible fields didn't already provide, so the maths
+  //    reconciles without the user having to add those fields.
+  for (const e of ((currentDoc && currentDoc.extractions) || [])) {
+    if (e.extraction_method !== 'shadow_reconcile') continue;
+    setRole(_amountRole(e.field_key, e.field_key), e.field_key,
+            _parseAmount(e.display_value != null ? e.display_value : (e.raw_value || '')));
+  }
+  const total = roles.total;
+  if (!total) return { verified: false, totalKey: null };
+  const sub = roles.subtotal ? roles.subtotal.amount : null;
+  if (total.amount == null || total.amount <= 0 || sub == null || sub <= 0)
+    return { verified: false, totalKey: total.key };
+  const tax  = (roles.tax && roles.tax.amount) || 0;
+  const ship = (roles.shipping && roles.shipping.amount) || 0;
+  const disc = (roles.discount && roles.discount.amount) || 0;
+  const tol  = Math.max(total.amount * 0.02, 0.05);
+  // Shipping/discount may be separate additions OR line items already inside the subtotal —
+  // verified if ANY plausible composition matches (mirrors validator.py reconciliation).
+  let verified = false;
+  for (const s of [0, 1]) for (const d of [0, 1])
+    if (Math.abs(total.amount - (sub + tax + s * ship - d * disc)) <= tol) verified = true;
+  return { verified, totalKey: total.key };
+}
+function updateTotalsVerifiedBadge() {
+  document.querySelectorAll('#fields-scroll .field-note.verified').forEach(n => n.remove());
+  let st; try { st = _totalsReconcileState(); } catch { return; }
+  if (!st || !st.verified || !st.totalKey) return;
+  const row = document.querySelector(`#fields-scroll .field-row[data-key="${CSS.escape(st.totalKey)}"]`);
+  if (!row) return;
+  const div = document.createElement('div');
+  div.className = 'field-note verified';
+  div.innerHTML = `<span class="corrected-badge" title="This total reconciles against the subtotal and any tax, shipping and discount on the document">✓ Value mathematically verified</span>`;
+  const wrap = row.querySelector('.field-input-wrap');
+  if (wrap) wrap.insertAdjacentElement('afterend', div); else row.appendChild(div);
+}
+
+// ── Drawn-value normalisation (⊕ teach) ───────────────────────────────────────
+// When a target box is drawn, tidy the OCR read to match the FIELD TYPE so the input
+// shows the clean value: strip the currency symbol from a currency field; parse a date
+// field to the app's canonical DD-MM-YYYY, disambiguating day/month order via the region
+// setting (region_date_order). Never blanks a read — an unparseable date keeps the raw text.
+function _stripCurrencySymbol(s) {
+  return String(s)
+    .replace(/[£$€¥₹]/g, '')
+    .replace(/\b(?:GBP|USD|EUR|JPY|AUD|CAD|CHF|INR|NZD|CNY|ZAR)\b/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+const _DRAWN_MONTHS = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
+function _fmtDMY(d, mo, y) { const p = n => String(n).padStart(2, '0'); return `${p(d)}-${p(mo)}-${y}`; }
+function _parseDrawnDate(raw, order) {
+  const t = String(raw).trim();
+  let m = t.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);   // a/b/yyyy — order-dependent
+  if (m) {
+    const a = +m[1], b = +m[2], y = +m[3];
+    let day, mon;
+    if (a > 12)               { day = a; mon = b; }   // first > 12 → must be the day
+    else if (b > 12)          { mon = a; day = b; }   // second > 12 → must be the day
+    else if (order === 'mdy') { mon = a; day = b; }   // US
+    else                      { day = a; mon = b; }   // dmy (default) / ymd fallback
+    if (mon >= 1 && mon <= 12 && day >= 1 && day <= 31) return _fmtDMY(day, mon, y);
+    return null;
+  }
+  m = t.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/);       // ISO yyyy-mm-dd (unambiguous)
+  if (m) { const mo = +m[2], day = +m[3]; if (mo >= 1 && mo <= 12 && day >= 1 && day <= 31) return _fmtDMY(day, mo, +m[1]); }
+  m = t.match(/^([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{4})$/);        // MMM DD YYYY (unambiguous)
+  if (m) { const mo = _DRAWN_MONTHS[m[1].slice(0, 3).toLowerCase()]; if (mo) return _fmtDMY(+m[2], mo, +m[3]); }
+  m = t.match(/^(\d{1,2})\s+([A-Za-z]{3,9}),?\s+(\d{4})$/);        // DD MMM YYYY (unambiguous)
+  if (m) { const mo = _DRAWN_MONTHS[m[2].slice(0, 3).toLowerCase()]; if (mo) return _fmtDMY(+m[1], mo, +m[3]); }
+  return null;
+}
+let _regionDateOrder = null;
+async function _getRegionDateOrder() {
+  if (_regionDateOrder) return _regionDateOrder;
+  let v = 'dmy';
+  try { v = ((await window.docusnap.getSetting('region_date_order')) || 'dmy').toLowerCase(); } catch {}
+  _regionDateOrder = ['dmy', 'mdy', 'ymd', 'auto'].includes(v) ? v : 'dmy';
+  return _regionDateOrder;
+}
+async function normalizeDrawnValue(fieldKey, text) {
+  const fdef = (fieldDefs || []).find(f => f.key === fieldKey);
+  const type = ((fdef && fdef.type) || '').toLowerCase();
+  if (type === 'currency') return _stripCurrencySymbol(text) || text;
+  if (type === 'date')     return _parseDrawnDate(text, await _getRegionDateOrder()) || text;
+  return text;
 }
 
 // ── Fields panel ──────────────────────────────────────────────────────────────
 function renderFields(doc) {
   const scroll = document.getElementById('fields-scroll');
   scroll.innerHTML = '';
+  // The ⊕ "wrong value?" prompt only makes sense with a document loaded — show it
+  // for a real doc, hide it on the empty state (clearDocPanel also hides it).
+  const sub = document.querySelector('.fields-header-sub');
+  if (sub) sub.style.display = doc ? '' : 'none';
   renderExtractionStatus(doc);
+  renderReviewReason(doc);
   if (!doc) { validateConfirm(); return; }
 
   const extMap = {};
@@ -676,13 +1458,16 @@ function renderFields(doc) {
   }
   validateConfirm();
   updateAcknowledgeButton();
+  updateTotalsVerifiedBadge();
 }
 
 function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, method) {
   const low      = conf !== null && conf < 70;
   const confClass = conf === null ? '' : conf >= 70 ? 'high' : conf >= 40 ? 'mid' : 'low';
+  // Pair the % with a plain word so non-technical users read it at a glance.
+  const confWord = conf === null ? '' : conf >= 70 ? 'High' : conf >= 40 ? 'Check' : 'Low';
   const confLabel = conf !== null
-    ? `<span class="conf-badge ${confClass}">${conf}%</span>`
+    ? `<span class="conf-badge ${confClass}" title="${confWord} confidence — the app is ${conf}% sure of this reading">${confWord} · ${conf}%</span>`
     : '';
   // A correction that was ALREADY APPLIED to the value (Stage 4.5 strong auto-fix:
   // an OCR misread of a near-universal learned token, e.g. "Lid"→"Ltd") shows as a
@@ -697,10 +1482,19 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   const acceptHtml = (correctedTo && !isApplied)
     ? ` <button type="button" class="accept-btn" data-key="${key}">Accept</button>`
     : '';
+  // "This name is correct" — for a NAME field flagged by the wordness/truncation signal
+  // (a legitimate acronym-bearing company like "Cloud VPS" reads low on the character
+  // model). One click marks the exact value as an accepted name so the flag never fires
+  // for it again (on this or any future document); see accept-name-value IPC.
+  const isNameFlag = !!note && !isApplied && _isNameLikeField(key)
+    && /read like a name|not a name|document heading|truncat|cut off/i.test(note);
+  const nameAcceptHtml = isNameFlag
+    ? ` <button type="button" class="name-accept-btn" data-key="${key}" title="Tell Scan Finder this really is a valid name, so it stops flagging it for review on future documents">✓ This name is correct</button>`
+    : '';
   const noteHtml = isApplied
     ? `<div class="field-note corrected"><span class="corrected-badge" title="An OCR misread was auto-corrected to the spelling that recurs in your confirmed data">✓ auto-corrected</span> ${escHtml(note || '')}</div>`
     : (note || correctedTo)
-      ? `<div class="field-note">${escHtml(note || '')}${acceptHtml}</div>`
+      ? `<div class="field-note">${escHtml(note || '')}${acceptHtml}${nameAcceptHtml}</div>`
       : '';
   // Anchor provenance: only for anchor-based extraction sources, and only when a
   // label was captured. Other methods (keyword, template, llm, manual) show nothing.
@@ -712,16 +1506,21 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   const row = document.createElement('div');
   row.className   = 'field-row';
   row.dataset.key = key;
+  // Plain-language gloss for the identity field — "Document Issuer" reads as ambiguous to
+  // non-technical / non-native users (own company vs the other party). Spell out it's the SENDER.
+  const _issuerHint = (key === 'supplier_name' || key === 'customer_name')
+    ? ' title="The company the document is FROM — the sender who issued it (e.g. the supplier on an invoice). Not your own company."'
+    : '';
   row.innerHTML = `
     <div class="field-row-header">
-      <span class="field-row-label" data-key="${key}">${escHtml(labelFor(key))}</span>
+      <span class="field-row-label" data-key="${key}"${_issuerHint}>${escHtml(labelFor(key))}</span>
       ${confLabel}
     </div>
     <div class="field-input-wrap">
       <input type="text" class="field-input ${low ? 'low-conf' : ''}"
              data-key="${key}" data-original="${escHtml(val)}"
              value="${escHtml(val)}" placeholder="Not found">
-      <button class="pick-btn" data-key="${key}" title="Pick from document">&#8853;</button>
+      <button class="pick-btn" data-key="${key}" title="Teach this field — draw a box round its value; Scan Finder learns where it sits and reads it on every future document from this supplier">&#8853;</button>
     </div>
     ${noteHtml}${anchorHtml}
   `;
@@ -740,6 +1539,7 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
     // flashes mid-type (e.g. an unfinished "12-05" looks invalid until complete).
     clearFieldWarning(row);
     validateConfirm();
+    updateTotalsVerifiedBadge();   // live-update the "mathematically verified" total badge
   });
 
   // Immediate regex/type validation on focus-out. Synchronous + warn-only: it sets
@@ -752,6 +1552,72 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
     if (msg) setFieldWarning(row, input, msg);
     else clearFieldWarning(row, input);
   });
+
+  // Right-click → field cleanup-rule toolkit (strip a leaked heading/column). Gated
+  // to admin/edit (the save is also role-checked server-side). Read-only users get
+  // the native menu.
+  input.addEventListener('contextmenu', (e) => {
+    if (!canEdit) return;
+    showFieldRuleMenu(e, input, key);
+  });
+
+  // ── Date shortcut + free-text type-ahead ──────────────────────────────────────
+  const fdef  = (fieldDefs || []).find(f => f.key === key);
+  const ftype = ((fdef && fdef.type) || '').toLowerCase();
+  // 't' / 'T' in a DATE field fills today's date (DD-MM-YYYY — the canonical format).
+  if (ftype === 'date') {
+    input.addEventListener('keydown', (e) => {
+      if ((e.key === 't' || e.key === 'T') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        const d = new Date(), p = (n) => String(n).padStart(2, '0');
+        input.value = `${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()}`;
+        input.dispatchEvent(new Event('input', { bubbles: true }));  // update corrections + clear warning
+      }
+    });
+  }
+  // Type-ahead for FREE-TEXT fields (names / generic text — no structured pattern):
+  // after 3 chars, suggest values already confirmed for this field on this doc type.
+  // Native <datalist> (browser handles matching + keyboard); options lazy-loaded once,
+  // and the list is only attached at >= 3 chars so it stays quiet for short input.
+  if (!validationKeyFor(fdef) && currentDoc && currentDoc.id != null) {
+    const dlId = `field-sugg-${key}`;
+    const dl = document.createElement('datalist');
+    dl.id = dlId;
+    row.appendChild(dl);
+    let loaded = false;
+    const ensureLoaded = async () => {
+      if (loaded) return;
+      loaded = true;
+      try {
+        const vals = (await window.docusnap.getFieldSuggestions(currentDoc.id, key)) || [];
+        dl.innerHTML = vals.map(v => `<option value="${escHtml(v)}"></option>`).join('');
+      } catch { /* suggestions are best-effort */ }
+    };
+    // Force-close the native popup. Removing `list` alone does NOT dismiss an already-
+    // open Chromium datalist — only blur does — so blur, then refocus (with `list` gone)
+    // to keep the cursor in the field without the popup reopening.
+    const closeSuggest = () => {
+      input.removeAttribute('list');
+      input.blur();
+      requestAnimationFrame(() => input.focus());
+    };
+    let lastArrowAt = 0;
+    input.addEventListener('input', (e) => {
+      if (e && e.inputType === 'insertReplacementText') {
+        // A datalist value was inserted. Arrow NAVIGATION fires this right after an
+        // Arrow keydown (keep the popup open); a MOUSE PICK fires it with no recent
+        // arrow (that's a commit → close). Enter is handled in keydown below.
+        if (Date.now() - lastArrowAt > 150) setTimeout(closeSuggest, 0);
+        return;
+      }
+      if (input.value.trim().length >= 3) { ensureLoaded(); input.setAttribute('list', dlId); }
+      else input.removeAttribute('list');
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') lastArrowAt = Date.now();
+      else if (e.key === 'Enter' && input.hasAttribute('list')) setTimeout(closeSuggest, 0);
+    });
+  }
 
   row.querySelector('.pick-btn').addEventListener('click', () => {
     if (activeField === key) cancelZoneMode();
@@ -772,6 +1638,33 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
     });
   }
 
+  // "This name is correct" — persist the value to the accepted-names allowlist (so the
+  // wordness flag never fires for it again) and clear the flag on this doc immediately.
+  const nameAcceptBtn = row.querySelector('.name-accept-btn');
+  if (nameAcceptBtn) {
+    nameAcceptBtn.addEventListener('click', async () => {
+      nameAcceptBtn.disabled = true;
+      try {
+        const res = await window.docusnap.acceptNameValue({
+          docId: currentDoc?.id, fieldKey: key, value: input.value,
+        });
+        if (res && res.ok) {
+          nameAcceptBtn.textContent = "✓ Saved — won't flag this again";
+          const noteEl = row.querySelector('.field-note');
+          if (noteEl) noteEl.remove();
+          clearFieldWarning(row);
+          // Drop this field from the in-memory flag tally so Confirm gating + the
+          // auto-file eligibility reflect the accept without a reload.
+          const ex = (currentDoc?.extractions || []).find(e => e.field_key === key);
+          if (ex) ex.validation_note = null;
+          validateConfirm();
+        } else {
+          nameAcceptBtn.disabled = false;
+        }
+      } catch { nameAcceptBtn.disabled = false; }
+    });
+  }
+
   scroll.appendChild(row);
 }
 
@@ -787,17 +1680,101 @@ function validateConfirm() {
   }
 
   const dt       = allDocTypes.find(t => t.slug === selectedTypeSlug);
-  const dateKey  = dt?.date_field_key  || 'invoice_date';
-  const refKey   = dt?.ref_field_key   || 'invoice_number';
-  const required = [dateKey, refKey];
+  // A role is either ASSIGNED (points at a real field key) or legitimately UNSET.
+  // Do NOT fall back to the literal invoice_number/invoice_date — a custom type
+  // keyed only by a date (delivery note, worksheet), or a type whose ref role was
+  // self-healed to NULL, then gates on a phantom field that can never be filled,
+  // permanently disabling Confirm (QA audit #2). Honour the type: require only the
+  // roles it actually designates. This matches the backend, which deliberately
+  // refuses to force a reference role.
+  const dateKey  = dt?.date_field_key || null;
+  const refKey   = dt?.ref_field_key  || null;
+  const note     = document.getElementById('confirm-config-note');
 
+  // A role that IS ASSIGNED but points at a field that no longer exists on the type
+  // (a dangling pointer — e.g. the Reference field was deleted) can never be
+  // satisfied, so say so plainly. An UNSET role is fine and is skipped.
+  const fieldExists = (key) => !!document.querySelector(`.field-input[data-key="${key}"]`);
+  const dangling = [
+    dateKey ? { key: dateKey, role: 'Date' } : null,
+    refKey  ? { key: refKey,  role: 'Reference' } : null,
+  ].filter(r => r && !fieldExists(r.key));
+  if (note) {
+    if (dangling.length) {
+      note.textContent = `This document type’s ${dangling.map(d => d.role).join(' and ')} field `
+        + `${dangling.length > 1 ? 'aren’t' : 'isn’t'} set up. `
+        + `Choose ${dangling.length > 1 ? 'them' : 'it'} in Settings → Document Types, then reopen this document.`;
+      Object.assign(note.style, { display: '', color: 'var(--warn)', fontSize: '12px',
+        lineHeight: '1.4', padding: '6px 14px' });
+    } else {
+      note.style.display = 'none';
+    }
+  }
+  if (dangling.length) { btn.disabled = true; markRequiredMissing([]); return; }
+
+  // Required = the assigned date/ref roles PLUS any CUSTOM field flagged Required in the
+  // Type Manager (fields.required) — minus the Document-Issuer identity, which is warn-only
+  // (handled below). Only fields actually present on screen are gated.
+  const ISSUER_KEYS = ['supplier_name', 'customer_name'];
+  const requiredKeys = new Set([dateKey, refKey]);
+  for (const f of (dt?.fields || [])) {
+    if (f.required && f.enabled !== 0 && !ISSUER_KEYS.includes(f.key)) requiredKeys.add(f.key);
+  }
+  const required = [...requiredKeys].filter(k => k && fieldExists(k));
   const missing = required.filter(key => {
     const input = document.querySelector(`.field-input[data-key="${key}"]`);
     return !input || !input.value.trim();
   });
 
-  markRequiredMissing(missing);
-  btn.disabled = missing.length > 0;
+  const issuerNote = document.getElementById('confirm-issuer-note');
+  const issuerKey  = issuerBlankKey();
+
+  if (missing.length) {
+    // These roles are needed to file (the filename is built from them), so Confirm stays
+    // disabled — but say plainly WHAT to add and WHY, instead of a silent greyed-out button.
+    if (note) {
+      const labels = missing.map(k => `<b>${escHtml(labelFor(k))}</b>`);
+      const list = labels.length > 1
+        ? labels.slice(0, -1).join(', ') + ' and ' + labels[labels.length - 1]
+        : labels[0];
+      note.innerHTML = `To file this document, please fill in ${list} — `
+        + `${missing.length > 1 ? 'these fields are' : 'this field is'} needed to file it.`
+        + (issuerKey ? ' The Document Issuer is empty too — add it so the app can learn this sender.' : '');
+      Object.assign(note.style, { display: '', color: 'var(--warn)', fontSize: '12px',
+        lineHeight: '1.4', padding: '6px 14px' });
+    }
+    if (issuerNote) issuerNote.style.display = 'none';
+    markRequiredMissing(missing);
+    btn.disabled = true;
+    return;
+  }
+
+  // Required roles are all present. A blank Document Issuer is a WARN, not a block (the
+  // app's review-not-reject posture) — name the consequence and let the user file anyway.
+  if (note) note.style.display = 'none';
+  if (issuerNote) {
+    if (issuerKey) {
+      issuerNote.textContent = 'No Document Issuer yet — if you file now it will be saved under '
+        + '“Unknown Company” and the app won’t learn this sender. Add the issuer above, or file anyway.';
+      Object.assign(issuerNote.style, { display: '', color: 'var(--warn)', fontSize: '12px',
+        lineHeight: '1.4', padding: '6px 14px' });
+    } else {
+      issuerNote.style.display = 'none';
+    }
+  }
+
+  markRequiredMissing([]);
+  btn.disabled = false;
+}
+
+// The identity/Document-Issuer field key (supplier_name | customer_name) on screen
+// when it is BLANK; null when present-and-filled or the type has no issuer field.
+function issuerBlankKey() {
+  for (const key of ['supplier_name', 'customer_name']) {
+    const input = document.querySelector(`.field-input[data-key="${key}"]`);
+    if (input) return input.value.trim() ? null : key;
+  }
+  return null;
 }
 
 function markRequiredMissing(missingKeys) {
@@ -827,6 +1804,7 @@ function enterZoneMode(key, label) {
 
 function cancelZoneMode() {
   activeField = null;
+  anchorDrawField = null;
   isDragging  = false;
   dragRect    = null;
   selCanvas.classList.remove('active');
@@ -869,9 +1847,11 @@ function clearTraceHighlight() {
 // reads (_crop_and_ocr crops cx±half). Everything else (template_mapping, the
 // inline harvest's inline_box) is [x_tl, y_tl, w, h] TOP-LEFT-based.
 const _CENTRE_BASED_SLICE_STAGES = new Set(['anchor_crop', 'anchor_relocate', 'anchor_registration']);
-function drawTraceBbox(bbox, kind, stage) {
+// `keep` = draw ON TOP of the current highlight without clearing it first — used to
+// overlay the anchor (label) box together with the value box from one click.
+function drawTraceBbox(bbox, kind, stage, keep) {
   if (!bbox || bbox.length < 4 || !traceCanvas.width) return;
-  clearTraceHighlight();
+  if (!keep) clearTraceHighlight();
   const w = traceCanvas.width, h = traceCanvas.height;
   const bw = Math.round(bbox[2] * w), bh = Math.round(bbox[3] * h);
   const isCenterBased = _CENTRE_BASED_SLICE_STAGES.has(stage);
@@ -888,11 +1868,14 @@ function drawTraceBbox(bbox, kind, stage) {
   traceCtx.fillStyle = color + '28';
   traceCtx.fillRect(x, y, bw, bh);
   traceCtx.restore();
-  _traceHighlightTimer = setTimeout(clearTraceHighlight, 3500);
+  if (_traceHighlightTimer) clearTimeout(_traceHighlightTimer);   // single shared dwell for both boxes
+  // Long idle dwell so you can actually study the box; it still clears immediately on
+  // the next row click, page change, or doc change (clearTraceHighlight callers).
+  _traceHighlightTimer = setTimeout(clearTraceHighlight, 30000);
 }
 
 selCanvas.addEventListener('mousedown', (e) => {
-  if (!activeField) return;
+  if (!activeField && !anchorDrawField) return;
   isDragging = true;
   const p    = canvasPoint(e, selCanvas);   // zoom/pan-compensated canvas-buffer px
   dragStart  = { x: p.x, y: p.y };
@@ -912,10 +1895,11 @@ selCanvas.addEventListener('mousemove', (e) => {
 });
 
 selCanvas.addEventListener('mouseup', async (e) => {
-  if (!isDragging || !dragRect || !activeField) return;
+  if (!isDragging || !dragRect || (!activeField && !anchorDrawField)) return;
   isDragging = false;
   if (dragRect.w < 10 || dragRect.h < 10) { clearCanvas(); return; }
-  await runZoneOcr(dragRect, activeField);
+  if (anchorDrawField) { const f = anchorDrawField; await runAnchorDraw(dragRect, f); }
+  else await runZoneOcr(dragRect, activeField);
 });
 
 // ── Zone OCR ──────────────────────────────────────────────────────────────────
@@ -940,8 +1924,13 @@ async function runZoneOcr(rect, fieldKey) {
     );
     const base64 = cropCanvas.toDataURL('image/png').split(',')[1];
 
-    const result = await window.docusnap.ocrRegion(base64);
-    const text   = (result || '').trim();
+    // Read via the --boxes path so we also learn the line COUNT (for the tall-box auto-rule).
+    // result.text is the same cleaned, multi-line-aware value the plain path returns.
+    const boxes  = await window.docusnap.ocrRegionBoxes?.(base64);
+    const rawText = ((boxes && boxes.text) || (await window.docusnap.ocrRegion(base64)) || '').trim();
+    // Tidy to the field type — strip a currency symbol, parse a date to canonical DD-MM-YYYY
+    // (region-aware). Used for the input value, the correction, and the learned anchor value.
+    const text   = rawText ? await normalizeDrawnValue(fieldKey, rawText) : rawText;
 
     if (text) {
       const input = document.querySelector(`.field-input[data-key="${fieldKey}"]`);
@@ -952,8 +1941,19 @@ async function runZoneOcr(rect, fieldKey) {
         corrections[fieldKey] = { original_value: orig, corrected_value: text };
         validateConfirm();
       }
-      const anchorSaved = await captureAnchorContext(rect, fieldKey, text, imgW, imgH, scaleX, scaleY);
-      if (anchorSaved) anchorTaughtFields.add(fieldKey);
+      // TALL-BOX teach method: the drawn box read 2+ lines, so this value WRAPS — auto-stage a
+      // multiline_continue rule (silent) for free-text/name-like fields, so future wrapping
+      // scans are joined. The right-click "This field can wrap" toggle is the explicit alternative.
+      if (boxes && boxes.lines >= 2 && _isNameLikeField(fieldKey)) {
+        _stageMultilineRule(fieldKey, { silent: true });
+        try { showToast('Looks like this value wraps onto the next line — wrapping enabled, saved on Confirm.', 'ok'); } catch {}
+      }
+      lastTeachCtx = { fieldKey, rect, imgW, imgH, scaleX, scaleY, value: text };
+      const detected = await captureAnchorContext(rect, fieldKey, text, imgW, imgH, scaleX, scaleY);
+      if (detected) {
+        anchorTaughtFields.add(fieldKey);
+        showAnchorReadout(detected, text);   // show which anchor was picked + the Left/Above toggle
+      }
     }
   } catch (err) {
     console.error('Zone OCR error:', err);
@@ -961,6 +1961,186 @@ async function runZoneOcr(rect, fieldKey) {
 
   ocrOverlay.classList.remove('visible');
   cancelZoneMode();
+}
+
+// ── Field cleanup rules — right-click menu ──────────────────────────────────
+// Teach Scan Finder to strip an adjacent heading/column OCR bled into a field.
+// Mirrors the ⊕ model: the field VALUE is fixed immediately; the learned RULE is
+// staged in pendingFieldRules and committed on confirm. Three tooltipped options.
+let _fieldRuleMenuEl = null;
+
+function _frTruncate(s, n = 40) {
+  s = String(s == null ? '' : s);
+  return s.length > n ? s.slice(0, n - 1) + '…' : s;
+}
+
+function closeFieldRuleMenu() {
+  if (_fieldRuleMenuEl) { _fieldRuleMenuEl.remove(); _fieldRuleMenuEl = null; }
+  document.removeEventListener('mousedown', _onFieldRuleMenuOutside, true);
+}
+function _onFieldRuleMenuOutside(e) {
+  if (_fieldRuleMenuEl && !_fieldRuleMenuEl.contains(e.target)) closeFieldRuleMenu();
+}
+
+// Snap [start,end) to whole words within `value`. First SHRINK off any selected
+// whitespace at the edges (so a stray trailing/leading space in the drag doesn't pull
+// in the next word — "7 " must stay "7", not grow into "7 Beaumont"), THEN grow each
+// edge out to the full word it sits inside (so a partial word becomes whole).
+function _snapToWords(value, start, end) {
+  while (start < end && /\s/.test(value[start]))     start++;
+  while (end > start && /\s/.test(value[end - 1]))   end--;
+  if (start >= end) return [start, end];
+  while (start > 0 && /\S/.test(value[start - 1]))   start--;
+  while (end < value.length && /\S/.test(value[end])) end++;
+  return [start, end];
+}
+
+// Name-like / naturally-multi-word fields (names, addresses, companies) must NOT be
+// offered "Keep only the main value": that keeps a single code-shaped token, which is
+// catastrophic when the junk is a stray digit and the value is a name ("7 Beaumont…"
+// → "7"). Mirrors the spirit of python value_quality.is_name_like_field.
+function _isNameLikeField(key) {
+  const s = (String(key || '') + ' ' + String(labelFor(key) || '')).toLowerCase();
+  return /name|address|company|customer|supplier|contact/.test(s);
+}
+
+// Learning scope (supplier + doctype) for a staged rule — same resolution the ⊕
+// teach uses so a rule isn't keyed to a stale identity.
+function _fieldRuleScope() {
+  const docType = currentDoc?.type_slug || currentDoc?.document_type_slug || null;
+  const supplierInput = document.querySelector('.field-input[data-key="supplier_name"]');
+  const supplier = supplierInput?.value?.trim() || currentDoc?.supplier_name || null;
+  return { document_type: docType, supplier_name: cleanSupplierName(supplier) };
+}
+
+// The single code-shaped (digit-bearing) token, mirroring the engine's keep_block
+// tie-break — or null when 0 / >1 such tokens (ambiguous).
+function _keepBlockResult(value) {
+  const toks = (value || '').trim().split(/\s+/);
+  if (toks.length < 2) return null;
+  const digit = toks.filter(t => /\d/.test(t));
+  return digit.length === 1 ? digit[0] : null;
+}
+
+// Apply a value change through the normal 'input' path (records corrections + runs
+// validation), optionally staging a learned rule (committed on confirm).
+function _applyFieldRule(input, key, newValue, rule) {
+  input.value = newValue;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  if (rule) {
+    (pendingFieldRules[key] = pendingFieldRules[key] || []).push(rule);
+    try { showToast('Saved for this document — the rule applies when you Confirm.', 'ok'); } catch {}
+  }
+  closeFieldRuleMenu();
+}
+
+// Stage a multiline_continue rule (no value change) so a value that WRAPS onto the next line
+// is joined on future scans. Idempotent per field; committed on Confirm via saveFieldRule.
+function _stageMultilineRule(key, { silent = false } = {}) {
+  pendingFieldRules[key] = pendingFieldRules[key] || [];
+  if (!pendingFieldRules[key].some(r => r.rule_type === 'multiline_continue')) {
+    pendingFieldRules[key].push({ ..._fieldRuleScope(), field_key: key, rule_type: 'multiline_continue', token: '-' });
+    if (!silent) { try { showToast('This field will read values that wrap onto the next line — saved when you Confirm.', 'ok'); } catch {} }
+  }
+  closeFieldRuleMenu();
+}
+function _hasMultilineRule(key) {
+  if ((pendingFieldRules[key] || []).some(r => r.rule_type === 'multiline_continue')) return true;
+  // Also reflect a SAVED rule in scope for this doc (supplier+doctype, or global/doctype-only).
+  const scope    = _fieldRuleScope();
+  const supplier = (scope.supplier_name || '').toLowerCase();
+  const doctype  = (scope.document_type || '').toLowerCase();
+  return _savedFieldRules.some(r =>
+    r.rule_type === 'multiline_continue' && r.field_key === key
+    && (r.document_type || '').toLowerCase() === doctype
+    && ['__global__', '', supplier].includes((r.supplier_name || '').toLowerCase()));
+}
+
+function showFieldRuleMenu(e, input, key) {
+  e.preventDefault();
+  closeFieldRuleMenu();
+  const value = input.value || '';
+  if (!value.trim()) return;
+
+  // Selection → leading/trailing trim (whole-value selection is blocked).
+  let s = input.selectionStart, en = input.selectionEnd;
+  let selected = '', side = null, removeResult = null;
+  if (s != null && en != null && s !== en) {
+    [s, en] = _snapToWords(value, s, en);
+    selected = value.slice(s, en).trim();
+    const touchesStart = !value.slice(0, s).trim();
+    const touchesEnd   = !value.slice(en).trim();
+    if (touchesStart && touchesEnd) { selected = ''; }            // whole value → nothing to trim
+    else if (touchesEnd)  { side = 'trailing'; removeResult = value.slice(0, s).replace(/\s+$/, ''); }
+    else if (touchesStart) { side = 'leading';  removeResult = value.slice(en).replace(/^\s+/, ''); }
+    else { selected = ''; }                                        // interior → not a leak (edit directly)
+  }
+  const trimOk = selected && (side === 'leading' || side === 'trailing')
+              && removeResult && removeResult.trim() && removeResult.trim() !== value.trim();
+
+  const items = [];
+  // "Keep only the main value" is for single-value CODE fields only — never name-like
+  // fields (a name is naturally multi-word; keeping one digit token would gut it).
+  const kb = _isNameLikeField(key) ? null : _keepBlockResult(value);
+  if (kb && kb !== value.trim()) {
+    items.push({
+      label: 'Keep only the main value',
+      sub: `${_frTruncate(value)}  →  ${_frTruncate(kb)}`,
+      tip: 'This field holds one value (e.g. a code). On future scans we keep the value and drop extra words that leak in from a neighbouring heading or column — on either side.',
+      onClick: () => _applyFieldRule(input, key, kb, { ..._fieldRuleScope(), field_key: key, rule_type: 'keep_block' }),
+    });
+  }
+  if (trimOk) {
+    items.push({
+      label: 'Remove this text from future scans',
+      sub: `${_frTruncate(value)}  →  ${_frTruncate(removeResult)}`,
+      tip: `We'll remove "${_frTruncate(selected, 28)}" (and close OCR variants) from this field on future scans, where it ${side === 'leading' ? 'leads' : 'trails'} the value.`,
+      onClick: () => _applyFieldRule(input, key, removeResult, { ..._fieldRuleScope(), field_key: key, rule_type: 'remove_text', token: selected, side }),
+    });
+    items.push({
+      label: 'Just fix this one',
+      sub: `${_frTruncate(value)}  →  ${_frTruncate(removeResult)}`,
+      tip: "Fix only this document. Scan Finder won't change how it reads future scans.",
+      onClick: () => _applyFieldRule(input, key, removeResult, null),
+    });
+  }
+  // "This field can wrap to the next line" — free-text / name-like fields only. Teaches a
+  // multiline_continue rule so a value that wraps (first line ends with "-") is read + joined
+  // on future scans; single-line values are unaffected. Available with no selection.
+  if (_isNameLikeField(key)) {
+    const on = _hasMultilineRule(key);
+    items.push({
+      label: on ? '✓ Wrapping is on for this field' : 'This field can wrap to the next line',
+      sub: on
+        ? 'Saved when you tap Confirm.'
+        : 'When the value runs onto a second line (the first line ends with “-”), Scan Finder reads the line below and joins them on future scans. Single-line values are unaffected.',
+      wrap: true,   // a descriptive sentence — wrap it instead of the native tooltip
+      onClick: on ? () => closeFieldRuleMenu() : () => _stageMultilineRule(key),
+    });
+  }
+  if (!items.length) return;
+
+  const menu = document.createElement('div');
+  menu.className = 'field-rule-menu';
+  menu.setAttribute('data-help-ignore', '');
+  for (const it of items) {
+    const b = document.createElement('button');
+    b.className = 'frm-item';
+    if (it.tip) b.title = it.tip;   // native tooltip only when set (a wrapping sub needs none)
+    b.innerHTML = `<span class="frm-label">${escHtml(it.label)}</span>`
+                + `<span class="frm-sub${it.wrap ? ' frm-wrap' : ''}">${escHtml(it.sub)}</span>`;
+    b.addEventListener('click', it.onClick);
+    menu.appendChild(b);
+  }
+  document.body.appendChild(menu);
+  _fieldRuleMenuEl = menu;
+  const mw = menu.offsetWidth, mh = menu.offsetHeight;
+  let x = e.clientX, y = e.clientY;
+  if (x + mw > window.innerWidth)  x = window.innerWidth - mw - 8;
+  if (y + mh > window.innerHeight) y = window.innerHeight - mh - 8;
+  menu.style.left = `${Math.max(8, x)}px`;
+  menu.style.top  = `${Math.max(8, y)}px`;
+  setTimeout(() => document.addEventListener('mousedown', _onFieldRuleMenuOutside, true), 0);
 }
 
 // Compute the DRIFT-INVARIANT label→value offset to store with a ⊕ teach.
@@ -983,7 +2163,53 @@ function labelOffsetFromBox(box, originDX, originDY, xNorm, yNorm, imgW, imgH) {
   return { offset_dx_norm: dx, offset_dy_norm: dy };
 }
 
-async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, scaleY) {
+// From the OCR word boxes of a left-of-value strip (one line tall), return the
+// RIGHTMOST contiguous block — the caption nearest the value — split from any other
+// column on a wide horizontal gap. Returns { text, box:[l,t,w,h] } in the words' own
+// px space, or null when there are no usable words. This is what stops a wide
+// two-column key/value row ("Ticket No. … Work Address") merging BOTH captions into
+// one bogus anchor: we keep only the caption adjacent to the value. Reusable for any
+// multi-column layout, not one document.
+function nearestLeftCluster(words) {
+  const ws = (words || [])
+    .filter(w => w && Array.isArray(w.box) && w.box.length >= 4 && (w.text || '').trim())
+    .map(w => ({ text: w.text.trim(), l: +w.box[0], t: +w.box[1], w: +w.box[2], h: +w.box[3] }))
+    .filter(w => isFinite(w.l) && isFinite(w.w))
+    .sort((a, b) => a.l - b.l);
+  if (!ws.length) return null;
+  // A real inter-COLUMN gap is several text-heights wide — far larger than the
+  // inter-word space inside one caption. Tie the threshold to the median word height
+  // so it scales with DPI/zoom rather than a brittle pixel constant.
+  const heights = ws.map(w => w.h).filter(h => h > 0).sort((a, b) => a - b);
+  const medH = heights[Math.floor(heights.length / 2)] || 0;
+  const gapThresh = Math.max(medH * 1.2, 8);
+  // Walk left→right; a gap past the threshold starts a new column, discarding
+  // everything to its left. The surviving block is the rightmost (nearest) column.
+  let block = [ws[0]];
+  for (let i = 1; i < ws.length; i++) {
+    const prev = ws[i - 1];
+    const gap = ws[i].l - (prev.l + prev.w);
+    if (gap > gapThresh) block = [ws[i]];
+    else block.push(ws[i]);
+  }
+  const l = Math.min(...block.map(w => w.l));
+  const t = Math.min(...block.map(w => w.t));
+  const r = Math.max(...block.map(w => w.l + w.w));
+  const b = Math.max(...block.map(w => w.t + w.h));
+  return { text: block.map(w => w.text).join(' '), box: [l, t, r - l, b - t] };
+}
+
+// The located label's box as page-normalised [x,y,w,h] (top-left), for the
+// "show the detected anchor" overlay. Same crop-origin math as labelOffsetFromBox.
+function labelNormBox(box, originDX, originDY, imgW, imgH) {
+  if (!Array.isArray(box) || box.length < 4) return null;
+  const nW = docImg.naturalWidth || imgW, nH = docImg.naturalHeight || imgH;
+  if (!nW || !nH || !imgW || !imgH) return null;
+  return [(originDX / imgW) + (box[0] / nW), (originDY / imgH) + (box[1] / nH),
+          box[2] / nW, box[3] / nH];
+}
+
+async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, scaleY, forceDir = null) {
   const xNorm    = (rect.x + rect.w / 2) / imgW;
   const yNorm    = (rect.y + rect.h / 2) / imgH;
   const pageZone = yNorm < 0.33 ? 'top' : yNorm < 0.66 ? 'middle' : 'bottom';
@@ -1031,11 +2257,18 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
   } catch {}
 
   // Best-effort: try to find a real label to the left of the box, then above.
-  // Each attempt is independently guarded — a failure here (bad crop, OCR
-  // error) must NOT prevent the guaranteed fallback save below, otherwise
-  // nothing gets learned at all.
-  try {
-    const leftPad    = Math.min(rect.x, 300);
+  // Search the WHOLE row to the LEFT of the value (not a fixed 300px window): on wide
+  // two-column key/value layouts the label ("Make", "IP address") sits far left of its
+  // value — beyond a narrow window — so a TIGHT value box would find nothing to the
+  // left and wrongly fall through to the row ABOVE (grabbing the line above, e.g. the
+  // customer name). The strip stays ONE line tall (rect.h), so it only reads THIS row;
+  // extractLabel takes the token nearest the value. Each attempt is independently
+  // guarded — a failure here (bad crop, OCR error) must NOT prevent the guaranteed
+  // fallback save below, otherwise nothing gets learned at all.
+  // forceDir (from the readout's Left/Above toggle) pins ONE direction: 'right' = label
+  // to the left only, 'below' = label above only; null = auto (left then above).
+  if (forceDir !== 'below') try {
+    const leftPad    = rect.x;   // full span from the page's left edge to the value box
     const leftCanvas = document.createElement('canvas');
     leftCanvas.width  = Math.round(leftPad * scaleX);
     leftCanvas.height = Math.round(rect.h * scaleY);
@@ -1049,22 +2282,37 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
       );
       const leftB64   = leftCanvas.toDataURL('image/png').split(',')[1];
       const leftRes   = await window.docusnap.ocrRegionBoxes?.(leftB64);
-      const leftText  = ((leftRes && leftRes.text) || (await window.docusnap.ocrRegion(leftB64)) || '').trim();
-      const leftLabel = extractLabel(leftText);
+      // Keep only the column nearest the value, not the whole row to the left — a wide
+      // key/value row OCRs as "label1 …gap… label2" and the far-left caption must not
+      // be glued onto the real adjacent one. Falls back to the full strip when word
+      // boxes aren't available (legacy region.py output).
+      const cluster   = nearestLeftCluster(leftRes && leftRes.words);
+      const leftText  = (cluster ? cluster.text
+                          : ((leftRes && leftRes.text) || (await window.docusnap.ocrRegion(leftB64)) || '')).trim();
+      const leftBox   = cluster ? cluster.box : (leftRes && leftRes.box);
+      const leftLabel = sanitizeAnchorLabel(extractLabel(leftText) || '');
       if (leftLabel) {
         // Drift-invariant offset: the located label's page position → value centre.
         // Origin of the left crop in DISPLAY px is (rect.x - leftPad, rect.y).
-        const off = labelOffsetFromBox(leftRes && leftRes.box, rect.x - leftPad, rect.y, xNorm, yNorm, imgW, imgH);
-        pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: leftLabel, direction: 'right', ...off };
-        return true;
+        const off = labelOffsetFromBox(leftBox, rect.x - leftPad, rect.y, xNorm, yNorm, imgW, imgH);
+        // label_detected: this caption was OCR'd from the PAGE (not the field-name
+        // fallback), so the backend must NOT drop it even if it equals the field key
+        // (a "Make" field whose on-page label is literally "Make").
+        pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: leftLabel, direction: 'right', ...off, label_detected: true };
+        return { anchor_label: leftLabel, direction: 'right',
+                 normBox: labelNormBox(leftBox, rect.x - leftPad, rect.y, imgW, imgH) };
       }
     }
   } catch (err) {
     console.warn('Anchor capture: left-label lookup failed (non-critical):', err);
   }
 
-  try {
-    const abovePad    = Math.min(rect.y, 60);
+  if (forceDir !== 'right') try {
+    // Read ONLY the single line directly above the value, not a fixed 60px band that
+    // bled into ~2 rows (capturing the line above AND the one above that → garbled).
+    // Tie the strip height to the value box's own line height (rect.h), floored so a
+    // very thin draw still reads.
+    const abovePad    = Math.min(rect.y, Math.max(rect.h, 20));
     const aboveCanvas = document.createElement('canvas');
     aboveCanvas.width  = Math.round(rect.w * scaleX);
     aboveCanvas.height = Math.round(abovePad * scaleY);
@@ -1079,12 +2327,17 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
       const aboveB64   = aboveCanvas.toDataURL('image/png').split(',')[1];
       const aboveRes   = await window.docusnap.ocrRegionBoxes?.(aboveB64);
       const aboveText  = ((aboveRes && aboveRes.text) || (await window.docusnap.ocrRegion(aboveB64)) || '').trim();
-      const aboveLabel = extractLabel(aboveText);
+      // "A value ABOVE is not a label": sanitizeAnchorLabel strips code/serial/number
+      // tokens (a MAC, an IP, a reference, a date), so the above-strip yields a label
+      // ONLY when it's a real caption — never the value sitting in the row above. This
+      // stops the snap latching onto the MAC above instead of the label to the left.
+      const aboveLabel = sanitizeAnchorLabel(extractLabel(aboveText) || '');
       if (aboveLabel) {
         // Origin of the above crop in DISPLAY px is (rect.x, rect.y - abovePad).
         const off = labelOffsetFromBox(aboveRes && aboveRes.box, rect.x, rect.y - abovePad, xNorm, yNorm, imgW, imgH);
-        pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: aboveLabel, direction: 'below', ...off };
-        return true;
+        pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: aboveLabel, direction: 'below', ...off, label_detected: true };
+        return { anchor_label: aboveLabel, direction: 'below',
+                 normBox: labelNormBox(aboveRes && aboveRes.box, rect.x, rect.y - abovePad, imgW, imgH) };
       }
     }
   } catch (err) {
@@ -1097,7 +2350,156 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
   // un-confirmed teach leaves no trace.
   const fallbackLabel = labelFor(fieldKey) || fieldKey.replace(/_/g, ' ');
   pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: fallbackLabel, direction: 'right' };
-  return true;
+  return { anchor_label: fallbackLabel, direction: 'right', normBox: null, fallback: true };
+}
+
+// Surface WHICH anchor the ⊕ teach auto-detected (its label + where it sits) and the
+// value it read, so a wrong snap — onto the value in the row ABOVE instead of the
+// label to the LEFT — is VISIBLE and the operator can simply draw again. The detected
+// anchor box flashes on the preview; the message warns on the weak cases (anchored
+// from above, or by position with no label found).
+let _anchorReadoutTimer = null;
+function hideAnchorReadout() {
+  const bar = document.getElementById('anchor-readout');
+  if (bar) { bar.style.display = 'none'; bar.innerHTML = ''; }
+  if (_anchorReadoutTimer) { clearTimeout(_anchorReadoutTimer); _anchorReadoutTimer = null; }
+}
+function showAnchorReadout(detected, value) {
+  try { if (detected.normBox) drawTraceBbox(detected.normBox, 'anchor', 'manual'); } catch {}
+  const bar = document.getElementById('anchor-readout');
+  if (!bar) return;
+  const val   = escHtml((value || '').trim());
+  const isLeft  = detected.direction === 'right';
+  const isAbove = detected.direction === 'below';
+  const suspicious = !detected.fallback && labelLooksSuspicious(detected.anchor_label);
+  const warn = detected.fallback || suspicious;
+  let msg;
+  if (detected.fallback) {
+    msg = `<span class="ar-msg">&#9888; No label found — anchored by position. Read: "${val}"</span>`;
+  } else {
+    // The label is EDITABLE — an auto-detect off a noisy scan can be misread ("verial No."),
+    // and a wrong label never re-locates. The operator can correct it here before Confirm.
+    const lead = suspicious
+      ? '&#9888; This label looks misread — check it matches the caption on the page:'
+      : `&#10003; Anchor (label ${isAbove ? 'above' : 'to the left'}):`;
+    msg = `<span class="ar-msg">${lead} `
+      + `<input class="ar-label-edit" spellcheck="false" title="The caption this field sits beside — edit if it was misread" `
+      + `style="font:inherit;font-weight:600;padding:1px 5px;min-width:90px;border:1px solid var(--border2);border-radius:5px;background:var(--surface)"> `
+      + `&rarr; "${val}"</span>`;
+  }
+  bar.className = 'anchor-readout' + (warn ? ' warn' : '');
+  bar.innerHTML = msg
+    + `<span class="ar-dir"><span class="ar-lbl">Label is:</span>`
+    + `<button class="ar-btn ${isLeft ? 'on' : ''}" data-dir="right">&larr; Left</button>`
+    + `<button class="ar-btn ${isAbove ? 'on' : ''}" data-dir="below">&uarr; Above</button>`
+    + `<button class="ar-btn ar-draw" title="Draw a box around the exact label to anchor on (e.g. &quot;Invoice Total&quot;) — useful when the value sits beside a repeating word like GBP">&#9998; Draw the anchor</button></span>`
+    + `<span class="ar-x" title="Dismiss">&times;</span>`;
+  bar.style.display = '';
+  // Populate + wire the editable label (value set via JS to avoid attribute-escaping issues).
+  const lblInput = bar.querySelector('.ar-label-edit');
+  if (lblInput) {
+    lblInput.value = detected.anchor_label || '';
+    lblInput.addEventListener('change', () => {
+      const fk = lastTeachCtx?.fieldKey;
+      const cleaned = sanitizeAnchorLabel(lblInput.value);
+      if (fk && pendingAnchors[fk]) {
+        pendingAnchors[fk].anchor_label = cleaned || (labelFor(fk) || fk.replace(/_/g, ' '));
+        pendingAnchors[fk].label_detected = !!cleaned;   // a typed caption is a real label
+      }
+      lblInput.classList.toggle('bad', labelLooksSuspicious(cleaned));
+    });
+  }
+  bar.querySelectorAll('.ar-btn[data-dir]').forEach(b => b.addEventListener('click', () => reDetectAnchor(b.dataset.dir)));
+  bar.querySelector('.ar-draw')?.addEventListener('click', () => enterAnchorDrawMode(lastTeachCtx?.fieldKey));
+  bar.querySelector('.ar-x')?.addEventListener('click', hideAnchorReadout);
+  if (_anchorReadoutTimer) clearTimeout(_anchorReadoutTimer);
+  _anchorReadoutTimer = setTimeout(hideAnchorReadout, 30000);   // stay long enough to read + act; matches the box dwell
+}
+// Re-run label detection forcing a direction (the Left/Above toggle), reusing the
+// cached draw context — so when auto-detect grabs the wrong neighbour the operator
+// just flips it instead of redrawing. Re-stages pendingAnchors + redraws the box.
+async function reDetectAnchor(dir) {
+  if (!lastTeachCtx) return;
+  const c = lastTeachCtx;
+  try {
+    const detected = await captureAnchorContext(c.rect, c.fieldKey, c.value, c.imgW, c.imgH, c.scaleX, c.scaleY, dir);
+    if (detected) { anchorTaughtFields.add(c.fieldKey); showAnchorReadout(detected, c.value); }
+  } catch (err) { console.warn('Anchor re-detect failed:', err); }
+}
+
+// ── Manual anchor draw ────────────────────────────────────────────────────────
+// The operator draws a box around the EXACT label to anchor on (e.g. "Invoice Total")
+// when auto-detect found nothing usable or grabbed a repeating word (GBP, a column
+// header). Arms the same draw canvas; the next box is read as the anchor, not a value.
+function enterAnchorDrawMode(fieldKey) {
+  if (!fieldKey || !lastTeachCtx || lastTeachCtx.fieldKey !== fieldKey) {
+    try { showToast('Draw the value box first, then draw its anchor.', 'warn'); } catch {}
+    return;
+  }
+  cancelZoneMode();
+  anchorDrawField = fieldKey;
+  hintField.textContent = `Draw a box around the label for “${labelFor(fieldKey) || fieldKey}” (e.g. Invoice Total)`;
+  selectHint.classList.add('visible');
+  selCanvas.classList.add('active');
+}
+
+// OCR the drawn anchor box, derive the label + a drift-invariant offset to the value,
+// and stage it as the field's anchor (authoritative, like a normal ⊕ teach).
+async function runAnchorDraw(aRect, fieldKey) {
+  const c = lastTeachCtx;
+  anchorDrawField = null;
+  selectHint.classList.remove('visible');
+  selCanvas.classList.remove('active');
+  clearCanvas();
+  if (!c || c.fieldKey !== fieldKey) return;
+  ocrOverlay.classList.add('visible');
+  try {
+    const { imgW, imgH, scaleX, scaleY, rect } = c;
+    const crop = document.createElement('canvas');
+    crop.width  = Math.round(aRect.w * scaleX);
+    crop.height = Math.round(aRect.h * scaleY);
+    if (crop.width > 6 && crop.height > 6) {
+      crop.getContext('2d').drawImage(
+        docImg,
+        Math.round(aRect.x * scaleX), Math.round(aRect.y * scaleY),
+        crop.width, crop.height, 0, 0, crop.width, crop.height);
+      const b64  = crop.toDataURL('image/png').split(',')[1];
+      const res  = await window.docusnap.ocrRegionBoxes?.(b64);
+      const raw  = ((res && res.text) || (await window.docusnap.ocrRegion(b64)) || '').trim();
+      const label = sanitizeAnchorLabel(raw) || raw;
+      // Value centre (normalised) from the value box; anchor box top-left (normalised).
+      const xNorm = (rect.x + rect.w / 2) / imgW, yNorm = (rect.y + rect.h / 2) / imgH;
+      const off = labelOffsetFromBox([0, 0], aRect.x, aRect.y, xNorm, yNorm, imgW, imgH);
+      // Direction: the anchor sits ABOVE the value (label-above) when the vertical gap
+      // dominates the horizontal one; otherwise it's to the LEFT (label-left).
+      const dcx = (rect.x + rect.w / 2) - (aRect.x + aRect.w / 2);
+      const dcy = (rect.y + rect.h / 2) - (aRect.y + aRect.h / 2);
+      const direction = (dcy > 0 && Math.abs(dcy) > Math.abs(dcx)) ? 'below' : 'right';
+      const supplierInput = document.querySelector('.field-input[data-key="supplier_name"]');
+      const liveSupplier  = supplierInput?.value?.trim() || currentDoc?.supplier_name;
+      pendingAnchors[fieldKey] = {
+        supplier_name: cleanSupplierName(liveSupplier),
+        document_type: currentDoc?.type_slug || currentDoc?.document_type_slug || null,
+        field_key: fieldKey,
+        page_zone: yNorm < 0.33 ? 'top' : yNorm < 0.66 ? 'middle' : 'bottom',
+        x_norm: xNorm, y_norm: yNorm, w_norm: rect.w / imgW, h_norm: rect.h / imgH,
+        authoritative: true,
+        anchor_label: label || (labelFor(fieldKey) || fieldKey.replace(/_/g, ' ')),
+        direction, ...off,
+        label_detected: !!label,   // a hand-drawn, OCR'd caption is a real page label
+      };
+      anchorTaughtFields.add(fieldKey);
+      // Overlay the drawn anchor box + show the readout with the caption for review/edit.
+      showAnchorReadout({
+        anchor_label: pendingAnchors[fieldKey].anchor_label, direction, fallback: false,
+        normBox: [aRect.x / imgW, aRect.y / imgH, aRect.w / imgW, aRect.h / imgH],
+      }, c.value);
+    }
+  } catch (err) {
+    console.warn('Manual anchor draw failed:', err);
+  } finally {
+    ocrOverlay.classList.remove('visible');
+  }
 }
 
 function cleanSupplierName(name) {
@@ -1124,8 +2526,12 @@ function extractLabel(text) {
 // blindly — and the on-screen-image steps (logo-fingerprint save + image-clear
 // animation) are skipped, since File All cycles documents itself. The file-by-
 // file behaviour is otherwise unchanged.
-async function confirmCurrentDoc({ bulk = false } = {}) {
+async function confirmCurrentDoc({ bulk = false, expectId = null } = {}) {
   if (!currentDoc) return { error: 'No document selected.' };
+  // Bulk-race guard: the caller (File All Ready) captures the doc it intends to
+  // file; if a delete / row-click reassigned the module-global `currentDoc` in an
+  // await gap, bail instead of filing the WRONG document (QA audit #5).
+  if (expectId != null && currentDoc.id !== expectId) return { skipped: true, reason: 'selection changed' };
 
   const allValues = {};
   document.querySelectorAll('#fields-scroll .field-input').forEach(input => {
@@ -1140,6 +2546,20 @@ async function confirmCurrentDoc({ bulk = false } = {}) {
     if (v && !/^\d+$/.test(v)) {
       if (bulk) return { skipped: true, reason: 'needs check' };
       if (!confirm(`"${labelFor(key)}" — Are you sure this is correct? This field usually contains only digits.`)) {
+        return { cancelled: true };
+      }
+    }
+  }
+
+  // Empty Document Issuer (supplier/customer identity): files under "Unknown Company"
+  // and can't learn this sender. Warn-and-allow — a deliberate confirm in single mode;
+  // in bulk it's "not cleanly ready", so the doc is left in the queue for review.
+  {
+    const issuerKey = ['supplier_name', 'customer_name'].find(k => k in allValues);
+    if (issuerKey && !(allValues[issuerKey] || '').trim()) {
+      if (bulk) return { skipped: true, reason: 'issuer blank' };
+      if (!confirm('Document Issuer is blank.\n\nThis document will be filed under "Unknown Company" and '
+                 + 'the app won’t learn this sender. File it anyway?')) {
         return { cancelled: true };
       }
     }
@@ -1164,6 +2584,14 @@ async function confirmCurrentDoc({ bulk = false } = {}) {
     supplier_name:      currentDoc.supplier_name,
     document_type_slug: selectedTypeSlug || currentDoc?.type_slug || null,
     taught_fields:      [...anchorTaughtFields],
+    // RE-FILE intent: only a doc opened while ALREADY confirmed ("Edit in Review" on a filed /
+    // auto-filed doc) may re-file. A doc opened from the review queue (needs_review/deferred) must
+    // NOT — so if another reviewer filed it first, this confirm loses cleanly (ALREADY_FILED)
+    // rather than silently overwriting them. See reviewService.confirm.
+    allowRefile:        currentDoc?.status === 'confirmed',
+    // In bulk the fields-only path never loaded the preview image, so there is
+    // no img.src file handle to wait on — let the backend skip its 150ms release.
+    bulk,
   });
 
   if (!result?.success) {
@@ -1171,7 +2599,9 @@ async function confirmCurrentDoc({ bulk = false } = {}) {
       docImgWrap.style.display = '';
       docImg.src = pageImages[currentPage];
     }
-    return { error: result?.error || 'Confirm failed. Check settings.' };
+    // Pass the backend code through so bulk filing can tell a license lapse
+    // (abort the whole run once) from an ordinary per-doc failure (skip + continue).
+    return { error: result?.error || 'Confirm failed. Check settings.', code: result?.code || null };
   }
 
   // Persist anchors taught with ⊕ this cycle — DEFERRED to commit so an un-confirmed
@@ -1199,6 +2629,25 @@ async function confirmCurrentDoc({ bulk = false } = {}) {
     pendingAnchors = {};
   }
 
+  // Flush staged FIELD CLEANUP RULES (right-click menu) — same commit-on-confirm
+  // model as anchors, re-keyed to the confirmed supplier. Best-effort per rule.
+  const ruleKeys = Object.keys(pendingFieldRules);
+  if (ruleKeys.length) {
+    const ruleSupplier = cleanSupplierName(allValues.supplier_name || currentDoc?.supplier_name);
+    for (const fk of ruleKeys) {
+      for (const rule of (pendingFieldRules[fk] || [])) {
+        try {
+          await window.docusnap.saveFieldRule({ ...rule, supplier_name: ruleSupplier });
+        } catch (err) {
+          console.error(`Field rule save failed for "${fk}":`, err);
+          if (!bulk) { try { showToast('Document filed, but a field cleanup rule could not be saved.', 'err'); } catch {} }
+        }
+      }
+    }
+    pendingFieldRules = {};
+    _loadSavedFieldRules();   // refresh the cache so the menu reflects the just-saved rule
+  }
+
   queue         = queue.filter(d => d.id !== currentDoc.id);
   deferredQueue = deferredQueue.filter(d => d.id !== currentDoc.id);
   return { filed: true };
@@ -1208,7 +2657,10 @@ document.getElementById('btn-confirm').addEventListener('click', async () => {
   // Remember where the doc sits BEFORE confirmCurrentDoc removes it from the list,
   // so we can advance to the NEXT doc (the one that shifts into this slot) rather
   // than snapping back to the top — the operator has already worked down the list.
-  const list = activeTab === 'deferred' ? deferredQueue : queue;
+  // Advance within the VISIBLE (grouped) order, not the raw chronological queue — else
+  // confirming "City Office doc 1" jumps to whatever chronological doc lands in this slot
+  // instead of "City Office doc 2".
+  const list = activeTab === 'deferred' ? deferredQueue : reviewDisplayOrder();
   const idx  = list.findIndex(d => d.id === currentDoc?.id);
   const r = await confirmCurrentDoc();
   if (r.cancelled) return;
@@ -1243,10 +2695,13 @@ document.getElementById('btn-acknowledge')?.addEventListener('click', async () =
 // whose single Confirm button would be enabled (type + required fields present).
 // Each is filed through confirmCurrentDoc({bulk:true}), exactly the per-document
 // path; not-ready or digit-mismatch documents are left in the queue for review.
+let _bulkFileStopped = false;   // cooperative-stop flag for File All Ready
+
 async function fileAllReady() {
   if (activeTab !== 'review') return;                 // only the review queue
   const btn = document.getElementById('btn-file-all-review');
   if (!btn || btn.disabled) return;
+  if (bulkFiling) return;                             // a run is already in progress
   const docs = [...queue];                            // snapshot before it mutates
   if (docs.length === 0) return;
   if (!confirm(
@@ -1256,43 +2711,162 @@ async function fileAllReady() {
         `details are left in the queue for you to review.`)) return;
 
   const confirmBtn = document.getElementById('btn-confirm');
-  const original   = btn.textContent;
-  btn.disabled = true;
-  bulkFiling   = true; // hold off auto-refresh; each confirm broadcasts review-count-changed back to this window
-  let filed = 0, skipped = 0;
+  const banner   = document.getElementById('bulk-file-progress');
+  const barFill  = banner.querySelector('.bfp-bar-fill');
+  const countEl  = banner.querySelector('.bfp-count');
+  const fileEl   = banner.querySelector('.bfp-file');
+  const stopBtn  = document.getElementById('btn-stop-file-all');
+  // These act on currentDoc, which the loop reassigns rapidly — disable for the run.
+  // btn-delete (single Delete) is included: without it a mid-run delete reassigns
+  // currentDoc in an await gap and could file the wrong doc (QA audit #5). Per-row ×
+  // and queue-row clicks are separately gated on `bulkFiling`.
+  const lockBtns = ['btn-file-all-review', 'btn-skip', 'btn-defer', 'btn-delete-all-review', 'btn-delete']
+    .map(id => document.getElementById(id)).filter(Boolean);
+
+  // Release any preview image handle held from a doc the user was viewing — ONCE,
+  // up front (the per-doc backend 150ms release-wait is skipped in bulk, and the
+  // fields-only path never opens a new one).
+  try { docImg.src = ''; docImgWrap.style.display = 'none'; } catch {}
+  await new Promise(r => setTimeout(r, 150));
+
+  bulkFiling       = true;   // hold off auto-refresh; each confirm broadcasts review-count-changed back to this window
+  _bulkFileStopped = false;
+  lockBtns.forEach(b => b.disabled = true);
+  stopBtn.disabled  = false;
+  stopBtn.innerHTML = '&#9632; Stop';
+  banner.classList.remove('done');
+  banner.classList.add('show');
+  barFill.style.width = '0';
+
+  let filed = 0, skipped = 0, noType = 0, aborted = false;
 
   try {
     for (let i = 0; i < docs.length; i++) {
+      if (_bulkFileStopped) break;                     // cooperative: in-flight doc already finished
       const doc = docs[i];
+      countEl.textContent = `Filing ${i + 1} of ${docs.length}` + (skipped ? ` · ${skipped} skipped` : '');
+      fileEl.textContent  = doc.original_filename || '';
+      barFill.style.width = `${Math.round(((i + 1) / docs.length) * 100)}%`;
+      // Yield to the browser between docs so the window stays responsive (paints the
+      // progress, handles Stop/input) over a big batch instead of showing "Not Responding".
+      await new Promise(r => setTimeout(r, 0));
+
       if (!queue.some(d => d.id === doc.id)) continue; // already handled elsewhere
       // Flagged docs (validation note / correction candidate / below-threshold
       // field) are excluded from bulk filing until a human clicks Mark Reviewed.
-      // Checked off the queue object directly — no need to load the doc.
       if (isFlagged(doc) && !doc.review_acknowledged_at) { skipped++; continue; }
-      btn.textContent = `Filing… ${i + 1}/${docs.length}`;
-      await selectDoc(doc);                            // loads fields; runs validateConfirm()
-      if (confirmBtn.disabled) { skipped++; continue; } // not ready — leave for review
-      const r = await confirmCurrentDoc({ bulk: true });
-      if (r.filed) filed++; else skipped++;
+
+      try {
+        await selectDoc(doc, { fieldsOnly: true });    // loads fields (no preview render); runs validateConfirm()
+        if (confirmBtn.disabled) {                     // not ready — leave for review
+          skipped++;
+          if (!doc.type_slug) noType++;                // dominant reason: no document type detected
+          continue;
+        }
+        const r = await confirmCurrentDoc({ bulk: true, expectId: doc.id });
+        if (r.filed) {
+          filed++;
+          // Drop the row the moment it's filed, so the queue shrinks live.
+          document.querySelector(`.queue-item[data-id="${doc.id}"]`)?.remove();
+        } else if (r.code === 'license_required') {
+          aborted = true; break;                       // license lapsed mid-run — stop once, don't spam failures
+        } else {
+          skipped++;                                   // ordinary per-doc failure — leave it queued
+        }
+      } catch (err) {
+        // A locked doc (open approval route) throws from requireUnlocked — SKIP it,
+        // never let one locked doc abort the whole run. A permission lapse (role
+        // changed) aborts the run once.
+        if (/FORBIDDEN|permission/i.test(err?.message || '')) { aborted = true; break; }
+        console.warn(`[File All] ${doc.original_filename}:`, err?.message || err);
+        skipped++;
+      }
     }
   } finally {
-    btn.textContent = original;
-    btn.disabled = false;
-    bulkFiling   = false; // re-enable auto-refresh before the post-run refresh below
+    bulkFiling = false;   // re-enable auto-refresh before the post-run refresh below
+    lockBtns.forEach(b => b.disabled = false);
   }
 
   updateTabCounts();
   renderQueueList();
-  if (queue.length > 0) selectDoc(queue[0]);
+  if (queue.length > 0 && !queueGrouped) selectDoc(queue[0]);   // grouped starts all-collapsed; user picks a group
   else { currentDoc = null; clearDocPanel(); }
   if (filed) window.docusnap.notifyReviewComplete();
 
+  // Banner done-state, then auto-dismiss. Already-filed docs stay filed.
+  const stoppedNote = _bulkFileStopped ? ' (stopped)' : '';
+  // Spell out the dominant skip reason — a doc with no detected type can't be filed
+  // (filing needs a type for the folder path). Tells the operator what to do next.
+  const noTypeNote = noType ? ` (${noType} have no document type — reprocess to detect it, or set a type)` : '';
+  const skipNote   = skipped ? ` · ${skipped} left for review${noTypeNote}` : '';
+  banner.classList.add('done');
+  stopBtn.disabled    = true;
+  fileEl.textContent  = '';
+  countEl.textContent = aborted
+    ? `Stopped — a valid license is required. Filed ${filed} first.`
+    : `Filed ${filed}` + skipNote + stoppedNote;
+  setTimeout(() => banner.classList.remove('show', 'done'), (aborted || noType) ? 7000 : 3500);
+
   showToast(
-    `Filed ${filed} document${filed === 1 ? '' : 's'}` +
-      (skipped ? ` · ${skipped} left for review` : ''),
-    filed ? 'ok' : 'warn');
+    aborted
+      ? `Filing stopped — a valid license is required. Filed ${filed} document${filed === 1 ? '' : 's'}.`
+      : `Filed ${filed} document${filed === 1 ? '' : 's'}` + skipNote + stoppedNote,
+    (aborted || !filed) ? 'warn' : 'ok');
 }
 document.getElementById('btn-file-all-review')?.addEventListener('click', fileAllReady);
+
+// After Reprocess All, auto-commit any document the SHARED server-side predicate deems
+// eligible (a trusted supplier's clean docs at the graduation floor, or a full-confidence doc)
+// — the SAME predicate the import-batch auto-file uses, so the two paths can't diverge.
+// Best-effort per doc (a failure just leaves it queued). Skips when the setting is off or a
+// manual File-All is already running.
+async function autoCommitFullConfidence() {
+  try {
+    if (bulkFiling) return;
+    if ((await window.docusnap.getSetting('auto_file_full_confidence')) === 'false') return;
+    // Eligibility is decided SERVER-SIDE by the shared predicate (scope graduation floor +
+    // structural safety gate), the SAME one the backend import path uses — so the two auto-file
+    // sites can't diverge. One IPC, getFieldFormats scanned once for the whole queue.
+    let eligibleIds = new Set();
+    try {
+      const res = await window.docusnap.getAutoFileEligible((queue || []).map(d => d.id));
+      eligibleIds = new Set((res && res.ids) || []);
+    } catch { return; }
+    const ready = (queue || []).filter(d => eligibleIds.has(d.id));
+    if (!ready.length) return;
+    bulkFiling = true;
+    let filed = 0;
+    try {
+      for (const doc of ready) {
+        if (!queue.some(d => d.id === doc.id)) continue;
+        try {
+          await selectDoc(doc, { fieldsOnly: true });
+          if (document.getElementById('btn-confirm').disabled) continue;   // not actually ready
+          const r = await confirmCurrentDoc({ bulk: true, expectId: doc.id });
+          if (r && r.filed) { filed++; document.querySelector(`.queue-item[data-id="${doc.id}"]`)?.remove(); }
+        } catch { /* leave it for manual review */ }
+        await new Promise(res => setTimeout(res, 0));   // keep the window responsive
+      }
+    } finally { bulkFiling = false; }
+    if (filed > 0) {
+      queue         = await window.docusnap.getReviewQueue();
+      deferredQueue = await window.docusnap.getDeferredQueue();
+      updateTabCounts();
+      renderQueueList();
+      showToast(`Auto-filed ${filed} document${filed > 1 ? 's' : ''} — no review needed.`, 'ok');
+    }
+  } catch (e) { console.warn('auto-commit 100% failed:', e.message); }
+}
+
+// Cooperative Stop: the in-flight document finishes filing, no new one starts,
+// everything already filed stays filed (this is not an undo). Mirrors Reprocess-All.
+document.getElementById('btn-stop-file-all')?.addEventListener('click', () => {
+  if (!bulkFiling) return;
+  _bulkFileStopped = true;
+  const s = document.getElementById('btn-stop-file-all');
+  s.disabled  = true;
+  s.innerHTML = 'Stopping…';
+});
 
 // ── Document cycling (prev/next rail beside the queue) ────────────────────────
 // The up/down rail moves the SELECTED document one step earlier/later within the
@@ -1301,7 +2875,7 @@ document.getElementById('btn-file-all-review')?.addEventListener('click', fileAl
 // so navigation is predictable, and keeps the chosen item scrolled into view.
 // Native list scrolling (wheel / scrollbar) is unaffected.
 function cycleDocument(direction) {
-  const list = activeTab === 'deferred' ? deferredQueue : queue;
+  const list = activeTab === 'deferred' ? deferredQueue : reviewDisplayOrder();
   if (!list.length) return;
   const idx     = currentDoc ? list.findIndex(d => d.id === currentDoc.id) : -1;
   const nextIdx = idx === -1 ? 0 : idx + direction;   // up = -1 (prev), down = +1 (next)
@@ -1320,7 +2894,7 @@ function updateDocNavButtons() {
   const prev = document.getElementById('btn-doc-prev');
   const next = document.getElementById('btn-doc-next');
   if (!prev || !next) return;
-  const list = activeTab === 'deferred' ? deferredQueue : queue;
+  const list = activeTab === 'deferred' ? deferredQueue : reviewDisplayOrder();
   const idx  = currentDoc ? list.findIndex(d => d.id === currentDoc.id) : -1;
   prev.disabled = idx <= 0;
   next.disabled = idx === -1 || idx >= list.length - 1;
@@ -1328,6 +2902,14 @@ function updateDocNavButtons() {
 
 document.getElementById('btn-doc-prev')?.addEventListener('click', () => cycleDocument(-1));
 document.getElementById('btn-doc-next')?.addEventListener('click', () => cycleDocument(1));
+
+// Sender-grouping toggle (grouped ⇄ newest-first); persists the choice per-window.
+document.getElementById('btn-group-toggle')?.addEventListener('click', () => {
+  queueGrouped = !queueGrouped;
+  localStorage.setItem('review_queue_grouped', String(queueGrouped));
+  renderQueueList();
+  updateDocNavButtons();   // the active doc's position changed in the new order
+});
 
 // Expandable file column — drag the splitter to widen/narrow the queue panel.
 // Width persists in localStorage so a chosen width survives reopening. Clamped so
@@ -1359,6 +2941,25 @@ document.getElementById('btn-doc-next')?.addEventListener('click', () => cycleDo
     localStorage.setItem('review_queue_width', String(parseInt(panel.style.width, 10) || 220));
   });
 })();
+
+// Ctrl+Enter (Cmd+Enter on Mac) commits the current document — the same as clicking
+// Confirm. Using a modifier (not plain Enter) means it works from ANY field, including
+// multi-line ones and dropdowns, without clashing with Enter's normal in-field behaviour;
+// the value is applied first via blur. Ignored while a modal/dialog is open, and only fires
+// when Confirm is actually enabled and visible, so it never files an incomplete doc.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' || e.repeat || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+  // A modal/dialog is actually OPEN — count only DISPLAYED help-mode-opt-out elements, not the
+  // static, permanently-present learning-history overlay (which carries data-help-ignore while
+  // hidden). A bare querySelector matched that hidden overlay and silently broke Ctrl+Enter.
+  if ([...document.querySelectorAll('[data-help-ignore]')].some(el => getComputedStyle(el).display !== 'none')) return;
+  const btn = document.getElementById('btn-confirm');
+  if (!btn || btn.disabled || btn.offsetParent === null) return;   // not ready / not visible
+  e.preventDefault();
+  const t = e.target;
+  if (t && typeof t.blur === 'function') t.blur();            // apply any in-progress field edit
+  btn.click();
+});
 
 // Keyboard triage shortcuts (single document-level listener; reuses the exact
 // handlers the on-screen controls use — no second nav/acknowledge path):
@@ -1402,7 +3003,7 @@ document.getElementById('btn-defer').addEventListener('click', async () => {
   queue         = queue.filter(d => d.id !== currentDoc.id);
   updateTabCounts();
   renderQueueList();
-  if (queue.length > 0) selectDoc(queue[0]);
+  if (queue.length > 0 && !queueGrouped) selectDoc(queue[0]);   // grouped starts all-collapsed; user picks a group
   else { currentDoc = null; clearDocPanel(); }
   window.docusnap.notifyReviewComplete();
 });
@@ -1496,7 +3097,8 @@ function advanceAfterAction(removedIdx = 0) {
     else { currentDoc = null; clearDocPanel(); }
   } else {
     renderQueueList();
-    if (queue.length > 0) selectDoc(queue[Math.min(at, queue.length - 1)]);
+    const order = reviewDisplayOrder();   // grouped display order — the doc now AT `at` is the next one
+    if (order.length > 0) selectDoc(order[Math.min(at, order.length - 1)]);
     else { currentDoc = null; clearDocPanel(); }
   }
 }
@@ -1581,7 +3183,334 @@ document.addEventListener('click', (e) => {
       !splitBar.contains(e.target) && !splitBtn.contains(e.target)) {
     splitBar.style.display = 'none';
   }
+  const advBar = document.getElementById('advanced-bar');
+  const advBtn = document.getElementById('btn-advanced');
+  if (advBar && advBar.style.display === 'block' &&
+      !advBar.contains(e.target) && !advBtn.contains(e.target)) {
+    advBar.style.display = 'none';
+  }
 });
+
+// ── Advanced → View learning history ──────────────────────────────────────────
+// Track the field the operator last clicked into. The modal is NON-blocking (no backdrop),
+// so while it's open the right fields pane stays lit and clickable — clicking a field
+// live-reloads the table for THAT field.
+let lastFocusedFieldKey = null;
+document.getElementById('fields-scroll')?.addEventListener('focusin', (e) => {
+  const inp = e.target.closest?.('.field-input');
+  if (inp && inp.dataset.key) {
+    lastFocusedFieldKey = inp.dataset.key;
+    // (Re)load only when focusing a DIFFERENT field. Re-focusing the field the modal already shows
+    // — e.g. clicking into it to fix a doc opened from that value's source-doc list — must NOT
+    // reload, or it wipes the expanded doc list the operator is working through.
+    if (isLhOpen() && (!_lhField || _lhField.key !== inp.dataset.key)) loadLearningHistoryFor(inp.dataset.key);
+  }
+});
+
+document.getElementById('btn-advanced').addEventListener('click', () => {
+  const bar = document.getElementById('advanced-bar');
+  bar.style.display = (bar.style.display === 'block') ? 'none' : 'block';
+});
+
+let _lhData = [];                          // unsorted rows from the backend
+let _lhRendered = [];                       // current sorted view (row buttons key off the index)
+let _lhSort = { key: 'count', dir: -1 };    // default: most-seen first
+let _lhField = null;                        // { key, label, supplier, slug }
+let _lhPending = null;                       // value awaiting inline delete-confirm
+let _lhEditing = null;                       // value currently being inline-edited
+let _lhProposals = [];                       // pending "fix likely slips" proposals
+let _lhExpanded = new Set();                  // values whose source-doc submenu is open
+let _lhDocs = {};                             // value -> source docs (lazy) | 'loading'
+
+const isLhOpen = () => document.getElementById('lh-overlay').style.display === 'block';
+
+function highlightActiveField(key) {
+  document.querySelectorAll('.field-row-label.lh-active-field').forEach(el => el.classList.remove('lh-active-field'));
+  if (isLhOpen()) document.querySelector(`.field-row-label[data-key="${key}"]`)?.classList.add('lh-active-field');
+}
+
+// Make the (non-blocking) learning-history modal DRAGGABLE by its header, so it can be moved
+// off whatever field/preview the operator wants to see. Idempotent (wired once).
+function makeLhDraggable() {
+  const modal = document.querySelector('#lh-overlay .lh-modal');
+  const head  = document.querySelector('#lh-overlay .lh-head');
+  if (!modal || !head || head._lhDragWired) return;
+  head._lhDragWired = true;
+  head.style.cursor = 'move';
+  let dragging = false, sx = 0, sy = 0, startLeft = 0, startTop = 0;
+  head.addEventListener('mousedown', (e) => {
+    if (e.target.closest('button')) return;            // ignore the close (×) button
+    const r = modal.getBoundingClientRect();
+    modal.style.transform = 'none';                    // drop the CSS vertical-centring
+    modal.style.left = r.left + 'px'; modal.style.top = r.top + 'px';
+    startLeft = r.left; startTop = r.top; sx = e.clientX; sy = e.clientY; dragging = true;
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const nl = Math.max(0, Math.min(window.innerWidth  - 80, startLeft + (e.clientX - sx)));
+    const nt = Math.max(0, Math.min(window.innerHeight - 40, startTop  + (e.clientY - sy)));
+    modal.style.left = nl + 'px'; modal.style.top = nt + 'px';
+  });
+  window.addEventListener('mouseup', () => { dragging = false; });
+}
+
+document.getElementById('btn-view-learning').addEventListener('click', async () => {
+  document.getElementById('advanced-bar').style.display = 'none';
+  document.getElementById('lh-overlay').style.display = 'block';
+  makeLhDraggable();
+  // Open regardless of focus. With a field already selected, load it; otherwise show an empty
+  // prompt — the modal is non-blocking, so clicking a field then populates it live.
+  if (lastFocusedFieldKey) await loadLearningHistoryFor(lastFocusedFieldKey);
+  else showLearningHistoryEmpty();
+});
+
+function showLearningHistoryEmpty() {
+  _lhField = null; _lhData = []; _lhRendered = [];
+  _lhPending = null; _lhEditing = null; _lhProposals = [];
+  document.getElementById('lh-field').textContent = '(no field selected)';
+  document.getElementById('lh-scope').textContent = 'Click a field on the right to see and tidy its learned values.';
+  document.getElementById('lh-proposals').style.display = 'none';
+  document.getElementById('lh-body').innerHTML =
+    `<tr><td colspan="4" class="lh-empty">👉 Click a field on the right to load its learned values.</td></tr>`;
+  document.querySelectorAll('.field-row-label.lh-active-field').forEach(el => el.classList.remove('lh-active-field'));
+}
+
+async function loadLearningHistoryFor(key) {
+  if (!key) return;
+  const label    = (typeof labelFor === 'function') ? labelFor(key) : key.replace(/_/g, ' ');
+  const slug     = selectedTypeSlug || currentDoc?.type_slug || currentDoc?.document_type_slug || null;
+  const supplier = document.querySelector('.field-input[data-key="supplier_name"]')?.value?.trim()
+                   || currentDoc?.supplier_name || '';
+  _lhField   = { key, label, supplier, slug };
+  _lhPending = null; _lhEditing = null; _lhProposals = [];
+  _lhExpanded = new Set(); _lhDocs = {};   // drop any prior field's source-doc submenus
+  _lhSort    = { key: 'count', dir: -1 };
+  document.getElementById('lh-field').textContent = label;
+  document.getElementById('lh-scope').textContent =
+    `Sender: ${supplier || 'any'} · Type: ${slug ? String(slug).replace(/_/g, ' ') : 'this document type'}`;
+  document.getElementById('lh-proposals').style.display = 'none';
+  try {
+    _lhData = await window.docusnap.getFieldValueHistory(
+      { supplier_name: supplier, document_type: slug, field_key: key }) || [];
+  } catch { _lhData = []; }
+  renderLearningHistory();
+  highlightActiveField(key);
+}
+
+// The source-doc submenu for one learned value (lazy-loaded into _lhDocs).
+function renderLhDocs(value) {
+  const docs = _lhDocs[value];
+  if (docs === 'loading') return `<div class="lh-docs-list lh-docs-empty">Loading documents…</div>`;
+  if (!Array.isArray(docs)) return '';
+  if (!docs.length) return `<div class="lh-docs-list lh-docs-empty">No filed documents carry this exact value.</div>`;
+  return `<div class="lh-docs-list">` + docs.map(d => {
+    const when = d.confirmed_at ? escHtml(String(d.confirmed_at).slice(0, 10)) : '';
+    const name = escHtml(d.original_filename || ('#' + d.id));
+    return `<div class="lh-doc"><span class="lh-doc-name" title="${name}">${name}</span>`
+      + `<span class="lh-doc-when">${when}</span>`
+      + `<button class="lh-open-doc" data-docid="${d.id}" title="Open this document in Review to re-check it">Open in Review</button></div>`;
+  }).join('') + `</div>`;
+}
+
+function renderLearningHistory() {
+  _lhRendered = [..._lhData].sort((a, b) => {
+    const k = _lhSort.key;
+    if (k === 'count') return ((a.count || 0) - (b.count || 0)) * _lhSort.dir;
+    const av = String(a[k] || '').toLowerCase(), bv = String(b[k] || '').toLowerCase();
+    return (av < bv ? -1 : av > bv ? 1 : 0) * _lhSort.dir;
+  });
+  const body = document.getElementById('lh-body');
+  body.innerHTML = _lhRendered.length ? _lhRendered.map((r, i) => {
+    const last = r.last_seen ? escHtml(String(r.last_seen).slice(0, 10)) : '—';
+    let valueCell, actionCell;
+    if (_lhEditing === r.value) {
+      valueCell  = `<input class="lh-edit-input" id="lh-edit-input" data-idx="${i}">`;
+      actionCell = `<button class="lh-save" data-idx="${i}" title="Save">✓</button><button class="lh-ecancel" title="Cancel">✗</button>`;
+    } else {
+      valueCell = `<span class="lh-val">${escHtml(r.value)}</span>`;
+      const on = _lhExpanded.has(r.value) ? ' lh-docs-on' : '';
+      actionCell = (_lhPending === r.value)
+        ? `<span class="lh-confirm">Delete?<button class="lh-yes" data-idx="${i}">Yes</button><button class="lh-no">No</button></span>`
+        : `<button class="lh-docs${on}" data-idx="${i}" title="Show the documents that have this value">&#128196;</button>`
+          + `<button class="lh-edit" data-idx="${i}" title="Fix this value">&#9998;</button>`
+          + `<button class="lh-del" data-idx="${i}" title="Delete this value from learning">🗑</button>`;
+    }
+    let row = `<tr><td>${valueCell}</td><td>${r.count}</td><td>${last}</td><td style="text-align:right; white-space:nowrap;">${actionCell}</td></tr>`;
+    if (_lhExpanded.has(r.value) && _lhEditing !== r.value) {
+      row += `<tr class="lh-docs-row"><td colspan="4">${renderLhDocs(r.value)}</td></tr>`;
+    }
+    return row;
+  }).join('') : `<tr><td colspan="4" class="lh-empty">No learned values yet for this field.</td></tr>`;
+  document.querySelectorAll('.lh-table th[data-sort]').forEach(th => {
+    const base = th.dataset.sort === 'value' ? 'Value' : th.dataset.sort === 'count' ? 'Times seen' : 'Last seen';
+    th.textContent = base + (th.dataset.sort === _lhSort.key ? (_lhSort.dir > 0 ? ' ▲' : ' ▼') : '');
+  });
+  if (_lhEditing !== null) {
+    const inp = document.getElementById('lh-edit-input');
+    if (inp) {
+      inp.value = _lhEditing; inp.focus(); inp.select();
+      inp.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); commitLhEdit(inp); }
+        else if (e.key === 'Escape') { e.preventDefault(); _lhEditing = null; renderLearningHistory(); }
+      });
+    }
+  }
+}
+
+// Rename a learned value (oldVal → newVal) via the backend, then reflect it locally
+// (merge counts if the new value already exists, else rename in place).
+async function applyLhRename(oldVal, newVal) {
+  if (!newVal || newVal === oldVal) return;
+  try {
+    await window.docusnap.renameFieldValue(
+      { supplier_name: _lhField.supplier, document_type: _lhField.slug, field_key: _lhField.key, oldValue: oldVal, newValue: newVal });
+    const old      = _lhData.find(x => x.value === oldVal);
+    const existing  = _lhData.find(x => x.value === newVal);
+    if (old && existing) { existing.count += old.count; _lhData = _lhData.filter(x => x.value !== oldVal); }
+    else if (old)        { old.value = newVal; }
+  } catch (e) { console.warn('rename-field-value failed:', e); }
+}
+
+async function commitLhEdit(inp) {
+  const oldVal = _lhEditing, newVal = inp.value.trim();
+  _lhEditing = null;
+  await applyLhRename(oldVal, newVal);
+  renderLearningHistory();
+}
+
+// "Fix likely slips": find values that differ from a strong per-position column consensus at
+// exactly ONE character, where that character is a likely OCR slip (a symbol where alnum is
+// expected, or a known confusion like $↔S / 0↔O / 1↔I) and the corrected value matches the
+// column's dominant shape or an existing value. Pure/data-driven — proposes, never auto-applies.
+const _OCR_PAIRS = new Set(['$S','5S','S5','0O','O0','0Q','Q0','1I','I1','1L','L1','8B','B8','6G','G6','2Z','Z2','7/','/7','€E','£E']);
+const _shapeSig = (s) => s.replace(/[0-9]/g, '#').replace(/[A-Za-z]/g, '@');
+function _likelySlip(from, to) {
+  if (!/[A-Za-z0-9]/.test(from)) return true;                 // a symbol where alnum is expected
+  return _OCR_PAIRS.has((from + to).toUpperCase());
+}
+function computeSlipFixes() {
+  const values = _lhData.map(r => r.value).filter(v => typeof v === 'string' && v.length);
+  if (values.length < 4) return [];                            // need a real column to vote
+  const shapeCount = {};
+  values.forEach(v => { const s = _shapeSig(v); shapeCount[s] = (shapeCount[s] || 0) + 1; });
+  const domShape = Object.entries(shapeCount).sort((a, b) => b[1] - a[1])[0][0];
+  const valueSet = new Set(values);
+  const out = [];
+  for (const v of values) {
+    const diffs = [];
+    for (let i = 0; i < v.length; i++) {
+      const tally = {}; let total = 0;
+      for (const w of values) {
+        if (w === v || w.length <= i) continue;
+        tally[w[i]] = (tally[w[i]] || 0) + 1; total++;
+      }
+      if (total < 3) continue;
+      const [domChar, domN] = Object.entries(tally).sort((a, b) => b[1] - a[1])[0];
+      if (domN / total >= 0.8 && v[i] !== domChar && _likelySlip(v[i], domChar)) diffs.push({ i, to: domChar });
+    }
+    if (diffs.length === 1) {
+      const d = diffs[0], fixed = v.slice(0, d.i) + d.to + v.slice(d.i + 1);
+      if (fixed !== v && (_shapeSig(fixed) === domShape || valueSet.has(fixed))) out.push({ from: v, to: fixed });
+    }
+  }
+  return out;
+}
+
+document.querySelectorAll('.lh-table th[data-sort]').forEach(th => th.addEventListener('click', () => {
+  const k = th.dataset.sort;
+  if (_lhSort.key === k) _lhSort.dir *= -1; else _lhSort = { key: k, dir: k === 'value' ? 1 : -1 };
+  _lhPending = null; _lhEditing = null;
+  renderLearningHistory();
+}));
+
+document.getElementById('lh-body').addEventListener('click', async (e) => {
+  // Toggle the source-doc submenu for a learned value (lazy-load on first open).
+  const docsBtn = e.target.closest('.lh-docs');
+  if (docsBtn) {
+    const val = _lhRendered[+docsBtn.dataset.idx]?.value;
+    if (val == null) return;
+    if (_lhExpanded.has(val)) { _lhExpanded.delete(val); renderLearningHistory(); return; }
+    _lhExpanded.add(val);
+    if (!(val in _lhDocs)) {
+      _lhDocs[val] = 'loading'; renderLearningHistory();
+      try {
+        _lhDocs[val] = await window.docusnap.getDocumentsForFieldValue(
+          { supplier_name: _lhField.supplier, document_type: _lhField.slug, field_key: _lhField.key, value: val }) || [];
+      } catch (err) { console.warn('get-documents-for-field-value failed:', err); _lhDocs[val] = []; }
+    }
+    renderLearningHistory();
+    return;
+  }
+  // Open a source document in Review (Edit-in-place; stays Filed) for re-checking.
+  const openBtn = e.target.closest('.lh-open-doc');
+  if (openBtn) {
+    const docId = parseInt(openBtn.dataset.docid, 10);
+    // Keep the (non-blocking) learning-history modal OPEN so the operator can work down the source
+    // -doc list — open a doc, fix it, then click the next one — without reopening the list each time.
+    if (docId) _navigateToDoc(docId);
+    return;
+  }
+  const edit = e.target.closest('.lh-edit');
+  if (edit) { _lhEditing = _lhRendered[+edit.dataset.idx]?.value ?? null; _lhPending = null; renderLearningHistory(); return; }
+  if (e.target.closest('.lh-ecancel')) { _lhEditing = null; renderLearningHistory(); return; }
+  const save = e.target.closest('.lh-save');
+  if (save) { const inp = document.getElementById('lh-edit-input'); if (inp) await commitLhEdit(inp); return; }
+  const del = e.target.closest('.lh-del');
+  if (del) { _lhPending = _lhRendered[+del.dataset.idx]?.value ?? null; renderLearningHistory(); return; }
+  if (e.target.closest('.lh-no')) { _lhPending = null; renderLearningHistory(); return; }
+  const yes = e.target.closest('.lh-yes');
+  if (yes) {
+    const val = _lhRendered[+yes.dataset.idx]?.value;
+    if (val == null) return;
+    yes.disabled = true;
+    try {
+      await window.docusnap.purgeFieldValue(
+        { supplier_name: _lhField.supplier, document_type: _lhField.slug, field_key: _lhField.key, value: val });
+      _lhData = _lhData.filter(x => x.value !== val);
+    } catch (err) { console.warn('purge-field-value failed:', err); }
+    _lhPending = null;
+    renderLearningHistory();
+  }
+});
+
+document.getElementById('lh-fix').addEventListener('click', () => {
+  const banner = document.getElementById('lh-proposals');
+  _lhProposals = computeSlipFixes();
+  banner.style.display = 'block';
+  if (!_lhProposals.length) {
+    banner.innerHTML = 'No likely single-character slips found in this column.';
+    setTimeout(() => { if (banner.innerHTML.startsWith('No likely')) banner.style.display = 'none'; }, 3500);
+    return;
+  }
+  const shown = _lhProposals.slice(0, 6).map(p => `<b>${escHtml(p.from)} → ${escHtml(p.to)}</b>`).join(', ');
+  banner.innerHTML = `Fix ${_lhProposals.length} likely slip${_lhProposals.length > 1 ? 's' : ''}: ${shown}`
+    + (_lhProposals.length > 6 ? `, +${_lhProposals.length - 6} more` : '')
+    + `<button class="lh-fix lh-apply" id="lh-apply-fixes">Apply</button>`
+    + `<button class="lh-cancel" id="lh-cancel-fixes">Cancel</button>`;
+});
+
+document.getElementById('lh-proposals').addEventListener('click', async (e) => {
+  if (e.target.id === 'lh-cancel-fixes') {
+    _lhProposals = []; document.getElementById('lh-proposals').style.display = 'none'; return;
+  }
+  if (e.target.id === 'lh-apply-fixes') {
+    e.target.disabled = true;
+    for (const p of _lhProposals) await applyLhRename(p.from, p.to);
+    _lhProposals = [];
+    document.getElementById('lh-proposals').style.display = 'none';
+    renderLearningHistory();
+  }
+});
+
+function closeLearningHistory() {
+  document.getElementById('lh-overlay').style.display = 'none';
+  _lhPending = null; _lhEditing = null; _lhProposals = [];
+  document.getElementById('lh-proposals').style.display = 'none';
+  document.querySelectorAll('.field-row-label.lh-active-field').forEach(el => el.classList.remove('lh-active-field'));
+}
+document.getElementById('lh-close').addEventListener('click', closeLearningHistory);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && isLhOpen()) closeLearningHistory(); });
 
 document.getElementById('enh-threshold').addEventListener('change', function () {
   const slider = document.getElementById('enh-threshold-level');
@@ -1718,8 +3647,26 @@ function syncDocTypeFromRecord(doc) {
 }
 
 // ── Reprocess ─────────────────────────────────────────────────────────────────
-document.getElementById('btn-reprocess').addEventListener('click', async () => {
+
+// Does the OPEN document carry un-committed review work that a reprocess would
+// silently discard (hand-typed corrections, a manual type override, or a staged ⊕
+// teach / field rule)? Used to warn before reprocessing (QA audit #3).
+function hasPendingReviewEdits() {
+  if (corrections && Object.keys(corrections).length) return true;
+  if (typeof pendingAnchors === 'object' && pendingAnchors && Object.keys(pendingAnchors).length) return true;
+  if (typeof pendingFieldRules === 'object' && pendingFieldRules && Object.keys(pendingFieldRules).length) return true;
+  const detected = currentDoc && currentDoc.type_slug;
+  if (selectedTypeSlug && detected && selectedTypeSlug !== detected) return true;   // manual type override
+  return false;
+}
+const REPROCESS_DISCARD_WARNING =
+  'Reprocessing re-reads this document with the latest learned data and REPLACES the '
+  + 'fields on screen — your unsaved edits and type choice for this document will be lost.\n\nContinue?';
+
+document.getElementById('btn-reprocess').addEventListener('click', async (e) => {
   if (!currentDoc) return;
+  // Warn only on a genuine user click (programmatic .click() re-extracts are trusted).
+  if (e?.isTrusted && hasPendingReviewEdits() && !confirm(REPROCESS_DISCARD_WARNING)) return;
   const btn = document.getElementById('btn-reprocess');
   btn.disabled = true;
   btn.innerHTML = '<span class="btn-spinner"></span> Reprocessing…';
@@ -1748,6 +3695,7 @@ document.getElementById('btn-reprocess').addEventListener('click', async () => {
       currentDoc  = full;    // sync in-memory state to fresh DB record
       corrections = {};      // drop stale corrections; fields are now fresh
       pendingAnchors = {};   // ...and any un-committed ⊕ teach (coords now stale)
+      pendingFieldRules = {};
       syncDocTypeFromRecord(full); // auto-select the newly detected type
     }
     renderFields(full || currentDoc);
@@ -1768,6 +3716,8 @@ document.getElementById('btn-reprocess').addEventListener('click', async () => {
     btn.innerHTML = '&#9654;&#9654; Reprocess with Learned Data';
     btn.style.color = 'var(--err)';
     setTimeout(() => { btn.style.color = ''; }, 2000);
+    // Surface WHY (e.g. "A reprocess is already running") instead of a silent red flash.
+    if (result && result.error) showToast(result.error, result.busy ? 'warn' : 'err');
   }
 });
 
@@ -1827,6 +3777,10 @@ let _batchStopped = false;
 document.getElementById('btn-stop-reprocess').addEventListener('click', () => {
   if (!_batchActive) return;
   _batchStopped = true;
+  // Batched Reprocess All runs in server-side Python workers, so cooperative
+  // flag-flipping can't halt it — kill the worker pool (same path folder-import Stop
+  // uses). The in-flight reprocessBatch promise then resolves and the finally runs.
+  try { window.docusnap.stopProcessing(); } catch {}
   const btnStop = document.getElementById('btn-stop-reprocess');
   btnStop.disabled = true;
   btnStop.innerHTML = 'Stopping…';
@@ -1835,6 +3789,8 @@ document.getElementById('btn-stop-reprocess').addEventListener('click', () => {
 document.getElementById('btn-reprocess-all').addEventListener('click', async () => {
   if (queue.length === 0) { showToast('No documents in queue', 'warn'); return; }
   if (_batchActive) return;
+  // The open document's unsaved edits/type choice are re-rendered away too (QA audit #3).
+  if (hasPendingReviewEdits() && !confirm(REPROCESS_DISCARD_WARNING)) return;
 
   const btnAll  = document.getElementById('btn-reprocess-all');
   const btnOne  = document.getElementById('btn-reprocess');
@@ -1856,66 +3812,51 @@ document.getElementById('btn-reprocess-all').addEventListener('click', async () 
 
   const docs  = [...queue];   // snapshot; queue is refetched in finally
   const total = docs.length;
-  let done    = 0;
-  let failed  = 0;
-  let nextIdx = 0;            // shared cursor handed out to the worker pool
+  let done = 0, failed = 0;
 
-  // Bounded parallel reprocess: run up to `processing_concurrency` reprocess
-  // calls at once (default 1 = the original serial behaviour). Each call is the
-  // SAME reprocess-document IPC the single-doc Reprocess button uses; the heavy
-  // OCR/extraction runs in parallel Python processes, while every DB write stays
-  // serialized on the single-threaded JS event loop (better-sqlite3 is
-  // synchronous) — so there is no SQLite contention or lost updates. Stop is
-  // cooperative: in-flight documents finish, no new ones start.
-  let concurrency = parseInt(await window.docusnap.getSetting('processing_concurrency'), 10);
-  if (!Number.isFinite(concurrency)) concurrency = 1;
-  concurrency = Math.max(1, Math.min(5, concurrency));
+  // Batched reprocess: ONE bounded pool of Python workers (server-side, honouring
+  // processing_concurrency) reprocesses the whole queue — each worker handles a
+  // SHARD of docs in a single process, so Python/Tesseract startup is paid per
+  // worker, not per document (the old per-doc reprocess-document spawn is what made
+  // a large Reprocess All slow to start). Each doc keeps its own template/doc-slug/
+  // enhance via the manifest, so accuracy is unchanged. Progress streams on
+  // reprocess-progress; Stop kills the workers (see the stop handler).
+  window.docusnap.removeReprocessProgress();
+  window.docusnap.onReprocessProgress((msg) => {
+    if (msg.type === 'file_done')  banner.textContent = `Reprocessing ${msg.done || 0} of ${msg.total || total}…`;
+    else if (msg.type === 'log')   console.log('[Reprocess All]', msg.text);
+  });
 
-  const runOne = async (doc) => {
-    try {
-      const result = await window.docusnap.reprocessDocument({
-        docId:      doc.id,
-        folderPath: doc.folder_path,
-        filename:   doc.original_filename,
-      });
-      if (!result?.success) failed++;
-      // Refresh the open document's panel only if IT was reprocessed AND is
-      // still the open doc when its result lands (the user may have navigated
-      // away while other workers were running).
-      if (result?.success && currentDoc && doc.id === currentDoc.id) {
-        const full = await window.docusnap.getDocumentWithExtractions(doc.id);
-        if (full && currentDoc && currentDoc.id === doc.id) {
+  try {
+    const res = await window.docusnap.reprocessBatch(
+      docs.map(d => ({ docId: d.id, folderPath: d.folder_path, filename: d.original_filename }))
+    );
+    done   = (res && res.done)   || 0;
+    failed = (res && res.failed) || 0;
+    // Refused because a single reprocess (or another batch) is already running — clear the
+    // just-shown banner and explain, rather than leaving "Reprocessing 0 of N…" stuck.
+    if (res && res.success === false) {
+      banner.classList.remove('show');
+      if (res.error) showToast(res.error, res.busy ? 'warn' : 'err');
+    }
+  } catch (e) {
+    console.warn('[Reprocess All]', e.message);
+  } finally {
+    window.docusnap.removeReprocessProgress();
+    // Refresh the open document's panel (it may have been reprocessed).
+    if (currentDoc) {
+      try {
+        const full = await window.docusnap.getDocumentWithExtractions(currentDoc.id);
+        if (full && currentDoc && currentDoc.id === full.id) {
           currentDoc  = full;
           corrections = {};
           pendingAnchors = {};   // drop any un-committed ⊕ teach (coords now stale)
-          syncDocTypeFromRecord(full); // auto-select the newly detected type
+          pendingFieldRules = {};
+          syncDocTypeFromRecord(full);
           renderFields(full);
         }
-      }
-    } catch (e) {
-      console.warn(`[Reprocess All] ${doc.original_filename}:`, e.message);
-      failed++;
+      } catch { /* panel refresh is best-effort */ }
     }
-    done++;
-    banner.textContent = `Reprocessing ${done} of ${total}…`;
-  };
-
-  // One worker pulls the next index off the shared cursor until the list is
-  // exhausted or Stop is requested. `nextIdx++` is safe without locking — there
-  // is no await between read and increment, so each index is handed out once.
-  const worker = async () => {
-    while (!_batchStopped) {
-      const i = nextIdx++;
-      if (i >= docs.length) return;
-      await runOne(docs[i]);
-    }
-  };
-
-  try {
-    const poolSize = Math.max(1, Math.min(concurrency, docs.length));
-    await Promise.all(Array.from({ length: poolSize }, () => worker()));
-  } finally {
-    // Always runs — covers normal completion, stop, and unexpected throws
     queue         = await window.docusnap.getReviewQueue();
     deferredQueue = await window.docusnap.getDeferredQueue();
     updateTabCounts();
@@ -1925,14 +3866,15 @@ document.getElementById('btn-reprocess-all').addEventListener('click', async () 
     btnAll.disabled      = false;
     btnOne.disabled      = false;
     btnStop.style.display = 'none';
-    btnAll.innerHTML     = '&#9654;&#9654; Reprocess All';
+    btnAll.innerHTML     = 'Reprocess all in queue';
+    // Auto-commit any docs that reprocessed to 100% (setting-gated) + toast.
+    await autoCommitFullConfidence();
   }
 
-  const ok = done - failed;
-  // Final state stays in the banner ("…completed"), then clears after a moment.
-  const summary = _batchStopped
-    ? `Stopped after ${done} of ${total}`
-    : (failed ? `Completed — ${ok} of ${done} OK, ${failed} failed`
+  const stopped = _batchStopped;
+  const summary = stopped
+    ? `Stopped — ${done} reprocessed`
+    : (failed ? `Completed — ${done} OK, ${failed} failed`
               : `Completed ${done} of ${total}`);
   banner.classList.add('done');
   banner.textContent = summary;
@@ -1940,18 +3882,12 @@ document.getElementById('btn-reprocess-all').addEventListener('click', async () 
     if (!_batchActive) { banner.classList.remove('show', 'done'); banner.textContent = ''; }
   }, 4000);
 
-  if (_batchStopped) {
-    const remaining = queue.length;
-    showToast(
-      `Stopped after ${done} — ${remaining} remaining in queue`,
-      'warn'
-    );
-  } else {
-    showToast(
-      failed ? `Reprocessed ${ok}/${done} — ${failed} failed` : `Reprocessed ${done} document${done !== 1 ? 's' : ''}`,
-      failed ? 'warn' : 'ok'
-    );
-  }
+  showToast(
+    stopped ? `Stopped — ${done} reprocessed, ${queue.length} remaining`
+            : (failed ? `Reprocessed ${done} — ${failed} failed`
+                      : `Reprocessed ${done} document${done !== 1 ? 's' : ''}`),
+    (failed || stopped) ? 'warn' : 'ok'
+  );
 });
 
 // ── Split PDF ─────────────────────────────────────────────────────────────────
@@ -2052,6 +3988,12 @@ function clearDocPanel() {
   document.getElementById('split-bar').style.display      = 'none';
   const extStatus = document.getElementById('extraction-status');
   if (extStatus) extStatus.innerHTML = '';
+  // Blank the per-document review aids too, so an empty queue ("All documents
+  // reviewed") doesn't leave the last doc's prompts behind:
+  renderReviewReason(null);                                  // the "needs a quick check" message
+  const sub = document.querySelector('.fields-header-sub');
+  if (sub) sub.style.display = 'none';                       // the ⊕ "wrong value?" prompt
+  updateAcknowledgeButton();                                 // currentDoc is null → hides "Mark Reviewed"
   updateDocNavButtons();   // no current document → both arrows disabled
 }
 
@@ -2093,11 +4035,10 @@ new ResizeObserver(() => {
 // Navigate to a specific doc when Review is already open (e.g. second "Edit in Review" click).
 window.docusnap.onNavigateToDoc((docId) => _navigateToDoc(docId));
 
-function _navigateToDoc(docId) {
+async function _navigateToDoc(docId) {
   const inReview   = queue.find(d => d.id === docId);
   const inDeferred = deferredQueue.find(d => d.id === docId);
-  const doc        = inReview || inDeferred;
-  if (!doc) return;
+  let doc          = inReview || inDeferred;
 
   if (inDeferred && activeTab !== 'deferred') {
     activeTab = 'deferred';
@@ -2111,24 +4052,52 @@ function _navigateToDoc(docId) {
     renderQueueList();
   }
 
+  // Not in a queue (e.g. an already-FILED doc opened from the processed list or Search's
+  // "Edit in Review") — load it directly so it can still be checked/corrected.
+  if (!doc) {
+    try { doc = await window.docusnap.getDocumentWithExtractions(docId); } catch {}
+    if (!doc) return;
+  }
+
   selectDoc(doc);
 }
 
-// Auto-refresh queue when main process signals new docs were added
-window.docusnap.onReviewCountChanged(async (n) => {
-  // While File All Ready is running, each per-doc confirm broadcasts this event
-  // back to us; re-fetching here would clobber the loop's local queue mid-run and
-  // leave just-filed docs as ghosts in the list. fileAllReady does one clean
-  // refresh once it finishes, so it's safe to ignore these interim signals.
-  if (bulkFiling) return;
+// A doc type was created/changed in another window (e.g. the Teach wizard) — reload the
+// type list so the dropdown shows it, preserving the current selection.
+window.docusnap.onDocTypesChanged?.(async () => {
+  try { allDocTypes = await window.docusnap.getAllDocTypes(); } catch {}
+  const sel = document.getElementById('doctype-select');
+  const cur = sel ? sel.value : '';
+  populateTypeDropdown();
+  if (sel) sel.value = cur || sel.value;
+});
+
+// Auto-refresh the queue when the main process signals the review count changed. DEBOUNCED: as a
+// batch processes, each doc first lands as needs_review (a count-change) and — when it qualifies —
+// AUTO-FILES a moment later (another count-change), so an immediate re-render made those docs FLASH
+// into the queue and straight back out. Coalescing a burst into ONE refresh shortly after it settles
+// skips the transient states: by then an auto-filed doc is already confirmed (never in the queue), so
+// only genuine needs_review docs remain, and the "N auto-committed" tally ticks up ONCE instead of
+// the list churning per doc. A single isolated change still lands in well under a second.
+let _reviewRefreshTimer = null;
+async function _refreshQueueFromBroadcast() {
+  // File All Ready does its own clean refresh when it finishes; the auto-filed VIEW owns the list
+  // while active (a background count-change must not clobber it — see refreshAutoCommittedBar).
+  if (bulkFiling || _viewingAutoFiled) return;
   const prevId  = currentDoc?.id;
   queue         = await window.docusnap.getReviewQueue();
   deferredQueue = await window.docusnap.getDeferredQueue();
   updateTabCounts();
   if (activeTab === 'review')   renderQueueList();
   if (activeTab === 'deferred') renderDeferredList();
-  // Auto-select first doc if nothing is currently loaded
+  refreshAutoCommittedBar();   // tick the auto-committed tally up after the burst (fetches fresh)
   if (!prevId && queue.length > 0 && activeTab === 'review') selectDoc(queue[0]);
+}
+window.docusnap.onReviewCountChanged(() => {
+  // Ignore File All Ready's interim per-doc broadcasts — its own clean refresh follows the run.
+  if (bulkFiling) return;
+  if (_reviewRefreshTimer) clearTimeout(_reviewRefreshTimer);
+  _reviewRefreshTimer = setTimeout(() => { _reviewRefreshTimer = null; _refreshQueueFromBroadcast(); }, 800);
 });
 
 // ── Preview zoom / pan ────────────────────────────────────────────────────────
@@ -2337,7 +4306,6 @@ function loadWizardField(i) {
 
   const f = wizard.fields[wizard.index];
   const fixedInput  = document.getElementById('wiz-fixed-value');
-  const fixedToggle = document.getElementById('wiz-fixed-toggle');
   const anchorInput = document.getElementById('wiz-anchor-text');
   const ocrInput    = document.getElementById('wiz-ocr-type');
 
@@ -2349,25 +4317,24 @@ function loadWizardField(i) {
   const savedFixed = wizard.fixedByKey && wizard.fixedByKey.get(f.key);
   if (draft) {
     wizard.fixedMode    = draft.fixedMode;
-    fixedToggle.checked = draft.fixedMode;
     fixedInput.value    = draft.fixedValue;
     anchorInput.value   = draft.anchorText;
     ocrInput.value      = draft.ocrType;
     wizard.draftAnchor  = draft.draftAnchor ? { ...draft.draftAnchor } : null;
     wizard.draftTarget  = draft.draftTarget ? { ...draft.draftTarget } : null;
   } else if (savedFixed != null && savedFixed !== '') {
-    wizard.fixedMode = true; fixedToggle.checked = true; fixedInput.value = savedFixed;
+    wizard.fixedMode = true; fixedInput.value = savedFixed;
     anchorInput.value = ''; ocrInput.value = 'text';
   } else if (saved && saved.anchor_x_norm != null && saved.target_x_norm != null
              && (saved.page_number || 0) === currentPage) {   // box belongs to this page
-    wizard.fixedMode = false; fixedToggle.checked = false; fixedInput.value = '';
+    wizard.fixedMode = false; fixedInput.value = '';
     wizard.draftAnchor = { x_norm: saved.anchor_x_norm, y_norm: saved.anchor_y_norm,
                            w_norm: saved.anchor_w_norm, h_norm: saved.anchor_h_norm };
     wizard.draftTarget = { x_norm: saved.target_x_norm, y_norm: saved.target_y_norm,
                            w_norm: saved.target_w_norm, h_norm: saved.target_h_norm };
     anchorInput.value = saved.anchor_text || ''; ocrInput.value = saved.ocr_type || 'text';
   } else {
-    wizard.fixedMode = false; fixedToggle.checked = false; fixedInput.value = '';
+    wizard.fixedMode = false; fixedInput.value = '';
     anchorInput.value = ''; ocrInput.value = 'text';
   }
 
@@ -2384,11 +4351,17 @@ function updateWizardUI() {
   document.getElementById('wiz-anchor-block').style.display = wizard.fixedMode ? 'none' : '';
   document.getElementById('wiz-fixed-block').style.display  = wizard.fixedMode ? '' : 'none';
 
+  // Reflect the active mode on the segmented toggle. Done here (not only in the click
+  // handler) so a field-switch restore — loadWizardField sets wizard.fixedMode then
+  // calls updateWizardUI — shows the correct segment.
+  document.querySelectorAll('#wiz-mode .wiz-seg-btn').forEach(b =>
+    b.classList.toggle('armed', (b.dataset.mode === 'fixed') === wizard.fixedMode));
+
   const st = document.getElementById('wiz-status');
   if (wizard.fixedMode) {
-    const hasVal = !!document.getElementById('wiz-fixed-value').value.trim();
-    st.textContent = hasVal ? 'Fixed value ready ✓' : 'Enter a fixed value';
-    st.className = 'wiz-status' + (hasVal ? ' ok' : '');
+    const fv = document.getElementById('wiz-fixed-value').value.trim();
+    st.textContent = fv ? `Will file: ${fv}` : 'Type the value to file';
+    st.className = 'wiz-status' + (fv ? ' ok' : '');
   } else {
     const a = !!wizard.draftAnchor, t = !!wizard.draftTarget;
     st.textContent = `Anchor: ${a ? 'drawn ✓' : '—'} · Target: ${t ? 'drawn ✓' : '—'}`;
@@ -2607,8 +4580,15 @@ document.getElementById('wiz-show-resolved')?.addEventListener('click', async ()
 });
 document.getElementById('wiz-prev')?.addEventListener('click', () => loadWizardField(wizard.index - 1));
 document.getElementById('wiz-next')?.addEventListener('click', () => loadWizardField(wizard.index + 1));
-document.getElementById('wiz-fixed-toggle')?.addEventListener('change', (e) => {
-  wizard.fixedMode = e.target.checked;
+// Mode toggle (segmented): "Read it from the document" (anchor + target) vs "Always
+// use the same value" (a constant). Mirrors the Settings Template Manager mode; the
+// active segment is reflected by updateWizardUI so a field-switch restore stays right.
+document.getElementById('wiz-mode')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('.wiz-seg-btn');
+  if (!btn) return;
+  const fixed = btn.dataset.mode === 'fixed';
+  if (fixed === wizard.fixedMode) return;   // already in this mode
+  wizard.fixedMode = fixed;
   wizard.drawMode = null;
   wizCanvas.classList.remove('drawing');
   updateWizardUI();
@@ -2713,6 +4693,20 @@ function sanitizeAnchorLabel(label) {
     if ((tok.match(/\d/g) || []).length >= 3) return false;  // code-like serial
     return true;
   }).join(' ').trim();
+}
+
+// An auto-detected label captured off a NOISY scan can be garbled ("Serial No." read
+// as "verial No.", "Description" as "�escription"). A garbled label never re-locates on
+// future pages, so the taught anchor silently reads nothing forever. Flag the obvious
+// garble so the ⊕ readout can warn + let the operator fix the label before it's saved.
+function labelLooksSuspicious(label) {
+  if (!label || !label.trim()) return true;
+  if (/�/.test(label)) return true;                                 // OCR replacement char �
+  if (/[^\p{L}\p{N}\s.,'&()/:#%\-]/u.test(label)) return true;           // junk symbols real captions don't carry
+  // a long alphabetic token with NO vowel reads as garble ("brtnz", "vrntx")
+  const toks = label.split(/\s+/).map(t => t.replace(/[^a-zA-Z]/g, '')).filter(t => t.length >= 4);
+  if (toks.some(t => !/[aeiouy]/i.test(t))) return true;
+  return false;
 }
 
 // OCR a NORMALISED box on the current page image (docImg) via the existing
@@ -2864,11 +4858,15 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
     // sliceMap[field][stage] = [ {kind, bbox, page}, ... ] — links candidates to page regions
     const sliceMap = {};
     const get = (f) => {
-      if (!byField.has(f)) byField.set(f, { merges: [], rejects: [], transforms: [], validations: [], final: null });
+      if (!byField.has(f)) byField.set(f, { merges: [], rejects: [], transforms: [], validations: [], final: null, reconcile: null });
       return byField.get(f);
     };
     for (const ev of events) {
-      if (!ev || ev.field == null) continue;
+      if (!ev) continue;
+      // reconcile is a CROSS-field TOTAL calc (keyed by total_key, carries no `field`) — attach it
+      // to the total field's block before the per-field guard below.
+      if (ev.event === 'reconcile') { if (ev.total_key) get(ev.total_key).reconcile = ev; continue; }
+      if (ev.field == null) continue;
       if (ev.event === 'merge') get(ev.field).merges.push(ev);
       else if (ev.event === 'anchor_reject') get(ev.field).rejects.push(ev);
       else if (ev.event === 'transform') get(ev.field).transforms.push(ev);   // Stage 2.5 denoise/correct
@@ -2912,6 +4910,18 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
       if (!arr || !arr.length) return null;
       return arr.find(s => s.kind === 'target') || arr[0];
     }
+    // The field's located LABEL box (kind="anchor") — the diagnostic anchor_label
+    // slice (Stage 2 ⊕ anchors) or a template_mapping anchor (Stage 0.5). Attached to
+    // every candidate row so clicking a value ALSO reveals where its anchor resolved
+    // (or, if absent, that the label didn't locate on this document).
+    function anchorSlice(field) {
+      const m = sliceMap[field];
+      if (!m) return null;
+      const pref = m['anchor_label'];
+      if (pref) { const hit = pref.find(s => s.kind === 'anchor'); if (hit) return hit; }
+      for (const k of Object.keys(m)) { const hit = m[k].find(s => s.kind === 'anchor'); if (hit) return hit; }
+      return null;
+    }
     if (!byField.size) {
       elEmpty.hidden = false; elFields.innerHTML = '';
       return;
@@ -2935,13 +4945,13 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
             ? `lost — lower confidence (${c.confidence}% < ${wc}%)`
             : (c.vs && c.vs.value != null ? `lost — superseded by "${shown(c.vs.value)}"` : 'lost — superseded');
         }
-        rows.push(cand(STAGE_LABEL[c.stage] || c.stage, c.value, c.confidence, c.method, won ? 'won' : 'lost', won ? '' : reason, pickSlice(field, c.method), rxBadge(field, c.value)));
+        rows.push(cand(STAGE_LABEL[c.stage] || c.stage, c.value, c.confidence, c.method, won ? 'won' : 'lost', won ? '' : reason, pickSlice(field, c.method), rxBadge(field, c.value), anchorSlice(field)));
       }
       for (const r of m.rejects) {
         // A rejected rung IS keyed by its method (e.g. "anchor_crop") — show the
         // exact crop it read so the operator sees WHERE the garbage came from. The
         // rx score explains a format-based rejection at a glance (e.g. rx 0%).
-        rows.push(cand(r.method || 'anchor', r.value, null, null, 'rej', `rejected — ${r.reason || 'failed gate'}`, pickSlice(field, r.method), rxBadge(field, r.value)));
+        rows.push(cand(r.method || 'anchor', r.value, null, null, 'rej', `rejected — ${r.reason || 'failed gate'}`, pickSlice(field, r.method), rxBadge(field, r.value), anchorSlice(field)));
       }
       // Stage 2.5 transforms (denoise / OCR-correct): value rewritten in place.
       for (const t of m.transforms) {
@@ -2964,6 +4974,18 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
         if (why) txt += `<div class="rdc-why">${why}</div>`;
         rows.push(noteRow('validate', txt, 'valid'));
       }
+      // Stage 4 TOTAL reconciliation maths (SFDEV): the exact sum it balanced against, so a
+      // "doesn't add up" flag on correct-looking figures is explained — most often a MISSING
+      // component (e.g. an un-captured "Discount (10%)") the total legitimately reflects.
+      if (m.reconcile) {
+        const rc = m.reconcile;
+        const comp = (lbl, v) => v === 'MISSING'
+          ? `<span style="color:var(--warn)">MISSING</span>(${lbl})`
+          : `${escHtml(String(v))}(${lbl})`;
+        const calc = `${escHtml(String(rc.subtotal))} + ${comp('tax', rc.tax)} + ${comp('ship', rc.shipping)} − ${comp('disc', rc.discount)} = <b>${escHtml(String(rc.computed))}</b>`
+          + ` &nbsp;vs total <b>${escHtml(String(rc.total))}</b> &nbsp;(Δ ${escHtml(String(rc.delta))}, tol ${escHtml(String(rc.tol))}) → ${rc.reconciles ? 'reconciles' : "doesn't reconcile"}`;
+        rows.push(noteRow('reconcile', calc + (rc.verdict ? `<div class="rdc-why">${escHtml(String(rc.verdict))}</div>` : ''), 'valid'));
+      }
       if (!rows.length) rows.push(`<div class="rdc-cand"><span class="rdc-reason" style="padding-left:0">matched on the OCR text layer (no per-stage crop trace)</span></div>`);
 
       blocks.push(
@@ -2977,28 +4999,38 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
       h.addEventListener('click', () => h.parentElement.classList.toggle('open'));
     });
     // Click a candidate row that has slice data → highlight the region on the page.
-    elFields.querySelectorAll('.rdc-cand[data-bbox]').forEach((row) => {
+    elFields.querySelectorAll('.rdc-cand[data-bbox],.rdc-cand[data-anchor-bbox]').forEach((row) => {
       row.addEventListener('click', (e) => {
         e.stopPropagation();   // don't toggle the field block open/closed
         try {
-          const bbox  = JSON.parse(row.dataset.bbox);
-          const page  = parseInt(row.dataset.page, 10) || 0;
-          const kind  = row.dataset.kind  || 'target';
-          const stage = row.dataset.stage || '_';
+          const page = parseInt(row.dataset.page || row.dataset.anchorPage, 10) || 0;
           // If the document is showing a different page, navigate to the correct one first.
           if (page !== currentPage) {
             currentPage = page;
             renderPage();
           }
-          drawTraceBbox(bbox, kind, stage);
+          // Draw the value box (amber) first, then OVERLAY the anchor/label box (blue)
+          // without clearing — so a click shows both where the value was read AND where
+          // its anchor resolved (or just one if the other wasn't captured).
+          let drew = false;
+          if (row.dataset.bbox) {
+            drawTraceBbox(JSON.parse(row.dataset.bbox), row.dataset.kind || 'target', row.dataset.stage || '_');
+            drew = true;
+          }
+          if (row.dataset.anchorBbox) {
+            drawTraceBbox(JSON.parse(row.dataset.anchorBbox), 'anchor', row.dataset.anchorStage || 'anchor_label', drew);
+          }
         } catch (_) {}
       });
     });
   }
 
-  function cand(stage, value, conf, method, tag, reason, slice, rx) {
+  function cand(stage, value, conf, method, tag, reason, slice, rx, aslice) {
     const tagTxt = tag === 'rej' ? 'rejected' : tag;
-    const bboxAttr = slice ? ` data-bbox="${escHtml(JSON.stringify(slice.bbox))}" data-kind="${escHtml(slice.kind || 'target')}" data-page="${slice.page ?? 0}" data-stage="${escHtml(slice.stage || '_')}" style="cursor:pointer" title="Click to highlight region on page"` : '';
+    const tAttr = slice ? ` data-bbox="${escHtml(JSON.stringify(slice.bbox))}" data-kind="${escHtml(slice.kind || 'target')}" data-page="${slice.page ?? 0}" data-stage="${escHtml(slice.stage || '_')}"` : '';
+    const aAttr = aslice ? ` data-anchor-bbox="${escHtml(JSON.stringify(aslice.bbox))}" data-anchor-page="${aslice.page ?? 0}" data-anchor-stage="${escHtml(aslice.stage || 'anchor_label')}"` : '';
+    const clickAttr = (slice || aslice) ? ` style="cursor:pointer" title="Click to highlight the value box (amber)${aslice ? ' + anchor box (blue)' : ''} on the page"` : '';
+    const bboxAttr = tAttr + aAttr + clickAttr;
     return `<div class="rdc-cand"${bboxAttr}>`
       + `<span class="rdc-stage">${escHtml(stage)}</span>`
       + `<span class="rdc-val">${escHtml(shown(value))}${method ? ` <span class="rdc-conf">${escHtml(method)}</span>` : ''}${rx || ''}</span>`

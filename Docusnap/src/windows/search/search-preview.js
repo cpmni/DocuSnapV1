@@ -7,8 +7,9 @@ function renderPreviewFields(doc) {
   const scroll = document.getElementById('preview-fields-scroll');
   scroll.innerHTML = '';
 
-  // Confidence band (enhanced Search only) — the signature "how sure are we" cue.
-  if (window.SearchState.entitled && doc.overall_confidence != null) {
+  // Confidence band (enhanced Search only) — UNCOMMITTED docs only; a confirmed doc is
+  // already checked + committed, so a detection % against it would mislead.
+  if (window.SearchState.entitled && doc.overall_confidence != null && doc.status !== 'confirmed') {
     const lvl = confLevel(doc.overall_confidence);
     const w   = Math.max(4, Math.min(100, doc.overall_confidence));
     const band = document.createElement('div');
@@ -112,7 +113,10 @@ async function selectDoc(doc) {
   ph.innerHTML      = '<div class="spinner"></div>';
 
   const full = await window.docusnap.getDocumentWithExtractions(doc.id);
-  renderPreviewFields(full || doc);
+  // `full` (getWithExtractions → getById) carries the extractions but NOT type_name (no
+  // join to document_types), while the search-result `doc` DOES — so merge, keeping doc's
+  // type_name/type_slug (otherwise the preview "Type" always shows "-").
+  renderPreviewFields({ ...doc, ...(full || {}) });
   window.SearchActions.renderActions(doc);
 
   const { folderPath, filename } = _fileArgs(doc);

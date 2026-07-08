@@ -38,7 +38,7 @@
   @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
   h1{font-size:26px;font-weight:650;margin-bottom:14px;letter-spacing:-.01em}
   h2{font-size:21px;font-weight:620;margin-bottom:10px}
-  p.lead{font-size:15px;line-height:1.6;color:#cdd3e3;margin-bottom:16px}
+  p.lead{font-size:15px;line-height:1.6;color:var(--text);margin-bottom:16px}
   .muted{color:var(--muted)}
   .pill-strip{display:flex;gap:10px;align-items:center;color:var(--muted);font-size:13px;margin:18px 0}
   .pill-strip b{color:var(--accent2)}
@@ -86,11 +86,19 @@
   .banner{background:var(--surface);border:1px solid var(--accent);border-radius:10px;padding:12px 16px;margin-bottom:12px}
   .banner .big{font-size:16px;font-weight:620}
   .banner .sub{font-size:13px;color:var(--muted);margin-top:3px}
+  /* Fixed-height pane: the page zooms INSIDE it (overflow clipped) instead of growing the
+     pane and pushing the controls below it off-screen. */
   .canvaswrap{position:relative;background:#0a0c12;border:1px solid var(--border);border-radius:10px;
-    overflow:hidden;min-height:420px;display:flex;align-items:center;justify-content:center}
+    overflow:hidden;height:72vh;min-height:360px;display:flex;align-items:center;justify-content:center}
+  /* Read-back confirmation docked to the bottom of the preview pane (hidden when empty). */
+  .rg-confirm{position:absolute;left:0;right:0;bottom:0;z-index:3;padding:11px 14px;
+    background:var(--surface);border-top:1px solid var(--border2);box-shadow:0 -8px 22px rgba(0,0,0,.22);
+    max-height:50%;overflow:auto;font-size:13px;color:var(--text);line-height:1.5}
+  .rg-confirm:empty{display:none}
+  .rg-confirm .val{color:var(--ok);font-weight:700}
   /* Same high-visibility crosshair as the Template Manager (dark outline under a blue
      cross + centre ring) so it shows against a white document. */
-  #pageCanvas{max-width:100%;max-height:72vh;display:block;transform-origin:center center;will-change:transform;
+  #pageCanvas{max-width:100%;max-height:72vh;display:block;flex:0 0 auto;transform-origin:center center;will-change:transform;
     cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Cline x1='16' y1='0' x2='16' y2='13' stroke='%23000' stroke-width='4' stroke-opacity='0.5'/%3E%3Cline x1='16' y1='19' x2='16' y2='32' stroke='%23000' stroke-width='4' stroke-opacity='0.5'/%3E%3Cline x1='0' y1='16' x2='13' y2='16' stroke='%23000' stroke-width='4' stroke-opacity='0.5'/%3E%3Cline x1='19' y1='16' x2='32' y2='16' stroke='%23000' stroke-width='4' stroke-opacity='0.5'/%3E%3Ccircle cx='16' cy='16' r='4' fill='none' stroke='%23000' stroke-width='3' stroke-opacity='0.5'/%3E%3Cline x1='16' y1='0' x2='16' y2='13' stroke='%234f8ef7' stroke-width='1.5'/%3E%3Cline x1='16' y1='19' x2='16' y2='32' stroke='%234f8ef7' stroke-width='1.5'/%3E%3Cline x1='0' y1='16' x2='13' y2='16' stroke='%234f8ef7' stroke-width='1.5'/%3E%3Cline x1='19' y1='16' x2='32' y2='16' stroke='%234f8ef7' stroke-width='1.5'/%3E%3Ccircle cx='16' cy='16' r='4' fill='none' stroke='%234f8ef7' stroke-width='1.5'/%3E%3C/svg%3E") 16 16, crosshair}
   .zoombar{position:absolute;top:8px;right:8px;z-index:2;display:flex;align-items:center;gap:2px;
     background:var(--surface);border:1px solid var(--border2);border-radius:8px;padding:3px;box-shadow:0 1px 4px rgba(0,0,0,.25)}
@@ -147,7 +155,7 @@
   <div class="titlebar">
     <span class="ttl">Teach a new document</span>
     <div class="winbtns">
-      <button class="help-guide-btn" id="btn-help-guide" title="Open the user guide (Teach a document)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></button>
+      <button class="help-guide-btn" id="btn-help-guide" data-help-key="user-guide" title="Open the user guide (Teach a document)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></button>
       <button id="help-mode-toggle" data-help-key="help-mode" title="Help mode — click, then click any control to learn what it does">?</button>
       <button id="win-min" title="Minimise">—</button>
       <button class="close" id="win-close" title="Close">✕</button>
@@ -173,9 +181,13 @@
     <section class="step" data-step="1">
       <h2>Choose the document to learn from</h2>
       <p class="lead">Pick one clear, typical scan. The cleaner the example, the better Scan Finder learns.</p>
+      <div style="margin-bottom:12px; display:flex; align-items:center; gap:10px;">
+        <button id="btn-import-teach" style="padding:8px 14px; border:1px solid var(--accent); background:var(--accent-bg); color:var(--accent2); border-radius:8px; cursor:pointer; font-size:13px; font-weight:600;">📄 Import a PDF to teach…</button>
+        <span id="import-teach-status" class="muted" style="font-size:12px;"></span>
+      </div>
       <div id="doc-picker" class="grid"></div>
-      <p id="doc-picker-empty" class="muted hidden">No documents are waiting to be taught.
-        Scan or import some pages first, then come back here.</p>
+      <p id="doc-picker-empty" class="muted hidden">No documents are waiting to be taught — use
+        “Import a PDF to teach…” above to load one, or scan/import some pages first.</p>
     </section>
 
     <!-- Step 2: Choose / create doc type -->
@@ -185,23 +197,7 @@
       <div id="type-grid" class="grid"></div>
 
       <div id="new-type-panel" class="panel hidden">
-        <label class="fl">Give it a simple name</label>
-        <input type="text" id="nt-name" placeholder="e.g. Delivery Note" autocomplete="off">
-
-        <label class="fl">What details should Scan Finder pull out?</label>
-        <div id="nt-fields" class="chips"></div>
-        <div class="addrow">
-          <input type="text" id="nt-field-input" placeholder="Add a detail, e.g. Order Number" autocomplete="off">
-          <button class="btn ghost" id="nt-field-add">+ Add</button>
-        </div>
-
-        <label class="fl">★ Which detail is the main number you'd search for later?
-          <span class="muted">(usually the invoice or order number)</span></label>
-        <select id="nt-ref"></select>
-
-        <label class="fl">📅 Which detail is the document's date?</label>
-        <select id="nt-date"></select>
-        <div id="nt-err" class="err"></div>
+        <div id="nt-editor-host"></div>
       </div>
     </section>
 
@@ -214,22 +210,25 @@
       <div class="regionwrap">
         <div>
           <div class="canvaswrap" title="Right-drag to pan · +/− to zoom">
-            <canvas id="pageCanvas" draggable="false"></canvas>
+            <canvas id="pageCanvas" data-help-key="teach-canvas" draggable="false"></canvas>
             <div class="zoombar">
-              <button id="tz-out" title="Zoom out">−</button>
+              <button id="tz-out" data-help-key="teach-zoom" title="Zoom out">−</button>
               <span class="lvl" id="tz-level">100%</span>
-              <button id="tz-in" title="Zoom in">+</button>
-              <button id="tz-reset" title="Reset view">⟲</button>
+              <button id="tz-in" data-help-key="teach-zoom" title="Zoom in">+</button>
+              <button id="tz-reset" data-help-key="teach-zoom" title="Reset view">⟲</button>
             </div>
+            <!-- Read-back confirmation overlays the BOTTOM of the preview pane so it's
+                 right where the user is looking (not below the fold). -->
+            <div class="rg-confirm" id="rg-confirm"></div>
           </div>
           <div class="readback" id="rg-readback"></div>
         </div>
         <div class="rail">
           <h3 id="rg-progress">Details</h3>
-          <div id="rg-fieldlist"></div>
+          <div id="rg-fieldlist" data-help-key="rg-fieldlist"></div>
           <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px">
-            <button class="btn ghost" id="rg-redraw">Redraw</button>
-            <button class="btn link" id="rg-skip">Skip for now</button>
+            <button class="btn ghost" id="rg-redraw" data-help-key="rg-redraw">Redraw</button>
+            <button class="btn link" id="rg-skip" data-help-key="rg-skip">Skip for now</button>
           </div>
           <div class="muted" style="font-size:12px;margin-top:12px;line-height:1.6">
             <span style="color:#3ecf8e;font-weight:700">▮</span> value (what I read)<br>
@@ -254,6 +253,8 @@
       <p class="lead">This was the first example. It works straight away, but it gets more accurate as you
         confirm a few more of the same kind — the next few may still come through the review queue so you can
         check them. That's normal, and each one makes it more sure.</p>
+      <p class="lead">If the odd field still slips later, you don't need to teach the whole document again —
+        just use <b>Teach this field</b> (the <b>⊕</b>) in Review and draw a box round its value.</p>
       <div class="flow3">
         <div class="b"><div class="t">Now</div><div class="d">I'll guide you</div></div>
         <div class="arr">→</div>
@@ -277,6 +278,7 @@
   <div class="toast" id="toast"></div>
   <script src="../shared/helpmode.js"></script>
   <script src="../shared/thumbs.js"></script>
+  <script src="../shared/doctype-editor.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

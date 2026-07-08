@@ -66,14 +66,105 @@ _WORD_RE = re.compile(r"[^\s]+")
 
 
 def is_name_like_field(field_key, label=None):
-    """True for fields that hold a NAME / company / person / address — where OCR
+    """True for fields that hold a NAME / company / person / postal address — where OCR
     gibberish should be quality-checked. Keyed on the field key/label so it works
     for custom fields too. Conservative: only obvious name-ish fields."""
-    hay = f"{field_key or ''} {label or ''}".lower()
-    return any(tok in hay for tok in (
+    # Normalise separators to spaces so "mac_address"/"bill_to" tokenise as whole words.
+    hay = re.sub(r"[^a-z0-9]+", " ", f"{field_key or ''} {label or ''}".lower())
+    if any(tok in hay for tok in (
         "name", "supplier", "customer", "company", "client", "vendor",
-        "person", "contact", "address", "payee", "bill_to", "ship_to",
-    ))
+        "person", "contact", "payee", "bill to", "ship to",
+    )):
+        return True
+    # "address" is name-like ONLY for a POSTAL/person address. A MAC / IP / hardware /
+    # network "address" is a technical IDENTIFIER (a code: "D4:F0:C9:25:9B:64",
+    # "192.168.1.200") with no real words — classing it name-like makes the name-quality /
+    # code-reject gates strip its legitimate value, so a labelled anchor could never fill
+    # mac_address / ip_address. Exclude the technical-address qualifiers.
+    if "address" in hay and not re.search(
+            r"\b(mac|ip|ipv4|ipv6|hardware|physical|network|gateway|subnet|dns|host|port)\b", hay):
+        return True
+    # Common ABBREVIATIONS that a substring test would miss ("cust" is not inside
+    # "customer") — matched as WHOLE WORDS so they can't false-positive on an
+    # unrelated key ("custom_ref", "custody_value"). A field keyed/labelled "cust" is the
+    # customer name and must get the same edge-strip / name-quality / token-repair treatment.
+    return bool(set(hay.split()) & {"cust"})
+
+
+def network_address_validation(field_key, label=None):
+    """Return the validation key 'mac_address' / 'ip_address' for a NETWORK-IDENTIFIER
+    field, else None. A MAC/IP is a CODE with a precise, well-defined format (colons,
+    dotted octets) — not a learned digit-position shape and not a generic 'text' charset —
+    so it gets a first-class validation pattern instead of falling through gates that don't
+    know its punctuation (the ':' flagged "unexpected", the new octet length flagged a
+    "shape" anomaly). Keyed on WHOLE-WORD tokens (mirrors the technical-address exclusion in
+    is_name_like_field) so it can't false-positive on 'description'/'ship'/'recipient'.
+    Reusable for any install whose doc type carries mac/ip fields."""
+    hay = re.sub(r"[^a-z0-9]+", " ", f"{field_key or ''} {label or ''}".lower())
+    toks = set(hay.split())
+    if toks & {"mac", "hardware"}:        # "hardware address" == MAC
+        return "mac_address"
+    if toks & {"ip", "ipv4", "ipv6"}:
+        return "ip_address"
+    return None
+
+
+def is_network_address_field(field_key, label=None):
+    """True for a MAC/IP network-identifier field (see network_address_validation)."""
+    return network_address_validation(field_key, label) is not None
+
+
+# An OCR glyph -> the HEX digit it was most likely misread FROM. Restricted to substitutions
+# that are safe only in a hex (MAC) context; mirrors the ocr_corrector confusion pairs. Used
+# ONLY to recover a value that then FULLY matches the field's precise pattern — never to guess.
+_HEX_OCR_CONFUSION = {
+    'O': '0', 'o': '0', 'Q': '0', 'D': '0',
+    'I': '1', 'l': '1', 'i': '1', '|': '1',
+    'Z': '2', 'z': '2',
+    'T': '7',
+    'S': '5', 's': '5',
+    'G': '6',
+    'B': '8',
+    'g': '9', 'q': '9',
+}
+
+
+def normalize_network_address(value, val_key, patterns):
+    """Reconcile a MAC/IP value against its PRECISE pattern. Returns (result, kind):
+
+      (value,  'ok')       already exactly valid — no change
+      (found,  'clean')    a valid MAC/IP is embedded with surrounding junk (e.g. a trailing
+                           OCR control char that pushed it below the authoritative coverage,
+                           or a "IP: " prefix) — `found` is the trimmed clean value
+      (fixed,  'repaired') MAC only: a single OCR-confusion substitution ("T3"->"73") makes it
+                           fully valid — recover-and-FLAG upstream, never a silent rewrite
+      (value,  'invalid')  not a valid MAC/IP and unrecoverable — flag upstream
+
+    A malformed IP is only ever flagged (its decimal octets carry no safe glyph map)."""
+    if not value:
+        return value, 'ok'
+    pats = patterns if isinstance(patterns, list) else [patterns]
+    for p in pats:
+        m = re.search(p, value)
+        if m:
+            found = m.group(0)
+            return (found, 'ok' if found == value else 'clean')
+    if val_key == 'mac_address':
+        out, changed = [], 0
+        for c in value:
+            if c in '0123456789abcdefABCDEF' or c in ':-.':
+                out.append(c)
+            elif c in _HEX_OCR_CONFUSION:
+                out.append(_HEX_OCR_CONFUSION[c]); changed += 1
+            else:
+                out.append(c)          # unknown glyph — leave it (the match will then fail)
+        cand = ''.join(out)
+        if changed:
+            for p in pats:
+                m = re.search(p, cand)
+                if m:
+                    return m.group(0), 'repaired'
+    return value, 'invalid'
 
 
 def _has_long_consonant_run(low):
@@ -107,11 +198,16 @@ def _token_good(tok):
         return False             # 2-char alpha fragment ("Fr", "St", "WM")
     if not any(c in _VOWELS for c in low):
         return False             # consonant gibberish ("brc")
-    # Proper-noun shape: Title-case, rest lowercase, no 4+ consonant run, len>=4.
-    # (A <=3 char Title token that wasn't a known word/abbrev above is almost
-    # always an OCR truncation — "Cre" from "Crescent" — so it stays "bad".)
-    if len(t) >= 4 and t[0].isupper() and t[1:].islower() and not _has_long_consonant_run(low):
-        return True
+    # Proper-noun shape (len>=4, no 4+ consonant run): Title-case ("Beaumont") OR
+    # ALL-CAPS ("BEAUMONT") — many invoices print the company name in capitals, so
+    # an all-caps alphabetic token is real name content, not gibberish. (A <=3 char
+    # Title token that wasn't a known word/abbrev above is almost always an OCR
+    # truncation — "Cre" from "Crescent" — so it stays "bad".)
+    if len(t) >= 4 and not _has_long_consonant_run(low):
+        title_case = t[0].isupper() and t[1:].islower()
+        all_caps   = t.isalpha() and t.isupper()
+        if title_case or all_caps:
+            return True
     return False
 
 

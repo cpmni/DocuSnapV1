@@ -10,6 +10,7 @@ function register(ctx) {
   const doctypes  = require('../../../database/modules/document_types');
   const learning  = require('../../../database/modules/learning');
   const templates = require('../../../database/modules/templates');
+  const { safeSlug } = require('../../../database/modules/slug');
   const { requireRole, requireLogin, logAudit } = require('../auth/handler');
   // Setting keys whose VALUE is safe to record verbatim in the audit trail
   // (mode/threads/flags). Anything else (paths, patterns, unknown keys) logs the
@@ -18,6 +19,8 @@ function register(ctx) {
     'processing_mode', 'processing_concurrency', 'registration_enabled', 'born_digital_enabled',
     'diagnostic_logging', 'theme', 'first_run_completed', 'watch_folder_enabled',
     'confidence_threshold', 'license_enforcement_enabled', 'copy_after_processing_enabled',
+    'name_wordness_flag', 'auto_separate_enabled', 'multiline_enabled',
+    'auto_rotate_enabled', 'dashboard_hidden_cards', 'telemetry_enabled',
   ]);
 
   // ── Document types ──────────────────────────────────────────────────────────
@@ -34,11 +37,13 @@ function register(ctx) {
     const db = getDb();
     // Atomic: create the type AND force its structural ID fields (Company + Date) so an
     // empty custom type can never exist. A mid-way throw rolls back the whole thing.
-    return db.transaction(() => {
+    const out = db.transaction(() => {
       const res = doctypes.addType(db, data || {});
       doctypes.ensureStructuralRoles(db, res.lastInsertRowid);
       return res;
     })();
+    notifyAllWindows('doc-types-changed');
+    return out;
   });
   ipcMain.handle('update-document-type', (_e, id, ch)  => { requireRole('admin'); return doctypes.updateType(getDb(), id, ch); });
 
@@ -56,7 +61,9 @@ function register(ctx) {
     if (!name) return { success: false, error: 'A document type name is required.' };
     const fields = Array.isArray(data && data.fields) ? data.fields : [];
     if (!fields.length) return { success: false, error: 'Add at least one field.' };
-    const slug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9_]/g, '_');
+    // Match addField's key derivation EXACTLY so ref/date roles bind to the keys
+    // the fields are actually created with (shared canonical safeSlug).
+    const slug = (s) => safeSlug(s, { fallback: 'field' });
     const refKey  = data.ref_field_key  ? slug(data.ref_field_key)  : null;
     const dateKey = data.date_field_key ? slug(data.date_field_key) : null;
     try {
@@ -83,9 +90,29 @@ function register(ctx) {
       });
       const id = tx();
       const created = doctypes.getAllWithFieldsAll(db).find(t => t.id === id) || null;
+      notifyAllWindows('doc-types-changed');   // other open windows reload their doc-type lists
       return { success: true, id, type: created };
     } catch (e) {
       return { success: false, error: e.message };  // UNIQUE name clash etc. — atomic rollback
+    }
+  });
+
+  // Preset document-type catalog (Settings → Document Types → "Add from catalog…").
+  // get-doctype-catalog lists the ready-made presets + whether each is already in
+  // this install; add-doctype-presets atomically creates each ticked type (+ fields
+  // + structural roles) AND seeds its likely label aliases into field_label_overrides
+  // (per-install, doc-type-scoped — see document_types.addPresetTypes). Admin-gated.
+  ipcMain.handle('get-doctype-catalog', () => { requireRole('admin'); return doctypes.getPresetCatalog(getDb()); });
+  ipcMain.handle('add-doctype-presets', (_e, slugs) => {
+    requireRole('admin');
+    const list = Array.isArray(slugs) ? slugs : (slugs ? [slugs] : []);
+    if (!list.length) return { success: false, error: 'Select at least one document type to add.' };
+    try {
+      const results = doctypes.addPresetTypes(getDb(), list);
+      notifyAllWindows('doc-types-changed');
+      return { success: true, results };
+    } catch (e) {
+      return { success: false, error: e.message };
     }
   });
 
@@ -198,6 +225,28 @@ function register(ctx) {
     return { changes: result.changes };
   });
 
+  // Blast-radius preview for renaming a supplier IDENTITY: per-table row counts under a name.
+  ipcMain.handle('get-supplier-scope-counts', (_e, name) => {
+    requireRole('admin');
+    return learning.getSupplierScopeCounts(getDb(), (name || '').trim());
+  });
+
+  // Rename a supplier IDENTITY across every learning-scope table (documents/hints/anchors/
+  // logos/corrections + the stored identity value) — the reusable fix for a wrong/merged
+  // supplier name that the per-field learning-history tools can't reach (they are scoped BY
+  // supplier). Admin-only + audited. Files are not moved (see learning.renameSupplier).
+  ipcMain.handle('rename-supplier', (_e, payload) => {
+    requireRole('admin');
+    const { oldName, newName } = payload || {};
+    const from = (oldName || '').trim(), to = (newName || '').trim();
+    if (!from || !to || from === to) return { renamed: 0 };
+    const db = getDb();
+    const result = learning.renameSupplier(db, { oldName: from, newName: to });
+    logAudit(db, { action: 'rename_supplier', target_type: 'supplier', outcome: 'success',
+      metadata: { from, to, before: result.before, after: result.after } });
+    return result;
+  });
+
   // Extreme-use recovery — see clearCorrectionsForScope in learning.js for
   // why this is kept separate from the anchors/hints clears above.
   ipcMain.handle('clear-learning-corrections', (_e, params) => {
@@ -208,6 +257,124 @@ function register(ctx) {
       supplier_name: supplier_name.trim(), document_type: document_type || null,
     });
     return { changes: result.changes };
+  });
+
+  ipcMain.handle('clear-learning-field-rules', (_e, params) => {
+    requireRole('admin');
+    const { supplier_name, document_type } = params || {};
+    if (!supplier_name || !supplier_name.trim()) return { changes: 0 };
+    const result = learning.clearFieldRulesForScope(getDb(), {
+      supplier_name: supplier_name.trim(), document_type: document_type || null,
+    });
+    return { changes: result.changes };
+  });
+
+  // ── "Fix a document type" recovery ───────────────────────────────────────────
+  // A single, safe recovery for a (document type, optional supplier) scope: set aside the
+  // offending confirmed docs (recycle bin — reversible) + optionally forget the scope's
+  // learning. Composes the scope clears + softDelete via recoveryService; never touches
+  // logo_fingerprints/templates. See src/services/recoveryService.js.
+  const recoverySvc = require('../../services/recoveryService').createRecoveryService({ learning });
+  ipcMain.handle('recovery-overview', (_e, scope) => {
+    requireRole('admin');
+    return recoverySvc.overview(getDb(), scope || {});
+  });
+  ipcMain.handle('recovery-apply', (_e, payload) => {
+    requireRole('admin');
+    const db = getDb();
+    const p = payload || {};
+    // .bak safety net for the NON-reversible learning clears (set-aside alone is reversible
+    // via the recycle bin). Best-effort — recovery still proceeds if the copy fails.
+    let backup = null;
+    if (p.forgetLearning || p.requeue) {
+      try {
+        const fs = ctx.fs || require('fs');
+        if (db.name && fs.existsSync(db.name)) {
+          const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+          backup = `${db.name}.bak-recovery-${stamp}`;
+          fs.copyFileSync(db.name, backup);
+        }
+      } catch (e) { backup = null; try { ctx.logger?.warn?.(`[recovery] DB backup failed: ${e.message}`); } catch {} }
+    }
+    const res = recoverySvc.apply(db, {}, p);
+    try {
+      logAudit(db, { action: 'recovery_apply', action_category: 'processing', target_type: 'document_type',
+        outcome: res.ok ? 'success' : 'failure',
+        metadata: { type: p.document_type_slug || null, supplier: p.supplier_name || null, ...(res.summary || {}) } });
+    } catch {}
+    if (res.ok) notifyAllWindows('review-count-changed', require('../../../database/modules/documents').getReviewCount(db));
+    return { ...res, backup };
+  });
+  // Undo: restore set-aside docs from the recycle bin.
+  ipcMain.handle('recovery-restore-docs', (_e, ids) => {
+    requireRole('admin');
+    const db = getDb();
+    const documents = require('../../../database/modules/documents');
+    let restored = 0;
+    for (const id of (Array.isArray(ids) ? ids : [])) { try { restored += documents.restoreDeleted(db, id).changes || 0; } catch {} }
+    return { restored };
+  });
+
+  // ── Learning Repair (browse + preview + suspects + send-to-review) ───────────
+  const repairSuspects = require('../../services/repairSuspects');
+  ipcMain.handle('repair-overview', (_e, scope) => {
+    requireRole('admin');
+    const db = getDb();
+    const documents = require('../../../database/modules/documents');
+    const s = scope || {};
+    if (!s.document_type_slug) return { error: 'A document type is required.' };
+    const sc = { supplier_name: s.supplier_name || null, document_type_slug: s.document_type_slug };
+    const docs = documents.getConfirmedDocsForScope(db, sc);
+    const confirmedCount = docs.length;   // "Learned from N" = the browsed (supplier-filtered) pool
+    let suspects = { byId: {}, count: 0 };
+    try { suspects = repairSuspects.computeSuspects(db, { document_type_slug: s.document_type_slug, supplier_name: s.supplier_name || null }); }
+    catch (e) { try { ctx.logger?.warn?.(`[repair] suspects failed: ${e.message}`); } catch {} }
+    // "Might not belong" outliers are detected across the WHOLE type, so a flagged doc may be a
+    // DIFFERENT supplier than the browse filter — union those in so they still render (strip +
+    // list + preview), otherwise a supplier search would hide the very outliers it should surface.
+    const have = new Set(docs.map(d => d.id));
+    const missing = Object.keys(suspects.byId).map(Number).filter(id => !have.has(id));
+    if (missing.length) { try { docs.push(...documents.getConfirmedDocsByIds(db, missing)); } catch {} }
+    return { scope: sc, confirmedCount, documents: docs, suspects };
+  });
+  // Each field's CONFIRMED value (correction wins over the raw OCR read) for the Learning
+  // Repair fields panel — so it agrees with the suspect reason, not a superseded misread.
+  ipcMain.handle('repair-doc-fields', (_e, id) => {
+    requireRole('admin');
+    const db = getDb();
+    const documents = require('../../../database/modules/documents');
+    try { return { fields: documents.getConfirmedFieldValues(db, Number(id)) }; }
+    catch (e) { return { fields: [], error: e.message || String(e) }; }
+  });
+  // Send ONE confirmed doc back to the review queue (respects the workflow lock).
+  ipcMain.handle('repair-deconfirm', (_e, id) => {
+    requireRole('admin');
+    const db = getDb();
+    const documents = require('../../../database/modules/documents');
+    const docId = Number(id);
+    try {
+      const guard = require('../../services/workflowService').editGuard(db, docId, 'admin');
+      if (guard && guard.ok === false) return { ok: false, error: guard.error || 'This document is locked by an approval route.', code: guard.code };
+    } catch { /* workflow off → no lock */ }
+    const r = documents.deconfirmDocument(db, docId);
+    if (r.changes) {
+      try { logAudit(db, { action: 'repair_send_to_review', action_category: 'document', target_type: 'document', target_id: docId, outcome: 'success' }); } catch {}
+      notifyAllWindows('review-count-changed', documents.getReviewCount(db));
+    }
+    return { ok: r.changes > 0 };
+  });
+  // Delete ONE confirmed doc to the recycle bin (recoverable; Undo via recovery-restore-docs).
+  ipcMain.handle('repair-delete', (_e, id) => {
+    requireRole('admin');
+    const db = getDb();
+    const documents = require('../../../database/modules/documents');
+    const docId = Number(id);
+    const r = documents.softDelete(db, docId);
+    if (r.changes) {
+      try { logAudit(db, { action: 'repair_delete', action_category: 'document', target_type: 'document', target_id: docId, outcome: 'success' }); } catch {}
+      notifyAllWindows('review-count-changed', documents.getReviewCount(db));
+    }
+    return { ok: r.changes > 0 };
   });
 
   // ── App settings (key-value) ─────────────────────────────────────────────────
@@ -224,10 +391,22 @@ function register(ctx) {
     const db = getDb();
     learning.setSetting(db, key, val);
     if (key === 'theme') notifyAllWindows('theme-changed', val);
+    if (key === 'dashboard_hidden_cards') notifyAllWindows('dashboard-cards-changed');
+    if (key === 'telemetry_enabled') { try { ctx.telemetry?.refreshConsent(); } catch {} }
     logAudit(db, { action: 'setting_changed', action_category: 'settings', target_type: 'setting',
       target_id: key, outcome: 'success',
       metadata: { key, value: _SAFE_SETTING_VALUE.has(key) ? String(val).slice(0, 120) : '[set]' } });
     return true;
+  });
+
+  // Opt-in diagnostics — read-only info for the Settings "see exactly what's sent"
+  // view: the master on/off, the full event allowlist (what CAN be sent), and the
+  // events currently buffered on THIS machine (verbatim). Admin only.
+  ipcMain.handle('get-telemetry-info', () => {
+    requireRole('admin');
+    const t = ctx.telemetry;
+    if (!t) return { enabled: false, events: {}, queued: [] };
+    return { enabled: !!t.enabled(), events: t.EVENTS, queued: t.queued() };
   });
 
   // ── Encrypted settings backup / restore (admin) ─────────────────────────────
@@ -239,6 +418,32 @@ function register(ctx) {
   const fs = require('fs');
   const backupService = require('../../services/backupService');
 
+  // The licensing device fingerprint of THIS machine (SHA-256, never the raw id).
+  // Best-effort: returns null on a dev box with no license config — which then never
+  // blocks an import.
+  function _currentDeviceFp() {
+    try {
+      const cfg = JSON.parse(fs.readFileSync(ctx.resourcePath('config', 'license.json'), 'utf8'));
+      return require('../../lib/license/fingerprint').computeFpHash(cfg.product_id);
+    } catch { return null; }
+  }
+  // Device-import gate: a backup is bound to the machine that made it. Another machine
+  // may restore it ONLY if it holds an ACTIVE PAID seat — so a paying customer can
+  // migrate to a new PC, but a fresh trial can't import another machine's learned data
+  // to dodge the trial. Legacy backups (no device_fp) and dev boxes are not blocked.
+  function _deviceImportAllowed(meta) {
+    const backupFp = meta && meta.device_fp;
+    if (!backupFp) return { allowed: true };          // pre-binding backup — can't enforce
+    const curFp = _currentDeviceFp();
+    if (!curFp) return { allowed: true };             // no licensing config (dev) — don't block
+    if (backupFp === curFp) return { allowed: true }; // same machine
+    try {
+      const tok = require('../../../database/modules/licensing').getActiveToken(getDb(), curFp);
+      if (tok && tok.kind === 'seat' && tok.state !== 'revoked') return { allowed: true };  // paid migration
+    } catch { /* fall through to deny */ }
+    return { allowed: false, error: 'This backup was made on a different computer. Restoring it here needs an activated licence on this computer — a free trial can only restore a backup created on the same machine.' };
+  }
+
   ipcMain.handle('settings-backup-export', async (_e, { password } = {}) => {
     requireRole('admin');
     if (!password || !String(password).trim()) return { ok: false, error: 'A password is required.' };
@@ -249,8 +454,9 @@ function register(ctx) {
         filters: [{ name: 'Scan Finder backup', extensions: ['sfbak'] }],
       });
       if (r.canceled || !r.filePath) return { ok: false, canceled: true };
-      const buf = backupService.createBackup(getDb(), password, { appVersion: app.getVersion() });
+      const buf = backupService.createBackup(getDb(), password, { appVersion: app.getVersion(), deviceFp: _currentDeviceFp() || '' });
       fs.writeFileSync(r.filePath, buf);
+      try { learning.setSetting(getDb(), 'last_backup_at', new Date().toISOString()); } catch { /* dashboard hint only */ }
       logAudit(getDb(), { action: 'settings_backup_export', action_category: 'settings',
         target_type: 'backup', outcome: 'success', metadata: { bytes: buf.length } });
       return { ok: true, path: r.filePath };
@@ -267,6 +473,8 @@ function register(ctx) {
       });
       if (r.canceled || !r.filePaths || !r.filePaths[0]) return { ok: false, canceled: true };
       const { meta, summary } = backupService.readBackup(fs.readFileSync(r.filePaths[0]), password);
+      const gate = _deviceImportAllowed(meta);
+      if (!gate.allowed) return { ok: false, error: gate.error };
       return { ok: true, path: r.filePaths[0], meta, summary };
     } catch (e) { return { ok: false, error: e.message }; }
   });
@@ -276,7 +484,13 @@ function register(ctx) {
     if (!filePath) return { ok: false, error: 'No backup file selected.' };
     if (!password || !String(password).trim()) return { ok: false, error: 'A password is required.' };
     try {
-      const { payload } = backupService.readBackup(fs.readFileSync(filePath), password);   // re-validate before write
+      const { meta, payload } = backupService.readBackup(fs.readFileSync(filePath), password);   // re-validate before write
+      const gate = _deviceImportAllowed(meta);   // device-bound: block cross-machine trial imports
+      if (!gate.allowed) {
+        logAudit(getDb(), { action: 'settings_backup_restore', action_category: 'settings',
+          target_type: 'backup', outcome: 'failure', metadata: { reason: 'device_mismatch' } });
+        return { ok: false, error: gate.error };
+      }
       const { applied } = backupService.applyBackup(getDb(), payload);
       logAudit(getDb(), { action: 'settings_backup_restore', action_category: 'settings',
         target_type: 'backup', outcome: 'success', metadata: { tables: Object.keys(applied).length } });

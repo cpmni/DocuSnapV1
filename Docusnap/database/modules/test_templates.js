@@ -64,6 +64,7 @@ function makeTestDb() {
       direction    TEXT    NOT NULL DEFAULT 'right',
       fixed_value  TEXT,
       is_variable  INTEGER NOT NULL DEFAULT 1,
+      fixed_locked INTEGER NOT NULL DEFAULT 0,   -- migration 31 (admin-locked fixed value)
       UNIQUE(template_id, field_key)
     );
     CREATE TABLE template_field_mappings (
