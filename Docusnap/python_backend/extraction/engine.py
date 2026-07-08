@@ -297,6 +297,7 @@ class ExtractionEngine:
         self.emit         = emit_fn or (lambda msg: None)
         self.format_index        = {}   # populated by set_formats()
         self.dominant_index      = {}   # Stage 2.5d dominant-value snap (populated by set_formats)
+        self.known_index         = {}   # confirmed values per scope — guards try_correct (set_formats)
         self.noise_profile_index = {}   # populated by set_formats()
         self.format_class_index  = {}   # populated by set_formats()
         self.label_overrides     = []   # populated by set_label_overrides()
@@ -680,6 +681,7 @@ class ExtractionEngine:
         self.format_index        = ocr_corrector.build_format_index(formats_data)
         self.noise_profile_index = ocr_corrector.build_noise_profile_index(formats_data)
         self.dominant_index      = ocr_corrector.build_dominant_index(formats_data)
+        self.known_index         = ocr_corrector.build_known_index(formats_data)
         self.format_class_index  = format_anomaly_checker.build_format_class_index(formats_data)
         n = len([k for k in self.format_index if k != '_fallback'])
         m = len(self.noise_profile_index)
@@ -1588,6 +1590,12 @@ class ExtractionEngine:
             n_corrected = 0
             for key, data in list(results.items()):
                 if not isinstance(data, dict) or not data.get("value"):
+                    continue
+                # Never rewrite a value the corpus has actually CONFIRMED (reggie): the count-weighted
+                # derive_template can force a position to a category, and try_correct would then
+                # SILENTLY (no flag) coerce a legitimate minority variant that OCR read correctly. If
+                # this exact value is a confirmed sample for the scope, it is real — leave it.
+                if ocr_corrector.is_known_value(self.known_index, key, supplier_name, document_slug, data["value"]):
                     continue
                 corrected_val, boost = ocr_corrector.correct_extraction(
                     data["value"], key, supplier_name, document_slug,

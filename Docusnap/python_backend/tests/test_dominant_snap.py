@@ -70,5 +70,16 @@ check("no counts -> position 2 is 'A' (byte-identical old behaviour)", _tb and _
 _tm = oc.derive_template(["1002", "10X2"], confirmed_count=10, value_counts={"1002": 5, "10X2": 5})
 check("genuine 50/50 digit-vs-letter position stays 'A'", _tm and _tm[2] == "A")
 
+print("\nbuild_known_index / is_known_value — guards try_correct from coercing a confirmed variant")
+kidx = oc.build_known_index([{"supplier_name": "Acme", "document_type": "invoice", "field_key": "code",
+                              "value_counts": {"1102V03NL1": 31, "1102VO3NL1": 4}}])
+check("a confirmed variant is 'known' (skips correction)", oc.is_known_value(kidx, "code", "Acme", "invoice", "1102VO3NL1") is True)
+check("the dominant is 'known'",                           oc.is_known_value(kidx, "code", "Acme", "invoice", "1102V03NL1") is True)
+check("an unseen artifact is NOT known (correctable)",     oc.is_known_value(kidx, "code", "Acme", "invoice", "11O2V03NL1") is False)
+check("wrong supplier (no cross-supplier union) -> not known", oc.is_known_value(kidx, "code", "Other", "invoice", "1102VO3NL1") is False)
+_kg = oc.build_known_index([{"supplier_name": "", "document_type": "invoice", "field_key": "code", "value_counts": {"GLOBAL1": 3}}])
+check("doc-type-scoped ('' supplier) learning known for any supplier", oc.is_known_value(_kg, "code", "Any Supplier", "invoice", "GLOBAL1") is True)
+check("empty index -> not known (no crash)",               oc.is_known_value({}, "code", "Acme", "invoice", "x") is False)
+
 print("\n" + ("All dominant-snap checks passed" if FAIL == 0 else f"{FAIL} FAILED"))
 sys.exit(1 if FAIL else 0)

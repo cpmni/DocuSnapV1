@@ -448,6 +448,46 @@ def lookup_dominant(dominant_index: dict, field_key: str,
     return (dominant_index.get('_fallback') or {}).get((dt, field_key))
 
 
+def build_known_index(formats_data: list) -> dict:
+    """Per (supplier, doctype, field): the SET of every CONFIRMED value. Used to guard the
+    character corrector (try_correct) so it never rewrites a value the corpus has actually seen —
+    the count-weighted derive_template can force a position to a category, and try_correct would
+    otherwise SILENTLY coerce a legitimate minority variant that OCR read correctly (reggie).
+    Doc-type fallback is the union across suppliers."""
+    index = {}
+    for entry in (formats_data or []):
+        field_key = entry.get('field_key', '')
+        if not field_key:
+            continue
+        vals = {str(v) for v in (entry.get('value_counts') or {}).keys()}
+        if not vals:
+            vals = {str(v) for v in (entry.get('sample_values') or [])}
+        if not vals:
+            continue
+        supplier = (entry.get('supplier_name') or '').lower().strip()   # '' = doc-type-scoped learning
+        doc_type = (entry.get('document_type') or '').lower().strip()
+        index.setdefault((supplier, doc_type, field_key), set()).update(vals)
+    return index
+
+
+def is_known_value(known_index: dict, field_key: str,
+                   supplier_name: str | None, doc_type: str | None, value) -> bool:
+    """True if `value` is a confirmed sample for THIS supplier scope OR the doc-type-scoped ('')
+    learning — mirroring how the engine resolves formats (supplier first, then the global doc-type
+    group), NOT a cross-supplier union (that could skip a legit correction for another supplier).
+    A confirmed value is real — the corrector must leave it alone."""
+    if not known_index or value is None:
+        return False
+    v = str(value)
+    s  = (supplier_name or '').lower().strip()
+    dt = (doc_type or '').lower().strip()
+    exact = known_index.get((s, dt, field_key))
+    if exact and v in exact:
+        return True
+    glob = known_index.get(('', dt, field_key))    # doc-type-scoped ('' supplier) learning
+    return bool(glob and v in glob)
+
+
 # ── Learned noise-edge stripping ─────────────────────────────────────────────
 #
 # Distinct from the character-substitution correction above: rather than fixing
