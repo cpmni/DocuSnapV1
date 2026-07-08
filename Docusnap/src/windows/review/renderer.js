@@ -1847,6 +1847,7 @@ function markRequiredMissing(missingKeys) {
 // ── Zone selection mode ───────────────────────────────────────────────────────
 function enterZoneMode(key, label) {
   cancelZoneMode();
+  hideAnchorReadout();   // starting a new teach clears any previous field's readout
   activeField = key;
   document.querySelectorAll('.pick-btn').forEach(b => b.classList.remove('picking'));
   document.querySelectorAll('.field-input').forEach(i => i.classList.remove('zone-active'));
@@ -2391,6 +2392,12 @@ function hideAnchorReadout() {
   if (bar) { bar.style.display = 'none'; bar.innerHTML = ''; }
   if (_anchorReadoutTimer) { clearTimeout(_anchorReadoutTimer); _anchorReadoutTimer = null; }
 }
+// The readout is transient — dismiss it the moment the operator moves on: a click into ANY value
+// field (its own editable-label / direction buttons aren't .field-inputs, so they keep it open).
+// Switching documents already clears it via renderPage → hideAnchorReadout.
+document.addEventListener('pointerdown', (e) => {
+  if (e.target?.closest?.('.field-input')) hideAnchorReadout();
+}, true);
 function showAnchorReadout(detected, value) {
   try { if (detected.normBox) drawTraceBbox(detected.normBox, 'anchor', 'manual'); } catch {}
   const bar = document.getElementById('anchor-readout');
@@ -2402,7 +2409,7 @@ function showAnchorReadout(detected, value) {
   const warn = detected.fallback || suspicious;
   let msg;
   if (detected.fallback) {
-    msg = `<span class="ar-msg">&#9888; No label found — anchored by position. Read: "${val}"</span>`;
+    msg = `<span class="ar-msg">&#9888; No label found — anchored by position. Read: <span class="ar-val">${val}</span></span>`;
   } else {
     // The label is EDITABLE — an auto-detect off a noisy scan can be misread ("verial No."),
     // and a wrong label never re-locates. The operator can correct it here before Confirm.
@@ -2412,7 +2419,7 @@ function showAnchorReadout(detected, value) {
     msg = `<span class="ar-msg">${lead} `
       + `<input class="ar-label-edit" spellcheck="false" title="The caption this field sits beside — edit if it was misread" `
       + `style="font:inherit;font-weight:600;padding:1px 5px;min-width:90px;border:1px solid var(--border2);border-radius:5px;background:var(--surface)"> `
-      + `&rarr; "${val}"</span>`;
+      + `&rarr; <span class="ar-val">${val}</span></span>`;
   }
   bar.className = 'anchor-readout' + (warn ? ' warn' : '');
   bar.innerHTML = msg
@@ -2876,7 +2883,10 @@ async function autoCommitFullConfidence() {
       deferredQueue = await window.docusnap.getDeferredQueue();
       updateTabCounts();
       renderQueueList();
-      showToast(`Auto-filed ${filed} document${filed > 1 ? 's' : ''} — no review needed.`, 'ok');
+      showToast(`✓ Auto-filed ${filed} document${filed > 1 ? 's' : ''} — no review needed.`, 'ok');
+      // Skip straight to the next document that still needs a look (the top of the queue), so the
+      // operator isn't left on an auto-filed doc that's no longer in the list.
+      if (queue.length && (!currentDoc || !queue.some(d => d.id === currentDoc.id))) selectDoc(queue[0]);
     }
   } catch (e) { console.warn('auto-commit 100% failed:', e.message); }
 }
