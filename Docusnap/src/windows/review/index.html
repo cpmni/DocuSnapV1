@@ -571,10 +571,13 @@
     .btn.reprocess { color: var(--accent2); border-color: var(--accent); font-size: 11px; }
     .btn.reprocess:hover     { background: var(--accent-bg); }
     .btn.reprocess:disabled  { opacity: .4; cursor: not-allowed; }
-    /* Quiet secondary text-button — no border/fill, smaller, muted. */
-    .btn.reprocess-all { background: transparent; border-color: transparent; color: var(--muted); font-size: 10px; padding-top: 3px; padding-bottom: 3px; }
-    .btn.reprocess-all:hover    { background: var(--accent-bg); color: var(--accent2); }
-    .btn.reprocess-all:disabled { opacity: .4; cursor: not-allowed; }
+    /* Queue-wide + per-sender reprocess — proper full-width secondary buttons (taller/legible;
+       the old "reprocess all" was a tiny quiet text-link that was easy to miss). Stacked. */
+    .btn.reprocess-scope { background: var(--surface2); border-color: var(--border2); color: var(--muted);
+      font-size: 11px; padding: 7px 10px; text-align: center; width: 100%; }
+    .btn.reprocess-scope:hover    { background: var(--accent-bg); color: var(--accent2); border-color: var(--accent); }
+    .btn.reprocess-scope:disabled { opacity: .4; cursor: not-allowed; }
+    #btn-reprocess-supplier { color: var(--accent2); border-color: var(--accent); }   /* the scoped action reads as primary-ish */
     .btn.stop-batch { flex-shrink:0; color:var(--warn); border-color:var(--warn); font-size:11px; }
     .btn.stop-batch:hover    { background:var(--warn-bg); }
     .btn.stop-batch:disabled { opacity:.4; cursor:not-allowed; }
@@ -924,7 +927,8 @@
       <div id="reprocess-bar">
         <button class="btn reprocess"     id="btn-reprocess" data-help-key="reprocess">&#9654;&#9654; Reprocess</button>
         <button class="btn stop-batch"    id="btn-stop-reprocess" data-help-key="stop-reprocess" style="display:none;">&#9632; Stop</button>
-        <button class="btn reprocess-all" id="btn-reprocess-all" data-help-key="reprocess-all" title="Reprocess every document in the review queue">Reprocess all in queue</button>
+        <button class="btn reprocess-scope" id="btn-reprocess-supplier" data-help-key="reprocess-supplier" style="display:none;" title="Reprocess only the documents from the sender of the document currently open">Reprocess all from this sender</button>
+        <button class="btn reprocess-scope" id="btn-reprocess-all" data-help-key="reprocess-all" title="Reprocess every document in the review queue">Reprocess all in queue</button>
       </div>
       <div id="confirm-config-note" style="display:none;"></div>
       <div id="confirm-issuer-note" style="display:none;"></div>
