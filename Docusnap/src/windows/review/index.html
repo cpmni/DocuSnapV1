@@ -567,7 +567,11 @@
     /* Stacked: full-width primary on top, demoted "Reprocess All" beneath, so the
        long "Reprocess with Learned Data" label fits the 320px panel and the heavy
        queue-wide action reads as clearly secondary (no longer clipped off the edge). */
-    #reprocess-bar { padding: 8px 14px 0; flex-shrink: 0; display: flex; flex-direction: column; gap: 6px; }
+    #reprocess-bar, #reprocess-queue-bar { padding: 8px 14px 0; flex-shrink: 0; display: flex; flex-direction: column; gap: 6px; }
+    #reprocess-queue-bar { padding-bottom: 10px; }
+    /* Section headings that separate "actions for THIS document" from "actions for ALL documents". */
+    .action-group-head { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--muted); margin: 0; padding: 0 1px; }
     .btn.reprocess { color: var(--accent2); border-color: var(--accent); font-size: 11px; }
     .btn.reprocess:hover     { background: var(--accent-bg); }
     .btn.reprocess:disabled  { opacity: .4; cursor: not-allowed; }
@@ -924,17 +928,23 @@
       <div id="fields-scroll"></div>
 
       <div id="reprocess-progress" role="status" aria-live="polite"></div>
+      <!-- Actions for THIS document: re-extract it, then file/delete it (action-bar below). -->
       <div id="reprocess-bar">
+        <div class="action-group-head">This document</div>
         <button class="btn reprocess"     id="btn-reprocess" data-help-key="reprocess">&#9654;&#9654; Reprocess</button>
         <button class="btn stop-batch"    id="btn-stop-reprocess" data-help-key="stop-reprocess" style="display:none;">&#9632; Stop</button>
-        <button class="btn reprocess-scope" id="btn-reprocess-supplier" data-help-key="reprocess-supplier" style="display:none;" title="Reprocess only the documents from the sender of the document currently open">Reprocess all from this sender</button>
-        <button class="btn reprocess-scope" id="btn-reprocess-all" data-help-key="reprocess-all" title="Reprocess every document in the review queue">Reprocess all in queue</button>
       </div>
       <div id="confirm-config-note" style="display:none;"></div>
       <div id="confirm-issuer-note" style="display:none;"></div>
       <div id="action-bar">
         <button class="btn danger" id="btn-delete" data-help-key="delete" title="Delete document">&#128465;</button>
         <button class="btn confirm" id="btn-confirm" disabled data-help-key="confirm">&#10003; Confirm &amp; File</button>
+      </div>
+      <!-- Actions for ALL documents in the review queue (batch reprocessing). -->
+      <div id="reprocess-queue-bar">
+        <div class="action-group-head">All documents in the queue</div>
+        <button class="btn reprocess-scope" id="btn-reprocess-supplier" data-help-key="reprocess-supplier" style="display:none;" title="Reprocess only the documents from the sender of the document currently open">Reprocess all from this sender</button>
+        <button class="btn reprocess-scope" id="btn-reprocess-all" data-help-key="reprocess-all" title="Reprocess every document in the review queue">Reprocess all in queue</button>
       </div>
     </div>
 
