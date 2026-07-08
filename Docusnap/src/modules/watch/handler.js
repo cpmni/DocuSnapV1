@@ -181,6 +181,7 @@ function _poll(db) {
 
   const now  = Date.now();
   const seen = new Set();
+  let newlyStable = 0;
 
   for (const entry of entries) {
     if (!entry.isFile()) continue;
@@ -208,11 +209,18 @@ function _poll(db) {
       case 'stable':
         _log('log', `[watch] file stable for ${STABILITY_DELAY_MS / 1000}s — accepted for processing: ${entry.name}`);
         _queue.push(entry.name);
-        _drainQueue(db);
+        newlyStable++;
         break;
       // 'wait', 'in-flight', 'unchanged-done': nothing to do, no log spam
     }
   }
+
+  // Drain ONCE per poll pass, AFTER the loop — not per file. Draining inside the loop made the
+  // FIRST stable file grab a solo 1-file batch (_inFlight>0 then blocks the rest until it
+  // finishes), so a set that stabilises together never sharded across the workers at once — it
+  // looked single-threaded even on a multi-core box. Batching a pass's stable files into one
+  // drain lets partitionRoundRobin fan the whole set over `processing_concurrency` immediately.
+  if (newlyStable > 0) _drainQueue(db);
 
   // Files that vanished before becoming stable (moved/deleted by something
   // else) — drop their tracking so a later file with the same name is
