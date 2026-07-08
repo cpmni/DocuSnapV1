@@ -45,6 +45,26 @@ const TRUST_MAX_CORRECTIONS  = 0;    // corrections tolerated within the last-W 
 const TRUSTED_FLOOR          = 95;
 const UNTRUSTED_FLOOR        = 100;  // ungraduated scopes keep today's full-confidence-only bar
 
+// FILING-CRITICAL per-field confidence floor. Auto-file must NOT rest on a BLENDED overall
+// confidence that can hide a weak read of a field that DECIDES THE FILENAME (the type's reference
+// and date). A logo@98 + date@98 can lift a reference read@84 to overall 93 — or even 100 — and a
+// wrong reference then files SILENTLY and can't be un-filed. So a PRESENT reference/date value must
+// itself clear this floor (checked at EVERY floor, including 100, because overall is a weighted
+// average that can sit above a genuinely uncertain critical field). Only ever HOLDS a doc for Review
+// — it never files one that wouldn't already — so it cannot cause a wrong auto-file. Reusable across
+// every supplier/layout: it catches the cross-supplier anchor-bleed class (a false-located crop that
+// reads a wrong-but-type-valid neighbour at a visibly lower per-field confidence) even when the
+// learned data itself is mis-taught. Tunable / reversible via the `critical_field_conf_floor`
+// setting (0 = disabled).
+//   Value = 88 (reggie-calibrated). It must be ABOVE the bleed (which reprocesses at conf 87) yet
+//   NOT above the by-design base confidence of a clean critical read: config base_confidence is 90
+//   for invoice_number and 88 for invoice_date (85 for due/po/order dates, which are rarely a ROLE
+//   field). A floor of 90 would over-HOLD a clean, boosted-only-to-88 date read on any supplier
+//   without strong date learning (a real-world usability regression — whole clean batches sent to
+//   Review); 88 catches the 87 bleed while letting the 88/90 base reads through. Raise toward 90 for
+//   extra margin at the cost of more review, or set 0 to disable.
+const CRITICAL_FIELD_FLOOR   = 88;
+
 // Types whose validation pattern genuinely CONSTRAINS the value, so a clean read (no
 // validation_note) is trustworthy on the type alone. Deliberately EXCLUDES 'alphanumeric'
 // (too loose — matches a dictionary word like "Information") and free text, which must fall
@@ -403,7 +423,10 @@ function isAutoFileEligible(db, doc, opts = {}) {
     return { eligible: false, floor: UNTRUSTED_FLOOR, reason: 'no-type' };
   const learning = require('./learning');
   const userThr = parseInt(learning.getSetting(db, 'auto_file_threshold', '100'), 10) || 100;
-  const dtRow = db.prepare('SELECT slug FROM document_types WHERE id = ?').get(doc.document_type_id);
+  // SELECT * (not named role columns) so this is resilient to a minimal test fixture whose
+  // document_types omits ref_field_key/date_field_key — absent → undefined → the critical-field
+  // floor below simply finds no keys and is a no-op.
+  const dtRow = db.prepare('SELECT * FROM document_types WHERE id = ?').get(doc.document_type_id);
   const slug = dtRow && dtRow.slug;
   const t = scopeTrust(db, doc.supplier_name, slug, opts);
   // Graduation is gated by the master switch + a per-scope opt-out (the visible controls). If
@@ -423,6 +446,34 @@ function isAutoFileEligible(db, doc, opts = {}) {
         "SELECT COUNT(*) c FROM extractions WHERE document_id = ? AND ((validation_note IS NOT NULL AND TRIM(validation_note) <> '') OR (corrected_to IS NOT NULL AND TRIM(corrected_to) <> ''))"
       ).get(doc.id).c;
   if (flagged) return { eligible: false, floor, trusted: t.trusted, reason: 'flagged' };
+  // Filing-critical per-field confidence floor (see CRITICAL_FIELD_FLOOR). A PRESENT reference/date
+  // value must itself clear the floor — a blended overall can hide a weak critical read, and the
+  // reference/date decide the filename, so they can't ride an average into a silent auto-file. Applies
+  // at EVERY floor (incl. 100). Empty/absent critical fields are the concern of other gates + Review,
+  // not this one. Data source: opts.extractions (batch/harness) else the DB row.
+  const critFloor = (opts.criticalFieldFloor !== undefined) ? opts.criticalFieldFloor
+    : (parseInt(learning.getSetting(db, 'critical_field_conf_floor', String(CRITICAL_FIELD_FLOOR)), 10) || 0);
+  if (critFloor > 0 && dtRow) {
+    const critKeys = [dtRow.ref_field_key, dtRow.date_field_key].filter(Boolean);
+    if (critKeys.length) {
+      const byKey = new Map();
+      if (opts.extractions) {
+        for (const e of opts.extractions) if (e && e.field_key) byKey.set(e.field_key, e);
+      } else {
+        for (const e of db.prepare('SELECT field_key, display_value, raw_value, confidence FROM extractions WHERE document_id = ?').all(doc.id))
+          byKey.set(e.field_key, e);
+      }
+      for (const k of critKeys) {
+        const e = byKey.get(k);
+        if (!e) continue;                                          // field absent → not this gate's concern
+        const v = String(e.display_value ?? e.raw_value ?? '').trim();
+        if (!v) continue;                                          // empty → handled by Review / other gates
+        const c = (e.confidence == null || e.confidence === '') ? null : Number(e.confidence);
+        if (c != null && !Number.isNaN(c) && c < critFloor)
+          return { eligible: false, floor, trusted: t.trusted, reason: `weak-critical-field:${k}` };
+      }
+    }
+  }
   // Structural safety gate.
   //  • sub-100 (a graduated read filing at the 95 discount) → the FULL gate ALWAYS runs (template +
   //    every valued field verifiable), since the discount is where confidence is lowest.
