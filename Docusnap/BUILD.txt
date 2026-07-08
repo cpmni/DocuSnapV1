@@ -71,12 +71,9 @@ Open a terminal and run:
 Verify:
   py -3.12 -c "import pytesseract, PIL, pypdfium2, requests, imagehash, pypdf, rapidfuzz; print('OK')"
 
-OPTIONAL — RapidOCR full-page OCR engine (beta, opt-in; NOT required):
-  py -3.12 -m pip install -r python_backend\requirements-ocr.txt
-  The app defaults to Tesseract and falls back to it automatically if RapidOCR
-  is absent, so this is only needed to try RapidOCR (Settings -> OCR engine).
-  Bundled PP-OCR models are offline (no download). Adds ~80-180 MB.
-  Full provisioning + offline verification: python_backend\OCR_RUNTIME.md
+Note: full-page OCR is Tesseract ONLY. RapidOCR was removed entirely (2026-07) — there is
+no OCR-engine toggle and no requirements-ocr.txt. If an OLD vendor\python still carries the
+RapidOCR stack, remove it to shed ~80-180 MB (see §3 build-machine note below).
 
 
 ────────────────────────────────────────────────────────────────────────────────
@@ -177,7 +174,7 @@ STEP A — Bundle Python (3.12 — Windows EMBEDDABLE package, NOT a venv):
     >=3.13 wheels; RapidOCR is no longer bundled, so that constraint is lifted — but
     stay on the §1.2 version unless you re-verify the whole backend on a newer one.)
 
-  RapidOCR is NO LONGER BUNDLED (unbundled 2026-07; full code removal follows). The
+  RapidOCR is NO LONGER BUNDLED (unbundled + full code removal done 2026-07, Slice 2). The
   full-page OCR engine ships as TESSERACT ONLY — do NOT pip install requirements-ocr.txt
   into vendor\python. This drops ~80-180 MB from the installer and removes both the manual
   provisioning step and the prebuild guard that could block a release. If a build machine's
