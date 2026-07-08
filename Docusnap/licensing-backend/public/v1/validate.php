@@ -7,12 +7,14 @@
 require __DIR__ . '/../../lib/db.php';
 require __DIR__ . '/../../lib/jws.php';
 require __DIR__ . '/../../lib/ratelimit.php';
+require __DIR__ . '/../../lib/release.php';
 
 const ACTIVE_KID = 'k1';
 
 $body      = read_json_body();
 $productId = isset($body['product_id']) ? trim((string) $body['product_id']) : '';
 $fpHash    = isset($body['fp_hash']) ? strtolower(trim((string) $body['fp_hash'])) : '';
+$channel   = isset($body['channel']) ? (string) $body['channel'] : 'msstore';   // advisory update channel
 
 if ($productId === '' || !preg_match('/^[0-9a-f]{64}$/', $fpHash)) {
     bad_request('product_id and a 64-hex fp_hash are required');
@@ -26,6 +28,10 @@ try {
     // while still bounding scripted abuse.
     $ipHit = rate_hit($pdo, 'validate_ip:' . client_ip(), 120, 3600);
     if (!$ipHit['allowed']) { too_many_requests($ipHit['retry_after']); return; }
+
+    // Advisory update info to piggy-back on the token responses (null when unset / on any error;
+    // release_info() is exception-proof so it can NEVER abort token minting — see lib/release.php).
+    $update = release_info($pdo, $channel);
 
     // Seat-aware: if a bound SEAT exists for this fingerprint, re-issue a fresh
     // seat token (this is what refreshes the 7-day grace for paid users online).
@@ -57,7 +63,7 @@ try {
         send_json(200, ['token' => $token, 'kind' => 'seat', 'state' => $state,
             'entitlement_id' => $entId, 'seat_id' => (int) $seat['seat_id'],
             'seats_total' => $seatsTotal, 'seats_used' => $seatsUsed, 'expires_at' => $expiresAt,
-            'features' => $features]);
+            'features' => $features, 'update' => $update]);
         return;
     }
 
@@ -100,6 +106,7 @@ try {
         'trial_end'      => $row['trial_end'],
         'days_remaining' => $daysRemaining,
         'features'       => $features,
+        'update'         => $update,
     ]);
 } catch (Throwable $e) {
     error_log('validate error: ' . $e->getMessage());

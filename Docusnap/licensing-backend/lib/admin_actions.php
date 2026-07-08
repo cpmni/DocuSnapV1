@@ -394,6 +394,34 @@ function admin_handle_post(PDO $pdo): void
             exit;
         }
 
+        if ($action === 'set_release') {
+            // Advisory "latest release" per channel — feeds the in-app update banner (lib/release.php,
+            // /v1 validate+status). Advisory only: an empty latest_version disables the banner.
+            $channel = (string) ($_POST['channel'] ?? '');
+            if (!in_array($channel, ['msstore', 'nsis'], true)) throw new RuntimeException('Invalid channel.');
+            $latest = trim((string) ($_POST['latest_version'] ?? ''));
+            $url    = trim((string) ($_POST['update_url'] ?? ''));
+            $minSup = trim((string) ($_POST['min_supported_version'] ?? ''));
+            $semver = '/^\d+\.\d+\.\d+$/';
+            if ($latest !== '' && !preg_match($semver, $latest)) throw new RuntimeException('Latest version must be blank or a 3-part version like 2.1.0.');
+            if ($minSup !== '' && !preg_match($semver, $minSup)) throw new RuntimeException('Minimum supported version must be blank or a 3-part version like 2.0.0.');
+            if ($url !== '' && !preg_match('#^(https://|ms-windows-store:)#i', $url)) throw new RuntimeException('Update URL must be blank, an https:// link, or an ms-windows-store: link.');
+            if ($latest !== '' && $url === '') throw new RuntimeException('Set an Update URL when advertising a version (the button needs somewhere to go).');
+            // Upsert the channel row (schema seeds an inert msstore row; nsis may not exist yet).
+            $pdo->prepare(
+                'INSERT INTO releases (channel, latest_version, update_url, min_supported_version, updated_at)
+                 VALUES (?, ?, ?, ?, NOW())
+                 ON DUPLICATE KEY UPDATE latest_version = VALUES(latest_version), update_url = VALUES(update_url),
+                                         min_supported_version = VALUES(min_supported_version), updated_at = NOW()'
+            )->execute([$channel, $latest, $url, ($minSup === '' ? null : $minSup)]);
+            audit_event($pdo, null, null, 'admin.release_set', "channel=$channel latest=" . ($latest === '' ? '(none)' : $latest));
+            flash_set('ok', $latest === ''
+                ? "Update banner for '$channel' is OFF (no version advertised)."
+                : "'$channel' now advertises version $latest — clients see the banner on their next licence check.");
+            header('Location: releases.php');
+            exit;
+        }
+
         flash_set('err', 'Unknown action.');
         header('Location: ' . $back);
         exit;

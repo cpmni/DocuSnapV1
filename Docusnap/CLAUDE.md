@@ -497,6 +497,23 @@ Bump `LEGAL_VERSION` (main.js) + the file's `Version:` header to re-prompt every
 📖 **FULL detail: `docs/licensing.md`** (decideAccess specifics, offline verify order, backend endpoints
 + owner-email-on-trial, admin 2FA/TOTP, config keys, and the Legal gate internals + IPC).
 
+**Update-available banner (slice 1, advisory).** MS Store delivers the actual binary (auto-update on
+relaunch); the app only SIGNALS "a newer version exists." The backend `releases` table (one row per
+channel: `latest_version`/`update_url`/`min_supported_version`) rides the EXISTING `/v1/validate` +
+`/v1/status` responses via `lib/release.php` `release_info()` — UNSIGNED, non-gating, and EXCEPTION-PROOF
+(a failure returns null and can NEVER 500 the token response → no lockout). Client compares `latest_version`
+vs `app.getVersion()` (clean 3-part SemVer in both NSIS + MSIX builds; `buildRev` is never an ordering key)
+CLIENT-SIDE, so the version never leaves the device. `licensing/handler.js` `captureUpdateInfo` (TOTAL — its
+own try/catch, persists to the `update_info` setting, never null-over-good, cannot disturb the gate decision)
++ `resolveUpdateInfo` (garbage-safe) → `get-update-info` IPC + `open-update-url` (scheme-allowlisted
+https/ms-windows-store only). Home dashboard `#dash-update` banner: info-tone, PULL model (mirrors
+refreshTrialBanner), per-version dismissal. **Slice 2 — forced-update** (`min_supported_version`): decideAccess
+sets `gate.forceUpdate` ONLY on a REACHABLE backend's live response (`belowFloor(app.getVersion(), min_supported)`),
+so an offline app is NEVER locked (FAIL-OPEN, eric's hard rule); enterMainApp + the 6h reval timer route a
+forced doc to its OWN lock window (`src/windows/update-lock/`, distinct from the licence lock — Update / Quit
+only; `update-lock-quit` IPC is sender-guarded). Designed with eric/bob/gary; guarded by
+`src/lib/update/test_version.js` (incl. `belowFloor`) + `src/modules/licensing/test_update_info.js`.
+
 ## Detached search client (LAN add-on)
 A separate Electron search/mailbox client runs on other LAN PCs and talks to the core over a TLS `/v1`
 API (`src/modules/api/handler.js`, Node `https`). It is an **entitlement-gated add-on**

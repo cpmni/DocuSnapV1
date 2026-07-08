@@ -145,6 +145,44 @@ function audit(db, action, outcome, targetId, details) {
   } catch { /* audit is best-effort */ }
 }
 
+// ── Advisory update info (slice 1) ── extracted from decideAccess + the get-update-info IPC so
+// both halves are directly unit-testable. Guarded by src/modules/licensing/test_update_info.js.
+
+/**
+ * Persist a WELL-FORMED advisory `update` block to the `update_info` setting. TOTAL by design —
+ * its own try/catch means it can NEVER throw, so a malformed block on the licence-validate path
+ * cannot affect the gate decision. Ignores anything that isn't a `{latest_version:string}` object,
+ * and never writes null over a good stored value (offline/absent keeps the last-known banner).
+ * `min_supported_version` is intentionally NOT read (deferred to a forced-update slice).
+ */
+function captureUpdateInfo(db, updateBlock, now) {
+  try {
+    const upd = updateBlock;
+    if (upd && typeof upd === 'object' && typeof upd.latest_version === 'string' && upd.latest_version.trim()) {
+      setSetting(db, 'update_info', JSON.stringify({
+        latest_version: upd.latest_version.trim(),
+        update_url:     typeof upd.update_url === 'string' ? upd.update_url.trim() : '',
+        checked_at:     now || 0,
+      }));
+    }
+  } catch { /* advisory only — never disturb the caller */ }
+}
+
+/**
+ * Resolve "is a newer version available?" from the stored row vs the running version. Garbage-safe:
+ * a missing/malformed row or unparseable version → { updateAvailable:false }. The url is only
+ * returned when an update is actually available. mustUpdate is NOT computed in slice 1.
+ */
+function resolveUpdateInfo(db, currentVersion) {
+  let info = {};
+  try { info = JSON.parse(getSetting(db, 'update_info', '{}')) || {}; } catch { info = {}; }
+  const latest = typeof info.latest_version === 'string' ? info.latest_version : null;
+  const url    = typeof info.update_url === 'string' ? info.update_url : '';
+  let available = false;
+  try { available = require('../../lib/update/version').isNewer(latest, currentVersion); } catch { available = false; }
+  return { currentVersion, latestVersion: latest, updateAvailable: available, updateUrl: available ? url : null };
+}
+
 function register(ctx) {
   _ctx = ctx;
   const { ipcMain, getDb } = ctx;
@@ -308,6 +346,31 @@ function register(ctx) {
   ipcMain.handle('license-get-enforcement', () => {
     // Enforcement is permanently ON; no env var or setting can relax it.
     return { setting: true, effective: true, envOverride: null, locked: true };
+  });
+
+  // ── Advisory update banner (slice 1) ─────────────────────────────────────────
+  // Resolve "is a newer version available?" from the update_info row the validate path
+  // persisted, comparing the backend's latest_version against THIS build's version. All the
+  // version logic lives here (one place); the renderer just renders. Garbage-safe — a bad
+  // stored row or version string resolves to updateAvailable:false, never a throw. Read-only,
+  // any signed-in user (the Home banner is visible to all roles). mustUpdate is deliberately
+  // NOT computed in slice 1 (forced-update is a later slice).
+  ipcMain.handle('get-update-info', () => {
+    const { app } = require('electron');
+    return resolveUpdateInfo(getDb(), app.getVersion());
+  });
+
+  // Open the update URL the backend supplied — from the stored row, NEVER a renderer-supplied
+  // value, and only when it passes a strict scheme allowlist (the URL is unsigned/untrusted, so
+  // a compromised/mis-typed row must not open an arbitrary target). https + the Store deep-link only.
+  ipcMain.on('open-update-url', async () => {
+    const { shell } = require('electron');
+    let info = {};
+    try { info = JSON.parse(getSetting(getDb(), 'update_info', '{}')) || {}; } catch { return; }
+    const url = typeof info.update_url === 'string' ? info.update_url.trim() : '';
+    if (!/^(https:\/\/|ms-windows-store:)/i.test(url)) return;
+    try { await shell.openExternal(url); }
+    catch { /* e.g. no Store handler on a stripped image — nothing safe to fall back to here */ }
   });
 
   // Toggle the persisted enforcement setting. Admin-only (the Settings window is
@@ -499,7 +562,7 @@ async function decideAccess() {
   // Best-effort online refresh: a fresh signed token restarts the 7-day grace.
   // Short timeout so app startup never blocks on a slow/unreachable backend; a
   // failure here is non-fatal (we fall back to the cached token within grace).
-  let online = false, onlineSeatGrant = false, returnedToken = false;
+  let online = false, onlineSeatGrant = false, returnedToken = false, forceUpdate = false;
   try {
     const gate = createClient({ baseUrl: cfg.base_url, productId: cfg.product_id, transport: _ctx.licenseTransport, timeoutMs: 2500 });
     const res = await gate.validate(fpHash, null);
@@ -511,6 +574,21 @@ async function decideAccess() {
       const c = token.decodeUnverifiedClaims(res.body.token) || {};
       onlineSeatGrant = c.kind === 'seat' && c.state === 'active';
     }
+    // ── Advisory UPDATE info (slice 1) ── captureUpdateInfo is TOTAL (its own try/catch, never
+    // throws) so a malformed `update` block can NEVER touch online/returnedToken/onlineSeatGrant
+    // or the gate decision — a licence must never fail because of an advisory field. It persists
+    // only a well-formed block and never writes null over a good one. See captureUpdateInfo below.
+    captureUpdateInfo(db, res && res.body && res.body.update, now);
+    // ── Forced-update floor (slice 2) ── FAIL-OPEN by construction: forceUpdate can only be set
+    // true HERE, on a REACHABLE backend's live response — an unreachable backend never reaches this
+    // line, so an offline app is NEVER locked (eric's hard rule). True iff the live channel row
+    // declares this build older than min_supported_version. Advisory read only — its own try/catch,
+    // so it can never disturb the licence decision.
+    try {
+      const ms = res && res.body && res.body.update && res.body.update.min_supported_version;
+      const cur = require('electron').app.getVersion();
+      if (require('../../lib/update/version').belowFloor(cur, ms)) forceUpdate = true;
+    } catch { forceUpdate = false; }
   } catch { /* offline — fall back to cached token within grace */ }
 
   // A REACHABLE backend that did NOT affirm an active SEAT for this device is
@@ -548,7 +626,11 @@ async function decideAccess() {
   // or offline), overriding any unsigned JSON. Done here (not in the per-IPC evaluator)
   // so it runs once per access decision.
   if (decision && decision.claims) _syncSignedFeatures(db, decision.claims);
+  // Attach the (live-only) forced-update flag so the main process can route to the update-lock
+  // window. Only ever true after a reachable backend said this build is below min_supported_version.
+  if (decision) decision.forceUpdate = forceUpdate;
   return decision;
 }
 
-module.exports = { register, decideAccess, evaluateCachedAccess, licenseDenied };
+module.exports = { register, decideAccess, evaluateCachedAccess, licenseDenied,
+  captureUpdateInfo, resolveUpdateInfo };

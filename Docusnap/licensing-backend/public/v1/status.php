@@ -6,9 +6,11 @@
 
 require __DIR__ . '/../../lib/db.php';
 require __DIR__ . '/../../lib/ratelimit.php';
+require __DIR__ . '/../../lib/release.php';
 
 $productId = isset($_GET['product_id']) ? trim((string) $_GET['product_id']) : '';
 $fpHash    = isset($_GET['fp_hash']) ? strtolower(trim((string) $_GET['fp_hash'])) : '';
+$channel   = isset($_GET['channel']) ? (string) $_GET['channel'] : 'msstore';
 
 if ($productId === '' || !preg_match('/^[0-9a-f]{64}$/', $fpHash)) {
     bad_request('product_id and a 64-hex fp_hash are required');
@@ -27,12 +29,17 @@ try {
     $sel->execute([$productId, $fpHash]);
     $row = $sel->fetch();
 
+    // Advisory update block (exception-proof; null when unset). Shown alongside the trial
+    // snapshot so the Settings "License Status" view can also surface an available update.
+    $update = release_info($pdo, $channel);
+
     if (!$row || $row['trial_end'] === null) {
         send_json(200, [
             'state'          => 'none',
             'days_remaining' => 0,
             'seats_total'    => null,
             'seats_used'     => null,
+            'update'         => $update,
         ]);
         return;
     }
@@ -49,6 +56,7 @@ try {
         'days_remaining' => $daysRemaining,
         'seats_total'    => null,
         'seats_used'     => null,
+        'update'         => $update,
     ]);
 } catch (Throwable $e) {
     error_log('status error: ' . $e->getMessage());

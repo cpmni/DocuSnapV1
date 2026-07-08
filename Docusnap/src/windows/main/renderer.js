@@ -118,6 +118,7 @@ async function refreshDashboard() {
   renderSetupChecklist(confirmed);
   refreshWatchCard();
   refreshTrialBanner();
+  refreshUpdateBanner();       // advisory "new version available" (pull; hidden unless newer)
   renderDashboardExtra();      // auto-file % · storage · backup · search clients
   applyDashboardCardPrefs();   // re-assert user hide/show after the cards re-render
 }
@@ -362,6 +363,32 @@ async function refreshTrialBanner() {
 document.getElementById('dash-open-review')?.addEventListener('click', () => window.docusnap.openReviewWindow());
 document.getElementById('dash-go-import')?.addEventListener('click', () => showView('import'));
 document.getElementById('dash-open-search')?.addEventListener('click', () => window.docusnap.openSearchWindow());
+
+// ── Update-available banner (advisory; PULL model, mirroring refreshTrialBanner) ──────────
+// Shows only when the backend advertises a newer version AND it hasn't been dismissed for THAT
+// version (a later release re-surfaces the banner). Info tone; the Store (or installer) does the
+// actual update. Fully guarded — any failure just hides the banner.
+async function refreshUpdateBanner() {
+  const el = document.getElementById('dash-update');
+  if (!el) return;
+  let info = null;
+  try { info = await window.docusnap.getUpdateInfo(); } catch { info = null; }
+  const dismissed = info && localStorage.getItem('update_dismissed_version') === info.latestVersion;
+  const show = !!(info && info.updateAvailable && !dismissed);
+  el.style.display = show ? '' : 'none';
+  if (show) {
+    el.dataset.latest = info.latestVersion;
+    const t = document.getElementById('dash-update-text');
+    if (t) t.textContent = `Version ${info.latestVersion} is ready — it installs the next time you restart Scan Finder.`;
+  }
+}
+document.getElementById('dash-update-btn')?.addEventListener('click', () => window.docusnap.openUpdateUrl());
+document.getElementById('dash-update-dismiss')?.addEventListener('click', () => {
+  const el = document.getElementById('dash-update');
+  if (el && el.dataset.latest) localStorage.setItem('update_dismissed_version', el.dataset.latest);
+  if (el) el.style.display = 'none';
+});
+refreshUpdateBanner();
 
 // ── Dashboard card customisation (Settings → Home dashboard) ───────────────────
 // A user-hidden card gets .card-hidden (display:none !important), which overrides each card's
@@ -611,6 +638,7 @@ const HELP_TEXTS = {
   'settings':      'Document types, fields, folders and preferences (admin).',
   'teach':         'Guide Scan Finder, step by step, to learn a new document layout.',
   'user-guide':    'Open the full user guide.',
+  'update':        'A newer version of Scan Finder is available. It installs automatically the next time you restart; this just lets you know. Your documents and settings stay on your PC.',
   'account':       'Your account — change password, switch theme, see About, or sign out.',
   'clock':         'Today’s date and the current time.',
   'local-only':    'Everything runs on this PC — no documents are uploaded or sent anywhere.',
