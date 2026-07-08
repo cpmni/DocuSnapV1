@@ -31,6 +31,7 @@ def ocr_image(img: Image.Image, config: str = "--oem 3 --psm 3") -> str:
 # segmentation drops (see reconstruct_page_text). Confidence-gated so only clean words are merged.
 _SUPP_CONFIG   = "--oem 3 --psm 6"
 _SUPP_MIN_CONF = 50
+_RENDER_DPI    = 300               # PDF pages are rasterised at this DPI; told to Tesseract via --dpi
 
 
 def _words_from_data(data) -> list:
@@ -67,7 +68,66 @@ def _center_in_any(word, boxes) -> bool:
     return False
 
 
-def reconstruct_page_text(img: Image.Image, config: str = "--oem 3 --psm 3") -> str:
+def _with_dpi(cfg: str, dpi) -> str:
+    """Append '--dpi N' to a Tesseract config when the render DPI is known. A rendered bitmap
+    carries NO DPI metadata, so Tesseract GUESSES (~70) and mis-scales its page analysis — at 300
+    DPI that silently drops sparse right-column header cells (a scanned invoice's 'Invoice Date …'
+    row read EMPTY even though the words are plainly printed and recognised at 200 DPI). Telling it
+    the true DPI restores recognition. No-op when dpi is falsy → byte-identical to before."""
+    try:
+        return f"{cfg} --dpi {int(dpi)}" if dpi else cfg
+    except (TypeError, ValueError):
+        return cfg
+
+
+def _group_words_into_lines(words, med_h) -> list:
+    """Group image_to_data words into reading LINES by visual row, then order columns within each
+    row (a label and its far-right value on the SAME physical row stay on one line; a wide intra-row
+    x-gap emits a 4-space column break so keyword.py's column-split still separates real columns).
+
+    Two-pass clustering with a FROZEN row anchor + NEAREST-of-all-rows assignment (oscar). The old
+    single-pass grouping compared only the LAST row and let each row's bbox GROW unbounded, so on a
+    two-column layout whose columns interleave in the global y-sort the outcome depended on visiting
+    order — a sub-pixel y shift at one DPI vs another flipped which words landed together and a whole
+    key/value row could be scattered across lines. Here each word joins the nearest EXISTING row
+    within a med_h-relative band measured against the row's frozen seed box/centre (never a grown
+    bbox, never a drifting mean), so it's order-independent and DPI-stable. Pure — no Tesseract call;
+    guarded by tests/test_ocr_engine.py."""
+    if not words:
+        return []
+    col_gap = max(med_h * 1.5, 12)    # x-gap wide enough to be a column break (4-space)
+    cap     = max(med_h * 1.2, 10)    # centres farther than this = DIFFERENT rows (hard backstop)
+    band    = max(med_h * 0.6, 6)     # within this of a row's FROZEN centre = same row (OR clause)
+    rows = []                          # each: {top, bot, yc, words}; top/bot/yc FROZEN at the seed
+    for wd in sorted(words, key=lambda w: w[1] + w[3] / 2.0):   # deterministic top-to-bottom
+        top_w, bot_w = wd[1], wd[1] + wd[3]
+        yc = wd[1] + wd[3] / 2.0
+        best, best_d = None, None
+        for r in rows:                                          # search ALL rows, pick the nearest
+            overlap = min(bot_w, r["bot"]) - max(top_w, r["top"])
+            shorter = min(wd[3], r["bot"] - r["top"]) or 1
+            d = abs(yc - r["yc"])
+            if (overlap >= 0.3 * shorter or d <= band) and d <= cap:
+                if best is None or d < best_d:
+                    best, best_d = r, d
+        if best is None:
+            rows.append({"top": top_w, "bot": bot_w, "yc": yc, "words": [wd]})
+        else:
+            best["words"].append(wd)                            # reference stays FROZEN
+    rows.sort(key=lambda r: r["yc"])
+    lines = []
+    for r in rows:
+        row_ws = sorted(r["words"], key=lambda w: w[0])         # left-to-right within the row
+        out = [row_ws[0][4]]
+        for a, b in zip(row_ws, row_ws[1:]):
+            gap = b[0] - (a[0] + a[2])
+            out.append("    " if gap > col_gap else " ")
+            out.append(b[4])
+        lines.append("".join(out))
+    return lines
+
+
+def reconstruct_page_text(img: Image.Image, config: str = "--oem 3 --psm 3", dpi=None) -> str:
     """Full-page OCR text with reading lines rebuilt from word GEOMETRY.
 
     Tesseract's page segmentation (the plain image_to_string in ocr_image) treats a wide
@@ -93,15 +153,16 @@ def reconstruct_page_text(img: Image.Image, config: str = "--oem 3 --psm 3") -> 
     OCR pass per SCANNED page only (born-digital never reaches here); best-effort, so a failure
     leaves the PSM-3 result untouched — it can never read worse. (oscar's sparse-column diagnosis.)
     """
+    main_cfg = _with_dpi(config, dpi)
     try:
-        data = pytesseract.image_to_data(img, config=config, output_type=pytesseract.Output.DICT)
+        data = pytesseract.image_to_data(img, config=main_cfg, output_type=pytesseract.Output.DICT)
     except Exception:
         return ocr_image(img, config)
     words = _words_from_data(data)
     if not words:
         return ""
     try:
-        supp = pytesseract.image_to_data(img, config=_SUPP_CONFIG, output_type=pytesseract.Output.DICT)
+        supp = pytesseract.image_to_data(img, config=_with_dpi(_SUPP_CONFIG, dpi), output_type=pytesseract.Output.DICT)
         boxes = [(w[0], w[1], w[2], w[3]) for w in words]
         for sw in _words_from_data(supp):
             if sw[5] >= _SUPP_MIN_CONF and any(ch.isalnum() for ch in sw[4]) \
@@ -111,41 +172,7 @@ def reconstruct_page_text(img: Image.Image, config: str = "--oem 3 --psm 3") -> 
         pass   # supplementary recovery is additive-only; never break the PSM-3 result
     heights = sorted(wd[3] for wd in words if wd[3] > 0)
     med_h = heights[len(heights) // 2] if heights else 10
-    col_gap = max(med_h * 1.5, 12)    # x-gap wide enough to be a column break (4-space)
-    cap = max(med_h * 1.2, 10)        # centres this far apart are DIFFERENT rows even if boxes overlap
-    words.sort(key=lambda wd: wd[1] + wd[3] / 2.0)   # top-to-bottom by y-centre
-    # Group into VISUAL ROWS by vertical OVERLAP, not centre proximity. A bold/larger label
-    # (a "Total:" row set heavier than the line items) has a taller box whose y-centre can sit
-    # more than the old 0.8*med_h from its normal-weight value, so centre-distance banding split
-    # the label from its value onto two lines and the totals never paired with their labels
-    # (oscar's diagnosis of the empty-Total case). Two words on the SAME physical row overlap
-    # vertically regardless of font weight; two adjacent rows barely overlap. The centre-distance
-    # `cap` is a backstop so genuinely-tight separate lines can't be over-merged.
-    rows = []                                          # each: [top, bottom, sum_yc, n, [words]]
-    for wd in words:
-        top_w, bot_w = wd[1], wd[1] + wd[3]
-        yc = wd[1] + wd[3] / 2.0
-        placed = False
-        if rows:
-            r = rows[-1]
-            overlap = min(bot_w, r[1]) - max(top_w, r[0])
-            shorter = min(wd[3], r[1] - r[0]) or 1
-            if overlap >= 0.3 * shorter and abs(yc - r[2] / r[3]) <= cap:
-                r[0] = min(r[0], top_w); r[1] = max(r[1], bot_w)
-                r[2] += yc; r[3] += 1; r[4].append(wd)
-                placed = True
-        if not placed:
-            rows.append([top_w, bot_w, yc, 1, [wd]])
-    lines = []
-    for _t, _b, _sum, _n, ws in rows:
-        ws.sort(key=lambda wd: wd[0])                  # left-to-right within the row
-        out = [ws[0][4]]
-        for a, b in zip(ws, ws[1:]):
-            gap = b[0] - (a[0] + a[2])
-            out.append("    " if gap > col_gap else " ")
-            out.append(b[4])
-        lines.append("".join(out))
-    return "\n".join(lines)
+    return "\n".join(_group_words_into_lines(words, med_h))
 
 
 def pdf_to_images(filepath: Path, dpi: int = 300) -> list[Image.Image]:
@@ -310,7 +337,7 @@ def extract_text_and_images(
         doc = pdfium.PdfDocument(str(filepath))
         try:
             for page in doc:
-                img = page.render(scale=300 / 72).to_pil()
+                img = page.render(scale=_RENDER_DPI / 72).to_pil()
                 # AUTO-ROTATE a sideways/upside-down page (first import only — reprocess re-renders
                 # the already-corrected working copy, so it's gated off under use_cache). Born-digital
                 # pages are upright by construction and skipped. Rotates the image BEFORE OCR + the
@@ -345,7 +372,7 @@ def extract_text_and_images(
                 if layer_text is not None:
                     texts.append(layer_text)
                 elif not use_cache:                 # scanned page, fresh run -> OCR it
-                    texts.append(engine.read_page(img, enhance_params))
+                    texts.append(engine.read_page(img, enhance_params, dpi=_RENDER_DPI))
                 else:                               # scanned page under use_cache -> honour cache
                     all_fresh = False
                 try: page.close()
@@ -355,11 +382,20 @@ def extract_text_and_images(
             except Exception: pass
     else:
         img = Image.open(filepath)
+        _idpi = None                              # honour a raster's own DPI so Tesseract scales right
+        try:
+            _d = img.info.get("dpi")
+            if _d:
+                _idpi = int(round(_d[0] if isinstance(_d, (tuple, list)) else _d))
+        except Exception:
+            _idpi = None
+        if not _idpi or _idpi < 72:               # unknown / implausible -> assume the standard render DPI
+            _idpi = _RENDER_DPI
         if img.mode not in ("RGB", "L"):
             img = img.convert("RGB")
         pages = [img]
         if not use_cache:
-            texts.append(engine.read_page(img, enhance_params))
+            texts.append(engine.read_page(img, enhance_params, dpi=_idpi))
         else:
             all_fresh = False   # a raster image has no text layer -> honour the OCR cache
 

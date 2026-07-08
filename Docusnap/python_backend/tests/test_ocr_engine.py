@@ -55,7 +55,7 @@ class SpyEngine:
     """Records read_page calls; returns a fixed marker (no real OCR)."""
     name = "spy"
     def __init__(self): self.calls = 0
-    def read_page(self, img, enhance_params=None):
+    def read_page(self, img, enhance_params=None, dpi=None):
         self.calls += 1
         return "SPY"
 
@@ -80,7 +80,7 @@ with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
 # ── 6. default (engine=None) is the Tesseract path -> reconstruct_page_text ───────
 with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
     png = _png(td)
-    tess_mod.reconstruct_page_text = lambda img, config="--oem 3 --psm 3": "DEFAULT-TESS"
+    tess_mod.reconstruct_page_text = lambda img, config="--oem 3 --psm 3", dpi=None: "DEFAULT-TESS"
     try:
         text, _pages = tess_mod.extract_text_and_images(png, None)   # no engine arg
         check("default engine routes through Tesseract reconstruct_page_text", text == "DEFAULT-TESS")
@@ -159,6 +159,37 @@ try:
           len(_total) == 1 and "$396.12" in _total[0])
 finally:
     _pt.image_to_data = _orig_i2d
+
+# ── 10c. grouping: an interleaved TWO-COLUMN header keeps each key/value paired ───────
+#   The scanned-invoice row-drop class: a right-column "Invoice Date <value>" row whose LEFT
+#   neighbour is an address block interleaving in y. Asserted at 1.0x (~200 DPI) AND 1.5x (~300
+#   DPI) geometry to prove the grouping is DPI-STABLE (the old greedy grouping flipped by DPI).
+def _interleaved_header(s):
+    def w(l, t, wd, h, txt): return (int(l * s), int(t * s), int(wd * s), int(h * s), txt, 96)
+    return [
+        w(60, 100, 80, 20, "Invoice"), w(150, 100, 20, 20, "To"),                                  # left
+        w(550, 100, 80, 20, "Invoice"), w(640, 100, 30, 20, "No."), w(750, 100, 70, 20, "152577"), # right row 1
+        w(60, 145, 70, 20, "574-576"), w(140, 145, 50, 20, "Road"),                                # left (interleaves)
+        w(550, 150, 80, 20, "Invoice"), w(640, 150, 40, 20, "Date"), w(750, 150, 90, 20, "26/02/2026"),  # right row 2
+        w(60, 195, 60, 20, "Belfast"),                                                             # left
+        w(550, 200, 50, 20, "Order"), w(610, 200, 10, 20, "#"),                                    # right row 3
+    ]
+for _s in (1.0, 1.5):
+    _lines = tess_mod._group_words_into_lines(_interleaved_header(_s), int(20 * _s))
+    _paired = [l for l in _lines if "Invoice Date" in l and "26/02/2026" in l]
+    check(f"grouping: interleaved header keeps Invoice Date + value on ONE line (scale {_s})",
+          len(_paired) == 1)
+    check(f"grouping: invoice number also paired on its own line (scale {_s})",
+          any("Invoice No." in l and "152577" in l for l in _lines))
+
+# ── 10d. over-merge guard: two tightly-spaced single-column lines stay TWO lines ──────
+_two = [(100, 100, 60, 20, "LineOne", 96), (100, 132, 60, 20, "LineTwo", 96)]   # centres 110 vs 142 > cap
+check("grouping: two close single-column lines are NOT glued into one",
+      len(tess_mod._group_words_into_lines(_two, 20)) == 2)
+
+# ── 10e. _with_dpi: append the render DPI so Tesseract scales right (the recognition fix) ──
+check("_with_dpi appends the render DPI", tess_mod._with_dpi("--psm 3", 300) == "--psm 3 --dpi 300")
+check("_with_dpi is a no-op when DPI is unknown", tess_mod._with_dpi("--psm 3", None) == "--psm 3")
 
 # ── 8. leak-prevention: crop/zone/anchor/landmark paths don't import the seam ─────
 for rel in ("ocr/region.py", "ocr/landmarks.py", "ocr/text_enhance.py",

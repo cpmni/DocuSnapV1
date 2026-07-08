@@ -27,14 +27,15 @@ class TesseractEngine:
     """Full-page OCR via Tesseract."""
     name = "tesseract"
 
-    def read_page(self, img, enhance_params=None):
+    def read_page(self, img, enhance_params=None, dpi=None):
         # Lazy import to avoid any import cycle with ocr.tesseract. Full-page text is
         # rebuilt from word GEOMETRY (reconstruct_page_text) so a right-aligned totals
         # value stays on its label's line instead of being stranded in a separate column
         # by Tesseract's page segmentation — see reconstruct_page_text. Falls back to
-        # ocr_image on any error.
+        # ocr_image on any error. `dpi` (the render/scan DPI) is passed to Tesseract so it
+        # doesn't guess the scale and drop sparse cells at 300 DPI — see _with_dpi.
         from ocr.tesseract import reconstruct_page_text, preprocess_for_ocr
-        return reconstruct_page_text(preprocess_for_ocr(img, enhance_params))
+        return reconstruct_page_text(preprocess_for_ocr(img, enhance_params), dpi=dpi)
 
 
 def get_engine(name=None, *, probe=True, use_cls=True, intra_op_num_threads=None):
