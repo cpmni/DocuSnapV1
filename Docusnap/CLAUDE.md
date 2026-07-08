@@ -691,6 +691,16 @@ license-state(gate)                    # pushed to the license window with the b
 
 ## Known bugs (fix these first)
 
+### ⛔ OPEN + CRITICAL (2026-07-08) — real-doc harness RED: 57 regressions + M=1. READ `HANDOVER_2026-07-08.md` FIRST.
+`stress_test/realdoc_regression.js` on the live DB reports 57 regressions (42 silent) + **M=1**
+(#404 would auto-file a WRONG ref+date — must be 0). invoice_ref reads collapse to fragments/labels
+on the synthetic suppliers (City Office `152567→'1/2'`, Cloud VPS `122786→'6102'`, Anconia
+`179914→null`). User: "most of these docs used to process." NOT yet isolated: probably POLLUTED
+LEARNED DATA (invoice_number anchors/templates mis-taught during the session), vs the unmerged
+`fix/ocr-multicol-precedence` branch code. **Do the baseline-vs-branch harness comparison in the
+handover BEFORE building/merging that branch.** Unmerged branches: `feat/review-import-activity`
+(built r20260708-2024), `fix/ocr-multicol-precedence` (not built). See `HANDOVER_2026-07-08.md`.
+
 ### FIXED (residual noted) — cross-supplier POSITIONAL anchor bleed (2026-07-06)
 A ⊕-taught AUTHORITATIVE anchor for a POSITIONAL field (e.g. `invoice_number`) was applied ACROSS
 suppliers: `_anchor_matches` admits it on doc-type match, `_filter_anchors` ranks authoritative teaches
