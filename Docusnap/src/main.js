@@ -299,7 +299,14 @@ async function enterMainApp() {
 function showUpdateLockWindow() {
   stopLicenseRevalidation();
   const win = createWindow('update-lock', LICENSE_WINDOW_OPTIONS, 'index.html');
-  Object.keys(windows).forEach((name) => { if (name !== 'update-lock') windows[name]?.close(); });
+  // DESTROY every other window (not .close() — closeToTray would intercept that into a hidden but
+  // still-reachable main shell, letting the forced-update lock be defeated by "Open ScanFinder"
+  // from the tray). update-lock is deliberately NOT a PRIMARY_WINDOW: like the legal gate, closing
+  // it with the X quits — there is no path forward without updating.
+  Object.keys(windows).forEach((name) => { if (name !== 'update-lock') destroyWindow(name); });
+  try {
+    win?.on('close', () => { if (!isQuitting && !win._allowClose) { isQuitting = true; app.quit(); } });
+  } catch {}
   return win;
 }
 
@@ -420,7 +427,10 @@ const NON_MODAL_CHILD = new Set(['dev-inspector', 'review', 'settings', 'search'
 // Top-level "primary" windows that hide to the tray on a user close (the app then
 // fully quits ONLY via tray Exit). Their programmatic transitions destroy them
 // via destroyWindow(). Child windows close normally.
-const PRIMARY_WINDOWS = new Set(['login', 'license', 'onboarding', 'main', 'update-lock']);
+// update-lock is intentionally NOT here: a forced-update lock must never hide-to-tray into a
+// headless, unrecoverable-yet-still-running state (and it manages its own close=quit handler,
+// like the legal gate). The rest hide-to-tray so the core keeps running for watch/clients.
+const PRIMARY_WINDOWS = new Set(['login', 'license', 'onboarding', 'main']);
 
 const winStateFile = () => path.join(app.getPath('userData'), 'window-state.json');
 function loadWinStates() { try { return JSON.parse(fs.readFileSync(winStateFile(), 'utf8')); } catch { return {}; } }
@@ -583,6 +593,9 @@ async function trayGateAllows() {
   let gate;
   try { gate = await licensingModule.decideAccess(); }
   catch { gate = { decision: 'locked_needs_online', reason: 'gate_error' }; }
+  // A forced-update verdict must lock even when the LICENCE itself is fine (fail-open leaves
+  // decision 'allow' but forceUpdate true) — check it FIRST so a tray reveal can't slip past.
+  if (gate && gate.forceUpdate) { showUpdateLockWindow(); return false; }
   if (gate && gate.decision === 'allow') return true;
   showLicenseWindow(gate || { decision: 'locked' });
   return false;
