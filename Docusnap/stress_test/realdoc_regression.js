@@ -52,6 +52,10 @@ function snap(db) {
   // Ablation: NO_IDENTITY_ANCHORS=1 drops supplier_name/customer_name anchors — proves whether
   // an identity anchor (which is supplier-specific) is helping or hurting when swept cross-supplier.
   if (process.env.NO_IDENTITY_ANCHORS) anchors = anchors.filter(a => !['supplier_name', 'customer_name'].includes(a.field_key));
+  // DROP_MISTAUGHT=1 simulates removing the end-of-session mis-taught AUTHORITATIVE invoice_number
+  // anchor (Cloud VPS, label "Invoice") WITHOUT touching the live DB — proves it is the root cause
+  // of the cross-supplier bleed (City Office 1828987, etc.).
+  if (process.env.DROP_MISTAUGHT) anchors = anchors.filter(a => !(a.field_key === 'invoice_number' && String(a.last_authoritative_at || '').trim()));
   return { args: [
     '--fields-file', w('f', dts.flatMap(d => d.fields)),
     '--hints-file', w('h', safe(() => learning.getHints(db), [])),
@@ -134,6 +138,7 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
         field_key: k,
         display_value: (e && typeof e === 'object') ? e.value : e,
         validation_note: (e && typeof e === 'object') ? e.validation_note : null,
+        confidence: (e && typeof e === 'object') ? e.confidence : null,
       }));
       const fakeDoc = { id: g.id, supplier_name: m.supplier_name, document_type_id: detId, overall_confidence: m.overall_confidence };
       try { wouldFile = trust.isAutoFileEligible(db, fakeDoc, { extractions: rex }).eligible; } catch {}
