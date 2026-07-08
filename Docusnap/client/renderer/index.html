@@ -532,6 +532,11 @@
       background:var(--surface); color:var(--text); font-size:14px; font-family:inherit; }
     .rv-fld.req-empty input { border-color:var(--err); }
     .rv-fld .fwarn { font-size:11px; color:var(--warn); }
+    /* A field the host flagged for review (validation_note) — tint the row so the reviewer
+       sees WHICH field to check; the ⚠ .note line below it says why. */
+    .rv-fld.fld-warn > label { color:var(--warn); }
+    .rv-fld.fld-warn input { border-color:var(--warn); }
+    .rv-fld-conf { float:right; font-weight:400; }
     /* Correction-only targeting: per-field "read from the document" button + draw box */
     .rv-fld-row { display:flex; align-items:stretch; gap:6px; }
     .rv-fld-row input { flex:1; min-width:0; }

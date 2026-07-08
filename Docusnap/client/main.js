@@ -221,14 +221,20 @@ ipcMain.handle('client-config',       () => ({ apiUrl: serverConfig ? urlOf(serv
 ipcMain.handle('client-connect',      () => client ? client.connect() : { ok: false, mode: 'block', reason: 'No server configured.' });
 ipcMain.handle('client-login',        async (_e, { username, password, totp }) => {
   if (!client) return { ok: false, error: 'No server configured.' };
-  const r = await client.login(username, password, totp);
+  // A network hiccup at login (DNS/TLS/timeout) used to REJECT the invoke, leaving the
+  // Sign-in button doing nothing with no message. Mirror client-set-server: turn a thrown
+  // transport error into a normal { ok:false, error } the renderer already renders.
+  let r;
+  try { r = await client.login(username, password, totp); }
+  catch (e) { return { ok: false, error: (e && e.message) || 'Could not reach the server.' }; }
   if (client.isAuthenticated()) startHeartbeat();   // watch the connection for this session
   return r;
 });
 ipcMain.handle('client-logout',       () => { stopHeartbeat(); pageCache.clear(); return client ? client.logout() : { ok: true }; });
 ipcMain.handle('client-change-password', async (_e, { currentPassword, newPassword } = {}) => {
   if (!client) return { ok: false, error: 'Not connected to a server.' };
-  return client.changePassword(currentPassword, newPassword);
+  try { return await client.changePassword(currentPassword, newPassword); }
+  catch (e) { return { ok: false, error: (e && e.message) || 'Could not reach the server.' }; }
 });
 ipcMain.handle('client-entitlement',  () => client ? client.entitlement() : { status: 0, json: null });
 ipcMain.handle('client-search',       guarded((_e, params) => client.search(params)));

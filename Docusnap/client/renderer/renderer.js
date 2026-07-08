@@ -282,8 +282,10 @@ $('login-btn').addEventListener('click', async () => {
   const totp = $('totp').value.trim() || undefined;
   if (!username || !password) { $('login-err').textContent = 'Enter username and password.'; return; }
 
-  const r = await api.login(username, password, totp);
-  if (r.ok) {
+  let r;
+  try { r = await api.login(username, password, totp); }
+  catch (e) { $('login-err').textContent = (e && e.message) || 'Could not reach the server.'; return; }
+  if (r && r.ok) {
     role = r.user.role;
     $('nav-recycle').style.display = canDecide() ? '' : 'none';   // delete/restore is Admin/Edit
     $('nav-review').style.display  = canDecide() ? '' : 'none';   // review/file is Admin/Edit
@@ -595,7 +597,8 @@ async function openReviewDoc(id) {
   fpanel.innerHTML = ''; fpanel.appendChild(wrap);
 
   const vals = {};
-  for (const e of (doc.extractions || [])) vals[e.field_key] = e.display_value || '';
+  const exByKey = {};
+  for (const e of (doc.extractions || [])) { vals[e.field_key] = e.display_value || ''; exByKey[e.field_key] = e; }
   if (!vals.supplier_name && doc.supplier_name) vals.supplier_name = doc.supplier_name;
 
   const sel = wrap.querySelector('#rv-type');
@@ -603,7 +606,7 @@ async function openReviewDoc(id) {
     const o = document.createElement('option'); o.value = t.slug; o.textContent = t.name;
     if (t.slug === doc.type_slug) o.selected = true; sel.appendChild(o);
   }
-  const renderFor = (slug) => renderReviewFields(wrap, types.find((t) => t.slug === slug) || null, vals);
+  const renderFor = (slug) => renderReviewFields(wrap, types.find((t) => t.slug === slug) || null, vals, exByKey);
   sel.addEventListener('change', () => renderFor(sel.value));
   renderFor(sel.value || doc.type_slug);
 
@@ -628,7 +631,7 @@ async function openReviewDoc(id) {
   for (const src of imgs) { const im = document.createElement('img'); im.src = src; pagesEl.appendChild(im); }
 }
 
-function renderReviewFields(wrap, type, vals) {
+function renderReviewFields(wrap, type, vals, exByKey = {}) {
   const c = wrap.querySelector('#rv-fields');
   if (!c) return;
   c.innerHTML = '';
@@ -637,7 +640,14 @@ function renderReviewFields(wrap, type, vals) {
   for (const f of fields) {
     const div = document.createElement('div'); div.className = 'rv-fld';
     const cur = vals[f.key] != null ? vals[f.key] : '';
-    div.innerHTML = `<label>${esc(f.label || f.key)}${f.required ? ' <span class="req">*</span>' : ''}</label>`;
+    const ex  = exByKey[f.key] || null;
+    // Surface the SAME per-field signal the Search preview shows (the host DTO already carries
+    // confidence + validation_note) so a remote reviewer can see WHICH field triggered review
+    // and WHY — not just an unexplained queue entry. A validation_note tints the row + prints a
+    // ⚠ line; the confidence pip reuses the shared confPip helper.
+    const pip = ex && ex.confidence != null ? confPip(ex.confidence) : '';
+    div.innerHTML = `<label>${esc(f.label || f.key)}${f.required ? ' <span class="req">*</span>' : ''}${pip ? ` <span class="rv-fld-conf">${pip}</span>` : ''}</label>`;
+    if (ex && ex.validation_note) div.classList.add('fld-warn');
     const inp = document.createElement('input');
     inp.type = 'text'; inp.value = cur; inp.dataset.key = f.key; inp.dataset.orig = cur;
     if (f.required && !cur) div.classList.add('req-empty');
@@ -650,6 +660,11 @@ function renderReviewFields(wrap, type, vals) {
     tbtn.addEventListener('click', () => rvArmTarget(inp));
     row.appendChild(tbtn);
     div.appendChild(row);
+    if (ex && ex.validation_note) {
+      const note = document.createElement('div'); note.className = 'note';
+      note.textContent = `⚠ ${ex.validation_note}`;
+      div.appendChild(note);
+    }
     c.appendChild(div);
   }
 }
