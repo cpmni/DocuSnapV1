@@ -50,6 +50,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   // backend-supplied update URL (validated main-side against a scheme allowlist).
   getUpdateInfo:         ()   => ipcRenderer.invoke('get-update-info'),
   openUpdateUrl:         ()   => ipcRenderer.send('open-update-url'),
+  updateLockQuit:        ()   => ipcRenderer.send('update-lock-quit'),   // forced-update lock: Quit
   // Manual "re-check licence now": runs the authoritative gate (re-validate) and locks the
   // app if the licence was revoked/expired server-side. Returns the gate decision.
   licenseRecheck:        ()   => ipcRenderer.invoke('license-recheck'),

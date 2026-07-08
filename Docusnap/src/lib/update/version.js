@@ -55,4 +55,14 @@ function isNewer(latest, current) {
   return _parse(latest) != null && compareVersions(latest, current) > 0;
 }
 
-module.exports = { compareVersions, isNewer, _parse };
+/**
+ * True iff `current` is a clean version STRICTLY BELOW a clean `minSupported` floor — the
+ * forced-update predicate. FAIL-SAFE: a blank/absent/garbage floor (or version) → false, so a
+ * missing or malformed `min_supported_version` can never force a lock. Never throws.
+ */
+function belowFloor(current, minSupported) {
+  if (minSupported == null || String(minSupported).trim() === '') return false;
+  return _parse(current) != null && _parse(minSupported) != null && compareVersions(current, minSupported) < 0;
+}
+
+module.exports = { compareVersions, isNewer, belowFloor, _parse };

@@ -279,6 +279,10 @@ async function enterMainApp() {
   try { gate = await licensingModule.decideAccess(); }
   catch (e) { logger.err('licensing gate error (failing closed): ' + e.message); gate = { decision: 'locked_needs_online', reason: 'gate_error' }; }
   if (gate.decision === 'allow') {
+    // Forced-update floor (slice 2): a REACHABLE backend reported this build below the channel's
+    // min_supported_version. Fail-open — gate.forceUpdate is only ever true on a live verdict, so
+    // an offline app never lands here. Its own lock window (NOT the licence one).
+    if (gate.forceUpdate) { showUpdateLockWindow(); return; }
     // Terms acceptance is enforced HERE, in the main process (never renderer-only),
     // after the licence gate and before onboarding/shell — so it can't be bypassed.
     if (!termsAccepted()) { showLegalGate(); return; }
@@ -287,6 +291,16 @@ async function enterMainApp() {
     return;
   }
   showLicenseWindow(gate);
+}
+
+// The forced-update lock — shown ONLY when a reachable backend declared this build older than the
+// channel's min_supported_version. A DISTINCT window/verdict from the licence lock (different copy +
+// recovery: Update or Quit, never "activate"). Mirrors showLicenseWindow's teardown.
+function showUpdateLockWindow() {
+  stopLicenseRevalidation();
+  const win = createWindow('update-lock', LICENSE_WINDOW_OPTIONS, 'index.html');
+  Object.keys(windows).forEach((name) => { if (name !== 'update-lock') windows[name]?.close(); });
+  return win;
 }
 
 function showLicenseWindow(gate) {
@@ -326,6 +340,9 @@ function startLicenseRevalidation() {
     if (gate && gate.decision !== 'allow') {
       logger?.warn?.(`periodic licence re-check: ${gate.decision} (${gate.reason}) — locking`);
       showLicenseWindow(gate);                       // stops the timer + swaps to the license window
+    } else if (gate && gate.forceUpdate) {
+      logger?.warn?.('periodic re-check: build below the supported floor — locking to update');
+      showUpdateLockWindow();                         // reachable backend said this version is too old
     }
   }, LICENSE_REVALIDATE_MS);
   if (_revalTimer.unref) _revalTimer.unref();        // don't keep the event loop alive on its own
@@ -403,7 +420,7 @@ const NON_MODAL_CHILD = new Set(['dev-inspector', 'review', 'settings', 'search'
 // Top-level "primary" windows that hide to the tray on a user close (the app then
 // fully quits ONLY via tray Exit). Their programmatic transitions destroy them
 // via destroyWindow(). Child windows close normally.
-const PRIMARY_WINDOWS = new Set(['login', 'license', 'onboarding', 'main']);
+const PRIMARY_WINDOWS = new Set(['login', 'license', 'onboarding', 'main', 'update-lock']);
 
 const winStateFile = () => path.join(app.getPath('userData'), 'window-state.json');
 function loadWinStates() { try { return JSON.parse(fs.readFileSync(winStateFile(), 'utf8')); } catch { return {}; } }
@@ -914,6 +931,13 @@ app.whenReady().then(() => {
     openMainShell();
   });
   ipcMain.on('legal-decline', (e) => { if (!fromLegalWindow(e)) return; isQuitting = true; app.quit(); });
+
+  // Forced-update lock: Quit closes the app. Guarded to the update-lock window's own webContents.
+  // (The "Update" button uses the existing scheme-allowlisted open-update-url IPC.)
+  ipcMain.on('update-lock-quit', (e) => {
+    if (BrowserWindow.fromWebContents(e.sender) !== windows['update-lock']) return;
+    isQuitting = true; app.quit();
+  });
 
   processingModule.register(ctx);
   reviewModule.register(ctx);

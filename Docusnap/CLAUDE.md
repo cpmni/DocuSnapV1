@@ -507,9 +507,12 @@ CLIENT-SIDE, so the version never leaves the device. `licensing/handler.js` `cap
 own try/catch, persists to the `update_info` setting, never null-over-good, cannot disturb the gate decision)
 + `resolveUpdateInfo` (garbage-safe) → `get-update-info` IPC + `open-update-url` (scheme-allowlisted
 https/ms-windows-store only). Home dashboard `#dash-update` banner: info-tone, PULL model (mirrors
-refreshTrialBanner), per-version dismissal. `min_supported_version` (forced-update) is NOT read yet —
-deferred to a later slice (must fail OPEN + get its own lock window, per eric). Designed with eric/bob/gary;
-guarded by `src/lib/update/test_version.js` + `src/modules/licensing/test_update_info.js`.
+refreshTrialBanner), per-version dismissal. **Slice 2 — forced-update** (`min_supported_version`): decideAccess
+sets `gate.forceUpdate` ONLY on a REACHABLE backend's live response (`belowFloor(app.getVersion(), min_supported)`),
+so an offline app is NEVER locked (FAIL-OPEN, eric's hard rule); enterMainApp + the 6h reval timer route a
+forced doc to its OWN lock window (`src/windows/update-lock/`, distinct from the licence lock — Update / Quit
+only; `update-lock-quit` IPC is sender-guarded). Designed with eric/bob/gary; guarded by
+`src/lib/update/test_version.js` (incl. `belowFloor`) + `src/modules/licensing/test_update_info.js`.
 
 ## Detached search client (LAN add-on)
 A separate Electron search/mailbox client runs on other LAN PCs and talks to the core over a TLS `/v1`

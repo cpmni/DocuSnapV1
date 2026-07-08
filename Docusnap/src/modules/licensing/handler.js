@@ -562,7 +562,7 @@ async function decideAccess() {
   // Best-effort online refresh: a fresh signed token restarts the 7-day grace.
   // Short timeout so app startup never blocks on a slow/unreachable backend; a
   // failure here is non-fatal (we fall back to the cached token within grace).
-  let online = false, onlineSeatGrant = false, returnedToken = false;
+  let online = false, onlineSeatGrant = false, returnedToken = false, forceUpdate = false;
   try {
     const gate = createClient({ baseUrl: cfg.base_url, productId: cfg.product_id, transport: _ctx.licenseTransport, timeoutMs: 2500 });
     const res = await gate.validate(fpHash, null);
@@ -579,6 +579,16 @@ async function decideAccess() {
     // or the gate decision — a licence must never fail because of an advisory field. It persists
     // only a well-formed block and never writes null over a good one. See captureUpdateInfo below.
     captureUpdateInfo(db, res && res.body && res.body.update, now);
+    // ── Forced-update floor (slice 2) ── FAIL-OPEN by construction: forceUpdate can only be set
+    // true HERE, on a REACHABLE backend's live response — an unreachable backend never reaches this
+    // line, so an offline app is NEVER locked (eric's hard rule). True iff the live channel row
+    // declares this build older than min_supported_version. Advisory read only — its own try/catch,
+    // so it can never disturb the licence decision.
+    try {
+      const ms = res && res.body && res.body.update && res.body.update.min_supported_version;
+      const cur = require('electron').app.getVersion();
+      if (require('../../lib/update/version').belowFloor(cur, ms)) forceUpdate = true;
+    } catch { forceUpdate = false; }
   } catch { /* offline — fall back to cached token within grace */ }
 
   // A REACHABLE backend that did NOT affirm an active SEAT for this device is
@@ -616,6 +626,9 @@ async function decideAccess() {
   // or offline), overriding any unsigned JSON. Done here (not in the per-IPC evaluator)
   // so it runs once per access decision.
   if (decision && decision.claims) _syncSignedFeatures(db, decision.claims);
+  // Attach the (live-only) forced-update flag so the main process can route to the update-lock
+  // window. Only ever true after a reachable backend said this build is below min_supported_version.
+  if (decision) decision.forceUpdate = forceUpdate;
   return decision;
 }
 

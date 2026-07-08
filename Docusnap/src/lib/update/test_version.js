@@ -5,7 +5,7 @@
  * src/lib/update/test_version.js — guards the garbage-safe SemVer comparator.
  *   ELECTRON_RUN_AS_NODE=1 node_modules/.bin/electron src/lib/update/test_version.js
  */
-const { compareVersions, isNewer } = require('./version');
+const { compareVersions, isNewer, belowFloor } = require('./version');
 
 let fails = 0;
 function check(label, cond) { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}`); if (!cond) fails++; }
@@ -38,6 +38,18 @@ check("isNewer(2.0.0, 2.0.0) → false", isNewer('2.0.0', '2.0.0') === false);
 check("client AHEAD: isNewer(2.0.0, 2.1.0) → false (dev/beta never nags)", isNewer('2.0.0', '2.1.0') === false);
 check("isNewer(garbage, 2.0.0) → false", isNewer('nope', '2.0.0') === false);
 check("isNewer(null, 2.0.0) → false",    isNewer(null, '2.0.0') === false);
+
+console.log('\nbelowFloor — the forced-update predicate (fail-safe)');
+check("1.9.0 below floor 2.0.0 → true",      belowFloor('1.9.0', '2.0.0') === true);
+check("2.0.0 == floor 2.0.0 → false",        belowFloor('2.0.0', '2.0.0') === false);
+check("2.1.0 above floor 2.0.0 → false",     belowFloor('2.1.0', '2.0.0') === false);
+check("blank floor → false (never forces)",  belowFloor('1.0.0', '') === false);
+check("null floor → false",                  belowFloor('1.0.0', null) === false);
+check("undefined floor → false",             belowFloor('1.0.0', undefined) === false);
+check("garbage floor → false",               belowFloor('1.0.0', 'x.y') === false);
+check("garbage current → false",             belowFloor('nope', '2.0.0') === false);
+let bfThrew = false; try { belowFloor({}, {}); } catch { bfThrew = true; }
+check("belowFloor never throws on garbage",  bfThrew === false);
 
 console.log(`\n${fails === 0 ? 'ALL PASS' : fails + ' FAILED'}`);
 process.exit(fails === 0 ? 0 : 1);
