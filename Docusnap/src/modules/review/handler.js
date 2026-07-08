@@ -282,6 +282,34 @@ function register(ctx) {
     } catch {}
     return { ok: true, accepted: list, cleared };
   });
+  // Operator marks a resolved issuer as CORRECT ("Issuer is correct" button on an identity-
+  // conflict flag). Adds the resolved supplier to the issuer allowlist so the conflict flag
+  // skips it on EVERY future doc (the explicit, one-click complement to the automatic
+  // "established after N confirmations" fallback), and clears the identity-conflict note on
+  // THIS doc's identity field so it stops nagging immediately.
+  ipcMain.handle('accept-issuer', (_e, p) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const value = p && typeof p.value === 'string' ? p.value.trim() : '';
+    if (!value) return { ok: false, error: 'empty-value' };
+    const list = learning.addAcceptedIssuer(db, value);
+    // Clear only the identity-conflict note ("confirm the issuer") on the current doc's field.
+    let cleared = 0;
+    if (p.docId && p.fieldKey) {
+      const row = db.prepare('SELECT validation_note FROM extractions WHERE document_id = ? AND field_key = ?')
+        .get(p.docId, p.fieldKey);
+      const note = row && String(row.validation_note || '');
+      if (note && /letterhead may read|confirm the issuer/i.test(note)) {
+        cleared = db.prepare('UPDATE extractions SET validation_note = NULL WHERE document_id = ? AND field_key = ?')
+          .run(p.docId, p.fieldKey).changes;
+      }
+    }
+    try {
+      logAudit(db, { action: 'issuer_accepted', action_category: 'learning',
+        outcome: 'success', metadata: { value, field_key: p.fieldKey || null, doc_id: p.docId || null, cleared } });
+    } catch {}
+    return { ok: true, accepted: list, cleared };
+  });
   ipcMain.handle('rename-field-value', (_e, scope) => {
     requireRole('admin', 'edit');
     const db = getDb();

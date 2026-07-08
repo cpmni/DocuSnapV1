@@ -1496,10 +1496,21 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   const nameAcceptHtml = isNameFlag
     ? ` <button type="button" class="name-accept-btn" data-key="${key}" title="Tell Scan Finder this really is a valid name, so it stops flagging it for review on future documents">✓ This name is correct</button>`
     : '';
+  // "Issuer is correct" — for the identity field when the identity-CONFLICT flag fired (the
+  // letterhead reads a different known name than the resolved issuer, e.g. a customer/printer
+  // name in the header). One click marks the resolved supplier as a valid issuer so the conflict
+  // flag never fires for it again — the explicit complement to the automatic "established after a
+  // few confirmations" fallback. Only on the identity field; see accept-issuer IPC.
+  const isIssuerFlag = !!note && !isApplied
+    && (key === 'supplier_name' || key === 'customer_name')
+    && /letterhead may read|confirm the issuer/i.test(note);
+  const issuerAcceptHtml = isIssuerFlag
+    ? ` <button type="button" class="issuer-accept-btn" data-key="${key}" title="Confirm this really is the correct issuer, so Scan Finder stops flagging it — even though a different name appears in the letterhead. Applies to future documents from this issuer too.">✓ Issuer is correct</button>`
+    : '';
   const noteHtml = isApplied
     ? `<div class="field-note corrected"><span class="corrected-badge" title="An OCR misread was auto-corrected to the spelling that recurs in your confirmed data">✓ auto-corrected</span> ${escHtml(note || '')}</div>`
     : (note || correctedTo)
-      ? `<div class="field-note">${escHtml(note || '')}${acceptHtml}${nameAcceptHtml}</div>`
+      ? `<div class="field-note">${escHtml(note || '')}${acceptHtml}${nameAcceptHtml}${issuerAcceptHtml}</div>`
       : '';
   // Anchor provenance: only for anchor-based extraction sources, and only when a
   // label was captured. Other methods (keyword, template, llm, manual) show nothing.
@@ -1667,6 +1678,33 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
           nameAcceptBtn.disabled = false;
         }
       } catch { nameAcceptBtn.disabled = false; }
+    });
+  }
+
+  // "Issuer is correct" — persist the resolved supplier to the accepted-issuers allowlist (so the
+  // identity-conflict flag never fires for it again) and clear the flag on this doc immediately.
+  const issuerAcceptBtn = row.querySelector('.issuer-accept-btn');
+  if (issuerAcceptBtn) {
+    issuerAcceptBtn.addEventListener('click', async () => {
+      issuerAcceptBtn.disabled = true;
+      try {
+        const res = await window.docusnap.acceptIssuer({
+          docId: currentDoc?.id, fieldKey: key, value: input.value,
+        });
+        if (res && res.ok) {
+          issuerAcceptBtn.textContent = "✓ Saved — won't flag this issuer again";
+          const noteEl = row.querySelector('.field-note');
+          if (noteEl) noteEl.remove();
+          clearFieldWarning(row);
+          // Drop the identity-conflict flag from the in-memory tally so Confirm gating +
+          // auto-file eligibility reflect the accept without a reload.
+          const ex = (currentDoc?.extractions || []).find(e => e.field_key === key);
+          if (ex) ex.validation_note = null;
+          validateConfirm();
+        } else {
+          issuerAcceptBtn.disabled = false;
+        }
+      } catch { issuerAcceptBtn.disabled = false; }
     });
   }
 

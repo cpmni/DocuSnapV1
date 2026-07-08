@@ -165,6 +165,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   purgeFieldValue:             (scope)   => ipcRenderer.invoke('purge-field-value', scope),
   renameFieldValue:            (scope)   => ipcRenderer.invoke('rename-field-value', scope),
   acceptNameValue:             (p)       => ipcRenderer.invoke('accept-name-value', p),
+  acceptIssuer:                (p)       => ipcRenderer.invoke('accept-issuer', p),
   getDocumentWithExtractions:  (id)      => ipcRenderer.invoke('get-document-with-extractions', id),
   notifyDocClosed:             (id)      => ipcRenderer.send('notify-doc-closed', id),
   reviewHeartbeat:             (id)      => ipcRenderer.invoke('review-heartbeat', id),

@@ -145,6 +145,7 @@ def main():
     parser.add_argument("--label-overrides-file", default=None)
     parser.add_argument("--field-rules-file", default=None)
     parser.add_argument("--accepted-names-file", default=None)
+    parser.add_argument("--accepted-issuers-file", default=None)
     parser.add_argument("--enhance-file",   default=None)
     # Parallel processing: when Electron runs a bounded worker pool, each worker
     # gets an explicit JSON list of the filenames (within --folder) it owns, so
@@ -259,6 +260,7 @@ def main():
     label_overrides = load_json_arg(None, args.label_overrides_file) or []
     field_rules    = load_json_arg(None, args.field_rules_file) or []
     accepted_names = load_json_arg(None, args.accepted_names_file) or []
+    accepted_issuers = load_json_arg(None, args.accepted_issuers_file) or []
     enhance_params = load_json_arg(None, args.enhance_file)   or None
     reprocess_manifest = load_json_arg(None, args.reprocess_manifest) or {}
 
@@ -303,6 +305,10 @@ def main():
     # → byte-identical.
     if accepted_names:
         engine.set_accepted_names(accepted_names)
+    # Operator-accepted ISSUER allowlist — resolved suppliers the user marked a valid issuer via
+    # the identity-conflict "Issuer is correct" button (skips the conflict flag). Empty → no change.
+    if accepted_issuers:
+        engine.set_accepted_issuers(accepted_issuers)
 
     # Text-led supplier-identity conflict flag (off unless --identity-conflict; flag-only).
     if args.identity_conflict:

@@ -1087,6 +1087,34 @@ function removeAcceptedName(db, value) {
   return list;
 }
 
+// Operator-accepted ISSUER allowlist — resolved supplier names the user explicitly marked as a
+// valid issuer via the "Issuer is correct" button on an identity-conflict flag. A supplier in
+// this set is trusted over a letterhead name that merely matches another known supplier (the
+// recipient/customer/printer in the header), so the conflict flag skips it immediately — the
+// explicit, one-click complement to the automatic "established after N confirmations" fallback.
+// Same canonical form + settings-JSON-array shape as the accepted-names list; the Python engine
+// (engine.set_accepted_issuers / _accept_norm) uses the SAME canonical form.
+const ACCEPTED_ISSUERS_KEY = 'accepted_issuer_values';
+function getAcceptedIssuers(db) {
+  try { const a = JSON.parse(getSetting(db, ACCEPTED_ISSUERS_KEY, '[]') || '[]'); return Array.isArray(a) ? a : []; }
+  catch { return []; }
+}
+/** Add a resolved-supplier name to the issuer allowlist (canonicalised, de-duplicated). */
+function addAcceptedIssuer(db, value) {
+  const norm = _acceptNorm(value);
+  if (!norm) return getAcceptedIssuers(db);
+  const list = getAcceptedIssuers(db);
+  if (!list.includes(norm)) { list.push(norm); setSetting(db, ACCEPTED_ISSUERS_KEY, JSON.stringify(list)); }
+  return list;
+}
+/** Remove a supplier from the issuer allowlist (canonicalised). Returns the updated list. */
+function removeAcceptedIssuer(db, value) {
+  const norm = _acceptNorm(value);
+  const list = getAcceptedIssuers(db).filter(n => n !== norm);
+  setSetting(db, ACCEPTED_ISSUERS_KEY, JSON.stringify(list));
+  return list;
+}
+
 // Distinct confirmed VALUES learned for a (supplier, doc-type, field) scope — the same final
 // values getFieldFormats learns shapes from (the user's corrected value if they edited, else
 // the extracted display value). Powers the "View learning history" table so a value that
@@ -1255,4 +1283,5 @@ module.exports = {
   saveFieldRule, getFieldRules, clearFieldRulesForScope,
   getSetting, setSetting,
   getAcceptedNames, addAcceptedName, removeAcceptedName,
+  getAcceptedIssuers, addAcceptedIssuer, removeAcceptedIssuer,
 };

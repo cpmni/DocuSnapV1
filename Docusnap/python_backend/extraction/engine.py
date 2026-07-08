@@ -30,6 +30,12 @@ try:
 except Exception:
     IDENTITY_FUSION_AVAILABLE = False
 
+# "Multiple commits determine it's OK" fallback for the identity-conflict flag: once the RESOLVED
+# supplier has been learned this many times (logo match_count / hint / anchor usage_count), a
+# letterhead name that merely matches ANOTHER known supplier (recipient/customer/printer in the
+# header) no longer raises the conflict — the established issuer is trusted. A new supplier still flags.
+IDENTITY_ESTABLISHED_MIN = 3
+
 
 # Stage 0.5 LOCATED-path mapping methods (admin-drawn anchor→target zones that
 # located their anchor on this page). Curated ground truth — protected from
@@ -321,6 +327,7 @@ class ExtractionEngine:
         # flags, so a legitimate acronym-bearing company ("Cloud VPS") stops being flagged
         # once confirmed once. Empty by default → byte-identical. See _accept_norm().
         self.accepted_names      = set()
+        self.accepted_issuers    = set()  # supplier names explicitly marked a valid issuer (button)
         self._identity_conflict  = False  # active flag-only supplier-conflict (set_identity_conflict)
         self._trace              = None  # dev-only trace callback (set per extract())
 
@@ -349,6 +356,13 @@ class ExtractionEngine:
         A name value in this set is exempt from the wordness + truncation flags. Empty/None
         → no change from default (byte-identical)."""
         self.accepted_names = {self._accept_norm(n) for n in (names or []) if str(n or "").strip()}
+
+    def set_accepted_issuers(self, names) -> None:
+        """Load the operator-accepted ISSUER allowlist (resolved supplier names the user marked a
+        valid issuer via the identity-conflict 'Issuer is correct' button). A resolved supplier in
+        this set never raises the conflict flag — the explicit complement to the automatic
+        established-after-N-confirmations fallback. Empty/None → no change (byte-identical)."""
+        self.accepted_issuers = {self._accept_norm(n) for n in (names or []) if str(n or "").strip()}
 
     def set_identity_conflict(self, on: bool):
         """Enable the ACTIVE text-led supplier-identity conflict flag (default OFF, opt-in). When
@@ -756,14 +770,41 @@ class ExtractionEngine:
             chrome = identity_fusion.issuer_chrome(ocr_text)
             res = identity_fusion.identify_supplier(chrome, known)
             picked, accepted = res.get("supplier"), bool(res.get("accepted"))
+            # "Multiple commits determine it's OK" fallback (user request): a letterhead can
+            # legitimately carry a DIFFERENT known name than the issuer (a recipient / customer /
+            # printer name in the header — e.g. Print Tracker docs). If the RESOLVED supplier is
+            # ESTABLISHED — learned strongly from confirmed docs (logo match_count / hint /
+            # anchor usage_count for it ≥ IDENTITY_ESTABLISHED_MIN) — trust it over the header
+            # text and DON'T raise the conflict. A brand-new supplier (little history) still flags.
+            def _strength(name):
+                nl = (name or "").strip().lower()
+                if not nl:
+                    return 0
+                best = 0
+                for row in (logos or []):
+                    if ((row or {}).get("supplier_name") or "").strip().lower() == nl:
+                        best = max(best, int((row or {}).get("match_count") or 0))
+                for src in (hints or [], anchors or []):
+                    for row in src:
+                        if ((row or {}).get("supplier_name") or "").strip().lower() == nl:
+                            best = max(best, int((row or {}).get("usage_count") or 0))
+                return best
+            # Trust the resolved issuer when it is EITHER explicitly accepted (the one-click
+            # "Issuer is correct" button → accepted_issuers allowlist) OR established by history.
+            accepted_issuer = self._accept_norm(resolved_supplier) in self.accepted_issuers
+            established = _strength(resolved_supplier) >= IDENTITY_ESTABLISHED_MIN
+            trusted = accepted_issuer or established
             return {
-                "resolved":   resolved_supplier,
-                "text_led":   picked,
-                "accepted":   accepted,
-                "confidence": res.get("confidence"),
-                "known_n":    len(known),
-                "agree":      accepted and picked == resolved_supplier,
-                "conflict":   accepted and bool(resolved_supplier) and picked != resolved_supplier,
+                "resolved":    resolved_supplier,
+                "text_led":    picked,
+                "accepted":    accepted,
+                "confidence":  res.get("confidence"),
+                "known_n":     len(known),
+                "established": established,
+                "accepted_issuer": accepted_issuer,
+                "conflict":    (accepted and bool(resolved_supplier)
+                                and picked != resolved_supplier and not trusted),
+                "agree":       accepted and picked == resolved_supplier,
             }
         except Exception:
             return None  # background aid — must never break extraction

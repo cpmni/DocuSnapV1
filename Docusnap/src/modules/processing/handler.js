@@ -165,6 +165,12 @@ function buildTrainingArgs(db, configPath, logger = null) {
   try { allAcceptedNames = learning.getAcceptedNames(db); }
   catch (e) { logger?.warn?.(`[training] accepted names load failed: ${e && e.message}`); }
   const acceptedNamesFile = writeTempJson('acceptednames', allAcceptedNames);
+  // Operator-accepted ISSUER allowlist — resolved suppliers marked a valid issuer via the
+  // identity-conflict button (skips the conflict flag). Empty by default; guarded for older DBs.
+  let allAcceptedIssuers = [];
+  try { allAcceptedIssuers = learning.getAcceptedIssuers(db); }
+  catch (e) { logger?.warn?.(`[training] accepted issuers load failed: ${e && e.message}`); }
+  const acceptedIssuersFile = writeTempJson('acceptedissuers', allAcceptedIssuers);
   const cfgFile       = configPath();
 
   // Registration-invariant anchoring ("register, then read"): ON unless an admin
@@ -224,6 +230,7 @@ function buildTrainingArgs(db, configPath, logger = null) {
     '--label-overrides-file', overridesFile,
     '--field-rules-file', fieldRulesFile,
     '--accepted-names-file', acceptedNamesFile,
+    '--accepted-issuers-file', acceptedIssuersFile,
     '--config-file',    cfgFile,
   ];
   if (registrationOn) args.push('--registration');
@@ -258,7 +265,7 @@ function buildTrainingArgs(db, configPath, logger = null) {
 
   return {
     args,
-    tempFiles: [fieldsFile, hintsFile, anchorsFile, logosFile, dtFile, formatsFile, templatesFile, overridesFile, fieldRulesFile, acceptedNamesFile],
+    tempFiles: [fieldsFile, hintsFile, anchorsFile, logosFile, dtFile, formatsFile, templatesFile, overridesFile, fieldRulesFile, acceptedNamesFile, acceptedIssuersFile],
   };
 }
 
