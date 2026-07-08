@@ -114,8 +114,8 @@ function makeMock() {
   handler.register(fakeCtx);
   const names = Object.keys(handlers).sort();
   if (!check('registers the expected licensing IPC channels',
-      names.join(',') === 'license-activate,license-get-diagnostics,license-get-enforcement,' +
-        'license-get-status,license-revoke,license-set-enforcement,license-start-trial,license-test-activate')) fail++;
+      names.join(',') === 'get-update-info,license-activate,license-get-diagnostics,license-get-enforcement,' +
+        'license-get-status,license-revoke,license-set-enforcement,license-start-trial,license-test-activate,open-update-url')) fail++;
   if (!check('registers NO gate/deny/enter handle channel',
       !names.some(n => /enter|gate|deny|lock/.test(n)))) fail++;
 

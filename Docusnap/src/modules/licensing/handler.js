@@ -363,14 +363,14 @@ function register(ctx) {
   // Open the update URL the backend supplied — from the stored row, NEVER a renderer-supplied
   // value, and only when it passes a strict scheme allowlist (the URL is unsigned/untrusted, so
   // a compromised/mis-typed row must not open an arbitrary target). https + the Store deep-link only.
-  ipcMain.on('open-update-url', async () => {
+  ipcMain.handle('open-update-url', async () => {
     const { shell } = require('electron');
     let info = {};
-    try { info = JSON.parse(getSetting(getDb(), 'update_info', '{}')) || {}; } catch { return; }
+    try { info = JSON.parse(getSetting(getDb(), 'update_info', '{}')) || {}; } catch { return false; }
     const url = typeof info.update_url === 'string' ? info.update_url.trim() : '';
-    if (!/^(https:\/\/|ms-windows-store:)/i.test(url)) return;
-    try { await shell.openExternal(url); }
-    catch { /* e.g. no Store handler on a stripped image — nothing safe to fall back to here */ }
+    if (!/^(https:\/\/|ms-windows-store:)/i.test(url)) return false;
+    try { await shell.openExternal(url); return true; }
+    catch { return false; /* e.g. no Store handler on a stripped image — nothing safe to fall back to */ }
   });
 
   // Toggle the persisted enforcement setting. Admin-only (the Settings window is
