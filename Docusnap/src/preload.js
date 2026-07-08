@@ -170,6 +170,10 @@ contextBridge.exposeInMainWorld('docusnap', {
   // confirm()/alert() returns) so the next text-field press does the real blurWebView() repair
   // even if the window's own 'blur' event didn't fire for the dialog. See focusRepair.js.
   markFocusSuspect:            ()        => ipcRenderer.send('mark-focus-suspect'),
+  // Widget-level focus transition for a custom modal that auto-focused its input with no click
+  // (blurWebView()+wc.focus()). Resolves after the transition so the caller can re-focus the
+  // input. See shared/modalFocus.js. NEVER win.blur()/win.focus().
+  repairModalFocus:            ()        => ipcRenderer.invoke('repair-modal-focus'),
   getDocumentWithExtractions:  (id)      => ipcRenderer.invoke('get-document-with-extractions', id),
   notifyDocClosed:             (id)      => ipcRenderer.send('notify-doc-closed', id),
   reviewHeartbeat:             (id)      => ipcRenderer.invoke('review-heartbeat', id),

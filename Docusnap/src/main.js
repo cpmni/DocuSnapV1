@@ -788,6 +788,20 @@ app.whenReady().then(() => {
     } catch {}
   });
 
+  // A custom in-page modal auto-focused its input with no click — do the widget-level focus
+  // transition (blurWebView then re-focus the webContents) that unsticks Blink's stale-TRUE
+  // widget focus, so the modal's input takes keystrokes without an alt-tab. The renderer
+  // re-focuses the input after this resolves. Sender-scoped; never win.blur()/win.focus().
+  ipcMain.handle('repair-modal-focus', (e) => {
+    try {
+      const wc = e.sender; if (!wc || wc.isDestroyed()) return false;
+      const win = BrowserWindow.fromWebContents(wc);
+      if (win && !win.isDestroyed()) win.blurWebView();
+      if (!wc.isDestroyed()) wc.focus();
+      return true;
+    } catch { return false; }
+  });
+
   // Splash first, before any other startup work, so it appears immediately.
   createSplash();
 

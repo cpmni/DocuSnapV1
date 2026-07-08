@@ -1505,6 +1505,7 @@ function showChangePasswordDialog() {
     box.append(title, input, msg, row);
     overlay.append(box);
     document.body.append(overlay);
-    input.focus();
+    // Auto-focus + widget-focus repair so the password box takes keystrokes without an alt-tab.
+    (window.repairModalInputFocus || ((el) => el.focus()))(input);
   }
 })();

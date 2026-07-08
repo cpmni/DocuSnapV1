@@ -1151,8 +1151,11 @@ function showTypedConfirmDialog({ title, warningHtml, requiredText, confirmLabel
     document.addEventListener('keydown', onKey);
     // Defer focus to the next frame: focusing an element in the SAME tick it is
     // appended to the DOM is sometimes dropped by Chromium, leaving the field with
-    // no caret (the "can't type / no flashing cursor" symptom).
-    requestAnimationFrame(() => { try { input.focus(); input.select(); } catch { /* */ } });
+    // no caret (the "can't type / no flashing cursor" symptom). The widget-focus repair
+    // also unsticks the stale-TRUE render-widget focus so the caret is live without an alt-tab.
+    requestAnimationFrame(() => {
+      try { (window.repairModalInputFocus || ((el) => { el.focus(); el.select(); }))(input); } catch { /* */ }
+    });
   });
 }
 

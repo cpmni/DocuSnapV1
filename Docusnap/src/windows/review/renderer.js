@@ -5296,7 +5296,8 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
       box.append(title, input, msg, row);
       ov.append(box);
       document.body.append(ov);
-      input.focus();
+      // Auto-focus + widget-focus repair so the password box takes keystrokes without an alt-tab.
+      (window.repairModalInputFocus || ((el) => el.focus()))(input);
     });
   }
 })();
