@@ -63,6 +63,31 @@ const STRICT_TYPES = new Set([
 // ── Pure shape helpers (unit-tested directly, no DB) ──────────────────────────
 const _norm = v => String(v == null ? '' : v).trim().toLowerCase().replace(/\s+/g, ' ');
 
+// SHARED validation patterns (config/keyword_patterns.json `validation_patterns`) — the single
+// source of truth the renderer + Python both validate against. Loaded once, guarded so a test
+// harness without the config file (or an older layout) simply gets no re-check. `_matchesTypePattern`
+// returns TRUE (don't block) when the type has no shipped pattern, so it can never over-refuse a
+// type it can't judge. Compiled RegExps are cached per pattern string.
+let _sharedPatternsCache;   // undefined = not loaded yet; null = unavailable
+function _sharedValidationPatterns() {
+  if (_sharedPatternsCache !== undefined) return _sharedPatternsCache;
+  try { _sharedPatternsCache = require('../../config/keyword_patterns.json').validation_patterns || null; }
+  catch { _sharedPatternsCache = null; }
+  return _sharedPatternsCache;
+}
+const _reCache = new Map();
+function _compile(p) {
+  if (_reCache.has(p)) return _reCache.get(p);
+  let re = null; try { re = new RegExp(p); } catch { re = null; }
+  _reCache.set(p, re); return re;
+}
+function _matchesTypePattern(type, value) {
+  const pats = _sharedValidationPatterns();
+  const arr = pats && pats[type];
+  if (!Array.isArray(arr) || !arr.length) return true;     // no pattern for this type → can't judge
+  return arr.some(p => { const re = _compile(p); return re ? re.test(String(value)) : true; });
+}
+
 const _digits     = v => /^\d+$/.test(String(v).trim());
 const _currencyish = v => /^[£$€]?\s?-?\d[\d,]*(?:\.\d+)?$/.test(String(v).trim());
 const _codeish    = v => {
@@ -289,16 +314,27 @@ function docTrustGate(db, docId, supplier, slug, opts = {}) {
       return { ok: false, reason: `flagged:${e.field_key}` };
     const _t = String(fieldTypes.get(e.field_key) || '').toLowerCase();
     if (STRICT_TYPES.has(_t)) {
-      // Defence-in-depth for strict types whose pattern doesn't fully validate the value: a date
-      // must be a real CALENDAR date; an IBAN / GB VAT must pass its CHECKSUM. Others keep
-      // note-absence trust — their patterns are adequate and re-checking risks false-blocking
-      // legit values (e.g. "1250.00 GBP").
-      if (_t === 'date'   && !_validDate(v))   return { ok: false, reason: `invalid-date:${e.field_key}` };
-      if (_t === 'iban'   && !_validIban(v))   return { ok: false, reason: `invalid-iban:${e.field_key}` };
-      if (_t === 'vat_gb' && !_validVatGb(v))  return { ok: false, reason: `invalid-vat:${e.field_key}` };
-      if (_t === 'currency') {
+      // Defence-in-depth for strict types (reggie T1/T2/T3/T5): don't trust note-absence alone —
+      // re-validate the VALUE at the gate. Each type is routed EXACTLY once (else-if on `_t`):
+      //   • date → real CALENDAR date; iban / vat_gb → CHECKSUM; currency → decimal-place
+      //     consistency vs learned history. These are STRICTER than the shared regex.
+      //   • every OTHER strict type (number / reference_code / email / postcode_uk / percentage)
+      //     must match its own SHARED validation pattern — the single source of truth the rest of
+      //     the app uses — instead of the note-absence trust that let an off-pattern value through.
+      //     A type with no shipped pattern (e.g. 'number') can't be judged, so it stays trusted.
+      // Values reach here already normalised (dates → DD-MM-YYYY, money → symbol-stripped), so a
+      // legit value matches its pattern; a mismatch routes to Review (fail-safe), never rejects.
+      if (_t === 'date') {
+        if (!_validDate(v)) return { ok: false, reason: `invalid-date:${e.field_key}` };
+      } else if (_t === 'iban') {
+        if (!_validIban(v)) return { ok: false, reason: `invalid-iban:${e.field_key}` };
+      } else if (_t === 'vat_gb') {
+        if (!_validVatGb(v)) return { ok: false, reason: `invalid-vat:${e.field_key}` };
+      } else if (_t === 'currency') {
         const f = fmts.get(e.field_key);
         if (f && !_currencyDpConsistent(v, f.sampleValues)) return { ok: false, reason: `currency-dp:${e.field_key}` };
+      } else if (!_matchesTypePattern(_t, v)) {
+        return { ok: false, reason: `invalid-type:${e.field_key}` };
       }
       continue;
     }
@@ -425,7 +461,7 @@ module.exports = {
   TRUST_WINDOW, TRUST_MAX_CORRECTIONS, TRUSTED_FLOOR, UNTRUSTED_FLOOR, STRICT_TYPES,
   classifyLearnedShape, valueMatchesShape, fieldVerifiable,
   validDate: _validDate, validIban: _validIban, validVatGb: _validVatGb,
-  currencyDpConsistent: _currencyDpConsistent,
+  currencyDpConsistent: _currencyDpConsistent, matchesTypePattern: _matchesTypePattern,
   scopeTrust, docTrustGate, isAutoFileEligible, autoFileEligibleIds,
   listGraduatedScopes, setScopeOptOut,
 };

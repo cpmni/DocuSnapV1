@@ -383,6 +383,29 @@ function main() {
     check("docTrustGate passes a normal 2-dp total (250.00)",     cand('250.00').ok === true);
   }
 
+  // ── 17c. STRICT-type value re-check vs shared validation_patterns (reggie T5, #9) ──────
+  section('17c. STRICT-type re-check vs shared validation_patterns');
+  // Unit: the helper reads config/keyword_patterns.json validation_patterns (present in-repo).
+  check("valid email matches its pattern",     trust.matchesTypePattern('email', 'a.b@example.co.uk') === true);
+  check("garbage email fails its pattern",     trust.matchesTypePattern('email', 'not-an-email') === false);
+  check("valid UK postcode matches",           trust.matchesTypePattern('postcode_uk', 'BT1 1HE') === true);
+  check("bad UK postcode fails",               trust.matchesTypePattern('postcode_uk', 'ZZ') === false);
+  check("valid percentage matches",            trust.matchesTypePattern('percentage', '20%') === true);
+  check("unknown type (no pattern) → allowed", trust.matchesTypePattern('number', '123456') === true);
+  {
+    // Integration: an email-typed field whose value is off-pattern (no note) is blocked at the gate.
+    const db = makeDb();
+    const tid = db.prepare("INSERT INTO document_types (name,slug) VALUES ('Contact','contact')").run().lastInsertRowid;
+    db.prepare("INSERT INTO fields (document_type_id,key,type,required) VALUES (?,?,?,?)").run(tid, 'contact_email', 'email', 0);
+    const mkDoc = (val) => {
+      const id = db.prepare("INSERT INTO documents (supplier_name,document_type_id,status,confirmed_at,template_id,overall_confidence) VALUES ('Acme',?,'needs_review','2026-06-07T10:00:00Z',7,98)").run(tid).lastInsertRowid;
+      db.prepare("INSERT INTO extractions (document_id,field_key,display_value) VALUES (?,?,?)").run(id, 'contact_email', val);
+      return id;
+    };
+    check("docTrustGate blocks an off-pattern email", trust.docTrustGate(db, mkDoc('bogus text'), 'Acme', 'contact').reason === 'invalid-type:contact_email');
+    check("docTrustGate passes a valid email",        trust.docTrustGate(db, mkDoc('ops@acme.com'), 'Acme', 'contact').ok === true);
+  }
+
   // ── 18. a full-100 read files gate-free even in a graduated scope (the D:\ worksheet case) ──
   section('18. 100% read skips the structural gate; the discount still gets it');
   {
