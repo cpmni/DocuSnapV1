@@ -65,6 +65,7 @@ function admin_nav(string $current): void
         'products' => ['products.php',       'Products'],            // split (Slice 2)
         'activity' => ['activity.php',       'Activity'],            // split (Slice 2)
         'diagnostics' => ['diagnostics.php', 'Diagnostics'],         // opt-in app diagnostics feed
+        'releases' => ['releases.php',       'App releases'],        // in-app update banner control
     ];
     echo '<nav style="display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 18px;">';
     foreach ($items as $key => [$href, $label]) {
