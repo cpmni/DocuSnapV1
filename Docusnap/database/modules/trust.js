@@ -158,17 +158,24 @@ function _currencyDpConsistent(value, sampleValues) {
   const twoDp = vals.filter(x => _currencyDp(x) === 2).length;
   if (twoDp / vals.length < 0.9) return true;                    // mixed/whole-pound supplier → don't judge
   if (_currencyDp(value) === 2) return true;                     // value matches the learned 2-dp habit
-  // 0/1-dp value against an all-2-dp history: suspicious only when the number is sizeable (a
-  // genuine tiny whole amount like "5" is low-blast-radius and plausibly real).
+  // 0/1-dp value against an all-2-dp history: suspicious only when the number is sizeable. Trigger
+  // at ≥4 integer digits (reggie) — this shrinks the whole-pound false-block (a legit round £150–£999
+  // from a normally-penced supplier no longer trips) while still catching the common dropped-decimal
+  // 100× error (e.g. 38774 ← 387.74, 123456 ← 1234.56).
   const intDigits = String(value).replace(/[^\d]/g, '').length - _currencyDp(value);
-  return intDigits < 3;                                          // ≥3 integer digits + 0-dp → dropped-decimal suspect
+  return intDigits < 4;
 }
 
 // GB VAT modulus-97 checksum (reggie T3): first 7 digits weighted 8,7,6,5,4,3,2, plus the 2 check
 // digits, must be a multiple of 97 (classic method) or with +55 added (post-2010 "9755" method).
 // Accepts a 9-digit number or a 12-digit branch-trader number (checksum uses the first 9).
 function _validVatGb(v) {
-  const s = String(v == null ? '' : v).replace(/[^0-9]/g, '');
+  // Government departments (GD000–GD499) and health authorities (HA500–HA999) use the non-checksum
+  // GBGD###/GBHA### form (mirrors the shared validation pattern) — accept it before the digit strip,
+  // else a legit GD/HA number strips to 3 digits and false-fails the checksum (reggie).
+  const up = String(v == null ? '' : v).replace(/\s+/g, '').toUpperCase();
+  if (/^GB(GD|HA)\d{3}$/.test(up)) return true;
+  const s = up.replace(/[^0-9]/g, '');
   if (!/^\d{9}(\d{3})?$/.test(s)) return false;
   const d = s.slice(0, 9).split('').map(Number);
   const w = [8, 7, 6, 5, 4, 3, 2];
@@ -287,6 +294,15 @@ function scopeTrust(db, supplier, slug, opts = {}) {
  * non-freetext learned shape, or empty. This is the diligence-independent block for the
  * untyped-confidently-wrong class (item="Information"): freetext learned shape → no match →
  * doc routed to Review. requireTemplate:false is only for tests without a template store.
+ *
+ * opts.at100 = the LENIENT variant used on the full-100 auto-file path (Slice 7). A 100% read
+ * is trusted, so we DON'T require a template and DON'T block a genuinely-unverifiable field
+ * (freetext / no-history / the ambiguous 'constant' shape). We STILL block: (a) a strict-typed
+ * value that fails its DETERMINISTIC re-check (date calendar, IBAN/VAT checksum, currency dp —
+ * never the loose shared regex, which false-blocks legit values at 100%), and (b) a value that
+ * violates a STRUCTURED learned shape (digits/date/currency/code) — e.g. a code field learned as
+ * "xxxx-xxxx-x" reading the word "Information". That closes the untyped-confidently-wrong class at
+ * 100% without touching a legitimately-variable free-text field (a per-doc customer name).
  */
 function docTrustGate(db, docId, supplier, slug, opts = {}) {
   const doc = db.prepare('SELECT id, template_id, document_type_id FROM documents WHERE id = ?').get(docId);
@@ -294,7 +310,8 @@ function docTrustGate(db, docId, supplier, slug, opts = {}) {
   // opts.templateMatched / opts.extractions let a caller evaluate a REPROCESSED result (not the
   // stored row) — the reliability harness uses this to ask "would THIS reprocessed read auto-file".
   const templateMatched = (opts.templateMatched !== undefined) ? opts.templateMatched : !!doc.template_id;
-  if (opts.requireTemplate !== false && !templateMatched) return { ok: false, reason: 'no-template' };
+  // at100 trusts the full read → no template requirement (else logo-only 100% suppliers regress).
+  if (!opts.at100 && opts.requireTemplate !== false && !templateMatched) return { ok: false, reason: 'no-template' };
 
   const sup  = _norm(supplier);
   const sl   = String(slug || '').toLowerCase().trim();
@@ -333,12 +350,25 @@ function docTrustGate(db, docId, supplier, slug, opts = {}) {
       } else if (_t === 'currency') {
         const f = fmts.get(e.field_key);
         if (f && !_currencyDpConsistent(v, f.sampleValues)) return { ok: false, reason: `currency-dp:${e.field_key}` };
-      } else if (!_matchesTypePattern(_t, v)) {
+      } else if (!opts.at100 && !_matchesTypePattern(_t, v)) {
+        // The loose shared-regex re-check (number/reference_code/email/postcode_uk/percentage) is
+        // applied on the sub-100 discount path but SKIPPED at 100% (reggie): at full confidence it
+        // false-blocks legit edge values more than it catches silent-wrong.
         return { ok: false, reason: `invalid-type:${e.field_key}` };
       }
       continue;
     }
     const f = fmts.get(e.field_key);
+    if (opts.at100) {
+      // At 100% only an UNAMBIGUOUS structured-shape violation blocks. 'constant' is excluded
+      // because ≤2 distinct values can't distinguish a truly-fixed field from a sparse variable
+      // one; 'freetext'/'none' are unverifiable by design. A code/digits/date/currency-shaped
+      // field reading an off-shape value (the "Information" vs xxxx-xxxx-x case) is still caught.
+      const structured = f && ['digits', 'date', 'currency', 'code'].includes(f.cls);
+      if (structured && !valueMatchesShape(v, f.cls, f.sampleValues))
+        return { ok: false, reason: `unverifiable-value:${e.field_key}` };
+      continue;
+    }
     if (!f || !valueMatchesShape(v, f.cls, f.sampleValues))
       return { ok: false, reason: `unverifiable-value:${e.field_key}` };
   }
@@ -393,16 +423,19 @@ function isAutoFileEligible(db, doc, opts = {}) {
         "SELECT COUNT(*) c FROM extractions WHERE document_id = ? AND ((validation_note IS NOT NULL AND TRIM(validation_note) <> '') OR (corrected_to IS NOT NULL AND TRIM(corrected_to) <> ''))"
       ).get(doc.id).c;
   if (flagged) return { eligible: false, floor, trusted: t.trusted, reason: 'flagged' };
-  // The structural gate guards the graduation DISCOUNT — a sub-100 read filing at the 98 floor.
-  // A FULL-100 read meets the original full-confidence bar, so it files gate-free (exactly as it
-  // did before the scope graduated). Otherwise graduation would perversely make a 100% doc LESS
-  // likely to auto-file than an ungraduated one: a legitimately-variable free-text field (e.g. a
-  // per-doc `customer` name) can never match a non-freetext learned shape, so the gate would
-  // block an otherwise-perfect 100% doc. Gate the discount, trust the full read.
-  if ((doc.overall_confidence || 0) < 100) {
-    const g = docTrustGate(db, doc.id, doc.supplier_name, slug, opts);
-    if (!g.ok) return { eligible: false, floor, trusted: t.trusted, reason: g.reason };
-  }
+  // Structural safety gate. Two regimes:
+  //  • sub-100 (a graduated read filing at the 98/95 discount) → the FULL gate (template + every
+  //    valued field verifiable), since the discount is where confidence is lowest.
+  //  • at 100 (Slice 7) → the LENIENT `at100` gate: no template requirement and no block on a
+  //    genuinely-unverifiable field (freetext / no-history / ambiguous 'constant'), so a
+  //    legitimately-variable free-text field (a per-doc `customer` name) and logo-only suppliers
+  //    still auto-file exactly as before — but a DETERMINISTICALLY-invalid strict value (bad
+  //    calendar date, checksum-failing IBAN/VAT, dropped-decimal total) or a value that violates a
+  //    STRUCTURED learned shape (a code field learned as "xxxx-xxxx-x" reading "Information") is now
+  //    caught at 100% too, closing the confidently-wrong hole the old gate-free path left open.
+  const g = docTrustGate(db, doc.id, doc.supplier_name, slug,
+    { ...opts, at100: (doc.overall_confidence || 0) >= 100 });
+  if (!g.ok) return { eligible: false, floor, trusted: t.trusted, reason: g.reason };
   return { eligible: true, floor, trusted: t.trusted, reason: 'ok' };
 }
 

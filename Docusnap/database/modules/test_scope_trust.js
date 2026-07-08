@@ -482,6 +482,48 @@ function main() {
       trust.isAutoFileEligible(db, d98, { extractions: cleanEx, templateMatched: false }).eligible === false);
   }
 
+  // ── 21. Slice 7 — the LENIENT at100 gate on the full-100 path ────────────────
+  section('21. Slice 7: at100 structural gate');
+  {
+    // item learns a CODE shape (M0018, M0028, …); customer is legitimately-variable free-text
+    // (>2 distinct → freetext) so it must NOT block a 100% doc.
+    const db = makeDb(); const tid = seedType(db, [['customer', 'text', 0]]);
+    const custs = ['Beaumont Bangor', 'Beaumont Galgorm', 'Beaumont Holywood', 'Acme Ltd', 'Globex',
+                   'Initech', 'Umbrella Co', 'Stark Ind', 'Wayne LLC', 'Oscorp'];
+    seedCleanScope(db, tid, 10, 'Anconia Corp', i => ({ item: `M00${i}8`, customer: custs[i - 1] }));
+    const at100 = (extra) => getDoc(db, seedDoc(db, tid, {
+      supplier: 'Anconia Corp', when: '2026-06-11T10:00:00Z', status: 'needs_review', template: 7, conf: 100,
+      fields: { supplier_name: 'Anconia Corp', invoice_date: '05-06-2026', invoice_number: 'INV9', total: '250.00', item: 'M0018', customer: 'A New Customer Ltd', ...extra },
+    }));
+    const elig = d => trust.isAutoFileEligible(db, d).eligible;
+    check("100% clean read → ELIGIBLE (liveness)",                         elig(at100({})) === true);
+    check("100% variable customer (freetext) NOT blocked (no regression)", elig(at100({ customer: 'Totally Unseen Name Corp' })) === true);
+    // THE user's case: a code-shaped field reading a word must not auto-file at 100%.
+    check("100% item='Information' vs learned CODE shape → BLOCKED",       elig(at100({ item: 'Information' })) === false);
+    check("100% bad calendar date (45/67/8901) → BLOCKED",                 elig(at100({ invoice_date: '45/67/8901' })) === false);
+    check("100% dropped-decimal total (25000) → BLOCKED",                  elig(at100({ total: '25000' })) === false);
+    // Anti-regression: logo-only 100% (no template) still auto-files (no template requirement at 100).
+    const noTpl = getDoc(db, seedDoc(db, tid, { supplier: 'Anconia Corp', when: '2026-06-11T10:05:00Z', status: 'needs_review', template: null, conf: 100,
+      fields: { supplier_name: 'Anconia Corp', invoice_date: '05-06-2026', invoice_number: 'INV9', total: '250.00', item: 'M0018', customer: 'X Co' } }));
+    check("100% logo-only (no template) → ELIGIBLE (no template req at 100)", trust.isAutoFileEligible(db, noTpl).eligible === true);
+    // A sub-100 read of the SAME item='Information' is already blocked by the full gate (regression guard).
+    const at98 = getDoc(db, seedDoc(db, tid, { supplier: 'Anconia Corp', when: '2026-06-11T10:06:00Z', status: 'needs_review', template: 7, conf: 96,
+      fields: { supplier_name: 'Anconia Corp', invoice_date: '05-06-2026', invoice_number: 'INV9', total: '250.00', item: 'Information', customer: 'X Co' } }));
+    check("sub-100 item='Information' still BLOCKED (full gate unchanged)", trust.isAutoFileEligible(db, at98).eligible === false);
+  }
+
+  // ── 22. reggie bug fixes: VAT GD/HA form + currency ≥4-digit trigger ─────────
+  section('22. VAT GD/HA + currency ≥4-digit trigger');
+  check("VAT GD gov-dept form passes checksum-free",  trust.validVatGb('GBGD001') === true);
+  check("VAT HA health-authority form passes",        trust.validVatGb('GBHA599') === true);
+  check("VAT GD wrong length still fails",             trust.validVatGb('GBGD12') === false);
+  {
+    const H = ['100.00', '250.00', '99.99', '12.50', '7.00', '1000.00'];   // all 2-dp
+    check("3-digit whole '250' now ALLOWED (≥4 trigger)", trust.currencyDpConsistent('250', H) === true);
+    check("4-digit whole '2500' still blocked",           trust.currencyDpConsistent('2500', H) === false);
+    check("dropped-decimal '38774' still blocked",        trust.currencyDpConsistent('38774', H) === false);
+  }
+
   console.log(`\n${fails === 0 ? 'ALL PASS' : fails + ' FAILED'}`);
   process.exit(fails === 0 ? 0 : 1);
 }
