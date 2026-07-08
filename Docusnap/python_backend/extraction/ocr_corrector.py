@@ -117,7 +117,7 @@ def value_to_template(value: str) -> str:
 MIN_CONFIRMED_FOR_SINGLE_SHAPE = 3
 
 
-def derive_template(values: list, confirmed_count: int = 0) -> str | None:
+def derive_template(values: list, confirmed_count: int = 0, value_counts: dict | None = None) -> str | None:
     """
     Infer a consensus format template from confirmed values.
     Returns a template string, or None if the values are too inconsistent.
@@ -126,6 +126,13 @@ def derive_template(values: list, confirmed_count: int = 0) -> str | None:
     yields a template ONLY when it recurs (confirmed_count >= MIN_CONFIRMED_FOR_SINGLE_SHAPE)
     — the strongest possible template (every position fixed), used to fix OCR character
     confusions (O→0, I→1, S→5) in a constant-value field.
+
+    COUNT-WEIGHTED (2026-07): each distinct value votes proportionally to how many times it was
+    confirmed (`value_counts`), so a SINGLE mis-confirmed OCR artifact can no longer drag a
+    strongly-recurring position to the mixed 'A' class — which used to silently stop try_correct
+    fixing O→0 there (a 31× "1102V03NL1" was neutered by one confirmed "11O2V03NL1"). A position
+    whose dominant category holds ≥80% of the WEIGHT is fixed to it; otherwise the prior
+    category-collapse applies. Absent value_counts → weight 1 each → byte-identical to before.
     """
     clean = [v for v in values if v and v.strip()]
     if not clean:
@@ -135,30 +142,45 @@ def derive_template(values: list, confirmed_count: int = 0) -> str | None:
     if len(clean) < 2:
         return None
 
-    templates = [value_to_template(v) for v in clean]
+    def _w(v):
+        try:
+            return max(1, int((value_counts or {}).get(v, 1)))
+        except Exception:
+            return 1
 
-    # Use the most common length (ignore outliers)
-    most_common_len = Counter(len(t) for t in templates).most_common(1)[0][0]
-    same_len = [t for t in templates if len(t) == most_common_len]
+    templates = [(value_to_template(v), _w(v)) for v in clean]
+
+    # Most common length, WEIGHTED (a rare different-length artifact can't shift the choice).
+    len_w = {}
+    for t, w in templates:
+        len_w[len(t)] = len_w.get(len(t), 0) + w
+    most_common_len = max(len_w.items(), key=lambda kv: kv[1])[0]
+    same_len = [(t, w) for t, w in templates if len(t) == most_common_len]
     if len(same_len) < 2:
         return None
 
     n = most_common_len
     merged = []
     for i in range(n):
-        chars = {t[i] for t in same_len}
-        if len(chars) == 1:
-            merged.append(next(iter(chars)))        # unanimous
-        elif chars <= {'D'}:
-            merged.append('D')
-        elif chars <= {'U'}:
-            merged.append('U')
-        elif chars <= {'L'}:
-            merged.append('L')
-        elif chars <= {'D', 'U', 'L', 'A'}:
-            merged.append('A')                      # mixed alphanumeric
+        cat_w = {}
+        for t, w in same_len:
+            cat_w[t[i]] = cat_w.get(t[i], 0) + w
+        total = sum(cat_w.values())
+        dom_cat, dom_w = max(cat_w.items(), key=lambda kv: kv[1])
+        if total and dom_w >= 0.8 * total:
+            merged.append(dom_cat)                  # a strongly-dominant category/literal wins
         else:
-            merged.append('?')                      # too varied
+            chars = set(cat_w)
+            if chars <= {'D'}:
+                merged.append('D')
+            elif chars <= {'U'}:
+                merged.append('U')
+            elif chars <= {'L'}:
+                merged.append('L')
+            elif chars <= {'D', 'U', 'L', 'A'}:
+                merged.append('A')                  # genuinely mixed alphanumeric
+            else:
+                merged.append('?')                  # too varied
 
     template = ''.join(merged)
 
@@ -284,7 +306,7 @@ def build_format_index(formats_data: list) -> dict:
         if len(samples) < 2 and confirmed < MIN_CONFIRMED_FOR_SINGLE_SHAPE:
             continue
 
-        tmpl = derive_template(samples, confirmed_count=confirmed)
+        tmpl = derive_template(samples, confirmed_count=confirmed, value_counts=entry.get('value_counts'))
         if not tmpl:
             continue
 
@@ -303,6 +325,127 @@ def build_format_index(formats_data: list) -> dict:
 
     index['_fallback'] = fallback
     return index
+
+
+# ── Dominant-value SNAP (Stage 2.5d) ─────────────────────────────────────────
+#
+# Fixes two OCR artifacts the character-substitution corrector above CANNOT: an inserted
+# WHITESPACE (a length change — try_correct requires equal length), and a slip on a field
+# whose consensus template got POLLUTED by a mis-confirmed artifact (derive_template treats
+# distinct values equally, so once "11O2…" is confirmed once the position collapses to 'A' and
+# O→0 stops being fixed). Both are cured by voting BY COUNT: snap a fresh read to the field's
+# DOMINANT confirmed literal — the value that clearly dominates the confirmed history — when the
+# read equals it after collapsing internal whitespace, or after at most one known OCR-confusion
+# substitution. Precision-first (reggie): the dominance gate means a 1x pollutant can never be
+# the target and a genuinely-variable field (no dominant) self-excludes. Design notes:
+#   • DOMINANT_MIN_COUNT / DOMINANT_MIN_SHARE — the value must recur ≥5x AND be ≥80% of all
+#     confirmations. 80% (not 60%) guarantees there is provably ONE canonical, so a legitimate
+#     second canonical (a 55/45 split) is never eaten.
+#   • Branch A (whitespace collapse) guesses no character → always auto-apply, zero risk.
+#   • Branch B (≤1 confusion substitution vs the LITERAL dominant) is stricter than try_correct
+#     (fixed target, not a class) but has ONE documented residual: a first-ever REAL sibling code
+#     that differs from the dominant by a single confusable char would be rewritten. SNAP_ALLOW_
+#     SUBSTITUTION is the kill-switch to disable branch B if that ever bites in the field.
+DOMINANT_MIN_COUNT      = 5
+DOMINANT_MIN_SHARE      = 0.80
+SNAP_ALLOW_SUBSTITUTION = True     # kill-switch for branch B (whitespace branch always on)
+
+_WHITESPACE = re.compile(r'\s+')
+
+
+def _is_confusion(read_ch: str, canon_ch: str) -> bool:
+    """True if OCR could plausibly have produced `read_ch` where the true char is `canon_ch`
+    (reusing the existing confusion maps, both directions, plus a case-only difference)."""
+    if read_ch == canon_ch:
+        return True
+    if LETTER_TO_DIGIT.get(read_ch) == canon_ch:   # letter read, digit canonical  (O→0)
+        return True
+    if DIGIT_TO_UPPER.get(read_ch) == canon_ch:    # digit read, UPPER canonical    (0→O)
+        return True
+    if DIGIT_TO_LOWER.get(read_ch) == canon_ch:    # digit read, lower canonical    (0→o)
+        return True
+    if SYMBOL_TO_UPPER.get(read_ch) == canon_ch:   # symbol read, UPPER canonical   ($→S)
+        return True
+    if read_ch.isalpha() and canon_ch.isalpha() and read_ch.lower() == canon_ch.lower():
+        return True                                # case-only
+    return False
+
+
+def snap_to_dominant(value: str, dominant_value: str,
+                     allow_substitution: bool = SNAP_ALLOW_SUBSTITUTION) -> tuple:
+    """Snap `value` to the confirmed DOMINANT literal when it matches after collapsing internal
+    whitespace (branch A) and, optionally, one known OCR-confusion substitution (branch B). The
+    caller enforces the dominance + scope guards (build_dominant_index / the engine call site);
+    this is the pure string test. Returns (snapped_value, n_subs) or (None, 0)."""
+    if not value or not dominant_value or value == dominant_value:
+        return None, 0
+    collapsed = _WHITESPACE.sub('', value)
+    if not collapsed:
+        return None, 0
+    if collapsed == dominant_value:                # branch A — pure whitespace artifact
+        return dominant_value, 0
+    if not allow_substitution or len(collapsed) != len(dominant_value):
+        return None, 0
+    subs = 0
+    for r, c in zip(collapsed, dominant_value):     # branch B — ≤1 confusion vs the literal
+        if r == c:
+            continue
+        if _is_confusion(r, c):
+            subs += 1
+            if subs > 1:
+                return None, 0
+        else:
+            return None, 0                          # a non-confusion difference → not a slip
+    return (dominant_value, subs) if subs == 1 else (None, 0)
+
+
+def build_dominant_index(formats_data: list) -> dict:
+    """Per (supplier, doctype, field): the confirmed DOMINANT code literal eligible for the snap,
+    plus the SET of all confirmed values (so the engine can leave a read that is itself an observed
+    value untouched). A field qualifies only when one value dominates (count ≥ DOMINANT_MIN_COUNT
+    and ≥ DOMINANT_MIN_SHARE of all confirmations) AND that value is a single-token code (no
+    internal whitespace, ≥1 digit) — which excludes variable fields (no dominant) and word/name
+    fields (no digit). Doc-type fallback only when every supplier agrees on the same dominant."""
+    index = {}
+    dt_accum = {}
+    for entry in (formats_data or []):
+        field_key = entry.get('field_key', '')
+        counts = entry.get('value_counts') or {}
+        if not field_key or not counts:
+            continue
+        dom_val, dom_n = max(counts.items(), key=lambda kv: kv[1])
+        total = sum(counts.values()) or (entry.get('confirmed_count', 0) or 0)
+        if total <= 0 or dom_n < DOMINANT_MIN_COUNT or dom_n < DOMINANT_MIN_SHARE * total:
+            continue
+        dom_val = str(dom_val)
+        if _WHITESPACE.search(dom_val) or not any(ch.isdigit() for ch in dom_val):
+            continue                                # dominant must be a single-token code
+        supplier = (entry.get('supplier_name') or '').lower().strip()
+        doc_type = (entry.get('document_type') or '').lower().strip()
+        rec = {'dominant': dom_val, 'known': {str(v) for v in counts.keys()}}
+        if supplier and doc_type:
+            index[(supplier, doc_type, field_key)] = rec
+        dt_accum.setdefault((doc_type, field_key), set()).add(dom_val)
+    fallback = {}
+    for dt_key, doms in dt_accum.items():
+        if len(doms) == 1:
+            fallback[dt_key] = {'dominant': next(iter(doms)), 'known': set()}
+    index['_fallback'] = fallback
+    return index
+
+
+def lookup_dominant(dominant_index: dict, field_key: str,
+                    supplier_name: str | None, doc_type: str | None):
+    """Scope lookup mirroring correct_extraction: exact (supplier, doctype, field) then the
+    all-suppliers-agree doc-type fallback. Returns the rec {'dominant', 'known'} or None."""
+    if not dominant_index:
+        return None
+    s  = (supplier_name or '').lower().strip()
+    dt = (doc_type or '').lower().strip()
+    rec = dominant_index.get((s, dt, field_key))
+    if rec:
+        return rec
+    return (dominant_index.get('_fallback') or {}).get((dt, field_key))
 
 
 # ── Learned noise-edge stripping ─────────────────────────────────────────────

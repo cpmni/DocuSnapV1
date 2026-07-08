@@ -254,6 +254,7 @@ const HELP_TEXTS = {
   'acknowledge':   'Mark this flagged document as checked, so it can be filed.',
   'delete':        'Move this document to the recycle bin — recoverable from Search → Recycle bin.',
   'reprocess-all': 'Re-run extraction on every document in the queue — useful after teaching or changing settings.',
+  'reprocess-supplier': 'Re-run extraction on just the queued documents from the open document’s sender — fix one supplier’s batch after teaching it, without reprocessing the whole queue.',
   'stop-file-all': 'Stop filing the rest. Documents already filed stay filed.',
   'stop-reprocess':'Stop reprocessing the rest. Already-done documents keep their new values.',
   'draw-anchor':   'Draw a box around a fixed label on the page (e.g. “Date:”) for the wizard to track.',
@@ -305,7 +306,10 @@ async function loadQueue() {
   const _editTypeBtn = document.getElementById('btn-edit-doctype');
   if (_editTypeBtn) {
     _editTypeBtn.style.display = isAdmin ? '' : 'none';
-    _editTypeBtn.onclick = () => window.docusnap.openSettingsWindowAtSection('doctypes');
+    // Open Settings → Document Types focused on the CURRENTLY-selected type (if one is), so the
+    // operator lands on the fields/roles they were looking at — not the first type in the list.
+    _editTypeBtn.onclick = () => window.docusnap.openSettingsWindowAtSection(
+      selectedTypeSlug ? { section: 'doctypes', docTypeSlug: selectedTypeSlug } : 'doctypes');
   }
   updateEditTypeBtn();
   queue         = await window.docusnap.getReviewQueue();
@@ -868,6 +872,7 @@ async function selectDoc(doc, opts) {
   // item is visible (matters when cycling to an off-screen document).
   updateDocNavButtons();
   scrollActiveItemIntoView();
+  updateReprocessSupplierButton();   // relabel the per-sender reprocess for this doc's supplier
 }
 // fieldsOnly: bulk "File All Ready" needs only the field VALUES + readiness, so
 // it skips the PDF→PNG preview render (the dominant per-doc cost) and the
@@ -2662,11 +2667,12 @@ document.getElementById('btn-confirm').addEventListener('click', async () => {
   // instead of "City Office doc 2".
   const list = activeTab === 'deferred' ? deferredQueue : reviewDisplayOrder();
   const idx  = list.findIndex(d => d.id === currentDoc?.id);
+  const supplier = (currentDoc?.supplier_name || '').trim();   // finish this sender's docs before moving on
   const r = await confirmCurrentDoc();
   if (r.cancelled) return;
   if (r.error) { showToast(r.error, 'err'); return; }
   updateTabCounts();
-  advanceAfterAction(idx);
+  advanceAfterAction(idx, supplier);
   window.docusnap.notifyReviewComplete();
 });
 
@@ -3089,18 +3095,27 @@ async function deleteFromQueue(doc) {
 // `removedIdx` is the just-removed doc's old position; because the list has
 // already shifted up, the element now AT that index is the next doc (clamped to
 // the last entry if we filed the bottom one). Defaults to 0 (top) when unknown.
-function advanceAfterAction(removedIdx = 0) {
+function advanceAfterAction(removedIdx = 0, preferSupplier = null) {
   const at = Math.max(0, removedIdx);
-  if (activeTab === 'deferred') {
-    renderDeferredList();
-    if (deferredQueue.length > 0) selectDoc(deferredQueue[Math.min(at, deferredQueue.length - 1)]);
-    else { currentDoc = null; clearDocPanel(); }
-  } else {
-    renderQueueList();
-    const order = reviewDisplayOrder();   // grouped display order — the doc now AT `at` is the next one
-    if (order.length > 0) selectDoc(order[Math.min(at, order.length - 1)]);
-    else { currentDoc = null; clearDocPanel(); }
+  const order = activeTab === 'deferred' ? (renderDeferredList(), deferredQueue)
+                                         : (renderQueueList(), reviewDisplayOrder());
+  const next = _pickNextDoc(order, at, preferSupplier);
+  if (next) selectDoc(next);
+  else { currentDoc = null; clearDocPanel(); }
+}
+
+// Choose the doc to open after filing/removing one. When preferSupplier is given, FINISH that
+// sender's remaining docs first (the operator asked to work a sender at a time) — scan forward
+// from the vacated slot, then backward — before falling back to the doc now occupying that slot
+// (the prior "next in the visible order" behaviour). Works in grouped AND chronological views.
+function _pickNextDoc(order, at, preferSupplier) {
+  if (!order || order.length === 0) return null;
+  if (preferSupplier) {
+    const norm = s => (s || '').trim();
+    for (let i = at; i < order.length; i++) if (norm(order[i].supplier_name) === preferSupplier) return order[i];
+    for (let i = Math.min(at, order.length) - 1; i >= 0; i--) if (norm(order[i].supplier_name) === preferSupplier) return order[i];
   }
+  return order[Math.min(at, order.length - 1)];
 }
 
 // ── Logo fingerprinting ───────────────────────────────────────────────────────
@@ -3349,7 +3364,12 @@ function renderLearningHistory() {
   if (_lhEditing !== null) {
     const inp = document.getElementById('lh-edit-input');
     if (inp) {
-      inp.value = _lhEditing; inp.focus(); inp.select();
+      inp.value = _lhEditing;
+      // Defer focus to the next frame: focusing an element the SAME tick its parent innerHTML was
+      // just set is dropped by Chromium (no caret), and the just-removed ✎ button leaves the render
+      // widget's keyboard focus unrouted — which also froze typing in the MAIN review fields until
+      // the window was re-activated. The rAF defer lands the caret and keeps the widget focused.
+      requestAnimationFrame(() => { try { inp.focus(); inp.select(); } catch {} });
       inp.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') { e.preventDefault(); commitLhEdit(inp); }
         else if (e.key === 'Escape') { e.preventDefault(); _lhEditing = null; renderLearningHistory(); }
@@ -3390,20 +3410,30 @@ function _likelySlip(from, to) {
   return _OCR_PAIRS.has((from + to).toUpperCase());
 }
 function computeSlipFixes() {
-  const values = _lhData.map(r => r.value).filter(v => typeof v === 'string' && v.length);
-  if (values.length < 4) return [];                            // need a real column to vote
+  // Vote WEIGHTED BY OCCURRENCE COUNT (`r.count` = "Times seen"), not one-per-distinct-value.
+  // Otherwise a value confirmed 31 times and a one-off OCR slip of it (e.g. "11O2…" vs "1102…")
+  // look like a 1-vs-1 tie: no position ever reaches the 80% consensus and the old `< 4 distinct
+  // values` gate bailed before voting at all. With counts, the 31x reading is the clear consensus
+  // and the 1x "O"→"0" slip is proposed.
+  const rows = _lhData
+    .filter(r => typeof r.value === 'string' && r.value.length)
+    .map(r => ({ value: r.value, count: Math.max(1, r.count || 1) }));
+  const totalCount = rows.reduce((s, r) => s + r.count, 0);
+  if (rows.length < 2 || totalCount < 4) return [];            // need ≥2 distinct + a real body of confirmations
+
   const shapeCount = {};
-  values.forEach(v => { const s = _shapeSig(v); shapeCount[s] = (shapeCount[s] || 0) + 1; });
+  rows.forEach(r => { const s = _shapeSig(r.value); shapeCount[s] = (shapeCount[s] || 0) + r.count; });
   const domShape = Object.entries(shapeCount).sort((a, b) => b[1] - a[1])[0][0];
-  const valueSet = new Set(values);
+  const valueSet = new Set(rows.map(r => r.value));
   const out = [];
-  for (const v of values) {
+  for (const r of rows) {
+    const v = r.value;
     const diffs = [];
     for (let i = 0; i < v.length; i++) {
       const tally = {}; let total = 0;
-      for (const w of values) {
-        if (w === v || w.length <= i) continue;
-        tally[w[i]] = (tally[w[i]] || 0) + 1; total++;
+      for (const w of rows) {
+        if (w.value === v || w.value.length <= i) continue;
+        tally[w.value[i]] = (tally[w.value[i]] || 0) + w.count; total += w.count;   // weighted
       }
       if (total < 3) continue;
       const [domChar, domN] = Object.entries(tally).sort((a, b) => b[1] - a[1])[0];
@@ -3786,13 +3816,16 @@ document.getElementById('btn-stop-reprocess').addEventListener('click', () => {
   btnStop.innerHTML = 'Stopping…';
 });
 
-document.getElementById('btn-reprocess-all').addEventListener('click', async () => {
-  if (queue.length === 0) { showToast('No documents in queue', 'warn'); return; }
+// Reprocess a set of documents (the whole queue, or just one sender's) through the shared
+// batched-worker path. scopeLabel is shown in the progress banner + toast.
+async function runReprocessBatch(docs, scopeLabel) {
+  if (!docs || docs.length === 0) { showToast('No documents to reprocess', 'warn'); return; }
   if (_batchActive) return;
   // The open document's unsaved edits/type choice are re-rendered away too (QA audit #3).
   if (hasPendingReviewEdits() && !confirm(REPROCESS_DISCARD_WARNING)) return;
 
   const btnAll  = document.getElementById('btn-reprocess-all');
+  const btnSup  = document.getElementById('btn-reprocess-supplier');
   const btnOne  = document.getElementById('btn-reprocess');
   const btnStop = document.getElementById('btn-stop-reprocess');
   const banner  = document.getElementById('reprocess-progress');
@@ -3800,17 +3833,15 @@ document.getElementById('btn-reprocess-all').addEventListener('click', async () 
   _batchActive  = true;
   _batchStopped = false;
   btnAll.disabled      = true;
+  if (btnSup) btnSup.disabled = true;
   btnOne.disabled      = true;
   btnStop.disabled     = false;
   btnStop.innerHTML    = '&#9632; Stop';
   btnStop.style.display = '';
-  // Progress shows in the banner above the buttons — the button label stays put.
-  btnAll.innerHTML     = '<span class="btn-spinner"></span> Reprocessing…';
   banner.classList.remove('done');
   banner.classList.add('show');
-  banner.textContent   = `Reprocessing 0 of ${queue.length}…`;
+  banner.textContent   = `Reprocessing 0 of ${docs.length} · ${scopeLabel}…`;
 
-  const docs  = [...queue];   // snapshot; queue is refetched in finally
   const total = docs.length;
   let done = 0, failed = 0;
 
@@ -3823,8 +3854,8 @@ document.getElementById('btn-reprocess-all').addEventListener('click', async () 
   // reprocess-progress; Stop kills the workers (see the stop handler).
   window.docusnap.removeReprocessProgress();
   window.docusnap.onReprocessProgress((msg) => {
-    if (msg.type === 'file_done')  banner.textContent = `Reprocessing ${msg.done || 0} of ${msg.total || total}…`;
-    else if (msg.type === 'log')   console.log('[Reprocess All]', msg.text);
+    if (msg.type === 'file_done')  banner.textContent = `Reprocessing ${msg.done || 0} of ${msg.total || total} · ${scopeLabel}…`;
+    else if (msg.type === 'log')   console.log('[Reprocess]', msg.text);
   });
 
   try {
@@ -3866,7 +3897,7 @@ document.getElementById('btn-reprocess-all').addEventListener('click', async () 
     btnAll.disabled      = false;
     btnOne.disabled      = false;
     btnStop.style.display = 'none';
-    btnAll.innerHTML     = 'Reprocess all in queue';
+    updateReprocessSupplierButton();   // re-enable + relabel the per-sender button for the open doc
     // Auto-commit any docs that reprocessed to 100% (setting-gated) + toast.
     await autoCommitFullConfidence();
   }
@@ -3888,7 +3919,37 @@ document.getElementById('btn-reprocess-all').addEventListener('click', async () 
                       : `Reprocessed ${done} document${done !== 1 ? 's' : ''}`),
     (failed || stopped) ? 'warn' : 'ok'
   );
+}
+
+document.getElementById('btn-reprocess-all').addEventListener('click', () => runReprocessBatch([...queue], 'all in queue'));
+
+// Reprocess only the documents from the OPEN document's sender — for fixing one supplier's
+// batch after teaching/settings changes without re-running the whole queue.
+document.getElementById('btn-reprocess-supplier').addEventListener('click', () => {
+  const sup = (currentDoc?.supplier_name || '').trim();
+  if (!sup) { showToast('Open a document first', 'warn'); return; }
+  const docs = queue.filter(d => (d.supplier_name || '').trim() === sup);
+  if (docs.length === 0) { showToast('No queued documents from this sender', 'warn'); return; }
+  runReprocessBatch(docs, sup);
 });
+
+// Show + label the per-sender reprocess button for the OPEN document's supplier (queue tab only;
+// hidden when there's no sender or no other queued docs from it). Called on doc select + batch end.
+function updateReprocessSupplierButton() {
+  const btn = document.getElementById('btn-reprocess-supplier');
+  if (!btn) return;
+  const sup = (currentDoc?.supplier_name || '').trim();
+  const n = (sup && activeTab !== 'deferred') ? queue.filter(d => (d.supplier_name || '').trim() === sup).length : 0;
+  if (n > 0) {
+    const shown = sup.length > 20 ? sup.slice(0, 19) + '…' : sup;
+    btn.textContent = `Reprocess ${n} from “${shown}”`;
+    btn.title = `Reprocess the ${n} queued document${n > 1 ? 's' : ''} from ${sup}`;
+    btn.disabled = _batchActive;
+    btn.style.display = '';
+  } else {
+    btn.style.display = 'none';
+  }
+}
 
 // ── Split PDF ─────────────────────────────────────────────────────────────────
 // Split mode: show the range input only for "by range", the N field only for
@@ -3975,6 +4036,8 @@ document.getElementById('split-ranges-input').addEventListener('keydown', (e) =>
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function clearDocPanel() {
   _clearPreviewState();
+  const _rsBtn = document.getElementById('btn-reprocess-supplier');
+  if (_rsBtn) _rsBtn.style.display = 'none';   // cleared panel → no open doc → hide per-sender reprocess
   docImgWrap.style.display = 'none';
   const ph = document.getElementById('doc-placeholder');
   ph.style.display = '';

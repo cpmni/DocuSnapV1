@@ -296,6 +296,7 @@ class ExtractionEngine:
         self.patterns     = keyword.load_patterns(config_path)
         self.emit         = emit_fn or (lambda msg: None)
         self.format_index        = {}   # populated by set_formats()
+        self.dominant_index      = {}   # Stage 2.5d dominant-value snap (populated by set_formats)
         self.noise_profile_index = {}   # populated by set_formats()
         self.format_class_index  = {}   # populated by set_formats()
         self.label_overrides     = []   # populated by set_label_overrides()
@@ -678,6 +679,7 @@ class ExtractionEngine:
         """Pre-build all format indexes from confirmed value data."""
         self.format_index        = ocr_corrector.build_format_index(formats_data)
         self.noise_profile_index = ocr_corrector.build_noise_profile_index(formats_data)
+        self.dominant_index      = ocr_corrector.build_dominant_index(formats_data)
         self.format_class_index  = format_anomaly_checker.build_format_class_index(formats_data)
         n = len([k for k in self.format_index if k != '_fallback'])
         m = len(self.noise_profile_index)
@@ -1608,6 +1610,48 @@ class ExtractionEngine:
                                 **{"from": data["value"], "to": corrected_val})
             if n_corrected:
                 self.log(f"  Stage 2.5: {n_corrected} OCR correction(s) applied")
+
+        # ── Stage 2.5d: snap a CODE value to its DOMINANT confirmed literal (reggie) ──
+        # Fixes what try_correct can't: an inserted SPACE (length change), and a slip on a field
+        # whose consensus template was polluted by a mis-confirmed artifact. Count-weighted — it
+        # only snaps to a value that dominates the confirmed history (≥5 and ≥80%), so a 1x
+        # pollutant can never be the target and a variable field (no dominant) self-excludes.
+        # Skips: name fields (name_match owns those) and FIXED/override reads (a user-set value,
+        # not an OCR read); a read that is ITSELF an observed confirmed value is left alone.
+        if self.dominant_index:
+            n_snapped = 0
+            for key, data in list(results.items()):
+                if not isinstance(data, dict) or not data.get('value'):
+                    continue
+                _m = str(data.get('method') or '')
+                if value_quality.is_name_like_field(key) \
+                        or 'override' in _m or 'template_fixed' in _m or 'template_mapping' in _m:
+                    continue
+                rec = ocr_corrector.lookup_dominant(self.dominant_index, key, supplier_name, document_slug)
+                if not rec:
+                    continue
+                val = str(data['value'])
+                if val in rec.get('known', ()):                      # already a real (observed) value → leave it
+                    continue
+                snapped, n_subs = ocr_corrector.snap_to_dominant(val, rec['dominant'])
+                if snapped and snapped != val:
+                    new_conf = min(95, (data.get('confidence') or 0) + (18 if n_subs == 0 else 12))
+                    results[key] = {
+                        **data,
+                        'value':           snapped,
+                        'display_value':   snapped,
+                        'confidence':      new_conf,
+                        'was_corrected':   True,
+                        'corrected_to':    snapped,
+                        'validation_note': f"Auto-corrected to this field's recurring value (was: {val})",
+                        'method':          (data.get('method', '') + '+snapped'),
+                    }
+                    n_snapped += 1
+                    self._t('transform', field=key, stage='2.5d_snap',
+                            method=results[key]['method'], confidence=new_conf,
+                            **{'from': val, 'to': snapped})
+            if n_snapped:
+                self.log(f"  Stage 2.5d: {n_snapped} value(s) snapped to the dominant learned value")
 
         # ── Background reconciliation components (SHADOW) ──────────────────────
         # Read subtotal/VAT/shipping/discount that the doc type does NOT define as fields,

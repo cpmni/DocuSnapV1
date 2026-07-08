@@ -3640,14 +3640,25 @@ loadTemplates().then(async () => {
 });
 api.onNavigateToTemplate(openTemplateInEditor);
 
-// Section/tab deep-link (e.g. Home "Activate" → 'licensing'): click the matching tab.
-function gotoSettingsSection(section) {
-  if (!section) return;
-  const tab = document.querySelector(`.tab[data-tab="${section}"]`);
+// Section/tab deep-link (e.g. Home "Activate" → 'licensing'): click the matching tab. The target
+// may be a bare section string, or { section, docTypeSlug } to ALSO open a specific document type
+// in the editor (Review's "Edit type" shortcut lands on the type the operator had selected).
+async function gotoSettingsSection(target) {
+  if (!target) return;
+  const section = typeof target === 'string' ? target : target.section;
+  const docTypeSlug = (typeof target === 'object' && target) ? target.docTypeSlug : null;
+  const tab = section && document.querySelector(`.tab[data-tab="${section}"]`);
   if (tab) tab.click();
+  if (docTypeSlug) {
+    if (!allTypesWithFields || !allTypesWithFields.length) {
+      try { await refreshDocTypesList(); } catch {}
+    }
+    const t = (allTypesWithFields || []).find(x => x && x.slug === docTypeSlug);
+    if (t) selectDocType(t.id);
+  }
 }
 (async () => {
-  try { gotoSettingsSection(await api.getSettingsSectionTarget()); }
+  try { await gotoSettingsSection(await api.getSettingsSectionTarget()); }
   catch (e) { console.warn('settings section target failed:', e.message); }
 })();
 api.onNavigateToSection?.(gotoSettingsSection);
