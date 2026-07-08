@@ -745,13 +745,13 @@ app.whenReady().then(() => {
     // just adds thrash during the splash→login→shell handoff. Route keys into the web
     // widget only; the OS focus event itself already made this the key window. (eric)
     win.on('focus', () => { try { win.webContents.focus(); } catch {} });
-    // Keyboard-focus repair TRIGGER (eric): any OS activation transition — a native
-    // confirm()/alert(), an app-switch, opening a child window — blurs this window and can
-    // leave Blink's render widget with STALE-TRUE focus state (click a field, no caret, until
-    // you alt-tab out and back). Mark the window "focus suspect" on blur; the next text-field
-    // press (ensure-window-focus below) then does the real blurWebView()+focus transition and
-    // clears the flag. This is the reliable signal document.hasFocus() failed to provide.
-    win.on('blur', () => { win.__focusSuspect = true; });
+    // NOTE: do NOT mark the window "focus suspect" on win.on('blur') — that fires far too
+    // broadly on Windows (a native <select> dropdown OPENING its popup blurs the owning
+    // BrowserWindow), so every dropdown-open flagged the window suspect and the next pointer
+    // press ran blurWebView() and CLOSED the just-opened dropdown (the "dropdown flashes open
+    // and shut" + "no caret" regression). The suspect flag is now set ONLY by the precise
+    // after-native-dialog signal (renderer wraps confirm()/alert() → mark-focus-suspect), which
+    // is the actual broken case; the pageHasFocus===false fallback still covers the rest.
     if (win.isVisible()) grabFocus();
   });
 

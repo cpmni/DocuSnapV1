@@ -360,8 +360,11 @@ contextBridge.exposeInMainWorld('docusnap', {
 window.addEventListener('pointerdown', (e) => {
   try {
     const t = e.target;
-    const el = t && t.closest && t.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]');
-    if (!el) return;                    // only repair when actually entering a field
+    // Deliberately EXCLUDE <select>: a native dropdown has no text caret to repair, and the
+    // repair's blurWebView() / el.focus() would CLOSE its just-opened popup (the "dropdown
+    // flashes open and shut" regression). Only real text-editing controls need caret repair.
+    const el = t && t.closest && t.closest('input, textarea, [contenteditable=""], [contenteditable="true"]');
+    if (!el) return;                    // only repair when actually entering a text field
     // ALWAYS re-assert webContents keyboard focus on a text-field press. document.hasFocus()
     // is UNRELIABLE here: after a native confirm()/alert() (the Review window uses these for
     // the digit/issuer/delete prompts) — or a child window closing — the window reports
