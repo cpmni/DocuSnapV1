@@ -306,7 +306,10 @@ async function loadQueue() {
   const _editTypeBtn = document.getElementById('btn-edit-doctype');
   if (_editTypeBtn) {
     _editTypeBtn.style.display = isAdmin ? '' : 'none';
-    _editTypeBtn.onclick = () => window.docusnap.openSettingsWindowAtSection('doctypes');
+    // Open Settings → Document Types focused on the CURRENTLY-selected type (if one is), so the
+    // operator lands on the fields/roles they were looking at — not the first type in the list.
+    _editTypeBtn.onclick = () => window.docusnap.openSettingsWindowAtSection(
+      selectedTypeSlug ? { section: 'doctypes', docTypeSlug: selectedTypeSlug } : 'doctypes');
   }
   updateEditTypeBtn();
   queue         = await window.docusnap.getReviewQueue();
