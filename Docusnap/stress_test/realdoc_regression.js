@@ -28,6 +28,11 @@ const learning = require(path.join(REPO, 'database', 'modules', 'learning.js'));
 const templates = require(path.join(REPO, 'database', 'modules', 'templates.js'));
 const trust = require(path.join(REPO, 'database', 'modules', 'trust.js'));
 let labelOverrides = null; try { labelOverrides = require(path.join(REPO, 'database', 'modules', 'label_overrides.js')); } catch {}
+// GT overrides: docs whose CONFIRMED value was poisoned during testing (mis-confirmed page
+// numbers / transpositions). Corrects the harness's EXPECTED value to the true value (per the
+// original filename), so the M gate reflects true pipeline soundness — WITHOUT mutating the DB.
+// See stress_test/gt_overrides.json. Ignored (all reads scored vs raw DB) if the file is absent.
+let GT_OVERRIDES = {}; try { GT_OVERRIDES = JSON.parse(fs.readFileSync(path.join(ST, 'gt_overrides.json'), 'utf8')); } catch {}
 
 const normSupplier = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const normRef = s => String(s || '').toUpperCase().replace(/\s+/g, '');
@@ -89,7 +94,7 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   const nameToSlug = {}; for (const r of db.prepare('SELECT name, slug FROM document_types').all()) nameToSlug[r.name] = r.slug;
   const roles = {}; for (const r of db.prepare('SELECT slug, ref_field_key, date_field_key FROM document_types').all()) roles[r.slug] = { ref: r.ref_field_key, date: r.date_field_key };
   const slugToId = {}; for (const r of db.prepare('SELECT id, slug FROM document_types').all()) slugToId[r.slug] = r.id;
-  const conf = db.prepare(`SELECT d.id, d.supplier_name, d.reference_number, d.doc_date, d.stored_path, d.working_path, dt.slug type_slug
+  const conf = db.prepare(`SELECT d.id, d.supplier_name, d.reference_number, d.doc_date, d.original_filename, d.stored_path, d.working_path, dt.slug type_slug
     FROM documents d LEFT JOIN document_types dt ON dt.id = d.document_type_id WHERE d.status = 'confirmed'`).all();
   const exByDoc = {};
   for (const e of db.prepare(`SELECT e.document_id, e.field_key, e.display_value FROM extractions e JOIN documents d ON d.id = e.document_id WHERE d.status = 'confirmed'`).all())
@@ -99,7 +104,7 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   const RR = fs.mkdtempSync(path.join(os.tmpdir(), 'realdoc-'));
   const resolveFile = d => (d.working_path && fs.existsSync(d.working_path)) ? d.working_path
                          : (d.stored_path && fs.existsSync(d.stored_path)) ? d.stored_path : null;
-  const gt = {}; const files = []; let noFile = 0;
+  const gt = {}; const files = []; let noFile = 0; const gtOverrideSkipped = [];
   for (const d of conf) {
     const src = resolveFile(d); if (!src) { noFile++; continue; }
     const fname = `doc${d.id}${path.extname(src) || '.pdf'}`;
@@ -108,7 +113,27 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
     const ex = exByDoc[d.id] || {};
     gt[fname] = { id: d.id, type_slug: d.type_slug, supplier: d.supplier_name, ref: d.reference_number, date: d.doc_date,
                   total: ex.total != null ? ex.total : ex.total_amount, subtotal: ex.subtotal };
+    // Apply a GT override (poisoned test-session confirmation → true value per filename), but ONLY
+    // after SELF-VALIDATING that the doc at this id is STILL the poisoned one (Oracle condition): the
+    // id keys a MUTABLE, resettable, machine-specific live DB, so after a `docusnap.db` reset (or on
+    // another machine / CI) id 896 could be an UNRELATED doc — blindly substituting would mask a real
+    // regression. Require the DB row still carry the recorded poison (`poisoned_ref`/`poisoned_date`)
+    // AND the filename token (`fname_has`). On ANY mismatch: DO NOT apply, warn, score vs raw DB GT.
+    const ov = GT_OVERRIDES[String(d.id)];
+    if (ov && typeof ov === 'object') {
+      const fnameOk = ov.fname_has == null || String(d.original_filename || '').includes(ov.fname_has);
+      const refOk   = ov.poisoned_ref  == null || normRef(d.reference_number) === normRef(ov.poisoned_ref);
+      const dateOk  = ov.poisoned_date == null || normDate(d.doc_date) === normDate(ov.poisoned_date);
+      if (fnameOk && refOk && dateOk) {
+        if (ov.ref  != null) gt[fname].ref  = ov.ref;
+        if (ov.date != null) gt[fname].date = ov.date;
+        gt[fname]._overridden = true;
+      } else {
+        gtOverrideSkipped.push(`#${d.id}: GT override SKIPPED (identity mismatch — DB reset / re-confirmed / other machine? db-ref='${d.reference_number}' file='${d.original_filename}')`);
+      }
+    }
   }
+  const gtOverrideN = Object.values(gt).filter(g => g._overridden).length;
   const snapObj = snap(db);
   const res = await runP(RR, snapObj.args, files);
 
@@ -158,7 +183,10 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
         // surface as needs-a-check in the app, so they're caught, not silent.
         const flagged = !!(exr && (String(exr.validation_note || '').trim() || (exr.confidence != null && exr.confidence < 70)));
         if (!flagged) silentWrong++;
-        regress.push(`#${g.id} ${g.type_slug} ${f}: want '${want}' got '${got}'${flagged ? ' [flagged]' : ' [SILENT]'}`);
+        // An OVERRIDDEN doc that STILL fails means the pipeline reads NEITHER the poison nor the
+        // filename-true value — a genuine problem the override is NOT hiding (want is the corrected GT).
+        const ovTag = g._overridden ? ' [GT-OVERRIDDEN — pipeline disagrees with the TRUE value!]' : '';
+        regress.push(`#${g.id} ${g.type_slug} ${f}: want '${want}' got '${got}'${flagged ? ' [flagged]' : ' [SILENT]'}${ovTag}`);
       }
     }
   }
@@ -168,7 +196,10 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   const pct = (o, n) => n ? (100 * o / n).toFixed(1) + '%' : '-';
   const out = [];
   out.push(`# Real-doc regression — ${files.length} confirmed docs reprocessed vs their confirmed values`);
-  out.push(`(${noFile} confirmed docs had no resolvable file and were skipped.)\n`);
+  out.push(`(${noFile} confirmed docs had no resolvable file and were skipped.)`);
+  if (gtOverrideN) out.push(`(${gtOverrideN} docs used a GT override — poisoned test-session confirmations corrected to the filename true value; see stress_test/gt_overrides.json.)`);
+  for (const s of gtOverrideSkipped) out.push(`⚠ ${s}`);
+  out.push('');
   out.push('| Field | correct | scored | accuracy |');
   out.push('|---|---|---|---|');
   for (const f of F) out.push(`| ${f} | ${acc[f].ok} | ${acc[f].n} | ${pct(acc[f].ok, acc[f].n)} |`);
