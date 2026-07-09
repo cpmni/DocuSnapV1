@@ -845,6 +845,22 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 42 applied: telemetry_events');
   }
 
+  // Migration 43: document_types.title_aliases — extra printed-title phrases that ALSO
+  // detect the type (document_types.normaliseTitleAliases / keyword.detect_document_type).
+  // The safeAdd for this column in addMissingColumns sits inside the migration-2 block,
+  // which every existing install stamped long ago — so the column only ever landed on a
+  // FRESH database (which is why the fresh-DB unit test passed while real installs stayed
+  // without it). Stamped here so existing DBs gain it; hasColumn keeps it idempotent
+  // against the fresh-DB path having already added it.
+  if (!applied.has(43)) {
+    if (tableExists(db, 'document_types') && !hasColumn(db, 'document_types', 'title_aliases')) {
+      try { db.exec(`ALTER TABLE document_types ADD COLUMN title_aliases TEXT`); }
+      catch (e) { console.warn(`  document_types.title_aliases: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (43)').run();
+    console.log('JS migration 43 applied: document_types.title_aliases');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

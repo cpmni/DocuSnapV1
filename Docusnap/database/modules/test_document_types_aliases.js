@@ -99,6 +99,32 @@ console.log('\nGarbage tolerance + migration idempotency:');
   check('runMigrations is idempotent (no throw on second run)', ok && hasCol());
   db.close();
 }
+{
+  // REGRESSION (2026-07-09): an EXISTING install has migrations 1–42 already stamped, so
+  // the safeAdd inside addMissingColumns (migration-2 block) never runs — the column must
+  // land via the stamped migration 43. Simulate a real pre-feature DB: document_types
+  // WITHOUT the column + a fully-stamped migrations table, then run migrations.
+  const db = new Database(':memory:');
+  db.exec(`CREATE TABLE migrations (
+    version INTEGER NOT NULL UNIQUE,
+    applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  const ins = db.prepare('INSERT INTO migrations (version) VALUES (?)');
+  for (let v = 1; v <= 42; v++) ins.run(v);
+  db.exec(`CREATE TABLE document_types (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, slug TEXT NOT NULL UNIQUE,
+    built_in INTEGER NOT NULL DEFAULT 0, enabled INTEGER NOT NULL DEFAULT 1,
+    ref_field_key TEXT, date_field_key TEXT,
+    sort_order INTEGER NOT NULL DEFAULT 100,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  const hasCol = () => db.prepare("PRAGMA table_info(document_types)").all().some(c => c.name === 'title_aliases');
+  check('pre-check: simulated existing DB has NO title_aliases column', !hasCol());
+  runMigrations(db);
+  check('EXISTING stamped DB (v42) gains title_aliases via migration 43', hasCol());
+  check('migration 43 is stamped', !!db.prepare('SELECT 1 FROM migrations WHERE version=43').get());
+  db.close();
+}
 
 console.log(`\n${fails ? fails + ' FAILED' : 'All title-alias checks passed.'}`);
 process.exit(fails ? 1 : 0);
