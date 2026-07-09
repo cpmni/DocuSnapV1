@@ -218,6 +218,35 @@ def _recover_clean_token(value, val_type, validation_patterns, label=None):
     return token if _crop_is_credible(token, val_type, validation_patterns, label) else None
 
 
+def _matches_learned_shape(value, field_key, format_lookup) -> bool:
+    """True when `value`'s shape signature is one the scope has CONFIRMED for this field — the
+    corroboration that lets a debris-recovered read commit CONFIDENT (drop the 'please verify' flag)
+    instead of recover-and-flag. The Oracle's condition 3c: an OFF-shape read (a systematic misread
+    that garbled the value) keeps the flag. Conservative — thin/free-text history (no learned shapes)
+    → False → keep the flag. Reuses format_anomaly_checker.shape_signature (the same shapes
+    _slipfix_to_shape trusts). Pure aside from the lazy import."""
+    if not value or format_lookup is None:
+        return False
+    try:
+        entry = format_lookup(field_key) or {}
+    except Exception:
+        return False
+    shapes = entry.get('shapes') or []
+    if not shapes:
+        return False
+    try:
+        # CLASS-level match: the stored shapes are length-agnostic ('#' = digits, any length; the
+        # model collapses run-lengths), while shape_signature produces the length-specific '######'.
+        # Fold each digit/letter RUN to a single char (keeping SEPARATORS, so structure like
+        # '#-#-#' is still distinguished) so '######' matches the learned '#'. A garbled/off-class
+        # read ('@@###', letters where digits are learned) does NOT match → keeps the flag.
+        from extraction.format_anomaly_checker import shape_signature
+        cls = lambda sh: re.sub(r'([#@])\1*', r'\1', sh or '')
+        return cls(shape_signature(str(value))) in {cls(s) for s in shapes}
+    except Exception:
+        return False
+
+
 def extract_with_anchors(ocr_text: str, anchors: list[dict],
                          supplier_name: str | None,
                          document_type: str | None,
@@ -883,8 +912,8 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 conf = min(93, registration.registration_confidence(page_transform))
             elif method == "anchor_crop_slipfix":
                 conf = min(70, conf)   # recover-and-flag: a gate-rejected read repaired to the learned shape
-            elif method == "anchor_crop_recovered":
-                conf = min(70, conf)   # recover-and-flag: trimmed OCR clip-debris from an otherwise-clean read
+            # anchor_crop_recovered is capped/flagged AFTER the located gate (see _rec_confident):
+            # a LOCATED, shape-matching recovery commits CONFIDENT (no flag); else capped to 70 + flagged.
             elif method == "anchor_crop_crosscheck":
                 conf = min(70, conf)   # cross-read disagreement: full-page value preferred, routed to review
             if _xcheck_note:
@@ -963,6 +992,24 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                     if on_reject:
                         on_reject(field_key, method, value, "blind_cross_supplier_anchor")
                     continue
+            # Confident recovery (oscar's confident-clean, Oracle-gated): a debris-recovered read
+            # whose clean token is LOCATED at the taught position AND matches the field's learned
+            # shape is as trustworthy as a normal clean read — _recover_clean_token only ever stripped
+            # NON-alphanumeric edge debris, so it cannot have force-fit a glyph (the Oracle's
+            # glyph-preservation condition, satisfied by construction). Drop the "please verify" flag
+            # and DON'T cap the confidence. An UNLOCATED or OFF-shape recovery keeps the capped +
+            # flagged posture (fail toward review). Harness M=0 is the safety gate.
+            _rec_confident = False
+            if method == "anchor_crop_recovered":
+                _rec_confident = bool(located_ok) and _matches_learned_shape(value, field_key, format_lookup)
+                if not _rec_confident:
+                    conf = min(70, conf)   # unlocated / off-shape → capped + flagged (route to review)
+                else:
+                    # located + shape-matched: DROP the "please verify" flag (the value is corroborated),
+                    # but keep confidence BELOW the auto-file floor (88) so a debris-recovered read still
+                    # gets a one-glance human confirm and never SILENTLY auto-files — regardless of the
+                    # anchor's usage_count. Better UX (no alarming note) without removing the checkpoint.
+                    conf = min(conf, 87)
             results[field_key] = {
                 "value":      value.strip(),
                 "confidence": conf,
@@ -997,9 +1044,10 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                     "corrected_to":    value.strip(),
                     "validation_note": "Corrected a likely OCR misread to the learned format — please verify.",
                 })
-            elif method == "anchor_crop_recovered":
-                # Recover-and-flag: the crop read the right value with OCR clip-debris (". = 317437");
-                # we trimmed the debris to the clean token but surface it for a one-glance confirm.
+            elif method == "anchor_crop_recovered" and not _rec_confident:
+                # Recover-and-flag: the crop read the right value with OCR clip-debris (". = 317437")
+                # but the read is UNLOCATED or OFF the learned shape — trim the debris but surface it
+                # for a one-glance confirm. A LOCATED, shape-matching recovery skips this (confident).
                 results[field_key].update({
                     "was_corrected":   True,
                     "corrected_to":    value.strip(),
