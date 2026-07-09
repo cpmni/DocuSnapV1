@@ -210,7 +210,7 @@ function createReviewService(deps = {}) {
         try {
           const tId = documents.getById(db, document_id)?.template_id || null;
           if (tId) await captureSample(tId, document_id);
-        } catch { /* best-effort */ }
+        } catch (e) { console.warn('Landmark sample capture on confirm failed:', e.message); }
         if (Array.isArray(taught_fields) && taught_fields.length && (document_type_slug || dtInfo)) {
           try { await onTaughtConfirm(db, document_id, { allValues, document_type_slug, supplier_name, dtInfo }); }
           catch (e) { console.warn('Auto-promote on taught confirm failed:', e.message); }

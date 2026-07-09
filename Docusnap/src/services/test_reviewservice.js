@@ -173,6 +173,25 @@ const basePayload = (id, extra = {}) => ({
   await flush();
   check('  → the detached captureSample WAS invoked (fire-and-forget, not silently skipped)', calls.captured === capturedBefore + 1);
 
+  // ── PIN (eric coverage): a detached hook that REJECTS (not merely hangs) must be swallowed —
+  //    no unhandledRejection escapes — and confirm must still return ok. Guarded by the inner
+  //    try/catch (now warns) + the outer .catch(()=>{}); pinned so a refactor can't leak it. ─
+  let sawUnhandled = false;
+  const onUnhandled = () => { sawUnhandled = true; };
+  process.on('unhandledRejection', onUnhandled);
+  const svcReject = createReviewService({
+    ...deps,
+    captureSample:   () => Promise.reject(new Error('spawn failed')),
+    onTaughtConfirm: () => Promise.reject(new Error('promote failed')),
+  });
+  const dRej = newDoc(db);
+  documents.update(db, dRej, { template_id: 77 });
+  const rRej = await svcReject.confirm(db, { username: 'sarah', role: 'admin' }, basePayload(dRej, { taught_fields: ['invoice_number'] }));
+  check('confirm ok despite a REJECTING detached hook', rRej.ok === true && get(db, dRej).status === 'confirmed');
+  await flush(); await flush();   // let the detached rejections settle + any unhandledRejection emit
+  check('  → no unhandledRejection escaped the detached learning block', sawUnhandled === false);
+  process.removeListener('unhandledRejection', onUnhandled);
+
   console.log(`\n${fails === 0 ? 'ALL PASS' : fails + ' FAILED'}`);
   process.exit(fails ? 1 : 0);
 })();
