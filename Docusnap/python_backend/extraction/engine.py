@@ -830,6 +830,60 @@ class ExtractionEngine:
         except Exception:
             return None  # background aid — must never break extraction
 
+    def _flag_recipient_caption_issuer(self, results, field_defs, supplier_name):
+        """RECIPIENT-CAPTION ISSUER GUARD (flag-only, never rewrites — Oracle-signed
+        2026-07-09). When a doc type's IDENTITY field is customer_name (its "Document
+        Issuer" — the type carries NO supplier_name field, mirroring COMPANY_KEYS
+        precedence; a type with BOTH keys has supplier_name as identity and customer_name
+        as a genuine recipient field that must not be nagged), a plain 'keyword' read of
+        it is BY CONSTRUCTION a recipient-caption read — the shipped label bank is
+        entirely "Bill To"/"Customer"/"Client"/… — and so names the RECIPIENT, not the
+        issuer (a sales order's buyer "Dunroamin Caravan Park" would file the doc under
+        the buyer at an unflagged 78%).
+
+        Flag for review: cap confidence at 69 — deliberately BELOW the review threshold
+        (validator.needs_review trips on < 70, so the codebase-conventional 70 caps do
+        NOT force review on their own; 69 is self-sufficient) — and plant an explanatory
+        note (which also blocks auto-file: the trust gate refuses any noted doc). An
+        already-noted field keeps its note but still gets the cap.
+
+        EXEMPT (no nag): every learned/taught/human method (template_fixed[_locked],
+        keyword_override, anchor*, template_mapping, hint, manual — anything not plain
+        'keyword') — those ARE the "intelligent methods" that legitimately fill the
+        issuer on subsequent documents; the operator allowlists (accepted_names /
+        accepted_issuers, "this name/issuer is correct"); and a value that AGREES with
+        the RESOLVED supplier identity under the engine's own normaliser (it plainly IS
+        the issuer). First doc from an unknown sender → flagged → the human confirms or
+        types the issuer, exactly the fail-toward-review the identity role demands.
+        Best-effort: never breaks extraction."""
+        try:
+            fd_keys = {f.get('key') for f in (field_defs or [])}
+            if 'customer_name' not in fd_keys or 'supplier_name' in fd_keys:
+                return
+            cn = results.get('customer_name')
+            if not isinstance(cn, dict):
+                return
+            val = cn.get('value')
+            if not val or str(cn.get('method') or '') != 'keyword':
+                return
+            norm = self._accept_norm(val)
+            if norm in self.accepted_names or norm in self.accepted_issuers:
+                return
+
+            def _nsi(v):
+                return keyword.normalize_supplier_name(v or '').strip().lower()
+            if supplier_name and _nsi(val) == _nsi(supplier_name):
+                return
+            cn['confidence'] = min(int(cn.get('confidence') or 0), 69)
+            if not str(cn.get('validation_note') or '').strip():
+                cn['validation_note'] = (
+                    "Document Issuer was read from a customer/recipient caption — "
+                    "this may be the recipient, not the issuer. Please confirm.")
+            self.log(f"  Issuer guard: customer_name read '{val}' came from a "
+                     f"recipient caption — flagged for review")
+        except Exception:
+            pass   # advisory guard — must never break extraction
+
     def _reconciliation_pick_total(self, results, field_defs):
         """Reconciliation-aware total pick. If the resolved `total` does NOT balance against the
         components (subtotal + tax + shipping - discount) but a confident REMEMBERED candidate
@@ -2187,6 +2241,12 @@ class ExtractionEngine:
         # any change. Suggestion-first; never touches a protected winner. No-op unless
         # candidate_override is enabled (then the ledger built during merge is read).
         self._resolve_candidates(results, field_defs, supplier_name, document_slug)
+
+        # ── Recipient-caption issuer guard (flag-only; Oracle-signed 2026-07-09) ──
+        # Runs AFTER the final supplier resolution and BEFORE the learned-agreement
+        # boost (which skips noted fields, so the cap can never be re-lifted) and the
+        # overall-confidence/needs_review computation (so both see the cap).
+        self._flag_recipient_caption_issuer(results, field_defs, supplier_name)
 
         # ── LEARNED-AGREEMENT CONFIDENCE BOOST ────────────────────────────────
         # A value that is CONSISTENT with a well-supported learned format for its scope is
