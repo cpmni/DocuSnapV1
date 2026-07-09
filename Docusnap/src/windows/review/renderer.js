@@ -2010,7 +2010,21 @@ async function runZoneOcr(rect, fieldKey) {
       const detected = await captureAnchorContext(rect, fieldKey, text, imgW, imgH, scaleX, scaleY);
       if (detected) {
         anchorTaughtFields.add(fieldKey);
-        showAnchorReadout(detected, text);   // show which anchor was picked + the Left/Above toggle
+        // The Document Issuer (company/supplier name) is usually a top-corner logo/letterhead
+        // with NO caption beside it, so the auto-label search only reads garbled logo/noise to its
+        // left. Don't keep that as a LOCATED label (it's meaningless and could mis-locate on a
+        // future doc) — downgrade to a clean position-only anchor, and skip the garbled readout.
+        // The value correction still feeds learning; the supplier is identified by its logo /
+        // keywords too. Reusable for every supplier/layout (not a one-document rule).
+        if (fieldKey === 'supplier_name' || fieldKey === 'customer_name') {
+          if (pendingAnchors[fieldKey]) {
+            pendingAnchors[fieldKey].anchor_label  = labelFor(fieldKey) || fieldKey.replace(/_/g, ' ');
+            pendingAnchors[fieldKey].label_detected = false;
+          }
+          try { showToast('Captured the ' + (labelFor(fieldKey) || 'company name') + ' from this layout.', 'ok'); } catch {}
+        } else {
+          showAnchorReadout(detected, text);   // show which anchor was picked + the Left/Above toggle
+        }
       }
     }
   } catch (err) {
