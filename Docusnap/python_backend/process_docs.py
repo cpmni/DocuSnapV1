@@ -467,21 +467,34 @@ def main():
                         log(f"  Doc type from assigned record: {document_type} ({doc_slug})")
                         break
 
-            # Fresh-scan doc-type: a confidently-matched template (logo + keyword
-            # fingerprint) is a STRONGER type signal than keyword name-detection —
-            # and for a supplier that issues several layouts under ONE letterhead
-            # the fingerprint is the only thing that distinguishes them (logo alone
-            # just says "this supplier"). Adopt the matched template's doc type +
-            # field set so the slug, fields and (doc-type-scoped) anchors all agree
-            # — but NEVER over an explicit known_doc_slug (a reprocess the user
-            # already assigned). Reusable for every supplier/doc type.
+            # The document's OWN doc-type signal — computed ONCE and threaded IDENTICALLY
+            # into BOTH template matches (this pre-extract one that sets active_fields, and
+            # the engine's authoritative one) so they cannot disagree. `detected_slug` is the
+            # type we believe (the detected title on a fresh scan; the assigned type on a
+            # reprocess, already resolved into doc_slug and authoritative). `title_trusted` =
+            # the type appeared as a real standalone HEADING, not a body mention — the
+            # STRUCTURAL signal the template must not override. (A confidence number can't
+            # separate a low-sitting heading under a tall letterhead from a top-of-page
+            # incidental mention — both land ~70-75 — so we gate on the heading, not a score.)
+            detected_slug = doc_slug
+            title_trusted = bool(type_detection and type_detection.get("heading") and type_conf >= 70)
+
+            # Fresh-scan doc-type: for a supplier that issues several layouts under ONE
+            # letterhead, the logo+fingerprint alone can't tell the layouts apart (identical
+            # fingerprints), so identify_template now uses `detected_slug` to prefer the
+            # type-matching sibling — or REFUSE when a trusted title declares a type no
+            # sibling carries. Adopt the matched template's type ONLY when the title is NOT a
+            # trusted heading (a confident title of a different type wins); NEVER over an
+            # explicit known_doc_slug (a reprocess the user already assigned).
             if not _ks and templates and page_images:
                 try:
-                    tmatch = template_matcher.identify_template(page_images[0], ocr_text, templates)
+                    tmatch = template_matcher.identify_template(
+                        page_images[0], ocr_text, templates,
+                        detected_slug=detected_slug, title_trusted=title_trusted)
                 except Exception:
                     tmatch = None
                 tslug = ((tmatch or {}).get("template") or {}).get("document_type_slug")
-                if tslug and doc_types and tslug != doc_slug:
+                if tslug and doc_types and tslug != doc_slug and not title_trusted:
                     for dt in doc_types:
                         if dt.get("slug") == tslug:
                             doc_slug      = tslug
@@ -518,6 +531,8 @@ def main():
                 templates     = templates,
                 document_type = document_type,
                 document_slug = doc_slug,
+                detected_slug = detected_slug,
+                title_trusted = title_trusted,
                 supplier_name = None,
                 known_template_id = _kt,
                 trace         = emit_trace if args.trace else None,

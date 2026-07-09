@@ -126,6 +126,36 @@ def merge_label_overrides(patterns: dict, overrides: list, doc_slug: str | None)
 
 # ── Document type detection ───────────────────────────────────────────────────
 
+# Heading-adjacent tokens a real title line may carry beside the type word — a
+# number/reference or a "No."/"#"/"Number" caption — none of which make it a body
+# mention. Any OTHER word on the line means it's prose, not a heading.
+_HEADING_ADJ = frozenset({"no", "no.", "#", "number", "num", "ref", "-", ":", "|"})
+
+def _line_is_heading_like(line: str, phrase: str) -> bool:
+    """Relaxed heading test for the EXPOSED `heading` signal only (scoring uses the
+    strict whole-line equality). True when the line IS the matched type phrase plus at
+    most heading-adjacent tokens — a reference/number CODE ("WORKSHEET 38", "Invoice No.
+    10023", "WORKSHEET WS-38", "PURCHASE ORDER #PO-1234") or a "No."/"#"/"Number" caption
+    — so a title carrying its own reference still counts, but "...see the attached
+    worksheet..." (a real extra word) does not."""
+    s = (line or "").strip().lower()
+    p = (phrase or "").strip().lower()
+    if not p or p not in s:
+        return False
+    if s == p:
+        return True
+    rest = s.replace(p, " ", 1)
+    for t in rest.split():
+        # A reference/number CODE beside the title (not a real word): contains a digit and
+        # is only alphanumerics + code punctuation ("38", "ws-38", "inv-2024-001", "#po1234").
+        if any(ch.isdigit() for ch in t) and all(ch.isalnum() or ch in "#:.-/|" for ch in t):
+            continue
+        if t in _HEADING_ADJ:
+            continue
+        return False                                        # a real extra word → a mention
+    return True
+
+
 def detect_document_type(ocr_text: str, patterns: dict,
                           known_types: list[str] | None = None) -> dict | None:
     """
@@ -165,8 +195,10 @@ def detect_document_type(ocr_text: str, patterns: dict,
         return None
 
     scores: dict[str, float] = {}
+    headings: dict[str, bool] = {}
     for doc_type, keywords in type_keywords.items():
         score = 0.0
+        head  = False
         for kw in keywords:
             kw = kw.strip()
             if not kw:
@@ -192,9 +224,19 @@ def detect_document_type(ocr_text: str, patterns: dict,
                 # works for any current or future label shape.
                 is_heading = line.strip().lower() == m.group(0).strip()
                 score += position_weight * (2.0 if is_heading else 1.0)
+                # EXPOSED heading signal (`heading` in the result) — consumed ONLY by the
+                # template doc-type-precedence gate (a matched template must not override a
+                # doc whose own TITLE confidently declares a different type). It does NOT
+                # affect `score`/`confidence` (byte-identical scoring preserved). Relaxed
+                # vs the strict scoring `is_heading` so a real title carrying a number or
+                # punctuation ("WORKSHEET 38", "Purchase Order:", "Invoice No. 10023")
+                # still counts as a heading, while an in-prose mention does not.
+                if is_heading or _line_is_heading_like(line, m.group(0)):
+                    head = True
                 break  # first occurrence of this phrase is enough
         if score > 0:
             scores[doc_type] = round(score, 1)
+            headings[doc_type] = head
 
     if not scores:
         return None
@@ -210,6 +252,11 @@ def detect_document_type(ocr_text: str, patterns: dict,
         "type":       best_type,
         "confidence": confidence,
         "all_scores": scores,
+        # True when the WINNING type appeared as a standalone heading (not just a body
+        # mention) — the structural signal the template-precedence gate trusts. A bare
+        # confidence number can't separate a low-sitting heading from a top-of-page
+        # mention (both land ~70-75); the heading structure can.
+        "heading":    headings.get(best_type, False),
     }
 
 

@@ -948,6 +948,8 @@ class ExtractionEngine:
                 templates:     list | None = None,
                 document_type: str | None = None,
                 document_slug: str | None = None,
+                detected_slug: str | None = None,
+                title_trusted: bool = False,
                 supplier_name: str | None = None,
                 known_template_id: int | None = None,
                 trace = None,
@@ -1006,6 +1008,8 @@ class ExtractionEngine:
                 page_images[0] if page_images else None,
                 ocr_text,
                 templates,
+                detected_slug=detected_slug,
+                title_trusted=title_trusted,
             )
             # Reprocess honour: a document already linked to a template (passed
             # as known_template_id) should still run that template's stage 0/0.5

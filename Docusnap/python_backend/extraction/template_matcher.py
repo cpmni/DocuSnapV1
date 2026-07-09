@@ -40,11 +40,23 @@ KEYWORD_THRESHOLD = 0.75 # min fraction of keywords that must be present
 _LOGO_AMBIG_MARGIN = 3
 
 
-def identify_template(page_image, ocr_text: str, templates: list) -> dict | None:
+def identify_template(page_image, ocr_text: str, templates: list,
+                      detected_slug: str | None = None,
+                      title_trusted: bool = False) -> dict | None:
     """
     Try to match this document to a known template.
     Returns {'template': {...}, 'confidence': int, 'method': str, 'logo_phash': str}
     or None if no match.
+
+    `detected_slug` / `title_trusted`: the document's OWN doc-type signal, from
+    keyword.detect_document_type (the caller computes both ONCE and threads them
+    identically here and into engine.extract). A supplier issues several layouts
+    under ONE letterhead, so their templates share the logo AND — because the
+    keyword fingerprint is the letterhead words — an IDENTICAL fingerprint; the
+    fingerprint tie-break then can't tell a "Sales Order" from a "Worksheet" and
+    the established sibling wins, stamping the wrong type. `detected_slug` breaks
+    that tie by the document's title (`title_trusted` = the title is a real
+    standalone HEADING, not a body mention). Both default off → byte-identical.
     """
     if not templates:
         return None
@@ -52,34 +64,56 @@ def identify_template(page_image, ocr_text: str, templates: list) -> dict | None
     ocr_lower  = ocr_text.lower()
     logo_phash = None
 
-    # 1. Logo hash — the most reliable SUPPLIER identifier, but NOT a doc-type
-    #    one: a supplier that sends several layouts under the same letterhead has
-    #    several templates with near-identical logos. So gather ALL close logo
-    #    candidates and, when more than one is within the ambiguity margin,
-    #    disambiguate by KEYWORD FINGERPRINT — which is exactly what tells a
-    #    "Purchase Order" apart from a "Service Worksheet". A lone candidate keeps
-    #    the old fast short-circuit (logo wins, no keyword work).
+    # 1. Logo hash — the most reliable SUPPLIER identifier, but NOT a doc-type one
+    #    (same-letterhead siblings). Gather ALL close logo candidates; within the
+    #    ambiguity margin, prefer the sibling whose DOC-TYPE matches the detected
+    #    title, else the keyword-fingerprint tie-break, else the closest logo.
     if page_image is not None:
         logo_phash, cands = _logo_candidates(page_image, templates)
         if cands:
             best_t, best_dist = cands[0]
+            cluster_dist = best_dist                       # closest logo in the cluster
             cluster = [t for (t, d) in cands if d <= best_dist + _LOGO_AMBIG_MARGIN]
-            method = 'logo'
-            if len(cluster) > 1:
+            dist_of = {id(t): d for (t, d) in cands}
+            method  = 'logo'
+            matching = [t for t in cluster
+                        if detected_slug and (t.get('document_type_slug') or '') == detected_slug]
+            if matching:
+                # Prefer the type-matching sibling; deterministic: closest logo, then
+                # most-confirmed. Keep supplier-identity confidence at the cluster's
+                # CLOSEST logo distance (the logo says "this supplier" at that strength;
+                # picking a type-correct-but-logo-farther sibling shouldn't sag it).
+                best_t    = min(matching, key=lambda t: (dist_of.get(id(t), 99),
+                                                         -(t.get('confirmed_count') or 0)))
+                best_dist = cluster_dist
+                method    = 'logo+slug'
+            elif len(cluster) > 1 and not (title_trusted and detected_slug):
                 scored = sorted(((t, _keyword_hit_ratio(t, ocr_lower)) for t in cluster),
                                 key=lambda x: -x[1])
-                if scored[0][1] > 0:                  # keyword evidence breaks the tie
-                    best_t = scored[0][0]
-                    best_dist = next(d for (t, d) in cands if t is best_t)
-                    method = 'logo+keywords'
+                if scored[0][1] > 0:                        # keyword evidence breaks the tie
+                    best_t    = scored[0][0]
+                    best_dist = dist_of.get(id(best_t), best_dist)
+                    method    = 'logo+keywords'
             conf = max(0, 100 - best_dist * 6)
             if conf >= 60:
+                # REFUSE: a TRUSTED title declares a type NONE of this letterhead's
+                # templates carry — do not force a wrong-type template's layout /
+                # fixed-values / Stage-0.5 mappings onto it. Return no match so the doc
+                # goes to review to teach the new type (supplier identity still resolves
+                # via the independent logo_fingerprints path). Gated on title_trusted, so
+                # a mere incidental mention can't discard a good single-template match.
+                if title_trusted and detected_slug and (best_t.get('document_type_slug') or '') != detected_slug:
+                    return None
                 return {'template': best_t, 'confidence': conf,
                         'method': method, 'logo_phash': logo_phash}
 
     # 2. Keyword fingerprint — fallback for docs without logos
     kw_match = _match_by_keywords(ocr_text, templates)
     if kw_match and kw_match['confidence'] >= int(KEYWORD_THRESHOLD * 100):
+        # Same title-trust refuse on the logoless path.
+        if title_trusted and detected_slug and \
+           (kw_match['template'].get('document_type_slug') or '') != detected_slug:
+            return None
         if logo_phash:
             kw_match['logo_phash'] = logo_phash
         return kw_match
