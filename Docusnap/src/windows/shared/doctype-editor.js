@@ -124,6 +124,13 @@
       .dte .form-group { display:flex; flex-direction:column; gap:5px; }
       .dte .form-group > label { font-size:11px; color:var(--muted); }
       .dte-err { color:var(--err); font-size:12px; min-height:1em; }
+      .dte-chips { display:flex; flex-wrap:wrap; gap:6px; }
+      .dte-chips:empty { display:none; }
+      .dte-chip { display:inline-flex; align-items:center; gap:7px; padding:3px 6px 3px 11px;
+        border:1px solid var(--border2); border-radius:999px; background:var(--surface2); font-size:12px; }
+      .dte-chip .cx { cursor:pointer; color:var(--muted); font-weight:700; line-height:1; padding:0 2px; }
+      .dte-chip .cx:hover { color:var(--err); }
+      .dte-alias-note { color:var(--warn); font-size:11px; line-height:1.4; min-height:0; margin-top:2px; }
     `;
     document.head.appendChild(st);
   }
@@ -149,6 +156,8 @@
     let fields = [];                   // [{label, key?, type, locked?}]
     let refKey = '';
     let dateKey = '';
+    // Title aliases (both modes): other printed titles that also DETECT this type.
+    let aliases = (type && Array.isArray(type.title_aliases)) ? type.title_aliases.slice() : [];
 
     injectStyles();
     if (mode === 'create') seedCreate();
@@ -243,6 +252,16 @@
               It applies to documents you file from now on &mdash; already-filed documents aren&rsquo;t affected.` : ''}
             </div>
           </div>
+          <div data-help-key="doctype-aliases">
+            <label class="dte-lbl">Also appears as <span class="muted">&mdash; other titles the same document is printed with</span></label>
+            <div class="dte-chips">${aliases.map((a, i) => `<span class="dte-chip" data-ai="${i}">${esc(a)}<span class="cx" title="Remove">&#10005;</span></span>`).join('')}</div>
+            <div class="dte-addrow">
+              <input type="text" class="field-select dte-alias-input" placeholder="e.g. Work Sheet" autocomplete="off">
+              <button class="btn dte-alias-btn">+ Add</button>
+            </div>
+            <div class="dte-fieldnote">A document is filed as this type when the title on the page matches the type&rsquo;s <b>name</b> <i>or</i> any title listed here. Add the spellings your documents actually use &mdash; e.g. <b>Work Sheet</b>, <b>Job Sheet</b>.</div>
+            <div class="dte-alias-note"></div>
+          </div>
           <div>
             <label class="dte-lbl">Filing roles</label>
             <div class="dte-roles">
@@ -271,7 +290,7 @@
       try {
         const all = await api.getAllDocTypesAll();
         const fresh = all.find(t => t.id === type.id);
-        if (fresh) type = fresh;
+        if (fresh) { type = fresh; aliases = Array.isArray(type.title_aliases) ? type.title_aliases.slice() : []; }
       } catch (e) { /* keep last-known state */ }
       render();
       if (opts.onChange) opts.onChange();
@@ -356,6 +375,40 @@
         try { await api.updateDocumentType(type.id, { date_field_key: dateSel.value || null }); type.date_field_key = dateSel.value || null; if (opts.onChange) opts.onChange(); }
         catch (e) { showErr('Could not set date: ' + e.message); }
       });
+
+      // Title aliases (chips). Create mode stages locally (emitted via getDraft); edit mode
+      // persists each add/remove immediately, then re-reads so server-side validation
+      // (drops of too-short/numeric aliases, or a name-collision error) is reflected.
+      const aliasInput = host.querySelector('.dte-alias-input');
+      const aliasBtn   = host.querySelector('.dte-alias-btn');
+      const setNote = (msg) => { const n = host.querySelector('.dte-alias-note'); if (n) n.textContent = msg || ''; };
+      const persistAliases = async (revertTo) => {
+        if (mode === 'create') { render(); const el = host.querySelector('.dte-alias-input'); if (el) el.focus(); return; }
+        try {
+          const r = await api.updateDocumentType(type.id, { title_aliases: aliases });
+          if (r && r.error) { aliases = revertTo; render(); setNote(r.error); return; }
+          await reload();                                   // re-seeds aliases + re-renders from server truth
+          setNote((r && r.notices && r.notices.length) ? r.notices.join('  ') : '');
+        } catch (e) { aliases = revertTo; render(); setNote(e.message); }
+      };
+      const addAlias = async () => {
+        const v = (aliasInput.value || '').trim();
+        if (!v) return;
+        const before = aliases.slice();
+        if (!aliases.some(a => a.toLowerCase() === v.toLowerCase())) aliases.push(v);
+        aliasInput.value = '';
+        await persistAliases(before);
+      };
+      if (aliasBtn)   aliasBtn.addEventListener('click', addAlias);
+      if (aliasInput) aliasInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addAlias(); } });
+      host.querySelectorAll('.dte-chip .cx').forEach((x) => {
+        x.addEventListener('click', async () => {
+          const chip = x.closest('.dte-chip'); if (!chip) return;
+          const before = aliases.slice();
+          aliases.splice(Number(chip.dataset.ai), 1);
+          await persistAliases(before);
+        });
+      });
     }
 
     function getDraft() {
@@ -364,6 +417,7 @@
         fields: fields.map(f => ({ key: f.key || slugify(f.label), label: f.label, type: f.type })),
         ref_field_key: refKey || null,
         date_field_key: dateKey || null,
+        title_aliases: aliases.slice(),
       };
     }
 

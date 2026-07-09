@@ -979,6 +979,11 @@ function addMissingColumns(db) {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )`);
   }
+  // Title aliases: extra printed-title phrases that also DETECT this type (JSON array of
+  // strings). NULL/absent = no aliases = byte-identical detection. Folded into the type's
+  // keyword bucket at detection time (keyed by the type NAME, so the detected type is
+  // unchanged). See document_types.normaliseTitleAliases + keyword.detect_document_type.
+  safeAdd('document_types', 'title_aliases', 'TEXT');
   if (!tableExists(db, 'field_anchors')) {
     db.exec(`CREATE TABLE field_anchors (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

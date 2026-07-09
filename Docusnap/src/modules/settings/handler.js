@@ -35,17 +35,43 @@ function register(ctx) {
   ipcMain.handle('add-document-type',    (_e, data)    => {
     requireRole('admin');
     const db = getDb();
+    data = data || {};
+    // Title-alias validation up front so a name-collision returns a clean error (not an
+    // unhandled throw) and soft-drop notices reach the UI; addType re-validates + persists.
+    let notices = [];
+    if (data.title_aliases != null) {
+      const na = doctypes.normaliseTitleAliases(db, data.title_aliases, data.name);
+      if (na.error) return { error: na.error };
+      notices = na.notices;
+    }
     // Atomic: create the type AND force its structural ID fields (Company + Date) so an
     // empty custom type can never exist. A mid-way throw rolls back the whole thing.
-    const out = db.transaction(() => {
-      const res = doctypes.addType(db, data || {});
-      doctypes.ensureStructuralRoles(db, res.lastInsertRowid);
-      return res;
-    })();
+    let out;
+    try {
+      out = db.transaction(() => {
+        const res = doctypes.addType(db, data);
+        doctypes.ensureStructuralRoles(db, res.lastInsertRowid);
+        return res;
+      })();
+    } catch (e) { return { error: e.message }; }
     notifyAllWindows('doc-types-changed');
-    return out;
+    return { lastInsertRowid: out.lastInsertRowid, changes: out.changes, notices };
   });
-  ipcMain.handle('update-document-type', (_e, id, ch)  => { requireRole('admin'); return doctypes.updateType(getDb(), id, ch); });
+  ipcMain.handle('update-document-type', (_e, id, ch)  => {
+    requireRole('admin');
+    const db = getDb();
+    ch = ch || {};
+    let notices = [];
+    if ('title_aliases' in ch) {
+      const row = db.prepare('SELECT name FROM document_types WHERE id = ?').get(id) || {};
+      const na = doctypes.normaliseTitleAliases(db, ch.title_aliases, ('name' in ch && ch.name) ? ch.name : row.name);
+      if (na.error) return { error: na.error };
+      notices = na.notices;
+    }
+    try { doctypes.updateType(db, id, ch); } catch (e) { return { error: e.message }; }
+    if ('title_aliases' in ch) notifyAllWindows('doc-types-changed');   // detection args rebuild per run
+    return { ok: true, notices };
+  });
 
   // Create a doc type + its fields + key-field assignments in ONE transaction.
   // The teaching wizard drives non-technical users through this; doing it as
@@ -66,9 +92,17 @@ function register(ctx) {
     const slug = (s) => safeSlug(s, { fallback: 'field' });
     const refKey  = data.ref_field_key  ? slug(data.ref_field_key)  : null;
     const dateKey = data.date_field_key ? slug(data.date_field_key) : null;
+    // Validate aliases up front so a name-collision returns a clean {error} (addType would
+    // throw inside the transaction → caught below either way) and notices reach the UI.
+    let aliasNotices = [];
+    if (data.title_aliases != null) {
+      const na = doctypes.normaliseTitleAliases(db, data.title_aliases, name);
+      if (na.error) return { success: false, error: na.error };
+      aliasNotices = na.notices;
+    }
     try {
       const tx = db.transaction(() => {
-        const res = doctypes.addType(db, { name, ref_field_key: refKey, date_field_key: dateKey });
+        const res = doctypes.addType(db, { name, ref_field_key: refKey, date_field_key: dateKey, title_aliases: data.title_aliases });
         const typeId = res.lastInsertRowid;
         let order = 10;
         for (const f of fields) {
@@ -91,7 +125,7 @@ function register(ctx) {
       const id = tx();
       const created = doctypes.getAllWithFieldsAll(db).find(t => t.id === id) || null;
       notifyAllWindows('doc-types-changed');   // other open windows reload their doc-type lists
-      return { success: true, id, type: created };
+      return { success: true, id, type: created, notices: aliasNotices };
     } catch (e) {
       return { success: false, error: e.message };  // UNIQUE name clash etc. — atomic rollback
     }

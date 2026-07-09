@@ -157,7 +157,8 @@ def _line_is_heading_like(line: str, phrase: str) -> bool:
 
 
 def detect_document_type(ocr_text: str, patterns: dict,
-                          known_types: list[str] | None = None) -> dict | None:
+                          known_types: list[str] | None = None,
+                          type_aliases: dict | None = None) -> dict | None:
     """
     Score candidate document types by scanning every line for type-indicating
     phrases, weighting matches by how close to the top of the page they sit
@@ -184,12 +185,27 @@ def detect_document_type(ocr_text: str, patterns: dict,
         return None
 
     type_keywords = {k: list(v) for k, v in patterns.get("document_type_keywords", {}).items()}
+    aliases_by_name = type_aliases or {}
     for name in (known_types or []):
         name = (name or "").strip()
-        if name:
-            bucket = type_keywords.setdefault(name, [])
-            if name not in bucket:
-                bucket.append(name)
+        if not name:
+            continue
+        bucket = type_keywords.setdefault(name, [])
+        # NAME fold — kept EXACTLY as before (case-sensitive membership) so the no-alias path
+        # is byte-identical to the pre-feature engine (the harness 0-delta gate).
+        if name not in bucket:
+            bucket.append(name)
+        # ALIASES — fold each of this type's title aliases into the SAME bucket (keyed by the
+        # NAME, so result["type"] / detected_slug / heading-trust are unchanged; only more
+        # phrases are searched). De-duped case-insensitively against the bucket. This branch is
+        # only entered when aliases exist, so it can never alter the no-alias run.
+        if aliases_by_name:
+            have = {str(p).strip().lower() for p in bucket}
+            for alias in (aliases_by_name.get(name) or []):
+                a = str(alias or "").strip()
+                if a and a.lower() not in have:
+                    bucket.append(a)
+                    have.add(a.lower())
 
     if not type_keywords:
         return None

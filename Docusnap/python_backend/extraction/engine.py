@@ -725,8 +725,9 @@ class ExtractionEngine:
             self.log(f"  Format checker: {p} format class rule(s) loaded")
 
     def detect_document_type(self, ocr_text: str,
-                             known_types: list | None = None) -> dict | None:
-        return keyword.detect_document_type(ocr_text, self.patterns, known_types)
+                             known_types: list | None = None,
+                             type_aliases: dict | None = None) -> dict | None:
+        return keyword.detect_document_type(ocr_text, self.patterns, known_types, type_aliases)
 
     # Reconciliation roles that back the "mathematically verified" total check.
     _RECONCILE_COMPONENT_ROLES = ('subtotal', 'vat_tax', 'shipping', 'discount')

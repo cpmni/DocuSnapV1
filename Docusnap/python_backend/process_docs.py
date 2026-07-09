@@ -428,7 +428,19 @@ def main():
 
             # Detect document type
             known_type_names = [dt["name"] for dt in doc_types] if doc_types else None
-            type_detection = engine.detect_document_type(ocr_text, known_type_names)
+            # Per-type title aliases (extra printed-title phrases that also detect this type).
+            # getAllWithFields parses the stored JSON to an array; be defensive if a str slips through.
+            type_aliases = None
+            if doc_types:
+                type_aliases = {}
+                for dt in doc_types:
+                    al = dt.get("title_aliases")
+                    if isinstance(al, str):
+                        try: al = json.loads(al)
+                        except Exception: al = []
+                    if al:
+                        type_aliases[dt["name"]] = al
+            type_detection = engine.detect_document_type(ocr_text, known_type_names, type_aliases or None)
             document_type  = type_detection["type"] if type_detection else None
             type_conf      = type_detection["confidence"] if type_detection else 0
 

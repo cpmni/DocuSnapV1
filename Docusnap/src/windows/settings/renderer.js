@@ -155,6 +155,7 @@ document.getElementById('btn-client-setup-help')?.addEventListener('click', () =
 const HELP_TEXTS = {
   'tab-files':      'Where filed documents go — the output, processed-scans and watch folders — and how they are named (the subfolder layout and file-name pattern).',
   'tab-doctypes':   'Enable or disable document types and choose which field is each type’s main reference number and date.',
+  'doctype-aliases':'Other titles the same document is printed with. Scan Finder recognises a document’s type from the title at the top of the page — matched to this type’s name OR any alias here. Add the spellings your documents actually use (e.g. “Work Sheet”, “Job Sheet”) so they’re filed correctly without renaming the type. Matching ignores capitals and spacing but is exact — a short form like “W-Sheet” only works if you add it.',
   'tab-fields':     'Add, edit, reorder or remove the fields a document type extracts. Built-in fields are locked.',
   'tab-processing': 'How documents are processed — import options (auto-file, wrap, auto-rotate), parallelism, the OCR engine, document separation, name checks and the review confidence threshold.',
   'tab-appearance': 'The colour theme, what happens when you close the window, and which cards appear on the Home screen.',
