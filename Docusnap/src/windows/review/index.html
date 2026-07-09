@@ -1095,6 +1095,22 @@
   .lh-table tr:hover td { background: var(--surface2); }
   .lh-val { font-family: var(--mono, monospace); }
   .lh-empty { color: var(--muted); text-align: center; padding: 22px; }
+  /* Learned-anchors panel (where a field is READ from) */
+  .lh-anchors { padding: 6px 18px 10px; border-top: 1px solid var(--border); }
+  .lh-anchors h4 { margin: 8px 0 6px; font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+  .lh-anchor { display: flex; align-items: center; gap: 10px; padding: 6px 9px; border: 1px solid var(--border); border-radius: var(--r-sm); margin-bottom: 6px; background: var(--surface); font-size: 12.5px; }
+  .lh-anchor .lh-a-label { font-weight: 600; color: var(--text); }
+  .lh-anchor .lh-a-meta { color: var(--muted); font-family: var(--mono, monospace); font-size: 11.5px; }
+  .lh-anchor .lh-a-badge { font-size: 10px; padding: 1px 7px; border-radius: var(--r-pill); background: var(--accent-bg); color: var(--accent2); white-space: nowrap; }
+  .lh-anchor .lh-a-badge.auto { background: var(--surface2); color: var(--muted); }
+  .lh-anchor .lh-a-badge.cross { background: var(--err); color: #fff; }
+  .lh-anchor .lh-a-spacer { flex: 1; }
+  .lh-anchor .lh-a-del { background: var(--surface2); border: 1px solid var(--border2); color: var(--err); border-radius: var(--r-sm); padding: 3px 9px; cursor: pointer; }
+  .lh-anchor .lh-a-del:hover { background: var(--err); color: #fff; border-color: var(--err); }
+  .lh-anchors .lh-a-empty { color: var(--muted); font-size: 12px; padding: 4px 2px; }
+  .lh-anchors .lh-a-confirm { display: inline-flex; align-items: center; gap: 6px; color: var(--err); font-size: 12px; }
+  .lh-anchors .lh-a-yes, .lh-anchors .lh-a-no { border: 1px solid var(--border2); border-radius: var(--r-sm); padding: 2px 9px; cursor: pointer; }
+  .lh-anchors .lh-a-yes { background: var(--err); color: #fff; border-color: var(--err); }
   .lh-del { background: none; border: 1px solid var(--border2); color: var(--err); border-radius: 6px;
             padding: 2px 8px; cursor: pointer; font-size: 12px; }
   .lh-del:hover { background: var(--err); color: #fff; border-color: var(--err); }
@@ -1134,6 +1150,7 @@
         <tbody id="lh-body"></tbody>
       </table>
     </div>
+    <div class="lh-anchors" id="lh-anchors"></div>
     <div class="lh-foot" style="display:flex; align-items:center; gap:10px; justify-content:space-between;">
       <span style="flex:1;">Click a heading to sort, the ✎ to fix a value (e.g. <b>$O2 → SO2</b>), or 🗑 to delete one. Filed documents keep their files; only that field's stored value changes.</span>
       <button id="lh-fix" class="lh-fix" title="Find values where a single character looks wrong against the column (e.g. a leading $ where every other value starts S) and fix them">Fix likely slips</button>

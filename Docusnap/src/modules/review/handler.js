@@ -201,6 +201,24 @@ function register(ctx) {
     } catch {}
     return { removed };
   });
+  // Learned ANCHORS for a (supplier, doc-type, field) scope — the "learned anchors" panel in the
+  // learning history, so an operator can SEE where a field reads from. Read-only.
+  ipcMain.handle('get-anchors-for-scope', (_e, scope) => {
+    requireRole('admin', 'edit');
+    return learning.getAnchorsForScope(getDb(), scope || {});
+  });
+  // Delete ONE mis-stored learned anchor (learning-history → 🗑). Admin/edit; audited.
+  ipcMain.handle('delete-field-anchor', (_e, payload) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const id = payload && payload.id;
+    const { removed } = learning.deleteAnchor(db, id);
+    try {
+      logAudit(db, { action: 'learning_anchor_deleted', action_category: 'learning',
+        outcome: removed ? 'success' : 'noop', metadata: { anchor_id: id, ...(payload || {}), removed } });
+    } catch {}
+    return { removed };
+  });
   // Saved field rules (read-only) — lets the Review right-click menu reflect a persisted
   // rule (e.g. show "wrapping is on" for a field that already has a multiline_continue rule).
   ipcMain.handle('get-field-rules', () => {

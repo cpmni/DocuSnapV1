@@ -504,6 +504,34 @@ function getAllAnchors(db) {
   ).all();
 }
 
+// The learned ANCHORS that would apply for a (supplier, doc-type, field) scope — this supplier's
+// own rows PLUS the global/unresolved ones (saved before the supplier was identified, mirroring
+// clearAnchors' scope). Powers the Learning-history "learned anchors" panel so an operator can SEE
+// where a field is being read from and DELETE an anchor stored at the wrong spot. Read-only.
+function getAnchorsForScope(db, { supplier_name, document_type, field_key } = {}) {
+  if (!field_key) return [];
+  return db.prepare(`
+    SELECT id, supplier_name, document_type, field_key, anchor_label, direction, page_zone,
+           x_norm, y_norm, w_norm, h_norm, usage_count, confidence,
+           last_authoritative_at, offset_dx_norm, offset_dy_norm
+    FROM field_anchors
+    WHERE field_key = @field_key
+      AND (@document_type IS NULL OR COALESCE(document_type, '') = COALESCE(@document_type, ''))
+      AND (LOWER(TRIM(COALESCE(supplier_name, ''))) = LOWER(TRIM(COALESCE(@supplier_name, '')))
+           OR supplier_name IN ('__unknown__', '__global__') OR supplier_name IS NULL OR TRIM(supplier_name) = '')
+    ORDER BY (last_authoritative_at IS NOT NULL) DESC, usage_count DESC, confidence DESC
+  `).all({ supplier_name: supplier_name || '', document_type: document_type ?? null, field_key });
+}
+
+// Delete ONE learned anchor by id (Learning-history "learned anchors" panel → 🗑). Precise, reversible
+// only by re-teaching (a mis-drawn anchor is cheap to redraw). Returns {removed}. Admin/edit, audited
+// at the IPC edge.
+function deleteAnchor(db, id) {
+  const _id = parseInt(id, 10);
+  if (!_id) return { removed: 0 };
+  return { removed: db.prepare('DELETE FROM field_anchors WHERE id = ?').run(_id).changes };
+}
+
 // ── Logo fingerprints ─────────────────────────────────────────────────────────
 
 function saveLogoFingerprint(db, { supplier_name, phash, ahash }) {
@@ -1276,7 +1304,7 @@ module.exports = {
   getFieldValueHistory, getDocumentsForFieldValue, purgeFieldValue, renameFieldValue,
   getSupplierScopeCounts, renameSupplier,
   saveCorrections, getHints, isPlausibleSupplierName, nameQuality, normalizeSupplierName,
-  saveAnchor, sanitizeAnchorLabel, clearAnchors, getAllAnchors,
+  saveAnchor, sanitizeAnchorLabel, clearAnchors, getAllAnchors, getAnchorsForScope, deleteAnchor,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
   getFieldFormats, getDigitsOnlyFields,
   getRecoverySummary, getRecoveryDetail, getMemoryInventory, resetAllLearning,

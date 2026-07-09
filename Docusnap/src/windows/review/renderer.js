@@ -3336,8 +3336,44 @@ async function loadLearningHistoryFor(key) {
     _lhData = await window.docusnap.getFieldValueHistory(
       { supplier_name: supplier, document_type: slug, field_key: key }) || [];
   } catch { _lhData = []; }
+  _lhAnchorPending = null;
+  try {
+    _lhAnchors = await window.docusnap.getAnchorsForScope(
+      { supplier_name: supplier, document_type: slug, field_key: key }) || [];
+  } catch { _lhAnchors = []; }
   renderLearningHistory();
+  renderLearningAnchors();
   highlightActiveField(key);
+}
+
+// The learned-anchors panel: WHERE this field is read from, so a mis-drawn anchor can be spotted +
+// deleted (delete + re-teach is the clean fix). Read-only display + per-anchor delete-confirm.
+let _lhAnchors = [];
+let _lhAnchorPending = null;
+function renderLearningAnchors() {
+  const el = document.getElementById('lh-anchors');
+  if (!el) return;
+  const supNorm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const selSup = supNorm(_lhField && _lhField.supplier);
+  const rows = (_lhAnchors || []).map(a => {
+    const drawn = !!a.last_authoritative_at;
+    const xpct = Math.round((a.x_norm || 0) * 100), ypct = Math.round((a.y_norm || 0) * 100);
+    const aSup = supNorm(a.supplier_name);
+    const isCross = aSup && aSup !== selSup && !['  global  ', 'global', 'unknown'].includes(aSup);
+    const badge = drawn
+      ? `<span class="lh-a-badge" title="You drew this box (⊕ teach)">✎ drawn</span>`
+      : `<span class="lh-a-badge auto" title="Learned automatically from confirmations">auto · used ${a.usage_count || 1}×</span>`;
+    const crossBadge = isCross
+      ? `<span class="lh-a-badge cross" title="Stored under a DIFFERENT sender (${escHtml(a.supplier_name || '')}) — likely mis-scoped">${escHtml(a.supplier_name || '?')}</span>` : '';
+    const meta = `<span class="lh-a-meta" title="label direction · position on the page">→ ${escHtml(a.direction || '?')} @ ${xpct}%,${ypct}%</span>`;
+    const action = (_lhAnchorPending === a.id)
+      ? `<span class="lh-a-confirm">Delete this anchor?<button class="lh-a-yes" data-id="${a.id}">Yes</button><button class="lh-a-no">No</button></span>`
+      : `<button class="lh-a-del" data-id="${a.id}" title="Delete this learned position (re-teach with ⊕ to replace it)">🗑 delete</button>`;
+    return `<div class="lh-anchor"><span class="lh-a-label">${escHtml(a.anchor_label || '(no label)')}</span>`
+      + `${meta} ${badge} ${crossBadge}<span class="lh-a-spacer"></span>${action}</div>`;
+  }).join('');
+  el.innerHTML = `<h4>Learned position (anchors)</h4>` + (rows
+    || `<div class="lh-a-empty">No learned anchor for this field — it's read by keyword/logo, or hasn't been taught. Use ⊕ on the field to teach a position.</div>`);
 }
 
 // The source-doc submenu for one learned value (lazy-loaded into _lhDocs).
@@ -3528,6 +3564,26 @@ document.getElementById('lh-body').addEventListener('click', async (e) => {
     } catch (err) { console.warn('purge-field-value failed:', err); }
     _lhPending = null;
     renderLearningHistory();
+  }
+});
+
+// Learned-anchors panel: per-anchor delete with a Yes/No confirm (delete + re-teach is the fix).
+document.getElementById('lh-anchors')?.addEventListener('click', async (e) => {
+  const del = e.target.closest('.lh-a-del');
+  if (del) { _lhAnchorPending = parseInt(del.dataset.id, 10) || null; renderLearningAnchors(); return; }
+  if (e.target.closest('.lh-a-no')) { _lhAnchorPending = null; renderLearningAnchors(); return; }
+  const yes = e.target.closest('.lh-a-yes');
+  if (yes) {
+    const id = parseInt(yes.dataset.id, 10);
+    if (!id) return;
+    yes.disabled = true;
+    try {
+      await window.docusnap.deleteFieldAnchor({ id, supplier_name: _lhField && _lhField.supplier,
+        document_type: _lhField && _lhField.slug, field_key: _lhField && _lhField.key });
+      _lhAnchors = _lhAnchors.filter(a => a.id !== id);
+    } catch (err) { console.warn('delete-field-anchor failed:', err); }
+    _lhAnchorPending = null;
+    renderLearningAnchors();
   }
 });
 

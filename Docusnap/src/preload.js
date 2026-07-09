@@ -163,6 +163,8 @@ contextBridge.exposeInMainWorld('docusnap', {
   getFieldValueHistory:        (scope)   => ipcRenderer.invoke('get-field-value-history', scope),
   getDocumentsForFieldValue:   (scope)   => ipcRenderer.invoke('get-documents-for-field-value', scope),
   purgeFieldValue:             (scope)   => ipcRenderer.invoke('purge-field-value', scope),
+  getAnchorsForScope:          (scope)   => ipcRenderer.invoke('get-anchors-for-scope', scope),
+  deleteFieldAnchor:           (p)       => ipcRenderer.invoke('delete-field-anchor', p),
   renameFieldValue:            (scope)   => ipcRenderer.invoke('rename-field-value', scope),
   acceptNameValue:             (p)       => ipcRenderer.invoke('accept-name-value', p),
   acceptIssuer:                (p)       => ipcRenderer.invoke('accept-issuer', p),
