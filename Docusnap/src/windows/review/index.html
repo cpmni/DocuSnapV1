@@ -301,13 +301,21 @@
       padding: 5px 8px; color: var(--text); font-family: var(--sans); font-size: 11px; outline: none;
     }
     #wizard-panel select:focus, #wizard-panel input[type="text"]:focus { border-color: var(--accent); }
-    .anchor-readout { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 20;
+    .anchor-readout { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 20;
       max-width: 92%; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-      background: var(--surface); border: 1px solid var(--border2); border-radius: var(--r-sm, 9px);
-      padding: 7px 11px; box-shadow: 0 4px 14px rgba(0,0,0,.18); font-size: 12px; color: var(--text); }
-    .anchor-readout.warn { border-color: var(--warn); }
-    .anchor-readout .ar-msg { font-family: var(--mono); }
+      background: var(--surface); border: 1px solid var(--accent); border-left: 4px solid var(--accent);
+      border-radius: 10px; padding: 9px 13px 9px 12px; box-shadow: 0 10px 30px rgba(0,0,0,.30);
+      font-size: 12.5px; color: var(--text); font-family: var(--sans);
+      animation: ar-pop .18s cubic-bezier(.2,.8,.2,1); }
+    @keyframes ar-pop { from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+                        to   { opacity: 1; transform: translateX(-50%) translateY(0); } }
+    .anchor-readout.warn { border-color: var(--warn); border-left-color: var(--warn); }
+    .anchor-readout .ar-msg { font-family: var(--sans); font-weight: 500; }
     .anchor-readout .ar-msg b { color: var(--accent2); }
+    /* the read VALUE as a highlighted chip (the only monospace part) so it stands out */
+    .anchor-readout .ar-val { font-family: var(--mono); font-weight: 600; color: var(--accent2);
+      background: var(--accent-bg); border: 1px solid var(--accent); border-radius: 6px; padding: 1px 7px; }
+    .anchor-readout.warn .ar-val { color: var(--warn); background: var(--warn-bg); border-color: var(--warn); }
     .anchor-readout .ar-dir { display: inline-flex; gap: 4px; align-items: center; }
     /* Right-click field cleanup-rule menu */
     .field-rule-menu { position: fixed; z-index: 100; min-width: 240px; max-width: 380px;
@@ -567,6 +575,13 @@
     /* Stacked: full-width primary on top, demoted "Reprocess All" beneath, so the
        long "Reprocess with Learned Data" label fits the 320px panel and the heavy
        queue-wide action reads as clearly secondary (no longer clipped off the edge). */
+    /* Import/watch activity bar — explains why Reprocess is paused while documents import. */
+    #processing-activity { margin: 8px 14px 0; padding: 8px 10px; border-radius: 8px; flex-shrink: 0;
+      background: var(--accent-bg); border: 1px solid var(--accent); color: var(--accent2);
+      font-size: 11px; line-height: 1.4; display: flex; align-items: center; gap: 8px; }
+    #processing-activity .pa-spinner { width: 12px; height: 12px; flex-shrink: 0; border-radius: 50%;
+      border: 2px solid var(--accent); border-top-color: transparent; animation: pa-spin .8s linear infinite; }
+    @keyframes pa-spin { to { transform: rotate(360deg); } }
     #reprocess-bar, #reprocess-queue-bar { padding: 8px 14px 0; flex-shrink: 0; display: flex; flex-direction: column; gap: 6px; }
     #reprocess-queue-bar { padding-bottom: 10px; }
     /* Section headings that separate "actions for THIS document" from "actions for ALL documents". */
@@ -928,7 +943,9 @@
       <div id="fields-scroll"></div>
 
       <div id="reprocess-progress" role="status" aria-live="polite"></div>
-      <!-- Actions for THIS document: re-extract it, then file/delete it (action-bar below). -->
+      <!-- Import/watch activity: shown while documents are being imported, so the operator sees
+           WHY "Reprocess" is unavailable (heavy work is serialised). -->
+      <div id="processing-activity" role="status" aria-live="polite" style="display:none;"></div>
       <div id="reprocess-bar">
         <div class="action-group-head">This document</div>
         <button class="btn reprocess"     id="btn-reprocess" data-help-key="reprocess">&#9654;&#9654; Reprocess</button>

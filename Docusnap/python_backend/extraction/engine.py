@@ -85,6 +85,26 @@ def _is_stage05_located(method: str | None) -> bool:
                              or method.startswith("template_registration"))
 
 
+# A BLIND template_registration read placed its target box by landmark GEOMETRY alone, with NO
+# evidence that this field's own label sits near the value — so a mis-taught / layout-mismatched
+# mapping can land on a wrong-but-type-valid neighbour (e.g. a ZIP fragment "6102" for
+# invoice_number). When a strong, rx-validated keyword DISAGREES and outscores it, prefer the
+# keyword but FLAG the two-source conflict below auto-file rather than silently swapping (reggie).
+# LOCATED mappings (label found on the page), ⊕ anchors and overrides are unaffected.
+_KEYWORD_TRUST_FLOOR = 90   # only a confident, rx-validated keyword may challenge a taught read
+_CONFLICT_CAP        = 88   # capped below the auto-file threshold → the conflict lands in Review
+
+
+def _cmp_norm(value) -> str:
+    """Compare-time normalisation for the keyword-vs-mapping disagreement check — reuses the shared
+    token normaliser so '6 102' / '6102' compare equal; degrades to a plain lower/strip on error."""
+    try:
+        from extraction import text_normalise
+        return "".join(text_normalise.normalise_for_tokens(value).split())   # collapse ws: '6 102'=='6102'
+    except Exception:
+        return "".join(str(value or "").strip().lower().split())
+
+
 def _supplier_identity_decision(existing: dict | None, candidate: dict | None) -> str | None:
     """Plausibility-aware merge ruling for the supplier_name field only.
 
@@ -1235,6 +1255,21 @@ class ExtractionEngine:
             # mis-aimed learned anchor then clobber the deliberate mapping. Keep
             # the mapping; curated sources still contend on confidence later.
             if existing and _is_stage05_located(existing.get("method")):
+                # A genuinely-LOCATED mapping keeps winning. But a BLIND template_registration read
+                # (landmark geometry only, no field-label evidence) can lose to a strong keyword that
+                # DISAGREES + outscores it — kept for review, not silently swapped or auto-filed.
+                _blind_reg = (existing.get("method") or "").startswith("template_registration")
+                _kw_ok = (data.get("method") in ("keyword", "keyword_override")
+                          and data.get("value") and (data.get("confidence") or 0) >= _KEYWORD_TRUST_FLOOR)
+                if (_blind_reg and _kw_ok
+                        and _cmp_norm(data.get("value")) != _cmp_norm(existing.get("value"))
+                        and (data.get("confidence") or 0) > (existing.get("confidence") or 0)):
+                    results[key] = {**data,
+                                    "confidence": min((data.get("confidence") or 0), _CONFLICT_CAP),
+                                    "validation_note": (
+                                        f"Kept the read value “{data.get('value')}” — a taught "
+                                        f"mapping read “{existing.get('value')}” at a registered "
+                                        f"position that couldn't be confirmed by its label. Please check.")}
                 continue
             if (key in date_field_keys and existing
                     and validator.parse_date(existing.get("value")) is not None

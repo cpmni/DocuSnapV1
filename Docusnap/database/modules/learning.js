@@ -360,26 +360,28 @@ function saveAnchor(db, {
   // usage_count. Stamping last_authoritative_at lets extraction prefer this row.
   // A mis-teach is cheap to recover from — just redraw again (also authoritative).
   if (authoritative) {
-    // Remove sibling anchors for the SAME field/supplier/doc_type that are not
-    // this exact label+direction, so the just-drawn box is the single source of
-    // truth for the field's position and no stale row can win selection.
+    // Remove sibling anchors for the SAME field + doc_type + THIS SUPPLIER that are
+    // not this exact label+direction, so the just-drawn box is the single source of
+    // truth for the field's position for this supplier and no stale same-supplier row
+    // can win selection.
     //
-    // Scope is (field_key, document_type) ACROSS ALL SUPPLIERS — deliberately
-    // NOT restricted to this teach's supplier. The doc-type IS the layout here;
-    // an operator teaching where a field sits is correcting it for that layout,
-    // not for one resolved supplier identity. Without the cross-supplier sweep,
-    // a stale anchor saved under a supplier the template/logo resolves to
-    // (supplier-exact = higher selection priority) survives and out-ranks this
-    // supplier-agnostic teach — the exact failure that made re-teaching look
-    // broken. Superseding by (field, doc-type) makes the explicit teach win for
-    // every future document of this type regardless of resolved supplier, which
-    // is the intended supplier-optional, doc-type-driven behaviour.
+    // Scope is (field_key, document_type, supplier_name) — the sweep is SUPPLIER-SCOPED
+    // (gary Slice 1, 2026-07-09). It used to run ACROSS ALL SUPPLIERS on the premise
+    // "the doc-type IS the layout", but that is FALSE for a multi-supplier type like
+    // Invoice: teaching one supplier's field then DELETED every other supplier's learned
+    // anchor for that field ("I taught one Anconia doc and it broke my other suppliers").
+    // A teach is tagged to the confirmed supplier (review/renderer.js), so it belongs to
+    // that supplier's layout, not to every sender of the type. The companion fix that
+    // stops a cross-supplier authoritative anchor from OUT-RANKING a supplier's own anchor
+    // at read time is _filter_anchors' supplier-aware auth priority (anchor.py) + the
+    // located-at-taught-position gate; a genuinely shared single-layout type opts in via
+    // the __global__ sentinel supplier. Guarded by database/modules/test_saveanchor_scope.js.
     db.prepare(`
       DELETE FROM field_anchors
       WHERE field_key = @field_key
         AND ((document_type IS @document_type) OR document_type = @document_type)
-        AND NOT (supplier_name = @supplier_name
-                 AND anchor_label = @anchor_label AND direction = @direction)
+        AND supplier_name = @supplier_name
+        AND NOT (anchor_label = @anchor_label AND direction = @direction)
     `).run(key);
 
     const existingAuth = db.prepare(`

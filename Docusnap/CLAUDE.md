@@ -79,6 +79,18 @@ spawn starts cold) and relay their findings to the user.
   bugs (label→value drift, registration / coordinate-frame mismatches) + end-to-end
   OCR-pipeline review; same OSS-licence hard rule as oscar. (Led the Stage 0.5
   inline-harvest drift fix with oscar + eric — see OCR_WORKFLOW_REVIEW.md.)
+- **oracle** (`agents/oracle.md`) — the FINAL adversarial reviewer: VETS the CONSENSUS of
+  the other advisors (invoke him LAST, after 007/gary/oscar/reggie/eric agree, or when one
+  proposal needs a hard second opinion). His load-bearing skill is systems/precedence
+  reasoning, not first-draft analysis — he catches the SEAM where two individually-correct
+  fixes combine badly, VETS THE PREMISE of the ask (facts/reward/risk), TRACES the code to
+  verify claims (same-frame/units, where a value is computed vs its gate), weighs BLAST RADIUS
+  (prefers do-nothing / a lower-risk layer over touching page-wide code), insists on FAIL-
+  TOWARD-REVIEW (never a silent wrong value; don't drop the human checkpoint on same-pixel
+  agreement alone), and names the VERIFICATION GATE (harness M=0 + zero accuracy drop). Verdicts:
+  SIGN OFF / …WITH CONDITIONS / SEND BACK / DO NOTHING / WRONG LAYER. Same OSS-licence hard rule.
+  Trial log + running assessment: `docs/oracle_log.md` (4-for-4 so far; his brief was refined
+  from that track record). Spawn as general-purpose with the persona if not yet a registered type.
 
 **Skills** in `.claude/skills/`: a set of Python engineering skills
 (`testing-strategy`, `code-quality`, `performance`, `api-design`, `packaging`,
@@ -690,6 +702,26 @@ license-state(gate)                    # pushed to the license window with the b
 ---
 
 ## Known bugs (fix these first)
+
+### ✅ RESOLVED (2026-07-09) — the 2026-07-08 real-doc harness RED was NOT a code regression. See `HANDOVER_2026-07-09.md`.
+Isolated (baseline `main` vs branch on the SAME live DB): the RED was (1) ONE accidental AUTHORITATIVE
+⊕ teach — `field_anchors` id=24, Cloud VPS `invoice_number`, label "Invoice" — which (per
+`learning.saveAnchor`) swept every other supplier's invoice_number anchor AND bled cross-supplier,
+false-locating on the generic caption "Invoice" to crop-read a wrong-but-valid neighbour (City Office
+`1828987`@87), overriding the correct keyword read (`152567`@98); and (2) partly-POISONED test GT (user
+mis-confirmed page-numbers/fragments while bug-hunting — #404 GT `22163`/`16-03-2026` but the doc's own
+OCR+filename say `22162`/`03-06-2026`; #896 GT `1/2`; #962/#1012 GT `102`). `main` was actually WORSE on
+safety (would-auto-file-wrong=25 vs the branch's 1). **True silent-wrong-auto-file = 0.** FIX SHIPPED
+(branch `fix/autofile-critical-field-floor`): a filing-critical per-field confidence floor in
+`trust.js` `isAutoFileEligible` (`critical_field_conf_floor`, default 88, 0=off) — a present ref/date
+value must itself clear the floor to auto-file, at every floor incl. 100; HOLD-only, so it can't cause a
+wrong auto-file; took would-auto-file-wrong 25→1 (the 1 = poisoned #404). The branch
+`fix/ocr-multicol-precedence` (oscar grouping + reggie guard) is NOT the cause and is safe to build.
+DAYTIME cause fix (reggie, not done — delicate): stop a NAMED cross-supplier authoritative read that
+located only via a WEAK/generic caption from being auto-trusted as "same layout" in `anchor.py`
+(`anchor_crop_relocated` is always `located_ok=True`, so it skips the cross-supplier guard). Cleanup:
+Settings → Learning → Learning Recovery (clear the Cloud VPS anchor), or `py
+stress_test/_clean_mistaught_anchor.py delete`.
 
 ### FIXED (residual noted) — cross-supplier POSITIONAL anchor bleed (2026-07-06)
 A ⊕-taught AUTHORITATIVE anchor for a POSITIONAL field (e.g. `invoice_number`) was applied ACROSS

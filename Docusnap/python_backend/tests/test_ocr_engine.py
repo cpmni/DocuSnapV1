@@ -191,6 +191,37 @@ check("grouping: two close single-column lines are NOT glued into one",
 check("_with_dpi appends the render DPI", tess_mod._with_dpi("--psm 3", 300) == "--psm 3 --dpi 300")
 check("_with_dpi is a no-op when DPI is unknown", tess_mod._with_dpi("--psm 3", None) == "--psm 3")
 
+# ── 10f. THREE-column header: a value's row is SEEDED AFTER it, so a single greedy pass glued it to
+#   the row above (real Anconia coords: 179914 at yc1270 stuck to BILLING@yc1252 instead of its own
+#   INVOICE NUMBER row@yc1274). The two-pass assignment must re-home it to its label's row. ─────────
+def _w(l, t, wd, h, txt): return (l, t, wd, h, txt, 96)
+_three_col = [
+    _w(299, 1238, 150, 29, "BILLING"), _w(455, 1238, 120, 29, "ADDRESS"),
+    _w(1009, 1260, 150, 27, "DELIVERY"), _w(1165, 1260, 120, 27, "ADDRESS"),
+    _w(1680, 1259, 120, 29, "INVOICE"), _w(1840, 1260, 110, 28, "NUMBER"), _w(2048, 1256, 120, 28, "179914"),
+    _w(299, 1335, 90, 28, "ACME"), _w(395, 1335, 60, 28, "Inc"),   # the line BELOW the label
+]
+_tc = tess_mod._group_words_into_lines(_three_col, 28)
+_invline = [l for l in _tc if "INVOICE NUMBER" in l]
+check("grouping: 3-column header keeps INVOICE NUMBER + its value on ONE line",
+      len(_invline) == 1 and "179914" in _invline[0])
+check("grouping: the value does NOT stick to the BILLING ADDRESS row above",
+      not any("BILLING" in l and "179914" in l for l in _tc))
+
+# ── 10g. tie-break pin: a BOLD tall label's value must stay with the label even when a decoy line
+#   just below is NEARER in centre — overlap must beat centre distance (guards against a regression
+#   to a min-centre rule). Total: box top520 h84 (yc562); value $396.12 top574 h30 (yc589, overlaps
+#   Total by 30px); decoy $0.00 top594 h30 (yc609, nearer the value's centre: d20 < 27, overlap 10). ─
+_decoy = [
+    _w(200, 520, 160, 84, "Total:"),
+    _w(2300, 574, 250, 30, "$396.12"),
+    _w(2300, 594, 250, 30, "$0.00"),
+]
+_dl = tess_mod._group_words_into_lines(_decoy, 30)
+_tot = [l for l in _dl if l.startswith("Total:")]
+check("grouping: bold label keeps its value over a nearer-centred decoy (overlap-first tie-break)",
+      len(_tot) == 1 and "$396.12" in _tot[0] and "$0.00" not in _tot[0])
+
 # ── 8. leak-prevention: crop/zone/anchor/landmark paths don't import the seam ─────
 for rel in ("ocr/region.py", "ocr/landmarks.py", "ocr/text_enhance.py",
             "extraction/anchor.py", "extraction/template_mapper.py"):

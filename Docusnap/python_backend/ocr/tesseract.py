@@ -85,35 +85,54 @@ def _group_words_into_lines(words, med_h) -> list:
     row (a label and its far-right value on the SAME physical row stay on one line; a wide intra-row
     x-gap emits a 4-space column break so keyword.py's column-split still separates real columns).
 
-    Two-pass clustering with a FROZEN row anchor + NEAREST-of-all-rows assignment (oscar). The old
-    single-pass grouping compared only the LAST row and let each row's bbox GROW unbounded, so on a
-    two-column layout whose columns interleave in the global y-sort the outcome depended on visiting
-    order — a sub-pixel y shift at one DPI vs another flipped which words landed together and a whole
-    key/value row could be scattered across lines. Here each word joins the nearest EXISTING row
-    within a med_h-relative band measured against the row's frozen seed box/centre (never a grown
-    bbox, never a drifting mean), so it's order-independent and DPI-stable. Pure — no Tesseract call;
-    guarded by tests/test_ocr_engine.py."""
+    TWO PASS with a FROZEN row anchor (oscar). A word can belong to a row that is SEEDED AFTER it in
+    the global y-sort, so a single greedy pass (which can only choose among rows already created) put
+    a value on the row above its label on a 3-column header — e.g. an invoice number at y-centre 1270
+    glued to "BILLING ADDRESS" (yc 1252, seeded first) instead of its own "INVOICE NUMBER" row (yc
+    1274, seeded later), so the label read empty and the keyword matcher fell through to the line
+    below. Fix: PASS 1 discovers the anchor SET with the SAME frozen-seed eligibility as before (so
+    the rows are identical to today — no regression); PASS 2 assigns EVERY word against the FULL set,
+    order-independent. Tie-break = (significant-overlap, max overlap, min centre-distance): vertical
+    box OVERLAP (physical "same printed line") wins over centre proximity, so a value re-homes to its
+    own label's row while a tall BOLD label still keeps its lower-centred value (which it encloses)
+    instead of losing it to a nearer line below. med_h-relative → DPI-stable. Guarded by test_ocr_engine.py."""
     if not words:
         return []
     col_gap = max(med_h * 1.5, 12)    # x-gap wide enough to be a column break (4-space)
     cap     = max(med_h * 1.2, 10)    # centres farther than this = DIFFERENT rows (hard backstop)
     band    = max(med_h * 0.6, 6)     # within this of a row's FROZEN centre = same row (OR clause)
-    rows = []                          # each: {top, bot, yc, words}; top/bot/yc FROZEN at the seed
-    for wd in sorted(words, key=lambda w: w[1] + w[3] / 2.0):   # deterministic top-to-bottom
+    OV      = 0.3                      # box-overlap fraction that counts as "significant" (same line)
+    sw = sorted(words, key=lambda w: w[1] + w[3] / 2.0)         # deterministic top-to-bottom
+
+    def _eligible(wd, a):
         top_w, bot_w = wd[1], wd[1] + wd[3]
-        yc = wd[1] + wd[3] / 2.0
-        best, best_d = None, None
-        for r in rows:                                          # search ALL rows, pick the nearest
-            overlap = min(bot_w, r["bot"]) - max(top_w, r["top"])
-            shorter = min(wd[3], r["bot"] - r["top"]) or 1
-            d = abs(yc - r["yc"])
-            if (overlap >= 0.3 * shorter or d <= band) and d <= cap:
-                if best is None or d < best_d:
-                    best, best_d = r, d
-        if best is None:
-            rows.append({"top": top_w, "bot": bot_w, "yc": yc, "words": [wd]})
+        overlap = min(bot_w, a["bot"]) - max(top_w, a["top"])
+        shorter = min(wd[3], a["bot"] - a["top"]) or 1
+        d = abs((wd[1] + wd[3] / 2.0) - a["yc"])
+        sig = overlap >= OV * shorter
+        return ((sig or d <= band) and d <= cap), sig, overlap, d
+
+    # PASS 1 — discover the anchor SET (identical seeding rule to the old single pass → same rows).
+    anchors = []
+    for wd in sw:
+        if not any(_eligible(wd, a)[0] for a in anchors):
+            anchors.append({"top": wd[1], "bot": wd[1] + wd[3], "yc": wd[1] + wd[3] / 2.0})
+    # PASS 2 — assign EVERY word to its BEST anchor over the FULL set (removes the visit-order bias).
+    rows = [{"top": a["top"], "bot": a["bot"], "yc": a["yc"], "words": []} for a in anchors]
+    for wd in sw:
+        best, best_key = None, None
+        for r in rows:
+            ok, sig, overlap, d = _eligible(wd, r)
+            if not ok:
+                continue
+            key = (1 if sig else 0, overlap, -d)               # overlap-first; centre only as tie-break
+            if best is None or key > best_key:
+                best, best_key = r, key
+        if best is None:                                        # pathological rounding only — never lose a word
+            rows.append({"top": wd[1], "bot": wd[1] + wd[3], "yc": wd[1] + wd[3] / 2.0, "words": [wd]})
         else:
-            best["words"].append(wd)                            # reference stays FROZEN
+            best["words"].append(wd)
+    rows = [r for r in rows if r["words"]]                      # drop any anchor that ended up empty
     rows.sort(key=lambda r: r["yc"])
     lines = []
     for r in rows:

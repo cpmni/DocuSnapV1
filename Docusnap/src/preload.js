@@ -327,6 +327,9 @@ contextBridge.exposeInMainWorld('docusnap', {
   onReviewCountChanged:  (cb) => ipcRenderer.on('review-count-changed',  (_e, n) => cb(n)),
   onDeferredCountChanged:(cb) => ipcRenderer.on('deferred-count-changed', (_e, n) => cb(n)),
   onReprocessProgress:   (cb) => ipcRenderer.on('reprocess-progress',    (_e, m) => cb(m)),
+  // Import/watch activity (broadcast to ALL windows) so Review can show WHY reprocess is paused.
+  onProcessingActivity:  (cb) => ipcRenderer.on('processing-activity',   (_e, s) => cb(s)),
+  getProcessingActivity: ()   => ipcRenderer.invoke('get-processing-activity'),
   removeReprocessProgress: ()  => ipcRenderer.removeAllListeners('reprocess-progress'),
 
   // Hidden dev inspector (read-only): request password unlock + subscribe to the
