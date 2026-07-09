@@ -322,8 +322,35 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                        and anchor.get("offset_dy_norm") is not None
                        and page0 is not None)
 
+        # CROSS-SUPPLIER ABSOLUTE-READ GATE (007① applied BEFORE the crop; Oracle-scoped, 2026-07-09).
+        # A NAMED cross-supplier AUTHORITATIVE anchor's ABSOLUTE reads — the rigid crop and the
+        # registration map of the taught box — are the ones that drift onto a wrong region of a
+        # DIFFERENT supplier's layout (Anconia's top-right box reading Cloud VPS's mid-page cell →
+        # "OO"). Suppress those absolute attempts unless the caption is at the TAUGHT position (same
+        # layout). This is a SUBSET of what the post-crop 007① gate already concludes for the rigid
+        # read (kept below as defence-in-depth), moved earlier so the wrong crop isn't attempted at
+        # all AND — the residual the post-crop gate missed — so a credible-but-wrong cross-supplier
+        # REGISTRATION read can't commit. The LABEL-RELATIVE reads (inline / drift-relocate / text
+        # fallback) are NOT gated: they read beside the caption LOCATED on THIS doc and self-validate,
+        # which is how a genuine shared layout at a SHIFTED position still fills (per the Oracle — do
+        # not trade a wrong value for a mysterious empty field). Reuses line_cache: one cheap locate,
+        # and it SAVES the heavy rigid + registration crop OCR when the skip fires. Passive anchors are
+        # untouched (authoritative-only, this slice).
+        _xsup_absolute_ok = True
+        if (_named_cross_supplier(anchor, supplier_name)
+                and anchor.get("last_authoritative_at")
+                and (anchor.get("anchor_label") or "").strip() and page0 is not None):
+            _plc = _locate_for_relocation(
+                page0, (anchor.get("anchor_label") or "").strip(), direction,
+                (x_norm, y_norm, anchor.get("w_norm") or 0.0, anchor.get("h_norm") or 0.0),
+                page_text_lines, line_cache=line_cache)
+            _xsup_absolute_ok = _located_at_taught_position(
+                _plc, x_norm, y_norm, anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm"))
+            if not _xsup_absolute_ok and on_reject:
+                on_reject(field_key, "anchor_crop", None, "cross_supplier_placement_skip")
+
         # ── Primary: image crop + re-OCR (accurate, avoids column bleed) ──────
-        if not _skip_rigid and x_norm > 0 and y_norm > 0 and page0 is not None:
+        if not _skip_rigid and _xsup_absolute_ok and x_norm > 0 and y_norm > 0 and page0 is not None:
             w_norm   = anchor.get("w_norm") or 0.0
             h_norm   = anchor.get("h_norm") or 0.0
             _cap = ((lambda c: slice_capture(field_key, "anchor_crop", 0,
@@ -724,7 +751,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
         # no extra trigger clause is needed). The mapped read still clears the SAME
         # credibility + learned-format gates. INERT (byte-identical) when no transform
         # was fitted (flag off / no landmarks / poor fit).
-        if (not value or _is_weak_read(value, val_type)) and page_transform is not None \
+        if (not value or _is_weak_read(value, val_type)) and _xsup_absolute_ok and page_transform is not None \
                 and x_norm > 0 and y_norm > 0 and page0 is not None:
             w_norm = anchor.get("w_norm") or 0.0
             h_norm = anchor.get("h_norm") or 0.0
@@ -2312,7 +2339,21 @@ def _anchor_matches(anchor: dict, supplier_name: str | None,
     # supplier guess (Greenfield reading "Supplier: Greenfield" over an "Acme" template match —
     # test_supplier_identity_stability), which is a legitimate identity re-resolution.
     if a_type and d_type and a_type == d_type:
-        return True
+        # Cross-supplier (DIFFERENT named supplier, SAME doc-type): admit ONLY for IDENTITY fields
+        # (supplier_name/customer_name). Layouts differ PER SUPPLIER, so a cross-supplier POSITIONAL
+        # anchor (invoice_number/date/total/…) is almost never right and only BLEEDS — supplier A's
+        # taught box reading a wrong region of supplier B's doc (the invoice_number drift). So a
+        # positional field is NOT admitted cross-supplier; it resolves from THIS doc's own
+        # supplier-agnostic keyword read (or is taught per supplier). NOTE there is no operator
+        # "this layout is shared across suppliers" control — a __global__ anchor only arises as a
+        # FALLBACK when the supplier was unresolved at teach time (see learning.js), so it is NOT the
+        # user-facing opt-in for a shared layout; keyword + per-supplier teaching is the real net.
+        # IDENTITY fields DO stay cross-supplier-admittable
+        # because a supplier's own labelled identity anchor must be able to CORRECT a wrong
+        # template/logo supplier guess (test_supplier_identity_stability), and the read-stage located
+        # gate keeps only its own labelled read. (2026-07-09, at the user's direction: "the layouts
+        # per supplier will mostly be different" — so cross-supplier positional reads never fire.)
+        return anchor.get("field_key") in _IDENTITY_FIELD_KEYS
 
     return False
 

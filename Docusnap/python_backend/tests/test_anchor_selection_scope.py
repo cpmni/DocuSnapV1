@@ -51,10 +51,16 @@ top_glob = _filter_anchors([glob_auth, city_passive], "City Office NI", "invoice
 check("__global__ authoritative teach sorts first (shared-layout opt-in preserved)",
       top_glob.get("supplier_name") == "__global__")
 
-print("cross-supplier anchor is still ADMITTED (available when the supplier has no own anchor):")
+print("cross-supplier admission is IDENTITY-ONLY (positional not admitted — user direction):")
 only_cross = _filter_anchors([anconia_auth], "City Office NI", "invoice")
-check("Anconia's teach is still returned on a City Office doc when it's the only match",
-      len(only_cross) == 1 and only_cross[0].get("supplier_name") == "Anconia Corp")
+check("Anconia's INVOICE_NUMBER (positional) teach is NOT admitted on a City Office doc",
+      len(only_cross) == 0)
+id_anchor = {"supplier_name": "Anconia Corp", "document_type": "invoice", "field_key": "supplier_name",
+             "anchor_label": "Supplier", "direction": "right", "x_norm": 0.1, "y_norm": 0.1,
+             "usage_count": 1, "last_authoritative_at": "2026-07-09 09:00:56"}
+id_cross = _filter_anchors([id_anchor], "City Office NI", "invoice")
+check("a supplier_name (identity) teach IS still admitted cross-supplier (re-resolution preserved)",
+      len(id_cross) == 1 and id_cross[0].get("field_key") == "supplier_name")
 
 print("007① placement gate — located caption must be at the TAUGHT position:")
 # taught: value centre (0.844, 0.384), offset value_centre − label_top_left = (0.185, 0.002)
