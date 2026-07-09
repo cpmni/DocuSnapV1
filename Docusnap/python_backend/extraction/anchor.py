@@ -247,6 +247,46 @@ def _matches_learned_shape(value, field_key, format_lookup) -> bool:
         return False
 
 
+def _exact_text_corroborates(value, anchor, y_norm, page_text_lines) -> bool:
+    """Independent exact-text corroboration for a debris-recovered read (Oracle
+    condition #4). The recovered token came from an IMAGE-crop OCR (debris-prone,
+    hence the conservative confidence). `page_text_lines` is the born-digital VECTOR
+    text layer — a FULLY INDEPENDENT source (it is NEVER OCR: process_docs only
+    populates it from born_digital.page_lines on a page that passes the text-layer
+    gate, and leaves it None for scanned/image-only pages). So its mere presence is
+    the born-digital provenance signal, and this can NEVER fire on a scanned doc
+    (where the full-page read and the crop are the SAME pixels — correlated, not
+    independent). Returns True when that exact vector text carries the SAME token as
+    a BOUNDED whole word on the value's OWN taught row (within ~1.5 label-heights of
+    y_norm) — i.e. the value sits at its own taught position in the independent text,
+    not merely somewhere on the page. That double confirmation (crop recovery + exact
+    vector text at the taught row) lets the read clear the auto-file floor; a scanned
+    debris-recovery keeps the one-glance review checkpoint (page_text_lines None →
+    False → capped)."""
+    if not page_text_lines or value is None:
+        return False
+    cv = str(value).strip()
+    if not cv:
+        return False
+    try:
+        pat = re.compile(r'(?<![0-9A-Za-z])' + re.escape(cv) + r'(?![0-9A-Za-z])')
+    except re.error:
+        return False
+    h  = float(anchor.get("h_norm") or 0.0) or 0.02
+    y0 = float(y_norm or 0.0) + h / 2.0            # taught value-box CENTRE
+    band = max(h * 1.5, 0.03)
+    for ln in page_text_lines:
+        try:
+            lcy = float(ln.get("y_norm", 0.0)) + float(ln.get("h_norm", 0.0)) / 2.0
+        except Exception:
+            continue
+        if abs(lcy - y0) > band:
+            continue
+        if pat.search(ln.get("text", "") or ""):
+            return True
+    return False
+
+
 def extract_with_anchors(ocr_text: str, anchors: list[dict],
                          supplier_name: str | None,
                          document_type: str | None,
@@ -994,21 +1034,32 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                     continue
             # Confident recovery (oscar's confident-clean, Oracle-gated): a debris-recovered read
             # whose clean token is LOCATED at the taught position AND matches the field's learned
-            # shape is as trustworthy as a normal clean read — _recover_clean_token only ever stripped
-            # NON-alphanumeric edge debris, so it cannot have force-fit a glyph (the Oracle's
-            # glyph-preservation condition, satisfied by construction). Drop the "please verify" flag
-            # and DON'T cap the confidence. An UNLOCATED or OFF-shape recovery keeps the capped +
-            # flagged posture (fail toward review). Harness M=0 is the safety gate.
+            # shape is trustworthy — _recover_clean_token only ever stripped NON-alphanumeric edge
+            # debris, so it cannot have force-fit a glyph (the Oracle's glyph-preservation condition,
+            # satisfied by construction). Three tiers: an UNLOCATED / OFF-shape recovery is capped +
+            # flagged (fail toward review); a LOCATED + shape-matched one drops the flag but stays
+            # BELOW the auto-file floor (a one-glance human confirm) UNLESS it is also independently
+            # corroborated by the born-digital vector text at the taught row, which lifts it to
+            # auto-file-eligible (Oracle condition #4). Harness M=0 is the safety gate.
             _rec_confident = False
             if method == "anchor_crop_recovered":
                 _rec_confident = bool(located_ok) and _matches_learned_shape(value, field_key, format_lookup)
                 if not _rec_confident:
                     conf = min(70, conf)   # unlocated / off-shape → capped + flagged (route to review)
+                elif _exact_text_corroborates(value, anchor, y_norm, page_text_lines):
+                    # BORN-DIGITAL + independent exact-text agreement on the value's OWN taught row
+                    # (Oracle condition #4): the debris-recovered token is confirmed by a fully
+                    # independent source (the vector text layer, never OCR — None for scanned, so this
+                    # can't fire on same-pixel agreement). Doubly-confirmed → lift the review checkpoint
+                    # to auto-file-eligible. Land in [90,95] (above the 88 floor, below a pristine
+                    # keyword read) — still a RECOVERED read, just corroborated.
+                    conf = min(95, max(conf, 90))
                 else:
-                    # located + shape-matched: DROP the "please verify" flag (the value is corroborated),
-                    # but keep confidence BELOW the auto-file floor (88) so a debris-recovered read still
-                    # gets a one-glance human confirm and never SILENTLY auto-files — regardless of the
-                    # anchor's usage_count. Better UX (no alarming note) without removing the checkpoint.
+                    # located + shape-matched but NOT independently corroborated (e.g. a SCANNED page —
+                    # the crop and the full-page read are the same pixels): DROP the "please verify"
+                    # flag (the value is shape-corroborated), but keep confidence BELOW the auto-file
+                    # floor (88) so a debris-recovered read still gets a one-glance human confirm and
+                    # never SILENTLY auto-files — regardless of the anchor's usage_count.
                     conf = min(conf, 87)
             results[field_key] = {
                 "value":      value.strip(),
