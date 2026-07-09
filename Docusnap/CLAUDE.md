@@ -54,10 +54,13 @@ spawn starts cold) and relay their findings to the user.
   report/diagnostic/plan, translates to plain English, splits fact vs assumption,
   flags risks, gives ranked options + a recommendation. Use after producing a
   report when the user wants options before implementation.
-- **gary** — Python engineering analyst (root-cause analysis, testable fix design,
-  test strategy). Not a defined agent file; spun up as a general-purpose agent and
-  named by the user. Briefed to use the Python skills below. (Validated the
-  absolute-target-first root cause for the worksheet date/name failures.)
+- **gary** (`agents/gary.md`, 2026-07-09) — Python engineering analyst: root-cause
+  analysis (FACT vs ASSUMPTION), smallest-correct testable fix DESIGN (with backward-compat +
+  data-migration + invariant notes), and TEST STRATEGY (unit + the realdoc_regression M=0/accuracy
+  gate + a test that PINS an accepted trade-off so a future dev can't restore the bug). Uses the
+  Python skills below. Now has a durable brief; still spawn general-purpose reading it if not a
+  registered type. (Validated the absolute-target-first root cause for the worksheet date/name
+  failures; designed the cross-supplier sweep/priority slices this session.)
 - **oscar** (`agents/oscar.md`) — OCR expert: efficient OCR pipelines
   (preprocessing, Tesseract PSM/OEM/lang, per-field crop recipes, confidence,
   tables/searchable-PDF, accuracy-vs-throughput). HARD RULE: only recommends
@@ -91,6 +94,15 @@ spawn starts cold) and relay their findings to the user.
   SIGN OFF / …WITH CONDITIONS / SEND BACK / DO NOTHING / WRONG LAYER. Same OSS-licence hard rule.
   Trial log + running assessment: `docs/oracle_log.md` (4-for-4 so far; his brief was refined
   from that track record). Spawn as general-purpose with the persona if not yet a registered type.
+
+**Advisor refinement (2026-07-09):** all the design advisors (007/gary/oscar/reggie/eric) now carry a
+**"name the seam"** rule — before proposing, state what the fix RELIES ON upstream and what safety/gate
+it DISABLES downstream (a credibility reject, a review flag, an auto-file floor, a precondition another
+fix depends on) — because the session's worst near-miss was a fix that was correct in isolation but
+removed the safety another fix relied on (an M=1). 007 additionally frame-checks the capture convention
+of its own helpers (top-left vs centre); oscar checks what a "cleaner"/whitelisted read disables; the
+principle is "fail toward review, never toward a silent wrong value." The Oracle remains the final
+cross-cutting check for the seam the specialists still miss.
 
 **Skills** in `.claude/skills/`: a set of Python engineering skills
 (`testing-strategy`, `code-quality`, `performance`, `api-design`, `packaging`,
