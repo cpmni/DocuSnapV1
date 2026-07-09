@@ -107,7 +107,7 @@ def load_json_arg(inline: str | None, filepath: str | None) -> list | dict | Non
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def doc_overrides(manifest, name, *, enhance=None, known_template_id=None,
-                  known_doc_slug=None, cached_text=None):
+                  known_doc_slug=None, cached_text=None, known_doc_slug_authority=None):
     """Per-document reprocess overrides from a manifest (batched Reprocess All), each
     keyed by the file's basename. Falls back to the global args when the manifest has
     no entry for this file — so single-doc reprocess and folder import (no manifest)
@@ -115,7 +115,15 @@ def doc_overrides(manifest, name, *, enhance=None, known_template_id=None,
     across many docs WITHOUT losing each doc's own template / doc-slug / enhance
     overrides (the accuracy guarantee). cached_text = the doc's already-stored full-page
     OCR text, reused on reprocess to skip the redundant full-page OCR (see
-    extract_text_and_images.cached_text)."""
+    extract_text_and_images.cached_text).
+
+    known_doc_slug_authority: who assigned the doc's known_doc_slug — 'machine' (the
+    pipeline typed it; a trusted contradicting title may re-type it) vs anything else
+    (human-confirmed / absent → the slug stays PINNED, today's behaviour). Deliberately
+    NO global fallback for a doc that HAS a manifest entry: authority is a per-document
+    fact (statuses differ across a batch), so a global flag must never leak onto
+    manifest-carried docs (Oracle condition, 2026-07-09)."""
+    has_entry = bool(manifest) and name in manifest
     o = (manifest or {}).get(name) or {}
     ct = o.get("ocr_text")
     return (
@@ -123,7 +131,35 @@ def doc_overrides(manifest, name, *, enhance=None, known_template_id=None,
         o.get("known_template_id") or known_template_id,
         o.get("known_doc_slug") or known_doc_slug,
         ct if ct else cached_text,
+        o.get("known_doc_slug_authority") if has_entry else known_doc_slug_authority,
     )
+
+
+def resolve_assigned_type_authority(ks, ks_auth, detected_name_slug, title_trusted_fresh):
+    """Reprocess type authority: may the doc's OWN freshly-detected title override its
+    already-ASSIGNED type slug (`ks`)? Returns (override, title_trusted) — the coherent
+    pair threaded into BOTH identify_template calls.
+
+    override is True ONLY when ALL hold:
+      - an assigned slug exists (this is a reprocess),
+      - the assignment authority is 'machine' (the pipeline typed it; a human-confirmed
+        type is NEVER overridden — absent/unknown authority counts as human/pinned, so
+        every pre-flag caller keeps today's byte-identical pin),
+      - the fresh title is TRUSTED (a real standalone heading, conf>=70 — a clipped scan
+        has no trusted heading and keeps the pin exactly as before),
+      - the detected title resolves to a KNOWN type slug that DIFFERS from the pin.
+
+    title_trusted (the pair's second half) fixes a pre-existing SPLIT-BRAIN: the engine
+    used to receive title_trusted computed from the FRESH detection alongside
+    detected_slug = the ASSIGNED slug — "trusted title = sales_order" describing a
+    heading that actually reads WORKSHEET, which could make template matching refuse a
+    legitimate sibling. Pinned ⇒ the title is trusted only when it AGREES with the pin;
+    overridden / fresh-scan ⇒ the fresh signal passes through unchanged."""
+    override = bool(ks and ks_auth == "machine" and title_trusted_fresh
+                    and detected_name_slug and detected_name_slug != ks)
+    if ks and not override:
+        return False, bool(title_trusted_fresh and detected_name_slug == ks)
+    return override, bool(title_trusted_fresh)
 
 
 def main():
@@ -159,6 +195,13 @@ def main():
     # type). Used in preference to re-detecting from OCR, which fails on a clipped
     # scan and leaves document_slug null — silently disabling the format gates.
     parser.add_argument("--known-doc-slug", default=None)
+    # Who assigned --known-doc-slug: 'machine' = the pipeline typed the doc and no human
+    # ever confirmed it, so a TRUSTED contradicting title (a real standalone heading) may
+    # re-type it on reprocess (see resolve_assigned_type_authority). Anything else —
+    # including ABSENT (every pre-flag caller: harness, older invocations) — keeps
+    # today's pin byte-identical. No hard `choices=` (an unknown value must not kill a
+    # batch; it simply behaves as the safe pin).
+    parser.add_argument("--known-doc-slug-authority", default=None)
     # Batched Reprocess All: a JSON map {basename: {known_template_id, known_doc_slug,
     # enhance_params}} so ONE Python process can reprocess many docs while each keeps
     # its OWN overrides (per-doc accuracy). Absent → the global --known-* args apply
@@ -376,12 +419,13 @@ def main():
 
         # Per-document overrides (batched reprocess) — fall back to the global args
         # when no manifest entry exists (byte-identical for folder import / single doc).
-        _enh, _kt, _ks, _cached = doc_overrides(
+        _enh, _kt, _ks, _cached, _ks_auth = doc_overrides(
             reprocess_manifest, filepath.name,
             enhance=enhance_params,
             known_template_id=args.known_template_id,
             known_doc_slug=args.known_doc_slug,
             cached_text=global_cached_text,
+            known_doc_slug_authority=args.known_doc_slug_authority,
         )
 
         try:
@@ -479,6 +523,45 @@ def main():
                         log(f"  Doc type from assigned record: {document_type} ({doc_slug})")
                         break
 
+            # The fresh detection's own slug (name → slug) + heading trust, resolved ONCE —
+            # inputs to the authority decision and the coherent (detected_slug, title_trusted)
+            # pair below.
+            detected_name_slug = None
+            if type_detection and doc_types:
+                for dt in doc_types:
+                    if dt["name"] == type_detection["type"]:
+                        detected_name_slug = dt.get("slug")
+                        break
+            title_trusted_fresh = bool(type_detection and type_detection.get("heading") and type_conf >= 70)
+
+            # MACHINE-assigned type vs the document's OWN trusted title: a doc the pipeline
+            # mis-typed (never human-confirmed, --known-doc-slug-authority 'machine') used to
+            # stay mis-typed on every reprocess — the _ks pin replayed the machine's own wrong
+            # guess as if a human chose it, so engine-side type fixes never reached
+            # already-processed docs. A TRUSTED standalone heading (e.g. "WORKSHEET") that
+            # contradicts a machine pin now re-types the doc; a HUMAN-confirmed type is NEVER
+            # overridden, and a clipped scan (no trusted heading) keeps the pin exactly as
+            # before. The linked template (_kt) is cleared on override — it belongs to the
+            # wrong type, and the engine's known-id fallback would otherwise resurrect it and
+            # re-flip the type (see resolve_assigned_type_authority).
+            _ks_overridden = False
+            if _ks and doc_types:
+                _ovr, _ = resolve_assigned_type_authority(
+                    _ks, _ks_auth, detected_name_slug, title_trusted_fresh)
+                if _ovr:
+                    for dt in doc_types:
+                        if dt.get("slug") == detected_name_slug:
+                            doc_slug      = detected_name_slug
+                            document_type = dt["name"]
+                            if dt.get("fields"):
+                                active_fields = dt["fields"]
+                            _kt = None
+                            _ks_overridden = True
+                            log(f"  Doc type OVERRIDE: assigned '{_ks}' contradicted by its own "
+                                f"trusted title '{document_type}' — re-typed (machine-assigned, "
+                                f"never confirmed)")
+                            break
+
             # The document's OWN doc-type signal — computed ONCE and threaded IDENTICALLY
             # into BOTH template matches (this pre-extract one that sets active_fields, and
             # the engine's authoritative one) so they cannot disagree. `detected_slug` is the
@@ -488,8 +571,15 @@ def main():
             # STRUCTURAL signal the template must not override. (A confidence number can't
             # separate a low-sitting heading under a tall letterhead from a top-of-page
             # incidental mention — both land ~70-75 — so we gate on the heading, not a score.)
+            # COHERENT PAIR (Oracle, 2026-07-09): when the assigned slug stays PINNED, the
+            # title is trusted only when it AGREES with the pin — the old code shipped the
+            # fresh heading's trust alongside the ASSIGNED slug ("trusted title=sales_order"
+            # describing a heading that reads WORKSHEET), which could make template matching
+            # refuse a legitimate sibling on reprocess.
             detected_slug = doc_slug
-            title_trusted = bool(type_detection and type_detection.get("heading") and type_conf >= 70)
+            _, title_trusted = resolve_assigned_type_authority(
+                _ks if not _ks_overridden else None,
+                _ks_auth, detected_name_slug, title_trusted_fresh)
 
             # Fresh-scan doc-type: for a supplier that issues several layouts under ONE
             # letterhead, the logo+fingerprint alone can't tell the layouts apart (identical
@@ -497,8 +587,9 @@ def main():
             # type-matching sibling — or REFUSE when a trusted title declares a type no
             # sibling carries. Adopt the matched template's type ONLY when the title is NOT a
             # trusted heading (a confident title of a different type wins); NEVER over an
-            # explicit known_doc_slug (a reprocess the user already assigned).
-            if not _ks and templates and page_images:
+            # explicit known_doc_slug (a reprocess the user already assigned — unless the
+            # machine-authority override above re-typed it, which re-enters the fresh path).
+            if (not _ks or _ks_overridden) and templates and page_images:
                 try:
                     tmatch = template_matcher.identify_template(
                         page_images[0], ocr_text, templates,
@@ -603,6 +694,10 @@ def main():
                 "needs_review":       review_needed,
                 "document_type":      doc_type_result,
                 "type_confidence":    type_conf,
+                # Machine-assigned type re-typed by the doc's own trusted title (reprocess
+                # authority override) — the handler plants a review note + drops stale
+                # wrong-type extraction rows off this signal.
+                **({"type_overridden": {"from": _ks, "to": doc_slug}} if _ks_overridden else {}),
                 "supplier_name":      supplier_name,
                 "template_id":        template_id,
                 "logo_phash":         logo_phash,
