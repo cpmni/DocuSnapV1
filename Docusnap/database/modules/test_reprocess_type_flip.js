@@ -144,5 +144,21 @@ section('Auto-file gate — the flip note is what blocks a silent file:');
   db.close();
 }
 
+// ── 4. Authority-polarity source pin (Oracle final-review condition 3) ─────────
+// The Python tests pin doc_overrides' plumbing, but nothing pinned WHERE the handler
+// decides 'machine': flipping the predicate to always-machine would let trusted titles
+// silently re-type HUMAN-confirmed docs with every suite green. Pin the predicate's
+// shape at both sites (single-doc + batch manifest): machine requires BOTH
+// status !== 'confirmed' AND no confirmed_at.
+section('Authority polarity — the never-confirmed predicate exists at both handler sites:');
+{
+  const fs = require('fs');
+  const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'modules', 'processing', 'handler.js'), 'utf8');
+  const singleDoc = /dtRow\.status\s*!==\s*'confirmed'\s*&&\s*!dtRow\.confirmed_at/.test(src);
+  const manifest  = /row\.status\s*!==\s*'confirmed'\s*&&\s*!row\.confirmed_at/.test(src);
+  check('single-doc reprocess gates machine authority on never-confirmed', singleDoc);
+  check('batch manifest gates machine authority on never-confirmed', manifest);
+}
+
 console.log(`\n${fails ? fails + ' FAILED' : 'All reprocess type-flip persistence checks passed.'}`);
 process.exit(fails ? 1 : 0);

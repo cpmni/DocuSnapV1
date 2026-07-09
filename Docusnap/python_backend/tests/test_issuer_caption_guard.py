@@ -140,5 +140,20 @@ check("unknown sender (no resolved supplier): first doc flags for a human",
       r["customer_name"]["confidence"] == 69
       and "recipient caption" in str(r["customer_name"].get("validation_note") or ""))
 
+print("\nPIN (iii) — the guard is actually WIRED into extract(), at the right position:")
+# Every functional check above drives the method DIRECTLY, so deleting (or moving) the one
+# call site in extract() would leave this suite green while silently disabling the guard in
+# production (Oracle final-review condition 2). Pin the wiring: the call must appear in
+# extract()'s source AFTER the final candidate resolution and BEFORE the learned-agreement
+# boost (which skips noted fields — hooked later, the boost could re-lift the cap).
+import inspect
+src = inspect.getsource(ExtractionEngine.extract)
+call_at = src.find("self._flag_recipient_caption_issuer(")
+resolve_at = src.find("self._resolve_candidates(")
+boost_at = src.find("LEARNED-AGREEMENT")
+check("extract() calls the guard", call_at != -1)
+check("... after _resolve_candidates", resolve_at != -1 and call_at > resolve_at)
+check("... before the learned-agreement boost", boost_at != -1 and call_at < boost_at)
+
 print(f"\n{fails} FAILED" if fails else "\nAll issuer-caption guard checks passed.")
 sys.exit(1 if fails else 0)
