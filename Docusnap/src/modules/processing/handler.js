@@ -114,6 +114,69 @@ function cleanupFiles(files) {
   }
 }
 
+// Pure merge of a reprocess result's extraction rows with the doc's EXISTING rows —
+// factored out of applyReprocessResult so the type-flip persistence is unit-testable
+// (test_reprocess_type_flip.js). `flip` is null when the reprocess kept the doc's type
+// (the merge is then byte-identical to the legacy behaviour), or — when the type
+// CHANGED — { newTypeKeys:Set, refKey, noteText }:
+//   - a carried-forward OLD row whose field_key is NOT in the new type's field set is
+//     DROPPED: Review renders only the current type's fields so the user could never
+//     see or fix it, but the trust gate and auto-file would still read it (Oracle
+//     condition 4, 2026-07-09);
+//   - noteText is planted on the new type's ref-field row (fallback: first row with a
+//     value, then first row) so the flip is explained in Review AND blocks auto-file
+//     (isAutoFileEligible refuses any doc carrying a validation_note — condition 3).
+function mergeReprocessRows(existing, newRows, flip = null, onTrace = null) {
+  const existingMap = {};
+  for (const e of existing) existingMap[e.field_key] = e;
+  const trace = (field, decision, oldV, newV) => { if (onTrace) onTrace(field, decision, oldV, newV); };
+
+  const mergedRows = newRows.map(row => {
+    const ex = existingMap[row.field_key];
+    if (!ex) return row;
+    if (ex.display_value && !row.display_value) {
+      trace(row.field_key, 'kept_existing', ex.display_value, row.display_value);
+      return {
+        ...row, raw_value: ex.raw_value,
+        display_value: ex.display_value, confidence: ex.confidence,
+        validation_note: ex.validation_note || null,
+        corrected_to: ex.corrected_to || null,
+      };
+    }
+    if (ex.display_value) trace(row.field_key, 'used_new', ex.display_value, row.display_value);
+    return row;
+  });
+
+  const newFieldKeys = new Set(newRows.map(r => r.field_key));
+  for (const ex of existing) {
+    if (!newFieldKeys.has(ex.field_key) && ex.display_value) {
+      if (flip && !flip.newTypeKeys.has(ex.field_key)) {
+        trace(ex.field_key, 'dropped_stale_type', ex.display_value, null);
+        continue;
+      }
+      mergedRows.push({
+        field_key:         ex.field_key,
+        raw_value:         ex.raw_value,
+        display_value:     ex.display_value,
+        confidence:        ex.confidence,
+        extraction_method: ex.extraction_method,
+        validation_note:   ex.validation_note || null,
+        corrected_to:      ex.corrected_to || null,
+      });
+    }
+  }
+
+  if (flip && flip.noteText && mergedRows.length) {
+    const target = mergedRows.find(r => r.field_key === flip.refKey)
+                || mergedRows.find(r => r.display_value)
+                || mergedRows[0];
+    target.validation_note = target.validation_note
+      ? `${flip.noteText} ${target.validation_note}`
+      : flip.noteText;
+  }
+  return mergedRows;
+}
+
 function buildTrainingArgs(db, configPath, logger = null) {
   const docTypes  = require('../../../database/modules/document_types');
   const learning  = require('../../../database/modules/learning');
@@ -950,9 +1013,6 @@ function register(ctx) {
   // when the new run found nothing for that field, and a field the new run didn't
   // return at all is kept (so reprocess never silently drops a good first-pass read).
   function applyReprocessResult(db, docId, existing, result, filename, diagOn) {
-    const existingMap = {};
-    for (const e of existing) existingMap[e.field_key] = e;
-
     const newRows = Object.entries(result.extractions).map(([key, data]) => ({
       field_key:         key,
       raw_value:         data.value != null ? String(data.value) : null,
@@ -970,49 +1030,46 @@ function register(ctx) {
                    field, decision, old: oldV ?? null, new: newV ?? null });
     };
 
-    const mergedRows = newRows.map(row => {
-      const ex = existingMap[row.field_key];
-      if (!ex) return row;
-      if (ex.display_value && !row.display_value) {
-        _emitMerge(row.field_key, 'kept_existing', ex.display_value, row.display_value);
-        return {
-          ...row, raw_value: ex.raw_value,
-          display_value: ex.display_value, confidence: ex.confidence,
-          validation_note: ex.validation_note || null,
-          corrected_to: ex.corrected_to || null,
-        };
-      }
-      if (ex.display_value) _emitMerge(row.field_key, 'used_new', ex.display_value, row.display_value);
-      return row;
-    });
-
-    const newFieldKeys = new Set(newRows.map(r => r.field_key));
-    for (const ex of existing) {
-      if (!newFieldKeys.has(ex.field_key) && ex.display_value) {
-        mergedRows.push({
-          field_key:         ex.field_key,
-          raw_value:         ex.raw_value,
-          display_value:     ex.display_value,
-          confidence:        ex.confidence,
-          extraction_method: ex.extraction_method,
-          validation_note:   ex.validation_note || null,
-          corrected_to:      ex.corrected_to || null,
-        });
+    // Resolve the reprocessed doc type BEFORE merging: a reprocess that CHANGES the
+    // doc's type (the machine-authority title override in process_docs, or a live
+    // template match resolving differently) must (a) DROP carried-forward rows from
+    // the OLD type's field set — Review hides them (it renders only the current
+    // type's fields) but the trust gate / auto-file still READ them — and (b) plant
+    // an explanation note so the flip lands in Review and can never silently
+    // auto-file (isAutoFileEligible refuses any doc carrying a validation_note).
+    // Oracle conditions 3+4, 2026-07-09. Type unchanged → merge byte-identical.
+    const _prior = db.prepare('SELECT document_type_id FROM documents WHERE id = ?').get(docId);
+    const priorTypeId = _prior ? _prior.document_type_id : null;
+    let reprocDocTypeId = null, reprocType = null;
+    if (result.document_type) {
+      const docTypesMod = require('../../../database/modules/document_types');
+      reprocType = docTypesMod.getAllWithFields(db).find(
+        dt => dt.name.toLowerCase() === result.document_type.toLowerCase()
+      ) || null;
+      if (reprocType) reprocDocTypeId = reprocType.id;
+    }
+    let flip = null;
+    if (reprocDocTypeId != null && priorTypeId != null && reprocDocTypeId !== priorTypeId) {
+      const _old = db.prepare('SELECT name FROM document_types WHERE id = ?').get(priorTypeId);
+      const oldName = (_old && _old.name) || 'previous type';
+      flip = {
+        newTypeKeys: new Set((reprocType.fields || []).map(f => f.key)),
+        refKey:      reprocType.ref_field_key || null,
+        noteText:    `Document type changed from '${oldName}' to '${reprocType.name}' on reprocess — please check the fields.`,
+      };
+      if (logger) logger.log(`Reprocess TYPE CHANGE: ${filename} '${oldName}' -> '${reprocType.name}'`
+        + (result.type_overridden ? " (machine-assigned type overridden by the doc's own title)" : ''));
+      if (traceWanted(diagOn)) {
+        routeTrace({ type: 'trace', doc: filename, event: 'reprocess_type_change',
+                     from: oldName, to: reprocType.name, overridden: !!result.type_overridden });
       }
     }
+
+    const mergedRows = mergeReprocessRows(existing, newRows, flip, _emitMerge);
 
     const learning = require('../../../database/modules/learning');
     learning.deleteExtractions(db, docId);
     learning.insertExtractions(db, docId, mergedRows);
-
-    let reprocDocTypeId = null;
-    if (result.document_type) {
-      const docTypesMod = require('../../../database/modules/document_types');
-      const reMatch = docTypesMod.getAllWithFields(db).find(
-        dt => dt.name.toLowerCase() === result.document_type.toLowerCase()
-      );
-      if (reMatch) reprocDocTypeId = reMatch.id;
-    }
 
     db.prepare(
       `UPDATE documents SET
@@ -1145,10 +1202,22 @@ function register(ctx) {
     // its type; pass that slug as the authoritative document_slug.
     try {
       const dtRow = db.prepare(
-        `SELECT dt.slug AS slug FROM documents d
+        `SELECT dt.slug AS slug, d.status AS status, d.confirmed_at AS confirmed_at
+         FROM documents d
          LEFT JOIN document_types dt ON dt.id = d.document_type_id
          WHERE d.id = ?`).get(docId);
-      if (dtRow && dtRow.slug) scriptArgs.push('--known-doc-slug', String(dtRow.slug));
+      if (dtRow && dtRow.slug) {
+        scriptArgs.push('--known-doc-slug', String(dtRow.slug));
+        // Who assigned that type: a NEVER-confirmed doc's type is the machine's own
+        // guess, so a trusted contradicting title may re-type it on reprocess (the
+        // pin used to replay the machine's wrong guess forever). A confirmed doc —
+        // incl. auto-filed (status 'confirmed') and Learning-Repair send-backs that
+        // were RE-confirmed — stays pinned (human checkpoint). Flag ABSENT = pinned,
+        // so every other caller keeps today's behaviour byte-identical.
+        if (dtRow.status !== 'confirmed' && !dtRow.confirmed_at) {
+          scriptArgs.push('--known-doc-slug-authority', 'machine');
+        }
+      }
     } catch {}
     // Dev trace stream + OCR slice capture while the inspector is open OR
     // diagnostic logging is on (so the diagnostic file captures reprocess too).
@@ -1297,7 +1366,7 @@ function register(ctx) {
     const tmpNames  = [];
     for (const d of docs) {
       try {
-        const row = db.prepare('SELECT working_path, template_id, ocr_text FROM documents WHERE id = ?').get(d.docId);
+        const row = db.prepare('SELECT working_path, template_id, ocr_text, status, confirmed_at FROM documents WHERE id = ?').get(d.docId);
         const srcFile = (row && row.working_path && fs.existsSync(row.working_path))
           ? row.working_path
           : path.join(d.folderPath || '', d.filename || '');
@@ -1314,6 +1383,13 @@ function register(ctx) {
         manifest[tmpName]  = {
           known_template_id: (row && row.template_id) || null,
           known_doc_slug:    (dtRow && dtRow.slug) || null,
+          // Per-doc type authority (statuses differ across a batch — a global flag must
+          // never leak, so this is manifest-only): a NEVER-confirmed doc's type is the
+          // machine's own guess and a trusted contradicting title may re-type it on
+          // reprocess; a confirmed doc stays pinned (human checkpoint). Key present only
+          // when 'machine' — absent = pinned, today's behaviour.
+          ...(row && row.status !== 'confirmed' && !row.confirmed_at
+              ? { known_doc_slug_authority: 'machine' } : {}),
           enhance_params:    enh,
           // Reuse stored full-page OCR text → skip the ~1.9s/page re-OCR (only when no
           // enhance is active and the text is non-empty; crop reads still re-run).
@@ -2262,4 +2338,6 @@ module.exports = {
   partitionRoundRobin,
   // Exposed for the F-06 path-policy unit test (test_open_path_policy.js).
   _isOpenablePath,
+  // Exposed for the reprocess type-flip persistence unit test (test_reprocess_type_flip.js).
+  _mergeReprocessRows: mergeReprocessRows,
 };
