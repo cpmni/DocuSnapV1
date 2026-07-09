@@ -52,6 +52,27 @@ Not urgent — reggie's flagged recovery already makes the value read correctly 
 - The ⊕/Template-Wizard "this layout is used by all senders" checkbox → `__global__` supplier (the
   sanctioned opt-in for a genuinely shared multi-supplier template).
 
+## Later same-day fixes (after the above, same branch)
+- **Cross-supplier POSITIONAL admission removed at the source** (commit 21bdab0, user-directed +
+  Oracle-vetted). `_anchor_matches` now admits a cross-supplier (different named supplier, same
+  doc-type) anchor ONLY for IDENTITY fields (supplier_name/customer_name — needed for wrong-guess
+  re-resolution, `test_supplier_identity_stability`). A POSITIONAL field (invoice_number/date/total) is
+  no longer admitted cross-supplier at all → the whole positional-bleed class is closed before any crop.
+  The 2026-07-06 read-stage guard stays as defence-in-depth. Also a pre-crop absolute-read skip for a
+  mis-placed cross-supplier anchor. Corpus: ref 96.3%→99.4%, true M=0. Oracle log cases #2-#3.
+- **Confident-clean for a corroborated debris recovery** (commit 52b9bc1, Oracle-vetted "B"). The
+  "please verify" flag on a debris-recovered value (". = 317437"→317437) is DROPPED when the read is
+  LOCATED-at-taught-position AND its class-level shape matches the learned shape; glyph-preservation is
+  inherent (`_recover_clean_token` only strips non-alnum debris). Conf capped <88 (never auto-files;
+  human still confirms). NO grouping change (the Oracle vetoed touching `reconstruct_page_text` — too
+  high blast radius; the null-misses it worried about were already fixed by reggie's recovery). Corpus:
+  ref 99.5% (held), true M=0. `_matches_learned_shape` in test_recover_clean_token.py. Oracle log case #4.
+- **DEFERRED, per the Oracle:** the 3-column-header OCR MISGROUPING (`reconstruct_page_text`) is the
+  real root of the spurious "ACME" keyword candidate + the debris, and (on docs the anchor doesn't
+  rescue) genuine recall misses. It is HIGH blast radius (feeds every doc's keyword pairing) and must
+  NOT be touched without a baseline-vs-branch isolation + a hard M=0/zero-accuracy-drop gate. The
+  per-supplier anchor-placement slice (`_place_from_located` residual) is the lower-risk future target.
+
 ## The Oracle (new)
 `.claude/agents/oracle.md` — a Tesseract/OCR + office-doc + customer-experience veteran who VETS the
 specialists' consensus. First outing: **earned his keep** — caught the oscar/placement M=1 interaction
