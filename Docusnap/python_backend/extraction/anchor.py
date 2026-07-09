@@ -906,10 +906,24 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                     # address), so it must NOT be treated as located. A labelled
                     # anchor must have its label actually found here.
                     _lbl = (anchor.get("anchor_label") or "").strip()
-                    located_ok = bool(_lbl) and bool(_locate_for_relocation(
+                    _loc = (_locate_for_relocation(
                         page0, _lbl, direction,
                         (x_norm, y_norm, anchor.get("w_norm") or 0.0, anchor.get("h_norm") or 0.0),
-                        page_text_lines, line_cache=line_cache))
+                        page_text_lines, line_cache=line_cache) if _lbl else None)
+                    located_ok = bool(_loc)
+                    # 007① (Oracle-corrected): a NAMED cross-supplier authoritative anchor counts
+                    # as 'located' ONLY if its caption is at the TAUGHT position — a generic caption
+                    # ("Invoice Number") on a DIFFERENT supplier's layout false-locates at a different
+                    # absolute position and must NOT certify the rigid absolute-box read (the #1
+                    # invoice_number cross-supplier bleed, e.g. Anconia's top-right box reading City
+                    # Office's mid-page cell). Same-supplier anchors keep the presence-only test
+                    # (their caption IS on their own layout). Below, not-located → conf capped 50 +
+                    # the cross-supplier drop, so the field resolves from THIS doc's own reads.
+                    if located_ok and _named_cross_supplier(anchor, supplier_name):
+                        if not _located_at_taught_position(
+                                _loc, x_norm, y_norm,
+                                anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm")):
+                            located_ok = False
             if not located_ok:
                 conf = min(conf, 50)   # blind rigid read (label absent/unfound) — untrustworthy
                 # A BLIND read from a NAMED different supplier's anchor is a positional guess learned
@@ -2125,14 +2139,19 @@ def _filter_anchors(anchors: list[dict],
         if t_match:             return 2
         return 3
 
-    # An EXPLICIT operator teach (last_authoritative_at set) outranks ALL merely
-    # passively-learned anchors, BEFORE supplier-priority is even considered — a
-    # human correction must never lose to a stale auto-learned anchor just because
-    # the latter happens to be tagged to the supplier the template/logo resolved.
-    # Within each bucket the existing priority/recency/usage order applies; among
-    # explicit teaches, the most recent wins.
+    # An EXPLICIT operator teach (last_authoritative_at set) outranks merely passively-
+    # learned anchors BEFORE supplier-priority is considered — a human correction must not
+    # lose to a stale auto-learned anchor tagged to the resolved supplier. BUT the boost is
+    # SUPPLIER-SCOPED (gary Slice 2, 2026-07-09): a NAMED cross-supplier authoritative anchor
+    # must NOT jump ahead of THIS supplier's own anchor, or supplier A's teach dominates
+    # supplier B's doc (the cross-supplier bleed — A's top-right box reading B's wrong region).
+    # A same-supplier / global (__global__) / unknown teach keeps the boost (bucket 0); a
+    # named different-supplier teach drops to bucket 1, where priority() then ranks THIS
+    # supplier's own anchor (priority 1) ahead of the cross-supplier one (type-only, priority 2).
+    # Pairs with the located-at-taught-position gate below, which is the sole guard when this
+    # supplier has NO own anchor. Guarded by tests/test_anchor_selection_scope.py.
     def auth_bucket(a):
-        return 0 if _auth_rank(a) > 0 else 1
+        return 0 if (_auth_rank(a) > 0 and not _named_cross_supplier(a, supplier_name)) else 1
 
     filtered = [
         a for a in anchors
@@ -2155,6 +2174,35 @@ def _named_cross_supplier(anchor: dict, supplier_name: str | None) -> bool:
     a_sup = (anchor.get("supplier_name") or "").lower().strip()
     return bool(a_sup and a_sup not in ("__global__", "__unknown__")
                 and a_sup != (supplier_name or "").lower().strip())
+
+
+# 007① same-layout position tolerance (Oracle-corrected). A cross-supplier caption found MORE than
+# this far from where the field was TAUGHT is a DIFFERENT layout (a generic-caption false-locate),
+# so the absolute-box read must not be trusted. Per-axis: X (columns) is looser than Y (rows are a
+# line-height tall). Fractions of page width/height. Corpus-validated (realdoc_regression, M=0).
+_SAME_LAYOUT_TOL_X = 0.10
+_SAME_LAYOUT_TOL_Y = 0.06
+
+
+def _located_at_taught_position(located, vx, vy, offset_dx, offset_dy,
+                                tol_x=_SAME_LAYOUT_TOL_X, tol_y=_SAME_LAYOUT_TOL_Y) -> bool:
+    """007① (Oracle-corrected): is the RE-LOCATED caption at the TAUGHT position, not merely PRESENT?
+    A generic caption ("Invoice Number") exists on many layouts at DIFFERENT absolute positions, so
+    'the caption is on this page' does NOT prove same-layout for a cross-supplier anchor — only 'the
+    caption is where it was taught' does. Compares the located label's TOP-LEFT to the taught expected
+    label top-left = value_centre − offset (the frame review/renderer.js captured the offset in:
+    offset = value_centre − label_top_left). Per-axis tolerance. NO offset → the value can't be placed
+    from the label → cannot verify → False (low-trust: the cross-supplier read is then capped/dropped).
+    Pure/coordinate-only — no supplier/filename/document logic. Guarded by test_identity_anchor_scope.py."""
+    lb = (located or {}).get("label_box") or located or {}
+    lx, ly = lb.get("x_norm"), lb.get("y_norm")
+    if lx is None or ly is None:
+        return False                                   # no positional evidence → don't trust
+    if offset_dx is None or offset_dy is None or (not offset_dx and not offset_dy):
+        return False                                   # no offset → can't place value from label → low-trust
+    exp_lx = float(vx) - float(offset_dx)              # expected label TOP-LEFT
+    exp_ly = float(vy) - float(offset_dy)
+    return abs(float(lx) - exp_lx) <= tol_x and abs(float(ly) - exp_ly) <= tol_y
 
 
 def _reads_disagree(a, b, val_type) -> bool:
