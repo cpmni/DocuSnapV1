@@ -174,6 +174,50 @@ def _slipfix_to_shape(value, field_key, format_lookup, val_type, validation_patt
     return None
 
 
+# Single-token code/ref types with NO legitimate internal whitespace — a SPACE in such a read
+# means OCR CLIP-DEBRIS (a clipped label tail / a hallucinated separator at the crop edge), never
+# part of the value. EXCLUDES types whose patterns embed \s (job_reference / vat_gb / postcode_uk),
+# date/currency (substring/salvage path, never coverage-gated), mac/ip (precise), and free text.
+_RECOVERABLE_TOKEN_TYPES = frozenset({"alphanumeric", "reference_code"})
+_MAX_DEBRIS_TOKEN_LEN = 2      # a clipped label tail / stray separator is 1-2 chars ("-R", ". =")
+_MAX_DEBRIS_CHARS     = 3      # total non-space debris chars tolerated
+
+
+def _recover_clean_token(value, val_type, validation_patterns, label=None):
+    """Recover the clean value from an anchor read that FAILED the credibility/coverage gate only
+    because it is ONE clean pattern-matching token wrapped in SHORT punctuation clip-debris
+    (". = 317437" / "-R 317437"). Regex-only (no learned history → works on document #1).
+    PRECISION-FIRST: returns the token ONLY when EXACTLY ONE whitespace-token fully matches the
+    field pattern AND every other token is clip-debris (len<=2 AND carries a non-alphanumeric char).
+    A bare-alnum fragment (the leading "2" in "2 317437", a lone "R") is REFUSED — it could be a
+    space-split part of the real value, so it is routed to review rather than guessed. A multi-value
+    read ("Total 250.00 317437", a real drift) is refused (not exactly one value token). The caller
+    commits the recovered value FLAGGED + conf-capped, mirroring _slipfix_to_shape — never silently.
+    reggie-designed; guarded by tests/test_recover_clean_token.py."""
+    if not value or val_type not in _RECOVERABLE_TOKEN_TYPES:
+        return None
+    pats = (validation_patterns or {}).get(val_type)
+    if not pats:
+        return None
+    tokens = str(value).split()
+    if len(tokens) < 2:                                   # single token already judged by credibility
+        return None
+    value_tokens, debris_chars = [], 0
+    for t in tokens:
+        if any(re.fullmatch(p, t, re.IGNORECASE) for p in pats):
+            value_tokens.append(t)                        # coverage 1.0 for this token
+            continue
+        if len(t) > _MAX_DEBRIS_TOKEN_LEN or not any(not c.isalnum() for c in t):
+            return None                                   # a real word, OR a bare-alnum fragment → refuse
+        debris_chars += len(t)
+        if debris_chars > _MAX_DEBRIS_CHARS:
+            return None
+    if len(value_tokens) != 1:                            # zero or ambiguous → refuse
+        return None
+    token = value_tokens[0]
+    return token if _crop_is_credible(token, val_type, validation_patterns, label) else None
+
+
 def extract_with_anchors(ocr_text: str, anchors: list[dict],
                          supplier_name: str | None,
                          document_type: str | None,
@@ -301,8 +345,15 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 if _slip:
                     value, method = _slip, "anchor_crop_slipfix"
                     ocr_conf, ocr_min = _m.get('conf'), _m.get('min_conf')
-                elif on_reject:
-                    on_reject(field_key, "anchor_crop", crop_value, "not_credible")
+                else:
+                    # DEBRIS RECOVERY: a clean single token wrapped in short clip-debris
+                    # (". = 317437" → "317437") — recover-and-flag, else reject to review.
+                    _rec = _recover_clean_token(crop_value, val_type, validation_patterns, label)
+                    if _rec:
+                        value, method = _rec, "anchor_crop_recovered"
+                        ocr_conf, ocr_min = _m.get('conf'), _m.get('min_conf')
+                    elif on_reject:
+                        on_reject(field_key, "anchor_crop", crop_value, "not_credible")
             elif crop_value:
                 # Also qualify against the learned format: a fixed crop that drifted
                 # onto the wrong row reads a NON-EMPTY, credible-looking but wrong
@@ -628,7 +679,12 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                                              val_type, capture=_rcap, verify_fn=_verify, meta=_mr, continuation=continuation)
                         _xfield = bool(rval) and _name_field_code_reject(rval, field_key)
                         if rval and (_xfield or not _crop_is_credible(rval, val_type, validation_patterns, label)):
-                            if on_reject:
+                            _rec = None if _xfield else _recover_clean_token(rval, val_type, validation_patterns, label)
+                            if _rec and _should_replace(value, _rec, val_type, validation_patterns, inc_ocr_conf=ocr_conf):
+                                value  = _rec
+                                method = "anchor_crop_recovered"
+                                ocr_conf, ocr_min = _mr.get('conf'), _mr.get('min_conf')
+                            elif on_reject:
                                 on_reject(field_key, "anchor_crop_relocated", rval,
                                           "cross_field_code" if _xfield else "not_credible")
                         elif rval:
@@ -686,7 +742,13 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
             _mg = {}
             gval = _crop_and_ocr(page0, rcx, rcy, w_norm, h_norm, val_type, capture=_gcap, verify_fn=_verify, meta=_mg, continuation=continuation)
             if gval and not _crop_is_credible(gval, val_type, validation_patterns, label):
-                if on_reject: on_reject(field_key, "anchor_registration", gval, "not_credible")
+                _rec = _recover_clean_token(gval, val_type, validation_patterns, label)
+                if _rec and _should_replace(value, _rec, val_type, validation_patterns, inc_ocr_conf=ocr_conf):
+                    value  = _rec
+                    method = "anchor_crop_recovered"
+                    ocr_conf, ocr_min = _mg.get('conf'), _mg.get('min_conf')
+                elif on_reject:
+                    on_reject(field_key, "anchor_registration", gval, "not_credible")
             elif gval:
                 q = _qualify_against_format(gval, field_key, format_lookup, text_field_keys,
                                             val_type, validation_patterns)
@@ -794,6 +856,8 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 conf = min(93, registration.registration_confidence(page_transform))
             elif method == "anchor_crop_slipfix":
                 conf = min(70, conf)   # recover-and-flag: a gate-rejected read repaired to the learned shape
+            elif method == "anchor_crop_recovered":
+                conf = min(70, conf)   # recover-and-flag: trimmed OCR clip-debris from an otherwise-clean read
             elif method == "anchor_crop_crosscheck":
                 conf = min(70, conf)   # cross-read disagreement: full-page value preferred, routed to review
             if _xcheck_note:
@@ -891,6 +955,14 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                     "was_corrected":   True,
                     "corrected_to":    value.strip(),
                     "validation_note": "Corrected a likely OCR misread to the learned format — please verify.",
+                })
+            elif method == "anchor_crop_recovered":
+                # Recover-and-flag: the crop read the right value with OCR clip-debris (". = 317437");
+                # we trimmed the debris to the clean token but surface it for a one-glance confirm.
+                results[field_key].update({
+                    "was_corrected":   True,
+                    "corrected_to":    value.strip(),
+                    "validation_note": "Trimmed OCR debris from the read — please verify the value.",
                 })
             elif method == "anchor_crop_crosscheck":
                 # Recover-and-flag: the taught crop and the full-page read of the same label
