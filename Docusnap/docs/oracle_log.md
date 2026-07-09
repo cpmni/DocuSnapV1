@@ -19,6 +19,19 @@ concrete catch / a false alarm / no-op echo) · outcome.
 
 | 4 | 2026-07-09 | 3-column header (Anconia #1344) misgroups: value 317437 splits from its INVOICE NUMBER label → keyword reads wrong "ACME" (anchor rescues → field correct), crop reads with debris → flagged. Q: fix the page-wide OCR grouping, or a targeted symptom fix? Claude recommended NOT touching grouping (high blast radius). | Claude proposal (avoid grouping; do oscar confident-clean B). Oracle GO/NO-GO. | **TARGETED-SYMPTOM-FIX(B); do NOT touch reconstruct_page_text now.** Confirmed grouping change = high blast radius (feeds all 1216 docs' keyword pairing) + code already under suspicion → needs baseline-vs-branch isolation + M=0/zero-accuracy-drop gate first. | **YES (4th).** Corrected Claude's "low-reward": the SAME grouping defect is the prime suspect for the null/fragment misses (179914→null) where the anchor doesn't rescue — so grouping IS worth fixing, just not blind/now. Flagged that B dropping the flag on same-pixel agreement is weak (systematic misread reproduces) → require learned-shape/value corroboration + located + glyph-preservation before dropping the human checkpoint. Pointed the real win at a per-supplier anchor-PLACEMENT slice (low blast radius), not keyword/grouping. | IMPLEMENTED B (grouping untouched per verdict). The Oracle's "null-miss" concern was already resolved by reggie's recovery (Anconia 179914/179915 now READ correctly), so the only residual was the flag. B realized simpler+safer than oscar's whitelist re-read: a debris-recovered read commits CONFIDENT (drops "please verify") only when LOCATED-at-taught-position (3a) AND its class-level shape matches the learned shape (3c); glyph-preservation (3b) is satisfied BY CONSTRUCTION (`_recover_clean_token` only strips NON-alnum debris, never force-fits a glyph) — so NO whitelist re-read, NO force-fit risk, NO extra OCR pass. Conf stays 85 (<88 floor) → no auto-file (human still confirms). Verified: #1344/#1093/#1125 confident/no-flag; #1129 cross-supplier unaffected. Tests: test_recover_clean_token.py (+_matches_learned_shape). **Harness PASSED: ref 99.5% (held), true silent-wrong-auto-file = 0.** Commit 52b9bc1. |
 
+## Brief refinement (2026-07-09, after 4 cases)
+His `.claude/agents/oracle.md` brief was REWRITTEN from this track record. The original framed him
+narrowly as an OCR/office-doc/CX reviewer, but his ship-blocking catches were systems-level and the
+brief prompted none of them explicitly. Added as first-class, always-run checks: (1) **the SEAM**
+between individually-correct fixes (case 1 — the oscar/007 interaction); (2) **vet the PREMISE** of the
+ask, not just the proposal (case 3 `__global__` overselling, case 4 "low-reward"); (3) **verify at the
+mechanism level — trace, don't trust**, incl. same-frame/units checks (case 1 offset-frame, case 3
+engine ordering, the `#` vs `######` shape mismatch); (4) **blast radius & warrant** — do-nothing / wrong-
+layer options (case 4 grouping); (5) **fail toward review**, never drop the human checkpoint on same-pixel
+agreement; (6) **cosmetic-on-the-sample vs real-on-the-siblings**; (7) **name the verification gate**.
+Verdict set widened to include DO NOTHING / WRONG LAYER. His identity now leads with systems/precedence
+engineering, keeping the OCR/office-doc/CX depth that makes his catches concrete.
+
 ## Running assessment
 _(updated as cases accrue — keep/retire recommendation)_
 - After case 1: **KEEP — clear value.** On his first outing he caught a cross-cutting interaction bug

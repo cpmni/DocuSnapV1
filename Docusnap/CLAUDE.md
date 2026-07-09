@@ -79,6 +79,18 @@ spawn starts cold) and relay their findings to the user.
   bugs (label→value drift, registration / coordinate-frame mismatches) + end-to-end
   OCR-pipeline review; same OSS-licence hard rule as oscar. (Led the Stage 0.5
   inline-harvest drift fix with oscar + eric — see OCR_WORKFLOW_REVIEW.md.)
+- **oracle** (`agents/oracle.md`) — the FINAL adversarial reviewer: VETS the CONSENSUS of
+  the other advisors (invoke him LAST, after 007/gary/oscar/reggie/eric agree, or when one
+  proposal needs a hard second opinion). His load-bearing skill is systems/precedence
+  reasoning, not first-draft analysis — he catches the SEAM where two individually-correct
+  fixes combine badly, VETS THE PREMISE of the ask (facts/reward/risk), TRACES the code to
+  verify claims (same-frame/units, where a value is computed vs its gate), weighs BLAST RADIUS
+  (prefers do-nothing / a lower-risk layer over touching page-wide code), insists on FAIL-
+  TOWARD-REVIEW (never a silent wrong value; don't drop the human checkpoint on same-pixel
+  agreement alone), and names the VERIFICATION GATE (harness M=0 + zero accuracy drop). Verdicts:
+  SIGN OFF / …WITH CONDITIONS / SEND BACK / DO NOTHING / WRONG LAYER. Same OSS-licence hard rule.
+  Trial log + running assessment: `docs/oracle_log.md` (4-for-4 so far; his brief was refined
+  from that track record). Spawn as general-purpose with the persona if not yet a registered type.
 
 **Skills** in `.claude/skills/`: a set of Python engineering skills
 (`testing-strategy`, `code-quality`, `performance`, `api-design`, `packaging`,
