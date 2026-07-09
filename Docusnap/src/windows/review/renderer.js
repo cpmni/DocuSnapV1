@@ -2595,13 +2595,19 @@ async function confirmCurrentDoc({ bulk = false, expectId = null } = {}) {
   }
 
   if (!bulk) {
+    // Fingerprint the logo in the BACKGROUND: capture the page image NOW (docImg is still the
+    // confirmed doc), then fire the save fire-and-forget — the logo-hash Python spawn was a
+    // blocking slice of the confirm pause and filing doesn't depend on it (Oracle B+). The old
+    // docImg.src='' + 150ms "release the preview handle" ritual was vestigial (the preview is an
+    // in-memory data URL, not a file handle; the source delete is deferred + retry-guarded), so
+    // it's removed — advanceAfterAction swaps the preview to the next doc a moment later.
     const supplierForLogo = allValues.supplier_name || currentDoc?.supplier_name;
-    if (supplierForLogo) await saveLogoOnConfirm(supplierForLogo);
-    docImg.src = '';
-    docImgWrap.style.display = 'none';
-    selCanvas.width  = 0;
-    selCanvas.height = 0;
-    await new Promise(r => setTimeout(r, 150));
+    if (supplierForLogo) {
+      let logoB64 = null;
+      try { if (docImg.complete && docImg.naturalWidth) logoB64 = await getPageBase64(); } catch {}
+      saveLogoOnConfirm(supplierForLogo, logoB64).catch(() => {});
+    }
+    selCanvas.width = 0; selCanvas.height = 0;   // clear any ⊕ selection overlay for the next doc
   }
 
   const result = await window.docusnap.confirmReview({
@@ -3179,10 +3185,18 @@ async function attemptLogoMatch() {
   }
 }
 
-async function saveLogoOnConfirm(supplierName) {
-  if (!supplierName || !docImg.complete || !docImg.naturalWidth) return;
+// b64: an optional page image captured by the caller. The OPTIMISTIC confirm path
+// advances (swapping docImg) before this runs in the background, so it must pass the
+// snapshot image — reading the live docImg here would fingerprint the NEXT doc against
+// the previous supplier (eric R1). With no b64 we fall back to the live docImg (the
+// legacy bulk/confirmCurrentDoc callers, which run before any advance).
+async function saveLogoOnConfirm(supplierName, b64 = null) {
+  if (!supplierName) return;
   try {
-    const b64    = await getPageBase64();
+    if (!b64) {
+      if (!docImg.complete || !docImg.naturalWidth) return;
+      b64 = await getPageBase64();
+    }
     const hashes = await window.docusnap.extractLogoHash(b64);
     if (hashes && hashes.phash) {
       await window.docusnap.saveLogoFingerprint({

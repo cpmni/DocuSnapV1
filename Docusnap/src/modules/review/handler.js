@@ -89,7 +89,10 @@ function register(ctx) {
       notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
       notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
     },
-    releaseDelayMs: 150,
+    // releaseDelayMs stays 0 (the default): the old 150ms "release the preview file handle" wait
+    // before filing was vestigial — the preview is an in-memory data URL, not an OS handle, and the
+    // source-file delete is already deferred + retry-guarded — so it only added confirm latency
+    // (eric/Oracle-verified). The renderer's twin 150ms was removed too. See reviewService.confirm.
   });
 
   // ── Validation patterns (shared source of truth for UI field validation) ─────

@@ -53,6 +53,7 @@ function createReviewService(deps = {}) {
       document_type, document_type_slug, taught_fields, bulk,
     } = payload || {};
     const actorName = (actor && actor.username) || null;
+    const _t0 = Date.now();   // confirm return-latency probe (logged below when diag logging is on)
 
     const docRow = documents.getById(db, document_id);
     const workingPath = docRow?.working_path || null;
@@ -141,7 +142,8 @@ function createReviewService(deps = {}) {
       const fieldSummary = Object.entries(allValues || {}).filter(([, v]) => v)
         .map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(' | ');
       logger.log(`Confirmed: ${original_filename} → type=${document_type_slug || '?'}` +
-        ` supplier=${allValues?.supplier_name || supplier_name || '?'} filed=${filingResult.filename}`);
+        ` supplier=${allValues?.supplier_name || supplier_name || '?'} filed=${filingResult.filename}` +
+        ` (${Date.now() - _t0}ms to file; landmark learning detached)`);
       if (fieldSummary) logger.log(`  Values: ${fieldSummary}`);
     }
 
@@ -193,21 +195,27 @@ function createReviewService(deps = {}) {
     if (filingResult.srcPath) onScheduleSourceMove({ srcPath: filingResult.srcPath, originalFilename: original_filename });
     notifyCounts(db);
 
-    // Cross-sample landmark learning (best-effort). SKIPPED in bulk "File All Ready":
-    // the hook spawns a Python landmark regen per doc against the SAME template, which
-    // made bulk filing crawl one-at-a-time. Single confirms + the startup backfill
-    // still cover it (the template's landmarks already exist from promote-time).
+    // Cross-sample landmark learning + taught-confirm auto-promote (best-effort). Both SPAWN a
+    // Python landmark subprocess and were AWAITED here — the dominant slice of the single-confirm
+    // pause the operator felt before the next doc loaded. They are now DETACHED (fire-and-forget)
+    // so confirm RETURNS immediately after the DB claim/file/counts: filing and the double-file
+    // claim do NOT depend on them, they already ran AFTER all persistence + notifyCounts, and each
+    // is try/caught + resolves-on-error. SKIPPED in bulk exactly as before (the !bulk guard). A
+    // detached rejection is swallowed so it can't surface as an unhandledRejection; a concurrent
+    // same-template regen from two quick confirms is benign (setLandmarks is last-write-wins over
+    // equivalent landmark sets, the manual-landmark case is guarded, and the startup backfill
+    // regenerates redundantly anyway). Ordered captureSample→onTaughtConfirm, as before. (Oracle B+.)
     if (!bulk) {
-      try {
-        const tId = documents.getById(db, document_id)?.template_id || null;
-        if (tId) await captureSample(tId, document_id);
-      } catch { /* best-effort */ }
-    }
-
-    // Auto-promote on a TAUGHT confirm (desktop only — the client never teaches).
-    if (!bulk && Array.isArray(taught_fields) && taught_fields.length && (document_type_slug || dtInfo)) {
-      try { await onTaughtConfirm(db, document_id, { allValues, document_type_slug, supplier_name, dtInfo }); }
-      catch (e) { console.warn('Auto-promote on taught confirm failed:', e.message); }
+      Promise.resolve().then(async () => {
+        try {
+          const tId = documents.getById(db, document_id)?.template_id || null;
+          if (tId) await captureSample(tId, document_id);
+        } catch { /* best-effort */ }
+        if (Array.isArray(taught_fields) && taught_fields.length && (document_type_slug || dtInfo)) {
+          try { await onTaughtConfirm(db, document_id, { allValues, document_type_slug, supplier_name, dtInfo }); }
+          catch (e) { console.warn('Auto-promote on taught confirm failed:', e.message); }
+        }
+      }).catch(() => {});
     }
 
     return { ok: true, success: true, ...filingResult };

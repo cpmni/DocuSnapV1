@@ -33,7 +33,7 @@ db.prepare("INSERT INTO document_types (id, name, slug, built_in) VALUES (1, 'In
 // ── Build a service with stubbed I/O + collectors ──────────────────────────────
 let filingMode = 'ok';   // 'ok' | 'fail'
 const calls = { audit: [], saveCorrections: 0, notifyCounts: 0, sourceMove: 0, taught: 0, captured: 0, commit: 0 };
-const svc = createReviewService({
+const deps = {
   documents,
   learning: { getSetting: () => '/out', saveCorrections: (_db, _id, corr, _s, _slug, allValues) => { calls.saveCorrections++; calls.lastAllValues = allValues; calls.lastCorrections = corr; } },
   doctypes: { getWithFields: () => ({ id: 1, name: 'Invoice', ref_field_key: 'invoice_number', date_field_key: 'invoice_date' }) },
@@ -54,7 +54,12 @@ const svc = createReviewService({
   captureSample: async () => { calls.captured++; },
   notifyCounts: () => { calls.notifyCounts++; },
   releaseDelayMs: 0,
-});
+};
+const svc = createReviewService(deps);
+// Flush pending microtasks/detached work: the landmark-learning hooks (captureSample /
+// onTaughtConfirm) are fire-and-forget after confirm() returns (Oracle B+), so a test that
+// asserts they RAN must let the microtask queue drain first.
+const flush = () => new Promise(r => setTimeout(r, 0));
 
 const basePayload = (id, extra = {}) => ({
   document_id: id, folder_path: '/in', original_filename: 'scan.pdf',
@@ -75,13 +80,15 @@ const basePayload = (id, extra = {}) => ({
   check('  → search fields denormalised (supplier)', get(db, d1).supplier_name === 'Acme');
   check('  → learning.saveCorrections called', calls.saveCorrections === 1);
   check('  → review_confirmed audited with actor', calls.audit.some(e => e.action === 'review_confirmed' && e.actor_username === 'sarah'));
-  check('  → notifyCounts + sourceMove + captureSample fired', calls.notifyCounts === 1 && calls.sourceMove === 1);
+  check('  → notifyCounts + sourceMove fired', calls.notifyCounts === 1 && calls.sourceMove === 1);
+  await flush();
   check('  → taught-confirm hook NOT fired (no taught_fields)', calls.taught === 0);
 
-  // ── Taught confirm fires the template-promote hook ────────────────────────────
+  // ── Taught confirm fires the template-promote hook (now DETACHED — flush first) ────
   const d2 = newDoc(db);
   await svc.confirm(db, { username: 'sarah', role: 'admin' }, basePayload(d2, { taught_fields: ['invoice_number'] }));
-  check('taught confirm fires onTaughtConfirm', calls.taught === 1);
+  await flush();   // onTaughtConfirm is fire-and-forget after confirm returns (Oracle B+)
+  check('taught confirm fires onTaughtConfirm (detached)', calls.taught === 1);
 
   // ── Central date normalisation: a client's typed date becomes canonical DD-MM-YYYY once ──
   const dNorm1 = newDoc(db);
@@ -143,6 +150,28 @@ const basePayload = (id, extra = {}) => ({
   check('defer again → NOT_REVIEWABLE', svc.defer(db, { username: 'sarah' }, d6).code === 'NOT_REVIEWABLE');
   check('restore the deferred doc ok', svc.restore(db, { username: 'sarah' }, d6).ok === true);
   check('restore again → NOT_DEFERRED', svc.restore(db, { username: 'sarah' }, d6).code === 'NOT_DEFERRED');
+
+  // ── PIN (Oracle B+): the landmark-learning hooks are DETACHED, so confirm() must NOT block
+  //    on them. If a future dev re-adds `await` around captureSample/onTaughtConfirm, the confirm
+  //    IPC would hang and the Review UI would freeze between docs — this test catches that. Both
+  //    hooks NEVER resolve here; confirm must still resolve promptly, and the doc must still file. ─
+  db.prepare("INSERT INTO templates (id, name, slug) VALUES (77, 'T', 't')").run();  // so captureSample fires (tId set)
+  const svcHang = createReviewService({
+    ...deps,
+    captureSample:   () => { calls.captured++; return new Promise(() => {}); },   // never resolves
+    onTaughtConfirm: () => { calls.taught++;   return new Promise(() => {}); },   // never resolves
+  });
+  const dHang = newDoc(db);
+  documents.update(db, dHang, { template_id: 77 });
+  const capturedBefore = calls.captured;
+  const raced = await Promise.race([
+    svcHang.confirm(db, { username: 'sarah', role: 'admin' }, basePayload(dHang, { taught_fields: ['invoice_number'] })),
+    new Promise(res => setTimeout(() => res('TIMEOUT'), 300)),
+  ]);
+  check('confirm resolves WITHOUT awaiting the never-resolving landmark hook (not frozen)', raced !== 'TIMEOUT' && raced.ok === true);
+  check('  → the doc still FILED despite the hung hook', get(db, dHang).status === 'confirmed');
+  await flush();
+  check('  → the detached captureSample WAS invoked (fire-and-forget, not silently skipped)', calls.captured === capturedBefore + 1);
 
   console.log(`\n${fails === 0 ? 'ALL PASS' : fails + ' FAILED'}`);
   process.exit(fails ? 1 : 0);
