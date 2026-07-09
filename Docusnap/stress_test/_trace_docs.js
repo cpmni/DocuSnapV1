@@ -46,8 +46,9 @@ function snapArgs(db) {
     '--config-file', CFG, '--registration', '--born-digital', '--multiline'];
 }
 function runOne(folder, args, fname) {
+  const extra = process.env.TRACE ? ['--trace'] : [];
   return new Promise(res => {
-    const p = spawn('py', ['-3.12', PROCESS_DOCS, '--folder', folder, '--files-file', w('sh', [fname]), '--mode', 'fast', '--tesseract', TESS, ...args], { windowsHide: true });
+    const p = spawn('py', ['-3.12', PROCESS_DOCS, '--folder', folder, '--files-file', w('sh', [fname]), '--mode', 'fast', '--tesseract', TESS, ...extra, ...args], { windowsHide: true });
     let out = ''; p.stdout.on('data', d => out += d); p.stderr.on('data', () => {}); p.on('close', () => res(out)); p.on('error', () => res(''));
   });
 }
@@ -68,7 +69,13 @@ function runOne(folder, args, fname) {
     const fname = `doc${id}${path.extname(src) || '.pdf'}`;
     fs.copyFileSync(src, path.join(RR, fname));
     const out = await runOne(RR, args, fname);
-    let m = null; for (const ln of out.split('\n')) { const t = ln.trim(); if (t[0] === '{') { try { const j = JSON.parse(t); if (j.type === 'file_done') m = j; } catch {} } }
+    let m = null; const traces = [];
+    for (const ln of out.split('\n')) { const t = ln.trim(); if (t[0] === '{') { try { const j = JSON.parse(t); if (j.type === 'file_done') m = j; else if (j.type === 'trace') traces.push(j); } catch {} } }
+    if (process.env.TRACE) {
+      const F = process.env.TRACE_FIELD || 'invoice_number';
+      console.log(`  --- TRACE events mentioning ${F} ---`);
+      for (const t of traces) { const s = JSON.stringify(t); if (s.includes(F)) console.log('    | ' + s); }
+    }
     const role = roles[d.type_slug] || {};
     console.log(`\n===== #${id}  supplier(want=${JSON.stringify(d.supplier_name)}) type=${d.type_slug} =====`);
     console.log(`  WANT ref=${JSON.stringify(d.reference_number)} date=${JSON.stringify(d.doc_date)}  stored_overall=${d.overall_confidence}`);
