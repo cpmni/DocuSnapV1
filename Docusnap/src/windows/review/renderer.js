@@ -1998,6 +1998,20 @@ async function runZoneOcr(rect, fieldKey) {
         input.classList.add('corrected');
         corrections[fieldKey] = { original_value: orig, corrected_value: text };
         validateConfirm();
+        // FOCUS (eric, 2026-07-10): the hidden Python OCR spawn during the await above
+        // desyncs the render widget's keyboard focus (page-focus false while the window
+        // still claims focus), so the user's next click into this field gets NO caret and
+        // the click's own repair races the transition and loses. Cure the desync HERE,
+        // deterministically: focus the input SYNCHRONOUSLY (so it's the activeElement when
+        // the main-side page-focus edge runs → the caret lands on the input, not <body>),
+        // drive that edge proactively (blurWebView→wc.focus; no OS activation, <select>
+        // untouched), then re-assert the caret past the cross-process transition with the
+        // double-rAF belt. Additive — the pointerdown repair stays as the fallback.
+        try {
+          input.focus();
+          window.docusnap.ensureWindowFocus?.();
+          window.repairModalInputFocus?.(input);
+        } catch {}
       }
       // TALL-BOX teach method: the drawn box read 2+ lines, so this value WRAPS — auto-stage a
       // multiline_continue rule (silent) for free-text/name-like fields, so future wrapping

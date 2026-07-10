@@ -97,6 +97,22 @@ const makeWc = (destroyed = false) => {
     .split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n');
   check('regression pin: repair never calls win.blur()/win.focus()',
         !/win\.blur\(\)|win\.focus\(\)/.test(repairSrc));
+
+  // Draw/zone-OCR focus fix (eric, 2026-07-10): the hidden-Python-spawn desync leaves the
+  // widget stale so the user's next click gets no caret. runZoneOcr must, after filling the
+  // field, deterministically re-establish focus: sync input.focus() (so the input is the
+  // activeElement when the page-focus edge runs) + the proactive ensureWindowFocus bridge +
+  // the double-rAF caret belt. Pinned so a "cleanup" can't quietly drop the cure.
+  const zoneFill = renderer.slice(renderer.indexOf('async function runZoneOcr'),
+                                  renderer.indexOf('async function runZoneOcr') + 3000);
+  check('runZoneOcr focuses the filled input', /input\.focus\(\)/.test(zoneFill));
+  check('runZoneOcr drives the proactive focus transition (ensureWindowFocus)',
+        /ensureWindowFocus/.test(zoneFill));
+  check('runZoneOcr re-asserts the caret via the double-rAF belt (repairModalInputFocus)',
+        /repairModalInputFocus/.test(zoneFill));
+  const preload = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf8');
+  check('preload exposes the ensureWindowFocus bridge',
+        /ensureWindowFocus\s*:/.test(preload));
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nAll focus-repair checks passed');

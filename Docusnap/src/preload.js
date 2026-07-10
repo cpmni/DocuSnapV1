@@ -172,6 +172,12 @@ contextBridge.exposeInMainWorld('docusnap', {
   // confirm()/alert() returns) so the next text-field press does the real blurWebView() repair
   // even if the window's own 'blur' event didn't fire for the dialog. See focusRepair.js.
   markFocusSuspect:            ()        => ipcRenderer.send('mark-focus-suspect'),
+  // Proactively drive the same widget-level focus transition the pointerdown repair uses
+  // (main → blurWebView(false)→wc.focus(true), a real page-focus edge; never an OS window
+  // activation). Called at draw/zone-OCR completion so the caret is re-established onto the
+  // just-filled input BEFORE the user clicks — the click's own repair races the Python-spawn
+  // desync and loses (eric, 2026-07-10).
+  ensureWindowFocus:           ()        => ipcRenderer.send('ensure-window-focus', { pageHasFocus: document.hasFocus() }),
   getDocumentWithExtractions:  (id)      => ipcRenderer.invoke('get-document-with-extractions', id),
   notifyDocClosed:             (id)      => ipcRenderer.send('notify-doc-closed', id),
   reviewHeartbeat:             (id)      => ipcRenderer.invoke('review-heartbeat', id),
@@ -383,6 +389,17 @@ window.addEventListener('pointerdown', (e) => {
       try {
         const already = document.activeElement === el;
         if (!already) el.focus();
+        // DIAGNOSTIC (eric, 2026-07-10) — distinguishes the draw-focus mechanism: a frame
+        // later, did the caret actually land? active=BODY → the click's focus was clobbered;
+        // active=INPUT + hasFocusNow=false → the page-focus edge didn't recover; both true →
+        // healed. Dev-terminal only (npm start); harmless in a packaged build.
+        const ae = document.activeElement;
+        requestAnimationFrame(() => {
+          try {
+            console.log(`[focus] after: active=${ae && ae.tagName}#${ae && ae.id} `
+              + `hasFocusNow=${document.hasFocus()} activeStillEl=${document.activeElement === el}`);
+          } catch {}
+        });
       } catch {}
     });
   } catch { /* never let focus repair break a click */ }
