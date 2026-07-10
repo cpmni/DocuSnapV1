@@ -479,6 +479,30 @@ def _total_role_collision(line: str, start: int, end: int) -> bool:
     return False
 
 
+# A bare identity caption ("Supplier"/"Vendor"/"Seller") collides with a BUYER-side REFERENCE
+# caption of the same head word — "Supplier Ref", "Vendor No", "Supplier Account", "Supplier #".
+# The word-boundary guard treats the following SPACE as a valid boundary, so "Supplier" matches
+# inside "Supplier Ref 4118" and the right-read grabs "Ref" — a reference fragment stamped onto
+# the Document Issuer. "text"-validated identity has NO value format gate, so nothing rejects it,
+# and because "Ref" reads as a PLAUSIBLE name it even suppresses the confirmed-hint recovery
+# downstream. Same shape as _total_role_collision; only the bare identity labels consult it, so a
+# real "Supplier: Acme Ltd" (follow word not a ref term) still matches. Reusable across every
+# supplier/layout — buyer-side "Supplier Ref/No/Account/Code/ID/VAT/#" blocks are very common.
+_IDENTITY_CAPTION_LABELS  = frozenset({"supplier", "vendor", "seller"})
+_IDENTITY_REF_FOLLOW_STOP = frozenset({"ref", "reference", "no", "number",
+                                       "code", "id", "vat", "account", "acct"})
+
+
+def _identity_ref_caption(line: str, end: int) -> bool:
+    """True when a bare identity caption at [.,end) is really a reference caption ('Supplier Ref',
+    'Vendor No', 'Supplier #'), detected by the immediately following word / '#'. Pure/unit-tested."""
+    tail = re.sub(r'^[\s:.\-–]+', '', line[end:].lower())
+    if tail.startswith('#'):
+        return True
+    m = re.match(r'([a-z]+)', tail)
+    return bool(m and m.group(1) in _IDENTITY_REF_FOLLOW_STOP)
+
+
 def _search_for_label(lines: list[str], label: str,
                       directions: list[str]) -> tuple[str, str] | None:
     """
@@ -489,6 +513,7 @@ def _search_for_label(lines: list[str], label: str,
         return None
 
     _is_bare_total = label.strip().lower() == 'total'
+    _is_identity_caption = label.strip().lower() in _IDENTITY_CAPTION_LABELS
     for i, line in enumerate(lines):
         line_lower = line.lower()
         m = pattern.search(line_lower)
@@ -497,6 +522,10 @@ def _search_for_label(lines: list[str], label: str,
         # The generic "Total" must not poach a "Sub Total" (subtotal) or "Total VAT" (tax) line —
         # skip to the real grand-total line below. See _total_role_collision.
         if _is_bare_total and _total_role_collision(line, m.start(), m.end()):
+            continue
+        # A bare "Supplier"/"Vendor"/"Seller" must not read a "Supplier Ref/No/Account" reference
+        # caption as the issuer name — skip; a real "Supplier: Acme" still matches. See above.
+        if _is_identity_caption and _identity_ref_caption(line, m.end()):
             continue
 
         # Try RIGHT direction — value is on the same line after the label
