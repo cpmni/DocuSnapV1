@@ -61,6 +61,20 @@ _RECON_PICK_MIN_CONF = 70
 # in the Stage 4.5 loop). Mirrors COMPANY_KEYS in database/modules/document_types.js.
 _IDENTITY_FIELD_KEYS = frozenset({"supplier_name", "customer_name"})
 
+# IDENTITY RESCUE kill-switch (Oracle-signed slice 1, 2026-07-10; ocr_corrector's
+# SNAP_ALLOW_SUBSTITUTION precedent — a module constant, no settings plumbing: the
+# forced-review construction below is the real safety). Slice 2 (graduating a rescue
+# past review at higher hint usage) is expressly NOT covered by that sign-off.
+IDENTITY_RESCUE_ENABLED = True
+
+# The resolved-identity ORIGINS a rescue may corroborate against: structural sources
+# (logo / template identity / fixed values / template anchor). keyword- and
+# hint-derived identities are excluded — corroborating a hint with a hint-derived
+# identity would be single-source evidence.
+_IDENTITY_STRUCTURAL_METHODS = frozenset({
+    'logo', 'template_identity', 'template_fixed', 'template_fixed_locked', 'template_anchor',
+})
+
 _STAGE05_LOCATED_METHODS = (
     "template_mapping", "template_mapping_expanded",
     "template_mapping_salvaged", "template_mapping_expanded_salvaged",
@@ -883,6 +897,107 @@ class ExtractionEngine:
                      f"recipient caption — flagged for review")
         except Exception:
             pass   # advisory guard — must never break extraction
+
+    def _rescue_identity_from_scope(self, results, field_defs, supplier_name,
+                                    document_slug, hints):
+        """IDENTITY RESCUE, slice 1 (gary's design, Oracle-signed 2026-07-10). The one
+        case no path could fix: the type's IDENTITY field (customer_name — "Document
+        Issuer") holds QUALITY-FAILED junk from a plain keyword read ('SO #' from an
+        OCR row-merge), while the system already KNOWS the issuer — the supplier scope
+        resolved STRUCTURALLY (logo/template) AND the user has confirmed the same
+        issuer into this exact scope's hints (usage>=2). Hints fill EMPTY fields only,
+        a positional teach reads blind at conf<=50 and loses the merge, and the
+        recipient-caption guard flags but never repairs — so the user re-typed the
+        same issuer forever.
+
+        DUAL-SOURCE corroboration, then REPLACE — never silently:
+          * incumbent must be plain 'keyword' (base method, C1) AND quality-failed
+            (note present / conf<70 / value withheld) AND not operator-accepted;
+          * resolved supplier must be a STRUCTURAL origin (_IDENTITY_STRUCTURAL_METHODS
+            — never hint/keyword-derived) and a plausible name;
+          * the corroborating hint comes from _apply_hints VERBATIM (inherits the
+            usage>=2 / schema-variable / >=2-distinct-values-in-scope guards — a
+            genuinely variable customer field can never be stamped) and must
+            normalise-EQUAL the resolved supplier (conflicting evidence => no rescue).
+        The substitution is conf 69 — BELOW the per-field review threshold (default 70;
+        validator.needs_review trips on <70) — with a note QUOTING the replaced read:
+        the note is the ONLY durable record of the original (the handler persists the
+        final value into raw/display alike) and is the second auto-file lock
+        (trust.js:344-350 refuses any noted doc at every threshold). Review shows the
+        correct issuer pre-filled with provenance; a blind confirm files the RIGHT
+        thing. Fail-toward-review by construction, never a silent write.
+        Best-effort: never breaks extraction."""
+        try:
+            if not IDENTITY_RESCUE_ENABLED or not hints or not supplier_name:
+                return
+            fd_keys = {f.get('key') for f in (field_defs or [])}
+            if 'customer_name' not in fd_keys or 'supplier_name' in fd_keys:
+                return
+            sn = results.get('supplier_name')
+            if not isinstance(sn, dict):
+                return                       # no structural identity written for this doc
+            # Structural ORIGIN is the method, not the field value: Stage 4.5's display
+            # format gate may WITHHOLD the supplier_name field's value (None + "enter
+            # manually" note) while the RESOLVED scope (`supplier_name` arg, re-resolved
+            # after every stage) survives — the real BF_sal_20 state. The dual-source
+            # protection is unaffected: the corroborating hint must normalise-EQUAL the
+            # resolved scope, so a garbage scope can never be stamped (no usage>=2 hint
+            # equals garbage).
+            if str(sn.get('method') or '').split('+')[0] not in _IDENTITY_STRUCTURAL_METHODS:
+                return
+            if not keyword._is_plausible_supplier_name(supplier_name):
+                return
+            cn = results.get('customer_name')
+            if not isinstance(cn, dict):
+                return
+            if str(cn.get('method') or '').split('+')[0] != 'keyword':   # C1: base method, exact
+                return
+            val   = cn.get('value')
+            conf  = int(cn.get('confidence') or 0)
+            noted = bool(str(cn.get('validation_note') or '').strip())
+            if val and not noted and conf >= 70:
+                return                       # healthy read — never touched
+            if val:
+                norm = self._accept_norm(val)
+                if norm in self.accepted_names or norm in self.accepted_issuers:
+                    return                   # operator explicitly accepted this value
+
+            def _nsi(v):
+                return keyword.normalize_supplier_name(v or '').strip().lower()
+            if val and _nsi(val) == _nsi(supplier_name):
+                return                       # already the identity — nothing to rescue
+            hinted = self._apply_hints(hints, supplier_name, document_slug,
+                                       field_defs).get('customer_name')
+            if not hinted or not hinted.get('value'):
+                return                       # no guarded corroborating hint
+            hint_value = hinted['value']
+            if _nsi(hint_value) != _nsi(supplier_name):
+                return                       # hint and identity disagree — conflicting evidence
+            usage = 0
+            s_l = supplier_name.lower().strip()
+            for h in hints:
+                if (h.get('field_key') == 'customer_name'
+                        and (h.get('hint_value') or '') == hint_value
+                        and (h.get('supplier_name') or '').lower().strip() == s_l):
+                    usage = max(usage, int(h.get('usage_count') or 0))
+            shown = str(val).strip() if val and str(val).strip() else 'nothing usable'
+            # C6: wording pinned — must NOT match the issuer-conflict regex
+            # (/letterhead may read|confirm the issuer/i) or the renderer's name-flag
+            # regex, else the "Issuer is correct" button appears on a rescue note.
+            results['customer_name'] = {
+                'value':           hint_value,
+                'display_value':   hint_value,
+                'confidence':      69,
+                'method':          'identity_rescue',
+                'validation_note': (f"Document Issuer read '{shown}' from the page — "
+                                    f"replaced with this supplier's confirmed issuer "
+                                    f"(logo/template match + {usage} past confirmations). "
+                                    f"Please confirm."),
+            }
+            self.log(f"  Identity rescue: customer_name '{shown}' -> '{hint_value}' "
+                     f"(structural identity + confirmed hint x{usage}; review-flagged)")
+        except Exception:
+            pass   # advisory rescue — must never break extraction
 
     def _reconciliation_pick_total(self, results, field_defs):
         """Reconciliation-aware total pick. If the resolved `total` does NOT balance against the
@@ -2247,6 +2362,12 @@ class ExtractionEngine:
         # boost (which skips noted fields, so the cap can never be re-lifted) and the
         # overall-confidence/needs_review computation (so both see the cap).
         self._flag_recipient_caption_issuer(results, field_defs, supplier_name)
+        # ── Identity rescue (slice 1; Oracle-signed 2026-07-10) ── AFTER the guard
+        # (it overwrites the guard's note with its own provenance note when the
+        # corroboration holds; no corroboration => the guard's behaviour survives
+        # byte-identical) and BEFORE the boost/needs_review for the same reasons.
+        self._rescue_identity_from_scope(results, field_defs, supplier_name,
+                                         document_slug, hints)
 
         # ── LEARNED-AGREEMENT CONFIDENCE BOOST ────────────────────────────────
         # A value that is CONSISTENT with a well-supported learned format for its scope is
