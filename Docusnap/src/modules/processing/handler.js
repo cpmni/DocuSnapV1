@@ -183,7 +183,9 @@ function buildTrainingArgs(db, configPath, logger = null) {
   const templates = require('../../../database/modules/templates');
 
   const allDocTypes  = docTypes.getAllWithFields(db);
-  const allHints     = learning.getHints(db);
+  // getAllHints, NOT getHints(db): the bare form's default LIMIT 100 silently starved
+  // the engine of every new supplier's low-usage hints once the corpus grew (2026-07-10).
+  const allHints     = learning.getAllHints(db);
   const allAnchors   = learning.getAllAnchors(db);
   const allLogos     = learning.getAllLogos(db);
   const allTemplates = templates.getAll(db);

@@ -261,6 +261,17 @@ function saveCorrections(db, document_id, corrections,
   })();
 }
 
+// The TRAINING dump — every hint row, uncapped (2026-07-10). buildTrainingArgs used the
+// bare getHints(db) below, whose default LIMIT 100 (by usage_count DESC) silently
+// STARVED the engine once the corpus grew past 100 rows: every new supplier's usage-1/2
+// hints — exactly the learning a fresh confirm creates — never reached _apply_hints,
+// the 2.5a identity text-scan, the variability evidence guard, or the identity rescue
+// (535 rows live, 435 invisible when this was caught). "No silent caps": the engine
+// must see the whole corpus; the capped form remains for scoped/display callers.
+function getAllHints(db) {
+  return db.prepare('SELECT * FROM supplier_hints ORDER BY usage_count DESC').all();
+}
+
 function getHints(db, { supplier_name, document_type, limit = 100 } = {}) {
   if (supplier_name && document_type) {
     return db.prepare(`
@@ -1358,7 +1369,7 @@ module.exports = {
   insertExtractions, deleteExtractions,
   getFieldValueHistory, getDocumentsForFieldValue, purgeFieldValue, renameFieldValue,
   getSupplierScopeCounts, renameSupplier,
-  saveCorrections, getHints, isPlausibleSupplierName, nameQuality, normalizeSupplierName,
+  saveCorrections, getHints, getAllHints, isPlausibleSupplierName, nameQuality, normalizeSupplierName,
   saveAnchor, sanitizeAnchorLabel, clearAnchors, getAllAnchors, getAnchorsForScope, deleteAnchor,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
   getFieldFormats, getDigitsOnlyFields,

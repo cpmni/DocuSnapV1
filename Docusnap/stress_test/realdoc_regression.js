@@ -63,7 +63,7 @@ function snap(db) {
   if (process.env.DROP_MISTAUGHT) anchors = anchors.filter(a => !(a.field_key === 'invoice_number' && String(a.last_authoritative_at || '').trim()));
   return { args: [
     '--fields-file', w('f', dts.flatMap(d => d.fields)),
-    '--hints-file', w('h', safe(() => learning.getHints(db), [])),
+    '--hints-file', w('h', safe(() => learning.getAllHints(db), [])),   // uncapped — mirrors buildTrainingArgs (the bare getHints LIMIT-100 starved the engine)
     '--anchors-file', w('a', anchors),
     '--logos-file', w('l', safe(() => learning.getAllLogos(db), [])),
     '--doc-types-file', w('d', dts),
