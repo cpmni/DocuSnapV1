@@ -113,6 +113,24 @@ const makeWc = (destroyed = false) => {
   const preload = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf8');
   check('preload exposes the ensureWindowFocus bridge',
         /ensureWindowFocus\s*:/.test(preload));
+
+  // SYSTEMIC cure (eric, 2026-07-10) — one central heal at the universal text-field pointerdown
+  // chokepoint, so it fixes the desync regardless of trigger (Confirm / draw / Learning-History
+  // all showed the identical pageHasFocus=false dead-click state). Pin the load-bearing pieces:
+  check('main registers BOTH ipcMain.on AND ipcMain.handle for ensure-window-focus',
+        /ipcMain\.on\(['"]ensure-window-focus['"]/.test(mainSrc)
+        && /ipcMain\.handle\(['"]ensure-window-focus['"]/.test(mainSrc));
+  check('main routes both through one shared body (runEnsureFocus)',
+        /runEnsureFocus/.test(mainSrc));
+  const pd = preload.slice(preload.indexOf("addEventListener('pointerdown'"));
+  check('pointerdown path uses invoke (ordered), not only send',
+        /ipcRenderer\.invoke\(['"]ensure-window-focus['"]/.test(pd));
+  check('pointerdown pre-focuses the target in the desynced state, gated on !pageHasFocus',
+        /!pageHasFocus\s*&&\s*document\.activeElement\s*!==\s*el/.test(pd));
+  check('pointerdown re-asserts via a double rAF after the edge',
+        /requestAnimationFrame\(\(\)\s*=>\s*requestAnimationFrame/.test(pd));
+  check('pointerdown has the one-shot blind-spot re-issue (!document.hasFocus())',
+        /!document\.hasFocus\(\)/.test(pd));
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nAll focus-repair checks passed');

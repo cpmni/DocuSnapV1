@@ -759,28 +759,21 @@ app.whenReady().then(() => {
   // click enters a text field while the render widget lacks OS keyboard focus (the
   // "click a box, no caret until I alt-tab out and back" bug). Re-focusing the sending
   // webContents re-syncs it without an OS window-focus change. Sender-scoped + guarded.
-  ipcMain.on('ensure-window-focus', (e, info) => {
+  //
+  // ONE shared body, registered on BOTH ipcMain.on (legacy fire-and-forget `send` callers:
+  // the proactive draw-fix bridge + any others) AND ipcMain.handle (the pointerdown path
+  // uses `invoke` so it can order the input re-focus AFTER this edge is issued — the fix for
+  // the cross-trigger dead caret; the two dispatch tables don't collide). Widget-level repair
+  // only (blurWebView + wc.focus) — NEVER win.blur()/win.focus() (the title-bar-flash storm;
+  // src/lib/focusRepair.js). Suspect flag (mark-focus-suspect) still forces the edge for the
+  // stale-TRUE-hasFocus case. eric-designed, 2026-07-10.
+  const runEnsureFocus = (wc, info) => {
     try {
-      const wc = e.sender; if (!wc || wc.isDestroyed()) return;
-      // Focus the owning WINDOW first, then the webContents — on Windows, after a native
-      // dialog closes wc.focus() alone can leave keyboard focus unrouted until the window
-      // itself is re-focused. Both are no-ops when already focused.
-      // Widget-level focus repair (blurWebView + wc.focus) — NEVER a window blur/focus. See
-      // src/lib/focusRepair.js for the full rationale (the win.blur()/win.focus() title-bar-flash
-      // storm eric traced). Extracted so it's unit-testable off the app lifecycle.
+      if (!wc || wc.isDestroyed()) return;
       const win = BrowserWindow.fromWebContents(wc);
-      // Fold in the main-side "focus suspect" flag — set by mark-focus-suspect (the
-      // renderer's wrapped native confirm()/alert(), and since 2026-07-10 also armed
-      // after every single-doc Confirm & File) so the blurWebView() transition runs
-      // when it's actually needed, not gated on the renderer's unreliable
-      // document.hasFocus() (stale-TRUE in the broken state). Consumed after repair.
       const suspect = !!(win && win.__focusSuspect);
-      // FOCUS DIAGNOSTIC (eric, 2026-07-10): one line per text-control press so a real
-      // "dead caret after Confirm & File" occurrence tells us WHICH state it is —
-      // suspect=false+pageHasFocus=true on a dead click = the stale-widget blind spot;
-      // suspect=true and STILL dead = blurWebView insufficient for this class (new
-      // design needed); winFocused=false = OS focus genuinely elsewhere. Dev-terminal
-      // visible under npm start; inert in a packaged build (stdout unrouted).
+      // Diagnostic: one line per text-control press (dev terminal; inert packaged). The new
+      // [focus] after: line lives in the preload and reports whether the caret actually landed.
       try {
         console.log(`[focus] press: suspect=${suspect} pageHasFocus=${(info || {}).pageHasFocus} `
           + `winFocused=${win && !win.isDestroyed() ? win.isFocused() : '?'} wcFocused=${wc.isFocused ? wc.isFocused() : '?'}`);
@@ -788,7 +781,12 @@ app.whenReady().then(() => {
       repairKeyboardFocus(win, wc, { ...(info || {}), suspect });
       if (win && !win.isDestroyed()) win.__focusSuspect = false;
     } catch {}
-  });
+  };
+  ipcMain.on('ensure-window-focus', (e, info) => runEnsureFocus(e.sender, info));
+  // invoke variant — returns AFTER the repair edge is issued so the preload can deterministically
+  // re-assert the input focus in its .then (fixes the single-rAF race that made every re-click
+  // re-lose). Body is synchronous; blurWebView/wc.focus queue their messages and this returns.
+  ipcMain.handle('ensure-window-focus', (e, info) => { runEnsureFocus(e.sender, info); return true; });
 
   // A renderer signals that a native confirm()/alert() just returned — mark that window's
   // widget focus SUSPECT so the next text-field press repairs it. Deterministic for the dialog

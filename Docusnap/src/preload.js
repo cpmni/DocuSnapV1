@@ -376,31 +376,48 @@ window.addEventListener('pointerdown', (e) => {
     // flashes open and shut" regression). Only real text-editing controls need caret repair.
     const el = t && t.closest && t.closest('input, textarea, [contenteditable=""], [contenteditable="true"]');
     if (!el) return;                    // only repair when actually entering a text field
-    // ALWAYS re-assert webContents keyboard focus on a text-field press. document.hasFocus()
-    // is UNRELIABLE here: after a native confirm()/alert() (the Review window uses these for
-    // the digit/issuer/delete prompts) — or a child window closing — the window reports
-    // focused while the render widget has lost keyboard focus, so the old `hasFocus()` guard
-    // skipped the repair in exactly the case that needs it ("clicked the box, can't type
-    // until I alt-tab out and back"). wc.focus() is cheap + idempotent on a normal click.
-    ipcRenderer.send('ensure-window-focus', { pageHasFocus: document.hasFocus() });
-    // Re-assert the caret next frame ONLY if the press didn't already focus the field — so a
-    // normal click's caret position is never disturbed; the broken case gets its focus back.
-    requestAnimationFrame(() => {
-      try {
-        const already = document.activeElement === el;
-        if (!already) el.focus();
-        // DIAGNOSTIC (eric, 2026-07-10) — distinguishes the draw-focus mechanism: a frame
-        // later, did the caret actually land? active=BODY → the click's focus was clobbered;
-        // active=INPUT + hasFocusNow=false → the page-focus edge didn't recover; both true →
-        // healed. Dev-terminal only (npm start); harmless in a packaged build.
-        const ae = document.activeElement;
-        requestAnimationFrame(() => {
+    const pageHasFocus = document.hasFocus();
+    // SYSTEMIC keyboard-focus cure (eric, 2026-07-10) — the ONE chokepoint every text-field
+    // press flows through, so it heals the render-widget desync (page-focus lost while the
+    // window still claims focus) regardless of what triggered it (Confirm & File, ⊕ draw,
+    // Learning-History modal, … all showed the identical pageHasFocus=false state). It gives
+    // the universal path the two things the per-site draw-fix has and the old code lacked:
+    //
+    // (A) In the DESYNCED state only, make the pressed control the pending focused element
+    //     BEFORE the page-focus edge runs, so SetPageFocus(true) restores focus TO IT, not to
+    //     <body> (the reason the edge fired but the caret never landed). Gated on !pageHasFocus
+    //     → a healthy click is byte-identical to the native focus/caret path, and <select> is
+    //     already excluded above. This pre-edge focus is what makes the heal correct even though
+    //     the invoke reply and the SetPageFocus messages ride different mojo pipes.
+    if (!pageHasFocus && document.activeElement !== el) { try { el.focus(); } catch {} }
+    // (B) Deterministic edge: main runs blurWebView()→wc.focus() and REPLIES; then re-assert the
+    //     caret past the cross-process transition with a double rAF. invoke (not send) is what
+    //     orders the re-focus AFTER the edge — the old single-rAF send RACED it and every
+    //     re-click re-lost. The listener stays synchronous (we chain .then, never await), so
+    //     event dispatch is not blocked and the click's native default focus still runs.
+    ipcRenderer.invoke('ensure-window-focus', { pageHasFocus }).then(() => {
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        try {
+          if (document.activeElement !== el) el.focus();
+          const ae = document.activeElement;
           try {
             console.log(`[focus] after: active=${ae && ae.tagName}#${ae && ae.id} `
               + `hasFocusNow=${document.hasFocus()} activeStillEl=${document.activeElement === el}`);
           } catch {}
-        });
-      } catch {}
-    });
+          // (C) Blind-spot self-heal (no 2nd user click): if the page STILL lacks focus a frame
+          //     after the repair, the first press read hasFocus() as stale-TRUE so the gate
+          //     skipped blurWebView. Re-issue the edge ONCE with pageHasFocus:false. A healthy
+          //     click reads hasFocus()===true here, so this never runs on a good click; capped
+          //     at one re-issue — no recursion.
+          if (!document.hasFocus()) {
+            ipcRenderer.invoke('ensure-window-focus', { pageHasFocus: false }).then(() => {
+              requestAnimationFrame(() => requestAnimationFrame(() => {
+                try { if (document.activeElement !== el) el.focus(); } catch {}
+              }));
+            }).catch(() => {});
+          }
+        } catch {}
+      }));
+    }).catch(() => {});
   } catch { /* never let focus repair break a click */ }
 }, true);
