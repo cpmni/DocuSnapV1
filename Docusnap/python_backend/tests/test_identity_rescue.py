@@ -138,6 +138,14 @@ res = rescue(r1878(sn_method="logo", sn_value=None), hints_for())
 check("structural origin with WITHHELD field value (logo + format-gate None) — rescued",
       res["customer_name"]["method"] == "identity_rescue"
       and res["customer_name"]["value"] == BF)
+# Oracle RIDER 1 (ratification of the withheld-value amendment): with the dict no longer
+# guaranteeing a value, the RESOLVED-SCOPE ARG must carry the explicit floor — non-empty
+# AND plausible — applied to the ARG, not the dict value. Pinned:
+res = rescue(r1878(sn_method="logo", sn_value=None), hints_for(), supplier="")
+check("RIDER 1: withheld dict + EMPTY resolved-scope arg — no fire", res["customer_name"]["value"] == "SO #")
+res = rescue(r1878(sn_method="logo", sn_value=None), hints_for(supplier="IN"), supplier="IN")
+check("RIDER 1: withheld dict + IMPLAUSIBLE resolved-scope arg ('IN') — no fire",
+      res["customer_name"]["value"] == "SO #")
 res = rescue(r1878(sn_method="hint_text_match"), hints_for())
 check("hint-derived identity ('hint_text_match') — single-source, no rescue",
       res["customer_name"]["value"] == "SO #")
