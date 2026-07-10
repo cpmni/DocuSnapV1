@@ -17,6 +17,56 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/features.md` — first-run wizard, welcome tour, settings backup, Learning Repair, teaching wizard, dev inspector.
 - `docs/history.md` — resolved QA/audit findings + build-stage history (Settings/Review/Search/Stage-7 rebuilds).
 
+## Recent session changes (2026-07-09 → 07-10) — durable mechanisms now in the code
+Full narrative in `HANDOVER_2026-07-10.md` (overnight) + `HANDOVER_2026-07-10_DAYTIME.md` (daytime).
+All on branch `feat/doctype-title-aliases`; each has unit tests (+ real-doc E2E where noted).
+- **Migration 43 stamped** (`database/index.js`) — `document_types.title_aliases` only ever landed on
+  FRESH DBs (safeAdd sat in the stamped migration-2 block); existing installs stayed at v42. Now a
+  proper stamped migration 43. `test_document_types_aliases.js` pins the stamped-v42 case.
+- **Reprocess type-authority override** (`process_docs.resolve_assigned_type_authority`, handler manifest):
+  a MACHINE-assigned doc type (never human-confirmed) may be re-typed on reprocess by the doc's OWN
+  TRUSTED standalone title; a human-confirmed type is NEVER overridden; clipped scans keep the pin;
+  `--known-doc-slug-authority machine` passed only for never-confirmed docs; flip drops stale wrong-type
+  extraction rows + plants a load-bearing review note (blocks auto-file). Fixed the "keeps applying Sales
+  Order on reprocess" report. Coherent (detected_slug,title_trusted) pair. `test_reprocess_type_flip.py/.js`.
+- **Recipient-caption issuer guard** (`engine._flag_recipient_caption_issuer`): a plain 'keyword' read of a
+  customer_name-IDENTITY field (shipped label bank is all recipient captions) is capped 69 + noted (never
+  rewritten) — a sales-order BUYER name can't silently fill the Document Issuer. Exempts learned/taught/
+  manual methods + accept allowlists + both-key types. `test_issuer_caption_guard.py`.
+- **Identity rescue slice 1** (`engine._rescue_identity_from_scope`, kill-switch `IDENTITY_RESCUE_ENABLED`):
+  on a customer_name-identity type, when the incumbent issuer read is QUALITY-FAILED junk AND the supplier
+  scope resolved STRUCTURALLY (logo/template) AND a same-scope confirmed hint (usage≥2, guarded by
+  `_apply_hints`) AGREES with it, REPLACE the junk with the confirmed issuer at conf 69 + provenance note
+  (review by construction, never silent). Fixed "issuer says SO #". Structural-origin is by METHOD (the
+  field VALUE may be format-withheld). `test_identity_rescue.py` (37 checks + real E2E). Slice 2
+  (graduate past review) DESIGNED, NOT Oracle-signed, NOT built. supplier_name-identity types NOT covered
+  (Fix A below solved the PO case via the logo).
+- **Supplier "Ref" label guard** (`keyword._identity_ref_caption`, mirrors `_total_role_collision`): a bare
+  "Supplier"/"Vendor"/"Seller" caption followed by a reference word (Ref/Reference/No/Number/Code/ID/VAT/
+  Account) or '#' is a BUYER-side reference caption, NOT the issuer — skip it; a real "Supplier: Acme" still
+  reads. Removing the "Ref" junk lets the LOGO win (@96). `test_keyword_label_guard.py` §1e.
+- **Confirm-upsert** (`learning.saveCorrections`): a value TYPED into a field the engine never read had NO
+  extraction row, so the reflect-back UPDATE was a no-op and the value lived only in `corrections` —
+  invisible to every learning reader (all select FROM extractions), to search, and on reopen ("worksheets
+  no longer learning values"). Now inserts a `manual` extraction row (conf 100, corrected_to NULL). Born at
+  CONFIRM time so no auto-file path reads it. `test_save_corrections.js`.
+- **getAllHints (uncapped training)** (`learning.getAllHints`): `buildTrainingArgs` used bare `getHints(db)`
+  whose default LIMIT 100 (usage DESC) STARVED the engine of every new supplier's usage-1/2 hints once the
+  corpus passed 100 rows. Training now uncapped (scoped/display callers keep the cap). `test_getallhints.js`.
+- **Position-only issuer teach** (renderer + `learning.saveAnchor`): a ⊕ issuer teach with no printed caption
+  now saves an EMPTY label (position-only), never the field DISPLAY name ("Document Issuer") — a phantom
+  label the anchor engine silently dropped ("my teach never sticks"). saveAnchor also drops a label equal to
+  the field's display label (unless OCR'd from the page). `test_anchor_phantom_display_label.js`.
+- **SYSTEMIC keyboard-focus cure** (`src/preload.js` pointerdown + `src/main.js` runEnsureFocus +
+  `src/lib/focusRepair.js`): ONE central heal at the universal text-field pointerdown chokepoint fixes the
+  render-widget desync (page-focus lost while the window still claims focus) regardless of trigger (Confirm/
+  draw/Learning-History all showed identical `pageHasFocus=false`). In the desynced state only: pre-focus the
+  pressed control SYNCHRONOUSLY (so SetPageFocus restores focus to IT not <body>) → `invoke` the repair
+  (ordered, not fire-and-forget send) → double-rAF re-assert → one-shot blind-spot re-issue. Healthy clicks
+  byte-identical; <select> excluded; the two pinned regressions hold (no win.blur/focus; no win.on('blur')
+  suspect). Per-site confirm(suspect)+draw(proactive) fixes stay as belt-and-braces. NEEDS A RESTART.
+  `test_focus_repair.js`. Residual: keyboard-Tab-only desync (no pointer) needs an additive focusin secondary.
+
 ## Working rules (read before any fix)
 
 **Token conservation — hard requirement**
