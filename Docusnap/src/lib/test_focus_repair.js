@@ -90,7 +90,10 @@ const makeWc = (destroyed = false) => {
   check("regression pin: no win.on('blur') suspect flag (the dropdown open/shut storm)",
         !/win\.on\(['"]blur['"][\s\S]{0,120}__focusSuspect/.test(mainSrc));
   // Strip line comments first — the file's own documentation NAMES the forbidden calls.
+  // (Normalise CRLF before anchoring: `.` doesn't consume `\r`, so `$` never matched
+  // on CRLF files and the strip silently no-opped.)
   const repairSrc = fs.readFileSync(path.join(__dirname, 'focusRepair.js'), 'utf8')
+    .replace(/\r/g, '')
     .split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n');
   check('regression pin: repair never calls win.blur()/win.focus()',
         !/win\.blur\(\)|win\.focus\(\)/.test(repairSrc));
