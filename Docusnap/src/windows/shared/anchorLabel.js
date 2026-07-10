@@ -76,6 +76,13 @@
     // a long alphabetic token with NO vowel reads as garble ("brtnz", "vrntx")
     const toks = label.split(/\s+/).map(t => t.replace(/[^a-zA-Z]/g, '')).filter(t => t.length >= 4);
     if (toks.some(t => !/[aeiouy]/i.test(t))) return true;
+    // intra-token case chaos — a lowercase letter immediately followed by an uppercase one.
+    // A real caption never does this (Title-case caps only at the front; ALLCAPS not at all),
+    // but garbled OCR does ("Site / Customer" misread as "VUoWwriter" trips o→W). Also catches
+    // an ALLCAPS word with one misread lowercase ("INVOlCE" → l→C). reggie-designed 2026-07-10;
+    // 0 false-flags across the real-caption vocab. Cannot catch clean-case clips ("verial",
+    // "escription") — no character rule can (they read as words) → left to the operator.
+    if (/\p{Ll}\p{Lu}/u.test(label)) return true;
     return false;
   }
 

@@ -52,6 +52,18 @@ check('clean label not suspicious', A.labelLooksSuspicious('Serial No.') === fal
 check('replacement-char label suspicious', A.labelLooksSuspicious('�escription') === true);
 check('vowel-less garble suspicious', A.labelLooksSuspicious('brtnz') === true);
 check('empty label suspicious', A.labelLooksSuspicious('') === true);
+// case-chaos garble (the "Site / Customer" → "VUoWwriter" misread) must be caught
+check('case-chaos garble suspicious', A.labelLooksSuspicious('VUoWwriter') === true);
+check('case-chaos garble (spaced) suspicious', A.labelLooksSuspicious('VS VUoWwriter') === true);
+check('ALLCAPS with misread lowercase suspicious', A.labelLooksSuspicious('INVOlCE') === true);
+// real captions must NOT be flagged by the new rule (0 false-flags)
+check('Site / Customer not suspicious', A.labelLooksSuspicious('Site / Customer') === false);
+check('Account not suspicious', A.labelLooksSuspicious('Account') === false);
+check('Net Total not suspicious', A.labelLooksSuspicious('Net Total') === false);
+check('PO Number not suspicious', A.labelLooksSuspicious('PO Number') === false);
+check('Work Address not suspicious', A.labelLooksSuspicious('Work Address') === false);
+// documented accepted misses (clean-case clips) stay FALSE — operator corrects these
+check('clean-case clip "verial" is an accepted miss', A.labelLooksSuspicious('verial No.') === false);
 
 console.log(fails ? `\n${fails} FAILED` : '\nAll anchor-label checks passed');
 process.exit(fails ? 1 : 0);

@@ -2444,6 +2444,18 @@ function showAnchorReadout(detected, value) {
   const isAbove = detected.direction === 'below';
   const suspicious = !detected.fallback && labelLooksSuspicious(detected.anchor_label);
   const warn = detected.fallback || suspicious;
+  // Garble verdict → never keep the misread caption staged: fall back to a POSITION-ONLY anchor
+  // (empty label + registration/position relocation), the same safe fallback used for a cleared
+  // label. The garble stays VISIBLE in the editable input so the operator can type the real
+  // caption (the change handler re-stages a good one). So Confirm-without-fixing saves position-
+  // only, never gibberish that would never re-locate. (reggie/Oracle-signed fallback, 2026-07-10)
+  if (suspicious) {
+    const _sfk = lastTeachCtx?.fieldKey;
+    if (_sfk && pendingAnchors[_sfk]) {
+      pendingAnchors[_sfk].anchor_label   = '';
+      pendingAnchors[_sfk].label_detected = false;
+    }
+  }
   let msg;
   if (detected.fallback) {
     msg = `<span class="ar-msg">&#9888; No label found — anchored by position. Read: <span class="ar-val">${val}</span></span>`;
@@ -2470,6 +2482,7 @@ function showAnchorReadout(detected, value) {
   const lblInput = bar.querySelector('.ar-label-edit');
   if (lblInput) {
     lblInput.value = detected.anchor_label || '';
+    lblInput.classList.toggle('bad', suspicious);   // flag it as needing a fix on load, not only after an edit
     lblInput.addEventListener('change', () => {
       const fk = lastTeachCtx?.fieldKey;
       const cleaned = sanitizeAnchorLabel(lblInput.value);
@@ -3360,7 +3373,11 @@ function makeLhDraggable() {
   window.addEventListener('mouseup', () => { dragging = false; });
 }
 
-document.getElementById('btn-view-learning').addEventListener('click', async () => {
+document.getElementById('btn-view-learning').addEventListener('click', async (ev) => {
+  // Blur the trigger BEFORE hiding its container: this button lives INSIDE #advanced-bar, so
+  // hiding the bar removes document.activeElement with no handoff, which drops Blink's page-focus
+  // flag (the Learning-History dead-caret source). A clean blur first keeps the flag intact.
+  try { ev.currentTarget.blur(); } catch {}
   document.getElementById('advanced-bar').style.display = 'none';
   document.getElementById('lh-overlay').style.display = 'block';
   makeLhDraggable();
@@ -4961,7 +4978,9 @@ async function maybeAutofillAnchorLabel(box) {
   const input = document.getElementById('wiz-anchor-text');
   if (!input || input.value.trim()) return;
   const clean = sanitizeAnchorLabel(await ocrWizardBox(box));
-  if (clean && !input.value.trim()) input.value = clean;
+  // Don't autofill a GARBLED auto-read — leave it blank (→ position-only on save) so a misread
+  // caption can't be silently promoted to a real anchor label (mirrors the ⊕ readout guard).
+  if (clean && !labelLooksSuspicious(clean) && !input.value.trim()) input.value = clean;
 }
 
 async function wizardSave() {
