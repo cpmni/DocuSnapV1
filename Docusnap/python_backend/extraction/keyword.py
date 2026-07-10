@@ -124,6 +124,64 @@ def merge_label_overrides(patterns: dict, overrides: list, doc_slug: str | None)
     return {**patterns, "field_patterns": field_patterns}
 
 
+# Common short-form captions per structural ROLE, so a CUSTOM ref/date field whose printed caption
+# differs from its DB label ("Reference number" printed as "Reference" / "Reference No." / "Ref") is
+# still found. Ref forms stay ref-SPECIFIC (all carry ref/reference/no) to limit collisions; the
+# _ref_caption_party_conflict guard blocks a buyer/seller "Customer Reference" cross-fill.
+# The "No" forms are tried FIRST so the caption is fully consumed ("Reference No.    WS438527" →
+# the existing pure-punctuation-column drop yields "WS438527"); the bare forms are the fallback for
+# a caption with no "No". Any residual "No"/"Number"/"." glued to a narrow-gap value is stripped in
+# extract_fields for a seeded ref read (role_caption='ref').
+_REF_ROLE_CAPTIONS  = ["Reference No", "Reference", "Ref No", "Ref"]
+_DATE_ROLE_CAPTIONS = ["Date"]
+
+
+def seed_field_labels(patterns: dict, field_defs: "list | None") -> dict:
+    """RC1 (2026-07-10): make a CUSTOM ref/date field attemptable at Stage 1 from its OWN DB label
+    — without an admin override. extract_fields skips any field key with no shipped pattern (the
+    'field never even tried' hole: a custom Worksheet type keys reference_number/date, neither
+    shipped, so both read only if a learned anchor exists → blank on unseen docs). For each field
+    whose key has no shipped entry and whose ROLE is ref or date (via _infer_validation), seed a
+    keyword entry using the field's label + the role's short-form captions, as PLAIN labels — method
+    'keyword', NOT 'keyword_override', i.e. an AUTO tier subordinate to Stage-2 anchors / Stage-0.5
+    mappings — with base_confidence 80 (below the auto-file critical-field floor 88, so a confusable
+    read fails toward REVIEW, never a silent wrong file). Ref captions carry role_caption='ref' so
+    _search_for_label applies the party guard to them only. Scoped to ref/date here (free-text/name
+    deferred). Additive + pure: returns `patterns` unchanged when there is nothing to seed."""
+    if not field_defs:
+        return patterns
+    shipped = patterns.get("field_patterns") or {}
+    field_patterns = None
+    for f in field_defs:
+        key = str((f or {}).get("key") or "").strip()
+        if not key or key in shipped:
+            continue
+        role = _infer_validation(key)
+        if role not in ("date", "alphanumeric"):        # ref == alphanumeric; currency/free-text deferred
+            continue
+        label = str((f or {}).get("label") or "").strip()
+        forms = _DATE_ROLE_CAPTIONS if role == "date" else _REF_ROLE_CAPTIONS
+        labels, seen = [], set()
+        for lab in ([label] + list(forms) if label else list(forms)):
+            low = lab.strip().lower()
+            if not low or low in seen:
+                continue
+            seen.add(low)
+            labels.append(lab.strip())
+        if not labels:
+            continue
+        if field_patterns is None:
+            field_patterns = {k: dict(v) for k, v in shipped.items()}
+        entry = {"labels": labels, "directions": ["right", "below"], "base_confidence": 80,
+                 "validation": ("date" if role == "date" else "alphanumeric")}
+        if role == "alphanumeric":
+            entry["role_caption"] = "ref"
+        field_patterns[key] = entry
+    if field_patterns is None:
+        return patterns
+    return {**patterns, "field_patterns": field_patterns}
+
+
 # ── Document type detection ───────────────────────────────────────────────────
 
 # Heading-adjacent tokens a real title line may carry beside the type word — a
@@ -340,6 +398,7 @@ def extract_fields(ocr_text: str, field_keys: list[str],
         labels  = fp.get("labels", [])
         dirs    = fp.get("directions", ["right"])
         base_conf = fp.get("base_confidence", 75)
+        role_caption = fp.get("role_caption")   # 'ref' on a seeded custom-ref field (RC1/RC5)
 
         for label in labels:
             # Support per-label direction override: {"text": "Bill From", "directions": ["below"]}
@@ -352,11 +411,18 @@ def extract_fields(ocr_text: str, field_keys: list[str],
             else:
                 label_text = label
                 label_dirs = dirs
-            found = _search_for_label(lines, label_text, label_dirs)
+            found = _search_for_label(lines, label_text, label_dirs, role_caption=role_caption)
             if not found:
                 continue
 
             value, direction = found
+            if role_caption == 'ref' and value:
+                # A seeded ref caption "Reference No." / "Ref No" leaves the "No"/"Number" suffix
+                # (and its trailing dot) glued to a right-read value ("No.  WS111238") — strip a
+                # dangling ref-suffix token, then a stray leading dot the caption left behind. Only
+                # seeded ref fields hit this (role_caption='ref'); shipped patterns are byte-identical.
+                value = re.sub(r'^(?:(?:no|number|nº)\b\.?|#)\s*', '', value, flags=re.I)
+                value = re.sub(r'^[.\s:|\-–]+', '', value).strip()
             if not value or len(value.strip()) < 1:
                 continue
 
@@ -503,10 +569,31 @@ def _identity_ref_caption(line: str, end: int) -> bool:
     return bool(m and m.group(1) in _IDENTITY_REF_FOLLOW_STOP)
 
 
+# A SEEDED custom ref field (RC1) searches generic ref captions ("Reference"/"Ref"/"No"). A bare
+# such caption preceded by a PARTY qualifier is that party's reference ("Customer Reference",
+# "Your Ref", "Supplier No", "Account No"), NOT the document's own reference — skip it so a seeded
+# custom-ref label can't cross-fill a buyer/seller/account reference. Mirrors _identity_ref_caption
+# (which guards the issuer side); this guards the reference side. Only seeded ref fields consult it
+# (role_caption='ref'), so shipped patterns are unaffected. (RC5, 2026-07-10)
+_REF_PARTY_STOP = frozenset({"customer", "client", "buyer", "your", "sales",
+                             "supplier", "vendor", "seller", "our", "account", "acct"})
+
+
+def _ref_caption_party_conflict(line: str, start: int) -> bool:
+    """True when a seeded bare REF caption at [start,.) is a DIFFERENT party's reference, detected by
+    the immediately PRECEDING word ('Customer Reference', 'Your Ref', 'Supplier No'). Pure."""
+    prec = re.search(r'([a-z]+)\W*$', line[:start].lower())
+    return bool(prec and prec.group(1) in _REF_PARTY_STOP)
+
+
 def _search_for_label(lines: list[str], label: str,
-                      directions: list[str]) -> tuple[str, str] | None:
+                      directions: list[str],
+                      role_caption: str | None = None) -> tuple[str, str] | None:
     """
     Search lines for a label and return (value, direction) or None.
+
+    role_caption (RC1/RC5): 'ref' for a SEEDED custom-ref field, so a buyer/seller party caption
+    ("Customer Reference") can't cross-fill it. None for shipped patterns → behaviour unchanged.
     """
     pattern = _label_pattern(label)
     if pattern is None:
@@ -526,6 +613,12 @@ def _search_for_label(lines: list[str], label: str,
         # A bare "Supplier"/"Vendor"/"Seller" must not read a "Supplier Ref/No/Account" reference
         # caption as the issuer name — skip; a real "Supplier: Acme" still matches. See above.
         if _is_identity_caption and _identity_ref_caption(line, m.end()):
+            continue
+        # A SEEDED custom REF caption ("Reference"/"Ref"/"No") must not read a DIFFERENT party's
+        # reference ("Customer Reference", "Your Ref", "Supplier No") — skip; the doc's own bare
+        # "Reference" still matches. Only seeded ref fields pass role_caption='ref', so shipped
+        # patterns are byte-identical. See _ref_caption_party_conflict (RC5, 2026-07-10).
+        if role_caption == 'ref' and _ref_caption_party_conflict(line, m.start()):
             continue
 
         # Try RIGHT direction — value is on the same line after the label

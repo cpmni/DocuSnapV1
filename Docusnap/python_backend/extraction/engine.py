@@ -1377,6 +1377,11 @@ class ExtractionEngine:
         # there's nothing to merge — no per-run copy in the common case.
         patterns_for_run = keyword.merge_label_overrides(
             self.patterns, self.label_overrides, document_slug)
+        # RC1 (2026-07-10): seed a Stage-1 keyword entry for a CUSTOM ref/date field from its own DB
+        # label (+ role short-forms), so a custom-type field with no shipped pattern and no admin
+        # override is still attempted here instead of depending on a learned anchor. Runs AFTER the
+        # override merge so an admin override still wins; additive/pure otherwise.
+        patterns_for_run = keyword.seed_field_labels(patterns_for_run, field_defs)
         kw_results = keyword.extract_fields(ocr_text, field_keys, patterns_for_run)
         # ── INPUT HYGIENE for name-like free-text keyword reads ── a keyword/label
         # capture has NO crop-path cleaning, so OCR edge junk ("--« Beaumont Care
