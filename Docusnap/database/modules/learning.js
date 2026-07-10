@@ -154,6 +154,28 @@ function saveCorrections(db, document_id, corrections,
     WHERE document_id = @document_id AND field_key = @field_key
   `);
 
+  // CONFIRM-UPSERT (Oracle-signed, 2026-07-10): a value typed into a field that the
+  // engine never READ has NO extraction row — the import only inserts rows for fields
+  // it extracted, and the UPDATE above is a no-op without a row. The typed value then
+  // lived ONLY in corrections, and every learning reader (getFieldFormats /
+  // getFieldValueHistory / getDocumentsForFieldValue / dominant-snap) selects FROM
+  // extractions with corrections merely LEFT-JOINed — so confirmed values were
+  // INVISIBLE to learning ("worksheets are no longer learning values": two confirmed
+  // docs, an empty Learning-history modal), invisible to search, and lost when the
+  // doc was reopened. Insert the missing row as an explicit MANUAL read: method
+  // 'manual' (exempt from the recipient-caption issuer guard; never consulted by any
+  // auto-file path — those run at PROCESSING time, this row is born at CONFIRM time),
+  // confidence 100 (a human typed it), corrected_to NULL (that column is the engine's
+  // auto-correction signal — the Review "corrected" chip keys off it).
+  const insertManualExtraction = db.prepare(`
+    INSERT INTO extractions
+      (document_id, field_key, raw_value, display_value, confidence,
+       extraction_method, was_corrected, validation_note, corrected_to, anchor_label)
+    VALUES
+      (@document_id, @field_key, NULL, @corrected_value, 100,
+       'manual', 1, NULL, NULL, NULL)
+  `);
+
   const upsertHint = db.prepare(`
     INSERT INTO supplier_hints
       (supplier_name, document_type, field_key, hint_value, usage_count, last_seen)
@@ -173,7 +195,12 @@ function saveCorrections(db, document_id, corrections,
         supplier_name: effectiveSupplier, document_type: document_type || null,
       });
       // Keep the stored extraction in step with the confirmed value (see above).
-      updateExtractionValue.run({ document_id, field_key, corrected_value: corrected_value ?? '' });
+      const _upd = updateExtractionValue.run({ document_id, field_key, corrected_value: corrected_value ?? '' });
+      // No row to update → the field was never read: persist the typed value as a
+      // manual extraction row so it exists for learning/search/reopen (see above).
+      if (_upd.changes === 0 && corrected_value && String(corrected_value).trim()) {
+        insertManualExtraction.run({ document_id, field_key, corrected_value: String(corrected_value) });
+      }
       if (corrected_value) {
         upsertHint.run({
           supplier_name: effectiveSupplier, document_type: document_type || null,
