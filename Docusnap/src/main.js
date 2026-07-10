@@ -769,10 +769,22 @@ app.whenReady().then(() => {
       // src/lib/focusRepair.js for the full rationale (the win.blur()/win.focus() title-bar-flash
       // storm eric traced). Extracted so it's unit-testable off the app lifecycle.
       const win = BrowserWindow.fromWebContents(wc);
-      // Fold in the reliable main-side "focus suspect" flag (set on win.on('blur')) so the
-      // blurWebView() transition runs when it's actually needed, not gated on the renderer's
-      // unreliable document.hasFocus(). Consume (clear) it after the repair.
+      // Fold in the main-side "focus suspect" flag — set by mark-focus-suspect (the
+      // renderer's wrapped native confirm()/alert(), and since 2026-07-10 also armed
+      // after every single-doc Confirm & File) so the blurWebView() transition runs
+      // when it's actually needed, not gated on the renderer's unreliable
+      // document.hasFocus() (stale-TRUE in the broken state). Consumed after repair.
       const suspect = !!(win && win.__focusSuspect);
+      // FOCUS DIAGNOSTIC (eric, 2026-07-10): one line per text-control press so a real
+      // "dead caret after Confirm & File" occurrence tells us WHICH state it is —
+      // suspect=false+pageHasFocus=true on a dead click = the stale-widget blind spot;
+      // suspect=true and STILL dead = blurWebView insufficient for this class (new
+      // design needed); winFocused=false = OS focus genuinely elsewhere. Dev-terminal
+      // visible under npm start; inert in a packaged build (stdout unrouted).
+      try {
+        console.log(`[focus] press: suspect=${suspect} pageHasFocus=${(info || {}).pageHasFocus} `
+          + `winFocused=${win && !win.isDestroyed() ? win.isFocused() : '?'} wcFocused=${wc.isFocused ? wc.isFocused() : '?'}`);
+      } catch {}
       repairKeyboardFocus(win, wc, { ...(info || {}), suspect });
       if (win && !win.isDestroyed()) win.__focusSuspect = false;
     } catch {}

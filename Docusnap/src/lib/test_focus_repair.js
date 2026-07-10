@@ -69,5 +69,32 @@ const makeWc = (destroyed = false) => {
   check('healthy + not suspect → blurWebView NOT called', win.calls.blurWebView === 0);
   check('healthy + not suspect → wc.focus called', wc.calls.focus === 1); }
 
+// 8. SOURCE PINS (eric, 2026-07-10 — the post-Confirm dead-caret fix). The repair can
+//    only run when something ARMS the suspect flag: document.hasFocus() reports
+//    stale-TRUE in the broken state, so a dialog-free Confirm & File desync was
+//    unrepairable by click (the user's "click the taskbar and back" ritual). Pin that
+//    (a) the Review confirm handler arms the flag after advancing, and (b) the two
+//    prior focus regressions stay out (no win.on('blur') suspect flag; no win.blur()/
+//    win.focus() in the repair).
+{
+  const fs = require('fs'), path = require('path');
+  const renderer = fs.readFileSync(path.join(__dirname, '..', 'windows', 'review', 'renderer.js'), 'utf8');
+  const confirmHandler = renderer.slice(renderer.indexOf("getElementById('btn-confirm')"));
+  const advanceAt = confirmHandler.indexOf('advanceAfterAction(');
+  const markAt    = confirmHandler.indexOf('markFocusSuspect');
+  check('confirm handler arms the focus-suspect flag', markAt !== -1);
+  check('... AFTER advanceAfterAction (covers the post-advance desync)',
+        advanceAt !== -1 && markAt > advanceAt);
+
+  const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+  check("regression pin: no win.on('blur') suspect flag (the dropdown open/shut storm)",
+        !/win\.on\(['"]blur['"][\s\S]{0,120}__focusSuspect/.test(mainSrc));
+  // Strip line comments first — the file's own documentation NAMES the forbidden calls.
+  const repairSrc = fs.readFileSync(path.join(__dirname, 'focusRepair.js'), 'utf8')
+    .split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n');
+  check('regression pin: repair never calls win.blur()/win.focus()',
+        !/win\.blur\(\)|win\.focus\(\)/.test(repairSrc));
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nAll focus-repair checks passed');
 process.exit(fails ? 1 : 0);

@@ -2717,6 +2717,16 @@ document.getElementById('btn-confirm').addEventListener('click', async () => {
   if (r.error) { showToast(r.error, 'err'); return; }
   updateTabCounts();
   advanceAfterAction(idx, supplier);
+  // FOCUS (eric, 2026-07-10): Confirm & File can desync the RenderWidget's keyboard
+  // focus (post-confirm teardown/rebuild of the sidebar + fields pane, snappier since
+  // the detached-learning change) WITHOUT a native dialog — and the repair's
+  // blurWebView transition only runs when the window is marked focus-SUSPECT (the
+  // renderer's document.hasFocus() reports stale-TRUE in exactly this broken state,
+  // so the pageHasFocus fallback never fires). Arm the flag after every single-doc
+  // confirm: it sits inert until the operator's next TEXT-control press, then runs
+  // the proven widget-level repair (never an OS activation; <select> excluded by the
+  // preload, so dropdowns are untouched — the two pinned prior regressions hold).
+  try { window.docusnap.markFocusSuspect?.(); } catch {}
   window.docusnap.notifyReviewComplete();
 });
 
