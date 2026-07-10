@@ -360,6 +360,34 @@ function saveAnchor(db, {
       offset_dy_norm = null;
     }
   }
+  // Same phantom class via the field's DISPLAY LABEL (Oracle-signed belt-and-braces,
+  // 2026-07-10): migration 38 renamed the identity display to "Document Issuer" while
+  // the KEYS stayed supplier_name/customer_name, so the field-key check above never
+  // caught a label synthesised from the display name — "Document Issuer" anchors
+  // reached the DB, and the anchor engine then silently dropped their reads on every
+  // doc (the "my issuer teach never sticks" loop). A label OCR'd FROM THE PAGE
+  // (label_detected) that merely equals the display label is a REAL caption — kept,
+  // exactly like the field-key check. Lookup is best-effort (minimal test DBs may
+  // lack the fields tables — treat as no-match).
+  if (anchor_label && field_key && !label_detected) {
+    let displayLabel = null;
+    try {
+      const row = db.prepare(`
+        SELECT f.label AS label FROM fields f
+        JOIN document_types dt ON dt.id = f.document_type_id
+        WHERE dt.slug = ? AND f.key = ?
+      `).get(String(document_type || ''), String(field_key));
+      displayLabel = row && row.label;
+    } catch { /* fields tables absent (minimal fixture) → no-match */ }
+    if (displayLabel) {
+      const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+      if (norm(anchor_label) === norm(displayLabel)) {
+        anchor_label   = '';
+        offset_dx_norm = null;
+        offset_dy_norm = null;
+      }
+    }
+  }
 
   const key = {
     supplier_name: supplier_name || '__unknown__',

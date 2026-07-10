@@ -98,6 +98,15 @@ check("no identity_labels passed -> label branch inert, scope logic unchanged (s
 check("GLOBAL positional labelled 'Document Issuer' -> KEEP (global exempt; artifact branch is identity-only)",
       blind('invoice_number', AL('invoice_number', '', 'Document Issuer'), 'profile construction',
             located_ok=False, identity_labels=_ID_LABELS) is False)
+# POSITION-ONLY teach (Fix B, 2026-07-10): the ⊕ issuer teach now saves an EMPTY label
+# instead of the display name. The artifact branch must be INERT on '' (a_lbl falsy) so the
+# read falls to the scope rule — same-supplier positional teach KEPT, cross-supplier dropped.
+check("BLIND SAME-supplier identity anchor with '' label (position-only teach) -> KEEP",
+      blind('supplier_name', AL('supplier_name', 'contoso asia', ''), 'contoso asia',
+            located_ok=False, identity_labels=_ID_LABELS) is False)
+check("BLIND CROSS-supplier identity anchor with '' label -> still DROP (scope rule holds)",
+      blind('supplier_name', AL('supplier_name', 'contoso asia', ''), 'profile construction',
+            located_ok=False, identity_labels=_ID_LABELS) is True)
 
 print("\nPOSITIONAL / structured fields — cross-supplier now FILTERED at admission (2026-07-09, user direction):")
 # _anchor_matches (the FILTER) now REFUSES a cross-supplier POSITIONAL anchor: layouts differ per

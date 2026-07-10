@@ -2018,10 +2018,18 @@ async function runZoneOcr(rect, fieldKey) {
         // keywords too. Reusable for every supplier/layout (not a one-document rule).
         if (fieldKey === 'supplier_name' || fieldKey === 'customer_name') {
           if (pendingAnchors[fieldKey]) {
-            pendingAnchors[fieldKey].anchor_label  = labelFor(fieldKey) || fieldKey.replace(/_/g, ' ');
+            // POSITION-ONLY means an EMPTY label (Oracle-signed, 2026-07-10) — staging the
+            // field's DISPLAY NAME ("Document Issuer") here manufactured a PHANTOM label:
+            // the page never prints it, so the anchor engine treated the read as a
+            // teaching artifact and silently dropped it on every doc — the user's issuer
+            // teach never fired ("SO #" kept winning). '' is the real positional sentinel
+            // (saveAnchor precedent); offsets are label-relative, so clear them too.
+            pendingAnchors[fieldKey].anchor_label   = '';
             pendingAnchors[fieldKey].label_detected = false;
+            pendingAnchors[fieldKey].offset_dx_norm = null;
+            pendingAnchors[fieldKey].offset_dy_norm = null;
           }
-          try { showToast('Captured the ' + (labelFor(fieldKey) || 'company name') + ' from this layout.', 'ok'); } catch {}
+          try { showToast('Captured the ' + (labelFor(fieldKey) || 'company name') + ' position from this layout.', 'ok'); } catch {}
         } else {
           showAnchorReadout(detected, text);   // show which anchor was picked + the Left/Above toggle
         }
@@ -2389,10 +2397,11 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
   // Guaranteed fallback — always STAGE SOMETHING so the position is learned on
   // commit even when no nearby label text could be read. The actual persistence
   // (and its admin-role / DB-error handling) happens in confirmCurrentDoc, so an
-  // un-confirmed teach leaves no trace.
-  const fallbackLabel = labelFor(fieldKey) || fieldKey.replace(/_/g, ' ');
-  pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: fallbackLabel, direction: 'right' };
-  return { anchor_label: fallbackLabel, direction: 'right', normBox: null, fallback: true };
+  // un-confirmed teach leaves no trace. POSITION-ONLY = EMPTY label (Oracle-signed
+  // 2026-07-10): the field's display name is never printed on the page, so staging
+  // it here manufactured a phantom label the anchor engine rightly distrusts.
+  pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: '', direction: 'right' };
+  return { anchor_label: '', direction: 'right', normBox: null, fallback: true };
 }
 
 // Surface WHICH anchor the ⊕ teach auto-detected (its label + where it sits) and the
@@ -2451,7 +2460,9 @@ function showAnchorReadout(detected, value) {
       const fk = lastTeachCtx?.fieldKey;
       const cleaned = sanitizeAnchorLabel(lblInput.value);
       if (fk && pendingAnchors[fk]) {
-        pendingAnchors[fk].anchor_label = cleaned || (labelFor(fk) || fk.replace(/_/g, ' '));
+        // Cleared/garbage caption → POSITION-ONLY ('' — never the field's display name,
+        // which the page doesn't print; Oracle-signed 2026-07-10).
+        pendingAnchors[fk].anchor_label = cleaned || '';
         pendingAnchors[fk].label_detected = !!cleaned;   // a typed caption is a real label
       }
       lblInput.classList.toggle('bad', labelLooksSuspicious(cleaned));
