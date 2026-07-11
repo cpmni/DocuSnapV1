@@ -327,13 +327,19 @@ function _centerDistance(ax, ay, bx, by) {
 // it carries no letter (a bare number / reference / date) or is a code-like
 // serial (>= 3 digits). Returns the cleaned caption, or '' when nothing stable
 // remains. Reusable for every supplier/field; no per-document logic.
+// MIRROR PAIR: src/windows/shared/anchorLabel.js sanitizeAnchorLabel MUST stay identical —
+// a divergence here re-strips a renderer-approved label AND nulls its drift offset below.
 function sanitizeAnchorLabel(label) {
   if (!label || typeof label !== 'string') return '';
   const kept = label.trim().split(/\s+/).filter(tok => {
+    // A STANDALONE '#' is caption punctuation ("SO #", "Item #"), never a value — keep it:
+    // it's the uniqueness that makes a 2-char stem locatable (reggie, 2026-07-10).
+    if (/^#[.:]?$/.test(tok)) return true;
     if (!/[a-zA-Z]/.test(tok)) return false;                // bare number / ref / date
     if ((tok.match(/\d/g) || []).length >= 3) return false; // code-like serial
     return true;
   });
+  if (!kept.some(t => /[a-zA-Z]/.test(t))) return '';       // a label must carry letters
   return kept.join(' ').trim();
 }
 

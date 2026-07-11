@@ -541,9 +541,11 @@ def main():
             # already-processed docs. A TRUSTED standalone heading (e.g. "WORKSHEET") that
             # contradicts a machine pin now re-types the doc; a HUMAN-confirmed type is NEVER
             # overridden, and a clipped scan (no trusted heading) keeps the pin exactly as
-            # before. The linked template (_kt) is cleared on override — it belongs to the
-            # wrong type, and the engine's known-id fallback would otherwise resurrect it and
-            # re-flip the type (see resolve_assigned_type_authority).
+            # before. The linked template (_kt) is now KEPT on override (2026-07-10): the same-logo
+            # sibling is the SAME SUPPLIER, so the engine's known-id rescue still fills its issuer +
+            # shared fields; the `authoritative` guard below stops that resurrected template re-
+            # flipping the type. (Was: cleared _kt — which left reprocess with "no template matched"
+            # and empty fields, gary root-cause. See resolve_assigned_type_authority.)
             _ks_overridden = False
             if _ks and doc_types:
                 _ovr, _ = resolve_assigned_type_authority(
@@ -555,7 +557,10 @@ def main():
                             document_type = dt["name"]
                             if dt.get("fields"):
                                 active_fields = dt["fields"]
-                            _kt = None
+                            # KEEP _kt (was `_kt = None`): the same-logo sibling is the SAME supplier,
+                            # so the engine's known-id rescue fills its issuer + shared fields. The
+                            # template can't re-assert its wrong TYPE — the `authoritative` guard at the
+                            # _document_type_slug re-flip (below) blocks that on any reprocess.
                             _ks_overridden = True
                             log(f"  Doc type OVERRIDE: assigned '{_ks}' contradicted by its own "
                                 f"trusted title '{document_type}' — re-typed (machine-assigned, "
@@ -654,7 +659,13 @@ def main():
             # pipeline / handler expects. Falls through to the keyword result when
             # no template matched or its slug isn't a known type.
             tmpl_type_slug   = raw_extractions.pop("_document_type_slug", None)
-            if tmpl_type_slug and doc_types:
+            # On a REPROCESS the type is ALREADY decided (the known-doc-slug assignment, or the title
+            # override above) — a resurrected known-id template supplies supplier/fields but must NEVER
+            # re-assert its own (possibly stale) type (the "keeps applying Sales Order on reprocess"
+            # bug). Import (no _ks, no override) is unaffected → the template type still wins. (gary,
+            # 2026-07-10 — the guard that lets us KEEP _kt on override without re-flipping the type.)
+            authoritative    = bool(_ks or _ks_overridden)
+            if tmpl_type_slug and doc_types and not authoritative:
                 for dt in doc_types:
                     if dt.get("slug") == tmpl_type_slug:
                         doc_type_result = dt["name"]

@@ -750,8 +750,25 @@ app.whenReady().then(() => {
     // BrowserWindow), so every dropdown-open flagged the window suspect and the next pointer
     // press ran blurWebView() and CLOSED the just-opened dropdown (the "dropdown flashes open
     // and shut" + "no caret" regression). The suspect flag is now set ONLY by the precise
-    // after-native-dialog signal (renderer wraps confirm()/alert() → mark-focus-suspect), which
-    // is the actual broken case; the pageHasFocus===false fallback still covers the rest.
+    // armed triggers (dialog wrap / post-Confirm / draw-OCR / the child-close arming below) +
+    // the preload's VERIFIED one-shot forceEdge (see focusRepair.js).
+    // CHILD-CLOSE ARMING (eric Q4', 2026-07-10; Oracle C1 correction): closing a PARENTED
+    // child window (the CHILD_WINDOWS set — review/settings/search/teach/dev-inspector/
+    // welcome/tutorial) yanks widget focus from its parent the same way a native dialog
+    // does — the known unarmed desync trigger behind the "no caret but typing works" runs.
+    // Parentless windows (help/license/splash/login/onboarding) never arm here — their
+    // close desyncs are the truthful-FALSE polarity, which the preload's (C) forceEdge
+    // one-shot covers on the next press.
+    // Arm the PARENT's suspect flag on 'close' (both windows still alive) so the parent's
+    // next text-field press runs the full repair edge. This CANNOT re-trip the dropdown pin:
+    // native <select> popups are Chromium-internal, never BrowserWindows, so this hook never
+    // sees them; and a spurious arm costs exactly one benign full-cycle edge.
+    win.on('close', () => {
+      try {
+        const p = typeof win.getParentWindow === 'function' ? win.getParentWindow() : null;
+        if (p && !p.isDestroyed()) p.__focusSuspect = true;
+      } catch {}
+    });
     if (win.isVisible()) grabFocus();
   });
 
@@ -775,18 +792,21 @@ app.whenReady().then(() => {
       // Diagnostic: one line per text-control press (dev terminal; inert packaged). The new
       // [focus] after: line lives in the preload and reports whether the caret actually landed.
       try {
-        console.log(`[focus] press: suspect=${suspect} pageHasFocus=${(info || {}).pageHasFocus} `
+        console.log(`[focus] press: suspect=${suspect} forceEdge=${!!(info || {}).forceEdge} `
+          + `pageHasFocus=${(info || {}).pageHasFocus} `
           + `winFocused=${win && !win.isDestroyed() ? win.isFocused() : '?'} wcFocused=${wc.isFocused ? wc.isFocused() : '?'}`);
       } catch {}
-      repairKeyboardFocus(win, wc, { ...(info || {}), suspect });
+      const res = repairKeyboardFocus(win, wc, { ...(info || {}), suspect });
       if (win && !win.isDestroyed()) win.__focusSuspect = false;
+      return res || { edgeRan: false };
     } catch {}
+    return { edgeRan: false };
   };
   ipcMain.on('ensure-window-focus', (e, info) => runEnsureFocus(e.sender, info));
   // invoke variant — returns AFTER the repair edge is issued so the preload can deterministically
   // re-assert the input focus in its .then (fixes the single-rAF race that made every re-click
   // re-lose). Body is synchronous; blurWebView/wc.focus queue their messages and this returns.
-  ipcMain.handle('ensure-window-focus', (e, info) => { runEnsureFocus(e.sender, info); return true; });
+  ipcMain.handle('ensure-window-focus', (e, info) => runEnsureFocus(e.sender, info) || { edgeRan: false });
 
   // A renderer signals that a native confirm()/alert() just returned — mark that window's
   // widget focus SUSPECT so the next text-field press repairs it. Deterministic for the dialog

@@ -135,6 +135,10 @@ def merge_label_overrides(patterns: dict, overrides: list, doc_slug: str | None)
 _REF_ROLE_CAPTIONS  = ["Reference No", "Reference", "Ref No", "Ref"]
 _DATE_ROLE_CAPTIONS = ["Date"]
 
+# RC1 slice 2 kill switch: seed a custom FREE-TEXT field's own DB label at Stage 1
+# (see the party branch in seed_field_labels below).
+SEED_FREE_TEXT_ENABLED = True
+
 
 def seed_field_labels(patterns: dict, field_defs: "list | None") -> dict:
     """RC1 (2026-07-10): make a CUSTOM ref/date field attemptable at Stage 1 from its OWN DB label
@@ -146,8 +150,10 @@ def seed_field_labels(patterns: dict, field_defs: "list | None") -> dict:
     'keyword', NOT 'keyword_override', i.e. an AUTO tier subordinate to Stage-2 anchors / Stage-0.5
     mappings — with base_confidence 80 (below the auto-file critical-field floor 88, so a confusable
     read fails toward REVIEW, never a silent wrong file). Ref captions carry role_caption='ref' so
-    _search_for_label applies the party guard to them only. Scoped to ref/date here (free-text/name
-    deferred). Additive + pure: returns `patterns` unchanged when there is nothing to seed."""
+    _search_for_label applies the party guard to them only. SLICE 2 (2026-07-10): custom FREE-TEXT
+    fields (role None, DB type 'text') are seeded too — own label only, base 75,
+    role_caption='party' (the G1/G2/G3 guards), gated by SEED_FREE_TEXT_ENABLED — see the branch
+    below. Additive + pure: returns `patterns` unchanged when there is nothing to seed."""
     if not field_defs:
         return patterns
     shipped = patterns.get("field_patterns") or {}
@@ -157,7 +163,60 @@ def seed_field_labels(patterns: dict, field_defs: "list | None") -> dict:
         if not key or key in shipped:
             continue
         role = _infer_validation(key)
-        if role not in ("date", "alphanumeric"):        # ref == alphanumeric; currency/free-text deferred
+        if role not in ("date", "alphanumeric"):        # ref == alphanumeric; currency deferred
+            # RC1 SLICE 2 (2026-07-10): a custom FREE-TEXT field (no inferable role, DB type
+            # 'text') is seeded from its OWN DB label ONLY — no synonym bank (free text has no
+            # bounded role; a caption that differs from the label is covered by the admin
+            # override / ⊕ teach / Stage-0.5 paths, all of which outrank this). base 75:
+            # BELOW seeded ref/date's 80 (a weaker evidence class — free text has no value
+            # format gate), ABOVE the 70 per-field review threshold (a clean read doesn't
+            # flag every doc forever). NOTE (Oracle, 2026-07-10): 75 is NOT an auto-file drag —
+            # an OPTIONAL field is often not counted in overall_confidence at all
+            # (validator counts required-only when the type has required fields), and a
+            # counted-but-EMPTY field scored 0 before, so filling it RAISES overall. The real
+            # rails are: the at-100 lenient gate's freetext skip (a previously-signed Slice-7
+            # class shipped `customer_name`@78-80 already rides), per-field review routing
+            # (<70 flags; guards fail-EMPTY), and the ref/date critical-field floor for
+            # anything filing-critical. role_caption='party' arms the G1/G2/G3 caption guards
+            # in _search_for_label; method stays plain 'keyword' (auto tier), so every existing
+            # precedence rule holds by construction. The label DEDUPE below means a caption
+            # already hunted by a SAME-TYPE sibling (e.g. customer_name's shipped "Customer")
+            # is never double-seeded — the established field owns it, no double-fill.
+            if not (SEED_FREE_TEXT_ENABLED and role is None
+                    and (str((f or {}).get("type") or "").lower() == "text")):
+                continue
+            label = str((f or {}).get("label") or "").strip()
+            if len(label) < 3:                          # a "To"-style label is not a caption
+                continue
+            # DEDUPE scoped to the field's OWN document type: a SIBLING field of the same
+            # type already hunting this caption (customer_name's shipped "Customer",
+            # supplier_name's "Supplier", or an earlier-seeded same-type sibling) would
+            # DOUBLE-FILL from one printed caption — the established entry owns it, this
+            # field stays teach-only. Fields of OTHER types can't collide (extract_fields
+            # only hunts the detected type's keys), so a global-bank label must NOT block
+            # a type that genuinely lacks that sibling (the config carries customer_name
+            # whether or not this type has such a field).
+            current = field_patterns if field_patterns is not None else shipped
+            low = label.lower()
+            _tid = (f or {}).get("document_type_id")    # None (e.g. tests) → all co-typed
+            sib_keys = {str((d or {}).get("key") or "").strip()
+                        for d in field_defs
+                        if (d or {}).get("document_type_id") == _tid} - {key, ""}
+            taken = False
+            for sk in sib_keys:
+                for x in ((current.get(sk) or {}).get("labels") or []):
+                    t = (x.get("text") if isinstance(x, dict) else x) or ""
+                    if str(t).strip().lower() == low:
+                        taken = True
+                        break
+                if taken:
+                    break
+            if taken:
+                continue
+            if field_patterns is None:
+                field_patterns = {k: dict(v) for k, v in shipped.items()}
+            field_patterns[key] = {"labels": [label], "directions": ["right", "below"],
+                                   "base_confidence": 75, "role_caption": "party"}
             continue
         label = str((f or {}).get("label") or "").strip()
         forms = _DATE_ROLE_CAPTIONS if role == "date" else _REF_ROLE_CAPTIONS
@@ -586,6 +645,65 @@ def _ref_caption_party_conflict(line: str, start: int) -> bool:
     return bool(prec and prec.group(1) in _REF_PARTY_STOP)
 
 
+# RC1 SLICE 2 guards (2026-07-10) — a SEEDED custom FREE-TEXT field (role_caption='party')
+# hunts its own DB label ("Customer", "Site Contact"). All three guards are party-gated, so
+# shipped patterns stay byte-identical. reggie-designed; guarded by test_keyword_label_guard.py.
+#   G1 _party_caption_conflict — the label immediately FOLLOWED by a reference/document word is a
+#      DIFFERENT caption ("Customer Reference No. WS12345", "Customer Order No", "CUSTOMER COPY",
+#      "Customer Signature", "Customer Services: 0800…"): skip the occurrence (the field stays
+#      empty → review as missing) rather than swallow a code or an artifact word. "Name" and
+#      "Details" are deliberately NOT stopped — "Customer Name: Acme" keeps reading.
+#   G3 _is_caption_fragment — a candidate VALUE that is itself a short ref/date CAPTION FRAGMENT
+#      ("Reference No.", "Work Date") is a COLUMN-INTERLEAVE artifact: the reconstructed reading
+#      order can put a right-column row between a left-column caption and its value
+#      ('Site / Customer' ↵ 'Reference No.  WS408618' ↵ 'Formby & Sons' — the MP_wor_48 class).
+#      Keyed on the LAST word (a name like "ID Solutions Ltd" ends 'ltd' → passes); the ≤3-word
+#      bound protects longer names that happen to end in a ref-noun.
+_PARTY_FOLLOW_STOP = frozenset({
+    "ref", "reference", "no", "number", "num", "code", "id", "vat", "account", "acct",
+    "order", "po", "invoice", "job", "booking", "quote", "quotation",
+    "copy", "copies", "signature", "signatures", "initials", "declaration",
+    "service", "services",
+    # address/contact caption family (Oracle C3, 2026-07-10): "Customer Site Address",
+    # "Customer Tel", "Customer Email" are captions for OTHER data — without these stops the
+    # right/below read fills the party field with an address line or phone number at 75,
+    # and two clean words pass the wordness net. Fail-empty = the pre-slice-2 behaviour.
+    "site", "address", "tel", "telephone", "phone", "fax", "email", "mobile",
+    "web", "website"})
+
+#      "name"/"details" live HERE (a bare "Name" right-of-caption is the caption's own
+#      continuation word, not a value) and deliberately NOT in _PARTY_FOLLOW_STOP — so
+#      "Customer Name" still matches as a caption and its below-value reads.
+_CAPTION_NOUN_TAIL = frozenset({"ref", "reference", "no", "number", "num",
+                                "code", "id", "vat", "account", "acct", "date",
+                                "name", "details"})
+
+
+def _party_caption_conflict(line: str, end: int) -> bool:
+    """True when a seeded PARTY caption at [.,end) is really a reference/document caption
+    ('Customer Ref', 'Customer Order No', 'CUSTOMER COPY', 'Customer #55'), detected by the
+    immediately following word / '#'. A 4+-space COLUMN BREAK right after the caption means
+    the next word is ANOTHER column's caption ('Customer    Reference No.' on an interleaved
+    header row), not this caption's continuation — no conflict; the G3 fragment guard owns
+    that case. Mirrors _identity_ref_caption. Pure."""
+    raw = line[end:]
+    if re.match(r'\s{4,}', raw):
+        return False
+    tail = re.sub(r'^[\s:.\-–]+', '', raw.lower())
+    if tail.startswith('#'):
+        return True
+    m = re.match(r'([a-z]+)', tail)
+    return bool(m and m.group(1) in _PARTY_FOLLOW_STOP)
+
+
+def _is_caption_fragment(text: str) -> bool:
+    """True when a candidate VALUE is itself a short caption fragment ending in a ref/date noun
+    ("Reference No.", "Work Date") — an interleaved column row, never a party value. Pure."""
+    t = re.sub(r'[\s.:#|\-–]+$', '', (text or '').strip())
+    ws = t.lower().split()
+    return bool(ws) and len(ws) <= 3 and ws[-1] in _CAPTION_NOUN_TAIL
+
+
 def _search_for_label(lines: list[str], label: str,
                       directions: list[str],
                       role_caption: str | None = None) -> tuple[str, str] | None:
@@ -620,10 +738,22 @@ def _search_for_label(lines: list[str], label: str,
         # patterns are byte-identical. See _ref_caption_party_conflict (RC5, 2026-07-10).
         if role_caption == 'ref' and _ref_caption_party_conflict(line, m.start()):
             continue
+        # G1: a SEEDED custom FREE-TEXT caption ("Customer") must not read a reference/document
+        # caption of the same head word ("Customer Reference No. WS12345", "CUSTOMER COPY") —
+        # skip the occurrence; a real "Customer: Acme" still matches. Only seeded free-text
+        # fields pass role_caption='party', so shipped patterns are byte-identical. (RC1 slice 2)
+        if role_caption == 'party' and _party_caption_conflict(line, m.end()):
+            continue
 
         # Try RIGHT direction — value is on the same line after the label
         if "right" in directions or "inline" in directions:
             after = line[m.end():].strip()
+            # G2 (party): the label matched as the FIRST word of a COMPOUND caption
+            # ("Customer / Site") — the remainder is the caption's own tail, never a value;
+            # blank it so the read falls through to 'below'. '/' and '&' join caption
+            # synonyms; ':' and '-' stay value separators (unchanged). (RC1 slice 2)
+            if role_caption == 'party' and re.match(r'^[/&]', after):
+                after = ''
             # Strip common separators
             after = re.sub(r'^[\s:|\-–]+', '', after).strip()
             # Split on column gaps (4+ spaces) — same as 'below' direction.
@@ -660,6 +790,12 @@ def _search_for_label(lines: list[str], label: str,
                     if re.search(r'\d', _s):
                         after = _s
                         break
+            # G3 (party): a right-side candidate that is ITSELF a ref/date caption fragment
+            # ("Reference No." on an interleaved 'Customer    Reference No.' line) is the
+            # neighbouring column's caption, not the value — blank it so the read falls
+            # through to 'below'. (RC1 slice 2)
+            if role_caption == 'party' and _is_caption_fragment(after):
+                after = ''
             # Reject if the extracted text itself looks like another label, or contains
             # an embedded label:value pair (e.g. "Ship Mode: Second Class", "Date: Sep 07")
             # which means we grabbed neighbouring column content, not the actual value.
@@ -677,6 +813,12 @@ def _search_for_label(lines: list[str], label: str,
                     continue
                 # Take only the first column segment (split on 4+ spaces)
                 candidate = re.split(r' {4,}', candidate)[0].strip()
+                # G3 (party): skip an interleaved right-column CAPTION row sitting between
+                # the caption and its value in the reconstructed reading order
+                # ('Site / Customer' ↵ 'Reference No.  WS408618' ↵ 'Formby & Sons' —
+                # the MP_wor_48 class); the window walks on to the real value. (RC1 slice 2)
+                if role_caption == 'party' and _is_caption_fragment(candidate):
+                    continue
                 if (candidate
                         and not _is_label_line(candidate)
                         and not re.search(r'[A-Za-z]{2,}\s*:', candidate)):

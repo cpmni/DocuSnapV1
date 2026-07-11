@@ -488,6 +488,10 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
         # date/ref stay pattern-trusted (their neighbours are rarely same-type + they carry
         # their own digit-parity/partial-shape guards on the later rungs). Needs a non-null
         # offset (legacy rows untouched); reuses line_cache so a clean on-row read pays one locate.
+        # Layer-A note slot (007+gary, 2026-07-10): SEPARATE from _xcheck_note — the
+        # crosscheck block can later FLIP the value, and this note describes the KEPT-RIGID
+        # (or junk-relocate) case only. Applied at the result build when no other note landed.
+        _relocate_guard_note = None
         if value and val_type in (None, "text", "multiline_text", "currency") \
                 and (anchor.get("anchor_label") or "").strip() \
                 and anchor.get("offset_dy_norm") is not None and page0 is not None:
@@ -552,6 +556,28 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                             # so variable free-text (a drifted NAME) and currency drift
                             # fixes are untouched. Complements the ambiguous-label guard.
                             pass   # keep the rigid read
+                        elif (val_type in (None, "text", "multiline_text")
+                                and len(_rv.split()) >= 2
+                                and not _name_junk_shaped(_rv, field_key)
+                                and _name_junk_shaped(_dv, field_key)):
+                            # NAME-GUARD BACKSTOP — Layer A (007+gary, 2026-07-10): for a
+                            # below/above-direction anchor the inline harvest is CROSS-COLUMN
+                            # content BY CONSTRUCTION, and no name-quality comparison existed
+                            # here — so a junk-shaped candidate ('Sso#' harvested off the
+                            # caption row's neighbour column) silently REPLACED a rigid read
+                            # that scores as a real multi-word name ('Formby & Sons',
+                            # MP_sal_35, rejected as off_row_drift). KEEP the rigid read and
+                            # flag it (cap ≤70 + note at the confidence block) — disagreement
+                            # is a REVIEW event, never a coin toss. The 2026-07-06 drift-fix
+                            # class (a credible multi-word relocate) does not trip this: its
+                            # candidate isn't junk-shaped. Guarded by
+                            # test_anchor_name_lock_guard.py.
+                            if on_reject:
+                                on_reject(field_key, "anchor_crop_relocated", _dv,
+                                          "name_guard_junk_candidate")
+                            _relocate_guard_note = ("The value found beside this document's own "
+                                                    "caption disagreed with the taught position "
+                                                    "— please verify.")
                         else:
                             if on_reject:
                                 on_reject(field_key, "anchor_crop", value, "off_row_drift")
@@ -956,6 +982,30 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
             # a LOCATED, shape-matching recovery commits CONFIDENT (no flag); else capped to 70 + flagged.
             elif method == "anchor_crop_crosscheck":
                 conf = min(70, conf)   # cross-read disagreement: full-page value preferred, routed to review
+            # NAME-CREDIBILITY BAR for WANDERED reads — Layer B (007+gary, 2026-07-10): a
+            # RELOCATED/INLINE commit on a name-like free-text field whose value is junk-shaped
+            # is capped ≤70 + noted, never trusted at the synthetic 87-92. These paths null
+            # ocr_conf by design (the OCR-quality cap below is blind to them) and the
+            # multi-word name gate above skips single tokens — this closes exactly that hole
+            # ('Sso'/'Sso#' @87-91 unflagged, MP_sal_35). A clean multi-word relocated name
+            # (the drift-fix class) passes the bar untouched. Composes with the Stage-2.6
+            # rescue's min()-cap (a rescued junk name stays 70+note). DELIBERATE residual: a
+            # legit ≤3-alpha brand ('IBM') via these methods flags every time — fail-toward-
+            # review; the accepted-names allowlist doesn't reach anchor.py yet (future
+            # plumbing, noted in test row f).
+            if (method in ("anchor_crop_relocated", "anchor_inline")
+                    and val_type in (None, "text", "multiline_text")
+                    and _name_junk_shaped(value, field_key)):
+                conf = min(70, conf)
+                if not _relocate_guard_note:
+                    _relocate_guard_note = ("This value was read after the taught position "
+                                            "shifted and doesn't look like a real name — "
+                                            "please verify.")
+            # Layer A kept the rigid read over a junk relocate: flag it for review. Skipped
+            # when the crosscheck later flipped/noted (method no longer anchor_crop or
+            # _xcheck_note set) — that path carries its own note.
+            if _relocate_guard_note and method == "anchor_crop" and not _xcheck_note:
+                conf = min(70, conf)
             if _xcheck_note:
                 conf = min(70, conf)   # flag-only value-below-label disagreement: keep the value, route to review
             # ── OCR-QUALITY CAP (FREE-TEXT ONLY): for a name/address field there is
@@ -1117,8 +1167,36 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 # FLAG-ONLY (value-below-label cross-supplier false-locate): KEEP the rigid value (no
                 # was_corrected / corrected_to) — only surface the cross-read disagreement for a human.
                 results[field_key]["validation_note"] = _xcheck_note
+            elif _relocate_guard_note and field_key in results \
+                    and not results[field_key].get("validation_note"):
+                # NAME-GUARD note (Layers A/B): flag-only — the value (kept rigid, or a capped
+                # junk relocate) is surfaced for a human; never overwrites a method-specific note.
+                results[field_key]["validation_note"] = _relocate_guard_note
 
     return results
+
+
+def _name_junk_shaped(value, field_key) -> bool:
+    """True when a NAME-LIKE field's value is JUNK-SHAPED — judged on its NON-ALNUM-STRIPPED
+    form (a '#' pushed 'Sso#' to a perfect name_quality: value_quality's token strip set has
+    no '#'): a single token with < 4 LETTERS ('Sso'), or name_quality < 0.5. KEY-ONLY
+    predicate — is_name_like_field(field_key), never the anchor's caption (a ref field
+    taught with the label "Customer Order No." must stay inert). Single clean ≥4-alpha
+    tokens ('Jordanstown') and real multi-word names pass. Used by the Layer-A replacement
+    backstop and the Layer-B relocate credibility bar (007+gary, 2026-07-10); guarded by
+    tests/test_anchor_name_lock_guard.py."""
+    if not value:
+        return False
+    from extraction.value_quality import is_name_like_field, name_quality
+    if not is_name_like_field(field_key):
+        return False
+    stripped = re.sub(r'[^0-9A-Za-z ]+', ' ', str(value)).strip()
+    toks = stripped.split()
+    if not toks:
+        return True
+    if len(toks) == 1 and len(re.sub(r'[^A-Za-z]', '', toks[0])) < 4:
+        return True
+    return name_quality(stripped) < 0.5
 
 
 # A logo match is only trusted when the winning supplier is DECISIVELY closer than
@@ -2378,7 +2456,20 @@ def _is_blind_cross_supplier_anchor(field_key: str, anchor: dict,
     a DIFFERENT position ("false-locate") keeps a wrong absolute value uncapped — closing that needs
     the label-relative offset read elevated over the absolute read, a separate slice. Pure/unit-tested."""
     if located_ok:
-        return False
+        # WEAK-CORE locate exception (Oracle C2, 2026-07-10): a locate via a caption whose
+        # alphabetic CORE is ≤3 chars — the bare "No."/"Ref"/"SO #" class the SHORT_CAPTION
+        # allowlist made teachable — proves almost nothing about layout identity: a standalone
+        # prose "no" anywhere on a NAMED different supplier's page "locates" it, and the
+        # located upgrade would bypass this guard (the documented generic-caption residual —
+        # the 'Invoice'-label class behind the 07-08 harness RED, with an even weaker
+        # caption). For a NAMED DIFFERENT supplier only, a weak-core locate does NOT count as
+        # "same layout": fall through to the blind-read rules below (→ dropped). Same-supplier
+        # / global / unknown scopes and ≥4-alpha-core labels are byte-identical. An UNRESOLVED
+        # supplier also falls through — no layout evidence either way; the Stage-2.6 rescue
+        # re-runs the anchor as same-supplier once identity resolves.
+        _core = re.sub(r'[^a-z]', '', (anchor.get("anchor_label") or "").lower())
+        if len(_core) > 3 or not _named_cross_supplier(anchor, supplier_name):
+            return False
     is_identity = field_key in _IDENTITY_FIELD_KEYS
     if is_identity and identity_labels:
         a_lbl = (anchor.get("anchor_label") or "").strip().lower()
@@ -2455,6 +2546,16 @@ def _anchor_matches(anchor: dict, supplier_name: str | None,
         return anchor.get("field_key") in _IDENTITY_FIELD_KEYS
 
     return False
+
+
+def anchor_admissible(anchor: dict, supplier_name: str | None,
+                      document_type: str | None) -> bool:
+    """PUBLIC admission check for ONE anchor under a given (supplier, doc-type) identity —
+    exactly _anchor_matches, exposed by name for the engine's Stage-2.6 LATE-ANCHOR RESCUE,
+    whose rescue set is the DELTA of admission (admissible under the freshly-resolved
+    supplier but NOT under None = exactly that supplier's own named positional anchors).
+    Behaviour-identical wrapper; keeps the engine off the private API."""
+    return _anchor_matches(anchor, supplier_name, document_type)
 
 
 def _label_pattern(label: str) -> "re.Pattern | None":

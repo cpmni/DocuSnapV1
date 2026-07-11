@@ -466,6 +466,51 @@ function create(db, { name, document_type_slug, logo_phash, keyword_fingerprint,
   return id;
 }
 
+// NAME-HEAL decision (2026-07-10): should a later confirm's Document-Issuer value replace
+// this template's current name? A template created at a supplier's FIRST confirm inherits
+// whatever sat in the issuer field at that moment — a wrong first detection births a
+// template named after a POSTCODE ("BT23 1BE" → slug bt23_1be, the PF_pur case) or a bare
+// caption word ("Ref", 4 confirms deep) and the old heal (generic "<Type> Template" names
+// only) never touches it. Adopt the confirmed issuer when:
+//   • the issuer is a PLAUSIBLE supplier name (learning.isPlausibleSupplierName) and
+//     differs from the current name (case-insensitive), AND the current name is
+//   • still the GENERIC "… Template", OR shape-IMPLAUSIBLE ("IN", "36552"), OR a UK
+//     POSTCODE ("BT23 1BE" — letters+digits, so it PASSES the plausibility shape test;
+//     regex twin of config validation_patterns.postcode_uk), OR a single bare
+//     DOCUMENT-STRUCTURE word ("Ref", "Invoice", "Total" — captions, never companies).
+// A plausible multi-word / brand-like name (hand-rename, or a previously-adopted issuer)
+// is NEVER touched — so the heal can't flip-flop between issuer variants: once a plausible
+// name is in place, only the admin can change it. Pure; guarded by
+// test_template_name_heal.js. NAME stays cosmetic (matching is logo/fingerprint).
+const _CAPTION_WORDS = new Set([
+  'ref', 'reference', 'no', 'number', 'invoice', 'order', 'total', 'date',
+  'account', 'customer', 'supplier', 'vendor', 'issuer', 'po', 'so', 'quote',
+  'delivery', 'statement', 'receipt', 'worksheet', 'document',
+]);
+const _UK_POSTCODE = /^[A-Za-z]{1,2}\d{1,2}[A-Za-z]?\s*\d[A-Za-z]{2}$/;
+
+function _looksLikeNonName(name) {
+  const t = String(name || '').trim();
+  if (!t) return true;
+  if (/\btemplate$/i.test(t)) return true;                       // the generic auto-name
+  const { isPlausibleSupplierName } = require('./learning');     // lazy: avoids load-order knots
+  if (!isPlausibleSupplierName(t)) return true;                  // "IN", "36552" shapes
+  if (_UK_POSTCODE.test(t)) return true;                         // "BT23 1BE"
+  const toks = t.toLowerCase().split(/\s+/);
+  if (toks.length === 1 && _CAPTION_WORDS.has(toks[0].replace(/[.:#]+$/, ''))) return true;
+  return false;
+}
+
+function shouldAdoptIssuerName(currentName, confirmedIssuer) {
+  const issuer = String(confirmedIssuer || '').trim();
+  if (!issuer) return false;
+  const { isPlausibleSupplierName } = require('./learning');
+  if (!isPlausibleSupplierName(issuer)) return false;            // never adopt junk
+  if (_UK_POSTCODE.test(issuer)) return false;                   // …or a postcode-as-issuer
+  if (issuer.toLowerCase() === String(currentName || '').trim().toLowerCase()) return false;
+  return _looksLikeNonName(currentName);
+}
+
 // Cosmetic/admin-facing rename only — `name` plays no role in template
 // matching (identification uses logo_phash / keyword_fingerprint exclusively,
 // see template_matcher.py) and `slug` is left untouched, so this can never
@@ -862,7 +907,7 @@ function getSampleWordsByDoc(db, templateId) {
 module.exports = {
   getAll, getById, getFields, findByLogoHash, findByKeywordFingerprint, identifyByFingerprint,
   searchByName,
-  create, update, remove, rename, hammingDistance,
+  create, update, remove, rename, shouldAdoptIssuerName, hammingDistance,
   stabiliseFingerprint, chooseLogoPhash,
   getMappings, getMapping, saveMapping, setMappingEnabled, deleteMapping,
   recordMappingTest, setSampleDocument, reassignDocuments, mergeInto, setFieldFixedValue,

@@ -124,9 +124,14 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
       const fnameOk = ov.fname_has == null || String(d.original_filename || '').includes(ov.fname_has);
       const refOk   = ov.poisoned_ref  == null || normRef(d.reference_number) === normRef(ov.poisoned_ref);
       const dateOk  = ov.poisoned_date == null || normDate(d.doc_date) === normDate(ov.poisoned_date);
-      if (fnameOk && refOk && dateOk) {
-        if (ov.ref  != null) gt[fname].ref  = ov.ref;
-        if (ov.date != null) gt[fname].date = ov.date;
+      // Supplier poison: `poisoned_supplier: ""` means the DB row must STILL carry NO issuer
+      // (normSupplier(null) === '' — the confirmed-without-issuer class, e.g. the Unknown-Company
+      // Ashford sales orders 1777/1786/1788 whose correct read the 2026-07-10 improvements restored).
+      const supOk   = ov.poisoned_supplier == null || normSupplier(d.supplier_name) === normSupplier(ov.poisoned_supplier);
+      if (fnameOk && refOk && dateOk && supOk) {
+        if (ov.ref      != null) gt[fname].ref      = ov.ref;
+        if (ov.date     != null) gt[fname].date     = ov.date;
+        if (ov.supplier != null) gt[fname].supplier = ov.supplier;
         gt[fname]._overridden = true;
       } else {
         gtOverrideSkipped.push(`#${d.id}: GT override SKIPPED (identity mismatch — DB reset / re-confirmed / other machine? db-ref='${d.reference_number}' file='${d.original_filename}')`);

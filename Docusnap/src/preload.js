@@ -368,9 +368,6 @@ contextBridge.exposeInMainWorld('docusnap', {
 // main to re-focus the webContents, then re-assert focus on the pressed control. The
 // preload shares the page DOM (contextIsolation isolates JS scope, not the DOM). No-op
 // when focus is already fine, so a normal click is untouched.
-// Shared marker so the focusin secondary (added below) never double-issues the repair for a
-// mouse click that pointerdown already owns — a click fires pointerdown THEN focusin.
-let _lastPointerRepair = 0;
 window.addEventListener('pointerdown', (e) => {
   try {
     const t = e.target;
@@ -379,7 +376,6 @@ window.addEventListener('pointerdown', (e) => {
     // flashes open and shut" regression). Only real text-editing controls need caret repair.
     const el = t && t.closest && t.closest('input, textarea, [contenteditable=""], [contenteditable="true"]');
     if (!el) return;                    // only repair when actually entering a text field
-    _lastPointerRepair = performance.now();   // this click owns the focus change (suppresses the focusin secondary)
     const pageHasFocus = document.hasFocus();
     // SYSTEMIC keyboard-focus cure (eric, 2026-07-10) — the ONE chokepoint every text-field
     // press flows through, so it heals the render-widget desync (page-focus lost while the
@@ -408,13 +404,16 @@ window.addEventListener('pointerdown', (e) => {
             console.log(`[focus] after: active=${ae && ae.tagName}#${ae && ae.id} `
               + `hasFocusNow=${document.hasFocus()} activeStillEl=${document.activeElement === el}`);
           } catch {}
-          // (C) Blind-spot self-heal (no 2nd user click): if the page STILL lacks focus a frame
-          //     after the repair, the first press read hasFocus() as stale-TRUE so the gate
-          //     skipped blurWebView. Re-issue the edge ONCE with pageHasFocus:false. A healthy
-          //     click reads hasFocus()===true here, so this never runs on a good click; capped
-          //     at one re-issue — no recursion.
+          // (C) VERIFIED one-shot self-heal (no 2nd user click): the page STILL lacks focus a
+          //     frame after a completed repair pass — a PROVEN-stuck page (categorically unlike
+          //     the removed capture-phase at-rest read: a healthy click's rAF read is true, so
+          //     this branch is unreachable from a healthy path). Re-issue ONCE with
+          //     forceEdge:true — the flag main actually honours (eric, 2026-07-10 night: the
+          //     old pageHasFocus:false payload was deliberately ignored post-revision, leaving
+          //     this self-heal TOOTHLESS and unarmed-trigger desyncs permanent — the 17-press
+          //     telemetry runs). forceEdge exists ONLY on this line; capped at one; no recursion.
           if (!document.hasFocus()) {
-            ipcRenderer.invoke('ensure-window-focus', { pageHasFocus: false }).then(() => {
+            ipcRenderer.invoke('ensure-window-focus', { pageHasFocus: false, forceEdge: true }).then(() => {
               requestAnimationFrame(() => requestAnimationFrame(() => {
                 try { if (document.activeElement !== el) el.focus(); } catch {}
               }));
@@ -424,35 +423,4 @@ window.addEventListener('pointerdown', (e) => {
       }));
     }).catch(() => {});
   } catch { /* never let focus repair break a click */ }
-}, true);
-
-// Additive focusin SECONDARY (eric, 2026-07-10) — the pointerdown chokepoint above heals a MOUSE
-// click, but a keyboard-Tab (or any programmatic focus) into a text field has no pointerdown to
-// hook, so a Tab into a field while the page-focus flag is desynced left a dead caret. focusin
-// fires on EVERY focus change (pointer AND Tab) and even when the document-focus flag is false, so
-// it is a strictly MORE universal chokepoint. It is INERT on healthy focus (gated on
-// !document.hasFocus()) and skips the click case pointerdown just handled (the _lastPointerRepair
-// window) — so no dropdown-thrash, and a healthy Tab is byte-identical. It reuses the SAME main-side
-// edge (blurWebView→wc.focus); no new main code, no new IPC. <select> is excluded (closest won't
-// match). The two pinned regressions (no win.blur/focus, no win.on('blur')) are untouched.
-window.addEventListener('focusin', (e) => {
-  try {
-    const el = e.target && e.target.closest
-      && e.target.closest('input, textarea, [contenteditable=""], [contenteditable="true"]');
-    if (!el) return;                                            // <select> excluded
-    if (document.hasFocus()) return;                            // HEALTHY focus → inert, no edge, no thrash
-    if (performance.now() - _lastPointerRepair < 350) return;   // pointerdown already healing this click
-    // Desync on a non-pointer focus (Tab/programmatic): el is ALREADY the pending focused element,
-    // so run the same page-focus edge and re-assert the caret past the cross-process transition.
-    ipcRenderer.invoke('ensure-window-focus', { pageHasFocus: false }).then(() => {
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        try { if (document.activeElement !== el) el.focus(); } catch {}
-        try {
-          const ae = document.activeElement;
-          console.log(`[focus] focusin-heal: active=${ae && ae.tagName}#${ae && ae.id} `
-            + `hasFocusNow=${document.hasFocus()} activeStillEl=${document.activeElement === el}`);
-        } catch {}
-      }));
-    }).catch(() => {});
-  } catch { /* never let focus repair break focus */ }
 }, true);

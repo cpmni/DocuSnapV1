@@ -470,19 +470,21 @@ function enterAnchorMode(){
 // position-only) and advances — it never discards a detected label.
 function renderAnchorReadout(){
   const f=curField(), r=f&&state.results[f.key]; if(!r) return;
-  const hasLabel = !!r.anchor_text;
+  // A garbled (suspicious) read is treated as UNREADABLE: the junk string is never displayed
+  // or offered as "Keep this label" — a garbled label never re-locates on future pages, and
+  // the user must never be asked to vouch for text they can't find on the page. The offer
+  // becomes position-only; the junk itself is dropped on advance (rb-skip-anchor below).
+  const suspicious = !!(r.anchor_text && r.anchorSuspicious);
+  const hasLabel = !!r.anchor_text && !suspicious;
   const dir = r.anchor_dir || 'left';
   const lbl = hasLabel
     ? `Detected label: <span class="mono">"${esc(r.anchor_text)}"</span>`
-    : 'No label found here — try the other direction, draw one, or continue without.';
-  // A garbled auto-label (OCR noise) never re-locates on future pages → the field silently reads
-  // nothing forever. Warn so the operator redraws the label or toggles direction before saving.
-  const warn = (hasLabel && r.anchorSuspicious)
-    ? `<div style="font-size:12px;color:var(--warn);margin-top:4px">⚠ This label looks misread — draw a cleaner box around the label, or switch direction, so it keeps matching on future documents.</div>`
-    : '';
+    : suspicious
+      ? `⚠ Couldn't read the caption here cleanly — the position will be remembered instead. Draw a box round the printed label, try the other direction, or continue without one.`
+      : 'No label found here — try the other direction, draw one, or continue without.';
   const keepText = hasLabel ? 'Keep this label →' : 'Continue without a label →';
   $('rg-confirm').innerHTML=
-    `<div class="muted" style="font-size:13px">${lbl}</div>${warn}`+
+    `<div class="muted" style="font-size:13px">${lbl}</div>`+
     `<div style="margin-top:9px;font-size:13px">Is the label to the <b>left</b> of the value, or <b>above</b> it?</div>`+
     `<div style="margin-top:6px;display:flex;gap:6px">`+
       `<button class="btn ${dir==='left'?'primary':'ghost'}" id="rb-dir-left">← Left</button>`+
@@ -494,7 +496,7 @@ function renderAnchorReadout(){
     `</div>`;
   $('rb-dir-left').onclick=()=>redetectAnchor('left');
   $('rb-dir-above').onclick=()=>redetectAnchor('above');
-  $('rb-skip-anchor').onclick=()=>{ r.status='done'; drawMode='value'; advanceField(); };
+  $('rb-skip-anchor').onclick=()=>{ if (suspicious) r.anchor_text=null; r.status='done'; drawMode='value'; advanceField(); };
   $('rb-redraw-val').onclick=()=>{ delete state.results[f.key]; promptField(); };
 }
 // Re-run label detection in the chosen direction (the Left/Above toggle) and refresh.
@@ -568,8 +570,24 @@ async function cropB64(box, pad){
 async function autoLabel(box, forceDir){
   const A = window.AnchorLabel;
   const leftW = Math.max(0, box.x);                                   // all the way to the left edge
-  const left  = {x:Math.max(0,box.x-leftW), y:box.y, w:leftW, h:box.h, dir:'left'};
-  const above = {x:box.x, y:Math.max(0,box.y-box.h*1.3), w:box.w, h:box.h*1.1, dir:'above'};
+  // LEFT band vertically CENTRE-EXPANDED to 1.8× the value height (oscar+007, 2026-07-10):
+  // a one-line band at the value's own y decapitated a bolder/higher caption ("SO #"→'sok').
+  // nearestRowTo below keeps only the row nearest the value's centre.
+  const lPad  = box.h * 0.4;
+  const lY    = Math.max(0, box.y - lPad);
+  const left  = {x:Math.max(0,box.x-leftW), y:lY, w:leftW,
+                 h:Math.min(1 - lY, box.h + 2 * lPad), dir:'left'};
+  // The ABOVE band must be tall enough to CONTAIN the caption line: line spacing routinely
+  // exceeds the value's own height, so the old one-line band (y-1.3h, h×1.1) clipped the
+  // caption to its bottom pixel-tips and OCR hallucinated junk from the sliver (mirrors the
+  // Review ⊕ fix, 2026-07-10). ~2.5 line-heights up, stopping 0.1h short of the value so the
+  // band can never swallow the value's own ascenders; nearestAboveRow below keeps only the
+  // bottom row of words, so a band catching two lines can't glue them together.
+  // 0.028 page-height floor (oscar, 2026-07-10) ≈ two text lines (the Review ⊕'s 34px floor at
+  // the 108-DPI preview): a tight x-height-only draw must still get a band tall enough to
+  // contain a caption a blank half-line up, instead of re-clipping it to a sliver.
+  const aH    = Math.min(Math.max(box.h*2.5, 0.028), Math.max(0, box.y - box.h*0.1));
+  const above = {x:box.x, y:Math.max(0, box.y - box.h*0.1 - aH), w:box.w, h:aH, dir:'above'};
   const tries=[];
   if (forceDir==='left')        { if (leftW>0.02) tries.push(left); }
   else if (forceDir==='above')  { if (box.y>0.02) tries.push(above); }
@@ -582,7 +600,18 @@ async function autoLabel(box, forceDir){
       // the far-left caption onto the adjacent one (the "label spans to the left" bug) — then
       // strip value-shaped tokens (a code / date / ref is never a label). A bare-text fallback
       // keeps older region.py output (no per-word boxes) working.
-      const cluster = (band.dir==='left') ? A.nearestLeftCluster(res && res.words) : null;
+      let cluster;
+      if (band.dir==='left'){
+        // Row nearest the VALUE's centre first (the band is taller than one line), then the
+        // column nearest the value. Word boxes are in the DOWNSCALED crop px (cropB64's ds).
+        const bandHpx = band.h*state.img.naturalHeight;
+        const ds = bandHpx>OCR_TARGET_H?(OCR_TARGET_H/bandHpx):1.0;
+        const cY = ((box.y + box.h/2) - band.y) * state.img.naturalHeight * ds;
+        const rowWords = A.nearestRowTo(res && res.words, cY);
+        cluster = A.nearestLeftCluster(rowWords || (res && res.words));
+      } else {
+        cluster = A.nearestAboveRow(res && res.words);
+      }
       const rawText = (cluster ? cluster.text : (res && res.text ? String(res.text) : '')).trim();
       const label   = A.sanitizeAnchorLabel(A.extractLabel(rawText) || '');
       if (label){

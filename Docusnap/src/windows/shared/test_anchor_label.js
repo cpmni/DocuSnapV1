@@ -35,6 +35,45 @@ const check = (label, cond) => { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}
 check('nearestLeftCluster([]) → null', A.nearestLeftCluster([]) === null);
 check('nearestLeftCluster(null) → null', A.nearestLeftCluster(null) === null);
 
+// ── nearestAboveRow — keep only the BOTTOM row (caption nearest the value) ──────
+// A tall above-the-value strip catching TWO text rows: the caption "Site / Customer"
+// on the bottom row and an unrelated line above it. Only the bottom row may win —
+// gluing the rows back together was the old reason the strip was starved to one line
+// (which then clipped captions to hallucinated slivers, the "eee F WS CwE ewe" bug).
+{
+  const words = [
+    { text: 'Meridian', box: [0, 2, 60, 12] },    // upper row — must be dropped
+    { text: 'Print',    box: [64, 2, 34, 12] },
+    { text: 'Site',     box: [0, 22, 26, 12] },   // bottom row — the caption
+    { text: '/',        box: [33, 21, 4, 14] },
+    { text: 'Customer', box: [41, 22, 66, 12] },
+  ];
+  const r = A.nearestAboveRow(words);
+  check('nearestAboveRow keeps the bottom row only', r && r.text === 'Site / Customer');
+  check('nearestAboveRow drops the row above', r && !/Meridian/.test(r.text));
+  check('nearestAboveRow box spans just the bottom row', r && r.box[1] === 21 && r.box[0] === 0 && (r.box[0] + r.box[2]) === 107);
+}
+// A single row comes back whole, words re-ordered left→right.
+{
+  const r = A.nearestAboveRow([
+    { text: 'Customer', box: [41, 3, 66, 12] },
+    { text: 'Site',     box: [0, 3, 26, 12] },
+    { text: '/',        box: [33, 2, 4, 14] },
+  ]);
+  check('nearestAboveRow single row kept whole, left→right', r && r.text === 'Site / Customer');
+}
+// Slight y-jitter within one visual row (ascenders/descenders) must not split it.
+{
+  const r = A.nearestAboveRow([
+    { text: 'Net',   box: [0, 5, 24, 11] },
+    { text: 'Total', box: [28, 3, 36, 14] },   // 2px higher top, taller glyphs — same row
+  ]);
+  check('nearestAboveRow tolerates in-row y-jitter', r && r.text === 'Net Total');
+}
+check('nearestAboveRow([]) → null', A.nearestAboveRow([]) === null);
+check('nearestAboveRow(null) → null', A.nearestAboveRow(null) === null);
+check('nearestAboveRow ignores box-less words', A.nearestAboveRow([{ text: 'x' }]) === null);
+
 // ── sanitizeAnchorLabel — strip value-shaped tokens ─────────────────────────────
 check('keeps a real caption', A.sanitizeAnchorLabel('Invoice Number') === 'Invoice Number');
 check('drops a bare number token', A.sanitizeAnchorLabel('Total 12345') === 'Total');
@@ -46,6 +85,48 @@ check('empty in → empty out', A.sanitizeAnchorLabel('') === '' && A.sanitizeAn
 check('extractLabel returns a short caption whole', A.extractLabel('some noise   Serial No.') === 'some noise Serial No.');
 check('extractLabel keeps the last 40 chars of a long strip', A.extractLabel('x'.repeat(50) + ' Serial No.').length <= 40 && /Serial No\.$/.test(A.extractLabel('x'.repeat(50) + ' Serial No.')));
 check('extractLabel rejects a too-short/no-alpha tail', A.extractLabel('  12  ') === null);
+
+// ── nearestRowTo — row nearest the value centre (the expanded LEFT strip, 2026-07-10) ────
+// A 1.8×-tall left strip catches the caption row plus a neighbour row; only the row nearest
+// the value's centre may feed the column pick (else the neighbour's rightmost word wins).
+{
+  const words = [
+    { text: 'Date',     box: [500, 2, 40, 12] },    // row above (centre ~8)
+    { text: 'SO',       box: [560, 22, 24, 13] },   // the caption row (centre ~28.5)
+    { text: '#',        box: [590, 22, 10, 13] },
+    { text: 'Account',  box: [500, 44, 60, 12] },   // row below (centre ~50)
+  ];
+  const r = A.nearestRowTo(words, 28);              // value centre in strip px
+  check('nearestRowTo picks the caption row', r && r.map(w => w.text).join(' ') === 'SO #');
+  const r2 = A.nearestRowTo(words, 6);
+  check('nearestRowTo respects a different centre', r2 && r2[0].text === 'Date');
+  check('nearestRowTo(null) → null', A.nearestRowTo(null, 10) === null);
+  // composed with nearestLeftCluster: the caption row's rightmost column is the label
+  const c = A.nearestLeftCluster(A.nearestRowTo(words, 28));
+  check('row→column composition yields the caption', c && c.text === 'SO #');
+}
+
+// ── SHORT-CAPTION allowlist + '#' retention (reggie, 2026-07-10 — the "SO #" slice) ──────
+// extractLabel: known short caption stems pass; OCR debris still dies.
+check("extractLabel accepts 'SO'",   A.extractLabel('SO') === 'SO');
+check("extractLabel accepts 'SO#' and un-glues it", A.extractLabel('SO#') === 'SO #');
+check("extractLabel accepts 'S/O'",  A.extractLabel('S/O') === 'S/O');
+check("extractLabel accepts 'Ref'",  A.extractLabel('Ref') === 'Ref');
+check("extractLabel accepts 'No.'",  A.extractLabel('No.') === 'No.');
+check("extractLabel accepts 'P.O.'", A.extractLabel('P.O.') === 'P.O.');
+check("extractLabel still rejects 'sok' (the MP_sal_35 misread)", A.extractLabel('sok') === null);
+check("extractLabel still rejects 'sox'", A.extractLabel('sox') === null);
+check("extractLabel still rejects 'po4'", A.extractLabel('po4') === null);
+check("extractLabel still rejects '$0'",  A.extractLabel('$0') === null);
+// sanitizeAnchorLabel: a STANDALONE '#' survives (caption punctuation, the locate uniqueness);
+// glued codes still drop; a letterless residue still collapses to ''.
+check("sanitize keeps 'SO #' whole",      A.sanitizeAnchorLabel('SO #') === 'SO #');
+check("sanitize keeps 'Item #' from 'Item # 123'", A.sanitizeAnchorLabel('Item # 123') === 'Item #');
+check("sanitize still drops glued '#12345'", A.sanitizeAnchorLabel('SO #12345') === 'SO');
+check("sanitize collapses letterless '# #' to empty", A.sanitizeAnchorLabel('# #') === '');
+check("sanitize unchanged for plain captions", A.sanitizeAnchorLabel('Work Address') === 'Work Address');
+check("sanitize unchanged for code-stripped captions",
+      A.sanitizeAnchorLabel('2605-0769-1 Work Address') === 'Work Address');
 
 // ── labelLooksSuspicious — garble guard ─────────────────────────────────────────
 check('clean label not suspicious', A.labelLooksSuspicious('Serial No.') === false);

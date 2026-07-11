@@ -67,9 +67,10 @@ DIGIT_TO_UPPER = {
 }
 
 # When we EXPECT an uppercase letter but OCR produced a SYMBOL (e.g. a leading "S" on a code
-# read as "$"). Mirrors the symbol cases of the renderer's _OCR_PAIRS (review/renderer.js) —
-# keep the two in sync (they are twins, like text_normalise.py/.js). Used by the slip-fix that
-# recovers a gate-rejected read which is ONE known-confusion substitution from the learned shape.
+# read as "$"). Mirrors the symbol cases of the shared OCR_PAIRS (src/windows/shared/slipFix.js,
+# extracted from review/renderer.js 2026-07-11) — keep the two in sync (they are twins, like
+# text_normalise.py/.js). Used by the slip-fix that recovers a gate-rejected read which is ONE
+# known-confusion substitution from the learned shape.
 SYMBOL_TO_UPPER = {
     '$': 'S',
     '€': 'E',

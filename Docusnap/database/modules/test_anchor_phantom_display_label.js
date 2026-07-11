@@ -19,7 +19,10 @@ const check = (l, c) => { console.log(`  ${c ? 'OK ' : 'BAD'} ${l}`); if (!c) fa
 
 const db = new Database(':memory:');
 runMigrations(db);
-doctypes.seedBuiltInTypes(db);   // sales_order carries customer_name labelled "Document Issuer" (migration 38)
+doctypes.seedBuiltInTypes(db);   // supplier_name carries the "Document Issuer" display label
+// (2026-07-10: migration 44 made customer_name an ordinary "Customer"-labelled recipient
+// field, so the display-label phantom premise moved from customer_name to supplier_name —
+// the mechanism under test is unchanged.)
 
 const anchorRow = (field) => db.prepare(
   'SELECT anchor_label, offset_dx_norm, offset_dy_norm FROM field_anchors WHERE field_key = ? ORDER BY id DESC LIMIT 1'
@@ -32,15 +35,27 @@ const base = {
 
 // 1. THE BUG: a synthesised "Document Issuer" label (label_detected false) must be
 //    stored as '' (position-only) with the label-relative offsets cleared.
-learning.saveAnchor(db, { ...base, field_key: 'customer_name', anchor_label: 'Document Issuer', label_detected: false });
-let r = anchorRow('customer_name');
+learning.saveAnchor(db, { ...base, field_key: 'supplier_name', anchor_label: 'Document Issuer', label_detected: false });
+let r = anchorRow('supplier_name');
 check("synthesised display label 'Document Issuer' -> stored '' (position-only)", r && r.anchor_label === '');
 check('... label-relative offsets cleared', r && r.offset_dx_norm === null && r.offset_dy_norm === null);
 
 // 2. A caption OCR'd FROM THE PAGE that happens to equal the display label is REAL — kept.
-learning.saveAnchor(db, { ...base, field_key: 'customer_name', direction: 'right', anchor_label: 'Document Issuer', label_detected: true });
-r = db.prepare("SELECT anchor_label FROM field_anchors WHERE field_key='customer_name' AND direction='right'").get();
+learning.saveAnchor(db, { ...base, field_key: 'supplier_name', direction: 'right', anchor_label: 'Document Issuer', label_detected: true });
+r = db.prepare("SELECT anchor_label FROM field_anchors WHERE field_key='supplier_name' AND direction='right'").get();
 check('label_detected=true identical caption -> KEPT (a real printed caption)', r && r.anchor_label === 'Document Issuer');
+
+// 2b. MIRROR-TWIN PIN (reggie, 2026-07-10): a '#'-bearing short caption ("SO #") must
+//     survive saveAnchor UNCHANGED with its drift offsets INTACT. If learning.js's
+//     sanitizeAnchorLabel ever diverges from the shared anchorLabel.js copy (e.g. one
+//     re-strips the '#'), the `_clean !== anchor_label` branch fires and NULLS the
+//     offsets — this check is the tripwire for that seam.
+learning.saveAnchor(db, { ...base, field_key: 'sales_order_number', direction: 'right',
+                          anchor_label: 'SO #', label_detected: true });
+r = anchorRow('sales_order_number');
+check("'SO #' caption stored verbatim (# kept)", r && r.anchor_label === 'SO #');
+check("... drift offsets PRESERVED (twin sanitizers agree)",
+      r && r.offset_dx_norm === 0.1 && r.offset_dy_norm === 0.02);
 
 // 3. The original field-KEY phantom check still works alongside.
 learning.saveAnchor(db, { ...base, field_key: 'order_date', anchor_label: 'Order Date', label_detected: false });

@@ -428,6 +428,13 @@
         "Purchase Order Number",
         "PURCHASE ORDER NO",
         "PO Number",
+        "P/O Number",
+        "P/O No",
+        "P/O No.",
+        "P/O #",
+        "P.O. Number",
+        "P.O. No",
+        "P.O. No.",
         "PO No",
         "PO No.",
         "PO #",
@@ -462,7 +469,8 @@
         "Date",
         "Sales Order Date",
         "Issue Date",
-        "Date of Order"
+        "Date of Order",
+        "Dated"
       ],
       "directions": [
         "right",
@@ -494,7 +502,16 @@
         "SO No.",
         "Order No",
         "Order Number",
-        "Our Order No"
+        "Our Order No",
+        "S/O Number",
+        "S/O No.",
+        "S/O No",
+        "S/O #",
+        "S.O. Number",
+        "S.O. No.",
+        "S.O. No",
+        "S.O. #",
+        "SO #"
       ],
       "directions": [
         "right",

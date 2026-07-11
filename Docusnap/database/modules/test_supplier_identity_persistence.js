@@ -50,6 +50,13 @@ function freshDb() {
       usage_count INTEGER DEFAULT 1, last_seen TEXT,
       UNIQUE(supplier_name, document_type, field_key, hint_value)
     );
+    CREATE TABLE extractions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      document_id INTEGER, field_key TEXT,
+      raw_value TEXT, display_value TEXT, confidence INTEGER,
+      extraction_method TEXT, was_corrected INTEGER DEFAULT 0,
+      validation_note TEXT, corrected_to TEXT, anchor_label TEXT
+    );
     CREATE TABLE field_anchors (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       supplier_name TEXT, document_type TEXT, field_key TEXT,

@@ -861,6 +861,44 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 43 applied: document_types.title_aliases');
   }
 
+  // Migration 44 (2026-07-10): UNLINK customer_name from the identity. supplier_name is now the
+  // SOLE "Document Issuer" identity/scope key (COMPANY_KEYS = ['supplier_name']); customer_name is
+  // an ordinary optional field. For every EXISTING type that used customer_name as its identity,
+  // ensure a supplier_name identity field exists and demote the customer_name field to an optional
+  // "Customer" field. SCHEMA-ONLY by owner decision (2026-07-10): NO documents / filing / learning
+  // data is touched — existing filed docs keep their (mostly logo-derived) supplier_name scope; the
+  // few with an empty scope re-fill from the logo on their next reprocess/confirm (no ambiguous
+  // customer_name back-fill → no risk of misfiling a doc under the buyer). Only fields labelled the
+  // OLD identity label "Document Issuer" are demoted, so a customer_name already used as a secondary
+  // ("Deliver To"/"Customer") field is left untouched.
+  if (!applied.has(44)) {
+    if (tableExists(db, 'document_types') && tableExists(db, 'fields')) {
+      try {
+        const n = require('./modules/document_types').reshapeCustomerIdentityTypes(db);
+        console.log(`  migration 44: reshaped ${n} customer_name-identity type(s)`);
+      } catch (e) { console.warn(`  migration 44 (customer_name unlink): ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (44)').run();
+    console.log('JS migration 44 applied: customer_name unlinked from identity (supplier_name is sole issuer)');
+  }
+
+  // Migration 45 (2026-07-10): clean STALE customer_name LEARNING left by the pre-RC2 model where
+  // customer_name WAS the identity — so the now-recipient field stops mirroring the issuer on reprocess
+  // (the live symptom: a sales-order Customer read the supplier's own name). Deletes ONLY customer_name
+  // hints whose value is the issuer (self-equal scope, or a known logo/scope issuer) + customer_name
+  // anchors labelled "Document Issuer"; keeps legit recipient learning ("Greenfield Nurseries"). Ordered
+  // after 44 (relies on the relabel so it can't regenerate). gary-designed, Oracle-aligned; data-safe.
+  if (!applied.has(45)) {
+    if (tableExists(db, 'supplier_hints') || tableExists(db, 'field_anchors')) {
+      try {
+        const r = require('./modules/document_types').cleanupStaleCustomerLearning(db);
+        console.log(`  migration 45: deleted customer_name learning — hints self-equal=${r.hintsSelfEqual} known-issuer=${r.hintsKnownIssuer}, anchors=${r.anchors}`);
+      } catch (e) { console.warn(`  migration 45 (stale customer learning): ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (45)').run();
+    console.log('JS migration 45 applied: stale customer_name learning cleaned (RC2)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

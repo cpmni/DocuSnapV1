@@ -67,6 +67,28 @@ _IDENTITY_FIELD_KEYS = frozenset({"supplier_name", "customer_name"})
 # past review at higher hint usage) is expressly NOT covered by that sign-off.
 IDENTITY_RESCUE_ENABLED = True
 
+# Stage 2.6 LATE-ANCHOR RESCUE kill switch + confidence ceiling (2026-07-10): when the
+# supplier was UNRESOLVED at Stage-2 time and Stage 2.5a then resolves it from text, the
+# supplier's OWN positional anchors (invisible to Stage 2 — _anchor_matches only admits
+# named-supplier positional anchors on a supplier match) get one fill-empty-only re-run.
+# The 85 cap mirrors the text-scan supplier premise's own cap and sits below the 88
+# critical-field auto-file floor. See the Stage 2.6 block in extract().
+LATE_ANCHOR_RESCUE_ENABLED = True
+_LATE_RESCUE_CAP = 85
+
+
+def _late_rescue_applicable(s2_supplier, supplier_name):
+    """Stage-2.6 gate (pure, unit-pinned): rescue ONLY when Stage 2 ran with NO supplier
+    (template/logo gave nothing — `s2_supplier` is the value the anchor stage was CALLED
+    with) and a plausible supplier is resolved NOW. The resolution source can be the 2.5a
+    hint text-scan, the post-Stage-2 promotion of a Stage-1 keyword identity, OR a located
+    identity-ANCHOR read promoted the same way (Oracle C4: the aperture is any
+    results['supplier_name'] promotion) — the same seam in every case: Stage 2 ran blind.
+    A supplier that Stage 2 already SAW gates the rescue OFF: wrong-then-corrected identity
+    is a different, riskier class, deliberately out of scope."""
+    from extraction import keyword as _kw
+    return (not s2_supplier) and _kw._is_plausible_supplier_name(supplier_name)
+
 # The resolved-identity ORIGINS a rescue may corroborate against: structural sources
 # (logo / template identity / fixed values / template anchor). keyword- and
 # hint-derived identities are excluded — corroborating a hint with a hint-derived
@@ -776,6 +798,78 @@ class ExtractionEngine:
         except Exception:
             pass  # background aid — must never break extraction
 
+    @staticmethod
+    def _is_degraded_variant(fragment, canonical):
+        """True when `fragment` is a CLIPPED CONTIGUOUS PIECE of `canonical` — the wandered-
+        relocate identity class ('pplies Ltd' ⊂ 'Northgate Supplies Ltd', a crop that started
+        mid-word; 'oplies Ltd' likewise). Comparison on the deterministic normalised form
+        (text_normalise + lowercase + non-alnum runs collapsed to single spaces); the fragment
+        must be STRICTLY shorter, carry ≥4 ALPHA chars (a 2-3 char scrap proves nothing), and
+        be a contiguous substring — so two genuinely different names ('Northgate Support Ltd'
+        vs 'Northgate Supplies Ltd') can NEVER collapse, and an OCR-noised variant ('0plies
+        Ltd', zero for o) deliberately fails toward today's flag-only behaviour. Pure;
+        guarded by tests/test_identity_variant.py."""
+        try:
+            import re as _re                      # engine.py has no module-level `re`
+            from extraction.text_normalise import normalise_for_tokens
+            def _norm(s):
+                s = normalise_for_tokens(s or "").lower()
+                return _re.sub(r"[^a-z0-9]+", " ", s).strip()
+            f, c = _norm(fragment), _norm(canonical)
+            if not f or not c or f == c or len(f) >= len(c):
+                return False
+            if len(_re.sub(r"[^a-z]", "", f)) < 4:
+                return False
+            return f in c
+        except Exception:
+            return False
+
+    @staticmethod
+    def _adopt_identity_variant(results, idv):
+        """VARIANT CORROBORATION (2026-07-10 night — the 'pplies Ltd' case; gary-vetted).
+        On an ACCEPTED identity-conflict verdict, when the pipeline's resolved supplier is a
+        CLIPPED FRAGMENT of the letterhead's gazetteer canonical (_is_degraded_variant), adopt
+        the canonical instead of committing the fragment: a wandered relocate that clipped
+        "Northgate Su|pplies Ltd" mid-word must not mint 'pplies Ltd' as a supplier — a
+        rubber-stamp confirm would then feed a junk learning scope. FRAGMENT-CARRIER GUARD
+        (gary G1): the swap touches ONLY results['supplier_name'] and ONLY when that field's
+        own value IS the fragment — on a customer-carrying type where the note lands on
+        customer_name, a blind swap would stamp the ISSUER canonical over the RECIPIENT.
+        Review by construction: conf capped ≤70, needs_review forced, and the note keeps BOTH
+        names so the reviewer can judge/restore. Non-variant conflicts stay flag-only,
+        byte-identically (the caller falls through to the existing note loop). Both supplier
+        stamps (the field + _supplier_name, which the persist path consumes) move together —
+        the CLAUDE.md "latest reliable resolution" invariant. Returns True when adopted.
+        Guarded by tests/test_identity_variant.py."""
+        try:
+            canon = (idv.get("text_led") or "").strip()
+            frag  = (idv.get("resolved") or "").strip()
+            if not canon or not frag:
+                return False
+            if not ExtractionEngine._is_degraded_variant(frag, canon):
+                return False
+            f = results.get("supplier_name")
+            if not (isinstance(f, dict) and (f.get("value") or "").strip()):
+                return False
+            import re as _re
+            from extraction.text_normalise import normalise_for_tokens
+            def _n(s):
+                return _re.sub(r"[^a-z0-9]+", " ",
+                               normalise_for_tokens(s or "").lower()).strip()
+            if _n(f.get("value")) != _n(frag):
+                return False
+            f["value"]  = canon
+            f["method"] = "identity_variant_adopt"
+            f["confidence"] = min(int(f.get("confidence") or 100), 70)
+            f["validation_note"] = (
+                f"The issuer read “{frag}” looks like a clipped fragment of “{canon}” — "
+                f"using the letterhead name; please confirm.")
+            results["_supplier_name"] = canon
+            results["_needs_review"] = True
+            return True
+        except Exception:
+            return False
+
     def _compute_identity_verdict(self, ocr_text, logos, hints, anchors, resolved_supplier):
         """Compute the text-led SUPPLIER identity verdict (extraction/identity_fusion) over the page
         CHROME: does the issuer-band letterhead read the SAME supplier the pipeline resolved? Used by
@@ -843,6 +937,65 @@ class ExtractionEngine:
             }
         except Exception:
             return None  # background aid — must never break extraction
+
+    @staticmethod
+    def _flag_cross_field_duplication(results):
+        """CROSS-FIELD DUPLICATION guard — Slice 1 (2026-07-10 night; gary-designed, built on
+        the user's explicit policy override of the Slice-0 do-nothing gate: belt-and-braces
+        over conditional deployment). A NAME-LIKE field whose committed value CONTAINS a
+        sibling STRUCTURED field's whole high-trust value (customer = "Reference 'WS703182"
+        beside reference_number=WS703182@95, KO_wor_41) is a WRONG-ROW capture by a wandered
+        anchor. HOLD-ONLY, deterministic where wordness is probabilistic (wordness
+        self-disables on scopes whose confirmed history went code-like — gary's F3): cap ≤69
+        + note + needs_review; the VALUE is never touched, an existing (e.g. wordness) note is
+        preserved (the cap still applies), and manual/authoritative/override methods are
+        exempt. Sibling bar: non-name-like key, conf ≥80, itself un-noted; the string
+        predicate (whole-value token-bounded containment, digit-required, len≥5 — the
+        "2026 Holdings Ltd" year class can't fire) is value_quality.contains_structured_sibling,
+        SHARED with stress_test/crossfield_sweep.py so the sweep stays the offline regression
+        twin. Guarded by tests/test_cross_field_duplication.py."""
+        try:
+            from extraction.value_quality import is_name_like_field, contains_structured_sibling
+            _EXEMPT = ("manual", "template_fixed", "template_fixed_locked", "keyword_override")
+            sibs = []
+            for k, f in results.items():
+                if k.startswith("_") or not isinstance(f, dict):
+                    continue
+                if is_name_like_field(k):
+                    continue
+                if not (f.get("value") or "").strip():
+                    continue
+                if int(f.get("confidence") or 0) < 80 or (f.get("validation_note") or "").strip():
+                    continue
+                sibs.append((k, str(f.get("value"))))
+            if not sibs:
+                return
+            for k, f in results.items():
+                if k.startswith("_") or not isinstance(f, dict):
+                    continue
+                if not is_name_like_field(k) or not (f.get("value") or "").strip():
+                    continue
+                if str(f.get("method") or "") in _EXEMPT:
+                    continue
+                for sk, sv in sibs:
+                    if sk == k:
+                        continue
+                    if contains_structured_sibling(f.get("value"), sv):
+                        # 69 is SELF-SUFFICIENT review routing (the recipient guard's
+                        # construction): 69 < the default 70 per-field threshold trips
+                        # validator.needs_review, and the NOTE blocks auto-file at every
+                        # trust threshold + bulk File-All-Ready. Do NOT set
+                        # results['_needs_review'] here — the later pipeline computation
+                        # reassigns it unconditionally, so a set here is dead code
+                        # (Oracle A2, 2026-07-10).
+                        f["confidence"] = min(int(f.get("confidence") or 100), 69)
+                        if not (f.get("validation_note") or "").strip():
+                            f["validation_note"] = (
+                                f"This value appears to contain the document's "
+                                f"{sk.replace('_', ' ')} “{sv}” — please verify.")
+                        break
+        except Exception:
+            pass  # a guard must never break extraction
 
     def _flag_recipient_caption_issuer(self, results, field_defs, supplier_name):
         """RECIPIENT-CAPTION ISSUER GUARD (flag-only, never rewrites — Oracle-signed
@@ -1476,6 +1629,12 @@ class ExtractionEngine:
         found = len([v for v in results.values() if v.get("value")])
         self.log(f"  Stage 1: {found}/{len(field_keys)} fields found")
 
+        # Snapshot the supplier identity AS OF Stage-2 time: the Stage-2.6 late-anchor
+        # rescue below runs ONLY when the supplier was UNRESOLVED here and resolved later
+        # (2.5a text scan) — never when Stage 2 already saw a supplier. Wrong-then-corrected
+        # identity is a different, riskier class and stays deliberately out of scope.
+        _s2_supplier = supplier_name
+
         # ── Stage 2: Anchor extraction (always runs) ──────────────────────────
         if anchors:
             self.log("  Stage 2: anchor extraction…")
@@ -1795,6 +1954,84 @@ class ExtractionEngine:
                     "method":     "hint_text_match",
                 }
                 self.log(f"  Stage 2.5: supplier '{best_hint}' identified from text scan")
+
+        # ── Stage 2.6: LATE-ANCHOR RESCUE (2026-07-10) ───────────────────────────
+        # On a doc whose supplier was UNKNOWN at Stage-2 time (no template/logo hit — exactly
+        # the new/poorly-fingerprinted suppliers whose teaching matters most), _anchor_matches
+        # cannot admit that supplier's OWN positional anchors (a named-supplier positional
+        # anchor needs a supplier match; only IDENTITY anchors ride the type-match branch).
+        # When 2.5a then resolves the supplier from text, re-run anchor extraction over the
+        # DELTA OF ADMISSION — anchors admissible under the resolved supplier but NOT under
+        # None. By construction that delta is EXACTLY the resolved supplier's own named
+        # positional anchors: identity/global/__unknown__ anchors were already admitted under
+        # None (excluded), and a DIFFERENT named supplier's positional anchors fail under both
+        # (excluded) — so the rescue can never re-admit a cross-supplier positional read (the
+        # 2026-07-09 decision stands) and never touches identity fields. FILL-EMPTY-ONLY
+        # (an incumbent is never displaced) + confidence capped at _LATE_RESCUE_CAP 85: the
+        # supplier premise itself is a text-scan capped 85, and 85 < the 88 critical-field
+        # floor, so a rescued ref/date can never auto-file at any threshold; a blind
+        # (label-not-found) read keeps anchor.py's own 50 cap → needs_review. Fail-toward-
+        # review throughout. Guarded by tests/test_late_anchor_rescue.py.
+        # NAMED SEAM (Oracle, 2026-07-10) — A-over-B precedence inversion: a Stage-1 SEEDED
+        # free-text read (keyword@75) fills first, so fill-empty-only EXCLUDES that field
+        # from this delta and the ⊕-taught authoritative anchor never reads — on late-
+        # resolving docs the normal "teach displaces keyword" precedence is inverted until
+        # the supplier gains a template/logo. Fails toward Review (no-template docs are
+        # blocked sub-100 by docTrustGate), not silence. Follow-up option if it bites: let
+        # an authoritative LOCATED rescue read displace a plain seeded 'keyword' incumbent,
+        # mirroring is_taught_override — requires reusing the Stage-2 merge gates, not this
+        # fill-empty loop.
+        if (LATE_ANCHOR_RESCUE_ENABLED and anchors and page_images
+                and _late_rescue_applicable(_s2_supplier, supplier_name)):
+            # Delta tightened to SAME-TYPE anchors only (Oracle C4): a legacy NULL-type row
+            # would ride the supplier-match branch into the delta (no type conflict when the
+            # anchor carries no type) — excluded here so "delta = the resolved supplier's own
+            # SAME-TYPE positional anchors" holds exactly; fail direction = no rescue.
+            rescue_set = [a for a in anchors
+                          if (a.get("document_type") or "") == (document_slug or "")
+                          and anchor.anchor_admissible(a, supplier_name, document_slug)
+                          and not anchor.anchor_admissible(a, None, document_slug)
+                          and not (results.get(a.get("field_key")) or {}).get("value")]
+            if rescue_set:
+                _r_identity_labels = {(f.get('label') or '').strip().lower()
+                                      for f in field_defs if f.get('key') in _IDENTITY_FIELD_KEYS}
+                _r_identity_labels.discard('')
+                _r_on_reject = ((lambda fk, st, v, r: self._t(
+                    "anchor_reject", field=fk, method=st, value=v, reason=r))
+                    if self._trace else None)
+                try:
+                    rescue_results = anchor.extract_with_anchors(
+                        ocr_text, rescue_set, supplier_name, document_slug,
+                        page_images=page_images,
+                        field_patterns=field_patterns,
+                        validation_patterns=self.patterns.get("validation_patterns", {}),
+                        slice_capture=(self._capture_slice if (self._trace and self._slice_dir) else None),
+                        format_lookup=self._make_format_lookup(supplier_name, document_slug),
+                        page_transform=None,
+                        on_reject=_r_on_reject,
+                        page_text_lines=page_text_lines,
+                        text_field_keys=text_field_keys,
+                        multiline_lookup=self._make_multiline_lookup(supplier_name, document_slug),
+                        identity_labels=_r_identity_labels,
+                    ) or {}
+                except Exception as e:
+                    rescue_results = {}
+                    self.log(f"  Stage 2.6: late-anchor rescue failed ({e})", "warn")
+                self._remember_candidates('2.6_late_anchor', rescue_results)
+                rescued = 0
+                for key, data in rescue_results.items():
+                    if (results.get(key) or {}).get("value"):
+                        continue                      # fill-empty-only — never displace
+                    data = dict(data)
+                    data["confidence"] = min(int(data.get("confidence") or 0), _LATE_RESCUE_CAP)
+                    data["late_rescue"] = True        # provenance for trace; method string untouched
+                    results[key] = data
+                    rescued += 1
+                    self._t("late_anchor_rescue", field=key,
+                            value=str(data.get("value"))[:40], conf=data["confidence"])
+                if rescued:
+                    self.log(f"  Stage 2.6: {rescued} field(s) rescued from this supplier's "
+                             f"anchors (supplier resolved after Stage 2)")
 
         # ── Stage 2.5b: Apply supplier hints (fill missing fields only) ──────────
         # Hints only fill fields that keyword/anchor found NOTHING for.
@@ -2367,6 +2604,10 @@ class ExtractionEngine:
         # boost (which skips noted fields, so the cap can never be re-lifted) and the
         # overall-confidence/needs_review computation (so both see the cap).
         self._flag_recipient_caption_issuer(results, field_defs, supplier_name)
+        # Cross-field duplication guard (Slice 1) — after the recipient guard, BEFORE the
+        # identity rescue: a dup-capped keyword incumbent then satisfies the rescue's
+        # quality-failed precondition (gary P2's beneficial composition).
+        ExtractionEngine._flag_cross_field_duplication(results)
         # ── Identity rescue (slice 1; Oracle-signed 2026-07-10) ── AFTER the guard
         # (it overwrites the guard's note with its own provenance note when the
         # corroboration holds; no corroboration => the guard's behaviour survives
@@ -2448,18 +2689,21 @@ class ExtractionEngine:
             if identity_shadow:
                 results["_identity_shadow"] = _idv          # measurement path — records only
             if self._identity_conflict and _idv and _idv.get("conflict"):
-                # FLAG-ONLY: the letterhead reads a DIFFERENT known supplier than the pipeline
-                # resolved. Force review + an advisory note on the identity field. NEVER override
-                # the value, fill an empty one, or flag on abstain/agree.
+                # VARIANT ADOPTION first (2026-07-10 night): when the resolved supplier is a
+                # clipped fragment of the letterhead canonical AND the supplier field itself
+                # carries the fragment, adopt the canonical (capped + noted + review) — see
+                # _adopt_identity_variant. Every other conflict stays FLAG-ONLY below: never
+                # override the value, fill an empty one, or flag on abstain/agree.
                 results["_needs_review"] = True
-                for _idk in ("supplier_name", "customer_name"):
-                    _f = results.get(_idk)
-                    if isinstance(_f, dict) and _f.get("value"):
-                        _f["validation_note"] = (
-                            f"Letterhead may read “{_idv.get('text_led')}” — "
-                            f"detected “{_idv.get('resolved')}”. Please confirm the issuer.")
-                        _f["confidence"] = min(int(_f.get("confidence") or 100), 70)
-                        break
+                if not ExtractionEngine._adopt_identity_variant(results, _idv):
+                    for _idk in ("supplier_name", "customer_name"):
+                        _f = results.get(_idk)
+                        if isinstance(_f, dict) and _f.get("value"):
+                            _f["validation_note"] = (
+                                f"Letterhead may read “{_idv.get('text_led')}” — "
+                                f"detected “{_idv.get('resolved')}”. Please confirm the issuer.")
+                            _f["confidence"] = min(int(_f.get("confidence") or 100), 70)
+                            break
 
         # Final resolved value per field — the inspector marks any earlier
         # candidate whose value differs from this as a superseded intermediate.

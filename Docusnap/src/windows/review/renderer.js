@@ -1516,7 +1516,7 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   // flag never fires for it again — the explicit complement to the automatic "established after a
   // few confirmations" fallback. Only on the identity field; see accept-issuer IPC.
   const isIssuerFlag = !!note && !isApplied
-    && (key === 'supplier_name' || key === 'customer_name')
+    && key === 'supplier_name'          // RC2 (2026-07-10): identity = supplier_name ONLY; customer_name is a recipient
     && /letterhead may read|confirm the issuer/i.test(note);
   const issuerAcceptHtml = isIssuerFlag
     ? ` <button type="button" class="issuer-accept-btn" data-key="${key}" title="Confirm this really is the correct issuer, so Scan Finder stops flagging it — even though a different name appears in the letterhead. Applies to future documents from this issuer too.">✓ Issuer is correct</button>`
@@ -1538,7 +1538,7 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   row.dataset.key = key;
   // Plain-language gloss for the identity field — "Document Issuer" reads as ambiguous to
   // non-technical / non-native users (own company vs the other party). Spell out it's the SENDER.
-  const _issuerHint = (key === 'supplier_name' || key === 'customer_name')
+  const _issuerHint = (key === 'supplier_name')   // RC2: only the issuer gets the "sender" gloss; customer_name is the recipient
     ? ' title="The company the document is FROM — the sender who issued it (e.g. the supplier on an invoice). Not your own company."'
     : '';
   row.innerHTML = `
@@ -1772,7 +1772,11 @@ function validateConfirm() {
   // Required = the assigned date/ref roles PLUS any CUSTOM field flagged Required in the
   // Type Manager (fields.required) — minus the Document-Issuer identity, which is warn-only
   // (handled below). Only fields actually present on screen are gated.
-  const ISSUER_KEYS = ['supplier_name', 'customer_name'];
+  // Identity = supplier_name ONLY (RC2 unlink, 2026-07-10). customer_name is now an ordinary optional
+  // RECIPIENT field — do NOT re-add it here or the recipient re-couples to the issuer (it would mirror
+  // the issuer + teach position-only, the exact bug RC2 fixed). Pinned by test_focus_repair.js's sibling
+  // structural pins / the RC2 tests.
+  const ISSUER_KEYS = ['supplier_name'];
   const requiredKeys = new Set([dateKey, refKey]);
   for (const f of (dt?.fields || [])) {
     if (f.required && f.enabled !== 0 && !ISSUER_KEYS.includes(f.key)) requiredKeys.add(f.key);
@@ -1827,7 +1831,7 @@ function validateConfirm() {
 // The identity/Document-Issuer field key (supplier_name | customer_name) on screen
 // when it is BLANK; null when present-and-filled or the type has no issuer field.
 function issuerBlankKey() {
-  for (const key of ['supplier_name', 'customer_name']) {
+  for (const key of ['supplier_name']) {   // RC2: identity = supplier_name only
     const input = document.querySelector(`.field-input[data-key="${key}"]`);
     if (input) return input.value.trim() ? null : key;
   }
@@ -2009,6 +2013,7 @@ async function runZoneOcr(rect, fieldKey) {
         // double-rAF belt. Additive — the pointerdown repair stays as the fallback.
         try {
           input.focus();
+          window.docusnap.markFocusSuspect?.();   // arm suspect so the proactive edge does the real blurWebView (the pageHasFocus OR-fallback was removed — focusRepair.js)
           window.docusnap.ensureWindowFocus?.();
           window.repairModalInputFocus?.(input);
         } catch {}
@@ -2030,7 +2035,7 @@ async function runZoneOcr(rect, fieldKey) {
         // future doc) — downgrade to a clean position-only anchor, and skip the garbled readout.
         // The value correction still feeds learning; the supplier is identified by its logo /
         // keywords too. Reusable for every supplier/layout (not a one-document rule).
-        if (fieldKey === 'supplier_name' || fieldKey === 'customer_name') {
+        if (fieldKey === 'supplier_name') {   // RC2: only the ISSUER is a logo/position-only field; customer_name teaches like a normal captioned field
           if (pendingAnchors[fieldKey]) {
             // POSITION-ONLY means an EMPTY label (Oracle-signed, 2026-07-10) — staging the
             // field's DISPLAY NAME ("Document Issuer") here manufactured a PHANTOM label:
@@ -2262,6 +2267,8 @@ function labelOffsetFromBox(box, originDX, originDY, xNorm, yNorm, imgW, imgH) {
 // uses the exact same label-quality logic — they can no longer diverge. Thin delegates keep the
 // existing call sites unchanged.
 function nearestLeftCluster(words) { return window.AnchorLabel.nearestLeftCluster(words); }
+function nearestAboveRow(words) { return window.AnchorLabel.nearestAboveRow(words); }
+function nearestRowTo(words, centreY) { return window.AnchorLabel.nearestRowTo(words, centreY); }
 
 // The located label's box as page-normalised [x,y,w,h] (top-left), for the
 // "show the detected anchor" overlay. Same crop-origin math as labelOffsetFromBox.
@@ -2333,38 +2340,48 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
   // to the left only, 'below' = label above only; null = auto (left then above).
   if (forceDir !== 'below') try {
     const leftPad    = rect.x;   // full span from the page's left edge to the value box
+    // VERTICAL EXPANSION (oscar+007, 2026-07-10): the strip was exactly rect.h tall at the
+    // VALUE's y, so a bolder/slightly-higher caption ("SO #") had its ascenders DECAPITATED
+    // → OCR garble ('sok') → no label → position-only anchor. Centre-expand to 1.8× the box
+    // height (0.4h above + below, page-clamped); nearestRowTo below then keeps only the row
+    // nearest the value's centre, so a neighbouring row can't hijack the column pick.
+    const lVPad      = Math.round(rect.h * 0.4);
+    const lTop       = Math.max(0, rect.y - lVPad);
+    const lH         = Math.min(imgH - lTop, rect.h + 2 * lVPad);
     const leftCanvas = document.createElement('canvas');
     leftCanvas.width  = Math.round(leftPad * scaleX);
-    leftCanvas.height = Math.round(rect.h * scaleY);
+    leftCanvas.height = Math.round(lH * scaleY);
     if (leftCanvas.width > 10 && leftCanvas.height > 10) {
       const lCtx = leftCanvas.getContext('2d');
       lCtx.drawImage(
         docImg,
-        Math.round((rect.x - leftPad) * scaleX), Math.round(rect.y * scaleY),
+        Math.round((rect.x - leftPad) * scaleX), Math.round(lTop * scaleY),
         leftCanvas.width, leftCanvas.height,
         0, 0, leftCanvas.width, leftCanvas.height
       );
       const leftB64   = leftCanvas.toDataURL('image/png').split(',')[1];
       const leftRes   = await window.docusnap.ocrRegionBoxes?.(leftB64);
-      // Keep only the column nearest the value, not the whole row to the left — a wide
-      // key/value row OCRs as "label1 …gap… label2" and the far-left caption must not
-      // be glued onto the real adjacent one. Falls back to the full strip when word
+      // Row nearest the VALUE's centre first (crop px space), THEN the column nearest the
+      // value — a wide key/value row OCRs as "label1 …gap… label2" and the far-left caption
+      // must not be glued onto the real adjacent one. Falls back to the full strip when word
       // boxes aren't available (legacy region.py output).
-      const cluster   = nearestLeftCluster(leftRes && leftRes.words);
+      const lRowWords = nearestRowTo(leftRes && leftRes.words,
+                                     (rect.y + rect.h / 2 - lTop) * scaleY);
+      const cluster   = nearestLeftCluster(lRowWords || (leftRes && leftRes.words));
       const leftText  = (cluster ? cluster.text
                           : ((leftRes && leftRes.text) || (await window.docusnap.ocrRegion(leftB64)) || '')).trim();
       const leftBox   = cluster ? cluster.box : (leftRes && leftRes.box);
       const leftLabel = sanitizeAnchorLabel(extractLabel(leftText) || '');
       if (leftLabel) {
         // Drift-invariant offset: the located label's page position → value centre.
-        // Origin of the left crop in DISPLAY px is (rect.x - leftPad, rect.y).
-        const off = labelOffsetFromBox(leftBox, rect.x - leftPad, rect.y, xNorm, yNorm, imgW, imgH);
+        // Origin of the left crop in DISPLAY px is (rect.x - leftPad, lTop).
+        const off = labelOffsetFromBox(leftBox, rect.x - leftPad, lTop, xNorm, yNorm, imgW, imgH);
         // label_detected: this caption was OCR'd from the PAGE (not the field-name
         // fallback), so the backend must NOT drop it even if it equals the field key
         // (a "Make" field whose on-page label is literally "Make").
         pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: leftLabel, direction: 'right', ...off, label_detected: true };
         return { anchor_label: leftLabel, direction: 'right',
-                 normBox: labelNormBox(leftBox, rect.x - leftPad, rect.y, imgW, imgH) };
+                 normBox: labelNormBox(leftBox, rect.x - leftPad, lTop, imgW, imgH) };
       }
     }
   } catch (err) {
@@ -2372,11 +2389,20 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
   }
 
   if (forceDir !== 'right') try {
-    // Read ONLY the single line directly above the value, not a fixed 60px band that
-    // bled into ~2 rows (capturing the line above AND the one above that → garbled).
-    // Tie the strip height to the value box's own line height (rect.h), floored so a
-    // very thin draw still reads.
-    const abovePad    = Math.min(rect.y, Math.max(rect.h, 20));
+    // The strip must be TALL ENOUGH TO CONTAIN the caption line above: line spacing routinely
+    // exceeds the value box's own height (a spaced address block, a section heading), so the
+    // old one-line strip (max(rect.h,20)) caught only the caption's bottom pixel-tips + its
+    // underline — a sliver OCR hallucinated into junk ("Site / Customer" → "eee F WS CwE ewe",
+    // 2026-07-10). ~2.5 line-heights reaches a caption a full blank half-line away. The old
+    // fear of a tall band — gluing the row ABOVE the caption onto it — is handled downstream:
+    // nearestAboveRow keeps only the BOTTOM visual row of words (nearest the value).
+    // 0.1×h BOTTOM STANDOFF (oscar, 2026-07-10): the band ends just ABOVE the drawn box, so a
+    // draw whose top edge clips the value's ascenders can't leak ascender-tip junk into the
+    // band's bottom rows — nearestAboveRow would prefer exactly that lowest "row" over the real
+    // caption. Mirrors the teach wizard's standoff.
+    const standoff    = Math.max(1, Math.round(rect.h * 0.1));
+    const abovePad    = Math.max(0, Math.min(rect.y - standoff, Math.max(Math.round(rect.h * 2.5), 34)));
+    const aboveTop    = rect.y - standoff - abovePad;   // crop origin (display px) — used below for offsets
     const aboveCanvas = document.createElement('canvas');
     aboveCanvas.width  = Math.round(rect.w * scaleX);
     aboveCanvas.height = Math.round(abovePad * scaleY);
@@ -2384,24 +2410,30 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
       const aCtx = aboveCanvas.getContext('2d');
       aCtx.drawImage(
         docImg,
-        Math.round(rect.x * scaleX), Math.round((rect.y - abovePad) * scaleY),
+        Math.round(rect.x * scaleX), Math.round(aboveTop * scaleY),
         aboveCanvas.width, aboveCanvas.height,
         0, 0, aboveCanvas.width, aboveCanvas.height
       );
       const aboveB64   = aboveCanvas.toDataURL('image/png').split(',')[1];
       const aboveRes   = await window.docusnap.ocrRegionBoxes?.(aboveB64);
-      const aboveText  = ((aboveRes && aboveRes.text) || (await window.docusnap.ocrRegion(aboveB64)) || '').trim();
+      // Keep only the BOTTOM row of words — the caption nearest the value — so the taller
+      // band can't glue the row above the caption onto it. Falls back to the full strip
+      // text when word boxes aren't available (legacy region.py output).
+      const aboveRow   = nearestAboveRow(aboveRes && aboveRes.words);
+      const aboveText  = (aboveRow ? aboveRow.text
+                          : ((aboveRes && aboveRes.text) || (await window.docusnap.ocrRegion(aboveB64)) || '')).trim();
+      const aboveBox   = aboveRow ? aboveRow.box : (aboveRes && aboveRes.box);
       // "A value ABOVE is not a label": sanitizeAnchorLabel strips code/serial/number
       // tokens (a MAC, an IP, a reference, a date), so the above-strip yields a label
       // ONLY when it's a real caption — never the value sitting in the row above. This
       // stops the snap latching onto the MAC above instead of the label to the left.
       const aboveLabel = sanitizeAnchorLabel(extractLabel(aboveText) || '');
       if (aboveLabel) {
-        // Origin of the above crop in DISPLAY px is (rect.x, rect.y - abovePad).
-        const off = labelOffsetFromBox(aboveRes && aboveRes.box, rect.x, rect.y - abovePad, xNorm, yNorm, imgW, imgH);
+        // Origin of the above crop in DISPLAY px is (rect.x, aboveTop).
+        const off = labelOffsetFromBox(aboveBox, rect.x, aboveTop, xNorm, yNorm, imgW, imgH);
         pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: aboveLabel, direction: 'below', ...off, label_detected: true };
         return { anchor_label: aboveLabel, direction: 'below',
-                 normBox: labelNormBox(aboveRes && aboveRes.box, rect.x, rect.y - abovePad, imgW, imgH) };
+                 normBox: labelNormBox(aboveBox, rect.x, aboveTop, imgW, imgH) };
       }
     }
   } catch (err) {
@@ -2462,8 +2494,11 @@ function showAnchorReadout(detected, value) {
   } else {
     // The label is EDITABLE — an auto-detect off a noisy scan can be misread ("verial No."),
     // and a wrong label never re-locates. The operator can correct it here before Confirm.
+    // GARBLE is never displayed (product rule: never ask the user to vouch for junk they
+    // can't find on the page) — the input starts EMPTY (= position-only, already staged
+    // below) and the message says so plainly; typing the printed caption upgrades it.
     const lead = suspicious
-      ? '&#9888; This label looks misread — check it matches the caption on the page:'
+      ? '&#9888; Couldn&#39;t read the caption beside this value &mdash; anchored by position. Type it to anchor on text:'
       : `&#10003; Anchor (label ${isAbove ? 'above' : 'to the left'}):`;
     msg = `<span class="ar-msg">${lead} `
       + `<input class="ar-label-edit" spellcheck="false" title="The caption this field sits beside — edit if it was misread" `
@@ -2479,10 +2514,13 @@ function showAnchorReadout(detected, value) {
     + `<span class="ar-x" title="Dismiss">&times;</span>`;
   bar.style.display = '';
   // Populate + wire the editable label (value set via JS to avoid attribute-escaping issues).
+  // A SUSPICIOUS (garbled) read is never shown: the input starts EMPTY — a valid state that
+  // matches the position-only anchor staged above, not an error to fix — with a placeholder
+  // inviting the real caption. Typing one re-stages it via the change handler below.
   const lblInput = bar.querySelector('.ar-label-edit');
   if (lblInput) {
-    lblInput.value = detected.anchor_label || '';
-    lblInput.classList.toggle('bad', suspicious);   // flag it as needing a fix on load, not only after an edit
+    lblInput.value = suspicious ? '' : (detected.anchor_label || '');
+    if (suspicious) lblInput.placeholder = 'caption as printed (optional)';
     lblInput.addEventListener('change', () => {
       const fk = lastTeachCtx?.fieldKey;
       const cleaned = sanitizeAnchorLabel(lblInput.value);
@@ -2636,7 +2674,7 @@ async function confirmCurrentDoc({ bulk = false, expectId = null } = {}) {
   // and can't learn this sender. Warn-and-allow — a deliberate confirm in single mode;
   // in bulk it's "not cleanly ready", so the doc is left in the queue for review.
   {
-    const issuerKey = ['supplier_name', 'customer_name'].find(k => k in allValues);
+    const issuerKey = ['supplier_name'].find(k => k in allValues);   // RC2: identity = supplier_name only
     if (issuerKey && !(allValues[issuerKey] || '').trim()) {
       if (bulk) return { skipped: true, reason: 'issuer blank' };
       if (!confirm('Document Issuer is blank.\n\nThis document will be filed under "Unknown Company" and '
@@ -3542,53 +3580,11 @@ async function commitLhEdit(inp) {
   renderLearningHistory();
 }
 
-// "Fix likely slips": find values that differ from a strong per-position column consensus at
-// exactly ONE character, where that character is a likely OCR slip (a symbol where alnum is
-// expected, or a known confusion like $↔S / 0↔O / 1↔I) and the corrected value matches the
-// column's dominant shape or an existing value. Pure/data-driven — proposes, never auto-applies.
-const _OCR_PAIRS = new Set(['$S','5S','S5','0O','O0','0Q','Q0','1I','I1','1L','L1','8B','B8','6G','G6','2Z','Z2','7/','/7','€E','£E']);
-const _shapeSig = (s) => s.replace(/[0-9]/g, '#').replace(/[A-Za-z]/g, '@');
-function _likelySlip(from, to) {
-  if (!/[A-Za-z0-9]/.test(from)) return true;                 // a symbol where alnum is expected
-  return _OCR_PAIRS.has((from + to).toUpperCase());
-}
-function computeSlipFixes() {
-  // Vote WEIGHTED BY OCCURRENCE COUNT (`r.count` = "Times seen"), not one-per-distinct-value.
-  // Otherwise a value confirmed 31 times and a one-off OCR slip of it (e.g. "11O2…" vs "1102…")
-  // look like a 1-vs-1 tie: no position ever reaches the 80% consensus and the old `< 4 distinct
-  // values` gate bailed before voting at all. With counts, the 31x reading is the clear consensus
-  // and the 1x "O"→"0" slip is proposed.
-  const rows = _lhData
-    .filter(r => typeof r.value === 'string' && r.value.length)
-    .map(r => ({ value: r.value, count: Math.max(1, r.count || 1) }));
-  const totalCount = rows.reduce((s, r) => s + r.count, 0);
-  if (rows.length < 2 || totalCount < 4) return [];            // need ≥2 distinct + a real body of confirmations
-
-  const shapeCount = {};
-  rows.forEach(r => { const s = _shapeSig(r.value); shapeCount[s] = (shapeCount[s] || 0) + r.count; });
-  const domShape = Object.entries(shapeCount).sort((a, b) => b[1] - a[1])[0][0];
-  const valueSet = new Set(rows.map(r => r.value));
-  const out = [];
-  for (const r of rows) {
-    const v = r.value;
-    const diffs = [];
-    for (let i = 0; i < v.length; i++) {
-      const tally = {}; let total = 0;
-      for (const w of rows) {
-        if (w.value === v || w.value.length <= i) continue;
-        tally[w.value[i]] = (tally[w.value[i]] || 0) + w.count; total += w.count;   // weighted
-      }
-      if (total < 3) continue;
-      const [domChar, domN] = Object.entries(tally).sort((a, b) => b[1] - a[1])[0];
-      if (domN / total >= 0.8 && v[i] !== domChar && _likelySlip(v[i], domChar)) diffs.push({ i, to: domChar });
-    }
-    if (diffs.length === 1) {
-      const d = diffs[0], fixed = v.slice(0, d.i) + d.to + v.slice(d.i + 1);
-      if (fixed !== v && (_shapeSig(fixed) === domShape || valueSet.has(fixed))) out.push({ from: v, to: fixed });
-    }
-  }
-  return out;
-}
+// "Fix likely slips" proposer — moved to the shared pure module src/windows/shared/slipFix.js
+// (2026-07-11), which also carries the ORIENTATION VETO added after the live inversion incident
+// (a poisoned in-scope majority made the old majority-ward code rename the LEGIT values into
+// the poison). Loaded via <script> in index.html before this file; tested by
+// src/windows/shared/test_slip_fix.js.
 
 document.querySelectorAll('.lh-table th[data-sort]').forEach(th => th.addEventListener('click', () => {
   const k = th.dataset.sort;
@@ -3669,7 +3665,7 @@ document.getElementById('lh-anchors')?.addEventListener('click', async (e) => {
 
 document.getElementById('lh-fix').addEventListener('click', () => {
   const banner = document.getElementById('lh-proposals');
-  _lhProposals = computeSlipFixes();
+  _lhProposals = window.SlipFix.computeSlipFixes(_lhData);
   banner.style.display = 'block';
   if (!_lhProposals.length) {
     banner.innerHTML = 'No likely single-character slips found in this column.';

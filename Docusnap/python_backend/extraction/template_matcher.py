@@ -32,6 +32,14 @@ CALENDAR_WORDS = {
 }
 
 LOGO_THRESHOLD    = 13   # max hamming distance for logo match
+# Text-corroborated same-type template RESCUE (Phillip, 2026-07-10): when the logo drifts OUT of the
+# strict accept band (dist>6 -> conf<60) but a template of the DETECTED type has this much keyword-
+# branding overlap, use it — a drifted-logo, right-supplier, right-type doc should still match its OWN
+# template instead of getting NO template (and thus no field-fills). 0.80 > the 0.75 logoless floor
+# because a wrong rescue MISFILES; the logo band is a wider backstop against a look-alike letterhead
+# (unrelated 64-bit logos sit ~28-32 apart, so <=20 keeps an >=8-bit margin while admitting real drift).
+RESCUE_KEYWORD_OVERLAP = 0.80
+RESCUE_LOGO_BAND       = 20
 KEYWORD_THRESHOLD = 0.75 # min fraction of keywords that must be present
 # Templates whose logos land within this hamming of the closest match are
 # treated as the SAME-LOGO cluster — a supplier that issues several layouts
@@ -106,6 +114,27 @@ def identify_template(page_image, ocr_text: str, templates: list,
                     return None
                 return {'template': best_t, 'confidence': conf,
                         'method': method, 'logo_phash': logo_phash}
+
+    # 2b. TEXT-CORROBORATED, SAME-TYPE RESCUE (Phillip, 2026-07-10): the logo drifted OUT of the strict
+    #     accept band, but a template of the DETECTED type carries a strongly-overlapping keyword
+    #     fingerprint (= the same supplier's BRANDING — the fingerprint strips doc-type + recipient
+    #     words) and (if we have a logo) sits within a WIDER corroboration band (= not a different
+    #     supplier's letterhead). Prefer it over the slug-BLIND best-score keyword fallback below,
+    #     which picks an IDENTICAL-fingerprint sibling of the WRONG type and is then refused by the
+    #     title guard — leaving e.g. a drifted Meridian PO with NO template even though its own PO
+    #     template is right there. Precision-gated (same-type + >=0.80 branding overlap + logo band):
+    #     can ONLY turn "wrongly no template" into the CORRECT template, never a wrong one; any miss
+    #     falls through to the existing logoless path / review-to-teach.
+    if detected_slug and title_trusted:
+        _same_type = sorted(
+            ((t, _keyword_hit_ratio(t, ocr_lower)) for t in templates
+             if (t.get('document_type_slug') or '') == detected_slug),
+            key=lambda x: -x[1])
+        if _same_type and _same_type[0][1] >= RESCUE_KEYWORD_OVERLAP:
+            _cand = _same_type[0][0]
+            if logo_phash is None or _min_set_dist(_cand, logo_phash) <= RESCUE_LOGO_BAND:
+                return {'template': _cand, 'confidence': 60,
+                        'method': 'keywords+slug_rescue', 'logo_phash': logo_phash}
 
     # 2. Keyword fingerprint — fallback for docs without logos
     kw_match = _match_by_keywords(ocr_text, templates)
@@ -262,6 +291,15 @@ def _logo_candidates(page_image: Image.Image,
             cands.append((t, dist))
     cands.sort(key=lambda x: x[1])
     return phash, cands
+
+
+def _min_set_dist(template: dict, phash: str) -> int:
+    """Min Hamming from `phash` to any logo hash in the template's multi-ref set (or its legacy single
+    logo_phash); 99 when the template carries no logo hash. The wider corroboration backstop for the
+    same-type keyword rescue — guards against a different-supplier look-alike letterhead."""
+    hashes = template.get('logo_phashes') or ([template.get('logo_phash')] if template.get('logo_phash') else [])
+    dists = [_hamming(phash, h) for h in hashes if h]
+    return min(dists) if dists else 99
 
 
 def _keyword_hit_ratio(template: dict, ocr_lower: str) -> float:

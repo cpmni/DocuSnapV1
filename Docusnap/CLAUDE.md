@@ -17,9 +17,346 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/features.md` — first-run wizard, welcome tour, settings backup, Learning Repair, teaching wizard, dev inspector.
 - `docs/history.md` — resolved QA/audit findings + build-stage history (Settings/Review/Search/Stage-7 rebuilds).
 
-## Recent session changes (2026-07-09 → 07-10) — durable mechanisms now in the code
-Full narrative in `HANDOVER_2026-07-10.md` (overnight) + `HANDOVER_2026-07-10_DAYTIME.md` (daytime).
-All on branch `feat/doctype-title-aliases`; each has unit tests (+ real-doc E2E where noted).
+## Recent session changes (2026-07-09 → 07-11) — durable mechanisms now in the code
+**READ FIRST: `docs/handovers/HANDOVER_2026-07-11.md`** (morning wrap-up — the whole NIGHT batch is
+UNCOMMITTED on top of commit `e898009`; live DB at migration 45; slip-fixer incident + approved fix
+cycle). Fuller narratives: `…_2026-07-10_EVENING.md` (the evening batch underneath) + `…_2026-07-10.md`
+/ `…_DAYTIME.md`. Session write-ups were REORGANISED 2026-07-11 into `docs/handovers/` +
+`docs/night-reports/` + `docs/audits/` — old root paths in memories/handovers are stale by exactly
+that prefix. All on branch `feat/doctype-title-aliases`; each fix has unit tests (+ real-doc E2E
+where noted).
+
+### 2026-07-11 DAYTIME — slip-fixer FIXED+WIDENED · 5 designs Oracle-closed
+**READ: `docs/handovers/HANDOVER_2026-07-11_DAYTIME.md`** (full detail; this is the index).
+- **SHIPPED (uncommitted, tested):** (1) slip-fixer ORIENTATION VETO — proposer extracted to
+  `src/windows/shared/slipFix.js`; letter↔digit proposals need the candidate's own neighbour
+  classes to agree; manual ✎ renames deliberately veto-free; (2) fused-pair DELETION widening —
+  `S0O-51337`-class heals ONLY toward an exact learned witness + orientation. `test_slip_fix.js`
+  38/38 + live-DB sweep `stress_test/slipfix_sweep.js` PASS. NO corpus run BY DESIGN (zero
+  pipeline files). **Ban lifted** — but a Review window opened before the fix runs the OLD code
+  (reopen to load). (3) "Dated" added to order_date labels (`tests/test_date_labels.py` 7/7).
+- **5 DESIGNS CLOSED (Oracle SIGN OFF WITH CONDITIONS; build AFTER the batch commits, each its
+  own commit + corpus A/B) — the conditions live in `docs/designs/*_2026-07-11.md`:**
+  REREAD_ESCALATION (Stage-4.5 withheld ref → pixel re-read, ≤69+note; 9 conditions) ·
+  ACCEPTED_DEBRIS (Accept button on the trim flag; scoped issuer+doctype+field; C1 crosscheck
+  rail blocking) · DIRECTION_SUPREMACY (c2 ownership guard + G3b known-caption guard
+  customer-side + D1 teach label-pick; D2 sweep-guard = DO NOTHING; builder traps recorded) ·
+  CROP_GEOMETRY (read-time snap-to-glyph retry INTRUSION-only + teach-time box snap).
+- **Recorded seams/follow-ups** (detail in the handover + design docs): qualification-withhold ×
+  reprocess-merge keeps stale pre-gating junk unflagged; crosscheck side-pick prefers label-side
+  debris over agreeing crop+keyword (doc 2378 repro); Stage-2.5d can reproduce the inversion on
+  poisoned constant-code dominants; read-time witness-deletion rung (user-proposed companion to
+  the re-read). Live wins: Bramble learning clean; customer anchor #158 re-taught, generalizing.
+
+### 2026-07-11 MORNING — "Fix likely slips" INVERTED live (tool defect; fix cycle APPROVED)
+- The Learning-History slip-fixer (`computeSlipFixes`, review renderer → `renameFieldValue`) is
+  COUNT-BLIND: it renames toward the ≥80% in-scope column consensus, with no orientation guard on
+  symmetric confusion pairs (0↔O/$↔S/1↔I). On (Bramble & Finch, sales_order, sales_order_number)
+  the majority was itself the poisoned ZERO form (3 mis-confirmed `S0-…` docs), so it renamed the
+  two LEGIT values majority-ward: 1879 `SO-66820`→`S0-66820`, 1886 `SO-27481`→`S0-27481`. Blast
+  radius = learning tables only (extractions/corrections/hints; `documents.reference_number` +
+  filed files untouched — the filenames PROVED the inversion). Undo = five ✎ renames toward `SO-`
+  (66820/27481/55005/51337/33736; each also drops the stale hint) — VERIFY landed before touching
+  learning. **"Fix likely slips" ban LIFTED — fix SHIPPED 2026-07-11 daytime (block above); safe
+  once the Review window is reopened on the new code** (an already-open window runs the old
+  proposer). (The NIGHT++++ note + gt_overrides 1880 `why` used to say the opposite — corrected.)
+  **USER APPROVED the fix cycle ("yes, run it") — first job next session, don't re-ask:** gary+
+  reggie design → Oracle last; smallest slice = block wrong-ward proposals (alpha-prefix
+  letter-prior, cross-supplier/doc-type-wide consensus agreement, filename confirm-time record;
+  propose NOTHING rather than invert); pin the inversion scenario in a test. Design brief in
+  `docs/handovers/HANDOVER_2026-07-11.md`.
+
+### 2026-07-10 NIGHT++++ — SLICE 1 BUILT ANYWAY (explicit USER POLICY OVERRIDE of the gate)
+- The owner overrode the Slice-0 do-nothing gate ("belt-and-braces over conditional deployment"),
+  so the runtime guard SHIPPED: `value_quality.contains_structured_sibling` (pure predicate —
+  whole-value token-bounded containment on normalise_for_tokens forms, sibling len≥5 + ≥1 digit;
+  kills the year/pure-alpha/mid-token classes) + `engine._flag_cross_field_duplication` at the
+  post-merge guard seam (after the recipient guard, BEFORE identity rescue — gary's composition).
+  HOLD-ONLY: name-like non-exempt (manual/template_fixed*/keyword_override) field whose value
+  contains an UN-NOTED ≥80-conf non-name sibling's whole value → cap ≤69 + note + needs_review;
+  value never touched; an existing wordness note is preserved (cap still applies). The SWEEP now
+  IMPORTS the same predicate (offline regression twin; post-refactor re-run reproduces 1 hit /
+  0 silent exactly). Tests: `test_cross_field_duplication.py` (incl. the PINNED trade-off: a legit
+  "Name REF" compound layout flags every doc until a slice-2 evidence exemption) + six neighbour
+  suites green. **Oracle: SIGN OFF WITH CONDITIONS** — seams verified (dup-cap→rescue composition
+  REAL; boost-skip intended; conflict-note overwrite lossy-but-safe; no renderer accept-button
+  leakage; auto-file TRIPLE-LOCKED incl. at-100). A2 APPLIED same night: the helper's
+  `_needs_review` set was DEAD code (the pipeline reassigns unconditionally) — removed; 69<70
+  threshold + the note ARE the routing (test reworked to assert the real mechanism + pin
+  no-dead-set). REMAINING CONDITIONS: (1) corpus A/B overnight (M=0, zero per-field drop,
+  flag-delta eyeball — esp. address⊃postcode / ship_to⊃PO classes); (2) FAST-FOLLOW: pass
+  accepted_names/accepted_issuers into the guard (the ONLY name guard ignoring the operator
+  allowlists — a compound-layout install has no in-product escape until then; workaround: type
+  the value = manual exempt, or re-teach excluding the ref); (3) slice-2 notes: evidence
+  exemption, label-aware name-likeness (key-only today — a `field_7` labelled "Customer Name"
+  is invisible). READ THE CORPUS OUTPUT BEFORE COMMIT.
+- **✅ TRIAGED 2026-07-11 morning — the RED was GT-NULL POISONING, not a code regression.**
+  #1777/#1786/#1788 are AW_sal_* Ashford Wholesale sales orders CONFIRMED WITHOUT AN ISSUER in the
+  early testing era (filed under `Unknown-Company\` on disk — the stored paths prove it; 1777's
+  letterhead was read as 'Ashford Wholesale' in the 07-10 probes). The pipeline NOW resolves the
+  correct supplier; the harness scored the right answer against a null answer key. The +5
+  regressions account EXACTLY: these 3 supplier rows + doc #1778's known ref/date pair. REMEDY per
+  house convention: `gt_overrides.json` gained the 3 entries (NEW `poisoned_supplier` support in the
+  harness applier — `""` means "DB issuer must STILL be null", self-validated + fname-pinned;
+  non-destructive). Corpus RELAUNCHED with overrides — expect M back to the known Cloudpeak 4.
+  OPTIONAL user cleanup: re-file the 3 docs to Ashford in-app (edit-in-place), then REMOVE the
+  entries per the file's convention. (Superseded RED note below kept for the record.)
+  **RERUN RESULT (07-11 morning): supplier 99.9% (the 3 Ashford rows now score correct), all 10
+  overrides applied / 0 skipped, M=5 = the known Cloudpeak 4 + #1880 (BF_sal_24)** — triaged:
+  DUAL cause: (a) GT mis-confirmed 'S0-51337' with a ZERO (the 0/O slip class; true SO-51337 per
+  the sibling pattern; gt_override ADDED — the doc stays a VISIBLE regression since the
+  pipeline's own read 'S0O-51337'@90/keyword is also imperfect on this rough scan — honest and
+  intended); (b) the read itself = the SAME class as the Cloudpeak 4 (high-conf keyword ref
+  misread on a rough scan clearing the 88 floor) — FOLDED into that standing triage item.
+  Tonight's guards are NON-CAUSAL for the read (shipped 'Order Number' label, pre-existing; the
+  new guards only push review-ward; the current-tree faithful run lands the doc review=TRUE —
+  the fail-safe holds live; the harness M is eligibility-boundary jitter via the customer
+  field's read). ⚠ The remediation originally queued here ("Fix likely slips, S0→SO") MISFIRED
+  2026-07-11 — the tool renamed majority-ward INTO the poison; see the 2026-07-11 MORNING block.
+  Remediation is now the five manual ✎ renames + re-confirm 1880.
+- **⚠ OVERNIGHT CORPUS RESULT (2026-07-10 ~23:30): RED — DO NOT COMMIT UNTIL TRIAGED.** Corpus
+  2,106→2,253 (evening confirms). Regressions 29→34 (24→28 silent); ref 99.2→98.9; supplier/date
+  held/up. **M = 8**: the four KNOWN pre-existing Cloudpeak refs (#2068/70/74/82, kill-switch-proven
+  non-causal earlier) **+ THREE NEW: #1777/#1786/#1788 — all sales_order, all wrong on SUPPLIER,
+  all OLD docs that were clean in the previous run.** The variant-adopt slice CANNOT be the cause
+  in-harness (realdoc's snap() never passes --identity-conflict → the conflict block never runs
+  there) — suspects: the C2 weak-core locate exception (anchor.py — NO kill switch), the name-lock
+  Layers A/B, or GT drift from the evening's rapid confirms. **MORNING TRIAGE (before commit):**
+  per-doc A/B of #1777/#1786/#1788 supplier reads — working tree vs `git show HEAD:` copies of
+  anchor.py (the ab_offenders.py pattern in the session scratchpad; swap the file, rerun the doc,
+  diff supplier value/method) → if C2/Layers causal, fix-or-gate before commit; if GT drift,
+  annotate like the City Office class. Also eyeball the +5 regressions + the ref dip against the
+  new-doc population (Cloudpeak-class growth). The duplication guard is FLAG-ONLY and cannot
+  change values (any value delta from it = a bug — Oracle).
+
+### 2026-07-10 NIGHT+++ — cross-field duplication guard: SLICE-0 GATE SAID DO-NOTHING (superseded by the override above; the sweep + gate reasoning remain the record)
+- The KO_wor_41 class (a wandered relocate committing a SIBLING structured field's value into a
+  name-like field: customer="Reference 'WS703182" while reference_number=WS703182@95). Bob+gary
+  designed a two-slice guard; **Slice 0 (the decision gate) ran 2026-07-10 night**:
+  `stress_test/crossfield_sweep.py` (READ-ONLY, permanent tool — re-run on the next sighting)
+  swept 2,360 docs / 7,261 extraction rows with the exact Slice-1 predicate (name-like target
+  non-manual; sibling non-name-like, normalised len≥5, ≥1 digit, conf≥80, un-noted; whole-value
+  token-boundary containment on normalise_for_tokens forms). RESULT: **1 hit in the entire
+  corpus — KO_wor_41 itself — already noted by wordness. Silent residual = 0 → documented
+  DO-NOTHING**; wordness's live coverage of this class is currently complete. Slice 1 (pure
+  predicate in value_quality.py + flag-only cap≤69+note beside the engine ~2547 guard seam,
+  digit/boundary/method-exemption FP rules, the pinned compound-layout nag trade-off) stays a
+  READY DESIGN in gary's 2026-07-10 feasibility report — build it ONLY when the sweep shows a
+  silent hit (his named structural risk: wordness self-disables on scopes whose confirmed
+  history went code-like, so re-run the sweep if a scope's wordness goes quiet). Related
+  later slices (own Oracle passes): same-field variant preference (sighting 2), relocate
+  geometry (007-led, evidence-first).
+
+### 2026-07-10 NIGHT++ — focus repair COMPLETED (the "no caret but typing works" cure)
+- **Root cause (eric, telemetry-proven)**: the repair edge was ASYMMETRIC — `blurWebView()` is
+  WIDGET-level and its focus-DROP always lands; `wc.focus()` is VIEW-level and EARLY-OUTS with no
+  renderer message when aura focus never moved (window stayed OS-focused — true in every broken
+  press: 17-run telemetry `suspect=false pageHasFocus=false winFocused=true wcFocused=true`). So
+  every edge was a NET page-focus drop: Blink `focused_` stuck FALSE → no caret/:focus/hasFocus,
+  keys still route to activeElement (typing works). Explains BOTH the original "broken everywhere"
+  era AND the milder stranded state. TWO stale polarities: post-dialog renderer hasFocus() lies
+  TRUE (suspect-arming catches it); post-child-close it's truthfully FALSE (only a renderer-read
+  can catch it) — both needed.
+- **Fixes (focusRepair.js + preload + main; test_focus_repair.js extended, all green)**:
+  (1) THE RESTORE HALF — `blurWebView(); focusOnWebView(); wc.focus()` (focusOnWebView =
+  documented widget-level counterpart, RenderWidgetHost::Focus, ZERO OS activation — the
+  win.blur/win.focus storm invariant holds); edge gated on `win.isFocused()` (a proactive draw
+  edge must never stamp page focus onto a background window); returns {edgeRan} (IPC reply +
+  telemetry `forceEdge=` added). (2) forceEdge — the preload's (C) one-shot re-issue (fires ONLY
+  after an invoke-ordered repair + double-rAF STILL measures hasFocus()===false; unreachable from
+  a healthy click; capped at one) now sends `forceEdge:true` which the edge honours — the old
+  payload was deliberately ignored, leaving the self-heal TOOTHLESS (the latent revision bug).
+  PINNED: pageHasFocus alone NEVER fires the edge (the at-rest OR-fallback stays dead); first-pass
+  payload never carries forceEdge. (3) CHILD-CLOSE ARMING — browser-window-created hook:
+  `win.on('close') → getParentWindow().__focusSuspect = true` (dropdown pin safe: <select> popups
+  aren't BrowserWindows). REJECTED by eric: caret nudges (setSelectionRange/el.blur+focus — wrong
+  layer, page-focus bit is the gate), wc.isFocused() gating (truthful for key routing, blind to
+  the renderer bit), draw-path send→invoke (FIFO ordering + self-sufficient edge). NEEDS RESTART.
+  **Oracle: SIGN OFF WITH CONDITIONS (applied)** — his headline: the restore half RETRO-FIXES the
+  morning's own armed heals (all three arm sites ran blur-only NET-DROP edges — how the runs were
+  manufactured); F3 child-close arming is safe ONLY because of F1 (both pinned together). C1
+  comment fix applied (help/license are PARENTLESS → never arm; covered by (C) forceEdge).
+  ⚠ FAST-FOLLOW (Oracle C3, non-blocking): the dialog wrap is REVIEW-ONLY — 44 native
+  confirm()/alert() sites elsewhere (34 in Settings) leave stale-TRUE desyncs unarmed. The wrap
+  CANNOT move to the preload (contextIsolation: overriding window.confirm there wraps the
+  ISOLATED world's copy — page code never calls it; it would silently do nothing) — replicate
+  the review renderer's 6-line IIFE via a shared MAIN-WORLD script per window. Optional
+  hardening (recorded, not built): conditional __focusSuspect clear on edgeRan. Manual gate
+  (A-F scenarios) required before commit+build.
+
+### 2026-07-10 NIGHT+ — template NAME-HEAL widened (the postcode-named-template report)
+- A template born at a supplier's FIRST confirm is NAMED from whatever sat in the Document-Issuer
+  field (by design, `_upsertTemplate`; slug derived + frozen) — a wrong first detection birthed
+  `name='BT23 1BE'` (slug bt23_1be, later hand-renamed 'Pinnacle') and `name='Ref'` (4 confirms).
+  The old heal renamed only still-GENERIC "<Type> Template" names. NOW: `templates.
+  shouldAdoptIssuerName(current, issuer)` (pure, exported) — a later confirm's PLAUSIBLE issuer
+  (learning.isPlausibleSupplierName, and never a postcode) is adopted when the current name is
+  generic OR shape-implausible ("IN"/"36552") OR a UK POSTCODE (regex twin of validation_patterns.
+  postcode_uk — postcodes PASS the plausibility shape test, hence the extra rule) OR a single bare
+  DOCUMENT-CAPTION word (Ref/Invoice/Total/… frozen set). A plausible hand-given/adopted name is
+  NEVER touched (no flip-flop); documented residual: a hand-named ≤3-char ALL-CAPS brand ('DHL')
+  re-adopts the issuer (cosmetic; pinned). Wired in review/handler `_upsertTemplate` reuse branch.
+  `test_template_name_heal.js`. Template 20 ('Ref') self-heals on its next confirm. ALSO REPAIRED:
+  `test_supplier_identity_persistence.js` fixture lacked the `extractions` table the EVENING
+  confirm-upsert now writes (pre-existing break since that batch, crashed on require) — table added.
+
+### 2026-07-10 NIGHT — Sales-Order anchor/label geometry (MP_sal_35 'Sso'@91 + "SO #" captions)
+- **Diagnosed on the real scan (trace-proven), 3 axes**: (1) the ⊕ LEFT label strip was exactly rect.h
+  tall at the VALUE's y — a bolder/higher caption ("SO #") got DECAPITATED → 'sok' → extractLabel's
+  ≤3-char reject → position-only teach (the vertical twin of the above-band bug); (2) short captions
+  structurally locked out (sanitize stripped '#' → weak 2-char "SO" label; ≤3 tails rejected);
+  (3) THE INVERSION: the taught below-anchor's label-lock INLINE HARVEST is CROSS-COLUMN by
+  construction (007) — rigid crop read the CORRECT 'Formby & Sons', rejected off_row_drift; the
+  harvested junk 'Sso#' cleared every gate (single-token skips the multi-word name gate; '#' pushed
+  name_quality to 1.0; ocr_conf NULLED on relocate paths → OCR cap blind; synthetic conf 87-92 has no
+  quality term; wordness missed by 0.16 logprob) → committed @91 UNFLAGGED. DPI theory half-disproven
+  by probe: tight 108-DPI crops read clean; 300-DPI source = robustness margin only (deferred design).
+- **Fixes (oscar+007+reggie designed, gary consolidation-reviewed)**: LEFT strip centre-expanded 1.8×
+  (review captureAnchorContext + teach autoLabel) + shared `nearestRowTo` row-pick (anchorLabel.js
+  `_groupRows` refactor shared with nearestAboveRow) so a neighbour row can't hijack the column pick;
+  SHORT_CAPTION allowlist in extractLabel (closed class [SP]/?O|[SP]\.O\.?|REF|NO + one [.#:], glued
+  'SO#'→'SO #' normalised — spaced locates 1.0 vs SOLD-TO 0.5, glued fuzzy-TIES 0.667 both) +
+  sanitize keeps a STANDALONE '#' — landed in BOTH twins (anchorLabel.js + learning.js — divergence
+  re-strips AND NULLS the drift offset; pinned in test_anchor_phantom_display_label.js) + 9 shipped
+  S/O-S.O.-"SO #" sales_order_number labels (longest-first!) + `_label_score` boundary guards made
+  conditional on alnum needle edges ('#'-terminal needles match glued values). **anchor.py NAME-GUARD
+  Layers A+B** (`_name_junk_shaped`: key-only is_name_like_field, judged on the NON-ALNUM-STRIPPED
+  form, single-token <4 letters or name_quality<0.5): A = the label-lock replacement keeps a
+  multi-word name-quality rigid over a junk-shaped candidate (reject event
+  `name_guard_junk_candidate`), B = relocated/inline junk-name commits capped ≤70; both flag via
+  `_relocate_guard_note` (SEPARATE slot from _xcheck_note — the crosscheck can flip the value; never
+  overwrites a method note). off_row_drift untouched; the 2026-07-06 drift-fix class pinned
+  replaceable; DELIBERATE residual: ≤3-alpha brands ('IBM') flag on wandered reads (accepted-names
+  doesn't reach anchor.py yet — future plumbing). Composes with Stage-2.6 rescue (min-cap keeps
+  70+note; pinned in test_late_anchor_rescue.py §4c).
+- **E2E MP_sal_35**: BEFORE customer_name='Sso'@91 unflagged + SO number ABSENT → AFTER
+  customer_name='Formby & Sons'@70+note (beats the keyword interleave artifact "SO #"@83) +
+  sales_order_number filled @88 review-bound. Siblings: MP_sal_36 clean 'Antrim Coast Hotels'@90
+  (guard costless when clean) + SO@88; MP_sal_03 kept-rigid@70+note + SO@88; AW_sal_07 (other
+  supplier) imperfect reads capped 69/70 → review, never silent. Strip probe: old geometry → no
+  label; new → 'so #'. Tests: test_anchor_name_lock_guard.py (junk shapes + BOTH trade-off pins) +
+  test_so_number_labels.py + test_anchor_label.js §nearestRowTo/SHORT_CAPTION/sanitize# +
+  phantom-label test premise moved customer_name→supplier_name (STALE after migration 44 — the 2 BADs
+  were PRE-EXISTING, proven vs HEAD). Full battery green. DEFERRED designs recorded: 300-DPI teach
+  crop source (--source-dpi + sliver-gate scaling 5px@108≡14px@300 + crop_norm box space, gated
+  image-only via born_digital.assess_page); '↓ Below' readout toggle (+ runAnchorDraw dcy>0
+  misclassify fix); min(native,300).
+- **Oracle verdict: SIGN OFF WITH CONDITIONS — ALL THREE CLOSED.** C1 corpus A/B: regressions
+  29/24-silent (one BETTER than the pre-fix run), per-field supplier 99.8/ref 99.2/date 99.6
+  (identical; sales_order_number scores inside the type's ref role; customer_name NOT
+  corpus-scored — its evidence is the 4-doc E2E), M=4 = the SAME pre-existing Cloudpeak set
+  (kill-switch-proven non-causal; open triage). C2 IMPLEMENTED: `_is_blind_cross_supplier_anchor`
+  weak-core exception — a locate via a ≤3-alpha-core caption ("No."/"Ref"/"SO #") does NOT count
+  as "same layout" for a NAMED different supplier (falls to the blind drop); same-supplier /
+  global / ≥4-core byte-identical; the suite's two LOCATED-KEEP pins were moved off the
+  placeholder 'x' label onto realistic captions (intent preserved); 5 new C2 rows; ZERO stored
+  anchors have weak-core labels → the completed corpus run certifies the final code. C3 RECORDED:
+  **the 88 critical floor passes conf==88 BY DESIGN** (trust.js blocks only c < 88, pinned in
+  test_scope_trust.js — do NOT "fix" the comparator, it would over-hold clean 88/90 base reads);
+  the pattern-valid slipped-ref class ('SO'→'50' @88) is carried by Stage-4.5 learned-shape
+  gating + docTrustGate + overall/notes, NOT the floor (doc 2204 was stopped twice: overall 58 +
+  the name-guard note). Oracle also corrected one evidence line: 'Formby & Sons'@70 beats
+  keyword@83 via TAUGHT-anchor precedence (Tier-A), not confidence — a PASSIVE anchor would lose
+  that merge to the interleave artifact (pre-existing keyword exposure, documented, not new).
+
+### 2026-07-10 LATE EVENING — custom FREE-TEXT fields first-class (RC1 slice 2 + the ordering seam)
+- **Diagnosed on MP_wor_48 (Worksheet `customer` "Not found" forever, reprocess included), 3 stacked
+  causes**: (1) free-text custom fields never Stage-1-seeded (slice-1 gap, by design); (2) THE ORDERING
+  SEAM — on a late-resolving doc (no template/logo match) Stage 2 runs with supplier=None and
+  `_anchor_matches` cannot admit that supplier's OWN POSITIONAL anchors (only identity anchors ride the
+  type-match branch — gary corrected the initial blind-drop theory: it's the FILTER), supplier resolves
+  at 2.5a but anchors never re-ran — so teaching was ignored exactly where it matters most; (3) the 3
+  pre-geometry-fix CUSTOMER anchors carry GARBLED labels ('ie), Oo Sp' slips labelLooksSuspicious — all
+  tokens <4 alpha). Hints correctly skip multi-valued customer (variability guard, unchanged).
+- **Fix A — free-text seeding** (`keyword.seed_field_labels` party branch, kill switch
+  `SEED_FREE_TEXT_ENABLED`): a custom text field seeds its OWN DB label only (len≥3, SAME-TYPE sibling
+  label dedupe so customer_name+customer on one type can't double-fill; global bank alone never blocks),
+  base 75 (< ref/date's 80 < the 88 floor, > the 70 review threshold), method plain 'keyword',
+  role_caption='party' arming reggie's guards in `_search_for_label`: G1 `_party_caption_conflict`
+  (follow-word stop: ref/no/order/po/copy/signature/services… — "Customer Ref 4118"/"CUSTOMER COPY"
+  never fill; 4-space column break after the label = another column's caption, NOT a conflict), G2
+  compound-tail ("Customer / Site" remainder never a value), G3 `_is_caption_fragment` (a candidate
+  VALUE that is itself a caption fragment — "Reference No.", bare "Name" — is skipped; fixes the
+  COLUMN-INTERLEAVE where the line after 'Site / Customer' in reading order is the ref row and the true
+  value 'Formby & Sons' is one further). Shipped patterns byte-identical (party-gated).
+- **Fix B — Stage 2.6 LATE-ANCHOR RESCUE** (`engine.py`, kill switch `LATE_ANCHOR_RESCUE_ENABLED`,
+  pure gate `_late_rescue_applicable` + `anchor.anchor_admissible` public wrapper): when the supplier
+  was UNRESOLVED at Stage-2 time and is plausibly resolved after (2.5a text scan, or the post-Stage-2
+  promotion of a Stage-1 keyword identity — same seam), re-run anchor extraction over the DELTA OF
+  ADMISSION (admissible under resolved supplier, NOT under None) = provably ONLY that supplier's own
+  named positional anchors (identity/global already admitted; foreign fails both) → can never re-admit
+  the 2026-07-09-banned cross-supplier positional reads. FILL-EMPTY-ONLY, conf ≤ _LATE_RESCUE_CAP 85
+  (the text-scan premise's own cap; < 88 critical floor), blind reads keep anchor.py's 50 cap → review;
+  method string untouched + `late_rescue` marker. Stage-0-resolved docs byte-identical (gate).
+  Post-rescue the 3 garbled anchors self-serve as positional reads @50 → NO cleanup migration (gary D3:
+  blanking ≡ same path; re-teach per scope upgrades to located reads — saveAnchor sweep is
+  SUPPLIER-scoped, learning.js:434, contra the older "across all suppliers" note above).
+- **Oracle verdict: SIGN OFF WITH CONDITIONS (all code conditions APPLIED + re-tested)**: C2 the
+  "75 keeps the doc off exactly-100" rationale was FALSE (optional fields often UNCOUNTED in
+  overall_confidence; a counted-EMPTY field scored 0, so a fill RAISES overall — the real rails are the
+  at-100 freetext-skip class + review routing + the 88 critical floor; comment corrected); C3
+  `_PARTY_FOLLOW_STOP` += site/address/tel/telephone/phone/fax/email/mobile/web/website ("Customer Site
+  Address" now fail-empty); C4 rescue delta tightened to SAME-TYPE anchors (legacy NULL-type rows out),
+  the A-over-B PRECEDENCE INVERSION named in the Stage-2.6 comment (a seeded keyword@75 fill excludes
+  the field from the delta, so on late docs a ⊕ teach can't displace a wrong seeded read until the
+  supplier gains a template/logo — fails toward review; follow-up option documented), gate docstring
+  widened (any results['supplier_name'] promotion arms it). C1 PENDING: read the corpus REPORT incl.
+  at-100/auto-file churn (filled fields LIFT overall — check no doc newly crosses into auto-file with a
+  wrong seeded/rescued value). C5: state plainly whether corpus GT covers custom `customer`.
+- **E2E on the real doc**: seeded path `customer='Formby & Sons' @75 keyword` (overall 82 → review);
+  rescue path (seeding off) `@50 anchor_crop late_rescue` → review. Tests:
+  `test_custom_field_seeding.py` (slice-1 "customer NOT seeded" pin DELIBERATELY flipped; full G1/G2/G3
+  battery + T-real interleave + dedupe + kill switch) + NEW `test_late_anchor_rescue.py` (delta
+  invariants, fill-empty-only, caps, gate pins, kill switch). All 8 anchor/identity/guard/rescue suites
+  green. **Corpus gate (C1) RESULT**: corpus 1838→2098 (tonight's confirms); regressions 30/25-silent
+  = BASELINE-IDENTICAL (zero new); per-field supplier 99.8%→99.8%, ref 99.2%→99.2%, date 99.4%→99.6%
+  (improved); no auto-file churn (96.6%→96.5%). **M=4 — ALL PROVEN NON-CAUSAL** (per-doc kill-switch
+  A/B: ON==OFF byte-identical): a PRE-EXISTING weakness surfaced by NEW DATA — Cloudpeak Systems
+  (first confirmed TODAY), invoices carrying BOTH an invoice# and a PO#, scanned-digit misreads at 95
+  keyword conf (> the 88 floor) → #2068/70/74/82 would-auto-file wrong ref; #2074's GT itself looks
+  mis-confirmed ('PO755' vs printed '1947063' — the #404 class). ⚠ OPEN FOLLOW-UP (not this change):
+  triage tonight's Cloudpeak confirms (Learning Repair / re-confirm) + a reggie pass on the
+  invoice#-vs-PO# candidate ambiguity; until then a future Cloudpeak invoice CAN auto-file a wrong ref
+  (pre-existing exposure). C5 (honesty): the harness scores supplier/ref/date/total ONLY — `customer`
+  is NOT corpus-scored; the seeded field's accuracy evidence = the MP_wor_48 E2E (both paths, correct
+  value, review-bound) + the unit battery + review routing.
+
+### 2026-07-10 EVENING (UNCOMMITTED at handover — details/conditions in the EVENING handover)
+- **Focus REVISED**: the systemic cure's `pageHasFocus===false` OR-fallback made `blurWebView` (the app's
+  ONLY page-focus dropper) fire on ~half of clicks → SELF-PERPETUATED the desync ("broken everywhere").
+  Now SUSPECT-ONLY (armed: native dialog / post-Confirm / runZoneOcr draw); the preload `focusin`
+  secondary from `4d2de72` is REVERTED. Child-window-close arm SHIPPED NIGHT++ (see below, with
+  the focusOnWebView restore half that made it safe). `test_focus_repair.js`.
+- **RC2 UNLINK (migrations 44+45)**: `COMPANY_KEYS=['supplier_name']` — customer_name is an ordinary
+  OPTIONAL recipient field everywhere; 44 reshapes existing types (SCHEMA-ONLY), 45 purges stale
+  issuer-as-customer hints/anchors (keeps legit recipients); review renderer decoupled (6 ISSUER_KEYS
+  sites). `test_migration_customer_unlink.js` + `test_migration_customer_hint_cleanup.js`.
+- **Reprocess keeps the template** (`process_docs.py`): the machine-authority override no longer clears
+  `_kt`; an `authoritative` guard stops a resurrected template re-asserting its stale type.
+- **Template RESCUE** (`template_matcher.py`): a drifted-logo doc still matches its own SAME-TYPE template
+  on ≥0.80 keyword-branding overlap + logo band ≤20 → `keywords+slug_rescue` @60 (Meridian 3-fragment case).
+- **`region.py _strip_horizontal_rules`**: gated underline/rule removal before the light rung (underlined
+  captions garbled at the 108-DPI teach preview). **`po_number`** labels: + "P/O …"/"P.O. …" forms.
+  ⚠ **SUPERSEDED DIAGNOSIS (2026-07-10 late evening)** — the LIVE garble ("eee F WS CwE ewe") was NOT
+  underline fusion: the ⊕ ABOVE-strip (one value-box height) CLIPPED the caption to its bottom 2-4px
+  (line spacing > box height) and OCR HALLUCINATED words from the sliver. THREE-LAYER FIX, oscar-vetted,
+  proven on MP_wor_47 + 4 more docs/2 suppliers (probe: true captions 2→8, empties 3→0): (1) GEOMETRY —
+  above band = 2.5 line-heights (floor 34px) with a 0.1h bottom STANDOFF, BOTH surfaces (review
+  captureAnchorContext + teach autoLabel, teach floor 0.028 page-height); shared `nearestAboveRow`
+  (anchorLabel.js) keeps only the BOTTOM word-row so the taller band can't re-glue two lines;
+  (2) `region.py` SLIVER GATE `_looks_unreadable_sliver` (ink band <5px pre-upscale → EMPTY, all
+  draw-tool callers incl. /v1 targeting-OCR — fail toward "no label", never junk); (3) UX — a
+  suspicious/garbled caption is NEVER DISPLAYED (review readout + teach wizard show "couldn't read the
+  caption — position remembered", empty editable input; junk dropped on advance). ALSO FIXED:
+  _strip_horizontal_rules erased BOX BORDERS (edge-hugging full-width lines) which flipped
+  test_region_light_first's bordered crop read "Serial number"→EMPTY — now skips edge bands
+  (top/bottom 6%). Dashed-underline eraser DELIBERATELY DEFERRED (geometry solves it; bridging dash
+  gaps risks erasing text rows — oscar's safe row-profile recipe is in the 07-10 oscar consult if ever
+  needed; pinned in test_strip_rules.py). Tests: `test_region_sliver.py` + `test_strip_rules.py` (NOW
+  EXISTS — was claimed but missing) + `test_anchor_label.js` §nearestAboveRow; light_first back GREEN.
+- Corpus gate: batch corpus-NEUTRAL, **M=0 held**; `GATE=1` exits 1 on the PRE-EXISTING 21-silent class —
+  read the report file, not the exit code. Final Oracle vet of the template/rescue/PO fixes crashed
+  (transient API) — **re-run before commit+build**.
 - **Migration 43 stamped** (`database/index.js`) — `document_types.title_aliases` only ever landed on
   FRESH DBs (safeAdd sat in the stamped migration-2 block); existing installs stayed at v42. Now a
   proper stamped migration 43. `test_document_types_aliases.js` pins the stamped-v42 case.
@@ -65,7 +402,14 @@ All on branch `feat/doctype-title-aliases`; each has unit tests (+ real-doc E2E 
   (ordered, not fire-and-forget send) → double-rAF re-assert → one-shot blind-spot re-issue. Healthy clicks
   byte-identical; <select> excluded; the two pinned regressions hold (no win.blur/focus; no win.on('blur')
   suspect). Per-site confirm(suspect)+draw(proactive) fixes stay as belt-and-braces. NEEDS A RESTART.
-  `test_focus_repair.js`. Residual: keyboard-Tab-only desync (no pointer) needs an additive focusin secondary.
+  `test_focus_repair.js`. ⚠ **REVISED 2026-07-10 (the systemic-cure build was net-broken "everywhere"):**
+  the blanket `pageHasFocus===false` OR-fallback in `focusRepair.js` was REMOVED — it fired `blurWebView`
+  (the ONLY page-focus dropper in the app) off a CAPTURE-phase at-rest `document.hasFocus()` read on ~half of
+  clicks, so it SELF-PERPETUATED the desync (telemetry: false in runs of 5-7 consecutive). `blurWebView` now
+  fires ONLY on an ARMED `__focusSuspect` trigger (native dialog / post-Confirm / draw-OCR — each arms it);
+  the additive `focusin` secondary was reverted. So the heal covers ARMED triggers — NOT "regardless of
+  trigger"; a non-armed desync (child-window close, keyboard-Tab-only) falls through to the recoverable
+  click-out-and-back dead caret (fail-safe — never a wrong value). Arming child-window-close is a fast-follow.
 
 ## Working rules (read before any fix)
 
@@ -81,6 +425,13 @@ Any issue touching field detection, anchors, OCR regions, keyword matching,
 validation, supplier/template learning, or extraction accuracy is a reusable
 *application-level* weakness until proven otherwise — assume it also affects
 unseen suppliers, layouts, and future templates, not just the document on screen.
+**Every document in the current corpus is a TEST DOC** (the BF_/KO_/MP_/NS_/PF_/AW_/CS_
+batches, SuperStore, etc.) — the deliverable is NEVER a fixed document, always a fixed
+SYSTEM. A doc-level outcome only matters as EVIDENCE of a system behaviour. (Operator
+actions in-session — a ⊕ teach, a typed correction, a confirm — are fine and are
+themselves system-wide by design: a teach lands a supplier+doctype-scoped anchor, a
+confirm feeds scope-wide learning. CODE changes, by contrast, must never be tuned to
+one document, one filename, or one sample's coordinates.)
 - Fix the reusable layer — matching strategy, learning rules, normalisation,
   thresholds, validation — not the symptom on one sample document.
 - No one-document hacks: filename-based exceptions, sample-specific
@@ -267,7 +618,7 @@ docusnap2/
 │   │   ├── value_quality.py             # name/company/address quality (name_quality, is_name_like_field) — JS mirror in learning.js. is_name_like_field EXCLUDES technical addresses (mac/ip/hardware/network "address") — they are CODES, not names, so the name-quality/_name_field_code_reject gates must not strip their legitimate value ("D4:F0:C9:25:9B:64", "192.168.1.200"); else a labelled mac_address/ip_address anchor can never fill (the value's relocated read is rejected as "no real word")
 │   │   ├── text_normalise.py            # deterministic compare-time normaliser (NFKC/dash/quote/lower/ws/edge); JS twin database/modules/text_normalise.js
 │   │   ├── name_match.py                # Stage 4.5 token-level canonical NAME repair (lexicon + positional repair); suggestion-only
-│   │   └── identity_fusion.py           # text-led SUPPLIER identity (page chrome vs known-supplier gazetteer; rapidfuzz dual-gate). DORMANT/SHADOW: engine.extract(identity_shadow=True)→_shadow_identity() records resolved-vs-text_led agree/conflict, changes NOTHING (off by default = byte-identical). Measure via process_docs --identity-shadow (emits file_done.identity_shadow) / rich_field_runner. Sandbox 100% precision/0 silent-wrong; real-engine bounded run 0 false-conflict. Promotion (conflict→needs_review + add rapidfuzz to requirements + check-licenses allowlist) PENDING — see HANDOVER_2026-07-07.md
+│   │   └── identity_fusion.py           # text-led SUPPLIER identity (page chrome vs known-supplier gazetteer; rapidfuzz dual-gate). DORMANT/SHADOW: engine.extract(identity_shadow=True)→_shadow_identity() records resolved-vs-text_led agree/conflict, changes NOTHING (off by default = byte-identical). Measure via process_docs --identity-shadow (emits file_done.identity_shadow) / rich_field_runner. Sandbox 100% precision/0 silent-wrong; real-engine bounded run 0 false-conflict. Promotion (conflict→needs_review + add rapidfuzz to requirements + check-licenses allowlist) PENDING — see docs/handovers/HANDOVER_2026-07-07.md
 │   ├── ocr/{tesseract.py,region.py,landmarks.py,text_enhance.py,born_digital.py}  # tesseract.py FULL-PAGE OCR text is rebuilt from image_to_data word GEOMETRY (reconstruct_page_text, 2026-07, routed via ocr/engine.py TesseractEngine.read_page): Tesseract's page segmentation (plain image_to_string) treats a wide right-column gap as a COLUMN break, so a right-aligned totals block OCRs as two detached columns — labels ("Subtotal:"/"Total:") on their own lines, values ("$387.74") stranded elsewhere — and the line-based keyword matcher can't pair them, so total/subtotal read EMPTY on scanned pages (born-digital pages keep exact word positions and never hit this path). Words are grouped into VISUAL ROWS (y-centre band) so a label + its far-right value stay on ONE line; a wide intra-row x-gap emits a 4-space column break so keyword.py's existing column-split guard still separates genuine columns. Same recognised words as image_to_string — only their grouping into reading lines changes; falls back to image_to_string on any error (never reads worse). Took scanned subtotal/total from ~63% → 100% in a 400-doc bench with no regression. Guarded by tests/test_ocr_engine.py. region.py: interactive draw-tool zone-OCR (review ⊕ picker, Template Wizard read-back, Template Manager) + --boxes label-position capture; LIGHT-FIRST ladder mirroring anchor._crop_and_ocr (light greyscale+upscale-small-only read first, heavy autocontrast+sharpen only when light is EMPTY) so a drawn box reads the SAME as extraction and clean born-digital crops aren't mangled into junk ("Serial number"→"be_7"); MULTI-LINE AWARE (2026-06): a drawn box that covers a value WRAPPING onto 2+ lines (a work address "Beaumont Care Homes Ltd -"/"Jordanstown") is re-segmented with PSM 6 (block mode) after the ladder and rebuilt line-by-line (top→bottom, space-joined) — PSM 7 (single-line) won the ladder first and MANGLED a multi-line crop into one garbled line ("p sverablseti Care Homes Ltd -"); a single-line crop keeps the ladder text byte-identical; the PSM-6 data is computed once + reused by --boxes. Guarded by tests/test_region_light_first.py (multi-line case); landmarks.py: derive registration landmarks from sample page; text_enhance.py: degraded text-line re-read (denoise+Sauvola+unsharp), text-only gate-triggered escalation; born_digital.py: read EXACT text + word boxes from a PDF's embedded text layer (pypdfium2 BSD), skipping OCR for generated PDFs (gated by born_digital_enabled)
 │   ├── logo/fingerprint.py
 │   ├── ocr/orientation.py              # AUTO-ROTATE (90/180/270) via Tesseract OSD (osd.traineddata, Apache-2.0; bundled). detect_rotation(img)→CW° to upright (0 on low conf/failure/sparse — never guesses; conf≥2.0, OSD on a width-capped copy ~120 DPI). correct_image(img,r)=img.rotate(360-r) (PIL is CCW; pypdf is CW + additive → page.rotate(r) verbatim — the two opposite signs are PROVEN in tests/test_orientation.py; a wrong sign corrupts every doc). Integrated in tesseract.extract_text_and_images(auto_rotate, rotations_out): first import only (gated off under cached_text/reprocess), born-digital pages SKIPPED (upright). process_docs --auto-rotate emits file_done.page_rotations; processing/handler _rotateWorkingCopyIfNeeded runs pdf_rotate.py (pypdf in-place /Rotate, atomic .part→rename) on the inbox WORKING COPY before drain/auto-file, so the FILED copy + every reprocess inherit upright from one detection. Gated by auto_rotate_enabled (default ON; original is drained to Processed/ UNTOUCHED → mis-rotation recoverable). Settings → toggle.
@@ -506,7 +857,9 @@ OutputRoot/
 
 **STRUCTURAL fields (Document Issuer / Date / Reference) are PERMANENT** (migration 27,
 `document_types.js`): every type has three locked roles — the COMPANY/identity
-field (`COMPANY_KEYS` = supplier_name | customer_name), the `date_field_key`, and
+field (`COMPANY_KEYS` — **`['supplier_name']` ONLY since migration 44, 2026-07-10**: customer_name was
+UNLINKED from identity and is now an ordinary OPTIONAL recipient field on every type; migration 45
+purged its stale issuer-as-customer learning — see HANDOVER_2026-07-10_EVENING.md), the `date_field_key`, and
 the `ref_field_key`. The identity field's DISPLAY label is **"Document Issuer"** for
 BOTH keys (migration 38, 2026-06-28 — one unambiguous label so an operator never
 enters variable data like a customer name in the identity field; supersedes the
@@ -524,9 +877,9 @@ changed — "Supplier Name"/"Customer Name") so the learning schema is untouched
 field (getWithFields/getAllWithFieldsAll) for the Settings UI (locked toggle, no
 delete, 🔒). `updateField`/`deleteField` enforce it server-side;
 `create-doc-type-with-fields` injects a Company field if the caller omits one.
-Guarded by `database/modules/test_structural_fields.js`. (NOTE a latent nuance: the
-engine's universal scope key is `supplier_name`, but sales orders carry the company
-as `customer_name` — label-only unification here; a key reconciliation is deferred.)
+Guarded by `database/modules/test_structural_fields.js`. (RESOLVED 2026-07-10: migration 44
+made `supplier_name` the sole identity/scope key on EVERY type — sales orders included;
+`customer_name` is a plain optional recipient field. The old latent nuance is gone.)
 
 **DANGLING STRUCTURAL ROLE — self-heal + Confirm resilience** (2026-07): a type's
 `ref_field_key`/`date_field_key` can end up pointing at a field that no longer exists

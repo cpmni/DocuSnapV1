@@ -58,7 +58,8 @@ print("\nREAD gate (_is_blind_cross_supplier_anchor) — drop a BLIND cross-supp
 check("BLIND cross-supplier supplier_name (Contoso crop on a Profile doc) -> DROP",
       blind('supplier_name', A('supplier_name', 'contoso asia'), 'profile construction', located_ok=False) is True)
 check("LOCATED cross-supplier supplier_name (reads the doc's OWN 'Supplier:' value) -> KEEP",
-      blind('supplier_name', A('supplier_name', 'greenfield logistics ltd'), 'acme corp holdings', located_ok=True) is False)
+      blind('supplier_name', {**A('supplier_name', 'greenfield logistics ltd'), 'anchor_label': 'Supplier'},
+            'acme corp holdings', located_ok=True) is False)
 check("BLIND SAME-supplier supplier_name (its own anchor) -> KEEP",
       blind('supplier_name', A('supplier_name', 'contoso asia'), 'contoso asia', located_ok=False) is False)
 check("BLIND cross-supplier on an UNKNOWN-supplier doc -> DROP (don't impose Contoso blindly)",
@@ -122,7 +123,11 @@ check("SAME-supplier invoice_number still admitted at the filter",
 check("BLIND cross-supplier invoice_number (different layout) -> DROP  [#1 bug fix; was intended-KEEP]",
       blind('invoice_number', A('invoice_number', 'contoso asia'), 'profile construction', located_ok=False) is True)
 check("LOCATED cross-supplier invoice_number (its label found here) -> KEEP (authoritative-wins holds)",
-      blind('invoice_number', A('invoice_number', 'contoso asia'), 'profile construction', located_ok=True) is False)
+      blind('invoice_number', {**A('invoice_number', 'contoso asia'), 'anchor_label': 'Invoice Number'},
+            'profile construction', located_ok=True) is False)
+# (The two LOCATED-KEEP rows above use REALISTIC captions since the Oracle-C2 weak-core
+#  exception: the old placeholder label 'x' (1 alpha char) now correctly counts as a
+#  weak-core locate and would be dropped cross-supplier — see the C2 rows at the end.)
 check("BLIND SAME-supplier invoice_number (its own layout) -> KEEP",
       blind('invoice_number', A('invoice_number', 'contoso asia'), 'contoso asia', located_ok=False) is False)
 check("BLIND GLOBAL invoice_number (supplier-agnostic, fixed position) -> KEEP (global exempt)",
@@ -137,6 +142,23 @@ check("supplier_name (IDENTITY) cross-supplier is STILL admitted (re-resolution 
 print("\ndoc-type conflict still vetoes at the filter (unchanged):")
 check("invoice_number anchor (type invoice) on a sales_order doc -> NO match",
       anchor._anchor_matches(A('invoice_number', 'a co', 'invoice'), 'a co', 'sales_order') is False)
+
+print("\nWEAK-CORE locate exception (Oracle C2, 2026-07-10) — a bare 'No.'/'Ref'/'SO #' caption")
+print("locating on a NAMED different supplier's page proves nothing about layout identity:")
+check("LOCATED weak-core ('SO #') cross-supplier positional -> DROP (treated as blind)",
+      blind('sales_order_number', AL('sales_order_number', 'meridian print & copy', 'SO #', 'sales_order'),
+            'other corp', located_ok=True) is True)
+check("LOCATED weak-core ('No.') cross-supplier -> DROP",
+      blind('invoice_number', AL('invoice_number', 'a co', 'No.'), 'b co', located_ok=True) is True)
+check("LOCATED weak-core SAME supplier -> KEEP (byte-identical)",
+      blind('sales_order_number', AL('sales_order_number', 'meridian print & copy', 'SO #', 'sales_order'),
+            'meridian print & copy', located_ok=True) is False)
+check("LOCATED STRONG label ('Order Number') cross-supplier -> KEEP (the located upgrade stands)",
+      blind('sales_order_number', AL('sales_order_number', 'a co', 'Order Number', 'sales_order'),
+            'b co', located_ok=True) is False)
+check("LOCATED weak-core GLOBAL scope -> KEEP (global fixed-position reads are the intended use)",
+      blind('sales_order_number', AL('sales_order_number', '', 'SO #', 'sales_order'),
+            'b co', located_ok=True) is False)
 
 if FAILS:
     print(f"\n{FAILS} FAILED")
