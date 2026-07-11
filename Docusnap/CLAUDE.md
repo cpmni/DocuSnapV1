@@ -981,9 +981,11 @@ ATOMICALLY creates the type + fields + structural roles (reuses
 aliases into `field_label_overrides` (per-install, doc-type-scoped — see
 `keyword.merge_label_overrides`), so Stage-1 anchored extraction has a head start with NO
 teaching. Slug is DERIVED from the name (`presetSlug`, mirrors `addType`); idempotent
-(re-add = no-op); catalog types are `built_in=0` (fully removable). The two invoice
-DIRECTIONS carry the correct company identity — **Purchase Invoice → `supplier_name`, Sales
-Invoice → `customer_name`** — so filing/learning scope is right from the start. reggie-
+(re-add = no-op); catalog types are `built_in=0` (fully removable). Post-migration-44 EVERY
+preset's identity/company role is **`supplier_name`** (the sole scope key) — Sales Invoice /
+Remittance / Delivery Note / Statement ALSO carry `customer_name` as an ordinary optional
+RECIPIENT field (the remitter's payer captions "Received From"/"Payment From" live on
+`supplier_name`, the issuer) — so filing/learning scope is right from the start. reggie-
 reviewed labels: only DOC-SPECIFIC captions + the NOVEL ref/date fields are seeded;
 canonical fields (supplier/customer/invoice_*/total) defer to the shipped
 `keyword_patterns.json` `field_patterns` (single source of truth, no drift); bare generics

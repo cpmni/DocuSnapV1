@@ -5,9 +5,11 @@
  * database/modules/test_doctype_presets.js
  * ----------------------------------------
  * Preset document-type catalog (Settings → "Add from catalog…"). Ticking a preset
- * must create the type + fields with the right STRUCTURAL roles (Sales Invoice →
- * customer_name, Purchase Invoice → supplier_name), and seed each field's likely
- * label aliases into field_label_overrides scoped to the type's slug. Adding a
+ * must create the type + fields with the right STRUCTURAL roles — post-migration-44
+ * EVERY preset's identity/company role is supplier_name (the sole scope key), and
+ * customer_name is an ordinary optional RECIPIENT field where a direction has one
+ * (Sales Invoice / Remittance / Delivery Note / Statement) — and seed each field's
+ * likely label aliases into field_label_overrides scoped to the type's slug. Adding a
  * preset that already exists is a no-op (idempotent — no duplicate fields/labels).
  *
  *   ELECTRON_RUN_AS_NODE=1 node_modules/.bin/electron database/modules/test_doctype_presets.js
@@ -83,11 +85,13 @@ function main() {
   f += !check('purchase_invoice date=invoice_date', pi && pi.date_field_key === 'invoice_date');
   f += !check('catalog-added type is custom (built_in=0)', pi && pi.built_in === 0);
 
-  // 3. Structural company role differs by direction (the key correctness win).
-  f += !check('Purchase Invoice company = supplier_name', !!fkey(db, 'purchase_invoice', 'supplier_name'));
-  f += !check('Sales Invoice company = customer_name', !!fkey(db, 'sales_invoice', 'customer_name'));
-  f += !check('Sales Invoice did NOT force a supplier_name field', !fkey(db, 'sales_invoice', 'supplier_name'));
-  f += !check('Remittance company = customer_name', !!fkey(db, 'remittance_advice', 'customer_name'));
+  // 3. Structural identity is supplier_name on EVERY preset (migration 44 — the sole scope key);
+  //    customer_name is an ordinary optional RECIPIENT field where the direction has one.
+  f += !check('Purchase Invoice identity = supplier_name', !!fkey(db, 'purchase_invoice', 'supplier_name'));
+  f += !check('Sales Invoice identity = supplier_name (migration 44)', !!fkey(db, 'sales_invoice', 'supplier_name'));
+  f += !check('Sales Invoice ALSO has customer_name (recipient field)', !!fkey(db, 'sales_invoice', 'customer_name'));
+  f += !check('Remittance identity = supplier_name', !!fkey(db, 'remittance_advice', 'supplier_name'));
+  f += !check('Remittance ALSO has customer_name (recipient field)', !!fkey(db, 'remittance_advice', 'customer_name'));
 
   // 4. ensureStructuralRoles did not inject a stray generic "date" field (real date exists).
   f += !check('no stray generic date field on sales_invoice', !fkey(db, 'sales_invoice', 'date'));
