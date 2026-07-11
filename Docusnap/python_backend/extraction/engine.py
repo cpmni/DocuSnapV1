@@ -86,6 +86,13 @@ _LATE_RESCUE_CAP = 85
 GATE_REREAD_ENABLED = os.environ.get('GATE_REREAD', '1') != '0'   # default ON; GATE_REREAD=0 disables
 _REREAD_CAP = 69
 
+# c2 TAUGHT-FIELD OWNERSHIP GUARD kill switch (2026-07-11, DIRECTION_SUPREMACY): a NON-identity
+# field whose FINAL read is a plain 'keyword' match, while the user AUTHORITATIVELY taught that
+# field's position for this scope (a ⊕ anchor with last_authoritative_at), is a generic-caption
+# keyword stand-in for a taught position that couldn't be confirmed on this page → cap to review
+# (69) + note. HOLD-ONLY (value never touched). See _flag_taught_field_ownership.
+TAUGHT_FIELD_OWNERSHIP_ENABLED = os.environ.get('TAUGHT_FIELD_OWNERSHIP', '1') != '0'
+
 
 def _late_rescue_applicable(s2_supplier, supplier_name):
     """Stage-2.6 gate (pure, unit-pinned): rescue ONLY when Stage 2 ran with NO supplier
@@ -1058,6 +1065,120 @@ class ExtractionEngine:
                     "this may be the recipient, not the issuer. Please confirm.")
             self.log(f"  Issuer guard: customer_name read '{val}' came from a "
                      f"recipient caption — flagged for review")
+        except Exception:
+            pass   # advisory guard — must never break extraction
+
+    def _flag_taught_field_ownership(self, results, field_defs, supplier_name,
+                                     anchors, hints, document_slug, caption_vocab):
+        """TAUGHT-FIELD OWNERSHIP GUARD (flag-only — Oracle-signed 2026-07-11, DIRECTION_SUPREMACY
+        c2). A NON-identity field whose FINAL read is a plain 'keyword' match, while the user has
+        AUTHORITATIVELY TAUGHT that field's position for this scope (a ⊕ anchor carrying
+        last_authoritative_at, admissible under the resolved supplier + doc-type), is a generic-
+        caption keyword read STANDING IN for a taught position that couldn't be confirmed on this
+        page — cap it to review (69, self-sufficient below the 70 threshold) + an explanatory note.
+        HOLD-ONLY: the value is never touched; an existing note is preserved (its cap still applies).
+
+        EXEMPT: keyword_override (BY CONSTRUCTION — its method is 'keyword_override', not 'keyword',
+        so the shipped override-wins doctrine is untouched); an empty/None value (a Stage-4.5-
+        withheld field must not get a confusing cap); and a keyword value that AGREES with a same-
+        scope confirmed HINT that WOULD fill this field — TRUE _apply_hints parity: usage>=2, not
+        is_variable, and not variable-BY-EVIDENCE (>=2 distinct confirmed in-scope values) — UNLESS
+        that hint value is itself a known caption (closes the twice-mis-confirmed-caption-hint
+        poison loop). Identity fields (supplier_name/customer_name) are handled by the recipient/
+        rescue guards, never here.
+
+        Ownership admission uses anchor.anchor_admissible with the doc-type SLUG (field_anchors.
+        document_type stores the SLUG — verified against the live DB and matching what the Stage-2
+        anchor path passes, engine.py extract_with_anchors(..., document_slug, ...); the design's
+        "stores the NAME" premise was WRONG and would silently empty `owned`) PLUS an explicit
+        exclusion of the __unknown__/__global__/'' fallback scopes that anchor_admissible over-
+        admits — so a global fallback teach can't claim per-scope ownership. Best-effort: never
+        breaks extraction."""
+        if not TAUGHT_FIELD_OWNERSHIP_ENABLED:
+            return
+        try:
+            from extraction import text_normalise
+            fd = {f.get('key'): f for f in (field_defs or [])}
+            # Per-type IDENTITY keys to EXCLUDE (they're handled by the recipient/rescue guards).
+            # NOT _IDENTITY_FIELD_KEYS: that frozenset still lists customer_name (pre-migration-44),
+            # but post-44 customer_name is an ORDINARY RECIPIENT field whenever the type also carries
+            # supplier_name — and THAT is exactly the incident field c2 must arm. So: supplier_name is
+            # always identity; customer_name is identity (recipient-guard territory) ONLY when it is
+            # the type's SOLE issuer (no supplier_name field). Mirrors _flag_recipient_caption_issuer.
+            _identity_keys = {'supplier_name'}
+            if 'supplier_name' not in fd and 'customer_name' in fd:
+                _identity_keys = {'customer_name'}
+            # Which NON-identity fields does the user OWN here (an authoritative, real-scope teach)?
+            owned = set()
+            for a in (anchors or []):
+                fk = a.get('field_key')
+                if not fk or fk in _identity_keys:
+                    continue
+                if not str(a.get('last_authoritative_at') or '').strip():
+                    continue   # ownership = an EXPLICIT ⊕ re-teach, not a passive auto-learn
+                a_sup = (a.get('supplier_name') or '').strip().lower()
+                if a_sup in ('__unknown__', '__global__', ''):
+                    continue   # the fallback scope is NOT per-(supplier,type) ownership
+                if anchor.anchor_admissible(a, supplier_name, document_slug):
+                    owned.add(fk)
+            if not owned:
+                return
+
+            s_lower = (supplier_name or '').lower().strip()
+            # variability parity (mirrors _apply_hints): distinct confirmed in-scope values per key
+            distinct = {}
+            for h in (hints or []):
+                hk = h.get('field_key'); hv = (h.get('hint_value') or '').strip().lower()
+                if not hk or not hv:
+                    continue
+                hs = (h.get('supplier_name') or '').lower().strip()
+                ht = h.get('document_type') or ''
+                if hs == s_lower and ((not ht) or ht == (document_slug or '')):
+                    distinct.setdefault(hk, set()).add(hv)
+
+            def _hint_exempt(key, val):
+                # A same-scope confirmed hint that WOULD fill `key` and AGREES with the keyword
+                # value (and is not itself a caption) means this keyword read is the legit stable
+                # value, not a caption stand-in — don't cap it.
+                if not s_lower or fd.get(key, {}).get('is_variable'):
+                    return False
+                if len(distinct.get(key, ())) >= 2:
+                    return False   # variable by evidence — a hint would NOT fill; never exempt
+                target = text_normalise.normalise_for_tokens(val)
+                for h in (hints or []):
+                    if h.get('field_key') != key or int(h.get('usage_count') or 0) < 2:
+                        continue
+                    hs = (h.get('supplier_name') or '').lower().strip()
+                    ht = h.get('document_type') or ''
+                    if not (hs == s_lower and ((not ht) or ht == (document_slug or ''))):
+                        continue
+                    hv = h.get('hint_value')
+                    if text_normalise.normalise_for_tokens(hv) != target:
+                        continue   # the hint must AGREE with the keyword value
+                    if keyword.value_is_caption(hv, caption_vocab):
+                        return False   # poisoned caption-hint — deny the exemption
+                    return True
+                return False
+
+            for key in owned:
+                d = results.get(key)
+                if not isinstance(d, dict):
+                    continue
+                if str(d.get('method') or '') != 'keyword':   # keyword_override & learned methods exempt
+                    continue
+                val = d.get('value')
+                if not val or not str(val).strip():            # skip empty/None (Stage-4.5 withhold)
+                    continue
+                if _hint_exempt(key, val):
+                    continue
+                d['confidence'] = min(int(d.get('confidence') or 0), 69)
+                if not str(d.get('validation_note') or '').strip():
+                    d['validation_note'] = (
+                        "this field has a taught position that couldn't be confirmed on this "
+                        "page — the value came from a generic caption match; please verify "
+                        "(re-teach with the ⊕ tool, or Settings → Learning Recovery)")
+                self.log(f"  Taught-ownership guard: '{key}' keyword read '{val}' capped — "
+                         f"an authoritative teach exists but wasn't located on this page")
         except Exception:
             pass   # advisory guard — must never break extraction
 
@@ -2692,6 +2813,12 @@ class ExtractionEngine:
         # identity rescue: a dup-capped keyword incumbent then satisfies the rescue's
         # quality-failed precondition (gary P2's beneficial composition).
         ExtractionEngine._flag_cross_field_duplication(results)
+        # c2 — TAUGHT-FIELD OWNERSHIP GUARD (2026-07-11): cap a plain-keyword read of a NON-identity
+        # field the user AUTHORITATIVELY taught here but that couldn't be located on this page (a
+        # generic caption stand-in). Beside the recipient guard, BEFORE identity rescue + the boost.
+        self._flag_taught_field_ownership(
+            results, field_defs, supplier_name, anchors, hints, document_slug,
+            keyword.build_caption_vocab(patterns_for_run.get('field_patterns'), field_defs))
         # ── Identity rescue (slice 1; Oracle-signed 2026-07-10) ── AFTER the guard
         # (it overwrites the guard's note with its own provenance note when the
         # corroboration holds; no corroboration => the guard's behaviour survives

@@ -1,6 +1,15 @@
 # Taught-direction supremacy package — CLOSED DESIGN (build after the night batch commits)
 
-**Status:** Oracle verdicts per-slice (2026-07-11): **c2 SIGN OFF WITH CONDITIONS · G3b SIGN OFF
+**Status:** ✅ **c2 BUILT 2026-07-11 EVENING+** (own commit). `engine._flag_taught_field_ownership`
++ shared `keyword.build_caption_vocab`/`value_is_caption` + `tests/test_taught_field_ownership.py`
+(23 units). ⚠ Design premise CORRECTED at build: `field_anchors.document_type` stores the **SLUG**,
+not the NAME — c2 uses `document_slug` for `anchor_admissible` (a NAME-framed call silently empties
+`owned`; pinned). Identity exclusion is PER-TYPE (supplier_name always; customer_name only when sole
+issuer — it's a RECIPIENT field otherwise, NOT via the stale `_IDENTITY_FIELD_KEYS`). A/B (same
+2495-doc DB): net SAFETY WIN — M 12→9 (caught 3 taught-field ref misreads), per-field IDENTICAL
+(HOLD-only), +128 docs (5%) review-bound. **G3b + D1 still to build.** Original design below.
+
+**Status (original):** Oracle verdicts per-slice (2026-07-11): **c2 SIGN OFF WITH CONDITIONS · G3b SIGN OFF
 WITH CONDITIONS (customer-side only) · D1 SIGN OFF WITH CONDITIONS · D2 DO NOTHING** (keep the
 total sweep; salvage only its comma-orphan rule into D1). Build as THREE separate kill-switched
 commits (c2 → G3b → D1), after the night batch lands. Cycle: gary + reggie parallel → Oracle.

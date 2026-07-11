@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 
 from extraction import number_format   # region-aware amount normaliser
+from extraction import text_normalise   # shared token normaliser (caption vocab)
 
 
 def load_patterns(config_path: str | None = None) -> dict:
@@ -61,6 +62,59 @@ def _infer_validation(field_key: str) -> "str | None":
             or k in ("subtotal", "balance", "amount")):
         return "currency"
     return None
+
+
+# ── Shared CAPTION VOCABULARY (taught-field ownership guard c2 + known-caption guard G3b) ──
+# A "caption" is a printed field-label ("Customer", "Order Number", "SO #") — never a VALUE.
+# The vocabulary is the RUN's post-merge label banks (shipped ∪ overrides ∪ seeds, i.e. every
+# field's field_patterns['labels']) plus each field's DISPLAY label. Two comparison forms per
+# caption so both a spaced and a punctuation-glued rendering match: the content TOKEN-TUPLE
+# ("SO #" -> ('so',)) and the alnum-only JOINED form ("S.O.No." -> 'sono').
+def _caption_forms(value):
+    """(content_token_tuple, alnum_joined) for a value — the caption comparison keys."""
+    toks = tuple(t for t in text_normalise.tokenise(value) if any(c.isalnum() for c in t))
+    joined = ''.join(c for c in text_normalise.normalise_for_tokens(value) if c.isalnum())
+    return toks, joined
+
+
+def build_caption_vocab(field_patterns: dict, field_defs=None) -> dict:
+    """The run's caption vocabulary -> {'tuples': set, 'joined': set}. Reach GROWS with the
+    banks (a new shipped/override/seed label is automatically a caption). field_patterns must be
+    the POST-MERGE bank (patterns_for_run['field_patterns'])."""
+    tuples, joined = set(), set()
+
+    def _add(text):
+        tt, jj = _caption_forms(text)
+        if tt:
+            tuples.add(tt)
+            joined.add(jj)
+
+    for entry in (field_patterns or {}).values():
+        for lab in (entry.get('labels') or []):
+            _add(lab.get('text') if isinstance(lab, dict) else lab)
+    for f in (field_defs or []):
+        _add(f.get('label'))
+    return {'tuples': tuples, 'joined': joined}
+
+
+def value_is_caption(value, vocab) -> bool:
+    """True when `value` IS a known caption (not a value). Rule 1: content-token-tuple equality
+    ('SO #' == the 'SO #' label). Rule 2: alnum-joined equality, ONLY for a MULTI-TOKEN or
+    PUNCTUATED candidate ('S.O.No.' == 'SO No'). NEVER containment/prefix ('Order Solutions Ltd',
+    'Total Office Supplies', bare 'SONO' all survive). An empty content tuple (a '#'-only value)
+    never matches."""
+    if not vocab:
+        return False
+    tt, jj = _caption_forms(value)
+    if not tt:
+        return False
+    if tt in vocab.get('tuples', ()):          # rule 1
+        return True
+    v = str(value or '')
+    punctuated = any(not (c.isalnum() or c.isspace()) for c in v)
+    if (len(tt) > 1 or punctuated) and jj and jj in vocab.get('joined', ()):   # rule 2
+        return True
+    return False
 
 
 def merge_label_overrides(patterns: dict, overrides: list, doc_slug: str | None) -> dict:

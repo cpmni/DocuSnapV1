@@ -26,6 +26,29 @@ cycle). Fuller narratives: `…_2026-07-10_EVENING.md` (the evening batch undern
 that prefix. All on branch `feat/doctype-title-aliases`; each fix has unit tests (+ real-doc E2E
 where noted).
 
+### 2026-07-11 EVENING+ — DIRECTION_SUPREMACY c2 (taught-field ownership guard) BUILT
+**Second queued design; first of its 3 slices (c2→G3b→D1), own commit on `28d31c5`.** A NON-identity
+field whose FINAL read is a plain 'keyword' match, while the user AUTHORITATIVELY taught that field's
+position for this scope (⊕ anchor w/ last_authoritative_at, admissible), is a generic-caption stand-in
+for a taught position that didn't confirm on this page → HOLD-ONLY cap ≤69 + note (value untouched,
+review-bound). `engine._flag_taught_field_ownership` at the guard seam (after the dup guard, BEFORE
+identity rescue); kill switch env `TAUGHT_FIELD_OWNERSHIP` default ON. Exempt: keyword_override (method
+≠ 'keyword'), empty/None, and a keyword value agreeing with a same-scope confirmed HINT that would fill
+(true `_apply_hints` variability parity) UNLESS the hint is itself a caption (poison-loop deny). Shared
+caption vocab `keyword.build_caption_vocab`/`value_is_caption` (token-tuple + alnum-joined rules, NEVER
+containment; 'SO #'→('so',), 'S.O.No.'→'sono') — G3b reuses it. `test_taught_field_ownership.py` 23/23.
+**⚠ BUG CAUGHT pre-commit: the design premise "field_anchors.document_type stores the NAME" was WRONG —
+it stores the SLUG (verified live + matches `engine.py` `extract_with_anchors(…, document_slug, …)`); c2
+first passed the NAME → `owned` always empty → a DEAD guard (0 caps), and the unit test FALSELY PASSED
+(name-consistent frame — the "dead guard greens every test" trap). Fixed to `document_slug`; added a
+load-bearing `admitted by SLUG not NAME` pin.** Identity exclusion is PER-TYPE (supplier_name always;
+customer_name only when SOLE issuer — post-migration-44 customer_name is a RECIPIENT field c2 must ARM,
+NOT via the stale `_IDENTITY_FIELD_KEYS` that still lists it). **A/B (same 2495-doc DB, ON vs OFF): net
+SAFETY WIN — M 12→9 (caught 3 high-conf ref misreads on taught fields #2357/#2566/#2572, ZERO added to
+M), per-field accuracy IDENTICAL (HOLD-only), silent regressions 42→41. Cost: 245 caps → +128 docs (5%)
+newly review-bound (user's taught-field-suppression rule; disable via TAUGHT_FIELD_OWNERSHIP=0).**
+Remaining DIRECTION_SUPREMACY: G3b (known-caption value guard) · D1 (teach label-pick). D2 = DO NOTHING.
+
 ### 2026-07-11 EVENING — gate-failure targeted RE-READ BUILT (REREAD_ESCALATION, default ON)
 **First of the 5 queued designs, built on the committed batch `838de51` as its OWN commit.** When
 Stage 4.5 WITHHOLDS a structured value on format grounds (engine.py withhold branch → value=None),
