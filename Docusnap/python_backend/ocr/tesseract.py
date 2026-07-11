@@ -210,12 +210,13 @@ def pdf_to_images(filepath: Path, dpi: int = 300) -> list[Image.Image]:
     return images
 
 
-def _deskew(img: Image.Image) -> Image.Image:
-    """
-    Detect and correct small-angle document skew via horizontal projection variance.
-    Operates on a downscaled binary copy for speed; rotation applied to the original
-    at full resolution. Skew below 0.2° is ignored to avoid spurious micro-rotations.
-    """
+def detect_skew_angle(img: Image.Image) -> float:
+    """Detect small-angle document skew via horizontal projection variance. Returns the angle in
+    DEGREES in PIL's convention (positive = the rotation `img.rotate(angle)` applies to STRAIGHTEN,
+    i.e. CCW-positive), or 0.0 when |skew| < 0.2° (no meaningful skew). NON-DESTRUCTIVE — measures
+    only. Shared by `_deskew` (which applies it to the OCR copy) and the Review-window display
+    deskew (which rotates the on-screen page so drawn ⊕ boxes align with straight text). Operates
+    on a downscaled binary copy for speed."""
     import numpy as np
 
     gray   = img.convert('L') if img.mode != 'L' else img
@@ -240,9 +241,18 @@ def _deskew(img: Image.Image) -> Image.Image:
     fine = [(base + d) / 10.0 for d in range(-5, 6)]
     best = max(fine, key=_score)
 
-    if abs(best) < 0.2:
-        return img  # no meaningful skew
+    return best if abs(best) >= 0.2 else 0.0
 
+
+def _deskew(img: Image.Image) -> Image.Image:
+    """
+    Detect and correct small-angle document skew via horizontal projection variance.
+    Operates on a downscaled binary copy for speed; rotation applied to the original
+    at full resolution. Skew below 0.2° is ignored to avoid spurious micro-rotations.
+    """
+    best = detect_skew_angle(img)
+    if best == 0.0:
+        return img  # no meaningful skew
     fill = 255 if img.mode == 'L' else (255, 255, 255)
     return img.rotate(best, expand=False, fillcolor=fill, resample=Image.BICUBIC)
 

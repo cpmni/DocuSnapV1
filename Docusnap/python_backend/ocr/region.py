@@ -86,6 +86,12 @@ def main():
     # by the ⊕ tool to capture the taught LABEL's position so a drift-invariant
     # label→value offset can be stored. Default (no flag) is unchanged: plain text.
     parser.add_argument('--boxes', action='store_true')
+    # --skew: emit JSON {"angle": <deg>} — the page's detected skew (PIL CCW-positive, 0.0 when
+    # < 0.2°). Used by the Review window to straighten the DISPLAYED page so drawn ⊕ boxes align
+    # with the text (display-only; the filed original is untouched). No OCR — measure only.
+    parser.add_argument('--skew', action='store_true')
+    # --deskew: emit JSON {"angle": <deg>, "image": <base64 PNG of the straightened page | null>}.
+    parser.add_argument('--deskew', action='store_true')
     args = parser.parse_args()
 
     if args.tesseract and os.path.exists(args.tesseract):
@@ -96,6 +102,47 @@ def main():
         img = Image.open(args.image_file).convert('L')  # greyscale
     except Exception as e:
         print('', end='')
+        return
+
+    # --skew: measure the page's skew angle (no OCR) and return it. Display-deskew endpoint.
+    if args.skew:
+        import json
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # python_backend
+        try:
+            from ocr.tesseract import detect_skew_angle
+            angle = float(detect_skew_angle(img))
+        except Exception:
+            angle = 0.0
+        print(json.dumps({"angle": round(angle, 2)}), end='', flush=True)
+        return
+
+    # --deskew: return the STRAIGHTENED page as a base64 PNG + its angle, for the Review DISPLAY.
+    # The rotation uses PIL's convention (img.rotate(angle), CCW-positive, expand=False so the dims
+    # are UNCHANGED — zoom/pan and the drawn-box math stay valid). The renderer swaps docImg to this
+    # so a drawn ⊕ box crops STRAIGHT text; it transforms the box back to the raw frame on save via
+    # the SAME angle. Angle 0 / below-threshold -> {"angle":0,"image":null} (caller shows the raw).
+    if args.deskew:
+        import json
+        import base64 as _b64
+        from io import BytesIO
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        try:
+            from ocr.tesseract import detect_skew_angle
+            angle = float(detect_skew_angle(img))
+        except Exception:
+            angle = 0.0
+        if abs(angle) < 0.2:
+            print(json.dumps({"angle": 0.0, "image": None}), end='', flush=True)
+            return
+        try:
+            orig = Image.open(args.image_file)                      # native mode (not the greyscale copy)
+            fill = 255 if orig.mode in ('L', '1') else (255, 255, 255)
+            rot  = orig.rotate(angle, expand=False, fillcolor=fill, resample=Image.BICUBIC)
+            buf  = BytesIO(); rot.save(buf, format='PNG')
+            print(json.dumps({"angle": round(angle, 2),
+                              "image": _b64.b64encode(buf.getvalue()).decode('ascii')}), end='', flush=True)
+        except Exception:
+            print(json.dumps({"angle": 0.0, "image": None}), end='', flush=True)
         return
 
     # SLIVER GATE (pre-upscale): a hairline ink band has no readable text — OCR would invent
