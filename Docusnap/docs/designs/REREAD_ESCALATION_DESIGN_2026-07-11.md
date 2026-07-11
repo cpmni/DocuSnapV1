@@ -1,6 +1,17 @@
 # Gate-failure targeted re-read — CLOSED DESIGN (build after the night batch commits)
 
-**Status:** design complete, Oracle **SIGN OFF WITH CONDITIONS** (2026-07-11). Do NOT build into
+**Status:** ✅ **BUILT 2026-07-11** on top of the committed night batch (`838de51`). Slices:
+(1) `ocr/targeted_reread.py` pure module (predicate `is_adoptable` + `locate_value_region` +
+`reread_field_value`) + `tests/test_gate_fail_reread.py` (27 units incl. seam #1 + provenance
+gate); (2) engine hook at the Stage-4.5 withhold branch (`_maybe_gate_reread`, kill switch
+`GATE_REREAD` env, default ON) + provenance plumbing (`tesseract.extract_text_and_images`
+`provenance_out` → `process_docs` → `engine.extract` `page_provenance`); (3) harness adoption
+count + corpus A/B. **Verified:** kill-switch-OFF byte-identical (10 suites); E2E — #2408 adopts
+`SO-27481` review-bound, #2392 fail-safe abstains (crop still garbled); corpus A/B — 5 adoptions
+ALL correct/more-correct + review-bound (3 pure recall wins null→correct: #1886/#2354/#2335),
+ZERO in the M (auto-file-wrong) list (review-bound invariant holds). Prior status below.
+
+**Status (original):** design complete, Oracle **SIGN OFF WITH CONDITIONS** (2026-07-11). Do NOT build into
 the uncommitted night batch (Oracle condition 8): own commit, own corpus A/B, after `e898009`+
 night-batch commit. Cycle: user proposal → oscar (OCR axis) + gary (engine seam) parallel →
 Oracle joint vet.

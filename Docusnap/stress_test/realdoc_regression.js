@@ -147,6 +147,7 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   const regress = [];
   let silentWrong = 0;
   let autoFiledN = 0, silentAutoFile = 0; const autoFileMisses = [];
+  let rereadN = 0; const rereadDocs = [];   // Stage-4.5 gate-failure re-read adoptions (review-bound)
   for (const fname of files) {
     const m = res[fname]; const g = gt[fname]; if (!m) continue;
     const rk = (roles[g.type_slug] || {}).ref, dk = (roles[g.type_slug] || {}).date;
@@ -160,6 +161,13 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
       subtotal: g.subtotal != null ? normMoney(ef(m, 'subtotal')) === normMoney(g.subtotal) : null,
     };
     for (const f of F) { if (s[f] == null) continue; acc[f].n++; if (s[f]) acc[f].ok++; }
+    // Gate-failure re-read adoptions (GATE_REREAD): a re-read is review-bound (note + corrected_to),
+    // so it can never auto-file — count it so a corpus A/B shows the feature actually FIRED.
+    for (const [k, e] of Object.entries(m.extractions || {})) {
+      if (e && typeof e === 'object' && (e.reread === true || String(e.validation_note || '').startsWith('re-read from the page'))) {
+        rereadN++; rereadDocs.push(`#${g.id} ${g.type_slug} ${k}: '${e.value}' (was garbled)`);
+      }
+    }
     // #6 auto-file SOUNDNESS — would the REAL gate auto-file this reprocessed read, and is it wrong?
     const detId = slugToId[detSlug];
     let wouldFile = false;
@@ -212,6 +220,8 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   for (const r of regress.slice(0, 60)) out.push(`- ${r}`);
   out.push(`\n**Auto-file soundness (#6): ${autoFiledN}/${files.length} reprocessed docs would auto-file; ${silentAutoFile} would auto-file a WRONG value (must be 0).**`);
   for (const r of autoFileMisses.slice(0, 40)) out.push(`- ${r}`);
+  out.push(`\n**Gate-failure re-reads adopted (GATE_REREAD): ${rereadN} (review-bound — can't auto-file; 0 = the feature never fired, not "safe").**`);
+  for (const r of rereadDocs.slice(0, 40)) out.push(`- ${r}`);
   const txt = out.join('\n');
   fs.writeFileSync(path.join(OUT, 'realdoc_regression.md'), txt);
   console.log(txt);

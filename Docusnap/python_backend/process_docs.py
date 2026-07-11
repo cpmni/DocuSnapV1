@@ -434,10 +434,12 @@ def main():
             # still re-run, so accuracy is unchanged. See extract_text_and_images.)
             log(f"  {'render (cached OCR)' if _cached else 'OCR'}: {filepath.name}")
             _rotations = []   # per-page CLOCKWISE auto-rotate angles (filled only on a first import)
+            _provenance = []  # per-page 'ocr'|'born_digital' (parallel to page_images)
             ocr_text, page_images = extract_text_and_images(
                 filepath, _enh, born_digital=args.born_digital, engine=ocr_engine,
                 cached_text=(_cached if (_cached and _cached.strip()) else None),
-                auto_rotate=getattr(args, 'auto_rotate', False), rotations_out=_rotations)
+                auto_rotate=getattr(args, 'auto_rotate', False), rotations_out=_rotations,
+                provenance_out=_provenance)
             if any(_rotations):
                 log(f"  auto-rotate: {[r for r in _rotations if r]} (clockwise°) on {filepath.name}")
 
@@ -646,6 +648,7 @@ def main():
                 trace         = emit_trace if args.trace else None,
                 slice_dir     = args.slice_dir if args.trace else None,
                 page_text_lines = page_text_lines,
+                page_provenance = _provenance,
                 identity_shadow = args.identity_shadow,
             )
 

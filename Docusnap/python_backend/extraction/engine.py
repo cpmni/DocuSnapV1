@@ -14,6 +14,7 @@ Usage:
   result = engine.extract(...)
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -75,6 +76,15 @@ IDENTITY_RESCUE_ENABLED = True
 # critical-field auto-file floor. See the Stage 2.6 block in extract().
 LATE_ANCHOR_RESCUE_ENABLED = True
 _LATE_RESCUE_CAP = 85
+
+# Stage-4.5 GATE-FAILURE RE-READ kill switch (2026-07-11, ships DARK — default OFF; slice 3
+# flips it after the corpus A/B). When a structured value is WITHHELD on format grounds
+# (value=None), take ONE bounded second look: locate the garble on the page, tight-crop re-read
+# via the crop ladder, and adopt ONLY a read that passes the exact gate the original failed
+# (ocr.targeted_reread.is_adoptable) — review-bound, never a silent value. See _maybe_gate_reread
+# + docs/designs/REREAD_ESCALATION_DESIGN_2026-07-11.md.
+GATE_REREAD_ENABLED = os.environ.get('GATE_REREAD', '1') != '0'   # default ON; GATE_REREAD=0 disables
+_REREAD_CAP = 69
 
 
 def _late_rescue_applicable(s2_supplier, supplier_name):
@@ -1260,6 +1270,71 @@ class ExtractionEngine:
         except Exception:
             pass  # reconciliation aid — must never break extraction
 
+    def _maybe_gate_reread(self, garble, data, fmt_entry, val_type, label,
+                           page_images, page_provenance, cache):
+        """Stage-4.5 gate-failure re-read (default OFF: GATE_REREAD_ENABLED). A structured value
+        was WITHHELD because its OCR read fails the field's learned format. Take ONE bounded
+        second look at the page: relocate the garble, tight-crop re-read via the anchor crop
+        ladder, and adopt ONLY a read that PASSES the exact gate the original failed AND is kin to
+        the garble (ocr.targeted_reread). Returns the adopted, REVIEW-BOUND field dict, or None
+        (caller keeps the byte-identical withhold). Never a silent value:
+          - conf capped at _REREAD_CAP (69) -> below the 70 review threshold and the 88 critical
+            auto-file floor;
+          - corrected_to + the note independently block auto-file at every trust floor;
+          - the caller flags it for review (format_anomaly_flagged / n_flagged).
+        Abstains (returns None) on: the switch OFF, no page images, a born-digital located page
+        (page_provenance), an ambiguous locate, or any read failing is_adoptable. Frame invariant:
+        image_to_data and the crop both run on the SAME raw page image instance."""
+        if not GATE_REREAD_ENABLED or not page_images or not garble:
+            return None
+        try:
+            from ocr import targeted_reread
+            import pytesseract
+            from pytesseract import Output
+            from extraction import anchor as _anchor
+
+            def _i2d(img):
+                # Config parity with the full-page reconstruct pass (PSM 3, auto page seg) so the
+                # garble reproduces and the match lands; the crop re-read does the cleanup.
+                return pytesseract.image_to_data(img, config="--oem 3 --psm 3",
+                                                 output_type=Output.DICT)
+
+            def _read_region(page_image, box_px, vt, verify):
+                W, H = page_image.size
+                left, top, bw, bh = box_px
+                if W <= 0 or H <= 0 or bw <= 0 or bh <= 0:
+                    return None
+                cx = (left + bw / 2.0) / W
+                cy = (top + bh / 2.0) / H
+                # Reuse the exact anchor crop+ladder recipe (padding, upscale, light-first rungs);
+                # verify_fn drives rung selection, and reread_field_value re-checks the return (seam #1).
+                return _anchor._crop_and_ocr(page_image, cx, cy, bw / float(W), bh / float(H),
+                                             val_type=vt, verify_fn=verify)
+
+            def _page_ok(pidx):
+                # Missing provenance -> abstain: never re-read a born-digital (exact) value.
+                return bool(page_provenance) and 0 <= pidx < len(page_provenance) \
+                    and page_provenance[pidx] == 'ocr'
+
+            adopted = targeted_reread.reread_field_value(
+                page_images, garble, label, val_type, fmt_entry, cache,
+                config_pattern=None, page_ok=_page_ok, i2d_fn=_i2d, read_region_fn=_read_region)
+        except Exception:
+            return None
+        if not adopted:
+            return None
+        self.log(f"  Stage 4.5: re-read '{garble}' -> '{adopted}' (review-bound)")
+        return {
+            **data,
+            'value':           adopted,
+            'display_value':   adopted,
+            'was_corrected':   True,
+            'corrected_to':    adopted,
+            'confidence':      min(data.get('confidence') or 0, _REREAD_CAP),
+            'validation_note': f're-read from the page (was "{garble}") — please verify',
+            'reread':          True,
+        }
+
     def extract(self,
                 ocr_text:      str,
                 page_images:   list,
@@ -1278,6 +1353,7 @@ class ExtractionEngine:
                 trace = None,
                 slice_dir = None,
                 page_text_lines: list | None = None,
+                page_provenance: list | None = None,
                 identity_shadow: bool = False) -> dict:
         """
         Run extraction pipeline according to current mode.
@@ -2234,7 +2310,9 @@ class ExtractionEngine:
             n_flagged = 0
             field_charsets = self.patterns.get('field_charsets') or {}
             field_types    = {f.get('key'): f.get('type') for f in (field_defs or [])}
+            field_labels   = {f.get('key'): (f.get('label') or '') for f in (field_defs or [])}
             validation_patterns = self.patterns.get('validation_patterns') or {}
+            _reread_cache  = {}   # per-extract full-page image_to_data cache (gate-failure re-read)
             for key, data in list(results.items()):
                 if key.startswith('_') or not isinstance(data, dict):
                     continue
@@ -2571,7 +2649,13 @@ class ExtractionEngine:
                         # for manual entry rather than populate an inconsistent
                         # value. A genuinely new-but-correct shape is accepted once
                         # it has been confirmed enough times (count-gated shapes).
-                        results[key] = {
+                        # GATE-FAILURE RE-READ (default OFF): before withholding, take ONE bounded
+                        # second look at the page for a clean, kin re-read (see _maybe_gate_reread).
+                        # Frame invariant: it OCRs + crops the SAME raw page_images the engine holds.
+                        _reread = self._maybe_gate_reread(
+                            str(val), data, fmt_entry, field_types.get(key), field_labels.get(key),
+                            page_images, page_provenance, _reread_cache)
+                        results[key] = _reread if _reread is not None else {
                             **data,
                             'value':           None,
                             'confidence':      0,

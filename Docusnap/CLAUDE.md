@@ -26,6 +26,28 @@ cycle). Fuller narratives: `…_2026-07-10_EVENING.md` (the evening batch undern
 that prefix. All on branch `feat/doctype-title-aliases`; each fix has unit tests (+ real-doc E2E
 where noted).
 
+### 2026-07-11 EVENING — gate-failure targeted RE-READ BUILT (REREAD_ESCALATION, default ON)
+**First of the 5 queued designs, built on the committed batch `838de51` as its OWN commit.** When
+Stage 4.5 WITHHOLDS a structured value on format grounds (engine.py withhold branch → value=None),
+take ONE bounded second look: relocate the garble on the page (fresh PSM-3 `image_to_data`, cached
+per-extract), tight-crop re-read via the anchor crop ladder (`_crop_and_ocr`), and adopt ONLY a
+read that PASSES the exact gate the original failed (learned-format `check_value` clean) AND is KIN
+to the garble (edit-distance ≤2 on alnum forms). REVIEW-BOUND by construction — conf≤69 + note +
+corrected_to (three independent auto-file locks, all below the 88 critical floor) — so it can NEVER
+auto-file; abstains (byte-identical withhold) on born-digital pages (new per-page `provenance_out`:
+`tesseract.extract_text_and_images` → `process_docs` → `engine.extract page_provenance`), ambiguous
+locate, or any non-adoptable read (fail-safe). Kill switch env `GATE_REREAD` (default ON; `=0`
+disables). Pure/injectable module `ocr/targeted_reread.py` (`is_adoptable` + `locate_value_region`
+n-gram/label-adjacency/abstain + `reread_field_value` seam #1 re-check) wired via engine
+`_maybe_gate_reread`; `tests/test_gate_fail_reread.py` 27 units. **A/B (SAME 2494-doc DB, ON vs
+OFF): M IDENTICAL (12=12 — the re-read adds ZERO to auto-file-wrong), ref +3 correct (3 pure recall
+wins null→correct #1886/#2354/#2335), all 5 adoptions correct/more-correct + review-bound, every
+other field byte-identical.** E2E: #2408 adopts `SO-27481`; #2392 fail-safe abstains (crop still
+garbled '$0-51337'). Design + Oracle conditions + BUILT note: `docs/designs/REREAD_ESCALATION_DESIGN_2026-07-11.md`.
+⚠ Corpus-health follow-up (ORTHOGONAL, new-data, not this change): 7 new invoice-ref misreads
+(#2566/69/70/72/75/76/85 — a new supplier's `mbdN…`/`IN/26/…` refs, `/` dropped) auto-file wrong —
+extends the standing Cloudpeak high-conf-ref-misread class; reggie pass queued.
+
 ### 2026-07-11 DAYTIME — slip-fixer FIXED+WIDENED · 5 designs Oracle-closed
 **READ: `docs/handovers/HANDOVER_2026-07-11_DAYTIME.md`** (full detail; this is the index).
 - **SHIPPED (uncommitted, tested):** (1) slip-fixer ORIENTATION VETO — proposer extracted to

@@ -299,6 +299,7 @@ def extract_text_and_images(
     cached_text: str | None = None,
     auto_rotate: bool = False,
     rotations_out: list | None = None,
+    provenance_out: list | None = None,
 ) -> tuple[str, list[Image.Image]]:
     """
     Extract OCR text from a document file.
@@ -388,6 +389,12 @@ def extract_text_and_images(
                             layer_text = _bd.page_text(page)
                     except Exception:
                         layer_text = None   # any text-layer failure -> OCR / cache fallback
+                # Per-page PROVENANCE (parallel to `pages`): 'born_digital' when this page's text
+                # comes from the embedded vector layer, else 'ocr'. Lets a downstream consumer
+                # (the Stage-4.5 gate-failure re-read) fire ONLY on OCR'd pages — a born-digital
+                # value is exact, so a withhold there is a real format issue, not an OCR garble.
+                if provenance_out is not None:
+                    provenance_out.append('born_digital' if layer_text is not None else 'ocr')
                 if layer_text is not None:
                     texts.append(layer_text)
                 elif not use_cache:                 # scanned page, fresh run -> OCR it
@@ -413,6 +420,8 @@ def extract_text_and_images(
         if img.mode not in ("RGB", "L"):
             img = img.convert("RGB")
         pages = [img]
+        if provenance_out is not None:
+            provenance_out.append('ocr')   # a raster image has no text layer — always OCR
         if not use_cache:
             texts.append(engine.read_page(img, enhance_params, dpi=_idpi))
         else:
