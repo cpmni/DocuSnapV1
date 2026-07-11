@@ -7,6 +7,7 @@ No LLM required. Handles 60-70% of fields on well-structured documents.
 Reads patterns from config/keyword_patterns.json.
 """
 
+import os
 import re
 import json
 from pathlib import Path
@@ -115,6 +116,14 @@ def value_is_caption(value, vocab) -> bool:
     if (len(tt) > 1 or punctuated) and jj and jj in vocab.get('joined', ()):   # rule 2
         return True
     return False
+
+
+# G3b KNOWN-CAPTION VALUE GUARD kill switch (2026-07-11, DIRECTION_SUPREMACY): for a name-like /
+# party field (CUSTOMER-SIDE only — supplier_name excluded), a candidate VALUE that IS a known
+# caption ("SO #", "Customer") dies AT GENERATION (right/below), so a caption never fills the field
+# (the incident: customer_name read the "SO #" caption as a value). See extract_fields /
+# _search_for_label `caption_guard`. Default ON; KNOWN_CAPTION_GUARD=0 disables.
+KNOWN_CAPTION_GUARD_ENABLED = os.environ.get('KNOWN_CAPTION_GUARD', '1') != '0'
 
 
 def merge_label_overrides(patterns: dict, overrides: list, doc_slug: str | None) -> dict:
@@ -474,11 +483,18 @@ ROLE_KEY_ALIASES = {
 # ── Field extraction ──────────────────────────────────────────────────────────
 
 def extract_fields(ocr_text: str, field_keys: list[str],
-                   patterns: dict) -> dict:
+                   patterns: dict, caption_vocab: dict | None = None,
+                   caption_guard_keys: "set | None" = None) -> dict:
     """
     Extract field values using keyword patterns.
     Returns dict of {field_key: {"value": str, "confidence": int, "method": "keyword"}}
     Only includes fields that were found.
+
+    caption_vocab / caption_guard_keys (G3b KNOWN-CAPTION VALUE GUARD, 2026-07-11): the run's
+    caption vocabulary (build_caption_vocab) + the set of field keys ARMED for it (name-like/party,
+    supplier_name EXCLUDED — the engine computes it). For an armed field, a candidate VALUE that IS
+    a known caption dies at generation (right/below fall-through), so a printed caption can never
+    fill a name field. Absent / kill switch off -> byte-identical.
     """
     field_patterns = patterns.get("field_patterns", {})
     validation     = patterns.get("validation_patterns", {})
@@ -512,6 +528,11 @@ def extract_fields(ocr_text: str, field_keys: list[str],
         dirs    = fp.get("directions", ["right"])
         base_conf = fp.get("base_confidence", 75)
         role_caption = fp.get("role_caption")   # 'ref' on a seeded custom-ref field (RC1/RC5)
+        # G3b: arm the known-caption VALUE guard for this field (name-like/party, customer-side —
+        # the engine already excluded supplier_name from caption_guard_keys). Pass the vocab so a
+        # caption-valued candidate dies at generation; None (unarmed / kill switch off) = unchanged.
+        _cap_guard = (caption_vocab if (KNOWN_CAPTION_GUARD_ENABLED and caption_vocab
+                                        and field_key in (caption_guard_keys or ())) else None)
 
         for label in labels:
             # Support per-label direction override: {"text": "Bill From", "directions": ["below"]}
@@ -524,7 +545,8 @@ def extract_fields(ocr_text: str, field_keys: list[str],
             else:
                 label_text = label
                 label_dirs = dirs
-            found = _search_for_label(lines, label_text, label_dirs, role_caption=role_caption)
+            found = _search_for_label(lines, label_text, label_dirs, role_caption=role_caption,
+                                      caption_guard=_cap_guard)
             if not found:
                 continue
 
@@ -760,12 +782,20 @@ def _is_caption_fragment(text: str) -> bool:
 
 def _search_for_label(lines: list[str], label: str,
                       directions: list[str],
-                      role_caption: str | None = None) -> tuple[str, str] | None:
+                      role_caption: str | None = None,
+                      caption_guard: dict | None = None) -> tuple[str, str] | None:
     """
     Search lines for a label and return (value, direction) or None.
 
     role_caption (RC1/RC5): 'ref' for a SEEDED custom-ref field, so a buyer/seller party caption
     ("Customer Reference") can't cross-fill it. None for shipped patterns → behaviour unchanged.
+
+    caption_guard (G3b, 2026-07-11): when set (an armed name-like/party field's caption vocab), a
+    candidate VALUE that IS a known caption dies at generation — blanked at 'right' so it falls
+    through to 'below', skipped at 'below' — so a printed caption ("SO #") never fills a name field.
+    None = unchanged. Broader than the role_caption='party' _is_caption_fragment guard (whole run
+    vocab, not just short ref/date fragments) and works even when role_caption is None (the shipped
+    customer_name pattern carries none — the incident).
     """
     pattern = _label_pattern(label)
     if pattern is None:
@@ -850,6 +880,11 @@ def _search_for_label(lines: list[str], label: str,
             # through to 'below'. (RC1 slice 2)
             if role_caption == 'party' and _is_caption_fragment(after):
                 after = ''
+            # G3b: a right-side candidate that IS a known caption ("SO #", "Customer") is the
+            # neighbour column's label, never a value — blank it so the read falls through to
+            # 'below'. Whole-run vocab; armed for name-like/party fields (customer-side).
+            if caption_guard and after and value_is_caption(after, caption_guard):
+                after = ''
             # Reject if the extracted text itself looks like another label, or contains
             # an embedded label:value pair (e.g. "Ship Mode: Second Class", "Date: Sep 07")
             # which means we grabbed neighbouring column content, not the actual value.
@@ -872,6 +907,10 @@ def _search_for_label(lines: list[str], label: str,
                 # ('Site / Customer' ↵ 'Reference No.  WS408618' ↵ 'Formby & Sons' —
                 # the MP_wor_48 class); the window walks on to the real value. (RC1 slice 2)
                 if role_caption == 'party' and _is_caption_fragment(candidate):
+                    continue
+                # G3b: a 'below' candidate that IS a known caption is a stray caption row in the
+                # reading order, not the value — walk on to the real value. (customer-side armed)
+                if caption_guard and value_is_caption(candidate, caption_guard):
                     continue
                 if (candidate
                         and not _is_label_line(candidate)

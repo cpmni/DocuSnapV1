@@ -26,6 +26,22 @@ cycle). Fuller narratives: `…_2026-07-10_EVENING.md` (the evening batch undern
 that prefix. All on branch `feat/doctype-title-aliases`; each fix has unit tests (+ real-doc E2E
 where noted).
 
+### 2026-07-11 EVENING++ — DIRECTION_SUPREMACY G3b (known-caption value guard) BUILT
+**Slice 2/3, own commit.** For a name-like/party field (CUSTOMER-SIDE — supplier_name EXCLUDED
+explicitly, NOT via `_IDENTITY_FIELD_KEYS` which still lists customer_name), a candidate VALUE that
+IS a known caption dies AT GENERATION in `keyword._search_for_label` (blanked at 'right' → falls
+through to 'below'; skipped at 'below') — so a printed caption ("SO #", "Order Number") never fills a
+name field (the incident: customer_name read the "SO #" caption). Reuses the c2 SHARED vocab
+`keyword.build_caption_vocab`/`value_is_caption`; the engine builds it once + the armed-key set
+(name-like ∧ ≠supplier_name) and threads both into `extract_fields`. Kill switch env
+`KNOWN_CAPTION_GUARD` default ON. Broader than the role_caption='party' `_is_caption_fragment` guard
+(whole RUN vocab, fires even when role_caption is None — the shipped customer_name pattern carries
+none). Engine wiring confirmed LIVE (caption_guard_keys=['customer_name'], 206-caption vocab — the
+c2 lesson). `test_known_caption_guard.py` 18/18. **A/B (same 2495-doc DB, ON vs OFF): perfectly
+NEUTRAL — M 9=9, per-field IDENTICAL, regressions 58=58** (customer_name isn't corpus-scored, so the
+gate proves NEUTRALITY; positive evidence = the unit battery + the incident smoke test). Remaining:
+D1 (teach label-pick). D2 = DO NOTHING.
+
 ### 2026-07-11 EVENING+ — DIRECTION_SUPREMACY c2 (taught-field ownership guard) BUILT
 **Second queued design; first of its 3 slices (c2→G3b→D1), own commit on `28d31c5`.** A NON-identity
 field whose FINAL read is a plain 'keyword' match, while the user AUTHORITATIVELY taught that field's

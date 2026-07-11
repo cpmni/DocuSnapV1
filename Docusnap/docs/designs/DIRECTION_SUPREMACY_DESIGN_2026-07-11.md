@@ -7,7 +7,14 @@ not the NAME — c2 uses `document_slug` for `anchor_admissible` (a NAME-framed 
 `owned`; pinned). Identity exclusion is PER-TYPE (supplier_name always; customer_name only when sole
 issuer — it's a RECIPIENT field otherwise, NOT via the stale `_IDENTITY_FIELD_KEYS`). A/B (same
 2495-doc DB): net SAFETY WIN — M 12→9 (caught 3 taught-field ref misreads), per-field IDENTICAL
-(HOLD-only), +128 docs (5%) review-bound. **G3b + D1 still to build.** Original design below.
+(HOLD-only), +128 docs (5%) review-bound.
+
+✅ **G3b BUILT 2026-07-11 EVENING++** (own commit). `keyword._search_for_label` caption_guard (kills a
+caption-valued candidate at right/below generation) + `extract_fields` threading + engine arming
+(name-like ∧ ≠supplier_name, customer-side only). Reuses the c2 shared vocab.
+`tests/test_known_caption_guard.py` 18/18; wiring confirmed live (caption_guard_keys=['customer_name']).
+A/B (same 2495-doc DB): perfectly NEUTRAL on scored fields (M 9=9, per-field identical) — the design's
+neutrality gate (customer_name unscored). **D1 still to build; D2 = DO NOTHING.** Original design below.
 
 **Status (original):** Oracle verdicts per-slice (2026-07-11): **c2 SIGN OFF WITH CONDITIONS · G3b SIGN OFF
 WITH CONDITIONS (customer-side only) · D1 SIGN OFF WITH CONDITIONS · D2 DO NOTHING** (keep the

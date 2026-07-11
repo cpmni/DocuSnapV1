@@ -1732,7 +1732,19 @@ class ExtractionEngine:
         # override is still attempted here instead of depending on a learned anchor. Runs AFTER the
         # override merge so an admin override still wins; additive/pure otherwise.
         patterns_for_run = keyword.seed_field_labels(patterns_for_run, field_defs)
-        kw_results = keyword.extract_fields(ocr_text, field_keys, patterns_for_run)
+        # G3b KNOWN-CAPTION VALUE GUARD + c2 hint-caption deny share this vocabulary: the run's
+        # post-merge label banks (shipped ∪ overrides ∪ seeds) + field DISPLAY labels. Armed keys
+        # = name-like/party fields, CUSTOMER-SIDE only — supplier_name EXCLUDED explicitly (NOT via
+        # _IDENTITY_FIELD_KEYS, which still lists customer_name and would silently neuter the fix).
+        _caption_vocab = keyword.build_caption_vocab(patterns_for_run.get('field_patterns'), field_defs)
+        _caption_guard_keys = {
+            f.get('key') for f in (field_defs or [])
+            if f.get('key') and f.get('key') != 'supplier_name'
+            and (value_quality.is_name_like_field(f.get('key'))
+                 or (patterns_for_run.get('field_patterns', {}).get(f.get('key')) or {}).get('role_caption') == 'party')}
+        kw_results = keyword.extract_fields(ocr_text, field_keys, patterns_for_run,
+                                            caption_vocab=_caption_vocab,
+                                            caption_guard_keys=_caption_guard_keys)
         # ── INPUT HYGIENE for name-like free-text keyword reads ── a keyword/label
         # capture has NO crop-path cleaning, so OCR edge junk ("--« Beaumont Care
         # Homes Ltd -") enters verbatim and — being the highest-authority source
@@ -2817,8 +2829,7 @@ class ExtractionEngine:
         # field the user AUTHORITATIVELY taught here but that couldn't be located on this page (a
         # generic caption stand-in). Beside the recipient guard, BEFORE identity rescue + the boost.
         self._flag_taught_field_ownership(
-            results, field_defs, supplier_name, anchors, hints, document_slug,
-            keyword.build_caption_vocab(patterns_for_run.get('field_patterns'), field_defs))
+            results, field_defs, supplier_name, anchors, hints, document_slug, _caption_vocab)
         # ── Identity rescue (slice 1; Oracle-signed 2026-07-10) ── AFTER the guard
         # (it overwrites the guard's note with its own provenance note when the
         # corroboration holds; no corroboration => the guard's behaviour survives
