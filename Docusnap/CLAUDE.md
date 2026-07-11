@@ -26,6 +26,21 @@ cycle). Fuller narratives: `…_2026-07-10_EVENING.md` (the evening batch undern
 that prefix. All on branch `feat/doctype-title-aliases`; each fix has unit tests (+ real-doc E2E
 where noted).
 
+### 2026-07-11 EVENING+++ — DIRECTION_SUPREMACY D1 (teach label-pick) BUILT — package COMPLETE
+**Slice 3/3, own commit — closes DIRECTION_SUPREMACY (D2 = DO NOTHING).** The ⊕ teach used a
+LEFT-FIRST early return: a garbled left-strip caption ('esha, i') was staged before the ABOVE strip
+was even read, so a clean caption above ('Customer') was lost. NOW `captureAnchorContext` reads BOTH
+strips, then `AnchorLabel.pickLabelCandidate(left, above, fieldCaptions)` picks: score 2 = matches
+THIS field's own caption (FIELD-SCOPED bank = the field's display label via `labelFor`; NOT a global
+bank, which would let a neighbour row's 'Date' outscore the true left caption — Oracle), 1 = clean,
+0 = suspicious/empty; higher wins, TIE → LEFT (status quo), BOTH 0 → position-only (empty label,
+never a staged garble). The COMMA-ORPHAN rule (a label ending ", <single letter>" = OCR fragment)
+landed in the SHARED `labelLooksSuspicious`, retro-benefiting the existing suspicious→position-only
+downgrade. Renderer-only (teach-time; extraction untouched) → no corpus A/B; `test_anchor_label.js`
+D1 battery (incident 'esha, i' left vs 'Customer' above → above wins; tie→LEFT; both-0→position-only;
+comma-orphan boundaries) all green, both files `node -c` clean. forceDir (Left/Above toggle) still
+pins one side. NEEDS A RESTART to load (renderer JS).
+
 ### 2026-07-11 EVENING++ — DIRECTION_SUPREMACY G3b (known-caption value guard) BUILT
 **Slice 2/3, own commit.** For a name-like/party field (CUSTOMER-SIDE — supplier_name EXCLUDED
 explicitly, NOT via `_IDENTITY_FIELD_KEYS` which still lists customer_name), a candidate VALUE that

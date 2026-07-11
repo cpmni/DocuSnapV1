@@ -2269,6 +2269,7 @@ function labelOffsetFromBox(box, originDX, originDY, xNorm, yNorm, imgW, imgH) {
 function nearestLeftCluster(words) { return window.AnchorLabel.nearestLeftCluster(words); }
 function nearestAboveRow(words) { return window.AnchorLabel.nearestAboveRow(words); }
 function nearestRowTo(words, centreY) { return window.AnchorLabel.nearestRowTo(words, centreY); }
+function pickLabelCandidate(leftLabel, aboveLabel, fieldCaptions) { return window.AnchorLabel.pickLabelCandidate(leftLabel, aboveLabel, fieldCaptions); }
 
 // The located label's box as page-normalised [x,y,w,h] (top-left), for the
 // "show the detected anchor" overlay. Same crop-origin math as labelOffsetFromBox.
@@ -2337,7 +2338,14 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
   // guarded — a failure here (bad crop, OCR error) must NOT prevent the guaranteed
   // fallback save below, otherwise nothing gets learned at all.
   // forceDir (from the readout's Left/Above toggle) pins ONE direction: 'right' = label
-  // to the left only, 'below' = label above only; null = auto (left then above).
+  // to the left only, 'below' = label above only; null = auto (D1: capture BOTH, then pick).
+  // D1 (2026-07-11): capture the left AND above captions, THEN pick via pickLabelCandidate — no
+  // left-first EARLY RETURN (which let a garbled left strip 'esha, i' beat a clean 'Customer'
+  // above). The field-scoped caption bank = this field's display label (NOT a global bank, which
+  // would let a neighbouring row's caption outscore the true left one — Oracle).
+  const fieldCaptions = [];
+  try { const _fl = (typeof labelFor === 'function') ? labelFor(fieldKey) : null; if (_fl) fieldCaptions.push(_fl); } catch {}
+  let leftCand = null, aboveCand = null;
   if (forceDir !== 'below') try {
     const leftPad    = rect.x;   // full span from the page's left edge to the value box
     // VERTICAL EXPANSION (oscar+007, 2026-07-10): the strip was exactly rect.h tall at the
@@ -2374,14 +2382,11 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
       const leftLabel = sanitizeAnchorLabel(extractLabel(leftText) || '');
       if (leftLabel) {
         // Drift-invariant offset: the located label's page position → value centre.
-        // Origin of the left crop in DISPLAY px is (rect.x - leftPad, lTop).
+        // Origin of the left crop in DISPLAY px is (rect.x - leftPad, lTop). D1: STORE the
+        // candidate (don't stage/return yet) so the above strip is also read and compared.
         const off = labelOffsetFromBox(leftBox, rect.x - leftPad, lTop, xNorm, yNorm, imgW, imgH);
-        // label_detected: this caption was OCR'd from the PAGE (not the field-name
-        // fallback), so the backend must NOT drop it even if it equals the field key
-        // (a "Make" field whose on-page label is literally "Make").
-        pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: leftLabel, direction: 'right', ...off, label_detected: true };
-        return { anchor_label: leftLabel, direction: 'right',
-                 normBox: labelNormBox(leftBox, rect.x - leftPad, lTop, imgW, imgH) };
+        leftCand = { label: leftLabel, direction: 'right', off,
+                     normBox: labelNormBox(leftBox, rect.x - leftPad, lTop, imgW, imgH) };
       }
     }
   } catch (err) {
@@ -2429,15 +2434,35 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
       // stops the snap latching onto the MAC above instead of the label to the left.
       const aboveLabel = sanitizeAnchorLabel(extractLabel(aboveText) || '');
       if (aboveLabel) {
-        // Origin of the above crop in DISPLAY px is (rect.x, aboveTop).
+        // Origin of the above crop in DISPLAY px is (rect.x, aboveTop). D1: STORE the candidate.
         const off = labelOffsetFromBox(aboveBox, rect.x, aboveTop, xNorm, yNorm, imgW, imgH);
-        pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: aboveLabel, direction: 'below', ...off, label_detected: true };
-        return { anchor_label: aboveLabel, direction: 'below',
-                 normBox: labelNormBox(aboveBox, rect.x, aboveTop, imgW, imgH) };
+        aboveCand = { label: aboveLabel, direction: 'below', off,
+                      normBox: labelNormBox(aboveBox, rect.x, aboveTop, imgW, imgH) };
       }
     }
   } catch (err) {
     console.warn('Anchor capture: above-label lookup failed (non-critical):', err);
+  }
+
+  // D1 — PICK between the left and above captions. forceDir pins one side; else pickLabelCandidate
+  // scores each (2 = matches this field's caption · 1 = clean · 0 = suspicious/empty), higher wins,
+  // a TIE goes to LEFT (status quo), BOTH 0 → position-only (fall through to the empty-label save
+  // below). This is where a clean 'Customer' above beats a garbled 'esha, i' left (the incident).
+  let chosen = null;
+  if (forceDir === 'right')      chosen = leftCand;
+  else if (forceDir === 'below') chosen = aboveCand;
+  else {
+    const pick = pickLabelCandidate(leftCand ? leftCand.label : '',
+                                    aboveCand ? aboveCand.label : '', fieldCaptions);
+    chosen = pick.direction === 'above' ? aboveCand
+           : pick.direction === 'left'  ? leftCand : null;
+  }
+  if (chosen) {
+    // label_detected: this caption was OCR'd from the PAGE (not the field-name fallback), so the
+    // backend must NOT drop it even if it equals the field key ("Make" field labelled "Make").
+    pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: chosen.label,
+                                 direction: chosen.direction, ...chosen.off, label_detected: true };
+    return { anchor_label: chosen.label, direction: chosen.direction, normBox: chosen.normBox };
   }
 
   // Guaranteed fallback — always STAGE SOMETHING so the position is learned on

@@ -164,10 +164,42 @@
     // 0 false-flags across the real-caption vocab. Cannot catch clean-case clips ("verial",
     // "escription") — no character rule can (they read as words) → left to the operator.
     if (/\p{Ll}\p{Lu}/u.test(label)) return true;
+    // COMMA-ORPHAN (D1, 2026-07-11): a label ending in a comma + a single stray letter ("esha, i")
+    // is an OCR FRAGMENT (a word split across the strip edge), never a real caption — flag it so
+    // the existing suspicious->position-only downgrade drops it instead of staging garble.
+    if (/,\s*\p{L}\.?\s*$/u.test(label.trim())) return true;
     return false;
   }
 
-  root.AnchorLabel = { nearestLeftCluster, nearestAboveRow, nearestRowTo, extractLabel, sanitizeAnchorLabel, labelLooksSuspicious };
+  // D1 — TEACH LABEL-PICK: score a candidate caption. 2 = matches one of THIS field's own known
+  // captions (a field-scoped bank — its DB labels + display label; NOT a global bank, which would
+  // let a neighbouring row's 'Date' outscore the true unknown left caption); 1 = not suspicious;
+  // 0 = suspicious/empty. Pure — no OCR, no DOM.
+  function _normCaption(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ''); }
+  function _matchesFieldCaption(label, fieldCaptions) {
+    const n = _normCaption(label);
+    if (!n) return false;
+    return (fieldCaptions || []).some(c => _normCaption(c) === n);
+  }
+  function scoreLabelCandidate(label, fieldCaptions) {
+    if (!label || !label.trim()) return 0;
+    if (_matchesFieldCaption(label, fieldCaptions)) return 2;
+    return labelLooksSuspicious(label) ? 0 : 1;
+  }
+
+  // Pick between the LEFT-strip and ABOVE-strip captions at teach time. Higher score wins; a TIE
+  // goes to LEFT (the status-quo direction). BOTH 0 -> position-only (empty label, never a staged
+  // garble). Returns {label, direction:'left'|'above'|null}. This replaces the left-first EARLY
+  // RETURN that let a garbled left strip ('esha, i') beat a clean caption above ('Customer').
+  function pickLabelCandidate(leftLabel, aboveLabel, fieldCaptions) {
+    const L = (leftLabel || '').trim(), A = (aboveLabel || '').trim();
+    const sL = scoreLabelCandidate(L, fieldCaptions), sA = scoreLabelCandidate(A, fieldCaptions);
+    if (sL === 0 && sA === 0) return { label: '', direction: null };   // position-only
+    if (sA > sL) return { label: A, direction: 'above' };
+    return { label: L, direction: 'left' };                            // sL >= sA incl. tie -> LEFT
+  }
+
+  root.AnchorLabel = { nearestLeftCluster, nearestAboveRow, nearestRowTo, extractLabel, sanitizeAnchorLabel, labelLooksSuspicious, scoreLabelCandidate, pickLabelCandidate };
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));
 
 // Node/test interop (the browser path uses window.AnchorLabel).

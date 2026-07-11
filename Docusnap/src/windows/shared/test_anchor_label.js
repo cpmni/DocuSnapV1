@@ -146,5 +146,34 @@ check('Work Address not suspicious', A.labelLooksSuspicious('Work Address') === 
 // documented accepted misses (clean-case clips) stay FALSE — operator corrects these
 check('clean-case clip "verial" is an accepted miss', A.labelLooksSuspicious('verial No.') === false);
 
+// ── D1: comma-orphan + pickLabelCandidate ───────────────────────────────────────
+check('comma-orphan fragment suspicious ("esha, i")', A.labelLooksSuspicious('esha, i') === true);
+check('comma-orphan no-space suspicious ("esha,i")', A.labelLooksSuspicious('esha,i') === true);
+check('real comma caption NOT flagged ("Company, Inc")', A.labelLooksSuspicious('Company, Inc') === false);
+check('two-letter tail after comma NOT comma-orphan ("Ref, No")', A.labelLooksSuspicious('Ref, No') === false);
+
+const CUST = ['Customer', 'Bill To'];   // a customer field's own caption bank (field-scoped)
+check('score 2 = matches THIS field caption', A.scoreLabelCandidate('Customer', CUST) === 2);
+check('score 1 = clean non-matching label', A.scoreLabelCandidate('Ship To', CUST) === 1);
+check('score 0 = suspicious label', A.scoreLabelCandidate('esha, i', CUST) === 0);
+check('score 0 = empty', A.scoreLabelCandidate('', CUST) === 0);
+
+let p = A.pickLabelCandidate('esha, i', 'Customer', CUST);
+check('INCIDENT: above "Customer" beats garbled left "esha, i"', p.direction === 'above' && p.label === 'Customer');
+p = A.pickLabelCandidate('Ship To', 'Deliver To', CUST);       // both score 1 -> tie
+check('tie -> LEFT (status quo)', p.direction === 'left' && p.label === 'Ship To');
+p = A.pickLabelCandidate('Customer', 'Customer', CUST);         // both score 2 -> tie
+check('tie (both match) -> LEFT', p.direction === 'left');
+p = A.pickLabelCandidate('esha, i', '�garble', CUST);
+check('both suspicious -> position-only (empty label, no staged garble)', p.direction === null && p.label === '');
+p = A.pickLabelCandidate('', '', CUST);
+check('both empty -> position-only', p.direction === null && p.label === '');
+p = A.pickLabelCandidate('', 'Bill To', CUST);
+check('empty left, clean above -> above', p.direction === 'above' && p.label === 'Bill To');
+p = A.pickLabelCandidate('Ship To', 'Customer', CUST);         // left 1, above 2
+check('field-caption match (above) beats clean non-match (left)', p.direction === 'above');
+p = A.pickLabelCandidate('Customer', 'Ship To', CUST);         // left 2, above 1
+check('field-caption match (left) beats clean non-match (above)', p.direction === 'left');
+
 console.log(fails ? `\n${fails} FAILED` : '\nAll anchor-label checks passed');
 process.exit(fails ? 1 : 0);

@@ -14,7 +14,13 @@ caption-valued candidate at right/below generation) + `extract_fields` threading
 (name-like ∧ ≠supplier_name, customer-side only). Reuses the c2 shared vocab.
 `tests/test_known_caption_guard.py` 18/18; wiring confirmed live (caption_guard_keys=['customer_name']).
 A/B (same 2495-doc DB): perfectly NEUTRAL on scored fields (M 9=9, per-field identical) — the design's
-neutrality gate (customer_name unscored). **D1 still to build; D2 = DO NOTHING.** Original design below.
+neutrality gate (customer_name unscored).
+
+✅ **D1 BUILT 2026-07-11 EVENING+++** (own commit) — **package COMPLETE (D2 = DO NOTHING).**
+`anchorLabel.js` pickLabelCandidate/scoreLabelCandidate + comma-orphan in labelLooksSuspicious;
+`review/renderer.js` captureAnchorContext reads BOTH strips then picks (no left-first early return),
+field-scoped bank = labelFor. `test_anchor_label.js` D1 battery green. Renderer-only, no corpus A/B.
+NEEDS A RESTART. Original design below.
 
 **Status (original):** Oracle verdicts per-slice (2026-07-11): **c2 SIGN OFF WITH CONDITIONS · G3b SIGN OFF
 WITH CONDITIONS (customer-side only) · D1 SIGN OFF WITH CONDITIONS · D2 DO NOTHING** (keep the
