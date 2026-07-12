@@ -17,14 +17,38 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/features.md` — first-run wizard, welcome tour, settings backup, Learning Repair, teaching wizard, dev inspector.
 - `docs/history.md` — resolved QA/audit findings + build-stage history (Settings/Review/Search/Stage-7 rebuilds).
 
-## Recent session changes (2026-07-09 → 07-11) — durable mechanisms now in the code
-**READ FIRST: `docs/handovers/HANDOVER_2026-07-11.md`** (morning wrap-up — the whole NIGHT batch is
-UNCOMMITTED on top of commit `e898009`; live DB at migration 45; slip-fixer incident + approved fix
-cycle). Fuller narratives: `…_2026-07-10_EVENING.md` (the evening batch underneath) + `…_2026-07-10.md`
-/ `…_DAYTIME.md`. Session write-ups were REORGANISED 2026-07-11 into `docs/handovers/` +
-`docs/night-reports/` + `docs/audits/` — old root paths in memories/handovers are stale by exactly
-that prefix. All on branch `feat/doctype-title-aliases`; each fix has unit tests (+ real-doc E2E
-where noted).
+## Recent session changes (2026-07-09 → 07-12) — durable mechanisms now in the code
+**READ FIRST: `docs/handovers/HANDOVER_2026-07-12.md`** (latest — the identity/name guards below;
+working tree CLEAN, HEAD `2ba919f`, live DB migration 45). Prior: `…_2026-07-11.md` (the NIGHT batch,
+since COMMITTED). Fuller narratives: `…_2026-07-10_EVENING.md` / `…_2026-07-10.md` / `…_DAYTIME.md`.
+Session write-ups live in `docs/handovers/` + `docs/night-reports/` + `docs/audits/` (reorganised
+2026-07-11 — old root paths are stale by exactly that prefix). All on branch `feat/doctype-title-aliases`;
+each fix has unit tests (+ real-doc E2E where noted).
+
+### 2026-07-12 — identity/name guards: wrong-supplier logo collision + customer-name heading garble (COMMITTED)
+**Two committed fixes; HEAD `2ba919f`. READ `docs/handovers/HANDOVER_2026-07-12.md`.**
+- **`2ba919f` — BRANDING CROSS-CHECK + logo cross-plant guard (wrong-supplier collision).** Thornbury
+  dockets auto-filed at 100% as "Cascade" (colliding TF/CW monogram logos + a logo set POISONED with TF
+  prints). `engine._flag_branding_conflict` at the finalisation seam (AFTER the identity-conflict block,
+  skip if it acted): a resolved supplier whose OWN template keyword-fingerprint is absent from the page
+  (own_ratio≤0.25, ≥3 distinctive words after `_BRANDING_STOPWORDS` strips generic doc-type words like
+  "delivery"/"docket") → cap `supplier_name`≤69 + review NOTE (naming the branding-detected alternative) +
+  needs_review. FLAG-ONLY — **the NOTE, not the cap, blocks auto-file** (trust.isAutoFileEligible). Covers
+  logo + template_fixed + fixed-supplier paths; dependency-free (reuses `_keyword_hit_ratio`); works with
+  identity_fusion absent (it's inert in packaged builds — rapidfuzz unbundled). Exempt ONLY manual +
+  accepted_issuers (NOT template_fixed_locked/keyword_override — the closed hole). Kill switch
+  `BRANDING_CONFLICT_GUARD`. `learning.saveLogoFingerprint` cross-plant guard refuses to plant a phash under
+  X when it's closer to a different supplier's print (first-print bootstrap + manual bypass; UPDATE branch
+  untouched). Oracle SIGN OFF /4 conditions applied (now 5-for-5). Corpus M(auto-file-wrong) 8→1 (the 1 =
+  #98, a SEPARATE DELIVERY-DOCKET→worksheet TYPE issue). `test_branding_conflict.py` 17/17 +
+  `test_logo_crossplant_guard.js` 7/7. **Owner will reset+reimport the test corpus — build+RESTART FIRST
+  (save-guard runs in the main process) else it re-poisons.**
+- **`4576c76` — HEADING-GARBLE NAME demotion.** A taught anchor's RELOCATED read landing on a caption garble
+  ("Deliver To RRS") beat the clean keyword name (relocated reads are unconditionally located + null OCR
+  conf → skip the Tier-A garble gate). Now demoted (`located_ok=False`→existing ≤50 cap) UNLESS it carries a
+  protective structural word (`wordness.has_no_protective_token` keeps "Delivery Solutions Ltd" inert).
+  anchor-local, demotion-only. Kill switch `HEADING_GARBLE_GUARD`. E2E `Deliver To RRS`@92 silent →
+  `Primrose Childcare`@83. `test_heading_garble_demotion.py` 24/24; corpus A/B NEUTRAL, M=0.
 
 ### 2026-07-11 EVENING+++ — DIRECTION_SUPREMACY D1 (teach label-pick) BUILT — package COMPLETE
 **Slice 3/3, own commit — closes DIRECTION_SUPREMACY (D2 = DO NOTHING).** The ⊕ teach used a
