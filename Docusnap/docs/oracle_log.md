@@ -57,3 +57,17 @@ _(updated as cases accrue — keep/retire recommendation)_
   the fix to shape/value-set corroboration + a preserved human checkpoint. The resulting fix was simpler
   AND safer than the first-draft plan. Verdict: unambiguous keep; his judgement has changed the outcome
   for the better on every case so far.
+- After case 5 (2026-07-12, logo-collision wrong-supplier identity fix): **KEEP — 5-for-5.** Vetting the
+  oscar+gary consensus on a branding cross-check for the Cascade⇄Thornbury misfile, he (a) traced the
+  auto-file path to establish that the load-bearing block is the `validation_note` (trust.js:443), NOT
+  the ≤69 cap or overall_confidence — so the note is mandatory and must survive to the extraction row;
+  (b) caught a ship-blocking HOLE in the exemption set — exempting `template_fixed_locked`/`keyword_override`
+  would have left the very template path that stamps `template_fixed_locked` exempt from the guard meant
+  to catch it (condition: exempt only `manual` + accepted_issuers); (c) corrected the trigger framing —
+  gary's "own-branding-absent" is NARROWER than stated (a brand-new supplier has no fingerprint → exempt),
+  making it the right smallest-safe trigger over oscar's collision-gate; (d) found a bootstrap bug in the
+  save-guard (first-ever print would be refused → a supplier could never learn a logo); (e) fixed the
+  placement (after the identity-conflict block, skip if it already adopted, to dodge a stale-var false-flag)
+  and the polluted-GT gate shape. Every one of these was a real defect the first-draft consensus missed.
+  Pattern holds: he verifies at the mechanism level and catches the seam. Route identity/precedence/
+  auto-file changes through him.

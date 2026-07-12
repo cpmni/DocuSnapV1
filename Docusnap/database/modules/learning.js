@@ -623,7 +623,10 @@ function deleteAnchor(db, id) {
 
 // ── Logo fingerprints ─────────────────────────────────────────────────────────
 
-function saveLogoFingerprint(db, { supplier_name, phash, ahash }) {
+// A NEW phash this many bits CLOSER to another supplier than to X's own = a cross-plant (poison).
+const LOGO_CROSSPLANT_MARGIN = 4;
+
+function saveLogoFingerprint(db, { supplier_name, phash, ahash, manual }) {
   const existing = db.prepare(
     'SELECT id, phash FROM logo_fingerprints WHERE supplier_name = ?'
   ).all(supplier_name);
@@ -636,6 +639,29 @@ function saveLogoFingerprint(db, { supplier_name, phash, ahash }) {
         WHERE id = ?
       `).run(row.id);
       return;
+    }
+  }
+  // CROSS-PLANT GUARD (Oracle 2026-07-12) — stop the logo-collision poisoning loop: refuse to plant a
+  // NEW phash under supplier X when it sits decisively CLOSER (by > MARGIN bits) to a DIFFERENT
+  // supplier's existing print than to any of X's own — the signature of a mis-resolved doc appending a
+  // rival's logo under X (a Thornbury "TF" mark saved under Cascade). Applies ONLY to the INSERT-new
+  // branch (the UPDATE / match_count++ path above is untouched) and ONLY when X ALREADY has >=1 own
+  // print — a supplier's FIRST-EVER logo is always planted (else a look-alike newcomer could never
+  // learn a logo) — and an explicit operator MANUAL supplier assignment bypasses (operator authority).
+  // Pure hash-space; no OCR. Defence-in-depth behind the engine branding-conflict flag (which routes a
+  // mis-resolved doc to review BEFORE the confirm that would plant the poison).
+  if (!manual && existing.length >= 1) {
+    let minOwn = 64;
+    for (const row of existing) minOwn = Math.min(minOwn, hammingDistance(row.phash, phash));
+    let minOther = 64, otherName = null;
+    for (const row of db.prepare(
+      'SELECT supplier_name, phash FROM logo_fingerprints WHERE supplier_name <> ?'
+    ).all(supplier_name)) {
+      const d = hammingDistance(row.phash, phash);
+      if (d < minOther) { minOther = d; otherName = row.supplier_name; }
+    }
+    if (minOther + LOGO_CROSSPLANT_MARGIN < minOwn) {
+      return { skipped: true, reason: 'cross_plant', closerTo: otherName, minOther, minOwn };
     }
   }
   db.prepare(`

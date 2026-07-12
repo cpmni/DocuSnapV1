@@ -182,6 +182,19 @@ def _supplier_identity_decision(existing: dict | None, candidate: dict | None) -
     return None
 
 
+# Generic document-TYPE / heading words that leak into template keyword-fingerprints and appear on
+# ANY supplier's document of that type — so they never DISTINGUISH a supplier. Stripped from the
+# branding banks in _flag_branding_conflict so the presence check is judged on distinctive
+# company/address tokens only (a Thornbury fingerprint polluted with "Delivery"/"Docket" must NOT
+# score as "present" on a Cascade DELIVERY DOCKET — the #1/#42 collision-slip class, where the wrong
+# supplier's leaked doc-type words push its branding ratio above the threshold and suppress the flag).
+_BRANDING_STOPWORDS = frozenset({
+    "delivery", "docket", "note", "notes", "invoice", "order", "purchase", "sales",
+    "statement", "remittance", "receipt", "quote", "quotation", "worksheet",
+    "credit", "debit", "advice", "proforma", "job", "copy", "original",
+})
+
+
 def _genuine_template_supplier(matched_tmpl: dict | None) -> str | None:
     """The matched template's DOMINANT confirmed issuer identity when it is a CLEAR majority, else
     None. Uses the learned issuer DISTRIBUTION (templates.getAll emits dominant_supplier / _count /
@@ -956,6 +969,84 @@ class ExtractionEngine:
             }
         except Exception:
             return None  # background aid — must never break extraction
+
+    def _flag_branding_conflict(self, results, supplier_name, templates, ocr_text):
+        """BRANDING-CONFLICT cross-check (Oracle 2026-07-12) — the logo-collision wrong-supplier
+        class (a Thornbury docket auto-filing as Cascade because their monogram logos collide and
+        Cascade's logo set was poisoned with Thornbury prints). When the resolved supplier X's OWN
+        printed branding is essentially ABSENT from the page — we resolved X (via logo / same-logo
+        sibling template / fixed supplier), yet the letterhead words that identify X aren't there —
+        cap the supplier field <=69, attach a review NOTE (naming the branding-detected alternative
+        if one is decisively present), and set needs_review. FLAG-ONLY: the value is never changed.
+        The NOTE is what actually blocks the wrong auto-file (trust.isAutoFileEligible refuses any
+        non-empty validation_note; the cap alone does not block at overall==100). Covers the logo +
+        template_fixed + fixed-supplier paths at one seam. Reuses template keyword-fingerprints +
+        template_matcher._keyword_hit_ratio (word-boundary; NO new dependency; works with
+        identity_fusion absent — the packaged-build reality). Kill switch BRANDING_CONFLICT_GUARD.
+
+        Exemptions (Oracle C1): method 'manual' (operator typed it on THIS doc); resolved in
+        accepted_issuers (the 'Issuer is correct' allowlist); the resolved supplier's own branding is
+        PRESENT (own_ratio > LOW); or it carries fewer than K distinctive fingerprint words (logo-only
+        / unjudgeable -> fail-safe, no flag). template_fixed_locked / keyword_override are
+        deliberately NOT exempt — the template path stamps template_fixed_locked, so exempting it
+        would reopen the exact hole this guard closes."""
+        if os.environ.get("BRANDING_CONFLICT_GUARD", "1") == "0":
+            return
+        if not supplier_name or not templates or not ocr_text:
+            return
+        fld = results.get("supplier_name")
+        if not isinstance(fld, dict) or not fld.get("value"):
+            return
+        if fld.get("method") == "manual":
+            return
+        if self._accept_norm(supplier_name) in self.accepted_issuers:
+            return
+        from extraction import template_matcher
+        # Branding bank per supplier identity: the template's DOMINANT confirmed issuer, else its name.
+        banks = {}
+        for t in templates:
+            iss = (t.get("dominant_supplier") or "").strip() or (t.get("name") or "").strip()
+            kf = t.get("keyword_fingerprint") or []
+            if not iss or not kf:
+                continue
+            b = banks.setdefault(self._accept_norm(iss), {"name": iss, "words": set()})
+            for w in kf:
+                wl = str(w or "").strip().lower()
+                if len(wl) >= 3 and wl not in _BRANDING_STOPWORDS:
+                    b["words"].add(wl)   # distinctive branding tokens only (doc-type words stripped)
+        K = 3
+        own = banks.get(self._accept_norm(supplier_name))
+        if not own or len(own["words"]) < K:
+            return  # no >=K-word fingerprint for the resolved supplier -> can't judge (fail-safe)
+        ocr_lower = ocr_text.lower()
+        own_ratio = template_matcher._keyword_hit_ratio(
+            {"keyword_fingerprint": sorted(own["words"])}, ocr_lower)
+        if own_ratio > 0.25:
+            return  # the resolved supplier's own branding IS on the page -> healthy, no flag
+        # X's branding is ABSENT. Name the decisively-present alternative supplier, if one stands out
+        # (>=0.75 present AND a clear margin over any third — Oracle: positive evidence, not weak agreement).
+        alt, alt_ratio, second = None, 0.0, 0.0
+        _own_norm = self._accept_norm(supplier_name)
+        for norm, b in banks.items():
+            if norm == _own_norm or len(b["words"]) < K:
+                continue
+            r = template_matcher._keyword_hit_ratio(
+                {"keyword_fingerprint": sorted(b["words"])}, ocr_lower)
+            if r > alt_ratio:
+                alt, second, alt_ratio = b["name"], alt_ratio, r
+            elif r > second:
+                second = r
+        named = alt if (alt and alt_ratio >= 0.75 and alt_ratio - second >= 0.25) else None
+        if named:
+            note = (f"The page branding reads '{named}', but this was filed under '{supplier_name}'. "
+                    "Please confirm the correct company.")
+        else:
+            note = (f"This document's letterhead doesn't match '{supplier_name}'. "
+                    "Please confirm the correct company.")
+        existing = str(fld.get("validation_note") or "").strip()
+        fld["validation_note"] = (existing + " " + note).strip() if existing else note
+        fld["confidence"] = min(int(fld.get("confidence") or 100), 69)
+        results["_needs_review"] = True
 
     @staticmethod
     def _flag_cross_field_duplication(results):
@@ -2971,6 +3062,7 @@ class ExtractionEngine:
         results["_keyword_fingerprint"]  = kw_fingerprint
         # Text-led SUPPLIER identity verdict — computed when EITHER the shadow measurement OR the
         # active conflict flag is live (both default off → byte-identical: verdict never computed).
+        _identity_acted = False
         if identity_shadow or self._identity_conflict:
             _idv = self._compute_identity_verdict(ocr_text, logos, hints, anchors, supplier_name)
             if identity_shadow:
@@ -2982,6 +3074,7 @@ class ExtractionEngine:
                 # _adopt_identity_variant. Every other conflict stays FLAG-ONLY below: never
                 # override the value, fill an empty one, or flag on abstain/agree.
                 results["_needs_review"] = True
+                _identity_acted = True
                 if not ExtractionEngine._adopt_identity_variant(results, _idv):
                     for _idk in ("supplier_name", "customer_name"):
                         _f = results.get(_idk)
@@ -2991,6 +3084,14 @@ class ExtractionEngine:
                                 f"detected “{_idv.get('resolved')}”. Please confirm the issuer.")
                             _f["confidence"] = min(int(_f.get("confidence") or 100), 70)
                             break
+        # BRANDING-CONFLICT cross-check (Oracle 2026-07-12) — the dependency-free backstop for the
+        # logo-collision wrong-supplier class, and the ONLY identity text-check live in packaged
+        # builds (identity_fusion above needs rapidfuzz, unbundled → a no-op there). Runs on the
+        # RESOLVED filing identity regardless of IDENTITY_FUSION_AVAILABLE. Skipped when the
+        # identity-conflict block already flagged/adopted (its _adopt_identity_variant may have
+        # changed results['supplier_name'] while the local supplier_name var is stale → false-flag).
+        if not _identity_acted:
+            self._flag_branding_conflict(results, supplier_name, templates, ocr_text)
 
         # Final resolved value per field — the inspector marks any earlier
         # candidate whose value differs from this as a superseded intermediate.
