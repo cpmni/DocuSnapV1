@@ -7,6 +7,7 @@ Faster and more accurate than LLM for known document layouts.
 """
 
 import math
+import os
 import re
 
 from PIL import Image
@@ -1100,6 +1101,20 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                                 _loc, x_norm, y_norm,
                                 anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm")):
                             located_ok = False
+            # HEADING-GARBLE NAME DEMOTION (Oracle 2026-07-12) — the DN-82792 customer_name class.
+            # A relocated/placed read on a NAME field that lands on a document CAPTION garble
+            # ("Deliver lo", "Deliver To RRS") is marked located BY METHOD (anchor_crop_relocated is
+            # unconditionally located) and has its OCR-quality signal NULLED on the relocate path, so
+            # it wins the engine Tier-A gate over the clean Stage-1 keyword name. Force located_ok
+            # False so it drops through the ≤50 cap below and LOSES the engine merge to the keyword
+            # ("Halcyon Leisure Group" / "Primrose Childcare"); with no keyword it shows ≤50 + note
+            # -> review. Demotion-only (never selects a value). Protective-token exclusion keeps a
+            # legit "Delivery Solutions Ltd" INERT (see _reads_like_heading_garble). Kill switch.
+            if located_ok and _reads_like_heading_garble(value, field_key):
+                located_ok = False
+                if not _relocate_guard_note:
+                    _relocate_guard_note = ("This value reads like a document heading, not a name — "
+                                            "please verify, or re-teach the field with the ⊕ tool.")
             if not located_ok:
                 conf = min(conf, 50)   # blind rigid read (label absent/unfound) — untrustworthy
                 # A BLIND read from a NAMED different supplier's anchor is a positional guess learned
@@ -2400,6 +2415,30 @@ def _filter_anchors(anchors: list[dict],
 # doc's OWN labelled value (see _is_blind_cross_supplier_anchor). Mirrors
 # engine._IDENTITY_FIELD_KEYS / COMPANY_KEYS in JS.
 _IDENTITY_FIELD_KEYS = frozenset({"supplier_name", "customer_name"})
+
+
+def _reads_like_heading_garble(value, field_key: str) -> bool:
+    """A NAME-like field's VALUE that reads like a document HEADING/CAPTION garble ("Deliver lo",
+    "Deliver To RRS") AND carries NO protective structural word ("Ltd"/"Group"/"Services") — i.e. a
+    relocated caption read, not a name. Used to DEMOTE such an anchor read (located_ok -> False, so
+    the ≤50 cap fires) so the clean Stage-1 keyword read of the same field wins the engine merge, or
+    — with no keyword — the value shows ≤50 + a review note. DEMOTION-ONLY (never selects a value),
+    so there is no clean-but-wrong-keyword silent path.
+
+    Precision: the protective-token exclusion (has_no_protective_token) keeps a legit company whose
+    distinctive token is chrome-shaped ("Delivery Solutions Ltd" — 'Solutions'/'Ltd' protect it)
+    INERT, so only an all-coined caption garble is demoted. Fail-toward-review by construction.
+    Kill switch HEADING_GARBLE_GUARD=0. Inert if the char-trigram model is absent (wordness
+    unavailable -> name_structure_flag returns None)."""
+    if os.environ.get("HEADING_GARBLE_GUARD", "1") == "0":
+        return False
+    from extraction.value_quality import is_name_like_field
+    if not is_name_like_field(field_key):
+        return False
+    from extraction import wordness
+    v = str(value or "")
+    return (wordness.name_structure_flag(v) is not None
+            and wordness.has_no_protective_token(v))
 
 
 def _named_cross_supplier(anchor: dict, supplier_name: str | None) -> bool:
