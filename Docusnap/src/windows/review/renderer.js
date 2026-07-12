@@ -521,6 +521,8 @@ document.getElementById('doctype-select').addEventListener('change', (e) => {
 // entry. No new window / no new IPC: the editor commits via createDocTypeWithFields and
 // returns the new type, which we splice into the dropdown and auto-select for this doc.
 let _newTypeModalOpen = false;
+let _catalogPickerOpen = false;   // catalog picker stacked OVER the new-type modal; gates its Esc handler
+let _catalogOpening   = false;    // set SYNCHRONOUSLY on launch so a double-click can't stack two pickers
 function openNewTypeModal() {
   if (_newTypeModalOpen || !isAdmin) return;
   if (!window.DocTypeEditor || typeof window.DocTypeEditor.create !== 'function') {
@@ -547,18 +549,25 @@ function openNewTypeModal() {
   const cancel = document.createElement('button'); cancel.className = 'btn'; cancel.textContent = 'Cancel';
   const create = document.createElement('button'); create.className = 'btn'; create.textContent = 'Create type'; create.disabled = true;
   Object.assign(create.style, { background: 'var(--accent)', borderColor: 'var(--accent)', color: 'var(--bg)', fontWeight: '500' });
+  // Secondary launcher for the ready-made preset catalog — pushed to the far left of the footer.
+  const catalogBtn = document.createElement('button'); catalogBtn.className = 'btn';
+  catalogBtn.textContent = '📋 Choose from catalog'; catalogBtn.style.marginRight = 'auto';
 
   const close = () => {
     if (closed) return; closed = true; _newTypeModalOpen = false;
+    _catalogPickerOpen = false;   // defensive: can't happen today (catalog covers this modal), but a future
+                                  // refactor that closed this under the catalog would otherwise strand the flag
     document.removeEventListener('keydown', onKey, true);
     try { ctl && ctl.destroy(); } catch {}
     ov.remove();
   };
-  const onKey = (e) => { if (e.key === 'Escape' && !committing) { e.stopPropagation(); close(); } };
+  // While the catalog picker is stacked on top, Esc must close only IT (its own handler), not this
+  // modal — both listen on document, and stopPropagation doesn't stop same-target listeners.
+  const onKey = (e) => { if (e.key === 'Escape' && !committing && !_catalogPickerOpen) { e.stopPropagation(); close(); } };
 
   // Attach the overlay BEFORE mounting the editor, so it renders into a host that's in
   // the document (Teach/Settings mount it attached; a detached host can break render).
-  footer.append(cancel, create);
+  footer.append(catalogBtn, cancel, create);
   box.append(title, host, footer);
   ov.append(box);
   document.body.append(ov);
@@ -577,6 +586,22 @@ function openNewTypeModal() {
   }
 
   cancel.addEventListener('click', close);
+  catalogBtn.addEventListener('click', () => {
+    if (committing) return;
+    openTypeCatalogModal(async (addedSlug) => {
+      // A preset was added: close this modal, refresh the dropdown, and auto-select the new type
+      // for the current doc (same tail as the manual create path above).
+      close();
+      try { allDocTypes = await window.docusnap.getAllDocTypes(); } catch {}
+      populateTypeDropdown();
+      if (addedSlug) {
+        const sel = document.getElementById('doctype-select');
+        if (sel) { sel.value = addedSlug; sel.dispatchEvent(new Event('change')); }
+        const t = (allDocTypes || []).find(d => d.slug === addedSlug);
+        if (t) showNewTypeNudge(t);
+      }
+    });
+  });
   create.addEventListener('click', async () => {
     if (committing || !ctl.isReady()) return;
     committing = true; create.disabled = true; create.textContent = 'Creating…';
@@ -600,6 +625,95 @@ function openNewTypeModal() {
   document.addEventListener('keydown', onKey, true);
   // Chromium drops focus on a just-appended element — defer to the next frame.
   requestAnimationFrame(() => { const inp = host.querySelector('input, select'); if (inp) inp.focus(); });
+}
+
+// Catalog picker STACKED over the new-type modal: tick a shipped preset type, add it (fields +
+// labels seeded), then hand its slug back so the caller can select it for the current doc. Mirrors
+// Settings' openCatalogModal + this file's own modal conventions. `onAdded(firstNewSlug)` fires on
+// a successful add. No new IPC — reuses get-doctype-catalog / add-doctype-presets (admin-gated).
+async function openTypeCatalogModal(onAdded) {
+  // _catalogOpening is set SYNCHRONOUSLY (before the await) so a double-click can't pass the guard
+  // twice and stack two overlays; _catalogPickerOpen is set only once the overlay exists, so the
+  // parent modal's Esc stays live during the (brief) catalog LOAD. Restore focus to the launcher on
+  // a cancel/Esc close so the re-exposed editor isn't left caret-less (the app's focus history).
+  if (_catalogPickerOpen || _catalogOpening || !isAdmin) return;
+  _catalogOpening = true;
+  const returnFocus = document.activeElement;
+  let catalog;
+  try { catalog = await window.docusnap.getDoctypeCatalog(); }
+  catch (e) { _catalogOpening = false; _newTypeToast('Could not load the catalog: ' + (e && e.message || e)); return; }
+  if (!Array.isArray(catalog) || !catalog.length) { _catalogOpening = false; _newTypeToast('The catalog is empty.'); return; }
+  _catalogPickerOpen = true; _catalogOpening = false;
+
+  const rows = catalog.map((p) => {
+    const fieldList = (p.fields || []).map(f => escHtml(f.label)).join(', ');
+    const tag = p.already_present
+      ? '<span style="font-size:10px; color:var(--ok); border:1px solid var(--ok); border-radius:999px; padding:1px 7px;">Already added</span>'
+      : '';
+    return `
+      <label style="display:flex; gap:10px; align-items:flex-start; padding:8px 6px; border-radius:8px; cursor:pointer;">
+        <input type="checkbox" data-slug="${escHtml(p.slug)}" ${p.already_present ? 'checked disabled' : ''} style="margin-top:3px;">
+        <div style="flex:1;">
+          <div style="font-size:12px; font-weight:500;">${escHtml(p.name)} ${tag}</div>
+          <div style="font-size:11px; color:var(--muted); line-height:1.5;">${fieldList}</div>
+        </div>
+      </label>`;
+  }).join('');
+
+  const ov = document.createElement('div');
+  ov.setAttribute('data-help-ignore', '');
+  Object.assign(ov.style, { position: 'fixed', inset: '0', background: 'rgba(8,10,15,.72)', display: 'flex',
+    alignItems: 'center', justifyContent: 'center', zIndex: '100001', padding: '24px' });   // above the 99999 modal
+  const box = document.createElement('div');
+  Object.assign(box.style, { width: 'min(480px,94vw)', maxHeight: '84vh', display: 'flex', flexDirection: 'column',
+    gap: '12px', background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: '12px',
+    padding: '18px', boxShadow: '0 18px 50px rgba(0,0,0,.5)', color: 'var(--text)' });
+  box.innerHTML = `
+    <div style="font-size:14px; font-weight:600;">Add a document type from the catalog</div>
+    <div style="font-size:11px; color:var(--muted); line-height:1.6;">Tick the type this document is —
+      it's added with its fields and likely labels, then selected here.</div>
+    <div id="rev-cat-rows" style="overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:4px; flex:1; min-height:120px;">${rows}</div>
+    <div id="rev-cat-err" style="display:none; font-size:11px; color:var(--err);"></div>
+    <div style="display:flex; gap:8px; justify-content:flex-end;">
+      <button id="rev-cat-cancel" class="btn">Cancel</button>
+      <button id="rev-cat-add" class="btn" style="background:var(--accent); border-color:var(--accent); color:var(--bg); font-weight:500;">Add selected</button>
+    </div>`;
+  ov.append(box);
+  document.body.append(ov);
+
+  let done = false, adding = false;
+  const closeCat = () => {
+    if (done) return; done = true; _catalogPickerOpen = false;
+    document.removeEventListener('keydown', onCatKey, true);
+    ov.remove();
+    // restore focus to whatever launched the picker (the catalog button); on the SUCCESS path that
+    // button is inside the now-closing parent modal, so re-check contains() and no-op if it's gone.
+    if (returnFocus) requestAnimationFrame(() => { if (document.contains(returnFocus)) { try { returnFocus.focus(); } catch {} } });
+  };
+  // Ignore Esc / backdrop / Cancel WHILE the add IPC is in flight, so an accidental dismiss can't
+  // race the resolved success into an unexpected auto-add+select (mirrors the parent's `committing`).
+  const onCatKey = (e) => { if (e.key === 'Escape' && !adding) { e.stopImmediatePropagation(); closeCat(); } };
+  document.addEventListener('keydown', onCatKey, true);
+  ov.addEventListener('mousedown', (e) => { if (e.target === ov && !adding) closeCat(); });
+  box.querySelector('#rev-cat-cancel').addEventListener('click', () => { if (!adding) closeCat(); });
+
+  box.querySelector('#rev-cat-add').addEventListener('click', async () => {
+    if (adding) return;
+    const slugs = Array.from(box.querySelectorAll('input[type=checkbox]:checked:not(:disabled)'))
+      .map(cb => cb.getAttribute('data-slug'));
+    if (!slugs.length) { closeCat(); return; }
+    const btn = box.querySelector('#rev-cat-add'); adding = true; btn.disabled = true; btn.textContent = 'Adding…';
+    let res; try { res = await window.docusnap.addDoctypePresets(slugs); }
+    catch (e) { res = { success: false, error: e && e.message }; }
+    if (res && res.success) { adding = false; closeCat(); if (typeof onAdded === 'function') onAdded(slugs[0]); }
+    else {
+      adding = false; btn.disabled = false; btn.textContent = 'Add selected';   // inline (a toast would sit behind this overlay)
+      const err = box.querySelector('#rev-cat-err');
+      err.textContent = 'Could not add types: ' + ((res && res.error) || 'unknown error'); err.style.display = '';
+    }
+  });
+
+  requestAnimationFrame(() => { const f = box.querySelector('input:not([disabled]), button'); if (f) f.focus(); });
 }
 
 // Minimal visible toast (no deps) — used for create-modal failures/diagnostics.
@@ -4060,9 +4174,16 @@ function syncDocTypeFromRecord(doc) {
   if (!doc || !doc.type_slug) return;
   selectedTypeSlug = doc.type_slug;
   const sel = document.getElementById('doctype-select');
-  if (sel) sel.value = selectedTypeSlug;
+  if (sel) sel.value = selectedTypeSlug;   // programmatic set → NO 'change' event, so the dropdown
+                                           // handler's _refreshTaughtForType never fires — do it here.
   const dt = allDocTypes.find(t => t.slug === selectedTypeSlug);
   if (dt) fieldDefs = dt.fields;
+  // The "position taught" dots are supplier+type scoped. When a reprocess re-types the doc in place
+  // (e.g. a delivery docket first opened with no type, then matched on reprocess), the dots were
+  // fetched at open time under the OLD/empty type and would stay red despite saved ⊕ anchors. Re-query
+  // for the now-correct scope (mirrors the manual dropdown-change path). Fire-and-forget: it repaints
+  // the dots once its async fetch returns, after renderFields has (re)built them.
+  _refreshTaughtForType();
 }
 
 // ── Reprocess ─────────────────────────────────────────────────────────────────
@@ -4138,12 +4259,20 @@ document.getElementById('btn-reprocess').addEventListener('click', async (e) => 
   // STRAIGHTENED page (taught labels relocate in a level frame → the skew misreads recover). The
   // filed file is never touched; the logo phash still uses the raw frame. Review-bound.
   const _deskewedRead = !!deskewEnabled;
+  // Manual type override: send the CURRENT dropdown pick and let the backend force it as HUMAN
+  // authority ONLY when it differs from the doc's STORED type (resolveReprocessTypeArgs compares
+  // against the DB — the ground truth). We must NOT compare here against currentDoc.type_slug: the
+  // dropdown-change handler mutates currentDoc.type_slug to the pick, so a local "differs" check is
+  // always false and the pick never reaches reprocess (the snap-back bug). An un-touched reprocess
+  // sends the stored type -> the backend no-ops -> byte-identical.
+  const _forcedTypeSlug = selectedTypeSlug || null;
   const result = await window.docusnap.reprocessDocument({
-    docId:         currentDoc.id,
-    folderPath:    currentDoc.folder_path,
-    filename:      currentDoc.original_filename,
-    enhanceParams: previewActive ? getEnhanceParams() : null,
-    deskewOnce:    _deskewedRead,
+    docId:          currentDoc.id,
+    folderPath:     currentDoc.folder_path,
+    filename:       currentDoc.original_filename,
+    enhanceParams:  previewActive ? getEnhanceParams() : null,
+    deskewOnce:     _deskewedRead,
+    forcedTypeSlug: _forcedTypeSlug,
   });
 
   window.docusnap.removeReprocessProgress();
