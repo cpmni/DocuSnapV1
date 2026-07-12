@@ -710,9 +710,17 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                     _lcrop = page0.crop((int(_lb["x_norm"] * _W), int(_lb["y_norm"] * _H),
                                          int((_lb["x_norm"] + _lb["w_norm"]) * _W),
                                          int((_lb["y_norm"] + _lb["h_norm"]) * _H)))
+                    # C4: if the position veto (below) would REJECT this locate, tag the slice
+                    # "anchor_vetoed" so "Show where it reads" shows the caption was FOUND-but-rejected
+                    # (wrong column) instead of a misleading amber box — the surface the original false
+                    # report came from. Same predicate as the extraction veto; dev-only (--trace).
+                    _tdx, _tdy = anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm")
+                    _t_vetoed = (_tdx is not None and _tdy is not None and (_tdx or _tdy)
+                                 and not _located_at_taught_position(_loc, x_norm, y_norm, _tdx, _tdy,
+                                                                     tol_x=_RELOC_TOL_X, tol_y=_RELOC_TOL_Y))
                     slice_capture(field_key, "anchor_label", 0,
                                   (_lb["x_norm"], _lb["y_norm"], _lb["w_norm"], _lb["h_norm"]),
-                                  _lcrop, "anchor")
+                                  _lcrop, "anchor_vetoed" if _t_vetoed else "anchor")
             except Exception:
                 pass  # dev-only diagnostic; never disrupt extraction
 
@@ -724,6 +732,28 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
             vbox    = (x_norm, y_norm, w_norm, h_norm)
             located = _locate_for_relocation(page0, anchor["anchor_label"], direction, vbox, page_text_lines,
                                              line_cache=line_cache)
+            # POSITION VETO (Oracle 2026-07-12). On a skewed/clipped scan the true caption can fragment
+            # below the fuzzy threshold in the local band, so the PAGE-WIDE relocate fallback grabs a
+            # same-PREFIX caption in the WRONG COLUMN ("Delivery Note No." → "Deliver To") and then inline-
+            # harvests a wrong-column value — a confident-wrong read no cross-supplier gate catches (a
+            # supplier's own doc bypasses them all). When this ⊕ anchor carries a usable label→value OFFSET
+            # (migration 21), verify the RE-LOCATED caption is at its TAUGHT position (value_centre − offset,
+            # looser _RELOC tolerances); if it landed a whole column/section away, DROP the relocation → the
+            # field keeps its weak rigid read → review. Only ever sets located=None (never selects) →
+            # fail-toward-review. C1 (load-bearing): gate on the offset being PRESENT + non-zero as a
+            # SEPARATE precondition — _located_at_taught_position ALSO returns False for a NO-offset (legacy)
+            # anchor, so a naive `if not _located_...` would veto EVERY pre-migration-21 anchor. No usable
+            # offset → no veto → byte-identical.
+            _reloc_odx, _reloc_ody = anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm")
+            _reloc_can_verify = (_reloc_odx is not None and _reloc_ody is not None
+                                 and (_reloc_odx or _reloc_ody))
+            if located and _reloc_can_verify and not _located_at_taught_position(
+                    located, x_norm, y_norm, _reloc_odx, _reloc_ody,
+                    tol_x=_RELOC_TOL_X, tol_y=_RELOC_TOL_Y):
+                if on_reject:
+                    on_reject(field_key, "anchor_relocate",
+                              (located or {}).get("matched_text"), "label_off_taught_position")
+                located = None
             if located:
                 # 1. INLINE HARVEST: in a key/value row the value shares the located
                 # label's OCR line ("label …gap… value") and sits in a far column the
@@ -2386,6 +2416,18 @@ def _named_cross_supplier(anchor: dict, supplier_name: str | None) -> bool:
 # line-height tall). Fractions of page width/height. Corpus-validated (realdoc_regression, M=0).
 _SAME_LAYOUT_TOL_X = 0.10
 _SAME_LAYOUT_TOL_Y = 0.06
+
+# RELOCATION position-veto tolerances (Oracle 2026-07-12) — DELIBERATELY LOOSER than the
+# cross-supplier _SAME_LAYOUT_TOL above, and a SEPARATE constant on purpose: the drift-recovery
+# relocate rung EXISTS to follow LARGE legitimate drift (a clipped/shifted scan moves the true
+# caption far from taught), so the veto must forgive that while still rejecting a full-column jump
+# (the "Delivery Note No." → "Deliver To" skew grab is off by ΔX≈0.46, caught at any sane bound).
+# Also absorbs the raw↔deskew frame slop on a --deskew-pages reprocess (located label is in the
+# deskewed frame, taught coords are raw; mismatch ≈ r·θ, up to ~0.09 in Y at the ±15° ceiling).
+# Corpus-tuned (realdoc_regression M=0 + over-veto/over-admit probes); do NOT collapse back into
+# _SAME_LAYOUT_TOL — that is a different question (same-layout proof vs same-supplier drift budget).
+_RELOC_TOL_X = 0.22
+_RELOC_TOL_Y = 0.14
 
 
 def _located_at_taught_position(located, vx, vy, offset_dx, offset_dy,
