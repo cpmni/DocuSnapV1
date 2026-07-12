@@ -1525,7 +1525,8 @@ class ExtractionEngine:
                 slice_dir = None,
                 page_text_lines: list | None = None,
                 page_provenance: list | None = None,
-                identity_shadow: bool = False) -> dict:
+                identity_shadow: bool = False,
+                raw_page0 = None) -> dict:
         """
         Run extraction pipeline according to current mode.
         Returns dict with field values + metadata keys prefixed with _.
@@ -1567,15 +1568,23 @@ class ExtractionEngine:
         logo_phash   = None
         kw_fingerprint = []
 
+        # Logo/identity phash SOURCE. On a deskew-reprocess the READ pages (page_images) are
+        # straightened, but the persisted logo phash and all logo/template MATCHING must use the
+        # RAW (un-deskewed) page 0: a deskewed phash drifts from the learned raw hashes (breaks
+        # identification) and, once persisted (results["_logo_phash"] -> template_logo_hashes),
+        # poisons the supplier's logo set for every future RAW import. raw_page0 defaults to None
+        # -> _id_img is the normal page 0 -> byte-identical for every existing caller.
+        _id_img = raw_page0 if raw_page0 is not None else (page_images[0] if page_images else None)
+
         # ── Pre-stage: compute logo hash + keyword fingerprint (always) ───────
-        if page_images:
-            logo_phash = template_matcher.compute_logo_hash(page_images[0])
+        if _id_img is not None:
+            logo_phash = template_matcher.compute_logo_hash(_id_img)
         kw_fingerprint = template_matcher.extract_keyword_fingerprint(ocr_text)
 
         # ── Stage 0: Template matching ────────────────────────────────────────
         if templates:
             match = template_matcher.identify_template(
-                page_images[0] if page_images else None,
+                _id_img,
                 ocr_text,
                 templates,
                 detected_slug=detected_slug,
@@ -1741,8 +1750,10 @@ class ExtractionEngine:
                          f"{supplier_name} — logo fallback skipped")
 
         # ── Pre-stage: logo supplier identification (fallback if no template) ──
-        if not supplier_name and logos and page_images:
-            logo_match = anchor.try_logo_supplier_match(page_images[0], logos)
+        # Matches against learned RAW logo hashes -> use the raw page 0 (_id_img), else a deskewed
+        # phash drifts out of range and the supplier fails to resolve on a straighten-reprocess.
+        if not supplier_name and logos and _id_img is not None:
+            logo_match = anchor.try_logo_supplier_match(_id_img, logos)
             if logo_match:
                 supplier_name = logo_match["supplier_name"]
                 self.log(

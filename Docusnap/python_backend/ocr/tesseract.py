@@ -310,6 +310,8 @@ def extract_text_and_images(
     auto_rotate: bool = False,
     rotations_out: list | None = None,
     provenance_out: list | None = None,
+    deskew_pages: bool = False,
+    raw_pages_out: list | None = None,
 ) -> tuple[str, list[Image.Image]]:
     """
     Extract OCR text from a document file.
@@ -329,6 +331,17 @@ def extract_text_and_images(
     instead of an OCR read — faster and exact. Image-only/scanned pages have no
     text layer and fall back to OCR unchanged. The page IMAGES are still rendered
     either way (logo/anchor/zone OCR need them). Gated by 'born_digital_enabled'.
+
+    deskew_pages (default off): the "Straighten + Reprocess" recovery path. When on, each
+    SCANNED page is transiently deskewed (ocr/tesseract._deskew — small-angle projection-variance
+    correction) after auto-rotate and BEFORE the OCR read, so the full-page text AND the returned
+    page image (the anchor crop source) are level → a taught label relocates in a straight frame.
+    Born-digital pages (exact text layer, upright) are skipped. The FILED file is never touched.
+    raw_pages_out, when given, is filled PARALLEL to the returned pages with each page's PRE-deskew
+    image — the caller passes raw_pages_out[0] to engine.extract(raw_page0=...) so the persisted
+    logo phash + logo/template MATCHING use the raw frame (a deskewed logo phash drifts from the
+    learned raw hashes and, once persisted, poisons the supplier's logo set for every future import).
+    Deskew is skipped under cached_text (a straighten always forces fresh OCR). Kill switch upstream.
 
     cached_text (default None): REPROCESS optimisation. The full-page OCR (~1.9 s/page
     on a scanned page) re-reads the SAME pixels every reprocess for a result that never
@@ -387,7 +400,6 @@ def extract_text_and_images(
                             img = _orientation.correct_image(img, rot)
                 if rotations_out is not None:
                     rotations_out.append(rot)
-                pages.append(img)
                 # Born-digital text: regenerate FRESH every run (cheap, authoritative), even
                 # under use_cache. Positional reading order (page_lines), not the layer's raw
                 # char order, so label-adjacency keyword extraction matches OCR.
@@ -399,6 +411,17 @@ def extract_text_and_images(
                             layer_text = _bd.page_text(page)
                     except Exception:
                         layer_text = None   # any text-layer failure -> OCR / cache fallback
+                # DESKEW (transient, scanned pages only): straighten the page BEFORE OCR + before it
+                # is appended to `pages` (the anchor crop source), so a taught label relocates in a
+                # level frame. raw_pages_out keeps the PRE-deskew page for the logo phash / identity.
+                # Born-digital pages (layer_text) are upright; a straighten forces fresh OCR so skip
+                # under use_cache (would deskew the crop source while serving raw cached text).
+                raw_img = img
+                if deskew_pages and layer_text is None and not use_cache:
+                    img = _deskew(img)
+                if deskew_pages and raw_pages_out is not None:
+                    raw_pages_out.append(raw_img)   # parallel to pages (raw==img on a born-digital page)
+                pages.append(img)
                 # Per-page PROVENANCE (parallel to `pages`): 'born_digital' when this page's text
                 # comes from the embedded vector layer, else 'ocr'. Lets a downstream consumer
                 # (the Stage-4.5 gate-failure re-read) fire ONLY on OCR'd pages — a born-digital
@@ -429,6 +452,14 @@ def extract_text_and_images(
             _idpi = _RENDER_DPI
         if img.mode not in ("RGB", "L"):
             img = img.convert("RGB")
+        # DESKEW (transient): a scanned raster (JPEG/PNG/TIFF) has no text layer — always OCR, so
+        # straighten it BEFORE the read + as the crop source. raw_pages_out keeps the raw frame for
+        # the logo phash. Skipped under use_cache (a straighten always re-OCRs fresh).
+        raw_img = img
+        if deskew_pages and not use_cache:
+            img = _deskew(img)
+        if deskew_pages and raw_pages_out is not None:
+            raw_pages_out.append(raw_img)
         pages = [img]
         if provenance_out is not None:
             provenance_out.append('ocr')   # a raster image has no text layer — always OCR

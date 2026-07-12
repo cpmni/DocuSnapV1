@@ -1130,7 +1130,7 @@ function register(ctx) {
     return { extractions: mergedMap, overall_confidence: result.overall_confidence };
   }
 
-  ipcMain.handle('reprocess-document', async (event, { docId, folderPath, filename, enhanceParams }) => {
+  ipcMain.handle('reprocess-document', async (event, { docId, folderPath, filename, enhanceParams, deskewOnce }) => {
     requireRole('admin', 'edit');
     const db      = getDb();
     // Multi-point licensing enforcement (F-01): reprocess re-runs the extraction
@@ -1193,7 +1193,10 @@ function register(ctx) {
     let ruleCreatedFor          = null;
     if (enhanceParams && typeof enhanceParams === 'object') {
       effectiveEnhanceParams = enhanceParams;
-      if (templateId) {
+      // A one-shot "Straighten + Reprocess" must NEVER become the template's permanent OCR
+      // baseline — deskew is a per-doc recovery, not a learned enhance. So skip setOcrAutoParams
+      // when deskewOnce (the enhance still applies to THIS reprocess via --enhance-file below).
+      if (templateId && !deskewOnce) {
         const updated = templates2.setOcrAutoParams(db, templateId, enhanceParams);
         ruleCreatedFor = updated ? updated.name : null;
       }
@@ -1247,17 +1250,25 @@ function register(ctx) {
       scriptArgs.push('--trace');
       try { fs.mkdirSync(ctx.devSliceDir, { recursive: true }); scriptArgs.push('--slice-dir', ctx.devSliceDir); } catch {}
     }
+    // "Straighten + Reprocess": deskew each scanned page before OCR. The filed file is untouched;
+    // the logo phash uses the raw frame (engine.extract raw_page0). Review-bound (reprocess never
+    // auto-files). Forces FRESH OCR below — the stored text is of the RAW (skewed) pixels.
+    if (deskewOnce) scriptArgs.push('--deskew-pages');
+
     const allTempFiles = [...tempFiles];
     if (effectiveEnhanceParams) {
       const enhanceFile = writeTempJson('enhance', effectiveEnhanceParams);
       allTempFiles.push(enhanceFile);
       scriptArgs.push('--enhance-file', enhanceFile);
-    } else {
+    } else if (!deskewOnce) {
       // Reprocess optimisation: reuse this doc's already-stored full-page OCR text so
       // the ~1.9s/page full-page OCR is skipped (the pixels don't change on reprocess —
       // only the learned data — and per-field crop reads still re-run, so accuracy is
       // unchanged). ONLY when no manual/template ENHANCE is active (that would change
       // the read) and the stored text is non-empty. Written into tmpDir (cleaned with it).
+      // SKIPPED on deskewOnce: the cached text is of the raw skewed pixels, so a straighten
+      // must re-OCR the deskewed page fresh (extract_text_and_images also gates deskew off
+      // under cached_text as a belt-and-braces).
       try {
         const otRow = db.prepare('SELECT ocr_text FROM documents WHERE id = ?').get(docId);
         if (otRow && otRow.ocr_text && otRow.ocr_text.trim()) {

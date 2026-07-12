@@ -2919,8 +2919,10 @@ async function confirmCurrentDoc({ bulk = false, expectId = null } = {}) {
     // it's removed — advanceAfterAction swaps the preview to the next doc a moment later.
     const supplierForLogo = allValues.supplier_name || currentDoc?.supplier_name;
     if (supplierForLogo) {
-      let logoB64 = null;
-      try { if (docImg.complete && docImg.naturalWidth) logoB64 = await getPageBase64(); } catch {}
+      // Capture the RAW page image (not the possibly-straightened/enhanced docImg) so a
+      // "Straighten + Reprocess" or OCR-Preview session can't write a drifted fingerprint that
+      // poisons this supplier's identity for future raw imports (Oracle C1).
+      const logoB64 = getRawPageBase64(currentPage);
       saveLogoOnConfirm(supplierForLogo, logoB64).catch(() => {});
     }
     selCanvas.width = 0; selCanvas.height = 0;   // clear any ⊕ selection overlay for the next doc
@@ -3478,18 +3480,20 @@ function _pickNextDoc(order, at, preferSupplier) {
 }
 
 // ── Logo fingerprinting ───────────────────────────────────────────────────────
-async function getPageBase64() {
-  const canvas = document.createElement('canvas');
-  canvas.width  = docImg.naturalWidth;
-  canvas.height = docImg.naturalHeight;
-  canvas.getContext('2d').drawImage(docImg, 0, 0);
-  return canvas.toDataURL('image/png').split(',')[1];
+// The logo image is ALWAYS the RAW page render (pageImages), never the on-screen docImg — a
+// deskewed (straighten) or enhanced (preview) docImg has a drifted phash that fails to match a
+// known supplier and, if fingerprinted on confirm, poisons supplier identity for every future raw
+// import (Oracle C1). Delegated to the pure shared/logoSource selector so it stays testable. The
+// old docImg→canvas capture (getPageBase64) was removed so the leak cannot be re-introduced.
+function getRawPageBase64(page = currentPage) {
+  return LogoSource.rawPageBase64(pageImages, page);
 }
 
 async function attemptLogoMatch() {
   if (!docImg.complete || !docImg.naturalWidth) return;
   try {
-    const b64   = await getPageBase64();
+    const b64   = getRawPageBase64(currentPage);
+    if (!b64) return;
     const match = await window.docusnap.matchLogoHash(b64);
     if (match && match.confidence >= 60) {
       const supplierInput = document.querySelector('.field-input[data-key="supplier_name"]');
@@ -3520,8 +3524,8 @@ async function saveLogoOnConfirm(supplierName, b64 = null) {
   if (!supplierName) return;
   try {
     if (!b64) {
-      if (!docImg.complete || !docImg.naturalWidth) return;
-      b64 = await getPageBase64();
+      b64 = getRawPageBase64(currentPage);   // RAW page — never the deskewed/enhanced docImg (Oracle C1)
+      if (!b64) return;
     }
     const hashes = await window.docusnap.extractLogoHash(b64);
     if (hashes && hashes.phash) {
@@ -4130,11 +4134,16 @@ document.getElementById('btn-reprocess').addEventListener('click', async (e) => 
   // Preview is active for this document — preview-off means inactive, not
   // hidden-active. (A template-level auto-processing rule, if any, is
   // applied on the main process side regardless of preview state.)
+  // "Straighten + Reprocess": when the display-deskew toggle is ON, ask the backend to read the
+  // STRAIGHTENED page (taught labels relocate in a level frame → the skew misreads recover). The
+  // filed file is never touched; the logo phash still uses the raw frame. Review-bound.
+  const _deskewedRead = !!deskewEnabled;
   const result = await window.docusnap.reprocessDocument({
     docId:         currentDoc.id,
     folderPath:    currentDoc.folder_path,
     filename:      currentDoc.original_filename,
     enhanceParams: previewActive ? getEnhanceParams() : null,
+    deskewOnce:    _deskewedRead,
   });
 
   window.docusnap.removeReprocessProgress();
@@ -4151,6 +4160,11 @@ document.getElementById('btn-reprocess').addEventListener('click', async (e) => 
     renderFields(full || currentDoc);
     if (result.ruleCreated) {
       showToast(`OCR auto-processing enabled for template "${result.ruleCreated}"`, 'ok');
+    }
+    // Straightening can shift EVERY field's read, not just the one you're fixing — a rubber-stamped
+    // shifted value would feed learning. Prompt the operator to eyeball the whole doc.
+    if (_deskewedRead) {
+      showToast('Read from the straightened page — please check all fields before confirming.', 'warn');
     }
     btn.innerHTML = '✓ Reprocessed';
     btn.style.color = 'var(--ok)';
