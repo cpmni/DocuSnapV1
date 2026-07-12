@@ -1130,7 +1130,7 @@ function register(ctx) {
     return { extractions: mergedMap, overall_confidence: result.overall_confidence };
   }
 
-  ipcMain.handle('reprocess-document', async (event, { docId, folderPath, filename, enhanceParams, deskewOnce }) => {
+  ipcMain.handle('reprocess-document', async (event, { docId, folderPath, filename, enhanceParams, deskewOnce, forcedTypeSlug }) => {
     requireRole('admin', 'edit');
     const db      = getDb();
     // Multi-point licensing enforcement (F-01): reprocess re-runs the extraction
@@ -1213,37 +1213,37 @@ function register(ctx) {
       '--mode',       reprMode,
       ...trainingArgs,
     ];
-    // Honour the template this doc is already linked to as a Stage 0 fallback,
-    // so its admin-drawn field mappings still apply on reprocess even when live
-    // re-identification is borderline (see engine.extract known_template_id).
-    if (templateId) {
-      scriptArgs.push('--known-template-id', String(templateId));
-    }
-    // Honour the document's ALREADY-ASSIGNED doc type on reprocess instead of
-    // re-detecting it from the (possibly clipped/degraded) OCR text. Re-detection
-    // fails when a scan's identifying band is cut off → null document_slug →
-    // the learned-format / qualification gates silently disable → wrong-row crops
-    // commit and drift relocation never fires. A reprocessed doc already knows
-    // its type; pass that slug as the authoritative document_slug.
+    // Doc-TYPE args (pure decision in resolveReprocessTypeArgs). Default: pin the doc's ALREADY-ASSIGNED
+    // type as document_slug (so the format/qualification gates stay armed even on a clipped scan whose
+    // identifying band is cut off), mark it 'machine' authority ONLY when never human-confirmed (a trusted
+    // contradicting title may then re-type it), and pass the linked template as a Stage-0 mapping fallback.
+    // OVERRIDE: an operator's explicit dropdown pick (forcedTypeSlug, sent only when it DIFFERS from the
+    // doc's current type) forces that type as HUMAN authority — no machine title re-type / no snap-back —
+    // and suppresses the linked (rejected-type) template; the engine's live re-match recovers the
+    // correct-type template. Byte-identical when forcedTypeSlug is null.
+    const { resolveReprocessTypeArgs } = require('./reprocessTypeArgs');
+    let _knownSlugs = null;
+    try { _knownSlugs = new Set(db.prepare('SELECT slug FROM document_types WHERE slug IS NOT NULL').all().map(r => r.slug)); } catch {}
+    let _dtRow = null;
     try {
-      const dtRow = db.prepare(
+      _dtRow = db.prepare(
         `SELECT dt.slug AS slug, d.status AS status, d.confirmed_at AS confirmed_at
-         FROM documents d
-         LEFT JOIN document_types dt ON dt.id = d.document_type_id
+         FROM documents d LEFT JOIN document_types dt ON dt.id = d.document_type_id
          WHERE d.id = ?`).get(docId);
-      if (dtRow && dtRow.slug) {
-        scriptArgs.push('--known-doc-slug', String(dtRow.slug));
-        // Who assigned that type: a NEVER-confirmed doc's type is the machine's own
-        // guess, so a trusted contradicting title may re-type it on reprocess (the
-        // pin used to replay the machine's wrong guess forever). A confirmed doc —
-        // incl. auto-filed (status 'confirmed') and Learning-Repair send-backs that
-        // were RE-confirmed — stays pinned (human checkpoint). Flag ABSENT = pinned,
-        // so every other caller keeps today's behaviour byte-identical.
-        if (dtRow.status !== 'confirmed' && !dtRow.confirmed_at) {
-          scriptArgs.push('--known-doc-slug-authority', 'machine');
-        }
-      }
     } catch {}
+    const _typeArgs = resolveReprocessTypeArgs({
+      storedSlug:  _dtRow ? _dtRow.slug : null,
+      status:      _dtRow ? _dtRow.status : null,
+      confirmedAt: _dtRow ? _dtRow.confirmed_at : null,
+      forcedTypeSlug, templateId, knownSlugs: _knownSlugs,
+    });
+    if (_typeArgs.knownTemplateId) {
+      scriptArgs.push('--known-template-id', String(_typeArgs.knownTemplateId));
+    }
+    if (_typeArgs.knownDocSlug) {
+      scriptArgs.push('--known-doc-slug', String(_typeArgs.knownDocSlug));
+      if (_typeArgs.authority) scriptArgs.push('--known-doc-slug-authority', _typeArgs.authority);
+    }
     // Dev trace stream + OCR slice capture while the inspector is open OR
     // diagnostic logging is on (so the diagnostic file captures reprocess too).
     if (traceWanted(diagOn)) {
