@@ -297,6 +297,70 @@ def main():
                  kw_loser_auto and kw_loser_auto['template']['id'] == 22):
         failures += 1
 
+    # ── Fix (2026-07-12): keyword fallback prefers the DETECTED-TYPE sibling on a tie ──────────
+    # A supplier issuing several doc types on ONE letterhead has same-logo siblings with IDENTICAL
+    # keyword fingerprints; when the logo drifts and this fallback runs, the wrong-type sibling used
+    # to win by template ORDER (Cascade delivery-docket typed 'invoice' -> delivery_number null).
+    # detected_slug now breaks the tie toward the sibling matching the doc's OWN detected title.
+    section('_match_by_keywords: detected_slug breaks a same-fingerprint sibling tie (type-aware)')
+    DN_TPL  = {'id': 30, 'name': 'Cascade Delivery', 'logo_phash': None,
+               'document_type_slug': 'delivery_note', 'confirmed_count': 0,
+               'keyword_fingerprint': ['CASCADE', 'WATER', 'SYSTEMS']}
+    INV_TPL = {'id': 31, 'name': 'Cascade Invoice', 'logo_phash': None,
+               'document_type_slug': 'invoice', 'confirmed_count': 0,
+               'keyword_fingerprint': ['CASCADE', 'WATER', 'SYSTEMS']}
+    cascade_text = "CASCADE WATER SYSTEMS\nDELIVERY DOCKET\nDN-62705"
+    m_inv_first = template_matcher._match_by_keywords(cascade_text, [INV_TPL, DN_TPL], detected_slug='delivery_note')
+    if not check('invoice-FIRST order: detected delivery_note sibling still wins (the live-bug order)',
+                 m_inv_first and m_inv_first['template']['id'] == 30):
+        failures += 1
+    m_dn_first = template_matcher._match_by_keywords(cascade_text, [DN_TPL, INV_TPL], detected_slug='delivery_note')
+    if not check('delivery-FIRST order: same winner -> deterministic, order-independent',
+                 m_dn_first and m_dn_first['template']['id'] == 30):
+        failures += 1
+    if not check("winner method is 'keywords'", m_inv_first and m_inv_first['method'] == 'keywords'):
+        failures += 1
+    m_blind = template_matcher._match_by_keywords(cascade_text, [INV_TPL, DN_TPL])
+    if not check('no detected_slug -> first-seen wins the tie (byte-identical old behaviour)',
+                 m_blind and m_blind['template']['id'] == 31):
+        failures += 1
+
+    # PIN THE TRADE-OFF (load-bearing): the slug preference is TIE-ONLY, NEVER a boost. A strictly
+    # higher-scoring DIFFERENT-type template MUST still win — else a weak same-type sibling could beat
+    # a strong (cross-supplier) match, the misfile class the word-boundary guard exists to prevent.
+    # Do NOT "fix" this by boosting the slug match above score.
+    WEAK_DN    = {'id': 32, 'name': 'Weak DN', 'logo_phash': None, 'document_type_slug': 'delivery_note',
+                  'confirmed_count': 0, 'keyword_fingerprint': ['CASCADE', 'WATER', 'ZZZ']}   # 2/3
+    STRONG_INV = {'id': 33, 'name': 'Strong INV', 'logo_phash': None, 'document_type_slug': 'invoice',
+                  'confirmed_count': 0, 'keyword_fingerprint': ['CASCADE', 'WATER']}           # 2/2
+    m_score = template_matcher._match_by_keywords(cascade_text, [WEAK_DN, STRONG_INV], detected_slug='delivery_note')
+    if not check('PIN: a strictly higher-scoring different-type template still wins (tie-only, never a boost)',
+                 m_score and m_score['template']['id'] == 33):
+        failures += 1
+
+    m_single = template_matcher._match_by_keywords(cascade_text, [INV_TPL], detected_slug='delivery_note')
+    if not check('single candidate returns regardless of a non-matching detected_slug',
+                 m_single and m_single['template']['id'] == 31):
+        failures += 1
+
+    # F1-C1 (Oracle): the "no keyword hit -> None" contract is INDEPENDENT of the tie-break key — a
+    # ZERO-hit template must never become a result, even when it slug-matches (else it would return a
+    # confidence-0 dict where today it returns None).
+    NOHIT_DN = {'id': 34, 'name': 'Nohit DN', 'logo_phash': None, 'document_type_slug': 'delivery_note',
+                'confirmed_count': 3, 'keyword_fingerprint': ['ZZZ', 'QQQ']}   # neither word on cascade_text
+    m_nohit = template_matcher._match_by_keywords(cascade_text, [NOHIT_DN], detected_slug='delivery_note')
+    if not check('F1-C1: a zero-hit slug-matching template is NOT returned (stays None)', m_nohit is None):
+        failures += 1
+
+    # F1-C5 (Oracle): the ENGINE co-run — identify_template (Stage 0, logo cluster empty via page_image=None)
+    # routes to the keyword path and prefers the detected_slug sibling. This is the seam gary's
+    # "mutually-exclusive branches" model missed: Fix 1 ALSO runs inside engine.extract on a forced reprocess,
+    # cooperatively recovering the correct-type template.
+    id_corun = template_matcher.identify_template(None, cascade_text, [INV_TPL, DN_TPL], detected_slug='delivery_note')
+    if not check('F1-C5: identify_template (no logo) + detected_slug picks the delivery_note sibling (engine co-run)',
+                 id_corun and id_corun['template']['id'] == 30):
+        failures += 1
+
     # The fix: same-logo SIBLINGS (one supplier, several layouts under one
     # letterhead) are disambiguated by KEYWORD FINGERPRINT, and the winner carries
     # its OWN document_type_slug - so a worksheet isn't matched to the PO template

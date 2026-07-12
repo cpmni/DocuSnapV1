@@ -136,8 +136,9 @@ def identify_template(page_image, ocr_text: str, templates: list,
                 return {'template': _cand, 'confidence': 60,
                         'method': 'keywords+slug_rescue', 'logo_phash': logo_phash}
 
-    # 2. Keyword fingerprint — fallback for docs without logos
-    kw_match = _match_by_keywords(ocr_text, templates)
+    # 2. Keyword fingerprint — fallback for docs without logos. Pass detected_slug so a same-fingerprint
+    # sibling of the DETECTED type wins the tie (the logo-drift → keyword-fallback → wrong-sibling class).
+    kw_match = _match_by_keywords(ocr_text, templates, detected_slug)
     if kw_match and kw_match['confidence'] >= int(KEYWORD_THRESHOLD * 100):
         # Same title-trust refuse on the logoless path.
         if title_trusted and detected_slug and \
@@ -316,10 +317,20 @@ def _keyword_hit_ratio(template: dict, ocr_lower: str) -> float:
     return hits / len(keywords)
 
 
-def _match_by_keywords(ocr_text: str, templates: list) -> dict | None:
+def _match_by_keywords(ocr_text: str, templates: list, detected_slug: str | None = None) -> dict | None:
+    """`detected_slug`: on an EXACT keyword-score TIE between same-fingerprint siblings (one supplier
+    issuing several doc types on ONE letterhead has IDENTICAL branding fingerprints — the fingerprint
+    strips doc-type words), prefer the sibling whose document_type_slug matches the doc's OWN detected
+    title. This mirrors the detected_slug preference the LOGO-cluster path already has (identify_template
+    :87-97) — WITHOUT it, when the logo drifts out of range and this fallback runs, the wrong-type sibling
+    wins by mere template ORDER (the Cascade delivery-docket-typed-invoice bug). TIE-ONLY, NEVER a boost:
+    `score` is the PRIMARY key element, so a strictly-higher-scoring template of ANY type always wins —
+    the slug preference can never override better keyword evidence (which would reopen the cross-supplier
+    misfile class the word-boundary guard below prevents). detected_slug=None → slug_match=0 for all →
+    pure order/confirmed tie-break, and the existing keyword-tie pins stay green."""
     ocr_lower  = ocr_text.lower()
     best       = None
-    best_score = 0.0
+    best_key   = None
 
     for t in templates:
         keywords = t.get('keyword_fingerprint') or []
@@ -336,9 +347,20 @@ def _match_by_keywords(ocr_text: str, templates: list) -> dict | None:
             1 for kw in keywords
             if re.search(r'(?<![a-z0-9])' + re.escape(kw.lower()) + r'(?![a-z0-9])', ocr_lower)
         )
+        if hits == 0:
+            continue                                       # no keyword hit -> never wins (the "return None"
+                                                           # contract, independent of slug_match; Oracle F1-C1)
         score = hits / len(keywords)
-        if score > best_score:
-            best_score = score
+        # (score, slug_match): score is PRIMARY (raw float — IEEE-754 division ties equal fractions
+        # bit-identically, so no round() is needed and it cannot erode strictly-higher-score-wins,
+        # Oracle F1-C3), so a higher-scoring template of ANY type always wins. slug_match breaks an
+        # EXACT score tie toward the detected-type sibling. NO confirmed_count tertiary (Oracle F1-C2:
+        # it would silently flip a sibling tie on the segmentation None-path the corpus can't see).
+        # Strict '>' keeps the first-seen on a FULL tie (score+slug equal) — byte-identical when None.
+        slug_match = 1 if detected_slug and (t.get('document_type_slug') or '') == detected_slug else 0
+        key = (score, slug_match)
+        if best_key is None or key > best_key:
+            best_key = key
             best = {
                 'template':   t,
                 'confidence': int(score * 100),
