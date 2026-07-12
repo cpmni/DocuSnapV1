@@ -59,5 +59,47 @@ dup  = keyword.detect_document_type("Worksheet\nAcme", {}, ['Worksheet'], {'Work
 check("alias == name (any case) folds ONCE — same score as no aliases",
       dup is not None and dup['type'] == 'Worksheet' and dup['all_scores']['Worksheet'] == base['all_scores']['Worksheet'])
 
+print("\nCOLUMN-AWARE HEADING (Oracle 2026-07-12 — the WORKSHEET-stuck-as-invoice bug):")
+lh = keyword._line_is_heading_like
+# The incident: the title is in its OWN left column; a far-right date got merged onto the OCR row.
+check("'WORKSHEET    Date 25/11/2026' (own column) -> heading-like", lh("WORKSHEET    Date 25/11/2026", "worksheet") is True)
+check("detect: same merged line -> Worksheet, heading=True", (det("WORKSHEET    Date 25/11/2026") or {}).get('heading') is True)
+check("generalise 'INVOICE    No. 10023' -> heading-like", lh("INVOICE    No. 10023", "invoice") is True)
+check("generalise 'PURCHASE ORDER    Order Date 3/4/2026' -> heading-like", lh("PURCHASE ORDER    Order Date 3/4/2026", "purchase order") is True)
+# Single-column: BYTE-IDENTICAL to the pre-column logic (no column break present).
+check("single-column 'worksheet' -> heading-like", lh("worksheet", "worksheet") is True)
+check("single-column 'Invoice No.' -> heading-like", lh("Invoice No.", "invoice") is True)
+check("single-column 'Job Sheet 42' (own ref) -> heading-like", lh("Job Sheet 42", "job sheet") is True)
+check("inline prose 'please complete the attached worksheet...' -> NOT heading", lh("please complete the attached worksheet and return it", "worksheet") is False)
+# PINNED TRADE-OFF (gary): ONLY an own-column title relaxes — a type word beside a REAL word in the
+# SAME column stays a mention, so a future dev can't widen this to any post-column mention.
+check("PIN: 'notes    worksheet template' -> NOT heading (type word shares its column with a real word)",
+      lh("notes    worksheet template", "worksheet") is False)
+# PIN THE MARKER CONTRACT (Oracle C2): only a 4+-space run splits a column; 2- and 3-space gaps do NOT
+# (proves {4,} — the image_to_string-fallback double/triple-space precision guard can't be silently loosened).
+check("PIN marker: 2-space gap does NOT split -> 'worksheet  date x' NOT heading", lh("worksheet  date x", "worksheet") is False)
+check("PIN marker: 3-space gap does NOT split -> 'worksheet   date x' NOT heading", lh("worksheet   date x", "worksheet") is False)
+
+print("\nBLAST-RADIUS PIN (Oracle C3 — a low/table-header type-name must not hijack the type):")
+# A table-header first column DOES read heading-like (the accepted widening)...
+check("table-header column 'invoice    date    amount' reads heading-like (documented widening)",
+      lh("invoice    date    amount", "invoice") is True)
+# ...but the top-of-page POSITION weighting stops it WINNING the type when a real top title exists, so
+# the newly-trusted heading never silently re-types a doc (the REFUSE it arms stays fail-toward-review).
+r = keyword.detect_document_type(
+    "WORKSHEET    Date 25/11/2026\nAcme Supplies Ltd\nDescription    Invoice    Amount\n1 High St",
+    {}, NAMES, ALIASES)
+check("a low 'Invoice' table column does NOT beat the top 'WORKSHEET' title -> type stays Worksheet",
+      r is not None and r['type'] == 'Worksheet')
+
+print("\nCOLUMN-BREAK CONTRACT (single source of truth — a producer width change must trip RED):")
+from ocr.text_layout import COLUMN_BREAK, COLUMN_BREAK_MIN
+check("COLUMN_BREAK is exactly 4 spaces (matches reconstruct_page_text / born_digital)",
+      COLUMN_BREAK == "    " and COLUMN_BREAK_MIN == 4)
+check("the heading splitter (derived from the constant) matches a 4-space run",
+      keyword._COL_BREAK_RE.search("a    b") is not None)
+check("the heading splitter does NOT match a 3-space run (pins {4,})",
+      keyword._COL_BREAK_RE.search("a   b") is None)
+
 print(f"\n{'ALL PASS' if fail == 0 else str(fail) + ' FAILED'}")
 sys.exit(1 if fail else 0)

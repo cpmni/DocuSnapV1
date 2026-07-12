@@ -11,6 +11,8 @@ import pytesseract
 import pypdfium2 as pdfium
 from PIL import Image, ImageOps, ImageFilter
 
+from ocr.text_layout import COLUMN_BREAK   # 4-space column-break marker (single source of truth)
+
 # Noise-cleanup slider levels (1-3) → PIL MedianFilter kernel size.
 # Larger kernels remove more speckle but blur fine text more.
 NOISE_FILTER_SIZES = {1: 3, 2: 5, 3: 7}
@@ -140,7 +142,7 @@ def _group_words_into_lines(words, med_h) -> list:
         out = [row_ws[0][4]]
         for a, b in zip(row_ws, row_ws[1:]):
             gap = b[0] - (a[0] + a[2])
-            out.append("    " if gap > col_gap else " ")
+            out.append(COLUMN_BREAK if gap > col_gap else " ")
             out.append(b[4])
         lines.append("".join(out))
     return lines

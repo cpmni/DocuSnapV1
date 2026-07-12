@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 
 from extraction import number_format   # region-aware amount normaliser
+from ocr.text_layout import COLUMN_BREAK_MIN   # 4 = the reconstruct_page_text / born_digital column-break width
 from extraction import text_normalise   # shared token normaliser (caption vocab)
 
 
@@ -311,20 +312,22 @@ def seed_field_labels(patterns: dict, field_defs: "list | None") -> dict:
 # mention. Any OTHER word on the line means it's prose, not a heading.
 _HEADING_ADJ = frozenset({"no", "no.", "#", "number", "num", "ref", "-", ":", "|"})
 
-def _line_is_heading_like(line: str, phrase: str) -> bool:
-    """Relaxed heading test for the EXPOSED `heading` signal only (scoring uses the
-    strict whole-line equality). True when the line IS the matched type phrase plus at
-    most heading-adjacent tokens — a reference/number CODE ("WORKSHEET 38", "Invoice No.
-    10023", "WORKSHEET WS-38", "PURCHASE ORDER #PO-1234") or a "No."/"#"/"Number" caption
-    — so a title carrying its own reference still counts, but "...see the attached
-    worksheet..." (a real extra word) does not."""
-    s = (line or "").strip().lower()
-    p = (phrase or "").strip().lower()
-    if not p or p not in s:
+# A run of COLUMN_BREAK_MIN (4) or more spaces = a COLUMN break (reconstruct_page_text / born_digital
+# emit exactly the 4-space COLUMN_BREAK for a wide intra-row x-gap; adjacent columns compound). Derived
+# from the single-source constant so a producer width change propagates here — pinned by
+# test_column_break_contract.py. Matches the four shipped ` {4,}` column guards below (:766/:846/:904/:1070).
+_COL_BREAK_RE = re.compile(r' {%d,}' % COLUMN_BREAK_MIN)
+
+
+def _segment_is_heading(seg: str, p: str) -> bool:
+    """One reading-line COLUMN segment IS the matched type phrase plus at most heading-adjacent
+    tokens — a reference/number CODE ("WORKSHEET 38", "WORKSHEET WS-38", "PURCHASE ORDER #PO-1234")
+    or a "No."/"#"/"Number" caption. A real extra word makes it a body mention."""
+    if not p or p not in seg:
         return False
-    if s == p:
+    if seg == p:
         return True
-    rest = s.replace(p, " ", 1)
+    rest = seg.replace(p, " ", 1)
     for t in rest.split():
         # A reference/number CODE beside the title (not a real word): contains a digit and
         # is only alphanumerics + code punctuation ("38", "ws-38", "inv-2024-001", "#po1234").
@@ -334,6 +337,22 @@ def _line_is_heading_like(line: str, phrase: str) -> bool:
             continue
         return False                                        # a real extra word → a mention
     return True
+
+
+def _line_is_heading_like(line: str, phrase: str) -> bool:
+    """Relaxed heading test for the EXPOSED `heading` signal only (scoring uses the strict whole-line
+    equality — untouched, so confidence stays byte-identical). COLUMN-AWARE (Oracle 2026-07-12): a
+    banner title in its OWN column ("WORKSHEET") must not be denied heading status because a far-right
+    date/ref column got merged onto the same OCR reading line ("WORKSHEET    Date 25/11/2026" — the
+    Cascade worksheet-stuck-as-invoice bug). Split the line into COLUMN segments on the column-break
+    marker and test each independently; True if ANY segment is the title (+ heading-adjacent tokens).
+    An inline PROSE mention ("...see the attached worksheet...") has no column break → ONE segment →
+    byte-identical to the pre-column behaviour."""
+    p = (phrase or "").strip().lower()
+    if not p:
+        return False
+    s = (line or "").strip().lower()
+    return any(_segment_is_heading(seg.strip(), p) for seg in _COL_BREAK_RE.split(s))
 
 
 def detect_document_type(ocr_text: str, patterns: dict,

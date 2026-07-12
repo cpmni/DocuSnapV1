@@ -19,6 +19,8 @@ page_lines() output is drop-in compatible with the OCR line path.
 Gated by the 'born_digital_enabled' setting (default ON); see process_docs.
 """
 
+from ocr.text_layout import COLUMN_BREAK   # 4-space column-break marker (single source of truth)
+
 _MIN_CHARS       = 40     # a page with >= this many real glyphs is born-digital
 _MIN_ALPHA_RATIO = 0.30   # hybrid/garbage guard: a real layer is mostly alnum
 _WORD_GAP_NORM   = 0.010  # x-gap (page-norm) that breaks one word from the next
@@ -109,7 +111,7 @@ def _join_words(words):
             out += t
         else:
             gap  = w.get("x1", 0.0) - prev.get("x2", 0.0)
-            out += ("    " if gap > col_gap else " ") + t   # 4 spaces = a column break
+            out += (COLUMN_BREAK if gap > col_gap else " ") + t   # column break vs word gap
         prev = w
     return out
 
