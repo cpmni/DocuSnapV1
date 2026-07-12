@@ -377,6 +377,7 @@ class ExtractionEngine:
         self.format_index        = {}   # populated by set_formats()
         self.dominant_index      = {}   # Stage 2.5d dominant-value snap (populated by set_formats)
         self.known_index         = {}   # confirmed values per scope — guards try_correct (set_formats)
+        self.prefix_index        = {}   # dominant ref-code prefix per scope — prefix-outlier guard (set_formats)
         self.noise_profile_index = {}   # populated by set_formats()
         self.format_class_index  = {}   # populated by set_formats()
         self.label_overrides     = []   # populated by set_label_overrides()
@@ -769,6 +770,7 @@ class ExtractionEngine:
         self.noise_profile_index = ocr_corrector.build_noise_profile_index(formats_data)
         self.dominant_index      = ocr_corrector.build_dominant_index(formats_data)
         self.known_index         = ocr_corrector.build_known_index(formats_data)
+        self.prefix_index        = ocr_corrector.build_prefix_index(formats_data)
         self.format_class_index  = format_anomaly_checker.build_format_class_index(formats_data)
         n = len([k for k in self.format_index if k != '_fallback'])
         m = len(self.noise_profile_index)
@@ -1065,6 +1067,54 @@ class ExtractionEngine:
                     "this may be the recipient, not the issuer. Please confirm.")
             self.log(f"  Issuer guard: customer_name read '{val}' came from a "
                      f"recipient caption — flagged for review")
+        except Exception:
+            pass   # advisory guard — must never break extraction
+
+    def _flag_prefix_outlier(self, results, field_defs, supplier_name, document_slug):
+        """PREFIX-OUTLIER GUARD (flag-only, never rewrites — reggie-designed, Oracle-vetted 2026-07-12).
+        A VARIABLE reference/code field can have a dominant leading-alpha PREFIX (DN / INV / PO / SO) in
+        its confirmed history. A skew-driven single-glyph misread of that prefix (DN->IN, DN->YN) is
+        SHAPE-VALID — it passes the reference regex + every format/credibility/critical-floor gate — so
+        it auto-files at 95%+ and POISONS the learned set. This is the only guard that can see it: the
+        read's prefix is a same-length single-substitution (Hamming-1) neighbour of the dominant but is
+        NOT itself a confirmed prefix. FLAG for review — cap confidence at 69 (below the <70 review trip
+        AND the 88 auto-file floor) + note; the VALUE is NEVER touched (the digits are per-doc variable,
+        so the misread can't be corrected, only refused). EXEMPT: override/manual/template_fixed methods
+        (human-set, not an OCR read); name fields; strictly-typed non-code fields. A TAUGHT-ANCHOR read
+        is deliberately NOT exempt (the teach fixed the position, not the value — the evidenced case).
+        SELF-HEALS: a genuinely-new legit prefix is flagged once, the operator confirms, it joins the
+        known set, and never flags again; a scope that legitimately uses two prefixes never has one at
+        >=80% share, so the guard disarms there. Kill switch env PREFIX_OUTLIER_GUARD (default ON).
+        Best-effort: never breaks extraction."""
+        if os.environ.get('PREFIX_OUTLIER_GUARD', '1') == '0' or not self.prefix_index:
+            return
+        try:
+            from extraction.value_quality import is_name_like_field
+            _skip_types = {'date', 'currency', 'number', 'percentage', 'email', 'iban', 'vat_gb',
+                           'postcode_uk', 'ip_address', 'mac_address', 'currency_code', 'website'}
+            type_by_key = {f.get('key'): (f.get('type') or '').lower() for f in (field_defs or [])}
+            for key, data in results.items():
+                if key.startswith('_') or not isinstance(data, dict):
+                    continue
+                val = data.get('value')
+                if not val or is_name_like_field(key) or type_by_key.get(key) in _skip_types:
+                    continue
+                method = str(data.get('method') or '')
+                if any(m in method for m in ('override', 'manual', 'template_fixed')):
+                    continue
+                rec = ocr_corrector.lookup_prefix(self.prefix_index, key, supplier_name, document_slug)
+                if not rec:
+                    continue
+                p = ocr_corrector.code_prefix(val)
+                if not p or not ocr_corrector.is_prefix_outlier(p, rec):
+                    continue
+                data['confidence'] = min(int(data.get('confidence') or 0), 69)
+                if not str(data.get('validation_note') or '').strip():
+                    data['validation_note'] = (
+                        f"This {key.replace('_', ' ')} starts '{p}', but this sender's usually start "
+                        f"'{rec['dominant']}' — likely a one-character misread. Please check.")
+                self.log(f"  Prefix-outlier guard: {key} read prefix '{p}' vs dominant "
+                         f"'{rec['dominant']}' — flagged for review")
         except Exception:
             pass   # advisory guard — must never break extraction
 
@@ -2830,6 +2880,10 @@ class ExtractionEngine:
         # generic caption stand-in). Beside the recipient guard, BEFORE identity rescue + the boost.
         self._flag_taught_field_ownership(
             results, field_defs, supplier_name, anchors, hints, document_slug, _caption_vocab)
+        # PREFIX-OUTLIER GUARD (2026-07-12): a shape-valid single-glyph misread of a ref field's
+        # dominant code prefix (DN->IN) evades every format gate + auto-files at 95%+ on import; flag
+        # it (cap 69 + note) so it can't silently file + poison learning. Flag-only, before the boost.
+        self._flag_prefix_outlier(results, field_defs, supplier_name, document_slug)
         # ── Identity rescue (slice 1; Oracle-signed 2026-07-10) ── AFTER the guard
         # (it overwrites the guard's note with its own provenance note when the
         # corroboration holds; no corroboration => the guard's behaviour survives

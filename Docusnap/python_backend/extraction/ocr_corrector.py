@@ -449,6 +449,81 @@ def lookup_dominant(dominant_index: dict, field_key: str,
     return (dominant_index.get('_fallback') or {}).get((dt, field_key))
 
 
+# ── Prefix-outlier model (reggie-designed, Oracle-vetted 2026-07-12) ─────────────────────────────
+# A VARIABLE reference field (each value unique → no dominant VALUE, so build_dominant_index is empty
+# for it) can still have a dominant leading-alpha CODE PREFIX (DN / INV / PO / SO). A skew-driven
+# single-glyph misread of that prefix (DN->IN, DN->YN) is SHAPE-VALID — it passes the reference regex
+# and every format/credibility/critical-floor gate — so it auto-files at 95%+ and poisons the learned
+# set. The prefix-outlier guard is the only thing that can see it: "this prefix disagrees with the
+# field's own confirmed history". FLAG-ONLY (the engine caps conf + notes; the value is never touched
+# — the digits are per-doc variable, so the misread can't be corrected, only refused).
+_LEAD_ALPHA_RE = re.compile(r'^[A-Za-z]{2,}')   # >=2 leading letters; {2,} is the precision gate
+
+def code_prefix(value):
+    """Leading-alpha CODE prefix of a value, uppercased — or None. Only for values that carry a digit
+    (a code, not a name); pure-numeric / digit-leading serials / single-letter prefixes -> None."""
+    v = str(value or '')
+    if not any(ch.isdigit() for ch in v):       # must be a CODE
+        return None
+    m = _LEAD_ALPHA_RE.match(v)
+    return m.group(0).upper() if m else None
+
+def build_prefix_index(formats_data):
+    """Per (supplier, doctype, field): the DOMINANT leading-alpha code prefix + the SET of all
+    confirmed prefixes. Share is over ALL confirmed values (so a mostly-numeric or genuinely mixed
+    scope never presents a dominant prefix -> the guard disarms, no nag). Reuses the dominant-index
+    thresholds. Supplier+doctype scope only (prefix conventions are per-supplier; no cross-supplier
+    fallback)."""
+    index = {}
+    for entry in (formats_data or []):
+        field_key = entry.get('field_key', '')
+        counts    = entry.get('value_counts') or {}
+        if not field_key or not counts:
+            continue
+        total_all = sum(max(1, int(c or 1)) for c in counts.values())   # over ALL confirmed values
+        prefix_counts, known = {}, set()
+        for value, c in counts.items():
+            p = code_prefix(value)
+            if not p:
+                continue
+            w = max(1, int(c or 1))
+            prefix_counts[p] = prefix_counts.get(p, 0) + w
+            known.add(p)
+        if not prefix_counts or total_all <= 0:
+            continue
+        dom_p, dom_n = max(prefix_counts.items(), key=lambda kv: kv[1])
+        if dom_n < DOMINANT_MIN_COUNT or dom_n < DOMINANT_MIN_SHARE * total_all:
+            continue                                # no trustworthy single prefix -> scope disarmed
+        supplier = (entry.get('supplier_name') or '').lower().strip()
+        doc_type = (entry.get('document_type') or '').lower().strip()
+        if supplier and doc_type:
+            index[(supplier, doc_type, field_key)] = {'dominant': dom_p, 'known': known}
+    return index
+
+def lookup_prefix(prefix_index, field_key, supplier_name, doc_type):
+    """Exact (supplier, doctype, field) lookup — no fallback (prefix conventions are per-supplier)."""
+    if not prefix_index:
+        return None
+    s  = (supplier_name or '').lower().strip()
+    dt = (doc_type or '').lower().strip()
+    return prefix_index.get((s, dt, field_key))
+
+def is_prefix_outlier(read_prefix, rec):
+    """True when read_prefix is a SAME-LENGTH single-substitution (Hamming-1) neighbour of the
+    dominant prefix but is NOT itself a confirmed prefix — a likely single-glyph misread (DN->IN).
+    NOT a confusion table: D->I / D->Y are skew artefacts, not canonical OCR pairs, and a shared
+    table would over-correct other fields. Length-changing misreads fall through (caught by the
+    shape checker). A confirmed prefix (self-heal) is never flagged."""
+    if not read_prefix or not rec:
+        return False
+    dom = rec.get('dominant')
+    if not dom or read_prefix == dom or read_prefix in (rec.get('known') or set()):
+        return False
+    if len(read_prefix) != len(dom):
+        return False
+    return sum(1 for a, b in zip(read_prefix, dom) if a != b) == 1
+
+
 def build_known_index(formats_data: list) -> dict:
     """Per (supplier, doctype, field): the SET of every CONFIRMED value. Used to guard the
     character corrector (try_correct) so it never rewrites a value the corpus has actually seen —

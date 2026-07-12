@@ -94,8 +94,12 @@ REREAD_ESCALATION) can never fire on a valid-shaped wrong value. Only a **learne
 - **Fail-safe:** a genuinely-new legit prefix (a real `IN-` invoice supplier) is reviewed **once**,
   confirmed, joins the known set, and stops being flagged — self-correcting, never a hard reject.
 
-**Impact:** all **6** of your bad auto-files are single-substitution neighbours of `DN` → the guard
-would have flagged every one (→ review, not silent file, not learning-poison).
+**Impact (scoped honestly — Oracle):** all 6 misread prefixes are Hamming-1 neighbours of `DN`, so
+**once the scope is ARMED** (≥5 clean `DN` confirmations at ≥80% share) the guard flags every one →
+review, not silent file. It does NOT retroactively fix poison already in the learned set, nor protect
+a *cold-start* scope before it arms — the ORIGINAL Cascade poisoning happened in that pre-armed window,
+which your Learning-Recovery purge closed (DN re-armed to ~90%). So the guard **prevents recurrence** on
+an armed scope (the next Cascade-class supplier), not the already-poisoned history.
 
 **Conditions before shipping (Oracle):** reggie precision pass on the exact prefix-extraction +
 threshold + edit-distance rule (tight scope so it doesn't nag suppliers whose prefix legitimately
