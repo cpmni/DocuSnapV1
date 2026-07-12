@@ -326,6 +326,16 @@
     .folder-path { font-family: var(--mono); font-size: 10px; color: var(--muted); word-break: break-all; line-height: 1.5; }
     .folder-path.set { color: var(--accent2); }
 
+    /* "N documents ready" preview — shown after a folder is picked, since the native folder
+       picker can't display files. Confirms the folder actually contains documents. */
+    .folder-preview { margin-top: 8px; font-size: 11px; }
+    .folder-preview.loading { color: var(--muted); }
+    .folder-preview.empty { color: var(--warn); }
+    .folder-preview .fp-head { font-weight: 600; color: var(--ok); margin-bottom: 4px; }
+    .folder-preview .fp-list { list-style: none; margin: 0; padding: 0; max-height: 128px; overflow-y: auto;
+      font-family: var(--mono); color: var(--muted); line-height: 1.7; }
+    .folder-preview .fp-list .more { font-style: italic; }
+
     .btn-run {
       display: flex; align-items: center; justify-content: center; gap: 8px;
       width: 100%; padding: 11px; border-radius: var(--r-sm); border: none;
@@ -956,6 +966,7 @@
             <div class="folder-box cue" id="folder-box" title="Click to choose folder" data-help-key="source-folder">
               <span class="folder-path" id="folder-display">Click to select a folder&hellip;</span>
             </div>
+            <div class="folder-preview" id="folder-preview" style="display:none"></div>
           </div>
           <div class="import-actions">
             <button class="btn-run" id="btn-run" disabled data-help-key="process">

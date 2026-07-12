@@ -127,6 +127,7 @@ contextBridge.exposeInMainWorld('docusnap', {
 
   // ── Folder processing ────────────────────────────────────────────────────────
   pickFolder:         ()     => ipcRenderer.invoke('pick-folder'),
+  listImportFolder:   (folder) => ipcRenderer.invoke('list-import-folder', folder),
   pickOutputFolder:   ()     => ipcRenderer.invoke('pick-output-folder'),
   processFolder:      (f, opts) => ipcRenderer.invoke('process-folder', f, opts),
   stagePdfForTeach:   ()     => ipcRenderer.invoke('stage-pdf-for-teach'),
@@ -207,8 +208,10 @@ contextBridge.exposeInMainWorld('docusnap', {
   // ── Zone OCR & learning ──────────────────────────────────────────────────────
   ocrRegion:           (b64)      => ipcRenderer.invoke('ocr-region', b64),
   ocrRegionBoxes:      (b64)      => ipcRenderer.invoke('ocr-region-boxes', b64),
+  getPageDeskew:       (b64)      => ipcRenderer.invoke('get-page-deskew', b64),
   testTemplateMapping: (pageB64, mapping, landmarks) => ipcRenderer.invoke('test-template-mapping', pageB64, mapping, landmarks),
   saveFieldAnchor:     (data)     => ipcRenderer.invoke('save-field-anchor', data),
+  getTaughtFieldKeys:  (scope)    => ipcRenderer.invoke('get-taught-field-keys', scope),
   saveFieldRule:       (data)     => ipcRenderer.invoke('save-field-rule', data),
   extractLogoHash:     (b64)      => ipcRenderer.invoke('extract-logo-hash', b64),
   matchLogoHash:       (b64)      => ipcRenderer.invoke('match-logo-hash', b64),

@@ -199,7 +199,61 @@
     return { label: L, direction: 'left' };                            // sL >= sA incl. tie -> LEFT
   }
 
-  root.AnchorLabel = { nearestLeftCluster, nearestAboveRow, nearestRowTo, extractLabel, sanitizeAnchorLabel, labelLooksSuspicious, scoreLabelCandidate, pickLabelCandidate };
+  // DESKEW BACK-TRANSFORM (2026-07-12): map a point given in the STRAIGHTENED (display) frame back
+  // to the RAW page frame that extraction reads. The Review window can straighten the on-screen page
+  // (region.py --deskew) so drawn ⊕ boxes land on level text; the immediate crop is read from that
+  // straightened image (see==read, a pure win), but the coords STAGED for the anchor are in the
+  // straightened frame while extraction reads the RAW scan — so on save they must be rotated back.
+  //
+  // `angleDeg` is the angle passed to PIL `img.rotate()` to straighten the page (CCW-positive; the
+  // value detect_skew_angle returns). PIL's rotate maps an OUTPUT pixel to the INPUT (source) pixel
+  // via input = R(+angle)·output about the image centre (VERIFIED empirically vs real PIL.rotate —
+  // NOT R(-angle); the sign was measured with a marker-pixel round-trip, see test_anchor_label.js).
+  // So a point the user drew at `output` (straightened) came from raw position R(+angle)·output.
+  // The rotation is in PIXEL space, so normalise→pixel→rotate→normalise; W,H are the page's pixel
+  // dims (preserved by expand=False, identical in both frames). Pure; returns {x,y} normalised.
+  function deskewedNormToRaw(xNorm, yNorm, angleDeg, W, H) {
+    if (!angleDeg || !W || !H) return { x: xNorm, y: yNorm };
+    const cx = W / 2, cy = H / 2;
+    const px = xNorm * W - cx, py = yNorm * H - cy;
+    const th = angleDeg * Math.PI / 180;
+    const c = Math.cos(th), s = Math.sin(th);
+    const rx = cx + c * px - s * py;      // R(+angle) about centre — proven sign
+    const ry = cy + s * px + c * py;
+    return { x: rx / W, y: ry / H };
+  }
+
+  // Decide how a ⊕-staged anchor's coords must be finalised, given the deskew frame the box was
+  // drawn on (`snap`) and the live frame at commit (`live`) — each `{angle, docId, page, W, H}`.
+  // Pure (the caller performs the DOM side-effects). This is the load-bearing FAIL-SAFE (Oracle C1):
+  // the back-transform is valid ONLY against the frame the box was drawn on, and there are OCR awaits
+  // between draw and commit, so if the displayed frame changed (Straighten toggled, page/doc
+  // navigated, or an async swap left the image undecoded → W/H 0) the staged coords belong to a
+  // different frame and must NEVER be persisted as raw. Returns:
+  //   {action:'keep'}       — deskew not involved (drawn raw, still raw) → leave coords as staged
+  //   {action:'drop'}       — frame changed / unusable → caller discards the teach + warns
+  //   {action:'transform', x, y, page_zone, offset_dx?, offset_dy?} — apply these RAW-frame coords
+  function deskewFinalizeAnchor(anchor, snap, live) {
+    const snapAngle = snap ? (snap.angle || 0) : 0;
+    const liveAngle = live ? (live.angle || 0) : 0;
+    if (!snapAngle && !liveAngle) return { action: 'keep' };   // deskew never involved
+    const W = snap && snap.W, H = snap && snap.H;
+    const frameOk = !!snap && !!live && !!W && !!H
+      && live.docId === snap.docId && live.page === snap.page
+      && live.angle === snap.angle && live.W === snap.W && live.H === snap.H;
+    if (!frameOk) return { action: 'drop' };
+    if (!snapAngle) return { action: 'keep' };   // drawn on the raw frame — coords already raw
+    const v = deskewedNormToRaw(anchor.x_norm, anchor.y_norm, snapAngle, W, H);
+    const out = { action: 'transform', x: v.x, y: v.y,
+                  page_zone: v.y < 0.33 ? 'top' : v.y < 0.66 ? 'middle' : 'bottom' };
+    if (anchor.offset_dx_norm != null && anchor.offset_dy_norm != null) {
+      const l = deskewedNormToRaw(anchor.x_norm - anchor.offset_dx_norm, anchor.y_norm - anchor.offset_dy_norm, snapAngle, W, H);
+      out.offset_dx = v.x - l.x; out.offset_dy = v.y - l.y;
+    }
+    return out;
+  }
+
+  root.AnchorLabel = { nearestLeftCluster, nearestAboveRow, nearestRowTo, extractLabel, sanitizeAnchorLabel, labelLooksSuspicious, scoreLabelCandidate, pickLabelCandidate, deskewedNormToRaw, deskewFinalizeAnchor };
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));
 
 // Node/test interop (the browser path uses window.AnchorLabel).

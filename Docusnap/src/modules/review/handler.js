@@ -210,6 +210,12 @@ function register(ctx) {
     requireRole('admin', 'edit');
     return learning.getAnchorsForScope(getDb(), scope || {});
   });
+  // Which fields have a learned anchor for a (supplier, doc-type) scope — powers the Review per-field
+  // "position taught" dot. Read-only; returns [] on any error so the indicator can never break render.
+  ipcMain.handle('get-taught-field-keys', (_e, scope) => {
+    requireRole('admin', 'edit');
+    try { return learning.getTaughtFieldKeys(getDb(), scope || {}); } catch { return []; }
+  });
   // Delete ONE mis-stored learned anchor (learning-history → 🗑). Admin/edit; audited.
   ipcMain.handle('delete-field-anchor', (_e, payload) => {
     requireRole('admin', 'edit');

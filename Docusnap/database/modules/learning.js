@@ -595,6 +595,23 @@ function getAnchorsForScope(db, { supplier_name, document_type, field_key } = {}
   `).all({ supplier_name: supplier_name || '', document_type: document_type ?? null, field_key });
 }
 
+// The field_keys that have at least one learned anchor applicable to a (supplier, doc-type) scope —
+// same scope rule as getAnchorsForScope (this supplier's own rows PLUS global/unresolved ones).
+// Powers the Review per-field "position taught" dot so an operator can see at a glance which fields
+// Scan Finder already knows where to read. `authoritative` is 1 when any in-scope anchor for that
+// field came from an explicit ⊕ re-teach (vs a passively auto-learned position). Read-only.
+function getTaughtFieldKeys(db, { supplier_name, document_type } = {}) {
+  return db.prepare(`
+    SELECT field_key,
+           MAX(CASE WHEN last_authoritative_at IS NOT NULL THEN 1 ELSE 0 END) AS authoritative
+    FROM field_anchors
+    WHERE (@document_type IS NULL OR COALESCE(document_type, '') = COALESCE(@document_type, ''))
+      AND (LOWER(TRIM(COALESCE(supplier_name, ''))) = LOWER(TRIM(COALESCE(@supplier_name, '')))
+           OR supplier_name IN ('__unknown__', '__global__') OR supplier_name IS NULL OR TRIM(supplier_name) = '')
+    GROUP BY field_key
+  `).all({ supplier_name: supplier_name || '', document_type: document_type ?? null });
+}
+
 // Delete ONE learned anchor by id (Learning-history "learned anchors" panel → 🗑). Precise, reversible
 // only by re-teaching (a mis-drawn anchor is cheap to redraw). Returns {removed}. Admin/edit, audited
 // at the IPC edge.
@@ -1376,7 +1393,7 @@ module.exports = {
   getFieldValueHistory, getDocumentsForFieldValue, purgeFieldValue, renameFieldValue,
   getSupplierScopeCounts, renameSupplier,
   saveCorrections, getHints, getAllHints, isPlausibleSupplierName, nameQuality, normalizeSupplierName,
-  saveAnchor, sanitizeAnchorLabel, clearAnchors, getAllAnchors, getAnchorsForScope, deleteAnchor,
+  saveAnchor, sanitizeAnchorLabel, clearAnchors, getAllAnchors, getAnchorsForScope, getTaughtFieldKeys, deleteAnchor,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
   getFieldFormats, getDigitsOnlyFields,
   getRecoverySummary, getRecoveryDetail, getMemoryInventory, resetAllLearning,

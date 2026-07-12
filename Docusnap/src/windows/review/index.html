@@ -229,6 +229,17 @@
       background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; flex-shrink: 0;
     }
     .doc-nav-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .doc-nav-btn.active { border-color: var(--accent); color: var(--on-accent); background: var(--accent); }
+
+    /* Per-field "position taught" dot, scoped to this supplier + DOCUMENT TYPE: green = a learned
+       position is saved for this field on this type; red = not taught for this type yet (the
+       actionable state — e.g. a look-alike doc that's actually a different type you haven't taught). */
+    .taught-dot {
+      display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+      margin-right: 7px; vertical-align: middle; flex-shrink: 0; box-sizing: border-box;
+      background: var(--err); border: 1.5px solid var(--err);
+    }
+    .taught-dot.on { background: var(--ok); border-color: var(--ok); }
 
     #select-hint {
       display: none; align-items: center; gap: 8px;
@@ -823,6 +834,8 @@
         <button class="doc-nav-btn" id="btn-page-prev" data-help-key="pages">&#8249; Prev</button>
         <span id="page-indicator" style="font-size:11px; color:var(--muted);">—</span>
         <button class="doc-nav-btn" id="btn-page-next" data-help-key="pages">Next &#8250;</button>
+        <button class="doc-nav-btn" id="btn-deskew" data-help-key="deskew" title="Straighten a tilted scan so drawn boxes line up with the text (display only — the filed file is unchanged)">&#8734; Straighten</button>
+        <span id="deskew-angle" style="font-size:11px; color:var(--muted);"></span>
       </div>
 
       <button class="btn" id="btn-acknowledge" data-help-key="acknowledge" style="display:none" title="This document was flagged for review. Mark it reviewed so File All Ready can include it.">&#10003; Mark Reviewed</button>

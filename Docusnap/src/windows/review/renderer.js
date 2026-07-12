@@ -144,6 +144,24 @@ function clearFieldWarning(row, input) {
   if (el) el.remove();
 }
 
+// Dismiss the EXTRACTION advisory note (the wordness "looks like a code, not a name" / format-check /
+// issuer note + its Accept button) once the operator has supplied a value themselves (typed or
+// ⊕-drawn). Human input is authoritative, so the machine's "please verify" — which describes the OLD
+// machine-read value — is satisfied and stale. Removes ONLY that advisory element via an explicit
+// exclusion selector: never the inline live-regex warning (.field-validation-warn), the
+// totals-verified badge (.verified) or the applied auto-fix badge (.corrected). Nulls the in-memory
+// flags so renderReviewReason's tally drops the field on any later re-render. Does NOT touch
+// review_flag_count / Confirm-gating / auto-file (those read the server count) and never teaches a
+// global allowlist (that stays the explicit "✓ This name/issuer is correct" buttons). Callers gate on
+// value-actually-changed; the same edit re-runs fieldValidationError so a bad structured value re-flags.
+function dismissServerNote(row, key) {
+  if (!row) return;
+  const note = row.querySelector('.field-note:not(.field-validation-warn):not(.verified):not(.corrected)');
+  if (note) note.remove();
+  const ex = (currentDoc?.extractions || []).find(e => e.field_key === key);
+  if (ex) { ex.validation_note = null; ex.corrected_to = null; }
+}
+
 // ── State ─────────────────────────────────────────────────────────────────────
 let queue            = [];
 // Review-queue view: group rows by sender (default) vs raw newest-first. A same-window
@@ -162,6 +180,9 @@ let pageImages       = [];
 let fieldDefs        = [];
 let corrections      = {};
 let anchorTaughtFields = new Set(); // field_keys taught via the ⊕ highlight/zone-OCR tool this cycle
+// field_keys with a SAVED learned anchor for the current supplier+doc-type scope (get-taught-field-keys),
+// for the per-field "position taught" dot. OR'd with pendingAnchors (this-session ⊕ teaches) at render.
+let taughtFieldKeys = new Set();
 // Anchors drawn with ⊕ this cycle, STAGED in memory and persisted only on Confirm
 // & File (mirrors `corrections`). An un-confirmed teach (skip/defer/doc-change)
 // leaves NO learned trace, so an accidental wrong pick can't poison the corpus.
@@ -171,6 +192,14 @@ let pendingAnchors   = {};
 // e.g. "Invoice Total") for this field — not a value read. Armed by the readout's
 // "Draw the anchor" button; consumed on mouseup by runAnchorDraw.
 let anchorDrawField  = null;
+// DESKEW DISPLAY (per-doc, opt-in, default OFF). When on, the shown page is the STRAIGHTENED
+// render (region.py --deskew) so drawn ⊕ boxes land on level text — the immediate crop read is
+// then a pure win (see==read). `deskewPageAngle` is the angle CURRENTLY applied to docImg (0 =
+// showing the raw page); it drives the coord back-transform on save (_deskewFixPending). Cache
+// keyed by page index so re-visiting a page doesn't re-run OCR. Reset on doc change.
+let deskewEnabled    = false;
+let deskewByPage     = {};   // page index → { angle, uri } (uri null / angle 0 = page already level)
+let deskewPageAngle  = 0;
 // Field cleanup rules taught via the right-click menu this cycle, STAGED in memory
 // and persisted only on Confirm (mirrors pendingAnchors). Keyed field_key → array of
 // saveFieldRule payloads. An un-confirmed teach (skip/defer/doc-change) leaves no trace.
@@ -484,6 +513,7 @@ document.getElementById('doctype-select').addEventListener('change', (e) => {
     appendFieldRow(scroll, key, val, null);
   }
   validateConfirm();
+  _refreshTaughtForType();   // dots are type-scoped — re-query for the newly-chosen type
 });
 
 // ── Create-a-new-type modal (in-page; reuses the shared DocTypeEditor) ─────────
@@ -899,7 +929,9 @@ async function _selectDoc(doc, { fieldsOnly = false } = {}) {
   corrections = {};
   anchorTaughtFields = new Set();
   pendingAnchors = {};   // discard any un-confirmed ⊕ teach when the doc changes
+  taughtFieldKeys = new Set();   // re-fetched for the new doc's scope before renderFields
   pendingFieldRules = {}; // ...and any un-confirmed field cleanup rule
+  deskewEnabled = false; deskewByPage = {}; deskewPageAngle = 0; updateDeskewBtn();  // deskew is per-doc, default OFF
   lastTeachCtx = null; hideAnchorReadout();
   { const c = document.getElementById('teach-cta'); if (c) { c.style.display = 'none'; c.innerHTML = ''; } }  // clear prior doc's CTA until this doc's recheck answers
 
@@ -958,6 +990,14 @@ async function _selectDoc(doc, { fieldsOnly = false } = {}) {
     full.below_threshold_count = doc.below_threshold_count;
     full.review_flag_count     = doc.review_flag_count;
   }
+  // Which of this supplier+type's fields already have a learned anchor — drives the per-field
+  // "position taught" dot. Best-effort + doc-guarded so a slow query can't dot the wrong doc.
+  taughtFieldKeys = new Set();
+  try {
+    const _tk = await window.docusnap.getTaughtFieldKeys?.({
+      supplier_name: currentDoc?.supplier_name, document_type: selectedTypeSlug });
+    if (currentDoc?.id === doc.id) for (const r of (_tk || [])) taughtFieldKeys.add(r.field_key);
+  } catch {}
   renderFields(renderedDoc);
 
   // Lightweight current-template recheck — this doc had no template match at
@@ -1020,10 +1060,21 @@ function renderPage() {
     redrawWizard();
     if (currentPage === 0) attemptLogoMatch();
   };
-  docImg.src = (previewActive && previewCache.has(currentPage))
-    ? previewCache.get(currentPage)
-    : pageImages[currentPage];
+  // DESKEW takes precedence over the raw/preview source when it's ON, this page is skewed and its
+  // straightened render is already cached (synchronous swap = no flash on revisit). The Template
+  // Wizard always draws on the RAW page (its coord math isn't deskew-aware), so deskew is suppressed
+  // while the wizard is active. A per-page angle of 0 means "show raw" (page already level).
+  const _canDeskew = deskewEnabled && !wizard.active;
+  const _dsk = _canDeskew ? deskewByPage[currentPage] : null;
+  deskewPageAngle = (_dsk && _dsk.uri) ? _dsk.angle : 0;
+  docImg.src = (_dsk && _dsk.uri)
+    ? _dsk.uri
+    : (previewActive && previewCache.has(currentPage))
+      ? previewCache.get(currentPage)
+      : pageImages[currentPage];
   indicator.textContent = `Page ${currentPage + 1} / ${pageImages.length}`;
+  if (_canDeskew && deskewByPage[currentPage] === undefined) applyDeskewToCurrentPage();  // not yet fetched
+  updateDeskewBtn();
 }
 
 document.getElementById('btn-page-prev').addEventListener('click', () => {
@@ -1032,6 +1083,97 @@ document.getElementById('btn-page-prev').addEventListener('click', () => {
 document.getElementById('btn-page-next').addEventListener('click', () => {
   if (currentPage < pageImages.length - 1) { cancelZoneMode(); currentPage++; renderPage(); if (previewActive) refreshPreviewNow(); }
 });
+
+// ── Deskew (straighten a tilted scan for accurate ⊕ box drawing) ─────────────────
+// Fetch (once, cached) the straightened render of the current page and swap it in. Guarded
+// against doc/page changes racing the async OCR, exactly like the OCR-preview refresh.
+async function applyDeskewToCurrentPage() {
+  if (!deskewEnabled || wizard.active || !pageImages || !pageImages.length) return;
+  const page = currentPage, docId = currentDoc?.id;
+  if (deskewByPage[page] !== undefined) return;   // already fetched (or in flight — set below)
+  deskewByPage[page] = null;                       // in-flight marker (renderPage treats null uri as "no swap yet")
+  let entry = { angle: 0, uri: null };
+  try {
+    const src = String(pageImages[page] || '');
+    const b64 = src.includes(',') ? src.split(',')[1] : src;
+    const res = await window.docusnap.getPageDeskew?.(b64);
+    if (res && res.image && res.angle) entry = { angle: res.angle, uri: `data:image/png;base64,${res.image}` };
+  } catch (e) {
+    console.warn('deskew failed:', e.message);
+  }
+  if (currentDoc?.id !== docId) return;            // doc changed while OCR ran — drop (state was reset)
+  deskewByPage[page] = entry;
+  if (deskewEnabled && !wizard.active && currentPage === page) {
+    if (entry.uri) renderPage();                              // swap the now-cached straightened image in
+    else { showToast('This page already looks straight.', 'ok'); updateDeskewBtn(); }   // nothing to straighten
+  } else updateDeskewBtn();
+}
+
+// Toggle deskew for the current doc. On → fetch+straighten the current page; off → revert to raw.
+async function toggleDeskew() {
+  if (!pageImages || !pageImages.length) { showToast('Open a document first', 'warn'); return; }
+  if (wizard.active) { showToast('Close the Template Wizard to straighten the page', 'warn'); return; }
+  deskewEnabled = !deskewEnabled;
+  if (!deskewEnabled) deskewPageAngle = 0;
+  renderPage();
+}
+
+// Reflect the toggle's state + the applied angle in the toolbar button.
+function updateDeskewBtn() {
+  const btn = document.getElementById('btn-deskew');
+  const lbl = document.getElementById('deskew-angle');
+  if (!btn) return;
+  const on = deskewEnabled && !wizard.active;
+  btn.classList.toggle('active', on);
+  btn.innerHTML = on ? '&#8734; Straightened' : '&#8734; Straighten';
+  if (lbl) lbl.textContent = (on && deskewPageAngle) ? `${deskewPageAngle > 0 ? '+' : ''}${deskewPageAngle.toFixed(1)}°` : '';
+}
+
+// Snapshot the deskew frame the operator is drawing on — taken SYNCHRONOUSLY before any OCR await,
+// so it records the frame the box was actually drawn against. `_deskewFixPending` back-transforms
+// with THIS frame's angle and drops the teach if the live frame no longer matches it (Oracle C1).
+function _captureDeskewSnap() {
+  return { angle: deskewPageAngle, docId: currentDoc?.id, page: currentPage,
+           W: docImg.naturalWidth, H: docImg.naturalHeight };
+}
+
+// Rotate a just-staged anchor's coords from the STRAIGHTENED display frame back to the RAW page
+// frame extraction reads, using the frame SNAPSHOT taken when the box was drawn (`snap`). No-op
+// when deskew was off at draw AND is off now (staged coords byte-identical to pre-deskew).
+//
+// FRAME-CONSISTENCY (Oracle C1 — the load-bearing safety): the value box + the label strips were
+// captured on the snapshot frame, so the back-transform is ONLY valid against that frame. Between
+// the draw and here there are OCR awaits; if the displayed frame changed in that window — Straighten
+// toggled, page/doc navigated, or an async src-swap left the image undecoded — the staged coords and
+// the strip-read label belong to a different frame. NEVER persist a straightened coord as raw: drop
+// the staged teach and tell the operator to redraw (fail toward NO anchor + a visible reason, never
+// a silent wrong authoritative anchor). The value point AND the label point (value − offset) are
+// transformed independently then the offset recomputed in the raw frame (a page-centre rotation
+// can't be applied to a normalised offset directly — x,y scale by W,H differently). page_zone is
+// re-derived from the raw y. w_norm/h_norm (a coarse crop zone) are left as-is (007-A deferred).
+function _deskewFixPending(fieldKey, snap) {
+  const a = pendingAnchors[fieldKey];
+  if (!a) return;
+  // Fast path — deskew never involved (drawn raw AND still raw): byte-identical, no dependency.
+  if (!(snap && snap.angle) && !deskewPageAngle) return;
+  const live = { angle: deskewPageAngle, docId: currentDoc?.id, page: currentPage,
+                 W: docImg.naturalWidth, H: docImg.naturalHeight };
+  const d = window.AnchorLabel?.deskewFinalizeAnchor?.(a, snap, live);
+  if (d && d.action === 'keep') return;
+  if (d && d.action === 'transform') {
+    a.x_norm = d.x; a.y_norm = d.y; a.page_zone = d.page_zone;
+    if (d.offset_dx != null) { a.offset_dx_norm = d.offset_dx; a.offset_dy_norm = d.offset_dy; }
+    return;
+  }
+  // 'drop' — or the helper is unavailable while deskew IS involved. Never persist a straightened
+  // coord as raw: discard the staged teach and tell the operator to redraw (Oracle C1).
+  delete pendingAnchors[fieldKey];
+  anchorTaughtFields.delete(fieldKey);
+  hideAnchorReadout();
+  try { showToast('Straighten changed while reading — please draw the box again.', 'warn'); } catch {}
+}
+
+document.getElementById('btn-deskew')?.addEventListener('click', toggleDeskew);
 
 // ── Extraction status pills ────────────────────────────────────────────────────
 function renderExtractionStatus(doc) {
@@ -1480,6 +1622,40 @@ function renderFields(doc) {
   updateTotalsVerifiedBadge();
 }
 
+// ── Per-field "position taught" dot ────────────────────────────────────────────
+// A field is "taught" when a learned anchor exists for the current supplier+doc-type scope (SAVED,
+// from get-taught-field-keys) OR one is staged this session (a ⊕ teach not yet confirmed).
+function _fieldIsTaught(key) { return taughtFieldKeys.has(key) || !!pendingAnchors[key]; }
+function _taughtDotTitle(taught) {
+  return taught
+    ? 'Taught — a learned position is saved for this field on this supplier + document type'
+    : 'Not taught for this document type yet — click ⊕ to teach it (a position taught on a different type doesn’t apply here)';
+}
+// Re-fetch the taught-field set for the CURRENT supplier + selected type and repaint every dot.
+// The dots are TYPE-scoped, so changing the document type must re-query — a field taught on the
+// OLD type must not stay green under the new one (and vice-versa). Doc-guarded against races.
+async function _refreshTaughtForType() {
+  const forDoc = currentDoc?.id;
+  taughtFieldKeys = new Set();
+  try {
+    const _tk = await window.docusnap.getTaughtFieldKeys?.({
+      supplier_name: currentDoc?.supplier_name, document_type: selectedTypeSlug });
+    if (currentDoc?.id !== forDoc) return;
+    for (const r of (_tk || [])) taughtFieldKeys.add(r.field_key);
+  } catch {}
+  if (currentDoc?.id !== forDoc) return;
+  document.querySelectorAll('#fields-scroll .taught-dot[data-key]').forEach(dot => _refreshTaughtDot(dot.dataset.key));
+}
+
+// Flip one field's dot live after a ⊕ teach stages or is C1-dropped (no full re-render).
+function _refreshTaughtDot(key) {
+  const dot = document.querySelector(`.taught-dot[data-key="${key}"]`);
+  if (!dot) return;
+  const taught = _fieldIsTaught(key);
+  dot.classList.toggle('on', taught);
+  dot.title = _taughtDotTitle(taught);
+}
+
 function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, method) {
   const low      = conf !== null && conf < 70;
   const confClass = conf === null ? '' : conf >= 70 ? 'high' : conf >= 40 ? 'mid' : 'low';
@@ -1543,6 +1719,7 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
     : '';
   row.innerHTML = `
     <div class="field-row-header">
+      <span class="taught-dot ${_fieldIsTaught(key) ? 'on' : ''}" data-key="${key}" title="${escHtml(_taughtDotTitle(_fieldIsTaught(key)))}"></span>
       <span class="field-row-label" data-key="${key}"${_issuerHint}>${escHtml(labelFor(key))}</span>
       ${confLabel}
     </div>
@@ -1568,6 +1745,9 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
     // value — only re-evaluate (and possibly re-flag) on blur, so the error never
     // flashes mid-type (e.g. an unfinished "12-05" looks invalid until complete).
     clearFieldWarning(row);
+    // A value the operator TYPED supersedes the machine's advisory note (wordness / format / issuer);
+    // dismiss it once the value actually differs from the flagged original (trimmed — Oracle C3).
+    if (input.value.trim() !== (orig || '').trim()) dismissServerNote(row, key);
     validateConfirm();
     updateTotalsVerifiedBadge();   // live-update the "mathematically verified" total badge
   });
@@ -1683,8 +1863,9 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
           const noteEl = row.querySelector('.field-note');
           if (noteEl) noteEl.remove();
           clearFieldWarning(row);
-          // Drop this field from the in-memory flag tally so Confirm gating + the
-          // auto-file eligibility reflect the accept without a reload.
+          // Drop this field from the in-memory review-reason DISPLAY tally (renderReviewReason) so it
+          // doesn't re-list on a later re-render. Does NOT change Confirm-gating or auto-file
+          // eligibility — those read the server review_flag_count, not these in-memory notes (Oracle C6).
           const ex = (currentDoc?.extractions || []).find(e => e.field_key === key);
           if (ex) ex.validation_note = null;
           validateConfirm();
@@ -1710,8 +1891,9 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
           const noteEl = row.querySelector('.field-note');
           if (noteEl) noteEl.remove();
           clearFieldWarning(row);
-          // Drop the identity-conflict flag from the in-memory tally so Confirm gating +
-          // auto-file eligibility reflect the accept without a reload.
+          // Drop the identity-conflict flag from the in-memory review-reason DISPLAY tally so it
+          // doesn't re-list on a later re-render. Does NOT change Confirm-gating or auto-file
+          // eligibility — those read the server review_flag_count, not these in-memory notes (Oracle C6).
           const ex = (currentDoc?.extractions || []).find(e => e.field_key === key);
           if (ex) ex.validation_note = null;
           validateConfirm();
@@ -1969,6 +2151,7 @@ async function runZoneOcr(rect, fieldKey) {
   ocrOverlay.classList.add('visible');
 
   try {
+    const deskewSnap = _captureDeskewSnap();   // the frame the box is drawn on (Oracle C1 — checked at commit)
     const scaleX = docImg.naturalWidth  / docImg.offsetWidth;
     const scaleY = docImg.naturalHeight / docImg.offsetHeight;
     const imgW   = docImg.offsetWidth;
@@ -2002,6 +2185,16 @@ async function runZoneOcr(rect, fieldKey) {
         input.classList.add('corrected');
         corrections[fieldKey] = { original_value: orig, corrected_value: text };
         validateConfirm();
+        // The operator supplied this value by DRAWING — clear the stale extraction advisory note,
+        // then re-validate the NEW value exactly as the blur handler does (a bad structured value
+        // still re-flags). Gated on an actual change; before the focus block so the DOM is settled.
+        // NOT a synthetic 'input' event (that would pop the type-ahead datalist — reggie). Oracle C5.
+        const _row = input.closest('.field-row');
+        if (_row && input.value.trim() !== (orig || '').trim()) {
+          dismissServerNote(_row, fieldKey);
+          const _msg = fieldValidationError(fieldKey, input.value);
+          if (_msg) setFieldWarning(_row, input, _msg); else clearFieldWarning(_row, input);
+        }
         // FOCUS (eric, 2026-07-10): the hidden Python OCR spawn during the await above
         // desyncs the render widget's keyboard focus (page-focus false while the window
         // still claims focus), so the user's next click into this field gets NO caret and
@@ -2025,8 +2218,8 @@ async function runZoneOcr(rect, fieldKey) {
         _stageMultilineRule(fieldKey, { silent: true });
         try { showToast('Looks like this value wraps onto the next line — wrapping enabled, saved on Confirm.', 'ok'); } catch {}
       }
-      lastTeachCtx = { fieldKey, rect, imgW, imgH, scaleX, scaleY, value: text };
-      const detected = await captureAnchorContext(rect, fieldKey, text, imgW, imgH, scaleX, scaleY);
+      lastTeachCtx = { fieldKey, rect, imgW, imgH, scaleX, scaleY, value: text, deskewSnap };
+      const detected = await captureAnchorContext(rect, fieldKey, text, imgW, imgH, scaleX, scaleY, null, deskewSnap);
       if (detected) {
         anchorTaughtFields.add(fieldKey);
         // The Document Issuer (company/supplier name) is usually a top-corner logo/letterhead
@@ -2053,6 +2246,7 @@ async function runZoneOcr(rect, fieldKey) {
           showAnchorReadout(detected, text);   // show which anchor was picked + the Left/Above toggle
         }
       }
+      _refreshTaughtDot(fieldKey);   // reflect the staged (or C1-dropped) teach on the field's dot
     }
   } catch (err) {
     console.error('Zone OCR error:', err);
@@ -2281,7 +2475,7 @@ function labelNormBox(box, originDX, originDY, imgW, imgH) {
           box[2] / nW, box[3] / nH];
 }
 
-async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, scaleY, forceDir = null) {
+async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, scaleY, forceDir = null, deskewSnap = null) {
   const xNorm    = (rect.x + rect.w / 2) / imgW;
   const yNorm    = (rect.y + rect.h / 2) / imgH;
   const pageZone = yNorm < 0.33 ? 'top' : yNorm < 0.66 ? 'middle' : 'bottom';
@@ -2462,6 +2656,8 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
     // backend must NOT drop it even if it equals the field key ("Make" field labelled "Make").
     pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: chosen.label,
                                  direction: chosen.direction, ...chosen.off, label_detected: true };
+    _deskewFixPending(fieldKey, deskewSnap);   // straighten→raw on the DRAW frame; drops the teach if the frame changed
+    if (!pendingAnchors[fieldKey]) return null;   // frame changed mid-read → teach dropped, nothing to surface
     return { anchor_label: chosen.label, direction: chosen.direction, normBox: chosen.normBox };
   }
 
@@ -2472,6 +2668,8 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
   // 2026-07-10): the field's display name is never printed on the page, so staging
   // it here manufactured a phantom label the anchor engine rightly distrusts.
   pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: '', direction: 'right' };
+  _deskewFixPending(fieldKey, deskewSnap);    // straighten→raw on the DRAW frame (no-op when deskew is off)
+  if (!pendingAnchors[fieldKey]) return null;   // frame changed mid-read → teach dropped
   return { anchor_label: '', direction: 'right', normBox: null, fallback: true };
 }
 
@@ -2571,7 +2769,7 @@ async function reDetectAnchor(dir) {
   if (!lastTeachCtx) return;
   const c = lastTeachCtx;
   try {
-    const detected = await captureAnchorContext(c.rect, c.fieldKey, c.value, c.imgW, c.imgH, c.scaleX, c.scaleY, dir);
+    const detected = await captureAnchorContext(c.rect, c.fieldKey, c.value, c.imgW, c.imgH, c.scaleX, c.scaleY, dir, c?.deskewSnap);
     if (detected) { anchorTaughtFields.add(c.fieldKey); showAnchorReadout(detected, c.value); }
   } catch (err) { console.warn('Anchor re-detect failed:', err); }
 }
@@ -2637,7 +2835,10 @@ async function runAnchorDraw(aRect, fieldKey) {
         direction, ...off,
         label_detected: !!label,   // a hand-drawn, OCR'd caption is a real page label
       };
+      _deskewFixPending(fieldKey, c?.deskewSnap);   // straighten→raw on the DRAW frame (no-op when deskew is off)
+      if (!pendingAnchors[fieldKey]) { _refreshTaughtDot(fieldKey); return; }   // frame changed mid-read → teach dropped
       anchorTaughtFields.add(fieldKey);
+      _refreshTaughtDot(fieldKey);
       // Overlay the drawn anchor box + show the readout with the caption for review/edit.
       showAnchorReadout({
         anchor_label: pendingAnchors[fieldKey].anchor_label, direction, fallback: false,
@@ -4467,6 +4668,13 @@ async function openWizard() {
   if (!isAdmin) return;                       // defence-in-depth; button is hidden for non-admins
   if (!pageImages.length) { showToast('Open a document first', 'warn'); return; }
   cancelZoneMode();                           // don't fight the zone-OCR tool
+  // The Template Wizard's coord math isn't deskew-aware, so it must draw on the RAW page —
+  // cancel Straighten when it opens (revert the shown image if a straightened one is up).
+  if (deskewEnabled) {
+    const wasDeskewed = !!deskewPageAngle;
+    deskewEnabled = false; deskewPageAngle = 0; updateDeskewBtn();
+    if (wasDeskewed) renderPage();
+  }
   wizard.active = true;
   wizard.fields = wizardFieldList();
   wizard.fixedMode = false;

@@ -493,16 +493,36 @@ function register(ctx) {
   ipcMain.handle('dev-get-session-docs', () => { requireRole('admin', 'edit'); return _devSession.docs.slice().reverse(); });
   ipcMain.handle('dev-get-session-doc',  (_e, key) => { requireRole('admin', 'edit'); return _devSession.traceByDoc.get(key) || []; });
 
-  // Source folder for "Process Documents" — part of the daily Admin/Edit workflow.
+  // Source folder for "Process Documents" — part of the daily Admin/Edit workflow. A native folder
+  // picker can't show the files inside (Windows: folders-only), so the Import view lists the folder's
+  // documents right after picking (see 'list-import-folder') — the operator picks the folder here,
+  // then SEES what's in it before processing.
   ipcMain.handle('pick-folder', async (e) => {
     requireRole('admin', 'edit');
     const { BrowserWindow } = require('electron');
     const win = BrowserWindow.fromWebContents(e.sender);
     const r = await dialog.showOpenDialog(win, {
       properties: ['openDirectory'],
-      title: 'Select folder containing scanned documents',
+      title: 'Select the folder of scanned documents to import',
     });
     return r.canceled ? null : r.filePaths[0];
+  });
+
+  // List the documents the import will actually process in a chosen folder (non-recursive, SAME
+  // extension set as the batch enumerator above) so the Import view can show "N documents ready" +
+  // the filenames before processing. Read-only; returns { count, files, error? }.
+  ipcMain.handle('list-import-folder', async (_e, folderPath) => {
+    requireRole('admin', 'edit');
+    if (!folderPath) return { count: 0, files: [] };
+    try {
+      const files = fs.readdirSync(folderPath, { withFileTypes: true })
+        .filter(en => en.isFile() && BATCH_SUPPORTED_EXTS.has(path.extname(en.name).toLowerCase()))
+        .map(en => en.name)
+        .sort();
+      return { count: files.length, files };
+    } catch (err) {
+      return { count: 0, files: [], error: err.message };
+    }
   });
 
   // Single-file import for the Teach wizard: pick ONE PDF and stage it in a FRESH temp folder
@@ -1534,6 +1554,33 @@ function register(ctx) {
         try { fs.unlinkSync(tmpFile); } catch {}
         if (err) console.error('ocr_region_boxes stderr:', err);
         try { resolve(JSON.parse(out.trim())); } catch { resolve(null); }
+      });
+    });
+  });
+
+  // Straighten a rendered page for the Review DISPLAY: returns {angle, image} where image is a
+  // base64 PNG of the deskewed page (SAME pixel dims as the input — region.py rotates with
+  // expand=False) and angle is the applied straightening angle (PIL CCW-positive, 0 when the page
+  // is already level). Display-only + non-destructive (the filed original is never touched); the
+  // renderer swaps the shown page to this so drawn ⊕ boxes land on level text, then rotates the
+  // saved anchor coords back to the raw frame by the SAME angle. Mirrors the ocr-region spawn.
+  ipcMain.handle('get-page-deskew', async (_e, base64png) => {
+    requireRole('admin', 'edit');
+    const tmpFile = path.join(os.tmpdir(), `ds_deskew_${Date.now()}.png`);
+    fs.writeFileSync(tmpFile, Buffer.from(base64png, 'base64'));
+    const script = ctx.resourcePath('python_backend', 'ocr', 'region.py');
+    const py = pythonExe();
+    return new Promise((resolve) => {
+      const proc = spawn(py, pythonArgs(script,
+        '--image-file', tmpFile, '--tesseract', tesseractPath(), '--deskew'),
+        { windowsHide: true });
+      let out = '', err = '';
+      proc.stdout.on('data', d => { out += d.toString(); });
+      proc.stderr.on('data', d => { err += d.toString(); });
+      proc.on('close', () => {
+        try { fs.unlinkSync(tmpFile); } catch {}
+        if (err) console.error('get_page_deskew stderr:', err);
+        try { resolve(JSON.parse(out.trim())); } catch { resolve({ angle: 0, image: null }); }
       });
     });
   });

@@ -175,5 +175,67 @@ check('field-caption match (above) beats clean non-match (left)', p.direction ==
 p = A.pickLabelCandidate('Customer', 'Ship To', CUST);         // left 2, above 1
 check('field-caption match (left) beats clean non-match (above)', p.direction === 'left');
 
+// ── deskewedNormToRaw — the ⊕ deskew back-transform, sign PINNED vs REAL PIL.rotate ──────
+// The display-deskew straightens the on-screen page; a box drawn there is in the STRAIGHTENED
+// frame, but extraction reads the RAW scan, so on save the anchor coords are rotated back. Get
+// the sign wrong and every future taught anchor lands off — so these cases are GROUND TRUTH from
+// a marker-pixel round-trip through real PIL.rotate (python_backend probe): place a marker at a
+// known RAW pixel, PIL-rotate by `angle` (what the display does), read where the marker LANDS in
+// the straightened image (the "drawn" point), and assert deskewedNormToRaw recovers the RAW pixel.
+// The correct transform is R(+angle) about the centre; R(-angle) is pinned as WRONG here so a
+// future "sign fix" can't silently invert it. Tolerance ~2px (PIL positions rounded to 0.1).
+{
+  // [W, H, drawnPxX, drawnPxY, angleDeg, rawPxX, rawPxY]  (drawn = PIL landing pos; raw = target)
+  const CASES = [
+    [400, 600, 287.0, 142.0,  5.0, 300, 150],
+    [400, 600, 138.0, 506.0,  5.0, 120, 500],
+    [400, 600, 310.0, 157.0, -4.0, 300, 150],
+    [800, 500, 692.0,  84.3,  3.0, 700, 100],
+  ];
+  for (const [W, H, dx, dy, ang, rx, ry] of CASES) {
+    const got = A.deskewedNormToRaw(dx / W, dy / H, ang, W, H);
+    const ex = Math.abs(got.x * W - rx), ey = Math.abs(got.y * H - ry);
+    check(`deskew back-transform recovers raw (W${W} a${ang}) — err ${ex.toFixed(2)},${ey.toFixed(2)}px`, ex < 2 && ey < 2);
+    // The WRONG sign must NOT recover the raw point (guards against an inverted "fix").
+    const bad = A.deskewedNormToRaw(dx / W, dy / H, -ang, W, H);
+    check(`  ...and R(-angle) does NOT (sign is load-bearing)`, ang === 0 || Math.abs(bad.x * W - rx) > 3 || Math.abs(bad.y * H - ry) > 3);
+  }
+  // angle 0 / missing dims → identity (no-op when the page is already straight)
+  const id = A.deskewedNormToRaw(0.4, 0.7, 0, 400, 600);
+  check('deskew angle 0 → identity', id.x === 0.4 && id.y === 0.7);
+}
+
+// ── deskewFinalizeAnchor — the ⊕ deskew FRAME-CONSISTENCY fail-safe (Oracle C1) ──────────
+// The back-transform is valid ONLY against the frame the box was drawn on. Between draw and commit
+// there are OCR awaits; if the displayed frame changed, the staged coords belong to a different
+// frame and MUST be dropped, never persisted as raw. Pins: keep when deskew uninvolved, transform
+// when the frame is unchanged, and DROP on every frame-change mode. A green test that can't
+// reproduce the drop would be worthless (Oracle), so each drop mode is exercised explicitly.
+{
+  const F = (over) => Object.assign({ angle: 5.0, docId: 7, page: 0, W: 400, H: 600 }, over || {});
+  // drawn point (287,142) is raw (300,150) rotated +5° (matches the deskewedNormToRaw ground truth)
+  const anchor = () => ({ x_norm: 287 / 400, y_norm: 142 / 600, offset_dx_norm: 0.05, offset_dy_norm: 0.02 });
+
+  let r = A.deskewFinalizeAnchor(anchor(), F({ angle: 0 }), F({ angle: 0 }));
+  check('deskew uninvolved → keep (byte-identical)', r.action === 'keep');
+
+  r = A.deskewFinalizeAnchor(anchor(), F(), F());
+  check('frame unchanged → transform', r.action === 'transform');
+  check('  ...transformed x recovers raw (~300/400)', Math.abs(r.x * 400 - 300) < 2);
+  check('  ...transformed y recovers raw (~150/600)', Math.abs(r.y * 600 - 150) < 2);
+  check('  ...offset recomputed in raw frame', r.offset_dx != null && r.offset_dy != null);
+
+  check('toggle-off mid-read → drop', A.deskewFinalizeAnchor(anchor(), F(), F({ angle: 0 })).action === 'drop');
+  check('off→on mid-read → drop', A.deskewFinalizeAnchor(anchor(), F({ angle: 0 }), F()).action === 'drop');
+  check('page changed → drop', A.deskewFinalizeAnchor(anchor(), F(), F({ page: 1 })).action === 'drop');
+  check('doc changed → drop', A.deskewFinalizeAnchor(anchor(), F(), F({ docId: 9 })).action === 'drop');
+  check('undecoded image (live W=0) → drop', A.deskewFinalizeAnchor(anchor(), F(), F({ W: 0 })).action === 'drop');
+  check('dims changed → drop', A.deskewFinalizeAnchor(anchor(), F(), F({ H: 700 })).action === 'drop');
+  check('no snapshot while deskew live → drop', A.deskewFinalizeAnchor(anchor(), null, F()).action === 'drop');
+
+  r = A.deskewFinalizeAnchor({ x_norm: 0.5, y_norm: 0.5 }, F(), F());
+  check('position-only anchor (no offset) → transform, no offset', r.action === 'transform' && r.offset_dx == null);
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nAll anchor-label checks passed');
 process.exit(fails ? 1 : 0);
