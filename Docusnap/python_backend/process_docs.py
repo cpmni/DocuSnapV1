@@ -633,6 +633,7 @@ def main():
             # "cield wu" as a reference error (and a clean "2602-0768-1" as valid)
             # instead of accepting it as free text. Never touches a date/currency
             # field; reusable for every custom doc type.
+            _ref_key = None   # hoisted (Oracle C2): threaded to extract() below even when this block is skipped
             if doc_slug and doc_types:
                 _ref_key = next((dt.get("ref_field_key") for dt in doc_types
                                  if dt.get("slug") == doc_slug), None)
@@ -654,6 +655,7 @@ def main():
                 document_slug = doc_slug,
                 detected_slug = detected_slug,
                 title_trusted = title_trusted,
+                ref_field_key = _ref_key,
                 supplier_name = None,
                 known_template_id = _kt,
                 trace         = emit_trace if args.trace else None,

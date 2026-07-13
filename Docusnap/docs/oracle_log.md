@@ -71,3 +71,14 @@ _(updated as cases accrue — keep/retire recommendation)_
   and the polluted-GT gate shape. Every one of these was a real defect the first-draft consensus missed.
   Pattern holds: he verifies at the mechanism level and catches the seam. Route identity/precedence/
   auto-file changes through him.
+- After case 6 (2026-07-12, PO vendor-caption issuer fix): **KEEP — 6-for-6.** Adjudicating the reggie(flag)
+  vs gary(drop) split, he ruled DROP with the *right* reason — not the brief's lead argument (the @40 cap is
+  a no-op) but that the value drives the filing/learning SCOPE (engine.py:2259 reads `.value`), so flag
+  keeps a real-but-wrong company that a careless confirm learns as the layout's supplier (poison spreads),
+  while drop fails to Unknown-Company + no learning (visible, non-poisoning). He corrected a load-bearing
+  premise in the brief (the Review confirm gate is WARN-not-block for the issuer, so drop doesn't *force* a
+  fill — the real advantage is the failure *nature*), found the one genuine seam drop opens (2.5a re-adopting
+  the suppressed vendor from a hint on a mature install → C1), caught a NameError-inducing scope bug in the
+  process_docs threading (C2), and specified breadcrumb-to-trace-not-UI (C3). Every condition was a real
+  defect or a genuine improvement. Pattern holds: he verifies at the mechanism level and adjudicates on the
+  fail-safe axis, not the surface argument.

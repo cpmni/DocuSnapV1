@@ -1107,6 +1107,38 @@ class ExtractionEngine:
         except Exception:
             pass  # a guard must never break extraction
 
+    @staticmethod
+    def _suppress_buyer_seller_issuer(kw_results, buyer_issued, accepted_norms, accept_norm):
+        """BUYER-ISSUED ISSUER GUARD (Oracle 2026-07-12) — pure. On a buyer-issued type (Purchase
+        Order), a supplier_name (Document Issuer) KEYWORD read that matched a 'Supplier'/'Vendor'/
+        'Seller' caption names the SELLER (the party the buyer is ordering from), NOT the issuer (the
+        buyer, in the un-captioned letterhead). DROP it so it never becomes results['supplier_name']
+        and thus the resolved filing/learning SCOPE (engine.py:2259 reads .value, not confidence —
+        the @40 cap other guards use is a no-op here, and a plausible vendor also BLOCKS the 2.5a
+        hint fallback). The issuer then falls to logo/letterhead/hint or empty→review, consistent
+        with every other type on a cold-start DB. Returns the dropped value (so the caller can record
+        it — Stage 2.5a must not silently re-adopt it, Oracle C1), else None.
+
+        Fires ONLY on a plain 'keyword' read whose recorded matched label (keyword.py:614) is a
+        seller caption (reuses keyword._IDENTITY_CAPTION_LABELS). A genuine issuer caption
+        ('Issued By'/'Bill From'/'Company Name'), a learned/logo/manual/keyword_override read
+        (method != 'keyword'), and an operator-accepted value (accepted_issuers ∪ accepted_names,
+        Oracle C4) are all left untouched. Kill switch BUYER_ISSUED_ISSUER_GUARD (default ON)."""
+        if os.environ.get("BUYER_ISSUED_ISSUER_GUARD", "1") == "0":
+            return None
+        if not buyer_issued:
+            return None
+        sn = kw_results.get("supplier_name")
+        if not isinstance(sn, dict) or str(sn.get("method") or "") != "keyword":
+            return None
+        if str(sn.get("label") or "").strip().lower() not in keyword._IDENTITY_CAPTION_LABELS:
+            return None
+        val = sn.get("value")
+        if val and accept_norm(val) in (accepted_norms or set()):
+            return None   # operator allowlisted this as a real issuer — respect it
+        kw_results.pop("supplier_name", None)
+        return val
+
     def _flag_recipient_caption_issuer(self, results, field_defs, supplier_name):
         """RECIPIENT-CAPTION ISSUER GUARD (flag-only, never rewrites — Oracle-signed
         2026-07-09). When a doc type's IDENTITY field is customer_name (its "Document
@@ -1610,6 +1642,7 @@ class ExtractionEngine:
                 document_slug: str | None = None,
                 detected_slug: str | None = None,
                 title_trusted: bool = False,
+                ref_field_key: str | None = None,
                 supplier_name: str | None = None,
                 known_template_id: int | None = None,
                 trace = None,
@@ -1923,6 +1956,22 @@ class ExtractionEngine:
                             _kd['display_value'] = _kclean
         _pre_s1 = self._snap(results)
         self._remember_candidates('1_keyword', kw_results)
+        # BUYER-ISSUED ISSUER GUARD (Oracle 2026-07-12) — drop a "Supplier/Vendor/Seller"-caption
+        # supplier_name keyword read on a Purchase Order BEFORE it can become the resolved issuer
+        # scope (see _suppress_buyer_seller_issuer). Runs AFTER _remember_candidates (C3) so the
+        # dropped read still shows in the dev-inspector trace; breadcrumb to the log only, no user
+        # note. buyer_issued = ref role is a PO number OR a trusted PURCHASE-ORDER heading (C5).
+        _buyer_issued = ((ref_field_key == 'po_number')
+                         or (str(detected_slug or '').lower() == 'purchase_order' and bool(title_trusted)))
+        _suppressed_issuer = ExtractionEngine._suppress_buyer_seller_issuer(
+            kw_results, _buyer_issued,
+            self.accepted_issuers | self.accepted_names, self._accept_norm)
+        if _suppressed_issuer:
+            # C1: the local `_suppressed_issuer` is threaded to Stage 2.5a below (same function scope)
+            # so the hint fallback can't re-adopt this vendor. Kept OUT of `results` deliberately — a
+            # bare string under a `_` key would break a later stage that .get()s field values.
+            self.log(f"  Buyer-issued issuer guard: dropped '{_suppressed_issuer}' — a "
+                     f"Supplier/Vendor caption names the vendor on a PO, not the issuer")
         for key, data in kw_results.items():
             existing = results.get(key)
             # An admin-LOCKED fixed value (method 'template_fixed_locked') is a
@@ -2291,6 +2340,12 @@ class ExtractionEngine:
         # scan can recover the real, plausible name from confirmed hints.
         if not keyword._is_plausible_supplier_name(supplier_name) and hints:
             ocr_top = ocr_text[:600].lower()
+            # C1 (Oracle): if the buyer-issued guard just dropped a vendor caption, Stage 2.5a must
+            # not silently re-adopt that same value from a stored hint (an install that both ORDERS
+            # FROM and is INVOICED BY "Sandpiper" would have it as a supplier_name hint, and a
+            # "Supplier:" caption sits near the top) — that would fill the issuer with the vendor and
+            # flip the doc out of review. A DIFFERENT true-issuer hint is still recoverable.
+            _suppressed_norm = self._accept_norm(_suppressed_issuer or "")
             best_hint = None
             best_usage = 0
             for h in hints:
@@ -2303,6 +2358,8 @@ class ExtractionEngine:
                 # implausible fragment for another.
                 if not keyword._is_plausible_supplier_name(val):
                     continue
+                if _suppressed_norm and self._accept_norm(val) == _suppressed_norm:
+                    continue   # C1: never re-adopt the just-suppressed vendor caption
                 if val and val.lower() in ocr_top:
                     if (h.get("usage_count") or 0) > best_usage:
                         best_hint  = val
