@@ -212,10 +212,12 @@ def pdf_to_images(filepath: Path, dpi: int = 300) -> list[Image.Image]:
     return images
 
 
-def detect_skew_angle(img: Image.Image) -> float:
+def detect_skew_angle(img: Image.Image, min_angle: float = 0.2) -> float:
     """Detect small-angle document skew via horizontal projection variance. Returns the angle in
     DEGREES in PIL's convention (positive = the rotation `img.rotate(angle)` applies to STRAIGHTEN,
-    i.e. CCW-positive), or 0.0 when |skew| < 0.2° (no meaningful skew). NON-DESTRUCTIVE — measures
+    i.e. CCW-positive), or 0.0 when |skew| < max(0.2, min_angle) — the caller's user-set floor,
+    clamped so it can NEVER drop below the hard 0.2° noise floor (below which the estimate is noise
+    and a rotate would be spurious). Default 0.2 ⇒ byte-identical to the pre-flag behaviour. NON-DESTRUCTIVE — measures
     only. Shared by `_deskew` (which applies it to the OCR copy) and the Review-window display
     deskew (which rotates the on-screen page so drawn ⊕ boxes align with straight text). Operates
     on a downscaled binary copy for speed."""
@@ -243,16 +245,16 @@ def detect_skew_angle(img: Image.Image) -> float:
     fine = [(base + d) / 10.0 for d in range(-5, 6)]
     best = max(fine, key=_score)
 
-    return best if abs(best) >= 0.2 else 0.0
+    return best if abs(best) >= max(0.2, min_angle) else 0.0
 
 
-def _deskew(img: Image.Image) -> Image.Image:
+def _deskew(img: Image.Image, min_angle: float = 0.2) -> Image.Image:
     """
     Detect and correct small-angle document skew via horizontal projection variance.
     Operates on a downscaled binary copy for speed; rotation applied to the original
     at full resolution. Skew below 0.2° is ignored to avoid spurious micro-rotations.
     """
-    best = detect_skew_angle(img)
+    best = detect_skew_angle(img, min_angle)
     if best == 0.0:
         return img  # no meaningful skew
     fill = 255 if img.mode == 'L' else (255, 255, 255)
@@ -313,6 +315,7 @@ def extract_text_and_images(
     rotations_out: list | None = None,
     provenance_out: list | None = None,
     deskew_pages: bool = False,
+    deskew_min_angle: float = 0.2,
     raw_pages_out: list | None = None,
 ) -> tuple[str, list[Image.Image]]:
     """
@@ -420,7 +423,7 @@ def extract_text_and_images(
                 # under use_cache (would deskew the crop source while serving raw cached text).
                 raw_img = img
                 if deskew_pages and layer_text is None and not use_cache:
-                    img = _deskew(img)
+                    img = _deskew(img, deskew_min_angle)
                 if deskew_pages and raw_pages_out is not None:
                     raw_pages_out.append(raw_img)   # parallel to pages (raw==img on a born-digital page)
                 pages.append(img)
@@ -459,7 +462,7 @@ def extract_text_and_images(
         # the logo phash. Skipped under use_cache (a straighten always re-OCRs fresh).
         raw_img = img
         if deskew_pages and not use_cache:
-            img = _deskew(img)
+            img = _deskew(img, deskew_min_angle)
         if deskew_pages and raw_pages_out is not None:
             raw_pages_out.append(raw_img)
         pages = [img]

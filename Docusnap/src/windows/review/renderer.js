@@ -200,6 +200,16 @@ let anchorDrawField  = null;
 let deskewEnabled    = false;
 let deskewByPage     = {};   // page index → { angle, uri } (uri null / angle 0 = page already level)
 let deskewPageAngle  = 0;
+// SESSION-WIDE straighten (rail toggle `#btn-deskew-all`). When ON, every doc that opens starts with
+// deskewEnabled=true and Reprocess All / Reprocess-this-sender force a straightened READ. Persisted in
+// localStorage (UI pref, mirrors review_queue_grouped) and written ONLY in the rail button handler
+// (Oracle C2) — never by the per-doc toggle, the doc-open reset, or the wizard's deskew suppression.
+let deskewSessionOn  = (localStorage.getItem('review_deskew_session') === 'true');
+// Minimum skew angle (deg) for the session straighten — only docs tilted MORE than this straighten
+// (display + reprocess reads). Default 1.0° (oscar: above the sub-degree noise band, catches typical
+// feeder skew, and where straightening starts helping the READ); clamped [0.2, 5.0]. Set in the rail
+// flyout, persisted alongside the flag; written ONLY by applyDeskewSession/turnOffDeskewSession (C2).
+let deskewMinAngle   = (() => { const v = parseFloat(localStorage.getItem('review_deskew_min_angle')); return (Number.isFinite(v) && v >= 0.2 && v <= 5.0) ? v : 1.0; })();
 // Field cleanup rules taught via the right-click menu this cycle, STAGED in memory
 // and persisted only on Confirm (mirrors pendingAnchors). Keyed field_key → array of
 // saveFieldRule payloads. An un-confirmed teach (skip/defer/doc-change) leaves no trace.
@@ -1045,7 +1055,11 @@ async function _selectDoc(doc, { fieldsOnly = false } = {}) {
   pendingAnchors = {};   // discard any un-confirmed ⊕ teach when the doc changes
   taughtFieldKeys = new Set();   // re-fetched for the new doc's scope before renderFields
   pendingFieldRules = {}; // ...and any un-confirmed field cleanup rule
-  deskewEnabled = false; deskewByPage = {}; deskewPageAngle = 0; updateDeskewBtn();  // deskew is per-doc, default OFF
+  // Straighten default FOLLOWS the session toggle; deskewByPage MUST still reset per doc ({} is
+  // page-indexed). RELIES ON this reset + renderPage() being the SOLE deskew-fetch trigger (Oracle
+  // C2 / eric): if a future change ever renders a page off that path or reuses deskewByPage across
+  // docs, the session flag would leak a stale straightened frame.
+  deskewEnabled = deskewSessionOn; deskewByPage = {}; deskewPageAngle = 0; updateDeskewBtn();
   lastTeachCtx = null; hideAnchorReadout();
   { const c = document.getElementById('teach-cta'); if (c) { c.style.display = 'none'; c.innerHTML = ''; } }  // clear prior doc's CTA until this doc's recheck answers
 
@@ -1210,7 +1224,7 @@ async function applyDeskewToCurrentPage() {
   try {
     const src = String(pageImages[page] || '');
     const b64 = src.includes(',') ? src.split(',')[1] : src;
-    const res = await window.docusnap.getPageDeskew?.(b64);
+    const res = await window.docusnap.getPageDeskew?.(b64, deskewMinAngle);
     if (res && res.image && res.angle) entry = { angle: res.angle, uri: `data:image/png;base64,${res.image}` };
   } catch (e) {
     console.warn('deskew failed:', e.message);
@@ -1219,7 +1233,8 @@ async function applyDeskewToCurrentPage() {
   deskewByPage[page] = entry;
   if (deskewEnabled && !wizard.active && currentPage === page) {
     if (entry.uri) renderPage();                              // swap the now-cached straightened image in
-    else { showToast('This page already looks straight.', 'ok'); updateDeskewBtn(); }   // nothing to straighten
+    else if (deskewSessionOn) { updateDeskewBtn(); }   // session auto-straighten: silently show raw (no per-doc toast on every below-floor doc)
+    else { showToast('This page already looks straight.', 'ok'); updateDeskewBtn(); }   // manual toggle: nothing to straighten
   } else updateDeskewBtn();
 }
 
@@ -1241,6 +1256,54 @@ function updateDeskewBtn() {
   btn.classList.toggle('active', on);
   btn.innerHTML = on ? '&#8734; Straightened' : '&#8734; Straighten';
   if (lbl) lbl.textContent = (on && deskewPageAngle) ? `${deskewPageAngle > 0 ? '+' : ''}${deskewPageAngle.toFixed(1)}°` : '';
+}
+
+// SESSION straighten (rail button `#btn-deskew-all` → `#deskew-all-bar` flyout). The flyout carries the
+// minimum-angle input; "Turn on"/"Update" applies it. deskewSessionOn + deskewMinAngle are PERSISTED
+// ONLY in applyDeskewSession/turnOffDeskewSession (the ONLY writers of review_deskew_* — Oracle C2), so
+// the per-doc `#btn-deskew` and openWizard can't silently change the session default.
+function openDeskewAllFlyout() {
+  const bar = document.getElementById('deskew-all-bar');
+  if (!bar) return;
+  const showing = bar.style.display === 'block';
+  bar.style.display = showing ? 'none' : 'block';
+  if (!showing) {   // opening → sync the input + button labels to the live state
+    const inp = document.getElementById('deskew-min-input');
+    if (inp) inp.value = String(deskewMinAngle);
+    const off   = document.getElementById('btn-deskew-all-off');
+    const apply = document.getElementById('btn-deskew-all-apply');
+    if (off)   off.style.display = deskewSessionOn ? '' : 'none';
+    if (apply) apply.textContent = deskewSessionOn ? 'Update' : 'Turn on';
+  }
+}
+function _readDeskewMinInput() {
+  const inp = document.getElementById('deskew-min-input');
+  const v = inp ? parseFloat(inp.value) : NaN;
+  return Number.isFinite(v) ? Math.max(0.2, Math.min(5.0, v)) : 1.0;   // clamp [0.2, 5.0] (server re-clamps too)
+}
+function applyDeskewSession() {
+  deskewMinAngle  = _readDeskewMinInput();
+  deskewSessionOn = true;
+  localStorage.setItem('review_deskew_min_angle', String(deskewMinAngle));
+  localStorage.setItem('review_deskew_session', 'true');
+  const bar = document.getElementById('deskew-all-bar'); if (bar) bar.style.display = 'none';
+  updateDeskewAllBtn();
+  if (wizard.active) return;   // wizard draws on the raw page — the flag applies from the next doc
+  deskewByPage = {};           // re-evaluate the current page against the new floor
+  if (pageImages && pageImages.length) { deskewEnabled = true; applyDeskewToCurrentPage(); updateDeskewBtn(); }
+}
+function turnOffDeskewSession() {
+  deskewSessionOn = false;
+  localStorage.setItem('review_deskew_session', 'false');
+  const bar = document.getElementById('deskew-all-bar'); if (bar) bar.style.display = 'none';
+  updateDeskewAllBtn();
+  if (!wizard.active && deskewEnabled) { deskewEnabled = false; deskewPageAngle = 0; renderPage(); updateDeskewBtn(); }
+}
+
+// Reflect the session toggle on the rail button (shared `.open` pressed style, like split/advanced).
+function updateDeskewAllBtn() {
+  const b = document.getElementById('btn-deskew-all');
+  if (b) b.classList.toggle('open', deskewSessionOn);
 }
 
 // Snapshot the deskew frame the operator is drawing on — taken SYNCHRONOUSLY before any OCR await,
@@ -1288,6 +1351,10 @@ function _deskewFixPending(fieldKey, snap) {
 }
 
 document.getElementById('btn-deskew')?.addEventListener('click', toggleDeskew);
+document.getElementById('btn-deskew-all')?.addEventListener('click', openDeskewAllFlyout);
+document.getElementById('btn-deskew-all-apply')?.addEventListener('click', applyDeskewSession);
+document.getElementById('btn-deskew-all-off')?.addEventListener('click', turnOffDeskewSession);
+updateDeskewAllBtn();   // reflect the persisted session-straighten state on load
 
 // ── Extraction status pills ────────────────────────────────────────────────────
 function renderExtractionStatus(doc) {
@@ -3334,7 +3401,19 @@ async function autoCommitFullConfidence() {
       showToast(`✓ Auto-filed ${filed} document${filed > 1 ? 's' : ''} — no review needed.`, 'ok');
       // Skip straight to the next document that still needs a look (the top of the queue), so the
       // operator isn't left on an auto-filed doc that's no longer in the list.
-      if (queue.length && (!currentDoc || !queue.some(d => d.id === currentDoc.id))) selectDoc(queue[0]);
+      if (queue.length) {
+        // Some docs still need a look — jump to the top of the remaining queue if the doc
+        // we were on just got filed (otherwise stay put).
+        if (!currentDoc || !queue.some(d => d.id === currentDoc.id)) selectDoc(queue[0]);
+      } else if (currentDoc && !queue.some(d => d.id === currentDoc.id)) {
+        // Every queued doc auto-filed — the open document is now filed and gone from the
+        // queue. Close it so the viewer shows the "All documents reviewed ✓" placeholder
+        // instead of leaving the last filed doc on screen. (renderQueueList only clears the
+        // panel when NO doc is open, to preserve intentional "view a filed doc" navigation,
+        // so we must null currentDoc + clear here.)
+        currentDoc = null;
+        clearDocPanel();
+      }
     }
   } catch (e) { console.warn('auto-commit 100% failed:', e.message); }
 }
@@ -4423,7 +4502,8 @@ async function runReprocessBatch(docs, scopeLabel) {
 
   try {
     const res = await window.docusnap.reprocessBatch(
-      docs.map(d => ({ docId: d.id, folderPath: d.folder_path, filename: d.original_filename }))
+      docs.map(d => ({ docId: d.id, folderPath: d.folder_path, filename: d.original_filename })),
+      { deskewAll: !!deskewSessionOn, deskewMinAngle }   // C4: force straightened READS (past the operator's angle floor) for the whole batch when the session toggle is on (covers Reprocess All + Reprocess-this-sender, which both route here)
     );
     done   = (res && res.done)   || 0;
     failed = (res && res.failed) || 0;

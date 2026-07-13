@@ -92,7 +92,11 @@ def main():
     parser.add_argument('--skew', action='store_true')
     # --deskew: emit JSON {"angle": <deg>, "image": <base64 PNG of the straightened page | null>}.
     parser.add_argument('--deskew', action='store_true')
+    # Minimum skew angle (deg) to straighten for --skew/--deskew; a page tilted LESS reads/shows raw.
+    # Clamped to [0.2, 5.0]; default 0.2 = the built-in floor (byte-identical to before this flag).
+    parser.add_argument('--min-angle', type=float, default=0.2)
     args = parser.parse_args()
+    _min_angle = max(0.2, min(5.0, float(getattr(args, 'min_angle', 0.2) or 0.2)))
 
     if args.tesseract and os.path.exists(args.tesseract):
         pytesseract.pytesseract.tesseract_cmd = args.tesseract
@@ -110,7 +114,7 @@ def main():
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # python_backend
         try:
             from ocr.tesseract import detect_skew_angle
-            angle = float(detect_skew_angle(img))
+            angle = float(detect_skew_angle(img, _min_angle))
         except Exception:
             angle = 0.0
         print(json.dumps({"angle": round(angle, 2)}), end='', flush=True)
@@ -128,7 +132,7 @@ def main():
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         try:
             from ocr.tesseract import detect_skew_angle
-            angle = float(detect_skew_angle(img))
+            angle = float(detect_skew_angle(img, _min_angle))
         except Exception:
             angle = 0.0
         if abs(angle) < 0.2:

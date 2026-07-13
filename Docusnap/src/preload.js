@@ -197,7 +197,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   deleteAllReview:             ()        => ipcRenderer.invoke('delete-all-review'),
   deleteAllDeferred:           ()        => ipcRenderer.invoke('delete-all-deferred'),
   reprocessDocument:           (data)    => ipcRenderer.invoke('reprocess-document', data),
-  reprocessBatch:              (docs)    => ipcRenderer.invoke('reprocess-batch', docs),
+  reprocessBatch:              (docs, opts) => ipcRenderer.invoke('reprocess-batch', docs, opts),
   getStuckCount:               ()        => ipcRenderer.invoke('get-stuck-count'),
   getStuckDocs:                ()        => ipcRenderer.invoke('get-stuck-docs'),
   promoteToTemplate:           (data)    => ipcRenderer.invoke('promote-to-template', data),
@@ -208,7 +208,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   // ── Zone OCR & learning ──────────────────────────────────────────────────────
   ocrRegion:           (b64)      => ipcRenderer.invoke('ocr-region', b64),
   ocrRegionBoxes:      (b64)      => ipcRenderer.invoke('ocr-region-boxes', b64),
-  getPageDeskew:       (b64)      => ipcRenderer.invoke('get-page-deskew', b64),
+  getPageDeskew:       (b64, minAngle) => ipcRenderer.invoke('get-page-deskew', b64, minAngle),
   testTemplateMapping: (pageB64, mapping, landmarks) => ipcRenderer.invoke('test-template-mapping', pageB64, mapping, landmarks),
   saveFieldAnchor:     (data)     => ipcRenderer.invoke('save-field-anchor', data),
   getTaughtFieldKeys:  (scope)    => ipcRenderer.invoke('get-taught-field-keys', scope),

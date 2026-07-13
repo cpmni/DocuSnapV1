@@ -1371,9 +1371,11 @@ function register(ctx) {
   // --reprocess-manifest, exactly as single-doc reprocess passes them. All DB writes
   // stay on the single-threaded JS event loop (applyReprocessResult), so there is no
   // SQLite contention. Stop kills every worker tree (shared _currentBatchProcs).
-  ipcMain.handle('reprocess-batch', async (event, docs) => {
+  ipcMain.handle('reprocess-batch', async (event, docs, opts) => {
     requireRole('admin', 'edit');
     const db = getDb();
+    const deskewAll = !!(opts && opts.deskewAll);   // C3/C4: force a straightened READ for every doc in this batch (session "Straighten all")
+    const deskewMinAngle = Math.max(0.2, Math.min(5.0, Number(opts && opts.deskewMinAngle) || 0.2));   // clamp the operator's floor (oscar: hard 0.2° min, 5° max)
     const licenseDenial = require('../licensing/handler').licenseDenied(db);
     if (licenseDenial) return { success: false, error: 'A valid license is required to reprocess documents. Please re-activate ScanFinder.', ...licenseDenial };
     // Serialise: refuse Reprocess All while a single reprocess (or another batch/import) is running —
@@ -1426,7 +1428,10 @@ function register(ctx) {
           enhance_params:    enh,
           // Reuse stored full-page OCR text → skip the ~1.9s/page re-OCR (only when no
           // enhance is active and the text is non-empty; crop reads still re-run).
-          ...(!enh && row && row.ocr_text && row.ocr_text.trim() ? { ocr_text: row.ocr_text } : {}),
+          // Skip the cached OCR text when straightening (Oracle/oscar C3): deskew is gated OFF under
+          // cached_text (tesseract.py use_cache), so keeping the cache here would read the RAW skewed
+          // pixels and the straighten would silently no-op. deskewAll forces a fresh straightened OCR.
+          ...(!enh && !deskewAll && row && row.ocr_text && row.ocr_text.trim() ? { ocr_text: row.ocr_text } : {}),
         };
         nameToDoc[tmpName] = { docId: d.docId, filename: d.filename, existing };
         tmpNames.push(tmpName);
@@ -1465,6 +1470,7 @@ function register(ctx) {
       shardFiles.push(filesFile);
       const scriptArgs = ['--folder', tmpDir, '--tesseract', tesseractPath(), '--mode', reprMode,
         '--files-file', filesFile, '--reprocess-manifest', manifestFile, ...trainingArgs];
+      if (deskewAll) scriptArgs.push('--deskew-pages', '--deskew-min-angle', String(deskewMinAngle));   // C3: straighten pages tilted past the operator's floor before reading (Python no-ops below it / on born-digital)
       if (traceWanted(diagOn)) {
         scriptArgs.push('--trace');
         try { fs.mkdirSync(ctx.devSliceDir, { recursive: true }); scriptArgs.push('--slice-dir', ctx.devSliceDir); } catch {}
@@ -1575,7 +1581,7 @@ function register(ctx) {
   // is already level). Display-only + non-destructive (the filed original is never touched); the
   // renderer swaps the shown page to this so drawn ⊕ boxes land on level text, then rotates the
   // saved anchor coords back to the raw frame by the SAME angle. Mirrors the ocr-region spawn.
-  ipcMain.handle('get-page-deskew', async (_e, base64png) => {
+  ipcMain.handle('get-page-deskew', async (_e, base64png, minAngle) => {
     requireRole('admin', 'edit');
     const tmpFile = path.join(os.tmpdir(), `ds_deskew_${Date.now()}.png`);
     fs.writeFileSync(tmpFile, Buffer.from(base64png, 'base64'));
@@ -1583,7 +1589,8 @@ function register(ctx) {
     const py = pythonExe();
     return new Promise((resolve) => {
       const proc = spawn(py, pythonArgs(script,
-        '--image-file', tmpFile, '--tesseract', tesseractPath(), '--deskew'),
+        '--image-file', tmpFile, '--tesseract', tesseractPath(), '--deskew',
+        '--min-angle', String(Math.max(0.2, Math.min(5.0, Number(minAngle) || 0.2)))),
         { windowsHide: true });
       let out = '', err = '';
       proc.stdout.on('data', d => { out += d.toString(); });

@@ -257,6 +257,11 @@ def main():
                              "OCR + as the anchor crop source, so a taught label relocates in a level "
                              "frame. The filed file is untouched; the logo phash uses the raw frame. "
                              "Kill switch env DESKEW_PAGES=0. Review-bound (reprocess never auto-files).")
+    parser.add_argument("--deskew-min-angle", type=float, default=0.2,
+                        help="Minimum skew angle in DEGREES to straighten under --deskew-pages; a page "
+                             "tilted LESS than this reads raw. Clamped to [0.2, 5.0]; default 0.2 = the "
+                             "built-in noise floor (straighten any measurable skew). The Review session "
+                             "'Straighten all' toggle sends the operator's chosen floor here.")
     parser.add_argument("--trace", action="store_true")
     # SHADOW measurement: compute the text-led supplier-identity verdict per doc and emit it
     # in file_done (extraction/identity_fusion). Changes no decision; off => output unchanged.
@@ -444,13 +449,14 @@ def main():
             # _raw_pages keeps each page's PRE-deskew image so raw_page0 (below) feeds the logo phash
             # the raw frame; empty (raw_page0=None) when deskew is off -> byte-identical.
             _deskew_pages = bool(getattr(args, 'deskew_pages', False)) and os.environ.get('DESKEW_PAGES', '1') != '0'
+            _deskew_min_angle = max(0.2, min(5.0, float(getattr(args, 'deskew_min_angle', 0.2) or 0.2)))
             _raw_pages = [] if _deskew_pages else None
             ocr_text, page_images = extract_text_and_images(
                 filepath, _enh, born_digital=args.born_digital, engine=ocr_engine,
                 cached_text=(_cached if (_cached and _cached.strip()) else None),
                 auto_rotate=getattr(args, 'auto_rotate', False), rotations_out=_rotations,
                 provenance_out=_provenance,
-                deskew_pages=_deskew_pages, raw_pages_out=_raw_pages)
+                deskew_pages=_deskew_pages, deskew_min_angle=_deskew_min_angle, raw_pages_out=_raw_pages)
             if any(_rotations):
                 log(f"  auto-rotate: {[r for r in _rotations if r]} (clockwise°) on {filepath.name}")
 

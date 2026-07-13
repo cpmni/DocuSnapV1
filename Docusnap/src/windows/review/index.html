@@ -739,6 +739,7 @@
                 <circle cx="8"  cy="17" r="2.6" fill="currentColor" stroke="none"/>
               </svg>
             </button>
+            <button class="queue-tool-btn" id="btn-deskew-all" title="Straighten every document this session — auto-straightens each doc you open and forces straightened reads on Reprocess All (display + reads only; filed files unchanged)" data-help-key="deskew">&#8734;</button>
             <button class="queue-tool-btn" id="btn-advanced" title="Advanced — view & prune a field's learning history (admin)" data-help-key="advanced">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:17px;height:17px;">
                 <circle cx="12" cy="12" r="3"/>
@@ -749,6 +750,18 @@
               <div class="rail-flyout-title">Advanced</div>
               <button id="btn-view-learning" class="btn-secondary" style="width:100%; font-size:11px; padding:6px 8px;">View learning history</button>
               <div style="font-size:10px; color:var(--muted); margin-top:6px; line-height:1.4;">Opens the values learned for a field — click any field on the right to load or switch it.</div>
+            </div>
+            <div id="deskew-all-bar" class="rail-flyout" style="display:none;">
+              <div class="rail-flyout-title">Straighten all</div>
+              <div style="font-size:11px; color:var(--muted); line-height:1.4; margin-bottom:5px;">Auto-straighten every document you open, and straighten reads on Reprocess All. Display + reads only — the filed files are unchanged.</div>
+              <label style="font-size:11px; display:flex; align-items:center; gap:6px;">Only if tilted more than
+                <input type="number" id="deskew-min-input" min="0.2" max="5.0" step="0.1" value="1.0" style="width:52px; font-size:11px; padding:3px 5px; background:var(--surface2); border:1px solid var(--border2); color:var(--text); border-radius:4px;">°
+              </label>
+              <div style="font-size:10px; color:var(--muted); margin-top:3px; line-height:1.4;">A page tilted less than this reads as-is. Lower = more aggressive.</div>
+              <div class="rail-flyout-row" style="margin-top:7px; gap:6px;">
+                <button id="btn-deskew-all-apply" class="btn-secondary" style="flex:1; font-size:11px; padding:6px 8px;">Turn on</button>
+                <button id="btn-deskew-all-off" class="btn-secondary" style="flex:1; font-size:11px; padding:6px 8px; display:none;">Turn off</button>
+              </div>
             </div>
 
             <!-- Flyouts anchored to the rail (shown by the existing handlers; IDs preserved) -->
