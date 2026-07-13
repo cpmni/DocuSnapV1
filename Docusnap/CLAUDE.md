@@ -1160,9 +1160,19 @@ is now font-src 'self'. Don't reintroduce a CDN <link>.
   "Third-Party Licenses" button that opens the bundled notice via `shell.openPath`.
   IPC `get-app-about`/`open-third-party-licenses` (core), `client-about`/
   `client-open-licenses` (client). See License compliance.
-- **Review queue** mirrors the Search results list: plain scroll + click (no arrow
-  rail; ↑/↓ keys still cycle), and a **draggable splitter** makes the file column
-  width adjustable (persisted in localStorage).
+- **Review queue** mirrors the Search results list: plain scroll + click (↑/↓ keys
+  still cycle), and a **draggable splitter** makes the file column width adjustable
+  (persisted in localStorage). Beside the queue is a **docked vertical tool rail**
+  (`#queue-scroll-rail`, `src/windows/review/index.html`): a top **nav group**
+  (`.rail-nav-group`) + a **document-tools group** (`.rail-tools-group`) holding the
+  ✂ Split-PDF, Template-Wizard (⚓), OCR-Enhance, ⚙ Advanced (learning-history), and
+  ∞ **Straighten-all** buttons — compact `.queue-tool-btn` icon triggers whose wide
+  controls open as `.rail-flyout` popovers anchored to the rail (active = the shared
+  `.open` pressed style). SEPARATELY, a horizontal `#doc-toolbar` sits ABOVE the page
+  (zoom, page nav, the per-doc ∞ Straighten button). A Review control lives in one or
+  the other — grep the WHOLE index.html before assuming a control's home. (The session
+  "Straighten all" toggle — `#btn-deskew-all` + its `#deskew-all-bar` angle-threshold
+  flyout — is in the tool rail; the per-doc Straighten is in `#doc-toolbar`.)
 
 ---
 
