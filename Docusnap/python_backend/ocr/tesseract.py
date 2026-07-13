@@ -248,17 +248,24 @@ def detect_skew_angle(img: Image.Image, min_angle: float = 0.2) -> float:
     return best if abs(best) >= max(0.2, min_angle) else 0.0
 
 
+def _apply_skew_rotation(img: Image.Image, angle: float) -> Image.Image:
+    """Rotate `img` by a PRE-DETECTED skew `angle` (PIL CCW-positive), or return it UNCHANGED when
+    angle is 0.0 (a below-floor page). Factored out of `_deskew` so a caller can detect the angle
+    ONCE (to decide fast-path cache reuse) and apply it here without a second projection sweep —
+    the rotation is byte-identical to `_deskew`'s (same white fill + BICUBIC resample)."""
+    if not angle:
+        return img  # no meaningful skew — identical pixels, so an OCR read would be unchanged
+    fill = 255 if img.mode == 'L' else (255, 255, 255)
+    return img.rotate(angle, expand=False, fillcolor=fill, resample=Image.BICUBIC)
+
+
 def _deskew(img: Image.Image, min_angle: float = 0.2) -> Image.Image:
     """
     Detect and correct small-angle document skew via horizontal projection variance.
     Operates on a downscaled binary copy for speed; rotation applied to the original
     at full resolution. Skew below 0.2° is ignored to avoid spurious micro-rotations.
     """
-    best = detect_skew_angle(img, min_angle)
-    if best == 0.0:
-        return img  # no meaningful skew
-    fill = 255 if img.mode == 'L' else (255, 255, 255)
-    return img.rotate(best, expand=False, fillcolor=fill, resample=Image.BICUBIC)
+    return _apply_skew_rotation(img, detect_skew_angle(img, min_angle))
 
 
 def preprocess_for_ocr(img: Image.Image, params: dict | None) -> Image.Image:
@@ -346,21 +353,34 @@ def extract_text_and_images(
     image — the caller passes raw_pages_out[0] to engine.extract(raw_page0=...) so the persisted
     logo phash + logo/template MATCHING use the raw frame (a deskewed logo phash drifts from the
     learned raw hashes and, once persisted, poisons the supplier's logo set for every future import).
-    Deskew is skipped under cached_text (a straighten always forces fresh OCR). Kill switch upstream.
+    Deskew and cached_text now COEXIST (DESKEW×CACHE fast path): the skew FLOOR is the gate — a
+    scanned page tilted past it is straightened + re-OCR'd fresh; a below-floor page reuses cache
+    because `_deskew` would return identical pixels (so the read is unchanged). Env DESKEW_CACHE_FAST=0
+    forces re-OCR on every deskew run; DESKEW_PAGES=0 upstream disables deskew entirely.
 
     cached_text (default None): REPROCESS optimisation. The full-page OCR (~1.9 s/page
     on a scanned page) re-reads the SAME pixels every reprocess for a result that never
     changes; only the learned data does. When the caller already has the text (stored
     in documents.ocr_text on first import), pass it here: the page IMAGES are still
     rendered (~0.25 s, needed for crop/logo/zone OCR + registration), but the full-page
-    OCR is SKIPPED and cached_text is returned verbatim. Per-field crop reads + the
-    born-digital page_text_lines (derived by the caller) are unaffected, so extraction
-    is unchanged — only the redundant full-page pass is removed.
+    OCR is SKIPPED and cached_text is returned verbatim. Under deskew_pages the OCR is skipped
+    ONLY for docs whose every scanned page is below the skew floor (a tilted doc re-OCRs fresh
+    straightened). Per-field crop reads + the born-digital page_text_lines (derived by the caller)
+    are unaffected, so extraction is unchanged — only the redundant full-page pass is removed.
     """
     use_cache = cached_text is not None
-    if engine is None and not use_cache:
+    # OCR happens whenever this is NOT a cached run, OR a deskew run might re-read a tilted page — so
+    # initialise the read engine in those cases (a pure cached NON-deskew run reads nothing, needs none).
+    if engine is None and (not use_cache or deskew_pages):
         from ocr.engine import TesseractEngine
         engine = TesseractEngine()
+    # DESKEW × CACHE FAST PATH (oscar-designed, Oracle SIGN-OFF-WITH-CONDITIONS). Straightening a scan
+    # re-reads the SAME rendered pixels, but a page tilted BELOW the floor is a no-op for `_deskew`
+    # (`detect_skew_angle` -> 0.0 -> identical pixels -> identical OCR). So instead of re-OCRing every
+    # page under Straighten-all, DETECT skew first (cheap projection sweep) and only re-OCR when a
+    # SCANNED page is actually tilted past the floor; an all-level doc reuses its cached OCR exactly
+    # like a normal reprocess. Kill switch DESKEW_CACHE_FAST=0 forces the old always-re-OCR behaviour.
+    _deskew_cache_fast = os.environ.get('DESKEW_CACHE_FAST', '1') != '0'
 
     ext   = filepath.suffix.lower()
     texts = []
@@ -377,11 +397,15 @@ def extract_text_and_images(
     if ext == ".pdf":
         import pypdfium2 as pdfium
         from ocr import born_digital as _bd
-        # Close the document (and its pages) as soon as we are done rendering, so the
-        # source PDF's file handle is released immediately — otherwise pdfium keeps it
-        # open for the rest of the worker's life and the post-processing "move to
-        # Processed/" rename fails on a Windows file lock. The returned page images are
-        # independent PIL copies (.to_pil()), so they survive the close.
+        # PASS A — render every page, auto-rotate, read born-digital text, DETECT+apply skew, fill the
+        # parallel output lists. The OCR read is DEFERRED to Pass B so we can first learn whether ANY
+        # scanned page is tilted (the whole-doc fast-path verdict). `page_layer[i]` remembers each page's
+        # born-digital text (None = a scanned page) so Pass B can OCR the stored `pages[i]` without
+        # re-touching the pdfium page — closed here to release the source file handle immediately
+        # (otherwise pdfium keeps it open and the "move to Processed/" rename hits a Windows lock; the
+        # returned page images are independent PIL .to_pil() copies, so they survive the close).
+        page_layer = []
+        any_scanned_tilted = False
         doc = pdfium.PdfDocument(str(filepath))
         try:
             for page in doc:
@@ -416,16 +440,19 @@ def extract_text_and_images(
                             layer_text = _bd.page_text(page)
                     except Exception:
                         layer_text = None   # any text-layer failure -> OCR / cache fallback
-                # DESKEW (transient, scanned pages only): straighten the page BEFORE OCR + before it
-                # is appended to `pages` (the anchor crop source), so a taught label relocates in a
-                # level frame. raw_pages_out keeps the PRE-deskew page for the logo phash / identity.
-                # Born-digital pages (layer_text) are upright; a straighten forces fresh OCR so skip
-                # under use_cache (would deskew the crop source while serving raw cached text).
+                # DESKEW (transient, scanned pages only): DETECT the angle ONCE (drives both the
+                # fast-path verdict and the rotation), then straighten before it's appended to `pages`
+                # (the anchor crop source), so a taught label relocates in a level frame. Below the floor
+                # detect returns 0.0 and the rotation is a NO-OP -> identical pixels, so reusing the cache
+                # for that page is exact. Runs under cached_text too now (the verdict below decides
+                # re-OCR vs cache). raw_pages_out keeps the PRE-deskew page for the logo phash / identity.
                 raw_img = img
-                if deskew_pages and layer_text is None and not use_cache:
-                    img = _deskew(img, deskew_min_angle)
+                _angle = detect_skew_angle(img, deskew_min_angle) if (deskew_pages and layer_text is None) else 0.0
+                if _angle:
+                    img = _apply_skew_rotation(img, _angle)
+                    any_scanned_tilted = True
                 if deskew_pages and raw_pages_out is not None:
-                    raw_pages_out.append(raw_img)   # parallel to pages (raw==img on a born-digital page)
+                    raw_pages_out.append(raw_img)   # parallel to pages (raw==img on a born-digital / level page)
                 pages.append(img)
                 # Per-page PROVENANCE (parallel to `pages`): 'born_digital' when this page's text
                 # comes from the embedded vector layer, else 'ocr'. Lets a downstream consumer
@@ -433,17 +460,29 @@ def extract_text_and_images(
                 # value is exact, so a withhold there is a real format issue, not an OCR garble.
                 if provenance_out is not None:
                     provenance_out.append('born_digital' if layer_text is not None else 'ocr')
-                if layer_text is not None:
-                    texts.append(layer_text)
-                elif not use_cache:                 # scanned page, fresh run -> OCR it
-                    texts.append(engine.read_page(img, enhance_params, dpi=_RENDER_DPI))
-                else:                               # scanned page under use_cache -> honour cache
-                    all_fresh = False
+                page_layer.append(layer_text)       # None = a scanned page (OCR'd or cache-deferred in Pass B)
                 try: page.close()
                 except Exception: pass
         finally:
             try: doc.close()
             except Exception: pass
+
+        # VERDICT: re-OCR the scanned pages when this is a fresh run, or a deskew run found a tilted
+        # scanned page (or the fast path is killed). Else the scanned pages reuse the cache. All-or-
+        # nothing per doc (the cache is one whole-doc blob), so a mixed/multi-page doc re-OCRs entirely
+        # iff ANY scanned page is tilted (per-page splitting is a deferred slice). Born-digital pages
+        # ALWAYS take their fresh layer text (never cache) — so a fully born-digital doc stays fresh.
+        needs_scanned_ocr = (not use_cache) or (deskew_pages and (any_scanned_tilted or not _deskew_cache_fast))
+        # PASS B — assemble `texts` in page order. When needs_scanned_ocr the list is complete (fresh
+        # born-digital + fresh OCR) and is joined below; else a scanned page sets all_fresh=False and the
+        # doc returns cached_text (the partial `texts` is never joined — same as the pre-split behaviour).
+        for i, layer_text in enumerate(page_layer):
+            if layer_text is not None:
+                texts.append(layer_text)                                                 # fresh born-digital
+            elif needs_scanned_ocr:
+                texts.append(engine.read_page(pages[i], enhance_params, dpi=_RENDER_DPI))  # fresh (straightened) OCR
+            else:
+                all_fresh = False                                                        # scanned page -> honour cache
     else:
         img = Image.open(filepath)
         _idpi = None                              # honour a raster's own DPI so Tesseract scales right
@@ -457,21 +496,23 @@ def extract_text_and_images(
             _idpi = _RENDER_DPI
         if img.mode not in ("RGB", "L"):
             img = img.convert("RGB")
-        # DESKEW (transient): a scanned raster (JPEG/PNG/TIFF) has no text layer — always OCR, so
-        # straighten it BEFORE the read + as the crop source. raw_pages_out keeps the raw frame for
-        # the logo phash. Skipped under use_cache (a straighten always re-OCRs fresh).
+        # DESKEW (a scanned raster has no text layer -> always a scanned page): detect the angle once,
+        # straighten if tilted (below-floor = no-op). raw_pages_out keeps the raw frame for the logo
+        # phash. Same fast-path verdict as the PDF branch (Oracle C3): a tilted raster re-OCRs fresh
+        # straightened; a level raster under cache reuses it.
         raw_img = img
-        if deskew_pages and not use_cache:
-            img = _deskew(img, deskew_min_angle)
+        _angle = detect_skew_angle(img, deskew_min_angle) if deskew_pages else 0.0
+        if _angle:
+            img = _apply_skew_rotation(img, _angle)
         if deskew_pages and raw_pages_out is not None:
             raw_pages_out.append(raw_img)
         pages = [img]
         if provenance_out is not None:
             provenance_out.append('ocr')   # a raster image has no text layer — always OCR
-        if not use_cache:
+        if (not use_cache) or (deskew_pages and ((_angle != 0.0) or not _deskew_cache_fast)):
             texts.append(engine.read_page(img, enhance_params, dpi=_idpi))
         else:
-            all_fresh = False   # a raster image has no text layer -> honour the OCR cache
+            all_fresh = False   # level raster under cache -> honour the OCR cache
 
     # Prefer freshly-derived text whenever we have it for EVERY page (fully born-digital, or a
     # non-cache run); only fall back to the cache when a scanned/mixed page was skipped under it.

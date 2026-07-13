@@ -30,7 +30,8 @@ console.log('handler.js — batch read floor (C3):');
 check('reprocess-batch handler takes opts', handler.includes("ipcMain.handle('reprocess-batch', async (event, docs, opts) =>"));
 check('derives deskewAll from opts', handler.includes('const deskewAll = !!(opts && opts.deskewAll)'));
 check('derives + clamps deskewMinAngle from opts', handler.includes('const deskewMinAngle = Math.max(0.2, Math.min(5.0, Number(opts && opts.deskewMinAngle) || 0.2))'));
-check('C3: manifest SUPPRESSES cached ocr_text when deskewAll (else deskew no-ops)', handler.includes('!enh && !deskewAll && row && row.ocr_text'));
+check('DESKEW×CACHE: manifest PASSES cached ocr_text even under deskewAll (fast path re-OCRs only tilted docs; old !deskewAll suppression gone)',
+      handler.includes('...(!enh && row && row.ocr_text && row.ocr_text.trim()') && !handler.includes('!enh && !deskewAll && row'));
 check('C3: batch spawn pushes --deskew-pages AND --deskew-min-angle when deskewAll',
       handler.includes("if (deskewAll) scriptArgs.push('--deskew-pages', '--deskew-min-angle', String(deskewMinAngle))"));
 check('get-page-deskew handler takes minAngle', handler.includes("ipcMain.handle('get-page-deskew', async (_e, base64png, minAngle) =>"));
