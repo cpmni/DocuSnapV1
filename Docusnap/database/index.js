@@ -899,6 +899,26 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 45 applied: stale customer_name learning cleaned (RC2)');
   }
 
+  // Migration 46 (2026-07-13): UNFREEZE auto-frozen RECIPIENT-name template fields. The old
+  // _buildTemplateFields froze a per-doc customer/recipient name as a template fixed_value, which then
+  // stamped that ONE name onto every matching doc (template_fixed @95 — the "Primrose Childcare" /
+  // "Aldermoor Engineering" class). The go-forward guard (never-freeze-a-recipient-name) stops NEW
+  // freezes, but the AUTO-FILE path never re-runs _buildTemplateFields, so an already-poisoned template
+  // would keep auto-filing the wrong recipient forever — this sweep is the only thing that heals it
+  // (Oracle: mandatory in this slice). Label-aware; preserves admin locks (fixed_locked) + the issuer
+  // (COMPANY_KEYS); template DEFINITIONS only (never touches filed docs → future docs re-extract).
+  // gary-designed, Oracle SIGN-OFF-WITH-CONDITIONS. Idempotent.
+  if (!applied.has(46)) {
+    if (tableExists(db, 'template_fields') && tableExists(db, 'templates')) {
+      try {
+        const r = require('./modules/templates').unfreezeAutoFrozenRecipientNames(db);
+        console.log(`  migration 46: unfroze ${r.unfrozen} auto-frozen recipient-name template field(s) (scanned ${r.scanned})`);
+      } catch (e) { console.warn(`  migration 46 (unfreeze recipient names): ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (46)').run();
+    console.log('JS migration 46 applied: auto-frozen recipient names unfrozen');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

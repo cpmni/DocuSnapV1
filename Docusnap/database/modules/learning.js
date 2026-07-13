@@ -117,6 +117,24 @@ function isPlausibleSupplierName(value) {
   return true;
 }
 
+// FAITHFUL JS mirror of python_backend/extraction/value_quality.py `is_name_like_field`
+// (the .py docstring pointer to a value_quality.js is STALE — no such file existed; this is it).
+// True for a field that holds a NAME / company / person / POSTAL address. Keyed on field key + label
+// so it works for custom fields too. Semantics are MIXED (Oracle C3): SUBSTRING match for the
+// inclusion words, SUBSTRING "address" gated by a WHOLE-WORD technical-address exclusion (mac/ip/…),
+// and WHOLE-WORD "cust". Separators are normalised to spaces so "mac_address"/"bill_to" tokenise as
+// whole words. Used by the template-field builder to NEVER freeze a recipient name (only the issuer
+// is legitimately constant). Guarded by database/modules/test_build_template_fields.js.
+function isNameLikeField(key, label) {
+  const hay = `${key || ''} ${label || ''}`.toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+  const INCLUDE = ['name', 'supplier', 'customer', 'company', 'client', 'vendor',
+                   'person', 'contact', 'payee', 'bill to', 'ship to'];
+  if (INCLUDE.some(tok => hay.includes(tok))) return true;
+  if (hay.includes('address') &&
+      !/\b(mac|ip|ipv4|ipv6|hardware|physical|network|gateway|subnet|dns|host|port)\b/.test(hay)) return true;
+  return hay.split(/\s+/).filter(Boolean).includes('cust');
+}
+
 function saveCorrections(db, document_id, corrections,
                          supplier_name, document_type, allValues, taughtFields = []) {
   // The confirmed/edited supplier_name field (allValues.supplier_name) is the
@@ -1418,7 +1436,7 @@ module.exports = {
   insertExtractions, deleteExtractions,
   getFieldValueHistory, getDocumentsForFieldValue, purgeFieldValue, renameFieldValue,
   getSupplierScopeCounts, renameSupplier,
-  saveCorrections, getHints, getAllHints, isPlausibleSupplierName, nameQuality, normalizeSupplierName,
+  saveCorrections, getHints, getAllHints, isPlausibleSupplierName, isNameLikeField, nameQuality, normalizeSupplierName,
   saveAnchor, sanitizeAnchorLabel, clearAnchors, getAllAnchors, getAnchorsForScope, getTaughtFieldKeys, deleteAnchor,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
   getFieldFormats, getDigitsOnlyFields,

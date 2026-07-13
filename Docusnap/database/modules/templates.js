@@ -364,11 +364,18 @@ function setOcrAutoEnabled(db, templateId, enabled) {
 // reference set (min distance), not just its primary — so a drifted scan still
 // resolves once the set has converged. threshold 13 reaches the convergence band
 // (callers apply their own accept gate, e.g. conf>=60 ⇔ dist<=6, on match_distance).
-function findByLogoHash(db, phash, threshold = 13) {
+function findByLogoHash(db, phash, threshold = 13, document_type_slug = null) {
   if (!phash) return null;
-  const rows = db.prepare(
-    'SELECT * FROM templates WHERE logo_phash IS NOT NULL'
-  ).all();
+  // Optional TYPE SCOPING (the UI recheck passes it): a supplier issuing several
+  // doc types on ONE letterhead has same-logo sibling templates, so a logo-only
+  // match is type-blind and would resolve a Sales Order template for an Invoice.
+  // When a slug is given, only that type's templates are candidates — mirroring
+  // template_matcher.identify_template's type refusal. Null slug = legacy behaviour.
+  const rows = document_type_slug
+    ? db.prepare(
+        "SELECT * FROM templates WHERE logo_phash IS NOT NULL AND LOWER(COALESCE(document_type_slug, '')) = LOWER(?)"
+      ).all(document_type_slug)
+    : db.prepare('SELECT * FROM templates WHERE logo_phash IS NOT NULL').all();
   let best = null, bestDist = threshold + 1;
   for (const t of rows) {
     let hashes = getLogoHashes(db, t.id);
@@ -387,12 +394,16 @@ function findByLogoHash(db, phash, threshold = 13) {
 // _match_by_keywords (word-boundary regex over each template's stored
 // keyword_fingerprint, score = hits/len(keywords)). KEYWORD_THRESHOLD there
 // is 0.75 → confidence >= 75 here, with the same int()-style truncation.
-function findByKeywordFingerprint(db, ocrText, threshold = 75) {
+function findByKeywordFingerprint(db, ocrText, threshold = 75, document_type_slug = null) {
   if (!ocrText) return null;
   const ocrLower = ocrText.toLowerCase();
-  const rows = db.prepare(
-    'SELECT id, name, keyword_fingerprint FROM templates WHERE keyword_fingerprint IS NOT NULL'
-  ).all();
+  // Same optional TYPE SCOPING as findByLogoHash — a same-letterhead sibling of a
+  // different type must not match here either (its keyword fingerprint is identical).
+  const rows = document_type_slug
+    ? db.prepare(
+        "SELECT id, name, keyword_fingerprint FROM templates WHERE keyword_fingerprint IS NOT NULL AND LOWER(COALESCE(document_type_slug, '')) = LOWER(?)"
+      ).all(document_type_slug)
+    : db.prepare('SELECT id, name, keyword_fingerprint FROM templates WHERE keyword_fingerprint IS NOT NULL').all();
 
   let best = null, bestScore = 0;
   for (const t of rows) {
@@ -419,14 +430,14 @@ function findByKeywordFingerprint(db, ocrText, threshold = 75) {
 // confidence >= 75. Used by the review queue to detect that a template added
 // via "Add to Template Manager" now covers a document that was queued before
 // it existed.
-function identifyByFingerprint(db, { logo_phash, ocr_text }) {
+function identifyByFingerprint(db, { logo_phash, ocr_text, document_type_slug = null }) {
   if (logo_phash) {
-    const logoMatch = findByLogoHash(db, logo_phash);
+    const logoMatch = findByLogoHash(db, logo_phash, 13, document_type_slug);
     if (logoMatch && logoMatch.confidence >= 60) {
       return { template: { id: logoMatch.id, name: logoMatch.name }, confidence: logoMatch.confidence, method: 'logo' };
     }
   }
-  return findByKeywordFingerprint(db, ocr_text);
+  return findByKeywordFingerprint(db, ocr_text, 75, document_type_slug);
 }
 
 // Cheap name-based lookup for the Learning Recovery tab — shows managed
@@ -904,8 +915,45 @@ function getSampleWordsByDoc(db, templateId) {
   return [...byDoc.values()];
 }
 
+// Migration 46 sweep: UNFREEZE already-auto-frozen RECIPIENT-name template fields across ALL
+// templates. `_buildTemplateFields` used to freeze a per-doc customer/recipient name as a fixed_value,
+// which then stamped that one name onto every matching doc (template_fixed @95 — "Primrose Childcare"
+// / "Aldermoor Engineering"). The go-forward guard stops NEW freezes, but the AUTO-FILE path never
+// re-runs `_buildTemplateFields`, so an already-poisoned template keeps auto-filing the wrong recipient
+// forever — only this sweep heals it (Oracle C1: mandatory in-slice). LABEL-AWARE (Oracle C2): recover
+// each field's label from its own type so an opaque-key field labelled "Customer Name" is caught too.
+// Preserves admin locks (fixed_locked=1) and the ISSUER (COMPANY_KEYS). Template DEFINITIONS only —
+// never touches filed docs (a future doc re-extracts the recipient → fail toward review, never a stale
+// stamp). Idempotent (an unfrozen row is is_variable=1 → not re-selected). Guarded by
+// database/modules/test_migration_unfreeze_names.js.
+function unfreezeAutoFrozenRecipientNames(db) {
+  const { isNameLikeField } = require('./learning');
+  const { COMPANY_KEYS }    = require('./document_types');
+  const companyKeys = COMPANY_KEYS || ['supplier_name'];
+  const rows = db.prepare(`
+    SELECT tf.id AS id, tf.field_key AS key, f.label AS label
+    FROM template_fields tf
+    JOIN templates t ON t.id = tf.template_id
+    LEFT JOIN document_types dt ON LOWER(dt.slug) = LOWER(t.document_type_slug)
+    LEFT JOIN fields f ON f.document_type_id = dt.id AND f.key = tf.field_key
+    WHERE tf.is_variable = 0 AND COALESCE(tf.fixed_locked, 0) = 0
+  `).all();
+  const upd = db.prepare('UPDATE template_fields SET fixed_value = NULL, is_variable = 1 WHERE id = ?');
+  let unfrozen = 0;
+  const tx = db.transaction(() => {
+    for (const r of rows) {
+      if (companyKeys.includes(r.key)) continue;                 // keep the issuer frozen
+      if (!isNameLikeField(r.key, r.label)) continue;            // keep genuinely-constant non-name fields
+      upd.run(r.id); unfrozen++;
+    }
+  });
+  tx();
+  return { unfrozen, scanned: rows.length };
+}
+
 module.exports = {
   getAll, getById, getFields, findByLogoHash, findByKeywordFingerprint, identifyByFingerprint,
+  unfreezeAutoFrozenRecipientNames,
   searchByName,
   create, update, remove, rename, shouldAdoptIssuerName, hammingDistance,
   stabiliseFingerprint, chooseLogoPhash,
