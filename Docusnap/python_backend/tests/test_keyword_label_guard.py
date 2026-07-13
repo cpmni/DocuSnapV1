@@ -95,6 +95,29 @@ def main():
             .get("invoice_number") or {}).get("value", "")
     f += not check(f'normal single-column value unchanged [got {inv3!r}]', inv3 == "INV-2044")
 
+    # ── 1e. identity caption vs BUYER-side reference caption (the "Supplier Ref" → "Ref" bug) ──
+    # A bare "Supplier"/"Vendor"/"Seller" label matches inside "Supplier Ref 4118" (the following
+    # SPACE is a valid word boundary) and the right-read grabbed "Ref" as the Document Issuer —
+    # a plausible-looking junk name that even suppressed the confirmed-hint recovery downstream.
+    # _identity_ref_caption skips the reference caption; a real "Supplier: Acme" still reads.
+    def _sup(ocr):
+        return (keyword.extract_fields(ocr, ["supplier_name"], patterns).get("supplier_name") or {}).get("value", "")
+    s1 = _sup("Supplier Ref    4118")
+    f += not check(f'"Supplier Ref 4118" does NOT read "Ref" as the issuer [got {s1!r}]', "Ref" not in s1)
+    s2 = _sup("Supplier No.   88421")
+    f += not check(f'"Supplier No. 88421" does NOT read a value [got {s2!r}]', "88421" not in s2 and "No" not in s2)
+    s3 = _sup("Supplier #4118")
+    f += not check(f'"Supplier #4118" (glued #) does NOT read [got {s3!r}]', "4118" not in s3)
+    # precision: a REAL issuer caption still reads its value inline.
+    s4 = _sup("Supplier: Acme Industrial Ltd")
+    f += not check(f'"Supplier: Acme Industrial Ltd" still reads the name [got {s4!r}]', "Acme" in s4)
+    # pure-function guard
+    f += not check('_identity_ref_caption: "Supplier Ref …" -> True', keyword._identity_ref_caption("Supplier Ref 4118", 8) is True)
+    f += not check('_identity_ref_caption: "Supplier Account …" -> True', keyword._identity_ref_caption("Supplier Account 8", 8) is True)
+    f += not check('_identity_ref_caption: "Supplier #…" -> True', keyword._identity_ref_caption("Supplier #4118", 8) is True)
+    f += not check('_identity_ref_caption: "Supplier: Acme" -> False', keyword._identity_ref_caption("Supplier: Acme Ltd", 8) is False)
+    f += not check('_identity_ref_caption: below-read (empty tail) -> False', keyword._identity_ref_caption("Supplier", 8) is False)
+
     # ── 2. validation inferred by field-key role ──
     f += not check('_infer_validation(remittance_date) = date', keyword._infer_validation("remittance_date") == "date")
     f += not check('_infer_validation(remittance_number) = alphanumeric', keyword._infer_validation("remittance_number") == "alphanumeric")

@@ -50,7 +50,11 @@ function main() {
 
   // 1. Label: the company/identity field is labelled "Document Issuer" (both roles).
   f += !check('invoice supplier_name labelled "Document Issuer"', field(db, 'supplier_name').label === 'Document Issuer');
-  f += !check('sales-order customer_name labelled "Document Issuer"', field(db, 'customer_name').label === 'Document Issuer');
+  // customer_name is no longer the identity (migration 44) — it's an ordinary optional 'Customer'
+  // field; the sales-order identity is now supplier_name (labelled "Document Issuer").
+  f += !check('sales-order identity is supplier_name "Document Issuer"', field(db, 'supplier_name').label === 'Document Issuer');
+  f += !check('sales-order customer_name is now optional "Customer" (not the identity)', field(db, 'customer_name').label === 'Customer');
+  f += !check('sales-order customer_name is NOT structural', doctypes.isStructuralKey({ ref_field_key: 'sales_order_number', date_field_key: 'order_date' }, 'customer_name') === false);
 
   // 2. is_structural annotation (Company / Date / Reference roles).
   const inv = doctypes.getWithFields(db, 'invoice');

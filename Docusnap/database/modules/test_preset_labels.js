@@ -6,7 +6,8 @@
  *    ambiguous "From";
  *  - "Valid From" (a validity/terms date) is not seeded on quote_date;
  *  - canonical presets (Purchase/Sales Invoice) defer to shipped field_patterns (no
- *    labels arrays), with the correct company identity per invoice direction.
+ *    labels arrays), with supplier_name identity (migration 44 — the sole scope key on
+ *    every type; customer_name is a plain recipient field where a direction has one).
  *
  * Run: ELECTRON_RUN_AS_NODE=1 npx electron database/modules/test_preset_labels.js
  */
@@ -19,12 +20,14 @@ const byName = (n) => PRESET_CATALOG.find(p => p.name === n);
 const field = (preset, key) => (preset.fields || []).find(f => f.key === key) || {};
 const labels = (preset, key) => field(preset, key).labels || [];
 
-// ── Remittance Advice: payer name must be qualified, not a bare "From" ──
+// ── Remittance Advice: the REMITTER (payer) ISSUES the advice, so its payer-specific captions
+//    live on the IDENTITY field supplier_name (migration 44) — and must be qualified, never a
+//    bare "From". customer_name is a plain recipient field with no seeded labels here.
 const rem = byName('Remittance Advice');
 check('Remittance found', !!rem);
-check('remittance customer_name drops bare "From"', !labels(rem, 'customer_name').includes('From'));
-check('remittance customer_name has "Received From"', labels(rem, 'customer_name').includes('Received From'));
-check('remittance customer_name has "Payment From"', labels(rem, 'customer_name').includes('Payment From'));
+check('remittance supplier_name drops bare "From"', !labels(rem, 'supplier_name').includes('From'));
+check('remittance supplier_name has "Received From"', labels(rem, 'supplier_name').includes('Received From'));
+check('remittance supplier_name has "Payment From"', labels(rem, 'supplier_name').includes('Payment From'));
 
 // ── Quote: "Valid From" is a terms date, not the quote date ──
 const quote = byName('Quote');
@@ -45,7 +48,7 @@ for (const n of ['Purchase Invoice', 'Sales Invoice']) {
         (p.fields || []).every(f => !f.labels));
 }
 check('Purchase Invoice identity = supplier_name', byName('Purchase Invoice').company_key === 'supplier_name');
-check('Sales Invoice identity = customer_name', byName('Sales Invoice').company_key === 'customer_name');
+check('Sales Invoice identity = supplier_name (migration 44 — sole scope key)', byName('Sales Invoice').company_key === 'supplier_name');
 
 // ── Global safety invariant: no seeded label is a bare ambiguous single token ──
 const BARE_BAD = new Set(['from', 'to', 'no', 'no.', 'date', 'amount', 'ref', 'total', 'balance', 'number']);

@@ -11,6 +11,8 @@ import pytesseract
 import pypdfium2 as pdfium
 from PIL import Image, ImageOps, ImageFilter
 
+from ocr.text_layout import COLUMN_BREAK   # 4-space column-break marker (single source of truth)
+
 # Noise-cleanup slider levels (1-3) → PIL MedianFilter kernel size.
 # Larger kernels remove more speckle but blur fine text more.
 NOISE_FILTER_SIZES = {1: 3, 2: 5, 3: 7}
@@ -85,35 +87,54 @@ def _group_words_into_lines(words, med_h) -> list:
     row (a label and its far-right value on the SAME physical row stay on one line; a wide intra-row
     x-gap emits a 4-space column break so keyword.py's column-split still separates real columns).
 
-    Two-pass clustering with a FROZEN row anchor + NEAREST-of-all-rows assignment (oscar). The old
-    single-pass grouping compared only the LAST row and let each row's bbox GROW unbounded, so on a
-    two-column layout whose columns interleave in the global y-sort the outcome depended on visiting
-    order — a sub-pixel y shift at one DPI vs another flipped which words landed together and a whole
-    key/value row could be scattered across lines. Here each word joins the nearest EXISTING row
-    within a med_h-relative band measured against the row's frozen seed box/centre (never a grown
-    bbox, never a drifting mean), so it's order-independent and DPI-stable. Pure — no Tesseract call;
-    guarded by tests/test_ocr_engine.py."""
+    TWO PASS with a FROZEN row anchor (oscar). A word can belong to a row that is SEEDED AFTER it in
+    the global y-sort, so a single greedy pass (which can only choose among rows already created) put
+    a value on the row above its label on a 3-column header — e.g. an invoice number at y-centre 1270
+    glued to "BILLING ADDRESS" (yc 1252, seeded first) instead of its own "INVOICE NUMBER" row (yc
+    1274, seeded later), so the label read empty and the keyword matcher fell through to the line
+    below. Fix: PASS 1 discovers the anchor SET with the SAME frozen-seed eligibility as before (so
+    the rows are identical to today — no regression); PASS 2 assigns EVERY word against the FULL set,
+    order-independent. Tie-break = (significant-overlap, max overlap, min centre-distance): vertical
+    box OVERLAP (physical "same printed line") wins over centre proximity, so a value re-homes to its
+    own label's row while a tall BOLD label still keeps its lower-centred value (which it encloses)
+    instead of losing it to a nearer line below. med_h-relative → DPI-stable. Guarded by test_ocr_engine.py."""
     if not words:
         return []
     col_gap = max(med_h * 1.5, 12)    # x-gap wide enough to be a column break (4-space)
     cap     = max(med_h * 1.2, 10)    # centres farther than this = DIFFERENT rows (hard backstop)
     band    = max(med_h * 0.6, 6)     # within this of a row's FROZEN centre = same row (OR clause)
-    rows = []                          # each: {top, bot, yc, words}; top/bot/yc FROZEN at the seed
-    for wd in sorted(words, key=lambda w: w[1] + w[3] / 2.0):   # deterministic top-to-bottom
+    OV      = 0.3                      # box-overlap fraction that counts as "significant" (same line)
+    sw = sorted(words, key=lambda w: w[1] + w[3] / 2.0)         # deterministic top-to-bottom
+
+    def _eligible(wd, a):
         top_w, bot_w = wd[1], wd[1] + wd[3]
-        yc = wd[1] + wd[3] / 2.0
-        best, best_d = None, None
-        for r in rows:                                          # search ALL rows, pick the nearest
-            overlap = min(bot_w, r["bot"]) - max(top_w, r["top"])
-            shorter = min(wd[3], r["bot"] - r["top"]) or 1
-            d = abs(yc - r["yc"])
-            if (overlap >= 0.3 * shorter or d <= band) and d <= cap:
-                if best is None or d < best_d:
-                    best, best_d = r, d
-        if best is None:
-            rows.append({"top": top_w, "bot": bot_w, "yc": yc, "words": [wd]})
+        overlap = min(bot_w, a["bot"]) - max(top_w, a["top"])
+        shorter = min(wd[3], a["bot"] - a["top"]) or 1
+        d = abs((wd[1] + wd[3] / 2.0) - a["yc"])
+        sig = overlap >= OV * shorter
+        return ((sig or d <= band) and d <= cap), sig, overlap, d
+
+    # PASS 1 — discover the anchor SET (identical seeding rule to the old single pass → same rows).
+    anchors = []
+    for wd in sw:
+        if not any(_eligible(wd, a)[0] for a in anchors):
+            anchors.append({"top": wd[1], "bot": wd[1] + wd[3], "yc": wd[1] + wd[3] / 2.0})
+    # PASS 2 — assign EVERY word to its BEST anchor over the FULL set (removes the visit-order bias).
+    rows = [{"top": a["top"], "bot": a["bot"], "yc": a["yc"], "words": []} for a in anchors]
+    for wd in sw:
+        best, best_key = None, None
+        for r in rows:
+            ok, sig, overlap, d = _eligible(wd, r)
+            if not ok:
+                continue
+            key = (1 if sig else 0, overlap, -d)               # overlap-first; centre only as tie-break
+            if best is None or key > best_key:
+                best, best_key = r, key
+        if best is None:                                        # pathological rounding only — never lose a word
+            rows.append({"top": wd[1], "bot": wd[1] + wd[3], "yc": wd[1] + wd[3] / 2.0, "words": [wd]})
         else:
-            best["words"].append(wd)                            # reference stays FROZEN
+            best["words"].append(wd)
+    rows = [r for r in rows if r["words"]]                      # drop any anchor that ended up empty
     rows.sort(key=lambda r: r["yc"])
     lines = []
     for r in rows:
@@ -121,7 +142,7 @@ def _group_words_into_lines(words, med_h) -> list:
         out = [row_ws[0][4]]
         for a, b in zip(row_ws, row_ws[1:]):
             gap = b[0] - (a[0] + a[2])
-            out.append("    " if gap > col_gap else " ")
+            out.append(COLUMN_BREAK if gap > col_gap else " ")
             out.append(b[4])
         lines.append("".join(out))
     return lines
@@ -191,12 +212,15 @@ def pdf_to_images(filepath: Path, dpi: int = 300) -> list[Image.Image]:
     return images
 
 
-def _deskew(img: Image.Image) -> Image.Image:
-    """
-    Detect and correct small-angle document skew via horizontal projection variance.
-    Operates on a downscaled binary copy for speed; rotation applied to the original
-    at full resolution. Skew below 0.2° is ignored to avoid spurious micro-rotations.
-    """
+def detect_skew_angle(img: Image.Image, min_angle: float = 0.2) -> float:
+    """Detect small-angle document skew via horizontal projection variance. Returns the angle in
+    DEGREES in PIL's convention (positive = the rotation `img.rotate(angle)` applies to STRAIGHTEN,
+    i.e. CCW-positive), or 0.0 when |skew| < max(0.2, min_angle) — the caller's user-set floor,
+    clamped so it can NEVER drop below the hard 0.2° noise floor (below which the estimate is noise
+    and a rotate would be spurious). Default 0.2 ⇒ byte-identical to the pre-flag behaviour. NON-DESTRUCTIVE — measures
+    only. Shared by `_deskew` (which applies it to the OCR copy) and the Review-window display
+    deskew (which rotates the on-screen page so drawn ⊕ boxes align with straight text). Operates
+    on a downscaled binary copy for speed."""
     import numpy as np
 
     gray   = img.convert('L') if img.mode != 'L' else img
@@ -221,9 +245,18 @@ def _deskew(img: Image.Image) -> Image.Image:
     fine = [(base + d) / 10.0 for d in range(-5, 6)]
     best = max(fine, key=_score)
 
-    if abs(best) < 0.2:
-        return img  # no meaningful skew
+    return best if abs(best) >= max(0.2, min_angle) else 0.0
 
+
+def _deskew(img: Image.Image, min_angle: float = 0.2) -> Image.Image:
+    """
+    Detect and correct small-angle document skew via horizontal projection variance.
+    Operates on a downscaled binary copy for speed; rotation applied to the original
+    at full resolution. Skew below 0.2° is ignored to avoid spurious micro-rotations.
+    """
+    best = detect_skew_angle(img, min_angle)
+    if best == 0.0:
+        return img  # no meaningful skew
     fill = 255 if img.mode == 'L' else (255, 255, 255)
     return img.rotate(best, expand=False, fillcolor=fill, resample=Image.BICUBIC)
 
@@ -280,6 +313,10 @@ def extract_text_and_images(
     cached_text: str | None = None,
     auto_rotate: bool = False,
     rotations_out: list | None = None,
+    provenance_out: list | None = None,
+    deskew_pages: bool = False,
+    deskew_min_angle: float = 0.2,
+    raw_pages_out: list | None = None,
 ) -> tuple[str, list[Image.Image]]:
     """
     Extract OCR text from a document file.
@@ -299,6 +336,17 @@ def extract_text_and_images(
     instead of an OCR read — faster and exact. Image-only/scanned pages have no
     text layer and fall back to OCR unchanged. The page IMAGES are still rendered
     either way (logo/anchor/zone OCR need them). Gated by 'born_digital_enabled'.
+
+    deskew_pages (default off): the "Straighten + Reprocess" recovery path. When on, each
+    SCANNED page is transiently deskewed (ocr/tesseract._deskew — small-angle projection-variance
+    correction) after auto-rotate and BEFORE the OCR read, so the full-page text AND the returned
+    page image (the anchor crop source) are level → a taught label relocates in a straight frame.
+    Born-digital pages (exact text layer, upright) are skipped. The FILED file is never touched.
+    raw_pages_out, when given, is filled PARALLEL to the returned pages with each page's PRE-deskew
+    image — the caller passes raw_pages_out[0] to engine.extract(raw_page0=...) so the persisted
+    logo phash + logo/template MATCHING use the raw frame (a deskewed logo phash drifts from the
+    learned raw hashes and, once persisted, poisons the supplier's logo set for every future import).
+    Deskew is skipped under cached_text (a straighten always forces fresh OCR). Kill switch upstream.
 
     cached_text (default None): REPROCESS optimisation. The full-page OCR (~1.9 s/page
     on a scanned page) re-reads the SAME pixels every reprocess for a result that never
@@ -357,7 +405,6 @@ def extract_text_and_images(
                             img = _orientation.correct_image(img, rot)
                 if rotations_out is not None:
                     rotations_out.append(rot)
-                pages.append(img)
                 # Born-digital text: regenerate FRESH every run (cheap, authoritative), even
                 # under use_cache. Positional reading order (page_lines), not the layer's raw
                 # char order, so label-adjacency keyword extraction matches OCR.
@@ -369,6 +416,23 @@ def extract_text_and_images(
                             layer_text = _bd.page_text(page)
                     except Exception:
                         layer_text = None   # any text-layer failure -> OCR / cache fallback
+                # DESKEW (transient, scanned pages only): straighten the page BEFORE OCR + before it
+                # is appended to `pages` (the anchor crop source), so a taught label relocates in a
+                # level frame. raw_pages_out keeps the PRE-deskew page for the logo phash / identity.
+                # Born-digital pages (layer_text) are upright; a straighten forces fresh OCR so skip
+                # under use_cache (would deskew the crop source while serving raw cached text).
+                raw_img = img
+                if deskew_pages and layer_text is None and not use_cache:
+                    img = _deskew(img, deskew_min_angle)
+                if deskew_pages and raw_pages_out is not None:
+                    raw_pages_out.append(raw_img)   # parallel to pages (raw==img on a born-digital page)
+                pages.append(img)
+                # Per-page PROVENANCE (parallel to `pages`): 'born_digital' when this page's text
+                # comes from the embedded vector layer, else 'ocr'. Lets a downstream consumer
+                # (the Stage-4.5 gate-failure re-read) fire ONLY on OCR'd pages — a born-digital
+                # value is exact, so a withhold there is a real format issue, not an OCR garble.
+                if provenance_out is not None:
+                    provenance_out.append('born_digital' if layer_text is not None else 'ocr')
                 if layer_text is not None:
                     texts.append(layer_text)
                 elif not use_cache:                 # scanned page, fresh run -> OCR it
@@ -393,7 +457,17 @@ def extract_text_and_images(
             _idpi = _RENDER_DPI
         if img.mode not in ("RGB", "L"):
             img = img.convert("RGB")
+        # DESKEW (transient): a scanned raster (JPEG/PNG/TIFF) has no text layer — always OCR, so
+        # straighten it BEFORE the read + as the crop source. raw_pages_out keeps the raw frame for
+        # the logo phash. Skipped under use_cache (a straighten always re-OCRs fresh).
+        raw_img = img
+        if deskew_pages and not use_cache:
+            img = _deskew(img, deskew_min_angle)
+        if deskew_pages and raw_pages_out is not None:
+            raw_pages_out.append(raw_img)
         pages = [img]
+        if provenance_out is not None:
+            provenance_out.append('ocr')   # a raster image has no text layer — always OCR
         if not use_cache:
             texts.append(engine.read_page(img, enhance_params, dpi=_idpi))
         else:

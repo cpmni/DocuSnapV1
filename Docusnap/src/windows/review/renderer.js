@@ -144,6 +144,24 @@ function clearFieldWarning(row, input) {
   if (el) el.remove();
 }
 
+// Dismiss the EXTRACTION advisory note (the wordness "looks like a code, not a name" / format-check /
+// issuer note + its Accept button) once the operator has supplied a value themselves (typed or
+// ⊕-drawn). Human input is authoritative, so the machine's "please verify" — which describes the OLD
+// machine-read value — is satisfied and stale. Removes ONLY that advisory element via an explicit
+// exclusion selector: never the inline live-regex warning (.field-validation-warn), the
+// totals-verified badge (.verified) or the applied auto-fix badge (.corrected). Nulls the in-memory
+// flags so renderReviewReason's tally drops the field on any later re-render. Does NOT touch
+// review_flag_count / Confirm-gating / auto-file (those read the server count) and never teaches a
+// global allowlist (that stays the explicit "✓ This name/issuer is correct" buttons). Callers gate on
+// value-actually-changed; the same edit re-runs fieldValidationError so a bad structured value re-flags.
+function dismissServerNote(row, key) {
+  if (!row) return;
+  const note = row.querySelector('.field-note:not(.field-validation-warn):not(.verified):not(.corrected)');
+  if (note) note.remove();
+  const ex = (currentDoc?.extractions || []).find(e => e.field_key === key);
+  if (ex) { ex.validation_note = null; ex.corrected_to = null; }
+}
+
 // ── State ─────────────────────────────────────────────────────────────────────
 let queue            = [];
 // Review-queue view: group rows by sender (default) vs raw newest-first. A same-window
@@ -162,6 +180,9 @@ let pageImages       = [];
 let fieldDefs        = [];
 let corrections      = {};
 let anchorTaughtFields = new Set(); // field_keys taught via the ⊕ highlight/zone-OCR tool this cycle
+// field_keys with a SAVED learned anchor for the current supplier+doc-type scope (get-taught-field-keys),
+// for the per-field "position taught" dot. OR'd with pendingAnchors (this-session ⊕ teaches) at render.
+let taughtFieldKeys = new Set();
 // Anchors drawn with ⊕ this cycle, STAGED in memory and persisted only on Confirm
 // & File (mirrors `corrections`). An un-confirmed teach (skip/defer/doc-change)
 // leaves NO learned trace, so an accidental wrong pick can't poison the corpus.
@@ -171,6 +192,24 @@ let pendingAnchors   = {};
 // e.g. "Invoice Total") for this field — not a value read. Armed by the readout's
 // "Draw the anchor" button; consumed on mouseup by runAnchorDraw.
 let anchorDrawField  = null;
+// DESKEW DISPLAY (per-doc, opt-in, default OFF). When on, the shown page is the STRAIGHTENED
+// render (region.py --deskew) so drawn ⊕ boxes land on level text — the immediate crop read is
+// then a pure win (see==read). `deskewPageAngle` is the angle CURRENTLY applied to docImg (0 =
+// showing the raw page); it drives the coord back-transform on save (_deskewFixPending). Cache
+// keyed by page index so re-visiting a page doesn't re-run OCR. Reset on doc change.
+let deskewEnabled    = false;
+let deskewByPage     = {};   // page index → { angle, uri } (uri null / angle 0 = page already level)
+let deskewPageAngle  = 0;
+// SESSION-WIDE straighten (rail toggle `#btn-deskew-all`). When ON, every doc that opens starts with
+// deskewEnabled=true and Reprocess All / Reprocess-this-sender force a straightened READ. Persisted in
+// localStorage (UI pref, mirrors review_queue_grouped) and written ONLY in the rail button handler
+// (Oracle C2) — never by the per-doc toggle, the doc-open reset, or the wizard's deskew suppression.
+let deskewSessionOn  = (localStorage.getItem('review_deskew_session') === 'true');
+// Minimum skew angle (deg) for the session straighten — only docs tilted MORE than this straighten
+// (display + reprocess reads). Default 1.0° (oscar: above the sub-degree noise band, catches typical
+// feeder skew, and where straightening starts helping the READ); clamped [0.2, 5.0]. Set in the rail
+// flyout, persisted alongside the flag; written ONLY by applyDeskewSession/turnOffDeskewSession (C2).
+let deskewMinAngle   = (() => { const v = parseFloat(localStorage.getItem('review_deskew_min_angle')); return (Number.isFinite(v) && v >= 0.2 && v <= 5.0) ? v : 1.0; })();
 // Field cleanup rules taught via the right-click menu this cycle, STAGED in memory
 // and persisted only on Confirm (mirrors pendingAnchors). Keyed field_key → array of
 // saveFieldRule payloads. An un-confirmed teach (skip/defer/doc-change) leaves no trace.
@@ -484,6 +523,7 @@ document.getElementById('doctype-select').addEventListener('change', (e) => {
     appendFieldRow(scroll, key, val, null);
   }
   validateConfirm();
+  _refreshTaughtForType();   // dots are type-scoped — re-query for the newly-chosen type
 });
 
 // ── Create-a-new-type modal (in-page; reuses the shared DocTypeEditor) ─────────
@@ -491,6 +531,8 @@ document.getElementById('doctype-select').addEventListener('change', (e) => {
 // entry. No new window / no new IPC: the editor commits via createDocTypeWithFields and
 // returns the new type, which we splice into the dropdown and auto-select for this doc.
 let _newTypeModalOpen = false;
+let _catalogPickerOpen = false;   // catalog picker stacked OVER the new-type modal; gates its Esc handler
+let _catalogOpening   = false;    // set SYNCHRONOUSLY on launch so a double-click can't stack two pickers
 function openNewTypeModal() {
   if (_newTypeModalOpen || !isAdmin) return;
   if (!window.DocTypeEditor || typeof window.DocTypeEditor.create !== 'function') {
@@ -517,18 +559,25 @@ function openNewTypeModal() {
   const cancel = document.createElement('button'); cancel.className = 'btn'; cancel.textContent = 'Cancel';
   const create = document.createElement('button'); create.className = 'btn'; create.textContent = 'Create type'; create.disabled = true;
   Object.assign(create.style, { background: 'var(--accent)', borderColor: 'var(--accent)', color: 'var(--bg)', fontWeight: '500' });
+  // Secondary launcher for the ready-made preset catalog — pushed to the far left of the footer.
+  const catalogBtn = document.createElement('button'); catalogBtn.className = 'btn';
+  catalogBtn.textContent = '📋 Choose from catalog'; catalogBtn.style.marginRight = 'auto';
 
   const close = () => {
     if (closed) return; closed = true; _newTypeModalOpen = false;
+    _catalogPickerOpen = false;   // defensive: can't happen today (catalog covers this modal), but a future
+                                  // refactor that closed this under the catalog would otherwise strand the flag
     document.removeEventListener('keydown', onKey, true);
     try { ctl && ctl.destroy(); } catch {}
     ov.remove();
   };
-  const onKey = (e) => { if (e.key === 'Escape' && !committing) { e.stopPropagation(); close(); } };
+  // While the catalog picker is stacked on top, Esc must close only IT (its own handler), not this
+  // modal — both listen on document, and stopPropagation doesn't stop same-target listeners.
+  const onKey = (e) => { if (e.key === 'Escape' && !committing && !_catalogPickerOpen) { e.stopPropagation(); close(); } };
 
   // Attach the overlay BEFORE mounting the editor, so it renders into a host that's in
   // the document (Teach/Settings mount it attached; a detached host can break render).
-  footer.append(cancel, create);
+  footer.append(catalogBtn, cancel, create);
   box.append(title, host, footer);
   ov.append(box);
   document.body.append(ov);
@@ -547,6 +596,22 @@ function openNewTypeModal() {
   }
 
   cancel.addEventListener('click', close);
+  catalogBtn.addEventListener('click', () => {
+    if (committing) return;
+    openTypeCatalogModal(async (addedSlug) => {
+      // A preset was added: close this modal, refresh the dropdown, and auto-select the new type
+      // for the current doc (same tail as the manual create path above).
+      close();
+      try { allDocTypes = await window.docusnap.getAllDocTypes(); } catch {}
+      populateTypeDropdown();
+      if (addedSlug) {
+        const sel = document.getElementById('doctype-select');
+        if (sel) { sel.value = addedSlug; sel.dispatchEvent(new Event('change')); }
+        const t = (allDocTypes || []).find(d => d.slug === addedSlug);
+        if (t) showNewTypeNudge(t);
+      }
+    });
+  });
   create.addEventListener('click', async () => {
     if (committing || !ctl.isReady()) return;
     committing = true; create.disabled = true; create.textContent = 'Creating…';
@@ -570,6 +635,95 @@ function openNewTypeModal() {
   document.addEventListener('keydown', onKey, true);
   // Chromium drops focus on a just-appended element — defer to the next frame.
   requestAnimationFrame(() => { const inp = host.querySelector('input, select'); if (inp) inp.focus(); });
+}
+
+// Catalog picker STACKED over the new-type modal: tick a shipped preset type, add it (fields +
+// labels seeded), then hand its slug back so the caller can select it for the current doc. Mirrors
+// Settings' openCatalogModal + this file's own modal conventions. `onAdded(firstNewSlug)` fires on
+// a successful add. No new IPC — reuses get-doctype-catalog / add-doctype-presets (admin-gated).
+async function openTypeCatalogModal(onAdded) {
+  // _catalogOpening is set SYNCHRONOUSLY (before the await) so a double-click can't pass the guard
+  // twice and stack two overlays; _catalogPickerOpen is set only once the overlay exists, so the
+  // parent modal's Esc stays live during the (brief) catalog LOAD. Restore focus to the launcher on
+  // a cancel/Esc close so the re-exposed editor isn't left caret-less (the app's focus history).
+  if (_catalogPickerOpen || _catalogOpening || !isAdmin) return;
+  _catalogOpening = true;
+  const returnFocus = document.activeElement;
+  let catalog;
+  try { catalog = await window.docusnap.getDoctypeCatalog(); }
+  catch (e) { _catalogOpening = false; _newTypeToast('Could not load the catalog: ' + (e && e.message || e)); return; }
+  if (!Array.isArray(catalog) || !catalog.length) { _catalogOpening = false; _newTypeToast('The catalog is empty.'); return; }
+  _catalogPickerOpen = true; _catalogOpening = false;
+
+  const rows = catalog.map((p) => {
+    const fieldList = (p.fields || []).map(f => escHtml(f.label)).join(', ');
+    const tag = p.already_present
+      ? '<span style="font-size:10px; color:var(--ok); border:1px solid var(--ok); border-radius:999px; padding:1px 7px;">Already added</span>'
+      : '';
+    return `
+      <label style="display:flex; gap:10px; align-items:flex-start; padding:8px 6px; border-radius:8px; cursor:pointer;">
+        <input type="checkbox" data-slug="${escHtml(p.slug)}" ${p.already_present ? 'checked disabled' : ''} style="margin-top:3px;">
+        <div style="flex:1;">
+          <div style="font-size:12px; font-weight:500;">${escHtml(p.name)} ${tag}</div>
+          <div style="font-size:11px; color:var(--muted); line-height:1.5;">${fieldList}</div>
+        </div>
+      </label>`;
+  }).join('');
+
+  const ov = document.createElement('div');
+  ov.setAttribute('data-help-ignore', '');
+  Object.assign(ov.style, { position: 'fixed', inset: '0', background: 'rgba(8,10,15,.72)', display: 'flex',
+    alignItems: 'center', justifyContent: 'center', zIndex: '100001', padding: '24px' });   // above the 99999 modal
+  const box = document.createElement('div');
+  Object.assign(box.style, { width: 'min(480px,94vw)', maxHeight: '84vh', display: 'flex', flexDirection: 'column',
+    gap: '12px', background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: '12px',
+    padding: '18px', boxShadow: '0 18px 50px rgba(0,0,0,.5)', color: 'var(--text)' });
+  box.innerHTML = `
+    <div style="font-size:14px; font-weight:600;">Add a document type from the catalog</div>
+    <div style="font-size:11px; color:var(--muted); line-height:1.6;">Tick the type this document is —
+      it's added with its fields and likely labels, then selected here.</div>
+    <div id="rev-cat-rows" style="overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:4px; flex:1; min-height:120px;">${rows}</div>
+    <div id="rev-cat-err" style="display:none; font-size:11px; color:var(--err);"></div>
+    <div style="display:flex; gap:8px; justify-content:flex-end;">
+      <button id="rev-cat-cancel" class="btn">Cancel</button>
+      <button id="rev-cat-add" class="btn" style="background:var(--accent); border-color:var(--accent); color:var(--bg); font-weight:500;">Add selected</button>
+    </div>`;
+  ov.append(box);
+  document.body.append(ov);
+
+  let done = false, adding = false;
+  const closeCat = () => {
+    if (done) return; done = true; _catalogPickerOpen = false;
+    document.removeEventListener('keydown', onCatKey, true);
+    ov.remove();
+    // restore focus to whatever launched the picker (the catalog button); on the SUCCESS path that
+    // button is inside the now-closing parent modal, so re-check contains() and no-op if it's gone.
+    if (returnFocus) requestAnimationFrame(() => { if (document.contains(returnFocus)) { try { returnFocus.focus(); } catch {} } });
+  };
+  // Ignore Esc / backdrop / Cancel WHILE the add IPC is in flight, so an accidental dismiss can't
+  // race the resolved success into an unexpected auto-add+select (mirrors the parent's `committing`).
+  const onCatKey = (e) => { if (e.key === 'Escape' && !adding) { e.stopImmediatePropagation(); closeCat(); } };
+  document.addEventListener('keydown', onCatKey, true);
+  ov.addEventListener('mousedown', (e) => { if (e.target === ov && !adding) closeCat(); });
+  box.querySelector('#rev-cat-cancel').addEventListener('click', () => { if (!adding) closeCat(); });
+
+  box.querySelector('#rev-cat-add').addEventListener('click', async () => {
+    if (adding) return;
+    const slugs = Array.from(box.querySelectorAll('input[type=checkbox]:checked:not(:disabled)'))
+      .map(cb => cb.getAttribute('data-slug'));
+    if (!slugs.length) { closeCat(); return; }
+    const btn = box.querySelector('#rev-cat-add'); adding = true; btn.disabled = true; btn.textContent = 'Adding…';
+    let res; try { res = await window.docusnap.addDoctypePresets(slugs); }
+    catch (e) { res = { success: false, error: e && e.message }; }
+    if (res && res.success) { adding = false; closeCat(); if (typeof onAdded === 'function') onAdded(slugs[0]); }
+    else {
+      adding = false; btn.disabled = false; btn.textContent = 'Add selected';   // inline (a toast would sit behind this overlay)
+      const err = box.querySelector('#rev-cat-err');
+      err.textContent = 'Could not add types: ' + ((res && res.error) || 'unknown error'); err.style.display = '';
+    }
+  });
+
+  requestAnimationFrame(() => { const f = box.querySelector('input:not([disabled]), button'); if (f) f.focus(); });
 }
 
 // Minimal visible toast (no deps) — used for create-modal failures/diagnostics.
@@ -899,7 +1053,13 @@ async function _selectDoc(doc, { fieldsOnly = false } = {}) {
   corrections = {};
   anchorTaughtFields = new Set();
   pendingAnchors = {};   // discard any un-confirmed ⊕ teach when the doc changes
+  taughtFieldKeys = new Set();   // re-fetched for the new doc's scope before renderFields
   pendingFieldRules = {}; // ...and any un-confirmed field cleanup rule
+  // Straighten default FOLLOWS the session toggle; deskewByPage MUST still reset per doc ({} is
+  // page-indexed). RELIES ON this reset + renderPage() being the SOLE deskew-fetch trigger (Oracle
+  // C2 / eric): if a future change ever renders a page off that path or reuses deskewByPage across
+  // docs, the session flag would leak a stale straightened frame.
+  deskewEnabled = deskewSessionOn; deskewByPage = {}; deskewPageAngle = 0; updateDeskewBtn();
   lastTeachCtx = null; hideAnchorReadout();
   { const c = document.getElementById('teach-cta'); if (c) { c.style.display = 'none'; c.innerHTML = ''; } }  // clear prior doc's CTA until this doc's recheck answers
 
@@ -958,6 +1118,14 @@ async function _selectDoc(doc, { fieldsOnly = false } = {}) {
     full.below_threshold_count = doc.below_threshold_count;
     full.review_flag_count     = doc.review_flag_count;
   }
+  // Which of this supplier+type's fields already have a learned anchor — drives the per-field
+  // "position taught" dot. Best-effort + doc-guarded so a slow query can't dot the wrong doc.
+  taughtFieldKeys = new Set();
+  try {
+    const _tk = await window.docusnap.getTaughtFieldKeys?.({
+      supplier_name: currentDoc?.supplier_name, document_type: selectedTypeSlug });
+    if (currentDoc?.id === doc.id) for (const r of (_tk || [])) taughtFieldKeys.add(r.field_key);
+  } catch {}
   renderFields(renderedDoc);
 
   // Lightweight current-template recheck — this doc had no template match at
@@ -1020,10 +1188,21 @@ function renderPage() {
     redrawWizard();
     if (currentPage === 0) attemptLogoMatch();
   };
-  docImg.src = (previewActive && previewCache.has(currentPage))
-    ? previewCache.get(currentPage)
-    : pageImages[currentPage];
+  // DESKEW takes precedence over the raw/preview source when it's ON, this page is skewed and its
+  // straightened render is already cached (synchronous swap = no flash on revisit). The Template
+  // Wizard always draws on the RAW page (its coord math isn't deskew-aware), so deskew is suppressed
+  // while the wizard is active. A per-page angle of 0 means "show raw" (page already level).
+  const _canDeskew = deskewEnabled && !wizard.active;
+  const _dsk = _canDeskew ? deskewByPage[currentPage] : null;
+  deskewPageAngle = (_dsk && _dsk.uri) ? _dsk.angle : 0;
+  docImg.src = (_dsk && _dsk.uri)
+    ? _dsk.uri
+    : (previewActive && previewCache.has(currentPage))
+      ? previewCache.get(currentPage)
+      : pageImages[currentPage];
   indicator.textContent = `Page ${currentPage + 1} / ${pageImages.length}`;
+  if (_canDeskew && deskewByPage[currentPage] === undefined) applyDeskewToCurrentPage();  // not yet fetched
+  updateDeskewBtn();
 }
 
 document.getElementById('btn-page-prev').addEventListener('click', () => {
@@ -1032,6 +1211,150 @@ document.getElementById('btn-page-prev').addEventListener('click', () => {
 document.getElementById('btn-page-next').addEventListener('click', () => {
   if (currentPage < pageImages.length - 1) { cancelZoneMode(); currentPage++; renderPage(); if (previewActive) refreshPreviewNow(); }
 });
+
+// ── Deskew (straighten a tilted scan for accurate ⊕ box drawing) ─────────────────
+// Fetch (once, cached) the straightened render of the current page and swap it in. Guarded
+// against doc/page changes racing the async OCR, exactly like the OCR-preview refresh.
+async function applyDeskewToCurrentPage() {
+  if (!deskewEnabled || wizard.active || !pageImages || !pageImages.length) return;
+  const page = currentPage, docId = currentDoc?.id;
+  if (deskewByPage[page] !== undefined) return;   // already fetched (or in flight — set below)
+  deskewByPage[page] = null;                       // in-flight marker (renderPage treats null uri as "no swap yet")
+  let entry = { angle: 0, uri: null };
+  try {
+    const src = String(pageImages[page] || '');
+    const b64 = src.includes(',') ? src.split(',')[1] : src;
+    const res = await window.docusnap.getPageDeskew?.(b64, deskewMinAngle);
+    if (res && res.image && res.angle) entry = { angle: res.angle, uri: `data:image/png;base64,${res.image}` };
+  } catch (e) {
+    console.warn('deskew failed:', e.message);
+  }
+  if (currentDoc?.id !== docId) return;            // doc changed while OCR ran — drop (state was reset)
+  deskewByPage[page] = entry;
+  if (deskewEnabled && !wizard.active && currentPage === page) {
+    if (entry.uri) renderPage();                              // swap the now-cached straightened image in
+    else if (deskewSessionOn) { updateDeskewBtn(); }   // session auto-straighten: silently show raw (no per-doc toast on every below-floor doc)
+    else { showToast('This page already looks straight.', 'ok'); updateDeskewBtn(); }   // manual toggle: nothing to straighten
+  } else updateDeskewBtn();
+}
+
+// Toggle deskew for the current doc. On → fetch+straighten the current page; off → revert to raw.
+async function toggleDeskew() {
+  if (!pageImages || !pageImages.length) { showToast('Open a document first', 'warn'); return; }
+  if (wizard.active) { showToast('Close the Template Wizard to straighten the page', 'warn'); return; }
+  deskewEnabled = !deskewEnabled;
+  if (!deskewEnabled) deskewPageAngle = 0;
+  renderPage();
+}
+
+// Reflect the toggle's state + the applied angle in the toolbar button.
+function updateDeskewBtn() {
+  const btn = document.getElementById('btn-deskew');
+  const lbl = document.getElementById('deskew-angle');
+  if (!btn) return;
+  const on = deskewEnabled && !wizard.active;
+  btn.classList.toggle('active', on);
+  btn.innerHTML = on ? '&#8734; Straightened' : '&#8734; Straighten';
+  if (lbl) lbl.textContent = (on && deskewPageAngle) ? `${deskewPageAngle > 0 ? '+' : ''}${deskewPageAngle.toFixed(1)}°` : '';
+}
+
+// SESSION straighten (rail button `#btn-deskew-all` → `#deskew-all-bar` flyout). The flyout carries the
+// minimum-angle input; "Turn on"/"Update" applies it. deskewSessionOn + deskewMinAngle are PERSISTED
+// ONLY in applyDeskewSession/turnOffDeskewSession (the ONLY writers of review_deskew_* — Oracle C2), so
+// the per-doc `#btn-deskew` and openWizard can't silently change the session default.
+function openDeskewAllFlyout() {
+  const bar = document.getElementById('deskew-all-bar');
+  if (!bar) return;
+  const showing = bar.style.display === 'block';
+  bar.style.display = showing ? 'none' : 'block';
+  if (!showing) {   // opening → sync the input + button labels to the live state
+    const inp = document.getElementById('deskew-min-input');
+    if (inp) inp.value = String(deskewMinAngle);
+    const off   = document.getElementById('btn-deskew-all-off');
+    const apply = document.getElementById('btn-deskew-all-apply');
+    if (off)   off.style.display = deskewSessionOn ? '' : 'none';
+    if (apply) apply.textContent = deskewSessionOn ? 'Update' : 'Turn on';
+  }
+}
+function _readDeskewMinInput() {
+  const inp = document.getElementById('deskew-min-input');
+  const v = inp ? parseFloat(inp.value) : NaN;
+  return Number.isFinite(v) ? Math.max(0.2, Math.min(5.0, v)) : 1.0;   // clamp [0.2, 5.0] (server re-clamps too)
+}
+function applyDeskewSession() {
+  deskewMinAngle  = _readDeskewMinInput();
+  deskewSessionOn = true;
+  localStorage.setItem('review_deskew_min_angle', String(deskewMinAngle));
+  localStorage.setItem('review_deskew_session', 'true');
+  const bar = document.getElementById('deskew-all-bar'); if (bar) bar.style.display = 'none';
+  updateDeskewAllBtn();
+  if (wizard.active) return;   // wizard draws on the raw page — the flag applies from the next doc
+  deskewByPage = {};           // re-evaluate the current page against the new floor
+  if (pageImages && pageImages.length) { deskewEnabled = true; applyDeskewToCurrentPage(); updateDeskewBtn(); }
+}
+function turnOffDeskewSession() {
+  deskewSessionOn = false;
+  localStorage.setItem('review_deskew_session', 'false');
+  const bar = document.getElementById('deskew-all-bar'); if (bar) bar.style.display = 'none';
+  updateDeskewAllBtn();
+  if (!wizard.active && deskewEnabled) { deskewEnabled = false; deskewPageAngle = 0; renderPage(); updateDeskewBtn(); }
+}
+
+// Reflect the session toggle on the rail button (shared `.open` pressed style, like split/advanced).
+function updateDeskewAllBtn() {
+  const b = document.getElementById('btn-deskew-all');
+  if (b) b.classList.toggle('open', deskewSessionOn);
+}
+
+// Snapshot the deskew frame the operator is drawing on — taken SYNCHRONOUSLY before any OCR await,
+// so it records the frame the box was actually drawn against. `_deskewFixPending` back-transforms
+// with THIS frame's angle and drops the teach if the live frame no longer matches it (Oracle C1).
+function _captureDeskewSnap() {
+  return { angle: deskewPageAngle, docId: currentDoc?.id, page: currentPage,
+           W: docImg.naturalWidth, H: docImg.naturalHeight };
+}
+
+// Rotate a just-staged anchor's coords from the STRAIGHTENED display frame back to the RAW page
+// frame extraction reads, using the frame SNAPSHOT taken when the box was drawn (`snap`). No-op
+// when deskew was off at draw AND is off now (staged coords byte-identical to pre-deskew).
+//
+// FRAME-CONSISTENCY (Oracle C1 — the load-bearing safety): the value box + the label strips were
+// captured on the snapshot frame, so the back-transform is ONLY valid against that frame. Between
+// the draw and here there are OCR awaits; if the displayed frame changed in that window — Straighten
+// toggled, page/doc navigated, or an async src-swap left the image undecoded — the staged coords and
+// the strip-read label belong to a different frame. NEVER persist a straightened coord as raw: drop
+// the staged teach and tell the operator to redraw (fail toward NO anchor + a visible reason, never
+// a silent wrong authoritative anchor). The value point AND the label point (value − offset) are
+// transformed independently then the offset recomputed in the raw frame (a page-centre rotation
+// can't be applied to a normalised offset directly — x,y scale by W,H differently). page_zone is
+// re-derived from the raw y. w_norm/h_norm (a coarse crop zone) are left as-is (007-A deferred).
+function _deskewFixPending(fieldKey, snap) {
+  const a = pendingAnchors[fieldKey];
+  if (!a) return;
+  // Fast path — deskew never involved (drawn raw AND still raw): byte-identical, no dependency.
+  if (!(snap && snap.angle) && !deskewPageAngle) return;
+  const live = { angle: deskewPageAngle, docId: currentDoc?.id, page: currentPage,
+                 W: docImg.naturalWidth, H: docImg.naturalHeight };
+  const d = window.AnchorLabel?.deskewFinalizeAnchor?.(a, snap, live);
+  if (d && d.action === 'keep') return;
+  if (d && d.action === 'transform') {
+    a.x_norm = d.x; a.y_norm = d.y; a.page_zone = d.page_zone;
+    if (d.offset_dx != null) { a.offset_dx_norm = d.offset_dx; a.offset_dy_norm = d.offset_dy; }
+    return;
+  }
+  // 'drop' — or the helper is unavailable while deskew IS involved. Never persist a straightened
+  // coord as raw: discard the staged teach and tell the operator to redraw (Oracle C1).
+  delete pendingAnchors[fieldKey];
+  anchorTaughtFields.delete(fieldKey);
+  hideAnchorReadout();
+  try { showToast('Straighten changed while reading — please draw the box again.', 'warn'); } catch {}
+}
+
+document.getElementById('btn-deskew')?.addEventListener('click', toggleDeskew);
+document.getElementById('btn-deskew-all')?.addEventListener('click', openDeskewAllFlyout);
+document.getElementById('btn-deskew-all-apply')?.addEventListener('click', applyDeskewSession);
+document.getElementById('btn-deskew-all-off')?.addEventListener('click', turnOffDeskewSession);
+updateDeskewAllBtn();   // reflect the persisted session-straighten state on load
 
 // ── Extraction status pills ────────────────────────────────────────────────────
 function renderExtractionStatus(doc) {
@@ -1480,6 +1803,40 @@ function renderFields(doc) {
   updateTotalsVerifiedBadge();
 }
 
+// ── Per-field "position taught" dot ────────────────────────────────────────────
+// A field is "taught" when a learned anchor exists for the current supplier+doc-type scope (SAVED,
+// from get-taught-field-keys) OR one is staged this session (a ⊕ teach not yet confirmed).
+function _fieldIsTaught(key) { return taughtFieldKeys.has(key) || !!pendingAnchors[key]; }
+function _taughtDotTitle(taught) {
+  return taught
+    ? 'Taught — a learned position is saved for this field on this supplier + document type'
+    : 'Not taught for this document type yet — click ⊕ to teach it (a position taught on a different type doesn’t apply here)';
+}
+// Re-fetch the taught-field set for the CURRENT supplier + selected type and repaint every dot.
+// The dots are TYPE-scoped, so changing the document type must re-query — a field taught on the
+// OLD type must not stay green under the new one (and vice-versa). Doc-guarded against races.
+async function _refreshTaughtForType() {
+  const forDoc = currentDoc?.id;
+  taughtFieldKeys = new Set();
+  try {
+    const _tk = await window.docusnap.getTaughtFieldKeys?.({
+      supplier_name: currentDoc?.supplier_name, document_type: selectedTypeSlug });
+    if (currentDoc?.id !== forDoc) return;
+    for (const r of (_tk || [])) taughtFieldKeys.add(r.field_key);
+  } catch {}
+  if (currentDoc?.id !== forDoc) return;
+  document.querySelectorAll('#fields-scroll .taught-dot[data-key]').forEach(dot => _refreshTaughtDot(dot.dataset.key));
+}
+
+// Flip one field's dot live after a ⊕ teach stages or is C1-dropped (no full re-render).
+function _refreshTaughtDot(key) {
+  const dot = document.querySelector(`.taught-dot[data-key="${key}"]`);
+  if (!dot) return;
+  const taught = _fieldIsTaught(key);
+  dot.classList.toggle('on', taught);
+  dot.title = _taughtDotTitle(taught);
+}
+
 function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, method) {
   const low      = conf !== null && conf < 70;
   const confClass = conf === null ? '' : conf >= 70 ? 'high' : conf >= 40 ? 'mid' : 'low';
@@ -1516,7 +1873,7 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   // flag never fires for it again — the explicit complement to the automatic "established after a
   // few confirmations" fallback. Only on the identity field; see accept-issuer IPC.
   const isIssuerFlag = !!note && !isApplied
-    && (key === 'supplier_name' || key === 'customer_name')
+    && key === 'supplier_name'          // RC2 (2026-07-10): identity = supplier_name ONLY; customer_name is a recipient
     && /letterhead may read|confirm the issuer/i.test(note);
   const issuerAcceptHtml = isIssuerFlag
     ? ` <button type="button" class="issuer-accept-btn" data-key="${key}" title="Confirm this really is the correct issuer, so Scan Finder stops flagging it — even though a different name appears in the letterhead. Applies to future documents from this issuer too.">✓ Issuer is correct</button>`
@@ -1538,11 +1895,12 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   row.dataset.key = key;
   // Plain-language gloss for the identity field — "Document Issuer" reads as ambiguous to
   // non-technical / non-native users (own company vs the other party). Spell out it's the SENDER.
-  const _issuerHint = (key === 'supplier_name' || key === 'customer_name')
+  const _issuerHint = (key === 'supplier_name')   // RC2: only the issuer gets the "sender" gloss; customer_name is the recipient
     ? ' title="The company the document is FROM — the sender who issued it (e.g. the supplier on an invoice). Not your own company."'
     : '';
   row.innerHTML = `
     <div class="field-row-header">
+      <span class="taught-dot ${_fieldIsTaught(key) ? 'on' : ''}" data-key="${key}" title="${escHtml(_taughtDotTitle(_fieldIsTaught(key)))}"></span>
       <span class="field-row-label" data-key="${key}"${_issuerHint}>${escHtml(labelFor(key))}</span>
       ${confLabel}
     </div>
@@ -1568,6 +1926,9 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
     // value — only re-evaluate (and possibly re-flag) on blur, so the error never
     // flashes mid-type (e.g. an unfinished "12-05" looks invalid until complete).
     clearFieldWarning(row);
+    // A value the operator TYPED supersedes the machine's advisory note (wordness / format / issuer);
+    // dismiss it once the value actually differs from the flagged original (trimmed — Oracle C3).
+    if (input.value.trim() !== (orig || '').trim()) dismissServerNote(row, key);
     validateConfirm();
     updateTotalsVerifiedBadge();   // live-update the "mathematically verified" total badge
   });
@@ -1683,8 +2044,9 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
           const noteEl = row.querySelector('.field-note');
           if (noteEl) noteEl.remove();
           clearFieldWarning(row);
-          // Drop this field from the in-memory flag tally so Confirm gating + the
-          // auto-file eligibility reflect the accept without a reload.
+          // Drop this field from the in-memory review-reason DISPLAY tally (renderReviewReason) so it
+          // doesn't re-list on a later re-render. Does NOT change Confirm-gating or auto-file
+          // eligibility — those read the server review_flag_count, not these in-memory notes (Oracle C6).
           const ex = (currentDoc?.extractions || []).find(e => e.field_key === key);
           if (ex) ex.validation_note = null;
           validateConfirm();
@@ -1710,8 +2072,9 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
           const noteEl = row.querySelector('.field-note');
           if (noteEl) noteEl.remove();
           clearFieldWarning(row);
-          // Drop the identity-conflict flag from the in-memory tally so Confirm gating +
-          // auto-file eligibility reflect the accept without a reload.
+          // Drop the identity-conflict flag from the in-memory review-reason DISPLAY tally so it
+          // doesn't re-list on a later re-render. Does NOT change Confirm-gating or auto-file
+          // eligibility — those read the server review_flag_count, not these in-memory notes (Oracle C6).
           const ex = (currentDoc?.extractions || []).find(e => e.field_key === key);
           if (ex) ex.validation_note = null;
           validateConfirm();
@@ -1772,7 +2135,11 @@ function validateConfirm() {
   // Required = the assigned date/ref roles PLUS any CUSTOM field flagged Required in the
   // Type Manager (fields.required) — minus the Document-Issuer identity, which is warn-only
   // (handled below). Only fields actually present on screen are gated.
-  const ISSUER_KEYS = ['supplier_name', 'customer_name'];
+  // Identity = supplier_name ONLY (RC2 unlink, 2026-07-10). customer_name is now an ordinary optional
+  // RECIPIENT field — do NOT re-add it here or the recipient re-couples to the issuer (it would mirror
+  // the issuer + teach position-only, the exact bug RC2 fixed). Pinned by test_focus_repair.js's sibling
+  // structural pins / the RC2 tests.
+  const ISSUER_KEYS = ['supplier_name'];
   const requiredKeys = new Set([dateKey, refKey]);
   for (const f of (dt?.fields || [])) {
     if (f.required && f.enabled !== 0 && !ISSUER_KEYS.includes(f.key)) requiredKeys.add(f.key);
@@ -1827,7 +2194,7 @@ function validateConfirm() {
 // The identity/Document-Issuer field key (supplier_name | customer_name) on screen
 // when it is BLANK; null when present-and-filled or the type has no issuer field.
 function issuerBlankKey() {
-  for (const key of ['supplier_name', 'customer_name']) {
+  for (const key of ['supplier_name']) {   // RC2: identity = supplier_name only
     const input = document.querySelector(`.field-input[data-key="${key}"]`);
     if (input) return input.value.trim() ? null : key;
   }
@@ -1847,6 +2214,7 @@ function markRequiredMissing(missingKeys) {
 // ── Zone selection mode ───────────────────────────────────────────────────────
 function enterZoneMode(key, label) {
   cancelZoneMode();
+  hideAnchorReadout();   // starting a new teach clears any previous field's readout
   activeField = key;
   document.querySelectorAll('.pick-btn').forEach(b => b.classList.remove('picking'));
   document.querySelectorAll('.field-input').forEach(i => i.classList.remove('zone-active'));
@@ -1964,6 +2332,7 @@ async function runZoneOcr(rect, fieldKey) {
   ocrOverlay.classList.add('visible');
 
   try {
+    const deskewSnap = _captureDeskewSnap();   // the frame the box is drawn on (Oracle C1 — checked at commit)
     const scaleX = docImg.naturalWidth  / docImg.offsetWidth;
     const scaleY = docImg.naturalHeight / docImg.offsetHeight;
     const imgW   = docImg.offsetWidth;
@@ -1997,6 +2366,31 @@ async function runZoneOcr(rect, fieldKey) {
         input.classList.add('corrected');
         corrections[fieldKey] = { original_value: orig, corrected_value: text };
         validateConfirm();
+        // The operator supplied this value by DRAWING — clear the stale extraction advisory note,
+        // then re-validate the NEW value exactly as the blur handler does (a bad structured value
+        // still re-flags). Gated on an actual change; before the focus block so the DOM is settled.
+        // NOT a synthetic 'input' event (that would pop the type-ahead datalist — reggie). Oracle C5.
+        const _row = input.closest('.field-row');
+        if (_row && input.value.trim() !== (orig || '').trim()) {
+          dismissServerNote(_row, fieldKey);
+          const _msg = fieldValidationError(fieldKey, input.value);
+          if (_msg) setFieldWarning(_row, input, _msg); else clearFieldWarning(_row, input);
+        }
+        // FOCUS (eric, 2026-07-10): the hidden Python OCR spawn during the await above
+        // desyncs the render widget's keyboard focus (page-focus false while the window
+        // still claims focus), so the user's next click into this field gets NO caret and
+        // the click's own repair races the transition and loses. Cure the desync HERE,
+        // deterministically: focus the input SYNCHRONOUSLY (so it's the activeElement when
+        // the main-side page-focus edge runs → the caret lands on the input, not <body>),
+        // drive that edge proactively (blurWebView→wc.focus; no OS activation, <select>
+        // untouched), then re-assert the caret past the cross-process transition with the
+        // double-rAF belt. Additive — the pointerdown repair stays as the fallback.
+        try {
+          input.focus();
+          window.docusnap.markFocusSuspect?.();   // arm suspect so the proactive edge does the real blurWebView (the pageHasFocus OR-fallback was removed — focusRepair.js)
+          window.docusnap.ensureWindowFocus?.();
+          window.repairModalInputFocus?.(input);
+        } catch {}
       }
       // TALL-BOX teach method: the drawn box read 2+ lines, so this value WRAPS — auto-stage a
       // multiline_continue rule (silent) for free-text/name-like fields, so future wrapping
@@ -2005,12 +2399,35 @@ async function runZoneOcr(rect, fieldKey) {
         _stageMultilineRule(fieldKey, { silent: true });
         try { showToast('Looks like this value wraps onto the next line — wrapping enabled, saved on Confirm.', 'ok'); } catch {}
       }
-      lastTeachCtx = { fieldKey, rect, imgW, imgH, scaleX, scaleY, value: text };
-      const detected = await captureAnchorContext(rect, fieldKey, text, imgW, imgH, scaleX, scaleY);
+      lastTeachCtx = { fieldKey, rect, imgW, imgH, scaleX, scaleY, value: text, deskewSnap };
+      const detected = await captureAnchorContext(rect, fieldKey, text, imgW, imgH, scaleX, scaleY, null, deskewSnap);
       if (detected) {
         anchorTaughtFields.add(fieldKey);
-        showAnchorReadout(detected, text);   // show which anchor was picked + the Left/Above toggle
+        // The Document Issuer (company/supplier name) is usually a top-corner logo/letterhead
+        // with NO caption beside it, so the auto-label search only reads garbled logo/noise to its
+        // left. Don't keep that as a LOCATED label (it's meaningless and could mis-locate on a
+        // future doc) — downgrade to a clean position-only anchor, and skip the garbled readout.
+        // The value correction still feeds learning; the supplier is identified by its logo /
+        // keywords too. Reusable for every supplier/layout (not a one-document rule).
+        if (fieldKey === 'supplier_name') {   // RC2: only the ISSUER is a logo/position-only field; customer_name teaches like a normal captioned field
+          if (pendingAnchors[fieldKey]) {
+            // POSITION-ONLY means an EMPTY label (Oracle-signed, 2026-07-10) — staging the
+            // field's DISPLAY NAME ("Document Issuer") here manufactured a PHANTOM label:
+            // the page never prints it, so the anchor engine treated the read as a
+            // teaching artifact and silently dropped it on every doc — the user's issuer
+            // teach never fired ("SO #" kept winning). '' is the real positional sentinel
+            // (saveAnchor precedent); offsets are label-relative, so clear them too.
+            pendingAnchors[fieldKey].anchor_label   = '';
+            pendingAnchors[fieldKey].label_detected = false;
+            pendingAnchors[fieldKey].offset_dx_norm = null;
+            pendingAnchors[fieldKey].offset_dy_norm = null;
+          }
+          try { showToast('Captured the ' + (labelFor(fieldKey) || 'company name') + ' position from this layout.', 'ok'); } catch {}
+        } else {
+          showAnchorReadout(detected, text);   // show which anchor was picked + the Left/Above toggle
+        }
       }
+      _refreshTaughtDot(fieldKey);   // reflect the staged (or C1-dropped) teach on the field's dot
     }
   } catch (err) {
     console.error('Zone OCR error:', err);
@@ -2225,6 +2642,9 @@ function labelOffsetFromBox(box, originDX, originDY, xNorm, yNorm, imgW, imgH) {
 // uses the exact same label-quality logic — they can no longer diverge. Thin delegates keep the
 // existing call sites unchanged.
 function nearestLeftCluster(words) { return window.AnchorLabel.nearestLeftCluster(words); }
+function nearestAboveRow(words) { return window.AnchorLabel.nearestAboveRow(words); }
+function nearestRowTo(words, centreY) { return window.AnchorLabel.nearestRowTo(words, centreY); }
+function pickLabelCandidate(leftLabel, aboveLabel, fieldCaptions) { return window.AnchorLabel.pickLabelCandidate(leftLabel, aboveLabel, fieldCaptions); }
 
 // The located label's box as page-normalised [x,y,w,h] (top-left), for the
 // "show the detected anchor" overlay. Same crop-origin math as labelOffsetFromBox.
@@ -2236,7 +2656,7 @@ function labelNormBox(box, originDX, originDY, imgW, imgH) {
           box[2] / nW, box[3] / nH];
 }
 
-async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, scaleY, forceDir = null) {
+async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, scaleY, forceDir = null, deskewSnap = null) {
   const xNorm    = (rect.x + rect.w / 2) / imgW;
   const yNorm    = (rect.y + rect.h / 2) / imgH;
   const pageZone = yNorm < 0.33 ? 'top' : yNorm < 0.66 ? 'middle' : 'bottom';
@@ -2293,41 +2713,55 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
   // guarded — a failure here (bad crop, OCR error) must NOT prevent the guaranteed
   // fallback save below, otherwise nothing gets learned at all.
   // forceDir (from the readout's Left/Above toggle) pins ONE direction: 'right' = label
-  // to the left only, 'below' = label above only; null = auto (left then above).
+  // to the left only, 'below' = label above only; null = auto (D1: capture BOTH, then pick).
+  // D1 (2026-07-11): capture the left AND above captions, THEN pick via pickLabelCandidate — no
+  // left-first EARLY RETURN (which let a garbled left strip 'esha, i' beat a clean 'Customer'
+  // above). The field-scoped caption bank = this field's display label (NOT a global bank, which
+  // would let a neighbouring row's caption outscore the true left one — Oracle).
+  const fieldCaptions = [];
+  try { const _fl = (typeof labelFor === 'function') ? labelFor(fieldKey) : null; if (_fl) fieldCaptions.push(_fl); } catch {}
+  let leftCand = null, aboveCand = null;
   if (forceDir !== 'below') try {
     const leftPad    = rect.x;   // full span from the page's left edge to the value box
+    // VERTICAL EXPANSION (oscar+007, 2026-07-10): the strip was exactly rect.h tall at the
+    // VALUE's y, so a bolder/slightly-higher caption ("SO #") had its ascenders DECAPITATED
+    // → OCR garble ('sok') → no label → position-only anchor. Centre-expand to 1.8× the box
+    // height (0.4h above + below, page-clamped); nearestRowTo below then keeps only the row
+    // nearest the value's centre, so a neighbouring row can't hijack the column pick.
+    const lVPad      = Math.round(rect.h * 0.4);
+    const lTop       = Math.max(0, rect.y - lVPad);
+    const lH         = Math.min(imgH - lTop, rect.h + 2 * lVPad);
     const leftCanvas = document.createElement('canvas');
     leftCanvas.width  = Math.round(leftPad * scaleX);
-    leftCanvas.height = Math.round(rect.h * scaleY);
+    leftCanvas.height = Math.round(lH * scaleY);
     if (leftCanvas.width > 10 && leftCanvas.height > 10) {
       const lCtx = leftCanvas.getContext('2d');
       lCtx.drawImage(
         docImg,
-        Math.round((rect.x - leftPad) * scaleX), Math.round(rect.y * scaleY),
+        Math.round((rect.x - leftPad) * scaleX), Math.round(lTop * scaleY),
         leftCanvas.width, leftCanvas.height,
         0, 0, leftCanvas.width, leftCanvas.height
       );
       const leftB64   = leftCanvas.toDataURL('image/png').split(',')[1];
       const leftRes   = await window.docusnap.ocrRegionBoxes?.(leftB64);
-      // Keep only the column nearest the value, not the whole row to the left — a wide
-      // key/value row OCRs as "label1 …gap… label2" and the far-left caption must not
-      // be glued onto the real adjacent one. Falls back to the full strip when word
+      // Row nearest the VALUE's centre first (crop px space), THEN the column nearest the
+      // value — a wide key/value row OCRs as "label1 …gap… label2" and the far-left caption
+      // must not be glued onto the real adjacent one. Falls back to the full strip when word
       // boxes aren't available (legacy region.py output).
-      const cluster   = nearestLeftCluster(leftRes && leftRes.words);
+      const lRowWords = nearestRowTo(leftRes && leftRes.words,
+                                     (rect.y + rect.h / 2 - lTop) * scaleY);
+      const cluster   = nearestLeftCluster(lRowWords || (leftRes && leftRes.words));
       const leftText  = (cluster ? cluster.text
                           : ((leftRes && leftRes.text) || (await window.docusnap.ocrRegion(leftB64)) || '')).trim();
       const leftBox   = cluster ? cluster.box : (leftRes && leftRes.box);
       const leftLabel = sanitizeAnchorLabel(extractLabel(leftText) || '');
       if (leftLabel) {
         // Drift-invariant offset: the located label's page position → value centre.
-        // Origin of the left crop in DISPLAY px is (rect.x - leftPad, rect.y).
-        const off = labelOffsetFromBox(leftBox, rect.x - leftPad, rect.y, xNorm, yNorm, imgW, imgH);
-        // label_detected: this caption was OCR'd from the PAGE (not the field-name
-        // fallback), so the backend must NOT drop it even if it equals the field key
-        // (a "Make" field whose on-page label is literally "Make").
-        pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: leftLabel, direction: 'right', ...off, label_detected: true };
-        return { anchor_label: leftLabel, direction: 'right',
-                 normBox: labelNormBox(leftBox, rect.x - leftPad, rect.y, imgW, imgH) };
+        // Origin of the left crop in DISPLAY px is (rect.x - leftPad, lTop). D1: STORE the
+        // candidate (don't stage/return yet) so the above strip is also read and compared.
+        const off = labelOffsetFromBox(leftBox, rect.x - leftPad, lTop, xNorm, yNorm, imgW, imgH);
+        leftCand = { label: leftLabel, direction: 'right', off,
+                     normBox: labelNormBox(leftBox, rect.x - leftPad, lTop, imgW, imgH) };
       }
     }
   } catch (err) {
@@ -2335,11 +2769,20 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
   }
 
   if (forceDir !== 'right') try {
-    // Read ONLY the single line directly above the value, not a fixed 60px band that
-    // bled into ~2 rows (capturing the line above AND the one above that → garbled).
-    // Tie the strip height to the value box's own line height (rect.h), floored so a
-    // very thin draw still reads.
-    const abovePad    = Math.min(rect.y, Math.max(rect.h, 20));
+    // The strip must be TALL ENOUGH TO CONTAIN the caption line above: line spacing routinely
+    // exceeds the value box's own height (a spaced address block, a section heading), so the
+    // old one-line strip (max(rect.h,20)) caught only the caption's bottom pixel-tips + its
+    // underline — a sliver OCR hallucinated into junk ("Site / Customer" → "eee F WS CwE ewe",
+    // 2026-07-10). ~2.5 line-heights reaches a caption a full blank half-line away. The old
+    // fear of a tall band — gluing the row ABOVE the caption onto it — is handled downstream:
+    // nearestAboveRow keeps only the BOTTOM visual row of words (nearest the value).
+    // 0.1×h BOTTOM STANDOFF (oscar, 2026-07-10): the band ends just ABOVE the drawn box, so a
+    // draw whose top edge clips the value's ascenders can't leak ascender-tip junk into the
+    // band's bottom rows — nearestAboveRow would prefer exactly that lowest "row" over the real
+    // caption. Mirrors the teach wizard's standoff.
+    const standoff    = Math.max(1, Math.round(rect.h * 0.1));
+    const abovePad    = Math.max(0, Math.min(rect.y - standoff, Math.max(Math.round(rect.h * 2.5), 34)));
+    const aboveTop    = rect.y - standoff - abovePad;   // crop origin (display px) — used below for offsets
     const aboveCanvas = document.createElement('canvas');
     aboveCanvas.width  = Math.round(rect.w * scaleX);
     aboveCanvas.height = Math.round(abovePad * scaleY);
@@ -2347,37 +2790,68 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
       const aCtx = aboveCanvas.getContext('2d');
       aCtx.drawImage(
         docImg,
-        Math.round(rect.x * scaleX), Math.round((rect.y - abovePad) * scaleY),
+        Math.round(rect.x * scaleX), Math.round(aboveTop * scaleY),
         aboveCanvas.width, aboveCanvas.height,
         0, 0, aboveCanvas.width, aboveCanvas.height
       );
       const aboveB64   = aboveCanvas.toDataURL('image/png').split(',')[1];
       const aboveRes   = await window.docusnap.ocrRegionBoxes?.(aboveB64);
-      const aboveText  = ((aboveRes && aboveRes.text) || (await window.docusnap.ocrRegion(aboveB64)) || '').trim();
+      // Keep only the BOTTOM row of words — the caption nearest the value — so the taller
+      // band can't glue the row above the caption onto it. Falls back to the full strip
+      // text when word boxes aren't available (legacy region.py output).
+      const aboveRow   = nearestAboveRow(aboveRes && aboveRes.words);
+      const aboveText  = (aboveRow ? aboveRow.text
+                          : ((aboveRes && aboveRes.text) || (await window.docusnap.ocrRegion(aboveB64)) || '')).trim();
+      const aboveBox   = aboveRow ? aboveRow.box : (aboveRes && aboveRes.box);
       // "A value ABOVE is not a label": sanitizeAnchorLabel strips code/serial/number
       // tokens (a MAC, an IP, a reference, a date), so the above-strip yields a label
       // ONLY when it's a real caption — never the value sitting in the row above. This
       // stops the snap latching onto the MAC above instead of the label to the left.
       const aboveLabel = sanitizeAnchorLabel(extractLabel(aboveText) || '');
       if (aboveLabel) {
-        // Origin of the above crop in DISPLAY px is (rect.x, rect.y - abovePad).
-        const off = labelOffsetFromBox(aboveRes && aboveRes.box, rect.x, rect.y - abovePad, xNorm, yNorm, imgW, imgH);
-        pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: aboveLabel, direction: 'below', ...off, label_detected: true };
-        return { anchor_label: aboveLabel, direction: 'below',
-                 normBox: labelNormBox(aboveRes && aboveRes.box, rect.x, rect.y - abovePad, imgW, imgH) };
+        // Origin of the above crop in DISPLAY px is (rect.x, aboveTop). D1: STORE the candidate.
+        const off = labelOffsetFromBox(aboveBox, rect.x, aboveTop, xNorm, yNorm, imgW, imgH);
+        aboveCand = { label: aboveLabel, direction: 'below', off,
+                      normBox: labelNormBox(aboveBox, rect.x, aboveTop, imgW, imgH) };
       }
     }
   } catch (err) {
     console.warn('Anchor capture: above-label lookup failed (non-critical):', err);
   }
 
+  // D1 — PICK between the left and above captions. forceDir pins one side; else pickLabelCandidate
+  // scores each (2 = matches this field's caption · 1 = clean · 0 = suspicious/empty), higher wins,
+  // a TIE goes to LEFT (status quo), BOTH 0 → position-only (fall through to the empty-label save
+  // below). This is where a clean 'Customer' above beats a garbled 'esha, i' left (the incident).
+  let chosen = null;
+  if (forceDir === 'right')      chosen = leftCand;
+  else if (forceDir === 'below') chosen = aboveCand;
+  else {
+    const pick = pickLabelCandidate(leftCand ? leftCand.label : '',
+                                    aboveCand ? aboveCand.label : '', fieldCaptions);
+    chosen = pick.direction === 'above' ? aboveCand
+           : pick.direction === 'left'  ? leftCand : null;
+  }
+  if (chosen) {
+    // label_detected: this caption was OCR'd from the PAGE (not the field-name fallback), so the
+    // backend must NOT drop it even if it equals the field key ("Make" field labelled "Make").
+    pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: chosen.label,
+                                 direction: chosen.direction, ...chosen.off, label_detected: true };
+    _deskewFixPending(fieldKey, deskewSnap);   // straighten→raw on the DRAW frame; drops the teach if the frame changed
+    if (!pendingAnchors[fieldKey]) return null;   // frame changed mid-read → teach dropped, nothing to surface
+    return { anchor_label: chosen.label, direction: chosen.direction, normBox: chosen.normBox };
+  }
+
   // Guaranteed fallback — always STAGE SOMETHING so the position is learned on
   // commit even when no nearby label text could be read. The actual persistence
   // (and its admin-role / DB-error handling) happens in confirmCurrentDoc, so an
-  // un-confirmed teach leaves no trace.
-  const fallbackLabel = labelFor(fieldKey) || fieldKey.replace(/_/g, ' ');
-  pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: fallbackLabel, direction: 'right' };
-  return { anchor_label: fallbackLabel, direction: 'right', normBox: null, fallback: true };
+  // un-confirmed teach leaves no trace. POSITION-ONLY = EMPTY label (Oracle-signed
+  // 2026-07-10): the field's display name is never printed on the page, so staging
+  // it here manufactured a phantom label the anchor engine rightly distrusts.
+  pendingAnchors[fieldKey] = { ...anchorBase, anchor_label: '', direction: 'right' };
+  _deskewFixPending(fieldKey, deskewSnap);    // straighten→raw on the DRAW frame (no-op when deskew is off)
+  if (!pendingAnchors[fieldKey]) return null;   // frame changed mid-read → teach dropped
+  return { anchor_label: '', direction: 'right', normBox: null, fallback: true };
 }
 
 // Surface WHICH anchor the ⊕ teach auto-detected (its label + where it sits) and the
@@ -2391,6 +2865,12 @@ function hideAnchorReadout() {
   if (bar) { bar.style.display = 'none'; bar.innerHTML = ''; }
   if (_anchorReadoutTimer) { clearTimeout(_anchorReadoutTimer); _anchorReadoutTimer = null; }
 }
+// The readout is transient — dismiss it the moment the operator moves on: a click into ANY value
+// field (its own editable-label / direction buttons aren't .field-inputs, so they keep it open).
+// Switching documents already clears it via renderPage → hideAnchorReadout.
+document.addEventListener('pointerdown', (e) => {
+  if (e.target?.closest?.('.field-input')) hideAnchorReadout();
+}, true);
 function showAnchorReadout(detected, value) {
   try { if (detected.normBox) drawTraceBbox(detected.normBox, 'anchor', 'manual'); } catch {}
   const bar = document.getElementById('anchor-readout');
@@ -2400,19 +2880,34 @@ function showAnchorReadout(detected, value) {
   const isAbove = detected.direction === 'below';
   const suspicious = !detected.fallback && labelLooksSuspicious(detected.anchor_label);
   const warn = detected.fallback || suspicious;
+  // Garble verdict → never keep the misread caption staged: fall back to a POSITION-ONLY anchor
+  // (empty label + registration/position relocation), the same safe fallback used for a cleared
+  // label. The garble stays VISIBLE in the editable input so the operator can type the real
+  // caption (the change handler re-stages a good one). So Confirm-without-fixing saves position-
+  // only, never gibberish that would never re-locate. (reggie/Oracle-signed fallback, 2026-07-10)
+  if (suspicious) {
+    const _sfk = lastTeachCtx?.fieldKey;
+    if (_sfk && pendingAnchors[_sfk]) {
+      pendingAnchors[_sfk].anchor_label   = '';
+      pendingAnchors[_sfk].label_detected = false;
+    }
+  }
   let msg;
   if (detected.fallback) {
-    msg = `<span class="ar-msg">&#9888; No label found — anchored by position. Read: "${val}"</span>`;
+    msg = `<span class="ar-msg">&#9888; No label found — anchored by position. Read: <span class="ar-val">${val}</span></span>`;
   } else {
     // The label is EDITABLE — an auto-detect off a noisy scan can be misread ("verial No."),
     // and a wrong label never re-locates. The operator can correct it here before Confirm.
+    // GARBLE is never displayed (product rule: never ask the user to vouch for junk they
+    // can't find on the page) — the input starts EMPTY (= position-only, already staged
+    // below) and the message says so plainly; typing the printed caption upgrades it.
     const lead = suspicious
-      ? '&#9888; This label looks misread — check it matches the caption on the page:'
+      ? '&#9888; Couldn&#39;t read the caption beside this value &mdash; anchored by position. Type it to anchor on text:'
       : `&#10003; Anchor (label ${isAbove ? 'above' : 'to the left'}):`;
     msg = `<span class="ar-msg">${lead} `
       + `<input class="ar-label-edit" spellcheck="false" title="The caption this field sits beside — edit if it was misread" `
       + `style="font:inherit;font-weight:600;padding:1px 5px;min-width:90px;border:1px solid var(--border2);border-radius:5px;background:var(--surface)"> `
-      + `&rarr; "${val}"</span>`;
+      + `&rarr; <span class="ar-val">${val}</span></span>`;
   }
   bar.className = 'anchor-readout' + (warn ? ' warn' : '');
   bar.innerHTML = msg
@@ -2423,14 +2918,20 @@ function showAnchorReadout(detected, value) {
     + `<span class="ar-x" title="Dismiss">&times;</span>`;
   bar.style.display = '';
   // Populate + wire the editable label (value set via JS to avoid attribute-escaping issues).
+  // A SUSPICIOUS (garbled) read is never shown: the input starts EMPTY — a valid state that
+  // matches the position-only anchor staged above, not an error to fix — with a placeholder
+  // inviting the real caption. Typing one re-stages it via the change handler below.
   const lblInput = bar.querySelector('.ar-label-edit');
   if (lblInput) {
-    lblInput.value = detected.anchor_label || '';
+    lblInput.value = suspicious ? '' : (detected.anchor_label || '');
+    if (suspicious) lblInput.placeholder = 'caption as printed (optional)';
     lblInput.addEventListener('change', () => {
       const fk = lastTeachCtx?.fieldKey;
       const cleaned = sanitizeAnchorLabel(lblInput.value);
       if (fk && pendingAnchors[fk]) {
-        pendingAnchors[fk].anchor_label = cleaned || (labelFor(fk) || fk.replace(/_/g, ' '));
+        // Cleared/garbage caption → POSITION-ONLY ('' — never the field's display name,
+        // which the page doesn't print; Oracle-signed 2026-07-10).
+        pendingAnchors[fk].anchor_label = cleaned || '';
         pendingAnchors[fk].label_detected = !!cleaned;   // a typed caption is a real label
       }
       lblInput.classList.toggle('bad', labelLooksSuspicious(cleaned));
@@ -2449,7 +2950,7 @@ async function reDetectAnchor(dir) {
   if (!lastTeachCtx) return;
   const c = lastTeachCtx;
   try {
-    const detected = await captureAnchorContext(c.rect, c.fieldKey, c.value, c.imgW, c.imgH, c.scaleX, c.scaleY, dir);
+    const detected = await captureAnchorContext(c.rect, c.fieldKey, c.value, c.imgW, c.imgH, c.scaleX, c.scaleY, dir, c?.deskewSnap);
     if (detected) { anchorTaughtFields.add(c.fieldKey); showAnchorReadout(detected, c.value); }
   } catch (err) { console.warn('Anchor re-detect failed:', err); }
 }
@@ -2515,7 +3016,10 @@ async function runAnchorDraw(aRect, fieldKey) {
         direction, ...off,
         label_detected: !!label,   // a hand-drawn, OCR'd caption is a real page label
       };
+      _deskewFixPending(fieldKey, c?.deskewSnap);   // straighten→raw on the DRAW frame (no-op when deskew is off)
+      if (!pendingAnchors[fieldKey]) { _refreshTaughtDot(fieldKey); return; }   // frame changed mid-read → teach dropped
       anchorTaughtFields.add(fieldKey);
+      _refreshTaughtDot(fieldKey);
       // Overlay the drawn anchor box + show the readout with the caption for review/edit.
       showAnchorReadout({
         anchor_label: pendingAnchors[fieldKey].anchor_label, direction, fallback: false,
@@ -2577,7 +3081,7 @@ async function confirmCurrentDoc({ bulk = false, expectId = null } = {}) {
   // and can't learn this sender. Warn-and-allow — a deliberate confirm in single mode;
   // in bulk it's "not cleanly ready", so the doc is left in the queue for review.
   {
-    const issuerKey = ['supplier_name', 'customer_name'].find(k => k in allValues);
+    const issuerKey = ['supplier_name'].find(k => k in allValues);   // RC2: identity = supplier_name only
     if (issuerKey && !(allValues[issuerKey] || '').trim()) {
       if (bulk) return { skipped: true, reason: 'issuer blank' };
       if (!confirm('Document Issuer is blank.\n\nThis document will be filed under "Unknown Company" and '
@@ -2588,13 +3092,21 @@ async function confirmCurrentDoc({ bulk = false, expectId = null } = {}) {
   }
 
   if (!bulk) {
+    // Fingerprint the logo in the BACKGROUND: capture the page image NOW (docImg is still the
+    // confirmed doc), then fire the save fire-and-forget — the logo-hash Python spawn was a
+    // blocking slice of the confirm pause and filing doesn't depend on it (Oracle B+). The old
+    // docImg.src='' + 150ms "release the preview handle" ritual was vestigial (the preview is an
+    // in-memory data URL, not a file handle; the source delete is deferred + retry-guarded), so
+    // it's removed — advanceAfterAction swaps the preview to the next doc a moment later.
     const supplierForLogo = allValues.supplier_name || currentDoc?.supplier_name;
-    if (supplierForLogo) await saveLogoOnConfirm(supplierForLogo);
-    docImg.src = '';
-    docImgWrap.style.display = 'none';
-    selCanvas.width  = 0;
-    selCanvas.height = 0;
-    await new Promise(r => setTimeout(r, 150));
+    if (supplierForLogo) {
+      // Capture the RAW page image (not the possibly-straightened/enhanced docImg) so a
+      // "Straighten + Reprocess" or OCR-Preview session can't write a drifted fingerprint that
+      // poisons this supplier's identity for future raw imports (Oracle C1).
+      const logoB64 = getRawPageBase64(currentPage);
+      saveLogoOnConfirm(supplierForLogo, logoB64).catch(() => {});
+    }
+    selCanvas.width = 0; selCanvas.height = 0;   // clear any ⊕ selection overlay for the next doc
   }
 
   const result = await window.docusnap.confirmReview({
@@ -2690,6 +3202,16 @@ document.getElementById('btn-confirm').addEventListener('click', async () => {
   if (r.error) { showToast(r.error, 'err'); return; }
   updateTabCounts();
   advanceAfterAction(idx, supplier);
+  // FOCUS (eric, 2026-07-10): Confirm & File can desync the RenderWidget's keyboard
+  // focus (post-confirm teardown/rebuild of the sidebar + fields pane, snappier since
+  // the detached-learning change) WITHOUT a native dialog — and the repair's
+  // blurWebView transition only runs when the window is marked focus-SUSPECT (the
+  // renderer's document.hasFocus() reports stale-TRUE in exactly this broken state,
+  // so the pageHasFocus fallback never fires). Arm the flag after every single-doc
+  // confirm: it sits inert until the operator's next TEXT-control press, then runs
+  // the proven widget-level repair (never an OS activation; <select> excluded by the
+  // preload, so dropdowns are untouched — the two pinned prior regressions hold).
+  try { window.docusnap.markFocusSuspect?.(); } catch {}
   window.docusnap.notifyReviewComplete();
 });
 
@@ -2876,7 +3398,22 @@ async function autoCommitFullConfidence() {
       deferredQueue = await window.docusnap.getDeferredQueue();
       updateTabCounts();
       renderQueueList();
-      showToast(`Auto-filed ${filed} document${filed > 1 ? 's' : ''} — no review needed.`, 'ok');
+      showToast(`✓ Auto-filed ${filed} document${filed > 1 ? 's' : ''} — no review needed.`, 'ok');
+      // Skip straight to the next document that still needs a look (the top of the queue), so the
+      // operator isn't left on an auto-filed doc that's no longer in the list.
+      if (queue.length) {
+        // Some docs still need a look — jump to the top of the remaining queue if the doc
+        // we were on just got filed (otherwise stay put).
+        if (!currentDoc || !queue.some(d => d.id === currentDoc.id)) selectDoc(queue[0]);
+      } else if (currentDoc && !queue.some(d => d.id === currentDoc.id)) {
+        // Every queued doc auto-filed — the open document is now filed and gone from the
+        // queue. Close it so the viewer shows the "All documents reviewed ✓" placeholder
+        // instead of leaving the last filed doc on screen. (renderQueueList only clears the
+        // panel when NO doc is open, to preserve intentional "view a filed doc" navigation,
+        // so we must null currentDoc + clear here.)
+        currentDoc = null;
+        clearDocPanel();
+      }
     }
   } catch (e) { console.warn('auto-commit 100% failed:', e.message); }
 }
@@ -3136,18 +3673,20 @@ function _pickNextDoc(order, at, preferSupplier) {
 }
 
 // ── Logo fingerprinting ───────────────────────────────────────────────────────
-async function getPageBase64() {
-  const canvas = document.createElement('canvas');
-  canvas.width  = docImg.naturalWidth;
-  canvas.height = docImg.naturalHeight;
-  canvas.getContext('2d').drawImage(docImg, 0, 0);
-  return canvas.toDataURL('image/png').split(',')[1];
+// The logo image is ALWAYS the RAW page render (pageImages), never the on-screen docImg — a
+// deskewed (straighten) or enhanced (preview) docImg has a drifted phash that fails to match a
+// known supplier and, if fingerprinted on confirm, poisons supplier identity for every future raw
+// import (Oracle C1). Delegated to the pure shared/logoSource selector so it stays testable. The
+// old docImg→canvas capture (getPageBase64) was removed so the leak cannot be re-introduced.
+function getRawPageBase64(page = currentPage) {
+  return LogoSource.rawPageBase64(pageImages, page);
 }
 
 async function attemptLogoMatch() {
   if (!docImg.complete || !docImg.naturalWidth) return;
   try {
-    const b64   = await getPageBase64();
+    const b64   = getRawPageBase64(currentPage);
+    if (!b64) return;
     const match = await window.docusnap.matchLogoHash(b64);
     if (match && match.confidence >= 60) {
       const supplierInput = document.querySelector('.field-input[data-key="supplier_name"]');
@@ -3169,10 +3708,18 @@ async function attemptLogoMatch() {
   }
 }
 
-async function saveLogoOnConfirm(supplierName) {
-  if (!supplierName || !docImg.complete || !docImg.naturalWidth) return;
+// b64: an optional page image captured by the caller. The OPTIMISTIC confirm path
+// advances (swapping docImg) before this runs in the background, so it must pass the
+// snapshot image — reading the live docImg here would fingerprint the NEXT doc against
+// the previous supplier (eric R1). With no b64 we fall back to the live docImg (the
+// legacy bulk/confirmCurrentDoc callers, which run before any advance).
+async function saveLogoOnConfirm(supplierName, b64 = null) {
+  if (!supplierName) return;
   try {
-    const b64    = await getPageBase64();
+    if (!b64) {
+      b64 = getRawPageBase64(currentPage);   // RAW page — never the deskewed/enhanced docImg (Oracle C1)
+      if (!b64) return;
+    }
     const hashes = await window.docusnap.extractLogoHash(b64);
     if (hashes && hashes.phash) {
       await window.docusnap.saveLogoFingerprint({
@@ -3287,7 +3834,11 @@ function makeLhDraggable() {
   window.addEventListener('mouseup', () => { dragging = false; });
 }
 
-document.getElementById('btn-view-learning').addEventListener('click', async () => {
+document.getElementById('btn-view-learning').addEventListener('click', async (ev) => {
+  // Blur the trigger BEFORE hiding its container: this button lives INSIDE #advanced-bar, so
+  // hiding the bar removes document.activeElement with no handoff, which drops Blink's page-focus
+  // flag (the Learning-History dead-caret source). A clean blur first keeps the flag intact.
+  try { ev.currentTarget.blur(); } catch {}
   document.getElementById('advanced-bar').style.display = 'none';
   document.getElementById('lh-overlay').style.display = 'block';
   makeLhDraggable();
@@ -3326,8 +3877,44 @@ async function loadLearningHistoryFor(key) {
     _lhData = await window.docusnap.getFieldValueHistory(
       { supplier_name: supplier, document_type: slug, field_key: key }) || [];
   } catch { _lhData = []; }
+  _lhAnchorPending = null;
+  try {
+    _lhAnchors = await window.docusnap.getAnchorsForScope(
+      { supplier_name: supplier, document_type: slug, field_key: key }) || [];
+  } catch { _lhAnchors = []; }
   renderLearningHistory();
+  renderLearningAnchors();
   highlightActiveField(key);
+}
+
+// The learned-anchors panel: WHERE this field is read from, so a mis-drawn anchor can be spotted +
+// deleted (delete + re-teach is the clean fix). Read-only display + per-anchor delete-confirm.
+let _lhAnchors = [];
+let _lhAnchorPending = null;
+function renderLearningAnchors() {
+  const el = document.getElementById('lh-anchors');
+  if (!el) return;
+  const supNorm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const selSup = supNorm(_lhField && _lhField.supplier);
+  const rows = (_lhAnchors || []).map(a => {
+    const drawn = !!a.last_authoritative_at;
+    const xpct = Math.round((a.x_norm || 0) * 100), ypct = Math.round((a.y_norm || 0) * 100);
+    const aSup = supNorm(a.supplier_name);
+    const isCross = aSup && aSup !== selSup && !['  global  ', 'global', 'unknown'].includes(aSup);
+    const badge = drawn
+      ? `<span class="lh-a-badge" title="You drew this box (⊕ teach)">✎ drawn</span>`
+      : `<span class="lh-a-badge auto" title="Learned automatically from confirmations">auto · used ${a.usage_count || 1}×</span>`;
+    const crossBadge = isCross
+      ? `<span class="lh-a-badge cross" title="Stored under a DIFFERENT sender (${escHtml(a.supplier_name || '')}) — likely mis-scoped">${escHtml(a.supplier_name || '?')}</span>` : '';
+    const meta = `<span class="lh-a-meta" title="label direction · position on the page">→ ${escHtml(a.direction || '?')} @ ${xpct}%,${ypct}%</span>`;
+    const action = (_lhAnchorPending === a.id)
+      ? `<span class="lh-a-confirm">Delete this anchor?<button class="lh-a-yes" data-id="${a.id}">Yes</button><button class="lh-a-no">No</button></span>`
+      : `<button class="lh-a-del" data-id="${a.id}" title="Delete this learned position (re-teach with ⊕ to replace it)">🗑 delete</button>`;
+    return `<div class="lh-anchor"><span class="lh-a-label">${escHtml(a.anchor_label || '(no label)')}</span>`
+      + `${meta} ${badge} ${crossBadge}<span class="lh-a-spacer"></span>${action}</div>`;
+  }).join('');
+  el.innerHTML = `<h4>Learned position (anchors)</h4>` + (rows
+    || `<div class="lh-a-empty">No learned anchor for this field — it's read by keyword/logo, or hasn't been taught. Use ⊕ on the field to teach a position.</div>`);
 }
 
 // The source-doc submenu for one learned value (lazy-loaded into _lhDocs).
@@ -3416,53 +4003,11 @@ async function commitLhEdit(inp) {
   renderLearningHistory();
 }
 
-// "Fix likely slips": find values that differ from a strong per-position column consensus at
-// exactly ONE character, where that character is a likely OCR slip (a symbol where alnum is
-// expected, or a known confusion like $↔S / 0↔O / 1↔I) and the corrected value matches the
-// column's dominant shape or an existing value. Pure/data-driven — proposes, never auto-applies.
-const _OCR_PAIRS = new Set(['$S','5S','S5','0O','O0','0Q','Q0','1I','I1','1L','L1','8B','B8','6G','G6','2Z','Z2','7/','/7','€E','£E']);
-const _shapeSig = (s) => s.replace(/[0-9]/g, '#').replace(/[A-Za-z]/g, '@');
-function _likelySlip(from, to) {
-  if (!/[A-Za-z0-9]/.test(from)) return true;                 // a symbol where alnum is expected
-  return _OCR_PAIRS.has((from + to).toUpperCase());
-}
-function computeSlipFixes() {
-  // Vote WEIGHTED BY OCCURRENCE COUNT (`r.count` = "Times seen"), not one-per-distinct-value.
-  // Otherwise a value confirmed 31 times and a one-off OCR slip of it (e.g. "11O2…" vs "1102…")
-  // look like a 1-vs-1 tie: no position ever reaches the 80% consensus and the old `< 4 distinct
-  // values` gate bailed before voting at all. With counts, the 31x reading is the clear consensus
-  // and the 1x "O"→"0" slip is proposed.
-  const rows = _lhData
-    .filter(r => typeof r.value === 'string' && r.value.length)
-    .map(r => ({ value: r.value, count: Math.max(1, r.count || 1) }));
-  const totalCount = rows.reduce((s, r) => s + r.count, 0);
-  if (rows.length < 2 || totalCount < 4) return [];            // need ≥2 distinct + a real body of confirmations
-
-  const shapeCount = {};
-  rows.forEach(r => { const s = _shapeSig(r.value); shapeCount[s] = (shapeCount[s] || 0) + r.count; });
-  const domShape = Object.entries(shapeCount).sort((a, b) => b[1] - a[1])[0][0];
-  const valueSet = new Set(rows.map(r => r.value));
-  const out = [];
-  for (const r of rows) {
-    const v = r.value;
-    const diffs = [];
-    for (let i = 0; i < v.length; i++) {
-      const tally = {}; let total = 0;
-      for (const w of rows) {
-        if (w.value === v || w.value.length <= i) continue;
-        tally[w.value[i]] = (tally[w.value[i]] || 0) + w.count; total += w.count;   // weighted
-      }
-      if (total < 3) continue;
-      const [domChar, domN] = Object.entries(tally).sort((a, b) => b[1] - a[1])[0];
-      if (domN / total >= 0.8 && v[i] !== domChar && _likelySlip(v[i], domChar)) diffs.push({ i, to: domChar });
-    }
-    if (diffs.length === 1) {
-      const d = diffs[0], fixed = v.slice(0, d.i) + d.to + v.slice(d.i + 1);
-      if (fixed !== v && (_shapeSig(fixed) === domShape || valueSet.has(fixed))) out.push({ from: v, to: fixed });
-    }
-  }
-  return out;
-}
+// "Fix likely slips" proposer — moved to the shared pure module src/windows/shared/slipFix.js
+// (2026-07-11), which also carries the ORIENTATION VETO added after the live inversion incident
+// (a poisoned in-scope majority made the old majority-ward code rename the LEGIT values into
+// the poison). Loaded via <script> in index.html before this file; tested by
+// src/windows/shared/test_slip_fix.js.
 
 document.querySelectorAll('.lh-table th[data-sort]').forEach(th => th.addEventListener('click', () => {
   const k = th.dataset.sort;
@@ -3521,9 +4066,29 @@ document.getElementById('lh-body').addEventListener('click', async (e) => {
   }
 });
 
+// Learned-anchors panel: per-anchor delete with a Yes/No confirm (delete + re-teach is the fix).
+document.getElementById('lh-anchors')?.addEventListener('click', async (e) => {
+  const del = e.target.closest('.lh-a-del');
+  if (del) { _lhAnchorPending = parseInt(del.dataset.id, 10) || null; renderLearningAnchors(); return; }
+  if (e.target.closest('.lh-a-no')) { _lhAnchorPending = null; renderLearningAnchors(); return; }
+  const yes = e.target.closest('.lh-a-yes');
+  if (yes) {
+    const id = parseInt(yes.dataset.id, 10);
+    if (!id) return;
+    yes.disabled = true;
+    try {
+      await window.docusnap.deleteFieldAnchor({ id, supplier_name: _lhField && _lhField.supplier,
+        document_type: _lhField && _lhField.slug, field_key: _lhField && _lhField.key });
+      _lhAnchors = _lhAnchors.filter(a => a.id !== id);
+    } catch (err) { console.warn('delete-field-anchor failed:', err); }
+    _lhAnchorPending = null;
+    renderLearningAnchors();
+  }
+});
+
 document.getElementById('lh-fix').addEventListener('click', () => {
   const banner = document.getElementById('lh-proposals');
-  _lhProposals = computeSlipFixes();
+  _lhProposals = window.SlipFix.computeSlipFixes(_lhData);
   banner.style.display = 'block';
   if (!_lhProposals.length) {
     banner.innerHTML = 'No likely single-character slips found in this column.';
@@ -3688,9 +4253,16 @@ function syncDocTypeFromRecord(doc) {
   if (!doc || !doc.type_slug) return;
   selectedTypeSlug = doc.type_slug;
   const sel = document.getElementById('doctype-select');
-  if (sel) sel.value = selectedTypeSlug;
+  if (sel) sel.value = selectedTypeSlug;   // programmatic set → NO 'change' event, so the dropdown
+                                           // handler's _refreshTaughtForType never fires — do it here.
   const dt = allDocTypes.find(t => t.slug === selectedTypeSlug);
   if (dt) fieldDefs = dt.fields;
+  // The "position taught" dots are supplier+type scoped. When a reprocess re-types the doc in place
+  // (e.g. a delivery docket first opened with no type, then matched on reprocess), the dots were
+  // fetched at open time under the OLD/empty type and would stay red despite saved ⊕ anchors. Re-query
+  // for the now-correct scope (mirrors the manual dropdown-change path). Fire-and-forget: it repaints
+  // the dots once its async fetch returns, after renderFields has (re)built them.
+  _refreshTaughtForType();
 }
 
 // ── Reprocess ─────────────────────────────────────────────────────────────────
@@ -3710,8 +4282,43 @@ const REPROCESS_DISCARD_WARNING =
   'Reprocessing re-reads this document with the latest learned data and REPLACES the '
   + 'fields on screen — your unsaved edits and type choice for this document will be lost.\n\nContinue?';
 
+// ── Import/watch activity → "why reprocess is paused" bar + reprocess-button disable ──────
+// A single-doc / batch reprocess is REFUSED while an import or watch-folder batch is running
+// (heavy work is serialised). Previously a click just flashed the button red + toasted; now a
+// persistent bar explains it and the reprocess buttons are disabled so the click can't flash.
+// Synced on load (getProcessingActivity) + live via the processing-activity broadcast.
+let _processingActive = false;
+function applyProcessingActivity(s) {
+  _processingActive = !!(s && s.active);
+  const bar = document.getElementById('processing-activity');
+  if (bar) {
+    if (_processingActive) {
+      const where = s.source === 'watch' ? 'the watch folder' : 'import';
+      const prog  = s.total ? ` — ${Math.min(s.done || 0, s.total)} of ${s.total}` : '';
+      bar.innerHTML = `<span class="pa-spinner"></span><span>Processing new documents from ${where}${prog}. Reprocess is paused until this finishes.</span>`;
+      bar.style.display = 'flex';
+    } else {
+      bar.style.display = 'none';
+    }
+  }
+  // Import/watch and a manual reprocess never run at the same time (heavy work is serialised),
+  // so toggling these here can't clash with a reprocess-in-progress's own disabled state.
+  for (const id of ['btn-reprocess', 'btn-reprocess-supplier', 'btn-reprocess-all']) {
+    const b = document.getElementById(id);
+    if (!b) continue;
+    b.disabled = _processingActive;
+    if (_processingActive) b.title = 'Documents are being imported — reprocess will be available once it finishes.';
+    else b.removeAttribute('title');
+  }
+}
+try {
+  window.docusnap.onProcessingActivity?.(applyProcessingActivity);
+  window.docusnap.getProcessingActivity?.().then(applyProcessingActivity).catch(() => {});
+} catch { /* older main without the activity signal — bar simply never shows */ }
+
 document.getElementById('btn-reprocess').addEventListener('click', async (e) => {
   if (!currentDoc) return;
+  if (_processingActive) { showToast('Documents are being imported — please wait, then reprocess.', 'warn'); return; }
   // Warn only on a genuine user click (programmatic .click() re-extracts are trusted).
   if (e?.isTrusted && hasPendingReviewEdits() && !confirm(REPROCESS_DISCARD_WARNING)) return;
   const btn = document.getElementById('btn-reprocess');
@@ -3727,11 +4334,24 @@ document.getElementById('btn-reprocess').addEventListener('click', async (e) => 
   // Preview is active for this document — preview-off means inactive, not
   // hidden-active. (A template-level auto-processing rule, if any, is
   // applied on the main process side regardless of preview state.)
+  // "Straighten + Reprocess": when the display-deskew toggle is ON, ask the backend to read the
+  // STRAIGHTENED page (taught labels relocate in a level frame → the skew misreads recover). The
+  // filed file is never touched; the logo phash still uses the raw frame. Review-bound.
+  const _deskewedRead = !!deskewEnabled;
+  // Manual type override: send the CURRENT dropdown pick and let the backend force it as HUMAN
+  // authority ONLY when it differs from the doc's STORED type (resolveReprocessTypeArgs compares
+  // against the DB — the ground truth). We must NOT compare here against currentDoc.type_slug: the
+  // dropdown-change handler mutates currentDoc.type_slug to the pick, so a local "differs" check is
+  // always false and the pick never reaches reprocess (the snap-back bug). An un-touched reprocess
+  // sends the stored type -> the backend no-ops -> byte-identical.
+  const _forcedTypeSlug = selectedTypeSlug || null;
   const result = await window.docusnap.reprocessDocument({
-    docId:         currentDoc.id,
-    folderPath:    currentDoc.folder_path,
-    filename:      currentDoc.original_filename,
-    enhanceParams: previewActive ? getEnhanceParams() : null,
+    docId:          currentDoc.id,
+    folderPath:     currentDoc.folder_path,
+    filename:       currentDoc.original_filename,
+    enhanceParams:  previewActive ? getEnhanceParams() : null,
+    deskewOnce:     _deskewedRead,
+    forcedTypeSlug: _forcedTypeSlug,
   });
 
   window.docusnap.removeReprocessProgress();
@@ -3748,6 +4368,11 @@ document.getElementById('btn-reprocess').addEventListener('click', async (e) => 
     renderFields(full || currentDoc);
     if (result.ruleCreated) {
       showToast(`OCR auto-processing enabled for template "${result.ruleCreated}"`, 'ok');
+    }
+    // Straightening can shift EVERY field's read, not just the one you're fixing — a rubber-stamped
+    // shifted value would feed learning. Prompt the operator to eyeball the whole doc.
+    if (_deskewedRead) {
+      showToast('Read from the straightened page — please check all fields before confirming.', 'warn');
     }
     btn.innerHTML = '✓ Reprocessed';
     btn.style.color = 'var(--ok)';
@@ -3877,7 +4502,8 @@ async function runReprocessBatch(docs, scopeLabel) {
 
   try {
     const res = await window.docusnap.reprocessBatch(
-      docs.map(d => ({ docId: d.id, folderPath: d.folder_path, filename: d.original_filename }))
+      docs.map(d => ({ docId: d.id, folderPath: d.folder_path, filename: d.original_filename })),
+      { deskewAll: !!deskewSessionOn, deskewMinAngle }   // C4: force straightened READS (past the operator's angle floor) for the whole batch when the session toggle is on (covers Reprocess All + Reprocess-this-sender, which both route here)
     );
     done   = (res && res.done)   || 0;
     failed = (res && res.failed) || 0;
@@ -4265,6 +4891,13 @@ async function openWizard() {
   if (!isAdmin) return;                       // defence-in-depth; button is hidden for non-admins
   if (!pageImages.length) { showToast('Open a document first', 'warn'); return; }
   cancelZoneMode();                           // don't fight the zone-OCR tool
+  // The Template Wizard's coord math isn't deskew-aware, so it must draw on the RAW page —
+  // cancel Straighten when it opens (revert the shown image if a straightened one is up).
+  if (deskewEnabled) {
+    const wasDeskewed = !!deskewPageAngle;
+    deskewEnabled = false; deskewPageAngle = 0; updateDeskewBtn();
+    if (wasDeskewed) renderPage();
+  }
   wizard.active = true;
   wizard.fields = wizardFieldList();
   wizard.fixedMode = false;
@@ -4797,7 +5430,9 @@ async function maybeAutofillAnchorLabel(box) {
   const input = document.getElementById('wiz-anchor-text');
   if (!input || input.value.trim()) return;
   const clean = sanitizeAnchorLabel(await ocrWizardBox(box));
-  if (clean && !input.value.trim()) input.value = clean;
+  // Don't autofill a GARBLED auto-read — leave it blank (→ position-only on save) so a misread
+  // caption can't be silently promoted to a real anchor label (mirrors the ⊕ readout guard).
+  if (clean && !labelLooksSuspicious(clean) && !input.value.trim()) input.value = clean;
 }
 
 async function wizardSave() {

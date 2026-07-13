@@ -91,6 +91,37 @@ def is_name_like_field(field_key, label=None):
     return bool(set(hay.split()) & {"cust"})
 
 
+def contains_structured_sibling(name_value, sibling_value):
+    """CROSS-FIELD DUPLICATION predicate (Slice 1, 2026-07-10 night — the KO_wor_41
+    "customer = Reference 'WS703182" case; gary-designed, built on user policy override of
+    the Slice-0 do-nothing gate as belt-and-braces). True when a NAME-LIKE field's value
+    CONTAINS a sibling STRUCTURED field's WHOLE value, token-boundary-aligned, on the
+    deterministic normalised forms — the signature of a wandered anchor capturing a
+    neighbouring structured row. PURE string predicate: the field-level gates (sibling
+    confidence ≥80 + un-noted + non-name-like key; target name-like + method exemptions)
+    belong to the caller (engine seam + stress_test/crossfield_sweep.py, which MUST stay
+    predicate-identical — it imports this).
+    Sibling constraints INSIDE the predicate: normalised length ≥5 AND ≥1 digit — a real
+    ref/PO/account is digit-bearing, so a pure-alpha fragment ('MEADOW' ⊂ 'Meadowbrook
+    Vets') can never fire, and WHOLE-value containment kills the year class naturally
+    ('2026 Holdings Ltd' does not contain a date sibling's full '30 12 2025').
+    Guarded by tests/test_cross_field_duplication.py."""
+    try:
+        import re as _re
+        from extraction.text_normalise import normalise_for_tokens
+        def _n(s):
+            return _re.sub(r"[^a-z0-9]+", " ",
+                           normalise_for_tokens(s or "").lower()).strip()
+        target, sib = _n(name_value), _n(sibling_value)
+        if not target or not sib or len(sib) < 5:
+            return False
+        if not any(c.isdigit() for c in sib):
+            return False
+        return f" {sib} " in f" {target} "
+    except Exception:
+        return False
+
+
 def network_address_validation(field_key, label=None):
     """Return the validation key 'mac_address' / 'ip_address' for a NETWORK-IDENTIFIER
     field, else None. A MAC/IP is a CODE with a precise, well-defined format (colons,

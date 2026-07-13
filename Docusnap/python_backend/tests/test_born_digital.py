@@ -114,6 +114,48 @@ check("normal word gap stays a single space",
 check("wide value gap '# 2371' stays joined (not a column)",
       bd._join_words([_wg("#", 0.817, 0.830), _wg("2371", 0.890, 0.942)]), "# 2371")
 
+print("Two-pass line grouping — nearest-anchor re-home (3-column header):")
+# The #1344-class bug: a value's row is NOT aligned with the label column to its left.
+# A single greedy pass glues the value to whichever row was SEEDED FIRST (the upper
+# "BILLING ADDRESS" at a slightly higher cy), so the value's own "INVOICE NUMBER"
+# label reads EMPTY and keyword extraction grabs the wrong column. Two-pass assigns
+# each word to its NEAREST anchor line, so the value re-homes to its own label's row.
+# Geometry (ch=12, H=792 → tol 0.006 norm = 4.75pt): BILLING cy_pt 494, value cy_pt
+# 489.5 (Δ4.5<tol from BILLING → NOT its own anchor in PASS 1), INVOICE cy_pt 488.5
+# (Δ1.0 from value). Old pass → value joins BILLING; new pass → value joins INVOICE.
+hdr  = word("BILLING", 60, 500)          # cy_pt 494 (upper row, LEFT column)
+hdr += word("INVOICE", 380, 494.5)       # cy_pt 488.5 (lower row, RIGHT column)
+hdr += word("NUMBER", 445, 494.5)        #   same row as INVOICE
+hdr += word("317437", 400, 495.5)        # cy_pt 489.5 — the VALUE, drifts between rows
+hlines = bd.page_lines(FakePage(W, H, hdr))
+val_line = next((ln for ln in hlines if "317437" in ln["text"]), None)
+check("value line found", val_line is not None, True)
+check("value re-homes to its INVOICE NUMBER row (not BILLING)",
+      val_line is not None and "INVOICE" in val_line["text"] and "NUMBER" in val_line["text"]
+      and "BILLING" not in val_line["text"], True)
+bill_line = next((ln for ln in hlines if "BILLING" in ln["text"]), None)
+check("BILLING row does NOT swallow the value",
+      bill_line is not None and "317437" not in bill_line["text"], True)
+
+print("Two-pass line grouping — stacked-rows guard (each amount keeps its own row):")
+# The trade-off PASS 2 must NOT break: a stacked totals block at NORMAL line spacing
+# (~15pt = 0.019 norm >> tol) must keep each amount on its OWN label's row — nearest-
+# anchor must never cross-pull "387.74" up to the "Total" row (or a future tol/nearest
+# tweak that merged them would silently move which total keyword pairs). A 0.5pt
+# baseline drift of each amount vs its label is included on purpose.
+tot  = word("Subtotal", 60, 300)         # row 1 label
+tot += word("387.74", 400, 299.5)        #   row 1 amount (0.5pt baseline drift)
+tot += word("Total", 60, 285)            # row 2 label, 15pt below (well separated)
+tot += word("426.32", 400, 284.5)        #   row 2 amount
+tlines = bd.page_lines(FakePage(W, H, tot))
+sub_line = next((ln for ln in tlines if "387.74" in ln["text"]), None)
+tot_line = next((ln for ln in tlines if "426.32" in ln["text"]), None)
+check("subtotal amount stays on the Subtotal row",
+      sub_line is not None and "Subtotal" in sub_line["text"] and "426.32" not in sub_line["text"], True)
+check("total amount stays on the Total row",
+      tot_line is not None and "Total" in tot_line["text"] and "387.74" not in tot_line["text"], True)
+check("stacked rows are two distinct lines", sub_line is not tot_line and sub_line is not None, True)
+
 if fails:
     print(f"\n{len(fails)} FAILED"); sys.exit(1)
 print("\nAll born_digital checks passed.")

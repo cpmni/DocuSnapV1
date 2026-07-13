@@ -1167,8 +1167,14 @@ def _label_score(needle, haystack):
         needle = _core
     if not haystack:
         return 0.0
-    # Boundary-aligned occurrence of the whole needle = a true label hit.
-    if re.search(r'(?<![a-z0-9])' + re.escape(needle) + r'(?![a-z0-9])', haystack):
+    # Boundary-aligned occurrence of the whole needle = a true label hit. A boundary guard
+    # beside a NON-alnum needle edge is vacuous-wrong: '#' IS its own boundary, so a
+    # '#'-terminal taught label ("so #") must still hit a value-glued row ("so #12345") —
+    # without this conditionality the `needle in haystack` branch below rejected it outright
+    # (reggie, 2026-07-10). Alnum-edged needles keep both guards — byte-identical.
+    _pre  = r'(?<![a-z0-9])' if needle[:1].isalnum() else ''
+    _post = r'(?![a-z0-9])'  if needle[-1:].isalnum() else ''
+    if re.search(_pre + re.escape(needle) + _post, haystack):
         return 1.0
     # Present, but glued inside a larger token (sub|total) → a false label. Reject
     # so it can neither win a 1.0 tie nor pass threshold on shared characters.

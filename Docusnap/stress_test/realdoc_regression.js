@@ -28,6 +28,11 @@ const learning = require(path.join(REPO, 'database', 'modules', 'learning.js'));
 const templates = require(path.join(REPO, 'database', 'modules', 'templates.js'));
 const trust = require(path.join(REPO, 'database', 'modules', 'trust.js'));
 let labelOverrides = null; try { labelOverrides = require(path.join(REPO, 'database', 'modules', 'label_overrides.js')); } catch {}
+// GT overrides: docs whose CONFIRMED value was poisoned during testing (mis-confirmed page
+// numbers / transpositions). Corrects the harness's EXPECTED value to the true value (per the
+// original filename), so the M gate reflects true pipeline soundness — WITHOUT mutating the DB.
+// See stress_test/gt_overrides.json. Ignored (all reads scored vs raw DB) if the file is absent.
+let GT_OVERRIDES = {}; try { GT_OVERRIDES = JSON.parse(fs.readFileSync(path.join(ST, 'gt_overrides.json'), 'utf8')); } catch {}
 
 const normSupplier = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const normRef = s => String(s || '').toUpperCase().replace(/\s+/g, '');
@@ -52,9 +57,13 @@ function snap(db) {
   // Ablation: NO_IDENTITY_ANCHORS=1 drops supplier_name/customer_name anchors — proves whether
   // an identity anchor (which is supplier-specific) is helping or hurting when swept cross-supplier.
   if (process.env.NO_IDENTITY_ANCHORS) anchors = anchors.filter(a => !['supplier_name', 'customer_name'].includes(a.field_key));
+  // DROP_MISTAUGHT=1 simulates removing the end-of-session mis-taught AUTHORITATIVE invoice_number
+  // anchor (Cloud VPS, label "Invoice") WITHOUT touching the live DB — proves it is the root cause
+  // of the cross-supplier bleed (City Office 1828987, etc.).
+  if (process.env.DROP_MISTAUGHT) anchors = anchors.filter(a => !(a.field_key === 'invoice_number' && String(a.last_authoritative_at || '').trim()));
   return { args: [
     '--fields-file', w('f', dts.flatMap(d => d.fields)),
-    '--hints-file', w('h', safe(() => learning.getHints(db), [])),
+    '--hints-file', w('h', safe(() => learning.getAllHints(db), [])),   // uncapped — mirrors buildTrainingArgs (the bare getHints LIMIT-100 starved the engine)
     '--anchors-file', w('a', anchors),
     '--logos-file', w('l', safe(() => learning.getAllLogos(db), [])),
     '--doc-types-file', w('d', dts),
@@ -85,7 +94,7 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   const nameToSlug = {}; for (const r of db.prepare('SELECT name, slug FROM document_types').all()) nameToSlug[r.name] = r.slug;
   const roles = {}; for (const r of db.prepare('SELECT slug, ref_field_key, date_field_key FROM document_types').all()) roles[r.slug] = { ref: r.ref_field_key, date: r.date_field_key };
   const slugToId = {}; for (const r of db.prepare('SELECT id, slug FROM document_types').all()) slugToId[r.slug] = r.id;
-  const conf = db.prepare(`SELECT d.id, d.supplier_name, d.reference_number, d.doc_date, d.stored_path, d.working_path, dt.slug type_slug
+  const conf = db.prepare(`SELECT d.id, d.supplier_name, d.reference_number, d.doc_date, d.original_filename, d.stored_path, d.working_path, dt.slug type_slug
     FROM documents d LEFT JOIN document_types dt ON dt.id = d.document_type_id WHERE d.status = 'confirmed'`).all();
   const exByDoc = {};
   for (const e of db.prepare(`SELECT e.document_id, e.field_key, e.display_value FROM extractions e JOIN documents d ON d.id = e.document_id WHERE d.status = 'confirmed'`).all())
@@ -95,7 +104,7 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   const RR = fs.mkdtempSync(path.join(os.tmpdir(), 'realdoc-'));
   const resolveFile = d => (d.working_path && fs.existsSync(d.working_path)) ? d.working_path
                          : (d.stored_path && fs.existsSync(d.stored_path)) ? d.stored_path : null;
-  const gt = {}; const files = []; let noFile = 0;
+  const gt = {}; const files = []; let noFile = 0; const gtOverrideSkipped = [];
   for (const d of conf) {
     const src = resolveFile(d); if (!src) { noFile++; continue; }
     const fname = `doc${d.id}${path.extname(src) || '.pdf'}`;
@@ -104,7 +113,32 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
     const ex = exByDoc[d.id] || {};
     gt[fname] = { id: d.id, type_slug: d.type_slug, supplier: d.supplier_name, ref: d.reference_number, date: d.doc_date,
                   total: ex.total != null ? ex.total : ex.total_amount, subtotal: ex.subtotal };
+    // Apply a GT override (poisoned test-session confirmation → true value per filename), but ONLY
+    // after SELF-VALIDATING that the doc at this id is STILL the poisoned one (Oracle condition): the
+    // id keys a MUTABLE, resettable, machine-specific live DB, so after a `docusnap.db` reset (or on
+    // another machine / CI) id 896 could be an UNRELATED doc — blindly substituting would mask a real
+    // regression. Require the DB row still carry the recorded poison (`poisoned_ref`/`poisoned_date`)
+    // AND the filename token (`fname_has`). On ANY mismatch: DO NOT apply, warn, score vs raw DB GT.
+    const ov = GT_OVERRIDES[String(d.id)];
+    if (ov && typeof ov === 'object') {
+      const fnameOk = ov.fname_has == null || String(d.original_filename || '').includes(ov.fname_has);
+      const refOk   = ov.poisoned_ref  == null || normRef(d.reference_number) === normRef(ov.poisoned_ref);
+      const dateOk  = ov.poisoned_date == null || normDate(d.doc_date) === normDate(ov.poisoned_date);
+      // Supplier poison: `poisoned_supplier: ""` means the DB row must STILL carry NO issuer
+      // (normSupplier(null) === '' — the confirmed-without-issuer class, e.g. the Unknown-Company
+      // Ashford sales orders 1777/1786/1788 whose correct read the 2026-07-10 improvements restored).
+      const supOk   = ov.poisoned_supplier == null || normSupplier(d.supplier_name) === normSupplier(ov.poisoned_supplier);
+      if (fnameOk && refOk && dateOk && supOk) {
+        if (ov.ref      != null) gt[fname].ref      = ov.ref;
+        if (ov.date     != null) gt[fname].date     = ov.date;
+        if (ov.supplier != null) gt[fname].supplier = ov.supplier;
+        gt[fname]._overridden = true;
+      } else {
+        gtOverrideSkipped.push(`#${d.id}: GT override SKIPPED (identity mismatch — DB reset / re-confirmed / other machine? db-ref='${d.reference_number}' file='${d.original_filename}')`);
+      }
+    }
   }
+  const gtOverrideN = Object.values(gt).filter(g => g._overridden).length;
   const snapObj = snap(db);
   const res = await runP(RR, snapObj.args, files);
 
@@ -113,6 +147,8 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   const regress = [];
   let silentWrong = 0;
   let autoFiledN = 0, silentAutoFile = 0; const autoFileMisses = [];
+  let rereadN = 0; const rereadDocs = [];   // Stage-4.5 gate-failure re-read adoptions (review-bound)
+  let ownCapN = 0;                          // c2 taught-field ownership caps (review-volume delta, HOLD-only)
   for (const fname of files) {
     const m = res[fname]; const g = gt[fname]; if (!m) continue;
     const rk = (roles[g.type_slug] || {}).ref, dk = (roles[g.type_slug] || {}).date;
@@ -126,6 +162,14 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
       subtotal: g.subtotal != null ? normMoney(ef(m, 'subtotal')) === normMoney(g.subtotal) : null,
     };
     for (const f of F) { if (s[f] == null) continue; acc[f].n++; if (s[f]) acc[f].ok++; }
+    // Gate-failure re-read adoptions (GATE_REREAD): a re-read is review-bound (note + corrected_to),
+    // so it can never auto-file — count it so a corpus A/B shows the feature actually FIRED.
+    for (const [k, e] of Object.entries(m.extractions || {})) {
+      if (e && typeof e === 'object' && (e.reread === true || String(e.validation_note || '').startsWith('re-read from the page'))) {
+        rereadN++; rereadDocs.push(`#${g.id} ${g.type_slug} ${k}: '${e.value}' (was garbled)`);
+      }
+      if (e && typeof e === 'object' && String(e.validation_note || '').startsWith('this field has a taught position')) ownCapN++;
+    }
     // #6 auto-file SOUNDNESS — would the REAL gate auto-file this reprocessed read, and is it wrong?
     const detId = slugToId[detSlug];
     let wouldFile = false;
@@ -134,6 +178,7 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
         field_key: k,
         display_value: (e && typeof e === 'object') ? e.value : e,
         validation_note: (e && typeof e === 'object') ? e.validation_note : null,
+        confidence: (e && typeof e === 'object') ? e.confidence : null,
       }));
       const fakeDoc = { id: g.id, supplier_name: m.supplier_name, document_type_id: detId, overall_confidence: m.overall_confidence };
       try { wouldFile = trust.isAutoFileEligible(db, fakeDoc, { extractions: rex }).eligible; } catch {}
@@ -153,7 +198,10 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
         // surface as needs-a-check in the app, so they're caught, not silent.
         const flagged = !!(exr && (String(exr.validation_note || '').trim() || (exr.confidence != null && exr.confidence < 70)));
         if (!flagged) silentWrong++;
-        regress.push(`#${g.id} ${g.type_slug} ${f}: want '${want}' got '${got}'${flagged ? ' [flagged]' : ' [SILENT]'}`);
+        // An OVERRIDDEN doc that STILL fails means the pipeline reads NEITHER the poison nor the
+        // filename-true value — a genuine problem the override is NOT hiding (want is the corrected GT).
+        const ovTag = g._overridden ? ' [GT-OVERRIDDEN — pipeline disagrees with the TRUE value!]' : '';
+        regress.push(`#${g.id} ${g.type_slug} ${f}: want '${want}' got '${got}'${flagged ? ' [flagged]' : ' [SILENT]'}${ovTag}`);
       }
     }
   }
@@ -163,7 +211,10 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   const pct = (o, n) => n ? (100 * o / n).toFixed(1) + '%' : '-';
   const out = [];
   out.push(`# Real-doc regression — ${files.length} confirmed docs reprocessed vs their confirmed values`);
-  out.push(`(${noFile} confirmed docs had no resolvable file and were skipped.)\n`);
+  out.push(`(${noFile} confirmed docs had no resolvable file and were skipped.)`);
+  if (gtOverrideN) out.push(`(${gtOverrideN} docs used a GT override — poisoned test-session confirmations corrected to the filename true value; see stress_test/gt_overrides.json.)`);
+  for (const s of gtOverrideSkipped) out.push(`⚠ ${s}`);
+  out.push('');
   out.push('| Field | correct | scored | accuracy |');
   out.push('|---|---|---|---|');
   for (const f of F) out.push(`| ${f} | ${acc[f].ok} | ${acc[f].n} | ${pct(acc[f].ok, acc[f].n)} |`);
@@ -171,6 +222,9 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   for (const r of regress.slice(0, 60)) out.push(`- ${r}`);
   out.push(`\n**Auto-file soundness (#6): ${autoFiledN}/${files.length} reprocessed docs would auto-file; ${silentAutoFile} would auto-file a WRONG value (must be 0).**`);
   for (const r of autoFileMisses.slice(0, 40)) out.push(`- ${r}`);
+  out.push(`\n**Gate-failure re-reads adopted (GATE_REREAD): ${rereadN} (review-bound — can't auto-file; 0 = the feature never fired, not "safe").**`);
+  for (const r of rereadDocs.slice(0, 40)) out.push(`- ${r}`);
+  out.push(`\n**c2 taught-field ownership caps (TAUGHT_FIELD_OWNERSHIP): ${ownCapN} (HOLD-only — value untouched, review-bound; this is the review-VOLUME delta, not an accuracy change).**`);
   const txt = out.join('\n');
   fs.writeFileSync(path.join(OUT, 'realdoc_regression.md'), txt);
   console.log(txt);

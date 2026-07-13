@@ -7,6 +7,7 @@ Faster and more accurate than LLM for known document layouts.
 """
 
 import math
+import os
 import re
 
 from PIL import Image
@@ -174,6 +175,119 @@ def _slipfix_to_shape(value, field_key, format_lookup, val_type, validation_patt
     return None
 
 
+# Single-token code/ref types with NO legitimate internal whitespace — a SPACE in such a read
+# means OCR CLIP-DEBRIS (a clipped label tail / a hallucinated separator at the crop edge), never
+# part of the value. EXCLUDES types whose patterns embed \s (job_reference / vat_gb / postcode_uk),
+# date/currency (substring/salvage path, never coverage-gated), mac/ip (precise), and free text.
+_RECOVERABLE_TOKEN_TYPES = frozenset({"alphanumeric", "reference_code"})
+_MAX_DEBRIS_TOKEN_LEN = 2      # a clipped label tail / stray separator is 1-2 chars ("-R", ". =")
+_MAX_DEBRIS_CHARS     = 3      # total non-space debris chars tolerated
+
+
+def _recover_clean_token(value, val_type, validation_patterns, label=None):
+    """Recover the clean value from an anchor read that FAILED the credibility/coverage gate only
+    because it is ONE clean pattern-matching token wrapped in SHORT punctuation clip-debris
+    (". = 317437" / "-R 317437"). Regex-only (no learned history → works on document #1).
+    PRECISION-FIRST: returns the token ONLY when EXACTLY ONE whitespace-token fully matches the
+    field pattern AND every other token is clip-debris (len<=2 AND carries a non-alphanumeric char).
+    A bare-alnum fragment (the leading "2" in "2 317437", a lone "R") is REFUSED — it could be a
+    space-split part of the real value, so it is routed to review rather than guessed. A multi-value
+    read ("Total 250.00 317437", a real drift) is refused (not exactly one value token). The caller
+    commits the recovered value FLAGGED + conf-capped, mirroring _slipfix_to_shape — never silently.
+    reggie-designed; guarded by tests/test_recover_clean_token.py."""
+    if not value or val_type not in _RECOVERABLE_TOKEN_TYPES:
+        return None
+    pats = (validation_patterns or {}).get(val_type)
+    if not pats:
+        return None
+    tokens = str(value).split()
+    if len(tokens) < 2:                                   # single token already judged by credibility
+        return None
+    value_tokens, debris_chars = [], 0
+    for t in tokens:
+        if any(re.fullmatch(p, t, re.IGNORECASE) for p in pats):
+            value_tokens.append(t)                        # coverage 1.0 for this token
+            continue
+        if len(t) > _MAX_DEBRIS_TOKEN_LEN or not any(not c.isalnum() for c in t):
+            return None                                   # a real word, OR a bare-alnum fragment → refuse
+        debris_chars += len(t)
+        if debris_chars > _MAX_DEBRIS_CHARS:
+            return None
+    if len(value_tokens) != 1:                            # zero or ambiguous → refuse
+        return None
+    token = value_tokens[0]
+    return token if _crop_is_credible(token, val_type, validation_patterns, label) else None
+
+
+def _matches_learned_shape(value, field_key, format_lookup) -> bool:
+    """True when `value`'s shape signature is one the scope has CONFIRMED for this field — the
+    corroboration that lets a debris-recovered read commit CONFIDENT (drop the 'please verify' flag)
+    instead of recover-and-flag. The Oracle's condition 3c: an OFF-shape read (a systematic misread
+    that garbled the value) keeps the flag. Conservative — thin/free-text history (no learned shapes)
+    → False → keep the flag. Reuses format_anomaly_checker.shape_signature (the same shapes
+    _slipfix_to_shape trusts). Pure aside from the lazy import."""
+    if not value or format_lookup is None:
+        return False
+    try:
+        entry = format_lookup(field_key) or {}
+    except Exception:
+        return False
+    shapes = entry.get('shapes') or []
+    if not shapes:
+        return False
+    try:
+        # CLASS-level match: the stored shapes are length-agnostic ('#' = digits, any length; the
+        # model collapses run-lengths), while shape_signature produces the length-specific '######'.
+        # Fold each digit/letter RUN to a single char (keeping SEPARATORS, so structure like
+        # '#-#-#' is still distinguished) so '######' matches the learned '#'. A garbled/off-class
+        # read ('@@###', letters where digits are learned) does NOT match → keeps the flag.
+        from extraction.format_anomaly_checker import shape_signature
+        cls = lambda sh: re.sub(r'([#@])\1*', r'\1', sh or '')
+        return cls(shape_signature(str(value))) in {cls(s) for s in shapes}
+    except Exception:
+        return False
+
+
+def _exact_text_corroborates(value, anchor, y_norm, page_text_lines) -> bool:
+    """Independent exact-text corroboration for a debris-recovered read (Oracle
+    condition #4). The recovered token came from an IMAGE-crop OCR (debris-prone,
+    hence the conservative confidence). `page_text_lines` is the born-digital VECTOR
+    text layer — a FULLY INDEPENDENT source (it is NEVER OCR: process_docs only
+    populates it from born_digital.page_lines on a page that passes the text-layer
+    gate, and leaves it None for scanned/image-only pages). So its mere presence is
+    the born-digital provenance signal, and this can NEVER fire on a scanned doc
+    (where the full-page read and the crop are the SAME pixels — correlated, not
+    independent). Returns True when that exact vector text carries the SAME token as
+    a BOUNDED whole word on the value's OWN taught row (within ~1.5 label-heights of
+    y_norm) — i.e. the value sits at its own taught position in the independent text,
+    not merely somewhere on the page. That double confirmation (crop recovery + exact
+    vector text at the taught row) lets the read clear the auto-file floor; a scanned
+    debris-recovery keeps the one-glance review checkpoint (page_text_lines None →
+    False → capped)."""
+    if not page_text_lines or value is None:
+        return False
+    cv = str(value).strip()
+    if not cv:
+        return False
+    try:
+        pat = re.compile(r'(?<![0-9A-Za-z])' + re.escape(cv) + r'(?![0-9A-Za-z])')
+    except re.error:
+        return False
+    h  = float(anchor.get("h_norm") or 0.0) or 0.02
+    y0 = float(y_norm or 0.0) + h / 2.0            # taught value-box CENTRE
+    band = max(h * 1.5, 0.03)
+    for ln in page_text_lines:
+        try:
+            lcy = float(ln.get("y_norm", 0.0)) + float(ln.get("h_norm", 0.0)) / 2.0
+        except Exception:
+            continue
+        if abs(lcy - y0) > band:
+            continue
+        if pat.search(ln.get("text", "") or ""):
+            return True
+    return False
+
+
 def extract_with_anchors(ocr_text: str, anchors: list[dict],
                          supplier_name: str | None,
                          document_type: str | None,
@@ -278,8 +392,35 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                        and anchor.get("offset_dy_norm") is not None
                        and page0 is not None)
 
+        # CROSS-SUPPLIER ABSOLUTE-READ GATE (007① applied BEFORE the crop; Oracle-scoped, 2026-07-09).
+        # A NAMED cross-supplier AUTHORITATIVE anchor's ABSOLUTE reads — the rigid crop and the
+        # registration map of the taught box — are the ones that drift onto a wrong region of a
+        # DIFFERENT supplier's layout (Anconia's top-right box reading Cloud VPS's mid-page cell →
+        # "OO"). Suppress those absolute attempts unless the caption is at the TAUGHT position (same
+        # layout). This is a SUBSET of what the post-crop 007① gate already concludes for the rigid
+        # read (kept below as defence-in-depth), moved earlier so the wrong crop isn't attempted at
+        # all AND — the residual the post-crop gate missed — so a credible-but-wrong cross-supplier
+        # REGISTRATION read can't commit. The LABEL-RELATIVE reads (inline / drift-relocate / text
+        # fallback) are NOT gated: they read beside the caption LOCATED on THIS doc and self-validate,
+        # which is how a genuine shared layout at a SHIFTED position still fills (per the Oracle — do
+        # not trade a wrong value for a mysterious empty field). Reuses line_cache: one cheap locate,
+        # and it SAVES the heavy rigid + registration crop OCR when the skip fires. Passive anchors are
+        # untouched (authoritative-only, this slice).
+        _xsup_absolute_ok = True
+        if (_named_cross_supplier(anchor, supplier_name)
+                and anchor.get("last_authoritative_at")
+                and (anchor.get("anchor_label") or "").strip() and page0 is not None):
+            _plc = _locate_for_relocation(
+                page0, (anchor.get("anchor_label") or "").strip(), direction,
+                (x_norm, y_norm, anchor.get("w_norm") or 0.0, anchor.get("h_norm") or 0.0),
+                page_text_lines, line_cache=line_cache)
+            _xsup_absolute_ok = _located_at_taught_position(
+                _plc, x_norm, y_norm, anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm"))
+            if not _xsup_absolute_ok and on_reject:
+                on_reject(field_key, "anchor_crop", None, "cross_supplier_placement_skip")
+
         # ── Primary: image crop + re-OCR (accurate, avoids column bleed) ──────
-        if not _skip_rigid and x_norm > 0 and y_norm > 0 and page0 is not None:
+        if not _skip_rigid and _xsup_absolute_ok and x_norm > 0 and y_norm > 0 and page0 is not None:
             w_norm   = anchor.get("w_norm") or 0.0
             h_norm   = anchor.get("h_norm") or 0.0
             _cap = ((lambda c: slice_capture(field_key, "anchor_crop", 0,
@@ -301,8 +442,15 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 if _slip:
                     value, method = _slip, "anchor_crop_slipfix"
                     ocr_conf, ocr_min = _m.get('conf'), _m.get('min_conf')
-                elif on_reject:
-                    on_reject(field_key, "anchor_crop", crop_value, "not_credible")
+                else:
+                    # DEBRIS RECOVERY: a clean single token wrapped in short clip-debris
+                    # (". = 317437" → "317437") — recover-and-flag, else reject to review.
+                    _rec = _recover_clean_token(crop_value, val_type, validation_patterns, label)
+                    if _rec:
+                        value, method = _rec, "anchor_crop_recovered"
+                        ocr_conf, ocr_min = _m.get('conf'), _m.get('min_conf')
+                    elif on_reject:
+                        on_reject(field_key, "anchor_crop", crop_value, "not_credible")
             elif crop_value:
                 # Also qualify against the learned format: a fixed crop that drifted
                 # onto the wrong row reads a NON-EMPTY, credible-looking but wrong
@@ -341,6 +489,10 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
         # date/ref stay pattern-trusted (their neighbours are rarely same-type + they carry
         # their own digit-parity/partial-shape guards on the later rungs). Needs a non-null
         # offset (legacy rows untouched); reuses line_cache so a clean on-row read pays one locate.
+        # Layer-A note slot (007+gary, 2026-07-10): SEPARATE from _xcheck_note — the
+        # crosscheck block can later FLIP the value, and this note describes the KEPT-RIGID
+        # (or junk-relocate) case only. Applied at the result build when no other note landed.
+        _relocate_guard_note = None
         if value and val_type in (None, "text", "multiline_text", "currency") \
                 and (anchor.get("anchor_label") or "").strip() \
                 and anchor.get("offset_dy_norm") is not None and page0 is not None:
@@ -405,6 +557,28 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                             # so variable free-text (a drifted NAME) and currency drift
                             # fixes are untouched. Complements the ambiguous-label guard.
                             pass   # keep the rigid read
+                        elif (val_type in (None, "text", "multiline_text")
+                                and len(_rv.split()) >= 2
+                                and not _name_junk_shaped(_rv, field_key)
+                                and _name_junk_shaped(_dv, field_key)):
+                            # NAME-GUARD BACKSTOP — Layer A (007+gary, 2026-07-10): for a
+                            # below/above-direction anchor the inline harvest is CROSS-COLUMN
+                            # content BY CONSTRUCTION, and no name-quality comparison existed
+                            # here — so a junk-shaped candidate ('Sso#' harvested off the
+                            # caption row's neighbour column) silently REPLACED a rigid read
+                            # that scores as a real multi-word name ('Formby & Sons',
+                            # MP_sal_35, rejected as off_row_drift). KEEP the rigid read and
+                            # flag it (cap ≤70 + note at the confidence block) — disagreement
+                            # is a REVIEW event, never a coin toss. The 2026-07-06 drift-fix
+                            # class (a credible multi-word relocate) does not trip this: its
+                            # candidate isn't junk-shaped. Guarded by
+                            # test_anchor_name_lock_guard.py.
+                            if on_reject:
+                                on_reject(field_key, "anchor_crop_relocated", _dv,
+                                          "name_guard_junk_candidate")
+                            _relocate_guard_note = ("The value found beside this document's own "
+                                                    "caption disagreed with the taught position "
+                                                    "— please verify.")
                         else:
                             if on_reject:
                                 on_reject(field_key, "anchor_crop", value, "off_row_drift")
@@ -537,9 +711,17 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                     _lcrop = page0.crop((int(_lb["x_norm"] * _W), int(_lb["y_norm"] * _H),
                                          int((_lb["x_norm"] + _lb["w_norm"]) * _W),
                                          int((_lb["y_norm"] + _lb["h_norm"]) * _H)))
+                    # C4: if the position veto (below) would REJECT this locate, tag the slice
+                    # "anchor_vetoed" so "Show where it reads" shows the caption was FOUND-but-rejected
+                    # (wrong column) instead of a misleading amber box — the surface the original false
+                    # report came from. Same predicate as the extraction veto; dev-only (--trace).
+                    _tdx, _tdy = anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm")
+                    _t_vetoed = (_tdx is not None and _tdy is not None and (_tdx or _tdy)
+                                 and not _located_at_taught_position(_loc, x_norm, y_norm, _tdx, _tdy,
+                                                                     tol_x=_RELOC_TOL_X, tol_y=_RELOC_TOL_Y))
                     slice_capture(field_key, "anchor_label", 0,
                                   (_lb["x_norm"], _lb["y_norm"], _lb["w_norm"], _lb["h_norm"]),
-                                  _lcrop, "anchor")
+                                  _lcrop, "anchor_vetoed" if _t_vetoed else "anchor")
             except Exception:
                 pass  # dev-only diagnostic; never disrupt extraction
 
@@ -551,6 +733,28 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
             vbox    = (x_norm, y_norm, w_norm, h_norm)
             located = _locate_for_relocation(page0, anchor["anchor_label"], direction, vbox, page_text_lines,
                                              line_cache=line_cache)
+            # POSITION VETO (Oracle 2026-07-12). On a skewed/clipped scan the true caption can fragment
+            # below the fuzzy threshold in the local band, so the PAGE-WIDE relocate fallback grabs a
+            # same-PREFIX caption in the WRONG COLUMN ("Delivery Note No." → "Deliver To") and then inline-
+            # harvests a wrong-column value — a confident-wrong read no cross-supplier gate catches (a
+            # supplier's own doc bypasses them all). When this ⊕ anchor carries a usable label→value OFFSET
+            # (migration 21), verify the RE-LOCATED caption is at its TAUGHT position (value_centre − offset,
+            # looser _RELOC tolerances); if it landed a whole column/section away, DROP the relocation → the
+            # field keeps its weak rigid read → review. Only ever sets located=None (never selects) →
+            # fail-toward-review. C1 (load-bearing): gate on the offset being PRESENT + non-zero as a
+            # SEPARATE precondition — _located_at_taught_position ALSO returns False for a NO-offset (legacy)
+            # anchor, so a naive `if not _located_...` would veto EVERY pre-migration-21 anchor. No usable
+            # offset → no veto → byte-identical.
+            _reloc_odx, _reloc_ody = anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm")
+            _reloc_can_verify = (_reloc_odx is not None and _reloc_ody is not None
+                                 and (_reloc_odx or _reloc_ody))
+            if located and _reloc_can_verify and not _located_at_taught_position(
+                    located, x_norm, y_norm, _reloc_odx, _reloc_ody,
+                    tol_x=_RELOC_TOL_X, tol_y=_RELOC_TOL_Y):
+                if on_reject:
+                    on_reject(field_key, "anchor_relocate",
+                              (located or {}).get("matched_text"), "label_off_taught_position")
+                located = None
             if located:
                 # 1. INLINE HARVEST: in a key/value row the value shares the located
                 # label's OCR line ("label …gap… value") and sits in a far column the
@@ -628,7 +832,12 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                                              val_type, capture=_rcap, verify_fn=_verify, meta=_mr, continuation=continuation)
                         _xfield = bool(rval) and _name_field_code_reject(rval, field_key)
                         if rval and (_xfield or not _crop_is_credible(rval, val_type, validation_patterns, label)):
-                            if on_reject:
+                            _rec = None if _xfield else _recover_clean_token(rval, val_type, validation_patterns, label)
+                            if _rec and _should_replace(value, _rec, val_type, validation_patterns, inc_ocr_conf=ocr_conf):
+                                value  = _rec
+                                method = "anchor_crop_recovered"
+                                ocr_conf, ocr_min = _mr.get('conf'), _mr.get('min_conf')
+                            elif on_reject:
                                 on_reject(field_key, "anchor_crop_relocated", rval,
                                           "cross_field_code" if _xfield else "not_credible")
                         elif rval:
@@ -668,7 +877,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
         # no extra trigger clause is needed). The mapped read still clears the SAME
         # credibility + learned-format gates. INERT (byte-identical) when no transform
         # was fitted (flag off / no landmarks / poor fit).
-        if (not value or _is_weak_read(value, val_type)) and page_transform is not None \
+        if (not value or _is_weak_read(value, val_type)) and _xsup_absolute_ok and page_transform is not None \
                 and x_norm > 0 and y_norm > 0 and page0 is not None:
             w_norm = anchor.get("w_norm") or 0.0
             h_norm = anchor.get("h_norm") or 0.0
@@ -686,7 +895,13 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
             _mg = {}
             gval = _crop_and_ocr(page0, rcx, rcy, w_norm, h_norm, val_type, capture=_gcap, verify_fn=_verify, meta=_mg, continuation=continuation)
             if gval and not _crop_is_credible(gval, val_type, validation_patterns, label):
-                if on_reject: on_reject(field_key, "anchor_registration", gval, "not_credible")
+                _rec = _recover_clean_token(gval, val_type, validation_patterns, label)
+                if _rec and _should_replace(value, _rec, val_type, validation_patterns, inc_ocr_conf=ocr_conf):
+                    value  = _rec
+                    method = "anchor_crop_recovered"
+                    ocr_conf, ocr_min = _mg.get('conf'), _mg.get('min_conf')
+                elif on_reject:
+                    on_reject(field_key, "anchor_registration", gval, "not_credible")
             elif gval:
                 q = _qualify_against_format(gval, field_key, format_lookup, text_field_keys,
                                             val_type, validation_patterns)
@@ -794,8 +1009,34 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 conf = min(93, registration.registration_confidence(page_transform))
             elif method == "anchor_crop_slipfix":
                 conf = min(70, conf)   # recover-and-flag: a gate-rejected read repaired to the learned shape
+            # anchor_crop_recovered is capped/flagged AFTER the located gate (see _rec_confident):
+            # a LOCATED, shape-matching recovery commits CONFIDENT (no flag); else capped to 70 + flagged.
             elif method == "anchor_crop_crosscheck":
                 conf = min(70, conf)   # cross-read disagreement: full-page value preferred, routed to review
+            # NAME-CREDIBILITY BAR for WANDERED reads — Layer B (007+gary, 2026-07-10): a
+            # RELOCATED/INLINE commit on a name-like free-text field whose value is junk-shaped
+            # is capped ≤70 + noted, never trusted at the synthetic 87-92. These paths null
+            # ocr_conf by design (the OCR-quality cap below is blind to them) and the
+            # multi-word name gate above skips single tokens — this closes exactly that hole
+            # ('Sso'/'Sso#' @87-91 unflagged, MP_sal_35). A clean multi-word relocated name
+            # (the drift-fix class) passes the bar untouched. Composes with the Stage-2.6
+            # rescue's min()-cap (a rescued junk name stays 70+note). DELIBERATE residual: a
+            # legit ≤3-alpha brand ('IBM') via these methods flags every time — fail-toward-
+            # review; the accepted-names allowlist doesn't reach anchor.py yet (future
+            # plumbing, noted in test row f).
+            if (method in ("anchor_crop_relocated", "anchor_inline")
+                    and val_type in (None, "text", "multiline_text")
+                    and _name_junk_shaped(value, field_key)):
+                conf = min(70, conf)
+                if not _relocate_guard_note:
+                    _relocate_guard_note = ("This value was read after the taught position "
+                                            "shifted and doesn't look like a real name — "
+                                            "please verify.")
+            # Layer A kept the rigid read over a junk relocate: flag it for review. Skipped
+            # when the crosscheck later flipped/noted (method no longer anchor_crop or
+            # _xcheck_note set) — that path carries its own note.
+            if _relocate_guard_note and method == "anchor_crop" and not _xcheck_note:
+                conf = min(70, conf)
             if _xcheck_note:
                 conf = min(70, conf)   # flag-only value-below-label disagreement: keep the value, route to review
             # ── OCR-QUALITY CAP (FREE-TEXT ONLY): for a name/address field there is
@@ -842,10 +1083,38 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                     # address), so it must NOT be treated as located. A labelled
                     # anchor must have its label actually found here.
                     _lbl = (anchor.get("anchor_label") or "").strip()
-                    located_ok = bool(_lbl) and bool(_locate_for_relocation(
+                    _loc = (_locate_for_relocation(
                         page0, _lbl, direction,
                         (x_norm, y_norm, anchor.get("w_norm") or 0.0, anchor.get("h_norm") or 0.0),
-                        page_text_lines, line_cache=line_cache))
+                        page_text_lines, line_cache=line_cache) if _lbl else None)
+                    located_ok = bool(_loc)
+                    # 007① (Oracle-corrected): a NAMED cross-supplier authoritative anchor counts
+                    # as 'located' ONLY if its caption is at the TAUGHT position — a generic caption
+                    # ("Invoice Number") on a DIFFERENT supplier's layout false-locates at a different
+                    # absolute position and must NOT certify the rigid absolute-box read (the #1
+                    # invoice_number cross-supplier bleed, e.g. Anconia's top-right box reading City
+                    # Office's mid-page cell). Same-supplier anchors keep the presence-only test
+                    # (their caption IS on their own layout). Below, not-located → conf capped 50 +
+                    # the cross-supplier drop, so the field resolves from THIS doc's own reads.
+                    if located_ok and _named_cross_supplier(anchor, supplier_name):
+                        if not _located_at_taught_position(
+                                _loc, x_norm, y_norm,
+                                anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm")):
+                            located_ok = False
+            # HEADING-GARBLE NAME DEMOTION (Oracle 2026-07-12) — the DN-82792 customer_name class.
+            # A relocated/placed read on a NAME field that lands on a document CAPTION garble
+            # ("Deliver lo", "Deliver To RRS") is marked located BY METHOD (anchor_crop_relocated is
+            # unconditionally located) and has its OCR-quality signal NULLED on the relocate path, so
+            # it wins the engine Tier-A gate over the clean Stage-1 keyword name. Force located_ok
+            # False so it drops through the ≤50 cap below and LOSES the engine merge to the keyword
+            # ("Halcyon Leisure Group" / "Primrose Childcare"); with no keyword it shows ≤50 + note
+            # -> review. Demotion-only (never selects a value). Protective-token exclusion keeps a
+            # legit "Delivery Solutions Ltd" INERT (see _reads_like_heading_garble). Kill switch.
+            if located_ok and _reads_like_heading_garble(value, field_key):
+                located_ok = False
+                if not _relocate_guard_note:
+                    _relocate_guard_note = ("This value reads like a document heading, not a name — "
+                                            "please verify, or re-teach the field with the ⊕ tool.")
             if not located_ok:
                 conf = min(conf, 50)   # blind rigid read (label absent/unfound) — untrustworthy
                 # A BLIND read from a NAMED different supplier's anchor is a positional guess learned
@@ -858,6 +1127,35 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                     if on_reject:
                         on_reject(field_key, method, value, "blind_cross_supplier_anchor")
                     continue
+            # Confident recovery (oscar's confident-clean, Oracle-gated): a debris-recovered read
+            # whose clean token is LOCATED at the taught position AND matches the field's learned
+            # shape is trustworthy — _recover_clean_token only ever stripped NON-alphanumeric edge
+            # debris, so it cannot have force-fit a glyph (the Oracle's glyph-preservation condition,
+            # satisfied by construction). Three tiers: an UNLOCATED / OFF-shape recovery is capped +
+            # flagged (fail toward review); a LOCATED + shape-matched one drops the flag but stays
+            # BELOW the auto-file floor (a one-glance human confirm) UNLESS it is also independently
+            # corroborated by the born-digital vector text at the taught row, which lifts it to
+            # auto-file-eligible (Oracle condition #4). Harness M=0 is the safety gate.
+            _rec_confident = False
+            if method == "anchor_crop_recovered":
+                _rec_confident = bool(located_ok) and _matches_learned_shape(value, field_key, format_lookup)
+                if not _rec_confident:
+                    conf = min(70, conf)   # unlocated / off-shape → capped + flagged (route to review)
+                elif _exact_text_corroborates(value, anchor, y_norm, page_text_lines):
+                    # BORN-DIGITAL + independent exact-text agreement on the value's OWN taught row
+                    # (Oracle condition #4): the debris-recovered token is confirmed by a fully
+                    # independent source (the vector text layer, never OCR — None for scanned, so this
+                    # can't fire on same-pixel agreement). Doubly-confirmed → lift the review checkpoint
+                    # to auto-file-eligible. Land in [90,95] (above the 88 floor, below a pristine
+                    # keyword read) — still a RECOVERED read, just corroborated.
+                    conf = min(95, max(conf, 90))
+                else:
+                    # located + shape-matched but NOT independently corroborated (e.g. a SCANNED page —
+                    # the crop and the full-page read are the same pixels): DROP the "please verify"
+                    # flag (the value is shape-corroborated), but keep confidence BELOW the auto-file
+                    # floor (88) so a debris-recovered read still gets a one-glance human confirm and
+                    # never SILENTLY auto-files — regardless of the anchor's usage_count.
+                    conf = min(conf, 87)
             results[field_key] = {
                 "value":      value.strip(),
                 "confidence": conf,
@@ -892,6 +1190,15 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                     "corrected_to":    value.strip(),
                     "validation_note": "Corrected a likely OCR misread to the learned format — please verify.",
                 })
+            elif method == "anchor_crop_recovered" and not _rec_confident:
+                # Recover-and-flag: the crop read the right value with OCR clip-debris (". = 317437")
+                # but the read is UNLOCATED or OFF the learned shape — trim the debris but surface it
+                # for a one-glance confirm. A LOCATED, shape-matching recovery skips this (confident).
+                results[field_key].update({
+                    "was_corrected":   True,
+                    "corrected_to":    value.strip(),
+                    "validation_note": "Trimmed OCR debris from the read — please verify the value.",
+                })
             elif method == "anchor_crop_crosscheck":
                 # Recover-and-flag: the taught crop and the full-page read of the same label
                 # DISAGREED; we took the full-page value (native-DPI, generally the truer read)
@@ -905,8 +1212,36 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 # FLAG-ONLY (value-below-label cross-supplier false-locate): KEEP the rigid value (no
                 # was_corrected / corrected_to) — only surface the cross-read disagreement for a human.
                 results[field_key]["validation_note"] = _xcheck_note
+            elif _relocate_guard_note and field_key in results \
+                    and not results[field_key].get("validation_note"):
+                # NAME-GUARD note (Layers A/B): flag-only — the value (kept rigid, or a capped
+                # junk relocate) is surfaced for a human; never overwrites a method-specific note.
+                results[field_key]["validation_note"] = _relocate_guard_note
 
     return results
+
+
+def _name_junk_shaped(value, field_key) -> bool:
+    """True when a NAME-LIKE field's value is JUNK-SHAPED — judged on its NON-ALNUM-STRIPPED
+    form (a '#' pushed 'Sso#' to a perfect name_quality: value_quality's token strip set has
+    no '#'): a single token with < 4 LETTERS ('Sso'), or name_quality < 0.5. KEY-ONLY
+    predicate — is_name_like_field(field_key), never the anchor's caption (a ref field
+    taught with the label "Customer Order No." must stay inert). Single clean ≥4-alpha
+    tokens ('Jordanstown') and real multi-word names pass. Used by the Layer-A replacement
+    backstop and the Layer-B relocate credibility bar (007+gary, 2026-07-10); guarded by
+    tests/test_anchor_name_lock_guard.py."""
+    if not value:
+        return False
+    from extraction.value_quality import is_name_like_field, name_quality
+    if not is_name_like_field(field_key):
+        return False
+    stripped = re.sub(r'[^0-9A-Za-z ]+', ' ', str(value)).strip()
+    toks = stripped.split()
+    if not toks:
+        return True
+    if len(toks) == 1 and len(re.sub(r'[^A-Za-z]', '', toks[0])) < 4:
+        return True
+    return name_quality(stripped) < 0.5
 
 
 # A logo match is only trusted when the winning supplier is DECISIVELY closer than
@@ -2053,14 +2388,19 @@ def _filter_anchors(anchors: list[dict],
         if t_match:             return 2
         return 3
 
-    # An EXPLICIT operator teach (last_authoritative_at set) outranks ALL merely
-    # passively-learned anchors, BEFORE supplier-priority is even considered — a
-    # human correction must never lose to a stale auto-learned anchor just because
-    # the latter happens to be tagged to the supplier the template/logo resolved.
-    # Within each bucket the existing priority/recency/usage order applies; among
-    # explicit teaches, the most recent wins.
+    # An EXPLICIT operator teach (last_authoritative_at set) outranks merely passively-
+    # learned anchors BEFORE supplier-priority is considered — a human correction must not
+    # lose to a stale auto-learned anchor tagged to the resolved supplier. BUT the boost is
+    # SUPPLIER-SCOPED (gary Slice 2, 2026-07-09): a NAMED cross-supplier authoritative anchor
+    # must NOT jump ahead of THIS supplier's own anchor, or supplier A's teach dominates
+    # supplier B's doc (the cross-supplier bleed — A's top-right box reading B's wrong region).
+    # A same-supplier / global (__global__) / unknown teach keeps the boost (bucket 0); a
+    # named different-supplier teach drops to bucket 1, where priority() then ranks THIS
+    # supplier's own anchor (priority 1) ahead of the cross-supplier one (type-only, priority 2).
+    # Pairs with the located-at-taught-position gate below, which is the sole guard when this
+    # supplier has NO own anchor. Guarded by tests/test_anchor_selection_scope.py.
     def auth_bucket(a):
-        return 0 if _auth_rank(a) > 0 else 1
+        return 0 if (_auth_rank(a) > 0 and not _named_cross_supplier(a, supplier_name)) else 1
 
     filtered = [
         a for a in anchors
@@ -2077,12 +2417,77 @@ def _filter_anchors(anchors: list[dict],
 _IDENTITY_FIELD_KEYS = frozenset({"supplier_name", "customer_name"})
 
 
+def _reads_like_heading_garble(value, field_key: str) -> bool:
+    """A NAME-like field's VALUE that reads like a document HEADING/CAPTION garble ("Deliver lo",
+    "Deliver To RRS") AND carries NO protective structural word ("Ltd"/"Group"/"Services") — i.e. a
+    relocated caption read, not a name. Used to DEMOTE such an anchor read (located_ok -> False, so
+    the ≤50 cap fires) so the clean Stage-1 keyword read of the same field wins the engine merge, or
+    — with no keyword — the value shows ≤50 + a review note. DEMOTION-ONLY (never selects a value),
+    so there is no clean-but-wrong-keyword silent path.
+
+    Precision: the protective-token exclusion (has_no_protective_token) keeps a legit company whose
+    distinctive token is chrome-shaped ("Delivery Solutions Ltd" — 'Solutions'/'Ltd' protect it)
+    INERT, so only an all-coined caption garble is demoted. Fail-toward-review by construction.
+    Kill switch HEADING_GARBLE_GUARD=0. Inert if the char-trigram model is absent (wordness
+    unavailable -> name_structure_flag returns None)."""
+    if os.environ.get("HEADING_GARBLE_GUARD", "1") == "0":
+        return False
+    from extraction.value_quality import is_name_like_field
+    if not is_name_like_field(field_key):
+        return False
+    from extraction import wordness
+    v = str(value or "")
+    return (wordness.name_structure_flag(v) is not None
+            and wordness.has_no_protective_token(v))
+
+
 def _named_cross_supplier(anchor: dict, supplier_name: str | None) -> bool:
     """A NAMED (not global/unknown) different-supplier anchor — the scope for a cross-supplier read
     guard. Mirrors the positional branch of _is_blind_cross_supplier_anchor."""
     a_sup = (anchor.get("supplier_name") or "").lower().strip()
     return bool(a_sup and a_sup not in ("__global__", "__unknown__")
                 and a_sup != (supplier_name or "").lower().strip())
+
+
+# 007① same-layout position tolerance (Oracle-corrected). A cross-supplier caption found MORE than
+# this far from where the field was TAUGHT is a DIFFERENT layout (a generic-caption false-locate),
+# so the absolute-box read must not be trusted. Per-axis: X (columns) is looser than Y (rows are a
+# line-height tall). Fractions of page width/height. Corpus-validated (realdoc_regression, M=0).
+_SAME_LAYOUT_TOL_X = 0.10
+_SAME_LAYOUT_TOL_Y = 0.06
+
+# RELOCATION position-veto tolerances (Oracle 2026-07-12) — DELIBERATELY LOOSER than the
+# cross-supplier _SAME_LAYOUT_TOL above, and a SEPARATE constant on purpose: the drift-recovery
+# relocate rung EXISTS to follow LARGE legitimate drift (a clipped/shifted scan moves the true
+# caption far from taught), so the veto must forgive that while still rejecting a full-column jump
+# (the "Delivery Note No." → "Deliver To" skew grab is off by ΔX≈0.46, caught at any sane bound).
+# Also absorbs the raw↔deskew frame slop on a --deskew-pages reprocess (located label is in the
+# deskewed frame, taught coords are raw; mismatch ≈ r·θ, up to ~0.09 in Y at the ±15° ceiling).
+# Corpus-tuned (realdoc_regression M=0 + over-veto/over-admit probes); do NOT collapse back into
+# _SAME_LAYOUT_TOL — that is a different question (same-layout proof vs same-supplier drift budget).
+_RELOC_TOL_X = 0.22
+_RELOC_TOL_Y = 0.14
+
+
+def _located_at_taught_position(located, vx, vy, offset_dx, offset_dy,
+                                tol_x=_SAME_LAYOUT_TOL_X, tol_y=_SAME_LAYOUT_TOL_Y) -> bool:
+    """007① (Oracle-corrected): is the RE-LOCATED caption at the TAUGHT position, not merely PRESENT?
+    A generic caption ("Invoice Number") exists on many layouts at DIFFERENT absolute positions, so
+    'the caption is on this page' does NOT prove same-layout for a cross-supplier anchor — only 'the
+    caption is where it was taught' does. Compares the located label's TOP-LEFT to the taught expected
+    label top-left = value_centre − offset (the frame review/renderer.js captured the offset in:
+    offset = value_centre − label_top_left). Per-axis tolerance. NO offset → the value can't be placed
+    from the label → cannot verify → False (low-trust: the cross-supplier read is then capped/dropped).
+    Pure/coordinate-only — no supplier/filename/document logic. Guarded by test_identity_anchor_scope.py."""
+    lb = (located or {}).get("label_box") or located or {}
+    lx, ly = lb.get("x_norm"), lb.get("y_norm")
+    if lx is None or ly is None:
+        return False                                   # no positional evidence → don't trust
+    if offset_dx is None or offset_dy is None or (not offset_dx and not offset_dy):
+        return False                                   # no offset → can't place value from label → low-trust
+    exp_lx = float(vx) - float(offset_dx)              # expected label TOP-LEFT
+    exp_ly = float(vy) - float(offset_dy)
+    return abs(float(lx) - exp_lx) <= tol_x and abs(float(ly) - exp_ly) <= tol_y
 
 
 def _reads_disagree(a, b, val_type) -> bool:
@@ -2132,7 +2537,20 @@ def _is_blind_cross_supplier_anchor(field_key: str, anchor: dict,
     a DIFFERENT position ("false-locate") keeps a wrong absolute value uncapped — closing that needs
     the label-relative offset read elevated over the absolute read, a separate slice. Pure/unit-tested."""
     if located_ok:
-        return False
+        # WEAK-CORE locate exception (Oracle C2, 2026-07-10): a locate via a caption whose
+        # alphabetic CORE is ≤3 chars — the bare "No."/"Ref"/"SO #" class the SHORT_CAPTION
+        # allowlist made teachable — proves almost nothing about layout identity: a standalone
+        # prose "no" anywhere on a NAMED different supplier's page "locates" it, and the
+        # located upgrade would bypass this guard (the documented generic-caption residual —
+        # the 'Invoice'-label class behind the 07-08 harness RED, with an even weaker
+        # caption). For a NAMED DIFFERENT supplier only, a weak-core locate does NOT count as
+        # "same layout": fall through to the blind-read rules below (→ dropped). Same-supplier
+        # / global / unknown scopes and ≥4-alpha-core labels are byte-identical. An UNRESOLVED
+        # supplier also falls through — no layout evidence either way; the Stage-2.6 rescue
+        # re-runs the anchor as same-supplier once identity resolves.
+        _core = re.sub(r'[^a-z]', '', (anchor.get("anchor_label") or "").lower())
+        if len(_core) > 3 or not _named_cross_supplier(anchor, supplier_name):
+            return False
     is_identity = field_key in _IDENTITY_FIELD_KEYS
     if is_identity and identity_labels:
         a_lbl = (anchor.get("anchor_label") or "").strip().lower()
@@ -2192,9 +2610,33 @@ def _anchor_matches(anchor: dict, supplier_name: str | None,
     # supplier guess (Greenfield reading "Supplier: Greenfield" over an "Acme" template match —
     # test_supplier_identity_stability), which is a legitimate identity re-resolution.
     if a_type and d_type and a_type == d_type:
-        return True
+        # Cross-supplier (DIFFERENT named supplier, SAME doc-type): admit ONLY for IDENTITY fields
+        # (supplier_name/customer_name). Layouts differ PER SUPPLIER, so a cross-supplier POSITIONAL
+        # anchor (invoice_number/date/total/…) is almost never right and only BLEEDS — supplier A's
+        # taught box reading a wrong region of supplier B's doc (the invoice_number drift). So a
+        # positional field is NOT admitted cross-supplier; it resolves from THIS doc's own
+        # supplier-agnostic keyword read (or is taught per supplier). NOTE there is no operator
+        # "this layout is shared across suppliers" control — a __global__ anchor only arises as a
+        # FALLBACK when the supplier was unresolved at teach time (see learning.js), so it is NOT the
+        # user-facing opt-in for a shared layout; keyword + per-supplier teaching is the real net.
+        # IDENTITY fields DO stay cross-supplier-admittable
+        # because a supplier's own labelled identity anchor must be able to CORRECT a wrong
+        # template/logo supplier guess (test_supplier_identity_stability), and the read-stage located
+        # gate keeps only its own labelled read. (2026-07-09, at the user's direction: "the layouts
+        # per supplier will mostly be different" — so cross-supplier positional reads never fire.)
+        return anchor.get("field_key") in _IDENTITY_FIELD_KEYS
 
     return False
+
+
+def anchor_admissible(anchor: dict, supplier_name: str | None,
+                      document_type: str | None) -> bool:
+    """PUBLIC admission check for ONE anchor under a given (supplier, doc-type) identity —
+    exactly _anchor_matches, exposed by name for the engine's Stage-2.6 LATE-ANCHOR RESCUE,
+    whose rescue set is the DELTA of admission (admissible under the freshly-resolved
+    supplier but NOT under None = exactly that supplier's own named positional anchors).
+    Behaviour-identical wrapper; keeps the engine off the private API."""
+    return _anchor_matches(anchor, supplier_name, document_type)
 
 
 def _label_pattern(label: str) -> "re.Pattern | None":

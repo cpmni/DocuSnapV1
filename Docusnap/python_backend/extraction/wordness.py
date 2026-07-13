@@ -185,6 +185,20 @@ def name_structure_flag(value, *, word_like: bool = True) -> "str | None":
     return None
 
 
+def has_no_protective_token(value) -> bool:
+    """True when NONE of `value`'s substantial tokens is a known-good structural word
+    (ABBREV / COMMON_WORDS) — i.e. the value carries NO protective name-structure evidence.
+    Pairs with name_structure_flag to tell a document-CAPTION garble ("Deliver To RRS", "Deliver
+    lo") — all-coined tokens, no real word — from a legit company that merely contains a
+    chrome-shaped distinctive word beside a real one ("Delivery Solutions Ltd" carries
+    'Solutions'/'Ltd'). Mirrors name_structure_flag's own substantial/content split so the two
+    agree on tokenisation. False for an empty / no-substantial-token value (no basis to demote)."""
+    toks = [t for t in re.split(r"[^A-Za-z]+", str(value or "")) if t]
+    substantial = [t for t in toks if len(_clean(t)) >= _MIN_TOKEN_LEN]
+    return bool(substantial) and all(
+        _clean(t) not in ABBREV and _clean(t) not in COMMON_WORDS for t in substantial)
+
+
 def looks_like_garble(value: str) -> bool:
     """Convenience boolean: should this free-text NAME value be flagged for review?"""
     return name_structure_flag(value) is not None

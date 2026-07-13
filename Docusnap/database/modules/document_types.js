@@ -11,11 +11,14 @@ const { safeSlug, uniqueSlug } = require('./slug');
 // per-document VALUE stays editable (so a mis-read can be corrected — that's what
 // feeds learning), but the FIELD itself cannot be deleted, disabled, renamed or
 // retyped. A field is structural when its key is the type's reference or date key,
-// or it is the COMPANY/identity field. COMPANY_KEYS is the internal scope key; the
-// DISPLAY label is "Document Issuer" for BOTH (the entity that issued the document) —
-// one unambiguous label so an operator never puts variable data (e.g. a customer name)
-// in the identity field. The KEY is the learning scope, so the schema is untouched.
-const COMPANY_KEYS = ['supplier_name', 'customer_name'];
+// or it is the COMPANY/identity field. The SOLE identity/scope key is `supplier_name`
+// (the entity that ISSUED the document — its logo/letterhead), labelled "Document Issuer".
+// `customer_name` is NO LONGER an identity key (migration 44, 2026-07-10): it is now an
+// ordinary OPTIONAL field (the recipient/buyer), so a sales-order-style doc files + learns
+// under its true issuer (from the logo), not under the buyer — and the whole downstream
+// stack (documents.supplier_name, filing Company folder, supplier-scoped learning, trust.js)
+// which already keyed off `supplier_name` alone is now consistent with the data model.
+const COMPANY_KEYS = ['supplier_name'];
 
 function isStructuralKey(dt, key) {
   return COMPANY_KEYS.includes(key)
@@ -48,9 +51,10 @@ const BUILT_IN_TYPES = [
     date_field_key: 'order_date',
     sort_order:     20,
     fields: [
-      { key: 'customer_name',       label: 'Document Issuer',       type: 'text', required: 1, sort_order: 10 },
+      { key: 'supplier_name',       label: 'Document Issuer',      type: 'text', required: 1, sort_order: 10 },
       { key: 'order_date',          label: 'Order Date',          type: 'date', required: 1, sort_order: 20 },
       { key: 'sales_order_number',  label: 'Sales Order Number',  type: 'text', required: 1, sort_order: 30 },
+      { key: 'customer_name',       label: 'Customer',            type: 'text', required: 0, sort_order: 40 },
     ]
   },
   {
@@ -145,7 +149,75 @@ function _cleanupAutoMoneyFields(db) {
 // (a self-reinforcing monoculture the evidence-based variability guard can't
 // break once every confirmed doc carries the same wrong value). Everything else
 // defaults to "constant" — the right default for supplier/customer/addresses/terms.
+// Read: the stored title_aliases JSON string → a real array (guarded). The SINGLE
+// parse choke point — every getter that returns a doc type routes through
+// _annotateFieldVariability, so the UI and the Python training file both receive an
+// array, never a double-encoded string. Never read title_aliases off raw getAll().
+function _parseAliases(v) {
+  if (Array.isArray(v)) return v;
+  if (typeof v !== 'string' || !v.trim()) return [];
+  try { const a = JSON.parse(v); return Array.isArray(a) ? a.map(String) : []; } catch { return []; }
+}
+
+// Common document-chrome single words — legitimate as a title in rare cases, but a
+// too-generic alias risks matching OTHER documents, so we WARN (never block) on these.
+const _CHROME_WORDS = new Set(['order', 'note', 'sheet', 'form', 'total', 'date', 'amount',
+  'number', 'page', 'copy', 'original', 'statement', 'document', 'account', 'summary', 'report']);
+
+// Write validator for title aliases (shared by addType/updateType/create-doc-type-with-fields
+// so the three write paths can't drift). Returns {aliases, error, notices}:
+//  • HARD ERROR (caller throws → surfaced to the operator) when an alias equals ANY existing
+//    document-type NAME — that would fold another type's title into this bucket and could
+//    silently stamp the wrong type. (An alias equal to THIS type's own name is just redundant
+//    → dropped silently.)
+//  • Hard-DROP (with a notice so the operator sees it didn't save): empty, >60 chars,
+//    <3 letters/digits, purely-non-alphabetic (numeric/punctuation), duplicates (case-insensitive),
+//    and anything beyond the 20-per-type cap.
+//  • WARN (kept, with a notice): a common document-chrome word (may match other documents).
+function normaliseTitleAliases(db, input, typeName) {
+  const notices = [];
+  const list = Array.isArray(input) ? input
+             : (typeof input === 'string' ? input.split(/[\n,]/) : []);
+  const existing = new Set();
+  try { for (const r of db.prepare('SELECT name FROM document_types').all()) existing.add(String(r.name || '').trim().toLowerCase()); } catch {}
+  const self = String(typeName || '').trim().toLowerCase();
+  const seen = new Set();
+  const out = [];
+  for (const raw of list) {
+    const a = String(raw == null ? '' : raw).replace(/\s+/g, ' ').trim();
+    if (!a) continue;
+    const low = a.toLowerCase();
+    if (low === self) continue;                                   // == this type's name → redundant, skip
+    if (existing.has(low)) {                                      // == ANOTHER type's name → hard error
+      return { aliases: [], error: `"${a}" is already a document type — it can't be used as an alias.`, notices };
+    }
+    if (a.length > 60) { notices.push(`"${a.slice(0, 24)}…" was too long and wasn't added.`); continue; }
+    if (!/[a-z]/i.test(a)) { notices.push(`"${a}" has no letters, so it wasn't added (too likely to match page numbers).`); continue; }
+    if (a.replace(/[^a-z0-9]/gi, '').length < 3) { notices.push(`"${a}" is too short to detect reliably, so it wasn't added.`); continue; }
+    if (seen.has(low)) continue;                                  // case-insensitive de-dupe
+    seen.add(low);
+    if (out.length >= 20) { notices.push('Only the first 20 aliases were kept.'); break; }
+    if (_CHROME_WORDS.has(low)) notices.push(`"${a}" is a very common word — it may match other documents, so only keep it if it's really the title.`);
+    out.push(a);
+  }
+  return { aliases: out, error: null, notices };
+}
+
+// Serialise for storage: [] / no aliases → NULL (byte-identical to a pre-feature row).
+function _serialiseAliases(aliases) {
+  return (Array.isArray(aliases) && aliases.length) ? JSON.stringify(aliases) : null;
+}
+
+// The real DB always has title_aliases (migration), but a pre-migration DB or a hand-rolled
+// test fixture may not — so addType/updateType tolerate its absence rather than throwing
+// "no such column". Cheap PRAGMA; not cached (schema is stable within a run).
+function _hasTitleAliasesColumn(db) {
+  try { return db.prepare("PRAGMA table_info(document_types)").all().some(c => c.name === 'title_aliases'); }
+  catch { return false; }
+}
+
 function _annotateFieldVariability(dt) {
+  dt.title_aliases = _parseAliases(dt.title_aliases);   // JSON string → array (single choke point)
   for (const f of dt.fields || []) {
     f.is_variable = (
       f.key === dt.ref_field_key ||
@@ -232,13 +304,29 @@ function getAllWithFieldsAll(db) {
   return types;
 }
 
-function addType(db, { name, ref_field_key, date_field_key }) {
+function addType(db, { name, ref_field_key, date_field_key, title_aliases }) {
   // Canonical slug + a live uniqueness suffix: two distinct names that collapse
   // to the same base (e.g. non-Latin "发票"/"账单" -> the fallback) no longer throw
   // a raw "UNIQUE constraint failed: document_types.slug". (Name is separately
   // UNIQUE, so a true duplicate name still errors as before.)
   const slugTaken = db.prepare('SELECT 1 FROM document_types WHERE slug = ?');
   const slug = uniqueSlug(name, (s) => slugTaken.get(s), { fallback: 'type' });
+  // Title aliases (optional) — validated at this write choke point so no caller can
+  // bypass. A name-collision throws (surfaced to the operator); soft drops are silent
+  // here (the IPC edge re-runs the normaliser to surface drop notices to the UI).
+  const hasAliasCol = _hasTitleAliasesColumn(db);
+  let aliasJson = null;
+  if (title_aliases != null && hasAliasCol) {
+    const na = normaliseTitleAliases(db, title_aliases, name);
+    if (na.error) throw new Error(na.error);
+    aliasJson = _serialiseAliases(na.aliases);
+  }
+  if (hasAliasCol) {
+    return db.prepare(`
+      INSERT INTO document_types (name, slug, built_in, ref_field_key, date_field_key, title_aliases)
+      VALUES (?, ?, 0, ?, ?, ?)
+    `).run(name, slug, ref_field_key || null, date_field_key || null, aliasJson);
+  }
   return db.prepare(`
     INSERT INTO document_types (name, slug, built_in, ref_field_key, date_field_key)
     VALUES (?, ?, 0, ?, ?)
@@ -295,8 +383,24 @@ function deleteField(db, id) {
 
 function updateType(db, id, changes) {
   const allowed = ['name', 'enabled', 'ref_field_key',
-                   'date_field_key', 'sort_order'];
+                   'date_field_key', 'sort_order', 'title_aliases'];
   changes = { ...changes };
+  // Title aliases: validate against the INCOMING name if renaming in the same call, else
+  // the current row's name (so an alias equal to the new/old name is still rejected). Throws
+  // on a name-collision; pre-SERIALISE the array to a JSON string (or NULL) because the
+  // generic @key binder below can't bind a JS array. Runs at this write choke point.
+  if ('title_aliases' in changes) {
+    if (!_hasTitleAliasesColumn(db)) {
+      delete changes.title_aliases;                       // pre-migration / fixture without the column
+    } else {
+      const nameForCheck = ('name' in changes && changes.name)
+        ? changes.name
+        : (db.prepare('SELECT name FROM document_types WHERE id = ?').get(id) || {}).name;
+      const na = normaliseTitleAliases(db, changes.title_aliases, nameForCheck);
+      if (na.error) throw new Error(na.error);
+      changes.title_aliases = _serialiseAliases(na.aliases);
+    }
+  }
   // A structural role must point at a field that EXISTS on this type — never let a
   // caller create a dangling ref/date role (which would make Review's Confirm gate
   // impossible to satisfy). A non-null role key with no matching field is dropped from
@@ -350,6 +454,73 @@ function ensureStructuralRoles(db, typeId) {
   }
 }
 
+// Migration 44 core (idempotent + reusable): UNLINK customer_name from identity. For every type
+// that used customer_name as its "Document Issuer" identity, ensure a supplier_name identity field
+// exists and demote the customer_name field to an optional "Customer" field. SCHEMA-ONLY — touches
+// NO document / filing / learning data (owner decision 2026-07-10: no ambiguous back-fill). Only a
+// field still carrying the OLD identity label "Document Issuer" is demoted, so a customer_name used
+// as a secondary field ("Deliver To"/"Customer") is left untouched. Returns the count reshaped.
+function reshapeCustomerIdentityTypes(db) {
+  const typesWithCustomer = db.prepare(
+    `SELECT DISTINCT document_type_id AS tid FROM fields WHERE key = 'customer_name'`).all();
+  const hasSupplier = db.prepare(
+    `SELECT 1 FROM fields WHERE document_type_id = ? AND key = 'supplier_name' LIMIT 1`);
+  const minSort = db.prepare(
+    `SELECT COALESCE(MIN(sort_order), 10) AS s FROM fields WHERE document_type_id = ?`);
+  const addSupplier = db.prepare(
+    `INSERT INTO fields (document_type_id, key, label, type, required, sort_order)
+     VALUES (?, 'supplier_name', 'Document Issuer', 'text', 1, ?)`);
+  const demoteCustomer = db.prepare(
+    `UPDATE fields SET label = 'Customer', required = 0
+     WHERE document_type_id = ? AND key = 'customer_name' AND label = 'Document Issuer'`);
+  let reshaped = 0;
+  for (const { tid } of typesWithCustomer) {
+    if (!hasSupplier.get(tid)) addSupplier.run(tid, (minSort.get(tid).s || 10) - 1);
+    if (demoteCustomer.run(tid).changes) reshaped++;
+  }
+  return reshaped;
+}
+
+// Migration 45 core (idempotent): clean STALE customer_name LEARNING left by the pre-RC2 model where
+// customer_name WAS the "Document Issuer" identity — so the now-recipient field stops mirroring the
+// issuer on reprocess. Touches ONLY customer_name hints/anchors; keeps legit recipient learning.
+// gary-designed + Oracle-aligned, schema/data-safe (removes wrong data, never injects). Depends on
+// migration 44 having relabelled the field to "Customer" (so the user won't re-teach the issuer into
+// it → the stale hint won't regenerate). Returns the counts deleted.
+function cleanupStaleCustomerLearning(db) {
+  const has = (t) => { try { return !!db.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name=?`).get(t); } catch { return false; } };
+  if (!has('supplier_hints') && !has('field_anchors')) return { hintsSelfEqual: 0, hintsKnownIssuer: 0, anchors: 0 };
+  let hintsSelfEqual = 0, hintsKnownIssuer = 0, anchors = 0;
+  if (has('supplier_hints')) {
+    // Snapshot the KNOWN-ISSUER set FIRST (deterministic + idempotent): a company with a logo, or a
+    // learned supplier SCOPE, IS an issuer. A recipient value equal to a known issuer is stale.
+    const issuers = new Set();
+    if (has('logo_fingerprints'))
+      for (const r of db.prepare(`SELECT DISTINCT LOWER(TRIM(supplier_name)) s FROM logo_fingerprints WHERE TRIM(COALESCE(supplier_name,''))<>''`).all()) issuers.add(r.s);
+    for (const r of db.prepare(`SELECT DISTINCT LOWER(TRIM(supplier_name)) s FROM supplier_hints WHERE supplier_name NOT IN ('__global__','__unknown__') AND TRIM(COALESCE(supplier_name,''))<>''`).all()) issuers.add(r.s);
+    // A — scope hint whose value == its own issuer scope (the reprocess fill; ZERO false-positive).
+    hintsSelfEqual = db.prepare(`
+      DELETE FROM supplier_hints WHERE field_key='customer_name'
+        AND supplier_name NOT IN ('__global__','__unknown__') AND supplier_name IS NOT NULL
+        AND LOWER(TRIM(hint_value)) = LOWER(TRIM(supplier_name))`).run().changes;
+    // B — any customer_name hint whose VALUE is a known issuer (logo/learned-scope). Keeps a genuine
+    // recipient that is never a supplier/logo (e.g. "Greenfield Nurseries"). Bounded false-positive
+    // on a dual-role company — accepted (fail toward review), pinned by test.
+    if (issuers.size) {
+      const rows = db.prepare(`SELECT id, LOWER(TRIM(hint_value)) v FROM supplier_hints WHERE field_key='customer_name'`).all();
+      const del = db.prepare(`DELETE FROM supplier_hints WHERE id=?`);
+      const tx = db.transaction((rs) => { let n = 0; for (const r of rs) if (issuers.has(r.v)) n += del.run(r.id).changes; return n; });
+      hintsKnownIssuer = tx(rows);
+    }
+  }
+  // C — customer_name anchors labelled the OLD identity label "Document Issuer" (defensive; the ONLY
+  // reason they're currently guard-dropped is customer_name still being in engine _IDENTITY_FIELD_KEYS —
+  // remove them now so a later RC2 follow-up that drops that membership can't resurrect the issuer read).
+  if (has('field_anchors'))
+    anchors = db.prepare(`DELETE FROM field_anchors WHERE field_key='customer_name' AND LOWER(TRIM(anchor_label))='document issuer'`).run().changes;
+  return { hintsSelfEqual, hintsKnownIssuer, anchors };
+}
+
 // ── Preset document-type catalog ──────────────────────────────────────────────
 //
 // A library of READY-MADE document types a business can tick to add (Settings →
@@ -390,22 +561,24 @@ const PRESET_CATALOG = [
   },
   {
     name: 'Sales Invoice', ref_field_key: 'invoice_number', date_field_key: 'invoice_date',
-    company_key: 'customer_name',
+    company_key: 'supplier_name',
     fields: [   // all canonical → shipped field_patterns own the labels
-      { key: 'customer_name',  label: 'Document Issuer',  type: 'text',     required: 1 },
+      { key: 'supplier_name',  label: 'Document Issuer', type: 'text',     required: 1 },
       { key: 'invoice_number', label: 'Invoice Number', type: 'text',     required: 1 },
       { key: 'invoice_date',   label: 'Invoice Date',   type: 'date',     required: 1 },
+      { key: 'customer_name',  label: 'Customer',       type: 'text',     required: 0 },
       { key: 'total_amount',   label: 'Total',          type: 'currency', required: 0 },
     ],
   },
   {
     name: 'Remittance Advice', ref_field_key: 'remittance_number', date_field_key: 'remittance_date',
-    company_key: 'customer_name',
+    company_key: 'supplier_name',
     fields: [
-      { key: 'customer_name',     label: 'Document Issuer',     type: 'text',     required: 1,
-        // QUALIFIED/directional only — name fields are ungated, so a bare "From"
-        // (also the supplier-address / email-header sense) is unsafe; use the payer-specific forms.
+      { key: 'supplier_name',     label: 'Document Issuer',     type: 'text',     required: 1,
+        // The REMITTER (payer) issues the advice — its payer-specific captions live on the issuer.
+        // QUALIFIED/directional only — name fields are ungated, so a bare "From" is unsafe.
         labels: ['Remitter', 'Received From', 'Payment From', 'Payer', 'Paid By'] },
+      { key: 'customer_name',     label: 'Customer',            type: 'text',     required: 0 },
       { key: 'remittance_number', label: 'Remittance Number', type: 'text',     required: 1,
         labels: ['Remittance No', 'Remittance Number', 'Remittance Ref', 'Advice No', 'Payment Ref', 'Payment Reference'] },
       { key: 'remittance_date',   label: 'Remittance Date',   type: 'date',     required: 1,
@@ -433,7 +606,7 @@ const PRESET_CATALOG = [
     fields: [
       { key: 'supplier_name',   label: 'Document Issuer',   type: 'text', required: 1,
         labels: ['Delivered By', 'Despatched By', 'Dispatched By'] },
-      { key: 'customer_name',   label: 'Document Issuer',   type: 'text', required: 0,
+      { key: 'customer_name',   label: 'Customer',          type: 'text', required: 0,
         labels: ['Deliver To', 'Delivery To', 'Ship To', 'Consignee'] },
       { key: 'delivery_number', label: 'Delivery Number', type: 'text', required: 1,
         labels: ['Delivery No', 'Delivery Number', 'Delivery Note No', 'DN No', 'Despatch No', 'Dispatch No', 'Docket No', 'Note No'] },
@@ -446,7 +619,7 @@ const PRESET_CATALOG = [
     fields: [
       { key: 'supplier_name',    label: 'Document Issuer',    type: 'text',     required: 1,
         labels: ['Statement From'] },
-      { key: 'customer_name',    label: 'Document Issuer',    type: 'text',     required: 0,
+      { key: 'customer_name',    label: 'Customer',           type: 'text',     required: 0,
         labels: ['Statement To', 'Account Holder'] },
       { key: 'statement_number', label: 'Statement Number', type: 'text',     required: 1,
         labels: ['Statement No', 'Statement Number', 'Statement Ref'] },
@@ -562,6 +735,7 @@ function addPresetTypes(db, slugs) {
 module.exports = {
   seedBuiltInTypes, getAll, getWithFields, getAllWithFields, getAllWithFieldsAll,
   addType, updateType, addField, updateField, deleteField, ensureStructuralRoles,
-  COMPANY_KEYS, isStructuralKey,
+  reshapeCustomerIdentityTypes, cleanupStaleCustomerLearning,
+  COMPANY_KEYS, isStructuralKey, normaliseTitleAliases,
   PRESET_CATALOG, presetSlug, getPresetCatalog, addPresetTypes,
 };

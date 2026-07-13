@@ -302,13 +302,17 @@ function _drainQueue(db) {
   const files  = _queue.splice(0, _queue.length);   // take the whole current queue
   const shards = processing.partitionRoundRobin(files, Math.min(concurrency, files.length));
   _inFlight = shards.length;
+  try { processing.beginWatchActivity(files.length); } catch {}   // Review "importing" bar (reprocess paused)
   for (const shard of shards) {
     _processBatch(db, shard)
       .catch(e => _log('err', `[watch] batch processing error — ${e.message}`))
       .finally(() => {
         for (const f of shard) { const rec = _tracked.get(f); if (rec) rec.state = 'done'; }
         _inFlight--;
-        if (_inFlight === 0) _drainQueue(db);   // whole batch done — pick up anything that arrived
+        if (_inFlight === 0) {
+          try { processing.endWatchActivity(); } catch {}   // watch idle — clear the Review bar
+          _drainQueue(db);   // whole batch done — pick up anything that arrived
+        }
       });
   }
 }

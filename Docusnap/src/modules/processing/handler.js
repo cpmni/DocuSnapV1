@@ -37,6 +37,24 @@ let _singleReprocessActive = false;  // a single reprocess-document is in flight
 // which presents as the app "freezing". Reprocess entry points refuse when busy; the watch folder
 // already defers on this signal.
 function _anyProcessingBusy() { return _currentBatchProcs.length > 0 || _singleReprocessActive; }
+
+// ── Processing-activity signal for OTHER windows (esp. Review) ─────────────────────────
+// A single-doc reprocess is REFUSED while an import/watch batch is running (heavy work is
+// serialised). Broadcast a lightweight activity state to ALL windows so the Review window can
+// show WHY reprocess is unavailable + a progress indicator. Import and watch both route file
+// completions through _handleFileMessage, so one bump there drives the count for either source.
+let _activity  = null;   // null | { source:'import'|'watch', done, total }
+let _notifyAll = null;   // ctx.notifyAllWindows, set in register()
+function _broadcastActivity() {
+  try {
+    _notifyAll?.('processing-activity', _activity
+      ? { active: true, source: _activity.source, done: _activity.done, total: _activity.total }
+      : { active: false });
+  } catch { /* never let a UI signal break processing */ }
+}
+function _beginActivity(source, total) { _activity = { source, done: 0, total: total || 0 }; _broadcastActivity(); }
+function _bumpActivity()               { if (_activity) { _activity.done++; _broadcastActivity(); } }
+function _endActivity(source)          { if (_activity && _activity.source === source) { _activity = null; _broadcastActivity(); } }
 let _cancelRequested   = false;  // set true when stop is requested; suppresses buffered stdout
 let _pendingDrains     = [];     // originals to move to Processed/Errors AFTER the worker exits (pdfium holds the PDF open mid-run, so a mid-batch rename is locked)
 
@@ -96,13 +114,78 @@ function cleanupFiles(files) {
   }
 }
 
+// Pure merge of a reprocess result's extraction rows with the doc's EXISTING rows —
+// factored out of applyReprocessResult so the type-flip persistence is unit-testable
+// (test_reprocess_type_flip.js). `flip` is null when the reprocess kept the doc's type
+// (the merge is then byte-identical to the legacy behaviour), or — when the type
+// CHANGED — { newTypeKeys:Set, refKey, noteText }:
+//   - a carried-forward OLD row whose field_key is NOT in the new type's field set is
+//     DROPPED: Review renders only the current type's fields so the user could never
+//     see or fix it, but the trust gate and auto-file would still read it (Oracle
+//     condition 4, 2026-07-09);
+//   - noteText is planted on the new type's ref-field row (fallback: first row with a
+//     value, then first row) so the flip is explained in Review AND blocks auto-file
+//     (isAutoFileEligible refuses any doc carrying a validation_note — condition 3).
+function mergeReprocessRows(existing, newRows, flip = null, onTrace = null) {
+  const existingMap = {};
+  for (const e of existing) existingMap[e.field_key] = e;
+  const trace = (field, decision, oldV, newV) => { if (onTrace) onTrace(field, decision, oldV, newV); };
+
+  const mergedRows = newRows.map(row => {
+    const ex = existingMap[row.field_key];
+    if (!ex) return row;
+    if (ex.display_value && !row.display_value) {
+      trace(row.field_key, 'kept_existing', ex.display_value, row.display_value);
+      return {
+        ...row, raw_value: ex.raw_value,
+        display_value: ex.display_value, confidence: ex.confidence,
+        validation_note: ex.validation_note || null,
+        corrected_to: ex.corrected_to || null,
+      };
+    }
+    if (ex.display_value) trace(row.field_key, 'used_new', ex.display_value, row.display_value);
+    return row;
+  });
+
+  const newFieldKeys = new Set(newRows.map(r => r.field_key));
+  for (const ex of existing) {
+    if (!newFieldKeys.has(ex.field_key) && ex.display_value) {
+      if (flip && !flip.newTypeKeys.has(ex.field_key)) {
+        trace(ex.field_key, 'dropped_stale_type', ex.display_value, null);
+        continue;
+      }
+      mergedRows.push({
+        field_key:         ex.field_key,
+        raw_value:         ex.raw_value,
+        display_value:     ex.display_value,
+        confidence:        ex.confidence,
+        extraction_method: ex.extraction_method,
+        validation_note:   ex.validation_note || null,
+        corrected_to:      ex.corrected_to || null,
+      });
+    }
+  }
+
+  if (flip && flip.noteText && mergedRows.length) {
+    const target = mergedRows.find(r => r.field_key === flip.refKey)
+                || mergedRows.find(r => r.display_value)
+                || mergedRows[0];
+    target.validation_note = target.validation_note
+      ? `${flip.noteText} ${target.validation_note}`
+      : flip.noteText;
+  }
+  return mergedRows;
+}
+
 function buildTrainingArgs(db, configPath, logger = null) {
   const docTypes  = require('../../../database/modules/document_types');
   const learning  = require('../../../database/modules/learning');
   const templates = require('../../../database/modules/templates');
 
   const allDocTypes  = docTypes.getAllWithFields(db);
-  const allHints     = learning.getHints(db);
+  // getAllHints, NOT getHints(db): the bare form's default LIMIT 100 silently starved
+  // the engine of every new supplier's low-usage hints once the corpus grew (2026-07-10).
+  const allHints     = learning.getAllHints(db);
   const allAnchors   = learning.getAllAnchors(db);
   const allLogos     = learning.getAllLogos(db);
   const allTemplates = templates.getAll(db);
@@ -351,6 +434,7 @@ function register(ctx) {
           backendScript, configPath, notifyMainWindow, notifyDevInspector,
           notifyReview, safeSend, spawn, path, fs, logger } = ctx;
   _pyHelpers = { pythonExe, pythonArgs, backendScript };
+  _notifyAll = ctx.notifyAllWindows;   // broadcast import/watch activity to Review (see _broadcastActivity)
 
   // Startup holding-area reconciliation — GC crash debris (.part / orphaned /
   // already-confirmed inbox copies) so the holding queue agrees with the DB on
@@ -409,16 +493,36 @@ function register(ctx) {
   ipcMain.handle('dev-get-session-docs', () => { requireRole('admin', 'edit'); return _devSession.docs.slice().reverse(); });
   ipcMain.handle('dev-get-session-doc',  (_e, key) => { requireRole('admin', 'edit'); return _devSession.traceByDoc.get(key) || []; });
 
-  // Source folder for "Process Documents" — part of the daily Admin/Edit workflow.
+  // Source folder for "Process Documents" — part of the daily Admin/Edit workflow. A native folder
+  // picker can't show the files inside (Windows: folders-only), so the Import view lists the folder's
+  // documents right after picking (see 'list-import-folder') — the operator picks the folder here,
+  // then SEES what's in it before processing.
   ipcMain.handle('pick-folder', async (e) => {
     requireRole('admin', 'edit');
     const { BrowserWindow } = require('electron');
     const win = BrowserWindow.fromWebContents(e.sender);
     const r = await dialog.showOpenDialog(win, {
       properties: ['openDirectory'],
-      title: 'Select folder containing scanned documents',
+      title: 'Select the folder of scanned documents to import',
     });
     return r.canceled ? null : r.filePaths[0];
+  });
+
+  // List the documents the import will actually process in a chosen folder (non-recursive, SAME
+  // extension set as the batch enumerator above) so the Import view can show "N documents ready" +
+  // the filenames before processing. Read-only; returns { count, files, error? }.
+  ipcMain.handle('list-import-folder', async (_e, folderPath) => {
+    requireRole('admin', 'edit');
+    if (!folderPath) return { count: 0, files: [] };
+    try {
+      const files = fs.readdirSync(folderPath, { withFileTypes: true })
+        .filter(en => en.isFile() && BATCH_SUPPORTED_EXTS.has(path.extname(en.name).toLowerCase()))
+        .map(en => en.name)
+        .sort();
+      return { count: files.length, files };
+    } catch (err) {
+      return { count: 0, files: [], error: err.message };
+    }
   });
 
   // Single-file import for the Teach wizard: pick ONE PDF and stage it in a FRESH temp folder
@@ -826,6 +930,7 @@ function register(ctx) {
     // Build the worker set. concurrency<=1 keeps the EXACT original path (one
     // worker scans the folder; its own start/total flows straight through).
     let workerPromises;
+    let batchTotal = 0;              // # files to import (for the Review activity bar; 0 = unknown)
     if (concurrency <= 1) {
       logger?.log(`Batch start: folder="${folderPath}" mode=${procMode} concurrency=1`);
       workerPromises = [runWorker(null, false)];
@@ -844,6 +949,7 @@ function register(ctx) {
         logger?.log(`Batch start: folder="${folderPath}" mode=${procMode} concurrency=1 (only ${allFiles.length} file)`);
         workerPromises = [runWorker(null, false)];
       } else {
+        batchTotal = allFiles.length;
         const shards = partitionRoundRobin(allFiles, Math.min(concurrency, allFiles.length));
         logger?.log(`Batch start: folder="${folderPath}" mode=${procMode} concurrency=${concurrency} → ${shards.length} workers, ${allFiles.length} files`);
         // Per-worker thread cap = cores / workers, so the pool never oversubscribes the
@@ -861,10 +967,14 @@ function register(ctx) {
       }
     }
 
+    // Signal Review an import is running (reprocess paused) — placed AFTER worker setup so a setup
+    // throw can't leave the bar stuck; the workers resolve (never reject), so _endActivity always fires.
+    _beginActivity('import', batchTotal);
     const codes   = await Promise.all(workerPromises);
     const stopped = _cancelRequested;
     _cancelRequested   = false;
     _currentBatchProcs = [];
+    _endActivity('import');   // import finished — clear the Review activity bar + re-enable reprocess
     // Wait for every deferred per-file IO (async working-copy/rotate/drain/auto-file)
     // to finish so their drains are queued/attempted, THEN flush — the workers have
     // exited, so the source PDFs are unlocked and the moves into Processed/ now succeed.
@@ -900,6 +1010,12 @@ function register(ctx) {
   // the role-gated reprocess-document IPC below.
   // CPU info for the Settings "Documents processed at once" control — lets the renderer
   // size the picker to this machine's cores and explain the choice. Read-only.
+  // Current import/watch activity — so a Review window opened DURING a running batch can sync
+  // its "documents are being imported" bar immediately (the broadcast only fires on transitions).
+  ipcMain.handle('get-processing-activity', () => _activity
+    ? { active: true, source: _activity.source, done: _activity.done, total: _activity.total }
+    : { active: false });
+
   ipcMain.handle('get-concurrency-info', () => ({
     cores: os.cpus().length || 1,
     maxConcurrency: maxConcurrency(),
@@ -919,9 +1035,6 @@ function register(ctx) {
   // when the new run found nothing for that field, and a field the new run didn't
   // return at all is kept (so reprocess never silently drops a good first-pass read).
   function applyReprocessResult(db, docId, existing, result, filename, diagOn) {
-    const existingMap = {};
-    for (const e of existing) existingMap[e.field_key] = e;
-
     const newRows = Object.entries(result.extractions).map(([key, data]) => ({
       field_key:         key,
       raw_value:         data.value != null ? String(data.value) : null,
@@ -939,49 +1052,46 @@ function register(ctx) {
                    field, decision, old: oldV ?? null, new: newV ?? null });
     };
 
-    const mergedRows = newRows.map(row => {
-      const ex = existingMap[row.field_key];
-      if (!ex) return row;
-      if (ex.display_value && !row.display_value) {
-        _emitMerge(row.field_key, 'kept_existing', ex.display_value, row.display_value);
-        return {
-          ...row, raw_value: ex.raw_value,
-          display_value: ex.display_value, confidence: ex.confidence,
-          validation_note: ex.validation_note || null,
-          corrected_to: ex.corrected_to || null,
-        };
-      }
-      if (ex.display_value) _emitMerge(row.field_key, 'used_new', ex.display_value, row.display_value);
-      return row;
-    });
-
-    const newFieldKeys = new Set(newRows.map(r => r.field_key));
-    for (const ex of existing) {
-      if (!newFieldKeys.has(ex.field_key) && ex.display_value) {
-        mergedRows.push({
-          field_key:         ex.field_key,
-          raw_value:         ex.raw_value,
-          display_value:     ex.display_value,
-          confidence:        ex.confidence,
-          extraction_method: ex.extraction_method,
-          validation_note:   ex.validation_note || null,
-          corrected_to:      ex.corrected_to || null,
-        });
+    // Resolve the reprocessed doc type BEFORE merging: a reprocess that CHANGES the
+    // doc's type (the machine-authority title override in process_docs, or a live
+    // template match resolving differently) must (a) DROP carried-forward rows from
+    // the OLD type's field set — Review hides them (it renders only the current
+    // type's fields) but the trust gate / auto-file still READ them — and (b) plant
+    // an explanation note so the flip lands in Review and can never silently
+    // auto-file (isAutoFileEligible refuses any doc carrying a validation_note).
+    // Oracle conditions 3+4, 2026-07-09. Type unchanged → merge byte-identical.
+    const _prior = db.prepare('SELECT document_type_id FROM documents WHERE id = ?').get(docId);
+    const priorTypeId = _prior ? _prior.document_type_id : null;
+    let reprocDocTypeId = null, reprocType = null;
+    if (result.document_type) {
+      const docTypesMod = require('../../../database/modules/document_types');
+      reprocType = docTypesMod.getAllWithFields(db).find(
+        dt => dt.name.toLowerCase() === result.document_type.toLowerCase()
+      ) || null;
+      if (reprocType) reprocDocTypeId = reprocType.id;
+    }
+    let flip = null;
+    if (reprocDocTypeId != null && priorTypeId != null && reprocDocTypeId !== priorTypeId) {
+      const _old = db.prepare('SELECT name FROM document_types WHERE id = ?').get(priorTypeId);
+      const oldName = (_old && _old.name) || 'previous type';
+      flip = {
+        newTypeKeys: new Set((reprocType.fields || []).map(f => f.key)),
+        refKey:      reprocType.ref_field_key || null,
+        noteText:    `Document type changed from '${oldName}' to '${reprocType.name}' on reprocess — please check the fields.`,
+      };
+      if (logger) logger.log(`Reprocess TYPE CHANGE: ${filename} '${oldName}' -> '${reprocType.name}'`
+        + (result.type_overridden ? " (machine-assigned type overridden by the doc's own title)" : ''));
+      if (traceWanted(diagOn)) {
+        routeTrace({ type: 'trace', doc: filename, event: 'reprocess_type_change',
+                     from: oldName, to: reprocType.name, overridden: !!result.type_overridden });
       }
     }
+
+    const mergedRows = mergeReprocessRows(existing, newRows, flip, _emitMerge);
 
     const learning = require('../../../database/modules/learning');
     learning.deleteExtractions(db, docId);
     learning.insertExtractions(db, docId, mergedRows);
-
-    let reprocDocTypeId = null;
-    if (result.document_type) {
-      const docTypesMod = require('../../../database/modules/document_types');
-      const reMatch = docTypesMod.getAllWithFields(db).find(
-        dt => dt.name.toLowerCase() === result.document_type.toLowerCase()
-      );
-      if (reMatch) reprocDocTypeId = reMatch.id;
-    }
 
     db.prepare(
       `UPDATE documents SET
@@ -1020,7 +1130,7 @@ function register(ctx) {
     return { extractions: mergedMap, overall_confidence: result.overall_confidence };
   }
 
-  ipcMain.handle('reprocess-document', async (event, { docId, folderPath, filename, enhanceParams }) => {
+  ipcMain.handle('reprocess-document', async (event, { docId, folderPath, filename, enhanceParams, deskewOnce, forcedTypeSlug }) => {
     requireRole('admin', 'edit');
     const db      = getDb();
     // Multi-point licensing enforcement (F-01): reprocess re-runs the extraction
@@ -1083,7 +1193,10 @@ function register(ctx) {
     let ruleCreatedFor          = null;
     if (enhanceParams && typeof enhanceParams === 'object') {
       effectiveEnhanceParams = enhanceParams;
-      if (templateId) {
+      // A one-shot "Straighten + Reprocess" must NEVER become the template's permanent OCR
+      // baseline — deskew is a per-doc recovery, not a learned enhance. So skip setOcrAutoParams
+      // when deskewOnce (the enhance still applies to THIS reprocess via --enhance-file below).
+      if (templateId && !deskewOnce) {
         const updated = templates2.setOcrAutoParams(db, templateId, enhanceParams);
         ruleCreatedFor = updated ? updated.name : null;
       }
@@ -1100,42 +1213,62 @@ function register(ctx) {
       '--mode',       reprMode,
       ...trainingArgs,
     ];
-    // Honour the template this doc is already linked to as a Stage 0 fallback,
-    // so its admin-drawn field mappings still apply on reprocess even when live
-    // re-identification is borderline (see engine.extract known_template_id).
-    if (templateId) {
-      scriptArgs.push('--known-template-id', String(templateId));
-    }
-    // Honour the document's ALREADY-ASSIGNED doc type on reprocess instead of
-    // re-detecting it from the (possibly clipped/degraded) OCR text. Re-detection
-    // fails when a scan's identifying band is cut off → null document_slug →
-    // the learned-format / qualification gates silently disable → wrong-row crops
-    // commit and drift relocation never fires. A reprocessed doc already knows
-    // its type; pass that slug as the authoritative document_slug.
+    // Doc-TYPE args (pure decision in resolveReprocessTypeArgs). Default: pin the doc's ALREADY-ASSIGNED
+    // type as document_slug (so the format/qualification gates stay armed even on a clipped scan whose
+    // identifying band is cut off), mark it 'machine' authority ONLY when never human-confirmed (a trusted
+    // contradicting title may then re-type it), and pass the linked template as a Stage-0 mapping fallback.
+    // OVERRIDE: an operator's explicit dropdown pick (forcedTypeSlug, sent only when it DIFFERS from the
+    // doc's current type) forces that type as HUMAN authority — no machine title re-type / no snap-back —
+    // and suppresses the linked (rejected-type) template; the engine's live re-match recovers the
+    // correct-type template. Byte-identical when forcedTypeSlug is null.
+    const { resolveReprocessTypeArgs } = require('./reprocessTypeArgs');
+    let _knownSlugs = null;
+    try { _knownSlugs = new Set(db.prepare('SELECT slug FROM document_types WHERE slug IS NOT NULL').all().map(r => r.slug)); } catch {}
+    let _dtRow = null;
     try {
-      const dtRow = db.prepare(
-        `SELECT dt.slug AS slug FROM documents d
-         LEFT JOIN document_types dt ON dt.id = d.document_type_id
+      _dtRow = db.prepare(
+        `SELECT dt.slug AS slug, d.status AS status, d.confirmed_at AS confirmed_at
+         FROM documents d LEFT JOIN document_types dt ON dt.id = d.document_type_id
          WHERE d.id = ?`).get(docId);
-      if (dtRow && dtRow.slug) scriptArgs.push('--known-doc-slug', String(dtRow.slug));
     } catch {}
+    const _typeArgs = resolveReprocessTypeArgs({
+      storedSlug:  _dtRow ? _dtRow.slug : null,
+      status:      _dtRow ? _dtRow.status : null,
+      confirmedAt: _dtRow ? _dtRow.confirmed_at : null,
+      forcedTypeSlug, templateId, knownSlugs: _knownSlugs,
+    });
+    if (_typeArgs.knownTemplateId) {
+      scriptArgs.push('--known-template-id', String(_typeArgs.knownTemplateId));
+    }
+    if (_typeArgs.knownDocSlug) {
+      scriptArgs.push('--known-doc-slug', String(_typeArgs.knownDocSlug));
+      if (_typeArgs.authority) scriptArgs.push('--known-doc-slug-authority', _typeArgs.authority);
+    }
     // Dev trace stream + OCR slice capture while the inspector is open OR
     // diagnostic logging is on (so the diagnostic file captures reprocess too).
     if (traceWanted(diagOn)) {
       scriptArgs.push('--trace');
       try { fs.mkdirSync(ctx.devSliceDir, { recursive: true }); scriptArgs.push('--slice-dir', ctx.devSliceDir); } catch {}
     }
+    // "Straighten + Reprocess": deskew each scanned page before OCR. The filed file is untouched;
+    // the logo phash uses the raw frame (engine.extract raw_page0). Review-bound (reprocess never
+    // auto-files). Forces FRESH OCR below — the stored text is of the RAW (skewed) pixels.
+    if (deskewOnce) scriptArgs.push('--deskew-pages');
+
     const allTempFiles = [...tempFiles];
     if (effectiveEnhanceParams) {
       const enhanceFile = writeTempJson('enhance', effectiveEnhanceParams);
       allTempFiles.push(enhanceFile);
       scriptArgs.push('--enhance-file', enhanceFile);
-    } else {
+    } else if (!deskewOnce) {
       // Reprocess optimisation: reuse this doc's already-stored full-page OCR text so
       // the ~1.9s/page full-page OCR is skipped (the pixels don't change on reprocess —
       // only the learned data — and per-field crop reads still re-run, so accuracy is
       // unchanged). ONLY when no manual/template ENHANCE is active (that would change
       // the read) and the stored text is non-empty. Written into tmpDir (cleaned with it).
+      // SKIPPED on deskewOnce: the cached text is of the raw skewed pixels, so a straighten
+      // must re-OCR the deskewed page fresh (extract_text_and_images also gates deskew off
+      // under cached_text as a belt-and-braces).
       try {
         const otRow = db.prepare('SELECT ocr_text FROM documents WHERE id = ?').get(docId);
         if (otRow && otRow.ocr_text && otRow.ocr_text.trim()) {
@@ -1238,9 +1371,11 @@ function register(ctx) {
   // --reprocess-manifest, exactly as single-doc reprocess passes them. All DB writes
   // stay on the single-threaded JS event loop (applyReprocessResult), so there is no
   // SQLite contention. Stop kills every worker tree (shared _currentBatchProcs).
-  ipcMain.handle('reprocess-batch', async (event, docs) => {
+  ipcMain.handle('reprocess-batch', async (event, docs, opts) => {
     requireRole('admin', 'edit');
     const db = getDb();
+    const deskewAll = !!(opts && opts.deskewAll);   // C3/C4: force a straightened READ for every doc in this batch (session "Straighten all")
+    const deskewMinAngle = Math.max(0.2, Math.min(5.0, Number(opts && opts.deskewMinAngle) || 0.2));   // clamp the operator's floor (oscar: hard 0.2° min, 5° max)
     const licenseDenial = require('../licensing/handler').licenseDenied(db);
     if (licenseDenial) return { success: false, error: 'A valid license is required to reprocess documents. Please re-activate ScanFinder.', ...licenseDenial };
     // Serialise: refuse Reprocess All while a single reprocess (or another batch/import) is running —
@@ -1266,7 +1401,7 @@ function register(ctx) {
     const tmpNames  = [];
     for (const d of docs) {
       try {
-        const row = db.prepare('SELECT working_path, template_id, ocr_text FROM documents WHERE id = ?').get(d.docId);
+        const row = db.prepare('SELECT working_path, template_id, ocr_text, status, confirmed_at FROM documents WHERE id = ?').get(d.docId);
         const srcFile = (row && row.working_path && fs.existsSync(row.working_path))
           ? row.working_path
           : path.join(d.folderPath || '', d.filename || '');
@@ -1283,10 +1418,20 @@ function register(ctx) {
         manifest[tmpName]  = {
           known_template_id: (row && row.template_id) || null,
           known_doc_slug:    (dtRow && dtRow.slug) || null,
+          // Per-doc type authority (statuses differ across a batch — a global flag must
+          // never leak, so this is manifest-only): a NEVER-confirmed doc's type is the
+          // machine's own guess and a trusted contradicting title may re-type it on
+          // reprocess; a confirmed doc stays pinned (human checkpoint). Key present only
+          // when 'machine' — absent = pinned, today's behaviour.
+          ...(row && row.status !== 'confirmed' && !row.confirmed_at
+              ? { known_doc_slug_authority: 'machine' } : {}),
           enhance_params:    enh,
           // Reuse stored full-page OCR text → skip the ~1.9s/page re-OCR (only when no
           // enhance is active and the text is non-empty; crop reads still re-run).
-          ...(!enh && row && row.ocr_text && row.ocr_text.trim() ? { ocr_text: row.ocr_text } : {}),
+          // Skip the cached OCR text when straightening (Oracle/oscar C3): deskew is gated OFF under
+          // cached_text (tesseract.py use_cache), so keeping the cache here would read the RAW skewed
+          // pixels and the straighten would silently no-op. deskewAll forces a fresh straightened OCR.
+          ...(!enh && !deskewAll && row && row.ocr_text && row.ocr_text.trim() ? { ocr_text: row.ocr_text } : {}),
         };
         nameToDoc[tmpName] = { docId: d.docId, filename: d.filename, existing };
         tmpNames.push(tmpName);
@@ -1325,6 +1470,7 @@ function register(ctx) {
       shardFiles.push(filesFile);
       const scriptArgs = ['--folder', tmpDir, '--tesseract', tesseractPath(), '--mode', reprMode,
         '--files-file', filesFile, '--reprocess-manifest', manifestFile, ...trainingArgs];
+      if (deskewAll) scriptArgs.push('--deskew-pages', '--deskew-min-angle', String(deskewMinAngle));   // C3: straighten pages tilted past the operator's floor before reading (Python no-ops below it / on born-digital)
       if (traceWanted(diagOn)) {
         scriptArgs.push('--trace');
         try { fs.mkdirSync(ctx.devSliceDir, { recursive: true }); scriptArgs.push('--slice-dir', ctx.devSliceDir); } catch {}
@@ -1425,6 +1571,34 @@ function register(ctx) {
         try { fs.unlinkSync(tmpFile); } catch {}
         if (err) console.error('ocr_region_boxes stderr:', err);
         try { resolve(JSON.parse(out.trim())); } catch { resolve(null); }
+      });
+    });
+  });
+
+  // Straighten a rendered page for the Review DISPLAY: returns {angle, image} where image is a
+  // base64 PNG of the deskewed page (SAME pixel dims as the input — region.py rotates with
+  // expand=False) and angle is the applied straightening angle (PIL CCW-positive, 0 when the page
+  // is already level). Display-only + non-destructive (the filed original is never touched); the
+  // renderer swaps the shown page to this so drawn ⊕ boxes land on level text, then rotates the
+  // saved anchor coords back to the raw frame by the SAME angle. Mirrors the ocr-region spawn.
+  ipcMain.handle('get-page-deskew', async (_e, base64png, minAngle) => {
+    requireRole('admin', 'edit');
+    const tmpFile = path.join(os.tmpdir(), `ds_deskew_${Date.now()}.png`);
+    fs.writeFileSync(tmpFile, Buffer.from(base64png, 'base64'));
+    const script = ctx.resourcePath('python_backend', 'ocr', 'region.py');
+    const py = pythonExe();
+    return new Promise((resolve) => {
+      const proc = spawn(py, pythonArgs(script,
+        '--image-file', tmpFile, '--tesseract', tesseractPath(), '--deskew',
+        '--min-angle', String(Math.max(0.2, Math.min(5.0, Number(minAngle) || 0.2)))),
+        { windowsHide: true });
+      let out = '', err = '';
+      proc.stdout.on('data', d => { out += d.toString(); });
+      proc.stderr.on('data', d => { err += d.toString(); });
+      proc.on('close', () => {
+        try { fs.unlinkSync(tmpFile); } catch {}
+        if (err) console.error('get_page_deskew stderr:', err);
+        try { resolve(JSON.parse(out.trim())); } catch { resolve({ angle: 0, image: null }); }
       });
     });
   });
@@ -1902,6 +2076,7 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
     return;
   }
   if (msg.type !== 'file_done') return;
+  _bumpActivity();   // one document finished (import or watch) — advance the Review activity bar
 
   if (!msg.success) {
     logger?.err(`File failed: ${msg.original_filename || '?'} — ${msg.error || 'unknown error'}`);
@@ -2219,6 +2394,10 @@ module.exports = {
   reconcileHolding,
   runHoldingReconcile,
   isBatchRunning: () => _anyProcessingBusy(),
+  // Watch-folder activity → the Review "documents are being imported" bar (file bumps happen
+  // automatically via handleFileMessage). beginWatchActivity(total) on drain, endWatchActivity() when idle.
+  beginWatchActivity: (total) => _beginActivity('watch', total),
+  endWatchActivity:   ()      => _endActivity('watch'),
   // Shared with the watch-folder handler so it can batch + shard its queue exactly like a
   // manual import (one Python process per shard of MANY files, not one process per file).
   maxConcurrency,
@@ -2226,4 +2405,6 @@ module.exports = {
   partitionRoundRobin,
   // Exposed for the F-06 path-policy unit test (test_open_path_policy.js).
   _isOpenablePath,
+  // Exposed for the reprocess type-flip persistence unit test (test_reprocess_type_flip.js).
+  _mergeReprocessRows: mergeReprocessRows,
 };

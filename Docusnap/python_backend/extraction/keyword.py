@@ -7,11 +7,14 @@ No LLM required. Handles 60-70% of fields on well-structured documents.
 Reads patterns from config/keyword_patterns.json.
 """
 
+import os
 import re
 import json
 from pathlib import Path
 
 from extraction import number_format   # region-aware amount normaliser
+from ocr.text_layout import COLUMN_BREAK_MIN   # 4 = the reconstruct_page_text / born_digital column-break width
+from extraction import text_normalise   # shared token normaliser (caption vocab)
 
 
 def load_patterns(config_path: str | None = None) -> dict:
@@ -61,6 +64,67 @@ def _infer_validation(field_key: str) -> "str | None":
             or k in ("subtotal", "balance", "amount")):
         return "currency"
     return None
+
+
+# ── Shared CAPTION VOCABULARY (taught-field ownership guard c2 + known-caption guard G3b) ──
+# A "caption" is a printed field-label ("Customer", "Order Number", "SO #") — never a VALUE.
+# The vocabulary is the RUN's post-merge label banks (shipped ∪ overrides ∪ seeds, i.e. every
+# field's field_patterns['labels']) plus each field's DISPLAY label. Two comparison forms per
+# caption so both a spaced and a punctuation-glued rendering match: the content TOKEN-TUPLE
+# ("SO #" -> ('so',)) and the alnum-only JOINED form ("S.O.No." -> 'sono').
+def _caption_forms(value):
+    """(content_token_tuple, alnum_joined) for a value — the caption comparison keys."""
+    toks = tuple(t for t in text_normalise.tokenise(value) if any(c.isalnum() for c in t))
+    joined = ''.join(c for c in text_normalise.normalise_for_tokens(value) if c.isalnum())
+    return toks, joined
+
+
+def build_caption_vocab(field_patterns: dict, field_defs=None) -> dict:
+    """The run's caption vocabulary -> {'tuples': set, 'joined': set}. Reach GROWS with the
+    banks (a new shipped/override/seed label is automatically a caption). field_patterns must be
+    the POST-MERGE bank (patterns_for_run['field_patterns'])."""
+    tuples, joined = set(), set()
+
+    def _add(text):
+        tt, jj = _caption_forms(text)
+        if tt:
+            tuples.add(tt)
+            joined.add(jj)
+
+    for entry in (field_patterns or {}).values():
+        for lab in (entry.get('labels') or []):
+            _add(lab.get('text') if isinstance(lab, dict) else lab)
+    for f in (field_defs or []):
+        _add(f.get('label'))
+    return {'tuples': tuples, 'joined': joined}
+
+
+def value_is_caption(value, vocab) -> bool:
+    """True when `value` IS a known caption (not a value). Rule 1: content-token-tuple equality
+    ('SO #' == the 'SO #' label). Rule 2: alnum-joined equality, ONLY for a MULTI-TOKEN or
+    PUNCTUATED candidate ('S.O.No.' == 'SO No'). NEVER containment/prefix ('Order Solutions Ltd',
+    'Total Office Supplies', bare 'SONO' all survive). An empty content tuple (a '#'-only value)
+    never matches."""
+    if not vocab:
+        return False
+    tt, jj = _caption_forms(value)
+    if not tt:
+        return False
+    if tt in vocab.get('tuples', ()):          # rule 1
+        return True
+    v = str(value or '')
+    punctuated = any(not (c.isalnum() or c.isspace()) for c in v)
+    if (len(tt) > 1 or punctuated) and jj and jj in vocab.get('joined', ()):   # rule 2
+        return True
+    return False
+
+
+# G3b KNOWN-CAPTION VALUE GUARD kill switch (2026-07-11, DIRECTION_SUPREMACY): for a name-like /
+# party field (CUSTOMER-SIDE only — supplier_name excluded), a candidate VALUE that IS a known
+# caption ("SO #", "Customer") dies AT GENERATION (right/below), so a caption never fills the field
+# (the incident: customer_name read the "SO #" caption as a value). See extract_fields /
+# _search_for_label `caption_guard`. Default ON; KNOWN_CAPTION_GUARD=0 disables.
+KNOWN_CAPTION_GUARD_ENABLED = os.environ.get('KNOWN_CAPTION_GUARD', '1') != '0'
 
 
 def merge_label_overrides(patterns: dict, overrides: list, doc_slug: str | None) -> dict:
@@ -124,10 +188,176 @@ def merge_label_overrides(patterns: dict, overrides: list, doc_slug: str | None)
     return {**patterns, "field_patterns": field_patterns}
 
 
+# Common short-form captions per structural ROLE, so a CUSTOM ref/date field whose printed caption
+# differs from its DB label ("Reference number" printed as "Reference" / "Reference No." / "Ref") is
+# still found. Ref forms stay ref-SPECIFIC (all carry ref/reference/no) to limit collisions; the
+# _ref_caption_party_conflict guard blocks a buyer/seller "Customer Reference" cross-fill.
+# The "No" forms are tried FIRST so the caption is fully consumed ("Reference No.    WS438527" →
+# the existing pure-punctuation-column drop yields "WS438527"); the bare forms are the fallback for
+# a caption with no "No". Any residual "No"/"Number"/"." glued to a narrow-gap value is stripped in
+# extract_fields for a seeded ref read (role_caption='ref').
+_REF_ROLE_CAPTIONS  = ["Reference No", "Reference", "Ref No", "Ref"]
+_DATE_ROLE_CAPTIONS = ["Date"]
+
+# RC1 slice 2 kill switch: seed a custom FREE-TEXT field's own DB label at Stage 1
+# (see the party branch in seed_field_labels below).
+SEED_FREE_TEXT_ENABLED = True
+
+
+def seed_field_labels(patterns: dict, field_defs: "list | None") -> dict:
+    """RC1 (2026-07-10): make a CUSTOM ref/date field attemptable at Stage 1 from its OWN DB label
+    — without an admin override. extract_fields skips any field key with no shipped pattern (the
+    'field never even tried' hole: a custom Worksheet type keys reference_number/date, neither
+    shipped, so both read only if a learned anchor exists → blank on unseen docs). For each field
+    whose key has no shipped entry and whose ROLE is ref or date (via _infer_validation), seed a
+    keyword entry using the field's label + the role's short-form captions, as PLAIN labels — method
+    'keyword', NOT 'keyword_override', i.e. an AUTO tier subordinate to Stage-2 anchors / Stage-0.5
+    mappings — with base_confidence 80 (below the auto-file critical-field floor 88, so a confusable
+    read fails toward REVIEW, never a silent wrong file). Ref captions carry role_caption='ref' so
+    _search_for_label applies the party guard to them only. SLICE 2 (2026-07-10): custom FREE-TEXT
+    fields (role None, DB type 'text') are seeded too — own label only, base 75,
+    role_caption='party' (the G1/G2/G3 guards), gated by SEED_FREE_TEXT_ENABLED — see the branch
+    below. Additive + pure: returns `patterns` unchanged when there is nothing to seed."""
+    if not field_defs:
+        return patterns
+    shipped = patterns.get("field_patterns") or {}
+    field_patterns = None
+    for f in field_defs:
+        key = str((f or {}).get("key") or "").strip()
+        if not key or key in shipped:
+            continue
+        role = _infer_validation(key)
+        if role not in ("date", "alphanumeric"):        # ref == alphanumeric; currency deferred
+            # RC1 SLICE 2 (2026-07-10): a custom FREE-TEXT field (no inferable role, DB type
+            # 'text') is seeded from its OWN DB label ONLY — no synonym bank (free text has no
+            # bounded role; a caption that differs from the label is covered by the admin
+            # override / ⊕ teach / Stage-0.5 paths, all of which outrank this). base 75:
+            # BELOW seeded ref/date's 80 (a weaker evidence class — free text has no value
+            # format gate), ABOVE the 70 per-field review threshold (a clean read doesn't
+            # flag every doc forever). NOTE (Oracle, 2026-07-10): 75 is NOT an auto-file drag —
+            # an OPTIONAL field is often not counted in overall_confidence at all
+            # (validator counts required-only when the type has required fields), and a
+            # counted-but-EMPTY field scored 0 before, so filling it RAISES overall. The real
+            # rails are: the at-100 lenient gate's freetext skip (a previously-signed Slice-7
+            # class shipped `customer_name`@78-80 already rides), per-field review routing
+            # (<70 flags; guards fail-EMPTY), and the ref/date critical-field floor for
+            # anything filing-critical. role_caption='party' arms the G1/G2/G3 caption guards
+            # in _search_for_label; method stays plain 'keyword' (auto tier), so every existing
+            # precedence rule holds by construction. The label DEDUPE below means a caption
+            # already hunted by a SAME-TYPE sibling (e.g. customer_name's shipped "Customer")
+            # is never double-seeded — the established field owns it, no double-fill.
+            if not (SEED_FREE_TEXT_ENABLED and role is None
+                    and (str((f or {}).get("type") or "").lower() == "text")):
+                continue
+            label = str((f or {}).get("label") or "").strip()
+            if len(label) < 3:                          # a "To"-style label is not a caption
+                continue
+            # DEDUPE scoped to the field's OWN document type: a SIBLING field of the same
+            # type already hunting this caption (customer_name's shipped "Customer",
+            # supplier_name's "Supplier", or an earlier-seeded same-type sibling) would
+            # DOUBLE-FILL from one printed caption — the established entry owns it, this
+            # field stays teach-only. Fields of OTHER types can't collide (extract_fields
+            # only hunts the detected type's keys), so a global-bank label must NOT block
+            # a type that genuinely lacks that sibling (the config carries customer_name
+            # whether or not this type has such a field).
+            current = field_patterns if field_patterns is not None else shipped
+            low = label.lower()
+            _tid = (f or {}).get("document_type_id")    # None (e.g. tests) → all co-typed
+            sib_keys = {str((d or {}).get("key") or "").strip()
+                        for d in field_defs
+                        if (d or {}).get("document_type_id") == _tid} - {key, ""}
+            taken = False
+            for sk in sib_keys:
+                for x in ((current.get(sk) or {}).get("labels") or []):
+                    t = (x.get("text") if isinstance(x, dict) else x) or ""
+                    if str(t).strip().lower() == low:
+                        taken = True
+                        break
+                if taken:
+                    break
+            if taken:
+                continue
+            if field_patterns is None:
+                field_patterns = {k: dict(v) for k, v in shipped.items()}
+            field_patterns[key] = {"labels": [label], "directions": ["right", "below"],
+                                   "base_confidence": 75, "role_caption": "party"}
+            continue
+        label = str((f or {}).get("label") or "").strip()
+        forms = _DATE_ROLE_CAPTIONS if role == "date" else _REF_ROLE_CAPTIONS
+        labels, seen = [], set()
+        for lab in ([label] + list(forms) if label else list(forms)):
+            low = lab.strip().lower()
+            if not low or low in seen:
+                continue
+            seen.add(low)
+            labels.append(lab.strip())
+        if not labels:
+            continue
+        if field_patterns is None:
+            field_patterns = {k: dict(v) for k, v in shipped.items()}
+        entry = {"labels": labels, "directions": ["right", "below"], "base_confidence": 80,
+                 "validation": ("date" if role == "date" else "alphanumeric")}
+        if role == "alphanumeric":
+            entry["role_caption"] = "ref"
+        field_patterns[key] = entry
+    if field_patterns is None:
+        return patterns
+    return {**patterns, "field_patterns": field_patterns}
+
+
 # ── Document type detection ───────────────────────────────────────────────────
 
+# Heading-adjacent tokens a real title line may carry beside the type word — a
+# number/reference or a "No."/"#"/"Number" caption — none of which make it a body
+# mention. Any OTHER word on the line means it's prose, not a heading.
+_HEADING_ADJ = frozenset({"no", "no.", "#", "number", "num", "ref", "-", ":", "|"})
+
+# A run of COLUMN_BREAK_MIN (4) or more spaces = a COLUMN break (reconstruct_page_text / born_digital
+# emit exactly the 4-space COLUMN_BREAK for a wide intra-row x-gap; adjacent columns compound). Derived
+# from the single-source constant so a producer width change propagates here — pinned by
+# test_column_break_contract.py. Matches the four shipped ` {4,}` column guards below (:766/:846/:904/:1070).
+_COL_BREAK_RE = re.compile(r' {%d,}' % COLUMN_BREAK_MIN)
+
+
+def _segment_is_heading(seg: str, p: str) -> bool:
+    """One reading-line COLUMN segment IS the matched type phrase plus at most heading-adjacent
+    tokens — a reference/number CODE ("WORKSHEET 38", "WORKSHEET WS-38", "PURCHASE ORDER #PO-1234")
+    or a "No."/"#"/"Number" caption. A real extra word makes it a body mention."""
+    if not p or p not in seg:
+        return False
+    if seg == p:
+        return True
+    rest = seg.replace(p, " ", 1)
+    for t in rest.split():
+        # A reference/number CODE beside the title (not a real word): contains a digit and
+        # is only alphanumerics + code punctuation ("38", "ws-38", "inv-2024-001", "#po1234").
+        if any(ch.isdigit() for ch in t) and all(ch.isalnum() or ch in "#:.-/|" for ch in t):
+            continue
+        if t in _HEADING_ADJ:
+            continue
+        return False                                        # a real extra word → a mention
+    return True
+
+
+def _line_is_heading_like(line: str, phrase: str) -> bool:
+    """Relaxed heading test for the EXPOSED `heading` signal only (scoring uses the strict whole-line
+    equality — untouched, so confidence stays byte-identical). COLUMN-AWARE (Oracle 2026-07-12): a
+    banner title in its OWN column ("WORKSHEET") must not be denied heading status because a far-right
+    date/ref column got merged onto the same OCR reading line ("WORKSHEET    Date 25/11/2026" — the
+    Cascade worksheet-stuck-as-invoice bug). Split the line into COLUMN segments on the column-break
+    marker and test each independently; True if ANY segment is the title (+ heading-adjacent tokens).
+    An inline PROSE mention ("...see the attached worksheet...") has no column break → ONE segment →
+    byte-identical to the pre-column behaviour."""
+    p = (phrase or "").strip().lower()
+    if not p:
+        return False
+    s = (line or "").strip().lower()
+    return any(_segment_is_heading(seg.strip(), p) for seg in _COL_BREAK_RE.split(s))
+
+
 def detect_document_type(ocr_text: str, patterns: dict,
-                          known_types: list[str] | None = None) -> dict | None:
+                          known_types: list[str] | None = None,
+                          type_aliases: dict | None = None) -> dict | None:
     """
     Score candidate document types by scanning every line for type-indicating
     phrases, weighting matches by how close to the top of the page they sit
@@ -154,19 +384,36 @@ def detect_document_type(ocr_text: str, patterns: dict,
         return None
 
     type_keywords = {k: list(v) for k, v in patterns.get("document_type_keywords", {}).items()}
+    aliases_by_name = type_aliases or {}
     for name in (known_types or []):
         name = (name or "").strip()
-        if name:
-            bucket = type_keywords.setdefault(name, [])
-            if name not in bucket:
-                bucket.append(name)
+        if not name:
+            continue
+        bucket = type_keywords.setdefault(name, [])
+        # NAME fold — kept EXACTLY as before (case-sensitive membership) so the no-alias path
+        # is byte-identical to the pre-feature engine (the harness 0-delta gate).
+        if name not in bucket:
+            bucket.append(name)
+        # ALIASES — fold each of this type's title aliases into the SAME bucket (keyed by the
+        # NAME, so result["type"] / detected_slug / heading-trust are unchanged; only more
+        # phrases are searched). De-duped case-insensitively against the bucket. This branch is
+        # only entered when aliases exist, so it can never alter the no-alias run.
+        if aliases_by_name:
+            have = {str(p).strip().lower() for p in bucket}
+            for alias in (aliases_by_name.get(name) or []):
+                a = str(alias or "").strip()
+                if a and a.lower() not in have:
+                    bucket.append(a)
+                    have.add(a.lower())
 
     if not type_keywords:
         return None
 
     scores: dict[str, float] = {}
+    headings: dict[str, bool] = {}
     for doc_type, keywords in type_keywords.items():
         score = 0.0
+        head  = False
         for kw in keywords:
             kw = kw.strip()
             if not kw:
@@ -192,9 +439,19 @@ def detect_document_type(ocr_text: str, patterns: dict,
                 # works for any current or future label shape.
                 is_heading = line.strip().lower() == m.group(0).strip()
                 score += position_weight * (2.0 if is_heading else 1.0)
+                # EXPOSED heading signal (`heading` in the result) — consumed ONLY by the
+                # template doc-type-precedence gate (a matched template must not override a
+                # doc whose own TITLE confidently declares a different type). It does NOT
+                # affect `score`/`confidence` (byte-identical scoring preserved). Relaxed
+                # vs the strict scoring `is_heading` so a real title carrying a number or
+                # punctuation ("WORKSHEET 38", "Purchase Order:", "Invoice No. 10023")
+                # still counts as a heading, while an in-prose mention does not.
+                if is_heading or _line_is_heading_like(line, m.group(0)):
+                    head = True
                 break  # first occurrence of this phrase is enough
         if score > 0:
             scores[doc_type] = round(score, 1)
+            headings[doc_type] = head
 
     if not scores:
         return None
@@ -210,6 +467,11 @@ def detect_document_type(ocr_text: str, patterns: dict,
         "type":       best_type,
         "confidence": confidence,
         "all_scores": scores,
+        # True when the WINNING type appeared as a standalone heading (not just a body
+        # mention) — the structural signal the template-precedence gate trusts. A bare
+        # confidence number can't separate a low-sitting heading from a top-of-page
+        # mention (both land ~70-75); the heading structure can.
+        "heading":    headings.get(best_type, False),
     }
 
 
@@ -240,11 +502,18 @@ ROLE_KEY_ALIASES = {
 # ── Field extraction ──────────────────────────────────────────────────────────
 
 def extract_fields(ocr_text: str, field_keys: list[str],
-                   patterns: dict) -> dict:
+                   patterns: dict, caption_vocab: dict | None = None,
+                   caption_guard_keys: "set | None" = None) -> dict:
     """
     Extract field values using keyword patterns.
     Returns dict of {field_key: {"value": str, "confidence": int, "method": "keyword"}}
     Only includes fields that were found.
+
+    caption_vocab / caption_guard_keys (G3b KNOWN-CAPTION VALUE GUARD, 2026-07-11): the run's
+    caption vocabulary (build_caption_vocab) + the set of field keys ARMED for it (name-like/party,
+    supplier_name EXCLUDED — the engine computes it). For an armed field, a candidate VALUE that IS
+    a known caption dies at generation (right/below fall-through), so a printed caption can never
+    fill a name field. Absent / kill switch off -> byte-identical.
     """
     field_patterns = patterns.get("field_patterns", {})
     validation     = patterns.get("validation_patterns", {})
@@ -277,6 +546,12 @@ def extract_fields(ocr_text: str, field_keys: list[str],
         labels  = fp.get("labels", [])
         dirs    = fp.get("directions", ["right"])
         base_conf = fp.get("base_confidence", 75)
+        role_caption = fp.get("role_caption")   # 'ref' on a seeded custom-ref field (RC1/RC5)
+        # G3b: arm the known-caption VALUE guard for this field (name-like/party, customer-side —
+        # the engine already excluded supplier_name from caption_guard_keys). Pass the vocab so a
+        # caption-valued candidate dies at generation; None (unarmed / kill switch off) = unchanged.
+        _cap_guard = (caption_vocab if (KNOWN_CAPTION_GUARD_ENABLED and caption_vocab
+                                        and field_key in (caption_guard_keys or ())) else None)
 
         for label in labels:
             # Support per-label direction override: {"text": "Bill From", "directions": ["below"]}
@@ -289,11 +564,19 @@ def extract_fields(ocr_text: str, field_keys: list[str],
             else:
                 label_text = label
                 label_dirs = dirs
-            found = _search_for_label(lines, label_text, label_dirs)
+            found = _search_for_label(lines, label_text, label_dirs, role_caption=role_caption,
+                                      caption_guard=_cap_guard)
             if not found:
                 continue
 
             value, direction = found
+            if role_caption == 'ref' and value:
+                # A seeded ref caption "Reference No." / "Ref No" leaves the "No"/"Number" suffix
+                # (and its trailing dot) glued to a right-read value ("No.  WS111238") — strip a
+                # dangling ref-suffix token, then a stray leading dot the caption left behind. Only
+                # seeded ref fields hit this (role_caption='ref'); shipped patterns are byte-identical.
+                value = re.sub(r'^(?:(?:no|number|nº)\b\.?|#)\s*', '', value, flags=re.I)
+                value = re.sub(r'^[.\s:|\-–]+', '', value).strip()
             if not value or len(value.strip()) < 1:
                 continue
 
@@ -416,16 +699,129 @@ def _total_role_collision(line: str, start: int, end: int) -> bool:
     return False
 
 
+# A bare identity caption ("Supplier"/"Vendor"/"Seller") collides with a BUYER-side REFERENCE
+# caption of the same head word — "Supplier Ref", "Vendor No", "Supplier Account", "Supplier #".
+# The word-boundary guard treats the following SPACE as a valid boundary, so "Supplier" matches
+# inside "Supplier Ref 4118" and the right-read grabs "Ref" — a reference fragment stamped onto
+# the Document Issuer. "text"-validated identity has NO value format gate, so nothing rejects it,
+# and because "Ref" reads as a PLAUSIBLE name it even suppresses the confirmed-hint recovery
+# downstream. Same shape as _total_role_collision; only the bare identity labels consult it, so a
+# real "Supplier: Acme Ltd" (follow word not a ref term) still matches. Reusable across every
+# supplier/layout — buyer-side "Supplier Ref/No/Account/Code/ID/VAT/#" blocks are very common.
+_IDENTITY_CAPTION_LABELS  = frozenset({"supplier", "vendor", "seller"})
+_IDENTITY_REF_FOLLOW_STOP = frozenset({"ref", "reference", "no", "number",
+                                       "code", "id", "vat", "account", "acct"})
+
+
+def _identity_ref_caption(line: str, end: int) -> bool:
+    """True when a bare identity caption at [.,end) is really a reference caption ('Supplier Ref',
+    'Vendor No', 'Supplier #'), detected by the immediately following word / '#'. Pure/unit-tested."""
+    tail = re.sub(r'^[\s:.\-–]+', '', line[end:].lower())
+    if tail.startswith('#'):
+        return True
+    m = re.match(r'([a-z]+)', tail)
+    return bool(m and m.group(1) in _IDENTITY_REF_FOLLOW_STOP)
+
+
+# A SEEDED custom ref field (RC1) searches generic ref captions ("Reference"/"Ref"/"No"). A bare
+# such caption preceded by a PARTY qualifier is that party's reference ("Customer Reference",
+# "Your Ref", "Supplier No", "Account No"), NOT the document's own reference — skip it so a seeded
+# custom-ref label can't cross-fill a buyer/seller/account reference. Mirrors _identity_ref_caption
+# (which guards the issuer side); this guards the reference side. Only seeded ref fields consult it
+# (role_caption='ref'), so shipped patterns are unaffected. (RC5, 2026-07-10)
+_REF_PARTY_STOP = frozenset({"customer", "client", "buyer", "your", "sales",
+                             "supplier", "vendor", "seller", "our", "account", "acct"})
+
+
+def _ref_caption_party_conflict(line: str, start: int) -> bool:
+    """True when a seeded bare REF caption at [start,.) is a DIFFERENT party's reference, detected by
+    the immediately PRECEDING word ('Customer Reference', 'Your Ref', 'Supplier No'). Pure."""
+    prec = re.search(r'([a-z]+)\W*$', line[:start].lower())
+    return bool(prec and prec.group(1) in _REF_PARTY_STOP)
+
+
+# RC1 SLICE 2 guards (2026-07-10) — a SEEDED custom FREE-TEXT field (role_caption='party')
+# hunts its own DB label ("Customer", "Site Contact"). All three guards are party-gated, so
+# shipped patterns stay byte-identical. reggie-designed; guarded by test_keyword_label_guard.py.
+#   G1 _party_caption_conflict — the label immediately FOLLOWED by a reference/document word is a
+#      DIFFERENT caption ("Customer Reference No. WS12345", "Customer Order No", "CUSTOMER COPY",
+#      "Customer Signature", "Customer Services: 0800…"): skip the occurrence (the field stays
+#      empty → review as missing) rather than swallow a code or an artifact word. "Name" and
+#      "Details" are deliberately NOT stopped — "Customer Name: Acme" keeps reading.
+#   G3 _is_caption_fragment — a candidate VALUE that is itself a short ref/date CAPTION FRAGMENT
+#      ("Reference No.", "Work Date") is a COLUMN-INTERLEAVE artifact: the reconstructed reading
+#      order can put a right-column row between a left-column caption and its value
+#      ('Site / Customer' ↵ 'Reference No.  WS408618' ↵ 'Formby & Sons' — the MP_wor_48 class).
+#      Keyed on the LAST word (a name like "ID Solutions Ltd" ends 'ltd' → passes); the ≤3-word
+#      bound protects longer names that happen to end in a ref-noun.
+_PARTY_FOLLOW_STOP = frozenset({
+    "ref", "reference", "no", "number", "num", "code", "id", "vat", "account", "acct",
+    "order", "po", "invoice", "job", "booking", "quote", "quotation",
+    "copy", "copies", "signature", "signatures", "initials", "declaration",
+    "service", "services",
+    # address/contact caption family (Oracle C3, 2026-07-10): "Customer Site Address",
+    # "Customer Tel", "Customer Email" are captions for OTHER data — without these stops the
+    # right/below read fills the party field with an address line or phone number at 75,
+    # and two clean words pass the wordness net. Fail-empty = the pre-slice-2 behaviour.
+    "site", "address", "tel", "telephone", "phone", "fax", "email", "mobile",
+    "web", "website"})
+
+#      "name"/"details" live HERE (a bare "Name" right-of-caption is the caption's own
+#      continuation word, not a value) and deliberately NOT in _PARTY_FOLLOW_STOP — so
+#      "Customer Name" still matches as a caption and its below-value reads.
+_CAPTION_NOUN_TAIL = frozenset({"ref", "reference", "no", "number", "num",
+                                "code", "id", "vat", "account", "acct", "date",
+                                "name", "details"})
+
+
+def _party_caption_conflict(line: str, end: int) -> bool:
+    """True when a seeded PARTY caption at [.,end) is really a reference/document caption
+    ('Customer Ref', 'Customer Order No', 'CUSTOMER COPY', 'Customer #55'), detected by the
+    immediately following word / '#'. A 4+-space COLUMN BREAK right after the caption means
+    the next word is ANOTHER column's caption ('Customer    Reference No.' on an interleaved
+    header row), not this caption's continuation — no conflict; the G3 fragment guard owns
+    that case. Mirrors _identity_ref_caption. Pure."""
+    raw = line[end:]
+    if re.match(r'\s{4,}', raw):
+        return False
+    tail = re.sub(r'^[\s:.\-–]+', '', raw.lower())
+    if tail.startswith('#'):
+        return True
+    m = re.match(r'([a-z]+)', tail)
+    return bool(m and m.group(1) in _PARTY_FOLLOW_STOP)
+
+
+def _is_caption_fragment(text: str) -> bool:
+    """True when a candidate VALUE is itself a short caption fragment ending in a ref/date noun
+    ("Reference No.", "Work Date") — an interleaved column row, never a party value. Pure."""
+    t = re.sub(r'[\s.:#|\-–]+$', '', (text or '').strip())
+    ws = t.lower().split()
+    return bool(ws) and len(ws) <= 3 and ws[-1] in _CAPTION_NOUN_TAIL
+
+
 def _search_for_label(lines: list[str], label: str,
-                      directions: list[str]) -> tuple[str, str] | None:
+                      directions: list[str],
+                      role_caption: str | None = None,
+                      caption_guard: dict | None = None) -> tuple[str, str] | None:
     """
     Search lines for a label and return (value, direction) or None.
+
+    role_caption (RC1/RC5): 'ref' for a SEEDED custom-ref field, so a buyer/seller party caption
+    ("Customer Reference") can't cross-fill it. None for shipped patterns → behaviour unchanged.
+
+    caption_guard (G3b, 2026-07-11): when set (an armed name-like/party field's caption vocab), a
+    candidate VALUE that IS a known caption dies at generation — blanked at 'right' so it falls
+    through to 'below', skipped at 'below' — so a printed caption ("SO #") never fills a name field.
+    None = unchanged. Broader than the role_caption='party' _is_caption_fragment guard (whole run
+    vocab, not just short ref/date fragments) and works even when role_caption is None (the shipped
+    customer_name pattern carries none — the incident).
     """
     pattern = _label_pattern(label)
     if pattern is None:
         return None
 
     _is_bare_total = label.strip().lower() == 'total'
+    _is_identity_caption = label.strip().lower() in _IDENTITY_CAPTION_LABELS
     for i, line in enumerate(lines):
         line_lower = line.lower()
         m = pattern.search(line_lower)
@@ -435,10 +831,32 @@ def _search_for_label(lines: list[str], label: str,
         # skip to the real grand-total line below. See _total_role_collision.
         if _is_bare_total and _total_role_collision(line, m.start(), m.end()):
             continue
+        # A bare "Supplier"/"Vendor"/"Seller" must not read a "Supplier Ref/No/Account" reference
+        # caption as the issuer name — skip; a real "Supplier: Acme" still matches. See above.
+        if _is_identity_caption and _identity_ref_caption(line, m.end()):
+            continue
+        # A SEEDED custom REF caption ("Reference"/"Ref"/"No") must not read a DIFFERENT party's
+        # reference ("Customer Reference", "Your Ref", "Supplier No") — skip; the doc's own bare
+        # "Reference" still matches. Only seeded ref fields pass role_caption='ref', so shipped
+        # patterns are byte-identical. See _ref_caption_party_conflict (RC5, 2026-07-10).
+        if role_caption == 'ref' and _ref_caption_party_conflict(line, m.start()):
+            continue
+        # G1: a SEEDED custom FREE-TEXT caption ("Customer") must not read a reference/document
+        # caption of the same head word ("Customer Reference No. WS12345", "CUSTOMER COPY") —
+        # skip the occurrence; a real "Customer: Acme" still matches. Only seeded free-text
+        # fields pass role_caption='party', so shipped patterns are byte-identical. (RC1 slice 2)
+        if role_caption == 'party' and _party_caption_conflict(line, m.end()):
+            continue
 
         # Try RIGHT direction — value is on the same line after the label
         if "right" in directions or "inline" in directions:
             after = line[m.end():].strip()
+            # G2 (party): the label matched as the FIRST word of a COMPOUND caption
+            # ("Customer / Site") — the remainder is the caption's own tail, never a value;
+            # blank it so the read falls through to 'below'. '/' and '&' join caption
+            # synonyms; ':' and '-' stay value separators (unchanged). (RC1 slice 2)
+            if role_caption == 'party' and re.match(r'^[/&]', after):
+                after = ''
             # Strip common separators
             after = re.sub(r'^[\s:|\-–]+', '', after).strip()
             # Split on column gaps (4+ spaces) — same as 'below' direction.
@@ -475,6 +893,17 @@ def _search_for_label(lines: list[str], label: str,
                     if re.search(r'\d', _s):
                         after = _s
                         break
+            # G3 (party): a right-side candidate that is ITSELF a ref/date caption fragment
+            # ("Reference No." on an interleaved 'Customer    Reference No.' line) is the
+            # neighbouring column's caption, not the value — blank it so the read falls
+            # through to 'below'. (RC1 slice 2)
+            if role_caption == 'party' and _is_caption_fragment(after):
+                after = ''
+            # G3b: a right-side candidate that IS a known caption ("SO #", "Customer") is the
+            # neighbour column's label, never a value — blank it so the read falls through to
+            # 'below'. Whole-run vocab; armed for name-like/party fields (customer-side).
+            if caption_guard and after and value_is_caption(after, caption_guard):
+                after = ''
             # Reject if the extracted text itself looks like another label, or contains
             # an embedded label:value pair (e.g. "Ship Mode: Second Class", "Date: Sep 07")
             # which means we grabbed neighbouring column content, not the actual value.
@@ -492,6 +921,16 @@ def _search_for_label(lines: list[str], label: str,
                     continue
                 # Take only the first column segment (split on 4+ spaces)
                 candidate = re.split(r' {4,}', candidate)[0].strip()
+                # G3 (party): skip an interleaved right-column CAPTION row sitting between
+                # the caption and its value in the reconstructed reading order
+                # ('Site / Customer' ↵ 'Reference No.  WS408618' ↵ 'Formby & Sons' —
+                # the MP_wor_48 class); the window walks on to the real value. (RC1 slice 2)
+                if role_caption == 'party' and _is_caption_fragment(candidate):
+                    continue
+                # G3b: a 'below' candidate that IS a known caption is a stray caption row in the
+                # reading order, not the value — walk on to the real value. (customer-side armed)
+                if caption_guard and value_is_caption(candidate, caption_guard):
+                    continue
                 if (candidate
                         and not _is_label_line(candidate)
                         and not re.search(r'[A-Za-z]{2,}\s*:', candidate)):

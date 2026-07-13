@@ -23,13 +23,14 @@ function section(t) { console.log(`\n${t}`); }
 function makeDb() {
   const db = new Database(':memory:');
   db.exec(`
-    CREATE TABLE document_types (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, slug TEXT UNIQUE);
+    CREATE TABLE document_types (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, slug TEXT UNIQUE,
+                                 ref_field_key TEXT, date_field_key TEXT);
     CREATE TABLE fields (id INTEGER PRIMARY KEY AUTOINCREMENT, document_type_id INTEGER, key TEXT,
                          label TEXT, type TEXT DEFAULT 'text', required INTEGER DEFAULT 0, enabled INTEGER DEFAULT 1);
     CREATE TABLE documents (id INTEGER PRIMARY KEY AUTOINCREMENT, supplier_name TEXT, document_type_id INTEGER,
                             status TEXT, confirmed_at TEXT, template_id INTEGER, overall_confidence INTEGER);
     CREATE TABLE extractions (id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER, field_key TEXT,
-                              display_value TEXT, raw_value TEXT, extraction_method TEXT, validation_note TEXT, corrected_to TEXT);
+                              display_value TEXT, raw_value TEXT, confidence INTEGER, extraction_method TEXT, validation_note TEXT, corrected_to TEXT);
     CREATE TABLE corrections (id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER, field_key TEXT,
                               original_value TEXT, corrected_value TEXT);
     CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT);
@@ -38,7 +39,7 @@ function makeDb() {
 }
 
 function seedType(db, extraFields = []) {
-  const tid = db.prepare("INSERT INTO document_types (name, slug) VALUES ('Invoice','invoice')").run().lastInsertRowid;
+  const tid = db.prepare("INSERT INTO document_types (name, slug, ref_field_key, date_field_key) VALUES ('Invoice','invoice','invoice_number','invoice_date')").run().lastInsertRowid;
   const add = (key, type, req) => db.prepare(
     'INSERT INTO fields (document_type_id, key, type, required) VALUES (?,?,?,?)').run(tid, key, type, req ? 1 : 0);
   add('supplier_name', 'text',     1);   // constant learned value (the company)
@@ -50,13 +51,15 @@ function seedType(db, extraFields = []) {
   return tid;
 }
 
-function seedDoc(db, tid, { supplier, when, status = 'confirmed', template = 1, conf = 100, fields = {}, notes = {}, ctos = {} }) {
+function seedDoc(db, tid, { supplier, when, status = 'confirmed', template = 1, conf = 100, fields = {}, notes = {}, ctos = {}, confs = {} }) {
   const id = db.prepare(
     'INSERT INTO documents (supplier_name, document_type_id, status, confirmed_at, template_id, overall_confidence) VALUES (?,?,?,?,?,?)'
   ).run(supplier, tid, status, when, template, conf).lastInsertRowid;
   for (const [k, v] of Object.entries(fields)) {
-    db.prepare('INSERT INTO extractions (document_id, field_key, display_value, extraction_method, validation_note, corrected_to) VALUES (?,?,?,?,?,?)')
-      .run(id, k, v, 'keyword', notes[k] || null, ctos[k] || null);
+    // confs[k] sets the per-field confidence (for the filing-critical floor); NULL when unspecified
+    // so existing tests, which don't pass confs, leave the floor a no-op (a null conf is skipped).
+    db.prepare('INSERT INTO extractions (document_id, field_key, display_value, confidence, extraction_method, validation_note, corrected_to) VALUES (?,?,?,?,?,?,?)')
+      .run(id, k, v, (k in confs) ? confs[k] : null, 'keyword', notes[k] || null, ctos[k] || null);
   }
   return id;
 }
@@ -326,6 +329,45 @@ function main() {
     check("scope opted OUT → 98% not eligible", trust.isAutoFileEligible(db, mk()).eligible === false);
     trust.setScopeOptOut(db, 'Anconia Corp', 'invoice', false);
     check("opt-out removed → 98% eligible again", trust.isAutoFileEligible(db, mk()).eligible === true);
+  }
+
+  // ── 15b. filing-critical per-field confidence floor ─────────────────────────
+  section('15b. filing-critical per-field confidence floor');
+  {
+    const db = makeDb(); const tid = seedType(db); seedCleanScope(db, tid, 10, 'Anconia Corp');
+    const mk = (confs, conf = 98) => getDoc(db, seedDoc(db, tid, {
+      supplier: 'Anconia Corp', when: '2026-06-06T11:00:00Z', status: 'needs_review', template: 7, conf,
+      fields: { supplier_name: 'Anconia Corp', invoice_date: '05-06-2026', invoice_number: 'INV8001', total: '250.00' },
+      confs,
+    }));
+    check("strong ref+date conf (98/98) → eligible",
+      trust.isAutoFileEligible(db, mk({ invoice_number: 98, invoice_date: 98 })).eligible === true);
+    // reggie calibration: base_confidence is 90 (ref) / 88 (date); the floor (88) must NOT over-hold
+    // a clean base-confidence read — 88 passes, only <88 (the 87 bleed) is held.
+    check("base-confidence ref+date (90/88) → eligible (no over-hold)",
+      trust.isAutoFileEligible(db, mk({ invoice_number: 90, invoice_date: 88 })).eligible === true);
+    const wr = trust.isAutoFileEligible(db, mk({ invoice_number: 87, invoice_date: 98 }));
+    check("weak REFERENCE conf (87<88 — the bleed, value type/shape-valid + overall 98) → NOT eligible",
+      wr.eligible === false && wr.reason === 'weak-critical-field:invoice_number');
+    const wd = trust.isAutoFileEligible(db, mk({ invoice_number: 98, invoice_date: 85 }));
+    check("weak DATE conf (85) → NOT eligible", wd.eligible === false && wd.reason === 'weak-critical-field:invoice_date');
+    const at100 = trust.isAutoFileEligible(db, mk({ invoice_number: 87, invoice_date: 98 }, 100));
+    check("weak reference at overall 100 → STILL NOT eligible (blended overall can hide it)",
+      at100.eligible === false && at100.reason === 'weak-critical-field:invoice_number');
+    const nonCrit = getDoc(db, seedDoc(db, tid, {
+      supplier: 'Anconia Corp', when: '2026-06-06T11:05:00Z', status: 'needs_review', template: 7, conf: 98,
+      fields: { supplier_name: 'Anconia Corp', invoice_date: '05-06-2026', invoice_number: 'INV8002', total: '250.00' },
+      confs: { invoice_number: 98, invoice_date: 98, total: 50 } }));
+    check("weak NON-critical field (total@50) → NOT blocked by this floor", trust.isAutoFileEligible(db, nonCrit).eligible === true);
+    db.prepare("INSERT INTO settings (key,value) VALUES ('critical_field_conf_floor','0')").run();
+    check("critical_field_conf_floor=0 → floor disabled (weak ref eligible again — reversible)",
+      trust.isAutoFileEligible(db, mk({ invoice_number: 87, invoice_date: 98 })).eligible === true);
+    db.prepare("DELETE FROM settings WHERE key='critical_field_conf_floor'").run();
+    check("opts.criticalFieldFloor override honoured (80 lets 87 through)",
+      trust.isAutoFileEligible(db, mk({ invoice_number: 87, invoice_date: 98 }), { criticalFieldFloor: 80 }).eligible === true);
+    // a critical field with NO recorded confidence (null) is skipped (can't judge → don't block)
+    check("null-confidence critical field → not blocked by the floor",
+      trust.isAutoFileEligible(db, mk({ invoice_date: 98 })).eligible === true);   // invoice_number conf unset
   }
 
   // ── 16. listGraduatedScopes (the roster) ────────────────────────────────────

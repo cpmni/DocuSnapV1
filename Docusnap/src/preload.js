@@ -127,6 +127,7 @@ contextBridge.exposeInMainWorld('docusnap', {
 
   // ── Folder processing ────────────────────────────────────────────────────────
   pickFolder:         ()     => ipcRenderer.invoke('pick-folder'),
+  listImportFolder:   (folder) => ipcRenderer.invoke('list-import-folder', folder),
   pickOutputFolder:   ()     => ipcRenderer.invoke('pick-output-folder'),
   processFolder:      (f, opts) => ipcRenderer.invoke('process-folder', f, opts),
   stagePdfForTeach:   ()     => ipcRenderer.invoke('stage-pdf-for-teach'),
@@ -163,6 +164,8 @@ contextBridge.exposeInMainWorld('docusnap', {
   getFieldValueHistory:        (scope)   => ipcRenderer.invoke('get-field-value-history', scope),
   getDocumentsForFieldValue:   (scope)   => ipcRenderer.invoke('get-documents-for-field-value', scope),
   purgeFieldValue:             (scope)   => ipcRenderer.invoke('purge-field-value', scope),
+  getAnchorsForScope:          (scope)   => ipcRenderer.invoke('get-anchors-for-scope', scope),
+  deleteFieldAnchor:           (p)       => ipcRenderer.invoke('delete-field-anchor', p),
   renameFieldValue:            (scope)   => ipcRenderer.invoke('rename-field-value', scope),
   acceptNameValue:             (p)       => ipcRenderer.invoke('accept-name-value', p),
   acceptIssuer:                (p)       => ipcRenderer.invoke('accept-issuer', p),
@@ -170,6 +173,12 @@ contextBridge.exposeInMainWorld('docusnap', {
   // confirm()/alert() returns) so the next text-field press does the real blurWebView() repair
   // even if the window's own 'blur' event didn't fire for the dialog. See focusRepair.js.
   markFocusSuspect:            ()        => ipcRenderer.send('mark-focus-suspect'),
+  // Proactively drive the same widget-level focus transition the pointerdown repair uses
+  // (main → blurWebView(false)→wc.focus(true), a real page-focus edge; never an OS window
+  // activation). Called at draw/zone-OCR completion so the caret is re-established onto the
+  // just-filled input BEFORE the user clicks — the click's own repair races the Python-spawn
+  // desync and loses (eric, 2026-07-10).
+  ensureWindowFocus:           ()        => ipcRenderer.send('ensure-window-focus', { pageHasFocus: document.hasFocus() }),
   getDocumentWithExtractions:  (id)      => ipcRenderer.invoke('get-document-with-extractions', id),
   notifyDocClosed:             (id)      => ipcRenderer.send('notify-doc-closed', id),
   reviewHeartbeat:             (id)      => ipcRenderer.invoke('review-heartbeat', id),
@@ -188,7 +197,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   deleteAllReview:             ()        => ipcRenderer.invoke('delete-all-review'),
   deleteAllDeferred:           ()        => ipcRenderer.invoke('delete-all-deferred'),
   reprocessDocument:           (data)    => ipcRenderer.invoke('reprocess-document', data),
-  reprocessBatch:              (docs)    => ipcRenderer.invoke('reprocess-batch', docs),
+  reprocessBatch:              (docs, opts) => ipcRenderer.invoke('reprocess-batch', docs, opts),
   getStuckCount:               ()        => ipcRenderer.invoke('get-stuck-count'),
   getStuckDocs:                ()        => ipcRenderer.invoke('get-stuck-docs'),
   promoteToTemplate:           (data)    => ipcRenderer.invoke('promote-to-template', data),
@@ -199,8 +208,10 @@ contextBridge.exposeInMainWorld('docusnap', {
   // ── Zone OCR & learning ──────────────────────────────────────────────────────
   ocrRegion:           (b64)      => ipcRenderer.invoke('ocr-region', b64),
   ocrRegionBoxes:      (b64)      => ipcRenderer.invoke('ocr-region-boxes', b64),
+  getPageDeskew:       (b64, minAngle) => ipcRenderer.invoke('get-page-deskew', b64, minAngle),
   testTemplateMapping: (pageB64, mapping, landmarks) => ipcRenderer.invoke('test-template-mapping', pageB64, mapping, landmarks),
   saveFieldAnchor:     (data)     => ipcRenderer.invoke('save-field-anchor', data),
+  getTaughtFieldKeys:  (scope)    => ipcRenderer.invoke('get-taught-field-keys', scope),
   saveFieldRule:       (data)     => ipcRenderer.invoke('save-field-rule', data),
   extractLogoHash:     (b64)      => ipcRenderer.invoke('extract-logo-hash', b64),
   matchLogoHash:       (b64)      => ipcRenderer.invoke('match-logo-hash', b64),
@@ -327,6 +338,9 @@ contextBridge.exposeInMainWorld('docusnap', {
   onReviewCountChanged:  (cb) => ipcRenderer.on('review-count-changed',  (_e, n) => cb(n)),
   onDeferredCountChanged:(cb) => ipcRenderer.on('deferred-count-changed', (_e, n) => cb(n)),
   onReprocessProgress:   (cb) => ipcRenderer.on('reprocess-progress',    (_e, m) => cb(m)),
+  // Import/watch activity (broadcast to ALL windows) so Review can show WHY reprocess is paused.
+  onProcessingActivity:  (cb) => ipcRenderer.on('processing-activity',   (_e, s) => cb(s)),
+  getProcessingActivity: ()   => ipcRenderer.invoke('get-processing-activity'),
   removeReprocessProgress: ()  => ipcRenderer.removeAllListeners('reprocess-progress'),
 
   // Hidden dev inspector (read-only): request password unlock + subscribe to the
@@ -365,20 +379,51 @@ window.addEventListener('pointerdown', (e) => {
     // flashes open and shut" regression). Only real text-editing controls need caret repair.
     const el = t && t.closest && t.closest('input, textarea, [contenteditable=""], [contenteditable="true"]');
     if (!el) return;                    // only repair when actually entering a text field
-    // ALWAYS re-assert webContents keyboard focus on a text-field press. document.hasFocus()
-    // is UNRELIABLE here: after a native confirm()/alert() (the Review window uses these for
-    // the digit/issuer/delete prompts) — or a child window closing — the window reports
-    // focused while the render widget has lost keyboard focus, so the old `hasFocus()` guard
-    // skipped the repair in exactly the case that needs it ("clicked the box, can't type
-    // until I alt-tab out and back"). wc.focus() is cheap + idempotent on a normal click.
-    ipcRenderer.send('ensure-window-focus', { pageHasFocus: document.hasFocus() });
-    // Re-assert the caret next frame ONLY if the press didn't already focus the field — so a
-    // normal click's caret position is never disturbed; the broken case gets its focus back.
-    requestAnimationFrame(() => {
-      try {
-        const already = document.activeElement === el;
-        if (!already) el.focus();
-      } catch {}
-    });
+    const pageHasFocus = document.hasFocus();
+    // SYSTEMIC keyboard-focus cure (eric, 2026-07-10) — the ONE chokepoint every text-field
+    // press flows through, so it heals the render-widget desync (page-focus lost while the
+    // window still claims focus) regardless of what triggered it (Confirm & File, ⊕ draw,
+    // Learning-History modal, … all showed the identical pageHasFocus=false state). It gives
+    // the universal path the two things the per-site draw-fix has and the old code lacked:
+    //
+    // (A) In the DESYNCED state only, make the pressed control the pending focused element
+    //     BEFORE the page-focus edge runs, so SetPageFocus(true) restores focus TO IT, not to
+    //     <body> (the reason the edge fired but the caret never landed). Gated on !pageHasFocus
+    //     → a healthy click is byte-identical to the native focus/caret path, and <select> is
+    //     already excluded above. This pre-edge focus is what makes the heal correct even though
+    //     the invoke reply and the SetPageFocus messages ride different mojo pipes.
+    if (!pageHasFocus && document.activeElement !== el) { try { el.focus(); } catch {} }
+    // (B) Deterministic edge: main runs blurWebView()→wc.focus() and REPLIES; then re-assert the
+    //     caret past the cross-process transition with a double rAF. invoke (not send) is what
+    //     orders the re-focus AFTER the edge — the old single-rAF send RACED it and every
+    //     re-click re-lost. The listener stays synchronous (we chain .then, never await), so
+    //     event dispatch is not blocked and the click's native default focus still runs.
+    ipcRenderer.invoke('ensure-window-focus', { pageHasFocus }).then(() => {
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        try {
+          if (document.activeElement !== el) el.focus();
+          const ae = document.activeElement;
+          try {
+            console.log(`[focus] after: active=${ae && ae.tagName}#${ae && ae.id} `
+              + `hasFocusNow=${document.hasFocus()} activeStillEl=${document.activeElement === el}`);
+          } catch {}
+          // (C) VERIFIED one-shot self-heal (no 2nd user click): the page STILL lacks focus a
+          //     frame after a completed repair pass — a PROVEN-stuck page (categorically unlike
+          //     the removed capture-phase at-rest read: a healthy click's rAF read is true, so
+          //     this branch is unreachable from a healthy path). Re-issue ONCE with
+          //     forceEdge:true — the flag main actually honours (eric, 2026-07-10 night: the
+          //     old pageHasFocus:false payload was deliberately ignored post-revision, leaving
+          //     this self-heal TOOTHLESS and unarmed-trigger desyncs permanent — the 17-press
+          //     telemetry runs). forceEdge exists ONLY on this line; capped at one; no recursion.
+          if (!document.hasFocus()) {
+            ipcRenderer.invoke('ensure-window-focus', { pageHasFocus: false, forceEdge: true }).then(() => {
+              requestAnimationFrame(() => requestAnimationFrame(() => {
+                try { if (document.activeElement !== el) el.focus(); } catch {}
+              }));
+            }).catch(() => {});
+          }
+        } catch {}
+      }));
+    }).catch(() => {});
   } catch { /* never let focus repair break a click */ }
 }, true);

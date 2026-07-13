@@ -32,6 +32,14 @@ CALENDAR_WORDS = {
 }
 
 LOGO_THRESHOLD    = 13   # max hamming distance for logo match
+# Text-corroborated same-type template RESCUE (Phillip, 2026-07-10): when the logo drifts OUT of the
+# strict accept band (dist>6 -> conf<60) but a template of the DETECTED type has this much keyword-
+# branding overlap, use it — a drifted-logo, right-supplier, right-type doc should still match its OWN
+# template instead of getting NO template (and thus no field-fills). 0.80 > the 0.75 logoless floor
+# because a wrong rescue MISFILES; the logo band is a wider backstop against a look-alike letterhead
+# (unrelated 64-bit logos sit ~28-32 apart, so <=20 keeps an >=8-bit margin while admitting real drift).
+RESCUE_KEYWORD_OVERLAP = 0.80
+RESCUE_LOGO_BAND       = 20
 KEYWORD_THRESHOLD = 0.75 # min fraction of keywords that must be present
 # Templates whose logos land within this hamming of the closest match are
 # treated as the SAME-LOGO cluster — a supplier that issues several layouts
@@ -40,11 +48,23 @@ KEYWORD_THRESHOLD = 0.75 # min fraction of keywords that must be present
 _LOGO_AMBIG_MARGIN = 3
 
 
-def identify_template(page_image, ocr_text: str, templates: list) -> dict | None:
+def identify_template(page_image, ocr_text: str, templates: list,
+                      detected_slug: str | None = None,
+                      title_trusted: bool = False) -> dict | None:
     """
     Try to match this document to a known template.
     Returns {'template': {...}, 'confidence': int, 'method': str, 'logo_phash': str}
     or None if no match.
+
+    `detected_slug` / `title_trusted`: the document's OWN doc-type signal, from
+    keyword.detect_document_type (the caller computes both ONCE and threads them
+    identically here and into engine.extract). A supplier issues several layouts
+    under ONE letterhead, so their templates share the logo AND — because the
+    keyword fingerprint is the letterhead words — an IDENTICAL fingerprint; the
+    fingerprint tie-break then can't tell a "Sales Order" from a "Worksheet" and
+    the established sibling wins, stamping the wrong type. `detected_slug` breaks
+    that tie by the document's title (`title_trusted` = the title is a real
+    standalone HEADING, not a body mention). Both default off → byte-identical.
     """
     if not templates:
         return None
@@ -52,34 +72,78 @@ def identify_template(page_image, ocr_text: str, templates: list) -> dict | None
     ocr_lower  = ocr_text.lower()
     logo_phash = None
 
-    # 1. Logo hash — the most reliable SUPPLIER identifier, but NOT a doc-type
-    #    one: a supplier that sends several layouts under the same letterhead has
-    #    several templates with near-identical logos. So gather ALL close logo
-    #    candidates and, when more than one is within the ambiguity margin,
-    #    disambiguate by KEYWORD FINGERPRINT — which is exactly what tells a
-    #    "Purchase Order" apart from a "Service Worksheet". A lone candidate keeps
-    #    the old fast short-circuit (logo wins, no keyword work).
+    # 1. Logo hash — the most reliable SUPPLIER identifier, but NOT a doc-type one
+    #    (same-letterhead siblings). Gather ALL close logo candidates; within the
+    #    ambiguity margin, prefer the sibling whose DOC-TYPE matches the detected
+    #    title, else the keyword-fingerprint tie-break, else the closest logo.
     if page_image is not None:
         logo_phash, cands = _logo_candidates(page_image, templates)
         if cands:
             best_t, best_dist = cands[0]
+            cluster_dist = best_dist                       # closest logo in the cluster
             cluster = [t for (t, d) in cands if d <= best_dist + _LOGO_AMBIG_MARGIN]
-            method = 'logo'
-            if len(cluster) > 1:
+            dist_of = {id(t): d for (t, d) in cands}
+            method  = 'logo'
+            matching = [t for t in cluster
+                        if detected_slug and (t.get('document_type_slug') or '') == detected_slug]
+            if matching:
+                # Prefer the type-matching sibling; deterministic: closest logo, then
+                # most-confirmed. Keep supplier-identity confidence at the cluster's
+                # CLOSEST logo distance (the logo says "this supplier" at that strength;
+                # picking a type-correct-but-logo-farther sibling shouldn't sag it).
+                best_t    = min(matching, key=lambda t: (dist_of.get(id(t), 99),
+                                                         -(t.get('confirmed_count') or 0)))
+                best_dist = cluster_dist
+                method    = 'logo+slug'
+            elif len(cluster) > 1 and not (title_trusted and detected_slug):
                 scored = sorted(((t, _keyword_hit_ratio(t, ocr_lower)) for t in cluster),
                                 key=lambda x: -x[1])
-                if scored[0][1] > 0:                  # keyword evidence breaks the tie
-                    best_t = scored[0][0]
-                    best_dist = next(d for (t, d) in cands if t is best_t)
-                    method = 'logo+keywords'
+                if scored[0][1] > 0:                        # keyword evidence breaks the tie
+                    best_t    = scored[0][0]
+                    best_dist = dist_of.get(id(best_t), best_dist)
+                    method    = 'logo+keywords'
             conf = max(0, 100 - best_dist * 6)
             if conf >= 60:
+                # REFUSE: a TRUSTED title declares a type NONE of this letterhead's
+                # templates carry — do not force a wrong-type template's layout /
+                # fixed-values / Stage-0.5 mappings onto it. Return no match so the doc
+                # goes to review to teach the new type (supplier identity still resolves
+                # via the independent logo_fingerprints path). Gated on title_trusted, so
+                # a mere incidental mention can't discard a good single-template match.
+                if title_trusted and detected_slug and (best_t.get('document_type_slug') or '') != detected_slug:
+                    return None
                 return {'template': best_t, 'confidence': conf,
                         'method': method, 'logo_phash': logo_phash}
 
-    # 2. Keyword fingerprint — fallback for docs without logos
-    kw_match = _match_by_keywords(ocr_text, templates)
+    # 2b. TEXT-CORROBORATED, SAME-TYPE RESCUE (Phillip, 2026-07-10): the logo drifted OUT of the strict
+    #     accept band, but a template of the DETECTED type carries a strongly-overlapping keyword
+    #     fingerprint (= the same supplier's BRANDING — the fingerprint strips doc-type + recipient
+    #     words) and (if we have a logo) sits within a WIDER corroboration band (= not a different
+    #     supplier's letterhead). Prefer it over the slug-BLIND best-score keyword fallback below,
+    #     which picks an IDENTICAL-fingerprint sibling of the WRONG type and is then refused by the
+    #     title guard — leaving e.g. a drifted Meridian PO with NO template even though its own PO
+    #     template is right there. Precision-gated (same-type + >=0.80 branding overlap + logo band):
+    #     can ONLY turn "wrongly no template" into the CORRECT template, never a wrong one; any miss
+    #     falls through to the existing logoless path / review-to-teach.
+    if detected_slug and title_trusted:
+        _same_type = sorted(
+            ((t, _keyword_hit_ratio(t, ocr_lower)) for t in templates
+             if (t.get('document_type_slug') or '') == detected_slug),
+            key=lambda x: -x[1])
+        if _same_type and _same_type[0][1] >= RESCUE_KEYWORD_OVERLAP:
+            _cand = _same_type[0][0]
+            if logo_phash is None or _min_set_dist(_cand, logo_phash) <= RESCUE_LOGO_BAND:
+                return {'template': _cand, 'confidence': 60,
+                        'method': 'keywords+slug_rescue', 'logo_phash': logo_phash}
+
+    # 2. Keyword fingerprint — fallback for docs without logos. Pass detected_slug so a same-fingerprint
+    # sibling of the DETECTED type wins the tie (the logo-drift → keyword-fallback → wrong-sibling class).
+    kw_match = _match_by_keywords(ocr_text, templates, detected_slug)
     if kw_match and kw_match['confidence'] >= int(KEYWORD_THRESHOLD * 100):
+        # Same title-trust refuse on the logoless path.
+        if title_trusted and detected_slug and \
+           (kw_match['template'].get('document_type_slug') or '') != detected_slug:
+            return None
         if logo_phash:
             kw_match['logo_phash'] = logo_phash
         return kw_match
@@ -230,6 +294,15 @@ def _logo_candidates(page_image: Image.Image,
     return phash, cands
 
 
+def _min_set_dist(template: dict, phash: str) -> int:
+    """Min Hamming from `phash` to any logo hash in the template's multi-ref set (or its legacy single
+    logo_phash); 99 when the template carries no logo hash. The wider corroboration backstop for the
+    same-type keyword rescue — guards against a different-supplier look-alike letterhead."""
+    hashes = template.get('logo_phashes') or ([template.get('logo_phash')] if template.get('logo_phash') else [])
+    dists = [_hamming(phash, h) for h in hashes if h]
+    return min(dists) if dists else 99
+
+
 def _keyword_hit_ratio(template: dict, ocr_lower: str) -> float:
     """Fraction of a template's keyword fingerprint present on the page (the same
     word-boundary match _match_by_keywords uses). 0.0 when the template has no
@@ -244,10 +317,20 @@ def _keyword_hit_ratio(template: dict, ocr_lower: str) -> float:
     return hits / len(keywords)
 
 
-def _match_by_keywords(ocr_text: str, templates: list) -> dict | None:
+def _match_by_keywords(ocr_text: str, templates: list, detected_slug: str | None = None) -> dict | None:
+    """`detected_slug`: on an EXACT keyword-score TIE between same-fingerprint siblings (one supplier
+    issuing several doc types on ONE letterhead has IDENTICAL branding fingerprints — the fingerprint
+    strips doc-type words), prefer the sibling whose document_type_slug matches the doc's OWN detected
+    title. This mirrors the detected_slug preference the LOGO-cluster path already has (identify_template
+    :87-97) — WITHOUT it, when the logo drifts out of range and this fallback runs, the wrong-type sibling
+    wins by mere template ORDER (the Cascade delivery-docket-typed-invoice bug). TIE-ONLY, NEVER a boost:
+    `score` is the PRIMARY key element, so a strictly-higher-scoring template of ANY type always wins —
+    the slug preference can never override better keyword evidence (which would reopen the cross-supplier
+    misfile class the word-boundary guard below prevents). detected_slug=None → slug_match=0 for all →
+    pure order/confirmed tie-break, and the existing keyword-tie pins stay green."""
     ocr_lower  = ocr_text.lower()
     best       = None
-    best_score = 0.0
+    best_key   = None
 
     for t in templates:
         keywords = t.get('keyword_fingerprint') or []
@@ -264,9 +347,20 @@ def _match_by_keywords(ocr_text: str, templates: list) -> dict | None:
             1 for kw in keywords
             if re.search(r'(?<![a-z0-9])' + re.escape(kw.lower()) + r'(?![a-z0-9])', ocr_lower)
         )
+        if hits == 0:
+            continue                                       # no keyword hit -> never wins (the "return None"
+                                                           # contract, independent of slug_match; Oracle F1-C1)
         score = hits / len(keywords)
-        if score > best_score:
-            best_score = score
+        # (score, slug_match): score is PRIMARY (raw float — IEEE-754 division ties equal fractions
+        # bit-identically, so no round() is needed and it cannot erode strictly-higher-score-wins,
+        # Oracle F1-C3), so a higher-scoring template of ANY type always wins. slug_match breaks an
+        # EXACT score tie toward the detected-type sibling. NO confirmed_count tertiary (Oracle F1-C2:
+        # it would silently flip a sibling tie on the segmentation None-path the corpus can't see).
+        # Strict '>' keeps the first-seen on a FULL tie (score+slug equal) — byte-identical when None.
+        slug_match = 1 if detected_slug and (t.get('document_type_slug') or '') == detected_slug else 0
+        key = (score, slug_match)
+        if best_key is None or key > best_key:
+            best_key = key
             best = {
                 'template':   t,
                 'confidence': int(score * 100),

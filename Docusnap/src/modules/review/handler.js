@@ -89,7 +89,10 @@ function register(ctx) {
       notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
       notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
     },
-    releaseDelayMs: 150,
+    // releaseDelayMs stays 0 (the default): the old 150ms "release the preview file handle" wait
+    // before filing was vestigial — the preview is an in-memory data URL, not an OS handle, and the
+    // source-file delete is already deferred + retry-guarded — so it only added confirm latency
+    // (eric/Oracle-verified). The renderer's twin 150ms was removed too. See reviewService.confirm.
   });
 
   // ── Validation patterns (shared source of truth for UI field validation) ─────
@@ -198,6 +201,30 @@ function register(ctx) {
     try {
       logAudit(db, { action: 'learning_value_purged', action_category: 'learning',
         outcome: 'success', metadata: { ...(scope || {}), removed } });
+    } catch {}
+    return { removed };
+  });
+  // Learned ANCHORS for a (supplier, doc-type, field) scope — the "learned anchors" panel in the
+  // learning history, so an operator can SEE where a field reads from. Read-only.
+  ipcMain.handle('get-anchors-for-scope', (_e, scope) => {
+    requireRole('admin', 'edit');
+    return learning.getAnchorsForScope(getDb(), scope || {});
+  });
+  // Which fields have a learned anchor for a (supplier, doc-type) scope — powers the Review per-field
+  // "position taught" dot. Read-only; returns [] on any error so the indicator can never break render.
+  ipcMain.handle('get-taught-field-keys', (_e, scope) => {
+    requireRole('admin', 'edit');
+    try { return learning.getTaughtFieldKeys(getDb(), scope || {}); } catch { return []; }
+  });
+  // Delete ONE mis-stored learned anchor (learning-history → 🗑). Admin/edit; audited.
+  ipcMain.handle('delete-field-anchor', (_e, payload) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const id = payload && payload.id;
+    const { removed } = learning.deleteAnchor(db, id);
+    try {
+      logAudit(db, { action: 'learning_anchor_deleted', action_category: 'learning',
+        outcome: removed ? 'success' : 'noop', metadata: { anchor_id: id, ...(payload || {}), removed } });
     } catch {}
     return { removed };
   });
@@ -787,14 +814,18 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
     // garble / per-document tokens can't poison Stage 0 matching and strand the
     // learned anchors — see templates.stabiliseFingerprint / chooseLogoPhash.
     templates.update(db, templateId, { logo_phash, keyword_fingerprint, fields });
-    // Heal a generic auto-name: a COLD first confirm named this template "<Type> Template" (no
-    // supplier read yet); a later confirm of the SAME template now carries the real issuer, so
-    // adopt it. Cosmetic (the name plays no role in matching/filing/learning-scope), and scoped to
-    // a STILL-generic name so a hand-edited or already-issuer name is left alone.
+    // Heal a junk/generic auto-name (WIDENED 2026-07-10): a template created at a supplier's
+    // FIRST confirm inherits whatever sat in the issuer field — a COLD confirm births
+    // "<Type> Template", and a WRONG first detection births a postcode ("BT23 1BE") or a bare
+    // caption word ("Ref") that the old generic-only heal never touched. A later confirm of
+    // the SAME template carrying a PLAUSIBLE issuer now also heals those non-name shapes
+    // (templates.shouldAdoptIssuerName — plausibility-gated both ways, postcode + caption-word
+    // shapes, generic "… Template"). A plausible hand-edited or previously-adopted name is
+    // NEVER touched, so the heal can't flip-flop between issuer variants. Cosmetic (the name
+    // plays no role in matching/filing/learning-scope).
     if (confirmedIssuer) {
       const cur = templates.getById(db, templateId);
-      if (cur && /\btemplate$/i.test((cur.name || '').trim())
-          && cur.name.trim().toLowerCase() !== confirmedIssuer.toLowerCase()) {
+      if (cur && templates.shouldAdoptIssuerName(cur.name, confirmedIssuer)) {
         try { templates.rename(db, templateId, confirmedIssuer); } catch {}
       }
     }

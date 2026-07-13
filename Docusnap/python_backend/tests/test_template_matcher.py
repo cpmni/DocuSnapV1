@@ -9,17 +9,17 @@ _match_by_keywords / extract_keyword_fingerprint).
 Written alongside the review/handler.js _upsertTemplate convergence fix
 (same-supplier/same-layout documents now reuse one template via
 templates.findByLogoHash instead of spawning a duplicate per confirm).
-This module's own matching code was NOT changed by that fix — these checks
+This module's own matching code was NOT changed by that fix - these checks
 exist to prove Stage 0 still behaves exactly as the fix assumes:
 
   - a close logo-phash match (Hamming distance <= 5, confidence >= 65)
-    wins immediately and short-circuits the keyword fallback — the same
+    wins immediately and short-circuits the keyword fallback - the same
     gate _upsertTemplate now mirrors via findByLogoHash + confidence >= 65
   - a logo distance just outside that gate (6 -> confidence 64) correctly
     falls through to keyword matching rather than forcing a weak match
   - keyword fingerprint matching requires >= 75% verbatim recall
   - nothing clearing its gate -> None (caller may legitimately start a new
-    template — this is the "materially different layout" branch)
+    template - this is the "materially different layout" branch)
 
 Also covers the keyword-fingerprint hardening for suppliers with weak/missing
 logos (extract_keyword_fingerprint / _match_by_keywords):
@@ -33,7 +33,7 @@ logos (extract_keyword_fingerprint / _match_by_keywords):
 
 Mirrors test_template_mapper.py's "bypass the external dependency entirely"
 convention: compute_logo_hash normally shells out to PIL/imagehash, so it is
-monkeypatched here to read a deterministic `.phash` off a tiny page stub —
+monkeypatched here to read a deterministic `.phash` off a tiny page stub -
 no image library or real rendering required.
 
 Usage:
@@ -59,7 +59,7 @@ def section(title):
 
 
 class FakePage:
-    """Stands in for a PIL page image — only ever handed to compute_logo_hash,
+    """Stands in for a PIL page image - only ever handed to compute_logo_hash,
     which `with_stub_hash` replaces for the duration of each call below."""
     def __init__(self, phash):
         self.phash = phash
@@ -67,7 +67,7 @@ class FakePage:
 
 def with_stub_hash(fn):
     """Run `fn` with compute_logo_hash reading FakePage.phash directly,
-    instead of shelling out to PIL/imagehash — deterministic and dependency-free."""
+    instead of shelling out to PIL/imagehash - deterministic and dependency-free."""
     original = template_matcher.compute_logo_hash
     template_matcher.compute_logo_hash = lambda page: page.phash
     try:
@@ -85,7 +85,7 @@ ACME_TEMPLATE = {
 }
 CONTOSO_TEMPLATE = {
     'id': 2, 'name': 'Contoso Receipt',
-    'logo_phash': '5e6f7a8b9c0d1e2f',   # unrelated hash — large distance from Acme's
+    'logo_phash': '5e6f7a8b9c0d1e2f',   # unrelated hash - large distance from Acme's
     'keyword_fingerprint': ['CONTOSO', 'RECEIPT', 'THANKYOU', 'STORE', 'VISIT'],
 }
 TEMPLATES = [ACME_TEMPLATE, CONTOSO_TEMPLATE]
@@ -97,7 +97,7 @@ def main():
     # ── Logo match wins outright and short-circuits keyword fallback ─────────
     section('identify_template: exact logo phash match short-circuits keyword fallback')
     page = FakePage(phash='a1b2c3d4e5f60718')   # distance 0 from Acme's stored hash
-    # Deliberately shares NO fingerprint words with either template — if logo
+    # Deliberately shares NO fingerprint words with either template - if logo
     # matching didn't win outright, this would fall through to a failing
     # keyword match and incorrectly return None.
     ocr_text = "Bill To: Someone Else\nInvoice 99999\nTotal Due: 1,234.56"
@@ -112,7 +112,7 @@ def main():
 
     # ── Logo gate boundary: confidence >= 60 <=> Hamming distance <= 6 ───────
     # _upsertTemplate's findByLogoHash reuse path mirrors this exact gate
-    # (see review/handler.js) — proving it here pins down what "close enough
+    # (see review/handler.js) - proving it here pins down what "close enough
     # to reuse" means on the Stage 0 side too, so the two stay consistent.
     #
     # Threshold was lowered from >= 65 (distance <= 5) to >= 60 (distance <= 6)
@@ -123,7 +123,7 @@ def main():
     # still very close (6/64 bits differ = 91% similar) and the risk of
     # cross-supplier false matches at this distance is low: the logo crop is
     # the top-left 50% × 20% of the page, and two genuinely different suppliers'
-    # logos in that region would need to be accidentally 91% identical — a
+    # logos in that region would need to be accidentally 91% identical - a
     # realistic collision boundary sits around distance 10–12.
     section('identify_template: logo accept-gate boundary (distance 6 matches, 7 does not)')
     near   = FakePage(phash='a1b2c3d4e5f60797')   # differs from ...0718 by exactly 5 bits
@@ -179,7 +179,7 @@ def main():
         failures += 1
 
     # ── extract_keyword_fingerprint: per-document variable tokens must not pollute it ──
-    # Two near-duplicate invoices from the SAME supplier — everything that
+    # Two near-duplicate invoices from the SAME supplier - everything that
     # differs between them (ref, date, customer, totals) is exactly what must
     # NOT survive into the fingerprint, or the "fingerprint" stops being a
     # stable per-supplier signal and starts being a per-document one.
@@ -201,7 +201,7 @@ def main():
                  'march' not in one_lower and 'september' not in two_lower):
         failures += 1
     # Customer name ("Northwind Traders" vs "Fabrikam Retail") sits in the
-    # recipient block AFTER "Bill To:" — harvesting now stops at that marker, so
+    # recipient block AFTER "Bill To:" - harvesting now stops at that marker, so
     # the per-document customer words are excluded entirely (the bug that made a
     # template match only its one sample customer). The stable supplier core
     # above the marker is kept.
@@ -216,7 +216,7 @@ def main():
     # ── _match_by_keywords: substring collisions must not inflate scores ─────
     # "LTD" is a short, distinctive single-word fingerprint entry. Plain
     # substring containment would score a hit against "ALTDORF" even though
-    # the document has nothing to do with that supplier — exactly the kind of
+    # the document has nothing to do with that supplier - exactly the kind of
     # accidental cross-supplier collision that makes keyword fallback brittle
     # for suppliers without a usable logo.
     section('_match_by_keywords: word-boundary matching avoids accidental substring collisions')
@@ -241,7 +241,7 @@ def main():
     # Per-template OCR auto-processing rules (templates.ocr_auto_enabled /
     # ocr_auto_params, see database/modules/templates.js setOcrAutoParams) are
     # applied AFTER a template has already been selected on identity grounds
-    # (logo/keyword) — see processing/handler.js reprocess-document. Stage 0
+    # (logo/keyword) - see processing/handler.js reprocess-document. Stage 0
     # itself never reads these fields. These checks pin that down: two
     # candidates that are otherwise identical (same logo distance / same
     # keyword score -> a tie) must resolve to the same winner regardless of
@@ -297,9 +297,73 @@ def main():
                  kw_loser_auto and kw_loser_auto['template']['id'] == 22):
         failures += 1
 
+    # ── Fix (2026-07-12): keyword fallback prefers the DETECTED-TYPE sibling on a tie ──────────
+    # A supplier issuing several doc types on ONE letterhead has same-logo siblings with IDENTICAL
+    # keyword fingerprints; when the logo drifts and this fallback runs, the wrong-type sibling used
+    # to win by template ORDER (Cascade delivery-docket typed 'invoice' -> delivery_number null).
+    # detected_slug now breaks the tie toward the sibling matching the doc's OWN detected title.
+    section('_match_by_keywords: detected_slug breaks a same-fingerprint sibling tie (type-aware)')
+    DN_TPL  = {'id': 30, 'name': 'Cascade Delivery', 'logo_phash': None,
+               'document_type_slug': 'delivery_note', 'confirmed_count': 0,
+               'keyword_fingerprint': ['CASCADE', 'WATER', 'SYSTEMS']}
+    INV_TPL = {'id': 31, 'name': 'Cascade Invoice', 'logo_phash': None,
+               'document_type_slug': 'invoice', 'confirmed_count': 0,
+               'keyword_fingerprint': ['CASCADE', 'WATER', 'SYSTEMS']}
+    cascade_text = "CASCADE WATER SYSTEMS\nDELIVERY DOCKET\nDN-62705"
+    m_inv_first = template_matcher._match_by_keywords(cascade_text, [INV_TPL, DN_TPL], detected_slug='delivery_note')
+    if not check('invoice-FIRST order: detected delivery_note sibling still wins (the live-bug order)',
+                 m_inv_first and m_inv_first['template']['id'] == 30):
+        failures += 1
+    m_dn_first = template_matcher._match_by_keywords(cascade_text, [DN_TPL, INV_TPL], detected_slug='delivery_note')
+    if not check('delivery-FIRST order: same winner -> deterministic, order-independent',
+                 m_dn_first and m_dn_first['template']['id'] == 30):
+        failures += 1
+    if not check("winner method is 'keywords'", m_inv_first and m_inv_first['method'] == 'keywords'):
+        failures += 1
+    m_blind = template_matcher._match_by_keywords(cascade_text, [INV_TPL, DN_TPL])
+    if not check('no detected_slug -> first-seen wins the tie (byte-identical old behaviour)',
+                 m_blind and m_blind['template']['id'] == 31):
+        failures += 1
+
+    # PIN THE TRADE-OFF (load-bearing): the slug preference is TIE-ONLY, NEVER a boost. A strictly
+    # higher-scoring DIFFERENT-type template MUST still win — else a weak same-type sibling could beat
+    # a strong (cross-supplier) match, the misfile class the word-boundary guard exists to prevent.
+    # Do NOT "fix" this by boosting the slug match above score.
+    WEAK_DN    = {'id': 32, 'name': 'Weak DN', 'logo_phash': None, 'document_type_slug': 'delivery_note',
+                  'confirmed_count': 0, 'keyword_fingerprint': ['CASCADE', 'WATER', 'ZZZ']}   # 2/3
+    STRONG_INV = {'id': 33, 'name': 'Strong INV', 'logo_phash': None, 'document_type_slug': 'invoice',
+                  'confirmed_count': 0, 'keyword_fingerprint': ['CASCADE', 'WATER']}           # 2/2
+    m_score = template_matcher._match_by_keywords(cascade_text, [WEAK_DN, STRONG_INV], detected_slug='delivery_note')
+    if not check('PIN: a strictly higher-scoring different-type template still wins (tie-only, never a boost)',
+                 m_score and m_score['template']['id'] == 33):
+        failures += 1
+
+    m_single = template_matcher._match_by_keywords(cascade_text, [INV_TPL], detected_slug='delivery_note')
+    if not check('single candidate returns regardless of a non-matching detected_slug',
+                 m_single and m_single['template']['id'] == 31):
+        failures += 1
+
+    # F1-C1 (Oracle): the "no keyword hit -> None" contract is INDEPENDENT of the tie-break key — a
+    # ZERO-hit template must never become a result, even when it slug-matches (else it would return a
+    # confidence-0 dict where today it returns None).
+    NOHIT_DN = {'id': 34, 'name': 'Nohit DN', 'logo_phash': None, 'document_type_slug': 'delivery_note',
+                'confirmed_count': 3, 'keyword_fingerprint': ['ZZZ', 'QQQ']}   # neither word on cascade_text
+    m_nohit = template_matcher._match_by_keywords(cascade_text, [NOHIT_DN], detected_slug='delivery_note')
+    if not check('F1-C1: a zero-hit slug-matching template is NOT returned (stays None)', m_nohit is None):
+        failures += 1
+
+    # F1-C5 (Oracle): the ENGINE co-run — identify_template (Stage 0, logo cluster empty via page_image=None)
+    # routes to the keyword path and prefers the detected_slug sibling. This is the seam gary's
+    # "mutually-exclusive branches" model missed: Fix 1 ALSO runs inside engine.extract on a forced reprocess,
+    # cooperatively recovering the correct-type template.
+    id_corun = template_matcher.identify_template(None, cascade_text, [INV_TPL, DN_TPL], detected_slug='delivery_note')
+    if not check('F1-C5: identify_template (no logo) + detected_slug picks the delivery_note sibling (engine co-run)',
+                 id_corun and id_corun['template']['id'] == 30):
+        failures += 1
+
     # The fix: same-logo SIBLINGS (one supplier, several layouts under one
     # letterhead) are disambiguated by KEYWORD FINGERPRINT, and the winner carries
-    # its OWN document_type_slug — so a worksheet isn't matched to the PO template
+    # its OWN document_type_slug - so a worksheet isn't matched to the PO template
     # (and then mis-typed). The logo alone can't tell them apart.
     section('identify_template: same-logo siblings disambiguated by keyword fingerprint + slug')
     PO_TPL = {'id': 30, 'name': 'Acme PO', 'logo_phash': SAME_HASH,
@@ -324,11 +388,60 @@ def main():
                  po_hit and po_hit['template']['id'] == 30):
         failures += 1
 
+    # ── THE LIVE BUG: same-logo siblings with IDENTICAL keyword fingerprints ──
+    # A supplier issuing several layouts under ONE letterhead -> the fingerprint is JUST
+    # the letterhead words, IDENTICAL between siblings, so the fingerprint tie-break above
+    # can't tell them apart and the established sibling wins -> wrong type. Only the detected
+    # TITLE distinguishes them. (The section above uses DIFFERING fingerprints and does not
+    # reproduce this.) Pins the detected_slug sibling pick + the title_trusted refuse.
+    section('identify_template: identical-fingerprint siblings disambiguated by detected_slug')
+    LH = ['ASHFORD', 'WHOLESALE', 'CHURCH', 'ROAD']   # shared letterhead fingerprint
+    SO_TPL  = {'id': 9,  'name': 'Ashford SO', 'logo_phash': SAME_HASH, 'confirmed_count': 2,
+               'document_type_slug': 'sales_order', 'keyword_fingerprint': LH}
+    WS2_TPL = {'id': 10, 'name': 'Ashford WS', 'logo_phash': SAME_HASH, 'confirmed_count': 0,
+               'document_type_slug': 'worksheet',   'keyword_fingerprint': LH}
+    SIBS = [SO_TPL, WS2_TPL]                          # SO first (established) = today's list-order winner
+    ocr  = "ASHFORD WHOLESALE\nWORKSHEET 38\nCHURCH ROAD"
+
+    m_none = with_stub_hash(lambda: template_matcher.identify_template(FakePage(SAME_HASH), ocr, SIBS))
+    if not check('detected_slug=None -> identical-fingerprint tie unbroken -> established sales_order wins (the bug)',
+                 m_none and m_none['template']['id'] == 9):
+        failures += 1
+    m_ws = with_stub_hash(lambda: template_matcher.identify_template(
+        FakePage(SAME_HASH), ocr, SIBS, detected_slug='worksheet', title_trusted=True))
+    if not check('detected_slug=worksheet -> picks the WORKSHEET sibling #10 (THE FIX)',
+                 m_ws and m_ws['template']['id'] == 10 and m_ws['template']['document_type_slug'] == 'worksheet'):
+        failures += 1
+    if not check("  -> method reflects slug disambiguation ('logo+slug')",
+                 m_ws and m_ws.get('method') == 'logo+slug'):
+        failures += 1
+    m_refuse = with_stub_hash(lambda: template_matcher.identify_template(
+        FakePage(SAME_HASH), ocr, SIBS, detected_slug='purchase_order', title_trusted=True))
+    if not check('trusted title of a type NO sibling has -> REFUSE (None, doc -> review to teach)',
+                 m_refuse is None):
+        failures += 1
+    m_fb = with_stub_hash(lambda: template_matcher.identify_template(
+        FakePage(SAME_HASH), ocr, SIBS, detected_slug='purchase_order', title_trusted=False))
+    if not check('UNtrusted mention + no matching sibling -> does NOT refuse (falls back - refuse can\'t eat good matches)',
+                 m_fb is not None):
+        failures += 1
+    m_single = with_stub_hash(lambda: template_matcher.identify_template(
+        FakePage(SAME_HASH), ocr, [SO_TPL], detected_slug='worksheet', title_trusted=True))
+    if not check('single sales_order template + trusted worksheet title -> REFUSE (no wrong-type force)',
+                 m_single is None):
+        failures += 1
+    m_ok = with_stub_hash(lambda: template_matcher.identify_template(
+        FakePage(SAME_HASH), "ASHFORD WHOLESALE\nSALES ORDER\nSO-12345", [SO_TPL],
+        detected_slug='sales_order', title_trusted=True))
+    if not check('single sales_order template + trusted sales_order title -> keeps #9 (no regression)',
+                 m_ok and m_ok['template']['id'] == 9):
+        failures += 1
+
     print()
     if failures:
-        print(f"{failures} check(s) failed — template_matcher Stage 0 identification regressed.")
+        print(f"{failures} check(s) failed - template_matcher Stage 0 identification regressed.")
         sys.exit(1)
-    print('All checks passed — template_matcher Stage 0 identification behaves as expected.')
+    print('All checks passed - template_matcher Stage 0 identification behaves as expected.')
 
 
 if __name__ == '__main__':

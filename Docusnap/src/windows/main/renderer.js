@@ -617,6 +617,34 @@ async function chooseSourceFolder() {
   btnRun.disabled = false;
   const dashFolder = document.getElementById('dash-folder');
   if (dashFolder) { dashFolder.textContent = folder; dashFolder.classList.add('set'); }
+  showFolderPreview(folder);   // list the docs inside so the operator can SEE the folder has content
+}
+
+// The native folder picker can't show files, so list the folder's documents (import is
+// non-recursive → matches exactly what "Process" will handle) so the operator confirms content
+// before processing. Disables Process for an empty folder (e.g. a parent that only has subfolders).
+async function showFolderPreview(folder) {
+  const el = document.getElementById('folder-preview');
+  if (!el) return;
+  el.style.display = '';
+  el.className = 'folder-preview loading';
+  el.textContent = 'Checking folder…';
+  let res = null;
+  try { res = await window.docusnap.listImportFolder?.(folder); } catch {}
+  if (selectedFolder !== folder) return;   // user re-picked while this was loading
+  if (!res || res.count === 0) {
+    el.className = 'folder-preview empty';
+    el.textContent = 'No documents found directly in this folder — pick the folder that contains the scans (PDFs or images).';
+    btnRun.disabled = true;
+    return;
+  }
+  btnRun.disabled = false;
+  el.className = 'folder-preview';
+  const MAXN = 12;
+  const items = res.files.slice(0, MAXN).map(f => `<li>${escHtml(f)}</li>`).join('');
+  const more  = res.count > MAXN ? `<li class="more">…and ${res.count - MAXN} more</li>` : '';
+  el.innerHTML = `<div class="fp-head">&#128196; ${res.count} document${res.count === 1 ? '' : 's'} ready to import</div>`
+               + `<ul class="fp-list">${items}${more}</ul>`;
 }
 folderBox.addEventListener('click', chooseSourceFolder);
 
@@ -716,6 +744,28 @@ async function startProcessing() {
     logStatus.textContent = 'Error';
     running = false;
     btnRun.disabled  = false;
+    setBtnLabel(btnRun, 'Process Documents');
+    btnStop.classList.remove('visible');
+    return;
+  }
+
+  // The handler REFUSES some imports up front (source folder overlaps the output or
+  // "Processed" folder, licence lapsed, a training-setup error) by RESOLVING with
+  // {success:false, error} — it does NOT throw — so the catch above never sees it, and
+  // the old code fell straight through to "0 processed" with no explanation (the
+  // Processed-folder-overlap trap). ONLY these refusals carry an `error` string (a normal
+  // batch returns {success,stopped} with none, so a partial worker-exit failure still
+  // renders its results below) — so surface it: show the reason, open the collapsed log,
+  // and stop.
+  if (processResult && processResult.success === false && processResult.error) {
+    const why = processResult.error;
+    appendLog(why, 'err');
+    logStatus.textContent    = 'Couldn’t start';
+    progressText.textContent = why;
+    logPanel.classList.add('log-open');            // reveal the collapsed log so the reason is visible
+    if (btnToggleLog) btnToggleLog.textContent = 'Hide log';
+    running = false;
+    btnRun.disabled = false;
     setBtnLabel(btnRun, 'Process Documents');
     btnStop.classList.remove('visible');
     return;

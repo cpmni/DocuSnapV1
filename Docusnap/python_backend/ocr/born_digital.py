@@ -19,6 +19,8 @@ page_lines() output is drop-in compatible with the OCR line path.
 Gated by the 'born_digital_enabled' setting (default ON); see process_docs.
 """
 
+from ocr.text_layout import COLUMN_BREAK   # 4-space column-break marker (single source of truth)
+
 _MIN_CHARS       = 40     # a page with >= this many real glyphs is born-digital
 _MIN_ALPHA_RATIO = 0.30   # hybrid/garbage guard: a real layer is mostly alnum
 _WORD_GAP_NORM   = 0.010  # x-gap (page-norm) that breaks one word from the next
@@ -109,7 +111,7 @@ def _join_words(words):
             out += t
         else:
             gap  = w.get("x1", 0.0) - prev.get("x2", 0.0)
-            out += ("    " if gap > col_gap else " ") + t   # 4 spaces = a column break
+            out += (COLUMN_BREAK if gap > col_gap else " ") + t   # column break vs word gap
         prev = w
     return out
 
@@ -162,15 +164,31 @@ def page_lines(page):
     if cur:
         words.append(cur)
 
-    # 2) Group words into lines by y-centre proximity, left→right within a line.
-    grouped = []
-    for wd in sorted(words, key=lambda w: (round((w["y1"] + w["y2"]) / 2.0, 3), w["x1"])):
+    # 2) Group words into lines — TWO PASS (mirrors ocr.tesseract._group_words_into_lines, oscar).
+    # A single greedy pass (join the LAST line if within tol) assigns a word to whichever row was
+    # VISITED first, so on a 3-column header whose columns are NOT row-aligned a value between two
+    # rows glues to the row above (a value at cy 0.385 joins "BILLING ADDRESS" at 0.379, Δ0.006 <
+    # tol) instead of its own "INVOICE NUMBER" row at 0.386 (Δ0.001) which is SEEDED LATER — so the
+    # label read empty and keyword extraction grabbed the wrong column ("ACME"). PASS 1 discovers the
+    # line-anchor SET with the SAME within-tol eligibility as the old single pass (→ identical rows,
+    # no regression by construction); PASS 2 assigns EVERY word to its NEAREST anchor line (removes
+    # the visit-order bias), so the value re-homes to its own label's row. y-centre-relative.
+    _sw = sorted(words, key=lambda w: ((w["y1"] + w["y2"]) / 2.0, w["x1"]))
+    _anchors = []
+    for wd in _sw:
         cy = (wd["y1"] + wd["y2"]) / 2.0
-        ln = grouped[-1] if grouped else None
-        if ln and abs(cy - ln["_cy"]) <= _LINE_TOL_NORM:
-            ln["_words"].append(wd)
-        else:
+        if not any(abs(cy - a) <= _LINE_TOL_NORM for a in _anchors):
+            _anchors.append(cy)
+    grouped = [{"_cy": a, "_words": []} for a in _anchors]
+    for wd in _sw:
+        cy = (wd["y1"] + wd["y2"]) / 2.0
+        best = min(grouped, key=lambda g: abs(cy - g["_cy"])) if grouped else None
+        if best is not None and abs(cy - best["_cy"]) <= _LINE_TOL_NORM:
+            best["_words"].append(wd)
+        else:                                           # no anchor within tol (rounding) — never lose a word
             grouped.append({"_cy": cy, "_words": [wd]})
+    grouped = [g for g in grouped if g["_words"]]
+    grouped.sort(key=lambda g: g["_cy"])
 
     out = []
     for ln in grouped:

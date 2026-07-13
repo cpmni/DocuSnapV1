@@ -154,6 +154,28 @@ function saveCorrections(db, document_id, corrections,
     WHERE document_id = @document_id AND field_key = @field_key
   `);
 
+  // CONFIRM-UPSERT (Oracle-signed, 2026-07-10): a value typed into a field that the
+  // engine never READ has NO extraction row — the import only inserts rows for fields
+  // it extracted, and the UPDATE above is a no-op without a row. The typed value then
+  // lived ONLY in corrections, and every learning reader (getFieldFormats /
+  // getFieldValueHistory / getDocumentsForFieldValue / dominant-snap) selects FROM
+  // extractions with corrections merely LEFT-JOINed — so confirmed values were
+  // INVISIBLE to learning ("worksheets are no longer learning values": two confirmed
+  // docs, an empty Learning-history modal), invisible to search, and lost when the
+  // doc was reopened. Insert the missing row as an explicit MANUAL read: method
+  // 'manual' (exempt from the recipient-caption issuer guard; never consulted by any
+  // auto-file path — those run at PROCESSING time, this row is born at CONFIRM time),
+  // confidence 100 (a human typed it), corrected_to NULL (that column is the engine's
+  // auto-correction signal — the Review "corrected" chip keys off it).
+  const insertManualExtraction = db.prepare(`
+    INSERT INTO extractions
+      (document_id, field_key, raw_value, display_value, confidence,
+       extraction_method, was_corrected, validation_note, corrected_to, anchor_label)
+    VALUES
+      (@document_id, @field_key, NULL, @corrected_value, 100,
+       'manual', 1, NULL, NULL, NULL)
+  `);
+
   const upsertHint = db.prepare(`
     INSERT INTO supplier_hints
       (supplier_name, document_type, field_key, hint_value, usage_count, last_seen)
@@ -173,7 +195,12 @@ function saveCorrections(db, document_id, corrections,
         supplier_name: effectiveSupplier, document_type: document_type || null,
       });
       // Keep the stored extraction in step with the confirmed value (see above).
-      updateExtractionValue.run({ document_id, field_key, corrected_value: corrected_value ?? '' });
+      const _upd = updateExtractionValue.run({ document_id, field_key, corrected_value: corrected_value ?? '' });
+      // No row to update → the field was never read: persist the typed value as a
+      // manual extraction row so it exists for learning/search/reopen (see above).
+      if (_upd.changes === 0 && corrected_value && String(corrected_value).trim()) {
+        insertManualExtraction.run({ document_id, field_key, corrected_value: String(corrected_value) });
+      }
       if (corrected_value) {
         upsertHint.run({
           supplier_name: effectiveSupplier, document_type: document_type || null,
@@ -234,6 +261,17 @@ function saveCorrections(db, document_id, corrections,
   })();
 }
 
+// The TRAINING dump — every hint row, uncapped (2026-07-10). buildTrainingArgs used the
+// bare getHints(db) below, whose default LIMIT 100 (by usage_count DESC) silently
+// STARVED the engine once the corpus grew past 100 rows: every new supplier's usage-1/2
+// hints — exactly the learning a fresh confirm creates — never reached _apply_hints,
+// the 2.5a identity text-scan, the variability evidence guard, or the identity rescue
+// (535 rows live, 435 invisible when this was caught). "No silent caps": the engine
+// must see the whole corpus; the capped form remains for scoped/display callers.
+function getAllHints(db) {
+  return db.prepare('SELECT * FROM supplier_hints ORDER BY usage_count DESC').all();
+}
+
 function getHints(db, { supplier_name, document_type, limit = 100 } = {}) {
   if (supplier_name && document_type) {
     return db.prepare(`
@@ -289,13 +327,19 @@ function _centerDistance(ax, ay, bx, by) {
 // it carries no letter (a bare number / reference / date) or is a code-like
 // serial (>= 3 digits). Returns the cleaned caption, or '' when nothing stable
 // remains. Reusable for every supplier/field; no per-document logic.
+// MIRROR PAIR: src/windows/shared/anchorLabel.js sanitizeAnchorLabel MUST stay identical —
+// a divergence here re-strips a renderer-approved label AND nulls its drift offset below.
 function sanitizeAnchorLabel(label) {
   if (!label || typeof label !== 'string') return '';
   const kept = label.trim().split(/\s+/).filter(tok => {
+    // A STANDALONE '#' is caption punctuation ("SO #", "Item #"), never a value — keep it:
+    // it's the uniqueness that makes a 2-char stem locatable (reggie, 2026-07-10).
+    if (/^#[.:]?$/.test(tok)) return true;
     if (!/[a-zA-Z]/.test(tok)) return false;                // bare number / ref / date
     if ((tok.match(/\d/g) || []).length >= 3) return false; // code-like serial
     return true;
   });
+  if (!kept.some(t => /[a-zA-Z]/.test(t))) return '';       // a label must carry letters
   return kept.join(' ').trim();
 }
 
@@ -333,6 +377,34 @@ function saveAnchor(db, {
       offset_dy_norm = null;
     }
   }
+  // Same phantom class via the field's DISPLAY LABEL (Oracle-signed belt-and-braces,
+  // 2026-07-10): migration 38 renamed the identity display to "Document Issuer" while
+  // the KEYS stayed supplier_name/customer_name, so the field-key check above never
+  // caught a label synthesised from the display name — "Document Issuer" anchors
+  // reached the DB, and the anchor engine then silently dropped their reads on every
+  // doc (the "my issuer teach never sticks" loop). A label OCR'd FROM THE PAGE
+  // (label_detected) that merely equals the display label is a REAL caption — kept,
+  // exactly like the field-key check. Lookup is best-effort (minimal test DBs may
+  // lack the fields tables — treat as no-match).
+  if (anchor_label && field_key && !label_detected) {
+    let displayLabel = null;
+    try {
+      const row = db.prepare(`
+        SELECT f.label AS label FROM fields f
+        JOIN document_types dt ON dt.id = f.document_type_id
+        WHERE dt.slug = ? AND f.key = ?
+      `).get(String(document_type || ''), String(field_key));
+      displayLabel = row && row.label;
+    } catch { /* fields tables absent (minimal fixture) → no-match */ }
+    if (displayLabel) {
+      const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+      if (norm(anchor_label) === norm(displayLabel)) {
+        anchor_label   = '';
+        offset_dx_norm = null;
+        offset_dy_norm = null;
+      }
+    }
+  }
 
   const key = {
     supplier_name: supplier_name || '__unknown__',
@@ -360,26 +432,28 @@ function saveAnchor(db, {
   // usage_count. Stamping last_authoritative_at lets extraction prefer this row.
   // A mis-teach is cheap to recover from — just redraw again (also authoritative).
   if (authoritative) {
-    // Remove sibling anchors for the SAME field/supplier/doc_type that are not
-    // this exact label+direction, so the just-drawn box is the single source of
-    // truth for the field's position and no stale row can win selection.
+    // Remove sibling anchors for the SAME field + doc_type + THIS SUPPLIER that are
+    // not this exact label+direction, so the just-drawn box is the single source of
+    // truth for the field's position for this supplier and no stale same-supplier row
+    // can win selection.
     //
-    // Scope is (field_key, document_type) ACROSS ALL SUPPLIERS — deliberately
-    // NOT restricted to this teach's supplier. The doc-type IS the layout here;
-    // an operator teaching where a field sits is correcting it for that layout,
-    // not for one resolved supplier identity. Without the cross-supplier sweep,
-    // a stale anchor saved under a supplier the template/logo resolves to
-    // (supplier-exact = higher selection priority) survives and out-ranks this
-    // supplier-agnostic teach — the exact failure that made re-teaching look
-    // broken. Superseding by (field, doc-type) makes the explicit teach win for
-    // every future document of this type regardless of resolved supplier, which
-    // is the intended supplier-optional, doc-type-driven behaviour.
+    // Scope is (field_key, document_type, supplier_name) — the sweep is SUPPLIER-SCOPED
+    // (gary Slice 1, 2026-07-09). It used to run ACROSS ALL SUPPLIERS on the premise
+    // "the doc-type IS the layout", but that is FALSE for a multi-supplier type like
+    // Invoice: teaching one supplier's field then DELETED every other supplier's learned
+    // anchor for that field ("I taught one Anconia doc and it broke my other suppliers").
+    // A teach is tagged to the confirmed supplier (review/renderer.js), so it belongs to
+    // that supplier's layout, not to every sender of the type. The companion fix that
+    // stops a cross-supplier authoritative anchor from OUT-RANKING a supplier's own anchor
+    // at read time is _filter_anchors' supplier-aware auth priority (anchor.py) + the
+    // located-at-taught-position gate; a genuinely shared single-layout type opts in via
+    // the __global__ sentinel supplier. Guarded by database/modules/test_saveanchor_scope.js.
     db.prepare(`
       DELETE FROM field_anchors
       WHERE field_key = @field_key
         AND ((document_type IS @document_type) OR document_type = @document_type)
-        AND NOT (supplier_name = @supplier_name
-                 AND anchor_label = @anchor_label AND direction = @direction)
+        AND supplier_name = @supplier_name
+        AND NOT (anchor_label = @anchor_label AND direction = @direction)
     `).run(key);
 
     const existingAuth = db.prepare(`
@@ -502,9 +576,57 @@ function getAllAnchors(db) {
   ).all();
 }
 
+// The learned ANCHORS that would apply for a (supplier, doc-type, field) scope — this supplier's
+// own rows PLUS the global/unresolved ones (saved before the supplier was identified, mirroring
+// clearAnchors' scope). Powers the Learning-history "learned anchors" panel so an operator can SEE
+// where a field is being read from and DELETE an anchor stored at the wrong spot. Read-only.
+function getAnchorsForScope(db, { supplier_name, document_type, field_key } = {}) {
+  if (!field_key) return [];
+  return db.prepare(`
+    SELECT id, supplier_name, document_type, field_key, anchor_label, direction, page_zone,
+           x_norm, y_norm, w_norm, h_norm, usage_count, confidence,
+           last_authoritative_at, offset_dx_norm, offset_dy_norm
+    FROM field_anchors
+    WHERE field_key = @field_key
+      AND (@document_type IS NULL OR COALESCE(document_type, '') = COALESCE(@document_type, ''))
+      AND (LOWER(TRIM(COALESCE(supplier_name, ''))) = LOWER(TRIM(COALESCE(@supplier_name, '')))
+           OR supplier_name IN ('__unknown__', '__global__') OR supplier_name IS NULL OR TRIM(supplier_name) = '')
+    ORDER BY (last_authoritative_at IS NOT NULL) DESC, usage_count DESC, confidence DESC
+  `).all({ supplier_name: supplier_name || '', document_type: document_type ?? null, field_key });
+}
+
+// The field_keys that have at least one learned anchor applicable to a (supplier, doc-type) scope —
+// same scope rule as getAnchorsForScope (this supplier's own rows PLUS global/unresolved ones).
+// Powers the Review per-field "position taught" dot so an operator can see at a glance which fields
+// Scan Finder already knows where to read. `authoritative` is 1 when any in-scope anchor for that
+// field came from an explicit ⊕ re-teach (vs a passively auto-learned position). Read-only.
+function getTaughtFieldKeys(db, { supplier_name, document_type } = {}) {
+  return db.prepare(`
+    SELECT field_key,
+           MAX(CASE WHEN last_authoritative_at IS NOT NULL THEN 1 ELSE 0 END) AS authoritative
+    FROM field_anchors
+    WHERE (@document_type IS NULL OR COALESCE(document_type, '') = COALESCE(@document_type, ''))
+      AND (LOWER(TRIM(COALESCE(supplier_name, ''))) = LOWER(TRIM(COALESCE(@supplier_name, '')))
+           OR supplier_name IN ('__unknown__', '__global__') OR supplier_name IS NULL OR TRIM(supplier_name) = '')
+    GROUP BY field_key
+  `).all({ supplier_name: supplier_name || '', document_type: document_type ?? null });
+}
+
+// Delete ONE learned anchor by id (Learning-history "learned anchors" panel → 🗑). Precise, reversible
+// only by re-teaching (a mis-drawn anchor is cheap to redraw). Returns {removed}. Admin/edit, audited
+// at the IPC edge.
+function deleteAnchor(db, id) {
+  const _id = parseInt(id, 10);
+  if (!_id) return { removed: 0 };
+  return { removed: db.prepare('DELETE FROM field_anchors WHERE id = ?').run(_id).changes };
+}
+
 // ── Logo fingerprints ─────────────────────────────────────────────────────────
 
-function saveLogoFingerprint(db, { supplier_name, phash, ahash }) {
+// A NEW phash this many bits CLOSER to another supplier than to X's own = a cross-plant (poison).
+const LOGO_CROSSPLANT_MARGIN = 4;
+
+function saveLogoFingerprint(db, { supplier_name, phash, ahash, manual }) {
   const existing = db.prepare(
     'SELECT id, phash FROM logo_fingerprints WHERE supplier_name = ?'
   ).all(supplier_name);
@@ -517,6 +639,29 @@ function saveLogoFingerprint(db, { supplier_name, phash, ahash }) {
         WHERE id = ?
       `).run(row.id);
       return;
+    }
+  }
+  // CROSS-PLANT GUARD (Oracle 2026-07-12) — stop the logo-collision poisoning loop: refuse to plant a
+  // NEW phash under supplier X when it sits decisively CLOSER (by > MARGIN bits) to a DIFFERENT
+  // supplier's existing print than to any of X's own — the signature of a mis-resolved doc appending a
+  // rival's logo under X (a Thornbury "TF" mark saved under Cascade). Applies ONLY to the INSERT-new
+  // branch (the UPDATE / match_count++ path above is untouched) and ONLY when X ALREADY has >=1 own
+  // print — a supplier's FIRST-EVER logo is always planted (else a look-alike newcomer could never
+  // learn a logo) — and an explicit operator MANUAL supplier assignment bypasses (operator authority).
+  // Pure hash-space; no OCR. Defence-in-depth behind the engine branding-conflict flag (which routes a
+  // mis-resolved doc to review BEFORE the confirm that would plant the poison).
+  if (!manual && existing.length >= 1) {
+    let minOwn = 64;
+    for (const row of existing) minOwn = Math.min(minOwn, hammingDistance(row.phash, phash));
+    let minOther = 64, otherName = null;
+    for (const row of db.prepare(
+      'SELECT supplier_name, phash FROM logo_fingerprints WHERE supplier_name <> ?'
+    ).all(supplier_name)) {
+      const d = hammingDistance(row.phash, phash);
+      if (d < minOther) { minOther = d; otherName = row.supplier_name; }
+    }
+    if (minOther + LOGO_CROSSPLANT_MARGIN < minOwn) {
+      return { skipped: true, reason: 'cross_plant', closerTo: otherName, minOther, minOwn };
     }
   }
   db.prepare(`
@@ -1273,8 +1418,8 @@ module.exports = {
   insertExtractions, deleteExtractions,
   getFieldValueHistory, getDocumentsForFieldValue, purgeFieldValue, renameFieldValue,
   getSupplierScopeCounts, renameSupplier,
-  saveCorrections, getHints, isPlausibleSupplierName, nameQuality, normalizeSupplierName,
-  saveAnchor, sanitizeAnchorLabel, clearAnchors, getAllAnchors,
+  saveCorrections, getHints, getAllHints, isPlausibleSupplierName, nameQuality, normalizeSupplierName,
+  saveAnchor, sanitizeAnchorLabel, clearAnchors, getAllAnchors, getAnchorsForScope, getTaughtFieldKeys, deleteAnchor,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
   getFieldFormats, getDigitsOnlyFields,
   getRecoverySummary, getRecoveryDetail, getMemoryInventory, resetAllLearning,

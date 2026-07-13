@@ -58,7 +58,8 @@ print("\nREAD gate (_is_blind_cross_supplier_anchor) — drop a BLIND cross-supp
 check("BLIND cross-supplier supplier_name (Contoso crop on a Profile doc) -> DROP",
       blind('supplier_name', A('supplier_name', 'contoso asia'), 'profile construction', located_ok=False) is True)
 check("LOCATED cross-supplier supplier_name (reads the doc's OWN 'Supplier:' value) -> KEEP",
-      blind('supplier_name', A('supplier_name', 'greenfield logistics ltd'), 'acme corp holdings', located_ok=True) is False)
+      blind('supplier_name', {**A('supplier_name', 'greenfield logistics ltd'), 'anchor_label': 'Supplier'},
+            'acme corp holdings', located_ok=True) is False)
 check("BLIND SAME-supplier supplier_name (its own anchor) -> KEEP",
       blind('supplier_name', A('supplier_name', 'contoso asia'), 'contoso asia', located_ok=False) is False)
 check("BLIND cross-supplier on an UNKNOWN-supplier doc -> DROP (don't impose Contoso blindly)",
@@ -98,31 +99,66 @@ check("no identity_labels passed -> label branch inert, scope logic unchanged (s
 check("GLOBAL positional labelled 'Document Issuer' -> KEEP (global exempt; artifact branch is identity-only)",
       blind('invoice_number', AL('invoice_number', '', 'Document Issuer'), 'profile construction',
             located_ok=False, identity_labels=_ID_LABELS) is False)
+# POSITION-ONLY teach (Fix B, 2026-07-10): the ⊕ issuer teach now saves an EMPTY label
+# instead of the display name. The artifact branch must be INERT on '' (a_lbl falsy) so the
+# read falls to the scope rule — same-supplier positional teach KEPT, cross-supplier dropped.
+check("BLIND SAME-supplier identity anchor with '' label (position-only teach) -> KEEP",
+      blind('supplier_name', AL('supplier_name', 'contoso asia', ''), 'contoso asia',
+            located_ok=False, identity_labels=_ID_LABELS) is False)
+check("BLIND CROSS-supplier identity anchor with '' label -> still DROP (scope rule holds)",
+      blind('supplier_name', AL('supplier_name', 'contoso asia', ''), 'profile construction',
+            located_ok=False, identity_labels=_ID_LABELS) is True)
 
-print("\nPOSITIONAL / structured fields — a NAMED cross-supplier BLIND read now DROPS (the #1 bug fix):")
-# _anchor_matches (the FILTER) is UNCHANGED — it still admits a cross-supplier same-type anchor; the
-# READ gate now drops the blind (label-absent) read from a NAMED different supplier, exactly as it
-# already did for identity. Fixes the Anconia invoice_number -> City Office bleed (a top-right INVOICE
-# NUMBER teach blind-reading the top-left "Invoice To" on a different layout). A LOCATED read (same
-# layout -> label found) is still kept; a global / own-supplier anchor is still kept.
-check("Contoso invoice_number anchor still cross-applies at the FILTER (admission unchanged)",
-      anchor._anchor_matches(A('invoice_number', 'contoso asia'), 'profile construction', 'invoice') is True)
+print("\nPOSITIONAL / structured fields — cross-supplier now FILTERED at admission (2026-07-09, user direction):")
+# _anchor_matches (the FILTER) now REFUSES a cross-supplier POSITIONAL anchor: layouts differ per
+# supplier, so a positional cross-supplier read is ~never right and only bleeds (Anconia's top-right
+# INVOICE NUMBER teach reading a wrong region of a City Office / Cloud VPS doc). IDENTITY fields stay
+# admitted (a supplier's own labelled identity anchor must be able to correct a wrong supplier guess).
+# The READ-stage guard below is UNCHANGED and REMAINS as defence-in-depth (it still drops a blind
+# cross-supplier read should one ever reach the read stage, e.g. via a __global__ anchor).
+check("invoice_number cross-supplier is now FILTERED at admission (positional, different supplier)",
+      anchor._anchor_matches(A('invoice_number', 'contoso asia'), 'profile construction', 'invoice') is False)
+check("SAME-supplier invoice_number still admitted at the filter",
+      anchor._anchor_matches(A('invoice_number', 'contoso asia'), 'contoso asia', 'invoice') is True)
 check("BLIND cross-supplier invoice_number (different layout) -> DROP  [#1 bug fix; was intended-KEEP]",
       blind('invoice_number', A('invoice_number', 'contoso asia'), 'profile construction', located_ok=False) is True)
 check("LOCATED cross-supplier invoice_number (its label found here) -> KEEP (authoritative-wins holds)",
-      blind('invoice_number', A('invoice_number', 'contoso asia'), 'profile construction', located_ok=True) is False)
+      blind('invoice_number', {**A('invoice_number', 'contoso asia'), 'anchor_label': 'Invoice Number'},
+            'profile construction', located_ok=True) is False)
+# (The two LOCATED-KEEP rows above use REALISTIC captions since the Oracle-C2 weak-core
+#  exception: the old placeholder label 'x' (1 alpha char) now correctly counts as a
+#  weak-core locate and would be dropped cross-supplier — see the C2 rows at the end.)
 check("BLIND SAME-supplier invoice_number (its own layout) -> KEEP",
       blind('invoice_number', A('invoice_number', 'contoso asia'), 'contoso asia', located_ok=False) is False)
 check("BLIND GLOBAL invoice_number (supplier-agnostic, fixed position) -> KEEP (global exempt)",
       blind('invoice_number', A('invoice_number', ''), 'profile construction', located_ok=False) is False)
 check("BLIND cross-supplier invoice_DATE (structured non-identity) -> DROP (placement, not shape)",
       blind('invoice_date', A('invoice_date', 'contoso asia'), 'profile construction', located_ok=False) is True)
-check("po_number cross-supplier -> still matches at the FILTER (admission unchanged)",
-      anchor._anchor_matches(A('po_number', 'a co', 'purchase_order'), 'b co', 'purchase_order') is True)
+check("po_number cross-supplier is now FILTERED at admission (positional)",
+      anchor._anchor_matches(A('po_number', 'a co', 'purchase_order'), 'b co', 'purchase_order') is False)
+check("supplier_name (IDENTITY) cross-supplier is STILL admitted (re-resolution preserved)",
+      anchor._anchor_matches(A('supplier_name', 'a co', 'purchase_order'), 'b co', 'purchase_order') is True)
 
 print("\ndoc-type conflict still vetoes at the filter (unchanged):")
 check("invoice_number anchor (type invoice) on a sales_order doc -> NO match",
       anchor._anchor_matches(A('invoice_number', 'a co', 'invoice'), 'a co', 'sales_order') is False)
+
+print("\nWEAK-CORE locate exception (Oracle C2, 2026-07-10) — a bare 'No.'/'Ref'/'SO #' caption")
+print("locating on a NAMED different supplier's page proves nothing about layout identity:")
+check("LOCATED weak-core ('SO #') cross-supplier positional -> DROP (treated as blind)",
+      blind('sales_order_number', AL('sales_order_number', 'meridian print & copy', 'SO #', 'sales_order'),
+            'other corp', located_ok=True) is True)
+check("LOCATED weak-core ('No.') cross-supplier -> DROP",
+      blind('invoice_number', AL('invoice_number', 'a co', 'No.'), 'b co', located_ok=True) is True)
+check("LOCATED weak-core SAME supplier -> KEEP (byte-identical)",
+      blind('sales_order_number', AL('sales_order_number', 'meridian print & copy', 'SO #', 'sales_order'),
+            'meridian print & copy', located_ok=True) is False)
+check("LOCATED STRONG label ('Order Number') cross-supplier -> KEEP (the located upgrade stands)",
+      blind('sales_order_number', AL('sales_order_number', 'a co', 'Order Number', 'sales_order'),
+            'b co', located_ok=True) is False)
+check("LOCATED weak-core GLOBAL scope -> KEEP (global fixed-position reads are the intended use)",
+      blind('sales_order_number', AL('sales_order_number', '', 'SO #', 'sales_order'),
+            'b co', located_ok=True) is False)
 
 if FAILS:
     print(f"\n{FAILS} FAILED")

@@ -83,6 +83,12 @@ Return exactly these sections:
 - Possible false positives.
 - Possible false negatives.
 - Any backward-compatibility concern.
+- **Seam / precedence interaction.** A pattern or precedence change never acts alone: it changes which
+  CANDIDATE wins and what the DOWNSTREAM gates then see. State it — does tightening this pattern now
+  reject a value a later stage assumed it would receive? Does loosening it let a read WIN that a safety
+  gate (credibility, learned-shape veto, auto-file floor, review flag) was silently catching? Does it
+  agree with the OTHER place the same rule lives (the renderer `RegExp` twin, the config
+  `validation_patterns`)? Name the interaction, or state "checked, no downstream stage depends on this."
 
 ### Smallest change
 - The minimum code change needed.
