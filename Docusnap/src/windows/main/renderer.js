@@ -749,6 +749,28 @@ async function startProcessing() {
     return;
   }
 
+  // The handler REFUSES some imports up front (source folder overlaps the output or
+  // "Processed" folder, licence lapsed, a training-setup error) by RESOLVING with
+  // {success:false, error} — it does NOT throw — so the catch above never sees it, and
+  // the old code fell straight through to "0 processed" with no explanation (the
+  // Processed-folder-overlap trap). ONLY these refusals carry an `error` string (a normal
+  // batch returns {success,stopped} with none, so a partial worker-exit failure still
+  // renders its results below) — so surface it: show the reason, open the collapsed log,
+  // and stop.
+  if (processResult && processResult.success === false && processResult.error) {
+    const why = processResult.error;
+    appendLog(why, 'err');
+    logStatus.textContent    = 'Couldn’t start';
+    progressText.textContent = why;
+    logPanel.classList.add('log-open');            // reveal the collapsed log so the reason is visible
+    if (btnToggleLog) btnToggleLog.textContent = 'Hide log';
+    running = false;
+    btnRun.disabled = false;
+    setBtnLabel(btnRun, 'Process Documents');
+    btnStop.classList.remove('visible');
+    return;
+  }
+
   // Done
   running = false;
   btnRun.disabled  = false;
