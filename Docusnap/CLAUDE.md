@@ -17,13 +17,38 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/features.md` — first-run wizard, welcome tour, settings backup, Learning Repair, teaching wizard, dev inspector.
 - `docs/history.md` — resolved QA/audit findings + build-stage history (Settings/Review/Search/Stage-7 rebuilds).
 
-## Recent session changes (2026-07-09 → 07-12) — durable mechanisms now in the code
-**READ FIRST: `docs/handovers/HANDOVER_2026-07-12.md`** (latest — the identity/name guards below;
-working tree CLEAN, HEAD `2ba919f`, live DB migration 45). Prior: `…_2026-07-11.md` (the NIGHT batch,
+## Recent session changes (2026-07-09 → 07-13) — durable mechanisms now in the code
+**READ FIRST: `docs/handovers/HANDOVER_2026-07-13.md`** (latest — review UX + session Straighten-all +
+buyer-issued issuer guard COMMITTED; working tree CLEAN, HEAD = `docs:` wrap-up on `f948112`, 5 commits
+ahead of origin, live DB migration 45). Prior: `…_2026-07-12.md` (identity/name guards). Earlier: `…_2026-07-11.md` (the NIGHT batch,
 since COMMITTED). Fuller narratives: `…_2026-07-10_EVENING.md` / `…_2026-07-10.md` / `…_DAYTIME.md`.
 Session write-ups live in `docs/handovers/` + `docs/night-reports/` + `docs/audits/` (reorganised
 2026-07-11 — old root paths are stale by exactly that prefix). All on branch `feat/doctype-title-aliases`;
 each fix has unit tests (+ real-doc E2E where noted).
+
+### 2026-07-13 — review UX + session "Straighten all" + buyer-issued issuer guard committed (ALL COMMITTED → `f948112`)
+**READ `docs/handovers/HANDOVER_2026-07-13.md`.** Working tree CLEAN; 4 commits ahead of origin (unpushed).
+- **`6d72833` — buyer-issued issuer guard** (built by the prior session, committed now after re-verify):
+  `engine._suppress_buyer_seller_issuer` DROPS a `supplier_name` keyword read whose matched label is a
+  "Supplier/Vendor/Seller" caption on a buyer-issued type (ref role `po_number` OR trusted `purchase_order`
+  title), unless operator-allowlisted — so a PO Document Issuer falls to logo/letterhead/hint or empty→review
+  instead of filling with the VENDOR. Oracle C1–C5 applied; kill switch `BUYER_ISSUED_ISSUER_GUARD`. 6-for-6.
+- **`1eceb9e` — A: import refusal is VISIBLE.** `startProcessing()` (main renderer) now shows the handler's
+  `{success:false,error}` reason (source ⊆ output/Processed folder, licence, setup error) instead of a silent
+  "0 processed". Gated on `error` present so a normal/partial-fail batch still renders results. (Diagnosed a
+  live "won't process" report as a CONFIG issue — `processed_folder` was the PARENT of the import folder.)
+- **`c0eeca4` — B: Reprocess All closes the doc on empty queue** (`autoCommitFullConfidence` nulls currentDoc
+  + `clearDocPanel()`); **C: session "Straighten all"** — rail button `#btn-deskew-all` + `#deskew-all-bar`
+  flyout with a min-skew-angle input (default 1.0°, 0.2–5.0°). ON → every opened doc auto-straightens AND
+  Reprocess All/-sender force a straightened READ, but ONLY past the floor. ONE `--deskew-min-angle` flag,
+  floor `max(0.2,user)` in `detect_skew_angle` (tesseract.py), threaded to BOTH read (`--deskew-pages`) and
+  display (`region.py --deskew`); default 0.2° = byte-identical. C3 (oscar): batch manifest `ocr_text`
+  SUPPRESSED when deskewAll (else deskew no-ops under `use_cache`). C2: flag persisted only by the apply/off
+  handlers. **Straightened reprocess docs auto-file via the SAME gate as any read (owner's call) — corpus A/B
+  (M must not increase) PENDING a rebuilt corpus.** Tests `test_deskew_min_angle.py` 10/10 +
+  `test_deskew_session.js` 27/27. oscar+eric+Oracle signed.
+- **`f948112` — advisor gap fix:** eric.md rule "grep the whole index.html before asserting a UI absence" +
+  CLAUDE.md now documents the Review docked tool rail (`#queue-scroll-rail`) vs horizontal `#doc-toolbar`.
 
 ### 2026-07-12 — identity/name guards: wrong-supplier logo collision + customer-name heading garble (COMMITTED)
 **Two committed fixes; HEAD `2ba919f`. READ `docs/handovers/HANDOVER_2026-07-12.md`.**
