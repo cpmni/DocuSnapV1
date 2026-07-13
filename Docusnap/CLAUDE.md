@@ -19,8 +19,9 @@ touches that area — read the pointed-to doc BEFORE working in it:
 
 ## Recent session changes (2026-07-09 → 07-13) — durable mechanisms now in the code
 **READ FIRST: `docs/handovers/HANDOVER_2026-07-13.md`** (latest — review UX + session Straighten-all +
-buyer-issued issuer guard COMMITTED; working tree CLEAN, HEAD = `docs:` wrap-up on `f948112`, 5 commits
-ahead of origin, live DB migration 45). Prior: `…_2026-07-12.md` (identity/name guards). Earlier: `…_2026-07-11.md` (the NIGHT batch,
+buyer-issued issuer guard COMMITTED; **MERGED into `main` via PR #9 = merge `ea9bdec`**; the old
+`feat/doctype-title-aliases` was deleted post-merge — new work is on **`feat/review-straighten-followups`**
+off `main`; live DB migration 45). Prior: `…_2026-07-12.md` (identity/name guards). Earlier: `…_2026-07-11.md` (the NIGHT batch,
 since COMMITTED). Fuller narratives: `…_2026-07-10_EVENING.md` / `…_2026-07-10.md` / `…_DAYTIME.md`.
 Session write-ups live in `docs/handovers/` + `docs/night-reports/` + `docs/audits/` (reorganised
 2026-07-11 — old root paths are stale by exactly that prefix). All on branch `feat/doctype-title-aliases`;
