@@ -210,6 +210,12 @@ let deskewSessionOn  = (localStorage.getItem('review_deskew_session') === 'true'
 // feeder skew, and where straightening starts helping the READ); clamped [0.2, 5.0]. Set in the rail
 // flyout, persisted alongside the flag; written ONLY by applyDeskewSession/turnOffDeskewSession (C2).
 let deskewMinAngle   = (() => { const v = parseFloat(localStorage.getItem('review_deskew_min_angle')); return (Number.isFinite(v) && v >= 0.2 && v <= 5.0) ? v : 1.0; })();
+// The HARD floor the backend can never undercut (max(0.2,user) in detect_skew_angle). The per-doc
+// Straighten BUTTON reads at this floor — so it can straighten a doc the SESSION floor intentionally
+// skips ("do its job even though the main option is on"); it also matches the single-doc reprocess
+// read, which passes --deskew-pages with no --deskew-min-angle (i.e. the 0.2° floor). The session
+// batch keeps its own deskewMinAngle floor.
+const DESKEW_HARD_FLOOR = 0.2;
 // Field cleanup rules taught via the right-click menu this cycle, STAGED in memory
 // and persisted only on Confirm (mirrors pendingAnchors). Keyed field_key → array of
 // saveFieldRule payloads. An un-confirmed teach (skip/defer/doc-change) leaves no trace.
@@ -1215,7 +1221,11 @@ document.getElementById('btn-page-next').addEventListener('click', () => {
 // ── Deskew (straighten a tilted scan for accurate ⊕ box drawing) ─────────────────
 // Fetch (once, cached) the straightened render of the current page and swap it in. Guarded
 // against doc/page changes racing the async OCR, exactly like the OCR-preview refresh.
-async function applyDeskewToCurrentPage() {
+// `minAngle` = the floor sent to the backend detector; SESSION auto-straighten uses deskewMinAngle,
+// the per-doc BUTTON uses DESKEW_HARD_FLOOR (so it can catch a tilt the session floor skips). `manual`
+// = an explicit per-doc request → toast "already straight" when nothing is above the floor; a session
+// auto pass stays silent (no toast on every below-floor doc opened).
+async function applyDeskewToCurrentPage(minAngle = deskewMinAngle, manual = false) {
   if (!deskewEnabled || wizard.active || !pageImages || !pageImages.length) return;
   const page = currentPage, docId = currentDoc?.id;
   if (deskewByPage[page] !== undefined) return;   // already fetched (or in flight — set below)
@@ -1224,7 +1234,7 @@ async function applyDeskewToCurrentPage() {
   try {
     const src = String(pageImages[page] || '');
     const b64 = src.includes(',') ? src.split(',')[1] : src;
-    const res = await window.docusnap.getPageDeskew?.(b64, deskewMinAngle);
+    const res = await window.docusnap.getPageDeskew?.(b64, minAngle);
     if (res && res.image && res.angle) entry = { angle: res.angle, uri: `data:image/png;base64,${res.image}` };
   } catch (e) {
     console.warn('deskew failed:', e.message);
@@ -1232,30 +1242,42 @@ async function applyDeskewToCurrentPage() {
   if (currentDoc?.id !== docId) return;            // doc changed while OCR ran — drop (state was reset)
   deskewByPage[page] = entry;
   if (deskewEnabled && !wizard.active && currentPage === page) {
-    if (entry.uri) renderPage();                              // swap the now-cached straightened image in
-    else if (deskewSessionOn) { updateDeskewBtn(); }   // session auto-straighten: silently show raw (no per-doc toast on every below-floor doc)
-    else { showToast('This page already looks straight.', 'ok'); updateDeskewBtn(); }   // manual toggle: nothing to straighten
+    if (entry.uri) renderPage();                              // swap the now-cached straightened image in (renderPage refreshes the button)
+    else if (manual) { showToast('This page already looks straight.', 'ok'); updateDeskewBtn(); }   // explicit request, nothing to do
+    else updateDeskewBtn();                                   // session auto-straighten: silently show raw (no per-doc toast on every below-floor doc)
   } else updateDeskewBtn();
 }
 
-// Toggle deskew for the current doc. On → fetch+straighten the current page; off → revert to raw.
+// The per-doc Straighten BUTTON. It acts on the SHOWN frame, not the session intent, so it keeps
+// working while session straighten is on: a page currently shown STRAIGHTENED reverts to raw; a page
+// shown RAW (session off, OR session on but this page fell below the session floor) is straightened
+// at the hard 0.2° floor. deskewEnabled tracks the shown state (drives the reprocess READ); this never
+// writes the session flag (Oracle C2 — only the rail apply/off handlers do).
 async function toggleDeskew() {
   if (!pageImages || !pageImages.length) { showToast('Open a document first', 'warn'); return; }
   if (wizard.active) { showToast('Close the Template Wizard to straighten the page', 'warn'); return; }
-  deskewEnabled = !deskewEnabled;
-  if (!deskewEnabled) deskewPageAngle = 0;
-  renderPage();
+  const shownStraightened = deskewEnabled && !!deskewPageAngle;
+  if (shownStraightened) {                 // currently straightened → revert to raw
+    deskewEnabled = false; deskewPageAngle = 0; renderPage();
+    return;
+  }
+  // Shown raw → force-straighten THIS page at the hard floor (below the session floor if need be).
+  deskewEnabled = true;
+  delete deskewByPage[currentPage];        // drop any below-session-floor "angle 0" cache so we re-read at the hard floor
+  await applyDeskewToCurrentPage(DESKEW_HARD_FLOOR, true);
 }
 
-// Reflect the toggle's state + the applied angle in the toolbar button.
+// Reflect the ACTUAL shown frame in the toolbar button. "Straightened" means this page was really
+// rotated (a non-zero applied angle) — NOT merely that straighten mode is on. So a below-threshold
+// doc under session straighten reads "Straighten" (honest) and the button still works to straighten it.
 function updateDeskewBtn() {
   const btn = document.getElementById('btn-deskew');
   const lbl = document.getElementById('deskew-angle');
   if (!btn) return;
-  const on = deskewEnabled && !wizard.active;
-  btn.classList.toggle('active', on);
-  btn.innerHTML = on ? '&#8734; Straightened' : '&#8734; Straighten';
-  if (lbl) lbl.textContent = (on && deskewPageAngle) ? `${deskewPageAngle > 0 ? '+' : ''}${deskewPageAngle.toFixed(1)}°` : '';
+  const straightened = deskewEnabled && !wizard.active && !!deskewPageAngle;
+  btn.classList.toggle('active', straightened);
+  btn.innerHTML = straightened ? '&#8734; Straightened' : '&#8734; Straighten';
+  if (lbl) lbl.textContent = straightened ? `${deskewPageAngle > 0 ? '+' : ''}${deskewPageAngle.toFixed(1)}°` : '';
 }
 
 // SESSION straighten (rail button `#btn-deskew-all` → `#deskew-all-bar` flyout). The flyout carries the

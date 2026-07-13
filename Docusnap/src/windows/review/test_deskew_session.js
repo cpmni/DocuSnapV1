@@ -44,9 +44,19 @@ console.log('\nrenderer.js — session drive + reprocess flag (C4) + display thr
 check('doc-open makes deskewEnabled FOLLOW the session flag', renderer.includes('deskewEnabled = deskewSessionOn; deskewByPage = {}; deskewPageAngle = 0; updateDeskewBtn();'));
 check('C4: Reprocess batch call passes {deskewAll, deskewMinAngle} (covers both reprocess buttons via runReprocessBatch)',
       renderer.includes('{ deskewAll: !!deskewSessionOn, deskewMinAngle }'));
-check('display fetch passes the operator floor to getPageDeskew', renderer.includes('getPageDeskew?.(b64, deskewMinAngle)'));
+check('display fetch passes a floor to getPageDeskew (session default = deskewMinAngle)',
+      renderer.includes('getPageDeskew?.(b64, minAngle)') && renderer.includes('applyDeskewToCurrentPage(minAngle = deskewMinAngle, manual = false)'));
 check('the min-angle input read is clamped [0.2, 5.0]', renderer.includes('Math.max(0.2, Math.min(5.0, v))'));
-check('session auto-straighten suppresses the per-doc "already straight" toast', renderer.includes('else if (deskewSessionOn) { updateDeskewBtn(); }'));
+check('session auto-straighten stays silent; only an explicit per-doc request toasts "already straight"',
+      renderer.includes("else if (manual) { showToast('This page already looks straight.', 'ok'); updateDeskewBtn(); }"));
+
+console.log('\nrenderer.js — per-doc Straighten button status + hard-floor override:');
+check('the button label reflects the ACTUAL applied angle, not just that mode is on',
+      renderer.includes('const straightened = deskewEnabled && !wizard.active && !!deskewPageAngle;'));
+check('the per-doc button reads at the hard 0.2° floor (works below the session floor)',
+      renderer.includes('const DESKEW_HARD_FLOOR = 0.2;') && renderer.includes('applyDeskewToCurrentPage(DESKEW_HARD_FLOOR, true)'));
+check('toggleDeskew acts on the SHOWN frame (revert if straightened, else force-straighten)',
+      renderer.includes('const shownStraightened = deskewEnabled && !!deskewPageAngle;'));
 
 console.log('\nrenderer.js — C2: only the session apply/off handlers persist the flag:');
 check('review_deskew_session is written exactly twice (applyDeskewSession + turnOffDeskewSession)',
