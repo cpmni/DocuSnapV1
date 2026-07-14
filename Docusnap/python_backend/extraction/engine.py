@@ -158,6 +158,71 @@ def _cmp_norm(value) -> str:
         return "".join(str(value or "").strip().lower().split())
 
 
+_NAME_RELOCATE_NOTE = ("Two different names were read here — the clean value beside the label and a "
+                       "garbled one from the taught box. Kept the label read; please verify.")
+_RELOCATE_METHODS = ("anchor_crop_relocated", "anchor_inline")
+
+
+def _candidate_source_label(method) -> str:
+    """A short human phrase for WHERE a candidate value was read, for the disambiguation picker
+    list (so an operator can tell the reads apart without knowing methods)."""
+    m = method or ""
+    if m in ("keyword", "keyword_override"):
+        return "beside the label"
+    if m.startswith("anchor") or m in ("template_mapping", "template_mapping_expanded"):
+        return "from the taught box"
+    if m.startswith("template_fixed") or m == "template":
+        return "from the template"
+    if m == "logo":
+        return "from the logo/letterhead"
+    return "read from the page"
+
+
+def _name_relocate_should_hold(existing: dict | None, data: dict | None, field_key: str) -> bool:
+    """NAME-RELOCATE DISAGREEMENT GUARD (slice 1; gary-designed, Oracle-signed WITH CONDITIONS,
+    2026-07-14). True → a taught anchor's RELOCATED read is a garbled NAME that DISAGREES with a
+    CLEAN keyword name for the same field, and the relocate is strictly more garbled AND absolutely
+    junky — so the caller HOLDS: keeps the clean keyword value, caps <=69 + note, routes to review.
+
+    The incident: a customer anchor taught on a ROTATED scan mis-registers on the straightened page,
+    its crop reads a clipped "comer Clinic" and — because the relocate NULLED its crop confidence
+    (see anchor.py Part A) — wins Tier-A outright over the label-adjacent keyword "Fernbank
+    Veterinary Clinic". The keyword read is the trustworthy one here.
+
+    Rule (all must hold): the field is name-like AND not supplier_name (slice-1 scope: supplier is
+    corpus-scored with its own defenses); the incumbent is a plain 'keyword' read with a value; the
+    incoming anchor is a RELOCATE with a value; the two DISAGREE; the keyword is a CLEAN name
+    (name_quality >= 0.6); the relocate is STRICTLY less clean than the keyword AND below an absolute
+    junk floor (name_quality < 0.6). The STRICT '<' plus the 0.6 floor are load-bearing (Oracle): a
+    legit taught mixed-case name ("McConnell Kelly Solicitors" scores ~0.667 because name_quality
+    under-rates interior capitals) is NOT demoted and still wins its Tier-A re-teach — only a genuine
+    garble (< 0.6) is held. FLAG-ONLY: never rewrites a value. Pin the floor in
+    test_name_relocate_disagreement.py so a future dev can't loosen it and re-break the teach."""
+    if not existing or not data:
+        return False
+    if not value_quality.is_name_like_field(field_key) or field_key == "supplier_name":
+        return False
+    if existing.get("method") != "keyword" or not existing.get("value"):
+        return False
+    if data.get("method") not in _RELOCATE_METHODS or not data.get("value"):
+        return False
+    ev, dv = existing.get("value"), data.get("value")
+    if _cmp_norm(ev) == _cmp_norm(dv):        # must DISAGREE
+        return False
+    eq = value_quality.name_quality(ev)
+    if eq < 0.6:                              # the keyword must be a CLEAN name
+        return False
+    # CAPTION-BLEED (fix #2): the relocate read the field's OWN caption (flagged in anchor.py —
+    # its leading tokens ARE the taught label). Real caption words score >=0.6, so the junk floor
+    # below can't catch them (they collide with a legit mixed-case name). Hold regardless of the
+    # relocate's name_quality — the clean keyword wins. Disagree + clean-keyword already checked.
+    if data.get("caption_bleed"):
+        return True
+    dq = value_quality.name_quality(dv)
+    # strict '<' (an equal/cleaner taught relocate still wins Tier-A) AND the absolute junk floor.
+    return dq < eq and dq < 0.6
+
+
 def _supplier_identity_decision(existing: dict | None, candidate: dict | None) -> str | None:
     """Plausibility-aware merge ruling for the supplier_name field only.
 
@@ -497,6 +562,7 @@ class ExtractionEngine:
                 'stage':         stage,
                 'authoritative': bool(data.get('authoritative')),
                 'located':       bool(data.get('located')),
+                'box':           data.get('box'),   # picker: value box (top-left norm) or None; inert to the ledger's consumers (Stage 4.6 + total reconciliation read named keys only)
             })
 
     @staticmethod
@@ -542,6 +608,57 @@ class ExtractionEngine:
             return None
         qualifying.sort(key=lambda c: (-(c['confidence'] or 0), str(c['value'])))
         return qualifying[0]
+
+    def _build_candidate_emit(self, results):
+        """Disambiguation picker (v1): for each NAME-LIKE non-supplier field carrying a
+        validation_note with >=2 DISTINCT candidate values, build the picker list
+        [{value, box, source_label, method, confidence}] (chosen value first, cap 3). Additive +
+        inert (commits no value); the box comes from the anchor read's own capture (top-left norm,
+        None for keyword/late reads). Kill switch FIELD_CANDIDATES_EMIT (default on)."""
+        if os.environ.get("FIELD_CANDIDATES_EMIT", "1") == "0":
+            return {}
+        emit = {}
+        for key, fld in results.items():
+            if key.startswith("_") or not isinstance(fld, dict):
+                continue
+            if key == "supplier_name" or not value_quality.is_name_like_field(key):
+                continue
+            if not str(fld.get("validation_note") or "").strip():
+                continue
+            # dedup by _cmp_norm; within a group keep a boxed rep, then the higher confidence.
+            by_norm = {}
+            for c in (self._field_candidates.get(key) or []):
+                v = c.get("value")
+                if not v:
+                    continue
+                nk = _cmp_norm(v)
+                cur = by_norm.get(nk)
+                if cur is None:
+                    by_norm[nk] = c
+                else:
+                    c_boxed, cur_boxed = c.get("box") is not None, cur.get("box") is not None
+                    if (c_boxed and not cur_boxed) or (c_boxed == cur_boxed
+                            and (c.get("confidence") or 0) > (cur.get("confidence") or 0)):
+                        by_norm[nk] = c
+            # the CHOSEN value must always be an option even if it never entered the ledger.
+            chosen_v = fld.get("value")
+            chosen_norm = _cmp_norm(chosen_v) if chosen_v else None
+            if chosen_v and chosen_norm not in by_norm:
+                by_norm[chosen_norm] = {"value": chosen_v, "method": fld.get("method"),
+                                        "confidence": fld.get("confidence") or 0, "box": fld.get("box")}
+            reps = list(by_norm.values())
+            if len(reps) < 2:
+                continue
+            reps.sort(key=lambda c: (0 if _cmp_norm(c.get("value")) == chosen_norm else 1,
+                                     -(c.get("confidence") or 0), str(c.get("value"))))
+            emit[key] = [{
+                "value":        c.get("value"),
+                "box":          c.get("box"),
+                "source_label": _candidate_source_label(c.get("method")),
+                "method":       c.get("method"),
+                "confidence":   c.get("confidence") or 0,
+            } for c in reps[:3]]
+        return emit
 
     def _resolve_candidates(self, results, field_defs, supplier_name, document_slug):
         """Stage 4.6 — gated, deterministic, suggestion-first override. Runs only when
@@ -1025,13 +1142,28 @@ class ExtractionEngine:
             return  # the resolved supplier's own branding IS on the page -> healthy, no flag
         # X's branding is ABSENT. Name the decisively-present alternative supplier, if one stands out
         # (>=0.75 present AND a clear margin over any third — Oracle: positive evidence, not weak agreement).
+        # The alt-scan is FUZZY (a garbled letterhead word "rthgate" still resolves "northgate") and runs
+        # on the ISSUER-BAND text ONLY (top letterhead, truncated at the first recipient marker), so a
+        # mid-page recipient/customer name can never be named as the issuer. own_ratio above stays EXACT +
+        # whole-page ON PURPOSE — fuzzing it could RAISE it and SUPPRESS the flag (fail-open to a silent
+        # wrong supplier); fuzzing only the alt-scan can never suppress, only ADD a name. Kill switch
+        # BRANDING_ALT_FUZZY (fuzzy is a superset of exact, so =0 restores the exact-name behaviour).
+        _fuzzy = os.environ.get("BRANDING_ALT_FUZZY", "1") != "0"
+        _issuer_tokens = None
+        if _fuzzy:
+            import re as _re
+            from extraction import chrome_band
+            _issuer_tokens = _re.findall(r"[a-z0-9]+", chrome_band.issuer_chrome(ocr_text).lower())
         alt, alt_ratio, second = None, 0.0, 0.0
         _own_norm = self._accept_norm(supplier_name)
         for norm, b in banks.items():
             if norm == _own_norm or len(b["words"]) < K:
                 continue
-            r = template_matcher._keyword_hit_ratio(
-                {"keyword_fingerprint": sorted(b["words"])}, ocr_lower)
+            if _fuzzy:
+                r = template_matcher._keyword_hit_ratio_fuzzy(sorted(b["words"]), _issuer_tokens)
+            else:
+                r = template_matcher._keyword_hit_ratio(
+                    {"keyword_fingerprint": sorted(b["words"])}, ocr_lower)
             if r > alt_ratio:
                 alt, second, alt_ratio = b["name"], alt_ratio, r
             elif r > second:
@@ -1040,6 +1172,13 @@ class ExtractionEngine:
         if named:
             note = (f"The page branding reads '{named}', but this was filed under '{supplier_name}'. "
                     "Please confirm the correct company.")
+            # Additive suggestion for a renderer "Use '<name>'" one-click button (Slice 2). The engine
+            # VALUE stays the honestly-resolved supplier — no _supplier_name change, no filing/scope write
+            # on a fuzzy match (Oracle/gary: the value-change belongs at confirm-time in the renderer).
+            # ONLY emitted on the safe issuer-band FUZZY path: the =0 revert uses the legacy exact
+            # whole-page scan (which can name a recipient), so it must not feed an actionable button.
+            if _fuzzy:
+                fld["suggested_supplier"] = named
         else:
             note = (f"This document's letterhead doesn't match '{supplier_name}'. "
                     "Please confirm the correct company.")
@@ -1645,6 +1784,7 @@ class ExtractionEngine:
                 ref_field_key: str | None = None,
                 supplier_name: str | None = None,
                 known_template_id: int | None = None,
+                pinned_template_id: int | None = None,
                 trace = None,
                 slice_dir = None,
                 page_text_lines: list | None = None,
@@ -1690,6 +1830,7 @@ class ExtractionEngine:
                            and not _is_ref_field(f["key"])}
         matched_tmpl = None
         logo_phash   = None
+        logo_detail_hash = None
         kw_fingerprint = []
 
         # Logo/identity phash SOURCE. On a deskew-reprocess the READ pages (page_images) are
@@ -1703,9 +1844,19 @@ class ExtractionEngine:
         # ── Pre-stage: compute logo hash + keyword fingerprint (always) ───────
         if _id_img is not None:
             logo_phash = template_matcher.compute_logo_hash(_id_img)
+            # Isolated-mark 256-bit DETAIL hash (the logo-collision discriminator, logo_detail.py),
+            # computed from the SAME raw page-0 source as the phash (Oracle: a deskewed/enhanced image
+            # drifts out of frame with the stored hashes). Fail-safe None on any error → the doc simply
+            # carries no detail hash. INERT until Slice C consumes it — persisting it now is harmless.
+            try:
+                import logo_detail
+                logo_detail_hash = logo_detail.detail_hash(_id_img)
+            except Exception:
+                logo_detail_hash = None
         kw_fingerprint = template_matcher.extract_keyword_fingerprint(ocr_text)
 
         # ── Stage 0: Template matching ────────────────────────────────────────
+        self._type_ambiguous = False   # Fix A: set True below when the match is an ambiguous same-logo pick
         if templates:
             match = template_matcher.identify_template(
                 _id_img,
@@ -1713,6 +1864,7 @@ class ExtractionEngine:
                 templates,
                 detected_slug=detected_slug,
                 title_trusted=title_trusted,
+                query_detail_hash=logo_detail_hash,   # Slice C: isolated-mark veto on a ≥2-supplier logo collision
             )
             # Reprocess honour: a document already linked to a template (passed
             # as known_template_id) should still run that template's stage 0/0.5
@@ -1721,13 +1873,36 @@ class ExtractionEngine:
             # logo/keyword score that dipped below threshold for this scan). Only
             # used as a fallback when live matching fails, so it never overrides
             # a positive live match with a stale link.
-            if not match and known_template_id is not None:
-                known = next((t for t in templates if t.get('id') == known_template_id), None)
+            if not match and (known_template_id is not None or pinned_template_id is not None):
+                # A B1 PIN also acts as this fallback (Oracle C2, match=None corner): if this engine
+                # call's own match failed, still honour the pinned sibling so Stage 0 runs against it
+                # AND the doc is held below. Pin wins over a stale known link.
+                _fb_id = pinned_template_id if pinned_template_id is not None else known_template_id
+                known  = next((t for t in templates if t.get('id') == _fb_id), None)
                 if known:
-                    match = {'template': known, 'confidence': 0, 'method': 'known_id'}
-                    self.log(f"  Stage 0: live match failed; honouring linked template id={known_template_id}")
+                    _fb_method = 'pinned_id' if pinned_template_id is not None else 'known_id'
+                    match = {'template': known, 'confidence': 0, 'method': _fb_method}
+                    self.log(f"  Stage 0: live match failed; honouring {_fb_method} template id={_fb_id}")
             if match:
+                # C2 (Oracle): a pinned doc is an ambiguous-HELD doc BY DEFINITION (pinned_template_id is
+                # set only by process_docs' B1 block for an ambiguous same-letterhead pick), so force the
+                # HOLD even if THIS engine call's own (raw-image) match resolved non-ambiguously — a
+                # raw-vs-processed split-brain must never let a pinned doc auto-file.
+                self._type_ambiguous = bool(match.get('ambiguous_type')) or (pinned_template_id is not None)
                 matched_tmpl = match['template']
+                # FIX B1 (suggest-only): process_docs resolved the ambiguous same-letterhead type from
+                # the doc's ref-prefix and PINNED the correct sibling's template. Force it as
+                # matched_tmpl so Stage 0/0.5 read against the RIGHT sibling's fixed-values/mappings and
+                # the filing type agrees with the seeded fields (no split-brain). We do NOT touch
+                # _type_ambiguous — the doc STAYS HELD for review; this only makes the suggestion + the
+                # extracted fields correct. Gated on pinned_template_id (None on every normal doc →
+                # byte-identical); the pinned id is always a band-13 sibling of this same cluster.
+                if pinned_template_id is not None:
+                    _pinned = next((t for t in templates if t.get('id') == pinned_template_id), None)
+                    if _pinned is not None:
+                        matched_tmpl = _pinned
+                        self.log(f"  Stage 0: template pinned by ref-prefix retype (Fix B1) → "
+                                 f"id={pinned_template_id} ({_pinned.get('document_type_slug')})")
                 self.log(
                     f"  Template matched: {matched_tmpl.get('name')} "
                     f"({match['confidence']}% via {match['method']})"
@@ -1877,7 +2052,7 @@ class ExtractionEngine:
         # Matches against learned RAW logo hashes -> use the raw page 0 (_id_img), else a deskewed
         # phash drifts out of range and the supplier fails to resolve on a straighten-reprocess.
         if not supplier_name and logos and _id_img is not None:
-            logo_match = anchor.try_logo_supplier_match(_id_img, logos)
+            logo_match = anchor.try_logo_supplier_match(_id_img, logos, query_detail_hash=logo_detail_hash)
             if logo_match:
                 supplier_name = logo_match["supplier_name"]
                 self.log(
@@ -2150,6 +2325,21 @@ class ExtractionEngine:
                         inc_v = existing.get("value") or ""
                         if any(c.isdigit() for c in inc_v) and not any(c.isdigit() for c in cand_v):
                             continue
+                # ── NAME-RELOCATE DISAGREEMENT GUARD (slice 1) ───────────────
+                # A garbled RELOCATED name read must not beat a CLEAN keyword name of
+                # the same field (the "comer Clinic" over "Fernbank Veterinary Clinic"
+                # case — a taught box drawn on a rotated scan mis-registers and clips
+                # the value). Keep the clean keyword, cap <=69 + note (the NOTE, not the
+                # cap, blocks auto-file), route to review. Flag-only; excludes
+                # supplier_name; kill switch. Sits BEFORE Tier-A so an authoritative
+                # garble is held, but the strict '<' + 0.6 floor let a genuine re-teach
+                # through. See _name_relocate_should_hold.
+                if (os.environ.get("NAME_RELOCATE_DISAGREE_GUARD", "1") != "0"
+                        and _name_relocate_should_hold(existing, data, key)):
+                    results[key] = {**existing,
+                                    "confidence": min(int(existing.get("confidence") or 0), 69),
+                                    "validation_note": existing.get("validation_note") or _NAME_RELOCATE_NOTE}
+                    continue
                 # ── Tier A: authoritative ⊕ anchor wins outright (any method) ──
                 # An EXPLICIT authoritative ⊕ anchor that cleared the credibility
                 # gate above is the operator's deliberate, current correction for
@@ -3116,6 +3306,7 @@ class ExtractionEngine:
         # document_type_keywords to keyword-detect). process_docs.py prefers it.
         results["_document_type_slug"]   = matched_tmpl.get("document_type_slug") if matched_tmpl else None
         results["_logo_phash"]           = logo_phash
+        results["_logo_detail_hash"]     = logo_detail_hash
         results["_keyword_fingerprint"]  = kw_fingerprint
         # Text-led SUPPLIER identity verdict — computed when EITHER the shadow measurement OR the
         # active conflict flag is live (both default off → byte-identical: verdict never computed).
@@ -3150,6 +3341,18 @@ class ExtractionEngine:
         if not _identity_acted:
             self._flag_branding_conflict(results, supplier_name, templates, ocr_text)
 
+        # TYPE-AMBIGUITY guard (Fix A, Oracle 2026-07-13) — the fail-toward-review backstop for the
+        # same-letterhead type-flip: a supplier issuing several doc types on ONE logo lets a skew-
+        # garbled title (title_trusted lost) resolve the type by a POPULARITY coin-flip (identical
+        # sibling fingerprints), auto-filing the WRONG type silently — every field VALUE is correct, only
+        # the type/ref-key is wrong, and trust.js has no type-correctness check. identify_template flags
+        # the ambiguous pick (`ambiguous_type`, computed over a jitter-immune wider band); here we HOLD
+        # the doc for review. Independent statement (not nested under _identity_acted — Oracle C2), and
+        # after the branding block so their notes compose rather than clobber. HOLD-ONLY: never changes a
+        # value -> per-field accuracy byte-identical. Kill switch TYPE_AMBIGUITY_GUARD.
+        if getattr(self, '_type_ambiguous', False) and os.environ.get('TYPE_AMBIGUITY_GUARD', '1') != '0':
+            self._flag_type_ambiguity(results, ref_field_key)
+
         # Final resolved value per field — the inspector marks any earlier
         # candidate whose value differs from this as a superseded intermediate.
         if self._trace:
@@ -3160,7 +3363,43 @@ class ExtractionEngine:
                         method=data.get("method"), confidence=data.get("confidence"),
                         note=data.get("validation_note"))
 
+        # ── Disambiguation picker: candidate map for flagged name fields ──────
+        # Built LAST, after every flag guard, so a note applied late (identity /
+        # caption-demotion) still arms the picker. Additive `_` metadata (popped +
+        # woven into the per-field emit by process_docs); commits no value.
+        results["_field_candidate_emit"] = self._build_candidate_emit(results)
+
         return results
+
+    def _flag_type_ambiguity(self, results, ref_field_key):
+        """Fix A: HOLD an ambiguous same-letterhead TYPE resolution for review. Lands a persisted
+        validation_note on a GUARANTEED-PRESENT field so trust.isAutoFileEligible's `flagged` check
+        blocks the auto-file (Oracle/gary's load-bearing catch: the DB-side gate honours a persisted
+        note, NOT a bare _needs_review). Carrier priority: supplier_name (the identity field, always
+        extracted) -> the ref-role field -> any valued field -> a synthetic supplier_name row (so the
+        note persists even for a worksheet whose ref_field_key is null — Oracle C3). APPENDS to any
+        existing note (composes with _flag_prefix_outlier / branding — Oracle C2). HOLD-ONLY: never
+        changes a value. Guarded by tests/test_type_ambiguity_flag.py."""
+        note = ("This letterhead is used for several document types and the type could not be confirmed "
+                "on this scan — please check the document type is correct before filing.")
+        carrier = None
+        for k in ('supplier_name', ref_field_key):
+            if k and isinstance(results.get(k), dict):
+                carrier = k
+                break
+        if carrier is None:                                   # no identity/ref field — take any valued field
+            for k, v in results.items():
+                if not str(k).startswith('_') and isinstance(v, dict):
+                    carrier = k
+                    break
+        if carrier is None:                                   # nothing at all — synthesise a persisted carrier
+            results['supplier_name'] = {'value': results.get('_supplier_name') or '', 'confidence': 69,
+                                        'method': 'type_ambiguity', 'validation_note': note}
+        else:
+            fld = results[carrier]
+            existing = str(fld.get('validation_note') or '').strip()
+            fld['validation_note'] = (existing + ' ' + note).strip() if existing else note
+        results["_needs_review"] = True
 
     def _apply_hints(self, hints: list, supplier_name: str,
                      document_slug: str | None, field_defs: list[dict]) -> dict:

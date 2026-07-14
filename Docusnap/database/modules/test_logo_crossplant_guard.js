@@ -16,7 +16,7 @@ const check = (name, cond) => { console.log((cond ? 'OK  ' : 'BAD ') + name); if
 function freshDb() {
   const db = new Database(':memory:');
   db.exec(`CREATE TABLE logo_fingerprints (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, supplier_name TEXT, phash TEXT, ahash TEXT,
+    id INTEGER PRIMARY KEY AUTOINCREMENT, supplier_name TEXT, phash TEXT, ahash TEXT, detail_hash TEXT,
     match_count INTEGER DEFAULT 1, last_seen TEXT)`);
   return db;
 }

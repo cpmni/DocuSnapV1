@@ -6,17 +6,18 @@ function insertExtractions(db, document_id, rows) {
   const stmt = db.prepare(`
     INSERT INTO extractions
       (document_id, field_key, raw_value, display_value,
-       confidence, extraction_method, validation_note, corrected_to, anchor_label)
+       confidence, extraction_method, validation_note, corrected_to, anchor_label, candidates)
     VALUES
       (@document_id, @field_key, @raw_value, @display_value,
-       @confidence, @extraction_method, @validation_note, @corrected_to, @anchor_label)
+       @confidence, @extraction_method, @validation_note, @corrected_to, @anchor_label, @candidates)
   `);
   const insertMany = db.transaction((rows) => {
     // corrected_to is the proposed (not-yet-applied) correction candidate from
     // Stage 4.5; anchor_label records the label an anchor-based read used (for the
-    // review "From anchor:" note). Both default to null so callers that don't set
-    // them are unaffected.
-    for (const row of rows) stmt.run({ document_id, corrected_to: null, anchor_label: null, ...row });
+    // review "From anchor:" note); candidates is the disambiguation-picker JSON (migration
+    // 48). All default to null so callers that don't set them are unaffected — and the null
+    // default is REQUIRED (better-sqlite3 throws "missing named parameter" without it).
+    for (const row of rows) stmt.run({ document_id, corrected_to: null, anchor_label: null, candidates: null, ...row });
   });
   insertMany(rows);
 }
@@ -115,6 +116,24 @@ function isPlausibleSupplierName(value) {
   // is never persisted as a learned hint. Single-token brands ("3M") aren't judged.
   if (/\s/.test(t) && nameQuality(t) < 0.5) return false;
   return true;
+}
+
+// FAITHFUL JS mirror of python_backend/extraction/value_quality.py `is_name_like_field`
+// (the .py docstring pointer to a value_quality.js is STALE — no such file existed; this is it).
+// True for a field that holds a NAME / company / person / POSTAL address. Keyed on field key + label
+// so it works for custom fields too. Semantics are MIXED (Oracle C3): SUBSTRING match for the
+// inclusion words, SUBSTRING "address" gated by a WHOLE-WORD technical-address exclusion (mac/ip/…),
+// and WHOLE-WORD "cust". Separators are normalised to spaces so "mac_address"/"bill_to" tokenise as
+// whole words. Used by the template-field builder to NEVER freeze a recipient name (only the issuer
+// is legitimately constant). Guarded by database/modules/test_build_template_fields.js.
+function isNameLikeField(key, label) {
+  const hay = `${key || ''} ${label || ''}`.toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+  const INCLUDE = ['name', 'supplier', 'customer', 'company', 'client', 'vendor',
+                   'person', 'contact', 'payee', 'bill to', 'ship to'];
+  if (INCLUDE.some(tok => hay.includes(tok))) return true;
+  if (hay.includes('address') &&
+      !/\b(mac|ip|ipv4|ipv6|hardware|physical|network|gateway|subnet|dns|host|port)\b/.test(hay)) return true;
+  return hay.split(/\s+/).filter(Boolean).includes('cust');
 }
 
 function saveCorrections(db, document_id, corrections,
@@ -626,18 +645,23 @@ function deleteAnchor(db, id) {
 // A NEW phash this many bits CLOSER to another supplier than to X's own = a cross-plant (poison).
 const LOGO_CROSSPLANT_MARGIN = 4;
 
-function saveLogoFingerprint(db, { supplier_name, phash, ahash, manual }) {
+function saveLogoFingerprint(db, { supplier_name, phash, ahash, detail_hash, manual }) {
   const existing = db.prepare(
     'SELECT id, phash FROM logo_fingerprints WHERE supplier_name = ?'
   ).all(supplier_name);
 
   for (const row of existing) {
     if (hammingDistance(row.phash, phash) <= 10) {
+      // Slice B: opportunistically BACKFILL the isolated-mark detail hash — a pre-migration print
+      // has NULL detail_hash; COALESCE fills it from this confirm without overwriting an existing one
+      // (the discriminator is a hash of the same mark, so any confirm's is equivalent). phash path
+      // unchanged.
       db.prepare(`
         UPDATE logo_fingerprints
-        SET match_count = match_count + 1, last_seen = datetime('now')
+        SET match_count = match_count + 1, last_seen = datetime('now'),
+            detail_hash = COALESCE(detail_hash, ?)
         WHERE id = ?
-      `).run(row.id);
+      `).run(detail_hash || null, row.id);
       return;
     }
   }
@@ -665,9 +689,9 @@ function saveLogoFingerprint(db, { supplier_name, phash, ahash, manual }) {
     }
   }
   db.prepare(`
-    INSERT INTO logo_fingerprints (supplier_name, phash, ahash)
-    VALUES (?, ?, ?)
-  `).run(supplier_name, phash, ahash);
+    INSERT INTO logo_fingerprints (supplier_name, phash, ahash, detail_hash)
+    VALUES (?, ?, ?, ?)
+  `).run(supplier_name, phash, ahash, detail_hash || null);
 }
 
 function getAllLogos(db) {
@@ -1418,7 +1442,7 @@ module.exports = {
   insertExtractions, deleteExtractions,
   getFieldValueHistory, getDocumentsForFieldValue, purgeFieldValue, renameFieldValue,
   getSupplierScopeCounts, renameSupplier,
-  saveCorrections, getHints, getAllHints, isPlausibleSupplierName, nameQuality, normalizeSupplierName,
+  saveCorrections, getHints, getAllHints, isPlausibleSupplierName, isNameLikeField, nameQuality, normalizeSupplierName,
   saveAnchor, sanitizeAnchorLabel, clearAnchors, getAllAnchors, getAnchorsForScope, getTaughtFieldKeys, deleteAnchor,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
   getFieldFormats, getDigitsOnlyFields,

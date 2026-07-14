@@ -899,6 +899,63 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 45 applied: stale customer_name learning cleaned (RC2)');
   }
 
+  // Migration 46 (2026-07-13): UNFREEZE auto-frozen RECIPIENT-name template fields. The old
+  // _buildTemplateFields froze a per-doc customer/recipient name as a template fixed_value, which then
+  // stamped that ONE name onto every matching doc (template_fixed @95 — the "Primrose Childcare" /
+  // "Aldermoor Engineering" class). The go-forward guard (never-freeze-a-recipient-name) stops NEW
+  // freezes, but the AUTO-FILE path never re-runs _buildTemplateFields, so an already-poisoned template
+  // would keep auto-filing the wrong recipient forever — this sweep is the only thing that heals it
+  // (Oracle: mandatory in this slice). Label-aware; preserves admin locks (fixed_locked) + the issuer
+  // (COMPANY_KEYS); template DEFINITIONS only (never touches filed docs → future docs re-extract).
+  // gary-designed, Oracle SIGN-OFF-WITH-CONDITIONS. Idempotent.
+  if (!applied.has(46)) {
+    if (tableExists(db, 'template_fields') && tableExists(db, 'templates')) {
+      try {
+        const r = require('./modules/templates').unfreezeAutoFrozenRecipientNames(db);
+        console.log(`  migration 46: unfroze ${r.unfrozen} auto-frozen recipient-name template field(s) (scanned ${r.scanned})`);
+      } catch (e) { console.warn(`  migration 46 (unfreeze recipient names): ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (46)').run();
+    console.log('JS migration 46 applied: auto-frozen recipient names unfrozen');
+  }
+
+  // Migration 47 (2026-07-14): the ISOLATED-MARK 256-bit detail hash (logo_detail.detail_hash), stored
+  // ALONGSIDE each logo phash — the logo-collision discriminator. documents.logo_detail_hash carries a
+  // scanned doc's detail hash from processing to confirm; logo_fingerprints.detail_hash +
+  // template_logo_hashes.detail_hash are the enrolled per-supplier / per-template sets (paired 1:1 with
+  // the phash of the same print). All NULLABLE → NULL-INERT: a pre-migration print has no detail hash,
+  // and the Slice-C disambiguator treats a missing hash as "skip", never a false abstain. This slice is
+  // ENROLMENT ONLY — nothing reads these yet (zero behaviour change); the abstain-only disambiguator that
+  // consumes them is Slice C. Idempotent.
+  if (!applied.has(47)) {
+    const addCol = (t, c, def) => {
+      if (tableExists(db, t) && !hasColumn(db, t, c)) {
+        try { db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${def}`); }
+        catch (e) { console.warn(`  migration 47 ${t}.${c}: ${e.message}`); }
+      }
+    };
+    addCol('documents',           'logo_detail_hash', 'TEXT');
+    addCol('logo_fingerprints',   'detail_hash',      'TEXT');
+    addCol('template_logo_hashes', 'detail_hash',     'TEXT');
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (47)').run();
+    console.log('JS migration 47 applied: logo detail-hash columns added (NULL-inert)');
+  }
+
+  // Migration 48 (2026-07-14): the DISAMBIGUATION-PICKER candidate store. extractions.candidates
+  // holds a JSON array [{value, box:{x_norm,y_norm,w_norm,h_norm}|null, source_label, method,
+  // confidence}] for a flagged NAME field with >=2 distinct reads — so the Review "⑂ Resolve" popup
+  // survives a queued doc being reopened from the DB (the live engine ledger is ephemeral). NULLABLE
+  // → NULL-INERT: a pre-migration / non-flagged row has no candidates and the renderer shows today's
+  // behaviour. Written by insertExtractions/applyReprocessResult; read via getWithExtractions. Idempotent.
+  if (!applied.has(48)) {
+    if (tableExists(db, 'extractions') && !hasColumn(db, 'extractions', 'candidates')) {
+      try { db.exec('ALTER TABLE extractions ADD COLUMN candidates TEXT'); }
+      catch (e) { console.warn(`  migration 48 extractions.candidates: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (48)').run();
+    console.log('JS migration 48 applied: extractions.candidates column added (NULL-inert)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

@@ -47,6 +47,7 @@ function snapArgs(db) {
 }
 function runOne(folder, args, fname) {
   const extra = process.env.TRACE ? ['--trace'] : [];
+  if (process.env.DESKEW) extra.push('--deskew-pages', '--deskew-min-angle', process.env.DESKEW_MIN || '0.2');
   return new Promise(res => {
     const p = spawn('py', ['-3.12', PROCESS_DOCS, '--folder', folder, '--files-file', w('sh', [fname]), '--mode', 'fast', '--tesseract', TESS, ...extra, ...args], { windowsHide: true });
     let out = ''; p.stdout.on('data', d => out += d); p.stderr.on('data', () => {}); p.on('close', () => res(out)); p.on('error', () => res(''));
@@ -85,7 +86,8 @@ function runOne(folder, args, fname) {
     for (const k of Object.keys(ex)) {
       const e = ex[k] || {};
       const star = (k === role.ref_field_key || k === role.date_field_key) ? ' <<CRITICAL' : '';
-      console.log(`    [${k}] value=${JSON.stringify(e.value)} conf=${e.confidence} method=${e.method} note=${JSON.stringify(e.validation_note||null)}${star}`);
+      const cn = Array.isArray(e.candidates) ? `  ⑂cands=[${e.candidates.map(c => JSON.stringify(c.value) + (c.box ? '@box' : '') + `(${c.source_label})`).join(', ')}]` : '';
+      console.log(`    [${k}] value=${JSON.stringify(e.value)} conf=${e.confidence} method=${e.method} note=${JSON.stringify(e.validation_note||null)}${star}${cn}`);
     }
     if (process.env.GREP && m.ocr_text) {
       const pats = process.env.GREP.split(',');

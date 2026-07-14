@@ -37,7 +37,7 @@ function makeDb() {
     CREATE TABLE template_logo_hashes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       template_id INTEGER NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
-      phash TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      phash TEXT NOT NULL, detail_hash TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE(template_id, phash)
     );
   `);

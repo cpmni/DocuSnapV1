@@ -53,11 +53,20 @@ def main():
     strip_hashes = compute_hashes(top_strip)
 
     if args.mode == 'extract':
+        # Slice B: the isolated-mark 256-bit DETAIL hash (logo_detail.detail_hash), computed from the
+        # SAME page image → enrolled beside the phash for the Slice-C collision disambiguator. Fail-safe
+        # None if the mark can't be isolated. logo_detail is in python_backend (on sys.path via line ~23).
+        try:
+            import logo_detail
+            detail = logo_detail.detail_hash(img)
+        except Exception:
+            detail = None
         print(json.dumps({
             "phash":       hashes["phash"],
             "ahash":       hashes["ahash"],
             "dhash":       hashes["dhash"],
             "strip_phash": strip_hashes["phash"],
+            "detail":      detail,
         }), flush=True)
         return
 

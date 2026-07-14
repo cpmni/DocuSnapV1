@@ -210,6 +210,12 @@ let deskewSessionOn  = (localStorage.getItem('review_deskew_session') === 'true'
 // feeder skew, and where straightening starts helping the READ); clamped [0.2, 5.0]. Set in the rail
 // flyout, persisted alongside the flag; written ONLY by applyDeskewSession/turnOffDeskewSession (C2).
 let deskewMinAngle   = (() => { const v = parseFloat(localStorage.getItem('review_deskew_min_angle')); return (Number.isFinite(v) && v >= 0.2 && v <= 5.0) ? v : 1.0; })();
+// The HARD floor the backend can never undercut (max(0.2,user) in detect_skew_angle). The per-doc
+// Straighten BUTTON reads at this floor — so it can straighten a doc the SESSION floor intentionally
+// skips ("do its job even though the main option is on"); it also matches the single-doc reprocess
+// read, which passes --deskew-pages with no --deskew-min-angle (i.e. the 0.2° floor). The session
+// batch keeps its own deskewMinAngle floor.
+const DESKEW_HARD_FLOOR = 0.2;
 // Field cleanup rules taught via the right-click menu this cycle, STAGED in memory
 // and persisted only on Confirm (mirrors pendingAnchors). Keyed field_key → array of
 // saveFieldRule payloads. An un-confirmed teach (skip/defer/doc-change) leaves no trace.
@@ -1048,6 +1054,7 @@ async function selectDoc(doc, opts) {
 async function _selectDoc(doc, { fieldsOnly = false } = {}) {
   _clearPreviewState();
   cancelZoneMode();
+  try { closeResolveOverlay(); } catch {}   // never leave a ⑂ Resolve popup open across a doc switch
   currentDoc  = doc;
   currentPage = 0;
   corrections = {};
@@ -1215,7 +1222,11 @@ document.getElementById('btn-page-next').addEventListener('click', () => {
 // ── Deskew (straighten a tilted scan for accurate ⊕ box drawing) ─────────────────
 // Fetch (once, cached) the straightened render of the current page and swap it in. Guarded
 // against doc/page changes racing the async OCR, exactly like the OCR-preview refresh.
-async function applyDeskewToCurrentPage() {
+// `minAngle` = the floor sent to the backend detector; SESSION auto-straighten uses deskewMinAngle,
+// the per-doc BUTTON uses DESKEW_HARD_FLOOR (so it can catch a tilt the session floor skips). `manual`
+// = an explicit per-doc request → toast "already straight" when nothing is above the floor; a session
+// auto pass stays silent (no toast on every below-floor doc opened).
+async function applyDeskewToCurrentPage(minAngle = deskewMinAngle, manual = false) {
   if (!deskewEnabled || wizard.active || !pageImages || !pageImages.length) return;
   const page = currentPage, docId = currentDoc?.id;
   if (deskewByPage[page] !== undefined) return;   // already fetched (or in flight — set below)
@@ -1224,7 +1235,7 @@ async function applyDeskewToCurrentPage() {
   try {
     const src = String(pageImages[page] || '');
     const b64 = src.includes(',') ? src.split(',')[1] : src;
-    const res = await window.docusnap.getPageDeskew?.(b64, deskewMinAngle);
+    const res = await window.docusnap.getPageDeskew?.(b64, minAngle);
     if (res && res.image && res.angle) entry = { angle: res.angle, uri: `data:image/png;base64,${res.image}` };
   } catch (e) {
     console.warn('deskew failed:', e.message);
@@ -1232,30 +1243,42 @@ async function applyDeskewToCurrentPage() {
   if (currentDoc?.id !== docId) return;            // doc changed while OCR ran — drop (state was reset)
   deskewByPage[page] = entry;
   if (deskewEnabled && !wizard.active && currentPage === page) {
-    if (entry.uri) renderPage();                              // swap the now-cached straightened image in
-    else if (deskewSessionOn) { updateDeskewBtn(); }   // session auto-straighten: silently show raw (no per-doc toast on every below-floor doc)
-    else { showToast('This page already looks straight.', 'ok'); updateDeskewBtn(); }   // manual toggle: nothing to straighten
+    if (entry.uri) renderPage();                              // swap the now-cached straightened image in (renderPage refreshes the button)
+    else if (manual) { showToast('This page already looks straight.', 'ok'); updateDeskewBtn(); }   // explicit request, nothing to do
+    else updateDeskewBtn();                                   // session auto-straighten: silently show raw (no per-doc toast on every below-floor doc)
   } else updateDeskewBtn();
 }
 
-// Toggle deskew for the current doc. On → fetch+straighten the current page; off → revert to raw.
+// The per-doc Straighten BUTTON. It acts on the SHOWN frame, not the session intent, so it keeps
+// working while session straighten is on: a page currently shown STRAIGHTENED reverts to raw; a page
+// shown RAW (session off, OR session on but this page fell below the session floor) is straightened
+// at the hard 0.2° floor. deskewEnabled tracks the shown state (drives the reprocess READ); this never
+// writes the session flag (Oracle C2 — only the rail apply/off handlers do).
 async function toggleDeskew() {
   if (!pageImages || !pageImages.length) { showToast('Open a document first', 'warn'); return; }
   if (wizard.active) { showToast('Close the Template Wizard to straighten the page', 'warn'); return; }
-  deskewEnabled = !deskewEnabled;
-  if (!deskewEnabled) deskewPageAngle = 0;
-  renderPage();
+  const shownStraightened = deskewEnabled && !!deskewPageAngle;
+  if (shownStraightened) {                 // currently straightened → revert to raw
+    deskewEnabled = false; deskewPageAngle = 0; renderPage();
+    return;
+  }
+  // Shown raw → force-straighten THIS page at the hard floor (below the session floor if need be).
+  deskewEnabled = true;
+  delete deskewByPage[currentPage];        // drop any below-session-floor "angle 0" cache so we re-read at the hard floor
+  await applyDeskewToCurrentPage(DESKEW_HARD_FLOOR, true);
 }
 
-// Reflect the toggle's state + the applied angle in the toolbar button.
+// Reflect the ACTUAL shown frame in the toolbar button. "Straightened" means this page was really
+// rotated (a non-zero applied angle) — NOT merely that straighten mode is on. So a below-threshold
+// doc under session straighten reads "Straighten" (honest) and the button still works to straighten it.
 function updateDeskewBtn() {
   const btn = document.getElementById('btn-deskew');
   const lbl = document.getElementById('deskew-angle');
   if (!btn) return;
-  const on = deskewEnabled && !wizard.active;
-  btn.classList.toggle('active', on);
-  btn.innerHTML = on ? '&#8734; Straightened' : '&#8734; Straighten';
-  if (lbl) lbl.textContent = (on && deskewPageAngle) ? `${deskewPageAngle > 0 ? '+' : ''}${deskewPageAngle.toFixed(1)}°` : '';
+  const straightened = deskewEnabled && !wizard.active && !!deskewPageAngle;
+  btn.classList.toggle('active', straightened);
+  btn.innerHTML = straightened ? '&#8734; Straightened' : '&#8734; Straighten';
+  if (lbl) lbl.textContent = straightened ? `${deskewPageAngle > 0 ? '+' : ''}${deskewPageAngle.toFixed(1)}°` : '';
 }
 
 // SESSION straighten (rail button `#btn-deskew-all` → `#deskew-all-bar` flyout). The flyout carries the
@@ -1796,7 +1819,7 @@ function renderFields(doc) {
   for (const key of reviewFields()) {
     const ext = extMap[key] || {};
     const val = ext.display_value ?? ext.raw_value ?? '';
-    appendFieldRow(scroll, key, val, ext.confidence ?? null, ext.validation_note || null, ext.corrected_to || null, ext.anchor_label || null, ext.extraction_method || null);
+    appendFieldRow(scroll, key, val, ext.confidence ?? null, ext.validation_note || null, ext.corrected_to || null, ext.anchor_label || null, ext.extraction_method || null, ext.candidates || null);
   }
   validateConfirm();
   updateAcknowledgeButton();
@@ -1837,7 +1860,7 @@ function _refreshTaughtDot(key) {
   dot.title = _taughtDotTitle(taught);
 }
 
-function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, method) {
+function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, method, candidates) {
   const low      = conf !== null && conf < 70;
   const confClass = conf === null ? '' : conf >= 70 ? 'high' : conf >= 40 ? 'mid' : 'low';
   // Pair the % with a plain word so non-technical users read it at a glance.
@@ -1878,10 +1901,17 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   const issuerAcceptHtml = isIssuerFlag
     ? ` <button type="button" class="issuer-accept-btn" data-key="${key}" title="Confirm this really is the correct issuer, so Scan Finder stops flagging it — even though a different name appears in the letterhead. Applies to future documents from this issuer too.">✓ Issuer is correct</button>`
     : '';
+  // "⑂ Resolve" — when the engine emitted >=2 distinct candidate readings for a flagged NAME field,
+  // offer a one-click picker (openResolveOverlay) instead of leaving the operator to retype. v1 scope:
+  // name-like fields only (the backend already excludes supplier_name + non-name fields).
+  const resolvable = Array.isArray(candidates) && candidates.filter(c => c && c.value).length >= 2 && _isNameLikeField(key);
+  const resolveHtml = resolvable
+    ? ` <button type="button" class="resolve-btn" data-key="${key}" title="See the readings the app found and click the correct one">⑂ Resolve</button>`
+    : '';
   const noteHtml = isApplied
     ? `<div class="field-note corrected"><span class="corrected-badge" title="An OCR misread was auto-corrected to the spelling that recurs in your confirmed data">✓ auto-corrected</span> ${escHtml(note || '')}</div>`
     : (note || correctedTo)
-      ? `<div class="field-note">${escHtml(note || '')}${acceptHtml}${nameAcceptHtml}${issuerAcceptHtml}</div>`
+      ? `<div class="field-note">${escHtml(note || '')}${acceptHtml}${nameAcceptHtml}${issuerAcceptHtml}${resolveHtml}</div>`
       : '';
   // Anchor provenance: only for anchor-based extraction sources, and only when a
   // label was captured. Other methods (keyword, template, llm, manual) show nothing.
@@ -2085,7 +2115,164 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
     });
   }
 
+  // "⑂ Resolve" — open the disambiguation picker for this field's candidate readings.
+  const resolveBtn = row.querySelector('.resolve-btn');
+  if (resolveBtn) {
+    resolveBtn.addEventListener('click', () => openResolveOverlay(key, candidates, row, input));
+  }
+
   scroll.appendChild(row);
+}
+
+// ── Disambiguation picker (⑂ Resolve) ─────────────────────────────────────────
+// An in-page popup (NOT a child window — Oracle/eric) showing the RAW page with the
+// candidate readings marked ①②③ + a clickable list. Click → fill the value + (if the
+// candidate carries a page box) stage a position-only anchor so this sender's next doc
+// reads from there. A pick NEVER files — the operator still presses Confirm.
+let _resolveEscHandler = null;
+
+function _ensureResolveStyles() {
+  if (document.getElementById('resolve-styles')) return;
+  const s = document.createElement('style');
+  s.id = 'resolve-styles';
+  s.textContent = `
+    #resolve-overlay { position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,.55);
+      display:flex; align-items:center; justify-content:center; }
+    #resolve-overlay .resolve-panel { background:var(--surface,#fff); color:var(--text,#1b1f2a);
+      border:1px solid var(--border2,#d2d8e4); border-radius:var(--r,12px); width:min(1080px,94vw);
+      max-height:92vh; display:flex; overflow:hidden; box-shadow:0 14px 50px rgba(0,0,0,.45); }
+    #resolve-overlay .resolve-doc { flex:1 1 58%; background:var(--doc-bg,#eef1f7); overflow:auto;
+      display:flex; align-items:flex-start; justify-content:center; padding:12px; }
+    #resolve-overlay .rd-wrap { position:relative; }
+    #resolve-overlay .rd-img { max-width:100%; display:block; }
+    #resolve-overlay .rd-canvas { position:absolute; left:0; top:0; pointer-events:none; }
+    #resolve-overlay .resolve-side { flex:0 0 42%; max-width:430px; padding:16px 20px 18px; display:flex;
+      flex-direction:column; gap:9px; overflow:auto; }
+    #resolve-overlay .rs-close { align-self:flex-end; background:none; border:none; font-size:24px;
+      line-height:1; cursor:pointer; color:var(--muted,#69728a); padding:0 4px; }
+    #resolve-overlay .resolve-side h3 { margin:0; font-size:16px; }
+    #resolve-overlay .rs-sub { color:var(--muted,#69728a); font-size:13px; margin-bottom:4px; }
+    #resolve-overlay .resolve-cand { display:flex; gap:10px; align-items:flex-start; text-align:left;
+      width:100%; padding:11px 12px; border:1px solid var(--border2,#d2d8e4); border-radius:var(--r-sm,9px);
+      background:var(--surface2,#eef1f7); cursor:pointer; font:inherit; color:inherit; }
+    #resolve-overlay .resolve-cand:hover, #resolve-overlay .resolve-cand:focus-visible {
+      border-color:var(--accent,#3b7df0); background:var(--accent-bg,#e7f0ff); outline:none; }
+    #resolve-overlay .rc-num { flex:0 0 auto; width:22px; height:22px; border-radius:50%;
+      background:var(--accent,#3b7df0); color:var(--on-accent,#fff); display:flex; align-items:center;
+      justify-content:center; font-weight:700; font-size:13px; }
+    #resolve-overlay .rc-val { font-weight:600; word-break:break-word; }
+    #resolve-overlay .rc-src { color:var(--muted,#69728a); font-size:12px; }
+    #resolve-overlay .rs-foot { color:var(--muted,#69728a); font-size:12px; margin-top:auto; }
+  `;
+  document.head.appendChild(s);
+}
+
+function closeResolveOverlay() {
+  const ov = document.getElementById('resolve-overlay');
+  if (ov) ov.remove();
+  if (_resolveEscHandler) { document.removeEventListener('keydown', _resolveEscHandler); _resolveEscHandler = null; }
+}
+
+function openResolveOverlay(key, candidates, row, input) {
+  _ensureResolveStyles();
+  closeResolveOverlay();
+  const openDocId = currentDoc?.id;
+  const cands = (candidates || []).filter(c => c && c.value).slice(0, 3);
+  if (cands.length < 2) return;
+  const pageSrc = pageImages[currentPage];
+  const fieldLabel = (typeof labelFor === 'function' ? labelFor(key) : null) || key;
+
+  const ov = document.createElement('div');
+  ov.id = 'resolve-overlay';
+  ov.setAttribute('data-help-ignore', '');   // help-mode must not swallow the pick clicks
+  ov.innerHTML = `
+    <div class="resolve-panel">
+      <div class="resolve-doc"><div class="rd-wrap">
+        ${pageSrc ? '<img class="rd-img" alt="">' : '<div class="rs-sub" style="padding:24px">Preview unavailable — pick from the list.</div>'}
+        <canvas class="rd-canvas"></canvas>
+      </div></div>
+      <div class="resolve-side">
+        <button class="rs-close" title="Close">×</button>
+        <h3>Which is correct?</h3>
+        <div class="rs-sub">Two different readings were found for “${escHtml(fieldLabel)}”. Click the right one — the ① markers show where each was read on the page.</div>
+        <div class="rs-list"></div>
+        <div class="rs-foot">Picking fills the field and, where a spot is marked, remembers it for this sender. You still press Confirm to file.</div>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+
+  const img = ov.querySelector('.rd-img');
+  const canvas = ov.querySelector('.rd-canvas');
+  const drawMarkers = () => {
+    if (!img || !canvas || !img.clientWidth) return;
+    canvas.width = img.clientWidth; canvas.height = img.clientHeight;
+    const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height);
+    cands.forEach((c, i) => {
+      const b = c.box; if (!b) return;   // no page box (e.g. a keyword read in v1) → list-only
+      const x = b.x_norm * canvas.width, y = b.y_norm * canvas.height;
+      ctx.strokeStyle = '#3b7df0'; ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, b.w_norm * canvas.width, b.h_norm * canvas.height);
+      ctx.fillStyle = '#3b7df0'; ctx.beginPath(); ctx.arc(x, y, 11, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(String(i + 1), x, y);
+    });
+  };
+  if (img) { img.onload = drawMarkers; img.src = pageSrc; if (img.complete) drawMarkers(); }
+
+  const list = ov.querySelector('.rs-list');
+  cands.forEach((c, i) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'resolve-cand';
+    b.innerHTML = `<span class="rc-num">${i + 1}</span><span><span class="rc-val">${escHtml(c.value)}</span><br>` +
+      `<span class="rc-src">${escHtml(c.source_label || 'read from the page')}${c.box ? '' : ' · position not marked'}</span></span>`;
+    b.addEventListener('click', () => {
+      if (currentDoc?.id !== openDocId) { closeResolveOverlay(); return; }   // doc switched under the overlay — abort
+      resolveCandidatePick(key, c, row, input);
+      closeResolveOverlay();
+    });
+    list.appendChild(b);
+  });
+
+  ov.querySelector('.rs-close').addEventListener('click', closeResolveOverlay);
+  ov.addEventListener('mousedown', (e) => { if (e.target === ov) closeResolveOverlay(); });   // scrim click
+  _resolveEscHandler = (e) => { if (e.key === 'Escape') closeResolveOverlay(); };
+  document.addEventListener('keydown', _resolveEscHandler);
+  requestAnimationFrame(() => ov.querySelector('.rs-close')?.focus());
+}
+
+function resolveCandidatePick(key, cand, row, input) {
+  // (a) fill the value — same path as the Accept button (flows through corrections + validateConfirm).
+  if (input) {
+    input.value = cand.value;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  // (b) teach the position — ONLY when the candidate carries a page box. Direct position-only stage
+  // (Oracle: NOT captureAnchorContext, whose label-OCR reads the possibly-DESKEWED preview and would
+  // mis-register). The contract box is TOP-LEFT; field_anchors stores CENTRE → convert ONCE here.
+  const centre = (typeof PickBox !== 'undefined') ? PickBox.pickBoxToAnchorCentre(cand.box) : null;
+  if (centre) {
+    const supplierInput = document.querySelector('.field-input[data-key="supplier_name"]');
+    const liveSupplier = supplierInput?.value?.trim() || currentDoc?.supplier_name;
+    pendingAnchors[key] = {
+      supplier_name: cleanSupplierName(liveSupplier),
+      document_type: currentDoc?.type_slug || currentDoc?.document_type_slug || null,
+      field_key:     key,
+      page_zone:     centre.y_norm < 0.33 ? 'top' : centre.y_norm < 0.66 ? 'middle' : 'bottom',
+      x_norm: centre.x_norm, y_norm: centre.y_norm, w_norm: centre.w_norm, h_norm: centre.h_norm,
+      authoritative: true,
+      anchor_label:  '',        // position-only sentinel (no label OCR — frame-safe)
+      direction:     'right',
+    };
+    try { anchorTaughtFields.add(key); _refreshTaughtDot(key); } catch {}
+  }
+  // (c) clear the flag in-memory (DOM only — the SERVER review_flag_count still gates auto-file, so a
+  // pick can never itself file; Oracle C6). Mirrors the accept-btn note dismissal.
+  const noteEl = row?.querySelector('.field-note');
+  if (noteEl) noteEl.remove();
+  if (row) clearFieldWarning(row);
+  const ex = (currentDoc?.extractions || []).find(e => e.field_key === key);
+  if (ex) ex.validation_note = null;
+  try { validateConfirm(); } catch {}
 }
 
 // ── Confirm validation ────────────────────────────────────────────────────────

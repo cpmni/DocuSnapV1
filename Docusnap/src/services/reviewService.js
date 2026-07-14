@@ -36,6 +36,7 @@ function createReviewService(deps = {}) {
   // Optional Electron-only hooks — no-ops for the API path.
   const onScheduleSourceMove = deps.onScheduleSourceMove || (() => {});
   const onTaughtConfirm      = deps.onTaughtConfirm      || (async () => {});
+  const onScopeGraduated     = deps.onScopeGraduated     || (async () => {});
   const captureSample        = deps.captureSample        || (async () => {});
   const notifyCounts         = deps.notifyCounts         || (() => {});
   const releaseDelayMs       = deps.releaseDelayMs != null ? deps.releaseDelayMs : 0;
@@ -215,6 +216,15 @@ function createReviewService(deps = {}) {
           try { await onTaughtConfirm(db, document_id, { allValues, document_type_slug, supplier_name, dtInfo }); }
           catch (e) { console.warn('Auto-promote on taught confirm failed:', e.message); }
         }
+        // Graduation auto-template (best-effort): the first confirm that GRADUATES a (supplier,type)
+        // scope with no template yet mints one, so its sub-100 docs can auto-file. Runs AFTER
+        // onTaughtConfirm so a taught confirm's template already exists → the hook's existence check
+        // sees it and links/skips instead of double-creating (Oracle ordering condition). Fires on
+        // EVERY non-bulk confirm (outside the taught_fields guard) — the common graduation case has
+        // no taught fields. The hook self-gates on scopeTrust + kill switch + a "no template yet"
+        // check; a failure here can never affect the already-returned confirm.
+        try { await onScopeGraduated(db, document_id, { allValues, document_type_slug, supplier_name, dtInfo }); }
+        catch (e) { console.warn('Graduation auto-template failed:', e.message); }
       }).catch(() => {});
     }
 

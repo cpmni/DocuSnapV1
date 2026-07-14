@@ -79,6 +79,7 @@ function register(ctx) {
     audit: (db, entry) => logAudit(db, entry),
     onScheduleSourceMove: (args) => _scheduleSourceMove(ctx, getDb(), documents, args),
     onTaughtConfirm: (db, docId, info) => _upsertTemplate(ctx, db, docId, info),
+    onScopeGraduated: (db, docId, info) => _maybeGraduationTemplate(ctx, db, docId, info),
     captureSample: async (tId, docId) => {
       if (ctx.captureSampleWords) {
         await ctx.captureSampleWords(tId, docId);
@@ -611,13 +612,23 @@ function register(ctx) {
     requireRole('admin', 'edit');
     const db  = getDb();
     const doc = db.prepare(
-      'SELECT template_id, logo_phash, ocr_text FROM documents WHERE id = ?'
+      `SELECT d.template_id, d.logo_phash, d.ocr_text, dt.slug AS document_type_slug
+         FROM documents d
+         LEFT JOIN document_types dt ON dt.id = d.document_type_id
+        WHERE d.id = ?`
     ).get(documentId);
     if (!doc || doc.template_id) return { matched: false };
 
+    // TYPE-SCOPED recheck: only a template of THIS document's own type counts as
+    // "available". Without this the check is type-blind and matches a same-logo
+    // sibling of a different type (a Sales Order template on an Invoice), which both
+    // misreports "Template available" AND suppresses the Teach-this-document CTA, so
+    // the operator can't create the genuinely-missing same-type template. Mirrors
+    // the Python identify_template type refusal. Null slug (untyped doc) = unscoped.
     const match = templates.identifyByFingerprint(db, {
       logo_phash: doc.logo_phash,
       ocr_text:   doc.ocr_text,
+      document_type_slug: doc.document_type_slug,
     });
     if (!match) return { matched: false };
 
@@ -631,8 +642,9 @@ function register(ctx) {
   });
 
   // ── Add to Template Manager (explicit promotion) ───────────────────────────
-  // Templates are no longer auto-created/refreshed on every confirm (see
-  // _upsertTemplate's removal from confirm-review above). Automatic learning
+  // Templates are not auto-created on every confirm, with TWO exceptions: an explicit ⊕/wizard
+  // TEACH (onTaughtConfirm), and ONCE at scope GRADUATION (onScopeGraduated → _maybeGraduationTemplate
+  // → graduationTemplate.js) so a graduated supplier's sub-100 docs can auto-file. Automatic learning
   // — anchors, hints, corrections via saveCorrections — keeps working on every
   // confirm regardless. This handler is the deliberate escalation path: a user
   // looking at a recurring layout that keeps misdetecting can promote the
@@ -737,7 +749,7 @@ function register(ctx) {
   });
 }
 
-module.exports = { register };
+module.exports = { register, _buildTemplateFields };   // _buildTemplateFields exported for test_build_template_fields.js
 
 // ── Template create / update ──────────────────────────────────────────────────
 
@@ -747,11 +759,12 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
 
   // Read document record for stored logo_phash and keyword_fingerprint
   const doc = db.prepare(
-    'SELECT template_id, logo_phash, keyword_fingerprint FROM documents WHERE id = ?'
+    'SELECT template_id, logo_phash, logo_detail_hash, keyword_fingerprint FROM documents WHERE id = ?'
   ).get(document_id);
   if (!doc) throw new Error('Document not found');
 
   const logo_phash           = doc.logo_phash || null;
+  const logo_detail_hash     = doc.logo_detail_hash || null;   // Slice B: isolated-mark discriminator, enrolled into the template set
   const keyword_fingerprint  = _parseJson(doc.keyword_fingerprint, []);
 
   // Build template field rules from confirmed values
@@ -797,7 +810,12 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
   //      keep this from merging two different suppliers with similar logos.
   let templateId = doc.template_id || null;
   if (!templateId && logo_phash) {
-    const reuse = templates.findByLogoHash(db, logo_phash);   // min over the hash set
+    // TYPE-SCOPED reuse: a template is per (supplier, TYPE), and a supplier issuing several types on
+    // one letterhead has same-logo siblings — so reusing the nearest logo BLINDLY would fold e.g. an
+    // Invoice into the Sales Order template (wrong-type mapping). Scope the candidate set to this
+    // document's own type, matching Stage 0's type precedence. Same-type-only means the STRICT branch
+    // is now safe too, not just the convergence branch's explicit slug check (kept for clarity).
+    const reuse = templates.findByLogoHash(db, logo_phash, 13, document_type_slug);   // min over the hash set, same-type only
     if (reuse && reuse.confidence >= 60) {
       templateId = reuse.id;
     } else if (reuse && reuse.match_distance <= 13
@@ -813,7 +831,7 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
     // fingerprint; keep an established logo_phash) so one noisy sample's OCR
     // garble / per-document tokens can't poison Stage 0 matching and strand the
     // learned anchors — see templates.stabiliseFingerprint / chooseLogoPhash.
-    templates.update(db, templateId, { logo_phash, keyword_fingerprint, fields });
+    templates.update(db, templateId, { logo_phash, logo_detail_hash, keyword_fingerprint, fields });
     // Heal a junk/generic auto-name (WIDENED 2026-07-10): a template created at a supplier's
     // FIRST confirm inherits whatever sat in the issuer field — a COLD confirm births
     // "<Type> Template", and a WRONG first detection births a postcode ("BT23 1BE") or a bare
@@ -850,6 +868,7 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
       name,
       document_type_slug: document_type_slug || null,
       logo_phash,
+      logo_detail_hash,
       keyword_fingerprint,
       fields,
     });
@@ -898,15 +917,36 @@ function _buildTemplateFields(db, allValues, dtInfo) {
   // Variable fields get no anchor_label here — they are templated by the
   // user-taught ⊕ field-anchor tool (Stage 2) / drawn mappings (Stage 0.5),
   // which are coordinate-based and immune to text-substring collisions.
+  const { isNameLikeField } = require('../../../database/modules/learning');
+  const { COMPANY_KEYS }    = require('../../../database/modules/document_types');
+  const companyKeys = COMPANY_KEYS || ['supplier_name'];
   const fieldMeta   = new Map((dtInfo?.fields || []).map(f => [f.key, f]));
   const multiValued = _fieldsWithMultipleConfirmedValues(db, dtInfo);
 
+  // (A) OWN-TYPE FILTER (gary/Oracle): only build a field the template's OWN doc type actually has,
+  // so a cross-type LEAK — a foreign field carried in allValues because a shared-logo wrong-type
+  // template got confirmed (observed: a Worksheet 'custom_customer_name' polluting a PO template) —
+  // can't pollute this template. Keep-all fallback when the type has no field metadata (mirrors
+  // graduationTemplate._variableOnlyFields). Never drop the issuer or the type's ref/date role keys,
+  // even if `fields` is malformed (defensive — those are load-bearing for filing).
+  const roleKeys = new Set([...companyKeys, dtInfo?.ref_field_key, dtInfo?.date_field_key].filter(Boolean));
+  const ownField = (key) => fieldMeta.size === 0 || fieldMeta.has(key) || roleKeys.has(key);
+
   return Object.entries(allValues)
-    .filter(([, v]) => v && String(v).trim())
+    .filter(([key, v]) => v && String(v).trim() && ownField(key))
     .map(([key, value]) => {
       const meta = fieldMeta.get(key);
       const schemaVariable = meta ? !!meta.is_variable : true;
-      const isVariable = schemaVariable || multiValued.has(key);
+      // (B) NEVER FREEZE a non-issuer NAME-LIKE field (gary/Oracle). A recipient/customer name is
+      // per-document; freezing it stamps ONE name onto every matching doc (template_fixed @95 — the
+      // "Primrose Childcare"/"Aldermoor" bug). Only the ISSUER (companyKeys/supplier_name) is
+      // legitimately constant for a supplier template; a genuinely-constant NON-name field (VAT,
+      // terms) still freezes. An admin who truly wants a name fixed sets it via Template Manager
+      // (fixed_locked, preserved by _upsertFields). ACCEPTED TRADE-OFF (pinned in the test): a
+      // genuinely-constant recipient name is re-extracted / may route to review rather than frozen —
+      // fail-toward-review, never a silent stamped value; do NOT restore the freeze "for recall".
+      const recipientName = isNameLikeField(key, meta && meta.label) && !companyKeys.includes(key);
+      const isVariable = schemaVariable || multiValued.has(key) || recipientName;
       return {
         field_key:    key,
         anchor_label: null,
@@ -915,6 +955,34 @@ function _buildTemplateFields(db, allValues, dtInfo) {
         is_variable:  isVariable,
       };
     });
+}
+
+// Graduation auto-template (Electron caller of the pure database/modules/graduationTemplate.js).
+// The pure module decides + does the DB create/link (synchronous, atomic on the single main loop);
+// this wrapper adds the Electron-only follow-ups AFTER the create commits: the debug template-file
+// write, pinning the graduating doc as the sample, and the Python landmark/fingerprint enrichment
+// (mirrors promote-to-template). All best-effort — it runs detached, after the user's confirm has
+// already returned, and must never throw. See graduationTemplate.js for the Oracle conditions.
+async function _maybeGraduationTemplate(ctx, db, document_id, info) {
+  const graduation = require('../../../database/modules/graduationTemplate');
+  const templates  = require('../../../database/modules/templates');
+  const { path, fs, templatesDir } = ctx;
+
+  const decision = graduation.decide(db, document_id, info);
+  if (!decision || decision.action === 'skip') return;
+  const res = graduation.apply(db, document_id, decision);
+  if (!res || !res.templateId) return;
+
+  try { _writeTemplateFile(db, res.templateId, path, fs, templatesDir()); }
+  catch (e) { console.warn('Graduation template file write failed:', e.message); }
+
+  // Only a freshly CREATED template needs enrichment; a LINK reuses an already-enriched one.
+  if (res.created) {
+    try { templates.setSampleDocument(db, res.templateId, document_id); } catch (e) { console.warn('Graduation sample pin failed:', e.message); }
+    try { if (ctx.generateLandmarks)   await ctx.generateLandmarks(res.templateId); }   catch (e) { console.warn('Graduation landmarks failed:', e.message); }
+    try { if (ctx.generateFingerprint) await ctx.generateFingerprint(res.templateId); } catch (e) { console.warn('Graduation fingerprint failed:', e.message); }
+    console.log(`[graduation] auto-created template "${res.name}" (id ${res.templateId}${res.keywordOnly ? ', keyword-only' : ''}) on scope graduation`);
+  }
 }
 
 function _writeTemplateFile(db, templateId, path, fs, dir) {

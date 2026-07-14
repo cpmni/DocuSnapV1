@@ -162,6 +162,7 @@ function mergeReprocessRows(existing, newRows, flip = null, onTrace = null) {
         extraction_method: ex.extraction_method,
         validation_note:   ex.validation_note || null,
         corrected_to:      ex.corrected_to || null,
+        candidates:        ex.candidates || null,   // preserve the stored picker JSON on carry-over
       });
     }
   }
@@ -1044,6 +1045,7 @@ function register(ctx) {
       validation_note:   data.validation_note || null,
       corrected_to:      data.corrected_to || null,
       anchor_label:      data.anchor || null,
+      candidates:        data.candidates ? JSON.stringify(data.candidates) : null,   // disambiguation picker
     }));
 
     const _emitMerge = (field, decision, oldV, newV) => {
@@ -1100,6 +1102,7 @@ function register(ctx) {
          document_type_id    = COALESCE(?, document_type_id),
          template_id         = ?,
          logo_phash          = ?,
+         logo_detail_hash    = ?,
          keyword_fingerprint = ?,
          supplier_name       = COALESCE(?, supplier_name),
          ocr_text            = COALESCE(?, ocr_text),
@@ -1110,6 +1113,7 @@ function register(ctx) {
       reprocDocTypeId,
       result.template_id        || null,
       result.logo_phash         || null,
+      result.logo_detail_hash   || null,
       result.keyword_fingerprint ? JSON.stringify(result.keyword_fingerprint) : null,
       result.supplier_name      || null,
       result.ocr_text           || null,
@@ -1252,7 +1256,8 @@ function register(ctx) {
     }
     // "Straighten + Reprocess": deskew each scanned page before OCR. The filed file is untouched;
     // the logo phash uses the raw frame (engine.extract raw_page0). Review-bound (reprocess never
-    // auto-files). Forces FRESH OCR below — the stored text is of the RAW (skewed) pixels.
+    // auto-files). Re-OCRs fresh ONLY if the page is actually tilted past the floor (DESKEW×CACHE
+    // fast path — a level page reuses the stored text); the cache is passed below regardless.
     if (deskewOnce) scriptArgs.push('--deskew-pages');
 
     const allTempFiles = [...tempFiles];
@@ -1260,15 +1265,15 @@ function register(ctx) {
       const enhanceFile = writeTempJson('enhance', effectiveEnhanceParams);
       allTempFiles.push(enhanceFile);
       scriptArgs.push('--enhance-file', enhanceFile);
-    } else if (!deskewOnce) {
+    } else {
       // Reprocess optimisation: reuse this doc's already-stored full-page OCR text so
       // the ~1.9s/page full-page OCR is skipped (the pixels don't change on reprocess —
       // only the learned data — and per-field crop reads still re-run, so accuracy is
       // unchanged). ONLY when no manual/template ENHANCE is active (that would change
       // the read) and the stored text is non-empty. Written into tmpDir (cleaned with it).
-      // SKIPPED on deskewOnce: the cached text is of the raw skewed pixels, so a straighten
-      // must re-OCR the deskewed page fresh (extract_text_and_images also gates deskew off
-      // under cached_text as a belt-and-braces).
+      // PASSED EVEN ON deskewOnce now (DESKEW×CACHE fast path): extract_text_and_images detects skew
+      // first and re-OCRs fresh straightened ONLY if this page is tilted past the floor; a level page
+      // reuses the cache (its straighten is a no-op). Kill switch DESKEW_CACHE_FAST=0.
       try {
         const otRow = db.prepare('SELECT ocr_text FROM documents WHERE id = ?').get(docId);
         if (otRow && otRow.ocr_text && otRow.ocr_text.trim()) {
@@ -1428,10 +1433,13 @@ function register(ctx) {
           enhance_params:    enh,
           // Reuse stored full-page OCR text → skip the ~1.9s/page re-OCR (only when no
           // enhance is active and the text is non-empty; crop reads still re-run).
-          // Skip the cached OCR text when straightening (Oracle/oscar C3): deskew is gated OFF under
-          // cached_text (tesseract.py use_cache), so keeping the cache here would read the RAW skewed
-          // pixels and the straighten would silently no-op. deskewAll forces a fresh straightened OCR.
-          ...(!enh && !deskewAll && row && row.ocr_text && row.ocr_text.trim() ? { ocr_text: row.ocr_text } : {}),
+          // PASS THE CACHE EVEN WHEN STRAIGHTENING (DESKEW×CACHE fast path — oscar/Oracle): the Python
+          // side (tesseract.extract_text_and_images) now DETECTS skew first and only re-OCRs docs with a
+          // page tilted past the floor; an all-level doc reuses this cache exactly like a normal
+          // reprocess (a below-floor page's straighten is a no-op → identical pixels → identical read).
+          // MUST land atomically with that Python change — against the old code, passing the cache under
+          // deskew would gate deskew OFF and serve raw text (silent no-op). Kill switch DESKEW_CACHE_FAST=0.
+          ...(!enh && row && row.ocr_text && row.ocr_text.trim() ? { ocr_text: row.ocr_text } : {}),
         };
         nameToDoc[tmpName] = { docId: d.docId, filename: d.filename, existing };
         tmpNames.push(tmpName);
@@ -1687,10 +1695,10 @@ function register(ctx) {
     return result?.match || null;
   });
 
-  ipcMain.handle('save-logo-fingerprint', (_e, { supplier_name, phash, ahash }) => {
+  ipcMain.handle('save-logo-fingerprint', (_e, { supplier_name, phash, ahash, detail_hash }) => {
     requireRole('admin', 'edit');
     const learning = require('../../../database/modules/learning');
-    learning.saveLogoFingerprint(getDb(), { supplier_name, phash, ahash });
+    learning.saveLogoFingerprint(getDb(), { supplier_name, phash, ahash, detail_hash });
     return true;
   });
 
@@ -2156,6 +2164,7 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
     status:             msg.status || 'needs_review',
     template_id:        msg.template_id   || null,
     logo_phash:         msg.logo_phash    || null,
+    logo_detail_hash:   msg.logo_detail_hash || null,
     keyword_fingerprint: msg.keyword_fingerprint
       ? JSON.stringify(msg.keyword_fingerprint) : null,
     ocr_text:           msg.ocr_text      || null,
@@ -2174,6 +2183,7 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
       validation_note:   data.validation_note || null,
       corrected_to:      data.corrected_to || null,
       anchor_label:      data.anchor || null,
+      candidates:        data.candidates ? JSON.stringify(data.candidates) : null,   // disambiguation picker
     }));
     learning.insertExtractions(db, docId, rows);
   }

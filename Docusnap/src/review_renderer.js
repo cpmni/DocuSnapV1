@@ -513,6 +513,7 @@ async function saveLogoOnConfirm(supplierName) {
         supplier_name: supplierName,
         phash:         hashes.phash,
         ahash:         hashes.ahash || hashes.phash,
+        detail_hash:   hashes.detail || null,   // Slice B: isolated-mark discriminator, enrolled beside the phash
       });
       console.log(`Logo fingerprint saved for: ${supplierName}`);
     }

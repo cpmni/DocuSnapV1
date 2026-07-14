@@ -524,6 +524,64 @@ def is_prefix_outlier(read_prefix, rec):
     return sum(1 for a, b in zip(read_prefix, dom) if a != b) == 1
 
 
+# ── FIX B1: ref-prefix type SUGGESTION (suggest-only; the caller keeps the review hold) ──────────
+# When the logo says "this supplier" but the same-letterhead cluster spans ≥2 doc types AND the
+# skew-garbled title can't resolve which (Fix A's ambiguous-type case), the doc's own reference
+# PREFIX is a strong per-supplier type signal: this sender's POs start "PO", their sales orders
+# "SO". We reuse the SAME poison-barred learned prefix model as _flag_prefix_outlier (build_prefix_
+# index → dominant needs both a min count AND ≥80% share) to pick the sibling — but ONLY as a
+# suggestion: the caller pre-selects the resolved type + seeds its fields, and STILL routes the doc
+# to review (Oracle/gary 2026-07-13). It never clears the human checkpoint, so a mis-suggestion on a
+# contaminated page (own ref garbled to absent while a QUOTED other-type ref reads clean) is benign —
+# the reviewer confirms/corrects, strictly no worse than Fix A's coin-flip suggestion.
+# UPPERCASE 2-4 letter run + a code number: the shape of a real reference prefix (PO/SO/INV/DN),
+# NOT a mixed-case label word abutting a number ("Total 12345"). Missing a mixed-case-printed prefix
+# only makes B1 abstain (→ Fix A holds) — the safe direction — so precision here beats recall. The
+# learned dominant is itself uppercased (code_prefix), so an uppercase scan matches it.
+_CODE_TOKEN_RE = re.compile(r'[A-Z]{2,4}[-/ ]?\d{3,}')
+
+def present_code_prefixes(ocr_text: str) -> set:
+    """The set of uppercased leading-alpha CODE prefixes of the reference-shaped tokens on the page
+    (PO-24103 → 'PO', SO12345 → 'SO', INV/58225 → 'INV'). Liberal only within the uppercase shape: an
+    extra token only ADDS a prefix, and more present prefixes can only push resolve_type_by_ref_prefix
+    toward ABSTAIN (the fail-safe direction), never toward a false pick."""
+    out = set()
+    for m in _CODE_TOKEN_RE.finditer(ocr_text or ''):
+        p = code_prefix(m.group(0))
+        if p:
+            out.add(p)
+    return out
+
+def resolve_type_by_ref_prefix(ambiguous_siblings, cluster_supplier, slug_ref_keys,
+                               prefix_index, present) -> str | None:
+    """Return the ONE sibling slug whose learned dominant ref-prefix is present on the page, else
+    None → ABSTAIN (the doc stays HELD by Fix A, unchanged). ambiguous_siblings = {slug: template}
+    over the band-13 set (from identify_template); slug_ref_keys = {slug: ref_field_key}.
+
+    Abstains on: null/blank supplier; empty inputs; no learned dominant for a sibling's ref field
+    (scope disarmed / mixed-numeric); ZERO matches; or ≥2 sibling dominants present at once — the
+    clean party/cross-reference case (a Sales Order printing BOTH its own 'SO-…' and the buyer's
+    'PO-…') resolves to ≥2 matches → abstain, so a quoted cross-ref can't force a pick.
+
+    ACCEPTED TRADE-OFF (Oracle B1 pin): the dangerous residual — the doc's OWN ref garbled to absent
+    while ONLY a quoted OTHER-sibling ref is present — is a SINGLE match, so this returns the OTHER
+    (wrong) slug. That is a benign MIS-SUGGESTION *only because the caller keeps needs_review=True*;
+    pinned in tests/test_ref_prefix_retype.py + the skew_type_probe contamination fixture. Do NOT use
+    this to clear the review hold without independent own-primary-ref corroboration (the unbuilt B2)."""
+    if not cluster_supplier or not ambiguous_siblings or not prefix_index or not present:
+        return None
+    matching = []
+    for slug in ambiguous_siblings:
+        ref_key = (slug_ref_keys or {}).get(slug)
+        if not ref_key:
+            continue
+        rec = lookup_prefix(prefix_index, ref_key, cluster_supplier, slug)
+        dom = rec.get('dominant') if rec else None
+        if dom and dom in present:
+            matching.append(slug)
+    return matching[0] if len(matching) == 1 else None
+
+
 def build_known_index(formats_data: list) -> dict:
     """Per (supplier, doctype, field): the SET of every CONFIRMED value. Used to guard the
     character corrector (try_correct) so it never rewrites a value the corpus has actually seen —

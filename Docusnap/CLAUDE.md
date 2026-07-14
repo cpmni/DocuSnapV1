@@ -17,14 +17,41 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/features.md` — first-run wizard, welcome tour, settings backup, Learning Repair, teaching wizard, dev inspector.
 - `docs/history.md` — resolved QA/audit findings + build-stage history (Settings/Review/Search/Stage-7 rebuilds).
 
-## Recent session changes (2026-07-09 → 07-13) — durable mechanisms now in the code
-**READ FIRST: `docs/handovers/HANDOVER_2026-07-13.md`** (latest — review UX + session Straighten-all +
-buyer-issued issuer guard COMMITTED; working tree CLEAN, HEAD = `docs:` wrap-up on `f948112`, 5 commits
-ahead of origin, live DB migration 45). Prior: `…_2026-07-12.md` (identity/name guards). Earlier: `…_2026-07-11.md` (the NIGHT batch,
-since COMMITTED). Fuller narratives: `…_2026-07-10_EVENING.md` / `…_2026-07-10.md` / `…_DAYTIME.md`.
-Session write-ups live in `docs/handovers/` + `docs/night-reports/` + `docs/audits/` (reorganised
-2026-07-11 — old root paths are stale by exactly that prefix). All on branch `feat/doctype-title-aliases`;
-each fix has unit tests (+ real-doc E2E where noted).
+## Recent session changes (2026-07-09 → 07-14) — durable mechanisms now in the code
+**READ FIRST: `docs/handovers/HANDOVER_2026-07-14.md`** (latest — skew type-flip robustness + branding
+fuzzy supplier-naming + the logo isolated-mark discriminator FOUNDATION, all COMMITTED on
+**`feat/review-straighten-followups`** off `main`, now **PUSHED to origin** (unmerged — open a PR when
+ready). **NEXT SESSION STARTS AT the logo discriminator Slice B+C** — the handover's top block.). Prior:
+`…_2026-07-13.md` (review UX + Straighten-all + buyer-issued issuer guard; MERGED to `main` via PR #9 =
+`ea9bdec`). Earlier: `…_2026-07-12.md` (identity/name guards) · `…_2026-07-11*.md` (the NIGHT batch).
+Session write-ups live in `docs/handovers/` + `docs/night-reports/` + `docs/audits/`. Each fix has unit
+tests (+ a corpus A/B where noted); all kill-switched + additive.
+
+### 2026-07-14 — skew type-flip + branding fuzzy naming + logo discriminator foundation (ALL COMMITTED + PUSHED)
+**READ `docs/handovers/HANDOVER_2026-07-14.md`.** Branch pushed to origin; working tree clean.
+- **`8ab5bd2` — skew type-flip robustness (Fix A + B1).** Same-letterhead suppliers (one logo, several doc
+  types → identical fingerprints) coin-flip the doc TYPE under MFD skew → wrong-type auto-file. Fix A
+  (`TYPE_AMBIGUITY_GUARD`) HOLDS an ambiguous same-letterhead type on BOTH the logo-cluster (`_type_ambiguity`)
+  and keyword-fingerprint (`_kw_type_ambiguity`, single-supplier cohesion C1) paths. Fix B1
+  (`REF_PREFIX_RETYPE`) resolves the correct sibling from the doc's own ref-PREFIX + pins its template but
+  KEEPS the review hold (Oracle rejected auto-file — the PO↔SO cross-reference hole). C2: pinned⇒held.
+  Corpus A/B accuracy UP, M unchanged. Tests: `test_kw_type_ambiguity`/`_ref_prefix_retype`/`_type_ambiguity_flag`/`_template_type_ambiguity`.
+- **`f06f349` — branding cross-check FUZZY-names the real supplier** from a garbled letterhead
+  ("rthgate textiles"→"Northgate Textiles"). ISSUER-BAND scoped (`chrome_band.py`, stdlib — never names a
+  mid-page recipient, positional not name-based), `own_ratio` stays exact+whole-page (fuzzing = fail-open),
+  suggest-only + additive `suggested_supplier` for a future renderer button (**Slice 2 NOT built** — Oracle
+  SEND-BACK the engine pre-fill; the value-change belongs at confirm-time). Kill switch `BRANDING_ALT_FUZZY`;
+  corpus A/B byte-identical. `test_branding_conflict.py` extended.
+- **`c0ac414` — logo isolated-mark 256-bit detail hash (INERT foundation).** `python_backend/logo_detail.py`
+  (dependency-free pure-NumPy connected-components → isolate the compact mark → 256-bit phash; colour-free →
+  B&W-identical; fail-safe None). GATE-0 proven on the live NT/CW pair (SEPARATED on colour AND B&W;
+  inter 114 vs typical intra ~30). NOTHING WIRED → zero behaviour change. **NEXT: Slice B (migration +
+  enrolment) + Slice C (abstain-only disambiguator at `identify_template` + JS `findLogoMatch`).** Colour
+  RULED OUT (same-navy monograms + B&W strips it); structural mark-isolation is the fix. Tests
+  `test_logo_detail.py`; gate `stress_test/logo_detail_probe.js`.
+- **Diagnoses closed to root:** customer-drop hint-bleed = a SYMPTOM of the wrong-supplier resolution +
+  poisoned Cascade scope (NOT a hint bug — the hint apply is fill-empty); self-corrects when supplier
+  resolves right. Colour-vs-structural logo direction settled by GATE-0. See the handover.
 
 ### 2026-07-13 — review UX + session "Straighten all" + buyer-issued issuer guard committed (ALL COMMITTED → `f948112`)
 **READ `docs/handovers/HANDOVER_2026-07-13.md`.** Working tree CLEAN; 4 commits ahead of origin (unpushed).

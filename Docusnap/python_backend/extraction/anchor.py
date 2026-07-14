@@ -493,6 +493,8 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
         # crosscheck block can later FLIP the value, and this note describes the KEPT-RIGID
         # (or junk-relocate) case only. Applied at the result build when no other note landed.
         _relocate_guard_note = None
+        _caption_bleed = False   # fix #2: the relocate read the field's OWN caption (landed on the label)
+        _read_box = None         # picker: the winning read's VALUE box (top-left norm) for name candidates
         if value and val_type in (None, "text", "multiline_text", "currency") \
                 and (anchor.get("anchor_label") or "").strip() \
                 and anchor.get("offset_dy_norm") is not None and page0 is not None:
@@ -510,9 +512,28 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 _dloc = _locate_for_relocation(page0, anchor["anchor_label"], direction,
                                                (x_norm, y_norm, _dw, _dh), page_text_lines,
                                                line_cache=line_cache, confirm_value=_cv)
+                # (C) POSITION VETO on the label-lock locate (007+Oracle 2026-07-14): the page-wide
+                # fallback in _locate_for_relocation can find a WRONG "Customer" occurrence; the drift
+                # rung already verifies the located caption sits at the taught position but THIS rung did
+                # not — a mis-locate would seat the caption-exclusion clamp (P) / relocate crop wrong.
+                # Verify with the SAME loose tolerances + the offset-present precondition (a legacy
+                # no-offset anchor is NEVER vetoed → byte-identical for those).
+                _llodx, _llody = anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm")
+                if _dloc and (_llodx is not None and _llody is not None and (_llodx or _llody)) \
+                        and not _located_at_taught_position(_dloc, x_norm, y_norm, _llodx, _llody,
+                                                            tol_x=_RELOC_TOL_X, tol_y=_RELOC_TOL_Y):
+                    if on_reject:
+                        on_reject(field_key, "anchor_relocate", (_dloc or {}).get("matched_text"),
+                                  "label_off_taught_position")
+                    _dloc = None
                 _dlb = (_dloc or {}).get("label_box")
                 if _dlb:   # label LOCATED -> lock the value to it (no drift threshold)
                     _dcand = None
+                    # Part A (007, 2026-07-14): capture the relocate crop's measured word
+                    # confidence so the field-conf cap (~1057) + the engine Tier-A OCR gate
+                    # aren't BLIND to a garbled clip (this rung uniquely NULLED it — the
+                    # outlier vs the sibling relocate rungs at 839/902 which already keep it).
+                    _dm = {}
                     # 1) inline harvest off the located label's line (value shares the row)
                     _div = (_dloc.get("inline_value") or "").strip()
                     if _div:
@@ -530,8 +551,10 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                                      offset=(anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm")))
                         if _drelo:
                             _drelo = _widen_relocated_crop(_drelo, val_type)
+                            _tl = _caption_top_limit(_dlb, direction, _drelo)   # (P) exclude the located caption band
                             _drv = _crop_and_ocr(page0, _drelo[0], _drelo[1], _drelo[2], _drelo[3],
-                                                 val_type, verify_fn=_verify, continuation=continuation)
+                                                 val_type, verify_fn=_verify, meta=_dm, continuation=continuation,
+                                                 top_limit_norm=_tl)
                             if _drv and not _name_field_code_reject(_drv, field_key) \
                                     and _crop_is_credible(_drv, val_type, validation_patterns, label):
                                 _dq = _qualify_against_format(_drv, field_key, format_lookup, text_field_keys)
@@ -584,7 +607,26 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                                 on_reject(field_key, "anchor_crop", value, "off_row_drift")
                             value = _dcand
                             method = "anchor_crop_relocated"
-                            ocr_conf, ocr_min = None, None
+                            _read_box = _norm_box_dict(_drelo, True)   # picker: where the relocate read
+                            # Part A: keep the crop's measured confidence (was NULLED here).
+                            # _dm stays {} when _dcand came from the INLINE HARVEST (no crop
+                            # ran) -> .get returns None -> byte-identical for that sub-case.
+                            ocr_conf, ocr_min = _dm.get('conf'), _dm.get('min_conf')
+                            # CAPTION-BLEED demotion (fix #2, RELOCATE_CAPTION_DEMOTE): the
+                            # relocate's LEADING tokens ARE the taught caption (e.g. "Customer
+                            # Site tee" vs label "Customer Site") -> the crop landed on the
+                            # LABEL, not the value. name_quality can't catch it (real caption
+                            # words score >=0.6, colliding with a legit mixed-case name), so
+                            # FLAG it: the engine merge guard then prefers the clean keyword,
+                            # and the note makes it review-bound even with no keyword incumbent.
+                            # Free-text only (a caption is never a currency). Kill switch below.
+                            if val_type in (None, "text", "multiline_text") \
+                                    and os.environ.get("RELOCATE_CAPTION_DEMOTE", "1") != "0" \
+                                    and _is_caption_bleed(_dcand, anchor.get("anchor_label")):
+                                _caption_bleed = True
+                                if not _relocate_guard_note:
+                                    _relocate_guard_note = ("The taught box landed on this field's "
+                                                            "label, not its value — please verify.")
             except Exception:
                 pass  # dev/robustness: the guard must never break a read
 
@@ -791,6 +833,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                         if q and _should_replace(value, q, val_type, validation_patterns, inc_ocr_conf=ocr_conf):
                             value  = q
                             method = "anchor_inline"
+                            _read_box = _norm_box_dict(located.get("inline_box"), False)   # picker: inline value box (top-left)
                             # The value now comes off the located LINE, not a crop —
                             # restore the documented "None for inline reads" invariant
                             # so the confidence cap and the placement rung below treat
@@ -860,6 +903,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                             if q and _should_replace(value, q, val_type, validation_patterns, inc_ocr_conf=ocr_conf):
                                 value  = q
                                 method = "anchor_crop_relocated"
+                                _read_box = _norm_box_dict(relo, True)   # picker: where the relocate read
                                 ocr_conf, ocr_min = _mr.get('conf'), _mr.get('min_conf')
 
         # ── Registration recovery (FALLBACK): map the taught value box through the
@@ -1181,6 +1225,14 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 # value isn't judged by Tesseract's digit confidence, so it carries
                 # no min-conf signal (None → Tier-A unaffected).
                 "ocr_min_conf": ocr_min if _is_free_text else None,
+                # fix #2: the relocate read the field's own caption (leading tokens == the
+                # taught label). The engine merge guard reads this to prefer a clean keyword
+                # over a caption-bleed relocate that name_quality can't distinguish from a name.
+                "caption_bleed": _caption_bleed,
+                # picker: the winning read's VALUE box (top-left norm) for the disambiguation
+                # candidate contract. Emitted ONLY for the instrumented relocate/inline rungs
+                # (which set _read_box); any other method -> None so a stale box can't leak.
+                "box": _read_box if method in ("anchor_inline", "anchor_crop_relocated") else None,
             }
             if method == "anchor_crop_slipfix":
                 # Recover-and-flag: surface as an auto-correction (value==corrected_to) routed to
@@ -1219,6 +1271,74 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 results[field_key]["validation_note"] = _relocate_guard_note
 
     return results
+
+
+def _caption_top_limit(label_box, direction, relo_box):
+    """(P, 007+Oracle) The normalised TOP limit for a relocated value crop so it can't include the
+    located caption above it. For a 'below' anchor: located-caption bottom + a tiny gap, but ONLY when
+    the caption is cleanly ABOVE the relocated value box (so the clamp can never clip into the value);
+    otherwise None (the value abuts/overlaps its caption — leave it to the credibility + caption-
+    demotion gates). None on missing input / non-'below' direction. Kill switch RELOCATE_CAPTION_EXCLUDE."""
+    if os.environ.get("RELOCATE_CAPTION_EXCLUDE", "1") == "0":
+        return None
+    if not label_box or direction != "below" or not relo_box:
+        return None
+    try:
+        lb_bottom = float(label_box.get("y_norm", 0.0)) + float(label_box.get("h_norm", 0.0))
+        val_top = float(relo_box[1]) - float(relo_box[3]) / 2.0   # relocated value CENTRE - h/2
+    except Exception:
+        return None
+    if lb_bottom < val_top - 0.002:                 # caption genuinely above the value
+        return min(lb_bottom + 0.002, val_top)      # just below the caption, never into the value
+    return None
+
+
+def _norm_box_dict(box, centre) -> dict | None:
+    """Normalise a VALUE box to {x_norm,y_norm,w_norm,h_norm} TOP-LEFT (the disambiguation-candidate
+    contract convention — Oracle: emit the VALUE box, top-left, NEVER the label_box), or None on
+    bad/empty input. `centre=True` means the input x,y are the box CENTRE (a relocated/registration
+    crop, as `_place_from_located`/`_crop_and_ocr` use) and are shifted to top-left; `centre=False`
+    for an already-top-left box (inline_box). Fail-safe None → the candidate becomes a marker-less
+    list row rather than a mis-placed marker."""
+    if box is None:
+        return None
+    try:
+        if isinstance(box, dict):
+            x, y, w, h = box["x_norm"], box["y_norm"], box["w_norm"], box["h_norm"]
+        else:
+            x, y, w, h = box[0], box[1], box[2], box[3]
+        x, y, w, h = float(x), float(y), float(w), float(h)
+    except Exception:
+        return None
+    if w <= 0 or h <= 0:
+        return None
+    if centre:
+        x, y = x - w / 2.0, y - h / 2.0
+    return {"x_norm": x, "y_norm": y, "w_norm": w, "h_norm": h}
+
+
+def _is_caption_bleed(cand, label) -> bool:
+    """True when a relocated read's LEADING content tokens EQUAL the taught caption's tokens —
+    the crop landed on the field's own LABEL, not its value (e.g. relocate "Customer Site tee"
+    vs taught label "Customer", the page caption being "Customer Site"). Token-prefix, never
+    char-prefix ("Bill Thompson Ltd" does NOT match the label "Bill To"). This ONLY sets a FLAG;
+    the demotion (engine `_name_relocate_should_hold`) still requires the relocate to DISAGREE
+    with a CLEAN keyword — so a real name that legitimately starts with the caption word
+    ("Customer Care Ltd" read correctly) AGREES with the keyword and is never demoted; the flag
+    only bites when the keyword read a different clean name (the label-bleed case). Fail-safe
+    False on missing/garbled input; requires >=1 caption token and a value at least that long."""
+    if not cand or not label:
+        return False
+    try:
+        from extraction import text_normalise
+        ct = [t.lower() for t in text_normalise.tokenise(label) if any(c.isalnum() for c in t)]
+        vt = [t.lower() for t in text_normalise.tokenise(cand) if any(c.isalnum() for c in t)]
+    except Exception:
+        return False
+    n = len(ct)
+    if n < 1 or len(vt) < n:
+        return False
+    return vt[:n] == ct
 
 
 def _name_junk_shaped(value, field_key) -> bool:
@@ -1282,7 +1402,8 @@ def _pick_unambiguous_supplier(by_supplier: dict) -> dict | None:
 
 def try_logo_supplier_match(page_image: Image.Image,
                             logos: list[dict],
-                            threshold: int = 12) -> dict | None:
+                            threshold: int = 12,
+                            query_detail_hash: str | None = None) -> dict | None:
     """
     Attempt to identify supplier from logo perceptual hash.
     Returns {"supplier_name": str, "confidence": int} or None.
@@ -1328,7 +1449,34 @@ def try_logo_supplier_match(page_image: Image.Image,
         if not by_supplier:
             return None
 
-        return _pick_unambiguous_supplier(by_supplier)
+        winner = _pick_unambiguous_supplier(by_supplier)
+        # SLICE C — isolated-mark VETO on the supplier-fingerprint path. _pick_unambiguous_supplier's ±4
+        # near-tie guard only rejects an AMBIGUOUS-distance pick; a look-alike monogram whose greyscale
+        # phash is DECISIVELY closest (the Northgate-doc-reads-Cascade case) sails through. Abstain the
+        # pick when the scan's 256-bit mark DETAIL hash POSITIVELY belongs to a DIFFERENT supplier — far
+        # from the picked supplier's enrolled set AND close to a rival's (logo_detail.veto_by_detail). This
+        # catches the collision even when the TRUE supplier's coarse phash drifted out of band (doc 193).
+        # Abstain-only → return None → keyword/text/review; byte-identical for a genuine match (its own
+        # mark agrees); fail-safe on missing/empty detail; inert until Slice-B accrues; kill switch.
+        if winner and query_detail_hash and os.environ.get('LOGO_DETAIL_VETO', '1') != '0':
+            try:
+                import logo_detail
+                wn = (winner["supplier_name"] or "").strip().lower()
+                pick_det, other_det = [], {}
+                for fp in logos:
+                    dh = fp.get("detail_hash")
+                    if not dh:
+                        continue
+                    sn = (fp.get("supplier_name") or "").strip()
+                    if sn.lower() == wn:
+                        pick_det.append(dh)
+                    elif sn:
+                        other_det.setdefault(sn, []).append(dh)
+                if logo_detail.veto_by_detail(query_detail_hash, pick_det, other_det):
+                    return None
+            except Exception:
+                pass   # best-effort; never break identification
+        return winner
 
     except ImportError:
         return None
@@ -2292,7 +2440,8 @@ def _maybe_continue(page_image, x1: int, y1: int, x2: int, y2: int,
 def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
                   w_norm: float = 0.0, h_norm: float = 0.0,
                   val_type: str | None = None, capture = None,
-                  verify_fn = None, meta = None, continuation = None) -> str | None:
+                  verify_fn = None, meta = None, continuation = None,
+                  top_limit_norm: float | None = None) -> str | None:
     """
     Crop a tight region centred on the stored value coordinates and re-OCR it.
     Uses the exact selection dimensions saved by the ⊕ tool (w_norm/h_norm) so
@@ -2332,6 +2481,18 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
         y1 = max(0, cy - half_h)
         x2 = min(w, cx + half_w)
         y2 = min(h, cy + half_h)
+
+        # (P) CAPTION-BAND EXCLUSION (007+Oracle 2026-07-14): a thin one-line value box is padded
+        # ~3× taller here (fixed +20/+6 px), so a below-anchor crop can balloon UP into the caption
+        # sitting a few px above the value ("Customer" → the shifted-scan "Customer eu" read). When
+        # the caller has POSITIVELY located that caption, it passes its bottom edge as top_limit_norm;
+        # clamp the crop TOP to it so the caption can never be read. The caller only passes it when the
+        # caption is cleanly ABOVE the value (never clips into the value); a degenerate clamp collapses
+        # → None → the caller skips the relocate (rigid read + caption-demotion backstop → review).
+        if top_limit_norm is not None:
+            y1 = max(y1, int(top_limit_norm * h))
+            if y1 >= y2 - 1:
+                return None
 
         crop = page_image.crop((x1, y1, x2, y2))
         if capture:
