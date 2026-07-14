@@ -6,17 +6,18 @@ function insertExtractions(db, document_id, rows) {
   const stmt = db.prepare(`
     INSERT INTO extractions
       (document_id, field_key, raw_value, display_value,
-       confidence, extraction_method, validation_note, corrected_to, anchor_label)
+       confidence, extraction_method, validation_note, corrected_to, anchor_label, candidates)
     VALUES
       (@document_id, @field_key, @raw_value, @display_value,
-       @confidence, @extraction_method, @validation_note, @corrected_to, @anchor_label)
+       @confidence, @extraction_method, @validation_note, @corrected_to, @anchor_label, @candidates)
   `);
   const insertMany = db.transaction((rows) => {
     // corrected_to is the proposed (not-yet-applied) correction candidate from
     // Stage 4.5; anchor_label records the label an anchor-based read used (for the
-    // review "From anchor:" note). Both default to null so callers that don't set
-    // them are unaffected.
-    for (const row of rows) stmt.run({ document_id, corrected_to: null, anchor_label: null, ...row });
+    // review "From anchor:" note); candidates is the disambiguation-picker JSON (migration
+    // 48). All default to null so callers that don't set them are unaffected — and the null
+    // default is REQUIRED (better-sqlite3 throws "missing named parameter" without it).
+    for (const row of rows) stmt.run({ document_id, corrected_to: null, anchor_label: null, candidates: null, ...row });
   });
   insertMany(rows);
 }

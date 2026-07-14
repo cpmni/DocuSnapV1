@@ -494,6 +494,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
         # (or junk-relocate) case only. Applied at the result build when no other note landed.
         _relocate_guard_note = None
         _caption_bleed = False   # fix #2: the relocate read the field's OWN caption (landed on the label)
+        _read_box = None         # picker: the winning read's VALUE box (top-left norm) for name candidates
         if value and val_type in (None, "text", "multiline_text", "currency") \
                 and (anchor.get("anchor_label") or "").strip() \
                 and anchor.get("offset_dy_norm") is not None and page0 is not None:
@@ -590,6 +591,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                                 on_reject(field_key, "anchor_crop", value, "off_row_drift")
                             value = _dcand
                             method = "anchor_crop_relocated"
+                            _read_box = _norm_box_dict(_drelo, True)   # picker: where the relocate read
                             # Part A: keep the crop's measured confidence (was NULLED here).
                             # _dm stays {} when _dcand came from the INLINE HARVEST (no crop
                             # ran) -> .get returns None -> byte-identical for that sub-case.
@@ -815,6 +817,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                         if q and _should_replace(value, q, val_type, validation_patterns, inc_ocr_conf=ocr_conf):
                             value  = q
                             method = "anchor_inline"
+                            _read_box = _norm_box_dict(located.get("inline_box"), False)   # picker: inline value box (top-left)
                             # The value now comes off the located LINE, not a crop —
                             # restore the documented "None for inline reads" invariant
                             # so the confidence cap and the placement rung below treat
@@ -884,6 +887,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                             if q and _should_replace(value, q, val_type, validation_patterns, inc_ocr_conf=ocr_conf):
                                 value  = q
                                 method = "anchor_crop_relocated"
+                                _read_box = _norm_box_dict(relo, True)   # picker: where the relocate read
                                 ocr_conf, ocr_min = _mr.get('conf'), _mr.get('min_conf')
 
         # ── Registration recovery (FALLBACK): map the taught value box through the
@@ -1209,6 +1213,10 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 # taught label). The engine merge guard reads this to prefer a clean keyword
                 # over a caption-bleed relocate that name_quality can't distinguish from a name.
                 "caption_bleed": _caption_bleed,
+                # picker: the winning read's VALUE box (top-left norm) for the disambiguation
+                # candidate contract. Emitted ONLY for the instrumented relocate/inline rungs
+                # (which set _read_box); any other method -> None so a stale box can't leak.
+                "box": _read_box if method in ("anchor_inline", "anchor_crop_relocated") else None,
             }
             if method == "anchor_crop_slipfix":
                 # Recover-and-flag: surface as an auto-correction (value==corrected_to) routed to
@@ -1247,6 +1255,30 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 results[field_key]["validation_note"] = _relocate_guard_note
 
     return results
+
+
+def _norm_box_dict(box, centre) -> dict | None:
+    """Normalise a VALUE box to {x_norm,y_norm,w_norm,h_norm} TOP-LEFT (the disambiguation-candidate
+    contract convention — Oracle: emit the VALUE box, top-left, NEVER the label_box), or None on
+    bad/empty input. `centre=True` means the input x,y are the box CENTRE (a relocated/registration
+    crop, as `_place_from_located`/`_crop_and_ocr` use) and are shifted to top-left; `centre=False`
+    for an already-top-left box (inline_box). Fail-safe None → the candidate becomes a marker-less
+    list row rather than a mis-placed marker."""
+    if box is None:
+        return None
+    try:
+        if isinstance(box, dict):
+            x, y, w, h = box["x_norm"], box["y_norm"], box["w_norm"], box["h_norm"]
+        else:
+            x, y, w, h = box[0], box[1], box[2], box[3]
+        x, y, w, h = float(x), float(y), float(w), float(h)
+    except Exception:
+        return None
+    if w <= 0 or h <= 0:
+        return None
+    if centre:
+        x, y = x - w / 2.0, y - h / 2.0
+    return {"x_norm": x, "y_norm": y, "w_norm": w, "h_norm": h}
 
 
 def _is_caption_bleed(cand, label) -> bool:

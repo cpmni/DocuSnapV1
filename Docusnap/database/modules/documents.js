@@ -88,6 +88,11 @@ function getWithExtractions(db, id) {
   doc.extractions = db.prepare(
     'SELECT * FROM extractions WHERE document_id = ? ORDER BY rowid'
   ).all(id);
+  // Disambiguation picker: parse the stored candidates JSON (migration 48) back to an array so the
+  // renderer consumes it directly. Malformed/NULL → undefined (renderer shows today's behaviour).
+  for (const ex of doc.extractions) {
+    if (ex.candidates) { try { ex.candidates = JSON.parse(ex.candidates); } catch { ex.candidates = undefined; } }
+  }
   return doc;
 }
 

@@ -941,6 +941,21 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 47 applied: logo detail-hash columns added (NULL-inert)');
   }
 
+  // Migration 48 (2026-07-14): the DISAMBIGUATION-PICKER candidate store. extractions.candidates
+  // holds a JSON array [{value, box:{x_norm,y_norm,w_norm,h_norm}|null, source_label, method,
+  // confidence}] for a flagged NAME field with >=2 distinct reads — so the Review "⑂ Resolve" popup
+  // survives a queued doc being reopened from the DB (the live engine ledger is ephemeral). NULLABLE
+  // → NULL-INERT: a pre-migration / non-flagged row has no candidates and the renderer shows today's
+  // behaviour. Written by insertExtractions/applyReprocessResult; read via getWithExtractions. Idempotent.
+  if (!applied.has(48)) {
+    if (tableExists(db, 'extractions') && !hasColumn(db, 'extractions', 'candidates')) {
+      try { db.exec('ALTER TABLE extractions ADD COLUMN candidates TEXT'); }
+      catch (e) { console.warn(`  migration 48 extractions.candidates: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (48)').run();
+    console.log('JS migration 48 applied: extractions.candidates column added (NULL-inert)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

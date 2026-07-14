@@ -735,6 +735,8 @@ def main():
             logo_detail_hash = raw_extractions.pop("_logo_detail_hash", None)
             kw_fingerprint   = raw_extractions.pop("_keyword_fingerprint", [])
             identity_shadow_v = raw_extractions.pop("_identity_shadow", None)
+            # Disambiguation picker: {field_key: [candidate,…]} for flagged name fields (or {}).
+            field_candidates  = raw_extractions.pop("_field_candidate_emit", None) or {}
             raw_extractions.pop("_mode_used", None)
             raw_extractions.pop("_document_slug", None)
 
@@ -790,6 +792,11 @@ def main():
                         # "Use '<name>'" one-click button (Slice 2). Additive; absent when not suggested.
                         **({"suggested_supplier": v["suggested_supplier"]}
                            if v.get("suggested_supplier") else {}),
+                        # Disambiguation picker: the candidate list for a flagged name field
+                        # (value + top-left box + source_label), present ONLY when the engine
+                        # armed it (>=2 distinct candidates on a noted name field).
+                        **({"candidates": field_candidates[k]}
+                           if field_candidates.get(k) else {}),
                     }
                     for k, v in extractions.items()
                 },

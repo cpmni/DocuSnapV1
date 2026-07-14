@@ -1,0 +1,115 @@
+"""
+test_field_candidates.py — the disambiguation-picker BACKEND (v1): the candidate ledger box copy +
+`engine._build_candidate_emit` + `_candidate_source_label` + the anchor `_norm_box_dict`.
+
+Pins (Oracle conditions): emit ONLY for name-like non-supplier fields with a note AND >=2 distinct
+candidates; dedup by _cmp_norm keeping a BOXED rep; chosen value first; cap 3; box copied into the
+ledger; the CHOSEN value always an option; kill switch FIELD_CANDIDATES_EMIT; box is TOP-LEFT.
+
+  cd python_backend && PYTHONUTF8=1 py -3.12 tests/test_field_candidates.py
+"""
+import os, sys, types
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from extraction.engine import ExtractionEngine, _candidate_source_label, _cmp_norm
+from extraction.anchor import _norm_box_dict
+
+fails = 0
+def check(label, cond):
+    global fails
+    print(("OK  " if cond else "BAD ") + label)
+    if not cond: fails += 1
+
+BOX = {"x_norm": 0.1, "y_norm": 0.2, "w_norm": 0.3, "h_norm": 0.05}
+
+def emit(results, ledger):
+    fake = types.SimpleNamespace(_field_candidates=ledger)
+    return ExtractionEngine._build_candidate_emit(fake, results)
+
+def cand(v, method="anchor_crop_relocated", conf=85, box=None):
+    return {"value": v, "method": method, "confidence": conf, "box": box}
+
+def noted(v, method="keyword", conf=69):
+    return {"value": v, "method": method, "confidence": conf,
+            "validation_note": "Two different names were read here — please verify."}
+
+def main():
+    os.environ.pop("FIELD_CANDIDATES_EMIT", None)
+
+    # ── TRIGGER ──────────────────────────────────────────────────────────────
+    results = {"customer_name": noted("Fernbank Veterinary Clinic")}
+    ledger  = {"customer_name": [cand("Fernbank Veterinary Clinic", "keyword", 78),
+                                 cand("Customer Site tee", "anchor_crop_relocated", 82, BOX)]}
+    out = emit(results, ledger)
+    check("emitted for a name field with note + 2 distinct candidates", "customer_name" in out)
+    check("emit carries value+box+source_label+method+confidence",
+          all(k in out["customer_name"][0] for k in ("value", "box", "source_label", "method", "confidence")))
+
+    check("NO note → not emitted",
+          "customer_name" not in emit({"customer_name": {"value": "X", "method": "keyword"}}, ledger))
+    check("note but <2 distinct → not emitted",
+          "customer_name" not in emit({"customer_name": noted("Only One")},
+                                      {"customer_name": [cand("Only One", "keyword", 78)]}))
+    check("supplier_name EXCLUDED (v1 scope)",
+          "supplier_name" not in emit({"supplier_name": noted("Acme")},
+                                      {"supplier_name": [cand("Acme", "logo", 90),
+                                                         cand("Acme Ltd", "keyword", 70)]}))
+    check("non-name field (invoice_number) → not emitted",
+          "invoice_number" not in emit({"invoice_number": noted("INV-1")},
+                                       {"invoice_number": [cand("INV-1", "keyword", 90),
+                                                           cand("INV-2", "anchor_inline", 80, BOX)]}))
+
+    # ── DEDUP / RANK ─────────────────────────────────────────────────────────
+    dl = {"customer_name": [cand("Fernbank Veterinary Clinic", "keyword", 78),
+                            cand("FERNBANK  VETERINARY CLINIC", "anchor_inline", 60, BOX),  # dup by _cmp_norm
+                            cand("Customer Site tee", "anchor_crop_relocated", 82, BOX)]}
+    reps = emit({"customer_name": noted("Fernbank Veterinary Clinic")}, dl)["customer_name"]
+    check("dedup by _cmp_norm collapses the case/space duplicate (2 reps not 3)", len(reps) == 2)
+    check("CHOSEN value ranked first (①)", _cmp_norm(reps[0]["value"]) == _cmp_norm("Fernbank Veterinary Clinic"))
+    check("dedup keeps a BOXED representative for the chosen value",
+          reps[0]["box"] is not None)   # the boxed anchor_inline dup is preferred over the box-less keyword
+
+    # cap at 3
+    big = {"customer_name": [cand(f"Name {i}", "anchor_inline", 90 - i, BOX) for i in range(5)]}
+    big["customer_name"].insert(0, cand("Chosen", "keyword", 50))
+    capped = emit({"customer_name": noted("Chosen")}, big)["customer_name"]
+    check("capped at 3 candidates", len(capped) == 3)
+
+    # the CHOSEN value is always present even if absent from the ledger
+    miss = emit({"customer_name": noted("Late Value", conf=69)},
+                {"customer_name": [cand("Alt A", "anchor_crop_relocated", 82, BOX),
+                                   cand("Alt B", "anchor_inline", 70, BOX)]})["customer_name"]
+    check("chosen value injected when missing from the ledger",
+          any(_cmp_norm(c["value"]) == _cmp_norm("Late Value") for c in miss))
+
+    # ── source_label mapping ─────────────────────────────────────────────────
+    check("source_label: keyword → 'beside the label'", _candidate_source_label("keyword") == "beside the label")
+    check("source_label: relocate → 'from the taught box'", _candidate_source_label("anchor_crop_relocated") == "from the taught box")
+    check("source_label: logo → letterhead", _candidate_source_label("logo") == "from the logo/letterhead")
+
+    # ── box normaliser (TOP-LEFT contract) ───────────────────────────────────
+    check("_norm_box_dict centre→top-left (0.5,0.5,0.2,0.1)→(0.4,0.45)",
+          _norm_box_dict((0.5, 0.5, 0.2, 0.1), True) == {"x_norm": 0.4, "y_norm": 0.45, "w_norm": 0.2, "h_norm": 0.1})
+    check("_norm_box_dict top-left dict passthrough", _norm_box_dict(BOX, False) == BOX)
+    check("_norm_box_dict bad/empty → None",
+          _norm_box_dict((0, 0, 0, 0), True) is None and _norm_box_dict(None, False) is None)
+
+    # ── ledger box copy (via _remember_candidates) ──────────────────────────
+    fake = types.SimpleNamespace(_field_candidates={})
+    ExtractionEngine._remember_candidates(fake, "2_anchor",
+        {"customer_name": {"value": "V", "method": "anchor_crop_relocated", "confidence": 80, "box": BOX}})
+    check("_remember_candidates copies the box into the ledger", fake._field_candidates["customer_name"][0]["box"] == BOX)
+    fake2 = types.SimpleNamespace(_field_candidates={})
+    ExtractionEngine._remember_candidates(fake2, "1_keyword",
+        {"customer_name": {"value": "V", "method": "keyword", "confidence": 78}})
+    check("box-less produced dict → ledger box None", fake2._field_candidates["customer_name"][0]["box"] is None)
+
+    # ── kill switch ──────────────────────────────────────────────────────────
+    os.environ["FIELD_CANDIDATES_EMIT"] = "0"
+    check("FIELD_CANDIDATES_EMIT=0 → nothing emitted", emit(results, ledger) == {})
+    os.environ.pop("FIELD_CANDIDATES_EMIT", None)
+    check("re-enabled → emits again", "customer_name" in emit(results, ledger))
+
+    print('\n' + ('ALL PASS' if fails == 0 else f'{fails} FAILED'))
+    sys.exit(1 if fails else 0)
+
+main()

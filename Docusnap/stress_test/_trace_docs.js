@@ -85,7 +85,8 @@ function runOne(folder, args, fname) {
     for (const k of Object.keys(ex)) {
       const e = ex[k] || {};
       const star = (k === role.ref_field_key || k === role.date_field_key) ? ' <<CRITICAL' : '';
-      console.log(`    [${k}] value=${JSON.stringify(e.value)} conf=${e.confidence} method=${e.method} note=${JSON.stringify(e.validation_note||null)}${star}`);
+      const cn = Array.isArray(e.candidates) ? `  ⑂cands=[${e.candidates.map(c => JSON.stringify(c.value) + (c.box ? '@box' : '') + `(${c.source_label})`).join(', ')}]` : '';
+      console.log(`    [${k}] value=${JSON.stringify(e.value)} conf=${e.confidence} method=${e.method} note=${JSON.stringify(e.validation_note||null)}${star}${cn}`);
     }
     if (process.env.GREP && m.ocr_text) {
       const pats = process.env.GREP.split(',');

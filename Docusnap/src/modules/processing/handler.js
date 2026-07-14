@@ -162,6 +162,7 @@ function mergeReprocessRows(existing, newRows, flip = null, onTrace = null) {
         extraction_method: ex.extraction_method,
         validation_note:   ex.validation_note || null,
         corrected_to:      ex.corrected_to || null,
+        candidates:        ex.candidates || null,   // preserve the stored picker JSON on carry-over
       });
     }
   }
@@ -1044,6 +1045,7 @@ function register(ctx) {
       validation_note:   data.validation_note || null,
       corrected_to:      data.corrected_to || null,
       anchor_label:      data.anchor || null,
+      candidates:        data.candidates ? JSON.stringify(data.candidates) : null,   // disambiguation picker
     }));
 
     const _emitMerge = (field, decision, oldV, newV) => {
@@ -2181,6 +2183,7 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
       validation_note:   data.validation_note || null,
       corrected_to:      data.corrected_to || null,
       anchor_label:      data.anchor || null,
+      candidates:        data.candidates ? JSON.stringify(data.candidates) : null,   // disambiguation picker
     }));
     learning.insertExtractions(db, docId, rows);
   }

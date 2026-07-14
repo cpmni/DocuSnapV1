@@ -163,6 +163,21 @@ _NAME_RELOCATE_NOTE = ("Two different names were read here — the clean value b
 _RELOCATE_METHODS = ("anchor_crop_relocated", "anchor_inline")
 
 
+def _candidate_source_label(method) -> str:
+    """A short human phrase for WHERE a candidate value was read, for the disambiguation picker
+    list (so an operator can tell the reads apart without knowing methods)."""
+    m = method or ""
+    if m in ("keyword", "keyword_override"):
+        return "beside the label"
+    if m.startswith("anchor") or m in ("template_mapping", "template_mapping_expanded"):
+        return "from the taught box"
+    if m.startswith("template_fixed") or m == "template":
+        return "from the template"
+    if m == "logo":
+        return "from the logo/letterhead"
+    return "read from the page"
+
+
 def _name_relocate_should_hold(existing: dict | None, data: dict | None, field_key: str) -> bool:
     """NAME-RELOCATE DISAGREEMENT GUARD (slice 1; gary-designed, Oracle-signed WITH CONDITIONS,
     2026-07-14). True → a taught anchor's RELOCATED read is a garbled NAME that DISAGREES with a
@@ -547,6 +562,7 @@ class ExtractionEngine:
                 'stage':         stage,
                 'authoritative': bool(data.get('authoritative')),
                 'located':       bool(data.get('located')),
+                'box':           data.get('box'),   # picker: value box (top-left norm) or None; inert to the ledger's consumers (Stage 4.6 + total reconciliation read named keys only)
             })
 
     @staticmethod
@@ -592,6 +608,57 @@ class ExtractionEngine:
             return None
         qualifying.sort(key=lambda c: (-(c['confidence'] or 0), str(c['value'])))
         return qualifying[0]
+
+    def _build_candidate_emit(self, results):
+        """Disambiguation picker (v1): for each NAME-LIKE non-supplier field carrying a
+        validation_note with >=2 DISTINCT candidate values, build the picker list
+        [{value, box, source_label, method, confidence}] (chosen value first, cap 3). Additive +
+        inert (commits no value); the box comes from the anchor read's own capture (top-left norm,
+        None for keyword/late reads). Kill switch FIELD_CANDIDATES_EMIT (default on)."""
+        if os.environ.get("FIELD_CANDIDATES_EMIT", "1") == "0":
+            return {}
+        emit = {}
+        for key, fld in results.items():
+            if key.startswith("_") or not isinstance(fld, dict):
+                continue
+            if key == "supplier_name" or not value_quality.is_name_like_field(key):
+                continue
+            if not str(fld.get("validation_note") or "").strip():
+                continue
+            # dedup by _cmp_norm; within a group keep a boxed rep, then the higher confidence.
+            by_norm = {}
+            for c in (self._field_candidates.get(key) or []):
+                v = c.get("value")
+                if not v:
+                    continue
+                nk = _cmp_norm(v)
+                cur = by_norm.get(nk)
+                if cur is None:
+                    by_norm[nk] = c
+                else:
+                    c_boxed, cur_boxed = c.get("box") is not None, cur.get("box") is not None
+                    if (c_boxed and not cur_boxed) or (c_boxed == cur_boxed
+                            and (c.get("confidence") or 0) > (cur.get("confidence") or 0)):
+                        by_norm[nk] = c
+            # the CHOSEN value must always be an option even if it never entered the ledger.
+            chosen_v = fld.get("value")
+            chosen_norm = _cmp_norm(chosen_v) if chosen_v else None
+            if chosen_v and chosen_norm not in by_norm:
+                by_norm[chosen_norm] = {"value": chosen_v, "method": fld.get("method"),
+                                        "confidence": fld.get("confidence") or 0, "box": fld.get("box")}
+            reps = list(by_norm.values())
+            if len(reps) < 2:
+                continue
+            reps.sort(key=lambda c: (0 if _cmp_norm(c.get("value")) == chosen_norm else 1,
+                                     -(c.get("confidence") or 0), str(c.get("value"))))
+            emit[key] = [{
+                "value":        c.get("value"),
+                "box":          c.get("box"),
+                "source_label": _candidate_source_label(c.get("method")),
+                "method":       c.get("method"),
+                "confidence":   c.get("confidence") or 0,
+            } for c in reps[:3]]
+        return emit
 
     def _resolve_candidates(self, results, field_defs, supplier_name, document_slug):
         """Stage 4.6 — gated, deterministic, suggestion-first override. Runs only when
@@ -3295,6 +3362,12 @@ class ExtractionEngine:
                 self._t("final", field=key, value=data.get("value"),
                         method=data.get("method"), confidence=data.get("confidence"),
                         note=data.get("validation_note"))
+
+        # ── Disambiguation picker: candidate map for flagged name fields ──────
+        # Built LAST, after every flag guard, so a note applied late (identity /
+        # caption-demotion) still arms the picker. Additive `_` metadata (popped +
+        # woven into the per-field emit by process_docs); commits no value.
+        results["_field_candidate_emit"] = self._build_candidate_emit(results)
 
         return results
 
