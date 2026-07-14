@@ -512,6 +512,20 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 _dloc = _locate_for_relocation(page0, anchor["anchor_label"], direction,
                                                (x_norm, y_norm, _dw, _dh), page_text_lines,
                                                line_cache=line_cache, confirm_value=_cv)
+                # (C) POSITION VETO on the label-lock locate (007+Oracle 2026-07-14): the page-wide
+                # fallback in _locate_for_relocation can find a WRONG "Customer" occurrence; the drift
+                # rung already verifies the located caption sits at the taught position but THIS rung did
+                # not — a mis-locate would seat the caption-exclusion clamp (P) / relocate crop wrong.
+                # Verify with the SAME loose tolerances + the offset-present precondition (a legacy
+                # no-offset anchor is NEVER vetoed → byte-identical for those).
+                _llodx, _llody = anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm")
+                if _dloc and (_llodx is not None and _llody is not None and (_llodx or _llody)) \
+                        and not _located_at_taught_position(_dloc, x_norm, y_norm, _llodx, _llody,
+                                                            tol_x=_RELOC_TOL_X, tol_y=_RELOC_TOL_Y):
+                    if on_reject:
+                        on_reject(field_key, "anchor_relocate", (_dloc or {}).get("matched_text"),
+                                  "label_off_taught_position")
+                    _dloc = None
                 _dlb = (_dloc or {}).get("label_box")
                 if _dlb:   # label LOCATED -> lock the value to it (no drift threshold)
                     _dcand = None
@@ -537,8 +551,10 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                                      offset=(anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm")))
                         if _drelo:
                             _drelo = _widen_relocated_crop(_drelo, val_type)
+                            _tl = _caption_top_limit(_dlb, direction, _drelo)   # (P) exclude the located caption band
                             _drv = _crop_and_ocr(page0, _drelo[0], _drelo[1], _drelo[2], _drelo[3],
-                                                 val_type, verify_fn=_verify, meta=_dm, continuation=continuation)
+                                                 val_type, verify_fn=_verify, meta=_dm, continuation=continuation,
+                                                 top_limit_norm=_tl)
                             if _drv and not _name_field_code_reject(_drv, field_key) \
                                     and _crop_is_credible(_drv, val_type, validation_patterns, label):
                                 _dq = _qualify_against_format(_drv, field_key, format_lookup, text_field_keys)
@@ -1255,6 +1271,26 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 results[field_key]["validation_note"] = _relocate_guard_note
 
     return results
+
+
+def _caption_top_limit(label_box, direction, relo_box):
+    """(P, 007+Oracle) The normalised TOP limit for a relocated value crop so it can't include the
+    located caption above it. For a 'below' anchor: located-caption bottom + a tiny gap, but ONLY when
+    the caption is cleanly ABOVE the relocated value box (so the clamp can never clip into the value);
+    otherwise None (the value abuts/overlaps its caption — leave it to the credibility + caption-
+    demotion gates). None on missing input / non-'below' direction. Kill switch RELOCATE_CAPTION_EXCLUDE."""
+    if os.environ.get("RELOCATE_CAPTION_EXCLUDE", "1") == "0":
+        return None
+    if not label_box or direction != "below" or not relo_box:
+        return None
+    try:
+        lb_bottom = float(label_box.get("y_norm", 0.0)) + float(label_box.get("h_norm", 0.0))
+        val_top = float(relo_box[1]) - float(relo_box[3]) / 2.0   # relocated value CENTRE - h/2
+    except Exception:
+        return None
+    if lb_bottom < val_top - 0.002:                 # caption genuinely above the value
+        return min(lb_bottom + 0.002, val_top)      # just below the caption, never into the value
+    return None
 
 
 def _norm_box_dict(box, centre) -> dict | None:
@@ -2404,7 +2440,8 @@ def _maybe_continue(page_image, x1: int, y1: int, x2: int, y2: int,
 def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
                   w_norm: float = 0.0, h_norm: float = 0.0,
                   val_type: str | None = None, capture = None,
-                  verify_fn = None, meta = None, continuation = None) -> str | None:
+                  verify_fn = None, meta = None, continuation = None,
+                  top_limit_norm: float | None = None) -> str | None:
     """
     Crop a tight region centred on the stored value coordinates and re-OCR it.
     Uses the exact selection dimensions saved by the ⊕ tool (w_norm/h_norm) so
@@ -2444,6 +2481,18 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
         y1 = max(0, cy - half_h)
         x2 = min(w, cx + half_w)
         y2 = min(h, cy + half_h)
+
+        # (P) CAPTION-BAND EXCLUSION (007+Oracle 2026-07-14): a thin one-line value box is padded
+        # ~3× taller here (fixed +20/+6 px), so a below-anchor crop can balloon UP into the caption
+        # sitting a few px above the value ("Customer" → the shifted-scan "Customer eu" read). When
+        # the caller has POSITIVELY located that caption, it passes its bottom edge as top_limit_norm;
+        # clamp the crop TOP to it so the caption can never be read. The caller only passes it when the
+        # caption is cleanly ABOVE the value (never clips into the value); a degenerate clamp collapses
+        # → None → the caller skips the relocate (rigid read + caption-demotion backstop → review).
+        if top_limit_norm is not None:
+            y1 = max(y1, int(top_limit_norm * h))
+            if y1 >= y2 - 1:
+                return None
 
         crop = page_image.crop((x1, y1, x2, y2))
         if capture:
