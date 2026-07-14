@@ -1456,10 +1456,13 @@ function register(ctx) {
     const manifestFile = writeTempJson('rbmanifest', manifest);
     let concurrency = parseInt(learning2.getSetting(db, 'processing_concurrency', String(defaultConcurrency())), 10);
     if (!Number.isFinite(concurrency)) concurrency = 1;
-    // Match the import cap (5): Reprocess All is pure cross-document parallelism (each
-    // doc's pipeline is unchanged); threadCap below keeps total OMP/onnx threads ≈ cores,
-    // and capping concurrency at 5 avoids oversubscribing the CPU on typical machines.
-    concurrency = Math.max(1, Math.min(5, concurrency));
+    // Reprocess All is pure cross-document parallelism (each doc's pipeline is unchanged); the
+    // threadCap below keeps total OMP/onnx threads ≈ cores, so more workers don't oversubscribe.
+    // Cap at 10 (raised from 5, owner request 2026-07-14): the effective count is still bounded by
+    // min(cap, processing_concurrency, files), and processing_concurrency defaults core-aware — so a
+    // low-core machine never actually reaches 10; a high-core box with a high concurrency setting now
+    // uses it (was throttled to 5). threadCap = cores/shards keeps the pool from thrashing.
+    concurrency = Math.max(1, Math.min(10, concurrency));
     const shards  = partitionRoundRobin(tmpNames, Math.min(concurrency, tmpNames.length));
     // Per-worker thread cap = cores / workers, so the pool doesn't oversubscribe the
     // CPU. Caps Tesseract's OpenMP threads (OMP_THREAD_LIMIT in the spawn env — without
