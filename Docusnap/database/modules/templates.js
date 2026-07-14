@@ -18,6 +18,7 @@ function getAll(db) {
     t.field_mappings      = getMappings(db, t.id);
     t.landmarks           = getLandmarks(db, t.id);
     t.logo_phashes        = getLogoHashes(db, t.id);
+    t.logo_detail_hashes = getLogoDetailHashes(db, t.id);
     t.keyword_fingerprint = _parseJson(t.keyword_fingerprint, []);
     t.ocr_auto_params     = _parseJson(t.ocr_auto_params, null);
     const dom             = getDominantSupplier(db, t.id);
@@ -70,6 +71,7 @@ function getById(db, id) {
   t.sample_document     = t.sample_document_id ? getSampleDocument(db, t.sample_document_id) : null;
   t.landmarks           = getLandmarks(db, t.id);
   t.logo_phashes        = getLogoHashes(db, t.id);
+  t.logo_detail_hashes = getLogoDetailHashes(db, t.id);
   return t;
 }
 
@@ -752,6 +754,15 @@ function getLogoHashes(db, templateId) {
   return db.prepare(
     'SELECT phash FROM template_logo_hashes WHERE template_id = ? ORDER BY id'
   ).all(templateId).map(r => r.phash);
+}
+
+// Slice C: the isolated-mark 256-bit DETAIL hashes of this template's enrolled prints (nulls
+// excluded). The Slice-C disambiguator takes the min distance over this set to veto a look-alike
+// logo collision. Empty until Slice-B enrolment accrues → the veto is inert (never a false abstain).
+function getLogoDetailHashes(db, templateId) {
+  return db.prepare(
+    "SELECT detail_hash FROM template_logo_hashes WHERE template_id = ? AND detail_hash IS NOT NULL AND detail_hash <> '' ORDER BY id"
+  ).all(templateId).map(r => r.detail_hash);
 }
 
 // Append a logo hash to a template's reference set (idempotent via UNIQUE), capped

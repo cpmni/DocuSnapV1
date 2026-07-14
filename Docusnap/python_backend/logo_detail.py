@@ -20,9 +20,21 @@ when the isolated marks disagree — never to pick a supplier or raise confidenc
 (fail-safe → the caller skips the gate) whenever isolation is unreliable, so a degraded scan can
 never cause a false abstain. Dependency-free: NumPy + Pillow + imagehash only (all BSD/MIT/HPND).
 """
+import os
 from PIL import Image, ImageOps
 import numpy as np
 import imagehash
+
+# Slice C veto threshold (min-over-set Hamming on the 256-bit detail hash). MEASURED, not guessed
+# (GATE-0 calibration 2026-07-14, Northgate/Cascade colliding pair): a same-supplier scan lands ≤44
+# bits from the supplier's stored set (max; p95 ≤20), while a look-alike collision sits ~114 apart.
+# 72 gives ~28 bits headroom above the worst same-supplier drift (no false veto) and ~42 below the
+# collision (catches it), on colour AND B&W. Env-overridable for tuning.
+def _veto_dist():
+    try:
+        return int(os.environ.get('LOGO_DETAIL_VETO_DIST', '72'))
+    except Exception:
+        return 72
 
 # The isolation runs on a downscaled copy of the region (speed + scale-normalisation); the mark
 # only needs to be localized, then the ORIGINAL-resolution crop is hashed.
@@ -162,3 +174,28 @@ def detail_distance(h1: str, h2: str):
         return int(imagehash.hex_to_hash(h1) - imagehash.hex_to_hash(h2))
     except Exception:
         return None
+
+
+def min_over_set(query_detail, stored_details):
+    """Smallest detail-hash distance between the scanned mark and a candidate's stored detail SET (the
+    multi-reference set absorbs per-scan drift). None when it can't be computed (missing query / empty
+    or all-null set) → the caller treats that as 'don't judge', never a distance."""
+    if not query_detail or not stored_details:
+        return None
+    dists = [d for d in (detail_distance(query_detail, s) for s in stored_details) if d is not None]
+    return min(dists) if dists else None
+
+
+def should_veto_logo(query_detail, stored_details, threshold=None):
+    """Slice C: does the scanned mark DISAGREE with the coarse-logo-picked candidate's stored mark set?
+    True → the coarse pick is a look-alike collision → the caller ABSTAINS the logo identity (falls to
+    keyword/hint + the branding net + review). NEVER picks another candidate, never raises confidence.
+
+    FAIL-SAFE = never veto on missing data: a None query hash (isolate-fail / low-detail scan) or an
+    empty/all-null stored set → False (keep the coarse pick, byte-identical to pre-Slice-C). So a missing
+    detail hash can only DISABLE the veto, never drop a real supplier to review. Threshold is measured
+    (_veto_dist, ~72) with headroom over same-supplier drift."""
+    d = min_over_set(query_detail, stored_details)
+    if d is None:
+        return False
+    return d > (threshold if threshold is not None else _veto_dist())

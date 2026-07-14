@@ -80,6 +80,28 @@ def main():
     check('B&W-robust: colour vs bitonal of the same mark hash within a small margin (≤ 20/256)',
           d is not None and d <= 20)
 
+    # 6. Slice C veto helper — min-over-set distance + the abstain decision (fail-safe on missing data).
+    base = '0' * 64                       # 256 zero bits
+    far  = 'f' * 25 + '0' * 39            # 100 one-bits → distance 100 from base
+    near = 'f' * 2 + '3' + '0' * 61       # 10 one-bits  → distance 10  from base
+    check('constructed distances are exact (self-check)',
+          LD.detail_distance(base, far) == 100 and LD.detail_distance(base, near) == 10)
+    check('min_over_set = smallest distance to the set', LD.min_over_set(far, [base, far]) == 0)
+    check('min_over_set = None on missing query / empty set',
+          LD.min_over_set(None, [base]) is None and LD.min_over_set(far, []) is None)
+
+    T = 72
+    check('VETO: mark FAR from the set (100 > 72) → abstain',        LD.should_veto_logo(far,  [base], T) is True)
+    check('KEEP: mark CLOSE to the set (10 ≤ 72) → no veto',         LD.should_veto_logo(near, [base], T) is False)
+    check('KEEP: FAR from one member but CLOSE to another (min-over-set)',
+          LD.should_veto_logo(far, [base, far], T) is False)
+    check('FAIL-SAFE: missing query hash → never veto (keep coarse pick)', LD.should_veto_logo(None, [base], T) is False)
+    check('FAIL-SAFE: empty stored set → never veto',               LD.should_veto_logo(far, [], T) is False)
+    check('FAIL-SAFE: all-null stored set → never veto',            LD.should_veto_logo(far, [None, None], T) is False)
+    check('threshold override respected (100 > 90 → veto; 100 ≤ 120 → keep)',
+          LD.should_veto_logo(far, [base], 90) is True and LD.should_veto_logo(far, [base], 120) is False)
+    check('default threshold ≈ measured 72 (env-overridable)', LD._veto_dist() == 72)
+
     print('\n' + ('ALL PASS' if fails == 0 else f'{fails} FAILED'))
     sys.exit(1 if fails else 0)
 

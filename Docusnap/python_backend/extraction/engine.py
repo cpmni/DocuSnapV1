@@ -1747,6 +1747,7 @@ class ExtractionEngine:
                 templates,
                 detected_slug=detected_slug,
                 title_trusted=title_trusted,
+                query_detail_hash=logo_detail_hash,   # Slice C: isolated-mark veto on a ≥2-supplier logo collision
             )
             # Reprocess honour: a document already linked to a template (passed
             # as known_template_id) should still run that template's stage 0/0.5

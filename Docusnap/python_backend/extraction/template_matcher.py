@@ -8,6 +8,7 @@ Templates are identified by logo hash (primary) or keyword fingerprint
 stored anchor rules rather than general keyword patterns.
 """
 
+import os
 import re
 import difflib
 from PIL import Image
@@ -70,6 +71,28 @@ def _type_ambiguity(cands, base_dist, detected_slug, title_trusted) -> bool:
     return len(slugs) >= 2 and not title_resolves
 
 
+def _logo_detail_veto(cands, base_dist, best_t, query_detail_hash) -> bool:
+    """SLICE C predicate (pure — Oracle/Phillip/oscar 2026-07-14). True → ABSTAIN the coarse logo pick:
+    the cluster spans ≥2 DISTINCT SUPPLIERS (a look-alike monogram collision is possible) AND the
+    scanned mark's 256-bit DETAIL hash disagrees with the picked template's enrolled mark set
+    (should_veto_logo → min-over-set > ~72, measured). FALSE (keep, byte-identical) on: kill switch off;
+    a missing query hash (isolate-fail); a single-supplier cluster; or an empty stored set (Slice-B not
+    yet accrued). So it can only turn a cross-supplier logo COLLISION into review, never drop a real
+    single-supplier match. Guarded by tests/test_logo_detail_veto.py."""
+    if not query_detail_hash or os.environ.get('LOGO_DETAIL_VETO', '1') == '0':
+        return False
+    band = [t for (t, d) in cands if d <= base_dist + _AMBIG_LOGO_BAND]
+    sups = {(t.get('dominant_supplier') or '').strip().lower() for t in band}
+    sups.discard('')
+    if len(sups) < 2:
+        return False
+    try:
+        import logo_detail
+        return logo_detail.should_veto_logo(query_detail_hash, best_t.get('logo_detail_hashes'))
+    except Exception:
+        return False   # best-effort; a broken veto must never break identification
+
+
 def _band_siblings(cands, base_dist) -> dict:
     """FIX B1 (suggest-only): {doc_type_slug: closest template} over the SAME wider `_AMBIG_LOGO_BAND`
     the ambiguity test uses (NOT the margin-3 pick cluster — a real drifted sibling can sit at Hamming
@@ -88,7 +111,8 @@ def _band_siblings(cands, base_dist) -> dict:
 
 def identify_template(page_image, ocr_text: str, templates: list,
                       detected_slug: str | None = None,
-                      title_trusted: bool = False) -> dict | None:
+                      title_trusted: bool = False,
+                      query_detail_hash: str | None = None) -> dict | None:
     """
     Try to match this document to a known template.
     Returns {'template': {...}, 'confidence': int, 'method': str, 'logo_phash': str}
@@ -149,6 +173,12 @@ def identify_template(page_image, ocr_text: str, templates: list,
                 # via the independent logo_fingerprints path). Gated on title_trusted, so
                 # a mere incidental mention can't discard a good single-template match.
                 if title_trusted and detected_slug and (best_t.get('document_type_slug') or '') != detected_slug:
+                    return None
+                # SLICE C — isolated-mark VETO: a ≥2-supplier logo cluster whose picked template's mark
+                # DISAGREES with the scan is a look-alike collision → ABSTAIN (fall to keyword + branding
+                # net + review). See _logo_detail_veto (scoped, fail-safe, kill-switched, inert until
+                # Slice-B detail hashes accrue). Ordered after the trusted-title refuse, before Fix A.
+                if _logo_detail_veto(cands, cluster_dist, best_t, query_detail_hash):
                     return None
                 # FIX A: is this an AMBIGUOUS same-letterhead pick? (Ordered AFTER the trusted-title
                 # refuse above.) If so the engine HOLDS the doc for review instead of auto-filing a
