@@ -613,6 +613,7 @@ def main():
             # trusted heading (a confident title of a different type wins); NEVER over an
             # explicit known_doc_slug (a reprocess the user already assigned — unless the
             # machine-authority override above re-typed it, which re-enters the fresh path).
+            _pinned_tid = None   # FIX B1: id of the ref-prefix-resolved sibling template, pinned into extract() below
             if (not _ks or _ks_overridden) and templates and page_images:
                 try:
                     tmatch = template_matcher.identify_template(
@@ -620,8 +621,41 @@ def main():
                         detected_slug=detected_slug, title_trusted=title_trusted)
                 except Exception:
                     tmatch = None
+                # FIX B1 (suggest-only, Oracle/gary 2026-07-13): when the same-letterhead pick is
+                # AMBIGUOUS (Fix A — the logo cluster spans ≥2 doc types and the skew-garbled title
+                # can't resolve which), pick the correct sibling from the doc's OWN reference PREFIX
+                # using the SAME poison-barred learned model as _flag_prefix_outlier. This ONLY pre-
+                # selects the type + seeds the right fields + pins that sibling's template; the engine
+                # STILL flags ambiguous_type, so the doc is routed to REVIEW — never auto-filed on this
+                # signal (the PO↔SO cross-reference hole makes an auto-file unsafe: a Sales Order
+                # quoting the buyer's PO could confidently mis-type when the own ref is skew-garbled).
+                # Abstains (→ Fix A's coin-flip suggestion, unchanged) on null supplier / no learned
+                # dominant / 0 or ≥2 sibling prefixes present. Kill switch env REF_PREFIX_RETYPE.
+                _amb_sibs = (tmatch or {}).get("ambiguous_siblings")
+                if _amb_sibs and doc_types and os.environ.get("REF_PREFIX_RETYPE", "1") != "0":
+                    try:
+                        from extraction import ocr_corrector as _occ
+                        _resolved = _occ.resolve_type_by_ref_prefix(
+                            _amb_sibs, (tmatch or {}).get("cluster_supplier"),
+                            {dt.get("slug"): dt.get("ref_field_key") for dt in doc_types},
+                            _occ.build_prefix_index(formats),
+                            _occ.present_code_prefixes(ocr_text))
+                    except Exception:
+                        _resolved = None
+                    if _resolved and _resolved in _amb_sibs:
+                        _pinned_tid = _amb_sibs[_resolved].get("id")
+                        for dt in doc_types:
+                            if dt.get("slug") == _resolved:
+                                if _resolved != doc_slug:
+                                    doc_slug      = _resolved
+                                    document_type = dt["name"]
+                                    if dt.get("fields"):
+                                        active_fields = dt["fields"]
+                                log(f"  Doc type SUGGESTED from ref-prefix (Fix B1 — held for "
+                                    f"review): {dt['name']} ({_resolved})")
+                                break
                 tslug = ((tmatch or {}).get("template") or {}).get("document_type_slug")
-                if tslug and doc_types and tslug != doc_slug and not title_trusted:
+                if _pinned_tid is None and tslug and doc_types and tslug != doc_slug and not title_trusted:
                     for dt in doc_types:
                         if dt.get("slug") == tslug:
                             doc_slug      = tslug
@@ -664,6 +698,7 @@ def main():
                 ref_field_key = _ref_key,
                 supplier_name = None,
                 known_template_id = _kt,
+                pinned_template_id = _pinned_tid,
                 trace         = emit_trace if args.trace else None,
                 slice_dir     = args.slice_dir if args.trace else None,
                 page_text_lines = page_text_lines,

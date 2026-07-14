@@ -1645,6 +1645,7 @@ class ExtractionEngine:
                 ref_field_key: str | None = None,
                 supplier_name: str | None = None,
                 known_template_id: int | None = None,
+                pinned_template_id: int | None = None,
                 trace = None,
                 slice_dir = None,
                 page_text_lines: list | None = None,
@@ -1706,6 +1707,7 @@ class ExtractionEngine:
         kw_fingerprint = template_matcher.extract_keyword_fingerprint(ocr_text)
 
         # ── Stage 0: Template matching ────────────────────────────────────────
+        self._type_ambiguous = False   # Fix A: set True below when the match is an ambiguous same-logo pick
         if templates:
             match = template_matcher.identify_template(
                 _id_img,
@@ -1721,13 +1723,36 @@ class ExtractionEngine:
             # logo/keyword score that dipped below threshold for this scan). Only
             # used as a fallback when live matching fails, so it never overrides
             # a positive live match with a stale link.
-            if not match and known_template_id is not None:
-                known = next((t for t in templates if t.get('id') == known_template_id), None)
+            if not match and (known_template_id is not None or pinned_template_id is not None):
+                # A B1 PIN also acts as this fallback (Oracle C2, match=None corner): if this engine
+                # call's own match failed, still honour the pinned sibling so Stage 0 runs against it
+                # AND the doc is held below. Pin wins over a stale known link.
+                _fb_id = pinned_template_id if pinned_template_id is not None else known_template_id
+                known  = next((t for t in templates if t.get('id') == _fb_id), None)
                 if known:
-                    match = {'template': known, 'confidence': 0, 'method': 'known_id'}
-                    self.log(f"  Stage 0: live match failed; honouring linked template id={known_template_id}")
+                    _fb_method = 'pinned_id' if pinned_template_id is not None else 'known_id'
+                    match = {'template': known, 'confidence': 0, 'method': _fb_method}
+                    self.log(f"  Stage 0: live match failed; honouring {_fb_method} template id={_fb_id}")
             if match:
+                # C2 (Oracle): a pinned doc is an ambiguous-HELD doc BY DEFINITION (pinned_template_id is
+                # set only by process_docs' B1 block for an ambiguous same-letterhead pick), so force the
+                # HOLD even if THIS engine call's own (raw-image) match resolved non-ambiguously — a
+                # raw-vs-processed split-brain must never let a pinned doc auto-file.
+                self._type_ambiguous = bool(match.get('ambiguous_type')) or (pinned_template_id is not None)
                 matched_tmpl = match['template']
+                # FIX B1 (suggest-only): process_docs resolved the ambiguous same-letterhead type from
+                # the doc's ref-prefix and PINNED the correct sibling's template. Force it as
+                # matched_tmpl so Stage 0/0.5 read against the RIGHT sibling's fixed-values/mappings and
+                # the filing type agrees with the seeded fields (no split-brain). We do NOT touch
+                # _type_ambiguous — the doc STAYS HELD for review; this only makes the suggestion + the
+                # extracted fields correct. Gated on pinned_template_id (None on every normal doc →
+                # byte-identical); the pinned id is always a band-13 sibling of this same cluster.
+                if pinned_template_id is not None:
+                    _pinned = next((t for t in templates if t.get('id') == pinned_template_id), None)
+                    if _pinned is not None:
+                        matched_tmpl = _pinned
+                        self.log(f"  Stage 0: template pinned by ref-prefix retype (Fix B1) → "
+                                 f"id={pinned_template_id} ({_pinned.get('document_type_slug')})")
                 self.log(
                     f"  Template matched: {matched_tmpl.get('name')} "
                     f"({match['confidence']}% via {match['method']})"
@@ -3150,6 +3175,18 @@ class ExtractionEngine:
         if not _identity_acted:
             self._flag_branding_conflict(results, supplier_name, templates, ocr_text)
 
+        # TYPE-AMBIGUITY guard (Fix A, Oracle 2026-07-13) — the fail-toward-review backstop for the
+        # same-letterhead type-flip: a supplier issuing several doc types on ONE logo lets a skew-
+        # garbled title (title_trusted lost) resolve the type by a POPULARITY coin-flip (identical
+        # sibling fingerprints), auto-filing the WRONG type silently — every field VALUE is correct, only
+        # the type/ref-key is wrong, and trust.js has no type-correctness check. identify_template flags
+        # the ambiguous pick (`ambiguous_type`, computed over a jitter-immune wider band); here we HOLD
+        # the doc for review. Independent statement (not nested under _identity_acted — Oracle C2), and
+        # after the branding block so their notes compose rather than clobber. HOLD-ONLY: never changes a
+        # value -> per-field accuracy byte-identical. Kill switch TYPE_AMBIGUITY_GUARD.
+        if getattr(self, '_type_ambiguous', False) and os.environ.get('TYPE_AMBIGUITY_GUARD', '1') != '0':
+            self._flag_type_ambiguity(results, ref_field_key)
+
         # Final resolved value per field — the inspector marks any earlier
         # candidate whose value differs from this as a superseded intermediate.
         if self._trace:
@@ -3161,6 +3198,36 @@ class ExtractionEngine:
                         note=data.get("validation_note"))
 
         return results
+
+    def _flag_type_ambiguity(self, results, ref_field_key):
+        """Fix A: HOLD an ambiguous same-letterhead TYPE resolution for review. Lands a persisted
+        validation_note on a GUARANTEED-PRESENT field so trust.isAutoFileEligible's `flagged` check
+        blocks the auto-file (Oracle/gary's load-bearing catch: the DB-side gate honours a persisted
+        note, NOT a bare _needs_review). Carrier priority: supplier_name (the identity field, always
+        extracted) -> the ref-role field -> any valued field -> a synthetic supplier_name row (so the
+        note persists even for a worksheet whose ref_field_key is null — Oracle C3). APPENDS to any
+        existing note (composes with _flag_prefix_outlier / branding — Oracle C2). HOLD-ONLY: never
+        changes a value. Guarded by tests/test_type_ambiguity_flag.py."""
+        note = ("This letterhead is used for several document types and the type could not be confirmed "
+                "on this scan — please check the document type is correct before filing.")
+        carrier = None
+        for k in ('supplier_name', ref_field_key):
+            if k and isinstance(results.get(k), dict):
+                carrier = k
+                break
+        if carrier is None:                                   # no identity/ref field — take any valued field
+            for k, v in results.items():
+                if not str(k).startswith('_') and isinstance(v, dict):
+                    carrier = k
+                    break
+        if carrier is None:                                   # nothing at all — synthesise a persisted carrier
+            results['supplier_name'] = {'value': results.get('_supplier_name') or '', 'confidence': 69,
+                                        'method': 'type_ambiguity', 'validation_note': note}
+        else:
+            fld = results[carrier]
+            existing = str(fld.get('validation_note') or '').strip()
+            fld['validation_note'] = (existing + ' ' + note).strip() if existing else note
+        results["_needs_review"] = True
 
     def _apply_hints(self, hints: list, supplier_name: str,
                      document_slug: str | None, field_defs: list[dict]) -> dict:
