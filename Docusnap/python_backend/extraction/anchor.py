@@ -513,6 +513,11 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 _dlb = (_dloc or {}).get("label_box")
                 if _dlb:   # label LOCATED -> lock the value to it (no drift threshold)
                     _dcand = None
+                    # Part A (007, 2026-07-14): capture the relocate crop's measured word
+                    # confidence so the field-conf cap (~1057) + the engine Tier-A OCR gate
+                    # aren't BLIND to a garbled clip (this rung uniquely NULLED it — the
+                    # outlier vs the sibling relocate rungs at 839/902 which already keep it).
+                    _dm = {}
                     # 1) inline harvest off the located label's line (value shares the row)
                     _div = (_dloc.get("inline_value") or "").strip()
                     if _div:
@@ -531,7 +536,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                         if _drelo:
                             _drelo = _widen_relocated_crop(_drelo, val_type)
                             _drv = _crop_and_ocr(page0, _drelo[0], _drelo[1], _drelo[2], _drelo[3],
-                                                 val_type, verify_fn=_verify, continuation=continuation)
+                                                 val_type, verify_fn=_verify, meta=_dm, continuation=continuation)
                             if _drv and not _name_field_code_reject(_drv, field_key) \
                                     and _crop_is_credible(_drv, val_type, validation_patterns, label):
                                 _dq = _qualify_against_format(_drv, field_key, format_lookup, text_field_keys)
@@ -584,7 +589,10 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                                 on_reject(field_key, "anchor_crop", value, "off_row_drift")
                             value = _dcand
                             method = "anchor_crop_relocated"
-                            ocr_conf, ocr_min = None, None
+                            # Part A: keep the crop's measured confidence (was NULLED here).
+                            # _dm stays {} when _dcand came from the INLINE HARVEST (no crop
+                            # ran) -> .get returns None -> byte-identical for that sub-case.
+                            ocr_conf, ocr_min = _dm.get('conf'), _dm.get('min_conf')
             except Exception:
                 pass  # dev/robustness: the guard must never break a read
 
