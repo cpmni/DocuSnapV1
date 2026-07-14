@@ -158,6 +158,50 @@ def _cmp_norm(value) -> str:
         return "".join(str(value or "").strip().lower().split())
 
 
+_NAME_RELOCATE_NOTE = ("Two different names were read here — the clean value beside the label and a "
+                       "garbled one from the taught box. Kept the label read; please verify.")
+_RELOCATE_METHODS = ("anchor_crop_relocated", "anchor_inline")
+
+
+def _name_relocate_should_hold(existing: dict | None, data: dict | None, field_key: str) -> bool:
+    """NAME-RELOCATE DISAGREEMENT GUARD (slice 1; gary-designed, Oracle-signed WITH CONDITIONS,
+    2026-07-14). True → a taught anchor's RELOCATED read is a garbled NAME that DISAGREES with a
+    CLEAN keyword name for the same field, and the relocate is strictly more garbled AND absolutely
+    junky — so the caller HOLDS: keeps the clean keyword value, caps <=69 + note, routes to review.
+
+    The incident: a customer anchor taught on a ROTATED scan mis-registers on the straightened page,
+    its crop reads a clipped "comer Clinic" and — because the relocate NULLED its crop confidence
+    (see anchor.py Part A) — wins Tier-A outright over the label-adjacent keyword "Fernbank
+    Veterinary Clinic". The keyword read is the trustworthy one here.
+
+    Rule (all must hold): the field is name-like AND not supplier_name (slice-1 scope: supplier is
+    corpus-scored with its own defenses); the incumbent is a plain 'keyword' read with a value; the
+    incoming anchor is a RELOCATE with a value; the two DISAGREE; the keyword is a CLEAN name
+    (name_quality >= 0.6); the relocate is STRICTLY less clean than the keyword AND below an absolute
+    junk floor (name_quality < 0.6). The STRICT '<' plus the 0.6 floor are load-bearing (Oracle): a
+    legit taught mixed-case name ("McConnell Kelly Solicitors" scores ~0.667 because name_quality
+    under-rates interior capitals) is NOT demoted and still wins its Tier-A re-teach — only a genuine
+    garble (< 0.6) is held. FLAG-ONLY: never rewrites a value. Pin the floor in
+    test_name_relocate_disagreement.py so a future dev can't loosen it and re-break the teach."""
+    if not existing or not data:
+        return False
+    if not value_quality.is_name_like_field(field_key) or field_key == "supplier_name":
+        return False
+    if existing.get("method") != "keyword" or not existing.get("value"):
+        return False
+    if data.get("method") not in _RELOCATE_METHODS or not data.get("value"):
+        return False
+    ev, dv = existing.get("value"), data.get("value")
+    if _cmp_norm(ev) == _cmp_norm(dv):        # must DISAGREE
+        return False
+    eq = value_quality.name_quality(ev)
+    if eq < 0.6:                              # the keyword must be a CLEAN name
+        return False
+    dq = value_quality.name_quality(dv)
+    # strict '<' (an equal/cleaner taught relocate still wins Tier-A) AND the absolute junk floor.
+    return dq < eq and dq < 0.6
+
+
 def _supplier_identity_decision(existing: dict | None, candidate: dict | None) -> str | None:
     """Plausibility-aware merge ruling for the supplier_name field only.
 
@@ -2208,6 +2252,21 @@ class ExtractionEngine:
                         inc_v = existing.get("value") or ""
                         if any(c.isdigit() for c in inc_v) and not any(c.isdigit() for c in cand_v):
                             continue
+                # ── NAME-RELOCATE DISAGREEMENT GUARD (slice 1) ───────────────
+                # A garbled RELOCATED name read must not beat a CLEAN keyword name of
+                # the same field (the "comer Clinic" over "Fernbank Veterinary Clinic"
+                # case — a taught box drawn on a rotated scan mis-registers and clips
+                # the value). Keep the clean keyword, cap <=69 + note (the NOTE, not the
+                # cap, blocks auto-file), route to review. Flag-only; excludes
+                # supplier_name; kill switch. Sits BEFORE Tier-A so an authoritative
+                # garble is held, but the strict '<' + 0.6 floor let a genuine re-teach
+                # through. See _name_relocate_should_hold.
+                if (os.environ.get("NAME_RELOCATE_DISAGREE_GUARD", "1") != "0"
+                        and _name_relocate_should_hold(existing, data, key)):
+                    results[key] = {**existing,
+                                    "confidence": min(int(existing.get("confidence") or 0), 69),
+                                    "validation_note": existing.get("validation_note") or _NAME_RELOCATE_NOTE}
+                    continue
                 # ── Tier A: authoritative ⊕ anchor wins outright (any method) ──
                 # An EXPLICIT authoritative ⊕ anchor that cleared the credibility
                 # gate above is the operator's deliberate, current correction for
