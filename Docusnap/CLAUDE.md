@@ -18,11 +18,20 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/history.md` — resolved QA/audit findings + build-stage history (Settings/Review/Search/Stage-7 rebuilds).
 
 ## Recent session changes (2026-07-09 → 07-14) — durable mechanisms now in the code
-**READ FIRST: `docs/handovers/HANDOVER_2026-07-14_EVENING.md`** (latest — the ⑂ Resolve disambiguation
-picker + anchor-precedence/caption-demotion/caption-band-exclusion fixes, all **MERGED to `main` via PR #10**
-= `6c93bb0`; + reprocess worker cap 5→10 on branch `feat/reprocess-throughput-autostraighten`.
-**NEXT SESSION STARTS AT: build the auto-straighten field re-read** from
-`docs/designs/DESKEW_FIELD_REREAD_2026-07-14.md` — field-scoped, Oracle-signed, NOT built.) Prior:
+**READ FIRST: `docs/handovers/HANDOVER_2026-07-14_NIGHT.md`** (latest — the SUPPLIER+DOC IDENTITY overhaul,
+autonomous night, on branch `feat/reprocess-throughput-autostraighten`). SHIPPED+PUSHED: **Slice 1 `999898c`**
+(SuperStore "INi"/"INGE" garble → correct supplier; chrome-fragment plausibility guard, base/full split per
+Oracle; kill switch `SUPPLIER_CHROME_FRAGMENT_GUARD`) + **Slice 2 `109a9df`** (DOCUMENT SOLUTIONS null-supplier
+→ value-corroborated template-identity FILL, review-bound; + the `_genuine_template_supplier` precedence-override
+poison-guard; kill switches `TEMPLATE_IDENTITY_FILL`/`TEMPLATE_PRECEDENCE_CORROBORATE`). Both corpus byte-identical
+(M=1 pre-existing). **NEXT SESSION: (a) OWNER data cleanup — templates 4/5/7 are named "Cascade" but learned
+"Northgate" (logo-collision poison); (b) the BIG proven-but-unbuilt fix — promote the 256-bit isolated-mark logo
+hash from abstain-veto to PRIMARY matcher (classifier 12/0/3 on the live corpus; resolves DocSol + breaks
+Cascade↔Northgate; needs a detail-hash BACKFILL + shadow pass — measurements in
+`docs/reports/IDENTITY_MEASUREMENTS_2026-07-14.md`, probes `stress_test/logo_detail_classify.py`).** Superseded
+next-task: the auto-straighten field re-read (`docs/designs/DESKEW_FIELD_REREAD_2026-07-14.md`, field-scoped,
+Oracle-signed, NOT built). Prior evening handover `…_2026-07-14_EVENING.md` (⑂ Resolve picker +
+anchor-precedence/caption fixes, **MERGED to `main` via PR #10** = `6c93bb0`; reprocess worker cap 5→10). Earlier:
 `…_2026-07-14.md` (skew type-flip + branding fuzzy + logo isolated-mark discriminator; MERGED in PR #10).
 Earlier:
 `…_2026-07-13.md` (review UX + Straighten-all + buyer-issued issuer guard; MERGED to `main` via PR #9 =
