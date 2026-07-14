@@ -199,3 +199,28 @@ def should_veto_logo(query_detail, stored_details, threshold=None):
     if d is None:
         return False
     return d > (threshold if threshold is not None else _veto_dist())
+
+
+def veto_by_detail(query_detail, pick_details, other_details_by_supplier, threshold=None):
+    """SLICE C (refined 2026-07-14). ABSTAIN the coarse logo pick when the scanned mark POSITIVELY
+    belongs to a DIFFERENT supplier — its 256-bit detail hash is FAR from the picked supplier's enrolled
+    set (min-over-set > threshold) AND CLOSE to some OTHER supplier's set (≤ threshold). This catches a
+    look-alike collision even when the TRUE supplier's coarse phash drifted OUT of the pick's band (the
+    doc-193 case: a Northgate scan whose phash is dist-4 from Cascade while Northgate's own prints sit
+    >band away — so the ≥2-supplier coarse gate never fired, yet the mark is unmistakably Northgate's).
+
+    Abstain-only, and SAFE for recall: a genuine single-supplier match's mark AGREES with its own set
+    (pick min ≤ threshold) → returns False FIRST → byte-identical. It only fires when the mark both
+    disagrees with the pick AND agrees with a known rival — a positive cross-supplier identity, not a
+    mere 'far from pick' (which an isolation-fail could trip). FAIL-SAFE: missing query/pick set → False;
+    no rival mark matches (novel/garbled) → False. other_details_by_supplier = {supplier: [hashes]} for
+    the NON-pick suppliers."""
+    t = threshold if threshold is not None else _veto_dist()
+    pm = min_over_set(query_detail, pick_details)
+    if pm is None or pm <= t:
+        return False                      # can't judge, or the pick's own mark agrees → keep
+    for dets in (other_details_by_supplier or {}).values():
+        m = min_over_set(query_detail, dets)
+        if m is not None and m <= t:
+            return True                   # the mark matches a DIFFERENT supplier → abstain the pick
+    return False

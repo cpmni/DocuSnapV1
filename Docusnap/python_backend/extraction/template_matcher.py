@@ -81,14 +81,21 @@ def _logo_detail_veto(cands, base_dist, best_t, query_detail_hash) -> bool:
     single-supplier match. Guarded by tests/test_logo_detail_veto.py."""
     if not query_detail_hash or os.environ.get('LOGO_DETAIL_VETO', '1') == '0':
         return False
-    band = [t for (t, d) in cands if d <= base_dist + _AMBIG_LOGO_BAND]
-    sups = {(t.get('dominant_supplier') or '').strip().lower() for t in band}
-    sups.discard('')
-    if len(sups) < 2:
-        return False
     try:
         import logo_detail
-        return logo_detail.should_veto_logo(query_detail_hash, best_t.get('logo_detail_hashes'))
+        best_sup = (best_t.get('dominant_supplier') or '').strip().lower()
+        pick_det = list(best_t.get('logo_detail_hashes') or [])
+        other_det = {}
+        for (t, d) in cands:
+            sn = (t.get('dominant_supplier') or '').strip()
+            if not sn:
+                continue
+            hs = t.get('logo_detail_hashes') or []
+            if sn.lower() == best_sup:
+                pick_det.extend(hs)
+            else:
+                other_det.setdefault(sn, []).extend(hs)
+        return logo_detail.veto_by_detail(query_detail_hash, pick_det, other_det)
     except Exception:
         return False   # best-effort; a broken veto must never break identification
 

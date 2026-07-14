@@ -1248,7 +1248,6 @@ def _name_junk_shaped(value, field_key) -> bool:
 # any OTHER supplier: if a different supplier's logo sits within this many hamming of
 # the winner, the (greyscale) phash can't reliably tell them apart, so we must not guess.
 LOGO_AMBIGUITY_MARGIN = 4
-LOGO_DETAIL_VETO_BAND = 13   # Slice C: ≥2 suppliers within this Hamming of the best = a collision cluster
 
 
 def _pick_unambiguous_supplier(by_supplier: dict) -> dict | None:
@@ -1333,22 +1332,28 @@ def try_logo_supplier_match(page_image: Image.Image,
         winner = _pick_unambiguous_supplier(by_supplier)
         # SLICE C — isolated-mark VETO on the supplier-fingerprint path. _pick_unambiguous_supplier's ±4
         # near-tie guard only rejects an AMBIGUOUS-distance pick; a look-alike monogram whose greyscale
-        # phash is DECISIVELY closest (the Northgate-doc-reads-Cascade case) sails through. So: when ≥2
-        # suppliers' logos sit within the collision band AND the scan's 256-bit mark DETAIL hash disagrees
-        # with the picked supplier's enrolled mark set → ABSTAIN (return None → keyword/text/review).
-        # Fail-safe on a missing query hash / empty set (should_veto_logo → False); inert until Slice-B
-        # detail hashes accrue; kill switch LOGO_DETAIL_VETO. Mirrors template_matcher._logo_detail_veto.
+        # phash is DECISIVELY closest (the Northgate-doc-reads-Cascade case) sails through. Abstain the
+        # pick when the scan's 256-bit mark DETAIL hash POSITIVELY belongs to a DIFFERENT supplier — far
+        # from the picked supplier's enrolled set AND close to a rival's (logo_detail.veto_by_detail). This
+        # catches the collision even when the TRUE supplier's coarse phash drifted out of band (doc 193).
+        # Abstain-only → return None → keyword/text/review; byte-identical for a genuine match (its own
+        # mark agrees); fail-safe on missing/empty detail; inert until Slice-B accrues; kill switch.
         if winner and query_detail_hash and os.environ.get('LOGO_DETAIL_VETO', '1') != '0':
             try:
-                best_dist = min(info["dist"] for info in by_supplier.values())
-                close = [n for n, info in by_supplier.items() if info["dist"] <= best_dist + LOGO_DETAIL_VETO_BAND]
-                if len(close) >= 2:
-                    import logo_detail
-                    wn = (winner["supplier_name"] or "").strip().lower()
-                    wdet = [fp.get("detail_hash") for fp in logos
-                            if (fp.get("supplier_name") or "").strip().lower() == wn and fp.get("detail_hash")]
-                    if logo_detail.should_veto_logo(query_detail_hash, wdet):
-                        return None
+                import logo_detail
+                wn = (winner["supplier_name"] or "").strip().lower()
+                pick_det, other_det = [], {}
+                for fp in logos:
+                    dh = fp.get("detail_hash")
+                    if not dh:
+                        continue
+                    sn = (fp.get("supplier_name") or "").strip()
+                    if sn.lower() == wn:
+                        pick_det.append(dh)
+                    elif sn:
+                        other_det.setdefault(sn, []).append(dh)
+                if logo_detail.veto_by_detail(query_detail_hash, pick_det, other_det):
+                    return None
             except Exception:
                 pass   # best-effort; never break identification
         return winner

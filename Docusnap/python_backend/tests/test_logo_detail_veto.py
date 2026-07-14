@@ -25,33 +25,41 @@ BASE = '0' * 64
 FAR  = 'f' * 25 + '0' * 39     # distance 100 from BASE (> 72 → disagrees)
 NEAR = 'f' * 2 + '3' + '0' * 61  # distance 10  from BASE (≤ 72 → agrees)
 
-def T(sup, detail=None):
-    return {'dominant_supplier': sup, 'logo_detail_hashes': detail if detail is not None else [BASE]}
+def T(sup, detail):
+    return {'dominant_supplier': sup, 'logo_detail_hashes': detail}
 
 def main():
-    # best_t = Cascade (mark set [BASE]); a Northgate sibling sits within band-13 → ≥2 suppliers.
-    cross = [(T('Cascade'), 1), (T('Northgate'), 8)]
-    check('≥2-supplier + mark DISAGREES (100 > 72) → VETO', _logo_detail_veto(cross, 1, cross[0][0], FAR) is True)
-    check('≥2-supplier + mark AGREES (10 ≤ 72) → keep',    _logo_detail_veto(cross, 1, cross[0][0], NEAR) is False)
+    # Cascade is the coarse pick (its template is closest); its enrolled mark = BASE. The Northgate rival
+    # template's enrolled mark = FAR. The scanned mark (query) = FAR → far from Cascade(BASE), == Northgate.
+    CAS, NG = T('Cascade', [BASE]), T('Northgate', [FAR])
+    cross = [(CAS, 1), (NG, 8)]
+    check('mark belongs to a RIVAL (far from pick, matches Northgate) → VETO', _logo_detail_veto(cross, 1, CAS, FAR) is True)
+    check('mark AGREES with the pick (query NEAR Cascade) → keep',            _logo_detail_veto(cross, 1, CAS, NEAR) is False)
 
-    # SINGLE-supplier cluster → never veto, even when the mark disagrees (recall: byte-identical).
-    same = [(T('Cascade'), 1), (T('Cascade'), 8)]
-    check('single-supplier cluster → NEVER veto (recall pin)', _logo_detail_veto(same, 1, same[0][0], FAR) is False)
+    # Far from the pick but matches NO rival (both rival + pick marks are BASE, query FAR) → novel/garbled
+    # → KEEP (never abstain on a positive-elsewhere absence — that's the recall guard, not ≥2-supplier).
+    no_rival = [(T('Cascade', [BASE]), 1), (T('Northgate', [BASE]), 8)]
+    check('far from pick but matches no rival mark → keep (novel/garbled)', _logo_detail_veto(no_rival, 1, no_rival[0][0], FAR) is False)
 
-    # A rival supplier OUTSIDE band-13 doesn't make it a collision cluster.
-    far_rival = [(T('Cascade'), 1), (T('Northgate'), 1 + _AMBIG_LOGO_BAND + 5)]
-    check('2nd supplier beyond band-13 → single-supplier → keep', _logo_detail_veto(far_rival, 1, far_rival[0][0], FAR) is False)
+    # Single-supplier cluster (no rival at all) → keep, even when the mark disagrees (byte-identical pin).
+    same = [(T('Cascade', [BASE]), 1), (T('Cascade', [BASE]), 8)]
+    check('single-supplier cluster → keep (recall pin)', _logo_detail_veto(same, 1, same[0][0], FAR) is False)
 
-    # Fail-safe: a missing query hash / empty stored set → keep (never drop on missing data).
-    check('missing query hash → keep', _logo_detail_veto(cross, 1, cross[0][0], None) is False)
-    empty = [(T('Cascade', []), 1), (T('Northgate'), 8)]
-    check('empty stored detail set → keep (Slice-B not accrued)', _logo_detail_veto(empty, 1, empty[0][0], FAR) is False)
+    # A DECISIVELY-closest wrong pick whose true supplier's coarse phash drifted OUT of band still vetoes
+    # (the detail hash detects it regardless of coarse distance — the doc-193 fix).
+    drifted = [(CAS, 1), (NG, 40)]   # Northgate coarse-far, but its MARK matches the scan
+    check('true supplier coarse-far but mark matches → VETO (doc-193 case)', _logo_detail_veto(drifted, 1, CAS, FAR) is True)
+
+    # Fail-safe.
+    check('missing query hash → keep', _logo_detail_veto(cross, 1, CAS, None) is False)
+    empty = [(T('Cascade', []), 1), (NG, 8)]
+    check('empty pick detail set → keep (Slice-B not accrued)', _logo_detail_veto(empty, 1, empty[0][0], FAR) is False)
 
     # Kill switch.
     os.environ['LOGO_DETAIL_VETO'] = '0'
-    check('LOGO_DETAIL_VETO=0 → veto disabled (keep)', _logo_detail_veto(cross, 1, cross[0][0], FAR) is False)
+    check('LOGO_DETAIL_VETO=0 → veto disabled (keep)', _logo_detail_veto(cross, 1, CAS, FAR) is False)
     del os.environ['LOGO_DETAIL_VETO']
-    check('re-enabled → vetoes again', _logo_detail_veto(cross, 1, cross[0][0], FAR) is True)
+    check('re-enabled → vetoes again', _logo_detail_veto(cross, 1, CAS, FAR) is True)
 
     print('\n' + ('ALL PASS' if fails == 0 else f'{fails} FAILED'))
     sys.exit(1 if fails else 0)
