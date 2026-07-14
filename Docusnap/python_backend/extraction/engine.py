@@ -197,6 +197,12 @@ def _name_relocate_should_hold(existing: dict | None, data: dict | None, field_k
     eq = value_quality.name_quality(ev)
     if eq < 0.6:                              # the keyword must be a CLEAN name
         return False
+    # CAPTION-BLEED (fix #2): the relocate read the field's OWN caption (flagged in anchor.py —
+    # its leading tokens ARE the taught label). Real caption words score >=0.6, so the junk floor
+    # below can't catch them (they collide with a legit mixed-case name). Hold regardless of the
+    # relocate's name_quality — the clean keyword wins. Disagree + clean-keyword already checked.
+    if data.get("caption_bleed"):
+        return True
     dq = value_quality.name_quality(dv)
     # strict '<' (an equal/cleaner taught relocate still wins Tier-A) AND the absolute junk floor.
     return dq < eq and dq < 0.6

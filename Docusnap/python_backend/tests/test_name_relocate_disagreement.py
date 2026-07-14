@@ -17,6 +17,7 @@ Load-bearing pins (a future dev must not silently revert them and re-open the "c
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from extraction.engine import _name_relocate_should_hold, _NAME_RELOCATE_NOTE, _cmp_norm
+from extraction.anchor import _is_caption_bleed
 
 fails = 0
 def check(label, cond):
@@ -91,6 +92,49 @@ def main():
     # ── custom name-like key (not just customer_name) ───────────────────────
     check("custom 'client_name' key held (is_name_like)",
           _name_relocate_should_hold(inc_kw, inc_re, "client_name") is True)
+
+    # ── FIX #2: CAPTION-BLEED — the relocate read the field's own caption ────
+    # "Customer Site tee"(nq 0.667) is real caption words → the nq<0.6 floor CANNOT catch it
+    # (collides with the legit "McConnell" 0.667). The caption_bleed flag (set in anchor.py)
+    # forces the hold, bypassing the floor, so the clean keyword wins.
+    def cb(v):  # a relocate flagged as a caption bleed
+        return {"value": v, "method": "anchor_crop_relocated", "caption_bleed": True}
+    check("caption-bleed 'Customer Site tee'(0.667) HELD vs clean keyword (floor bypassed)",
+          _name_relocate_should_hold(kw("Fembank Veterinary Clinic"), cb("Customer Site tee"),
+                                     "customer_name") is True)
+    check("caption-bleed still needs a CLEAN keyword incumbent (garbled keyword → not held)",
+          _name_relocate_should_hold(kw("comer Clinic"), cb("Customer Site tee"),
+                                     "customer_name") is False)
+    check("caption-bleed that AGREES with keyword → not held (no disagreement)",
+          _name_relocate_should_hold(kw("Customer Site tee"), cb("Customer Site tee"),
+                                     "customer_name") is False)
+    check("caption-bleed does NOT override the supplier_name exclusion (slice-1)",
+          _name_relocate_should_hold(kw("Fembank Veterinary Clinic"), cb("Customer Site tee"),
+                                     "supplier_name") is False)
+    # The real safety for a legit name starting with the caption word: a CORRECT read AGREES with
+    # the keyword, so even with caption_bleed set it is NEVER demoted (agreement gate, not the token
+    # count). Only a keyword that read a DIFFERENT clean name triggers the hold.
+    check("legit 'Customer Care Ltd' that AGREES with keyword → NOT held (agreement protects it)",
+          _name_relocate_should_hold(kw("Customer Care Ltd"), cb("Customer Care Ltd"),
+                                     "customer_name") is False)
+
+    # ── _is_caption_bleed predicate (anchor.py) ─────────────────────────────
+    check("_is_caption_bleed: 'Customer Site tee' vs label 'Customer Site' → True",
+          _is_caption_bleed("Customer Site tee", "Customer Site") is True)
+    check("_is_caption_bleed: exact caption 'Customer Site' → True",
+          _is_caption_bleed("Customer Site", "Customer Site") is True)
+    check("_is_caption_bleed: 1-token caption 'Customer' matches 'Customer Site tee' leading → True",
+          _is_caption_bleed("Customer Site tee", "Customer") is True)
+    check("_is_caption_bleed: a name starting with the caption word matches the FLAG (Part B's agreement gate is the safety) → True",
+          _is_caption_bleed("Customer Care Ltd", "Customer") is True)
+    check("_is_caption_bleed: real name not starting with the caption → False",
+          _is_caption_bleed("Fernbank Veterinary Clinic", "Customer Site") is False)
+    check("_is_caption_bleed: value shorter than the caption → False",
+          _is_caption_bleed("Customer", "Customer Site") is False)
+    check("_is_caption_bleed: 'Bill Thompson Ltd' vs label 'Bill To' (token, not char, prefix) → False",
+          _is_caption_bleed("Bill Thompson Ltd", "Bill To") is False)
+    check("_is_caption_bleed: empty inputs → False",
+          _is_caption_bleed("", "Customer Site") is False and _is_caption_bleed("Customer Site", "") is False)
 
     print('\n' + ('ALL PASS' if fails == 0 else f'{fails} FAILED'))
     sys.exit(1 if fails else 0)

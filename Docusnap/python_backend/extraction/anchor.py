@@ -493,6 +493,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
         # crosscheck block can later FLIP the value, and this note describes the KEPT-RIGID
         # (or junk-relocate) case only. Applied at the result build when no other note landed.
         _relocate_guard_note = None
+        _caption_bleed = False   # fix #2: the relocate read the field's OWN caption (landed on the label)
         if value and val_type in (None, "text", "multiline_text", "currency") \
                 and (anchor.get("anchor_label") or "").strip() \
                 and anchor.get("offset_dy_norm") is not None and page0 is not None:
@@ -593,6 +594,21 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                             # _dm stays {} when _dcand came from the INLINE HARVEST (no crop
                             # ran) -> .get returns None -> byte-identical for that sub-case.
                             ocr_conf, ocr_min = _dm.get('conf'), _dm.get('min_conf')
+                            # CAPTION-BLEED demotion (fix #2, RELOCATE_CAPTION_DEMOTE): the
+                            # relocate's LEADING tokens ARE the taught caption (e.g. "Customer
+                            # Site tee" vs label "Customer Site") -> the crop landed on the
+                            # LABEL, not the value. name_quality can't catch it (real caption
+                            # words score >=0.6, colliding with a legit mixed-case name), so
+                            # FLAG it: the engine merge guard then prefers the clean keyword,
+                            # and the note makes it review-bound even with no keyword incumbent.
+                            # Free-text only (a caption is never a currency). Kill switch below.
+                            if val_type in (None, "text", "multiline_text") \
+                                    and os.environ.get("RELOCATE_CAPTION_DEMOTE", "1") != "0" \
+                                    and _is_caption_bleed(_dcand, anchor.get("anchor_label")):
+                                _caption_bleed = True
+                                if not _relocate_guard_note:
+                                    _relocate_guard_note = ("The taught box landed on this field's "
+                                                            "label, not its value — please verify.")
             except Exception:
                 pass  # dev/robustness: the guard must never break a read
 
@@ -1189,6 +1205,10 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 # value isn't judged by Tesseract's digit confidence, so it carries
                 # no min-conf signal (None → Tier-A unaffected).
                 "ocr_min_conf": ocr_min if _is_free_text else None,
+                # fix #2: the relocate read the field's own caption (leading tokens == the
+                # taught label). The engine merge guard reads this to prefer a clean keyword
+                # over a caption-bleed relocate that name_quality can't distinguish from a name.
+                "caption_bleed": _caption_bleed,
             }
             if method == "anchor_crop_slipfix":
                 # Recover-and-flag: surface as an auto-correction (value==corrected_to) routed to
@@ -1227,6 +1247,30 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 results[field_key]["validation_note"] = _relocate_guard_note
 
     return results
+
+
+def _is_caption_bleed(cand, label) -> bool:
+    """True when a relocated read's LEADING content tokens EQUAL the taught caption's tokens —
+    the crop landed on the field's own LABEL, not its value (e.g. relocate "Customer Site tee"
+    vs taught label "Customer", the page caption being "Customer Site"). Token-prefix, never
+    char-prefix ("Bill Thompson Ltd" does NOT match the label "Bill To"). This ONLY sets a FLAG;
+    the demotion (engine `_name_relocate_should_hold`) still requires the relocate to DISAGREE
+    with a CLEAN keyword — so a real name that legitimately starts with the caption word
+    ("Customer Care Ltd" read correctly) AGREES with the keyword and is never demoted; the flag
+    only bites when the keyword read a different clean name (the label-bleed case). Fail-safe
+    False on missing/garbled input; requires >=1 caption token and a value at least that long."""
+    if not cand or not label:
+        return False
+    try:
+        from extraction import text_normalise
+        ct = [t.lower() for t in text_normalise.tokenise(label) if any(c.isalnum() for c in t)]
+        vt = [t.lower() for t in text_normalise.tokenise(cand) if any(c.isalnum() for c in t)]
+    except Exception:
+        return False
+    n = len(ct)
+    if n < 1 or len(vt) < n:
+        return False
+    return vt[:n] == ct
 
 
 def _name_junk_shaped(value, field_key) -> bool:
