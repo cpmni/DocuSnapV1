@@ -18,10 +18,13 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/history.md` — resolved QA/audit findings + build-stage history (Settings/Review/Search/Stage-7 rebuilds).
 
 ## Recent session changes (2026-07-09 → 07-14) — durable mechanisms now in the code
-**READ FIRST: `docs/handovers/HANDOVER_2026-07-14.md`** (latest — skew type-flip robustness + branding
-fuzzy supplier-naming + the logo isolated-mark discriminator FOUNDATION, all COMMITTED on
-**`feat/review-straighten-followups`** off `main`, now **PUSHED to origin** (unmerged — open a PR when
-ready). **NEXT SESSION STARTS AT the logo discriminator Slice B+C** — the handover's top block.). Prior:
+**READ FIRST: `docs/handovers/HANDOVER_2026-07-14_EVENING.md`** (latest — the ⑂ Resolve disambiguation
+picker + anchor-precedence/caption-demotion/caption-band-exclusion fixes, all **MERGED to `main` via PR #10**
+= `6c93bb0`; + reprocess worker cap 5→10 on branch `feat/reprocess-throughput-autostraighten`.
+**NEXT SESSION STARTS AT: build the auto-straighten field re-read** from
+`docs/designs/DESKEW_FIELD_REREAD_2026-07-14.md` — field-scoped, Oracle-signed, NOT built.) Prior:
+`…_2026-07-14.md` (skew type-flip + branding fuzzy + logo isolated-mark discriminator; MERGED in PR #10).
+Earlier:
 `…_2026-07-13.md` (review UX + Straighten-all + buyer-issued issuer guard; MERGED to `main` via PR #9 =
 `ea9bdec`). Earlier: `…_2026-07-12.md` (identity/name guards) · `…_2026-07-11*.md` (the NIGHT batch).
 Session write-ups live in `docs/handovers/` + `docs/night-reports/` + `docs/audits/`. Each fix has unit
