@@ -296,6 +296,64 @@ def _genuine_template_supplier(matched_tmpl: dict | None) -> str | None:
     return None
 
 
+# ── Template-identity supplier FILL (2026-07-14 night; gary-designed, Oracle-signed; corroboration-gated) ──
+# When a template matched but the supplier is UNRESOLVED (flaky logo drifted out of range), the doc reads
+# EMPTY — every supplier-scoped taught anchor is dropped, so the user re-teaches every field on every doc.
+# Fill the supplier from the template's DOMINANT CONFIRMED issuer so its anchors admit. ALWAYS REVIEW-BOUND
+# (persisted note): an INFERRED identity (no logo, no on-page read) must NEVER silently drive the filing folder.
+_TEMPLATE_IDENTITY_FILL_NOTE_SINGLE = ("Company inferred from one previously filed document — "
+                                       "please confirm before filing.")
+_TEMPLATE_IDENTITY_FILL_NOTE_MAJORITY = ("Company inferred from previously filed documents on this "
+                                         "layout — please confirm before filing.")
+
+
+def _template_identity_for_fill(matched_tmpl: dict | None):
+    """FILL an UNRESOLVED supplier from the matched template's DOMINANT CONFIRMED issuer. Returns
+    {'value','tier','note'} or None. tier 'majority' = >=2 confirms + strict majority; 'single' =
+    exactly one unanimous confirm; None = ambiguous plurality / zero confirms / implausible identity /
+    no template. Uses ONLY the confirmed-issuer distribution, NEVER matched_tmpl['name'] (a garble/
+    postcode). `note` is always non-empty so BOTH tiers stay review-bound (Oracle blocking condition)."""
+    if not matched_tmpl:
+        return None
+    value = (matched_tmpl.get("dominant_supplier") or "").strip()
+    if not value or not keyword._is_plausible_supplier_name(value):
+        return None
+    try:
+        count = int(matched_tmpl.get("dominant_supplier_count") or 0)
+        total = int(matched_tmpl.get("dominant_supplier_total") or 0)
+    except (TypeError, ValueError):
+        return None
+    if count >= 2 and count * 2 > total:
+        return {"value": value, "tier": "majority", "note": _TEMPLATE_IDENTITY_FILL_NOTE_MAJORITY}
+    if count == 1 and total == 1:
+        return {"value": value, "tier": "single", "note": _TEMPLATE_IDENTITY_FILL_NOTE_SINGLE}
+    return None
+
+
+def _template_identity_corroborated(value: str | None, ocr_text: str | None) -> bool:
+    """True → the IDENTITY we're about to FILL (the template's dominant issuer `value`) actually appears
+    on THIS page as text. This validates the IDENTITY, not the layout — which is what catches a POISONED
+    dominant issuer: templates 4/5/7 are NAMED 'Cascade Water Systems' but their dominant_supplier is
+    'Northgate Textiles' (the Cascade<->Northgate logo collision cross-contaminated their confirmed docs).
+    A Cascade docket carries NO 'Northgate'/'Textiles' text, so filling 'Northgate' on it can't corroborate
+    → no fill → the supplier resolves via logo/keyword/text-scan instead. (Checking the template's
+    FINGERPRINT instead would wrongly pass — the Cascade layout IS on a Cascade docket even when the
+    template's learned issuer is poisoned.) Requires >=60% of the value's distinctive name tokens (>=3
+    chars, minus generic company suffixes) present as WHOLE WORDS. FAIL-SAFE: a name not on the page
+    (logo-only letterhead) → no fill → review."""
+    if not value or not ocr_text:
+        return False
+    import re as _re
+    _GENERIC = {"ltd", "limited", "plc", "llp", "inc", "incorporated", "co", "company", "corp",
+                "group", "holdings", "services", "service", "the", "and"}
+    toks = [t for t in _re.findall(r"[a-z0-9]+", value.lower()) if len(t) >= 3 and t not in _GENERIC]
+    if not toks:
+        return False
+    text = ocr_text.lower()
+    present = sum(1 for t in toks if _re.search(r"\b" + _re.escape(t) + r"\b", text))
+    return present >= 1 and (present / len(toks)) >= 0.6
+
+
 def _is_ref_field(key: str) -> bool:
     """Reference-number-style fields, by naming convention (no supplier/doc
     specifics): invoice_number / po_number / sales_order_number (..._number),
@@ -2074,6 +2132,30 @@ class ExtractionEngine:
                     "method":     "logo",
                 }
 
+        # ── Template-identity supplier FILL (logo miss) ──────────────────────
+        # A template matched but nothing resolved WHO the supplier is (logo drifted
+        # out of range) → every supplier-scoped taught anchor is dropped and the doc
+        # reads EMPTY (user re-teaches every field). Fill from the template's DOMINANT
+        # CONFIRMED issuer so its anchors admit in Stage 2 proper. Fires ONLY when the
+        # supplier is still empty AND a template matched AND the template's DISTINCTIVE
+        # fingerprint words are ON THIS PAGE (corroboration) — the corroboration gate is
+        # what prevents a colliding-logo template (Cascade<->Northgate) from imposing the
+        # WRONG supplier. ALWAYS REVIEW-BOUND (persisted note) — an inferred identity must
+        # never silently drive the filing folder (Oracle 2026-07-14). Kill switch env
+        # TEMPLATE_IDENTITY_FILL (default on) → =0 is byte-identical.
+        if (not supplier_name and matched_tmpl
+                and os.environ.get("TEMPLATE_IDENTITY_FILL", "1") != "0"):
+            _fill = _template_identity_for_fill(matched_tmpl)
+            if _fill and _template_identity_corroborated(_fill["value"], ocr_text):
+                supplier_name = _fill["value"]
+                results["supplier_name"] = {
+                    "value":           supplier_name,
+                    "confidence":      70,
+                    "method":          "template_identity",
+                    "validation_note": _fill["note"],
+                }
+                self.log(f"  Template-identity supplier fill ({_fill['tier']}, corroborated): {supplier_name}")
+
         # Dev-only: expose the RESOLVED doc identity so a diagnostic log can show
         # why the learned-format / qualification gates did or didn't engage (they
         # key on document_slug; a missing/mismatched slug silently disables them).
@@ -2484,6 +2566,16 @@ class ExtractionEngine:
         # artifact anchor contradicts a confirmed template identity.
         _sn = results.get('supplier_name')
         _tmpl_sup = _genuine_template_supplier(matched_tmpl)
+        # POISON GUARD (Oracle 2026-07-14): the same dominant_supplier this override trusts can be
+        # POISONED — templates 4/5/7 are NAMED 'Cascade Water Systems' but learned 'Northgate Textiles'
+        # (Northgate docs confirmed under Cascade-named templates via the logo collision). Without this,
+        # a Cascade docket's CORRECT 'Cascade' read would be overridden to the poisoned 'Northgate'@90
+        # UN-NOTED (auto-fileable → silent wrong folder), and the branding backstop is itself poisoned.
+        # Require the template identity's own NAME to appear on THIS page (value-corroboration) before it
+        # may override — the SAME gate the fill uses. Kill switch TEMPLATE_PRECEDENCE_CORROBORATE (on).
+        if (_tmpl_sup and os.environ.get("TEMPLATE_PRECEDENCE_CORROBORATE", "1") != "0"
+                and not _template_identity_corroborated(_tmpl_sup, ocr_text)):
+            _tmpl_sup = None
         if _sn and _sn.get('value') and _tmpl_sup:
             def _ns(v):
                 return keyword.normalize_supplier_name(v or '').strip().lower()
