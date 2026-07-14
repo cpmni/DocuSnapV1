@@ -288,6 +288,52 @@ def _genuine_template_supplier(matched_tmpl: dict | None) -> str | None:
     return None
 
 
+# ── Template-identity supplier FILL (2026-07-14; gary-designed, Oracle SIGN-OFF WITH CONDITIONS) ──
+# BOTH tiers are REVIEW-BOUND by a persisted note: an INFERRED identity (no logo, no on-page read —
+# an empty supplier is WHY the fill fired) must NEVER silently drive the filing folder. Its only
+# evidence is the keyword fingerprint that also produces same-letterhead collisions, and the branding
+# cross-check is only a PARTIAL guard (Oracle) — so a wrong fingerprint match lands in Review pre-filled
+# (user corrects) instead of auto-filing to the wrong folder + poisoning the scope.
+_TEMPLATE_IDENTITY_FILL_NOTE_SINGLE = ("Company inferred from one previously filed document — "
+                                       "please confirm before filing.")
+_TEMPLATE_IDENTITY_FILL_NOTE_MAJORITY = ("Company inferred from previously filed documents on this "
+                                         "layout — please confirm before filing.")
+
+
+def _template_identity_for_fill(matched_tmpl: dict | None):
+    """FILL an UNRESOLVED supplier from the matched template's DOMINANT CONFIRMED issuer. Returns
+    {'value','tier','note'} or None. Distinct from `_genuine_template_supplier` (which gates the
+    disagree-OVERRIDE at >=2): a template that matched by keyword fingerprint but couldn't resolve
+    WHO the supplier is (flaky logo drifted out of range) otherwise reads EMPTY — every
+    supplier-scoped taught anchor is dropped — so the user must re-teach every field on every doc.
+
+      tier 'majority' = >=2 confirms AND strict majority (the same distribution the override trusts);
+      tier 'single'   = exactly one unanimous confirm (count==1 and total==1) — the doc-#2 fix;
+      None            = a count==1/total>1 ambiguous plurality (never fill an arbitrary tie), zero
+                        confirms, an implausible-shaped identity, or no matched template.
+
+    Uses ONLY the confirmed-issuer distribution (`dominant_supplier`/_count/_total from
+    templates.getDominantSupplier) — NEVER `matched_tmpl['name']`, the cosmetic first-confirmed name,
+    which can be a garble/postcode (the reason `_genuine_template_supplier` exists). `note` is always
+    non-empty so the caller stays review-bound for BOTH tiers (Oracle blocking condition). Backward-
+    safe: absent dominant_* fields (old caller/DB) → None → inert."""
+    if not matched_tmpl:
+        return None
+    value = (matched_tmpl.get("dominant_supplier") or "").strip()
+    if not value or not keyword._is_plausible_supplier_name(value):
+        return None
+    try:
+        count = int(matched_tmpl.get("dominant_supplier_count") or 0)
+        total = int(matched_tmpl.get("dominant_supplier_total") or 0)
+    except (TypeError, ValueError):
+        return None
+    if count >= 2 and count * 2 > total:
+        return {"value": value, "tier": "majority", "note": _TEMPLATE_IDENTITY_FILL_NOTE_MAJORITY}
+    if count == 1 and total == 1:
+        return {"value": value, "tier": "single", "note": _TEMPLATE_IDENTITY_FILL_NOTE_SINGLE}
+    return None
+
+
 def _is_ref_field(key: str) -> bool:
     """Reference-number-style fields, by naming convention (no supplier/doc
     specifics): invoice_number / po_number / sales_order_number (..._number),
@@ -2065,6 +2111,29 @@ class ExtractionEngine:
                     "confidence": logo_match["confidence"],
                     "method":     "logo",
                 }
+
+        # ── Template-identity supplier FILL (logo miss) ──────────────────────
+        # A template matched (keyword fingerprint) but nothing resolved WHO the
+        # supplier is (logo drifted out of range, no fixed supplier, no keyword
+        # read yet), so every supplier-scoped taught anchor would be dropped and
+        # the doc reads EMPTY (the user re-teaches each one). Fill the supplier
+        # from the template's DOMINANT CONFIRMED issuer so its anchors admit in
+        # Stage 2 proper. ALWAYS REVIEW-BOUND (persisted note) — an inferred
+        # identity must never silently drive the filing folder (Oracle 2026-07-14).
+        # Fires only when supplier is still empty AND a template matched. Kill
+        # switch env TEMPLATE_IDENTITY_FILL (default on) → =0 is byte-identical.
+        if (not supplier_name and matched_tmpl
+                and os.environ.get("TEMPLATE_IDENTITY_FILL", "1") != "0"):
+            _fill = _template_identity_for_fill(matched_tmpl)
+            if _fill:
+                supplier_name = _fill["value"]
+                results["supplier_name"] = {
+                    "value":           supplier_name,
+                    "confidence":      70,
+                    "method":          "template_identity",
+                    "validation_note": _fill["note"],
+                }
+                self.log(f"  Template-identity supplier fill ({_fill['tier']}): {supplier_name}")
 
         # Dev-only: expose the RESOLVED doc identity so a diagnostic log can show
         # why the learned-format / qualification gates did or didn't engage (they
