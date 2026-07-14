@@ -455,7 +455,7 @@ function searchByName(db, query, document_type_slug) {
   `).all({ q, dt: document_type_slug || null });
 }
 
-function create(db, { name, document_type_slug, logo_phash, keyword_fingerprint, fields }) {
+function create(db, { name, document_type_slug, logo_phash, logo_detail_hash, keyword_fingerprint, fields }) {
   const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'template';
   // templates.slug is UNIQUE, but the generated NAME is not: two documents of the
   // same type with no resolved supplier both yield "<Type> Template" -> the same
@@ -472,7 +472,7 @@ function create(db, { name, document_type_slug, logo_phash, keyword_fingerprint,
   `).run(name, slug, document_type_slug || null, logo_phash || null,
          JSON.stringify(keyword_fingerprint || []));
   const id = info.lastInsertRowid;
-  if (logo_phash) addLogoHash(db, id, logo_phash);   // seed the reference set (migration 26)
+  if (logo_phash) addLogoHash(db, id, logo_phash, logo_detail_hash);   // seed the set + its detail hash (migration 26 / 47)
   if (fields && fields.length) _upsertFields(db, id, fields);
   return id;
 }
@@ -604,7 +604,7 @@ function chooseLogoPhash(existing, incoming) {
   return (incoming == null || String(incoming).trim() === '') ? null : incoming;
 }
 
-function update(db, id, { logo_phash, keyword_fingerprint, fields } = {}) {
+function update(db, id, { logo_phash, logo_detail_hash, keyword_fingerprint, fields } = {}) {
   const sets   = ["confirmed_count = confirmed_count + 1", "updated_at = datetime('now')"];
   const params = [];
 
@@ -633,9 +633,9 @@ function update(db, id, { logo_phash, keyword_fingerprint, fields } = {}) {
   // converges to span this supplier's render drift. addLogoHash dedups + caps.
   if (logo_phash) {
     const primary = (db.prepare('SELECT logo_phash FROM templates WHERE id = ?').get(id) || {}).logo_phash;
-    if (primary) addLogoHash(db, id, primary);
+    if (primary) addLogoHash(db, id, primary);   // seed's own detail hash unknown here → backfills on re-confirm
     const minD = minLogoDistance(db, id, logo_phash, primary);
-    if (minD > LOGO_DEDUP_FLOOR && minD <= LOGO_APPEND_BAND) addLogoHash(db, id, logo_phash);
+    if (minD > LOGO_DEDUP_FLOOR && minD <= LOGO_APPEND_BAND) addLogoHash(db, id, logo_phash, logo_detail_hash);
   }
 }
 
@@ -758,11 +758,18 @@ function getLogoHashes(db, templateId) {
 // at LOGO_HASH_CAP. On overflow, evict the MOST REDUNDANT non-primary ref (smallest
 // distance to another ref; tie-broken oldest), never the template's seed/primary
 // logo_phash. One transaction.
-function addLogoHash(db, templateId, phash) {
+function addLogoHash(db, templateId, phash, detail_hash) {
   if (!phash) return;
   const tx = db.transaction(() => {
-    db.prepare('INSERT OR IGNORE INTO template_logo_hashes (template_id, phash) VALUES (?, ?)')
-      .run(templateId, phash);
+    db.prepare('INSERT OR IGNORE INTO template_logo_hashes (template_id, phash, detail_hash) VALUES (?, ?, ?)')
+      .run(templateId, phash, detail_hash || null);
+    // Slice B: backfill the isolated-mark detail hash onto an already-present phash row (INSERT OR
+    // IGNORE leaves an existing row untouched; a pre-migration row's detail_hash is NULL). NULL-inert.
+    if (detail_hash) {
+      db.prepare(`UPDATE template_logo_hashes SET detail_hash = ?
+                  WHERE template_id = ? AND phash = ? AND (detail_hash IS NULL OR detail_hash = '')`)
+        .run(detail_hash, templateId, phash);
+    }
     const rows = db.prepare(
       'SELECT id, phash FROM template_logo_hashes WHERE template_id = ? ORDER BY id'
     ).all(templateId);

@@ -1713,6 +1713,7 @@ class ExtractionEngine:
                            and not _is_ref_field(f["key"])}
         matched_tmpl = None
         logo_phash   = None
+        logo_detail_hash = None
         kw_fingerprint = []
 
         # Logo/identity phash SOURCE. On a deskew-reprocess the READ pages (page_images) are
@@ -1726,6 +1727,15 @@ class ExtractionEngine:
         # ── Pre-stage: compute logo hash + keyword fingerprint (always) ───────
         if _id_img is not None:
             logo_phash = template_matcher.compute_logo_hash(_id_img)
+            # Isolated-mark 256-bit DETAIL hash (the logo-collision discriminator, logo_detail.py),
+            # computed from the SAME raw page-0 source as the phash (Oracle: a deskewed/enhanced image
+            # drifts out of frame with the stored hashes). Fail-safe None on any error → the doc simply
+            # carries no detail hash. INERT until Slice C consumes it — persisting it now is harmless.
+            try:
+                import logo_detail
+                logo_detail_hash = logo_detail.detail_hash(_id_img)
+            except Exception:
+                logo_detail_hash = None
         kw_fingerprint = template_matcher.extract_keyword_fingerprint(ocr_text)
 
         # ── Stage 0: Template matching ────────────────────────────────────────
@@ -3163,6 +3173,7 @@ class ExtractionEngine:
         # document_type_keywords to keyword-detect). process_docs.py prefers it.
         results["_document_type_slug"]   = matched_tmpl.get("document_type_slug") if matched_tmpl else None
         results["_logo_phash"]           = logo_phash
+        results["_logo_detail_hash"]     = logo_detail_hash
         results["_keyword_fingerprint"]  = kw_fingerprint
         # Text-led SUPPLIER identity verdict — computed when EITHER the shadow measurement OR the
         # active conflict flag is live (both default off → byte-identical: verdict never computed).

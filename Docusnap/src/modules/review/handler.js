@@ -759,11 +759,12 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
 
   // Read document record for stored logo_phash and keyword_fingerprint
   const doc = db.prepare(
-    'SELECT template_id, logo_phash, keyword_fingerprint FROM documents WHERE id = ?'
+    'SELECT template_id, logo_phash, logo_detail_hash, keyword_fingerprint FROM documents WHERE id = ?'
   ).get(document_id);
   if (!doc) throw new Error('Document not found');
 
   const logo_phash           = doc.logo_phash || null;
+  const logo_detail_hash     = doc.logo_detail_hash || null;   // Slice B: isolated-mark discriminator, enrolled into the template set
   const keyword_fingerprint  = _parseJson(doc.keyword_fingerprint, []);
 
   // Build template field rules from confirmed values
@@ -830,7 +831,7 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
     // fingerprint; keep an established logo_phash) so one noisy sample's OCR
     // garble / per-document tokens can't poison Stage 0 matching and strand the
     // learned anchors — see templates.stabiliseFingerprint / chooseLogoPhash.
-    templates.update(db, templateId, { logo_phash, keyword_fingerprint, fields });
+    templates.update(db, templateId, { logo_phash, logo_detail_hash, keyword_fingerprint, fields });
     // Heal a junk/generic auto-name (WIDENED 2026-07-10): a template created at a supplier's
     // FIRST confirm inherits whatever sat in the issuer field — a COLD confirm births
     // "<Type> Template", and a WRONG first detection births a postcode ("BT23 1BE") or a bare
@@ -867,6 +868,7 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
       name,
       document_type_slug: document_type_slug || null,
       logo_phash,
+      logo_detail_hash,
       keyword_fingerprint,
       fields,
     });

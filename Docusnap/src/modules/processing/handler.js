@@ -1100,6 +1100,7 @@ function register(ctx) {
          document_type_id    = COALESCE(?, document_type_id),
          template_id         = ?,
          logo_phash          = ?,
+         logo_detail_hash    = ?,
          keyword_fingerprint = ?,
          supplier_name       = COALESCE(?, supplier_name),
          ocr_text            = COALESCE(?, ocr_text),
@@ -1110,6 +1111,7 @@ function register(ctx) {
       reprocDocTypeId,
       result.template_id        || null,
       result.logo_phash         || null,
+      result.logo_detail_hash   || null,
       result.keyword_fingerprint ? JSON.stringify(result.keyword_fingerprint) : null,
       result.supplier_name      || null,
       result.ocr_text           || null,
@@ -1691,10 +1693,10 @@ function register(ctx) {
     return result?.match || null;
   });
 
-  ipcMain.handle('save-logo-fingerprint', (_e, { supplier_name, phash, ahash }) => {
+  ipcMain.handle('save-logo-fingerprint', (_e, { supplier_name, phash, ahash, detail_hash }) => {
     requireRole('admin', 'edit');
     const learning = require('../../../database/modules/learning');
-    learning.saveLogoFingerprint(getDb(), { supplier_name, phash, ahash });
+    learning.saveLogoFingerprint(getDb(), { supplier_name, phash, ahash, detail_hash });
     return true;
   });
 
@@ -2160,6 +2162,7 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
     status:             msg.status || 'needs_review',
     template_id:        msg.template_id   || null,
     logo_phash:         msg.logo_phash    || null,
+    logo_detail_hash:   msg.logo_detail_hash || null,
     keyword_fingerprint: msg.keyword_fingerprint
       ? JSON.stringify(msg.keyword_fingerprint) : null,
     ocr_text:           msg.ocr_text      || null,

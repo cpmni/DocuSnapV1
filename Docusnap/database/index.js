@@ -919,6 +919,28 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 46 applied: auto-frozen recipient names unfrozen');
   }
 
+  // Migration 47 (2026-07-14): the ISOLATED-MARK 256-bit detail hash (logo_detail.detail_hash), stored
+  // ALONGSIDE each logo phash — the logo-collision discriminator. documents.logo_detail_hash carries a
+  // scanned doc's detail hash from processing to confirm; logo_fingerprints.detail_hash +
+  // template_logo_hashes.detail_hash are the enrolled per-supplier / per-template sets (paired 1:1 with
+  // the phash of the same print). All NULLABLE → NULL-INERT: a pre-migration print has no detail hash,
+  // and the Slice-C disambiguator treats a missing hash as "skip", never a false abstain. This slice is
+  // ENROLMENT ONLY — nothing reads these yet (zero behaviour change); the abstain-only disambiguator that
+  // consumes them is Slice C. Idempotent.
+  if (!applied.has(47)) {
+    const addCol = (t, c, def) => {
+      if (tableExists(db, t) && !hasColumn(db, t, c)) {
+        try { db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${def}`); }
+        catch (e) { console.warn(`  migration 47 ${t}.${c}: ${e.message}`); }
+      }
+    };
+    addCol('documents',           'logo_detail_hash', 'TEXT');
+    addCol('logo_fingerprints',   'detail_hash',      'TEXT');
+    addCol('template_logo_hashes', 'detail_hash',     'TEXT');
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (47)').run();
+    console.log('JS migration 47 applied: logo detail-hash columns added (NULL-inert)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

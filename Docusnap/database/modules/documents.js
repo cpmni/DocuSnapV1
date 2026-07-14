@@ -4,17 +4,17 @@ const path = require('path');
 
 function insert(db, { original_filename, folder_path, document_type_id,
                       supplier_name, overall_confidence, status,
-                      template_id, logo_phash, keyword_fingerprint,
+                      template_id, logo_phash, logo_detail_hash, keyword_fingerprint,
                       ocr_text, page_count }) {
   return db.prepare(`
     INSERT INTO documents
       (original_filename, folder_path, document_type_id,
        supplier_name, overall_confidence, status,
-       template_id, logo_phash, keyword_fingerprint, ocr_text, page_count)
+       template_id, logo_phash, logo_detail_hash, keyword_fingerprint, ocr_text, page_count)
     VALUES
       (@original_filename, @folder_path, @document_type_id,
        @supplier_name, @overall_confidence, @status,
-       @template_id, @logo_phash, @keyword_fingerprint, @ocr_text, @page_count)
+       @template_id, @logo_phash, @logo_detail_hash, @keyword_fingerprint, @ocr_text, @page_count)
   `).run({
     original_filename, folder_path,
     document_type_id:    document_type_id    || null,
@@ -23,6 +23,7 @@ function insert(db, { original_filename, folder_path, document_type_id,
     status:              status              || 'pending',
     template_id:         template_id         || null,
     logo_phash:          logo_phash          || null,
+    logo_detail_hash:    logo_detail_hash    || null,
     keyword_fingerprint: keyword_fingerprint || null,
     ocr_text:            ocr_text            || null,
     page_count:          page_count          || null,

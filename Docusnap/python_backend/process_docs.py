@@ -732,6 +732,7 @@ def main():
             review_needed    = raw_extractions.pop("_needs_review", True)
             template_id      = raw_extractions.pop("_template_id", None)
             logo_phash       = raw_extractions.pop("_logo_phash", None)
+            logo_detail_hash = raw_extractions.pop("_logo_detail_hash", None)
             kw_fingerprint   = raw_extractions.pop("_keyword_fingerprint", [])
             identity_shadow_v = raw_extractions.pop("_identity_shadow", None)
             raw_extractions.pop("_mode_used", None)
@@ -770,6 +771,7 @@ def main():
                 "supplier_name":      supplier_name,
                 "template_id":        template_id,
                 "logo_phash":         logo_phash,
+                "logo_detail_hash":   logo_detail_hash,
                 "keyword_fingerprint": kw_fingerprint,
                 **({"identity_shadow": identity_shadow_v} if identity_shadow_v else {}),
                 "page_count":         len(page_images),

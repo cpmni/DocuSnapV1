@@ -644,18 +644,23 @@ function deleteAnchor(db, id) {
 // A NEW phash this many bits CLOSER to another supplier than to X's own = a cross-plant (poison).
 const LOGO_CROSSPLANT_MARGIN = 4;
 
-function saveLogoFingerprint(db, { supplier_name, phash, ahash, manual }) {
+function saveLogoFingerprint(db, { supplier_name, phash, ahash, detail_hash, manual }) {
   const existing = db.prepare(
     'SELECT id, phash FROM logo_fingerprints WHERE supplier_name = ?'
   ).all(supplier_name);
 
   for (const row of existing) {
     if (hammingDistance(row.phash, phash) <= 10) {
+      // Slice B: opportunistically BACKFILL the isolated-mark detail hash — a pre-migration print
+      // has NULL detail_hash; COALESCE fills it from this confirm without overwriting an existing one
+      // (the discriminator is a hash of the same mark, so any confirm's is equivalent). phash path
+      // unchanged.
       db.prepare(`
         UPDATE logo_fingerprints
-        SET match_count = match_count + 1, last_seen = datetime('now')
+        SET match_count = match_count + 1, last_seen = datetime('now'),
+            detail_hash = COALESCE(detail_hash, ?)
         WHERE id = ?
-      `).run(row.id);
+      `).run(detail_hash || null, row.id);
       return;
     }
   }
@@ -683,9 +688,9 @@ function saveLogoFingerprint(db, { supplier_name, phash, ahash, manual }) {
     }
   }
   db.prepare(`
-    INSERT INTO logo_fingerprints (supplier_name, phash, ahash)
-    VALUES (?, ?, ?)
-  `).run(supplier_name, phash, ahash);
+    INSERT INTO logo_fingerprints (supplier_name, phash, ahash, detail_hash)
+    VALUES (?, ?, ?, ?)
+  `).run(supplier_name, phash, ahash, detail_hash || null);
 }
 
 function getAllLogos(db) {
