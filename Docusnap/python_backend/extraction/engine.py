@@ -1935,7 +1935,7 @@ class ExtractionEngine:
         # Matches against learned RAW logo hashes -> use the raw page 0 (_id_img), else a deskewed
         # phash drifts out of range and the supplier fails to resolve on a straighten-reprocess.
         if not supplier_name and logos and _id_img is not None:
-            logo_match = anchor.try_logo_supplier_match(_id_img, logos)
+            logo_match = anchor.try_logo_supplier_match(_id_img, logos, query_detail_hash=logo_detail_hash)
             if logo_match:
                 supplier_name = logo_match["supplier_name"]
                 self.log(
