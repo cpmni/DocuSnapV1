@@ -236,9 +236,17 @@ def _supplier_identity_decision(existing: dict | None, candidate: dict | None) -
     incumbent. When both are plausible (or both implausible — e.g. a genuinely
     short "IBM" with no plausible alternative), there is no opinion and the
     caller's confidence comparison decides, so legitimate short names are never
-    hard-banned. Reuses keyword._is_plausible_supplier_name (shape test).
+    hard-banned.
+
+    ⚠ The INCUMBENT is judged by the SHAPE-BASE test (NOT the document-chrome layer):
+    a chrome-shaped but REAL short name ("Dell"→'deli', "Sage"→'sale') is edit-1 from a
+    title prefix, so letting the chrome demotion license this confidence-blind 'take'
+    would let a plausible WRONG challenger silently overwrite a correctly-resolved short
+    supplier (Oracle 2026-07-14). The CANDIDATE keeps the FULL check, so a chrome GARBLE
+    challenger ("INi") is correctly implausible and can't displace a real incumbent.
+    SuperStore's garble is corrected by the Stage-2.5a recovery, not this arm.
     """
-    e_ok = keyword._is_plausible_supplier_name((existing or {}).get("value"))
+    e_ok = keyword._is_plausible_supplier_name_base((existing or {}).get("value"))
     c_ok = keyword._is_plausible_supplier_name((candidate or {}).get("value"))
     if e_ok and not c_ok:
         return "keep"

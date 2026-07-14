@@ -98,23 +98,76 @@ function nameQuality(value) {
   return total === 0 ? 1.0 : good / total;
 }
 
-function isPlausibleSupplierName(value) {
+// Document-chrome / TITLE words a large page heading garbles into — a closed,
+// supplier-agnostic set. Mirror of _DOC_CHROME_WORDS in
+// python_backend/extraction/keyword.py (keep in lockstep).
+const _DOC_CHROME_WORDS = new Set([
+  'invoice', 'statement', 'purchase', 'order', 'sales', 'delivery', 'docket',
+  'note', 'receipt', 'credit', 'debit', 'quote', 'quotation', 'remittance',
+  'worksheet', 'bill', 'advice', 'proforma', 'estimate', 'ticket', 'memo',
+  'packing', 'slip',
+]);
+
+function _boundedLevenshtein(a, b) {
+  const m = a.length, n = b.length;
+  const d = Array.from({ length: n + 1 }, (_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    let prev = d[0]; d[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const tmp = d[j];
+      d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = tmp;
+    }
+  }
+  return d[n];
+}
+
+// Mirror of keyword._is_doc_chrome_fragment — a short OCR near-form of a title-word prefix.
+function _isDocChromeFragment(core) {
+  if (_DOC_CHROME_WORDS.has(core)) return true;         // a whole title word read as the supplier
+  const L = core.length;
+  if (L < 2 || L > 5) return false;
+  const budget = L <= 3 ? 1 : 2;
+  for (const w of _DOC_CHROME_WORDS) {
+    if (w.length >= L && _boundedLevenshtein(core, w.slice(0, L)) <= budget) return true;
+  }
+  return false;
+}
+
+// SHAPE-only plausibility (the base rules WITHOUT the document-chrome layer). Used where a
+// chrome-SHAPED but genuine short name ("Dell"/"Sage", edit-1 from a title prefix) must NOT be
+// demoted — judging an already-RESOLVED / CONFIRMED identity (template-name adopt, repair-suspect
+// scan). The chrome layer is an EXTRACTION-time filter (see isPlausibleSupplierName). Mirror of
+// keyword._is_plausible_supplier_name_base (Python).
+function isPlausibleSupplierNameBase(value) {
   const t = String(value == null ? '' : value).trim().replace(/:+$/, '');
   if (!t) return false;
   if (t.length <= 3 && !/\s/.test(t) && t === t.toUpperCase() && !/\d/.test(t)) {
     return false;
   }
-  // Digit-dominant reference shapes misread into the supplier field ("t 38/07",
-  // "36552", "12/345") — reject when there are 2+ digits AND fewer than 3
-  // letters. Keeps letter-rich names that merely contain digits ("3M",
-  // "G2 Environmental", "24/7 Services"). Mirrors keyword._is_plausible_supplier_name.
+  // Digit-dominant reference misread: 2+ digits AND <3 letters. Keeps letter-rich names that
+  // merely contain digits ("3M", "G2 Environmental", "24/7 Services").
   const nAlpha = (t.match(/[A-Za-z]/g) || []).length;
   const nDigit = (t.match(/\d/g) || []).length;
   if (nAlpha < 3 && nDigit >= 2) return false;
-  // Word-quality gate (multi-word only): a mostly-gibberish MULTI-TOKEN read
-  // ("Fr eanehae Crane", "67 Boucher Cre") is not a real supplier identity — so it
-  // is never persisted as a learned hint. Single-token brands ("3M") aren't judged.
+  // Word-quality gate (MULTI-word only): a mostly-gibberish multi-token read is not a supplier.
   if (/\s/.test(t) && nameQuality(t) < 0.5) return false;
+  return true;
+}
+
+// = the shape BASE test PLUS a document-CHROME near-form reject (kill switch
+// SUPPLIER_CHROME_FRAGMENT_GUARD). A large TITLE ("INVOICE") OCR-garbles into a short token
+// ("INi"/"INGE"/"IN \") that slips the all-caps guard and wins the supplier field. Demote it so a
+// garble is never PERSISTED as a learned hint (the hint-persist caller uses THIS full form).
+// CORROBORATED-value callers (template-name adopt, repair-suspect) use isPlausibleSupplierNameBase
+// so a real short name is never chrome-demoted (Oracle 2026-07-14). Mirror of keyword._is_plausible_supplier_name.
+function isPlausibleSupplierName(value) {
+  if (!isPlausibleSupplierNameBase(value)) return false;
+  if (process.env.SUPPLIER_CHROME_FRAGMENT_GUARD !== '0') {
+    const t = String(value == null ? '' : value).trim().replace(/:+$/, '');
+    const core = t.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (t.split(/\s+/).length <= 2 && _isDocChromeFragment(core)) return false;
+  }
   return true;
 }
 
@@ -1442,7 +1495,7 @@ module.exports = {
   insertExtractions, deleteExtractions,
   getFieldValueHistory, getDocumentsForFieldValue, purgeFieldValue, renameFieldValue,
   getSupplierScopeCounts, renameSupplier,
-  saveCorrections, getHints, getAllHints, isPlausibleSupplierName, isNameLikeField, nameQuality, normalizeSupplierName,
+  saveCorrections, getHints, getAllHints, isPlausibleSupplierName, isPlausibleSupplierNameBase, isNameLikeField, nameQuality, normalizeSupplierName,
   saveAnchor, sanitizeAnchorLabel, clearAnchors, getAllAnchors, getAnchorsForScope, getTaughtFieldKeys, deleteAnchor,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
   getFieldFormats, getDigitsOnlyFields,

@@ -969,50 +969,107 @@ def _is_label_line(text: str) -> bool:
     return False
 
 
-def _is_plausible_supplier_name(value: str | None) -> bool:
-    """Is `value` plausible as a SUPPLIER IDENTITY (not a generic field value)?
+# Document-chrome / TITLE words a large page heading garbles into. A closed,
+# generic, supplier-agnostic set (never a company name) — used ONLY to demote a
+# short OCR fragment of a title (the "INVOICE"→"INi"/"INGE" class) out of the
+# supplier field. Mirror of _DOC_CHROME_WORDS in database/modules/learning.js.
+_DOC_CHROME_WORDS = frozenset({
+    "invoice", "statement", "purchase", "order", "sales", "delivery", "docket",
+    "note", "receipt", "credit", "debit", "quote", "quotation", "remittance",
+    "worksheet", "bill", "advice", "proforma", "estimate", "ticket", "memo",
+    "packing", "slip",
+})
 
-    A real supplier/company name is essentially never a bare 2-3 character
-    all-caps token with no digits — those ("IN"/"INV" from "INVOICE", "BILL",
-    "PO") are document-structure fragments that label/zone cropping leaves
-    behind, and once one wins it poisons every supplier-keyed lookup. Anything
-    longer, multi-word, mixed-case, or containing a digit is treated as
-    plausible (so "SuperStore", "ACME LIMITED", "Polychemtex Inc." all pass).
 
-    This is deliberately a SHAPE test, not a stoplist — no supplier name is
-    hardcoded. Short all-caps brands ("IBM", "DHL") are flagged here as
-    not-uniquely-plausible BY SHAPE; callers must apply an "unless uniquely
-    supported" rule (override only when a plausible alternative exists; persist
-    only when the user explicitly confirmed it) so legitimate short names are
-    never hard-banned. Mirrored in database/modules/learning.js
-    (isPlausibleSupplierName) for the persistence side.
-    """
+def _bounded_levenshtein(a: str, b: str) -> int:
+    """Levenshtein edit distance (tiny strings only — supplier fragments ≤5 chars)."""
+    m, n = len(a), len(b)
+    d = list(range(n + 1))
+    for i in range(1, m + 1):
+        prev, d[0] = d[0], i
+        for j in range(1, n + 1):
+            tmp = d[j]
+            d[j] = min(d[j] + 1, d[j - 1] + 1, prev + (0 if a[i - 1] == b[j - 1] else 1))
+            prev = tmp
+    return d[n]
+
+
+def _is_doc_chrome_fragment(core: str) -> bool:
+    """True → `core` (an alnum-lowercased token) is a SHORT OCR near-form of the
+    PREFIX of a document-chrome/title word — the class a big page TITLE garbles
+    into ("INVOICE"→"ini"/"inge"/"in", "STATEMENT"→"stat"). Bounded edit distance
+    to each title word truncated to the candidate's length: ≤1 for ≤3 chars, ≤2
+    for 4–5 chars. Only 2–5 char cores are judged — a real company name is longer,
+    or does not near-match a title prefix, so 'Invoice Ninja'-style real names
+    (longer / multi-word) never reach here."""
+    if core in _DOC_CHROME_WORDS:        # a whole title word read as the supplier
+        return True
+    L = len(core)
+    if L < 2 or L > 5:
+        return False
+    budget = 1 if L <= 3 else 2
+    for w in _DOC_CHROME_WORDS:
+        if len(w) >= L and _bounded_levenshtein(core, w[:L]) <= budget:
+            return True
+    return False
+
+
+def _is_plausible_supplier_name_base(value: str | None) -> bool:
+    """SHAPE-only plausibility — the base rules WITHOUT the document-chrome layer.
+
+    Rejects a bare 2-3 char all-caps token ("IN"/"PO" from "INVOICE"/"PURCHASE"), a
+    digit-dominant reference misread ("36552", "t 38/07"), and a mostly-gibberish
+    MULTI-WORD read ("Fr eanehae Crane") — but NOT a chrome near-form. Used where a
+    chrome-SHAPED but genuine short name ("Dell"→'deli', "Sage"→'sale', edit-1 from a
+    title prefix) must NOT be demoted: notably the OVERRIDE arm of
+    engine._supplier_identity_decision, where an implausible incumbent is REPLACEABLE
+    regardless of confidence — the chrome demotion must never (on shape alone) license
+    overwriting a real short-named incumbent with a plausible WRONG challenger (Oracle
+    2026-07-14). Short all-caps brands ("IBM","DHL") are flagged not-uniquely-plausible
+    here BY SHAPE; callers apply the "unless uniquely supported" rule."""
     if not value or not str(value).strip():
         return False
     t = str(value).strip().rstrip(":")
     if (len(t) <= 3 and t.isupper() and " " not in t
             and not any(c.isdigit() for c in t)):
         return False
-    # A reference/number misread into the supplier field ("t 38/07", "36552",
-    # "12/345") is digit-dominant with almost no letters — a real company name
-    # always carries substantial alphabetic content. Shape test only: reject
-    # when there are 2+ digits AND fewer than 3 letters. This keeps legitimate
-    # letter-rich names that merely contain digits ("3M", "G2 Environmental",
-    # "24/7 Services") plausible.
+    # Digit-dominant reference misread: 2+ digits AND <3 letters. Keeps letter-rich
+    # names that merely contain digits ("3M", "G2 Environmental", "24/7 Services").
     n_alpha = sum(c.isalpha() for c in t)
     n_digit = sum(c.isdigit() for c in t)
     if n_alpha < 3 and n_digit >= 2:
         return False
-    # Word-quality gate (multi-word only): a MULTI-TOKEN read that is mostly OCR
-    # gibberish / address fragments ("Fr eanehae Crane", "67 Boucher Cre",
-    # "St OMe WM cenant") is not a real supplier identity — flagging it implausible
-    # is what lets the learned-hint recovery (engine Stage 2.5a) replace it with the
-    # confirmed name. Single-token values are NOT judged here so short real brands
-    # ("3M", "IBM", "DHL") are never demoted by this rule (the shape tests above
-    # already govern them). See extraction/value_quality.py.
+    # Word-quality gate (MULTI-word only): a mostly-gibberish multi-token read is not a
+    # supplier identity; single-token brands ("3M") are not judged here.
     if len(t.split()) >= 2:
         from extraction.value_quality import name_quality
         if name_quality(t) < 0.5:
+            return False
+    return True
+
+
+def _is_plausible_supplier_name(value: str | None) -> bool:
+    """SUPPLIER-identity plausibility = the shape BASE test PLUS a document-CHROME
+    near-form reject (kill switch SUPPLIER_CHROME_FRAGMENT_GUARD, default on). A large
+    document TITLE ("INVOICE"/"STATEMENT") OCR-garbles into a short token
+    ("INi","INGE","IN \") that slips the all-caps guard and WINS the supplier field,
+    filing a whole batch under a phantom sender. Demote such a title fragment so the
+    letterhead read / the implausibility-gated Stage-2.5a hint recovery takes over.
+    FAIL-TOWARD-REVIEW (demote-only — never rewrites a value).
+
+    ⚠ The chrome layer lives HERE, NOT in `_base` — and the OVERRIDE arm of
+    engine._supplier_identity_decision judges the INCUMBENT with `_base`, so the chrome
+    demotion can never license a confidence-blind 'take' that overwrites a real short
+    supplier ("Dell"/"Sage") — a chrome-shaped real name is edit-1 from a title prefix,
+    so shape alone cannot tell it from a garble; only the FILTERING seams use this full
+    form (persist a fresh read; the Stage-2.5a recovery gate + re-check), where rejecting
+    a garble is the whole point. Mirrored in database/modules/learning.js."""
+    if not _is_plausible_supplier_name_base(value):
+        return False
+    if os.environ.get("SUPPLIER_CHROME_FRAGMENT_GUARD", "1") != "0":
+        t = str(value).strip().rstrip(":")
+        core = "".join(c for c in t.lower() if c.isalnum())
+        if len(t.split()) <= 2 and _is_doc_chrome_fragment(core):
             return False
     return True
 

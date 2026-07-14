@@ -190,7 +190,7 @@ function detectAnomalousValues(vals) {
         const q = learning.nameQuality ? learning.nameQuality(r.value) : 1;
         const multi = r.value.split(/\s+/).filter(Boolean).length >= 2;
         const badSupplier = (field === 'supplier_name' || field === 'customer_name')
-          && learning.isPlausibleSupplierName && !learning.isPlausibleSupplierName(r.value);
+          && learning.isPlausibleSupplierNameBase && !learning.isPlausibleSupplierNameBase(r.value);
         if ((q < 0.5 && multi) || badSupplier) {
           out.push({ id: r.doc, kind: 'data', field, value: r.value,
             text: `The ${field.replace(/_/g, ' ')} “${r.value}” doesn't read like the others — you may want to check it.`,

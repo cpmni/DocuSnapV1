@@ -506,8 +506,8 @@ function _looksLikeNonName(name) {
   const t = String(name || '').trim();
   if (!t) return true;
   if (/\btemplate$/i.test(t)) return true;                       // the generic auto-name
-  const { isPlausibleSupplierName } = require('./learning');     // lazy: avoids load-order knots
-  if (!isPlausibleSupplierName(t)) return true;                  // "IN", "36552" shapes
+  const { isPlausibleSupplierNameBase } = require('./learning'); // lazy: avoids load-order knots
+  if (!isPlausibleSupplierNameBase(t)) return true;              // "IN"/"36552" shapes (BASE — a real short name like "Dell" is NOT chrome-demoted here)
   if (_UK_POSTCODE.test(t)) return true;                         // "BT23 1BE"
   const toks = t.toLowerCase().split(/\s+/);
   if (toks.length === 1 && _CAPTION_WORDS.has(toks[0].replace(/[.:#]+$/, ''))) return true;
@@ -517,8 +517,8 @@ function _looksLikeNonName(name) {
 function shouldAdoptIssuerName(currentName, confirmedIssuer) {
   const issuer = String(confirmedIssuer || '').trim();
   if (!issuer) return false;
-  const { isPlausibleSupplierName } = require('./learning');
-  if (!isPlausibleSupplierName(issuer)) return false;            // never adopt junk
+  const { isPlausibleSupplierNameBase } = require('./learning');
+  if (!isPlausibleSupplierNameBase(issuer)) return false;        // never adopt junk (BASE — a real short issuer is not chrome-demoted)
   if (_UK_POSTCODE.test(issuer)) return false;                   // …or a postcode-as-issuer
   if (issuer.toLowerCase() === String(currentName || '').trim().toLowerCase()) return false;
   return _looksLikeNonName(currentName);
