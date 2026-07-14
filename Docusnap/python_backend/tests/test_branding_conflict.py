@@ -136,5 +136,86 @@ check("BRANDING_CONFLICT_GUARD=0 → the bug case NOT flagged (guard disabled)",
 del os.environ["BRANDING_CONFLICT_GUARD"]
 check("guard re-enabled → flags again", flagged(run("Cascade Water Systems", THORNBURY_PAGE)))
 
+# ═══════════════════════════════════════════════════════════════════════════════════════════
+# FUZZY ALTERNATIVE-SUPPLIER NAMING (2026-07-14, Oracle/gary SIGN-OFF-WITH-CONDITIONS) — a
+# GARBLED letterhead ("rthgate textiles") still resolves the known supplier ("Northgate Textiles"),
+# ISSUER-BAND scoped, suggest-only. own_ratio stays EXACT + whole-page. Kill switch BRANDING_ALT_FUZZY.
+from extraction.template_matcher import _keyword_hit_ratio_fuzzy as _fz
+
+NORTHGATE_T = {"name": "Northgate Textiles",
+               "keyword_fingerprint": ["Northgate", "Textiles", "Weavers", "Preston"]}
+PRIMROSE_T = {"name": "Primrose Childcare",
+              "keyword_fingerprint": ["Primrose", "Childcare", "Vicarage", "Exeter"]}
+NORTHGATE_ALT_T = {"name": "Northgate Trading",         # contrived twin → pins the margin gate under fuzzy
+                   "keyword_fingerprint": ["Northgate", "Textiles", "Weavers", "Preston"]}
+NG_TEMPLATES = [CASCADE_T, NORTHGATE_T, PRIMROSE_T]
+# Garbled Northgate letterhead (each distinctive word 1–2 chars off → EXACT misses, FUZZY hits);
+# recipient "Primrose Childcare" sits BELOW the 'Customer' marker (mid-page → excluded from the band).
+NORTHGATE_GARBLE_PAGE = ("rthgate Textles\n14 Weavrs Way\nPrestn PR1 3QX\n"
+                         "SALES ORDER   SO-31427\n"
+                         "Customer\nPrimrose Childcare\nThe Old School, Vicarage Rd\nExeter EX4 6NA")
+CASCADE_GARBLE_PAGE = "ascade Watr Systms\nSpringfeld Works\nINVOICE INV-1\nBill To\nAcme Ltd"
+
+print("\nFUZZY helper — the metric is pinned (difflib ratio ≥0.85; tokens <6 stay EXACT):")
+check("incident: 'rthgate' (2-char drop) fuzzy-matches 'northgate' → present",   _fz(["Northgate"], ["rthgate"]) == 1.0)
+check("boundary: 'thgate' (3-char drop) does NOT match 'northgate' → absent",     _fz(["Northgate"], ["thgate"]) == 0.0)
+check("short token (<6 chars) requires EXACT: 'oaks' vs 'soaks' → absent",        _fz(["Oaks"], ["soaks"]) == 0.0)
+check("unrelated tokens → absent",                                               _fz(["Textiles"], ["reading"]) == 0.0)
+check("length window ±2: a long token CONTAINING the word does NOT match",        _fz(["Northgate"], ["northgateshireco"]) == 0.0)
+
+print("\nFUZZY alt-naming — a garbled letterhead names the known supplier + emits the suggestion:")
+r = run("Cascade Water Systems", NORTHGATE_GARBLE_PAGE, templates=NG_TEMPLATES)
+check("garbled 'rthgate textles…' → FLAGGED and note names 'Northgate Textiles'",
+      flagged(r) and "Northgate Textiles" in (r["supplier_name"].get("validation_note") or ""))
+check("FLAG-ONLY: value still 'Cascade Water Systems' (no engine value-change)",
+      r["supplier_name"]["value"] == "Cascade Water Systems")
+check("additive 'suggested_supplier' = the named alt (fed to the renderer 'Use …' button)",
+      r["supplier_name"].get("suggested_supplier") == "Northgate Textiles")
+
+print("\nISSUER-BAND restriction (Oracle) — the mid-page RECIPIENT is never named as the issuer:")
+check("'Primrose Childcare' (a known supplier, below the 'Customer' marker) is NOT named/suggested",
+      "Primrose Childcare" not in (r["supplier_name"].get("validation_note") or "")
+      and r["supplier_name"].get("suggested_supplier") != "Primrose Childcare")
+
+print("\nPrecision — no false name:")
+check("an unrelated rival (Thornbury) absent from the garbled page → not named",
+      "Thornbury" not in (r["supplier_name"].get("validation_note") or ""))
+r_margin = run("Cascade Water Systems", NORTHGATE_GARBLE_PAGE, templates=[CASCADE_T, NORTHGATE_T, NORTHGATE_ALT_T])
+check("two rivals TIE under fuzzy (margin <0.25) → generic note, no name/suggestion",
+      flagged(r_margin) and not r_margin["supplier_name"].get("suggested_supplier"))
+
+print("\nown_ratio stays EXACT + whole-page (the load-bearing seam pin):")
+r_own = run("Cascade Water Systems", CASCADE_GARBLE_PAGE, templates=NG_TEMPLATES)
+check("resolved supplier's OWN name garbled → own_ratio(exact)≈0 → STILL flagged "
+      "(fuzzing own_ratio would raise it and SUPPRESS the flag = fail-open)", flagged(r_own))
+
+print("\nKill switch BRANDING_ALT_FUZZY + backward-compat:")
+os.environ["BRANDING_ALT_FUZZY"] = "0"
+r_off = run("Cascade Water Systems", NORTHGATE_GARBLE_PAGE, templates=NG_TEMPLATES)
+check("=0 reverts to the legacy exact whole-page scan: garbled 'Northgate' not matched, and the "
+      "actionable suggestion is fuzzy-path-only → NO suggested_supplier (clean production A/B)",
+      flagged(r_off) and not r_off["supplier_name"].get("suggested_supplier"))
+del os.environ["BRANDING_ALT_FUZZY"]
+check("re-enabled → names Northgate again",
+      run("Cascade Water Systems", NORTHGATE_GARBLE_PAGE, templates=NG_TEMPLATES)["supplier_name"].get("suggested_supplier") == "Northgate Textiles")
+check("fuzzy ⊇ exact: an EXACT-present alt (Thornbury page) is STILL named (no regression)",
+      "Thornbury Fasteners" in (run("Cascade Water Systems", THORNBURY_PAGE)["supplier_name"].get("validation_note") or ""))
+
+print("\nDependency pin — fuzzy naming runs with rapidfuzz BLOCKED (packaged-build reality):")
+_blocked = {k: sys.modules.pop(k) for k in [m for m in list(sys.modules) if m == "rapidfuzz" or m.startswith("rapidfuzz.")]}
+class _RFBlock:
+    def find_module(self, name, path=None):
+        return self if (name == "rapidfuzz" or name.startswith("rapidfuzz.")) else None
+    def load_module(self, name):
+        raise ImportError("rapidfuzz blocked (test)")
+sys.meta_path.insert(0, _RFBlock())
+try:
+    r_dep = run("Cascade Water Systems", NORTHGATE_GARBLE_PAGE, templates=NG_TEMPLATES)
+    check("rapidfuzz unavailable → NO ImportError, still names Northgate (chrome_band is stdlib)",
+          r_dep["supplier_name"].get("suggested_supplier") == "Northgate Textiles")
+finally:
+    sys.meta_path.pop(0)
+    sys.modules.update(_blocked)
+
 print(f"\n{'ALL PASS' if fails == 0 else str(fails) + ' FAILED'}")
 sys.exit(1 if fails else 0)

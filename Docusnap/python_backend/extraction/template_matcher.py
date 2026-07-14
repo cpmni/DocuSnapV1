@@ -9,6 +9,7 @@ stored anchor rules rather than general keyword patterns.
 """
 
 import re
+import difflib
 from PIL import Image
 
 STOP_WORDS = {
@@ -365,6 +366,38 @@ def _keyword_hit_ratio(template: dict, ocr_lower: str) -> float:
         if re.search(r'(?<![a-z0-9])' + re.escape(kw.lower()) + r'(?![a-z0-9])', ocr_lower)
     )
     return hits / len(keywords)
+
+
+def _keyword_hit_ratio_fuzzy(fingerprint_words, page_tokens,
+                             threshold: float = 0.85, min_len: int = 6) -> float:
+    """FUZZY fraction of a branding fingerprint present among `page_tokens` — for the branding
+    cross-check's ALTERNATIVE-supplier hunt ONLY (Oracle/gary 2026-07-14), so an OCR-GARBLED
+    letterhead word ("rthgate") still resolves to its supplier ("northgate"). A SEPARATE function
+    from _keyword_hit_ratio on purpose: that exact matcher is the shared page-wide template tie-break
+    and must stay byte-identical.
+
+    Precision rules (metric-pinned): a word of len ≥ `min_len` counts present if some page token of
+    similar length (±2) scores difflib.SequenceMatcher(None, w, t).ratio() ≥ `threshold`
+    (0.85 → "rthgate"/"northgate" = 0.875 present; a 3rd dropped char → 0.80 absent). SequenceMatcher
+    .ratio() (block alignment) is used, NOT normalised edit-distance (which scores the same pair 0.78
+    and would MISS it). Words shorter than `min_len` require an EXACT token match (difflib on 3–5 char
+    tokens is noisy, and every distinctive branding token is ≥6). `page_tokens` = the caller's chosen
+    band (the branding guard passes ISSUER-BAND tokens so a mid-page recipient can't be matched)."""
+    words = [str(w or '').strip().lower() for w in (fingerprint_words or []) if str(w or '').strip()]
+    if not words:
+        return 0.0
+    tokset = set(page_tokens)
+    hits = 0
+    for w in words:
+        if len(w) < min_len:
+            if w in tokset:                                  # short words stay EXACT (tokens are word-bounded)
+                hits += 1
+            continue
+        for t in page_tokens:
+            if abs(len(t) - len(w)) <= 2 and difflib.SequenceMatcher(None, w, t).ratio() >= threshold:
+                hits += 1
+                break
+    return hits / len(words)
 
 
 def _kw_type_ambiguity(scored, best_t, winner_slug_match):

@@ -784,6 +784,10 @@ def main():
                            if v.get("validation_note") else {}),
                         **({"corrected_to": v["corrected_to"]}
                            if v.get("corrected_to") else {}),
+                        # Branding cross-check's fuzzy alternative-supplier suggestion → the renderer
+                        # "Use '<name>'" one-click button (Slice 2). Additive; absent when not suggested.
+                        **({"suggested_supplier": v["suggested_supplier"]}
+                           if v.get("suggested_supplier") else {}),
                     }
                     for k, v in extractions.items()
                 },

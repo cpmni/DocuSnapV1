@@ -1025,13 +1025,28 @@ class ExtractionEngine:
             return  # the resolved supplier's own branding IS on the page -> healthy, no flag
         # X's branding is ABSENT. Name the decisively-present alternative supplier, if one stands out
         # (>=0.75 present AND a clear margin over any third — Oracle: positive evidence, not weak agreement).
+        # The alt-scan is FUZZY (a garbled letterhead word "rthgate" still resolves "northgate") and runs
+        # on the ISSUER-BAND text ONLY (top letterhead, truncated at the first recipient marker), so a
+        # mid-page recipient/customer name can never be named as the issuer. own_ratio above stays EXACT +
+        # whole-page ON PURPOSE — fuzzing it could RAISE it and SUPPRESS the flag (fail-open to a silent
+        # wrong supplier); fuzzing only the alt-scan can never suppress, only ADD a name. Kill switch
+        # BRANDING_ALT_FUZZY (fuzzy is a superset of exact, so =0 restores the exact-name behaviour).
+        _fuzzy = os.environ.get("BRANDING_ALT_FUZZY", "1") != "0"
+        _issuer_tokens = None
+        if _fuzzy:
+            import re as _re
+            from extraction import chrome_band
+            _issuer_tokens = _re.findall(r"[a-z0-9]+", chrome_band.issuer_chrome(ocr_text).lower())
         alt, alt_ratio, second = None, 0.0, 0.0
         _own_norm = self._accept_norm(supplier_name)
         for norm, b in banks.items():
             if norm == _own_norm or len(b["words"]) < K:
                 continue
-            r = template_matcher._keyword_hit_ratio(
-                {"keyword_fingerprint": sorted(b["words"])}, ocr_lower)
+            if _fuzzy:
+                r = template_matcher._keyword_hit_ratio_fuzzy(sorted(b["words"]), _issuer_tokens)
+            else:
+                r = template_matcher._keyword_hit_ratio(
+                    {"keyword_fingerprint": sorted(b["words"])}, ocr_lower)
             if r > alt_ratio:
                 alt, second, alt_ratio = b["name"], alt_ratio, r
             elif r > second:
@@ -1040,6 +1055,13 @@ class ExtractionEngine:
         if named:
             note = (f"The page branding reads '{named}', but this was filed under '{supplier_name}'. "
                     "Please confirm the correct company.")
+            # Additive suggestion for a renderer "Use '<name>'" one-click button (Slice 2). The engine
+            # VALUE stays the honestly-resolved supplier — no _supplier_name change, no filing/scope write
+            # on a fuzzy match (Oracle/gary: the value-change belongs at confirm-time in the renderer).
+            # ONLY emitted on the safe issuer-band FUZZY path: the =0 revert uses the legacy exact
+            # whole-page scan (which can name a recipient), so it must not feed an actionable button.
+            if _fuzzy:
+                fld["suggested_supplier"] = named
         else:
             note = (f"This document's letterhead doesn't match '{supplier_name}'. "
                     "Please confirm the correct company.")
