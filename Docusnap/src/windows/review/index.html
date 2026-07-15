@@ -508,6 +508,7 @@
     .rr-notes li { font-size: 10.5px; color: var(--muted); line-height: 1.4; }
     .rr-notes li strong { color: var(--text); font-weight: 600; }
     .rr-notes li.rr-more { list-style: none; margin-left: -16px; font-style: italic; }
+    /* "Accept" a suggested correction — small inline-pill in the accent key. */
     .accept-btn {
       font-size: 10px; font-family: var(--sans); line-height: 1;
       padding: 1px 6px; margin-left: 6px; vertical-align: baseline;
@@ -516,6 +517,21 @@
     }
     .accept-btn:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-bg); }
     .accept-btn:disabled { color: var(--muted); cursor: default; border-color: var(--border); }
+    /* "Resolve" opens the disambiguation picker — the PRIMARY action on a flagged name field, so it's
+       slightly larger + FILLED (accent-tinted) to stand out from the other note actions, with a crisp
+       stroke "route into two arrows" icon (not the old fork glyph). Fills solid accent on hover. */
+    .resolve-btn {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 11px; font-family: var(--sans); font-weight: 600; line-height: 1;
+      padding: 3px 9px; margin-left: 8px; vertical-align: middle;
+      border: 1px solid var(--accent); border-radius: 6px;
+      background: var(--accent-bg); color: var(--accent2); cursor: pointer;
+    }
+    .resolve-btn:hover { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+    .resolve-ico { width: 15px; height: 15px; flex-shrink: 0; }
+    /* "Straighten"/deskew icon: a tilted line with a curved correcting arrow rotating it down to the
+       horizontal baseline (the correct position) — replaces the generic infinity glyph. */
+    .straighten-ico { width: 16px; height: 16px; vertical-align: middle; }
     /* "This name is correct" — same shape as .accept-btn but in the OK/green key, since it
        affirms a value rather than applying a suggested change. */
     .name-accept-btn, .issuer-accept-btn {
@@ -739,7 +755,7 @@
                 <circle cx="8"  cy="17" r="2.6" fill="currentColor" stroke="none"/>
               </svg>
             </button>
-            <button class="queue-tool-btn" id="btn-deskew-all" title="Straighten every document this session — auto-straightens each doc you open and forces straightened reads on Reprocess All (display + reads only; filed files unchanged)" data-help-key="deskew">&#8734;</button>
+            <button class="queue-tool-btn" id="btn-deskew-all" title="Straighten every document this session — auto-straightens each doc you open and forces straightened reads on Reprocess All (display + reads only; filed files unchanged)" data-help-key="deskew"><svg class="straighten-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 15L19 9M10.9 4.7L13 10.35M13 10.35L13.5 7.4M13 10.35L10.7 8.5"/></svg></button>
             <button class="queue-tool-btn" id="btn-advanced" title="Advanced — view & prune a field's learning history (admin)" data-help-key="advanced">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:17px;height:17px;">
                 <circle cx="12" cy="12" r="3"/>
@@ -847,7 +863,7 @@
         <button class="doc-nav-btn" id="btn-page-prev" data-help-key="pages">&#8249; Prev</button>
         <span id="page-indicator" style="font-size:11px; color:var(--muted);">—</span>
         <button class="doc-nav-btn" id="btn-page-next" data-help-key="pages">Next &#8250;</button>
-        <button class="doc-nav-btn" id="btn-deskew" data-help-key="deskew" title="Straighten a tilted scan so drawn boxes line up with the text (display only — the filed file is unchanged)">&#8734; Straighten</button>
+        <button class="doc-nav-btn" id="btn-deskew" data-help-key="deskew" title="Straighten a tilted scan so drawn boxes line up with the text (display only — the filed file is unchanged)"><svg class="straighten-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 15L19 9M10.9 4.7L13 10.35M13 10.35L13.5 7.4M13 10.35L10.7 8.5"/></svg> Straighten</button>
         <span id="deskew-angle" style="font-size:11px; color:var(--muted);"></span>
       </div>
 

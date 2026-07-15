@@ -1906,7 +1906,7 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   // name-like fields only (the backend already excludes supplier_name + non-name fields).
   const resolvable = Array.isArray(candidates) && candidates.filter(c => c && c.value).length >= 2 && _isNameLikeField(key);
   const resolveHtml = resolvable
-    ? ` <button type="button" class="resolve-btn" data-key="${key}" title="See the readings the app found and click the correct one">⑂ Resolve</button>`
+    ? ` <button type="button" class="resolve-btn" data-key="${key}" title="See the readings the app found and click the correct one"><svg class="resolve-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h5M9 12l9-6M18 6h-4M18 6v4M9 12l9 6M18 18h-4M18 18v-4"/></svg>Resolve</button>`
     : '';
   const noteHtml = isApplied
     ? `<div class="field-note corrected"><span class="corrected-badge" title="An OCR misread was auto-corrected to the spelling that recurs in your confirmed data">✓ auto-corrected</span> ${escHtml(note || '')}</div>`
