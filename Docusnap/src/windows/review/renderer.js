@@ -4036,9 +4036,18 @@ document.getElementById('fields-scroll')?.addEventListener('focusin', (e) => {
   }
 });
 
-document.getElementById('btn-advanced').addEventListener('click', () => {
-  const bar = document.getElementById('advanced-bar');
-  bar.style.display = (bar.style.display === 'block') ? 'none' : 'block';
+// DIRECT Learning-History button (2026-07-15, bob): the ⚙ Advanced flyout held only "View learning
+// history", so a gear (which reads as Settings) + an extra click for one action was pure friction.
+// This button now opens the learning-history modal DIRECTLY (same as #btn-view-learning). The
+// #advanced-bar flyout markup + its #btn-view-learning handler stay dormant (display:none), so a
+// future 2nd advanced item can re-enable the flyout cheaply.
+document.getElementById('btn-advanced').addEventListener('click', async (ev) => {
+  try { ev.currentTarget.blur(); } catch {}   // keep Blink's page-focus flag (dead-caret guard)
+  document.getElementById('advanced-bar').style.display = 'none';
+  document.getElementById('lh-overlay').style.display = 'block';
+  makeLhDraggable();
+  if (lastFocusedFieldKey) await loadLearningHistoryFor(lastFocusedFieldKey);
+  else showLearningHistoryEmpty();
 });
 
 let _lhData = [];                          // unsorted rows from the backend

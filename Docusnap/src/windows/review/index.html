@@ -531,7 +531,7 @@
     .resolve-ico { width: 15px; height: 15px; flex-shrink: 0; }
     /* "Straighten"/deskew icon: a tilted line with a curved correcting arrow rotating it down to the
        horizontal baseline (the correct position) — replaces the generic infinity glyph. */
-    .straighten-ico { width: 16px; height: 16px; vertical-align: middle; }
+    .straighten-ico { width: 18px; height: 18px; vertical-align: middle; }
     /* "This name is correct" — same shape as .accept-btn but in the OK/green key, since it
        affirms a value rather than applying a suggested change. */
     .name-accept-btn, .issuer-accept-btn {
@@ -755,11 +755,12 @@
                 <circle cx="8"  cy="17" r="2.6" fill="currentColor" stroke="none"/>
               </svg>
             </button>
-            <button class="queue-tool-btn" id="btn-deskew-all" title="Straighten every document this session — auto-straightens each doc you open and forces straightened reads on Reprocess All (display + reads only; filed files unchanged)" data-help-key="deskew"><svg class="straighten-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 15L19 9M10.9 4.7L13 10.35M13 10.35L13.5 7.4M13 10.35L10.7 8.5"/></svg></button>
-            <button class="queue-tool-btn" id="btn-advanced" title="Advanced — view & prune a field's learning history (admin)" data-help-key="advanced">
+            <button class="queue-tool-btn" id="btn-deskew-all" title="Straighten every document this session — auto-straightens each doc you open and forces straightened reads on Reprocess All (display + reads only; filed files unchanged)" data-help-key="deskew"><svg class="straighten-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21h18"/><path d="M5 17l9-4"/><path d="M4 11a8 8 0 0 1 15.5-1"/><path d="M19.5 10l.8-4M19.5 10l-3.6-1.6"/></svg></button>
+            <button class="queue-tool-btn" id="btn-advanced" title="Learning history — see &amp; tidy the values learned for a field (admin)" data-help-key="advanced">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:17px;height:17px;">
-                <circle cx="12" cy="12" r="3"/>
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                <path d="M3 3v5h5"/>
+                <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/>
+                <path d="M12 7v5l4 2"/>
               </svg>
             </button>
             <div id="advanced-bar" class="rail-flyout" style="display:none;">
@@ -863,7 +864,7 @@
         <button class="doc-nav-btn" id="btn-page-prev" data-help-key="pages">&#8249; Prev</button>
         <span id="page-indicator" style="font-size:11px; color:var(--muted);">—</span>
         <button class="doc-nav-btn" id="btn-page-next" data-help-key="pages">Next &#8250;</button>
-        <button class="doc-nav-btn" id="btn-deskew" data-help-key="deskew" title="Straighten a tilted scan so drawn boxes line up with the text (display only — the filed file is unchanged)"><svg class="straighten-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 15L19 9M10.9 4.7L13 10.35M13 10.35L13.5 7.4M13 10.35L10.7 8.5"/></svg> Straighten</button>
+        <button class="doc-nav-btn" id="btn-deskew" data-help-key="deskew" title="Straighten a tilted scan so drawn boxes line up with the text (display only — the filed file is unchanged)"><svg class="straighten-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21h18"/><path d="M5 17l9-4"/><path d="M4 11a8 8 0 0 1 15.5-1"/><path d="M19.5 10l.8-4M19.5 10l-3.6-1.6"/></svg> Straighten</button>
         <span id="deskew-angle" style="font-size:11px; color:var(--muted);"></span>
       </div>
 
