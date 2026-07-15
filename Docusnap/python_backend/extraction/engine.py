@@ -204,7 +204,11 @@ def _name_relocate_should_hold(existing: dict | None, data: dict | None, field_k
         return False
     if existing.get("method") != "keyword" or not existing.get("value"):
         return False
-    if data.get("method") not in _RELOCATE_METHODS or not data.get("value"):
+    # Oracle C2 (2026-07-15): admit a RIGID anchor_crop into the hold ONLY when anchor.py flagged it a
+    # fuzzy caption-bleed — never bare (a normal rigid taught read still wins Tier-A, byte-identical).
+    _m = data.get("method")
+    _rigid_bleed = (_m == "anchor_crop" and data.get("caption_bleed"))
+    if (_m not in _RELOCATE_METHODS and not _rigid_bleed) or not data.get("value"):
         return False
     ev, dv = existing.get("value"), data.get("value")
     if _cmp_norm(ev) == _cmp_norm(dv):        # must DISAGREE
@@ -675,7 +679,7 @@ class ExtractionEngine:
         qualifying.sort(key=lambda c: (-(c['confidence'] or 0), str(c['value'])))
         return qualifying[0]
 
-    def _build_candidate_emit(self, results):
+    def _build_candidate_emit(self, results, ocr_text=None):
         """Disambiguation picker (v1): for each NAME-LIKE non-supplier field carrying a
         validation_note with >=2 DISTINCT candidate values, build the picker list
         [{value, box, source_label, method, confidence}] (chosen value first, cap 3). Additive +
@@ -696,6 +700,16 @@ class ExtractionEngine:
             for c in (self._field_candidates.get(key) or []):
                 v = c.get("value")
                 if not v:
+                    continue
+                # Guard A (Oracle C4): an UN-BOXED candidate (keyword/hint/late — no located position on
+                # THIS page) must actually appear in the page OCR text to be offered. A replayed hint like
+                # "Sandpiper Hotels" that isn't on the page is dropped, so the picker never presents an
+                # off-page value as "read from the page". Boxed candidates are inherently located → kept;
+                # the CHOSEN winner is re-injected below regardless. FAIL-SAFE: no ocr_text → keep
+                # (byte-identical). Reuses the proven on-page predicate. Kill switch CANDIDATE_OCR_VALIDATE.
+                if (os.environ.get("CANDIDATE_OCR_VALIDATE", "1") != "0"
+                        and c.get("box") is None and ocr_text
+                        and not _template_identity_corroborated(v, ocr_text)):
                     continue
                 nk = _cmp_norm(v)
                 cur = by_norm.get(nk)
@@ -3474,7 +3488,7 @@ class ExtractionEngine:
         # Built LAST, after every flag guard, so a note applied late (identity /
         # caption-demotion) still arms the picker. Additive `_` metadata (popped +
         # woven into the per-field emit by process_docs); commits no value.
-        results["_field_candidate_emit"] = self._build_candidate_emit(results)
+        results["_field_candidate_emit"] = self._build_candidate_emit(results, ocr_text)
 
         return results
 

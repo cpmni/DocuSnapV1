@@ -1034,6 +1034,25 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
             if is_name_like_field(field_key) and name_quality(value) < 0.5:
                 value = None
 
+        # Guard B (fuzzy caption bleed, RIGID anchor_crop — Oracle 2026-07-15): a rigid taught crop that
+        # landed on the field's own CAPTION and OCR-garbled it ("Veliver 10°" from "Deliver To") slips the
+        # token-EXACT _is_caption_bleed (relocate-only) AND the multi-word name null above (name_quality
+        # 0.5, not < 0.5), then WINS Tier-A over the correct keyword. Fuzzy-detect it and set BOTH the flag
+        # (so engine._name_relocate_should_hold keeps the clean keyword) AND _relocate_guard_note (which
+        # caps conf <= 70 at the anchor_crop guard below AND persists a note, so it's review-bound even
+        # with NO keyword incumbent — Oracle C1). Gated to name_quality < 0.6 (Oracle C3: real names like
+        # "Denver Trading"/"Delivery Solutions Ltd" score 1.0 and survive). Kill switch ANCHOR_CAPTION_BLEED_GUARD.
+        if (value and method == "anchor_crop" and val_type in (None, "text", "multiline_text")
+                and os.environ.get("ANCHOR_CAPTION_BLEED_GUARD", "1") != "0"):
+            from extraction.value_quality import is_name_like_field as _isnl2, name_quality as _nq2
+            if (_isnl2(field_key) and field_key != "supplier_name"
+                    and _is_fuzzy_caption_bleed(value, anchor.get("anchor_label"), field_key)
+                    and _nq2(value) < 0.6):
+                _caption_bleed = True
+                if not _relocate_guard_note:
+                    _relocate_guard_note = ("The taught box landed on this field's label, not its "
+                                            "value — please verify.")
+
         if value:
             conf = min(95, 55 + (usage_count * 5) + int(conf_factor * 20))
             if method == "anchor_crop":
@@ -1339,6 +1358,49 @@ def _is_caption_bleed(cand, label) -> bool:
     if n < 1 or len(vt) < n:
         return False
     return vt[:n] == ct
+
+
+# Party/recipient caption PHRASES a garbled taught-box read can land on. Fuzzy-matched (below) so an OCR
+# garble of the caption ("Deliver To" -> "Veliver 10°") is caught where the token-EXACT _is_caption_bleed
+# can't. Short 4-char captions (Site/etc.) are left to the exact check (joined len < 5 is skipped).
+_FUZZY_CAPTION_PHRASES = ("deliver", "delivery", "deliver to", "delivery address", "customer", "client",
+                          "consignee", "ship to", "sold to", "bill to", "invoice to", "account")
+
+
+def _is_fuzzy_caption_bleed(value, label, field_key) -> bool:
+    """True → the value's LEADING tokens are an OCR-GARBLED form of a party/recipient CAPTION — the crop
+    landed on the field's own label and garbled it ("Veliver 10°" from "Deliver To": D->V, "To"->"10°").
+    The FUZZY companion to _is_caption_bleed (token-EXACT, relocate-only); it catches the RIGID anchor_crop
+    garble the exact check misses. For each caption phrase: k = its content-token count, cj = its
+    alnum-joined form; compare the value's leading-k content tokens (alnum-joined) -> vj; fires when
+    normalized Levenshtein(vj, cj) <= 0.35 AND |len(vj)-len(cj)| <= 2 AND len(cj) >= 5 AND len(vj) >= 4.
+    "veliver10" vs "deliverto" = 3/9 = 0.33 -> fires. The CALLER additionally requires name_quality < 0.6
+    (Oracle C3) so a CLEAN real name that fuzzy-resembles a caption ("Delivery Solutions Ltd" dist 0 to
+    "delivery", "Denver Trading" dist 2 to "deliver") is NEVER demoted (it scores 1.0). Vocab =
+    _FUZZY_CAPTION_PHRASES + the taught anchor_label. Fail-safe False on missing/short input."""
+    if not value:
+        return False
+    from extraction import keyword as _kw
+    vt = [t.lower() for t in re.findall(r"[0-9A-Za-z]+", str(value))]
+    if not vt:
+        return False
+    phrases = list(_FUZZY_CAPTION_PHRASES)
+    if label:
+        phrases.append(str(label))
+    for phrase in phrases:
+        ct = re.findall(r"[0-9A-Za-z]+", phrase.lower())
+        if not ct:
+            continue
+        k = len(ct)
+        cj = "".join(ct)
+        if len(cj) < 5 or len(vt) < k:
+            continue
+        vj = "".join(vt[:k])
+        if len(vj) < 4 or abs(len(vj) - len(cj)) > 2:
+            continue
+        if _kw._bounded_levenshtein(vj, cj) / max(len(vj), len(cj)) <= 0.35:
+            return True
+    return False
 
 
 def _name_junk_shaped(value, field_key) -> bool:
