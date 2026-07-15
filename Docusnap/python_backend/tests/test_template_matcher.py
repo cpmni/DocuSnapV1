@@ -417,8 +417,21 @@ def main():
         failures += 1
     m_refuse = with_stub_hash(lambda: template_matcher.identify_template(
         FakePage(SAME_HASH), ocr, SIBS, detected_slug='purchase_order', title_trusted=True))
-    if not check('trusted title of a type NO sibling has -> REFUSE (None, doc -> review to teach)',
-                 m_refuse is None):
+    # C1 (TYPE-heading authority): the trusted-title refuse now returns a HOLD sentinel (template
+    # None + type_refused) so the engine HOLDS the doc for review instead of silently typing it via
+    # detection at overall==100; it is still "no usable template" for every (m or {}).get('template')
+    # reader (byte-identical downstream). See engine._flag_type_ambiguity refuse branch.
+    if not check('trusted title of a type NO sibling has -> REFUSE (hold sentinel: template None + type_refused)',
+                 (m_refuse or {}).get('template') is None and (m_refuse or {}).get('type_refused') is True):
+        failures += 1
+    # C5(a) byte-identical pin: TYPE_REFUSE_HOLD=0 -> the pre-C1 None refuse exactly.
+    import os as _os
+    _os.environ['TYPE_REFUSE_HOLD'] = '0'
+    m_refuse_off = with_stub_hash(lambda: template_matcher.identify_template(
+        FakePage(SAME_HASH), ocr, SIBS, detected_slug='purchase_order', title_trusted=True))
+    _os.environ.pop('TYPE_REFUSE_HOLD', None)
+    if not check('TYPE_REFUSE_HOLD=0 -> refuse returns None (byte-identical to pre-C1)',
+                 m_refuse_off is None):
         failures += 1
     m_fb = with_stub_hash(lambda: template_matcher.identify_template(
         FakePage(SAME_HASH), ocr, SIBS, detected_slug='purchase_order', title_trusted=False))
@@ -427,8 +440,8 @@ def main():
         failures += 1
     m_single = with_stub_hash(lambda: template_matcher.identify_template(
         FakePage(SAME_HASH), ocr, [SO_TPL], detected_slug='worksheet', title_trusted=True))
-    if not check('single sales_order template + trusted worksheet title -> REFUSE (no wrong-type force)',
-                 m_single is None):
+    if not check('single sales_order template + trusted worksheet title -> REFUSE (hold sentinel, no wrong-type force)',
+                 (m_single or {}).get('template') is None and (m_single or {}).get('type_refused') is True):
         failures += 1
     m_ok = with_stub_hash(lambda: template_matcher.identify_template(
         FakePage(SAME_HASH), "ASHFORD WHOLESALE\nSALES ORDER\nSO-12345", [SO_TPL],

@@ -310,7 +310,13 @@ def seed_field_labels(patterns: dict, field_defs: "list | None") -> dict:
 # Heading-adjacent tokens a real title line may carry beside the type word — a
 # number/reference or a "No."/"#"/"Number" caption — none of which make it a body
 # mention. Any OTHER word on the line means it's prose, not a heading.
-_HEADING_ADJ = frozenset({"no", "no.", "#", "number", "num", "ref", "-", ":", "|"})
+# Split into PUNCTUATION (always tolerated) vs CAPTION WORDS (tolerated only by the
+# relaxed EXPOSED-flag test, caption_ok=True). The tighter SCORING variant (Part B,
+# caption_ok=False) excludes the caption words so a leftmost table column-header
+# segment reading "Purchase Order  No." cannot earn the strong 2.0 heading weight.
+_HEADING_PUNCT   = frozenset({"#", "-", ":", "|"})
+_HEADING_CAPTION = frozenset({"no", "no.", "number", "num", "ref"})
+_HEADING_ADJ     = _HEADING_PUNCT | _HEADING_CAPTION
 
 # A run of COLUMN_BREAK_MIN (4) or more spaces = a COLUMN break (reconstruct_page_text / born_digital
 # emit exactly the 4-space COLUMN_BREAK for a wide intra-row x-gap; adjacent columns compound). Derived
@@ -319,10 +325,17 @@ _HEADING_ADJ = frozenset({"no", "no.", "#", "number", "num", "ref", "-", ":", "|
 _COL_BREAK_RE = re.compile(r' {%d,}' % COLUMN_BREAK_MIN)
 
 
-def _segment_is_heading(seg: str, p: str) -> bool:
+def _segment_is_heading(seg: str, p: str, caption_ok: bool = True) -> bool:
     """One reading-line COLUMN segment IS the matched type phrase plus at most heading-adjacent
     tokens — a reference/number CODE ("WORKSHEET 38", "WORKSHEET WS-38", "PURCHASE ORDER #PO-1234")
-    or a "No."/"#"/"Number" caption. A real extra word makes it a body mention."""
+    or a "No."/"#"/"Number" caption. A real extra word makes it a body mention.
+
+    caption_ok (default True) = the relaxed EXPOSED-flag behaviour: a "No."/"Number"/"Ref" CAPTION
+    word beside the title is tolerated (a real banner often prints one). caption_ok=False = the
+    tighter SCORING variant (Part B, column-aware heading scoring): only a numeric CODE + code
+    punctuation is allowed beside the title, so a leftmost table column-header segment that reads
+    "Purchase Order  No." (no wide column gap splitting them) can't earn the strong 2.0 heading
+    weight — the banner must stand ALONE (or with just a code) to score as a heading."""
     if not p or p not in seg:
         return False
     if seg == p:
@@ -333,7 +346,9 @@ def _segment_is_heading(seg: str, p: str) -> bool:
         # is only alphanumerics + code punctuation ("38", "ws-38", "inv-2024-001", "#po1234").
         if any(ch.isdigit() for ch in t) and all(ch.isalnum() or ch in "#:.-/|" for ch in t):
             continue
-        if t in _HEADING_ADJ:
+        # Punctuation is always heading-adjacent; caption WORDS only when caption_ok
+        # (caption_ok=True reproduces the old `t in _HEADING_ADJ` exactly).
+        if t in _HEADING_PUNCT or (caption_ok and t in _HEADING_CAPTION):
             continue
         return False                                        # a real extra word → a mention
     return True
@@ -383,8 +398,15 @@ def detect_document_type(ocr_text: str, patterns: dict,
     if not total:
         return None
 
+    # Part B kill switch (default ON): column-aware heading SCORING for name/alias banners.
+    _col_aware = os.environ.get("HEADING_SCORE_COLUMN_AWARE", "1") != "0"
+
     type_keywords = {k: list(v) for k, v in patterns.get("document_type_keywords", {}).items()}
     aliases_by_name = type_aliases or {}
+    # Part B: phrases that are a type NAME or a title ALIAS (lowercased). ONLY these get the
+    # column-aware heading SCORING below; the built-in document_type_keywords phrases keep the
+    # strict whole-line test (byte-identical). Mirrors the design's eligible = name ∪ aliases.
+    name_alias_lc: set[str] = set()
     for name in (known_types or []):
         name = (name or "").strip()
         if not name:
@@ -394,6 +416,7 @@ def detect_document_type(ocr_text: str, patterns: dict,
         # is byte-identical to the pre-feature engine (the harness 0-delta gate).
         if name not in bucket:
             bucket.append(name)
+        name_alias_lc.add(name.lower())
         # ALIASES — fold each of this type's title aliases into the SAME bucket (keyed by the
         # NAME, so result["type"] / detected_slug / heading-trust are unchanged; only more
         # phrases are searched). De-duped case-insensitively against the bucket. This branch is
@@ -405,6 +428,8 @@ def detect_document_type(ocr_text: str, patterns: dict,
                 if a and a.lower() not in have:
                     bucket.append(a)
                     have.add(a.lower())
+                if a:
+                    name_alias_lc.add(a.lower())
 
     if not type_keywords:
         return None
@@ -437,7 +462,22 @@ def detect_document_type(ocr_text: str, patterns: dict,
                 # OCR'd standalone headings (newline-delimited, not
                 # space-delimited) — comparing against the regex match span
                 # works for any current or future label shape.
-                is_heading = line.strip().lower() == m.group(0).strip()
+                # Part B — COLUMN-AWARE heading SCORING for a type-NAME/alias banner: a real
+                # banner ("WORKSHEET", "PURCHASE ORDER") that shares one OCR reading line with a
+                # far-right ref/date COLUMN ("WORKSHEET    Reference No. WS-65750") is still the
+                # leftmost-column heading and must earn the strong 2.0 weight — the strict whole-
+                # line test scored it 1.0 and let a body-mentioned type steal best_type (the
+                # worksheet-stuck-as-delivery-note class). ONLY name/alias phrases get this;
+                # built-in document_type_keywords phrases keep the strict, byte-identical test.
+                # SCORING uses the tighter caption_ok=False. Monotone: a line the strict test
+                # counted (line==phrase) still scores 2.0 (seg0==phrase); a mid-body table column
+                # relies on the low positional weight + the C1 refuse review-hold to stay safe.
+                # Kill switch HEADING_SCORE_COLUMN_AWARE.
+                if _col_aware and kw.lower() in name_alias_lc:
+                    seg0 = _COL_BREAK_RE.split(line.strip().lower())[0].strip()
+                    is_heading = _segment_is_heading(seg0, m.group(0).strip(), caption_ok=False)
+                else:
+                    is_heading = line.strip().lower() == m.group(0).strip()
                 score += position_weight * (2.0 if is_heading else 1.0)
                 # EXPOSED heading signal (`heading` in the result) — consumed ONLY by the
                 # template doc-type-precedence gate (a matched template must not override a

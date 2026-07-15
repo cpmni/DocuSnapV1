@@ -749,7 +749,7 @@ function register(ctx) {
   });
 }
 
-module.exports = { register, _buildTemplateFields };   // _buildTemplateFields exported for test_build_template_fields.js
+module.exports = { register, _buildTemplateFields, _upsertTemplate };   // _buildTemplateFields + _upsertTemplate exported for tests (test_build_template_fields.js, test_upsert_type_link.js)
 
 // ── Template create / update ──────────────────────────────────────────────────
 
@@ -809,6 +809,24 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
   //      — instead of spawning a near-duplicate template. Same-slug + keyword floor
   //      keep this from merging two different suppliers with similar logos.
   let templateId = doc.template_id || null;
+  // Part D (TYPE-heading authority) — DETACH a WRONG-TYPE Stage-0 link before reuse. doc.template_id
+  // reflects whatever Stage 0 matched during processing, which for a same-logo supplier can be a
+  // SIBLING OF THE WRONG TYPE (a worksheet logo-matched to the delivery-note template). Confirming
+  // as-is runs templates.update() on that wrong-type template — reinforcing it — and NEVER borns the
+  // correct-type one, so the cluster never separates (root cause #3, self-reinforcing; it is why no
+  // worksheet template with a logo is ever created). If the linked template's slug is PRESENT and
+  // DIFFERS from the type the operator CONFIRMED, drop the link so the type-scoped reuse/create below
+  // re-points the doc to a RIGHT-type template carrying this doc's logo. Detach ONLY on a real slug
+  // mismatch — a legacy null-slug template stays attached (Oracle C4b). Kill switch TEMPLATE_TYPE_LINK_GUARD.
+  let retypedLink = false;
+  if (templateId && process.env.TEMPLATE_TYPE_LINK_GUARD !== '0') {
+    const linked = templates.getById(db, templateId);
+    const linkedSlug = linked && linked.document_type_slug;
+    if (linkedSlug && document_type_slug && linkedSlug !== document_type_slug) {
+      templateId = null;
+      retypedLink = true;
+    }
+  }
   if (!templateId && logo_phash) {
     // TYPE-SCOPED reuse: a template is per (supplier, TYPE), and a supplier issuing several types on
     // one letterhead has same-logo siblings — so reusing the nearest logo BLINDLY would fold e.g. an
@@ -847,7 +865,9 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
         try { templates.rename(db, templateId, confirmedIssuer); } catch {}
       }
     }
-    if (!doc.template_id) {
+    // Relink when the doc had no template, OR when Part D detached a wrong-type link and the
+    // type-scoped reuse found a RIGHT-type template to converge onto (Oracle C4a).
+    if (!doc.template_id || retypedLink) {
       db.prepare('UPDATE documents SET template_id = ? WHERE id = ?').run(templateId, document_id);
     }
     _writeTemplateFile(db, templateId, path, fs, templatesDir());

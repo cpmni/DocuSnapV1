@@ -101,5 +101,35 @@ check("the heading splitter (derived from the constant) matches a 4-space run",
 check("the heading splitter does NOT match a 3-space run (pins {4,})",
       keyword._COL_BREAK_RE.search("a   b") is None)
 
+print("\nPART B — COLUMN-AWARE heading SCORING (kill switch HEADING_SCORE_COLUMN_AWARE):")
+sih = keyword._segment_is_heading
+# C2(a) monotonicity: every line the STRICT scorer counted (line == phrase) still scores as a
+# heading under the tighter column-aware SCORING variant (seg0 == phrase short-circuits any caption
+# check), so a refactor can't drop a real heading below the 2.0 weight.
+check("C2(a): _segment_is_heading('worksheet','worksheet',caption_ok=False) True (strict-counted still 2.0)",
+      sih("worksheet", "worksheet", caption_ok=False) is True)
+check("C2(a): a numeric code beside the title still scores ('worksheet 38')",
+      sih("worksheet 38", "worksheet", caption_ok=False) is True)
+# The SCORING variant (caption_ok=False) EXCLUDES caption WORDS (no column gap) so a table
+# column-header segment 'purchase order no' can't earn the 2.0 weight; the relaxed EXPOSED-flag
+# variant (caption_ok=True) still tolerates it (byte-identical to the old _HEADING_ADJ behaviour).
+check("caption_ok=False: 'purchase order no' is NOT a scoring heading (caption word excluded)",
+      sih("purchase order no", "purchase order", caption_ok=False) is False)
+check("caption_ok=True: 'purchase order no' IS heading-like for the exposed flag (unchanged)",
+      sih("purchase order no", "purchase order", caption_ok=True) is True)
+# The core fix: a column-MERGED name/alias banner now earns the strong 2.0 weight — scoring HIGHER
+# than the strict whole-line path that scored it 1.0 and let a body-mentioned type steal best_type.
+MERGED = "WORKSHEET    Reference No. WS-65750\nAcme Supplies Ltd\n1 High St"
+on = keyword.detect_document_type(MERGED, {}, NAMES, ALIASES)
+os.environ['HEADING_SCORE_COLUMN_AWARE'] = '0'
+off = keyword.detect_document_type(MERGED, {}, NAMES, ALIASES)
+os.environ.pop('HEADING_SCORE_COLUMN_AWARE', None)
+check("Part B ON: merged 'WORKSHEET  Reference No.' scores STRONGER than the strict path",
+      bool(on and off and on['all_scores']['Worksheet'] > off['all_scores']['Worksheet']))
+check("C2(b): a score-driven best_type carries heading=True (test-2 superset of test-3)",
+      bool(on and on['type'] == 'Worksheet' and on['heading'] is True))
+check("kill switch OFF -> strict whole-line scoring (still detects, lower score = byte-identical scoring path)",
+      bool(off and off['type'] == 'Worksheet'))
+
 print(f"\n{'ALL PASS' if fail == 0 else str(fail) + ' FAILED'}")
 sys.exit(1 if fail else 0)

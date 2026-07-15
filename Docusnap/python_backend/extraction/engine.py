@@ -1937,6 +1937,7 @@ class ExtractionEngine:
 
         # ── Stage 0: Template matching ────────────────────────────────────────
         self._type_ambiguous = False   # Fix A: set True below when the match is an ambiguous same-logo pick
+        self._type_refused   = False   # C1: set True below when the trusted-title refuse discards a template
         if templates:
             match = template_matcher.identify_template(
                 _id_img,
@@ -1946,6 +1947,16 @@ class ExtractionEngine:
                 title_trusted=title_trusted,
                 query_detail_hash=logo_detail_hash,   # Slice C: isolated-mark veto on a ≥2-supplier logo collision
             )
+            # C1 (TYPE-heading authority): identify_template returns a REFUSE sentinel (template
+            # None + type_refused) when a TRUSTED heading declares a type the matched template does
+            # NOT carry. Collapse it to "no template" so every branch below is byte-identical to the
+            # old None return, but REMEMBER it so the doc is HELD for review at the type-ambiguity
+            # seam — a falsely-trusted heading must fail toward review, never auto-file a wrong type
+            # at 100. (Kill switch TYPE_REFUSE_HOLD lives in template_matcher._type_refuse → None,
+            # which makes this branch dead and the whole flow byte-identical.)
+            if match and match.get('type_refused'):
+                self._type_refused = True
+                match = None
             # Reprocess honour: a document already linked to a template (passed
             # as known_template_id) should still run that template's stage 0/0.5
             # — including its admin-drawn field mappings — even when live
@@ -3473,6 +3484,19 @@ class ExtractionEngine:
         # value -> per-field accuracy byte-identical. Kill switch TYPE_AMBIGUITY_GUARD.
         if getattr(self, '_type_ambiguous', False) and os.environ.get('TYPE_AMBIGUITY_GUARD', '1') != '0':
             self._flag_type_ambiguity(results, ref_field_key)
+        # C1 (TYPE-heading authority): a trusted-title REFUSE (identify_template discarded the matched
+        # template because the trusted heading names a DIFFERENT type) leaves the doc with NO template
+        # — it must not silently auto-file a detection-only type at overall==100. HOLD it for review.
+        # Fires whenever the refuse ran; its kill switch (TYPE_REFUSE_HOLD) gates the sentinel upstream
+        # so _type_refused is already False when disabled → byte-identical. `elif`: a refuse yields
+        # match=None so _type_ambiguous is normally False, but a ref-prefix PIN can re-populate the
+        # match and set _type_ambiguous — either way the doc is HELD, so the ambiguity note winning
+        # the tie is fine (both compose after the branding/prefix notes applied above).
+        elif getattr(self, '_type_refused', False):
+            self._flag_type_ambiguity(
+                results, ref_field_key,
+                note=("The heading on this page names a document type that doesn't match this "
+                      "supplier's saved layout — please check the document type is correct before filing."))
 
         # Final resolved value per field — the inspector marks any earlier
         # candidate whose value differs from this as a superseded intermediate.
@@ -3492,7 +3516,7 @@ class ExtractionEngine:
 
         return results
 
-    def _flag_type_ambiguity(self, results, ref_field_key):
+    def _flag_type_ambiguity(self, results, ref_field_key, note=None):
         """Fix A: HOLD an ambiguous same-letterhead TYPE resolution for review. Lands a persisted
         validation_note on a GUARANTEED-PRESENT field so trust.isAutoFileEligible's `flagged` check
         blocks the auto-file (Oracle/gary's load-bearing catch: the DB-side gate honours a persisted
@@ -3500,9 +3524,11 @@ class ExtractionEngine:
         extracted) -> the ref-role field -> any valued field -> a synthetic supplier_name row (so the
         note persists even for a worksheet whose ref_field_key is null — Oracle C3). APPENDS to any
         existing note (composes with _flag_prefix_outlier / branding — Oracle C2). HOLD-ONLY: never
-        changes a value. Guarded by tests/test_type_ambiguity_flag.py."""
-        note = ("This letterhead is used for several document types and the type could not be confirmed "
-                "on this scan — please check the document type is correct before filing.")
+        changes a value. `note` overrides the default message (C1 passes a trusted-title-refuse note).
+        Guarded by tests/test_type_ambiguity_flag.py."""
+        if note is None:
+            note = ("This letterhead is used for several document types and the type could not be confirmed "
+                    "on this scan — please check the document type is correct before filing.")
         carrier = None
         for k in ('supplier_name', ref_field_key):
             if k and isinstance(results.get(k), dict):

@@ -116,6 +116,21 @@ def _band_siblings(cands, base_dist) -> dict:
     return out
 
 
+def _type_refuse(detected_slug, template_slug):
+    """C1 (TYPE-heading authority): the sentinel returned by the trusted-title REFUSE — a TRUSTED
+    heading declares a document type that the matched template does NOT carry. It behaves as
+    "no template" for EVERY downstream reader (`template` is None, so `(m or {}).get('template')`
+    stays None exactly like the old `return None`), but the engine reads `type_refused` to HOLD the
+    doc for review — a FALSELY-trusted heading (e.g. a leftmost mid-body table column that reads
+    like a type name) that discards the real template must fail toward review, never auto-file a
+    detection-only type at overall==100 (docTrustGate is skipped at 100). Kill switch
+    TYPE_REFUSE_HOLD=0 → None, i.e. byte-identical to the pre-C1 refuse (the required C5(a) gate)."""
+    if os.environ.get('TYPE_REFUSE_HOLD', '1') == '0':
+        return None
+    return {'template': None, 'type_refused': True,
+            'detected_slug': detected_slug, 'refused_slug': template_slug or None}
+
+
 def identify_template(page_image, ocr_text: str, templates: list,
                       detected_slug: str | None = None,
                       title_trusted: bool = False,
@@ -180,7 +195,7 @@ def identify_template(page_image, ocr_text: str, templates: list,
                 # via the independent logo_fingerprints path). Gated on title_trusted, so
                 # a mere incidental mention can't discard a good single-template match.
                 if title_trusted and detected_slug and (best_t.get('document_type_slug') or '') != detected_slug:
-                    return None
+                    return _type_refuse(detected_slug, best_t.get('document_type_slug'))
                 # SLICE C — isolated-mark VETO: a ≥2-supplier logo cluster whose picked template's mark
                 # DISAGREES with the scan is a look-alike collision → ABSTAIN (fall to keyword + branding
                 # net + review). See _logo_detail_veto (scoped, fail-safe, kill-switched, inert until
@@ -231,7 +246,7 @@ def identify_template(page_image, ocr_text: str, templates: list,
         # Same title-trust refuse on the logoless path.
         if title_trusted and detected_slug and \
            (kw_match['template'].get('document_type_slug') or '') != detected_slug:
-            return None
+            return _type_refuse(detected_slug, kw_match['template'].get('document_type_slug'))
         if logo_phash:
             kw_match['logo_phash'] = logo_phash
         return kw_match
