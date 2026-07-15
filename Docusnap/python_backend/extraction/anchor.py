@@ -1513,8 +1513,9 @@ def try_logo_supplier_match(page_image: Image.Image,
 
         winner = _pick_unambiguous_supplier(by_supplier)
 
-        # SLICE D — PRIMARY detail resolver (kill switch LOGO_DETAIL_PRIMARY, default OFF → this whole
-        # block is skipped and the function stays byte-identical to the veto-only path). When ON and a
+        # SLICE D — PRIMARY detail resolver (kill switch LOGO_DETAIL_PRIMARY, default ON since 2026-07-15
+        # — owner-enabled after the NT↔Copperfield logo collision; set env LOGO_DETAIL_PRIMARY=0 to disable,
+        # which skips this whole block and keeps the function byte-identical to the veto-only path). When ON and a
         # mark detail hash is present, classify the supplier by NEAREST isolated-mark over ALL enrolled
         # sets — this reaches ACROSS the coarse band, so a look-alike whose coarse phash drifted into a
         # rival's band (doc-193) still resolves to the RIGHT company. AGREE with the coarse winner → keep
@@ -1526,7 +1527,7 @@ def try_logo_supplier_match(page_image: Image.Image,
         # with PRIMARY on (Oracle Seam 3). Method stays 'logo' so the engine _genuine_template_supplier
         # precedence override (which fires only on method.startswith('anchor')) can never re-engage on
         # it (Oracle C3).
-        if query_detail_hash and os.environ.get('LOGO_DETAIL_PRIMARY', '0') == '1':
+        if query_detail_hash and os.environ.get('LOGO_DETAIL_PRIMARY', '1') == '1':
             try:
                 import logo_detail
                 by_sup_det: dict[str, list] = {}

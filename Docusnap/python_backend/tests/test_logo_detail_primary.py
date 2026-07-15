@@ -65,8 +65,8 @@ def main():
     agree    = [L('X', P, XNEAR), L('Y', FARP, YFAR)]     # coarse winner = X; detail names X
     disagree = [L('Y', P, YFAR), L('X', FARP, XNEAR)]     # coarse winner = Y; detail names X
 
-    # ── PRIMARY OFF (default): byte-identical veto-only path ──────────────────
-    os.environ.pop('LOGO_DETAIL_PRIMARY', None)
+    # ── PRIMARY OFF (explicit =0; the default is now ON since 2026-07-15): byte-identical veto-only path ──
+    os.environ['LOGO_DETAIL_PRIMARY'] = '0'
     r = anchor.try_logo_supplier_match(page, agree, query_detail_hash=QUERY)
     check('PRIMARY off → coarse winner X returned unchanged (byte-identical)',
           r and r['supplier_name'] == 'X' and r['confidence'] != 69 and 'validation_note' not in r)
