@@ -18,8 +18,21 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/history.md` — resolved QA/audit findings + build-stage history (Settings/Review/Search/Stage-7 rebuilds).
 
 ## Recent session changes (2026-07-09 → 07-15) — durable mechanisms now in the code
-**READ FIRST: `HANDOVER_2026-07-15.md`** (repo root — poison cleanup + Slice D detail-hash PRIMARY matcher
-BUILT default-off + 2 disambiguation-picker guards + icon restyle + the system-wide TYPE-heading fix DESIGN).
+**READ FIRST: `HANDOVER_2026-07-15_EVENING.md`** (repo root, 6 UNPUSHED commits). This session SHIPPED the
+deferred TYPE-heading fix + more: **TYPE-heading fix BUILT + CONFIRMED live** (worksheet types as WSht) —
+Part B column-aware heading SCORING + C1 refuse→review-hold + Part D confirm-path type-link detach
+(`2168c85`, kills `HEADING_SCORE_COLUMN_AWARE`/`TYPE_REFUSE_HOLD`/`TEMPLATE_TYPE_LINK_GUARD`); **Slice D
+enabled by default** (`LOGO_DETAIL_PRIMARY` 0→1, `51ea89d`); **review-UX** (`ae3a330` taught-dots re-scope
+on issuer change + clear-suspect-reads + label-cluster banner fix; `c8ed1cf` V4 straighten icon + direct
+Learning-History button; `809f4fa` position-only readout reword); **taught-ownership corroboration
+exemption** (`c5ec661`, kill `TAUGHT_OWNERSHIP_CORROBORATE`). Per-install DATA (not committed): WSht type
+(id 13) got aliases `["Worksheet","Work Sheet"]` — **a custom type is identified by its "Also appears as"
+aliases, NEVER its arbitrary internal name.** **NEXT = the gary/Oracle-signed ISSUER positional-read DROP**
+(`engine.py:2662`, kill `IDENTITY_POSITIONAL_DROP`, DESIGNED not built): fixes cross-supplier positional
+issuer bleed — a swept position-only issuer teach makes SuperStore invoices read ANOTHER supplier's issuer
+POSITION → junk "Item"/"Ship To:" (14 needs_review docs, nothing filed; audit: 0 confirmed wins use
+positional issuer reads). Full spec in the EVENING handover.
+Prior same-day: `HANDOVER_2026-07-15.md` (poison cleanup + Slice D BUILT default-off + 2 disambiguation-picker guards + icon restyle + the TYPE-heading fix DESIGN — now built).
 Prior: `docs/handovers/HANDOVER_2026-07-14_NIGHT.md` (SUPPLIER+DOC IDENTITY overhaul). Earlier-shipped:
 **Slice 1 `999898c`** (SuperStore garble guard, `SUPPLIER_CHROME_FRAGMENT_GUARD`) + **Slice 2 `109a9df`**
 (DOCUMENT SOLUTIONS template-identity FILL, `TEMPLATE_IDENTITY_FILL`/`TEMPLATE_PRECEDENCE_CORROBORATE`).
@@ -31,8 +44,9 @@ hash PROMOTED from abstain-veto to PRIMARY supplier matcher, DEFAULT OFF (`LOGO_
 collisions (measured NT intra 62 < inter 126); supersedes the "BIG proven-but-unbuilt" TODO; enable it by
 flipping the switch on the next reimport (self-heals per supplier after 1 confirm), then the C7 field-scan/M=0
 gate; (c) `1f02557` two disambiguation-picker guards (`CANDIDATE_OCR_VALIDATE` off-page-candidate drop +
-`ANCHOR_CAPTION_BLEED_GUARD` fuzzy caption-bleed hold); (d) `b806fa1` Resolve/Straighten icon restyle. NEXT:
-BUILD the system-wide document-TYPE heading-authority fix — full spec + the 6 Oracle conditions (C1 is a
+`ANCHOR_CAPTION_BLEED_GUARD` fuzzy caption-bleed hold); (d) `b806fa1` Resolve/Straighten icon restyle. **[UPDATE: the type fix below was BUILT + SHIPPED 2026-07-15 evening — commit `2168c85`;
+see HANDOVER_2026-07-15_EVENING.md. This is the design that got built.]** The system-wide document-TYPE
+heading-authority fix — full spec + the 6 Oracle conditions (C1 was a
 ship-blocker) in `docs/designs/TYPE_HEADING_AUTHORITY_2026-07-15.md` (PO→Invoice / Worksheet→Sales-Order: the
 logo-sibling template type overrides the printed heading; the enhancement pass erodes the RED heading; and
 `_upsertTemplate` reinforces the wrong-type template instead of borning the correct-type one — owner's 16
