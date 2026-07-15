@@ -24,6 +24,21 @@ const check = (label, cond) => { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}
   check('nearestLeftCluster drops the far-left caption', c && !/Ticket/.test(c.text));
   check('nearestLeftCluster box spans just the nearest block', c && c.box[0] === 400 && (c.box[0] + c.box[2]) === 502);
 }
+// A BIG banner heading ("PURCHASE ORDER") shares the OCR row with a normal-sized caption ("Order
+// No.") near the value. The heading's tall boxes inflate the GLOBAL median, so a global threshold
+// swallowed the real column gap and glued the heading onto the caption ("the label grabs the whole
+// line" — the PO-83175 report). The PER-GAP threshold (scaled to the right/caption word) must split it.
+{
+  const words = [
+    { text: 'PURCHASE', box: [10,  0, 120, 60] },   // big banner heading, far left (tall boxes)
+    { text: 'ORDER',    box: [140, 0, 100, 60] },
+    { text: 'Order',    box: [300, 20, 45, 15] },   // normal caption near the value — wide gap before it
+    { text: 'No.',      box: [350, 20, 25, 15] },
+  ];
+  const c = A.nearestLeftCluster(words);
+  check('big banner heading does NOT glue onto the caption (per-gap threshold)', c && c.text === 'Order No.');
+  check('banner heading dropped from the label', c && !/PURCHASE/.test(c.text));
+}
 // One caption (small inter-word gaps only) stays whole.
 {
   const c = A.nearestLeftCluster([

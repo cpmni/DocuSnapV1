@@ -1838,12 +1838,64 @@ function _taughtDotTitle(taught) {
 // Re-fetch the taught-field set for the CURRENT supplier + selected type and repaint every dot.
 // The dots are TYPE-scoped, so changing the document type must re-query — a field taught on the
 // OLD type must not stay green under the new one (and vice-versa). Doc-guarded against races.
+// The LIVE Document-Issuer value: the current (possibly operator-edited) issuer input, else the
+// stored supplier. The taught dots are (supplier + type)-scoped, so a correction to the issuer must
+// re-scope them to the NEW supplier — reading the input keeps them honest the moment it changes.
+function _currentIssuerValue() {
+  const inp = document.querySelector('#fields-scroll .field-input[data-key="supplier_name"]');
+  const live = inp ? (inp.value || '').trim() : '';
+  return live || (currentDoc?.supplier_name || '');
+}
+
+// Debounced taught-dot re-query for an ISSUER edit (a re-key fires many input events). A NEW/untaught
+// issuer -> dots go off (honest "not learned for this supplier yet"); an existing issuer with taught
+// fields for this type -> they light. Mirrors the type-change re-query.
+let _issuerTaughtTimer = null;
+function _scheduleTaughtRefreshForIssuer() {
+  clearTimeout(_issuerTaughtTimer);
+  _issuerTaughtTimer = setTimeout(() => { _refreshTaughtForType().catch(() => {}); }, 300);
+}
+
+// A field VALUE read from a supplier-SCOPED learned source (a taught anchor, a template mapping /
+// fixed value, or a supplier hint) is INVALID once the issuer is corrected to a DIFFERENT supplier —
+// that position/mapping/value belonged to the previous supplier. Keyword/pattern reads and typed
+// (manual) values are supplier-INDEPENDENT and are kept. (Owner's "clear only suspect reads" choice.)
+function _isSupplierScopedRead(method) {
+  const m = String(method || '');
+  return /^anchor/.test(m) || /^template/.test(m) || m === 'hint' || m === 'late_rescue';
+}
+// After the issuer settles on a different supplier, clear the suspect (old-supplier-scoped) reads so
+// they aren't mistaken for valid values. Fires only on a settled change (⊕ teach / blur), never
+// mid-type. No-op when the issuer is unchanged/blank. The issuer field itself is never cleared.
+function _clearSuspectReadsForNewIssuer() {
+  const issuer = _currentIssuerValue().trim();
+  const orig   = (currentDoc?.supplier_name || '').trim();
+  if (!issuer || issuer.toLowerCase() === orig.toLowerCase()) return;   // unchanged / same supplier
+  let cleared = 0;
+  document.querySelectorAll('#fields-scroll .field-input[data-key]').forEach(input => {
+    const key = input.dataset.key;
+    if (key === 'supplier_name') return;                          // never the issuer being corrected
+    if (!input.value.trim()) return;                              // already empty
+    if (!_isSupplierScopedRead(input.dataset.method)) return;     // keyword / manual / logo -> keep
+    const o = input.dataset.original;
+    input.value = '';
+    input.classList.remove('corrected');
+    corrections[key] = { original_value: o, corrected_value: '' };   // persist the clear on Confirm
+    const row = input.closest('.field-row');
+    if (row) { try { dismissServerNote(row, key); } catch {} try { clearFieldWarning(row, input); } catch {} }
+    cleared++;
+  });
+  if (cleared) { validateConfirm(); try { showToast(`Cleared ${cleared} field${cleared > 1 ? 's' : ''} that were read from the previous supplier — teach them for ${issuer}.`, 'ok'); } catch {} }
+}
+
 async function _refreshTaughtForType() {
   const forDoc = currentDoc?.id;
   taughtFieldKeys = new Set();
   try {
+    // Live issuer value (not currentDoc.supplier_name) so an operator's issuer CORRECTION re-scopes
+    // the dots to the new supplier — a new supplier has no learned positions, so the dots go off.
     const _tk = await window.docusnap.getTaughtFieldKeys?.({
-      supplier_name: currentDoc?.supplier_name, document_type: selectedTypeSlug });
+      supplier_name: _currentIssuerValue(), document_type: selectedTypeSlug });
     if (currentDoc?.id !== forDoc) return;
     for (const r of (_tk || [])) taughtFieldKeys.add(r.field_key);
   } catch {}
@@ -1936,7 +1988,7 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
     </div>
     <div class="field-input-wrap">
       <input type="text" class="field-input ${low ? 'low-conf' : ''}"
-             data-key="${key}" data-original="${escHtml(val)}"
+             data-key="${key}" data-original="${escHtml(val)}" data-method="${escHtml(method || '')}"
              value="${escHtml(val)}" placeholder="Not found">
       <button class="pick-btn" data-key="${key}" title="Teach this field — draw a box round its value; Scan Finder learns where it sits and reads it on every future document from this supplier">&#8853;</button>
     </div>
@@ -1961,6 +2013,9 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
     if (input.value.trim() !== (orig || '').trim()) dismissServerNote(row, key);
     validateConfirm();
     updateTotalsVerifiedBadge();   // live-update the "mathematically verified" total badge
+    // Re-scope the "position taught" dots when the ISSUER is corrected — they're (supplier + type)-
+    // scoped, so a new/other supplier changes which learned positions apply (debounced re-query).
+    if (key === 'supplier_name') _scheduleTaughtRefreshForIssuer();
   });
 
   // Immediate regex/type validation on focus-out. Synchronous + warn-only: it sets
@@ -1972,6 +2027,10 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
     const msg = fieldValidationError(key, input.value);
     if (msg) setFieldWarning(row, input, msg);
     else clearFieldWarning(row, input);
+    // The ISSUER settled on a (possibly new) supplier -> re-scope the taught dots and clear the
+    // old-supplier-scoped reads (anchor/template/hint); keyword/typed values are kept. No-op if
+    // unchanged or the same supplier.
+    if (key === 'supplier_name') { _refreshTaughtForType().catch(() => {}); _clearSuspectReadsForNewIssuer(); }
   });
 
   // Right-click → field cleanup-rule toolkit (strip a leaked heading/column). Gated
@@ -2615,6 +2674,10 @@ async function runZoneOcr(rect, fieldKey) {
         }
       }
       _refreshTaughtDot(fieldKey);   // reflect the staged (or C1-dropped) teach on the field's dot
+      // If the ISSUER was just taught, its value IS the resolved supplier for this doc — re-scope
+      // EVERY field's taught dot to the new supplier (a new/untaught supplier -> the other fields'
+      // dots go off). A DIRECT re-query, not the datalist-popping synthetic 'input' avoided above.
+      if (fieldKey === 'supplier_name') { _refreshTaughtForType().catch(() => {}); _clearSuspectReadsForNewIssuer(); }
     }
   } catch (err) {
     console.error('Zone OCR error:', err);

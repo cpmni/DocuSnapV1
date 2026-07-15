@@ -25,17 +25,21 @@
       .sort((a, b) => a.l - b.l);
     if (!ws.length) return null;
     // A real inter-COLUMN gap is several text-heights wide — far larger than the inter-word
-    // space inside one caption. Tie the threshold to the median word height so it scales with
-    // DPI/zoom rather than a brittle pixel constant.
+    // space inside one caption. Tie the threshold to word height so it scales with DPI/zoom
+    // rather than a brittle pixel constant.
     const heights = ws.map(w => w.h).filter(h => h > 0).sort((a, b) => a - b);
     const medH = heights[Math.floor(heights.length / 2)] || 0;
-    const gapThresh = Math.max(medH * 1.2, 8);
-    // Walk left→right; a gap past the threshold starts a new column, discarding everything to
-    // its left. The surviving block is the rightmost (nearest) column.
+    // Walk left→right; a gap past the threshold starts a new column, DISCARDING everything to its
+    // left. The surviving block is the rightmost (nearest) column. The threshold is PER-GAP, scaled
+    // to the RIGHT word's height (the caption side, nearest the value) — NOT a global median — so a
+    // big BANNER heading sharing the OCR row ("PURCHASE ORDER   Order No. PO-83175") can't inflate
+    // the median and swallow the real inter-column gap, gluing the heading onto the caption (the
+    // "the label grabs the whole line" class). medH is the fallback when a word has no height.
     let block = [ws[0]];
     for (let i = 1; i < ws.length; i++) {
       const prev = ws[i - 1];
-      const gap = ws[i].l - (prev.l + prev.w);
+      const gap  = ws[i].l - (prev.l + prev.w);
+      const gapThresh = Math.max((ws[i].h || medH) * 1.2, 8);
       if (gap > gapThresh) block = [ws[i]];
       else block.push(ws[i]);
     }
