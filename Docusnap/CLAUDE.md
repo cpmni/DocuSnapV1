@@ -17,18 +17,26 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/features.md` — first-run wizard, welcome tour, settings backup, Learning Repair, teaching wizard, dev inspector.
 - `docs/history.md` — resolved QA/audit findings + build-stage history (Settings/Review/Search/Stage-7 rebuilds).
 
-## Recent session changes (2026-07-09 → 07-14) — durable mechanisms now in the code
-**READ FIRST: `docs/handovers/HANDOVER_2026-07-14_NIGHT.md`** (latest — the SUPPLIER+DOC IDENTITY overhaul,
-autonomous night, on branch `feat/reprocess-throughput-autostraighten`). SHIPPED+PUSHED: **Slice 1 `999898c`**
-(SuperStore "INi"/"INGE" garble → correct supplier; chrome-fragment plausibility guard, base/full split per
-Oracle; kill switch `SUPPLIER_CHROME_FRAGMENT_GUARD`) + **Slice 2 `109a9df`** (DOCUMENT SOLUTIONS null-supplier
-→ value-corroborated template-identity FILL, review-bound; + the `_genuine_template_supplier` precedence-override
-poison-guard; kill switches `TEMPLATE_IDENTITY_FILL`/`TEMPLATE_PRECEDENCE_CORROBORATE`). Both corpus byte-identical
-(M=1 pre-existing). **NEXT SESSION: (a) OWNER data cleanup — templates 4/5/7 are named "Cascade" but learned
-"Northgate" (logo-collision poison); (b) the BIG proven-but-unbuilt fix — promote the 256-bit isolated-mark logo
-hash from abstain-veto to PRIMARY matcher (classifier 12/0/3 on the live corpus; resolves DocSol + breaks
-Cascade↔Northgate; needs a detail-hash BACKFILL + shadow pass — measurements in
-`docs/reports/IDENTITY_MEASUREMENTS_2026-07-14.md`, probes `stress_test/logo_detail_classify.py`).** Superseded
+## Recent session changes (2026-07-09 → 07-15) — durable mechanisms now in the code
+**READ FIRST: `HANDOVER_2026-07-15.md`** (repo root — poison cleanup + Slice D detail-hash PRIMARY matcher
+BUILT default-off + 2 disambiguation-picker guards + icon restyle + the system-wide TYPE-heading fix DESIGN).
+Prior: `docs/handovers/HANDOVER_2026-07-14_NIGHT.md` (SUPPLIER+DOC IDENTITY overhaul). Earlier-shipped:
+**Slice 1 `999898c`** (SuperStore garble guard, `SUPPLIER_CHROME_FRAGMENT_GUARD`) + **Slice 2 `109a9df`**
+(DOCUMENT SOLUTIONS template-identity FILL, `TEMPLATE_IDENTITY_FILL`/`TEMPLATE_PRECEDENCE_CORROBORATE`).
+**2026-07-15 (branch `feat/reprocess-throughput-autostraighten`, UNPUSHED, 3 commits): (a) Cascade↔Northgate
+template poison CLEANED on the live DB (backup `docusnap.db.poison-backup-20260715-072322`) — supersedes the
+old "templates 4/5/7 Cascade/Northgate" cleanup TODO; (b) `40994fe` Slice D — the 256-bit isolated-mark detail
+hash PROMOTED from abstain-veto to PRIMARY supplier matcher, DEFAULT OFF (`LOGO_DETAIL_PRIMARY`), review-bound
+@69+note, both-branch enrolment cross-plant guard — resolves Cascade↔Northgate AND Northgate↔Copperfield
+collisions (measured NT intra 62 < inter 126); supersedes the "BIG proven-but-unbuilt" TODO; enable it by
+flipping the switch on the next reimport (self-heals per supplier after 1 confirm), then the C7 field-scan/M=0
+gate; (c) `1f02557` two disambiguation-picker guards (`CANDIDATE_OCR_VALIDATE` off-page-candidate drop +
+`ANCHOR_CAPTION_BLEED_GUARD` fuzzy caption-bleed hold); (d) `b806fa1` Resolve/Straighten icon restyle. NEXT:
+BUILD the system-wide document-TYPE heading-authority fix — full spec + the 6 Oracle conditions (C1 is a
+ship-blocker) in `docs/designs/TYPE_HEADING_AUTHORITY_2026-07-15.md` (PO→Invoice / Worksheet→Sales-Order: the
+logo-sibling template type overrides the printed heading; the enhancement pass erodes the RED heading; and
+`_upsertTemplate` reinforces the wrong-type template instead of borning the correct-type one — owner's 16
+worksheet confirms are all mislinked).** Superseded
 next-task: the auto-straighten field re-read (`docs/designs/DESKEW_FIELD_REREAD_2026-07-14.md`, field-scoped,
 Oracle-signed, NOT built). Prior evening handover `…_2026-07-14_EVENING.md` (⑂ Resolve picker +
 anchor-precedence/caption fixes, **MERGED to `main` via PR #10** = `6c93bb0`; reprocess worker cap 5→10). Earlier:
