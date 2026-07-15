@@ -3144,7 +3144,7 @@ function showAnchorReadout(detected, value) {
   }
   let msg;
   if (detected.fallback) {
-    msg = `<span class="ar-msg">&#9888; No label found — anchored by position. Read: <span class="ar-val">${val}</span></span>`;
+    msg = `<span class="ar-msg">&#10003; No caption nearby — anchored by its position. This spot will be read on future documents from this supplier. Read: <span class="ar-val">${val}</span></span>`;
   } else {
     // The label is EDITABLE — an auto-detect off a noisy scan can be misread ("verial No."),
     // and a wrong label never re-locates. The operator can correct it here before Confirm.
