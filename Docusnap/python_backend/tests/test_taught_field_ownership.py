@@ -152,6 +152,82 @@ try:
 finally:
     engine_mod.TAUGHT_FIELD_OWNERSHIP_ENABLED = _saved
 
+
+# ── corroboration exemption (gary+Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-15) ──────────────────
+# The ownership cap is DECLINED when the taught position ITSELF corroborated the value: a same-field
+# candidate that is authoritative (the ⊕ teach) / located / Stage-0.5 read the EXACT SAME non-caption
+# value the keyword winner did. Oracle C1: a BLIND non-authoritative anchor may NOT vouch.
+print("-- corroboration exemption --")
+NAME = 'Fernbank Veterinary Clinic'
+
+def cand(value, method='anchor_crop', authoritative=False, located=False):
+    return {"value": value, "method": method, "confidence": 50,
+            "authoritative": authoritative, "located": located}
+
+def run_c(results, candidates, anchors=None):
+    e = eng()
+    e._field_candidates = candidates or {}
+    e._flag_taught_field_ownership(results, FIELDS, 'Bramble & Finch Ltd', anchors or [],
+                                   [], 'sales_order', VOCAB)
+    return results
+
+# T1 INCIDENT: keyword@75 name + admissible taught anchor + AUTHORITATIVE (blind, located=False)
+# candidate reading the SAME name -> NOT capped (the taught position corroborated).
+r = run_c({"customer_name": kw(NAME, conf=75)},
+          {"customer_name": [cand(NAME, method='anchor_crop', authoritative=True, located=False)]},
+          anchors=[anc('customer_name')])
+check("T1 incident: authoritative anchor agrees -> NOT capped (conf 75 kept)", r["customer_name"]["confidence"] == 75)
+check("T1 incident: no taught-position note added", not r["customer_name"].get("validation_note"))
+
+# T1b LOCATED variant (located=True, not authoritative) also corroborates.
+r = run_c({"customer_name": kw(NAME, conf=75)},
+          {"customer_name": [cand(NAME, method='anchor_crop_relocated', authoritative=False, located=True)]},
+          anchors=[anc('customer_name')])
+check("T1b located anchor agrees -> NOT capped",
+      r["customer_name"]["confidence"] == 75 and not r["customer_name"].get("validation_note"))
+
+# T2 CAPTION-BOTH: both keyword and anchor read a CAPTION ('SO #') -> STILL capped (agreement on a
+# caption is not corroboration of a real value; pins the bug can't be restored).
+r = run_c({"customer_name": kw('SO #')},
+          {"customer_name": [cand('SO #', authoritative=True)]},
+          anchors=[anc('customer_name')])
+check("T2 caption both sides -> STILL capped @69", r["customer_name"]["confidence"] == 69)
+check("T2 caption both sides -> note present", 'taught position' in (r["customer_name"].get("validation_note") or ''))
+
+# T3 (pins Oracle C1): a BLIND NON-authoritative candidate (passive/global/late-rescue) matching the
+# value may NOT vouch -> STILL capped.
+r = run_c({"customer_name": kw(NAME, conf=75)},
+          {"customer_name": [cand(NAME, method='anchor_crop', authoritative=False, located=False)]},
+          anchors=[anc('customer_name')])
+check("T3 blind non-authoritative anchor -> STILL capped @69 (Oracle C1)", r["customer_name"]["confidence"] == 69)
+
+# T4 different anchor value -> STILL capped.
+r = run_c({"customer_name": kw(NAME, conf=75)},
+          {"customer_name": [cand('Someone Else Ltd', authoritative=True)]},
+          anchors=[anc('customer_name')])
+check("T4 anchor read a DIFFERENT value -> STILL capped @69", r["customer_name"]["confidence"] == 69)
+
+# T5 sub kill-switch off on the T1 setup -> capped again.
+_savedc = engine_mod.TAUGHT_OWNERSHIP_CORROBORATE
+try:
+    engine_mod.TAUGHT_OWNERSHIP_CORROBORATE = False
+    r = run_c({"customer_name": kw(NAME, conf=75)},
+              {"customer_name": [cand(NAME, authoritative=True)]},
+              anchors=[anc('customer_name')])
+    check("T5 TAUGHT_OWNERSHIP_CORROBORATE=0 -> capped again @69", r["customer_name"]["confidence"] == 69)
+finally:
+    engine_mod.TAUGHT_OWNERSHIP_CORROBORATE = _savedc
+
+# T6 BASELINE empty ledger -> STILL capped @69 (byte-identical to pre-change).
+r = run_c({"customer_name": kw(NAME, conf=75)}, {}, anchors=[anc('customer_name')])
+check("T6 empty ledger -> STILL capped @69 (byte-identical)", r["customer_name"]["confidence"] == 69)
+
+# T7 candidate matches but method is 'hint' (not anchor/located/stage-0.5) -> STILL capped.
+r = run_c({"customer_name": kw(NAME, conf=75)},
+          {"customer_name": [cand(NAME, method='hint', authoritative=False, located=False)]},
+          anchors=[anc('customer_name')])
+check("T7 non-anchor candidate (hint) agrees -> STILL capped @69", r["customer_name"]["confidence"] == 69)
+
 print()
 if fails:
     print(f"FAILED: {fails}")

@@ -92,6 +92,13 @@ _REREAD_CAP = 69
 # keyword stand-in for a taught position that couldn't be confirmed on this page → cap to review
 # (69) + note. HOLD-ONLY (value never touched). See _flag_taught_field_ownership.
 TAUGHT_FIELD_OWNERSHIP_ENABLED = os.environ.get('TAUGHT_FIELD_OWNERSHIP', '1') != '0'
+# CORROBORATION EXEMPTION (2026-07-15, gary+Oracle SIGN-OFF-WITH-CONDITIONS): the ownership cap is
+# DECLINED when the taught position ITSELF corroborated the value — a same-field candidate that is
+# authoritative (the ⊕ teach) OR genuinely located OR a Stage-0.5 mapping read the EXACT SAME non-
+# caption value the keyword winner did (two independent sources agree → not a generic-caption stand-in).
+# Oracle C1: a BLIND non-authoritative anchor (passive/__global__/Stage-2.6 late-rescue) may NOT vouch.
+# Own sub-switch so it A/Bs and rolls back independently of the c2 guard.
+TAUGHT_OWNERSHIP_CORROBORATE = os.environ.get('TAUGHT_OWNERSHIP_CORROBORATE', '1') != '0'
 
 
 def _late_rescue_applicable(s2_supplier, supplier_name):
@@ -1552,6 +1559,30 @@ class ExtractionEngine:
                     return True
                 return False
 
+            def _anchor_corroborates(key, val):
+                # CORROBORATION EXEMPTION (gary+Oracle 2026-07-15): the taught position ITSELF confirmed
+                # this value if a same-field candidate TIED TO THAT POSITION — authoritative (the ⊕ teach),
+                # genuinely located, or a Stage-0.5 mapping — read the EXACT SAME value the keyword winner
+                # did. Then it's not a generic-caption stand-in; don't cap. Oracle C1: a BLIND non-
+                # authoritative anchor (passive / __global__ / Stage-2.6 late-rescue blind rigid read) may
+                # NOT vouch — it reads arbitrary fixed-position text, not the protected taught position.
+                # BOTH the committed value AND the candidate must be NON-caption (two methods both grabbing
+                # a caption is not corroboration). Sub-switch TAUGHT_OWNERSHIP_CORROBORATE.
+                if not TAUGHT_OWNERSHIP_CORROBORATE:
+                    return False
+                if keyword.value_is_caption(val, caption_vocab):
+                    return False
+                target = text_normalise.normalise_for_tokens(val)
+                if not target:
+                    return False
+                for c in (getattr(self, '_field_candidates', {}) or {}).get(key, ()):
+                    if not (c.get('authoritative') or c.get('located')
+                            or _is_stage05_located(c.get('method'))):
+                        continue   # Oracle C1: only an ownership-tied read may vouch
+                    if text_normalise.normalise_for_tokens(c.get('value')) == target:
+                        return True
+                return False
+
             for key in owned:
                 d = results.get(key)
                 if not isinstance(d, dict):
@@ -1562,6 +1593,8 @@ class ExtractionEngine:
                 if not val or not str(val).strip():            # skip empty/None (Stage-4.5 withhold)
                     continue
                 if _hint_exempt(key, val):
+                    continue
+                if _anchor_corroborates(key, val):
                     continue
                 d['confidence'] = min(int(d.get('confidence') or 0), 69)
                 if not str(d.get('validation_note') or '').strip():
