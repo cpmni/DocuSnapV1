@@ -698,6 +698,54 @@ function deleteAnchor(db, id) {
 // A NEW phash this many bits CLOSER to another supplier than to X's own = a cross-plant (poison).
 const LOGO_CROSSPLANT_MARGIN = 4;
 
+// DETAIL-space (256-bit isolated-mark) cross-plant guard (Oracle C1, 2026-07-15). Once the detail hash
+// is promoted to a PRIMARY supplier picker (logo_detail.classify_supplier), one poisoned enrolled mark
+// flips a real PICK — a mis-FILE — not a harmless abstain. So refuse to enrol OR backfill a detail mark
+// that POSITIVELY belongs to a DIFFERENT supplier. Mirrors logo_detail.detail_cross_plant_closer
+// (accept 80 / margin 24, measured). Must gate BOTH branches: the collide-at-8 COALESCE backfill path
+// pre-empts the coarse insert guard (Cascade↔Northgate coarse phash = 8 ≤ 10), so the insert-branch
+// coarse guard alone leaves the detail set open to poison.
+const DETAIL_ACCEPT_DIST       = 80;
+const DETAIL_CROSSPLANT_MARGIN = 24;
+
+// 256-bit hex Hamming. Large sentinel on length-mismatch/empty — NOT 64 (which is a valid mid-range
+// detail distance and would masquerade as a moderate match; hammingDistance's 64 fallback is for the
+// 64-bit coarse phash only).
+function detailHamming(h1, h2) {
+  if (!h1 || !h2 || h1.length !== h2.length) return 1e9;
+  let dist = 0;
+  for (let i = 0; i < h1.length; i++) {
+    const xor = parseInt(h1[i], 16) ^ parseInt(h2[i], 16);
+    dist += xor.toString(2).split('1').length - 1;
+  }
+  return dist;
+}
+
+// True → the incoming detail mark is decisively a DIFFERENT supplier's (matches a rival's enrolled set
+// within accept AND is > margin closer to that rival than to this supplier's own set) → refuse to plant
+// it under `supplier_name`. COLD-START SAFE: with no own detail yet (minOwn = ∞), a genuine first mark
+// sits FAR from every rival (inter ~108 > accept 80) → not refused; only a mark that positively matches
+// a rival is refused. FAIL-SAFE: missing detail / no rival detail → false (nothing to poison).
+function _detailCrossPlantCloser(db, supplier_name, detail_hash) {
+  if (!detail_hash) return false;
+  let minOwn = Infinity;
+  for (const r of db.prepare(
+    'SELECT detail_hash FROM logo_fingerprints WHERE supplier_name = ? AND detail_hash IS NOT NULL'
+  ).all(supplier_name)) {
+    const d = detailHamming(detail_hash, r.detail_hash);
+    if (d < minOwn) minOwn = d;
+  }
+  let minOther = Infinity;
+  for (const r of db.prepare(
+    'SELECT detail_hash FROM logo_fingerprints WHERE supplier_name <> ? AND detail_hash IS NOT NULL'
+  ).all(supplier_name)) {
+    const d = detailHamming(detail_hash, r.detail_hash);
+    if (d < minOther) minOther = d;
+  }
+  if (minOther === Infinity) return false;                 // no rival detail to be closer to
+  return minOther <= DETAIL_ACCEPT_DIST && (minOther + DETAIL_CROSSPLANT_MARGIN) < minOwn;
+}
+
 function saveLogoFingerprint(db, { supplier_name, phash, ahash, detail_hash, manual }) {
   const existing = db.prepare(
     'SELECT id, phash FROM logo_fingerprints WHERE supplier_name = ?'
@@ -709,12 +757,18 @@ function saveLogoFingerprint(db, { supplier_name, phash, ahash, detail_hash, man
       // has NULL detail_hash; COALESCE fills it from this confirm without overwriting an existing one
       // (the discriminator is a hash of the same mark, so any confirm's is equivalent). phash path
       // unchanged.
+      // C1 (Oracle 2026-07-15): but REFUSE the backfill when this detail mark decisively belongs to a
+      // RIVAL — the collide-at-8 coarse path lands HERE (before the insert cross-plant guard), so a
+      // Northgate doc mis-confirmed under Cascade would otherwise poison Cascade's picker set. Pass
+      // null so COALESCE leaves the row's detail_hash untouched; MANUAL bypasses (operator authority).
+      const backfill = (detail_hash && !manual && _detailCrossPlantCloser(db, supplier_name, detail_hash))
+        ? null : (detail_hash || null);
       db.prepare(`
         UPDATE logo_fingerprints
         SET match_count = match_count + 1, last_seen = datetime('now'),
             detail_hash = COALESCE(detail_hash, ?)
         WHERE id = ?
-      `).run(detail_hash || null, row.id);
+      `).run(backfill, row.id);
       return;
     }
   }
@@ -741,10 +795,15 @@ function saveLogoFingerprint(db, { supplier_name, phash, ahash, detail_hash, man
       return { skipped: true, reason: 'cross_plant', closerTo: otherName, minOther, minOwn };
     }
   }
+  // C1: even when the coarse phash passes the cross-plant guard above, refuse to plant a detail mark
+  // that decisively belongs to a rival (contradictory coarse-vs-detail evidence) — insert the phash
+  // (coarse-vetted) but with a null detail rather than poisoning the picker set. MANUAL bypasses.
+  const insDetail = (detail_hash && !manual && _detailCrossPlantCloser(db, supplier_name, detail_hash))
+    ? null : (detail_hash || null);
   db.prepare(`
     INSERT INTO logo_fingerprints (supplier_name, phash, ahash, detail_hash)
     VALUES (?, ?, ?, ?)
-  `).run(supplier_name, phash, ahash, detail_hash || null);
+  `).run(supplier_name, phash, ahash, insDetail);
 }
 
 function getAllLogos(db) {

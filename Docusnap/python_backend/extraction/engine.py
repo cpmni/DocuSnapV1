@@ -2131,6 +2131,13 @@ class ExtractionEngine:
                     "confidence": logo_match["confidence"],
                     "method":     "logo",
                 }
+                # C2 (Slice D): a PRIMARY detail-hash OVERRIDE that RE-ROUTES the supplier carries a
+                # validation_note — propagate it so the re-route is REVIEW-BOUND. supplier_name is
+                # text-typed, so the trust.js 88 critical-field floor does NOT guard it; the NOTE is the
+                # only reliable auto-file block (isAutoFileEligible refuses any noted field at EVERY
+                # floor). Absent on a coarse/agree match (LOGO_DETAIL_PRIMARY off) → byte-identical.
+                if logo_match.get("validation_note"):
+                    results["supplier_name"]["validation_note"] = logo_match["validation_note"]
 
         # ── Template-identity supplier FILL (logo miss) ──────────────────────
         # A template matched but nothing resolved WHO the supplier is (logo drifted

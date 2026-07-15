@@ -1450,6 +1450,47 @@ def try_logo_supplier_match(page_image: Image.Image,
             return None
 
         winner = _pick_unambiguous_supplier(by_supplier)
+
+        # SLICE D — PRIMARY detail resolver (kill switch LOGO_DETAIL_PRIMARY, default OFF → this whole
+        # block is skipped and the function stays byte-identical to the veto-only path). When ON and a
+        # mark detail hash is present, classify the supplier by NEAREST isolated-mark over ALL enrolled
+        # sets — this reaches ACROSS the coarse band, so a look-alike whose coarse phash drifted into a
+        # rival's band (doc-193) still resolves to the RIGHT company. AGREE with the coarse winner → keep
+        # it untouched (its confidence/bonus intact). DISAGREE, or coarse None/ambiguous → OVERRIDE, but
+        # REVIEW-BOUND (conf 69 + note): a supplier re-route is the highest blast radius, and
+        # supplier_name is text-typed so the trust.js critical-field floor does NOT guard it — the note
+        # is the auto-file block. classify_supplier is FAIL-SAFE: on None/abstain it returns None and we
+        # FALL THROUGH to the veto + coarse path below, so the veto still guards the coarse winner even
+        # with PRIMARY on (Oracle Seam 3). Method stays 'logo' so the engine _genuine_template_supplier
+        # precedence override (which fires only on method.startswith('anchor')) can never re-engage on
+        # it (Oracle C3).
+        if query_detail_hash and os.environ.get('LOGO_DETAIL_PRIMARY', '0') == '1':
+            try:
+                import logo_detail
+                by_sup_det: dict[str, list] = {}
+                for fp in logos:
+                    dh = fp.get("detail_hash")
+                    sn = (fp.get("supplier_name") or "").strip()
+                    if dh and sn:
+                        by_sup_det.setdefault(sn, []).append(dh)
+                s, _d, band = logo_detail.classify_supplier(query_detail_hash, by_sup_det)
+                if s is not None:
+                    if winner and (winner.get("supplier_name") or "").strip().lower() == s.strip().lower():
+                        return winner            # AGREE → coarse winner untouched (byte-identical)
+                    return {                     # DISAGREE / coarse miss → detail OVERRIDES, review-bound
+                        "supplier_name":   s,
+                        "confidence":      69,   # < 70 review threshold AND < 88 critical floor
+                        "match_count":     len(by_sup_det.get(s, [])),
+                        "method":          "logo",
+                        "validation_note": "Company identified from the letterhead logo mark; "
+                                           "please confirm it's correct.",
+                        "detail_override": True,
+                        "detail_band":     band,
+                    }
+                # classify abstained (None) → fall through to the veto + coarse path (unchanged)
+            except Exception:
+                pass   # best-effort; never break identification
+
         # SLICE C — isolated-mark VETO on the supplier-fingerprint path. _pick_unambiguous_supplier's ±4
         # near-tie guard only rejects an AMBIGUOUS-distance pick; a look-alike monogram whose greyscale
         # phash is DECISIVELY closest (the Northgate-doc-reads-Cascade case) sails through. Abstain the

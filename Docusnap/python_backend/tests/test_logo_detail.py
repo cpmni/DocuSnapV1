@@ -102,6 +102,70 @@ def main():
           LD.should_veto_logo(far, [base], 90) is True and LD.should_veto_logo(far, [base], 120) is False)
     check('default threshold ≈ measured 72 (env-overridable)', LD._veto_dist() == 72)
 
+    # 7. Slice D — classify_supplier PRIMARY resolver (pure; fail-safe; the ties/band rules).
+    def at(d):
+        """A 64-hex (256-bit) string at exactly Hamming `d` from base ('0'*64) — i.e. from the query."""
+        full, rem = d // 4, d % 4
+        s = 'f' * full + {0: '', 1: '1', 2: '3', 3: '7'}[rem]
+        return s + '0' * (64 - len(s))
+    q = '0' * 64
+    check('classify self-check: at(d) is exactly d from the query', LD.detail_distance(q, at(37)) == 37)
+    check('default thresholds (env-overridable): accept 80 / confident 48 / margin 24',
+          LD._accept_dist() == 80 and LD._confident_dist() == 48 and LD._accept_margin() == 24)
+
+    # confident band: nearest ≤48 AND ≥2 marks
+    check('classify: nearest 30 with 2 marks → confident',
+          LD.classify_supplier(q, {'X': [at(30), at(35)]}) == ('X', 30, 'confident'))
+    # single ref can NEVER be confident (drift envelope unproven) — cold-start pin
+    check('classify: nearest 20 but ONE mark → review (single ref not confident)',
+          LD.classify_supplier(q, {'X': [at(20)]}) == ('X', 20, 'review'))
+    # review band: confident_thr < dist ≤ accept_thr
+    check('classify: nearest 60 → review band',
+          LD.classify_supplier(q, {'X': [at(60), at(70)]}) == ('X', 60, 'review'))
+    # decisive multi-supplier pick
+    check('classify: decisive nearest (20 vs 100) → confident X',
+          LD.classify_supplier(q, {'X': [at(20), at(22)], 'Y': [at(100)]}) == ('X', 20, 'confident'))
+    # nearest beyond accept → abstain to coarse
+    check('classify: nearest 100 (> accept 80) → (None,100,None) → coarse',
+          LD.classify_supplier(q, {'X': [at(100)]}) == (None, 100, None))
+    # NEAR-TIE: two viable suppliers within margin → abstain (never pick-nearest on a tie)
+    check('classify: near-tie 60 vs 70 (both ≤80, diff<24) → abstain',
+          LD.classify_supplier(q, {'X': [at(60)], 'Y': [at(70)]}) == (None, 60, None))
+    check('classify: near-tie fires even at confident distance (20 vs 30) → abstain',
+          LD.classify_supplier(q, {'X': [at(20), at(21)], 'Y': [at(30)]}) == (None, 20, None))
+    # Seam-4 boundary: runner-up NOT viable (>accept) → NOT a tie → resolve the nearest
+    check('classify: 60 vs 95 (runner-up >accept) → resolve X, not abstain',
+          LD.classify_supplier(q, {'X': [at(60)], 'Y': [at(95)]}) == ('X', 60, 'review'))
+    # fail-safe
+    check('classify FAIL-SAFE: None query → (None,None,None)',
+          LD.classify_supplier(None, {'X': [at(10)]}) == (None, None, None))
+    check('classify FAIL-SAFE: empty supplier map → (None,None,None)',
+          LD.classify_supplier(q, {}) == (None, None, None))
+    check('classify FAIL-SAFE: all-null / empty sets → (None,None,None)',
+          LD.classify_supplier(q, {'X': [None], 'Y': []}) == (None, None, None))
+
+    # 8. detail_cross_plant_closer — enrolment guard (Oracle C1). True = refuse (would poison the picker).
+    # POISON: a Northgate mark presented under Cascade — Cascade has no own detail yet (cold-start) but
+    # the mark positively matches Northgate → REFUSE.
+    check('cross-plant: cold-start, mark matches a rival (10) → refuse',
+          LD.detail_cross_plant_closer(q, [], {'Northgate': [at(10)]}) is True)
+    # POISON with own present: mark far from Cascade's own (100) but close to Northgate (10) → refuse.
+    check('cross-plant: closer to rival (10) than own (100) → refuse',
+          LD.detail_cross_plant_closer(q, [at(100)], {'Northgate': [at(10)]}) is True)
+    # LEGIT first mark: Cascade cold-start, its genuine mark is FAR from every rival (inter ~108) → plant.
+    check('cross-plant COLD-START SAFE: legit first mark far from all rivals (108) → plant',
+          LD.detail_cross_plant_closer(q, [], {'Northgate': [at(108)]}) is False)
+    # LEGIT with own: close to own (15), rival far (108) → plant.
+    check('cross-plant: closer to own (15) than rival (108) → plant',
+          LD.detail_cross_plant_closer(q, [at(15)], {'Northgate': [at(108)]}) is False)
+    # ambiguous but NOT decisively closer to rival (own 30, rival 35) → plant (margin not met).
+    check('cross-plant: rival barely closer, margin not met → plant',
+          LD.detail_cross_plant_closer(q, [at(30)], {'Northgate': [at(35)]}) is False)
+    check('cross-plant FAIL-SAFE: no query → plant (nothing to poison)',
+          LD.detail_cross_plant_closer(None, [at(30)], {'Y': [at(10)]}) is False)
+    check('cross-plant: no rival detail at all → plant',
+          LD.detail_cross_plant_closer(q, [at(30)], {}) is False)
+
     print('\n' + ('ALL PASS' if fails == 0 else f'{fails} FAILED'))
     sys.exit(1 if fails else 0)
 
