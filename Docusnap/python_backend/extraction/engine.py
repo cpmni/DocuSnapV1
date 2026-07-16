@@ -145,6 +145,49 @@ def _is_stage05_located(method: str | None) -> bool:
                              or method.startswith("template_registration"))
 
 
+def _identity_key_for_type(field_defs: list[dict]) -> str | None:
+    """The single IDENTITY (Document Issuer) field key FOR THIS TYPE — supplier_name when the
+    type carries one, else customer_name, else None. Mirrors COMPANY_KEYS precedence
+    (database/modules/document_types.js) and the _flag_recipient_caption_issuer derivation:
+    post-migration-44 every type's identity/scope key is supplier_name, and a customer_name
+    that co-exists on a dual-key type is an ordinary RECIPIENT field, NOT the issuer. Derived
+    PER-TYPE deliberately — do NOT reuse the module frozenset _IDENTITY_FIELD_KEYS (it still
+    lists BOTH keys, so it would treat a recipient customer_name as identity)."""
+    keys = {f.get('key') for f in (field_defs or [])}
+    if 'supplier_name' in keys:
+        return 'supplier_name'
+    if 'customer_name' in keys:
+        return 'customer_name'
+    return None
+
+
+def _is_positional_identity_read(method: str | None) -> bool:
+    """True for an identity read placed by landmark GEOMETRY alone — method ``anchor_registration``,
+    the "register, then read" rung (anchor.py:937-967) that positions its target box via the
+    per-page landmark transform and clears only a credibility/format gate, WITHOUT ever locating
+    this field's own caption. It is the single identity method flagged ``located_ok=True`` by method
+    fiat (anchor.py:1134-1136), so it alone BYPASSES the cross-supplier blind-read guard
+    (``anchor._is_blind_cross_supplier_anchor``, which runs only when ``not located_ok``) — the exact
+    vector by which a DIFFERENT supplier's identity anchor, admitted cross-supplier by
+    ``_anchor_matches``' identity branch, reads THIS page at a foreign landmark position (the
+    SuperStore "Item"/"Ship To:" junk — all 14 live cases are ``anchor_registration`` with no caption).
+
+    Deliberately NARROW (Oracle 2026-07-15 SEND-BACK of the original broad ``startswith('anchor') or
+    _is_stage05_located`` predicate, which regressed two shipped tested capabilities to close a hole
+    the corpus/audit show is empty). It does NOT match:
+      - content-located Stage-2 anchor reads off a REAL caption (``anchor`` / ``anchor_inline`` /
+        ``anchor_crop_relocated``) — a supplier's OWN "Supplier:" line still corrects a wrong template
+        guess (the Greenfield-over-Acme invariant ``_is_blind_cross_supplier_anchor`` preserves BY NAME);
+      - blind rigid ``anchor_crop`` reads — a NAMED cross-supplier one is already dropped by the
+        existing blind guard (``located_ok=False``);
+      - admin-curated Stage-0.5 ``template_mapping`` / ``template_registration`` reads — template-scoped,
+        never cross-applied.
+    Those legitimate origins are left to the existing guards. (The pre-existing false-locate residual —
+    a rigid ABSOLUTE read whose caption coincidentally appears on another layout — is unclosed by any
+    method-level predicate and deferred to the ``_place_from_located`` slice.)"""
+    return (method or "").startswith("anchor_registration")
+
+
 # A BLIND template_registration read placed its target box by landmark GEOMETRY alone, with NO
 # evidence that this field's own label sits near the value — so a mis-taught / layout-mismatched
 # mapping can land on a wrong-but-type-valid neighbour (e.g. a ZIP fragment "6102" for
@@ -579,6 +622,57 @@ class ExtractionEngine:
         trimmed). The JS side (learning.acceptName / buildTrainingArgs) stores the SAME
         canonical form, so a taught 'Cloud VPS' matches 'cloud   vps' / ' Cloud VPS '."""
         return " ".join(str(value or "").strip().lower().split())
+
+    @staticmethod
+    def _noted_template_fill_value(sn_cur):
+        """The value of a REVIEW-BOUND template_identity FILL (method 'template_identity' + a
+        validation_note + a value) — the ONLY incumbent eligible for text-first graduation. Returns
+        None for: the un-noted template-supplier-precedence override (@90, no note), a
+        positional-dropped (None) value, or any other method. Pure/static so the eligibility gate is
+        unit-testable without a full extract()."""
+        if not isinstance(sn_cur, dict):
+            return None
+        if sn_cur.get("method") != "template_identity":
+            return None
+        if not sn_cur.get("validation_note"):
+            return None
+        return sn_cur.get("value") or None
+
+    def _supplier_hint_upgrade(self, incumbent_value, hints, ocr_top, suppressed_norm):
+        """Pick the best qualifying `supplier_name` hint whose value appears in `ocr_top` (the issuer
+        band). Returns (value, usage_count) or None. Shared by the Stage-2.5a text-scan fallback and
+        the text-first issuer GRADUATION (gary-designed, Oracle-signed 2026-07-15) so the graduate/
+        hold/no-swap/C1 decision is unit-reachable without OCR or a DB.
+
+        A candidate hint must, IN THIS ORDER (the order is load-bearing — Oracle C1): be a
+        `supplier_name` hint · usage_count >= 3 · a PLAUSIBLE name · NOT the C1-suppressed vendor
+        (`suppressed_norm`, the buyer-issued guard's dropped caption) · [GRADUATION only] equal
+        `incumbent_value` (the no-swap invariant) · and finally be PRESENT in `ocr_top`. Highest
+        usage_count wins.
+
+        `incumbent_value` None  → original implausible-incumbent path: ANY qualifying hint may win
+                                  (swapping to a different supplier is the point there).
+        `incumbent_value` == V  → graduation path: ONLY a hint confirming V may win, so a graduation
+                                  can never adopt a DIFFERENT supplier than the fill already chose —
+                                  it only decides whether to shed the review note."""
+        grad_norm = self._accept_norm(incumbent_value) if incumbent_value else None
+        best_val, best_usage = None, 0
+        for h in (hints or []):
+            if h.get("field_key") != "supplier_name":
+                continue
+            if (h.get("usage_count") or 0) < 3:
+                continue
+            val = (h.get("hint_value") or "").strip()
+            if not keyword._is_plausible_supplier_name(val):
+                continue
+            if suppressed_norm and self._accept_norm(val) == suppressed_norm:
+                continue   # C1: never re-adopt the just-suppressed vendor caption
+            if grad_norm is not None and self._accept_norm(val) != grad_norm:
+                continue   # no-swap: a graduation may only confirm the fill's own value
+            if val and val.lower() in ocr_top:
+                if (h.get("usage_count") or 0) > best_usage:
+                    best_val, best_usage = val, (h.get("usage_count") or 0)
+        return (best_val, best_usage) if best_val else None
 
     def set_accepted_names(self, names) -> None:
         """Load the operator-accepted NAME allowlist (exact values the user marked valid).
@@ -1416,6 +1510,67 @@ class ExtractionEngine:
                     "this may be the recipient, not the issuer. Please confirm.")
             self.log(f"  Issuer guard: customer_name read '{val}' came from a "
                      f"recipient caption — flagged for review")
+        except Exception:
+            pass   # advisory guard — must never break extraction
+
+    def _drop_positional_identity_read(self, results, field_defs):
+        """IDENTITY POSITIONAL-READ DROP (cross-supplier issuer-bleed fix; gary+Oracle-signed,
+        narrowed by Oracle SEND-BACK 2026-07-15).
+
+        MECHANISM (verified in the live code — NOT the stale "cross-supplier sweep" narrative; the
+        authoritative saveAnchor sweep was scoped to one supplier on 2026-07-09, learning.js:523-529).
+        The bleed is READ-TIME: anchor._anchor_matches admits a DIFFERENT supplier's identity anchor
+        onto this doc-type by design (the identity branch — so a supplier's own caption can correct a
+        wrong template guess). anchor._is_blind_cross_supplier_anchor would drop such a foreign read,
+        but it runs only when `not located_ok` — and `anchor_registration` is flagged located_ok=True
+        by method fiat (anchor.py:1134-1136) despite placing its box by landmark GEOMETRY with no
+        caption verification. So a foreign position-only ISSUER teach reads THIS page at its landmark
+        position → a column header ("Item") or recipient caption ("Ship To:") → junk that, uncaught,
+        becomes results['supplier_name'] and thus the resolved filing/learning SCOPE. All 14 live
+        SuperStore cases are anchor_registration with no caption.
+
+        This drop is the COMPLEMENT that plugs exactly that located_ok=True bypass — it fires ONLY for
+        `anchor_registration` identity reads (see _is_positional_identity_read). A live audit found
+        ZERO confirmed docs whose issuer resolves via any positional read (wins are logo /
+        template_fixed / template_identity / hint_text_match / keyword / manual), so it removes NO
+        committed win. Content-located own-caption anchor reads (Greenfield's 'Supplier:'), blind
+        rigid anchor_crop (already dropped by the existing guard), and admin-curated Stage-0.5
+        template_mapping reads are all LEFT ALONE — the original broad predicate regressed those
+        (test_supplier_identity_stability / test_supplier_name_precedence) for no safety gain.
+
+        DROP (value=None + conf 0 + note), NOT a review-cap: a capped "Item" stays visible AND still
+        scopes downstream learning. Keep the dict (do NOT pop the key — the synthesised
+        type_ambiguity carrier and other readers expect supplier_name present). resolved_supplier
+        (read just after the call site) then falls to Stage 2.5a hint recovery / logo / keyword, or
+        empty→review — never a different WRONG supplier (Stage-2.5a only adopts a plausible, usage≥3,
+        on-page hint; the E2E resolves all 14 → the correct 'SuperStore').
+
+        Per-type identity key (_identity_key_for_type) so a RECIPIENT customer_name positional read
+        on a dual-key type (disambiguation picker / late rescue / taught recipient) is UNAFFECTED.
+        Kill switch env IDENTITY_POSITIONAL_DROP (default ON) → =0 is byte-identical. Best-effort:
+        never breaks extraction."""
+        if os.environ.get("IDENTITY_POSITIONAL_DROP", "1") == "0":
+            return
+        try:
+            id_key = _identity_key_for_type(field_defs)
+            if not id_key:
+                return
+            read = results.get(id_key)
+            if not isinstance(read, dict) or not read.get('value'):
+                return
+            if not _is_positional_identity_read(read.get('method')):
+                return
+            self.log(f"  Identity positional-read drop: {id_key} read '{read.get('value')}' via "
+                     f"'{read.get('method')}' (taught position, not this page's own content) — "
+                     f"dropped; issuer falls to hint/logo/keyword or review")
+            results[id_key] = {
+                "value":           None,
+                "confidence":      0,
+                "method":          read.get('method'),
+                "validation_note": ("The Document Issuer was read from a remembered position that "
+                                    "belongs to a different sender's layout, so it wasn't trusted on "
+                                    "this document. Please confirm who issued this."),
+            }
         except Exception:
             pass   # advisory guard — must never break extraction
 
@@ -2660,6 +2815,12 @@ class ExtractionEngine:
                         "method":     "template_identity",
                     }
 
+        # IDENTITY POSITIONAL-READ DROP (the cross-supplier issuer-bleed fix) — see the method. Fires
+        # AFTER the template-supplier-precedence override above (a corroborated template identity has
+        # already replaced the artifact read) and BEFORE resolved_supplier is read below, so a blanked
+        # issuer falls to Stage 2.5a hint recovery / logo / keyword, or empty→review.
+        self._drop_positional_identity_read(results, field_defs)
+
         resolved_supplier = (results.get('supplier_name') or {}).get('value') or None
         if resolved_supplier and resolved_supplier != supplier_name:
             if supplier_name:
@@ -2693,40 +2854,44 @@ class ExtractionEngine:
         # a supplier" and skipped this recovery entirely — letting the fragment
         # win. Now an implausible incumbent is treated like no incumbent, so the
         # scan can recover the real, plausible name from confirmed hints.
-        if not keyword._is_plausible_supplier_name(supplier_name) and hints:
+        # TEXT-FIRST ISSUER GRADUATION (gary-designed, Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-15):
+        # a review-bound template_identity FILL (@70 + "inferred from previously filed documents"
+        # note) is graduated to the confident, un-noted hint_text_match resolution 2.5a would ITSELF
+        # produce for a plain-text-wordmark supplier — when the SAME value is corroborated by a
+        # usage>=3 confirmed hint present in the issuer band. The logo misses on these (its region
+        # crop encodes the variable Bill-To block — Phillip), so the fill fires and BLOCKS this
+        # stricter path (the fill's value is plausible, so the gate below skipped it). The graduated
+        # set is a STRICT SUBSET of 2.5a's already-trusted un-noted set (2.5a's bar PLUS whole-page
+        # template corroboration PLUS value==V no-swap), so it drops no safety the un-noted path
+        # doesn't already accept; the post-2.5a guard suite (branding/identity/type-ambiguity/
+        # wordness/recipient-caption) re-runs on the un-noted value. Value is FIXED to V — it can
+        # NEVER graduate a DIFFERENT supplier. Kill switch env TEMPLATE_IDENTITY_GRADUATE (default
+        # ON). See tests/test_template_identity_graduate.py.
+        # Eligible incumbent for text-first graduation: a review-bound template_identity fill, ONLY
+        # when the kill switch is on. None on the original implausible-incumbent path (unchanged).
+        _incumbent = None
+        if os.environ.get("TEMPLATE_IDENTITY_GRADUATE", "1") != "0":
+            _incumbent = self._noted_template_fill_value(results.get("supplier_name"))
+        if hints and (not keyword._is_plausible_supplier_name(supplier_name) or _incumbent is not None):
             ocr_top = ocr_text[:600].lower()
             # C1 (Oracle): if the buyer-issued guard just dropped a vendor caption, Stage 2.5a must
             # not silently re-adopt that same value from a stored hint (an install that both ORDERS
             # FROM and is INVOICED BY "Sandpiper" would have it as a supplier_name hint, and a
-            # "Supplier:" caption sits near the top) — that would fill the issuer with the vendor and
-            # flip the doc out of review. A DIFFERENT true-issuer hint is still recoverable.
+            # "Supplier:" caption sits near the top). A DIFFERENT true-issuer hint is still recoverable.
             _suppressed_norm = self._accept_norm(_suppressed_issuer or "")
-            best_hint = None
-            best_usage = 0
-            for h in hints:
-                if h.get("field_key") != "supplier_name":
-                    continue
-                if (h.get("usage_count") or 0) < 3:
-                    continue
-                val = (h.get("hint_value") or "").strip()
-                # Only a PLAUSIBLE hint may replace the incumbent — never swap one
-                # implausible fragment for another.
-                if not keyword._is_plausible_supplier_name(val):
-                    continue
-                if _suppressed_norm and self._accept_norm(val) == _suppressed_norm:
-                    continue   # C1: never re-adopt the just-suppressed vendor caption
-                if val and val.lower() in ocr_top:
-                    if (h.get("usage_count") or 0) > best_usage:
-                        best_hint  = val
-                        best_usage = h.get("usage_count") or 0
-            if best_hint:
+            # GRADUATION no-swap: when firing off a noted fill (_incumbent set), ONLY a hint confirming
+            # that value V may qualify — a different-supplier hint, even higher-usage, can never win.
+            _pick = self._supplier_hint_upgrade(_incumbent, hints, ocr_top, _suppressed_norm)
+            if _pick:
+                best_hint, best_usage = _pick
                 supplier_name = best_hint
                 results["supplier_name"] = {
                     "value":      best_hint,
                     "confidence": min(85, 60 + best_usage * 2),
                     "method":     "hint_text_match",
                 }
-                self.log(f"  Stage 2.5: supplier '{best_hint}' identified from text scan")
+                self.log(f"  Stage 2.5: supplier '{best_hint}' identified from text scan"
+                         f"{' (graduated from a review-bound template_identity fill)' if _incumbent else ''}")
 
         # ── Stage 2.6: LATE-ANCHOR RESCUE (2026-07-10) ───────────────────────────
         # On a doc whose supplier was UNKNOWN at Stage-2 time (no template/logo hit — exactly
