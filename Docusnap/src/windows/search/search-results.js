@@ -159,7 +159,10 @@ function _showMenu(x, y) {
   menu.innerHTML = _isBin()
     ? (_canEdit() ? `<button data-act="restore">Restore${sfx}</button>` : '') +
       (_isAdmin() ? `<button data-act="purge" class="danger">Delete permanently${sfx}</button>` : '')
-    : `<button data-act="delete" class="danger">Delete${sfx}</button>`;
+    // Send back to Review (Admin): de-confirms a filed doc so it re-enters the queue. Status-guarded
+    // server-side (only currently-confirmed docs move), so a mixed/non-confirmed selection is a no-op.
+    : (_isAdmin() ? `<button data-act="sendback">Send back to Review${sfx}</button>` : '') +
+      `<button data-act="delete" class="danger">Delete${sfx}</button>`;
   document.body.appendChild(menu);
   const mw = menu.offsetWidth, mh = menu.offsetHeight;
   menu.style.left = Math.min(x, window.innerWidth  - mw - 6) + 'px';
@@ -177,8 +180,10 @@ async function _act(kind) {
   const noun = ids.length > 1 ? `${ids.length} documents` : 'this document';
   if (kind === 'delete' && !confirm(`Move ${noun} to the recycle bin? You can restore ${ids.length > 1 ? 'them' : 'it'} later.`)) return;
   if (kind === 'purge'  && !confirm(`Permanently delete ${noun} and ${ids.length > 1 ? 'their files' : 'its file'}? This cannot be undone.`)) return;
+  if (kind === 'sendback' && !confirm(`Send ${noun} back to the Review queue? ${ids.length > 1 ? 'They stay' : 'It stays'} filed until re-confirmed.`)) return;
   const call = kind === 'delete' ? window.docusnap.deleteDocument
              : kind === 'restore' ? window.docusnap.restoreDocument
+             : kind === 'sendback' ? window.docusnap.repairDeconfirm
              : window.docusnap.purgeDocument;
   try { for (const id of ids) await call(id); } catch (e) { console.error(`${kind} failed:`, e); }
   _sel().clear();

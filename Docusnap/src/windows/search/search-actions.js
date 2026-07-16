@@ -49,6 +49,12 @@ function renderActions(doc) {
     });
   } else {
     if (doc.status === 'confirmed') {
+      // Send a filed doc back to the Review queue (Admin) — de-confirms it; the file stays put
+      // until re-confirmed (repair-deconfirm keeps stored_path). First action so it's prominent.
+      if (isAdmin) _btn(docSection, '↩ Send back to Review', () => {
+        if (confirm('Send this document back to the Review queue? It stays filed until you re-confirm it.'))
+          _afterChange(window.docusnap.repairDeconfirm(doc.id));
+      }, true);
       if (doc.stored_path) {
         _btn(docSection, 'Open in Explorer', () => window.docusnap.showInExplorer(doc.stored_path));
         _btn(docSection, 'Open File',        () => window.docusnap.openFile(doc.stored_path));
