@@ -3025,8 +3025,13 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
   // would let a neighbouring row's caption outscore the true left one — Oracle).
   const fieldCaptions = [];
   try { const _fl = (typeof labelFor === 'function') ? labelFor(fieldKey) : null; if (_fl) fieldCaptions.push(_fl); } catch {}
-  let leftCand = null, aboveCand = null;
-  if (forceDir !== 'below') try {
+  // Draw-tool UX Slice 2b: read the LEFT and ABOVE captions CONCURRENTLY. They're independent (each
+  // yields its own candidate; neither needs the other or the value text), so the two OCR round-trips
+  // OVERLAP instead of running back-to-back — one fewer read of wall-clock per draw. Each is wrapped
+  // in a self-guarded closure returning its candidate (or null); the per-strip logic is unchanged.
+  const _readLeftCand = async () => {
+   if (forceDir === 'below') return null;
+   try {
     const leftPad    = rect.x;   // full span from the page's left edge to the value box
     // VERTICAL EXPANSION (oscar+007, 2026-07-10): the strip was exactly rect.h tall at the
     // VALUE's y, so a bolder/slightly-higher caption ("SO #") had its ascenders DECAPITATED
@@ -3062,18 +3067,22 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
       const leftLabel = sanitizeAnchorLabel(extractLabel(leftText) || '');
       if (leftLabel) {
         // Drift-invariant offset: the located label's page position → value centre.
-        // Origin of the left crop in DISPLAY px is (rect.x - leftPad, lTop). D1: STORE the
-        // candidate (don't stage/return yet) so the above strip is also read and compared.
+        // Origin of the left crop in DISPLAY px is (rect.x - leftPad, lTop).
         const off = labelOffsetFromBox(leftBox, rect.x - leftPad, lTop, xNorm, yNorm, imgW, imgH);
-        leftCand = { label: leftLabel, direction: 'right', off,
-                     normBox: labelNormBox(leftBox, rect.x - leftPad, lTop, imgW, imgH) };
+        return { label: leftLabel, direction: 'right', off,
+                 normBox: labelNormBox(leftBox, rect.x - leftPad, lTop, imgW, imgH) };
       }
     }
-  } catch (err) {
+    return null;
+   } catch (err) {
     console.warn('Anchor capture: left-label lookup failed (non-critical):', err);
-  }
+    return null;
+   }
+  };
 
-  if (forceDir !== 'right') try {
+  const _readAboveCand = async () => {
+   if (forceDir === 'right') return null;
+   try {
     // The strip must be TALL ENOUGH TO CONTAIN the caption line above: line spacing routinely
     // exceeds the value box's own height (a spaced address block, a section heading), so the
     // old one-line strip (max(rect.h,20)) caught only the caption's bottom pixel-tips + its
@@ -3114,15 +3123,22 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
       // stops the snap latching onto the MAC above instead of the label to the left.
       const aboveLabel = sanitizeAnchorLabel(extractLabel(aboveText) || '');
       if (aboveLabel) {
-        // Origin of the above crop in DISPLAY px is (rect.x, aboveTop). D1: STORE the candidate.
+        // Origin of the above crop in DISPLAY px is (rect.x, aboveTop).
         const off = labelOffsetFromBox(aboveBox, rect.x, aboveTop, xNorm, yNorm, imgW, imgH);
-        aboveCand = { label: aboveLabel, direction: 'below', off,
-                      normBox: labelNormBox(aboveBox, rect.x, aboveTop, imgW, imgH) };
+        return { label: aboveLabel, direction: 'below', off,
+                 normBox: labelNormBox(aboveBox, rect.x, aboveTop, imgW, imgH) };
       }
     }
-  } catch (err) {
+    return null;
+   } catch (err) {
     console.warn('Anchor capture: above-label lookup failed (non-critical):', err);
-  }
+    return null;
+   }
+  };
+
+  // Both caption reads run CONCURRENTLY (Slice 2b): the two OCR round-trips OVERLAP instead of
+  // back-to-back. Independent, self-guarded → order-free; the pick logic below is unchanged.
+  const [leftCand, aboveCand] = await Promise.all([_readLeftCand(), _readAboveCand()]);
 
   // D1 — PICK between the left and above captions. forceDir pins one side; else pickLabelCandidate
   // scores each (2 = matches this field's caption · 1 = clean · 0 = suspicious/empty), higher wins,

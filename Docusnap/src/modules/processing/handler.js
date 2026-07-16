@@ -437,6 +437,25 @@ function register(ctx) {
   _pyHelpers = { pythonExe, pythonArgs, backendScript };
   _notifyAll = ctx.notifyAllWindows;   // broadcast import/watch activity to Review (see _broadcastActivity)
 
+  // Warm OCR worker POOL (draw-tool UX plan Slice 2) — configured once; the ocr-region(-boxes)
+  // handlers route through it when ENABLED (default OFF: env OCR_WARM_WORKER=1 or setting
+  // ocr_warm_worker_enabled), falling back to a cold region.py spawn on any worker failure so a
+  // read never fails toward empty. See src/modules/processing/regionWorker.js.
+  const regionWorker = require('./regionWorker');
+  regionWorker.configure({
+    pythonExe, pythonArgs,
+    workerScript: ctx.resourcePath('python_backend', 'ocr', 'region_worker.py'),
+    tesseract: tesseractPath,
+    isEnabled: () => {
+      try {
+        if (process.env.OCR_WARM_WORKER === '1') return true;
+        return require('../../../database/modules/learning')
+          .getSetting(getDb(), 'ocr_warm_worker_enabled', 'false') === 'true';
+      } catch { return false; }
+    },
+  });
+  try { require('electron').app.on('before-quit', () => regionWorker.shutdown()); } catch {}
+
   // Startup holding-area reconciliation — GC crash debris (.part / orphaned /
   // already-confirmed inbox copies) so the holding queue agrees with the DB on
   // launch. Deferred so it never blocks module registration; best-effort.
@@ -1539,51 +1558,58 @@ function register(ctx) {
   // Zone-OCR + anchor/logo teaching tools — all part of the Review window's
   // "teach the system" workflow, so Admin/Edit (the same set that can confirm
   // and correct extractions there).
+  let _ocrTmpSeq = 0;   // disambiguates same-ms tmpFile names for the 3 parallel reads of one draw
+  // COLD region.py spawn (the always-available fallback; also the sole path when the pool is OFF).
+  // Does NOT unlink — the caller (_runRegion) owns the tmpFile lifecycle via its finally.
+  const _coldRegion = (tmpFile, boxes) => new Promise((resolve) => {
+    const extra = boxes ? ['--boxes'] : [];
+    const proc = spawn(pythonExe(), pythonArgs(ctx.resourcePath('python_backend', 'ocr', 'region.py'),
+      '--image-file', tmpFile, '--tesseract', tesseractPath(), ...extra), { windowsHide: true });
+    let out = '', err = '';
+    proc.stdout.on('data', d => { out += d.toString(); });
+    proc.stderr.on('data', d => { err += d.toString(); });
+    proc.on('close', () => {
+      if (err) console.error(`ocr_region${boxes ? '_boxes' : ''} stderr:`, err);
+      if (boxes) { try { resolve(JSON.parse(out.trim())); } catch { resolve(null); } }
+      else resolve(out.trim());
+    });
+    proc.on('error', () => resolve(boxes ? null : ''));   // spawn failure -> empty (never hang)
+  });
+  // Shared read path. Writes the tmpFile ONCE, routes through the warm worker pool when enabled
+  // (fallback to a cold spawn on ANY worker failure), and unlinks the tmpFile ONCE in finally —
+  // regardless of path (Oracle: single unlink point, no per-request close race under the pool). The
+  // seq suffix keeps the 3 PARALLEL reads of one draw from colliding on the same-ms filename.
+  const _runRegion = async (base64png, boxes) => {
+    const tmpFile = path.join(os.tmpdir(), `ds_ocr${boxes ? 'b' : ''}_${Date.now()}_${_ocrTmpSeq++}.png`);
+    fs.writeFileSync(tmpFile, Buffer.from(base64png, 'base64'));
+    try {
+      if (regionWorker.enabled()) {
+        try {
+          const r = await regionWorker.run({ imageFile: tmpFile, boxes });
+          return boxes ? { text: r.text, box: r.box, words: r.words, lines: r.lines } : (r.text || '');
+        } catch (e) {
+          console.error('ocr-region warm-worker fallback:', e && e.message);   // -> cold spawn below
+        }
+      }
+      return await _coldRegion(tmpFile, boxes);
+    } finally {
+      try { fs.unlinkSync(tmpFile); } catch {}
+    }
+  };
+
+  // Zone-OCR + anchor teaching tools — Admin/Edit (the set that can confirm/correct in Review).
   ipcMain.handle('ocr-region', async (_e, base64png) => {
     requireRole('admin', 'edit');
-    const tmpFile = path.join(os.tmpdir(), `ds_ocr_${Date.now()}.png`);
-    fs.writeFileSync(tmpFile, Buffer.from(base64png, 'base64'));
-    const script = ctx.resourcePath('python_backend', 'ocr', 'region.py');
-    const py = pythonExe();
-
-    return new Promise((resolve) => {
-      const proc = spawn(py, pythonArgs(script,
-        '--image-file', tmpFile, '--tesseract', tesseractPath()),
-        { windowsHide: true });
-      let out = '', err = '';
-      proc.stdout.on('data', d => { out += d.toString(); });
-      proc.stderr.on('data', d => { err += d.toString(); });
-      proc.on('close', () => {
-        try { fs.unlinkSync(tmpFile); } catch {}
-        if (err) console.error('ocr_region stderr:', err);
-        resolve(out.trim());
-      });
-    });
+    return _runRegion(base64png, false);
   });
 
-  // Like ocr-region but returns {text, box:[l,t,w,h]} where box is the union of
-  // detected word boxes in the crop's ORIGINAL pixels. The ⊕ tool uses this to
-  // capture the taught LABEL's position so a drift-invariant label→value offset
-  // can be stored (see review/renderer.js captureAnchorContext, learning.saveAnchor).
+  // Like ocr-region but returns {text, box:[l,t,w,h], words, lines} where box is the union of
+  // detected word boxes in the crop's ORIGINAL pixels. The ⊕ tool uses this to capture the taught
+  // LABEL's position so a drift-invariant label→value offset can be stored (see review/renderer.js
+  // captureAnchorContext, learning.saveAnchor).
   ipcMain.handle('ocr-region-boxes', async (_e, base64png) => {
     requireRole('admin', 'edit');
-    const tmpFile = path.join(os.tmpdir(), `ds_ocrb_${Date.now()}.png`);
-    fs.writeFileSync(tmpFile, Buffer.from(base64png, 'base64'));
-    const script = ctx.resourcePath('python_backend', 'ocr', 'region.py');
-    const py = pythonExe();
-    return new Promise((resolve) => {
-      const proc = spawn(py, pythonArgs(script,
-        '--image-file', tmpFile, '--tesseract', tesseractPath(), '--boxes'),
-        { windowsHide: true });
-      let out = '', err = '';
-      proc.stdout.on('data', d => { out += d.toString(); });
-      proc.stderr.on('data', d => { err += d.toString(); });
-      proc.on('close', () => {
-        try { fs.unlinkSync(tmpFile); } catch {}
-        if (err) console.error('ocr_region_boxes stderr:', err);
-        try { resolve(JSON.parse(out.trim())); } catch { resolve(null); }
-      });
-    });
+    return _runRegion(base64png, true);
   });
 
   // Straighten a rendered page for the Review DISPLAY: returns {angle, image} where image is a

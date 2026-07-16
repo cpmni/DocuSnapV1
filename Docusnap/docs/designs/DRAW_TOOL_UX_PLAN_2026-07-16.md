@@ -1,7 +1,22 @@
 # PLAN — make the draw-a-box OCR feel instant (Review draw + ⊕ teach)
 
-**Date:** 2026-07-16 · **Status:** advisor-panel + Oracle SIGN-OFF-WITH-CONDITIONS · **Slices 0+1 BUILT +
-measured (uncommitted); Slice 2 (pool) is the recommended next lever; Slice 3 held.**
+**Date:** 2026-07-16 · **Status:** advisor-panel + Oracle SIGN-OFF-WITH-CONDITIONS · **Slices 0+1 COMMITTED
+(`81a967d`); Slice 2 (pool + caption-parallelise) BUILT + tested, default OFF — needs app validation +
+long-soak before default-on; Slice 3 held.**
+
+**BUILT 2026-07-16 (Slice 2):** NEW `python_backend/ocr/region_worker.py` (long-lived worker: imports
+region_core once, newline-JSON over stdio, STATELESS per request) · NEW `src/modules/processing/regionWorker.js`
+(pool manager: least-busy dispatch, per-request timeout, crash→reject→handler-cold-fallback, backoff [3
+deaths/60s → disable], idle-kill, shutdown on before-quit) · `processing/handler.js` routes ocr-region(-boxes)
+through the pool when enabled (env `OCR_WARM_WORKER=1` or setting `ocr_warm_worker_enabled`, **default OFF**),
+single tmpfile write+unlink, cold-spawn fallback on any failure · `review/renderer.js` `captureAnchorContext`
+now reads the LEFT + ABOVE captions CONCURRENTLY (`Promise.all`, byte-identical results — 2b). **Verified:**
+`test_region_worker.py` (warm==cold byte-identical + statelessness/no-cache pin + error-safe) green;
+`test_region_worker.js` (dispatch/parallel/kill-switch/crash-reject) green; region regressions green; all JS
+`node -c` clean. **Deferred:** full value+caption 3-way parallelise (captureAnchorContext restructure);
+`tesserocr` (removes the ~300ms/read model reload); Slice 3 async UX (held). **Needs the owner:** turn on
+`OCR_WARM_WORKER=1`, draw a few fields to confirm the felt speedup + that anchor capture still stages, then a
+long-soak (memory / orphaned tesseract) before flipping default-on.
 **Panel:** eric (renderer/IPC) · oscar (OCR recipe) · 007 (pipeline arch) · gary (Python perf) · reggie
 (format feedback) · bob (product) → synthesis → Oracle. Workflow: `wf_bb25f2d5-4f3`.
 
