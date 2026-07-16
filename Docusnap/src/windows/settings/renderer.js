@@ -340,6 +340,17 @@ document.getElementById('auto-rotate-toggle').addEventListener('change', async (
   await api.setSetting('auto_rotate_enabled', e.target.checked ? 'true' : 'false');
 });
 
+// ── Faster field reads via a warm OCR helper pool (default ON) ─────────────────
+(async () => {
+  try {
+    const v = await api.getSetting('ocr_warm_worker_enabled');
+    document.getElementById('warm-ocr-toggle').checked = (v !== 'false');   // unset → on
+  } catch { document.getElementById('warm-ocr-toggle').checked = true; }
+})();
+document.getElementById('warm-ocr-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('ocr_warm_worker_enabled', e.target.checked ? 'true' : 'false');
+});
+
 // ── Home dashboard cards (show/hide) ───────────────────────────────────────────
 // A toggle per Home card. Checked = shown, unchecked = hidden. Stored as a JSON list of HIDDEN
 // card ids in `dashboard_hidden_cards`; the main window applies it live (dashboard-cards-changed).

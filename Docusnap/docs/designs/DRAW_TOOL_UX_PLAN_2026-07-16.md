@@ -1,8 +1,18 @@
 # PLAN — make the draw-a-box OCR feel instant (Review draw + ⊕ teach)
 
 **Date:** 2026-07-16 · **Status:** advisor-panel + Oracle SIGN-OFF-WITH-CONDITIONS · **Slices 0+1 COMMITTED
-(`81a967d`); Slice 2 (pool + caption-parallelise) BUILT + tested, default OFF — needs app validation +
-long-soak before default-on; Slice 3 held.**
+(`81a967d`); Slice 2 (pool + caption-parallelise) COMMITTED (`504884e`) + **OWNER-VALIDATED live: ~4.6× draw
+speedup (2s → ~0.45s; measured warm read 223ms vs cold 687ms)** → flipped **DEFAULT ON** + Settings→Processing
+toggle + a smooth overlay fade; Slice 3 held.**
+
+> **Live measurement (owner machine, warm-vs-cold):** cold `region.py --boxes` spawn ~687ms/read; **warm
+> worker read ~223ms/read (3.1× faster)** — a fresh spawn pays interpreter+import+a COLD tesseract call
+> (~357ms); a warm worker pays none of that and its repeated tesseract calls hit the warm ~107ms floor. This
+> **corrects the pre-build estimate** that the Python pool was "only half the lever" — it is the whole lever;
+> `tesserocr` is now LOW priority (little left to shave). Field draw: ~2060ms cold → **~447ms** warm+caption-
+> parallel → ~223ms with the (deferred) full 3-way parallelise. Owner turned it on default after validating;
+> `idle-kill` (3 min) + crash-fallback bound the soak risk; `ocr_warm_worker_enabled` toggle + env
+> `OCR_WARM_WORKER=1/0` override.
 
 **BUILT 2026-07-16 (Slice 2):** NEW `python_backend/ocr/region_worker.py` (long-lived worker: imports
 region_core once, newline-JSON over stdio, STATELESS per request) · NEW `src/modules/processing/regionWorker.js`

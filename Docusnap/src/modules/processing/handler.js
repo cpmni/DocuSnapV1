@@ -448,9 +448,14 @@ function register(ctx) {
     tesseract: tesseractPath,
     isEnabled: () => {
       try {
-        if (process.env.OCR_WARM_WORKER === '1') return true;
+        const env = process.env.OCR_WARM_WORKER;      // explicit override wins: '1' on, '0' off
+        if (env === '1') return true;
+        if (env === '0') return false;
+        // DEFAULT ON (owner-enabled 2026-07-16 after validating the ~4.6x draw speedup); the
+        // Settings → Processing toggle sets 'false' to disable. Idle-kill (3 min) + crash-fallback
+        // bound the risk. Setting missing → on.
         return require('../../../database/modules/learning')
-          .getSetting(getDb(), 'ocr_warm_worker_enabled', 'false') === 'true';
+          .getSetting(getDb(), 'ocr_warm_worker_enabled', 'true') !== 'false';
       } catch { return false; }
     },
   });
