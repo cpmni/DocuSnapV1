@@ -956,6 +956,33 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 48 applied: extractions.candidates column added (NULL-inert)');
   }
 
+  // Migration 49 (2026-07-16): extractions.suggested_supplier — the branding cross-check's fuzzy
+  // DETECTED supplier name (engine _flag_branding_conflict), for the "Use '<name>'" resolve button on
+  // a branding-conflict issuer. NULLABLE / NULL-inert: a non-conflict row has none and the renderer
+  // shows today's behaviour. Written by insertExtractions/applyReprocessResult; read via SELECT *. Idempotent.
+  if (!applied.has(49)) {
+    if (tableExists(db, 'extractions') && !hasColumn(db, 'extractions', 'suggested_supplier')) {
+      try { db.exec('ALTER TABLE extractions ADD COLUMN suggested_supplier TEXT'); }
+      catch (e) { console.warn(`  migration 49 extractions.suggested_supplier: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (49)').run();
+    console.log('JS migration 49 applied: extractions.suggested_supplier column added (NULL-inert)');
+  }
+
+  // Migration 50 (2026-07-16): documents.supplier_pin — the operator "Resolve" supplier PIN (Part B).
+  // Written when the operator clicks "Use '<name>'" on a branding-conflict issuer; a REPROCESS reads it
+  // and forces that supplier (--known-supplier) so a colliding-logo doc stops reverting to the wrong
+  // one. Local to the doc (writes NO logo/hint learning). NULLABLE / NULL-inert; CLEARED on confirm
+  // (once the name is learned, a stale pin must never override a later legit resolution). Idempotent.
+  if (!applied.has(50)) {
+    if (tableExists(db, 'documents') && !hasColumn(db, 'documents', 'supplier_pin')) {
+      try { db.exec('ALTER TABLE documents ADD COLUMN supplier_pin TEXT'); }
+      catch (e) { console.warn(`  migration 50 documents.supplier_pin: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (50)').run();
+    console.log('JS migration 50 applied: documents.supplier_pin column added (NULL-inert)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

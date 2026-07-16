@@ -926,8 +926,14 @@ function buildQueueItem(doc) {
                 : blocked        ? 'Missing a required field — can’t file yet'
                 : sev === 'mid'  ? 'Needs a quick check'
                 :                  'Looks good';
+  // HONEST BADGE: a flagged / un-fileable doc must NOT wear a reassuring "100%" — the overall
+  // score ignores the flagged field (e.g. a branding-conflict issuer capped at 69), so a bare
+  // "100%" contradicts the warning beside it. For the orange (mid) state show the review word,
+  // not the number; genuinely-low (red) keeps its honest number; clean (green) is unchanged.
   const confBadge = conf == null ? '' :
-    `<span class="conf-badge ${sev}" style="flex-shrink:0;" title="${sevWord} — ${conf}% confidence">${conf}%</span>`;
+    sev === 'mid'
+      ? `<span class="conf-badge mid" style="flex-shrink:0;" title="${sevWord} — overall ${conf}%, but a field needs a look">Check</span>`
+      : `<span class="conf-badge ${sev}" style="flex-shrink:0;" title="${sevWord} — ${conf}% confidence">${conf}%</span>`;
   // Lead with the actual blocker (the missing field), not the reassuring score.
   const blockerLine = blocked
     ? `<div class="qi-blocker" title="Can’t be filed until this is filled in"
@@ -1867,7 +1873,7 @@ function renderFields(doc) {
   for (const key of reviewFields()) {
     const ext = extMap[key] || {};
     const val = ext.display_value ?? ext.raw_value ?? '';
-    appendFieldRow(scroll, key, val, ext.confidence ?? null, ext.validation_note || null, ext.corrected_to || null, ext.anchor_label || null, ext.extraction_method || null, ext.candidates || null);
+    appendFieldRow(scroll, key, val, ext.confidence ?? null, ext.validation_note || null, ext.corrected_to || null, ext.anchor_label || null, ext.extraction_method || null, ext.candidates || null, ext.suggested_supplier || null);
   }
   validateConfirm();
   updateAcknowledgeButton();
@@ -1960,7 +1966,7 @@ function _refreshTaughtDot(key) {
   dot.title = _taughtDotTitle(taught);
 }
 
-function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, method, candidates) {
+function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, method, candidates, suggestedSupplier) {
   const low      = conf !== null && conf < 70;
   const confClass = conf === null ? '' : conf >= 70 ? 'high' : conf >= 40 ? 'mid' : 'low';
   // Pair the % with a plain word so non-technical users read it at a glance.
@@ -2001,6 +2007,16 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   const issuerAcceptHtml = isIssuerFlag
     ? ` <button type="button" class="issuer-accept-btn" data-key="${key}" title="Confirm this really is the correct issuer, so Scan Finder stops flagging it — even though a different name appears in the letterhead. Applies to future documents from this issuer too.">✓ Issuer is correct</button>`
     : '';
+  // "Use '<name>'" — the branding cross-check DETECTED the true issuer (the page branding reads a
+  // different known name than the resolved supplier). One click accepts the detected name for the
+  // Document Issuer — it fills the value (persisted on Confirm, like a typed correction). The regex is
+  // DISJOINT from the issuer-accept regex above, so the two buttons can never double-render on one note.
+  const isBrandingFlag = !!note && !isApplied
+    && key === 'supplier_name' && !!suggestedSupplier
+    && /page branding reads|confirm the correct company/i.test(note);
+  const brandingResolveHtml = isBrandingFlag
+    ? ` <button type="button" class="branding-resolve-btn" data-key="${key}" data-name="${escHtml(suggestedSupplier)}" title="Set the Document Issuer to the company the letterhead reads. Saved when you confirm this document.">Use “${escHtml(suggestedSupplier)}”</button>`
+    : '';
   // "⑂ Resolve" — when the engine emitted >=2 distinct candidate readings for a flagged NAME field,
   // offer a one-click picker (openResolveOverlay) instead of leaving the operator to retype. v1 scope:
   // name-like fields only (the backend already excludes supplier_name + non-name fields).
@@ -2011,7 +2027,7 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   const noteHtml = isApplied
     ? `<div class="field-note corrected"><span class="corrected-badge" title="An OCR misread was auto-corrected to the spelling that recurs in your confirmed data">✓ auto-corrected</span> ${escHtml(note || '')}</div>`
     : (note || correctedTo)
-      ? `<div class="field-note">${escHtml(note || '')}${acceptHtml}${nameAcceptHtml}${issuerAcceptHtml}${resolveHtml}</div>`
+      ? `<div class="field-note">${escHtml(note || '')}${acceptHtml}${nameAcceptHtml}${issuerAcceptHtml}${brandingResolveHtml}${resolveHtml}</div>`
       : '';
   // Anchor provenance: only for anchor-based extraction sources, and only when a
   // label was captured. Other methods (keyword, template, llm, manual) show nothing.
@@ -2233,6 +2249,30 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   const resolveBtn = row.querySelector('.resolve-btn');
   if (resolveBtn) {
     resolveBtn.addEventListener('click', () => openResolveOverlay(key, candidates, row, input));
+  }
+
+  // "Use '<name>'" — accept the branding-detected issuer. (A) Fills the value via the SAME path as the
+  // customer picker / Accept (synthetic 'input' → corrections + validateConfirm + the issuer-changed
+  // hooks) and clears the branding note in-memory (DOM only — Oracle C6, never touches the server
+  // review_flag_count, so it can't file). No page box → no position teach. Persists on Confirm.
+  // (B) Writes the per-doc supplier PIN so a REPROCESS forces this supplier instead of reverting to the
+  // coarse-logo pick. The pin is local to the doc, cleared on confirm; the engine keeps it review-bound.
+  const brandingBtn = row.querySelector('.branding-resolve-btn');
+  if (brandingBtn) {
+    brandingBtn.addEventListener('click', async () => {
+      const name = brandingBtn.dataset.name || '';
+      if (!name) return;
+      input.value = name;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      const noteEl = row.querySelector('.field-note');
+      if (noteEl) noteEl.remove();
+      clearFieldWarning(row);
+      const ex = (currentDoc?.extractions || []).find(e => e.field_key === key);
+      if (ex) ex.validation_note = null;
+      validateConfirm();
+      // Best-effort: the value fill above already sticks on Confirm even if this pin write fails.
+      try { await window.docusnap.resolveIssuer?.({ docId: currentDoc?.id, value: name }); } catch {}
+    });
   }
 
   scroll.appendChild(row);

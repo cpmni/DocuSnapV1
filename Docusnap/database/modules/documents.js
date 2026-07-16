@@ -35,7 +35,7 @@ function update(db, id, changes) {
                    'status', 'overall_confidence', 'supplier_name',
                    'doc_date', 'reference_number', 'confirmed_at',
                    'error_message', 'template_id', 'working_path',
-                   'review_acknowledged_at', 'page_count', 'confirmed_by_username'];
+                   'review_acknowledged_at', 'page_count', 'confirmed_by_username', 'supplier_pin'];
   const sets = Object.keys(changes)
     .filter(k => allowed.includes(k))
     .map(k => `${k} = @${k}`)
@@ -391,6 +391,7 @@ function confirm(db, id, { stored_filename, stored_path, confirmed_by_username =
     stored_path,
     confirmed_at: new Date().toISOString(),
     confirmed_by_username,
+    supplier_pin: null,   // clear the operator "Resolve" pin — the name is now learned; a stale pin must not override later
   });
 }
 
@@ -414,7 +415,8 @@ function confirmIfReviewable(db, id, { stored_filename = null, stored_path = nul
            confirmed_at          = @confirmed_at,
            confirmed_by_username = @confirmed_by_username,
            stored_filename       = @stored_filename,
-           stored_path           = @stored_path
+           stored_path           = @stored_path,
+           supplier_pin          = NULL
      WHERE id = @id
        AND ( status IN ('needs_review','deferred')
           OR (status = 'confirmed' AND @allowRefile = 1) )

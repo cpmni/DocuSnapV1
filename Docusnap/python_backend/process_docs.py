@@ -195,6 +195,11 @@ def main():
     # type). Used in preference to re-detecting from OCR, which fails on a clipped
     # scan and leaves document_slug null — silently disabling the format gates.
     parser.add_argument("--known-doc-slug", default=None)
+    # Operator "Resolve" supplier PIN (Part B): a per-doc reprocess override that forces the issuer to
+    # the operator-chosen supplier BEFORE the logo/template match, so a colliding-logo doc stops
+    # reverting to the wrong one. Single-doc reprocess only here (Reprocess-All carries it per-doc in
+    # the manifest). The engine keeps it REVIEW-BOUND (method 'operator_pin' + note). Never set on import.
+    parser.add_argument("--known-supplier", default=None)
     # Who assigned --known-doc-slug: 'machine' = the pipeline typed the doc and no human
     # ever confirmed it, so a TRUSTED contradicting title (a real standalone heading) may
     # re-type it on reprocess (see resolve_assigned_type_authority). Anything else —
@@ -729,6 +734,7 @@ def main():
                 title_trusted = title_trusted,
                 ref_field_key = _ref_key,
                 supplier_name = None,
+                pinned_supplier = getattr(args, 'known_supplier', None),   # operator Resolve pin (Part B); None on import
                 known_template_id = _kt,
                 pinned_template_id = _pinned_tid,
                 trace         = emit_trace if args.trace else None,

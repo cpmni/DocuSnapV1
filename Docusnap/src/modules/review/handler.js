@@ -350,6 +350,25 @@ function register(ctx) {
     } catch {}
     return { ok: true, accepted: list, cleared };
   });
+  // "Use '<name>'" resolve → the operator supplier PIN (Part B). Writes documents.supplier_pin so a
+  // REPROCESS forces this supplier (--known-supplier) instead of reverting to the coarse-logo pick. Local
+  // to the doc — writes NO logo/hint learning; the pin is cleared on confirm (documents.confirm). The
+  // engine keeps a pinned read REVIEW-BOUND (method 'operator_pin' + note). Admin/edit; audited.
+  ipcMain.handle('resolve-issuer', (_e, p) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const value = p && typeof p.value === 'string' ? p.value.trim() : '';
+    const docId = p && p.docId;
+    if (!value || !docId) return { ok: false, error: 'missing-value-or-doc' };
+    let changed = 0;
+    try { changed = db.prepare('UPDATE documents SET supplier_pin = ? WHERE id = ?').run(value, docId).changes; }
+    catch (e) { return { ok: false, error: e.message }; }
+    try {
+      logAudit(db, { action: 'supplier_resolved', action_category: 'learning',
+        outcome: 'success', metadata: { value, doc_id: docId } });
+    } catch {}
+    return { ok: true, changed };
+  });
   ipcMain.handle('rename-field-value', (_e, scope) => {
     requireRole('admin', 'edit');
     const db = getDb();

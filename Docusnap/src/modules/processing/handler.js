@@ -163,6 +163,7 @@ function mergeReprocessRows(existing, newRows, flip = null, onTrace = null) {
         validation_note:   ex.validation_note || null,
         corrected_to:      ex.corrected_to || null,
         candidates:        ex.candidates || null,   // preserve the stored picker JSON on carry-over
+        suggested_supplier: ex.suggested_supplier || null,   // preserve the branding-detected name on carry-over
       });
     }
   }
@@ -1070,6 +1071,7 @@ function register(ctx) {
       corrected_to:      data.corrected_to || null,
       anchor_label:      data.anchor || null,
       candidates:        data.candidates ? JSON.stringify(data.candidates) : null,   // disambiguation picker
+      suggested_supplier: data.suggested_supplier || null,   // branding cross-check → "Use '<name>'" button
     }));
 
     const _emitMerge = (field, decision, oldV, newV) => {
@@ -1265,13 +1267,27 @@ function register(ctx) {
       confirmedAt: _dtRow ? _dtRow.confirmed_at : null,
       forcedTypeSlug, templateId, knownSlugs: _knownSlugs,
     });
-    if (_typeArgs.knownTemplateId) {
+    // Operator supplier PIN (Part B) + B2 re-scope (Oracle C1): read the doc's pin; when it DIFFERS from
+    // the doc's current supplier, the linked template + assigned type belong to the OLD (wrong) supplier
+    // — SUPPRESS them so the engine re-detects the type and re-matches the template for the pinned
+    // supplier. Kill switch SUPPLIER_PIN; off → byte-identical (pin ignored, type args pushed as before).
+    let _supplierPin = null, _pinDiffers = false;
+    try {
+      const _sr = db.prepare('SELECT supplier_pin, supplier_name FROM documents WHERE id = ?').get(docId);
+      _supplierPin = _sr && _sr.supplier_pin ? String(_sr.supplier_pin).trim() : null;
+      _pinDiffers = !!_supplierPin
+        && _supplierPin.toLowerCase() !== String((_sr && _sr.supplier_name) || '').trim().toLowerCase();
+    } catch {}
+    const _pinOn = !!_supplierPin && process.env.SUPPLIER_PIN !== '0';
+    const _suppressTypeForPin = _pinOn && _pinDiffers;   // B2: drop stale template/type on a supplier change
+    if (_typeArgs.knownTemplateId && !_suppressTypeForPin) {
       scriptArgs.push('--known-template-id', String(_typeArgs.knownTemplateId));
     }
-    if (_typeArgs.knownDocSlug) {
+    if (_typeArgs.knownDocSlug && !_suppressTypeForPin) {
       scriptArgs.push('--known-doc-slug', String(_typeArgs.knownDocSlug));
       if (_typeArgs.authority) scriptArgs.push('--known-doc-slug-authority', _typeArgs.authority);
     }
+    if (_pinOn) scriptArgs.push('--known-supplier', _supplierPin);
     // Dev trace stream + OCR slice capture while the inspector is open OR
     // diagnostic logging is on (so the diagnostic file captures reprocess too).
     if (traceWanted(diagOn)) {
@@ -2218,6 +2234,7 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
       corrected_to:      data.corrected_to || null,
       anchor_label:      data.anchor || null,
       candidates:        data.candidates ? JSON.stringify(data.candidates) : null,   // disambiguation picker
+      suggested_supplier: data.suggested_supplier || null,   // branding cross-check → "Use '<name>'" button
     }));
     learning.insertExtractions(db, docId, rows);
   }

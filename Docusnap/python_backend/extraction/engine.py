@@ -2051,6 +2051,7 @@ class ExtractionEngine:
                 title_trusted: bool = False,
                 ref_field_key: str | None = None,
                 supplier_name: str | None = None,
+                pinned_supplier: str | None = None,   # operator "Resolve" pin — overrides logo/template (Part B)
                 known_template_id: int | None = None,
                 pinned_template_id: int | None = None,
                 trace = None,
@@ -2308,6 +2309,29 @@ class ExtractionEngine:
                     self._trace_stage('0.5_mapping', mapping_results, _pre_s05, results)
                     if applied:
                         self.log(f"  Stage 0.5: {applied} field(s) refined via anchor/target mapping")
+
+        # ── OPERATOR SUPPLIER PIN (Resolve button, Part B) — highest precedence ──
+        # The operator RESOLVED the issuer (the branding cross-check detected the true name and they
+        # clicked "Use '<name>'"). On reprocess it arrives as pinned_supplier and OVERRIDES the
+        # logo/template supplier UNCONDITIONALLY: set the local supplier_name so the three fill blocks
+        # below all skip (each is gated `if not supplier_name`), AND so the Stage-1/2 reads re-scope to
+        # the pinned supplier's own anchors/hints. REVIEW-BOUND by construction — method 'operator_pin'
+        # + a validation_note keep the doc below EVERY auto-file lock (isAutoFileEligible refuses a noted
+        # field at every floor incl. 100), so a pin can never silently auto-file. Writes NO logo/hint
+        # learning (local to this doc); future docs learn the normal way on Confirm. The pin also joins
+        # accepted_issuers so the branding cross-check doesn't re-flag the pinned name (Oracle C5).
+        # Kill switch env SUPPLIER_PIN (default on); off -> ignored -> byte-identical.
+        if pinned_supplier and os.environ.get('SUPPLIER_PIN', '1') != '0':
+            supplier_name = pinned_supplier
+            results["supplier_name"] = {
+                "value":           pinned_supplier,
+                "confidence":      75,
+                "method":          "operator_pin",
+                "validation_note": "Supplier set by you — confirm to file.",
+            }
+            try: self.accepted_issuers.add(self._accept_norm(pinned_supplier))
+            except Exception: pass
+            self.log(f"  Operator supplier pin: {pinned_supplier} — logo/template supplier skipped")
 
         # ── Fixed Supplier Name is IMMUNE to the logo fallback ────────────────
         # A doc type whose Supplier Name is an admin-fixed template field has a
@@ -2820,6 +2844,18 @@ class ExtractionEngine:
         # already replaced the artifact read) and BEFORE resolved_supplier is read below, so a blanked
         # issuer falls to Stage 2.5a hint recovery / logo / keyword, or empty→review.
         self._drop_positional_identity_read(results, field_defs)
+
+        # OPERATOR PIN is authoritative through the FINAL re-resolve (Oracle C4): a later stage may have
+        # overwritten results['supplier_name'] (a keyword/anchor read), but the operator DECIDED the
+        # issuer — re-assert the pin as the final identity (review-bound by the operator_pin note).
+        # Kill switch SUPPLIER_PIN; off -> byte-identical.
+        if pinned_supplier and os.environ.get('SUPPLIER_PIN', '1') != '0':
+            results["supplier_name"] = {
+                "value":           pinned_supplier,
+                "confidence":      75,
+                "method":          "operator_pin",
+                "validation_note": "Supplier set by you — confirm to file.",
+            }
 
         resolved_supplier = (results.get('supplier_name') or {}).get('value') or None
         if resolved_supplier and resolved_supplier != supplier_name:
