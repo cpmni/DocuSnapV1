@@ -217,6 +217,18 @@ function register(ctx) {
     requireRole('admin', 'edit');
     try { return learning.getTaughtFieldKeys(getDb(), scope || {}); } catch { return []; }
   });
+  // How many CONFIRMED docs already exist for a (supplier, doc-type) scope. Drives the Review
+  // renderer's live suppression of the stale "heading names a type that doesn't match this
+  // supplier's saved layout" note: once ONE doc of that type is confirmed for the supplier, the
+  // type IS valid for them and the (already-stored) note is out of date. Forgiving supplier match
+  // (getConfirmedDocsForScope uses LIKE) so a slightly-garbled variant still counts.
+  ipcMain.handle('scope-confirmed-count', (_e, scope) => {
+    requireRole('admin', 'edit');
+    const { supplier_name, document_type_slug } = scope || {};
+    if (!document_type_slug) return 0;
+    try { return documents.getConfirmedDocsForScope(getDb(), { supplier_name, document_type_slug }).length; }
+    catch { return 0; }
+  });
   // Delete ONE mis-stored learned anchor (learning-history → 🗑). Admin/edit; audited.
   ipcMain.handle('delete-field-anchor', (_e, payload) => {
     requireRole('admin', 'edit');

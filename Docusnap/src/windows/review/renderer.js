@@ -1133,6 +1133,28 @@ async function _selectDoc(doc, { fieldsOnly = false } = {}) {
       supplier_name: currentDoc?.supplier_name, document_type: selectedTypeSlug });
     if (currentDoc?.id === doc.id) for (const r of (_tk || [])) taughtFieldKeys.add(r.field_key);
   } catch {}
+  // LIVE suppression of the STALE type-mismatch note. The engine plants "the heading names a type
+  // that doesn't match this supplier's saved layout" when the supplier had no saved template of the
+  // detected type AT PROCESSING TIME. Once ONE doc of that type is confirmed for the supplier, the
+  // type is valid for them and that (already-stored) note is out of date — so strip it on load before
+  // rendering, so it neither displays nor counts toward "needs a quick check". The engine already
+  // self-heals on the next import (a template of the type now exists); this clears docs processed
+  // BEFORE the confirm without a reprocess. Best-effort + doc-guarded (a slow query can't clobber a
+  // newer doc); only removes THIS note, never a value.
+  try {
+    const _exs = renderedDoc.extractions || [];
+    const _STALE_TYPE_NOTE = /doesn't match this supplier's saved layout/i;
+    if (_exs.some(e => e.validation_note && _STALE_TYPE_NOTE.test(e.validation_note))
+        && currentDoc?.supplier_name && selectedTypeSlug) {
+      const _n = await window.docusnap.scopeConfirmedCount?.({
+        supplier_name: currentDoc.supplier_name, document_type_slug: selectedTypeSlug });
+      if (currentDoc?.id === doc.id && (_n || 0) > 0) {
+        for (const e of _exs) {
+          if (e.validation_note && _STALE_TYPE_NOTE.test(e.validation_note)) e.validation_note = null;
+        }
+      }
+    }
+  } catch {}
   renderFields(renderedDoc);
 
   // Lightweight current-template recheck — this doc had no template match at
@@ -1764,8 +1786,34 @@ function _stripCurrencySymbol(s) {
 }
 const _DRAWN_MONTHS = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
 function _fmtDMY(d, mo, y) { const p = n => String(n).padStart(2, '0'); return `${p(d)}-${p(mo)}-${y}`; }
+// OCR date pre-clean — TWIN of validator._date_preclean (python_backend/extraction/validator.py);
+// keep the three aligned (this + filing/handler.js). Rejoin an OCR-split number ("1 5" -> "15",
+// "2 0 2 6" -> "2026") without touching a digit/letter boundary ("15 Jun" stays), then collapse
+// whitespace around date separators. Lookbehind is zero-width + REQUIRED (a /(\d)\s+(\d)/ replace
+// consumes the trailing digit and misses the next split space); V8 (Electron 31) supports it.
+// A month NAME lets a space legitimately separate a day from a year ("Aug 3 2024"), where the
+// digit-join would wrongly fuse "3 2024" -> "32024" — so gate the join on the ABSENCE of a month
+// name (numeric dates never contain a month token).
+function _datePreclean(text) {
+  let s = String(text);
+  if (!/jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec/i.test(s)) {
+    s = s.replace(/(?<=\d)\s+(?=\d)/g, '');   // numeric-only: "1 5/06/2026" -> "15/06/2026"
+  }
+  return s
+    .replace(/\s*([/.\-])\s*/g, '$1')         // "16 / 03 / 2026" -> "16/03/2026"
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
 function _parseDrawnDate(raw, order) {
-  const t = String(raw).trim();
+  // Preclean (rejoin split digits) then edge-trim a leading "Date:" label + edge punctuation, so a
+  // drawn box that captured a bit of the caption or a stray char still parses instead of surfacing
+  // raw junk via normalizeDrawnValue's `|| text`. The colon requirement means a month-first date
+  // ("Jun 15 2026") is never mistaken for a label; the non-alnum strips never touch a leading day
+  // digit or a trailing year digit. The strict ^…$ matchers + their day/month gates stay unchanged.
+  const t = _datePreclean(raw)
+    .replace(/^[A-Za-z][A-Za-z ]*?:\s*/, '')   // drop a leading "Date:" / "Invoice Date:" label (colon required)
+    .replace(/^[^0-9A-Za-z]+/, '')             // leading "(", "#", …
+    .replace(/[^0-9A-Za-z]+$/, '');            // trailing ".", ")", …
   let m = t.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);   // a/b/yyyy — order-dependent
   if (m) {
     const a = +m[1], b = +m[2], y = +m[3];
@@ -1980,9 +2028,16 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   const _issuerHint = (key === 'supplier_name')   // RC2: only the issuer gets the "sender" gloss; customer_name is the recipient
     ? ' title="The company the document is FROM — the sender who issued it (e.g. the supplier on an invoice). Not your own company."'
     : '';
+  // The Document Issuer (supplier_name) has NO "position taught" dot: it's identified by its NAME
+  // (logo / letterhead / hint / typed value), never by a taught POSITION — a positional teach only
+  // applies to captioned value fields. A hidden spacer keeps the label aligned with the other rows;
+  // no data-key, so the dot refresh / re-scope logic skips it entirely.
+  const _dotSpan = (key === 'supplier_name')
+    ? `<span class="taught-dot" style="visibility:hidden" aria-hidden="true"></span>`
+    : `<span class="taught-dot ${_fieldIsTaught(key) ? 'on' : ''}" data-key="${key}" title="${escHtml(_taughtDotTitle(_fieldIsTaught(key)))}"></span>`;
   row.innerHTML = `
     <div class="field-row-header">
-      <span class="taught-dot ${_fieldIsTaught(key) ? 'on' : ''}" data-key="${key}" title="${escHtml(_taughtDotTitle(_fieldIsTaught(key)))}"></span>
+      ${_dotSpan}
       <span class="field-row-label" data-key="${key}"${_issuerHint}>${escHtml(labelFor(key))}</span>
       ${confLabel}
     </div>

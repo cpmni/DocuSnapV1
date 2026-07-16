@@ -532,6 +532,10 @@
     /* "Straighten"/deskew icon: a tilted line with a curved correcting arrow rotating it down to the
        horizontal baseline (the correct position) — replaces the generic infinity glyph. */
     .straighten-ico { width: 18px; height: 18px; vertical-align: middle; }
+    /* In the top doc-toolbar the icon sits next to 11px text; keep it small so the Straighten
+       button is the SAME HEIGHT as the other doc-nav-btns (the 18px icon otherwise makes it taller).
+       Scoped to #doc-toolbar so the icon-only rail button (#btn-deskew-all) keeps its 18px size. */
+    #doc-toolbar .straighten-ico { width: 13px; height: 13px; margin-right: 1px; }
     /* "This name is correct" — same shape as .accept-btn but in the OK/green key, since it
        affirms a value rather than applying a suggested change. */
     .name-accept-btn, .issuer-accept-btn {
