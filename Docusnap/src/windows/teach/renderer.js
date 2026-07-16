@@ -20,7 +20,11 @@ const state = {
   docs: [],            // review-queue rows to choose from
   doc: null,           // chosen row {id, folder_path, original_filename, supplier_name}
   pageDataUrl: null,
-  img: null,           // loaded Image (natural size)
+  img: null,           // loaded Image (natural size) — the STRAIGHTENED render while deskew is on, else rawImg
+  rawImg: null,        // the RAW page render (always) — boxes are STORED in this frame
+  deskewImg: null,     // the straightened render (cached once fetched)
+  deskewImgAngle: 0,   // the detected angle of deskewImg (fixed once fetched)
+  deskewAngle: 0,      // angle CURRENTLY applied to state.img (deskewImgAngle when on, 0 when showing raw)
   docTypeSlug: null,
   docTypeName: null,
   fields: [],          // [{key,label,type,required}]
@@ -133,6 +137,12 @@ $('btn-import-teach')?.addEventListener('click', async () => {
   const lbl = btn.textContent;
   btn.disabled = true; btn.textContent = 'Importing…';
   if (st) st.textContent = 'Reading the document…';
+  const bar = $('teach-import-progress');
+  if (bar) bar.classList.add('active');
+  // Progress subscription (eric): remove-before-add so a 2nd import in the same session can't
+  // double-register; window-scoped ipcRenderer, so removeAllListeners clears only this window's.
+  D.removeProgress && D.removeProgress();
+  D.onProgress && D.onProgress(teachProgress);
   try {
     await D.processFolder(staged.folder, { autoFile: false });  // same import path, but DON'T auto-file (keep it in Review to teach)
     state.docs = await D.getReviewQueue() || [];
@@ -143,9 +153,22 @@ $('btn-import-teach')?.addEventListener('click', async () => {
   } catch (e) {
     if (st) st.textContent = 'Import failed: ' + (e.message || 'unknown error');
   } finally {
+    D.removeProgress && D.removeProgress();
+    if (bar) bar.classList.remove('active');
     btn.disabled = false; btn.textContent = lbl;
   }
 });
+
+// Import read-progress readout. A single doc's OCR has no sub-% (start -> file_begin -> file_pages
+// -> file_done), so the bar is indeterminate (animated) and only the TEXT is event-driven.
+function teachProgress(msg) {
+  const st = $('import-teach-status');
+  if (!msg || !st) return;
+  if (msg.type === 'file_begin')      st.textContent = 'Reading the document…';
+  else if (msg.type === 'file_pages' && (msg.pages > 1))
+                                       st.textContent = 'Multi-page document (' + msg.pages + ' pages)…';
+  else if (msg.type === 'file_done')  st.textContent = 'Read complete.';
+}
 
 // ── Step 2: choose / create type ─────────────────────────────────────────────
 async function renderTypeStep(){
@@ -252,6 +275,54 @@ const TEACH_RENDER_SCALE = 4.0;   // 288 DPI display render (was 3.0/216) — cr
 // is the sweet spot region.py reads well. The OCR crop is downscaled to land near here
 // regardless of the (possibly much higher) DISPLAY render — see cropB64.
 const OCR_TARGET_H = 28;
+// ── Straighten (deskew) ──────────────────────────────────────────────────────
+// Reuse the Review mechanism (get-page-deskew) + AnchorLabel's PROVEN coordinate transform. Boxes
+// are STORED in the RAW frame (so doCommit → saveTemplateMapping registers to the raw scan, byte-
+// identical to a non-straightened teach) and forward-transformed only for the on-screen overlay and
+// a label re-read. get-page-deskew returns SAME pixel dims (expand=False) → canvas/zoom untouched.
+const DESKEW_HARD_FLOOR = 0.2;
+let _teachDeskewBusy = false;
+let _teachReadBusy = false;                 // an OCR read is in flight → block a straighten toggle mid-read
+function _teachBackBox(b){                 // display(straightened) -> raw, applied on STORE
+  if (!b) return b;
+  // Prefer the angle of the frame the box was DRAWN in (tagged at mouseup) so a straighten toggle
+  // racing an in-flight read can't canonicalise a box with the wrong angle; fall back to the live angle.
+  const a = (typeof b._ang === 'number') ? b._ang : (state.deskewAngle || 0);
+  if (!a || !state.rawImg || !window.AnchorLabel) return { x:b.x, y:b.y, w:b.w, h:b.h };
+  const W = state.rawImg.naturalWidth, H = state.rawImg.naturalHeight;
+  const r = window.AnchorLabel.deskewedNormToRaw(b.x + b.w/2, b.y + b.h/2, a, W, H);   // +angle: display -> raw
+  return { x: r.x - b.w/2, y: r.y - b.h/2, w: b.w, h: b.h };
+}
+function _teachFwdBox(n){                   // raw -> display(straightened), for OVERLAY + re-read
+  if (!n) return n;
+  const a = state.deskewAngle || 0; if (!a || !state.rawImg || !window.AnchorLabel) return { x:n.x, y:n.y, w:n.w, h:n.h };
+  const W = state.rawImg.naturalWidth, H = state.rawImg.naturalHeight;
+  const r = window.AnchorLabel.deskewedNormToRaw(n.x + n.w/2, n.y + n.h/2, -a, W, H);  // -angle: inverse (raw -> display)
+  return { x: r.x - n.w/2, y: r.y - n.h/2, w: n.w, h: n.h };
+}
+async function toggleTeachDeskew(forceOn){
+  if (_teachDeskewBusy || _teachReadBusy || drag || !state.rawImg || !state.pageDataUrl) return;
+  const goOn = (typeof forceOn === 'boolean') ? forceOn : !state.deskewAngle;
+  const btn = document.getElementById('tz-deskew');
+  _teachDeskewBusy = true;
+  try {
+    if (goOn) {
+      if (!state.deskewImg) {                              // fetch the straightened render ONCE
+        let res = null; try { res = await window.docusnap.getPageDeskew?.(state.pageDataUrl.split(',')[1], DESKEW_HARD_FLOOR); } catch {}
+        if (res && res.image && res.angle) {
+          await new Promise(r => { const im = new Image(); im.onload = () => { state.deskewImg = im; state.deskewImgAngle = res.angle; r(); }; im.onerror = () => r(); im.src = 'data:image/png;base64,' + res.image; });
+        }
+      }
+      if (state.deskewImg && state.deskewImgAngle) { state.img = state.deskewImg; state.deskewAngle = state.deskewImgAngle; }
+      else if (typeof forceOn !== 'boolean') { try { toast('This page is already straight'); } catch {} }
+    } else {
+      state.img = state.rawImg; state.deskewAngle = 0;
+    }
+    redrawCanvas();
+    if (btn) btn.classList.toggle('active', !!state.deskewAngle);
+  } finally { _teachDeskewBusy = false; }
+}
+
 async function startRegionStep(){
   canvas=$('pageCanvas'); ctx=canvas.getContext('2d');
   if (!state.img){
@@ -261,12 +332,16 @@ async function startRegionStep(){
     }catch{ state.pageDataUrl=null; }
     if (!state.pageDataUrl){ $('rg-prompt').textContent="Couldn't load that page."; return; }
     await new Promise(res=>{ const im=new Image(); im.onload=()=>{state.img=im;res();}; im.onerror=()=>res(); im.src=state.pageDataUrl; });
+    state.rawImg = state.img;        // canonical RAW frame — boxes are stored here (see store-raw note)
   }
   fitCanvas(); tzReset(); redrawCanvas();
+  bindCanvas();
+  // Straighten ON by default — training needs a level page so anchor↔target geometry registers cleanly.
+  // Runs once (deskewImg unset); if the page is already straight it's a silent no-op.
+  if (state.rawImg && !state.deskewImg) await toggleTeachDeskew(true);
   state.fieldIndex = state.fields.findIndex(f=>!state.results[f.key]);
   if (state.fieldIndex<0) state.fieldIndex=0;
   renderFieldRail(); promptField();
-  bindCanvas();
 }
 function fitCanvas(){
   if (!state.img) return;
@@ -285,12 +360,13 @@ function redrawCanvas(){
   if (!state.img) return;
   ctx.clearRect(0,0,canvas.width,canvas.height);
   ctx.drawImage(state.img,0,0,canvas.width,canvas.height);
-  // other captured fields' values (faint green)
-  for (const f of state.fields){ const r=state.results[f.key]; if(r&&r.target&&r.status==='done') drawBox(r.target,'#3ecf8e',false); }
+  // other captured fields' values (faint green). Stored boxes are RAW → forward-transform to the
+  // current (possibly straightened) display frame; drawnBox/drag are live DISPLAY boxes, drawn as-is.
+  for (const f of state.fields){ const r=state.results[f.key]; if(r&&r.target&&r.status==='done') drawBox(_teachFwdBox(r.target),'#3ecf8e',false); }
   // current field: its label (blue) + value (green) — same colours as Template Manager
   const cf=curField(), cr=cf?state.results[cf.key]:null;
-  if (cr&&cr.anchor) drawBox(cr.anchor,'#4f8ef7',true);
-  if (cr&&cr.target) drawBox(cr.target,'#3ecf8e',true);
+  if (cr&&cr.anchor) drawBox(_teachFwdBox(cr.anchor),'#4f8ef7',true);
+  if (cr&&cr.target) drawBox(_teachFwdBox(cr.target),'#3ecf8e',true);
   else if (drawnBox) drawBox(drawnBox,'#3ecf8e',true);
   // live drag rectangle, coloured by what we're drawing
   if (drag) drawBox(drag, drawMode==='anchor'?'#4f8ef7':'#3ecf8e',true,true);
@@ -311,7 +387,7 @@ function bindCanvas(){
   // LEFT-drag draws the box; right-click is reserved for panning (below).
   canvas.addEventListener('mousedown',e=>{ if(e.button!==0)return; const p=cpoint(e); drag={x:p.x,y:p.y,w:0,h:0,_sx:p.x,_sy:p.y}; });
   canvas.addEventListener('mousemove',e=>{ if(!drag)return; const p=cpoint(e); drag.x=Math.min(drag._sx,p.x);drag.y=Math.min(drag._sy,p.y);drag.w=Math.abs(p.x-drag._sx);drag.h=Math.abs(p.y-drag._sy); redrawCanvas(); });
-  window.addEventListener('mouseup',async()=>{ if(!drag)return; const b={x:drag.x,y:drag.y,w:drag.w,h:drag.h}; drag=null; if(b.w<0.01||b.h<0.008){redrawCanvas();return;}
+  window.addEventListener('mouseup',async()=>{ if(!drag)return; const b={x:drag.x,y:drag.y,w:drag.w,h:drag.h,_ang:state.deskewAngle||0}; drag=null; if(b.w<0.01||b.h<0.008){redrawCanvas();return;}
     if (drawMode==='anchor'){ await captureAnchor(b); return; }
     drawnBox=b; redrawCanvas(); await readBack(b); });
 
@@ -323,6 +399,7 @@ function bindCanvas(){
   $('tz-in') ?.addEventListener('click',()=>tzSet(tzZoom+TZ_STEP));
   $('tz-out')?.addEventListener('click',()=>tzSet(tzZoom-TZ_STEP));
   $('tz-reset')?.addEventListener('click',tzReset);
+  $('tz-deskew')?.addEventListener('click',()=>toggleTeachDeskew());
   // Scroll-wheel zoom (same step as the +/− buttons; matches the other preview panes).
   wrap.addEventListener('wheel',e=>{ if(!state.img)return; e.preventDefault(); tzSet(tzZoom+(e.deltaY<0?TZ_STEP:-TZ_STEP)); }, {passive:false});
   wrap.addEventListener('dragstart',e=>e.preventDefault());
@@ -425,9 +502,12 @@ async function readBack(box){
   const f=curField();
   $('rg-readback').innerHTML='';   // hide the per-field "fixed value?" card while confirming a read
   $('rg-confirm').innerHTML='<span class="muted">Reading…</span>';
+  _teachReadBusy = true;
   let value=''; try{ value=(await D.ocrRegion(await cropB64(box)))||''; }catch{}
   value=(value||'').trim();
   const anchor=await autoLabel(box);
+  _teachReadBusy = false;   // both reads done; the box carries its own _ang for a later manual store
+  if (anchor && anchor.box) anchor.box._ang = box._ang;   // same frame as the value box (manual-store safe)
   if (!value){
     $('rg-confirm').innerHTML=
       `<div class="warn">Couldn't read that clearly. Try a bigger box, or type the value:</div>`+
@@ -503,26 +583,30 @@ function renderAnchorReadout(){
 async function redetectAnchor(dir){
   const f=curField(), r=f&&state.results[f.key]; if(!r||!r.target) return;
   $('rg-confirm').innerHTML='<span class="muted">Looking '+(dir==='left'?'to the left':'above the value')+'…</span>';
+  _teachReadBusy = true;
   try{
-    const a=await autoLabel(r.target, dir);
-    r.anchor=a.box; r.anchor_text=a.anchor_text; r.anchor_dir=a.dir||dir; r.anchorSuspicious=!!a.suspicious;
+    const a=await autoLabel(_teachFwdBox(r.target), dir);   // r.target RAW → crop from the DISPLAY image
+    r.anchor=_teachBackBox(a.box); r.anchor_text=a.anchor_text; r.anchor_dir=a.dir||dir; r.anchorSuspicious=!!a.suspicious;
   }catch{ r.anchor_dir=dir; }
+  _teachReadBusy = false;
   redrawCanvas();
   renderAnchorReadout();
 }
 async function captureAnchor(box){
   const f=curField(), r=f&&state.results[f.key]; if(!r){ drawMode='value'; return; }
   $('rg-confirm').innerHTML='<span class="muted">Reading the label…</span>';
+  _teachReadBusy = true;
   let text=''; try{ const res=await D.ocrRegionBoxes(await cropB64(box)); text=res&&res.text?String(res.text).trim():''; }catch{}
+  _teachReadBusy = false;
   // Sanitize the manually-drawn label the same way (strip value-shaped tokens); if that empties
   // it, respect the operator's explicit pick with the raw first line.
   const A=window.AnchorLabel;
   const clean=A.sanitizeAnchorLabel(A.extractLabel(text) || '');
   text = clean || (text||'').split('\n')[0].slice(0,40);
-  r.anchor={x:box.x,y:box.y,w:box.w,h:box.h};
+  r.anchor=_teachBackBox({x:box.x,y:box.y,w:box.w,h:box.h,_ang:box._ang});   // store RAW (box is a display-frame draw; keep its frame angle)
   r.anchor_text = text || r.anchor_text || null;
   r.anchorSuspicious = r.anchor_text ? A.labelLooksSuspicious(r.anchor_text) : false;
-  const v=r.target||{};   // direction implied by where they drew it, for the read-out
+  const v=r.target?_teachFwdBox(r.target):{};   // r.target is RAW — compare in the display frame the box was drawn in
   r.anchor_dir = (typeof v.y==='number' && (box.y+box.h) <= (v.y+(v.h||0)*0.5)) ? 'above' : 'left';
   r.anchorManual = true;
   r.status = 'done';
@@ -532,7 +616,8 @@ async function captureAnchor(box){
   advanceField();
 }
 function store(f,box,anchor,value,pending){
-  state.results[f.key]={ value, target:box, anchor:anchor.box, anchor_text:anchor.anchor_text, anchor_dir:anchor.dir||'left', anchorSuspicious:!!anchor.suspicious, status:pending?'pending':'done' };
+  // Canonicalise to the RAW frame (identity when straighten is off) so doCommit registers to the raw scan.
+  state.results[f.key]={ value, target:_teachBackBox(box), anchor:_teachBackBox(anchor.box), anchor_text:anchor.anchor_text, anchor_dir:anchor.dir||'left', anchorSuspicious:!!anchor.suspicious, status:pending?'pending':'done' };
   if (!pending) advanceField();
 }
 function advanceField(){

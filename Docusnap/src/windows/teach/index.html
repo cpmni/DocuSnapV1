@@ -105,6 +105,7 @@
   .zoombar button{width:26px;height:24px;border:0;background:transparent;color:var(--text);font-size:15px;
     line-height:1;border-radius:5px;cursor:pointer}
   .zoombar button:hover{background:var(--surface2)}
+  .zoombar button.active{background:var(--accent);color:var(--on-accent)}
   .zoombar .lvl{min-width:42px;text-align:center;font-size:11px;color:var(--muted)}
   .rail{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px}
   .rail h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:10px}
@@ -185,6 +186,16 @@
         <button id="btn-import-teach" style="padding:8px 14px; border:1px solid var(--accent); background:var(--accent-bg); color:var(--accent2); border-radius:8px; cursor:pointer; font-size:13px; font-weight:600;">📄 Import a PDF to teach…</button>
         <span id="import-teach-status" class="muted" style="font-size:12px;"></span>
       </div>
+      <!-- Read progress: an indeterminate animated bar (a single doc's OCR has no sub-%). Shown only
+           while the import runs (renderer toggles .active). -->
+      <div id="teach-import-progress" style="height:4px; border-radius:3px; background:var(--surface3); overflow:hidden; margin:-4px 0 12px; display:none;">
+        <div id="teach-import-progress-fill" style="height:100%; width:35%; border-radius:3px; background:var(--accent);"></div>
+      </div>
+      <style>
+        #teach-import-progress.active{display:block}
+        #teach-import-progress.active #teach-import-progress-fill{animation:teach-import-slide 1.1s ease-in-out infinite}
+        @keyframes teach-import-slide{0%{margin-left:-35%}100%{margin-left:100%}}
+      </style>
       <div id="doc-picker" class="grid"></div>
       <p id="doc-picker-empty" class="muted hidden">No documents are waiting to be taught — use
         “Import a PDF to teach…” above to load one, or scan/import some pages first.</p>
@@ -216,6 +227,7 @@
               <span class="lvl" id="tz-level">100%</span>
               <button id="tz-in" data-help-key="teach-zoom" title="Zoom in">+</button>
               <button id="tz-reset" data-help-key="teach-zoom" title="Reset view">⟲</button>
+              <button id="tz-deskew" data-help-key="teach-straighten" title="Straighten the page (on by default — teaching needs a level scan)">∞</button>
             </div>
             <!-- Read-back confirmation overlays the BOTTOM of the preview pane so it's
                  right where the user is looking (not below the fold). -->
