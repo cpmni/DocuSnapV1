@@ -135,6 +135,39 @@ _MONTH_NAME_DATE_RE = re.compile(
 )
 
 
+# ── OCR date pre-clean (space/split tolerance) ────────────────────────────────
+# Rejoin a number an OCR word-break SPLIT ("1 5" -> "15", "2 0 2 6" -> "2026") WITHOUT
+# touching a digit/letter boundary ("15 Jun" stays), then collapse whitespace around the
+# date separators ("16 / 03 / 2026" -> "16/03/2026"). The zero-width lookaround is REQUIRED:
+# a capturing replace r'(\d)\s+(\d)' consumes the trailing digit and misses the next split
+# space in a 3+-digit run ("2 0 2 6" -> "20 26"). Deletes whitespace only — never reorders or
+# inserts a digit, so it cannot fabricate a date (parse_date/strptime stays the sole gate).
+#
+# SAFETY (Oracle 2026-07-16): fed in front of the SALVAGE locator ONLY — never parse_date, the
+# Stage-2 anchor read, or the engine merge. So a recovered split date stays at the salvage tier
+# (_CLEAN_SALVAGE_CONF 80, review-held, < the 88 critical-field floor) and can NEVER auto-file;
+# and the spaced anchor read keeps its (depressed) confidence and still loses to a clean keyword
+# read. Moving this into parse_date would let a spaced date parse at _CLEAN_DATE_CONF 94 (>=88)
+# and become auto-file-eligible — do NOT. JS twin: _datePreclean in src/windows/review/renderer.js
+# and src/modules/filing/handler.js (keep the three aligned — see test_date_salvage.py twin pin).
+_DIGIT_SPLIT_RE = re.compile(r'(?<=\d)\s+(?=\d)')
+_DATE_SEP_WS_RE = re.compile(r'\s*([/.\-])\s*')
+# A month NAME means a space can legitimately separate a day from a year ("Aug 3 2024"), where the
+# digit-join would wrongly FUSE "3 2024" -> "32024". Numeric dates (digits + / - . separators) never
+# contain a month token, so a digit-space-digit there is always an OCR split. Gate the join on the
+# ABSENCE of a month name — so "1 5/06/2026" rejoins but "Aug 3 2024" / "15 Jun 2026" are untouched.
+_MONTH_TOKEN_RE = re.compile(r'jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec', re.IGNORECASE)
+
+
+def _date_preclean(text: str) -> str:
+    s = str(text)
+    if not _MONTH_TOKEN_RE.search(s):
+        s = _DIGIT_SPLIT_RE.sub('', s)              # numeric-only: "1 5/06/2026" -> "15/06/2026"
+    s = _DATE_SEP_WS_RE.sub(r'\1', s)               # "16 / 03 / 2026" -> "16/03/2026"
+    s = re.sub(r'\s{2,}', ' ', s)
+    return s.strip()
+
+
 def _best_date_candidate(candidates: list[datetime]) -> datetime:
     """Pick the most plausible date among confirmed candidates.
 
@@ -162,7 +195,7 @@ def salvage_date_detail(raw: str | None) -> "tuple[datetime | None, int]":
     candidate is a real date — callers fall back to their existing handling."""
     if not raw:
         return None, 0
-    s = str(raw)
+    s = _date_preclean(str(raw))   # rejoin an OCR-split number ("1 5" -> "15") BEFORE locating (salvage tier only)
     candidates: list[datetime] = []
     for rx in (_NUMERIC_DATE_RE, _MONTH_NAME_DATE_RE):
         for m in rx.finditer(s):

@@ -327,9 +327,23 @@ const MONTHS = {
   jul:6, aug:7, sep:8, oct:9, nov:10, dec:11,
 };
 
+// OCR date pre-clean — TWIN of validator._date_preclean + renderer._datePreclean; keep aligned.
+// Rejoin an OCR-split number ("1 5" -> "15") + collapse whitespace around date separators, so a
+// value that extraction normalised also normalises at confirm/filename. No-op on an already-clean
+// DD-MM-YYYY (no intra-digit spaces, no spaced separators) → the normal path is byte-identical.
+function _datePreclean(raw) {
+  let s = String(raw == null ? '' : raw);
+  if (!/jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec/i.test(s)) {
+    s = s.replace(/(?<=\d)\s+(?=\d)/g, '');   // gate the digit-join on the ABSENCE of a month name ("Aug 3 2024")
+  }
+  return s
+    .replace(/\s*([/.\-])\s*/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
 function parseDate(raw) {
   if (!raw) return null;
-  const s = String(raw).trim();
+  const s = _datePreclean(raw);
   // DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
   let m = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
   if (m) return new Date(parseInt(m[3]), parseInt(m[2])-1, parseInt(m[1]));
