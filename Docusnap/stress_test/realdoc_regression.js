@@ -149,8 +149,11 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   let autoFiledN = 0, silentAutoFile = 0; const autoFileMisses = [];
   let rereadN = 0; const rereadDocs = [];   // Stage-4.5 gate-failure re-read adoptions (review-bound)
   let ownCapN = 0;                          // c2 taught-field ownership caps (review-volume delta, HOLD-only)
+  let wrongTypeAutoFile = 0;                // M_type (Oracle C3): would auto-file under the WRONG document TYPE
+  let bannerRereadN = 0; const bannerRereadDocs = [];  // BANNER_HEADING_REREAD firings (proves the fix fired)
   for (const fname of files) {
     const m = res[fname]; const g = gt[fname]; if (!m) continue;
+    if (m.banner_heading_reread) { bannerRereadN++; bannerRereadDocs.push(`#${g.id} ${g.type_slug} -> ${m.document_type}`); }
     const rk = (roles[g.type_slug] || {}).ref, dk = (roles[g.type_slug] || {}).date;
     const detSlug = m._document_slug || nameToSlug[m.document_type] || null;
     const s = {
@@ -188,6 +191,10 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
       silentAutoFile++;
       autoFileMisses.push(`#${g.id} ${g.type_slug} would-auto-file but WRONG on: ${F.filter(f => s[f] === false).join(',')}`);
     }
+    // M_type (Oracle C3): a doc that would auto-file under the WRONG document TYPE. A SUBSET of
+    // silentAutoFile (type ∈ F) but tracked + gated on its OWN so a wrong-TYPE/right-VALUE auto-file
+    // — the banner-heading fix's exact failure mode — is VISIBLE and can't hide in the value metric.
+    if (wouldFile && s.type === false) wrongTypeAutoFile++;
     // Regressions on the filing-critical fields; flag whether the wrong read carried a review note (SILENT = didn't).
     for (const [f, key, want] of [['supplier', 'supplier_name', g.supplier], ['ref', rk, g.ref], ['date', dk, g.date]]) {
       if (s[f] === false) {
@@ -222,6 +229,9 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   for (const r of regress.slice(0, 60)) out.push(`- ${r}`);
   out.push(`\n**Auto-file soundness (#6): ${autoFiledN}/${files.length} reprocessed docs would auto-file; ${silentAutoFile} would auto-file a WRONG value (must be 0).**`);
   for (const r of autoFileMisses.slice(0, 40)) out.push(`- ${r}`);
+  out.push(`\n**Wrong-TYPE auto-file (M_type, Oracle C3): ${wrongTypeAutoFile} (must be 0 — would auto-file under the WRONG document type; a subset of M above, tracked + gated separately).**`);
+  out.push(`\n**Banner heading re-reads adopted (BANNER_HEADING_REREAD): ${bannerRereadN} (red-channel recovery FIRED + adopted a trusted type; 0 = never fired on this corpus, NOT proof of safety).**`);
+  for (const r of bannerRereadDocs.slice(0, 40)) out.push(`- ${r}`);
   out.push(`\n**Gate-failure re-reads adopted (GATE_REREAD): ${rereadN} (review-bound — can't auto-file; 0 = the feature never fired, not "safe").**`);
   for (const r of rereadDocs.slice(0, 40)) out.push(`- ${r}`);
   out.push(`\n**c2 taught-field ownership caps (TAUGHT_FIELD_OWNERSHIP): ${ownCapN} (HOLD-only — value untouched, review-bound; this is the review-VOLUME delta, not an accuracy change).**`);
@@ -229,5 +239,5 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   fs.writeFileSync(path.join(OUT, 'realdoc_regression.md'), txt);
   console.log(txt);
 
-  if (process.env.GATE === '1' && (silentWrong > 0 || silentAutoFile > 0)) process.exit(1);   // any SILENT regression OR wrong auto-file fails the gate
+  if (process.env.GATE === '1' && (silentWrong > 0 || silentAutoFile > 0 || wrongTypeAutoFile > 0)) process.exit(1);   // any SILENT regression, wrong-value OR wrong-TYPE auto-file fails the gate
 })();

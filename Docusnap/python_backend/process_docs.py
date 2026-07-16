@@ -507,6 +507,38 @@ def main():
             document_type  = type_detection["type"] if type_detection else None
             type_conf      = type_detection["confidence"] if type_detection else 0
 
+            # BANNER HEADING RE-READ. ORDERING IS LOAD-BEARING (Oracle C2): this MUST stay BEFORE
+            # title_trusted_fresh (~L560) AND before identify_template (~L623), so a recovered heading
+            # flips BOTH the fresh-scan type-precedence and the machine-authority reprocess override.
+            # A stylised RED type heading (e.g. a big-red "WORKSHEET" banner) is destroyed by the main
+            # pass's greyscale OCR (red is luminance-underweighted -> "WORKSH = ET"), so
+            # detect_document_type never matches the alias -> heading=False -> title_trusted=False and
+            # the whole 2026-07-15 heading-authority net is disarmed, so the type falls to a same-logo
+            # sibling. Recover the banner from the RAW RGB page-0 red channel and RE-DETECT through the
+            # SAME exact-alias matcher (no fuzzy -> no new false-positive surface); adopt ONLY a TRUSTED
+            # heading. Fires only when the main pass produced no trusted heading, on a scanned page 0
+            # (provenance 'ocr') carrying a real red top-band mark (recover_heading_band's C1 pre-gate
+            # confines cost + FP surface to red-banner docs — measured firing rate ~0.4%). Fail-safe:
+            # any miss keeps the original detection (today's review-hold). Kill switch
+            # BANNER_HEADING_REREAD (default ON). Design: docs/designs/BANNER_HEADING_REREAD_2026-07-16.md.
+            _banner_reread = False   # telemetry: did the red-channel heading re-read adopt a type?
+            if (os.environ.get("BANNER_HEADING_REREAD", "1") != "0"
+                    and not (type_detection and type_detection.get("heading") and type_conf >= 70)
+                    and page_images and known_type_names
+                    and _provenance and _provenance[0] == "ocr"):
+                try:
+                    from ocr.heading_reread import recover_type_detection
+                    _aug = recover_type_detection(page_images[0], ocr_text, known_type_names,
+                                                  type_aliases or None, engine.detect_document_type)
+                    if _aug:
+                        type_detection = _aug
+                        document_type  = _aug["type"]
+                        type_conf      = _aug["confidence"]
+                        _banner_reread = True
+                        log(f"  Banner heading recovered: {document_type} ({type_conf}%) [red-channel re-read]")
+                except Exception:
+                    pass  # additive; on any failure the original detection stands (fail toward review)
+
             if document_type:
                 log(f"  Document type: {document_type} ({type_conf}%)")
 
@@ -770,6 +802,9 @@ def main():
                 # authority override) — the handler plants a review note + drops stale
                 # wrong-type extraction rows off this signal.
                 **({"type_overridden": {"from": _ks, "to": doc_slug}} if _ks_overridden else {}),
+                # Red-channel banner heading re-read adopted a recovered TYPE (telemetry so a corpus
+                # A/B can prove the fix FIRED; absent when it didn't). See heading_reread.py.
+                **({"banner_heading_reread": True} if _banner_reread else {}),
                 "supplier_name":      supplier_name,
                 "template_id":        template_id,
                 "logo_phash":         logo_phash,
