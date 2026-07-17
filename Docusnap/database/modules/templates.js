@@ -9,6 +9,10 @@ const LOGO_HASH_CAP    = 8;    // max stored hashes per template
 const LOGO_DEDUP_FLOOR = 2;    // <= this to the nearest existing ref -> already covered, skip
 const LOGO_APPEND_BAND = 13;   // append only within this Hamming of an existing ref (= the matcher candidate net)
 
+// Shared distinctive-branding primitives (the ONE source of truth for template convergence by
+// branding rather than the unstable logo — see branding_fingerprint.js + the M2 design doc).
+const brandingFp = require('./branding_fingerprint');
+
 function getAll(db) {
   const rows = db.prepare(
     'SELECT * FROM templates ORDER BY confirmed_count DESC, name'
@@ -27,6 +31,39 @@ function getAll(db) {
     t.dominant_supplier_total = dom ? dom.total  : 0;
   }
   return rows;
+}
+
+// N — LIVE confirmed-document counts for the Template Manager (docs/designs/TEMPLATE_CONVERGENCE_2026-07-17.md).
+// The stored templates.confirmed_count is under-counted (bumped only on the taught-confirm reuse branch,
+// never on create / graduation-link), so the roster shows "confirmed 0×" despite many linked docs. It is
+// DISPLAY-ONLY — graduation counts confirmed DOCUMENTS live via trust.scopeTrust (never this column) and
+// mergeInto sums it — so these readers show the live truth WITHOUT touching the stored column or getAll()
+// (which feeds the extraction pipeline + Python matcher and MUST NOT change). ONE grouped query (no index
+// on documents.template_id → a per-template correlated subquery would full-scan), map-joined.
+function liveConfirmedCounts(db) {
+  const m = new Map();
+  for (const r of db.prepare(
+    "SELECT template_id, COUNT(*) c FROM documents WHERE status = 'confirmed' AND template_id IS NOT NULL GROUP BY template_id"
+  ).all()) m.set(r.template_id, r.c);
+  return m;
+}
+
+// Template Manager roster (get-templates): getAll's rows with confirmed_count replaced by the LIVE
+// confirmed-doc count and RE-SORTED by it (so the shown number and the order agree — Oracle caveat).
+// getAll() itself is left untouched.
+function getAllWithLiveCounts(db) {
+  const rows   = getAll(db);
+  const counts = liveConfirmedCounts(db);
+  for (const t of rows) t.confirmed_count = counts.get(t.id) || 0;
+  rows.sort((a, b) => (b.confirmed_count - a.confirmed_count) || String(a.name || '').localeCompare(String(b.name || '')));
+  return rows;
+}
+
+// Live confirmed-doc count for ONE template (the detail view — same truth as the roster).
+function confirmedDocCount(db, templateId) {
+  return db.prepare(
+    "SELECT COUNT(*) c FROM documents WHERE template_id = ? AND status = 'confirmed'"
+  ).get(templateId).c;
 }
 
 // The issuer identity the template's CONFIRMED docs actually carry, as a distribution — NOT the
@@ -423,6 +460,30 @@ function findByKeywordFingerprint(db, ocrText, threshold = 75, document_type_slu
     }
   }
   return (best && best.confidence >= threshold) ? best : null;
+}
+
+// Branding-fingerprint REUSE target (M2, docs/designs/TEMPLATE_CONVERGENCE_2026-07-17.md): the
+// canonical SAME-TYPE template a drifted-logo doc should reuse, identified by DISTINCTIVE branding
+// tokens (not the unstable logo). Requires >= DISTINCTIVE_MIN shared distinctive tokens AND a SYMMETRIC
+// ratio >= threshold; TYPE-SCOPED by slug (a same-branding sibling of another type is never a reuse
+// target — the letterhead fingerprint is type-blind). Returns the best-ratio same-type template or null.
+// threshold defaults to 0.80 — the measured 0% cross-supplier false-match point; the MUTATING reuse path
+// (_upsertTemplate → update() folds fingerprint/fields) gets the strict bar (link paths use a lower one).
+function findByBrandingFingerprint(db, docFingerprint, document_type_slug, threshold = 0.80) {
+  if (!document_type_slug) return null;
+  if (brandingFp.distinctiveTokens(docFingerprint).length < brandingFp.DISTINCTIVE_MIN) return null;
+  const rows = db.prepare(
+    "SELECT id, name, document_type_slug, keyword_fingerprint FROM templates WHERE keyword_fingerprint IS NOT NULL AND LOWER(COALESCE(document_type_slug, '')) = LOWER(?)"
+  ).all(document_type_slug);
+  let best = null, bestRatio = 0;
+  for (const t of rows) {
+    const { shared, ratio } = brandingFp.symmetricDistinctiveOverlap(docFingerprint, _parseJson(t.keyword_fingerprint, []));
+    if (shared >= brandingFp.DISTINCTIVE_MIN && ratio >= threshold && ratio > bestRatio) {
+      bestRatio = ratio;
+      best = { id: t.id, name: t.name, document_type_slug: t.document_type_slug, match_ratio: ratio, shared };
+    }
+  }
+  return best;
 }
 
 // Lightweight current-template recheck — given a document's already-stored
@@ -970,7 +1031,7 @@ function unfreezeAutoFrozenRecipientNames(db) {
 }
 
 module.exports = {
-  getAll, getById, getFields, findByLogoHash, findByKeywordFingerprint, identifyByFingerprint,
+  getAll, getAllWithLiveCounts, confirmedDocCount, getById, getFields, findByLogoHash, findByKeywordFingerprint, findByBrandingFingerprint, identifyByFingerprint,
   unfreezeAutoFrozenRecipientNames,
   searchByName,
   create, update, remove, rename, shouldAdoptIssuerName, hammingDistance,

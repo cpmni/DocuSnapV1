@@ -44,29 +44,14 @@ const trust     = require('./trust');
 const templates = require('./templates');
 const learning  = require('./learning');
 
-// Mirror of engine.py `_BRANDING_STOPWORDS` — doc-type words that are NOT a supplier's
-// distinctive branding. The >=K gate below strips these so it counts the same "distinctive
-// tokens" that engine._flag_branding_conflict counts (keep the two lists in sync).
-const BRANDING_STOPWORDS = new Set([
-  'delivery', 'docket', 'note', 'notes', 'invoice', 'order', 'purchase', 'sales',
-  'statement', 'remittance', 'receipt', 'quote', 'quotation', 'worksheet',
-  'credit', 'debit', 'advice', 'proforma', 'job', 'copy', 'original',
-]);
-const DISTINCTIVE_MIN = 3;    // K in engine._flag_branding_conflict (engine.py:1017)
+// Distinctive-branding primitives now live in the shared branding_fingerprint module (ONE source of
+// truth, so _upsertTemplate's M2 reuse and this create gate can never disagree about "same supplier" —
+// Oracle SEAM condition). BRANDING_STOPWORDS + DISTINCTIVE_MIN + distinctiveTokens are re-exported below
+// for backward compatibility (test_graduation_template.js imports them).
+const { BRANDING_STOPWORDS, DISTINCTIVE_MIN, distinctiveTokens } = require('./branding_fingerprint');
 const COLLISION_DIST  = 10;   // seed-logo cross-supplier danger band (Oracle C3)
 
 function _parseJson(s, fb) { try { const v = JSON.parse(s); return v == null ? fb : v; } catch { return fb; } }
-
-// Distinctive branding tokens = fingerprint tokens (len>=3, lowercased, doc-type stopword
-// removed), de-duplicated. Mirrors engine.py:1013-1016. Exported for the test.
-function distinctiveTokens(keywordFingerprint) {
-  const out = new Set();
-  for (const w of (keywordFingerprint || [])) {
-    const wl = String(w == null ? '' : w).trim().toLowerCase();
-    if (wl.length >= 3 && !BRANDING_STOPWORDS.has(wl)) out.add(wl);
-  }
-  return [...out];
-}
 
 // Cross-supplier collision pre-check (Oracle C3): is the seed logo phash within the danger band
 // of ANY same-type template's logo set? We only reach create() when identifyByFingerprint

@@ -285,12 +285,15 @@ function register(ctx) {
   // ── Browse ──────────────────────────────────────────────────────────────────
   ipcMain.handle('get-templates', () => {
     requireRole('admin', 'edit');   // Edit users need the list for Review's "link to an existing document"
-    return templates.getAll(getDb());
+    return templates.getAllWithLiveCounts(getDb());   // N: live confirmed-doc count (the stored column under-counts)
   });
 
   ipcMain.handle('get-template-detail', (_e, templateId) => {
     requireRole('admin');
-    return templates.getById(getDb(), templateId);
+    const db = getDb();
+    const detail = templates.getById(db, templateId);
+    if (detail) detail.confirmed_count = templates.confirmedDocCount(db, templateId);   // N: same live truth as the roster
+    return detail;
   });
 
   // Admin-facing template management — name is purely cosmetic metadata
