@@ -41,7 +41,7 @@ LOGO_THRESHOLD    = 13   # max hamming distance for logo match
 # because a wrong rescue MISFILES; the logo band is a wider backstop against a look-alike letterhead
 # (unrelated 64-bit logos sit ~28-32 apart, so <=20 keeps an >=8-bit margin while admitting real drift).
 RESCUE_KEYWORD_OVERLAP = 0.80
-RESCUE_LOGO_BAND       = 20
+RESCUE_LOGO_BAND       = int(os.environ.get('RESCUE_LOGO_BAND', '20') or 20)   # env-tunable (test/tuning)
 KEYWORD_THRESHOLD = 0.75 # min fraction of keywords that must be present
 # Templates whose logos land within this hamming of the closest match are
 # treated as the SAME-LOGO cluster — a supplier that issues several layouts
@@ -235,7 +235,17 @@ def identify_template(page_image, ocr_text: str, templates: list,
             key=lambda x: -x[1])
         if _same_type and _same_type[0][1] >= RESCUE_KEYWORD_OVERLAP:
             _cand = _same_type[0][0]
-            if logo_phash is None or _min_set_dist(_cand, logo_phash) <= RESCUE_LOGO_BAND:
+            # LOGO BAND is NO LONGER REQUIRED (2026-07-17): the coarse logo phash is too unstable to
+            # corroborate — MEASURED on the 9-supplier Demo corpus, same-supplier drift reaches 36
+            # Hamming while different-supplier distances drop to 2, so the band cannot tell suppliers
+            # apart and only BLOCKED legitimate drifted-logo / right-supplier / right-type matches
+            # (e.g. a Copperfield PO whose logo drifted to ~36 never matched its own PO template). The
+            # real precision is the >=0.80 branding-overlap + same-type + title_trusted gate above —
+            # MEASURED 0% cross-supplier false-match at 0.80 on those 9 suppliers (branding words are
+            # unique; only generic doc-type words like "DELIVERY DOCKET" overlap, topping out at 0.50).
+            # Kill switch RESCUE_ENFORCE_LOGO_BAND=1 restores the old band (byte-identical to before).
+            _enforce_band = os.environ.get('RESCUE_ENFORCE_LOGO_BAND', '0') != '0'
+            if logo_phash is None or not _enforce_band or _min_set_dist(_cand, logo_phash) <= RESCUE_LOGO_BAND:
                 return {'template': _cand, 'confidence': 60,
                         'method': 'keywords+slug_rescue', 'logo_phash': logo_phash}
 
