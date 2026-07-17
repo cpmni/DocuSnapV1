@@ -17,7 +17,36 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/features.md` — first-run wizard, welcome tour, settings backup, Learning Repair, teaching wizard, dev inspector.
 - `docs/history.md` — resolved QA/audit findings + build-stage history (Settings/Review/Search/Stage-7 rebuilds).
 
-## Recent session changes (2026-07-09 → 07-15) — durable mechanisms now in the code
+## Recent session changes (2026-07-09 → 07-17) — durable mechanisms now in the code
+### 2026-07-16 → 07-17 (branch `feat/reprocess-throughput-autostraighten`, 5 commits UNPUSHED + `52d863e` pushed)
+**READ FIRST: `HANDOVER_2026-07-17.md`** (also `HANDOVER_2026-07-16.md` for the prior batch). Two features,
+control-test-first (corpus baseline captured BEFORE any code; every stage kill-switched; OFF ⇒ byte-identical
+to baseline M=1/M_type=0). **Core installer BUILT: `dist\ScanFinder Setup 2.0.0-r20260717-0754-e2a197e.exe`.**
+- **Draw-tool UX — ⊕ field draw ~2s → ~0.45s** (`81a967d`/`504884e`/`c60a54e`): `ocr/region_core.py` (pure OCR
+  shared by CLI + a NEW long-lived `ocr/region_worker.py` warm POOL, `src/modules/processing/regionWorker.js`)
+  + parallel caption reads. Owner-validated → **DEFAULT ON** + Settings→Processing toggle
+  (`ocr_warm_worker_enabled`) + `#ocr-overlay` fade. Kills `OCR_WARM_WORKER`, `DS_OCR_SINGLELINE_FAST`,
+  `DS_OCR_TIMING`. (Corrected estimate: the warm pool is the WHOLE latency lever, not half → `tesserocr` deprioritized.)
+- **Resolve-the-issuer + operator supplier PIN** (`de96611`/`e2a197e`, kill `SUPPLIER_PIN`): a colliding-logo
+  mis-ID (Marlowe filed under Ridgeway) gets a **"Use '<name>'" button** (surfaces the branding-detected
+  supplier; migration 49 `extractions.suggested_supplier`) + a per-doc **pin** (migration 50
+  `documents.supplier_pin`, `resolve-issuer` IPC) that OVERRIDES logo/template on reprocess (engine
+  `pinned_supplier`, `process_docs --known-supplier`, batch manifest carry) — method `operator_pin`,
+  REVIEW-BOUND, writes NO logo learning, pin cleared on confirm. Badge shows **"Check"** not a misleading 100%.
+- **⚠ PACKAGED-BUILD REGRESSION found+fixed (`5d5fd8c`)** — the draw-tool refactor's bare `import region_core`
+  in `ocr/region.py`+`region_worker.py` crashed under the built app's EMBEDDABLE Python (its `python312._pth`
+  drops the script-dir from `sys.path`), breaking Straighten/`--skew`/`--boxes`/the ⊕ draw tool in the PACKAGED
+  build only (dev's system Python masked it). Fix: add `ocr/`+`python_backend` to `sys.path` before the import.
+  **Durable rule: any spawned Python CLI must import siblings via `from ocr.x import …` after a `sys.path.insert`,
+  never bare `import x`; reproduce with `python -P`; verify build-only fixes against `vendor/python`, not `py`.**
+  Regression pin `tests/test_region_embeddable_import.py`. Second installer rebuilt with the fix.
+- **DEFERRED — B-safety** (Resolve→Confirm-WITHOUT-reprocess poison seam): touches the SHARED confirm/learning
+  path → too risky unattended; avoided by the flow resolve→Reprocess→Confirm; `SUPPLIER_PIN=0` disables all of B.
+- **FINDING (pre-existing):** `logo_fingerprints.detail_hash` is NULL for every supplier — enrolment plants the
+  256-bit detail into TEMPLATES not logo_fingerprints, so **Slice D (256-bit logo resolver) is partly INERT**;
+  likely the deeper root of the Marlowe/Ridgeway (and Copperfield/Northgate) collisions. Its own investigation.
+
+### 2026-07-09 → 07-15
 **READ FIRST: `HANDOVER_2026-07-15_EVENING.md`** (repo root, 6 UNPUSHED commits). This session SHIPPED the
 deferred TYPE-heading fix + more: **TYPE-heading fix BUILT + CONFIRMED live** (worksheet types as WSht) —
 Part B column-aware heading SCORING + C1 refuse→review-hold + Part D confirm-path type-link detach
