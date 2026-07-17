@@ -1446,7 +1446,7 @@ function register(ctx) {
     const tmpNames  = [];
     for (const d of docs) {
       try {
-        const row = db.prepare('SELECT working_path, template_id, ocr_text, status, confirmed_at FROM documents WHERE id = ?').get(d.docId);
+        const row = db.prepare('SELECT working_path, template_id, ocr_text, status, confirmed_at, supplier_pin, supplier_name FROM documents WHERE id = ?').get(d.docId);
         const srcFile = (row && row.working_path && fs.existsSync(row.working_path))
           ? row.working_path
           : path.join(d.folderPath || '', d.filename || '');
@@ -1460,16 +1460,24 @@ function register(ctx) {
         const dtRow = db.prepare(
           `SELECT dt.slug AS slug FROM documents d LEFT JOIN document_types dt ON dt.id = d.document_type_id WHERE d.id = ?`
         ).get(d.docId);
+        // Operator supplier PIN (Part B3, per-doc, no global leak): carry the pin so batch reprocess
+        // forces the supplier, and — when it DIFFERS from the doc's current supplier — suppress the stale
+        // template/type (B2) so the type re-detects for the new supplier. Byte-identical when no pin
+        // (SUPPLIER_PIN off/unset): known_supplier absent, template/type unchanged.
+        const _pin = (row && row.supplier_pin) ? String(row.supplier_pin).trim() : null;
+        const _pinOn = !!_pin && process.env.SUPPLIER_PIN !== '0';
+        const _pinDiff = _pinOn && _pin.toLowerCase() !== String((row && row.supplier_name) || '').trim().toLowerCase();
         manifest[tmpName]  = {
-          known_template_id: (row && row.template_id) || null,
-          known_doc_slug:    (dtRow && dtRow.slug) || null,
+          known_template_id: _pinDiff ? null : ((row && row.template_id) || null),
+          known_doc_slug:    _pinDiff ? null : ((dtRow && dtRow.slug) || null),
           // Per-doc type authority (statuses differ across a batch — a global flag must
           // never leak, so this is manifest-only): a NEVER-confirmed doc's type is the
           // machine's own guess and a trusted contradicting title may re-type it on
           // reprocess; a confirmed doc stays pinned (human checkpoint). Key present only
           // when 'machine' — absent = pinned, today's behaviour.
-          ...(row && row.status !== 'confirmed' && !row.confirmed_at
+          ...(!_pinDiff && row && row.status !== 'confirmed' && !row.confirmed_at
               ? { known_doc_slug_authority: 'machine' } : {}),
+          ...(_pinOn ? { known_supplier: _pin } : {}),
           enhance_params:    enh,
           // Reuse stored full-page OCR text → skip the ~1.9s/page re-OCR (only when no
           // enhance is active and the text is non-empty; crop reads still re-run).

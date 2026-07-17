@@ -36,6 +36,11 @@ kill-switch-OFF run was diffed against this and must be byte-identical.
   accept-issuer, admin/edit, audited) + `preload.resolveIssuer`; the button writes the pin; **pin CLEARED on
   confirm** (both `confirm` + `confirmIfReviewable` — once learned, a stale pin must not override later).
   **Verified:** `test_supplier_pin_persist.js` 7/7 (migration / write / clear-on-confirm / null-inert).
+- **Stage B3 — batch Reprocess-All pin** (`process_docs.py` `doc_overrides` + `processing/handler.js` manifest
+  builder): the pin is carried PER-DOC in the reprocess manifest with the **no-global-leak** rule (mirrors
+  `known_doc_slug_authority`, Oracle 2026-07-09) + the B2 template/type suppression on a supplier change.
+  Byte-identical when no pin. **Verified:** `test_doc_overrides_pin.py` 5/5; **corpus BYTE-IDENTICAL to
+  baseline** (the tuple arity 5→6 change is non-causal on the no-manifest path).
 
 ## Two findings from the control gate (Oracle C3 collision-poison probe)
 1. **`logo_fingerprints.detail_hash` is NULL for ALL suppliers** (Ridgeway 5 prints, Marlowe) — the confirm

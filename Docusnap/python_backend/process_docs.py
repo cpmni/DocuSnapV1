@@ -107,7 +107,8 @@ def load_json_arg(inline: str | None, filepath: str | None) -> list | dict | Non
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def doc_overrides(manifest, name, *, enhance=None, known_template_id=None,
-                  known_doc_slug=None, cached_text=None, known_doc_slug_authority=None):
+                  known_doc_slug=None, cached_text=None, known_doc_slug_authority=None,
+                  known_supplier=None):
     """Per-document reprocess overrides from a manifest (batched Reprocess All), each
     keyed by the file's basename. Falls back to the global args when the manifest has
     no entry for this file — so single-doc reprocess and folder import (no manifest)
@@ -132,6 +133,7 @@ def doc_overrides(manifest, name, *, enhance=None, known_template_id=None,
         o.get("known_doc_slug") or known_doc_slug,
         ct if ct else cached_text,
         o.get("known_doc_slug_authority") if has_entry else known_doc_slug_authority,
+        o.get("known_supplier") if has_entry else known_supplier,   # per-doc pin; no global leak onto batch docs
     )
 
 
@@ -434,13 +436,14 @@ def main():
 
         # Per-document overrides (batched reprocess) — fall back to the global args
         # when no manifest entry exists (byte-identical for folder import / single doc).
-        _enh, _kt, _ks, _cached, _ks_auth = doc_overrides(
+        _enh, _kt, _ks, _cached, _ks_auth, _known_supplier = doc_overrides(
             reprocess_manifest, filepath.name,
             enhance=enhance_params,
             known_template_id=args.known_template_id,
             known_doc_slug=args.known_doc_slug,
             cached_text=global_cached_text,
             known_doc_slug_authority=args.known_doc_slug_authority,
+            known_supplier=args.known_supplier,
         )
 
         try:
@@ -734,7 +737,7 @@ def main():
                 title_trusted = title_trusted,
                 ref_field_key = _ref_key,
                 supplier_name = None,
-                pinned_supplier = getattr(args, 'known_supplier', None),   # operator Resolve pin (Part B); None on import
+                pinned_supplier = _known_supplier,   # operator Resolve pin (Part B); per-doc via doc_overrides, None on import
                 known_template_id = _kt,
                 pinned_template_id = _pinned_tid,
                 trace         = emit_trace if args.trace else None,
