@@ -1327,8 +1327,20 @@ function register(ctx) {
     _singleReprocessActive = true;   // mark busy now we're committed to spawning (cleared in finish())
     return new Promise((resolve) => {
       const py   = pythonExe();
+      // Single-doc reprocess MAY use several cores (parallel full-page OCR = Option B; parallel
+      // field reads = Option C) so ONE document finishes faster on a slow CPU. Output is
+      // byte-identical (scheduling only) — see docs/designs/REPROCESS_PARALLELISM_BC_2026-07-17.md.
+      // Gated by a setting, DEFAULT OFF; passed ONLY here on the single-reprocess spawn, NEVER the
+      // batch/import/shard path (those already parallelise ACROSS docs with their own OMP cap, so
+      // nesting a per-doc pool inside them would oversubscribe). The python side caps OMP to 1.
+      let spawnEnv = process.env;
+      try {
+        if (require('../../../database/modules/learning').getSetting(db, 'ocr_parallel_reprocess_enabled', 'false') === 'true') {
+          spawnEnv = { ...process.env, DS_OCR_PARALLEL_FULLPAGE: '1' };
+        }
+      } catch { /* setting read failed → sequential (default) */ }
       const proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs),
-        { windowsHide: true });
+        { windowsHide: true, env: spawnEnv });
       let buf = '', result = null;
       let settled  = false;
       let watchdog = null;

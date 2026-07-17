@@ -175,22 +175,65 @@ def reconstruct_page_text(img: Image.Image, config: str = "--oem 3 --psm 3", dpi
     leaves the PSM-3 result untouched — it can never read worse. (oscar's sparse-column diagnosis.)
     """
     main_cfg = _with_dpi(config, dpi)
-    try:
-        data = pytesseract.image_to_data(img, config=main_cfg, output_type=pytesseract.Output.DICT)
-    except Exception:
-        return ocr_image(img, config)
+    supp_cfg = _with_dpi(_SUPP_CONFIG, dpi)
+
+    # OBTAIN THE TWO INDEPENDENT FULL-PAGE PASSES (PSM-3 main + PSM-6 supplementary). The MERGE
+    # below is unchanged and single-source, so only HOW these are fetched differs:
+    #   OFF (default): sequential — PSM-3, and PSM-6 only if PSM-3 read words (today's behaviour,
+    #                  byte-identical).
+    #   ON  (DS_OCR_PARALLEL_FULLPAGE != '0'): both submitted concurrently to a 2-worker pool —
+    #        each pytesseract call shells out to a GIL-releasing tesseract.exe, so this is the
+    #        ~2x lever on the full-page OCR of a single reprocess (Option B, 2026-07-17 design).
+    #        Byte-identical because the merge takes PSM-3 as a FIXED base and APPENDS PSM-6
+    #        survivors, never order-of-completion. OMP capped to 1 so the 2 tesseract.exe can't
+    #        oversubscribe (LSTM is 1-core-bound → throughput-neutral + recognition-identical).
+    #        ANY pool/import failure falls through to the sequential path. Gated ON only by the
+    #        single-reprocess spawn — never batch/import (those already parallelise across docs).
+    data = supp = None
+    if os.environ.get('DS_OCR_PARALLEL_FULLPAGE', '0') != '0':
+        try:
+            import concurrent.futures as _cf
+            os.environ['OMP_THREAD_LIMIT'] = '1'   # floor; never raises a parent cap (1 is the min)
+            with _cf.ThreadPoolExecutor(max_workers=2) as _ex:
+                _fm = _ex.submit(pytesseract.image_to_data, img, config=main_cfg, output_type=pytesseract.Output.DICT)
+                _fs = _ex.submit(pytesseract.image_to_data, img, config=supp_cfg, output_type=pytesseract.Output.DICT)
+                try:
+                    data = _fm.result()
+                except Exception:
+                    return ocr_image(img, config)           # PSM-3 failed → same fallback as sequential
+                try:
+                    supp = _fs.result()
+                except Exception:
+                    supp = None                             # supplementary is additive-only
+        except Exception:
+            data = supp = None                              # pool construction failed → sequential below
+
+    if data is None:                                        # OFF / fallback: sequential PSM-3
+        try:
+            data = pytesseract.image_to_data(img, config=main_cfg, output_type=pytesseract.Output.DICT)
+        except Exception:
+            return ocr_image(img, config)
+
     words = _words_from_data(data)
     if not words:
         return ""
-    try:
-        supp = pytesseract.image_to_data(img, config=_with_dpi(_SUPP_CONFIG, dpi), output_type=pytesseract.Output.DICT)
-        boxes = [(w[0], w[1], w[2], w[3]) for w in words]
-        for sw in _words_from_data(supp):
-            if sw[5] >= _SUPP_MIN_CONF and any(ch.isalnum() for ch in sw[4]) \
-                    and not _center_in_any(sw, boxes):
-                words.append(sw)
-    except Exception:
-        pass   # supplementary recovery is additive-only; never break the PSM-3 result
+
+    # Supplementary PSM-6 recovery (fetched now only if not already obtained in parallel above —
+    # OFF path preserves today's behaviour of skipping PSM-6 when PSM-3 read nothing).
+    if supp is None:
+        try:
+            supp = pytesseract.image_to_data(img, config=supp_cfg, output_type=pytesseract.Output.DICT)
+        except Exception:
+            supp = None   # supplementary recovery is additive-only; never break the PSM-3 result
+    if supp is not None:
+        try:
+            boxes = [(w[0], w[1], w[2], w[3]) for w in words]
+            for sw in _words_from_data(supp):
+                if sw[5] >= _SUPP_MIN_CONF and any(ch.isalnum() for ch in sw[4]) \
+                        and not _center_in_any(sw, boxes):
+                    words.append(sw)
+        except Exception:
+            pass   # supplementary recovery is additive-only; never break the PSM-3 result
     heights = sorted(wd[3] for wd in words if wd[3] > 0)
     med_h = heights[len(heights) // 2] if heights else 10
     return "\n".join(_group_words_into_lines(words, med_h))

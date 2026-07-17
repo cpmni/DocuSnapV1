@@ -351,6 +351,17 @@ document.getElementById('warm-ocr-toggle').addEventListener('change', async (e) 
   await api.setSetting('ocr_warm_worker_enabled', e.target.checked ? 'true' : 'false');
 });
 
+// ── Faster single-document reprocessing via multiple CPU cores (Option B/C; default OFF) ──────
+(async () => {
+  try {
+    const v = await api.getSetting('ocr_parallel_reprocess_enabled');
+    document.getElementById('parallel-reprocess-toggle').checked = (v === 'true');   // unset → off
+  } catch { document.getElementById('parallel-reprocess-toggle').checked = false; }
+})();
+document.getElementById('parallel-reprocess-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('ocr_parallel_reprocess_enabled', e.target.checked ? 'true' : 'false');
+});
+
 // ── Home dashboard cards (show/hide) ───────────────────────────────────────────
 // A toggle per Home card. Checked = shown, unchecked = hidden. Stored as a JSON list of HIDDEN
 // card ids in `dashboard_hidden_cards`; the main window applies it live (dashboard-cards-changed).
