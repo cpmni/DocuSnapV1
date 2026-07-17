@@ -21,6 +21,13 @@ import time as _time
 import pytesseract
 from PIL import Image
 
+# See region.py: the packaged embeddable Python's ._pth drops the script-dir from sys.path, so a bare
+# `import region_core` crashes the worker at startup (dev's system Python masks it). Add ocr/ + its
+# parent explicitly before importing.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+for _p in (os.path.dirname(_HERE), _HERE):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 try:
     import region_core
 except ImportError:                              # imported as a package (ocr.region_worker)

@@ -17,10 +17,17 @@ from io import BytesIO
 import pytesseract
 from PIL import Image, ImageFilter, ImageOps
 
-# region_core holds the pure OCR logic. Import it as a SIBLING — ocr/ is on sys.path both when this
-# runs as a CLI __main__ and when a test does `import region` after adding ocr/ to the path. Re-export
-# the two image helpers so existing tests (`region._strip_horizontal_rules` / `_looks_unreadable_sliver`)
-# keep resolving unchanged.
+# region_core holds the pure OCR logic. Make it importable as a SIBLING: the PACKAGED build runs an
+# EMBEDDABLE Python whose pythonXX._pth SUPPRESSES the automatic script-dir on sys.path (dev's system
+# Python adds it — which is why this only bit the built app: `import region_core` crashed region.py
+# before main(), killing --deskew/--skew/--boxes AND the ⊕ draw tool). Explicitly put this file's own
+# dir (ocr/) and its parent (python_backend) on the path FIRST — mirrors the insert the --skew/--deskew
+# branch already does for `from ocr.tesseract import ...`. Re-export the two image helpers so existing
+# tests (`region._strip_horizontal_rules` / `_looks_unreadable_sliver`) keep resolving unchanged.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+for _p in (os.path.dirname(_HERE), _HERE):        # python_backend (for the pkg fallback), then ocr/ at [0]
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 try:
     import region_core
 except ImportError:                              # imported as a package (ocr.region)
