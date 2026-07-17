@@ -190,6 +190,46 @@ check('field-caption match (above) beats clean non-match (left)', p.direction ==
 p = A.pickLabelCandidate('Customer', 'Ship To', CUST);         // left 2, above 1
 check('field-caption match (left) beats clean non-match (above)', p.direction === 'left');
 
+// ── D1b: form-label WORD-RATIO tiebreak (2026-07-17) — a garble/non-label LEFT loses a SCORE-1 tie
+// to a decisively-cleaner multi-word caption ABOVE. reggie-designed, Oracle SIGN-OFF-WITH-CONDITIONS.
+check('labelWordRatio: "Rote," = 0 (not a form-label word)', A.labelWordRatio('Rote,') === 0);
+check('labelWordRatio: "Site / Customer" = 1', A.labelWordRatio('Site / Customer') === 1);
+check('labelWordRatio: "verial No." = 0.5', A.labelWordRatio('verial No.') === 0.5);
+check('labelWordRatio: "Serial No." = 1', A.labelWordRatio('Serial No.') === 1);
+check('labelWordRatio: dotted stem "S.O." = 1 (NOT split on ".")', A.labelWordRatio('S.O.') === 1);
+check('labelWordRatio: empty = 0', A.labelWordRatio('') === 0);
+// THE INCIDENT: garbled left "Rote," vs true caption "Site / Customer" above (both score 1) -> ABOVE
+p = A.pickLabelCandidate('Rote,', 'Site / Customer', CUST);
+check('INCIDENT: garble left "Rote," loses tie to real caption "Site / Customer" above',
+      p.direction === 'above' && p.label === 'Site / Customer');
+// clean-case CLIP: "verial No." (Serial misread) loses to the real "Serial No." above
+p = A.pickLabelCandidate('verial No.', 'Serial No.', []);
+check('clean-case clip left loses tie to the real caption above', p.direction === 'above');
+// C2 GUARD: a LONE dictionary word above (1 vocab hit) does NOT override a real single-token abbrev left
+p = A.pickLabelCandidate('EORI', 'Order', []);
+check('C2: lone-word above does NOT override a non-vocab abbrev left', p.direction === 'left' && p.label === 'EORI');
+// C1 PINNED MIS-STEER (ACCEPTED): a non-vocab abbrev left IS overridden by a strong >=2-word caption
+// above — the operator's [<- Left] toggle corrects it. Pinned so a future dev SEES that not all
+// abbreviations are protected (only the vocab stems po/so/ref/no/vat/id/serial are).
+p = A.pickLabelCandidate('EORI', 'Order Details', []);
+check('C1 (ACCEPTED mis-steer): non-vocab abbrev left flips to a 2-word caption above', p.direction === 'above');
+p = A.pickLabelCandidate('SKU', 'Site / Customer', []);
+check('C1 (ACCEPTED mis-steer): "SKU" left flips to "Site / Customer" above', p.direction === 'above');
+// GARBLE ABOVE must NOT flip a good LEFT (the above side needs >=2 vocab words)
+p = A.pickLabelCandidate('Delivery Address', 'Rote garble', []);
+check('garble above does NOT flip a clean label left', p.direction === 'left' && p.label === 'Delivery Address');
+// BALANCED TIE (regression pin, C4): equal-quality captions stay LEFT (status quo)
+p = A.pickLabelCandidate('Ship To', 'Deliver To', []);
+check('balanced 2-word tie stays LEFT (no spurious flip)', p.direction === 'left');
+// KILL SWITCH: OFF -> tie is unconditional LEFT (byte-identical to pre-change)
+A.setRatioTiebreak(false);
+try {
+  p = A.pickLabelCandidate('Rote,', 'Site / Customer', CUST);
+  check('kill switch OFF: incident tie -> LEFT (byte-identical to pre-change)', p.direction === 'left');
+} finally {
+  A.setRatioTiebreak(true);   // restore (suite's monkeypatch-restore convention)
+}
+
 // ── deskewedNormToRaw — the ⊕ deskew back-transform, sign PINNED vs REAL PIL.rotate ──────
 // The display-deskew straightens the on-screen page; a box drawn there is in the STRAIGHTENED
 // frame, but extraction reads the RAW scan, so on save the anchor coords are rotated back. Get

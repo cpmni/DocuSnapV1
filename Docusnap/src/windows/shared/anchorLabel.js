@@ -195,12 +195,62 @@
   // goes to LEFT (the status-quo direction). BOTH 0 -> position-only (empty label, never a staged
   // garble). Returns {label, direction:'left'|'above'|null}. This replaces the left-first EARLY
   // RETURN that let a garbled left strip ('esha, i') beat a clean caption above ('Customer').
+  // ── FORM-LABEL WORD VOCABULARY (2026-07-17) — steer the ⊕ teach direction toward the side whose
+  // caption reads like a real FORM LABEL. A general dictionary can't do this ("Rote" IS an English
+  // word); a curated caption vocabulary can ("rote"=no, "site"/"customer"=yes). Original in-repo
+  // constant (no external word-list bundled → licence-clean). STEER only — never a reject list.
+  // C4 INVARIANT: ship/to/deliver/customer/serial/no/order/site MUST stay listed or the tie pins in
+  // test_anchor_label.js (Ship To / Deliver To, etc.) flip. Product-code abbreviations (sku/eori/
+  // mpn/gtin/iban/utr) are DELIBERATELY excluded — they are the exposed non-vocab class (see the
+  // pinned mis-steer test); the operator [← Left]/[↑ Above] toggle corrects a mis-steer.
+  const LABEL_VOCAB = new Set([
+    'customer','client','supplier','vendor','seller','buyer','name','company','business',
+    'account','acct','site','address','premises','location','invoice','order','purchase','sales',
+    'po','so','reference','ref','number','num','no','serial','id','code','date','dated','due',
+    'total','subtotal','net','gross','vat','tax','gst','qty','quantity','amount','price','unit',
+    'cost','description','desc','item','details','detail','bill','billing','ship','shipping',
+    'shipped','sold','deliver','delivery','delivered','to','from','for','terms','payment','method',
+    'currency','discount','balance','note','notes','contact','phone','tel','telephone','fax',
+    'email','mobile','website','work','job','ticket','worksheet','sheet','project','department',
+    'dept','branch','office','manager','engineer','status','type','product','service','model',
+    'part','period','month','year'
+  ]);
+  const _LABEL_RATIO_MARGIN   = 0.5;   // above must out-score left by this to flip a tie
+  const _LABEL_MIN_ABOVE_HITS = 2;     // ...AND carry >=2 vocab words (C2: a lone word can't flip)
+  let _ratioTiebreak = true;
+  function setRatioTiebreak(on) { _ratioTiebreak = !!on; }   // kill switch → OFF = unconditional LEFT
+  // Split on caption separators (NOT '.', so dotted stems "S.O."/"P.O."/"No." survive as one token),
+  // lowercase + strip to alnum, drop empties.
+  function _labelTokens(label) {
+    return String(label || '').split(/[\s/\\|,;:\-]+/)
+      .map(t => t.toLowerCase().replace(/[^a-z0-9]+/g, '')).filter(Boolean);
+  }
+  function labelVocabHits(label) { return _labelTokens(label).filter(t => LABEL_VOCAB.has(t)).length; }
+  function labelWordRatio(label) {
+    const t = _labelTokens(label);
+    return t.length ? t.filter(x => LABEL_VOCAB.has(x)).length / t.length : 0;
+  }
+
   function pickLabelCandidate(leftLabel, aboveLabel, fieldCaptions) {
     const L = (leftLabel || '').trim(), A = (aboveLabel || '').trim();
     const sL = scoreLabelCandidate(L, fieldCaptions), sA = scoreLabelCandidate(A, fieldCaptions);
     if (sL === 0 && sA === 0) return { label: '', direction: null };   // position-only
     if (sA > sL) return { label: A, direction: 'above' };
-    return { label: L, direction: 'left' };                            // sL >= sA incl. tie -> LEFT
+    if (sL > sA) return { label: L, direction: 'left' };
+    // TIE. Consult the form-label word ratio ONLY on a score-1 tie (both clean, NEITHER a known field
+    // caption — a score-2 caption is the field's own gold signal, never second-guessed: C3). Flip
+    // LEFT→ABOVE only with POSITIVE evidence: the above side carries >=2 form-label words (C2) AND
+    // out-scores the left by >= the margin — so a lone dictionary word can't override a real single-
+    // token abbreviation left (EORI/SKU); only a decisively-cleaner multi-word caption ("Site /
+    // Customer" over "Rote,") flips. STEER only — the label is never rejected; the operator's Left/
+    // Above toggle overrides a mis-steer. NOTE: the Teach wizard's autoLabel (teach/renderer.js) does
+    // NOT share this picker, so it is unaffected (pre-existing gap, C5).
+    if (_ratioTiebreak && sL === 1 && sA === 1
+        && labelVocabHits(A) >= _LABEL_MIN_ABOVE_HITS
+        && (labelWordRatio(A) - labelWordRatio(L)) >= _LABEL_RATIO_MARGIN) {
+      return { label: A, direction: 'above' };
+    }
+    return { label: L, direction: 'left' };                            // tie default stays LEFT
   }
 
   // DESKEW BACK-TRANSFORM (2026-07-12): map a point given in the STRAIGHTENED (display) frame back
@@ -257,7 +307,7 @@
     return out;
   }
 
-  root.AnchorLabel = { nearestLeftCluster, nearestAboveRow, nearestRowTo, extractLabel, sanitizeAnchorLabel, labelLooksSuspicious, scoreLabelCandidate, pickLabelCandidate, deskewedNormToRaw, deskewFinalizeAnchor };
+  root.AnchorLabel = { nearestLeftCluster, nearestAboveRow, nearestRowTo, extractLabel, sanitizeAnchorLabel, labelLooksSuspicious, scoreLabelCandidate, pickLabelCandidate, labelWordRatio, labelVocabHits, setRatioTiebreak, deskewedNormToRaw, deskewFinalizeAnchor };
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));
 
 // Node/test interop (the browser path uses window.AnchorLabel).
