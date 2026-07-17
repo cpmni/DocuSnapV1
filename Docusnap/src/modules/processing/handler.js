@@ -1336,7 +1336,9 @@ function register(ctx) {
       let spawnEnv = process.env;
       try {
         if (require('../../../database/modules/learning').getSetting(db, 'ocr_parallel_reprocess_enabled', 'false') === 'true') {
-          spawnEnv = { ...process.env, DS_OCR_PARALLEL_FULLPAGE: '1' };
+          // B = parallel full-page OCR passes (straighten/enhance/first-import); C = parallel per-field
+          // crop reads (every reprocess). Both byte-identical, single-reprocess spawn only.
+          spawnEnv = { ...process.env, DS_OCR_PARALLEL_FULLPAGE: '1', DS_OCR_PARALLEL_FIELDS: '1' };
         }
       } catch { /* setting read failed → sequential (default) */ }
       const proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs),

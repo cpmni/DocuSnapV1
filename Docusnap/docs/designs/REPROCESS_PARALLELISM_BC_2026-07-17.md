@@ -1,7 +1,24 @@
 # Single-doc reprocess parallelism — Option B + Option C
 
-**Date:** 2026-07-17 · **Status:** DESIGNED (advisor panel oscar/eric/gary + Oracle). **Oracle: SIGN OFF
-WITH CONDITIONS.** NOT built. Workflow `wf_96a8fc1b-076`.
+**Date:** 2026-07-17 · **Status:** BUILT (B `25469e2` + C this commit; kill-switched, default OFF via the
+`ocr_parallel_reprocess_enabled` Settings toggle). Advisor panel oscar/eric/gary + Oracle SIGN OFF WITH
+CONDITIONS (workflow `wf_96a8fc1b-076`). **All dev-box gates GREEN.**
+
+**BUILD RESULTS (2026-07-17):**
+- **B:** reconstruct OFF==ON byte-identical (10 pages + `test_parallel_fullpage.py`, +5× determinism); OMP=1
+  recognition byte-identical; corpus A/B byte-identical; **1.9×** on full-page OCR.
+- **C 2a (move-only):** `_eval_field_group` extracted (956-line body verbatim, 14 params, no re-indent);
+  py_compile OK; 17 extraction tests pass; **corpus A/B byte-identical to baseline** (move is behaviour-preserving).
+- **C 2b (parallel dispatch):** first-group-serial cache-warm + pooled rest + per-task sequential-retry belt +
+  `OMP=1` + `DS_OCR_POOL_WORKERS` cap + trace-forces-sequential; 15 extraction tests pass with the flag ON;
+  `test_parallel_fields_dispatch.py` 7/7 (grouping / short-circuit / OFF==ON / retry belt / trace-sequential);
+  **corpus A/B (DS_OCR_PARALLEL_FIELDS=1) byte-identical to baseline** (295 docs, M=1 #135, accuracy unchanged).
+- **VERIFIED field-independence against the code:** every `results` access in the old loop was the field's
+  OWN key — no cross-field reads — so the field-group model is sound (not just assumed).
+- **REMAINING PRE-GATE (needs the owner's 6-core box, dev can't reproduce):** confirm ZERO except-fallbacks
+  (`_crop_and_ocr` internal `''`/`None` degraded reads) fire under real memory pressure while the flag is ON —
+  the one path where a determinism-neutral design could diverge. Until validated there, the toggle stays
+  DEFAULT OFF; the retry belt + pool cap + review-binding bound the risk.
 **Goal:** cut a single-doc reprocess from ~10.3s (16-core dev) / **~12s (owner 6-core i5-9500T)** toward ~5s,
 with the extraction output **byte-identical** so learning + auto-file are untouched.
 

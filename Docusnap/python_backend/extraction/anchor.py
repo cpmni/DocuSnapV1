@@ -288,50 +288,18 @@ def _exact_text_corroborates(value, anchor, y_norm, page_text_lines) -> bool:
     return False
 
 
-def extract_with_anchors(ocr_text: str, anchors: list[dict],
-                         supplier_name: str | None,
-                         document_type: str | None,
-                         page_images: list | None = None,
-                         field_patterns: dict | None = None,
-                         validation_patterns: dict | None = None,
-                         slice_capture = None,
-                         format_lookup = None,
-                         page_transform = None,
-                         on_reject = None,
-                         page_text_lines = None,
-                         text_field_keys = None,
-                         multiline_lookup = None,
-                         identity_labels = None) -> dict:
-    """
-    Attempt to extract field values using saved structural anchors.
-
-    When an anchor has x_norm/y_norm coordinates (set by the user via the ⊕
-    selection tool), the page image is cropped to a tight region around the
-    value and re-OCR'd. This is far more accurate than full-page text search
-    for multi-column layouts where columns bleed into each other in OCR text.
-
-    Falls back to text-based search for anchors without coordinates.
-
-    Returns dict of {field_key: {"value": str, "confidence": int, "method": str}}
-    """
-    if not anchors or not ocr_text:
-        return {}
-
-    relevant = _filter_anchors(anchors, supplier_name, document_type)
-    if not relevant:
-        return {}
-
-    lines   = ocr_text.split("\n")
+def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_labels,
+                      line_cache, lines, multiline_lookup, on_reject, page0,
+                      page_text_lines, page_transform, slice_capture, supplier_name,
+                      text_field_keys, validation_patterns):
+    """Evaluate ONE field_key GROUP: run its anchors in _filter_anchors priority order,
+    committing the first value that qualifies (the `if field_key in results: continue`
+    short-circuit, now per-group). Move-only extraction of the former extract_with_anchors
+    per-anchor loop (C Stage 2a, 2026-07-17) — the body below is verbatim. Fields are
+    independent (every results access is this group's own key), so groups merge disjoint
+    keys; Option C parallelises the groups across cores (DS_OCR_PARALLEL_FIELDS)."""
     results = {}
-    page0   = page_images[0] if page_images else None
-    # Per-page OCR cache (Stage 1 / #4): every field whose rigid crop fails does a
-    # page-wide label locate; without sharing, each re-ran a full-page image_to_data
-    # (~2s). One cache for this page collapses them to a single pass (see
-    # template_mapper._locate_anchor). Especially hot when NO template matched and
-    # all fields fall here.
-    line_cache = {}
-
-    for anchor in relevant:
+    for anchor in group_anchors:
         field_key   = anchor["field_key"]
         label       = anchor["anchor_label"].lower().strip()
         direction   = anchor["direction"]
@@ -1288,6 +1256,98 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 # NAME-GUARD note (Layers A/B): flag-only — the value (kept rigid, or a capped
                 # junk relocate) is surfaced for a human; never overwrites a method-specific note.
                 results[field_key]["validation_note"] = _relocate_guard_note
+    return results
+
+
+def extract_with_anchors(ocr_text: str, anchors: list[dict],
+                         supplier_name: str | None,
+                         document_type: str | None,
+                         page_images: list | None = None,
+                         field_patterns: dict | None = None,
+                         validation_patterns: dict | None = None,
+                         slice_capture = None,
+                         format_lookup = None,
+                         page_transform = None,
+                         on_reject = None,
+                         page_text_lines = None,
+                         text_field_keys = None,
+                         multiline_lookup = None,
+                         identity_labels = None) -> dict:
+    """
+    Attempt to extract field values using saved structural anchors.
+
+    When an anchor has x_norm/y_norm coordinates (set by the user via the ⊕
+    selection tool), the page image is cropped to a tight region around the
+    value and re-OCR'd. This is far more accurate than full-page text search
+    for multi-column layouts where columns bleed into each other in OCR text.
+
+    Falls back to text-based search for anchors without coordinates.
+
+    Returns dict of {field_key: {"value": str, "confidence": int, "method": str}}
+    """
+    if not anchors or not ocr_text:
+        return {}
+
+    relevant = _filter_anchors(anchors, supplier_name, document_type)
+    if not relevant:
+        return {}
+
+    lines   = ocr_text.split("\n")
+    results = {}
+    page0   = page_images[0] if page_images else None
+    # Per-page OCR cache (Stage 1 / #4): every field whose rigid crop fails does a
+    # page-wide label locate; without sharing, each re-ran a full-page image_to_data
+    # (~2s). One cache for this page collapses them to a single pass (see
+    # template_mapper._locate_anchor). Especially hot when NO template matched and
+    # all fields fall here.
+    line_cache = {}
+
+    # ── Option C: evaluate anchors GROUPED BY field_key (2026-07-17) ──────────────────────
+    # Fields are INDEPENDENT — every `results` access in the former per-anchor loop was the
+    # field's OWN key (verified), so groups produce disjoint keys and merge cleanly. Within a
+    # group, anchors run in _filter_anchors priority order and the first committable value wins.
+    # Stage 2a = MOVE-ONLY: dispatch is sequential in the original order -> byte-identical to the
+    # old inline loop. Stage 2b parallelises the groups behind DS_OCR_PARALLEL_FIELDS.
+    _groups = {}
+    for _a in relevant:
+        _groups.setdefault(_a["field_key"], []).append(_a)
+    _ctx = (field_patterns, format_lookup, identity_labels, line_cache, lines, multiline_lookup,
+            on_reject, page0, page_text_lines, page_transform, slice_capture, supplier_name,
+            text_field_keys, validation_patterns)
+    _gvals = list(_groups.values())
+    # Stage 2b — parallelise the independent field-key groups across cores (each _eval_field_group
+    # OCRs its own crops via GIL-releasing tesseract.exe). Gated OFF by default; FORCED SEQUENTIAL
+    # under trace/inspector (on_reject/slice_capture set) so dev diagnostics stay in serial order,
+    # and when there is <=1 group. Byte-identical: groups write DISJOINT field-keys; line_cache is
+    # keyed per crop-box, so we warm any shared entry by running the FIRST group serially, then pool
+    # the rest (Oracle cond 4). Each pooled task falls back to a SEQUENTIAL re-run on any abnormal
+    # exception (cond 3), so an under-pressure degraded read is "slower", never a silent wrong value.
+    _parallel = (os.environ.get('DS_OCR_PARALLEL_FIELDS', '0') != '0'
+                 and on_reject is None and slice_capture is None
+                 and len(_gvals) > 1)
+    if _parallel:
+        os.environ['OMP_THREAD_LIMIT'] = '1'   # cap Tesseract OMP (1 = floor; LSTM is 1-core-bound)
+        results.update(_eval_field_group(_gvals[0], *_ctx))   # warm shared line_cache entries
+        _rest = _gvals[1:]
+        try:
+            import concurrent.futures as _cf
+            _cap = os.environ.get('DS_OCR_POOL_WORKERS')       # optional width override / memory bound
+            _maxw = int(_cap) if (_cap and _cap.isdigit() and int(_cap) > 0) else (os.cpu_count() or 1)
+            _W = max(1, min(_maxw, 8, len(_rest)))
+            with _cf.ThreadPoolExecutor(max_workers=_W) as _ex:
+                _pairs = [(g, _ex.submit(_eval_field_group, g, *_ctx)) for g in _rest]
+                for g, _fut in _pairs:                         # merge in original group order
+                    try:
+                        _gr = _fut.result()
+                    except Exception:
+                        _gr = _eval_field_group(g, *_ctx)      # sequential-retry belt (cond 3)
+                    results.update(_gr)
+        except Exception:
+            for g in _rest:                                    # pool construction failed → sequential
+                results.update(_eval_field_group(g, *_ctx))
+    else:
+        for _ga in _gvals:
+            results.update(_eval_field_group(_ga, *_ctx))
 
     return results
 
