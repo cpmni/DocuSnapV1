@@ -640,7 +640,21 @@ function openNewTypeModal() {
 
   document.addEventListener('keydown', onKey, true);
   // Chromium drops focus on a just-appended element — defer to the next frame.
-  requestAnimationFrame(() => { const inp = host.querySelector('input, select'); if (inp) inp.focus(); });
+  requestAnimationFrame(() => {
+    const inp = host.querySelector('input, select');
+    if (!inp) return;
+    inp.focus();
+    // Programmatic focus bypasses the text-field pointerdown chokepoint that normally triggers the
+    // page-focus repair, so on a desynced page (e.g. just after a Confirm/native dialog) the modal
+    // shows a caret but keystrokes don't route ("caret but no text input"). Arm + run the repair
+    // edge, then re-assert the caret past the cross-process transition — the proven pattern used for
+    // the reconcile input (~line 2731). The edge is the gated blurWebView→wc.focus restore, safe here.
+    try {
+      window.docusnap.markFocusSuspect?.();
+      window.docusnap.ensureWindowFocus?.();
+      window.repairModalInputFocus?.(inp);
+    } catch {}
+  });
 }
 
 // Catalog picker STACKED over the new-type modal: tick a shipped preset type, add it (fields +

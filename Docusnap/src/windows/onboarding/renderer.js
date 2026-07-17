@@ -57,10 +57,20 @@ async function loadCurrent() {
   try {
     state.outputFolder = (await D.getSetting('output_folder')) || (await D.suggestedOutputFolder()) || '';
   } catch {}
-  // Default to a core-aware value (this PC's cores minus headroom) unless the user already
-  // chose one — a fresh multi-core PC shouldn't be stuck at a hardcoded 2.
-  try { const info = await D.getConcurrencyInfo(); if (info && info.recommended >= 1) state.threads = info.recommended; } catch {}
-  try { const c = parseInt(await D.getSetting('processing_concurrency'), 10); if (c >= 1) state.threads = c; } catch {}
+  // Map the three Speed cards to REAL concurrency for THIS PC: Gentle=1, Balanced≈half, Fast=the full
+  // recommended (cores minus headroom). A hardcoded Fast=4 both under-used a powerful PC AND matched
+  // NO card on a high-core box (recommended 14 != 1/2/4) so nothing highlighted — the "no blue
+  // suggestion" report. DEFAULT = Fast (the suggested speed); a previously-stored choice wins, snapped
+  // to the nearest tier so a card ALWAYS highlights. Click-handler + highlight both read data-threads,
+  // so updating it here is enough.
+  let _rec = 4;
+  try { const info = await D.getConcurrencyInfo(); if (info && info.recommended >= 1) _rec = info.recommended; } catch {}
+  const _fast = Math.max(4, _rec), _bal = Math.min(_fast - 1, Math.max(2, Math.round(_fast / 2)));
+  const _speedCards = $$('[data-threads]');                 // DOM order: Gentle, Balanced, Fast
+  if (_speedCards.length === 3) { _speedCards[1].dataset.threads = String(_bal); _speedCards[2].dataset.threads = String(_fast); }
+  state.threads = _fast;                                    // default: Fast (the blue suggestion)
+  try { const c = parseInt(await D.getSetting('processing_concurrency'), 10);
+        if (c >= 1) state.threads = [1, _bal, _fast].reduce((a, b) => Math.abs(b - c) <= Math.abs(a - c) ? b : a); } catch {}
   // The wizard only offers Thorough (smart) / Quick (fast); map any other stored
   // value (e.g. a legacy 'ai', or an unset/blank) to 'smart' so a card is always
   // selected — otherwise neither Accuracy card highlights and it looks unselectable.
