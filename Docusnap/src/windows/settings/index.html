@@ -769,6 +769,18 @@
           Advanced: use only when standard extraction is repeatedly failing for a supplier layout.
         </p>
       </div>
+      <div class="section" id="tpl-cleanup-section">
+        <div class="section-title">Suggested cleanups</div>
+        <p class="section-desc">
+          Find duplicate templates of the same supplier &amp; type (they can fragment when a scanned logo drifts) and re-link documents that ended up with no template. A merge takes a database backup and asks you to confirm first.
+        </p>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <button class="btn" id="btn-scan-duplicates">Scan for duplicate templates</button>
+          <button class="btn" id="btn-relink-strays">Re-link stray documents</button>
+          <span id="tpl-cleanup-msg" class="section-desc" style="margin:0;"></span>
+        </div>
+        <div id="tpl-cleanup-results" style="margin-top:12px;"></div>
+      </div>
       <div id="tpl-layout">
         <div id="tpl-list-col">
           <div class="section-title sub">Templates</div>

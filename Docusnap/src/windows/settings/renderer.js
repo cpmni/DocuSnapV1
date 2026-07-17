@@ -1274,6 +1274,87 @@ async function loadTemplates() {
   renderTemplateList();
 }
 
+// ── M3 "Suggested cleanups" (docs/designs/TEMPLATE_CONVERGENCE_2026-07-17.md) ────────────────
+// Read-only scan for duplicate templates + a backup-first admin-confirmed merge, plus a
+// non-destructive "re-link stray documents" backfill. Wired once at init (setupTemplateCleanups).
+function setupTemplateCleanups() {
+  const scanBtn   = document.getElementById('btn-scan-duplicates');
+  const relinkBtn = document.getElementById('btn-relink-strays');
+  const msg       = document.getElementById('tpl-cleanup-msg');
+  const results   = document.getElementById('tpl-cleanup-results');
+  if (!scanBtn || !relinkBtn || scanBtn.dataset.wired) return;
+  scanBtn.dataset.wired = '1';
+
+  scanBtn.addEventListener('click', async () => {
+    scanBtn.disabled = true; msg.textContent = 'Scanning…'; results.innerHTML = '';
+    try { renderMergeCandidates(await api.getMergeCandidates(), results, msg); }
+    catch (e) { msg.textContent = 'Scan failed: ' + e.message; }
+    finally { scanBtn.disabled = false; }
+  });
+
+  relinkBtn.addEventListener('click', async () => {
+    relinkBtn.disabled = true; msg.textContent = 'Checking…';
+    try {
+      const plan = await api.planTemplateBackfill();
+      if (!plan.count) { msg.textContent = 'No stray documents to re-link.'; return; }
+      if (!confirm(`Re-link ${plan.count} document(s) that have no template to their matching template?\n\n`
+        + `Documents are only linked (reversible) — nothing is deleted.`)) { msg.textContent = ''; return; }
+      const r = await api.applyTemplateBackfill();
+      msg.textContent = `Re-linked ${r.linked} document(s).`;
+      await loadTemplates();
+    } catch (e) { msg.textContent = 'Re-link failed: ' + e.message; }
+    finally { relinkBtn.disabled = false; }
+  });
+}
+
+function renderMergeCandidates(clusters, results, msg) {
+  results.innerHTML = '';
+  clusters = clusters || [];
+  if (!clusters.length) { msg.textContent = 'No duplicate templates found.'; return; }
+  const mergeable = clusters.filter(c => c.suggestedAction === 'merge').length;
+  msg.textContent = `${clusters.length} group(s) of possible duplicates (${mergeable} safe to merge).`;
+
+  for (const c of clusters) {
+    const box = document.createElement('div');
+    box.className = 'section';
+    box.style.cssText = 'padding:10px; margin-top:8px;';
+    const canon = c.canonical;
+    const memberList = c.members.map(m =>
+      `${escHtml(m.name)} <span class="field-key">(${m.liveConfirmed}× · ${Math.round(m.jaccard * 100)}% branding · ${escHtml(m.structure)})</span>`
+    ).join(', ');
+    box.innerHTML =
+      `<div><strong>${escHtml(canon.name)}</strong> <span class="field-key">(${escHtml(c.slug)} · keep this one · ${canon.liveConfirmed} confirmed)</span></div>`
+      + `<div class="section-desc" style="margin:4px 0;">Duplicate${c.members.length === 1 ? '' : 's'}: ${memberList}</div>`;
+
+    if (c.suggestedAction === 'merge') {
+      const btn = document.createElement('button');
+      btn.className = 'btn danger';
+      btn.textContent = `Merge ${c.members.length} into "${canon.name}"`;
+      btn.addEventListener('click', async () => {
+        if (!confirm(`Merge ${c.members.length} duplicate(s) INTO "${canon.name}" and DELETE them?\n\n`
+          + `A database backup is taken first. "${canon.name}" gains all their documents plus any field `
+          + `mappings / landmarks / sample it lacks. This is NOT reversible (the backup is your safety net).`)) return;
+        btn.disabled = true; btn.textContent = 'Backing up + merging…';
+        try {
+          const r = await api.mergeTemplateCluster(canon.id, c.members.map(m => m.id));
+          if (r && r.ok) { msg.textContent = `Merged ${r.merged} into "${canon.name}".`; box.remove(); }
+          else { msg.textContent = 'Merge failed: ' + ((r && (r.error || r.reason)) || 'unknown'); btn.disabled = false; btn.textContent = `Merge ${c.members.length} into "${canon.name}"`; }
+        } catch (e) { msg.textContent = 'Merge failed: ' + e.message; btn.disabled = false; btn.textContent = `Merge ${c.members.length} into "${canon.name}"`; }
+        await loadTemplates();
+      });
+      box.appendChild(btn);
+    } else {
+      const note = document.createElement('div');
+      note.className = 'section-desc';
+      note.style.cssText = 'color:var(--warn); margin:0;';
+      note.textContent = 'These look like different layouts of the same supplier (their field positions differ), '
+        + 'so an automatic merge could break extraction. Review and merge manually in Learning Recovery if they really are duplicates.';
+      box.appendChild(note);
+    }
+    results.appendChild(box);
+  }
+}
+
 function makeTplRow(t, isChild) {
   const mappingCount = (t.field_mappings || []).filter(m => m.enabled).length;
   const row = document.createElement('div');
@@ -3661,6 +3742,7 @@ loadTemplates().then(async () => {
     if (targetId) openTemplateInEditor(targetId);
   } catch (e) { console.warn('settings template target failed:', e.message); }
 });
+setupTemplateCleanups();   // M3 "Suggested cleanups" — wire the scan/merge/re-link buttons (idempotent)
 api.onNavigateToTemplate(openTemplateInEditor);
 
 // Section/tab deep-link (e.g. Home "Activate" → 'licensing'): click the matching tab. The target

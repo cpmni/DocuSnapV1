@@ -407,6 +407,61 @@ function register(ctx) {
     return templates.mergeInto(getDb(), Number(fromTemplateId), Number(toTemplateId));
   });
 
+  // ── M3 template-convergence cleanup (docs/designs/TEMPLATE_CONVERGENCE_2026-07-17.md) ──────────
+  // The engine (findMergeCandidates / planBackfill / applyBackfill) is READ-ONLY or LINK-only; only
+  // the cluster merge is destructive, and it takes a DB backup first (Oracle M3 condition).
+  const templateMerge = require('../../../database/modules/templateMerge');
+
+  // Online DB backup to a timestamped sibling file (better-sqlite3 .backup handles WAL correctly).
+  async function _backupDbBeforeMerge(db) {
+    const src = db.name;
+    if (!src || src === ':memory:') throw new Error('no database file to back up');
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const dest  = path.join(path.dirname(src), `docusnap.db.merge-backup-${stamp}`);
+    await db.backup(dest);
+    return dest;
+  }
+
+  // READ-ONLY: clusters of duplicate same-supplier same-type templates worth reviewing for a merge.
+  ipcMain.handle('get-merge-candidates', () => {
+    requireRole('admin');
+    return templateMerge.findMergeCandidates(getDb());
+  });
+
+  // READ-ONLY: confirmed documents with no template that a same-type branding match would LINK.
+  ipcMain.handle('plan-template-backfill', () => {
+    requireRole('admin');
+    const plan = templateMerge.planBackfill(getDb());
+    return { count: plan.length, plan };
+  });
+
+  // NON-DESTRUCTIVE: apply the backfill LINK (guarded `WHERE template_id IS NULL`; reversible).
+  ipcMain.handle('apply-template-backfill', () => {
+    requireRole('admin');
+    return templateMerge.applyBackfill(getDb());
+  });
+
+  // DESTRUCTIVE, admin-confirmed: BACK UP THE DB, then fold each member template INTO the canonical
+  // (templates.mergeInto DELETEs each source). Refuses to merge if the backup fails — never destroy
+  // without the safety net. The renderer confirms + shows the structure verdict first.
+  ipcMain.handle('merge-template-cluster', async (_e, canonicalId, memberIds) => {
+    requireRole('admin');
+    const db      = getDb();
+    const canon   = Number(canonicalId);
+    const members = (Array.isArray(memberIds) ? memberIds : []).map(Number).filter(id => id && id !== canon);
+    if (!canon || !members.length) return { ok: false, reason: 'invalid' };
+    let backup;
+    try { backup = await _backupDbBeforeMerge(db); }
+    catch (e) { return { ok: false, reason: 'backup-failed', error: e.message }; }
+    const results = [];
+    for (const m of members) {
+      try { results.push({ from: m, ...templates.mergeInto(db, m, canon) }); }
+      catch (e) { results.push({ from: m, ok: false, reason: e.message }); }
+    }
+    const merged = results.filter(r => r.ok).length;
+    return { ok: merged > 0, backup, canonicalId: canon, merged, attempted: members.length, results };
+  });
+
   // OCR auto-processing — enable/disable a learned per-template OCR
   // preprocessing rule (see templates.setOcrAutoParams, created via an
   // OCR-Preview-active reprocess). Toggling never discards the stored

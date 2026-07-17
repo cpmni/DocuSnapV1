@@ -3,9 +3,12 @@
 **Date:** 2026-07-17 · **Branch:** `feat/reprocess-throughput-autostraighten`
 **Status:** vetted by the specialist panel (gary/Phillip/reggie/eric) and Oracle (**SIGN OFF WITH
 CONDITIONS**). **Build progress:** M2 BUILT + verified (kill switch `TEMPLATE_REUSE_BY_BRANDING`, default
-OFF; corpus byte-identical OFF; 7-section battery green ON). N BUILT + verified (display-only; `getAll`
-untouched). **M1 DEFERRED into M3's backfill** (owner decision — its reward overlaps M3's re-link + existing
-Stage-0 reprocess re-link). **M3 = next.**
+OFF; corpus byte-identical OFF; 7-section battery green ON) — COMMITTED `7d051f3`. N BUILT + verified
+(display-only; `getAll` untouched) — COMMITTED `7d051f3`. **M1 DEFERRED into M3's backfill** (owner
+decision). **M3 BUILT** (read-only `findMergeCandidates` + structure gate + `planBackfill`/`applyBackfill`
+in `templateMerge.js`; IPCs `get-merge-candidates`/`plan-template-backfill`/`apply-template-backfill`/
+`merge-template-cluster` [backup-first]; Template-Manager "Suggested cleanups" UI). Engine 24-check battery
+green; `db.backup()` smoke-tested. UNCOMMITTED — pending owner review + a live-app pass.
 **Owner steers:** cleanup = admin-reviewed merge; rollout = every slice kill-switched, **default OFF**,
 byte-identical OFF, prove on a corpus A/B + the Demo Docs corpus before flipping on.
 
