@@ -373,6 +373,10 @@ function _allowedOpenRoots(db) {
   try {
     const { app } = require('electron');
     roots.push(path.resolve(path.join(app.getPath('userData'), 'inbox')));
+    // Separator-sheet packs (Filing Slips): written ONLY by the generate-filing-slips
+    // IPC into this app-managed dir; the renderer round-trips the path through
+    // open-file/show-in-explorer to open the pack for printing.
+    roots.push(path.resolve(path.join(app.getPath('userData'), 'filing-slips')));
   } catch { /* ignore (e.g. unit tests without an electron app) */ }
   return roots;
 }
