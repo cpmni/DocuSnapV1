@@ -87,7 +87,22 @@ function hasActiveRoute(db, documentId) {
   ).get(documentId);
 }
 
+// True when `userId` is a PARTY (sender or recipient) on an OPEN route for this
+// document — the per-document visibility grant used by accessService.canAccessDocument
+// (docs/designs/WORKFLOW_SUITE_2026-07-18.md §3, Oracle C3: OPEN routes only, so the
+// grant ENDS when the route closes; a closed-route party gets the immutable snapshot,
+// not the live doc). OPEN = pending|claimed today; extend to include 'waiting' when the
+// multi-step slice adds that state.
+function isOpenRouteParty(db, documentId, userId) {
+  if (userId == null) return false;
+  return !!db.prepare(
+    "SELECT 1 FROM document_routes WHERE document_id = ? AND (from_user_id = ? OR to_user_id = ?)"
+    + " AND state IN ('pending','claimed') LIMIT 1"
+  ).get(documentId, userId, userId);
+}
+
 module.exports = {
   insertRoute, getRoute, listInbox, listSent, listAssigned, listCompleted,
-  updateState, setDocWorkflowStatus, setStampedPath, hasActiveRoute, OPEN_STATES, CLOSED_STATES,
+  updateState, setDocWorkflowStatus, setStampedPath, hasActiveRoute, isOpenRouteParty,
+  OPEN_STATES, CLOSED_STATES,
 };

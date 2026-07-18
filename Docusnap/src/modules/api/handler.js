@@ -37,6 +37,7 @@ const sessionService    = require('../../services/sessionService');
 const authService       = require('../../services/authService');
 const workflowService   = require('../../services/workflowService');
 const entitlementService = require('../../services/entitlementService');
+const accessService      = require('../../services/accessService');
 const totp              = require('../../lib/totp');
 const certService       = require('../../services/certService');
 const path              = require('path');
@@ -455,6 +456,12 @@ function createRequestListener(ctx) {
       if (req.method === 'GET' && detailMatch) {
         const session = requireSession(req, res); if (!session) return;
         const id = Number(detailMatch[1]);
+        // Per-document authorization (Slice 0). 404 hides existence on not_found; 403 on
+        // authorized-but-denied. Kill-switchable (ACCESS_GATE_ENABLED, default ON).
+        if (accessService.gateEnabled()) {
+          const acc = accessService.canAccessDocument(getDb(), session, id);
+          if (!acc.allow) return sendJson(res, acc.reason === 'not_found' ? 404 : 403, { error: acc.reason === 'not_found' ? 'not found' : 'forbidden' });
+        }
         const doc = previewService.getDocumentDetail(getDb(), id, { learning });
         if (!doc) return sendJson(res, 404, { error: 'not found' });
         audit({ user_id: session.userId, action: 'document_open', action_category: 'document',
@@ -467,6 +474,10 @@ function createRequestListener(ctx) {
       if (req.method === 'GET' && pagesMatch) {
         const session = requireSession(req, res); if (!session) return;
         const id = Number(pagesMatch[1]);
+        if (accessService.gateEnabled()) {
+          const acc = accessService.canAccessDocument(getDb(), session, id);
+          if (!acc.allow) return sendJson(res, acc.reason === 'not_found' ? 404 : 403, { error: acc.reason === 'not_found' ? 'not found' : 'forbidden' });
+        }
         // SECURITY (F-02): the on-disk location is resolved SERVER-SIDE from the
         // document row ONLY — client-supplied folderPath/filename are NOT read here.
         // A detached client never sees filesystem paths; honouring them would let an
@@ -493,6 +504,10 @@ function createRequestListener(ctx) {
       if (req.method === 'GET' && thumbMatch) {
         const session = requireSession(req, res); if (!session) return;
         const id = Number(thumbMatch[1]);
+        if (accessService.gateEnabled()) {
+          const acc = accessService.canAccessDocument(getDb(), session, id);
+          if (!acc.allow) return sendJson(res, acc.reason === 'not_found' ? 404 : 403, { error: acc.reason === 'not_found' ? 'not found' : 'forbidden' });
+        }
         // Same server-side path resolution as /pages (F-02): never trust client paths.
         let folderPath = null, filename = null;
         const P = ctx.path || require('path');

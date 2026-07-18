@@ -63,7 +63,16 @@ function register(ctx) {
   const templates  = require('../../../database/modules/templates');
   const previewService = require('../../services/previewService');
   const workflowService = require('../../services/workflowService');
+  const accessService = require('../../services/accessService');
   const { requireRole, requireLogin, hasRole, logAudit, getCurrentUser } = require('../auth/handler');
+  // Per-document read authz (Slice 0). Throws a FORBIDDEN error (crosses IPC as the
+  // rejection reason) when the gate is on and the actor may not read this document.
+  // not_found also denies (hide existence). Kill switch ACCESS_GATE_ENABLED (default ON).
+  const _assertDocAccess = (db, sess, docId) => {
+    if (!accessService.gateEnabled()) return;
+    const acc = accessService.canAccessDocument(db, sess, docId);
+    if (!acc.allow) throw Object.assign(new Error('You do not have permission to view this document.'), { code: 'FORBIDDEN' });
+  };
   // Shared in-process presence map (the "being reviewed by" signal) — the SAME instance the /v1
   // client API publishes to, so a desktop reviewer is visible to clients and vice-versa.
   const presence = require('../../services/presenceService').shared();
@@ -386,6 +395,7 @@ function register(ctx) {
   ipcMain.handle('get-document-with-extractions', (_e, id) => {
     const sess = requireLogin();
     const db  = getDb();
+    _assertDocAccess(db, sess, id);
     // Pure data assembly (doc + extractions + resolved slug + digit-only fields)
     // lives in the shared service so a detached client can reuse it; auth + audit
     // stay here at the transport edge.
@@ -431,12 +441,26 @@ function register(ctx) {
 
   // ── Document pages for preview ──────────────────────────────────────────────
   ipcMain.handle('get-document-pages', async (_e, docId, folderPath, filename, scale) => {
-    requireLogin();
-    if (!folderPath || !filename) {
-      console.log(`[pages] docId=${docId} missing path — folderPath=${folderPath} filename=${filename}`);
+    const sess = requireLogin();
+    const db = getDb();
+    _assertDocAccess(db, sess, docId);
+    // SECURITY (mirror /v1 F-02): resolve the on-disk location SERVER-SIDE from the doc
+    // row ONLY — the client-supplied folderPath/filename are NOT read (a compromised/replaced
+    // renderer could otherwise path.join arbitrary host paths through the render pipeline).
+    // Precedence matches the in-process preview: working copy -> filed copy -> recorded source.
+    const row = db.prepare(
+      'SELECT working_path, stored_path, folder_path, original_filename FROM documents WHERE id = ?').get(docId);
+    let rFolder = null, rFile = null;
+    if (row) {
+      const pick = row.working_path || row.stored_path
+        || (row.folder_path && row.original_filename ? path.join(row.folder_path, row.original_filename) : null);
+      if (pick) { rFolder = path.dirname(pick); rFile = path.basename(pick); }
+    }
+    if (!rFolder || !rFile) {
+      console.log(`[pages] docId=${docId} no resolvable file`);
       return [];
     }
-    const sourcePath = path.join(folderPath, filename);
+    const sourcePath = path.join(rFolder, rFile);
 
     // A new document loading is our signal that the previous one's preview
     // has moved on — fire any deferred source-file move now (unless, oddly,
@@ -448,7 +472,7 @@ function register(ctx) {
 
     // Transport-agnostic page render lives in the shared service so the detached
     // client can reuse it; Electron collaborators are injected via deps.
-    return previewService.getDocumentPages(getDb(), { docId, folderPath, filename, scale }, {
+    return previewService.getDocumentPages(db, { docId, folderPath: rFolder, filename: rFile, scale }, {
       fs, path, spawn, pythonExe, pythonArgs,
       renderScript: ctx.resourcePath('python_backend', 'render', 'pages.py'),
     });
@@ -456,9 +480,20 @@ function register(ctx) {
 
   // ── Small page-1 thumbnail for the document lists + add-template picker ──────
   ipcMain.handle('get-document-thumbnail', async (_e, docId, folderPath, filename) => {
-    requireLogin();
-    if (!folderPath || !filename) return null;
-    return previewService.getThumbnail(getDb(), { docId, folderPath, filename }, {
+    const sess = requireLogin();
+    const db = getDb();
+    _assertDocAccess(db, sess, docId);
+    // Same server-side path resolution as get-document-pages (never trust client paths).
+    const row = db.prepare(
+      'SELECT working_path, stored_path, folder_path, original_filename FROM documents WHERE id = ?').get(docId);
+    let rFolder = null, rFile = null;
+    if (row) {
+      const pick = row.working_path || row.stored_path
+        || (row.folder_path && row.original_filename ? path.join(row.folder_path, row.original_filename) : null);
+      if (pick) { rFolder = path.dirname(pick); rFile = path.basename(pick); }
+    }
+    if (!rFolder || !rFile) return null;
+    return previewService.getThumbnail(db, { docId, folderPath: rFolder, filename: rFile }, {
       fs, path, spawn, pythonExe, pythonArgs,
       renderScript: ctx.resourcePath('python_backend', 'render', 'pages.py'),
     });
