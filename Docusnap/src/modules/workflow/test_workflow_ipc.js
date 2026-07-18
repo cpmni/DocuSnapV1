@@ -25,6 +25,32 @@ const fakeAuth = {
 const authPath = require.resolve('../auth/handler');
 require.cache[authPath] = { id: authPath, filename: authPath, loaded: true, exports: fakeAuth };
 
+// ── entitlement stub (require.cache — the fake-auth pattern above) ─────────────
+// WORKFLOW_FEATURE_ENABLED is a hard-coded const (entitlementService.js) with NO injection
+// seam on the desktop IPC path, so this suite could never go green while the feature is dark
+// (the recorded known-fail). The stub simulates the master flag ON while PRESERVING the real
+// seat-count default-deny — so the OFF half still exercises the real "no seats ⇒ deny" logic
+// and the ON half exercises the real handler/service flow. The flag-off forcing itself stays
+// covered by src/services/test_entitlement.js (workflow.disabled pin). Production untouched.
+const realEntPath = require.resolve('../../services/entitlementService');
+const realEnt = require(realEntPath);
+const entStub = {
+  ...realEnt,
+  checkClientEntitlement(db, deps) {
+    const r = realEnt.checkClientEntitlement(db, deps);
+    let wfSeats = 0;
+    try {
+      const row = db.prepare('SELECT value FROM settings WHERE key=?').get(realEnt.WORKFLOW_SEATS_KEY);
+      const n = parseInt(row && row.value, 10);
+      wfSeats = Number.isFinite(n) && n > 0 ? n : 0;
+    } catch { /* no settings table -> 0 */ }
+    // WORKFLOW_BUNDLED_WITH_CLIENT=true semantics with the master flag ON:
+    const entitled = r.search.entitled || wfSeats > 0;
+    return { ...r, workflow: { entitled, seats: wfSeats > 0 ? wfSeats : r.search.seats, bundled: true } };
+  },
+};
+require.cache[realEntPath] = { id: realEntPath, filename: realEntPath, loaded: true, exports: entStub };
+
 const wfHandler = require('./handler');
 const { SEARCH_SEATS_KEY, WORKFLOW_SEATS_KEY } = require('../../services/entitlementService');
 
