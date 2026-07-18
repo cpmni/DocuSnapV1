@@ -54,9 +54,16 @@ function register(ctx) {
     } catch (e) { try { logger?.warn?.('[print] audit failed: ' + e.message); } catch {} }
   };
 
-  // Print one resolved PDF via a bare per-job window + the driver dialog. Resolves to the
-  // print outcome; never rejects (all failure lands as an audited outcome).
-  function printPdf(db, docId, pdfPath, source, deviceName, pageRanges) {
+  // Print one resolved PDF via a bare per-job window. `po` = print options:
+  //   { silent, deviceName, pageRanges, copies, duplexMode, color }.
+  // silent:true prints straight to the chosen device through ITS driver — any option
+  // passed OVERRIDES the driver default, any omitted option INHERITS the printer's saved
+  // Printing Preferences (tray/media/quality/duplex) — so it is "the driver, with its
+  // settings", not a generic bypass (eric). silent:false raises the full driver dialog
+  // (the "More settings…" escape hatch; the only path with a user 'cancelled' outcome).
+  // The REAL vector PDF is always what spools — the renderer's preview images never do.
+  function printPdf(db, docId, pdfPath, source, po) {
+    const silent = po.silent !== false;      // default true (the modal path)
     return new Promise((resolve) => {
       let win = null, settled = false, timer = null;
       const finish = (outcome, extra) => {
@@ -64,7 +71,11 @@ function register(ctx) {
         if (timer) { clearTimeout(timer); timer = null; }
         try { if (win && !win.isDestroyed()) win.destroy(); } catch {}
         win = null;
-        auditPrint(db, docId, outcome, { source, printer: deviceName || null, pages: pageRanges ? 'range' : 'all', silent: false });
+        auditPrint(db, docId, outcome, {
+          source, printer: po.deviceName || null,
+          pages: (Array.isArray(po.pageRanges) && po.pageRanges.length) ? 'range' : 'all',
+          copies: po.copies || 1, silent, ...(extra || {}),
+        });
         resolve({ ok: outcome === 'success', outcome });
       };
       try {
@@ -83,9 +94,12 @@ function register(ctx) {
           // small settle so the PDF plugin is ready to print
           setTimeout(() => {
             if (settled || !win || win.isDestroyed()) return;
-            const opts = { silent: false, printBackground: true };
-            if (deviceName) opts.deviceName = deviceName;
-            if (Array.isArray(pageRanges) && pageRanges.length) opts.pageRanges = pageRanges;
+            const opts = { silent, printBackground: true };
+            if (po.deviceName) opts.deviceName = po.deviceName;
+            if (Array.isArray(po.pageRanges) && po.pageRanges.length) opts.pageRanges = po.pageRanges;
+            if (po.copies && po.copies > 1) opts.copies = po.copies;
+            if (po.duplexMode) opts.duplexMode = po.duplexMode;       // 'simplex'|'shortEdge'|'longEdge'
+            if (typeof po.color === 'boolean') opts.color = po.color; // omit ⇒ driver default
             try {
               win.webContents.print(opts, (success, failureReason) => {
                 if (success) return finish('success');
@@ -104,14 +118,20 @@ function register(ctx) {
     });
   }
 
-  // print-document({ docId, source:'original'|'stamped', deviceName?, pageRanges? })
+  // print-document({ docId, source:'original'|'stamped', silent?, deviceName?, pageRanges?, copies?, duplexMode?, color? })
   ipcMain.handle('print-document', async (_e, payload) => {
     const sess = requireLogin();
     const db = getDb();
     const docId = payload && Number(payload.docId);
     const source = (payload && payload.source) || 'original';
-    const deviceName = payload && payload.deviceName;
-    const pageRanges = payload && payload.pageRanges;
+    const po = {
+      silent:     payload ? payload.silent : undefined,   // default true in printPdf
+      deviceName: payload && payload.deviceName,
+      pageRanges: payload && payload.pageRanges,
+      copies:     payload && Number(payload.copies) > 0 ? Math.min(99, Math.floor(Number(payload.copies))) : 1,
+      duplexMode: payload && payload.duplexMode,
+      color:      payload && typeof payload.color === 'boolean' ? payload.color : undefined,
+    };
 
     if (!printingEnabled(db)) return { ok: false, reason: 'disabled' };
     if (!docId) return { ok: false, reason: 'bad_request' };
@@ -134,13 +154,29 @@ function register(ctx) {
     if (!pdfPath || !fs.existsSync(pdfPath)) { auditPrint(db, docId, 'failure', { source, reason: 'file_missing' }); return { ok: false, reason: 'file_missing' }; }
     if (String(path.extname(pdfPath)).toLowerCase() !== '.pdf') { auditPrint(db, docId, 'noop', { source, reason: 'not_pdf' }); return { ok: false, reason: 'not_pdf' }; }
 
-    return printPdf(db, docId, pdfPath, source, deviceName, pageRanges);
+    return printPdf(db, docId, pdfPath, source, po);
   });
 
   // Read-only: is printing available? (for the renderer to show/hide the print control)
   ipcMain.handle('print-available', () => {
     try { requireLogin(); } catch { return false; }
     return printingEnabled(getDb());
+  });
+
+  // List installed printers for the in-app print-preview picker. No paths/privileged data
+  // cross; gated on login + the printing feature. Uses the CALLING window's webContents.
+  ipcMain.handle('list-printers', async (_e) => {
+    try { requireLogin(); } catch { return []; }
+    if (!printingEnabled(getDb())) return [];
+    try {
+      const wc = _e && _e.sender;
+      if (!wc || wc.isDestroyed()) return [];
+      const printers = await wc.getPrintersAsync();
+      return (printers || []).map(p => ({
+        name: p.name, displayName: p.displayName || p.name,
+        isDefault: !!p.isDefault, status: p.status,
+      }));
+    } catch { return []; }
   });
 }
 

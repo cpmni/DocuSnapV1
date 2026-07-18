@@ -1441,34 +1441,111 @@ function _deskewFixPending(fieldKey, snap) {
   try { showToast('Straighten changed while reading — please draw the box again.', 'warn'); } catch {}
 }
 
-// ── Print (Print-Slice 1) — driver-dialog print of the current document ─────────
-// _printAvailable is queried once on load; the button shows only for PDFs when on.
+// ── Print (Print-Slice 1 + our own preview) ─────────────────────────────────────
+// Electron doesn't render Chromium's print-preview pane, so we show our own: the
+// already-loaded page images (pageImages), plus a printer picker. Print prints
+// silent:true to the chosen device (its driver + saved settings); "Printer settings…"
+// opens the full driver dialog. The REAL PDF always spools, never the preview images.
 let _printAvailable = false;
 (async () => { try { _printAvailable = await window.docusnap.printAvailable?.(); } catch { _printAvailable = false; } })();
-document.getElementById('btn-print-doc')?.addEventListener('click', async () => {
-  if (!currentDoc?.id) return;
-  const btn = document.getElementById('btn-print-doc');
-  btn.disabled = true;
-  const prev = btn.innerHTML;
-  try {
-    const res = await window.docusnap.printDocument({ docId: currentDoc.id, source: 'original' });
-    if (res && res.ok) {
-      showToast?.('Sent to your printer.');
-    } else if (res && res.outcome === 'cancelled') {
-      /* user cancelled the driver dialog — silent */
-    } else if (res && res.reason === 'disabled') {
-      showToast?.('Printing is turned off — enable it in Settings → Processing.');
-    } else if (res && res.reason === 'file_missing') {
-      showToast?.("Couldn't find this document's file to print.");
-    } else if (res) {
-      showToast?.("Couldn't print this document.");
-    }
-  } catch (e) {
-    showToast?.("Couldn't print this document.");
+
+// Parse a 1-based "1-3, 5" range into Electron 0-based pageRanges [{from,to}]. Empty/All ⇒ null.
+function _parsePageRanges(text, pageCount) {
+  const s = String(text || '').trim();
+  if (!s) return null;
+  const out = [];
+  for (const part of s.split(',')) {
+    const m = part.trim().match(/^(\d+)\s*-\s*(\d+)$/) || part.trim().match(/^(\d+)$/);
+    if (!m) continue;
+    let a = parseInt(m[1], 10), b = parseInt(m[2] || m[1], 10);
+    if (isNaN(a) || isNaN(b)) continue;
+    a = Math.max(1, a); b = Math.min(pageCount || b, Math.max(a, b));
+    out.push({ from: a - 1, to: b - 1 });
   }
-  btn.disabled = false;
-  btn.innerHTML = prev;
+  return out.length ? out : null;
+}
+
+const _printModal = document.getElementById('print-modal');
+function _closePrintModal() { if (_printModal) _printModal.style.display = 'none'; }
+
+async function _openPrintModal() {
+  if (!currentDoc?.id || !_printModal) return;
+  const msg = document.getElementById('print-modal-msg');
+  if (msg) msg.textContent = '';
+  // Preview pane: the page images we already rendered for this doc.
+  const pane = document.getElementById('print-preview-pane');
+  if (pane) {
+    pane.innerHTML = '';
+    if (pageImages && pageImages.length) {
+      pageImages.forEach((src, i) => {
+        const img = document.createElement('img');
+        img.src = src; img.alt = `Page ${i + 1}`;
+        img.style.cssText = 'max-width:100%; box-shadow:0 2px 10px rgba(0,0,0,.2); background:#fff;';
+        pane.appendChild(img);
+      });
+    } else {
+      const d = document.createElement('div');
+      d.style.cssText = 'color:var(--muted); font-size:12px; padding:24px;';
+      d.textContent = 'Preview unavailable — you can still print the document.';
+      pane.appendChild(d);
+    }
+  }
+  // Printer list.
+  const sel = document.getElementById('print-printer');
+  if (sel) {
+    sel.innerHTML = '<option>Loading printers…</option>';
+    try {
+      const printers = await window.docusnap.listPrinters?.() || [];
+      sel.innerHTML = '';
+      if (!printers.length) { sel.innerHTML = '<option value="">(no printers found)</option>'; }
+      for (const p of printers) {
+        const o = document.createElement('option');
+        o.value = p.name; o.textContent = p.displayName || p.name;
+        if (p.isDefault) o.selected = true;
+        sel.appendChild(o);
+      }
+    } catch { sel.innerHTML = '<option value="">(couldn\'t list printers)</option>'; }
+  }
+  _printModal.style.display = 'flex';
+}
+
+async function _doModalPrint(silent) {
+  const msg = document.getElementById('print-modal-msg');
+  const go = document.getElementById('print-modal-go');
+  const dlg = document.getElementById('print-modal-dialog');
+  if (go) go.disabled = true; if (dlg) dlg.disabled = true;
+  if (msg) msg.textContent = silent ? 'Sending to printer…' : 'Opening printer settings…';
+  const deviceName = document.getElementById('print-printer')?.value || undefined;
+  const copies = parseInt(document.getElementById('print-copies')?.value, 10) || 1;
+  const pagesMode = document.getElementById('print-pages-mode')?.value;
+  const pageRanges = pagesMode === 'range'
+    ? _parsePageRanges(document.getElementById('print-pages-range')?.value, pageImages.length) : null;
+  const duplexMode = document.getElementById('print-duplex')?.value || undefined;
+  const colorVal = document.getElementById('print-color')?.value;
+  const color = colorVal === '' ? undefined : (colorVal === 'true');
+  try {
+    const res = await window.docusnap.printDocument({
+      docId: currentDoc.id, source: 'original', silent,
+      deviceName, copies, pageRanges, duplexMode, color,
+    });
+    if (res && res.ok) { _closePrintModal(); showToast?.('Sent to your printer.'); }
+    else if (res && res.outcome === 'cancelled') { if (msg) msg.textContent = 'Cancelled.'; }
+    else if (res && res.reason === 'file_missing') { if (msg) msg.textContent = "Couldn't find this document's file."; }
+    else if (res && res.reason === 'disabled') { if (msg) msg.textContent = 'Printing is turned off.'; }
+    else { if (msg) msg.textContent = "Couldn't print this document."; }
+  } catch { if (msg) msg.textContent = "Couldn't print this document."; }
+  if (go) go.disabled = false; if (dlg) dlg.disabled = false;
+}
+
+document.getElementById('btn-print-doc')?.addEventListener('click', _openPrintModal);
+document.getElementById('print-modal-close')?.addEventListener('click', _closePrintModal);
+document.getElementById('print-modal-go')?.addEventListener('click', () => _doModalPrint(true));
+document.getElementById('print-modal-dialog')?.addEventListener('click', () => _doModalPrint(false));
+document.getElementById('print-pages-mode')?.addEventListener('change', (e) => {
+  const r = document.getElementById('print-pages-range');
+  if (r) r.style.display = e.target.value === 'range' ? '' : 'none';
 });
+_printModal?.addEventListener('click', (e) => { if (e.target === _printModal) _closePrintModal(); });
 
 document.getElementById('btn-deskew')?.addEventListener('click', toggleDeskew);
 document.getElementById('btn-deskew-all')?.addEventListener('click', openDeskewAllFlyout);
