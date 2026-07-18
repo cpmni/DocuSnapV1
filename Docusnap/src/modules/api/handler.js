@@ -158,7 +158,14 @@ function createRequestListener(ctx) {
     catch (e) { log(`[api] audit write failed: ${e && e.message}`); }
   };
 
-  const workflow = ctx.workflowService || workflowService.createWorkflowService({ audit });
+  const workflow = ctx.workflowService || workflowService.createWorkflowService({
+    audit,
+    // Slice 1: the SAME shared main.js sink as the desktop transport — a /v1 action by
+    // another user must reach the SEARCH window's open mailbox and toast the desktop user
+    // (eric: ctx.notifyMainWindow reaches main+review only and would starve it; pinned in
+    // test_workflow_ipc.js). Best-effort; the service shields the action from a throw.
+    notifyWorkflow: (ev) => { try { ctx.notifyWorkflowEvent && ctx.notifyWorkflowEvent(ev); } catch { /* best-effort */ } },
+  });
   const actorOf = (session) => ({ userId: session.userId, username: session.username, role: session.role });
 
   // The SAME transport-agnostic review orchestration the desktop uses (Phase 2). The API injects
@@ -639,6 +646,23 @@ function createRequestListener(ctx) {
           .filter(u => u.is_active)
           .map(u => ({ id: u.id, username: u.username, displayName: u.display_name, role: u.role }));
         return sendJson(res, 200, { recipients: users });
+      }
+
+      // Per-user box counts (Slice 1 badge poll) — COUNTs only, so the client's 60s poll
+      // costs ONE cheap request instead of four full list fetches, and never touches
+      // myOpenRoutes semantics (the full lists stay on view-load/action). Auto-gated by
+      // the WORKFLOW_ROUTE prefix (entitlement + workflow sub-seat) like every
+      // /v1/workflow path; contract is MAJOR-only so this addition needs no bump.
+      if (req.method === 'GET' && pathname === `${API_PREFIX}/workflow/counts`) {
+        const session = requireSession(req, res); if (!session) return;
+        const dbwf = require('../../../database/modules/workflow');
+        const uid = session.userId;
+        return sendJson(res, 200, { counts: {
+          inbox:     dbwf.countInbox(getDb(), uid),
+          sent:      dbwf.countSent(getDb(), uid),
+          assigned:  dbwf.countAssigned(getDb(), uid),
+          completed: dbwf.countCompleted(getDb(), uid),
+        } });
       }
 
       // Create a route (assign).

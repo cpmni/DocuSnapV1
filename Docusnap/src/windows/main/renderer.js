@@ -244,7 +244,36 @@ async function renderDashboardExtra() {
     }
   }
   applyDashboardCardPrefs();   // a user-hide still wins over the entitlement-driven show above
+  renderWorkflowCard();        // Slice 1: its own tiny IPC — never part of this heavy pipeline
 }
+
+// Workflow "Waiting on you" card (Slice 1). Deliberately fed by the tiny
+// get-workflow-counts IPC, NOT get-dashboard-extra — the per-event repaint path must
+// never pay fs.statfsSync + five blocks (eric). Hidden entirely while the workflow
+// add-on is dark/unlicensed (the dash-clients precedent); a user-hide still wins.
+async function renderWorkflowCard() {
+  const card = document.getElementById('dash-workflow');
+  if (!card) return;
+  let c = null;
+  try { c = await window.docusnap.workflow?.counts?.(); } catch { /* leave hidden */ }
+  if (!c || !c.entitled) { card.style.display = 'none'; applyDashboardCardPrefs(); return; }
+  card.style.display = '';
+  const body = document.getElementById('dash-workflow-body');
+  if (body) body.innerHTML = `
+    <div class="dash-attn-row"><span class="dash-attn-num">${c.inbox}</span> waiting for your decision</div>
+    <div class="dash-attn-row"${c.openSent ? '' : ' style="display:none;"'}><span class="dash-attn-num">${c.openSent}</span> sent, awaiting others</div>`;
+  applyDashboardCardPrefs();
+}
+document.getElementById('dash-workflow-open')?.addEventListener('click', () => {
+  window.docusnap.openSearchWindow();   // the mailbox lives in the Search window
+});
+// Repaint on the workflow invalidation ping, debounced (a bulk /v1 assign of 20 docs
+// must coalesce, mirroring the _dashRefreshTimer idiom).
+let _wfCardTimer = null;
+window.docusnap.onWorkflowCountsChanged?.(() => {
+  clearTimeout(_wfCardTimer);
+  _wfCardTimer = setTimeout(renderWorkflowCard, 400);
+});
 
 // First-run setup checklist — shown only until the core steps are done, then hidden.
 async function renderSetupChecklist(confirmed) {

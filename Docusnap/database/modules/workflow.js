@@ -53,6 +53,30 @@ function listCompleted(db, userId) {
   ).all(userId, userId);
 }
 
+// ── Cheap per-user box counts (Slice 1 notifications) ──────────────────────────
+// ONE source, three consumers: the Home "Waiting on you" card (get-workflow-counts
+// IPC), the at-login digest, and GET /v1/workflow/counts (the client's 60s badge
+// poll). COUNT-only so a poll never pays the LIST_SELECT join. Each MUST mirror its
+// list query's WHERE exactly (pinned in test_workflow.js) or badges drift from tabs.
+function countInbox(db, userId) {
+  return db.prepare("SELECT COUNT(*) c FROM document_routes WHERE to_user_id = ? AND state IN ('pending','claimed')").get(userId).c;
+}
+function countSent(db, userId) {
+  return db.prepare('SELECT COUNT(*) c FROM document_routes WHERE from_user_id = ?').get(userId).c;
+}
+function countOpenSent(db, userId) {   // "awaiting others" — my still-open requests
+  return db.prepare("SELECT COUNT(*) c FROM document_routes WHERE from_user_id = ? AND state IN ('pending','claimed')").get(userId).c;
+}
+function countAssigned(db, userId) {
+  return db.prepare("SELECT COUNT(*) c FROM document_routes WHERE claimed_by_id = ? AND state = 'claimed'").get(userId).c;
+}
+function countCompleted(db, userId) {
+  return db.prepare(
+    "SELECT COUNT(*) c FROM document_routes WHERE (to_user_id = ? OR from_user_id = ?)"
+    + " AND state IN ('approved','rejected','acknowledged','recalled')"
+  ).get(userId, userId).c;
+}
+
 /**
  * Apply a state transition guarded by optimistic version. `fields` may set state,
  * comment/resolution_comment, claim/resolve stamps. Returns the number of rows
@@ -103,6 +127,7 @@ function isOpenRouteParty(db, documentId, userId) {
 
 module.exports = {
   insertRoute, getRoute, listInbox, listSent, listAssigned, listCompleted,
+  countInbox, countSent, countOpenSent, countAssigned, countCompleted,
   updateState, setDocWorkflowStatus, setStampedPath, hasActiveRoute, isOpenRouteParty,
   OPEN_STATES, CLOSED_STATES,
 };

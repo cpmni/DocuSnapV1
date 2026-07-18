@@ -23,7 +23,12 @@ function register(ctx) {
   const dbAuth = require('../../../database/modules/auth');
   const { requireLogin, requireRole, getCurrentUser, logAudit } = require('../auth/handler');
 
-  const workflow = workflowService.createWorkflowService({ audit: (entry) => logAudit(getDb(), entry) });
+  const workflow = workflowService.createWorkflowService({
+    audit: (entry) => logAudit(getDb(), entry),
+    // Slice 1: the shared main.js notification sink (badge fan-out + debounced toast).
+    // Best-effort — the service already shields the action from a throwing hook.
+    notifyWorkflow: (ev) => { try { ctx.notifyWorkflowEvent && ctx.notifyWorkflowEvent(ev); } catch { /* best-effort */ } },
+  });
   const actor = () => { const u = getCurrentUser(); return { userId: u.id, username: u.username, role: u.role }; };
 
   function assertEntitled() {
@@ -39,6 +44,27 @@ function register(ctx) {
 
   // Entitlement probe — any logged-in user (drives basic-vs-enhanced Search).
   ipcMain.handle('get-entitlement', () => { requireLogin(); return entitlementService.checkClientEntitlement(getDb()); });
+
+  // Per-user box counts (Slice 1) for the Home "Waiting on you" card + repaints. Cheap
+  // COUNTs only — deliberately NOT the heavy get-dashboard-extra pipeline (eric: statfsSync
+  // per event under bulk assigns). Returns a clean {entitled:false} instead of throwing
+  // while the feature is dark, so the Home dashboard never logs errors (Oracle F8b).
+  ipcMain.handle('get-workflow-counts', () => {
+    requireLogin();
+    const db = getDb();
+    const e = entitlementService.checkClientEntitlement(db);
+    if (!e.workflow || !e.workflow.entitled) return { entitled: false };
+    const dbwf = require('../../../database/modules/workflow');
+    const u = actor();
+    return {
+      entitled: true,
+      inbox:     dbwf.countInbox(db, u.userId),
+      openSent:  dbwf.countOpenSent(db, u.userId),
+      sent:      dbwf.countSent(db, u.userId),
+      assigned:  dbwf.countAssigned(db, u.userId),
+      completed: dbwf.countCompleted(db, u.userId),
+    };
+  });
 
   // List views (logged-in + entitled; each list is already scoped to the actor).
   for (const box of ['inbox', 'sent', 'assigned', 'completed']) {

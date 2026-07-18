@@ -249,6 +249,7 @@ contextBridge.exposeInMainWorld('docusnap', {
     sent:       () => ipcRenderer.invoke('workflow-sent'),
     assigned:   () => ipcRenderer.invoke('workflow-assigned'),
     completed:  () => ipcRenderer.invoke('workflow-completed'),
+    counts:     () => ipcRenderer.invoke('get-workflow-counts'),
     recipients: () => ipcRenderer.invoke('workflow-recipients'),
     assign:     (documentId, toUserId, actionRequired, comment, resubmitOf) =>
                    ipcRenderer.invoke('workflow-assign', { documentId, toUserId, actionRequired, comment, resubmitOf }),
@@ -349,6 +350,8 @@ contextBridge.exposeInMainWorld('docusnap', {
   onDashboardCardsChanged: (cb) => ipcRenderer.on('dashboard-cards-changed', ()   => cb()),
   onReviewCountChanged:  (cb) => ipcRenderer.on('review-count-changed',  (_e, n) => cb(n)),
   onDeferredCountChanged:(cb) => ipcRenderer.on('deferred-count-changed', (_e, n) => cb(n)),
+  // Workflow invalidation ping (Slice 1) — carries NO data; listeners re-pull counts.
+  onWorkflowCountsChanged:(cb) => ipcRenderer.on('workflow-counts-changed', () => cb()),
   onReprocessProgress:   (cb) => ipcRenderer.on('reprocess-progress',    (_e, m) => cb(m)),
   // Import/watch activity (broadcast to ALL windows) so Review can show WHY reprocess is paused.
   onProcessingActivity:  (cb) => ipcRenderer.on('processing-activity',   (_e, s) => cb(s)),

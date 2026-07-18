@@ -57,6 +57,12 @@ function createWorkflowService(deps = {}) {
   const docs = deps.dbDocuments || require('../../database/modules/documents');
   const now  = deps.now || (() => new Date().toISOString());
   const audit = deps.audit || (() => {});
+  // Slice-1 notifications: fired AFTER a successful transition with {event, route, actor}
+  // (event = assigned | claimed | approved | rejected | acknowledged | recalled). Default
+  // no-op (the audit-hook pattern); wrapped so a THROWING sink can never fail the action
+  // (pinned in test_workflow.js). Both transports wire it to main.js notifyWorkflowEvent.
+  const notifyWorkflow = deps.notifyWorkflow || (() => {});
+  const _notify = (event, route, actor) => { try { notifyWorkflow({ event, route, actor }); } catch { /* never fail the action */ } };
   // Visual derivative of an approve/reject decision (a stamped PDF copy). Best-effort +
   // non-fatal; tests inject a stub so they don't touch the filesystem.
   const stampDecision = deps.stampDecision || require('./pdfStamp').stampWorkflowDecision;
@@ -101,6 +107,7 @@ function createWorkflowService(deps = {}) {
     audit({ user_id: actor.userId, action: 'workflow_route_created', action_category: 'workflow',
             outcome: 'success', target_type: 'document', target_id: documentId, document_id: documentId,
             details: `to=${recipient.username} action=${actionRequired}${resubmitTag}` });
+    _notify('assigned', route, actor);
     return { ok: true, route };
   }
 
@@ -117,7 +124,9 @@ function createWorkflowService(deps = {}) {
     wf.setDocWorkflowStatus(db, route.document_id, 'claimed');
     audit({ user_id: actor.userId, action: 'workflow_claimed', action_category: 'workflow', outcome: 'success',
             target_type: 'document', target_id: route.document_id, document_id: route.document_id });
-    return { ok: true, route: wf.getRoute(db, routeId) };
+    const fresh = wf.getRoute(db, routeId);
+    _notify('claimed', fresh, actor);
+    return { ok: true, route: fresh };
   }
 
   // ── Resolve (approve | reject | acknowledge) ─────────────────────────────────
@@ -170,7 +179,9 @@ function createWorkflowService(deps = {}) {
         .then((stampedPath) => { if (stampedPath) { try { wf.setStampedPath(db, route.id, stampedPath); } catch { /* non-fatal */ } } })
         .catch(() => {});
     }
-    return { ok: true, route: wf.getRoute(db, routeId) };
+    const fresh = wf.getRoute(db, routeId);
+    _notify(newState, fresh, actor);
+    return { ok: true, route: fresh };
   }
 
   // ── Recall (sender withdraws while still pending) ────────────────────────────
@@ -184,7 +195,9 @@ function createWorkflowService(deps = {}) {
     wf.setDocWorkflowStatus(db, route.document_id, 'recalled');
     audit({ user_id: actor.userId, action: 'workflow_recalled', action_category: 'workflow', outcome: 'success',
             target_type: 'document', target_id: route.document_id, document_id: route.document_id });
-    return { ok: true, route: wf.getRoute(db, routeId) };
+    const fresh = wf.getRoute(db, routeId);
+    _notify('recalled', fresh, actor);
+    return { ok: true, route: fresh };
   }
 
   return { inbox, sent, assigned, completed, assign, claim, resolve, recall };

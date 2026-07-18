@@ -180,8 +180,13 @@ function showConnect(reason) { showOnly('connect'); $('connect-err').textContent
 function showConnLost() { $('conn-lost')?.classList.remove('hidden'); setConn('block', 'Connection lost'); }
 function hideConnLost() { $('conn-lost')?.classList.add('hidden'); }
 function wireConnLost() {
-  api.onConnectionLost?.(showConnLost);
-  api.onConnectionRestored?.(() => { hideConnLost(); setConn('ok', 'Reconnected'); });
+  api.onConnectionLost?.(() => { _connAlive = false; showConnLost(); });   // Slice 1: pause the badge poll too
+  api.onConnectionRestored?.(() => {
+    _connAlive = true; hideConnLost(); setConn('ok', 'Reconnected');
+    // One immediate FULL refresh on reconnect — fresh myOpenRoutes + badges after an outage.
+    if (role && workflowEntitled) refreshBadges();
+    if (role && canDecide()) refreshReviewCounts();
+  });
   const btn = $('conn-lost-retry');
   if (btn) btn.addEventListener('click', async () => {
     const orig = btn.innerHTML;
@@ -306,6 +311,7 @@ $('login-btn').addEventListener('click', async () => {
     $('unc-wrap').classList.toggle('hidden', !canDecide());
     $('login').classList.add('hidden');
     $('app').classList.remove('hidden');
+    startBadgePoll();  // Slice 1: gentle 60s badge refresh while signed in (entitlement-gated inside)
     setView('home');   // Home dashboard is the default landing view
     renderChips();
     return;
@@ -327,6 +333,7 @@ for (const id of ['u', 'p', 'totp']) {
 
 function doLogout() {
   rvLeave();   // release any review presence before the session ends
+  stopBadgePoll();   // Slice 1: no polling while signed out
   api.logout();
   role = null; recipientsCache = null;
   $('app').classList.add('hidden');
@@ -1342,6 +1349,14 @@ async function viewStamped(routeId) {
   document.addEventListener('keydown', function esc(e) { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc); } });
 }
 
+// Paint one box's badge (segmented tab count + the nav inbox badge). Shared by the full
+// refreshBadges (list lengths) and the 60s counts poll (COUNT queries) so they can't drift.
+function paintWfCount(box, n) {
+  const seg = document.querySelector(`.segmented .seg[data-box="${box}"] [data-count]`);
+  if (seg) { seg.textContent = String(n); seg.classList.toggle('hidden', n === 0); }
+  if (box === 'inbox') { const b = $('inbox-badge'); b.textContent = String(n); b.classList.toggle('hidden', n === 0); }
+}
+
 // Per-tab counts (inbox/sent/assigned/completed) + the nav inbox badge.
 async function refreshBadges() {
   const boxes = ['inbox', 'sent', 'assigned', 'completed'];
@@ -1351,9 +1366,7 @@ async function refreshBadges() {
       const r = await api.workflow.list(box);
       const routes = (r.json && r.json.routes) || [];
       const n = routes.length; counts[box] = n;
-      const seg = document.querySelector(`.segmented .seg[data-box="${box}"] [data-count]`);
-      if (seg) { seg.textContent = String(n); seg.classList.toggle('hidden', n === 0); }
-      if (box === 'inbox') { const b = $('inbox-badge'); b.textContent = String(n); b.classList.toggle('hidden', n === 0); }
+      paintWfCount(box, n);
       // Routes I can act on (addressed to me, still open) → drive the preview decision bar.
       if (box === 'inbox' || box === 'assigned') {
         for (const rt of routes) if (rt.state === 'pending' || rt.state === 'claimed') open[rt.document_id] = rt;
@@ -1363,6 +1376,31 @@ async function refreshBadges() {
   myOpenRoutes = open;
   return { counts, open };   // Home dashboard reuses these instead of re-fetching
 }
+
+// ── Badge poll (Slice 1) — gentle 60s counts refresh while signed in + entitled + the
+// connection is alive. Fetches /v1/workflow/counts (ONE cheap request, not four list
+// fetches) and paints badge numbers ONLY — it must NEVER write myOpenRoutes (that map
+// drives the decision bar and comes only from the full refreshBadges on view-load /
+// action / manual refresh). Cleared on logout; paused while disconnected (the 5s
+// heartbeat owns reachability); one immediate full refresh on reconnect.
+let _wfPollTimer = null;
+let _connAlive = true;
+async function pollWfCounts() {
+  if (!role || !_connAlive) return;
+  try {
+    if (workflowEntitled) {
+      const r = await api.workflow.counts();
+      if (r.status === 200 && r.json && r.json.counts) {
+        for (const box of ['inbox', 'sent', 'assigned', 'completed']) {
+          if (typeof r.json.counts[box] === 'number') paintWfCount(box, r.json.counts[box]);
+        }
+      }
+    }
+    if (canDecide()) refreshReviewCounts();
+  } catch { /* the heartbeat flips the connection state; nothing queues */ }
+}
+function startBadgePoll() { stopBadgePoll(); _wfPollTimer = setInterval(pollWfCounts, 60000); }
+function stopBadgePoll()  { if (_wfPollTimer) { clearInterval(_wfPollTimer); _wfPollTimer = null; } }
 
 // Draggable pane dividers — resize the search/review columns. `data-resize="prev"` widens the
 // pane to the LEFT of the grip (the list), `"next"` the pane to the RIGHT (the review fields);

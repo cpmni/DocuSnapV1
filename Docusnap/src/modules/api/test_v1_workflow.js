@@ -62,7 +62,8 @@ async function mkClient(baseUrl, username) {
 
 async function main() {
   const db = await freshDb();
-  const server = api.createServer({ getDb: () => db, learning: { getDigitsOnlyFields: () => [] }, checkEntitlement: () => ({ entitled: true, feature: 'detached_client', search: { entitled: true, seats: 99 }, workflow: { entitled: true, seats: 99 } }) });
+  const wfEvents = [];   // Slice 1: the shared notification sink (ctx.notifyWorkflowEvent) spy
+  const server = api.createServer({ getDb: () => db, learning: { getDigitsOnlyFields: () => [] }, checkEntitlement: () => ({ entitled: true, feature: 'detached_client', search: { entitled: true, seats: 99 }, workflow: { entitled: true, seats: 99 } }), notifyWorkflowEvent: (ev) => wfEvents.push(ev) });
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
 
@@ -132,6 +133,23 @@ async function main() {
   // ── 5b: uncommitted (needs_review) documents are routable ────────────────────
   r = await adminC.workflow.assign(2, editorId, 'approve', 'check this review item');
   check('admin can route an uncommitted (needs_review) doc -> 200', r.status === 200 && r.json.route.state === 'pending');
+
+  // ── Slice 1: counts endpoint (badge poll) + the shared notification sink ─────
+  r = await readerC.workflow.counts();
+  check('counts endpoint -> 200 with four numeric boxes', r.status === 200 && r.json && r.json.counts
+    && ['inbox', 'sent', 'assigned', 'completed'].every(k => typeof r.json.counts[k] === 'number'));
+  check('reader inbox count mirrors the inbox list',
+    r.json.counts.inbox === ((await readerC.workflow.list('inbox')).json.routes || []).length);
+  // Oracle condition 4b: unauthenticated -> 401 (requireSession guards the endpoint).
+  const anonC = createClient({ baseUrl }); await anonC.connect(); anonC._setToken('bogus-token');
+  r = await anonC.workflow.counts();
+  check('unauthenticated counts -> 401', r.status === 401);
+  // eric's fan-out pin: the /v1-built service reaches the ONE shared ctx sink
+  // (main.js notifyWorkflowEvent -> notifyAllWindows, which includes the SEARCH window).
+  // A future "simplify to ctx.notifyMainWindow" — which misses the Search window and
+  // defeats the cross-user mailbox refresh — fails these loudly.
+  check('ctx.notifyWorkflowEvent saw the /v1 assigns', wfEvents.some(e => e.event === 'assigned' && e.route && e.actor));
+  check('ctx.notifyWorkflowEvent saw a /v1 resolve with its terminal state', wfEvents.some(e => e.event === 'approved'));
 
   // ── filing state never rewritten by workflow ─────────────────────────────────
   r = await adminC.getDocument(1);

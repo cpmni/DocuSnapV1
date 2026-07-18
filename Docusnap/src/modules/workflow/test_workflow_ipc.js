@@ -82,7 +82,8 @@ function main() {
   let fail = 0;
   const db = freshDb();
   const H = {};
-  wfHandler.register({ ipcMain: { handle: (n, fn) => { H[n] = fn; } }, getDb: () => db });
+  const wfEvents = [];   // Slice 1: the shared main.js sink (ctx.notifyWorkflowEvent) spy
+  wfHandler.register({ ipcMain: { handle: (n, fn) => { H[n] = fn; } }, getDb: () => db, notifyWorkflowEvent: (ev) => wfEvents.push(ev) });
   const setLicensed = (on) => {
     const set = (k, v) => db.prepare(`INSERT INTO settings (key,value) VALUES (?,?)
       ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(k, v);
@@ -96,6 +97,10 @@ function main() {
   fail += !check('workflow-inbox blocked when unlicensed', threwCode(() => H['workflow-inbox']({}), 'FEATURE_NOT_LICENSED'));
   fail += !check('workflow-assign blocked when unlicensed',
     threwCode(() => H['workflow-assign']({}, { documentId: 1, toUserId: 3, actionRequired: 'acknowledge' }), 'FEATURE_NOT_LICENSED'));
+  // Slice 1: the counts IPC returns a CLEAN {entitled:false} while dark — never throws —
+  // so the Home dashboard's "Waiting on you" card can probe it safely on every load.
+  fail += !check('get-workflow-counts is clean {entitled:false} when unlicensed',
+    H['get-workflow-counts']({}).entitled === false);
 
   // ── license the add-on ───────────────────────────────────────────────────────
   setLicensed(true);
@@ -106,6 +111,11 @@ function main() {
   fail += !check('admin assign -> route pending', route && route.state === 'pending');
   fail += !check('admin recipients lists the reader',
     H['workflow-recipients']({}).some(u => u.username === 'reader'));
+  // Slice 1: the desktop transport reaches the shared main.js notification sink.
+  fail += !check('ctx.notifyWorkflowEvent saw the assign', wfEvents.some(e => e.event === 'assigned' && e.route && e.route.id === route.id));
+  const wc = H['get-workflow-counts']({});
+  fail += !check('counts ON: entitled + admin sent=1 inbox=0',
+    wc.entitled === true && wc.sent === 1 && wc.inbox === 0 && typeof wc.openSent === 'number');
 
   // reader: sees it in inbox, can acknowledge; cannot list recipients
   session = { id: 3, username: 'reader', role: 'readonly' };

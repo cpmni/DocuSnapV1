@@ -176,6 +176,35 @@ function main() {
   wf.resolve(db, editor, un.route.id, { decision: 'approve' });
   check('editGuard: lock releases after the route resolves', editGuard(db, 2, 'edit').ok === true);
 
+  // ── C1: notifyWorkflow hook (Slice 1 notifications) ───────────────────────────
+  const events = [];
+  const wfN = createWorkflowService({ audit: () => {}, stampDecision: () => Promise.resolve(null), notifyWorkflow: (e) => events.push(e) });
+  const na = wfN.assign(db, admin, { documentId: 1, toUserId: 2, actionRequired: 'approve' });
+  check('notify hook fires on assign with {event,route,actor}',
+    events.some(e => e.event === 'assigned' && e.route && e.route.id === na.route.id && e.actor === admin));
+  wfN.claim(db, editor, na.route.id);
+  check('notify hook fires on claim', events.some(e => e.event === 'claimed'));
+  wfN.resolve(db, editor, na.route.id, { decision: 'approve' });
+  check('notify hook carries the TERMINAL state on resolve', events.some(e => e.event === 'approved'));
+  const nr5 = wfN.assign(db, admin, { documentId: 1, toUserId: 3, actionRequired: 'acknowledge' });
+  wfN.recall(db, admin, nr5.route.id);
+  check('notify hook fires on recall', events.some(e => e.event === 'recalled'));
+  // A THROWING sink must NEVER fail the action (the detached-hook rule; the service wraps
+  // the call — main.js's real sink is additionally try/catch'd itself, belt and braces).
+  const wfT = createWorkflowService({ audit: () => {}, stampDecision: () => Promise.resolve(null), notifyWorkflow: () => { throw new Error('boom'); } });
+  const nt = wfT.assign(db, admin, { documentId: 1, toUserId: 2, actionRequired: 'acknowledge' });
+  check('throwing notify hook never breaks assign', nt.ok === true);
+  check('throwing notify hook never breaks resolve', wfT.resolve(db, editor, nt.route.id, { decision: 'acknowledge' }).ok === true);
+
+  // ── C2: box COUNTs mirror their list queries EXACTLY (one source for the Home card,
+  // the /v1 counts endpoint and the client badge poll — drift = badges lie vs tabs) ──
+  check('countInbox mirrors listInbox',         dbwf.countInbox(db, 2)     === dbwf.listInbox(db, 2).length);
+  check('countSent mirrors listSent',           dbwf.countSent(db, 1)      === dbwf.listSent(db, 1).length);
+  check('countAssigned mirrors listAssigned',   dbwf.countAssigned(db, 2)  === dbwf.listAssigned(db, 2).length);
+  check('countCompleted mirrors listCompleted', dbwf.countCompleted(db, 1) === dbwf.listCompleted(db, 1).length);
+  check('countOpenSent counts only OPEN sent routes',
+    dbwf.countOpenSent(db, 1) === dbwf.listSent(db, 1).filter(r => r.state === 'pending' || r.state === 'claimed').length);
+
   // ── zero-paid sweep: NO path anywhere in this suite can mint a 'paid' row ─────
   check("zero 'paid' routes exist after the full flow",
     db.prepare(`SELECT COUNT(*) c FROM document_routes WHERE state='paid'`).get().c === 0);

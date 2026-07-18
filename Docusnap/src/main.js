@@ -174,6 +174,7 @@ function showLoginScreen() {
   // Destroy (not hide) every other window — especially the main shell, so logging
   // out can't leave a hidden previous-user session reachable from the tray.
   Object.keys(windows).forEach((name) => { if (name !== 'login') destroyWindow(name); });
+  _wfDigestShown = false;   // re-arm the at-login workflow digest for the NEXT login (Slice 1)
   refreshTrayMenu();   // reflect logged-out state (disable Review/Settings)
 }
 
@@ -197,6 +198,7 @@ function openMainShell() {
   }
   refreshTrayMenu();   // reflect logged-in state (enable Review/Settings)
   startLicenseRevalidation();   // P0: catch a server-side revoke WHILE running, not only at launch
+  maybeShowWorkflowDigest();    // Slice 1: one-shot at-login "N waiting for your approval" (latched)
 }
 
 // First-run setup wizard. Shows ONLY when `first_run_completed` !== 'true' (a
@@ -667,6 +669,73 @@ function maybeShowTrayHint() {
   } catch { /* best-effort */ }
 }
 
+// ── Workflow notifications (Slice 1) — ONE shared sink for BOTH transports ─────
+// Wired as the workflowService `notifyWorkflow` hook by the desktop workflow handler
+// AND the /v1 API handler, so the toast policy + debounce state live in exactly one
+// place (eric: two sinks = double toasts under mixed transports). Fan-out MUST use
+// notifyAllWindows — notifyMainWindow reaches main+review only and would starve the
+// SEARCH window's open mailbox (the cross-user /v1 case is the headline fix; pinned
+// in test_workflow_ipc.js). Pull model: the event carries no data; renderers re-pull.
+// Decision logic is pure + tested in src/lib/workflowNotify.js; guards run at FIRE
+// time (Oracle condition 3 — a toast queued just before logout must not show).
+const workflowNotify = require('./lib/workflowNotify');
+let _wfToastAgg = null;
+let _wfToastTimer = null;
+let _wfDigestShown = false;   // per-login latch; showLoginScreen re-arms it
+function notifyWorkflowEvent(ev) {
+  try {
+    notifyAllWindows('workflow-counts-changed');
+    const next = workflowNotify.aggregate(_wfToastAgg, ev || {});
+    if (next === _wfToastAgg) return;         // badge-ping-only event (claim/recall)
+    _wfToastAgg = next;
+    clearTimeout(_wfToastTimer);
+    _wfToastTimer = setTimeout(_fireWorkflowToast, 2000);   // trailing debounce: bulk = ONE toast
+  } catch { /* notifications are best-effort — never disturb the action */ }
+}
+function _fireWorkflowToast() {
+  const agg = _wfToastAgg; _wfToastAgg = null;
+  try {
+    let settingEnabled = true;
+    try { settingEnabled = require('../database/modules/learning').getSetting(getDb(), 'workflow_toasts_enabled', 'true') !== 'false'; } catch { /* fail-open */ }
+    const { getCurrentUser } = require('./modules/auth/handler');
+    const toast = workflowNotify.decideToast(agg, {
+      isQuitting,
+      notificationsSupported: !!(Notification.isSupported && Notification.isSupported()),
+      settingEnabled,
+      currentUser: getCurrentUser ? getCurrentUser() : null,
+    });
+    if (toast) new Notification({ ...toast, icon: path.join(__dirname, '..', 'assets', 'icon.ico') }).show();
+  } catch { /* best-effort */ }
+}
+// At-login digest (Slice 1): ONE toast when items await the signing-in user. Flat delay —
+// never coupled to ready-to-show (documented can-never-fire mode; openMainShell carries its
+// own 12s backstop for exactly that). Latched per login; showLoginScreen clears the latch,
+// so a license-revalidation re-entry of openMainShell can never re-fire it (eric).
+function maybeShowWorkflowDigest() {
+  if (_wfDigestShown) return;
+  _wfDigestShown = true;
+  setTimeout(() => {
+    try {
+      if (isQuitting) return;
+      if (!(Notification.isSupported && Notification.isSupported())) return;
+      const learning = require('../database/modules/learning');
+      if (learning.getSetting(getDb(), 'workflow_toasts_enabled', 'true') === 'false') return;
+      const ent = require('./services/entitlementService').checkClientEntitlement(getDb());
+      if (!ent.workflow || !ent.workflow.entitled) return;   // dark / unlicensed ⇒ silent
+      const { getCurrentUser } = require('./modules/auth/handler');
+      const me = getCurrentUser && getCurrentUser();
+      if (!me) return;
+      const n = require('../database/modules/workflow').countInbox(getDb(), me.id);
+      if (!n) return;
+      new Notification({
+        title: n === 1 ? '1 document waiting for your approval' : `${n} documents waiting for your approval`,
+        body: 'Open the Mailbox in Search to act.',
+        icon: path.join(__dirname, '..', 'assets', 'icon.ico'),
+      }).show();
+    } catch { /* best-effort */ }
+  }, 3000);
+}
+
 // Best-effort startup integrity sweep of the managed import inbox. Copy-on-
 // import writes userData/inbox/<docId><ext> and then sets documents.working_path;
 // a crash between those two steps would leave a stray file with no DB reference.
@@ -893,6 +962,9 @@ app.whenReady().then(() => {
     resourcePath, pythonExe, pythonArgs, tesseractPath,
     backendScript, configPath, templatesDir,
     createWindow, getMainWindow, notifyMainWindow, notifyAllWindows, safeSend,
+    // Slice 1: the ONE workflow-notification sink shared by the desktop + /v1 transports
+    // (fan-out to ALL windows + debounced toast policy — see notifyWorkflowEvent above).
+    notifyWorkflowEvent,
     // Read-only telemetry mirror target for the hidden dev inspector (no-op when closed).
     // safeSend guards a destroyed/missing webContents, not just a missing window.
     notifyDevInspector: (channel, ...args) => safeSend(windows['dev-inspector']?.webContents, channel, ...args),

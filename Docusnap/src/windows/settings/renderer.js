@@ -371,6 +371,7 @@ const DASH_CARD_SECTIONS = [
   ['Top', [
     ['dash-quickfind', 'Quick find'],
     ['dash-attention', 'Needs your attention'],
+    ['dash-workflow',  'Waiting on you (approvals)'],
     ['dash-pulse',     'Documents filed'],
     ['dash-autofile',  'Filed automatically'],
     ['dash-learning',  'Getting smarter'],

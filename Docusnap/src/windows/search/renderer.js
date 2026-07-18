@@ -58,6 +58,25 @@ async function _init() {
     document.body.classList.add('workflow-on');                                       // mailbox + approvals
     if (window.SearchWorkflow) await window.SearchWorkflow.init();
     if (window.SearchMailbox) window.SearchMailbox.init();
+    // Cross-user freshness (Slice 1): ANY workflow change (this desktop or a /v1 client)
+    // pings every window — re-pull my open-route map + the visible mailbox, debounced
+    // (SearchMailbox.render has no concurrency guard; overlapping renders interleave DOM).
+    // The action-panel rerender is SKIPPED while the user is mid-input in it (a half-typed
+    // rejection note must never be wiped by someone else's action).
+    let _wfPing = null;
+    window.docusnap.onWorkflowCountsChanged?.(() => {
+      clearTimeout(_wfPing);
+      _wfPing = setTimeout(async () => {
+        try {
+          await window.SearchWorkflow?.refresh?.();
+          const panel = document.getElementById('preview-actions');
+          const busy = panel && (panel.contains(document.activeElement)
+            || (panel.querySelector('.wf-note') && panel.querySelector('.wf-note').value.trim()));
+          if (!busy && window.SearchState.selectedDoc) window.SearchActions.renderActions(window.SearchState.selectedDoc);
+          window.SearchMailbox?.refreshIfActive?.();
+        } catch { /* best-effort */ }
+      }, 400);
+    });
   }
   window.SearchPreview.initPageNav();
   window.SearchQuery.initInputs();
