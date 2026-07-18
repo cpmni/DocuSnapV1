@@ -368,7 +368,10 @@ async function _processBatch(db, filenames) {
       '--mode',      procMode,
       ...trainingArgs,
     ];
-    const proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs), { windowsHide: true });
+    // AUTO_TITLE env rides the watch batch too (slice 4 — the engine seam still only
+    // fires for detection-None docs, so typed watch imports are untouched).
+    const proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs),
+      { windowsHide: true, env: { ...process.env, ...processing._autoTitleEnv(db) } });
     _liveProcs.add(proc);   // track for quit-time kill (untracked on close below)
     let buf = '';
 

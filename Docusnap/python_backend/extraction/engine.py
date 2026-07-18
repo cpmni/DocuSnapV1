@@ -3803,6 +3803,12 @@ class ExtractionEngine:
         s_lower    = supplier_name.lower().strip()
         field_meta = {f["key"]: f for f in field_defs}
 
+        # Oracle C3 (Generic Document design): a title is PER-DOCUMENT by nature — never
+        # hint-filled. The evidence-based variability guard below needs >=2 DISTINCT
+        # confirmed values to disarm, so the FIRST stale title would otherwise fill an
+        # empty title on a same-supplier reprocess (a wrong value wearing 60-90 conf).
+        hints = [h for h in hints if str((h or {}).get("field_key") or "").lower() != "title"]
+
         # Evidence-based variability: a field with >=2 DISTINCT confirmed values for
         # this supplier+type is variable IN FACT (e.g. a per-document customer name),
         # even when the schema doesn't flag it is_variable (free-text fields never are).

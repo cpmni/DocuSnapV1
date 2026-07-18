@@ -37,6 +37,14 @@ function _reprocessGenericAdopt(db, priorTypeId, resultDocumentType) {
   if (priorTypeId != null || resultDocumentType) return null;
   return _genericFallbackId(db, null);
 }
+// Auto-Title spawn env (slice 4): AUTO_TITLE=1 reaches process_docs only when the
+// setting is on; the engine seam additionally fires only for detection-None docs.
+function _autoTitleEnv(db) {
+  try {
+    const learning = require('../../../database/modules/learning');
+    return learning.getSetting(db, 'auto_title_enabled', 'false') === 'true' ? { AUTO_TITLE: '1' } : {};
+  } catch { return {}; }
+}
 
 // Coerce the stored processing_mode to a value the backend accepts. A stale/legacy value
 // (e.g. an old "light", or one from a restored settings backup) must never reach
@@ -907,9 +915,11 @@ function register(ctx) {
       // worker POOL is the parallelism; per-process OMP threading fights it. Capping
       // to cores/workers (threadCap) keeps total threads ≈ cores. threadCap=0 (the
       // single-worker path) leaves Tesseract free to use every core for the one proc.
-      const env = threadCap > 0
-        ? { ...process.env, OMP_THREAD_LIMIT: String(threadCap) }
-        : process.env;
+      const env = {
+        ...process.env,
+        ...(threadCap > 0 ? { OMP_THREAD_LIMIT: String(threadCap) } : {}),
+        ..._autoTitleEnv(db),
+      };
       const proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs),
         { windowsHide: true, env });
       _currentBatchProcs.push(proc);
@@ -1621,9 +1631,11 @@ function register(ctx) {
         scriptArgs.push('--trace');
         try { fs.mkdirSync(ctx.devSliceDir, { recursive: true }); scriptArgs.push('--slice-dir', ctx.devSliceDir); } catch {}
       }
-      const env = threadCap > 0
-        ? { ...process.env, OMP_THREAD_LIMIT: String(threadCap) }
-        : process.env;
+      const env = {
+        ...process.env,
+        ...(threadCap > 0 ? { OMP_THREAD_LIMIT: String(threadCap) } : {}),
+        ..._autoTitleEnv(db),
+      };
       const proc = spawn(pythonExe(), pythonArgs(backendScript(), ...scriptArgs), { windowsHide: true, env });
       _currentBatchProcs.push(proc);
       let buf = '', settled = false, watchdog = null;
@@ -2604,6 +2616,7 @@ module.exports = {
   flushPendingDrains: _flushPendingDrains,
   _genericFallbackId,        // Generic Document fallback pins (test_generic_fallback_mapping.js)
   _reprocessGenericAdopt,
+  _autoTitleEnv,             // Auto-Title spawn env (shared with the watch batch)
   drainOriginalToFolder,
   ensureWorkingCopy,
   ensureWorkingCopyAsync,

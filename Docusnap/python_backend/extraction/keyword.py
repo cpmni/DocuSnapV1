@@ -249,6 +249,13 @@ def seed_field_labels(patterns: dict, field_defs: "list | None") -> dict:
             if not (SEED_FREE_TEXT_ENABLED and role is None
                     and (str((f or {}).get("type") or "").lower() == "text")):
                 continue
+            # Oracle C2 (Generic Document design): the `title` field is NEVER seeded — its
+            # label "Title" is a genuinely printed caption ("Title: Mr/Mrs"), and a seeded
+            # keyword read would REPLACE the carried auto_title row on reprocess via the
+            # merge's new-wins rule (a silent title downgrade). Auto-Title
+            # (extraction/title_pick.py) owns this key; pinned by tests/test_title_pick.py.
+            if str((f or {}).get("key") or "").strip().lower() == "title":
+                continue
             label = str((f or {}).get("label") or "").strip()
             if len(label) < 3:                          # a "To"-style label is not a caption
                 continue

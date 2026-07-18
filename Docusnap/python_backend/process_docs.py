@@ -784,6 +784,25 @@ def main():
             # Sanitise — ensure all values are proper dicts
             extractions = sanitise_extractions(raw_extractions)
 
+            # AUTO-TITLE (Generic Document design §5; kill switch env AUTO_TITLE, default
+            # OFF): ONLY for a doc NO type claimed — the same None the Electron fallback
+            # maps to "General Document" — so title rows exist precisely for the docs that
+            # become generic; typed docs NEVER get one (PIN 5; also why a reprocess with a
+            # known slug never re-runs it — the title row survives via the merge carry,
+            # Oracle C5). Post-sanitise injection: overall confidence is already computed,
+            # zero pipeline interaction. conf 60 keeps it review-threshold-bound on its
+            # own; the trust 'generic-type' refusal is the real auto-file wall.
+            if doc_type_result is None and os.environ.get("AUTO_TITLE") == "1":
+                try:
+                    from extraction.title_pick import pick_title
+                    _tp = pick_title(ocr_text, supplier_name=supplier_name)
+                    if _tp:
+                        extractions["title"] = {"value": _tp["title"], "confidence": 60,
+                                                "method": "auto_title"}
+                        log(f"  TITLE   {_tp['title']!r} (auto_title, line {_tp['line_index']})")
+                except Exception as _te:    # fail toward NO title — never junk, never a crash
+                    log(f"  TITLE   skipped: {_te}")
+
             # Emit per-field extraction detail so the log shows what was found vs missed
             for field_key, data in extractions.items():
                 val    = data.get("value")
