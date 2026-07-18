@@ -1599,16 +1599,23 @@ async function _doModalPrint(silent) {
     return;
   }
 
-  // Silent quick-print: the callback fires reliably (success/failure), so await + lock is fine.
-  try {
-    const res = await window.docusnap.printDocument(payload);
-    if (res && res.ok) { _closePrintModal(); showToast?.('Sent to your printer.'); }
-    else if (res && res.outcome === 'cancelled') { if (msg) msg.textContent = 'Cancelled.'; }
-    else if (res && res.reason === 'file_missing') { if (msg) msg.textContent = "Couldn't find this document's file."; }
-    else if (res && res.reason === 'disabled') { if (msg) msg.textContent = 'Printing is turned off in Settings.'; }
-    else { if (msg) msg.textContent = "Couldn't print this document."; }
-  } catch { if (msg) msg.textContent = "Couldn't print this document."; }
-  reenable();
+  // Silent quick-print. Electron's print callback is UNRELIABLE — it may not fire on a user
+  // cancel, on a virtual printer's "Save as…" prompt (Microsoft Print to PDF), or even on a
+  // normal real-printer job (owner saw it hang on the Ricoh). So NEVER lock the modal waiting
+  // on it: report the outcome IF/WHEN the callback lands, but a watchdog re-enables the modal
+  // so a slow/absent callback can't freeze it. The vector PDF still spools regardless.
+  let settled = false;
+  const done = (apply) => { if (settled) return; settled = true; reenable(); if (apply) apply(); };
+  window.docusnap.printDocument(payload).then((res) => {
+    done(() => {
+      if (res && res.ok) { _closePrintModal(); showToast?.('Sent to your printer.'); }
+      else if (res && res.outcome === 'cancelled') { if (msg) msg.textContent = 'Cancelled.'; }
+      else if (res && res.reason === 'file_missing') { if (msg) msg.textContent = "Couldn't find this document's file."; }
+      else if (res && res.reason === 'disabled') { if (msg) msg.textContent = 'Printing is turned off in Settings.'; }
+      else { if (msg) msg.textContent = "Couldn't print this document."; }
+    });
+  }).catch(() => done(() => { if (msg) msg.textContent = "Couldn't print this document."; }));
+  setTimeout(() => done(() => { if (msg) msg.textContent = 'Sent to your printer — complete any prompt it shows.'; }), 4000);
 }
 
 document.getElementById('btn-print-doc')?.addEventListener('click', _openPrintModal);
