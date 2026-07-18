@@ -541,6 +541,20 @@ if (slipsToggle) slipsToggle.addEventListener('change', async () => {
   catch { /* non-fatal; reloads on next open */ }
   refreshSlipsWatchWarn();
 });
+// ── Document printing (Print-Slice 1) ──────────────────────────────────────────
+// Default OFF (backend reads 'printing_enabled' with a 'false' default). Adds the
+// Review Print button + the driver-dialog print IPC when on.
+const printingToggle = document.getElementById('printing-toggle');
+async function loadPrinting() {
+  if (!printingToggle) return;
+  try { printingToggle.checked = (await api.getSetting('printing_enabled')) === 'true'; } catch {}
+}
+loadPrinting();
+if (printingToggle) printingToggle.addEventListener('change', async () => {
+  try { await api.setSetting('printing_enabled', printingToggle.checked ? 'true' : 'false'); }
+  catch { /* non-fatal; reloads on next open */ }
+});
+
 // ── Generic Document fallback + Auto-Title (docs/designs/GENERIC_DOCTYPE_2026-07-18.md) ──
 // Defaults OFF (backend reads 'generic_fallback_enabled' / 'auto_title_enabled' with
 // 'false' defaults). Enabling the fallback AUTO-CREATES the "General Document" preset

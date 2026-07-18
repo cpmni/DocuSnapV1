@@ -74,6 +74,7 @@ const licensingModule      = require('./modules/licensing/handler');
 const apiModule            = require('./modules/api/handler');
 const workflowModule       = require('./modules/workflow/handler');
 const tutorialModule       = require('./modules/tutorial/handler');
+const printModule          = require('./modules/print/handler');
 
 // ── DB ────────────────────────────────────────────────────────────────────────
 let _db = null;
@@ -1034,6 +1035,11 @@ app.whenReady().then(() => {
   // In-process mailbox/approval workflow for the core app's enhanced Search
   // (entitlement + role gated; reuses workflowService). See modules/workflow/handler.js.
   workflowModule.register(ctx);
+
+  // Document printing through the customer's printer driver (print-document /
+  // print-available). Kill switch: setting printing_enabled (default OFF). See
+  // modules/print/handler.js.
+  printModule.register(ctx);
   tutorialModule.register(ctx);
 
   // Diagnostics lifecycle (all gated on consent INSIDE telemetry → inert until opt-in;

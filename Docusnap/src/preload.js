@@ -295,6 +295,9 @@ contextBridge.exposeInMainWorld('docusnap', {
   splitPdf:                   (file, ranges, outDir, docId, every) => ipcRenderer.invoke('split-pdf', file, ranges, outDir, docId, every),
   // Filing Slips — printable separator-sheet pack (opens via openFile/showInExplorer)
   generateFilingSlips:        (count)        => ipcRenderer.invoke('generate-filing-slips', count),
+  // Document printing through the customer's printer driver (Print-Slice 1)
+  printDocument:              (payload)      => ipcRenderer.invoke('print-document', payload),
+  printAvailable:             ()             => ipcRenderer.invoke('print-available'),
 
   // ── Settings ─────────────────────────────────────────────────────────────────
   getSetting:          (key)      => ipcRenderer.invoke('get-setting', key),

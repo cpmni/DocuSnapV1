@@ -1117,6 +1117,8 @@ async function _selectDoc(doc, { fieldsOnly = false } = {}) {
   document.getElementById('btn-split-pdf').style.display  = isPdf ? '' : 'none';
   document.getElementById('split-bar').style.display      = 'none';
   document.getElementById('split-ranges-input').value     = '';
+  // Print button — PDFs only, and only when the printing feature is on (Print-Slice 1).
+  { const pb = document.getElementById('btn-print-doc'); if (pb) pb.style.display = (isPdf && _printAvailable) ? '' : 'none'; }
 
   // Set doc type dropdown
   selectedTypeSlug = doc.type_slug || null;
@@ -1438,6 +1440,35 @@ function _deskewFixPending(fieldKey, snap) {
   hideAnchorReadout();
   try { showToast('Straighten changed while reading — please draw the box again.', 'warn'); } catch {}
 }
+
+// ── Print (Print-Slice 1) — driver-dialog print of the current document ─────────
+// _printAvailable is queried once on load; the button shows only for PDFs when on.
+let _printAvailable = false;
+(async () => { try { _printAvailable = await window.docusnap.printAvailable?.(); } catch { _printAvailable = false; } })();
+document.getElementById('btn-print-doc')?.addEventListener('click', async () => {
+  if (!currentDoc?.id) return;
+  const btn = document.getElementById('btn-print-doc');
+  btn.disabled = true;
+  const prev = btn.innerHTML;
+  try {
+    const res = await window.docusnap.printDocument({ docId: currentDoc.id, source: 'original' });
+    if (res && res.ok) {
+      showToast?.('Sent to your printer.');
+    } else if (res && res.outcome === 'cancelled') {
+      /* user cancelled the driver dialog — silent */
+    } else if (res && res.reason === 'disabled') {
+      showToast?.('Printing is turned off — enable it in Settings → Processing.');
+    } else if (res && res.reason === 'file_missing') {
+      showToast?.("Couldn't find this document's file to print.");
+    } else if (res) {
+      showToast?.("Couldn't print this document.");
+    }
+  } catch (e) {
+    showToast?.("Couldn't print this document.");
+  }
+  btn.disabled = false;
+  btn.innerHTML = prev;
+});
 
 document.getElementById('btn-deskew')?.addEventListener('click', toggleDeskew);
 document.getElementById('btn-deskew-all')?.addEventListener('click', openDeskewAllFlyout);
@@ -5158,6 +5189,7 @@ function clearDocPanel() {
   document.getElementById('btn-confirm').disabled = true;
   document.getElementById('btn-split-pdf').style.display  = 'none';
   document.getElementById('split-bar').style.display      = 'none';
+  { const pb = document.getElementById('btn-print-doc'); if (pb) pb.style.display = 'none'; }
   const extStatus = document.getElementById('extraction-status');
   if (extStatus) extStatus.innerHTML = '';
   // Blank the per-document review aids too, so an empty queue ("All documents
