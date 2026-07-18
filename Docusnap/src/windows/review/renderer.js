@@ -488,6 +488,20 @@ function updateEditTypeBtn() {
   if (b) b.disabled = !selectedTypeSlug;
 }
 
+// Generic Document chip: one click = pick the General Document type via the normal
+// change path (field list updates, staged teaching rules apply — no side channel).
+window.__genericFallbackOn = false;
+(async () => {
+  try { window.__genericFallbackOn = (await window.docusnap.getSetting('generic_fallback_enabled')) === 'true'; }
+  catch { /* stays false — chip hidden */ }
+})();
+document.getElementById('generic-chip')?.addEventListener('click', () => {
+  const sel = document.getElementById('doctype-select');
+  sel.value = 'general_document';
+  sel.dispatchEvent(new Event('change', { bubbles: true }));
+  document.getElementById('generic-chip').style.display = 'none';
+});
+
 document.getElementById('doctype-select').addEventListener('change', (e) => {
   if (e.target.value === NEW_TYPE_SENTINEL) {
     e.target.value = selectedTypeSlug || '';   // revert — the sentinel never becomes a chosen type
@@ -1109,6 +1123,16 @@ async function _selectDoc(doc, { fieldsOnly = false } = {}) {
   const sel = document.getElementById('doctype-select');
   sel.value = selectedTypeSlug || '';
   updateEditTypeBtn();
+  // Generic Document chip (docs/designs/GENERIC_DOCTYPE_2026-07-18.md §6): a one-click
+  // "file it as General" affordance for docs that arrived with NO type — shown only when
+  // the fallback feature is on and the General Document type exists (pre-enable backlog
+  // docs and any doc the operator prefers to hand-route).
+  const _genericChip = document.getElementById('generic-chip');
+  if (_genericChip) {
+    _genericChip.style.display =
+      (!selectedTypeSlug && window.__genericFallbackOn && allDocTypes.some(t => t.slug === 'general_document'))
+        ? '' : 'none';
+  }
   const dt = allDocTypes.find(t => t.slug === selectedTypeSlug);
   fieldDefs = dt ? dt.fields : (allDocTypes[0]?.fields || []);
 

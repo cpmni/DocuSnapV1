@@ -12,6 +12,32 @@ const diaglog = require('../diaglog');
 const { buildSegmentArgs, buildSplitPlan } = require('./split_plan');
 const { clampSlipCount, nextSlipRange, slipPackName } = require('./slip_pack');
 
+// ── Generic Document fallback (docs/designs/GENERIC_DOCTYPE_2026-07-18.md §3) ──────────
+// Map a NO-MATCH import (detection returned None ⇒ msg.document_type null) to the
+// "General Document" type — ONLY when the switch is on AND the preset exists+enabled.
+// PIN 1: a doc ANY real type matched is untouched (the fallback fires only on None);
+// the trust.js 'generic-type' refusal keeps every mapped doc review-bound (PIN 2).
+// Exported for test_generic_fallback_mapping.js.
+function _genericFallbackId(db, msgDocumentType) {
+  if (msgDocumentType) return null;                        // a detected type always wins
+  if (process.env.GENERIC_FALLBACK === '0') return null;   // env hard-kill
+  try {
+    const learning = require('../../../database/modules/learning');
+    if (learning.getSetting(db, 'generic_fallback_enabled', 'false') !== 'true') return null;
+    const g = require('../../../database/modules/document_types').getGenericType(db);
+    return g ? g.id : null;
+  } catch { return null; }
+}
+// The SECOND insert seam (Oracle C1): reprocess. A pre-existing NULL-type doc whose
+// reprocess detection ALSO returns None adopts the generic type (the designed
+// go-forward backlog path). DIRECTION-GUARDED: a TYPED doc whose reprocess detection
+// returns None is NEVER dragged to generic (priorTypeId must be null), and a detected
+// type always wins. Exported for the C1 both-direction pins.
+function _reprocessGenericAdopt(db, priorTypeId, resultDocumentType) {
+  if (priorTypeId != null || resultDocumentType) return null;
+  return _genericFallbackId(db, null);
+}
+
 // Coerce the stored processing_mode to a value the backend accepts. A stale/legacy value
 // (e.g. an old "light", or one from a restored settings backup) must never reach
 // process_docs.py's --mode and break the whole batch on an arg-parse error.
@@ -1151,6 +1177,15 @@ function register(ctx) {
         routeTrace({ type: 'trace', doc: filename, event: 'reprocess_type_change',
                      from: oldName, to: reprocType.name, overridden: !!result.type_overridden });
       }
+    }
+
+    // Generic fallback on reprocess (Oracle C1, direction-guarded — never drags a typed
+    // doc): only a NULL-type doc whose fresh detection is ALSO None adopts the generic id.
+    // Not a "flip" (priorTypeId is null), so no flip note — the trust refusal keeps it
+    // review-bound regardless.
+    if (reprocDocTypeId == null) {
+      const gid = _reprocessGenericAdopt(db, priorTypeId, result.document_type || null);
+      if (gid) reprocDocTypeId = gid;
     }
 
     const mergedRows = mergeReprocessRows(existing, newRows, flip, _emitMerge);
@@ -2311,6 +2346,11 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
       dt => dt.name.toLowerCase() === msg.document_type.toLowerCase()
     );
     if (match) document_type_id = match.id;
+  } else {
+    // Generic Document fallback: detection returned None → adopt the General Document
+    // type when enabled (kill-switched; review-bound via the trust.js refusal).
+    const gid = _genericFallbackId(db, msg.document_type);
+    if (gid) document_type_id = gid;
   }
 
   // _supplier_name metadata is only populated via logo/hint matching, which is
@@ -2562,6 +2602,8 @@ module.exports = {
   cleanupTempFiles: cleanupFiles,
   handleFileMessage: _handleFileMessage,
   flushPendingDrains: _flushPendingDrains,
+  _genericFallbackId,        // Generic Document fallback pins (test_generic_fallback_mapping.js)
+  _reprocessGenericAdopt,
   drainOriginalToFolder,
   ensureWorkingCopy,
   ensureWorkingCopyAsync,
