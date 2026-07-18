@@ -1469,6 +1469,64 @@ function _parsePageRanges(text, pageCount) {
   return out.length ? out : null;
 }
 
+// The 0-based page indices the preview should show, honouring the Range selection
+// (empty/invalid range ⇒ all pages, matching the print behaviour where null = all).
+function _selectedPageIndices() {
+  const n = (pageImages && pageImages.length) || 0;
+  const all = Array.from({ length: n }, (_, i) => i);
+  if (document.getElementById('print-pages-mode')?.value !== 'range') return all;
+  const ranges = _parsePageRanges(document.getElementById('print-pages-range')?.value, n);
+  if (!ranges) return all;
+  const set = new Set();
+  for (const r of ranges) for (let i = r.from; i <= r.to; i++) if (i >= 0 && i < n) set.add(i);
+  return [...set].sort((a, b) => a - b);
+}
+
+// Re-render the preview to REFLECT the modal's settings — mono (greyscale), page range
+// (only those pages), and pages-per-sheet (N-up grid). Copies/Sides have no visual, so
+// they're not shown. Purely visual: the real print still sends the vector PDF + options.
+// Default (colour / all / 1-up) renders identically to the plain page images.
+function _renderPrintPreview() {
+  const pane = document.getElementById('print-preview-pane');
+  if (!pane) return;
+  pane.innerHTML = '';
+  const note = (txt) => {
+    const d = document.createElement('div');
+    d.style.cssText = 'color:var(--muted); font-size:12px; padding:24px;';
+    d.textContent = txt; pane.appendChild(d);
+  };
+  if (!pageImages || !pageImages.length) return note('Preview unavailable — you can still print the document.');
+  const mono = document.getElementById('print-color')?.value === 'false';
+  const nup  = Math.max(1, parseInt(document.getElementById('print-nup')?.value, 10) || 1);
+  const pages = _selectedPageIndices();
+  if (!pages.length) return note('No pages in that range.');
+  const monoCss = mono ? 'filter:grayscale(1);' : '';
+  if (nup === 1) {
+    for (const i of pages) {
+      const img = document.createElement('img');
+      img.src = pageImages[i]; img.alt = `Page ${i + 1}`;
+      img.style.cssText = 'max-width:100%; box-shadow:0 2px 10px rgba(0,0,0,.2); background:#fff;' + monoCss;
+      pane.appendChild(img);
+    }
+    return;
+  }
+  // N-up: group pages into page-shaped "sheets", each a grid in reading order.
+  const cols = Math.ceil(Math.sqrt(nup));
+  for (let s = 0; s < pages.length; s += nup) {
+    const sheet = document.createElement('div');
+    sheet.style.cssText = 'width:100%; max-width:100%; box-sizing:border-box; background:#fff; '
+      + 'box-shadow:0 2px 10px rgba(0,0,0,.2); padding:6px; display:grid; gap:6px; '
+      + `grid-template-columns:repeat(${cols},1fr);`;
+    for (const i of pages.slice(s, s + nup)) {
+      const img = document.createElement('img');
+      img.src = pageImages[i]; img.alt = `Page ${i + 1}`;
+      img.style.cssText = 'width:100%; height:auto; display:block; background:#fff;' + monoCss;
+      sheet.appendChild(img);
+    }
+    pane.appendChild(sheet);
+  }
+}
+
 const _printModal = document.getElementById('print-modal');
 function _closePrintModal() { if (_printModal) _printModal.style.display = 'none'; }
 
@@ -1476,24 +1534,8 @@ async function _openPrintModal() {
   if (!currentDoc?.id || !_printModal) return;
   const msg = document.getElementById('print-modal-msg');
   if (msg) msg.textContent = '';
-  // Preview pane: the page images we already rendered for this doc.
-  const pane = document.getElementById('print-preview-pane');
-  if (pane) {
-    pane.innerHTML = '';
-    if (pageImages && pageImages.length) {
-      pageImages.forEach((src, i) => {
-        const img = document.createElement('img');
-        img.src = src; img.alt = `Page ${i + 1}`;
-        img.style.cssText = 'max-width:100%; box-shadow:0 2px 10px rgba(0,0,0,.2); background:#fff;';
-        pane.appendChild(img);
-      });
-    } else {
-      const d = document.createElement('div');
-      d.style.cssText = 'color:var(--muted); font-size:12px; padding:24px;';
-      d.textContent = 'Preview unavailable — you can still print the document.';
-      pane.appendChild(d);
-    }
-  }
+  // Preview pane — reflects the current settings (mono / range / N-up).
+  _renderPrintPreview();
   // Printer list.
   const sel = document.getElementById('print-printer');
   if (sel) {
@@ -1558,7 +1600,12 @@ document.getElementById('print-modal-dialog')?.addEventListener('click', () => _
 document.getElementById('print-pages-mode')?.addEventListener('change', (e) => {
   const r = document.getElementById('print-pages-range');
   if (r) r.style.display = e.target.value === 'range' ? '' : 'none';
+  _renderPrintPreview();   // All ⇄ Range changes which pages show
 });
+// Live-update the preview as the visual settings change (mono / range text / N-up).
+document.getElementById('print-color')?.addEventListener('change', _renderPrintPreview);
+document.getElementById('print-nup')?.addEventListener('change', _renderPrintPreview);
+document.getElementById('print-pages-range')?.addEventListener('input', _renderPrintPreview);
 _printModal?.addEventListener('click', (e) => { if (e.target === _printModal) _closePrintModal(); });
 
 document.getElementById('btn-deskew')?.addEventListener('click', toggleDeskew);

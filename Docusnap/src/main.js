@@ -49,6 +49,11 @@ app.setName('ScanFinder');
 // (If reclaiming GPU acceleration is ever wanted, try the narrower
 //  commandLine.appendSwitch('disable-gpu-compositing') instead and re-test.)
 app.disableHardwareAcceleration();
+// NOTE: `disable-print-preview` was TRIED 2026-07-18 to get the native Windows print dialog
+// out of webContents.print({silent:false}) — it did NOT reroute the programmatic print path
+// on Electron 31 (still Chromium's stubbed preview WebUI, physically verified). There is no
+// working way to raise the classic native Windows print dialog from webContents.print; do
+// not re-add the switch expecting it to.
 
 // Windows toast attribution: without an explicit AppUserModelID, notifications are
 // labelled "Electron". Match the installer's shortcut AUMID (build.appId in
