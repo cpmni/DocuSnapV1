@@ -45,7 +45,7 @@ DISTRIBUTION & VERIFICATION NOTES
   the full text and are incorporated by reference (see section 3).
 
 Applies to product version: ScanFinder 2.0.0 (core) / 1.0.2 (search client).
-Last reviewed: 2026-07-08.
+Last reviewed: 2026-07-18.
 
 --------------------------------------------------------------------------------
 1. COMPONENT INVENTORY
@@ -128,7 +128,7 @@ Node.js components — production dependency tree (55)
   which                           2.0.2         ISC
   wrappy                          1.0.2         ISC
 
-Python components — bundled interpreter, vendor/python (22)
+Python components — bundled interpreter, vendor/python (24)
   certifi                         2026.6.17     MPL-2.0
   charset_normalizer              3.4.7         MIT
   colorama                        0.4.6         BSD
@@ -148,9 +148,11 @@ Python components — bundled interpreter, vendor/python (22)
   rapidfuzz                       3.14.5        MIT
   requests                        2.34.2        Apache-2.0
   scipy                           1.18.0        BSD
+  segno                           1.6.6         BSD
   six                             1.17.0        MIT
   tqdm                            4.68.3        MPL-2.0 AND MIT
   urllib3                         2.7.0         MIT
+  zxing_cpp                       3.1.0         Apache-2.0
 
 User-interface fonts (self-hosted asset files, src/windows/shared/fonts)
   IBM Plex Sans / IBM Plex Mono   SIL Open Font License 1.1 (c) 2017 IBM Corp.

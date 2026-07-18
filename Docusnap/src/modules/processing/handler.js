@@ -9,6 +9,7 @@ const os   = require('os');
 const path = require('path');
 const fs   = require('fs');
 const diaglog = require('../diaglog');
+const { buildSegmentArgs, buildSplitPlan } = require('./split_plan');
 
 // Coerce the stored processing_mode to a value the backend accepts. A stale/legacy value
 // (e.g. an old "light", or one from a restored settings backup) must never reach
@@ -694,7 +695,7 @@ function register(ctx) {
     proc.on('error', () => done(null));
   });
 
-  async function _separateBatchDocuments(folderPath, templatesFile, log, onPhase, parallelism) {
+  async function _separateBatchDocuments(folderPath, templatesFile, log, onPhase, parallelism, slipsOn) {
     let pdfs = [];
     try {
       pdfs = fs.readdirSync(folderPath, { withFileTypes: true })
@@ -726,20 +727,36 @@ function register(ctx) {
         const name = pdfs[i];
         const filePath = path.join(folderPath, name);
         const det = await runPyJson(segScript,
-          ['--file', filePath, '--templates-file', templatesFile, '--tesseract', tesseractPath()], env);
+          buildSegmentArgs({ filePath, templatesFile, tesseract: tesseractPath(), slips: slipsOn }), env);
         done += 1;
         onPhase?.(`Preparing ${done}/${pdfs.length}…`);
         if (_cancelRequested) return;
-        const segments = det && det.success && Array.isArray(det.segments) ? det.segments : null;
-        if (!segments || segments.length < 2) continue;   // one document → leave it untouched
+        // Decision logic (incl. the Filing-Slips exclusion/rewrite rules) lives in the
+        // pure split_plan.js so it is pinned by test_split_plan.js.
+        const plan = buildSplitPlan(det);
+        if (plan.action === 'skip') continue;   // one document, no sheets → leave it untouched
 
-        // 0-based inclusive [start,end] → pdf_splitter's 1-based "a-b,c,…".
-        const ranges = segments.map(([s, e]) => (s === e ? `${s + 1}` : `${s + 1}-${e + 1}`)).join(',');
+        if (plan.action === 'consume') {
+          // The file is ONLY separator sheets — nothing to import. Keep it recoverable.
+          try {
+            const keepDir = path.join(folderPath, SEPARATED_DIR);
+            fs.mkdirSync(keepDir, { recursive: true });
+            fs.renameSync(filePath, path.join(keepDir, name));
+            log?.(`${name} contained only separator sheets — nothing to import (kept in ${SEPARATED_DIR})`);
+          } catch {
+            // Not movable → it imports as a normal (junk) doc and lands in Review — visible, never silent.
+            log?.(`${name} contains only separator sheets but could not be set aside — left in place`, 'warn');
+          }
+          continue;
+        }
+
+        // plan.action === 'split' — ranges already EXCLUDE separator-sheet pages; with
+        // sheets present ONE output is legal (the REWRITE case: doc + trailing sheet).
         const split  = await runPyJson(splitScript,
-          ['--file', filePath, '--ranges', ranges, '--outdir', folderPath], env);
+          ['--file', filePath, '--ranges', plan.ranges, '--outdir', folderPath], env);
         const made   = (split && split.success && Array.isArray(split.files))
           ? split.files.filter(f => fs.existsSync(f)) : [];
-        if (made.length < 2) continue;   // splitter failed → leave the original as one doc
+        if (made.length < plan.minFiles) continue;   // splitter failed → leave the original as one doc
 
         // Move the original OUT of the (non-recursive) scan so it isn't ALSO processed,
         // while keeping it recoverable.
@@ -755,7 +772,11 @@ function register(ctx) {
           continue;
         }
         separated += 1;
-        log?.(`Detected ${made.length} documents in ${name} — separated`);
+        if (plan.separators) {
+          log?.(`${name} — ${plan.separators} separator sheet(s) found · ${made.length} document(s) imported · sheets removed · original kept safe`);
+        } else {
+          log?.(`Detected ${made.length} documents in ${name} — separated`);
+        }
       }
     }
     await Promise.all(Array.from({ length: Math.min(P, pdfs.length) }, worker));
@@ -921,12 +942,22 @@ function register(ctx) {
 
     // ── Auto document separation (Stage 1) ── runs BEFORE the worker set is built, so
     // both the single-worker (scans the folder) and multi-worker (enumerates it) paths
-    // pick up the per-document segments. Gated by a setting (default on); fail-safe, so a
-    // detector/splitter failure just leaves the folder unchanged. See _separateBatchDocuments.
-    if (learning.getSetting(db, 'auto_separate_enabled', 'true') === 'true') {
+    // pick up the per-document segments. Fail-safe: a detector/splitter failure just
+    // leaves the folder unchanged. See _separateBatchDocuments. TWO independent arms
+    // (Oracle C2, docs/designs/FILING_SLIPS_2026-07-18.md): the template-signature
+    // heuristic needs `auto_separate_enabled` (default on) AND taught templates; the
+    // Filing-Slips separator-sheet scan (`filing_slips_enabled`, default OFF, env
+    // FILING_SLIPS=0 hard-kill) is explicit operator intent and must work on a
+    // zero-template install with the heuristic toggle off — it never re-arms template
+    // segmentation (its templates-file stays gated on the heuristic arm).
+    {
       const tIdx = trainingArgs.indexOf('--templates-file');
-      const templatesFile = tIdx >= 0 ? trainingArgs[tIdx + 1] : null;
-      if (templatesFile) {
+      const templatesFileRaw = tIdx >= 0 ? trainingArgs[tIdx + 1] : null;
+      const autoSep = learning.getSetting(db, 'auto_separate_enabled', 'true') === 'true';
+      const slipsOn = process.env.FILING_SLIPS !== '0'
+        && learning.getSetting(db, 'filing_slips_enabled', 'false') === 'true';
+      const templatesFile = (autoSep && templatesFileRaw) ? templatesFileRaw : null;
+      if (templatesFile || slipsOn) {
         // Run detection concurrently (each PDF is independent) so the pre-pass doesn't
         // serialise a Python cold-start per document. Cap at the CPU core count (≤6).
         const sepP = Math.max(1, Math.min(os.cpus().length || 1, 6));
@@ -934,7 +965,7 @@ function register(ctx) {
           const n = await _separateBatchDocuments(folderPath, templatesFile,
             (text, level) => mirror(event.sender, 'process-progress', { type: 'log', text, level: level || '' }),
             (text) => mirror(event.sender, 'process-progress', { type: 'log', text, phase: true }),
-            sepP);
+            sepP, slipsOn);
           if (n) logger?.log(`[separation] separated ${n} multi-document PDF(s) before processing`);
         } catch (e) {
           logger?.warn(`[separation] pre-pass failed (continuing without split): ${e.message}`);
