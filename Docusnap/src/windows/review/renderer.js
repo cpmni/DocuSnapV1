@@ -1579,18 +1579,36 @@ async function _doModalPrint(silent) {
   const colorVal = document.getElementById('print-color')?.value;
   const color = colorVal === '' ? undefined : (colorVal === 'true');
   const pagesPerSheet = parseInt(document.getElementById('print-nup')?.value, 10) || 1;
+  const payload = { docId: currentDoc.id, source: 'original', silent, deviceName, copies, pageRanges, duplexMode, color, pagesPerSheet };
+  const reenable = () => { if (go) go.disabled = false; if (dlg) dlg.disabled = false; };
+
+  if (!silent) {
+    // The full driver dialog is a SEPARATE OS window. Electron fires the print callback on a
+    // SUCCESSFUL print but NOT on a cancel — so awaiting it would leave the modal stuck on
+    // "Opening…" with disabled buttons forever after the user cancels (owner-reported). Don't
+    // lock: re-enable immediately so the modal stays usable, and report only a successful print
+    // (asynchronously). A cancel simply leaves the still-usable modal as-is.
+    reenable();
+    if (msg) msg.textContent = 'Your printer’s dialog is open.';
+    window.docusnap.printDocument(payload).then((res) => {
+      if (res && res.ok) { _closePrintModal(); showToast?.('Sent to your printer.'); }
+      else if (res && res.reason === 'disabled') { if (msg) msg.textContent = 'Printing is turned off in Settings.'; }
+      else if (res && res.reason === 'file_missing') { if (msg) msg.textContent = "Couldn't find this document's file."; }
+      // cancelled / no callback: nothing to do — the modal is already usable.
+    }).catch(() => {});
+    return;
+  }
+
+  // Silent quick-print: the callback fires reliably (success/failure), so await + lock is fine.
   try {
-    const res = await window.docusnap.printDocument({
-      docId: currentDoc.id, source: 'original', silent,
-      deviceName, copies, pageRanges, duplexMode, color, pagesPerSheet,
-    });
+    const res = await window.docusnap.printDocument(payload);
     if (res && res.ok) { _closePrintModal(); showToast?.('Sent to your printer.'); }
     else if (res && res.outcome === 'cancelled') { if (msg) msg.textContent = 'Cancelled.'; }
     else if (res && res.reason === 'file_missing') { if (msg) msg.textContent = "Couldn't find this document's file."; }
     else if (res && res.reason === 'disabled') { if (msg) msg.textContent = 'Printing is turned off in Settings.'; }
     else { if (msg) msg.textContent = "Couldn't print this document."; }
   } catch { if (msg) msg.textContent = "Couldn't print this document."; }
-  if (go) go.disabled = false; if (dlg) dlg.disabled = false;
+  reenable();
 }
 
 document.getElementById('btn-print-doc')?.addEventListener('click', _openPrintModal);
