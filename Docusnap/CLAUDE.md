@@ -17,8 +17,131 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/features.md` — first-run wizard, welcome tour, settings backup, Learning Repair, teaching wizard, dev inspector.
 - `docs/history.md` — resolved QA/audit findings + build-stage history (Settings/Review/Search/Stage-7 rebuilds).
 
-## Recent session changes (2026-07-09 → 07-17) — durable mechanisms now in the code
-### 2026-07-16 → 07-17 (branch `feat/reprocess-throughput-autostraighten`, 5 commits UNPUSHED + `52d863e` pushed)
+## Recent session changes (2026-07-09 → 07-18) — durable mechanisms now in the code
+### 2026-07-18 (branch `feat/reprocess-throughput-autostraighten`, ALL PUSHED through `bea1028`; installer `r20260718-0818-bea1028`)
+**READ FIRST: `HANDOVER_2026-07-18_EVENING.md` (the Filing Slips day), then `HANDOVER_2026-07-18.md` (morning, template convergence).** Three workstreams. **(1) TEMPLATE FRAGMENTATION FIX (M#19/N#20) BUILT +
+COMMITTED (unpushed), default OFF** — branding-fingerprint template convergence past the panel (gary/Phillip/
+reggie/eric) + Oracle, control-test-first. `7d051f3` = **M2** (a drifted-logo taught confirm now REUSES its
+branding-matched same-type template instead of spawning a duplicate; new shared `database/modules/
+branding_fingerprint.js` = distinctive-token SYMMETRIC overlap; `templates.findByBrandingFingerprint` ≥3 shared
+tokens/ratio≥0.80/same-slug; kill switch `TEMPLATE_REUSE_BY_BRANDING`, **default OFF ⇒ byte-identical**) + **N**
+(Template Manager shows a LIVE confirmed-doc COUNT via `templates.getAllWithLiveCounts`/`confirmedDocCount`;
+`getAll` — the pipeline reader — untouched; fixes "confirmed 0×"). `02fc10c` = **M3** (`database/modules/
+templateMerge.js` `findMergeCandidates` + landmark-constellation STRUCTURE gate + `planBackfill`/`applyBackfill`;
+admin "Suggested cleanups" UI in Settings→Templates; `merge-template-cluster` IPC takes a WAL-safe `db.backup()`
+BEFORE `templates.mergeInto`). **M1 folded into M3's backfill.** Corpus OFF byte-identical (76 docs, M=0/M_type=0);
+unit batteries (`test_template_reuse`/`_confirmed_count`/`_merge_plan`) + `db.backup()` smoke all green; a
+read-only live-DB test confirmed N + the 6 real strays M3 would re-link. **⚠ OPEN (Oracle-first):** on the real
+DB the merge one-click WON'T fire — the duplicates have NO landmarks → `group_or_review`; and the 4 PO fragments
+don't cluster (template-level fingerprints diverge <0.60). Proposed refinement: no-geometry (no landmarks AND no
+mappings) ⇒ safe-to-merge + lower/seed the cluster threshold. Spec + Oracle conditions:
+`docs/designs/TEMPLATE_CONVERGENCE_2026-07-17.md`. **(2) SECURITY AUDIT → living backlog** (both gitignored /
+LOCAL-ONLY — exploit detail): `SECURITY_BACKLOG.md` (SEC-01…20, priority-ordered, one-by-one) + `SECURITY_AUDIT_
+2026-07-17.md`. Headline: **SEC-01** admin console no-lockout + 2FA-off (HIGH, only remote); **SEC-02** IONOS
+signing key has no deny backstop — verify GET `/keys/*` is 403/404; **SEC-03** `/v1` read-endpoint authz;
+**SEC-04** core↔client TOFU + dead pairing gate; **SEC-05** offline trial extension; client-side licensing tamper
+= LOW (crown jewel = the SERVER signing key). Owner directive (memory `feedback-security-vigilance`): work the
+backlog one-by-one + **proactively flag security holes any new feature could expose**.
+**(3) FILING SLIPS ("Separator sheets") — DESIGNED (Oracle-signed) + SLICE 1 BUILT** — printable QR separator
+sheets (90mm ECC-H `SFSEP-%04d` + corner minis) that split a scanned batch at each sheet AND remove the sheet
+page; QR decode IS the decision, no-decode ⇒ no split (fail-safe). Panel oscar/gary/eric/barry (NEW advisor
+`agents/barry-the-brainstormer.md`) → **Oracle SIGN OFF WITH CONDITIONS C1–C6**; owner answered all 9 open
+questions "as recommended" (§10 of the spec). **SLICE 1 (detector + pipeline) BUILT, default OFF** — setting
+`filing_slips_enabled` (default 'false') + env `FILING_SLIPS=0` hard-kill: new `ocr/slip_detect.py`
+(150 DPI render + zxingcpp decode, anchored `^SFSEP-\d{1,6}$`, whole-file-or-abort, 500-page cap) +
+`segment_docs.py --slips` (slips-first, slips-present ⇒ template segmentation SKIPPED = PIN #2, abort recorded
+in reasons) + pure `src/modules/processing/split_plan.js` (`buildSegmentArgs` C1 + `buildSplitPlan`: 1-segment+
+separator = REWRITE minFiles=1 = PIN #1 — never file a sheet inside a doc; only-slips ⇒ consume; C4 abort
+never half-applies) + handler C2 DECOUPLED gate `(auto_separate && templatesFile) || slipsOn` (slips work on
+zero-template installs, never re-arm template separation). Deps zxing-cpp (Apache-2.0) + segno (BSD-3) vendored
++ gated (check-vendor REQUIRED, BUILD.txt, notices regen — C5 same-commit). Tests all green incl. C1 real-spawn
+E2E (`test_slip_e2e.js`), 31-check python battery, embeddable `-P` pin; PIN #1/#2 PROVEN to fail on reversion
+(C6). Corpus: baseline `stress_test/out/filing_slips_BASELINE.md` (76 docs M=0/M_type=0) captured pre-code;
+OFF-run identical. **SLICE 2 (generation + UI) ALSO BUILT**: `python_backend/filing_slips.py` (PIL+segno,
+200 DPI A4 raster `resolution=200.0` load-bearing, duplex pairs, 90mm ECC-H QR + 2×35mm corner minis, frozen-
+contract artwork) + `generate-filing-slips` IPC (admin/edit, clamp via pure `slip_pack.js`
+clampSlipCount/nextSlipRange/slipPackName — counter `filing_slip_next_number` advances only on success,
+restart-at-1 wrap, writes `userData/filing-slips/`, keeps newest 5 packs, 30s kill-timer OUTSIDE the batch
+registry) + preload `generateFilingSlips` + Settings→Processing "Recognise separator sheets" toggle +
+count+"Print separator sheets…" row + **C3 watch-folder warning** (toggle row + success panel when
+`watch_folder_enabled`) + Import-view `#btn-print-slips` (inline msg, no native alert) + `slip_split`
+process-trace event + Help section (`help/importing.html#separator-sheets`). Tests `test_filing_slips.py`
+(ROUND-TRIP: every generated page decodes via the real detector, exact payload sequence; A4 geometry; -P) +
+`test_slip_pack.js` green; div-balance checked. **LIVE-TESTED 2026-07-18: two bugs found+fixed during owner
+testing** — `77e674e` IPC ReferenceError (`learning` is per-function-required in processing/handler.js, a
+module-load smoke can't catch call-time references) + `bea1028` `userData/filing-slips` added to
+`_allowedOpenRoots` (the F-06 open-file guard silently blocked "Open to print"). **SYNTHETIC PILOT PASSED on
+the live app**: 3 composed batches (10-doc/9-sheet incl. rotated sheets; payment-QR control; defaced-sheet
+control) → 13 docs to Review exactly as predicted, sheets removed, QR firewall held, fail-safe merged. Also
+`a14bd08` Settings HIERARCHY RESTYLE (barry+eric consult, owner-picked): `.section-title` → small-caps accent
+eyebrow + rule, labels weight 500, subs 65ch cap — settings-local style block ONLY (license window carries its
+own class copies — do NOT move to theme.css). Installer `dist\ScanFinder Setup 2.0.0-r20260718-0818-bea1028.exe`,
+branch PUSHED through `bea1028`. **SlipTest CLEANUP done** (13 test docs soft-deleted; ALL fake-supplier
+learning purged — 17 hints + 5 logo fingerprints + 16 anchors + 4 templates, zero residue; lesson: 6 casual
+confirms of fictional docs planted 42 learning rows). NEXT = real MFD pilot (scan degradation, the unproven
+axis), then slice 5 watch parity BEFORE any default-ON flip (Oracle C3). Full session detail + honest
+verification ledger: `HANDOVER_2026-07-18_EVENING.md`.
+**(4) GENERIC DOCUMENT TYPE + AUTO-TITLE — DESIGNED (Oracle-signed C1–C6), NOT BUILT** (`da3fab0`, pushed,
+post-handover): "General Document" fallback preset assigned at the Electron INSERT seam ONLY on detection-None,
+paired same-commit with an unconditional `trust.js` `generic-type` auto-file refusal (**the whole wall at 100 —
+the at-100 gate is GATE-FREE by default**, `strict_100_autofile` opt-in); Date stays required, satisfied by a
+visible SCAN-DATE PREFILL; pure `title_pick.py` Auto-Title (empty-beats-junk pinned) as an extractions row,
+generic-only v1; 'General' folder for this slug only; `{title}` token registered before any UI mentions it.
+Oracle caught 2 panel-missed seams: reprocess = a SECOND insert seam (`applyReprocessResult`), and free-text
+seeding would EAT the title via the printed "Title:" caption. Owner answered all 8 questions "as recommended".
+**ALL SLICES 1-6 BUILT + PUSHED same day** (`6d54b2f` preset+refusal+template-skip · `20c0963` fallback both
+seams + Review chip · `6e05803` scan-date prefill + glance aids + 'General' folder + Settings toggles ·
+`59822d6` Auto-Title engine `extraction/title_pick.py` (empty-beats-junk pinned; C2 seeding + C3 hints
+exclusions; AUTO_TITLE env via `auto_title_enabled`) · `4a4abe4` {title} token + NEW DEFAULT filename pattern
+`{docType}.{date}.{ref}.{title}` (byte-identical for typed docs, pinned)). Also `2deed1b` = the 07-17 Option-A
+duplicate-filing core committed as its own change (still unwired). Feature DEFAULT OFF: Settings→Processing→
+"Unrecognised documents" (fallback toggle auto-creates the preset; Auto-Title sub-toggle). Corpus: slice-4 OFF
+AND ON runs byte-identical to `stress_test/out/generic_doctype_BASELINE.md`; real-spawn seam test green.
+REMAINING: owner live smoke (toggles ON → arbitrary letter → General Document + title + scan-date prefill →
+Ctrl+Enter → `General/`); known minor gap: single-doc reprocess doesn't thread AUTO_TITLE (titles survive via
+the merge carry). Spec: `docs/designs/GENERIC_DOCTYPE_2026-07-18.md`.
+**(5) WORKFLOW SUITE + DOCUMENT PRINT — DESIGNED (Oracle-signed C1–C8), NOT BUILT; BUILD HELD** (`docs/designs/
+WORKFLOW_SUITE_2026-07-18.md`). Separately-licensed approval + routing between LAN users + a driver-honoring
+Document Print feature (owner asked for both). Barry-chaired panel (barry/eric/gary/security) + 4-beat web
+research + Oracle SIGN OFF WITH CONDITIONS. **KEY: a complete single-hop approval MAILBOX ALREADY EXISTS** wired
+end-to-end (document_routes + CAS + editGuard lock + PDF stamping + audit + workflow seat pool + core Search
+mailbox AND detached client mailbox) held dark behind `WORKFLOW_FEATURE_ENABLED=false` (entitlementService.js:37);
+entitlement pre-built for a 2nd paid module (signed token {core,search,workflow} features map). Suite COMPLETES
+it. **Slice 0 = AUTHZ PREREQUISITE**: fix SEC-03 + desktop twins (6 by-id read holes) via ONE fail-closed
+`canAccessDocument` (new src/services/accessService.js), `ACCESS_GATE_ENABLED` default ON — routing on unfixed
+authz is a REGRESSION. Flagship = amount-threshold routing off the extracted total (Oracle C4 trust-gated).
+Remove half-wired `paid` (C1). Print = `webContents.print({silent:false})` → OS/driver dialog (honors the
+customer's printer driver, NOT a fixed Windows path — memory `feedback_print_driver_audit`), every print audited,
+original-vs-stamped, `printing_enabled` default OFF; Print-Slice 1 (original) has no workflow dependency.
+Owner answered all 8 decisions "as recommended". **SLICE 0 (authz) BUILT+PUSHED `f8299d4`** — SEC-03 fixed:
+`src/services/accessService.js` `canAccessDocument` at all 6 by-id seams + desktop path-trust fix; kill
+`ACCESS_GATE_ENABLED` default ON; `test_access_service.js` 28/28; corpus byte-identical. **PRINT: Print-Slice 1
+`b9e8c03` + Print Preview `252c058` BUILT** (`src/modules/print/handler.js`; driver-honoring `webContents.print`,
+our own preview modal since Electron omits Chromium's; kill `printing_enabled` default OFF). Workflow engine
+Slices 1-6 DESIGNED not built (Oracle C1–C8). **READ FIRST next session: `HANDOVER_2026-07-18_NIGHT.md`.** Memory
+`project_workflow_suite_design`, `feedback_print_driver_audit`.
+Full spec: `docs/designs/FILING_SLIPS_2026-07-18.md`; product origin
+`docs/brainstorms/BARRY_2026-07-18_home-edition_generic-docs_separator-sheets.md`.
+### 2026-07-17 EVENING (branch `feat/reprocess-throughput-autostraighten`, 3 commits UNPUSHED + Option-A uncommitted)
+**READ FIRST: `HANDOVER_2026-07-17_EVENING.md`.** A testing marathon on the built app. Committed-unpushed:
+`da4a5ff` template rescue no longer trusts the unstable logo (kill `RESCUE_ENFORCE_LOGO_BAND`, half-fix — MATCH
+side only); `ba667b6` wizard Speed→Fast default + Review new-type modal focus repair; `1f30946` teach
+label-picker word-ratio tiebreak (kill `anchorLabel.setRatioTiebreak`). Uncommitted: Option-A duplicate-filing
+core in `filename_pattern.js` (`resolveDuplicate`, default byte-identical — NOT wired). Pushed earlier this
+session: `25469e2`/`7298b10` single-doc reprocess parallelism B+C (default OFF, `DS_OCR_PARALLEL_FULLPAGE`/
+`DS_OCR_PARALLEL_FIELDS`, Settings `ocr_parallel_reprocess_enabled` — owner load-test pending). Installer
+`dist\ScanFinder Setup 2.0.0-r20260717-1415-7298b10.exe`.
+- **⚠ ROOT CAUSE DIAGNOSED (not fixed) — the "no template match" family = MEASURED logo unreliability.**
+  On scans the coarse 64-bit AND 256-bit logo hash can't separate suppliers (same logo drifts up to 36; ranges
+  overlap). The KEYWORD BRANDING FINGERPRINT separates cleanly (0% cross-supplier false-match @0.80). Verified on
+  the dev DB: Copperfield has 3 invoice + 4 PO + 1 sales templates (fragmented); `sales_order_05` branding overlap
+  1.00 vs template 9 but logo dist 22 (a matching one = 1.00 / dist 6). **M (#19)** = `_upsertTemplate` reuse is
+  still logo-gated (7–13 band) → spawns duplicate templates OR confirms template-less → fragmentation → new docs
+  match none. Fix = reuse-by-branding-fingerprint + grow one logo set + merge duplicates (advisor+Oracle next).
+  **N (#20)** = `confirmed_count` never incremented on confirm (roster shows 0×; may also block trust graduation
+  — verify `trust.js`). Both queued; `da4a5ff` only did the MATCH half.
+
+### 2026-07-16 → 07-17 (branch `feat/reprocess-throughput-autostraighten`, all PUSHED through `7298b10`)
 **READ FIRST: `HANDOVER_2026-07-17.md`** (also `HANDOVER_2026-07-16.md` for the prior batch). Two features,
 control-test-first (corpus baseline captured BEFORE any code; every stage kill-switched; OFF ⇒ byte-identical
 to baseline M=1/M_type=0). **Core installer BUILT: `dist\ScanFinder Setup 2.0.0-r20260717-0754-e2a197e.exe`.**
@@ -670,6 +793,14 @@ spawn starts cold) and relay their findings to the user.
   report/diagnostic/plan, translates to plain English, splits fact vs assumption,
   flags risks, gives ranked options + a recommendation. Use after producing a
   report when the user wants options before implementation.
+- **barry** (`agents/barry-the-brainstormer.md`, 2026-07-18) — elite PRODUCT
+  BRAINSTORMER: high-value feature ideation for home/personal/small-office document
+  management. Thinks in full user flows (capture→review→file→retrieve), friction,
+  trust and segment fit; labels ideas L1 polish → L4 market-first bet + priority.
+  Carries a verified product-grounding block (full-text search live, auto-separation
+  exists, ref-less types first-class). Brainstorm-stage only — his output still goes
+  through the normal advisor+Oracle gate before any build. First output:
+  `docs/brainstorms/BARRY_2026-07-18_home-edition_generic-docs_separator-sheets.md`.
 - **gary** (`agents/gary.md`, 2026-07-09) — Python engineering analyst: root-cause
   analysis (FACT vs ASSUMPTION), smallest-correct testable fix DESIGN (with backward-compat +
   data-migration + invariant notes), and TEST STRATEGY (unit + the realdoc_regression M=0/accuracy
