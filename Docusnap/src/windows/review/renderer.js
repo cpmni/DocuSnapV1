@@ -5074,6 +5074,7 @@ async function runReprocessBatch(docs, scopeLabel) {
     else if (msg.type === 'log')   console.log('[Reprocess]', msg.text);
   });
 
+  let lockedSkipped = 0;   // Slice 1 Stage E: docs skipped because they sit in an approval workflow
   try {
     const res = await window.docusnap.reprocessBatch(
       docs.map(d => ({ docId: d.id, folderPath: d.folder_path, filename: d.original_filename })),
@@ -5081,6 +5082,7 @@ async function runReprocessBatch(docs, scopeLabel) {
     );
     done   = (res && res.done)   || 0;
     failed = (res && res.failed) || 0;
+    lockedSkipped = (res && res.lockedSkipped) || 0;
     // Refused because a single reprocess (or another batch) is already running — clear the
     // just-shown banner and explain, rather than leaving "Reprocessing 0 of N…" stuck.
     if (res && res.success === false) {
@@ -5120,10 +5122,13 @@ async function runReprocessBatch(docs, scopeLabel) {
   }
 
   const stopped = _batchStopped;
-  const summary = stopped
+  // Slice 1 Stage E: locked docs are skipped (never silently rewritten under an approver) —
+  // say so, or the skip reads as a miscount.
+  const lockedText = lockedSkipped ? ` · ${lockedSkipped} skipped (in an approval workflow)` : '';
+  const summary = (stopped
     ? `Stopped — ${done} reprocessed`
     : (failed ? `Completed — ${done} OK, ${failed} failed`
-              : `Completed ${done} of ${total}`);
+              : `Completed ${done} of ${total}`)) + lockedText;
   banner.classList.add('done');
   banner.textContent = summary;
   setTimeout(() => {
@@ -5131,10 +5136,10 @@ async function runReprocessBatch(docs, scopeLabel) {
   }, 4000);
 
   showToast(
-    stopped ? `Stopped — ${done} reprocessed, ${queue.length} remaining`
-            : (failed ? `Reprocessed ${done} — ${failed} failed`
-                      : `Reprocessed ${done} document${done !== 1 ? 's' : ''}`),
-    (failed || stopped) ? 'warn' : 'ok'
+    (stopped ? `Stopped — ${done} reprocessed, ${queue.length} remaining`
+             : (failed ? `Reprocessed ${done} — ${failed} failed`
+                       : `Reprocessed ${done} document${done !== 1 ? 's' : ''}`)) + lockedText,
+    (failed || stopped || lockedSkipped) ? 'warn' : 'ok'
   );
 }
 

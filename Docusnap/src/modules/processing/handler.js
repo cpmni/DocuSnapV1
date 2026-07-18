@@ -1244,7 +1244,7 @@ function register(ctx) {
   }
 
   ipcMain.handle('reprocess-document', async (event, { docId, folderPath, filename, enhanceParams, deskewOnce, forcedTypeSlug }) => {
-    requireRole('admin', 'edit');
+    const sess    = requireRole('admin', 'edit');
     const db      = getDb();
     // Multi-point licensing enforcement (F-01): reprocess re-runs the extraction
     // pipeline — same network-free cached-license re-check as bulk import.
@@ -1255,6 +1255,20 @@ function register(ctx) {
     // the same document, which presents as the app freezing.
     if (_anyProcessingBusy()) {
       return { success: false, busy: true, error: 'A reprocess is already running — please wait for it to finish.' };
+    }
+    // WORKFLOW_LOCK (Slice 1 Stage E): a document under an OPEN approval route must not be
+    // rewritten beneath its approver — the same rule confirm/defer/delete already enforce
+    // (review/handler requireUnlocked). Admin may override, audited (the same seam). Sits
+    // BEFORE the success audit below so a refusal never records outcome 'success'. Inert
+    // wherever no routes exist (every current install — the feature is dark).
+    {
+      const guard = require('../../services/workflowService').editGuard(db, docId, sess.role);
+      if (!guard.ok) return { success: false, error: guard.error, code: guard.code };
+      if (guard.overridden) {
+        logAudit(db, { action: 'workflow_lock_overridden', action_category: 'workflow',
+          target_type: 'document', target_id: docId, document_id: docId, outcome: 'success',
+          metadata: { action: 'reprocess' } });
+      }
     }
     logAudit(db, { action: 'reprocess', target_type: 'document', target_id: docId, document_id: docId,
       outcome: 'success', metadata: { enhanced: !!enhanceParams } });
@@ -1541,8 +1555,17 @@ function register(ctx) {
     const manifest  = {};   // tmpName -> { known_template_id, known_doc_slug, enhance_params }
     const nameToDoc = {};   // tmpName -> { docId, filename, existing }
     const tmpNames  = [];
+    // WORKFLOW_LOCK (Slice 1 Stage E): SKIP-AND-REPORT, never abort — a locked doc is under
+    // an approver and must not be rewritten by a bulk pass (this is the second reprocess
+    // door; without it the batch silently sails past the single-doc guard). DELIBERATELY no
+    // admin auto-override here (PINNED in test_reprocess_lock.js): bulk mutation under an
+    // approver is exactly the class the lock exists for — the override stays a per-doc act
+    // via single-doc reprocess. Skipped count is surfaced in the summary.
+    const dbwfLock = require('../../../database/modules/workflow');
+    let lockedSkipped = 0;
     for (const d of docs) {
       try {
+        if (dbwfLock.hasActiveRoute(db, d.docId)) { lockedSkipped++; continue; }
         const row = db.prepare('SELECT working_path, template_id, ocr_text, status, confirmed_at, supplier_pin, supplier_name FROM documents WHERE id = ?').get(d.docId);
         const srcFile = (row && row.working_path && fs.existsSync(row.working_path))
           ? row.working_path
@@ -1595,7 +1618,7 @@ function register(ctx) {
     if (!tmpNames.length) {
       try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
       cleanupFiles(tempFiles);
-      return { success: true, done: 0, failed: 0 };
+      return { success: true, done: 0, failed: 0, lockedSkipped };
     }
 
     const manifestFile = writeTempJson('rbmanifest', manifest);
@@ -1679,7 +1702,7 @@ function register(ctx) {
       try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
       cleanupFiles([manifestFile, ...shardFiles, ...tempFiles]);
     }
-    return { success: true, done, failed };
+    return { success: true, done, failed, lockedSkipped };
   });
 
   // ── OCR region ──────────────────────────────────────────────────────────────
