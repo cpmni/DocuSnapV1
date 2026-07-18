@@ -1863,6 +1863,7 @@ function register(ctx) {
   ipcMain.handle('generate-filing-slips', async (_e, count) => {
     requireRole('admin', 'edit');
     const { app } = require('electron');
+    const learning = require('../../../database/modules/learning');   // per-function require, matching this file's convention
     const db = getDb();
     const n = clampSlipCount(count);
     const cur = parseInt(learning.getSetting(db, 'filing_slip_next_number', '1'), 10);
