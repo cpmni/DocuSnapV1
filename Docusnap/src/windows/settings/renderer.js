@@ -541,6 +541,31 @@ if (slipsToggle) slipsToggle.addEventListener('change', async () => {
   catch { /* non-fatal; reloads on next open */ }
   refreshSlipsWatchWarn();
 });
+// ── Generic Document fallback + Auto-Title (docs/designs/GENERIC_DOCTYPE_2026-07-18.md) ──
+// Defaults OFF (backend reads 'generic_fallback_enabled' / 'auto_title_enabled' with
+// 'false' defaults). Enabling the fallback AUTO-CREATES the "General Document" preset
+// first (transactional + idempotent via the existing add-doctype-presets IPC — owner Q5)
+// so the insert-seam mapping always has a type to land on.
+const genericToggle = document.getElementById('generic-fallback-toggle');
+const autoTitleToggle = document.getElementById('auto-title-toggle');
+async function loadGenericFallback() {
+  try {
+    if (genericToggle) genericToggle.checked = (await api.getSetting('generic_fallback_enabled')) === 'true';
+    if (autoTitleToggle) autoTitleToggle.checked = (await api.getSetting('auto_title_enabled')) === 'true';
+  } catch { /* defaults stay unchecked */ }
+}
+loadGenericFallback();
+if (genericToggle) genericToggle.addEventListener('change', async () => {
+  try {
+    if (genericToggle.checked) { try { await api.addDoctypePresets(['general_document']); } catch { /* already present */ } }
+    await api.setSetting('generic_fallback_enabled', genericToggle.checked ? 'true' : 'false');
+  } catch { /* non-fatal; reloads on next open */ }
+});
+if (autoTitleToggle) autoTitleToggle.addEventListener('change', async () => {
+  try { await api.setSetting('auto_title_enabled', autoTitleToggle.checked ? 'true' : 'false'); }
+  catch { /* non-fatal; reloads on next open */ }
+});
+
 if (slipsPrintBtn) slipsPrintBtn.addEventListener('click', async () => {
   slipsPrintBtn.disabled = true;
   if (slipsResult) { slipsResult.style.display = ''; slipsResult.textContent = 'Creating separator sheets…'; }

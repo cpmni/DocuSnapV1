@@ -103,7 +103,13 @@ async function commitDocument({
   // runs the same buildFilenameStem per level) and fall back to a neutral name when
   // it comes up empty.
   const supplierStem = buildFilenameStem(String(allValues['supplier_name'] || ''), {});
-  const supplierName = supplierStem || 'Unknown Company';
+  // Generic Document (docs/designs/GENERIC_DOCTYPE_2026-07-18.md §6): a blank issuer is
+  // DESIGNED for that type — it files under a calm 'General/' folder. Every OTHER type
+  // keeps the 'Unknown Company' failure signal byte-identical (PIN 6). supplier_name on
+  // the doc row stays NULL either way — folder substitution only, no phantom learning scope.
+  const fallbackCompany = (dtInfo && dtInfo.slug === require('../../../database/modules/document_types').GENERIC_SLUG)
+    ? 'General' : 'Unknown Company';
+  const supplierName = supplierStem || fallbackCompany;
 
   const dateObj = parseDate(rawDate);
   const ext     = path.extname(originalFilename).toLowerCase();

@@ -1903,6 +1903,7 @@ function renderFields(doc) {
   if (sub) sub.style.display = doc ? '' : 'none';
   renderExtractionStatus(doc);
   renderReviewReason(doc);
+  _renderDocSnippet(doc);
   if (!doc) { validateConfirm(); return; }
 
   const extMap = {};
@@ -1913,9 +1914,56 @@ function renderFields(doc) {
     const val = ext.display_value ?? ext.raw_value ?? '';
     appendFieldRow(scroll, key, val, ext.confidence ?? null, ext.validation_note || null, ext.corrected_to || null, ext.anchor_label || null, ext.extraction_method || null, ext.candidates || null, ext.suggested_supplier || null);
   }
+  _prefillGenericScanDate(doc, scroll);
   validateConfirm();
   updateAcknowledgeButton();
   updateTotalsVerifiedBadge();
+}
+
+// ── Generic Document glance aids (docs/designs/GENERIC_DOCTYPE_2026-07-18.md §4/§6) ────
+// Provenance strip + 2-line ocr_text snippet for generic/untyped docs — client-side only.
+function _renderDocSnippet(doc) {
+  const box = document.getElementById('doc-snippet');
+  if (!box) return;
+  const strip = box.querySelector('.snippet-strip');
+  const body  = box.querySelector('.snippet-text');
+  const generic = selectedTypeSlug === 'general_document';
+  const untyped = !selectedTypeSlug;
+  if (!doc || !(generic || untyped) || !doc.ocr_text) { box.hidden = true; return; }
+  if (strip) {
+    strip.hidden = !generic;
+    if (generic) strip.textContent = "ScanFinder didn't recognise this document, so it's set to file as a "
+      + 'General Document — change the type above if that\'s wrong.';
+  }
+  if (body) body.textContent = String(doc.ocr_text).replace(/\s+/g, ' ').trim().slice(0, 260);
+  box.hidden = false;
+}
+
+// Scan-date PREFILL (owner Q4: prefill-with-provenance): a General Document that read no
+// date gets the LOCAL import date pre-filled and recorded as a correction — it flows
+// through the normal confirm → normaliseDate path, zero new IPC. Review-time only, so it
+// is human-gated by construction (auto-file eligibility was decided at import). The
+// cosmetic UTC→local conversion is deliberate: an overnight off-by-one must be visible
+// and editable, never silent.
+function _prefillGenericScanDate(doc, scroll) {
+  if (selectedTypeSlug !== 'general_document' || !doc || !doc.processed_at) return;
+  const gdt = allDocTypes.find(t => t.slug === 'general_document');
+  const dateKey = (gdt && gdt.date_field_key) || 'date';
+  const inp = scroll.querySelector(`.field-input[data-key="${dateKey}"]`);
+  if (!inp || String(inp.value || '').trim()) return;
+  const d = new Date(String(doc.processed_at).replace(' ', 'T') + 'Z');
+  if (isNaN(d)) return;
+  const pad = (n) => String(n).padStart(2, '0');
+  inp.value = `${pad(d.getDate())}-${pad(d.getMonth() + 1)}-${d.getFullYear()}`;
+  corrections[dateKey] = { original_value: '', corrected_value: inp.value };
+  const row = inp.closest('.field-row');
+  if (row && !row.querySelector('.scan-date-note')) {
+    const note = document.createElement('div');
+    note.className = 'field-note scan-date-note';
+    note.textContent = 'Scan date — edit if the document shows its own date.';
+    Object.assign(note.style, { fontSize: '11px', color: 'var(--muted)', marginTop: '3px' });
+    row.appendChild(note);
+  }
 }
 
 // ── Per-field "position taught" dot ────────────────────────────────────────────
@@ -2556,7 +2604,13 @@ function validateConfirm() {
   // app's review-not-reject posture) — name the consequence and let the user file anyway.
   if (note) note.style.display = 'none';
   if (issuerNote) {
-    if (issuerKey) {
+    if (issuerKey && selectedTypeSlug === 'general_document') {
+      // Generic Document: a blank issuer is DESIGNED, not a failure — calm-informational.
+      issuerNote.textContent = 'No Document Issuer — that\'s fine for a General Document; it will be '
+        + 'filed under “General”. Add the sender above if you want the app to learn it.';
+      Object.assign(issuerNote.style, { display: '', color: 'var(--muted)', fontSize: '12px',
+        lineHeight: '1.4', padding: '6px 14px' });
+    } else if (issuerKey) {
       issuerNote.textContent = 'No Document Issuer yet — if you file now it will be saved under '
         + '“Unknown Company” and the app won’t learn this sender. Add the issuer above, or file anyway.';
       Object.assign(issuerNote.style, { display: '', color: 'var(--warn)', fontSize: '12px',
@@ -3483,7 +3537,11 @@ async function confirmCurrentDoc({ bulk = false, expectId = null } = {}) {
     const issuerKey = ['supplier_name'].find(k => k in allValues);   // RC2: identity = supplier_name only
     if (issuerKey && !(allValues[issuerKey] || '').trim()) {
       if (bulk) return { skipped: true, reason: 'issuer blank' };
-      if (!confirm('Document Issuer is blank.\n\nThis document will be filed under "Unknown Company" and '
+      // Generic Document: blank issuer is DESIGNED (files under 'General') — no dialog in
+      // single mode, or the one-keystroke promise dies on every generic doc. The inline
+      // issuer note already names the consequence. Bulk stays unchanged (fails toward review).
+      if (selectedTypeSlug !== 'general_document'
+          && !confirm('Document Issuer is blank.\n\nThis document will be filed under "Unknown Company" and '
                  + 'the app won’t learn this sender. File it anyway?')) {
         return { cancelled: true };
       }

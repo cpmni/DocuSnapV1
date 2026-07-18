@@ -997,6 +997,12 @@
         <div class="fields-header-sub"><strong>Teach a field:</strong> click the <span class="repick-glyph">⊕</span> on it and draw a box round its value — Scan Finder learns where it lives and reads it on every future document from this supplier. Saved when you confirm.</div>
       </div>
       <div id="review-reason" hidden></div>
+      <!-- Generic Document glance aids: provenance strip + a two-line text snippet
+           (docs/designs/GENERIC_DOCTYPE_2026-07-18.md §6). Client-side from doc.ocr_text. -->
+      <div id="doc-snippet" hidden style="padding:8px 14px 0;">
+        <div class="snippet-strip" hidden style="font-size:12px; color:var(--accent2); line-height:1.4; margin-bottom:6px;"></div>
+        <div class="snippet-text" style="font-size:11px; color:var(--muted); line-height:1.5; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;"></div>
+      </div>
       <div id="fields-scroll"></div>
 
       <div id="reprocess-progress" role="status" aria-live="polite"></div>
@@ -1012,7 +1018,7 @@
       <div id="confirm-issuer-note" style="display:none;"></div>
       <div id="action-bar">
         <button class="btn danger" id="btn-delete" data-help-key="delete" title="Delete document">&#128465;</button>
-        <button class="btn confirm" id="btn-confirm" disabled data-help-key="confirm">&#10003; Confirm &amp; File</button>
+        <button class="btn confirm" id="btn-confirm" disabled data-help-key="confirm" title="File this document (Ctrl+Enter)">&#10003; Confirm &amp; File</button>
       </div>
       <!-- Actions for ALL documents in the review queue (batch reprocessing). -->
       <div id="reprocess-queue-bar">

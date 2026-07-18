@@ -680,6 +680,30 @@
           </div>
 
           <div class="section">
+            <div class="section-title">Unrecognised documents</div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">File unrecognised documents as General Documents</div>
+                <div class="threshold-sub">When ScanFinder can't tell what kind of document something is, it becomes a "General Document" — reviewed as usual, filed under a General folder, and found later by searching its text. Never applies to anything ScanFinder recognises, and these documents never file themselves automatically.</div>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" id="generic-fallback-toggle">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Suggest a title from the document's own heading</div>
+                <div class="threshold-sub">General Documents get a suggested Title picked from the page's main heading ("Boiler Service Certificate") — editable at review, searchable, and usable in filenames. If no clean heading is found the Title is simply left blank.</div>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" id="auto-title-toggle">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="section">
             <div class="section-title">Name checks</div>
             <div class="threshold-row">
               <div>
