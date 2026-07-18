@@ -293,6 +293,8 @@ contextBridge.exposeInMainWorld('docusnap', {
   getTemplateSiblings:        (id)           => ipcRenderer.invoke('get-template-siblings', id),
   // PDF splitting
   splitPdf:                   (file, ranges, outDir, docId, every) => ipcRenderer.invoke('split-pdf', file, ranges, outDir, docId, every),
+  // Filing Slips — printable separator-sheet pack (opens via openFile/showInExplorer)
+  generateFilingSlips:        (count)        => ipcRenderer.invoke('generate-filing-slips', count),
 
   // ── Settings ─────────────────────────────────────────────────────────────────
   getSetting:          (key)      => ipcRenderer.invoke('get-setting', key),

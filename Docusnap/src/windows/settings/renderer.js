@@ -510,6 +510,69 @@ if (autoSeparateToggle) autoSeparateToggle.addEventListener('change', async () =
   catch { /* non-fatal; reloads on next open */ }
 });
 
+// ── Filing Slips ("Separator sheets") ──────────────────────────────────────────
+// Default OFF (backend reads 'filing_slips_enabled' with a 'false' default). The
+// detection gate is INDEPENDENT of the auto-separation toggle above (Oracle C2,
+// docs/designs/FILING_SLIPS_2026-07-18.md). C3: while a watch folder is configured,
+// a persistent warning explains sheets are detected on manual Import only.
+const slipsToggle = document.getElementById('filing-slips-toggle');
+const slipsWatchWarn = document.getElementById('filing-slips-watch-warn');
+const slipsCountInput = document.getElementById('filing-slips-count');
+const slipsPrintBtn = document.getElementById('filing-slips-print');
+const slipsResult = document.getElementById('filing-slips-result');
+async function slipsWatchConfigured() {
+  try {
+    return (await api.getSetting('watch_folder_enabled')) === '1'
+      && !!(await api.getSetting('watch_folder'));
+  } catch { return false; }
+}
+async function refreshSlipsWatchWarn() {
+  if (!slipsWatchWarn) return;
+  slipsWatchWarn.style.display = (slipsToggle?.checked && await slipsWatchConfigured()) ? '' : 'none';
+}
+async function loadFilingSlips() {
+  if (!slipsToggle) return;
+  slipsToggle.checked = (await api.getSetting('filing_slips_enabled')) === 'true';
+  refreshSlipsWatchWarn();
+}
+loadFilingSlips();
+if (slipsToggle) slipsToggle.addEventListener('change', async () => {
+  try { await api.setSetting('filing_slips_enabled', slipsToggle.checked ? 'true' : 'false'); }
+  catch { /* non-fatal; reloads on next open */ }
+  refreshSlipsWatchWarn();
+});
+if (slipsPrintBtn) slipsPrintBtn.addEventListener('click', async () => {
+  slipsPrintBtn.disabled = true;
+  if (slipsResult) { slipsResult.style.display = ''; slipsResult.textContent = 'Creating separator sheets…'; }
+  try {
+    const res = await api.generateFilingSlips(parseInt(slipsCountInput?.value, 10));
+    if (res && res.success && slipsResult) {
+      const pad = (n) => String(n).padStart(4, '0');
+      slipsResult.textContent = '';
+      slipsResult.append(`Created sheets ${pad(res.first)}–${pad(res.last)}. `);
+      const openBtn = document.createElement('button');
+      openBtn.className = 'btn'; openBtn.textContent = 'Open to print';
+      openBtn.style.marginRight = '6px';
+      openBtn.addEventListener('click', () => api.openFile(res.path));
+      const showBtn = document.createElement('button');
+      showBtn.className = 'btn'; showBtn.textContent = 'Show in folder';
+      showBtn.addEventListener('click', () => api.showInExplorer(res.path));
+      slipsResult.append(openBtn, showBtn);
+      if (await slipsWatchConfigured()) {
+        const w = document.createElement('div');
+        w.style.color = 'var(--warn)';
+        w.textContent = 'Note: sheets are detected on manual Import only — not yet in the auto-import folder.';
+        slipsResult.append(w);
+      }
+    } else if (slipsResult) {
+      slipsResult.textContent = `Could not create sheets: ${(res && res.error) || 'unknown error'}`;
+    }
+  } catch (e) {
+    if (slipsResult) slipsResult.textContent = `Could not create sheets: ${e.message}`;
+  }
+  slipsPrintBtn.disabled = false;
+});
+
 // ── Name wordness review flag (flag odd supplier/customer names) ───────────────
 // Defaults ON (backend reads 'name_wordness_flag' with a 'true' default); flag-only,
 // so this only persists an explicit choice and never changes extracted values.

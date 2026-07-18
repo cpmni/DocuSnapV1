@@ -10,6 +10,7 @@ const path = require('path');
 const fs   = require('fs');
 const diaglog = require('../diaglog');
 const { buildSegmentArgs, buildSplitPlan } = require('./split_plan');
+const { clampSlipCount, nextSlipRange, slipPackName } = require('./slip_pack');
 
 // Coerce the stored processing_mode to a value the backend accepts. A stale/legacy value
 // (e.g. an old "light", or one from a restored settings backup) must never reach
@@ -695,7 +696,7 @@ function register(ctx) {
     proc.on('error', () => done(null));
   });
 
-  async function _separateBatchDocuments(folderPath, templatesFile, log, onPhase, parallelism, slipsOn) {
+  async function _separateBatchDocuments(folderPath, templatesFile, log, onPhase, parallelism, slipsOn, trace) {
     let pdfs = [];
     try {
       pdfs = fs.readdirSync(folderPath, { withFileTypes: true })
@@ -774,6 +775,7 @@ function register(ctx) {
         separated += 1;
         if (plan.separators) {
           log?.(`${name} — ${plan.separators} separator sheet(s) found · ${made.length} document(s) imported · sheets removed · original kept safe`);
+          trace?.({ ev: 'slip_split', file: name, separators: plan.separators, payloads: plan.payloads, made: made.length });
         } else {
           log?.(`Detected ${made.length} documents in ${name} — separated`);
         }
@@ -965,7 +967,8 @@ function register(ctx) {
           const n = await _separateBatchDocuments(folderPath, templatesFile,
             (text, level) => mirror(event.sender, 'process-progress', { type: 'log', text, level: level || '' }),
             (text) => mirror(event.sender, 'process-progress', { type: 'log', text, phase: true }),
-            sepP, slipsOn);
+            sepP, slipsOn,
+            (ev) => mirror(event.sender, 'process-trace', ev));
           if (n) logger?.log(`[separation] separated ${n} multi-document PDF(s) before processing`);
         } catch (e) {
           logger?.warn(`[separation] pre-pass failed (continuing without split): ${e.message}`);
@@ -1851,6 +1854,58 @@ function register(ctx) {
   // Thin wrapper around pdf_splitter.py (pypdf). Splits a single PDF into
   // page-range sub-documents that can then be dropped into the normal process-
   // folder pipeline. outDir is optional (defaults to a safe system-temp path).
+  // ── Filing Slips: generate a printable separator-sheet pack ─────────────────
+  // docs/designs/FILING_SLIPS_2026-07-18.md §5. Writes the PDF into userData/
+  // filing-slips/ (never a caller-supplied path — no path-taking IPC surface); the
+  // renderer opens it via the existing open-file/show-in-explorer bridges and the
+  // user prints from their PDF viewer. The numbering counter advances ONLY on a
+  // successful generation. requireRole holds the read-only wall (mutating IPC).
+  ipcMain.handle('generate-filing-slips', async (_e, count) => {
+    requireRole('admin', 'edit');
+    const { app } = require('electron');
+    const db = getDb();
+    const n = clampSlipCount(count);
+    const cur = parseInt(learning.getSetting(db, 'filing_slip_next_number', '1'), 10);
+    const { first, last, next } = nextSlipRange(cur, n);
+    const outDir = path.join(app.getPath('userData'), 'filing-slips');
+    try { fs.mkdirSync(outDir, { recursive: true }); }
+    catch (err) { return { success: false, error: `Could not create the output folder: ${err.message}` }; }
+    const outPath = path.join(outDir, slipPackName(first, last));
+
+    const script = path.join(path.dirname(backendScript()), 'filing_slips.py');
+    const res = await new Promise((resolve) => {
+      let stdout = '';
+      let proc;
+      try {
+        proc = spawn(pythonExe(),
+          pythonArgs(script, '--count', String(n), '--start', String(first), '--out', outPath),
+          { windowsHide: true });
+      } catch (err) { return resolve({ success: false, error: err.message }); }
+      // Deliberately NOT in the batch Stop/kill registry — pack generation is
+      // independent of any import; a 30 s timer guards a leaked child instead.
+      const timer = setTimeout(() => { try { proc.kill(); } catch {} }, 30000);
+      proc.stdout.on('data', (d) => { stdout += d.toString(); });
+      proc.on('close', () => {
+        clearTimeout(timer);
+        try { resolve(JSON.parse(stdout.trim())); }
+        catch { resolve({ success: false, error: 'slip generator returned non-JSON output' }); }
+      });
+      proc.on('error', (err) => { clearTimeout(timer); resolve({ success: false, error: err.message }); });
+    });
+    if (!res || !res.success || !fs.existsSync(outPath)) {
+      return { success: false, error: (res && res.error) || 'Sheet generation failed' };
+    }
+    learning.setSetting(db, 'filing_slip_next_number', String(next));
+    // Sweep old packs (keep the newest 5) so the folder never grows unbounded.
+    try {
+      const packs = fs.readdirSync(outDir).filter(f => f.toLowerCase().endsWith('.pdf'))
+        .map(f => ({ f, t: fs.statSync(path.join(outDir, f)).mtimeMs }))
+        .sort((a, b) => b.t - a.t);
+      for (const p of packs.slice(5)) { try { fs.unlinkSync(path.join(outDir, p.f)); } catch {} }
+    } catch { /* best-effort */ }
+    return { success: true, path: outPath, first, last };
+  });
+
   ipcMain.handle('split-pdf', async (_e, filePath, ranges, outDir, docId, every) => {
     requireRole('admin', 'edit');
     // `every` (split every N pages, 1 = every page) is an alternative to an

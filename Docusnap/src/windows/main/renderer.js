@@ -1051,6 +1051,28 @@ function updateStats() {
   document.getElementById('stat-err').textContent   = stats.err;
 }
 
+// Print separator sheets (Filing Slips) — creates a numbered PDF pack (default 10,
+// duplex pairs) and opens it in the system viewer to print. Errors surface inline
+// (no native alert — the focus-repair rule). Settings → Processing has the count field.
+document.getElementById('btn-print-slips')?.addEventListener('click', async () => {
+  const btn = document.getElementById('btn-print-slips');
+  const msg = document.getElementById('print-slips-msg');
+  btn.disabled = true;
+  if (msg) { msg.style.display = ''; msg.textContent = 'Creating sheets…'; }
+  try {
+    const res = await window.docusnap.generateFilingSlips(10);
+    if (res && res.success) {
+      window.docusnap.openFile(res.path);
+      if (msg) msg.textContent = `Sheets ${String(res.first).padStart(4, '0')}–${String(res.last).padStart(4, '0')} created — print from the viewer.`;
+    } else if (msg) {
+      msg.textContent = `Couldn't create sheets: ${(res && res.error) || 'unknown error'}`;
+    }
+  } catch (e) {
+    if (msg) msg.textContent = `Couldn't create sheets: ${e.message}`;
+  }
+  btn.disabled = false;
+});
+
 // Clear Stats — reset the cumulative Session Stats (and the per-run batch +
 // progress bar) back to zero. Session Stats no longer reset per run, so this is
 // the way to start a fresh count without restarting the app.

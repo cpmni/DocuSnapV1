@@ -649,6 +649,28 @@
                 <span class="toggle-slider"></span>
               </label>
             </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Recognise separator sheets</div>
+                <div class="threshold-sub">Split a scanned pile wherever a printed ScanFinder separator sheet appears — the sheet page is removed from the filed documents. Print sheets below, slot them between documents, and scan the lot as one batch. If a sheet can't be read, nothing is split — the batch just arrives as one document in Review.</div>
+                <div class="threshold-sub" id="filing-slips-watch-warn" style="display:none; color: var(--warn);">Separator sheets are detected on manual Import only — not yet in the auto-import (watch) folder.</div>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" id="filing-slips-toggle">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Print separator sheets</div>
+                <div class="threshold-sub">Creates a PDF pack of numbered sheets and opens it — print from your PDF viewer (double-sided if you can). Sheets are reusable; keep the pack by the scanner.</div>
+                <div class="threshold-sub" id="filing-slips-result" style="display:none"></div>
+              </div>
+              <div style="display:flex; gap:8px; align-items:center; flex-shrink:0;">
+                <input type="number" id="filing-slips-count" min="1" max="50" value="10" title="How many sheets to print" style="width:64px;">
+                <button class="btn" id="filing-slips-print">Print separator sheets…</button>
+              </div>
+            </div>
           </div>
 
           <div class="section">
