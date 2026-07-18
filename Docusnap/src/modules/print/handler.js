@@ -56,14 +56,19 @@ function register(ctx) {
 
   // Print one resolved PDF via a bare per-job window. `po` = print options:
   //   { silent, deviceName, pageRanges, copies, duplexMode, color }.
-  // silent:true prints straight to the chosen device through ITS driver — any option
-  // passed OVERRIDES the driver default, any omitted option INHERITS the printer's saved
-  // Printing Preferences (tray/media/quality/duplex) — so it is "the driver, with its
-  // settings", not a generic bypass (eric). silent:false raises the full driver dialog
-  // (the "More settings…" escape hatch; the only path with a user 'cancelled' outcome).
-  // The REAL vector PDF is always what spools — the renderer's preview images never do.
+  // silent:false — THE DEFAULT (owner-directed 2026-07-18; the custom preview modal was
+  // removed) — raises the OS/driver print dialog: the customer's installed-driver dialog,
+  // so tray/duplex/paper/quality/copies are the driver's own; the only path with a user
+  // 'cancelled' outcome. NOTE the preview pane INSIDE Windows' modern print dialog shows
+  // "This app doesn't support print preview" — an Electron platform limitation (no
+  // app-side preview provider); the dialog's settings all work. silent:true prints
+  // straight to the chosen device through ITS driver (omitted options INHERIT the
+  // printer's saved Printing Preferences — "the driver, with its settings", not a
+  // bypass; eric) — kept for a future silent quick-print (Print-Slice 3). A BARE call
+  // must never silently spool to the default printer, hence explicit opt-in below.
+  // The REAL vector PDF is always what spools.
   function printPdf(db, docId, pdfPath, source, po) {
-    const silent = po.silent !== false;      // default true (the modal path)
+    const silent = po.silent === true;       // default FALSE = the OS/driver dialog
     return new Promise((resolve) => {
       let win = null, settled = false, timer = null;
       const finish = (outcome, extra) => {
@@ -125,7 +130,7 @@ function register(ctx) {
     const docId = payload && Number(payload.docId);
     const source = (payload && payload.source) || 'original';
     const po = {
-      silent:     payload ? payload.silent : undefined,   // default true in printPdf
+      silent:     payload ? payload.silent : undefined,   // default FALSE in printPdf (OS/driver dialog)
       deviceName: payload && payload.deviceName,
       pageRanges: payload && payload.pageRanges,
       copies:     payload && Number(payload.copies) > 0 ? Math.min(99, Math.floor(Number(payload.copies))) : 1,
