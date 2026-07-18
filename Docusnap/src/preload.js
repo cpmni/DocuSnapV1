@@ -250,8 +250,8 @@ contextBridge.exposeInMainWorld('docusnap', {
     assigned:   () => ipcRenderer.invoke('workflow-assigned'),
     completed:  () => ipcRenderer.invoke('workflow-completed'),
     recipients: () => ipcRenderer.invoke('workflow-recipients'),
-    assign:     (documentId, toUserId, actionRequired, comment) =>
-                   ipcRenderer.invoke('workflow-assign', { documentId, toUserId, actionRequired, comment }),
+    assign:     (documentId, toUserId, actionRequired, comment, resubmitOf) =>
+                   ipcRenderer.invoke('workflow-assign', { documentId, toUserId, actionRequired, comment, resubmitOf }),
     claim:      (id, version) => ipcRenderer.invoke('workflow-claim', { id, version }),
     resolve:    (id, decision, comment, version) =>
                    ipcRenderer.invoke('workflow-resolve', { id, decision, comment, version }),

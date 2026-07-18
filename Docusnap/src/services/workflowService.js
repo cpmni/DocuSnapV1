@@ -72,7 +72,12 @@ function createWorkflowService(deps = {}) {
   const completed = (db, actor) => wf.listCompleted(db, actor.userId);
 
   // ── Assign (route a document to a user) ──────────────────────────────────────
-  function assign(db, actor, { documentId, toUserId, actionRequired, comment }) {
+  // `resubmitOf` (optional, Slice 1): the id of a REJECTED route this send supersedes.
+  // ADVISORY LINEAGE ONLY — no lookup/validation (pinned in test_workflow.js), recorded
+  // solely in the audit trail (no schema column; a failed best-effort audit loses it
+  // silently, acceptable for advisory data). Slice-2's decision snapshot may later carry
+  // first-class lineage at the decision grain.
+  function assign(db, actor, { documentId, toUserId, actionRequired, comment, resubmitOf }) {
     if (!ACTOR_CAN_ASSIGN.includes(actor.role)) return fail('FORBIDDEN', 'Your role cannot route documents.');
     if (actionRequired !== 'approve' && actionRequired !== 'acknowledge') {
       return fail('INVALID', 'actionRequired must be "approve" or "acknowledge".');
@@ -92,9 +97,10 @@ function createWorkflowService(deps = {}) {
       toUserId: recipient.id, toUsername: recipient.username, actionRequired, comment,
     });
     wf.setDocWorkflowStatus(db, documentId, 'pending');
+    const resubmitTag = resubmitOf != null ? ` resubmit_of=${String(resubmitOf).slice(0, 32)}` : '';
     audit({ user_id: actor.userId, action: 'workflow_route_created', action_category: 'workflow',
             outcome: 'success', target_type: 'document', target_id: documentId, document_id: documentId,
-            details: `to=${recipient.username} action=${actionRequired}` });
+            details: `to=${recipient.username} action=${actionRequired}${resubmitTag}` });
     return { ok: true, route };
   }
 

@@ -121,6 +121,24 @@ function main() {
   check('DECISION_STYLE.paid removed', require('./pdfStamp').DECISION_STYLE.paid === undefined);
   check('no stamp attempted for a refused paid', !stamps.some(s => s.decision === 'paid'));
 
+  // ── B2: resubmission lineage (Slice 1 — advisory, audit-details only) ─────────
+  const rs = wf.assign(db, admin, { documentId: 1, toUserId: 2, actionRequired: 'approve', resubmitOf: a2.route.id });
+  check('assign with resubmitOf -> ok', rs.ok);
+  check('resubmit lineage recorded in the audit details',
+    audits.some(e => e.action === 'workflow_route_created' && new RegExp(`resubmit_of=${a2.route.id}\\b`).test(e.details || '')));
+  check('assign WITHOUT resubmitOf leaves details clean',
+    audits.some(e => e.action === 'workflow_route_created' && !/resubmit_of/.test(e.details || '')));
+  // PINNED semantics: NO lookup — garbage lineage is recorded as-is (bounded to 32 chars)
+  // and never fails the assign. Advisory audit data only; a first-class column, if ever
+  // wanted, belongs to the Slice-2 decision-snapshot grain — not here.
+  const rg = wf.assign(db, admin, { documentId: 1, toUserId: 2, actionRequired: 'acknowledge', resubmitOf: 999999 });
+  check('garbage resubmitOf still ok (no lookup — advisory only, pinned)', rg.ok);
+  check('preconditions still fire with resubmitOf present (role)',
+    wf.assign(db, reader, { documentId: 1, toUserId: 2, actionRequired: 'approve', resubmitOf: 1 }).code === 'FORBIDDEN');
+  check('preconditions still fire with resubmitOf present (routable)',
+    wf.assign(db, admin, { documentId: 3, toUserId: 2, actionRequired: 'approve', resubmitOf: 1 }).code === 'NOT_ROUTABLE');
+  wf.recall(db, admin, rs.route.id); wf.recall(db, admin, rg.route.id);   // tidy the pending routes
+
   // ── optimistic concurrency (stale version loses) ─────────────────────────────
   const a4 = wf.assign(db, admin, { documentId: 1, toUserId: 2, actionRequired: 'approve' });
   const staleV = a4.route.version;        // version before claim

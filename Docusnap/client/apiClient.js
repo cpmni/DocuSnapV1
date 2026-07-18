@@ -174,8 +174,8 @@ function createClient(opts = {}) {
   // ── Mailbox / approval workflow ───────────────────────────────────────────────
   const wfList    = (view) => request('GET', `/v1/workflow/${view}`, { withAuth: true });
   const recipients = () => request('GET', '/v1/workflow/recipients', { withAuth: true });
-  const assign = (documentId, toUserId, actionRequired, comment) =>
-    request('POST', '/v1/workflow/routes', { withAuth: true, body: { documentId, toUserId, actionRequired, comment } });
+  const assign = (documentId, toUserId, actionRequired, comment, resubmitOf) =>
+    request('POST', '/v1/workflow/routes', { withAuth: true, body: { documentId, toUserId, actionRequired, comment, resubmitOf } });
   const claim   = (id, version) => request('POST', `/v1/workflow/routes/${id}/claim`, { withAuth: true, body: { version } });
   const resolve = (id, decision, comment, version) =>
     request('POST', `/v1/workflow/routes/${id}/resolve`, { withAuth: true, body: { decision, comment, version } });

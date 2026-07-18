@@ -49,24 +49,44 @@ function _routeItem(r) {
   const title = r.supplier_name || ('Document #' + r.document_id);
   const kind  = r.action_required === 'approve' ? 'Approval' : 'Acknowledgement';
   const who   = _box === 'sent' ? `to ${r.to_username}` : `from ${r.from_username}`;
+  // Sender-side row actions (Slice 1). listSent is sender-scoped BY QUERY, so these are
+  // safe to show without knowing the current user id. (A rejected route in Completed gets
+  // its actions via its Sent twin — listSent has no state filter.)
+  const rowActs = _box === 'sent'
+    ? (r.state === 'pending'  ? `<button class="wf-stamp-link wf-recall" type="button">Recall</button>` : '')
+      + (r.state === 'rejected' ? `<button class="wf-stamp-link wf-resend" type="button">Send again</button>` : '')
+    : '';
   el.innerHTML = `
     <div class="result-header">
       <span class="result-supplier" title="${escHtml(title)}">${escHtml(title)}</span>
       <span class="wf-state ${escHtml(r.state)}">${escHtml(r.state)}</span>
     </div>
-    <div class="result-filename">${escHtml(kind)} · ${escHtml(who)}</div>
-    <div class="result-footer"><span class="result-date">${escHtml(r.doc_date || '')}</span>${
-      r.stamped_path ? `<button class="wf-stamp-link" type="button">View stamped copy</button>` : ''}</div>`;
+    <div class="result-filename">${escHtml(kind)} · ${escHtml(who)}</div>${
+      r.resolution_comment ? `
+    <div class="result-filename wf-reason" title="${escHtml(r.resolution_comment)}">Reason: ${escHtml(r.resolution_comment)}</div>` : ''}
+    <div class="result-footer"><span class="result-date">${escHtml(r.doc_date || '')}</span>${rowActs}${
+      r.stamped_path ? `<button class="wf-stamp-link wf-stamp" type="button">View stamped copy</button>` : ''}</div>`;
   el.addEventListener('click', async () => {
     document.querySelectorAll('.result-item').forEach(n => n.classList.remove('active'));
     el.classList.add('active');
     const full = await window.docusnap.getDocumentWithExtractions(r.document_id);
     if (full) window.SearchPreview.selectDoc(full);
   });
+  // Row buttons must never trigger the row's open-document click (stamp-link precedent).
   // The stamped decision copy lives locally on this PC — open it directly.
-  el.querySelector('.wf-stamp-link')?.addEventListener('click', (e) => {
+  el.querySelector('.wf-stamp')?.addEventListener('click', (e) => {
     e.stopPropagation();
     window.docusnap.openFile(r.stamped_path);
+  });
+  el.querySelector('.wf-recall')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    window.SearchWorkflow.recallRoute(r);   // _run refreshes the open mailbox itself
+  });
+  el.querySelector('.wf-resend')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    document.querySelectorAll('.result-item').forEach(n => n.classList.remove('active'));
+    el.classList.add('active');
+    window.SearchWorkflow.queueResubmit(r);
   });
   return el;
 }

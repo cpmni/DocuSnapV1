@@ -1202,32 +1202,35 @@ function closeBinMenu() { document.getElementById('bin-menu')?.remove(); }
 document.addEventListener('click', closeBinMenu);
 document.addEventListener('scroll', closeBinMenu, true);
 
-async function assignControl(docId, senderUsername) {
+// Generalised prefill (Slice 1): `preselectUsername` marks + selects ANY recipient
+// (Forward… passes the original SENDER for a route-back; Send-again passes the original
+// RECIPIENT) — extra { tag, title, actionRequired, resubmitOf } label and prefill the rest.
+async function assignControl(docId, preselectUsername, extra = {}) {
   const wrap = document.createElement('div'); wrap.className = 'wf';
   if (!recipientsCache) {
     const rr = await api.workflow.recipients();
     recipientsCache = (rr.json && rr.json.recipients) || [];
   }
-  // When forwarding a routed doc, pre-select + mark the original sender for a "route back".
   const opts = recipientsCache.map((u) => {
-    const isSender = senderUsername && u.username === senderUsername;
-    return `<option value="${u.id}"${isSender ? ' selected' : ''}>${esc(u.displayName || u.username)} (${esc(u.role)})${isSender ? ' — sender' : ''}</option>`;
+    const pre = preselectUsername && u.username === preselectUsername;
+    return `<option value="${u.id}"${pre ? ' selected' : ''}>${esc(u.displayName || u.username)} (${esc(u.role)})${pre ? ` — ${esc(extra.tag || 'sender')}` : ''}</option>`;
   }).join('');
   wrap.innerHTML = `
-    <h3>${ico('assign')}${senderUsername ? 'Forward / route onward' : 'Route for approval / acknowledgement'}</h3>
+    <h3>${ico('assign')}${esc(extra.title || (preselectUsername ? 'Forward / route onward' : 'Route for approval / acknowledgement'))}</h3>
     <div class="wf-row">
       <select class="a-to">${opts}</select>
       <select class="a-action"><option value="approve">Approve</option><option value="acknowledge">Acknowledge</option></select>
       <input class="a-comment" placeholder="Note (optional)" />
       <span class="msg"></span>
     </div>`;
+  if (extra.actionRequired) wrap.querySelector('.a-action').value = extra.actionRequired;
   const btn = mkBtn({ label: 'Assign', icon: 'assign', variant: 'primary', sm: false, onClick: async () => {
     const toUserId = Number(wrap.querySelector('.a-to').value);
     const action = wrap.querySelector('.a-action').value;
     const comment = wrap.querySelector('.a-comment').value.trim() || undefined;
     const msg = wrap.querySelector('.msg');
     if (!toUserId) { msg.className = 'msg err'; msg.textContent = 'Pick a recipient.'; return; }
-    const res = await api.workflow.assign(docId, toUserId, action, comment);
+    const res = await api.workflow.assign(docId, toUserId, action, comment, extra.resubmitOf);
     if (res.status === 200) { msg.className = 'msg ok'; msg.textContent = 'Routed.'; refreshBadges(); }
     else { msg.className = 'msg err'; msg.textContent = (res.json && res.json.error) || 'Could not route.'; }
   } });
@@ -1287,6 +1290,14 @@ function mbRow(rt) {
 
   if (currentBox === 'sent') {
     if (rt.state === 'pending') acts.appendChild(mkBtn({ label: 'Recall', icon: 'recall', variant: 'ghost', onClick: () => act(api.workflow.recall(rt.id, rt.version)) }));
+    // Send again (Slice 1): a rejection is never a dead-end — inline prefilled re-route
+    // (original recipient + action) carrying the resubmit lineage for the audit trail.
+    if (rt.state === 'rejected' && canDecide()) acts.appendChild(mkBtn({ label: 'Send again', icon: 'assign', variant: 'secondary', onClick: async () => {
+      if (el.querySelector('.wf')) return;          // one inline control per row
+      el.appendChild(await assignControl(rt.document_id, rt.to_username, {
+        tag: 'previous recipient', title: 'Send again — the previous request was rejected',
+        actionRequired: rt.action_required, resubmitOf: rt.id }));
+    } }));
   } else if (currentBox === 'inbox' || currentBox === 'assigned') {
     if (open) {
       if (rt.action_required === 'acknowledge') {
