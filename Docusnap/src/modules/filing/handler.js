@@ -129,6 +129,7 @@ async function commitDocument({
     year:         dateObj ? String(dateObj.getFullYear())   : '',
     month:        dateObj ? MONTH_NAMES[dateObj.getMonth()] : '',
     originalName: path.basename(originalFilename, ext),
+    title:        allValues['title'] || '',   // Auto-Title / typed at review; empty collapses
   };
 
   const built = buildFilename({ pattern, values: tokenValues, ext });

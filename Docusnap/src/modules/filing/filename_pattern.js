@@ -13,7 +13,11 @@
  * covered by a standalone unit test — see test_filename_pattern.js.
  */
 
-const DEFAULT_PATTERN = '{docType}.{date}.{ref}';
+// {title} joined the DEFAULT 2026-07-18 (Generic Document design slice 6, owner-confirmed):
+// byte-identical for every typed doc — in v1 only General Documents carry a title, and an
+// empty token collapses (no dangling separators). PINNED by test_filename_pattern.js; any
+// future typed-doc title extension MUST revisit this default before shipping (design §11 Q8).
+const DEFAULT_PATTERN = '{docType}.{date}.{ref}.{title}';
 
 // `short` = the compact caption shown ON the pill block in the visual pattern
 // editor (shared/pattern-editor.js); `label` is the fuller description kept for the
@@ -26,12 +30,18 @@ const SUPPORTED_TOKENS = [
   { token: '{year}',         label: 'Document year',                            short: 'Year',      example: '2025' },
   { token: '{month}',        label: 'Document month name',                      short: 'Month',     example: 'December' },
   { token: '{originalName}', label: 'Original scanned filename (no extension)', short: 'Filename',  example: 'scan0042' },
+  // Generic Document Auto-Title (docs/designs/GENERIC_DOCTYPE_2026-07-18.md §6). Empty on
+  // docs without a title (v1: every typed doc), and an empty token collapses cleanly — so
+  // adding {title} to a pattern is byte-identical for typed docs. Registration MUST ship
+  // before any UI suggests the token (an unknown token makes the whole pattern fall back
+  // to default — TOKEN_NAMES below is the validator).
+  { token: '{title}',        label: 'Document title (Auto-Title / typed at review)', short: 'Title', example: 'Boiler-Service-Certificate' },
 ];
 
 // The curated, meaningful blocks offered in the builder UI (Settings + first-run
 // wizard) for BOTH folder structure and file name — click to insert, type custom
 // text between them. A superset ({originalName}) is still accepted if typed by hand.
-const FIELD_TOKENS = ['{supplier}', '{docType}', '{date}', '{ref}', '{year}', '{month}']
+const FIELD_TOKENS = ['{supplier}', '{docType}', '{date}', '{ref}', '{year}', '{month}', '{title}']
   .map(tok => SUPPORTED_TOKENS.find(t => t.token === tok));
 
 // Default subfolder pattern built UNDER the (separately configured) output root.

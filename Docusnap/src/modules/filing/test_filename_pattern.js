@@ -304,8 +304,8 @@ function main() {
     JSON.stringify(buildFolderSegments('{supplier}/{ref}/{year}', { ...fv, ref: '' })) === JSON.stringify(['Acme-Supplies-Ltd', '2025']))) failures++;
   if (!check('reserved device name as a folder level is defused',
     buildFolderSegments('{docType}', { ...fv, docType: 'CON' })[0] === 'CON_')) failures++;
-  if (!check('builder blocks are the meaningful field tokens only',
-    FIELD_TOKENS.map(t => t.token).join(',') === '{supplier},{docType},{date},{ref},{year},{month}')) failures++;
+  if (!check('builder blocks are the meaningful field tokens only ({title} joined 2026-07-18)',
+    FIELD_TOKENS.map(t => t.token).join(',') === '{supplier},{docType},{date},{ref},{year},{month},{title}')) failures++;
 
   // #10: empty-sanitising supplier keeps a company folder (never files under Year/Month directly).
   for (const bad of ['..', '///', '***', '   ', '.']) {
@@ -317,6 +317,22 @@ function main() {
   }
   if (!check('a real supplier is untouched by the fallback',
     supplierFolderFallback('Acme Supplies Ltd') === 'Acme Supplies Ltd')) failures++;
+
+  // ── {title} token + the slice-6 default (Generic Document design §6/§7) ────────
+  console.log('\n{title} token + new default pattern:');
+  const typed = { docType: 'Invoice', date: '15-12-2025', ref: 'INV-001', supplier: 'Acme', year: '2025', month: 'December', originalName: 'scan1', title: '' };
+  if (!check('{title} is a registered token (pattern with it does NOT fall back)',
+    buildFilename({ pattern: '{docType}.{title}', values: { ...typed, title: 'Boiler Service Certificate' }, ext: '.pdf' }).fellBack === false)) failures++;
+  if (!check('title value is sanitised (spaces→dashes)',
+    buildFilename({ pattern: '{title}', values: { ...typed, title: 'Boiler Service Certificate' }, ext: '.pdf' }).filename === 'Boiler-Service-Certificate.pdf')) failures++;
+  // PIN (slice 6): the new default is BYTE-IDENTICAL for typed docs — title empty ⇒ collapses.
+  const oldDefault = buildFilename({ pattern: '{docType}.{date}.{ref}', values: typed, ext: '.pdf' }).filename;
+  const newDefault = buildFilename({ pattern: DEFAULT_PATTERN, values: typed, ext: '.pdf' }).filename;
+  if (!check(`new default byte-identical for typed docs (${newDefault})`, newDefault === oldDefault)) failures++;
+  if (!check('generic doc (no ref) + title under the new default',
+    buildFilename({ pattern: DEFAULT_PATTERN,
+      values: { ...typed, docType: 'General Document', ref: '', title: 'Tenancy Agreement' }, ext: '.pdf' }).filename
+      === 'General-Document.15-12-2025.Tenancy-Agreement.pdf')) failures++;
 
   console.log();
   if (failures) {
