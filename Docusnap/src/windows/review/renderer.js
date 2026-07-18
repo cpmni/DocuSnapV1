@@ -1441,35 +1441,125 @@ function _deskewFixPending(fieldKey, snap) {
   try { showToast('Straighten changed while reading — please draw the box again.', 'warn'); } catch {}
 }
 
-// ── Print (owner-directed 2026-07-18): straight to the WINDOWS/driver print dialog ──
-// The custom preview modal was REMOVED at the owner's request — the document is already
-// on screen in Review, and the modal's controls duplicated the driver dialog. NOTE: the
-// preview pane INSIDE Windows' modern print dialog says "This app doesn't support print
-// preview" — a hard Electron platform limitation (Electron has no app-side preview
-// provider to feed that pane); every SETTING in the dialog works (printer/copies/duplex/
-// tray/quality via More settings) and the REAL vector PDF is what spools. Do not rebuild
-// an in-app preview without a fresh owner decision.
+// ── Print (option a, owner-directed 2026-07-18) ─────────────────────────────────
+// A custom modal (the owner liked the preview) carrying the options Electron's silent
+// print genuinely honours — printer / copies / duplex / colour / range / pages-per-sheet
+// (N-up). "Print" = silent:true to the CHOSEN device (its saved driver preferences +
+// these overrides). "Full printer dialog…" = silent:false → the printer's OWN dialog,
+// the ONLY place for BOOKLET / trays / stapling / quality (the driver owns those; Electron
+// exposes no way to load them back into this modal — eric). The REAL vector PDF spools;
+// the preview images never print. NOTE: the preview pane INSIDE the Windows dialog shows
+// "This app doesn't support print preview" — a hard Electron platform limitation.
 let _printAvailable = false;
 (async () => { try { _printAvailable = await window.docusnap.printAvailable?.(); } catch { _printAvailable = false; } })();
 
-let _printBusy = false;
-async function _printCurrentDoc() {
-  if (!currentDoc?.id || _printBusy) return;
-  _printBusy = true;
-  const pb = document.getElementById('btn-print-doc');
-  if (pb) pb.disabled = true;
-  try {
-    const res = await window.docusnap.printDocument({ docId: currentDoc.id, source: 'original', silent: false });
-    if (res && res.ok) showToast('Sent to your printer.');
-    else if (res && res.outcome === 'cancelled') { /* user closed the dialog — stay quiet */ }
-    else if (res && res.reason === 'file_missing') showToast("Couldn't find this document's file.", 'warn');
-    else if (res && res.reason === 'disabled') showToast('Printing is turned off in Settings.', 'warn');
-    else showToast("Couldn't print this document.", 'warn');
-  } catch { try { showToast("Couldn't print this document.", 'warn'); } catch {} }
-  _printBusy = false;
-  if (pb) pb.disabled = false;
+// Parse a 1-based "1-3, 5" range into Electron 0-based pageRanges [{from,to}]. Empty/All ⇒ null.
+function _parsePageRanges(text, pageCount) {
+  const s = String(text || '').trim();
+  if (!s) return null;
+  const out = [];
+  for (const part of s.split(',')) {
+    const m = part.trim().match(/^(\d+)\s*-\s*(\d+)$/) || part.trim().match(/^(\d+)$/);
+    if (!m) continue;
+    let a = parseInt(m[1], 10), b = parseInt(m[2] || m[1], 10);
+    if (isNaN(a) || isNaN(b)) continue;
+    a = Math.max(1, a); b = Math.min(pageCount || b, Math.max(a, b));
+    out.push({ from: a - 1, to: b - 1 });
+  }
+  return out.length ? out : null;
 }
-document.getElementById('btn-print-doc')?.addEventListener('click', _printCurrentDoc);
+
+const _printModal = document.getElementById('print-modal');
+function _closePrintModal() { if (_printModal) _printModal.style.display = 'none'; }
+
+async function _openPrintModal() {
+  if (!currentDoc?.id || !_printModal) return;
+  const msg = document.getElementById('print-modal-msg');
+  if (msg) msg.textContent = '';
+  // Preview pane: the page images we already rendered for this doc.
+  const pane = document.getElementById('print-preview-pane');
+  if (pane) {
+    pane.innerHTML = '';
+    if (pageImages && pageImages.length) {
+      pageImages.forEach((src, i) => {
+        const img = document.createElement('img');
+        img.src = src; img.alt = `Page ${i + 1}`;
+        img.style.cssText = 'max-width:100%; box-shadow:0 2px 10px rgba(0,0,0,.2); background:#fff;';
+        pane.appendChild(img);
+      });
+    } else {
+      const d = document.createElement('div');
+      d.style.cssText = 'color:var(--muted); font-size:12px; padding:24px;';
+      d.textContent = 'Preview unavailable — you can still print the document.';
+      pane.appendChild(d);
+    }
+  }
+  // Printer list.
+  const sel = document.getElementById('print-printer');
+  if (sel) {
+    sel.innerHTML = '<option>Loading printers…</option>';
+    try {
+      const printers = await window.docusnap.listPrinters?.() || [];
+      sel.innerHTML = '';
+      if (!printers.length) { sel.innerHTML = '<option value="">(no printers found)</option>'; }
+      for (const p of printers) {
+        const o = document.createElement('option');
+        o.value = p.name; o.textContent = p.displayName || p.name;
+        if (p.isDefault) o.selected = true;
+        sel.appendChild(o);
+      }
+    } catch { sel.innerHTML = '<option value="">(couldn\'t list printers)</option>'; }
+  }
+  _printModal.style.display = 'flex';
+}
+
+// silent=true  → quick print to the chosen device with the modal's options.
+// silent=false → the printer's own full dialog (booklet/trays/quality live there).
+async function _doModalPrint(silent) {
+  const msg = document.getElementById('print-modal-msg');
+  const go = document.getElementById('print-modal-go');
+  const dlg = document.getElementById('print-modal-dialog');
+  const deviceName = document.getElementById('print-printer')?.value || undefined;
+  // Safety invariant (eric): a silent print MUST target an explicit device — never let it
+  // fall through to a silent spool on the default printer. No printer picked ⇒ steer to the
+  // full dialog instead of quietly printing somewhere unexpected.
+  if (silent && !deviceName) {
+    if (msg) msg.textContent = 'Choose a printer above, or use the full printer dialog.';
+    return;
+  }
+  if (go) go.disabled = true; if (dlg) dlg.disabled = true;
+  if (msg) msg.textContent = silent ? 'Sending to printer…' : 'Opening your printer’s dialog…';
+  const copies = parseInt(document.getElementById('print-copies')?.value, 10) || 1;
+  const pagesMode = document.getElementById('print-pages-mode')?.value;
+  const pageRanges = pagesMode === 'range'
+    ? _parsePageRanges(document.getElementById('print-pages-range')?.value, pageImages.length) : null;
+  const duplexMode = document.getElementById('print-duplex')?.value || undefined;
+  const colorVal = document.getElementById('print-color')?.value;
+  const color = colorVal === '' ? undefined : (colorVal === 'true');
+  const pagesPerSheet = parseInt(document.getElementById('print-nup')?.value, 10) || 1;
+  try {
+    const res = await window.docusnap.printDocument({
+      docId: currentDoc.id, source: 'original', silent,
+      deviceName, copies, pageRanges, duplexMode, color, pagesPerSheet,
+    });
+    if (res && res.ok) { _closePrintModal(); showToast?.('Sent to your printer.'); }
+    else if (res && res.outcome === 'cancelled') { if (msg) msg.textContent = 'Cancelled.'; }
+    else if (res && res.reason === 'file_missing') { if (msg) msg.textContent = "Couldn't find this document's file."; }
+    else if (res && res.reason === 'disabled') { if (msg) msg.textContent = 'Printing is turned off in Settings.'; }
+    else { if (msg) msg.textContent = "Couldn't print this document."; }
+  } catch { if (msg) msg.textContent = "Couldn't print this document."; }
+  if (go) go.disabled = false; if (dlg) dlg.disabled = false;
+}
+
+document.getElementById('btn-print-doc')?.addEventListener('click', _openPrintModal);
+document.getElementById('print-modal-close')?.addEventListener('click', _closePrintModal);
+document.getElementById('print-modal-go')?.addEventListener('click', () => _doModalPrint(true));
+document.getElementById('print-modal-dialog')?.addEventListener('click', () => _doModalPrint(false));
+document.getElementById('print-pages-mode')?.addEventListener('change', (e) => {
+  const r = document.getElementById('print-pages-range');
+  if (r) r.style.display = e.target.value === 'range' ? '' : 'none';
+});
+_printModal?.addEventListener('click', (e) => { if (e.target === _printModal) _closePrintModal(); });
 
 document.getElementById('btn-deskew')?.addEventListener('click', toggleDeskew);
 document.getElementById('btn-deskew-all')?.addEventListener('click', openDeskewAllFlyout);

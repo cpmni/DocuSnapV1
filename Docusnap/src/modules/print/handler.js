@@ -104,6 +104,7 @@ function register(ctx) {
             if (Array.isArray(po.pageRanges) && po.pageRanges.length) opts.pageRanges = po.pageRanges;
             if (po.copies && po.copies > 1) opts.copies = po.copies;
             if (po.duplexMode) opts.duplexMode = po.duplexMode;       // 'simplex'|'shortEdge'|'longEdge'
+            if (po.pagesPerSheet && po.pagesPerSheet > 1) opts.pagesPerSheet = po.pagesPerSheet;  // N-up (reading order)
             if (typeof po.color === 'boolean') opts.color = po.color; // omit ⇒ driver default
             try {
               win.webContents.print(opts, (success, failureReason) => {
@@ -136,6 +137,10 @@ function register(ctx) {
       copies:     payload && Number(payload.copies) > 0 ? Math.min(99, Math.floor(Number(payload.copies))) : 1,
       duplexMode: payload && payload.duplexMode,
       color:      payload && typeof payload.color === 'boolean' ? payload.color : undefined,
+      // N-up (plain reading-order pages-per-sheet — Chromium honours 1/2/4/6/9/16). NOT booklet
+      // imposition: booklet needs page reordering the driver owns, so it lives only in the full
+      // driver dialog (silent:false). See the modal's "Full printer dialog…" button.
+      pagesPerSheet: payload && Number(payload.pagesPerSheet) > 1 ? Math.floor(Number(payload.pagesPerSheet)) : undefined,
     };
 
     if (!printingEnabled(db)) return { ok: false, reason: 'disabled' };

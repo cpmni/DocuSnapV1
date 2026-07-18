@@ -1221,9 +1221,68 @@
     </div>
   </div>
 </div>
-<!-- (The Print-Slice-1 custom print-preview modal was REMOVED 2026-07-18 at the owner's
-     request — the Print button now opens the Windows/driver print dialog directly. The
-     empty preview pane INSIDE that OS dialog is an Electron platform limitation.) -->
+<!-- ── Print modal (option a, owner-directed 2026-07-18) ───────────────────────────
+     Custom preview + the options Electron's silent print genuinely honours (copies /
+     duplex / colour / range / pages-per-sheet). "Full printer dialog…" is the ONLY path
+     to booklet / trays / stapling / quality — those live in the driver and cannot be
+     round-tripped back into this modal (Electron exposes no driver-settings handle). The
+     real vector PDF is what spools; the preview images never print. ─────────────────── -->
+<div id="print-modal" style="display:none; position:fixed; inset:0; z-index:100000; background:rgba(12,16,24,.55); align-items:center; justify-content:center;" data-help-ignore>
+  <div style="background:var(--surface); border:1px solid var(--border2); border-radius:var(--r); width:min(920px,94vw); height:min(88vh,760px); display:flex; flex-direction:column; overflow:hidden; box-shadow:0 18px 60px rgba(0,0,0,.4);">
+    <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid var(--border);">
+      <div style="font-weight:600; font-size:14px; color:var(--text);">Print</div>
+      <button id="print-modal-close" class="doc-nav-btn" title="Close" style="font-size:16px; line-height:1;">&#215;</button>
+    </div>
+    <div style="flex:1; display:flex; min-height:0;">
+      <!-- controls -->
+      <div style="width:280px; flex-shrink:0; border-right:1px solid var(--border); padding:14px 16px; overflow-y:auto; display:flex; flex-direction:column; gap:12px;">
+        <label style="font-size:11px; color:var(--muted);">Printer
+          <select id="print-printer" style="width:100%; margin-top:4px;"></select>
+        </label>
+        <label style="font-size:11px; color:var(--muted);">Copies
+          <input type="number" id="print-copies" min="1" max="99" value="1" style="width:100%; margin-top:4px;">
+        </label>
+        <div style="font-size:11px; color:var(--muted);">Pages
+          <div style="display:flex; gap:6px; align-items:center; margin-top:4px;">
+            <select id="print-pages-mode" style="flex:1;"><option value="all">All pages</option><option value="range">Range</option></select>
+          </div>
+          <input type="text" id="print-pages-range" placeholder="e.g. 1-3, 5" style="width:100%; margin-top:6px; display:none;">
+        </div>
+        <label style="font-size:11px; color:var(--muted);">Sides
+          <select id="print-duplex" style="width:100%; margin-top:4px;">
+            <option value="">Printer default</option>
+            <option value="simplex">Single-sided</option>
+            <option value="longEdge">Double-sided (long edge)</option>
+            <option value="shortEdge">Double-sided (short edge)</option>
+          </select>
+        </label>
+        <label style="font-size:11px; color:var(--muted);">Colour
+          <select id="print-color" style="width:100%; margin-top:4px;">
+            <option value="">Printer default</option>
+            <option value="true">Colour</option>
+            <option value="false">Black &amp; white</option>
+          </select>
+        </label>
+        <label style="font-size:11px; color:var(--muted);">Pages per sheet
+          <select id="print-nup" style="width:100%; margin-top:4px;">
+            <option value="1">1 (normal)</option>
+            <option value="2">2</option>
+            <option value="4">4</option>
+            <option value="6">6</option>
+            <option value="9">9</option>
+          </select>
+        </label>
+        <div style="flex:1;"></div>
+        <button class="btn primary" id="print-modal-go" style="width:100%;">Print</button>
+        <button class="btn" id="print-modal-dialog" title="Opens your printer's own dialog — the only place for booklet, paper trays, stapling and quality settings" style="width:100%; font-size:11px;">Full printer dialog&hellip;</button>
+        <div style="font-size:10px; color:var(--muted); line-height:1.5;">Booklet, paper trays, stapling and quality live in your printer&rsquo;s own dialog &mdash; open it above.</div>
+        <div id="print-modal-msg" style="font-size:11px; color:var(--muted); min-height:14px;"></div>
+      </div>
+      <!-- preview -->
+      <div id="print-preview-pane" style="flex:1; overflow-y:auto; background:var(--doc-bg); padding:16px; display:flex; flex-direction:column; align-items:center; gap:12px;"></div>
+    </div>
+  </div>
+</div>
 
 <script src="../shared/theme.js"></script>
 <script src="../shared/helpmode.js"></script>
