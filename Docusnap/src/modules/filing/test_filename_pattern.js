@@ -32,7 +32,7 @@
 const {
   DEFAULT_PATTERN, validatePattern,
   sanitiseFilenameStem,
-  buildFilename, resolveDuplicateFilename,
+  buildFilename, resolveDuplicateFilename, resolveDuplicate, DUPLICATES_SUBFOLDER,
   DEFAULT_FOLDER_PATTERN, FIELD_TOKENS, buildFolderSegments, buildFilenameStem,
 } = require('./filename_pattern');
 
@@ -246,6 +246,45 @@ function main() {
     ]);
     if (!check('three collisions -> -DUPLICATE-3',
       resolveDuplicateFilename(base, '.pdf', n => threeCollisions.has(n)) === 'Invoice.15-12-2025.INV-001-DUPLICATE-3.pdf')) failures++;
+  }
+
+  // 7b. Policy-aware duplicate resolution (2026-07-17) — suffix styles + Duplicates subfolder
+  {
+    console.log('Duplicate policy: suffix styles + Duplicates subfolder');
+    const base = 'Invoice.15-12-2025.INV-001.pdf';
+    const inDir = (set) => (name, sub) => set.has((sub ? sub + '/' : '') + name);
+
+    let r = resolveDuplicate(base, '.pdf', inDir(new Set()), { policy: 'suffix', suffix: 'DUPLICATE' });
+    if (!check('no collision -> base, no subfolder', r.filename === base && r.subfolder === '')) failures++;
+
+    const two = new Set([base, 'Invoice.15-12-2025.INV-001-DUPLICATE.pdf']);
+    r = resolveDuplicate(base, '.pdf', inDir(two), { policy: 'suffix', suffix: 'DUPLICATE' });
+    if (!check('DEFAULT suffix DUPLICATE byte-identical (-DUPLICATE-2)',
+      r.filename === 'Invoice.15-12-2025.INV-001-DUPLICATE-2.pdf' && r.subfolder === '')) failures++;
+
+    r = resolveDuplicate(base, '.pdf', inDir(new Set([base])), { policy: 'suffix', suffix: 'COPY' });
+    if (!check('suffix COPY -> -COPY', r.filename === 'Invoice.15-12-2025.INV-001-COPY.pdf')) failures++;
+
+    r = resolveDuplicate(base, '.pdf', inDir(new Set([base, 'Invoice.15-12-2025.INV-001-2.pdf'])), { policy: 'suffix', suffix: 'number' });
+    if (!check('suffix number -> -3 (pure counter)', r.filename === 'Invoice.15-12-2025.INV-001-3.pdf')) failures++;
+
+    r = resolveDuplicate(base, '.pdf', inDir(new Set([base])), { policy: 'suffix', suffix: 'date', now: new Date(2026, 2, 5) });
+    if (!check('suffix date -> -2026-03-05', r.filename === 'Invoice.15-12-2025.INV-001-2026-03-05.pdf')) failures++;
+
+    r = resolveDuplicate(base, '.pdf', inDir(new Set([base])), { policy: 'suffix', suffix: 'ARCHIVE' });
+    if (!check('custom suffix -> -ARCHIVE', r.filename === 'Invoice.15-12-2025.INV-001-ARCHIVE.pdf')) failures++;
+
+    r = resolveDuplicate(base, '.pdf', inDir(new Set([base])), { policy: 'suffix', suffix: 'a/b:c' });
+    if (!check('custom suffix sanitised (no path sep / illegal chars)',
+      r.subfolder === '' && !/[\\/:]/.test(r.filename) && r.filename.startsWith('Invoice.15-12-2025.INV-001-'))) failures++;
+
+    r = resolveDuplicate(base, '.pdf', inDir(new Set([base])), { policy: 'subfolder' });
+    if (!check('subfolder policy -> Duplicates/, same name',
+      r.filename === base && r.subfolder === DUPLICATES_SUBFOLDER)) failures++;
+
+    r = resolveDuplicate(base, '.pdf', inDir(new Set([base, 'Duplicates/' + base])), { policy: 'subfolder' });
+    if (!check('subfolder dup-of-dup -> -2 inside Duplicates',
+      r.subfolder === DUPLICATES_SUBFOLDER && r.filename === 'Invoice.15-12-2025.INV-001-2.pdf')) failures++;
   }
 
   // ── Folder-pattern builder (Settings → Output Structure) ────────────────────

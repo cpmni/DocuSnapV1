@@ -186,6 +186,59 @@ function resolveDuplicateFilename(baseFilename, ext, existsFn) {
   return candidate;
 }
 
+// The subfolder a duplicate is filed into under the 'subfolder' policy.
+const DUPLICATES_SUBFOLDER = 'Duplicates';
+
+// Resolve the SUFFIX token for the 'suffix' policy. Default 'DUPLICATE' (byte-identical to the old
+// behaviour). Reserved words: 'COPY' -> -COPY; 'number' -> pure counter (-2, -3); 'date' -> the
+// import date (-YYYY-MM-DD). Anything else is a CUSTOM suffix, run through the same Windows-safety
+// pass as a filename stem. `now` is injectable for testable 'date'.
+function _duplicateTag(suffix, now) {
+  const s = (suffix == null ? 'DUPLICATE' : String(suffix)).trim();
+  const up = s.toUpperCase();
+  if (!s || up === 'DUPLICATE') return 'DUPLICATE';
+  if (up === 'COPY') return 'COPY';
+  if (s.toLowerCase() === 'number') return '';            // pure counter, no word
+  if (s.toLowerCase() === 'date') {
+    const d = now instanceof Date ? now : new Date();
+    const p = (x) => String(x).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }
+  return sanitiseFilenameStem(s) || 'DUPLICATE';          // custom -> safe, never empty
+}
+
+// Policy-aware duplicate resolution. Returns { filename, subfolder }. `existsIn(name, subfolder)`
+// checks whether `name` already exists in targetDir/subfolder (subfolder '' = the target dir), with
+// the caller excluding the doc's OWN current copy (a re-file is not a collision). Policies:
+//   'suffix'   (default) — keep both files in the same folder with a suffix (see _duplicateTag).
+//   'subfolder'          — file the duplicate into a 'Duplicates' subfolder, same name (suffix only
+//                          if it ALSO collides there, i.e. a duplicate-of-a-duplicate).
+// The 'suffix'/'DUPLICATE' path is byte-identical to resolveDuplicateFilename.
+function resolveDuplicate(baseFilename, ext, existsIn, opts = {}) {
+  const policy = opts.policy === 'subfolder' ? 'subfolder' : 'suffix';
+  if (!existsIn(baseFilename, '')) return { filename: baseFilename, subfolder: '' };
+
+  const stem = baseFilename.slice(0, -ext.length);
+
+  if (policy === 'subfolder') {
+    const sub = DUPLICATES_SUBFOLDER;
+    if (!existsIn(baseFilename, sub)) return { filename: baseFilename, subfolder: sub };
+    let n = 2, cand = `${stem}-${n}${ext}`;
+    while (existsIn(cand, sub)) { n++; cand = `${stem}-${n}${ext}`; }
+    return { filename: cand, subfolder: sub };
+  }
+
+  const tag = _duplicateTag(opts.suffix, opts.now);
+  if (!tag) {                                             // 'number' style: -2, -3, …
+    let n = 2, cand = `${stem}-${n}${ext}`;
+    while (existsIn(cand, '')) { n++; cand = `${stem}-${n}${ext}`; }
+    return { filename: cand, subfolder: '' };
+  }
+  let cand = `${stem}-${tag}${ext}`, n = 2;
+  while (existsIn(cand, '')) { cand = `${stem}-${tag}-${n}${ext}`; n++; }
+  return { filename: cand, subfolder: '' };
+}
+
 // Build the subfolder segments for one document from a folder PATTERN. "/" in the
 // pattern separates subfolder levels; each level is token-substituted and run
 // through the same Windows-safety pass as a filename stem (illegal chars stripped,
@@ -212,4 +265,6 @@ module.exports = {
   buildFilename,
   buildFolderSegments,
   resolveDuplicateFilename,
+  resolveDuplicate,
+  DUPLICATES_SUBFOLDER,
 };
