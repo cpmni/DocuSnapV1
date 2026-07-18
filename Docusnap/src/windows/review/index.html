@@ -1238,6 +1238,7 @@
       <div style="width:280px; flex-shrink:0; border-right:1px solid var(--border); padding:14px 16px; overflow-y:auto; display:flex; flex-direction:column; gap:12px;">
         <label style="font-size:11px; color:var(--muted);">Printer
           <select id="print-printer" style="width:100%; margin-top:4px;"></select>
+          <span style="display:block; margin-top:3px; font-size:10px; color:var(--muted); line-height:1.4;">Used for the <b>Print</b> button below. In the full printer dialog you pick the printer there.</span>
         </label>
         <label style="font-size:11px; color:var(--muted);">Copies
           <input type="number" id="print-copies" min="1" max="99" value="1" style="width:100%; margin-top:4px;">
@@ -1274,8 +1275,8 @@
         </label>
         <div style="flex:1;"></div>
         <button class="btn primary" id="print-modal-go" style="width:100%;">Print</button>
-        <button class="btn" id="print-modal-dialog" title="Opens your printer's own dialog — the only place for booklet, paper trays, stapling and quality settings" style="width:100%; font-size:11px;">Full printer dialog&hellip;</button>
-        <div style="font-size:10px; color:var(--muted); line-height:1.5;">Booklet, paper trays, stapling and quality live in your printer&rsquo;s own dialog &mdash; open it above.</div>
+        <button class="btn" id="print-modal-dialog" title="Opens your printer's own dialog — choose the printer there, plus booklet, paper trays, stapling and quality settings" style="width:100%; font-size:11px;">Full printer dialog&hellip;</button>
+        <div style="font-size:10px; color:var(--muted); line-height:1.5;">Booklet, paper trays, stapling and quality live in your printer&rsquo;s own dialog &mdash; open it above and choose your printer there.</div>
         <div id="print-modal-msg" style="font-size:11px; color:var(--muted); min-height:14px;"></div>
       </div>
       <!-- preview -->

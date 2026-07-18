@@ -42,6 +42,20 @@ function register(ctx) {
   const { ipcMain, getDb, fs, path, logger } = ctx;
   const { BrowserWindow } = require('electron');
 
+  // The visible window that OWNS the print job's dialog — so the native driver dialog stays
+  // above the app instead of dropping behind when the app is clicked (eric: a `show:false`
+  // print window is unowned, so its dialog can be occluded). Prefer Review (where the Print
+  // button lives), then main, then the focused window; all isDestroyed()-guarded so a closed
+  // window can never be passed to `parent` (which would throw at construction).
+  const getPrintParent = () => {
+    const w = ctx.windows && ctx.windows['review'];
+    if (w && !w.isDestroyed()) return w;
+    const m = ctx.getMainWindow && ctx.getMainWindow();
+    if (m && !m.isDestroyed()) return m;
+    const f = BrowserWindow.getFocusedWindow();
+    return (f && !f.isDestroyed()) ? f : undefined;
+  };
+
   // Audit helper — every print INTENT gets a row (success | cancelled | failure | noop).
   const auditPrint = (db, docId, outcome, meta) => {
     try {
@@ -86,6 +100,7 @@ function register(ctx) {
       try {
         win = new BrowserWindow({
           show: false,
+          parent: getPrintParent(),   // owner ⇒ the driver dialog stays above the app (Bug 2). Must be set at construction.
           webPreferences: { plugins: true, sandbox: true, contextIsolation: true, nodeIntegration: false, preload: undefined },
         });
         win.setMenu(null);
@@ -96,6 +111,11 @@ function register(ctx) {
         timer = setTimeout(() => finish('failure', { load_error: 'load timeout' }), PRINT_LOAD_TIMEOUT_MS);
 
         win.webContents.once('did-finish-load', () => {
+          // The PDF has loaded — the load-timeout's job is done. CLEAR it (eric): otherwise a
+          // user who reads/configures the driver dialog for >20s would hit the load-timeout,
+          // which destroys the window and closes the dialog under them. An interactive dialog
+          // must have NO wall-clock cap.
+          if (timer) { clearTimeout(timer); timer = null; }
           // small settle so the PDF plugin is ready to print
           setTimeout(() => {
             if (settled || !win || win.isDestroyed()) return;
