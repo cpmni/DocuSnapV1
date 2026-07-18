@@ -1063,7 +1063,6 @@ function decisionBar(route) {
   } else if (canDecide()) {
     acts.appendChild(mkBtn({ label: 'Approve',   icon: 'check',  variant: 'primary',   sm: false, onClick: () => decide('approve') }));
     acts.appendChild(mkBtn({ label: 'Reject',    icon: 'reject', variant: 'danger',    sm: false, onClick: () => decide('reject') }));
-    acts.appendChild(mkBtn({ label: 'Mark Paid', icon: 'check',  variant: 'secondary', sm: false, onClick: () => decide('paid') }));
   }
   // Disposition: route the document back to the sender or on to another user. Admin/edit
   // only (reuses the assign control, which lists the sender for a route-back).
@@ -1295,14 +1294,13 @@ function mbRow(rt) {
       } else if (canDecide()) {
         acts.appendChild(mkBtn({ label: 'Approve',   icon: 'check',  variant: 'primary',   onClick: () => decide('approve') }));
         acts.appendChild(mkBtn({ label: 'Reject',    icon: 'reject', variant: 'danger',    onClick: () => decide('reject') }));
-        acts.appendChild(mkBtn({ label: 'Mark Paid', icon: 'check',  variant: 'secondary', onClick: () => decide('paid') }));
       }
       if (rt.state === 'pending') acts.appendChild(mkBtn({ label: 'Claim', icon: 'claim', variant: 'secondary', onClick: () => act(api.workflow.claim(rt.id, rt.version)) }));
     }
   }
   const actionable = (currentBox === 'inbox' || currentBox === 'assigned') && open;
   acts.appendChild(mkBtn({ label: 'View doc', icon: 'view', variant: 'ghost', onClick: () => { setView('search'); openDocument(rt.document_id, actionable ? rt : null); } }));
-  if (rt.has_stamp) {   // a stamped APPROVED/REJECTED/PAID copy was filed for this decision
+  if (rt.has_stamp) {   // a stamped APPROVED/REJECTED copy was filed (legacy PAID stamps still served)
     acts.appendChild(mkBtn({ label: 'View stamped copy', icon: 'doc', variant: 'ghost', onClick: () => viewStamped(rt.id) }));
   }
   return el;

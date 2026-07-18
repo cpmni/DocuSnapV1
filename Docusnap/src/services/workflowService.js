@@ -125,16 +125,20 @@ function createWorkflowService(deps = {}) {
     }
 
     // Decision must match what was requested. An "approve" request accepts approve | reject
-    // | paid (a deciding action); "acknowledge" accepts only acknowledge.
-    const DECIDE = ['approve', 'reject', 'paid'];
+    // (a deciding action); "acknowledge" accepts only acknowledge.
+    // NOTE: 'paid' was REMOVED for v1 (Oracle ruling, WORKFLOW_SUITE_2026-07-18.md §5) — it was
+    // half-wired (in neither OPEN_STATES nor CLOSED_STATES, invisible in 3 of 4 boxes). Payment
+    // tracking, if ever wanted, returns as a NEW designed state with its own migration — never
+    // by re-adding 'paid' here (pinned in test_workflow.js).
+    const DECIDE = ['approve', 'reject'];
     const okForApprove = route.action_required === 'approve' && DECIDE.includes(decision);
     const okForAck     = route.action_required === 'acknowledge' && decision === 'acknowledge';
     if (!okForApprove && !okForAck) {
       return fail('INVALID', `Decision "${decision}" is not valid for an "${route.action_required}" request.`);
     }
-    // Least privilege: approve/reject/paid need admin|edit; acknowledge is open to all.
+    // Least privilege: approve/reject need admin|edit; acknowledge is open to all.
     if (DECIDE.includes(decision) && !ACTOR_CAN_DECIDE.includes(actor.role)) {
-      return fail('FORBIDDEN', 'Your role cannot approve, reject or mark paid — only acknowledge.');
+      return fail('FORBIDDEN', 'Your role cannot approve or reject — only acknowledge.');
     }
     if (decision === 'reject' && !String(comment || '').trim()) {
       return fail('COMMENT_REQUIRED', 'A reason is required to reject.');
@@ -142,8 +146,7 @@ function createWorkflowService(deps = {}) {
 
     const resolvedAt = now();
     const newState = decision === 'approve' ? 'approved'
-      : decision === 'reject' ? 'rejected'
-      : decision === 'paid' ? 'paid' : 'acknowledged';
+      : decision === 'reject' ? 'rejected' : 'acknowledged';
     const changed = wf.updateState(db, routeId, _ver(route, expectedVersion), {
       state: newState, resolution_comment: comment || null, resolved_at: resolvedAt,
     });
@@ -153,9 +156,9 @@ function createWorkflowService(deps = {}) {
     audit({ user_id: actor.userId, action: `workflow_${newState}`, action_category: 'workflow', outcome: 'success',
             target_type: 'document', target_id: route.document_id, document_id: route.document_id,
             details: decision === 'reject' ? 'rejected with reason' : undefined });
-    // Stamp a PDF copy of the decision (approve/reject/paid). Fire-and-forget + non-fatal:
+    // Stamp a PDF copy of the decision (approve/reject). Fire-and-forget + non-fatal:
     // the recorded decision above is the source of truth; a stamp failure never rolls it back.
-    if (decision === 'approve' || decision === 'reject' || decision === 'paid') {
+    if (decision === 'approve' || decision === 'reject') {
       Promise.resolve()
         .then(() => stampDecision({ db, route, decision, userName: actor.username, comment, resolvedAt }))
         .then((stampedPath) => { if (stampedPath) { try { wf.setStampedPath(db, route.id, stampedPath); } catch { /* non-fatal */ } } })

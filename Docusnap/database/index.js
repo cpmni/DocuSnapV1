@@ -56,6 +56,35 @@ function runMigrations(db) {
 }
 
 function runJsMigrations(db, applied) {
+  // ── Workflow 'paid' heal — MUST run BEFORE any stamped block (Workflow Slice 1, Oracle
+  // condition 1). The half-wired 'paid' route state was removed for v1: it sat in neither
+  // OPEN_STATES nor CLOSED_STATES, so a paid route was invisible in inbox/assigned/completed.
+  // Heal any dark-era rows to 'approved' (their true semantics: an approve-type route resolved
+  // by its recipient — healing RESTORES their visibility in Completed). UNSTAMPED + idempotent:
+  // re-running is free and self-heals restored/worktree DBs every boot. Placed at the TOP of
+  // this function so a FUTURE stamped table-rebuild that adds a CHECK constraint (Workflow
+  // Slice 4) can never see a nonconforming 'paid' row, even on the first boot of a dark-era
+  // DB. Do NOT move this below the stamped blocks — pinned by
+  // database/modules/test_workflow_paid_heal.js. `version` is deliberately NOT bumped ('paid'
+  // is terminal; no CAS can act on it — also pinned).
+  if (tableExists(db, 'document_routes')) {
+    try {
+      const routesHealed = db.prepare(`UPDATE document_routes SET state='approved' WHERE state='paid'`).run().changes;
+      const docsHealed = (tableExists(db, 'documents') && hasColumn(db, 'documents', 'workflow_status'))
+        ? db.prepare(`UPDATE documents SET workflow_status='approved' WHERE workflow_status='paid'`).run().changes
+        : 0;
+      if (routesHealed || docsHealed) {
+        console.log(`Workflow heal: 'paid' -> 'approved' (${routesHealed} route(s), ${docsHealed} doc(s))`);
+        try {
+          require('./modules/auth').addAuditEntry(db, {
+            user_id: null, action: 'workflow_paid_migrated', action_category: 'workflow',
+            outcome: 'success', metadata: { routes: routesHealed, docs: docsHealed },
+          });
+        } catch { /* audit is best-effort — must never abort migrations */ }
+      }
+    } catch (e) { console.warn(`  workflow paid heal: ${e.message}`); }
+  }
+
   // Migration 2: upgrade v1 fields table to v2 (adds document_type_id)
   if (!applied.has(2)) {
     upgradeFieldsTable(db);

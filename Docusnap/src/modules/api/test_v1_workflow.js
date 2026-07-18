@@ -109,6 +109,18 @@ async function main() {
   r = await editorC.workflow.resolve(rjRoute.id, 'reject', 'totals wrong', rjRoute.version);
   check('reject with reason -> 200 rejected', r.status === 200 && r.json.route.state === 'rejected');
 
+  // ── 'paid' decision REMOVED for v1 (Workflow Slice 1) ────────────────────────
+  // The /v1 layer passes the decision string VERBATIM to workflowService.resolve — the
+  // service DECIDE allowlist is the ONLY wall, and this pins that it holds over the wire.
+  r = await adminC.workflow.assign(1, editorId, 'approve');
+  const pdRoute = r.json.route;
+  r = await editorC.workflow.resolve(pdRoute.id, 'paid', 'paid via BACS', pdRoute.version);
+  check("'paid' decision over /v1 -> 400 INVALID (removed)", r.status === 400 && r.json.code === 'INVALID');
+  // Recall with the PRE-refusal version doubles as a pin that the refused resolve never
+  // touched the CAS version.
+  r = await adminC.workflow.recall(pdRoute.id, pdRoute.version);
+  check("refused 'paid' left the version untouched (recall with old version -> 200)", r.status === 200 && r.json.route.state === 'recalled');
+
   // ── readonly recipient cannot approve ────────────────────────────────────────
   r = await adminC.workflow.assign(1, readerId, 'approve');
   const roRoute = r.json.route;

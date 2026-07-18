@@ -97,13 +97,29 @@ function main() {
     db.prepare('SELECT status,workflow_status FROM documents WHERE id=1').get().status === 'confirmed'
     && db.prepare('SELECT workflow_status FROM documents WHERE id=1').get().workflow_status === 'approved');
 
-  // ── mark-paid decision (a deciding action; editor/admin only, optional note) ──
+  // ── 'paid' REMOVED for v1 (Oracle ruling, WORKFLOW_SUITE_2026-07-18.md §5) ────
+  // Mark Paid was half-wired: a 'paid' route sat in neither OPEN_STATES nor CLOSED_STATES,
+  // so it vanished from inbox/assigned/completed. Payment tracking, if ever wanted, returns
+  // as a NEW designed state with its own migration — NEVER by re-adding 'paid' to DECIDE.
+  // These checks are deliberate tripwires for that (dark-era rows are healed to 'approved'
+  // at boot — see database/modules/test_workflow_paid_heal.js).
   const ap = wf.assign(db, admin, { documentId: 1, toUserId: 2, actionRequired: 'approve' });
-  const paid = wf.resolve(db, editor, ap.route.id, { decision: 'paid', comment: 'paid via BACS' });
-  check('editor marks paid -> state paid + note recorded',
-    paid.ok && paid.route.state === 'paid' && paid.route.resolution_comment === 'paid via BACS');
-  check('readonly cannot mark paid (role gate)',
-    wf.resolve(db, reader, wf.assign(db, admin, { documentId: 1, toUserId: 3, actionRequired: 'approve' }).route.id, { decision: 'paid' }).code === 'FORBIDDEN');
+  const paidTry = wf.resolve(db, editor, ap.route.id, { decision: 'paid', comment: 'paid via BACS' });
+  check("'paid' decision -> INVALID (removed from DECIDE)", paidTry.code === 'INVALID');
+  check("refused 'paid' leaves the route pending",
+    db.prepare('SELECT state FROM document_routes WHERE id=?').get(ap.route.id).state === 'pending');
+  check("refused 'paid' leaves workflow_status untouched",
+    db.prepare('SELECT workflow_status FROM documents WHERE id=1').get().workflow_status === 'pending');
+  // Readonly + 'paid' now dies at the DECISION check (:130, which precedes the role gate at
+  // :136) -> INVALID, NOT the old FORBIDDEN. Copying the old expectation would green a wrong pin.
+  check("readonly 'paid' -> INVALID (decision check precedes role gate)",
+    wf.resolve(db, reader, wf.assign(db, admin, { documentId: 1, toUserId: 3, actionRequired: 'approve' }).route.id, { decision: 'paid' }).code === 'INVALID');
+  // Role-gate message no longer mentions paid.
+  const roleErr = wf.resolve(db, reader, wf.assign(db, admin, { documentId: 1, toUserId: 3, actionRequired: 'approve' }).route.id, { decision: 'approve' });
+  check('role-gate message mentions no "paid"', roleErr.code === 'FORBIDDEN' && !/paid/i.test(roleErr.error));
+  // Stamp belt: the PAID preset is gone and the service never attempts a paid stamp.
+  check('DECISION_STYLE.paid removed', require('./pdfStamp').DECISION_STYLE.paid === undefined);
+  check('no stamp attempted for a refused paid', !stamps.some(s => s.decision === 'paid'));
 
   // ── optimistic concurrency (stale version loses) ─────────────────────────────
   const a4 = wf.assign(db, admin, { documentId: 1, toUserId: 2, actionRequired: 'approve' });
@@ -141,6 +157,10 @@ function main() {
   // Once resolved, the lock releases.
   wf.resolve(db, editor, un.route.id, { decision: 'approve' });
   check('editGuard: lock releases after the route resolves', editGuard(db, 2, 'edit').ok === true);
+
+  // ── zero-paid sweep: NO path anywhere in this suite can mint a 'paid' row ─────
+  check("zero 'paid' routes exist after the full flow",
+    db.prepare(`SELECT COUNT(*) c FROM document_routes WHERE state='paid'`).get().c === 0);
 
   db.close();
   console.log(fail ? `\n${fail} check(s) FAILED` : '\nAll workflow checks passed.');

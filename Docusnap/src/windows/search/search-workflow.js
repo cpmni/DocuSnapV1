@@ -87,7 +87,6 @@ function _decisionBar(route) {
   } else if (_canDecide()) {
     acts.appendChild(_btn('Approve', true, () => decide('approve')));
     acts.appendChild(_btn('Reject', false, () => decide('reject')));
-    acts.appendChild(_btn('Mark Paid', false, () => decide('paid')));
   }
   // Disposition: route back to the sender or on to another user (reuses the assign form,
   // with the sender pre-selected for a route-back). Admin/edit only.

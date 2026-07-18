@@ -16,10 +16,11 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 const MAX_NOTES = 600;
 
 // Default decision presentation — callers may override label/color.
+// 'paid' removed for v1 (Workflow Slice 1) — an unknown decision no-ops (stampWorkflowDecision
+// returns null), and legacy *.PAID-stamped.pdf copies on disk stay served (deliberate; no cleanup).
 const DECISION_STYLE = {
   approve: { label: 'APPROVED', color: '#2E7D32' },   // green
   reject:  { label: 'REJECTED', color: '#C62828' },   // red
-  paid:    { label: 'PAID',     color: '#1565C0' },   // blue
 };
 
 function hexToRgb(hex) {

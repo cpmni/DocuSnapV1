@@ -89,6 +89,18 @@ console.log('§2 route-party grant — OPEN routes only (Oracle C3), the workflo
   const d4 = mkDoc(db4, 'deferred');
   mkRoute(db4, d4, E.id, RECIP.id, 'recalled');
   check("recalled route = CLOSED -> party DENIED", !can(db4, RECIP, d4));
+
+  // Remaining closed states (Slice-1 matrix completion). A dark-era 'paid' row is healed to
+  // exactly 'approved' at boot (see test_workflow_paid_heal.js), so 'approved' above covers it —
+  // no 'paid' state can exist post-heal.
+  const db5 = makeDb();
+  const d5 = mkDoc(db5, 'deferred');
+  mkRoute(db5, d5, E.id, RECIP.id, 'rejected');
+  check("rejected route = CLOSED -> party DENIED", !can(db5, RECIP, d5));
+  const db6 = makeDb();
+  const d6 = mkDoc(db6, 'deferred');
+  mkRoute(db6, d6, E.id, RECIP.id, 'acknowledged');
+  check("acknowledged route = CLOSED -> party DENIED", !can(db6, RECIP, d6));
 }
 
 console.log('§3 route-party never DOWNGRADES an existing allow (admin/writer still fine)');
