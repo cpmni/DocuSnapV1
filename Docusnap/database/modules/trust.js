@@ -428,6 +428,15 @@ function isAutoFileEligible(db, doc, opts = {}) {
   // floor below simply finds no keys and is a no-op.
   const dtRow = db.prepare('SELECT * FROM document_types WHERE id = ?').get(doc.document_type_id);
   const slug = dtRow && dtRow.slug;
+  // Generic Document refusal (docs/designs/GENERIC_DOCTYPE_2026-07-18.md §3, Oracle C4):
+  // the "General Document" fallback type is REVIEW-BOUND BY CONSTRUCTION. With a type
+  // assigned, the 'no-type' refusal above no longer covers these docs — and at overall
+  // confidence 100 the structural gate below is GATE-FREE by default (strict_100_autofile
+  // is opt-in), so this refusal is the ENTIRE wall between a generic doc and auto-file.
+  // Unconditional: any confidence, any slider, any graduation. PINNED by
+  // test_generic_autofile_refusal.js — do not weaken or move below the floor logic.
+  if (slug === require('./document_types').GENERIC_SLUG)
+    return { eligible: false, floor: UNTRUSTED_FLOOR, reason: 'generic-type' };
   const t = scopeTrust(db, doc.supplier_name, slug, opts);
   // Graduation is gated by the master switch + a per-scope opt-out (the visible controls). If
   // either is off, a trusted scope keeps the user's threshold — no 98 floor.

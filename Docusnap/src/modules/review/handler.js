@@ -702,6 +702,9 @@ function register(ctx) {
       const result = await _upsertTemplate(ctx, db, document_id, {
         allValues, document_type_slug, supplier_name, dtInfo,
       });
+      if (result && result.skipped === 'generic-type') {
+        return { success: false, error: 'General Documents are filed without templates — there is nothing to add to the Template Manager.' };
+      }
       // Pin the promoted document as the template's sample so the template
       // editor, opened straight from here, has it loaded in the preview pane
       // (no second manual browse). This is the doc the admin just curated, so
@@ -752,6 +755,9 @@ function register(ctx) {
       const result = await _upsertTemplate(ctx, db, document_id, {
         allValues, document_type_slug, supplier_name, dtInfo,
       });
+      if (result && result.skipped === 'generic-type') {
+        return { success: false, error: 'General Documents are filed without templates — retype the document first if it belongs with this template.' };
+      }
       const newId = result.templateId;
       // Only pin/derive on a genuinely NEW template — never disturb an existing one's sample.
       if (newId && result.created) {
@@ -785,6 +791,13 @@ module.exports = { register, _buildTemplateFields, _upsertTemplate };   // _buil
 // ── Template create / update ──────────────────────────────────────────────────
 
 async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_slug, supplier_name, dtInfo }) {
+  // Generic Document (docs/designs/GENERIC_DOCTYPE_2026-07-18.md §3, pinned trade-off):
+  // the heterogeneous "General Document" pile must NEVER mint templates — a generic-born
+  // template could later Stage-0-match and stamp generic over a doc a real type fits.
+  // No template learning on the pile in v1; the Teach-Me Funnel is the later graduation path.
+  if (document_type_slug === require('../../../database/modules/document_types').GENERIC_SLUG) {
+    return { skipped: 'generic-type' };
+  }
   const { path, fs, templatesDir } = ctx;
   const templates = require('../../../database/modules/templates');
 

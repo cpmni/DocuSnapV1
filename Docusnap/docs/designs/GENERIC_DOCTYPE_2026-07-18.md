@@ -119,16 +119,16 @@ OFF ⇒ today exactly: NULL id, no title row, 'Unknown Company', invoice-shaped 
 9. **Renderer prefill untestable in the JS battery** — covered by the manual gate + existing reviewService normaliseDate tests.
 10. **Letterhead-as-title residual** (noun-carrying straplines, "Annual Statement" mastheads) — position decay + line-1 rule + supplier dedupe cover most; residue is one-click editable and never files silently.
 
-## 11. Open questions for the owner
+## 11. Open questions — **ANSWERED by the owner 2026-07-18: "all as recommended"**
 
-1. **Near-miss trigger:** v1 fallback fires on any detection None. Do you want the stricter barry rule (fallback only on true zero-signal) enough to justify exposing the best sub-threshold score from `detect_document_type`? (Costs a small change to a byte-identical-gated function; the chip covers near-miss docs either way.)
-2. **Default filename pattern:** confirm adopting `{docType}.{date}.{ref}.{title}` as the new default (slice 6), given the byte-identical proof for typed docs.
-3. **Naming:** "General Document" (type) and "General" (folder) — confirm both words.
-4. **Date affordance:** confirm prefill-with-provenance over eric's one-click button (both wired designs are ready).
-5. **Toggle seeding:** confirm the Settings toggle auto-creates the preset on first enable (vs requiring a separate "Add from catalog" step).
-6. **Backlog:** after enabling, existing NULL-type docs stay NULL until reprocessed — is a one-time "re-check unrecognised documents" affordance wanted, or is go-forward-only fine for v1?
-7. **Metric surfacing:** should the one-keystroke rate appear anywhere (e.g. a Getting-smarter card line), or remain an internal measure?
-8. **Title scope pin:** confirm generic-only titles for v1 (extending to typed docs later re-opens the default-pattern and corpus-churn decisions — pinned to force that conversation).
+1. **Near-miss trigger** ✔ v1 fires on any detection None; the stricter zero-signal rule is deferred (the chip covers near-miss docs; exposing a sub-threshold score is a future refinement).
+2. **Default filename pattern** ✔ `{docType}.{date}.{ref}.{title}` adopted as the new default, as slice 6, last, behind its own gate (byte-identical typed filenames proven before flip).
+3. **Naming** ✔ "General Document" (type) · "General" (folder).
+4. **Date affordance** ✔ prefill-with-provenance ("Scan date — edit if the document shows its own date"); eric's one-click button in `#confirm-config-note` remains the fallback if the user clears the prefill.
+5. **Toggle seeding** ✔ the Settings toggle auto-creates the preset on first enable (transactional, idempotent).
+6. **Backlog** ✔ go-forward-only for v1; existing NULL-type docs adopt via ordinary reprocess (the C1 `applyReprocessResult` branch). A bulk "re-check unrecognised documents" affordance is DEFERRED.
+7. **Metric surfacing** ✔ the one-keystroke rate stays an internal measure for v1 (no dashboard card).
+8. **Title scope pin** ✔ generic-only titles for v1 — extending to typed docs later MUST re-open the default-pattern and corpus-churn decisions (pinned).
 
 ## 12. Oracle review (2026-07-18) — SIGN OFF WITH CONDITIONS
 
