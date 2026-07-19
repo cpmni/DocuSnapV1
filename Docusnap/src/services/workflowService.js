@@ -51,6 +51,49 @@ function editGuard(db, documentId, actorRole, deps = {}) {
   };
 }
 
+// ── Decision snapshot (Slice 2) ──────────────────────────────────────────────
+// Kill switch, read at CALL TIME (never cached at module load) so it's togglable in tests and
+// flippable in a packaged build. Default OFF ⇒ resolve() writes no snapshot ⇒ byte-identical. Doubly
+// dark: master WORKFLOW_FEATURE_ENABLED=false keeps resolve() unreachable in production regardless.
+function decisionSnapshotEnabled() {
+  const v = String(process.env.WORKFLOW_DECISION_SNAPSHOT || '').trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'on';
+}
+
+// Pure (DB-free) — assemble the append-only decision record from values already in hand. The snapshot
+// captures the EXTRACTED FIELDS AT THE INSTANT OF RESOLVE — NOT "what the approver first saw": an admin
+// editGuard override (see editGuard above, admin ⇒ overridden) can reprocess a locked open-route doc
+// between first view and decision, changing the whole snapshot. FORWARD CONTRACT: no consumer (Slice-3
+// amount routing, payment auth, export) may treat snapshot_total_amount as a human-verified amount without
+// a mid-flight-change guard. (Oracle C5 — docs/designs/WORKFLOW_SLICE2_BUILD_2026-07-19.md §11.)
+function buildDecisionSnapshot({ route, newState, resolvedAt, actor, comment, totalDisplay, overallConfidence }) {
+  const snapshot = {
+    document_id:        route.document_id,
+    supplier_name:      route.supplier_name ?? null,
+    reference_number:   route.reference_number ?? null,
+    doc_date:           route.doc_date ?? null,
+    type_name:          route.type_name ?? null,
+    total:              totalDisplay ?? null,
+    overall_confidence: overallConfidence ?? null,
+    action_required:    route.action_required,
+    resulting_state:    newState,        // approved | rejected | acknowledged
+  };
+  return {
+    routeId:             route.id,
+    documentId:          route.document_id,
+    actorUserId:         actor.userId,
+    actorUsername:       actor.username,
+    decision:            newState,        // the committed resulting state
+    comment:             comment ?? null,
+    snapshotJson:        JSON.stringify(snapshot),
+    snapshotTotalAmount: totalDisplay ?? null,
+    chainPosition:       1,               // Slice-4 multi-step fills; single-hop = 1
+    onBehalfOfUserId:    null,            // Slice-5 delegation
+    onBehalfOfUsername:  null,
+    decidedAt:           resolvedAt,
+  };
+}
+
 function createWorkflowService(deps = {}) {
   const wf  = deps.dbWorkflow  || require('../../database/modules/workflow');
   const dbAuth = deps.dbAuth   || require('../../database/modules/auth');
@@ -171,6 +214,21 @@ function createWorkflowService(deps = {}) {
     audit({ user_id: actor.userId, action: `workflow_${newState}`, action_category: 'workflow', outcome: 'success',
             target_type: 'document', target_id: route.document_id, document_id: route.document_id,
             details: decision === 'reject' ? 'rejected with reason' : undefined });
+    // Decision snapshot (Slice 2) — an append-only record of the extracted fields at the INSTANT OF
+    // RESOLVE, so a later reprocess can't rewrite what was decided. Written AFTER the CAS commit above
+    // (a version-race loser returned CONFLICT at :168 and never reaches here ⇒ exactly one snapshot per
+    // committed decision). Gated at CALL TIME by WORKFLOW_DECISION_SNAPSHOT (default OFF ⇒ byte-identical).
+    // Best-effort: wrapped so a snapshot failure can NEVER roll back the decision (mirrors audit/notify);
+    // the doc-side reads (total, overall_confidence) live here — buildDecisionSnapshot stays pure/DB-free.
+    if (decisionSnapshotEnabled()) {
+      try {
+        const totalDisplay = docs.getExtractedTotalDisplay(db, route.document_id);
+        const overallConfidence = docs.getById(db, route.document_id)?.overall_confidence ?? null;
+        wf.insertRouteDecision(db, buildDecisionSnapshot({
+          route, newState, resolvedAt, actor, comment: comment || null, totalDisplay, overallConfidence,
+        }));
+      } catch { /* never fail the resolve — document_routes + audit remain the source of truth */ }
+    }
     // Stamp a PDF copy of the decision (approve/reject). Fire-and-forget + non-fatal:
     // the recorded decision above is the source of truth; a stamp failure never rolls it back.
     if (decision === 'approve' || decision === 'reject') {
@@ -203,4 +261,4 @@ function createWorkflowService(deps = {}) {
   return { inbox, sent, assigned, completed, assign, claim, resolve, recall };
 }
 
-module.exports = { createWorkflowService, editGuard, ACTOR_CAN_ASSIGN, ACTOR_CAN_DECIDE, ROUTABLE_STATES };
+module.exports = { createWorkflowService, editGuard, buildDecisionSnapshot, decisionSnapshotEnabled, ACTOR_CAN_ASSIGN, ACTOR_CAN_DECIDE, ROUTABLE_STATES };

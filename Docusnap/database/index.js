@@ -1053,6 +1053,41 @@ function runJsMigrations(db, applied) {
     try { db.exec(`ALTER TABLE document_routes ADD COLUMN stamped_path TEXT`); console.log('Workflow schema: added document_routes.stamped_path'); }
     catch (e) { console.warn(`  document_routes.stamped_path: ${e.message}`); }
   }
+
+  // Decision snapshot (Workflow Slice 2): an APPEND-ONLY record of each approve/reject/acknowledge,
+  // capturing the extracted fields AT THE INSTANT OF RESOLVE (supplier/ref/date/total/confidence) so a
+  // later reprocess can never rewrite what was decided. Its OWN idempotent guard — NOT nested inside the
+  // document_routes block above (a DB that already has document_routes must still get this table). NO FK on
+  // route_id/document_id BY DESIGN: document_routes.document_id AND extractions.document_id both cascade on
+  // doc-delete, so this denormalised row is the ONLY surviving audit — an FK would cascade-destroy it.
+  // (Slice-4's document_routes stamped rebuild MUST preserve document_routes.id so route_id soft-refs stay
+  // valid — see docs/designs/WORKFLOW_SUITE_2026-07-18.md §5.) Two triggers make append-only STRUCTURAL: a
+  // row-level UPDATE/DELETE is blocked; a whole-table DROP+recreate migration is still allowed (DROP is DDL
+  // and does not fire these), and this ensure-block recreates the triggers afterward.
+  if (!tableExists(db, 'route_decisions')) {
+    db.exec(`CREATE TABLE route_decisions (
+      id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+      route_id              INTEGER,   -- soft-ref to document_routes.id (NO FK by design; Slice-4 rebuild MUST preserve the id)
+      document_id           INTEGER,   -- denormalised so the record survives the route/doc delete cascade
+      actor_user_id         INTEGER,
+      actor_username        TEXT,
+      decision              TEXT,       -- approved | rejected | acknowledged (the committed resulting state)
+      comment               TEXT,
+      snapshot_json         TEXT,       -- extracted fields at the instant of resolve (self-describing JSON)
+      snapshot_total_amount TEXT,       -- the extracted total DISPLAY STRING at resolve (may be NULL)
+      chain_position        INTEGER NOT NULL DEFAULT 1,   -- Slice-4 multi-step fills; 1 for single-hop
+      on_behalf_of_user_id  INTEGER,    -- Slice-5 delegation; NULL in v1
+      on_behalf_of_username TEXT,
+      decided_at            TEXT
+    )`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_route_decisions_doc   ON route_decisions(document_id)`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_route_decisions_route ON route_decisions(route_id)`);
+    db.exec(`CREATE TRIGGER IF NOT EXISTS route_decisions_noupd BEFORE UPDATE ON route_decisions
+             BEGIN SELECT RAISE(ABORT, 'route_decisions is append-only'); END`);
+    db.exec(`CREATE TRIGGER IF NOT EXISTS route_decisions_nodel BEFORE DELETE ON route_decisions
+             BEGIN SELECT RAISE(ABORT, 'route_decisions is append-only'); END`);
+    console.log('Workflow schema: created route_decisions');
+  }
 }
 
 function hasColumn(db, table, column) {

@@ -49,6 +49,20 @@ function getById(db, id) {
   return db.prepare('SELECT * FROM documents WHERE id = ?').get(id);
 }
 
+// The extracted total as a DISPLAY STRING ("£1,046.16"), or NULL when the doc has no total field
+// (delivery notes, acknowledge-only routes, any type without a total). NULL-safe by design — the
+// decision snapshot (Slice 2) must still record a row for a total-less doc. Uses the same total
+// field keys as the search total-filter (search() below).
+function getExtractedTotalDisplay(db, documentId) {
+  const row = db.prepare(
+    `SELECT COALESCE(display_value, raw_value) AS v FROM extractions
+      WHERE document_id = ? AND field_key IN ('total_amount','total','grand_total')
+        AND COALESCE(display_value, raw_value) IS NOT NULL
+      ORDER BY confidence DESC LIMIT 1`
+  ).get(documentId);
+  return row ? (row.v ?? null) : null;
+}
+
 // Clear any FK reference into documents that has NO ON DELETE action, so the
 // subsequent DELETE doesn't trip a constraint. extractions/corrections cascade
 // (001_initial.sql), but templates.sample_document_id (added by JS migration 8
@@ -576,7 +590,7 @@ function getWorkingPaths(db) {
 }
 
 module.exports = {
-  insert, update, getById, getWithExtractions,
+  insert, update, getById, getExtractedTotalDisplay, getWithExtractions,
   getReviewQueue, getDeferredQueue, getByIds,
   getReviewCount, getDeferredCount, getStuckCount, getStuckQueue, getFiledCounts,
   softDelete, restoreDeleted, getDeletedQueue, getDeletedCount,

@@ -101,6 +101,46 @@ function setStampedPath(db, routeId, stampedPath) {
   db.prepare('UPDATE document_routes SET stamped_path = ? WHERE id = ?').run(stampedPath, routeId);
 }
 
+// ── Decision snapshot (Slice 2) — APPEND-ONLY ────────────────────────────────
+// insertRouteDecision writes one immutable record of an approve/reject/acknowledge
+// (the extracted fields AT THE INSTANT OF RESOLVE). There is deliberately NO update/
+// delete sibling — append-only is enforced both by that absence AND by the two
+// BEFORE UPDATE/DELETE triggers on the table (database/index.js). `?? null` keeps
+// better-sqlite3 from seeing `undefined` (which throws on a @named param).
+function insertRouteDecision(db, d) {
+  const info = db.prepare(`
+    INSERT INTO route_decisions
+      (route_id, document_id, actor_user_id, actor_username, decision, comment,
+       snapshot_json, snapshot_total_amount, chain_position, on_behalf_of_user_id,
+       on_behalf_of_username, decided_at)
+    VALUES
+      (@route_id, @document_id, @actor_user_id, @actor_username, @decision, @comment,
+       @snapshot_json, @snapshot_total_amount, @chain_position, @on_behalf_of_user_id,
+       @on_behalf_of_username, @decided_at)
+  `).run({
+    route_id:              d.routeId ?? null,
+    document_id:           d.documentId ?? null,
+    actor_user_id:         d.actorUserId ?? null,
+    actor_username:        d.actorUsername ?? null,
+    decision:              d.decision ?? null,
+    comment:               d.comment ?? null,
+    snapshot_json:         d.snapshotJson ?? null,
+    snapshot_total_amount: d.snapshotTotalAmount ?? null,
+    chain_position:        d.chainPosition ?? 1,
+    on_behalf_of_user_id:  d.onBehalfOfUserId ?? null,
+    on_behalf_of_username: d.onBehalfOfUsername ?? null,
+    decided_at:            d.decidedAt ?? null,
+  });
+  return info.lastInsertRowid;
+}
+
+// Read the decision history for a document (the export/mailbox reader), oldest first.
+function listRouteDecisions(db, documentId) {
+  return db.prepare(
+    'SELECT * FROM route_decisions WHERE document_id = ? ORDER BY decided_at ASC, id ASC'
+  ).all(documentId);
+}
+
 // True when a document has an OPEN routing task (pending or claimed). This is the
 // workflow_lock signal: while it holds, the Review pipeline must not mutate the
 // document (see workflowService.editGuard) so the two systems can't both edit the
@@ -129,5 +169,6 @@ module.exports = {
   insertRoute, getRoute, listInbox, listSent, listAssigned, listCompleted,
   countInbox, countSent, countOpenSent, countAssigned, countCompleted,
   updateState, setDocWorkflowStatus, setStampedPath, hasActiveRoute, isOpenRouteParty,
+  insertRouteDecision, listRouteDecisions,
   OPEN_STATES, CLOSED_STATES,
 };
