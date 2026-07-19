@@ -84,10 +84,11 @@ function register(ctx) {
   function printPdf(db, docId, pdfPath, source, po) {
     const silent = po.silent === true;       // default FALSE = the OS/driver dialog
     return new Promise((resolve) => {
-      let win = null, settled = false, timer = null;
+      let win = null, settled = false, timer = null, poll = null;
       const finish = (outcome, extra) => {
         if (settled) return; settled = true;
         if (timer) { clearTimeout(timer); timer = null; }
+        if (poll) { clearInterval(poll); poll = null; }
         try { if (win && !win.isDestroyed()) win.destroy(); } catch {}
         win = null;
         auditPrint(db, docId, outcome, {
@@ -100,13 +101,24 @@ function register(ctx) {
       try {
         win = new BrowserWindow({
           show: false,
-          parent: getPrintParent(),   // owner ⇒ the driver dialog stays above the app (Bug 2). Must be set at construction.
+          parent: getPrintParent(),   // owner association — bounds the ghost's lifetime to the app window; composes with topmost.
+          // alwaysOnTop forces the OS/driver dialog (an OWNED window of this ghost) into the Windows
+          // TOPMOST z-band, so it stays above the app when the app is clicked. `parent` ALONE cannot do
+          // this: the ghost is show:false / never activated, so clicking a sibling app window doesn't
+          // restack the dialog through the invisible intermediate owner (eric, 2026-07-18; the splash uses
+          // the same show:false+alwaysOnTop pattern, main.js:379). skipTaskbar: explicit (the ghost is hidden).
+          alwaysOnTop: true,
+          skipTaskbar: true,
           webPreferences: { plugins: true, sandbox: true, contextIsolation: true, nodeIntegration: false, preload: undefined },
         });
         win.setMenu(null);
         win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
         win.webContents.on('will-navigate', (e) => e.preventDefault());
         win.webContents.on('did-fail-load', (_e, code, desc) => finish('failure', { load_error: `${code} ${desc}`.slice(0, 80) }));
+        // Leak backstop: if the ghost is ever torn down without a print outcome (the parent Review
+        // window closes, or the app quits while the driver dialog is open), settle so the Promise +
+        // audit row can't leak. No-op during normal finish()-driven teardown (the settled guard).
+        win.once('closed', () => finish('cancelled', { reaped: 'window_closed' }));
 
         timer = setTimeout(() => finish('failure', { load_error: 'load timeout' }), PRINT_LOAD_TIMEOUT_MS);
 
@@ -127,11 +139,34 @@ function register(ctx) {
             if (po.pagesPerSheet && po.pagesPerSheet > 1) opts.pagesPerSheet = po.pagesPerSheet;  // N-up (reading order)
             if (typeof po.color === 'boolean') opts.color = po.color; // omit ⇒ driver default
             try {
+              try { win.setAlwaysOnTop(true); } catch {}   // re-assert topmost the instant before the dialog opens (the ghost is never shown)
               win.webContents.print(opts, (success, failureReason) => {
                 if (success) return finish('success');
                 if (failureReason && /cancel/i.test(String(failureReason))) return finish('cancelled');
                 finish('failure', { print_error: String(failureReason || 'unknown').slice(0, 80) });
               });
+              // The print callback is UNRELIABLE — it may not fire on cancel, on a virtual printer's
+              // "Save as" prompt, or even a normal Ricoh job (owner-observed) — so it can't be the only
+              // teardown, or a cancelled/no-callback print leaks the ghost + Promise and writes NO audit
+              // row. Independent close-detector: a modal print dialog DISABLES its owner (the ghost) while
+              // open and re-enables it on close, so win.isEnabled() tracks open→closed. On open-then-closed
+              // with no callback, reap. Deliberately NO "never opened" wall-clock cap is armed (eric's
+              // openBound): that could close a LIVE dialog if the enabled-state signal is absent (unverified
+              // on the Win11 modern dialog). Without it this is fail-safe either way — it reaps when
+              // isEnabled tracks state, and harmlessly no-ops if it doesn't (the once('closed') backstop
+              // above still resolves on app-window close; leak then bounded to Review's lifetime). (eric, 2026-07-18)
+              let sawDisabled = false;
+              poll = setInterval(() => {
+                if (settled || !win || win.isDestroyed()) { if (poll) { clearInterval(poll); poll = null; } return; }
+                let enabled; try { enabled = win.isEnabled(); } catch { return; }
+                if (!sawDisabled) { if (enabled === false) sawDisabled = true; }   // dialog opened
+                else if (enabled === true) {                                        // dialog closed (printed OR cancelled)
+                  clearInterval(poll); poll = null;
+                  // Let a late/slow callback land first — it carries the accurate success/cancel outcome;
+                  // only if none arrives do we record the honest, indeterminate 'closed'.
+                  setTimeout(() => { if (!settled) finish('closed', { callback: false }); }, 600);
+                }
+              }, 200);
             } catch (e) { finish('failure', { print_error: e.message.slice(0, 80) }); }
           }, 300);
         });

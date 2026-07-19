@@ -1534,6 +1534,9 @@ async function _openPrintModal() {
   if (!currentDoc?.id || !_printModal) return;
   const msg = document.getElementById('print-modal-msg');
   if (msg) msg.textContent = '';
+  // Always re-enable the action buttons on (re)open — an in-flight print may have left them disabled.
+  { const g = document.getElementById('print-modal-go'); if (g) g.disabled = false;
+    const d = document.getElementById('print-modal-dialog'); if (d) d.disabled = false; }
   // Preview pane — reflects the current settings (mono / range / N-up).
   _renderPrintPreview();
   // Printer list.
@@ -1583,18 +1586,20 @@ async function _doModalPrint(silent) {
   const reenable = () => { if (go) go.disabled = false; if (dlg) dlg.disabled = false; };
 
   if (!silent) {
-    // The full driver dialog is a SEPARATE OS window. Electron fires the print callback on a
-    // SUCCESSFUL print but NOT on a cancel — so awaiting it would leave the modal stuck on
-    // "Opening…" with disabled buttons forever after the user cancels (owner-reported). Don't
-    // lock: re-enable immediately so the modal stays usable, and report only a successful print
-    // (asynchronously). A cancel simply leaves the still-usable modal as-is.
-    reenable();
-    if (msg) msg.textContent = 'Your printer’s dialog is open.';
+    // "Advanced printing": hand off ENTIRELY to Windows' own driver dialog. CLOSE our modal so that
+    // dialog is the SOLE print surface (owner-directed 2026-07-18) — no competing overlay to fight it
+    // for z-order. The main process forces that dialog TOPMOST so it stays above the app when clicked
+    // (modules/print/handler.js). The print callback is unreliable (fires on a successful print but not
+    // always on cancel / virtual-printer prompts), so we don't await a result to keep any UI alive;
+    // feedback + errors surface as a toast since the modal is gone. A cancel is silent (the dialog handled it).
+    reenable();               // clear the disabled state before closing so a later reopen isn't stuck
+    _closePrintModal();
+    showToast?.('Opening your printer’s dialog…');
     window.docusnap.printDocument(payload).then((res) => {
-      if (res && res.ok) { _closePrintModal(); showToast?.('Sent to your printer.'); }
-      else if (res && res.reason === 'disabled') { if (msg) msg.textContent = 'Printing is turned off in Settings.'; }
-      else if (res && res.reason === 'file_missing') { if (msg) msg.textContent = "Couldn't find this document's file."; }
-      // cancelled / no callback: nothing to do — the modal is already usable.
+      if (res && res.ok) showToast?.('Sent to your printer.');
+      else if (res && res.reason === 'disabled') showToast?.('Printing is turned off in Settings.', 'warn');
+      else if (res && res.reason === 'file_missing') showToast?.("Couldn't find this document's file.", 'err');
+      // cancelled / closed / no callback: nothing to report — the dialog handled it.
     }).catch(() => {});
     return;
   }
