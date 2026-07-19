@@ -4547,9 +4547,20 @@ function renderAuditRows(rows) {
     const cat = escHtml(r.action_category || '');
     const outcome = escHtml(r.outcome || '');
     const oclass = auditOutcomeClass(r.outcome);
-    const target = r.target_type
-      ? escHtml(r.target_id ? `${r.target_type}:${r.target_id}` : r.target_type)
-      : (r.document_id ? escHtml(`document:${r.document_id}`) : '');
+    // Document targets show the FILENAME + a "View" link (opens the doc in Review, full zoom/pan)
+    // instead of "document:111"; a deleted/missing doc shows as unavailable. Other target types unchanged.
+    const auditDocId = (r.target_type === 'document' && r.target_id) ? r.target_id : (r.document_id || null);
+    let target;
+    if (auditDocId) {
+      const gone = !r.doc_filename || r.doc_status === 'deleted';
+      const fname = r.doc_filename ? escHtml(r.doc_filename) : `document #${auditDocId}`;
+      target = `<span title="document #${auditDocId}">${fname}</span>`
+        + (gone
+            ? ` <span style="color:var(--muted)" title="This document is no longer available">(unavailable)</span>`
+            : ` <button type="button" class="aud-view-btn" data-doc="${auditDocId}" title="Open this document in Review">View</button>`);
+    } else {
+      target = r.target_type ? escHtml(r.target_id ? `${r.target_type}:${r.target_id}` : r.target_type) : '';
+    }
     html.push(`<tr class="aud-row" data-id="${r.id}">
       <td>${when}</td>
       <td>${user}${r.actor_role ? ` <span style="color:var(--muted)">(${escHtml(r.actor_role)})</span>` : ''}</td>
@@ -4576,6 +4587,15 @@ function renderAuditRows(rows) {
     tr.addEventListener('click', () => {
       const d = tbody.querySelector(`tr.aud-detail[data-detail="${tr.dataset.id}"]`);
       if (d) d.style.display = d.style.display === 'none' ? '' : 'none';
+    });
+  });
+  // "View" opens the audited document in Review (full zoom/pan); stop the click from also toggling the
+  // detail row. openReviewWindowAt is admin/edit-gated in main.js (the Audit tab is itself admin-only).
+  tbody.querySelectorAll('.aud-view-btn').forEach(b => {
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = Number(b.dataset.doc);
+      if (id) api.openReviewWindowAt(id);
     });
   });
 }

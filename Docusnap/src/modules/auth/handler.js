@@ -431,7 +431,25 @@ function register(ctx) {
   // Admin audit search (filters + pagination) and CSV export of the filtered set.
   ipcMain.handle('audit-query', (_e, filters) => {
     requireRole('admin');
-    return auth.getAuditLogFiltered(getDb(), filters || {}, { archiveDir: _auditArchiveDir() });
+    const db = getDb();
+    const res = auth.getAuditLogFiltered(db, filters || {}, { archiveDir: _auditArchiveDir() });
+    // Enrich document-target rows with the CURRENT filename + status so the Audit table can show the
+    // filename (not "document:111") + a "View" link. Post-query on the LIVE documents table (works for
+    // archived audit rows too); a deleted/missing doc resolves to null → the UI shows it unavailable.
+    try {
+      const rows = res.rows || [];
+      const idOf = (r) => (r.target_type === 'document' && r.target_id) ? Number(r.target_id) : (r.document_id ? Number(r.document_id) : null);
+      const ids = [...new Set(rows.map(idOf).filter(Boolean))];
+      if (ids.length) {
+        const docs = db.prepare(`SELECT id, original_filename, stored_filename, status FROM documents WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids);
+        const byId = new Map(docs.map(d => [d.id, d]));
+        for (const r of rows) {
+          const d = byId.get(idOf(r));
+          if (d) { r.doc_filename = d.stored_filename || d.original_filename || null; r.doc_status = d.status || null; }
+        }
+      }
+    } catch { /* best-effort enrichment — never break the audit query */ }
+    return res;
   });
   ipcMain.handle('audit-export-csv', async (e, filters) => {
     requireRole('admin');
