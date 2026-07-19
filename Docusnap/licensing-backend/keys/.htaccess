@@ -1,0 +1,13 @@
+# DENY BACKSTOP (SEC-02) — this directory holds the Ed25519 SIGNING SEED, the admin
+# password hash and the 2FA state. It is meant to live OUTSIDE the web docroot; this
+# file is the config-independent last wall if a mis-pointed docroot (e.g. an IONOS
+# account-root docroot) ever serves the tree. Exposure of the seed = forge licenses
+# for every customer, undetectably. Apache-only — on nginx/LiteSpeed the
+# outside-docroot layout is the sole control (see SEC-15).
+<IfModule mod_authz_core.c>
+  Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+  Order deny,allow
+  Deny from all
+</IfModule>
