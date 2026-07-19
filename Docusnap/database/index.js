@@ -1088,6 +1088,28 @@ function runJsMigrations(db, applied) {
              BEGIN SELECT RAISE(ABORT, 'route_decisions is append-only'); END`);
     console.log('Workflow schema: created route_decisions');
   }
+
+  // Amount-threshold routing rules (Workflow Slice 3): "documents of type T with a total in
+  // [min,max) -> route to <role|user> for <approve|acknowledge>". Own idempotent guard, additive.
+  // NO FK on target_user_id BY DESIGN: a deleted target user must make a rule resolve-to-missing
+  // (the engine HOLDS + audits), never cascade-delete the rule. Amounts are INTEGER PENNIES so a
+  // banding decision is exact (never float). Dev/test-seeded in v1 (no rules-management UI yet).
+  if (!tableExists(db, 'workflow_route_rules')) {
+    db.exec(`CREATE TABLE workflow_route_rules (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      document_type_id   INTEGER,                       -- NULL = any type
+      min_amount_pennies INTEGER NOT NULL,              -- inclusive lower bound
+      max_amount_pennies INTEGER,                       -- exclusive upper bound; NULL = unbounded
+      target_role        TEXT,                          -- prefer role; resolves to the single active member
+      target_user_id     INTEGER,                       -- NO FK by design (see above)
+      action_required    TEXT NOT NULL DEFAULT 'approve', -- approve | acknowledge
+      step_order         INTEGER NOT NULL DEFAULT 1,    -- present but unused in v1 (single-hop)
+      active             INTEGER NOT NULL DEFAULT 1,
+      created_at         TEXT,
+      CHECK (target_role IS NOT NULL OR target_user_id IS NOT NULL)
+    )`);
+    console.log('Workflow schema: created workflow_route_rules');
+  }
 }
 
 function hasColumn(db, table, column) {

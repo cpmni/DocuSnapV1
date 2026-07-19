@@ -141,6 +141,37 @@ function listRouteDecisions(db, documentId) {
   ).all(documentId);
 }
 
+// ── Amount-threshold routing rules (Slice 3) ─────────────────────────────────
+// insertRouteRule is used by tests / a future rules-management UI (dev-seeded in v1).
+// listActiveRouteRules returns the active rules in evaluation order (step_order, id) — the
+// amountRouting engine picks the FIRST whose type + band matches. `?? null` keeps better-sqlite3
+// from seeing `undefined` on a @named param.
+function insertRouteRule(db, r) {
+  const info = db.prepare(`
+    INSERT INTO workflow_route_rules
+      (document_type_id, min_amount_pennies, max_amount_pennies, target_role, target_user_id,
+       action_required, step_order, active, created_at)
+    VALUES
+      (@document_type_id, @min_amount_pennies, @max_amount_pennies, @target_role, @target_user_id,
+       @action_required, @step_order, @active, @created_at)
+  `).run({
+    document_type_id:   r.documentTypeId ?? null,
+    min_amount_pennies: r.minAmountPennies,
+    max_amount_pennies: r.maxAmountPennies ?? null,
+    target_role:        r.targetRole ?? null,
+    target_user_id:     r.targetUserId ?? null,
+    action_required:    r.actionRequired || 'approve',
+    step_order:         r.stepOrder ?? 1,
+    active:             r.active == null ? 1 : (r.active ? 1 : 0),
+    created_at:         r.createdAt ?? null,
+  });
+  return info.lastInsertRowid;
+}
+
+function listActiveRouteRules(db) {
+  return db.prepare('SELECT * FROM workflow_route_rules WHERE active = 1 ORDER BY step_order ASC, id ASC').all();
+}
+
 // True when a document has an OPEN routing task (pending or claimed). This is the
 // workflow_lock signal: while it holds, the Review pipeline must not mutate the
 // document (see workflowService.editGuard) so the two systems can't both edit the
@@ -170,5 +201,6 @@ module.exports = {
   countInbox, countSent, countOpenSent, countAssigned, countCompleted,
   updateState, setDocWorkflowStatus, setStampedPath, hasActiveRoute, isOpenRouteParty,
   insertRouteDecision, listRouteDecisions,
+  insertRouteRule, listActiveRouteRules,
   OPEN_STATES, CLOSED_STATES,
 };

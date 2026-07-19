@@ -556,11 +556,22 @@ function setScopeOptOut(db, supplier, slug, optedOut) {
   return cur;
 }
 
+// Slice-3 amount-routing helper: is `value` dp-consistent with the confirmed history for this
+// (supplier, doc-type, field) scope? Reuses the SAME sample source + rule the auto-file currency gate
+// uses (_scopeFormats -> _currencyDpConsistent), so routing and auto-file agree. No history for the
+// field ⇒ true (can't judge — mirrors _currencyDpConsistent's <5-sample behaviour). Additive/inert
+// until amountRouting (Slice 3) calls it, so it changes no existing trust/auto-file decision.
+function _currencyConsistentForField(db, supplier, slug, fieldKey, value) {
+  const fmts = _scopeFormats(db, _norm(supplier), String(slug || '').toLowerCase().trim());
+  const f = fmts.get(fieldKey);
+  return f ? _currencyDpConsistent(value, f.sampleValues) : true;
+}
+
 module.exports = {
   TRUST_WINDOW, TRUST_MAX_CORRECTIONS, TRUSTED_FLOOR, UNTRUSTED_FLOOR, STRICT_TYPES,
   classifyLearnedShape, valueMatchesShape, fieldVerifiable,
   validDate: _validDate, validIban: _validIban, validVatGb: _validVatGb,
-  currencyDpConsistent: _currencyDpConsistent, matchesTypePattern: _matchesTypePattern,
+  currencyDpConsistent: _currencyDpConsistent, currencyConsistentForField: _currencyConsistentForField, matchesTypePattern: _matchesTypePattern,
   scopeTrust, docTrustGate, isAutoFileEligible, autoFileEligibleIds,
   listGraduatedScopes, setScopeOptOut,
 };

@@ -39,6 +39,8 @@ function createReviewService(deps = {}) {
   const onScopeGraduated     = deps.onScopeGraduated     || (async () => {});
   const captureSample        = deps.captureSample        || (async () => {});
   const notifyCounts         = deps.notifyCounts         || (() => {});
+  const captureRouteContext  = deps.captureRouteContext  || (() => null);   // Slice 3: total trust ctx captured pre-note-clear
+  const startDefaultRoute    = deps.startDefaultRoute    || (() => {});     // Slice 3: amount-threshold auto-route (detached)
   const releaseDelayMs       = deps.releaseDelayMs != null ? deps.releaseDelayMs : 0;
 
   // ── Queue reads (Admin/Edit; the caller gates) ────────────────────────────────
@@ -163,6 +165,11 @@ function createReviewService(deps = {}) {
       metadata: { type: document_type_slug || null, filed: filingResult.filename,
                   fields_changed: Object.keys(corrections || {}).join(',') || null } });
 
+    // Slice 3 (amount routing): capture the total's trust context — its note + confidence — BEFORE the
+    // note-clear below wipes it (Oracle A1). No-op (returns null) unless WORKFLOW_AMOUNT_ROUTING is armed,
+    // so OFF is byte-identical. Consumed by the detached startDefaultRoute in the !bulk block.
+    const _routeCtx = captureRouteContext(db, document_id, corrections || {});
+
     // Clear pre-confirmation review aids (display-only; not read by learning).
     db.prepare('UPDATE extractions SET validation_note = NULL, corrected_to = NULL WHERE document_id = ?').run(document_id);
 
@@ -225,6 +232,20 @@ function createReviewService(deps = {}) {
         // check; a failure here can never affect the already-returned confirm.
         try { await onScopeGraduated(db, document_id, { allValues, document_type_slug, supplier_name, dtInfo }); }
         catch (e) { console.warn('Graduation auto-template failed:', e.message); }
+        // Slice 3 (amount routing): auto-create an approval route from the extracted total. Detached +
+        // fail-open (can never affect the already-returned confirm). NOT on a re-file (Oracle B1 — an
+        // "Edit in Review" of a settled doc must not spawn a second route); the engine also self-guards
+        // on the kill switch + real entitlement + hasActiveRoute.
+        if (!isRefile) {
+          try {
+            startDefaultRoute(db, document_id, _routeCtx, {
+              actor,
+              supplierName: (allValues && allValues.supplier_name) || supplier_name || null,
+              slug: document_type_slug || (dtInfo && dtInfo.slug) || null,
+              documentTypeId: (dtInfo && dtInfo.id) || null,
+            });
+          } catch (e) { console.warn('Amount routing on confirm failed:', e.message); }
+        }
       }).catch(() => {});
     }
 

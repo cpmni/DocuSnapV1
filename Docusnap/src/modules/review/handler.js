@@ -99,6 +99,23 @@ function register(ctx) {
       notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
       notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
     },
+    // Slice 3 (amount routing): capture the total's trust context before the note-clear, and — detached +
+    // fail-open — auto-create an approval route from it. Both no-op unless WORKFLOW_AMOUNT_ROUTING is armed
+    // AND the workflow feature is entitled (a const, false today), so this is byte-identical + un-strandable.
+    captureRouteContext: (db, docId, corrections) =>
+      require('../../services/amountRouting').captureTotalContext(db, docId, corrections,
+        { getExtractedTotalContext: documents.getExtractedTotalContext }),
+    startDefaultRoute: (db, docId, routeCtx, meta) =>
+      require('../../services/amountRouting').startDefaultRoute(db, docId, routeCtx, meta, {
+        entitled: (d) => { try { return !!require('../../services/entitlementService').checkClientEntitlement(d).workflow.entitled; } catch { return false; } },
+        hasActiveRoute: (d, id) => require('../../database/modules/workflow').hasActiveRoute(d, id),
+        currencyConsistent: (d, sup, slug, fk, v) => require('../../database/modules/trust').currencyConsistentForField(d, sup, slug, fk, v),
+        floor: (d) => parseInt(learning.getSetting(d, 'critical_field_conf_floor', '88'), 10) || 0,
+        listActiveRules: (d) => require('../../database/modules/workflow').listActiveRouteRules(d),
+        usersByRole: (d, role) => require('../../database/modules/auth').getAllUsers(d).filter(u => u.role === role),
+        assign: (actor, opts) => require('../../services/workflowService').createWorkflowService({ audit: (e) => logAudit(db, e) }).assign(db, actor, opts),
+        audit: (e) => logAudit(db, e),
+      }),
     // releaseDelayMs stays 0 (the default): the old 150ms "release the preview file handle" wait
     // before filing was vestigial — the preview is an in-memory data URL, not an OS handle, and the
     // source-file delete is already deferred + retry-guarded — so it only added confirm latency
@@ -657,7 +674,7 @@ function register(ctx) {
     // the shared reviewService does the claim-before-file, filing, learning and cleanup so the
     // desktop and the /v1 client API file documents through ONE race-safe path.
     const sess = requireUnlocked(db, payload.document_id, 'confirm');
-    const r = await reviewService.confirm(db, { username: sess.username, role: sess.role }, payload);
+    const r = await reviewService.confirm(db, { userId: sess.id, username: sess.username, role: sess.role }, payload);
     if (!r.ok) {
       return { success: false, error: r.error,
                ...(r.code ? { code: r.code } : {}),

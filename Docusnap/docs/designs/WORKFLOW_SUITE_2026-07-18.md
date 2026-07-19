@@ -79,7 +79,7 @@ Live badge counts (extend the `/v1` mailbox poll), a Home "Waiting on you" card,
 - **Workflow-OFF byte-identical:** all switches off ⇒ confirm hook no-op, filing byte-identical, `stress_test/realdoc_regression.js` **M=0**; a legit writer's own-doc confirm/file untouched.
 - **Real-invocation service tests** (`src/services/test_workflow.js`, Electron-as-Node): sequential advance; parallel-any first-approve; parallel-all last-approver + one-reject short-circuit; double-resolve CONFLICT; amount match/no-match/malformed→manual + dropped-decimal→held; delegation on-behalf; escalation sweep no-op vs interleaved resolve; **paid→gone** (seeded `paid` migrates to `approved`, appears in `listCompleted`); FK deleted-user rebuild leaves NULL party + intact audit.
 - **Path-trust pins:** desktop pages AND thumbnail ignore a `folderPath` outside the doc row.
-- **SoD:** assign/resolve where actor == submitter refused (admin override audited); single-member-target-role auto-route holds.
+- **SoD:** assign/resolve where actor == submitter refused (admin override audited). Amount-routing (Slice 3): a target role with 0 or ≥2 active members HOLDS; **exactly-1 ROUTES** unless that single member IS the submitter → SoD hold (**Oracle D1, 2026-07-19: "single-member" holds ONLY in the submitter case; do NOT read it as "any single-member role holds"**). Multi-member role routing is deferred to Slice 4.
 - **Print:** real driver-dialog spool = manual verify; auto-tests cover original/stamped resolution + no-stamp fallback, the audit row on success/cancel/failure, the renderer-supplies-no-path pin, the same party-scope on desktop stamped-print as `/v1`, and `printing_enabled` OFF ⇒ no print surface.
 
 ## 11. Open owner decisions (recommended default in bold)

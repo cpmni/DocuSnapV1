@@ -63,6 +63,23 @@ function getExtractedTotalDisplay(db, documentId) {
   return row ? (row.v ?? null) : null;
 }
 
+// The full trust context of the extracted total, from the SAME highest-confidence total row: its
+// field_key, value (display), confidence, and validation_note. Used by Slice-3 amount routing, which
+// must read the note + confidence BEFORE reviewService.confirm clears the note. NULL when the doc has
+// no total field. (was_corrected-this-cycle is derived by the caller from the corrections payload, not
+// the sticky row flag.)
+function getExtractedTotalContext(db, documentId) {
+  const row = db.prepare(
+    `SELECT field_key, COALESCE(display_value, raw_value) AS value, confidence, validation_note
+       FROM extractions
+      WHERE document_id = ? AND field_key IN ('total_amount','total','grand_total')
+        AND COALESCE(display_value, raw_value) IS NOT NULL
+      ORDER BY confidence DESC LIMIT 1`
+  ).get(documentId);
+  if (!row) return null;
+  return { fieldKey: row.field_key, value: row.value, confidence: row.confidence, note: row.validation_note };
+}
+
 // Clear any FK reference into documents that has NO ON DELETE action, so the
 // subsequent DELETE doesn't trip a constraint. extractions/corrections cascade
 // (001_initial.sql), but templates.sample_document_id (added by JS migration 8
@@ -590,7 +607,7 @@ function getWorkingPaths(db) {
 }
 
 module.exports = {
-  insert, update, getById, getExtractedTotalDisplay, getWithExtractions,
+  insert, update, getById, getExtractedTotalDisplay, getExtractedTotalContext, getWithExtractions,
   getReviewQueue, getDeferredQueue, getByIds,
   getReviewCount, getDeferredCount, getStuckCount, getStuckQueue, getFiledCounts,
   softDelete, restoreDeleted, getDeletedQueue, getDeletedCount,
