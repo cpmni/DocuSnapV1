@@ -196,3 +196,50 @@ loaded by the processing handler. No new IPC or Python arg until Stage 3.
 
 ---
 
+
+---
+
+# Resolved known-bug blocks (moved out of CLAUDE.md 2026-07-19, verbatim)
+
+### ✅ RESOLVED (2026-07-09) — the 2026-07-08 real-doc harness RED was NOT a code regression. See `HANDOVER_2026-07-09.md`.
+Isolated (baseline `main` vs branch on the SAME live DB): the RED was (1) ONE accidental AUTHORITATIVE
+⊕ teach — `field_anchors` id=24, Cloud VPS `invoice_number`, label "Invoice" — which (per
+`learning.saveAnchor`) swept every other supplier's invoice_number anchor AND bled cross-supplier,
+false-locating on the generic caption "Invoice" to crop-read a wrong-but-valid neighbour (City Office
+`1828987`@87), overriding the correct keyword read (`152567`@98); and (2) partly-POISONED test GT (user
+mis-confirmed page-numbers/fragments while bug-hunting — #404 GT `22163`/`16-03-2026` but the doc's own
+OCR+filename say `22162`/`03-06-2026`; #896 GT `1/2`; #962/#1012 GT `102`). `main` was actually WORSE on
+safety (would-auto-file-wrong=25 vs the branch's 1). **True silent-wrong-auto-file = 0.** FIX SHIPPED
+(branch `fix/autofile-critical-field-floor`): a filing-critical per-field confidence floor in
+`trust.js` `isAutoFileEligible` (`critical_field_conf_floor`, default 88, 0=off) — a present ref/date
+value must itself clear the floor to auto-file, at every floor incl. 100; HOLD-only, so it can't cause a
+wrong auto-file; took would-auto-file-wrong 25→1 (the 1 = poisoned #404). The branch
+`fix/ocr-multicol-precedence` (oscar grouping + reggie guard) is NOT the cause and is safe to build.
+DAYTIME cause fix (reggie, not done — delicate): stop a NAMED cross-supplier authoritative read that
+located only via a WEAK/generic caption from being auto-trusted as "same layout" in `anchor.py`
+(`anchor_crop_relocated` is always `located_ok=True`, so it skips the cross-supplier guard). Cleanup:
+Settings → Learning → Learning Recovery (clear the Cloud VPS anchor), or `py
+stress_test/_clean_mistaught_anchor.py delete`.
+
+### FIXED (residual noted) — cross-supplier POSITIONAL anchor bleed (2026-07-06)
+A ⊕-taught AUTHORITATIVE anchor for a POSITIONAL field (e.g. `invoice_number`) was applied ACROSS
+suppliers: `_anchor_matches` admits it on doc-type match, `_filter_anchors` ranks authoritative teaches
+ahead of supplier-priority, and the read-stage guard was IDENTITY-ONLY — so Anconia's `INVOICE NUMBER`
+anchor (pinned top-right) blind-read the top-left "Invoice To" on a City Office invoice (LATENT: masked
+by the multi-method net until keyword doesn't fire). FIX (007-reviewed): the read-stage guard
+`_is_blind_cross_supplier_anchor` (renamed from `_is_blind_cross_supplier_identity`, anchor.py) now
+drops a BLIND (`not located_ok`) read from a NAMED different supplier for ANY field — a LOCATED read
+(taught label found here → same layout) is still kept for every field (authoritative-wins holds), and
+same-supplier / global-scoped anchors are kept (a global positional's fixed-position blind read is
+intended). Key insight: `located_ok` (does the taught label appear on THIS page?) IS the per-read
+"same layout?" signal, so no template-scoping was needed. Guarded by `test_identity_anchor_scope.py`;
+A/B `realdoc_regression` 738 docs, 0 regressions, M=0, no per-field accuracy drop.
+RESIDUAL (mostly closed 2026-07-06): the false-locate — a cross-supplier layout sharing the SAME
+caption at a DIFFERENT position, so the rigid ABSOLUTE crop reads a wrong-but-valid value — is now
+cross-read against the label's REAL inline value for FREE-TEXT/CURRENCY (the LABEL LOCK) and for
+REF + DATE (the authoritative-crop cross-check, `anchor.py`, extended to dates with a calendar-aware
+compare); on disagreement the located read wins + flags for review. Remaining sliver (low-severity): a
+value printed BELOW its label (inline harvest empty) on a cross-supplier false-locate isn't cross-read
+— needs the geometric `_place_from_located` path (the deferred "fixed-positioning-from-label" idea).
+
+
