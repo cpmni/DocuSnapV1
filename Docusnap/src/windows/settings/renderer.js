@@ -48,9 +48,13 @@ async function initWorkflowPanel() {
       '<option value="">any document type</option>' + types.map(t => `<option value="${t.id}">${_wfEsc(t.name)}</option>`).join('');
   } catch {}
   try {
-    const [users, me] = await Promise.all([api.authListUsers(), api.authGetCurrentUser().catch(() => null)]);
+    const [usersRes, me] = await Promise.all([api.authListUsers(), api.authGetCurrentUser().catch(() => null)]);
     const meId = me && me.id;
-    document.getElementById('wf-b-person').innerHTML = (users || []).filter(u => u.is_active)
+    // auth-list-users returns { users: [...] } (see loadUsersList) — NOT a bare array; the
+    // original array-shaped read threw inside this catch and left the dropdown EMPTY (found
+    // in the owner's first live click-through of the rule builder).
+    const users = (usersRes && usersRes.users) || [];
+    document.getElementById('wf-b-person').innerHTML = users.filter(u => u.is_active)
       .map(u => `<option value="${u.id}">${_wfEsc(u.display_name || u.username)}${meId === u.id ? ' (me)' : ''}</option>`).join('');
   } catch {}
   const amtOn = document.getElementById('wf-b-amount-on');
