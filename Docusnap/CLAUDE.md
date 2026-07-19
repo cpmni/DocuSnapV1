@@ -17,7 +17,54 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/features.md` — first-run wizard, welcome tour, settings backup, Learning Repair, teaching wizard, dev inspector.
 - `docs/history.md` — resolved QA/audit findings + build-stage history (Settings/Review/Search/Stage-7 rebuilds).
 
-## Recent session changes (2026-07-09 → 07-18) — durable mechanisms now in the code
+## Recent session changes (2026-07-09 → 07-19) — durable mechanisms now in the code
+### 2026-07-19 (branch `feat/reprocess-throughput-autostraighten`, **15 commits UNPUSHED** — ask before pushing; installer STALE `r20260718-0818-bea1028`)
+**READ FIRST: `HANDOVER_2026-07-19.md`.** Opus-4.8 (1M) session. **(1) PRINT FLOW FIX (`75206fb`, ⚠ UNVERIFIED
+LIVE)** — "Advanced printing" closes the custom modal + `alwaysOnTop`/`skipTaskbar` force the OS driver dialog
+topmost (a `parent` on a `show:false` window can't) + an `isEnabled`-poll reaps the ghost window on dialog close
+(fixes a cancel-path leak). eric-vetted; NEEDS an owner Windows/Ricoh live test (z-order + does it spool paper).
+**(2) WORKFLOW SLICES 2 & 3 BUILT + committed, dark** (`a6e8153` decision snapshot / append-only `route_decisions`;
+`92851ab` amount-threshold routing). **(3) ROUTING SETTINGS SLICE (`e85f646`) — CLOSES SEAM A + REFRAMES the
+feature** (Barry-led): Review=data-completeness, **routing = a separate step firing at the FILING SEAM for EVERY
+filed doc** (auto-filed via new `workflowService.assignSystem` NULL-sender + reviewed + bulk File-All-Ready = D2),
+driven by admin rules in a new HIDDEN entitlement-gated **Workflow Settings tab** (sentence rule builder
+APPROVAL-ONLY per Oracle D1, rules list, read-only dry-run). Engine adds type-only rules (skip the amount gate),
+null-total shadowing fix, route-to-self vs role-SoD, immutable `matched_rule_summary` (a new `document_routes`
+column). Barry→gary+eric→Oracle SIGN OFF WITH CONDITIONS. Spec `docs/designs/WORKFLOW_ROUTING_SLICE_2026-07-19.md`;
+SEAM-A test `src/modules/processing/test_autofile_route.js`. **(4) MULTI-STEP routing (old Slice 4) DEFERRED**
+(Barry: single-hop covers the home/small-office segment; the risky `document_routes` stamped-rebuild is
+Oracle-signed C1–C8 but shelved). **NEXT = make the FYI/`acknowledge` action NON-LOCKING** (split `hasActiveRoute`
+so only approve routes edit-lock, acknowledge still grants visibility+dedupe) + PRE-LAUNCH **E1 admin cancel-route**
+(a null-sender auto-file route isn't user-recallable; editGuard override frees the doc not the route). New process
+rule (memory `feedback_barry_new_features`): **include Barry EARLY on new features**, before the design/Oracle gate.
+### 2026-07-18 NIGHT2 (branch `feat/reprocess-throughput-autostraighten`, last PUSHED `c9d32ec`, **11 commits UNPUSHED** — ask before pushing; installer STALE `r20260718-0818-bea1028`)
+**READ FIRST: `HANDOVER_2026-07-18_NIGHT2.md`** (supersedes the NIGHT handover). A Fable-5 session; owner
+returned to Opus. Two workstreams. **(1) WORKFLOW SLICE 1 BUILT — 5 commits `e66bc04`→`42a671b`, all DARK
+behind `WORKFLOW_FEATURE_ENABLED=false`** (does NOT flip it — that's Slice 6). Removed the half-wired `paid`
+state + idempotent boot HEAL paid→approved at the TOP of `runJsMigrations` (Oracle C1, un-brickable; KEY TRAP:
+readonly+paid now → INVALID not FORBIDDEN, decision-check precedes role-gate) · reject→revise→resubmit (core
+mailbox now shows the rejection REASON + "Send again" prefills the recipient + `resubmitOf` audit lineage) ·
+pull-model notifications (ONE shared main.js `notifyWorkflowEvent` sink for BOTH transports, `notifyAllWindows`
+fan-out, pure `src/lib/workflowNotify.js` debounce+fire-time-guards, Home "Waiting on you" card via
+`get-workflow-counts` IPC, at-login digest, `GET /v1/workflow/counts` + client 60s poll) · reprocess
+workflow-lock on BOTH doors (single-doc editGuard + batch skip-and-report, admin batch ALSO skips — pinned).
+`test_workflow_ipc.js` known-fail is now GREEN (Stage D, test-side stub). Plan+gate:
+`docs/designs/WORKFLOW_SLICE1_BUILD_2026-07-18.md` (gary+eric GO-WITH-CHANGES, Oracle SIGN OFF WITH CONDITIONS
+1-4 folded). Corpus byte-identical to `workflow_slice1_BASELINE`; 18-suite battery green; dark ⇒ OFF structural.
+**(2) PRINT — long UX saga, landed "modal works, functional-print UNVERIFIED" (6 commits `bf98389`→`9eb4377`).**
+CONCLUSION: Electron 31 can't give the native/classic Windows dialog from `webContents.print` (always Win11's
+modern dialog with the "doesn't support preview" pane — a **Windows-11** behaviour, not Electron; same message
+from .NET); no permissive off-the-shelf PDF-print tool exists (all GPL/AGPL or $thousands SDKs). Current custom
+modal: reactive preview (mono/range/N-up), driver dialog parented to Review (stays in front), and — the key
+finding — **Electron's print callback is UNRELIABLE (doesn't fire on cancel, on a virtual printer's Save
+prompt, or even a normal Ricoh job)**, so the modal is now callback-INDEPENDENT (watchdog re-enables). ⚠ OPEN:
+**does the Ricoh actually print paper?** — decides "functional, move on" vs "build the banked design". Clean
+native-dialog rebuild is DESIGNED + Oracle-signed but **BANKED**: `docs/designs/NATIVE_PRINT_2026-07-18.md`
+(C2: ship a **compiled C# helper** not a `.ps1` — a GPO ExecutionPolicy overrides `-Bypass`; C1: LOCAL temp
+not roaming; C4: block virtual/file printers by default). The `PreferLegacyPrintDialog` registry toggle was
+REJECTED (eric WRONG-LAYER — system-wide mutation from an unsigned app; revert can't run on cancel). SEC-03
+marked FIXED in `SECURITY_BACKLOG.md` (bookkeeping — was `f8299d4`).
+
 ### 2026-07-18 (branch `feat/reprocess-throughput-autostraighten`, ALL PUSHED through `bea1028`; installer `r20260718-0818-bea1028`)
 **READ FIRST: `HANDOVER_2026-07-18_EVENING.md` (the Filing Slips day), then `HANDOVER_2026-07-18.md` (morning, template convergence).** Three workstreams. **(1) TEMPLATE FRAGMENTATION FIX (M#19/N#20) BUILT +
 COMMITTED (unpushed), default OFF** — branding-fingerprint template convergence past the panel (gary/Phillip/
@@ -118,8 +165,8 @@ Owner answered all 8 decisions "as recommended". **SLICE 0 (authz) BUILT+PUSHED 
 `ACCESS_GATE_ENABLED` default ON; `test_access_service.js` 28/28; corpus byte-identical. **PRINT: Print-Slice 1
 `b9e8c03` + Print Preview `252c058` BUILT** (`src/modules/print/handler.js`; driver-honoring `webContents.print`,
 our own preview modal since Electron omits Chromium's; kill `printing_enabled` default OFF). Workflow engine
-Slices 1-6 DESIGNED not built (Oracle C1–C8). **READ FIRST next session: `HANDOVER_2026-07-18_NIGHT.md`.** Memory
-`project_workflow_suite_design`, `feedback_print_driver_audit`.
+**Slice 1 now BUILT 2026-07-18 NIGHT2 (see the top block); Slices 2-6 DESIGNED not built** (Oracle C1–C8).
+Memory `project_workflow_suite_design`, `feedback_print_driver_audit`.
 Full spec: `docs/designs/FILING_SLIPS_2026-07-18.md`; product origin
 `docs/brainstorms/BARRY_2026-07-18_home-edition_generic-docs_separator-sheets.md`.
 ### 2026-07-17 EVENING (branch `feat/reprocess-throughput-autostraighten`, 3 commits UNPUSHED + Option-A uncommitted)

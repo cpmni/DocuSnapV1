@@ -64,3 +64,9 @@ stress_test/out/
 # Parked website design variants + pricing model — kept out of the app repo but not
 # deleted (recoverable). Move anything here back out if it's needed again.
 _archive/
+
+# Security audit + living backlog — contain concrete exploit detail for THIS product.
+# Local working docs only; never committed/pushed so the repo history can't become an
+# attacker roadmap. See SECURITY_BACKLOG.md (the tracker) + SECURITY_AUDIT_*.md (full evidence).
+SECURITY_AUDIT_*.md
+SECURITY_BACKLOG.md
