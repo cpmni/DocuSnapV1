@@ -13,7 +13,7 @@ if (admin_is_authed()) {
 
 // "Start over" link on the 2FA step abandons the pending challenge.
 if (isset($_GET['cancel'])) {
-    unset($_SESSION['admin_2fa_pending'], $_SESSION['admin_2fa_tries']);
+    unset($_SESSION['admin_2fa_pending'], $_SESSION['admin_2fa_tries'], $_SESSION['admin_2fa_started']);
     header('Location: login.php');
     exit;
 }
@@ -27,8 +27,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_check()) {
         $err = 'Security check failed. Please try again.';
     } elseif (!empty($_SESSION['admin_2fa_pending'])) {
-        // Stage 2 — TOTP or one-time recovery code.
-        if (!admin_2fa_pending_active()) {
+        // Stage 2 — TOTP or one-time recovery code. The PERSISTED throttle runs
+        // BEFORE any verification (SEC-01): the session 5-try cap alone could be
+        // reset with a fresh cookie jar + a re-POST of the (known) password.
+        $retry = admin_throttle('2fa');
+        if ($retry !== null) {
+            $err = 'Too many attempts. Try again in ' . max(1, (int) ceil($retry / 60)) . ' minute(s).';
+        } elseif (!admin_2fa_pending_active()) {
             // The password→code window expired; pending state is now cleared.
             $err = 'That sign-in timed out. Please sign in again.';
         } elseif (admin_complete_2fa((string) ($_POST['code'] ?? ''))) {
@@ -44,17 +49,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     } else {
-        // Stage 1 — password.
-        $status = admin_login((string) ($_POST['password'] ?? ''));
-        if ($status === 'ok') {
-            header('Location: index.php');
-            exit;
+        // Stage 1 — password. Throttle BEFORE verifying anything (SEC-01: the old
+        // 0.4s usleep was the only brake — no counter survived the request).
+        $retry = admin_throttle('pw');
+        if ($retry !== null) {
+            $err = 'Too many attempts. Try again in ' . max(1, (int) ceil($retry / 60)) . ' minute(s).';
+        } else {
+            $status = admin_login((string) ($_POST['password'] ?? ''));
+            if ($status === 'ok') {
+                header('Location: index.php');
+                exit;
+            }
+            if ($status === 'fail') {
+                usleep(400000);
+                $err = 'Incorrect password.';
+            }
+            if ($status === 'no_2fa') {
+                // Correct password, but 2FA is mandatory and unprovisioned (SEC-01
+                // fail-closed). First-run path: set LICENSING_ADMIN_ALLOW_NO_2FA=1,
+                // sign in, provision 2FA under Security, then REMOVE the env.
+                $err = 'Two-factor authentication is required but not yet set up. '
+                     . 'Set the LICENSING_ADMIN_ALLOW_NO_2FA=1 environment variable temporarily, '
+                     . 'sign in, enable 2FA under Security, then remove the variable.';
+            }
+            // 'need_2fa' → fall through and render the challenge below.
         }
-        if ($status === 'fail') {
-            usleep(400000);
-            $err = 'Incorrect password.';
-        }
-        // 'need_2fa' → fall through and render the challenge below.
     }
 }
 

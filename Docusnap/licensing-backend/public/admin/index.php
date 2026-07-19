@@ -31,6 +31,15 @@ $recent = $pdo->query(
      ORDER BY id DESC LIMIT 5"
 )->fetchAll();
 
+// SEC-06 health check (Oracle O1): the /v1 limiter FAILS OPEN, so a missing
+// rate_limits table silently disables every /v1 throttle (trial farming, key
+// guessing). Surface it here so V4 is a one-glance check. (The ADMIN limiter is
+// unaffected — it fails CLOSED, so on a mis-migrated host you'd notice at login.)
+$rateLimiterOk = false;
+try {
+    $rateLimiterOk = $pdo->query("SHOW TABLES LIKE 'rate_limits'")->fetchColumn() !== false;
+} catch (\Throwable $e) { /* leave false — the warning below says what to do */ }
+
 admin_page_open('Dashboard');
 admin_nav('index');
 ?>
@@ -38,6 +47,12 @@ admin_nav('index');
 <p class="lead">Overview of accounts, trials and temporary licences. Use the cards below or the
    top navigation to manage each area. Activation keys are shown once at creation and are
    never stored or displayed again.</p>
+
+<?php if (!$rateLimiterOk): ?>
+  <div class="flash err"><strong>Rate limiting is OFF:</strong> the <code>rate_limits</code> table is
+    missing, so every /v1 throttle (trial caps, key-guess protection) is silently inert. Import
+    <code>schema.sql</code> on this host to enable it.</div>
+<?php endif; ?>
 
 <!-- ── At-a-glance counts ───────────────────────────────────────────────── -->
 <div class="row" style="gap:14px; flex-wrap:wrap; margin:6px 0 20px;">

@@ -15,14 +15,17 @@ function admin_session_boot(): void
     if (session_status() === PHP_SESSION_ACTIVE) {
         return;
     }
-    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
     session_name('LICADMIN');
     session_set_cookie_params([
         'lifetime' => 0,
         'path'     => '/',
         'httponly' => true,
         'samesite' => 'Lax',
-        'secure'   => $https,
+        // Hard-coded true (SEC-14): behind a proxy that doesn't reflect HTTPS into
+        // $_SERVER['HTTPS'], the old conditional shipped LICADMIN without Secure.
+        // The console is HTTPS-only in every real deployment; a plain-HTTP dev hit
+        // simply gets a cookie the browser won't send back — sign in over HTTPS.
+        'secure'   => true,
     ]);
     session_start();
 }
@@ -48,10 +51,79 @@ function admin_password_hash(): ?string
 // Server-side inactivity timeout for an authenticated admin session (seconds).
 const ADMIN_IDLE_TIMEOUT = 300;          // 5 minutes
 // Max wrong TOTP/recovery attempts before the pending 2FA state is dropped.
+// (SESSION-scoped belt only — the REAL wall is the persisted admin_throttle below,
+// which an attacker cannot reset by re-POSTing the password with a fresh cookie jar.)
 const ADMIN_2FA_MAX_TRIES = 5;
 // Lifetime of the password→code window. The pending 2FA state self-expires after
 // this, independent of (and shorter than) the authenticated-session timeout.
 const ADMIN_2FA_PENDING_TTL = 180; // 3 minutes
+
+// ── SEC-01: persisted brute-force lockout (fixed window, IP + global keyed) ───
+// The old defence was a 0.4s usleep only — no counter survived the request, so an
+// attacker could hammer the password (and reset the session TOTP cap at will).
+// Attempts are now counted in the rate_limits table via rate_hit_strict:
+//   admin_<stage>_ip:<ip>  — per-source cap
+//   admin_<stage>_global   — cross-source cap (rotating-proxy defence; this is a
+//                            single-credential console, so a global cap is meaningful)
+// Counting ATTEMPTS (not just failures) keeps this a single pre-verify call with no
+// success/failure race; the caps are far above any human's legitimate use.
+const ADMIN_RL_WINDOW     = 900;  // 15-minute fixed window
+const ADMIN_RL_IP_MAX     = 10;   // attempts per IP per window
+const ADMIN_RL_GLOBAL_MAX = 50;   // attempts across ALL IPs per window
+
+// FAIL CLOSED (SEC-06): unlike the /v1 limiter (availability-first, fail-open), an
+// admin-console limiter that cannot run — rate_limits table missing, DB down — DENIES.
+// The console is DB-backed anyway (nothing in it works without MySQL), so failing
+// closed costs nothing and turns the "silently inert limiter" hole into a loud stop.
+// Returns null when the attempt may proceed; retry-after seconds when blocked.
+function admin_throttle(string $stage): ?int
+{
+    try {
+        require_once __DIR__ . '/db.php';
+        require_once __DIR__ . '/ratelimit.php';
+        $pdo = db();
+        $ip  = client_ip();
+        // ORDER IS LOAD-BEARING (Oracle C1): the IP bucket is hit FIRST and a deny
+        // RETURNS before the global bucket is ever touched — otherwise one already-
+        // denied IP keeps inflating the global counter and a single address can lock
+        // the console for everyone (the griefing bar must be ≥ GLOBAL/IP distinct
+        // sources, not one). Audit only the FIRST crossing per window (Oracle C2 —
+        // one row per lockout event, not one per denied request; the rest error_log).
+        $a = rate_hit_strict($pdo, 'admin_' . $stage . '_ip:' . $ip, ADMIN_RL_IP_MAX, ADMIN_RL_WINDOW);
+        if (!$a['allowed']) {
+            if ((int) $a['count'] === ADMIN_RL_IP_MAX + 1) {
+                admin_audit('admin.login_throttled', $stage . ' ip=' . $ip);
+            } else {
+                error_log('admin_throttle deny (ip bucket) stage=' . $stage . ' ip=' . $ip);
+            }
+            return max($a['retry_after'], 1);
+        }
+        $b = rate_hit_strict($pdo, 'admin_' . $stage . '_global', ADMIN_RL_GLOBAL_MAX, ADMIN_RL_WINDOW);
+        if (!$b['allowed']) {
+            if ((int) $b['count'] === ADMIN_RL_GLOBAL_MAX + 1) {
+                admin_audit('admin.login_throttled', $stage . ' global (distributed)');
+            } else {
+                error_log('admin_throttle deny (global bucket) stage=' . $stage . ' ip=' . $ip);
+            }
+            return max($b['retry_after'], 1);
+        }
+        return null;
+    } catch (\Throwable $e) {
+        error_log('admin_throttle FAIL-CLOSED (limiter unavailable): ' . $e->getMessage());
+        return 60; // deny — never let a broken limiter mean unlimited attempts
+    }
+}
+
+// ── SEC-01: 2FA is REQUIRED by default for this internet-facing console ───────
+// Password-only sign-in is refused while keys/admin_2fa.json is unprovisioned,
+// UNLESS the break-glass env LICENSING_ADMIN_ALLOW_NO_2FA=1 is set (first-run
+// provisioning path: set the env, sign in, provision 2FA on the Security page,
+// REMOVE the env). Fail-closed per the 2026-07-17 audit adjudication.
+function admin_2fa_required(): bool
+{
+    $v = getenv('LICENSING_ADMIN_ALLOW_NO_2FA');
+    return !(is_string($v) && ($v === '1' || strtolower($v) === 'true' || strtolower($v) === 'on'));
+}
 
 function admin_is_authed(): bool
 {
@@ -94,8 +166,9 @@ function admin_2fa_pending_active(): bool
 }
 
 // Stage 1. Returns 'ok' (fully signed in, no 2FA), 'need_2fa' (password correct,
-// a TOTP challenge is required next), or 'fail'. Never sets admin_authed while a
-// 2FA challenge is outstanding.
+// a TOTP challenge is required next), 'no_2fa' (password correct but 2FA is
+// unprovisioned and required — sign-in REFUSED, see admin_2fa_required), or
+// 'fail'. Never sets admin_authed while a 2FA challenge is outstanding.
 function admin_login(string $password): string
 {
     $hash = admin_password_hash();
@@ -110,8 +183,15 @@ function admin_login(string $password): string
         unset($_SESSION['admin_authed']);
         return 'need_2fa';
     }
+    if (admin_2fa_required()) {
+        // Correct password, but the console is 2FA-mandatory and 2FA isn't set up.
+        // Fail CLOSED (SEC-01): a password-only internet-facing console is the
+        // exposure the audit flagged. The login page explains the break-glass path.
+        admin_audit('admin.login_refused', 'no_2fa_provisioned');
+        return 'no_2fa';
+    }
     admin_finalize_login();
-    admin_audit('admin.login_success', 'password');
+    admin_audit('admin.login_success', 'password (2FA break-glass env active)');
     return 'ok';
 }
 
