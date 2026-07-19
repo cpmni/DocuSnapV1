@@ -232,20 +232,23 @@ function createReviewService(deps = {}) {
         // check; a failure here can never affect the already-returned confirm.
         try { await onScopeGraduated(db, document_id, { allValues, document_type_slug, supplier_name, dtInfo }); }
         catch (e) { console.warn('Graduation auto-template failed:', e.message); }
-        // Slice 3 (amount routing): auto-create an approval route from the extracted total. Detached +
-        // fail-open (can never affect the already-returned confirm). NOT on a re-file (Oracle B1 — an
-        // "Edit in Review" of a settled doc must not spawn a second route); the engine also self-guards
-        // on the kill switch + real entitlement + hasActiveRoute.
-        if (!isRefile) {
-          try {
-            startDefaultRoute(db, document_id, _routeCtx, {
-              actor,
-              supplierName: (allValues && allValues.supplier_name) || supplier_name || null,
-              slug: document_type_slug || (dtInfo && dtInfo.slug) || null,
-              documentTypeId: (dtInfo && dtInfo.id) || null,
-            });
-          } catch (e) { console.warn('Amount routing on confirm failed:', e.message); }
-        }
+      }).catch(() => {});
+    }
+
+    // Routing (SEAM A/A'): auto-create an approval route from the extracted total/type. Fires on BOTH
+    // bulk and non-bulk confirms — a filed doc is a filed doc (Oracle D2); the !bulk guard above exists
+    // only to throttle the Python-spawning landmark hooks, which routing is not. Detached + fail-open
+    // (can never affect the already-returned confirm). NOT on a re-file (Oracle B1 — an "Edit in Review"
+    // of a settled doc must not spawn a second route); the engine self-guards on the kill switch + real
+    // entitlement + hasActiveRoute.
+    if (!isRefile) {
+      Promise.resolve().then(() => {
+        startDefaultRoute(db, document_id, _routeCtx, {
+          actor,
+          supplierName: (allValues && allValues.supplier_name) || supplier_name || null,
+          slug: document_type_slug || (dtInfo && dtInfo.slug) || null,
+          documentTypeId: (dtInfo && dtInfo.id) || null,
+        });
       }).catch(() => {});
     }
 

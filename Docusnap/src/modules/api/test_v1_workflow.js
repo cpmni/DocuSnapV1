@@ -38,7 +38,7 @@ async function freshDb() {
     CREATE TABLE document_routes (id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER, from_user_id INTEGER,
       from_username TEXT, to_user_id INTEGER, to_username TEXT, action_required TEXT, state TEXT DEFAULT 'pending',
       comment TEXT, resolution_comment TEXT, claimed_by_id INTEGER, claimed_by_username TEXT, claimed_at TEXT,
-      resolved_at TEXT, version INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')));
+      resolved_at TEXT, matched_rule_summary TEXT, version INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')));
   `);
   db.prepare(`INSERT INTO document_types (id,name,slug) VALUES (1,'Invoice','invoice')`).run();
   db.prepare(`INSERT INTO documents (id,supplier_name,document_type_id,status,confirmed_at,processed_at)

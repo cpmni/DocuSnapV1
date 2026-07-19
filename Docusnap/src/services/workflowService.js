@@ -121,29 +121,34 @@ function createWorkflowService(deps = {}) {
   const completed = (db, actor) => wf.listCompleted(db, actor.userId);
 
   // ── Assign (route a document to a user) ──────────────────────────────────────
-  // `resubmitOf` (optional, Slice 1): the id of a REJECTED route this send supersedes.
-  // ADVISORY LINEAGE ONLY — no lookup/validation (pinned in test_workflow.js), recorded
-  // solely in the audit trail (no schema column; a failed best-effort audit loses it
-  // silently, acceptable for advisory data). Slice-2's decision snapshot may later carry
-  // first-class lineage at the decision grain.
-  function assign(db, actor, { documentId, toUserId, actionRequired, comment, resubmitOf }) {
+  // Shared recipient/routable validation used by BOTH assign (human sender) and assignSystem
+  // (auto-file, null sender). Returns { ok:true, recipient } or a fail carrying the SAME codes assign
+  // has always returned (NOT_FOUND / NOT_ROUTABLE / INACTIVE_RECIPIENT) — pinned byte-identical (Oracle C4).
+  function _validateAssignTarget(db, documentId, toUserId) {
+    const doc = docs.getById(db, documentId);
+    if (!doc) return fail('NOT_FOUND', 'Document not found.');
+    if (!ROUTABLE_STATES.includes(doc.status)) return fail('NOT_ROUTABLE', 'Only confirmed or in-review documents can be routed.');
+    const recipient = dbAuth.getUserById(db, toUserId);
+    if (!recipient) return fail('NOT_FOUND', 'Recipient not found.');
+    if (!recipient.is_active) return fail('INACTIVE_RECIPIENT', 'Recipient account is disabled.');
+    return { ok: true, recipient };
+  }
+
+  // `resubmitOf` (optional, Slice 1): advisory audit lineage only (no lookup/validation, pinned).
+  // `matchedRuleSummary` (optional, routing slice): the immutable "why it routed" sentence snapshot.
+  function assign(db, actor, { documentId, toUserId, actionRequired, comment, resubmitOf, matchedRuleSummary }) {
     if (!ACTOR_CAN_ASSIGN.includes(actor.role)) return fail('FORBIDDEN', 'Your role cannot route documents.');
     if (actionRequired !== 'approve' && actionRequired !== 'acknowledge') {
       return fail('INVALID', 'actionRequired must be "approve" or "acknowledge".');
     }
-    const doc = docs.getById(db, documentId);
-    if (!doc) return fail('NOT_FOUND', 'Document not found.');
-    if (!ROUTABLE_STATES.includes(doc.status)) {
-      return fail('NOT_ROUTABLE', 'Only confirmed or in-review documents can be routed.');
-    }
-
-    const recipient = dbAuth.getUserById(db, toUserId);
-    if (!recipient) return fail('NOT_FOUND', 'Recipient not found.');
-    if (!recipient.is_active) return fail('INACTIVE_RECIPIENT', 'Recipient account is disabled.');
+    const v = _validateAssignTarget(db, documentId, toUserId);
+    if (!v.ok) return v;
+    const recipient = v.recipient;
 
     const route = wf.insertRoute(db, {
       documentId, fromUserId: actor.userId, fromUsername: actor.username,
       toUserId: recipient.id, toUsername: recipient.username, actionRequired, comment,
+      matchedRuleSummary: matchedRuleSummary ?? null,
     });
     wf.setDocWorkflowStatus(db, documentId, 'pending');
     const resubmitTag = resubmitOf != null ? ` resubmit_of=${String(resubmitOf).slice(0, 32)}` : '';
@@ -151,6 +156,33 @@ function createWorkflowService(deps = {}) {
             outcome: 'success', target_type: 'document', target_id: documentId, document_id: documentId,
             details: `to=${recipient.username} action=${actionRequired}${resubmitTag}` });
     _notify('assigned', route, actor);
+    return { ok: true, route };
+  }
+
+  // ── AssignSystem (auto-file routing — NO human sender) ────────────────────────
+  // The auto-file path has no confirmer; `assign` refuses a machine actor (its role gate). This is a
+  // first-class SYSTEM-sender route: NULL from_user_id + 'Auto-filed' sentinel, sharing assign's
+  // recipient/routable validation, skipping ONLY the role gate. Writes only workflow_status (never
+  // documents.status — the invariant). Not human-recallable (no from_user_id); closes via the
+  // recipient's resolve (or an admin force-close — a documented pre-live item). (routing slice, Oracle.)
+  function assignSystem(db, { documentId, toUserId, actionRequired, comment, matchedRuleSummary }) {
+    if (actionRequired !== 'approve' && actionRequired !== 'acknowledge') {
+      return fail('INVALID', 'actionRequired must be "approve" or "acknowledge".');
+    }
+    const v = _validateAssignTarget(db, documentId, toUserId);
+    if (!v.ok) return v;
+    const recipient = v.recipient;
+
+    const route = wf.insertRoute(db, {
+      documentId, fromUserId: null, fromUsername: 'Auto-filed',
+      toUserId: recipient.id, toUsername: recipient.username, actionRequired,
+      comment: comment || null, matchedRuleSummary: matchedRuleSummary ?? null,
+    });
+    wf.setDocWorkflowStatus(db, documentId, 'pending');
+    audit({ user_id: null, action: 'workflow_route_created', action_category: 'workflow', outcome: 'success',
+            target_type: 'document', target_id: documentId, document_id: documentId,
+            details: `to=${recipient.username} action=${actionRequired} system=1` });
+    _notify('assigned', route, { username: 'Auto-filed', role: 'system' });
     return { ok: true, route };
   }
 
@@ -258,7 +290,7 @@ function createWorkflowService(deps = {}) {
     return { ok: true, route: fresh };
   }
 
-  return { inbox, sent, assigned, completed, assign, claim, resolve, recall };
+  return { inbox, sent, assigned, completed, assign, assignSystem, claim, resolve, recall };
 }
 
 module.exports = { createWorkflowService, editGuard, buildDecisionSnapshot, decisionSnapshotEnabled, ACTOR_CAN_ASSIGN, ACTOR_CAN_DECIDE, ROUTABLE_STATES };

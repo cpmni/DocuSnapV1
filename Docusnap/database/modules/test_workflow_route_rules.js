@@ -71,5 +71,23 @@ console.log('§4 captureTotalContext reads the total note/conf (proves the pre-n
   delete process.env.WORKFLOW_AMOUNT_ROUTING;
 }
 
+console.log('§5 rule CRUD (settings-area DB layer)');
+{
+  const db = freshDb();
+  const id = wf.insertRouteRule(db, { documentTypeId: 1, minAmountPennies: 50000, targetUserId: 5, actionRequired: 'approve' });
+  check('getRouteRule returns the row', wf.getRouteRule(db, id) && wf.getRouteRule(db, id).target_user_id === 5);
+  wf.insertRouteRule(db, { minAmountPennies: 0, targetRole: 'x', active: 0 });   // inactive
+  check('listAllRouteRules returns active AND inactive', wf.listAllRouteRules(db).length === 2);
+  check('listActiveRouteRules returns only active', wf.listActiveRouteRules(db).length === 1);
+  wf.updateRouteRule(db, id, { documentTypeId: 1, minAmountPennies: 100000, targetUserId: 6, actionRequired: 'approve' });
+  const upd = wf.getRouteRule(db, id);
+  check('updateRouteRule persists', upd && upd.min_amount_pennies === 100000 && upd.target_user_id === 6);
+  wf.setRouteRuleActive(db, id, 0);
+  check('setRouteRuleActive toggles off', wf.getRouteRule(db, id).active === 0);
+  check('rule no longer in listActive', !wf.listActiveRouteRules(db).some(r => r.id === id));
+  wf.deleteRouteRule(db, id);
+  check('deleteRouteRule removes it', !wf.getRouteRule(db, id));
+}
+
 console.log(`\n${fail ? 'FAIL' : 'PASS'} — ${fail} failure(s)`);
 process.exit(fail ? 1 : 0);

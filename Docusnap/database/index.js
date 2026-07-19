@@ -1053,6 +1053,11 @@ function runJsMigrations(db, applied) {
     try { db.exec(`ALTER TABLE document_routes ADD COLUMN stamped_path TEXT`); console.log('Workflow schema: added document_routes.stamped_path'); }
     catch (e) { console.warn(`  document_routes.stamped_path: ${e.message}`); }
   }
+  // Routing slice: the immutable "why it routed" rule-sentence snapshot on the route (Oracle C6).
+  if (tableExists(db, 'document_routes') && !hasColumn(db, 'document_routes', 'matched_rule_summary')) {
+    try { db.exec(`ALTER TABLE document_routes ADD COLUMN matched_rule_summary TEXT`); console.log('Workflow schema: added document_routes.matched_rule_summary'); }
+    catch (e) { console.warn(`  document_routes.matched_rule_summary: ${e.message}`); }
+  }
 
   // Decision snapshot (Workflow Slice 2): an APPEND-ONLY record of each approve/reject/acknowledge,
   // capturing the extracted fields AT THE INSTANT OF RESOLVE (supplier/ref/date/total/confidence) so a

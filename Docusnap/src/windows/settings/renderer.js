@@ -16,8 +16,130 @@ document.querySelectorAll('.tab').forEach(btn => {
     if (btn.dataset.tab === 'repair') repairInit();
     if (btn.dataset.tab === 'audit' && !auditState.loaded) loadAudit();
     if (btn.dataset.tab === 'searchclient') initClientApiSection();
+    if (btn.dataset.tab === 'workflow') initWorkflowPanel();
   });
 });
+
+// ── Workflow routing rules (admin; entitlement-gated, hidden while the add-on is dark) ──────────
+let _wfWired = false;
+let _wfEditId = null;
+const _wfEsc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+async function applyWorkflowTabVisibility() {
+  const tab = document.querySelector('.tab[data-tab="workflow"]');
+  if (!tab) return;
+  try {
+    const e = await api.getEntitlement();
+    tab.style.display = (e && e.workflow && e.workflow.entitled && !e.workflow.disabled) ? '' : 'none';
+  } catch { tab.style.display = 'none'; }   // fail-closed
+}
+
+async function initWorkflowPanel() {
+  if (_wfWired) { loadWorkflowRules(); return; }
+  _wfWired = true;
+  try {
+    const types = (await api.getDocumentTypes()) || [];
+    document.getElementById('wf-b-type').innerHTML =
+      '<option value="">any document type</option>' + types.map(t => `<option value="${t.id}">${_wfEsc(t.name)}</option>`).join('');
+  } catch {}
+  try {
+    const [users, me] = await Promise.all([api.authListUsers(), api.authGetCurrentUser().catch(() => null)]);
+    const meId = me && me.id;
+    document.getElementById('wf-b-person').innerHTML = (users || []).filter(u => u.is_active)
+      .map(u => `<option value="${u.id}">${_wfEsc(u.display_name || u.username)}${meId === u.id ? ' (me)' : ''}</option>`).join('');
+  } catch {}
+  const amtOn = document.getElementById('wf-b-amount-on');
+  amtOn.addEventListener('change', () => {
+    document.getElementById('wf-b-amount').style.display = amtOn.checked ? '' : 'none';
+    document.getElementById('wf-b-amount-suffix').style.display = amtOn.checked ? '' : 'none';
+  });
+  document.getElementById('wf-b-save').addEventListener('click', wfSaveRule);
+  document.getElementById('wf-b-dryrun').addEventListener('click', wfDryRun);
+  document.getElementById('wf-b-cancel').addEventListener('click', wfResetBuilder);
+  loadWorkflowRules();
+}
+
+function _wfBuilderPayload() {
+  const p = { documentTypeId: document.getElementById('wf-b-type').value || '', targetUserId: document.getElementById('wf-b-person').value || null };
+  if (document.getElementById('wf-b-amount-on').checked) p.amountText = document.getElementById('wf-b-amount').value;
+  if (_wfEditId) p.id = _wfEditId;
+  return p;
+}
+
+async function wfSaveRule() {
+  const msg = document.getElementById('wf-b-msg');
+  msg.textContent = 'Saving…';
+  try {
+    const res = _wfEditId ? await api.workflow.ruleUpdate(_wfBuilderPayload()) : await api.workflow.ruleCreate(_wfBuilderPayload());
+    if (res && res.error) { msg.textContent = res.error; return; }
+    wfResetBuilder(); msg.textContent = 'Saved.'; loadWorkflowRules();
+  } catch { msg.textContent = "Couldn't save the rule."; }
+}
+
+function wfResetBuilder() {
+  _wfEditId = null;
+  document.getElementById('wf-builder-title').textContent = 'Add a routing rule';
+  document.getElementById('wf-b-save').textContent = 'Add rule';
+  document.getElementById('wf-b-cancel').style.display = 'none';
+  document.getElementById('wf-b-type').value = '';
+  document.getElementById('wf-b-amount-on').checked = false;
+  document.getElementById('wf-b-amount').value = '';
+  document.getElementById('wf-b-amount').style.display = 'none';
+  document.getElementById('wf-b-amount-suffix').style.display = 'none';
+  document.getElementById('wf-dryrun').innerHTML = '';
+}
+
+async function wfDryRun() {
+  const box = document.getElementById('wf-dryrun');
+  box.innerHTML = '<p style="color:var(--muted);">Checking your recent documents…</p>';
+  try {
+    const res = await api.workflow.ruleDryRun(_wfBuilderPayload());
+    if (res && res.error) { box.innerHTML = `<p style="color:var(--muted);">${_wfEsc(res.error)}</p>`; return; }
+    if (!res || res.count === 0) {
+      box.innerHTML = `<p style="color:var(--muted);">None of your last ${res ? res.sampled : 0} filed documents would match — the rule may be too narrow.</p>`;
+      return;
+    }
+    const rows = (res.matched || []).map(m => `<div style="padding:4px 0; border-top:1px solid var(--border); font-size:12px;">${_wfEsc(m.supplier)} · ${_wfEsc(m.total)} · ${_wfEsc(m.filename)}</div>`).join('');
+    box.innerHTML = `<div style="margin-top:6px; padding:12px; background:var(--surface2); border-radius:8px;"><div style="font-weight:600; margin-bottom:6px;">This would have routed ${res.count} of your last ${res.sampled} filed documents:</div>${rows}<div style="font-size:11px; color:var(--muted); margin-top:8px;">Preview only — saving a rule doesn't route these; it applies to documents filed from now on.</div></div>`;
+  } catch { box.innerHTML = '<p style="color:var(--muted);">Couldn\'t run the preview.</p>'; }
+}
+
+async function loadWorkflowRules() {
+  const list = document.getElementById('wf-rules-list');
+  try {
+    const rules = (await api.workflow.rulesList()) || [];
+    if (!rules.length) { list.innerHTML = '<p style="color:var(--muted);">No rules yet. Add one above.</p>'; return; }
+    list.innerHTML = rules.map(r => `<div class="card" style="display:flex; align-items:center; gap:12px; padding:12px 14px; margin-bottom:8px; ${r.active ? '' : 'opacity:.55;'}">
+        <div style="flex:1;">${_wfEsc(r.summary || 'Routing rule')}</div>
+        <label style="display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); cursor:pointer;"><input type="checkbox" ${r.active ? 'checked' : ''} data-wf-toggle="${r.id}"> On</label>
+        <button class="btn" data-wf-edit="${r.id}" style="padding:4px 10px;">Edit</button>
+        <button class="btn" data-wf-del="${r.id}" style="padding:4px 10px;">Delete</button>
+      </div>`).join('');
+    list.querySelectorAll('[data-wf-toggle]').forEach(el => el.addEventListener('change', () => api.workflow.ruleToggle(Number(el.dataset.wfToggle), el.checked).then(loadWorkflowRules)));
+    list.querySelectorAll('[data-wf-edit]').forEach(el => el.addEventListener('click', () => wfEditRule(Number(el.dataset.wfEdit), rules)));
+    list.querySelectorAll('[data-wf-del]').forEach(el => el.addEventListener('click', () => { if (confirm('Delete this routing rule?')) api.workflow.ruleDelete(Number(el.dataset.wfDel)).then(loadWorkflowRules); }));
+  } catch { list.innerHTML = '<p style="color:var(--muted);">Couldn\'t load your rules.</p>'; }
+}
+
+function wfEditRule(id, rules) {
+  const r = rules.find(x => x.id === id);
+  if (!r) return;
+  _wfEditId = id;
+  document.getElementById('wf-builder-title').textContent = 'Edit routing rule';
+  document.getElementById('wf-b-save').textContent = 'Save changes';
+  document.getElementById('wf-b-cancel').style.display = '';
+  document.getElementById('wf-b-type').value = r.document_type_id != null ? String(r.document_type_id) : '';
+  const hasAmt = Number(r.min_amount_pennies) > 0;
+  document.getElementById('wf-b-amount-on').checked = hasAmt;
+  document.getElementById('wf-b-amount').value = hasAmt ? (r.min_amount_pennies / 100).toFixed(2) : '';
+  document.getElementById('wf-b-amount').style.display = hasAmt ? '' : 'none';
+  document.getElementById('wf-b-amount-suffix').style.display = hasAmt ? '' : 'none';
+  if (r.target_user_id != null) document.getElementById('wf-b-person').value = String(r.target_user_id);
+}
+
+applyWorkflowTabVisibility();   // reveal the tab iff the add-on is entitled (dark today ⇒ stays hidden)
+
+// ── Search client access (admin) — host the detached-client API ────────────────
 
 // ── Search client access (admin) — host the detached-client API ────────────────
 let _clientApiWired = false;

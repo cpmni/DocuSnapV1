@@ -44,7 +44,7 @@ function freshDb() {
       id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER, from_user_id INTEGER, from_username TEXT,
       to_user_id INTEGER, to_username TEXT, action_required TEXT, state TEXT DEFAULT 'pending',
       comment TEXT, resolution_comment TEXT, claimed_by_id INTEGER, claimed_by_username TEXT,
-      claimed_at TEXT, resolved_at TEXT, stamped_path TEXT, version INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now'))
+      claimed_at TEXT, resolved_at TEXT, stamped_path TEXT, matched_rule_summary TEXT, version INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now'))
     );
     CREATE TABLE extractions (
       id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER, field_key TEXT,

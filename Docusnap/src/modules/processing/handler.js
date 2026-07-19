@@ -2568,6 +2568,13 @@ async function _autoFileDoc(db, docId, folderPath, notifyMainWindow, logger) {
     return;
   }
   documents.update(db, docId, { stored_filename: fr.filename, stored_path: fr.filePath });
+  // Routing slice (SEAM A): capture the total's trust context BEFORE the note-clear below (Oracle A1).
+  // Kill-switch-gated ⇒ OFF = no DB read = byte-identical. corrections={} ⇒ wasCorrected=false (a pure
+  // machine read — the doc already passed isAutoFileEligible).
+  const amountRouting = require('../../services/amountRouting');
+  const _routeCtx = amountRouting.amountRoutingEnabled()
+    ? amountRouting.captureTotalContext(db, docId, {}, { getExtractedTotalContext: documents.getExtractedTotalContext })
+    : null;
   try { db.prepare('UPDATE extractions SET validation_note = NULL, corrected_to = NULL WHERE document_id = ?').run(docId); } catch {}
   if (doc.working_path) {
     try { if (fs.existsSync(doc.working_path)) fs.unlinkSync(doc.working_path); } catch {}
@@ -2588,6 +2595,39 @@ async function _autoFileDoc(db, docId, folderPath, notifyMainWindow, logger) {
     notifyMainWindow?.('doc-auto-filed', { docId, count: getAutoFiledIds(db).length });
     notifyMainWindow?.('review-count-changed', documents.getReviewCount(db));
   } catch {}
+  // Routing slice (SEAM A): auto-create an approval route from the extracted total/type — detached +
+  // fail-open (can NEVER disturb the already-completed file). System sender via assignSystem (no human
+  // confirmer on auto-file). Self-gated on the kill switch + REAL entitlement (master const, false
+  // today) + hasActiveRoute, so a dark build never routes and a running build never strands a locked doc.
+  if (amountRouting.amountRoutingEnabled()) {
+    Promise.resolve().then(() => amountRouting.startDefaultRoute(db, docId, _routeCtx, {
+      supplierName: allValues.supplier_name || doc.supplier_name || null,
+      slug: dtInfo.slug, documentTypeId: doc.document_type_id,
+    }, _autoFileRouteDeps(db))).catch(() => {});
+  }
+}
+
+// Deps for the auto-file routing engine (Oracle C2 — the SAME gates as the confirm path, incl. the REAL
+// entitlement, not merely the kill switch). assign → assignSystem (NULL "Auto-filed" sender: auto-file
+// has no human confirmer). A throwing dep is swallowed by the detached .catch above (fail-open).
+function _autoFileRouteDeps(db) {
+  const wfDb     = require('../../../database/modules/workflow');
+  const trust    = require('../../../database/modules/trust');
+  const authDb   = require('../../../database/modules/auth');
+  const learning = require('../../../database/modules/learning');
+  const { logAudit } = require('../auth/handler');
+  const svc = require('../../services/workflowService').createWorkflowService({ audit: (e) => logAudit(db, e) });
+  return {
+    entitled: (d) => { try { return !!require('../../services/entitlementService').checkClientEntitlement(d).workflow.entitled; } catch { return false; } },
+    hasActiveRoute: (d, id) => wfDb.hasActiveRoute(d, id),
+    currencyConsistent: (d, sup, slug, fk, v) => trust.currencyConsistentForField(d, sup, slug, fk, v),
+    floor: (d) => parseInt(learning.getSetting(d, 'critical_field_conf_floor', '88'), 10) || 0,
+    listActiveRules: (d) => wfDb.listActiveRouteRules(d),
+    usersByRole: (d, role) => authDb.getAllUsers(d).filter(u => u.role === role),
+    assign: (_actor, opts) => svc.assignSystem(db, opts),   // NULL sender — auto-file has no human confirmer
+    audit: (e) => logAudit(db, e),
+    summarizeRule: (rule) => wfDb.summarizeRule(db, rule),
+  };
 }
 
 // Rolling list of recently auto-filed doc ids (the "auto-committed" set the Review window

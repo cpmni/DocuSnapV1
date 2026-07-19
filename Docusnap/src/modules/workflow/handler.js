@@ -83,6 +83,79 @@ function register(ctx) {
   ipcMain.handle('workflow-claim',   (_e, { id, version } = {})         => { requireLogin(); assertEntitled(); return unwrap(workflow.claim(getDb(), actor(), id, version)); });
   ipcMain.handle('workflow-resolve', (_e, { id, decision, comment, version } = {}) => { requireLogin(); assertEntitled(); return unwrap(workflow.resolve(getDb(), actor(), id, { decision, comment, expectedVersion: version })); });
   ipcMain.handle('workflow-recall',  (_e, { id, version } = {})         => { requireLogin(); assertEntitled(); return unwrap(workflow.recall(getDb(), actor(), id, version)); });
+
+  // ── Routing rules — the Workflow settings area (admin + entitled; every mutation audited) ─────
+  // v1 is APPROVAL-ONLY (Oracle D1: an FYI/"just see it" route would edit-lock the doc, breaking the
+  // "nobody's blocked" promise — deferred to a non-locking slice) and NAMED-PERSON only (target_role
+  // is a later slice). The amount is optional; when set it means "£X or more" (inclusive-min).
+  const dbwf = () => require('../../../database/modules/workflow');
+  const documents = require('../../../database/modules/documents');
+  const amountRouting = require('../../services/amountRouting');
+  const _ruleFromPayload = (p) => ({
+    documentTypeId:   (p.documentTypeId != null && p.documentTypeId !== '') ? Number(p.documentTypeId) : null,
+    minAmountPennies: (p.amountText != null && String(p.amountText).trim() !== '') ? amountRouting.totalToPennies(String(p.amountText)) : 0,
+    maxAmountPennies: null,       // v1 = min-only
+    targetRole:       null,       // v1 = named person only
+    targetUserId:     (p.targetUserId != null) ? Number(p.targetUserId) : null,
+    actionRequired:   'approve',  // v1 = approval-only (D1)
+  });
+  const _validateRule = (r) => {
+    if (r.minAmountPennies == null || r.minAmountPennies < 0) return "That amount doesn't look right.";
+    if (r.targetUserId == null || !Number.isFinite(r.targetUserId)) return 'Choose who to send it to.';
+    return null;
+  };
+  const _withSummary = (db, row) => (row ? { ...row, summary: dbwf().summarizeRule(db, row) } : null);
+
+  ipcMain.handle('workflow-rules-list', () => {
+    requireRole('admin'); assertEntitled();
+    const db = getDb();
+    return dbwf().listAllRouteRules(db).map(r => _withSummary(db, r));
+  });
+  ipcMain.handle('workflow-rule-create', (_e, p = {}) => {
+    requireRole('admin'); assertEntitled();
+    const db = getDb(); const r = _ruleFromPayload(p); const err = _validateRule(r);
+    if (err) return { error: err };
+    const id = dbwf().insertRouteRule(db, r);
+    logAudit(db, { user_id: actor().userId, action: 'workflow_rule_created', action_category: 'workflow', outcome: 'success', target_type: 'workflow_rule', target_id: Number(id), details: `type=${r.documentTypeId} min=${r.minAmountPennies} to=${r.targetUserId}` });
+    return { ok: true, rule: _withSummary(db, dbwf().getRouteRule(db, id)) };
+  });
+  ipcMain.handle('workflow-rule-update', (_e, p = {}) => {
+    requireRole('admin'); assertEntitled();
+    const db = getDb(); const id = Number(p.id); const r = _ruleFromPayload(p); const err = _validateRule(r);
+    if (!id || err) return { error: err || 'Bad request.' };
+    dbwf().updateRouteRule(db, id, r);
+    logAudit(db, { user_id: actor().userId, action: 'workflow_rule_updated', action_category: 'workflow', outcome: 'success', target_type: 'workflow_rule', target_id: id });
+    return { ok: true, rule: _withSummary(db, dbwf().getRouteRule(db, id)) };
+  });
+  ipcMain.handle('workflow-rule-toggle', (_e, { id, active } = {}) => {
+    requireRole('admin'); assertEntitled();
+    const db = getDb(); dbwf().setRouteRuleActive(db, Number(id), !!active);
+    logAudit(db, { user_id: actor().userId, action: 'workflow_rule_toggled', action_category: 'workflow', outcome: 'success', target_type: 'workflow_rule', target_id: Number(id), details: active ? 'on' : 'off' });
+    return { ok: true };
+  });
+  ipcMain.handle('workflow-rule-delete', (_e, { id } = {}) => {
+    requireRole('admin'); assertEntitled();
+    const db = getDb(); dbwf().deleteRouteRule(db, Number(id));
+    logAudit(db, { user_id: actor().userId, action: 'workflow_rule_deleted', action_category: 'workflow', outcome: 'success', target_type: 'workflow_rule', target_id: Number(id) });
+    return { ok: true };
+  });
+  // Read-only DRY-RUN — calls the PURE matcher, NEVER startDefaultRoute/assign, so it can't create a
+  // route (Oracle's UI contract). Reports which of the last 30 filed docs the draft would route.
+  ipcMain.handle('workflow-rule-dry-run', (_e, p = {}) => {
+    requireRole('admin'); assertEntitled();
+    const db = getDb(); const r = _ruleFromPayload(p); const err = _validateRule(r);
+    if (err) return { error: err };
+    const draft = { id: 0, document_type_id: r.documentTypeId, min_amount_pennies: r.minAmountPennies,
+                    max_amount_pennies: r.maxAmountPennies, target_user_id: r.targetUserId, action_required: r.actionRequired };
+    const recent = db.prepare("SELECT id, document_type_id, supplier_name, original_filename FROM documents WHERE status='confirmed' ORDER BY confirmed_at DESC LIMIT 30").all();
+    const recentDocs = recent.map(d => ({ id: d.id, document_type_id: d.document_type_id, totalDisplay: documents.getExtractedTotalDisplay(db, d.id) }));
+    const g = amountRouting.dryRunRules([draft], recentDocs)[0];
+    const matchedIds = g ? new Set(g.sample) : new Set();
+    const matched = recent.filter(d => matchedIds.has(d.id)).map(d => ({
+      supplier: d.supplier_name || '(no supplier)', filename: d.original_filename, total: documents.getExtractedTotalDisplay(db, d.id) || '',
+    }));
+    return { count: g ? g.count : 0, sampled: recent.length, matched };
+  });
 }
 
 module.exports = { register };

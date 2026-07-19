@@ -257,6 +257,13 @@ contextBridge.exposeInMainWorld('docusnap', {
     resolve:    (id, decision, comment, version) =>
                    ipcRenderer.invoke('workflow-resolve', { id, decision, comment, version }),
     recall:     (id, version) => ipcRenderer.invoke('workflow-recall', { id, version }),
+    // Routing rules — the Workflow settings area (admin)
+    rulesList:  ()           => ipcRenderer.invoke('workflow-rules-list'),
+    ruleCreate: (p)          => ipcRenderer.invoke('workflow-rule-create', p),
+    ruleUpdate: (p)          => ipcRenderer.invoke('workflow-rule-update', p),
+    ruleToggle: (id, active) => ipcRenderer.invoke('workflow-rule-toggle', { id, active }),
+    ruleDelete: (id)         => ipcRenderer.invoke('workflow-rule-delete', { id }),
+    ruleDryRun: (p)          => ipcRenderer.invoke('workflow-rule-dry-run', p),
   },
 
   // ── Template Viewer / Anchor Mapping (admin-only, lives in Settings) ────────

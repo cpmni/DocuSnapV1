@@ -405,6 +405,7 @@
     <button class="tab" data-tab="learning" data-help-key="tab-learning"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c0 1 2.7 2 6 2s6-1 6-2v-5"/></svg>Learning</button>
     <button class="tab" data-tab="repair" data-help-key="tab-repair"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.3 2.3-2.5-.7-.7-2.5z"/></svg>Learning Repair</button>
     <button class="tab" data-tab="users" data-help-key="tab-users"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>Users &amp; activity</button>
+    <button class="tab" data-tab="workflow" data-help-key="tab-workflow" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="10.7" x2="15.4" y2="6.3"/><line x1="8.6" y1="13.3" x2="15.4" y2="17.7"/></svg>Workflow</button>
     <button class="tab" data-tab="audit" data-help-key="tab-audit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="18" rx="2"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>Audit</button>
     <button class="tab" data-tab="licensing" data-help-key="tab-licensing"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 21 2"/><path d="M16 7l3 3"/><path d="M18 5l3 3"/></svg>Licensing</button>
     <button class="tab" data-tab="searchclient" data-help-key="tab-searchclient"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><line x1="8" y1="20" x2="16" y2="20"/><line x1="12" y1="16" x2="12" y2="20"/></svg>Search client</button>
@@ -1411,6 +1412,37 @@
     </div>
 
     <!-- ══ AUDIT ══ -->
+    <div class="panel" id="panel-workflow" data-help-key="tab-workflow">
+      <div class="section-title">Document routing</div>
+      <p style="color:var(--muted); max-width:65ch;">Automatically send a filed document to someone for approval, based on its type and amount. Rules run on <b>every</b> document as it's filed — whether it was auto-filed or reviewed.</p>
+
+      <div class="card" id="wf-builder" style="margin-top:14px; padding:16px;">
+        <div style="font-weight:600; margin-bottom:10px;" id="wf-builder-title">Add a routing rule</div>
+        <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; line-height:2.4;">
+          <span>When a</span>
+          <select id="wf-b-type" style="min-width:150px;"></select>
+          <span>is filed</span>
+          <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer;"><input type="checkbox" id="wf-b-amount-on"> and it's £</label>
+          <input type="text" id="wf-b-amount" inputmode="decimal" placeholder="0.00" style="width:90px; display:none;">
+          <span id="wf-b-amount-suffix" style="display:none;">or more</span>
+          <span>, send it to</span>
+          <select id="wf-b-person" style="min-width:160px;"></select>
+          <span>to approve.</span>
+        </div>
+        <div style="margin-top:10px; font-size:11px; color:var(--muted);">Approval only for now — a “just see it” (notify without blocking) option is coming.</div>
+        <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
+          <button class="btn primary" id="wf-b-save">Add rule</button>
+          <button class="btn" id="wf-b-dryrun">Show me what this would do</button>
+          <button class="btn" id="wf-b-cancel" style="display:none;">Cancel</button>
+        </div>
+        <div id="wf-b-msg" style="font-size:12px; color:var(--muted); min-height:16px; margin-top:10px;"></div>
+        <div id="wf-dryrun" style="margin-top:8px;"></div>
+      </div>
+
+      <div style="font-weight:600; margin:20px 0 8px;">Your rules</div>
+      <div id="wf-rules-list"><p style="color:var(--muted);">Loading…</p></div>
+    </div>
+
     <div class="panel" id="panel-audit" data-help-key="tab-audit">
       <style>
         #panel-audit .aud-lbl { display:block; font-size:10px; color:var(--muted); margin-bottom:3px; letter-spacing:.04em; }

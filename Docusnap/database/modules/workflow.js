@@ -23,12 +23,12 @@ const CLOSED_STATES = ['approved', 'rejected', 'acknowledged', 'recalled'];
 function insertRoute(db, r) {
   const info = db.prepare(`
     INSERT INTO document_routes
-      (document_id, from_user_id, from_username, to_user_id, to_username, action_required, state, comment)
-    VALUES (@document_id, @from_user_id, @from_username, @to_user_id, @to_username, @action_required, 'pending', @comment)
+      (document_id, from_user_id, from_username, to_user_id, to_username, action_required, state, comment, matched_rule_summary)
+    VALUES (@document_id, @from_user_id, @from_username, @to_user_id, @to_username, @action_required, 'pending', @comment, @matched_rule_summary)
   `).run({
     document_id: r.documentId, from_user_id: r.fromUserId, from_username: r.fromUsername,
     to_user_id: r.toUserId, to_username: r.toUsername, action_required: r.actionRequired,
-    comment: r.comment || null,
+    comment: r.comment || null, matched_rule_summary: r.matchedRuleSummary ?? null,
   });
   return getRoute(db, info.lastInsertRowid);
 }
@@ -171,6 +171,49 @@ function insertRouteRule(db, r) {
 function listActiveRouteRules(db) {
   return db.prepare('SELECT * FROM workflow_route_rules WHERE active = 1 ORDER BY step_order ASC, id ASC').all();
 }
+// The settings-area CRUD (admin): the UI shows ALL rules (active + inactive) with a toggle.
+function listAllRouteRules(db) {
+  return db.prepare('SELECT * FROM workflow_route_rules ORDER BY step_order ASC, id ASC').all();
+}
+function getRouteRule(db, id) {
+  return db.prepare('SELECT * FROM workflow_route_rules WHERE id = ?').get(id);
+}
+function updateRouteRule(db, id, r) {
+  return db.prepare(`UPDATE workflow_route_rules SET
+      document_type_id=@document_type_id, min_amount_pennies=@min_amount_pennies, max_amount_pennies=@max_amount_pennies,
+      target_role=@target_role, target_user_id=@target_user_id, action_required=@action_required WHERE id=@id`).run({
+    id, document_type_id: r.documentTypeId ?? null, min_amount_pennies: r.minAmountPennies,
+    max_amount_pennies: r.maxAmountPennies ?? null, target_role: r.targetRole ?? null,
+    target_user_id: r.targetUserId ?? null, action_required: r.actionRequired || 'approve',
+  }).changes;
+}
+function setRouteRuleActive(db, id, active) {
+  return db.prepare('UPDATE workflow_route_rules SET active = ? WHERE id = ?').run(active ? 1 : 0, id).changes;
+}
+function deleteRouteRule(db, id) {
+  return db.prepare('DELETE FROM workflow_route_rules WHERE id = ?').run(id).changes;
+}
+
+// Build the human-readable "why it routed" sentence for a rule AT ROUTE TIME (stored immutably on the
+// route so a later rule edit/delete can't rewrite history — Oracle C6). Reads the type + target names.
+function summarizeRule(db, rule) {
+  if (!rule) return null;
+  let typeName = 'a document';
+  if (rule.document_type_id != null) {
+    const t = db.prepare('SELECT name FROM document_types WHERE id = ?').get(rule.document_type_id);
+    if (t && t.name) typeName = `a ${t.name}`;
+  }
+  const amt = (Number(rule.min_amount_pennies) > 0) ? ` and it's £${(rule.min_amount_pennies / 100).toFixed(2)} or more` : '';
+  let target = 'someone';
+  if (rule.target_user_id != null) {
+    const u = db.prepare('SELECT display_name, username FROM users WHERE id = ?').get(rule.target_user_id);
+    if (u) target = u.display_name || u.username;
+  } else if (rule.target_role) {
+    target = `the ${rule.target_role} team`;
+  }
+  const act = rule.action_required === 'acknowledge' ? 'just see it' : 'approve';
+  return `When ${typeName} is filed${amt}, send it to ${target} to ${act}.`;
+}
 
 // True when a document has an OPEN routing task (pending or claimed). This is the
 // workflow_lock signal: while it holds, the Review pipeline must not mutate the
@@ -201,6 +244,7 @@ module.exports = {
   countInbox, countSent, countOpenSent, countAssigned, countCompleted,
   updateState, setDocWorkflowStatus, setStampedPath, hasActiveRoute, isOpenRouteParty,
   insertRouteDecision, listRouteDecisions,
-  insertRouteRule, listActiveRouteRules,
+  insertRouteRule, listActiveRouteRules, listAllRouteRules, getRouteRule, updateRouteRule,
+  setRouteRuleActive, deleteRouteRule, summarizeRule,
   OPEN_STATES, CLOSED_STATES,
 };

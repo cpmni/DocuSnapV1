@@ -115,6 +115,7 @@ function register(ctx) {
         usersByRole: (d, role) => require('../../database/modules/auth').getAllUsers(d).filter(u => u.role === role),
         assign: (actor, opts) => require('../../services/workflowService').createWorkflowService({ audit: (e) => logAudit(db, e) }).assign(db, actor, opts),
         audit: (e) => logAudit(db, e),
+        summarizeRule: (rule) => require('../../database/modules/workflow').summarizeRule(db, rule),
       }),
     // releaseDelayMs stays 0 (the default): the old 150ms "release the preview file handle" wait
     // before filing was vestigial — the preview is an in-memory data URL, not an OS handle, and the

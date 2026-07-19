@@ -32,7 +32,7 @@ function freshDb() {
       id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER, from_user_id INTEGER, from_username TEXT,
       to_user_id INTEGER, to_username TEXT, action_required TEXT, state TEXT DEFAULT 'pending',
       comment TEXT, resolution_comment TEXT, claimed_by_id INTEGER, claimed_by_username TEXT,
-      claimed_at TEXT, resolved_at TEXT, stamped_path TEXT, version INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now'))
+      claimed_at TEXT, resolved_at TEXT, stamped_path TEXT, matched_rule_summary TEXT, version INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now'))
     );
   `);
   db.prepare(`INSERT INTO document_types (id,name,slug) VALUES (1,'Invoice','invoice')`).run();
@@ -204,6 +204,22 @@ function main() {
   check('countCompleted mirrors listCompleted', dbwf.countCompleted(db, 1) === dbwf.listCompleted(db, 1).length);
   check('countOpenSent counts only OPEN sent routes',
     dbwf.countOpenSent(db, 1) === dbwf.listSent(db, 1).filter(r => r.state === 'pending' || r.state === 'claimed').length);
+
+  // ── assignSystem: auto-file (system-sender) routes + matched_rule_summary (routing slice, Oracle C4) ──
+  {
+    const why = 'When an Invoice is filed, send it to Reader to just see it.';
+    const sys = wf.assignSystem(db, { documentId: 1, toUserId: 3, actionRequired: 'acknowledge', matchedRuleSummary: why });
+    check('assignSystem -> ok', sys.ok);
+    check('system route: from_user_id NULL + from_username Auto-filed', sys.ok && sys.route.from_user_id === null && sys.route.from_username === 'Auto-filed');
+    check('system route: matched_rule_summary persisted (immutable why-routed)', sys.ok && sys.route.matched_rule_summary === why);
+    check('system route shows in recipient inbox', dbwf.listInbox(db, 3).some(r => r.id === sys.route.id));
+    check('acknowledge system route resolvable by the readonly recipient', wf.resolve(db, reader, sys.route.id, { decision: 'acknowledge' }).ok);
+    // shared _validateAssignTarget returns the SAME codes as assign (C4 — byte-identical validation)
+    check('assignSystem inactive recipient -> INACTIVE_RECIPIENT', wf.assignSystem(db, { documentId: 1, toUserId: 4, actionRequired: 'approve' }).code === 'INACTIVE_RECIPIENT');
+    check('assignSystem non-routable doc -> NOT_ROUTABLE', wf.assignSystem(db, { documentId: 3, toUserId: 3, actionRequired: 'approve' }).code === 'NOT_ROUTABLE');
+    check('assignSystem missing doc -> NOT_FOUND', wf.assignSystem(db, { documentId: 999, toUserId: 3, actionRequired: 'approve' }).code === 'NOT_FOUND');
+    check('assignSystem bad action -> INVALID', wf.assignSystem(db, { documentId: 1, toUserId: 3, actionRequired: 'frobnicate' }).code === 'INVALID');
+  }
 
   // ── zero-paid sweep: NO path anywhere in this suite can mint a 'paid' row ─────
   check("zero 'paid' routes exist after the full flow",

@@ -9,7 +9,7 @@
  * Run: ELECTRON_RUN_AS_NODE=1 node_modules/.bin/electron src/services/test_amount_routing.js
  */
 
-const { totalToPennies, findMatchingRule, totalSafeToRouteOn, startDefaultRoute } = require('./amountRouting');
+const { totalToPennies, findMatchingRule, ruleBandsOnAmount, totalSafeToRouteOn, startDefaultRoute, dryRunRules } = require('./amountRouting');
 
 let fail = 0;
 const eq = (label, got, want) => {
@@ -93,8 +93,12 @@ console.log('§6 startDefaultRoute — gates, rule match, role resolution + SoD 
   eq('dropped-decimal -> held [safety]', startDefaultRoute(null, 1, { ...ctxOK, value: '104616' }, meta, mockDeps({ currencyConsistent: () => false })).reason, 'currency-dp');
   eq('below band -> no rule match (manual)', startDefaultRoute(null, 1, { ...ctxOK, value: '£100.00' }, meta, mockDeps()).reason, 'no-match');
 
-  const sodRule = [{ id: 1, document_type_id: null, min_amount_pennies: 500000, max_amount_pennies: null, target_user_id: 2, action_required: 'approve', step_order: 1 }];
-  eq('SoD (target == confirmer) -> held', startDefaultRoute(null, 1, ctxOK, meta, mockDeps({ listActiveRules: () => sodRule })).reason, 'sod');
+  // Oracle C3: an EXPLICITLY named person (even yourself) is a deliberate choice -> ALLOWED
+  // (route-to-self); only a ROLE that RESOLVES to the confirmer is SoD-blocked.
+  const selfRule = [{ id: 1, document_type_id: null, min_amount_pennies: 500000, max_amount_pennies: null, target_user_id: 2, action_required: 'approve', step_order: 1 }];
+  eq('explicit target_user_id == confirmer -> ROUTED (route-to-self allowed)', startDefaultRoute(null, 1, ctxOK, meta, mockDeps({ listActiveRules: () => selfRule })).routed, true);
+  const sodRoleRule = [{ id: 1, document_type_id: null, min_amount_pennies: 500000, max_amount_pennies: null, target_role: 'manager', action_required: 'approve', step_order: 1 }];
+  eq('role RESOLVING to the confirmer -> held sod', startDefaultRoute(null, 1, ctxOK, meta, mockDeps({ listActiveRules: () => sodRoleRule, usersByRole: () => [{ id: 2, is_active: 1 }] })).reason, 'sod');
 
   const roleRule = [{ id: 1, document_type_id: null, min_amount_pennies: 500000, max_amount_pennies: null, target_role: 'manager', action_required: 'approve', step_order: 1 }];
   const one = startDefaultRoute(null, 1, ctxOK, meta, mockDeps({ listActiveRules: () => roleRule, usersByRole: () => [{ id: 5, is_active: 1 }] }));
@@ -102,6 +106,52 @@ console.log('§6 startDefaultRoute — gates, rule match, role resolution + SoD 
   eq('ambiguous role (2 members) -> held', startDefaultRoute(null, 1, ctxOK, meta, mockDeps({ listActiveRules: () => roleRule, usersByRole: () => [{ id: 5, is_active: 1 }, { id: 6, is_active: 1 }] })).reason, 'ambiguous-role');
   eq('empty role (0 members) -> held', startDefaultRoute(null, 1, ctxOK, meta, mockDeps({ listActiveRules: () => roleRule, usersByRole: () => [] })).reason, 'no-recipient');
   delete process.env.WORKFLOW_AMOUNT_ROUTING;
+}
+
+console.log('§7 type-only rules + null-total (Oracle C1 — no shadowing, honest holds)');
+{
+  const meta = { actor: { userId: 2, username: 'editor', role: 'edit' }, supplierName: 'Acme', slug: 'invoice', documentTypeId: 1 };
+  const ctxOK = { fieldKey: 'total_amount', value: '£6,000.00', confidence: 95, note: null, wasCorrected: false };
+  const typeOnly = [{ id: 7, document_type_id: 1, min_amount_pennies: 0, max_amount_pennies: null, target_user_id: 9, action_required: 'approve', step_order: 1 }];
+  const banded   = [{ id: 8, document_type_id: 1, min_amount_pennies: 500000, max_amount_pennies: null, target_user_id: 9, action_required: 'approve', step_order: 1 }];
+  const both     = [banded[0], typeOnly[0]];   // banded FIRST, type-only SECOND (shadowing risk)
+  const md = (rules, over = {}) => ({
+    entitled: () => true, hasActiveRoute: () => false, currencyConsistent: () => true, floor: () => 88,
+    listActiveRules: () => rules, usersByRole: () => [],
+    assign: (actor, opts) => ({ ok: true, route: { id: 100, to_user_id: opts.toUserId } }), audit: () => {}, ...over,
+  });
+  process.env.WORKFLOW_AMOUNT_ROUTING = '1';
+
+  eq('ruleBandsOnAmount: type-only (min0/maxNull) -> false', ruleBandsOnAmount({ min_amount_pennies: 0, max_amount_pennies: null }), false);
+  eq('ruleBandsOnAmount: min>0 -> true', ruleBandsOnAmount({ min_amount_pennies: 1, max_amount_pennies: null }), true);
+  eq('ruleBandsOnAmount: max set -> true', ruleBandsOnAmount({ min_amount_pennies: 0, max_amount_pennies: 500000 }), true);
+
+  eq('type-only + clean total -> routed', startDefaultRoute(null, 1, ctxOK, meta, md(typeOnly)).routed, true);
+  eq('type-only + DROPPED-DECIMAL -> routed (amount gate skipped)', startDefaultRoute(null, 1, { ...ctxOK, value: '104616' }, meta, md(typeOnly, { currencyConsistent: () => false })).routed, true);
+  eq('type-only + NO total -> routed', startDefaultRoute(null, 1, null, meta, md(typeOnly)).routed, true);
+  eq('[banded, type-only] + no total -> routes via TYPE-ONLY (no shadow)', startDefaultRoute(null, 1, null, meta, md(both)).toUserId, 9);
+  eq('[banded only] + no total -> held no-total (honest, not no-match)', startDefaultRoute(null, 1, null, meta, md(banded)).reason, 'no-total');
+  eq('[banded only] + dropped-decimal (parses) -> held currency-dp (safety kept)', startDefaultRoute(null, 1, { ...ctxOK, value: '104616' }, meta, md(banded, { currencyConsistent: () => false })).reason, 'currency-dp');
+  delete process.env.WORKFLOW_AMOUNT_ROUTING;
+}
+
+console.log('§8 dryRunRules — pure, write-free (Oracle C5)');
+{
+  const rules = [
+    { id: 1, document_type_id: 1, min_amount_pennies: 500000, max_amount_pennies: null, target_user_id: 9, step_order: 1 },
+    { id: 2, document_type_id: 1, min_amount_pennies: 0,      max_amount_pennies: null, target_user_id: 8, step_order: 2 },
+  ];
+  const recent = [
+    { id: 101, document_type_id: 1, totalDisplay: '£6,000.00' },   // rule 1 (banded)
+    { id: 102, document_type_id: 1, totalDisplay: '£100.00' },     // rule 2 (type-only, below band 1)
+    { id: 103, document_type_id: 1, totalDisplay: null },          // rule 2 (type-only, no total)
+    { id: 104, document_type_id: 2, totalDisplay: '£9,000.00' },   // no match (wrong type)
+  ];
+  const res = dryRunRules(rules, recent);
+  const r1 = res.find(x => x.ruleId === 1), r2 = res.find(x => x.ruleId === 2);
+  eq('rule 1 (banded) matched 1 doc', r1 && r1.count, 1);
+  eq('rule 2 (type-only) matched 2 docs incl. the totalless one', r2 && r2.count, 2);
+  eq('dryRunRules has NO db param (arity 2) -> structurally write-free', dryRunRules.length, 2);
 }
 
 console.log(`\n${fail ? 'FAIL' : 'PASS'} — ${fail} failure(s)`);
