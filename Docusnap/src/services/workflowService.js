@@ -341,7 +341,49 @@ function createWorkflowService(deps = {}) {
     return { ok: true, route: fresh };
   }
 
-  return { inbox, sent, assigned, completed, assign, assignSystem, claim, resolve, recall };
+  // ── Admin cancel (E1 — the deliberate escape hatch) ───────────────────────────
+  // Closes ANY open route (pending OR claimed) regardless of sender — the cure for the
+  // routes `recall` can never reach: a NULL-sender system route (assignSystem — recallable
+  // by nobody), a claimed route (unrecallable even by its sender), and a route to a
+  // deactivated/deleted recipient (never resolvable; an approve route then locks the doc
+  // forever — the editGuard admin override frees individual ACTIONS, never the route).
+  // recall STAYS sender-only + pending-only (pinned in test_workflow.js): do not widen it —
+  // this function is the escape hatch. DELIBERATELY no ROUTABLE_STATES / doc-status check:
+  // a route stranded on an already-deleted document is exactly what this must still heal
+  // (Oracle OC3 — never add one). Never stamps, never snapshots (both live only in resolve).
+  // The comment is ALWAYS non-null — it is the display discriminator among the three
+  // producers of 'recalled' (sender recall = NULL, delete-close = "Document deleted by…",
+  // cancel = "Cancelled by…"); machine provenance is the distinct audit action. No code may
+  // branch on the comment TEXT; a closed_reason column becomes mandatory at producer #4 or
+  // first localisation (Oracle OC2).
+  function adminCancelRoute(db, actor, routeId, { reason, expectedVersion } = {}) {
+    if (!actor || actor.role !== 'admin') return fail('FORBIDDEN', 'Only an administrator can cancel a route.');
+    const route = wf.getRoute(db, routeId);
+    if (!route) return fail('NOT_FOUND', 'Route not found.');
+    if (!['pending', 'claimed'].includes(route.state)) return fail('INVALID', `This item is already ${route.state}.`);
+    const comment = `Cancelled by ${actor.displayName || actor.username} (administrator)`
+      + (String(reason || '').trim() ? `: ${String(reason).trim()}` : '');
+    const changed = wf.updateState(db, routeId, _ver(route, expectedVersion), {
+      state: 'recalled', resolution_comment: comment, resolved_at: now(),
+    });
+    if (!changed) return fail('CONFLICT', 'This item was updated by someone else. Refresh and retry.');
+    // A doc can carry SEVERAL open routes (manual assign has no dedupe): stamp the denorm
+    // 'recalled' only when NO open route remains, else the survivors' state stands (gary C1;
+    // recall/resolve blind-stamp — pre-existing display-only defect, editGuard never reads it).
+    if (!wf.hasActiveRoute(db, route.document_id)) wf.setDocWorkflowStatus(db, route.document_id, 'recalled');
+    audit({ user_id: actor.userId, action: 'workflow_route_cancelled', action_category: 'workflow',
+            outcome: 'success', target_type: 'document', target_id: route.document_id,
+            document_id: route.document_id,
+            details: `route=${routeId} to=${route.to_username}${reason ? ' with reason' : ''}` });
+    const fresh = wf.getRoute(db, routeId);
+    // 'admin_cancelled' is DELIBERATELY unlisted in workflowNotify.eventDirection ⇒ badge-ping
+    // only, no toast (gary C2 — reusing 'recalled' would couple admin cancels to any future
+    // sender-recall toast decision, with grammar built for the sender).
+    _notify('admin_cancelled', fresh, actor);
+    return { ok: true, route: fresh };
+  }
+
+  return { inbox, sent, assigned, completed, assign, assignSystem, claim, resolve, recall, adminCancelRoute };
 }
 
 module.exports = { createWorkflowService, editGuard, hasActiveWorkflowLock, closeOpenRoutesForDeletedDoc,

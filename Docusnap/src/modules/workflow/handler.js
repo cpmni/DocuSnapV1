@@ -29,7 +29,7 @@ function register(ctx) {
     // Best-effort — the service already shields the action from a throwing hook.
     notifyWorkflow: (ev) => { try { ctx.notifyWorkflowEvent && ctx.notifyWorkflowEvent(ev); } catch { /* best-effort */ } },
   });
-  const actor = () => { const u = getCurrentUser(); return { userId: u.id, username: u.username, role: u.role }; };
+  const actor = () => { const u = getCurrentUser(); return { userId: u.id, username: u.username, displayName: u.displayName, role: u.role }; };
 
   function assertEntitled() {
     // Workflow is now its OWN licensed feature (split from the base detached-client /
@@ -83,6 +83,35 @@ function register(ctx) {
   ipcMain.handle('workflow-claim',   (_e, { id, version } = {})         => { requireLogin(); assertEntitled(); return unwrap(workflow.claim(getDb(), actor(), id, version)); });
   ipcMain.handle('workflow-resolve', (_e, { id, decision, comment, version } = {}) => { requireLogin(); assertEntitled(); return unwrap(workflow.resolve(getDb(), actor(), id, { decision, comment, expectedVersion: version })); });
   ipcMain.handle('workflow-recall',  (_e, { id, version } = {})         => { requireLogin(); assertEntitled(); return unwrap(workflow.recall(getDb(), actor(), id, version)); });
+
+  // ── E1 admin cancel (docs/designs/WORKFLOW_ADMIN_CANCEL_2026-07-19.md) ─────────
+  // The escape hatch for routes recall can't reach (NULL-sender system routes, claimed
+  // routes, deactivated recipients). Admin-gated at the IPC AND inside the service.
+  ipcMain.handle('workflow-admin-cancel', (_e, { id, version, reason } = {}) => {
+    requireRole('admin'); assertEntitled();
+    return unwrap(workflow.adminCancelRoute(getDb(), actor(), id, { reason, expectedVersion: version }));
+  });
+  // OPEN routes for ONE document — feeds the Search-preview "Routed to <name>" banner.
+  // A NEW by-id read seam ⇒ accessService gate (skipping it would reopen SEC-03 as a 7th
+  // hole — eric). admin/edit read (an edit user gets the informational banner; cancel stays
+  // admin-only). PROJECTED shape: no stamped_path, and no comment — the banner never renders
+  // it, so the sender's private note must not ship to every edit renderer (Oracle OC4).
+  ipcMain.handle('workflow-doc-routes', (_e, { documentId } = {}) => {
+    const sess = requireRole('admin', 'edit'); assertEntitled();
+    const db = getDb();
+    const acc = require('../../services/accessService').canAccessDocument(db, sess, Number(documentId));
+    if (!acc.allow) throw Object.assign(new Error('Document not found.'), { code: 'NOT_FOUND' });
+    return require('../../../database/modules/workflow').listOpenRoutesForDocument(db, Number(documentId))
+      .map(r => ({ id: r.id, to_username: r.to_username, from_username: r.from_username,
+                   action_required: r.action_required, state: r.state, created_at: r.created_at, version: r.version }));
+  });
+  // EVERY open route (admin) — the Settings "Open routes" list, E1's discovery surface
+  // (a system route appears in nobody's Sent box). Projection lives in the SQL
+  // (workflow.listAllOpenRoutes); includes soft-deleted-doc rows by design (Oracle OC3).
+  ipcMain.handle('workflow-open-routes', () => {
+    requireRole('admin'); assertEntitled();
+    return require('../../../database/modules/workflow').listAllOpenRoutes(getDb());
+  });
 
   // ── Routing rules — the Workflow settings area (admin + entitled; every mutation audited) ─────
   // Rules are approval OR "for information" (acknowledge) since the FYI non-locking slice

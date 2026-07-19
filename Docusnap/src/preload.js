@@ -257,6 +257,10 @@ contextBridge.exposeInMainWorld('docusnap', {
     resolve:    (id, decision, comment, version) =>
                    ipcRenderer.invoke('workflow-resolve', { id, decision, comment, version }),
     recall:     (id, version) => ipcRenderer.invoke('workflow-recall', { id, version }),
+    // E1 admin cancel-route (admin) + the open-route reads that surface stuck routes
+    adminCancel: (id, version, reason) => ipcRenderer.invoke('workflow-admin-cancel', { id, version, reason }),
+    docRoutes:   (documentId)  => ipcRenderer.invoke('workflow-doc-routes', { documentId }),
+    openRoutes:  ()            => ipcRenderer.invoke('workflow-open-routes'),
     // Routing rules — the Workflow settings area (admin)
     rulesList:  ()           => ipcRenderer.invoke('workflow-rules-list'),
     ruleCreate: (p)          => ipcRenderer.invoke('workflow-rule-create', p),

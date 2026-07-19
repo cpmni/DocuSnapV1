@@ -303,6 +303,102 @@ function main() {
       && fnBody.indexOf("notifyAllWindows('workflow-counts-changed')") < fnBody.indexOf('workflowNotify.aggregate'));
   }
 
+  // ── E1 ADMIN CANCEL-ROUTE (docs/designs/WORKFLOW_ADMIN_CANCEL_2026-07-19.md) ──
+  {
+    const cancelEvents = [];
+    const wfC = createWorkflowService({ audit: (e) => audits.push(e),
+      stampDecision: (a) => { stamps.push(a); return Promise.resolve(null); },
+      notifyWorkflow: (e) => cancelEvents.push(e) });
+
+    // Setup: the 'paid' blocks above DELIBERATELY leave open approve routes on doc 1
+    // (refused decisions keep the route pending) — settle them so this battery's
+    // lock-release / last-route assertions see only their own routes.
+    db.prepare(`UPDATE document_routes SET state='approved', resolved_at=datetime('now')
+                WHERE document_id=1 AND state IN ('pending','claimed')`).run();
+
+    // THE HEADLINE HOLE, pinned first: a NULL-sender system route is recallable by NOBODY.
+    const sysR = wfC.assignSystem(db, { documentId: 1, toUserId: 3, actionRequired: 'approve' });
+    check('(the hole) recall of a system route FORBIDDEN even for admin', wfC.recall(db, admin, sysR.route.id).code === 'FORBIDDEN');
+    check('non-admin cannot cancel (edit)', wfC.adminCancelRoute(db, editor, sysR.route.id, {}).code === 'FORBIDDEN');
+    check('non-admin cannot cancel (readonly)', wfC.adminCancelRoute(db, reader, sysR.route.id, {}).code === 'FORBIDDEN');
+    check('(setup) the open approve system route locks the doc', editGuard(db, 1, 'edit').code === 'WORKFLOW_LOCKED');
+    const inboxBeforeCancel = dbwf.countInbox(db, 3);
+    const c1 = wfC.adminCancelRoute(db, admin, sysR.route.id, {});
+    check('admin cancels the system route -> recalled', c1.ok && c1.route.state === 'recalled');
+    check('comment ALWAYS non-null "Cancelled by …(administrator)" + resolved_at',
+      /^Cancelled by .+\(administrator\)$/.test(c1.route.resolution_comment || '') && !!c1.route.resolved_at);
+    check('cancel releases the edit lock', editGuard(db, 1, 'edit').ok === true);
+    check('recipient inbox count drops', dbwf.countInbox(db, 3) === inboxBeforeCancel - 1);
+    check("notify fired 'admin_cancelled' exactly once", cancelEvents.filter(e => e.event === 'admin_cancelled').length === 1);
+    check("aggregate ignores 'admin_cancelled' (badge-only pin — do not add it to eventDirection)",
+      require('../lib/workflowNotify').aggregate(null, { event: 'admin_cancelled', route: c1.route }) === null);
+    check('audited workflow_route_cancelled', audits.some(a => a.action === 'workflow_route_cancelled'));
+
+    // Claimed route cancels (the second stuck case); never stamps/snapshots even with the env on.
+    process.env.WORKFLOW_DECISION_SNAPSHOT = '1';
+    const cl = wfC.assign(db, admin, { documentId: 1, toUserId: 2, actionRequired: 'approve' });
+    wfC.claim(db, editor, cl.route.id);
+    const stampsBefore = stamps.length;
+    const c2 = wfC.adminCancelRoute(db, admin, cl.route.id, { reason: 'recipient left the company' });
+    delete process.env.WORKFLOW_DECISION_SNAPSHOT;
+    check('CLAIMED route cancels', c2.ok && c2.route.state === 'recalled');
+    check('optional reason appended after a colon', /: recipient left the company$/.test(c2.route.resolution_comment || ''));
+    check('cancel NEVER stamps (spy untouched, snapshot env armed)', stamps.length === stampsBefore);
+
+    check('already-closed -> INVALID', wfC.adminCancelRoute(db, admin, c2.route.id, {}).code === 'INVALID');
+    check('missing route -> NOT_FOUND', wfC.adminCancelRoute(db, admin, 999999, {}).code === 'NOT_FOUND');
+    const cs = wfC.assign(db, admin, { documentId: 1, toUserId: 2, actionRequired: 'approve' });
+    const staleV2 = cs.route.version;
+    wfC.claim(db, editor, cs.route.id);   // bumps version
+    check('stale expectedVersion -> CONFLICT, row untouched',
+      wfC.adminCancelRoute(db, admin, cs.route.id, { expectedVersion: staleV2 }).code === 'CONFLICT'
+      && db.prepare('SELECT state FROM document_routes WHERE id=?').get(cs.route.id).state === 'claimed');
+
+    // gary C1: a doc can carry SEVERAL open routes — the 'recalled' denorm stamps only when
+    // NO open route remains (never blind-stamp over a survivor).
+    const t1 = wfC.assign(db, admin, { documentId: 1, toUserId: 3, actionRequired: 'acknowledge' });
+    wfC.adminCancelRoute(db, admin, t1.route.id, {});
+    check('C1: one of two open routes cancelled -> workflow_status NOT recalled',
+      db.prepare('SELECT workflow_status FROM documents WHERE id=1').get().workflow_status !== 'recalled');
+    wfC.adminCancelRoute(db, admin, cs.route.id, {});
+    check('C1: LAST open route cancelled -> workflow_status recalled',
+      db.prepare('SELECT workflow_status FROM documents WHERE id=1').get().workflow_status === 'recalled');
+    check('cancel frees the doc for routing (hasActiveRoute false, fresh assign ok)',
+      dbwf.hasActiveRoute(db, 1) === false
+      && wfC.assign(db, admin, { documentId: 1, toUserId: 2, actionRequired: 'acknowledge' }).ok === true);
+
+    // A deactivated OR hard-DELETED recipient can never block the escape hatch.
+    const dr = wfC.assign(db, admin, { documentId: 1, toUserId: 3, actionRequired: 'approve' });
+    db.prepare('DELETE FROM users WHERE id = 3').run();
+    check('cancel succeeds when the recipient user row was DELETED', wfC.adminCancelRoute(db, admin, dr.route.id, {}).ok === true);
+
+    // Oracle OC3: a route stranded on a soft-DELETED doc still cancels — the cancel path
+    // deliberately has NO ROUTABLE_STATES / doc-status check; never add one (this is the
+    // healing surface for legacy strands).
+    const delDoc = wfC.assign(db, admin, { documentId: 2, toUserId: 2, actionRequired: 'approve' });
+    db.prepare(`UPDATE documents SET status='deleted' WHERE id=2`).run();
+    check('OC3: cancel succeeds on a soft-deleted doc route', wfC.adminCancelRoute(db, admin, delDoc.route.id, {}).ok === true);
+    db.prepare(`UPDATE documents SET status='needs_review' WHERE id=2`).run();
+
+    // Oracle OC2: the THREE producers of 'recalled' stay comment-distinct — sender recall
+    // NULL / delete-close "Document deleted by…" / cancel "Cancelled by…". NO code may ever
+    // branch on the comment TEXT (audit actions are the machine provenance); a closed_reason
+    // column becomes mandatory at producer #4 or first localisation.
+    const triple = db.prepare(`SELECT
+        SUM(CASE WHEN resolution_comment IS NULL THEN 1 ELSE 0 END) nul,
+        SUM(CASE WHEN resolution_comment LIKE 'Document deleted by%' THEN 1 ELSE 0 END) del,
+        SUM(CASE WHEN resolution_comment LIKE 'Cancelled by%' THEN 1 ELSE 0 END) can
+      FROM document_routes WHERE state='recalled'`).get();
+    check('OC2: recalled-producer triple stays comment-distinct', triple.nul >= 1 && triple.del >= 1 && triple.can >= 1);
+
+    // TRADE-OFF PIN: recall STAYS sender-only + pending-only — admin cancel is the
+    // deliberate escape hatch; do NOT widen recall to "fix" these.
+    const tp = wfC.assign(db, admin, { documentId: 1, toUserId: 2, actionRequired: 'approve' });
+    wfC.claim(db, editor, tp.route.id);
+    check('TRADE-OFF PIN: sender recall of a CLAIMED route stays INVALID', wfC.recall(db, admin, tp.route.id).code === 'INVALID');
+    wfC.adminCancelRoute(db, admin, tp.route.id, {});   // tidy
+  }
+
   // ── zero-paid sweep: NO path anywhere in this suite can mint a 'paid' row ─────
   check("zero 'paid' routes exist after the full flow",
     db.prepare(`SELECT COUNT(*) c FROM document_routes WHERE state='paid'`).get().c === 0);

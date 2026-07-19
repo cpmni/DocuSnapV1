@@ -63,7 +63,8 @@ function freshDb() {
     CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);
     CREATE TABLE document_types (id INTEGER PRIMARY KEY, name TEXT, slug TEXT);
     CREATE TABLE documents (id INTEGER PRIMARY KEY, status TEXT, document_type_id INTEGER, workflow_status TEXT,
-      supplier_name TEXT, reference_number TEXT, doc_date TEXT);
+      supplier_name TEXT, reference_number TEXT, doc_date TEXT,
+      stored_filename TEXT, original_filename TEXT);
     CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT, display_name TEXT, role TEXT,
       is_active INTEGER DEFAULT 1, must_change_password INTEGER DEFAULT 0, last_login_at TEXT, created_at TEXT, updated_at TEXT);
     CREATE TABLE document_routes (id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER, from_user_id INTEGER,
@@ -148,6 +149,34 @@ function main() {
   const rBad = H['workflow-rule-create']({}, { targetUserId: 3, actionRequired: 'delete_everything' });
   fail += !check('rule-create with a garbage action -> REFUSED (allowlist, never coerced)',
     rBad && rBad.error && !rBad.ok);
+
+  // ── E1 admin cancel-route IPCs (docs/designs/WORKFLOW_ADMIN_CANCEL_2026-07-19.md) ──
+  session = { id: 1, username: 'admin', role: 'admin' };
+  const e1r = H['workflow-assign']({}, { documentId: 1, toUserId: 3, actionRequired: 'approve' });
+  session = { id: 2, username: 'editor', role: 'edit' };
+  fail += !check('admin-cancel rejects a non-admin session', threwCode(() => H['workflow-admin-cancel']({}, { id: e1r.id, version: e1r.version }), 'FORBIDDEN'));
+  session = { id: 3, username: 'reader', role: 'readonly' };
+  fail += !check('doc-routes rejects readonly', threwCode(() => H['workflow-doc-routes']({}, { documentId: 1 }), 'FORBIDDEN'));
+  session = { id: 2, username: 'editor', role: 'edit' };
+  fail += !check('open-routes is admin-only (edit rejected)', threwCode(() => H['workflow-open-routes']({}), 'FORBIDDEN'));
+  session = { id: 1, username: 'admin', role: 'admin' };
+  const drs = H['workflow-doc-routes']({}, { documentId: 1 });
+  fail += !check('doc-routes returns the open route with the PROJECTED shape (version yes; stamped_path/comment NO — Oracle OC4)',
+    drs.length === 1 && drs[0].id === e1r.id && typeof drs[0].version === 'number'
+    && !('stamped_path' in drs[0]) && !('comment' in drs[0]));
+  const openAll = H['workflow-open-routes']({});
+  fail += !check('open-routes lists it with filename join + no stamped_path (OC3-iii projection pin)',
+    openAll.some(x => x.id === e1r.id) && !openAll.some(x => 'stamped_path' in x));
+  // OC3-ii: a route on a soft-DELETED doc stays LISTED (doc_status exposed) — the healing
+  // surface for legacy strands; do not filter it out.
+  db.prepare(`UPDATE documents SET status='deleted' WHERE id=1`).run();
+  const openDel = H['workflow-open-routes']({});
+  fail += !check('open-routes INCLUDES a deleted-doc route with doc_status (OC3-ii pin)',
+    openDel.some(x => x.id === e1r.id && x.doc_status === 'deleted'));
+  db.prepare(`UPDATE documents SET status='confirmed' WHERE id=1`).run();
+  const cancelled = H['workflow-admin-cancel']({}, { id: e1r.id, version: e1r.version });
+  fail += !check('admin-cancel over IPC -> recalled with the Cancelled-by comment',
+    cancelled.state === 'recalled' && /^Cancelled by /.test(cancelled.resolution_comment || ''));
 
   db.close();
   console.log(fail ? `\n${fail} check(s) FAILED` : '\nAll workflow-IPC checks passed.');

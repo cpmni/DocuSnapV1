@@ -254,6 +254,24 @@ function listOpenRoutesForDocument(db, documentId) {
   ).all(documentId);
 }
 
+// EVERY open route in the system, joined for the admin "Open routes" list — E1's discovery
+// surface: a NULL-sender system route appears in NOBODY's Sent box, so without this list a
+// stuck route is only found by per-doc luck. DELIBERATELY includes routes whose document is
+// soft-deleted (doc_status exposed, rendered "(document deleted)"): with delete-close live those
+// rows shouldn't exist, so any that DO are legacy strands or missed doors — exactly what an
+// admin must see, and this list is their only healing surface (Oracle OC3 — do not filter).
+// PROJECTED shape by design: no stamped_path, no comment, no SELECT * (same guard as the
+// per-doc read; pinned in test_workflow_ipc.js).
+function listAllOpenRoutes(db) {
+  return db.prepare(`
+    SELECT r.id, r.document_id, r.to_username, r.from_username, r.action_required, r.state,
+           r.created_at, r.version,
+           d.status AS doc_status, d.stored_filename, d.original_filename, d.supplier_name
+    FROM document_routes r JOIN documents d ON d.id = r.document_id
+    WHERE r.state IN ('pending','claimed')
+    ORDER BY r.created_at ASC`).all();
+}
+
 // True when `userId` is a PARTY (sender or recipient) on an OPEN route for this
 // document — the per-document visibility grant used by accessService.canAccessDocument
 // (docs/designs/WORKFLOW_SUITE_2026-07-18.md §3, Oracle C3: OPEN routes only, so the
@@ -272,7 +290,7 @@ module.exports = {
   insertRoute, getRoute, listInbox, listSent, listAssigned, listCompleted,
   countInbox, countSent, countOpenSent, countAssigned, countCompleted,
   updateState, setDocWorkflowStatus, setStampedPath, hasActiveRoute, hasActiveApprovalRoute,
-  listOpenRoutesForDocument, isOpenRouteParty,
+  listOpenRoutesForDocument, listAllOpenRoutes, isOpenRouteParty,
   insertRouteDecision, listRouteDecisions,
   insertRouteRule, listActiveRouteRules, listAllRouteRules, getRouteRule, updateRouteRule,
   setRouteRuleActive, deleteRouteRule, summarizeRule,

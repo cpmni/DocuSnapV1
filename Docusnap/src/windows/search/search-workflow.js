@@ -50,7 +50,10 @@ const _run = async (promise) => {
   await refresh(); _rerender();
   if (window.SearchMailbox && window.SearchMailbox.refreshIfActive) window.SearchMailbox.refreshIfActive();
   if (errMsg) {
-    const panel = document.querySelector('#preview-actions .wf-decision, #preview-actions .wf-assign');
+    // .wf-routed = the admin route-banner container — it carries the class FROM CREATION
+    // (sync) and populates append-only, so an error attached here survives the async fill
+    // (Oracle OC1: without both halves a cancel CONFLICT/INVALID would vanish silently).
+    const panel = document.querySelector('#preview-actions .wf-decision, #preview-actions .wf-assign, #preview-actions .wf-routed');
     if (panel) _err(panel, errMsg);
   }
 };
@@ -78,8 +81,51 @@ function _provide(doc) {
       tag: 'previous recipient', title: 'Send again — the previous request was rejected',
       actionRequired: pending.actionRequired, resubmitOf: pending.resubmitOf }) }];
   }
-  if (_recipients.length) return [{ node: _assignForm(doc) }]; // recipients only returned to admin/edit
+  if (_recipients.length) return [{ node: _routeOrAssign(doc) }]; // recipients only returned to admin/edit
   return [];
+}
+
+// E1 (docs/designs/WORKFLOW_ADMIN_CANCEL_2026-07-19.md): the assign-form slot is now a
+// SELF-POPULATING container — sync-returned (SearchActions providers are sync), then an async
+// workflow-doc-routes read decides: open route(s) NOT mine → one banner per route ("Routed to
+// <name> — awaiting …") with an admin-only two-step [Cancel route]; no open route → the
+// existing assign form. Renders NOTHING until the IPC resolves (never swap a form under typing
+// hands — eric). Class 'wf-routed' sits on the container FROM CREATION and population is
+// APPEND-ONLY so a `.wf-err` attached by _run survives the fill (Oracle OC1).
+function _routeOrAssign(doc) {
+  const wrap = document.createElement('div'); wrap.className = 'wf-routed';
+  window.docusnap.workflow.docRoutes(doc.id).then((routes) => {
+    // Staleness guards: renderActions wipes the panel on re-render (isConnected), and a fast
+    // re-selection during the invoke round-trip must not paint the wrong doc's routes.
+    if (!wrap.isConnected || !window.SearchState.selectedDoc || window.SearchState.selectedDoc.id !== doc.id) return;
+    const open = (routes || []).filter(r => r.state === 'pending' || r.state === 'claimed');
+    if (!open.length) { wrap.appendChild(_assignForm(doc)); return; }
+    for (const r of open) wrap.appendChild(_routedBanner(r));
+  }).catch(() => {
+    if (wrap.isConnected) wrap.appendChild(_assignForm(doc));   // read failed → fall back to the old behaviour
+  });
+  return wrap;
+}
+
+function _routedBanner(r) {
+  const row = document.createElement('div'); row.className = 'wf-decision';
+  const banner = document.createElement('div'); banner.className = 'wf-banner';
+  banner.textContent = `Routed to ${r.to_username} by ${r.from_username || 'Auto-filed'} — awaiting ${r.action_required === 'approve' ? 'approval' : 'information'}`;
+  row.appendChild(banner);
+  if (window.SearchState.role === 'admin') {
+    const acts = document.createElement('div'); acts.className = 'wf-acts'; row.appendChild(acts);
+    // Two-step inline confirm (NO native confirm() — the Search window is an unarmed
+    // focus-desync site). First click arms, ~5s auto-revert; second click cancels. A stale
+    // cancel lands as a truthful INVALID/CONFLICT that _run re-shows on the fresh panel.
+    const btn = _btn('Cancel route', false, () => {
+      if (btn.dataset.armed) { _run(window.docusnap.workflow.adminCancel(r.id, r.version)); return; }
+      btn.dataset.armed = '1'; btn.textContent = `Confirm — remove from ${r.to_username}'s inbox`;
+      btn.classList.add('danger');
+      setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = 'Cancel route'; btn.classList.remove('danger'); } }, 5000);
+    });
+    acts.appendChild(btn);
+  }
+  return row;
 }
 
 function _decisionBar(route) {

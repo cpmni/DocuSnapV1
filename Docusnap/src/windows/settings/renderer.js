@@ -40,7 +40,7 @@ async function applyWorkflowTabVisibility() {
 }
 
 async function initWorkflowPanel() {
-  if (_wfWired) { loadWorkflowRules(); return; }
+  if (_wfWired) { loadWorkflowRules(); loadWorkflowOpenRoutes(); return; }
   _wfWired = true;
   try {
     const types = (await api.getDocumentTypes()) || [];
@@ -62,6 +62,45 @@ async function initWorkflowPanel() {
   document.getElementById('wf-b-dryrun').addEventListener('click', wfDryRun);
   document.getElementById('wf-b-cancel').addEventListener('click', wfResetBuilder);
   loadWorkflowRules();
+  loadWorkflowOpenRoutes();
+}
+
+// E1 admin cancel-route: the "Open routes" list — the DISCOVERY surface for stuck routes
+// (a NULL-sender auto-file route appears in NOBODY's Sent box; without this list a stuck doc
+// is only found by per-doc luck in Search). Includes routes whose document was deleted
+// ("(document deleted)") — those are legacy strands and this list is their only healing
+// surface (Oracle OC3). Cancel = two-step inline confirm, same IPC as the Search banner.
+async function loadWorkflowOpenRoutes() {
+  const list = document.getElementById('wf-open-list');
+  if (!list) return;
+  try {
+    const routes = (await api.workflow.openRoutes()) || [];
+    if (!routes.length) { list.innerHTML = '<p style="color:var(--muted);">Nothing is waiting on anyone.</p>'; return; }
+    list.innerHTML = routes.map(r => {
+      const fname = r.stored_filename || r.original_filename || ('Document #' + r.document_id);
+      const gone = r.doc_status === 'deleted' ? ' <span style="color:var(--err); font-size:11px;">(document deleted)</span>' : '';
+      const await_ = r.action_required === 'approve' ? 'awaiting approval' : 'for information';
+      const age = (r.created_at || '').slice(0, 10);
+      return `<div class="card" style="display:flex; align-items:center; gap:12px; padding:10px 14px; margin-bottom:8px;">
+        <div style="flex:1; min-width:0;">
+          <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${_wfEsc(fname)}${gone}</div>
+          <div style="font-size:11px; color:var(--muted);">${_wfEsc(r.supplier_name || '')} · to ${_wfEsc(r.to_username)} · ${_wfEsc(await_)} · since ${_wfEsc(age)}</div>
+        </div>
+        <button class="btn" data-wf-cancel="${r.id}" data-wf-cancel-v="${r.version}" data-wf-cancel-to="${_wfEsc(r.to_username)}" style="padding:4px 10px;">Cancel</button>
+      </div>`;
+    }).join('');
+    list.querySelectorAll('[data-wf-cancel]').forEach(el => el.addEventListener('click', async () => {
+      if (!el.dataset.armed) {
+        el.dataset.armed = '1'; el.textContent = `Confirm — remove from ${el.dataset.wfCancelTo}'s inbox`;
+        setTimeout(() => { if (el.isConnected) { delete el.dataset.armed; el.textContent = 'Cancel'; } }, 5000);
+        return;
+      }
+      el.disabled = true;
+      try { await api.workflow.adminCancel(Number(el.dataset.wfCancel), Number(el.dataset.wfCancelV)); }
+      catch (e) { el.disabled = false; el.textContent = 'Cancel'; delete el.dataset.armed; }
+      loadWorkflowOpenRoutes();
+    }));
+  } catch { list.innerHTML = '<p style="color:var(--muted);">Couldn\'t load the open routes.</p>'; }
 }
 
 function _wfBuilderPayload() {
