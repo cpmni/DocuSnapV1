@@ -16,6 +16,11 @@ document.querySelectorAll('.tab').forEach(btn => {
     if (btn.dataset.tab === 'repair') repairInit();
     if (btn.dataset.tab === 'audit' && !auditState.loaded) loadAudit();
     if (btn.dataset.tab === 'searchclient') initClientApiSection();
+    // The Workflow add-on + client-seat sections live in the Licensing tab but are populated by
+    // initClientApiSection/loadSeats — run them on Licensing open too, not just on Refresh (after the
+    // Settings tab-reorg the sections moved here but their lazy-init trigger stayed on 'searchclient',
+    // so the workflow toggle/chip/seat-count sat in their raw default until a manual Refresh).
+    if (btn.dataset.tab === 'licensing') { initClientApiSection(); if (typeof loadSeats === 'function') loadSeats(); }
     if (btn.dataset.tab === 'workflow') initWorkflowPanel();
   });
 });
@@ -203,20 +208,30 @@ async function initClientApiSection() {
   const wfSub = document.getElementById('wf-addon-sub');
   if (wfTgl && wfSub) {
     wfTgl.disabled = true;
+    const sec = document.getElementById('wf-section');
     try {
       const ent = await api.getEntitlement();
       // Pre-release: the workflow feature is master-disabled (entitlement returns workflow.disabled).
       // Hide the whole section so there's no mention of the unbuilt feature; un-hides automatically
-      // when the WORKFLOW_FEATURE_ENABLED flag is flipped back on.
+      // when the WORKFLOW_FEATURE_ENABLED flag is flipped back on. #wf-section defaults hidden in the
+      // HTML (so it never FLASHES visible before this async check resolves) — REVEAL it whenever the
+      // feature is not master-disabled.
       if (ent && ent.workflow && ent.workflow.disabled) {
-        const sec = document.getElementById('wf-section'); if (sec) sec.style.display = 'none';
+        if (sec) sec.style.display = 'none';
       } else {
+        if (sec) sec.style.display = '';
         const on = !!(ent && ent.workflow && ent.workflow.entitled);
+        const seats = (ent && ent.workflow && ent.workflow.seats) || 0;
         wfTgl.checked = on;
-        wfSub.textContent = on ? 'Licensed' : 'Not licensed';
+        wfSub.textContent = on
+          ? (seats > 0 ? `Licensed · ${seats} seat${seats === 1 ? '' : 's'}` : 'Licensed')
+          : 'Not licensed';
         setChip('wf-chip', on ? 'On' : 'Off', on ? 'ok' : '');
       }
-    } catch { wfSub.textContent = 'Unknown'; setChip('wf-chip', 'Unknown', ''); }
+    } catch {
+      if (sec) sec.style.display = '';
+      wfSub.textContent = 'Unknown'; setChip('wf-chip', 'Unknown', '');
+    }
   }
 
   if (_clientApiWired) return; // bind listeners once
