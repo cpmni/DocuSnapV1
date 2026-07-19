@@ -64,7 +64,20 @@ STALE `r20260718-0818-bea1028`. READ FIRST: `HANDOVER_2026-07-19.md`.**
   auto-file critical-field floor (88); Slice D 256-bit logo detail; OCR warm worker pool; the 2026-07-09→15
   extraction-guard family (see the archive).
 - **Security**: work `SECURITY_BACKLOG.md` (repo root, gitignored, LOCAL-ONLY) one-by-one; proactively
-  flag holes any new feature exposes. Headline: SEC-01 admin console no-lockout+2FA-off (HIGH).
+  flag holes any new feature exposes. **SEC-01/02/06/14 CODE-FIXED 2026-07-19 (`aad2141`+`bd82a9e`,
+  Oracle-signed)** — INERT until deployed to IONOS; owner gates V7 (live REMOTE_ADDR) + V8 (run
+  `php licensing-backend\scripts\test_admin_throttle.php` with WAMP up); the live console will require
+  2FA (break-glass env `LICENSING_ADMIN_ALLOW_NO_2FA=1` once). Next open: SEC-04 (TOFU pairing), SEC-05.
+- **IDENTITY REDESIGN (overnight 2026-07-19) — DESIGNED, OWNER SIGN-OFF PENDING (D1-D4)**: the Larkspur
+  incident (20 new-supplier docs; logo layer misassigned 5; correction didn't heal) is diagnosed to root —
+  the 64-bit logo phash has ZERO separating power (live-measured cross-supplier min hamming 2) while the
+  branding TEXT named the true supplier every time. Direction (Barry+gary): **text-first, logo
+  corroborates, abstain-by-default; a logo match alone never assigns or plants learning** + a correction
+  RIPPLE via the pin rail. Spec `docs/designs/IDENTITY_TEXT_FIRST_2026-07-19.md`; permanent suite
+  `stress_test/logo_identity_suite.py` (GREEN — 6 PIN-BROKEN reality pins). Oracle vet AFTER owner D1.
+  KEY TRAP for the build: review-renderer `attemptLogoMatch` is NOT display-only (auto-fills + writes
+  corrections = the confirm-time poison back door); Stage-0 `identify_template` accepts on logo alone
+  (Slice 1d, own corpus gate).
 - **Process rules**: include Barry EARLY on new features (before design/Oracle); control-test-first
   (baseline BEFORE code; kill-switched; OFF ⇒ byte-identical); advisor+Oracle gate on substantive changes.
 
