@@ -689,9 +689,13 @@ let _wfToastTimer = null;
 let _wfDigestShown = false;   // per-login latch; showLoginScreen re-arms it
 function notifyWorkflowEvent(ev) {
   try {
+    // ORDERING IS LOAD-BEARING (Oracle C4): the badge broadcast fires BEFORE the aggregate
+    // early-return below, so an unlisted event ('auto_closed' — route closed by doc delete)
+    // still refreshes every window's counts. A refactor that hoists the early-return above
+    // this line kills the badge for exactly those events. Pinned in test_workflow.js.
     notifyAllWindows('workflow-counts-changed');
     const next = workflowNotify.aggregate(_wfToastAgg, ev || {});
-    if (next === _wfToastAgg) return;         // badge-ping-only event (claim/recall)
+    if (next === _wfToastAgg) return;         // badge-ping-only event (claim/recall/auto_closed)
     _wfToastAgg = next;
     clearTimeout(_wfToastTimer);
     _wfToastTimer = setTimeout(_fireWorkflowToast, 2000);   // trailing debounce: bulk = ONE toast

@@ -1414,7 +1414,7 @@
     <!-- ══ AUDIT ══ -->
     <div class="panel" id="panel-workflow" data-help-key="tab-workflow">
       <div class="section-title">Document routing</div>
-      <p style="color:var(--muted); max-width:65ch;">Automatically send a filed document to someone for approval, based on its type and amount. Rules run on <b>every</b> document as it's filed — whether it was auto-filed or reviewed.</p>
+      <p style="color:var(--muted); max-width:65ch;">Automatically send a filed document to someone — for approval or just for information — based on its type and amount. Rules run on <b>every</b> document as it's filed, whether it was auto-filed or reviewed.</p>
 
       <div class="card" id="wf-builder" style="margin-top:14px; padding:16px;">
         <div style="font-weight:600; margin-bottom:10px;" id="wf-builder-title">Add a routing rule</div>
@@ -1427,9 +1427,13 @@
           <span id="wf-b-amount-suffix" style="display:none;">or more</span>
           <span>, send it to</span>
           <select id="wf-b-person" style="min-width:160px;"></select>
-          <span>to approve.</span>
+          <select id="wf-b-action" style="min-width:150px;">
+            <option value="approve">for approval</option>
+            <option value="acknowledge">for information</option>
+          </select>
+          <span>.</span>
         </div>
-        <div style="margin-top:10px; font-size:11px; color:var(--muted);">Approval only for now — a “just see it” (notify without blocking) option is coming.</div>
+        <div style="margin-top:10px; font-size:11px; color:var(--muted);">Approval holds the document until they decide. For-information never holds anything — filing carries on as normal.</div>
         <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
           <button class="btn primary" id="wf-b-save">Add rule</button>
           <button class="btn" id="wf-b-dryrun">Show me what this would do</button>

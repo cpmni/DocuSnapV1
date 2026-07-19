@@ -122,6 +122,26 @@ handler.register({
   r = await H['reprocess-batch']({}, [{ docId: lockedId, folderPath: '/nowhere', filename: 'locked.pdf' }], {});
   check('a CLOSED route no longer skips (lock is open-routes-only)', r && r.lockedSkipped === 0);
 
+  console.log('§3 FYI non-locking (2026-07-19 slice) — an open acknowledge route is NOT a lock');
+  // WHY delete-close (bulk delete doors) is NOT skip-and-report like this batch: a delete is a
+  // VISIBLE cancellation — the route closes to an honest 'recalled' tombstone in Completed —
+  // whereas a bulk reprocess under an approver is a SILENT REWRITE of what they're judging.
+  // The two behaviours are both deliberate; do not "align" one to the other (Oracle C3).
+  db.prepare(`INSERT INTO document_routes (document_id, from_user_id, from_username, to_user_id, to_username, action_required, state)
+              VALUES (?, 1, 'admin', 2, 'editor', 'acknowledge', 'pending')`).run(lockedId);
+  session = { id: 2, username: 'editor', role: 'edit' };
+  r = await H['reprocess-batch']({}, [{ docId: lockedId, folderPath: '/nowhere', filename: 'locked.pdf' }], {});
+  check('batch does NOT skip an FYI/acknowledge-routed doc (postcard, not gate — pinned)',
+    r && r.success === true && r.lockedSkipped === 0);
+  r = await H['reprocess-document']({}, { docId: lockedId, folderPath: '/nowhere', filename: 'locked.pdf' });
+  check('single-doc door passes the guard on an FYI route (fails later on the missing file)',
+    r && r.success === false && !r.code && /File not found/i.test(r.error || ''));
+  process.env.WORKFLOW_ACK_LOCKS = '1';
+  r = await H['reprocess-batch']({}, [{ docId: lockedId, folderPath: '/nowhere', filename: 'locked.pdf' }], {});
+  check('WORKFLOW_ACK_LOCKS=1 restores the batch skip for FYI routes (polarity pin)',
+    r && r.lockedSkipped === 1);
+  delete process.env.WORKFLOW_ACK_LOCKS;
+
   db.close();
   console.log(fails ? `\n${fails} check(s) FAILED` : '\nAll reprocess-lock checks passed.');
   process.exit(fails ? 1 : 0);

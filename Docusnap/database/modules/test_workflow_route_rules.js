@@ -89,5 +89,16 @@ console.log('§5 rule CRUD (settings-area DB layer)');
   check('deleteRouteRule removes it', !wf.getRouteRule(db, id));
 }
 
+console.log('§6 summarizeRule action PHRASE (FYI slice grammar pin — never "to for information")');
+{
+  const db = freshDb();
+  const ackRule = { document_type_id: null, min_amount_pennies: 0, max_amount_pennies: null,
+    target_role: 'managers', target_user_id: null, action_required: 'acknowledge' };
+  check('acknowledge -> "... for information."',
+    wf.summarizeRule(db, ackRule) === 'When a document is filed, send it to the managers team for information.');
+  check('approve stays byte-identical "... to approve."',
+    wf.summarizeRule(db, { ...ackRule, action_required: 'approve' }) === 'When a document is filed, send it to the managers team to approve.');
+}
+
 console.log(`\n${fail ? 'FAIL' : 'PASS'} — ${fail} failure(s)`);
 process.exit(fail ? 1 : 0);

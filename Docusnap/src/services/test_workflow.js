@@ -221,6 +221,88 @@ function main() {
     check('assignSystem bad action -> INVALID', wf.assignSystem(db, { documentId: 1, toUserId: 3, actionRequired: 'frobnicate' }).code === 'INVALID');
   }
 
+  // ── FYI NON-LOCKING slice (2026-07-19) — the lock split ───────────────────────
+  // THE PIN: an open acknowledge/FYI route NEVER edit-locks — an FYI is a postcard, not a
+  // gate (docs/designs/WORKFLOW_FYI_NONLOCKING_2026-07-19.md). Do NOT re-lock it. The
+  // Oracle-C5 role pair lives earlier in this suite: readonly CAN acknowledge (the
+  // "reader acknowledges" check) and readonly CANNOT approve (the role-gate check) —
+  // an FYI is for everyone; never least-privilege the acknowledge away.
+  {
+    const { hasActiveWorkflowLock, closeOpenRoutesForDeletedDoc } = require('./workflowService');
+    const fy = wf.assign(db, admin, { documentId: 2, toUserId: 3, actionRequired: 'acknowledge' });
+    check('FYI: open acknowledge route does NOT edit-lock', editGuard(db, 2, 'edit').ok === true);
+    check('FYI: hasActiveWorkflowLock false on ack-only', hasActiveWorkflowLock(db, 2) === false);
+    check('FYI: hasActiveRoute STILL sees the ack route (dedupe/visibility unchanged — pinned)',
+      dbwf.hasActiveRoute(db, 2) === true);
+    check('FYI: hasActiveApprovalRoute does not', dbwf.hasActiveApprovalRoute(db, 2) === false);
+    const apLock = wf.assign(db, admin, { documentId: 2, toUserId: 2, actionRequired: 'approve' });
+    check('FYI: ack+approve both open => LOCKED (approve dominates)', editGuard(db, 2, 'edit').code === 'WORKFLOW_LOCKED');
+    wf.recall(db, admin, apLock.route.id);
+    check('FYI: approve recalled => unlocked again (ack still open)', editGuard(db, 2, 'edit').ok === true);
+    // Polarity pin: WORKFLOW_ACK_LOCKS=1 restores the pre-slice any-route locking.
+    process.env.WORKFLOW_ACK_LOCKS = '1';
+    check('WORKFLOW_ACK_LOCKS=1 restores any-route locking', editGuard(db, 2, 'edit').code === 'WORKFLOW_LOCKED');
+    delete process.env.WORKFLOW_ACK_LOCKS;
+    check('env unset => non-locking again', editGuard(db, 2, 'edit').ok === true);
+    // Fail-toward-lock: an UNKNOWN action value still locks (the predicate is
+    // action <> 'acknowledge', NOT action = 'approve' — a future 'countersign'/multi-step
+    // 'waiting' stays locked until deliberately exempted).
+    db.prepare(`INSERT INTO document_routes (document_id, from_user_id, from_username, to_user_id, to_username, action_required, state)
+                VALUES (2, 1, 'admin', 2, 'editor', 'countersign', 'pending')`).run();
+    check("unknown action 'countersign' STILL LOCKS (fail-toward-lock polarity pin)",
+      editGuard(db, 2, 'edit').code === 'WORKFLOW_LOCKED');
+    db.prepare(`DELETE FROM document_routes WHERE action_required = 'countersign'`).run();
+    // NULL action (legacy/raw row) must ALSO lock — bare `<> 'acknowledge'` would evaluate
+    // NULL and silently unlock it (the IS NULL arm in hasActiveApprovalRoute is load-bearing).
+    db.prepare(`INSERT INTO document_routes (document_id, from_user_id, from_username, to_user_id, to_username, action_required, state)
+                VALUES (2, 1, 'admin', 2, 'editor', NULL, 'pending')`).run();
+    check('NULL action STILL LOCKS (the IS NULL arm pin)', editGuard(db, 2, 'edit').code === 'WORKFLOW_LOCKED');
+    db.prepare(`DELETE FROM document_routes WHERE action_required IS NULL`).run();
+    wf.resolve(db, reader, fy.route.id, { decision: 'acknowledge' });   // tidy
+
+    // ── delete-close (closeOpenRoutesForDeletedDoc) — the honest tombstone ──────
+    const r1 = wf.assign(db, admin, { documentId: 2, toUserId: 3, actionRequired: 'acknowledge' });
+    const r2 = wf.assign(db, admin, { documentId: 2, toUserId: 2, actionRequired: 'approve' });
+    wf.claim(db, editor, r2.route.id);
+    const inboxBefore = dbwf.countInbox(db, 3);
+    const res = closeOpenRoutesForDeletedDoc(db, { documentId: 2, deletedByName: 'Admin' });
+    check('delete-close closes BOTH pending and claimed routes', res.closed.length === 2);
+    const row1 = dbwf.getRoute(db, r1.route.id);
+    check("closed route: state 'recalled' + honest comment + resolved_at",
+      row1.state === 'recalled' && /Document deleted by Admin/.test(row1.resolution_comment || '') && !!row1.resolved_at);
+    check('recipient inbox count drops on close', dbwf.countInbox(db, 3) === inboxBefore - 1);
+    check('closed route appears in Completed (the tombstone is findable)',
+      dbwf.listCompleted(db, 3).some(r => r.id === r1.route.id));
+    check("doc workflow_status becomes 'recalled'",
+      db.prepare('SELECT workflow_status FROM documents WHERE id=2').get().workflow_status === 'recalled');
+    check('no open routes => closed:[] (caller then SKIPS audit+notify — pinned)',
+      closeOpenRoutesForDeletedDoc(db, { documentId: 2, deletedByName: 'X' }).closed.length === 0);
+    // CAS: a concurrent resolve wins — the helper's stale-version update writes nothing.
+    const wfmod = require('../../database/modules/workflow');
+    const r4 = wf.assign(db, admin, { documentId: 2, toUserId: 3, actionRequired: 'acknowledge' });
+    const staleRow = { ...db.prepare('SELECT * FROM document_routes WHERE id=?').get(r4.route.id) };
+    db.prepare('UPDATE document_routes SET version = version + 1 WHERE id = ?').run(r4.route.id);
+    const resCas = closeOpenRoutesForDeletedDoc(db, { documentId: 2, deletedByName: 'X' },
+      { dbWorkflow: { ...wfmod, listOpenRoutesForDocument: () => [staleRow] } });
+    check('CAS race: stale version => skip, route untouched',
+      resCas.closed.length === 0 && dbwf.getRoute(db, r4.route.id).state === 'pending');
+    db.prepare('UPDATE document_routes SET version = version - 1 WHERE id = ?').run(r4.route.id);
+    wf.recall(db, admin, r4.route.id);   // tidy
+
+    // ── Oracle C4: 'auto_closed' is toast-free BY OMISSION — do not "complete" the list ──
+    const wnotify = require('../lib/workflowNotify');
+    check("eventDirection('auto_closed') is null (deliberately unlisted)", wnotify.eventDirection('auto_closed') === null);
+    check("aggregate ignores 'auto_closed' (returns its input => no toast timer reset)",
+      wnotify.aggregate(null, { event: 'auto_closed', route: { id: 1, to_user_id: 2, from_user_id: 1 } }) === null);
+    // main.js pin: the badge broadcast ('workflow-counts-changed') fires BEFORE the aggregate
+    // early-return, so an unlisted event still refreshes counts — asserted structurally here:
+    const mainSrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'main.js'), 'utf8');
+    const fnBody = mainSrc.split('function notifyWorkflowEvent')[1] || '';
+    check("main.js: badge broadcast precedes the aggregate early-return (ordering pin)",
+      fnBody.indexOf("notifyAllWindows('workflow-counts-changed')") > -1
+      && fnBody.indexOf("notifyAllWindows('workflow-counts-changed')") < fnBody.indexOf('workflowNotify.aggregate'));
+  }
+
   // ── zero-paid sweep: NO path anywhere in this suite can mint a 'paid' row ─────
   check("zero 'paid' routes exist after the full flow",
     db.prepare(`SELECT COUNT(*) c FROM document_routes WHERE state='paid'`).get().c === 0);

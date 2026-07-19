@@ -211,18 +211,47 @@ function summarizeRule(db, rule) {
   } else if (rule.target_role) {
     target = `the ${rule.target_role} team`;
   }
-  const act = rule.action_required === 'acknowledge' ? 'just see it' : 'approve';
-  return `When ${typeName} is filed${amt}, send it to ${target} to ${act}.`;
+  // Action PHRASE, not a bare verb — "to ${act}" would render "to for information" (grammar
+  // pinned in test_workflow.js). Older stored summaries keep the pre-slice "to just see it"
+  // sentence — per-route summaries are immutable by design (Oracle C6), never migrated.
+  const actPhrase = rule.action_required === 'acknowledge' ? 'for information' : 'to approve';
+  return `When ${typeName} is filed${amt}, send it to ${target} ${actPhrase}.`;
 }
 
-// True when a document has an OPEN routing task (pending or claimed). This is the
-// workflow_lock signal: while it holds, the Review pipeline must not mutate the
-// document (see workflowService.editGuard) so the two systems can't both edit the
-// same row.
+// True when a document has an OPEN routing task (pending or claimed), ANY action.
+// Since the FYI non-locking slice (2026-07-19) this is NOT the lock signal — it
+// feeds the one-route-max routing dedupe (amountRouting.startDefaultRoute) and
+// stays the broadest "something is in flight" read. The LOCK is
+// hasActiveApprovalRoute below (see workflowService.editGuard).
 function hasActiveRoute(db, documentId) {
   return !!db.prepare(
     "SELECT 1 FROM document_routes WHERE document_id = ? AND state IN ('pending','claimed') LIMIT 1"
   ).get(documentId);
+}
+
+// The workflow_lock signal: an OPEN route whose action is anything OTHER than
+// 'acknowledge'. Polarity is deliberately NOT-acknowledge, not IS-approve
+// (fail-toward-lock): a future action value ('countersign', multi-step 'waiting')
+// stays LOCKED until deliberately exempted — pinned in test_workflow.js. An open
+// acknowledge/FYI route never locks: an FYI is a postcard, not a gate (spec
+// docs/designs/WORKFLOW_FYI_NONLOCKING_2026-07-19.md). Pure SQL — the
+// WORKFLOW_ACK_LOCKS policy switch lives in workflowService (business rule).
+function hasActiveApprovalRoute(db, documentId) {
+  // The IS NULL arm is load-bearing: bare `<> 'acknowledge'` evaluates NULL for a NULL
+  // action (legacy/raw row) and would silently UNLOCK it — fail-toward-lock covers NULL
+  // exactly like an unknown value (pinned in test_workflow.js).
+  return !!db.prepare(
+    "SELECT 1 FROM document_routes WHERE document_id = ? AND state IN ('pending','claimed')"
+    + " AND (action_required IS NULL OR action_required <> 'acknowledge') LIMIT 1"
+  ).get(documentId);
+}
+
+// All OPEN routes for a document (raw rows incl. version — no display join): the
+// delete-time close helper iterates these with per-row CAS.
+function listOpenRoutesForDocument(db, documentId) {
+  return db.prepare(
+    "SELECT * FROM document_routes WHERE document_id = ? AND state IN ('pending','claimed') ORDER BY id"
+  ).all(documentId);
 }
 
 // True when `userId` is a PARTY (sender or recipient) on an OPEN route for this
@@ -242,7 +271,8 @@ function isOpenRouteParty(db, documentId, userId) {
 module.exports = {
   insertRoute, getRoute, listInbox, listSent, listAssigned, listCompleted,
   countInbox, countSent, countOpenSent, countAssigned, countCompleted,
-  updateState, setDocWorkflowStatus, setStampedPath, hasActiveRoute, isOpenRouteParty,
+  updateState, setDocWorkflowStatus, setStampedPath, hasActiveRoute, hasActiveApprovalRoute,
+  listOpenRoutesForDocument, isOpenRouteParty,
   insertRouteDecision, listRouteDecisions,
   insertRouteRule, listActiveRouteRules, listAllRouteRules, getRouteRule, updateRouteRule,
   setRouteRuleActive, deleteRouteRule, summarizeRule,

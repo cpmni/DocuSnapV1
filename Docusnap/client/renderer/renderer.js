@@ -1044,7 +1044,7 @@ function confLevel(c) { return c == null ? '' : c >= 85 ? '' : c >= 60 ? 'warn' 
 // A context banner + decision bar shown when the open document is routed TO me.
 function decisionBar(route) {
   const wrap = document.createElement('div'); wrap.className = 'wf decision';
-  const kind = route.action_required === 'approve' ? 'Approval requested' : 'Acknowledgement requested';
+  const kind = route.action_required === 'approve' ? 'Approval requested' : 'For your information';
   const canAct = route.action_required === 'approve' && canDecide();
   wrap.innerHTML = `
     <div class="dec-banner">${ico('inbox')}<span>Routed to you by <strong>${esc(route.from_username)}</strong> — ${kind}${route.comment ? ': “' + esc(route.comment) + '”' : ''}</span></div>
@@ -1066,7 +1066,8 @@ function decisionBar(route) {
     run(api.workflow.resolve(route.id, decision, note || null, route.version));
   };
   if (route.action_required === 'acknowledge') {
-    acts.appendChild(mkBtn({ label: 'Acknowledge', icon: 'check', variant: 'primary', sm: false, onClick: () => run(api.workflow.resolve(route.id, 'acknowledge', null, route.version)) }));
+    // Display copy only — the resolve decision string stays 'acknowledge' (/v1 contract).
+    acts.appendChild(mkBtn({ label: 'Got it', icon: 'check', variant: 'primary', sm: false, onClick: () => run(api.workflow.resolve(route.id, 'acknowledge', null, route.version)) }));
   } else if (canDecide()) {
     acts.appendChild(mkBtn({ label: 'Approve',   icon: 'check',  variant: 'primary',   sm: false, onClick: () => decide('approve') }));
     acts.appendChild(mkBtn({ label: 'Reject',    icon: 'reject', variant: 'danger',    sm: false, onClick: () => decide('reject') }));
@@ -1223,10 +1224,10 @@ async function assignControl(docId, preselectUsername, extra = {}) {
     return `<option value="${u.id}"${pre ? ' selected' : ''}>${esc(u.displayName || u.username)} (${esc(u.role)})${pre ? ` — ${esc(extra.tag || 'sender')}` : ''}</option>`;
   }).join('');
   wrap.innerHTML = `
-    <h3>${ico('assign')}${esc(extra.title || (preselectUsername ? 'Forward / route onward' : 'Route for approval / acknowledgement'))}</h3>
+    <h3>${ico('assign')}${esc(extra.title || (preselectUsername ? 'Forward / route onward' : 'Route for approval / for information'))}</h3>
     <div class="wf-row">
       <select class="a-to">${opts}</select>
-      <select class="a-action"><option value="approve">Approve</option><option value="acknowledge">Acknowledge</option></select>
+      <select class="a-action"><option value="approve">Approve</option><option value="acknowledge">For information</option></select>
       <input class="a-comment" placeholder="Note (optional)" />
       <span class="msg"></span>
     </div>`;
@@ -1272,10 +1273,12 @@ async function loadMailbox() {
 function mbRow(rt) {
   const el = document.createElement('div'); el.className = 'mb-row fade';
   const who = currentBox === 'sent' ? `to ${esc(rt.to_username)}` : `from ${esc(rt.from_username)}`;
-  const kind = rt.action_required === 'approve' ? 'Approval request' : 'Acknowledgement request';
+  const kind = rt.action_required === 'approve' ? 'Approval request' : 'For your information';
+  // Chip LABEL only — the CSS class keeps the raw state. 'seen' = resolved FYI (Barry, FYI slice).
+  const stateLabel = rt.state === 'acknowledged' ? 'seen' : rt.state;
   el.innerHTML = `
     <div class="t1"><span class="nm">${esc(rt.supplier_name || ('Document #' + rt.document_id))}</span>
-      <span class="chip ${esc(rt.state)}">${esc(rt.state)}</span></div>
+      <span class="chip ${esc(rt.state)}">${esc(stateLabel)}</span></div>
     <div class="t2">${ico(rt.action_required === 'approve' ? 'check' : 'inbox')}<span>${kind} · ${who} · ${esc(rt.doc_date || '')}</span></div>
     ${rt.comment ? `<div class="quote">“${esc(rt.comment)}”</div>` : ''}
     ${rt.resolution_comment ? `<div class="quote">Reason: ${esc(rt.resolution_comment)}</div>` : ''}
@@ -1308,7 +1311,8 @@ function mbRow(rt) {
   } else if (currentBox === 'inbox' || currentBox === 'assigned') {
     if (open) {
       if (rt.action_required === 'acknowledge') {
-        acts.appendChild(mkBtn({ label: 'Acknowledge', icon: 'check', variant: 'primary', onClick: () => act(api.workflow.resolve(rt.id, 'acknowledge', null, rt.version)) }));
+        // Display copy only — the resolve decision string stays 'acknowledge' (/v1 contract).
+        acts.appendChild(mkBtn({ label: 'Got it', icon: 'check', variant: 'primary', onClick: () => act(api.workflow.resolve(rt.id, 'acknowledge', null, rt.version)) }));
       } else if (canDecide()) {
         acts.appendChild(mkBtn({ label: 'Approve',   icon: 'check',  variant: 'primary',   onClick: () => decide('approve') }));
         acts.appendChild(mkBtn({ label: 'Reject',    icon: 'reject', variant: 'danger',    onClick: () => decide('reject') }));

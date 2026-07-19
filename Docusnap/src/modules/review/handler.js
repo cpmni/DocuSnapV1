@@ -582,11 +582,36 @@ function register(ctx) {
   // reprocess — but not permanent deletion of a scanned document).
   // Delete is now a SOFT delete → the document goes to the RECYCLE BIN (status='deleted',
   // recoverable; files are KEPT). Permanent removal is the separate purge below.
+  // Close any OPEN routes on a doc that was just soft-deleted (FYI slice, Oracle C1/C2):
+  // 'recalled' + "Document deleted by <name>" — an honest Completed-list tombstone instead of a
+  // silent vanish (ack, newly deletable) or a stranded-open inbox item (approve via admin
+  // override / the previously-unguarded bulk doors). Audits + notifies ONLY when something
+  // closed; ONE notify per call (a batch door passes many docs' worth through one call site).
+  // 'auto_closed' is deliberately UNKNOWN to workflowNotify.eventDirection ⇒ badge-ping only,
+  // no toast (the recipient finds the tombstone in Completed; a toast for a dead doc is noise).
+  function _closeRoutesForDeleted(db, docIds, deletedByName) {
+    let closed = 0;
+    for (const id of docIds) {
+      const res = workflowService.closeOpenRoutesForDeletedDoc(db, { documentId: id, deletedByName });
+      if (res.closed.length) {
+        closed += res.closed.length;
+        logAudit(db, { action: 'workflow_route_closed_on_delete', action_category: 'workflow',
+          target_type: 'document', target_id: id, document_id: id, outcome: 'success',
+          metadata: { routes: res.closed.map(r => r.id), deleted_by: deletedByName } });
+      }
+    }
+    if (closed > 0) { try { ctx.notifyWorkflowEvent && ctx.notifyWorkflowEvent({ event: 'auto_closed' }); } catch { /* best-effort */ } }
+    return closed;
+  }
+
   ipcMain.handle('delete-document', async (_e, docId /*, filePath */) => {
     requireRole('admin', 'edit');
     const db = getDb();
-    requireUnlocked(db, docId, 'delete'); // blocked while under an open approval route
+    // Blocked while under an open APPROVAL route (an open FYI route never blocks — FYI slice);
+    // admin override proceeds and the route-close below leaves the honest tombstone.
+    const sess = requireUnlocked(db, docId, 'delete');
     documents.softDelete(db, docId);
+    _closeRoutesForDeleted(db, [docId], sess.displayName || sess.username);
     logAudit(db, { action: 'document_deleted', action_category: 'document', target_type: 'document',
       target_id: docId, document_id: docId, outcome: 'success', metadata: { soft: true } });
     notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
@@ -642,23 +667,26 @@ function register(ctx) {
   // can never reach confirmed documents; source files are unlinked best-effort
   // first, then the rows (and their cascaded extractions) are removed in one
   // statement. Returning the deleted count lets the renderer report it.
-  function _deleteQueue(status, rows, countEvent) {
+  function _deleteQueue(status, rows, countEvent, deletedByName) {
     const db = getDb();
     let n = 0;
     for (const r of rows) { documents.softDelete(db, r.id); n++; }   // → recycle bin (recoverable; files kept)
+    // Previously-unguarded door: open routes (approve included) were stranded pending-forever
+    // against the deleted docs. One notify for the whole batch (Oracle C2).
+    _closeRoutesForDeleted(db, rows.map(r => r.id), deletedByName);
     notifyMainWindow(countEvent, status === 'needs_review'
       ? documents.getReviewCount(db) : documents.getDeferredCount(db));
     return { success: true, deleted: n };
   }
 
   ipcMain.handle('delete-all-review', async () => {
-    requireRole('admin');
-    return _deleteQueue('needs_review', documents.getReviewQueue(getDb()), 'review-count-changed');
+    const sess = requireRole('admin');
+    return _deleteQueue('needs_review', documents.getReviewQueue(getDb()), 'review-count-changed', sess.displayName || sess.username);
   });
 
   ipcMain.handle('delete-all-deferred', async () => {
-    requireRole('admin');
-    return _deleteQueue('deferred', documents.getDeferredQueue(getDb()), 'deferred-count-changed');
+    const sess = requireRole('admin');
+    return _deleteQueue('deferred', documents.getDeferredQueue(getDb()), 'deferred-count-changed', sess.displayName || sess.username);
   });
 
   // ── Confirm review ──────────────────────────────────────────────────────────

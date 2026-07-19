@@ -78,10 +78,21 @@ function createRecoveryService(deps = {}) {
 
     const scope = { supplier_name: sn, document_type: dt };
     const summary = { setAside: 0, anchors: 0, hints: 0, fieldRules: 0, corrections: 0, requeued: 0 };
+    const closedRoutes = [];   // open routes closed by the set-aside (FYI slice) — caller audits/notifies AFTER commit (Oracle C2)
 
     db.transaction(() => {
       // 1) Set aside the offending documents (recycle bin — reversible; stops them feeding the derived model).
-      for (const id of ids) summary.setAside += (documents.softDelete(db, id).changes || 0);
+      //    Close any open routes on each with the honest tombstone (previously a stranded-open hole);
+      //    INSIDE the transaction so a rollback never leaves half-closed routes announced.
+      for (const id of ids) {
+        const changes = documents.softDelete(db, id).changes || 0;
+        summary.setAside += changes;
+        if (changes) {
+          const r = require('./workflowService').closeOpenRoutesForDeletedDoc(db,
+            { documentId: id, deletedByName: (actor && (actor.displayName || actor.username)) || 'an administrator' });
+          closedRoutes.push(...r.closed);
+        }
+      }
 
       // 2) Forget the scope's active learning artifacts (they re-learn from the remaining good docs).
       if (forgetLearning) {
@@ -97,7 +108,7 @@ function createRecoveryService(deps = {}) {
       if (requeue) summary.requeued = documents.requeueConfirmedDocsForScope(db, { supplier_name: sn, document_type_slug: dt }).changes || 0;
     })();
 
-    return { ok: true, summary, setAsideIds: ids };
+    return { ok: true, summary, setAsideIds: ids, closedRoutes };
   }
 
   return { overview, apply };

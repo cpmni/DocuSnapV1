@@ -84,7 +84,7 @@ function _provide(doc) {
 
 function _decisionBar(route) {
   const wrap = document.createElement('div'); wrap.className = 'wf-decision';
-  const kind = route.action_required === 'approve' ? 'Approval requested' : 'Acknowledgement requested';
+  const kind = route.action_required === 'approve' ? 'Approval requested' : 'For your information';
   const banner = document.createElement('div'); banner.className = 'wf-banner';
   banner.textContent = `Routed to you by ${route.from_username} — ${kind}`
     + (route.comment ? `: “${route.comment}”` : '');
@@ -103,7 +103,8 @@ function _decisionBar(route) {
   };
 
   if (route.action_required === 'acknowledge') {
-    acts.appendChild(_btn('Acknowledge', true, () =>
+    // Display copy only — the resolve decision string stays 'acknowledge' (DB/IPC contract).
+    acts.appendChild(_btn('Got it', true, () =>
       _run(window.docusnap.workflow.resolve(route.id, 'acknowledge', null, route.version))));
   } else if (_canDecide()) {
     acts.appendChild(_btn('Approve', true, () => decide('approve')));
@@ -126,7 +127,7 @@ function _decisionBar(route) {
 function _assignForm(doc, preselectUsername, opts = {}) {
   const wrap = document.createElement('div'); wrap.className = 'wf-assign';
   const sub = document.createElement('div'); sub.className = 'wf-sub';
-  sub.textContent = opts.title || (preselectUsername ? 'Forward / route onward' : 'Route for approval / acknowledgement');
+  sub.textContent = opts.title || (preselectUsername ? 'Forward / route onward' : 'Route for approval / for information');
   const sel = document.createElement('select'); sel.className = 'search-input';
   for (const u of _recipients) {
     const o = document.createElement('option'); o.value = u.id;
@@ -136,7 +137,7 @@ function _assignForm(doc, preselectUsername, opts = {}) {
     sel.appendChild(o);
   }
   const act = document.createElement('select'); act.className = 'search-input';
-  [['approve', 'Approve'], ['acknowledge', 'Acknowledge']].forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; act.appendChild(o); });
+  [['approve', 'Approve'], ['acknowledge', 'For information']].forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; act.appendChild(o); });
   if (opts.actionRequired) act.value = opts.actionRequired;
   const note = document.createElement('input'); note.className = 'search-input'; note.placeholder = 'Note (optional)';
   const go = _btn('Route…', true, () =>

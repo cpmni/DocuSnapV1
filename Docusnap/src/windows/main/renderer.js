@@ -260,7 +260,7 @@ async function renderWorkflowCard() {
   card.style.display = '';
   const body = document.getElementById('dash-workflow-body');
   if (body) body.innerHTML = `
-    <div class="dash-attn-row"><span class="dash-attn-num">${c.inbox}</span> waiting for your decision</div>
+    <div class="dash-attn-row"><span class="dash-attn-num">${c.inbox}</span> waiting for you</div>
     <div class="dash-attn-row"${c.openSent ? '' : ' style="display:none;"'}><span class="dash-attn-num">${c.openSent}</span> sent, awaiting others</div>`;
   applyDashboardCardPrefs();
 }

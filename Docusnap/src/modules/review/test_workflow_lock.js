@@ -37,11 +37,12 @@ function freshDb() {
     CREATE TABLE documents (id INTEGER PRIMARY KEY, status TEXT, working_path TEXT,
       folder_path TEXT, original_filename TEXT);
     CREATE TABLE document_routes (id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER,
-      state TEXT DEFAULT 'pending');
+      state TEXT DEFAULT 'pending', action_required TEXT);
   `);
   db.prepare(`INSERT INTO documents (id,status) VALUES (1,'needs_review'),(2,'needs_review')`).run();
-  // doc 1 has an OPEN route (locked); doc 2 has none.
-  db.prepare(`INSERT INTO document_routes (document_id,state) VALUES (1,'pending')`).run();
+  // doc 1 has an OPEN APPROVE route (locked); doc 2 has none. (action_required added for the
+  // FYI slice — the lock predicate reads it; an 'acknowledge' route would NOT lock.)
+  db.prepare(`INSERT INTO document_routes (document_id,state,action_required) VALUES (1,'pending','approve')`).run();
   return db;
 }
 

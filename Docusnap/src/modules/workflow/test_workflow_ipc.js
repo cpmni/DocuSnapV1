@@ -70,6 +70,11 @@ function freshDb() {
       from_username TEXT, to_user_id INTEGER, to_username TEXT, action_required TEXT, state TEXT DEFAULT 'pending',
       comment TEXT, resolution_comment TEXT, claimed_by_id INTEGER, claimed_by_username TEXT, claimed_at TEXT,
       resolved_at TEXT, matched_rule_summary TEXT, version INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')));
+    CREATE TABLE workflow_route_rules (id INTEGER PRIMARY KEY AUTOINCREMENT, document_type_id INTEGER,
+      min_amount_pennies INTEGER NOT NULL DEFAULT 0, max_amount_pennies INTEGER, target_role TEXT,
+      target_user_id INTEGER, action_required TEXT NOT NULL DEFAULT 'approve', step_order INTEGER NOT NULL DEFAULT 1,
+      active INTEGER NOT NULL DEFAULT 1, created_at TEXT,
+      CHECK (target_role IS NOT NULL OR target_user_id IS NOT NULL));
   `);
   db.prepare(`INSERT INTO document_types (id,name,slug) VALUES (1,'Invoice','invoice')`).run();
   db.prepare(`INSERT INTO documents (id,status,document_type_id,supplier_name) VALUES (1,'confirmed',1,'Acme')`).run();
@@ -125,6 +130,24 @@ function main() {
   fail += !check('reader acknowledges -> acknowledged', ack && ack.state === 'acknowledged');
   fail += !check('filing state untouched (still confirmed)',
     db.prepare('SELECT status FROM documents WHERE id=1').get().status === 'confirmed');
+
+  // ── FYI slice: routing rules accept BOTH actions (the old D1 approval-only pin is
+  // DELIBERATELY FLIPPED — acknowledge stopped edit-locking, so the deferral reason is gone;
+  // docs/designs/WORKFLOW_FYI_NONLOCKING_2026-07-19.md). Server-side allowlist is the trust
+  // boundary: missing action defaults to approve (stale renderer), garbage is REFUSED.
+  session = { id: 1, username: 'admin', role: 'admin' };
+  const rAck = H['workflow-rule-create']({}, { targetUserId: 3, actionRequired: 'acknowledge' });
+  fail += !check('rule-create acknowledge -> stored verbatim',
+    rAck && rAck.ok && rAck.rule.action_required === 'acknowledge');
+  fail += !check('acknowledge rule summary says "for information" (grammar pin)',
+    rAck && /for information\.$/.test(rAck.rule.summary || ''));
+  const rDef = H['workflow-rule-create']({}, { targetUserId: 3 });
+  fail += !check('rule-create with NO action -> defaults to approve (stale-renderer back-compat)',
+    rDef && rDef.ok && rDef.rule.action_required === 'approve'
+    && /to approve\.$/.test(rDef.rule.summary || ''));
+  const rBad = H['workflow-rule-create']({}, { targetUserId: 3, actionRequired: 'delete_everything' });
+  fail += !check('rule-create with a garbage action -> REFUSED (allowlist, never coerced)',
+    rBad && rBad.error && !rBad.ok);
 
   db.close();
   console.log(fail ? `\n${fail} check(s) FAILED` : '\nAll workflow-IPC checks passed.');

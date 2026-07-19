@@ -314,7 +314,7 @@ function register(ctx) {
     return recoverySvc.overview(getDb(), scope || {});
   });
   ipcMain.handle('recovery-apply', (_e, payload) => {
-    requireRole('admin');
+    const sess = requireRole('admin');
     const db = getDb();
     const p = payload || {};
     // .bak safety net for the NON-reversible learning clears (set-aside alone is reversible
@@ -330,12 +330,19 @@ function register(ctx) {
         }
       } catch (e) { backup = null; try { ctx.logger?.warn?.(`[recovery] DB backup failed: ${e.message}`); } catch {} }
     }
-    const res = recoverySvc.apply(db, {}, p);
+    const res = recoverySvc.apply(db, { username: sess.username, displayName: sess.displayName }, p);
     try {
       logAudit(db, { action: 'recovery_apply', action_category: 'processing', target_type: 'document_type',
         outcome: res.ok ? 'success' : 'failure',
         metadata: { type: p.document_type_slug || null, supplier: p.supplier_name || null, ...(res.summary || {}) } });
     } catch {}
+    // Route-close audit + ONE badge-ping AFTER the transaction committed (Oracle C2 — never
+    // announce a close a rollback could undo; 'auto_closed' is toast-free by design).
+    if (res.ok && Array.isArray(res.closedRoutes) && res.closedRoutes.length) {
+      try { logAudit(db, { action: 'workflow_route_closed_on_delete', action_category: 'workflow', target_type: 'document_type',
+        outcome: 'success', metadata: { routes: res.closedRoutes.map(r => r.id), via: 'recovery' } }); } catch {}
+      try { ctx.notifyWorkflowEvent && ctx.notifyWorkflowEvent({ event: 'auto_closed' }); } catch {}
+    }
     if (res.ok) notifyAllWindows('review-count-changed', require('../../../database/modules/documents').getReviewCount(db));
     return { ...res, backup };
   });
@@ -399,12 +406,24 @@ function register(ctx) {
   });
   // Delete ONE confirmed doc to the recycle bin (recoverable; Undo via recovery-restore-docs).
   ipcMain.handle('repair-delete', (_e, id) => {
-    requireRole('admin');
+    const sess = requireRole('admin');
     const db = getDb();
     const documents = require('../../../database/modules/documents');
     const docId = Number(id);
     const r = documents.softDelete(db, docId);
     if (r.changes) {
+      // Previously-unguarded soft-delete door: close any open routes with the honest
+      // "Document deleted by <name>" tombstone (FYI slice, Oracle C1/C2 — was a
+      // stranded-open-route hole). Badge-ping only ('auto_closed' is deliberately
+      // unknown to workflowNotify ⇒ no toast).
+      try {
+        const closed = require('../../services/workflowService')
+          .closeOpenRoutesForDeletedDoc(db, { documentId: docId, deletedByName: (sess && (sess.displayName || sess.username)) || 'an administrator' }).closed;
+        if (closed.length) {
+          try { logAudit(db, { action: 'workflow_route_closed_on_delete', action_category: 'workflow', target_type: 'document', target_id: docId, document_id: docId, outcome: 'success', metadata: { routes: closed.map(x => x.id) } }); } catch {}
+          try { ctx.notifyWorkflowEvent && ctx.notifyWorkflowEvent({ event: 'auto_closed' }); } catch {}
+        }
+      } catch { /* best-effort — never blocks the delete */ }
       try { logAudit(db, { action: 'repair_delete', action_category: 'document', target_type: 'document', target_id: docId, outcome: 'success' }); } catch {}
       notifyAllWindows('review-count-changed', documents.getReviewCount(db));
     }

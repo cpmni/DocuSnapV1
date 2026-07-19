@@ -15,6 +15,11 @@
 //   'in'  → something new landed on the RECIPIENT (assign)
 //   'out' → the SENDER's request was resolved (approve/reject/acknowledge)
 //   null  → badge-ping only (claim, recall — the acting user already knows)
+// 'auto_closed' (a route closed because its DOCUMENT was deleted — FYI slice) is
+// DELIBERATELY unlisted ⇒ null ⇒ badge only: the sender finds the honest tombstone in
+// Completed; a toast for a dead doc is noise — and decideToast's grammar would render
+// the raw string ("…was auto_closed"). Do NOT "complete" this list with it (Oracle C4;
+// pinned in test_workflow.js).
 function eventDirection(event) {
   if (event === 'assigned') return 'in';
   if (event === 'approved' || event === 'rejected' || event === 'acknowledged') return 'out';

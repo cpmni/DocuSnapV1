@@ -85,9 +85,11 @@ function register(ctx) {
   ipcMain.handle('workflow-recall',  (_e, { id, version } = {})         => { requireLogin(); assertEntitled(); return unwrap(workflow.recall(getDb(), actor(), id, version)); });
 
   // ── Routing rules — the Workflow settings area (admin + entitled; every mutation audited) ─────
-  // v1 is APPROVAL-ONLY (Oracle D1: an FYI/"just see it" route would edit-lock the doc, breaking the
-  // "nobody's blocked" promise — deferred to a non-locking slice) and NAMED-PERSON only (target_role
-  // is a later slice). The amount is optional; when set it means "£X or more" (inclusive-min).
+  // Rules are approval OR "for information" (acknowledge) since the FYI non-locking slice
+  // (2026-07-19 — the old D1 approval-only pin was DELIBERATELY lifted once acknowledge stopped
+  // edit-locking; docs/designs/WORKFLOW_FYI_NONLOCKING_2026-07-19.md). NAMED-PERSON only
+  // (target_role is a later slice). The amount is optional; when set it means "£X or more"
+  // (inclusive-min). The action allowlist below is the TRUST BOUNDARY — never the renderer.
   const dbwf = () => require('../../../database/modules/workflow');
   const documents = require('../../../database/modules/documents');
   const amountRouting = require('../../services/amountRouting');
@@ -97,11 +99,14 @@ function register(ctx) {
     maxAmountPennies: null,       // v1 = min-only
     targetRole:       null,       // v1 = named person only
     targetUserId:     (p.targetUserId != null) ? Number(p.targetUserId) : null,
-    actionRequired:   'approve',  // v1 = approval-only (D1)
+    // Missing/empty ⇒ 'approve' (stale-renderer back-compat); anything else passes through for
+    // _validateRule's allowlist to judge (never silently coerce an unknown action to approve).
+    actionRequired:   (p.actionRequired == null || p.actionRequired === '') ? 'approve' : String(p.actionRequired),
   });
   const _validateRule = (r) => {
     if (r.minAmountPennies == null || r.minAmountPennies < 0) return "That amount doesn't look right.";
     if (r.targetUserId == null || !Number.isFinite(r.targetUserId)) return 'Choose who to send it to.';
+    if (r.actionRequired !== 'approve' && r.actionRequired !== 'acknowledge') return 'Choose approval or for-information.';
     return null;
   };
   const _withSummary = (db, row) => (row ? { ...row, summary: dbwf().summarizeRule(db, row) } : null);

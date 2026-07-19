@@ -1561,11 +1561,16 @@ function register(ctx) {
     // admin auto-override here (PINNED in test_reprocess_lock.js): bulk mutation under an
     // approver is exactly the class the lock exists for — the override stays a per-doc act
     // via single-doc reprocess. Skipped count is surfaced in the summary.
-    const dbwfLock = require('../../../database/modules/workflow');
+    // FYI slice (2026-07-19): the skip uses the shared LOCK predicate (workflowService.
+    // hasActiveWorkflowLock = approval routes only, WORKFLOW_ACK_LOCKS-aware) — a doc with
+    // only an open acknowledge/FYI route IS reprocessed (an FYI is a postcard, not a gate;
+    // the recipient's view always joins live fields). Same authority as editGuard, so the
+    // two reprocess doors can never disagree.
+    const wfLockSvc = require('../../services/workflowService');
     let lockedSkipped = 0;
     for (const d of docs) {
       try {
-        if (dbwfLock.hasActiveRoute(db, d.docId)) { lockedSkipped++; continue; }
+        if (wfLockSvc.hasActiveWorkflowLock(db, d.docId)) { lockedSkipped++; continue; }
         const row = db.prepare('SELECT working_path, template_id, ocr_text, status, confirmed_at, supplier_pin, supplier_name FROM documents WHERE id = ?').get(d.docId);
         const srcFile = (row && row.working_path && fs.existsSync(row.working_path))
           ? row.working_path

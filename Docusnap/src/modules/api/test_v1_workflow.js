@@ -28,7 +28,7 @@ async function freshDb() {
       id INTEGER PRIMARY KEY, supplier_name TEXT, reference_number TEXT, doc_date TEXT,
       document_type_id INTEGER, status TEXT, ocr_text TEXT, overall_confidence INTEGER,
       original_filename TEXT, stored_filename TEXT, stored_path TEXT, folder_path TEXT,
-      working_path TEXT, workflow_status TEXT, confirmed_at TEXT, processed_at TEXT
+      working_path TEXT, workflow_status TEXT, confirmed_at TEXT, processed_at TEXT, deleted_at TEXT
     );
     CREATE TABLE extractions (id INTEGER PRIMARY KEY, document_id INTEGER, field_key TEXT, raw_value TEXT,
       display_value TEXT, confidence INTEGER, was_corrected INTEGER, corrected_to TEXT, validation_note TEXT, extraction_method TEXT);
@@ -154,6 +154,33 @@ async function main() {
   // ── filing state never rewritten by workflow ─────────────────────────────────
   r = await adminC.getDocument(1);
   check('document filing status still "confirmed" after approve/reject', r.json.status === 'confirmed');
+
+  // ── FYI slice / Oracle C1: the /v1 delete door respects the approval lock ─────
+  // This door was UNGUARDED — a remote edit-role user could delete an approval-locked doc
+  // the desktop would refuse (authz asymmetry) and strand/dissolve the route. Doc 2 still
+  // carries the open approve route from the 5b check above.
+  const lockRoute = db.prepare("SELECT id FROM document_routes WHERE document_id=2 AND state IN ('pending','claimed')").get();
+  check('(setup) doc 2 has an open approve route', !!lockRoute);
+  r = await editorC.recycle.delete(2);
+  check('edit-role /v1 delete of an approval-locked doc -> 409 WORKFLOW_LOCKED',
+    r.status === 409 && r.json.code === 'WORKFLOW_LOCKED');
+  check('refusal leaves the route open + the doc undeleted',
+    db.prepare('SELECT state FROM document_routes WHERE id=?').get(lockRoute.id).state === 'pending'
+    && db.prepare('SELECT status FROM documents WHERE id=2').get().status === 'needs_review');
+  r = await adminC.recycle.delete(2);
+  check('admin /v1 delete overrides the lock -> 200', r.status === 200);
+  const closedRow = db.prepare('SELECT state, resolution_comment FROM document_routes WHERE id=?').get(lockRoute.id);
+  check("admin-override delete closes the route 'recalled' with the honest tombstone",
+    closedRow.state === 'recalled' && /Document deleted by admin/.test(closedRow.resolution_comment || ''));
+  check('doc soft-deleted', db.prepare('SELECT status FROM documents WHERE id=2').get().status === 'deleted');
+  check("the close badge-pinged the shared sink ('auto_closed')", wfEvents.some(e => e.event === 'auto_closed'));
+  // An open FYI route never blocks a writer's delete — and still closes honestly, never vanishes.
+  r = await adminC.workflow.assign(1, readerId, 'acknowledge');
+  const fyiRoute = r.json.route;
+  r = await editorC.recycle.delete(1);
+  check('edit-role /v1 delete passes with only an open FYI route -> 200', r.status === 200);
+  check("the FYI route closed 'recalled' too (tombstone, no silent vanish)",
+    db.prepare('SELECT state FROM document_routes WHERE id=?').get(fyiRoute.id).state === 'recalled');
 
   await new Promise(r2 => server.close(r2));
   db.close();

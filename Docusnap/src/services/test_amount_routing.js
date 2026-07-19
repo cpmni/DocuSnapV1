@@ -87,6 +87,23 @@ console.log('§6 startDefaultRoute — gates, rule match, role resolution + SoD 
   eq('master OFF (not entitled) -> not routed [master-dark pin]', startDefaultRoute(null, 1, ctxOK, meta, mockDeps({ entitled: () => false })).reason, 'not-entitled');
   eq('already routed -> not routed [idempotency/re-file pin]', startDefaultRoute(null, 1, ctxOK, meta, mockDeps({ hasActiveRoute: () => true })).reason, 'already-routed');
 
+  // FYI slice audit pins (Oracle Q8): 'already-routed' IS audited (the any-route dedupe can
+  // block a rule-triggered approval behind an open FYI — must be discoverable, not
+  // silent-silent) — but 'disabled'/'not-entitled' stay SILENT: they fire on every confirm in
+  // a dark build, so "completing" their auditing would flood the log (audit-spam pin).
+  {
+    const auditsAR = [];
+    startDefaultRoute(null, 1, ctxOK, meta, mockDeps({ hasActiveRoute: () => true, audit: (e) => auditsAR.push(e) }));
+    eq('already-routed audits noop', auditsAR.length === 1 && auditsAR[0].outcome === 'noop'
+      && /already-routed/.test(auditsAR[0].details || ''), true);
+    const auditsSilent = [];
+    delete process.env.WORKFLOW_AMOUNT_ROUTING;
+    startDefaultRoute(null, 1, ctxOK, meta, mockDeps({ audit: (e) => auditsSilent.push(e) }));
+    process.env.WORKFLOW_AMOUNT_ROUTING = '1';
+    startDefaultRoute(null, 1, ctxOK, meta, mockDeps({ entitled: () => false, audit: (e) => auditsSilent.push(e) }));
+    eq('disabled + not-entitled still audit NOTHING (spam pin — do not "complete" this)', auditsSilent.length, 0);
+  }
+
   const happy = startDefaultRoute(null, 1, ctxOK, meta, mockDeps());
   eq('happy path -> routed to target_user 9', happy.routed && happy.toUserId, 9);
 

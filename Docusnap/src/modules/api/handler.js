@@ -591,7 +591,25 @@ function createRequestListener(ctx) {
         const session = requireSession(req, res); if (!session) return;
         if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
         const id = Number(delMatch[1]);
+        // Workflow lock (FYI slice, Oracle C1): this door had NO guard — a remote edit-role user
+        // could delete an approval-locked doc the desktop would refuse (authz asymmetry + the
+        // stranded-route hole). Same semantics as the desktop door: approval-locked ⇒ 409 for a
+        // non-admin writer; admin override proceeds (audited) and the route-close below leaves
+        // the honest tombstone. An open FYI route never blocks.
+        const guard = workflowService.editGuard(getDb(), id, session.role);
+        if (!guard.ok) return sendJson(res, 409, { error: guard.error, code: guard.code });
+        if (guard.overridden) {
+          audit({ user_id: session.userId, action: 'workflow_lock_overridden', action_category: 'workflow',
+                  outcome: 'success', document_id: id, metadata: { action: 'delete', via: 'client' } });
+        }
         documents.softDelete(getDb(), id);
+        const closed = workflowService.closeOpenRoutesForDeletedDoc(getDb(),
+          { documentId: id, deletedByName: session.username }).closed;
+        if (closed.length) {
+          audit({ user_id: session.userId, action: 'workflow_route_closed_on_delete', action_category: 'workflow',
+                  outcome: 'success', document_id: id, metadata: { routes: closed.map(r => r.id), via: 'client' } });
+          try { ctx.notifyWorkflowEvent && ctx.notifyWorkflowEvent({ event: 'auto_closed' }); } catch { /* badge-ping only (unknown event ⇒ no toast) */ }
+        }
         audit({ user_id: session.userId, action: 'document_deleted', action_category: 'document',
                 outcome: 'success', document_id: id, metadata: { soft: true, via: 'client' } });
         return sendJson(res, 200, { ok: true });

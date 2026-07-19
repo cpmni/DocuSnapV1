@@ -42,13 +42,61 @@ function fail(code, error) { return { ok: false, code, error }; }
  *        | { ok:false, locked:true, code:'WORKFLOW_LOCKED', error }
  */
 function editGuard(db, documentId, actorRole, deps = {}) {
-  const wf = deps.dbWorkflow || require('../../database/modules/workflow');
-  if (!wf.hasActiveRoute(db, documentId)) return { ok: true, locked: false };
+  if (!hasActiveWorkflowLock(db, documentId, deps)) return { ok: true, locked: false };
   if (actorRole === 'admin') return { ok: true, locked: true, overridden: true };
   return {
     ok: false, locked: true, code: 'WORKFLOW_LOCKED',
     error: 'This document is in an approval workflow — resolve or recall it before editing.',
   };
+}
+
+// ── FYI non-locking (2026-07-19 slice) ───────────────────────────────────────
+// LOCK POLICY, single authority for every lock reader (editGuard above + the batch-reprocess
+// skip in processing/handler.js): only an open APPROVAL-side route locks; an open
+// acknowledge/FYI route never does (visibility + dedupe only). Env WORKFLOW_ACK_LOCKS=1/true/on
+// RESTORES the pre-slice any-route locking (read at call time — the decisionSnapshotEnabled
+// pattern); default unset = non-locking FYI. Deliberately NO settings-table twin: a lock policy
+// needs one authority. Safe default-new: the feature is dark in production
+// (WORKFLOW_FEATURE_ENABLED=false ⇒ zero routes ⇒ both polarities byte-identical).
+function ackLocksRestored() {
+  const v = String(process.env.WORKFLOW_ACK_LOCKS || '').trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'on';
+}
+function hasActiveWorkflowLock(db, documentId, deps = {}) {
+  const wf = deps.dbWorkflow || require('../../database/modules/workflow');
+  return ackLocksRestored() ? wf.hasActiveRoute(db, documentId)
+                            : wf.hasActiveApprovalRoute(db, documentId);
+}
+
+/**
+ * Close every OPEN route on a document being (soft-)deleted — the honest tombstone
+ * (Barry/Oracle, FYI slice): the recipient's inbox item becomes a Completed
+ * 'recalled' entry reading "Document deleted by <name>" instead of silently
+ * vanishing or sitting stranded-open against a dead doc forever (the pre-existing
+ * hole at every unguarded soft-delete door). DB-ONLY and UNGATED (no env switch —
+ * it converts silence into visibility, fail-toward-visible); the CALLER audits +
+ * notifies AFTER its transaction commits (Oracle C2 — a notify from a rolled-back
+ * tx announces a close that never happened; the editGuard caller-audits precedent).
+ * Per-row CAS via the row's own version: changes===0 ⇒ a concurrent resolve won ⇒
+ * skip (their resolution stands — honest either way). Returns { closed: [rows] }.
+ * NOTE restore-from-bin does NOT reopen these routes (the doc resurrects, the route
+ * stays closed with its now-historical comment; the sender re-routes — documented
+ * residual, Oracle C8).
+ */
+function closeOpenRoutesForDeletedDoc(db, { documentId, deletedByName }, deps = {}) {
+  const wf = deps.dbWorkflow || require('../../database/modules/workflow');
+  const open = wf.listOpenRoutesForDocument(db, documentId);
+  const closed = [];
+  const resolvedAt = new Date().toISOString();
+  const comment = `Document deleted by ${deletedByName || 'an administrator'}`;
+  for (const r of open) {
+    const changes = wf.updateState(db, r.id, r.version, {
+      state: 'recalled', resolution_comment: comment, resolved_at: resolvedAt,
+    });
+    if (changes > 0) closed.push({ ...r, state: 'recalled', resolution_comment: comment, resolved_at: resolvedAt });
+  }
+  if (closed.length > 0) wf.setDocWorkflowStatus(db, documentId, 'recalled');
+  return { closed };
 }
 
 // ── Decision snapshot (Slice 2) ──────────────────────────────────────────────
@@ -61,11 +109,14 @@ function decisionSnapshotEnabled() {
 }
 
 // Pure (DB-free) — assemble the append-only decision record from values already in hand. The snapshot
-// captures the EXTRACTED FIELDS AT THE INSTANT OF RESOLVE — NOT "what the approver first saw": an admin
-// editGuard override (see editGuard above, admin ⇒ overridden) can reprocess a locked open-route doc
-// between first view and decision, changing the whole snapshot. FORWARD CONTRACT: no consumer (Slice-3
-// amount routing, payment auth, export) may treat snapshot_total_amount as a human-verified amount without
-// a mid-flight-change guard. (Oracle C5 — docs/designs/WORKFLOW_SLICE2_BUILD_2026-07-19.md §11.)
+// captures the EXTRACTED FIELDS AT THE INSTANT OF RESOLVE — NOT "what the approver first saw". Since
+// the FYI non-locking slice (2026-07-19) mid-route mutation is ROUTINE, not admin-exceptional: an open
+// acknowledge route never locks, so the doc can be edited/reprocessed/re-confirmed at any time between
+// send and resolve (an approve route still locks; only an admin override mutates under one). Inbox and
+// live views always JOIN the CURRENT document fields, not routed-time values. FORWARD CONTRACT: no
+// consumer (Slice-3 amount routing, payment auth, export) may treat snapshot_total_amount as a
+// human-verified amount without a mid-flight-change guard. (Oracle C5 slice-2 + C7 FYI slice —
+// docs/designs/WORKFLOW_FYI_NONLOCKING_2026-07-19.md.)
 function buildDecisionSnapshot({ route, newState, resolvedAt, actor, comment, totalDisplay, overallConfidence }) {
   const snapshot = {
     document_id:        route.document_id,
@@ -293,4 +344,5 @@ function createWorkflowService(deps = {}) {
   return { inbox, sent, assigned, completed, assign, assignSystem, claim, resolve, recall };
 }
 
-module.exports = { createWorkflowService, editGuard, buildDecisionSnapshot, decisionSnapshotEnabled, ACTOR_CAN_ASSIGN, ACTOR_CAN_DECIDE, ROUTABLE_STATES };
+module.exports = { createWorkflowService, editGuard, hasActiveWorkflowLock, closeOpenRoutesForDeletedDoc,
+  buildDecisionSnapshot, decisionSnapshotEnabled, ACTOR_CAN_ASSIGN, ACTOR_CAN_DECIDE, ROUTABLE_STATES };

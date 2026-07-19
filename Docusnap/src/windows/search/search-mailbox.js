@@ -47,8 +47,11 @@ async function render() {
 function _routeItem(r) {
   const el = document.createElement('div'); el.className = 'result-item'; el.dataset.id = r.document_id;
   const title = r.supplier_name || ('Document #' + r.document_id);
-  const kind  = r.action_required === 'approve' ? 'Approval' : 'Acknowledgement';
+  const kind  = r.action_required === 'approve' ? 'Approval' : 'For information';
   const who   = _box === 'sent' ? `to ${r.to_username}` : `from ${r.from_username}`;
+  // Chip LABEL only — the CSS class keeps the raw state (styling keys off it). 'seen' is the
+  // human word for a resolved FYI (Barry, FYI slice).
+  const stateLabel = r.state === 'acknowledged' ? 'seen' : r.state;
   // Sender-side row actions (Slice 1). listSent is sender-scoped BY QUERY, so these are
   // safe to show without knowing the current user id. (A rejected route in Completed gets
   // its actions via its Sent twin — listSent has no state filter.)
@@ -59,7 +62,7 @@ function _routeItem(r) {
   el.innerHTML = `
     <div class="result-header">
       <span class="result-supplier" title="${escHtml(title)}">${escHtml(title)}</span>
-      <span class="wf-state ${escHtml(r.state)}">${escHtml(r.state)}</span>
+      <span class="wf-state ${escHtml(r.state)}">${escHtml(stateLabel)}</span>
     </div>
     <div class="result-filename">${escHtml(kind)} · ${escHtml(who)}</div>${
       r.resolution_comment ? `

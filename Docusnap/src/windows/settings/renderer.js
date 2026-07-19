@@ -65,7 +65,8 @@ async function initWorkflowPanel() {
 }
 
 function _wfBuilderPayload() {
-  const p = { documentTypeId: document.getElementById('wf-b-type').value || '', targetUserId: document.getElementById('wf-b-person').value || null };
+  const p = { documentTypeId: document.getElementById('wf-b-type').value || '', targetUserId: document.getElementById('wf-b-person').value || null,
+    actionRequired: document.getElementById('wf-b-action').value || 'approve' };
   if (document.getElementById('wf-b-amount-on').checked) p.amountText = document.getElementById('wf-b-amount').value;
   if (_wfEditId) p.id = _wfEditId;
   return p;
@@ -91,6 +92,7 @@ function wfResetBuilder() {
   document.getElementById('wf-b-amount').value = '';
   document.getElementById('wf-b-amount').style.display = 'none';
   document.getElementById('wf-b-amount-suffix').style.display = 'none';
+  document.getElementById('wf-b-action').value = 'approve';
   document.getElementById('wf-dryrun').innerHTML = '';
 }
 
@@ -139,6 +141,9 @@ function wfEditRule(id, rules) {
   document.getElementById('wf-b-amount').value = hasAmt ? (r.min_amount_pennies / 100).toFixed(2) : '';
   document.getElementById('wf-b-amount').style.display = hasAmt ? '' : 'none';
   document.getElementById('wf-b-amount-suffix').style.display = hasAmt ? '' : 'none';
+  // Prefill the action — without this, editing a for-information rule and saving would
+  // silently convert it to approval (eric's catch in the FYI slice review).
+  document.getElementById('wf-b-action').value = r.action_required === 'acknowledge' ? 'acknowledge' : 'approve';
   if (r.target_user_id != null) document.getElementById('wf-b-person').value = String(r.target_user_id);
 }
 

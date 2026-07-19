@@ -118,7 +118,15 @@ function startDefaultRoute(db, docId, ctx, meta, deps) {
   // false today) so a dark build can NEVER create a route, then the already-routed/re-file guard.
   if (!amountRoutingEnabled()) return { routed: false, reason: 'disabled' };
   if (!deps.entitled(db)) return { routed: false, reason: 'not-entitled' };
-  if (deps.hasActiveRoute(db, docId)) return { routed: false, reason: 'already-routed' };
+  // NOTE: 'disabled'/'not-entitled' above are DELIBERATELY un-audited — they fire on every confirm
+  // in a dark build (audit-spam; pinned in test_amount_routing.js). 'already-routed' below IS
+  // audited (FYI slice / Oracle Q8): the dedupe is ANY-open-route, so an unresolved FYI blocks a
+  // rule-triggered approval — rare (routes fire once at filing; only an Edit-in-Review re-file
+  // re-enters) but a real missed-approval scenario that must be discoverable, not silent-silent.
+  if (deps.hasActiveRoute(db, docId)) {
+    _routeAudit(deps, docId, meta, 'noop', 'already-routed');
+    return { routed: false, reason: 'already-routed' };
+  }
 
   // Match the rule FIRST (Oracle C1) so a type-only rule fires even with no/messy total, and a banded
   // rule that would fail the trust gate can't shadow a later type-only rule.
