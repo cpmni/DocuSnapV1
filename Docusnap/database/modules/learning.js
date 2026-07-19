@@ -1419,6 +1419,32 @@ function getFieldValueHistory(db, { supplier_name, document_type, field_key } = 
   `).all(field_key, supplier_name || '', document_type || '');
 }
 
+// PREFIX-OUTLIER model for ONE scope (Slice 1 confirm-time cold-start gate). Runs the same scoped
+// confirmed-value query as getFieldValueHistory to get {value: confirmedCount}, then feeds the JS
+// mirror prefix_outlier.buildScopeRec — so the CONFIRM-time check uses the SAME dominant-prefix rule
+// as the Python extraction guard, against LIVE confirmed history (which the extraction index misses
+// on a first bulk import). Returns the scope rec {dominant,known,counts,total} or null (disarmed /
+// no supplier / no field). Supplier match is EXACT (per-supplier prefix convention, no cross-
+// supplier fallback); do NOT lowercase (the SQL is COALESCE-equality on the stored value).
+function getPrefixModelForScope(db, supplier_name, document_type_slug, field_key) {
+  if (!field_key || !supplier_name) return null;
+  const rows = db.prepare(`
+    SELECT COALESCE(NULLIF(TRIM(c.corrected_value), ''), e.display_value) AS value, COUNT(*) AS count
+    FROM extractions e
+    JOIN documents d ON d.id = e.document_id
+    LEFT JOIN document_types dt ON dt.id = d.document_type_id
+    LEFT JOIN corrections   c  ON c.document_id = e.document_id AND c.field_key = e.field_key
+    WHERE d.status = 'confirmed' AND e.field_key = ?
+      AND COALESCE(d.supplier_name, '') = COALESCE(?, '')
+      AND COALESCE(dt.slug, '')         = COALESCE(?, '')
+    GROUP BY value
+    HAVING value IS NOT NULL AND TRIM(value) <> ''
+  `).all(field_key, supplier_name || '', document_type_slug || '');
+  const counts = {};
+  for (const row of rows) counts[row.value] = row.count;
+  return require('./prefix_outlier').buildScopeRec(counts);
+}
+
 // List the CONFIRMED documents whose final value for this (supplier, doc-type, field) scope
 // equals `value` — so the Learning-history modal can jump from a learned value to the source
 // documents that taught it (to re-check/correct them via "Edit in Review"). Same scope +
@@ -1552,7 +1578,7 @@ function renameSupplier(db, { oldName, newName } = {}) {
 
 module.exports = {
   insertExtractions, deleteExtractions,
-  getFieldValueHistory, getDocumentsForFieldValue, purgeFieldValue, renameFieldValue,
+  getFieldValueHistory, getDocumentsForFieldValue, purgeFieldValue, renameFieldValue, getPrefixModelForScope,
   getSupplierScopeCounts, renameSupplier,
   saveCorrections, getHints, getAllHints, isPlausibleSupplierName, isPlausibleSupplierNameBase, isNameLikeField, nameQuality, normalizeSupplierName,
   saveAnchor, sanitizeAnchorLabel, clearAnchors, getAllAnchors, getAnchorsForScope, getTaughtFieldKeys, deleteAnchor,

@@ -28,6 +28,7 @@ function createReviewService(deps = {}) {
   const documents = deps.documents || require('../../database/modules/documents');
   const learning  = deps.learning  || require('../../database/modules/learning');
   const doctypes  = deps.doctypes  || require('../../database/modules/document_types');
+  const prefixOutlier = deps.prefixOutlier || require('../../database/modules/prefix_outlier');
   const filing    = deps.filing    || require('../modules/filing/handler');
   const fs   = deps.fs   || require('fs');
   const path = deps.path || require('path');
@@ -99,6 +100,45 @@ function createReviewService(deps = {}) {
 
     const outputRoot = learning.getSetting(db, 'output_folder', null);
     if (!outputRoot) return fail('NO_OUTPUT', 'No output folder set. Please configure it in Settings.');
+
+    // ── PREFIX-OUTLIER confirm gate (Slice 1, cold-start) ────────────────────────────────────────
+    // The extraction-time prefix guard is INERT on a first bulk import (its history snapshot is
+    // empty), so RE-CHECK the reference here against LIVE confirmed history and HOLD an odd-one-out
+    // for review BEFORE it files. Flag-only + PRE-CLAIM: writes a review note, leaves the doc
+    // needs_review; nothing is claimed or filed. Exempt: a re-file, a human-typed value (a
+    // correction), and an explicit acknowledge ("Confirm anyway"). Dual kill switch (env + setting).
+    // Reuses the SAME weight-aware predicate as the Python extraction guard (prefix_outlier.js
+    // mirrors ocr_corrector.py; parity pinned by test_prefix_outlier.js). ADVISORY: a gate error
+    // fails OPEN (never blocks a confirm), like the Python guard.
+    if (!isRefile && dtInfo && dtInfo.ref_field_key
+        && process.env.PREFIX_OUTLIER_CONFIRM_GUARD !== '0'
+        && learning.getSetting(db, 'prefix_outlier_confirm_guard_enabled', 'true') !== 'false') {
+      try {
+        const refKey = dtInfo.ref_field_key;
+        const refVal = allValues ? allValues[refKey] : null;
+        const humanCorrected = !!(corrections && corrections[refKey] && corrections[refKey].corrected_value != null);
+        const acked = Array.isArray(payload && payload.acknowledgePrefixOutlier)
+                   && payload.acknowledgePrefixOutlier.includes(refKey);
+        if (refVal && !humanCorrected && !acked) {
+          const scopeSupplier = (allValues && allValues.supplier_name) || supplier_name || null;
+          const rec = learning.getPrefixModelForScope(db, scopeSupplier, document_type_slug, refKey);
+          const chk = prefixOutlier.checkValue(refVal, rec);   // { outlier, prefix, dominant }
+          if (chk.outlier) {
+            db.prepare('UPDATE extractions SET validation_note = ? WHERE document_id = ? AND field_key = ?')
+              .run(`Reference starts "${chk.prefix}-" but this sender's usually start "${chk.dominant}-" - please check.`,
+                   document_id, refKey);
+            audit(db, { action: 'confirm_held_prefix_outlier', target_type: 'document', target_id: document_id,
+              document_id, outcome: 'held', actor_username: actorName,
+              metadata: { field: refKey, dominant: chk.dominant, prefix: chk.prefix } });
+            notifyCounts(db);
+            return fail('PREFIX_OUTLIER', 'The reference looks unusual for this sender - please review.',
+              { field: refKey, dominant: chk.dominant, prefix: chk.prefix });
+          }
+        }
+      } catch (e) {
+        if (logger && logger.warn) logger.warn('prefix-outlier confirm gate skipped: ' + (e && e.message));
+      }
+    }
 
     // CLAIM before filing (first-confirm only) so a lost race can't double-file. The loser
     // reads the winner's name off confirmed_by_username and reports it.

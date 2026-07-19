@@ -679,7 +679,8 @@ function register(ctx) {
     if (!r.ok) {
       return { success: false, error: r.error,
                ...(r.code ? { code: r.code } : {}),
-               ...(r.confirmedBy ? { confirmedBy: r.confirmedBy } : {}) };
+               ...(r.confirmedBy ? { confirmedBy: r.confirmedBy } : {}),
+               ...(r.code === 'PREFIX_OUTLIER' ? { prefixOutlier: { field: r.field, dominant: r.dominant, prefix: r.prefix } } : {}) };
     }
     return r;   // { ok:true, success:true, ...filingResult }
   });

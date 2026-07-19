@@ -3704,7 +3704,7 @@ function extractLabel(text) { return window.AnchorLabel.extractLabel(text); }
 // blindly — and the on-screen-image steps (logo-fingerprint save + image-clear
 // animation) are skipped, since File All cycles documents itself. The file-by-
 // file behaviour is otherwise unchanged.
-async function confirmCurrentDoc({ bulk = false, expectId = null } = {}) {
+async function confirmCurrentDoc({ bulk = false, expectId = null, acknowledgePrefixOutlier = null } = {}) {
   if (!currentDoc) return { error: 'No document selected.' };
   // Bulk-race guard: the caller (File All Ready) captures the doc it intends to
   // file; if a delete / row-click reassigned the module-global `currentDoc` in an
@@ -3782,6 +3782,8 @@ async function confirmCurrentDoc({ bulk = false, expectId = null } = {}) {
     // In bulk the fields-only path never loaded the preview image, so there is
     // no img.src file handle to wait on — let the backend skip its 150ms release.
     bulk,
+    // Slice 1: ref field(s) the operator explicitly "Confirm anyway"-ed past the prefix-outlier hold.
+    acknowledgePrefixOutlier,
   });
 
   if (!result?.success) {
@@ -3791,7 +3793,8 @@ async function confirmCurrentDoc({ bulk = false, expectId = null } = {}) {
     }
     // Pass the backend code through so bulk filing can tell a license lapse
     // (abort the whole run once) from an ordinary per-doc failure (skip + continue).
-    return { error: result?.error || 'Confirm failed. Check settings.', code: result?.code || null };
+    return { error: result?.error || 'Confirm failed. Check settings.', code: result?.code || null,
+             prefixOutlier: result?.prefixOutlier || null };
   }
 
   // Persist anchors taught with ⊕ this cycle — DEFERRED to commit so an un-confirmed
@@ -3843,6 +3846,34 @@ async function confirmCurrentDoc({ bulk = false, expectId = null } = {}) {
   return { filed: true };
 }
 
+// Slice 1: render the prefix-outlier HOLD inline on the reference field — a plain-language note + a
+// "Confirm anyway" button that re-confirms with the field acknowledged. Reuses the `.field-note`
+// class so editing the field (a correction) auto-dismisses it (dismissServerNote) AND exempts the
+// value on the backend, mirroring the accept-btn wiring in appendFieldRow.
+function showPrefixOutlierHold(detail, idx, supplier) {
+  const field = detail && detail.field;
+  const row = field ? document.querySelector(`#fields-scroll .field-row[data-key="${field}"]`) : null;
+  if (!row) { showToast('This reference looks unusual for this sender - please check it.', 'err'); return; }
+  row.querySelector('.field-note.prefix-hold')?.remove();
+  const dom = detail.dominant ? escHtml(detail.dominant) : 'the usual';
+  const pfx = detail.prefix ? escHtml(detail.prefix) : '';
+  const note = document.createElement('div');
+  note.className = 'field-note prefix-hold';
+  note.innerHTML = `Starts "${pfx}-" but this sender's references usually start "${dom}-". Fix it above, or `
+    + `<button type="button" class="prefix-ack-btn">Confirm anyway</button>`;
+  row.appendChild(note);
+  const inp = row.querySelector('.field-input'); if (inp) { try { inp.focus(); inp.select?.(); } catch {} }
+  note.querySelector('.prefix-ack-btn')?.addEventListener('click', async () => {
+    const r2 = await confirmCurrentDoc({ acknowledgePrefixOutlier: [field] });
+    if (r2.cancelled) return;
+    if (r2.error || r2.code) { showToast(r2.error || 'Confirm failed.', 'err'); return; }
+    updateTabCounts();
+    advanceAfterAction(idx, supplier);
+    try { window.docusnap.markFocusSuspect?.(); } catch {}
+    window.docusnap.notifyReviewComplete();
+  });
+}
+
 document.getElementById('btn-confirm').addEventListener('click', async () => {
   // Remember where the doc sits BEFORE confirmCurrentDoc removes it from the list,
   // so we can advance to the NEXT doc (the one that shifts into this slot) rather
@@ -3855,6 +3886,9 @@ document.getElementById('btn-confirm').addEventListener('click', async () => {
   const supplier = (currentDoc?.supplier_name || '').trim();   // finish this sender's docs before moving on
   const r = await confirmCurrentDoc();
   if (r.cancelled) return;
+  // Slice 1: a suspicious-reference HOLD — surface the note + a "Confirm anyway" affordance on the
+  // ref field instead of a transient error toast (editing the field also clears it and exempts it).
+  if (r.code === 'PREFIX_OUTLIER') { showPrefixOutlierHold(r.prefixOutlier, idx, supplier); return; }
   if (r.error) { showToast(r.error, 'err'); return; }
   updateTabCounts();
   advanceAfterAction(idx, supplier);
