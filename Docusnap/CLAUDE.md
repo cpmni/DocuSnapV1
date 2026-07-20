@@ -59,6 +59,23 @@ READ FIRST: `HANDOVER_2026-07-20.md` (then `HANDOVER_2026-07-19.md`).**
   while `type_confidence` is always the keyword score (don't pair them blindly).**
   ⚠ `realdoc_regression.js` spawns `process_docs.py` DIRECTLY — it is structurally blind to every
   Electron/renderer change. A green corpus run proves nothing about renderer work.
+- **DETECTED-TYPE NUDGE BUILT `0f3c8e9`** (the tail above, Oracle C2/C3/C5/C6): **migration 51**
+  `documents.detected_type_name` (NULL-inert; set ONLY when a detected name matches no installed
+  type; **name only — no confidence column**, since `type_confidence` is a keyword-bucket score and
+  `document_type` can be template-overridden) · one helper `_resolveDetectedType` at BOTH insert
+  seams, reprocess **CLEARS** via plain assignment not COALESCE (else the suggestion outlives the
+  type being added) · Review's untyped notice gains "Add '<type>'" which **adds AND RE-READS** —
+  auto-select alone BLANKS every field, because extraction ran against the union of all installed
+  types' keys (Oracle's best catch) · **NO slug fallback** (would newly resolve types exact matching
+  misses = a live `document_type_id` change; pinned out) · kill `DETECTED_TYPE_NUDGE=0`. PIN A: a
+  named detection never adopts Generic. Guarded by `test_detected_type_nudge.js` (whitelist trap
+  proven red first). **UNCLICKED — needs an owner fresh-install run with dockets.**
+- **⚠ RECURRING TRAP — THREE stale fixtures fixed in one day, all one class** (`71ffc8d`, `0f3c8e9`):
+  a `documents`/`templates` test fixture that never gained a column production gained. Because
+  `documents.insert()`/`templates.create()` name every column, the INSERT fails outright and EVERY
+  downstream assertion reads as a PRODUCT regression ("the failure-row producer regressed"). SUSPECT
+  THE FIXTURE SCHEMA FIRST. Also: `documents.update()`'s `allowed` whitelist SILENTLY DROPS unknown
+  keys — a column added to `insert()` but not there writes once and can never be cleared.
 - **THE TWO PRE-EXISTING TEST FAILURES ARE FIXED (`71ffc8d`)** — both were stale, not regressions:
   `test_reprocess_type_flip.py` unpacked a 5-tuple from `doc_overrides` (6 since the supplier-pin
   work), and its own shape pin was red too so it never flagged it; `test_promote_custom_doctype.js`
