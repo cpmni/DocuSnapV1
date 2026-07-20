@@ -1010,7 +1010,19 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
         # caps conf <= 70 at the anchor_crop guard below AND persists a note, so it's review-bound even
         # with NO keyword incumbent — Oracle C1). Gated to name_quality < 0.6 (Oracle C3: real names like
         # "Denver Trading"/"Delivery Solutions Ltd" score 1.0 and survive). Kill switch ANCHOR_CAPTION_BLEED_GUARD.
-        if (value and method == "anchor_crop" and val_type in (None, "text", "multiline_text")
+        # 2026-07-20 — WIDENED to the RELOCATED crop (owner report, Northgate delivery dockets).
+        # The two caption guards had a hole exactly between them: the token-EXACT check
+        # (_is_caption_bleed) is relocate-scoped but can't match a caption OCR mangled it, and this
+        # FUZZY check caught the garble but only on the RIGID crop — so a GARBLED RELOCATE walked
+        # through both. Live trace: taught label "Deliver To" (direction below) produced
+        # anchor_crop "Wenver i0" (rejected off_row_drift) and anchor_crop_relocated "Vetiver 10"
+        # @80, which BEAT the correct keyword read "Halcyon Leisure Group" @78 and filed the label
+        # as the customer. "vetiver" vs "deliver" = 2/7 = 0.29 <= 0.35, so the predicate always
+        # recognised it — only the method gate kept it out. The name_quality < 0.6 condition below
+        # is what keeps REAL names safe here ("Denver Trading"/"Delivery Solutions Ltd" fuzzy-match
+        # a caption but score 1.0), so widening the method set cannot demote a clean name.
+        if (value and method in ("anchor_crop", "anchor_crop_relocated")
+                and val_type in (None, "text", "multiline_text")
                 and os.environ.get("ANCHOR_CAPTION_BLEED_GUARD", "1") != "0"):
             from extraction.value_quality import is_name_like_field as _isnl2, name_quality as _nq2
             if (_isnl2(field_key) and field_key != "supplier_name"
