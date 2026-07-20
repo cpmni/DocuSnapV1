@@ -128,6 +128,72 @@ check("usage 3  -> 66 (below the 70 field threshold => stays in review; self-gat
 check("ceiling NEVER exceeds 85 for any usage", all(graduated_conf(u) <= 85 for u in range(3, 500)))
 
 
+
+# ── C4 (Oracle, 2026-07-20): the ISSUER BAND that licenses a graduation ──────────────────────
+# Graduation replaces a NOTED template_identity fill with an UN-NOTED hint_text_match one, and
+# trust.js refuses auto-file on any non-empty validation_note BEFORE comparing the floor — so
+# shedding the note is what removes the human checkpoint. The evidence standard for that was
+# always written as "a hint present in the ISSUER BAND", but the window was a raw ocr_text[:600]
+# slice that contains the recipient block. These pin the band that makes the sentence true.
+print()
+print("-- C4 issuer band (the window that licenses shedding a review note) --")
+import os as _os
+
+check("the existing TOP fixture still yields 'superstore' through the band "
+      "(the graduation class survives the narrowing)",
+      "superstore" in E._issuer_hint_band(TOP))
+
+# 1. THE HOLE. The only occurrence of the name is BELOW a recipient marker.
+_recip_only = "Northgate Textiles\n14 Mill Street\nBill To:\nSuperStore\n1 High Road\n"
+_band = E._issuer_hint_band(_recip_only)
+check("value present ONLY below 'Bill To' is OUT of the band", "superstore" not in _band)
+check("...so the graduation does NOT fire, and the review note is retained",
+      E._supplier_hint_upgrade("SuperStore", [hint("SuperStore", 61)], _band, "") is None)
+check("...while the same hint DOES fire when the name is in the letterhead",
+      E._supplier_hint_upgrade("SuperStore", [hint("SuperStore", 61)],
+                               E._issuer_hint_band("SuperStore\n1 High Road\nBill To:\nAcme\n"), "") is not None)
+
+# 2. Two-column, ISSUER LEFT — the salvage in chrome_band must keep working at this call site.
+#    _group_words_into_lines merges a physical row into ONE line, so the marker shares the line.
+check("two-column, issuer LEFT ('ACME Ltd    Bill To:') keeps the issuer",
+      "acme ltd" in E._issuer_hint_band("ACME Ltd    Bill To:    Halcyon Leisure\n9 Mill Road\n"))
+
+# 3. Two-column, ISSUER RIGHT — ACCEPTED COST, pinned so it is a known limit and not a surprise.
+#    The marker sits at position 0 of the row, so there is no text before it to salvage and the
+#    band truncates immediately. This layout family is absent from the demo corpus; do not
+#    "discover" it later and assume it is a regression.
+check("two-column, issuer RIGHT ('Bill To:    ACME Ltd') loses the issuer (ACCEPTED)",
+      "acme ltd" not in E._issuer_hint_band("Bill To:    ACME Ltd\n9 Mill Road\n"))
+
+# 4. DELIBERATE NEW ADMISSION. The band joins lines with a space, so a name wrapped across two
+#    visual rows becomes matchable when it was not against the raw slice. Usually a win (wrapped
+#    letterheads); pinned because it is a NEW match surface, i.e. the one direction in which this
+#    change is not a strict subset of the old behaviour.
+check("a name split across two rows IS matchable in the band (new, deliberate)",
+      "halcyon leisure group" in E._issuer_hint_band("HALCYON\nLEISURE GROUP\n1 High Road\n"))
+check("...and was NOT matchable in the legacy raw slice",
+      "halcyon leisure group" not in "HALCYON\nLEISURE GROUP\n1 High Road\n"[:600].lower())
+
+# 5. KILL SWITCH — byte-identical to the legacy expression, including the C1 withhold being inert.
+_prev = _os.environ.get("ISSUER_HINT_BAND")
+try:
+    _os.environ["ISSUER_HINT_BAND"] = "0"
+    check("ISSUER_HINT_BAND=0 is byte-identical to ocr_text[:600].lower()",
+          E._issuer_hint_band(_recip_only) == _recip_only[:600].lower())
+    check("...so the recipient-block value is matchable again (this IS the old hole)",
+          "superstore" in E._issuer_hint_band(_recip_only))
+finally:
+    if _prev is None:
+        _os.environ.pop("ISSUER_HINT_BAND", None)
+    else:
+        _os.environ["ISSUER_HINT_BAND"] = _prev
+check("env restored (a leaked kill switch would silently disarm every later check)",
+      _os.environ.get("ISSUER_HINT_BAND") == _prev)
+
+
+# The verdict MUST be the last thing in this file. It used to sit mid-file, which meant any check
+# appended after it incremented `fails` and was then never examined — the suite printed ALL PASS
+# and exited 0 with failing checks below. A test that cannot fail is worse than no test.
 print()
 if fails:
     print(f"FAILED: {fails} check(s)")

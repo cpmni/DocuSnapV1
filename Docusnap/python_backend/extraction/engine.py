@@ -775,9 +775,49 @@ class ExtractionEngine:
             return None
         return sn_cur.get("value") or None
 
+    # How many top lines `_issuer_hint_band` may scan. Deliberately LARGE so the 600-character cap
+    # — not this line cap — is what binds on a marker-free page: the only intended narrowing is the
+    # recipient-marker truncation, and a line cap would smuggle in a second, unevidenced one.
+    # NOT the same as chrome_band.issuer_chrome's own default of 6, which must not be touched: that
+    # default is calibrated for TOKEN-RATIO consumers (_identity_text_sufficient's floor at
+    # _IDENTITY_MIN_BAND_TOKENS was measured against it), which degrade gracefully on a short band.
+    # This consumer is an all-or-nothing substring test and has no such tolerance.
+    _HINT_BAND_LINES = 40
+
+    @staticmethod
+    def _issuer_hint_band(ocr_text):
+        """The evidence window for matching a KNOWN supplier name (Stage 2.5a + the text-first
+        issuer graduation): today's top-600-character reach, TRUNCATED at the first recipient
+        marker ("Bill To"/"Sold To"/"FAO"/…).
+
+        WHY: the window used to be a raw `ocr_text[:600]`, which on a real invoice comfortably
+        contains the RECIPIENT block — measured at ~180 chars on a traced invoice and ~160 on a
+        purchase order. So the customer's name was admissible evidence for the ISSUER field. The
+        band is a strict subset of that slice, so this can only REMOVE candidates, never admit a
+        different company — with one deliberate exception, pinned in the tests: the band joins
+        lines with a space, so a name split across two visual rows ("HALCYON\\nLEISURE GROUP")
+        becomes matchable when it wasn't.
+
+        SCOPE, stated honestly: this protects MARKER-BEARING layouts only. On a page with no
+        recipient marker the band equals the legacy window and the hole stays open — the
+        "To:"-first / uncaptioned-address layout is exactly the hardest case and is NOT closed here.
+
+        Kill switch ISSUER_HINT_BAND=0 returns the legacy expression byte-identically.
+        """
+        if os.environ.get("ISSUER_HINT_BAND", "1") == "0":
+            return (ocr_text or "")[:600].lower()
+        from extraction import chrome_band     # local import: matches the existing callers, and
+                                               # keeps engine import-light (chrome_band is stdlib-only)
+        return chrome_band.issuer_chrome(
+            ocr_text, max_lines=ExtractionEngine._HINT_BAND_LINES)[:600].lower()
+
     def _supplier_hint_upgrade(self, incumbent_value, hints, ocr_top, suppressed_norm):
-        """Pick the best qualifying `supplier_name` hint whose value appears in `ocr_top` (the issuer
-        band). Returns (value, usage_count) or None. Shared by the Stage-2.5a text-scan fallback and
+        """Pick the best qualifying `supplier_name` hint whose value appears in `ocr_top` — the
+        ISSUER BAND as produced by `_issuer_hint_band` (the caller narrows it; this function does
+        not, so the graduation pins can keep feeding it a pre-computed window).
+        ⚠ Before 2026-07-20 `ocr_top` was a raw `ocr_text[:600]` slice and this docstring's claim
+        that it was "the issuer band" was FALSE — the recipient block sat inside it.
+        Returns (value, usage_count) or None. Shared by the Stage-2.5a text-scan fallback and
         the text-first issuer GRADUATION (gary-designed, Oracle-signed 2026-07-15) so the graduate/
         hold/no-swap/C1 decision is unit-reachable without OCR or a DB.
 
@@ -3021,7 +3061,18 @@ class ExtractionEngine:
         # a review-bound template_identity FILL (@70 + "inferred from previously filed documents"
         # note) is graduated to the confident, un-noted hint_text_match resolution 2.5a would ITSELF
         # produce for a plain-text-wordmark supplier — when the SAME value is corroborated by a
-        # usage>=3 confirmed hint present in the issuer band. The logo misses on these (its region
+        # usage>=3 confirmed hint present in the issuer band.
+        # ⚠ THAT SENTENCE WAS NOT TRUE UNTIL 2026-07-20 (Oracle C2). The corroboration window was a
+        # raw ocr_text[:600] slice, which on a real invoice contains the RECIPIENT block — so a
+        # template-inferred supplier that is actually the CUSTOMER on this page could corroborate
+        # itself from under "Bill To" and SHED ITS REVIEW NOTE. That matters more than a wrong
+        # value: graduation replaces a noted fill with an UN-noted one, and trust.js refuses
+        # auto-file on any non-empty note BEFORE the floor comparison — so shedding the note is
+        # what removes the human checkpoint. `_issuer_hint_band` is what finally makes the sentence
+        # above describe the code. NOTE the honest limit: it truncates at a RECIPIENT MARKER, so a
+        # marker-free page (a "To:"-first or uncaptioned-address layout) still gets the legacy
+        # window — the hardest layouts are NOT closed by this.
+        # The logo misses on these (its region
         # crop encodes the variable Bill-To block — Phillip), so the fill fires and BLOCKS this
         # stricter path (the fill's value is plausible, so the gate below skipped it). The graduated
         # set is a STRICT SUBSET of 2.5a's already-trusted un-noted set (2.5a's bar PLUS whole-page
@@ -3036,7 +3087,7 @@ class ExtractionEngine:
         if os.environ.get("TEMPLATE_IDENTITY_GRADUATE", "1") != "0":
             _incumbent = self._noted_template_fill_value(results.get("supplier_name"))
         if hints and (not keyword._is_plausible_supplier_name(supplier_name) or _incumbent is not None):
-            ocr_top = ocr_text[:600].lower()
+            ocr_top = self._issuer_hint_band(ocr_text)
             # C1 (Oracle): if the buyer-issued guard just dropped a vendor caption, Stage 2.5a must
             # not silently re-adopt that same value from a stored hint (an install that both ORDERS
             # FROM and is INVOICED BY "Sandpiper" would have it as a supplier_name hint, and a
@@ -3055,6 +3106,33 @@ class ExtractionEngine:
                 }
                 self.log(f"  Stage 2.5: supplier '{best_hint}' identified from text scan"
                          f"{' (graduated from a review-bound template_identity fill)' if _incumbent else ''}")
+            elif _incumbent is None and os.environ.get("ISSUER_HINT_BAND", "1") != "0":
+                # FAIL TOWARD REVIEW (Oracle C1, 2026-07-20). This branch exists ONLY because the
+                # band narrowing above can now suppress a match the legacy window would have made.
+                #
+                # Without it the narrowing fails toward a SILENT WRONG VALUE, not toward review:
+                # there is no else here, so `results['supplier_name']` keeps whatever it had — and
+                # on THIS arm (`_incumbent is None`) the incumbent is by definition IMPLAUSIBLE,
+                # the "stale template/anchor seed of an implausible short fragment ('IN')" this
+                # stage exists to rescue. Suppressing the rescue would leave 'IN' standing as the
+                # filing folder and the learning scope, unnoted. Nothing downstream blanks it.
+                #
+                # DELTA-SCOPED on purpose: it fires only where the legacy slice WOULD have matched
+                # and the band did not, so a document where 2.5a declines today for any other
+                # reason is completely unaffected.
+                _legacy = (ocr_text or "")[:600].lower()
+                if _legacy != ocr_top and self._supplier_hint_upgrade(None, hints, _legacy, _suppressed_norm):
+                    results["supplier_name"] = {
+                        "value":           None,
+                        "confidence":      0,
+                        "method":          "issuer_band_withheld",
+                        "validation_note": "A known supplier's name appears on this page, but not in "
+                                           "the letterhead area, so it wasn't trusted as the issuer. "
+                                           "Please confirm who issued this document.",
+                    }
+                    supplier_name = None
+                    self.log("  Stage 2.5: a known supplier name matched OUTSIDE the issuer band "
+                             "— withheld and routed to review rather than adopted")
 
         # ── Stage 2.6: LATE-ANCHOR RESCUE (2026-07-10) ───────────────────────────
         # On a doc whose supplier was UNKNOWN at Stage-2 time (no template/logo hit — exactly
