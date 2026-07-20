@@ -554,7 +554,11 @@ document.getElementById('doctype-select').addEventListener('change', (e) => {
 let _newTypeModalOpen = false;
 let _catalogPickerOpen = false;   // catalog picker stacked OVER the new-type modal; gates its Esc handler
 let _catalogOpening   = false;    // set SYNCHRONOUSLY on launch so a double-click can't stack two pickers
-function openNewTypeModal() {
+// _onCreated: optional override for what happens AFTER a type is created/added. Default (and every
+// pre-existing caller) keeps the auto-select tail. The untyped-document notice passes its own,
+// because auto-selecting a brand-new type on a doc that was extracted without it blanks every field
+// on screen — see _addDetectedType (Oracle C3).
+function openNewTypeModal(_onCreated) {
   if (_newTypeModalOpen || !isAdmin) return;
   if (!window.DocTypeEditor || typeof window.DocTypeEditor.create !== 'function') {
     _newTypeToast('The document-type editor didn’t load. Try reopening the Review window.');
@@ -644,6 +648,7 @@ function openNewTypeModal() {
       close();
       try { allDocTypes = await window.docusnap.getAllDocTypes(); } catch {}
       populateTypeDropdown();
+      if (typeof _onCreated === 'function') { _onCreated(newSlug); return; }
       const sel = document.getElementById('doctype-select');
       sel.value = newSlug;
       sel.dispatchEvent(new Event('change'));    // reuse the existing handler: select + rebuild field rows
@@ -676,7 +681,11 @@ function openNewTypeModal() {
 // labels seeded), then hand its slug back so the caller can select it for the current doc. Mirrors
 // Settings' openCatalogModal + this file's own modal conventions. `onAdded(firstNewSlug)` fires on
 // a successful add. No new IPC — reuses get-doctype-catalog / add-doctype-presets (admin-gated).
-async function openTypeCatalogModal(onAdded) {
+// _preselectName: tick the catalog row whose NAME matches a type the pipeline DETECTED but this
+// install doesn't have, so "Add 'Delivery Note'" opens with Delivery Note already ticked. Matched
+// on NAME, not slug, deliberately — the renderer has no safeSlug and duplicating the slug rules
+// here would be a second source of truth that silently drifts from database/modules/slug.js.
+async function openTypeCatalogModal(onAdded, _preselectName) {
   // _catalogOpening is set SYNCHRONOUSLY (before the await) so a double-click can't pass the guard
   // twice and stack two overlays; _catalogPickerOpen is set only once the overlay exists, so the
   // parent modal's Esc stays live during the (brief) catalog LOAD. Restore focus to the launcher on
@@ -697,7 +706,10 @@ async function openTypeCatalogModal(onAdded) {
       : '';
     return `
       <label style="display:flex; gap:10px; align-items:flex-start; padding:8px 6px; border-radius:8px; cursor:pointer;">
-        <input type="checkbox" data-slug="${escHtml(p.slug)}" ${p.already_present ? 'checked disabled' : ''} style="margin-top:3px;">
+        <input type="checkbox" data-slug="${escHtml(p.slug)}" data-name="${escHtml(p.name)}"
+               ${p.already_present ? 'checked disabled'
+                 : (_preselectName && p.name.toLowerCase() === _preselectName.toLowerCase() ? 'checked' : '')}
+               style="margin-top:3px;">
         <div style="flex:1;">
           <div style="font-size:12px; font-weight:500;">${escHtml(p.name)} ${tag}</div>
           <div style="font-size:11px; color:var(--muted); line-height:1.5;">${fieldList}</div>
@@ -1925,6 +1937,42 @@ function renderCleanHoldReason(el, doc) {
   el.hidden = false;
 }
 
+// "Add '<detected type>'" from the untyped-document notice. Opens the PRESET catalog with that
+// type pre-ticked (most missing types are presets — Delivery Note, Statement, Remittance), falling
+// back to the full type builder with the name prefilled when it isn't one.
+//
+// THEN REPROCESSES, and that is the load-bearing part (Oracle C3). The extraction ran against the
+// union of ALL installed types' field keys, so the new type's own fields (delivery_note_number…)
+// were never extracted. The existing add-a-type tail auto-SELECTS the new slug, and the dropdown
+// handler rebuilds the rows by matching key — which for a freshly-added type matches nothing, so
+// every field on screen goes BLANK with Confirm still disabled. The user clicks a helpful-looking
+// button and lands somewhere that looks worse. Re-reading the document with the type installed is
+// the only thing that actually fills those fields.
+//
+// Safe by construction: reprocess forces status='needs_review' (processing/handler.js) and
+// _maybeAutoFile has exactly ONE call site — the import file_done path — so nothing here can file
+// a document. The human checkpoint stays put.
+async function _addDetectedType(detName) {
+  if (!detName || !isAdmin) return;
+  const afterAdd = () => {
+    showToast(`“${detName}” added — reading this document again…`, 'ok');
+    // Reuse the existing Reprocess button rather than calling reprocessDocument directly, so this
+    // inherits its in-flight guards, progress wiring and post-reprocess refresh (same pattern as
+    // the grouped-template path).
+    document.getElementById('btn-reprocess')?.click();
+  };
+  let catalog = [];
+  try { catalog = await window.docusnap.getDoctypeCatalog(); } catch { catalog = []; }
+  const preset = (Array.isArray(catalog) ? catalog : [])
+    .find(p => p && p.name && p.name.toLowerCase() === detName.toLowerCase() && !p.already_present);
+  if (preset) openTypeCatalogModal(afterAdd, detName);
+  else {
+    _newTypeToast(`“${detName}” isn't one of the ready-made types — create it here, then the `
+                + `document will be read again.`);
+    openNewTypeModal(afterAdd);
+  }
+}
+
 function renderReviewReason(doc) {
   const el = document.getElementById('review-reason');
   if (!el) return;
@@ -1945,14 +1993,34 @@ function renderReviewReason(doc) {
   // Deliberately gated on the TYPE, not on any detected-name enrichment — the advice is wrong
   // for EVERY untyped doc, including the ones where detection returned nothing at all.
   if (!doc.document_type_id && (doc.status === 'needs_review' || doc.status === 'deferred')) {
+    // ENRICHMENT ONLY (mig 51): when the pipeline named a type this install doesn't have, say so
+    // and offer to add it. The BRANCH above does not depend on this — an untyped doc with no
+    // detected name still gets the correction, which is the common case.
+    const detName = (doc.detected_type_name || '').trim();
     el.classList.add('rr-calm');
     el.innerHTML =
-        `<div class="rr-lead">This document doesn't have a document type yet, so it can't be filed `
-      + `— and it will never file itself automatically, whatever the confidence setting.</div>`
-      + `<div class="rr-cues"><span class="rr-cue info">No document type</span></div>`
-      + `<div class="rr-hint">Choose a type above. If the right one isn't in the list, an `
-      + `administrator can add it from that same menu.</div>`;
+        `<div class="rr-lead">`
+      + (detName
+          ? `This looks like a <strong>${escHtml(detName)}</strong>, but you don't have that `
+            + `document type yet — so it can't be filed, and it will never file itself `
+            + `automatically, whatever the confidence setting.`
+          : `This document doesn't have a document type yet, so it can't be filed — and it will `
+            + `never file itself automatically, whatever the confidence setting.`)
+      + `</div>`
+      + `<div class="rr-cues"><span class="rr-cue info">`
+      + (detName ? `${escHtml(detName)} · not set up` : 'No document type')
+      + `</span></div>`
+      + (detName && isAdmin
+          ? `<div class="rr-hint"><button type="button" class="btn btn-sm" id="rr-add-type">`
+            + `Add “${escHtml(detName)}”</button> — or choose an existing type above.</div>`
+          : detName
+            ? `<div class="rr-hint">Ask an administrator to add “${escHtml(detName)}”, or choose an `
+              + `existing type above.</div>`
+            : `<div class="rr-hint">Choose a type above. If the right one isn't in the list, an `
+              + `administrator can add it from that same menu.</div>`);
     el.hidden = false;
+    const addBtn = document.getElementById('rr-add-type');
+    if (addBtn) addBtn.addEventListener('click', () => _addDetectedType(detName));
     return;
   }
 

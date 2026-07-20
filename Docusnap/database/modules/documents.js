@@ -5,16 +5,18 @@ const path = require('path');
 function insert(db, { original_filename, folder_path, document_type_id,
                       supplier_name, overall_confidence, status,
                       template_id, logo_phash, logo_detail_hash, keyword_fingerprint,
-                      ocr_text, page_count }) {
+                      ocr_text, page_count, detected_type_name }) {
   return db.prepare(`
     INSERT INTO documents
       (original_filename, folder_path, document_type_id,
        supplier_name, overall_confidence, status,
-       template_id, logo_phash, logo_detail_hash, keyword_fingerprint, ocr_text, page_count)
+       template_id, logo_phash, logo_detail_hash, keyword_fingerprint, ocr_text, page_count,
+       detected_type_name)
     VALUES
       (@original_filename, @folder_path, @document_type_id,
        @supplier_name, @overall_confidence, @status,
-       @template_id, @logo_phash, @logo_detail_hash, @keyword_fingerprint, @ocr_text, @page_count)
+       @template_id, @logo_phash, @logo_detail_hash, @keyword_fingerprint, @ocr_text, @page_count,
+       @detected_type_name)
   `).run({
     original_filename, folder_path,
     document_type_id:    document_type_id    || null,
@@ -27,6 +29,7 @@ function insert(db, { original_filename, folder_path, document_type_id,
     keyword_fingerprint: keyword_fingerprint || null,
     ocr_text:            ocr_text            || null,
     page_count:          page_count          || null,
+    detected_type_name:  detected_type_name  || null,   // mig 51 — set ONLY when the detected type isn't installed
   });
 }
 
@@ -35,7 +38,10 @@ function update(db, id, changes) {
                    'status', 'overall_confidence', 'supplier_name',
                    'doc_date', 'reference_number', 'confirmed_at',
                    'error_message', 'template_id', 'working_path',
-                   'review_acknowledged_at', 'page_count', 'confirmed_by_username', 'supplier_pin'];
+                   'review_acknowledged_at', 'page_count', 'confirmed_by_username', 'supplier_pin',
+                   // mig 51. This whitelist SILENTLY DROPS anything not listed, so a column added
+                   // to insert() but not here writes once and can never be cleared again.
+                   'detected_type_name'];
   const sets = Object.keys(changes)
     .filter(k => allowed.includes(k))
     .map(k => `${k} = @${k}`)

@@ -33,6 +33,37 @@ function _genericFallbackId(db, msgDocumentType) {
 // go-forward backlog path). DIRECTION-GUARDED: a TYPED doc whose reprocess detection
 // returns None is NEVER dragged to generic (priorTypeId must be null), and a detected
 // type always wins. Exported for the C1 both-direction pins.
+// Resolve a DETECTED type NAME to an installed type, and say so when it isn't one.
+// Detection scores types from the SHIPPED document_type_keywords buckets, which exist
+// independently of the types an install actually HAS, so "Delivery Note" can be detected at 93%
+// by an install that never added it (Delivery Note is a PRESET, not a built-in — the 2026-07-20
+// delivery-docket report). Both insert seams treated name->id as a TOTAL function and dropped the
+// input on failure, so nothing downstream knew the pipeline had ever named a type.
+//
+// EXACT lowercase name match ONLY, deliberately. A slug-level fallback was proposed and dropped:
+// it would newly RESOLVE types that exact matching misses today, which is a live behaviour change
+// to document_type_id on real installs, smuggled into a slice whose kill switch is supposed to
+// make OFF byte-identical. If it's worth having it's worth measuring on its own.
+//
+// Returns { id, unmatchedName }. unmatchedName is set ONLY when a name was detected and matched
+// nothing — never for a detection that returned nothing at all (there is no name to offer).
+// Kill switch DETECTED_TYPE_NUDGE=0 ⇒ unmatchedName always null ⇒ column stays NULL ⇒ inert.
+function _resolveDetectedType(db, name) {
+  const out = { id: null, unmatchedName: null };
+  const detected = (name == null ? '' : String(name)).trim();
+  if (!detected) return out;
+  try {
+    const docTypes = require('../../../database/modules/document_types');
+    const match = docTypes.getAllWithFields(db).find(
+      dt => dt.name.toLowerCase() === detected.toLowerCase()
+    );
+    if (match) { out.id = match.id; return out; }
+  } catch { return out; }        // a lookup failure must never invent a suggestion
+  if (process.env.DETECTED_TYPE_NUDGE === '0') return out;
+  out.unmatchedName = detected;
+  return out;
+}
+
 function _reprocessGenericAdopt(db, priorTypeId, resultDocumentType) {
   if (priorTypeId != null || resultDocumentType) return null;
   return _genericFallbackId(db, null);
@@ -1165,12 +1196,17 @@ function register(ctx) {
     const _prior = db.prepare('SELECT document_type_id FROM documents WHERE id = ?').get(docId);
     const priorTypeId = _prior ? _prior.document_type_id : null;
     let reprocDocTypeId = null, reprocType = null;
+    // Re-derived on EVERY reprocess, both directions (mig 51). Go-forward: a doc whose fresh
+    // detection names an uninstalled type gets the stamp; a doc that NOW resolves to a real type
+    // gets it CLEARED. The clear is what stops a stale suggestion outliving the type being added.
+    let reprocDetectedName = null;
     if (result.document_type) {
       const docTypesMod = require('../../../database/modules/document_types');
       reprocType = docTypesMod.getAllWithFields(db).find(
         dt => dt.name.toLowerCase() === result.document_type.toLowerCase()
       ) || null;
       if (reprocType) reprocDocTypeId = reprocType.id;
+      reprocDetectedName = _resolveDetectedType(db, result.document_type).unmatchedName;
     }
     let flip = null;
     if (reprocDocTypeId != null && priorTypeId != null && reprocDocTypeId !== priorTypeId) {
@@ -1215,6 +1251,7 @@ function register(ctx) {
          keyword_fingerprint = ?,
          supplier_name       = COALESCE(?, supplier_name),
          ocr_text            = COALESCE(?, ocr_text),
+         detected_type_name  = ?,
          review_acknowledged_at = NULL
        WHERE id = ?`
     ).run(
@@ -1226,6 +1263,9 @@ function register(ctx) {
       result.keyword_fingerprint ? JSON.stringify(result.keyword_fingerprint) : null,
       result.supplier_name      || null,
       result.ocr_text           || null,
+      // Plain assignment, NOT COALESCE: null must actually CLEAR the stamp. COALESCE here would
+      // make the suggestion permanent — it would survive the very act of adding the type.
+      reprocDetectedName,
       docId
     );
 
@@ -2410,12 +2450,17 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
   // Resolve document_type_id from the detected type name so the review queue
   // has type_slug populated and anchors/hints are tagged correctly.
   let document_type_id = null;
+  let detectedTypeName = null;
   if (msg.document_type) {
-    const allTypes = docTypes.getAllWithFields(db);
-    const match = allTypes.find(
-      dt => dt.name.toLowerCase() === msg.document_type.toLowerCase()
-    );
-    if (match) document_type_id = match.id;
+    const res = _resolveDetectedType(db, msg.document_type);
+    document_type_id = res.id;
+    // The type was NAMED but this install doesn't have it. Keep the name so Review can offer to
+    // add it. The doc deliberately stays UNTYPED rather than adopting the generic type: generic is
+    // equally unfilable (trust.js refuses 'generic-type' as flatly as 'no-type'), but it would
+    // overwrite the type with one we KNOW is wrong when a better answer is one admin click away,
+    // and it would move the filing {docType} token and the learning scope onto general_document.
+    // Generic remains the answer for detection == None only — do not move it out of the else.
+    detectedTypeName = res.unmatchedName;
   } else {
     // Generic Document fallback: detection returned None → adopt the General Document
     // type when enabled (kill-switched; review-bound via the trust.js refusal).
@@ -2442,6 +2487,7 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
       ? JSON.stringify(msg.keyword_fingerprint) : null,
     ocr_text:           msg.ocr_text      || null,
     page_count:         msg.page_count    || null,
+    detected_type_name: detectedTypeName,
   });
 
   const docId = docResult.lastInsertRowid;
@@ -2713,6 +2759,7 @@ module.exports = {
   handleFileMessage: _handleFileMessage,
   flushPendingDrains: _flushPendingDrains,
   _genericFallbackId,        // Generic Document fallback pins (test_generic_fallback_mapping.js)
+  _resolveDetectedType,      // mig-51 detected-type-nudge pins (test_detected_type_nudge.js)
   _reprocessGenericAdopt,
   _autoTitleEnv,             // Auto-Title spawn env (shared with the watch batch)
   drainOriginalToFolder,

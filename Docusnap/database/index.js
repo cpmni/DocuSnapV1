@@ -1012,6 +1012,25 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 50 applied: documents.supplier_pin column added (NULL-inert)');
   }
 
+  // Migration 51: the type the pipeline DETECTED when this install doesn't HAVE it.
+  // Detection scores types from the SHIPPED config/keyword_patterns.json document_type_keywords
+  // buckets, which exist independently of the types an install actually has (Delivery Note is a
+  // PRESET, not a built-in). A confident "Delivery Note" that maps to no installed type used to be
+  // discarded, leaving the doc untyped with the name nowhere on record. Stored so Review can offer
+  // to ADD the type. NULL-inert: NULL means "nothing to suggest", which is the normal case.
+  // Deliberately name-only — no confidence column. The emitted type_confidence is a keyword-bucket
+  // heading score, not OCR character accuracy, and document_type can be overridden by a matched
+  // template while type_confidence never is, so the pair is not reliably about the same thing
+  // (Oracle C2). Showing it as a "%" would invite exactly the wrong reading.
+  if (!applied.has(51)) {
+    if (tableExists(db, 'documents') && !hasColumn(db, 'documents', 'detected_type_name')) {
+      try { db.exec('ALTER TABLE documents ADD COLUMN detected_type_name TEXT'); }
+      catch (e) { console.warn(`  migration 51 documents.detected_type_name: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (51)').run();
+    console.log('JS migration 51 applied: documents.detected_type_name column added (NULL-inert)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the
