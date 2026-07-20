@@ -315,17 +315,12 @@ def _supplier_identity_decision(existing: dict | None, candidate: dict | None) -
 # company/address tokens only (a Thornbury fingerprint polluted with "Delivery"/"Docket" must NOT
 # score as "present" on a Cascade DELIVERY DOCKET — the #1/#42 collision-slip class, where the wrong
 # supplier's leaked doc-type words push its branding ratio above the threshold and suppress the flag).
-_BRANDING_STOPWORDS = frozenset({
-    "delivery", "docket", "note", "notes", "invoice", "order", "purchase", "sales",
-    "statement", "remittance", "receipt", "quote", "quotation", "worksheet",
-    "credit", "debit", "advice", "proforma", "job", "copy", "original",
-})
-# Shared branding-evidence constants — ONE definition for the late conflict FLAG
-# (_flag_branding_conflict) and the Stage-0.9 text-agreement GATE (identity text-first).
-# K: below this many distinctive words a supplier is UNJUDGEABLE (fail-safe, never "absent").
-# PRESENT: own_ratio above this = the supplier's own branding IS on the page.
-_BRANDING_MIN_WORDS = 3
-_BRANDING_PRESENT_RATIO = 0.25
+# THE definitions moved to template_matcher.py (TEMPLATE_GATE_DISTINCTIVE, 2026-07-20) so the
+# Stage-0 gate and this flag judge "distinctive" by ONE rule — template_matcher is the leaf, this
+# module aliases. Two definitions would drift, and the drift was the Northgate/Vellum misfile class.
+_BRANDING_STOPWORDS     = template_matcher._BRANDING_STOPWORDS
+_BRANDING_MIN_WORDS     = template_matcher._BRANDING_MIN_WORDS
+_BRANDING_PRESENT_RATIO = template_matcher._BRANDING_PRESENT_RATIO
 
 
 # ── Branding evidence (shared: the late conflict FLAG + the text-agreement GATE) ──────────
@@ -360,7 +355,17 @@ def _letterhead_type_phrases(patterns):
 
 def _branding_banks(templates, norm):
     """{norm_issuer: {'name': str, 'words': set}} — keyed by the template's DOMINANT confirmed
-    issuer (else its name); value = its distinctive branding tokens."""
+    issuer (else its name); value = its distinctive branding tokens.
+
+    BRANDING_DISTINCTIVE_TOKENS (default ON, 2026-07-20 — the slice-2 half of the distinctive-token
+    train; must ship WITH the Stage-0 gate so the two banks can't drift, Oracle condition D): banks
+    use the SHARED template_matcher._distinctive_tokens, which additionally drops generic vocabulary,
+    calendar words and type-word PREFIXES ('INV', split off "INV-12345" at harvest). The junk cuts
+    both ways: for a WRONG supplier those fragments are the likeliest page hits (own_ratio inflated
+    above the 0.25 present-bar → the conflict flag SUPPRESSED — the same class as the misfile gate
+    defeat, through the other door); for the RIGHT supplier they dilute the denominator (false
+    flags). =0 restores the legacy len>=3 + type-stopword filter byte-identically."""
+    distinctive = os.environ.get("BRANDING_DISTINCTIVE_TOKENS", "1") != "0"
     banks = {}
     for t in (templates or []):
         iss = (t.get("dominant_supplier") or "").strip() or (t.get("name") or "").strip()
@@ -368,10 +373,13 @@ def _branding_banks(templates, norm):
         if not iss or not kf:
             continue
         b = banks.setdefault(norm(iss), {"name": iss, "words": set()})
-        for w in kf:
-            wl = str(w or "").strip().lower()
-            if len(wl) >= 3 and wl not in _BRANDING_STOPWORDS:
-                b["words"].add(wl)   # distinctive branding tokens only (doc-type words stripped)
+        if distinctive:
+            b["words"].update(template_matcher._distinctive_tokens(kf))
+        else:
+            for w in kf:
+                wl = str(w or "").strip().lower()
+                if len(wl) >= 3 and wl not in _BRANDING_STOPWORDS:
+                    b["words"].add(wl)   # distinctive branding tokens only (doc-type words stripped)
     return banks
 
 
