@@ -92,6 +92,7 @@ _GENERIC_NAME_TOKENS = frozenset({
     "ltd", "limited", "plc", "inc", "llc", "llp", "gmbh", "corp", "company", "group",
     "holdings", "office", "offices", "services", "service", "supplies", "systems",
     "solutions", "trading", "registered", "enterprises", "international", "the", "and",
+    "document", "documents",
 })
 
 

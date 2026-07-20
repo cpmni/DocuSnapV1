@@ -477,12 +477,18 @@ def main():
             _deskew_pages = bool(getattr(args, 'deskew_pages', False)) and os.environ.get('DESKEW_PAGES', '1') != '0'
             _deskew_min_angle = max(0.2, min(5.0, float(getattr(args, 'deskew_min_angle', 0.2) or 0.2)))
             _raw_pages = [] if _deskew_pages else None
+            # PAGE-0 GEOMETRY hand-off (letterhead height ranking): filled only when page 0 was
+            # freshly OCR'd — empty on a cached reprocess (the pairing would be stale) and on a
+            # born-digital page 0 (exact vector text, no word boxes) → consumers fall back to
+            # text-only. Empty dict ⇒ None into engine.extract (byte-identical no-geometry path).
+            _page0_geom = {}
             ocr_text, page_images = extract_text_and_images(
                 filepath, _enh, born_digital=args.born_digital, engine=ocr_engine,
                 cached_text=(_cached if (_cached and _cached.strip()) else None),
                 auto_rotate=getattr(args, 'auto_rotate', False), rotations_out=_rotations,
                 provenance_out=_provenance,
-                deskew_pages=_deskew_pages, deskew_min_angle=_deskew_min_angle, raw_pages_out=_raw_pages)
+                deskew_pages=_deskew_pages, deskew_min_angle=_deskew_min_angle, raw_pages_out=_raw_pages,
+                page0_words_out=_page0_geom)
             if any(_rotations):
                 log(f"  auto-rotate: {[r for r in _rotations if r]} (clockwise°) on {filepath.name}")
 
@@ -783,6 +789,7 @@ def main():
                 page_provenance = _provenance,
                 identity_shadow = args.identity_shadow,
                 raw_page0       = (_raw_pages[0] if _raw_pages else None),
+                page0_geometry  = (_page0_geom or None),   # empty (cached/born-digital p0) ⇒ None
             )
 
             # Pull out metadata keys before sanitising

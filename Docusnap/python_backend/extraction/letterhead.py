@@ -30,10 +30,12 @@ NO NEW VOCABULARY. Every test below is an existing, reviewed primitive:
   · keyword._is_plausible_supplier_name — the shared garble/chrome gate, already mirrored in
     database/modules/learning.js, so reusing it UNCHANGED adds no drift surface.
 
-DELIBERATELY NOT USED: font size / "largest text on the page". The word geometry that would
-express it is computed and then discarded in ocr/tesseract.py (the engine receives a plain
-string), so a height signal would need new plumbing. Line ORDER is the usable proxy and it is
-sound only because tesseract.py rebuilds page text from word geometry into visual rows.
+FONT SIZE — NOW PLUMBED (the geometry slice, 2026-07-20 late evening). The word geometry is no
+longer discarded: reconstruct_page_text's words_out hand-off threads page-0 rows/heights/med_h
+through extract_text_and_images → engine.extract(page0_geometry) → pick_issuer(geometry=...).
+When present, the GEOMETRY ARM ranks the gate-surviving candidates by LINE-level height ratio to
+med_h (see _pick_by_height); when absent (cached reprocess, born-digital page 0, any mismatch)
+the reader is byte-identical to the text-only version below.
 
 ⚠ THE STOP RULE (Oracle, 2026-07-20). Text position cannot distinguish an issuer letterhead from
 a RECIPIENT block that merely sits higher on the page — an uncaptioned window-envelope address
@@ -47,8 +49,9 @@ anything else (a column break) is rejected wholesale, because splitting on colum
 exactly what would admit a right-hand recipient column; a strapline or second trading name in the
 band triggers the abstain; and lowercase-initial brands ("easyJet") fail the name shape.
 
-⚠⚠ STATUS: DARK AND UNFINISHED. `LETTERHEAD_ISSUER` is DEFAULT OFF and should stay off until the
-geometry slice below lands. MEASURED 2026-07-20:
+⚠⚠ STATUS: DARK — `LETTERHEAD_ISSUER` is DEFAULT OFF. The geometry slice HAS now landed (below);
+the flag stays off until the slice MEASURES well on the real corpus AND the flip passes the
+owner + Oracle gate. The pre-geometry measurement that forced it, 2026-07-20:
     · synthetic Demo Docs corpus, 45 docs cold : 31 correct suggestions, 0 wrong  (69%)
     · REAL scanned invoices, 14 docs           : **0 suggestions**                 (0%)
 The gap is the whole story, and it is not a tuning miss — it is the design's ceiling. Real
@@ -94,6 +97,117 @@ _LETTERHEAD_NAME_RE = re.compile(r"^%s(?:[ ]%s){0,6}$" % (_LH_WORD, _LH_WORD))
 _MIN_CORROBORATING_LINES = 2   # address-ish lines beneath, when there is no legal suffix
 _LOOKAHEAD_LINES = 3
 
+# ── THE GEOMETRY ARM (2026-07-20 late evening — the slice the STOP RULE above demanded) ─────────
+# Measured on the real invoices (the 0-of-14 set): the document TITLE is the largest text
+# (ratio 2.87 to med_h) and the issuer is only FOURTH (1.26) — so "largest text in the top band"
+# alone is WRONG. The design the data supports: geometry RANKS, the existing text filters GATE.
+# With type phrases, caption lines and implausible values gated out, the issuer becomes the
+# largest SURVIVING candidate. Two hard-won rules from the same measurement:
+#   · heights are computed at LINE level (upper-median over the row's words — "Cit" h=64 +
+#     "Office" h=101 on one visual row; word heights are noisy, the row is not);
+#   · always RATIO to med_h, never absolute pixels (DPI-invariant — this project has a documented
+#     DPI-hint bug in exactly that shape).
+# The floors below were set from that measurement (real issuer 1.26; body text ≡ 1.0) and move
+# ONLY on aggregate corpus measurement, never per-document.
+_GEOM_MIN_RATIO = 1.15   # letterhead-sized: decisively above the page's median word height
+_GEOM_MIN_LEAD  = 1.10   # decisively larger than the runner-up candidate (else abstain: two
+                         # comparably-sized companies is the same ambiguity as the text arm's)
+
+
+def _distinctive_core(cand):
+    """True when the candidate has at least one DISTINCTIVE, digit-free, non-generic token. The
+    geometry arm drops the text arm's corroboration rule, and without this gate a GARBLED type
+    heading — 'INVOIC E', huge on the page, missed by the exact type-phrase exclusion — would rank
+    first and be suggested as a company. template_matcher._distinctive_tokens is the slice-1
+    primitive built for exactly this garble family ('invoic' is a proper prefix of 'invoice').
+    _GENERIC_NAME_TOKENS is applied too — MEASURED on the owner's real worksheets (2026-07-20 late
+    evening): 'SERVICE WORKSHEET' survived the type-word strip on 'service' alone and was suggested
+    as the company 17 times; a stacked wordmark's bare 'SOLUTIONS' row likewise. HONEST COST,
+    accepted: a company genuinely NAMED from generic words ("Document Solutions") is unsuggestable
+    — the reader abstains, and empty beats a guess."""
+    from extraction.template_matcher import _distinctive_tokens, _GENERIC_NAME_TOKENS
+    toks = [t for t in re.findall(r"[A-Za-z0-9]{2,}", cand) if not any(ch.isdigit() for ch in t)]
+    return bool(_distinctive_tokens(toks) - _GENERIC_NAME_TOKENS)
+
+
+def _row_height(row_words):
+    """A visual row's height: the UPPER-MEDIAN of its words' heights (the same len//2 convention
+    med_h itself uses), so one clipped ascender can't halve a row and one smear can't double it."""
+    hs = sorted(w[3] for w in row_words if w[3] > 0)
+    return hs[len(hs) // 2] if hs else 0
+
+
+def _row_segments(line_text, row_words):
+    """[(segment_text, segment_words)] — the line split at 4+-space COLUMN BREAKS, each segment
+    paired with ITS OWN words. The pairing is positional and exact: reconstruct_page_text builds
+    the line by joining the row's words left-to-right with single spaces inside a column and the
+    4-space marker between columns, so segment i consumes the next len(segment.split()) words.
+
+    WHY SEGMENTS ARE SAFE HERE AND NOWHERE ELSE (measured 2026-07-20 late evening): the real
+    SuperStore letterhead prints the name and the title on ONE visual row ('Superstore    INVOICE'
+    @2.87 joined), so the whole-line candidate fails the name shape and the motivating case never
+    even reached the ranker. The module's own warning — "splitting on column breaks is exactly
+    what would admit a right-hand recipient column" — is about the TEXT arm, where position was
+    the only signal; in the geometry arm a split segment still has to (a) pass every text gate,
+    (b) be letterhead-SIZED by its own words' heights, and (c) decisively beat the runner-up. A
+    body-sized right-column recipient fails (b); a large second company trips (c)'s abstain."""
+    segs = [s.strip() for s in re.split(r" {4,}", line_text) if s.strip()]
+    out, wi = [], 0
+    for s in segs:
+        n = len(s.split())
+        out.append((s, row_words[wi:wi + n]))
+        wi += n
+    return out
+
+
+def _pick_by_height(band_lines, geometry, is_candidate):
+    """The geometry verdict, or None (→ the text arm runs). Candidates are the band lines' COLUMN
+    SEGMENTS (see _row_segments), each gated by `is_candidate` and scored by its own words'
+    upper-median height as a RATIO to med_h. None whenever the pairing cannot be trusted
+    (missing/mismatched rows), the top survivor is not letterhead-sized (< _GEOM_MIN_RATIO), or
+    two survivors are comparably sized (< _GEOM_MIN_LEAD) — every uncertain path falls back,
+    never guesses."""
+    med_h = geometry.get("med_h") or 0
+    rows = geometry.get("rows") or []
+    glines = geometry.get("lines") or []
+    if med_h <= 0 or not rows or len(rows) != len(glines):
+        return None
+    by_text = {}
+    for gi, gl in enumerate(glines):
+        key = gl.strip()
+        if key and key not in by_text:      # first occurrence wins — the band IS the top of page 0
+            by_text[key] = gi
+    scored = []
+    for bl in band_lines:
+        gi = by_text.get(bl.strip())
+        if gi is None:
+            continue                        # e.g. a truncated marker-line head — text arm's problem
+        for seg, seg_words in _row_segments(glines[gi].strip(), rows[gi]):
+            if len(seg_words) != len(seg.split()):
+                continue                    # pairing drifted — never score words that aren't the segment's
+            if not is_candidate(seg):
+                continue
+            h = _row_height(seg_words)
+            if h > 0:
+                scored.append((h / med_h, seg))
+    if not scored:
+        return None
+    scored.sort(key=lambda t: -t[0])
+    if scored[0][0] < _GEOM_MIN_RATIO:
+        return None
+    # FRAGMENT → FULL NAME (measured on the real corpus, 2026-07-20): a logo WORDMARK often prints
+    # one word of the name huge ('Cloud' at 3.5×) while the full name recurs at letterhead size
+    # ('Cloud VPS' at 1.7× in the address block). The fragment must never beat its own superset —
+    # prefer the highest-ranked surviving candidate whose tokens CONTAIN the top pick's.
+    top_toks = {t.lower() for t in scored[0][1].split()}
+    for ratio, cand in scored[1:]:
+        c_toks = {t.lower() for t in cand.split()}
+        if top_toks < c_toks:
+            return cand
+    if len(scored) > 1 and scored[0][0] < scored[1][0] * _GEOM_MIN_LEAD:
+        return None
+    return scored[0][1]
+
 
 def _disqualified(line):
     """Reasons a band line can never be an issuer name. All reused from title_pick."""
@@ -107,10 +221,13 @@ def _disqualified(line):
                 or _POSTCODE_RE.search(s) or _STREET_RE.search(s))
 
 
-def pick_issuer(ocr_text, detected_title=None, type_phrases=None):
+def pick_issuer(ocr_text, detected_title=None, type_phrases=None, geometry=None):
     """The issuer name from a letterhead, or None. `detected_title` is the document's own detected
     title and `type_phrases` the doc-type vocabulary — both EXCLUDED so "INVOICE" can never be
-    read as a company. Returns None whenever the evidence is ambiguous: empty beats a guess."""
+    read as a company. `geometry` (optional) is the page-0 word-geometry hand-off; when present
+    the GEOMETRY ARM runs first — height RANKS what the text gates let SURVIVE — and the text arm
+    below is the unchanged fallback, so a None geometry is byte-identical to the pre-slice reader.
+    Returns None whenever the evidence is ambiguous: empty beats a guess."""
     lines = chrome_band.issuer_chrome_lines(ocr_text)
     if not lines:
         return None
@@ -125,6 +242,29 @@ def pick_issuer(ocr_text, detected_title=None, type_phrases=None):
     # the CUSTOMER sits at index 0 with its own address beneath (corroboration satisfied, single
     # candidate, no abstain) and the issuer's letterhead sits below at index 4+, unseen. Looking at
     # the whole band turns that from a WRONG SUGGESTION into an abstain, which costs only yield.
+    #
+    # GEOMETRY ARM — the measured design: the real issuer ("SuperStore", sharing its visual row
+    # with the title, nothing beneath it to corroborate) is invisible to the text arm but is the
+    # LARGEST SURVIVING text by a clear margin. Candidates here are COLUMN SEGMENTS (see
+    # _row_segments) run through the same text gates PLUS the distinctive-core gate (a garbled
+    # type heading, or a generic-vocabulary caption like 'SERVICE WORKSHEET', has shape but no
+    # distinctive token). Every uncertain verdict falls through to the text arm, so on documents
+    # where geometry can't decide, behaviour is exactly the pre-slice reader.
+    if geometry and geometry.get("rows"):
+        def _geom_candidate(seg):
+            s = seg.strip()
+            if not s or s.lower() in excluded or _disqualified(s):
+                return False
+            if not _LETTERHEAD_NAME_RE.match(s):
+                return False
+            if not keyword._is_plausible_supplier_name(s):
+                return False
+            return _distinctive_core(s)
+        pick = _pick_by_height(lines, geometry, _geom_candidate)
+        if pick is not None:
+            return pick
+
+    # TEXT ARM — unchanged from the pre-geometry reader: whole band lines, gates + corroboration.
     candidates = []
     for i, line in enumerate(lines):
         cand = line.strip()

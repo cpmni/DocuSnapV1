@@ -2253,7 +2253,8 @@ class ExtractionEngine:
                 page_text_lines: list | None = None,
                 page_provenance: list | None = None,
                 identity_shadow: bool = False,
-                raw_page0 = None) -> dict:
+                raw_page0 = None,
+                page0_geometry: dict | None = None) -> dict:
         """
         Run extraction pipeline according to current mode.
         Returns dict with field values + metadata keys prefixed with _.
@@ -4036,6 +4037,10 @@ class ExtractionEngine:
                     # suggested "TAX INVOICE" as the company name.
                     detected_title=results.get("_document_type"),
                     type_phrases=_letterhead_type_phrases(self.patterns),
+                    # PAGE-0 GEOMETRY (the geometry slice, 2026-07-20): word boxes + med_h from the
+                    # fresh page-0 OCR read. None on a cached reprocess / born-digital page 0 —
+                    # pick_issuer falls back to its text-only path. Height RANKS, text filters GATE.
+                    geometry=page0_geometry,
                 )
             except Exception as _e:                  # a suggestion must never break an extraction
                 _lh = None

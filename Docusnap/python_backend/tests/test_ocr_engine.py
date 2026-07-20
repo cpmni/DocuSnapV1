@@ -55,7 +55,7 @@ class SpyEngine:
     """Records read_page calls; returns a fixed marker (no real OCR)."""
     name = "spy"
     def __init__(self): self.calls = 0
-    def read_page(self, img, enhance_params=None, dpi=None):
+    def read_page(self, img, enhance_params=None, dpi=None, words_out=None):  # words_out: the geometry hand-off kwarg (stale-stub trap)
         self.calls += 1
         return "SPY"
 
@@ -80,7 +80,7 @@ with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
 # ── 6. default (engine=None) is the Tesseract path -> reconstruct_page_text ───────
 with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
     png = _png(td)
-    tess_mod.reconstruct_page_text = lambda img, config="--oem 3 --psm 3", dpi=None: "DEFAULT-TESS"
+    tess_mod.reconstruct_page_text = lambda img, config="--oem 3 --psm 3", dpi=None, **kw: "DEFAULT-TESS"   # **kw: words_out (geometry hand-off)
     try:
         text, _pages = tess_mod.extract_text_and_images(png, None)   # no engine arg
         check("default engine routes through Tesseract reconstruct_page_text", text == "DEFAULT-TESS")

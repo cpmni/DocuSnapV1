@@ -23,7 +23,7 @@ class SpyEngine:
     """Records whether the full-page OCR actually ran, and returns a marker so we can tell a fresh
     read from a served cache."""
     def __init__(self): self.calls = 0
-    def read_page(self, img, enhance_params, dpi=None):
+    def read_page(self, img, enhance_params, dpi=None, words_out=None):  # words_out: the geometry hand-off kwarg (stale-stub trap)
         self.calls += 1
         return "FRESH_OCR_TEXT"
 

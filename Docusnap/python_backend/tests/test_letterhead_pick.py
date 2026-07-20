@@ -145,6 +145,121 @@ for name, body in (("Copperfield Electrical Ltd", "Copperfield Electrical Ltd\nx
     check("title_pick rejects '%s' as a title (reason=%s) AND letterhead accepts it"
           % (name, reason), reason in ("company-name", "address-block") and pick_issuer(body) == name)
 
+# ═══════════════════════════════════════════════════════════════════════════════════════════
+# THE GEOMETRY ARM (2026-07-20 late evening). The 0-of-14 real-invoice measurement proved the
+# text arm's ceiling: "SuperStore" is line 1 with NOTHING beneath it to corroborate — but it is
+# the largest SURVIVING text on its page (ratio 1.26 to med_h; the TITLE at 2.87 is gated out).
+# Geometry RANKS, the text filters GATE. Heights are LINE-level upper-medians; ratios to med_h.
+from extraction.letterhead import _distinctive_core, _pick_by_height
+
+
+def geom(lines_heights, med_h):
+    """Build a hand-off dict: lines_heights = [(line_text, row_height_px)]. ONE WORD PER TOKEN —
+    the segment ranker pairs a segment's tokens with the row's words positionally and refuses to
+    score on a mismatch, so a fixture must mirror reconstruct_page_text's real contract."""
+    lines = [t for (t, _h) in lines_heights]
+    rows = []
+    for i, (t, h) in enumerate(lines_heights):
+        rows.append([(10 + 60 * j, 10 + 100 * i, 50, h, tok, 90)
+                     for j, tok in enumerate(t.split())])
+    return {"lines": lines, "rows": rows, "med_h": med_h, "words": [], "size": (2480, 3508)}
+
+
+print("\n-- geometry arm: the measured real-invoice shape (the 0-of-14 class) --")
+SUPERSTORE = "SuperStore\nINVOICE\n# 32104\nBill To\nMegan Harris\n12 Ash Grove"
+SS_GEOM = geom([("SuperStore", 39), ("INVOICE", 89), ("# 32104", 42)], med_h=31)
+check("RED PROOF: text-only (geometry=None) still finds nothing (the measured 0/14)",
+      pick_issuer(SUPERSTORE, type_phrases=PROD_TYPE_PHRASES) is None)
+check("with geometry, 'SuperStore' IS suggested (largest surviving candidate, ratio 1.26)",
+      pick_issuer(SUPERSTORE, type_phrases=PROD_TYPE_PHRASES, geometry=SS_GEOM) == "SuperStore")
+check("the TITLE never wins despite being the largest text (gated, not ranked)",
+      pick_issuer(SUPERSTORE, detected_title="Invoice", type_phrases=PROD_TYPE_PHRASES,
+                  geometry=SS_GEOM) == "SuperStore")
+
+print("\n-- geometry arm: the garbled-title guard (distinctive core) --")
+check("'INVOIC E' has no distinctive core ('invoic' is a prefix of 'invoice')",
+      _distinctive_core("INVOIC E") is False)
+check("'SuperStore' has one", _distinctive_core("SuperStore") is True)
+GARBLE = "SuperStore\nINVOIC E\nNo. INV-32104\nBill To\nMegan Harris"
+G_GEOM = geom([("SuperStore", 39), ("INVOIC E", 89), ("No. INV-32104", 30)], med_h=31)
+check("a GARBLED title (huge, missed by exact type-phrase exclusion) is never suggested",
+      pick_issuer(GARBLE, type_phrases=PROD_TYPE_PHRASES, geometry=G_GEOM) == "SuperStore")
+
+print("\n-- geometry arm: the two defects the REAL-corpus measurement caught (2026-07-20) --")
+# (1) The real SuperStore layout puts the name and the title on ONE VISUAL ROW — the whole-line
+# candidate 'Superstore    INVOICE' fails the name shape, so line-level ranking missed the
+# motivating case entirely. Segments fix it: each column segment is gated and ranked by ITS OWN
+# words' heights (Superstore@1.26 vs INVOICE@2.87 on the same row; INVOICE is gated out).
+JOINED = "Superstore    INVOICE\n# 32104\nDate: Dec 30 2012\nBill To\nMegan Harris"
+J_GEOM = {"lines": ["Superstore    INVOICE", "# 32104", "Date: Dec 30 2012"],
+          "rows": [[(10, 10, 220, 39, "Superstore", 90), (700, 10, 260, 89, "INVOICE", 90)],
+                   [(10, 110, 30, 37, "#", 90), (50, 110, 110, 37, "32104", 90)],
+                   [(10, 210, 70, 31, "Date:", 90), (90, 210, 60, 31, "Dec", 90),
+                    (160, 210, 40, 31, "30", 90), (210, 210, 70, 31, "2012", 90)]],
+          "med_h": 31, "words": [], "size": (2480, 3508)}
+check("RED PROOF: text-only finds nothing on the joined-row layout",
+      pick_issuer(JOINED, type_phrases=PROD_TYPE_PHRASES) is None)
+check("the name SEGMENT wins by its own words' height (the title segment is gated, not ranked)",
+      pick_issuer(JOINED, type_phrases=PROD_TYPE_PHRASES, geometry=J_GEOM) == "Superstore")
+# (2) The owner's real worksheets: 'SERVICE WORKSHEET' (huge) survived the type-word strip on
+# 'service' alone and was suggested as the COMPANY 17 times; the stacked wordmark's bare
+# 'SOLUTIONS' row likewise. Generic-name vocabulary now gates the distinctive core.
+check("'SERVICE WORKSHEET' has no distinctive core (generic + type word)",
+      _distinctive_core("SERVICE WORKSHEET") is False)
+check("bare 'SOLUTIONS' has no distinctive core", _distinctive_core("SOLUTIONS") is False)
+WKST = "SERVICE WORKSHEET\nDOCUMENT\nSOLUTIONS\nTicket    Location"
+W2_GEOM = geom([("SERVICE WORKSHEET", 60), ("DOCUMENT", 50), ("SOLUTIONS", 51),
+                ("Ticket    Location", 28)], med_h=31)
+check("a worksheet page yields NO suggestion (empty beats 'SERVICE WORKSHEET' as a company)",
+      pick_issuer(WKST, type_phrases=PROD_TYPE_PHRASES, geometry=W2_GEOM) is None)
+
+# (3) The wordmark-fragment rule, also from the real corpus: 'Cloud' prints at 3.5× in the logo
+# wordmark while the full 'Cloud VPS' recurs at 1.7× — the fragment must never beat its superset.
+CLOUD = "f    Cloud    VPS\nCloud VPS\n35997 Better St\nKansas City, KS 66102"
+C_GEOM = {"lines": ["f    Cloud    VPS", "Cloud VPS", "35997 Better St"],
+          "rows": [[(10, 10, 40, 50, "f", 90), (100, 10, 300, 109, "Cloud", 90),
+                    (500, 10, 200, 109, "VPS", 90)],
+                   [(10, 130, 120, 52, "Cloud", 90), (140, 130, 80, 52, "VPS", 90)],
+                   [(10, 230, 90, 31, "35997", 90), (110, 230, 90, 31, "Better", 90),
+                    (210, 230, 60, 31, "St", 90)]],
+          "med_h": 31, "words": [], "size": (2480, 3508)}
+check("a huge wordmark FRAGMENT yields to its full-name superset ('Cloud' → 'Cloud VPS')",
+      pick_issuer(CLOUD, type_phrases=PROD_TYPE_PHRASES, geometry=C_GEOM) == "Cloud VPS")
+check("'Location' is caption vocabulary, never a company (GENERIC_SINGLES)",
+      pick_issuer("Location\nSomething Else Entirely\nBill To\nX",
+                  type_phrases=PROD_TYPE_PHRASES,
+                  geometry=geom([("Location", 60), ("Something Else Entirely", 30)],
+                                med_h=31)) is None)
+
+print("\n-- geometry arm: abstains and fallbacks (empty beats a guess) --")
+TWO_BIG = "Alpha Holdings\nBravo Interiors\nINVOICE\nBill To\nSomeone"
+TB_GEOM = geom([("Alpha Holdings", 40), ("Bravo Interiors", 39), ("INVOICE", 80)], med_h=30)
+check("two comparably-sized companies => geometry abstains (and the text arm's own abstain holds)",
+      pick_issuer(TWO_BIG, type_phrases=PROD_TYPE_PHRASES, geometry=TB_GEOM) is None)
+SYNTH = "Fernbank Supplies Ltd\n12 Weaver Street\nManchester M1 4AB\nINVOICE"
+SY_GEOM = geom([("Fernbank Supplies Ltd", 31), ("12 Weaver Street", 30),
+                ("Manchester M1 4AB", 30), ("INVOICE", 60)], med_h=30)
+check("a body-sized letterhead (ratio ~1.03 < floor) falls back to the TEXT arm and still resolves"
+      " (the synthetic corpus's yield is preserved)",
+      pick_issuer(SYNTH, type_phrases=PROD_TYPE_PHRASES, geometry=SY_GEOM) == "Fernbank Supplies Ltd")
+BROKEN = {"lines": ["SuperStore"], "rows": [], "med_h": 31}
+check("a mismatched/broken hand-off degrades to the text arm, never crashes",
+      pick_issuer(SUPERSTORE, type_phrases=PROD_TYPE_PHRASES, geometry=BROKEN) is None)
+check("med_h=0 degrades the same way",
+      pick_issuer(SUPERSTORE, type_phrases=PROD_TYPE_PHRASES,
+                  geometry=geom([("SuperStore", 39)], med_h=0)) is None)
+
+print("\n-- geometry arm: the recipient-first layout the STOP RULE reserved for geometry --")
+WINDOW = ("Megan Harris\n12 Ash Grove\nLeeds LS1 4AB\nBigcorp Industries\nUnit 9 Forge Park\n"
+          "Sheffield S1 2BB")
+W_GEOM = geom([("Megan Harris", 30), ("12 Ash Grove", 30), ("Leeds LS1 4AB", 30),
+               ("Bigcorp Industries", 44), ("Unit 9 Forge Park", 30), ("Sheffield S1 2BB", 30)],
+              med_h=30)
+check("RED PROOF: text-only abstains on the window-envelope layout (two candidates)",
+      pick_issuer(WINDOW, type_phrases=PROD_TYPE_PHRASES) is None)
+check("with geometry the LETTERHEAD-SIZED issuer wins over the body-sized recipient",
+      pick_issuer(WINDOW, type_phrases=PROD_TYPE_PHRASES, geometry=W_GEOM) == "Bigcorp Industries")
+
 print("\n-- purity: no I/O, no env reads, deterministic --")
 _before = dict(os.environ)
 check("repeated calls agree", pick_issuer(VELLUM) == pick_issuer(VELLUM))

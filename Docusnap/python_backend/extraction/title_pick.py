@@ -37,9 +37,13 @@ TITLE_NOUNS = frozenset((
 ))
 
 # A bare generic single word is never a useful title.
+# 'location'/'ticket' added 2026-07-20 (letterhead geometry measurement): table-header caption
+# vocabulary on service/job documents — a bold header cell was letterhead-SIZED and got suggested
+# as a company. Same class as 'date'/'total'; equally useless as a Generic-Document title.
 GENERIC_SINGLES = frozenset((
     "invoice", "statement", "copy", "urgent", "draft", "original", "document", "page",
     "private", "confidential", "important", "attention", "date", "total", "details",
+    "location", "ticket",
 ))
 
 _LEGAL_SUFFIX_RE = re.compile(r"\b(ltd|limited|plc|llp|llc|inc|gmbh|co|company)\.?$", re.I)

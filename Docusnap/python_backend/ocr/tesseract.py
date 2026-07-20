@@ -82,7 +82,7 @@ def _with_dpi(cfg: str, dpi) -> str:
         return cfg
 
 
-def _group_words_into_lines(words, med_h) -> list:
+def _group_words_into_lines(words, med_h, rows_out=None) -> list:
     """Group image_to_data words into reading LINES by visual row, then order columns within each
     row (a label and its far-right value on the SAME physical row stay on one line; a wide intra-row
     x-gap emits a 4-space column break so keyword.py's column-split still separates real columns).
@@ -139,6 +139,12 @@ def _group_words_into_lines(words, med_h) -> list:
     lines = []
     for r in rows:
         row_ws = sorted(r["words"], key=lambda w: w[0])         # left-to-right within the row
+        # rows_out (geometry hand-off, 2026-07-20): the per-row WORD TUPLES, appended PARALLEL to
+        # the returned line strings — rows_out[i] is exactly the words `lines[i]` was built from.
+        # Opt-in and inert (None = no extra work); the letterhead height ranker needs LINE-level
+        # heights ("Cit" h=64 + "Office" h=101 on one row — word heights are noisy, the row is not).
+        if rows_out is not None:
+            rows_out.append(row_ws)
         out = [row_ws[0][4]]
         for a, b in zip(row_ws, row_ws[1:]):
             gap = b[0] - (a[0] + a[2])
@@ -237,7 +243,8 @@ def reconstruct_page_text(img: Image.Image, config: str = "--oem 3 --psm 3", dpi
             pass   # supplementary recovery is additive-only; never break the PSM-3 result
     heights = sorted(wd[3] for wd in words if wd[3] > 0)
     med_h = heights[len(heights) // 2] if heights else 10
-    lines = _group_words_into_lines(words, med_h)
+    _rows = [] if words_out is not None else None
+    lines = _group_words_into_lines(words, med_h, rows_out=_rows)
     # GEOMETRY HAND-OFF (2026-07-20). Everything above computes per-word boxes, per-word confidence
     # and the page's MEDIAN WORD HEIGHT — and the join below has always thrown all of it away, so
     # everything downstream reasons over a bare string. That is why "the biggest text at the top of
@@ -255,6 +262,7 @@ def reconstruct_page_text(img: Image.Image, config: str = "--oem 3 --psm 3", dpi
         words_out["words"] = words          # [(left, top, w, h, text, conf)]
         words_out["med_h"] = med_h          # the DPI-invariant scale reference: compare RATIOS to it
         words_out["lines"] = lines          # the same visual rows the returned text is built from
+        words_out["rows"] = _rows           # per-row word tuples, PARALLEL to `lines` (rows_out)
         words_out["size"] = getattr(img, "size", None)
     return "\n".join(lines)
 
@@ -387,6 +395,7 @@ def extract_text_and_images(
     deskew_pages: bool = False,
     deskew_min_angle: float = 0.2,
     raw_pages_out: list | None = None,
+    page0_words_out: dict | None = None,
 ) -> tuple[str, list[Image.Image]]:
     """
     Extract OCR text from a document file.
@@ -543,7 +552,11 @@ def extract_text_and_images(
             if layer_text is not None:
                 texts.append(layer_text)                                                 # fresh born-digital
             elif needs_scanned_ocr:
-                texts.append(engine.read_page(pages[i], enhance_params, dpi=_RENDER_DPI))  # fresh (straightened) OCR
+                # page0_words_out: the PAGE-0 geometry hand-off (letterhead height ranking) —
+                # filled only on a fresh page-0 OCR read; born-digital page 0 has no word boxes
+                # (exact vector text) and a cache-honoured run reads nothing (cleared below).
+                texts.append(engine.read_page(pages[i], enhance_params, dpi=_RENDER_DPI,
+                                              words_out=(page0_words_out if i == 0 else None)))  # fresh (straightened) OCR
             else:
                 all_fresh = False                                                        # scanned page -> honour cache
     else:
@@ -573,13 +586,19 @@ def extract_text_and_images(
         if provenance_out is not None:
             provenance_out.append('ocr')   # a raster image has no text layer — always OCR
         if (not use_cache) or (deskew_pages and ((_angle != 0.0) or not _deskew_cache_fast)):
-            texts.append(engine.read_page(img, enhance_params, dpi=_idpi))
+            texts.append(engine.read_page(img, enhance_params, dpi=_idpi,
+                                          words_out=page0_words_out))   # a raster IS page 0
         else:
             all_fresh = False   # level raster under cache -> honour the OCR cache
 
     # Prefer freshly-derived text whenever we have it for EVERY page (fully born-digital, or a
     # non-cache run); only fall back to the cache when a scanned/mixed page was skipped under it.
     if use_cache and not all_fresh:
+        # The CACHED text is being returned, so any page-0 geometry captured above belongs to
+        # lines the caller will never see — a stale pairing is worse than none (the documented
+        # cached-reprocess caveat: geometry consumers fall back to text-only on a reprocess).
+        if page0_words_out is not None:
+            page0_words_out.clear()
         return cached_text, pages
     return "\n\n--- PAGE BREAK ---\n\n".join(texts), pages
 
