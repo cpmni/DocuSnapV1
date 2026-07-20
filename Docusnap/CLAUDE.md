@@ -21,11 +21,29 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-07-20) — lean index; full detail in `HANDOVER_2026-07-19.md` + `docs/session-log.md`
-**Branch `feat/reprocess-throughput-autostraighten` — ALL PUSHED through `0107331` (2026-07-20; the
-07-19+07-20 batch of 39 commits went up together, working tree clean). Installer STALE
-`r20260718-0818-bea1028` — a rebuild is owed (identity + workflow + review-UX changes are all
-source-only so far). READ FIRST: `HANDOVER_2026-07-19.md`.**
+## Current session state (2026-07-20) — lean index; full detail in `HANDOVER_2026-07-20.md` + `docs/session-log.md`
+**Branch `feat/reprocess-throughput-autostraighten` — ALL PUSHED through `277a107`, working tree
+clean. Installer `dist\ScanFinder Setup 2.0.0-r20260720-0850-365bada.exe` is ALREADY STALE: it
+predates `04a6af1` (fresh-install type fix) + `277a107` (live template counts), the two fixes that
+matter most on a new DB — REBUILD before the next fresh-install test.
+READ FIRST: `HANDOVER_2026-07-20.md` (then `HANDOVER_2026-07-19.md`).**
+- **OWNER-REPORTED LIVE BUGS FIXED 2026-07-20** (all root-caused from their log + a copy of the
+  second machine's DB, all corpus-gated byte-identical): **`04a6af1` the FRESH-INSTALL TYPE HOLE** —
+  a type detected from the SHIPPED keyword buckets but NOT installed (Delivery Note is a PRESET, not
+  a built-in) left `detected_slug` None, which silently DISARMED **both** type-refuse guards, so a
+  same-supplier PO template stamped its slug on delivery dockets; now the slug is DERIVED
+  (`_slug_from_type_name`, parity with JS `safeSlug`; kill `DETECTED_SLUG_FALLBACK`) ·
+  **`277a107` `templates.confirmed_count` was ALWAYS 0** (only bumped on the taught-confirm branch) —
+  NOT cosmetic: it feeds the sibling tiebreaks at `template_matcher.py:179` + `engine.py:696` and the
+  order templates reach the matcher, all inert at 0; `getAll` now serves the LIVE count
+  (`liveConfirmedCounts` returns **null**, not an empty Map, when uncountable so a fixture without a
+  `documents` table keeps the stored value; kill `TEMPLATE_LIVE_COUNTS`; a pin asserting "getAll is
+  UNTOUCHED" was deliberately flipped) · **`0107331`** a GARBLED caption on the RELOCATED crop (the
+  exact check was relocate-only, the fuzzy check rigid-only — a garbled relocate fell between them) ·
+  **`53ceea9`** Review now says WHY a clean doc waits below the auto-file threshold.
+- **⚠ TWO PRE-EXISTING TEST FAILURES** (verified by stashing — NOT regressions):
+  `database/modules/test_promote_custom_doctype.js` and `python_backend/tests/test_reprocess_type_flip.py`
+  (stale fixture: unpacks 5 values from `doc_overrides`, which returns 6).
 - **WORKFLOW SUITE — engine COMPLETE for single-hop; 2 slices left, neither blocking**: built =
   slice 0 (authz) · 1 (reveal core) · 2 (decision snapshot) · 3 (amount routing) · routing-settings ·
   FYI non-locking · E1 admin cancel. REMAINING = **slice 5 delegation+escalation** (a real feature,
@@ -73,10 +91,17 @@ source-only so far). READ FIRST: `HANDOVER_2026-07-19.md`.**
   auto-file critical-field floor (88); Slice D 256-bit logo detail; OCR warm worker pool; the 2026-07-09→15
   extraction-guard family (see the archive).
 - **Security**: work `SECURITY_BACKLOG.md` (repo root, gitignored, LOCAL-ONLY) one-by-one; proactively
-  flag holes any new feature exposes. **SEC-01/02/06/14 CODE-FIXED 2026-07-19 (`aad2141`+`bd82a9e`,
-  Oracle-signed)** — INERT until deployed to IONOS; owner gates V7 (live REMOTE_ADDR) + V8 (run
-  `php licensing-backend\scripts\test_admin_throttle.php` with WAMP up); the live console will require
-  2FA (break-glass env `LICENSING_ADMIN_ALLOW_NO_2FA=1` once). Next open: SEC-04 (TOFU pairing), SEC-05.
+  flag holes any new feature exposes. **CODE-FIXED + Oracle-signed: SEC-01/02/06/14 (`aad2141`,
+  `bd82a9e`) · SEC-05 (`07d01af` + `98da251` = its Oracle C1/C2/C3) · SEC-13/15/19 (`10bb9e1`).**
+  ALL INERT UNTIL DEPLOYED TO IONOS. Owner gates V7 (live `REMOTE_ADDR` — load-bearing for SEC-01)
+  + V8 (`php licensing-backend\scripts\test_admin_throttle.php` with WAMP up, never run); the live
+  console will REQUIRE 2FA (break-glass env `LICENSING_ADMIN_ALLOW_NO_2FA=1` once).
+  **SEC-05 recovery runbook CHANGED**: the rollback mark now also lives at
+  `%LOCALAPPDATA%\ScanFinder\.time-anchor`, so "delete `%APPDATA%\ScanFinder`" alone no longer
+  un-bricks a machine — delete that file too, or just get it online once (the C2 self-heal).
+  **Next open: SEC-04** (dead pairing gate) — eric-designed, NOT built; client transport+IPC already
+  thread `code`, ship CLIENT field first then core; his own finding to fold in:
+  `backupService._settingExcluded` only filters `licens`, so a pairing code would ride out in backups.
 - **IDENTITY REDESIGN — BUILT 2026-07-20** (owner-signed, Oracle C1–C8 folded; 5 commits
   `3c0a744`→`febdc29`; spec `docs/designs/IDENTITY_TEXT_FIRST_2026-07-19.md` carries the full
   verification ledger). A logo match no longer asserts identity alone: it must AGREE with the page
