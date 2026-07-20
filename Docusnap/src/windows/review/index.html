@@ -507,11 +507,17 @@
       display: flex; flex-direction: column; gap: 6px;
     }
     #review-reason[hidden] { display: none; }
+    /* A CLEAN document that is simply waiting (nothing flagged — it just didn't reach the
+       auto-file threshold) is not a warning: same panel, calm accent, so "needs attention"
+       stays visually distinct from "nothing wrong, just waiting for you". */
+    #review-reason.rr-calm { border-left-color: var(--accent); }
     .rr-lead { font-size: 11.5px; color: var(--text); line-height: 1.45; }
     .rr-cues { display: flex; flex-wrap: wrap; gap: 6px; }
     .rr-cue { font-size: 10px; font-weight: 600; padding: 1px 8px; border-radius: var(--r-pill); cursor: default; }
     .rr-cue.low  { background: var(--err-bg);  color: var(--err); }
     .rr-cue.flag { background: var(--warn-bg); color: var(--warn); }
+    .rr-cue.info { background: var(--accent-bg); color: var(--accent2); }
+    .rr-hint { font-size: 10.5px; color: var(--muted); line-height: 1.4; }
     .rr-notes { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 2px; }
     .rr-notes li { font-size: 10.5px; color: var(--muted); line-height: 1.4; }
     .rr-notes li strong { color: var(--text); font-weight: 600; }

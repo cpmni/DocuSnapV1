@@ -350,6 +350,7 @@ async function loadQueue() {
     isAdmin = !!(me && me.role === 'admin');
     canEdit = !!(me && (me.role === 'admin' || me.role === 'edit'));
   } catch { isAdmin = false; canEdit = false; }
+  loadAutoFileConfig();      // for the "nothing flagged — just below your auto-file setting" panel
   applyAnchorWizardGate();   // Template Wizard is admin-only (mapping IPC is admin-gated server-side)
   // "+ New type" header launcher — admin only (the create IPC is admin-gated server-side).
   const _newTypeBtn = document.getElementById('btn-new-doctype');
@@ -1877,11 +1878,59 @@ function updateAcknowledgeButton() {
 // processing check flagged), plus the verbatim per-field notes already produced
 // during processing. Keeps the two "orange" causes — low confidence vs a format
 // flag — distinguishable as two labelled cues.
+// Auto-file config, cached for the "why is this clean doc waiting?" explanation below.
+// Defaults MIRROR the backend (_maybeAutoFile): auto_file_full_confidence 'true',
+// auto_file_threshold 100. Read once per window; the panel is advisory, so a stale value
+// after a settings change costs nothing but a reopen.
+let _autoFileCfg = { enabled: true, threshold: 100 };
+async function loadAutoFileConfig() {
+  try {
+    const [en, thr] = await Promise.all([
+      window.docusnap.getSetting('auto_file_full_confidence'),
+      window.docusnap.getSetting('auto_file_threshold'),
+    ]);
+    _autoFileCfg.enabled = String(en ?? 'true') !== 'false';
+    const n = parseInt(thr ?? '100', 10);
+    _autoFileCfg.threshold = Number.isFinite(n) && n >= 1 ? n : 100;
+  } catch { /* keep the backend-mirroring defaults */ }
+}
+
+// A document with NOTHING flagged still sits in Review when it didn't reach the auto-file
+// threshold — and until now the panel said nothing at all, so a clean 98% doc looked stuck for
+// no reason while its 100% siblings filed themselves (owner report, 2026-07-20: 9 of 20 filed,
+// the rest waited silently). Say why, in the user's own numbers, and point at the setting.
+// Truthful by construction: the effective floor is min(user threshold, graduation floor), so a
+// clean doc that is WAITING always sits below the user's threshold — the number we quote.
+function renderCleanHoldReason(el, doc) {
+  const conf = Number(doc.overall_confidence);
+  const thr  = _autoFileCfg.threshold;
+  let lead, cue, hint = '';
+  if (!_autoFileCfg.enabled) {
+    lead = 'Nothing was flagged on this document — it\'s waiting because automatic filing is turned off.';
+    cue  = 'Ready to file';
+    hint = 'Turn it on in Settings → Processing to let clean documents file themselves.';
+  } else if (Number.isFinite(conf) && conf < thr) {
+    lead = `Nothing was flagged — this was read at ${conf}%, just below the ${thr}% you've set for `
+         + 'filing without a check, so it\'s waiting for you.';
+    cue  = `${conf}% · your setting ${thr}%`;
+    hint = `If documents like this are consistently right, lower the threshold in Settings → Processing.`;
+  } else {
+    lead = 'Nothing was flagged on this document — check the values and confirm to file it.';
+    cue  = 'Ready to file';
+  }
+  el.classList.add('rr-calm');
+  el.innerHTML = `<div class="rr-lead">${escHtml(lead)}</div>`
+               + `<div class="rr-cues"><span class="rr-cue info">${escHtml(cue)}</span></div>`
+               + (hint ? `<div class="rr-hint">${escHtml(hint)}</div>` : '');
+  el.hidden = false;
+}
+
 function renderReviewReason(doc) {
   const el = document.getElementById('review-reason');
   if (!el) return;
   el.innerHTML = '';
   el.hidden    = true;
+  el.classList.remove('rr-calm');
   if (!doc) return;
 
   const lowN = doc.below_threshold_count || 0;
@@ -1896,7 +1945,13 @@ function renderReviewReason(doc) {
     ? _relevant.filter(e => e.validation_note || e.corrected_to).length
     : (doc.review_flag_count || 0);
 
-  if (lowN === 0 && flagN === 0) return;   // clean — no banner
+  // Clean: nothing flagged, nothing low. It's still HERE, so explain why rather than sitting
+  // mute (the auto-file threshold is the usual answer). Confirmed docs being re-opened for
+  // editing aren't waiting on anything, so they keep the silent treatment.
+  if (lowN === 0 && flagN === 0) {
+    if (doc.status === 'needs_review' || doc.status === 'deferred') renderCleanHoldReason(el, doc);
+    return;
+  }
 
   const parts = [];
   if (lowN)  parts.push(`${lowN} field${lowN === 1 ? ' was' : 's were'} read with low confidence`);
