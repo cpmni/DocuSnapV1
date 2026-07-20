@@ -1014,6 +1014,26 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
       retypedLink = true;
     }
   }
+  // Part E (TEMPLATE_SUPPLIER_LINK_GUARD — Oracle condition A, the confirm-time reinforcement
+  // loop, 2026-07-20): never REUSE a template whose established supplier identity is NAME-DISJOINT
+  // from the issuer the operator just confirmed. Without this, a foreign doc that Stage-0
+  // logo-matched another supplier's template (the misfiled docs sit at hamming 4-6 — INSIDE the
+  // logo append band) would, on its corrected taught-confirm/promote, bump that template's count,
+  // APPEND its phash into the wrong reference set (making the collision match BETTER next time),
+  // dilute its dominant issuer and rewrite its fields. Applied to the surviving doc link here AND
+  // to the logo/branding reuse acquisitions below (the same foreign template is re-acquirable by
+  // findByLogoHash at the same distance). Unjudgeable identity ⇒ reuse (fail toward today);
+  // detached ⇒ fall through to CREATE — a genuinely different sender gets its OWN template.
+  const _supplierLinkOk = (tid) => {
+    if (!tid || !confirmedIssuer || process.env.TEMPLATE_SUPPLIER_LINK_GUARD === '0') return true;
+    const ident = templates.establishedIdentity(db, tid);
+    return !(ident && templates.supplierNamesDisjoint(confirmedIssuer, ident));
+  };
+  let supplierDetached = false;
+  if (templateId && !_supplierLinkOk(templateId)) {
+    templateId = null;
+    supplierDetached = true;
+  }
   if (!templateId && logo_phash) {
     // TYPE-SCOPED reuse: a template is per (supplier, TYPE), and a supplier issuing several types on
     // one letterhead has same-logo siblings — so reusing the nearest logo BLINDLY would fold e.g. an
@@ -1042,6 +1062,13 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
     const bg = templates.findByBrandingFingerprint(db, keyword_fingerprint, document_type_slug, 0.80);
     if (bg) templateId = bg.id;
   }
+  // Part E again, on the reuse ACQUISITIONS: the same foreign template the doc-link check above
+  // detached is re-acquirable by findByLogoHash at the same hamming distance (the Vellum docs sit
+  // at dist 4 from the Copperfield set — inside the strict reuse gate).
+  if (templateId && !_supplierLinkOk(templateId)) {
+    templateId = null;
+    supplierDetached = true;
+  }
 
   if (templateId) {
     // Update existing (or now logo-matched) template. update() STABILISES the
@@ -1066,8 +1093,9 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
       }
     }
     // Relink when the doc had no template, OR when Part D detached a wrong-type link and the
-    // type-scoped reuse found a RIGHT-type template to converge onto (Oracle C4a).
-    if (!doc.template_id || retypedLink) {
+    // type-scoped reuse found a RIGHT-type template to converge onto (Oracle C4a), OR when Part E
+    // detached a wrong-SUPPLIER link and a different (same-supplier) template was legitimately reused.
+    if (!doc.template_id || retypedLink || supplierDetached) {
       db.prepare('UPDATE documents SET template_id = ? WHERE id = ?').run(templateId, document_id);
     }
     _writeTemplateFile(db, templateId, path, fs, templatesDir());

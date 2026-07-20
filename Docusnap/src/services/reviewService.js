@@ -28,6 +28,7 @@ function createReviewService(deps = {}) {
   const documents = deps.documents || require('../../database/modules/documents');
   const learning  = deps.learning  || require('../../database/modules/learning');
   const doctypes  = deps.doctypes  || require('../../database/modules/document_types');
+  const templates = deps.templates || require('../../database/modules/templates');
   const prefixOutlier = deps.prefixOutlier || require('../../database/modules/prefix_outlier');
   const filing    = deps.filing    || require('../modules/filing/handler');
   const fs   = deps.fs   || require('fs');
@@ -239,6 +240,31 @@ function createReviewService(deps = {}) {
       reference_number: (allValues && allValues[refField]) || null,
       document_type_id: dtInfo?.id || null,
     });
+
+    // TEMPLATE SUPPLIER-LINK GUARD (Oracle condition A on the template-misfile fix, 2026-07-20).
+    // A doc Stage-0-matched to ANOTHER supplier's template keeps that template_id through confirm —
+    // Part D (review/handler.js _upsertTemplate) detaches on TYPE mismatch only, so an invoice
+    // mis-matched to a foreign invoice template survives here. The stale link then poisons the
+    // wrong template on a PLAIN confirm through three doors: its LIVE confirmed_count (matcher
+    // tiebreaks), its dominant_supplier distribution (the identity key for the branding banks and
+    // gates), and captureSample below (this foreign page would become a LANDMARK SAMPLE of the
+    // wrong template). Detach ONLY when the confirmed issuer is NAME-DISJOINT from the template's
+    // established identity (zero shared distinctive tokens — a suffix/variant spelling shares one
+    // and keeps the link); an unjudgeable identity keeps the link (fail toward today). Runs for
+    // bulk confirms too — the count/dominant doors are derived state, not hooks.
+    if (process.env.TEMPLATE_SUPPLIER_LINK_GUARD !== '0') {
+      try {
+        const linkId = db.prepare('SELECT template_id FROM documents WHERE id = ?').get(document_id)?.template_id;
+        const confirmedIssuer = (allValues && allValues.supplier_name) || supplier_name || null;
+        if (linkId && confirmedIssuer) {
+          const ident = templates.establishedIdentity(db, linkId);
+          if (ident && templates.supplierNamesDisjoint(confirmedIssuer, ident)) {
+            documents.update(db, document_id, { template_id: null });
+            if (logger) logger.log(`  Supplier-link guard: detached template ${linkId} (${ident}) from doc ${document_id} — confirmed issuer '${confirmedIssuer}'`);
+          }
+        }
+      } catch { /* guard is best-effort; a failure must never affect the confirm */ }
+    }
 
     if (filingResult.srcPath) onScheduleSourceMove({ srcPath: filingResult.srcPath, originalFilename: original_filename });
     notifyCounts(db);

@@ -133,6 +133,44 @@ function getDominantSupplier(db, templateId) {
   }
 }
 
+// ── Supplier-link guard primitives (Oracle condition A, template-misfile fix 2026-07-20) ──────
+// The identity a template ASSERTS when matched/reused: its DOMINANT confirmed issuer (live
+// truth), else its frozen supplier_name fixed value (what template_fixed would stamp). The
+// cosmetic `name` is deliberately NOT consulted — it is first-confirm luck, can be an OCR garble
+// ("50 Asia"), and plays no role in matching/filing/learning scope. Null = unjudgeable; callers
+// keep the link on null (fail toward today's behaviour).
+function establishedIdentity(db, templateId) {
+  const dom = getDominantSupplier(db, templateId);
+  if (dom && dom.value) return dom.value;
+  try {
+    const row = db.prepare(
+      "SELECT fixed_value FROM template_fields WHERE template_id = ? AND field_key = 'supplier_name' " +
+      "AND is_variable = 0 AND fixed_value IS NOT NULL AND TRIM(fixed_value) <> ''").get(templateId);
+    return row ? row.fixed_value : null;
+  } catch { return null; }
+}
+
+// Zero shared DISTINCTIVE name tokens ⇒ the two names denote different companies. Deliberately
+// PRECISION-FIRST: any shared token ("Copperfield Electrical" vs "Copperfield Electrical Ltd")
+// keeps the link — the guard only fires on an unambiguously FOREIGN name, because its false
+// positive merely spawns a duplicate template (the known fragmentation cost, convergeable later)
+// while its false negative re-arms the confirm-time reinforcement loop it exists to close.
+// Generic corporate-suffix tokens carry no identity and are ignored on both sides.
+const GENERIC_NAME_TOKENS = new Set([
+  'ltd', 'limited', 'plc', 'inc', 'llc', 'llp', 'gmbh', 'co', 'corp', 'company',
+  'group', 'holdings', 'the', 'and', 'of', 'uk',
+]);
+function _nameTokens(s) {
+  const m = String(s || '').toLowerCase().normalize('NFKC').match(/[a-z0-9]{2,}/g) || [];
+  return new Set(m.filter(t => !GENERIC_NAME_TOKENS.has(t)));
+}
+function supplierNamesDisjoint(a, b) {
+  const ta = _nameTokens(a), tb = _nameTokens(b);
+  if (!ta.size || !tb.size) return false;          // unjudgeable ⇒ not disjoint
+  for (const t of ta) if (tb.has(t)) return false;
+  return true;
+}
+
 function getById(db, id) {
   const t = db.prepare('SELECT * FROM templates WHERE id = ?').get(id);
   if (!t) return null;
@@ -1067,6 +1105,7 @@ function unfreezeAutoFrozenRecipientNames(db) {
 
 module.exports = {
   getAll, getAllWithLiveCounts, liveConfirmedCounts, confirmedDocCount, getById, getFields, findByLogoHash, findByKeywordFingerprint, findByBrandingFingerprint, identifyByFingerprint,
+  getDominantSupplier, establishedIdentity, supplierNamesDisjoint,
   unfreezeAutoFrozenRecipientNames,
   searchByName,
   create, update, remove, rename, shouldAdoptIssuerName, hammingDistance,
