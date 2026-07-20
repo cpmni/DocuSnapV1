@@ -47,13 +47,25 @@ function loadConfig(ctx) {
   return _config;
 }
 
+// SEC-05: the high-water mark is mirrored OUTSIDE the app database (lib/license/timeAnchor.js,
+// under LOCALAPPDATA — a different root from the roaming docusnap.db). Restoring a DB snapshot
+// therefore no longer rolls the clock defence back; the gate takes the max of both. Reads are
+// clamped and fail OPEN (0) — a corrupt anchor must never lock a paying user out offline, which is
+// the failure direction that actually matters here (eff >= end ⇒ locked).
+const timeAnchor = require('../../lib/license/timeAnchor');
+
 function readHwm(db) {
   const n = Number(getSetting(db, HWM_KEY));
-  return Number.isFinite(n) ? n : 0;
+  const fromDb = Number.isFinite(n) ? n : 0;
+  let fromAnchor = 0;
+  try { fromAnchor = timeAnchor.readAnchor(Date.now()); } catch { fromAnchor = 0; }
+  return Math.max(fromDb, fromAnchor);
 }
 function bumpHwm(db, t) {
   const next = Math.max(readHwm(db), Number(t) || 0);
   setSetting(db, HWM_KEY, String(next));
+  // Best-effort mirror; a read-only/locked-down profile just keeps the DB-only behaviour.
+  try { timeAnchor.writeAnchor(next, Date.now()); } catch { /* never break the gate */ }
   return next;
 }
 
