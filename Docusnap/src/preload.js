@@ -218,6 +218,10 @@ contextBridge.exposeInMainWorld('docusnap', {
   extractLogoHash:     (b64)      => ipcRenderer.invoke('extract-logo-hash', b64),
   matchLogoHash:       (b64)      => ipcRenderer.invoke('match-logo-hash', b64),
   saveLogoFingerprint: (data)     => ipcRenderer.invoke('save-logo-fingerprint', data),
+  // Correction ripple (identity text-first slice 2): find same-sender siblings by page text,
+  // then pin the chosen ones so a reprocess re-reads them under the corrected supplier.
+  findIssuerSiblings:  (docId, value)   => ipcRenderer.invoke('find-issuer-siblings', { docId, value }),
+  applyIssuerRipple:   (docIds, value)  => ipcRenderer.invoke('apply-issuer-ripple', { docIds, value }),
 
   // ── Processing mode ──────────────────────────────────────────────────────────
   getProcessingMode:         ()           => ipcRenderer.invoke('get-processing-mode'),

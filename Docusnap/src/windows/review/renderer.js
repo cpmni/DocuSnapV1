@@ -2556,7 +2556,11 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
       if (ex) ex.validation_note = null;
       validateConfirm();
       // Best-effort: the value fill above already sticks on Confirm even if this pin write fails.
-      try { await window.docusnap.resolveIssuer?.({ docId: currentDoc?.id, value: name }); } catch {}
+      const _srcDocId = currentDoc?.id;
+      try { await window.docusnap.resolveIssuer?.({ docId: _srcDocId, value: name }); } catch {}
+      // (C) CORRECTION RIPPLE (slice 2): one fix should heal the batch — offer the siblings that
+      // look like the same sender BY TEXT. Advisory + non-blocking; nothing happens without a click.
+      try { await offerIssuerRipple(_srcDocId, name, row); } catch { /* never disturb the correction */ }
     });
   }
 
@@ -4372,6 +4376,56 @@ function _pickNextDoc(order, at, preferSupplier) {
 // old docImg→canvas capture (getPageBase64) was removed so the leak cannot be re-introduced.
 function getRawPageBase64(page = currentPage) {
   return LogoSource.rawPageBase64(pageImages, page);
+}
+
+// CORRECTION RIPPLE (identity text-first slice 2) — after the operator resolves the issuer on one
+// document, offer to apply it to the unfiled documents that look like the SAME SENDER by page text.
+// Why text and not the logo: the owner corrected one Larkspur docket and the other 19 still didn't
+// match — nearest-neighbour keeps favouring the bigger WRONG pool (and the hint path needs three
+// confirms before it upgrades). Applying goes through the per-doc supplier PIN, so every rippled
+// document comes back REVIEW-BOUND and plants no learning: a wrong ripple costs a click, never a
+// wrong filed value.
+async function offerIssuerRipple(srcDocId, name, row) {
+  if (!srcDocId || !name || !window.docusnap.findIssuerSiblings) return;
+  document.querySelector('.ripple-bar')?.remove();
+  const res = await window.docusnap.findIssuerSiblings(srcDocId, name);
+  const siblings = (res && res.siblings) || [];
+  if (!siblings.length) return;
+  const bar = document.createElement('div');
+  bar.className = 'field-note ripple-bar';
+  const label = document.createElement('div');
+  label.textContent = `${siblings.length} more unfiled document${siblings.length === 1 ? '' : 's'} `
+    + `look${siblings.length === 1 ? 's' : ''} like the same sender.`;
+  bar.appendChild(label);
+  const apply = document.createElement('button');
+  apply.type = 'button';
+  apply.className = 'branding-resolve-btn';
+  apply.textContent = `Apply “${name}” to ${siblings.length} & re-read`;
+  apply.title = 'Sets the sender on those documents and re-reads them. They stay in Review for you to check.';
+  const dismiss = document.createElement('button');
+  dismiss.type = 'button';
+  dismiss.className = 'accept-btn';
+  dismiss.textContent = 'Not now';
+  dismiss.addEventListener('click', () => bar.remove());
+  apply.addEventListener('click', async () => {
+    apply.disabled = dismiss.disabled = true;
+    apply.textContent = 'Applying…';
+    try {
+      const ids = siblings.map(s => s.id);
+      const out = await window.docusnap.applyIssuerRipple(ids, name);
+      if (!out || out.ok !== true) { apply.textContent = 'Could not apply'; return; }
+      bar.remove();
+      // Re-read them through the SAME batched rail Reprocess-this-sender uses; the pins make the
+      // engine read them as this supplier instead of reverting to the coarse-logo pick.
+      const docs = (queue || []).filter(d => ids.includes(d.id));
+      if (docs.length) await runReprocessBatch(docs, `${docs.length} from “${name}”`);
+    } catch {
+      apply.disabled = dismiss.disabled = false;
+      apply.textContent = `Apply “${name}” to ${siblings.length} & re-read`;
+    }
+  });
+  bar.append(apply, dismiss);
+  row.appendChild(bar);
 }
 
 // LOGO SUGGESTION — OFFERED, never auto-applied (identity text-first slice 1c, Oracle C5).

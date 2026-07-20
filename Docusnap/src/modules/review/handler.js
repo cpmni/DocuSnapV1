@@ -396,6 +396,47 @@ function register(ctx) {
     } catch {}
     return { ok: true, changed };
   });
+  // ── CORRECTION RIPPLE (identity text-first, slice 2) ─────────────────────────────────
+  // One correction should heal the batch. Siblings are found BY TEXT (the same distinctive
+  // branding tokens), never by the logo layer — nearest-neighbour would keep favouring the
+  // bigger WRONG pool, which is exactly why the owner's single correction didn't heal the
+  // other 19 Larkspur dockets. Read-only; the apply goes through the existing supplier-PIN
+  // rail, so everything stays review-bound and plants no learning.
+  // Kill switch SUPPLIER_RIPPLE=0 (additive feature; the IPCs simply report nothing).
+  ipcMain.handle('find-issuer-siblings', (_e, p) => {
+    requireRole('admin', 'edit');
+    if (process.env.SUPPLIER_RIPPLE === '0') return { ok: true, siblings: [] };
+    const docId = p && p.docId, value = p && p.value;
+    if (!docId || !value) return { ok: true, siblings: [] };
+    try {
+      const siblings = require('../../../database/modules/supplierSiblings')
+        .findSiblings(getDb(), docId, value);
+      return { ok: true, siblings };
+    } catch (e) {
+      logger?.warn?.(`find-issuer-siblings: ${e.message}`);
+      return { ok: true, siblings: [] };   // advisory — never break the resolve it follows
+    }
+  });
+  ipcMain.handle('apply-issuer-ripple', (_e, p) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const value = p && typeof p.value === 'string' ? p.value.trim() : '';
+    const ids = Array.isArray(p && p.docIds) ? p.docIds.map(Number).filter(Number.isInteger) : [];
+    if (!value || !ids.length) return { ok: false, error: 'missing-value-or-docs' };
+    let applied = 0;
+    // Same single-doc write as resolve-issuer, per document: a PIN only — no logo/hint learning,
+    // cleared on confirm, and the engine keeps a pinned read review-bound ('operator_pin' + note).
+    const stmt = db.prepare('UPDATE documents SET supplier_pin = ? WHERE id = ? AND status IN (\'needs_review\',\'deferred\')');
+    for (const id of ids.slice(0, 100)) {
+      try { applied += stmt.run(value, id).changes; } catch { /* skip the row, never abort the ripple */ }
+    }
+    try {
+      logAudit(db, { action: 'supplier_ripple_applied', action_category: 'learning',
+        outcome: 'success', metadata: { value, doc_ids: ids.slice(0, 100), applied } });
+    } catch {}
+    return { ok: true, applied, docIds: ids.slice(0, 100) };
+  });
+
   ipcMain.handle('rename-field-value', (_e, scope) => {
     requireRole('admin', 'edit');
     const db = getDb();
