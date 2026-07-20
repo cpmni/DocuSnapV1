@@ -22,6 +22,22 @@ touches that area — read the pointed-to doc BEFORE working in it:
   ➜AN there). Read the matching block before changing one of those files.
 
 ## Current session state (2026-07-20) — lean index; full detail in `HANDOVER_2026-07-20.md` + `docs/session-log.md`
+**EVENING SESSION 2026-07-20 — READ `HANDOVER_2026-07-20_EVENING.md` FIRST.** All pushed through
+`1bc144e`. Shipped ON: auto-file trust gate (`eb79638`), issuer band (`e8f3a6c`), detected-type
+nudge (`0f3c8e9`). Shipped DARK **and measured as NOT WORKING on real documents**: the letterhead
+issuer reader (`7d314e0` — 69% on the synthetic corpus, **0 of 14 on real scanned invoices**; leave
+`LETTERHEAD_ISSUER` OFF). Landed inert: word-geometry hand-off (`1bc144e`).
+**NEXT SLICE, design already measured — do NOT build "largest text in the top band"**: on real
+invoices the document TITLE is the largest text (ratio 2.87) and the issuer is only FOURTH (1.26).
+Geometry RANKS, the existing text filters GATE — exclude type phrases + caption lines + digit-
+dominant values and the issuer becomes the largest SURVIVING candidate. Compute height at LINE
+level (word heights are noisy: "City Office" → `Cit` h=64 + `Office` h=101) and always ratio to
+`med_h`, never absolute pixels.
+**HIGHEST-VALUE OPEN THREAD: 10 documents in the live DB carry the WRONG supplier**, all stamped by
+`template_fixed` (a template with a FROZEN supplier_name matching other suppliers' documents).
+Verified by adjudicating the letterhead read against filenames — the reader is right on all 10.
+That is the owner's "drift", with a mechanism. **The installer predates the last three commits.**
+
 **Branch `feat/reprocess-throughput-autostraighten` — ALL PUSHED through `71ffc8d`, working tree
 clean. CURRENT installer `dist\ScanFinder Setup 2.0.0-r20260720-1253-0f3c8e9.exe` (built 2026-07-20
 12:53) — carries the whole delivery-docket trilogy (`04a6af1` fresh-install type fix + `39e8142`
