@@ -4374,27 +4374,40 @@ function getRawPageBase64(page = currentPage) {
   return LogoSource.rawPageBase64(pageImages, page);
 }
 
+// LOGO SUGGESTION — OFFERED, never auto-applied (identity text-first slice 1c, Oracle C5).
+// This used to SILENTLY fill the empty issuer field, mark it `.corrected` AND write
+// corrections['supplier_name'] — so a Confirm rubber-stamped a guess from the 64-bit logo hash,
+// which is MEASURED to have zero separating power on scans (cross-supplier min hamming 2). That
+// was the renderer half of the poison loop: the engine's text-agreement gate would abstain, and
+// this would put the wrong name straight back in. Now it renders a CLICK affordance in the same
+// style as the branding "Use '<name>'" button: the app shows what the logo saw and says why it
+// isn't sure; the human decides. Nothing is written until they click.
 async function attemptLogoMatch() {
   if (!docImg.complete || !docImg.naturalWidth) return;
   try {
     const b64   = getRawPageBase64(currentPage);
     if (!b64) return;
     const match = await window.docusnap.matchLogoHash(b64);
-    if (match && match.confidence >= 60) {
-      const supplierInput = document.querySelector('.field-input[data-key="supplier_name"]');
-      if (supplierInput && !supplierInput.value.trim()) {
-        supplierInput.value = match.supplier_name;
-        supplierInput.classList.add('corrected');
-        corrections['supplier_name'] = { original_value: '', corrected_value: match.supplier_name };
-        validateConfirm();
-        const header = document.getElementById('fields-header');
-        const note = document.createElement('div');
-        note.style.cssText = 'font-size:10px; color:var(--ok); margin-top:3px;';
-        note.textContent = `Logo matched: ${match.supplier_name} (${match.confidence}%)`;
-        header.appendChild(note);
-        setTimeout(() => note.remove(), 4000);
-      }
-    }
+    if (!match || match.confidence < 60 || !match.supplier_name) return;
+    const supplierInput = document.querySelector('.field-input[data-key="supplier_name"]');
+    if (!supplierInput || supplierInput.value.trim()) return;      // never overwrite a read/typed value
+    if (document.querySelector('.logo-suggest-btn')) return;        // one offer at a time
+    const wrap = supplierInput.closest('.field-input-wrap') || supplierInput.parentElement;
+    if (!wrap || !wrap.parentElement) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'branding-resolve-btn logo-suggest-btn';
+    btn.textContent = `Use “${match.supplier_name}” — the logo looks similar`;
+    btn.title = 'The logo resembles this company, but the page text didn’t confirm it. '
+              + 'Click to use this name, or type the correct one.';
+    btn.addEventListener('click', () => {
+      supplierInput.value = match.supplier_name;
+      supplierInput.classList.add('corrected');
+      corrections['supplier_name'] = { original_value: '', corrected_value: match.supplier_name };
+      validateConfirm();
+      btn.remove();
+    });
+    wrap.parentElement.insertBefore(btn, wrap.nextSibling);
   } catch (err) {
     console.warn('Logo match failed (non-critical):', err);
   }
