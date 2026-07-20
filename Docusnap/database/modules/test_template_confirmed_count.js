@@ -67,10 +67,43 @@ section('N: live confirmed-doc counts drive the roster (stored column is inverte
   check('confirmedDocCount(Alpha) = 3', templates.confirmedDocCount(db, t1) === 3);
   check('confirmedDocCount(Beta) = 1',  templates.confirmedDocCount(db, t2) === 1);
 
-  section('N: getAll() is UNTOUCHED (still returns the STORED column) — pipeline reader unchanged');
+  // PIN DELIBERATELY FLIPPED (2026-07-20). The N slice left getAll on the STORED column to avoid
+  // changing pipeline behaviour at that time, and these two checks pinned that choice. But the
+  // stored column is only ever bumped by templates.update() on the taught-confirm reuse branch, so
+  // a real install reads 0 next to 20 confirmed docs (owner's DB: 0 / 1 / 0 vs 20 / 20 / 19) — and
+  // this column is NOT display-only: it feeds the same-type sibling tiebreaks in
+  // template_matcher.py:179 and engine.py:696 plus the order templates reach the matcher, all of
+  // which sat INERT while every value was 0. getAll now serves the same LIVE count the roster does.
+  section('getAll() serves the LIVE count too (pipeline + roster agree; was: stored column)');
   const raw = templates.getAll(db);
-  check('getAll Alpha still shows the stored 0', raw.find(r => r.name === 'Alpha').confirmed_count === 0);
-  check('getAll Beta still shows the stored 5',  raw.find(r => r.name === 'Beta').confirmed_count === 5);
+  check('getAll Alpha shows the LIVE 3, not the stored 0', raw.find(r => r.name === 'Alpha').confirmed_count === 3);
+  check('getAll Beta shows the LIVE 1, not the stored 5',  raw.find(r => r.name === 'Beta').confirmed_count === 1);
+  check('getAll is ordered by the live count (Alpha 3 before Beta 1)',
+        raw.findIndex(r => r.name === 'Alpha') < raw.findIndex(r => r.name === 'Beta'));
+  // The kill switch must restore the old reading byte-for-byte.
+  process.env.TEMPLATE_LIVE_COUNTS = '0';
+  const stored = templates.getAll(db);
+  check('TEMPLATE_LIVE_COUNTS=0 restores the stored column (Alpha 0)',
+        stored.find(r => r.name === 'Alpha').confirmed_count === 0);
+  check('TEMPLATE_LIVE_COUNTS=0 restores the stored column (Beta 5)',
+        stored.find(r => r.name === 'Beta').confirmed_count === 5);
+  delete process.env.TEMPLATE_LIVE_COUNTS;
+  // FAIL-SAFE (the property this change actually adds): the count must be UNTAKEABLE-safe.
+  // getAll is the pipeline reader, so a DB where the count can't be taken must degrade to the
+  // stored column, NOT zero every template (which would silently disarm the sibling tiebreaks) and
+  // NOT throw. NOTE getAll has always required the template_* tables — that dependency predates
+  // this change — so the guarantee is pinned at the level it belongs to.
+  {
+    const Database = require('better-sqlite3');
+    const bare = new Database(':memory:');
+    bare.exec('CREATE TABLE templates (id INTEGER PRIMARY KEY, confirmed_count INTEGER DEFAULT 0)');
+    check('liveConfirmedCounts returns NULL when the documents table is absent (not an empty map — '
+          + 'an empty map legitimately means "no confirmed docs yet" and would zero everything)',
+          templates.liveConfirmedCounts(bare) === null);
+    bare.close();
+  }
+  check('a real DB returns a MAP (empty or populated), never null',
+        templates.liveConfirmedCounts(db) instanceof Map);
 
   section('N: the live count SELF-HEALS when a doc is de-confirmed');
   db.prepare("UPDATE documents SET status='deleted' WHERE id=?").run(a1);

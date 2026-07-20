@@ -13,10 +13,33 @@ const LOGO_APPEND_BAND = 13;   // append only within this Hamming of an existing
 // branding rather than the unstable logo — see branding_fingerprint.js + the M2 design doc).
 const brandingFp = require('./branding_fingerprint');
 
+// The stored templates.confirmed_count is bumped ONLY by templates.update(), which runs on the
+// taught-confirm reuse branch (_upsertTemplate via onTaughtConfirm) — so an ordinary confirm never
+// touches it and a real install reads 0 next to 20 confirmed documents (owner's DB, 2026-07-20:
+// 0 / 1 / 0 against 20 / 20 / 19). That is not only a cosmetic roster bug: this column feeds the
+// same-type sibling TIEBREAKS in template_matcher.py:179 and engine.py:696 ("prefer the
+// most-confirmed sibling") and the ORDER templates are handed to the matcher — all three of which
+// are INERT while every value is 0, silently degrading sibling choice to first-seen/name order.
+// So the pipeline reader now serves the LIVE count (documents linked to the template and confirmed
+// — the same truth the Template Manager already shows), which cannot drift because it is derived,
+// not maintained. ONE grouped query per call; getAll runs once per batch. The stored column is left
+// alone (mergeInto still sums it) but is no longer authoritative anywhere.
+// Kill switch TEMPLATE_LIVE_COUNTS=0 restores the stored column + SQL ordering byte-identically.
 function getAll(db) {
-  const rows = db.prepare(
-    'SELECT * FROM templates ORDER BY confirmed_count DESC, name'
-  ).all();
+  const useLive = process.env.TEMPLATE_LIVE_COUNTS !== '0';
+  const rows = useLive
+    ? db.prepare('SELECT * FROM templates').all()
+    : db.prepare('SELECT * FROM templates ORDER BY confirmed_count DESC, name').all();
+  const counts = useLive ? liveConfirmedCounts(db) : null;
+  if (counts) {                                   // null ⇒ uncountable, keep the stored column
+    for (const t of rows) t.confirmed_count = counts.get(t.id) || 0;
+    // Re-create the SQL ordering in JS so "shown count" and "order" still agree.
+    rows.sort((a, b) => (b.confirmed_count - a.confirmed_count)
+      || String(a.name || '').localeCompare(String(b.name || '')));
+  } else if (useLive) {
+    rows.sort((a, b) => ((b.confirmed_count || 0) - (a.confirmed_count || 0))
+      || String(a.name || '').localeCompare(String(b.name || '')));
+  }
   for (const t of rows) {
     t.fields              = getFields(db, t.id);
     t.field_mappings      = getMappings(db, t.id);
@@ -40,11 +63,23 @@ function getAll(db) {
 // mergeInto sums it — so these readers show the live truth WITHOUT touching the stored column or getAll()
 // (which feeds the extraction pipeline + Python matcher and MUST NOT change). ONE grouped query (no index
 // on documents.template_id → a per-template correlated subquery would full-scan), map-joined.
+// FAIL-SAFE (2026-07-20): getAll — the pipeline reader — now calls this, so it must never throw.
+// A caller whose schema has `templates` but not `documents` (the promote/template unit fixtures,
+// and any future minimal harness) would otherwise take a "no such table: documents" straight
+// through template reading and break extraction.
+// Returns NULL when the count could not be taken at all — deliberately distinct from an EMPTY map,
+// which is a legitimate answer meaning "no confirmed documents yet" (0 is then the truth). getAll
+// keeps the stored column on null and overwrites on a map, so a broken query degrades to exactly
+// the pre-change behaviour instead of zeroing every template.
 function liveConfirmedCounts(db) {
   const m = new Map();
-  for (const r of db.prepare(
-    "SELECT template_id, COUNT(*) c FROM documents WHERE status = 'confirmed' AND template_id IS NOT NULL GROUP BY template_id"
-  ).all()) m.set(r.template_id, r.c);
+  try {
+    for (const r of db.prepare(
+      "SELECT template_id, COUNT(*) c FROM documents WHERE status = 'confirmed' AND template_id IS NOT NULL GROUP BY template_id"
+    ).all()) m.set(r.template_id, r.c);
+  } catch {
+    return null;   // no documents table / unreadable → caller keeps the stored column
+  }
   return m;
 }
 
@@ -1031,7 +1066,7 @@ function unfreezeAutoFrozenRecipientNames(db) {
 }
 
 module.exports = {
-  getAll, getAllWithLiveCounts, confirmedDocCount, getById, getFields, findByLogoHash, findByKeywordFingerprint, findByBrandingFingerprint, identifyByFingerprint,
+  getAll, getAllWithLiveCounts, liveConfirmedCounts, confirmedDocCount, getById, getFields, findByLogoHash, findByKeywordFingerprint, findByBrandingFingerprint, identifyByFingerprint,
   unfreezeAutoFrozenRecipientNames,
   searchByName,
   create, update, remove, rename, shouldAdoptIssuerName, hammingDistance,
