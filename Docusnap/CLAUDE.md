@@ -42,6 +42,23 @@ READ FIRST: `HANDOVER_2026-07-20.md` (then `HANDOVER_2026-07-19.md`).**
   UNTOUCHED" was deliberately flipped) · **`0107331`** a GARBLED caption on the RELOCATED crop (the
   exact check was relocate-only, the fuzzy check rigid-only — a garbled relocate fell between them) ·
   **`53ceea9`** Review now says WHY a clean doc waits below the auto-file threshold.
+- **UNTYPED-DOC REVIEW MESSAGE FIXED `39e8142`** (gary design → Oracle SEND-BACK-WITH-CONDITIONS;
+  his C1 IS the commit): a null-type doc used to fall through to the clean-hold branch and be told
+  "just below the X% you've set — lower the threshold", which is FALSE at any threshold because
+  `trust.js` refuses `no-type` unconditionally; `validateConfirm` also disabled Confirm with NO note.
+  New FIRST branch in `renderReviewReason` **gated on `document_type_id`, NOT on any detected name**
+  (the advice is wrong for EVERY untyped doc; detection usually returns nothing at all) + a note on
+  the no-type Confirm return. ORDERING is the load-bearing property — pinned by
+  `src/windows/review/test_review_untyped_reason.js` (8 checks red pre-fix). **STILL OPEN (gary's
+  slice 1 tail, Oracle C2/C3/C5/C6): `detected_type_name`/`detected_type_conf` columns (migration 51
+  is free) + the "Add '<type>'" button. TRAP to solve first — extraction ran against the union of
+  all installed types' keys, so add-type → auto-select rebuilds rows by key and every field goes
+  BLANK; add-a-type must be followed by a REPROCESS (safe: reprocess forces needs_review and
+  `_maybeAutoFile` has ONE call site, the import `file_done` path) or must not auto-select. Also:
+  clear the columns wherever a type is later assigned, and `document_type` can be template-overridden
+  while `type_confidence` is always the keyword score (don't pair them blindly).**
+  ⚠ `realdoc_regression.js` spawns `process_docs.py` DIRECTLY — it is structurally blind to every
+  Electron/renderer change. A green corpus run proves nothing about renderer work.
 - **THE TWO PRE-EXISTING TEST FAILURES ARE FIXED (`71ffc8d`)** — both were stale, not regressions:
   `test_reprocess_type_flip.py` unpacked a 5-tuple from `doc_overrides` (6 since the supplier-pin
   work), and its own shape pin was red too so it never flagged it; `test_promote_custom_doctype.js`
