@@ -1911,12 +1911,54 @@ async function loadAutoFileConfig() {
 // threshold — and until now the panel said nothing at all, so a clean 98% doc looked stuck for
 // no reason while its 100% siblings filed themselves (owner report, 2026-07-20: 9 of 20 filed,
 // the rest waited silently). Say why, in the user's own numbers, and point at the setting.
-// Truthful by construction: the effective floor is min(user threshold, graduation floor), so a
-// clean doc that is WAITING always sits below the user's threshold — the number we quote.
+// ⚠ This used to claim "truthful by construction: a clean doc that is WAITING always sits below the
+// user's threshold". That is FALSE whenever graduation is active — a trusted scope's effective floor
+// is min(user threshold, 95), so a doc at 97 can sit ABOVE its floor and still be held by the
+// structural gate. The threshold-derived copy below is therefore only correct for a genuine
+// below-floor hold; every other case is answered by the real verdict at the top of the function.
+// The REAL verdict for the doc on screen, fetched alongside it (null until it arrives, and null
+// for a doc the predicate can't judge). Populated by loadHoldReason below.
+let _holdVerdict = null;
+
+// Plain-English name for the field a gate refused on, using the on-screen label where we have one.
+function _holdFieldLabel(key) {
+  if (!key) return null;
+  const f = (fieldDefs || []).find(x => x.key === key);
+  return (f && f.label) || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
 function renderCleanHoldReason(el, doc) {
   const conf = Number(doc.overall_confidence);
   const thr  = _autoFileCfg.threshold;
   let lead, cue, hint = '';
+  // THE REAL REASON FIRST (Oracle, 2026-07-20). Everything below re-derives a reason from the
+  // confidence threshold, which is only correct when the threshold is genuinely what is holding
+  // the doc. It was wrong in BOTH directions: a doc refused by the structural gate was told to
+  // lower a threshold that cannot help it, and a graduated doc sitting ABOVE its floor was told
+  // "Ready to file" — asserting readiness for a document the predicate had refused. Never invent
+  // a reason when the authoritative one is available.
+  const v = _holdVerdict;
+  if (v && !v.eligible && v.kind && v.kind !== 'below-floor') {
+    const fieldName = _holdFieldLabel(v.field);
+    const why = {
+      'unverifiable-value': fieldName
+        ? `<strong>${escHtml(fieldName)}</strong> couldn't be checked automatically, so this one is waiting for your eye.`
+        : 'one of the values couldn\'t be checked automatically, so this one is waiting for your eye.',
+      'flagged': fieldName
+        ? `<strong>${escHtml(fieldName)}</strong> was flagged by a formatting check.`
+        : 'a value was flagged by a formatting check.',
+      'no-template': 'this layout hasn\'t been matched to a template yet.',
+      'no-type': 'it has no document type yet.',
+      'generic-type': 'General Documents are always checked by a person before filing.',
+    }[v.kind] || 'an automatic check didn\'t pass.';
+    el.classList.add('rr-calm');
+    el.innerHTML = `<div class="rr-lead">Nothing looks wrong — ${why}</div>`
+                 + `<div class="rr-cues"><span class="rr-cue info">${escHtml(conf)}% · checked by you</span></div>`
+                 + `<div class="rr-hint">Confirm it and it files. This isn't the confidence setting — `
+                 + `changing that won't file this one.</div>`;
+    el.hidden = false;
+    return;
+  }
   if (!_autoFileCfg.enabled) {
     lead = 'Nothing was flagged on this document — it\'s waiting because automatic filing is turned off.';
     cue  = 'Ready to file';
@@ -2248,6 +2290,19 @@ function renderFields(doc) {
   if (sub) sub.style.display = doc ? '' : 'none';
   renderExtractionStatus(doc);
   renderReviewReason(doc);
+  // Fetch the AUTHORITATIVE hold verdict and re-render the reason once it lands. Deliberately
+  // async-after-paint: the panel must never block on an IPC, and the threshold-derived copy is a
+  // safe interim for the fraction of a second before the real answer arrives. The verdict is
+  // cleared first so a stale one from the previous document can't be shown against this one.
+  _holdVerdict = null;
+  if (doc && doc.id && (doc.status === 'needs_review' || doc.status === 'deferred')) {
+    const _forDoc = doc.id;
+    Promise.resolve(window.docusnap.getAutoFileReason?.(doc.id)).then((v) => {
+      if (!v || !currentDoc || currentDoc.id !== _forDoc) return;   // user moved on → drop it
+      _holdVerdict = v;
+      renderReviewReason(currentDoc);
+    }).catch(() => {});
+  }
   _renderDocSnippet(doc);
   if (!doc) { validateConfirm(); return; }
 

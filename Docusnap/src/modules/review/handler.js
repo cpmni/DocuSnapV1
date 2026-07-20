@@ -306,6 +306,26 @@ function register(ctx) {
     return { ids: trust.autoFileEligibleIds(db, rows) };
   });
 
+  // WHY is this one document not filing itself? Returns the SAME predicate's verdict verbatim, so
+  // Review can state the real reason instead of re-deriving one from the confidence threshold.
+  // It re-derived it before, and got it WRONG in two directions: a doc held by the structural gate
+  // was told "just below the X% you've set — lower the threshold" (the threshold cannot help; the
+  // gate refuses at any floor), and a graduated doc ABOVE its floor was told "Ready to file" —
+  // asserting readiness for a document this very predicate had refused.
+  ipcMain.handle('get-auto-file-reason', (_e, docId) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const trust = require('../../../database/modules/trust');
+    const doc = documents.getById(db, Number(docId));
+    if (!doc) return null;
+    const r = trust.isAutoFileEligible(db, doc) || {};
+    // reason is 'kind:field_key' (e.g. unverifiable-value:customer_name) — split so the renderer
+    // never has to parse it, and can name the field in plain English.
+    const [kind, field] = String(r.reason || '').split(':');
+    return { eligible: !!r.eligible, kind: kind || null, field: field || null,
+             floor: r.floor ?? null, trusted: !!r.trusted };
+  });
+
   // Graduation roster + per-supplier opt-out (Slice 5 UX — the "Suppliers handled automatically"
   // controls). Admin/edit gated like the rest of the review admin surface.
   ipcMain.handle('get-graduated-suppliers', () => {

@@ -464,12 +464,93 @@ function main() {
     const d100 = mk(100);
     check("scope graduated (variable customer is OPTIONAL, so it doesn't block graduation)",
       trust.scopeTrust(db, 'Document Solutions', 'invoice').trusted === true);
-    check("docTrustGate DOES block the variable free-text customer",
-      trust.docTrustGate(db, d100.id, 'Document Solutions', 'invoice').reason === 'unverifiable-value:customer');
+    // PINNED TRADE-OFF, flipped deliberately 2026-07-20 (gary + Barry + Oracle SEND-BACK→design).
+    // A graduated scope's sub-100 read now auto-files even though its per-document free-text
+    // `customer` cannot be verified. Requiring it to verify made graduation PERMANENTLY
+    // unreachable for every type carrying a recipient name — no confirm, correction or teach could
+    // ever satisfy it, because valueMatchesShape returns false for 'freetext' BY DESIGN. Measured
+    // on the owner's live DB: 29 documents held by exactly this, 25 of them among the 156 he had
+    // already hand-checked. `customer` is NOT a filing input (COMPANY_KEYS = ['supplier_name']
+    // since migration 44), so the cost is wrong METADATA on a correctly-filed, searchable doc.
+    // The guard that replaces it is dominance, not absence — see the pin two blocks below, which
+    // proves a field of codes with one confirmed misread STILL blocks. Do NOT "restore" this.
+    const _lenient = process.env.TRUST_NONROLE_SHAPE_LENIENT === '1';
+    check("free-text customer: BLOCKED with the switch off, EXEMPT with it on",
+      (trust.docTrustGate(db, d100.id, 'Document Solutions', 'invoice').reason === 'unverifiable-value:customer') === !_lenient);
     check("100% doc → ELIGIBLE (full read files gate-free, as pre-graduation)",
       trust.isAutoFileEligible(db, d100).eligible === true);
-    check("98% doc → NOT eligible (discount → gate applies → customer blocks)",
-      trust.isAutoFileEligible(db, mk(98)).eligible === false);
+    check("98% doc → the trade-off: held when off, files when on",
+      trust.isAutoFileEligible(db, mk(98)).eligible === _lenient);
+  }
+
+  // ── 18b. THE DISCRIMINATING PIN (Oracle, 2026-07-20) — dominance, not absence ─────────────
+  // The failure mode that killed the first design. item="Information" is a MISREAD THAT GETS
+  // CONFIRMED (by a hurried operator, or by an auto-file at 100 where the gate is off by default).
+  // Once confirmed it joins the scope history and collapses the field to 'freetext'. A design that
+  // exempts every freetext field therefore DISARMS THE GUARD EXACTLY WHEN THE FIELD HAS BEEN
+  // POISONED — the one event that contaminates the field is the event that stops it being checked.
+  // Here the history is 9 codes + 1 confirmed word outlier, and the CANDIDATE is seeded
+  // needs_review (so it cannot poison its own scope, matching production, where _autoFileDoc only
+  // evaluates needs_review docs and getFieldFormats reads only confirmed ones).
+  // This pin FAILS against a structured-class-list-only implementation. It is the whole reason
+  // this file's section 8 stayed green without touching its fixture.
+  section('18b. contaminated history still guards (dominant structured class)');
+  {
+    const db = makeDb();
+    const tid = seedType(db);          // seedType already declares `item` as the optional danger field
+    // 9 clean codes …
+    seedCleanScope(db, tid, 9, 'Anconia Corp', i => ({ item: `M00${i}8` }));
+    // … + ONE confirmed word outlier, which is what flips the strict classifier to 'freetext'.
+    seedDoc(db, tid, {
+      supplier: 'Anconia Corp', when: '2026-06-09T09:00:00Z', template: 7,
+      fields: { supplier_name: 'Anconia Corp', invoice_date: '05-06-2026', invoice_number: 'INV8000',
+                total: '250.00', item: 'Information' },
+    });
+    const cand = getDoc(db, seedDoc(db, tid, {
+      supplier: 'Anconia Corp', when: '2026-06-09T10:00:00Z', status: 'needs_review', template: 7, conf: 97,
+      fields: { supplier_name: 'Anconia Corp', invoice_date: '05-06-2026', invoice_number: 'INV8001',
+                total: '250.00', item: 'Information' },
+    }));
+    check("the contaminated history really is 'freetext' to the strict classifier (the trap)",
+      trust.classifyLearnedShape(['M0018', 'M0028', 'M0038', 'M0048', 'M0058', 'Information']) === 'freetext');
+    check("…but 9-of-10 codes still vote a DOMINANT class",
+      trust._dominantStructuredClass(['M0018', 'M0028', 'M0038', 'M0048', 'M0058',
+                                      'M0068', 'M0078', 'M0088', 'M0098', 'Information']) === 'code');
+    check("CONTAMINATED code field reading a word → STILL BLOCKED, switch on or off",
+      trust.isAutoFileEligible(db, cand).eligible === false);
+    // The DEAD END, stated as a fact rather than described. With the switch OFF, one confirmed
+    // misread poisons the field for good: even a perfectly CLEAN code value is refused from then
+    // on, and nothing the user can do restores it. With the switch ON the dominant class still
+    // recognises its own shape, so the clean value passes and the word does not. This one check
+    // carries the whole argument for the change.
+    check("clean code value on a contaminated scope: REFUSED when off (the dead end), allowed when on",
+      trust.docTrustGate(db, seedDoc(db, tid, {
+        supplier: 'Anconia Corp', when: '2026-06-09T11:00:00Z', status: 'needs_review', template: 7,
+        fields: { supplier_name: 'Anconia Corp', invoice_date: '05-06-2026', invoice_number: 'INV8002',
+                  total: '250.00', item: 'M0108' },
+      }), 'Anconia Corp', 'invoice').ok === (process.env.TRUST_NONROLE_SHAPE_LENIENT === '1'));
+  }
+
+  // ── 18c. NULL-ROLE GUARD (Oracle) — leniency must not apply where a role self-healed away ──
+  // repairStructuralRoles() deliberately CLEARS a dangling role key to NULL. If ref_field_key is
+  // NULL, the document's real reference field is an ordinary field and would become the most
+  // LENIENT field on the doc — while the 88 critical-field floor is ALREADY a no-op there, because
+  // it filters on the same two role keys. Two guards off at once. So: no roles, no leniency.
+  section('18c. a type with an unset structural role gets NO leniency');
+  {
+    const db = makeDb();
+    const tid = seedType(db, [['customer', 'text', 0]]);
+    db.prepare('UPDATE document_types SET ref_field_key = NULL WHERE id = ?').run(tid);
+    const names = ['ACME Inc', 'Globex Ltd', 'Initech', 'Umbrella Co', 'Stark Ind',
+                   'Wayne LLC', 'Oscorp', 'Tyrell Corp', 'Soylent Inc', 'Cyberdyne'];
+    seedCleanScope(db, tid, 10, 'Document Solutions', i => ({ customer: names[i - 1] }));
+    const d = getDoc(db, seedDoc(db, tid, {
+      supplier: 'Document Solutions', when: '2026-06-10T10:00:00Z', status: 'needs_review', template: 7, conf: 98,
+      fields: { supplier_name: 'Document Solutions', invoice_date: '05-06-2026', invoice_number: 'INV9500',
+                total: '250.00', customer: 'New Customer Ltd' },
+    }));
+    check("unset ref role → free-text customer STILL blocks (no leniency), switch on or off",
+      trust.docTrustGate(db, d.id, 'Document Solutions', 'invoice').reason === 'unverifiable-value:customer');
   }
 
   // ── 19. auto-file SOUNDNESS matrix (#6): refuse structurally-wrong reads at the discount ──

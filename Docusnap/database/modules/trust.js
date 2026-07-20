@@ -224,6 +224,46 @@ function classifyLearnedShape(sampleValues) {
   return 'freetext';                                     // mixed / wordy → cannot auto-verify
 }
 
+/**
+ * The DOMINANT structured class of a scope's confirmed samples, or null when the field is
+ * genuinely free text (Oracle, 2026-07-20).
+ *
+ * WHY THIS EXISTS. `classifyLearnedShape` above is all-or-nothing — "every non-empty sample must
+ * share the class" — so it CONFLATES two completely different fields:
+ *   • 15 distinct customer names  → freetext, correctly: there is nothing to verify against;
+ *   • 14 product codes + 1 misread word ("Information") → ALSO freetext, wrongly: 14 samples say
+ *     exactly what this field looks like.
+ * That conflation is what forced a false choice between a dead-end gate (block the customer name
+ * forever, unclearable by any user action) and an open door (exempt every freetext field, which
+ * un-guards the contaminated code field). Distinguishing them dissolves it.
+ *
+ * THE INVERSION THIS CLOSES. The item="Information" class is a misread that gets CONFIRMED — by a
+ * hurried operator, or by an auto-file at 100 where the gate is off by default. The moment one is
+ * confirmed it joins the scope history and collapses the field to freetext. Under a blanket
+ * freetext exemption, the very event that poisons a field is the event that disables the guard
+ * against it. Under this rule the 14 codes still outvote the intruder and the guard holds.
+ *
+ * Requires ≥5 non-empty samples and ≥75% agreement, so it can only ever FIRE on real evidence;
+ * below that it returns null and the caller falls back to its own (stricter) handling.
+ *
+ * DELIBERATELY SEPARATE from classifyLearnedShape, which must NOT change: that feeds
+ * scopeTrust's required-field verifiability check, and reclassifying a contaminated required
+ * field as 'code' there would silently widen GRADUATION itself — the seam inside the fix.
+ */
+const _DOMINANT_MIN_SAMPLES = 5;
+const _DOMINANT_MIN_SHARE   = 0.75;
+function _dominantStructuredClass(sampleValues) {
+  const vals = (sampleValues || []).map(v => String(v == null ? '' : v).trim()).filter(Boolean);
+  if (vals.length < _DOMINANT_MIN_SAMPLES) return null;
+  const tests = [['digits', _digits], ['date', _dateish], ['currency', _currencyish], ['code', _codeish]];
+  let best = null, bestShare = 0;
+  for (const [cls, fn] of tests) {
+    const share = vals.filter(v => { try { return fn(v); } catch { return false; } }).length / vals.length;
+    if (share > bestShare) { bestShare = share; best = cls; }
+  }
+  return bestShare >= _DOMINANT_MIN_SHARE ? best : null;
+}
+
 /** Does a value match a learned shape class? Empty is the caller's concern; 'freetext'/'none' never match. */
 function valueMatchesShape(value, cls, sampleValues) {
   const v = String(value == null ? '' : value).trim();
@@ -344,6 +384,23 @@ function docTrustGate(db, docId, supplier, slug, opts = {}) {
     'SELECT field_key, display_value, raw_value, validation_note FROM extractions WHERE document_id = ?'
   ).all(docId);
 
+  // STRUCTURAL ROLE keys — the issuer plus the type's ref/date roles. These decide the folder path
+  // and the filename and cannot be corrected after filing without a re-file, so they keep the FULL
+  // verifiability requirement on the sub-100 path.
+  const _dtRow = opts.dtRow
+    || db.prepare('SELECT ref_field_key, date_field_key FROM document_types WHERE id = ?').get(doc.document_type_id)
+    || {};
+  const roleKeys = new Set(['supplier_name', _dtRow.ref_field_key, _dtRow.date_field_key].filter(Boolean));
+  // NULL-ROLE GUARD (Oracle). An earlier draft of this claimed a dangling role key "falls back to
+  // the strict treatment". That was FALSE and backwards: if ref_field_key is NULL, the document's
+  // real reference field is still an ordinary field, is NOT in roleKeys, and would become the most
+  // LENIENT field on the document — while the 88 critical-field floor is ALREADY a no-op there
+  // (it filters on the same two role keys). Two guards off at once, on a class the codebase knows
+  // happens: repairStructuralRoles() deliberately CLEARS a dangling role to NULL. So when either
+  // role is unset, no leniency applies to this document at all.
+  const _rolesComplete = !!(_dtRow.ref_field_key && _dtRow.date_field_key);
+  const _nonRoleLenientOn = process.env.TRUST_NONROLE_SHAPE_LENIENT === '1' && _rolesComplete;
+
   for (const e of exs) {
     const v = String(e.display_value ?? e.raw_value ?? '').trim();
     if (!v) continue;                                                    // empty → safe
@@ -389,8 +446,36 @@ function docTrustGate(db, docId, supplier, slug, opts = {}) {
         return { ok: false, reason: `unverifiable-value:${e.field_key}` };
       continue;
     }
-    if (!f || !valueMatchesShape(v, f.cls, f.sampleValues))
+    // A field with NO confirmed history at all still blocks, role or not — a graduated scope has
+    // ≥10 confirms, so a value appearing in a field nothing has ever confirmed is genuinely odd.
+    // (Deliberately TIGHTER than the at100 arm, which tolerates it.)
+    // No history at all still blocks, role or not — a graduated scope has ≥10 confirms, so a value
+    // in a field nothing has ever confirmed is genuinely odd. 'none' (a format row with no usable
+    // samples) is the same thing wearing a different hat, so it blocks identically.
+    if (!f || f.cls === 'none') return { ok: false, reason: `unverifiable-value:${e.field_key}` };
+    if (_nonRoleLenientOn && !roleKeys.has(e.field_key)) {
+      // NON-ROLE field. Exempt ONLY when the scope's confirmed history offers nothing to verify
+      // against. A field whose history is genuinely free text (a per-document recipient name,
+      // address, description) is UNVERIFIABLE BY CONSTRUCTION — valueMatchesShape returns false for
+      // 'freetext' by design — so requiring it to verify made graduation PERMANENTLY unreachable
+      // for every type carrying one: no confirm, correction or teach could ever clear it. Measured
+      // on the live DB: 29 documents held by exactly this, every one on customer_name, which is NOT
+      // a filing input (COMPANY_KEYS is ['supplier_name'] alone since migration 44), so the doc
+      // still lands in the right folder under the right name.
+      //
+      // But 'freetext' ALSO covers a field of codes with ONE misread word confirmed into it, and
+      // exempting that would disarm the guard exactly when the field has been poisoned. So a
+      // DOMINANT structured class (≥5 samples, ≥75% agreement) is enforced even though the strict
+      // classifier gave up on the field. 'constant' stays enforced as-is: a ≤2-distinct-value field
+      // reading a third value is evidence, not an abstention.
+      const dom = ['constant', 'digits', 'date', 'currency', 'code'].includes(f.cls)
+        ? f.cls                                        // strict classifier already agreed
+        : _dominantStructuredClass(f.sampleValues);    // …else does the history still vote?
+      if (dom && !valueMatchesShape(v, dom, f.sampleValues))
+        return { ok: false, reason: `unverifiable-value:${e.field_key}` };
+    } else if (!valueMatchesShape(v, f.cls, f.sampleValues)) {
       return { ok: false, reason: `unverifiable-value:${e.field_key}` };
+    }
   }
   return { ok: true };
 }
@@ -570,6 +655,7 @@ function _currencyConsistentForField(db, supplier, slug, fieldKey, value) {
 module.exports = {
   TRUST_WINDOW, TRUST_MAX_CORRECTIONS, TRUSTED_FLOOR, UNTRUSTED_FLOOR, STRICT_TYPES,
   classifyLearnedShape, valueMatchesShape, fieldVerifiable,
+  _dominantStructuredClass,        // exported for the contaminated-history pin (test_scope_trust.js §18b)
   validDate: _validDate, validIban: _validIban, validVatGb: _validVatGb,
   currencyDpConsistent: _currencyDpConsistent, currencyConsistentForField: _currencyConsistentForField, matchesTypePattern: _matchesTypePattern,
   scopeTrust, docTrustGate, isAutoFileEligible, autoFileEligibleIds,
