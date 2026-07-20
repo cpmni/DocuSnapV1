@@ -217,5 +217,44 @@ finally:
     sys.meta_path.pop(0)
     sys.modules.update(_blocked)
 
+# ═══════════════════════════════════════════════════════════════════════════════════════════
+# BRANDING_NAMED_BLANK (slice 4 of the template-misfile fix, Oracle-signed 2026-07-20): a NAMED
+# rival on the issuer-band fuzzy path against a plain 'template_fixed' frozen stamp BLANKS the
+# value AND the _supplier_name filing/learning scope (stamped before this check runs). Every other
+# branch stays FLAG-ONLY — the un-named branch NEVER blanks (a degraded scan of a GENUINE supplier
+# has own-absence as its only evidence), and template_fixed_locked/manual are untouched.
+
+print("\nNAMED-BLANK — a frozen template stamp contradicted BY NAME is blanked, not displayed:")
+r = run("Cascade Water Systems", THORNBURY_PAGE, method="template_fixed")
+check("value BLANKED (no wrong on-screen name / filing folder)", r["supplier_name"]["value"] is None)
+check("_supplier_name scope blanked too (no learning under the wrong supplier)",
+      "_supplier_name" in r and r["_supplier_name"] is None)
+check("note kept and still names the rival + arms the renderer regex",
+      "Thornbury Fasteners" in (r["supplier_name"].get("validation_note") or "")
+      and "confirm the correct company" in (r["supplier_name"].get("validation_note") or ""))
+check("suggested_supplier kept (the 'Use' button renders on a value-less row)",
+      r["supplier_name"].get("suggested_supplier") == "Thornbury Fasteners")
+check("review-bound with confidence 0", r["_needs_review"] is True and r["supplier_name"]["confidence"] == 0)
+
+print("\nNAMED-BLANK scope pins — everything else stays flag-only:")
+r = run("Cascade Water Systems", THORNBURY_PAGE, method="template_fixed_locked")
+check("PIN: template_fixed_locked (admin intent) is flagged but NEVER blanked",
+      flagged(r) and r["supplier_name"]["value"] == "Cascade Water Systems")
+r = run("Cascade Water Systems", NAMELESS_PAGE, method="template_fixed")
+check("PIN: the UN-NAMED branch never blanks (own-absence alone deletes correct identities)",
+      flagged(r) and r["supplier_name"]["value"] == "Cascade Water Systems")
+r = run("Cascade Water Systems", THORNBURY_PAGE, method="logo")
+check("PIN: a non-template method (logo) stays flag-only", r["supplier_name"]["value"] == "Cascade Water Systems")
+os.environ["BRANDING_ALT_FUZZY"] = "0"
+r = run("Cascade Water Systems", THORNBURY_PAGE, method="template_fixed")
+del os.environ["BRANDING_ALT_FUZZY"]
+check("PIN: the legacy exact whole-page naming (=0, can name a recipient) never blanks",
+      r["supplier_name"]["value"] == "Cascade Water Systems")
+os.environ["BRANDING_NAMED_BLANK"] = "0"
+r = run("Cascade Water Systems", THORNBURY_PAGE, method="template_fixed")
+del os.environ["BRANDING_NAMED_BLANK"]
+check("kill switch =0 restores flag-only on template_fixed (the red proof/revert pin)",
+      flagged(r) and r["supplier_name"]["value"] == "Cascade Water Systems")
+
 print(f"\n{'ALL PASS' if fails == 0 else str(fails) + ' FAILED'}")
 sys.exit(1 if fails else 0)

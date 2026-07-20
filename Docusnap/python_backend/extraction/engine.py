@@ -1481,7 +1481,10 @@ class ExtractionEngine:
         printed branding is essentially ABSENT from the page — we resolved X (via logo / same-logo
         sibling template / fixed supplier), yet the letterhead words that identify X aren't there —
         cap the supplier field <=69, attach a review NOTE (naming the branding-detected alternative
-        if one is decisively present), and set needs_review. FLAG-ONLY: the value is never changed.
+        if one is decisively present), and set needs_review. FLAG-ONLY — the value is never changed
+        — with ONE carve-out (BRANDING_NAMED_BLANK, slice 4 2026-07-20): a NAMED rival on the
+        issuer-band fuzzy path against a plain 'template_fixed' frozen stamp BLANKS the value and
+        the _supplier_name scope (see the inline comment; locked/manual/un-named never blank).
         The NOTE is what actually blocks the wrong auto-file (trust.isAutoFileEligible refuses any
         non-empty validation_note; the cap alone does not block at overall==100). Covers the logo +
         template_fixed + fixed-supplier paths at one seam. Reuses template keyword-fingerprints +
@@ -1513,6 +1516,7 @@ class ExtractionEngine:
         if own_ratio > _BRANDING_PRESENT_RATIO:
             return  # the resolved supplier's own branding IS on the page -> healthy, no flag
         named, _fuzzy = _branding_alt_name(banks, ocr_text, self._accept_norm(supplier_name))
+        _blank = False
         if named:
             note = (f"The page branding reads '{named}', but this was filed under '{supplier_name}'. "
                     "Please confirm the correct company.")
@@ -1523,12 +1527,39 @@ class ExtractionEngine:
             # whole-page scan (which can name a recipient), so it must not feed an actionable button.
             if _fuzzy:
                 fld["suggested_supplier"] = named
+            # BRANDING_NAMED_BLANK (slice 4 of the template-misfile fix, Oracle-signed 2026-07-20):
+            # when the branding evidence POSITIVELY names a different supplier and the wrong value
+            # came from a FROZEN template stamp, don't leave the wrong name standing as the
+            # on-screen value / filing folder / learning scope — BLANK it (note + suggestion kept;
+            # the renderer's "Use '<name>'" button renders on a value-less row, the abstain-speak
+            # precedent). Scope is deliberately narrow, every leg load-bearing:
+            #   * _fuzzy only — the legacy exact whole-page scan can name a RECIPIENT; issuer-band
+            #     evidence only (the same standard as the actionable button).
+            #   * method 'template_fixed' EXACTLY — template_fixed_locked is deliberate admin
+            #     intent (stays flag-only, pinned) and 'manual' returned above; other methods have
+            #     their own text gates upstream.
+            #   * the UN-NAMED branch below NEVER blanks — on a degraded scan of a GENUINE
+            #     supplier, own-absence is the only evidence, and blanking there deletes correct
+            #     identities (the exact reason the C2 sufficiency floor exists).
+            # results['_supplier_name'] is blanked too — it was stamped BEFORE this check runs, and
+            # blanking the field alone would leave the wrong name as the filing/learning scope
+            # (precedent: _adopt_identity_variant). Kill switch BRANDING_NAMED_BLANK=0.
+            if (_fuzzy and fld.get("method") == "template_fixed"
+                    and os.environ.get("BRANDING_NAMED_BLANK", "1") != "0"):
+                _blank = True
+                note = (f"The page branding reads '{named}', but this matched a template belonging "
+                        f"to '{supplier_name}' — so nothing was assumed. "
+                        "Please confirm the correct company.")
         else:
             note = (f"This document's letterhead doesn't match '{supplier_name}'. "
                     "Please confirm the correct company.")
         existing = str(fld.get("validation_note") or "").strip()
         fld["validation_note"] = (existing + " " + note).strip() if existing else note
         fld["confidence"] = min(int(fld.get("confidence") or 100), 69)
+        if _blank:
+            fld["value"] = None
+            fld["confidence"] = 0
+            results["_supplier_name"] = None
         results["_needs_review"] = True
 
     @staticmethod
