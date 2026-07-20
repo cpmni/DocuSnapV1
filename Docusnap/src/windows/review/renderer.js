@@ -1933,6 +1933,29 @@ function renderReviewReason(doc) {
   el.classList.remove('rr-calm');
   if (!doc) return;
 
+  // NO TYPE = the whole reason it's here, and it must be said FIRST (Oracle C1, 2026-07-20).
+  // Everything below this branch is wrong for an untyped document:
+  //   • below_threshold_count JOINs fields ON f.document_type_id = d.document_type_id
+  //     (documents.js getReviewQueue), so with a NULL type it is STRUCTURALLY always 0;
+  //   • flagN is 0 too, so the doc fell through to renderCleanHoldReason, which told the user
+  //     "read at 93%, just below the 100% you've set — lower the threshold in Settings".
+  // That advice is FALSE for every null-type doc: trust.js isAutoFileEligible refuses with
+  // 'no-type' at ANY confidence and ANY threshold, so lowering the slider to 0 changes nothing.
+  // Sending a user to a setting that cannot possibly help is worse than saying nothing.
+  // Deliberately gated on the TYPE, not on any detected-name enrichment — the advice is wrong
+  // for EVERY untyped doc, including the ones where detection returned nothing at all.
+  if (!doc.document_type_id && (doc.status === 'needs_review' || doc.status === 'deferred')) {
+    el.classList.add('rr-calm');
+    el.innerHTML =
+        `<div class="rr-lead">This document doesn't have a document type yet, so it can't be filed `
+      + `— and it will never file itself automatically, whatever the confidence setting.</div>`
+      + `<div class="rr-cues"><span class="rr-cue info">No document type</span></div>`
+      + `<div class="rr-hint">Choose a type above. If the right one isn't in the list, an `
+      + `administrator can add it from that same menu.</div>`;
+    el.hidden = false;
+    return;
+  }
+
   const lowN = doc.below_threshold_count || 0;
   // Only surface flags for fields that belong to THIS document's CURRENT type — a stale
   // extraction left over from a previous type (e.g. an old "invoice_number" note after the
@@ -2777,8 +2800,18 @@ function resolveCandidatePick(key, cand, row, input) {
 function validateConfirm() {
   const btn = document.getElementById('btn-confirm');
 
-  // Need a doc type selected
+  const _note0 = document.getElementById('confirm-config-note');
+  // Need a doc type selected. SAY SO (Oracle C1, 2026-07-20): this used to disable Confirm and
+  // write no note at all, so an untyped document showed a greyed-out button with nothing on
+  // screen explaining it — the same dead-end class as the dangling-role trap below, which we
+  // already talk about. An untyped doc reaches this state on a FRESH INSTALL whenever detection
+  // names a type the install doesn't have (delivery dockets, 2026-07-20), so it is not an edge case.
   if (!selectedTypeSlug) {
+    if (_note0) {
+      _note0.textContent = 'Choose a document type above before filing this document.';
+      Object.assign(_note0.style, { display: '', color: 'var(--warn)', fontSize: '12px',
+        lineHeight: '1.4', padding: '6px 14px' });
+    }
     btn.disabled = true;
     markRequiredMissing([]);
     return;
