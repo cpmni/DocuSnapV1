@@ -1,6 +1,29 @@
 # Supplier identity — text-first redesign (2026-07-19 overnight)
 
-**Status: DESIGNED, AWAITING OWNER SIGN-OFF (then Oracle vet before build).**
+**Status: BUILT 2026-07-20 — owner signed off, Oracle SIGN OFF WITH CONDITIONS C1–C8, all folded.**
+Commits: `3c0a744` 1a pure refactor · `21fbc90` 1b text-agreement gate (+C1 abstain-still-speaks,
+C2 measured text floor, C3 allowlist) · `2645ba1` C4 confirm-time plant gate · `c13eaad` 1c the
+renderer auto-fill back door closed · `febdc29` slice 2 correction ripple.
+**Oracle's ship-blocker catch (neither panel member owned it):** abstaining would have KILLED the
+"Use '<name>'" button (suggested_supplier is only emitted alongside a supplier VALUE), leaving the
+incident class mute AND making slice 2 dead code on its own motivating incident — so abstain now
+emits a value-less row carrying the branding-detected name. He also promoted C4 from optional to
+blocking and rejected a note-based plant gate (it would starve first-contact enrolment).
+**VERIFICATION LEDGER (all green):** slice-1a purity = the OFF corpus run is BYTE-IDENTICAL to the
+pre-code baseline · corpus ON == OFF byte-identical (M=1 pre-existing #108, M_type=0, supplier
+100%, ref 98.1%, date 100%, no auto-file churn, ref/date/total unmoved) · gate population on the
+live install (new `stress_test/logo_gate_population.py`): 24 logo-resolved docs → 19 accept, 1
+suggest, 4 ABSTAIN = exactly the misassigned Larkspur dockets, with **0 abstains suppressing a
+human-confirmed-correct identity** (the C8 send-back number) · batteries: `test_logo_text_gate.py`
+15/15, `test_plant_text_gate.js` 11/11, `test_supplier_siblings.js` 14/14, `test_branding_conflict.py`
+unchanged + neighbours green · C2 floor MEASURED (133 live docs: thinnest real page 18 band / 76
+page tokens; floor 10/50 routes ZERO healthy docs to suggest) · ripple bar MEASURED (119 confirmed
+docs: cross-supplier max overlap 0.00, same-supplier min 0.60 ⇒ 0.80 is safe but under-offers by
+57%; kept conservative, `bar` is an opts parameter).
+**Kill switches:** `LOGO_TEXT_GATE=0` · `LOGO_PLANT_TEXT_GATE=0` · `SUPPLIER_RIPPLE=0`.
+**Still open:** D2 (Barry slices 3-5: New-sender state, quarantine check-up, batch-cluster triage),
+D3 (retire or fix the inert detail-hash path), Slice 1d (Stage-0 `identify_template` accepts on
+logo distance alone — own corpus gate; residual is a FLAGGED wrong match, never a silent file).
 Origin: the owner's Larkspur incident + verbatim question: "I am questioning whether the
 'this logo is like' selection on 1st import is a good idea." Panel: forensics (this session) →
 Barry (product) → gary (engineering). Nothing built beyond the test suite.

@@ -68,7 +68,23 @@ STALE `r20260718-0818-bea1028`. READ FIRST: `HANDOVER_2026-07-19.md`.**
   Oracle-signed)** — INERT until deployed to IONOS; owner gates V7 (live REMOTE_ADDR) + V8 (run
   `php licensing-backend\scripts\test_admin_throttle.php` with WAMP up); the live console will require
   2FA (break-glass env `LICENSING_ADMIN_ALLOW_NO_2FA=1` once). Next open: SEC-04 (TOFU pairing), SEC-05.
-- **IDENTITY REDESIGN (overnight 2026-07-19) — DESIGNED, OWNER SIGN-OFF PENDING (D1-D4)**: the Larkspur
+- **IDENTITY REDESIGN — BUILT 2026-07-20** (owner-signed, Oracle C1–C8 folded; 5 commits
+  `3c0a744`→`febdc29`; spec `docs/designs/IDENTITY_TEXT_FIRST_2026-07-19.md` carries the full
+  verification ledger). A logo match no longer asserts identity alone: it must AGREE with the page
+  text (`LOGO_TEXT_GATE`), may only SUGGEST when the text can't judge, and is DROPPED when the text
+  contradicts it — while still surfacing the branding-detected name so the "Use '<name>'" button (and
+  the ripple) survive. A confirm can no longer teach the logo to a wrong-but-confirmed supplier
+  (`LOGO_PLANT_TEXT_GATE`, corroboration-gated so first-contact enrolment still works). The renderer's
+  silent auto-fill is now a click affordance. One correction RIPPLES to same-sender siblings by text
+  (`SUPPLIER_RIPPLE`) through the review-bound pin rail. Corpus ON==OFF byte-identical; on the live
+  install the gate abstains on exactly the 4 misassigned dockets, 0 correct identities suppressed.
+  **OPEN**: Slice 1d (Stage-0 `identify_template` still accepts on logo distance alone — own corpus
+  gate; residual = a FLAGGED wrong match, never a silent file) · D2 Barry slices 3-5 · D3 the inert
+  detail-hash path (retire or fix) · **UX: a clean doc held just below the auto-file threshold gives
+  no on-screen reason** (owner hit this: 9/20 auto-filed at 100, #121 held at 98 with
+  `auto_file_threshold` unset=100 — the mechanism is correct, the silence isn't; Review should say
+  "98% — just below your auto-file setting").
+- **(superseded) IDENTITY REDESIGN (overnight 2026-07-19) — DESIGNED**: the Larkspur
   incident (20 new-supplier docs; logo layer misassigned 5; correction didn't heal) is diagnosed to root —
   the 64-bit logo phash has ZERO separating power (live-measured cross-supplier min hamming 2) while the
   branding TEXT named the true supplier every time. Direction (Barry+gary): **text-first, logo
