@@ -70,6 +70,32 @@ READ FIRST: `HANDOVER_2026-07-20.md` (then `HANDOVER_2026-07-19.md`).**
   misses = a live `document_type_id` change; pinned out) · kill `DETECTED_TYPE_NUDGE=0`. PIN A: a
   named detection never adopts Generic. Guarded by `test_detected_type_nudge.js` (whitelist trap
   proven red first). **UNCLICKED — needs an owner fresh-install run with dockets.**
+- **AUTO-FILE TRUST GATE — non-role shape leniency, DEFAULT ON `eb79638`** (built dark `5f88791`;
+  Barry+gary designed, **Oracle SENT BACK and the shipped design is his**). Sub-100 auto-file
+  required EVERY valued field to pass `valueMatchesShape`, which returns false for `'freetext'` BY
+  DESIGN — so a per-document customer name made the gate UNSATISFIABLE and **graduation unreachable
+  for any doc carrying one**. Measured: 29 docs held, 25 of them among 156 already hand-confirmed.
+  **THE TRAP THAT KILLED TWO DESIGNS:** `item="Information"` is a misread that GETS CONFIRMED, which
+  collapses its own field to freetext — so a blanket freetext exemption **disarms the guard exactly
+  when the field is poisoned** (today's blanket block fails SAFE under contamination; both proposed
+  designs failed OPEN). Also rejected: keying on `isNameLikeField` — it matches on SUBSTRING, so
+  `customer_order_number`/`company_reg_no` are "name-like" CODE fields; it was built for
+  `_buildTemplateFields` where over-inclusion is safe, here it inverts. **SHIPPED:**
+  `_dominantStructuredClass` (≥5 samples, ≥75%) consulted ONLY in the lenient branch — 14 codes
+  outvote one intruder, 11 varied names abstain. Do NOT change `classifyLearnedShape` itself (it
+  feeds `scopeTrust`, and reclassifying there widens GRADUATION). NULL/dangling role ⇒ NO leniency
+  (the 88 floor is already a no-op there — two guards off at once). Gate: corpus A/B 50→82
+  would-auto-file, **M unchanged at 1**, M_type 0, accuracy byte-identical. Kill
+  `TRUST_NONROLE_SHAPE_LENIENT=0`. Pins: `test_scope_trust.js` §18b (contaminated history — FAILS
+  against the rejected design) + §18c (NULL-role) + the both-directions trade-off pin.
+- **REVIEW HOLD REASON IS NOW AUTHORITATIVE (`5f88791`, Oracle merge precondition)** — the panel
+  derived its message from the confidence threshold and claimed that was "truthful by construction".
+  **FALSE once graduation is active** (effective floor = min(threshold, 95)), and wrong BOTH ways: a
+  gate-held doc was told to lower a threshold that cannot help it, and a graduated doc ABOVE its
+  floor was told **"Ready to file"** about a doc the predicate had refused. New `get-auto-file-reason`
+  IPC returns the SAME predicate's verdict; the panel names the blocking field. **THIRD false
+  hold-reason of this class fixed 2026-07-20** (`39e8142` untyped, this one, + the nudge copy) —
+  when Review explains a hold, it must read the real verdict, never re-derive one.
 - **⚠ RECURRING TRAP — THREE stale fixtures fixed in one day, all one class** (`71ffc8d`, `0f3c8e9`):
   a `documents`/`templates` test fixture that never gained a column production gained. Because
   `documents.insert()`/`templates.create()` name every column, the INSERT fails outright and EVERY
