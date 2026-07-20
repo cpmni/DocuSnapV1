@@ -71,18 +71,32 @@ function readAnchor(now, deps = {}) {
  * roaming-profile-restricted machine must still run the app), and never REGRESSES the stored value:
  * we only ever write a larger number, so a stale caller can't lower the mark.
  */
-function writeAnchor(value, now, deps = {}) {
+function writeAnchor(value, now, deps = {}, opts = {}) {
   const fs = deps.fs || require('fs');
   try {
     const v = sanitiseAnchor(value, now);
     if (!v) return false;
     const p = anchorPath(deps);
     if (!p) return false;
-    if (readAnchor(now, deps) >= v) return false;    // monotonic: never write backwards
+    // Monotonic by default: a stale caller can never lower the mark. `force` is the ONE
+    // sanctioned way down (Oracle C2) — a successful ONLINE refresh resetting to the backend's
+    // own server-stamped issued_at. Without it there is no recourse at all for a machine whose
+    // mark went wrongly high: this file survives deleting the database, so the old rescue fails.
+    if (!opts.force && readAnchor(now, deps) >= v) return false;
     fs.mkdirSync(path.dirname(p), { recursive: true });
     fs.writeFileSync(p, String(v), 'utf8');
     return true;
   } catch { return false; }
 }
 
-module.exports = { sanitiseAnchor, anchorPath, readAnchor, writeAnchor, MAX_FUTURE_SKEW_MS };
+/** Remove the anchor entirely (support/uninstall recovery). Best-effort; never throws. */
+function clearAnchor(deps = {}) {
+  const fs = deps.fs || require('fs');
+  try {
+    const p = anchorPath(deps);
+    if (p && fs.existsSync(p)) { fs.rmSync(p); return true; }
+    return false;
+  } catch { return false; }
+}
+
+module.exports = { sanitiseAnchor, anchorPath, readAnchor, writeAnchor, clearAnchor, MAX_FUTURE_SKEW_MS };

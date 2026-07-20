@@ -17,7 +17,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { sanitiseAnchor, readAnchor, writeAnchor, anchorPath, MAX_FUTURE_SKEW_MS } =
+const { sanitiseAnchor, readAnchor, writeAnchor, clearAnchor, anchorPath, MAX_FUTURE_SKEW_MS } =
   require('./timeAnchor');
 
 let fail = 0;
@@ -72,8 +72,29 @@ fs.rmSync(p);
 check('a deleted anchor reads as 0', readAnchor(NOW, deps) === 0);
 check('an unwritable location returns false rather than throwing',
   writeAnchor(NOW, NOW, { baseDir: path.join(base, 'nope\0bad') }) === false);
-check('no base dir at all (odd environment) → 0 / false, never a throw',
-  readAnchor(NOW, { baseDir: '' }) === 0 || true);
+// Oracle C3: this check used to read `... === 0 || true` — a TAUTOLOGY that could never fail —
+// and `baseDir: ''` is falsy, so anchorPath fell through to the REAL LOCALAPPDATA and the test
+// silently read the production anchor. Scrub the env so "no base dir" genuinely means none.
+const _env = { LOCALAPPDATA: process.env.LOCALAPPDATA, XDG_STATE_HOME: process.env.XDG_STATE_HOME, HOME: process.env.HOME };
+delete process.env.LOCALAPPDATA; delete process.env.XDG_STATE_HOME; delete process.env.HOME;
+check('no base dir ANYWHERE → anchorPath null, read 0, write false, never a throw',
+  anchorPath({}) === null && readAnchor(NOW, {}) === 0 && writeAnchor(NOW, NOW, {}) === false);
+Object.assign(process.env, Object.fromEntries(Object.entries(_env).filter(([, v]) => v !== undefined)));
+
+console.log('\n§6 the ONE sanctioned way DOWN (Oracle C2 — the only recourse for a wrongly-high mark)');
+const b2 = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-anchor2-'));
+const d2 = { baseDir: b2 };
+writeAnchor(NOW + 2 * 365 * 86400000, NOW, d2);       // a bogus mark ~2y ahead (inside the clamp)
+check('(setup) a mid-band bogus mark IS stored (this is the brick scenario)',
+  readAnchor(NOW, d2) > NOW);
+check('a normal write cannot lower it (monotonic holds)',
+  writeAnchor(NOW, NOW, d2) === false && readAnchor(NOW, d2) > NOW);
+check('force: RESETS it down (the online self-heal to the server-stamped issued_at)',
+  writeAnchor(NOW, NOW, d2, { force: true }) === true && readAnchor(NOW, d2) === NOW);
+check('clearAnchor removes it entirely (support/uninstall recovery)',
+  clearAnchor(d2) === true && readAnchor(NOW, d2) === 0);
+check('clearAnchor on an absent file is a no-op, not a throw', clearAnchor(d2) === false);
+fs.rmSync(b2, { recursive: true, force: true });
 
 fs.rmSync(base, { recursive: true, force: true });
 console.log(fail ? `\n${fail} check(s) FAILED` : '\nAll time-anchor checks passed.');
