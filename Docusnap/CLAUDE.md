@@ -21,18 +21,39 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-07-20) — lean index; full detail in `HANDOVER_2026-07-20.md` + `docs/session-log.md`
-**EVENING SESSION 2026-07-20 — READ `HANDOVER_2026-07-20_EVENING.md` FIRST.** All pushed through
-`1bc144e`. Shipped ON: auto-file trust gate (`eb79638`), issuer band (`e8f3a6c`), detected-type
-nudge (`0f3c8e9`). Shipped DARK **and measured as NOT WORKING on real documents**: the letterhead
-issuer reader (`7d314e0` — 69% on the synthetic corpus, **0 of 14 on real scanned invoices**; leave
-`LETTERHEAD_ISSUER` OFF). Landed inert: word-geometry hand-off (`1bc144e`).
-**NEXT SLICE, design already measured — do NOT build "largest text in the top band"**: on real
-invoices the document TITLE is the largest text (ratio 2.87) and the issuer is only FOURTH (1.26).
-Geometry RANKS, the existing text filters GATE — exclude type phrases + caption lines + digit-
-dominant values and the issuer becomes the largest SURVIVING candidate. Compute height at LINE
-level (word heights are noisy: "City Office" → `Cit` h=64 + `Office` h=101) and always ratio to
-`med_h`, never absolute pixels.
+## Current session state (2026-07-20) — lean index; full detail in `HANDOVER_2026-07-20_LATE.md` + `docs/session-log.md`
+**LATE SESSION 2026-07-20 (Fable 5) — READ `HANDOVER_2026-07-20_LATE.md` FIRST.** All pushed
+through `2a81124`, tag `milestone-20260720-identity` (owner-marked good point). **CURRENT installer
+`dist\ScanFinder Setup 2.0.0-r20260720-2050-2a81124.exe`** — every earlier one is stale. The live
+DB was WIPED ~21:00 for a fresh-install test (migration 51); the OLD 213-doc misfile corpus is
+preserved at `%APPDATA%\ScanFinder\docusnap.backup-20260720-misfile-corpus.db` (replayable via
+`TEMPLATE_PROBE_DB`).
+**THE FRESH SESSION'S BUILD JOB — the LABEL-AS-VALUE plan (Oracle-ruled, NOT built).** A correctly-
+taught 'below' anchor commits a garble OF ITS OWN LABEL ('Vetiver 10'≈"Deliver To") as
+customer_name — 12/20 live Ridgeway dockets, 7 of 12 UNFLAGGED; on a graduated supplier the class
+silently wrong-files. Root causes (007 instrumented replay, all code-verified): the OCR ladder's
+preview fast path re-crops the FULL PAGE from the UNCLAMPED box (anchor.py:2335-2347/:2402/:2448 —
+restores the caption band the :525 clamp excluded; `clean_crop_segment` takes the FIRST line) · a
+swallowed NameError at :578 (bare except :598; fixing it ALONE makes inline junk MORE Tier-A-
+eligible — sequencing load-bearing) · flag family structurally capped
+(name_quality('Veliver to')=1.0 == 'Denver Trading') · merge hold dead on `keyword_override`
+(engine.py:255 checks =="keyword") · Tier-A ignores confidence. **Build order A→C→D→B** (ladder
+clamp → composed reject [bare fuzzy-echo vocab AND window-overlaps-caption-band; content alone
+CANNOT separate: gary's full-label echo misses 'Vetiver 10' at 0.444, the bare vocab falsely
+rejects 'Denver Trading' at 0.286] → keyword_override one-token → NameError fix; E crop-first
+DEFERRED). Full plan + merge gate: memory `project_label_capture_plan.md`. ⚠ DATA HYGIENE: the 12
+garble docs are in the review queue — confirming one plants the garble into learning; reprocess
+after the fix, or correct Customer per-doc first.
+**GEOMETRY SLICE BUILT+MEASURED, still DARK (`2a81124`, LETTERHEAD_ISSUER=0):** words_out threads
+page-0 rows/heights → `pick_issuer(geometry=)`; COLUMN-SEGMENT candidates, LINE-level heights
+ratioed to med_h, fragment-yields-to-superset. Real scans 0%→**67% correct** (117/174, 13 garble
+fragments, 44 honest abstains), synthetic 45/45. Flip = owner+Oracle decision. Corpus byte-identical
+proven on a SAME-DB stash pair (mid-session A/B is invalid while the owner confirms — re-pair).
+**Earlier today (see EVENING/daytime handovers):** trust gate `eb79638`, issuer band `e8f3a6c`,
+detected-type nudge `0f3c8e9`, word-geometry hand-off `1bc144e` (now consumed by the slice above).
+**Five PRE-EXISTING test failures catalogued by stash-bisect (NOT today's work, un-triaged):**
+test_anchor_crop_crosscheck(3) · test_late_anchor_rescue(7) · test_template_rescue(1) ·
+test_field_data_types(silent) · test_identity_fusion(known).
 **THE 10 template_fixed MISFILES ARE FIXED (late evening 2026-07-20, `705da10`→`7c541fa`)** — full
 investigation → gary+Phillip design → Oracle SIGN-OFF-WITH-CONDITIONS → built in his order. Five
 kill-switched slices, ALL ON: `TEMPLATE_SUPPLIER_LINK_GUARD` (the confirm-time reinforcement loop —
@@ -52,12 +73,10 @@ installed** (needs an installer REBUILD — the current one predates all of this
 a FULLY cold supplier (no template/hints/name anywhere) still accepts + flags with the wrong name —
 that is the letterhead cold-start thread's job, not this fix's.
 
-**Branch `feat/reprocess-throughput-autostraighten` — ALL PUSHED through `71ffc8d`, working tree
-clean. CURRENT installer `dist\ScanFinder Setup 2.0.0-r20260720-1253-0f3c8e9.exe` (built 2026-07-20
-12:53) — carries the whole delivery-docket trilogy (`04a6af1` fresh-install type fix + `39e8142`
-untyped-doc message + `0f3c8e9` detected-type nudge/migration 51) AND `277a107` live template
-counts. USE THIS ONE for the fresh-install test; every earlier `dist\*.exe` predates some of it.
-READ FIRST: `HANDOVER_2026-07-20.md` (then `HANDOVER_2026-07-19.md`).**
+**Branch `feat/reprocess-throughput-autostraighten` — ALL PUSHED through `2a81124`, working tree
+clean. (Installer note superseded — the CURRENT installer is `...r20260720-2050-2a81124.exe`, see
+the LATE session block above.) Daytime detail: `HANDOVER_2026-07-20.md` (then
+`HANDOVER_2026-07-19.md`).**
 - **OWNER-REPORTED LIVE BUGS FIXED 2026-07-20** (all root-caused from their log + a copy of the
   second machine's DB, all corpus-gated byte-identical): **`04a6af1` the FRESH-INSTALL TYPE HOLE** —
   a type detected from the SHIPPED keyword buckets but NOT installed (Delivery Note is a PRESET, not
