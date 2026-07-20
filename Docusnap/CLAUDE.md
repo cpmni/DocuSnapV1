@@ -23,10 +23,10 @@ touches that area — read the pointed-to doc BEFORE working in it:
 
 ## Current session state (2026-07-20) — lean index; full detail in `HANDOVER_2026-07-20.md` + `docs/session-log.md`
 **Branch `feat/reprocess-throughput-autostraighten` — ALL PUSHED through `71ffc8d`, working tree
-clean. CURRENT installer `dist\ScanFinder Setup 2.0.0-r20260720-1204-71ffc8d.exe` (built 2026-07-20
-12:04) — the FIRST build carrying `04a6af1` (fresh-install type fix) + `277a107` (live template
-counts), the two fixes that matter most on a new DB. Use it for the next fresh-install test; every
-earlier `dist\*.exe` predates them.
+clean. CURRENT installer `dist\ScanFinder Setup 2.0.0-r20260720-1253-0f3c8e9.exe` (built 2026-07-20
+12:53) — carries the whole delivery-docket trilogy (`04a6af1` fresh-install type fix + `39e8142`
+untyped-doc message + `0f3c8e9` detected-type nudge/migration 51) AND `277a107` live template
+counts. USE THIS ONE for the fresh-install test; every earlier `dist\*.exe` predates some of it.
 READ FIRST: `HANDOVER_2026-07-20.md` (then `HANDOVER_2026-07-19.md`).**
 - **OWNER-REPORTED LIVE BUGS FIXED 2026-07-20** (all root-caused from their log + a copy of the
   second machine's DB, all corpus-gated byte-identical): **`04a6af1` the FRESH-INSTALL TYPE HOLE** —
