@@ -13,8 +13,12 @@
  * distinctive-token create gate), and src/modules/review/handler.js (_upsertTemplate M2 reuse) — ONE
  * helper so the reuse and link paths can never disagree about "same template" (Oracle SEAM condition).
  *
- * BRANDING_STOPWORDS mirrors engine.py `_BRANDING_STOPWORDS` — doc-type words that are NOT a supplier's
- * distinctive branding (two suppliers' delivery dockets both carry "delivery"/"docket"). Keep in sync.
+ * BRANDING_STOPWORDS mirrors `_BRANDING_STOPWORDS`, whose Python home moved to template_matcher.py
+ * (2026-07-20, TEMPLATE_GATE_DISTINCTIVE — engine.py now aliases it): doc-type words that are NOT a
+ * supplier's distinctive branding (two suppliers' delivery dockets both carry "delivery"/"docket").
+ * Keep in sync. NOTE the Python `_distinctive_tokens` additionally drops STOP_WORDS/CALENDAR_WORDS
+ * and type-word PREFIXES ('INV'/'INVOIC') — the compare-time hygiene for polluted stored
+ * fingerprints; this JS comparator is symmetric (both sides equally polluted) so it doesn't need it.
  */
 
 const BRANDING_STOPWORDS = new Set([

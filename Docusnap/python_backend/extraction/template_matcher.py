@@ -33,6 +33,76 @@ CALENDAR_WORDS = {
     'mon', 'tue', 'tues', 'wed', 'thu', 'thur', 'thurs', 'fri', 'sat', 'sun',
 }
 
+# ── Distinctive-token identity primitives (TEMPLATE_GATE_DISTINCTIVE, Oracle-signed 2026-07-20) ──
+# Generic document-TYPE / heading words that leak into template keyword-fingerprints and appear on
+# ANY supplier's document of that type — so they never DISTINGUISH a supplier. THE definition lives
+# HERE (template_matcher is a leaf; engine.py aliases it — engine imports this module, never the
+# reverse) and is kept in sync with branding_fingerprint.js on the JS side.
+_BRANDING_STOPWORDS = frozenset({
+    "delivery", "docket", "note", "notes", "invoice", "order", "purchase", "sales",
+    "statement", "remittance", "receipt", "quote", "quotation", "worksheet",
+    "credit", "debit", "advice", "proforma", "job", "copy", "original",
+})
+# Shared branding-evidence constants (aliased by engine.py — ONE definition).
+# K: below this many distinctive words an identity is UNJUDGEABLE (fail-safe, never "absent").
+# PRESENT: own-ratio above this = the identity's own branding IS on the page.
+_BRANDING_MIN_WORDS = 3
+_BRANDING_PRESENT_RATIO = 0.25
+
+
+def _distinctive_tokens(words):
+    """The subset of `words` that can DISTINGUISH a supplier: lowercase, len>=3, not generic
+    vocabulary/type/calendar words, and not a PROPER PREFIX of a type word. The prefix rule is what
+    kills the ref-prefix garble family — 'INV' (split off "INV-76642" by the harvest tokeniser,
+    digit-free so the digit filter never saw it) and 'INVOIC' (an OCR-clipped heading) are prefixes
+    of 'invoice' and are systematically present in ~every invoice fingerprint, where they fake
+    cross-supplier corroboration ('INV' word-boundary-matches inside every invoice number).
+    Direction pinned: 'inverness' is NOT a prefix of any type word and survives."""
+    out = set()
+    for w in words or ():
+        wl = str(w or "").strip().lower()
+        if len(wl) < 3 or wl in _BRANDING_STOPWORDS or wl in STOP_WORDS or wl in CALENDAR_WORDS:
+            continue
+        if any(sw.startswith(wl) and len(wl) < len(sw) for sw in _BRANDING_STOPWORDS):
+            continue
+        out.add(wl)
+    return out
+
+
+def _distinctive_hit_ratio(template, ocr_lower):
+    """(ratio, n): exact word-boundary presence of the template fingerprint's DISTINCTIVE tokens on
+    the page, and how many distinctive tokens there were (n==0 ⇒ unjudgeable — the fingerprint is
+    all junk, e.g. ['INV']). A SEPARATE function from _keyword_hit_ratio on purpose: that raw ratio
+    is the page-wide template tie-break shared with the JS comparator and must stay byte-identical."""
+    toks = sorted(_distinctive_tokens(template.get("keyword_fingerprint") or []))
+    if not toks:
+        return 0.0, 0
+    hits = sum(
+        1 for kw in toks
+        if re.search(r"(?<![a-z0-9])" + re.escape(kw) + r"(?![a-z0-9])", ocr_lower)
+    )
+    return hits / len(toks), len(toks)
+
+
+# NAME-arm distinctiveness (Oracle condition C): tokens of a supplier's display NAME that are
+# generic corporate/vocabulary words carry no identity — without this filter, "Registered Office"
+# plus an address 'City' in the top band scores the 'City Office' name arm 1.0 and a degraded
+# GENUINE document false-abstains (re-breaking the "absence is not evidence" pin by another door).
+_GENERIC_NAME_TOKENS = frozenset({
+    "ltd", "limited", "plc", "inc", "llc", "llp", "gmbh", "corp", "company", "group",
+    "holdings", "office", "offices", "services", "service", "supplies", "systems",
+    "solutions", "trading", "registered", "enterprises", "international", "the", "and",
+})
+
+
+def _name_arm_tokens(name):
+    """Distinctive tokens of a supplier display NAME (for the rival name arm). Judgeable only when
+    >=2 tokens SURVIVE the filters — a single surviving token ("Sterling") is never rival evidence
+    ("pounds sterling" would match it on any page)."""
+    toks = _distinctive_tokens(re.findall(r"[A-Za-z0-9]{2,}", str(name or "")))
+    return {t for t in toks if t not in _GENERIC_NAME_TOKENS}
+
+
 LOGO_THRESHOLD    = 13   # max hamming distance for logo match
 # Text-corroborated same-type template RESCUE (Phillip, 2026-07-10): when the logo drifts OUT of the
 # strict accept band (dist>6 -> conf<60) but a template of the DETECTED type has this much keyword-
@@ -227,12 +297,35 @@ def identify_template(page_image, ocr_text: str, templates: list,
                 # on POSITIVE DISAGREEMENT: the winner's own branding is absent AND some OTHER supplier's
                 # branding is decisively present on the page. Un-fingerprinted templates and empty OCR are
                 # unjudgeable and always accepted. Kill switch TEMPLATE_LOGO_TEXT_GATE=0.
-                if (method == 'logo' and ocr_lower
-                        and os.environ.get('TEMPLATE_LOGO_TEXT_GATE', '1') != '0'
-                        and (best_t.get('keyword_fingerprint') or [])
-                        and _keyword_hit_ratio(best_t, ocr_lower) <= 0.0
-                        and _rival_branding_present(best_t, templates, ocr_lower)):
-                    return None
+                #
+                # V2 — TEMPLATE_GATE_DISTINCTIVE (Oracle-signed 2026-07-20; =0 restores the V1
+                # predicate byte-identically). The V1 gate was defeated THREE independent ways by
+                # the live Northgate/Vellum→Copperfield misfiles — the exact case it was built for:
+                #   (a) it tested method=='logo' only, and a type-matching sibling relabels the
+                #       pick 'logo+slug' — but the slug corroborates the TYPE, not the SUPPLIER.
+                #       TYPE evidence never corroborates supplier identity, so V2 gates EVERY
+                #       logo-cluster accept ('logo', 'logo+slug', 'logo+keywords' — a tie broken
+                #       on a junk-token ratio is not corroboration either; a genuinely
+                #       corroborated winner self-exempts on own-distinctive >= 0.25).
+                #   (b) its own-branding trigger (raw ratio <= 0.0) was defeated by junk stored
+                #       tokens: 'INV' (matches inside every "INV-76642") and 'Industrial' (hit the
+                #       CUSTOMER's address). V2 judges own-presence over DISTINCTIVE tokens with
+                #       the engine's shared 0.25 present-bar; an all-junk fingerprint (n==0) is
+                #       own-absent, not own-present.
+                #   (c) its rival test (raw per-template fingerprint, exact, whole-page, flat
+                #       0.75) was structurally unreachable — see _rival_branding_present V2.
+                if (ocr_lower and os.environ.get('TEMPLATE_LOGO_TEXT_GATE', '1') != '0'
+                        and (best_t.get('keyword_fingerprint') or [])):
+                    if os.environ.get('TEMPLATE_GATE_DISTINCTIVE', '1') != '0':
+                        _own, _n = _distinctive_hit_ratio(best_t, ocr_lower)
+                        if (method in ('logo', 'logo+slug', 'logo+keywords')
+                                and (_n == 0 or _own < _BRANDING_PRESENT_RATIO)
+                                and _rival_branding_present(best_t, templates, ocr_lower)):
+                            return None
+                    elif (method == 'logo'
+                            and _keyword_hit_ratio(best_t, ocr_lower) <= 0.0
+                            and _rival_branding_present(best_t, templates, ocr_lower)):
+                        return None
                 ambiguous_type = _type_ambiguity(cands, cluster_dist, detected_slug, title_trusted)
                 result = {'template': best_t, 'confidence': conf, 'method': method,
                           'logo_phash': logo_phash, 'ambiguous_type': ambiguous_type}
@@ -445,12 +538,57 @@ def _min_set_dist(template: dict, phash: str) -> int:
 
 def _rival_branding_present(picked: dict, templates: list, ocr_lower: str,
                             bar: float = 0.75) -> bool:
-    """True → some template belonging to a DIFFERENT supplier identity has its distinctive branding
-    DECISIVELY on this page (ratio >= bar). Used by the Slice-1d logo-only gate: absence of the
-    winner's own branding is not evidence (a bad scan looks the same), but another supplier's
-    letterhead being clearly present IS — that is the Northgate-invoice-matched-a-Copperfield-
-    template case. Identity = dominant_supplier else name; a template with no fingerprint or no
-    identity can never be the rival (fail-safe)."""
+    """True → some DIFFERENT supplier identity is DECISIVELY present on this page's ISSUER BAND.
+
+    V2 (TEMPLATE_GATE_DISTINCTIVE, default): per-IDENTITY banks of DISTINCTIVE fingerprint tokens
+    (union across a supplier's templates), matched FUZZY over the issuer band — the same evidence
+    shape as the engine's _branding_alt_name, which named the true supplier on 10/10 of the live
+    misfiles while the V1 test below named it on 0/10. V1's structural unreachability, measured:
+    a rival whose only template is a different DOC TYPE carries type words that cannot appear on
+    this page (Northgate's delivery fingerprint capped at 0.60 on an invoice), and a rival whose
+    fingerprint leaked its sample doc's CUSTOMER name is diluted below the bar (Vellum at 0.70 —
+    "Bill To" OCR'd as "Bi Te", so harvest truncation missed). Banks strip both classes from the
+    denominator. PLUS a supplier-NAME arm: the identity's display-name tokens (>=2 surviving the
+    generic-name filter — Oracle C: 'City Office' is unjudgeable, never a rival) found in the
+    band. Band-scoping means a mid-page recipient can never make a rival — and the name arm is
+    what names a rival whose bank the leak diluted.
+
+    V1 (=0): the original raw-fingerprint exact whole-page test, byte-identical."""
+    if os.environ.get('TEMPLATE_GATE_DISTINCTIVE', '1') == '0':
+        return _rival_branding_present_v1(picked, templates, ocr_lower, bar)
+    if not ocr_lower:
+        return False
+    try:
+        import chrome_band
+    except ImportError:
+        from extraction import chrome_band
+    band_tokens = re.findall(r'[a-z0-9]+', chrome_band.issuer_chrome(ocr_lower).lower())
+    if not band_tokens:
+        return False
+    pid = ((picked.get('dominant_supplier') or picked.get('name') or '').strip().lower())
+    banks, names = {}, {}
+    for t in (templates or []):
+        tid = ((t.get('dominant_supplier') or t.get('name') or '').strip().lower())
+        if not tid or tid == pid:
+            continue
+        names.setdefault(tid, (t.get('dominant_supplier') or t.get('name') or '').strip())
+        banks.setdefault(tid, set()).update(_distinctive_tokens(t.get('keyword_fingerprint') or []))
+    for tid, words in banks.items():
+        if len(words) >= _BRANDING_MIN_WORDS \
+                and _keyword_hit_ratio_fuzzy(sorted(words), band_tokens) >= bar:
+            return True
+        nt = _name_arm_tokens(names[tid])
+        if len(nt) >= 2 and _keyword_hit_ratio_fuzzy(sorted(nt), band_tokens) >= bar:
+            return True
+    return False
+
+
+def _rival_branding_present_v1(picked: dict, templates: list, ocr_lower: str,
+                               bar: float = 0.75) -> bool:
+    """The V1 rival test, preserved VERBATIM for TEMPLATE_GATE_DISTINCTIVE=0 (the byte-identical
+    revert pin): raw per-template fingerprint, exact word-boundary, whole page, flat bar.
+    Identity = dominant_supplier else name; a template with no fingerprint or no identity can
+    never be the rival (fail-safe)."""
     pid = ((picked.get('dominant_supplier') or picked.get('name') or '').strip().lower())
     for t in (templates or []):
         if not (t.get('keyword_fingerprint') or []):
