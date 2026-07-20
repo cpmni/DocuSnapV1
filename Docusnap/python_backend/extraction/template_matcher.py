@@ -206,6 +206,33 @@ def identify_template(page_image, ocr_text: str, templates: list,
                 # refuse above.) If so the engine HOLDS the doc for review instead of auto-filing a
                 # popularity-coin-flip type. Computed over the WIDER jitter-immune band — see
                 # _type_ambiguity / _AMBIG_LOGO_BAND (Oracle).
+                # SLICE 1d — TEXT CORROBORATION for a LOGO-ONLY accept (identity text-first,
+                # 2026-07-20). Everything above can accept a template on LOGO DISTANCE ALONE
+                # (conf = 100 - 6*dist >= 60, i.e. dist <= 6) — and the 64-bit phash is MEASURED
+                # to have zero separating power on scans (cross-supplier MIN hamming 2 vs
+                # same-supplier min 6). Live case that forced this: a NORTHGATE invoice matched a
+                # COPPERFIELD invoice template (Northgate has no invoice template of its own), so
+                # it filed as Copperfield while its 7 siblings resolved correctly by text. The
+                # engine's logo->supplier gate can't help here: this path sets the supplier BEFORE
+                # it, via template_fixed.
+                # So: when the pick rests on the logo alone ('logo' — NOT 'logo+slug', which the
+                # doc's own detected TYPE corroborated, nor 'logo+keywords', which text already
+                # broke), require ANY of the winning template's distinctive branding words on the
+                # page. Zero overlap => the letterhead contradicts the template => ABSTAIN (fall
+                # to keyword/hint identity + the branding net + review) rather than impose a
+                # wrong supplier, type and field layout.
+# FAIL-SAFE, and it mirrors the engine's logo gate: mere ABSENCE of the winner's branding is
+                # NOT enough (a legitimate logo-only match whose fingerprint words didn't OCR must still
+                # work — pinned in test_template_matcher as "matches Acme by logo alone"). We abstain only
+                # on POSITIVE DISAGREEMENT: the winner's own branding is absent AND some OTHER supplier's
+                # branding is decisively present on the page. Un-fingerprinted templates and empty OCR are
+                # unjudgeable and always accepted. Kill switch TEMPLATE_LOGO_TEXT_GATE=0.
+                if (method == 'logo' and ocr_lower
+                        and os.environ.get('TEMPLATE_LOGO_TEXT_GATE', '1') != '0'
+                        and (best_t.get('keyword_fingerprint') or [])
+                        and _keyword_hit_ratio(best_t, ocr_lower) <= 0.0
+                        and _rival_branding_present(best_t, templates, ocr_lower)):
+                    return None
                 ambiguous_type = _type_ambiguity(cands, cluster_dist, detected_slug, title_trusted)
                 result = {'template': best_t, 'confidence': conf, 'method': method,
                           'logo_phash': logo_phash, 'ambiguous_type': ambiguous_type}
@@ -414,6 +441,26 @@ def _min_set_dist(template: dict, phash: str) -> int:
     hashes = template.get('logo_phashes') or ([template.get('logo_phash')] if template.get('logo_phash') else [])
     dists = [_hamming(phash, h) for h in hashes if h]
     return min(dists) if dists else 99
+
+
+def _rival_branding_present(picked: dict, templates: list, ocr_lower: str,
+                            bar: float = 0.75) -> bool:
+    """True → some template belonging to a DIFFERENT supplier identity has its distinctive branding
+    DECISIVELY on this page (ratio >= bar). Used by the Slice-1d logo-only gate: absence of the
+    winner's own branding is not evidence (a bad scan looks the same), but another supplier's
+    letterhead being clearly present IS — that is the Northgate-invoice-matched-a-Copperfield-
+    template case. Identity = dominant_supplier else name; a template with no fingerprint or no
+    identity can never be the rival (fail-safe)."""
+    pid = ((picked.get('dominant_supplier') or picked.get('name') or '').strip().lower())
+    for t in (templates or []):
+        if not (t.get('keyword_fingerprint') or []):
+            continue
+        tid = ((t.get('dominant_supplier') or t.get('name') or '').strip().lower())
+        if not tid or tid == pid:
+            continue
+        if _keyword_hit_ratio(t, ocr_lower) >= bar:
+            return True
+    return False
 
 
 def _keyword_hit_ratio(template: dict, ocr_lower: str) -> float:
