@@ -3760,7 +3760,9 @@ async function confirmCurrentDoc({ bulk = false, expectId = null, acknowledgePre
       // "Straighten + Reprocess" or OCR-Preview session can't write a drifted fingerprint that
       // poisons this supplier's identity for future raw imports (Oracle C1).
       const logoB64 = getRawPageBase64(currentPage);
-      saveLogoOnConfirm(supplierForLogo, logoB64).catch(() => {});
+      // Pass the doc id so the main process can apply the confirm-time plant gate (Oracle C4):
+      // a plant is skipped when the confirmed issuer isn't corroborated by THIS document's text.
+      saveLogoOnConfirm(supplierForLogo, logoB64, currentDoc?.id).catch(() => {});
     }
     selCanvas.width = 0; selCanvas.height = 0;   // clear any ⊕ selection overlay for the next doc
   }
@@ -4403,7 +4405,7 @@ async function attemptLogoMatch() {
 // snapshot image — reading the live docImg here would fingerprint the NEXT doc against
 // the previous supplier (eric R1). With no b64 we fall back to the live docImg (the
 // legacy bulk/confirmCurrentDoc callers, which run before any advance).
-async function saveLogoOnConfirm(supplierName, b64 = null) {
+async function saveLogoOnConfirm(supplierName, b64 = null, documentId = null) {
   if (!supplierName) return;
   try {
     if (!b64) {
@@ -4416,6 +4418,9 @@ async function saveLogoOnConfirm(supplierName, b64 = null) {
         supplier_name: supplierName,
         phash:         hashes.phash,
         ahash:         hashes.ahash || hashes.phash,
+        // The main process gates the plant on this document's own text (Oracle C4); absent id
+        // ⇒ the gate fails open, so older callers keep working unchanged.
+        document_id:   documentId ?? currentDoc?.id ?? null,
       });
     }
   } catch (err) {

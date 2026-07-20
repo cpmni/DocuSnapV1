@@ -69,10 +69,38 @@ function convergesByBranding(fpA, fpB, threshold) {
   return shared >= DISTINCTIVE_MIN && ratio >= threshold;
 }
 
+/**
+ * CONFIRM-TIME PLANT GATE (identity text-first, Oracle C4) — is `supplierName` corroborated by
+ * this document's own text? A logo fingerprint planted under a wrong-but-confirmed supplier is
+ * the poison loop the text-agreement gate can't reach: the human rubber-stamps a plausible
+ * prefill, and the page phash is planted under the wrong company, making the NEXT batch worse.
+ *
+ * Judged on the supplier's DISTINCTIVE tokens: its learned template fingerprints when it has
+ * any, else the distinctive words of its own NAME (so a genuine FIRST-CONTACT enrolment — the
+ * case that has no template yet — still corroborates and still plants; gating on "has a note"
+ * instead would starve legitimate enrolment, which is why the Oracle rejected that shape).
+ *
+ * FAIL OPEN by design: no text, or nothing distinctive to test, ⇒ { judgeable:false,
+ * corroborated:true }. This gate may only ever SKIP a learning write — it can never change a
+ * filed value — so an unjudgeable case must not block enrolment.
+ */
+function nameCorroboratedByText(supplierName, supplierFingerprints, ocrText) {
+  const text = String(ocrText || '').toLowerCase();
+  let tokens = [];
+  for (const fp of (supplierFingerprints || [])) tokens.push(...distinctiveTokens(fp));
+  if (!tokens.length) tokens = distinctiveTokens(String(supplierName || '').split(/\s+/));
+  tokens = [...new Set(tokens)];
+  if (!text || !tokens.length) return { judgeable: false, corroborated: true, matched: [] };
+  const matched = tokens.filter(t => new RegExp(`(^|[^a-z0-9])${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9]|$)`)
+    .test(text));
+  return { judgeable: true, corroborated: matched.length > 0, matched };
+}
+
 module.exports = {
   BRANDING_STOPWORDS,
   DISTINCTIVE_MIN,
   distinctiveTokens,
   symmetricDistinctiveOverlap,
   convergesByBranding,
+  nameCorroboratedByText,
 };

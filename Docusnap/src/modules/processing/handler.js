@@ -1880,10 +1880,40 @@ function register(ctx) {
     return result?.match || null;
   });
 
-  ipcMain.handle('save-logo-fingerprint', (_e, { supplier_name, phash, ahash, detail_hash }) => {
+  ipcMain.handle('save-logo-fingerprint', (_e, { supplier_name, phash, ahash, detail_hash, document_id }) => {
     requireRole('admin', 'edit');
     const learning = require('../../../database/modules/learning');
-    learning.saveLogoFingerprint(getDb(), { supplier_name, phash, ahash, detail_hash });
+    const db = getDb();
+    // CONFIRM-TIME PLANT GATE (identity text-first, Oracle C4). The text-agreement gate stops the
+    // ENGINE asserting a contradicted identity, but a human can still rubber-stamp a plausible
+    // wrong prefill — and this plant would then teach the wrong company that page's logo, making
+    // the next batch worse (the measured anti-healing loop: cross-supplier min hamming 2). So a
+    // plant now requires the confirmed issuer to be corroborated by the DOCUMENT'S OWN text.
+    // Gated on positive corroboration, NOT on "the field carries a note" — every template-less
+    // new supplier carries one, and that shape would starve legitimate first-contact enrolment.
+    // FAILS OPEN (no doc id, no ocr_text, nothing distinctive ⇒ plant) and can only ever skip a
+    // LEARNING write — never a filed value. Kill switch LOGO_PLANT_TEXT_GATE=0.
+    if (document_id != null && process.env.LOGO_PLANT_TEXT_GATE !== '0') {
+      try {
+        const bf = require('../../../database/modules/branding_fingerprint');
+        const doc = db.prepare('SELECT ocr_text FROM documents WHERE id = ?').get(Number(document_id));
+        const fps = db.prepare(
+          `SELECT t.keyword_fingerprint FROM templates t
+             WHERE t.keyword_fingerprint IS NOT NULL AND LOWER(TRIM(t.name)) = LOWER(TRIM(?))`
+        ).all(String(supplier_name || '')).map(r => { try { return JSON.parse(r.keyword_fingerprint) || []; } catch { return []; } });
+        const verdict = bf.nameCorroboratedByText(supplier_name, fps, doc && doc.ocr_text);
+        if (verdict.judgeable && !verdict.corroborated) {
+          logger?.warn?.(`[identity] logo plant SKIPPED for '${supplier_name}' — doc ${document_id} text does not corroborate it`);
+          try {
+            logAudit(db, { action: 'logo_plant_skipped', action_category: 'processing',
+              target_type: 'document', target_id: Number(document_id), document_id: Number(document_id),
+              outcome: 'success', details: `supplier=${supplier_name} reason=text_not_corroborated` });
+          } catch { /* audit must never break the confirm */ }
+          return false;
+        }
+      } catch (e) { logger?.warn?.(`[identity] plant gate check failed (planting anyway): ${e.message}`); }
+    }
+    learning.saveLogoFingerprint(db, { supplier_name, phash, ahash, detail_hash });
     return true;
   });
 
