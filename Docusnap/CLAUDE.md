@@ -22,10 +22,11 @@ touches that area — read the pointed-to doc BEFORE working in it:
   ➜AN there). Read the matching block before changing one of those files.
 
 ## Current session state (2026-07-20) — lean index; full detail in `HANDOVER_2026-07-20.md` + `docs/session-log.md`
-**Branch `feat/reprocess-throughput-autostraighten` — ALL PUSHED through `277a107`, working tree
-clean. Installer `dist\ScanFinder Setup 2.0.0-r20260720-0850-365bada.exe` is ALREADY STALE: it
-predates `04a6af1` (fresh-install type fix) + `277a107` (live template counts), the two fixes that
-matter most on a new DB — REBUILD before the next fresh-install test.
+**Branch `feat/reprocess-throughput-autostraighten` — ALL PUSHED through `71ffc8d`, working tree
+clean. CURRENT installer `dist\ScanFinder Setup 2.0.0-r20260720-1204-71ffc8d.exe` (built 2026-07-20
+12:04) — the FIRST build carrying `04a6af1` (fresh-install type fix) + `277a107` (live template
+counts), the two fixes that matter most on a new DB. Use it for the next fresh-install test; every
+earlier `dist\*.exe` predates them.
 READ FIRST: `HANDOVER_2026-07-20.md` (then `HANDOVER_2026-07-19.md`).**
 - **OWNER-REPORTED LIVE BUGS FIXED 2026-07-20** (all root-caused from their log + a copy of the
   second machine's DB, all corpus-gated byte-identical): **`04a6af1` the FRESH-INSTALL TYPE HOLE** —
@@ -41,9 +42,13 @@ READ FIRST: `HANDOVER_2026-07-20.md` (then `HANDOVER_2026-07-19.md`).**
   UNTOUCHED" was deliberately flipped) · **`0107331`** a GARBLED caption on the RELOCATED crop (the
   exact check was relocate-only, the fuzzy check rigid-only — a garbled relocate fell between them) ·
   **`53ceea9`** Review now says WHY a clean doc waits below the auto-file threshold.
-- **⚠ TWO PRE-EXISTING TEST FAILURES** (verified by stashing — NOT regressions):
-  `database/modules/test_promote_custom_doctype.js` and `python_backend/tests/test_reprocess_type_flip.py`
-  (stale fixture: unpacks 5 values from `doc_overrides`, which returns 6).
+- **THE TWO PRE-EXISTING TEST FAILURES ARE FIXED (`71ffc8d`)** — both were stale, not regressions:
+  `test_reprocess_type_flip.py` unpacked a 5-tuple from `doc_overrides` (6 since the supplier-pin
+  work), and its own shape pin was red too so it never flagged it; `test_promote_custom_doctype.js`
+  had a fixture predating `logo_detail_hash`/`detail_hash` (mig 47), so the promote died on
+  "no such column" and EVERY later assertion cascaded off that one error. A stale pin there was
+  deliberately flipped: it asserted a recipient `customer` name freezes as a template `fixed_value`,
+  which contradicts `_buildTemplateFields` rule (B) — only the ISSUER is legitimately constant.
 - **WORKFLOW SUITE — engine COMPLETE for single-hop; 2 slices left, neither blocking**: built =
   slice 0 (authz) · 1 (reveal core) · 2 (decision snapshot) · 3 (amount routing) · routing-settings ·
   FYI non-locking · E1 admin cancel. REMAINING = **slice 5 delegation+escalation** (a real feature,
