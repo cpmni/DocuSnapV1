@@ -250,6 +250,23 @@ function classifyLearnedShape(sampleValues) {
  * scopeTrust's required-field verifiability check, and reclassifying a contaminated required
  * field as 'code' there would silently widen GRADUATION itself — the seam inside the fix.
  */
+/**
+ * Is the non-role shape leniency ON? DEFAULT ON since 2026-07-20; `TRUST_NONROLE_SHAPE_LENIENT=0`
+ * restores the old blanket block. Defined ONCE and exported so the tests assert against the same
+ * default the product uses — a test that hard-codes its own copy of a default silently stops
+ * testing the shipped behaviour the moment the default moves, which is how a pin quietly dies.
+ *
+ * Flipped ON after both gate conditions were met, not on the strength of the argument:
+ *   • corpus A/B (realdoc_regression, 156 docs, OFF vs ON): would-auto-file 50 → 82, silent
+ *     would-auto-file-WRONG (M) UNCHANGED at 1 (the pre-existing #108), M_type 0, and per-field
+ *     accuracy byte-identical on all six scored fields;
+ *   • live-DB re-judge under this exact rule: 29 documents flip, 0 with a ROLE blocking key,
+ *     0 whose blocking field had any dominant structure.
+ */
+function _nonRoleLenientEnabled() {
+  return process.env.TRUST_NONROLE_SHAPE_LENIENT !== '0';
+}
+
 const _DOMINANT_MIN_SAMPLES = 5;
 const _DOMINANT_MIN_SHARE   = 0.75;
 function _dominantStructuredClass(sampleValues) {
@@ -399,7 +416,7 @@ function docTrustGate(db, docId, supplier, slug, opts = {}) {
   // happens: repairStructuralRoles() deliberately CLEARS a dangling role to NULL. So when either
   // role is unset, no leniency applies to this document at all.
   const _rolesComplete = !!(_dtRow.ref_field_key && _dtRow.date_field_key);
-  const _nonRoleLenientOn = process.env.TRUST_NONROLE_SHAPE_LENIENT === '1' && _rolesComplete;
+  const _nonRoleLenientOn = _nonRoleLenientEnabled() && _rolesComplete;
 
   for (const e of exs) {
     const v = String(e.display_value ?? e.raw_value ?? '').trim();
@@ -656,6 +673,7 @@ module.exports = {
   TRUST_WINDOW, TRUST_MAX_CORRECTIONS, TRUSTED_FLOOR, UNTRUSTED_FLOOR, STRICT_TYPES,
   classifyLearnedShape, valueMatchesShape, fieldVerifiable,
   _dominantStructuredClass,        // exported for the contaminated-history pin (test_scope_trust.js §18b)
+  _nonRoleLenientEnabled,          // single source of the default, so tests can't drift from it
   validDate: _validDate, validIban: _validIban, validVatGb: _validVatGb,
   currencyDpConsistent: _currencyDpConsistent, currencyConsistentForField: _currencyConsistentForField, matchesTypePattern: _matchesTypePattern,
   scopeTrust, docTrustGate, isAutoFileEligible, autoFileEligibleIds,

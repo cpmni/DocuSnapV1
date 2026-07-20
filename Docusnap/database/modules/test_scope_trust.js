@@ -474,7 +474,9 @@ function main() {
     // since migration 44), so the cost is wrong METADATA on a correctly-filed, searchable doc.
     // The guard that replaces it is dominance, not absence — see the pin two blocks below, which
     // proves a field of codes with one confirmed misread STILL blocks. Do NOT "restore" this.
-    const _lenient = process.env.TRUST_NONROLE_SHAPE_LENIENT === '1';
+    // Ask trust.js what the default IS — never restate it here. A test carrying its own copy of a
+    // default stops testing the shipped behaviour the moment the default moves.
+    const _lenient = trust._nonRoleLenientEnabled();
     check("free-text customer: BLOCKED with the switch off, EXEMPT with it on",
       (trust.docTrustGate(db, d100.id, 'Document Solutions', 'invoice').reason === 'unverifiable-value:customer') === !_lenient);
     check("100% doc → ELIGIBLE (full read files gate-free, as pre-graduation)",
@@ -528,7 +530,7 @@ function main() {
         supplier: 'Anconia Corp', when: '2026-06-09T11:00:00Z', status: 'needs_review', template: 7,
         fields: { supplier_name: 'Anconia Corp', invoice_date: '05-06-2026', invoice_number: 'INV8002',
                   total: '250.00', item: 'M0108' },
-      }), 'Anconia Corp', 'invoice').ok === (process.env.TRUST_NONROLE_SHAPE_LENIENT === '1'));
+      }), 'Anconia Corp', 'invoice').ok === trust._nonRoleLenientEnabled());
   }
 
   // ── 18c. NULL-ROLE GUARD (Oracle) — leniency must not apply where a role self-healed away ──
