@@ -337,6 +337,27 @@ _BRANDING_PRESENT_RATIO = 0.25
 # these callable without an engine — keep them pure. Same K, same stopword strip, same EXACT
 # whole-page _keyword_hit_ratio: fuzzing own_ratio was deliberately REJECTED (it can only RAISE the
 # ratio and suppress a flag = fail-open to a silent wrong supplier).
+def _letterhead_type_phrases(patterns):
+    """Every printed phrase that names a DOCUMENT TYPE — the `document_type_keywords` bucket KEYS
+    **and** the phrases inside them. The letterhead reader excludes these so a type heading can
+    never be read as a company. Keys alone are NOT enough: the buckets carry the real printed forms
+    ("tax invoice", "vat invoice", "order confirmation"), which are multi-word (so title_pick's
+    GENERIC_SINGLES misses them) and longer than the chrome-fragment guard's 2-5 char window — a
+    logo-only letterhead would otherwise have suggested "TAX INVOICE" as the company."""
+    out = []
+    try:
+        buckets = (patterns or {}).get("document_type_keywords", {}) or {}
+        for key, phrases in buckets.items():
+            out.append(str(key))
+            if isinstance(phrases, dict):
+                out.extend(str(p) for p in phrases.keys())
+            elif isinstance(phrases, (list, tuple, set)):
+                out.extend(str(p) for p in phrases)
+    except Exception:
+        pass                       # a suggestion helper must never break an extraction
+    return out
+
+
 def _branding_banks(templates, norm):
     """{norm_issuer: {'name': str, 'words': set}} — keyed by the template's DOMINANT confirmed
     issuer (else its name); value = its distinctive branding tokens."""
@@ -3941,6 +3962,72 @@ class ExtractionEngine:
                     "Couldn't confirm which company sent this — the logo matched another company "
                     "but the page text doesn't agree. Please set the correct company.")
             results["_needs_review"] = True
+
+        # ── LETTERHEAD ISSUER SUGGESTION (2026-07-20, DEFAULT OFF: LETTERHEAD_ISSUER=1 to arm) ───
+        # THE COLD-START HOLE. field_patterns.supplier_name finds the issuer only by a CAPTION
+        # ("Bill From"/"Supplier"/"Vendor"/…), and real letterheads carry none — the company name
+        # just sits at the top. Every other issuer path (template/logo/hint-scan/branding) needs a
+        # prior confirm. So on FIRST CONTACT the issuer is unreadable: measured 0 of 270 documents
+        # identified cold, including one whose OCR line 1 is literally its own company name.
+        #
+        # SUGGESTS, NEVER ASSERTS, and the reason is not timidity: this reader only has to carry
+        # DOCUMENT #1. After one confirm the supplier has a hint, a logo and a template and every
+        # later document resolves at full confidence — so it never needs authority to assert, while
+        # a wrong assert would plant a poisoned learning SCOPE that then attracts future documents.
+        # It therefore rides the SAME value-less-row + "Use '<name>'" affordance the branding
+        # abstain above already uses — which the renderer arms by MATCHING THE NOTE TEXT, so the
+        # wording below is part of the contract, not decoration (see the note comment).
+        #
+        # FILL-EMPTY-ONLY and placed LAST, deliberately: several upstream guards are written
+        # `if not supplier_name`, so producing a value earlier would SKIP the logo match and the
+        # Stage-2.5a hint scan. A fresh geometric guess must never outrank a learned identity.
+        if (os.environ.get("LETTERHEAD_ISSUER", "0") == "1"
+                and not (isinstance(results.get("supplier_name"), dict)
+                         and results["supplier_name"].get("value"))):
+            try:
+                from extraction import letterhead
+                _lh = letterhead.pick_issuer(
+                    ocr_text,
+                    # Exclude the document's OWN detected type name and the shipped type
+                    # vocabulary, so a printed type heading can never be read as a company.
+                    # BOTH the bucket KEYS and the PHRASES inside them: keys alone left
+                    # "TAX INVOICE" / "VAT INVOICE" / "ORDER CONFIRMATION" eligible, and those
+                    # sail past GENERIC_SINGLES (multi-word) and past the chrome-fragment guard
+                    # (which only judges 2-5 char cores) — a logo-only letterhead would then have
+                    # suggested "TAX INVOICE" as the company name.
+                    detected_title=results.get("_document_type"),
+                    type_phrases=_letterhead_type_phrases(self.patterns),
+                )
+            except Exception as _e:                  # a suggestion must never break an extraction
+                _lh = None
+                self.log(f"  Letterhead issuer scan skipped: {_e}")
+            if _lh:
+                _lfld = results.get("supplier_name")
+                if not isinstance(_lfld, dict):
+                    _lfld = {"value": None, "confidence": 0, "method": "letterhead_suggest"}
+                    results["supplier_name"] = _lfld
+                if not _lfld.get("suggested_supplier"):     # never displace a stronger suggestion
+                    _lfld["suggested_supplier"] = _lh
+                    # ⚠ THE WORDING IS LOAD-BEARING, not cosmetic. The Review renderer decides
+                    # whether to draw the "Use '<name>'" button by REGEX-MATCHING this note
+                    # (renderer.js isBrandingFlag: /page branding reads|confirm the correct
+                    # company/i). An earlier draft ended "…confirm the company", which does not
+                    # match — the suggestion was computed, stored, passed to the renderer and
+                    # silently dropped, leaving the operator prose and an empty box. Two languages
+                    # coupled by a sentence: test_letterhead_note_contract.js pins BOTH sides, so a
+                    # copy edit here trips red instead of quietly removing the only affordance.
+                    #
+                    # The copy also has a job: this fires on FIRST CONTACT, where the corroboration
+                    # gate cannot protect anything (the name was read verbatim out of the page, so
+                    # "is it corroborated by the page text" is true by construction). The operator's
+                    # reading of this sentence is the whole remaining safety budget, so it names the
+                    # one mistake only a human can catch here: sender versus customer.
+                    _lfld.setdefault(
+                        "validation_note",
+                        f"Never seen this sender before. The top of the page reads '{_lh}' — "
+                        "please confirm the correct company (check it's the sender, not the customer).")
+                    results["_needs_review"] = True
+                    self.log(f"  Letterhead issuer SUGGESTED: '{_lh}' (not assigned)")
 
         # TYPE-AMBIGUITY guard (Fix A, Oracle 2026-07-13) — the fail-toward-review backstop for the
         # same-letterhead type-flip: a supplier issuing several doc types on ONE logo lets a skew-
