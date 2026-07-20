@@ -21,9 +21,18 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-07-19) — lean index; full detail in `HANDOVER_2026-07-19.md` + `docs/session-log.md`
-**Branch `feat/reprocess-throughput-autostraighten`, 15 commits UNPUSHED — ask before pushing; installer
-STALE `r20260718-0818-bea1028`. READ FIRST: `HANDOVER_2026-07-19.md`.**
+## Current session state (2026-07-20) — lean index; full detail in `HANDOVER_2026-07-19.md` + `docs/session-log.md`
+**Branch `feat/reprocess-throughput-autostraighten` — ALL PUSHED through `0107331` (2026-07-20; the
+07-19+07-20 batch of 39 commits went up together, working tree clean). Installer STALE
+`r20260718-0818-bea1028` — a rebuild is owed (identity + workflow + review-UX changes are all
+source-only so far). READ FIRST: `HANDOVER_2026-07-19.md`.**
+- **WORKFLOW SUITE — engine COMPLETE for single-hop; 2 slices left, neither blocking**: built =
+  slice 0 (authz) · 1 (reveal core) · 2 (decision snapshot) · 3 (amount routing) · routing-settings ·
+  FYI non-locking · E1 admin cancel. REMAINING = **slice 5 delegation+escalation** (a real feature,
+  not a prerequisite) and **slice 6 PACKAGING FLIP** (unbundle from the client seat + backend SKU +
+  entitlement card — this is the go-live switch). Slice 4 multi-step DEFERRED (Barry). The temp
+  `WORKFLOW_FEATURE_ENABLED=true` flip is REVERTED (`14a7d2e`) — the suite ships dark; flipping it
+  locally for testing turns `test_entitlement.js` red, which is expected, not a regression.
 - **FYI NON-LOCKING slice BUILT 2026-07-19 (Barry→gary/eric→Oracle C1–C8, 20-suite gate green)** —
   only open APPROVE routes lock (`hasActiveApprovalRoute`, NOT-acknowledge polarity incl. NULL;
   env `WORKFLOW_ACK_LOCKS=1` restores old locking); delete now CLOSES open routes as 'recalled' +
