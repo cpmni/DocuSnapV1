@@ -354,6 +354,97 @@ def _branding_banks(templates, norm):
     return banks
 
 
+def _branding_alt_name(banks, ocr_text, exclude_norm):
+    """The DECISIVELY-present alternative supplier on this page, or None — extracted VERBATIM from
+    _flag_branding_conflict (slice 1a/C1) so the late FLAG and the gate's abstain-suggestion name
+    the alternative by ONE rule. Returns (named, fuzzy_on).
+
+    >=0.75 present AND a >=0.25 margin over any third (positive evidence, not weak agreement).
+    FUZZY (a garbled 'rthgate' still resolves 'northgate') and scoped to the ISSUER BAND ONLY (top
+    letterhead, truncated at the first recipient marker), so a mid-page recipient can never be named
+    as the issuer. Kill switch BRANDING_ALT_FUZZY: =0 restores the legacy exact whole-page scan,
+    whose result must NOT feed an actionable button (it can name a recipient) — hence fuzzy_on is
+    returned so callers gate the suggestion on it."""
+    fuzzy = os.environ.get("BRANDING_ALT_FUZZY", "1") != "0"
+    if not banks or not ocr_text:
+        return None, fuzzy
+    from extraction import template_matcher
+    issuer_tokens = None
+    if fuzzy:
+        import re as _re
+        from extraction import chrome_band
+        issuer_tokens = _re.findall(r"[a-z0-9]+", chrome_band.issuer_chrome(ocr_text).lower())
+    ocr_lower = ocr_text.lower()
+    alt, alt_ratio, second = None, 0.0, 0.0
+    for norm_key, b in banks.items():
+        if norm_key == exclude_norm or len(b["words"]) < _BRANDING_MIN_WORDS:
+            continue
+        if fuzzy:
+            r = template_matcher._keyword_hit_ratio_fuzzy(sorted(b["words"]), issuer_tokens)
+        else:
+            r = template_matcher._keyword_hit_ratio(
+                {"keyword_fingerprint": sorted(b["words"])}, ocr_lower)
+        if r > alt_ratio:
+            alt, second, alt_ratio = b["name"], alt_ratio, r
+        elif r > second:
+            second = r
+    named = alt if (alt and alt_ratio >= 0.75 and alt_ratio - second >= 0.25) else None
+    return named, fuzzy
+
+
+# ── Identity text-sufficiency floor (Oracle C2) ────────────────────────────────────────────
+# own_ratio is EXACT + whole-page, so a page whose letterhead OCR'd to mush scores ~0 — under the
+# late FLAG that only cost a review hold, but as a DESTRUCTIVE gate (abstain) it would delete a
+# CORRECT identity on a bad scan. Below this floor the page is UNJUDGEABLE (branch 2), never
+# "branding absent". MEASURED on the live corpus (133 docs with ocr_text, 2026-07-20): the THINNEST
+# real page had 18 issuer-band tokens / 76 whole-page tokens; median 25 / 116. The floor sits ~45%
+# BELOW the worst real page, so it routes ZERO healthy docs to branch 2 and fires only on OCR that
+# genuinely failed. Re-measure before moving it.
+_IDENTITY_MIN_BAND_TOKENS = 10
+_IDENTITY_MIN_PAGE_TOKENS = 50
+
+
+def _identity_text_sufficient(ocr_text):
+    """False when this page's text is too thin to judge branding presence either way (C2)."""
+    if not ocr_text:
+        return False
+    import re as _re
+    from extraction import chrome_band
+    page = _re.findall(r"[a-z0-9]+", ocr_text.lower())
+    if len(page) < _IDENTITY_MIN_PAGE_TOKENS:
+        return False
+    band = _re.findall(r"[a-z0-9]+", chrome_band.issuer_chrome(ocr_text).lower())
+    return len(band) >= _IDENTITY_MIN_BAND_TOKENS
+
+
+def decide_logo_text_gate(logo_supplier, banks, ocr_text, norm, accepted_issuers=()):
+    """PURE three-way decision for an accepted logo match (identity text-first, slice 1b).
+    Returns one of 'accept' | 'suggest' | 'abstain'.
+
+    'accept'  — the supplier's OWN distinctive branding is on the page: byte-identical to pre-slice
+                behaviour (value, confidence incl. the match_count bonus, method 'logo').
+    'suggest' — UNJUDGEABLE (no >=K-word bank for this supplier, or the page text is below the C2
+                sufficiency floor): keep the value but review-bound (<=69 + note). A logo alone
+                never ASSERTS, but withholding what it saw would leave the reviewer mute (Oracle Q1).
+    'abstain' — POSITIVE DISAGREEMENT (a bank exists, the page text is sufficient, and the
+                supplier's branding is absent): the logo is contradicted by the page — drop it.
+
+    An operator-allowlisted issuer ('Issuer is correct') NEVER abstains (Oracle C3): the human
+    already ruled on this identity; a text-poor page must not silently override them."""
+    if not logo_supplier:
+        return 'abstain'
+    if not _identity_text_sufficient(ocr_text):
+        return 'suggest'                       # C2: too little text to judge → never destructive
+    own_ratio = _branding_own_ratio(logo_supplier, banks, ocr_text, norm)
+    if own_ratio is None:
+        return 'suggest'                       # no >=K-word bank → unjudgeable (fail-safe)
+    if own_ratio > _BRANDING_PRESENT_RATIO:
+        return 'accept'
+    if norm(logo_supplier) in (accepted_issuers or ()):
+        return 'suggest'                       # C3: operator allowlist outranks the text check
+    return 'abstain'
+
+
 def _branding_own_ratio(supplier_name, banks, ocr_text, norm):
     """How much of `supplier_name`'s OWN distinctive branding appears on the page.
     None = UNJUDGEABLE (no bank for it, or fewer than K distinctive words) — the fail-safe class
@@ -1352,37 +1443,7 @@ class ExtractionEngine:
             return  # no >=K-word fingerprint for the resolved supplier -> can't judge (fail-safe)
         if own_ratio > _BRANDING_PRESENT_RATIO:
             return  # the resolved supplier's own branding IS on the page -> healthy, no flag
-        K = _BRANDING_MIN_WORDS
-        ocr_lower = ocr_text.lower()
-        # X's branding is ABSENT. Name the decisively-present alternative supplier, if one stands out
-        # (>=0.75 present AND a clear margin over any third — Oracle: positive evidence, not weak agreement).
-        # The alt-scan is FUZZY (a garbled letterhead word "rthgate" still resolves "northgate") and runs
-        # on the ISSUER-BAND text ONLY (top letterhead, truncated at the first recipient marker), so a
-        # mid-page recipient/customer name can never be named as the issuer. own_ratio above stays EXACT +
-        # whole-page ON PURPOSE — fuzzing it could RAISE it and SUPPRESS the flag (fail-open to a silent
-        # wrong supplier); fuzzing only the alt-scan can never suppress, only ADD a name. Kill switch
-        # BRANDING_ALT_FUZZY (fuzzy is a superset of exact, so =0 restores the exact-name behaviour).
-        _fuzzy = os.environ.get("BRANDING_ALT_FUZZY", "1") != "0"
-        _issuer_tokens = None
-        if _fuzzy:
-            import re as _re
-            from extraction import chrome_band
-            _issuer_tokens = _re.findall(r"[a-z0-9]+", chrome_band.issuer_chrome(ocr_text).lower())
-        alt, alt_ratio, second = None, 0.0, 0.0
-        _own_norm = self._accept_norm(supplier_name)
-        for norm, b in banks.items():
-            if norm == _own_norm or len(b["words"]) < K:
-                continue
-            if _fuzzy:
-                r = template_matcher._keyword_hit_ratio_fuzzy(sorted(b["words"]), _issuer_tokens)
-            else:
-                r = template_matcher._keyword_hit_ratio(
-                    {"keyword_fingerprint": sorted(b["words"])}, ocr_lower)
-            if r > alt_ratio:
-                alt, second, alt_ratio = b["name"], alt_ratio, r
-            elif r > second:
-                second = r
-        named = alt if (alt and alt_ratio >= 0.75 and alt_ratio - second >= 0.25) else None
+        named, _fuzzy = _branding_alt_name(banks, ocr_text, self._accept_norm(supplier_name))
         if named:
             note = (f"The page branding reads '{named}', but this was filed under '{supplier_name}'. "
                     "Please confirm the correct company.")
@@ -2389,6 +2450,29 @@ class ExtractionEngine:
         # phash drifts out of range and the supplier fails to resolve on a straighten-reprocess.
         if not supplier_name and logos and _id_img is not None:
             logo_match = anchor.try_logo_supplier_match(_id_img, logos, query_detail_hash=logo_detail_hash)
+            # ── TEXT-AGREEMENT GATE (identity text-first, slice 1b; kill LOGO_TEXT_GATE=0) ──────
+            # MEASURED 2026-07-19: the 64-bit logo phash has ZERO separating power on scans
+            # (cross-supplier MIN hamming 2 vs same-supplier min 6) — it cannot carry identity
+            # alone, while the printed branding separates cleanly (worst cross overlap 0.22) and
+            # named the true supplier on every doc of the Larkspur misassignment. So a logo match
+            # must now AGREE with the page text to assert; it may SUGGEST when the text can't
+            # judge; and it is DROPPED when the text positively contradicts it.
+            # docs/designs/IDENTITY_TEXT_FIRST_2026-07-19.md
+            _gate = 'accept'
+            if logo_match and os.environ.get("LOGO_TEXT_GATE", "1") != "0":
+                _gate = decide_logo_text_gate(
+                    logo_match["supplier_name"],
+                    _branding_banks(templates, self._accept_norm),
+                    ocr_text, self._accept_norm, self.accepted_issuers)
+            if logo_match and _gate == 'abstain':
+                # The page says someone else. Drop the identity rather than scope every
+                # per-supplier learning corpus to the wrong company — but NEVER go mute
+                # (Oracle C1): stash the suppressed name + the branding-detected alternative so
+                # finalisation can surface the "Use '<name>'" button, which is also the ONLY
+                # trigger for the correction-ripple slice.
+                self.log(f"  Logo match '{logo_match['supplier_name']}' DROPPED — the page branding contradicts it")
+                results["_logo_abstained"] = {"suppressed": logo_match["supplier_name"]}
+                logo_match = None
             if logo_match:
                 supplier_name = logo_match["supplier_name"]
                 self.log(
@@ -2401,6 +2485,16 @@ class ExtractionEngine:
                     "confidence": logo_match["confidence"],
                     "method":     "logo",
                 }
+                if _gate == 'suggest':
+                    # UNJUDGEABLE: keep what the logo saw, but review-bound — the note is the
+                    # auto-file lock (isAutoFileEligible refuses any noted field at EVERY floor),
+                    # and text_agree marks the read for the confirm-time learning gate.
+                    results["supplier_name"]["confidence"] = min(
+                        int(results["supplier_name"]["confidence"] or 100), 69)
+                    results["supplier_name"]["text_agree"] = False
+                    results["supplier_name"]["validation_note"] = (
+                        "Matched by logo only — the page text doesn't confirm this company. Please check.")
+                    results["_needs_review"] = True
                 # C2 (Slice D): a PRIMARY detail-hash OVERRIDE that RE-ROUTES the supplier carries a
                 # validation_note — propagate it so the re-route is REVIEW-BOUND. supplier_name is
                 # text-typed, so the trust.js 88 critical-field floor does NOT guard it; the NOTE is the
@@ -3739,6 +3833,36 @@ class ExtractionEngine:
         # changed results['supplier_name'] while the local supplier_name var is stale → false-flag).
         if not _identity_acted:
             self._flag_branding_conflict(results, supplier_name, templates, ocr_text)
+
+        # ── ABSTAIN MUST STILL SPEAK (identity text-first, Oracle C1) ───────────────────────
+        # The text-agreement gate dropped a contradicted logo identity. If NOTHING else resolved
+        # the issuer, the doc would otherwise reach Review mute — no name, no explanation, and no
+        # "Use '<name>'" button, which is ALSO the only trigger for the correction-ripple slice.
+        # So emit a VALUE-LESS supplier_name row carrying the branding-detected alternative (same
+        # alt-scan rule as the flag above: issuer-band, fuzzy, decisively-present only) plus a
+        # plain-English note. Value stays None on purpose — the logo was contradicted, so the app
+        # asserts nothing; the human clicks to accept, exactly as in the branding-conflict flow.
+        _abst = results.get("_logo_abstained")
+        if _abst and not (isinstance(results.get("supplier_name"), dict)
+                          and results["supplier_name"].get("value")):
+            _alt, _alt_fuzzy = _branding_alt_name(
+                _branding_banks(templates, self._accept_norm), ocr_text,
+                self._accept_norm(_abst.get("suppressed") or ""))
+            _fld = results.get("supplier_name")
+            if not isinstance(_fld, dict):
+                _fld = {"value": None, "confidence": 0, "method": "logo_abstained"}
+                results["supplier_name"] = _fld
+            if _alt:
+                _fld["validation_note"] = (
+                    f"The page branding reads '{_alt}'. The logo looked like a different company, "
+                    "so nothing was assumed — please confirm the correct company.")
+                if _alt_fuzzy:                      # actionable button only on the safe issuer-band path
+                    _fld["suggested_supplier"] = _alt
+            else:
+                _fld["validation_note"] = (
+                    "Couldn't confirm which company sent this — the logo matched another company "
+                    "but the page text doesn't agree. Please set the correct company.")
+            results["_needs_review"] = True
 
         # TYPE-AMBIGUITY guard (Fix A, Oracle 2026-07-13) — the fail-toward-review backstop for the
         # same-letterhead type-flip: a supplier issuing several doc types on ONE logo lets a skew-
