@@ -497,6 +497,9 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                 _dlb = (_dloc or {}).get("label_box")
                 if _dlb:   # label LOCATED -> lock the value to it (no drift threshold)
                     _dcand = None
+                    _drelo = None      # slice B: pre-bound — the inline branch below leaves it unset,
+                    _dinline = False   # and the commit block read it (NameError, swallowed at :598)
+                    _dband_reject = False
                     # Part A (007, 2026-07-14): capture the relocate crop's measured word
                     # confidence so the field-conf cap (~1057) + the engine Tier-A OCR gate
                     # aren't BLIND to a garbled clip (this rung uniquely NULLED it — the
@@ -513,6 +516,7 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                                 and _crop_is_credible(_dc, val_type, validation_patterns, label) \
                                 and _qualify_against_format(_dc, field_key, format_lookup, text_field_keys):
                             _dcand = _dc
+                            _dinline = True
                     # 2) else re-read a crop seated beside the LOCATED label
                     if not _dcand:
                         _drelo = _place_from_located(_dloc, direction, (x_norm, y_norm, _dw, _dh),
@@ -526,7 +530,15 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                             if _drv and not _name_field_code_reject(_drv, field_key) \
                                     and _crop_is_credible(_drv, val_type, validation_patterns, label):
                                 _dq = _qualify_against_format(_drv, field_key, format_lookup, text_field_keys)
-                                if _dq:
+                                # (C) COMPOSED CAPTION-BAND REJECT: the read is a garbled caption AND
+                                # the window that produced it still overlaps the located caption band
+                                # -> it is the LABEL, not the value. Keep the rigid read; never commit.
+                                if _dq and _is_caption_band_read(_dq, anchor.get("anchor_label"), field_key,
+                                                                _dlb, _drelo, val_type, page0.size, _tl):
+                                    _dband_reject = True
+                                    if on_reject:
+                                        on_reject(field_key, "anchor_crop_relocated", _dq, "caption_band_read")
+                                elif _dq:
                                     _dcand = _dq
                     if _dcand and _dcand.strip().lower() != (value or "").strip().lower():
                         _rv, _dv = (value or "").strip(), _dcand.strip()
@@ -575,26 +587,47 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                                 on_reject(field_key, "anchor_crop", value, "off_row_drift")
                             value = _dcand
                             method = "anchor_crop_relocated"
-                            _read_box = _norm_box_dict(_drelo, True)   # picker: where the relocate read
-                            # Part A: keep the crop's measured confidence (was NULLED here).
-                            # _dm stays {} when _dcand came from the INLINE HARVEST (no crop
-                            # ran) -> .get returns None -> byte-identical for that sub-case.
-                            ocr_conf, ocr_min = _dm.get('conf'), _dm.get('min_conf')
-                            # CAPTION-BLEED demotion (fix #2, RELOCATE_CAPTION_DEMOTE): the
-                            # relocate's LEADING tokens ARE the taught caption (e.g. "Customer
-                            # Site tee" vs label "Customer Site") -> the crop landed on the
-                            # LABEL, not the value. name_quality can't catch it (real caption
-                            # words score >=0.6, colliding with a legit mixed-case name), so
-                            # FLAG it: the engine merge guard then prefers the clean keyword,
-                            # and the note makes it review-bound even with no keyword incumbent.
-                            # Free-text only (a caption is never a currency). Kill switch below.
-                            if val_type in (None, "text", "multiline_text") \
-                                    and os.environ.get("RELOCATE_CAPTION_DEMOTE", "1") != "0" \
-                                    and _is_caption_bleed(_dcand, anchor.get("anchor_label")):
-                                _caption_bleed = True
-                                if not _relocate_guard_note:
-                                    _relocate_guard_note = ("The taught box landed on this field's "
-                                                            "label, not its value — please verify.")
+                            # (B) SLICE B — the swallowed NameError. Everything from here down used
+                            # to be DEAD whenever the candidate came from the INLINE HARVEST: that
+                            # branch never bound `_drelo`, so the next line raised NameError, which
+                            # the bare `except` at the end of this guard swallowed — AFTER value +
+                            # method had already committed. Consequences, all silent: the provenance
+                            # box was lost; the RIGID crop's ocr_conf/ocr_min were carried over onto
+                            # a read the rigid crop did not produce (corrupting the free-text
+                            # confidence cap and the engine's Tier-A OCR gate); and the caption-bleed
+                            # demotion below never ran for inline reads. Branch-aware now — the
+                            # inline box is already TOP-LEFT (centre=False). Kill switch
+                            # LABELLOCK_INLINE_PROVENANCE=0 restores the crash-truncated behaviour
+                            # for the inline sub-case only (crop reads are unaffected either way).
+                            if not _dinline or os.environ.get("LABELLOCK_INLINE_PROVENANCE", "1") != "0":
+                              _read_box = (_norm_box_dict((_dloc or {}).get("inline_box"), False) if _dinline
+                                           else _norm_box_dict(_drelo, True))   # picker: where the read came from
+                              # Part A: keep the crop's measured confidence (was NULLED here).
+                              # _dm stays {} when _dcand came from the INLINE HARVEST (no crop
+                              # ran) -> .get returns None -> the documented "clean located read".
+                              ocr_conf, ocr_min = _dm.get('conf'), _dm.get('min_conf')
+                              # CAPTION-BLEED demotion (fix #2, RELOCATE_CAPTION_DEMOTE): the
+                              # relocate's LEADING tokens ARE the taught caption (e.g. "Customer
+                              # Site tee" vs label "Customer Site") -> the crop landed on the
+                              # LABEL, not the value. name_quality can't catch it (real caption
+                              # words score >=0.6, colliding with a legit mixed-case name), so
+                              # FLAG it: the engine merge guard then prefers the clean keyword,
+                              # and the note makes it review-bound even with no keyword incumbent.
+                              # Free-text only (a caption is never a currency). Kill switch below.
+                              if val_type in (None, "text", "multiline_text") \
+                                      and os.environ.get("RELOCATE_CAPTION_DEMOTE", "1") != "0" \
+                                      and _is_caption_bleed(_dcand, anchor.get("anchor_label")):
+                                  _caption_bleed = True
+                                  if not _relocate_guard_note:
+                                      _relocate_guard_note = ("The taught box landed on this field's "
+                                                              "label, not its value — please verify.")
+                    # (C) The relocate read its own caption and was refused above. The rigid read we
+                    # KEPT disagreed with it by construction, so the anchor's two reads contradict
+                    # each other -> flag for review (cap <=70 at the confidence block). No note when
+                    # nothing was rejected, so a clean corroborated read is untouched.
+                    if _dband_reject and not _relocate_guard_note:
+                        _relocate_guard_note = ("The value beside this document's own caption was the "
+                                                "caption itself — please verify.")
             except Exception:
                 pass  # dev/robustness: the guard must never break a read
 
@@ -668,7 +701,9 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                                                 offset=(anchor.get("offset_dx_norm"),
                                                         anchor.get("offset_dy_norm")))
                     _gv = (_crop_and_ocr(page0, _gbox[0], _gbox[1], _gbox[2], _gbox[3], val_type,
-                                         verify_fn=_verify, continuation=continuation) if _gbox else None)
+                                         verify_fn=_verify, continuation=continuation,
+                                         top_limit_norm=_caption_top_limit(_xloc.get("label_box"),
+                                                                           direction, _gbox)) if _gbox else None)
                     _gc = (_clean_text_fallback(_gv, val_type, validation_patterns)
                            or clean_crop_segment(_gv, val_type)) if _gv else None
                     if _gc and _crop_is_credible(_gc, val_type, validation_patterns, label) \
@@ -839,8 +874,14 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                         _rcap = ((lambda c: slice_capture(field_key, "anchor_relocate", 0,
                                     relo, c, "target")) if slice_capture else None)
                         _mr = {}
+                        # (P) slice A: the drift rung's relocate crop was NEVER clamped — the
+                        # exclusion was produced at exactly one call site (the label-lock rung).
+                        # Same geometry, same failure: a padded below-anchor crop balloons up into
+                        # the caption it was seated beneath. Rides RELOCATE_CAPTION_EXCLUDE.
+                        _rtl = _caption_top_limit(located.get("label_box"), direction, relo)
                         rval = _crop_and_ocr(page0, relo[0], relo[1], relo[2], relo[3],
-                                             val_type, capture=_rcap, verify_fn=_verify, meta=_mr, continuation=continuation)
+                                             val_type, capture=_rcap, verify_fn=_verify, meta=_mr,
+                                             continuation=continuation, top_limit_norm=_rtl)
                         _xfield = bool(rval) and _name_field_code_reject(rval, field_key)
                         if rval and (_xfield or not _crop_is_credible(rval, val_type, validation_patterns, label)):
                             _rec = None if _xfield else _recover_clean_token(rval, val_type, validation_patterns, label)
@@ -868,6 +909,18 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                             if not q and not _digit_free_on_digit_field(rval, field_key, format_lookup) \
                                     and not _partial_of_uniform_shape(rval, field_key, format_lookup):
                                 q = rval
+                            # (C) COMPOSED CAPTION-BAND REJECT — the second commit point. Same rule as
+                            # the label-lock rung: a garbled caption read from a window that still
+                            # overlaps the located caption band is the LABEL, not the value.
+                            if q and _is_caption_band_read(q, anchor.get("anchor_label"), field_key,
+                                                          located.get("label_box"), relo, val_type,
+                                                          page0.size, _rtl):
+                                if on_reject:
+                                    on_reject(field_key, "anchor_crop_relocated", q, "caption_band_read")
+                                if not _relocate_guard_note:
+                                    _relocate_guard_note = ("The value beside this document's own caption "
+                                                            "was the caption itself — please verify.")
+                                q = None
                             if q and _should_replace(value, q, val_type, validation_patterns, inc_ocr_conf=ocr_conf):
                                 value  = q
                                 method = "anchor_crop_relocated"
@@ -1473,6 +1526,76 @@ def _is_fuzzy_caption_bleed(value, label, field_key) -> bool:
         if _kw._bounded_levenshtein(vj, cj) / max(len(vj), len(cj)) <= 0.35:
             return True
     return False
+
+
+def _read_window_top_norm(relo_box, val_type, page_h, top_limit_norm) -> float:
+    """The WORST-CASE (highest, smallest-y) normalised edge that a value read seated at `relo_box`
+    can actually see. Mirrors the two windows that exist downstream:
+      (a) `_crop_and_ocr`'s padded crop — centre − (h/2 + 20px), + 0.4·h + 6px more for free text;
+      (b) the ladder's PREVIEW FAST PATH re-crop — the tight box's top − 0.5·h of headroom.
+    Then applies the caller's (P) clamp, which after slice A really does bound BOTH. Deliberately
+    duplicates (a)'s arithmetic rather than refactoring `_crop_and_ocr`: that function is on every
+    value-read path in the app and must not change shape for a guard. Keep the two in step."""
+    try:
+        cx, cy, wn, hn = float(relo_box[0]), float(relo_box[1]), float(relo_box[2]), float(relo_box[3])
+        ph = float(page_h)
+    except Exception:
+        return 0.0
+    if wn > 0 and hn > 0:
+        half_h = int(hn * ph / 2) + 20
+        if val_type in ("text", "multiline_text"):
+            half_h += int(hn * ph * 0.4) + 6
+    else:
+        half_h = 60
+    top = max(0.0, (int(cy * ph) - half_h) / ph)
+    if wn > 0 and hn > 0:                              # (b) the preview fast path's headroom
+        top = min(top, max(0.0, cy - hn / 2.0 - hn * 0.5))
+    if top_limit_norm is not None:
+        top = max(top, float(top_limit_norm))
+    return top
+
+
+def _is_caption_band_read(value, label, field_key, label_box, relo_box, val_type,
+                          page_size, top_limit_norm) -> bool:
+    """COMPOSED CAPTION-BAND REJECT (Oracle ruling, 2026-07-20 — the discriminator that content alone
+    cannot provide). True → this relocated read must NOT commit, because it is BOTH:
+      • CONTENT: an OCR-garbled form of a party/recipient caption (`_is_fuzzy_caption_bleed`, the BARE
+        vocab with NO name_quality gate — 'Vetiver 10' scores a perfect 1.0, so the nq<0.6 gate that
+        protects the flag family is structurally blind to exactly this class); AND
+      • GEOMETRY: the worst-case read window still OVERLAPS the caption the caller POSITIVELY located.
+
+    Why BOTH are load-bearing (Oracle's arithmetic, why two earlier single-signal designs were sent
+    back): a full-label echo test MISSES 'Vetiver 10' (normalised lev to "deliverto" = 0.444 > 0.35),
+    while the bare k=1 phrase vocab FALSELY rejects the real customer 'Denver Trading'
+    (lev("denver","deliver") = 0.286 ≤ 0.35). Content cannot separate them — only geometry can: a real
+    name sits BELOW its caption (the caller's clamp then bounds the window and this returns False),
+    whereas a caption capture is read from inside the caption band itself.
+
+    ACCEPTED, PINNED COST: a customer whose name genuinely echoes its caption AND is printed ABUTTING
+    it (no clean gap, so `_caption_top_limit` cannot clamp) loses this relocate rung and falls back to
+    the rigid/keyword read or to review. Fail toward review, never toward a silent wrong value.
+    Kill switch CAPTION_BAND_REJECT=0 ⇒ byte-identical."""
+    if os.environ.get("CAPTION_BAND_REJECT", "1") == "0":
+        return False
+    if not value or not label_box or not relo_box:
+        return False
+    if val_type not in (None, "text", "multiline_text"):
+        return False
+    try:
+        from extraction.value_quality import is_name_like_field as _isnl
+        if not _isnl(field_key) or field_key == "supplier_name":
+            return False
+        if not _is_fuzzy_caption_bleed(value, label, field_key):
+            return False
+        cap_top = float(label_box.get("y_norm"))
+        cap_bottom = cap_top + float(label_box.get("h_norm") or 0.0)
+        page_h = page_size[1]
+        val_centre = float(relo_box[1])
+    except Exception:
+        return False                                   # fail-safe: never block a read on bad input
+    if val_centre <= cap_top:                          # the value isn't below the caption at all
+        return False
+    return _read_window_top_norm(relo_box, val_type, page_h, top_limit_norm) < cap_bottom
 
 
 def _name_junk_shaped(value, field_key) -> bool:
@@ -2312,7 +2435,7 @@ _PREVIEW_ACCEPT_MIN = 55  # a preview-scale free-text read this confident (min s
                           # to the full-resolution ladder (tiny text that needs the detail).
 
 
-def _noise_smooth_retry(crop, val_type, base_min, page=None, box=None):
+def _noise_smooth_retry(crop, val_type, base_min, page=None, box=None, top_limit_norm=None):
     """Reproduce the on-screen DRAW TOOL's read so extraction reads what the operator can
     read perfectly with a target box. The draw tool wins for TWO reasons, both reproduced
     here: (1) it reads the ~108 DPI PREVIEW image — the 300 DPI extraction render amplifies
@@ -2327,7 +2450,16 @@ def _noise_smooth_retry(crop, val_type, base_min, page=None, box=None):
     CLEANER than the base read — a higher MINIMUM substantial-word confidence (the mean
     dilutes a couple of garbled words; the min is the discriminator). The smaller image
     also OCRs FASTER. Free-text only; gated on a shaky base read, so clean/structured/
-    numeric crops never reach here."""
+    numeric crops never reach here.
+
+    top_limit_norm (slice A, 2026-07-21): the caller's (P) CAPTION-BAND clamp. THE HOLE THIS CLOSES —
+    `_crop_and_ocr` clamped its OWN window to keep the located caption out, then handed this function
+    the page + the UNCLAMPED value box, so the headroom re-crop below (box top − 0.5·h) RESTORED the
+    caption band and `clean_crop_segment` (first line wins) returned the CAPTION as the value. The
+    clamp is only real once it reaches HERE. Applied to the page re-crop only; if the clamp makes that
+    crop degenerate we simply don't offer it, and the FALLBACK below downscales the crop we were handed
+    — which the caller already clamped — so we fall back to the CLAMPED read, never to an unclamped
+    one. None ⇒ every existing caller is byte-identical."""
     try:
         candidates = []
         # PRIMARY: re-crop from the page with vertical headroom, then downscale to the
@@ -2340,6 +2472,8 @@ def _noise_smooth_retry(crop, val_type, base_min, page=None, box=None):
                 y0 = max(0, int((float(box["y_norm"]) - padh) * ph))
                 x1 = min(pw, int((float(box["x_norm"]) + float(box["w_norm"])) * pw))
                 y1 = min(ph, int((float(box["y_norm"]) + float(box["h_norm"]) + padh) * ph))
+                if top_limit_norm is not None:      # slice A: honour the caller's caption clamp
+                    y0 = max(y0, int(float(top_limit_norm) * ph))
                 if x1 > x0 and y1 > y0:
                     pc = page.crop((x0, y0, x1, y1))
                     cw, ch = pc.size
@@ -2372,7 +2506,8 @@ def _noise_smooth_retry(crop, val_type, base_min, page=None, box=None):
     return None
 
 
-def _ocr_crop_laddered(crop, val_type=None, verify_fn=None, meta=None, page=None, box=None):
+def _ocr_crop_laddered(crop, val_type=None, verify_fn=None, meta=None, page=None, box=None,
+                       top_limit_norm=None):
     """Light-first OCR ladder on an ALREADY-CROPPED image -> cleaned best-rung text
     (or None). SHARED by anchor._crop_and_ocr (centre+dims crop) and
     template_mapper._crop_and_ocr (drawn-box crop) so every value-crop path reads with the
@@ -2386,7 +2521,10 @@ def _ocr_crop_laddered(crop, val_type=None, verify_fn=None, meta=None, page=None
     page + box (optional, the source page and the value's normalised box): enable the
     PREVIEW-SCALE FAST PATH for free-text — read the crop the way the on-screen draw tool
     does (re-crop with headroom, downscale to ≈the 108 DPI preview) which is both cleaner
-    on degraded scans AND faster. Without them the ladder runs unchanged."""
+    on degraded scans AND faster. Without them the ladder runs unchanged.
+
+    top_limit_norm: the caller's (P) caption-band clamp, threaded to BOTH `_noise_smooth_retry`
+    sites so the re-crop can't reach back above it (slice A — see that function's docstring)."""
     def _set_meta(c, mn):
         if meta is not None:
             meta['conf'] = c
@@ -2400,7 +2538,7 @@ def _ocr_crop_laddered(crop, val_type=None, verify_fn=None, meta=None, page=None
     # outright; an unconfident one (tiny text needing the detail) falls through. Needs the
     # page + box to re-crop with headroom — absent (a test stub) → ladder unchanged.
     if val_type in (None, "text", "multiline_text") and page is not None and box is not None:
-        pv = _noise_smooth_retry(crop, val_type, -1.0, page=page, box=box)
+        pv = _noise_smooth_retry(crop, val_type, -1.0, page=page, box=box, top_limit_norm=top_limit_norm)
         if pv is not None and pv[2] >= _PREVIEW_ACCEPT_MIN and (
                 bool(verify_fn(pv[0])) if verify_fn is not None else pv[1] >= 60.0):
             _set_meta(pv[1], pv[2])
@@ -2446,7 +2584,8 @@ def _ocr_crop_laddered(crop, val_type=None, verify_fn=None, meta=None, page=None
             # _noise_smooth_retry). Clean reads (high min) and structured/numeric fields are
             # byte-identical — the retry is never reached.
             if val_type in (None, "text", "multiline_text") and rmin < _NOISE_RETRY_MIN_CONF:
-                ds = _noise_smooth_retry(crop, val_type, rmin, page=page, box=box)
+                ds = _noise_smooth_retry(crop, val_type, rmin, page=page, box=box,
+                                         top_limit_norm=top_limit_norm)
                 if ds is not None and (verify_fn is None or verify_fn(ds[0])):
                     _set_meta(ds[1], ds[2])
                     return ds[0]
@@ -2682,7 +2821,7 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
             _box = {"x_norm": max(0.0, x_norm - w_norm / 2), "y_norm": max(0.0, y_norm - h_norm / 2),
                     "w_norm": w_norm, "h_norm": h_norm}
         _v = _ocr_crop_laddered(crop, val_type, verify_fn=verify_fn, meta=meta,
-                                page=page_image, box=_box)
+                                page=page_image, box=_box, top_limit_norm=top_limit_norm)
         # Multi-line continuation (gated): only re-reads/joins when a rule + the trailing-
         # pattern/history signal say the value wraps onto the next line; else byte-identical.
         if continuation and _v:

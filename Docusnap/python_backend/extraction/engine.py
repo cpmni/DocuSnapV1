@@ -252,7 +252,14 @@ def _name_relocate_should_hold(existing: dict | None, data: dict | None, field_k
         return False
     if not value_quality.is_name_like_field(field_key) or field_key == "supplier_name":
         return False
-    if existing.get("method") != "keyword" or not existing.get("value"):
+    # (D, 2026-07-21) The incumbent set was 'keyword' ONLY, which made this guard DEAD on every
+    # install that carries a label override for the field: `merge_label_overrides` re-labels the
+    # Stage-1 capture as method 'keyword_override', so the clean label-adjacent read — the very
+    # value this guard exists to protect — was not recognised as an incumbent and the garbled
+    # relocate won unopposed. An override is the SAME read from the SAME layer (a curated caption
+    # instead of a shipped one), so it belongs in the same set. Kill NAME_HOLD_ADMIT_OVERRIDE=0.
+    _INCUMBENTS = ("keyword", "keyword_override") if os.environ.get("NAME_HOLD_ADMIT_OVERRIDE", "1") != "0" else ("keyword",)
+    if existing.get("method") not in _INCUMBENTS or not existing.get("value"):
         return False
     # Oracle C2 (2026-07-15): admit a RIGID anchor_crop into the hold ONLY when anchor.py flagged it a
     # fuzzy caption-bleed — never bare (a normal rigid taught read still wins Tier-A, byte-identical).
