@@ -320,6 +320,52 @@ _BRANDING_STOPWORDS = frozenset({
     "statement", "remittance", "receipt", "quote", "quotation", "worksheet",
     "credit", "debit", "advice", "proforma", "job", "copy", "original",
 })
+# Shared branding-evidence constants — ONE definition for the late conflict FLAG
+# (_flag_branding_conflict) and the Stage-0.9 text-agreement GATE (identity text-first).
+# K: below this many distinctive words a supplier is UNJUDGEABLE (fail-safe, never "absent").
+# PRESENT: own_ratio above this = the supplier's own branding IS on the page.
+_BRANDING_MIN_WORDS = 3
+_BRANDING_PRESENT_RATIO = 0.25
+
+
+# ── Branding evidence (shared: the late conflict FLAG + the text-agreement GATE) ──────────
+# Extracted VERBATIM from _flag_branding_conflict (2026-07-20, identity text-first slice 1a) so ONE
+# definition of "supplier X's distinctive letterhead words" and "are they on this page?" serves both
+# the flag and the gate. Two definitions would drift — the gate would then abstain on docs the guard
+# clears (or worse, assert on docs it flags). MODULE-LEVEL + norm INJECTED (not engine methods): the
+# guard's own test drives the predicate through a minimal fake self, and the gate's battery needs
+# these callable without an engine — keep them pure. Same K, same stopword strip, same EXACT
+# whole-page _keyword_hit_ratio: fuzzing own_ratio was deliberately REJECTED (it can only RAISE the
+# ratio and suppress a flag = fail-open to a silent wrong supplier).
+def _branding_banks(templates, norm):
+    """{norm_issuer: {'name': str, 'words': set}} — keyed by the template's DOMINANT confirmed
+    issuer (else its name); value = its distinctive branding tokens."""
+    banks = {}
+    for t in (templates or []):
+        iss = (t.get("dominant_supplier") or "").strip() or (t.get("name") or "").strip()
+        kf = t.get("keyword_fingerprint") or []
+        if not iss or not kf:
+            continue
+        b = banks.setdefault(norm(iss), {"name": iss, "words": set()})
+        for w in kf:
+            wl = str(w or "").strip().lower()
+            if len(wl) >= 3 and wl not in _BRANDING_STOPWORDS:
+                b["words"].add(wl)   # distinctive branding tokens only (doc-type words stripped)
+    return banks
+
+
+def _branding_own_ratio(supplier_name, banks, ocr_text, norm):
+    """How much of `supplier_name`'s OWN distinctive branding appears on the page.
+    None = UNJUDGEABLE (no bank for it, or fewer than K distinctive words) — the fail-safe class
+    BOTH callers must read as 'no evidence either way', never as 'branding absent'."""
+    if not supplier_name or not banks or not ocr_text:
+        return None
+    own = banks.get(norm(supplier_name))
+    if not own or len(own["words"]) < _BRANDING_MIN_WORDS:
+        return None
+    from extraction import template_matcher
+    return template_matcher._keyword_hit_ratio(
+        {"keyword_fingerprint": sorted(own["words"])}, ocr_text.lower())
 
 
 def _genuine_template_supplier(matched_tmpl: dict | None) -> str | None:
@@ -1300,27 +1346,14 @@ class ExtractionEngine:
         if self._accept_norm(supplier_name) in self.accepted_issuers:
             return
         from extraction import template_matcher
-        # Branding bank per supplier identity: the template's DOMINANT confirmed issuer, else its name.
-        banks = {}
-        for t in templates:
-            iss = (t.get("dominant_supplier") or "").strip() or (t.get("name") or "").strip()
-            kf = t.get("keyword_fingerprint") or []
-            if not iss or not kf:
-                continue
-            b = banks.setdefault(self._accept_norm(iss), {"name": iss, "words": set()})
-            for w in kf:
-                wl = str(w or "").strip().lower()
-                if len(wl) >= 3 and wl not in _BRANDING_STOPWORDS:
-                    b["words"].add(wl)   # distinctive branding tokens only (doc-type words stripped)
-        K = 3
-        own = banks.get(self._accept_norm(supplier_name))
-        if not own or len(own["words"]) < K:
+        banks = _branding_banks(templates, self._accept_norm)
+        own_ratio = _branding_own_ratio(supplier_name, banks, ocr_text, self._accept_norm)
+        if own_ratio is None:
             return  # no >=K-word fingerprint for the resolved supplier -> can't judge (fail-safe)
-        ocr_lower = ocr_text.lower()
-        own_ratio = template_matcher._keyword_hit_ratio(
-            {"keyword_fingerprint": sorted(own["words"])}, ocr_lower)
-        if own_ratio > 0.25:
+        if own_ratio > _BRANDING_PRESENT_RATIO:
             return  # the resolved supplier's own branding IS on the page -> healthy, no flag
+        K = _BRANDING_MIN_WORDS
+        ocr_lower = ocr_text.lower()
         # X's branding is ABSENT. Name the decisively-present alternative supplier, if one stands out
         # (>=0.75 present AND a clear margin over any third — Oracle: positive evidence, not weak agreement).
         # The alt-scan is FUZZY (a garbled letterhead word "rthgate" still resolves "northgate") and runs
