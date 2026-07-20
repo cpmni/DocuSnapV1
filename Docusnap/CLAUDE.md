@@ -96,6 +96,36 @@ READ FIRST: `HANDOVER_2026-07-20.md` (then `HANDOVER_2026-07-19.md`).**
   IPC returns the SAME predicate's verdict; the panel names the blocking field. **THIRD false
   hold-reason of this class fixed 2026-07-20** (`39e8142` untyped, this one, + the nudge copy) —
   when Review explains a hold, it must read the real verdict, never re-derive one.
+- **ISSUER BAND for known-supplier text matches `e8f3a6c`** (gary design → Oracle SIGN-OFF-WITH-
+  CONDITIONS C1-C4). `engine.py` Stage 2.5a matched a known supplier HINT anywhere in a raw
+  `ocr_text[:600]` slice whose docstring called it "the issuer band" — it isn't: the RECIPIENT name
+  sits ~160-180 chars in on real docs, so the CUSTOMER was admissible evidence for the ISSUER.
+  Now `_issuer_hint_band` truncates at the first recipient marker via `chrome_band.issuer_chrome`,
+  keeping the 600-char REACH (`_HINT_BAND_LINES=40`) — chrome_band's own `max_lines=6` default is
+  NOT used and must NOT be moved (it is calibrated for TOKEN-RATIO consumers like
+  `_identity_text_sufficient`; this consumer is an all-or-nothing substring test). Kill
+  `ISSUER_HINT_BAND=0`. **THE REWARD IS ON THE GRADUATION ARM, not the swap arm** — graduation swaps
+  a NOTED fill for an UN-NOTED one and `trust.js` refuses auto-file on any note BEFORE the floor
+  check, so the note IS the human checkpoint; its stated evidence standard (`engine.py:3024`) had
+  never matched the code. **Oracle C1 (the blocking catch): the swap arm has NO else** — suppressing
+  a match left an IMPLAUSIBLE incumbent ('IN') standing as the filing + learning scope, unnoted; it
+  now blanks with a note, DELTA-SCOPED to only where the legacy slice would have matched.
+  HONEST SCOPE: marker-bearing layouts only — a marker-free "To:"-first page still gets the legacy
+  window. Accepted+pinned costs: issuer-RIGHT two-column loses its match; a two-row-wrapped name is
+  newly matchable. **Does NOT fix the buyer-issued vendor-caption class** (needs a type-aware slice;
+  do NOT add supplier/vendor/seller to `_RECIPIENT_MARKER` — type-blind, 3+ consumers, and
+  "Supplier: ACME" is the issuer's own self-declaration on a supplier-issued form).
+- **⚠ THE ISSUER IS ONLY FINDABLE BY A CAPTION — the structural cold-start hole (OPEN)**. Traced
+  2026-07-20: `Vellum & Crane Stationers` is OCR line 1 and `supplier_name` comes back null.
+  `field_patterns.supplier_name` is caption-only (Bill From/Supplier/Vendor/Issued By/Billed By/
+  Seller/Company Name/Business Name) and real letterheads carry NONE; `position_hint:"top_third"`
+  is DEAD CONFIG (read nowhere). The RECIPIENT *is* captioned (`Bill To`, base_confidence **78** vs
+  the issuer's **40**). EVERY other issuer path (template/logo/hint-scan/branding) is
+  learning-dependent ⇒ dead on a cold DB. 007: the geometry that would fix it (word boxes, heights,
+  `med_h`) is COMPUTED THEN DISCARDED at `ocr/tesseract.py:239` — `keyword.py` gets a bare string, so
+  "largest text in the top band" is UNREPRESENTABLE, not merely unimplemented. Designed, NOT built:
+  a `letterhead.py` SUGGESTION-only reader (it only ever has to carry doc #1 — after one confirm,
+  learning resolves the supplier forever, so it never needs authority to assert).
 - **⚠ RECURRING TRAP — THREE stale fixtures fixed in one day, all one class** (`71ffc8d`, `0f3c8e9`):
   a `documents`/`templates` test fixture that never gained a column production gained. Because
   `documents.insert()`/`templates.create()` name every column, the INSERT fails outright and EVERY
