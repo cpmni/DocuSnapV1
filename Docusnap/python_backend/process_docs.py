@@ -137,6 +137,24 @@ def doc_overrides(manifest, name, *, enhance=None, known_template_id=None,
     )
 
 
+# Python twin of database/modules/slug.js safeSlug (as used by document_types.presetSlug), so a
+# type name detected from the SHIPPED keyword buckets derives the SAME slug the type would carry if
+# the operator added it from the preset catalog. Keep the two in step: "Delivery Note" must yield
+# 'delivery_note' on both sides or the type-refuse guards compare against the wrong string.
+def _slug_from_type_name(name, fallback="type", max_len=64):
+    import unicodedata as _ud
+    import re as _re
+    s = "" if name is None else str(name)
+    try:
+        s = "".join(c for c in _ud.normalize("NFKD", s) if not _ud.combining(c))
+    except Exception:
+        pass
+    s = _re.sub(r"[^a-z0-9]+", "_", s.lower()).strip("_")
+    if len(s) > max_len:
+        s = s[:max_len].rstrip("_")
+    return s or fallback
+
+
 def resolve_assigned_type_authority(ks, ks_auth, detected_name_slug, title_trusted_fresh):
     """Reprocess type authority: may the doc's OWN freshly-detected title override its
     already-ASSIGNED type slug (`ks`)? Returns (override, title_trusted) — the coherent
@@ -591,6 +609,25 @@ def main():
                     if dt["name"] == type_detection["type"]:
                         detected_name_slug = dt.get("slug")
                         break
+            # UNINSTALLED-TYPE FALLBACK (2026-07-20, owner report — the delivery dockets that
+            # filed as Purchase Orders on a FRESH install). The detected type NAME comes from the
+            # SHIPPED document_type_keywords buckets, which exist independently of the types this
+            # install actually has. Delivery Note is a PRESET, not a built-in — so on a new install
+            # the engine detected "Delivery Note" at 93% with a trusted heading, failed to map it to
+            # any installed type, and left detected_name_slug None. BOTH type-refuse guards in
+            # template_matcher (the logo path AND the keyword path) are conditioned on a truthy
+            # detected_slug, so they silently DISARMED, and a same-supplier PURCHASE ORDER template
+            # matched by keywords (80%) stamped its own slug over the correct detection. Net effect:
+            # the protection was strongest for a fully-configured install and ABSENT for a brand-new
+            # one — exactly backwards. So when the name doesn't resolve, DERIVE the slug the type
+            # would have if it were added (same safeSlug rules as document_types.presetSlug), which
+            # re-arms the refuse: 'delivery_note' != 'purchase_order' => refuse => the doc reaches
+            # review UNTYPED instead of MIS-typed. Only ever consulted alongside title_trusted
+            # (heading + conf >= 70), so an incidental mention still refuses nothing.
+            # Kill switch DETECTED_SLUG_FALLBACK=0 restores the old None behaviour.
+            if (detected_name_slug is None and type_detection
+                    and os.environ.get("DETECTED_SLUG_FALLBACK", "1") != "0"):
+                detected_name_slug = _slug_from_type_name(type_detection.get("type"))
             title_trusted_fresh = bool(type_detection and type_detection.get("heading") and type_conf >= 70)
 
             # MACHINE-assigned type vs the document's OWN trusted title: a doc the pipeline
