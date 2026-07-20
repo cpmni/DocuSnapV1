@@ -465,7 +465,19 @@ def extract_keyword_fingerprint(ocr_text: str, max_words: int = 10) -> list:
             break  # stop before the per-document recipient/customer block
         header_lines.append(line)
     header_text = ' '.join(header_lines)
-    words       = re.findall(r'\b[A-Za-z][A-Za-z0-9]{2,}\b', header_text)
+    # FINGERPRINT_HYGIENE (slice 3 of the distinctive-token train, 2026-07-20): a ref-prefix
+    # fragment is NOT branding. The token regex splits "INV-76642" at '-', so 'INV' reaches the
+    # digit filter digit-free and enters ~every invoice template's permanent identity, where it
+    # fakes cross-supplier corroboration. The skip must test the RAW-TEXT context (token followed
+    # by an optional -/# or / then a digit) — by token time the evidence is already gone. Harvest-
+    # side only helps NEW fingerprints; the compare-time _distinctive_tokens prefix rule is what
+    # heals frozen ones. Kill switch FINGERPRINT_HYGIENE=0.
+    _hygiene = os.environ.get('FINGERPRINT_HYGIENE', '1') != '0'
+    words = []
+    for m in re.finditer(r'\b[A-Za-z][A-Za-z0-9]{2,}\b', header_text):
+        if _hygiene and re.match(r'[-/#]?\d', header_text[m.end():]):
+            continue                     # 'INV' in "INV-76642" / 'REF' in "REF/2024-1"
+        words.append(m.group(0))
 
     seen        = set()
     fingerprint = []

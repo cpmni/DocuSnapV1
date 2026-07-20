@@ -178,6 +178,35 @@ def main():
                          ('the', 'total', 'amount', 'invoice', 'order', 'page', 'this', 'for'))):
         failures += 1
 
+    # ── FINGERPRINT_HYGIENE (slice 3, 2026-07-20): ref-prefix fragments are not branding ──
+    # The token regex splits "INV-76642" at '-', so 'INV' reached the digit filter digit-free and
+    # entered ~every invoice template's permanent identity (the live tpl-2 pollution that faked
+    # cross-supplier corroboration). The skip tests the RAW-TEXT context, not the token stream.
+    section('extract_keyword_fingerprint: a token glued to -/digit in the raw text is a ref prefix, not branding')
+    fp_ref = template_matcher.extract_keyword_fingerprint(
+        "NORTHGATE TEXTILES\nINV-76642\nREF/2024-1\nJOB#4417\nWeavers Way Preston")
+    fp_ref_lower = [w.lower() for w in fp_ref]
+    if not check("'INV' / 'REF' / 'JOB' (digit-glued) are dropped at harvest",
+                 not any(w in fp_ref_lower for w in ('inv', 'ref', 'job'))):
+        failures += 1
+    if not check('real branding words around them still harvest',
+                 'northgate' in fp_ref_lower and 'weavers' in fp_ref_lower):
+        failures += 1
+    import os as _os
+    _old_hyg = _os.environ.get('FINGERPRINT_HYGIENE')
+    _os.environ['FINGERPRINT_HYGIENE'] = '0'
+    try:
+        fp_ref_v0 = [w.lower() for w in template_matcher.extract_keyword_fingerprint(
+            "NORTHGATE TEXTILES\nINV-76642\nWeavers Way Preston")]
+    finally:
+        if _old_hyg is None:
+            _os.environ.pop('FINGERPRINT_HYGIENE', None)
+        else:
+            _os.environ['FINGERPRINT_HYGIENE'] = _old_hyg
+    if not check("kill switch =0 restores the legacy harvest ('inv' captured — the red proof/revert pin)",
+                 'inv' in fp_ref_v0):
+        failures += 1
+
     # ── extract_keyword_fingerprint: per-document variable tokens must not pollute it ──
     # Two near-duplicate invoices from the SAME supplier - everything that
     # differs between them (ref, date, customer, totals) is exactly what must

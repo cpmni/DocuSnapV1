@@ -952,7 +952,7 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
 
   const logo_phash           = doc.logo_phash || null;
   const logo_detail_hash     = doc.logo_detail_hash || null;   // Slice B: isolated-mark discriminator, enrolled into the template set
-  const keyword_fingerprint  = _parseJson(doc.keyword_fingerprint, []);
+  let keyword_fingerprint    = _parseJson(doc.keyword_fingerprint, []);
 
   // Build template field rules from confirmed values
   const fields = _buildTemplateFields(db, allValues, dtInfo);
@@ -968,6 +968,30 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
     || (allValues && allValues.customer_name)
     || ''
   ).trim();
+
+  // FINGERPRINT_HYGIENE (slice 3 of the distinctive-token train, Oracle-signed 2026-07-20): the
+  // doc-side fingerprint can carry the RECIPIENT's name when the recipient marker OCR'd garbled
+  // ("Bill To" → "Bi Te" defeated the harvest truncation) — the live Vellum template froze its
+  // sample's customer ("Ashcombe Care Homes") into its permanent identity, diluting its own rival
+  // ratio below the naming bar exactly when it was the true supplier. At CONFIRM time the
+  // recipient is GROUND TRUTH (the operator just confirmed customer_name), so subtract those
+  // tokens — never fuzzy-match garbled markers (difflib on 5-7 char markers scores ~0.67, below
+  // any safe bar; both advisors rejected it). Oracle condition E: a token also present in the
+  // confirmed ISSUER is never subtracted (a company billing its own branch must not strip its own
+  // identity). On the UPDATE path stabiliseFingerprint INTERSECTS stored∩incoming, so a stored
+  // leak ('Ashcombe') heals on the very next confirm without a migration — pinned.
+  // Skipped entirely when the issuer identity CAME from the customer field (the confirmedIssuer
+  // fallback above) — subtracting there would strip the issuer's own identity.
+  if (process.env.FINGERPRINT_HYGIENE !== '0' && allValues && allValues.customer_name
+      && confirmedIssuer && confirmedIssuer !== String(allValues.customer_name).trim()) {
+    const toks = (s) => new Set((String(s || '').toLowerCase().match(/[a-z0-9]{2,}/g)) || []);
+    const custToks = toks(allValues.customer_name);
+    const issuerToks = toks(confirmedIssuer);
+    keyword_fingerprint = keyword_fingerprint.filter(w => {
+      const wl = String(w == null ? '' : w).toLowerCase();
+      return !(custToks.has(wl) && !issuerToks.has(wl));
+    });
+  }
 
   // `doc.template_id` reflects whatever Stage 0 matched DURING PROCESSING —
   // which, for a freshly-scanned batch, runs before any of that batch's own
