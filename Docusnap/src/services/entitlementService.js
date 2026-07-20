@@ -34,7 +34,7 @@ const WORKFLOW_BUNDLED_WITH_CLIENT = true;
 // endpoints (FEATURE_NOT_LICENSED). ALL the workflow CODE stays intact behind this one flag — flip
 // to true (or wire it to a real signed-token feature claim) to turn the whole feature back on with
 // no other change. Keep new workflow work modular behind this gate.
-const WORKFLOW_FEATURE_ENABLED = true; // TEMP 2026-07-19: flipped ON for local workflow testing — REVERT to false before any commit
+const WORKFLOW_FEATURE_ENABLED = false;
 const SEATS_KEY = 'detached_client_seats';        // DEPRECATED local key — never read as entitlement (kept only for the migration test)
 const SEARCH_SEATS_KEY = 'detached_search_seats';   // backend-cached: concurrent search clients
 const WORKFLOW_SEATS_KEY = 'detached_workflow_seats'; // backend-cached: workflow add-on capacity
