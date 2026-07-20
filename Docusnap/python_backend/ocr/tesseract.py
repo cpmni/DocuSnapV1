@@ -148,7 +148,8 @@ def _group_words_into_lines(words, med_h) -> list:
     return lines
 
 
-def reconstruct_page_text(img: Image.Image, config: str = "--oem 3 --psm 3", dpi=None) -> str:
+def reconstruct_page_text(img: Image.Image, config: str = "--oem 3 --psm 3", dpi=None,
+                          words_out: dict | None = None) -> str:
     """Full-page OCR text with reading lines rebuilt from word GEOMETRY.
 
     Tesseract's page segmentation (the plain image_to_string in ocr_image) treats a wide
@@ -236,7 +237,26 @@ def reconstruct_page_text(img: Image.Image, config: str = "--oem 3 --psm 3", dpi
             pass   # supplementary recovery is additive-only; never break the PSM-3 result
     heights = sorted(wd[3] for wd in words if wd[3] > 0)
     med_h = heights[len(heights) // 2] if heights else 10
-    return "\n".join(_group_words_into_lines(words, med_h))
+    lines = _group_words_into_lines(words, med_h)
+    # GEOMETRY HAND-OFF (2026-07-20). Everything above computes per-word boxes, per-word confidence
+    # and the page's MEDIAN WORD HEIGHT — and the join below has always thrown all of it away, so
+    # everything downstream reasons over a bare string. That is why "the biggest text at the top of
+    # the page" is not merely unimplemented but UNREPRESENTABLE in extraction/keyword.py, and why a
+    # letterhead issuer that is the largest text on its page reads as null (measured: 0 of 14 real
+    # invoices identified, extraction/letterhead.py).
+    #
+    # OPT-IN and inert: `words_out` defaults to None, so with no caller asking, this function is
+    # byte-identical — no extra OCR pass, no extra work, same return value. A caller that passes a
+    # dict receives the geometry alongside the text it belongs to. Units are IMAGE-NATURAL PIXELS
+    # of the preprocessed page bitmap, origin TOP-LEFT, box = (left, top, width, height) — the
+    # convention this module produces. Do NOT hand these to anchor space, which is CENTRE-based and
+    # normalised: mixing the two is a documented source of drift bugs in this project.
+    if words_out is not None:
+        words_out["words"] = words          # [(left, top, w, h, text, conf)]
+        words_out["med_h"] = med_h          # the DPI-invariant scale reference: compare RATIOS to it
+        words_out["lines"] = lines          # the same visual rows the returned text is built from
+        words_out["size"] = getattr(img, "size", None)
+    return "\n".join(lines)
 
 
 def pdf_to_images(filepath: Path, dpi: int = 300) -> list[Image.Image]:
