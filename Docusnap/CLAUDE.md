@@ -33,10 +33,24 @@ Geometry RANKS, the existing text filters GATE — exclude type phrases + captio
 dominant values and the issuer becomes the largest SURVIVING candidate. Compute height at LINE
 level (word heights are noisy: "City Office" → `Cit` h=64 + `Office` h=101) and always ratio to
 `med_h`, never absolute pixels.
-**HIGHEST-VALUE OPEN THREAD: 10 documents in the live DB carry the WRONG supplier**, all stamped by
-`template_fixed` (a template with a FROZEN supplier_name matching other suppliers' documents).
-Verified by adjudicating the letterhead read against filenames — the reader is right on all 10.
-That is the owner's "drift", with a mechanism. **The installer predates the last three commits.**
+**THE 10 template_fixed MISFILES ARE FIXED (late evening 2026-07-20, `705da10`→`7c541fa`)** — full
+investigation → gary+Phillip design → Oracle SIGN-OFF-WITH-CONDITIONS → built in his order. Five
+kill-switched slices, ALL ON: `TEMPLATE_SUPPLIER_LINK_GUARD` (the confirm-time reinforcement loop —
+Oracle's blocking catch: a corrected confirm bumped/appended/diluted/landmark-sampled the WRONG
+template; guard at BOTH the reviewService confirm seam and `_upsertTemplate` Part E) ·
+`TEMPLATE_GATE_DISTINCTIVE` (Stage-0 gate on distinctive tokens — V1 was defeated 3 ways: the
+logo+slug bypass, junk 'INV'/'Industrial' stored tokens, and a rival bar unreachable by cross-type/
+customer-leaked fingerprints; V2 = per-identity banks + supplier-NAME arm, fuzzy, issuer-band) ·
+`BRANDING_DISTINCTIVE_TOKENS` (engine banks, parity-pinned) · `FINGERPRINT_HYGIENE` (digit-glue
+harvest skip + confirmed-customer-token subtraction; stored leaks HEAL via the update intersect) ·
+`BRANDING_NAMED_BLANK` (a named-rival-contradicted `template_fixed` value blanks + keeps the "Use"
+button; locked/un-named/non-template NEVER blank). **Gate: `stress_test/template_gate_probe.py`**
+(permanent live-DB replay — realdoc_regression is BLIND to this class): 52/52 wrong-match outcomes
+healed (the 10 + the Larkspur-class), false-abstain 0; corpus ON == baseline byte-identical.
+**The 6 misfiled Vellum docs in review are safe to correct+confirm once a build with the guard is
+installed** (needs an installer REBUILD — the current one predates all of this). Residual, honest:
+a FULLY cold supplier (no template/hints/name anywhere) still accepts + flags with the wrong name —
+that is the letterhead cold-start thread's job, not this fix's.
 
 **Branch `feat/reprocess-throughput-autostraighten` — ALL PUSHED through `71ffc8d`, working tree
 clean. CURRENT installer `dist\ScanFinder Setup 2.0.0-r20260720-1253-0f3c8e9.exe` (built 2026-07-20
