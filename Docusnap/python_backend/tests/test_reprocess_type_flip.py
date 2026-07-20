@@ -78,7 +78,7 @@ check("fresh scan, no heading => untrusted", ovr is False and tt is False)
 print("\ndoc_overrides — authority threading (Oracle: no global fallback for manifest docs):")
 
 # Single-doc reprocess (no manifest): the global flag is the channel.
-_, _, ks, _, auth = doc_overrides(None, "a.pdf", known_doc_slug="sales_order",
+_, _, ks, _, auth, _sup = doc_overrides(None, "a.pdf", known_doc_slug="sales_order",
                                   known_doc_slug_authority="machine")
 check("no manifest: global authority applies", auth == "machine" and ks == "sales_order")
 
@@ -86,20 +86,26 @@ check("no manifest: global authority applies", auth == "machine" and ks == "sale
 # must never leak onto a manifest-carried doc (per-doc statuses differ).
 man = {"rb_1.pdf": {"known_doc_slug": "sales_order", "known_doc_slug_authority": "machine"},
        "rb_2.pdf": {"known_doc_slug": "invoice"}}
-_, _, ks, _, auth = doc_overrides(man, "rb_1.pdf", known_doc_slug_authority=None)
+_, _, ks, _, auth, _sup = doc_overrides(man, "rb_1.pdf", known_doc_slug_authority=None)
 check("manifest entry carries its own authority", auth == "machine" and ks == "sales_order")
-_, _, ks, _, auth = doc_overrides(man, "rb_2.pdf", known_doc_slug_authority="machine")
+_, _, ks, _, auth, _sup = doc_overrides(man, "rb_2.pdf", known_doc_slug_authority="machine")
 check("manifest entry WITHOUT authority does NOT inherit the global (stays pinned)",
       auth is None and ks == "invoice")
 
 # File absent from the manifest falls back to globals (existing semantics).
-_, _, ks, _, auth = doc_overrides(man, "other.pdf", known_doc_slug="quote",
+_, _, ks, _, auth, _sup = doc_overrides(man, "other.pdf", known_doc_slug="quote",
                                   known_doc_slug_authority="machine")
 check("file not in manifest: global fallback (slug + authority)", ks == "quote" and auth == "machine")
 
-# 5-tuple shape guard: existing callers unpack five values.
+# SHAPE GUARD. doc_overrides is unpacked POSITIONALLY at every call site, so adding a return value
+# silently breaks all of them — which is exactly what happened: the supplier-pin work (2026-07-16)
+# appended `known_supplier` and this pin, still asserting five, went red and stayed red (found
+# 2026-07-20). Keep the number here in step with the function, and when you change it, fix the
+# call sites in the SAME commit.
+#   (enhance_params, known_template_id, known_doc_slug, ocr_text, known_doc_slug_authority,
+#    known_supplier)
 vals = doc_overrides(None, "x.pdf")
-check("doc_overrides returns a 5-tuple", isinstance(vals, tuple) and len(vals) == 5)
+check("doc_overrides returns a 6-tuple", isinstance(vals, tuple) and len(vals) == 6)
 
 print(f"\n{fails} FAILED" if fails else "\nAll reprocess type-flip checks passed.")
 sys.exit(1 if fails else 0)
