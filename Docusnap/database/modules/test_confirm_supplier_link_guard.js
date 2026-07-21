@@ -116,6 +116,76 @@ const LOGO_NEAR = 'bc4cc3b3c7385c40';   // hamming 4 from LOGO — inside the st
   delete process.env.TEMPLATE_SUPPLIER_LINK_GUARD;
   check('kill switch off ⇒ stale link kept (pre-guard behaviour)', linkOf(d4) === tplId);
 
+  // ── §3 arm 1 — THE SELF-REFERENCE (TEMPLATE_GUARD_SELF_INDEPENDENT, red-first on HEAD) ────────
+  // §1 seeded FOUR genuine Copperfield confirms, so the intruder's self-vote is out-voted and the
+  // bug is masked. The real incident is a template whose ONLY confirmed doc would be the intruder:
+  // the guard runs AFTER the doc is confirmed + linked + supplier_name=VELLUM, so a plain
+  // establishedIdentity counts the doc AGAINST ITSELF (dominant=VELLUM), compares VELLUM to VELLUM,
+  // finds them equal, and never detaches — permanently poisoning the template's dominant. Judging
+  // identity from the OTHER confirmed docs (here: none → the frozen COPPER value) detaches instead.
+  section('§3 arm 1 — self-reference: first foreign confirm on a frozen-only template still detaches');
+  const frozenId = (name) => templates.create(db, {
+    name, document_type_slug: 'invoice', logo_phash: LOGO_NEAR,
+    keyword_fingerprint: ['Copperfield', 'Electrical', 'Coventry'],
+    fields: [{ field_key: 'supplier_name', fixed_value: COPPER, is_variable: 0 }],
+  });
+  const linkedTo = (tid, fn = 's3.pdf') => {
+    const id = Number(documents.insert(db, { original_filename: fn, folder_path: '/in', status: 'needs_review' }).lastInsertRowid);
+    documents.update(db, id, { template_id: tid });
+    return id;
+  };
+  const fTpl = frozenId('Frozen Copper A');
+  const s3 = linkedTo(fTpl);
+  await svc.confirm(db, { username: 'u', role: 'admin' }, payload(s3, VELLUM));
+  await flush();
+  check('SELF-REF DETACH: a foreign confirm on a template with NO other confirmed docs still detaches',
+    linkOf(s3) === null);
+  check('SELF-REF: the template dominant is NOT poisoned to the intruder (self excluded)',
+    (templates.getDominantSupplier(db, fTpl) || {}).value !== VELLUM);
+
+  // Kill-switch OFF ⇒ the self-reference bug returns verbatim (the poisoned link is KEPT). This is
+  // the byte-identical-OFF gate for the new switch, and proves the pins above are red-first.
+  const fTpl2 = frozenId('Frozen Copper B');
+  const s3b = linkedTo(fTpl2, 's3b.pdf');
+  process.env.TEMPLATE_GUARD_SELF_INDEPENDENT = '0';
+  await svc.confirm(db, { username: 'u', role: 'admin' }, payload(s3b, VELLUM));
+  await flush();
+  delete process.env.TEMPLATE_GUARD_SELF_INDEPENDENT;
+  check('SELF-REF kill switch off ⇒ pre-fix bug returns (self-poisoned link KEPT)', linkOf(s3b) === fTpl2);
+
+  // TRADE-OFF PIN (a): a template's very first confirm by its GENUINE supplier KEEPS the link — the
+  // self-exclude falls to the frozen COPPER value, disjoint(COPPER,COPPER) is false. Proves we did
+  // not turn every first-confirm into a detach.
+  const fTpl3 = frozenId('Frozen Copper C');
+  const s3c = linkedTo(fTpl3, 's3c.pdf');
+  await svc.confirm(db, { username: 'u', role: 'admin' }, payload(s3c, COPPER));
+  await flush();
+  check('TRADE-OFF: a genuine first-confirm (matching frozen identity) KEEPS the link', linkOf(s3c) === fTpl3);
+
+  // TRADE-OFF PIN (b): a name-only cold template (no frozen supplier, no other confirmed docs) KEEPS
+  // the link even for a disjoint issuer — self-exclude → null → unjudgeable → keep. Proves we did
+  // NOT add a `name` fallback: a dev who "fixes" the fully-cold residual by consulting the template
+  // name would turn this red by over-detaching a legitimate cold first-confirm.
+  const nameOnly = templates.create(db, { name: COPPER, document_type_slug: 'invoice', logo_phash: LOGO_NEAR, keyword_fingerprint: [], fields: [] });
+  const s3d = linkedTo(nameOnly, 's3d.pdf');
+  await svc.confirm(db, { username: 'u', role: 'admin' }, payload(s3d, VELLUM));
+  await flush();
+  check('TRADE-OFF: name-only cold template is unjudgeable ⇒ link KEPT (no name fallback)', linkOf(s3d) === nameOnly);
+
+  // NO-RIPPLE PIN: with NO excludeDocId the tally is byte-identical to the pre-fix positional query —
+  // getAll and the Python matcher's dominant_supplier are untouched by this change.
+  const domA = templates.getDominantSupplier(db, tplId);
+  const domB = templates.getDominantSupplier(db, tplId, null);
+  const domC = templates.getDominantSupplier(db, tplId, 999999);   // exclude a non-existent doc
+  // The 4 genuine Copperfield confirms still dominate (over §1's kept 'Ltd' variant + kill-switch
+  // Vellum), so value stays COPPER, count 4 — total is whatever §1 accumulated; the point is that
+  // the three exclude-variants are IDENTICAL, so getAll (no-exclude) is untouched by the change.
+  check('NO-RIPPLE: no-exclude dominant is still COPPER (count 4)', !!domA && domA.value === COPPER && domA.count === 4);
+  check('NO-RIPPLE: excludeDocId=null is byte-identical to no-exclude',
+    !!domB && domB.value === domA.value && domB.count === domA.count && domB.total === domA.total);
+  check('NO-RIPPLE: excluding a non-existent doc is byte-identical to no-exclude',
+    !!domC && domC.value === domA.value && domC.count === domA.count && domC.total === domA.total);
+
   // ── §2 arm 2: _upsertTemplate refuses to REUSE a supplier-disjoint template ──────────────────
   section('§2 arm 2 — taught-confirm/promote must not reinforce a foreign template');
   const makeDb = () => {
@@ -237,6 +307,42 @@ const LOGO_NEAR = 'bc4cc3b3c7385c40';   // hamming 4 from LOGO — inside the st
   const docE = mkDoc(fdb, frozenOnly, LOGO_NEAR);
   const rE = await _upsertTemplate(ctx, fdb, docE, { allValues: vals(VELLUM), document_type_slug: 'invoice', supplier_name: VELLUM, dtInfo: INV_DT });
   check('E5: frozen supplier value alone is enough identity to refuse the reuse', !!rE && rE.created === true);
+
+  // §4 arm 2 — THE SELF-REFERENCE in the taught-confirm path (red-first on HEAD). The E-tests above
+  // use needs_review docs, so the doc under judgement is never counted and the self-reference is
+  // masked — but production runs _upsertTemplate from the DETACHED onTaughtConfirm hook AFTER the
+  // doc is confirmed. Reproduce that state: the linked doc is already status='confirmed' with
+  // supplier_name=VELLUM, on a frozen-COPPER template with no OTHER confirmed docs. On HEAD the
+  // confirmed self IS counted → dominant=VELLUM → establishedIdentity=VELLUM → _supplierLinkOk true
+  // → self-reuse (created:false, the poisoning). Self-excluded → frozen COPPER → detach → create.
+  section('§4 arm 2 — self-reference: _upsertTemplate on an ALREADY-CONFIRMED foreign doc still detaches');
+  fdb = makeDb();
+  const frozen4 = templates.create(fdb, {
+    name: 'X4', document_type_slug: 'invoice', logo_phash: LOGO, keyword_fingerprint: [],
+    fields: [{ field_key: 'supplier_name', fixed_value: COPPER, is_variable: 0 }],
+  });
+  const logos4Before = logoRows(fdb, frozen4), count4Before = storedCount(fdb, frozen4);
+  const docS4 = Number(fdb.prepare(
+    "INSERT INTO documents (original_filename, status, document_type_id, template_id, logo_phash, keyword_fingerprint, supplier_name) " +
+    "VALUES ('s4.pdf', 'confirmed', 1, ?, ?, '[]', ?)").run(frozen4, LOGO_NEAR, VELLUM).lastInsertRowid);
+  const rS4 = await _upsertTemplate(ctx, fdb, docS4, { allValues: vals(VELLUM), document_type_slug: 'invoice', supplier_name: VELLUM, dtInfo: INV_DT });
+  check('SELF-REF arm 2: an already-confirmed foreign doc still detaches + CREATES (not self-reuse)', !!rS4 && rS4.created === true);
+  check('SELF-REF arm 2: foreign template phash NOT appended', logoRows(fdb, frozen4) === logos4Before);
+  check('SELF-REF arm 2: foreign template stored count NOT bumped', storedCount(fdb, frozen4) === count4Before);
+
+  // Kill-switch OFF ⇒ the arm-2 self-reference bug returns verbatim (self-reuse, created:false).
+  fdb = makeDb();
+  const frozen4b = templates.create(fdb, {
+    name: 'X4b', document_type_slug: 'invoice', logo_phash: LOGO, keyword_fingerprint: [],
+    fields: [{ field_key: 'supplier_name', fixed_value: COPPER, is_variable: 0 }],
+  });
+  const docS4b = Number(fdb.prepare(
+    "INSERT INTO documents (original_filename, status, document_type_id, template_id, logo_phash, keyword_fingerprint, supplier_name) " +
+    "VALUES ('s4b.pdf', 'confirmed', 1, ?, ?, '[]', ?)").run(frozen4b, LOGO_NEAR, VELLUM).lastInsertRowid);
+  process.env.TEMPLATE_GUARD_SELF_INDEPENDENT = '0';
+  const rS4b = await _upsertTemplate(ctx, fdb, docS4b, { allValues: vals(VELLUM), document_type_slug: 'invoice', supplier_name: VELLUM, dtInfo: INV_DT });
+  delete process.env.TEMPLATE_GUARD_SELF_INDEPENDENT;
+  check('SELF-REF arm 2 kill switch off ⇒ pre-fix bug returns (self-reuse, created:false)', !!rS4b && rS4b.created === false);
 
   try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
   console.log('\n' + (failures === 0 ? 'ALL PASS' : failures + ' check(s) FAILED'));

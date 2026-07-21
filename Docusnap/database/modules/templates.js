@@ -115,16 +115,29 @@ function confirmedDocCount(db, templateId) {
 // (count*2 > total is false when the top two are equal), so the engine returns None for it anyway,
 // making any tie-break pick unobservable — and requiring confirmed_at would couple this to the full
 // documents schema for no behavioural gain.
-function getDominantSupplier(db, templateId) {
+// `excludeDocId` (TEMPLATE_GUARD_SELF_INDEPENDENT, 2026-07-21): omit ONE document from the tally.
+// The supplier-link guard (reviewService confirm seam + _upsertTemplate) runs AFTER the doc being
+// confirmed is already status='confirmed', supplier_name=confirmedIssuer, and still template-linked
+// — so a plain getDominantSupplier COUNTS THE DOC AGAINST ITSELF: on a template with no other
+// confirmed docs, the intruder becomes its own "established identity", supplierNamesDisjoint(x,x)
+// is false, the guard never detaches, and the wrong template is permanently poisoned (its dominant
+// flips, which then disarms the Stage-0 rival-branding gate for every sibling doc). The guard passes
+// `document_id` here to judge identity from the OTHER confirmed docs only. Default null ⇒ the
+// `@ex IS NULL` short-circuit matches every row ⇒ BYTE-IDENTICAL to the old positional query for the
+// getAll / establishedIdentity-internal / test callers, which never pass it. ALL-NAMED binds
+// deliberately (Oracle C1): better-sqlite3 refuses a mix of positional `?` and named `@ex` and
+// throws, and this function's `catch` would swallow that throw and silently revert to the bug.
+function getDominantSupplier(db, templateId, excludeDocId = null) {
   try {
     const rows = db.prepare(`
       SELECT supplier_name AS value, COUNT(*) AS n
       FROM documents
-      WHERE template_id = ? AND status = 'confirmed'
+      WHERE template_id = @tid AND status = 'confirmed'
         AND supplier_name IS NOT NULL AND TRIM(supplier_name) <> ''
+        AND (@ex IS NULL OR id != @ex)
       GROUP BY supplier_name
       ORDER BY n DESC
-    `).all(templateId);
+    `).all({ tid: templateId, ex: excludeDocId });
     if (!rows.length) return null;
     const total = rows.reduce((s, r) => s + r.n, 0);
     return { value: rows[0].value, count: rows[0].n, total };
@@ -139,8 +152,13 @@ function getDominantSupplier(db, templateId) {
 // cosmetic `name` is deliberately NOT consulted — it is first-confirm luck, can be an OCR garble
 // ("50 Asia"), and plays no role in matching/filing/learning scope. Null = unjudgeable; callers
 // keep the link on null (fail toward today's behaviour).
-function establishedIdentity(db, templateId) {
-  const dom = getDominantSupplier(db, templateId);
+// `excludeDocId`: forwarded to getDominantSupplier so the guard judges a template's identity from
+// the OTHER confirmed docs, never the one under judgement (see getDominantSupplier). Order is
+// unchanged: dominant-confirmed-issuer (now optionally self-excluded) → frozen supplier_name fixed
+// value → null. `name` is STILL never consulted (Oracle C3): a self-excluded null must fail toward
+// KEEP-link, not toward detaching a legitimate cold first-confirm against a garbled/cosmetic name.
+function establishedIdentity(db, templateId, excludeDocId = null) {
+  const dom = getDominantSupplier(db, templateId, excludeDocId);
   if (dom && dom.value) return dom.value;
   try {
     const row = db.prepare(

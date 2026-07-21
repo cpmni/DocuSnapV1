@@ -257,7 +257,14 @@ function createReviewService(deps = {}) {
         const linkId = db.prepare('SELECT template_id FROM documents WHERE id = ?').get(document_id)?.template_id;
         const confirmedIssuer = (allValues && allValues.supplier_name) || supplier_name || null;
         if (linkId && confirmedIssuer) {
-          const ident = templates.establishedIdentity(db, linkId);
+          // SELF-INDEPENDENT identity (TEMPLATE_GUARD_SELF_INDEPENDENT, 2026-07-21): judge the
+          // template's identity from its OTHER confirmed docs — this doc is ALREADY confirmed +
+          // linked + supplier_name=confirmedIssuer at this point, so a plain establishedIdentity
+          // counts it against itself and the guard compares the issuer to itself (never disjoint →
+          // never detaches → the wrong template's dominant is permanently poisoned). Passing
+          // document_id removes the self-vote. OFF ('0') ⇒ excludeDocId=null ⇒ byte-identical.
+          const _selfIndep = process.env.TEMPLATE_GUARD_SELF_INDEPENDENT !== '0';
+          const ident = templates.establishedIdentity(db, linkId, _selfIndep ? document_id : null);
           if (ident && templates.supplierNamesDisjoint(confirmedIssuer, ident)) {
             documents.update(db, document_id, { template_id: null });
             if (logger) logger.log(`  Supplier-link guard: detached template ${linkId} (${ident}) from doc ${document_id} — confirmed issuer '${confirmedIssuer}'`);

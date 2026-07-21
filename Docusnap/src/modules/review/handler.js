@@ -1050,7 +1050,12 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
   // detached ⇒ fall through to CREATE — a genuinely different sender gets its OWN template.
   const _supplierLinkOk = (tid) => {
     if (!tid || !confirmedIssuer || process.env.TEMPLATE_SUPPLIER_LINK_GUARD === '0') return true;
-    const ident = templates.establishedIdentity(db, tid);
+    // SELF-INDEPENDENT identity (TEMPLATE_GUARD_SELF_INDEPENDENT, 2026-07-21): this runs from the
+    // detached onTaughtConfirm hook AFTER the doc is confirmed + supplier_name=confirmedIssuer, so —
+    // exactly like the reviewService arm — a plain establishedIdentity counts the doc against itself.
+    // Exclude document_id (in scope from the _upsertTemplate signature). OFF ⇒ null ⇒ byte-identical.
+    const _selfIndep = process.env.TEMPLATE_GUARD_SELF_INDEPENDENT !== '0';
+    const ident = templates.establishedIdentity(db, tid, _selfIndep ? document_id : null);
     return !(ident && templates.supplierNamesDisjoint(confirmedIssuer, ident));
   };
   let supplierDetached = false;
