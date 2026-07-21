@@ -79,4 +79,11 @@ function _setBin(on) {
   if (e) e.style.display = (on && window.SearchState && window.SearchState.role === 'admin') ? '' : 'none';
 }
 
-window.SearchQuery = { doSearch, initInputs };
+// Toggle the recycle-bin view (reused by the vertical rail's recycle button + the
+// search-bar button, so both stay in one place).
+function toggleBin() {
+  _setBin(!(window.SearchState && window.SearchState.binMode));
+  doSearch();
+}
+
+window.SearchQuery = { doSearch, initInputs, toggleBin };

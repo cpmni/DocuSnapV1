@@ -65,33 +65,81 @@ function _keyLabel(key) {
 
 // ── Page navigation ───────────────────────────────────────────────────────────
 
+// The bottom bar carries the zoom controls (always shown while a doc is up) and the
+// page controls (`.pn-pages`, shown only for multi-page docs).
 function _syncPageNav() {
   const s   = window.SearchState;
   const nav = document.getElementById('page-nav');
-  if (s.currentPages.length <= 1) { nav.style.display = 'none'; return; }
-  nav.style.display = '';
-  document.getElementById('page-label').textContent =
-    `${s.currentPage + 1} / ${s.currentPages.length}`;
-  document.getElementById('btn-page-prev').disabled = s.currentPage === 0;
-  document.getElementById('btn-page-next').disabled = s.currentPage === s.currentPages.length - 1;
+  if (!s.currentPages.length) { nav.style.display = 'none'; return; }
+  nav.style.display = '';                                    // reverts to the CSS flex row
+  const multi = s.currentPages.length > 1;
+  document.querySelectorAll('#page-nav .pn-pages').forEach(el => { el.style.display = multi ? '' : 'none'; });
+  if (multi) {
+    document.getElementById('page-label').textContent = `${s.currentPage + 1} / ${s.currentPages.length}`;
+    document.getElementById('btn-page-prev').disabled = s.currentPage === 0;
+    document.getElementById('btn-page-next').disabled = s.currentPage === s.currentPages.length - 1;
+  }
 }
 
 function _showPage(idx) {
   const s = window.SearchState;
   if (idx < 0 || idx >= s.currentPages.length) return;
   s.currentPage = idx;
-  const img = document.getElementById('preview-img');
-  img.src          = s.currentPages[idx];
-  img.style.display = 'block';
+  document.getElementById('preview-img').src = s.currentPages[idx];
+  document.getElementById('preview-img-wrap').style.display = '';   // reverts to the CSS flex
   document.getElementById('preview-img-placeholder').style.display = 'none';
   _syncPageNav();
 }
+
+// ── Zoom / pan (mirrors the Review viewer: buttons + wheel zoom, right-drag pan) ─
+let previewZoom = 1, panX = 0, panY = 0;
+const ZOOM_MIN = 1, ZOOM_MAX = 4, ZOOM_STEP = 0.25;
+
+function _applyTransform() {
+  const wrap = document.getElementById('preview-img-wrap');
+  if (wrap) wrap.style.transform = `translate(${panX}px, ${panY}px) scale(${previewZoom})`;
+  const lvl = document.getElementById('zoom-level');
+  if (lvl) lvl.textContent = Math.round(previewZoom * 100) + '%';
+}
+function setPreviewZoom(z) { previewZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z)); _applyTransform(); }
+function resetPreviewView() { previewZoom = 1; panX = 0; panY = 0; _applyTransform(); }
 
 function initPageNav() {
   document.getElementById('btn-page-prev').addEventListener('click', () =>
     _showPage(window.SearchState.currentPage - 1));
   document.getElementById('btn-page-next').addEventListener('click', () =>
     _showPage(window.SearchState.currentPage + 1));
+
+  document.getElementById('btn-zoom-in') ?.addEventListener('click', () => setPreviewZoom(previewZoom + ZOOM_STEP));
+  document.getElementById('btn-zoom-out')?.addEventListener('click', () => setPreviewZoom(previewZoom - ZOOM_STEP));
+  document.getElementById('btn-zoom-reset')?.addEventListener('click', resetPreviewView);
+
+  const area   = document.getElementById('preview-img-area');
+  const hasDoc = () => window.SearchState.currentPages.length > 0;
+  // Suppress the context menu (so right-drag can pan) + block native image dragging.
+  area.addEventListener('contextmenu', (e) => { if (hasDoc()) e.preventDefault(); });
+  area.addEventListener('dragstart',   (e) => e.preventDefault());
+  // Scroll-wheel zoom (same step as the +/− buttons).
+  area.addEventListener('wheel', (e) => {
+    if (!hasDoc()) return;
+    e.preventDefault();
+    setPreviewZoom(previewZoom + (e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP));
+  }, { passive: false });
+  // Right-click drag pans (left-click is left untouched).
+  let panStart = null;
+  area.addEventListener('mousedown', (e) => {
+    if (e.button !== 2 || !hasDoc()) return;
+    panStart = { x: e.clientX, y: e.clientY, panX, panY };
+    area.style.cursor = 'grabbing';
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!panStart) return;
+    panX = panStart.panX + (e.clientX - panStart.x);
+    panY = panStart.panY + (e.clientY - panStart.y);
+    _applyTransform();
+  });
+  window.addEventListener('mouseup', () => { if (panStart) { panStart = null; area.style.cursor = ''; } });
 }
 
 // ── Document selection ────────────────────────────────────────────────────────
@@ -106,11 +154,12 @@ async function selectDoc(doc) {
   document.getElementById('preview-empty').style.display = 'none';
   document.getElementById('preview-doc').style.display   = '';
 
-  const img = document.getElementById('preview-img');
-  const ph  = document.getElementById('preview-img-placeholder');
-  img.style.display = 'none';
-  ph.style.display  = '';
-  ph.innerHTML      = '<div class="spinner"></div>';
+  const wrap = document.getElementById('preview-img-wrap');
+  const ph   = document.getElementById('preview-img-placeholder');
+  wrap.style.display = 'none';
+  ph.style.display   = '';
+  ph.innerHTML       = '<div class="spinner"></div>';
+  resetPreviewView();                        // each new document opens at 100%, un-panned
 
   const full = await window.docusnap.getDocumentWithExtractions(doc.id);
   // `full` (getWithExtractions → getById) carries the extractions but NOT type_name (no

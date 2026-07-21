@@ -135,6 +135,7 @@ function _refreshSelStyles() {
 
 // Selection toolbar in the results header.
 function _renderToolbar() {
+  _syncRail();   // keep the vertical rail (nav + tools) in step wherever the toolbar refreshes
   const head = document.getElementById('results-head');
   if (!head) return;
   const n = _sel().size;
@@ -147,6 +148,74 @@ function _renderToolbar() {
   head.querySelector('.bin-restore')?.addEventListener('click', () => _act('restore'));
   head.querySelector('.bin-purge')?.addEventListener('click', () => _act('purge'));
   head.querySelector('.bin-delete')?.addEventListener('click', () => _act('delete'));
+}
+
+// ── Vertical tool rail (mirrors the Review window) ──────────────────────────────
+// Keeps the rail's document-cycle arrows + tool buttons in sync with the current
+// selection, recycle-bin mode and role. Called wherever the selection changes.
+function _syncRail() { _updateRailNav(); _renderRail(); }
+
+// Cycle the SELECTED document up/down through the flat render order — the same list
+// the ↑/↓ keys walk. Single-selects + previews the next row and scrolls it into view.
+function cycleSelection(dir) {
+  if (!_rowOrder.length) return;
+  const cur = window.SearchState.selectedDoc;
+  const idx = cur ? _rowOrder.indexOf(cur.id) : -1;
+  const nextIdx = idx === -1 ? 0 : idx + dir;         // up = -1 (prev), down = +1 (next)
+  if (nextIdx < 0 || nextIdx >= _rowOrder.length) return;   // clamp at the ends
+  const doc = _docById[_rowOrder[nextIdx]];
+  if (!doc) return;
+  _sel().clear(); _sel().add(doc.id); _anchorId = doc.id;
+  window.SearchPreview.selectDoc(doc);
+  _refreshSelStyles();
+  const el = document.querySelector(`#results-scroll [data-id="${doc.id}"]`);
+  if (el) el.scrollIntoView({ block: 'nearest' });
+  _syncRail();
+}
+
+// Disable the up arrow on the first row and the down arrow on the last.
+function _updateRailNav() {
+  const prev = document.getElementById('btn-doc-prev');
+  const next = document.getElementById('btn-doc-next');
+  if (!prev || !next) return;
+  const cur = window.SearchState.selectedDoc;
+  const idx = cur ? _rowOrder.indexOf(cur.id) : -1;
+  prev.disabled = idx <= 0;
+  next.disabled = idx === -1 || idx >= _rowOrder.length - 1;
+}
+
+// Reveal the rail's tools by role + recycle-bin mode, and enable them only when
+// something is selected. Normal view: Delete + Send-back (admin). Bin view: Restore +
+// Delete-permanently (admin). The Recycle-bin toggle shows for anyone who can edit.
+function _renderRail() {
+  const del = document.getElementById('rail-delete');
+  if (!del) return;
+  const back = document.getElementById('rail-sendback');
+  const restore = document.getElementById('rail-restore');
+  const recycle = document.getElementById('rail-recycle');
+  const n = _sel().size, canEdit = _canEdit(), isAdmin = _isAdmin(), bin = _isBin();
+  if (recycle) { recycle.style.display = canEdit ? '' : 'none'; recycle.classList.toggle('active', bin); }
+  if (bin) {
+    del.style.display = isAdmin ? '' : 'none'; del.title = 'Delete permanently'; del.disabled = !n;
+    if (restore) { restore.style.display = canEdit ? '' : 'none'; restore.disabled = !n; }
+    if (back) back.style.display = 'none';
+  } else {
+    del.style.display = canEdit ? '' : 'none'; del.title = 'Delete (move to recycle bin)'; del.disabled = !n;
+    if (restore) restore.style.display = 'none';
+    if (back) { back.style.display = isAdmin ? '' : 'none'; back.disabled = !n; }
+  }
+}
+
+// Wire the rail once (called from renderer after the DOM is ready). Delete dispatches
+// to purge in the bin, delete otherwise — mirroring the right-click menu.
+function initRail() {
+  document.getElementById('btn-doc-prev')?.addEventListener('click', () => cycleSelection(-1));
+  document.getElementById('btn-doc-next')?.addEventListener('click', () => cycleSelection(1));
+  document.getElementById('rail-delete')  ?.addEventListener('click', () => _act(_isBin() ? 'purge' : 'delete'));
+  document.getElementById('rail-restore') ?.addEventListener('click', () => _act('restore'));
+  document.getElementById('rail-sendback')?.addEventListener('click', () => _act('sendback'));
+  document.getElementById('rail-recycle') ?.addEventListener('click', () => window.SearchQuery.toggleBin());
+  _syncRail();
 }
 
 // Right-click menu (acts on the current selection).
@@ -190,4 +259,4 @@ async function _act(kind) {
   if (window.SearchQuery) window.SearchQuery.doSearch();
 }
 
-window.SearchResults = { renderResults };
+window.SearchResults = { renderResults, cycleSelection, initRail };
