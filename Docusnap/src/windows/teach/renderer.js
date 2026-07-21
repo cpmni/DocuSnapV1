@@ -119,10 +119,26 @@ async function renderDocPicker(){
     // loaded. A doc with no renderable thumbnail keeps the emoji.
     c.innerHTML=`<div class="ic"><span class="ic-emoji">📄</span><img class="ic-thumb" alt=""></div>`+
       `<div class="nm" style="font-size:13px;word-break:break-all">${esc(name)}</div>`+
-      `<div class="muted" style="font-size:12px">${esc(d.supplier_name||'Unknown supplier')}</div>`;
+      `<div class="muted" style="font-size:12px">${esc(d.supplier_name||'Unknown issuer')}</div>`;   // display name is "Document Issuer" (mig 38); supplier_name is only the internal key
     if (window.Thumbs) window.Thumbs.lazy(c.querySelector('.ic-thumb'), d);
-    c.onclick=()=>{ state.doc=d; renderDocPicker(); renderFooter(); };
+    // Toggle the selection IN PLACE. A full re-render rebuilt every card and re-ran the
+    // lazy thumbnail loader on all of them, and left the enlarged state depending on a
+    // clean rebuild every time. Toggling makes "exactly one card is big" true by
+    // construction — no card can keep the big styling after another is picked.
+    c.onclick=()=>{
+      state.doc=d;
+      for (const el of grid.querySelectorAll('.card')) el.classList.toggle('sel', el===c);
+      renderFooter();
+    };
     grid.appendChild(c);
+  }
+  // Open with one card already big, so the step starts in the state a click produces
+  // rather than with every card the same size and nothing to look at.
+  if (!state.doc && state.docs.length){
+    state.doc = state.docs[0];
+    const first = grid.querySelector('.card');
+    if (first) first.classList.add('sel');
+    renderFooter();
   }
 }
 
@@ -275,6 +291,11 @@ const TEACH_RENDER_SCALE = 4.0;   // 288 DPI display render (was 3.0/216) — cr
 // is the sweet spot region.py reads well. The OCR crop is downscaled to land near here
 // regardless of the (possibly much higher) DISPLAY render — see cropB64.
 const OCR_TARGET_H = 28;
+// Read the drawn box at NATIVE resolution, exactly as the Review window does. See cropB64.
+const TEACH_NATIVE_CROP = true;
+// The page fitted to the pane is too small to draw on accurately, so every user zoomed
+// in by hand before their first box. Start where they were going anyway.
+const TZ_DEFAULT = 1.5;
 // ── Straighten (deskew) ──────────────────────────────────────────────────────
 // Reuse the Review mechanism (get-page-deskew) + AnchorLabel's PROVEN coordinate transform. Boxes
 // are STORED in the RAW frame (so doCommit → saveTemplateMapping registers to the raw scan, byte-
@@ -339,6 +360,11 @@ async function startRegionStep(){
   // Straighten ON by default — training needs a level page so anchor↔target geometry registers cleanly.
   // Runs once (deskewImg unset); if the page is already straight it's a silent no-op.
   if (state.rawImg && !state.deskewImg) await toggleTeachDeskew(true);
+  // Open at TZ_DEFAULT rather than fit-to-pane: the fitted page is too small to draw an
+  // accurate box on, so this is where the user was going to zoom to anyway. Deferred to
+  // the next frame and set AFTER any deskew re-render, so tzApply measures the true
+  // fitted width (_fitW) instead of a stale or mid-layout one.
+  if (TZ_DEFAULT > 1) requestAnimationFrame(() => { try { tzSet(TZ_DEFAULT); } catch {} });
   state.fieldIndex = state.fields.findIndex(f=>!state.results[f.key]);
   if (state.fieldIndex<0) state.fieldIndex=0;
   renderFieldRail(); promptField();
@@ -431,15 +457,59 @@ function bindCanvas(){
   });
 }
 function curField(){ return state.fields[state.fieldIndex]; }
+
+// ── The Document Issuer is taught POSITION-ONLY ──────────────────────────────
+// Real letterheads print no caption above the company name, so asking the user to
+// confirm a "label" for the issuer manufactures a PHANTOM anchor that never
+// re-locates on a future scan — the teach then silently does nothing. The issuer is
+// identified by its NAME (logo / keywords / letterhead) instead. This is the same
+// rule Review applies (review/renderer.js RC2, Oracle-signed 2026-07-10), and the
+// Stage 0.5 mapper supports a label-less mapping as a first-class case
+// (template_mapper.py:405 — base 78 "no label" vs 90 "anchor located").
+const ISSUER_KEYS = ['supplier_name'];               // COMPANY_KEYS since migration 44
+function isIssuerField(f){ return !!f && ISSUER_KEYS.includes(f.key); }
+function finishIssuerField(f){
+  const r = state.results[f.key]; if (!r) return;
+  r.anchor = null; r.anchor_text = null; r.anchor_dir = null; r.anchorSuspicious = false;
+  r.status = 'done'; drawMode = 'value';
+  toast(`Captured the ${f.label} position from this layout.`);
+  advanceField();
+}
+
+// ── Read-back panel: ONE place, at the top ───────────────────────────────────
+// The question used to sit at the BOTTOM of the page pane while the instruction sat
+// at the top, so the eye had to ping-pong and you never knew which end the next
+// thing would appear at. It now renders only in the banner, directly under the
+// instruction it belongs to. Every write goes through setConfirm() so there is a
+// single seam if it ever needs to move again.
+const CONFIRM_SEL = (id) => `#rg-confirm-top [id="${id}"]`;
+function eachConfirm(id, fn){ document.querySelectorAll(CONFIRM_SEL(id)).forEach(fn); }
+function onConfirm(id, handler){ eachConfirm(id, el => { el.onclick = handler; }); }
+function confirmValue(id){
+  let v=''; eachConfirm(id, el => { if (!v) v = (el.value||'').trim(); }); return v;
+}
+function markConfirmInvalid(id){ eachConfirm(id, el => { el.style.borderColor='var(--err)'; }); }
+function setConfirm(html){
+  const top=$('rg-confirm-top'); if (top) top.innerHTML = html || '';
+}
+// The prompt is set in two parts so the FIELD BEING TAUGHT reads as a title rather
+// than as words buried in a sentence — see the .pact/.ptitle rules in index.html.
+// Every prompt goes through here, so the emphasis can't be lost by a future caller.
+function setPrompt(action, title){
+  $('rg-prompt').innerHTML =
+    `<span class="pact">${esc(action)}</span><span class="ptitle">${esc(title)}</span>`;
+}
 function setValueBanner(f){
   const idx=state.fieldIndex+1, total=state.fields.length;
-  $('rg-prompt').textContent=`Field ${idx} of ${total} — draw a box around the ${f.label}`;
-  $('rg-sub').textContent=`Drag a rectangle right over the value on the page (not the label next to it). After reading it you'll mark its label.`;
+  setPrompt(`Field ${idx} of ${total} — draw a box around the value for`, f.label);
+  $('rg-sub').textContent = isIssuerField(f)
+    ? `Drag a rectangle right over the company name on the page. There's no label to mark — the issuer is recognised by its name and letterhead.`
+    : `Drag a rectangle right over the value on the page (not the label next to it). After reading it you'll mark its label.`;
 }
 function promptField(){
   const f=curField(); if(!f) return;
   drawMode='value';
-  { const cc=$('rg-confirm'); if(cc) cc.innerHTML=''; }   // clear any prior read-back overlay
+  setConfirm('');   // clear any prior read-back overlay
   setValueBanner(f);
   // Fixed-value alternative — presented as a prominent accent card (not a buried muted
   // link) so a first-time user can clearly see they DON'T have to draw a box for a field
@@ -460,8 +530,8 @@ function promptField(){
 }
 function showFixedInput(f){
   drawMode='value';
-  { const cc=$('rg-confirm'); if(cc) cc.innerHTML=''; }
-  $('rg-prompt').textContent=`${f.label} — type the fixed value`;
+  setConfirm('');
+  setPrompt('Type the fixed value for', f.label);
   $('rg-sub').textContent=`This value is always the same on every document of this type (e.g. the company name).`;
   const existing=state.results[f.key];
   const prev=(existing&&existing.status==='fixed')?existing.value||'':'';
@@ -501,24 +571,36 @@ function renderFieldRail(){
 async function readBack(box){
   const f=curField();
   $('rg-readback').innerHTML='';   // hide the per-field "fixed value?" card while confirming a read
-  $('rg-confirm').innerHTML='<span class="muted">Reading…</span>';
+  setConfirm('<span class="muted">Reading…</span>');
   _teachReadBusy = true;
-  let value=''; try{ value=(await D.ocrRegion(await cropB64(box)))||''; }catch{}
+  // Read via --boxes first with a plain fallback — the SAME order Review's runZoneOcr uses
+  // (review/renderer.js:3202-3203), so a box drawn here and a box drawn there resolve
+  // through one recipe rather than two that can drift apart.
+  let value='';
+  try{
+    const b64 = await cropB64(box);
+    const res = await D.ocrRegionBoxes?.(b64);
+    value = ((res && res.text) || (await D.ocrRegion(b64)) || '');
+  }catch{}
   value=(value||'').trim();
-  const anchor=await autoLabel(box);
+  // The issuer never gets a label read — see isIssuerField above (also saves an OCR round trip).
+  const anchor = isIssuerField(f)
+    ? { box:null, anchor_text:null, dir:null, suspicious:false }
+    : await autoLabel(box);
   _teachReadBusy = false;   // both reads done; the box carries its own _ang for a later manual store
   if (anchor && anchor.box) anchor.box._ang = box._ang;   // same frame as the value box (manual-store safe)
   if (!value){
-    $('rg-confirm').innerHTML=
+    setConfirm(
       `<div class="warn">Couldn't read that clearly. Try a bigger box, or type the value:</div>`+
       `<div style="margin-top:8px;display:flex;gap:8px;align-items:center">`+
         `<input type="text" id="rb-manual-input" style="flex:1;background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-radius:8px;padding:8px 10px;font-size:14px;font-family:inherit" placeholder="${esc(f.label)} value…">`+
         `<button class="btn ghost" id="rb-type">Use this</button>`+
-      `</div>`;
-    const mi=$('rb-manual-input'); mi.focus();
-    const doManual=()=>{ const v=mi.value.trim(); if(!v){mi.style.borderColor='var(--err)';return;} store(f,box,anchor,v,true); showValueConfirm(f,state.results[f.key]); };
-    $('rb-type').onclick=doManual;
-    mi.addEventListener('keydown',e=>{ if(e.key==='Enter'){e.preventDefault();doManual();} });
+      `</div>`);
+    // Both copies are live: read whichever the user typed into, flag both if empty.
+    const doManual=()=>{ const v=confirmValue('rb-manual-input'); if(!v){markConfirmInvalid('rb-manual-input');return;} store(f,box,anchor,v,true); showValueConfirm(f,state.results[f.key]); };
+    onConfirm('rb-type', doManual);
+    eachConfirm('rb-manual-input', el => el.addEventListener('keydown', e=>{ if(e.key==='Enter'){e.preventDefault();doManual();} }));
+    { const mi=$('rb-manual-input'); if (mi) mi.focus(); }
     return;
   }
   store(f, box, anchor, value, /*pending*/true);
@@ -526,21 +608,22 @@ async function readBack(box){
 }
 // Value is stored; let the user confirm it before moving to the anchor step.
 function showValueConfirm(f, r){
-  $('rg-confirm').innerHTML=
+  setConfirm(
     `<div>I read: <span class="val mono">${esc(r.value)}</span> — is that right?</div>`+
     `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">`+
       `<button class="btn primary" id="rb-yes">Yes →</button>`+
       `<button class="btn ghost" id="rb-redraw">Redraw</button>`+
-    `</div>`;
-  $('rb-yes').onclick=()=>enterAnchorMode();
-  $('rb-redraw').onclick=()=>{ delete state.results[f.key]; promptField(); };
+    `</div>`);
+  // Issuer: the value confirmation is the LAST step — no label to confirm.
+  onConfirm('rb-yes',   ()=> isIssuerField(f) ? finishIssuerField(f) : enterAnchorMode());
+  onConfirm('rb-redraw',()=>{ delete state.results[f.key]; promptField(); });
 }
 // After confirming the value, auto-enter anchor mode so the user can mark (or skip)
 // the printed label Scan Finder follows when the layout shifts.
 function enterAnchorMode(){
   const f=curField(), r=f&&state.results[f.key]; if(!r) return;
   drawMode='anchor';
-  $('rg-prompt').textContent=`Step 2 — confirm the label for ${f.label}`;
+  setPrompt('Step 2 — confirm the printed label for', f.label);
   $('rg-sub').textContent=`Scan Finder follows a printed label so the field keeps reading when the layout shifts. Confirm the detected label and its direction, draw a different box, or continue without one.`;
   renderAnchorReadout();
   redrawCanvas();
@@ -563,7 +646,7 @@ function renderAnchorReadout(){
       ? `⚠ Couldn't read the caption here cleanly — the position will be remembered instead. Draw a box round the printed label, try the other direction, or continue without one.`
       : 'No label found here — try the other direction, draw one, or continue without.';
   const keepText = hasLabel ? 'Keep this label →' : 'Continue without a label →';
-  $('rg-confirm').innerHTML=
+  setConfirm(
     `<div class="muted" style="font-size:13px">${lbl}</div>`+
     `<div style="margin-top:9px;font-size:13px">Is the label to the <b>left</b> of the value, or <b>above</b> it?</div>`+
     `<div style="margin-top:6px;display:flex;gap:6px">`+
@@ -573,16 +656,16 @@ function renderAnchorReadout(){
     `<div style="margin-top:11px;display:flex;gap:8px;flex-wrap:wrap">`+
       `<button class="btn primary" id="rb-skip-anchor">${keepText}</button>`+
       `<button class="btn ghost" id="rb-redraw-val">← Redraw value</button>`+
-    `</div>`;
-  $('rb-dir-left').onclick=()=>redetectAnchor('left');
-  $('rb-dir-above').onclick=()=>redetectAnchor('above');
-  $('rb-skip-anchor').onclick=()=>{ if (suspicious) r.anchor_text=null; r.status='done'; drawMode='value'; advanceField(); };
-  $('rb-redraw-val').onclick=()=>{ delete state.results[f.key]; promptField(); };
+    `</div>`);
+  onConfirm('rb-dir-left',   ()=>redetectAnchor('left'));
+  onConfirm('rb-dir-above',  ()=>redetectAnchor('above'));
+  onConfirm('rb-skip-anchor',()=>{ if (suspicious) r.anchor_text=null; r.status='done'; drawMode='value'; advanceField(); });
+  onConfirm('rb-redraw-val', ()=>{ delete state.results[f.key]; promptField(); });
 }
 // Re-run label detection in the chosen direction (the Left/Above toggle) and refresh.
 async function redetectAnchor(dir){
   const f=curField(), r=f&&state.results[f.key]; if(!r||!r.target) return;
-  $('rg-confirm').innerHTML='<span class="muted">Looking '+(dir==='left'?'to the left':'above the value')+'…</span>';
+  setConfirm('<span class="muted">Looking '+(dir==='left'?'to the left':'above the value')+'…</span>');
   _teachReadBusy = true;
   try{
     const a=await autoLabel(_teachFwdBox(r.target), dir);   // r.target RAW → crop from the DISPLAY image
@@ -594,7 +677,7 @@ async function redetectAnchor(dir){
 }
 async function captureAnchor(box){
   const f=curField(), r=f&&state.results[f.key]; if(!r){ drawMode='value'; return; }
-  $('rg-confirm').innerHTML='<span class="muted">Reading the label…</span>';
+  setConfirm('<span class="muted">Reading the label…</span>');
   _teachReadBusy = true;
   let text=''; try{ const res=await D.ocrRegionBoxes(await cropB64(box)); text=res&&res.text?String(res.text).trim():''; }catch{}
   _teachReadBusy = false;
@@ -625,7 +708,7 @@ function advanceField(){
   const next=state.fields.findIndex((f,i)=>i>state.fieldIndex && !state.results[f.key] || (i>state.fieldIndex && state.results[f.key] && state.results[f.key].status==='pending'));
   const firstMissing=state.fields.findIndex(f=>!state.results[f.key]);
   if (firstMissing>=0){ state.fieldIndex=firstMissing; promptField(); }
-  else { renderFieldRail(); $('rg-confirm').innerHTML='<div class="muted">All details captured — choose <b>Review →</b> below.</div>'; }
+  else { renderFieldRail(); setConfirm('<div class="muted">All details captured — choose <b>Review →</b> below.</div>'); }
 }
 $('rg-redraw').onclick=()=>{ const f=curField(); if(f) delete state.results[f.key]; promptField(); };
 $('rg-skip').onclick=()=>{ const f=curField(); if(!f)return; state.results[f.key]={value:'',target:null,anchor:null,anchor_text:null,status:'skip'}; advanceField(); };
@@ -639,11 +722,14 @@ async function cropB64(box, pad){
   const im=state.img, natW=im.naturalWidth, natH=im.naturalHeight;
   const x=Math.max(0,(box.x-(pad?pad:0))*natW), y=Math.max(0,(box.y-(pad?pad:0))*natH);
   const w=Math.min(natW-x,(box.w+(pad?pad*2:0))*natW), h=Math.min(natH-y,(box.h+(pad?pad*2:0))*natH);
-  // Downscale a TALL (high-DPI) crop so its line-height lands near the OCR sweet spot.
-  // Resolution-INDEPENDENT: it targets the crop's own pixel height, so it never assumes
-  // the display render scale (a scale mismatch can't over-shrink the crop to junk) and
-  // only ever downscales (region.py upscales anything too small itself).
-  const ds = h > OCR_TARGET_H ? (OCR_TARGET_H / h) : 1.0;
+  // PARITY WITH REVIEW (owner-reported 2026-07-21: teach read "SO-51261" as "$00-51261"
+  // where Review reads it correctly). Review's runZoneOcr crops at NATIVE resolution and
+  // does not downscale at all (review/renderer.js:3188-3197). This wizard used to shrink
+  // every crop to OCR_TARGET_H≈28px, which is roughly half a 1.5-scale line and enough to
+  // collapse 'S'→'$' and 'O'→'0'. region.py's own light-first ladder handles scaling, so
+  // the downscale was doing work the recipe already does — badly.
+  // Kill switch: TEACH_NATIVE_CROP=false restores the old downscale.
+  const ds = TEACH_NATIVE_CROP ? 1.0 : (h > OCR_TARGET_H ? (OCR_TARGET_H / h) : 1.0);
   const c=document.createElement('canvas');
   c.width=Math.max(1,Math.round(w*ds)); c.height=Math.max(1,Math.round(h*ds));
   c.getContext('2d').drawImage(im,x,y,w,h,0,0,c.width,c.height);
@@ -765,7 +851,12 @@ async function doCommit(){
     // 2b) save a Stage 0.5 mapping per captured (non-fixed) field
     for (const f of state.fields){
       const r=state.results[f.key]; if(!r||r.status==='skip'||r.status==='fixed'||!r.target) continue;
-      const a=r.anchor||{x:Math.max(0,r.target.x-0.1),y:r.target.y,w:0.1,h:r.target.h};
+      // No anchor: the issuer is POSITION-ONLY, so its "anchor" box is the target itself —
+      // never a synthesised box to the LEFT, which would be phantom geometry the mapper
+      // could try to relocate against. Label-less mappings are supported (template_mapper.py).
+      const a = r.anchor || (isIssuerField(f)
+        ? { x:r.target.x, y:r.target.y, w:r.target.w, h:r.target.h }
+        : { x:Math.max(0,r.target.x-0.1), y:r.target.y, w:0.1, h:r.target.h });
       await D.saveTemplateMapping(templateId,{
         field_key:f.key, page_number:0, anchor_text:r.anchor_text||null,
         anchor_x_norm:a.x, anchor_y_norm:a.y, anchor_w_norm:a.w, anchor_h_norm:a.h,
