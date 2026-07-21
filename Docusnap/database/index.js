@@ -1031,6 +1031,27 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 51 applied: documents.detected_type_name column added (NULL-inert)');
   }
 
+  // Migration 52: field_anchors.max_w_norm — the MONOTONIC high-water crop width for a
+  // taught field (box-width learning). A ⊕ teach stores its drawn box width in w_norm, but
+  // w_norm is NOT monotonic (an authoritative re-teach REPLACES it; the passive within-spot
+  // path BLENDS toward narrower samples), so teaching a short value ("Tesco") then a longer
+  // one ("Billies Hardware Store") truncates the long value at the short box. max_w_norm
+  // records the widest width ever drawn for the anchor's scope so the crop can extend RIGHT up
+  // to it. INERT until the Python reader is switched on (ANCHOR_MAX_CROP_WIDTH) — this column
+  // alone changes no extraction behaviour. Backfilled to w_norm so every legacy anchor's
+  // effective width == its current width (byte-identical) until it is re-taught. (Oracle
+  // SIGN-OFF-WITH-CONDITIONS 2026-07-21; write-the-column-unconditionally, gate-only-the-crop.)
+  if (!applied.has(52)) {
+    if (tableExists(db, 'field_anchors') && !hasColumn(db, 'field_anchors', 'max_w_norm')) {
+      try {
+        db.exec('ALTER TABLE field_anchors ADD COLUMN max_w_norm REAL NOT NULL DEFAULT 0');
+        db.exec('UPDATE field_anchors SET max_w_norm = w_norm');   // backfill: high-water = current width
+      } catch (e) { console.warn(`  migration 52 field_anchors.max_w_norm: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (52)').run();
+    console.log('JS migration 52 applied: field_anchors.max_w_norm column added (box-width; NULL-inert)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

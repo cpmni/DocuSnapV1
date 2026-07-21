@@ -394,7 +394,7 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
             _cap = ((lambda c: slice_capture(field_key, "anchor_crop", 0,
                        (x_norm, y_norm, w_norm, h_norm), c, "target")) if slice_capture else None)
             _m = {}
-            crop_value = _crop_and_ocr(page0, x_norm, y_norm, w_norm, h_norm, val_type, capture=_cap, verify_fn=_verify, meta=_m, continuation=continuation)
+            crop_value = _crop_and_ocr(page0, x_norm, y_norm, w_norm, h_norm, val_type, capture=_cap, verify_fn=_verify, meta=_m, continuation=continuation, max_w_norm=anchor.get("max_w_norm"))
             # A fixed crop is positionally rigid: when an upstream line wraps or
             # the block shifts on a sibling layout, the box can land off-target
             # and return a NON-EMPTY but wrong value (e.g. ">alifornia" from the
@@ -526,7 +526,7 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                             _tl = _caption_top_limit(_dlb, direction, _drelo)   # (P) exclude the located caption band
                             _drv = _crop_and_ocr(page0, _drelo[0], _drelo[1], _drelo[2], _drelo[3],
                                                  val_type, verify_fn=_verify, meta=_dm, continuation=continuation,
-                                                 top_limit_norm=_tl)
+                                                 top_limit_norm=_tl, max_w_norm=anchor.get("max_w_norm"))
                             if _drv and not _name_field_code_reject(_drv, field_key) \
                                     and _crop_is_credible(_drv, val_type, validation_patterns, label):
                                 _dq = _qualify_against_format(_drv, field_key, format_lookup, text_field_keys)
@@ -881,7 +881,8 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                         _rtl = _caption_top_limit(located.get("label_box"), direction, relo)
                         rval = _crop_and_ocr(page0, relo[0], relo[1], relo[2], relo[3],
                                              val_type, capture=_rcap, verify_fn=_verify, meta=_mr,
-                                             continuation=continuation, top_limit_norm=_rtl)
+                                             continuation=continuation, top_limit_norm=_rtl,
+                                             max_w_norm=anchor.get("max_w_norm"))
                         _xfield = bool(rval) and _name_field_code_reject(rval, field_key)
                         if rval and (_xfield or not _crop_is_credible(rval, val_type, validation_patterns, label)):
                             _rec = None if _xfield else _recover_clean_token(rval, val_type, validation_patterns, label)
@@ -2752,11 +2753,18 @@ def _maybe_continue(page_image, x1: int, y1: int, x2: int, y2: int,
         return value
 
 
+# Absolute ceiling on the learned crop width (normalised), so a fat-finger over-wide draw can't
+# run the crop to the page edge before the operator notices (Oracle: eff_w = max(w_norm,
+# min(max_w_norm, cap)) — the OUTER max guarantees a legitimately-wide single teach is never shrunk).
+_MAX_CROP_WIDTH_CAP = 0.6
+
+
 def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
                   w_norm: float = 0.0, h_norm: float = 0.0,
                   val_type: str | None = None, capture = None,
                   verify_fn = None, meta = None, continuation = None,
-                  top_limit_norm: float | None = None) -> str | None:
+                  top_limit_norm: float | None = None,
+                  max_w_norm: float | None = None) -> str | None:
     """
     Crop a tight region centred on the stored value coordinates and re-OCR it.
     Uses the exact selection dimensions saved by the ⊕ tool (w_norm/h_norm) so
@@ -2775,6 +2783,26 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
     """
     try:
         w, h = page_image.size
+
+        # BOX-WIDTH LEARNING (ANCHOR_MAX_CROP_WIDTH, DARK by default; Oracle SIGN-OFF-WITH-CONDITIONS
+        # 2026-07-21): a field's crop width is the taught box's w_norm, so a value LONGER than the box
+        # ever drawn is truncated (teach "Tesco", then "Billies Hardware Store" is cut off). max_w_norm
+        # is the MONOTONIC widest width ever drawn for this anchor's scope (learning.js). Extend the
+        # crop RIGHTWARD to it — KEEP the value's LEFT edge fixed (values flow right from the left-
+        # anchored label), never beyond the absolute cap. eff_w = max(w_norm, min(max_w_norm, cap)):
+        # the outer max never shrinks a legitimately-wide single teach. OFF (default) OR max_w_norm
+        # ≤ w_norm (legacy backfill / first teach) ⇒ this block is skipped ⇒ byte-identical. Applied
+        # only at the rigid + label-lock/drift RELOCATE rungs (the caller passes it there, NOT at the
+        # cross-check or registration rungs — Oracle). y/h are untouched, so the (P) caption clamp and
+        # vertical geometry are unchanged.
+        if (max_w_norm and w_norm > 0 and h_norm > 0
+                and os.environ.get("ANCHOR_MAX_CROP_WIDTH", "0") != "0"):
+            eff_w = max(w_norm, min(float(max_w_norm), _MAX_CROP_WIDTH_CAP))
+            if eff_w > w_norm:
+                left   = x_norm - w_norm / 2.0      # value LEFT edge (normalised) — preserved
+                x_norm = left + eff_w / 2.0          # new centre, shifted right
+                w_norm = eff_w                       # widened width
+
         cx = int(x_norm * w)
         cy = int(y_norm * h)
 

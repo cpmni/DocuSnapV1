@@ -539,6 +539,7 @@ function saveAnchor(db, {
         UPDATE field_anchors
         SET page_zone = @page_zone, x_norm = @x_norm, y_norm = @y_norm,
             w_norm = @w_norm, h_norm = @h_norm,
+            max_w_norm = MAX(COALESCE(max_w_norm, 0), @w_norm),
             offset_dx_norm = @offset_dx_norm, offset_dy_norm = @offset_dy_norm,
             usage_count = usage_count + 1,
             confidence  = 1.0,
@@ -550,11 +551,11 @@ function saveAnchor(db, {
       db.prepare(`
         INSERT INTO field_anchors
           (supplier_name, document_type, field_key, anchor_label, direction,
-           page_zone, x_norm, y_norm, w_norm, h_norm,
+           page_zone, x_norm, y_norm, w_norm, h_norm, max_w_norm,
            offset_dx_norm, offset_dy_norm, last_authoritative_at)
         VALUES
           (@supplier_name, @document_type, @field_key, @anchor_label, @direction,
-           @page_zone, @x_norm, @y_norm, @w_norm, @h_norm,
+           @page_zone, @x_norm, @y_norm, @w_norm, @h_norm, @w_norm,
            @offset_dx_norm, @offset_dy_norm, datetime('now'))
       `).run({ ...key, ...incoming });
     }
@@ -578,10 +579,10 @@ function saveAnchor(db, {
     db.prepare(`
       INSERT INTO field_anchors
         (supplier_name, document_type, field_key, anchor_label,
-         direction, page_zone, x_norm, y_norm, w_norm, h_norm)
+         direction, page_zone, x_norm, y_norm, w_norm, h_norm, max_w_norm)
       VALUES
         (@supplier_name, @document_type, @field_key, @anchor_label,
-         @direction, @page_zone, @x_norm, @y_norm, @w_norm, @h_norm)
+         @direction, @page_zone, @x_norm, @y_norm, @w_norm, @h_norm, @w_norm)
     `).run({ ...key, ...incoming });
     return;
   }
@@ -637,9 +638,14 @@ function saveAnchor(db, {
         y_norm      = @y_norm,
         w_norm      = @w_norm,
         h_norm      = @h_norm,
+        max_w_norm  = MAX(COALESCE(max_w_norm, 0), @incoming_w_raw),
         last_seen   = datetime('now')
     WHERE id = @id
-  `).run({ id: existing.id, page_zone: incoming.page_zone, ...next });
+  `).run({ id: existing.id, page_zone: incoming.page_zone, incoming_w_raw: incoming.w_norm || 0, ...next });
+  // ↑ max_w_norm binds the RAW drawn width (incoming.w_norm), NOT the blended next.w_norm
+  //   (:614 blends toward narrower samples) — this is the one line that makes the high-water
+  //   monotonic, so a later narrow re-teach can never shrink the field and re-truncate a long
+  //   value. (Oracle: the load-bearing line of the passive path.)
 }
 
 function getAllAnchors(db) {

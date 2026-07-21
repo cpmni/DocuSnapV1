@@ -77,7 +77,7 @@ def _run(reg_value, located_ret, page_transform):
         return reg_value
     saved = (anchor._crop_and_ocr, anchor._locate_for_relocation, anchor._filter_anchors)
     anchor._crop_and_ocr = (lambda page, x, y, w, h, vt, capture=None, verify_fn=None,
-                            meta=None, continuation=None: crop(x, y))
+                            meta=None, continuation=None, **_kw: crop(x, y))
     anchor._locate_for_relocation = lambda *a, **k: located_ret
     anchor._filter_anchors = lambda anchors, s, d: list(anchors)
     try:
@@ -150,7 +150,7 @@ def test_clean_page_uses_rigid():
         return "2605-0849-1" if (abs(x - RIGID[0]) < 0.02 and abs(y - RIGID[1]) < 0.02) else "WRONG-9"
     saved = (anchor._crop_and_ocr, anchor._locate_for_relocation, anchor._filter_anchors)
     anchor._crop_and_ocr = (lambda page, x, y, w, h, vt, capture=None, verify_fn=None,
-                            meta=None, continuation=None: crop(x, y))
+                            meta=None, continuation=None, **_kw: crop(x, y))
     anchor._locate_for_relocation = lambda *a, **k: _located("WRONG-9")
     anchor._filter_anchors = lambda anchors, s, d: list(anchors)
     try:
