@@ -377,6 +377,52 @@ def _line_is_heading_like(line: str, phrase: str) -> bool:
     return any(_segment_is_heading(seg.strip(), p) for seg in _COL_BREAK_RE.split(s))
 
 
+# SLICE 1 (HEADING_LETTER_SPACING, Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-21): a document-TYPE
+# heading set in a TRACKED / letter-spaced display font ("PURCHASE ORDER") is fragmented by Tesseract
+# into pseudo-words ("PU RC HASE ORDER"); _type_keyword_pattern joins the phrase's words with \s* but
+# NOT within a word, so it can't match, the type never scores from its own title, and the doc
+# mis-types to a same-logo sibling. Top band the heading sits in (generous — a low-sitting title
+# under a tall letterhead still qualifies; body prose is excluded by BOTH this AND the exact-equality
+# test below).
+_HEADING_TOP_BAND_LINES = 15
+_HEADING_TOP_BAND_FRAC  = 0.28
+# Minimum collapsed phrase length to attempt letter-spacing recovery. A real letter-spaced TITLE is a
+# word ("invoice"=7, "quote"=5, "purchaseorder"=13); a SHORT abbreviation type name ("PO", "GRN")
+# would collision-match a spaced code label ("P O 12345" -> "po"), so it is never despace-recovered
+# (Oracle: the thinnest part of the false-positive surface).
+_MIN_DESPACE_LEN = 5
+
+
+def _despaced_heading(seg0: str, phrase_lc: str) -> bool:
+    """True when seg0's LEADING words — with ALL spacing removed — EXACTLY equal `phrase_lc` with its
+    spaces removed, recovering a letter-spaced title ("PU RC HASE ORDER" -> "purchaseorder" ==
+    "purchaseorder"). Trailing reference/number CODE tokens (a "PO-62560"/"38" beside the title) are
+    peeled first — the SAME code-token predicate _segment_is_heading uses. EXACT equality (never
+    substring) is load-bearing against false positives: "PO Box 12" peels "12" but the real word "box"
+    stays -> "pobox" != "po"; "please order online" -> "pleaseorderonline" != any phrase. Caller
+    scopes this to name/alias phrases + the top band + the regex-found-nothing case, so it is purely
+    ADDITIVE (byte-identical when it never fires)."""
+    # MULTI-WORD phrases only. Letter-spacing fragments a title's WORDS ("PURCHASE ORDER" ->
+    # "PU RC HASE ORDER"); collapsing there just rejoins the fragments. A SINGLE-word type name
+    # ("Worksheet") must NOT be matched by collapsing a legitimately-spaced segment ("Work Sheet"):
+    # that two-word spelling is the ALIAS mechanism's job, and auto-collapsing it would bypass the
+    # alias contract (test_detect_type_aliases: the null-alias path stays byte-identical). Every live
+    # letter-spacing case is a multi-word title (PURCHASE ORDER / SALES ORDER / DELIVERY NOTE). A
+    # single-word letter-spaced title ("IN VO ICE") is a deferred, thinner-precision extension.
+    if len((phrase_lc or "").split()) < 2:
+        return False
+    target = (phrase_lc or "").replace(" ", "")
+    if len(target) < _MIN_DESPACE_LEN:                      # short abbreviations are too collision-prone
+        return False
+    toks = seg0.split()
+    while toks and any(ch.isdigit() for ch in toks[-1]) \
+            and all(ch.isalnum() or ch in "#:.-/|" for ch in toks[-1]):
+        toks.pop()                                          # peel a trailing ref/code token
+    if not toks:
+        return False
+    return "".join(toks) == target
+
+
 def detect_document_type(ocr_text: str, patterns: dict,
                           known_types: list[str] | None = None,
                           type_aliases: dict | None = None) -> dict | None:
@@ -407,6 +453,8 @@ def detect_document_type(ocr_text: str, patterns: dict,
 
     # Part B kill switch (default ON): column-aware heading SCORING for name/alias banners.
     _col_aware = os.environ.get("HEADING_SCORE_COLUMN_AWARE", "1") != "0"
+    # Slice 1 kill switch (default ON): letter-spacing heading recovery (see _despaced_heading).
+    _letter_spacing = os.environ.get("HEADING_LETTER_SPACING", "1") != "0"
 
     type_keywords = {k: list(v) for k, v in patterns.get("document_type_keywords", {}).items()}
     aliases_by_name = type_aliases or {}
@@ -455,8 +503,20 @@ def detect_document_type(ocr_text: str, patterns: dict,
                 continue
             for i, line in enumerate(lines):
                 m = pattern.search(line.lower())
+                _despaced = False
                 if not m:
-                    continue
+                    # SLICE 1 — LETTER-SPACING recovery (HEADING_LETTER_SPACING). Only where the regex
+                    # matched NOTHING, only for a name/alias TITLE phrase, only on a TOP-BAND line, and
+                    # only on the leftmost column segment with all spacing collapsed to EXACT equality
+                    # (see _despaced_heading). ADDITIVE — a normal regex match never reaches here, so
+                    # the no-fire path is byte-identical.
+                    if (_letter_spacing and _col_aware and kw.lower() in name_alias_lc
+                            and (i <= _HEADING_TOP_BAND_LINES or i / total <= _HEADING_TOP_BAND_FRAC)):
+                        _seg0 = _COL_BREAK_RE.split(line.strip().lower())[0].strip()
+                        if _despaced_heading(_seg0, kw.lower()):
+                            _despaced = True
+                    if not _despaced:
+                        continue
                 # Headings near the top carry by far the strongest signal;
                 # weight decays smoothly with depth but never drops below 1 —
                 # nothing found later in the document is structurally ignored.
@@ -480,7 +540,12 @@ def detect_document_type(ocr_text: str, patterns: dict,
                 # counted (line==phrase) still scores 2.0 (seg0==phrase); a mid-body table column
                 # relies on the low positional weight + the C1 refuse review-hold to stay safe.
                 # Kill switch HEADING_SCORE_COLUMN_AWARE.
-                if _col_aware and kw.lower() in name_alias_lc:
+                if _despaced:
+                    is_heading = True                       # Seam B (Oracle): a letter-spacing
+                    # recovery MUST force BOTH the strong 2.0 SCORE and the exposed head signal below;
+                    # the :483/:496 recompute uses m.group(0)=collapsed vs the spaced seg -> False,
+                    # which would silently leave title_trusted off and NOT fix the cascade.
+                elif _col_aware and kw.lower() in name_alias_lc:
                     seg0 = _COL_BREAK_RE.split(line.strip().lower())[0].strip()
                     is_heading = _segment_is_heading(seg0, m.group(0).strip(), caption_ok=False)
                 else:
@@ -493,8 +558,8 @@ def detect_document_type(ocr_text: str, patterns: dict,
                 # vs the strict scoring `is_heading` so a real title carrying a number or
                 # punctuation ("WORKSHEET 38", "Purchase Order:", "Invoice No. 10023")
                 # still counts as a heading, while an in-prose mention does not.
-                if is_heading or _line_is_heading_like(line, m.group(0)):
-                    head = True
+                if is_heading or (m is not None and _line_is_heading_like(line, m.group(0))):
+                    head = True                             # _despaced -> is_heading True -> head True (Seam B)
                 break  # first occurrence of this phrase is enough
         if score > 0:
             scores[doc_type] = round(score, 1)
