@@ -153,7 +153,24 @@ let pendingTeachDocId = null;
 const MAIN_WINDOW_OPTIONS    = { width: 1100, height: 750, minWidth: 800, minHeight: 560 };
 const LOGIN_WINDOW_OPTIONS   = { width: 460, height: 660, resizable: false, minimizable: false, maximizable: false };
 const LICENSE_WINDOW_OPTIONS = { width: 460, height: 560, resizable: false, minimizable: false, maximizable: false };
-const ONBOARDING_WINDOW_OPTIONS = { width: 720, height: 720, resizable: false, minimizable: false, maximizable: false };
+// The wizard is a FIXED-SIZE window (resizable:false), so its height must fit its TALLEST
+// step, not its average one. Step 1 grows by ~95px the moment "Choose a folder" reveals the
+// processed-scans path row — at 720 that tipped the panel into its own overflow, so a
+// scrollbar appeared and vanished as the card was toggled. Sized for that tallest state.
+// The panel keeps its internal overflow-y as the backstop for an unusual theme/font metric.
+const ONBOARDING_WINDOW_OPTIONS = { width: 720, height: 820, resizable: false, minimizable: false, maximizable: false };
+
+// …but a fixed 820 must never exceed the screen, or on a 768-high laptop the footer's
+// Next button would sit below the taskbar with no way to resize the window. Clamp to the
+// work area at open time (screen isn't available at module load).
+function onboardingWindowOptions() {
+  const opts = { ...ONBOARDING_WINDOW_OPTIONS };
+  try {
+    const wa = screen.getPrimaryDisplay().workArea;
+    if (wa && wa.height > 0) opts.height = Math.max(600, Math.min(opts.height, wa.height - 40));
+  } catch { /* screen unavailable — keep the nominal height */ }
+  return opts;
+}
 const LEGAL_WINDOW_OPTIONS = { width: 720, height: 680, resizable: false, minimizable: false, maximizable: false };
 // Bump this (and LEGAL.txt's "Version:" header) to re-prompt everyone for acceptance.
 const LEGAL_VERSION = '2026-07-01';
@@ -218,7 +235,7 @@ function needsOnboarding() {
 }
 
 function showOnboarding() {
-  createWindow('onboarding', ONBOARDING_WINDOW_OPTIONS, 'index.html');
+  createWindow('onboarding', onboardingWindowOptions(), 'index.html');
   destroyWindow('login');
   destroyWindow('license');
 }
