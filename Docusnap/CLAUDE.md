@@ -21,7 +21,30 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-07-20) — lean index; full detail in `HANDOVER_2026-07-20_LATE.md` + `docs/session-log.md`
+## Current session state (2026-07-21) — READ `HANDOVER_2026-07-21.md` FIRST
+**2026-07-21 (Opus 4.8) — 7 commits, ALL UNPUSHED on `feat/reprocess-throughput-autostraighten`
+(`f08f131`→`8f41e95`); tree clean.** Overnight SECURITY AUDIT delivered (`SECURITY_AUDIT_2026-07-21.md`,
+gitignored: DB not encrypted → recommend disk-level; licensing self-grant main-process-only; PHP
+hardening inert until IONOS). Then, live-testing: (1) `581d626` **label-as-value** — a taught 'below'
+anchor no longer commits its own caption garble (order A→C→D→B; kills `NAME_HOLD_ADMIT_OVERRIDE`/
+`LABELLOCK_INLINE_PROVENANCE`/`CAPTION_BAND_REJECT`) · (2) `666258a` **identity self-poisoning** — the
+`TEMPLATE_SUPPLIER_LINK_GUARD` confirm path voted the doc-being-confirmed for its own stale identity
+(the "Copperfield sticks after re-teach" root cause); `getDominantSupplier`/`establishedIdentity` now
+take `excludeDocId` (kill `TEMPLATE_GUARD_SELF_INDEPENDENT`) · (3) `27d54b7`+`5760489` **Search UI** —
+vertical rail + zoom/pan + expandable details + ↑/↓ cycle · (4) `1234814` **box-width learning**
+(migration **52** `field_anchors.max_w_norm` high-water; DARK behind `ANCHOR_MAX_CROP_WIDTH`; live DB
+still at 51 until next start) · (5) `80d532c` **letter-spacing type recovery** — "PU RC HASE ORDER"→
+Purchase Order via top-band collapsed-equality + Seam-B heading force (default ON `HEADING_LETTER_SPACING`;
+multi-word-only guard) · (6) `8f41e95` audit-log View buttons styled. **Installer
+`...r20260721-1010-581d626.exe` predates commits 2–6 → REBUILD before owner live-test.** Non-bug: filed
+files show scan mtime (copyFileSync preserves it), not a filing bug. Poisoned GT: doc #190
+LarkspurInteriors_purchase_order_08 mis-confirmed as delivery_note. **QUEUE (diagnosed, not built):**
+first-run-wizard output-folder-not-copying-on-a-different-PC (REAL, unstarted) · per-template field
+HIDING (superset-locked, structural-protected) · keyword-per-field (backend done, UI left) · po_date
+corroboration date-separator exemption · worksheet line-merge mode-3 (diagnose doc-156 A-vs-B first) ·
+buyer-issued Supplier→issuer guard trace · `LETTERHEAD_ISSUER` flip.
+
+## (prior) Session state (2026-07-20) — full detail in `HANDOVER_2026-07-20_LATE.md` + `docs/session-log.md`
 **LATE SESSION 2026-07-20 (Fable 5) — READ `HANDOVER_2026-07-20_LATE.md` FIRST.** All pushed
 through `2a81124`, tag `milestone-20260720-identity` (owner-marked good point). **CURRENT installer
 `dist\ScanFinder Setup 2.0.0-r20260720-2050-2a81124.exe`** — every earlier one is stale. The live
