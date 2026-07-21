@@ -1464,6 +1464,18 @@
         #panel-audit .aud-pill.failure { background:var(--err-bg); color:var(--err); }
         #panel-audit .aud-pill.denied  { background:var(--warn-bg); color:var(--warn); }
         #panel-audit .aud-detail td { background:var(--bg); color:var(--muted); font-family:var(--mono); font-size:10.5px; white-space:pre-wrap; word-break:break-word; }
+        /* Inline "View" affordance in the Target cell — a compact accent pill (was a bare default
+           button); fills the accent on hover, matching the app's button language. */
+        #panel-audit .aud-view-btn {
+          display:inline-flex; align-items:center; margin-left:6px; padding:2px 9px; vertical-align:middle;
+          border-radius:var(--r-pill, 999px); border:1px solid var(--accent-border, var(--border2));
+          background:var(--accent-bg); color:var(--accent2);
+          font-family:var(--sans); font-size:10px; font-weight:600; letter-spacing:.02em; line-height:1.5;
+          cursor:pointer; transition:background .15s, border-color .15s, color .15s, transform .1s;
+        }
+        #panel-audit .aud-view-btn:hover { background:var(--accent); border-color:var(--accent); color:#fff; transform:translateY(-1px); }
+        #panel-audit .aud-view-btn:active { transform:translateY(0); }
+        #panel-audit .aud-view-btn:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
       </style>
       <div class="section">
         <div class="section-title">Audit log</div>
