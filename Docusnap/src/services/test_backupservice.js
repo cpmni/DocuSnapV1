@@ -69,6 +69,21 @@ catch (e) { reThrew = true; console.log('   (restore-over-existing error: ' + e.
 check('restore over existing related rows (deferred FK) succeeds', !reThrew &&
   (db.prepare('SELECT key FROM fields WHERE id=10').get() || {}).key === 'invoice_number');
 
+// ── M5: an EMPTY-array learned table must NOT wipe the target (fresh-install backup case) ──
+db.exec(`CREATE TABLE supplier_hints(id INTEGER PRIMARY KEY, supplier_name TEXT, field_key TEXT, hint_value TEXT);`);
+db.prepare("INSERT INTO supplier_hints VALUES(1,'Acme','invoice_number','INV-1')").run();
+db.prepare("INSERT INTO supplier_hints VALUES(2,'Acme','po_number','PO-2')").run();
+// (a) empty array ⇒ "nothing to import", learned rows PRESERVED (was: silently wiped).
+applyBackup(db, { tables: { supplier_hints: [] } });
+check('M5: an empty-array learned table is NOT wiped', db.prepare('SELECT COUNT(*) c FROM supplier_hints').get().c === 2);
+// (b) absent table ⇒ left intact (the pre-existing baseline behaviour, must still hold).
+applyBackup(db, { tables: {} });
+check('M5: an absent learned table is left intact', db.prepare('SELECT COUNT(*) c FROM supplier_hints').get().c === 2);
+// (c) a NON-empty table still fully REPLACES — the guard must not disable a real restore.
+applyBackup(db, { tables: { supplier_hints: [{ id: 5, supplier_name: 'Beta', field_key: 'ref', hint_value: 'R-9' }] } });
+const shRows = db.prepare('SELECT supplier_name FROM supplier_hints').all();
+check('M5: a non-empty learned table still fully REPLACES', shRows.length === 1 && shRows[0].supplier_name === 'Beta');
+
 db.close();
 console.log(fail ? `\n${fail} check(s) FAILED` : '\nAll backupService checks passed.');
 process.exit(fail ? 1 : 0);

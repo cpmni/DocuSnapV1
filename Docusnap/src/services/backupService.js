@@ -243,7 +243,9 @@ function applyBackup(db, payload) {
     //    keep their children untouched. ──
     const replaceChildren = (table, parentCol, parentMap) => {
       const rows = rowsFor(table), cols = colsOf(table);
-      if (!rows || !cols) return;
+      // M5 (same class as the learned-table loop): an empty child array is "nothing to
+      // import", not "delete this parent's children". Absent→skipped must equal empty→skipped.
+      if (!rows || !rows.length || !cols) return;
       const del = db.prepare(`DELETE FROM ${table} WHERE ${parentCol} = ?`);
       for (const localId of new Set(parentMap.values())) del.run(localId);
       let n = 0;
@@ -264,7 +266,12 @@ function applyBackup(db, payload) {
     // ── learned tables — full REPLACE (no inbound id FK; keyed by supplier/slug text) ──
     for (const t of ['field_label_overrides', 'field_anchors', 'supplier_hints', 'corrections', 'logo_fingerprints']) {
       const rows = rowsFor(t), cols = colsOf(t);
-      if (!rows || !cols) continue;
+      // M5: an EMPTY array means "nothing to import", the same as an ABSENT table — NOT
+      // "delete everything". Without the `!rows.length` guard a fresh-install backup (which
+      // serialises these learned tables as []) would `DELETE FROM` and wipe every anchor,
+      // hint, correction and logo on the TARGET machine. `createBackup` already skips an
+      // absent table, so absent→skipped must equal empty→skipped.
+      if (!rows || !rows.length || !cols) continue;
       db.prepare(`DELETE FROM ${t}`).run();
       let n = 0;
       for (const raw of rows) { insertRow(t, cols, { ...raw }); n++; }

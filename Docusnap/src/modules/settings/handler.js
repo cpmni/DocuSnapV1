@@ -547,10 +547,22 @@ function register(ctx) {
           target_type: 'backup', outcome: 'failure', metadata: { reason: 'device_mismatch' } });
         return { ok: false, error: gate.error };
       }
+      // M5: snapshot the DB before this destructive restore so a mistaken import (e.g. a
+      // fresh-install backup that would replace learned tables) is recoverable. Best-effort
+      // (matches the reset/recovery snapshot pattern); a snapshot failure must not block a
+      // legitimate restore — the empty-table guards in applyBackup are the primary defence.
+      let snapshot = null;
+      try {
+        const db0 = getDb();
+        try { db0.pragma('wal_checkpoint(TRUNCATE)'); } catch { /* WAL flush best-effort */ }
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        snapshot = `${db0.name}.pre-restore-${stamp}`;
+        fs.copyFileSync(db0.name, snapshot);
+      } catch (e) { snapshot = null; try { ctx.logger?.warn?.(`[backup-restore] pre-restore snapshot failed: ${e.message}`); } catch { /* noop */ } }
       const { applied } = backupService.applyBackup(getDb(), payload);
       logAudit(getDb(), { action: 'settings_backup_restore', action_category: 'settings',
-        target_type: 'backup', outcome: 'success', metadata: { tables: Object.keys(applied).length } });
-      return { ok: true, applied, restart: true };
+        target_type: 'backup', outcome: 'success', metadata: { tables: Object.keys(applied).length, snapshot: snapshot ? snapshot.split(/[\\/]/).pop() : null } });
+      return { ok: true, applied, restart: true, snapshot };
     } catch (e) { return { ok: false, error: e.message }; }
   });
 }
