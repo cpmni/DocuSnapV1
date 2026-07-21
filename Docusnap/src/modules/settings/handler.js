@@ -212,6 +212,10 @@ function register(ctx) {
       try { ctx.logger?.warn?.(`[reset-fresh-install] DB backup failed: ${e.message}`); } catch {}
     }
     const counts = learning.resetToFreshInstall(db);
+    // M1: after a full wipe, VACUUM to reclaim + zero the freed pages (with secure_delete=ON
+    // the content is already zeroed on delete; VACUUM shrinks the file and clears the freelist
+    // so a "reset to fresh" DB doesn't still carry deleted content on disk). Best-effort.
+    try { db.exec('VACUUM'); } catch (e) { try { ctx.logger?.warn?.(`[reset-fresh-install] VACUUM failed: ${e.message}`); } catch { /* noop */ } }
     return { backup, counts };
   });
 

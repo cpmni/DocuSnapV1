@@ -16,6 +16,12 @@ function open() {
   _db = new Database(dbPath);
   _db.pragma('journal_mode = WAL');
   _db.pragma('foreign_keys = ON');
+  // Audit M1 — "deletion isn't erasure". Without secure_delete, a deleted row's pages
+  // (including the up-to-50k-char ocr_text) go to the SQLite freelist INTACT and are
+  // recoverable with `strings docusnap.db`. secure_delete=ON zeroes freed pages on every
+  // delete, so purge/recycle-bin/reset actually remove content. Per-connection pragma, set
+  // at open. (Disk-theft of LIVE docs is a separate concern — BitLocker is the control there.)
+  _db.pragma('secure_delete = ON');
   runMigrations(_db);
   seedDefaults(_db);
   return _db;
