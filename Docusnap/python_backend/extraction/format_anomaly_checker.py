@@ -137,6 +137,18 @@ def shape_signature(value: str) -> str:
 
     All four are alphanum_sep, but only the first matches the learned shape.
     Pure and deterministic.
+
+    ⚠ INVARIANT — the letter→'@' fold is DELIBERATELY prefix-AGNOSTIC, and must stay so
+    HERE. `shape_signature('PO-1') == shape_signature('DN-1')` on purpose. A wrong-
+    document-type misfile that keeps the same digit/separator shape (a PO filed as a
+    delivery note: 'PO-21275' vs 'DN-70795') is therefore invisible to this signature —
+    that is intentional at EXTRACTION time: making this prefix-aware would FALSE-HOLD a
+    genuinely-new supplier with a legitimately different prefix against thin learned
+    history (a fail-toward-review violation at the wrong moment). The prefix mismatch is
+    caught POST-CONFIRM instead, where an 80+ doc pool makes it safe, by the JS detector
+    `src/services/repairSuspects.detectRefPrefixOutliers` (a suggestion-only Learning-
+    Repair rule). Do NOT port that rule into this function. Pinned by
+    tests/test_format_shape_consistency.py (section 8, the prefix-agnostic invariant).
     """
     out = []
     for c in (value or '').strip():

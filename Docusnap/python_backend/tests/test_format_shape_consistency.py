@@ -17,6 +17,7 @@ Covers:
   6. Existing coarse behaviour preserved (digits_only letter = high severity;
      alphanum_sep unexpected char = low severity) and short on this path
   7. shape_signature itself is correct and deterministic
+  8. shape_signature is DELIBERATELY prefix-agnostic (Oracle P1 tripwire — 'PO-1'=='DN-1')
 
 Usage:
     py -3.12 python_backend/tests/test_format_shape_consistency.py
@@ -194,6 +195,22 @@ def main() -> int:
         failures += 1
     if not check("deterministic (same input -> same output)",
                  shape_signature('X9/9') == shape_signature('X9/9')):
+        failures += 1
+
+    # ── 8. shape_signature is DELIBERATELY prefix-agnostic (INVARIANT tripwire) ──
+    # Oracle-mandated pin (P1, 2026-07-21). The letter->'@' fold makes 'PO-1' and 'DN-1'
+    # collapse to the SAME signature ON PURPOSE: at EXTRACTION time a prefix-aware shape
+    # would false-hold a genuinely-new supplier against thin history. A wrong-type misfile
+    # that keeps the same shape (PO filed as a delivery note) is caught POST-CONFIRM by the
+    # JS detector src/services/repairSuspects.detectRefPrefixOutliers, never here. If a
+    # maintainer makes shape_signature prefix-aware to "mirror the JS fix", THIS goes RED —
+    # that is the point. Do not delete or loosen it; see the shape_signature docstring.
+    section("8. shape_signature prefix-agnostic INVARIANT (do NOT make it prefix-aware)")
+    if not check("'PO-1' and 'DN-1' share a signature (extraction-time new-supplier safety)",
+                 shape_signature('PO-1') == shape_signature('DN-1') == '@@-#'):
+        failures += 1
+    if not check("'PO-21275' and 'DN-70795' share a signature (the doc #190 misfile class)",
+                 shape_signature('PO-21275') == shape_signature('DN-70795')):
         failures += 1
 
     # ── Summary ───────────────────────────────────────────────────────────────
