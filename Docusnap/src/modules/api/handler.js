@@ -418,14 +418,39 @@ function createRequestListener(ctx) {
         if (nw.length < 8 || nw.length > 128) return sendJson(res, 400, { error: 'New password must be 8–128 characters.' });
         if (nw === cur) return sendJson(res, 400, { error: 'New password must be different from your current password.' });
         dbAuth.setUserPassword(getDb(), user.id, await pwMod.hashPassword(nw), false);
+        // M3: revoke EVERY existing session for this account so a stolen /v1 token can't
+        // survive a self-service password change (the desktop change-password already does
+        // this; the /v1 path silently didn't). Then re-issue a fresh token for the caller so
+        // THIS client stays logged in — a client that ignores it simply re-logs-in.
+        try { sessions.revokeUser(user.id); } catch { /* best-effort; the token below is still fresh */ }
+        let reissued = null;
+        try { reissued = sessions.issue({ userId: session.userId, username: session.username, role: session.role, clientKey: session.clientKey }); } catch { /* client will re-login */ }
         audit({ user_id: user.id, action: 'password_change', action_category: 'auth', outcome: 'success',
                 actor_username: user.username, details: 'self_service_client' });
-        return sendJson(res, 200, { ok: true });
+        return sendJson(res, 200, { ok: true, token: reissued ? reissued.token : null, expiresAt: reissued ? reissued.expiresAt : null });
       }
 
       // ── Auth-required: TOTP enrolment (setup → returns secret; confirm → enables) ─
       if (req.method === 'POST' && pathname === `${API_PREFIX}/auth/totp/setup`) {
         const session = requireSession(req, res); if (!session) return;
+        // M2: re-enrolment must not silently disable an existing second factor. setTotpSecret
+        // clears totp_enabled, so a bare setup call from a stolen token would turn a victim's
+        // MFA OFF. If a factor is ALREADY enabled, require the current password AND a valid
+        // current code before overwriting. First-time enrol (no existing factor) needs no extra
+        // proof — you can't be locked out of what isn't set up yet.
+        const totpState = dbAuth.getTotpForUser(getDb(), session.userId);
+        if (totpState && totpState.totp_enabled) {
+          let body; try { body = await readJsonBody(req); } catch { body = {}; }
+          const user = dbAuth.getUserById(getDb(), session.userId);
+          const pwMod = require('../auth/password');
+          const pwOk   = !!user && await pwMod.verifyPassword(user.password_hash, String((body && body.currentPassword) || ''));
+          const codeOk = !!totpState.totp_secret && totp.verify(String((body && body.totp) || ''), totpState.totp_secret);
+          if (!pwOk || !codeOk) {
+            audit({ user_id: session.userId, action: 'totp_setup', action_category: 'auth', outcome: 'failure',
+                    actor_username: session.username, details: 'reenrol_reauth_failed' });
+            return sendJson(res, 401, { error: 'To change your authenticator, enter your current password and a current code.' });
+          }
+        }
         const secret = totp.generateSecret();
         dbAuth.setTotpSecret(getDb(), session.userId, secret);
         audit({ user_id: session.userId, action: 'totp_setup', action_category: 'auth', outcome: 'success' });
