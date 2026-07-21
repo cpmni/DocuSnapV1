@@ -1000,7 +1000,11 @@ function ensureManagedCert(ctx, { force = false } = {}) {
   const covering = exists(managedCrt) && certService.certCoversAddresses({ serverCrtPath: managedCrt, addresses: sans, fs }).valid;
   if (!force && covering && rp(cfg.certPath) === rp(managedCrt)) return { managed: true, regenerated: false, ...managedCertStatus(ctx) };
 
-  const r = certService.generateServerCerts({ certsDir: certsDirFor(ctx), sans, reuseCa: true, fs });
+  // H1: encrypt the CA private key at rest (Electron safeStorage / DPAPI). Kill switch
+  // CERT_KEY_ENCRYPT_DISABLED=1 restores plaintext (passthrough). Backward-compatible: a legacy
+  // plaintext ca.key reads fine and is migrated to encrypted on this reuse.
+  const secret = process.env.CERT_KEY_ENCRYPT_DISABLED === '1' ? undefined : require('../../lib/secretStore');
+  const r = certService.generateServerCerts({ certsDir: certsDirFor(ctx), sans, reuseCa: true, fs, secret });
   const db = ctx.getDb();
   const learning = require('../../../database/modules/learning');
   learning.setSetting(db, 'client_api_tls_cert', r.serverCrtPath);
