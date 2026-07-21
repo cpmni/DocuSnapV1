@@ -830,6 +830,35 @@ app.whenReady().then(() => {
   // key events, not just the window frame — whenever it is actually shown.
   // Registered before any window is created so it covers the splash, the
   // login/main/license swap, child windows (settings/review/search), and any
+  // ── Navigation / new-window / drop lockdown (audit M4, defence-in-depth) ─────
+  // Every app window is a local file:// page under src/windows/. Nothing legitimately
+  // navigates off that tree — the Help window navigates BETWEEN its own local pages,
+  // which the dir check permits; every EXTERNAL open goes through main-process shell.*
+  // via IPC, which these guards never touch. A dropped local .html or a
+  // window.open('file://…') would otherwise load a page that KEEPS the preload
+  // (privileged IPC) but LOSES the per-page <meta> CSP. Deny all of it. Registered here,
+  // before any window is created, so it covers the splash/login/print-ghost too.
+  // Kill switch: NAV_GUARD_DISABLED=1. (eric-designed, code-verified against every
+  // shell.openExternal/openPath and the Help window's inter-page links.)
+  const _appWindowsRoot = (path.join(__dirname, 'windows') + path.sep).toLowerCase();
+  const _isInAppWindow = (targetUrl) => require('./lib/navGuard').isInAppWindow(targetUrl, _appWindowsRoot);
+  if (process.env.NAV_GUARD_DISABLED !== '1') {
+    app.on('web-contents-created', (_e, contents) => {
+      // No renderer opens a new window (external links go via the open-external IPC →
+      // shell.openExternal). Still hand a genuine http(s) URL to the OS browser so a
+      // future <a target="_blank"> keeps working; deny the in-app new window either way.
+      contents.setWindowOpenHandler(({ url }) => {
+        try { const u = new URL(url); if (u.protocol === 'https:' || u.protocol === 'http:') shell.openExternal(u.href); } catch { /* noop */ }
+        return { action: 'deny' };
+      });
+      // The initial loadFile is NOT a "navigation" and never reaches here; only
+      // page/user-driven navigations (links, location=, a dropped file) do.
+      contents.on('will-navigate', (e, url) => { if (!_isInAppWindow(url)) e.preventDefault(); });
+      contents.on('will-redirect', (e, url) => { if (!_isInAppWindow(url)) e.preventDefault(); });
+      contents.on('will-attach-webview', (e) => e.preventDefault());   // no <webview> anywhere
+    });
+  }
+
   // window added later. Re-fires on every show so restore-from-minimise re-focuses.
   app.on('browser-window-created', (_e, win) => {
     const grabFocus = () => {
