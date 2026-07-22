@@ -26,9 +26,12 @@ touches that area — read the pointed-to doc BEFORE working in it:
 `feat/reprocess-throughput-autostraighten` has **11 commits UNPUSHED** on top of origin `370d04d`
 (`f6d85b5`→`90ecaf7`). Tree clean except this session-state refresh.** The LATE handover's UI batch is
 now COMMITTED (`f6d85b5` cards, `1618f77` wizard height, `f9bc202` teach batch — **still none owner-tested**).
-**P1 BUILT** (`ac7bdb3`): `repairSuspects` ref-prefix outlier detector in **BOTH** JS (`repairSuspects.js`,
-kill `REPAIR_PREFIX_MISMATCH`) **and the Python mirror** `format_anomaly_checker.py`, with tests — the
-"one side or both" question resolved to BOTH. **P2 DIAGNOSED, P3–P5 DESIGNED** (`b0739ca`, docs in
+**P1 BUILT** (`ac7bdb3`): `repairSuspects.detectRefPrefixOutliers` (JS, kill `REPAIR_PREFIX_MISMATCH`) —
+suggestion-only Learning-Repair flag for a ref whose alpha prefix (DN/PO/SO/INV) disagrees with the
+type's dominant one. **JS-ONLY by deliberate reggie+Oracle decision** — the "one side or both" answer is
+**JS-only + a Python tripwire**: `format_anomaly_checker.shape_signature` stays PREFIX-BLIND on purpose
+(prefix-awareness at extraction time would fail-toward-review-violate on a new supplier), pinned by
+`test_format_shape_consistency.py` §8. Do NOT port the rule into Python. Tests green (JS 27/27 + Py §8). **P2 DIAGNOSED, P3–P5 DESIGNED** (`b0739ca`, docs in
 `docs/designs/`): P2 fault(b) root cause = generic Stage-1 date patterns all carry a bare `"Date"` label,
 so a delivery docket's `Date:` fills invoice/order/po_date alike (Option A storage-seam fix recommended,
 NOT built). **SECURITY AUDIT `SECURITY_AUDIT_2026-07-21.md` — 6/7 FIXED:** H1 CA-key-at-rest (`8546932`,
