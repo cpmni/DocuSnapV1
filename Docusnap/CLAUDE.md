@@ -31,10 +31,15 @@ suggestion-only Learning-Repair flag for a ref whose alpha prefix (DN/PO/SO/INV)
 type's dominant one. **JS-ONLY by deliberate reggie+Oracle decision** — the "one side or both" answer is
 **JS-only + a Python tripwire**: `format_anomaly_checker.shape_signature` stays PREFIX-BLIND on purpose
 (prefix-awareness at extraction time would fail-toward-review-violate on a new supplier), pinned by
-`test_format_shape_consistency.py` §8. Do NOT port the rule into Python. Tests green (JS 27/27 + Py §8). **P2 DIAGNOSED, P3–P5 DESIGNED** (`b0739ca`, docs in
-`docs/designs/`): P2 fault(b) root cause = generic Stage-1 date patterns all carry a bare `"Date"` label,
-so a delivery docket's `Date:` fills invoice/order/po_date alike (Option A storage-seam fix recommended,
-NOT built). **SECURITY AUDIT `SECURITY_AUDIT_2026-07-21.md` — 6/7 FIXED:** H1 CA-key-at-rest (`8546932`,
+`test_format_shape_consistency.py` §8. Do NOT port the rule into Python. Tests green (JS 27/27 + Py §8). **P3 BUILT** (`4e0af32`, kill
+`WIZARD_TEARDOWN_FIX=0`): the first-run wizard's 12s self-close — `openMainShell`'s teardown now
+identity-scopes the captured cover-window instances + tears down synchronously on the reuse branch +
+stores/clears the backstop timer (`src/lib/coverTeardown.js`, pin `test_coverteardown.js` 19 checks;
+eric SIGN-OFF-W/CONDITIONS, all met). **⚠ needs an owner FULL-RESTART to confirm live** (main-process
+change); does NOT fix the separate "Re-run reopens a stale wizard on its old step". **P2 DIAGNOSED, P4–P5
+DESIGNED** (`b0739ca`, docs in `docs/designs/`): P2 fault(b) root cause = generic Stage-1 date patterns
+all carry a bare `"Date"` label, so a delivery docket's `Date:` fills invoice/order/po_date alike
+(Option A storage-seam fix recommended, NOT built). **SECURITY AUDIT `SECURITY_AUDIT_2026-07-21.md` — 6/7 FIXED:** H1 CA-key-at-rest (`8546932`,
 `src/lib/secretStore.js`) · M1 secure_delete (`75634be`) · M2+M3 `/v1` session-revoke + TOTP re-auth
 (`90ecaf7`) · M4 nav lockdown (`3555c73` `src/lib/navGuard.js`) + CSP `'none'` sweep (`12c9da1`) · M5
 empty-array backup guard (`596c083`). **H2 (LAN pairing TOFU) is the ONLY open finding — DESIGN ONLY,
