@@ -2998,14 +2998,22 @@ def _reads_disagree(a, b, val_type) -> bool:
     """Do two independent reads of a field carry genuinely DIFFERENT values? For a DATE, compare
     CALENDAR dates (parse_date) so a format-only difference (29/05/2026 vs 29-05-2026) is NOT a
     disagreement and an unparseable read never counts; everything else is a case-insensitive string
-    compare. Shared by the authoritative-crop cross-check's inline AND value-below branches."""
+    compare. Shared by the authoritative-crop cross-check's inline AND value-below branches.
+
+    DATE-AWARE even when val_type didn't resolve to 'date' here: if BOTH reads parse as calendar
+    dates we compare the DATES, not the raw strings — so a crop that OCR'd the separator differently
+    ('04/06/2026' vs '04-06-2026') never fires a needless cross-check flag. Kill switch
+    DATE_AWARE_CROSSCHECK=0 restores the val_type=='date'-only behaviour (OFF => byte-identical)."""
     a, b = (a or "").strip(), (b or "").strip()
     if not a or not b:
         return False
-    if val_type == "date":
+    if val_type == "date" or os.environ.get("DATE_AWARE_CROSSCHECK", "1") != "0":
         from extraction.validator import parse_date
         da, db = parse_date(a), parse_date(b)
-        return bool(da and db and da.date() != db.date())
+        if da and db:
+            return da.date() != db.date()
+        if val_type == "date":
+            return False   # a date field where one read didn't parse → never a disagreement
     return a.lower() != b.lower()
 
 
