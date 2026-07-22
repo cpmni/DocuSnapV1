@@ -2335,7 +2335,18 @@ function _renderDocSnippet(doc) {
     if (generic) strip.textContent = "ScanFinder didn't recognise this document, so it's set to file as a "
       + 'General Document — change the type above if that\'s wrong.';
   }
-  if (body) body.textContent = String(doc.ocr_text).replace(/\s+/g, ' ').trim().slice(0, 260);
+  if (body) {
+    // Tidy the raw OCR preview: collapse whitespace, drop lone symbol/punctuation noise (e.g. "\ \"),
+    // and when the page scanned too poorly to read, show a calm note instead of a wall of garble.
+    const toks = String(doc.ocr_text).replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+    const wordish = t => (t.length >= 3 && (t.match(/[A-Za-z]/g) || []).length >= t.length * 0.6)
+                      || (t.match(/[0-9]/g) || []).length >= 2;
+    const legible = toks.length ? toks.filter(wordish).length / toks.length : 0;
+    const cleaned = toks.filter(t => /[A-Za-z0-9]/.test(t)).join(' ').slice(0, 260);
+    body.textContent = (legible >= 0.5 && cleaned)
+      ? cleaned
+      : "The text on this page didn't scan clearly enough to preview.";
+  }
   box.hidden = false;
 }
 
