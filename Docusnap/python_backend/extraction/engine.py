@@ -198,6 +198,19 @@ _KEYWORD_TRUST_FLOOR = 90   # only a confident, rx-validated keyword may challen
 _CONFLICT_CAP        = 88   # capped below the auto-file threshold → the conflict lands in Review
 
 
+def _count_valued_fields(results) -> int:
+    """Count real extracted fields that carry a value, honouring the results-dict invariant:
+    '_'-prefixed keys are METADATA — some are NON-dict (e.g. `_needs_review = True`, injected
+    mid-pipeline by the logo text-gate 'suggest' branch ~engine.py:2605) — and MUST be skipped
+    before any `.get()` on a value. This is the same guard every other results-iterator in the
+    engine already uses; the three diagnostic 'found' counters (Stage 0/1/2 log lines) were the
+    only sites that omitted it, which is how a bool value crashed extraction with
+    'bool object has no attribute get'. Log-only + behaviour-neutral (a non-dict metadata key was
+    never a valued field, so the count is unchanged on every working document)."""
+    return sum(1 for k, v in results.items()
+               if not str(k).startswith('_') and isinstance(v, dict) and v.get('value'))
+
+
 def _cmp_norm(value) -> str:
     """Compare-time normalisation for the keyword-vs-mapping disagreement check — reuses the shared
     token normaliser so '6 102' / '6102' compare equal; degrades to a plain lower/strip on error."""
@@ -2418,7 +2431,7 @@ class ExtractionEngine:
                 # where it then won out over the real "Polychemtex Inc." hints).
                 if not supplier_name:
                     supplier_name = (results.get('supplier_name') or {}).get('value') or None
-                found = len([v for v in results.values() if v.get('value')])
+                found = _count_valued_fields(results)
                 self.log(f"  Stage 0: {found}/{len(field_keys)} fields from template")
 
                 # ── Stage 0.5: admin-drawn anchor → target zone mappings ──────
@@ -2780,7 +2793,7 @@ class ExtractionEngine:
                     or data.get("confidence", 0) > existing.get("confidence", 0)):
                 results[key] = data
         self._trace_stage('1_keyword', kw_results, _pre_s1, results)
-        found = len([v for v in results.values() if v.get("value")])
+        found = _count_valued_fields(results)
         self.log(f"  Stage 1: {found}/{len(field_keys)} fields found")
 
         # Snapshot the supplier identity AS OF Stage-2 time: the Stage-2.6 late-anchor
@@ -3007,7 +3020,7 @@ class ExtractionEngine:
                 if not existing or is_taught_override or data["confidence"] > existing["confidence"]:
                     results[key] = data
             self._trace_stage('2_anchor', anchor_results, _pre_s2, results)
-            new_found = len([v for v in results.values() if v.get("value")])
+            new_found = _count_valued_fields(results)
             self.log(f"  Stage 2: +{new_found - found} fields from anchors")
             found = new_found
 
