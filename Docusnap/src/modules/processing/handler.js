@@ -2657,6 +2657,11 @@ async function _autoFileDoc(db, docId, folderPath, notifyMainWindow, logger) {
     ? amountRouting.captureTotalContext(db, docId, {}, { getExtractedTotalContext: documents.getExtractedTotalContext })
     : null;
   try { db.prepare('UPDATE extractions SET validation_note = NULL, corrected_to = NULL WHERE document_id = ?').run(docId); } catch {}
+  // P2 — drop FOREIGN extraction rows (keys not on this doc's type) AFTER the auto-file gate at
+  // isAutoFileEligible above has already run on the FULL row set, so a garbled foreign field still
+  // HELD this doc exactly as today (the drop can never open the gate — ordering is load-bearing).
+  // Kill switch FOREIGN_FIELD_DROP=0. Shared predicate with reviewService + _buildTemplateFields.
+  try { require('../../lib/foreignFields').dropForeignExtractions(db, docId, dtInfo); } catch (e) { logger?.warn?.(`foreign-field drop skipped for docId=${docId}: ${e && e.message}`); }
   if (doc.working_path) {
     try { if (fs.existsSync(doc.working_path)) fs.unlinkSync(doc.working_path); } catch {}
     try { documents.update(db, docId, { working_path: null }); } catch {}

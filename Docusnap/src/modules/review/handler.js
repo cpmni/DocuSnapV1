@@ -1206,8 +1206,9 @@ function _buildTemplateFields(db, allValues, dtInfo) {
   // can't pollute this template. Keep-all fallback when the type has no field metadata (mirrors
   // graduationTemplate._variableOnlyFields). Never drop the issuer or the type's ref/date role keys,
   // even if `fields` is malformed (defensive — those are load-bearing for filing).
-  const roleKeys = new Set([...companyKeys, dtInfo?.ref_field_key, dtInfo?.date_field_key].filter(Boolean));
-  const ownField = (key) => fieldMeta.size === 0 || fieldMeta.has(key) || roleKeys.has(key);
+  // Shared with the P2 foreign-row drop (reviewService.confirm + _autoFileDoc) via foreignFields.js,
+  // so the keep-predicate can't drift between the template builder and the storage-scope fix.
+  const ownField = require('../../lib/foreignFields').ownFieldPredicate(dtInfo);
 
   return Object.entries(allValues)
     .filter(([key, v]) => v && String(v).trim() && ownField(key))

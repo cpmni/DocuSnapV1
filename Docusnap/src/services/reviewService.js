@@ -31,6 +31,7 @@ function createReviewService(deps = {}) {
   const templates = deps.templates || require('../../database/modules/templates');
   const prefixOutlier = deps.prefixOutlier || require('../../database/modules/prefix_outlier');
   const filing    = deps.filing    || require('../modules/filing/handler');
+  const foreignFields = deps.foreignFields || require('../lib/foreignFields');
   const fs   = deps.fs   || require('fs');
   const path = deps.path || require('path');
   const logger = deps.logger || null;
@@ -213,6 +214,12 @@ function createReviewService(deps = {}) {
 
     // Clear pre-confirmation review aids (display-only; not read by learning).
     db.prepare('UPDATE extractions SET validation_note = NULL, corrected_to = NULL WHERE document_id = ?').run(document_id);
+
+    // P2 — drop FOREIGN extraction rows (keys not on this doc's assigned type: the union-of-keys
+    // bleed where a delivery docket's bare `Date:` also filled invoice/order/po_date). AFTER the
+    // claim + file above, so it can't affect the filing decision. Kill switch FOREIGN_FIELD_DROP=0.
+    // Shares _buildTemplateFields' keep-predicate (foreignFields.js) so the two can't drift.
+    if (dtInfo) { try { foreignFields.dropForeignExtractions(db, document_id, dtInfo); } catch (e) { logger?.warn?.('foreign-field drop skipped: ' + (e && e.message)); } }
 
     // The working copy has served its purpose — remove it + clear the pointer.
     if (workingPath) {
