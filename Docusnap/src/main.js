@@ -11,6 +11,7 @@ const { app, BrowserWindow, ipcMain, screen, shell, Tray, Menu, Notification } =
 const path = require('path');
 const fs   = require('fs');
 const { repairKeyboardFocus } = require('./lib/focusRepair');
+const { closeCoverWindows, scheduleCoverTeardown } = require('./lib/coverTeardown');
 
 // ── App-data directory (brand rename: DocuSnap → ScanFinder) ──────────────────
 // On-disk data lives under userData (SQLite DB, users, cached license tokens,
@@ -202,22 +203,40 @@ function showLoginScreen() {
 
 // Raw shell open — only ever reached AFTER the licensing gate has allowed it.
 function openMainShell() {
+  // P3 fix (kill switch WIZARD_TEARDOWN_FIX=0 restores the exact legacy path below).
+  // Was `main` already alive BEFORE this call? Capture it BEFORE createWindow, because
+  // createWindow('main') returns the EXISTING window on its reuse branch (a "Re-run setup"
+  // → finish/skip re-enters here). On reuse the shell is already painted, so
+  // 'ready-to-show' will NEVER re-fire and the old 12s backstop would be the ONLY teardown
+  // — leaving the wizard on screen and clickable until it vanished mid-interaction.
+  const P3 = process.env.WIZARD_TEARDOWN_FIX !== '0';
+  const mainExisted = !!windows['main'] && !windows['main'].isDestroyed();
   const main = createWindow('main', MAIN_WINDOW_OPTIONS, 'index.html');
-  // Keep the current cover window (login / license / onboarding) on screen until the main
-  // shell has actually PAINTED (ready-to-show), so a slow first run never flashes a blank /
-  // naked swap (the "loaded with icons but no text" report). Backstop-destroy so the cover
-  // windows are never leaked if ready-to-show never fires.
-  const teardown = () => {
-    destroyWindow('login');
-    destroyWindow('license');
-    destroyWindow('onboarding');
-  };
-  if (main && !main.isDestroyed()) {
-    main.once('ready-to-show', teardown);   // createWindow also shows main here, so it's a seamless swap
-    setTimeout(teardown, 12000);            // never leak the cover windows if ready-to-show never fires
+
+  if (!P3) {
+    // ── legacy behaviour (byte-identical to pre-P3) ──
+    const teardown = () => {
+      destroyWindow('login');
+      destroyWindow('license');
+      destroyWindow('onboarding');
+    };
+    if (main && !main.isDestroyed()) {
+      main.once('ready-to-show', teardown);
+      setTimeout(teardown, 12000);
+    } else {
+      teardown();
+    }
   } else {
-    teardown();
+    // Keep the current cover window (login / license / onboarding) on screen until the main
+    // shell has actually PAINTED, so a slow first run never flashes a blank / naked swap (the
+    // "loaded with icons but no text" report). Identity-scope the teardown: capture the ACTUAL
+    // cover-window instances NOW so a later fire closes only what was on screen at THIS call —
+    // never a newer wizard that reused the same slot. scheduleCoverTeardown does the arm/cancel
+    // (reuse ⇒ tear down now; fresh ⇒ on ready-to-show with a stored, cleared 12s backstop).
+    const covers = [windows['login'], windows['license'], windows['onboarding']];
+    scheduleCoverTeardown({ main, mainExisted, teardown: () => closeCoverWindows(covers) });
   }
+
   refreshTrayMenu();   // reflect logged-in state (enable Review/Settings)
   startLicenseRevalidation();   // P0: catch a server-side revoke WHILE running, not only at launch
   maybeShowWorkflowDigest();    // Slice 1: one-shot at-login "N waiting for your approval" (latched)
