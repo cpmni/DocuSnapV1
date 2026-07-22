@@ -299,6 +299,10 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
     independent (every results access is this group's own key), so groups merge disjoint
     keys; Option C parallelises the groups across cores (DS_OCR_PARALLEL_FIELDS)."""
     results = {}
+    # Label-relocation caption guard (group-level): a RE-READ that lands on a page CAPTION word nulls
+    # the value; if nothing else fills the field, an empty+note row is emitted after the loop so the
+    # doc routes to review (never a silent blank auto-file). See the guard + after-loop emit. Oracle C2.
+    _caption_detected, _caption_field, _caption_note = False, None, None
     for anchor in group_anchors:
         field_key   = anchor["field_key"]
         label       = anchor["anchor_label"].lower().strip()
@@ -1034,6 +1038,22 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
         if value and not _crop_is_credible(value, val_type, validation_patterns, label):
             value = None
 
+        # CAPTION-CONTINUATION GUARD (label relocation): a RE-READ (text-fallback / inline / relocate /
+        # registration) that landed on a page CAPTION word — the "Item Information" heading stealing the
+        # "Item" label and reading 'information' — must NEVER commit. Null it; a rigid taught crop
+        # (method 'anchor_crop') is deliberately NOT in the method set, so a clean rigid read is
+        # preserved and auto-files unflagged. Content-only predicate (val_type-aware); if no anchor
+        # fills the field, the after-loop branch emits an empty+note row -> review. This is the ONE
+        # convergence point (no read after it re-sources a value). Kill switch
+        # ANCHOR_CAPTION_HARVEST_GUARD=0 (OFF => byte-identical). (Oracle SIGN-OFF-WITH-CONDITIONS.)
+        if (value and method in ("anchor", "anchor_inline", "anchor_crop_relocated", "anchor_registration")
+                and os.environ.get("ANCHOR_CAPTION_HARVEST_GUARD", "1") != "0"):
+            from extraction.keyword import is_caption_continuation
+            if is_caption_continuation(value, val_type, anchor.get("anchor_label")):
+                value, _caption_detected, _caption_field = None, True, field_key
+                _caption_note = ("The label matched a heading on the page, not a value — "
+                                 "please check this field.")
+
         # Final learned-format gate — also covers the text-fallback value, so a
         # label-search read that grabbed the wrong token is rejected/trimmed too.
         # SKIP for the label-confirmed rungs (inline/relocated/registration): they
@@ -1322,6 +1342,12 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                 # NAME-GUARD note (Layers A/B): flag-only — the value (kept rigid, or a capped
                 # junk relocate) is surfaced for a human; never overwrites a method-specific note.
                 results[field_key]["validation_note"] = _relocate_guard_note
+    # After every anchor: if a RE-READ landed on a page caption AND nothing else filled the field,
+    # emit an EMPTY row carrying the note so trust.isAutoFileEligible's flagged gate holds the doc for
+    # review (never a silent blank auto-file). Same pattern as engine._flag_type_ambiguity. Oracle C2.
+    if _caption_detected and _caption_field and _caption_field not in results:
+        results[_caption_field] = {"value": None, "confidence": 40, "method": "anchor",
+                                   "validation_note": _caption_note}
     return results
 
 

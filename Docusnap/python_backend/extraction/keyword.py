@@ -119,6 +119,45 @@ def value_is_caption(value, vocab) -> bool:
     return False
 
 
+# Val_types whose REAL value ALWAYS carries a digit — so a purely ALPHABETIC harvested continuation
+# ("Information", "Description") is a printed caption word, not a value. EXCLUDES currency_code
+# (GBP/USD are all-alpha and legitimate) and free text. (P2/label-relocation caption guard, reggie.)
+_DIGIT_BEARING_VAL_TYPES = frozenset({
+    "alphanumeric", "job_reference", "reference_code", "vat_gb", "iban",
+})
+# Generic column/header nouns that are NEVER a standalone free-text VALUE. Kept tight for precision
+# (a single-token real name must not collide). A SEPARATE frozenset from _CAPTION_NOUN_TAIL — do NOT
+# fold them; that one's consumer (_is_caption_fragment) must stay byte-identical. Extend on evidence.
+_CAPTION_CONTINUATION_WORDS = frozenset({
+    "information", "description", "details", "reference", "quantity", "qty", "number",
+})
+
+
+def is_caption_continuation(value, val_type=None, label=None, vocab=None) -> bool:
+    """Last-ditch anti-silent-commit guard for the anchor cross-read/inline harvest: True when a
+    harvested CONTINUATION word is a printed caption/column word, not a value (the "Item Information"
+    header stealing the "Item" label, reading 'information'). MUST be gated by the caller to the
+    RE-READ methods (a rigid crop of the taught box is not a caption pickup). val_type-aware and
+    precision-first — errs toward NOT firing on a plausible value:
+      ARM 0 (reuse): the word IS a configured field label (needs the run's caption vocab; inert when None).
+      ARM 1: a CODE/REFERENCE field's real value carries a digit, so a PURELY ALPHABETIC read is a caption.
+      ARM 2: NAME/FREE-TEXT/untyped — all-alpha is legitimate, so fire only when EVERY content token is a
+             known header noun (a real 2-word name like 'Sofa Bed' survives; 'Description Quantity' is caught).
+    """
+    v = (value or "").strip()
+    if not v:
+        return False
+    core = re.sub(r"^[^0-9A-Za-z]+|[^0-9A-Za-z]+$", "", v)   # drop OCR edge junk
+    if not core:
+        return False
+    if vocab and value_is_caption(v, vocab):                 # ARM 0 (optional; inert without vocab)
+        return True
+    if val_type in _DIGIT_BEARING_VAL_TYPES:                 # ARM 1 (code/ref: all-alpha => caption)
+        return bool(re.fullmatch(r"[A-Za-z]+", core))
+    toks = re.findall(r"[a-z0-9]+", core.lower())            # ARM 2 (name/free-text: every token a header noun)
+    return bool(toks) and all(t in _CAPTION_CONTINUATION_WORDS for t in toks)
+
+
 # G3b KNOWN-CAPTION VALUE GUARD kill switch (2026-07-11, DIRECTION_SUPREMACY): for a name-like /
 # party field (CUSTOMER-SIDE only — supplier_name excluded), a candidate VALUE that IS a known
 # caption ("SO #", "Customer") dies AT GENERATION (right/below), so a caption never fills the field
