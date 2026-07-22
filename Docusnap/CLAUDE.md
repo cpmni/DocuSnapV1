@@ -21,7 +21,50 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-07-21) — READ `HANDOVER_2026-07-21.md` FIRST
+## Current session state (2026-07-22) — READ `HANDOVER_2026-07-22.md` FIRST
+**2026-07-22 (Opus 4.8) — the night run + a security-audit remediation pass; branch
+`feat/reprocess-throughput-autostraighten` has **11 commits UNPUSHED** on top of origin `370d04d`
+(`f6d85b5`→`90ecaf7`). Tree clean except this session-state refresh.** The LATE handover's UI batch is
+now COMMITTED (`f6d85b5` cards, `1618f77` wizard height, `f9bc202` teach batch — **still none owner-tested**).
+**P1 BUILT** (`ac7bdb3`): `repairSuspects` ref-prefix outlier detector in **BOTH** JS (`repairSuspects.js`,
+kill `REPAIR_PREFIX_MISMATCH`) **and the Python mirror** `format_anomaly_checker.py`, with tests — the
+"one side or both" question resolved to BOTH. **P2 DIAGNOSED, P3–P5 DESIGNED** (`b0739ca`, docs in
+`docs/designs/`): P2 fault(b) root cause = generic Stage-1 date patterns all carry a bare `"Date"` label,
+so a delivery docket's `Date:` fills invoice/order/po_date alike (Option A storage-seam fix recommended,
+NOT built). **SECURITY AUDIT `SECURITY_AUDIT_2026-07-21.md` — 6/7 FIXED:** H1 CA-key-at-rest (`8546932`,
+`src/lib/secretStore.js`) · M1 secure_delete (`75634be`) · M2+M3 `/v1` session-revoke + TOTP re-auth
+(`90ecaf7`) · M4 nav lockdown (`3555c73` `src/lib/navGuard.js`) + CSP `'none'` sweep (`12c9da1`) · M5
+empty-array backup guard (`596c083`). **H2 (LAN pairing TOFU) is the ONLY open finding — DESIGN ONLY,
+needs OWNER Path-A-vs-B call** (`docs/designs/AUDIT_H2_PAIRING_2026-07-21.md`; add-on OFF by default = no
+live exposure). ⚠ **UNVERIFIED: no test suite / corpus gate was RUN this session — unit tests authored,
+not proven green.** Installer predates all 11 commits → REBUILD before any live test. Nothing pushed.
+
+## (prior) Session state (2026-07-21 LATE) — `HANDOVER_2026-07-21_LATE.md` (NIGHT RUN NOW DONE — see 07-22)
+**2026-07-21 LATE (Opus 4.8) — UI session; branch `feat/reprocess-throughput-autostraighten` was
+pushed through `370d04d`** (verified `git rev-list --left-right --count @{u}...HEAD` = `0 0` —
+the earlier "7 commits ALL UNPUSHED" note below is STALE, do not re-push). **(This batch is now
+COMMITTED as `f6d85b5`/`1618f77`/`f9bc202` — see the 07-22 block; still NONE owner-tested.)** (1) `onboarding/index.html` **first-run cards** — a `theme.css` `.card + .card{margin-top:16px}`
+leak knocked every row-card after the first down 16px (the long-standing "second card doesn't line up");
+cancelled + selected card grows via **flex-grow NOT scale** (scale overlapped the wide Accuracy row) —
+owner said "this is better" · (2) `main.js` **wizard height 720→820**, screen-clamped via new
+`onboardingWindowOptions()` (fixed-size window must fit its TALLEST step; step 1 grows ~95px when
+"Choose a folder" reveals the path row) — NOT yet seen running · (3) `teach/{index.html,renderer.js}`
+**teach batch** (7 changes): native-resolution crop = **OCR parity with Review** (fixes teach reading
+`SO-51261` as `$00-51261`; kill `TEACH_NATIVE_CROP=false`), **Issuer taught POSITION-ONLY** (no phantom
+label anchor; same rule as Review RC2), read-back panel moved to the banner via one `setConfirm()` seam,
+`.pact`/`.ptitle` prompt emphasis via one `setPrompt()` (⚠ the "What to do now" GUIDANCE BAND was
+REJECTED — do NOT rebuild), page-preview doc picker + 1.5× default zoom. **WIZARD SELF-CLOSE ROOT-CAUSED
+(not fixed):** `openMainShell()` arms an uncancelled `setTimeout(teardown,12000)` (`main.js:210-217`)
+whose `destroyWindow('onboarding')` resolves the window at FIRE time, so any wizard alive 12s after any
+`openMainShell()` is destroyed — and on a re-run the main-shell reuse branch skips `loadFile` so
+ready-to-show never fires and the 12s timer is the ONLY teardown. Fix = run teardown synchronously on the
+reuse branch + identity-scope it + clearTimeout (eric-gate). **Corrections to CLAUDE.md:** live DB is at
+**mig 52** (not "51 until next start"); opt-in diagnostics IS built (`telemetry.js` + mig 42 + Settings
+toggle + wizard card, OFF by default — not "DESIGNED but NOT built"). **The AUTONOMOUS NIGHT RUN this
+block planned (§7) HAS RUN — P1 built, P2 diagnosed, P3–P5 designed; see the 07-22 block for outcomes.**
+Installer `...r20260721-1010-581d626.exe` predates the 07-22 commit stack → REBUILD before live-test.
+
+## (prior) Session state (2026-07-21) — READ `HANDOVER_2026-07-21.md`
 **2026-07-21 (Opus 4.8) — 7 commits, ALL UNPUSHED on `feat/reprocess-throughput-autostraighten`
 (`f08f131`→`8f41e95`); tree clean.** Overnight SECURITY AUDIT delivered (`SECURITY_AUDIT_2026-07-21.md`,
 gitignored: DB not encrypted → recommend disk-level; licensing self-grant main-process-only; PHP
@@ -33,7 +76,7 @@ anchor no longer commits its own caption garble (order A→C→D→B; kills `NAM
 take `excludeDocId` (kill `TEMPLATE_GUARD_SELF_INDEPENDENT`) · (3) `27d54b7`+`5760489` **Search UI** —
 vertical rail + zoom/pan + expandable details + ↑/↓ cycle · (4) `1234814` **box-width learning**
 (migration **52** `field_anchors.max_w_norm` high-water; DARK behind `ANCHOR_MAX_CROP_WIDTH`; live DB
-still at 51 until next start) · (5) `80d532c` **letter-spacing type recovery** — "PU RC HASE ORDER"→
+**IS at 52** — the "still at 51" note was superseded once the app restarted) · (5) `80d532c` **letter-spacing type recovery** — "PU RC HASE ORDER"→
 Purchase Order via top-band collapsed-equality + Seam-B heading force (default ON `HEADING_LETTER_SPACING`;
 multi-word-only guard) · (6) `8f41e95` audit-log View buttons styled. **Installer
 `...r20260721-1010-581d626.exe` predates commits 2–6 → REBUILD before owner live-test.** Non-bug: filed
@@ -42,7 +85,55 @@ LarkspurInteriors_purchase_order_08 mis-confirmed as delivery_note. **QUEUE (dia
 first-run-wizard output-folder-not-copying-on-a-different-PC (REAL, unstarted) · per-template field
 HIDING (superset-locked, structural-protected) · keyword-per-field (backend done, UI left) · po_date
 corroboration date-separator exemption · worksheet line-merge mode-3 (diagnose doc-156 A-vs-B first) ·
-buyer-issued Supplier→issuer guard trace · `LETTERHEAD_ISSUER` flip.
+buyer-issued Supplier→issuer guard trace · `LETTERHEAD_ISSUER` flip · **TEACH-WIZARD PROMPT EMPHASIS — DONE 2026-07-21, uncommitted**
+(owner: the wizard is hard to follow — "you don't know what to do next, so you find yourself looking for
+the instruction". ⚠ A "What to do now" GUIDANCE BAND above the pane was built and **REJECTED by the owner
+as "too much" — do NOT rebuild it.** The accepted answer is far smaller: make the EXISTING step-3 banner
+stand out by splitting the prompt into a quiet ACTION line + the FIELD NAME as a title
+(`.pact`/`.ptitle` in `teach/index.html`; single `setPrompt(action,title)` helper in `teach/renderer.js`
+so a later prompt can't lose the emphasis). Awaiting owner test) ·
+**FIELD ORDER UNSTABLE ACROSS DOCS** (owner 2026-07-21, Search pane + probably the detached client:
+the same type's fields appear in a DIFFERENT order doc-to-doc. LEAD, evidenced: `getWithExtractions`
+`database/modules/documents.js:126` is `ORDER BY rowid` = the order the PYTHON ENGINE happened to emit
+fields for THAT doc, which varies by which stage won — so it is arbitrary per document. `fields.sort_order`
+ALREADY EXISTS (`database/index.js:1205`, default 100) and is the intended canonical order. Fix = order
+displayed fields by the type's `sort_order` (fallback rowid) at the SHARED seam so Review/Search/client
+all agree; then ADD drag-to-reorder in the Doc Type editor writing `sort_order`. ⚠ structural roles
+issuer/date/ref must stay reorderable-but-never-deletable; check the /v1 DTO contract before changing
+client-visible ordering) · **"RE-RUN SETUP" REOPENS A STALE WIZARD, NEVER A FRESH ONE** (found 2026-07-21 while styling
+the cards. VERIFIED: `close_to_tray` defaults to `'true'` (`main.js:655`), and onboarding is in
+`PRIMARY_WINDOWS`, so the window X **hides** it (`main.js:571-578`) instead of destroying it.
+`showOnboarding()` (`main.js:220`) then calls `createWindow`, which REUSES a live window —
+`.restore()/.show()/.focus()` and returns WITHOUT `loadFile` (`main.js` createWindow reuse branch).
+So Settings→Advanced→Re-run setup re-shows the wizard **on whatever step it was left on, with the
+previous field values and stale renderer state** — it does not restart setup. Also means renderer
+edits to onboarding/login/license/main need a FULL APP RESTART, not a window reopen (child windows
+like teach/review/settings/search DO reload — they are destroyed on close). FIX DIRECTION: have
+`showOnboarding` reload/reset when reusing (e.g. `loadFile` again), so the wizard always starts at
+step 0. ⚠ Check the same reuse-without-reload seam on login/license before changing createWindow
+itself) · **"MIGHT NOT BELONG" IS BLIND TO A REF-PREFIX OUTLIER** (owner 2026-07-21, doc **#190**
+`LarkspurInteriors_purchase_order_08.pdf` — a PURCHASE ORDER confirmed as a DELIVERY NOTE, with
+`PO-21275` stored in Delivery Number while every sibling reads `DN-#####`. ROOT CAUSE **VERIFIED, not
+hypothesised**: `repairSuspects.shapeSignature` (`src/services/repairSuspects.js:36-45`) maps EVERY
+letter to `@`, so `PO-21275` and `DN-70795` BOTH reduce to `@@-#####` — identical. The detector
+discards the only differing token, so this class is STRUCTURALLY invisible; no threshold tuning can
+ever surface it (B1 at :182 and the pool check at :239 both compare shapes only). FIX DIRECTION: learn
+the dominant ALPHABETIC PREFIX / literal token per (doc-type, field) alongside the shape and flag a
+strong-dominant mismatch — owner: "needs to be smarter than a 1-char swap". ⚠ Mirror lives in
+`format_anomaly_checker.shape_signature` (python) — keep the two aligned or they drift. NOTE doc #190
+is ALSO the known poisoned-GT doc, so fixing this detector would have caught the poisoning itself) ·
+**IRRELEVANT DATE FIELDS ALL FILLED WITH THE SAME VALUE** (owner 2026-07-21, seen in Learning
+Repair on `IronbridgeFabrication_delivery_docket_04.pdf`: a DELIVERY NOTE shows Delivery Date **and**
+Invoice Date **and** Order Date **and** Po Date, all four = "12-06-2026", while the real Delivery Date
+read as the garbled "2 12/06/2026" and got flagged. TWO separate faults: (a) a delivery note carries
+invoice/order/po date fields AT ALL — CLAUDE.md already records that extraction runs against the UNION
+of all installed types' keys, so a date lands in every date-ish key; (b) one date value is copied into
+every one of them, which then feeds learning as if corroborated. Overlaps the per-template field HIDING
+item but is NOT the same thing — hiding is display-only, this is bad DATA being stored and learned.
+Diagnose which stage writes the duplicates before designing) · **TEMPLATE MANAGER ALPHABETICAL** (owner 2026-07-21. LEAD: `templates.getAll`
+`database/modules/templates.js:32` sorts `confirmed_count DESC, name`. ⚠ SEAM — that same `getAll` feeds
+the sibling tiebreaks and "the order templates reach the matcher" (`277a107`/`TEMPLATE_LIVE_COUNTS`), so
+do NOT re-sort the query; sort in the Admin Template VIEWER only, or add an explicit display-order arg).
 
 ## (prior) Session state (2026-07-20) — full detail in `HANDOVER_2026-07-20_LATE.md` + `docs/session-log.md`
 **LATE SESSION 2026-07-20 (Fable 5) — READ `HANDOVER_2026-07-20_LATE.md` FIRST.** All pushed
