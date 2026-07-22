@@ -48,24 +48,40 @@ function mkDoc(db, templateId, status) {
 }
 const byName = (rows, name) => rows.find(r => r.name === name);
 
-section('N: live confirmed-doc counts drive the roster (stored column is inverted)');
+section('N: live confirmed-doc counts drive the roster count (stored column is inverted)');
 {
   const db = makeDb();
-  const t1 = mkTemplate(db, 'Alpha', 0);   // stored 0 but will have 3 confirmed docs
-  const t2 = mkTemplate(db, 'Beta',  5);   // stored 5 but will have 1 confirmed doc
+  // Names chosen so ALPHABETICAL order (Acme, Zephyr) DIVERGES from count-desc order
+  // (Zephyr=3 then Acme=1) — the whole point of P5 is that the viewer roster and the
+  // matcher-facing getAll can legitimately differ, so the pins below must be able to tell them apart.
+  const t1 = mkTemplate(db, 'Zephyr', 0);   // stored 0 but will have 3 confirmed docs; alphabetically LAST
+  const t2 = mkTemplate(db, 'Acme',   5);   // stored 5 but will have 1 confirmed doc; alphabetically FIRST
   const a1 = mkDoc(db, t1, 'confirmed'); mkDoc(db, t1, 'confirmed'); mkDoc(db, t1, 'confirmed');
   mkDoc(db, t1, 'pending');                            // NOT confirmed → must not count
   mkDoc(db, t2, 'confirmed');
   mkDoc(db, null, 'confirmed');                        // template-less confirmed → counts for nobody
 
   const live = templates.getAllWithLiveCounts(db);
-  check('Alpha live count = 3 (its confirmed docs, not the stored 0)', byName(live, 'Alpha').confirmed_count === 3);
-  check('Beta live count = 1 (not the stored 5)', byName(live, 'Beta').confirmed_count === 1);
-  check('a pending doc is NOT counted', byName(live, 'Alpha').confirmed_count === 3);
-  check('roster is sorted by the live count (Alpha=3 before Beta=1)', live[0].name === 'Alpha' && live[1].name === 'Beta');
+  check('Zephyr live count = 3 (its confirmed docs, not the stored 0)', byName(live, 'Zephyr').confirmed_count === 3);
+  check('Acme live count = 1 (not the stored 5)', byName(live, 'Acme').confirmed_count === 1);
+  check('a pending doc is NOT counted', byName(live, 'Zephyr').confirmed_count === 3);
 
-  check('confirmedDocCount(Alpha) = 3', templates.confirmedDocCount(db, t1) === 3);
-  check('confirmedDocCount(Beta) = 1',  templates.confirmedDocCount(db, t2) === 1);
+  // P5 (2026-07-22): the Template Manager roster is ALPHABETICAL by name — a viewer-only
+  // preference. Because alpha (Acme, Zephyr) and count-desc (Zephyr, Acme) diverge here, this
+  // genuinely pins the new order rather than coinciding with the old one.
+  section('P5: the roster is ALPHABETICAL (viewer only; diverges from count-desc)');
+  check('roster is alphabetical (Acme before Zephyr, though Zephyr has the higher count)',
+        live[0].name === 'Acme' && live[1].name === 'Zephyr');
+  process.env.TEMPLATE_VIEWER_ALPHA = '0';
+  const legacy = templates.getAllWithLiveCounts(db);
+  check('TEMPLATE_VIEWER_ALPHA=0 restores count-desc order (Zephyr=3 before Acme=1)',
+        legacy[0].name === 'Zephyr' && legacy[1].name === 'Acme');
+  check('the kill switch keeps the LIVE counts (Zephyr 3 / Acme 1)',
+        byName(legacy, 'Zephyr').confirmed_count === 3 && byName(legacy, 'Acme').confirmed_count === 1);
+  delete process.env.TEMPLATE_VIEWER_ALPHA;
+
+  check('confirmedDocCount(Zephyr) = 3', templates.confirmedDocCount(db, t1) === 3);
+  check('confirmedDocCount(Acme) = 1',  templates.confirmedDocCount(db, t2) === 1);
 
   // PIN DELIBERATELY FLIPPED (2026-07-20). The N slice left getAll on the STORED column to avoid
   // changing pipeline behaviour at that time, and these two checks pinned that choice. But the
@@ -74,19 +90,21 @@ section('N: live confirmed-doc counts drive the roster (stored column is inverte
   // this column is NOT display-only: it feeds the same-type sibling tiebreaks in
   // template_matcher.py:179 and engine.py:696 plus the order templates reach the matcher, all of
   // which sat INERT while every value was 0. getAll now serves the same LIVE count the roster does.
-  section('getAll() serves the LIVE count too (pipeline + roster agree; was: stored column)');
+  // P5: getAll's ORDER (count-desc) must stay UNTOUCHED — it is the matcher-facing order, and here
+  // it must NOT be alphabetical (Zephyr=3 before Acme=1), unlike the viewer roster above.
+  section('getAll() serves the LIVE count AND keeps count-desc order (matcher-facing; unaffected by P5)');
   const raw = templates.getAll(db);
-  check('getAll Alpha shows the LIVE 3, not the stored 0', raw.find(r => r.name === 'Alpha').confirmed_count === 3);
-  check('getAll Beta shows the LIVE 1, not the stored 5',  raw.find(r => r.name === 'Beta').confirmed_count === 1);
-  check('getAll is ordered by the live count (Alpha 3 before Beta 1)',
-        raw.findIndex(r => r.name === 'Alpha') < raw.findIndex(r => r.name === 'Beta'));
+  check('getAll Zephyr shows the LIVE 3, not the stored 0', raw.find(r => r.name === 'Zephyr').confirmed_count === 3);
+  check('getAll Acme shows the LIVE 1, not the stored 5',  raw.find(r => r.name === 'Acme').confirmed_count === 1);
+  check('getAll stays count-desc (Zephyr 3 before Acme 1) — NOT alphabetical',
+        raw.findIndex(r => r.name === 'Zephyr') < raw.findIndex(r => r.name === 'Acme'));
   // The kill switch must restore the old reading byte-for-byte.
   process.env.TEMPLATE_LIVE_COUNTS = '0';
   const stored = templates.getAll(db);
-  check('TEMPLATE_LIVE_COUNTS=0 restores the stored column (Alpha 0)',
-        stored.find(r => r.name === 'Alpha').confirmed_count === 0);
-  check('TEMPLATE_LIVE_COUNTS=0 restores the stored column (Beta 5)',
-        stored.find(r => r.name === 'Beta').confirmed_count === 5);
+  check('TEMPLATE_LIVE_COUNTS=0 restores the stored column (Zephyr 0)',
+        stored.find(r => r.name === 'Zephyr').confirmed_count === 0);
+  check('TEMPLATE_LIVE_COUNTS=0 restores the stored column (Acme 5)',
+        stored.find(r => r.name === 'Acme').confirmed_count === 5);
   delete process.env.TEMPLATE_LIVE_COUNTS;
   // FAIL-SAFE (the property this change actually adds): the count must be UNTAKEABLE-safe.
   // getAll is the pipeline reader, so a DB where the count can't be taken must degrade to the
@@ -107,7 +125,7 @@ section('N: live confirmed-doc counts drive the roster (stored column is inverte
 
   section('N: the live count SELF-HEALS when a doc is de-confirmed');
   db.prepare("UPDATE documents SET status='deleted' WHERE id=?").run(a1);
-  check('Alpha live count drops to 2 after one de-confirm', templates.confirmedDocCount(db, t1) === 2);
+  check('Zephyr live count drops to 2 after one de-confirm', templates.confirmedDocCount(db, t1) === 2);
 }
 
 console.log('\n' + (failures === 0 ? 'ALL PASS' : failures + ' check(s) FAILED'));

@@ -84,13 +84,25 @@ function liveConfirmedCounts(db) {
 }
 
 // Template Manager roster (get-templates): getAll's rows with confirmed_count replaced by the LIVE
-// confirmed-doc count and RE-SORTED by it (so the shown number and the order agree — Oracle caveat).
-// getAll() itself is left untouched.
+// confirmed-doc count. getAll() itself is left untouched.
+//
+// P5 (2026-07-22): the roster is a DISPLAY concern only. This wrapper is viewer-only — its sole
+// non-test caller is the get-templates IPC; the matcher reads templates.getAll() DIRECTLY
+// (processing/handler.js, review/handler.js), and getAll's count-desc SQL order feeds the sibling
+// tiebreaks + "the order templates reach the matcher" (277a107 / TEMPLATE_LIVE_COUNTS). So we sort
+// the ROSTER alphabetically by name here without touching getAll's matcher-facing order.
+// Kill switch TEMPLATE_VIEWER_ALPHA=0 restores the legacy count-desc roster order byte-identically.
 function getAllWithLiveCounts(db) {
   const rows   = getAll(db);
   const counts = liveConfirmedCounts(db);
   for (const t of rows) t.confirmed_count = counts.get(t.id) || 0;
-  rows.sort((a, b) => (b.confirmed_count - a.confirmed_count) || String(a.name || '').localeCompare(String(b.name || '')));
+  if (process.env.TEMPLATE_VIEWER_ALPHA !== '0') {
+    rows.sort((a, b) =>
+      String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' })
+      || ((a.id || 0) - (b.id || 0)));                                       // stable tiebreak on same-name templates
+  } else {
+    rows.sort((a, b) => (b.confirmed_count - a.confirmed_count) || String(a.name || '').localeCompare(String(b.name || '')));
+  }
   return rows;
 }
 

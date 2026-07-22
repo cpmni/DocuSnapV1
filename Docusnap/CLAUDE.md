@@ -36,10 +36,14 @@ type's dominant one. **JS-ONLY by deliberate reggie+Oracle decision** — the "o
 identity-scopes the captured cover-window instances + tears down synchronously on the reuse branch +
 stores/clears the backstop timer (`src/lib/coverTeardown.js`, pin `test_coverteardown.js` 19 checks;
 eric SIGN-OFF-W/CONDITIONS, all met). **⚠ needs an owner FULL-RESTART to confirm live** (main-process
-change); does NOT fix the separate "Re-run reopens a stale wizard on its old step". **P2 DIAGNOSED, P4–P5
-DESIGNED** (`b0739ca`, docs in `docs/designs/`): P2 fault(b) root cause = generic Stage-1 date patterns
-all carry a bare `"Date"` label, so a delivery docket's `Date:` fills invoice/order/po_date alike
-(Option A storage-seam fix recommended, NOT built). **SECURITY AUDIT `SECURITY_AUDIT_2026-07-21.md` — 6/7 FIXED:** H1 CA-key-at-rest (`8546932`,
+change); does NOT fix the separate "Re-run reopens a stale wizard on its old step". **P5 BUILT** (2026-07-22,
+kill `TEMPLATE_VIEWER_ALPHA=0`): Template Manager roster now ALPHABETICAL by name — sorted in the
+viewer-only wrapper `templates.getAllWithLiveCounts` (its sole non-test caller is the `get-templates`
+IPC); the matcher-facing `templates.getAll` count-desc order is left BYTE-IDENTICAL (pinned in
+`test_template_confirmed_count.js` with divergent names). **P2 DIAGNOSED, P4 DESIGNED** (`b0739ca`, docs
+in `docs/designs/`): P2 fault(b) root cause = generic Stage-1 date patterns all carry a bare `"Date"`
+label, so a delivery docket's `Date:` fills invoice/order/po_date alike (Option A storage-seam fix
+recommended, NOT built). **SECURITY AUDIT `SECURITY_AUDIT_2026-07-21.md` — 6/7 FIXED:** H1 CA-key-at-rest (`8546932`,
 `src/lib/secretStore.js`) · M1 secure_delete (`75634be`) · M2+M3 `/v1` session-revoke + TOTP re-auth
 (`90ecaf7`) · M4 nav lockdown (`3555c73` `src/lib/navGuard.js`) + CSP `'none'` sweep (`12c9da1`) · M5
 empty-array backup guard (`596c083`). **H2 (LAN pairing TOFU) is the ONLY open finding — DESIGN ONLY,
