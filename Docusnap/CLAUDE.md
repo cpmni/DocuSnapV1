@@ -21,7 +21,30 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-07-22 LATE) — READ `HANDOVER_2026-07-22_LATE.md` FIRST
+## Current session state (2026-07-22 NIGHT) — READ `HANDOVER_2026-07-22_NIGHT.md` FIRST
+**2026-07-22 NIGHT (Opus 4.8) — a LIVE CUSTOMER CRASH session. Branch
+`feat/reprocess-throughput-autostraighten` PUSHED through `dde0e39` (origin in sync `0 0`); tree clean.**
+Fixed a production crash **`'bool' object has no attribute 'get'`** on 2 PCs (surfaced BOTH as reprocess
+"No data returned" AND import→Errors): the logo text-gate **`'suggest'`** branch injects
+`results["_needs_review"]=True` (a bool) mid-pipeline (`engine.py:2605`) and the 3 UNGUARDED Stage-0/1/2
+"found" counters (`engine.py:2421/:2783/:3010`) `.get()` it → crash; fires once a supplier's LOGO is learned
+but its page TEXT doesn't corroborate. **`3e3fde1`** = shared `_count_valued_fields()` guard (log-only,
+byte-identical). **INSTALLER BUILT crash-fix-only:** `dist\ScanFinder Setup 2.0.0-r20260722-1742-3e3fde1.exe`
+(does NOT include the label guard — rebuild off `dde0e39` to add it; ⚠ 4 stray `electron.exe` at wrap-up →
+close before building). ⚠ RULED OUT + do NOT re-chase: the parallel reprocess option (`ocr_parallel_reprocess_enabled`)
+AND the `field_rules` multiline rule were BOTH wrong leads. **5 commits, all PUSHED:** `2cbc3ec` **P2**
+foreign-date-field drop at BOTH confirm sites after the auto-file gate (kill `FOREIGN_FIELD_DROP`; shared
+`src/lib/foreignFields.js`; sweep `scripts/p2-foreign-field-sweep.js` found **94** live rows — owner `--apply`) ·
+`bd7eb83` date cross-check by CALENDAR date not raw string (kill `DATE_AWARE_CROSSCHECK`) · `f55bf98`
+garbled-snippet tidy (renderer) · `3e3fde1` the crash fix · `dde0e39` **label caption guard** — a taught
+label ("Item") that leads a HEADING ("Item Information") no longer harvests "information"; nulls the caption
+re-read + emits an empty+note row → review (kill `ANCHOR_CAPTION_HARVEST_GUARD`; Oracle conds 1-6 met; corpus
+A/B OFF-vs-ON **byte-identical**; the geometry occurrence-picker to make teaching auto-STICK is a DEFERRED
+follow-up). Live DB **mig 52, 187 confirmed**. Corpus gate EXITS 1 on the PRE-EXISTING baseline (M=3
+poisoned-GT #190/#7 + OCR misreads), NOT this session's fixes (crash fix log-only; label guard A/B empty diff).
+**Base block ↓**
+
+## (prior) Session state (2026-07-22 LATE) — READ `HANDOVER_2026-07-22_LATE.md` FIRST
 **2026-07-22 LATE adds to the below:** this session's unit tests all RAN GREEN (P1/audit/P3/P5); P1 scope
 corrected to **JS-only** (`bc677d1`); **P3 BUILT+PUSHED** (`4e0af32`, wizard 12s self-close, eric-signed,
 kill `WIZARD_TEARDOWN_FIX`); **P5 BUILT UNPUSHED** (`0849579`, alphabetical Template Manager, kill
