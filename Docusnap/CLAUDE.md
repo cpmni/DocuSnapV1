@@ -21,7 +21,12 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-07-22) — READ `HANDOVER_2026-07-22.md` FIRST
+## Current session state (2026-07-22 LATE) — READ `HANDOVER_2026-07-22_LATE.md` FIRST
+**2026-07-22 LATE adds to the below:** this session's unit tests all RAN GREEN (P1/audit/P3/P5); P1 scope
+corrected to **JS-only** (`bc677d1`); **P3 BUILT+PUSHED** (`4e0af32`, wizard 12s self-close, eric-signed,
+kill `WIZARD_TEARDOWN_FIX`); **P5 BUILT UNPUSHED** (`0849579`, alphabetical Template Manager, kill
+`TEMPLATE_VIEWER_ALPHA`). Origin at `5db3590`, **1 commit ahead**. Open: H2 owner decision · P2/P4
+designs · installer rebuild + owner live-test of P3/P5/teach. **Base block ↓**
 **2026-07-22 (Opus 4.8) — the night run + a security-audit remediation pass; branch
 `feat/reprocess-throughput-autostraighten` has **11 commits UNPUSHED** on top of origin `370d04d`
 (`f6d85b5`→`90ecaf7`). Tree clean except this session-state refresh.** The LATE handover's UI batch is
