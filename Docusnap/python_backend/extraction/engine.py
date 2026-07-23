@@ -221,6 +221,42 @@ def _cmp_norm(value) -> str:
         return "".join(str(value or "").strip().lower().split())
 
 
+# Confidence a cross-check flip is RESTORED to when an independent keyword read corroborates it
+# (E2, below). Must clear trust.js's 88 critical-field floor with margin, and stay within the
+# located-inline ceiling (~93) — a corroborated located read, not a certainty.
+_CROSSCHECK_CORROB_CONF = 90
+
+
+def _crosscheck_keyword_corroborated(data, kw_entry, is_date) -> bool:
+    """E2 (Oracle-signed): is an anchor.py crop-vs-fullpage crosscheck FLIP corroborated by an
+    INDEPENDENT Stage-1 keyword read of the same field? True only when `data` is the crosscheck
+    result AND the incumbent `kw_entry` is a keyword/override read whose value NORMALISES-EQUAL to
+    the flipped value (calendar-aware for dates via anchor._reads_disagree; token-normalised for
+    refs via _cmp_norm — so 'DN-23333' == 'DN 23333' but != 'DN-99999'). Pure; no side effects.
+    Fires the flag-clear at the engine merge; a missing/disagreeing peer returns False → today's
+    flag stands (fail-toward-review)."""
+    if (data or {}).get("method") != "anchor_crop_crosscheck":
+        return False
+    if not isinstance(kw_entry, dict) or kw_entry.get("method") not in ("keyword", "keyword_override"):
+        return False
+    dv = str(data.get("value") or "").strip()
+    kv = str(kw_entry.get("value") or "").strip()
+    if not dv or not kv:
+        return False
+    if is_date:
+        try:
+            return not anchor._reads_disagree(kv, dv, "date")   # calendar-equal
+        except Exception:
+            return False
+    # Ref arm: compare the ALPHANUMERIC CORE (drop separators/spaces) so a formatting difference
+    # between the keyword read (ref-suffix stripped, keyword.py:729-730) and the inline read
+    # (clean_crop_segment) still corroborates — 'DN-23333' == 'DN 23333' == 'DN23333' — while
+    # 'DN-23333' != 'DN-99999'. _cmp_norm already lowercases/NFKC-folds; we then keep alnum only.
+    dvn = "".join(c for c in _cmp_norm(dv) if c.isalnum())
+    kvn = "".join(c for c in _cmp_norm(kv) if c.isalnum())
+    return bool(dvn) and dvn == kvn
+
+
 _NAME_RELOCATE_NOTE = ("Two different names were read here — the clean value beside the label and a "
                        "garbled one from the taught box. Kept the label read; please verify.")
 _RELOCATE_METHODS = ("anchor_crop_relocated", "anchor_inline")
@@ -2883,6 +2919,31 @@ class ExtractionEngine:
                     if decision == "take":
                         results[key] = data
                         continue
+                # ── CROSS-CHECK KEYWORD CORROBORATION CLEAR (E2; kill CROSSCHECK_KEYWORD_CLEAR) ──
+                # anchor.py's authoritative-crop cross-check flips a crop-vs-fullpage DISAGREEMENT to
+                # the full-page/inline value, caps it 70 + notes "please verify" (a review event) —
+                # and via Tier-A that FLAGGED read wins over the clean keyword incumbent, so the doc
+                # holds even though the value is right (a taught 2x crop that spanned two rows on a
+                # skewed scan is a framing artifact, not a real second read of the field). When an
+                # INDEPENDENT Stage-1 keyword/override read normalises-equal to the flipped value,
+                # oscar's "two independent reads agree" bar IS met: restore the field to a
+                # corroborated confidence (>=88 clears the critical-field floor; the keyword's own
+                # 85 would itself still be held) and drop the note, so the correct value files
+                # instead of being permanently held. Value UNCHANGED (still the located inline read)
+                # -> accuracy byte-identical; only the flag/confidence move. No peer, or a
+                # DISAGREEING peer -> unchanged -> today's flag stands (fail-toward-review).
+                if (os.environ.get("CROSSCHECK_KEYWORD_CLEAR", "1") != "0"
+                        and _crosscheck_keyword_corroborated(data, existing, key in date_field_keys)):
+                    # Represent the surviving read HONESTLY as the located inline harvest it is
+                    # (method 'anchor_inline'), which ALSO unhooks the 70-cap + "please verify" note
+                    # that key off 'anchor_crop_crosscheck' so nothing downstream re-derives them.
+                    data = {**data,
+                            "method": "anchor_inline",
+                            "confidence": max(int(data.get("confidence") or 0), _CROSSCHECK_CORROB_CONF)}
+                    for _k in ("validation_note", "was_corrected", "corrected_to"):
+                        data.pop(_k, None)
+                    results[key] = data
+                    continue
                 # ── Stage 2 credibility gate (before any override) ───────────
                 # A Stage 2 candidate must not DISPLACE an existing incumbent
                 # unless it is credible for the field's class. Reusable, shape/
