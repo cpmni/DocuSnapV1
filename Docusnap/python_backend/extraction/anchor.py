@@ -1306,6 +1306,11 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                 # candidate contract. Emitted ONLY for the instrumented relocate/inline rungs
                 # (which set _read_box); any other method -> None so a stale box can't leak.
                 "box": _read_box if method in ("anchor_inline", "anchor_crop_relocated") else None,
+                # Deskew raw-witness (issue-3): the ORIGINAL taught box (immune to any relocate
+                # mutation) for a raw-page re-crop of a crop-derived ref/date read on a --deskew-pages
+                # reprocess. None for non-crop methods; the engine reads it only when raw_page0 is set.
+                "taught_box": ((x_norm, y_norm, anchor.get("w_norm") or 0.0, anchor.get("h_norm") or 0.0)
+                               if method in _CROP_FAMILY_METHODS else None),
             }
             if method == "anchor_crop_slipfix":
                 # Recover-and-flag: surface as an auto-correction (value==corrected_to) routed to
@@ -3263,6 +3268,95 @@ def _reads_disagree(a, b, val_type) -> bool:
         if val_type == "date":
             return False   # a date field where one read didn't parse → never a disagreement
     return a.lower() != b.lower()
+
+
+# ── Deskew RAW-FRAME witness (issue-3, Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-24) ──────────────
+# On a `--deskew-pages` reprocess a taught crop is read off the DESKEWED page; the rotation resample
+# can flip a valid-SHAPED glyph (PO-98370 → PO-98270) that no regex catches, so it files silently at
+# ref/date confidence. The RAW page (raw_page0) is the teach-time frame — drawn ⊕ coords are back-
+# transformed to raw on save — so a re-crop there reproduces the correct read. This witness heals a
+# committed ref/date value ONLY on a two-read CONSENSUS (the raw crop AND the raw page text agree on
+# a value that DISAGREES with the committed one) and otherwise leaves it untouched. FAIL-TOWARD-
+# REVIEW: never a silent wrong value; never a silent DROP of a correct value — a LONE raw dissenter
+# the page text can't corroborate is left alone (that is the benign column-only crop class, ~2% of
+# refs the full-page OCR misses but the crop reads correctly — measured on the live corpus).
+# The engine calls this pre-Stage-2.5d (a witness after the dominant-snap would undo a legit snap);
+# gated on raw_page0 present + kill switch → byte-identical off the deskew path.
+# OUT OF SCOPE (documented residual): a Stage-2.5d snap-INDUCED corruption on a constant-ish ref
+# (the DN-22222 poisoned-dominant class) is owned by 2.5d's own guard / Learning Repair, not here.
+_CROP_FAMILY_METHODS = frozenset({
+    "anchor_crop", "anchor_crop_relocated", "anchor_crop_recovered",
+    "anchor_crop_slipfix", "anchor_registration",
+})
+
+
+def _alnum_core(s) -> str:
+    return re.sub(r'[^a-z0-9]', '', str(s or '').lower())
+
+
+def _ref_witnessed(value, witness_text) -> bool:
+    """Normalized-EXACT membership of a ref value's alnum core in the page text. EXACT by
+    construction — a single-glyph flip changes the core ('po98370' ≠ 'po98270'); NO edit-distance
+    fold (that would mask the exact bug this catches). A tiny core (<4 chars) is unjudgeable →
+    treated as witnessed (never act on a coincidence)."""
+    core = _alnum_core(value)
+    if len(core) < 4:
+        return True
+    return core in _alnum_core(witness_text)
+
+
+def _date_witnessed(value, witness_text) -> bool:
+    """Calendar membership: does the value's day+month+year appear as a contiguous date in the page
+    text in ANY common order/separator? (A date needn't appear verbatim in DD-MM-YYYY form.)"""
+    d = re.sub(r'[^0-9]', '', str(value or ''))
+    if len(d) != 8:
+        return True   # unparseable digit-shape → don't judge
+    dd, mm, yyyy = d[0:2], d[2:4], d[4:8]
+    td = re.sub(r'[^0-9]', '', str(witness_text or ''))
+    return any(c in td for c in (dd + mm + yyyy, mm + dd + yyyy, yyyy + mm + dd, yyyy + dd + mm))
+
+
+def raw_crop_recheck(committed_value, taught_box, raw_page0, witness_text,
+                     val_type, field_key, label, format_lookup, text_field_keys,
+                     validation_patterns):
+    """Return (new_value, note) to FLIP+FLAG a deskew-corrupted ref/date read, or None to leave it
+    unchanged (see the module note above). Best-effort: any error → None. Guarded by
+    tests/test_deskew_raw_witness.py."""
+    try:
+        is_date = (val_type == "date")
+        # DETECT (cheap pre-filter). REF: committed value already witnessed on the raw page → agree
+        # → untouched (byte-identical, and the ~97.6% common case). DATE: skip membership (a wrong-
+        # field date read can itself be 'on the page') → always re-crop + calendar-compare.
+        if not is_date and _ref_witnessed(committed_value, witness_text):
+            return None
+        if not taught_box or raw_page0 is None:
+            return None
+        x, y, w, h = taught_box
+        if not (x and y):
+            return None
+
+        def _verify(t):
+            return (bool(t) and _crop_is_credible(t, val_type, validation_patterns, label)
+                    and bool(_qualify_against_format(t, field_key, format_lookup, text_field_keys,
+                                                     val_type, validation_patterns)))
+        raw = _crop_and_ocr(raw_page0, x, y, w or 0.0, h or 0.0, val_type, verify_fn=_verify)
+        if not raw:
+            return None
+        raw = (_qualify_against_format(raw, field_key, format_lookup, text_field_keys,
+                                       val_type, validation_patterns) or "").strip()
+        if not raw or not _crop_is_credible(raw, val_type, validation_patterns, label):
+            return None
+        if not _reads_disagree(raw, committed_value, val_type):
+            return None   # raw crop AGREES with the committed read → no correction (byte-identical)
+        # TWO-READ CONSENSUS: the raw crop's value must be corroborated by the raw page text. A lone
+        # raw dissenter (the raw crop reads something the page can't confirm) is NOT trusted — leave
+        # the committed value alone (guards against the raw crop itself being the wrong read).
+        corroborated = _date_witnessed(raw, witness_text) if is_date else _ref_witnessed(raw, witness_text)
+        if not corroborated:
+            return None
+        return (raw, "The straightened read disagreed with the original scan — using the original; please verify.")
+    except Exception:
+        return None
 
 
 def _is_blind_cross_supplier_anchor(field_key: str, anchor: dict,

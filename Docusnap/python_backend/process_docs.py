@@ -790,6 +790,7 @@ def main():
                 identity_shadow = args.identity_shadow,
                 raw_page0       = (_raw_pages[0] if _raw_pages else None),
                 page0_geometry  = (_page0_geom or None),   # empty (cached/born-digital p0) ⇒ None
+                cached_text     = global_cached_text,       # raw-frame witness text (deskew reprocess); None ⇒ engine falls back to ocr_text
             )
 
             # Pull out metadata keys before sanitising

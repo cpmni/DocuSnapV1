@@ -2406,7 +2406,8 @@ class ExtractionEngine:
                 page_provenance: list | None = None,
                 identity_shadow: bool = False,
                 raw_page0 = None,
-                page0_geometry: dict | None = None) -> dict:
+                page0_geometry: dict | None = None,
+                cached_text: str | None = None) -> dict:
         """
         Run extraction pipeline according to current mode.
         Returns dict with field values + metadata keys prefixed with _.
@@ -3555,6 +3556,46 @@ class ExtractionEngine:
                             **{"from": data["value"], "to": denoised})
             if n_denoised:
                 self.log(f"  Stage 2.5: {n_denoised} value(s) denoised via learned template")
+
+        # ── Stage 2.5-witness: RAW-FRAME re-read of a deskew-corrupted taught crop ────────────
+        # On a --deskew-pages reprocess ONLY (raw_page0 present), a taught crop read off the DESKEWED
+        # page can carry a valid-SHAPED glyph flip from the rotation resample (PO-98370 → PO-98270)
+        # that no regex catches and that then files silently at ref/date confidence. Re-read the RAW
+        # page at the taught box and, on a TWO-READ consensus (raw crop + raw page text agree on a
+        # DIFFERENT value), flip to it + flag (recover-and-flag; conf capped below the 88 floor so it
+        # never auto-files — trust.js also refuses on the note). BYTE-IDENTICAL off the deskew path
+        # (raw_page0 None → skipped) and under the kill switch DESKEW_RAW_WITNESS=0. Runs BEFORE Stage
+        # 2.5d snap (Oracle §2: a witness after the snap would undo a legitimate dominant-snap). See
+        # anchor.raw_crop_recheck for the fail-toward-review rules + the documented snap residual.
+        if raw_page0 is not None and os.environ.get('DESKEW_RAW_WITNESS', '1') != '0':
+            _witness_text = cached_text if cached_text else ocr_text   # raw cached text preferred
+            _fmt_lookup = self._make_format_lookup(supplier_name, document_slug)
+            _vpats = self.patterns.get("validation_patterns", {})
+            _val_by_key = {f.get('key'): (f.get('type') or None) for f in field_defs}
+            _lbl_by_key = {f.get('key'): (f.get('label') or None) for f in field_defs}
+            _witness_keys = ({ref_field_key} if ref_field_key else set()) | set(date_field_keys or ())
+            for _wk in _witness_keys:
+                _d = results.get(_wk)
+                if (not isinstance(_d, dict) or not _d.get('value')
+                        or _d.get('validation_note')                    # already flagged → no double-flip
+                        or _d.get('method') not in anchor._CROP_FAMILY_METHODS):
+                    continue
+                _res = anchor.raw_crop_recheck(
+                    _d['value'], _d.get('taught_box'), raw_page0, _witness_text,
+                    _val_by_key.get(_wk), _wk, _lbl_by_key.get(_wk),
+                    _fmt_lookup, text_field_keys, _vpats)
+                if _res:
+                    _new_val, _note = _res
+                    results[_wk] = {**_d, 'value': _new_val, 'display_value': _new_val,
+                                    # cap at 70 (matches the existing :661 anchor_crop_crosscheck) —
+                                    # well below the 88 critical floor even after any Stage-4.5 re-weight;
+                                    # the validation_note is the primary auto-file guard (trust.js).
+                                    'confidence': min(int(_d.get('confidence') or 0), 70),
+                                    'method': 'anchor_crop_crosscheck',
+                                    'was_corrected': True, 'corrected_to': _new_val,
+                                    'validation_note': _note}
+                    self.log(f"  Deskew raw-witness: {_wk} '{_d['value']}' → '{_new_val}' — the "
+                             f"straightened read disagreed with the original scan; flagged for review")
 
         # ── Stage 2.5b: OCR format correction ────────────────────────────────
         if self.format_index:
