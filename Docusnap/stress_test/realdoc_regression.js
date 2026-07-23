@@ -23,7 +23,9 @@ const REPO = 'c:/GIT Projects/Docusnap', ST = path.join(REPO, 'stress_test');
 const OUT = path.join(ST, 'out'), CFG = path.join(REPO, 'config', 'keyword_patterns.json');
 const PROCESS_DOCS = path.join(REPO, 'python_backend', 'process_docs.py');
 const TESS = 'C:/Program Files/Tesseract-OCR/tesseract.exe';
-const LIVE_DB = path.join(process.env.APPDATA, 'ScanFinder', 'docusnap.db');
+// RR_DB: optional DB override for same-corpus A/Bs against a MODIFIED COPY (e.g. the
+// logo-detail backfill activation gate, Oracle C5 2026-07-23). Absent ⇒ the live DB, unchanged.
+const LIVE_DB = process.env.RR_DB || path.join(process.env.APPDATA, 'ScanFinder', 'docusnap.db');
 const learning = require(path.join(REPO, 'database', 'modules', 'learning.js'));
 const templates = require(path.join(REPO, 'database', 'modules', 'templates.js'));
 const trust = require(path.join(REPO, 'database', 'modules', 'trust.js'));

@@ -1953,7 +1953,30 @@ function register(ctx) {
         }
       } catch (e) { logger?.warn?.(`[identity] plant gate check failed (planting anyway): ${e.message}`); }
     }
-    learning.saveLogoFingerprint(db, { supplier_name, phash, ahash, detail_hash });
+    // DETAIL-HASH ENROLMENT THREAD (Phillip R2 / Oracle C5, 2026-07-23; LOGO_DETAIL_ENROL=1 arms).
+    // ⚠ SHIPS DARK (default OFF) — the C5 activation A/B (starved copy vs backfilled copy,
+    // 390 docs, stress_test/out/act_{base,on}.md) measured what population does: M 9→3 (real
+    // healing — six poisoned-GT wrong-auto-files die) BUT would-auto-file 268→131, because with
+    // SPARSE detail sets (one reference per row) the anchor-path detail-primary picker
+    // (LOGO_DETAIL_PRIMARY, default ON in anchor.py, inert only while this table is starved)
+    // abstains across the same-supplier drift tail (histogram: 27% of genuine pairs exceed the
+    // veto distance; multi-reference sets are the load-bearing structure). Populating detail_hash
+    // by ANY route — this thread or scripts/logo-detail-backfill.js — ARMS that picker, so
+    // neither may default-ON until a minimum-set-size guard lands on the Python side (its own
+    // design round). The mechanics below are correct and gated for that day.
+    // The renderer's confirm-time caller never sends detail_hash (why the table sat 0/N). Thread
+    // it SERVER-side from the doc's processing-time hash (documents.logo_detail_hash, mig 47) —
+    // never renderer-computed: the canvas image varies with render resolution/enhancement.
+    // saveLogoFingerprint's guards apply unchanged (COALESCE fills empty rows only;
+    // _detailCrossPlantCloser refuses rival-matching marks). No doc id / no hash ⇒ exactly today.
+    let _detail = detail_hash;
+    if (!_detail && document_id != null && process.env.LOGO_DETAIL_ENROL === '1') {
+      try {
+        const _dr = db.prepare('SELECT logo_detail_hash FROM documents WHERE id = ?').get(Number(document_id));
+        _detail = (_dr && _dr.logo_detail_hash) || null;
+      } catch { _detail = detail_hash; }
+    }
+    learning.saveLogoFingerprint(db, { supplier_name, phash, ahash, detail_hash: _detail });
     return true;
   });
 
