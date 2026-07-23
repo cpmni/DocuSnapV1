@@ -410,6 +410,55 @@ function retractConfirmHints(db, document_id) {
   return { decremented, deleted };
 }
 
+// ── replantConfirmHints — the inverse of retractConfirmHints, for the recycle-bin RESTORE of a
+// doc whose DELETE retracted (C6, owner-ruled 2026-07-23). Restore returns a filed doc to
+// 'confirmed', so its hint votes must return too, or delete→restore silently un-learns a good
+// doc. Mirrors retract's traversal EXACTLY (corrections-path latest-row untrimmed + __global__
+// twin only when scoped; allValues-path trimmed display, plausibility skip) using the SAME
+// upsert semantics as the original plant (+1 or insert-at-1). MUST only run when
+// documents.learning_retracted_at proves the delete actually retracted — a blind re-plant on a
+// pre-feature deletion double-counts forever (pinned). Round trip pinned: retract∘replant ==
+// identity on supplier_hints (modulo last_seen).
+function replantConfirmHints(db, document_id) {
+  const doc = db.prepare(`
+    SELECT d.supplier_name, dt.slug AS type_slug
+    FROM documents d LEFT JOIN document_types dt ON dt.id = d.document_type_id
+    WHERE d.id = ?`).get(document_id);
+  if (!doc) return { planted: 0 };
+  const eff = normalizeSupplierName(String(doc.supplier_name || '').trim() || '__global__');
+  const dt = doc.type_slug || null;
+  const upsert = db.prepare(`
+    INSERT INTO supplier_hints
+      (supplier_name, document_type, field_key, hint_value, usage_count, last_seen)
+    VALUES (@s, @dt, @f, @v, 1, datetime('now'))
+    ON CONFLICT(supplier_name, document_type, field_key, hint_value) DO UPDATE SET
+      usage_count = usage_count + 1, last_seen = datetime('now')`);
+  let planted = 0;
+  const plantOne = (s, f, v) => { if (v) { upsert.run({ s, dt, f, v: String(v) }); planted++; } };
+
+  const latest = new Map();
+  for (const r of db.prepare(
+    'SELECT field_key, corrected_value FROM corrections WHERE document_id = ? ORDER BY rowid'
+  ).all(document_id)) {
+    latest.set(r.field_key, r.corrected_value);
+  }
+  for (const [field, v] of latest) {
+    if (!v) continue;
+    plantOne(eff, field, v);
+    if (eff !== '__global__') plantOne('__global__', field, v);
+  }
+  for (const r of db.prepare(
+    'SELECT field_key, display_value FROM extractions WHERE document_id = ?'
+  ).all(document_id)) {
+    if (latest.has(r.field_key)) continue;
+    const v = String(r.display_value || '').trim();
+    if (!v) continue;
+    if (r.field_key === 'supplier_name' && !isPlausibleSupplierName(v)) continue;
+    plantOne(eff, r.field_key, v);
+  }
+  return { planted };
+}
+
 // The TRAINING dump — every hint row, uncapped (2026-07-10). buildTrainingArgs used the
 // bare getHints(db) below, whose default LIMIT 100 (by usage_count DESC) silently
 // STARVED the engine once the corpus grew past 100 rows: every new supplier's usage-1/2
@@ -1663,7 +1712,7 @@ module.exports = {
   insertExtractions, deleteExtractions,
   getFieldValueHistory, getDocumentsForFieldValue, purgeFieldValue, renameFieldValue, getPrefixModelForScope,
   getSupplierScopeCounts, renameSupplier,
-  saveCorrections, retractConfirmHints, getHints, getAllHints, isPlausibleSupplierName, isPlausibleSupplierNameBase, isNameLikeField, nameQuality, normalizeSupplierName,
+  saveCorrections, retractConfirmHints, replantConfirmHints, getHints, getAllHints, isPlausibleSupplierName, isPlausibleSupplierNameBase, isNameLikeField, nameQuality, normalizeSupplierName,
   saveAnchor, sanitizeAnchorLabel, clearAnchors, getAllAnchors, getAnchorsForScope, getTaughtFieldKeys, deleteAnchor,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
   detailCrossPlantCloser: _detailCrossPlantCloser,   // exported for the detail-backfill script's final anti-poison check (2026-07-23)

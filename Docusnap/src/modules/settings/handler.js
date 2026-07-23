@@ -355,8 +355,18 @@ function register(ctx) {
     requireRole('admin');
     const db = getDb();
     const documents = require('../../../database/modules/documents');
+    // C6 restore side: re-plant the retracted hints IFF learning_retracted_at proves the delete
+    // retracted (a pre-feature / switch-off deletion never did — a blind re-plant would
+    // double-count). The service clears the marker either way; same REPAIR_UNPLANT switch.
+    const useSvc = process.env.REPAIR_UNPLANT !== '0';
+    const repairService = useSvc ? require('../../services/repairService') : null;
     let restored = 0;
-    for (const id of (Array.isArray(ids) ? ids : [])) { try { restored += documents.restoreDeleted(db, id).changes || 0; } catch {} }
+    for (const id of (Array.isArray(ids) ? ids : [])) {
+      try {
+        restored += (useSvc ? repairService.restoreFromRecycleBin(db, Number(id)).changes
+                            : documents.restoreDeleted(db, id).changes) || 0;
+      } catch {}
+    }
     return { restored };
   });
 
@@ -431,7 +441,13 @@ function register(ctx) {
     const db = getDb();
     const documents = require('../../../database/modules/documents');
     const docId = Number(id);
-    const r = documents.softDelete(db, docId);
+    // C6 (owner-ruled 2026-07-23; same REPAIR_UNPLANT switch as send-back): deleting a CONFIRMED
+    // doc retracts its confirm-planted hints + stamps learning_retracted_at (mig 53), so the
+    // panel's heavier remedy un-poisons at least as much as its lighter one; recovery-restore
+    // re-plants IFF the marker proves the retract ran (see repairService).
+    const r = (process.env.REPAIR_UNPLANT !== '0')
+      ? require('../../services/repairService').deleteToRecycleBin(db, docId)
+      : documents.softDelete(db, docId);
     if (r.changes) {
       // Previously-unguarded soft-delete door: close any open routes with the honest
       // "Document deleted by <name>" tombstone (FYI slice, Oracle C1/C2 — was a

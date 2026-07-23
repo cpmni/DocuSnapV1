@@ -30,7 +30,8 @@ function makeDb() {
   db.exec(`
     CREATE TABLE document_types (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, slug TEXT UNIQUE);
     CREATE TABLE documents (id INTEGER PRIMARY KEY AUTOINCREMENT, supplier_name TEXT, document_type_id INTEGER,
-                            status TEXT, confirmed_at TEXT, confirmed_by_username TEXT);
+                            status TEXT, confirmed_at TEXT, confirmed_by_username TEXT,
+                            deleted_at TEXT, learning_retracted_at TEXT);
     CREATE TABLE extractions (id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER, field_key TEXT,
                               raw_value TEXT, display_value TEXT, confidence INTEGER, extraction_method TEXT,
                               was_corrected INTEGER DEFAULT 0, validation_note TEXT, corrected_to TEXT, anchor_label TEXT);
@@ -206,6 +207,55 @@ function main() {
     check('preload threads the optional opts arg', preload.includes("repairDeconfirm:     (id, opts) => ipcRenderer.invoke('repair-deconfirm', id, opts)"));
     const rend = read('..', '..', 'src', 'windows', 'settings', 'renderer.js');
     check('the Repair renderer threads its suspect context', /api\.repairDeconfirm\(_rpSel, \{ suspects \}\)/.test(rend));
+  }
+
+  section('9. C6 — delete retracts + restore RE-PLANTS, only when the marker proves it');
+  {
+    const { db, tid } = makeDb();
+    const A = seedDoc(db, tid, 'Acme Ltd', { supplier_name: 'Acme Ltd', ref: 'DN-8' });
+    learning.saveCorrections(db, A, {}, 'Acme Ltd', 'delivery_note', { supplier_name: 'Acme Ltd', ref: 'DN-8' });
+    const planted = hintsSnap(db);
+    const d = repairService.deleteToRecycleBin(db, A);
+    check('delete of a confirmed doc retracts (hints gone) + marker set + soft-deleted',
+      d.ok && d.unplanted
+      && db.prepare('SELECT COUNT(*) c FROM supplier_hints').get().c === 0
+      && !!db.prepare('SELECT learning_retracted_at m, status s FROM documents WHERE id=?').get(A).m
+      && db.prepare('SELECT status s FROM documents WHERE id=?').get(A).s === 'deleted');
+    const rr = repairService.restoreFromRecycleBin(db, A);
+    check('restore → confirmed again + RE-PLANTED to the exact pre-delete state + marker cleared',
+      rr.ok && rr.replanted
+      && db.prepare('SELECT status s FROM documents WHERE id=?').get(A).s === 'confirmed'
+      && hintsSnap(db) === planted
+      && db.prepare('SELECT learning_retracted_at m FROM documents WHERE id=?').get(A).m == null);
+
+    // THE DOUBLE-PLANT PIN: a doc deleted PRE-FEATURE (no marker) must NOT re-plant on restore.
+    const B = seedDoc(db, tid, 'Acme Ltd', { ref: 'DN-10' });
+    learning.saveCorrections(db, B, {}, 'Acme Ltd', 'delivery_note', { ref: 'DN-10' });
+    db.prepare("UPDATE documents SET status='deleted', deleted_at=datetime('now') WHERE id=?").run(B);   // legacy delete: NO retract
+    const preRestore = hintsSnap(db);
+    const rb = repairService.restoreFromRecycleBin(db, B);
+    check('pre-feature deletion (no marker) restores WITHOUT re-plant (never double-count)',
+      rb.ok && rb.replanted == null && hintsSnap(db) === preRestore);
+
+    // A never-confirmed doc deleted then restored → needs_review, no retract, no re-plant.
+    const C = seedDoc(db, tid, 'Acme Ltd', { ref: 'DN-11' });
+    db.prepare('UPDATE documents SET status=\'needs_review\', confirmed_at=NULL WHERE id=?').run(C);
+    const dc = repairService.deleteToRecycleBin(db, C);
+    check('deleting a non-confirmed doc never retracts (no marker)',
+      dc.ok && dc.unplanted == null
+      && db.prepare('SELECT learning_retracted_at m FROM documents WHERE id=?').get(C).m == null);
+    const rc = repairService.restoreFromRecycleBin(db, C);
+    check('…and restores to needs_review with no re-plant',
+      rc.ok && rc.replanted == null
+      && db.prepare('SELECT status s FROM documents WHERE id=?').get(C).s === 'needs_review');
+
+    const handler2 = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'modules', 'settings', 'handler.js'), 'utf8');
+    check('repair-delete + recovery-restore ride the SAME REPAIR_UNPLANT switch (legacy paths intact)',
+      /deleteToRecycleBin\(db, docId\)\s*:\s*documents\.softDelete\(db, docId\)/.test(handler2)
+      && /restoreFromRecycleBin\(db, Number\(id\)\)\.changes\s*:\s*documents\.restoreDeleted\(db, id\)\.changes/.test(handler2));
+    const mig = fs.readFileSync(path.join(__dirname, '..', '..', 'database', 'index.js'), 'utf8');
+    check('migration 53 adds documents.learning_retracted_at (NULL-inert)',
+      mig.includes("ALTER TABLE documents ADD COLUMN learning_retracted_at TEXT") && mig.includes('applied.has(53)'));
   }
 
   console.log(fails ? `\n${fails} FAILED` : '\nAll repair un-plant checks passed');

@@ -98,4 +98,45 @@ function sendBackToReview(db, docId, { suspects } = {}) {
   return run();
 }
 
-module.exports = { sendBackToReview };
+// ── C6 (owner-ruled 2026-07-23): delete/restore learning symmetry ────────────────────────────
+// The Repair panel's DELETE was the heavier remedy that un-poisoned LESS than send-back. Now:
+// deleting a CONFIRMED doc retracts its confirm-planted hints (same inverse), stamps
+// documents.learning_retracted_at (mig 53 — the proof the retract ran), and soft-deletes; a
+// recycle-bin RESTORE that returns the doc to 'confirmed' RE-PLANTS if-and-only-if the marker is
+// set (a doc deleted pre-feature / switch-off was never retracted — a blind re-plant would
+// double-count its hints forever). Corrections rows are KEPT on delete — unlike send-back —
+// because a deleted doc is out of every confirm cycle (no re-confirm echo) and restore must be
+// the exact status quo ante. Both atomic; both fail toward the status quo.
+
+function deleteToRecycleBin(db, docId) {
+  const run = db.transaction(() => {
+    const doc = db.prepare('SELECT status FROM documents WHERE id = ?').get(docId);
+    if (!doc) return { ok: false, changes: 0 };
+    let unplanted = null;
+    if (doc.status === 'confirmed') {
+      unplanted = learning.retractConfirmHints(db, docId);
+      db.prepare("UPDATE documents SET learning_retracted_at = datetime('now') WHERE id = ?").run(docId);
+    }
+    const r = documents.softDelete(db, docId);
+    return { ok: r.changes > 0, changes: r.changes, unplanted };
+  });
+  return run();
+}
+
+function restoreFromRecycleBin(db, docId) {
+  const run = db.transaction(() => {
+    const before = db.prepare('SELECT status, learning_retracted_at FROM documents WHERE id = ?').get(docId);
+    const r = documents.restoreDeleted(db, docId);
+    if (!r.changes) return { ok: false, changes: 0 };
+    const after = db.prepare('SELECT status FROM documents WHERE id = ?').get(docId);
+    let replanted = null;
+    if (before && before.learning_retracted_at && after && after.status === 'confirmed') {
+      replanted = learning.replantConfirmHints(db, docId);   // only when the delete PROVABLY retracted
+    }
+    db.prepare('UPDATE documents SET learning_retracted_at = NULL WHERE id = ?').run(docId);
+    return { ok: true, changes: r.changes, replanted };
+  });
+  return run();
+}
+
+module.exports = { sendBackToReview, deleteToRecycleBin, restoreFromRecycleBin };

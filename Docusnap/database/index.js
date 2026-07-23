@@ -1058,6 +1058,23 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 52 applied: field_anchors.max_w_norm column added (box-width; NULL-inert)');
   }
 
+  // Migration 53: documents.learning_retracted_at — the delete/restore LEARNING-SYMMETRY marker
+  // (C6 of the repair un-plant, owner-ruled 2026-07-23). A Learning-Repair DELETE of a confirmed
+  // doc retracts its confirm-planted hints (same inverse as send-back); a recycle-bin RESTORE
+  // returns the doc to 'confirmed' and must RE-PLANT them — but ONLY when the delete actually
+  // retracted (a doc deleted BEFORE this feature, or with the switch off, was never retracted;
+  // a blind re-plant would DOUBLE-count its hints forever). This timestamp is that proof: set at
+  // retract time, consumed + cleared at restore. NULL-inert — no reader changes behaviour on it.
+  if (!applied.has(53)) {
+    if (tableExists(db, 'documents') && !hasColumn(db, 'documents', 'learning_retracted_at')) {
+      try {
+        db.exec('ALTER TABLE documents ADD COLUMN learning_retracted_at TEXT');
+      } catch (e) { console.warn(`  migration 53 documents.learning_retracted_at: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (53)').run();
+    console.log('JS migration 53 applied: documents.learning_retracted_at column added (delete/restore learning symmetry; NULL-inert)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the
