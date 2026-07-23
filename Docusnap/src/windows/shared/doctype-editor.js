@@ -125,6 +125,19 @@
       .dte-row .dte-handle:active { cursor:grabbing; }
       .dte-row.dragging { opacity:.45; }
       .dte-row.dragging .dte-handle { cursor:grabbing; }
+      /* Per-field keyword-labels toggle (🏷) + its inline editor panel. */
+      .dte-row .dte-kw { flex:0 0 auto; align-self:center; cursor:pointer; color:var(--muted);
+        font-size:12px; line-height:1; user-select:none; padding:1px 4px; border-radius:6px; white-space:nowrap; }
+      .dte-row .dte-kw:hover { color:var(--accent); background:var(--surface2); }
+      .dte-row .dte-kw.open { color:var(--accent); background:var(--accent-bg); }
+      .dte-kwpanel { margin:-2px 0 4px 26px; padding:10px 12px; border:1px solid var(--border);
+        border-radius:8px; background:var(--surface2); display:flex; flex-direction:column; gap:8px; }
+      .dte-kw-title { font-size:12px; color:var(--text); }
+      .dte-kw-builtins { font-size:11px; color:var(--muted); line-height:1.7; }
+      .dte-kw-cap { text-transform:uppercase; letter-spacing:.06em; font-size:9px; }
+      .dte-kw-bchip { display:inline-block; padding:1px 7px; border-radius:999px; border:1px dashed var(--border2);
+        color:var(--muted); font-size:11px; }
+      .dte-kw-note:empty { display:none; }
       /* Name + key share ONE baseline so the label doesn't ride high above its key,
          and the whole identity block centres on the same line as the right controls.
          A min-width keeps the name legible and lets the TYPE/ENABLED controls wrap to a
@@ -209,6 +222,23 @@
 
     const currentFields = () => (mode === 'create' ? fields : (type.fields || []));
 
+    // ── Per-field keyword labels (edit mode only) ────────────────────────────────
+    // Extra caption words that make the cheap Stage-1 keyword pass catch a field without
+    // per-document teaching — reuses the admin label-override store (field_label_overrides),
+    // scoped to THIS type's slug. Single-open inline panel; kwOpenFor + the loaded rows survive
+    // re-renders. A saved slug + field key are required, so this is edit-mode only.
+    let kwOpenFor = null, kwRows = null, kwPatterns = null, kwNoteMsg = '';
+    const kwCountFor = (key) => (kwRows || []).reduce((n, r) => n + (r.field_key === key ? 1 : 0), 0);
+    async function loadKeywords() {
+      if (mode !== 'edit' || !type || !type.slug) return;
+      try {
+        const [rows, pats] = await Promise.all([api.getLabelOverrides(), api.getFieldPatterns()]);
+        kwRows     = (rows || []).filter(r => r.doc_type_slug === type.slug);
+        kwPatterns = pats || {};
+      } catch { kwRows = kwRows || []; kwPatterns = kwPatterns || {}; }
+      if (!destroyed) render();
+    }
+
     function isReady() {
       if (mode !== 'create') return true;
       return !!name.trim() && fields.length >= 1;
@@ -248,8 +278,33 @@
               <span class="toggle-slider"></span>
             </label>
           </span>` : ''}
+          ${editing ? `<span class="dte-kw${kwOpenFor === key ? ' open' : ''}" data-kw="${esc(key)}" title="Extra caption words this field is detected by">&#127991;${kwCountFor(key) ? ' ' + kwCountFor(key) : ''}</span>` : ''}
           ${removable ? '<span class="x" title="Remove field">&#10005;</span>' : '<span class="x-slot" aria-hidden="true"></span>'}
         </div>`;
+    }
+
+    // The inline keyword-labels editor shown under a field when its 🏷 is open (edit mode). Lists the
+    // shipped BUILT-IN words (read-only, always active) + any custom words this install added
+    // (removable), and an add box. Empty string unless this field is the open one.
+    function kwPanelHtml(f) {
+      if (mode !== 'edit') return '';
+      const key = f.key || slugify(f.label);
+      if (kwOpenFor !== key) return '';
+      const builtins = Array.isArray(kwPatterns && kwPatterns[key]) ? kwPatterns[key] : [];
+      const customs  = (kwRows || []).filter(r => r.field_key === key);
+      const bChips = builtins.length
+        ? `<span class="dte-kw-cap">Built-in words (always active):</span> ` + builtins.map(b => `<span class="dte-kw-bchip">${esc(b)}</span>`).join(' ')
+        : `<span class="dte-kw-cap">No built-in words ship for this field.</span>`;
+      const cChips = customs.length
+        ? `<div class="dte-chips">` + customs.map(r => `<span class="dte-chip" data-kwid="${r.id}">${esc(r.label)}<span class="cx" title="Remove">&#10005;</span></span>`).join('') + `</div>`
+        : '';
+      return `<div class="dte-kwpanel" data-kwfor="${esc(key)}">`
+        + `<div class="dte-kw-title">Extra label words for <b>${esc(f.label)}</b> <span class="muted">&mdash; captions your documents actually use that mean this field</span></div>`
+        + `<div class="dte-kw-builtins">${bChips}</div>`
+        + cChips
+        + `<div class="dte-addrow"><input type="text" class="field-select dte-kw-input" placeholder="e.g. Despatch Date, Delivered On" autocomplete="off"><button class="btn dte-kw-add">+ Add</button></div>`
+        + `<div class="dte-alias-note dte-kw-note">${esc(kwNoteMsg)}</div>`
+        + `</div>`;
     }
 
     function roleOptionsHtml() {
@@ -273,7 +328,7 @@
             </div>` : ''}
           <div>
             <label class="dte-lbl">Fields${mode === 'create' ? ' <span class="muted">&mdash; what details should Scan Finder pull out?</span>' : ''}</label>
-            <div class="dte-fields">${currentFields().map(fieldRowHtml).join('')}</div>
+            <div class="dte-fields">${currentFields().map((f, i) => fieldRowHtml(f, i) + kwPanelHtml(f)).join('')}</div>
             <div class="dte-addrow">
               <input type="text" class="field-select dte-add-input" placeholder="Add a field, e.g. Order Number" autocomplete="off">
               <button class="btn dte-add-btn">+ Add field</button>
@@ -469,6 +524,47 @@
         });
       });
 
+      // ── Per-field keyword labels (toggle / add / remove) ─────────────────────
+      host.querySelectorAll('.dte-kw').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const key = btn.dataset.kw;
+          kwOpenFor = (kwOpenFor === key) ? null : key;
+          kwNoteMsg = '';
+          if (kwOpenFor && kwRows === null) loadKeywords();   // first open → load (re-renders)
+          else render();
+        });
+      });
+      const kwPanel = host.querySelector('.dte-kwpanel');
+      if (kwPanel) {
+        const fieldKey = kwPanel.dataset.kwfor;
+        const kwInput  = kwPanel.querySelector('.dte-kw-input');
+        const kwAddBtn = kwPanel.querySelector('.dte-kw-add');
+        const addKw = async () => {
+          const val = (kwInput.value || '').trim();
+          if (!val || !type || !type.slug) { kwNoteMsg = val ? '' : 'Enter a word to add.'; render(); return; }
+          try {
+            const r = await api.addLabelOverrides({ doc_type_slug: type.slug, field_key: fieldKey, labels: val });
+            if (r && r.ok === false) { kwNoteMsg = 'Could not add those words.'; render(); return; }
+            const rejected = (r && r.rejected)  || [];
+            const warn     = (r && r.warnings)  || [];
+            kwNoteMsg = rejected.some(x => x.code === 'cap_reached') ? 'Reached the limit of words for this field.'
+              : rejected.length ? 'Some words were too long and were skipped.'
+              : warn.length      ? `Added — note: "${warn[0].label}" is also used by another field.`
+              : (r && r.inserted ? 'Added.' : (r && r.alreadyExisted ? 'Already added.' : ''));
+            await loadKeywords();   // reload rows + re-render; kwNoteMsg persists across it
+          } catch (e) { kwNoteMsg = 'Could not add: ' + (e.message || 'error'); render(); }
+        };
+        if (kwAddBtn) kwAddBtn.addEventListener('click', addKw);
+        if (kwInput)  kwInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addKw(); } });
+        kwPanel.querySelectorAll('.dte-chip .cx').forEach((x) => {
+          x.addEventListener('click', async () => {
+            const chip = x.closest('.dte-chip'); if (!chip) return;
+            try { await api.deleteLabelOverride(Number(chip.dataset.kwid)); kwNoteMsg = ''; await loadKeywords(); }
+            catch (e) { kwNoteMsg = 'Could not remove: ' + (e.message || 'error'); render(); }
+          });
+        });
+      }
+
       // ── Drag-to-reorder fields (handle-armed native DnD) ─────────────────────
       // The row is draggable, but a drag only STARTS from the ⠿ handle: we gate dragstart on
       // whether the pointer press began on the handle, so a click on the Type <select>/toggles
@@ -545,6 +641,7 @@
     function destroy() { destroyed = true; if (host) host.innerHTML = ''; }
 
     render();
+    loadKeywords();   // edit mode only (no-op otherwise) → repaints with per-field word counts
 
     return {
       isReady,
