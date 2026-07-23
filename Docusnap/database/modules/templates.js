@@ -12,6 +12,7 @@ const LOGO_APPEND_BAND = 13;   // append only within this Hamming of an existing
 // Shared distinctive-branding primitives (the ONE source of truth for template convergence by
 // branding rather than the unstable logo — see branding_fingerprint.js + the M2 design doc).
 const brandingFp = require('./branding_fingerprint');
+const logoDetail = require('./logoDetail');   // 256-bit isolated-mark veto arithmetic (mig 47)
 
 // The stored templates.confirmed_count is bumped ONLY by templates.update(), which runs on the
 // taught-confirm reuse branch (_upsertTemplate via onTaughtConfirm) — so an ordinary confirm never
@@ -596,11 +597,27 @@ function findByBrandingFingerprint(db, docFingerprint, document_type_slug, thres
 // confidence >= 75. Used by the review queue to detect that a template added
 // via "Add to Template Manager" now covers a document that was queued before
 // it existed.
-function identifyByFingerprint(db, { logo_phash, ocr_text, document_type_slug = null }) {
+function identifyByFingerprint(db, { logo_phash, ocr_text, document_type_slug = null, logo_detail_hash = null }) {
   if (logo_phash) {
     const logoMatch = findByLogoHash(db, logo_phash, 13, document_type_slug);
     if (logoMatch && logoMatch.confidence >= 60) {
-      return { template: { id: logoMatch.id, name: logoMatch.name }, confidence: logoMatch.confidence, method: 'logo' };
+      // DETAIL-HASH VETO (TEMPLATE_LOGO_DETAIL_VETO, default ON; Oracle-signed 2026-07-23).
+      // The 64-bit phash's histograms have CROSSED on real scans — measured cross-supplier
+      // separation 2/64 bits vs SAME-supplier scan drift 18/64 — so no distance threshold can
+      // make a logo-alone accept correct (the "Template available: Thornbury" on a Copperfield
+      // docket incident). When the caller supplies the doc's 256-bit isolated-mark hash and the
+      // matched template has an enrolled detail set, a positive CONTRADICTION (min-over-set
+      // distance > veto dist 72; measured impostor 114-124 vs genuine drift 30-56) refuses the
+      // logo arm and falls through to the text-based keyword arm — abstain-or-text, never
+      // pick-another-template-by-hash. Fail-open on missing detail (callers not passing the new
+      // param, detail-less template rows, pre-mig-47 installs) ⇒ byte-identical. This extends
+      // the 2026-07-20 identity invariant — "a logo match never asserts identity alone" — to
+      // its last JS holdout; see logoDetail.js for the deliberate Stage-0 semantic divergence.
+      const vetoed = logo_detail_hash && process.env.TEMPLATE_LOGO_DETAIL_VETO !== '0'
+        && logoDetail.shouldVetoLogo(logo_detail_hash, getLogoDetailHashes(db, logoMatch.id));
+      if (!vetoed) {
+        return { template: { id: logoMatch.id, name: logoMatch.name }, confidence: logoMatch.confidence, method: 'logo' };
+      }
     }
   }
   return findByKeywordFingerprint(db, ocr_text, 75, document_type_slug);
@@ -1145,7 +1162,7 @@ module.exports = {
   setOcrAutoParams, setOcrAutoEnabled,
   getLandmarks, setLandmarks, clearLandmarks, hasManualLandmarks, hasCrossSampleLandmarks,
   replaceSampleWords, countSampleDocs, getSampleWordsByDoc,
-  getLogoHashes, addLogoHash, minLogoDistance, keywordOverlap: _keywordOverlap,
+  getLogoHashes, addLogoHash, getLogoDetailHashes, minLogoDistance, keywordOverlap: _keywordOverlap,
   getAllGroups, createGroup, deleteGroup, setTemplateGroup, getSiblings,
   GRID_COLS, GRID_ROWS,
 };

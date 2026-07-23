@@ -145,11 +145,14 @@ def _type_ambiguity(cands, base_dist, detected_slug, title_trusted) -> bool:
 def _logo_detail_veto(cands, base_dist, best_t, query_detail_hash) -> bool:
     """SLICE C predicate (pure — Oracle/Phillip/oscar 2026-07-14). True → ABSTAIN the coarse logo pick:
     the cluster spans ≥2 DISTINCT SUPPLIERS (a look-alike monogram collision is possible) AND the
-    scanned mark's 256-bit DETAIL hash disagrees with the picked template's enrolled mark set
-    (should_veto_logo → min-over-set > ~72, measured). FALSE (keep, byte-identical) on: kill switch off;
-    a missing query hash (isolate-fail); a single-supplier cluster; or an empty stored set (Slice-B not
-    yet accrued). So it can only turn a cross-supplier logo COLLISION into review, never drop a real
-    single-supplier match. Guarded by tests/test_logo_detail_veto.py."""
+    scanned mark's 256-bit DETAIL hash disagrees per logo_detail.veto_by_detail — the refined
+    POSITIVE-RIVAL semantic (the query must positively match a RIVAL's enrolled set), NOT the bare
+    far-from-pick should_veto_logo (which trips on isolation garble; docstring corrected 2026-07-23 —
+    the JS templates recheck DELIBERATELY uses the bare semantic instead, see
+    database/modules/logoDetail.js for why the two diverge). FALSE (keep, byte-identical) on: kill
+    switch off; a missing query hash (isolate-fail); a single-supplier cluster; or an empty stored
+    set (Slice-B not yet accrued). So it can only turn a cross-supplier logo COLLISION into review,
+    never drop a real single-supplier match. Guarded by tests/test_logo_detail_veto.py."""
     if not query_detail_hash or os.environ.get('LOGO_DETAIL_VETO', '1') == '0':
         return False
     try:

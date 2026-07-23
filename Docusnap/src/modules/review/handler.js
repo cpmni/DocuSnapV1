@@ -786,7 +786,7 @@ function register(ctx) {
     requireRole('admin', 'edit');
     const db  = getDb();
     const doc = db.prepare(
-      `SELECT d.template_id, d.logo_phash, d.ocr_text, dt.slug AS document_type_slug
+      `SELECT d.template_id, d.logo_phash, d.logo_detail_hash, d.ocr_text, dt.slug AS document_type_slug
          FROM documents d
          LEFT JOIN document_types dt ON dt.id = d.document_type_id
         WHERE d.id = ?`
@@ -803,6 +803,11 @@ function register(ctx) {
       logo_phash: doc.logo_phash,
       ocr_text:   doc.ocr_text,
       document_type_slug: doc.document_type_slug,
+      // 256-bit isolated-mark evidence (mig 47, populated at processing time): arms the
+      // detail-hash veto so this recheck — which also picks the Template Wizard's SAVE
+      // TARGET via resolveWizardTemplate — can never name a template whose enrolled mark
+      // positively contradicts this page's mark (the Thornbury-on-Copperfield pill).
+      logo_detail_hash: doc.logo_detail_hash,
     });
     if (!match) return { matched: false };
 

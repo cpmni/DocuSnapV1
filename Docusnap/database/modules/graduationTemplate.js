@@ -54,11 +54,14 @@ const COLLISION_DIST  = 10;   // seed-logo cross-supplier danger band (Oracle C3
 function _parseJson(s, fb) { try { const v = JSON.parse(s); return v == null ? fb : v; } catch { return fb; } }
 
 // Cross-supplier collision pre-check (Oracle C3): is the seed logo phash within the danger band
-// of ANY same-type template's logo set? We only reach create() when identifyByFingerprint
-// returned null (no accept-gate match — the nearest same-type logo is already >6 away, or the
-// keyword arm didn't reach 75%), so any same-type template within COLLISION_DIST is a near-miss
-// collision → don't plant the logo (fall back to keyword-only identity). Conservative by design:
-// a doubtful logo becomes keyword-only (safe), never a colliding logo identity (a silent misfile).
+// of ANY same-type template's logo set? ⚠ Since the 2026-07-23 detail-hash veto, create() is
+// ALSO reachable when a nearby-phash match (even dist ≤6) was VETOED as a detail-contradicted
+// impostor — so "reaching here" no longer implies the nearest same-type logo is >6 away. This
+// check is what keeps that composition safe: the vetoed impostor's logo sits well inside
+// COLLISION_DIST, so the new template is created KEYWORD-ONLY and no colliding logo identity is
+// ever planted (pinned in test_graduation_template.js §detail-veto). Do NOT weaken this check
+// on the old ">6 away" assumption. Conservative by design: a doubtful logo becomes keyword-only
+// (safe), never a colliding logo identity (a silent misfile).
 function seedLogoCollides(db, seedPhash, slug) {
   if (!seedPhash || !slug) return false;
   const rows = db.prepare(
@@ -104,7 +107,7 @@ function decide(db, docId, info = {}, opts = {}) {
   if (!slug) return { action: 'skip', reason: 'no-doctype' };            // Oracle C4
 
   const doc = db.prepare(
-    'SELECT id, template_id, supplier_name, logo_phash, keyword_fingerprint, ocr_text FROM documents WHERE id = ?'
+    'SELECT id, template_id, supplier_name, logo_phash, logo_detail_hash, keyword_fingerprint, ocr_text FROM documents WHERE id = ?'
   ).get(docId);
   if (!doc) return { action: 'skip', reason: 'no-doc' };
   if (doc.template_id) return { action: 'skip', reason: 'already-linked' };   // e.g. a taught confirm just made one
@@ -121,8 +124,13 @@ function decide(db, docId, info = {}, opts = {}) {
 
   // Existence: is this scope's layout already covered by a SAME-TYPE template (logo OR keyword)?
   // On a match, LINK only — never update-fold (Oracle C1).
+  // logo_detail_hash arms the detail-hash veto: 'link' WRITES documents.template_id, and a
+  // false cross-supplier link pollutes getDominantSupplier tallies — the establishedIdentity
+  // other guards (Part E) consume. A vetoed impostor match falls to the keyword arm or 'create'
+  // (whose own C2-C3 gates apply). Fail-open when either side lacks a detail hash.
   const match = templates.identifyByFingerprint(db, {
     logo_phash: doc.logo_phash, ocr_text: doc.ocr_text, document_type_slug: slug,
+    logo_detail_hash: doc.logo_detail_hash,
   });
   if (match && match.template) {
     return { action: 'link', templateId: match.template.id, name: match.template.name || null, reason: 'exists' };
