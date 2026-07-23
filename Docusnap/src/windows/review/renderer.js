@@ -4308,9 +4308,11 @@ async function fileAllReady() {
   }
 
   updateTabCounts();
-  renderQueueList();
-  if (queue.length > 0 && !queueGrouped) selectDoc(queue[0]);   // grouped starts all-collapsed; user picks a group
-  else { currentDoc = null; clearDocPanel(); }
+  // Batch done: keep the operator moving — land on the first document still in the visible order
+  // (grouped view included), or clear to the "all reviewed" done-state when none remain, instead of
+  // showing "All documents reviewed ✓" over a queue that still has skipped docs. (advanceAfterAction
+  // re-renders the list itself, so the explicit renderQueueList above is folded in.)
+  advanceAfterAction(0, null);
   if (filed) window.docusnap.notifyReviewComplete();
 
   // Banner done-state, then auto-dismiss. Already-filed docs stay filed.
@@ -4533,13 +4535,15 @@ document.getElementById('btn-skip').addEventListener('click', () => {
 // ── Defer ─────────────────────────────────────────────────────────────────────
 document.getElementById('btn-defer').addEventListener('click', async () => {
   if (!currentDoc || currentDoc.status === 'deferred') return;
+  // Remember the slot + sender BEFORE removing, so we advance to the NEXT doc (finishing this
+  // sender first) instead of snapping to the top or clearing the pane — mirrors single-doc Confirm.
+  const idx      = reviewDisplayOrder().findIndex(d => d.id === currentDoc.id);
+  const supplier = (currentDoc.supplier_name || '').trim();
   await window.docusnap.deferDocument(currentDoc.id);
   deferredQueue = await window.docusnap.getDeferredQueue();
   queue         = queue.filter(d => d.id !== currentDoc.id);
   updateTabCounts();
-  renderQueueList();
-  if (queue.length > 0 && !queueGrouped) selectDoc(queue[0]);   // grouped starts all-collapsed; user picks a group
-  else { currentDoc = null; clearDocPanel(); }
+  advanceAfterAction(idx, supplier);   // re-renders + lands on the next doc (or clears if none remain)
   window.docusnap.notifyReviewComplete();
 });
 

@@ -73,11 +73,16 @@ console.log('\nWiring + invariants (source):');
 const lqBody = renderer.slice(renderer.indexOf('async function loadQueue'),
                               renderer.indexOf('// ── "Auto-committed"'));
 check('loadQueue calls decideInitialSelection', /decideInitialSelection\(\{/.test(lqBody));
-// Scope this to loadQueue: the same flat-only pattern legitimately lives in the mid-session
-// Defer / File-All done-paths (out of scope for this cold-start fix), so assert on lqBody, not
-// the whole file. What matters is that the WINDOW-OPEN path no longer uses the raced auto-select.
-check('loadQueue no longer uses the old un-awaited `selectDoc(queue[0])` auto-select (the race half)',
-      !/if \(queue\.length > 0 && !queueGrouped\) selectDoc\(queue\[0\]\);/.test(lqBody));
+// The flat-only `selectDoc(queue[0])` auto-select is now gone EVERYWHERE — the window-open path
+// uses decideInitialSelection, and the mid-session Defer / File-All done-paths advance via
+// advanceAfterAction (which lands on a doc in the grouped view too, instead of clearing the pane).
+check('the old flat-only `selectDoc(queue[0])` auto-select is gone everywhere (open + mid-session)',
+      !/if \(queue\.length > 0 && !queueGrouped\) selectDoc\(queue\[0\]\);/.test(renderer));
+// Defer must advance within the visible/grouped order (advanceAfterAction), not clear the pane.
+const deferSrc  = renderer.slice(renderer.indexOf("getElementById('btn-defer').addEventListener"));
+const deferBody = deferSrc.slice(0, deferSrc.indexOf('});'));
+check('Defer advances via advanceAfterAction (lands on the next doc, grouped view too)',
+      /advanceAfterAction\(/.test(deferBody));
 check('getReviewTarget is read BEFORE the decision (consume-once)',
       lqBody.indexOf('getReviewTarget') > -1
       && lqBody.indexOf('getReviewTarget') < lqBody.indexOf('decideInitialSelection('));
