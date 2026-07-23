@@ -318,6 +318,14 @@ def veto_by_detail(query_detail, pick_details, other_details_by_supplier, thresh
     the NON-pick suppliers."""
     t = threshold if threshold is not None else _veto_dist()
     pm = min_over_set(query_detail, pick_details)
+    # pm is None ⇒ the PICK has no enrolled detail set (a detail-less template — "residual (a)" in the
+    # 2026-07-24 Slice-1d DO-NOTHING ledger, memory project_slice1d_donothing). It is UNJUDGEABLE here,
+    # so KEEP: the pick rests on the 64-bit phash + the Stage-0 text gate, and self-heals once that
+    # template accrues a detail hash on its next confirm. ACCEPTED TRADE-OFF, pinned in
+    # test_logo_detail_veto.py. Do NOT turn pm-None into an abstain-iff-a-rival-matches without: keeping
+    # the POSITIVE-RIVAL requirement (a bare far-from-pick veto is NON-SEPARABLE — same-supplier drift
+    # p90≈96/max162 overlaps the impostor floor 86), a fresh kill switch, AND re-gating BOTH consumers of
+    # this shared primitive (template_matcher._logo_detail_veto AND anchor.try_logo_supplier_match).
     if pm is None or pm <= t:
         return False                      # can't judge, or the pick's own mark agrees → keep
     for dets in (other_details_by_supplier or {}).values():

@@ -37,8 +37,19 @@ marker; re-plant IFF retract proven), C7 plant-side foreign filter `de67cc7`. �
 the sparse-set "abstention" theory was WRONG (it was the Slice-D miss-fill arm); the Oracle's
 "disagree can't fire on genuine docs" was measured FALSE (the WINNER is the rival on 2-bit
 collisions) — he re-adjudicated; "ref-via-keyword NEVER auto-files" was over-broad (shipped patterns
-score 90; the support boost self-heals at ≥5 confirms). NEXT: **Slice 1d** (Stage-0 logo-alone accept
-— the writer of the 13 links) + the owner live checks. **Prior block ↓**
+score 90; the support boost self-heals at ≥5 confirms). NEXT (2026-07-24 CORRECTION): Slice 1d
+INVESTIGATED → **DO-NOTHING-IN-CODE** (gary + Oracle SIGN-OFF-W/CONDITIONS). The "Stage-0 accepts on
+logo alone" premise was a STORE CATEGORY-ERROR: the Stage-0 veto (`_logo_detail_veto`→`veto_by_detail`)
+reads `template_logo_hashes.detail_hash` (**Store B, 19/21, written UNCONDITIONALLY at confirm-time**),
+NOT the starved Store A `logo_fingerprints.detail_hash` (0/29 = the dark-enrolment/backfill target,
+which feeds the ANCHOR path only). Engine threads the query hash (engine.py:2484). MEASURED live:
+`veto_by_detail` fires 13/13 on the poisoned links, 0/364 false abstains; a fresh `identify_template`
+replay (`stress_test/stage0_detail_veto_probe.py`, veto OFF vs ON) = **0 wrong matches** → the 13 links
+are HISTORICAL DATA, not reproducible today. "Mirror the JS twin" would MISFILE (bare one-sided veto is
+non-separable at Stage-0 — drift p90 96 overlaps impostor floor 86; regresses 268→131 auto-files).
+Owner action = `scripts/poisoned-template-link-sweep.js --apply` (NOT reprocess — the known-id fallback
+re-imposes the poison). Full ledger + seam pins + residual-(b) fix: [[project_slice1d_donothing]].
+Owner live checks still open. **Prior block ↓**
 
 ## (prior) Session state (2026-07-23 EVENING) — READ `HANDOVER_2026-07-23_EVENING.md` FIRST
 **2026-07-23 EVENING (Opus 4.8 → Fable 5) — Thornbury live-testing day; 5 commits PUSHED through
@@ -477,8 +488,10 @@ the LATE session block above.) Daytime detail: `HANDOVER_2026-07-20.md` (then
   silent auto-fill is now a click affordance. One correction RIPPLES to same-sender siblings by text
   (`SUPPLIER_RIPPLE`) through the review-bound pin rail. Corpus ON==OFF byte-identical; on the live
   install the gate abstains on exactly the 4 misassigned dockets, 0 correct identities suppressed.
-  **OPEN**: Slice 1d (Stage-0 `identify_template` still accepts on logo distance alone — own corpus
-  gate; residual = a FLAGGED wrong match, never a silent file) · D2 Barry slices 3-5 · D3 the inert
+  **OPEN**: Slice 1d — **RESOLVED 2026-07-24 DO-NOTHING-IN-CODE** (Oracle SIGN-OFF-W/COND; the Stage-0
+  veto is LIVE via Store B, the 13 links are historical DATA → owner sweep, not a code fix; genuine
+  cold-start residual (b) is NOT text-gate-defended = the issuer-by-caption family, letterhead/text
+  layer not a logo veto; ledger [[project_slice1d_donothing]]) · D2 Barry slices 3-5 · D3 the inert
   detail-hash path (retire or fix) · **UX: a clean doc held just below the auto-file threshold gives
   no on-screen reason** (owner hit this: 9/20 auto-filed at 100, #121 held at 98 with
   `auto_file_threshold` unset=100 — the mechanism is correct, the silence isn't; Review should say
