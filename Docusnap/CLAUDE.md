@@ -21,7 +21,26 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-07-23 EVENING) — READ `HANDOVER_2026-07-23_EVENING.md` FIRST
+## Current session state (2026-07-23 NIGHT) — READ `HANDOVER_2026-07-23_NIGHT.md` FIRST
+**2026-07-23 NIGHT (Fable 5) — 15 commits, ALL PUSHED through `b28f581`; tree clean; migration 53.**
+`48262e0` **ANCHOR_LINE_SELECT built DARK** (flip = the live Thornbury gate) · UI: editor subgrid rows
++ Keywords pill `c5c1e58`, type-LIST drag `76c2b96`, Review labels left `7b07620` · **identity chain**:
+JS detail-hash veto `6ab04f1` (64-bit histograms CROSSED — 2/64 cross vs 18/64 drift, never tune it;
+256-bit impostor floor 86) + poisoned-link sweep `2c1dd13` (13 live links, owner --apply PENDING) +
+enrolment DARK `c9725e2` (`LOGO_DETAIL_ENROL=1` arms — INVERTED default) + sparse guard `059d87b` →
+**unified `b28f581`: BOTH detail arms suggest-only, coarse winner THREADED to the text gate; C5 gate
+PASSED (backfilled == starved BYTE-IDENTICAL, 268/390, M=9 same rows) — enrolment flip now SAFE,
+owner-timed** · `06470a4` KEYWORD_ANCHOR_CORROB lift + weak-critical-field hold copy ·
+repair symmetry: send-back UN-PLANTS `a9f2d42` (hints retract + corrections delete + suspect notes;
+corrections queries had NO status filter — that leak is closed), delete/restore `6d61cb0` (mig-53
+marker; re-plant IFF retract proven), C7 plant-side foreign filter `de67cc7`. ⚠ PREMISES CORRECTED:
+the sparse-set "abstention" theory was WRONG (it was the Slice-D miss-fill arm); the Oracle's
+"disagree can't fire on genuine docs" was measured FALSE (the WINNER is the rival on 2-bit
+collisions) — he re-adjudicated; "ref-via-keyword NEVER auto-files" was over-broad (shipped patterns
+score 90; the support boost self-heals at ≥5 confirms). NEXT: **Slice 1d** (Stage-0 logo-alone accept
+— the writer of the 13 links) + the owner live checks. **Prior block ↓**
+
+## (prior) Session state (2026-07-23 EVENING) — READ `HANDOVER_2026-07-23_EVENING.md` FIRST
 **2026-07-23 EVENING (Opus 4.8 → Fable 5) — Thornbury live-testing day; 5 commits PUSHED through
 `0ae0f46` (origin in sync `0 0`); tree clean.** `0bbfdce` SFDEV trace shows EVERY field + per-field
 OCR crop thumbnails · `d91da4b` field drag-to-reorder (shared DocTypeEditor, ⠿ handle) · `274276c`
