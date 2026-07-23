@@ -392,7 +392,7 @@ function register(ctx) {
     catch (e) { return { fields: [], error: e.message || String(e) }; }
   });
   // Send ONE confirmed doc back to the review queue (respects the workflow lock).
-  ipcMain.handle('repair-deconfirm', (_e, id) => {
+  ipcMain.handle('repair-deconfirm', (_e, id, opts) => {
     requireRole('admin');
     const db = getDb();
     const documents = require('../../../database/modules/documents');
@@ -401,6 +401,23 @@ function register(ctx) {
       const guard = require('../../services/workflowService').editGuard(db, docId, 'admin');
       if (guard && guard.ok === false) return { ok: false, error: guard.error || 'This document is locked by an approval route.', code: guard.code };
     } catch { /* workflow off → no lock */ }
+    // UN-PLANT (Oracle-signed 2026-07-23; kill REPAIR_UNPLANT=0 ⇒ the legacy status-flip only).
+    // One door serves all three send-back surfaces (Repair panel + Search preview/bulk); the
+    // service atomically de-confirms + retracts this doc's confirm-planted hints + deletes its
+    // corrections rows (the re-confirm echo) + stamps the suspect-field notes. See repairService.
+    if (process.env.REPAIR_UNPLANT !== '0') {
+      let r;
+      try { r = require('../../services/repairService').sendBackToReview(db, docId, opts || {}); }
+      catch (e) { return { ok: false, error: 'Send-back failed (nothing was changed): ' + (e.message || e) }; }
+      if (r.ok) {
+        try {
+          logAudit(db, { action: 'repair_send_to_review', action_category: 'document', target_type: 'document',
+            target_id: docId, outcome: 'success', details: JSON.stringify(r.unplanted) });
+        } catch {}
+        notifyAllWindows('review-count-changed', documents.getReviewCount(db));
+      }
+      return { ok: !!r.ok };
+    }
     const r = documents.deconfirmDocument(db, docId);
     if (r.changes) {
       try { logAudit(db, { action: 'repair_send_to_review', action_category: 'document', target_type: 'document', target_id: docId, outcome: 'success' }); } catch {}

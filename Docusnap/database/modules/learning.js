@@ -333,6 +333,83 @@ function saveCorrections(db, document_id, corrections,
   })();
 }
 
+// ── retractConfirmHints — the INVERSE of saveCorrections' hint plants (Oracle-signed 2026-07-23,
+// C1-C3; co-located DIRECTLY below the plant so the pair can't drift). deconfirmDocument reverses
+// only the LIVE-derived half of confirm learning; the stored-increment half (supplier_hints) had
+// no inverse — a poisoned confirm's hints kept filling fields at usage>=2 after send-back.
+// Decrement-by-one is the ONLY faithful semantics: usage_count is NOT a pure function of current
+// confirmed docs (renameSupplier merges, mig-45 deletions, cycle-scoped increments), so a full
+// re-derive would silently rewrite untouched suppliers' counts install-wide. Mirrors the plant
+// branch-for-branch:
+//   corrections-path: LATEST corrections row per field → retract (supplier, UNTRIMMED exact) and,
+//     only when the scope isn't '__global__', the '__global__' twin (C3 — the plant skipped the
+//     separate global upsert for a null-supplier doc).
+//   allValues-path (fields with no corrections row): TRIMMED display_value, supplier-scoped only,
+//     with the SAME isPlausibleSupplierName skip on supplier_name (C2 — a passthrough-'IN' doc
+//     never planted, so its retract must never touch a corrected-'IN' row another doc planted).
+// C1: AT MOST ONE row per (scope, field, value) — exact match first, TRIM(hint_value) fallback
+// ONLY when exact missed (the :279 plant stores untrimmed while :328 trims; a single OR-match
+// could decrement BOTH variants = over-removal of another doc's contribution). A missing row is
+// 0 changes, never negative — other docs' contributions are arithmetic residue, untouched.
+// Guarded by database/modules/test_repair_unplant.js (round-trip vs a pristine plant of doc B).
+function retractConfirmHints(db, document_id) {
+  const doc = db.prepare(`
+    SELECT d.supplier_name, dt.slug AS type_slug
+    FROM documents d LEFT JOIN document_types dt ON dt.id = d.document_type_id
+    WHERE d.id = ?`).get(document_id);
+  if (!doc) return { decremented: 0, deleted: 0 };
+  const eff = normalizeSupplierName(String(doc.supplier_name || '').trim() || '__global__');
+  const dt = doc.type_slug || null;
+
+  const pickExact = db.prepare(`
+    SELECT id, usage_count FROM supplier_hints
+    WHERE supplier_name = @s AND COALESCE(document_type, '') = COALESCE(@dt, '')
+      AND field_key = @f AND hint_value = @v
+    ORDER BY id LIMIT 1`);
+  const pickTrim = db.prepare(`
+    SELECT id, usage_count FROM supplier_hints
+    WHERE supplier_name = @s AND COALESCE(document_type, '') = COALESCE(@dt, '')
+      AND field_key = @f AND TRIM(hint_value) = @v
+    ORDER BY id LIMIT 1`);
+  const delRow = db.prepare('DELETE FROM supplier_hints WHERE id = ?');
+  const decRow = db.prepare('UPDATE supplier_hints SET usage_count = usage_count - 1 WHERE id = ?');
+
+  let decremented = 0, deleted = 0;
+  const retractOne = (scope, field, value) => {
+    const v = String(value == null ? '' : value);
+    if (!v) return;
+    let row = pickExact.get({ s: scope, dt, f: field, v });
+    if (!row) row = pickTrim.get({ s: scope, dt, f: field, v: v.trim() });
+    if (!row) return;
+    if ((row.usage_count || 0) <= 1) { delRow.run(row.id); deleted++; }
+    else { decRow.run(row.id); decremented++; }
+  };
+
+  // corrections-path (C2): the LATEST corrections row per field is what the last confirm planted.
+  const latest = new Map();
+  for (const r of db.prepare(
+    'SELECT field_key, corrected_value FROM corrections WHERE document_id = ? ORDER BY rowid'
+  ).all(document_id)) {
+    latest.set(r.field_key, r.corrected_value);
+  }
+  for (const [field, v] of latest) {
+    if (!v) continue;
+    retractOne(eff, field, v);
+    if (eff !== '__global__') retractOne('__global__', field, v);
+  }
+  // allValues-path: final confirmed values, minus corrected fields (the plant skipped them here).
+  for (const r of db.prepare(
+    'SELECT field_key, display_value FROM extractions WHERE document_id = ?'
+  ).all(document_id)) {
+    if (latest.has(r.field_key)) continue;
+    const v = String(r.display_value || '').trim();
+    if (!v) continue;
+    if (r.field_key === 'supplier_name' && !isPlausibleSupplierName(v)) continue;
+    retractOne(eff, r.field_key, v);
+  }
+  return { decremented, deleted };
+}
+
 // The TRAINING dump — every hint row, uncapped (2026-07-10). buildTrainingArgs used the
 // bare getHints(db) below, whose default LIMIT 100 (by usage_count DESC) silently
 // STARVED the engine once the corpus grew past 100 rows: every new supplier's usage-1/2
@@ -1586,9 +1663,10 @@ module.exports = {
   insertExtractions, deleteExtractions,
   getFieldValueHistory, getDocumentsForFieldValue, purgeFieldValue, renameFieldValue, getPrefixModelForScope,
   getSupplierScopeCounts, renameSupplier,
-  saveCorrections, getHints, getAllHints, isPlausibleSupplierName, isPlausibleSupplierNameBase, isNameLikeField, nameQuality, normalizeSupplierName,
+  saveCorrections, retractConfirmHints, getHints, getAllHints, isPlausibleSupplierName, isPlausibleSupplierNameBase, isNameLikeField, nameQuality, normalizeSupplierName,
   saveAnchor, sanitizeAnchorLabel, clearAnchors, getAllAnchors, getAnchorsForScope, getTaughtFieldKeys, deleteAnchor,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
+  detailCrossPlantCloser: _detailCrossPlantCloser,   // exported for the detail-backfill script's final anti-poison check (2026-07-23)
   getFieldFormats, getDigitsOnlyFields,
   getRecoverySummary, getRecoveryDetail, getMemoryInventory, resetAllLearning,
   resetToFreshInstall, getLearningFootprintForDocuments,

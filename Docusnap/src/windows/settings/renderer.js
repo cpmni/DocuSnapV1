@@ -3874,8 +3874,14 @@ async function rpSend() {
   if (!_rpSel) return;
   const doc = _rpDocs.find(d => d.id === _rpSel);
   if (!confirm(`Send “${doc.original_filename}” back to Review?\n\nThis just moves it to your Review list — nothing is deleted. If it was fine, confirm it there and it goes right back to where it was.`)) return;
+  // Thread the SUSPECT context so the un-plant can flag the exact field(s) that brought the
+  // operator here — the doc returns to Review visibly suspect (note + flag + File-All-Ready
+  // exclusion) instead of clean-looking (the rubber-stamp gap). Empty reasons ⇒ the service
+  // stamps its generic doc-level note.
+  const _reasons = (_rpSuspects[_rpSel] && _rpSuspects[_rpSel].reasons) || [];
+  const suspects = _reasons.map(rr => ({ field: rr.field || null, note: String(rr.text || rr.kind || '') }));
   let r = null;
-  try { r = await api.repairDeconfirm(_rpSel); } catch (e) { alert('Failed: ' + (e.message || e)); return; }
+  try { r = await api.repairDeconfirm(_rpSel, { suspects }); } catch (e) { alert('Failed: ' + (e.message || e)); return; }
   if (!r || !r.ok) { document.getElementById('rp-action-msg').textContent = (r && r.error) || 'Could not send this document back (it may be locked by an approval route).'; return; }
   rpRemoveCurrent('Sent back to Review.');
 }

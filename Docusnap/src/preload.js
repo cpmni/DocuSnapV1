@@ -362,7 +362,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   // Learning Repair (browse/preview/suspects/send-to-review)
   repairOverview:      (scope)   => ipcRenderer.invoke('repair-overview', scope),
   repairDocFields:     (id)      => ipcRenderer.invoke('repair-doc-fields', id),
-  repairDeconfirm:     (id)      => ipcRenderer.invoke('repair-deconfirm', id),
+  repairDeconfirm:     (id, opts) => ipcRenderer.invoke('repair-deconfirm', id, opts),
   repairDelete:        (id)      => ipcRenderer.invoke('repair-delete', id),
 
   // ── Advanced (Settings tab) — keyword label overrides ───────────────────────
