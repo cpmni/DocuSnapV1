@@ -112,11 +112,30 @@
       .dte { display:flex; flex-direction:column; gap:16px; }
       .dte-lbl { font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); display:block; margin-bottom:8px; }
       .dte-lbl .muted { text-transform:none; letter-spacing:0; font-weight:400; }
-      .dte-fields { display:flex; flex-direction:column; gap:6px; }
+      /* COLUMN-ALIGNED ROWS (2026-07-23, bob-reviewed): the list is ONE grid and every row
+         tracks it via subgrid, so the divider + Type/Required/Enabled/Keywords columns line
+         up EXACTLY across rows, auto-sized to the widest content — no magic widths to drift
+         when copy or theme changes. This DELIBERATELY REVERSES the earlier "controls wrap to
+         a second line on narrow panels" decision (the owner: wrapped rows read as misaligned
+         chaos); the name column is the flexible one and ellipsises instead. Create mode
+         renders fewer cells, so it gets its OWN template via the .dte--create mode class
+         (both modes can coexist in one document — Settings hosts add-type AND edit).
+         Columns (edit): handle | name+key | divider | type | required | enabled | keywords | ✕ */
+      .dte-fields { display:grid; grid-template-columns: auto minmax(0,1fr) 1px auto auto auto auto 20px; gap:6px 10px; }
+      .dte--create .dte-fields { grid-template-columns: auto minmax(0,1fr) 1px auto 20px; }
       .dte-row {
-        display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px;
+        grid-column: 1 / -1; display:grid; grid-template-columns: subgrid; align-items:center;
         padding:8px 12px; border:1px solid var(--border); border-radius:8px; background:var(--surface);
       }
+      .dte-row .dte-handle { grid-column:1; }
+      .dte-row .idn { grid-column:2; }
+      .dte-row .col-div { grid-column:3; }
+      .dte-row .grp-type { grid-column:4; }
+      .dte-row .grp-req { grid-column:5; }
+      .dte-row .grp-en { grid-column:6; }
+      .dte-row .dte-kw { grid-column:7; }
+      .dte-row .x, .dte-row .x-slot { grid-column:8; }
+      .dte--create .dte-row .x, .dte--create .dte-row .x-slot { grid-column:5; }
       .dte-row.locked { background:var(--surface2); }
       /* Drag-to-reorder handle. The row is draggable but a drag only starts from this handle
          (gated in dragstart), so the Type select / toggles keep working. */
@@ -125,34 +144,42 @@
       .dte-row .dte-handle:active { cursor:grabbing; }
       .dte-row.dragging { opacity:.45; }
       .dte-row.dragging .dte-handle { cursor:grabbing; }
-      /* Per-field keyword-labels toggle (🏷) + its inline editor panel. */
-      .dte-row .dte-kw { flex:0 0 auto; align-self:center; cursor:pointer; color:var(--muted);
-        font-size:12px; line-height:1; user-select:none; padding:1px 4px; border-radius:6px; white-space:nowrap; }
-      .dte-row .dte-kw:hover { color:var(--accent); background:var(--surface2); }
-      .dte-row .dte-kw.open { color:var(--accent); background:var(--accent-bg); }
-      .dte-kwpanel { margin:-2px 0 4px 26px; padding:10px 12px; border:1px solid var(--border);
+      /* Per-field keyword-labels button + its inline editor panel. A LABELLED pill (not a
+         bare glyph — invisible to the non-technical operators this UI serves) and a real
+         <button> so it's keyboard-reachable with a focus state; the count doubles as a
+         "this field has custom words" badge. Matches the .dte-chip pill language. */
+      .dte-row .dte-kw { justify-self:start; cursor:pointer; user-select:none; white-space:nowrap;
+        font:inherit; font-size:11px; line-height:1.4; color:var(--muted); background:var(--surface);
+        border:1px solid var(--border2); border-radius:999px; padding:3px 10px; }
+      .dte-row .dte-kw:hover { color:var(--accent); border-color:var(--accent); background:var(--accent-bg); }
+      .dte-row .dte-kw:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+      .dte-row .dte-kw.open { color:var(--accent); border-color:var(--accent); background:var(--accent-bg); }
+      .dte-kwpanel { grid-column:1 / -1; margin:-2px 0 4px 26px; padding:10px 12px; border:1px solid var(--border);
         border-radius:8px; background:var(--surface2); display:flex; flex-direction:column; gap:8px; }
+      /* An open keyword panel is the dragged row's SIBLING — hide every panel while a drag
+         gesture is live so it can't be left behind mid-gesture; the drop's re-render restores
+         it under its (moved) row. */
+      .dte-fields:has(.dte-row.dragging) .dte-kwpanel { display:none; }
       .dte-kw-title { font-size:12px; color:var(--text); }
       .dte-kw-builtins { font-size:11px; color:var(--muted); line-height:1.7; }
       .dte-kw-cap { text-transform:uppercase; letter-spacing:.06em; font-size:9px; }
       .dte-kw-bchip { display:inline-block; padding:1px 7px; border-radius:999px; border:1px dashed var(--border2);
         color:var(--muted); font-size:11px; }
       .dte-kw-note:empty { display:none; }
-      /* Name + key share ONE baseline so the label doesn't ride high above its key,
-         and the whole identity block centres on the same line as the right controls.
-         A min-width keeps the name legible and lets the TYPE/ENABLED controls wrap to a
-         second line (instead of overlapping the name) when the panel is narrow. */
-      .dte-row .idn { display:flex; align-items:baseline; gap:8px; min-width:140px; }
-      .dte-row .nm { font-weight:500; font-size:13px; line-height:1; }
-      .dte-row .key { font-family:var(--mono); font-size:10px; color:var(--muted); line-height:1; }
-      .dte-row .spacer { flex:1; min-width:8px; }
+      /* Name + key share ONE baseline so the label doesn't ride high above its key. The
+         lock lives INSIDE this cell (not its own column) so locked and unlocked rows'
+         names align. min-width:0 + ellipsis: the name column is the row's only flexible
+         track — a long name shortens here rather than wrapping the controls. */
+      .dte-row .idn { display:flex; align-items:baseline; gap:8px; min-width:0; }
+      .dte-row .nm { font-weight:500; font-size:13px; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .dte-row .key { font-family:var(--mono); font-size:10px; color:var(--muted); line-height:1; white-space:nowrap; }
       .dte-row .lock { color:var(--muted); font-size:12px; cursor:default; align-self:center; }
       .dte-row select { min-width:128px; }
       /* Divider between a field's IDENTITY (lock+name+key) and its TYPE/behaviour
          controls, plus a tiny caption on each control so its purpose is clear at a
-         glance. Caption travels WITH its control, so it stays correct on ragged rows
-         (toggle present/absent) and in create mode (no toggle). */
-      .dte-row .col-div { width:1px; align-self:stretch; background:var(--border2); margin:-8px 2px -8px 0; flex:0 0 auto; }
+         glance. Caption travels WITH its control. The negative vertical margins run the
+         1px line through the row's padding, edge to edge. */
+      .dte-row .col-div { width:1px; align-self:stretch; background:var(--border2); margin:-8px 0; }
       .dte-row .grp { display:flex; align-items:center; gap:6px; }
       .dte-row .ctl-cap { font-size:9px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); user-select:none; white-space:nowrap; }
       /* Remove-button slot is RESERVED on every row (placeholder when not removable) so
@@ -256,29 +283,27 @@
       return `
         <div class="dte-row${locked ? ' locked' : ''}" data-i="${i}"${editing ? ` data-fid="${f.id}"` : ''} draggable="true">
           <span class="dte-handle" title="Drag to reorder this field" aria-hidden="true">&#10303;</span>
-          ${locked ? '<span class="lock" title="Required field - cannot be removed or retyped">&#128274;</span>' : ''}
-          <span class="idn"><span class="nm">${esc(f.label)}</span>${editing ? `<span class="key">${esc(key)}</span>` : ''}</span>
-          <span class="spacer"></span>
+          <span class="idn">${locked ? '<span class="lock" title="Required field - cannot be removed or retyped">&#128274;</span>' : ''}<span class="nm">${esc(f.label)}</span>${editing ? `<span class="key">${esc(key)}</span>` : ''}</span>
           <span class="col-div" aria-hidden="true"></span>
-          <span class="grp">
+          <span class="grp grp-type">
             <span class="ctl-cap" title="The kind of data this field holds">Type</span>
             ${typeSelectHtml(f.type || 'text', locked)}
           </span>
-          ${editing ? `<span class="grp">
+          ${editing ? `<span class="grp grp-req">
             <span class="ctl-cap" title="Whether a document must have this field filled before it can be filed">Required</span>
             <label class="toggle" title="${locked ? 'Structural field — always required' : 'Require this field before a document can be confirmed & filed'}">
               <input type="checkbox" class="dte-req"${f.required ? ' checked' : ''}${locked ? ' disabled' : ''}>
               <span class="toggle-slider"></span>
             </label>
           </span>` : ''}
-          ${editing ? `<span class="grp">
+          ${editing ? `<span class="grp grp-en">
             <span class="ctl-cap" title="${locked ? 'Required field - always on' : 'Whether this field is used when filing'}">Enabled</span>
             <label class="toggle" title="${locked ? 'Required field - always on' : 'Enable or disable this field'}">
               <input type="checkbox" class="dte-en"${enabled ? ' checked' : ''}${locked ? ' disabled' : ''}>
               <span class="toggle-slider"></span>
             </label>
           </span>` : ''}
-          ${editing ? `<span class="dte-kw${kwOpenFor === key ? ' open' : ''}" data-kw="${esc(key)}" title="Extra caption words this field is detected by">&#127991;${kwCountFor(key) ? ' ' + kwCountFor(key) : ''}</span>` : ''}
+          ${editing ? `<button type="button" class="dte-kw${kwOpenFor === key ? ' open' : ''}" data-kw="${esc(key)}" title="Extra caption words this field is detected by">&#127991; Keywords${kwCountFor(key) ? ' &middot; ' + kwCountFor(key) : ''}</button>` : ''}
           ${removable ? '<span class="x" title="Remove field">&#10005;</span>' : '<span class="x-slot" aria-hidden="true"></span>'}
         </div>`;
     }
@@ -320,7 +345,7 @@
       const curDate = mode === 'create' ? dateKey : (type.date_field_key || '');
 
       host.innerHTML = `
-        <div class="dte">
+        <div class="dte dte--${mode}">
           ${showName ? `
             <div>
               <label class="dte-lbl">Document type name</label>
@@ -652,5 +677,8 @@
     };
   }
 
-  window.DocTypeEditor = { create };
+  // planReorder is exported as the ONE shared reorder-commit math (eric's review):
+  // the Settings doc-type LIST drag-reorder uses the same renumbering + minimal-write
+  // plan as the field rows here, so the two affordances can't drift apart.
+  window.DocTypeEditor = { create, planReorder };
 })();
