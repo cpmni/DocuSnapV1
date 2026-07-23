@@ -342,6 +342,30 @@ window.addEventListener('beforeunload', () => {
 });
 
 // ── Load queue ────────────────────────────────────────────────────────────────
+// Decide what the Review window lands on when it opens — PURE and side-effect-free so it can be
+// unit-pinned (test_review_initial_selection.js). Returns exactly one of:
+//   { navigate: <docId> } — an "Edit in Review" target was requested → go there, ONLY
+//   { select: <doc> }     — auto-land on this document
+//   { none: true }        — land on nothing (empty queue, or 2+ sender piles that deliberately
+//                           start collapsed → the pick-a-doc CTA shows instead of a dead pane)
+// The navigate and select outcomes are MUTUALLY EXCLUSIVE by construction, so the window can never
+// fire two selectDoc calls at once — this removes the pre-existing double-select race where the
+// un-awaited init auto-select and the "Edit in Review" navigation both selected a document.
+function decideInitialSelection({ targetId, queueGrouped, queue, groups }) {
+  if (targetId) return { navigate: targetId };
+  if (!queue || queue.length === 0) return { none: true };
+  if (!queueGrouped) return { select: queue[0] };   // flat "Newest first" — land on the top row (unchanged)
+  // Grouped view: only auto-land when there is a SINGLE sender pile. That is exactly the cold-DB /
+  // single-sender case where an all-collapsed list would strand a first-time user on an empty pane
+  // with just a "—" bar. With 2+ piles, keep the deliberate "pick a group" landing so the
+  // many-senders overview is preserved (widening this is what would revive the double-select race).
+  if (groups && groups.length === 1 && groups[0].docs && groups[0].docs.length) {
+    return { select: groups[0].docs[0] };
+  }
+  return { none: true };
+}
+/* __PIN_END:decideInitialSelection__ */
+
 async function loadQueue() {
   // Resolve role first so the admin-only bulk-delete footers render correctly
   // (visibility is a convenience — the delete IPCs are admin-gated server-side).
@@ -380,12 +404,20 @@ async function loadQueue() {
   populateTypeDropdown();
   updateTabCounts();
   renderQueueList();
-  if (queue.length > 0 && !queueGrouped) selectDoc(queue[0]);   // grouped starts all-collapsed; user picks a group
-  refreshAutoCommittedBar();   // surface recently auto-filed docs for re-checking
+  refreshAutoCommittedBar();   // surface recently auto-filed docs for re-checking (independent of the selection below)
 
-  // If opened via "Edit in Review" from Search, navigate to the requested doc.
+  // Decide what to land on ONCE. getReviewTarget is consume-once, so read it first, then let
+  // decideInitialSelection choose target-nav XOR auto-land — the two can never both fire selectDoc
+  // (removes the old double-select race). The single-group branch is the cold-start fix: a first
+  // import (no learned senders yet) is one "—" pile, so we auto-expand it and open the first
+  // document instead of leaving the user on a collapsed bar over an empty pane.
   const targetId = await window.docusnap.getReviewTarget();
-  if (targetId) _navigateToDoc(targetId);
+  const decision = decideInitialSelection({
+    targetId, queueGrouped, queue, groups: reviewDisplayGroups(),
+  });
+  if (decision.navigate)    _navigateToDoc(decision.navigate);   // "Edit in Review" target
+  else if (decision.select) selectDoc(decision.select);          // flat top row, or the sole sender pile's first doc
+  else if (queue.length)    showPreviewCta();                    // docs waiting but nothing auto-landed (2+ piles) → offer a next step, not a dead pane
 }
 
 // ── "Auto-committed" re-surface ──────────────────────────────────────────────
@@ -435,6 +467,13 @@ document.getElementById('auto-committed-bar')?.addEventListener('click', async (
   renderQueueList();
   if (queue.length) selectDoc(queue[0]);
   refreshAutoCommittedBar();
+});
+
+// "Start reviewing →" in the empty-pane CTA: land on the first document in the visible order
+// (selectDoc expands its group). Same landing the ↑/↓ nav treats as first.
+document.getElementById('btn-start-reviewing')?.addEventListener('click', () => {
+  const order = reviewDisplayOrder();
+  if (order.length) selectDoc(order[0]);
 });
 
 async function exitAutoFiledView() {
@@ -879,13 +918,15 @@ function renderQueueList() {
   if (viewLbl) viewLbl.textContent = queueGrouped ? 'Grouped by sender' : 'Newest first';
 
   if (queueGrouped) {
-    for (const g of reviewDisplayGroups()) {
+    const groups = reviewDisplayGroups();
+    for (const g of groups) {
       const open = expandedSuppliers.has(g.supplier);
       const head = document.createElement('div');
       head.className = 'queue-group-head' + (open ? ' open' : '');
       const attn = g.need ? ` · <span class="qgh-attn">${g.need} need${g.need > 1 ? '' : 's'} a look</span>` : '';
+      const title = groupTitle(g.supplier, groups.length);   // '—' pile → readable copy; the expand/nav KEY stays g.supplier
       head.innerHTML = `<span class="qgh-caret" aria-hidden="true"></span>`
-                     + `<span class="qgh-name" title="${escHtml(g.supplier)}">${escHtml(g.supplier)}</span>`
+                     + `<span class="qgh-name" title="${escHtml(title)}">${escHtml(title)}</span>`
                      + `<span class="qgh-meta">${g.docs.length} document${g.docs.length > 1 ? 's' : ''}${attn}</span>`;
       head.setAttribute('role', 'button');
       head.setAttribute('aria-expanded', open ? 'true' : 'false');
@@ -918,9 +959,25 @@ function reviewDisplayGroups() {
   }));
   // STABLE within a review session: order by HAS-attention (a boolean that only flips
   // when a group's LAST flagged doc clears) rather than the raw count, which would
-  // reshuffle the list on every confirm. Then biggest batch first, then name.
-  entries.sort((a, b) => (b.need > 0) - (a.need > 0) || b.docs.length - a.docs.length || a.supplier.localeCompare(b.supplier));
+  // reshuffle the list on every confirm. Then push the "not yet identified" (—) pile DOWN —
+  // but only BELOW the attention term, so a FLAGGED unidentified batch still surfaces above
+  // clean named piles and is never buried. Then biggest batch first, then name. This sort is
+  // shared with reviewDisplayOrder (the ↑/↓ nav), so the list and the arrows stay in lockstep.
+  entries.sort((a, b) =>
+       (b.need > 0) - (a.need > 0)
+    || (a.supplier === '—') - (b.supplier === '—')
+    || b.docs.length - a.docs.length
+    || a.supplier.localeCompare(b.supplier));
   return entries;
+}
+
+// Human display title for a sender group. The null-supplier pile's KEY stays '—' (shared by
+// reviewDisplayGroups/reviewDisplayOrder + selectDoc's expand branch, so it MUST NOT change), but
+// a bare "—" reads as broken to a first-time user. Show real copy instead, chosen by whether the
+// pile stands alone (a whole cold-DB batch, no senders learned yet) or sits among named piles.
+function groupTitle(supplier, groupCount) {
+  if (supplier !== '—') return supplier;
+  return groupCount <= 1 ? 'Your scanned documents' : 'Sender not identified';
 }
 
 // The flat doc order the queue is actually SHOWN in (grouped or chronological). The nav
@@ -988,7 +1045,7 @@ function buildQueueItem(doc) {
       <div style="flex:1; min-width:0;">
         <span class="qi-name" title="${escHtml(doc.original_filename)}">${escHtml(doc.original_filename)}</span>
         <div style="display:flex; align-items:center; gap:6px;">
-          <span class="qi-supplier" style="flex:1; min-width:0;">${escHtml(doc.supplier_name || '—')}</span>
+          <span class="qi-supplier" style="flex:1; min-width:0;">${escHtml(doc.supplier_name || 'Not yet identified')}</span>
           ${doc.page_count > 1 ? `<span class="qi-multipage" title="Multi-page document (${doc.page_count} pages)" style="flex-shrink:0;display:inline-flex;color:var(--muted)"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V6a2 2 0 0 1 2-2h10"/></svg></span>` : ''}
           ${confBadge}
         </div>
@@ -1038,7 +1095,7 @@ function renderDeferredList() {
       <div style="display:flex; align-items:flex-start; gap:4px;">
         <div style="flex:1; min-width:0;">
           <span class="qi-name" title="${escHtml(doc.original_filename)}">${escHtml(doc.original_filename)}</span>
-          <span class="qi-supplier">${escHtml(doc.supplier_name || '—')}</span>
+          <span class="qi-supplier">${escHtml(doc.supplier_name || 'Not yet identified')}</span>
         </div>
         <div style="display:flex; gap:3px; flex-shrink:0;" onclick="event.stopPropagation()">
           <button class="qi-btn qi-review-now" title="Move back to review queue" style="padding:2px 6px; font-size:10px;">Review</button>
@@ -5166,6 +5223,26 @@ function _clearPreviewState() {
   if (banner) banner.classList.remove('visible');
   const btn = document.getElementById('btn-preview-ocr');
   if (btn) { btn.innerHTML = '&#9658; Preview OCR'; btn.classList.remove('active'); }
+  hidePreviewCta();   // a real doc is being shown (or the panel cleared) → drop the pick-a-doc CTA
+}
+
+// The "pick a document to start" call-to-action shown in the empty preview pane when the queue
+// HAS documents but none is auto-selected (the returning-user case: 2+ sender piles that start
+// collapsed). It replaces a bland/dead pane with a clear next step and doubles as insurance for
+// any other "nothing selected" moment. Hidden the instant any doc is selected or the panel is
+// cleared — both routes run through _clearPreviewState above. The button lands on the first
+// document in the CURRENT display order (reviewDisplayOrder — what the ↑/↓ nav treats as first);
+// selectDoc then expands that doc's group.
+function showPreviewCta() {
+  const cta = document.getElementById('preview-cta');
+  if (!cta) return;
+  const ph = document.getElementById('doc-placeholder');
+  if (ph) ph.style.display = 'none';   // don't stack the plain placeholder behind the CTA
+  cta.style.display = 'flex';
+}
+function hidePreviewCta() {
+  const cta = document.getElementById('preview-cta');
+  if (cta) cta.style.display = 'none';
 }
 
 function deactivatePreview() {

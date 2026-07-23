@@ -371,6 +371,12 @@
     .wiz-note { font-size: 9px; color: var(--muted); font-style: italic; }
 
     #doc-placeholder { color: var(--muted); font-size: 14px; margin: auto; }
+    /* Empty-pane "start reviewing" CTA — centred in the (flex) #doc-viewer like the placeholder. */
+    #preview-cta { margin: auto; max-width: 340px; padding: 24px; display: flex; flex-direction: column;
+                   align-items: center; gap: 10px; text-align: center; }
+    #preview-cta .pcta-title { font-size: 16px; font-weight: 700; color: var(--text); }
+    #preview-cta .pcta-sub { font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+    #preview-cta .btn.primary { margin-top: 6px; }
 
     /* "Teach this document" CTA — a slim centred card banner above the preview. */
     .teach-cta { display: flex; flex-direction: column; align-items: center; gap: 5px;
@@ -909,6 +915,14 @@
 
       <div id="doc-viewer">
         <span id="doc-placeholder">Select a document from the queue</span>
+        <!-- Empty-pane call-to-action: shown when the queue has documents but none is auto-selected
+             (returning user with 2+ sender piles). Cold-start single-pile imports auto-land on a
+             document instead, so a first-timer never sees a dead pane. Wired in renderer.js. -->
+        <div id="preview-cta" style="display:none">
+          <div class="pcta-title">Ready when you are</div>
+          <div class="pcta-sub">Pick a document on the left to check its details, then Confirm to file it — Scan Finder takes you to the next one.</div>
+          <button class="btn primary" id="btn-start-reviewing">Start reviewing &#8594;</button>
+        </div>
         <div id="anchor-readout" class="anchor-readout" style="display:none"></div>
         <div id="doc-img-wrap" style="display:none">
           <img id="doc-img" alt="Document preview" draggable="false">
