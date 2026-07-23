@@ -1772,11 +1772,25 @@ def try_logo_supplier_match(page_image: Image.Image,
                     # still-empty→review-bound fill. A coarse WINNER that the detail POSITIVELY
                     # contradicts keeps today's review-bound override (the collision-healing arm —
                     # that is the job this machinery exists for).
-                    if winner is None and os.environ.get('LOGO_DETAIL_MISS_SUGGEST', '1') != '0':
+                    # UNIFIED (Oracle re-adjudication 2026-07-23 — his own premise measured false:
+                    # on the 2-bit coarse-collision class the WINNER is the RIVAL, so a correct
+                    # pick "disagrees" with a wrong winner and the old pre-stage override held 36
+                    # clean docs the text gate was already healing). BOTH the miss AND disagree
+                    # arms now suggest; the COARSE WINNER is THREADED (Oracle C1 — a bare suggest
+                    # dict would silently discard it and the text gate would never judge it: the
+                    # dead-guard trap) so the engine intercept re-asserts it exactly as in the
+                    # starved baseline. Consumption then judges the pick against the FINAL
+                    # resolution: agree→clean file · a STANDING wrong winner→the disagree note
+                    # (healing kept, now at the right seam) · empty→text-gated fill. Accepted
+                    # trade (named): mid-pipeline pick-scoping on disagree docs is given up —
+                    # equal to the starved baseline, proven value-neutral on the corpus. Do NOT
+                    # "restore" the pre-stage override to get it back.
+                    if os.environ.get('LOGO_DETAIL_MISS_SUGGEST', '1') != '0':
                         return {
                             "suggest_only":  True,
                             "supplier_name": s,
                             "detail_band":   band,
+                            "coarse_winner": winner,   # None on the miss arm (today's behaviour)
                         }
                     return {                     # DISAGREE (winner exists) / legacy miss → OVERRIDE, review-bound
                         "supplier_name":   s,

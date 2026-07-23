@@ -2715,8 +2715,15 @@ class ExtractionEngine:
                 results["_logo_detail_suggest"] = {"supplier_name": logo_match.get("supplier_name"),
                                                    "detail_band":   logo_match.get("detail_band")}
                 self.log(f"  Logo detail mark suggests '{logo_match.get('supplier_name')}' "
-                         "(coarse miss) — deferred to finalisation")
-                logo_match = None
+                         "— deferred to finalisation")
+                # Oracle C1 (re-adjudication): re-assert the COARSE WINNER so the text gate judges
+                # it exactly as in the starved baseline — None on the miss arm (byte-identical to
+                # the old null), the winner dict on the disagree arm (the gate abstains a
+                # text-contradicted rival; a winner that STANDS to finalisation meets the
+                # suggestion's disagree note there). NEVER a bare null on disagree — that
+                # discards the winner unjudged and every anchor-level pin stays green (the
+                # dead-guard-greens-every-test trap this comment exists to prevent).
+                logo_match = logo_match.get("coarse_winner")
             # ── TEXT-AGREEMENT GATE (identity text-first, slice 1b; kill LOGO_TEXT_GATE=0) ──────
             # MEASURED 2026-07-19: the 64-bit logo phash has ZERO separating power on scans
             # (cross-supplier MIN hamming 2 vs same-supplier min 6) — it cannot carry identity

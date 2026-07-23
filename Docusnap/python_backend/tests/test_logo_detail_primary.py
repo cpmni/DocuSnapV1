@@ -85,15 +85,26 @@ def main():
           r and r['supplier_name'] == 'X' and r['confidence'] != 69 and 'validation_note' not in r)
 
     # DISAGREE: coarse winner Y, detail names X → OVERRIDE to X, review-bound.
+    # UNIFIED (Oracle re-adjudication 2026-07-23): the DISAGREE arm also SUGGESTS — his own
+    # "cannot fire on genuine docs" premise was measured false (on 2-bit coarse collisions the
+    # WINNER is the rival, and the old pre-stage override held 36 clean docs the text gate was
+    # already healing). The coarse winner is THREADED so the engine re-asserts it through the
+    # text gate exactly as starved (Oracle C1 — a bare suggest dict would discard it unjudged).
     r = anchor.try_logo_supplier_match(page, disagree, query_detail_hash=QUERY)
-    check('DISAGREE → OVERRIDE to X (the detail supplier), not the coarse Y',
-          r and r['supplier_name'] == 'X')
-    check('override is REVIEW-BOUND: confidence 69',            r and r['confidence'] == 69)
-    check('override carries a validation_note (the auto-file block)',
-          r and bool(r.get('validation_note')))
-    check('override method stays "logo" (Oracle C3 — precedence override unreachable)',
-          r and r.get('method') == 'logo')
-    check('override is flagged detail_override',                 r and r.get('detail_override') is True)
+    check('DISAGREE → suggest_only X (never a pre-stage assertion)',
+          r and r.get('suggest_only') is True and r['supplier_name'] == 'X')
+    check('no confidence/note asserted (the consumption seam judges it)',
+          r and 'confidence' not in r and 'validation_note' not in r)
+    check('C1: the coarse winner Y is THREADED for the text gate to judge',
+          r and isinstance(r.get('coarse_winner'), dict)
+          and r['coarse_winner'].get('supplier_name') == 'Y')
+    os.environ['LOGO_DETAIL_MISS_SUGGEST'] = '0'
+    r0 = anchor.try_logo_supplier_match(page, disagree, query_detail_hash=QUERY)
+    del os.environ['LOGO_DETAIL_MISS_SUGGEST']
+    check('kill switch =0 restores the legacy DISAGREE override (X@69+note+detail_override)',
+          r0 and not r0.get('suggest_only') and r0['supplier_name'] == 'X'
+          and r0['confidence'] == 69 and bool(r0.get('validation_note'))
+          and r0.get('detail_override') is True and r0.get('method') == 'logo')
 
     # Coarse AMBIGUOUS (X & Y tie in coarse) + detail resolves X — SPARSE-GUARD (Oracle-signed
     # 2026-07-23): a coarse MISS now returns a SUGGESTION, never an asserted identity (the
@@ -112,13 +123,14 @@ def main():
           r and not r.get('suggest_only') and r['supplier_name'] == 'X'
           and r['confidence'] == 69 and bool(r.get('validation_note')))
 
-    # PINNED TRADE-OFF (Seam F): the DISAGREE arm (coarse winner Y exists, detail resolves X) is
-    # the collision-HEALING arm and is UNCHANGED by the sparse guard — a confident-band override
-    # is STILL capped at 69 + note on first ship.
+    # PINNED TRADE-OFF (Seam F, re-based): even a CONFIDENT-band pick never bypasses the
+    # suggestion — no band escalates to a pre-stage assertion; the consumption seam is the
+    # only judge (a future dev can't "promote" confident picks back into the blanket hold).
     conf_fixture = [L('Y', P, YFAR), L('X', FARP, at(20)), L('X', FARP, at(22))]  # X: 2 marks, dist 20 → confident
     r = anchor.try_logo_supplier_match(page, conf_fixture, query_detail_hash=QUERY)
-    check('PINNED: confident-band DISAGREE override is STILL review-bound (band=confident, conf=69, note)',
-          r and r.get('detail_band') == 'confident' and r['confidence'] == 69 and bool(r.get('validation_note')))
+    check('PINNED: confident-band pick is STILL only a suggestion (band=confident, no confidence key)',
+          r and r.get('suggest_only') is True and r.get('detail_band') == 'confident'
+          and 'confidence' not in r)
 
     # Seam 3: PRIMARY on but classify ABSTAINS (near-tie) → falls through so the VETO still fires → None.
     # Coarse winner X; detail near-tie Y@70 vs X@75 (both ≤80, diff<24) → classify abstains; then the veto

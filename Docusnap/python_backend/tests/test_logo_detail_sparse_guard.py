@@ -90,8 +90,9 @@ i_stash = src.find('results["_logo_detail_suggest"]')
 i_gate = src.find('os.environ.get("LOGO_TEXT_GATE", "1")')
 check("C2: interception sits AFTER the match call and BEFORE the LOGO_TEXT_GATE block",
       -1 < i_call < i_stash < i_gate)
-check("C2: the intercept nulls logo_match (a suggestion never reaches the fill block)",
-      'logo_match = None' in src[i_stash:i_stash + 900])
+check("C2/C1: the SUGGEST dict itself never reaches the fill block — logo_match becomes the "
+      "threaded coarse winner (None on the miss arm), judged by the text gate as in starved",
+      'logo_match = logo_match.get("coarse_winner")' in src[i_stash:i_stash + 1400])
 i_bc = src.find('self._flag_branding_conflict(results, supplier_name, templates, ocr_text)')
 i_consume = src.find('results.pop("_logo_detail_suggest", None)')
 i_abst = src.find('_abst = results.get("_logo_abstained")')
@@ -129,10 +130,47 @@ finally:
     setenv('LOGO_DETAIL_PRIMARY', None)
 check("a 1-ref drift-tail set is BYTE-IDENTICAL to the coarse path (abstain is free; veto positive-rival only)",
       r3 == r3_off)
-# Trade-off pin (the blanket hold may not return): the miss-arm suggestion carries NO note and
-# no confidence — a future dev re-adding assert-on-miss "for safety" flips the suggest pin above.
-check("trade-off: the suggestion dict is note-free BY SHAPE (the blanket hold cannot silently return)",
-      isinstance(r, dict) and set(r.keys()) == {'suggest_only', 'supplier_name', 'detail_band'})
+# Trade-off pin (the blanket hold may not return): the suggestion carries NO note and no
+# confidence — a future dev re-adding assert-on-miss "for safety" flips the suggest pin above.
+# Per-arm key shapes (Oracle re-adjudication Q3): the MISS arm's coarse_winner is None (today's
+# null preserved through .get()); the DISAGREE arm THREADS the winner dict (C1).
+check("miss arm: 4-key shape with coarse_winner=None (note-free BY SHAPE)",
+      isinstance(r, dict) and set(r.keys()) == {'suggest_only', 'supplier_name', 'detail_band', 'coarse_winner'}
+      and r['coarse_winner'] is None)
+D_Y = 'f' * 20 + '0' * 44          # 80 bits from D_ACME — Y's set never captures the query
+LOGOS_DIS = [
+    {'supplier_name': 'Acme Ltd', 'phash': 'f' * 16, 'detail_hash': D_ACME, 'match_count': 3},   # far coarse
+    {'supplier_name': 'Rival Co', 'phash': None, 'detail_hash': D_Y, 'match_count': 3},
+]
+# Coarse winner needs a decisive phash match — craft it from the page's own hash so 'Rival Co'
+# wins coarse while the detail picks 'Acme Ltd' (the disagree shape). Reproduce the matcher's
+# own top-left-corner phash recipe (anchor.py try_logo_supplier_match).
+try:
+    import imagehash
+    from PIL import ImageOps, ImageFilter
+    _w, _h = IMG.size
+    _crop = IMG.crop((0, 0, _w // 2, _h // 5)).convert('L')
+    _crop = ImageOps.autocontrast(_crop, cutoff=5)
+    _crop = _crop.resize((256, 256), Image.LANCZOS)
+    _crop = _crop.filter(ImageFilter.GaussianBlur(radius=1))
+    _page_hash = str(imagehash.phash(_crop, hash_size=8))
+except Exception:
+    _page_hash = None
+if _page_hash:
+    LOGOS_DIS[1]['phash'] = _page_hash                    # Rival = exact coarse winner (dist 0)
+    rd = anchor.try_logo_supplier_match(IMG, LOGOS_DIS, query_detail_hash=D_ACME)
+    check("disagree arm: suggest_only with the WRONG coarse winner THREADED (C1)",
+          isinstance(rd, dict) and rd.get('suggest_only') is True
+          and rd['supplier_name'] == 'Acme Ltd'
+          and isinstance(rd.get('coarse_winner'), dict)
+          and rd['coarse_winner'].get('supplier_name') == 'Rival Co')
+else:
+    check("disagree arm fixture skipped (no compute_logo_hash)", False)
+
+print("\nIntercept parity (the pin that fails on the literal condition-drop):")
+check("the engine intercept RE-ASSERTS the threaded winner — never a bare null",
+      'logo_match = logo_match.get("coarse_winner")' in src
+      and 'logo_match = None' not in src[i_stash:i_stash + 1200])
 
 print(f"\n{fails} FAILED" if fails else "\nAll sparse-guard checks passed")
 sys.exit(1 if fails else 0)
