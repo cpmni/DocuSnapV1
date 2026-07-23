@@ -1762,7 +1762,23 @@ def try_logo_supplier_match(page_image: Image.Image,
                 if s is not None:
                     if winner and (winner.get("supplier_name") or "").strip().lower() == s.strip().lower():
                         return winner            # AGREE → coarse winner untouched (byte-identical)
-                    return {                     # DISAGREE / coarse miss → detail OVERRIDES, review-bound
+                    # SPARSE-GUARD (Oracle-signed 2026-07-23; kill LOGO_DETAIL_MISS_SUGGEST=0 ⇒ the
+                    # legacy assert-on-miss): the activation A/B measured the COARSE-MISS fill arm
+                    # as the 268→131 throughput collapse — a CORRECT pick, asserted at conf 69 + a
+                    # review note, on docs whose supplier resolved the SAME name un-noted downstream
+                    # (keyword/hints/text) in the starved baseline. So a coarse MISS now returns a
+                    # SUGGESTION, never an identity: the engine stashes it and consumes it at
+                    # finalisation AFTER the last supplier writer — agree→clean, disagree→note,
+                    # still-empty→review-bound fill. A coarse WINNER that the detail POSITIVELY
+                    # contradicts keeps today's review-bound override (the collision-healing arm —
+                    # that is the job this machinery exists for).
+                    if winner is None and os.environ.get('LOGO_DETAIL_MISS_SUGGEST', '1') != '0':
+                        return {
+                            "suggest_only":  True,
+                            "supplier_name": s,
+                            "detail_band":   band,
+                        }
+                    return {                     # DISAGREE (winner exists) / legacy miss → OVERRIDE, review-bound
                         "supplier_name":   s,
                         "confidence":      69,   # < 70 review threshold AND < 88 critical floor
                         "match_count":     len(by_sup_det.get(s, [])),

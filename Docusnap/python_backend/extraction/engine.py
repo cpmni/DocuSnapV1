@@ -289,6 +289,33 @@ def _values_normalise_equal(a, b, is_date) -> bool:
     return bool(avn) and avn == bvn
 
 
+def _resolve_detail_suggestion(resolved_field, suggested, norm) -> str:
+    """SPARSE-GUARD suggestion arbiter (pure; Oracle-signed 2026-07-23) — what should a stashed
+    coarse-miss detail-mark suggestion do, given the FINAL resolved supplier field?
+      'clean' — downstream resolved the SAME name (the measured 137-doc arm: un-noted, files as
+                in the starved baseline), OR the field is operator-pinned (human authority is
+                never second-guessed), OR it already carries a note (one-note-per-field
+                convention — the doc is already review-bound; never overwrite a more specific
+                note with a generic one).
+      'note'  — downstream resolved a DIFFERENT name un-noted: positive mark-vs-text conflict →
+                attach the disagree note (fail-toward-review on POSITIVE evidence only).
+      'fill'  — nothing resolved: the suggestion may fill, review-bound, AFTER the text gate
+                (the caller runs decide_logo_text_gate; abstain ⇒ the value-less
+                _logo_abstained affordance instead)."""
+    if not isinstance(resolved_field, dict) or not str(resolved_field.get("value") or "").strip():
+        return "fill"
+    if (resolved_field.get("method") or "") == "operator_pin":
+        return "clean"
+    if resolved_field.get("validation_note"):
+        return "clean"
+    try:
+        if norm(str(resolved_field.get("value"))) == norm(str(suggested)):
+            return "clean"
+    except Exception:
+        return "clean"   # an unjudgeable compare must never manufacture a conflict
+    return "note"
+
+
 def _crosscheck_keyword_corroborated(data, kw_entry, is_date) -> bool:
     """E2 (Oracle-signed): is an anchor.py crop-vs-fullpage crosscheck FLIP corroborated by an
     INDEPENDENT Stage-1 keyword read of the same field? True only when `data` is the crosscheck
@@ -2676,6 +2703,20 @@ class ExtractionEngine:
         # phash drifts out of range and the supplier fails to resolve on a straighten-reprocess.
         if not supplier_name and logos and _id_img is not None:
             logo_match = anchor.try_logo_supplier_match(_id_img, logos, query_detail_hash=logo_detail_hash)
+            # SPARSE-GUARD SUGGESTION INTERCEPT (Oracle C2, 2026-07-23): a coarse-miss detail pick
+            # is a SUGGESTION, not an identity. Stash it and take the STARVED path exactly — no
+            # text gate here (it could stash a mid-pipeline _logo_abstained and diverge from the
+            # starved baseline), no fill (a fill here re-creates the throughput collapse: it makes
+            # the supplier non-empty, which SKIPS the un-noted Stage-2.5a hint resolution the same
+            # docs used before enrolment), and it must never reach the :fill block below (its dict
+            # has no confidence/match_count — pinned). Consumed at finalisation AFTER the last
+            # supplier writer (see the consumption block near _flag_branding_conflict).
+            if isinstance(logo_match, dict) and logo_match.get("suggest_only"):
+                results["_logo_detail_suggest"] = {"supplier_name": logo_match.get("supplier_name"),
+                                                   "detail_band":   logo_match.get("detail_band")}
+                self.log(f"  Logo detail mark suggests '{logo_match.get('supplier_name')}' "
+                         "(coarse miss) — deferred to finalisation")
+                logo_match = None
             # ── TEXT-AGREEMENT GATE (identity text-first, slice 1b; kill LOGO_TEXT_GATE=0) ──────
             # MEASURED 2026-07-19: the 64-bit logo phash has ZERO separating power on scans
             # (cross-supplier MIN hamming 2 vs same-supplier min 6) — it cannot carry identity
@@ -4172,6 +4213,51 @@ class ExtractionEngine:
         # changed results['supplier_name'] while the local supplier_name var is stale → false-flag).
         if not _identity_acted:
             self._flag_branding_conflict(results, supplier_name, templates, ocr_text)
+
+        # ── SPARSE-GUARD SUGGESTION CONSUMPTION (LOGO_DETAIL_MISS_SUGGEST; Oracle C1 PLACEMENT
+        # IS LOAD-BEARING, 2026-07-23) ── The coarse-miss detail pick stashed at the pre-stage is
+        # judged HERE — after _flag_branding_conflict, after the Stage-2.5a hint scan and
+        # _adopt_identity_variant (the last supplier_name WRITERS), and before the _logo_abstained
+        # consumer below (so the fill arm's text-gate abstain rides its existing value-less-row +
+        # "Use '<name>'" affordance). The Oracle traced BOTH failure modes of the earlier
+        # (:re-resolve) placement: a fill there made the supplier non-empty and SKIPPED the
+        # un-noted Stage-2.5a resolution (re-creating the 268→131 collapse for that subset), and a
+        # disagree note there was DESTROYED when 2.5a replaced the field dict — and that note is
+        # the ONLY auto-file block on a text-typed field. Do not move this earlier.
+        # The disagree copy deliberately does NOT match the renderer's isBrandingFlag regex
+        # (/page branding reads|confirm the correct company/i) — the row HAS a value, so a bare
+        # note without the Use-button is the intended shape (pinned).
+        _sug = results.pop("_logo_detail_suggest", None)
+        if isinstance(_sug, dict) and str(_sug.get("supplier_name") or "").strip():
+            _sname = str(_sug["supplier_name"]).strip()
+            _out = _resolve_detail_suggestion(results.get("supplier_name"), _sname, self._accept_norm)
+            if _out == "note":
+                _fld = results["supplier_name"]
+                _fld["validation_note"] = (
+                    f"The letterhead mark matches '{_sname}' — please confirm the company.")
+                results["_needs_review"] = True
+                self.log(f"  Logo detail mark DISAGREES with resolved supplier — noted for review ('{_sname}')")
+            elif _out == "fill":
+                _tg = decide_logo_text_gate(_sname, _branding_banks(templates, self._accept_norm),
+                                            ocr_text, self._accept_norm, self.accepted_issuers)
+                if _tg == 'abstain':
+                    # Text positively contradicts — assert nothing; the ABSTAIN-MUST-SPEAK consumer
+                    # just below emits the value-less row + affordance.
+                    results.setdefault("_logo_abstained", {"suppressed": _sname})
+                    self.log(f"  Logo detail suggestion '{_sname}' dropped — page branding contradicts it")
+                else:
+                    results["supplier_name"] = {
+                        "value":           _sname,
+                        "confidence":      69,   # < 70 review threshold; the note is the auto-file block
+                        "method":          "logo",
+                        "validation_note": "Company identified from the letterhead logo mark; "
+                                           "please confirm it's correct.",
+                    }
+                    results["_supplier_name"] = _sname   # scope mirror — _supplier_name was baked above
+                    results["_needs_review"] = True      # review_needed was computed above — mirror it
+                    self.log(f"  Logo detail mark FILLED the empty supplier: '{_sname}' (review-bound)")
+            # 'clean' → nothing: downstream resolved the same name un-noted (the measured 137-doc
+            # arm) or the field is pinned/already-noted — byte-identical to the starved baseline.
 
         # ── ABSTAIN MUST STILL SPEAK (identity text-first, Oracle C1) ───────────────────────
         # The text-agreement gate dropped a contradicted logo identity. If NOTHING else resolved

@@ -189,6 +189,17 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
       try { wouldFile = trust.isAutoFileEligible(db, fakeDoc, { extractions: rex }).eligible; } catch {}
     }
     if (wouldFile) autoFiledN++;
+    // RR_DUMP (C5 attribution, 2026-07-23): per-doc would-auto-file + the supplier field's note,
+    // so an A/B shortfall can be attributed doc-by-doc (which arm held it), never hand-waved.
+    if (process.env.RR_DUMP) {
+      try {
+        const supEx = (m.extractions || {}).supplier_name;
+        fs.appendFileSync(process.env.RR_DUMP, JSON.stringify({
+          id: g.id, wouldFile, sup: m.supplier_name || null,
+          supNote: (supEx && typeof supEx === 'object' && supEx.validation_note) || null,
+        }) + '\n');
+      } catch {}
+    }
     if (wouldFile && F.some(f => s[f] === false)) {
       silentAutoFile++;
       autoFileMisses.push(`#${g.id} ${g.type_slug} would-auto-file but WRONG on: ${F.filter(f => s[f] === false).join(',')}`);

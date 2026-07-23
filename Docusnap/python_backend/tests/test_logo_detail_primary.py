@@ -95,16 +95,29 @@ def main():
           r and r.get('method') == 'logo')
     check('override is flagged detail_override',                 r and r.get('detail_override') is True)
 
-    # Coarse AMBIGUOUS (X & Y tie in coarse) + detail resolves X → OVERRIDE (doc-193 out-of-band).
+    # Coarse AMBIGUOUS (X & Y tie in coarse) + detail resolves X — SPARSE-GUARD (Oracle-signed
+    # 2026-07-23): a coarse MISS now returns a SUGGESTION, never an asserted identity (the
+    # activation A/B measured the old assert-on-miss as the 268→131 would-auto-file collapse:
+    # correct picks blanket-noted on docs that resolved the same name un-noted downstream).
+    # LOGO_DETAIL_MISS_SUGGEST=0 restores the legacy override — both sides pinned.
     ambiguous = [L('X', P, XNEAR), L('Y', P, YFAR)]      # both coarse dist 0 → winner None
     r = anchor.try_logo_supplier_match(page, ambiguous, query_detail_hash=QUERY)
-    check('coarse ambiguous (winner None) + detail resolves → OVERRIDE X@69+note',
-          r and r['supplier_name'] == 'X' and r['confidence'] == 69 and bool(r.get('validation_note')))
+    check('coarse ambiguous (winner None) + detail resolves → suggest_only X (never an assertion)',
+          r and r.get('suggest_only') is True and r['supplier_name'] == 'X'
+          and 'confidence' not in r and 'validation_note' not in r)
+    os.environ['LOGO_DETAIL_MISS_SUGGEST'] = '0'
+    r = anchor.try_logo_supplier_match(page, ambiguous, query_detail_hash=QUERY)
+    del os.environ['LOGO_DETAIL_MISS_SUGGEST']
+    check('…and the kill switch restores the legacy OVERRIDE X@69+note',
+          r and not r.get('suggest_only') and r['supplier_name'] == 'X'
+          and r['confidence'] == 69 and bool(r.get('validation_note')))
 
-    # PINNED TRADE-OFF (Seam F): a CONFIDENT-band override is STILL capped at 69 + note on first ship.
+    # PINNED TRADE-OFF (Seam F): the DISAGREE arm (coarse winner Y exists, detail resolves X) is
+    # the collision-HEALING arm and is UNCHANGED by the sparse guard — a confident-band override
+    # is STILL capped at 69 + note on first ship.
     conf_fixture = [L('Y', P, YFAR), L('X', FARP, at(20)), L('X', FARP, at(22))]  # X: 2 marks, dist 20 → confident
     r = anchor.try_logo_supplier_match(page, conf_fixture, query_detail_hash=QUERY)
-    check('PINNED: confident-band override is STILL review-bound (band=confident, conf=69, note)',
+    check('PINNED: confident-band DISAGREE override is STILL review-bound (band=confident, conf=69, note)',
           r and r.get('detail_band') == 'confident' and r['confidence'] == 69 and bool(r.get('validation_note')))
 
     # Seam 3: PRIMARY on but classify ABSTAINS (near-tie) → falls through so the VETO still fires → None.
