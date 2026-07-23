@@ -2007,6 +2007,15 @@ function renderCleanHoldReason(el, doc) {
       'no-template': 'this layout hasn\'t been matched to a template yet.',
       'no-type': 'it has no document type yet.',
       'generic-type': 'General Documents are always checked by a person before filing.',
+      // The critical-floor hold (trust.js weak-critical-field): a filing-critical field was read
+      // below the automatic-filing bar. Copy names the FIELD from the real verdict and gives NO
+      // threshold advice (the floor applies at every threshold — Oracle C7); the shared hint
+      // below already says the confidence setting can't file it.
+      'weak-critical-field': fieldName
+        ? `<strong>${escHtml(fieldName)}</strong> was read at lower confidence than automatic `
+          + `filing requires, so this one is waiting for your eye. Teaching this field `
+          + `(&#8853;) usually fixes it for good.`
+        : 'a filing field was read at lower confidence than automatic filing requires.',
     }[v.kind] || 'an automatic check didn\'t pass.';
     el.classList.add('rr-calm');
     el.innerHTML = `<div class="rr-lead">Nothing looks wrong — ${why}</div>`

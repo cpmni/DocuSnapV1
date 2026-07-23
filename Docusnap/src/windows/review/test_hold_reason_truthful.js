@@ -66,5 +66,21 @@ check('the "truthful by construction" claim no longer stands unqualified',
       !/Truthful by construction: the effective floor is min\(user threshold, graduation floor\), so a\s*\/\/ clean doc that is WAITING always sits below/.test(renderer));
 check('…and the file records WHY it was false', /FALSE whenever graduation is active/.test(renderer));
 
+// ── weak-critical-field copy (2026-07-23, Oracle C7 of the corroboration-lift sign-off) ──
+// The critical-floor hold used to fall to the generic "an automatic check didn't pass" —
+// the one hold kind whose copy DIDN'T name the field (the owner's 4 held invoices). The map
+// entry must name the field from the real verdict and carry NO threshold advice (the floor
+// applies at every threshold; the shared hint already says the setting can't file it).
+console.log('\nweak-critical-field names the field (was the generic fallback):');
+check("the map carries a 'weak-critical-field' entry", renderer.includes("'weak-critical-field':"));
+{
+  const i = renderer.indexOf("'weak-critical-field':");
+  const entry = renderer.slice(i, renderer.indexOf('}[v.kind]', i));
+  check('the copy names the blocking field (fieldName interpolated)', /fieldName\s*\?/.test(entry) && entry.includes('${escHtml(fieldName)}'));
+  check('no threshold advice in the copy (the floor applies at EVERY threshold)',
+        !/threshold|Settings → Processing|confidence setting/i.test(entry));
+  check('the generic fallback survives for unknown kinds', renderer.includes("|| 'an automatic check didn\\'t pass.'"));
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nAll hold-reason truthfulness checks passed');
 process.exit(fails ? 1 : 0);

@@ -259,34 +259,48 @@ def _cmp_norm(value) -> str:
 _CROSSCHECK_CORROB_CONF = 90
 
 
+def _values_normalise_equal(a, b, is_date) -> bool:
+    """THE ONE value-agreement core shared by BOTH corroboration paths — E2's crosscheck clear
+    and the KEYWORD_ANCHOR_CORROB lift (Oracle C1, 2026-07-23: a copy-pasted comparison is
+    exactly the drift the shared 90 constant exists to prevent; pinned by
+    test_keyword_anchor_corrob.py). Dates: BOTH sides must parse and be CALENDAR-equal
+    (anchor._reads_disagree strict polarity — 0ae0f46's C1; '12-06' vs '06-12' never
+    corroborates). Refs: ALPHANUMERIC-CORE equality (drop separators/spaces) so a formatting
+    difference between the keyword read (ref-suffix stripped, keyword.py:729-730) and a crop/
+    inline read (clean_crop_segment) still corroborates — 'DN-23333' == 'DN 23333' == 'DN23333'
+    — while 'DN-23333' != 'DN-99999'. Pure; empty/error → False (fail-toward-review).
+    ⚠ DATE-ARM POLARITY (inherited from E2, deliberately preserved): _reads_disagree is
+    salvage-aware AND fail-open on an UNPARSEABLE side ('zz/xx' does not register as
+    disagreement → this returns True). Every caller MUST therefore sit BEHIND a parse gate:
+    the corroboration lift sits after the merge loop's date-parse credibility guard (an
+    unparseable date witness is `continue`d before it can reach the lift — pinned), and E2's
+    flip values are parse-gated in anchor.py. Do NOT reuse this helper on ungated values."""
+    av = str(a or "").strip()
+    bv = str(b or "").strip()
+    if not av or not bv:
+        return False
+    if is_date:
+        try:
+            return not anchor._reads_disagree(bv, av, "date")   # calendar-equal
+        except Exception:
+            return False
+    avn = "".join(c for c in _cmp_norm(av) if c.isalnum())
+    bvn = "".join(c for c in _cmp_norm(bv) if c.isalnum())
+    return bool(avn) and avn == bvn
+
+
 def _crosscheck_keyword_corroborated(data, kw_entry, is_date) -> bool:
     """E2 (Oracle-signed): is an anchor.py crop-vs-fullpage crosscheck FLIP corroborated by an
     INDEPENDENT Stage-1 keyword read of the same field? True only when `data` is the crosscheck
     result AND the incumbent `kw_entry` is a keyword/override read whose value NORMALISES-EQUAL to
-    the flipped value (calendar-aware for dates via anchor._reads_disagree; token-normalised for
-    refs via _cmp_norm — so 'DN-23333' == 'DN 23333' but != 'DN-99999'). Pure; no side effects.
-    Fires the flag-clear at the engine merge; a missing/disagreeing peer returns False → today's
-    flag stands (fail-toward-review)."""
+    the flipped value (the shared _values_normalise_equal core). Pure; no side effects. Fires the
+    flag-clear at the engine merge; a missing/disagreeing peer returns False → today's flag
+    stands (fail-toward-review)."""
     if (data or {}).get("method") != "anchor_crop_crosscheck":
         return False
     if not isinstance(kw_entry, dict) or kw_entry.get("method") not in ("keyword", "keyword_override"):
         return False
-    dv = str(data.get("value") or "").strip()
-    kv = str(kw_entry.get("value") or "").strip()
-    if not dv or not kv:
-        return False
-    if is_date:
-        try:
-            return not anchor._reads_disagree(kv, dv, "date")   # calendar-equal
-        except Exception:
-            return False
-    # Ref arm: compare the ALPHANUMERIC CORE (drop separators/spaces) so a formatting difference
-    # between the keyword read (ref-suffix stripped, keyword.py:729-730) and the inline read
-    # (clean_crop_segment) still corroborates — 'DN-23333' == 'DN 23333' == 'DN23333' — while
-    # 'DN-23333' != 'DN-99999'. _cmp_norm already lowercases/NFKC-folds; we then keep alnum only.
-    dvn = "".join(c for c in _cmp_norm(dv) if c.isalnum())
-    kvn = "".join(c for c in _cmp_norm(kv) if c.isalnum())
-    return bool(dvn) and dvn == kvn
+    return _values_normalise_equal(data.get("value"), kw_entry.get("value"), is_date)
 
 
 _NAME_RELOCATE_NOTE = ("Two different names were read here — the clean value beside the label and a "
@@ -3085,6 +3099,47 @@ class ExtractionEngine:
                         _cov_ok = anchor._pattern_coverage(data.get("value"), _cpats) >= 0.8
                 if data.get("authoritative") and data.get("value") and data.get("located", True) and _ocr_clean and _cov_ok:
                     results[key] = data
+                    continue
+                # ── KEYWORD-ANCHOR CORROBORATION LIFT (fork A; Oracle SIGN-OFF-W/CONDITIONS
+                # 2026-07-23; kill KEYWORD_ANCHOR_CORROB) ── The merge used to DISCARD agreement:
+                # an anchor-family read that normalises-equal to the keyword incumbent but loses
+                # the contest vanished, so the surviving read carried only its SOLO confidence —
+                # and the seeded/override keyword path is capped at 85 BY DESIGN (keyword.py:344,
+                # below the 88 critical floor, fail-toward-review), a one-way valve whose only
+                # escape (the Stage-4.5 support boost) is structurally unavailable at first
+                # contact (formats load at spawn — a new supplier's first batch can't corroborate
+                # itself) and lands 1 short at support 3-4 (+2 → 87). When TWO differently-located
+                # reads of a FILING-CRITICAL field agree, the E2 bar ("two independent reads
+                # agree") is met: lift the surviving keyword read to the SAME corroborated
+                # confidence E2 uses (>= the 88 floor). Value and method are KEPT (the keyword
+                # value is the cleaned/suffix-stripped one; method ripples through every
+                # method=='keyword' consumer); no note is added or removed (a noted incumbent
+                # never reaches here — the flagged gate owns it). Witnesses: located, un-noted
+                # anchor_inline / anchor_crop / anchor_crop_relocated only — anchor_registration
+                # is blind geometry (located-by-fiat, an independence fraud), the bare 'anchor'
+                # text-fallback is the SAME full-page line read the keyword pass makes (same
+                # caption, same line — no independence), and anchor_crop_crosscheck is a
+                # DISAGREEMENT event (E2 owns it). The peer already passed the Stage-2
+                # credibility gates above. Placement (Oracle C5): AFTER Tier-A — an AUTHORITATIVE
+                # agreeing peer wins outright above and never reaches this lift; if it sits <88
+                # itself the doc still holds, by design (the recovered/capped classes' escapes
+                # are born-digital exact-text + the support boost, anchor.py:1247-1275 — do NOT
+                # extend this lift to them, pinned). Lone/uncorroborated reads keep holding.
+                if (os.environ.get("KEYWORD_ANCHOR_CORROB", "1") != "0"
+                        and existing
+                        and existing.get("method") in ("keyword", "keyword_override")
+                        and int(existing.get("confidence") or 0) < 88
+                        and not existing.get("validation_note")
+                        and (key in date_field_keys or _is_ref_field(key))
+                        and data.get("method") in ("anchor_inline", "anchor_crop", "anchor_crop_relocated")
+                        and data.get("located", True)
+                        and not data.get("validation_note")
+                        and data.get("value")
+                        and _values_normalise_equal(data.get("value"), existing.get("value"),
+                                                    key in date_field_keys)):
+                    results[key] = {**existing,
+                                    "confidence": max(int(existing.get("confidence") or 0),
+                                                      _CROSSCHECK_CORROB_CONF)}
                     continue
                 # Precedence: a deliberately DRAWN source outranks an AUTO-LEARNED
                 # anchor. A hand-drawn Stage 0.5 mapping (_STAGE05_LOCATED_METHODS)

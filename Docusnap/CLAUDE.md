@@ -37,9 +37,13 @@ anchors are SINGLE-ROW h_norm 0.015-0.024 — the 2-row crop is READ-TIME +20px 
 Oracle-SIGNED: **`docs/designs/ANCHOR_LINE_SELECT_2026-07-23.md`** is the canonical spec (band +
 per-rung rescale, pins a-k incl. RED-first, slice-2 `ANCHOR_ROW_GRACE` builds DARK). Then:
 owner-requested **doc-TYPE list rearranging** (backend sort_order READY, UI only) + live-test
-drag-reorder/keywords · the **85-vs-88 permanent-hold class** (keyword reads cap at 85 <
-critical floor 88 → ref-via-keyword docs NEVER auto-file; corroboration-boost direction agreed,
-needs the gate; panel copy should name the field). P4 CORRECTED: Review already honours sort_order —
+drag-reorder/keywords · the **85-vs-88 hold class** (BUILT 2026-07-23 late session, Oracle fork-A:
+`KEYWORD_ANCHOR_CORROB` lift + the weak-critical-field panel copy. FRAMING CORRECTED per Oracle C8:
+the SEEDED/override keyword path caps at 85 by design — shipped patterns score 90 and clear the
+floor — and the class PARTIALLY SELF-HEALS: the Stage-4.5 support boost lifts 85→89 at ≥5 confirmed
+docs in scope; the truly-held residue is young scopes + same-batch first contact + constant-value
+fields, which the corroboration lift now covers when a second located read agrees. The recovered/
+slipfix caps are DELIBERATELY not lifted — anchor.py:1247-1275). P4 CORRECTED: Review already honours sort_order —
 only Search-preview extras (rowid) + the /v1 DTO remain. Corpus facts: 276 docs, ref accuracy 95.3%
 (the weak spot), several "regressions" are poisoned `N-99718`-style GT. **Base block ↓**
 
