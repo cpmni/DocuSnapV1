@@ -21,7 +21,29 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-07-22 NIGHT) — READ `HANDOVER_2026-07-22_NIGHT.md` FIRST
+## Current session state (2026-07-23) — READ `HANDOVER_2026-07-23.md` FIRST
+**2026-07-23 (Opus 4.8) — a RENDERER-ONLY Review first-run UX fix. Branch
+`feat/reprocess-throughput-autostraighten` PUSHED through `f4463cd` (origin in sync `0 0`); tree clean.**
+Fixed the "first-import user gets lost in Review" hole: the queue defaults to **grouped-by-sender**,
+all groups **collapsed on open**, and on a cold DB every doc's `supplier_name` is null → a single
+collapsed **"—"** bar over an EMPTY pane, nothing selected. **2 commits, both pushed:** `5e0fc80` —
+new PURE `decideInitialSelection()` (grouped view with a SINGLE sender pile auto-expands + opens doc 1;
+**2+ piles → land on nothing**, preserving the collapsed overview; flat unchanged) + made target-nav
+**XOR** auto-land (removes a pre-existing double-select race) + relabel the null pile via
+`groupTitle()` ("Your scanned documents" alone / "Sender not identified" among named piles; per-row →
+"Not yet identified"; **KEY stays `'—'`** so expand/nav unchanged; unidentified pile sunk in the SHARED
+sort but BELOW the `need>0` term so a flagged pile is never buried) + an empty-pane "Start reviewing →"
+CTA (`#preview-cta`, hidden via the single `_clearPreviewState` seam). `f4463cd` — Defer + File-All
+done-paths now `advanceAfterAction()` (land on the next doc in grouped view) instead of blanking the
+pane; the flat-only `selectDoc(queue[0])` pattern is now gone from **all three** sites. Advisors:
+**barry + eric + oracle (SIGN OFF WITH CONDITIONS C1–C4, all met)**. **No kill switch** (renderer-only;
+corpus harness is BLIND to renderer code). **Pinned:** `src/windows/review/test_review_initial_selection.js`
+(16/16 green under `node` — extracts+evals the pure fn, incl. the "2+ groups → select nothing" widening
+guard). Siblings green; `node --check` OK. **⚠ NOT DONE: the live cold-DB smoke** — reopen Review to
+load it; (ii)+(iii) checkable now on the live DB, (i) needs a cold/single-null-pile queue (fresh-install
+run or a seeded copy — do NOT wipe the live 187-confirmed DB). **Prior block ↓**
+
+## (prior) Session state (2026-07-22 NIGHT) — READ `HANDOVER_2026-07-22_NIGHT.md` FIRST
 **2026-07-22 NIGHT (Opus 4.8) — a LIVE CUSTOMER CRASH session. Branch
 `feat/reprocess-throughput-autostraighten` PUSHED through `dde0e39` (origin in sync `0 0`); tree clean.**
 Fixed a production crash **`'bool' object has no attribute 'get'`** on 2 PCs (surfaced BOTH as reprocess
