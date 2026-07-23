@@ -964,8 +964,11 @@ function renderDocTypesList() {
     row.className = 'doctype-row'
       + (dt.enabled ? '' : ' disabled')
       + (dt.id === selectedDocTypeId ? ' active' : '');
+    row.dataset.tid = dt.id;
+    row.draggable = true;
     const fieldCount = (dt.fields || []).length;
     row.innerHTML = `
+      <span class="doctype-handle" title="Drag to reorder this type" aria-hidden="true">&#10303;</span>
       <div class="doctype-name">
         <span class="doctype-nametext" title="${escHtml(dt.name)}">${escHtml(dt.name)}</span>
         <span class="${dt.built_in ? 'badge-builtin' : 'badge-custom'}">${dt.built_in ? 'built-in' : 'custom'}</span>
@@ -974,6 +977,77 @@ function renderDocTypesList() {
     `;
     row.addEventListener('click', () => selectDocType(dt.id));
     list.appendChild(row);
+  }
+  wireDocTypeListReorder(list);
+}
+
+// ── Drag-to-reorder the doc-type LIST (owner-requested; mirrors the field-row pattern) ──
+// Handle-armed native DnD, exactly the d91da4b gesture: the row is draggable but a drag
+// only STARTS from the ⠿ handle, so plain clicks still select. Live feedback moves the
+// SAME node via insertBefore; the drop commits ONCE via the SHARED
+// DocTypeEditor.planReorder math (gap-of-10 sort_order, minimal writes). Container
+// listeners are attached once (the container survives re-renders; rows don't).
+function wireDocTypeListReorder(list) {
+  if (list.dataset.dndWired) return;
+  list.dataset.dndWired = '1';
+  let pressedHandle = false;
+  let dragRow = null;
+  const rowAfter = (y) => {
+    const rows = Array.prototype.slice.call(list.querySelectorAll('.doctype-row')).filter(r => r !== dragRow);
+    for (const r of rows) {
+      const box = r.getBoundingClientRect();
+      if (y < box.top + box.height / 2) return r;
+    }
+    return null;
+  };
+  list.addEventListener('pointerdown', (e) => { pressedHandle = !!e.target.closest('.doctype-handle'); });
+  list.addEventListener('pointerup',   () => { pressedHandle = false; });
+  list.addEventListener('dragstart', (e) => {
+    const row = e.target.closest('.doctype-row');
+    if (!row || !pressedHandle) { e.preventDefault(); return; }
+    dragRow = row;
+    row.classList.add('dragging');
+    try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', row.dataset.tid || ''); } catch (_) {}
+  });
+  list.addEventListener('dragend', () => {
+    pressedHandle = false;
+    if (dragRow) dragRow.classList.remove('dragging');
+    dragRow = null;
+  });
+  list.addEventListener('dragover', (e) => {
+    if (!dragRow) return;
+    e.preventDefault();
+    try { e.dataTransfer.dropEffect = 'move'; } catch (_) {}
+    const after = rowAfter(e.clientY);
+    if (after == null) { if (dragRow !== list.lastElementChild) list.appendChild(dragRow); }
+    else if (after !== dragRow && after !== dragRow.nextSibling) list.insertBefore(dragRow, after);
+  });
+  list.addEventListener('drop', (e) => {
+    if (!dragRow) return;
+    e.preventDefault();
+    dragRow.classList.remove('dragging');
+    dragRow = null; pressedHandle = false;
+    const ids = Array.prototype.slice.call(list.querySelectorAll('.doctype-row')).map(r => Number(r.dataset.tid));
+    commitDocTypeOrder(ids);
+  });
+}
+
+// Persist a new type-list order: renumber sort_order via the SHARED planReorder math and
+// write only the changed rows (updateType whitelists sort_order; every fetch already
+// ORDERs BY it, so Review/teach/search pickers follow this order automatically).
+// Re-render FIRST so no click can act on a stale row mid-await; any write failure
+// re-reads from the DB so the list snaps back to server truth.
+async function commitDocTypeOrder(idsInNewOrder) {
+  const byId = new Map(allTypesWithFields.map(t => [t.id, t]));
+  const reordered = idsInNewOrder.map(id => byId.get(id)).filter(Boolean);
+  if (reordered.length !== allTypesWithFields.length) { renderDocTypesList(); return; }   // DOM/state mismatch → repaint, don't persist
+  const prevSort = new Map(allTypesWithFields.map(t => [t.id, t.sort_order]));
+  const writes = window.DocTypeEditor.planReorder(reordered, prevSort);
+  allTypesWithFields = reordered;
+  renderDocTypesList();
+  for (const w of writes) {
+    try { await api.updateDocumentType(w.id, { sort_order: w.sort_order }); }
+    catch (e) { await refreshDocTypesList(); return; }
   }
 }
 

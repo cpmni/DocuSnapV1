@@ -198,6 +198,12 @@
     .dt-list-header .lbl { font-size:16px; font-weight:600; color:var(--text); }
     .doctype-row { cursor:pointer; }
     .doctype-row.active { border-color:var(--accent); background:var(--accent-bg); }
+    /* Drag-to-reorder handle on each type row — same ⠿ affordance as the field rows in
+       the type editor (a drag only starts from the handle, so click-to-select is safe). */
+    .doctype-row .doctype-handle { flex:0 0 auto; cursor:grab; color:var(--muted);
+      font-size:15px; line-height:1; user-select:none; padding:0 2px; }
+    .doctype-row .doctype-handle:active { cursor:grabbing; }
+    .doctype-row.dragging { opacity:.45; }
     .doctype-count { font-size:10px; color:var(--muted); font-family:var(--mono); }
     .dt-detail-header { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:18px; }
     .dt-detail-header h3 { margin:0; font-size:16px; }

@@ -84,5 +84,21 @@ check('edit-mode applyOrder re-renders BEFORE persisting (no stale-index await w
       /render\(\);\s*\/\/ re-sync indices before any await/.test(src));
 check('applyOrder persists via updateField sort_order', /api\.updateField\(w\.id, \{ sort_order: w\.sort_order \}\)/.test(src));
 
+// ── The Settings doc-type LIST reorder shares the SAME commit math (eric's "one shared
+//    commit fn") — never a second renumbering implementation that can drift. ──
+console.log('\nWiring (settings type-list reorder):');
+const settingsSrc = fs.readFileSync(path.join(__dirname, '..', 'settings', 'renderer.js'), 'utf8');
+check('planReorder is exported on window.DocTypeEditor', /window\.DocTypeEditor = \{ create, planReorder \}/.test(src));
+check('type-list commit uses the SHARED DocTypeEditor.planReorder',
+      /window\.DocTypeEditor\.planReorder\(reordered, prevSort\)/.test(settingsSrc));
+check('type-list drag is handle-gated too (click-to-select preserved)',
+      /doctype-handle/.test(settingsSrc)
+      && /if \(!row \|\| !pressedHandle\) \{ e\.preventDefault\(\); return; \}/.test(settingsSrc));
+check('type-list persists via updateDocumentType sort_order',
+      /api\.updateDocumentType\(w\.id, \{ sort_order: w\.sort_order \}\)/.test(settingsSrc));
+check('type-list re-renders BEFORE persisting + snaps back to server truth on failure',
+      /renderDocTypesList\(\);\s*for \(const w of writes\)/.test(settingsSrc)
+      && /catch \(e\) \{ await refreshDocTypesList\(\); return; \}/.test(settingsSrc));
+
 console.log(fails ? `\n${fails} FAILED` : '\nAll reorder checks passed');
 process.exit(fails ? 1 : 0);
