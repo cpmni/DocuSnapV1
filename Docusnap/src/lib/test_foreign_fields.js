@@ -136,6 +136,38 @@ function main() {
   check('reviewService.confirm calls dropForeignExtractions', rsDropIdx >= 0);
   check('drop runs AFTER filing.commitDocument (post-file, post-claim)', commitIdx >= 0 && rsDropIdx > commitIdx);
 
+  section('6. PLANT-SIDE FILTER (C7, 2026-07-23) — the learning input is filtered by the SAME predicate');
+  {
+    const { filterLearningInput } = require('./foreignFields');
+    const dtInfo = { ref_field_key: 'delivery_number', date_field_key: 'delivery_date',
+                     fields: [{ key: 'supplier_name' }, { key: 'delivery_number' }, { key: 'delivery_date' }, { key: 'customer_name' }] };
+    const av = { supplier_name: 'Acme', delivery_date: '01-02-2026', invoice_date: '01-02-2026', po_date: '01-02-2026' };
+    const co = { invoice_date: { original_value: 'x', corrected_value: '01-02-2026' },
+                 delivery_number: { original_value: 'y', corrected_value: 'DN-1' } };
+    const r = filterLearningInput(av, co, dtInfo);
+    check('foreign date keys removed from allValues (the same-value-in-four-date-fields plant)',
+      !('invoice_date' in r.allValues) && !('po_date' in r.allValues) && r.allValues.delivery_date === '01-02-2026');
+    check('identity + own keys kept', r.allValues.supplier_name === 'Acme');
+    check('foreign correction filtered, own correction kept',
+      !('invoice_date' in r.corrections) && r.corrections.delivery_number.corrected_value === 'DN-1');
+    check('pure — inputs not mutated', 'invoice_date' in av && 'invoice_date' in co);
+    const off = { ...process.env };
+    process.env.FOREIGN_FIELD_DROP = '0';
+    const r2 = filterLearningInput(av, co, dtInfo);
+    process.env.FOREIGN_FIELD_DROP = off.FOREIGN_FIELD_DROP || '';
+    if (!off.FOREIGN_FIELD_DROP) delete process.env.FOREIGN_FIELD_DROP;
+    check('kill switch OFF ⇒ passthrough (byte-identical legacy)', r2.allValues === av && r2.corrections === co);
+    check('fail-open: no field metadata ⇒ passthrough',
+      filterLearningInput(av, co, { fields: [] }).allValues === av);
+    const rs2 = fs.readFileSync(path.join(__dirname, '..', 'services', 'reviewService.js'), 'utf8');
+    const plantIdx = rs2.indexOf('learning.saveCorrections');
+    const filtIdx = rs2.indexOf('foreignFields.filterLearningInput');
+    check('reviewService filters the learning input BEFORE the plant (the un-plant retract can then always mirror it)',
+      filtIdx >= 0 && plantIdx > filtIdx);
+    check('captureRouteContext still receives the ORIGINAL corrections (routing unaffected)',
+      /captureRouteContext\(db, document_id, corrections \|\| \{\}\)/.test(rs2));
+  }
+
   console.log('\n' + (fails === 0 ? 'ALL PASS' : `${fails} FAILED`));
   process.exit(fails ? 1 : 0);
 }

@@ -59,4 +59,26 @@ function dropForeignExtractions(db, documentId, dtInfo) {
   return n;
 }
 
-module.exports = { foreignFieldDropEnabled, ownFieldPredicate, dropForeignExtractions };
+// Filter the CONFIRM LEARNING INPUT (allValues + corrections) by the same keep-predicate — the
+// PLANT-side twin of dropForeignExtractions (Oracle C7 of the un-plant sign-off, 2026-07-23).
+// dropForeignExtractions runs AFTER learning.saveCorrections in reviewService.confirm, so a
+// bulk / /v1 payload carrying foreign keys planted hints/corrections the row-drop then orphaned
+// — residue the send-back retract can never see (no extraction row remains to mirror). Filtering
+// the LEARNING input closes the plant; the row-drop's load-bearing ordering (after the filing /
+// auto-file decision) is untouched because learning input feeds no gate. Same switch, same
+// fail-open (no field metadata ⇒ passthrough); pure — returns new objects, never mutates.
+function filterLearningInput(allValues, corrections, dtInfo) {
+  if (!foreignFieldDropEnabled()) return { allValues, corrections };
+  const fields = (dtInfo && Array.isArray(dtInfo.fields)) ? dtInfo.fields : [];
+  if (fields.length === 0) return { allValues, corrections };
+  const keep = ownFieldPredicate(dtInfo);
+  const filt = (o) => {
+    if (!o || typeof o !== 'object') return o;
+    const out = {};
+    for (const [k, v] of Object.entries(o)) { if (keep(k)) out[k] = v; }
+    return out;
+  };
+  return { allValues: filt(allValues), corrections: filt(corrections) };
+}
+
+module.exports = { foreignFieldDropEnabled, ownFieldPredicate, dropForeignExtractions, filterLearningInput };

@@ -192,7 +192,13 @@ function createReviewService(deps = {}) {
       if (fieldSummary) logger.log(`  Values: ${fieldSummary}`);
     }
 
-    learning.saveCorrections(db, document_id, corrections || {}, supplier_name, document_type_slug, allValues, taught_fields || []);
+    // C7 (2026-07-23, the un-plant's plant-side twin): the desktop panel is fieldDefs-driven, but
+    // this service is SHARED (bulk File-All + /v1) and the foreign-row drop below runs AFTER this
+    // plant — so a payload carrying foreign keys could learn hints the later row-drop orphans.
+    // Filter the LEARNING input through the same keep-predicate + switch (FOREIGN_FIELD_DROP);
+    // the original `corrections` object still feeds captureRouteContext below, unfiltered.
+    const _learn = foreignFields.filterLearningInput(allValues, corrections || {}, dtInfo);
+    learning.saveCorrections(db, document_id, _learn.corrections || {}, supplier_name, document_type_slug, _learn.allValues, taught_fields || []);
 
     // Record the stored location. First-confirm already flipped status/confirmed_at/confirmed_by
     // in the claim; a re-file confirms now (and records who re-filed).
