@@ -77,14 +77,46 @@ IDENTITY_RESCUE_ENABLED = True
 LATE_ANCHOR_RESCUE_ENABLED = True
 _LATE_RESCUE_CAP = 85
 
-# Stage-4.5 GATE-FAILURE RE-READ kill switch (2026-07-11, ships DARK — default OFF; slice 3
-# flips it after the corpus A/B). When a structured value is WITHHELD on format grounds
-# (value=None), take ONE bounded second look: locate the garble on the page, tight-crop re-read
-# via the crop ladder, and adopt ONLY a read that passes the exact gate the original failed
-# (ocr.targeted_reread.is_adoptable) — review-bound, never a silent value. See _maybe_gate_reread
+# Stage-4.5 GATE-FAILURE RE-READ kill switch (2026-07-11; DEFAULT ON — the old "ships DARK"
+# note was stale). When a structured value is WITHHELD on format grounds (value=None), take ONE
+# bounded second look: locate the garble on the page, tight-crop re-read via the crop ladder, and
+# adopt ONLY a read that passes the exact gate the original failed (ocr.targeted_reread.is_adoptable).
+# An adopted read is REVIEW-BOUND (cap 69 + note) — EXCEPT the NORMALISATION-ONLY case (Oracle-signed
+# 2026-07-23, GATE_REREAD_CLEAN_ACCEPT below): when the re-read agrees with the original on every
+# alphanumeric character (and, for dates, on the CALENDAR date), the "correction" is spacing/
+# separator/case only — two independent reads agreeing on the content — so it files clean, un-noted.
+# See _maybe_gate_reread + _reread_is_normalisation_only
 # + docs/designs/REREAD_ESCALATION_DESIGN_2026-07-11.md.
 GATE_REREAD_ENABLED = os.environ.get('GATE_REREAD', '1') != '0'   # default ON; GATE_REREAD=0 disables
 _REREAD_CAP = 69
+# =0: every adopted re-read is review-bound again (the pre-2026-07-23 posture) — byte-identical legacy.
+GATE_REREAD_CLEAN_ACCEPT = os.environ.get('GATE_REREAD_CLEAN_ACCEPT', '1') != '0'
+
+
+def _reread_is_normalisation_only(garble, adopted, val_type) -> bool:
+    """True when a gate-reread's adopted value differs from the original garble ONLY by
+    normalisation — spacing/separators/case — i.e. the two reads AGREE on every alphanumeric
+    character (the 0-edit subset of targeted_reread's kinship band). For DATE fields the core
+    match is NOT sufficient (separator POSITION is semantic: '1/12/2026' vs '11/2/2026' share
+    the core '1122026' but are different days — Oracle C1), so dates additionally require BOTH
+    sides to PARSE and be CALENDAR-EQUAL; an unparseable side ⇒ not clean. A non-date field
+    where both sides nevertheless parse as dates gets the same calendar bar. Any error ⇒ False
+    (fail toward the review-bound path). Pure — pinned by test_gate_reread_clean.py."""
+    try:
+        from ocr.targeted_reread import _alnum
+        g, a = str(garble or ''), str(adopted or '')
+        ga, aa = _alnum(g), _alnum(a)
+        if not ga or ga != aa:
+            return False
+        gp = validator.parse_date(g)
+        ap = validator.parse_date(a)
+        if val_type == 'date':
+            return gp is not None and ap is not None and gp.date() == ap.date()
+        if gp is not None and ap is not None:
+            return gp.date() == ap.date()   # date-shaped content on any field: same calendar bar
+        return True
+    except Exception:
+        return False
 
 # c2 TAUGHT-FIELD OWNERSHIP GUARD kill switch (2026-07-11, DIRECTION_SUPREMACY): a NON-identity
 # field whose FINAL read is a plain 'keyword' match, while the user AUTHORITATIVELY taught that
@@ -2223,19 +2255,29 @@ class ExtractionEngine:
 
     def _maybe_gate_reread(self, garble, data, fmt_entry, val_type, label,
                            page_images, page_provenance, cache):
-        """Stage-4.5 gate-failure re-read (default OFF: GATE_REREAD_ENABLED). A structured value
+        """Stage-4.5 gate-failure re-read (DEFAULT ON: GATE_REREAD_ENABLED). A structured value
         was WITHHELD because its OCR read fails the field's learned format. Take ONE bounded
         second look at the page: relocate the garble, tight-crop re-read via the anchor crop
         ladder, and adopt ONLY a read that PASSES the exact gate the original failed AND is kin to
-        the garble (ocr.targeted_reread). Returns the adopted, REVIEW-BOUND field dict, or None
-        (caller keeps the byte-identical withhold). Never a silent value:
+        the garble (ocr.targeted_reread). Returns the adopted field dict, or None (caller keeps
+        the byte-identical withhold). A real-character repair (1-2 edits on the alnum core) is
+        REVIEW-BOUND — never a silent value:
           - conf capped at _REREAD_CAP (69) -> below the 70 review threshold and the 88 critical
             auto-file floor;
           - corrected_to + the note independently block auto-file at every trust floor;
           - the caller flags it for review (format_anomaly_flagged / n_flagged).
-        Abstains (returns None) on: the switch OFF, no page images, a born-digital located page
-        (page_provenance), an ambiguous locate, or any read failing is_adoptable. Frame invariant:
-        image_to_data and the crop both run on the SAME raw page image instance."""
+        EXEMPT from that rule (Oracle-signed 2026-07-23, kill GATE_REREAD_CLEAN_ACCEPT): a
+        NORMALISATION-ONLY recovery — the re-read agrees with the original on EVERY alphanumeric
+        character (0-edit kinship; calendar-equal for dates) and the result passes the learned
+        format — is two independent reads (full-page pass vs crop ladder) agreeing on the content,
+        so it returns CLEAN: no cap, no was_corrected/note, marked 'reread_clean' (the caller
+        skips its flag bump). Do NOT "restore" the flag on this branch as a supposed regression
+        fix — the review dressing on a whitespace-only change was the bug (a permanent
+        looks-like-no-correction hold; see the 2026-07-23 handover). Any PRE-EXISTING note/
+        corrected_to on the field survives via the **data spread — an unrelated flag stays
+        review-bound. Abstains (returns None) on: the switch OFF, no page images, a born-digital
+        located page (page_provenance), an ambiguous locate, or any read failing is_adoptable.
+        Frame invariant: image_to_data and the crop both run on the SAME raw page image instance."""
         if not GATE_REREAD_ENABLED or not page_images or not garble:
             return None
         try:
@@ -2274,6 +2316,19 @@ class ExtractionEngine:
             return None
         if not adopted:
             return None
+        if GATE_REREAD_CLEAN_ACCEPT and _reread_is_normalisation_only(garble, adopted, val_type):
+            # Normalisation-only (spacing/separator/case; calendar-equal for dates): the two reads
+            # agree on the content — a clean read, not a correction. Original confidence stands
+            # (nothing inflated — the 88 floor/thresholds apply normally); no cap/note/was_corrected;
+            # a pre-existing note from another stage survives the spread (fail-toward-review).
+            self.log(f"  Stage 4.5: re-read '{garble}' -> '{adopted}' (normalisation-only — accepted clean)")
+            return {
+                **data,
+                'value':         adopted,
+                'display_value': adopted,
+                'reread':        True,
+                'reread_clean':  True,
+            }
         self.log(f"  Stage 4.5: re-read '{garble}' -> '{adopted}' (review-bound)")
         return {
             **data,
@@ -3894,12 +3949,21 @@ class ExtractionEngine:
                         # for manual entry rather than populate an inconsistent
                         # value. A genuinely new-but-correct shape is accepted once
                         # it has been confirmed enough times (count-gated shapes).
-                        # GATE-FAILURE RE-READ (default OFF): before withholding, take ONE bounded
+                        # GATE-FAILURE RE-READ (default ON): before withholding, take ONE bounded
                         # second look at the page for a clean, kin re-read (see _maybe_gate_reread).
                         # Frame invariant: it OCRs + crops the SAME raw page_images the engine holds.
                         _reread = self._maybe_gate_reread(
                             str(val), data, fmt_entry, field_types.get(key), field_labels.get(key),
                             page_images, page_provenance, _reread_cache)
+                        if _reread is not None and _reread.pop('reread_clean', False):
+                            # Normalisation-only recovery (spacing/separator/case; calendar-equal
+                            # for dates): the crop re-read agreed with the original on every
+                            # alphanumeric character and the result passes the learned format —
+                            # a clean read, not an anomaly. No n_flagged/format_anomaly_flagged
+                            # bump (an unrelated note on ANOTHER field still holds the doc, and a
+                            # pre-existing note on THIS field survived the spread → trust gate).
+                            results[key] = _reread
+                            continue
                         results[key] = _reread if _reread is not None else {
                             **data,
                             'value':           None,
