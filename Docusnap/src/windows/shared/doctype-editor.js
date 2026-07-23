@@ -78,6 +78,32 @@
     : (/total|amount|price|cost|sum|net|gross|vat|tax/i.test(label) ? 'currency'
     : (/\b(ref|reference|number|no|invoice|order|po|account)\b/i.test(label) ? 'reference' : 'text'));
 
+  // First field row whose vertical midpoint is BELOW the pointer (the drop lands before it);
+  // null → drop at the end. Excludes the row being dragged. Pure DOM read (no re-render).
+  function rowAfterPointer(container, y, exclude) {
+    const rows = Array.prototype.slice.call(container.querySelectorAll('.dte-row')).filter(r => r !== exclude);
+    for (const r of rows) {
+      const box = r.getBoundingClientRect();
+      if (y < box.top + box.height / 2) return r;
+    }
+    return null;
+  }
+
+  // Pure: assign fresh gap-of-10 sort_orders to fields in their NEW order (sort_order is an
+  // INTEGER column — whole-number slots, never fractional midpoints), mutate each field's
+  // sort_order, and return ONLY the rows whose value CHANGED so edit-mode persists the minimum.
+  // Extracted + pin-tested (test_doctype_reorder.js).
+  function planReorder(reorderedFields, prevSortById) {
+    const writes = [];
+    reorderedFields.forEach((f, idx) => {
+      const next = (idx + 1) * 10;
+      f.sort_order = next;
+      if (prevSortById.get(f.id) !== next) writes.push({ id: f.id, sort_order: next });
+    });
+    return writes;
+  }
+  /* __PIN_END:planReorder__ */
+
   function injectStyles() {
     if (document.getElementById('dte-styles')) return;
     const st = document.createElement('style');
@@ -92,6 +118,13 @@
         padding:8px 12px; border:1px solid var(--border); border-radius:8px; background:var(--surface);
       }
       .dte-row.locked { background:var(--surface2); }
+      /* Drag-to-reorder handle. The row is draggable but a drag only starts from this handle
+         (gated in dragstart), so the Type select / toggles keep working. */
+      .dte-row .dte-handle { flex:0 0 auto; align-self:center; cursor:grab; color:var(--muted);
+        font-size:15px; line-height:1; user-select:none; padding:0 2px; }
+      .dte-row .dte-handle:active { cursor:grabbing; }
+      .dte-row.dragging { opacity:.45; }
+      .dte-row.dragging .dte-handle { cursor:grabbing; }
       /* Name + key share ONE baseline so the label doesn't ride high above its key,
          and the whole identity block centres on the same line as the right controls.
          A min-width keeps the name legible and lets the TYPE/ENABLED controls wrap to a
@@ -191,7 +224,8 @@
       const key      = f.key || slugify(f.label);
       const enabled  = f.enabled !== 0;
       return `
-        <div class="dte-row${locked ? ' locked' : ''}" data-i="${i}"${editing ? ` data-fid="${f.id}"` : ''}>
+        <div class="dte-row${locked ? ' locked' : ''}" data-i="${i}"${editing ? ` data-fid="${f.id}"` : ''} draggable="true">
+          <span class="dte-handle" title="Drag to reorder this field" aria-hidden="true">&#10303;</span>
           ${locked ? '<span class="lock" title="Required field - cannot be removed or retyped">&#128274;</span>' : ''}
           <span class="idn"><span class="nm">${esc(f.label)}</span>${editing ? `<span class="key">${esc(key)}</span>` : ''}</span>
           <span class="spacer"></span>
@@ -293,6 +327,31 @@
         if (fresh) { type = fresh; aliases = Array.isArray(type.title_aliases) ? type.title_aliases.slice() : []; }
       } catch (e) { /* keep last-known state */ }
       render();
+      if (opts.onChange) opts.onChange();
+    }
+
+    // Apply a new field order. `perm` is the rows' ORIGINAL indices in their NEW visual order.
+    // create: permute the draft array + re-render (commit assigns sort_order by array index).
+    // edit: renumber sort_order (gap of 10), RE-RENDER FIRST to re-sync the per-row data-i/data-fid
+    // bindings, THEN persist only the changed rows — so no control can act on a stale index mid-await.
+    async function applyOrder(perm) {
+      if (!perm || !perm.length) return;
+      if (mode === 'create') {
+        fields = perm.map(i => fields[i]).filter(Boolean);
+        render();
+        return;
+      }
+      const cur = type.fields || [];
+      const prevSort = new Map(cur.map(f => [f.id, f.sort_order]));
+      const reordered = perm.map(i => cur[i]).filter(Boolean);
+      if (reordered.length !== cur.length) { render(); return; }   // guard: DOM/state mismatch → repaint, don't persist
+      const writes = planReorder(reordered, prevSort);   // mutates each f.sort_order; returns changed rows
+      type.fields = reordered;
+      render();                                           // re-sync indices before any await
+      for (const w of writes) {
+        try { await api.updateField(w.id, { sort_order: w.sort_order }); }
+        catch (e) { showErr('Could not save the new order: ' + e.message); await reload(); return; }
+      }
       if (opts.onChange) opts.onChange();
     }
 
@@ -409,6 +468,50 @@
           await persistAliases(before);
         });
       });
+
+      // ── Drag-to-reorder fields (handle-armed native DnD) ─────────────────────
+      // The row is draggable, but a drag only STARTS from the ⠿ handle: we gate dragstart on
+      // whether the pointer press began on the handle, so a click on the Type <select>/toggles
+      // never starts a drag. Live feedback moves the SAME DOM node via insertBefore (its wired
+      // listeners survive, no re-render mid-gesture); on drop we read the final order and commit
+      // once via applyOrder (which re-renders to re-sync the row indices). All listeners are
+      // host-scoped, so the next render()'s innerHTML replace GCs them — no cross-render leak.
+      const fieldsWrap = host.querySelector('.dte-fields');
+      if (fieldsWrap) {
+        let pressedHandle = false;
+        let dragRow = null;
+        fieldsWrap.addEventListener('pointerdown', (e) => { pressedHandle = !!e.target.closest('.dte-handle'); });
+        fieldsWrap.addEventListener('pointerup',   () => { pressedHandle = false; });
+        fieldsWrap.addEventListener('dragstart', (e) => {
+          const row = e.target.closest('.dte-row');
+          if (!row || !pressedHandle) { e.preventDefault(); return; }   // only a handle-initiated gesture drags
+          dragRow = row;
+          row.classList.add('dragging');
+          try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', row.dataset.i || ''); } catch (_) {}
+        });
+        fieldsWrap.addEventListener('dragend', () => {
+          pressedHandle = false;
+          if (dragRow) dragRow.classList.remove('dragging');
+          dragRow = null;
+        });
+        fieldsWrap.addEventListener('dragover', (e) => {
+          if (!dragRow) return;
+          e.preventDefault();
+          try { e.dataTransfer.dropEffect = 'move'; } catch (_) {}
+          const after = rowAfterPointer(fieldsWrap, e.clientY, dragRow);
+          if (after == null) { if (dragRow !== fieldsWrap.lastElementChild) fieldsWrap.appendChild(dragRow); }
+          else if (after !== dragRow && after !== dragRow.nextSibling) fieldsWrap.insertBefore(dragRow, after);
+        });
+        fieldsWrap.addEventListener('drop', (e) => {
+          if (!dragRow) return;
+          e.preventDefault();
+          const perm = Array.prototype.slice.call(fieldsWrap.querySelectorAll('.dte-row')).map(r => Number(r.dataset.i));
+          dragRow.classList.remove('dragging');
+          dragRow = null; pressedHandle = false;
+          if (perm.some((v, idx) => v !== idx)) applyOrder(perm);
+          else render();   // no net change → repaint to clear any drag artefacts
+        });
+      }
     }
 
     function getDraft() {
