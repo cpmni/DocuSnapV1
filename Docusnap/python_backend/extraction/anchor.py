@@ -2323,7 +2323,12 @@ def clean_crop_segment(text: str | None, val_type: str | None) -> str | None:
     template-mapping crop (template_mapper._clean_value) so a drawn target zone
     is cleaned IDENTICALLY to a learned-anchor crop — one rule, system-wide.
 
-    Rules, in order, on the first non-empty line:
+    Rules, in order, on the FIRST non-empty line. NOTE (2026-07-23): the padded crop
+    structurally holds ~1.5-2.2 text rows, so "first line wins" commits/rejects on
+    whichever row Tesseract emits first — when ANCHOR_LINE_SELECT is active the crop
+    LADDER supersedes this take per rung with a band-gated per-line chooser
+    (select_row_line); this function remains the fall-through and the rule for every
+    other caller.
       * Split off Tesseract column-gap noise: 4+ spaces (every field type).
       * For free-text name/address fields (text/multiline_text) ONLY, trim a
         TRAILING postcode/year boundary via _trim_trailing_digit_boundary —
@@ -2414,22 +2419,21 @@ def _light_prep(image):
     return img
 
 
-def _read(img, psm):
-    """One image_to_data pass → (text, mean_word_conf, min_word_conf).
-    Reconstructs lines from word boxes (block/par/line) so clean_crop_segment
-    still sees real line breaks, and averages positive word confidences as a
-    deterministic rung tie-breaker. Also returns the MINIMUM confidence over the
-    SUBSTANTIAL words (alphabetic, length ≥ 3) — a discriminator the mean dilutes:
-    a name like "Aaiumant Care Homes Ltd Galaorm" has three clean words masking
-    two garbled ones, so its mean stays moderate while its min (the garbled word)
-    drops. Used to gate the authoritative-anchor outright win. min == mean when no
-    substantial word is present. Same OCR cost as image_to_string on the same image."""
+def _read_lines_full(img, psm):
+    """One image_to_data pass → (text, mean_word_conf, min_word_conf, lines).
+    The single implementation behind _read — SAME Tesseract call, SAME first three
+    outputs, byte-identical — that ALSO keeps the per-word GEOMETRY the dict already
+    carries (top/height/line_num, previously received and discarded): `lines` is a
+    list of per-visual-line dicts {text, top, height, mean_conf, min_conf} in IMAGE
+    px, for the ANCHOR_LINE_SELECT per-line chooser. Zero extra OCR cost. Per-line
+    min_conf mirrors the whole-read rule: min over that line's SUBSTANTIAL words
+    (alphabetic, length ≥ 3), else the line's mean."""
     import pytesseract
     from pytesseract import Output
     try:
         d = pytesseract.image_to_data(img, config=f"--oem 3 --psm {psm}", output_type=Output.DICT)
     except Exception:
-        return "", 0.0, 0.0
+        return "", 0.0, 0.0, []
     lines, confs, word_confs = {}, [], []
     for i in range(len(d.get("text", []))):
         t = (d["text"][i] or "").strip()
@@ -2439,15 +2443,52 @@ def _read(img, psm):
             c = -1.0
         if not t or c < 0:
             continue
-        lines.setdefault((d["block_num"][i], d["par_num"][i], d["line_num"][i]), []).append(t)
+        key = (d["block_num"][i], d["par_num"][i], d["line_num"][i])
+        g = lines.get(key)
+        if g is None:
+            g = lines[key] = {"w": [], "c": [], "sc": [], "y0": None, "y1": None}
+        g["w"].append(t)
+        g["c"].append(c)
+        try:
+            T, H = int(d["top"][i]), int(d["height"][i])
+            g["y0"] = T if g["y0"] is None else min(g["y0"], T)
+            g["y1"] = (T + H) if g["y1"] is None else max(g["y1"], T + H)
+        except Exception:
+            pass   # geometry-less stub rows: line still carries text/confs
         confs.append(c)
         # A "substantial" word for the min — skip 1-2 char tokens and punctuation
         # ("-", ":", "Co") whose OCR confidence is noisy and not name-bearing.
         if len(t) >= 3 and sum(ch.isalpha() for ch in t) >= 3:
             word_confs.append(c)
-    text = "\n".join(" ".join(lines[k]) for k in sorted(lines.keys())).strip()
+            g["sc"].append(c)
+    text = "\n".join(" ".join(lines[k]["w"]) for k in sorted(lines.keys())).strip()
     mean = (sum(confs) / len(confs)) if confs else 0.0
     min_conf = min(word_confs) if word_confs else mean
+    out = []
+    for k in sorted(lines.keys()):
+        g = lines[k]
+        lmean = sum(g["c"]) / len(g["c"])
+        out.append({"text": " ".join(g["w"]),
+                    "top": g["y0"] if g["y0"] is not None else 0,
+                    "height": max(0, (g["y1"] or 0) - (g["y0"] or 0)),
+                    "mean_conf": lmean,
+                    "min_conf": min(g["sc"]) if g["sc"] else lmean})
+    return text, mean, min_conf, out
+
+
+def _read(img, psm):
+    """One image_to_data pass → (text, mean_word_conf, min_word_conf).
+    Thin wrapper over _read_lines_full (the single implementation) — kept so the
+    non-ladder callers (_noise_smooth_retry, the text_enhance escalation) keep their
+    3-tuple contract. Reconstructs lines from word boxes (block/par/line) so
+    clean_crop_segment still sees real line breaks, and averages positive word
+    confidences as a deterministic rung tie-breaker. Also returns the MINIMUM
+    confidence over the SUBSTANTIAL words (alphabetic, length ≥ 3) — a discriminator
+    the mean dilutes: a name like "Aaiumant Care Homes Ltd Galaorm" has three clean
+    words masking two garbled ones, so its mean stays moderate while its min (the
+    garbled word) drops. Used to gate the authoritative-anchor outright win. min ==
+    mean when no substantial word is present. Same OCR cost as image_to_string."""
+    text, mean, min_conf, _lines = _read_lines_full(img, psm)
     return text, mean, min_conf
 
 
@@ -2533,8 +2574,95 @@ def _noise_smooth_retry(crop, val_type, base_min, page=None, box=None, top_limit
     return None
 
 
+# ── ANCHOR_LINE_SELECT — per-line candidate selection for the anchored crop read ──
+# (Oracle-signed design 2026-07-23: docs/designs/ANCHOR_LINE_SELECT_2026-07-23.md.)
+# The crop pad is a FIXED +20px half-height, so a single-row taught box structurally
+# crops ~1.5-2.2 text rows and skew slides the adjacent row in half-sliced; the
+# first-line take then commits/rejects on the WRONG row's garbage. The chooser reads
+# ALL the rung's lines (already in the same image_to_data pass) and commits the ONE
+# line inside the taught row's band that passes the rung's own gates — never
+# nearest-wins, never a second-best. Scope: structured types only.
+#
+# THE LADDER NOTE (Oracle's closing condition — do not remove lower rungs):
+# 2026-07-23's four rulings form a deliberate ladder: LINE_SELECT fixes the READ ·
+# the crosscheck+E2 (CROSSCHECK_KEYWORD_CLEAR) arbitrates a DISAGREEMENT with a real
+# witness · clean-accept (GATE_REREAD_CLEAN_ACCEPT) stops flagging a NON-correction ·
+# the review flag survives wherever no second independent read exists. Each layer's
+# guard assumes the one below still fires — a future "simplification" that removes
+# the crosscheck because "LINE_SELECT made it quiet" reopens the City Office silent
+# digit-mangle class.
+
+_LINE_SELECT_TYPES = ("date", "alphanumeric", "job_reference", "currency_code")
+# Free-text (incl. None) is EXCLUDED (its preview fast path + loose gates are a
+# different regime); currency is EXCLUDED (its all-rows-regex-valid stacked-totals
+# geometry is handled by the label lock / _skip_rigid, and every totals row would
+# qualify here — the chooser could only ever abstain or pick a wrong-but-valid row).
+
+
+def _row_band(cy_px: float, box_h_px: float, y1_px: float) -> tuple:
+    """The TAUGHT row's vertical band in CROP px: the un-padded taught box height
+    centred on the stored value centre, expressed relative to the crop's FINAL top
+    edge (after any grace expansion + caption clamp). Pure arithmetic — computed
+    ONCE per crop in _crop_and_ocr from its own args and rescaled PER RUNG by the
+    prepped image's height ratio (the prep upscales ×2-3; a once-per-crop scale is
+    the frame bug)."""
+    top = (cy_px - box_h_px / 2.0) - y1_px
+    bottom = (cy_px + box_h_px / 2.0) - y1_px
+    return (top, bottom)
+
+
+def select_row_line(lines, band, val_type, qualify_fn, edge_exclude=None):
+    """Pick THE line inside the taught row band, or None (→ the caller falls
+    through to the exact status-quo whole-text path for that rung).
+
+    lines: _read_lines_full per-line dicts, in the SAME px frame as `band` (the
+    caller rescales the band to the rung image). Selection, top-sorted:
+      1. _clean_one_line (the same per-line cleaning the first-line take used);
+      2. band overlap ≥ 50% of min(line_height, band_height) — the narrower-box
+         convention (_x_overlap's vertical twin);
+      3. the rung's existing qualify_fn (verify_fn = credibility + learned-format
+         — NO new predicates);
+      4. `date` additionally: validator.parse_date non-None (a shape-valid
+         non-date like "99/99/2026" must NOT qualify).
+    EXACTLY ONE in-band qualifier → (line, cleaned_seg). Zero or ≥2 → None —
+    NEVER nearest-wins (an ambiguous crop is a review problem, not a coin toss).
+    An out-of-band qualifier alone is also None: never commit another field's row.
+
+    edge_exclude (slice 2, ANCHOR_ROW_GRACE only): (low, high) px bounds — a line
+    whose bbox touches the crop top/bottom edge is half-sliced by construction, so
+    it is INELIGIBLE (row-integrity by disqualification). None ⇒ no exclusion."""
+    if not lines or not band or qualify_fn is None:
+        return None
+    band_top, band_bottom = float(band[0]), float(band[1])
+    band_h = max(1.0, band_bottom - band_top)
+    chosen = None
+    for ln in sorted(lines, key=lambda l: l.get("top", 0)):
+        top = float(ln.get("top", 0))
+        height = max(1.0, float(ln.get("height", 0)))
+        if edge_exclude is not None:
+            lo, hi = float(edge_exclude[0]), float(edge_exclude[1])
+            if top <= lo or (top + height) >= hi:
+                continue   # half-sliced edge line: ineligible (slice 2)
+        overlap = max(0.0, min(top + height, band_bottom) - max(top, band_top))
+        if overlap / min(height, band_h) < 0.5:
+            continue
+        seg = _clean_one_line(ln.get("text"), val_type)
+        if not seg:
+            continue
+        if not qualify_fn(seg):
+            continue
+        if val_type == "date":
+            from extraction import validator   # lazy: avoid a module-load cycle
+            if validator.parse_date(seg) is None:
+                continue
+        if chosen is not None:
+            return None   # ≥2 in-band qualifiers → ambiguous → status quo (pin a)
+        chosen = (ln, seg)
+    return chosen
+
+
 def _ocr_crop_laddered(crop, val_type=None, verify_fn=None, meta=None, page=None, box=None,
-                       top_limit_norm=None):
+                       top_limit_norm=None, row_band=None, edge_ineligible=False):
     """Light-first OCR ladder on an ALREADY-CROPPED image -> cleaned best-rung text
     (or None). SHARED by anchor._crop_and_ocr (centre+dims crop) and
     template_mapper._crop_and_ocr (drawn-box crop) so every value-crop path reads with the
@@ -2551,7 +2679,19 @@ def _ocr_crop_laddered(crop, val_type=None, verify_fn=None, meta=None, page=None
     on degraded scans AND faster. Without them the ladder runs unchanged.
 
     top_limit_norm: the caller's (P) caption-band clamp, threaded to BOTH `_noise_smooth_retry`
-    sites so the re-crop can't reach back above it (slice A — see that function's docstring)."""
+    sites so the re-crop can't reach back above it (slice A — see that function's docstring).
+
+    row_band (ANCHOR_LINE_SELECT, kill-switched, DEFAULT OFF): the taught row's vertical
+    band in CROP px (see _row_band). When active + in scope, each rung tries the per-line
+    chooser (select_row_line) BEFORE the whole-text first-line take; EXACTLY ONE in-band
+    qualifier commits with meta from the SELECTED LINE's words only (the whole-crop min
+    includes the garbled neighbour and would falsely demote a correct read out of Tier-A);
+    zero/≥2/any exception falls through to the exact status-quo path for that rung —
+    including the best_seg bookkeeping and the no-rung-gated return-best path. The chooser
+    result flows back to the CALLING RUNG's own commit, so method stays rung-native
+    (anchor_crop / anchor_crop_relocated / anchor_registration — forcing 'anchor_crop'
+    would erase relocate provenance). edge_ineligible (ANCHOR_ROW_GRACE, slice 2 — DARK):
+    a line whose bbox touches the crop's top/bottom edge is ineligible in the chooser."""
     def _set_meta(c, mn):
         if meta is not None:
             meta['conf'] = c
@@ -2594,11 +2734,39 @@ def _ocr_crop_laddered(crop, val_type=None, verify_fn=None, meta=None, page=None
     light = _light_prep(crop)
     heavy = None
     best_seg, best_conf, best_min = None, -1.0, 0.0
+    # ANCHOR_LINE_SELECT (per-call env read — the :2825/:1453 convention). The recheck of
+    # scope here is belt-and-braces: _crop_and_ocr only passes row_band when in scope, and
+    # the gateless Stage-0.5 caller (verify_fn None) never passes one.
+    _line_select = (row_band is not None and verify_fn is not None
+                    and val_type in _LINE_SELECT_TYPES
+                    and os.environ.get("ANCHOR_LINE_SELECT", "0") != "0")
     for _src, _psm in (("light", 7), ("light", 6), ("heavy", 7), ("heavy", 6)):
         if _src == "heavy" and heavy is None:
             heavy = _tm._prep(crop)            # Rung 3 = today's recipe verbatim
         rimg = light if _src == "light" else heavy
-        rtext, rconf, rmin = _read(rimg, _psm)
+        rtext, rconf, rmin, rlines = _read_lines_full(rimg, _psm)
+        if _line_select and rlines:
+            # Per-line chooser — wrapped WHOLE (Oracle cond 1): any exception ⇒ the exact
+            # status-quo path below, including best_seg bookkeeping (Oracle cond 2, pin k).
+            # No _repair_single_token here: a separator-mangled read fails verify_fn, so it
+            # falls through to the status-quo path where repair still gets its chance.
+            try:
+                _scale = rimg.height / max(1, crop.height)   # PER-RUNG frame rescale (pin c):
+                # heavy _prep upscales ×2 for virtually every crop; light only <300px wide.
+                _sband = (row_band[0] * _scale, row_band[1] * _scale)
+                _edges = None
+                if edge_ineligible:
+                    _epx = 2.0 * _scale                      # ~2px in CROP px, rung frame
+                    _edges = (_epx, rimg.height - _epx)
+                _sel = select_row_line(rlines, _sband, val_type, verify_fn, edge_exclude=_edges)
+                if _sel is not None:
+                    _ln, _lseg = _sel
+                    # Meta from the SELECTED line's words ONLY (pin d) — the whole-crop min
+                    # includes the garbled neighbour and feeds _TIER_A_OCR_MIN.
+                    _set_meta(_ln.get("mean_conf", rconf), _ln.get("min_conf", rmin))
+                    return _lseg
+            except Exception:
+                pass
         rseg = clean_crop_segment(rtext, val_type)
         if rseg:
             rseg = _repair_single_token(rimg, rseg, val_type)
@@ -2851,6 +3019,25 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
         x2 = min(w, cx + half_w)
         y2 = min(h, cy + half_h)
 
+        # ANCHOR_LINE_SELECT scope (per-call env, the convention above): structured types
+        # only, a real verify gate (auto-excludes the gateless Stage-0.5 caller), real dims
+        # (the 200×60 no-dims fallback → no band → inert).
+        _ls_scope = (w_norm > 0 and h_norm > 0 and verify_fn is not None
+                     and val_type in _LINE_SELECT_TYPES)
+        _ls_on = _ls_scope and os.environ.get("ANCHOR_LINE_SELECT", "0") != "0"
+        # ANCHOR_ROW_GRACE (slice 2 — ships DARK; do NOT flip with slice 1): ±0.6·box_h
+        # vertical expansion BEFORE the caption clamp below, so top_limit_norm enforcement
+        # is the existing code and grace can never reach above a located caption. INERT
+        # unless LINE_SELECT is active (enforced here — grace without the chooser re-opens
+        # the 2026-07-20 caption-band incident class). The honest residual lives in this
+        # zone (a fully-contained wrong row + a garbled true row), hence dark until a
+        # measured case slice 1 alone fails.
+        _rg_on = _ls_on and os.environ.get("ANCHOR_ROW_GRACE", "0") != "0"
+        if _rg_on:
+            _g = int(h_norm * h * 0.6)          # downward cap ≤0.6 row == the same _g
+            y1 = max(0, y1 - _g)
+            y2 = min(h, y2 + _g)
+
         # (P) CAPTION-BAND EXCLUSION (007+Oracle 2026-07-14): a thin one-line value box is padded
         # ~3× taller here (fixed +20/+6 px), so a below-anchor crop can balloon UP into the caption
         # sitting a few px above the value ("Customer" → the shifted-scan "Customer eu" read). When
@@ -2862,6 +3049,10 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
             y1 = max(y1, int(top_limit_norm * h))
             if y1 >= y2 - 1:
                 return None
+
+        # The taught row's band, in CROP px from the FINAL y1 (after grace + clamp), so the
+        # per-line chooser judges against the un-padded taught box, not the padded crop.
+        _band = _row_band(cy, h_norm * h, y1) if _ls_on else None
 
         crop = page_image.crop((x1, y1, x2, y2))
         if capture:
@@ -2875,7 +3066,8 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
             _box = {"x_norm": max(0.0, x_norm - w_norm / 2), "y_norm": max(0.0, y_norm - h_norm / 2),
                     "w_norm": w_norm, "h_norm": h_norm}
         _v = _ocr_crop_laddered(crop, val_type, verify_fn=verify_fn, meta=meta,
-                                page=page_image, box=_box, top_limit_norm=top_limit_norm)
+                                page=page_image, box=_box, top_limit_norm=top_limit_norm,
+                                row_band=_band, edge_ineligible=_rg_on)
         # Multi-line continuation (gated): only re-reads/joins when a rule + the trailing-
         # pattern/history signal say the value wraps onto the next line; else byte-identical.
         if continuation and _v:
