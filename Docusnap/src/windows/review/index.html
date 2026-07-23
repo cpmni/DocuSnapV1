@@ -1119,6 +1119,18 @@
   .rdc-tag.rej  { background: rgba(247,111,111,.16); color: var(--err); }
   .rdc-tag.auth { background: rgba(79,142,247,.18); color: var(--accent2); }
   .rdc-reason { color: var(--muted); font-size: 9px; flex-basis: 100%; padding-left: 70px; }
+  /* Crop strip: the exact image(s) OCR'd for this field (dev slice capture) — so you can
+     see WHAT was read to get the value, incl. a disagreeing taught crop vs full-page read. */
+  .rdc-slices { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; padding-top: 8px;
+                border-top: 1px dashed var(--border2); }
+  .rdc-slice { margin: 0; display: flex; flex-direction: column; gap: 3px; max-width: 170px; }
+  .rdc-slice img { max-width: 170px; max-height: 96px; border: 1px solid var(--border2);
+                   border-radius: 4px; background: var(--surface); object-fit: contain; }
+  .rdc-slice figcaption { font-size: 9px; color: var(--muted); overflow-wrap: anywhere; }
+  .rdc-slice.missing img { display: none; }
+  .rdc-slice.missing::after { content: 'crop unavailable'; font-size: 9px; color: var(--err); }
+  /* A field the last trace run produced NO candidate for (union placeholder — it still shows). */
+  .rdc-field.noevents .rdc-fname { color: var(--warn); }
   /* Stage 2.5 transform + Stage 4/4.5 validation rows (the "why" behind a held/
      flagged/emptied value). */
   .rdc-note .rdc-stage { color: var(--muted); }

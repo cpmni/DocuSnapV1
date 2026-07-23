@@ -6647,12 +6647,15 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
       else if (ev.event === 'transform') get(ev.field).transforms.push(ev);   // Stage 2.5 denoise/correct
       else if (ev.event === 'validation') get(ev.field).validations.push(ev);  // Stage 4/4.5 normalise/flag/withhold
       else if (ev.event === 'final') get(ev.field).final = ev;
-      else if (ev.event === 'slice' && ev.bbox) {
+      else if (ev.event === 'slice' && (ev.bbox || ev.path)) {
+        // Keep the saved crop PATH too (served by devGetSlice) so the panel can SHOW the
+        // exact image OCR'd — and capture a path-only slice (no bbox) as well, so a read
+        // with no located box still shows its crop.
         const f = ev.field;
         if (!sliceMap[f]) sliceMap[f] = {};
         const key = ev.stage || '_';
         if (!sliceMap[f][key]) sliceMap[f][key] = [];
-        sliceMap[f][key].push({ kind: ev.kind || 'target', bbox: ev.bbox, page: ev.page ?? 0, stage: ev.stage || '_' });
+        sliceMap[f][key].push({ kind: ev.kind || 'target', bbox: ev.bbox || null, page: ev.page ?? 0, stage: ev.stage || '_', method: ev.method || null, path: ev.path || null });
       }
     }
     // Map a candidate's METHOD to the slice-event stage it produced. The slice
@@ -6697,13 +6700,36 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
       for (const k of Object.keys(m)) { const hit = m[k].find(s => s.kind === 'anchor'); if (hit) return hit; }
       return null;
     }
-    if (!byField.size) {
+    // Every field's captured crops (path-bearing slices), flattened across stages — shown as
+    // thumbnails at the bottom of the field so you can SEE exactly what was OCR'd for each read.
+    function allSlices(field) {
+      const mm = sliceMap[field];
+      if (!mm) return [];
+      const out = [];
+      for (const k of Object.keys(mm)) for (const s of mm[k]) if (s.path) out.push(s);
+      return out;
+    }
+
+    // Show a block for EVERY field, not only those that produced a merge/final event: union the
+    // type's declared fields (in their own order) with any traced field and any field that
+    // produced ONLY a crop. A flagged-but-vanished field (e.g. a date whose taught + full-page
+    // reads disagreed) now ALWAYS appears — with its crops — instead of silently dropping out.
+    const orderedFields = [];
+    const seenF = new Set();
+    const pushF = (k) => { if (k && !seenF.has(k)) { seenF.add(k); orderedFields.push(k); } };
+    for (const f of (fieldDefs || [])) pushF(f.key);   // declared order first
+    for (const k of byField.keys()) pushF(k);           // then any traced extras
+    for (const k of Object.keys(sliceMap)) pushF(k);    // then crop-only fields
+    if (!orderedFields.length) {
       elEmpty.hidden = false; elFields.innerHTML = '';
       return;
     }
     elEmpty.hidden = true;
+    const EMPTY_M = { merges: [], rejects: [], transforms: [], validations: [], final: null, reconcile: null };
     const blocks = [];
-    for (const [field, m] of byField) {
+    for (const field of orderedFields) {
+      const m = byField.get(field) || EMPTY_M;
+      const hadEvents = byField.has(field);
       const finalVal = m.final ? m.final.value : null;
       const emptyCls = (finalVal == null || finalVal === '') ? ' empty' : '';
       const winLine  = m.final
@@ -6761,15 +6787,34 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
           + ` &nbsp;vs total <b>${escHtml(String(rc.total))}</b> &nbsp;(Δ ${escHtml(String(rc.delta))}, tol ${escHtml(String(rc.tol))}) → ${rc.reconciles ? 'reconciles' : "doesn't reconcile"}`;
         rows.push(noteRow('reconcile', calc + (rc.verdict ? `<div class="rdc-why">${escHtml(String(rc.verdict))}</div>` : ''), 'valid'));
       }
-      if (!rows.length) rows.push(`<div class="rdc-cand"><span class="rdc-reason" style="padding-left:0">matched on the OCR text layer (no per-stage crop trace)</span></div>`);
+      if (!rows.length) rows.push(hadEvents
+        ? `<div class="rdc-cand"><span class="rdc-reason" style="padding-left:0">matched on the OCR text layer (no per-stage crop trace)</span></div>`
+        : `<div class="rdc-cand"><span class="rdc-reason" style="padding-left:0">no candidate reached this field on the last trace run${allSlices(field).length ? ' — see the crops below for what was read' : ''}</span></div>`);
+
+      // Bottom strip: every crop this field was OCR'd from (lazy-loaded via devGetSlice), so you
+      // can see the exact image behind each read — incl. a disagreeing taught crop vs full-page.
+      const slices = allSlices(field);
+      const sliceStrip = slices.length
+        ? `<div class="rdc-slices">` + slices.map(s =>
+            `<figure class="rdc-slice"><img data-slice-path="${escHtml(s.path)}" alt="crop" loading="lazy">`
+            + `<figcaption>${escHtml(s.method || s.kind || 'crop')}${(s.stage && s.stage !== '_') ? ' · ' + escHtml(s.stage) : ''}</figcaption></figure>`).join('')
+          + `</div>`
+        : '';
 
       blocks.push(
-        `<div class="rdc-field" data-f="${escHtml(field)}">`
+        `<div class="rdc-field${hadEvents ? '' : ' noevents'}" data-f="${escHtml(field)}">`
         + `<div class="rdc-fhead"><span class="rdc-fname">${escHtml(field)}</span>`
         + `<span class="rdc-fwin${emptyCls}">${winLine}</span></div>`
-        + `<div class="rdc-cands">${rows.join('')}</div></div>`);
+        + `<div class="rdc-cands">${rows.join('')}${sliceStrip}</div></div>`);
     }
     elFields.innerHTML = blocks.join('');
+    // Lazy-load the crop images (dev-only; devGetSlice returns a data: URL under devSliceDir, or null).
+    elFields.querySelectorAll('img[data-slice-path]').forEach(async (img) => {
+      try {
+        const url = await window.docusnap.devGetSlice(img.dataset.slicePath);
+        if (url) img.src = url; else img.closest('.rdc-slice')?.classList.add('missing');
+      } catch { img.closest('.rdc-slice')?.classList.add('missing'); }
+    });
     elFields.querySelectorAll('.rdc-fhead').forEach((h) => {
       h.addEventListener('click', () => h.parentElement.classList.toggle('open'));
     });
@@ -6802,8 +6847,8 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
 
   function cand(stage, value, conf, method, tag, reason, slice, rx, aslice) {
     const tagTxt = tag === 'rej' ? 'rejected' : tag;
-    const tAttr = slice ? ` data-bbox="${escHtml(JSON.stringify(slice.bbox))}" data-kind="${escHtml(slice.kind || 'target')}" data-page="${slice.page ?? 0}" data-stage="${escHtml(slice.stage || '_')}"` : '';
-    const aAttr = aslice ? ` data-anchor-bbox="${escHtml(JSON.stringify(aslice.bbox))}" data-anchor-page="${aslice.page ?? 0}" data-anchor-stage="${escHtml(aslice.stage || 'anchor_label')}"` : '';
+    const tAttr = (slice && slice.bbox) ? ` data-bbox="${escHtml(JSON.stringify(slice.bbox))}" data-kind="${escHtml(slice.kind || 'target')}" data-page="${slice.page ?? 0}" data-stage="${escHtml(slice.stage || '_')}"` : '';
+    const aAttr = (aslice && aslice.bbox) ? ` data-anchor-bbox="${escHtml(JSON.stringify(aslice.bbox))}" data-anchor-page="${aslice.page ?? 0}" data-anchor-stage="${escHtml(aslice.stage || 'anchor_label')}"` : '';
     const clickAttr = (slice || aslice) ? ` style="cursor:pointer" title="Click to highlight the value box (amber)${aslice ? ' + anchor box (blue)' : ''} on the page"` : '';
     const bboxAttr = tAttr + aAttr + clickAttr;
     return `<div class="rdc-cand"${bboxAttr}>`
