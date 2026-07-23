@@ -21,7 +21,29 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-07-23) — READ `HANDOVER_2026-07-23.md` FIRST
+## Current session state (2026-07-23 EVENING) — READ `HANDOVER_2026-07-23_EVENING.md` FIRST
+**2026-07-23 EVENING (Opus 4.8 → Fable 5) — Thornbury live-testing day; 5 commits PUSHED through
+`0ae0f46` (origin in sync `0 0`); tree clean.** `0bbfdce` SFDEV trace shows EVERY field + per-field
+OCR crop thumbnails · `d91da4b` field drag-to-reorder (shared DocTypeEditor, ⠿ handle) · `274276c`
+per-field keyword labels (🏷, reuses label_overrides) · **`1c8243b` E2** — a crop-vs-fullpage
+crosscheck flip auto-accepts when a Stage-1 keyword read normalises-equal (re-based `anchor_inline`
+@90 ≥ the 88 floor; kill `CROSSCHECK_KEYWORD_CLEAR`; corpus A/B: only 117→118 would-auto-file, M=3
+unchanged) · **`0ae0f46`** gate-reread NORMALISATION-ONLY recoveries file clean (0-edit alnum-core;
+dates need strict CALENDAR equality — Oracle C1; kill `GATE_REREAD_CLEAN_ACCEPT`; corpus A/B
+byte-identical). ⚠ DEAD PREMISES, do not re-chase: E1 "oversized taught box" (all taught ref/date
+anchors are SINGLE-ROW h_norm 0.015-0.024 — the 2-row crop is READ-TIME +20px padding bleed) ·
+"keyword corroboration inert on delivery_number" (preset installs seed 8 labels — owner caught it).
+**NEXT SESSION'S BUILD JOB: `ANCHOR_LINE_SELECT`** — per-line crop selection, fully designed +
+Oracle-SIGNED: **`docs/designs/ANCHOR_LINE_SELECT_2026-07-23.md`** is the canonical spec (band +
+per-rung rescale, pins a-k incl. RED-first, slice-2 `ANCHOR_ROW_GRACE` builds DARK). Then:
+owner-requested **doc-TYPE list rearranging** (backend sort_order READY, UI only) + live-test
+drag-reorder/keywords · the **85-vs-88 permanent-hold class** (keyword reads cap at 85 <
+critical floor 88 → ref-via-keyword docs NEVER auto-file; corroboration-boost direction agreed,
+needs the gate; panel copy should name the field). P4 CORRECTED: Review already honours sort_order —
+only Search-preview extras (rowid) + the /v1 DTO remain. Corpus facts: 276 docs, ref accuracy 95.3%
+(the weak spot), several "regressions" are poisoned `N-99718`-style GT. **Base block ↓**
+
+## (prior) Session state (2026-07-23) — READ `HANDOVER_2026-07-23.md` FIRST
 **2026-07-23 (Opus 4.8) — a RENDERER-ONLY Review first-run UX fix. Branch
 `feat/reprocess-throughput-autostraighten` PUSHED through `f4463cd` (origin in sync `0 0`); tree clean.**
 Fixed the "first-import user gets lost in Review" hole: the queue defaults to **grouped-by-sender**,
