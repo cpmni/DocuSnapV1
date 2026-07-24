@@ -17,7 +17,7 @@ function makeDb() {
   db.exec(`
     CREATE TABLE templates (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, slug TEXT, document_type_slug TEXT);
     CREATE TABLE document_types (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, slug TEXT, ref_field_key TEXT, date_field_key TEXT);
-    CREATE TABLE fields (id INTEGER PRIMARY KEY AUTOINCREMENT, document_type_id INTEGER, key TEXT, label TEXT, required INTEGER DEFAULT 0);
+    CREATE TABLE fields (id INTEGER PRIMARY KEY AUTOINCREMENT, document_type_id INTEGER, key TEXT, label TEXT, required INTEGER DEFAULT 0, enabled INTEGER DEFAULT 1, sort_order INTEGER DEFAULT 100);
     CREATE TABLE template_hidden_fields (template_id INTEGER NOT NULL, field_key TEXT NOT NULL, hidden_at TEXT DEFAULT (datetime('now')), PRIMARY KEY (template_id, field_key));
   `);
   // A worksheet type with roles + custom fields ITEM / SERIAL.
@@ -55,6 +55,14 @@ check('refuse to hide a field not on the type (superset-lock)', r.ok === false &
 check('isFieldHideable true for a custom optional field', templates.isFieldHideable(db, 7, 'item') === true);
 check('isFieldHideable false for a structural role', templates.isFieldHideable(db, 7, 'reference_number') === false);
 check('isFieldHideable false for a non-type field', templates.isFieldHideable(db, 7, 'ghost') === false);
+
+// 5b · getTypeFieldsForHiding gives the renderer the whole picture (structural + hidden flags)
+const tf = templates.getTypeFieldsForHiding(db, 7);
+check('type fields listed for the hide UI (5 fields)', tf.length === 5);
+check('serial_no shown as hidden', (tf.find(f => f.key === 'serial_no') || {}).hidden === true);
+check('reference_number shown as structural (locked)', (tf.find(f => f.key === 'reference_number') || {}).structural === true);
+check('item shown non-structural and not hidden',
+      (tf.find(f => f.key === 'item') || {}).structural === false && (tf.find(f => f.key === 'item') || {}).hidden === false);
 
 // 6 · unhide round-trip
 r = templates.setHiddenField(db, 7, 'serial_no', false);

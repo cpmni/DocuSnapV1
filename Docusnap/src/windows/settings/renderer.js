@@ -2017,10 +2017,51 @@ async function selectTemplate(id) {
     renderGroupSection(detail),
   ]);
   renderMappingsTable(detail);
+  renderHiddenFieldsSection(detail);
   renderSelectorAnchorsTable(detail);
   await loadSamplePages(detail);
   await populateMapFieldSelect(detail);
   await renderFixedFieldsTable(detail);
+}
+
+// Per-template field HIDING (migration 54): let an admin hide a field the TYPE has but THIS
+// supplier's layout lacks, so Review stops flagging it missing. Structural roles are shown locked
+// (never hideable). The backend refuses a bad hide and returns {ok:false}; the checkbox reverts on
+// refusal. The section is hidden entirely when the type has no hideable (non-structural) field.
+function renderHiddenFieldsSection(detail) {
+  const section = document.getElementById('tpl-hidden-fields-section');
+  const list    = document.getElementById('tpl-hidden-fields-list');
+  if (!section || !list) return;
+  const fields = detail.type_fields || [];
+  if (!fields.some(f => !f.structural)) { section.style.display = 'none'; return; }
+  section.style.display = 'block';
+  list.innerHTML = '';
+  for (const f of fields) {
+    const row = document.createElement('label');
+    row.className = 'tpl-hidden-row' + (f.structural ? ' locked' : '');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = !!f.hidden;
+    cb.disabled = !!f.structural;
+    cb.title = f.structural
+      ? 'Structural roles (Issuer / Date / Reference) can never be hidden'
+      : 'Hide this field on this layout';
+    if (!f.structural) cb.addEventListener('change', async () => {
+      cb.disabled = true;
+      try {
+        const r = await api.setTemplateHiddenField(detail.id, f.key, cb.checked);
+        if (!r || r.ok === false) cb.checked = !cb.checked;   // revert on refusal
+        else f.hidden = cb.checked;
+      } catch { cb.checked = !cb.checked; }
+      cb.disabled = false;
+    });
+    const txt = document.createElement('span');
+    txt.className = 'tpl-hidden-label';
+    txt.textContent = (f.label || f.key) + (f.structural ? '  🔒' : '');
+    row.appendChild(cb);
+    row.appendChild(txt);
+    list.appendChild(row);
+  }
 }
 
 function renderDetectionMethod(detail) {

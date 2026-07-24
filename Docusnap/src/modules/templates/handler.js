@@ -292,8 +292,20 @@ function register(ctx) {
     requireRole('admin');
     const db = getDb();
     const detail = templates.getById(db, templateId);
-    if (detail) detail.confirmed_count = templates.confirmedDocCount(db, templateId);   // N: same live truth as the roster
+    if (detail) {
+      detail.confirmed_count = templates.confirmedDocCount(db, templateId);   // N: same live truth as the roster
+      detail.hidden_fields = templates.getHiddenFields(db, templateId);       // per-template field-hiding mask (mig 54)
+      detail.type_fields   = templates.getTypeFieldsForHiding(db, templateId);// {key,label,structural,hidden} for the hide UI
+    }
     return detail;
+  });
+
+  // Per-template field HIDING (migration 54): mark a field the type has but this layout lacks as
+  // hidden, so Review stops flagging it missing. Backend REFUSES a structural role or a field not on
+  // the type (superset-lock) and returns {ok:false, reason}. Admin-only (whole viewer is admin).
+  ipcMain.handle('set-template-hidden-field', (_e, templateId, fieldKey, hidden) => {
+    requireRole('admin');
+    return templates.setHiddenField(getDb(), templateId, fieldKey, !!hidden);
   });
 
   // Admin-facing template management — name is purely cosmetic metadata

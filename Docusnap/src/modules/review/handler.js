@@ -480,6 +480,11 @@ function register(ctx) {
     // stay here at the transport edge.
     const doc = previewService.getDocumentDetail(db, id, { learning });
     if (doc) {
+      // Per-template field HIDING (migration 54): the fields hidden for THIS doc's matched template,
+      // so the renderer can skip their rows (a layout that lacks a field stops showing it empty).
+      // Empty [] when no template / nothing hidden ⇒ the renderer's filter is a no-op (byte-identical).
+      try { doc.hidden_fields = doc.template_id ? require('../../../database/modules/templates').getHiddenFields(db, doc.template_id) : []; }
+      catch { doc.hidden_fields = []; }
       logAudit(db, { action: 'document_open', target_type: 'document', target_id: id,
         document_id: id, outcome: 'success', metadata: { type: doc.type_slug || null, status: doc.status || null } });
       // Publish desktop REVIEW presence so clients see "being reviewed by <name>" — only for a

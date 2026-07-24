@@ -378,6 +378,13 @@
        + cell wrapping rather than forcing a horizontal scrollbar. */
     #tpl-mappings-table { table-layout:fixed; }
     #tpl-dock .fields-table th, #tpl-dock .fields-table td { word-break:break-word; }
+    /* Per-template field hiding (mig 54): a compact checkbox list of the type's fields. */
+    .tpl-hidden-list { display:flex; flex-direction:column; gap:2px; margin-top:6px; }
+    .tpl-hidden-row { display:flex; align-items:center; gap:9px; padding:5px 8px; border-radius:var(--r-sm); cursor:pointer; }
+    .tpl-hidden-row:hover { background:var(--surface2); }
+    .tpl-hidden-row.locked { cursor:default; opacity:.65; }
+    .tpl-hidden-row input[type=checkbox] { margin:0; flex:0 0 auto; }
+    .tpl-hidden-label { font-size:13px; color:var(--text); }
     /* 2px divider + clearer (promoted) heading above each dock section. The dock
        is id="tpl-dock", so this must be an id selector — the old .tpl-dock class
        selector never matched, which is why the dividers were missing. */
@@ -1061,6 +1068,12 @@
                 <tbody id="tpl-mappings-tbody"></tbody>
               </table>
               <div id="tpl-mappings-empty" class="section-desc" style="display:none;">No mappings yet — standard pipeline applies.</div>
+            </div>
+
+            <div class="section" id="tpl-hidden-fields-section" style="display:none;">
+              <div class="section-title sub">Fields on this layout</div>
+              <p class="section-desc">Hide a field this supplier's layout doesn't print (for example a serial number on a plain worksheet), so Review stops flagging it as missing on these documents. The Document Issuer, Date and Reference roles can't be hidden. This only changes what Review <em>expects</em> — nothing is deleted, and other layouts are unaffected.</p>
+              <div id="tpl-hidden-fields-list" class="tpl-hidden-list"></div>
             </div>
 
             <details id="tpl-advanced" style="margin-top:18px;">

@@ -379,6 +379,21 @@ function isFieldHideable(db, templateId, fieldKey) {
   return !!exists;
 }
 
+function getTypeFieldsForHiding(db, templateId) {
+  // The template's TYPE fields with per-field {structural, hidden} flags — everything the Template
+  // Manager needs to render a hide toggle per field (structural rows are shown locked). Includes
+  // fields that have NO drawn mapping (the whole point: hide a field the layout simply lacks).
+  const t = safe(() => db.prepare('SELECT document_type_slug FROM templates WHERE id = ?').get(templateId), null);
+  if (!t) return [];
+  const structural = _structuralKeysForTemplate(db, templateId);
+  const hidden = new Set(getHiddenFields(db, templateId));
+  const rows = safe(() => db.prepare(
+    `SELECT f.key, f.label FROM fields f JOIN document_types dt ON dt.id = f.document_type_id
+      WHERE dt.slug = ? AND COALESCE(f.enabled, 1) = 1
+      ORDER BY COALESCE(f.sort_order, 100), f.id`).all(t.document_type_slug), []);
+  return rows.map(r => ({ key: r.key, label: r.label, structural: structural.has(r.key), hidden: hidden.has(r.key) }));
+}
+
 function setHiddenField(db, templateId, fieldKey, hidden) {
   // Returns {ok, reason?}. Refuses a structural role or a field not on the type (superset-lock).
   if (hidden && !isFieldHideable(db, templateId, fieldKey)) {
@@ -1230,7 +1245,7 @@ module.exports = {
   stabiliseFingerprint, chooseLogoPhash,
   getMappings, getMapping, saveMapping, setMappingEnabled, deleteMapping,
   recordMappingTest, setSampleDocument, reassignDocuments, mergeInto, setFieldFixedValue,
-  getHiddenFields, isFieldHideable, setHiddenField,
+  getHiddenFields, isFieldHideable, setHiddenField, getTypeFieldsForHiding,
   setOcrAutoParams, setOcrAutoEnabled,
   getLandmarks, setLandmarks, clearLandmarks, hasManualLandmarks, hasCrossSampleLandmarks,
   replaceSampleWords, countSampleDocs, getSampleWordsByDoc,

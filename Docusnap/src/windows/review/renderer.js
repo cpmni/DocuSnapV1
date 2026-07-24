@@ -2375,9 +2375,16 @@ function renderFields(doc) {
   const extMap = {};
   for (const e of (doc.extractions || [])) extMap[e.field_key] = e;
 
+  // Per-template field HIDING (migration 54): fields hidden for this doc's matched template.
+  // Structural roles are never in this set (the backend refuses to hide them), so roles always show.
+  const hiddenKeys = new Set(doc.hidden_fields || []);
   for (const key of reviewFields()) {
     const ext = extMap[key] || {};
     const val = ext.display_value ?? ext.raw_value ?? '';
+    // Skip a hidden field WHEN it read empty (the layout lacks it — the noise the owner asked to
+    // remove). A hidden field that unexpectedly HAS a value is still shown: hiding is a display
+    // mask, never a way to lose real data. Inert when nothing is hidden (empty set).
+    if (hiddenKeys.has(key) && String(val).trim() === '') continue;
     appendFieldRow(scroll, key, val, ext.confidence ?? null, ext.validation_note || null, ext.corrected_to || null, ext.anchor_label || null, ext.extraction_method || null, ext.candidates || null, ext.suggested_supplier || null);
   }
   _prefillGenericScanDate(doc, scroll);
