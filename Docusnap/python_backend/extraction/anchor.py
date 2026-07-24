@@ -465,6 +465,8 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
         # crosscheck block can later FLIP the value, and this note describes the KEPT-RIGID
         # (or junk-relocate) case only. Applied at the result build when no other note landed.
         _relocate_guard_note = None
+        _name_guard_junk_note = False   # True ONLY for the :586 clean-rigid-vs-junk-sibling note ->
+                                        # marks the result for engine.NAME_GUARD_KEYWORD_CLEAR
         _caption_bleed = False   # fix #2: the relocate read the field's OWN caption (landed on the label)
         _read_box = None         # picker: the winning read's VALUE box (top-left norm) for name candidates
         if value and val_type in (None, "text", "multiline_text", "currency") \
@@ -586,6 +588,8 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                             _relocate_guard_note = ("The value found beside this document's own "
                                                     "caption disagreed with the taught position "
                                                     "— please verify.")
+                            _name_guard_junk_note = True   # kept value is an independently-clean name
+                                                           # -> a Stage-1 keyword that AGREES clears it
                         else:
                             if on_reject:
                                 on_reject(field_key, "anchor_crop", value, "off_row_drift")
@@ -1347,6 +1351,13 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                 # NAME-GUARD note (Layers A/B): flag-only — the value (kept rigid, or a capped
                 # junk relocate) is surfaced for a human; never overwrites a method-specific note.
                 results[field_key]["validation_note"] = _relocate_guard_note
+                if _name_guard_junk_note:
+                    # ONLY the :586 clean-rigid-vs-off-junk site: mark for the engine keyword-corrob
+                    # clear (engine.NAME_GUARD_KEYWORD_CLEAR). The kept value is an independently-clean
+                    # name, so a Stage-1 keyword that agrees clears the phantom flag; a STALE clean name
+                    # (keyword disagrees) keeps it. The other note sites (garble-IS-the-value / geometric
+                    # caption) are deliberately NOT marked — they must keep flagging (Oracle C4).
+                    results[field_key]["_name_guard_clearable"] = True
     # After every anchor: if a RE-READ landed on a page caption AND nothing else filled the field,
     # emit an EMPTY row carrying the note so trust.isAutoFileEligible's flagged gate holds the doc for
     # review (never a silent blank auto-file). Same pattern as engine._flag_type_ambiguity. Oracle C2.

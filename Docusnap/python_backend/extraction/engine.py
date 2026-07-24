@@ -393,6 +393,32 @@ def _crosscheck_keyword_corroborated(data, kw_entry, is_date) -> bool:
     return _values_normalise_equal(data.get("value"), kw_entry.get("value"), is_date)
 
 
+def _name_guard_keyword_clears(data, existing, key) -> bool:
+    """NAME-GUARD KEYWORD CLEAR decision (Oracle SEND-BACK redirect 2026-07-24; kill
+    NAME_GUARD_KEYWORD_CLEAR). True iff the Stage-2 read carries the `_name_guard_clearable` marker —
+    set by anchor.py ONLY at the :586 clean-rigid-name vs off-page-junk site — AND an INDEPENDENT
+    Stage-1 keyword incumbent NORMALISES-EQUAL to the KEPT value. A STALE clean name is excluded BY
+    CONSTRUCTION: its keyword read disagrees -> False -> the phantom note stands (fail-toward-review).
+    Never clears supplier_name (the filing identity — mirrors _name_relocate_should_hold's exclusion).
+    Pure; no side effects. Unit-pinned by test_name_guard_keyword_clear.py."""
+    if not (isinstance(data, dict) and data.get("_name_guard_clearable")):
+        return False
+    # DEFAULT OFF (Oracle 2026-07-24): the clear is correct + pinned, but it lifts a doc's ONLY hold
+    # when the phantom name note is the sole blocker — on #259 (ThornburyFasteners_delivery_docket_02)
+    # that un-masked a REAL valid-shaped ref misread (DN-28472 read as DN-38472) into a SILENT wrong-
+    # file. Ships DARK. PRECONDITION to flip ON (=1): make the authoritative-crop cross-check
+    # (anchor.py:638-659) flag a crop-vs-full-page single-digit ref disagreement even when the crop
+    # read is sub-credible, so #259's ref is independently held. Until then: fail-toward-review — the
+    # Saltmarsh/Halcyon phantom flag stays (a cosmetic needless review), never a silent wrong result.
+    if os.environ.get("NAME_GUARD_KEYWORD_CLEAR", "0") != "1":
+        return False
+    if key == "supplier_name":
+        return False
+    if not (isinstance(existing, dict) and str(existing.get("method") or "").startswith("keyword")):
+        return False
+    return _values_normalise_equal(data.get("value"), existing.get("value"), False)
+
+
 _NAME_RELOCATE_NOTE = ("Two different names were read here — the clean value beside the label and a "
                        "garbled one from the taught box. Kept the label read; please verify.")
 _RELOCATE_METHODS = ("anchor_crop_relocated", "anchor_inline")
@@ -3136,6 +3162,28 @@ class ExtractionEngine:
                         data.pop(_k, None)
                     results[key] = data
                     continue
+                # ── NAME-GUARD KEYWORD CLEAR (Oracle SEND-BACK redirect 2026-07-24; kill
+                # NAME_GUARD_KEYWORD_CLEAR) ── anchor.py's :586 name-guard note KEEPS a clean rigid
+                # name but flags it "caption disagreed with the taught position" when the RELOCATE
+                # landed on off-page junk (e.g. "wines"). That note is the ONLY backstop for a STALE-
+                # but-clean rigid name, so it CANNOT be dropped on a raw-OCR witness (Oracle: a same-
+                # supplier drift would then file silently wrong). But when an INDEPENDENT Stage-1
+                # keyword read AGREES with the KEPT value, the stale residual is excluded BY
+                # CONSTRUCTION (a stale name => the keyword disagrees) and the two-independent-reads bar
+                # is met: drop the phantom note + take the higher confidence. No keyword / a disagreeing
+                # keyword => note stands (fail-toward-review). VALUE UNCHANGED. The marker is set ONLY at
+                # the :586 site (anchor.py), so the other _relocate_guard_note sites keep flagging.
+                if isinstance(data, dict) and data.get("_name_guard_clearable"):
+                    _ng_clears = _name_guard_keyword_clears(data, existing, key)
+                    data = {k: v for k, v in data.items() if k != "_name_guard_clearable"}  # strip marker always
+                    if _ng_clears:
+                        for _k in ("validation_note", "was_corrected", "corrected_to"):
+                            data.pop(_k, None)
+                        data["confidence"] = max(int(data.get("confidence") or 0),
+                                                 int(existing.get("confidence") or 0))
+                        results[key] = data
+                        continue
+                    # not corroborated: marker stripped, note kept -> falls through; Tier-A holds it
                 # ── Stage 2 credibility gate (before any override) ───────────
                 # A Stage 2 candidate must not DISPLACE an existing incumbent
                 # unless it is credible for the field's class. Reusable, shape/
