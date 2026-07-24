@@ -21,10 +21,23 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-07-24 LATE) — READ `HANDOVER_2026-07-24_LATE.md` FIRST
-**2026-07-24 LATE (Opus 5) — an INVESTIGATION session; NOTHING COMMITTED. Branch unchanged at `1a6e2dd`
-(origin `0 0`). One file modified (`anchor.py`, kill-switched DEFAULT OFF ⇒ byte-identical) + one scratch
-harness. The session was asked to build the REF-HOLD guard and instead demolished its premise.**
+## Current session state (2026-07-24 LATE → overnight) — READ `HANDOVER_2026-07-24_LATE.md` FIRST
+**2026-07-24 LATE (Opus 5 → Opus 4.8 re-review + autonomous overnight) — 5 commits PUSHED through
+`c9d9480` (origin `0 0`, tree clean).** `733b4e1` **late-rescue sticky cap** (kill `LATE_RESCUE_CAP_STICKY`,
+default ON; restores the documented 85 cap that Stage-2.5b +8 conformance + Stage-4.5 +5 silently lifted to
+98; terminal re-cap before overall_confidence; A/B M 10→9, OFF byte-identical) · `ef612ae` **GT repair** (9
+poisoned corpus rows re-read at 600 DPI + corrected in `gt_overrides.json`, self-validating; + type-override
+support; corpus now type 100% / ref 98.6% / M 10→1 [only #183] / M_type 0) · `2cc20f7` docs · `14d52c4`+
+`c9d9480` **per-template field HIDING BUILT** (Task #2; migration **54** `template_hidden_fields`; hide a
+field the type has but a layout lacks so Review stops flagging it missing; HIDE-ONLY + superset-locked +
+structural roles never hideable; INERT with no rows ⇒ byte-identical; Template Manager toggle + Review
+row-skip need a LIVE-TEST). ⚠ Remaining real M = **#183** (skew broke OCR row-grouping → the harvest
+SYNTHESISED `PO-20008`; two fixes proposed, NOT built — see `project_183_harvest_synthesis`). ⚠ The
+`NAME_GUARD_KEYWORD_CLEAR` flip is now UNBLOCKED (#259 GT repaired) but its gate is "enumerate the docs it
+newly auto-files + check each against the PAGE", not M. **↓ The Opus-5 investigation block (superseded on
+the facts by the re-review) follows.**
+**2026-07-24 LATE (Opus 5) — an INVESTIGATION session. The session was asked to build the REF-HOLD guard
+and instead demolished its premise.**
 ⚠ **THE REF-HOLD GUARD IS DEAD — do NOT build it** (Oracle DO NOTHING, on MECHANISM not measurement: the
 doctrine at `anchor.py:651` presumes BOTH reads are credible, and the guard would apply it to one credible
 read + one the pipeline already binned as not-credible = the invariant inverted). Measured 0 TP / 9-10 FP.

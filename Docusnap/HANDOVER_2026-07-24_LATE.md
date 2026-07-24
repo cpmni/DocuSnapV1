@@ -1,11 +1,33 @@
 # HANDOVER — 2026-07-24 LATE (Opus 5, xhigh; then Opus 4.8 re-review + overnight)
 
-## 🌙 OVERNIGHT AUTONOMOUS RESULTS (Opus 4.8, owner asleep — READ THIS FIRST)
+## 🌅 MORNING STATUS (Opus 4.8, autonomous) — ALL COMMITTED + PUSHED (origin `0 0`, tree clean)
+
+Branch `feat/reprocess-throughput-autostraighten` pushed through **`c9d9480`**. Five commits this run:
+1. `733b4e1` **late-rescue sticky cap** — restores the documented 85 cap (kill `LATE_RESCUE_CAP_STICKY`,
+   default ON, OFF byte-identical). Corpus A/B clean, full Python suite clean of it, 1 catalogued
+   pre-existing test fixed.
+2. `ef612ae` **GT repair** — 9 poisoned corpus rows corrected (I re-read all 9 crops at 600 DPI per your
+   go-ahead; each self-validating + non-destructive) + type-override support.
+3. `2cc20f7` **docs** — the root-cause corrections + this handover.
+4. `14d52c4` + `c9d9480` **per-template field hiding (Task #2, owner-approved) — BUILT** (migration 54 +
+   backend + Review consumers + Template Manager UI). Inert by default; backend/consumer proven by
+   `test_template_hidden_fields.js` (E2E). ⚠ The two renderer surfaces (Template Manager toggle, Review
+   row-skip) need a live-test — they can't be auto-tested — but are syntax-clean + mirror existing patterns.
+
+**Corpus gate after the GT repair + sticky cap: type 100%, ref 98.6%, M 10→1 (only #183), M_type 1→0.**
+
+**STILL OPEN (needs you / the advisor gate):** the #183 harvest-synthesis misfile (§3 below — the one
+real M left, two proposed fixes, NOT built); a live-test of the field-hiding UI; the `NAME_GUARD_
+KEYWORD_CLEAR` flip (now unblocked — #259's GT is repaired, so enabling it no longer raises M — but its
+gate is "enumerate the docs it newly auto-files + check each against the page", not the M metric).
+
+---
+
+## 🌙 OVERNIGHT AUTONOMOUS RESULTS (Opus 4.8) — the investigation record below
 
 Owner asked to finish the fixes, test fully, and explore any remaining gap + propose a morning fix.
-**Nothing committed, nothing pushed. All changes kill-switched / revertable. The late-rescue sticky
-cap is DONE and gate-clean; the full test suite is clean of my change; the one remaining genuine gap
-(#183) is root-caused with two proposed fixes below — NOT built (needs the advisor gate).**
+**The late-rescue sticky cap is DONE and gate-clean; the full test suite is clean of my change; the one
+remaining genuine gap (#183) is root-caused with two proposed fixes below — NOT built (needs the gate).**
 
 ### 1. Late-rescue sticky cap — FINISHED + FULLY TESTED ✅
 - Built, unit-tested, corpus-A/B-gated (details in the "BUILT THIS RE-REVIEW" block below).
