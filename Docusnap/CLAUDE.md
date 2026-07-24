@@ -21,7 +21,62 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-07-24) — READ `HANDOVER_2026-07-24.md` FIRST
+## Current session state (2026-07-24 LATE) — READ `HANDOVER_2026-07-24_LATE.md` FIRST
+**2026-07-24 LATE (Opus 5) — an INVESTIGATION session; NOTHING COMMITTED. Branch unchanged at `1a6e2dd`
+(origin `0 0`). One file modified (`anchor.py`, kill-switched DEFAULT OFF ⇒ byte-identical) + one scratch
+harness. The session was asked to build the REF-HOLD guard and instead demolished its premise.**
+⚠ **THE REF-HOLD GUARD IS DEAD — do NOT build it** (Oracle DO NOTHING, on MECHANISM not measurement: the
+doctrine at `anchor.py:651` presumes BOTH reads are credible, and the guard would apply it to one credible
+read + one the pipeline already binned as not-credible = the invariant inverted). Measured 0 TP / 9-10 FP.
+⚠ **THE CORPUS GT IS POISONED ON 8 ROWS — true M is 2, not 10** (#180 #259 #262 #263 #266 #269 #273 #287
++#190; each page read at 350-400 DPI; only **#183** and **#472** are genuine misreads). This invalidates the
+"M-safe" gate on ALL FOUR of 2026-07-24's commits, in BOTH directions — re-run them after the GT repair.
+⚠ **#259 is NOT a real misread**: the pipeline's `DN-38472` is CORRECT; its `corrections` row is a
+single-character prepend (`N-28472`→`DN-28472`), so the operator fixed a missing letter and never audited
+the digits. The prior claim *"two sources say DN-28472"* is FALSE — the quoted "crop read" was verbatim that
+row's `original_value`. So `NAME_GUARD_KEYWORD_CLEAR`'s DARK reason does not exist; its gate is NOT "did M
+rise" (the harness's scored set excludes `customer_name`) but "enumerate the docs the flip newly auto-files
+and check each against the PAGE".
+⚠ **ROOT CAUSE = MULTI-FACTOR STACK, no single clean fix (Opus 4.8 re-review, TESTED — corrects the
+"skew is THE cause / deskew is THE fix" framing that an earlier pass asserted untested).** For the two
+genuine misreads {#183, #472} the chain is: (a) keyword can't read the clean value — po_number labels
+lack "Order No" AND the doc's footer boilerplate ("quote this Order No. on all correspondence") collides,
+so a naive label-add REGRESSES to null (TESTED) → (b) falls to the taught crop → (c) supplier resolved
+LATE → Stage 2.6 blind crop → (d) SKEW clips it → wrong value → (e) the 85 late-rescue cap LEAKS to 98 →
+silent misfile. **SKEW is real (deskew recovers #472→PO-98093, #183→PO-60906) BUT DESKEW IS NOT THE FIX:
+it is not fail-safe — it CORRUPTED #180 (correct raw `PO-91914` → resample-flipped `PO-81914`), exactly
+the `DESKEW_RAW_WITNESS` glyph-flip.** Global deskew trades errors; any deskew must be field-scoped +
+witnessed. `project_detect_deskew_parked`/`_deskew_field_reread`/`_deskew_raw_witness` already warned this.
+**SAFEST NEXT BUILD = the late-rescue TERMINAL RE-CAP (below): fail-toward-review, Oracle-signed, converts
+#472 to held-for-review without solving skew/keyword — but its ~14% review-volume cost is an OWNER call.**
+⚠ **#180 is a GT-poison, NOT a genuine misread** (raw pipeline reads `PO-91914` correctly). GT poisoning
+re-confirmed at 600 DPI (#180/#259/#266); true M=2. Skew measurement (still valid as CONTEXT): spread
+−2.1°…+2.4°, ~15px/degree walk at x_norm 0.83-0.86, up to 66% of a band; corpus is SYNTHETIC (simulated
+scans, skew deliberate). ⚠ **(a SYMPTOM, do NOT lead with it, A/B REGRESSED, DEFAULT OFF) structured
+ref/date OCR crops slice the glyph bottoms off.** `anchor.py:3053-3058` gives vertical headroom ONLY to
+text/multiline_text;
+ref/date keep a FLAT 20px. The stated reason ("numerics keep the tight box so they don't bleed into the next
+COLUMN") does not cover what it gates — the withheld pad is `half_h`, i.e. VERTICAL, which can only bleed
+into an adjacent ROW. Measured on #472 at 300 DPI: OFF ⇒ `"No. PQO-aRano"` (garbage) · 0.25 ⇒ `"No. PO-98092"`
+· **0.35/0.4 ⇒ `"No. PO-98093"` EXACTLY CORRECT**. PART 1 BUILT (kill `ANCHOR_STRUCTURED_HEADROOM`, DEFAULT
+OFF). ⚠ **BUT THE FIRST A/B FAILED — DO NOT FLIP IT ON:** at 0.35, part 1 ALONE gives M 10→11, M_type 0→1,
+ref −2, **0 healed** (new silent wrongs #173 `WS-77682`→`WS-77622`, #484 `PO-83362`→`PO-82262`) — the
+adjacent-row/extra-noise risk is MEASURED. Mechanism proven, shipped shape not. Measure part 1+2 TOGETHER,
+sweep the ratio DOWN, and consider applying the headroom ONLY where the rigid crop would otherwise be
+REJECTED (that shape avoids both regressions by construction). **PART 2 REQUIRED, not built**: the correct
+crop is STILL rejected because it carries the caption tail
+`No.` and `_pattern_coverage` (`anchor.py:2208-2222`) uses `re.search` = FIRST match (3/12) — and `finditer`
+alone only reaches 0.67 < 0.8, so the fix is to STRIP THE TAUGHT LABEL before the credibility gate.
+⚠ **Stage-2.6 late-rescue cap leak (real, DEMOTED):** `engine.py:3628` caps 85, then `:3784` +8
+(`ocr_corrector.py:274` `boost_table{0:8}` = +8 for ZERO fixes) and `:4358` +5 ⇒ **98**. 55 of 56 rescued
+fields leak. Holding them costs 54 correct docs to catch 1 → **re-measure AFTER the crop fix, not before**.
+Dead code found: `late_rescue` (`engine.py:3629`) is written and NEVER read; `review/renderer.js:2482` tests
+it as a METHOD string and can never fire; `engine.py:4338`'s "never reaches 100" is stale (graduated floor is
+**95**, `trust.js:45/548`). `test_late_anchor_rescue.py` 7 RED = ONE stale fixture (its OCR puts the supplier
+after "Customer", a recipient marker per `chrome_band.py:26`) — and its `capped at 85` check passes
+VACUOUSLY on an empty field. **Prior block ↓**
+
+## (prior) Session state (2026-07-24) — READ `HANDOVER_2026-07-24.md` FIRST
 **2026-07-24 (Opus 4.8 1M) — live-testing day WITH the owner; branch `feat/reprocess-throughput-autostraighten`
 PUSHED through `f0107f9` (origin in sync `0 0`); tree clean.** Owner-facing pipeline overview (flowchart + plain-
 English stage-by-stage): **`docs/DETECTION_OVERVIEW_2026-07-24.pdf`**. **6 code commits, all kill-switched
@@ -39,13 +94,14 @@ name; the owner's raw-OCR-witness idea was Oracle-SENT-BACK (it silently files a
 10→11 on **#259** (a CORRECT name-flag-clear un-masked a pre-existing REAL ref misread DN-28472→DN-38472), so per
 Oracle+owner it ships DARK · (+ overnight `8e2211c` deskew raw-witness ON, `5377e24` slice-1d DO-NOTHING; the naive
 cross-tier auto-file lift was MEASURED+REVERTED). **Installer** `dist\ScanFinder Setup 2.0.0-r20260724-1432-7229cdd.exe`
-(3 LIVE fixes; name-guard is dark → NO rebuild needed for it). **NEXT — the ONE tracked follow-up + the name-guard
-PRECONDITION: the REF-HOLD guard.** Make the authoritative-crop cross-check (`anchor.py:638-659`) flag a valid-shaped
-**SINGLE-DIGIT** crop-vs-full-page ref disagreement EVEN when the crop read is sub-credible — the net that catches
-#259's `DN-28472`/`DN-38472` (it doesn't fire because the crop 'N-28472' is sub-credible → "credible AND disagrees"
-fails). Feeds every ref/date field → its OWN corpus gate; the old City-Office silent-misread class; #259 = the named
-canary. When it lands: pin (#259's ref flags; enabling the name-clear doesn't raise silentAutoFile), then flip
-`NAME_GUARD_KEYWORD_CLEAR=1` (or ship both together). **Owner live-checks OPEN** (on the current installer): Thornbury
+(3 LIVE fixes; name-guard is dark → NO rebuild needed for it). ~~**NEXT — the REF-HOLD guard.**~~
+⚠ **SUPERSEDED 2026-07-24 LATE — DO NOT BUILD THE REF-HOLD GUARD.** Its whole premise was wrong: #259's GT is
+POISONED (the pipeline's `DN-38472` is CORRECT), the cited crop read `'N-28472'` was actually a `corrections`
+row's `original_value` not a measurement, the "single-digit" framing was wrong (the crop is 2 positions off),
+the cited site `anchor.py:638-659` is stale (`:642-689`, and it is structurally unreachable on a rejected crop
+because it is gated `method == "anchor_crop"` at `:665`), and `on_reject` is TRACE-ONLY so a guard hung off it
+would be dead in production. Measured 0 TP / 9-10 false holds. See the LATE block above. **Owner live-checks OPEN**
+(on the current installer): Thornbury
 invoice/PO_05 (issue-2 + located-recovery) + Saltmarsh sales-order (no "Template available: Larkspur"). Memory:
 [[project_taught_ownership_own_label]] · [[project_late_located_corrob]] · [[project_name_presence_veto]] ·
 [[project_name_guard_keyword_clear]] · [[project_deskew_raw_witness]] · [[project_slice1d_donothing]]. **Prior block ↓**
@@ -555,6 +611,33 @@ the LATE session block above.) Daytime detail: `HANDOVER_2026-07-20.md` (then
   pilots); remediation conventions: `gt_overrides.json` + the archive's 2026-07-10/11 blocks.
 
 ## Working rules (read before any fix)
+
+**STOP AND SECOND-GUESS at these five junctures** (owner rule, added 2026-07-24 after a root cause was
+missed that the owner spotted immediately). Not "think harder" — at each named juncture, spend ONE extra
+step asking **"do I need more information?"** and **"what am I missing?"**, then continue. This does NOT
+override token conservation: it is five specific moments, not a licence to widen every investigation.
+1. **You just looked at an artefact to answer ONE question.** Before closing an image / trace / report,
+   describe what ELSE is in the frame. FAILURE 2026-07-24: nine document crops were opened to read a
+   reference number; every one of them also showed a visibly SKEWED page, which was the actual root
+   cause, and it was read past nine times.
+2. **You found a plausible cause and it feels satisfying** — especially when it is a code smell (a wrong
+   comment, a suspicious constant, an obvious asymmetry). Ask "why is THAT true?" one level deeper before
+   designing. A wrong comment is evidence of confusion, not proof you have found the mechanism.
+3. **Your own measurement produced an extreme number.** An extreme number IS the finding — do not file it
+   as mild corroboration of the small hypothesis you already hold. FAILURE: `no_candidate = 326/574`
+   (57% of rigid crops yielding nothing comparable) was noted as "consistent with clipping" and moved
+   past; 57% is a structural mismatch, not an under-sized constant.
+4. **Before proposing ANY fix**, ask "am I treating a symptom?" and "what would make this wrong?" — then
+   say the answer out loud in the design. A fix that compensates for a misalignment instead of removing
+   it will pass its unit test and fail its corpus gate (it did: the crop-headroom A/B bought 2 new silent
+   wrong reads and healed 0).
+5. **Before concluding, grep the memory index + CLAUDE.md for prior art on the MECHANISM**, not just on
+   the symptom. FAILURE: `project_skew_anchor_misread` / `project_detect_deskew_parked` /
+   `project_deskew_field_reread` already recorded that skew breaks anchored reads. All three were in the
+   index and none were consulted.
+**Corollary — the owner is a live source of information, not just an approver.** When something is cheap
+for them to answer and expensive to infer (how they draw a teach box, whether duplicate imports are
+deliberate, what a scan actually looks like), ASK before building on an assumption.
 
 **Token conservation — hard requirement**
 - Smallest possible scope: read the fewest files necessary; never scan the
