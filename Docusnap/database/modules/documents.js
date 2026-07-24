@@ -2,6 +2,10 @@
 
 const path = require('path');
 
+// Best-effort single-row query — returns null instead of throwing (used to probe optional
+// schema like template_hidden_fields, migration 54, so an older DB / test fixture is unaffected).
+function safeQ(db, sql) { try { return db.prepare(sql).get(); } catch { return null; } }
+
 function insert(db, { original_filename, folder_path, document_type_id,
                       supplier_name, overall_confidence, status,
                       template_id, logo_phash, logo_detail_hash, keyword_fingerprint,
@@ -167,6 +171,14 @@ function getReviewQueue(db) {
   // correction candidate — lets the review list colour "corrected/flagged" rows
   // distinctly without loading every field. Read-only enrichment; no change to
   // confidence calculation.
+  // Per-template field HIDING (migration 54): a field HIDDEN for the doc's matched template is not
+  // counted as a missing-required blocker. Conditional on the table existing so an older DB / a test
+  // fixture without it is byte-identical (empty fragment). Inert when nothing is hidden.
+  const _hasHidden = !!safeQ(db, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='template_hidden_fields'");
+  const _hiddenExcl = _hasHidden
+    ? `AND NOT EXISTS (SELECT 1 FROM template_hidden_fields h
+                        WHERE h.template_id = d.template_id AND h.field_key = f.key)`
+    : '';
   return db.prepare(`
     SELECT d.*, dt.name as type_name, dt.slug as type_slug,
       (SELECT COUNT(*) FROM extractions e
@@ -195,6 +207,7 @@ function getReviewQueue(db) {
           AND ( f.key = dt.ref_field_key
                 OR f.key = dt.date_field_key
                 OR (f.required = 1 AND f.key NOT IN ('supplier_name','customer_name')) )
+          ${_hiddenExcl}
           AND NOT EXISTS (
                 SELECT 1 FROM extractions e
                  WHERE e.document_id = d.id AND e.field_key = f.key

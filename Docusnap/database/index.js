@@ -1075,6 +1075,30 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 53 applied: documents.learning_retracted_at column added (delete/restore learning symmetry; NULL-inert)');
   }
 
+  // Migration 54: template_hidden_fields — per-template field HIDING (owner-approved 2026-07-24).
+  // A DISPLAY/EXPECTATION mask: hide a field the TYPE has but THIS supplier's layout lacks (e.g.
+  // ITEM/SERIAL on a worksheet that doesn't print them) so Review stops showing it as an empty
+  // "not found" row and stops counting it as a missing-required blocker FOR THAT TEMPLATE. It is a
+  // MASK, never a data delete — extraction still runs and stores whatever it reads; only the review
+  // EXPECTATION for this template changes. HIDE-ONLY + superset-locked (you can only hide a field the
+  // type already has; you can never ADD one) and structural roles (issuer/date/ref) can NEVER be
+  // hidden — both enforced in templates.setHiddenField. Keyed by template_id → per-supplier-layout,
+  // not per-type. ADDITIVE + INERT: with zero rows every consumer clause is a no-op ⇒ byte-identical.
+  if (!applied.has(54)) {
+    if (tableExists(db, 'templates') && !tableExists(db, 'template_hidden_fields')) {
+      try {
+        db.exec(`CREATE TABLE template_hidden_fields (
+          template_id INTEGER NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
+          field_key   TEXT    NOT NULL,
+          hidden_at   TEXT    DEFAULT (datetime('now')),
+          PRIMARY KEY (template_id, field_key)
+        )`);
+      } catch (e) { console.warn(`  migration 54 template_hidden_fields: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (54)').run();
+    console.log('JS migration 54 applied: template_hidden_fields table added (per-template field-hiding mask; INERT with no rows)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

@@ -14,6 +14,7 @@ const LOGO_APPEND_BAND = 13;   // append only within this Hamming of an existing
 const brandingFp = require('./branding_fingerprint');
 const logoDetail = require('./logoDetail');   // 256-bit isolated-mark veto arithmetic (mig 47)
 const namePresence = require('./namePresence');   // per-supplier name-presence veto (Oracle 2026-07-24)
+const safe = (fn, dflt) => { try { return fn(); } catch { return dflt; } };
 
 // The stored templates.confirmed_count is bumped ONLY by templates.update(), which runs on the
 // taught-confirm reuse branch (_upsertTemplate via onTaughtConfirm) — so an ordinary confirm never
@@ -334,6 +335,65 @@ function recordMappingTest(db, templateId, fieldKey, { value, confidence, status
         last_test_at = datetime('now')
     WHERE template_id = ? AND field_key = ?
   `).run(value ?? null, confidence ?? null, status || null, templateId, fieldKey);
+}
+
+// ── Per-template field HIDING (migration 54, owner-approved 2026-07-24) ───────────────────────
+// A DISPLAY/EXPECTATION mask: hide a field the TYPE has but THIS supplier's layout lacks, so Review
+// stops showing it as an empty "not found" row and stops counting it a missing-required blocker FOR
+// THIS TEMPLATE. Never a data delete (extraction still runs + stores whatever it reads). HIDE-ONLY,
+// superset-locked (only a field the type actually has), structural roles (issuer/date/ref) NEVER
+// hideable — enforced here in setHiddenField. INERT: with no rows, every consumer clause is a no-op.
+function _thfTableExists(db) {
+  try {
+    return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='template_hidden_fields'").get();
+  } catch { return false; }
+}
+
+function _structuralKeysForTemplate(db, templateId) {
+  // Keys that can NEVER be hidden: the identity/company key(s) + customer_name + the type's ref/date
+  // roles. Mirrors document_types.COMPANY_KEYS + the structural-role definition (CLAUDE.md).
+  const { COMPANY_KEYS } = require('./document_types');
+  const keys = new Set([...(COMPANY_KEYS || ['supplier_name']), 'customer_name']);
+  const row = safe(() => db.prepare(
+    `SELECT dt.ref_field_key AS ref, dt.date_field_key AS date
+       FROM templates t LEFT JOIN document_types dt ON dt.slug = t.document_type_slug
+      WHERE t.id = ?`).get(templateId), null);
+  if (row) { if (row.ref) keys.add(row.ref); if (row.date) keys.add(row.date); }
+  return keys;
+}
+
+function getHiddenFields(db, templateId) {
+  if (!_thfTableExists(db)) return [];
+  return db.prepare('SELECT field_key FROM template_hidden_fields WHERE template_id = ? ORDER BY field_key')
+           .all(templateId).map(r => r.field_key);
+}
+
+function isFieldHideable(db, templateId, fieldKey) {
+  // Superset-lock: the field must exist on the template's TYPE, and must not be a structural role.
+  if (_structuralKeysForTemplate(db, templateId).has(fieldKey)) return false;
+  const t = safe(() => db.prepare('SELECT document_type_slug FROM templates WHERE id = ?').get(templateId), null);
+  if (!t) return false;
+  const exists = safe(() => db.prepare(
+    `SELECT 1 FROM fields f JOIN document_types dt ON dt.id = f.document_type_id
+      WHERE dt.slug = ? AND f.key = ? LIMIT 1`).get(t.document_type_slug, fieldKey), null);
+  return !!exists;
+}
+
+function setHiddenField(db, templateId, fieldKey, hidden) {
+  // Returns {ok, reason?}. Refuses a structural role or a field not on the type (superset-lock).
+  if (hidden && !isFieldHideable(db, templateId, fieldKey)) {
+    const structural = _structuralKeysForTemplate(db, templateId).has(fieldKey);
+    return { ok: false, reason: structural ? 'structural-role' : 'not-a-type-field' };
+  }
+  if (!_thfTableExists(db)) return { ok: false, reason: 'no-table' };
+  if (hidden) {
+    db.prepare('INSERT OR IGNORE INTO template_hidden_fields (template_id, field_key) VALUES (?, ?)')
+      .run(templateId, fieldKey);
+  } else {
+    db.prepare('DELETE FROM template_hidden_fields WHERE template_id = ? AND field_key = ?')
+      .run(templateId, fieldKey);
+  }
+  return { ok: true };
 }
 
 // 8-region coarse grid: 2 columns × 4 rows of the page, indexed 0-7
@@ -1170,6 +1230,7 @@ module.exports = {
   stabiliseFingerprint, chooseLogoPhash,
   getMappings, getMapping, saveMapping, setMappingEnabled, deleteMapping,
   recordMappingTest, setSampleDocument, reassignDocuments, mergeInto, setFieldFixedValue,
+  getHiddenFields, isFieldHideable, setHiddenField,
   setOcrAutoParams, setOcrAutoEnabled,
   getLandmarks, setLandmarks, clearLandmarks, hasManualLandmarks, hasCrossSampleLandmarks,
   replaceSampleWords, countSampleDocs, getSampleWordsByDoc,
