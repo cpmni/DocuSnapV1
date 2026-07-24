@@ -171,6 +171,23 @@ def _late_rescue_applicable(s2_supplier, supplier_name):
     return (not s2_supplier) and _kw._is_plausible_supplier_name(supplier_name)
 
 
+def _apply_late_rescue_sticky_cap(results, cap=_LATE_RESCUE_CAP):
+    """TERMINAL re-cap of Stage-2.6 late-rescue reads (kill LATE_RESCUE_CAP_STICKY, gated at the
+    ONE call site in extract()). Pure over the results dict: for every field carrying the
+    `late_rescue` provenance stamped at the rescue (:3629), return its confidence to `cap` if a
+    later boost re-inflated it above the cap. VALUE is never touched (fail-toward-review — a wrong
+    blind read is HELD, not filed). Skips `_`-prefixed metadata and non-dict entries. Returns the
+    count re-capped. See the call site for the full rationale + the forward-seam warning."""
+    n = 0
+    for k, d in results.items():
+        if k.startswith('_') or not isinstance(d, dict):
+            continue
+        if d.get("late_rescue") and int(d.get("confidence") or 0) > cap:
+            d["confidence"] = cap
+            n += 1
+    return n
+
+
 def _filter_located_corrob(corrob_results, anchors_by_key, date_field_keys,
                            tol_x, tol_y, normalise_date):
     """PURE filter for Stage 2.6b late located crop-corroboration (Oracle C1-C3, unit-pinned by
@@ -3792,9 +3809,14 @@ class ExtractionEngine:
                     }
                     if was_changed:
                         n_corrected += 1
-                        self._t("transform", field=key, stage="2.5_correct",
-                                method=results[key]["method"], confidence=new_conf,
-                                **{"from": data["value"], "to": corrected_val})
+                    # Trace on ANY boost, not only a value change (Oracle C6): a CONFORMANCE-only
+                    # lift (boost_table{0:8} — +8 for zero fixes, value unchanged) was previously
+                    # INVISIBLE in the trace, which is precisely why the late-rescue cap leak
+                    # (85 -> 93 -> 98) took a full day to find. Emitting it whenever boost>0 makes
+                    # the dev-inspector's per-field lineage show why a rescued field gained conf.
+                    self._t("transform", field=key, stage="2.5_correct",
+                            method=results[key]["method"], confidence=new_conf, boost=boost,
+                            changed=was_changed, **{"from": data["value"], "to": corrected_val})
             if n_corrected:
                 self.log(f"  Stage 2.5: {n_corrected} OCR correction(s) applied")
 
@@ -4358,6 +4380,33 @@ class ExtractionEngine:
                 _d['confidence'] = min(98, _cur + _b)
         except Exception:
             pass
+
+        # ── LATE-RESCUE STICKY CAP (kill LATE_RESCUE_CAP_STICKY; 2026-07-24) ──────────────────────
+        # engine.py:3572-3576 DOCUMENTS the invariant "a rescued ref/date can never auto-file at any
+        # threshold" and enforces it at :3628 with min(conf, _LATE_RESCUE_CAP=85). Two later boosts
+        # SILENTLY defeat it: Stage-2.5b conformance (ocr_corrector boost_table{0:8} — +8 merely for
+        # MATCHING the learned shape, which a valid-shaped misread does BY CONSTRUCTION) then the
+        # Stage-4.5 learned-agreement boost (+5), so 85 -> 93 -> 98 and a BLIND late-rescue crop
+        # misread (supplier resolved late, no context) auto-files SILENTLY — the worst class, and the
+        # real-world cold-start / new-supplier case, not a synthetic artefact. This TERMINAL re-cap
+        # restores the invariant ONCE, after EVERY boost and before overall_confidence, keying on the
+        # `late_rescue` provenance the rescue already stamps at :3629. It runs after all boosts and
+        # there is no later max() on per-field confidence (engine.py:3182's max() is upstream, in
+        # Stage-2 merge), so no boost can defeat it (Oracle C1: terminal, not per-site skips).
+        # FAIL-TOWARD-REVIEW: the VALUE is untouched — only confidence returns to the cap, so a wrong
+        # blind read is HELD (sub-88 critical floor / general threshold) instead of filed. Covers both
+        # lifts by construction (Oracle C2: +8 alone -> 93, +5 alone -> 90, both > the 88 floor).
+        # OFF (=0) skips the loop => byte-identical. Steady-state cost is low: rescue only fires when
+        # the supplier resolved LATE (cold DB / unlearned / weak fingerprint), rare once suppliers are
+        # learned. Pin: tests/test_late_anchor_rescue.py (post-extract cap survives the boosts).
+        if os.environ.get("LATE_RESCUE_CAP_STICKY", "1") != "0":
+            _recapped = _apply_late_rescue_sticky_cap(results)
+            if _recapped:
+                self.log(f"  Late-rescue sticky cap: {_recapped} field(s) returned to "
+                         f"{_LATE_RESCUE_CAP} (a boost had re-inflated a blind-rescue read)")
+        # ⚠ FORWARD SEAM (Oracle C5): if the "let a located rescue displace a keyword incumbent"
+        # follow-up at :3577-3585 is ever built, a rescue could OVERWRITE a good keyword value and
+        # this cap would then hold a value that WAS trustworthy — re-scope the marker there first.
 
         # ── Metadata ──────────────────────────────────────────────────────────
         overall_conf  = validator.overall_confidence(results, field_defs)
