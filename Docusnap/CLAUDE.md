@@ -21,7 +21,36 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-07-23 NIGHT) — READ `HANDOVER_2026-07-23_NIGHT.md` FIRST
+## Current session state (2026-07-24) — READ `HANDOVER_2026-07-24.md` FIRST
+**2026-07-24 (Opus 4.8 1M) — live-testing day WITH the owner; branch `feat/reprocess-throughput-autostraighten`
+PUSHED through `f0107f9` (origin in sync `0 0`); tree clean.** Owner-facing pipeline overview (flowchart + plain-
+English stage-by-stage): **`docs/DETECTION_OVERVIEW_2026-07-24.pdf`**. **6 code commits, all kill-switched
+(OFF ⇒ byte-identical), each advisor→Oracle SIGN-OFF, corpus M-safe:**
+`4af4bba` **issue-2 own-label exemption** — a precise labelled keyword read (Invoice No/PO Date) no longer
+over-flagged by the taught-ownership guard; SHARED/generic labels (Date/#) still held (kill `TAUGHT_OWNERSHIP_OWN_LABEL`, ON) ·
+`5c94db8` **located-recovery** — Stage-2.6b re-runs an owned taught anchor when the supplier resolved LATE (Stage 2
+ran supplier-blind) so a correct held ref/date lifts (kill `LATE_RESCUE_LOCATED_CORROB`, ON; #473 fixed; the crop-
+BLIND version was Oracle-REJECTED = repeated-date misfile) · `7229cdd` **name-presence veto** — kills a cross-supplier
+LOGO false-match on the JS template SUGGESTION path (Larkspur-on-Saltmarsh): a supplier that reliably prints its own
+name can't be suggested for a page missing it (kill `TEMPLATE_NAME_PRESENCE_VETO`, ON; live sweep 510 docs → 0 false-
+vetoes; guards the pill + teach-wizard save-target + graduation link) · `7d11f86` **name-guard keyword-clear — DARK**
+(kill `NAME_GUARD_KEYWORD_CLEAR`, **DEFAULT OFF**) — clears a PHANTOM 'caption disagreed' flag on a keyword-corroborated
+name; the owner's raw-OCR-witness idea was Oracle-SENT-BACK (it silently files a stale DRIFTED name); its M-gate rose
+10→11 on **#259** (a CORRECT name-flag-clear un-masked a pre-existing REAL ref misread DN-28472→DN-38472), so per
+Oracle+owner it ships DARK · (+ overnight `8e2211c` deskew raw-witness ON, `5377e24` slice-1d DO-NOTHING; the naive
+cross-tier auto-file lift was MEASURED+REVERTED). **Installer** `dist\ScanFinder Setup 2.0.0-r20260724-1432-7229cdd.exe`
+(3 LIVE fixes; name-guard is dark → NO rebuild needed for it). **NEXT — the ONE tracked follow-up + the name-guard
+PRECONDITION: the REF-HOLD guard.** Make the authoritative-crop cross-check (`anchor.py:638-659`) flag a valid-shaped
+**SINGLE-DIGIT** crop-vs-full-page ref disagreement EVEN when the crop read is sub-credible — the net that catches
+#259's `DN-28472`/`DN-38472` (it doesn't fire because the crop 'N-28472' is sub-credible → "credible AND disagrees"
+fails). Feeds every ref/date field → its OWN corpus gate; the old City-Office silent-misread class; #259 = the named
+canary. When it lands: pin (#259's ref flags; enabling the name-clear doesn't raise silentAutoFile), then flip
+`NAME_GUARD_KEYWORD_CLEAR=1` (or ship both together). **Owner live-checks OPEN** (on the current installer): Thornbury
+invoice/PO_05 (issue-2 + located-recovery) + Saltmarsh sales-order (no "Template available: Larkspur"). Memory:
+[[project_taught_ownership_own_label]] · [[project_late_located_corrob]] · [[project_name_presence_veto]] ·
+[[project_name_guard_keyword_clear]] · [[project_deskew_raw_witness]] · [[project_slice1d_donothing]]. **Prior block ↓**
+
+## (prior) Session state (2026-07-23 NIGHT) — READ `HANDOVER_2026-07-23_NIGHT.md` FIRST
 **2026-07-23 NIGHT (Fable 5) — 15 commits, ALL PUSHED through `b28f581`; tree clean; migration 53.**
 `48262e0` **ANCHOR_LINE_SELECT built DARK** (flip = the live Thornbury gate) · UI: editor subgrid rows
 + Keywords pill `c5c1e58`, type-LIST drag `76c2b96`, Review labels left `7b07620` · **identity chain**:
