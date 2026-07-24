@@ -13,6 +13,7 @@ const LOGO_APPEND_BAND = 13;   // append only within this Hamming of an existing
 // branding rather than the unstable logo — see branding_fingerprint.js + the M2 design doc).
 const brandingFp = require('./branding_fingerprint');
 const logoDetail = require('./logoDetail');   // 256-bit isolated-mark veto arithmetic (mig 47)
+const namePresence = require('./namePresence');   // per-supplier name-presence veto (Oracle 2026-07-24)
 
 // The stored templates.confirmed_count is bumped ONLY by templates.update(), which runs on the
 // taught-confirm reuse branch (_upsertTemplate via onTaughtConfirm) — so an ordinary confirm never
@@ -615,12 +616,22 @@ function identifyByFingerprint(db, { logo_phash, ocr_text, document_type_slug = 
       // its last JS holdout; see logoDetail.js for the deliberate Stage-0 semantic divergence.
       const vetoed = logo_detail_hash && process.env.TEMPLATE_LOGO_DETAIL_VETO !== '0'
         && logoDetail.shouldVetoLogo(logo_detail_hash, getLogoDetailHashes(db, logoMatch.id));
-      if (!vetoed) {
+      // NAME-PRESENCE VETO (Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-24): a supplier that reliably
+      // prints its own name can't be suggested for a page lacking it — the JS twin of the Python
+      // TEMPLATE_LOGO_TEXT_GATE, keyed on a learned per-supplier ratio. Sibling to the detail veto:
+      // both only turn accept->abstain (monotonic) and fall through to the text keyword arm. It is
+      // MORE load-bearing than the detail veto here — it also guards the wizard save-target and the
+      // graduation link that share identifyByFingerprint. See namePresence.js.
+      const nameVetoed = !vetoed && namePresence.nameBearingButAbsent(db, logoMatch.id, ocr_text);
+      if (!vetoed && !nameVetoed) {
         return { template: { id: logoMatch.id, name: logoMatch.name }, confidence: logoMatch.confidence, method: 'logo' };
       }
     }
   }
-  return findByKeywordFingerprint(db, ocr_text, 75, document_type_slug);
+  // Gate the keyword arm too (Oracle: both arms) — a keyword-fingerprint match to a name-bearing
+  // supplier whose name is absent on this page is the same cross-supplier suggestion.
+  const kw = findByKeywordFingerprint(db, ocr_text, 75, document_type_slug);
+  return (kw && namePresence.nameBearingButAbsent(db, kw.template.id, ocr_text)) ? null : kw;
 }
 
 // Cheap name-based lookup for the Learning Recovery tab — shows managed
