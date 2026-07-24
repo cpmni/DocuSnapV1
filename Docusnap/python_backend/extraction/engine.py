@@ -76,6 +76,18 @@ IDENTITY_RESCUE_ENABLED = True
 # critical-field auto-file floor. See the Stage 2.6 block in extract().
 LATE_ANCHOR_RESCUE_ENABLED = True
 _LATE_RESCUE_CAP = 85
+# LATE LOCATED CROP-CORROBORATION (2026-07-24, gary design + Oracle SIGN-OFF-WITH-CONDITIONS): the
+# A-over-B follow-up named in the Stage-2.6 seam. When the supplier resolved LATE, the owned
+# authoritative anchor never ran, so a keyword-filled critical ref/date is capped by the taught-
+# ownership guard with no located corroboration — even when the value is correct and at the taught
+# position. Stage 2.6b re-runs JUST those anchors and remembers a GENUINELY-LOCATED read (Oracle C1:
+# {anchor_inline, anchor_crop_relocated} whitelist + located=True; C2: near-taught value-box
+# proximity, fail-CLOSED; C3: date canonicalised to the committed DD-MM-YYYY) so the UNCHANGED
+# _anchor_corroborates vouches -> the guard does not cap. CORROBORATE-ONLY (no results write).
+# DEFAULT ON (Oracle SIGN-OFF-WITH-CONDITIONS; corpus silentAutoFile UNCHANGED at 9, M_type 1,
+# lift 4 caps 6->2; #473 po_date 69+note -> 98 clean); kill LATE_RESCUE_LOCATED_CORROB=0 (byte-
+# identical off). Guarded by test_late_located_corrob.py.
+LATE_RESCUE_LOCATED_CORROB = os.environ.get('LATE_RESCUE_LOCATED_CORROB', '1') != '0'
 
 # Stage-4.5 GATE-FAILURE RE-READ kill switch (2026-07-11; DEFAULT ON — the old "ships DARK"
 # note was stale). When a structured value is WITHHELD on format grounds (value=None), take ONE
@@ -157,6 +169,44 @@ def _late_rescue_applicable(s2_supplier, supplier_name):
     is a different, riskier class, deliberately out of scope."""
     from extraction import keyword as _kw
     return (not s2_supplier) and _kw._is_plausible_supplier_name(supplier_name)
+
+
+def _filter_located_corrob(corrob_results, anchors_by_key, date_field_keys,
+                           tol_x, tol_y, normalise_date):
+    """PURE filter for Stage 2.6b late located crop-corroboration (Oracle C1-C3, unit-pinned by
+    tests/test_late_located_corrob.py). Keeps ONLY reads that may safely vouch for a keyword-filled
+    critical value at the taught-ownership guard, returning {field_key: candidate}:
+      C1  method in {anchor_inline, anchor_crop_relocated} (label-confirmed reads that carry a value
+          box) AND located is True — a BLIND authoritative rigid read (anchor_crop, located=False)
+          is DROPPED, so it can never vouch through _anchor_corroborates' `authoritative OR located`
+          (that bypass is the repeated-date hole).
+      C2  the located value box sits NEAR the taught value box (a second same-caption elsewhere reads
+          a different row -> dropped). FAILS CLOSED: no box / bad coords / no taught anchor -> dropped.
+      C3  a DATE candidate is canonicalised to DD-MM-YYYY (the form the validator already gave the
+          committed value) so the UNCHANGED token compare in _anchor_corroborates matches.
+    No I/O, no engine state — safe to unit-test directly."""
+    out = {}
+    for k, d in (corrob_results or {}).items():
+        if not isinstance(d, dict) or not d.get("value"):
+            continue
+        if str(d.get("method") or "") not in ("anchor_inline", "anchor_crop_relocated"):
+            continue                                   # C1: genuine-locate whitelist
+        if not d.get("located"):
+            continue                                   # C1: located-only (never a blind rigid read)
+        box, a = d.get("box"), (anchors_by_key or {}).get(k)
+        try:
+            near = (bool(box) and a is not None
+                    and abs(float(box["x_norm"]) - float(a.get("x_norm") or 0)) <= tol_x
+                    and abs(float(box["y_norm"]) - float(a.get("y_norm") or 0)) <= tol_y)
+        except Exception:
+            near = False
+        if not near:
+            continue                                   # C2: near-taught, fail-CLOSED
+        d = dict(d)
+        if k in (date_field_keys or set()):
+            d["value"] = normalise_date(d.get("value")) or d.get("value")   # C3
+        out[k] = d
+    return out
 
 # The resolved-identity ORIGINS a rescue may corroborate against: structural sources
 # (logo / template identity / fixed values / template anchor). keyword- and
@@ -3536,6 +3586,51 @@ class ExtractionEngine:
                 if rescued:
                     self.log(f"  Stage 2.6: {rescued} field(s) rescued from this supplier's "
                              f"anchors (supplier resolved after Stage 2)")
+
+        # ── Stage 2.6b: LATE LOCATED CROP-CORROBORATION (Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-24) ──
+        # See the module note at LATE_RESCUE_LOCATED_CORROB. When the supplier resolved late, the
+        # keyword-filled critical ref/date whose taught anchor never ran gets capped by the taught-
+        # ownership guard. Re-run ONLY those anchors, remember a genuinely-LOCATED read, and let the
+        # UNCHANGED _anchor_corroborates suppress the cap. Corroborate-only — never writes results.
+        if (LATE_RESCUE_LOCATED_CORROB and LATE_ANCHOR_RESCUE_ENABLED and anchors and page_images
+                and _late_rescue_applicable(_s2_supplier, supplier_name)):
+            _crit_keys = (({ref_field_key} if ref_field_key else set()) | set(date_field_keys or ()))
+            # The guard-capped class: an OWNED (authoritative), same-type, resolved-supplier-only
+            # (the late-rescue delta) CRITICAL anchor whose field currently holds a plain KEYWORD read.
+            corrob_set = [a for a in anchors
+                          if a.get("field_key") in _crit_keys
+                          and (a.get("document_type") or "") == (document_slug or "")
+                          and str(a.get("last_authoritative_at") or "").strip()
+                          and anchor.anchor_admissible(a, supplier_name, document_slug)
+                          and not anchor.anchor_admissible(a, None, document_slug)
+                          and str((results.get(a.get("field_key")) or {}).get("method") or "") == "keyword"]
+            if corrob_set:
+                try:
+                    corrob_results = anchor.extract_with_anchors(
+                        ocr_text, corrob_set, supplier_name, document_slug,
+                        page_images=page_images,
+                        field_patterns=field_patterns,
+                        validation_patterns=self.patterns.get("validation_patterns", {}),
+                        format_lookup=self._make_format_lookup(supplier_name, document_slug),
+                        page_transform=None,
+                        page_text_lines=page_text_lines,
+                        text_field_keys=text_field_keys,
+                        multiline_lookup=self._make_multiline_lookup(supplier_name, document_slug),
+                    ) or {}
+                except Exception as e:
+                    corrob_results = {}
+                    self.log(f"  Stage 2.6b: located crop-corroboration failed ({e})", "warn")
+                from extraction import validator as _validator
+                _corrob_filtered = _filter_located_corrob(
+                    corrob_results, {a.get("field_key"): a for a in corrob_set},
+                    date_field_keys, anchor._SAME_LAYOUT_TOL_X, anchor._SAME_LAYOUT_TOL_Y,
+                    _validator.normalise_date)
+                if _corrob_filtered:
+                    # Remember the FILTERED subset ONLY (Oracle C1 — do NOT mirror the unfiltered
+                    # remember above); corroborate-only, results untouched.
+                    self._remember_candidates('2.6_late_corrob', _corrob_filtered)
+                    self._t("late_located_corrob", fields=list(_corrob_filtered.keys()),
+                            values=[str(v.get("value"))[:24] for v in _corrob_filtered.values()])
 
         # ── Stage 2.5b: Apply supplier hints (fill missing fields only) ──────────
         # Hints only fill fields that keyword/anchor found NOTHING for.
