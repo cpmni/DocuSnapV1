@@ -131,6 +131,19 @@ TAUGHT_FIELD_OWNERSHIP_ENABLED = os.environ.get('TAUGHT_FIELD_OWNERSHIP', '1') !
 # Oracle C1: a BLIND non-authoritative anchor (passive/__global__/Stage-2.6 late-rescue) may NOT vouch.
 # Own sub-switch so it A/Bs and rolls back independently of the c2 guard.
 TAUGHT_OWNERSHIP_CORROBORATE = os.environ.get('TAUGHT_OWNERSHIP_CORROBORATE', '1') != '0'
+# OWN-LABEL EXEMPTION (2026-07-24, reggie design + Oracle SIGN-OFF-WITH-CONDITIONS C1-C3): the
+# ownership cap is ALSO declined when the keyword read matched a caption UNIQUE TO THIS FIELD that
+# carries a field-identifying token ("Invoice No", "PO Date") — a precise labelled read, not a
+# generic-caption stand-in. A SHARED caption ("Date", "Issue Date", "Order No", "PO Number", "Order
+# Number" — carried by >=2 roles) or a purely-generic one ("#") stays HELD. keyword.
+# label_is_own_discriminating is the sole new gate; every other read stays capped as now.
+# Corpus (realdoc_regression, 449): +21 auto-files (311->332), M and M_type UNCHANGED (9/1), 45->6
+# over-flags removed, 0 accuracy drift. DEFAULT ON (Oracle's call — the residuals were closed at the
+# CONFIG layer per C2: "Printed On" removed from po_date labels, "Order Number" added to
+# purchase_order_number so it is SHARED->held; do NOT add a role-token rule, it would break legit
+# synonyms "Bill No"/"Order Ref" — pinned in test_taught_ownership_own_label.py). Kill: =0 (byte-
+# identical off). C3 owner live-check outstanding: the Thornbury invoice files clean, no 69 cap.
+TAUGHT_OWNERSHIP_OWN_LABEL = os.environ.get('TAUGHT_OWNERSHIP_OWN_LABEL', '1') != '0'
 
 
 def _late_rescue_applicable(s2_supplier, supplier_name):
@@ -2074,6 +2087,13 @@ class ExtractionEngine:
                     continue
                 if _anchor_corroborates(key, val):
                     continue
+                if (TAUGHT_OWNERSHIP_OWN_LABEL
+                        and keyword.label_is_own_discriminating(
+                            d.get('label'), key, getattr(self, '_label_owners', {}) or {})):
+                    # matched via THIS field's OWN discriminating caption ("Invoice No", "PO
+                    # Date") — a precise labelled read, not a generic-caption stand-in. A shared
+                    # ("Date") or purely-generic ("#") label does NOT qualify (reggie 2026-07-24).
+                    continue
                 d['confidence'] = min(int(d.get('confidence') or 0), 69)
                 if not str(d.get('validation_note') or '').strip():
                     d['validation_note'] = (
@@ -2833,6 +2853,10 @@ class ExtractionEngine:
         # = name-like/party fields, CUSTOMER-SIDE only — supplier_name EXCLUDED explicitly (NOT via
         # _IDENTITY_FIELD_KEYS, which still lists customer_name and would silently neuter the fix).
         _caption_vocab = keyword.build_caption_vocab(patterns_for_run.get('field_patterns'), field_defs)
+        # OWN-LABEL exemption index for the taught-ownership guard (reggie 2026-07-24): {label ->
+        # {field_keys}} from the SAME post-merge bank, so the guard can tell a field's own
+        # discriminating caption ("Invoice No") from a shared/generic one ("Date"/"#").
+        self._label_owners = keyword.build_label_owner_index(patterns_for_run.get('field_patterns'))
         _caption_guard_keys = {
             f.get('key') for f in (field_defs or [])
             if f.get('key') and f.get('key') != 'supplier_name'

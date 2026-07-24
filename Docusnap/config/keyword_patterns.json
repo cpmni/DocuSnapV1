@@ -413,7 +413,8 @@
         "Your PO",
         "Order No",
         "Order Reference",
-        "Order Ref"
+        "Order Ref",
+        "Order Number"
       ],
       "directions": [
         "right",
@@ -452,7 +453,6 @@
         "PO Date",
         "Order Date",
         "Date of Order",
-        "Printed On",
         "Issue Date",
         "Date"
       ],

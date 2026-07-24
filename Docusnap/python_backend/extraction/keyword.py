@@ -99,6 +99,53 @@ def build_caption_vocab(field_patterns: dict, field_defs=None) -> dict:
     return {'tuples': tuples, 'joined': joined}
 
 
+# ── Taught-ownership OWN-LABEL exemption (2026-07-24, reggie design) ───────────────────
+# Every keyword read records the exact caption it matched (results[key]['label'], see the
+# extract_fields read-dict). The taught-field ownership guard (engine._flag_taught_field_
+# ownership) caps a plain keyword read of an authoritatively-taught field that didn't confirm
+# on this page — but a value matched via a caption UNIQUE TO THIS FIELD ("Invoice No", "PO
+# Date") is a precise labelled read, not a generic-caption stand-in. This pair lets the guard
+# tell the two apart: a discriminating own-label declines the cap; a SHARED caption ("Date",
+# "Issue Date", "Order No" — carried by >=2 roles) or a purely-generic one ("#") stays held.
+# Precision-first — any doubt keeps the hold (a false exemption is a silent wrong auto-file).
+_GENERIC_LABEL_TOKENS = frozenset({
+    'date', 'dated', 'no', 'number', 'num', 'ref', 'reference', 'id', 'dt', 'of', 'the',
+})
+
+
+def _norm_label(text) -> str:
+    return ' '.join(str(text or '').lower().split())
+
+
+def build_label_owner_index(field_patterns: dict) -> dict:
+    """{normalised-label -> frozenset(field_keys carrying it)} from the POST-MERGE
+    field_patterns bank (patterns_for_run['field_patterns'] — the SAME source as
+    build_caption_vocab). A label carried by >=2 roles ('date', 'issue date', 'order no')
+    is thereby detectable as NON-discriminating. Reach grows automatically with the banks."""
+    owners: dict = {}
+    for key, entry in (field_patterns or {}).items():
+        for lab in (entry.get('labels') or []):
+            t = _norm_label(lab.get('text') if isinstance(lab, dict) else lab)
+            if t:
+                owners.setdefault(t, set()).add(key)
+    return {k: frozenset(v) for k, v in owners.items()}
+
+
+def label_is_own_discriminating(label, field_key, owners) -> bool:
+    """True iff the matched keyword `label` is UNIQUE to `field_key` across the run's
+    field_patterns AND carries >=1 field-identifying token (not purely generic role words).
+    Precision-first: any doubt -> False (keep the ownership hold). Used ONLY by the taught-
+    ownership guard to decline its cap for a precisely-labelled read.
+      "Invoice No"  -> owned by {invoice_number}, token 'invoice' non-generic -> True
+      "Date"        -> owned by {invoice_date, po_date, order_date}           -> False (shared)
+      "#"           -> owned by {invoice_number} but no alnum token           -> False (generic)"""
+    t = _norm_label(label)
+    if not t or owners.get(t) != frozenset({field_key}):
+        return False                                       # shared / unknown => not own
+    toks = re.findall(r'[a-z0-9]+', t)
+    return any(tok not in _GENERIC_LABEL_TOKENS for tok in toks)   # >=1 distinguishing token
+
+
 def value_is_caption(value, vocab) -> bool:
     """True when `value` IS a known caption (not a value). Rule 1: content-token-tuple equality
     ('SO #' == the 'SO #' label). Rule 2: alnum-joined equality, ONLY for a MULTI-TOKEN or
