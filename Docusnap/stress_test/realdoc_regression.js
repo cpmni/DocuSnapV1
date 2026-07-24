@@ -130,10 +130,15 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
       // (normSupplier(null) === '' — the confirmed-without-issuer class, e.g. the Unknown-Company
       // Ashford sales orders 1777/1786/1788 whose correct read the 2026-07-10 improvements restored).
       const supOk   = ov.poisoned_supplier == null || normSupplier(d.supplier_name) === normSupplier(ov.poisoned_supplier);
-      if (fnameOk && refOk && dateOk && supOk) {
-        if (ov.ref      != null) gt[fname].ref      = ov.ref;
-        if (ov.date     != null) gt[fname].date     = ov.date;
-        if (ov.supplier != null) gt[fname].supplier = ov.supplier;
+      // Type poison: a doc mis-CONFIRMED under the wrong document TYPE (e.g. #190, a purchase order
+      // filed as delivery_note — the ref/date VALUES are correct, only the type is wrong). Same
+      // self-validation discipline: the DB row must STILL carry the poisoned slug, else SKIP.
+      const typeOk  = ov.poisoned_type == null || String(d.type_slug || '') === ov.poisoned_type;
+      if (fnameOk && refOk && dateOk && supOk && typeOk) {
+        if (ov.ref      != null) gt[fname].ref       = ov.ref;
+        if (ov.date     != null) gt[fname].date      = ov.date;
+        if (ov.supplier != null) gt[fname].supplier  = ov.supplier;
+        if (ov.type     != null) gt[fname].type_slug = ov.type;   // corrects role-key lookup + the type score
         gt[fname]._overridden = true;
       } else {
         gtOverrideSkipped.push(`#${d.id}: GT override SKIPPED (identity mismatch — DB reset / re-confirmed / other machine? db-ref='${d.reference_number}' file='${d.original_filename}')`);
