@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Scan Finder — Detection Overview</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, Arial, sans-serif; color: #1b1f2a; line-height: 1.5;
+         max-width: 900px; margin: 0 auto; padding: 32px 40px; font-size: 14px; }
+  h1 { font-size: 26px; margin: 0 0 4px; color: #14203a; }
+  h2 { font-size: 19px; margin: 34px 0 10px; padding-bottom: 6px; border-bottom: 2px solid #3b7df0;
+       color: #14203a; page-break-after: avoid; }
+  h3 { font-size: 15px; margin: 16px 0 4px; color: #1a3a6b; }
+  .sub { color: #69728a; margin: 0 0 8px; font-size: 13px; }
+  .lead { background: #eef3fb; border-left: 4px solid #3b7df0; padding: 12px 16px; border-radius: 8px;
+          margin: 14px 0 6px; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #e4e7ef; vertical-align: top; }
+  th { background: #f4f6fa; color: #14203a; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600;
+          white-space: nowrap; }
+  .live { background: #e3f5ea; color: #1f7a4d; }
+  .dark { background: #fdeede; color: #9a5b16; }
+  .done { background: #e7eefc; color: #2f5fc0; }
+  .stage { border: 1px solid #e4e7ef; border-radius: 10px; padding: 12px 16px; margin: 10px 0;
+           page-break-inside: avoid; }
+  .stage .tag { font-family: 'Consolas', monospace; font-size: 11px; color: #69728a; }
+  .decision { color: #14203a; font-weight: 600; }
+  .flow { text-align: center; margin: 8px 0 4px; }
+  .mermaid { font-size: 13px; }
+  .note { font-size: 12px; color: #69728a; }
+  .star { color: #c9820a; font-weight: 700; }
+  footer { margin-top: 34px; padding-top: 12px; border-top: 1px solid #e4e7ef; color: #69728a; font-size: 12px; }
+  code { background: #f2f4f8; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  @media print { body { padding: 8px 6px; } h2 { page-break-after: avoid; } }
+</style>
+</head>
+<body>
+
+<h1>Scan Finder — How Detection Works, &amp; Today's Work</h1>
+<p class="sub">A plain-English map of the pipeline &middot; 24 July 2026</p>
+
+<div class="lead">
+  Scan Finder turns a scanned document into filed data in a <b>staged pipeline</b>. Each stage adds
+  or checks one thing, and passes the document to the next. The golden rule underneath all of it:
+  <b>when unsure, send it to review — never file a silent wrong value.</b> This page shows what each
+  stage does, the decision it makes, and what changed today. Items marked <span class="star">★</span>
+  are today's fixes.
+</div>
+
+<h2>1 &nbsp;What we did today</h2>
+<p class="sub">Four fixes shipped (three live, one held safely behind a gate) plus two "measured &rarr; do nothing" calls and one earlier straighten fix. Every risky change has an on/off switch.</p>
+<table>
+  <tr><th>Fix</th><th>What it does, in plain terms</th><th>Status</th></tr>
+  <tr>
+    <td><b>Own-label exemption</b><br>(issue&nbsp;2)</td>
+    <td>A value read from a precise label ("Invoice No", "PO Date") is no longer wrongly flagged just because a taught position didn't line up. Shared/generic labels ("Date", "#") are still checked.</td>
+    <td><span class="pill live">LIVE</span></td>
+  </tr>
+  <tr>
+    <td><b>Late located-recovery</b></td>
+    <td>When the supplier's name is worked out <i>late</i>, the taught anchor that never got to run is re-run to find the label and confirm the value — so a correct ref/date stops being held for no reason.</td>
+    <td><span class="pill live">LIVE</span></td>
+  </tr>
+  <tr>
+    <td><b>Name-presence veto</b></td>
+    <td>Kills a wrong "Template available: <i>Other Supplier</i>" suggestion. If a supplier reliably prints its own name but that name isn't on this page, its template can't be suggested (fixed Larkspur showing on a Saltmarsh doc).</td>
+    <td><span class="pill live">LIVE</span></td>
+  </tr>
+  <tr>
+    <td><b>Name-guard clear</b></td>
+    <td>Clears a false "caption disagreed" flag on a correct name when an independent read agrees. <b>Built and correct, but switched OFF</b> — it can expose a separate ref misread until the ref-guard below lands.</td>
+    <td><span class="pill dark">DARK</span></td>
+  </tr>
+  <tr>
+    <td><b>Straighten witness</b></td>
+    <td>Straighten + reprocess no longer silently corrupts a value (a rotated crop that flipped a digit is caught by re-reading the original scan).</td>
+    <td><span class="pill live">LIVE</span></td>
+  </tr>
+  <tr>
+    <td><b>Two "do-nothing" calls</b></td>
+    <td>Measured a cross-tier auto-file lift and the "Slice&nbsp;1d" logo veto — both turned out to add nothing safe or already ship. Reverted rather than add risk.</td>
+    <td><span class="pill done">MEASURED</span></td>
+  </tr>
+</table>
+<p class="note"><b>Next up (the one tracked follow-up):</b> a <b>ref-guard</b> that flags a valid-shaped single-digit ref disagreement between the tight crop and the full page (e.g. <code>DN-28472</code> vs <code>DN-38472</code>). It's the missing safety net that lets the name-guard clear switch on — and it fixes silent ref misreads on its own.</p>
+
+<h2>2 &nbsp;The pipeline at a glance</h2>
+<p class="sub">Each box is a stage; each diamond is a decision. Follow the arrows top to bottom. <span class="star">★</span> marks where today's fixes live.</p>
+<div class="flow">
+<pre class="mermaid">
+flowchart TD
+    A([Scan imported]) --> B[Read the page with OCR]
+    B --> C{Stage 0 — Known layout?<br/>logo + branding fingerprint}
+    C -->|Logo matches BUT<br/>name not on page| CV[Refuse the template<br/><b>★ name-presence veto</b>]
+    C -->|Match| D[Seed fields from the<br/>learned template]
+    C -->|No match| E
+    CV --> E
+    D --> E[Stage 1 — Keyword read<br/>find labels, read values]
+    E --> F[Stage 2 — Anchor read<br/>taught positions + logo ID]
+    F --> G{Supplier worked out<br/>only AFTER Stage 2?}
+    G -->|Yes — Stage 2 ran blind| H[Stage 2.6 — re-run the taught<br/>anchor to confirm<br/><b>★ located-recovery</b>]
+    G -->|No| I
+    H --> I[Stage 2.5 — fix known misreads,<br/>snap to a dominant value]
+    I --> J[Merge — keyword vs anchor:<br/>pick the winner per field]
+    J --> K{Anchor raised a<br/>name disagreement?}
+    K -->|An independent read agrees| KC[Clear the false flag<br/><b>★ name-guard DARK</b>]
+    K -->|No| L
+    KC --> L[Stage 4 / 4.5 — validate dates &amp;<br/>maths, check the value's shape]
+    L --> M{Auto-file gate —<br/>is every field safe?}
+    M -->|Confidence high enough<br/>AND no review flag| N([✓ Filed automatically])
+    M -->|Below the floor<br/>OR any flag/note| O([Sent to Review])
+    style N fill:#e3f5ea,stroke:#1f7a4d,color:#14203a
+    style O fill:#fde7e7,stroke:#c23b3b,color:#14203a
+    style CV fill:#fff6e8,stroke:#c9820a
+    style H fill:#fff6e8,stroke:#c9820a
+    style KC fill:#fff6e8,stroke:#c9820a
+</pre>
+</div>
+
+<h2>3 &nbsp;Each stage, in plain English</h2>
+<p class="sub">What it does &middot; <span class="decision">the decision it makes</span> &middot; where detection stands.</p>
+
+<div class="stage">
+  <h3>OCR — read the page <span class="tag">tesseract</span></h3>
+  Turns the scan into text with positions. If the page is crooked it can be "straightened" first.
+  <div class="decision">Decision: none yet — it just produces the raw words and where they sit.</div>
+  <span class="note">Today: straightening can occasionally corrupt a tight crop; that's now caught by re-reading the original scan (the "straighten witness").</span>
+</div>
+
+<div class="stage">
+  <h3>Stage 0 — Template match <span class="tag">template_matcher.py</span></h3>
+  Asks "have I seen this supplier's exact layout before?" using the logo shape and the distinctive words
+  on the page. If yes, it pre-fills the fields from the learned template.
+  <div class="decision">Decision: use a learned template, suggest one, or start fresh.</div>
+  <span class="note">Where it stands: logo shapes alone <b>cannot</b> reliably tell suppliers apart on scans (two different logos can look identical to the maths). So today's <b>name-presence veto</b> makes the page <i>text</i> the tie-breaker — a supplier that prints its name can't be suggested for a page missing it.</span>
+</div>
+
+<div class="stage">
+  <h3>Stage 0.5 — Taught mappings <span class="tag">template_mapper.py</span></h3>
+  If you've drawn a box around a field ("teach"), this reads that exact spot, adjusting for small shifts.
+  <div class="decision">Decision: read the taught box; fall back to relocation if the layout moved.</div>
+</div>
+
+<div class="stage">
+  <h3>Stage 1 — Keyword read <span class="tag">keyword.py</span></h3>
+  The workhorse. Finds labels ("Invoice No", "Order Date", "Customer") and reads the value next to them.
+  Handles ~60–70% of fields on its own.
+  <div class="decision">Decision: for each field, which label matched and what value sits by it.</div>
+  <span class="note">Today: the <b>own-label exemption</b> means a value read from a field's <i>own</i> distinctive label is trusted, not wrongly held.</span>
+</div>
+
+<div class="stage">
+  <h3>Stage 2 — Anchor read + logo ID <span class="tag">anchor.py</span></h3>
+  Uses positions you've taught (per supplier) and the logo to identify the sender. Recovers when things
+  drift, and cross-checks a tight crop against the full page.
+  <div class="decision">Decision: the taught value, the supplier's identity, and whether two reads of a field <i>agree</i>.</div>
+  <span class="note">Where it stands: this is the trickiest stage. A "relocated" crop can land on junk or on a caption — today's work makes disagreements route to review honestly, and (dark) clears them when an independent read confirms the value.</span>
+</div>
+
+<div class="stage">
+  <h3>Stage 2.6 — Late rescue <span class="tag">engine.py</span></h3>
+  If the supplier's name was only worked out <i>after</i> Stage 2 already ran, the taught anchors never got
+  a chance. This re-runs just those, finds the label, and confirms the value.
+  <div class="decision">Decision: does a genuine "located" read confirm the value? If yes, stop holding it.</div>
+  <span class="note">Today: this is the <b>located-recovery</b> fix — it lifts a correct ref/date that was being held only because the anchor ran too early.</span>
+</div>
+
+<div class="stage">
+  <h3>Stage 2.5 — Corrections <span class="tag">ocr_corrector.py</span></h3>
+  Applies learned fixes (a repeated misread) and can "snap" a value to the dominant confirmed value when
+  the same supplier always uses it.
+  <div class="decision">Decision: replace a known misread with the value history proves is right.</div>
+</div>
+
+<div class="stage">
+  <h3>Stage 4 &amp; 4.5 — Validate + format check <span class="tag">validator.py / format_anomaly_checker.py</span></h3>
+  Normalises dates, checks totals add up, and compares each value's <i>shape</i> to the supplier's history
+  (a ref that suddenly changes pattern is suspicious).
+  <div class="decision">Decision: is each value well-formed and consistent with what this supplier normally sends?</div>
+</div>
+
+<div class="stage">
+  <h3>The auto-file gate <span class="tag">trust.js</span></h3>
+  The final safety check. A document files itself only if <b>every</b> valued field is confident enough and
+  carries <b>no</b> review flag. New suppliers must earn trust (a few clean confirms) before anything auto-files.
+  <div class="decision"><span class="decision">Decision: auto-file, or send to Review — the last line before your eyes.</span></div>
+  <span class="note">Any single "please verify" note holds the whole document. That's why today's care was to remove only <i>false</i> flags, never a real one.</span>
+</div>
+
+<h2>4 &nbsp;The golden rule</h2>
+<div class="lead">
+  <b>Fail toward review, never toward a silent wrong value.</b> One document filed with the wrong number is
+  worse than ten honest "please check this" holds. Every change today was measured against that: three fixes
+  removed <i>needless</i> reviews without ever letting a wrong value slip through, and the one fix that <i>could</i>
+  have (the name-guard clear) was switched off until its safety net is built.
+</div>
+
+<footer>
+  Scan Finder &middot; detection overview generated 24 Jul 2026 &middot; branch <code>feat/reprocess-throughput-autostraighten</code>
+  (pushed). Kill switches for every fix: <code>TAUGHT_OWNERSHIP_OWN_LABEL</code>, <code>LATE_RESCUE_LOCATED_CORROB</code>,
+  <code>TEMPLATE_NAME_PRESENCE_VETO</code>, <code>NAME_GUARD_KEYWORD_CLEAR</code> (off), <code>DESKEW_RAW_WITNESS</code>.
+</footer>
+
+<script>
+  mermaid.initialize({ startOnLoad: true, flowchart: { curve: 'basis', useMaxWidth: true },
+    themeVariables: { fontSize: '13px' } });
+  window.addEventListener('load', () => { setTimeout(() => { document.title = 'RENDER_DONE'; }, 100); });
+</script>
+</body>
+</html>

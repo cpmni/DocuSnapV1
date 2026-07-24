@@ -177,7 +177,7 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
     }
     // #6 auto-file SOUNDNESS — would the REAL gate auto-file this reprocessed read, and is it wrong?
     const detId = slugToId[detSlug];
-    let wouldFile = false;
+    let wouldFile = false, afReason = null;
     if (detId != null && m.overall_confidence != null) {
       const rex = Object.entries(m.extractions || {}).map(([k, e]) => ({
         field_key: k,
@@ -186,7 +186,16 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
         confidence: (e && typeof e === 'object') ? e.confidence : null,
       }));
       const fakeDoc = { id: g.id, supplier_name: m.supplier_name, document_type_id: detId, overall_confidence: m.overall_confidence };
-      try { wouldFile = trust.isAutoFileEligible(db, fakeDoc, { extractions: rex }).eligible; } catch {}
+      try { const _af = trust.isAutoFileEligible(db, fakeDoc, { extractions: rex }); wouldFile = _af.eligible; afReason = _af.reason; } catch {}
+    }
+    // RR_CONSENSUS (overnight P1 measurement, env-gated -> inert/byte-identical when unset): per-doc
+    // hold-reason + per-critical-field {value,conf,note,correct} so the multi-read-consensus auto-file
+    // opportunity (and its M-safety) can be analysed offline vs the stored page OCR. Read-only.
+    if (process.env.RR_CONSENSUS) {
+      try {
+        const _cf = (k, ok) => { if (!k) return null; const e = m.extractions && m.extractions[k]; return { key: k, val: ef(m, k), conf: (e && typeof e === 'object') ? e.confidence : null, note: (e && typeof e === 'object') ? (e.validation_note || null) : null, correct: ok }; };
+        fs.appendFileSync(process.env.RR_CONSENSUS, JSON.stringify({ id: g.id, type: g.type_slug, wouldFile, reason: afReason, ref: _cf(rk, s.ref), date: _cf(dk, s.date) }) + '\n');
+      } catch {}
     }
     if (wouldFile) autoFiledN++;
     // RR_DUMP (C5 attribution, 2026-07-23): per-doc would-auto-file + the supplier field's note,
