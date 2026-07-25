@@ -6,10 +6,12 @@
  * phash drifts past the accept band (measured up to 36 Hamming for the SAME supplier), so a taught
  * confirm whose logo drifted can't find its own same-supplier same-type template by logo and SPAWNS A
  * DUPLICATE (the fragmentation birth path). M2 adds a branding-fingerprint reuse branch so the drifted
- * doc REUSES its template instead. Kill switch env TEMPLATE_REUSE_BY_BRANDING (default OFF ⇒ byte-identical).
+ * doc REUSES its template instead. Kill switch env TEMPLATE_REUSE_BY_BRANDING — DEFAULT ON since
+ * 2026-07-25 (TEMPLATE_DEFRAG_2026-07-25.md); set '0' to disable ⇒ byte-identical to the pre-M2 create path.
  *
- * CONTROL-TEST-FIRST: Section A (switch OFF) is the BASELINE — it must stay green both BEFORE M2 is
- * built and AFTER with the switch off (a duplicate is still born; nothing changed). Sections B–G are
+ * CONTROL-TEST-FIRST: Section A (switch explicitly '0') is the OFF BASELINE — it must stay green both
+ * BEFORE M2 is built and AFTER with the switch off (a duplicate is still born; nothing changed). Because
+ * the default is now ON, Section A sets '0' EXPLICITLY (an unset env now means ON). Sections B–G are
  * capability-guarded on templates.findByBrandingFingerprint so this file runs cleanly pre-build too
  * (they print PENDING until M2 lands), then pin the fix + the Oracle trade-offs once M2 exists.
  *
@@ -123,8 +125,8 @@ async function upsert(db, docId) {
   console.log(HAS_M2 ? '  (M2 present — running the full battery)' : '  (M2 NOT built — baseline only; B–G pend)');
 
   // ── A — BASELINE / kill-switch OFF: drifted-logo branding-match confirm STILL spawns a duplicate ──
-  section('A. Baseline (TEMPLATE_REUSE_BY_BRANDING off): drifted logo → DUPLICATE born (byte-identical)');
-  delete process.env.TEMPLATE_REUSE_BY_BRANDING;
+  section('A. Baseline (TEMPLATE_REUSE_BY_BRANDING=0): drifted logo → DUPLICATE born (byte-identical)');
+  process.env.TEMPLATE_REUSE_BY_BRANDING = '0';
   {
     const db = makeDb();
     const tId = mkTemplate(db, 'Copperfield Electrical', 'wsht', A, FP_FULL);

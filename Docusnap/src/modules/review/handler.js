@@ -1089,15 +1089,23 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
     }
   }
 
-  // M2 — BRANDING-FINGERPRINT REUSE (docs/designs/TEMPLATE_CONVERGENCE_2026-07-17.md; kill switch
-  // TEMPLATE_REUSE_BY_BRANDING, DEFAULT OFF => byte-identical). On scans the coarse logo phash drifts
-  // past the accept band (measured up to 36 Hamming for the SAME supplier), so the logo arms above miss
-  // a drifted doc's own template and the CREATE branch below spawns a DUPLICATE (the fragmentation birth
-  // path). Reuse the canonical SAME-TYPE template identified by DISTINCTIVE branding tokens instead
-  // (measured 0% cross-supplier false-match at 0.80). Placed under `!templateId` (NOT nested in the
-  // logo_phash guard) so it also converges logo-LESS suppliers (Oracle cond 3). The far-drifted logo is
-  // NOT folded into the reused template's set — update()'s append stays bounded at LOGO_APPEND_BAND=13.
-  if (!templateId && process.env.TEMPLATE_REUSE_BY_BRANDING === '1') {
+  // M2 — BRANDING-FINGERPRINT REUSE (docs/designs/TEMPLATE_CONVERGENCE_2026-07-17.md +
+  // TEMPLATE_DEFRAG_2026-07-25.md; kill switch TEMPLATE_REUSE_BY_BRANDING, DEFAULT ON since 2026-07-25 —
+  // set '0' to disable). On scans the coarse logo phash drifts past the accept band (measured up to 36
+  // Hamming for the SAME supplier), so the logo arms above miss a drifted doc's own template and the
+  // CREATE branch below spawns a DUPLICATE (the fragmentation birth path). Reuse the canonical SAME-TYPE
+  // template identified by DISTINCTIVE branding tokens instead. Placed under `!templateId` (NOT nested in
+  // the logo_phash guard) so it also converges logo-LESS suppliers (Oracle cond 3). The far-drifted logo
+  // is NOT folded into the reused template's set — update()'s append stays bounded at LOGO_APPEND_BAND=13.
+  // WHY DEFAULT ON IS SAFE (Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-25): this is a CONFIRM-TIME path the
+  // corpus harness never exercises, so its safety is a live REPLAY not a corpus run — 534 confirmed docs
+  // gave 482 same-supplier reuses and 0 cross-supplier false matches at 0.80. The real guard is NOT that
+  // number but the BLAST RADIUS: a mis-bind is a reversible `template_id` LINK, never a value write, and
+  // the Part-E `_supplierLinkOk` re-check below detaches a name-disjoint acquisition. TODO (Phillip's
+  // Slice-2 condition, follow-up): harden findByBrandingFingerprint against short/generic-token collisions
+  // (two "___ Services Ltd" sharing 3 boilerplate tokens) via a per-DB IDF/rarity weight — a synthetic
+  // corpus can't expose it. Real gate before wide rollout = one live owner batch that reuses cleanly.
+  if (!templateId && process.env.TEMPLATE_REUSE_BY_BRANDING !== '0') {
     const bg = templates.findByBrandingFingerprint(db, keyword_fingerprint, document_type_slug, 0.80);
     if (bg) templateId = bg.id;
   }
