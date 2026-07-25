@@ -356,6 +356,7 @@ const HELP_TEXTS = {
   'add-type':       'Create a custom document type with its own fields (e.g. “Delivery Note”) alongside the built-in Invoice / Sales Order / Purchase Order.',
   'add-field':      'Add a custom field to the selected document type: a label, an auto-generated key, a value type and whether it’s required.',
   'add-catalog':    'Add a ready-made document type (Purchase/Sales Invoice, Credit Note, Statement, Receipt…) with its fields already set up.',
+  'field-visibility':'Choose which fields each sender\'s layout shows. Untick a field a layout doesn\'t print so Review stops asking for it. The Issuer, Date and Reference are always shown.',
   'pick-output':    'Choose the folder where confirmed documents are filed. Must be set before any document can be confirmed.',
   'pick-processed': 'Choose where each original scan is moved after it’s filed. Leave blank to keep originals where they are.',
   'clear-processed':'Stop moving originals — leave them in the source folder after filing.',
@@ -1244,6 +1245,106 @@ async function openCatalogModal() {
 
 document.getElementById('btn-catalog').addEventListener('click', openCatalogModal);
 
+// ── "Field visibility" — per-layout field masking (migration 54). The GENERAL-PURPOSE home for the
+// hide/show control, moved OUT of the advanced Template Manager (owner, 2026-07-25): pick a learned
+// layout, then tick the fields it actually shows. Unticking hides a field a supplier's layout doesn't
+// print, so Review stops flagging it. Structural roles (Issuer/Date/Reference) are always shown +
+// locked. Each toggle persists immediately (set-template-hidden-field, unticked => hide=true). Nothing
+// is deleted; other layouts are unaffected. Mirrors openCatalogModal's overlay pattern.
+async function openFieldVisibilityModal() {
+  let tmpls;
+  try { tmpls = await api.getTemplates(); }
+  catch (e) { alert('Could not load layouts: ' + (e && e.message || e)); return; }
+  tmpls = Array.isArray(tmpls)
+    ? tmpls.slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+    : [];
+  const opts = tmpls.map(t =>
+    `<option value="${t.id}">${escHtml(t.name)}${t.document_type_slug ? ' · ' + escHtml(t.document_type_slug) : ''}</option>`).join('');
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText =
+    'position:fixed; inset:0; z-index:9998; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center;';
+  overlay.innerHTML = `
+    <div style="width:460px; max-height:80vh; background:var(--surface); border:1px solid var(--border2);
+                border-radius:10px; padding:18px; display:flex; flex-direction:column; gap:12px;
+                font-family:var(--sans); color:var(--text);">
+      <div style="font-size:13px; font-weight:600;">Field visibility</div>
+      <div style="font-size:11px; color:var(--muted); line-height:1.6;">
+        Choose which fields each layout shows. Untick a field a sender's layout doesn't print — Review
+        will stop asking for it on those documents. The Document Issuer, Date and Reference are always
+        shown. Nothing is deleted, and other layouts are unaffected.</div>
+      ${tmpls.length
+        ? `<label style="font-size:11px; color:var(--muted);">Layout
+             <select id="fv-template" style="width:100%; margin-top:4px; padding:7px; border-radius:6px;
+                     border:1px solid var(--border2); background:var(--surface2); color:var(--text);
+                     font-family:inherit; font-size:12px;">${opts}</select>
+           </label>
+           <div id="fv-fields" style="overflow-y:auto; border:1px solid var(--border); border-radius:8px;
+                padding:4px; flex:1; min-height:120px;"></div>`
+        : `<div style="font-size:12px; color:var(--muted); padding:22px 6px; text-align:center; line-height:1.6;">
+             No layouts learned yet. A layout appears here once you've confirmed a few documents from a
+             sender, so Scan Finder knows what that sender's paperwork looks like.</div>`}
+      <div style="display:flex;">
+        <button id="fv-close" style="flex:1; padding:9px; border-radius:6px; border:1px solid var(--border2);
+                background:transparent; color:var(--muted); font-family:inherit; font-size:12px; cursor:pointer;">Done</button>
+      </div>
+    </div>`;
+  overlay.setAttribute('data-help-ignore', '1');
+  document.body.appendChild(overlay);
+
+  const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
+  overlay.querySelector('#fv-close').addEventListener('click', close);
+
+  const sel  = overlay.querySelector('#fv-template');
+  const list = overlay.querySelector('#fv-fields');
+  if (!sel || !list) return;   // empty state — nothing to wire
+
+  async function renderFor(id) {
+    list.innerHTML = '<div style="font-size:11px; color:var(--muted); padding:12px;">Loading…</div>';
+    let detail;
+    try { detail = await api.getTemplateDetail(Number(id)); } catch { detail = null; }
+    const fields = (detail && detail.type_fields) || [];
+    if (!fields.length) {
+      list.innerHTML = '<div style="font-size:11px; color:var(--muted); padding:12px;">No fields on this layout.</div>';
+      return;
+    }
+    list.innerHTML = '';
+    for (const f of fields) {
+      const row = document.createElement('label');
+      row.style.cssText = 'display:flex; gap:10px; align-items:center; padding:7px 8px; border-radius:8px; cursor:'
+        + (f.structural ? 'default' : 'pointer') + ';';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !f.hidden;            // TICKED = shown (allowed); unticked = hidden
+      cb.disabled = !!f.structural;
+      cb.title = f.structural
+        ? 'The Document Issuer / Date / Reference roles are always shown'
+        : 'Untick to hide this field on this layout';
+      if (!f.structural) cb.addEventListener('change', async () => {
+        cb.disabled = true;
+        try {
+          const r = await api.setTemplateHiddenField(Number(id), f.key, !cb.checked);   // unticked -> hide=true
+          if (!r || r.ok === false) cb.checked = !cb.checked;   // revert on refusal
+          else f.hidden = !cb.checked;
+        } catch { cb.checked = !cb.checked; }
+        cb.disabled = false;
+      });
+      const txt = document.createElement('span');
+      txt.style.cssText = 'font-size:12px;' + (f.structural ? ' color:var(--muted);' : '');
+      txt.textContent = (f.label || f.key) + (f.structural ? '  🔒' : '');
+      row.appendChild(cb);
+      row.appendChild(txt);
+      list.appendChild(row);
+    }
+  }
+  sel.addEventListener('change', () => renderFor(sel.value));
+  renderFor(sel.value);
+}
+document.getElementById('btn-field-visibility')?.addEventListener('click', openFieldVisibilityModal);
+
 // (FIELDS TAB removed — merged into the Document Types master-detail tab above.
 //  Field add/edit/delete now happens in the shared DocTypeEditor component via the
 //  same add-field / update-field / delete-field IPCs.)
@@ -2017,51 +2118,10 @@ async function selectTemplate(id) {
     renderGroupSection(detail),
   ]);
   renderMappingsTable(detail);
-  renderHiddenFieldsSection(detail);
   renderSelectorAnchorsTable(detail);
   await loadSamplePages(detail);
   await populateMapFieldSelect(detail);
   await renderFixedFieldsTable(detail);
-}
-
-// Per-template field HIDING (migration 54): let an admin hide a field the TYPE has but THIS
-// supplier's layout lacks, so Review stops flagging it missing. Structural roles are shown locked
-// (never hideable). The backend refuses a bad hide and returns {ok:false}; the checkbox reverts on
-// refusal. The section is hidden entirely when the type has no hideable (non-structural) field.
-function renderHiddenFieldsSection(detail) {
-  const section = document.getElementById('tpl-hidden-fields-section');
-  const list    = document.getElementById('tpl-hidden-fields-list');
-  if (!section || !list) return;
-  const fields = detail.type_fields || [];
-  if (!fields.some(f => !f.structural)) { section.style.display = 'none'; return; }
-  section.style.display = 'block';
-  list.innerHTML = '';
-  for (const f of fields) {
-    const row = document.createElement('label');
-    row.className = 'tpl-hidden-row' + (f.structural ? ' locked' : '');
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.checked = !!f.hidden;
-    cb.disabled = !!f.structural;
-    cb.title = f.structural
-      ? 'Structural roles (Issuer / Date / Reference) can never be hidden'
-      : 'Hide this field on this layout';
-    if (!f.structural) cb.addEventListener('change', async () => {
-      cb.disabled = true;
-      try {
-        const r = await api.setTemplateHiddenField(detail.id, f.key, cb.checked);
-        if (!r || r.ok === false) cb.checked = !cb.checked;   // revert on refusal
-        else f.hidden = cb.checked;
-      } catch { cb.checked = !cb.checked; }
-      cb.disabled = false;
-    });
-    const txt = document.createElement('span');
-    txt.className = 'tpl-hidden-label';
-    txt.textContent = (f.label || f.key) + (f.structural ? '  🔒' : '');
-    row.appendChild(cb);
-    row.appendChild(txt);
-    list.appendChild(row);
-  }
 }
 
 function renderDetectionMethod(detail) {
