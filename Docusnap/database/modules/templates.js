@@ -666,6 +666,42 @@ function findByBrandingFingerprint(db, docFingerprint, document_type_slug, thres
   return best;
 }
 
+// LIVE field-visibility resolver (2026-07-25, owner request): the template whose hidden-field config
+// applies to a (supplier, type) — used by Review to hide a supplier's absent fields even when Stage-0
+// matched NO template (the "No template match" case). Returns a template id or null; null ⇒ the caller
+// shows ALL fields (the fail-safe the owner asked for). mode 1 = entered NAME first, doc branding
+// fingerprint as backup (default); mode 2 = entered NAME only (a dev A/B switch). Name match is normalised
+// exact-first then containment; ties broken by confirmed_count so the richest (post-merge canonical) wins.
+function _normNameForVis(s) { return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+
+function findForSupplierType(db, { supplier_name, document_type_slug, keyword_fingerprint = null, mode = 1 } = {}) {
+  if (!document_type_slug) return null;
+  const slug = document_type_slug;
+  const byName = () => {
+    const q = _normNameForVis(supplier_name);
+    if (q.length < 3) return null;   // too short to match safely (fail toward "show all")
+    const rows = db.prepare(
+      "SELECT id, name, confirmed_count FROM templates WHERE LOWER(COALESCE(document_type_slug, '')) = LOWER(?) AND name IS NOT NULL"
+    ).all(slug);
+    let exact = null, partial = null;
+    for (const t of rows) {
+      const n = _normNameForVis(t.name);
+      if (!n) continue;
+      const cc = t.confirmed_count || 0;
+      if (n === q) { if (!exact || cc > (exact.confirmed_count || 0)) exact = t; }
+      else if (n.includes(q) || q.includes(n)) { if (!partial || cc > (partial.confirmed_count || 0)) partial = t; }
+    }
+    const best = exact || partial;
+    return best ? best.id : null;
+  };
+  const byBranding = () => {
+    if (!Array.isArray(keyword_fingerprint) || !keyword_fingerprint.length) return null;
+    const m = findByBrandingFingerprint(db, keyword_fingerprint, slug, 0.80);
+    return m ? m.id : null;
+  };
+  return (mode === 2) ? byName() : (byName() || byBranding());
+}
+
 // Lightweight current-template recheck — given a document's already-stored
 // logo_phash/ocr_text (no page image, no OCR, no extraction pipeline), tries
 // the same logo-then-keyword identification order and accept thresholds as
@@ -1237,7 +1273,7 @@ function unfreezeAutoFrozenRecipientNames(db) {
 }
 
 module.exports = {
-  getAll, getAllWithLiveCounts, liveConfirmedCounts, confirmedDocCount, getById, getFields, findByLogoHash, findByKeywordFingerprint, findByBrandingFingerprint, identifyByFingerprint,
+  getAll, getAllWithLiveCounts, liveConfirmedCounts, confirmedDocCount, getById, getFields, findByLogoHash, findByKeywordFingerprint, findByBrandingFingerprint, findForSupplierType, identifyByFingerprint,
   getDominantSupplier, establishedIdentity, supplierNamesDisjoint,
   unfreezeAutoFrozenRecipientNames,
   searchByName,

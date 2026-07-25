@@ -175,6 +175,7 @@ let deferredQueue    = [];
 let bulkFiling       = false; // true while File All Ready runs; suppresses the auto-refresh listener so its per-doc confirm broadcasts can't clobber the loop's local queue mid-run
 let allDocTypes      = [];
 let currentDoc       = null;
+let _lastRenderedDoc = null;   // the FULL doc object renderFields last drew (≠ currentDoc, which is the queue stub) — the live field-visibility re-resolve mutates + re-renders THIS one
 let currentPage      = 0;
 let pageImages       = [];
 let fieldDefs        = [];
@@ -1273,6 +1274,10 @@ async function _selectDoc(doc, { fieldsOnly = false } = {}) {
   } catch {}
   renderFields(renderedDoc);
 
+  // (LIVE field visibility for a "No template match" doc is resolved SERVER-SIDE in
+  // get-document-with-extractions, so renderedDoc.hidden_fields is already correct here. The renderer
+  // only re-resolves on a LIVE issuer edit — see _resolveFieldVisibility on the issuer blur/teach hooks.)
+
   // Lightweight current-template recheck — this doc had no template match at
   // processing time, but a template covering its layout may have been added
   // since (e.g. via "Add to Template Manager" on another document from the
@@ -2348,6 +2353,7 @@ async function normalizeDrawnValue(fieldKey, text) {
 
 // ── Fields panel ──────────────────────────────────────────────────────────────
 function renderFields(doc) {
+  _lastRenderedDoc = doc;   // capture the FULL doc object so the live field-visibility re-resolve re-renders THIS one (not the currentDoc queue stub)
   const scroll = document.getElementById('fields-scroll');
   scroll.innerHTML = '';
   // The ⊕ "wrong value?" prompt only makes sense with a document loaded — show it
@@ -2527,6 +2533,32 @@ async function _refreshTaughtForType() {
   document.querySelectorAll('#fields-scroll .taught-dot[data-key]').forEach(dot => _refreshTaughtDot(dot.dataset.key));
 }
 
+// LIVE field visibility (2026-07-25, owner request): resolve which of the ENTERED supplier+type's fields
+// the layout hides, and re-render — so a doc that matched NO template still honours the supplier's
+// hidden-field config, and typing/correcting the issuer re-scopes the visible fields ("enter Thornbury →
+// its fields appear"). FAIL-SAFE: nothing resolves ⇒ hidden [] ⇒ ALL fields show (the owner's rule).
+// Async-after-paint (never blocks render), doc-guarded, no-op when unchanged or the kill switch is off
+// (the IPC returns {disabled:true}). The Confirm gate follows automatically — validateConfirm requires
+// only fields actually on screen (fieldExists), and structural roles are never hideable.
+async function _resolveFieldVisibility() {
+  const doc = _lastRenderedDoc;   // the FULL rendered doc (has extractions); currentDoc is the queue stub
+  if (!doc || !currentDoc || currentDoc.id !== doc.id || !selectedTypeSlug) return;
+  const forDoc = doc.id;
+  let r;
+  try {
+    r = await window.docusnap.resolveFieldVisibility?.({
+      supplier_name: _currentIssuerValue(), document_type_slug: selectedTypeSlug, doc_id: doc.id });
+  } catch { return; }
+  if (!r || r.disabled) return;
+  if (currentDoc?.id !== forDoc || _lastRenderedDoc?.id !== forDoc) return;   // user moved on → drop it
+  const next = Array.isArray(r.hidden) ? r.hidden : [];
+  const cur  = doc.hidden_fields || [];
+  const same = next.length === cur.length && next.every(k => cur.includes(k));
+  if (same) return;                                       // no change → no churn
+  doc.hidden_fields = next;
+  renderFields(doc);
+}
+
 // Flip one field's dot live after a ⊕ teach stages or is C1-dropped (no full re-render).
 function _refreshTaughtDot(key) {
   const dot = document.querySelector(`.taught-dot[data-key="${key}"]`);
@@ -2671,7 +2703,7 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
     // The ISSUER settled on a (possibly new) supplier -> re-scope the taught dots and clear the
     // old-supplier-scoped reads (anchor/template/hint); keyword/typed values are kept. No-op if
     // unchanged or the same supplier.
-    if (key === 'supplier_name') { _refreshTaughtForType().catch(() => {}); _clearSuspectReadsForNewIssuer(); }
+    if (key === 'supplier_name') { _refreshTaughtForType().catch(() => {}); _clearSuspectReadsForNewIssuer(); _resolveFieldVisibility(); }
   });
 
   // Right-click → field cleanup-rule toolkit (strip a leaked heading/column). Gated
@@ -3362,7 +3394,7 @@ async function runZoneOcr(rect, fieldKey) {
       // If the ISSUER was just taught, its value IS the resolved supplier for this doc — re-scope
       // EVERY field's taught dot to the new supplier (a new/untaught supplier -> the other fields'
       // dots go off). A DIRECT re-query, not the datalist-popping synthetic 'input' avoided above.
-      if (fieldKey === 'supplier_name') { _refreshTaughtForType().catch(() => {}); _clearSuspectReadsForNewIssuer(); }
+      if (fieldKey === 'supplier_name') { _refreshTaughtForType().catch(() => {}); _clearSuspectReadsForNewIssuer(); _resolveFieldVisibility(); }
     }
   } catch (err) {
     console.error('Zone OCR error:', err);

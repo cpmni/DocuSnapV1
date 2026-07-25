@@ -482,9 +482,24 @@ function register(ctx) {
     if (doc) {
       // Per-template field HIDING (migration 54): the fields hidden for THIS doc's matched template,
       // so the renderer can skip their rows (a layout that lacks a field stops showing it empty).
-      // Empty [] when no template / nothing hidden ⇒ the renderer's filter is a no-op (byte-identical).
-      try { doc.hidden_fields = doc.template_id ? require('../../../database/modules/templates').getHiddenFields(db, doc.template_id) : []; }
-      catch { doc.hidden_fields = []; }
+      // When the doc matched NO template (a Stage-0 miss — the "No template match" case), fall back to
+      // resolving the supplier's layout by the issuer name / branding, so the hidden-field config still
+      // applies (owner 2026-07-25). Kill switch FIELD_VIS_LIVE_RESOLVE=0 restores template_id-only.
+      // Empty [] ⇒ show all fields (fail-safe; byte-identical when nothing resolves).
+      try {
+        const _t = require('../../../database/modules/templates');
+        if (doc.template_id) {
+          doc.hidden_fields = _t.getHiddenFields(db, doc.template_id);
+        } else if (process.env.FIELD_VIS_LIVE_RESOLVE !== '0') {
+          const _mode = String((db.prepare('SELECT value FROM settings WHERE key = ?').get('field_visibility_resolve_mode') || {}).value) === '2' ? 2 : 1;
+          let _fp = null; try { _fp = JSON.parse(doc.keyword_fingerprint || 'null'); } catch {}
+          const _tid = _t.findForSupplierType(db, { supplier_name: doc.supplier_name,
+            document_type_slug: doc.type_slug, keyword_fingerprint: Array.isArray(_fp) ? _fp : null, mode: _mode });
+          doc.hidden_fields = _tid ? _t.getHiddenFields(db, _tid) : [];
+        } else {
+          doc.hidden_fields = [];
+        }
+      } catch { doc.hidden_fields = []; }
       logAudit(db, { action: 'document_open', target_type: 'document', target_id: id,
         document_id: id, outcome: 'success', metadata: { type: doc.type_slug || null, status: doc.status || null } });
       // Publish desktop REVIEW presence so clients see "being reviewed by <name>" — only for a
@@ -521,6 +536,35 @@ function register(ctx) {
       document_id: docId, outcome: 'success' }); } catch {}
     // Drop this desktop reviewer's presence immediately (the TTL is the backstop).
     try { const u = getCurrentUser(); if (u) presence.release(docId, _desktopKey(u.id)); } catch {}
+  });
+
+  // LIVE field visibility by the ENTERED supplier + type (2026-07-25, owner request). Review calls this
+  // on issuer-blur and on load for a doc that matched NO template, so a supplier's hidden-field config
+  // still applies (the per-template config is keyed on template_id, which is null on a "No template match"
+  // doc). Read-only. FAIL-SAFE: returns hidden:[] (show ALL fields) whenever nothing resolves — the owner's
+  // stated rule. Kill switch FIELD_VIS_LIVE_RESOLVE=0 ⇒ {disabled:true}; the renderer then keeps the
+  // template_id-keyed set from get-document-with-extractions ⇒ byte-identical to before. Mode (setting
+  // `field_visibility_resolve_mode`): 1 = entered name, doc branding fingerprint as backup (default);
+  // 2 = entered name ONLY (the dev A/B switch — flip via set-setting to test).
+  ipcMain.handle('resolve-field-visibility', (_e, payload = {}) => {
+    try {
+      requireLogin();
+      if (process.env.FIELD_VIS_LIVE_RESOLVE === '0') return { disabled: true };
+      const db = getDb();
+      const templatesMod = require('../../../database/modules/templates');
+      const { supplier_name, document_type_slug, doc_id } = payload || {};
+      if (!document_type_slug) return { hidden: [], templateId: null };
+      const modeRow = db.prepare('SELECT value FROM settings WHERE key = ?').get('field_visibility_resolve_mode');
+      const mode = String(modeRow && modeRow.value) === '2' ? 2 : 1;
+      let fp = null;
+      if (mode === 1 && doc_id) {
+        try { fp = JSON.parse(db.prepare('SELECT keyword_fingerprint FROM documents WHERE id = ?').get(doc_id)?.keyword_fingerprint || 'null'); } catch {}
+      }
+      const tid = templatesMod.findForSupplierType(db, {
+        supplier_name, document_type_slug, keyword_fingerprint: Array.isArray(fp) ? fp : null, mode });
+      const hidden = tid ? templatesMod.getHiddenFields(db, tid) : [];
+      return { hidden, templateId: tid || null, mode };
+    } catch { return { hidden: [], templateId: null }; }
   });
 
   // ── Document pages for preview ──────────────────────────────────────────────

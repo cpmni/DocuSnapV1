@@ -227,6 +227,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   saveFieldAnchor:     (data)     => ipcRenderer.invoke('save-field-anchor', data),
   getTaughtFieldKeys:  (scope)    => ipcRenderer.invoke('get-taught-field-keys', scope),
   scopeConfirmedCount: (scope)    => ipcRenderer.invoke('scope-confirmed-count', scope),
+  resolveFieldVisibility: (payload) => ipcRenderer.invoke('resolve-field-visibility', payload),
   saveFieldRule:       (data)     => ipcRenderer.invoke('save-field-rule', data),
   extractLogoHash:     (b64)      => ipcRenderer.invoke('extract-logo-hash', b64),
   matchLogoHash:       (b64)      => ipcRenderer.invoke('match-logo-hash', b64),
