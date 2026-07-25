@@ -399,6 +399,29 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                        (x_norm, y_norm, w_norm, h_norm), c, "target")) if slice_capture else None)
             _m = {}
             crop_value = _crop_and_ocr(page0, x_norm, y_norm, w_norm, h_norm, val_type, capture=_cap, verify_fn=_verify, meta=_m, continuation=continuation, max_w_norm=anchor.get("max_w_norm"))
+            # CAPTION-PREFIX STRIP (kill ANCHOR_CAPTION_PREFIX_STRIP, DEFAULT OFF => byte-identical).
+            # A rigid crop can capture its own caption ("Date 22/07/2026", "No. DN-36457"), which then
+            # fails the credibility / learned-format gate below (the correct value is DISCARDED) OR — on a
+            # cold supplier with no learned format — commits DIRTY into the filename ("...Date 22-07-2026..").
+            # Recover the value by stripping the field's own taught label prefix. RECOVERY not pre-emption
+            # (Oracle SEAM B): keep the ORIGINAL whenever it already qualifies against real history; use the
+            # stripped value only when the original would be REJECTED, or when there is NO learned format at
+            # all (the cold-supplier dirty-commit). Structured non-currency only (Oracle SEAM A). The stripped
+            # value still faces the UNCHANGED gates below and commits as a plain anchor_crop, so a disagreeing
+            # Stage-1 keyword read still flags/holds it (the strip is never authoritative).
+            if (crop_value and val_type in _CAPTION_STRIP_TYPES
+                    and os.environ.get("ANCHOR_CAPTION_PREFIX_STRIP", "0") != "0"):
+                _stripped = _strip_caption_prefix(crop_value, label, val_type, validation_patterns)
+                if _stripped != crop_value:
+                    _orig_ok = bool(_crop_is_credible(crop_value, val_type, validation_patterns, label)
+                                    and _qualify_against_format(crop_value, field_key, format_lookup,
+                                                                text_field_keys, val_type, validation_patterns))
+                    _no_history = True
+                    if format_lookup is not None:
+                        try: _no_history = not format_lookup(field_key)
+                        except Exception: _no_history = True
+                    if (not _orig_ok) or _no_history:
+                        crop_value = _stripped
             # A fixed crop is positionally rigid: when an upstream line wraps or
             # the block shifts on a sibling layout, the box can land off-target
             # and return a NON-EMPTY but wrong value (e.g. ">alifornia" from the
@@ -2080,6 +2103,44 @@ def _is_bare_label(v: str, label: str | None) -> bool:
     if not label_tokens or not val_tokens:
         return False
     return all(t in label_tokens for t in val_tokens)
+
+
+# Structured val_types eligible for the caption-prefix strip. DELIBERATELY EXCLUDES currency
+# (Oracle SEAM A, 2026-07-25): a currency anchor goes through the label-lock/relocate block below,
+# whose caption defences (_is_caption_bleed / _is_caption_band_read) detect a caption-landed crop by
+# the caption STILL being present in the value — stripping it first would blind that defence and let
+# a caption-landed "$500" pass silently. date/reference/number SKIP the label-lock entirely, so there
+# is no downstream caption defence for the strip to blind on them. Free-text is excluded in the helper.
+_CAPTION_STRIP_TYPES = frozenset({"date", "alphanumeric", "reference_code", "job_reference", "number"})
+
+
+def _strip_caption_prefix(value, label, val_type, validation_patterns):
+    """Recover a STRUCTURED value whose anchor crop captured its own caption/label prefix
+    ("Date 22/07/2026" -> "22/07/2026", "No. DN-36457" -> "DN-36457"): strip a leading run of the
+    field's OWN taught label words (+ caption punctuation), each of which MUST be followed by
+    whitespace — so a GLUED value ("NO-1234", label "no") is never touched (that is the precision
+    lever that tells "caption + value" from "value that starts with a caption word"). Structured,
+    NON-currency, NON-free-text only. Returns the value UNCHANGED on every no-op path (no label, no
+    matching prefix, would-strip-to-empty), so a caption-free read is byte-identical. Never
+    manufactures a value: the remainder still faces the UNCHANGED credibility + learned-format gates
+    and commits as a plain (non-authoritative) anchor_crop. Precision-first cousin of _is_bare_label."""
+    v = (value or "").strip()
+    if not v or not label or val_type in (None, "text", "multiline_text", "currency"):
+        return value
+    if not (validation_patterns or {}).get(val_type):
+        return value                       # no format backstop for this type -> don't risk a strip
+    words = sorted(set(re.findall(r"[a-z0-9]+", label.lower())), key=len, reverse=True)
+    if not words:
+        return value
+    alt = "|".join(re.escape(w) for w in words)
+    # leading punctuation, then 1+ (label-word + optional caption punct + MANDATORY whitespace)
+    m = re.match(rf"[^A-Za-z0-9]*(?:(?:{alt})[.:#)\-]*\s+)+", v, re.IGNORECASE)
+    if not m or m.end() == 0:
+        return value
+    remainder = v[m.end():].strip()
+    if not remainder or not re.search(r"[A-Za-z0-9]", remainder):
+        return value                       # would strip to nothing -> leave it for the gates/review
+    return remainder
 
 
 # Mean OCR word-confidence floor below which a FREE-TEXT rigid crop read is treated
