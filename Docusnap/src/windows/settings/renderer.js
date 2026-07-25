@@ -1770,31 +1770,81 @@ function setupTemplateCleanups() {
   });
 }
 
+// Plain-English name for a member's layout verdict (avoid the raw 'insufficient'/'divergent' jargon).
+function _layoutPhrase(structure) {
+  if (structure === 'compatible') return 'same layout';
+  if (structure === 'divergent')  return 'different layout';
+  return 'layout not verified';   // insufficient
+}
+
 function renderMergeCandidates(clusters, results, msg) {
   results.innerHTML = '';
   clusters = clusters || [];
   if (!clusters.length) { msg.textContent = 'No duplicate templates found.'; return; }
-  const mergeable = clusters.filter(c => c.suggestedAction === 'merge').length;
-  msg.textContent = `${clusters.length} group(s) of possible duplicates (${mergeable} safe to merge).`;
+  // Both 'merge' (confident) and 'merge_review' (owner-verify) offer a merge button.
+  const mergeable = clusters.filter(c => c.suggestedAction === 'merge' || c.suggestedAction === 'merge_review').length;
+  msg.textContent = `${clusters.length} group(s) of possible duplicates (${mergeable} you can merge).`;
+
+  // A clickable template name that opens that template (and its sample) in the viewer, so the owner can
+  // actually compare two layouts before merging (Oracle #4c — the merge_review checkpoint must be real).
+  const tplLink = (id, name) => {
+    const a = document.createElement('a');
+    a.href = '#'; a.textContent = name; a.style.cssText = 'color:var(--accent); text-decoration:underline; cursor:pointer;';
+    a.title = 'Open this layout to view its sample';
+    a.addEventListener('click', (e) => { e.preventDefault(); try { selectTemplate(id); } catch {} });
+    return a;
+  };
 
   for (const c of clusters) {
     const box = document.createElement('div');
     box.className = 'section';
     box.style.cssText = 'padding:10px; margin-top:8px;';
     const canon = c.canonical;
-    const memberList = c.members.map(m =>
-      `${escHtml(m.name)} <span class="field-key">(${m.liveConfirmed}× · ${Math.round(m.jaccard * 100)}% branding · ${escHtml(m.structure)})</span>`
-    ).join(', ');
-    box.innerHTML =
-      `<div><strong>${escHtml(canon.name)}</strong> <span class="field-key">(${escHtml(c.slug)} · keep this one · ${canon.liveConfirmed} confirmed)</span></div>`
-      + `<div class="section-desc" style="margin:4px 0;">Duplicate${c.members.length === 1 ? '' : 's'}: ${memberList}</div>`;
+    const head = document.createElement('div');
+    head.append(document.createTextNode('Keep: '));
+    const strong = document.createElement('strong'); strong.appendChild(tplLink(canon.id, canon.name)); head.appendChild(strong);
+    const meta = document.createElement('span');
+    meta.className = 'field-key';
+    meta.textContent = ` (${c.slug} · ${canon.liveConfirmed} confirmed)`;
+    head.appendChild(meta);
+    box.appendChild(head);
 
-    if (c.suggestedAction === 'merge') {
+    const memberDiv = document.createElement('div');
+    memberDiv.className = 'section-desc';
+    memberDiv.style.margin = '4px 0';
+    memberDiv.append(document.createTextNode(`Duplicate${c.members.length === 1 ? '' : 's'}: `));
+    c.members.forEach((m, i) => {
+      if (i) memberDiv.append(document.createTextNode(', '));
+      memberDiv.appendChild(tplLink(m.id, m.name));
+      const info = document.createElement('span');
+      info.className = 'field-key';
+      info.textContent = ` (${m.liveConfirmed}× · ${Math.round(m.jaccard * 100)}% branding · ${_layoutPhrase(m.structure)})`;
+      memberDiv.appendChild(info);
+    });
+    box.appendChild(memberDiv);
+
+    const action = c.suggestedAction;
+    if (action === 'merge' || action === 'merge_review') {
+      // merge_review = same supplier + type, near-identical branding, but the layout could NOT be verified
+      // automatically (independent teaches rarely reuse the same anchor words). It is NOT a claim they
+      // differ — but the owner must eyeball, because branding sameness never proves layout sameness.
+      if (action === 'merge_review') {
+        const hint = document.createElement('div');
+        hint.className = 'section-desc';
+        hint.style.cssText = 'margin:0 0 6px;';
+        hint.textContent = 'Same sender and type with near-identical branding, but the field layout couldn\'t be '
+          + 'auto-verified. Open a sample of each (click a name above) and merge only if the fields sit in the '
+          + 'same places.';
+        box.appendChild(hint);
+      }
       const btn = document.createElement('button');
       btn.className = 'btn danger';
       btn.textContent = `Merge ${c.members.length} into "${canon.name}"`;
       btn.addEventListener('click', async () => {
-        if (!confirm(`Merge ${c.members.length} duplicate(s) INTO "${canon.name}" and DELETE them?\n\n`
+        const geo = action === 'merge_review'
+          ? `\n\nThese may be different LAYOUTS of the same supplier — merge only if you've checked the fields sit in the same places.`
+          : '';
+        if (!confirm(`Merge ${c.members.length} duplicate(s) INTO "${canon.name}" and DELETE them?${geo}\n\n`
           + `A database backup is taken first. "${canon.name}" gains all their documents plus any field `
           + `mappings / landmarks / sample it lacks. This is NOT reversible (the backup is your safety net).`)) return;
         btn.disabled = true; btn.textContent = 'Backing up + merging…';
@@ -1806,12 +1856,21 @@ function renderMergeCandidates(clusters, results, msg) {
         await loadTemplates();
       });
       box.appendChild(btn);
-    } else {
+    } else if (action === 'group_or_review') {
+      // Now ONLY genuinely-different geometry (a divergent landmark OR field-zone signal).
       const note = document.createElement('div');
       note.className = 'section-desc';
       note.style.cssText = 'color:var(--warn); margin:0;';
       note.textContent = 'These look like different layouts of the same supplier (their field positions differ), '
-        + 'so an automatic merge could break extraction. Review and merge manually in Learning Recovery if they really are duplicates.';
+        + 'so an automatic merge could break extraction. Merge manually in Learning Recovery only if they really are duplicates.';
+      box.appendChild(note);
+    } else {
+      // review — branding overlaps but not strongly enough to suggest a merge.
+      const note = document.createElement('div');
+      note.className = 'section-desc';
+      note.style.cssText = 'margin:0;';
+      note.textContent = 'Branding partly overlaps but not strongly enough to suggest a merge. Compare them and '
+        + 'merge manually in Learning Recovery if they are the same template.';
       box.appendChild(note);
     }
     results.appendChild(box);

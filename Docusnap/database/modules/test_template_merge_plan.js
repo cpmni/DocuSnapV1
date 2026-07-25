@@ -25,7 +25,8 @@ function makeDb() {
       created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE TABLE template_fields (id INTEGER PRIMARY KEY AUTOINCREMENT, template_id INTEGER, field_key TEXT, anchor_label TEXT, direction TEXT, fixed_value TEXT, is_variable INTEGER, fixed_locked INTEGER DEFAULT 0);
-    CREATE TABLE template_field_mappings (id INTEGER PRIMARY KEY AUTOINCREMENT, template_id INTEGER, field_key TEXT);
+    CREATE TABLE template_field_mappings (id INTEGER PRIMARY KEY AUTOINCREMENT, template_id INTEGER, field_key TEXT,
+      target_x_norm REAL, target_y_norm REAL, target_w_norm REAL, target_h_norm REAL, enabled INTEGER DEFAULT 1);
     CREATE TABLE template_landmarks (id INTEGER PRIMARY KEY AUTOINCREMENT, template_id INTEGER, label_text TEXT, x_norm REAL, y_norm REAL, w_norm REAL, h_norm REAL, ocr_conf REAL, page_number INTEGER);
     CREATE TABLE template_logo_hashes (id INTEGER PRIMARY KEY AUTOINCREMENT, template_id INTEGER, phash TEXT, detail_hash TEXT, UNIQUE(template_id, phash));
     CREATE TABLE document_types (id INTEGER PRIMARY KEY AUTOINCREMENT, slug TEXT, name TEXT);
@@ -87,15 +88,109 @@ section('findMergeCandidates: same branding but DIVERGENT layout → group_or_re
   check('member structure = divergent', c[0] && c[0].members[0].structure === 'divergent');
 }
 
-section('findMergeCandidates: high branding but NO landmarks to judge → group_or_review (insufficient)');
+section('findMergeCandidates: high branding, layout UNVERIFIABLE (insufficient) → merge_review (owner-confirmed)');
 {
+  // Post-2026-07-25: `insufficient` means "can't verify the layout" (independent re-teaches rarely share
+  // 3+ landmark labels), NOT "different layout". At near-identical branding it becomes an owner-confirmed,
+  // backup-first merge (merge_review) instead of being hidden behind a false "different layouts" warning.
   const db = makeDb();
   mkT(db, 'Copperfield', 'invoice', FP_A);
   mkT(db, 'Copperfield', 'invoice', FP_A);
   const c = merge.findMergeCandidates(db);
   check('one cluster', c.length === 1);
-  check("insufficient structure → NOT auto-merge", c[0] && c[0].suggestedAction === 'group_or_review');
+  check("insufficient + jaccard>=0.85 → merge_review (surfaced+confirmable, NOT auto-merge)", c[0] && c[0].suggestedAction === 'merge_review');
   check('member structure = insufficient', c[0] && c[0].members[0].structure === 'insufficient');
+}
+
+section('findMergeCandidates: insufficient layout + jaccard in [0.75,0.85) → review (surfaced, no merge button)');
+{
+  const db = makeDb();
+  mkT(db, 'Copperfield', 'invoice', FP_A);    // 4 tokens
+  mkT(db, 'Copperfield', 'invoice', FP_A2);   // 3-token subset → distinctiveJaccard 3/4 = 0.75
+  const c = merge.findMergeCandidates(db);
+  check('one cluster', c.length === 1);
+  check('jaccard 0.75 (< 0.85 merge_review bar) → review, NOT merge_review', c[0] && c[0].suggestedAction === 'review');
+}
+
+section('findMergeCandidates: DIVERGENT layout is NEVER merge_review, even at branding 1.00');
+{
+  const db = makeDb();
+  const a = mkT(db, 'Copperfield', 'invoice', FP_A);
+  const b = mkT(db, 'Copperfield', 'invoice', FP_A);   // jaccard 1.00
+  addLandmarks(db, a, LM3);
+  addLandmarks(db, b, [['invoice', 0.9, 0.9], ['date', 0.1, 0.8], ['total', 0.2, 0.2]]);  // same labels, far apart
+  const c = merge.findMergeCandidates(db);
+  check("divergent structure → group_or_review (not merge / not merge_review)", c[0] && c[0].suggestedAction === 'group_or_review');
+}
+
+section('findMergeCandidates: FIELD-ZONE gate DEMOTES a shared-branding cluster whose fields sit in different places');
+{
+  // Landmark labels disagree (< 3 shared) → structureVerdict = insufficient; but the field mappings share
+  // 2 field_keys in DIFFERENT target zones → fieldZoneVerdict = divergent → fused layout = divergent →
+  // group_or_review. This is Oracle #3's genuinely-different-layout-of-one-supplier case, caught by data.
+  const db = makeDb();
+  const a = mkT(db, 'Copperfield', 'invoice', FP_A);
+  const b = mkT(db, 'Copperfield', 'invoice', FP_A);
+  const mp = (tId, key, tx, ty) => db.prepare(
+    "INSERT INTO template_field_mappings (template_id, field_key, target_x_norm, target_y_norm, target_w_norm, target_h_norm, enabled) VALUES (?,?,?,?,0.1,0.03,1)"
+  ).run(tId, key, tx, ty);
+  mp(a, 'invoice_number', 0.10, 0.10); mp(a, 'invoice_date', 0.10, 0.20);
+  mp(b, 'invoice_number', 0.80, 0.85); mp(b, 'invoice_date', 0.80, 0.75);   // same keys, far zones
+  const c = merge.findMergeCandidates(db);
+  check('field-zone divergence → group_or_review (demoted out of merge_review)', c[0] && c[0].suggestedAction === 'group_or_review');
+  check('member structure reported divergent', c[0] && c[0].members[0].structure === 'divergent');
+}
+
+section('findMergeCandidates: FIELD-ZONE gate PROMOTES agreeing zones to a confident merge (no landmarks needed)');
+{
+  const db = makeDb();
+  const a = mkT(db, 'Copperfield', 'invoice', FP_A);
+  const b = mkT(db, 'Copperfield', 'invoice', FP_A);
+  confirmedFor(db, a, 3); confirmedFor(db, b, 1);
+  const mp = (tId, key, tx, ty) => db.prepare(
+    "INSERT INTO template_field_mappings (template_id, field_key, target_x_norm, target_y_norm, target_w_norm, target_h_norm, enabled) VALUES (?,?,?,?,0.1,0.03,1)"
+  ).run(tId, key, tx, ty);
+  mp(a, 'invoice_number', 0.10, 0.10); mp(a, 'invoice_date', 0.10, 0.20);
+  mp(b, 'invoice_number', 0.11, 0.11); mp(b, 'invoice_date', 0.10, 0.21);   // same keys, same zones
+  const c = merge.findMergeCandidates(db);
+  check('agreeing field zones → compatible → merge', c[0] && c[0].suggestedAction === 'merge');
+}
+
+section('richness-first canonical: the landmark-rich row wins over a higher-live thin row (Thornbury fix)');
+{
+  const db = makeDb();
+  const rich = mkT(db, 'Copperfield', 'invoice', FP_A);
+  const poor = mkT(db, 'Copperfield', 'invoice', FP_A);
+  confirmedFor(db, rich, 1); confirmedFor(db, poor, 5);   // poor has MORE live docs
+  addLandmarks(db, rich, [['a',0.1,0.1],['b',0.2,0.2],['c',0.3,0.3],['d',0.4,0.4],['e',0.5,0.5]]);  // 5
+  addLandmarks(db, poor, [['a',0.1,0.1]]);                                                            // 1
+  db.prepare('UPDATE templates SET confirmed_count=? WHERE id=?').run(3, rich);
+  db.prepare('UPDATE templates SET confirmed_count=? WHERE id=?').run(7, poor);
+  const c = merge.findMergeCandidates(db);
+  check('canonical = the 5-landmark row despite fewer live docs', c[0] && c[0].canonical.id === rich);
+  const r = templates.mergeInto(db, poor, rich);
+  check('mergeInto ok', r && r.ok);
+  check('survivor keeps its 5 landmarks (adopt-if-empty would have dropped them under live-first)', templates.getLandmarks(db, rich).length === 5);
+  check('confirmed_count summed (3+7=10) — none lost by the richer-canonical choice', templates.getById(db, rich).confirmed_count === 10);
+}
+
+section('KILL SWITCH OFF (TEMPLATE_MERGE_REVIEW=0): legacy verdicts restored, byte-identical');
+{
+  process.env.TEMPLATE_MERGE_REVIEW = '0';
+  const db = makeDb();
+  mkT(db, 'Copperfield', 'invoice', FP_A);
+  mkT(db, 'Copperfield', 'invoice', FP_A);   // insufficient
+  const c = merge.findMergeCandidates(db);
+  check('OFF: insufficient → group_or_review (legacy)', c[0] && c[0].suggestedAction === 'group_or_review');
+
+  const db2 = makeDb();
+  const a = mkT(db2, 'Copperfield', 'invoice', FP_A);
+  const b = mkT(db2, 'Copperfield', 'invoice', FP_A);
+  confirmedFor(db2, a, 3); confirmedFor(db2, b, 1);
+  addLandmarks(db2, a, LM3); addLandmarks(db2, b, LM3);
+  const c2 = merge.findMergeCandidates(db2);
+  check('OFF: compatible → merge (legacy, canonical = higher-live)', c2[0] && c2[0].suggestedAction === 'merge' && c2[0].canonical.id === a);
+  delete process.env.TEMPLATE_MERGE_REVIEW;
 }
 
 section('findMergeCandidates: DIFFERENT suppliers of the same type do NOT cluster');
