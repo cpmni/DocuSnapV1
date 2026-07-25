@@ -21,23 +21,28 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-07-25) — READ `HANDOVER_2026-07-25.md` FIRST
-**2026-07-25 (Opus 4.8) — template DE-FRAGMENTATION; branch `feat/reprocess-throughput-autostraighten`,
-2 commits UNPUSHED on top of `431068e`: `5501be1` (Slice 1) + `aba2f46` (Slice 2); tree clean.** Owner
-spotted duplicate templates (same supplier+type minted 2-4×) in the Field-visibility Layout dropdown.
-Verified all 254 linked docs correctly assigned (pure fragmentation, no misfiles). **Slice 1** (`5501be1`,
-kill `TEMPLATE_MERGE_REVIEW` default ON): the "Suggested cleanups" detector (`templateMerge.js`) now splits
-`insufficient` (layout unverifiable) from `divergent` and offers an owner-confirmed backup-first `merge_review`
-for near-identical-branding dupes (was hiding them behind a false "different layouts" warning); + `fieldZoneVerdict`
-demote/promote (Phillip) + richness-first canonical (fixes Thornbury id12→id16) + honest UI copy w/ clickable
-samples. **Slice 2** (`aba2f46`, kill `TEMPLATE_REUSE_BY_BRANDING` flipped to DEFAULT ON): a confirm/teach reuses
-its existing (branding,slug) template instead of minting — replay 534 docs → 482 reuse, 0 cross-supplier.
-Phillip endorsed + Oracle SIGN-OFF-WITH-CONDITIONS (all met); `test_template_merge_plan.js` + `test_template_reuse.js`
-+ 8 siblings GREEN. ⚠ **NOT PUSHED. Slice-2 real gate = one LIVE OWNER BATCH** (goes live on next app restart —
-watch the first batch; `=0` disables). ⚠ **DEFERRED (required before wide rollout): Slice-2 IDF/rarity hardening**
-(generic-token collision). Merges on the live DB stay an OWNER click (Settings → Templates → Suggested cleanups;
-backup-first). The **field-visibility live-update** ask needed NO code — it was `431068e`, fixed by an app restart
-(owner confirmed). Memory: [[project_template_defrag_20260725]]. **Prior block ↓**
+## Current session state (2026-07-25 EVENING) — READ `HANDOVER_2026-07-25_EVENING.md` FIRST
+**2026-07-25 (Opus 4.8) — live-testing day with the owner; branch `feat/reprocess-throughput-autostraighten`
+ALL PUSHED through `863e914` (origin `0 0`, tree clean). 6 commits, all kill-switched + advisor/Oracle gated.**
+`5501be1` **merge tool (Slice 1)** — `templateMerge` splits `insufficient` vs `divergent` + offers an owner-
+confirmed backup-first `merge_review` for near-identical-branding dupes (kill `TEMPLATE_MERGE_REVIEW`;
+Settings→Templates→Suggested cleanups; ⚠ the merges themselves are an OWNER click, NOT run) · `aba2f46`
+**reuse-by-branding DEFAULT ON (Slice 2)** — a confirm/teach reuses its (branding,slug) template instead of
+minting (kill `TEMPLATE_REUSE_BY_BRANDING`; replay 482/534 reuse, 0 cross-supplier; ⚠ needs one LIVE OWNER
+BATCH + Phillip's IDF hardening before wide rollout) · `17f25e5` **live field-visibility by supplier** —
+`templates.findForSupplierType` resolves a no-template doc's hidden fields + re-scopes on issuer edit (kill
+`FIELD_VIS_LIVE_RESOLVE`; modes via setting `field_visibility_resolve_mode`) · `af346d8` **logo-refuse
+fall-through** — `identify_template`'s logo-arm trusted-title refuse falls through to the same-type keyword
+rescue (+ Oracle C1 supplier guard) so a wrong-type same-supplier logo lock no longer gives "No template match"
+on reprocess (kill `LOGO_REFUSE_FALLTHROUGH`; corpus M/accuracy-neutral, +5 correct auto-files; VALIDATED LIVE)
+· `8103268`/`863e914` docs (label-separator tolerance INVESTIGATED → DO NOT BUILD: reggie premise-break, no-op
+for its symptom). ⚠ **Python change ⇒ clear `python_backend/**/__pycache__`** or a reprocess runs STALE
+bytecode (masked the logo fix for ~an hour this session). ⭐ **NEXT SESSION'S TARGET: the recipient/customer
+anchor** can't pick the COMPANY-NAME line out of a captioned multi-line address block ("Deliver To" / "Site
+Customer") — it reads the caption or a garbled address line, `keyword_override` rescues the correct name, and
+the batch keeps landing in review; DIAGNOSED, not fixed (handover + [[project_recipient_anchor_problem]]).
+Memory: [[project_logo_refuse_fallthrough_20260725]] · [[project_field_visibility_live_resolve_20260725]] ·
+[[project_template_defrag_20260725]]. **Prior block ↓**
 
 ## Current session state (2026-07-24 LATE → overnight) — READ `HANDOVER_2026-07-24_LATE.md` FIRST
 **2026-07-24 LATE (Opus 5 → Opus 4.8 re-review + autonomous overnight) — 5 commits PUSHED through
