@@ -93,6 +93,40 @@ condition 6).
   lifting reopens the #472 class. Enumeration CONFIRMED inert: 0 docs held by weak-critical-with-template
   (`scratchpad/enum_autofile.js`).
 
+## Template-match gap — diagnosis (read-only, 2026-07-25 night; do NOT touch the matcher — Phillip+owner own the design)
+
+Traced doc 597 (no template, 88) vs doc 599 (T24, 95), both Saltmarsh delivery dockets, identical layout:
+- **The logo phash is useless here.** 597's own delivery template **T24 is Hamming 26** away — the FARTHEST
+  of all Saltmarsh templates; the CLOSEST is the wrong-type sibling **T21 (sales_order) at 14**; the
+  supplier logo store is 28. All far outside the accept band (≤6) and the corrob band (≤13). So the logo
+  path (`identify_template` path 1) correctly abstains — it cannot match 597 to anything. (Re-confirms
+  [[project_logo_hash_unreliable]] / [[project_identity_overhaul_20260714]]: 64-bit phash has ~zero
+  separating power on scans.) `scratchpad/hamming.py`.
+- **The delivery templates are barely established.** T24 `confirmed_count=0`, `sample_document_id=None`;
+  Ironbridge delivery T1=2, Copperfield T5=3, Thornbury T16=3 — despite those SCOPES having 20-160 clean
+  confirms. Confirms are NOT reinforcing the (branding,slug) template (the reuse-by-branding /
+  confirmed_count line — [[project_template_defrag_20260725]]). A never-reinforced template is fragile.
+- **597 has ALL 9 of T24's fingerprint words** ([Saltmarsh,Seafoods,Harbour,Fisher,Quay,Grimsby,Delivery,
+  Note,Deliver], keyword score 1.0 ≥ the 0.75 threshold) — yet `identify_template` returns None; 599
+  matches T24 via the same-type keyword rescue (path 2b @60, which requires `detected_slug + title_trusted
+  + hit_ratio ≥ 0.80`). The unstable element is the reverse-text **"DELIVERY DOCKET" banner** (a black-box
+  reverse print): on 597 it OCR'd MERGED onto the ref line (`DELIVERY DOCKET    Delivery Note No. DN-36457`);
+  on 599 it did NOT OCR at all (`Delivery Note No. DN-38626`). That plausibly flips `title_trusted`
+  (standalone-heading signal), which gates the only rescue path that fires here.
+- ⚠ **OPEN (needs an instrumented `identify_template` trace — Phillip, next session):** by the code, the
+  logoless keyword fallback (path 2, `_match_by_keywords`, threshold 0.75, NO title_trusted requirement)
+  should score T24 at 1.0 for 597 and return it — yet 597 returns None. The exact gate that suppresses it
+  (a title_trusted refuse, an ambiguity hold, a supplier/branding gate, or the reprocess-doesn't-persist
+  path) is NOT yet pinned. Pin it before designing.
+
+**Design directions (for Phillip + owner — NOT built):** (a) stop relying on the unstable logo phash +
+the fragile `title_trusted` heading for SAME-supplier matching — the branding fingerprint (597 has it in
+full) is the reliable signal, so the keyword fallback SHOULD be rescuing 597; pin why it isn't. (b) make
+confirms REINFORCE the (branding,slug) template so `confirmed_count` grows and the template establishes
+(reuse-by-branding). (c) a banner-heading re-read for the reverse-text title ([[project_banner_heading_reread]],
+kill BANNER_HEADING_REREAD) may stabilise `title_trusted`. Likely the exact Slice-2 live-owner-batch that
+[[project_template_defrag_20260725]] is already waiting on.
+
 ## Recommended next steps (owner-gated)
 1. **Confirm 6 more Saltmarsh dockets** → graduate the scope (floor 95) → 4 clean docs auto-file. Free.
 2. **Diagnose the template-match gap** (#1) — the real lever for the other 11. Read-only first; the fix
