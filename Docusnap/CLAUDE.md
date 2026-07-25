@@ -21,6 +21,24 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
+## Current session state (2026-07-25) — READ `HANDOVER_2026-07-25.md` FIRST
+**2026-07-25 (Opus 4.8) — template DE-FRAGMENTATION; branch `feat/reprocess-throughput-autostraighten`,
+2 commits UNPUSHED on top of `431068e`: `5501be1` (Slice 1) + `aba2f46` (Slice 2); tree clean.** Owner
+spotted duplicate templates (same supplier+type minted 2-4×) in the Field-visibility Layout dropdown.
+Verified all 254 linked docs correctly assigned (pure fragmentation, no misfiles). **Slice 1** (`5501be1`,
+kill `TEMPLATE_MERGE_REVIEW` default ON): the "Suggested cleanups" detector (`templateMerge.js`) now splits
+`insufficient` (layout unverifiable) from `divergent` and offers an owner-confirmed backup-first `merge_review`
+for near-identical-branding dupes (was hiding them behind a false "different layouts" warning); + `fieldZoneVerdict`
+demote/promote (Phillip) + richness-first canonical (fixes Thornbury id12→id16) + honest UI copy w/ clickable
+samples. **Slice 2** (`aba2f46`, kill `TEMPLATE_REUSE_BY_BRANDING` flipped to DEFAULT ON): a confirm/teach reuses
+its existing (branding,slug) template instead of minting — replay 534 docs → 482 reuse, 0 cross-supplier.
+Phillip endorsed + Oracle SIGN-OFF-WITH-CONDITIONS (all met); `test_template_merge_plan.js` + `test_template_reuse.js`
++ 8 siblings GREEN. ⚠ **NOT PUSHED. Slice-2 real gate = one LIVE OWNER BATCH** (goes live on next app restart —
+watch the first batch; `=0` disables). ⚠ **DEFERRED (required before wide rollout): Slice-2 IDF/rarity hardening**
+(generic-token collision). Merges on the live DB stay an OWNER click (Settings → Templates → Suggested cleanups;
+backup-first). The **field-visibility live-update** ask needed NO code — it was `431068e`, fixed by an app restart
+(owner confirmed). Memory: [[project_template_defrag_20260725]]. **Prior block ↓**
+
 ## Current session state (2026-07-24 LATE → overnight) — READ `HANDOVER_2026-07-24_LATE.md` FIRST
 **2026-07-24 LATE (Opus 5 → Opus 4.8 re-review + autonomous overnight) — 5 commits PUSHED through
 `c9d9480` (origin `0 0`, tree clean).** `733b4e1` **late-rescue sticky cap** (kill `LATE_RESCUE_CAP_STICKY`,
