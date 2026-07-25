@@ -5874,6 +5874,16 @@ window.docusnap.onDocTypesChanged?.(async () => {
   if (sel) sel.value = cur || sel.value;
 });
 
+// LIVE field-visibility (migration 54): an admin changed which fields a layout shows in
+// Settings → Field visibility. If the doc on screen belongs to that template, refresh its hidden
+// set and re-render the fields immediately — no close/reopen. The payload carries the fresh array
+// so we don't re-fetch. Ignored when the change is for a different template (or nothing is open).
+window.docusnap.onReviewVisibilityChanged?.(({ templateId, hidden } = {}) => {
+  if (!currentDoc || currentDoc.template_id !== templateId) return;
+  currentDoc.hidden_fields = hidden || [];
+  renderFields(currentDoc);
+});
+
 // Auto-refresh the queue when the main process signals the review count changed. DEBOUNCED: as a
 // batch processes, each doc first lands as needs_review (a count-change) and — when it qualifies —
 // AUTO-FILES a moment later (another count-change), so an immediate re-render made those docs FLASH

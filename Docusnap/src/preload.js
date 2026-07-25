@@ -312,6 +312,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   saveTemplateMapping:        (id, mapping)       => ipcRenderer.invoke('save-template-mapping', id, mapping),
   setTemplateMappingEnabled:  (id, key, enabled)  => ipcRenderer.invoke('set-template-mapping-enabled', id, key, enabled),
   setTemplateHiddenField:     (id, key, hidden)   => ipcRenderer.invoke('set-template-hidden-field', id, key, hidden),
+  onReviewVisibilityChanged:  (cb)                => ipcRenderer.on('review-visibility-changed', (_e, p) => cb(p)),
   deleteTemplateMapping:      (id, key)           => ipcRenderer.invoke('delete-template-mapping', id, key),
   recordTemplateMappingTest:  (id, key, result)   => ipcRenderer.invoke('record-template-mapping-test', id, key, result),
   setTemplateFieldFixed:      (id, key, value)    => ipcRenderer.invoke('set-template-field-fixed', id, key, value),

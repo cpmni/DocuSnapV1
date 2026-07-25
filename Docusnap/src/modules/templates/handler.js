@@ -305,7 +305,15 @@ function register(ctx) {
   // the type (superset-lock) and returns {ok:false, reason}. Admin-only (whole viewer is admin).
   ipcMain.handle('set-template-hidden-field', (_e, templateId, fieldKey, hidden) => {
     requireRole('admin');
-    return templates.setHiddenField(getDb(), templateId, fieldKey, !!hidden);
+    const db = getDb();
+    const r  = templates.setHiddenField(db, templateId, fieldKey, !!hidden);
+    // LIVE-UPDATE an open Review window: push the fresh hidden set for this template so a doc on
+    // screen re-renders immediately (no close/reopen). The payload CARRIES the array so Review needs
+    // no admin-gated re-fetch (a Review window can be an Edit user). No-op if Review isn't open.
+    if (r && r.ok !== false) {
+      try { ctx.notifyReview('review-visibility-changed', { templateId, hidden: templates.getHiddenFields(db, templateId) }); } catch {}
+    }
+    return r;
   });
 
   // Admin-facing template management — name is purely cosmetic metadata
