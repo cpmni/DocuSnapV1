@@ -229,6 +229,25 @@ def identify_template(page_image, ocr_text: str, templates: list,
 
     ocr_lower  = ocr_text.lower()
     logo_phash = None
+    # LOGO_REFUSE_FALLTHROUGH (default ON): when the type-blind logo arm locks a WRONG-TYPE same-letterhead
+    # sibling, capture the refuse + the supplier the logo locked (dist<=6), then FALL THROUGH to the
+    # same-type rescue / keyword arm below (they resolve the right-type sibling the logo can't). Re-emitted
+    # at the end iff nothing right-SUPPLIER resolves (Oracle C1 guard). OFF ('0') ⇒ both stay None ⇒ the
+    # refuse returns immediately at its original site ⇒ byte-identical.
+    _logo_refused = None
+    _refused_supplier = None
+
+    def _fallthrough_supplier_ok(cand):
+        # Oracle C1: on the captured-refuse fall-through, a rescue/keyword match for a DIFFERENT known
+        # supplier than the logo locked is a look-alike collision, NOT the right-type sibling → reject it
+        # (→ re-emit the refuse / hold). A null candidate supplier = a fresh same-letterhead sibling of the
+        # right type by construction → allow. No refuse captured (the normal accept path) → always allow.
+        if _logo_refused is None:
+            return True
+        if not _refused_supplier:          # the logo-locked supplier is unknown (fresh/unconfirmed sibling)
+            return True                    # → can't judge cross-supplier → allow (no false hold; branding bars still gate)
+        ds = (cand.get('dominant_supplier') or '').strip().lower()
+        return (not ds) or (ds == _refused_supplier)
 
     # 1. Logo hash — the most reliable SUPPLIER identifier, but NOT a doc-type one
     #    (same-letterhead siblings). Gather ALL close logo candidates; within the
@@ -269,12 +288,19 @@ def identify_template(page_image, ocr_text: str, templates: list,
                 # via the independent logo_fingerprints path). Gated on title_trusted, so
                 # a mere incidental mention can't discard a good single-template match.
                 if title_trusted and detected_slug and (best_t.get('document_type_slug') or '') != detected_slug:
-                    return _type_refuse(detected_slug, best_t.get('document_type_slug'))
+                    if os.environ.get('LOGO_REFUSE_FALLTHROUGH', '1') == '0':
+                        return _type_refuse(detected_slug, best_t.get('document_type_slug'))
+                    # Fall through to the rescue / keyword arm — the logo can't judge TYPE, and a right-type
+                    # sibling may match by keyword. Capture the refuse + the LOCKED supplier so a fall-through
+                    # match for a DIFFERENT known supplier is rejected (C1). The accept path below is skipped
+                    # while _logo_refused is set (its veto/gate/return are guarded on `_logo_refused is None`).
+                    _logo_refused = (detected_slug, best_t.get('document_type_slug'))
+                    _refused_supplier = (best_t.get('dominant_supplier') or '').strip().lower()
                 # SLICE C — isolated-mark VETO: a ≥2-supplier logo cluster whose picked template's mark
                 # DISAGREES with the scan is a look-alike collision → ABSTAIN (fall to keyword + branding
                 # net + review). See _logo_detail_veto (scoped, fail-safe, kill-switched, inert until
                 # Slice-B detail hashes accrue). Ordered after the trusted-title refuse, before Fix A.
-                if _logo_detail_veto(cands, cluster_dist, best_t, query_detail_hash):
+                if _logo_refused is None and _logo_detail_veto(cands, cluster_dist, best_t, query_detail_hash):
                     return None
                 # FIX A: is this an AMBIGUOUS same-letterhead pick? (Ordered AFTER the trusted-title
                 # refuse above.) If so the engine HOLDS the doc for review instead of auto-filing a
@@ -318,7 +344,7 @@ def identify_template(page_image, ocr_text: str, templates: list,
                 #       own-absent, not own-present.
                 #   (c) its rival test (raw per-template fingerprint, exact, whole-page, flat
                 #       0.75) was structurally unreachable — see _rival_branding_present V2.
-                if (ocr_lower and os.environ.get('TEMPLATE_LOGO_TEXT_GATE', '1') != '0'
+                if (_logo_refused is None and ocr_lower and os.environ.get('TEMPLATE_LOGO_TEXT_GATE', '1') != '0'
                         and (best_t.get('keyword_fingerprint') or [])):
                     if os.environ.get('TEMPLATE_GATE_DISTINCTIVE', '1') != '0':
                         _own, _n = _distinctive_hit_ratio(best_t, ocr_lower)
@@ -340,7 +366,10 @@ def identify_template(page_image, ocr_text: str, templates: list,
                     # non-ambiguous matches never carry them → every existing caller is unchanged.
                     result['ambiguous_siblings'] = _band_siblings(cands, cluster_dist)
                     result['cluster_supplier'] = best_t.get('dominant_supplier')
-                return result
+                # Return the accepted logo match — UNLESS the logo arm refused a wrong-type sibling, in
+                # which case fall through to the same-type rescue / keyword arm (LOGO_REFUSE_FALLTHROUGH).
+                if _logo_refused is None:
+                    return result
 
     # 2b. TEXT-CORROBORATED, SAME-TYPE RESCUE (Phillip, 2026-07-10): the logo drifted OUT of the strict
     #     accept band, but a template of the DETECTED type carries a strongly-overlapping keyword
@@ -370,8 +399,9 @@ def identify_template(page_image, ocr_text: str, templates: list,
             # Kill switch RESCUE_ENFORCE_LOGO_BAND=1 restores the old band (byte-identical to before).
             _enforce_band = os.environ.get('RESCUE_ENFORCE_LOGO_BAND', '0') != '0'
             if logo_phash is None or not _enforce_band or _min_set_dist(_cand, logo_phash) <= RESCUE_LOGO_BAND:
-                return {'template': _cand, 'confidence': 60,
-                        'method': 'keywords+slug_rescue', 'logo_phash': logo_phash}
+                if _fallthrough_supplier_ok(_cand):   # C1: reject a fall-through match for a DIFFERENT supplier
+                    return {'template': _cand, 'confidence': 60,
+                            'method': 'keywords+slug_rescue', 'logo_phash': logo_phash}
 
     # 2. Keyword fingerprint — fallback for docs without logos. Pass detected_slug so a same-fingerprint
     # sibling of the DETECTED type wins the tie (the logo-drift → keyword-fallback → wrong-sibling class).
@@ -381,9 +411,17 @@ def identify_template(page_image, ocr_text: str, templates: list,
         if title_trusted and detected_slug and \
            (kw_match['template'].get('document_type_slug') or '') != detected_slug:
             return _type_refuse(detected_slug, kw_match['template'].get('document_type_slug'))
-        if logo_phash:
-            kw_match['logo_phash'] = logo_phash
-        return kw_match
+        if _fallthrough_supplier_ok(kw_match['template']):   # C1: reject a fall-through match for a DIFFERENT supplier
+            if logo_phash:
+                kw_match['logo_phash'] = logo_phash
+            return kw_match
+
+    # LOGO_REFUSE_FALLTHROUGH re-emit (C1): the logo arm refused a wrong-type sibling and we fell through,
+    # but neither the same-type rescue nor the keyword arm resolved a RIGHT-type, RIGHT-supplier template.
+    # Preserve the hold + note so a trusted title naming a type this supplier lacks still fails to review.
+    # (OFF ⇒ _logo_refused is None ⇒ no-op ⇒ byte-identical.)
+    if _logo_refused is not None:
+        return _type_refuse(_logo_refused[0], _logo_refused[1])
 
     return None
 

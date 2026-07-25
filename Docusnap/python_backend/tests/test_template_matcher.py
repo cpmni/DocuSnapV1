@@ -479,6 +479,59 @@ def main():
                  m_ok and m_ok['template']['id'] == 9):
         failures += 1
 
+    # ── LOGO_REFUSE_FALLTHROUGH (2026-07-25): the logo arm locks a WRONG-TYPE same-letterhead sibling
+    #    (the 64-bit phash can't tell a supplier's layouts apart), so the trusted-title refuse used to
+    #    return before the same-type rescue/keyword arm could resolve the RIGHT-type sibling. Doc 555
+    #    (SaltmarshSeafoods_worksheet): logo dist 4 to the sales_order template, 18 to its own worksheet
+    #    template. Fall through, with Oracle C1's supplier-scoping guard. ──────────────────────────────
+    section('LOGO_REFUSE_FALLTHROUGH: wrong-type logo lock falls through to the right-type keyword match')
+    import os as _os2
+    NEAR = '0000000000000000'            # doc logo + the wrong-type sibling (dist 0, conf 100)
+    FAR  = '000000000003ffff'            # the right-type sibling (dist 18 > LOGO_THRESHOLD 13 -> excluded from the logo cluster)
+    LH   = ['saltmarsh', 'seafoods']
+    WRONG = {'id': 21, 'name': 'Saltmarsh SO', 'logo_phash': NEAR, 'confirmed_count': 3,
+             'document_type_slug': 'sales_order', 'keyword_fingerprint': LH, 'dominant_supplier': 'Saltmarsh Seafoods'}
+    RIGHT = {'id': 23, 'name': 'Saltmarsh WS', 'logo_phash': FAR,  'confirmed_count': 3,
+             'document_type_slug': 'service_worksheet', 'keyword_fingerprint': LH, 'dominant_supplier': 'Saltmarsh Seafoods'}
+    ws_ocr = "SALTMARSH SEAFOODS\nWORKSHEET 38\nREFERENCE NO WS-26836"
+
+    # (a) THE FIX — a future dev restoring `return _type_refuse` at :271 makes this RED (refuse instead of RIGHT).
+    m_ft = with_stub_hash(lambda: template_matcher.identify_template(
+        FakePage(NEAR), ws_ocr, [WRONG, RIGHT], detected_slug='service_worksheet', title_trusted=True))
+    if not check('logo locks wrong-TYPE sibling but right-type sibling matches by keyword -> resolves RIGHT (id23), no refuse',
+                 m_ft and m_ft['template']['id'] == 23 and not m_ft.get('type_refused')):
+        failures += 1
+
+    # (c) C1 SUPPLIER GUARD (load-bearing) — only a DIFFERENT-supplier right-type template matches -> re-emit refuse, never file the wrong company.
+    OTHER = {'id': 30, 'name': 'Bexley WS', 'logo_phash': 'ffffffffffffffff', 'confirmed_count': 3,
+             'document_type_slug': 'service_worksheet', 'keyword_fingerprint': ['bexley', 'traders'],
+             'dominant_supplier': 'Bexley Traders'}
+    other_ocr = "SALTMARSH SEAFOODS\nWORKSHEET 38\nBEXLEY TRADERS LTD"   # both brandings present on the page
+    m_c1 = with_stub_hash(lambda: template_matcher.identify_template(
+        FakePage(NEAR), other_ocr, [WRONG, OTHER], detected_slug='service_worksheet', title_trusted=True))
+    if not check('C1: logo locked Saltmarsh, only a DIFFERENT-supplier (Bexley) right-type template matches -> re-emit refuse, NOT Bexley',
+                 (m_c1 or {}).get('template') is None and (m_c1 or {}).get('type_refused') is True):
+        failures += 1
+
+    # (b) PURE RE-EMIT — no right-type template for anyone + no keyword hit -> the end re-emit fires (deleting it makes this RED).
+    m_re = with_stub_hash(lambda: template_matcher.identify_template(
+        FakePage(NEAR), "WORKSHEET 38\nUNRELATED BODY TEXT", [WRONG],
+        detected_slug='service_worksheet', title_trusted=True))
+    if not check('pure re-emit: logo refuses, no rescue + no keyword hit -> refuse held via the end re-emit',
+                 (m_re or {}).get('template') is None and (m_re or {}).get('type_refused') is True):
+        failures += 1
+
+    # (e) OFF byte-identical — LOGO_REFUSE_FALLTHROUGH=0 restores the immediate refuse at :271 (does NOT reach the rescue).
+    _os2.environ['LOGO_REFUSE_FALLTHROUGH'] = '0'
+    m_off2 = with_stub_hash(lambda: template_matcher.identify_template(
+        FakePage(NEAR), ws_ocr, [WRONG, RIGHT], detected_slug='service_worksheet', title_trusted=True))
+    _os2.environ.pop('LOGO_REFUSE_FALLTHROUGH', None)
+    if not check('OFF (=0): logo-arm refuse returns immediately (byte-identical) -> hold sentinel, NOT the rescued RIGHT',
+                 (m_off2 or {}).get('template') is None and (m_off2 or {}).get('type_refused') is True):
+        failures += 1
+    # (d, no-right-type still refuses) is covered above by m_refuse (:447) + m_single (:470): both now flow through
+    # the fall-through and end in a refuse via the keyword arm's own trusted-title guard — the preserved fail-safe.
+
     print()
     if failures:
         print(f"{failures} check(s) failed - template_matcher Stage 0 identification regressed.")
