@@ -21,6 +21,28 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
+## Current session state (2026-07-25 NIGHT, autonomous) — READ `HANDOVER_2026-07-25_NIGHT.md` FIRST
+**2026-07-25 NIGHT (Opus 4.8, autonomous overnight; owner asleep, hard NO-REGRESSIONS rule).** Chased the
+owner's "recipient/customer anchor" problem to root and it is a **RED HERRING for the auto-file pile-up**:
+customer_name is `required=0` → never feeds `overall_confidence`. The 16 correct Saltmarsh dockets pile up
+because of **TEMPLATE MATCH + confidence caps + an ungraduated scope**, NOT a wrong read. Full audit:
+**`docs/AUTOFILE_AUDIT_2026-07-25.md`**. Root: match→supplier early→Stage-2.5 conformance boost (85→96)+
+docTrustGate ok→95; no-match→supplier LATE→`late_anchor_rescue` cap 85→88, and **no-template BARS sub-100
+auto-file** (docTrustGate, trust.js:391). Scope **4/10 confirms→floor 100→nothing auto-files**; simulated
+at graduated floor 95 only **4/20** file (11 no-template + 5 flagged [2 "type changed on reprocess", 3
+customer phantom note]). **BUILT (DARK, LOCAL commit `9dfa011`, NOT pushed): caption-prefix strip** (kill
+`ANCHOR_CAPTION_PREFIX_STRIP` default OFF) — `_strip_caption_prefix` recovers a structured crop that
+captured its caption ("Date 22/07/2026"→"22/07/2026") + fixes a cold-supplier dirty-commit; reggie+Oracle
+SIGN-OFF-W/COND (SEAM A currency-exclude, SEAM B recovery-not-pre-emption). OFF byte-identical; unit green
+(`test_caption_prefix_strip.py`); ON live batch **16/16 zero VALUE changes** (method-only recovery). ⚠ NOT
+flipped, NOT full-corpus-gated, **does NOT clear the batch**. **RULED OUT (gary+Oracle DO NOTHING): the
+corroboration lift** (late-rescue⟺template-less⟹zero recall; enumeration confirmed inert). **UNCOMMITTED
+new files** (safe, carry no data): `stress_test/caption_strip_ab.js` (A/B harness), `docs/AUTOFILE_AUDIT_2026-07-25.md`,
+`HANDOVER_2026-07-25_NIGHT.md`. **NEXT (owner-gated; Oracle: do NOT touch the matcher autonomously):** confirm
+6 more dockets→graduate; diagnose the template-match gap (primary lever, [[project_template_defrag_20260725]]);
+decide the "type changed on reprocess" flag; flip the strip after corpus A/B + page-verify. Memory:
+[[project_autofile_blockers_20260725]] · [[project_caption_prefix_strip_20260725]]. **Prior block ↓**
+
 ## Current session state (2026-07-25 EVENING) — READ `HANDOVER_2026-07-25_EVENING.md` FIRST
 **2026-07-25 (Opus 4.8) — live-testing day with the owner; branch `feat/reprocess-throughput-autostraighten`
 ALL PUSHED through `863e914` (origin `0 0`, tree clean). 6 commits, all kill-switched + advisor/Oracle gated.**
