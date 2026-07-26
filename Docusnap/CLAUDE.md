@@ -21,7 +21,19 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-07-26 FINAL) — logo-identity LIVE + INSTALLER BUILT (bytecode-hardened)
+## Current session state (2026-07-26) — READ `HANDOVER_2026-07-26.md` FIRST
+**Wrapped 2026-07-26 (Fable 5). ALL PUSHED through `fff6cde` (origin `0 0`), tree clean, no background
+processes.** The day: logo-identity fix END-TO-END (iris forensics → A+C → corpus block → G1/G2 guards
+→ revised-C8 PASS → FLIPPED ON → owner live-validated "docs filed fine") + installer
+`r20260726-1018-58533ea` BUILT with NEW bytecode hardening (extraction ships sourceless .pyc; kill
+`SHIP_PY_SOURCE=1`) + `docs/ARCHITECTURE_SNAPSHOT_2026-07-26.md` (C++-port report; MODULES.md = stale).
+⭐ **NEXT SESSION: (1) owner smoke of the hardened installer, (2) the COPPERFIELD TAUGHT-OWNERSHIP PLAN
+(formulated, NOT built — 13 POs @69; root = a BLIND label-less po_date anchor the ⊕ teach silently
+planted; slices 0/A/B/B′/B″/C incl. the owner's TWO DESIGN DECISIONS: TYPE-SCOPED label ownership +
+single-date crop salvage — [[project_taught_anchor_ownership_20260726]]), (3) #183 anchor-binding.**
+Details + recovery anchors below. **↓**
+
+## (detail) 2026-07-26 — logo-identity LIVE + INSTALLER BUILT (bytecode-hardened)
 **INSTALLER: `dist\ScanFinder Setup 2.0.0-r20260726-1018-58533ea.exe`** — carries the ENTIRE week
 (logo-identity A+C+G1+G2 flipped ON, field-vis, logo-refuse, caption-strip DARK) **+ the new
 BYTECODE HARDENING**: `scripts/compile-python-bytecode.js` stages `build_python/` (extraction/ etc.
