@@ -70,10 +70,12 @@ def anc(field_key, sup='Bramble & Finch Ltd', slug='sales_order', auth='2026-07-
             "last_authoritative_at": auth, "anchor_label": "x", "direction": "below"}
 
 
-def kw(value, conf=83, method='keyword', note=None):
+def kw(value, conf=83, method='keyword', note=None, label=None):
     d = {"value": value, "confidence": conf, "method": method}
     if note:
         d["validation_note"] = note
+    if label is not None:
+        d["label"] = label   # the matched caption — read by the OWN_LABEL / B' type-scoped branches
     return d
 
 
@@ -227,6 +229,93 @@ r = run_c({"customer_name": kw(NAME, conf=75)},
           {"customer_name": [cand(NAME, method='hint', authoritative=False, located=False)]},
           anchors=[anc('customer_name')])
 check("T7 non-anchor candidate (hint) agrees -> STILL capped @69", r["customer_name"]["confidence"] == 69)
+
+# ── B' TYPE-SCOPED own-label exemption (gary + Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-26) ──────
+# A caption shared GLOBALLY but UNIQUE within the RESOLVED type ("Order Date" on a purchase_order —
+# order_date is not a field there) declines the cap, but ONLY on an AUTHORITATIVE type
+# (self._type_authoritative). Kill switch DARK by default. The global branch is untouched.
+print("-- B' type-scoped own-label exemption --")
+B_FP = {
+    'po_number':      {'labels': [{'text': 'PO Number'}, {'text': 'Order No'}]},
+    'po_date':        {'labels': [{'text': 'PO Date'}, {'text': 'Order Date'}, {'text': 'Date'}]},
+    'order_date':     {'labels': [{'text': 'Sales Order Date'}, {'text': 'Order Date'}, {'text': 'Date'}]},
+    'invoice_number': {'labels': [{'text': 'Invoice No'}]},
+    'invoice_date':   {'labels': [{'text': 'Invoice Date'}, {'text': 'Date'}]},
+}
+B_OWNERS = keyword.build_label_owner_index(B_FP)
+PO_FIELDS = [
+    {"key": "supplier_name", "label": "Document Issuer", "type": "text",   "required": 1},
+    {"key": "po_number",     "label": "PO Number",       "type": "text",   "required": 1, "is_variable": 1},
+    {"key": "po_date",       "label": "PO Date",         "type": "date",   "required": 1, "is_variable": 1},
+    {"key": "total_amount",  "label": "Total",           "type": "number", "required": 0},
+]
+INV_2DATE_FIELDS = [   # a type carrying MORE THAN ONE date field (invoice_date + po_date)
+    {"key": "supplier_name",  "label": "Document Issuer", "type": "text", "required": 1},
+    {"key": "invoice_number", "label": "Invoice No",      "type": "text", "required": 1, "is_variable": 1},
+    {"key": "invoice_date",   "label": "Invoice Date",    "type": "date", "required": 1, "is_variable": 1},
+    {"key": "po_date",        "label": "PO Date",         "type": "date", "required": 0, "is_variable": 1},
+]
+SO_FIELDS = [
+    {"key": "supplier_name", "label": "Document Issuer", "type": "text",   "required": 1},
+    {"key": "order_date",    "label": "Order Date",      "type": "date",   "required": 1, "is_variable": 1},
+    {"key": "total_amount",  "label": "Total",           "type": "number", "required": 0},
+]
+
+
+def run_b(results, fields, slug, type_auth, anchors, flag=True):
+    e = eng()
+    e._label_owners = B_OWNERS
+    e._type_authoritative = type_auth
+    _s = engine_mod.TAUGHT_OWNERSHIP_TYPE_SCOPED_LABEL
+    try:
+        engine_mod.TAUGHT_OWNERSHIP_TYPE_SCOPED_LABEL = flag
+        e._flag_taught_field_ownership(results, fields, 'Copperfield Electrical', anchors, [], slug, VOCAB)
+    finally:
+        engine_mod.TAUGHT_OWNERSHIP_TYPE_SCOPED_LABEL = _s
+    return results
+
+
+# B1 INCIDENT: authoritative PO, po_date read via the shared-but-type-unique "Order Date" -> NOT capped.
+r = run_b({"po_date": kw('26/10/2026', label='Order Date')}, PO_FIELDS, 'purchase_order',
+          True, [anc('po_date', sup='Copperfield Electrical', slug='purchase_order')])
+check("B1 incident: 'Order Date' on an AUTHORITATIVE PO -> NOT capped (conf kept)",
+      r["po_date"]["confidence"] == 83 and not r["po_date"].get("validation_note"))
+
+# B2 ACCEPTED-TRADE-OFF PIN (a future dev must NOT delete): the SAME read on a NON-authoritative type
+# STILL holds @69 + note — the whole precision argument for type-scoping (a mis-typed doc keeps its
+# review checkpoint).
+r = run_b({"po_date": kw('26/10/2026', label='Order Date')}, PO_FIELDS, 'purchase_order',
+          False, [anc('po_date', sup='Copperfield Electrical', slug='purchase_order')])
+check("B2 non-authoritative type -> STILL capped @69 (accepted-trade-off pin)",
+      r["po_date"]["confidence"] == 69 and 'taught position' in (r["po_date"].get("validation_note") or ''))
+
+# B3 >1-date type (invoice carrying invoice_date+po_date); po_date read via bare "Date" -> STILL held
+# (shared within type AND generic token) even though the type is authoritative.
+r = run_b({"po_date": kw('26/10/2026', label='Date')}, INV_2DATE_FIELDS, 'invoice',
+          True, [anc('po_date', sup='Copperfield Electrical', slug='invoice')])
+check("B3 >1-date type, bare 'Date' -> STILL capped @69", r["po_date"]["confidence"] == 69)
+
+# B4 kill switch OFF -> byte-identical (B1 setup capped again).
+r = run_b({"po_date": kw('26/10/2026', label='Order Date')}, PO_FIELDS, 'purchase_order',
+          True, [anc('po_date', sup='Copperfield Electrical', slug='purchase_order')], flag=False)
+check("B4 TAUGHT_OWNERSHIP_TYPE_SCOPED_LABEL=0 -> capped again @69 (byte-identical)",
+      r["po_date"]["confidence"] == 69)
+
+# B5 GLOBAL path untouched: a globally-unique "Invoice No" exempts on invoice_number regardless of
+# type-authority (the existing branch is authority-agnostic).
+r = run_b({"invoice_number": kw('INV-5', label='Invoice No')}, INV_2DATE_FIELDS, 'invoice',
+          False, [anc('invoice_number', sup='Copperfield Electrical', slug='invoice')])
+check("B5 global 'Invoice No' exempt even when non-authoritative (global branch untouched)",
+      r["invoice_number"]["confidence"] == 83 and not r["invoice_number"].get("validation_note"))
+
+# B6 THE ACCEPTED RESIDUAL (Oracle: the authoritative-but-WRONG-type conjunction) — a doc mis-typed as
+# sales_order via a garbled-but-trusted heading, order_date taught, read via "Order Date" -> B' WILL
+# exempt it. Pinned so the accepted residual stays VISIBLE and can't be silently "fixed" into a widening.
+r = run_b({"order_date": kw('26/10/2026', label='Order Date')}, SO_FIELDS, 'sales_order',
+          True, [anc('order_date', sup='Copperfield Electrical', slug='sales_order')])
+check("B6 accepted residual: authoritative-but-wrong-type -> B' exempts (documented residual)",
+      r["order_date"]["confidence"] == 83 and not r["order_date"].get("validation_note"))
+
 
 print()
 if fails:

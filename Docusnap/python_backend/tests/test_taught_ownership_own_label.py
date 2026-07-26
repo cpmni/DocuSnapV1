@@ -122,6 +122,57 @@ assert keyword.build_label_owner_index({}) == {}
 assert keyword.build_label_owner_index(None) == {}
 assert keyword.label_is_own_discriminating('Invoice No', 'invoice_number', {}) is False
 
+
+# ══ B' TYPE-SCOPED own-label exemption (gary + Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-26) ══════
+# label_is_own_discriminating_in_type judges uniqueness against the RESOLVED TYPE's field-key set, so a
+# label shared GLOBALLY but unique WITHIN a type ("Order Date": po_date + order_date globally, but only
+# po_date exists on a purchase_order) exempts FOR THAT TYPE. The generic-token gate is RETAINED (bare
+# "Date" never exempts) and a UNION field set degrades to the global test. Precision-first: doubt -> False.
+print("\n=== B': type-scoped own-label exemption ===")
+FP_T = {
+    'invoice_date': {'labels': [{'text': 'Invoice Date'}, {'text': 'Date'}]},
+    'po_date':      {'labels': [{'text': 'PO Date'}, {'text': 'Order Date'}, {'text': 'Date'}]},
+    'order_date':   {'labels': [{'text': 'Sales Order Date'}, {'text': 'Order Date'}, {'text': 'Date'}]},
+    'po_number':    {'labels': [{'text': 'PO Number'}]},
+    'total_amount': {'labels': ['Total']},
+}
+owners_t = keyword.build_label_owner_index(FP_T)
+PO_KEYS    = frozenset({'supplier_name', 'po_number', 'po_date', 'total_amount'})
+SO_KEYS    = frozenset({'supplier_name', 'sales_order_number', 'order_date', 'total_amount'})
+INV2_KEYS  = frozenset({'supplier_name', 'invoice_number', 'invoice_date', 'po_date'})   # >1 date field
+BOTH_KEYS  = frozenset({'supplier_name', 'po_date', 'order_date', 'total_amount'})        # type carries BOTH
+UNION_KEYS = frozenset(FP_T) | {'supplier_name', 'sales_order_number', 'invoice_number'}
+
+
+def check2(label, key, keys, expect, why):
+    got = keyword.label_is_own_discriminating_in_type(label, key, owners_t, keys)
+    tag = 'ok  ' if got == expect else 'FAIL'
+    if got != expect:
+        fails.append((label, key, expect, got, why))
+    print(f"  [{tag}] label={label!r:14} key={key:12} -> {got}  (expect {expect}: {why})")
+
+
+# THE INCIDENT + symmetric sibling — shared globally, unique within the resolved type
+check2('Order Date', 'po_date',        PO_KEYS,    True,  'unique within purchase_order (order_date absent) — INCIDENT')
+check2('Order Date', 'order_date',     SO_KEYS,    True,  'symmetric: unique within sales_order (po_date absent)')
+# generic-token gate retained — bare "Date" never exempts, even when scoped-unique
+check2('Date',       'po_date',        PO_KEYS,    False, 'generic token "date" — held even though scoped to {po_date}')
+# owner requirement: a type with >1 date field holds a shared/generic date label
+check2('Date',       'po_date',        INV2_KEYS,  False, '>1-date type (invoice_date+po_date) — shared+generic -> held')
+# a type carrying BOTH po_date AND order_date -> "Order Date" ambiguous within type -> held
+check2('Order Date', 'po_date',        BOTH_KEYS,  False, 'type carries po_date AND order_date -> ambiguous -> held')
+# UNION field set (no type resolved) degrades to the global test -> held (doubly safe)
+check2('Order Date', 'po_date',        UNION_KEYS, False, 'union field set == global test -> held (degrade-to-global)')
+# field absent from the resolved type / not a global owner / edges
+check2('Order Date', 'po_date',        SO_KEYS,    False, 'po_date not a field on sales_order -> held')
+check2('Order Date', 'invoice_number', PO_KEYS,    False, 'invoice_number never carries "Order Date"')
+check2('',           'po_date',        PO_KEYS,    False, 'blank label')
+check2(None,         'po_date',        PO_KEYS,    False, 'None label')
+check2('Order Date', 'po_date',        frozenset(), False, 'empty type_keys')
+check2('Nope',       'po_date',        PO_KEYS,    False, 'unknown label')
+assert keyword.label_is_own_discriminating_in_type('Order Date', 'po_date', {}, PO_KEYS) is False
+assert owners_t.get('order date') == frozenset({'po_date', 'order_date'}), owners_t.get('order date')
+
 if fails:
     print(f"\n{len(fails)} FAIL(s):")
     for f in fails:

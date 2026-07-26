@@ -156,6 +156,21 @@ TAUGHT_OWNERSHIP_CORROBORATE = os.environ.get('TAUGHT_OWNERSHIP_CORROBORATE', '1
 # synonyms "Bill No"/"Order Ref" — pinned in test_taught_ownership_own_label.py). Kill: =0 (byte-
 # identical off). C3 owner live-check outstanding: the Thornbury invoice files clean, no 69 cap.
 TAUGHT_OWNERSHIP_OWN_LABEL = os.environ.get('TAUGHT_OWNERSHIP_OWN_LABEL', '1') != '0'
+# TYPE-SCOPED OWN-LABEL EXEMPTION — B' (2026-07-26, gary design + Oracle SIGN-OFF-WITH-CONDITIONS).
+# Extends the own-label exemption to a caption that is shared GLOBALLY but UNIQUE within the RESOLVED
+# doc type ("Order Date" is on po_date AND sales_order.order_date, but only po_date exists on a
+# purchase_order, so within that type it is discriminating). Fires ONLY on an AUTHORITATIVE type
+# (self._type_authoritative — a trusted standalone heading named it, and Stage 0 did not flag the type
+# ambiguous/refused): a type-scoped-unique label is not self-identifying, so the exemption leans on the
+# type being right. ADDS exemptions only; OFF or non-authoritative => byte-identical (the existing global
+# branch is untouched). DEFAULT ON (owner flip 2026-07-26 after ALL Oracle conditions passed): C1
+# make-or-break live-fire on the 13 held Copperfield POs — every po_date lifted 69->98, note gone, VALUES
+# UNCHANGED (method-only) · C2 realdoc OFF-vs-ON — the WHOLE diff is one line (ownership caps 13->5); the
+# would-auto-file set (396), M (2, #183/#583), M_type (0) and accuracy are byte-identical, so the enumerated
+# auto-file delta is EMPTY (Oracle C2's real gate — M is invariant by construction here and proves nothing) ·
+# C3 crash-safe (title_trusted-only; the un-wired type_confirmed dropped) · C4 pins (incl. B2 non-authoritative
+# HOLD + B6 wrong-type residual). Kill: =0 (byte-identical off).
+TAUGHT_OWNERSHIP_TYPE_SCOPED_LABEL = os.environ.get('TAUGHT_OWNERSHIP_TYPE_SCOPED_LABEL', '1') != '0'
 
 
 def _late_rescue_applicable(s2_supplier, supplier_name):
@@ -2260,12 +2275,21 @@ class ExtractionEngine:
                     continue
                 if _anchor_corroborates(key, val):
                     continue
+                _owners = getattr(self, '_label_owners', {}) or {}
                 if (TAUGHT_OWNERSHIP_OWN_LABEL
-                        and keyword.label_is_own_discriminating(
-                            d.get('label'), key, getattr(self, '_label_owners', {}) or {})):
+                        and keyword.label_is_own_discriminating(d.get('label'), key, _owners)):
                     # matched via THIS field's OWN discriminating caption ("Invoice No", "PO
                     # Date") — a precise labelled read, not a generic-caption stand-in. A shared
                     # ("Date") or purely-generic ("#") label does NOT qualify (reggie 2026-07-24).
+                    continue
+                if (TAUGHT_OWNERSHIP_TYPE_SCOPED_LABEL
+                        and getattr(self, '_type_authoritative', False)
+                        and keyword.label_is_own_discriminating_in_type(
+                            d.get('label'), key, _owners, frozenset(k for k in fd if k))):
+                    # B' (2026-07-26): the caption is shared GLOBALLY but UNIQUE within this
+                    # AUTHORITATIVE type ("Order Date" on a purchase_order — order_date is not a
+                    # field here). Fires only on a trusted-heading type; bare "Date" and >1-date
+                    # types still hold; OFF/non-authoritative => byte-identical (Oracle-gated DARK).
                     continue
                 d['confidence'] = min(int(d.get('confidence') or 0), 69)
                 if not str(d.get('validation_note') or '').strip():
@@ -3046,6 +3070,17 @@ class ExtractionEngine:
         # {field_keys}} from the SAME post-merge bank, so the guard can tell a field's own
         # discriminating caption ("Invoice No") from a shared/generic one ("Date"/"#").
         self._label_owners = keyword.build_label_owner_index(patterns_for_run.get('field_patterns'))
+        # TYPE-AUTHORITY signal for the B' type-scoped own-label exemption (Oracle C1/C3 2026-07-26):
+        # the resolved type is trustworthy enough to scope label-ownership to it ONLY when a trusted
+        # standalone heading named it (title_trusted) AND Stage 0 did not flag the type ambiguous or
+        # refused. Template signals are DELIBERATELY excluded (same-logo siblings are the SOURCE of type
+        # ambiguity — and they set _type_ambiguous/_type_refused, which disqualify here). type_confirmed
+        # (an operator-confirmed/retyped reprocess) is NOT wired in this slice (Oracle C3: it would need a
+        # new extract() kwarg + an uncaught-NameError risk here, outside the guard's try/except); unwired
+        # it is simply False, so B' leans on title_trusted only for now. getattr keeps it crash-safe.
+        self._type_authoritative = (bool(title_trusted)
+                                    and not getattr(self, '_type_ambiguous', False)
+                                    and not getattr(self, '_type_refused', False))
         _caption_guard_keys = {
             f.get('key') for f in (field_defs or [])
             if f.get('key') and f.get('key') != 'supplier_name'

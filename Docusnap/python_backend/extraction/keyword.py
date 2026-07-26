@@ -146,6 +146,32 @@ def label_is_own_discriminating(label, field_key, owners) -> bool:
     return any(tok not in _GENERIC_LABEL_TOKENS for tok in toks)   # >=1 distinguishing token
 
 
+def label_is_own_discriminating_in_type(label, field_key, owners, type_keys) -> bool:
+    """TYPE-SCOPED sibling of label_is_own_discriminating (B', gary design + Oracle
+    SIGN-OFF-WITH-CONDITIONS 2026-07-26). Judges the matched caption's uniqueness against the
+    RESOLVED doc TYPE's field-key set instead of the GLOBAL bank: a label carried by >=2 fields
+    globally but by EXACTLY `field_key` WITHIN this type is own-discriminating FOR THIS TYPE
+    ("Order Date" -> {po_date, order_date} globally, but only po_date exists on a purchase_order).
+    The generic-token gate is RETAINED, so bare "Date" NEVER exempts, on any type. Precision-first:
+    any doubt -> False.
+
+    The CALLER MUST gate this on type-authority (self._type_authoritative) — unlike a globally-
+    unique label ("Invoice No"), a type-scoped-unique one is NOT self-identifying, so the exemption
+    leans on the type having resolved correctly. When `type_keys` is the UNION of all types' fields
+    (no type resolved) the intersection == the global owner set, so this DEGRADES to the global
+    test (held) — doubly safe."""
+    t = _norm_label(label)
+    if not t:
+        return False
+    gowners = owners.get(t)
+    if not gowners or field_key not in gowners:
+        return False                                       # unknown label, or field not even a global owner
+    if (gowners & frozenset(type_keys or ())) != frozenset({field_key}):
+        return False                                       # shared WITHIN this type, or field absent from it
+    toks = re.findall(r'[a-z0-9]+', t)
+    return any(tok not in _GENERIC_LABEL_TOKENS for tok in toks)   # retain the generic-token gate
+
+
 def value_is_caption(value, vocab) -> bool:
     """True when `value` IS a known caption (not a value). Rule 1: content-token-tuple equality
     ('SO #' == the 'SO #' label). Rule 2: alnum-joined equality, ONLY for a MULTI-TOKEN or
