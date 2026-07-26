@@ -127,6 +127,33 @@ confirms REINFORCE the (branding,slug) template so `confirmed_count` grows and t
 kill BANNER_HEADING_REREAD) may stabilise `title_trusted`. Likely the exact Slice-2 live-owner-batch that
 [[project_template_defrag_20260725]] is already waiting on.
 
+## 2026-07-26 UPDATE — the logo-identity fix (slices A+C): BUILT DARK, corpus gate FAILED the flip
+Full forensics (iris agent, pixel-verified): the 64-bit "logo hash" is a phash of the whole top-left
+(w/2 × h/5) crop — the mark is <5% of the area; the rest is SHARED layout furniture, so intra-supplier
+median distance (10) equals inter-supplier (10, min 2) — ZERO separation; 8/16 Saltmarsh dockets
+coarse-lock a WRONG supplier at ≤6. The 256-bit isolated-mark detail hash separates cleanly (own ≤38 vs
+impostors ≥86, min-over-set). The purpose-built veto missed it because its rival universe was cut by the
+same broken coarse hash (cands ≤13 — the true supplier sat ≥14). Matrices + crops in the 07-26 scratchpad
+(iris_matrix64/256.csv, salt/thorn hash-input PNGs).
+
+**Built (committed DARK, default OFF):** `522cc3b` Slice A — global rival universe for the detail veto
+(kill `LOGO_DETAIL_GLOBAL_RIVALS`; probe: 606 docs, 0 wrong, 0 false abstains) · `c1f9a3f` Slice C —
+identity-veto fall-through to the text arms (kill `TEMPLATE_VETO_FALLTHROUGH`; Oracle C1-C5 incl. the
+load-bearing supplier-scoped sibling exclusion + the winner branding/mark bar). Unit 6/6 + 8/8; matcher
+family green. **Live A+C ON: all 4 stuck dockets match T24, overall 99-100, same correct values.**
+Slice B (mark as primary matcher) DEFERRED per Oracle until mark normalisation.
+
+**⚠ Corpus flag-matrix: FAIL — DO NOT FLIP.** OFF 335/570 would-auto-file M=2 (pre-existing #183/#583);
+ON 378/570 (+43 recall) but **M=3 (NEW: #472** — its skew-wrong ref PO-38093 was only held because the
+template match failed; C recovers the correct template → boost → wrong ref rides above the floor) **and
+date accuracy 98.4→98.2 (NEW: #456** reads 04-10-2026 for 14-10-2026 on the template-matched path).
+The hold on #472 was luck, not safety — but the north star is no new silent-wrong. **Flip prerequisite:**
+the read-layer skew fixes (the designed-not-built #183/#472 class — harvest-corroboration hold /
+field-scoped witnessed deskew, [[project_183_harvest_synthesis]]) OR a corroboration-gated C variant
+(fall-through-matched docs auto-file only when critical reads are multi-source corroborated — the
+Saltmarsh 4 pass, #472 would not). Either needs its own Oracle round. Meanwhile the 4 live dockets are
+correct on screen — confirm them by hand.
+
 ## Recommended next steps (owner-gated)
 1. **Confirm 6 more Saltmarsh dockets** → graduate the scope (floor 95) → 4 clean docs auto-file. Free.
 2. **Diagnose the template-match gap** (#1) — the real lever for the other 11. Read-only first; the fix

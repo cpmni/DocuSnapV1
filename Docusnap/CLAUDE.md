@@ -21,6 +21,32 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
+## Current session state (2026-07-26) — logo-identity slices BUILT DARK; corpus gate BLOCKED the flip
+**2026-07-26 (Fable 5, owner-directed).** The remaining 4 "perfect" dockets (587/588/589/590, overall 94
+< graduated floor 95) were root-caused to the END: owner's exercise ("the logo is visually identical —
+find the algorithmic fix") → built the **iris** perceptual-forensics agent (`.claude/agents/iris.md`,
+REGISTERED — pixels-first, 4-layer decomposition, contrastive matrices) → iris proved the 64-bit "logo
+hash" hashes **LAYOUT not the mark** (phash of the top-left w/2×h/5 crop; mark <5% of area; intra- ==
+inter-supplier distance ⇒ ZERO separation; 8/16 dockets coarse-lock a WRONG supplier ≤6) while the
+**256-bit isolated mark separates cleanly** (own ≤38 vs impostors ≥86 min-over-set; pairwise tails cross
+— the multi-ref set is load-bearing) and the purpose-built detail veto was silent because its rival
+universe was cut by the same broken coarse hash. **BUILT (Oracle-conditioned, both DARK/OFF, 2 commits):**
+`522cc3b` Slice A global-rival veto universe (kill `LOGO_DETAIL_GLOBAL_RIVALS`; probe 606 docs 0 wrong/0
+false-abstain) · `c1f9a3f` Slice C identity-veto fall-through to the text arms (kill
+`TEMPLATE_VETO_FALLTHROUGH`; C2 supplier-scoped sibling exclusion LOAD-BEARING + C3 winner branding/mark
+bar). Unit 6/6+8/8, matcher family green. **Live A+C ON: all 4 dockets match T24, overall 99-100, values
+unchanged-correct.** Slice B (mark as primary matcher) DEFERRED per Oracle until mark normalisation.
+**⚠ CORPUS FLAG-MATRIX FAILED THE FLIP — DO NOT FLIP:** ON = +43 would-auto-file BUT **NEW M #472**
+(template match un-holds its skew-wrong ref — the hold was luck, not safety) **+ date 98.4→98.2 (#456**
+new wrong date on the template-matched path). Flip prerequisite = the skew read-layer fix
+([[project_183_harvest_synthesis]] A/B) OR a corroboration-gated C (fall-through docs auto-file only on
+multi-source-corroborated criticals — Saltmarsh 4 pass, #472 fails); each needs its own Oracle round.
+Meanwhile: the 4 docs are correct on screen — owner confirms by hand. Earlier same session: caption-strip
+`9dfa011` (DARK), audit `docs/AUTOFILE_AUDIT_2026-07-25.md` (07-26 update appended), template-diagnosis
+`6c13ec3`. **6 commits ahead of origin, ALL LOCAL/UNPUSHED.** Memory:
+[[project_logo_identity_slices_20260726]] · [[project_autofile_blockers_20260725]] ·
+[[project_caption_prefix_strip_20260725]]. **Prior block ↓**
+
 ## Current session state (2026-07-25 NIGHT, autonomous) — READ `HANDOVER_2026-07-25_NIGHT.md` FIRST
 **2026-07-25 NIGHT (Opus 4.8, autonomous overnight; owner asleep, hard NO-REGRESSIONS rule).** Chased the
 owner's "recipient/customer anchor" problem to root and it is a **RED HERRING for the auto-file pile-up**:
