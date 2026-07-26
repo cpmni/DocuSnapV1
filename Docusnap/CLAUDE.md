@@ -21,7 +21,20 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-07-26 FINAL) — logo-identity fix COMPLETE, FLIPPED ON + LIVE-VALIDATED
+## Current session state (2026-07-26 FINAL) — logo-identity LIVE + INSTALLER BUILT (bytecode-hardened)
+**INSTALLER: `dist\ScanFinder Setup 2.0.0-r20260726-1018-58533ea.exe`** — carries the ENTIRE week
+(logo-identity A+C+G1+G2 flipped ON, field-vis, logo-refuse, caption-strip DARK) **+ the new
+BYTECODE HARDENING**: `scripts/compile-python-bytecode.js` stages `build_python/` (extraction/ etc.
+compiled sourceless under vendor/python — 38 modules .pyc-only, 15 JS-spawned entries stay .py;
+packaged-tree VERIFIED zero .py in extraction/). Kill `SHIP_PY_SOURCE=1` stages verbatim source.
+⚠ Build trap found: Git-bash mangles `taskkill /IM` into a path (silent fail) — close the app via
+PowerShell `Stop-Process -Name electron` or the EBUSY on better_sqlite3.node kills electron-builder.
+**RECOVERY ANCHORS:** tag `milestone-20260726-logo-identity` (=`3c37500`, pushed) · DB snapshot
+`%APPDATA%\ScanFinder\docusnap.backup-20260726-prebuild.db` · prior installer `r20260724-1432` in
+dist · revert `58533ea` or SHIP_PY_SOURCE=1 to un-harden. Hardening ladder recorded: .pyc now →
+Cython/bytenode at PRE-LAUNCH (see the decompile discussion; C++ port = engine-first if ever, see
+`docs/ARCHITECTURE_SNAPSHOT_2026-07-26.md`; vendor/ bundles python AND tesseract — port Q1 answered).
+**NEXT: #183 anchor-binding** (007→Oracle→build; the last real corpus M) in a FRESH session.
 **FLIP + LIVE VALIDATION (latest):** defaults flipped ON (`eeb257d` — `TEMPLATE_VETO_FALLTHROUGH` +
 `LOGO_DETAIL_GLOBAL_RIVALS` default '1', =0 restores; test OFF-cases now set '0' explicitly). Owner ran
 `npm start`, reprocessed the stuck Saltmarsh dockets: **"the docs filed fine"** — the full chain
