@@ -21,6 +21,35 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
+## Current session state (2026-07-26 NIGHT, autonomous) — READ `HANDOVER_2026-07-26_NIGHT.md` FIRST
+**2026-07-26 NIGHT (Opus 4.8, autonomous; owner asleep). ALL PUSHED through `c617230` (origin `0 0`), tree
+clean.** Two atomic kill-switched commits. **`e0b5c04` TASK #5 Northgate PO→Invoice TYPE-FLIP FIXED** —
+Herald-designed, Oracle SIGN-OFF-W/COND (C1-C6 all met), corpus-gated on a FROZEN live-DB snapshot:
+**Lever 1 `HEADING_FUZZY_VOCAB`** (keyword.py, DEFAULT ON) = a fuzzy-to-closed-vocabulary title arm beside
+the exact `_despaced_heading` (difflib ratio ≥0.82, ARGMAX+0.08 margin, single-word only-if-fragmented so
+the alias contract holds; new `_collapse_title_tokens`, `_despaced_heading` byte-UNTOUCHED) — recovers
+'PU RC fa ASE ORDER'/'I N V O I C E'; **Lever 3 `KW_TYPE_NONDISTINCTIVE_HOLD`** (template_matcher.py,
+DEFAULT ON) = the silent-misfile backstop: `_kw_nondistinctive_hold` HOLDs a keyword winner whose
+DISTINCTIVE fingerprint ⊆ a same-supplier different-type sibling's, NO exact tie needed; gate
+`winner_slug_match==0 and not title_trusted` composes cleanly with Lever 1 (no double-hold); reuses the
+intact ambiguity→HOLD engine chain (no engine change). BOTH OFF ⇒ byte-identical. **Gate: value accuracy
+byte-identical (type 99.5/sup 100/ref 98.0/date 95.3), M_type 0, 0 new silent-misfile, 0 new false-hold,
+−6 false-holds, +1 correct auto-file; Northgate 673/674 invoice→PO, Lever-3-only turns a conf-100 garble
+from silent-Invoice into ambiguity-HELD-with-correct-PO-suggestion.** New gate tooling (data-free):
+`stress_test/type_outcome_report.js` + `northgate_type_trace.js` + an inert `RR_TYPE_ENUM` dump in
+realdoc_regression.js. · **`c617230` BUILD DECOMPILE-HARDENING scaffold** (eric-designed,
+`docs/BUILD_HARDENING_PLAN_2026-07-26.md`): **Rung C DEFAULT ON** (asar `files` negations drop
+`test_*.js`/`__tests__` — dry-pack verified 0 of our test files in app.asar) + **Rung A scaffold DEFAULT
+OFF** (`scripts/afterPack-fuses.js`, kill `HARDEN_FUSES`; arms RunAsNode/NODE_OPTIONS/--inspect OFF on
+ScanFinder.exe; `@electron/fuses` MIT devDep). Default dry pack `electron-builder --dir` SUCCEEDS, afterPack
+no-op fires (byte-identical), check-licenses OK (79 comps commercially-free). ⭐ **NEEDS OWNER (needs a live
+app, couldn't do asleep): (1) reprocess Northgate in `npm start` to SEE the fix (POs now type Purchase
+Order, held); (2) ARM the fuses — `HARDEN_FUSES=1 npm run build` + smoke every window (a bad flip = won't
+start) — then decide to keep it in the release build cmd; (3) decide the deferred rungs B/D/F/E (each needs
+a smoke; weakest links = config JSON + JS-in-asar, `.pyc` already best-protected).** Installer
+`r20260726-1018` predates all of this — rebuild to carry task #5 + smoke hardening. Revert: `git revert
+e0b5c04`/`c617230`, or the kill switches restore byte-identical. **Prior block ↓**
+
 ## Current session state (2026-07-26 EVENING) — READ `HANDOVER_2026-07-26_EVENING.md` FIRST
 **2026-07-26 EVENING (Opus 4.8) — ALL PUSHED through `7cfcc5f` (origin `0 0`), tree clean; a dev
 `npm start` is RUNNING (owner live test). READ `HANDOVER_2026-07-26_EVENING.md` (its ⭐ LATEST block first).** Built the two planned
