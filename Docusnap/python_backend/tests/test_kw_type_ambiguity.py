@@ -83,9 +83,58 @@ def main():
     amb7, _, _ = _kw_type_ambiguity([(inv_a, 1.0), (inv_b, 1.0)], inv_a, 0)
     check('single-type tie (same slug) → NOT ambiguous', amb7 is False)
 
-    # 8. No tie (winner strictly above the other) → NOT ambiguous (only one at the top score).
-    amb8, _, _ = _kw_type_ambiguity([(inv, 1.0), (dn, 0.5)], inv, 0)
-    check('no tie (1.0 vs 0.5) → NOT ambiguous', amb8 is False)
+    # 8. No tie (winner strictly above the other), same-supplier identical-fp, 2 slugs.
+    #    LEVER 3 (KW_TYPE_NONDISTINCTIVE_HOLD, default ON, Herald/Oracle 2026-07-26): the winner's
+    #    DISTINCTIVE fingerprint is a subset (here EQUAL) of the different-type sibling's → non-distinctive
+    #    → HOLD, WITHOUT any exact tie (the pure-letterhead sibling that wins 1.0 on every page). This
+    #    FLIPPED from the pre-Lever-3 behaviour (Oracle C1) — 8b pins the OFF/legacy exact-tie-only result.
+    os.environ.pop('KW_TYPE_NONDISTINCTIVE_HOLD', None)     # default ON
+    amb8, sibs8, sup8 = _kw_type_ambiguity([(inv, 1.0), (dn, 0.5)], inv, 0)
+    check('LEVER 3 ON: non-tie subset-fingerprint winner → ambiguous (silent-misfile backstop)',
+          amb8 is True and set(sibs8) == {'invoice', 'delivery_note'} and sup8 == 'Cascade Water Systems')
+
+    # 8b. OFF/legacy pin — with Lever 3 disabled the non-tie case is NOT ambiguous (exact-tie-only, the
+    #     pre-2026-07-26 behaviour) ⇒ byte-identical off.
+    os.environ['KW_TYPE_NONDISTINCTIVE_HOLD'] = '0'
+    amb8b, _, _ = _kw_type_ambiguity([(inv, 1.0), (dn, 0.5)], inv, 0)
+    check('LEVER 3 OFF: non-tie (1.0 vs 0.5) → NOT ambiguous (exact-tie-only, byte-identical)', amb8b is False)
+    os.environ.pop('KW_TYPE_NONDISTINCTIVE_HOLD', None)
+
+    # 9. GATE — a TRUSTED title skips Lever 3 (defers to the trusted-title REFUSE / the resolved type, so
+    #    Lever 1 and Lever 3 compose with no double-hold). winner_slug_match=0 but title_trusted=True.
+    amb9, _, _ = _kw_type_ambiguity([(inv, 1.0), (dn, 0.5)], inv, 0, True)
+    check('LEVER 3 gate: title_trusted=True → NOT held here (defers to Lever 1 refuse/resolve)', amb9 is False)
+
+    # 10. GATE — a slug-decided winner (winner_slug_match=1) skips Lever 3 (existing resolution stands).
+    amb10, _, _ = _kw_type_ambiguity([(inv, 1.0), (dn, 0.5)], inv, 1)
+    check('LEVER 3 gate: slug-decided winner → NOT held (byte-identical to today)', amb10 is False)
+
+    # 11. STRICT subset (⊂, not equal), NO tie — the live Northgate shape (invoice fp ⊂ PO fp) → HOLD.
+    po_super = T('purchase_order', 'Northgate Textiles', ['mill', 'northgate', 'preston', 'bluefin', 'marine'], 30)
+    inv_sub  = T('invoice', 'Northgate Textiles', ['mill', 'northgate', 'preston'], 25)
+    amb11, sibs11, _ = _kw_type_ambiguity([(inv_sub, 1.0), (po_super, 0.6)], inv_sub, 0)
+    check('LEVER 3: strict-subset winner (invoice ⊂ PO, no tie) → ambiguous (the Northgate hole)',
+          amb11 is True and set(sibs11) == {'invoice', 'purchase_order'})
+
+    # 12. NOT a subset — the winner carries a distinctive word the sibling lacks → has its OWN identity → NOT held.
+    inv_own = T('invoice', 'Northgate Textiles', ['mill', 'northgate', 'ledger'], 25)   # 'ledger' ∉ PO fp
+    amb12, _, _ = _kw_type_ambiguity([(inv_own, 1.0), (po_super, 0.6)], inv_own, 0)
+    check('LEVER 3: winner with its OWN distinctive word (not a subset) → NOT ambiguous', amb12 is False)
+
+    # 13. C5 empty-distinctive-set — a winner whose fingerprint is ALL generic/type words (∅ distinctive):
+    #     ∅ ⊆ anything, so a >=2-slug same-supplier cohort → HOLD (no identity evidence ⇒ ambiguous). The
+    #     cohort forms via the SAME-SUPPLIER fallback (the two junk fps share no word).
+    inv_junk = T('invoice', 'Northgate Textiles', ['invoice', 'order'], 25)        # both stopwords → ∅ distinctive
+    dn_junk  = T('delivery_note', 'Northgate Textiles', ['delivery', 'note'], 26)  # both stopwords → ∅ distinctive
+    amb13, sibs13, _ = _kw_type_ambiguity([(inv_junk, 1.0), (dn_junk, 0.6)], inv_junk, 0)
+    check('LEVER 3 C5: ∅-distinctive winner + >=2-slug same-supplier cohort → ambiguous (no identity evidence)',
+          amb13 is True and set(sibs13) == {'invoice', 'delivery_note'})
+
+    # 14. C5 corollary — ∅-distinctive winner but a SINGLE-type cohort (only same-slug siblings) → NOT held.
+    inv_junk2 = T('invoice', 'Northgate Textiles', ['invoice', 'copy'], 27)        # same slug as the winner
+    amb14, _, _ = _kw_type_ambiguity([(inv_junk, 1.0), (inv_junk2, 0.6)], inv_junk, 0)
+    check('LEVER 3 C5: ∅-distinctive winner but only a same-SLUG cohort → NOT ambiguous (nothing to confuse)',
+          amb14 is False)
 
     print('\n' + ('ALL PASS' if fails == 0 else f'{fails} FAILED'))
     sys.exit(1 if fails else 0)

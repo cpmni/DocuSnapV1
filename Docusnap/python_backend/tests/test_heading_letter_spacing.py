@@ -63,11 +63,16 @@ def main():
           rc is not None and rc["type"] == "Purchase Order" and rc.get("heading") is True)
 
     # ── OFF-pin: byte-identical to the pre-fix bug ──────────────────────────────
+    # BOTH recovery paths must be off to reproduce the bug: the fuzzy-to-vocabulary arm (Lever 1,
+    # HEADING_FUZZY_VOCAB, 2026-07-26) is a SUPERSET that ALSO recovers a cleanly letter-spaced title
+    # (ratio 1.0), so disabling letter-spacing alone no longer un-recovers it.
     setenv("0")
+    os.environ["HEADING_FUZZY_VOCAB"] = "0"
     ro = detect(ls)
-    check("OFF-pin: with HEADING_LETTER_SPACING=0 the letter-spaced title does NOT type Purchase "
+    check("OFF-pin: with letter-spacing AND fuzzy OFF the letter-spaced title does NOT type Purchase "
           "Order (the pre-fix bug — proves red-first + byte-identical off)",
           ro is None or ro["type"] != "Purchase Order")
+    os.environ.pop("HEADING_FUZZY_VOCAB", None)
     setenv("1")
 
     # ── FP negatives (must stay green — no false Purchase Order) ─────────────────

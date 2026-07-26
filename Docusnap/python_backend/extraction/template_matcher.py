@@ -518,7 +518,7 @@ def identify_template(page_image, ocr_text: str, templates: list,
 
     # 2. Keyword fingerprint — fallback for docs without logos. Pass detected_slug so a same-fingerprint
     # sibling of the DETECTED type wins the tie (the logo-drift → keyword-fallback → wrong-sibling class).
-    kw_match = _match_by_keywords(ocr_text, _arm_templates, detected_slug)
+    kw_match = _match_by_keywords(ocr_text, _arm_templates, detected_slug, title_trusted)
     if kw_match and kw_match['confidence'] >= int(KEYWORD_THRESHOLD * 100):
         # Same title-trust refuse on the logoless path.
         if title_trusted and detected_slug and \
@@ -818,7 +818,49 @@ def _keyword_hit_ratio_fuzzy(fingerprint_words, page_tokens,
     return hits / len(words)
 
 
-def _kw_type_ambiguity(scored, best_t, winner_slug_match):
+def _kw_nondistinctive_hold(scored, best_t):
+    """LEVER 3 predicate (Herald/Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-26). HOLD a keyword-arm winner
+    that carries NO type-distinctive branding a same-supplier DIFFERENT-type sibling lacks — a subset (or
+    equal) DISTINCTIVE fingerprint. This is the pure-letterhead sibling (e.g. an 'invoice' template whose
+    fingerprint is just the letterhead) that scores 1.0 on every page of a multi-type letterhead and wins
+    OUTRIGHT, so `_kw_type_ambiguity`'s exact-tie test never sees it — the deterministic silent-misfile
+    (§2.5 of HERALD_TYPE_DETECTION_REFERENCE). Returns ({slug: template}, cluster_supplier) or None.
+
+    Same cohesion + belt-and-braces as _kw_type_ambiguity so it can NEVER pin a FOREIGN template: the
+    cohort is same-supplier only (shares the winner's fingerprint OR the same non-null dominant_supplier),
+    and it bails if the cohort spans two distinct known suppliers. Uses _distinctive_tokens (type/generic
+    words stripped) so type words — which SHOULD differ between siblings — never count as identity, and an
+    ∅-distinctive winner (fingerprint all generic/type words) HOLDs when a >=2-slug cohort exists
+    (∅ ⊆ anything = "no identity evidence ⇒ ambiguous"; Oracle C5, pinned)."""
+    best_slug = best_t.get('document_type_slug') or ''
+    bf_set    = {w.lower() for w in (best_t.get('keyword_fingerprint') or [])}
+    best_sup  = (best_t.get('dominant_supplier') or '').strip().lower()
+    # Same-supplier cohort of a DIFFERENT doc type (fingerprint-word overlap OR same non-null supplier).
+    cohort = [t for (t, _s) in scored
+              if (t.get('document_type_slug') or '') != best_slug
+              and ({w.lower() for w in (t.get('keyword_fingerprint') or [])} & bf_set
+                   or (best_sup and (t.get('dominant_supplier') or '').strip().lower() == best_sup))]
+    if not cohort:
+        return None
+    sups = {(t.get('dominant_supplier') or '').strip().lower() for t in cohort if t.get('dominant_supplier')}
+    if best_sup:
+        sups.add(best_sup)
+    if len(sups) > 1:                                       # never span two KNOWN suppliers (belt-and-braces)
+        return None
+    best_dist = _distinctive_tokens(best_t.get('keyword_fingerprint') or [])
+    if not any(best_dist <= _distinctive_tokens(t.get('keyword_fingerprint') or []) for t in cohort):
+        return None                                        # winner carries a distinctive word no sibling has → not ambiguous
+    slugs = {best_slug: best_t} if best_slug else {}
+    for t in cohort:
+        slug = t.get('document_type_slug') or ''
+        if slug and slug not in slugs:                     # scored is source-order; first per slug is kept
+            slugs[slug] = t
+    if len(slugs) < 2:
+        return None
+    return (slugs, best_t.get('dominant_supplier'))
+
+
+def _kw_type_ambiguity(scored, best_t, winner_slug_match, title_trusted=False):
     """FIX A/B1 on the KEYWORD fallback path (Oracle/gary SIGN-OFF-WITH-CONDITIONS 2026-07-13).
     `scored` = [(template, score)] for every hits>0 template. Returns (ambiguous, {slug: sibling},
     cluster_supplier).
@@ -836,7 +878,21 @@ def _kw_type_ambiguity(scored, best_t, winner_slug_match):
         groups → never fires → can never pin a FOREIGN template into the engine. Belt-and-braces: bail
         if the cohort still spans two DIFFERENT non-null suppliers.
     cluster_supplier = best_t's dominant_supplier (may be null → B1 abstains on the ref-prefix lookup,
-    but Fix A still HOLDS the doc — the safe direction). Guarded by tests/test_kw_type_ambiguity.py."""
+    but Fix A still HOLDS the doc — the safe direction). Guarded by tests/test_kw_type_ambiguity.py.
+
+    LEVER 3 (KW_TYPE_NONDISTINCTIVE_HOLD, Herald/Oracle 2026-07-26): BEFORE the exact-tie body, HOLD a
+    non-distinctive subset-fingerprint winner (see _kw_nondistinctive_hold) — no exact tie required. This
+    is the silent-misfile backstop for a garbled title Lever 1 could not recover. Gate = winner NOT
+    slug-decided AND title NOT trusted. (De Morgan of Oracle's stated `not (title_trusted and
+    winner_slug_match)`; his VERIFIED conclusion — under the ON default only test 8 flips — pins THIS
+    form: a slug-decided winner OR a trusted title defers to the existing resolution / the trusted-title
+    REFUSE, so Lever 3 only fires on the untrusted-title residual, composing cleanly with Lever 1.) OFF ⇒
+    the block is skipped and title_trusted is read nowhere else ⇒ _kw_type_ambiguity is byte-identical."""
+    _nd = os.environ.get('KW_TYPE_NONDISTINCTIVE_HOLD', '1') != '0'
+    if _nd and winner_slug_match == 0 and not title_trusted:
+        _hold = _kw_nondistinctive_hold(scored, best_t)
+        if _hold is not None:
+            return (True, _hold[0], _hold[1])
     if winner_slug_match != 0:
         return (False, {}, None)
     top = max(s for _, s in scored)
@@ -860,7 +916,8 @@ def _kw_type_ambiguity(scored, best_t, winner_slug_match):
     return (True, slugs, best_t.get('dominant_supplier'))
 
 
-def _match_by_keywords(ocr_text: str, templates: list, detected_slug: str | None = None) -> dict | None:
+def _match_by_keywords(ocr_text: str, templates: list, detected_slug: str | None = None,
+                       title_trusted: bool = False) -> dict | None:
     """`detected_slug`: on an EXACT keyword-score TIE between same-fingerprint siblings (one supplier
     issuing several doc types on ONE letterhead has IDENTICAL branding fingerprints — the fingerprint
     strips doc-type words), prefer the sibling whose document_type_slug matches the doc's OWN detected
@@ -919,7 +976,7 @@ def _match_by_keywords(ocr_text: str, templates: list, detected_slug: str | None
     # logo-path guards never see. Flag it (→ engine HOLD) + expose the SINGLE-SUPPLIER sibling set (→ B1
     # ref-prefix suggestion). Additive keys, attached ONLY when ambiguous → non-ambiguous matches stay
     # byte-identical (best_key[1] = the winner's slug_match, for Option A).
-    amb, sibs, cluster_sup = _kw_type_ambiguity(scored, best['template'], best_key[1])
+    amb, sibs, cluster_sup = _kw_type_ambiguity(scored, best['template'], best_key[1], title_trusted)
     if amb:
         best['ambiguous_type']     = True
         best['ambiguous_siblings'] = sibs

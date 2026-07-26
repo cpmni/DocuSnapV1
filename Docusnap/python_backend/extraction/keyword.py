@@ -11,6 +11,7 @@ import os
 import re
 import json
 from pathlib import Path
+from difflib import SequenceMatcher   # Lever 1 fuzzy-to-closed-vocabulary title match (PSF licence)
 
 from extraction import number_format   # region-aware amount normaliser
 from ocr.text_layout import COLUMN_BREAK_MIN   # 4 = the reconstruct_page_text / born_digital column-break width
@@ -535,6 +536,77 @@ def _despaced_heading(seg0: str, phrase_lc: str) -> bool:
     return "".join(toks) == target
 
 
+def _collapse_title_tokens(seg0: str) -> list[str]:
+    """The leading TITLE tokens of a reading-line column segment, with trailing reference/number CODE
+    tokens peeled — the SAME peel _despaced_heading uses inline. Factored out so _fuzzy_heading can
+    reuse the exact peel WITHOUT touching the byte-frozen _despaced_heading on the hot exact path
+    (Oracle C4: leave the exact function untouched; the small duplication is deliberate)."""
+    toks = (seg0 or "").split()
+    while toks and any(ch.isdigit() for ch in toks[-1]) \
+            and all(ch.isalnum() or ch in "#:.-/|" for ch in toks[-1]):
+        toks.pop()                                          # peel a trailing ref/code token
+    return toks
+
+
+# Lever 1 (HEADING_FUZZY_VOCAB, Herald/Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-26): a title read that
+# is GARBLED (a skew/noise glyph corruption — "PU RC fa ASE ORDER") or SINGLE-WORD letter-spaced
+# ("I N V O I C E") fails _despaced_heading's EXACT equality, so the type never scores from its own
+# title and the doc falls to a same-logo sibling / generic fingerprint (the Northgate PO->Invoice
+# flip). The exact test is kept verbatim (its false-positive guarantee); this fuzzy arm is ADDED beside
+# it. Safe ONLY on the tiny CLOSED vocabulary (installed type names ∪ aliases) — measured vocab-to-vocab
+# block-ratio max 0.737 < the 0.82 accept floor, so no clean phrase can ever fuzzy-match a DIFFERENT
+# type. Threshold + margin are the Oracle C3 belt.
+_FUZZY_HEADING_RATIO  = 0.82   # SequenceMatcher.ratio accept floor (window: genuine-decoy 0.762 .. recovery 0.857)
+_FUZZY_HEADING_MARGIN = 0.08   # best must beat 2nd-best vocab phrase by this (C3 — a garble equidistant between two types HOLDs)
+
+
+def _fuzzy_heading(seg0: str, phrase_lc: str, vocab_lc) -> bool:
+    """ADDITIVE fuzzy fallback beside _despaced_heading (Lever 1). True when seg0's collapsed leading
+    title tokens match `phrase_lc` (spaces removed) by difflib block-ratio >= _FUZZY_HEADING_RATIO AND
+    `phrase_lc` is the clear ARGMAX over the whole closed vocabulary (beats the 2nd-best by
+    _FUZZY_HEADING_MARGIN). Recovers 'purcfaaseorder'~0.889 'purchaseorder' and 'invoice'==1.0 from
+    'I N V O I C E'. The argmax+margin over `vocab_lc` (the caller's name_alias_lc) is Oracle C3: a clean
+    DIFFERENT-type phrase scores < 0.74 to any other vocab entry, so it can never fuzzy-fire this one,
+    and a genuinely-ambiguous garble (no clear winner) HOLDs instead of guessing. Caller scopes this to
+    the top band + leftmost segment + the regex-found-nothing case + kw ∈ name_alias — identical to the
+    exact arm — so it is byte-identical when it never fires."""
+    target = (phrase_lc or "").replace(" ", "")
+    if len(target) < _MIN_DESPACE_LEN:                      # keep the short-abbreviation floor (PO/GRN collide)
+        return False
+    toks = _collapse_title_tokens(seg0)
+    if not toks:
+        return False
+    # The read must be MULTI-TOKEN — fuzzy recovers a SPACED / FRAGMENTED title (letter-spacing, or a
+    # skew garble that splits the word), NOT a single intact mis-spelled token ('Wksheet'). A compact
+    # misspelling of a clean word is the EXACT alias mechanism's domain; matching it here would loosen
+    # the alias-is-exact contract (test_detect_type_aliases) for any alias whose collapsed form is short.
+    if len(toks) < 2:
+        return False
+    # SINGLE-word target: admit ONLY a genuinely FRAGMENTED read (letter-spacing), never a word-spaced
+    # two-word spelling — 'WORK SHEET' -> worksheet is the ALIAS mechanism's job, not fuzzy collapse
+    # (preserves the test_detect_type_aliases contract). Multi-word targets are the proven
+    # letter-spacing class and take no fragmentation gate (so a lightly-garbled 2-word title still fuzzes).
+    if len((phrase_lc or "").split()) < 2:
+        fragmented = len(toks) >= 3 or sum(len(t) <= 2 for t in toks) * 2 > len(toks)
+        if not fragmented:
+            return False
+    collapsed = "".join(toks)
+    if not collapsed:
+        return False
+    r_self = SequenceMatcher(None, collapsed, target).ratio()
+    if r_self < _FUZZY_HEADING_RATIO:
+        return False
+    second = 0.0                                            # best ratio to any OTHER vocab phrase
+    for v in (vocab_lc or ()):
+        vt = (v or "").replace(" ", "")
+        if not vt or vt == target:
+            continue
+        rv = SequenceMatcher(None, collapsed, vt).ratio()
+        if rv > second:
+            second = rv
+    return (r_self - second) >= _FUZZY_HEADING_MARGIN
+
+
 def detect_document_type(ocr_text: str, patterns: dict,
                           known_types: list[str] | None = None,
                           type_aliases: dict | None = None) -> dict | None:
@@ -567,6 +639,9 @@ def detect_document_type(ocr_text: str, patterns: dict,
     _col_aware = os.environ.get("HEADING_SCORE_COLUMN_AWARE", "1") != "0"
     # Slice 1 kill switch (default ON): letter-spacing heading recovery (see _despaced_heading).
     _letter_spacing = os.environ.get("HEADING_LETTER_SPACING", "1") != "0"
+    # Lever 1 kill switch (default ON): fuzzy-to-closed-vocabulary title recovery (see _fuzzy_heading).
+    # OFF ⇒ the elif below short-circuits ⇒ detect_document_type is byte-identical (Oracle C4).
+    _fuzzy = os.environ.get("HEADING_FUZZY_VOCAB", "1") != "0"
 
     type_keywords = {k: list(v) for k, v in patterns.get("document_type_keywords", {}).items()}
     aliases_by_name = type_aliases or {}
@@ -622,11 +697,13 @@ def detect_document_type(ocr_text: str, patterns: dict,
                     # only on the leftmost column segment with all spacing collapsed to EXACT equality
                     # (see _despaced_heading). ADDITIVE — a normal regex match never reaches here, so
                     # the no-fire path is byte-identical.
-                    if (_letter_spacing and _col_aware and kw.lower() in name_alias_lc
+                    if ((_letter_spacing or _fuzzy) and _col_aware and kw.lower() in name_alias_lc
                             and (i <= _HEADING_TOP_BAND_LINES or i / total <= _HEADING_TOP_BAND_FRAC)):
                         _seg0 = _COL_BREAK_RE.split(line.strip().lower())[0].strip()
-                        if _despaced_heading(_seg0, kw.lower()):
-                            _despaced = True
+                        if _letter_spacing and _despaced_heading(_seg0, kw.lower()):
+                            _despaced = True                # exact letter-spacing recovery (verbatim)
+                        elif _fuzzy and _fuzzy_heading(_seg0, kw.lower(), name_alias_lc):
+                            _despaced = True                # Lever 1 — fuzzy-to-vocabulary garble recovery
                     if not _despaced:
                         continue
                 # Headings near the top carry by far the strongest signal;

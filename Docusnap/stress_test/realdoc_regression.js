@@ -214,6 +214,27 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
         }) + '\n');
       } catch {}
     }
+    // RR_TYPE_ENUM (type-outcome enumerator — task #5 gate, 2026-07-26): per-doc type resolution +
+    // which TYPE guard (if any) held it, so the fix's two load-bearing numbers are measurable
+    // corpus-wide: SILENT-MISFILE (wrong type, would-file, no guard) and FALSE-HOLD (correct type but
+    // a type guard fired). Guard inferred from the persisted validation_note signatures
+    // (engine.py: ambiguity :4950, refuse :4858, adjacent-G1 :4889). Read-only, env-gated ⇒ inert.
+    if (process.env.RR_TYPE_ENUM) {
+      try {
+        let guard = null;
+        for (const e of Object.values(m.extractions || {})) {
+          const n = (e && typeof e === 'object' && e.validation_note) ? String(e.validation_note) : '';
+          if (n.includes('used for several document types')) guard = 'ambiguity';
+          else if (n.includes("names a document type that doesn't match")) guard = guard || 'refuse';
+          else if (n.includes("couldn't be confirmed anywhere else")) guard = guard || 'g1';
+        }
+        fs.appendFileSync(process.env.RR_TYPE_ENUM, JSON.stringify({
+          id: g.id, supplier: m.supplier_name || null, gt: g.type_slug, got: detSlug || null,
+          conf: m.overall_confidence != null ? m.overall_confidence : null,
+          wouldFile, typeOk: s.type, guard, overridden: !!g._overridden,
+        }) + '\n');
+      } catch {}
+    }
     if (wouldFile && F.some(f => s[f] === false)) {
       silentAutoFile++;
       autoFileMisses.push(`#${g.id} ${g.type_slug} would-auto-file but WRONG on: ${F.filter(f => s[f] === false).join(',')}`);
