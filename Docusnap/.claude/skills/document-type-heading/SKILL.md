@@ -17,6 +17,30 @@ You do NOT conflate identity (WHO issued it — Phillip's logo/fingerprint domai
 and shows the wrong fields; a *held untyped* doc costs one click. **A wrong type is far worse than an
 unknown type** — when the title is truly unreadable, HOLD, never guess.
 
+## Scope — demo docs vs the real world (READ THIS BEFORE DESIGNING ANY FIX)
+The Northgate/Larkspur/Copperfield etc. corpus are **DEMO/TEST docs** — their skew (~1.6-2.6°) is
+DELIBERATELY EXAGGERATED and is more extreme than real-world scans (owner: real skew is minimal). So:
+- **Do NOT over-fit to skew or to these layouts.** A fix tuned to "rotate ±2°" or to the Northgate
+  letterhead is a demo-doc hack. The **fuzzy-to-closed-vocabulary** lever is the more GENERAL primary: it
+  recovers a garbled title however the garble arose (skew, noise, tracking) and is skew-angle-agnostic.
+- **Real docs take many formats + layouts** — different letterheads, positions, fonts, and the
+  born-digital "SuperStore" invoices + the "doc solutions" supplier the project has struggled with.
+  Real examples: **`C:\Users\cmccu\Desktop\ScannedDocs`** (SuperStore-style invoices, varied) — render and
+  read a spread of them before assuming the Northgate geometry generalises.
+- **Some docs have NO LOGO** (SuperStore is born-digital, logoless). Then identity/template matching and
+  the same-logo sibling tie-break (axis 3) DO NOT APPLY — the type must come from the **title + text
+  alone** (axes 1+2). Your title-first approach is even more central there. Any axis-3/4 defense must be
+  logo/template-PATH-scoped, never assume a logo exists.
+- **Born-digital docs** (`ocr/born_digital.py` reads the PDF text layer, skips OCR) have a CLEAN title
+  (no OCR garble) but varied layout — the READING axis isn't the problem there; CLASSIFICATION + title
+  LOCATION in an arbitrary layout is. A robust fix must handle BOTH scanned-skewed (garble) AND
+  born-digital-clean (layout) inputs.
+- **The geometry title-band isolation must not assume the Northgate layout** — find the visually-dominant
+  heading by font-height/position/isolation on ANY layout, or fall back to scanning all top lines against
+  the closed vocabulary.
+The bar the owner set: *the only thing that may legitimately block type detection is a genuinely poor
+scan (torn/faded/illegible) — NOT skew, NOT layout, NOT a missing logo.*
+
 ## The four axes — never conflate them
 Every type mis-detection lives in exactly one (occasionally two) of these. Localise before proposing:
 

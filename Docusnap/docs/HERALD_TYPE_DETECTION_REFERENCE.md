@@ -22,8 +22,12 @@ that issues several types on one letterhead, **TIE-BREAK** which sibling templat
 A legible title makes axis 1→2 decisive and axes 3→4 irrelevant. **Every type mis-detection is an
 axis-1 read failure that then exposes an axis-3 weakness**, with axis 4 either catching it (HOLD) or
 mis-firing on a correct doc (the mirror symptom). In Scan Finder today axis 2 is **sound**; axis 1 has
-**no recovery path for a dark, skew-garbled heading**; axis 3 can fail toward a **confident wrong type**;
-axis 4 both **misses** the real mis-type and **over-holds** correct docs.
+**no recovery path for a garbled or single-word letter-spaced heading**; axis 3 can fail toward a
+**confident wrong type**; axis 4 both **misses** the real mis-type and **over-holds** correct docs.
+**Crucially, axes 3–4 apply ONLY when a logo/template exists.** Much of the real corpus is **born-digital
+and logoless** (SuperStore-style), where the type is the pure title+text call (axes 1–2 only) — and that
+path is **sound today** for a legible title in the vocabulary (§2A). Skew is the DEMO trigger, not the
+general problem; the general axis-1 lever is fuzzy-to-vocabulary.
 
 ---
 
@@ -72,6 +76,13 @@ axis 4 both **misses** the real mis-type and **over-holds** correct docs.
 ---
 
 ## 2. The live case — Northgate Textiles (ground truth, rendered + OCR'd)
+
+> **Scope caveat (READ FIRST — see §2A).** Northgate is a **DEMO doc**: its ~1.6–2.6° skew is
+> **deliberately exaggerated** and it has a **logo + same-logo siblings**, so it exercises axes 1/3/4
+> hardest. **Real-world docs skew far less, take many layouts, and many have NO logo** (born-digital
+> SuperStore-style). Do NOT read the skew emphasis below as the general problem — the general axis-1
+> lever is **fuzzy-to-closed-vocabulary** (skew-agnostic), and the whole axis-3 story below applies
+> ONLY when a logo/template exists. §2A grounds the real-world spread.
 
 **Setup (FACT, live DB `%APPDATA%\ScanFinder\docusnap.db`).** One supplier ("NT" logo), three sibling
 templates sharing the letterhead: **id25 invoice, id26 delivery_note, id30 purchase_order**. Installed
@@ -138,13 +149,72 @@ The review friction is real and spread across three different guards.
 
 ---
 
+## 2A. Scope & generalisation — demo vs real, no-logo & born-digital (FACT — `real_docs_probe.py`, `nol0go_edges.py`)
+
+Northgate is one demo point. A permanent fix must generalise across the axes below. Evidence: a
+rendered/read + classified spread of real `C:\Users\cmccu\Desktop\ScannedDocs`.
+
+### 2A.1 Demo skew is exaggerated — don't over-fit to it
+Owner: the Northgate/Copperfield corpus skew (~1.6–2.6°) is **deliberately worse than real scans**. So
+the skew-band deskew (§2.3) is **scanned-support only** and must NOT be tuned to ±2° or to a letterhead
+geometry. The **skew-agnostic** lever is fuzzy-to-closed-vocabulary: it recovers a garbled title however
+the garble arose (skew, noise, tracking, JPEG). Treat "rotate ±2°" as a demo-doc hack.
+
+**Confirmed on a REAL scanned doc (FACT).** `City Office NI` — a genuine Belfast managed-print invoice
+(`Invoicefhfhghh…152573.pdf`, **image-only / NOT born-digital**, so it goes through OCR) — has a large,
+clean, left-aligned **"Invoice"** title at essentially **minimal skew**; `reconstruct_page_text` →
+`detect_document_type` reads it cleanly and types **Invoice 95, heading=True, TRUSTED, with NO template**.
+A real scanned invoice reads its own title fine — the Northgate garble is the **exaggerated-skew
+artefact**, not the real-world norm. *(NB the `fhfhghh@@££^%!` garble is in the FILENAME only; the printed
+title is clean — these are NOT garbled-title test docs.)*
+
+### 2A.2 Most real docs are BORN-DIGITAL and LOGOLESS — and today they type correctly
+`ScannedDocs` has both kinds: a **born-digital** family (`ocr/born_digital.py` reads the PDF text layer,
+no OCR) — SuperStore invoices (2012, ~15 KB), Anconia Corp, Cloud VPS, Contoso Asia, Profile
+Construction/ACME (2026) — and an **image-only/scanned** family (the large "fhfhghh…" / City Office docs,
+§2A.1). Every **born-digital** doc I sampled **types Invoice, conf 95, heading=True, TRUSTED — with NO
+logo and NO template**, because `detect_document_type` scans **every line** (not a fixed band) and the
+clean text
+layer gives an exact "INVOICE" match. This is the **axes-1+2-only path** and it is **SOUND** for a clean
+title in the vocabulary. Layout is genuinely varied and the title is NOT always top-left: **SuperStore's
+"INVOICE" is top-RIGHT**, Profile's is in a top-right grey box, Cloud VPS/Contoso sit mid-header. A fixed
+"top-left title band" would miss most of them — the whole-line scan is what makes it layout-agnostic.
+
+### 2A.3 Axis 3/4 DO NOT APPLY to a logoless, template-less doc — but a template match is not logo-gated
+For a fresh logoless born-digital doc, `identify_template` finds no logo cluster → the type is the pure
+detection (axes 1+2), and the same-logo tie-break / refuse guards never run. **BUT** `_match_by_keywords`
+(`template_matcher.py:863`) can match a logoless doc to an existing template by keyword **fingerprint**
+alone — so the axis-3 generic-fingerprint hole (§2.5: a pure-letterhead fingerprint scoring 1.0) **can
+fire without any logo**. Therefore any axis-3/4 defense must be **template-PATH-scoped (logo OR keyword),
+never logo-gated, and must never assume a logo/template exists.**
+
+### 2A.4 Where the no-logo / born-digital path is SOFT (verified edges, `nol0go_edges.py`)
+| Title input | Result | Assessment |
+|---|---|---|
+| `INVOICE` / `TAX INVOICE` / `VAT INVOICE` / `Sales Invoice` | Invoice, TRUSTED ✓ | shipped buckets cover common qualifiers |
+| `PURCHASE ORDER` (born-digital, clean) | Purchase Order, TRUSTED ✓ | title-first works |
+| `CREDIT NOTE` / `REMITTANCE ADVICE` / `RECEIPT` (types **not installed**) | detected as that type, TRUSTED, then held (no installed type/template) ✓ | correct fail-safe → "Add '<type>'" |
+| **`I N V O I C E`** / `INV OICE` (single-word letter-spaced/split) | **heading=False, untrusted** | **GAP: `_despaced_heading` is MULTI-WORD only (`keyword.py:524`)** — a tracked single-word title has no recovery |
+| `Proforma Invoice` / `COMMERCIAL INVOICE` (uncommon qualifier) | Invoice, **untrusted** | still types on the no-logo path; loses title-trust |
+| `STATEMENT` / `QUOTATION` (no bucket + not installed) | mis-suggested **Invoice conf 66** (held) | soft: suggests wrong type instead of clean "unknown" |
+| supplier+title on one line, **no** column gap (`SuperStore INVOICE`) | untrusted | with a column gap (`ACME    INVOICE`) → trusted ✓ (born-digital emits the gap) |
+
+**Net:** the born-digital/no-logo happy path is sound; the real generalisation targets are (a) **single-word
+letter-spaced titles** (multi-word-only recovery), (b) **uncommon qualifiers**, and (c) cleaner
+**HOLD-as-unknown** when no title is in the closed vocabulary — all **axis-1/2, logo-independent**.
+
+---
+
 ## 3. Per-axis verdict (with the isolating experiment)
 
-- **Axis 1 — title READING: BROKEN for dark skew-garbled headings.** Isolating experiment: §2.3 — raw
-  band OCR corrupts a glyph (`PU RC fa ASE ORDER`); `_despaced_heading`'s **exact** equality
-  (`keyword.py:535`) rejects it; the only recovery module (`heading_reread`) is **red-only** and
-  empirically inert here (`has_red_banner=False`, §2.5). Deskew **can** recover it (675 at +1.6°) but no
-  deskew exists in the pipeline. **This is the root axis.**
+- **Axis 1 — title READING: BROKEN whenever the title read is garbled or letter-spaced.** Isolating
+  experiment: §2.3 — raw band OCR corrupts a glyph (`PU RC fa ASE ORDER`); `_despaced_heading`'s
+  **exact** equality (`keyword.py:535`) rejects it; the only recovery module (`heading_reread`) is
+  **red-only** and empirically inert here (`has_red_banner=False`, §2.5). **Skew is only the DEMO
+  trigger** (§2A.1) — the general failure is *any* garble, and a **single-word letter-spaced** title
+  fails even with NO skew and clean born-digital text (§2A.4, `keyword.py:524` multi-word-only). Deskew
+  can recover the demo case (675 at +1.6°) but no deskew exists in the pipeline and it is not the general
+  fix. **This is the root axis; the general lever is fuzzy-to-vocabulary (§7 Lever 1).**
 - **Axis 2 — CLASSIFICATION: SOUND.** Isolating experiment: §2.4 — correct title → PO, trusted, 3/3.
   A legible banner is never outvoted by body captions (heading weight ×2.0). Nothing to fix here.
 - **Axis 3 — TIE-BREAK: UNSAFE (fails toward a confident wrong type).** Isolating experiment: §2.5 —
@@ -230,38 +300,61 @@ no type guard firing.** That violates *fail-toward-hold* and is the priority to 
 
 ---
 
-## 7. Fix landscape (what a permanent fix must cover)
+## 7. Fix landscape (generalised — what a permanent fix must cover)
 
-**Primary lever — axis 1, make the software read the title a human reads (the creed).**
-1. **Skew-robust TITLE-BAND re-read** (generalise `heading_reread.recover_type_detection` beyond red):
-   isolate the top title band by **geometry** (the tallest non-logo word cluster below the letterhead,
-   not a fixed fraction); estimate the band's **own** skew (projection-profile variance / Tesseract OSD
-   angle) and deskew the **crop**; upscale + binarise; OCR at **PSM 7/8/11**; **VOTE** across recipes.
-   Fail-safe: only ever ADD a recovered *trusted* heading; a genuinely illegible title stays lost → HOLD.
-   Covers 675 (deskew) and, with the recipe, 673.
-2. **Fuzzy-to-CLOSED-VOCABULARY match** (the smallest, most robust change): after de-spacing, match the
-   read against the tiny known set {name ∪ aliases} by edit-distance / token-overlap instead of demanding
-   exact equality (`keyword.py:535`). `purcfaaseorder` → `purchaseorder` is a 1–2 edit recovery, safe on
-   a closed set. Gate it to the top band + name/alias phrases only (bound the FP surface). Covers 675 AND
-   673 at the classification seam with no rendering work. **Do NOT loosen the exact test — ADD a fuzzy
-   arm beside it** (preserves D5's FP guarantee for the non-garbled path).
+Design order reflects the scope correction (§2A): the **general, input-agnostic** lever first; the
+scanned-only support second; the logo/template-path defenses third. The bar (owner): *only a genuinely
+poor scan may block type detection — not skew, not layout, not a missing logo.*
 
-**Secondary lever — axis 3/4 defense-in-depth, for when the title truly cannot be read.**
-3. **Fix the ambiguity guard's blindness to a generic/subset fingerprint:** a same-supplier multi-slug
-   match where the winner's fingerprint carries **no type-distinctive content** (pure letterhead, or a
-   strict subset of a sibling's) must be treated as **ambiguous → HOLD**, without requiring an exact
-   score tie (`_kw_type_ambiguity`, `template_matcher.py:840-859`). This closes the silent-misfile hole.
-4. **Fingerprint hygiene:** strip confirmed customer words (Bluefin/Marine) from id30 so the correct PO
-   template can win on a genuine PO (the `FINGERPRINT_HYGIENE` intent, evidently not applied to id30).
-5. **Buyer-issued polarity corroboration:** these POs print `Supplier: <other party>` — a PO is
-   buyer-issued; that polarity is corroborating type evidence when the title is weak (mind the existing
-   buyer-issued issuer guard; don't add supplier/vendor to recipient markers type-blind).
+**Lever 1 (PRIMARY, general, input-agnostic) — fuzzy match the read title to the CLOSED vocabulary.**
+After collapsing intra-word spacing, match the top-band read against the tiny known set {type names ∪
+aliases} by edit-distance / token-overlap instead of demanding **exact** equality (`_despaced_heading`
+`keyword.py:535`; `_segment_is_heading` `:447`). Skew-**agnostic**: recovers a garble however it arose —
+`purcfaaseorder`→`purchaseorder` (skew, §2.3) AND `i n v o i c e`→`invoice` (born-digital tracking,
+§2A.4). **Must also cover SINGLE-WORD titles** (drop the multi-word-only guard `keyword.py:524` for the
+fuzzy arm — the born-digital "I N V O I C E" gap). No rendering; works on scanned AND born-digital text.
+*Seam it relies on:* the closed set stays tiny (fuzzy is safe only there). *Must not disable:* keep the
+exact test as-is and **ADD** the fuzzy arm beside it (preserves the D5 false-positive guarantee for the
+non-garbled path); scope to the top band + name/alias phrases; require a tight edit threshold so an
+adjacent vocab word can't cross-match ("credit note" vs "delivery note"). *Does NOT cover:* a title that
+is a **synonym outside the vocabulary** (e.g. an uninstalled "Statement") — that must HOLD-as-unknown
+(Lever 4), not fuzz to the nearest installed type.
 
-**What a fix does NOT cover (honesty).** A genuinely illegible title (torn/faded/sub-threshold) still
-HOLDs — correct. Fuzzy matching adds a small, bounded FP surface on the closed set (must stay top-band +
-name/alias scoped). Deskew that resamples could harm a *field* read — but the title read is
-**suggestion-only and never writes a field value**, so `project_detect_deskew_parked` doesn't apply.
-Every recommendation must fail toward **held/untyped**, never a confident wrong type.
+**Lever 2 (SCANNED-support only) — a layout-agnostic title re-read for a genuinely garbled scan.**
+Generalise `heading_reread.recover_type_detection` beyond the red channel: find the visually-dominant
+heading by **geometry on ANY layout** — the tallest non-logo word cluster in the top region, wherever it
+sits (**top-left, top-right like SuperStore, or a boxed header like Profile**) — NOT a fixed
+band/letterhead offset; estimate the band's **own** small skew (numpy projection-profile variance first —
+it recovered the live case at +1.6°; `scikit-image`/OSD only if a fix demonstrably needs finer angle,
+degrade gracefully); upscale + binarise; OCR at **PSM 7/8/11**; **VOTE** and feed Lever 1. *Must not:* be
+tuned to ±2° or the Northgate geometry (§2A.1); assume a logo/letterhead exists; or run on born-digital
+(clean text already). *Does NOT cover:* a torn/faded/sub-threshold title — that HOLDs (correct).
+
+**Lever 3 (LOGO/TEMPLATE-PATH ONLY, defense-in-depth) — HOLD a template match that carries no
+type-distinctive evidence.** Applies **only when a template matched** (logo cluster OR keyword
+fingerprint — §2A.3, NOT logo-gated). When the winning sibling's fingerprint carries **no type-distinctive
+content** (pure letterhead, or a strict subset of a sibling's) and no trusted title resolves the type,
+treat it as **ambiguous → HOLD**, WITHOUT requiring an exact score tie (`_kw_type_ambiguity`
+`template_matcher.py:840-859`; the logo-path `_type_ambiguity` `:131`). Closes the silent-misfile hole
+(§2.5) on both the logo and the logoless-keyword path. *Must not:* fire on a logoless doc with **no**
+template (there is nothing to be ambiguous about — it is the pure axes-1+2 call). Support: **fingerprint
+hygiene** (strip leaked customer words like "Bluefin/Marine" from id30 — the `FINGERPRINT_HYGIENE` intent,
+evidently not applied) so the correct template can win; **buyer-issued polarity** ("Supplier: <other
+party>" ⇒ buyer-issued ⇒ PO/not-invoice) as corroboration when the title is weak (mind the existing
+buyer-issued issuer guard; don't add supplier/vendor to recipient markers type-blind).
+
+**Lever 4 (no-logo/born-digital robustness) — a legible title must type on text alone, else HOLD clean.**
+Keep the type call **logo-independent** (it already is via the whole-line scan — §2A.2; don't regress it
+by adding a band restriction). When **no** title matches the closed vocabulary (even fuzzily), prefer a
+clean **"unknown → review/Add type"** hold over suggesting the incidental-body winner (§2A.4 Statement→
+Invoice@66). *Does NOT cover:* inventing a type that isn't configured — an uninstalled detected type
+stays a one-click "Add '<type>'" (correct fail-safe).
+
+**Overall fail-safe (non-negotiable).** Every lever fails toward **held/untyped**, never a confident wrong
+type. The title read is **suggestion-only and never writes a field value**, so
+`project_detect_deskew_parked` (deskew corrupting a *field* re-read) does not apply to Lever 2. The
+current keyword-arm path (§3 axis-3) is the one place that fails toward a *confident wrong type* today —
+Lever 3 is what closes it.
 
 ---
 
@@ -283,26 +376,30 @@ Every recommendation must fail toward **held/untyped**, never a confident wrong 
 
 ## 9. What herald still needs (standing requests)
 
-- **A skew-robust title-band harness of my own** (scratchpad-permanent): given a doc id, render → isolate
-  band by geometry → raw + deskew + upscale/binarise + PSM 6/7/8/11 → VOTE → fuzzy-to-vocabulary, and
-  print a doc×recipe recovery matrix + per-type score table. I built the pieces this run
-  (`herald_forensic.py`, `title_forensic.py`); folding them into one reusable probe would let me gate any
-  axis-1 fix contrastively. *(No new dependency — pypdfium2 BSD-3, Pillow HPND, numpy BSD-3,
-  pytesseract Apache-2.0 + Tesseract 5, all already bundled.)*
-- **A read-only type-outcome enumerator** over the whole confirmed corpus (per doc: detected type +
-  conf + heading-trusted, template arm, which guard held it, and mis-type direction). The Northgate slice
-  shows the guards fire on 9/20 — I want the corpus-wide false-hold and silent-misfile rates before any
-  fix, as the gate.
-- **Confirmation of the reprocess vs fresh-import divergence** (failure mode 5 / D2): the cheapest check
-  is to reprocess 674 through the app's real reprocess IPC (stored slug `invoice`, working-path image)
-  and compare `title_trusted_fresh` to the fresh-import trace. I can't settle read-only whether the
-  persisted PO came from a code path, an older build, or a manual retype.
-- **`scikit-image` (BSD-3) as an OPTIONAL accelerator** for projection-profile / Hough deskew of the
-  title band — only if a fix needs it; it must degrade gracefully to the numpy variance sweep when
-  absent (never a mandatory backend dep; **no OpenCV/`cv2`, no PyMuPDF/AGPL**).
-- **Owner ground-truth on one question that's cheap for them, expensive to infer:** are these synthetic
-  scans representative of the real MFD's skew distribution (±1–3°), or should the recovery target a wider
-  range? It changes how aggressive the deskew sweep must be.
+Two harnesses are now **assigned to me** (skill update 2026-07-26); I will author them on first fix-gating
+use. No new dependency — pypdfium2 BSD-3, Pillow HPND, numpy BSD-3, pytesseract Apache-2.0 + Tesseract 5
+are all bundled. Pieces already built this run: `herald_forensic.py`, `title_forensic.py`,
+`real_docs_probe.py`, `nol0go_edges.py`.
+
+- **Title-band recovery matrix** (fold the above into one probe): doc id → geometry band isolate (any
+  layout) → {raw, deskew-sweep, upscale, binarise, PSM 6/7/8/11} → de-space → **fuzzy-to-vocabulary** →
+  doc×recipe recovery matrix + per-type score table. Gates any axis-1 fix contrastively (mis-typed vs
+  correct sibling) AND must cover born-digital single-word letter-spacing (§2A.4).
+- **Corpus-wide type-outcome enumerator** (read-only `?mode=ro`): per confirmed doc — detected type +
+  conf + heading-trusted, template arm, which guard (if any) held it, mis-type direction. The FIX GATE:
+  measure corpus-wide false-hold and silent-misfile rates BEFORE/after any change. Northgate alone shows
+  guards firing on 9/20; I want the whole-corpus number, **including the logoless born-digital docs**.
+- **Reprocess-vs-fresh check** (needs the app write path → flag for the owner/main session, not read-only):
+  reprocess 674 through the real reprocess IPC (stored slug `invoice`) and compare `title_trusted_fresh`
+  to the fresh-import trace, to settle failure mode 5 / D2 (path-dependent type).
+- **`scikit-image` (BSD-3, free-for-commercial) as an OPTIONAL accelerator** for finer projection-profile
+  / Hough deskew of the title band — admitted via the license gate ONLY if a fix demonstrably needs it,
+  and must degrade gracefully to the numpy variance sweep (numpy FIRST — it recovered the live case at
+  +1.6°). Never a mandatory backend dep; **no OpenCV/`cv2` hard dep, no PyMuPDF/`fitz` (AGPL)**.
+- **Owner ground-truth (cheap for them, expensive to infer):** (a) confirmed — the demo skew is
+  exaggerated (baked into §2A); (b) is the "doc solutions" supplier among `ScannedDocs` (I could not
+  positively identify it on disk), and what did it type wrong; (c) do real suppliers use single-word
+  letter-spaced/design titles often enough to prioritise that gap.
 
 ---
 
@@ -312,6 +409,8 @@ Every recommendation must fail toward **held/untyped**, never a confident wrong 
 - `title_forensic.py` — isolated-band raw + deskew-sweep OCR (§2.3).
 - `herald_forensic.py` — pipeline `reconstruct_page_text` raw/deskew + **axis-2 isolation** (§2.3–2.4).
 - `fingerprints_and_red.py` — sibling-fingerprint identity + red-channel inertness (§2.5).
+- `real_docs_probe.py` — real `ScannedDocs` spread: born-digital detection + no-logo classification + rendered `real_*.png` bands (§2A.2).
+- `nol0go_edges.py` — controlled no-logo/born-digital classification edge cases (§2A.4).
 - `northgate_trace.js` — live `process_docs` type-resolution trace (§2.2); run via
   `ELECTRON_RUN_AS_NODE=1 ./node_modules/electron/dist/electron.exe northgate_trace.js 675 673 674 670 667 685`.
 - `northgate_types.py` / `notes_and_types.py` — DB landscape + persisted validation notes (§2.6).
