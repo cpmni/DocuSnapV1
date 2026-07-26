@@ -143,7 +143,25 @@ load-bearing supplier-scoped sibling exclusion + the winner branding/mark bar). 
 family green. **Live A+C ON: all 4 stuck dockets match T24, overall 99-100, same correct values.**
 Slice B (mark as primary matcher) DEFERRED per Oracle until mark normalisation.
 
-**⚠ Corpus flag-matrix: FAIL — DO NOT FLIP.** OFF 335/570 would-auto-file M=2 (pre-existing #183/#583);
+**✅ 2026-07-26 LATER — G1+G2 corroboration guards BUILT (`ba8bcea`); the revised Oracle gate PASSES.**
+gary designed + Oracle signed (revised C8) two guards keyed on a `veto_fallthrough` tag: **G1** — a
+fall-through doc's critical winner must be corroborated (independent-family rail read, or boundary-
+guarded page presence incl. the date RAW-form arm) else a field-kind-aware note holds it; **G2** — a
+non-authoritative crop at inverted confidence never silently displaces a disagreeing keyword (keep
+keyword + note; agreeing keeps the incumbent noteless, C6). One master switch: naked C UNREACHABLE.
+**Gate results:** M == 2 exactly (#472 eliminated), M_type 0, would-auto-file **377** (+42 vs OFF's
+335), ref/supplier = baseline, dates 98.2 with the complete wrong-stored set {#456, #472} both
+**[flagged]** (note-held — "no silent wrong value" satisfied). Live: #472/#456 held with notes,
+Saltmarsh clean at 100. **Accepted costs (pinned):** (a) a correct lone read the page OCR missed is
+held; (b) a wrong keyword with a correct disagreeing auto-crop goes to review holding the keyword;
+**(c) an authoritative fall-through displacer that misreads is stored wrong-but-held (G1-noted), never
+silently filed — the accuracy metric counts it as a miss by design** (#456: extending G2 to
+authoritative would make ⊕-taught corrections structurally unable to beat wrong keywords). **The flip
+(defaults ON + installer rebuild) is now the owner's call.** Residual on the backlog, named: G1
+verifies EXISTENCE not BINDING — a lone read grabbing a different genuine page token still passes;
+that is the #183 Fix-A anchor-binding work, not a G1 widening.
+
+**(superseded by the above) ⚠ Corpus flag-matrix on NAKED C: FAIL — DO NOT FLIP naked.** OFF 335/570 would-auto-file M=2 (pre-existing #183/#583);
 ON 378/570 (+43 recall) but **M=3 (NEW: #472** — its skew-wrong ref PO-38093 was only held because the
 template match failed; C recovers the correct template → boost → wrong ref rides above the floor) **and
 date accuracy 98.4→98.2 (NEW: #456** reads 04-10-2026 for 14-10-2026 on the template-matched path).

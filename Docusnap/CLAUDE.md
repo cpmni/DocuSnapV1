@@ -21,7 +21,25 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-07-26) — logo-identity slices BUILT DARK; corpus gate BLOCKED the flip
+## Current session state (2026-07-26 FINAL) — logo-identity fix COMPLETE (A+C+G1+G2), gate PASSED, DARK
+**LATER 2026-07-26: the corroboration-gated variant CLEARED the gate.** gary designed + Oracle signed
+(revised C8) the G1/G2 guards, BUILT `ba8bcea`, all green: **G1** (final assembly) — a fall-through
+doc's critical winner must be corroborated (independent-FAMILY rail read, or boundary-guarded page
+presence incl. the date RAW-form arm; field-kind-aware note holds via the flagged gate; NO authoritative
+exemption) · **G2** (Stage-2 merge) — a non-authoritative crop at INVERTED confidence never silently
+displaces a disagreeing keyword (keep keyword + note; agreeing keeps the incumbent noteless, C6;
+authoritative exempt BY RULING — G1 backstops, accepted cost (c) pinned). Tag `veto_fallthrough` from
+the matcher; ONE master switch (`TEMPLATE_VETO_FALLTHROUGH`) — **naked C is unreachable at runtime**
+(Oracle-blessed deviation). **Gate results: M == 2 exactly** (#472 eliminated; baseline #183/#583 only),
+M_type 0, **would-auto-file 377** (+42 vs OFF 335), ref/supplier = baseline, dates 98.2 with the complete
+wrong-stored set {#456, #472} both **[flagged]** note-held ("no silent wrong value"); live: #472/#456
+held with notes, Saltmarsh clean 100. Unit `test_veto_fallthrough_corrob.py` 20 pins + 7 sibling suites
+green. **STILL DARK — the flip (defaults ON + installer rebuild) is the OWNER'S call.** Backlog (named,
+do NOT widen G1 for it): G1 verifies EXISTENCE not BINDING — a lone read grabbing a different genuine
+page token passes; that is the #183 Fix-A anchor-binding work. **The earlier block below is superseded
+on the gate outcome; its root-cause forensics remain canonical. ↓**
+
+## (superseded on outcome) 2026-07-26 — logo-identity slices BUILT DARK; corpus gate BLOCKED naked C
 **2026-07-26 (Fable 5, owner-directed).** The remaining 4 "perfect" dockets (587/588/589/590, overall 94
 < graduated floor 95) were root-caused to the END: owner's exercise ("the logo is visually identical —
 find the algorithmic fix") → built the **iris** perceptual-forensics agent (`.claude/agents/iris.md`,
