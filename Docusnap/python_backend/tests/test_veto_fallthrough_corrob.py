@@ -102,6 +102,41 @@ def main():
     fails += not check("revised-C8 pin: authoritative #456-shape stays UNCORROBORATED (G1 note path)",
                        corrob(W456A, RAW456, "INVOICE Invoice Date 14/10/2026", True) is False)
 
+    # ── Fix A (#183) inline-harvest absence hold — pure predicate (gary + Oracle C1-C5 2026-07-26) ──
+    # _inline_absence_should_hold = (method=='anchor_inline') AND NOT _fallthrough_critical_corroborated.
+    # The crop-box requirement was DROPPED (Oracle C2): keyed on the CORROBORATION invariant, a pure
+    # function of the RESULT — no anchors-list correlation, and it closes the label-less/positional-anchor
+    # synthesis hole a crop-box test would have exempted (residual-a). OFF byte-identical + the G1
+    # composition (one-note skip, no double-note) are SYSTEM-level (the realdoc A/B), per this file's
+    # convention that block behaviour is system-proven while the PURE predicate is unit-pinned here.
+    iah = eng._inline_absence_should_hold
+    P183 = "PURCHASE ORDER  Order No.\nOrder Date 11/03/2026\nOrder Total 1,240.00"   # true ref line lost to skew
+    fails += not check("#183 regression: page-absent anchor_inline ref (no rail) -> HELD",
+                       iah({"value": "PO-20008", "method": "anchor_inline"}, [], P183, False) is True)
+    # Accepted-trade-off pin: a page-PRESENT inline value is trusted -> NOT held (stops a future 'restore
+    # #183' by loosening, and stops over-holding a correct inline read the page actually carries).
+    fails += not check("trade-off pin: page-present anchor_inline value -> NOT held",
+                       iah({"value": "PO-60906", "method": "anchor_inline"}, [], "Order No. PO-60906", False) is False)
+    # Method filter: a SUCCEEDED anchor_crop (the 'column-only crop reads right' class) is EXEMPT even when
+    # page-absent — direct pixel evidence from the taught box, must not be held.
+    fails += not check("method filter: succeeded anchor_crop, page-absent -> NOT held",
+                       iah({"value": "PO-20008", "method": "anchor_crop"}, [], "degraded page text", False) is False)
+    # Cross-family corroboration: a keyword-family rail agreeing on the value -> NOT held (arm i).
+    fails += not check("cross-family rail agrees -> NOT held",
+                       iah({"value": "PO-20008", "method": "anchor_inline"},
+                           [{"value": "PO-20008", "method": "keyword"}], "degraded page text", False) is False)
+    # Out of scope: a keyword winner is never the synthesis class -> NOT held.
+    fails += not check("keyword winner -> NOT held (only anchor_inline is in scope)",
+                       iah({"value": "PO-20008", "method": "keyword"}, [], "degraded page text", False) is False)
+    # Residual-(a) CLOSED (Oracle C2, crop-box dropped): a LABEL-LESS/positional anchor_inline synthesis
+    # (the blind-po_date class) that is page-absent + uncorroborated -> HELD. A crop-box requirement would
+    # have EXEMPTED it (the value has no crop box), leaving the exact #183 chain open on that class.
+    fails += not check("residual-a closed: positional/label-less anchor_inline, page-absent -> HELD",
+                       iah({"value": "SO-77777", "method": "anchor_inline"}, [], "SALES ORDER\nDate 01/01/2026", False) is True)
+    # Date scope: a page-absent anchor_inline DATE with no parseable cross-family agreement -> HELD.
+    fails += not check("date: page-absent anchor_inline date -> HELD",
+                       iah({"value": "31-12-2026", "method": "anchor_inline"}, [], "Order Date 01/01/2026", True) is True)
+
     # ── The fall-through tag (matcher side) ──────────────────────────────────────────────────────
     Q = "aa" * 8
     WRONG = {"id": 1, "name": "T", "dominant_supplier": "Thornbury Fasteners",

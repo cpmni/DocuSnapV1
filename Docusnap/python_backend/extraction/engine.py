@@ -171,6 +171,26 @@ TAUGHT_OWNERSHIP_OWN_LABEL = os.environ.get('TAUGHT_OWNERSHIP_OWN_LABEL', '1') !
 # C3 crash-safe (title_trusted-only; the un-wired type_confirmed dropped) · C4 pins (incl. B2 non-authoritative
 # HOLD + B6 wrong-type residual). Kill: =0 (byte-identical off).
 TAUGHT_OWNERSHIP_TYPE_SCOPED_LABEL = os.environ.get('TAUGHT_OWNERSHIP_TYPE_SCOPED_LABEL', '1') != '0'
+# INLINE-HARVEST ABSENCE HOLD — Fix A for #183 (gary design + Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-26).
+# A CRITICAL ref/date committed by the Stage-2 word-geometry inline harvest (method 'anchor_inline') that
+# NO independent source corroborates — no different-method-family rail agrees AND its alnum core is absent
+# from the full-page ocr_text — is a value assembled from scattered word boxes that appears NOWHERE on the
+# page (#183: harvested 'PO-20008' while the page prints 'PO-60906'; skew broke Tesseract row-grouping so
+# ocr_text never carried the true line, and the conformance boost rode the synthesis to a silent auto-file
+# @98). HOLD it (validation_note -> trust.js flagged gate). The general-doc sibling of the G1 veto-
+# fallthrough guard, which fires ONLY on identity-veto fall-through docs (#183 resolves its supplier
+# normally so G1 never runs on it). Note-only: no value/method/confidence change -> per-field accuracy
+# byte-identical. Keyed on the CORROBORATION invariant, NOT a rigid-crop-rejection signal (Oracle C2 — a
+# rejection is unobservable in production: on_reject is trace-only, and the _xsup_absolute_ok skip + the
+# supersede-not-reject path both yield anchor_inline with no rejection; a crop-box requirement would also
+# EXEMPT the label-less positional-anchor synthesis hole). DEFAULT ON (owner flip 2026-07-26 after the
+# Oracle conditions passed): realdoc A/B OFF-vs-ON — silentAutoFile 2->1 (#183 'PO-20008' flips SILENT->
+# flagged; #583 the date-M UNCHANGED, Oracle C4 — it's page-present, a different class), M_type 0, per-field
+# accuracy BYTE-IDENTICAL (note-only), no doc newly enabled to file. would-auto-file 396->391: 5 held = #183
+# (the silent-wrong win) + 4 correct-per-GT reads on the same degraded-scan family (181/185/189 Larkspur,
+# 471 Thornbury) — the honest fail-toward-review cost, 0.6%, since a correct and a wrong page-absent inline
+# synthesis are indistinguishable at runtime. Kill: =0 (byte-identical off).
+INLINE_HARVEST_ABSENCE_HOLD = os.environ.get('INLINE_HARVEST_ABSENCE_HOLD', '1') != '0'
 
 
 def _late_rescue_applicable(s2_supplier, supplier_name):
@@ -909,6 +929,27 @@ def _fallthrough_critical_corroborated(winner, cands, ocr_text, is_date) -> bool
             if rv and rv != wv and _page_presence_corroborated(rv, ocr_text):
                 return True
     return False
+
+
+def _inline_absence_should_hold(winner, cands, ocr_text, is_date) -> bool:
+    """Fix A (#183, gary design + Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-26): should a CRITICAL
+    anchor_inline winner be HELD for review? True iff the winner was committed by the Stage-2 word-
+    geometry inline harvest (method 'anchor_inline') AND no independent source corroborates it
+    (_fallthrough_critical_corroborated is False: no different-method-family rail agrees AND the value's
+    alnum core is absent from the full-page text). Catches the skew-synthesis class — a valid-shaped
+    critical value the harvest assembled from scattered word boxes that appears NOWHERE on the page
+    (#183: 'PO-20008' while the page prints 'PO-60906'); the row-grouping loss hid it from ocr_text so it
+    rode the conformance boost to a silent auto-file.
+
+    Oracle C2 (2026-07-26): keyed on the CORROBORATION invariant, NOT on whether the rigid crop was
+    'rejected'. That story is SUFFICIENT-NOT-NECESSARY and unobservable in production (on_reject is trace-
+    only; the _xsup_absolute_ok skip and the supersede-not-reject path both yield anchor_inline with no
+    rejection) — do NOT re-scope this to demand a rejection signal or a crop box. Being a pure function of
+    the RESULT (no anchors-list correlation) it also closes the label-less/positional-anchor synthesis hole
+    (the blind-po_date class) that a crop-box requirement would have exempted."""
+    if str((winner or {}).get("method") or "") != "anchor_inline":
+        return False
+    return not _fallthrough_critical_corroborated(winner, cands or [], ocr_text or "", is_date)
 
 
 # Field TYPE → credibility validation key. Only STRUCTURED / code types are mapped;
@@ -4842,6 +4883,33 @@ class ExtractionEngine:
                                           f"page — please check it against the document before filing.")
                 results["_needs_review"] = True
                 self.log(f"  Veto-fallthrough hold: {_ck} '{_cd.get('value')}' uncorroborated — held for review")
+
+        # Fix A (#183 harvest-absence hold — gary design + Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-26).
+        # The general-doc sibling of the G1 veto-fallthrough guard above: a CRITICAL anchor_inline winner
+        # that _fallthrough_critical_corroborated can't confirm (no cross-family rail agrees, value absent
+        # from the page) is the #183 skew-synthesis — HOLD it. Runs AFTER G1 so a fall-through doc that G1
+        # already noted is SKIPPED (the validation_note check; one note per field, no double-note). Fix A's
+        # condition is a strict SUBSET of G1's (same predicate + an anchor_inline filter), so on a veto-
+        # fallthrough doc it adds nothing G1 didn't. Note-only, no value/method/confidence change. Kill
+        # INLINE_HARVEST_ABSENCE_HOLD=0 (byte-identical off).
+        if INLINE_HARVEST_ABSENCE_HOLD:
+            _ia_crit = ({ref_field_key} if ref_field_key else set()) | set(date_field_keys or ())
+            for _ck in sorted(_ia_crit):
+                _cd = results.get(_ck)
+                if not (isinstance(_cd, dict) and str(_cd.get("value") or "").strip()):
+                    continue
+                if str(_cd.get("validation_note") or "").strip():
+                    continue                                      # G1/type-guard already held → skip
+                _is_d = _ck in date_field_keys
+                if _inline_absence_should_hold(_cd, (self._field_candidates or {}).get(_ck) or [],
+                                               ocr_text, _is_d):
+                    _kind = "date" if _is_d else ("reference" if _ck == ref_field_key else "value")
+                    _cd["validation_note"] = (f"This {_kind} was read from the page layout but couldn't "
+                                              f"be confirmed anywhere else on the document — please check "
+                                              f"it before filing.")
+                    results["_needs_review"] = True
+                    self.log(f"  Inline-absence hold: {_ck} '{_cd.get('value')}' anchor_inline "
+                             f"uncorroborated + page-absent — held for review")
 
         # Final resolved value per field — the inspector marks any earlier
         # candidate whose value differs from this as a superseded intermediate.
